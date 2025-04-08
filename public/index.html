@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Playfield — AI Orchestration</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background: #000;
+    }
+    canvas {
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="canvas"></canvas>
+
+  <script>
+    const canvas = document.getElementById('canvas')
+    const ctx = canvas.getContext('2d')
+
+    let elements = {} // Store elements by ID
+    let backgroundColor = '#000000'
+
+    function resizeCanvas() {
+      canvas.width = window.innerWidth
+      canvas.height = window.innerHeight
+    }
+
+    window.addEventListener('resize', resizeCanvas)
+    resizeCanvas()
+
+    function drawScene() {
+      // Clear background
+      ctx.fillStyle = backgroundColor
+      ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+      // Draw all elements
+      Object.values(elements).forEach(el => {
+        if (el.type === 'circle') {
+          ctx.beginPath()
+          ctx.arc(el.x, el.y, el.radius, 0, Math.PI * 2)
+          ctx.fillStyle = el.color
+          ctx.fill()
+        } else if (el.type === 'text') {
+          ctx.fillStyle = el.color
+          ctx.font = `${el.size}px sans-serif`
+          ctx.fillText(el.text, el.x, el.y)
+        }
+      })
+    }
+
+    function animateMove(el, targetX, targetY, duration) {
+      const startTime = performance.now()
+      const startX = el.x
+      const startY = el.y
+
+      function animate(time) {
+        const elapsed = time - startTime
+        const t = Math.min(elapsed / duration, 1)
+
+        el.x = startX + (targetX - startX) * t
+        el.y = startY + (targetY - startY) * t
+
+        drawScene()
+
+        if (t < 1) {
+          requestAnimationFrame(animate)
+        }
+      }
+
+      requestAnimationFrame(animate)
+    }
+
+    function handleCommand(command) {
+      const parts = command.split(':')
+
+      if (parts[0] === 'B') {
+        backgroundColor = parts[1]
+        drawScene()
+      }
+
+      else if (parts[0] === 'C') {
+        const [elementId, position, radius, color] = parts.slice(1)
+        const [x, y] = position.replace(/[()]/g, '').split(',').map(Number)
+
+        elements[elementId] = {
+          type: 'circle',
+          x,
+          y,
+          radius: Number(radius),
+          color
+        }
+        drawScene()
+      }
+
+      else if (parts[0] === 'T') {
+        const [text, position, size, color] = parts.slice(1)
+        const cleanText = text.replace(/["]/g, '')
+        const [x, y] = position.replace(/[()]/g, '').split(',').map(Number)
+
+        const elementId = `text${Object.keys(elements).length}`
+        console.log('cleanText', cleanText)
+        elements[elementId] = {
+          type: 'text',
+          text: cleanText,
+          x,
+          y,
+          size: Number(size),
+          color
+        }
+        drawScene()
+      }
+
+      else if (parts[0] === 'M') {
+        const [elementId, position, duration] = parts.slice(1)
+        const [x, y] = position.replace(/[()]/g, '').split(',').map(Number)
+
+        const el = elements[elementId]
+        if (el) {
+          animateMove(el, x, y, Number(duration))
+        }
+      }
+    }
+
+    // Connect stream
+    const eventSource = new EventSource('/stream')
+
+    eventSource.onmessage = (event) => {
+      const command = event.data.trim()
+      console.log('🎨 Command:', command)
+      handleCommand(command)
+    }
+
+    eventSource.onerror = (err) => {
+      console.error('Stream error:', err)
+      eventSource.close()
+    }
+
+    drawScene()
+  </script>
+</body>
+</html>
