@@ -25,14 +25,14 @@ export function resizeCanvas() {
 
 export function clearElements() {
   Object.keys(elements).forEach(key => delete elements[key])
-  backgroundColor = '#ffffff'
+  state.backgroundColor = '#ffffff'
   drawScene()
 }
 
 export function drawScene() {
   ctx.clearRect(0, 0, canvas.width, canvas.height)
-
-  ctx.fillStyle = backgroundColor
+  
+  ctx.fillStyle = state.backgroundColor
   ctx.fillRect(0, 0, canvas.width, canvas.height)
 
   Object.values(elements).forEach(el => {
