@@ -48,7 +48,7 @@ function startQueueStream(res: express.Response) {
       }
     }
 
-    setTimeout(tick, 500) // Adjust interval here (lower = faster, higher = slower)
+    setTimeout(tick, 0) // Adjust interval here (lower = faster, higher = slower)
   }
 
   tick()
@@ -130,6 +130,7 @@ Guidelines:
 - Avoid setting the background repeatedly unless the scene demands a shift.
 - Avoid wrapping commands in code blocks or quotes — output raw protocol commands only.
 - Do not explain or narrate — only output commands.
+- Give animation duration in milliseconds.
 
 Visual Design Principles:
 - Always maintain strong contrast between background and foreground elements.
@@ -220,7 +221,7 @@ Begin composing your visual performance now.
               commandBuffer = commandBuffer.slice(newlineIndex + 1)
 
               if (line.length > 0) {
-                console.log('✅ Command detected:', line)
+                // console.log('✅ Command detected:', line)
                 commandQueue.push(line)
 
               }
@@ -233,8 +234,26 @@ Begin composing your visual performance now.
 
     response.body.on('end', () => {
       console.log('🔴 Stream ended')
-      res.write('data: [DONE]\n\n')
-      res.end()
+      
+      // Flush any remaining commands in the buffer
+      if (commandBuffer.trim().length > 0) {
+        commandBuffer.trim().split('\n').forEach(line => {
+          const trimmed = line.trim()
+          if (trimmed.length > 0) {
+            console.log('✅ Flushing final command:', trimmed)
+            commandQueue.push(trimmed)
+          }
+        })
+      }
+      
+      // Wait for queue to be processed before ending
+      const checkQueue = setInterval(() => {
+        if (commandQueue.length === 0) {
+          clearInterval(checkQueue)
+          res.write('data: [DONE]\n\n')
+          res.end()
+        }
+      }, 100)
     })
   } catch (error) {
     console.error('🔥 Streaming error:', error)
@@ -248,6 +267,6 @@ Begin composing your visual performance now.
 app.listen(port, () => {
   console.log(`🚀 Server running at http://localhost:${port}/stream`)
 })
-
-app.use(express.static(path.join(__dirname, '../public')))
+console.log(path.join(__dirname, '../../public'))
+app.use(express.static(path.join(__dirname, '../../public')))
 

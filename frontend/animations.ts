@@ -1,77 +1,37 @@
 import { drawScene } from './components'
+import gsap from 'gsap'
+
+// 🔥 Global timeline
+const timeline = gsap.timeline({ defaults: { onUpdate: drawScene } })
 
 export function animateMove(el: any, targetX: number, targetY: number, duration: number) {
-  const startTime = performance.now()
-  const startX = el.x
-  const startY = el.y
-
-  function animate(time: number) {
-    const elapsed = time - startTime
-    const t = Math.min(elapsed / duration, 1)
-
-    el.x = startX + (targetX - startX) * t
-    el.y = startY + (targetY - startY) * t
-
-    drawScene()
-
-    if (t < 1) requestAnimationFrame(animate)
-  }
-
-  requestAnimationFrame(animate)
+  timeline.to(el, {
+    x: targetX,
+    y: targetY,
+    duration: duration / 1000
+  })
 }
 
 export function animateFade(el: any, targetOpacity: number, duration: number) {
-  const startTime = performance.now()
-  const startOpacity = el.opacity ?? 1
-
-  function animate(time: number) {
-    const elapsed = time - startTime
-    const t = Math.min(elapsed / duration, 1)
-
-    el.opacity = startOpacity + (targetOpacity - startOpacity) * t
-    drawScene()
-
-    if (t < 1) {
-      requestAnimationFrame(animate)
-    }
-  }
-
-  requestAnimationFrame(animate)
-}
-
-export function animateRotate(el: any, targetDegrees: number, duration: number) {
-  const startTime = performance.now()
-  const startRotation = el.rotation ?? 0
-  const targetRotation = startRotation + targetDegrees
-
-  function animate(time: number) {
-    const elapsed = time - startTime
-    const t = Math.min(elapsed / duration, 1)
-
-    el.rotation = startRotation + (targetRotation - startRotation) * t
-    drawScene()
-
-    if (t < 1) requestAnimationFrame(animate)
-  }
-
-  requestAnimationFrame(animate)
+  timeline.to(el, {
+    opacity: targetOpacity,
+    duration: duration / 1000
+  })
 }
 
 export function animateScale(el: any, targetScale: number, duration: number) {
-  const startTime = performance.now()
-  const startScale = el.scale ?? 1
-  targetScale = startScale * targetScale
-
-  function animate(time: number) {
-    const elapsed = time - startTime
-    const t = Math.min(elapsed / duration, 1)
-
-    el.scale = startScale + (targetScale - startScale) * t
-    drawScene()
-
-    if (t < 1) requestAnimationFrame(animate)
-  }
-
-  requestAnimationFrame(animate)
+  timeline.to(el, {
+    scale: targetScale,
+    duration: duration / 1000
+  })
 }
 
+export function animateRotate(el: any, targetDegrees: number, duration: number) {
+  timeline.to(el, {
+    rotation: targetDegrees,
+    duration: duration / 1000
+  })
+}
+
+// ✅ Optional: export the timeline for control (pause, resume, etc.)
+export { timeline }
