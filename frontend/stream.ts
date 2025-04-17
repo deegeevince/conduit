@@ -1,5 +1,6 @@
 import { handleCommand } from './protocol'
 import { clearElements } from './components'
+import { timeline } from './animations'
 
 export function sendPrompt(prompt: string) {
   clearElements()
@@ -19,7 +20,12 @@ export function sendPrompt(prompt: string) {
         chunk.trim().split('\n').forEach(line => {
           if (line.startsWith('data: ')) {
             const command = line.replace(/^data: /, '').trim()
-            if (command !== '[DONE]') handleCommand(command)
+            console.log(command)
+            if (command !== '[DONE]') {
+              handleCommand(command)
+            } else {
+              timeline.play();
+            }
           }
         })
         read()

@@ -57,9 +57,9 @@ export function drawScene() {
       case 'text': {
         ctx.fillStyle = el.color
         ctx.font = `${el.size}px sans-serif`
-        ctx.textAlign = 'center'
-        ctx.textBaseline = 'middle'
-        ctx.fillText(el.text, 0, 0)
+        ctx.textAlign = 'left'           // 👈 aligns left edge to (x, y)
+        ctx.textBaseline = 'top'         // 👈 aligns top edge to (x, y)
+        ctx.fillText(el.text, 0, 0)      // ⬅️ now 0,0 is top-left corner of text
         break
       }
 
