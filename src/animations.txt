@@ -1,0 +1,59 @@
+B:#f7f3f0  
+T:s11a2c:"You ever sit through a haircut, quietly dreading every second of it?":(80,140):32:#3b3b3b  
+A:s11a2c:type:interval=45  
+A:s11a2c:fadeOut:duration=1200:delay=3000  
+
+B:#e6e0dc  
+T:s21b9e:"In fact, even early on, you already knew.":(100,140):30:#444444  
+A:s21b9e:type:interval=40  
+A:s21b9e:fadeOut:duration=1000:delay=2500  
+
+T:s22c1a:"It wasn’t going the way you wanted —":(100,120):34:#5b2626  
+A:s22c1a:slideIn:from=left:distance=120px:duration=600  
+T:s22d77:"not even close.":(120,170):34:#8a2b2b  
+A:s22d77:fadeIn:duration=600:delay=400  
+A:s22d77:pulse:scale=1.1:duration=600:repeat=2  
+A:s22c1a:fadeOut:duration=800:delay=2500  
+A:s22d77:fadeOut:duration=800:delay=2500  
+
+T:s31e5b:"But instead of saying something,":(100,130):30:#444444  
+A:s31e5b:slideIn:from=bottom:distance=100px:duration=500  
+T:s32fe3:"you just sat there, trying to act normal,":(100,170):28:#5c5c5c  
+A:s32fe3:fadeIn:duration=700:delay=300  
+T:s33c9d:"hoping somehow it would turn out okay.":(100,210):28:#5c5c5c  
+A:s33c9d:fadeIn:duration=700:delay=600  
+A:s31e5b:fadeOut:duration=900:delay=3000  
+A:s32fe3:fadeOut:duration=900:delay=3000  
+A:s33c9d:fadeOut:duration=900:delay=3000  
+
+B:#dcd3d1  
+T:s41aa2:"By the time it was done, the feeling had already settled in.":(80,140):30:#303030  
+A:s41aa2:type:interval=35  
+A:s41aa2:fadeOut:duration=1000:delay=2500  
+
+T:s51b1c:"They turned the chair, held up the mirror,":(80,130):30:#2d2d2d  
+A:s51b1c:fadeIn:duration=700  
+T:s52ab4:"and asked, “How’s that?”":(100,180):32:#1e1e1e  
+A:s52ab4:fadeIn:duration=700:delay=400  
+A:s51b1c:fadeOut:duration=900:delay=3000  
+A:s52ab4:fadeOut:duration=900:delay=3000  
+
+T:s61f9e:"And without skipping a beat,":(100,130):28:#2a2a2a  
+A:s61f9e:fadeIn:duration=600  
+T:s62ca3:"you smiled and said,":(100,170):30:#3a3a3a  
+A:s62ca3:fadeIn:duration=600:delay=300  
+T:s63b8a:"“Yeah, looks good.”":(120,210):34:#4c4c4c  
+A:s63b8a:fadeIn:duration=600:delay=600  
+A:s61f9e:fadeOut:duration=1000:delay=2800  
+A:s62ca3:fadeOut:duration=1000:delay=2800  
+A:s63b8a:fadeOut:duration=1000:delay=2800  
+
+B:#1b1b1b  
+T:s71ec7:"But inside...":(100,140):34:#e3d8d8  
+A:s71ec7:fadeIn:duration=600  
+A:s71ec7:pulse:scale=1.2:duration=700:repeat=2  
+T:s72ad2:"you fucking hated it.":(100,190):38:#ff3b3b  
+A:s72ad2:fadeIn:duration=600:delay=500  
+A:s72ad2:scaleTo:scale=1.15:duration=800  
+A:s71ec7:fadeOut:duration=1000:delay=3000  
+A:s72ad2:fadeOut:duration=1000:delay=3000

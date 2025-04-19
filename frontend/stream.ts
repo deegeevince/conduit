@@ -5,6 +5,8 @@ import { timeline } from './animations'
 export function sendPrompt(prompt: string) {
   clearElements()
   console.log('Sending prompt:', prompt)
+  let timelineStarted = false  // Flag to track if timeline has started
+
   fetch('/stream', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -23,8 +25,10 @@ export function sendPrompt(prompt: string) {
             console.log(command)
             if (command !== '[DONE]') {
               handleCommand(command)
-            } else {
-              timeline.play();
+              if (!timelineStarted) {
+                timeline.play()
+                timelineStarted = true
+              }
             }
           }
         })
