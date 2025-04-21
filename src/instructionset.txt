@@ -13,19 +13,32 @@ Each line must be a command using the Series protocol.
 Use only these instructions:
 
 B:#hexcolor                          → Set background color  
-T:id:"text":(x,y):size:#color  → Draw text at position with size and color  
+T:id:"text":(x,y):size:#color:[:style=underline|highlight:#000000|strike|halo|outline:#000000]  → Draw text at position with size and color  
 A:id:fadeIn:duration=ms[:delay=ms]   → Animate text fade in  
 A:id:fadeOut:duration=ms[:delay=ms]  → Animate text fade out  
 A:id:type:interval=ms                → Typewriter effect, one letter at a time  
 A:id:pulse:scale=s:duration=ms:repeat=n → Pulse size  
 A:id:slideIn:from=left|right|top|bottom:distance=px:duration=ms → Slide in  
 A:id:scaleTo:scale=s:duration=ms     → Scale element  
-A:id:rotateTo:degrees=n:duration=ms  → Rotate element  
+A:id:rotateTo:degrees=n:duration=ms  → Rotate element 
+RIMG:id:source=giphy:tag="keyword or phrase":align=left|right|top|bottom|center → Renders one image based on tag supplied
+
+Text Guidelines:
+- Text {style} supports: underline, strike, highlight, halo, outline
 
 Text Chunking Rules:
 - Break the input into chunks that reflect natural rhythm, pauses, or emotional shifts - Each chunk becomes a separate T: line followed by one or more A: lines for animation
 - Each chunk becomes a separate T: line followed by one or more A: lines for animation  
 - For example, a sentence like “You already knew” might be animated word by word with delays  
+
+RIMG Guidelines (GIPHY only):
+- Use `RIMG:` to insert a reaction GIF that feels like a character cut‑in—think “actor’s reaction,” not “generic emotion.”
+- Choose memorable, meme‑style tags (e.g. “awkward michael scott,” “jim halpert stare,” “surprised pikachu,” “facepalm”) rather than basic feelings.
+- Align the GIF to reflect its role:
+    - `left` for inner thought or subtle subtext
+    - `right` for overt reaction or tension
+    - `center` for full‑focus punchline moments
+- No dimensions needed—client lays out and scales automatically.
 
 Guidelines
 - Before starting each new scene, make sure previous elements are no longer visible using a fadeout animation for those elements
@@ -35,6 +48,18 @@ Guidelines
 - Animation should feel choreographed: light words may float or fade gently, intense words may scale, pulse, or slide in abruptly.
 - Color should shift with emotion: use warm hues for intensity or passion, cool tones for calm or mystery, and grays or muted colors for detachment or reflection.
 - Between major shifts in tone or imagery, evolve the background color or layout subtly. Let visual tone support the narrative arc — warm for vitality, dark for mystery, soft for stillness, etc.
+- Make sure to remove all elements before transitioning to the next scene.
+- Use just one meme from giphy for further expressiveness
+- Try to include at least 1–2 styled or animated text chunks per scene to keep the output varied and engaging.
+
+**GOOD Example:**
+T:s105:"you":position=left-mid:start=1.0:end=1.2:weight=light A:s105:fadeIn:duration=200 L:s105:hold=300
+T:s106:"fucking":position=center:start=1.2:end=1.5:weight=bold:color=#ff3333 A:s106:pulse:duration=300 L:s106:hold=300
+T:s107:"hated it.":position=right-low:start=1.5:end=2.0:size=56:weight=bold A:s107:scaleTo:scale=1.1:duration=300 L:s107:hold=500
+
+**BAD Example:**
+T:s105:"you fucking hated it.":...
+→ Too long, loses expressive pacing and visual impact
 
 ID Format:
 Use this for every element:  

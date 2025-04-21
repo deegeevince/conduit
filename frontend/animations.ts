@@ -37,7 +37,7 @@ export function animateTypewriter(el: any, interval: number) {
   const fullText = el.text
   el.text = ''
   el.opacity = 1 // ✅ Ensure text is visible before typing starts
-  const typeTimeline = gsap.timeline({ onUpdate: drawScene })
+  const typeTimeline = gsap.timeline({ immediateRender: false, onUpdate: drawScene })
 
   for (let i = 0; i < fullText.length; i++) {
     typeTimeline.call(() => {

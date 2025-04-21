@@ -48,8 +48,8 @@ async function getOpenAIResponse(req: Request, res: Response) {
     res.flushHeaders?.();
 
 
-    console.log(instructionSet);
-    console.log(prompt);
+    // console.log(instructionSet);
+    // console.log(prompt);
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {

@@ -1,28 +1,42 @@
 import { elements, drawScene, state } from './components'
 import { animateMove, animateFade, animateRotate, animateScale, timeline, animateTypewriter } from './animations'
+import gsap from 'gsap'
+
 
 export function handleCommand(command: string) {
   const parts = command.split(':')
   const cmd = parts[0]
 
   switch (cmd) {
-    case 'B': { // Background color
-      const color = parts[1]
-
-      let colorProxy = { color: state.backgroundColor }
-
-      timeline.to(colorProxy, {
-        color: color,
-        duration: 0.5,
-        onUpdate: () => {
-          state.backgroundColor = colorProxy.color
-          drawScene()
-        },
-        ease: 'none'
-      })
-      break
+    case 'B': {
+      const targetColor = gsap.utils.splitColor(parts[1]);
+    
+      timeline.add(() => {
+        const current = gsap.utils.splitColor(state.backgroundColor);
+    
+        const colorProxy = {
+          r: current[0],
+          g: current[1],
+          b: current[2]
+        };
+    
+        gsap.to(colorProxy, {
+          r: targetColor[0],
+          g: targetColor[1],
+          b: targetColor[2],
+          duration: 0.5,
+          ease: 'none',
+          onUpdate: () => {
+            state.backgroundColor = `rgb(${Math.round(colorProxy.r)}, ${Math.round(colorProxy.g)}, ${Math.round(colorProxy.b)})`;
+            drawScene();
+          }
+        });
+      });
+    
+      break;
     }
-
+    
+    
     case 'C': { // Circle
       const [id, position, radius, color] = parts.slice(1)
       const [x, y] = position.replace(/[()]/g, '').split(',').map(Number)
@@ -70,7 +84,7 @@ export function handleCommand(command: string) {
 
     case 'W': { // Wait
       const [duration] = parts.slice(1)
-      timeline.to({}, { duration: Number(duration) / 1000 })
+      timeline.to({}, { immediateRender: false, duration: Number(duration) / 1000 })
       break
     }
 
@@ -80,6 +94,7 @@ export function handleCommand(command: string) {
       if (!el) break
     
       timeline.to(el, {
+        immediateRender: false, 
         opacity: 0,
         duration: 0.5,
         onUpdate: drawScene,
@@ -99,13 +114,15 @@ export function handleCommand(command: string) {
     }
 
     case 'T': {
-      const [id, rawText, position, size, color] = parts.slice(1)
+      const [id, rawText, position, size, color, ...rest] = parts.slice(1)
       const text = rawText.replace(/"/g, '')
       const [rawX, rawY] = position.replace(/[()]/g, '').split(',')
     
-      // Normalize center positioning
       const x = rawX.trim() === 'center' ? window.innerWidth / 2 : Number(rawX)
       const y = rawY.trim() === 'center' ? window.innerHeight / 2 : Number(rawY)
+    
+      const stylePart = rest.find(p => p.startsWith('style='))
+      const style = stylePart ? stylePart.replace('style=', '') : undefined
     
       elements[id] = {
         type: 'text',
@@ -116,13 +133,12 @@ export function handleCommand(command: string) {
         color,
         rotation: 0,
         scale: 1,
-        opacity: 0
+        opacity: 0,
+        style
       }
     
-      // timeline.call(() => drawScene())
       break
-    }
-    
+    }    
     
     case 'PT': { // Point
       const [id, position, size, color] = parts.slice(1)
@@ -154,6 +170,54 @@ export function handleCommand(command: string) {
       break
     }
 
+    case 'RIMG': {
+      // RIMG:id:source=giphy|unsplash:tag="...":align=left|right|top|bottom|center
+      const [id, sourcePart, tagPart, alignPart] = parts.slice(1)
+      const source = sourcePart.split('=')[1]
+      const tag    = tagPart.split('=')[1].replace(/^"|"$/g, '')
+      const align  = alignPart.split('=')[1]
+
+      // placeholder element
+      elements[id] = {
+        type: 'image',
+        img: null as HTMLImageElement | null,
+        align,
+        opacity: 0,
+        x: 0,
+        y: 0
+      }
+       // fetch a random image URL
+       let urlPromise: Promise<string>
+       const GIPHY_API_KEY = 'YOUR_GIPHY_API_KEY'
+              
+       if (source === 'giphy') {
+         urlPromise = fetch(
+           `https://api.giphy.com/v1/gifs/random?api_key=${GIPHY_API_KEY}&tag=${encodeURIComponent(tag)}`
+         )
+         .then(r => r.json())
+         .then(json => json.data.images.fixed_height.url)
+       } else {
+         urlPromise = Promise.resolve(
+           `https://source.unsplash.com/800x600/?${encodeURIComponent(tag)}`
+         )
+       }
+ 
+       urlPromise.then(url => {
+         const img = new Image()
+         img.src = url
+         img.onload = () => {
+           const el = elements[id] as any
+           el.img = img
+           el.width  = img.naturalWidth
+           el.height = img.naturalHeight
+           // fade in once loaded
+           animateElement(id, 'fadeIn', ['duration=800', 'immediateRender=false'])
+         }
+       })
+       break
+     }
+
+
     default:
       console.warn('Unknown command:', command)
   }
@@ -167,12 +231,12 @@ function animateElement(id: string, animType: string, params: string[]) {
   switch (animType) {
     case 'fadeIn': {
       const duration = Number(params[0].split('=')[1]) / 1000
-      timeline.to(el, { opacity: 1, duration, onUpdate: animate })
+      timeline.to(el, { opacity: 1, duration, immediateRender: false, onUpdate: animate })
       break
     }
     case 'fadeOut': {
       const duration = Number(params[0].split('=')[1]) / 1000
-      timeline.to(el, { opacity: 0, duration, onUpdate: animate })
+      timeline.to(el, { opacity: 0, duration, immediateRender: false, onUpdate: animate })
       break
     }
     case 'pulse': {
@@ -180,6 +244,7 @@ function animateElement(id: string, animType: string, params: string[]) {
       const duration = Number(params[1].split('=')[1]) / 1000
       const repeat = Number(params[2].split('=')[1])
       timeline.to(el, {
+        immediateRender: false,
         opacity: 1,
         scale,
         duration,
@@ -200,6 +265,7 @@ function animateElement(id: string, animType: string, params: string[]) {
       if (from === 'top') el.y -= distance
       if (from === 'bottom') el.y += distance
       timeline.to(el, {
+        immediateRender: false,
         opacity: 1,
         x: originalX,
         y: originalY,
@@ -211,13 +277,13 @@ function animateElement(id: string, animType: string, params: string[]) {
     case 'scaleTo': {
       const scale = Number(params[0].split('=')[1])
       const duration = Number(params[1].split('=')[1]) / 1000
-      timeline.to(el, { opacity: 1, scale, duration, onUpdate: animate })
+      timeline.to(el, { opacity: 1, scale, duration, immediateRender: false, onUpdate: animate })
       break
     }
     case 'rotateTo': {
       const degrees = Number(params[0].split('=')[1])
       const duration = Number(params[1].split('=')[1]) / 1000
-      timeline.to(el, { opacity: 1, rotation: degrees, duration, onUpdate: animate })
+      timeline.to(el, { opacity: 1, rotation: degrees, duration, immediateRender: false, onUpdate: animate })
       break
     }
     case 'type': {

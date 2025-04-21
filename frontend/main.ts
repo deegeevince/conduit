@@ -16,5 +16,10 @@ document.getElementById('promptInput')?.addEventListener('keydown', (e) => {
   }
 })
 
-// Initial draw
-drawScene()
+// 3. Start the continuous render loop
+function renderLoop() {
+  drawScene()
+  requestAnimationFrame(renderLoop)
+}
+renderLoop()
+

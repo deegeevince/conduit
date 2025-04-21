@@ -31,16 +31,28 @@ export function clearElements() {
 
 export function drawScene() {
   ctx.clearRect(0, 0, canvas.width, canvas.height)
-  
+
   // Background
   ctx.fillStyle = state.backgroundColor
   ctx.fillRect(0, 0, canvas.width, canvas.height)
 
   // Draw all elements
-  Object.values(elements).forEach(el => {
+  for (const el of Object.values(elements)) {
+
     ctx.save()
 
-    ctx.globalAlpha = el.opacity ?? 1
+    const opacity = el.opacity ?? 1
+    if (opacity <= 0.01) {
+      ctx.restore()
+      continue  // 👈 properly skip rendering this element
+    }
+    ctx.globalAlpha = opacity
+
+    if (el.type === 'image' && !el.img) {
+      ctx.restore()
+      continue
+    }
+
     ctx.translate(el.x, el.y)
     ctx.rotate((el.rotation ?? 0) * Math.PI / 180)
     ctx.scale(el.scale ?? 1, el.scale ?? 1)
@@ -55,11 +67,98 @@ export function drawScene() {
       }
 
       case 'text': {
-        ctx.fillStyle = el.color
+        if (!el.text || el.text.trim() === '') {
+          ctx.restore()
+          return
+        }
         ctx.font = `${el.size}px sans-serif`
-        ctx.textAlign = 'left'           // 👈 aligns left edge to (x, y)
-        ctx.textBaseline = 'top'         // 👈 aligns top edge to (x, y)
-        ctx.fillText(el.text, 0, 0)      // ⬅️ now 0,0 is top-left corner of text
+        ctx.textAlign = 'left'
+        ctx.textBaseline = 'top'
+        
+        const textWidth = ctx.measureText(el.text).width
+        const style = el.style || ''
+      
+        if (style.includes('highlight')) {
+          ctx.save()
+          ctx.globalAlpha = el.opacity ?? 1
+          const color = style.split(':')[1] || '#ffffaa'
+          ctx.fillStyle = color
+          ctx.fillRect(-4, -4, textWidth + 8, el.size + 8)
+          ctx.restore()
+        }
+        
+
+        // Outline text before fillText
+        if (style.includes('outline')) {
+          ctx.save()
+          ctx.globalAlpha = el.opacity ?? 1
+          const colorMatch = style.match(/outline:#([0-9a-fA-F]{3,6})/)
+          const outlineColor = colorMatch ? `#${colorMatch[1]}` : '#000000'
+          ctx.strokeStyle = outlineColor
+          ctx.lineWidth = 2
+          ctx.strokeText(el.text, 0, 0)
+          ctx.restore()
+        }
+      
+        // Optional: halo (glow around text)
+        if (style.includes('halo')) {
+          ctx.save()
+          ctx.globalAlpha = el.opacity ?? 1
+          ctx.shadowColor = el.color
+          ctx.shadowBlur = 12
+          ctx.restore()
+        } else {
+          ctx.shadowBlur = 0
+        }
+      
+        // Draw the actual text
+        ctx.fillStyle = el.color
+        ctx.fillText(el.text, 0, 0)
+      
+        // Underline
+        if (style.includes('underline')) {
+          ctx.save()
+          ctx.globalAlpha = el.opacity ?? 1
+          ctx.beginPath()
+          ctx.moveTo(0, el.size * 1.1)
+          ctx.lineTo(textWidth, el.size * 1.1)
+          ctx.strokeStyle = el.color
+          ctx.lineWidth = 2
+          ctx.stroke()
+          ctx.restore()
+        }
+      
+        // Strike-through
+        if (style.includes('strike')) {
+          ctx.save()
+          ctx.globalAlpha = el.opacity ?? 1
+          ctx.beginPath()
+          ctx.moveTo(0, el.size / 2)
+          ctx.lineTo(textWidth, el.size / 2)
+          ctx.strokeStyle = el.color
+          ctx.lineWidth = 2
+          ctx.stroke()
+          ctx.restore()
+        }
+      
+        break
+      }
+
+      case 'image': {
+        const img = el.img as HTMLImageElement
+        const cw = canvas.width, ch = canvas.height
+        let drawX = 0, drawY = 0
+
+        if (el.align === 'left') {
+          drawX = 20
+        } else if (el.align === 'right') {
+          drawX = cw - img.width - 20
+        } else { // center
+          drawX = (cw - img.width) / 2
+        }
+        drawY = (ch - img.height) / 2
+        console.log('image?')
+        ctx.drawImage(img, drawX, drawY, img.width, img.height)
         break
       }
 
@@ -114,5 +213,5 @@ export function drawScene() {
     }
 
     ctx.restore()
-  })
+  }
 }

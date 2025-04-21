@@ -1,59 +1,82 @@
-B:#f7f3f0  
-T:s11a2c:"You ever sit through a haircut, quietly dreading every second of it?":(80,140):32:#3b3b3b  
-A:s11a2c:type:interval=45  
-A:s11a2c:fadeOut:duration=1200:delay=3000  
+B:#101214
+T:s1c1a:"You ever sit through a haircut,":(50,200):30:#FFFFFF:style=underline
+A:s1c1a:fadeIn:duration=1000
+A:s1c1a:type:interval=100
+A:s1c1a:fadeOut:duration=1000:delay=1500
 
-B:#e6e0dc  
-T:s21b9e:"In fact, even early on, you already knew.":(100,140):30:#444444  
-A:s21b9e:type:interval=40  
-A:s21b9e:fadeOut:duration=1000:delay=2500  
+T:s1c2b:"quietly dreading every second of it?":(50,300):30:#a8a8a8:style=strike
+A:s1c2b:fadeIn:duration=1000:delay=1000
+A:s1c2b:type:interval=60
+A:s1c2b:fadeOut:duration=1000:delay=2000
 
-T:s22c1a:"It wasn’t going the way you wanted —":(100,120):34:#5b2626  
-A:s22c1a:slideIn:from=left:distance=120px:duration=600  
-T:s22d77:"not even close.":(120,170):34:#8a2b2b  
-A:s22d77:fadeIn:duration=600:delay=400  
-A:s22d77:pulse:scale=1.1:duration=600:repeat=2  
-A:s22c1a:fadeOut:duration=800:delay=2500  
-A:s22d77:fadeOut:duration=800:delay=2500  
+B:#1a2930
+T:s2c3c:"In fact, even early on, you already knew.":(50,200):30:#b2ddd4:style=highlight:#fffbcc
+A:s2c3c:fadeIn:duration=1000
+A:s2c3c:type:interval=70
+A:s2c3c:fadeOut:duration=1000:delay=2500
 
-T:s31e5b:"But instead of saying something,":(100,130):30:#444444  
-A:s31e5b:slideIn:from=bottom:distance=100px:duration=500  
-T:s32fe3:"you just sat there, trying to act normal,":(100,170):28:#5c5c5c  
-A:s32fe3:fadeIn:duration=700:delay=300  
-T:s33c9d:"hoping somehow it would turn out okay.":(100,210):28:#5c5c5c  
-A:s33c9d:fadeIn:duration=700:delay=600  
-A:s31e5b:fadeOut:duration=900:delay=3000  
-A:s32fe3:fadeOut:duration=900:delay=3000  
-A:s33c9d:fadeOut:duration=900:delay=3000  
+T:s2c4d:"It wasn’t going the way you wanted — not even close.":(50,300):30:#96c6c1:style=halo
+A:s2c4d:fadeIn:duration=1000:delay=1000
+A:s2c4d:type:interval=50
+A:s2c4d:fadeOut:duration=1000:delay=2500
 
-B:#dcd3d1  
-T:s41aa2:"By the time it was done, the feeling had already settled in.":(80,140):30:#303030  
-A:s41aa2:type:interval=35  
-A:s41aa2:fadeOut:duration=1000:delay=2500  
+B:#22303f
+T:s3c5e:"But instead of saying something,":(50,200):30:#f4a261:style=outline:#000000
+A:s3c5e:fadeIn:duration=1000
+A:s3c5e:type:interval=80
+A:s3c5e:fadeOut:duration=1000:delay=2000
 
-T:s51b1c:"They turned the chair, held up the mirror,":(80,130):30:#2d2d2d  
-A:s51b1c:fadeIn:duration=700  
-T:s52ab4:"and asked, “How’s that?”":(100,180):32:#1e1e1e  
-A:s52ab4:fadeIn:duration=700:delay=400  
-A:s51b1c:fadeOut:duration=900:delay=3000  
-A:s52ab4:fadeOut:duration=900:delay=3000  
+T:s3c6f:"you just sat there, trying to act normal,":(50,300):30:#e76f51
+A:s3c6f:fadeIn:duration=1000:delay=1000
+A:s3c6f:type:interval=70
+A:s3c6f:fadeOut:duration=1000:delay=2000
 
-T:s61f9e:"And without skipping a beat,":(100,130):28:#2a2a2a  
-A:s61f9e:fadeIn:duration=600  
-T:s62ca3:"you smiled and said,":(100,170):30:#3a3a3a  
-A:s62ca3:fadeIn:duration=600:delay=300  
-T:s63b8a:"“Yeah, looks good.”":(120,210):34:#4c4c4c  
-A:s63b8a:fadeIn:duration=600:delay=600  
-A:s61f9e:fadeOut:duration=1000:delay=2800  
-A:s62ca3:fadeOut:duration=1000:delay=2800  
-A:s63b8a:fadeOut:duration=1000:delay=2800  
+T:s3c7g:"hoping somehow it would turn out okay.":(50,400):30:#e9c46a
+A:s3c7g:fadeIn:duration=1000:delay=2000
+A:s3c7g:type:interval=60
+A:s3c7g:fadeOut:duration=1000:delay=2500
 
-B:#1b1b1b  
-T:s71ec7:"But inside...":(100,140):34:#e3d8d8  
-A:s71ec7:fadeIn:duration=600  
-A:s71ec7:pulse:scale=1.2:duration=700:repeat=2  
-T:s72ad2:"you fucking hated it.":(100,190):38:#ff3b3b  
-A:s72ad2:fadeIn:duration=600:delay=500  
-A:s72ad2:scaleTo:scale=1.15:duration=800  
-A:s71ec7:fadeOut:duration=1000:delay=3000  
-A:s72ad2:fadeOut:duration=1000:delay=3000
+B:#334756
+T:s4c8h:"By the time it was done,":(50,200):30:#e9c46a
+A:s4c8h:fadeIn:duration=1000
+A:s4c8h:type:interval=70
+A:s4c8h:fadeOut:duration=1000:delay=1500
+
+T:s4c9i:"the feeling had already settled in.":(50,300):30:#e76f51
+A:s4c9i:fadeIn:duration=1000:delay=1000
+A:s4c9i:type:interval=70
+A:s4c9i:fadeOut:duration=1000:delay=2000
+
+B:#445f77
+T:s5c10j:"They turned the chair, held up the mirror,":(50,200):30:#2a9d8f
+A:s5c10j:fadeIn:duration=1000
+A:s5c10j:type:interval=60
+A:s5c10j:fadeOut:duration=1000:delay=2000
+
+T:s5c11k:"and asked, “How’s that?”":(50,300):30:#264653
+A:s5c11k:fadeIn:duration=1000:delay=1500
+A:s5c11k:type:interval=100
+A:s5c11k:fadeOut:duration=1000:delay=1000
+
+T:s5c12l:"And without skipping a beat, you smiled and said,":(50,400):30:#2a9d8f
+A:s5c12l:fadeIn:duration=1000:delay=2000
+A:s5c12l:type:interval=50
+A:s5c12l:fadeOut:duration=1000:delay=3000
+
+B:#556f98
+T:s6c13m:"“Yeah, looks good.”":(50,200):30:#0a9396
+A:s6c13m:fadeIn:duration=1000
+A:s6c13m:type:interval=100
+A:s6c13m:fadeOut:duration=1000:delay=1500
+
+B:#334756
+T:s7c14n:"But inside...":(50,200):50:#fd1501
+A:s7c14n:fadeIn:duration=1000
+A:s7c14n:type:interval=200
+A:s7c14n:scaleTo:scale=1.5:duration=1000:delay=2000
+A:s7c14n:fadeOut:duration=1000:delay=2500
+
+T:s7c15o:"you fucking hated it.":(50,400):60:#f20c00
+A:s7c15o:fadeIn:duration=1000:delay=3000
+A:s7c15o:type:interval=200
+A:s7c15o:scaleTo:scale=2:duration=1000:delay=4000
