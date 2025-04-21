@@ -146,19 +146,10 @@ export function drawScene() {
 
       case 'image': {
         const img = el.img as HTMLImageElement
-        const cw = canvas.width, ch = canvas.height
-        let drawX = 0, drawY = 0
-
-        if (el.align === 'left') {
-          drawX = 20
-        } else if (el.align === 'right') {
-          drawX = cw - img.width - 20
-        } else { // center
-          drawX = (cw - img.width) / 2
-        }
-        drawY = (ch - img.height) / 2
-        console.log('image?')
-        ctx.drawImage(img, drawX, drawY, img.width, img.height)
+        // Don't draw to canvas, just update the actual img element's position
+        img.style.left = `${el.x}px`
+        img.style.top = `${el.y}px`
+        img.style.visibility = 'visible' // Show the image
         break
       }
 

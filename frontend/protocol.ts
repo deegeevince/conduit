@@ -177,45 +177,77 @@ export function handleCommand(command: string) {
       const tag    = tagPart.split('=')[1].replace(/^"|"$/g, '')
       const align  = alignPart.split('=')[1]
 
-      // placeholder element
+      // Create and set up image element
+      const img = new Image()
+      img.crossOrigin = 'anonymous'
+      img.style.position = 'absolute'
+      img.style.left = '-9999px'  // Initially off-screen
+      img.style.top = '-9999px'
+      img.style.visibility = 'hidden'
+      document.body.appendChild(img)
+
+      // Add to elements immediately
       elements[id] = {
         type: 'image',
-        img: null as HTMLImageElement | null,
+        img,
         align,
         opacity: 0,
-        x: 0,
-        y: 0
+        x: -9999,
+        y: -9999
       }
-       // fetch a random image URL
-       let urlPromise: Promise<string>
-       const GIPHY_API_KEY = 'YOUR_GIPHY_API_KEY'
-              
-       if (source === 'giphy') {
-         urlPromise = fetch(
-           `https://api.giphy.com/v1/gifs/random?api_key=${GIPHY_API_KEY}&tag=${encodeURIComponent(tag)}`
-         )
-         .then(r => r.json())
-         .then(json => json.data.images.fixed_height.url)
-       } else {
-         urlPromise = Promise.resolve(
-           `https://source.unsplash.com/800x600/?${encodeURIComponent(tag)}`
-         )
-       }
- 
-       urlPromise.then(url => {
-         const img = new Image()
-         img.src = url
-         img.onload = () => {
-           const el = elements[id] as any
-           el.img = img
-           el.width  = img.naturalWidth
-           el.height = img.naturalHeight
-           // fade in once loaded
-           animateElement(id, 'fadeIn', ['duration=800', 'immediateRender=false'])
-         }
-       })
-       break
-     }
+
+      const GIPHY_API_KEY='YOUR_GIPHY_API_KEY'
+      // urlPromise = Promise.resolve("http://localhost:3000/images/mindblown.gif")
+      // Fetch image URL based on source
+      if (source === 'giphy') {
+        fetch(`https://api.giphy.com/v1/gifs/random?api_key=${GIPHY_API_KEY}&tag=${encodeURIComponent(tag)}`)
+          .then(r => r.json())
+          .then(json => {
+            img.src = json.data.images.fixed_height.url
+          })
+          .catch(err => {
+            console.error('Giphy API error:', err)
+            img.src = '/images/mindblown.gif' // Fallback if API fails
+          })
+      } else {
+        img.src = `https://source.unsplash.com/800x600/?${encodeURIComponent(tag)}`
+      }
+
+      // Handle image load
+      img.onload = () => {
+        const el = elements[id]
+        const padding = 20
+        const cw = window.innerWidth
+        const ch = window.innerHeight
+
+        // Calculate final position based on alignment
+        switch(align) {
+          case 'left':
+            el.x = padding
+            el.y = (ch - img.naturalHeight) / 2
+            break
+          case 'right':
+            el.x = cw - img.naturalWidth - padding
+            el.y = (ch - img.naturalHeight) / 2
+            break
+          case 'top':
+            el.x = (cw - img.naturalWidth) / 2
+            el.y = padding
+            break
+          case 'bottom':
+            el.x = (cw - img.naturalWidth) / 2
+            el.y = ch - img.naturalHeight - padding
+            break
+          default: // center
+            el.x = (cw - img.naturalWidth) / 2
+            el.y = (ch - img.naturalHeight) / 2
+        }
+
+        // Fade in using our existing animation system
+        // animateElement(id, 'fadeIn', ['duration=800', 'immediateRender=false'])
+      }
+      break
+    }
 
 
     default:
@@ -228,67 +260,103 @@ function animateElement(id: string, animType: string, params: string[]) {
   if (!el) return
 
   const animate = () => drawScene()
+
+  // parse optional delay (in seconds)
+  const delayParam = params.find(p => p.startsWith('delay='))
+  const delaySec   = delayParam ? Number(delayParam.split('=')[1]) / 1000 : 0
+
   switch (animType) {
     case 'fadeIn': {
-      const duration = Number(params[0].split('=')[1]) / 1000
-      timeline.to(el, { opacity: 1, duration, immediateRender: false, onUpdate: animate })
+      const duration = Number(params.find(p => p.startsWith('duration='))!.split('=')[1]) / 1000
+      timeline.to(el, {
+        opacity: 1,
+        duration,
+        delay: delaySec,
+        immediateRender: false,
+        onUpdate: animate
+      })
       break
     }
     case 'fadeOut': {
-      const duration = Number(params[0].split('=')[1]) / 1000
-      timeline.to(el, { opacity: 0, duration, immediateRender: false, onUpdate: animate })
+      const duration = Number(params.find(p => p.startsWith('duration='))!.split('=')[1]) / 1000
+      timeline.to(el, {
+        opacity: 0,
+        duration,
+        delay: delaySec,
+        immediateRender: false,
+        onUpdate: animate
+      })
       break
     }
     case 'pulse': {
-      const scale = Number(params[0].split('=')[1])
-      const duration = Number(params[1].split('=')[1]) / 1000
-      const repeat = Number(params[2].split('=')[1])
+      const scale    = Number(params.find(p => p.startsWith('scale='))!.split('=')[1])
+      const duration = Number(params.find(p => p.startsWith('duration='))!.split('=')[1]) / 1000
+      const repeat   = Number(params.find(p => p.startsWith('repeat='))!.split('=')[1])
       timeline.to(el, {
-        immediateRender: false,
-        opacity: 1,
         scale,
         duration,
+        delay: delaySec,
         repeat,
         yoyo: true,
+        immediateRender: false,
         onUpdate: animate
       })
       break
     }
     case 'slideIn': {
-      const from = params[0].split('=')[1]
-      const distance = Number(params[1].split('=')[1])
-      const duration = Number(params[2].split('=')[1]) / 1000
-      const originalX = el.x
-      const originalY = el.y
-      if (from === 'left') el.x -= distance
-      if (from === 'right') el.x += distance
-      if (from === 'top') el.y -= distance
-      if (from === 'bottom') el.y += distance
+      const from     = params.find(p => p.startsWith('from='))!.split('=')[1]
+      const distance = Number(params.find(p => p.startsWith('distance='))!.split('=')[1])
+      const duration = Number(params.find(p => p.startsWith('duration='))!.split('=')[1]) / 1000
+
+      const targetX = el.x, targetY = el.y
+      const fromVars: any = { opacity: 0 }
+      if (from === 'left')   fromVars.x = targetX - distance
+      if (from === 'right')  fromVars.x = targetX + distance
+      if (from === 'top')    fromVars.y = targetY - distance
+      if (from === 'bottom') fromVars.y = targetY + distance
+
+      timeline.fromTo(el,
+        fromVars,
+        {
+          x: targetX,
+          y: targetY,
+          opacity: 1,
+          duration,
+          delay: delaySec,
+          immediateRender: false,
+          onUpdate: animate
+        }
+      )
+      break
+    }
+    case 'scaleTo': {
+      const scale    = Number(params.find(p => p.startsWith('scale='))!.split('=')[1])
+      const duration = Number(params.find(p => p.startsWith('duration='))!.split('=')[1]) / 1000
       timeline.to(el, {
-        immediateRender: false,
-        opacity: 1,
-        x: originalX,
-        y: originalY,
+        scale,
         duration,
+        delay: delaySec,
+        immediateRender: false,
         onUpdate: animate
       })
       break
     }
-    case 'scaleTo': {
-      const scale = Number(params[0].split('=')[1])
-      const duration = Number(params[1].split('=')[1]) / 1000
-      timeline.to(el, { opacity: 1, scale, duration, immediateRender: false, onUpdate: animate })
-      break
-    }
     case 'rotateTo': {
-      const degrees = Number(params[0].split('=')[1])
-      const duration = Number(params[1].split('=')[1]) / 1000
-      timeline.to(el, { opacity: 1, rotation: degrees, duration, immediateRender: false, onUpdate: animate })
+      const degrees  = Number(params.find(p => p.startsWith('degrees='))!.split('=')[1])
+      const duration = Number(params.find(p => p.startsWith('duration='))!.split('=')[1]) / 1000
+      timeline.to(el, {
+        rotation: degrees,
+        duration,
+        delay: delaySec,
+        immediateRender: false,
+        onUpdate: animate
+      })
       break
     }
     case 'type': {
-      const interval = Number(params[0].split('=')[1])
-      animateTypewriter(el, interval)
+      const interval = Number(params.find(p => p.startsWith('interval='))!.split('=')[1])
+      const delayMs  = delaySec * 1000
+      setTimeout(() => animateTypewriter(el, interval), delayMs)
       break
     }
   }

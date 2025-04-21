@@ -1,82 +1,49 @@
-B:#101214
-T:s1c1a:"You ever sit through a haircut,":(50,200):30:#FFFFFF:style=underline
-A:s1c1a:fadeIn:duration=1000
-A:s1c1a:type:interval=100
-A:s1c1a:fadeOut:duration=1000:delay=1500
+B:#293241
+T:s11a:"What belief":(200,200):30:#758C9F
+A:s11a:fadeIn:duration=500
+A:s11a:slideIn:from=left:distance=px:duration=500
+A:s11a:pulse:scale=1.1:duration=100:repeat=
+T:s11b:"might I hold":(300,300):30:#758C9F
+A:s11b:fadeIn:duration=500:delay=1200
+A:s11b:slideIn:from=left:distance=px:duration=500
+A:s11b:pulse:scale=1.1:duration=100:repeat=3
+T:s11c:"that could eventually":(400,400):30:#758C9F
+A:s11c:fadeIn:duration=500:delay=1800
+A:s11c:slideIn:from=left:distance=px:duration=500
+A:s11c:pulse:scale=1.1:duration=100:repeat=3
+T:s11d:"become stronger":(500,500):30:#FB9300:style=underline
+A:s11d:fadeIn:duration=500:delay=2200
+A:s11d:scaleTo:scale=1.1:duration=300
+A:s11d:rotateTo:degrees=10:duration=200
+T:s11e:"than the one":(550,550):30:#758C9F
+A:s11e:fadeIn:duration=500:delay=2500
+A:s11e:slideIn:from=left:distance=px:duration=500
+A:s11e:pulse:scale=1.1:duration=100:repeat=3
+T:s11f:"I’ve been conditioned to follow?":(600,600):30:#FB9300:style=underline
+A:s11f:fadeIn:duration=500:delay=2700
+A:s11f:scaleTo:scale=1.1:duration=300
+A:s11f:rotateTo:degrees=10:duration=200
 
-T:s1c2b:"quietly dreading every second of it?":(50,300):30:#a8a8a8:style=strike
-A:s1c2b:fadeIn:duration=1000:delay=1000
-A:s1c2b:type:interval=60
-A:s1c2b:fadeOut:duration=1000:delay=2000
+A:s11a:fadeOut:duration=800:delay=3500
+A:s11b:fadeOut:duration=800:delay=3500
+A:s11c:fadeOut:duration=800:delay=3500
+A:s11d:fadeOut:duration=800:delay=3500
+A:s11e:fadeOut:duration=800:delay=3500
+A:s11f:fadeOut:duration=800:delay=3500
 
-B:#1a2930
-T:s2c3c:"In fact, even early on, you already knew.":(50,200):30:#b2ddd4:style=highlight:#fffbcc
-A:s2c3c:fadeIn:duration=1000
-A:s2c3c:type:interval=70
-A:s2c3c:fadeOut:duration=1000:delay=2500
+B:#2C6E49
 
-T:s2c4d:"It wasn’t going the way you wanted — not even close.":(50,300):30:#96c6c1:style=halo
-A:s2c4d:fadeIn:duration=1000:delay=1000
-A:s2c4d:type:interval=50
-A:s2c4d:fadeOut:duration=1000:delay=2500
-
-B:#22303f
-T:s3c5e:"But instead of saying something,":(50,200):30:#f4a261:style=outline:#000000
-A:s3c5e:fadeIn:duration=1000
-A:s3c5e:type:interval=80
-A:s3c5e:fadeOut:duration=1000:delay=2000
-
-T:s3c6f:"you just sat there, trying to act normal,":(50,300):30:#e76f51
-A:s3c6f:fadeIn:duration=1000:delay=1000
-A:s3c6f:type:interval=70
-A:s3c6f:fadeOut:duration=1000:delay=2000
-
-T:s3c7g:"hoping somehow it would turn out okay.":(50,400):30:#e9c46a
-A:s3c7g:fadeIn:duration=1000:delay=2000
-A:s3c7g:type:interval=60
-A:s3c7g:fadeOut:duration=1000:delay=2500
-
-B:#334756
-T:s4c8h:"By the time it was done,":(50,200):30:#e9c46a
-A:s4c8h:fadeIn:duration=1000
-A:s4c8h:type:interval=70
-A:s4c8h:fadeOut:duration=1000:delay=1500
-
-T:s4c9i:"the feeling had already settled in.":(50,300):30:#e76f51
-A:s4c9i:fadeIn:duration=1000:delay=1000
-A:s4c9i:type:interval=70
-A:s4c9i:fadeOut:duration=1000:delay=2000
-
-B:#445f77
-T:s5c10j:"They turned the chair, held up the mirror,":(50,200):30:#2a9d8f
-A:s5c10j:fadeIn:duration=1000
-A:s5c10j:type:interval=60
-A:s5c10j:fadeOut:duration=1000:delay=2000
-
-T:s5c11k:"and asked, “How’s that?”":(50,300):30:#264653
-A:s5c11k:fadeIn:duration=1000:delay=1500
-A:s5c11k:type:interval=100
-A:s5c11k:fadeOut:duration=1000:delay=1000
-
-T:s5c12l:"And without skipping a beat, you smiled and said,":(50,400):30:#2a9d8f
-A:s5c12l:fadeIn:duration=1000:delay=2000
-A:s5c12l:type:interval=50
-A:s5c12l:fadeOut:duration=1000:delay=3000
-
-B:#556f98
-T:s6c13m:"“Yeah, looks good.”":(50,200):30:#0a9396
-A:s6c13m:fadeIn:duration=1000
-A:s6c13m:type:interval=100
-A:s6c13m:fadeOut:duration=1000:delay=1500
-
-B:#334756
-T:s7c14n:"But inside...":(50,200):50:#fd1501
-A:s7c14n:fadeIn:duration=1000
-A:s7c14n:type:interval=200
-A:s7c14n:scaleTo:scale=1.5:duration=1000:delay=2000
-A:s7c14n:fadeOut:duration=1000:delay=2500
-
-T:s7c15o:"you fucking hated it.":(50,400):60:#f20c00
-A:s7c15o:fadeIn:duration=1000:delay=3000
-A:s7c15o:type:interval=200
-A:s7c15o:scaleTo:scale=2:duration=1000:delay=4000
+T:s21a:"This is where":(200,200):40:#C7F9CC:style=highlight:#000000
+A:s21a:fadeIn:duration=600
+A:s21a:pulse:scale=1.3:duration=300:repeat=2
+T:s21b:"real, lasting change":(400,400):40:#96C9A5:style=highlight:#000000
+A:s21b:fadeIn:duration=600:delay=800
+A:s21b:type:interval=150
+T:s21c:"begins.":(600,600):40:#96C9A5:style=highlight:#000000
+A:s21c:fadeIn:duration=600:delay=1600
+A:s21c:pulse:scale=1.5:duration=400:repeat=3
+A:s21a:fadeOut:duration=1000:delay=3000
+A:s21b:fadeOut:duration=1000:delay=3000
+A:s21c:fadeOut:duration=1000:delay=3000
+RIMG:s21d:source=giphy:tag="new beginnings":align=center
+A:s21d:fadeIn:duration=1000:delay=3500
