@@ -108,7 +108,7 @@ async function getOpenAIResponse(req: Request, res: Response) {
               }
             }
           } catch (e) {
-            console.error('Error parsing JSON:', e);
+            console.error('Error parsing JSON:', e, data);
           }
         }
       }
@@ -164,27 +164,60 @@ async function getResponse(req: Request, res: Response) {
   }
 }
 
+const commandQueue: string[] = []
+let queueStreaming = false
+
+function startQueueStream(res: express.Response) {
+  if (queueStreaming) return // Prevent multiple loops
+  queueStreaming = true
+
+  function tick() {
+    if (commandQueue.length > 0) {
+      const command = commandQueue.shift()
+      if (command) {
+        console.log('🚀 Sending command from queue:', command)
+        res.write(`data: ${command}\n\n`)
+        res.flush?.()
+      }
+    } else {
+      res.write('data: [DONE]\n\n');
+      res.end();
+    }
+
+    setTimeout(tick, 1000) // Adjust interval here (lower = faster, higher = slower)
+  }
+
+  tick()
+}
+
+
 // Stream endpoint
 app.post('/stream', (async (req, res) => {
   try {
     if (false) {
       await getResponse(req, res);
-    } else if (true) {
+      res.write('data: [DONE]\n\n');
+      res.end();
+    } else if (false) {
       await getOpenAIResponse(req, res);
+      res.write('data: [DONE]\n\n');
+      res.end();
     } else {
       console.log(path.join(__dirname, '../animations.txt'))
       const response = fs.readFileSync(path.join(__dirname, '../../src/animations.txt'), 'utf8');
 
       const lines = response.trim().split('\n');
+      
       for (const line of lines) {
-        res.write(`data: ${line}\n\n`);
+        // res.write(`data: ${line}\n\n`);
+        commandQueue.push(line);
       }
+       startQueueStream(res);
     }
 
 
 
-    res.write('data: [DONE]\n\n');
-    res.end();
+   
   } catch (error) {
     console.error('Error processing stream:', error);
     res.write('data: ERROR\n\n');

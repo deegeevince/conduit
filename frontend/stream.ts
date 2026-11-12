@@ -15,6 +15,7 @@ export function sendPrompt(prompt: string) {
     const reader = response.body?.getReader()
     const decoder = new TextDecoder()
 
+    let commandCount = 0
     function read() {
       reader?.read().then(({ done, value }) => {
         if (done) return
@@ -22,10 +23,12 @@ export function sendPrompt(prompt: string) {
         chunk.trim().split('\n').forEach(line => {
           if (line.startsWith('data: ')) {
             const command = line.replace(/^data: /, '').trim()
-            console.log(command)
+            console.log('command', command)
             if (command !== '[DONE]') {
               handleCommand(command)
-              if (!timelineStarted) {
+              commandCount++
+              if (!timelineStarted && commandCount >= 1) {
+                console.log('start')
                 timeline.play()
                 timelineStarted = true
               }

@@ -258,106 +258,108 @@ export function handleCommand(command: string) {
 function animateElement(id: string, animType: string, params: string[]) {
   const el = elements[id]
   if (!el) return
-
   const animate = () => drawScene()
 
-  // parse optional delay (in seconds)
-  const delayParam = params.find(p => p.startsWith('delay='))
-  const delaySec   = delayParam ? Number(delayParam.split('=')[1]) / 1000 : 0
+  // parse absolute times
+  const start = Number(params.find(p => p.startsWith('start='))!.split('=')[1])
+  const end   = Number(params.find(p => p.startsWith('end='))!.split('=')[1])
+  const duration = end - start
+  console.log('animateelement', start, duration)
 
   switch (animType) {
-    case 'fadeIn': {
-      const duration = Number(params.find(p => p.startsWith('duration='))!.split('=')[1]) / 1000
-      timeline.to(el, {
-        opacity: 1,
-        duration,
-        delay: delaySec,
-        immediateRender: false,
-        onUpdate: animate
-      })
+    case 'fadeIn':
+      timeline.to(el,
+        { opacity: 1, immediateRender: false, onUpdate: animate, duration },
+        start
+      )
       break
-    }
-    case 'fadeOut': {
-      const duration = Number(params.find(p => p.startsWith('duration='))!.split('=')[1]) / 1000
-      timeline.to(el, {
-        opacity: 0,
-        duration,
-        delay: delaySec,
-        immediateRender: false,
-        onUpdate: animate
-      })
+
+    case 'fadeOut':
+      timeline.to(el,
+        { opacity: 0, immediateRender: false, onUpdate: animate, duration },
+        start
+      )
       break
-    }
-    case 'pulse': {
-      const scale    = Number(params.find(p => p.startsWith('scale='))!.split('=')[1])
-      const duration = Number(params.find(p => p.startsWith('duration='))!.split('=')[1]) / 1000
-      const repeat   = Number(params.find(p => p.startsWith('repeat='))!.split('=')[1])
-      timeline.to(el, {
-        scale,
-        duration,
-        delay: delaySec,
-        repeat,
-        yoyo: true,
-        immediateRender: false,
-        onUpdate: animate
-      })
-      break
-    }
+
     case 'slideIn': {
       const from     = params.find(p => p.startsWith('from='))!.split('=')[1]
-      const distance = Number(params.find(p => p.startsWith('distance='))!.split('=')[1])
-      const duration = Number(params.find(p => p.startsWith('duration='))!.split('=')[1]) / 1000
-
-      const targetX = el.x, targetY = el.y
+      const distanceParam = params.find(p => p.startsWith('distance='))?.split('=')[1]
+      const distance = !distanceParam || isNaN(Number(distanceParam)) ? 30 : Number(distanceParam)
+      const tx = el.x, ty = el.y
       const fromVars: any = { opacity: 0 }
-      if (from === 'left')   fromVars.x = targetX - distance
-      if (from === 'right')  fromVars.x = targetX + distance
-      if (from === 'top')    fromVars.y = targetY - distance
-      if (from === 'bottom') fromVars.y = targetY + distance
+      if (from === 'left')   fromVars.x = tx - distance
+      if (from === 'right')  fromVars.x = tx + distance
+      if (from === 'top')    fromVars.y = ty - distance
+      if (from === 'bottom') fromVars.y = ty + distance
 
       timeline.fromTo(el,
         fromVars,
-        {
-          x: targetX,
-          y: targetY,
-          opacity: 1,
-          duration,
-          delay: delaySec,
-          immediateRender: false,
-          onUpdate: animate
-        }
+        { x: tx, y: ty, opacity: 1, immediateRender: false, onUpdate: animate, duration },
+        start
       )
       break
     }
+
+    case 'pulse': {
+      const scale  = Number(params.find(p => p.startsWith('scale='))!.split('=')[1])
+      const repeat = Number(params.find(p => p.startsWith('repeat='))!.split('=')[1])
+      timeline.to(el,
+        { scale, repeat, yoyo: true, immediateRender: false, onUpdate: animate, duration },
+        start
+      )
+      break
+    }
+
     case 'scaleTo': {
-      const scale    = Number(params.find(p => p.startsWith('scale='))!.split('=')[1])
-      const duration = Number(params.find(p => p.startsWith('duration='))!.split('=')[1]) / 1000
-      timeline.to(el, {
-        scale,
-        duration,
-        delay: delaySec,
-        immediateRender: false,
-        onUpdate: animate
-      })
+      const scaleParam = params.find(p => p.startsWith('scale='))?.split('=')[1]
+      const scale = !scaleParam || isNaN(Number(scaleParam)) ? 1.1 : Number(scaleParam)
+      timeline.to(el,
+        { scale, immediateRender: false, onUpdate: animate, duration },
+        start
+      )
       break
     }
+
     case 'rotateTo': {
-      const degrees  = Number(params.find(p => p.startsWith('degrees='))!.split('=')[1])
-      const duration = Number(params.find(p => p.startsWith('duration='))!.split('=')[1]) / 1000
-      timeline.to(el, {
-        rotation: degrees,
-        duration,
-        delay: delaySec,
-        immediateRender: false,
-        onUpdate: animate
-      })
+      const degreesParam = params.find(p => p.startsWith('degrees='))?.split('=')[1]
+      const degrees = !degreesParam || isNaN(Number(degreesParam)) ? 50 : Number(degreesParam)
+      timeline.to(el,
+        { rotation: degrees, immediateRender: false, onUpdate: animate, duration },
+        start
+      )
       break
     }
+
     case 'type': {
-      const interval = Number(params.find(p => p.startsWith('interval='))!.split('=')[1])
-      const delayMs  = delaySec * 1000
-      setTimeout(() => animateTypewriter(el, interval), delayMs)
+      // parse absolute start/end and interval
+      // const interval = Number(params.find(p => p.startsWith('interval='))?.split('=')[1] || '20') / 1000
+      
+      // prepare the element
+      const fullText = el.text
+      el.text        = ''
+      // el.opacity     = 1  // make sure it’s visible
+      // console.log('fullText', fullText)
+      console.log('fulltext length', fullText.length, 'duration', duration)
+      const interval = duration / fullText.length;
+      console.log(interval)
+
+      // schedule each character at absolute times
+      for (let i = 0; i < fullText.length; i++) {
+        const t = start + i * interval
+        console.log(start, i, interval, t)
+        timeline.call(
+          () => { 
+            el.text += fullText[i]; 
+            console.log('scheduling', el.text, t)
+            drawScene() 
+          },
+          undefined,
+          t
+        )
+      }
+    
       break
     }
   }
 }
+
