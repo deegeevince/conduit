@@ -1,0 +1,353 @@
+// The exploration harness: a battery of prompts and scripted conversations
+// across the uses this medium might be good for, run through a brain (several
+// times each, in one or more prompt variants), judged by a model that looks at
+// the final picture, and laid out for review side by side. These types cross
+// from the runner (a server-side tool) to the review page (in the browser), so
+// they live here, together with the pure functions both sides use to turn an
+// answer into verdicts and verdicts into pass rates.
+
+import type { Issue } from './types';
+import type { StageBase } from './schedule';
+import type { ElementKind, LookId } from './vocabulary';
+import type { BriefForm } from './prompt';
+import type { TurnEndReason } from './wire';
+
+/** What kind of answer a prompt is fishing for. `plain` prompts check that the brain does NOT stage a fact. */
+export type ExploreExpectation = 'plain' | 'drawn' | 'pixels' | 'scene' | 'type' | 'motion' | 'any';
+
+/** The two ways of teaching a diagram that `PROMPT_VARIANT` chooses between. */
+export type ExploreVariant = 'column' | 'hero';
+export const EXPLORE_VARIANTS: readonly ExploreVariant[] = ['column', 'hero'];
+
+export interface ExplorePrompt {
+  /** short and stable: file names and URLs are built from it */
+  readonly id: string;
+  /** the candidate use this prompt stands for, in a few words */
+  readonly useCase: string;
+  readonly prompt: string;
+  readonly expects: ExploreExpectation;
+  /** when true the runner also asks a plain-English model the same thing, to compare substance and cost */
+  readonly baseline: boolean;
+  /** true when no worked example in the system prompt is of this kind: a fair test of what the language teaches rather than of what it recites */
+  readonly heldOut?: boolean;
+  /** an explanation or a diagram: the prompts `--variant column,hero` compares, and the ones held to the baseline's substance */
+  readonly information?: boolean;
+  /** how long the prompt asks the answer to play, when it says; the answer should come within about a third of it */
+  readonly statedSeconds?: number;
+  /** how many lines about the medium itself are tolerated (the open invitation may say one thing); default 0 */
+  readonly mayDescribeMedium?: number;
+}
+
+/** One step of a scripted conversation. */
+export type ExploreCaseTurn =
+  | {
+      readonly do: 'prompt';
+      readonly text: string;
+      /** before this turn the viewer switches to this look */
+      readonly look?: LookId;
+      /** before this turn the window changes to this size */
+      readonly screen?: 'phone' | 'desktop';
+      /** the viewer cuts this answer off this many ms after its first line, by speaking again */
+      readonly interruptAfterMs?: number;
+    }
+  /** the viewer taps the first choice the previous answer left on stage */
+  | { readonly do: 'tap' }
+  /** the viewer says: look at what you drew and fix it. The brain gets the sight report and the picture of the stage. */
+  | { readonly do: 'fix'; readonly text?: string };
+
+export interface ExploreCase {
+  readonly id: string;
+  readonly useCase: string;
+  /** what this conversation exists to catch */
+  readonly why: string;
+  readonly turns: readonly ExploreCaseTurn[];
+  readonly heldOut?: boolean;
+  /** the answer the judge scores, and the prompt it is told was asked; for a fix case the first and the last answer are both judged */
+  readonly judged?: boolean;
+}
+
+export interface ExploreBattery {
+  readonly version: number;
+  readonly prompts: readonly ExplorePrompt[];
+  readonly cases?: readonly ExploreCase[];
+}
+
+export interface ExploreUsage {
+  readonly outputTokens: number | null;
+  readonly thinkingTokens: number | null;
+  readonly cacheReadTokens: number | null;
+  readonly cacheWriteTokens: number | null;
+  readonly inputTokens: number | null;
+  readonly costUsd: number | null;
+}
+
+/** What can be told about an answer without looking at it. The review page shows these; a person or a model judges the rest. */
+export interface ExploreChecks {
+  readonly lines: number;
+  readonly rejects: number;
+  readonly warnings: number;
+  /** elements put on stage, by kind */
+  readonly kinds: Readonly<Partial<Record<ElementKind, number>>>;
+  /** words of text shown */
+  readonly words: number;
+  readonly scenes: number;
+  readonly cameraMoves: number;
+  /** layers other than `mid` that hold something */
+  readonly depthLayers: number;
+  /** share of lines that use an exact value (`@N`, `dur=`, `over=`, `stay=Ns`) */
+  readonly handLevel: number;
+  /** text that talks about the stage, the medium or the act of drawing instead of answering */
+  readonly aboutTheMedium: readonly string[];
+  /** seconds the answer takes to play */
+  readonly playSeconds: number;
+  /** did it do what the prompt was fishing for, as far as counting can tell */
+  readonly meetsExpectation: boolean;
+  /** the verb of the first line, null when there was none */
+  readonly opening?: string | null;
+  /** shapes drawn */
+  readonly shapes?: number;
+  /** text placed against something or inside a group (`near=`, `group=`, `at=`): a label, not a line of the flow */
+  readonly labels?: number;
+  /** the median, over scenes that are not `page`, of in-flow text lines in a scene; null when there is no such scene */
+  readonly inFlowMedian?: number | null;
+  /** distinct frames of the sprites drawn (the most any one sprite has) */
+  readonly spriteFrames?: number;
+}
+
+export interface ExploreBaseline {
+  readonly text: string;
+  readonly words: number;
+  readonly totalMs: number;
+  readonly usage: ExploreUsage;
+  /** from the request to the first character of the plain answer */
+  readonly firstTextMs?: number | null;
+}
+
+/** The judge's reading of the final picture: a model that was shown the still and the prompt. */
+export interface ExploreJudgement {
+  readonly model: string;
+  /** does the picture show what was asked */
+  readonly asked: boolean;
+  /** text that cannot be read or lies over other text; null when none */
+  readonly textProblem: string | null;
+  /** a label that points at the wrong thing; null when none */
+  readonly wrongLabel: string | null;
+  /** is the drawing right, factually and visually */
+  readonly correct: boolean;
+  /** what is wrong with it; null when nothing */
+  readonly mistake: string | null;
+  /** 1 (does not hold together) to 5 (reads as one composed picture) */
+  readonly coherence: number;
+  readonly why: string;
+  readonly costUsd: number | null;
+  readonly ms: number;
+  /** the pictures the judge saw, small JPEG data URLs: the last one is the final still */
+  readonly stills: readonly string[];
+  /** set when the judge could not give a verdict; every other field is then neutral */
+  readonly failure: string | null;
+}
+
+export interface ExploreVerdict {
+  readonly label: string;
+  readonly ok: boolean;
+  readonly detail: string;
+}
+
+/** What a turn of a conversation was and how the brain was spoken to. Set on every turn of a case. */
+export interface ExploreTurnMeta {
+  readonly case: string;
+  /** 1-based */
+  readonly index: number;
+  readonly kind: 'prompt' | 'tap' | 'fix';
+  readonly said: string;
+  /** `since`: the process still held the conversation. `full`: it was told everything. null when the brain does not say. */
+  readonly form: BriefForm | 'script' | null;
+  /** share of input tokens read from the prompt cache, 0..1 */
+  readonly cacheReadShare: number | null;
+  /** the brief carried a picture of the stage */
+  readonly withSnapshot: boolean;
+  /** this answer was cut off at this many ms by the next turn; null when it ran to its end */
+  readonly interruptedAtMs: number | null;
+  /** what changed in the viewer's window before this turn */
+  readonly changed: string | null;
+  /** why this turn could not be played as scripted (no choice to tap); null when it was */
+  readonly problem: string | null;
+}
+
+/** One answer of one prompt, with everything needed to replay it in a browser without a brain. */
+export interface ExploreResult {
+  readonly prompt: ExplorePrompt;
+  /** canonical lines in arrival order, with the milliseconds since the request at which each was complete */
+  readonly lines: readonly { readonly seq: number; readonly text: string; readonly ms: number; readonly issues: readonly Issue[] }[];
+  readonly rejects: readonly { readonly raw: string; readonly ms: number; readonly issues: readonly Issue[] }[];
+  readonly end: TurnEndReason;
+  readonly message: string | null;
+  /** from the request to the first line that puts something on stage; null when nothing was */
+  readonly firstVisibleMs: number | null;
+  readonly totalMs: number;
+  readonly usage: ExploreUsage | null;
+  readonly checks: ExploreChecks;
+  readonly baseline: ExploreBaseline | null;
+  /** the prompt variant the brain was taught with; absent in runs from before variants */
+  readonly variant?: ExploreVariant;
+  /** 1-based sample number of this prompt and variant */
+  readonly sample?: number;
+  /** from the request to the first character of text, as the brain measured it */
+  readonly firstTextMs?: number | null;
+  /** what the viewer waits for at reading speed: the later of the last line arriving and the answer finishing playing from its first line */
+  readonly viewerWaitMs?: number | null;
+  /** the stage this answer started from; absent means an empty stage */
+  readonly base?: StageBase;
+  readonly turn?: ExploreTurnMeta;
+  readonly judge?: ExploreJudgement | null;
+  readonly verdicts?: readonly ExploreVerdict[];
+}
+
+/** A scripted conversation, played once: its turns in order, each a full result that starts from the stage the one before left. */
+export interface ExploreCaseResult {
+  readonly case: ExploreCase;
+  readonly variant: ExploreVariant;
+  readonly sample: number;
+  readonly turns: readonly ExploreResult[];
+  /** for a case with a `fix` turn: did the second look score higher than the first */
+  readonly fix?: { readonly before: number | null; readonly after: number | null; readonly improved: boolean | null } | null;
+  /** checks of the whole conversation, with the same shape as a prompt's verdicts */
+  readonly verdicts: readonly ExploreVerdict[];
+}
+
+/** One line of the run's index: a file (prompt id, `<id>_<variant>_s<n>`). */
+export interface ExploreIndexEntry {
+  /** the file stem under the run's folder; what `API.exploreResult` is asked for */
+  readonly id: string;
+  readonly useCase: string;
+  readonly end: TurnEndReason;
+  readonly meetsExpectation: boolean;
+  /** the prompt or the case this is an answer to; absent in runs from before samples */
+  readonly promptId?: string;
+  readonly kind?: 'prompt' | 'case';
+  readonly variant?: ExploreVariant;
+  readonly sample?: number;
+  readonly heldOut?: boolean;
+  /** verdicts that failed, by label (including the judge's); lets the index show pass rates without reading every file */
+  readonly failed?: readonly string[];
+  readonly checked?: readonly string[];
+  readonly costUsd?: number | null;
+}
+
+/** The index of one run of the battery. */
+export interface ExploreRun {
+  /** `YYYYMMDD-HHMMSS-<brain>`, also the folder name under `explore/runs/` */
+  readonly id: string;
+  readonly started: string;
+  readonly brain: string;
+  readonly model: string | null;
+  readonly language: number;
+  /** characters in the system prompt the brain was given */
+  readonly promptChars: number;
+  readonly prompts: readonly ExploreIndexEntry[];
+  readonly samples?: number;
+  readonly variants?: readonly ExploreVariant[];
+  readonly judgeModel?: string | null;
+  /** what the run was projected to cost before it began, and what it did */
+  readonly projection?: { readonly calls: number; readonly usd: number | null } | null;
+  readonly spentUsd?: number | null;
+  /** what one call of each kind cost on average in this run: the next run's projection starts from these */
+  readonly measured?: { readonly firstTurnUsd: number | null; readonly laterTurnUsd: number | null; readonly judgeUsd: number | null; readonly baselineUsd: number | null } | null;
+}
+
+// -- verdicts ---------------------------------------------------------------
+
+const TOKEN_FLAG = 1500;
+const FIRST_LINE_BAR_MS = 4000;
+
+/** Whether the prompt asked for a stated length and the answer kept to it, within a third (and never off by less than two seconds). */
+function keptDuration(prompt: ExplorePrompt, played: number): { ok: boolean; detail: string } | null {
+  if (prompt.statedSeconds === undefined) return null;
+  const slack = Math.max(2, prompt.statedSeconds / 3);
+  return {
+    ok: Math.abs(played - prompt.statedSeconds) <= slack,
+    detail: `asked for ${prompt.statedSeconds} s, plays for ${played.toFixed(1)} s`,
+  };
+}
+
+/** Every automatic check, then the judge's, for one answer. Failed ones first. */
+export function verdictsOf(result: ExploreResult): ExploreVerdict[] {
+  const { checks, prompt } = result;
+  const opening = checks.opening ?? null;
+  const out: ExploreVerdict[] = [
+    { label: 'meets expectation', ok: checks.meetsExpectation, detail: `the prompt expects: ${prompt.expects}` },
+    { label: 'finished', ok: result.end === 'done' || result.turn?.interruptedAtMs != null, detail: result.end + (result.message === null ? '' : `: ${result.message}`) },
+    { label: 'no rejected line', ok: result.rejects.length === 0, detail: `${result.rejects.length} rejected, ${checks.warnings} warnings` },
+    {
+      label: 'silent about the medium',
+      ok: checks.aboutTheMedium.length <= (prompt.mayDescribeMedium ?? 0),
+      detail: checks.aboutTheMedium.length === 0 ? 'nothing' : checks.aboutTheMedium.join(' / '),
+    },
+    { label: 'few exact times', ok: checks.handLevel < 0.1, detail: `${Math.round(checks.handLevel * 100)}% of lines` },
+  ];
+  // A later turn of a conversation may go on from what is on stage with a plain `set` or `revise`.
+  if (result.turn === undefined || result.turn.index === 1) {
+    out.push({ label: 'starts with look or scene', ok: opening === 'look' || opening === 'scene', detail: opening === null ? 'no lines' : `starts with ${opening}` });
+  }
+  if (result.firstVisibleMs !== null) {
+    out.push({ label: 'first line within 4 s', ok: result.firstVisibleMs <= FIRST_LINE_BAR_MS, detail: `${(result.firstVisibleMs / 1000).toFixed(1)} s` });
+  }
+  if (prompt.information === true && checks.labels !== undefined) out.push({ label: 'diagram has two labels', ok: checks.labels >= 2, detail: `${checks.labels} labels, ${checks.shapes ?? 0} shapes` });
+  const inFlow = checks.inFlowMedian ?? null;
+  if (inFlow !== null) out.push({ label: 'four in-flow lines or fewer', ok: inFlow <= 4, detail: `median ${inFlow} in a scene` });
+  const kept = keptDuration(prompt, checks.playSeconds);
+  if (kept !== null) out.push({ label: 'stated length kept', ok: kept.ok, detail: kept.detail });
+  const tokens = result.usage?.outputTokens ?? null;
+  if (tokens !== null) {
+    const base = result.baseline?.usage.outputTokens ?? null;
+    if (prompt.expects === 'plain' && base !== null && base > 0) {
+      out.push({ label: 'within 1.3x the plain answer', ok: tokens <= base * 1.3, detail: `${tokens} against ${base} tokens` });
+    } else if (prompt.baseline && base !== null && base > 0) {
+      out.push({ label: 'within 2x the plain answer', ok: tokens <= base * 2, detail: `${tokens} against ${base} tokens` });
+    } else {
+      out.push({ label: `under ${TOKEN_FLAG} tokens`, ok: tokens <= TOKEN_FLAG, detail: `${tokens} output tokens` });
+    }
+  }
+  const turn = result.turn;
+  if (turn !== undefined && turn.index > 1) {
+    if (turn.form !== null) out.push({ label: 'warm (brief was since)', ok: turn.form === 'since', detail: `form ${turn.form}` });
+    if (turn.cacheReadShare !== null) out.push({ label: 'cache reads over 80%', ok: turn.cacheReadShare > 0.8, detail: `${Math.round(turn.cacheReadShare * 100)}%` });
+    if (turn.problem !== null) out.push({ label: 'turn could be played', ok: false, detail: turn.problem });
+  }
+  const judge = result.judge ?? null;
+  if (judge !== null && judge.failure === null) {
+    out.push(
+      { label: 'judge: shows what was asked', ok: judge.asked, detail: judge.asked ? 'it does' : judge.why },
+      { label: 'judge: text readable', ok: judge.textProblem === null, detail: judge.textProblem ?? 'nothing wrong' },
+      { label: 'judge: labels point right', ok: judge.wrongLabel === null, detail: judge.wrongLabel ?? 'nothing wrong' },
+      { label: 'judge: drawing correct', ok: judge.correct, detail: judge.mistake ?? 'nothing wrong' },
+      { label: 'judge: coherence 4 or more', ok: judge.coherence >= 4, detail: `${judge.coherence} of 5: ${judge.why}` },
+    );
+  }
+  return out.sort((a, b) => Number(a.ok) - Number(b.ok));
+}
+
+/** Pass counts per check label over a set of verdict lists (the samples of one prompt and variant). */
+export function passRates(sets: readonly (readonly ExploreVerdict[])[]): { label: string; passed: number; of: number }[] {
+  const order: string[] = [];
+  const tally = new Map<string, { passed: number; of: number }>();
+  for (const verdicts of sets) {
+    for (const verdict of verdicts) {
+      let entry = tally.get(verdict.label);
+      if (entry === undefined) {
+        entry = { passed: 0, of: 0 };
+        tally.set(verdict.label, entry);
+        order.push(verdict.label);
+      }
+      entry.of += 1;
+      if (verdict.ok) entry.passed += 1;
+    }
+  }
+  return order.map((label) => ({ label, ...(tally.get(label) ?? { passed: 0, of: 0 }) }));
+}
+
+/** The time the viewer waits at reading speed. Lines arrive as `lineMs`; the answer plays for `playSeconds` from its first. */
+export function viewerWaitOf(firstLineMs: number | null, lastLineMs: number | null, playSeconds: number): number | null {
+  if (firstLineMs === null || lastLineMs === null) return null;
+  return Math.round(Math.max(lastLineMs, firstLineMs + playSeconds * 1000));
+}

@@ -1,0 +1,402 @@
+{
+  "version": 2,
+  "prompts": [
+    {
+      "id": "sky-blue",
+      "useCase": "explain a concept with a diagram",
+      "prompt": "Why is the sky blue?",
+      "expects": "drawn",
+      "baseline": true,
+      "information": true,
+      "heldOut": false
+    },
+    {
+      "id": "four-stroke",
+      "useCase": "a mechanism, step by step",
+      "prompt": "How does a four-stroke engine work? Take me through it one stroke at a time.",
+      "expects": "drawn",
+      "baseline": true,
+      "information": true,
+      "heldOut": false
+    },
+    {
+      "id": "moon-phases",
+      "useCase": "teaching a child",
+      "prompt": "Explain to a six-year-old why the moon changes shape.",
+      "expects": "drawn",
+      "baseline": false,
+      "information": true,
+      "heldOut": false
+    },
+    {
+      "id": "planets",
+      "useCase": "a picture of something in space or on a map",
+      "prompt": "Show me the planets in order from the sun, with their sizes.",
+      "expects": "drawn",
+      "baseline": true,
+      "information": true,
+      "heldOut": false
+    },
+    {
+      "id": "rent-or-buy",
+      "useCase": "a decision visualised",
+      "prompt": "Should I rent or buy a home? Show me how to think about it.",
+      "expects": "drawn",
+      "baseline": true,
+      "information": true,
+      "heldOut": false
+    },
+    {
+      "id": "heat-pump",
+      "useCase": "a comparison at a glance",
+      "prompt": "Compare a heat pump and a gas boiler at a glance.",
+      "expects": "drawn",
+      "baseline": true,
+      "information": true,
+      "heldOut": false
+    },
+    {
+      "id": "population",
+      "useCase": "a data story with an animated chart",
+      "prompt": "Show me how the world's population grew from 1800 to today, as an animated chart.",
+      "expects": "drawn",
+      "baseline": true,
+      "information": true,
+      "heldOut": false
+    },
+    {
+      "id": "title-card",
+      "useCase": "kinetic typography",
+      "prompt": "Make a title card for a documentary called The Last Glacier.",
+      "expects": "any",
+      "baseline": false,
+      "heldOut": false
+    },
+    {
+      "id": "first-snow",
+      "useCase": "a poem performed",
+      "prompt": "Write me a short poem about the first snow, and perform it.",
+      "expects": "any",
+      "baseline": false,
+      "heldOut": false
+    },
+    {
+      "id": "laid-off",
+      "useCase": "a feeling",
+      "prompt": "I just got laid off.",
+      "expects": "type",
+      "baseline": false,
+      "heldOut": false
+    },
+    {
+      "id": "pay-button",
+      "useCase": "a UI motion prototype",
+      "prompt": "Prototype the animation for a Pay button: idle, pressed, loading, success.",
+      "expects": "motion",
+      "baseline": false,
+      "heldOut": false
+    },
+    {
+      "id": "logo-sting",
+      "useCase": "a logo sting",
+      "prompt": "Design a three-second logo sting for a coffee brand called Ember.",
+      "expects": "drawn",
+      "baseline": false,
+      "statedSeconds": 3,
+      "heldOut": false
+    },
+    {
+      "id": "bakery-clip",
+      "useCase": "a short social clip",
+      "prompt": "Make a ten-second clip announcing that our bakery now opens at 6 am.",
+      "expects": "motion",
+      "baseline": false,
+      "statedSeconds": 10,
+      "heldOut": false
+    },
+    {
+      "id": "bike-ad",
+      "useCase": "a storyboard or animatic",
+      "prompt": "Storyboard a fifteen-second ad for a bike shop in four shots.",
+      "expects": "drawn",
+      "baseline": false,
+      "statedSeconds": 15,
+      "heldOut": false
+    },
+    {
+      "id": "story",
+      "useCase": "a story as a scene",
+      "prompt": "Tell me a story as a scene.",
+      "expects": "scene",
+      "baseline": false,
+      "heldOut": false
+    },
+    {
+      "id": "lighthouse",
+      "useCase": "a painting, sketch first",
+      "prompt": "Paint me a lighthouse in a storm.",
+      "expects": "drawn",
+      "baseline": false,
+      "heldOut": false
+    },
+    {
+      "id": "pixel-fox",
+      "useCase": "pixel art",
+      "prompt": "Pixel art of a fox.",
+      "expects": "pixels",
+      "baseline": false,
+      "heldOut": false
+    },
+    {
+      "id": "pixel-fire",
+      "useCase": "animated pixel art",
+      "prompt": "An animated pixel campfire.",
+      "expects": "pixels",
+      "baseline": false,
+      "heldOut": false
+    },
+    {
+      "id": "everest",
+      "useCase": "a plain fact",
+      "prompt": "What is the boiling point of water at the top of Everest?",
+      "expects": "plain",
+      "baseline": true,
+      "heldOut": false
+    },
+    {
+      "id": "git-undo",
+      "useCase": "a plain how-to",
+      "prompt": "How do I undo my last git commit but keep the changes?",
+      "expects": "plain",
+      "baseline": true,
+      "heldOut": false
+    },
+    {
+      "id": "sleep-tips",
+      "useCase": "a plain list",
+      "prompt": "Give me five tips for sleeping better.",
+      "expects": "plain",
+      "baseline": true,
+      "heldOut": false
+    },
+    {
+      "id": "show-me",
+      "useCase": "the open invitation that v0 answered by talking about itself",
+      "prompt": "Show me what you can do.",
+      "expects": "any",
+      "baseline": false,
+      "mayDescribeMedium": 1,
+      "heldOut": false
+    },
+    {
+      "id": "silk-road",
+      "useCase": "a map",
+      "prompt": "Show me a map of the Silk Road with the main cities in order from east to west.",
+      "expects": "drawn",
+      "baseline": true,
+      "heldOut": true,
+      "information": true
+    },
+    {
+      "id": "apollo-timeline",
+      "useCase": "a timeline",
+      "prompt": "Make a timeline of the Apollo programme from 1961 to 1972, with the main missions.",
+      "expects": "drawn",
+      "baseline": true,
+      "heldOut": true,
+      "information": true
+    },
+    {
+      "id": "family-tree",
+      "useCase": "a family tree",
+      "prompt": "Draw a family tree: I have two parents, each of them has two parents, and I have one sister.",
+      "expects": "drawn",
+      "baseline": true,
+      "heldOut": true,
+      "information": true
+    },
+    {
+      "id": "umbrella-flow",
+      "useCase": "a flowchart",
+      "prompt": "Give me a flowchart for deciding whether to take an umbrella today.",
+      "expects": "drawn",
+      "baseline": true,
+      "heldOut": true,
+      "information": true
+    },
+    {
+      "id": "pancakes",
+      "useCase": "a recipe",
+      "prompt": "How do I make pancakes? Show me the steps.",
+      "expects": "drawn",
+      "baseline": true,
+      "heldOut": true,
+      "information": true
+    },
+    {
+      "id": "root-two",
+      "useCase": "a proof",
+      "prompt": "Prove that the square root of 2 is irrational, one step at a time.",
+      "expects": "drawn",
+      "baseline": true,
+      "heldOut": true,
+      "information": true
+    },
+    {
+      "id": "water-cycle",
+      "useCase": "a process with a loop",
+      "prompt": "Show me the water cycle as a loop that keeps going.",
+      "expects": "drawn",
+      "baseline": true,
+      "heldOut": true,
+      "information": true
+    },
+    {
+      "id": "pets-table",
+      "useCase": "a comparison table",
+      "prompt": "Compare cats, dogs and rabbits as pets in a table: cost, space and noise.",
+      "expects": "drawn",
+      "baseline": true,
+      "heldOut": true,
+      "information": true
+    },
+    {
+      "id": "bubble-sort",
+      "useCase": "an algorithm in motion",
+      "prompt": "Show me how bubble sort puts these five numbers in order: 5, 2, 4, 1, 3.",
+      "expects": "drawn",
+      "baseline": true,
+      "heldOut": true,
+      "information": true
+    },
+    {
+      "id": "offside",
+      "useCase": "a rule with a picture",
+      "prompt": "Explain the offside rule in football with a picture.",
+      "expects": "drawn",
+      "baseline": true,
+      "heldOut": true,
+      "information": true
+    },
+    {
+      "id": "counting-apples",
+      "useCase": "a children's counting game",
+      "prompt": "Make a counting game for a four-year-old, with apples.",
+      "expects": "any",
+      "baseline": false,
+      "heldOut": true
+    },
+    {
+      "id": "toggle-state",
+      "useCase": "a product UI state",
+      "prompt": "Show a toggle switch going from off to on, with its label changing to match.",
+      "expects": "motion",
+      "baseline": false,
+      "heldOut": true
+    },
+    {
+      "id": "podcast-title",
+      "useCase": "a title with a stated length",
+      "prompt": "Give me a five-second opening title for a podcast called Night Shift.",
+      "expects": "type",
+      "baseline": false,
+      "heldOut": true,
+      "statedSeconds": 5
+    }
+  ],
+  "cases": [
+    {
+      "id": "look-change",
+      "useCase": "a conversation across a look and a window change",
+      "why": "A change of look or window must not throw away the warm brain or the cache (P0-1): turns 2 and 3 should be since, warm and cached.",
+      "heldOut": true,
+      "judged": true,
+      "turns": [
+        {
+          "do": "prompt",
+          "text": "Tell me how a bicycle stays upright."
+        },
+        {
+          "do": "prompt",
+          "text": "Now show me how it steers.",
+          "look": "chalk"
+        },
+        {
+          "do": "prompt",
+          "text": "Sum it all up in one picture.",
+          "screen": "phone"
+        }
+      ]
+    },
+    {
+      "id": "interrupt",
+      "useCase": "a viewer who cuts the answer off",
+      "why": "Speaking mid-answer must stop the old answer, leave the process warm, and tell the next brief what was and was not seen.",
+      "heldOut": true,
+      "judged": true,
+      "turns": [
+        {
+          "do": "prompt",
+          "text": "Tell me the story of the first powered flight, scene by scene.",
+          "interruptAfterMs": 3500
+        },
+        {
+          "do": "prompt",
+          "text": "Actually, just show me the plane."
+        }
+      ]
+    },
+    {
+      "id": "tap-choice",
+      "useCase": "tapping a choice",
+      "why": "A tap arrives as the next turn; the brain continues from what it offered.",
+      "heldOut": true,
+      "judged": true,
+      "turns": [
+        {
+          "do": "prompt",
+          "text": "Offer me three weekend trips and let me choose one."
+        },
+        {
+          "do": "tap"
+        },
+        {
+          "do": "prompt",
+          "text": "What should I pack for it?"
+        }
+      ]
+    },
+    {
+      "id": "fix-diagram",
+      "useCase": "look at what you drew; fix it",
+      "why": "Can the model repair its own diagram from the sight report and the picture of the stage? Judge score before and after.",
+      "heldOut": true,
+      "judged": true,
+      "turns": [
+        {
+          "do": "prompt",
+          "text": "Draw a diagram of how a bill becomes a law, with every step labelled."
+        },
+        {
+          "do": "fix"
+        }
+      ]
+    },
+    {
+      "id": "fix-chart",
+      "useCase": "look at what you drew; fix it",
+      "why": "The same loop on a chart whose numbers have to be drawn to scale.",
+      "heldOut": true,
+      "judged": true,
+      "turns": [
+        {
+          "do": "prompt",
+          "text": "Draw a bar chart of the five largest countries by area, in millions of square kilometres, drawn to scale."
+        },
+        {
+          "do": "fix"
+        }
+      ]
+    }
+  ]
+}

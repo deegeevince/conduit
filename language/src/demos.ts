@@ -1,0 +1,47 @@
+import type { DemoInfo } from './wire';
+
+/** The fixture scripts in `language/demos/<name>.series`. The first one is what a first visit performs. */
+export const DEMOS = [
+  {
+    name: 'overture',
+    title: 'Overture',
+    summary: 'The first-load performance: a drawing, pixels, a staged scene with a camera, a sketch waiting for a painting. Ends on choices.',
+  },
+  {
+    name: 'sketchbook',
+    title: 'Sketchbook',
+    summary: 'The drawing vocabulary at work: labels, a morph, a group and its copy, travel along a curve, three looks.',
+  },
+  {
+    name: 'plainly',
+    title: 'Plainly',
+    summary: 'A question of fact answered as plain prose at reading speed: the medium is a choice.',
+  },
+  {
+    name: 'titles',
+    title: 'Titles',
+    summary: 'Type as the whole show: a title card, a stalled brain held in silence, a visible correction.',
+  },
+  {
+    name: 'styles',
+    title: 'Styles',
+    summary: 'One short script with no look of its own, so the same lines can be compared in every look.',
+  },
+] as const satisfies readonly DemoInfo[];
+
+export type DemoName = (typeof DEMOS)[number]['name'];
+export const FIRST_LOAD_DEMO: DemoName = 'overture';
+export const GALLERY_DEMO: DemoName = 'styles';
+
+/**
+ * A fixture line starting with `#!` is an instruction to the replay brain,
+ * not to the painter. To every other reader it is an ordinary comment.
+ * `#! stall 3` holds the stream for three seconds, the way a real brain stalls.
+ */
+export type ReplayDirective = { readonly kind: 'stall'; readonly seconds: number };
+
+export function parseReplayDirective(raw: string): ReplayDirective | null {
+  const match = /^#!\s*stall\s+(\d+(?:\.\d+)?)\s*$/.exec(raw.trim());
+  if (match === null || match[1] === undefined) return null;
+  return { kind: 'stall', seconds: Number(match[1]) };
+}

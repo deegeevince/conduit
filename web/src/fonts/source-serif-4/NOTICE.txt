@@ -1,0 +1,6 @@
+Source Serif 4, Copyright 2014 Adobe (http://www.adobe.com/), with Reserved Font Name "Source"
+SIL Open Font License 1.1; the full text is in OFL.txt.
+
+source-serif-4-400-fixed.ttf, source-serif-4-700-fixed.ttf are the Latin subset from the @fontsource/source-serif-4 package with
+the GPOS, GSUB, GDEF and kern tables removed, made by `pnpm --filter @conduit/web fonts`.
+The glyphs are unchanged.

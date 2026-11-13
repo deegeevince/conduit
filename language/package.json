@@ -1,0 +1,20 @@
+{
+  "name": "@conduit/language",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Series: the line language between brain and painter. Types, parser, serializer, validation, timeline maths, brain prompt.",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./demos/*": "./demos/*"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.scripts.json"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.0",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}

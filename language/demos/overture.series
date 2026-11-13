@@ -1,0 +1,50 @@
+# Overture: what a first visit performs. Inside twenty seconds it has to
+# prove, without saying so, that this is not a text box: a drawing that draws
+# itself, real pixels, a staged scene with depth and a camera, and a sketch
+# that a painting would grow over. Words only where words are best.
+
+scene hello caption calm
+line ground 18,72 142,72 stroke=dim
+rect wall 62,50 30x22
+poly roof 57,50 77,33 97,50
+rect door 73,60 8x12 fill=accent
+circle sun 126,22 8 stroke=accent thick=1.2
+say face=hand size=l | Hello.
+pix cat at=36,62 scale=2 loop=bob
+| .0......0.
+| 090....090
+| 0990000990
+| 0999999990
+| 0907997090
+| 0999ee9990
+| 0997997990
+| .09999990.
+| ..000000..
+wait 3
+
+color sky=#0b1026 dusk=#1c2a52 far=#18223f near=#24325a lit=#ffcf70 wall=#0e1730
+scene night caption calm slow
+look night
+rect full layer=far fill=sky>dusk
+ambient stars light
+circle moon 128,20 9 layer=far fill=#f6f1d5
+path layer=bg fill=far stroke=none | M0 60 Q40 40 82 56 T160 48 V90 H0 Z
+path hill fill=near stroke=none | M0 74 Q52 58 100 72 T160 66 V90 H0 Z
+group house at=132,56
+rect in=house 0,0 16x12 fill=wall
+poly in=house -2,0 8,-9 18,0 fill=wall
+rect in=house 6,4 4x5 fill=lit
+cam push slow
+say | Evening comes.
+ambient fireflies light layer=fg
+wait 2
+paint as=gouache | a small house on rolling blue hills under a huge pale moon, one window lit, stars
+wait 5
+
+cam rest
+plan lines=5
+say strong | What shall we make?
+say choice | explain something with a drawing
+say choice | pixel art
+say choice | a story, staged
+say choice | just the facts, plainly

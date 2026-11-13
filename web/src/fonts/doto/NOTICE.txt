@@ -1,0 +1,6 @@
+Doto, Copyright 2024 The Doto Project Authors (https://github.com/oliverlalan/Doto)
+SIL Open Font License 1.1; the full text is in OFL.txt.
+
+doto-700-fixed.ttf and doto-900-fixed.ttf are the Latin subsets at weights 700
+and 900 from the @fontsource/doto package with the GDEF table removed, made by
+`pnpm --filter @conduit/web fonts`. The glyphs are unchanged.

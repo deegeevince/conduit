@@ -1,0 +1,150 @@
+import type { StageBase } from './schedule';
+import type { Sight } from './sight';
+import type { ShownItem } from './stage';
+import type { LeadWindow } from './timing';
+import type { Issue } from './types';
+import type { BackEventRecord, Capabilities, ClockState, ScreenFacts, Services, TurnInput } from './wire';
+
+/** A line of an earlier turn that did not do what the brain meant, as the brain should hear about it. */
+export interface LineProblem {
+  /** the line as the brain wrote it, cut to 120 characters */
+  readonly raw: string;
+  /** `rejected`: nothing of it happened. `repaired`: it happened without the part named in `why`. */
+  readonly kind: 'rejected' | 'repaired';
+  readonly why: string;
+}
+
+/** One earlier turn as the brain should remember it: what the user said and what they actually SAW. */
+export interface TurnMemory {
+  readonly turn: string;
+  readonly input: TurnInput;
+  readonly outcome:
+    | 'finished'
+    | 'interrupted'
+    /** the painter never reported; nothing can be assumed seen */
+    | 'unseen'
+    | 'failed';
+  /** where the playhead stopped, when known */
+  readonly playhead: number | null;
+  readonly shown: readonly ShownItem[];
+  /** how it landed, from the painter's report; null when the painter never reported */
+  readonly sight: Sight | null;
+  /** where the user asked to see it all at once, if they did: they did not watch what came after */
+  readonly skippedAt: number | null;
+  /** lines the brain wrote that were dropped or repaired, at most 8, so it can stop making the same mistake */
+  readonly problems: readonly LineProblem[];
+  /** true when a picture of the resting stage is held for this turn */
+  readonly snapshot: boolean;
+}
+
+/**
+ * `full` is for a brain that remembers nothing: a fresh process, or a relay
+ * agent. `since` is for a brain that still holds the conversation (a warm
+ * process): it is told only what it cannot know, which is what the stage did
+ * with its last answer and what the user did next.
+ */
+export type BriefForm = 'full' | 'since';
+
+/** A prompt this long is handed to the brain as a document, not as a line of speech. */
+export const PASTE_AS_DOCUMENT_CHARS = 1500;
+
+/** The most characters of a web page or pasted text a brain is given; a PDF goes whole. */
+export const DOCUMENT_TEXT_CHARS = 40_000;
+
+/** Something the user gave the brain to read: a PDF, a web page, or a long pasted passage. */
+export interface DocumentFacts {
+  readonly id: string;
+  /** `pdf` travels as an attachment to the message; the others as text in the brief */
+  readonly kind: 'pdf' | 'text' | 'pasted';
+  /** the site it came from, or `pasted` */
+  readonly source: string;
+  readonly url: string | null;
+  readonly title: string | null;
+  /** characters of `text` that were kept; 0 for a PDF */
+  readonly chars: number;
+  /** the text was cut at `DOCUMENT_TEXT_CHARS` and the end is missing */
+  readonly truncated: boolean;
+  readonly text: string | null;
+  /** it arrived with this turn's message */
+  readonly fresh: boolean;
+}
+
+/** A link the user gave that could not be read, and why in plain words. */
+export interface UnreadFacts {
+  readonly url: string;
+  readonly why: string;
+}
+
+/** Everything a brain is told at the start of a turn. */
+export interface TurnContext {
+  readonly screen: ScreenFacts;
+  readonly capabilities: Capabilities;
+  readonly services: Services;
+  readonly lead: LeadWindow;
+  /** what is on stage right now, with the look, the open scene and the styles defined so far */
+  readonly stage: StageBase;
+  /** earlier turns, oldest first */
+  readonly history: readonly TurnMemory[];
+  /** taps the painter reported since the previous turn began */
+  readonly heard: readonly BackEventRecord[];
+  /** documents the brain is to be given with this message; absent means none */
+  readonly documents?: readonly DocumentFacts[];
+  /** links in this turn's message that could not be read */
+  readonly unread?: readonly UnreadFacts[];
+}
+
+/** What a relay agent can know about the two clocks between its calls. */
+export interface RelayClock {
+  /** where the next line will start; computed by the server from the lines accepted so far */
+  readonly pen: number;
+  /** the last playhead the painter reported, or null before the first report */
+  readonly playhead: number | null;
+  /** pen minus playhead: how far ahead of the audience the brain is */
+  readonly lead: number | null;
+  readonly state: ClockState | null;
+  /** milliseconds since the painter last reported */
+  readonly reportedMsAgo: number | null;
+}
+
+export interface RelayClaim {
+  readonly turn: string;
+  readonly session: string;
+  readonly input: TurnInput;
+  readonly context: TurnContext;
+  /** `context` and `input` rendered as the text an LLM brain would be given */
+  readonly brief: string;
+  /** where to POST lines, end the turn, read events, read the language guide, and (when there is one) GET a picture of how the previous turn landed */
+  readonly links: { readonly lines: string; readonly end: string; readonly events: string; readonly guide: string; readonly snapshot: string | null };
+}
+
+export interface RelayRejected {
+  /** 1-based line number within the posted body */
+  readonly lineNumber: number;
+  readonly raw: string;
+  readonly issues: readonly Issue[];
+}
+
+export interface RelayAppendResponse {
+  readonly accepted: number;
+  /** lines that were dropped, and lines that were kept with a repair */
+  readonly rejected: readonly RelayRejected[];
+  readonly warnings: readonly RelayRejected[];
+  readonly clock: RelayClock;
+  /** back-channel events since the cursor this turn last saw */
+  readonly events: readonly BackEventRecord[];
+  readonly cursor: number;
+  readonly ended: boolean;
+}
+
+export interface RelayEventsResponse {
+  readonly events: readonly BackEventRecord[];
+  readonly cursor: number;
+  readonly clock: RelayClock;
+  /** false once the user has interrupted or the turn has ended; stop writing */
+  readonly open: boolean;
+}
+
+export interface RelayStatus {
+  readonly pending: readonly { readonly turn: string; readonly session: string; readonly input: TurnInput; readonly waitingMs: number }[];
+  readonly claimed: readonly { readonly turn: string; readonly session: string; readonly idleMs: number }[];
+}

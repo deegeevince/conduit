@@ -1,0 +1,40 @@
+/* Design tokens for the chrome only. The stage takes everything from the looks. */
+:root {
+  color-scheme: light;
+
+  /* Set on the root element whenever the look changes; these are paper's, the look a stage starts in. */
+  --stage-ground: #f4efe4;
+  --stage-ink: #23201b;
+  --stage-dim: #6f685c;
+  --stage-accent: #c13e1e;
+
+  --chrome-ground: var(--stage-ground);
+  --chrome-text: var(--stage-ink);
+  --chrome-text-quiet: var(--stage-dim);
+  --chrome-line: var(--stage-dim);
+  --chrome-focus: var(--stage-accent);
+
+  /* The HUD is a tool, not part of the product, and keeps its own neutral colours in every look. */
+  --hud-ground: #0c0c0b;
+  --hud-text: #e9e6df;
+  --hud-text-quiet: #a19d93;
+  --hud-warn: #e0a84a;
+  --hud-bad: #e0655a;
+
+  --chrome-font: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --chrome-font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --chrome-text-size: 1rem;
+  --chrome-text-size-small: 0.8125rem;
+
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-6: 1.5rem;
+
+  --radius: 2px;
+  --control-height: 2.75rem;
+  --focus-ring: 2px solid var(--chrome-focus);
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --duration-quick: 120ms;
+}

@@ -1,0 +1,7 @@
+packages:
+  - language
+  - server
+  - web
+
+onlyBuiltDependencies:
+  - esbuild

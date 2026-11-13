@@ -1,0 +1,6 @@
+Archivo Black, Copyright 2017 The Archivo Black Project Authors (https://github.com/Omnibus-Type/ArchivoBlack)
+SIL Open Font License 1.1; the full text is in OFL.txt.
+
+archivo-black-400-fixed.ttf is the Latin subset from the @fontsource/archivo-black package with
+the GPOS, GSUB, GDEF and kern tables removed, made by `pnpm --filter @conduit/web fonts`.
+The glyphs are unchanged.

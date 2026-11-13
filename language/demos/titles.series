@@ -1,0 +1,27 @@
+# Titles: type as the whole show. A title card, a held silence while the
+# brain stalls, a visible correction. Nothing is drawn.
+
+look night
+style whisper size=s ink=dim enter=fade
+style card size=xxl weight=bold face=display enter=slam by=all
+
+scene open solo tense
+say whisper | a short film about
+wait
+say card | WAITING
+cam push slow
+wait 2
+
+scene hold stack lines=3 calm slow
+cam rest
+say a1 | Hold on.
+#! stall 5
+say a2 | I was thinking.
+say a3 | I am always right.
+wait 2
+correct a3 | I am *sometimes* right.
+wait 2
+
+scene end solo
+say card ink=accent | fin
+wait 2

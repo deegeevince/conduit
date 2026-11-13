@@ -1,0 +1,18 @@
+# Styles: the same lines for every look. There is no `look` line on purpose;
+# the styles page locks each stage to one look so they can be compared by eye.
+
+scene show figure lines=3 neutral steady
+circle sun 26,32 8 fill=accent
+path hill thick=1.5 | M8 72 Q25 46 44 64 T76 60
+rect 54,32 14x14 fill=dim
+pix at=76,74 scale=1.2
+| .88.88.
+| 8888888
+| 8888888
+| .88888.
+| ..888..
+| ...8...
+say label near=sun:below | accent
+say title | Same lines
+say | Only the *look* changes: ground, inks, face, surface.
+say aside | size, colour, stroke and texture belong to the look

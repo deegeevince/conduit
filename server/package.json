@@ -1,0 +1,23 @@
+{
+  "name": "@conduit/server",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Sessions, turns, the back channel and the brains (relay, claude-cli, replay).",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "dev": "tsx watch --env-file-if-exists=../.env src/main.ts",
+    "start": "NODE_ENV=production tsx --env-file-if-exists=../.env src/main.ts"
+  },
+  "dependencies": {
+    "@conduit/language": "workspace:*",
+    "@hono/node-server": "^2.1.8",
+    "hono": "^4.13.18",
+    "tsx": "^4.23.15"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.0",
+    "typescript": "^7.0.2"
+  }
+}

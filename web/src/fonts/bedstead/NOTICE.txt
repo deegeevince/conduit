@@ -1,0 +1,11 @@
+Bedstead 3.261, by Ben Harris
+https://bjh21.me.uk/bedstead/
+
+An outline font based on the character set of the Mullard SAA5050 teletext
+character generator. The program that generates Bedstead and all of its newly
+designed glyphs have been released into the public domain by the author.
+
+bedstead.otf        the unmodified file from the address above
+                    sha256 9473c5671c703d26e728a8187f8d30ca7a19497ee17cc5b076bd0fb6e2986007
+bedstead-fixed.otf  the same glyphs with the GPOS, GSUB and GDEF tables removed,
+                    made by `pnpm --filter @conduit/web fonts`. This is the file the app loads.

@@ -1,0 +1,41 @@
+# Sketchbook: the drawing vocabulary used the way an explanation uses it.
+# Shapes that draw themselves, labels that find their own room, a part that
+# changes into another, a group copied, a thing travelling along a curve.
+
+look chalk
+scene lever figure lines=2
+line beam 14,50 86,50 thick=2
+poly pivot 38,62 44,50 50,62 fill=accent
+rect load 72,40 12x10 fill=dim
+path push stroke=accent thick=1.5 | M20 26 V46 m-4 -5 l4 5 l4 -5
+say label near=pivot:below | pivot
+say label near=load:above | load
+say | Push down far from the pivot and the short end lifts the load.
+wait
+poly pivot 62,62 68,50 74,62
+say strong | Move the pivot closer: *less effort, less lift*.
+wait 2
+
+scene orbit caption lines=1
+look blueprint
+circle star 80,45 7 fill=accent stroke=none
+ellipse track 80,45 46x24 stroke=dim thick=0.5
+circle planet 126,45 3 fill=ink stroke=none
+move planet along=track slow
+say | A year is one trip round the track.
+group moon at=34,45 loop=spin
+circle in=moon 0,0 2 fill=alt stroke=none
+line in=moon 0,0 6,0 stroke=dim thick=0.4
+use moon2 moon at=118,30 scale=0.7
+wait 3
+
+scene shapes caption playful brisk
+look riso
+circle blob 80,42 16 fill=accent
+say | One shape
+circle blob 80,42 24 fill=alt
+say | becomes another
+poly blob 56,60 80,18 104,60 fill=ink
+say | and another.
+ambient confetti
+wait 2

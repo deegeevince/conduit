@@ -1,0 +1,11 @@
+# Plainly: the medium is a choice. A question of fact gets a plain answer in
+# a reading column, at reading speed, with nothing staged.
+
+scene page
+say strong | Canberra.
+say | Sydney and Melbourne both wanted to be the capital, so neither got it. In 1908 a site between them was chosen, and a city was designed and built for the job.
+say | The plan came from an international competition, won by the American architects Walter and Marion Griffin.
+say aside | Melbourne stood in until Parliament moved to Canberra in 1927.
+wait
+say choice | why did the two cities fight over it?
+say choice | show me where it is

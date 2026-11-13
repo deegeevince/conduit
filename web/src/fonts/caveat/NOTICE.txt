@@ -1,0 +1,6 @@
+Caveat, Copyright 2014 The Caveat Project Authors (https://github.com/googlefonts/caveat)
+SIL Open Font License 1.1; the full text is in OFL.txt.
+
+caveat-500-fixed.ttf, caveat-700-fixed.ttf are the Latin subset from the @fontsource/caveat package with
+the GPOS, GSUB, GDEF and kern tables removed, made by `pnpm --filter @conduit/web fonts`.
+The glyphs are unchanged.

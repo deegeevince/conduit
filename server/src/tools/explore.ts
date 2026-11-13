@@ -1,0 +1,669 @@
+// Runs the evaluation battery through a brain and writes a run to disk. Not part of the server.
+//
+//   pnpm explore                          every prompt and every scripted conversation, 3 samples each
+//   pnpm explore --dry-run                only print the plan: calls, estimated dollars
+//   pnpm explore --only id,id             just these prompts or cases
+//   pnpm explore --held-out               just the prompts and cases that no worked example mirrors
+//   pnpm explore --samples 5              samples per prompt (default 3); each check gets a pass rate
+//   pnpm explore --variant column,hero    teach the diagram two ways (PROMPT_VARIANT) on the information prompts
+//   pnpm explore --no-cases               single-turn prompts only
+//   pnpm explore --no-judge               skip the model that looks at the final still
+//   pnpm explore --judge-model sonnet     the judge's model (default sonnet); --judge-effort low|medium|high (default medium)
+//   pnpm explore --judge-frames 3         show the judge the final still and two earlier ones (default 1: the final still)
+//   pnpm explore --brain replay           through the replay brain (no model, no judge, no cases): to work on the review page
+//   pnpm explore --no-baseline            skip the plain-English comparison
+//   pnpm explore --model haiku            the claude-cli model for this run (default: CLAUDE_MODEL)
+//   pnpm explore --timeout 120            seconds a turn may take before it is recorded as a timeout (default 180)
+//   pnpm explore --max-usd 5 --yes        a run projected over --max-usd (default 5) refuses to start without --yes
+//   pnpm explore --web http://127.0.0.1:4461   use this running web dev server for the judge's pictures (default: start one)
+//
+// For each prompt, variant and sample: a TurnRequest over an empty stage is handed to the brain exactly as the
+// conductor would (LineNormalizer, TurnScore), with a fresh conversation. Every line is recorded with the
+// millisecond it was complete. The final still of the answer (made by the painter's own engine in a headless Chrome:
+// explore-browser.ts) goes with the prompt to a judge (explore-judge.ts). Scripted conversations (explore-case.ts)
+// are played turn by turn on one brain session with the stage, memory and picture carried between turns.
+//
+// Writes explore/runs/<run>/index.json (an ExploreRun) and one <prompt>_<variant>_s<n>.json per prompt answer
+// (an ExploreResult) or <case>_<variant>_s<n>.json per conversation (an ExploreCaseResult). Prompts run one at a time
+// (timings are the measurement); judges run beside the next prompt. Ctrl-C stops after the current unit; a second
+// abandons it too.
+import { existsSync } from 'node:fs';
+import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import {
+  EMPTY_STAGE,
+  FULL_CAPABILITIES,
+  LANGUAGE,
+  LEAD_WINDOW,
+  REFERENCE_SCREEN,
+  EXPLORE_VARIANTS,
+  buildSystemPrompt,
+  passRates,
+  verdictsOf,
+} from '@conduit/language';
+import type {
+  ExploreBaseline,
+  ExploreBattery,
+  ExploreCase,
+  ExploreCaseResult,
+  ExploreIndexEntry,
+  ExplorePrompt,
+  ExploreResult,
+  ExploreRun,
+  ExploreVariant,
+  ExploreVerdict,
+  Line,
+  Services,
+} from '@conduit/language';
+import type { Brain } from '../domain/brain';
+import { createBrains } from '../brains/registry';
+import { runClaude } from '../brains/claude-cli/process';
+import { failureOf, parseStreamLine, textDeltaOf } from '../brains/claude-cli/stream-json';
+import { RelayHub } from '../brains/relay/relay-hub';
+import { loadEnv, processEnvironment } from '../env';
+import type { Env } from '../env';
+import { createLogger } from '../log';
+import { openEyes, repoRoot } from './explore-browser';
+import type { Eyes } from './explore-browser';
+import { playCase } from './explore-case';
+import { callsOf, perCallFor, projectUsd } from './explore-cost';
+import type { Plan } from './explore-cost';
+import type { JudgeSettings } from './explore-judge';
+import { EMPTY, judgeStills, slots } from './explore-rig';
+import type { Rig, Running } from './explore-rig';
+import { playTurn, unreadable } from './explore-turn';
+
+interface Options {
+  readonly only: readonly string[] | null;
+  readonly heldOut: boolean;
+  readonly brain: string | null;
+  readonly model: string | null;
+  readonly baseline: boolean;
+  readonly timeoutMs: number;
+  readonly samples: number;
+  readonly variants: readonly ExploreVariant[];
+  readonly cases: boolean;
+  readonly judge: boolean;
+  readonly judgeModel: string;
+  readonly judgeEffort: 'low' | 'medium' | 'high';
+  readonly judgeFrames: number;
+  readonly dryRun: boolean;
+  readonly maxUsd: number;
+  readonly yes: boolean;
+  readonly web: string | null;
+}
+
+const BASELINE_SYSTEM = 'Answer in plain English. Be concise and complete.';
+const DEFAULT_TIMEOUT_S = 180;
+const WEB_PORT = 4461;
+const JUDGE_SIDE = 1024;
+
+function usageError(message: string): never {
+  process.stderr.write(`explore: ${message}\n`);
+  process.exit(2);
+}
+
+function parseArguments(argv: readonly string[]): Options {
+  let only: string[] | null = null;
+  let heldOut = false;
+  let brain: string | null = null;
+  let model: string | null = null;
+  let baseline = true;
+  let timeoutS = DEFAULT_TIMEOUT_S;
+  let samples = 3;
+  let variants: ExploreVariant[] | null = null;
+  let cases = true;
+  let judgeOn = true;
+  let judgeModel = 'sonnet';
+  let judgeEffort: 'low' | 'medium' | 'high' = 'medium';
+  let judgeFrames = 1;
+  let dryRun = false;
+  let maxUsd = 5;
+  let yes = false;
+  let web: string | null = null;
+  for (let i = 0; i < argv.length; i += 1) {
+    const flag = argv[i];
+    const value = (): string => argv[++i] ?? usageError(`${String(flag)} needs a value`);
+    if (flag === '--only') only = value().split(',').map((id) => id.trim()).filter((id) => id !== '');
+    else if (flag === '--held-out') heldOut = true;
+    else if (flag === '--brain') brain = value();
+    else if (flag === '--model') model = value();
+    else if (flag === '--no-baseline') baseline = false;
+    else if (flag === '--timeout') timeoutS = Number(value());
+    else if (flag === '--samples') samples = Number(value());
+    else if (flag === '--variant' || flag === '--variants') {
+      variants = value().split(',').map((name) => {
+        const found = EXPLORE_VARIANTS.find((item) => item === name.trim());
+        return found ?? usageError(`unknown variant "${name}" (known: ${EXPLORE_VARIANTS.join(', ')})`);
+      });
+    } else if (flag === '--no-cases') cases = false;
+    else if (flag === '--no-judge') judgeOn = false;
+    else if (flag === '--judge-model') judgeModel = value();
+    else if (flag === '--judge-effort') {
+      const effort = value();
+      if (effort !== 'low' && effort !== 'medium' && effort !== 'high') usageError('--judge-effort must be low, medium or high');
+      judgeEffort = effort;
+    } else if (flag === '--judge-frames') judgeFrames = Number(value());
+    else if (flag === '--dry-run') dryRun = true;
+    else if (flag === '--max-usd') maxUsd = Number(value());
+    else if (flag === '--yes') yes = true;
+    else if (flag === '--web') web = value();
+    else usageError(`unknown argument "${String(flag)}"`);
+  }
+  if (!Number.isFinite(timeoutS) || timeoutS <= 0) usageError('--timeout must be a positive number of seconds');
+  if (!Number.isInteger(samples) || samples < 1 || samples > 20) usageError('--samples must be a whole number from 1 to 20');
+  if (!Number.isInteger(judgeFrames) || judgeFrames < 1 || judgeFrames > 5) usageError('--judge-frames must be a whole number from 1 to 5');
+  if (!Number.isFinite(maxUsd) || maxUsd <= 0) usageError('--max-usd must be a positive number');
+  return { only, heldOut, brain, model, baseline, timeoutMs: timeoutS * 1000, samples, variants: variants ?? ['column'], cases, judge: judgeOn, judgeModel, judgeEffort, judgeFrames, dryRun, maxUsd, yes, web };
+}
+
+function asNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function wordCount(text: string): number {
+  return text.split(/\s+/).filter((word) => word !== '').length;
+}
+
+/** The same question put to a plain model: what the answer would have been, and what it would have cost. */
+async function askBaseline(prompt: string, bin: string, model: string, effort: 'low' | 'medium' | 'high', signal: AbortSignal): Promise<ExploreBaseline | null> {
+  const started = performance.now();
+  let text = '';
+  let firstTextMs: number | null = null;
+  let result: Record<string, unknown> | null = null;
+  let failure: string | null = null;
+  for await (const raw of runClaude({ bin, model, effort, systemPrompt: BASELINE_SYSTEM, userMessage: prompt }, signal)) {
+    const event = parseStreamLine(raw);
+    if (event === null) continue;
+    const delta = textDeltaOf(event);
+    if (delta !== null) {
+      text += delta;
+      firstTextMs ??= Math.round(performance.now() - started);
+    }
+    if (event.type === 'result') {
+      failure = failureOf(event);
+      result = event as unknown as Record<string, unknown>;
+    }
+  }
+  if (signal.aborted) return null;
+  if (failure !== null) throw new Error(failure);
+  const totalMs = Math.round(performance.now() - started);
+  if (text === '' && typeof result?.result === 'string') text = result.result;
+  const used = (result?.usage ?? {}) as Record<string, unknown>;
+  const details = used['output_tokens_details'];
+  const thinking = typeof details === 'object' && details !== null ? asNumber((details as Record<string, unknown>)['thinking_tokens']) : null;
+  return {
+    text: text.trim(),
+    words: wordCount(text),
+    totalMs,
+    firstTextMs,
+    usage: {
+      outputTokens: asNumber(used['output_tokens']),
+      thinkingTokens: thinking,
+      cacheReadTokens: asNumber(used['cache_read_input_tokens']),
+      cacheWriteTokens: asNumber(used['cache_creation_input_tokens']),
+      inputTokens: asNumber(used['input_tokens']),
+      costUsd: asNumber(result?.total_cost_usd),
+    },
+  };
+}
+
+type Unit =
+  | { readonly kind: 'prompt'; readonly prompt: ExplorePrompt; readonly variant: ExploreVariant; readonly sample: number }
+  | { readonly kind: 'case'; readonly case: ExploreCase; readonly variant: ExploreVariant; readonly sample: number };
+
+const stemOf = (unit: Unit): string => `${unit.kind === 'prompt' ? unit.prompt.id : unit.case.id}_${unit.variant}_s${unit.sample}`;
+
+function unitsOf(battery: ExploreBattery, options: Options): Unit[] {
+  const wanted = (id: string, heldOut: boolean | undefined): boolean => (options.only === null || options.only.includes(id)) && (!options.heldOut || heldOut === true);
+  const units: Unit[] = [];
+  for (const prompt of battery.prompts) {
+    if (!wanted(prompt.id, prompt.heldOut)) continue;
+    // Variants differ in how a diagram is taught: only the information prompts run under more than one.
+    const variants = prompt.information === true ? options.variants : options.variants.slice(0, 1);
+    for (let sample = 1; sample <= options.samples; sample += 1) for (const variant of variants) units.push({ kind: 'prompt', prompt, variant, sample });
+  }
+  if (options.cases) {
+    for (const scripted of battery.cases ?? []) {
+      if (!wanted(scripted.id, scripted.heldOut)) continue;
+      for (let sample = 1; sample <= options.samples; sample += 1) units.push({ kind: 'case', case: scripted, variant: options.variants[0] ?? 'column', sample });
+    }
+  }
+  return units;
+}
+
+function planOf(units: readonly Unit[], battery: ExploreBattery, options: Options, judging: boolean, baselines: boolean): Plan {
+  let firstTurns = 0;
+  let laterTurns = 0;
+  let judgeCalls = 0;
+  const baselined = new Set<string>();
+  for (const unit of units) {
+    if (unit.kind === 'prompt') {
+      firstTurns += 1;
+      if (judging) judgeCalls += 1;
+      if (baselines && unit.prompt.baseline) baselined.add(unit.prompt.id);
+    } else {
+      firstTurns += 1;
+      laterTurns += unit.case.turns.length - 1;
+      if (judging && unit.case.judged !== false) judgeCalls += unit.case.turns.filter((turn, at) => !(turn.do === 'prompt' && turn.interruptAfterMs !== undefined && at < unit.case.turns.length - 1)).length;
+    }
+  }
+  void battery;
+  return { firstTurns, laterTurns, judgeCalls, extraImages: judgeCalls * (options.judgeFrames - 1), baselines: baselined.size };
+}
+
+function money(value: number | null | undefined): string {
+  return value === null || value === undefined ? '-' : `$${value.toFixed(4)}`;
+}
+
+function median(values: readonly number[]): number | null {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 1 ? (sorted[middle] ?? null) : ((sorted[middle - 1] ?? 0) + (sorted[middle] ?? 0)) / 2;
+}
+
+const mean = (values: readonly number[]): number | null => (values.length === 0 ? null : values.reduce((a, b) => a + b, 0) / values.length);
+const secondsText = (ms: number | null): string => (ms === null ? '-' : (ms / 1000).toFixed(1));
+
+function stamp(now: Date): string {
+  const two = (n: number): string => String(n).padStart(2, '0');
+  return `${now.getFullYear()}${two(now.getMonth() + 1)}${two(now.getDate())}-${two(now.getHours())}${two(now.getMinutes())}${two(now.getSeconds())}`;
+}
+
+function pad(value: string, width: number, right = false): string {
+  return right ? value.padStart(width) : value.padEnd(width);
+}
+
+function tabulate(header: readonly string[], rows: readonly (readonly string[])[], numeric: ReadonlySet<number>): string {
+  const widths = header.map((title, column) => Math.max(title.length, ...rows.map((row) => (row[column] ?? '').length)));
+  const format = (row: readonly string[]): string => row.map((cell, column) => pad(cell, widths[column] ?? 0, numeric.has(column))).join('  ').trimEnd();
+  return [format(header), format(widths.map((width) => '-'.repeat(width))), ...rows.map(format)].join('\n');
+}
+
+interface Recorded {
+  readonly unit: Unit;
+  readonly stem: string;
+  readonly results: readonly ExploreResult[];
+  readonly verdicts: readonly ExploreVerdict[];
+}
+
+function summary(recorded: readonly Recorded[], planned: number): string {
+  const groups = new Map<string, Recorded[]>();
+  for (const item of recorded) {
+    const id = item.unit.kind === 'prompt' ? item.unit.prompt.id : item.unit.case.id;
+    const key = `${id}\u0000${item.unit.variant}`;
+    groups.set(key, [...(groups.get(key) ?? []), item]);
+  }
+  const rows: string[][] = [];
+  for (const [key, items] of groups) {
+    const [id = '', variant = ''] = key.split('\u0000');
+    const answers = items.flatMap((item) => item.results);
+    const first = items.flatMap((item) => (item.unit.kind === 'case' ? item.results.slice(0, 1) : item.results));
+    const verdictSets = items.map((item) => item.verdicts);
+    const rates = passRates(verdictSets);
+    const passed = rates.reduce((sum, rate) => sum + rate.passed, 0);
+    const of = rates.reduce((sum, rate) => sum + rate.of, 0);
+    const coherence = mean(answers.flatMap((r) => (r.judge != null && r.judge.failure === null ? [r.judge.coherence] : [])));
+    rows.push([
+      id + (items[0]?.unit.kind === 'case' ? ' (case)' : ''),
+      variant,
+      String(items.length),
+      items.every((item) => item.results.every((r) => r.end === 'done' || r.turn?.interruptedAtMs != null)) ? 'done' : 'NOT DONE',
+      secondsText(median(first.flatMap((r) => (r.firstVisibleMs === null ? [] : [r.firstVisibleMs])))),
+      secondsText(median(first.flatMap((r) => (r.firstTextMs == null ? [] : [r.firstTextMs])))),
+      secondsText(median(first.map((r) => r.totalMs))),
+      secondsText(median(first.flatMap((r) => (r.viewerWaitMs == null ? [] : [r.viewerWaitMs])))),
+      String(Math.round(median(first.flatMap((r) => (r.usage?.outputTokens == null ? [] : [r.usage.outputTokens]))) ?? 0)),
+      money(mean(items.map((item) => item.results.reduce((sum, r) => sum + (r.usage?.costUsd ?? 0), 0)))),
+      of === 0 ? '-' : `${passed}/${of}`,
+      coherence === null ? '-' : coherence.toFixed(1),
+    ]);
+  }
+  const header = ['prompt', 'variant', 'n', 'end', 'vis s', '1st word s', 'last word s', 'viewer s', 'out tok', '$ per sample', 'checks', 'judge'];
+  const numeric = new Set([2, 4, 5, 6, 7, 8, 9, 10, 11]);
+
+  // Pass rate per check over everything, worst first.
+  const everything = passRates(recorded.map((item) => item.verdicts));
+  const weak = everything.filter((rate) => rate.passed < rate.of).sort((a, b) => a.passed / a.of - b.passed / b.of);
+  const rateLines = weak.map((rate) => `  ${pad(`${rate.passed}/${rate.of}`, 7)} ${rate.label}`);
+
+  // Like for like: only the prompts that have a baseline, with the mean over their samples.
+  const compared = [...groups.values()]
+    .filter((items) => items[0]?.unit.kind === 'prompt' && items.some((item) => item.results.some((r) => r.baseline !== null)))
+    .map((items) => {
+      const answers = items.flatMap((item) => item.results);
+      const base = answers.find((r) => r.baseline !== null)?.baseline ?? null;
+      return {
+        tokens: mean(answers.flatMap((r) => (r.usage?.outputTokens == null ? [] : [r.usage.outputTokens]))),
+        cost: mean(answers.flatMap((r) => (r.usage?.costUsd == null ? [] : [r.usage.costUsd]))),
+        wait: mean(answers.flatMap((r) => (r.viewerWaitMs == null ? [] : [r.viewerWaitMs]))),
+        baseTokens: base?.usage.outputTokens ?? null,
+        baseCost: base?.usage.costUsd ?? null,
+        baseMs: base?.totalMs ?? null,
+      };
+    })
+    .filter((row) => row.baseTokens !== null && row.tokens !== null);
+  const sum = (pick: (row: (typeof compared)[number]) => number | null): number => compared.reduce((total, row) => total + (pick(row) ?? 0), 0);
+  const like =
+    compared.length === 0
+      ? ''
+      : `\nlike for like, ${compared.length} prompts with a plain baseline (mean of their samples): output tokens ${Math.round(sum((r) => r.tokens))} against ${sum((r) => r.baseTokens)}, ` +
+        `cost ${money(sum((r) => r.cost))} against ${money(sum((r) => r.baseCost))}, viewer's wait ${(sum((r) => r.wait) / 1000).toFixed(0)} s against ${(sum((r) => r.baseMs) / 1000).toFixed(0)} s generation`;
+
+  const total = recorded.reduce((sumUsd, item) => sumUsd + item.results.reduce((s, r) => s + (r.usage?.costUsd ?? 0) + (r.judge?.costUsd ?? 0), 0), 0);
+  return [
+    tabulate(header, rows, numeric),
+    '',
+    rateLines.length === 0 ? 'every check passed in every sample' : `checks that did not pass every time (passed/ran):\n${rateLines.join('\n')}`,
+    like,
+    `\n${recorded.length} of ${planned} units ran; brain and judge cost ${money(total)}`,
+  ].join('\n');
+}
+
+async function main(): Promise<void> {
+  const options = parseArguments(process.argv.slice(2));
+  const source: Record<string, string | undefined> = { ...processEnvironment() };
+  source.NODE_ENV = undefined;
+  source.BRAIN = options.brain ?? (options.model !== null ? 'claude-cli' : source.BRAIN) ?? 'claude-cli';
+  if (source.BRAIN === 'relay') usageError('the relay brain needs a person on the other end; use --brain replay or --brain claude-cli');
+  if (source.BRAIN === 'replay') source.REPLAY_SCRIPT = undefined;
+  if (options.model !== null) source.CLAUDE_MODEL = options.model;
+  const env: Env = loadEnv(source);
+  const replaying = env.brain.kind === 'replay';
+  const claudeBin = env.brain.kind === 'claude-cli' ? env.brain.bin : (source['CLAUDE_BIN'] ?? 'claude');
+
+  const battery = JSON.parse(await readFile(join(env.exploreDir, 'battery.json'), 'utf8')) as ExploreBattery;
+  const known = new Set([...battery.prompts.map((p) => p.id), ...(battery.cases ?? []).map((c) => c.id)]);
+  if (options.only !== null) {
+    const missing = options.only.filter((id) => !known.has(id));
+    if (missing.length > 0) usageError(`no such prompt or case: ${missing.join(', ')} (known: ${[...known].join(', ')})`);
+  }
+  // A replay brain plays a fixture whatever it is asked: there is nothing to judge and no conversation to carry.
+  const judging = options.judge && !replaying;
+  const casesOn = options.cases && !replaying;
+  const units = unitsOf(battery, { ...options, cases: casesOn });
+  const baselines = options.baseline && env.brain.kind === 'claude-cli';
+  const plan = planOf(units, battery, options, judging, baselines);
+  const model = env.brain.kind === 'claude-cli' ? env.brain.model : null;
+
+  const runsDir = join(env.exploreDir, 'runs');
+  const earlier: ExploreRun[] = [];
+  for (const name of await readdir(runsDir).catch(() => [] as string[])) {
+    try {
+      earlier.push(JSON.parse(await readFile(join(runsDir, name, 'index.json'), 'utf8')) as ExploreRun);
+    } catch {
+      // not a run
+    }
+  }
+  earlier.sort((a, b) => (a.started < b.started ? 1 : -1));
+  const per = perCallFor(model, earlier, judging ? options.judgeModel : null);
+  const projected = replaying ? 0 : projectUsd(plan, per);
+  process.stdout.write(
+    `plan: ${units.length} units (${units.filter((u) => u.kind === 'case').length} conversations), ${callsOf(plan)} model calls ` +
+      `(${plan.firstTurns} cold turns, ${plan.laterTurns} warm turns, ${plan.judgeCalls} judge, ${plan.baselines} baseline), ` +
+      `estimated ${replaying ? '$0 (replay)' : `$${projected.toFixed(2)}`}${replaying ? '' : ` from ${per.source}`}\n`,
+  );
+  if (options.dryRun) return;
+  if (units.length === 0) usageError('nothing to run');
+  if (projected > options.maxUsd && !options.yes) usageError(`projected $${projected.toFixed(2)} is over --max-usd ${options.maxUsd}; narrow it with --only/--held-out/--samples, or pass --yes`);
+  if (replaying && casesOn === false && options.cases && (battery.cases?.length ?? 0) > 0) process.stdout.write('  (the replay brain plays fixtures: scripted conversations and the judge are skipped)\n');
+
+  // One brain per prompt variant, made when first needed from an environment that names the variant (`PROMPT_VARIANT`),
+  // so whatever way the server reads it, the brain was taught the way the card says.
+  const log = createLogger('error');
+  const made = new Map<ExploreVariant, { readonly brains: ReturnType<typeof createBrains>; readonly brain: Brain }>();
+  const brainFor = (variant: ExploreVariant): Brain => {
+    let found = made.get(variant);
+    if (found === undefined) {
+      const forVariant = loadEnv({ ...source, PROMPT_VARIANT: variant });
+      const brains = createBrains({ settings: forVariant.brain, log, relayHub: new RelayHub({ log, now: () => Date.now(), idleTimeoutMs: 1_000 }) });
+      found = { brains, brain: brains.configured };
+      made.set(variant, found);
+    }
+    return found.brain;
+  };
+  const brain = brainFor(options.variants[0] ?? 'column');
+  const services: Services = { paint: env.images.kind !== 'none', sight: 'snapshot' };
+
+  const started = new Date();
+  const baseId = `${stamp(started)}-${brain.id}`;
+  let id = baseId;
+  for (let n = 2; existsSync(join(runsDir, id)); n += 1) id = `${baseId}-${n}`;
+  const dir = join(runsDir, id);
+  await mkdir(dir, { recursive: true });
+
+  const promptChars = buildSystemPrompt({ capabilities: FULL_CAPABILITIES, services }).length;
+  process.stdout.write(`run ${id}: ${units.length} units through ${brain.id}${model === null ? '' : ` (${model})`}${judging ? `, judged by ${options.judgeModel}` : ''}, samples ${options.samples}, variants ${options.variants.join(',')}\n`);
+
+  let eyes: Eyes | null = null;
+  if (judging || casesOn) {
+    process.stdout.write('  starting the headless browser for the pictures ...');
+    try {
+      eyes = await openEyes({ web: options.web, port: WEB_PORT, repo: repoRoot() });
+      process.stdout.write(' ready\n');
+    } catch (error) {
+      process.stdout.write(`\n  no pictures: ${error instanceof Error ? error.message : String(error)}\n`);
+    }
+  }
+  const judgeSettings: JudgeSettings | null = judging && eyes !== null ? { bin: claudeBin, model: options.judgeModel, effort: options.judgeEffort, timeoutMs: 120_000 } : null;
+
+  const index: { entries: ExploreIndexEntry[] } = { entries: [] };
+  const recorded: Recorded[] = [];
+  const measured = { first: [] as number[], later: [] as number[], judge: [] as number[], baseline: [] as number[] };
+  let current: Running | null = null;
+  let stopping = false;
+  let firstStop = 0;
+  const variantChecked = new Set<ExploreVariant>();
+  const baselineCache = new Map<string, ExploreBaseline | null>();
+
+  const writeIndex = async (): Promise<void> => {
+    const run: ExploreRun = {
+      id,
+      started: started.toISOString(),
+      brain: brain.id,
+      model,
+      language: LANGUAGE.version,
+      promptChars,
+      prompts: index.entries,
+      samples: options.samples,
+      variants: options.variants,
+      judgeModel: judging ? options.judgeModel : null,
+      projection: { calls: callsOf(plan), usd: replaying ? null : Number(projected.toFixed(4)) },
+      spentUsd: recorded.reduce((sum, item) => sum + item.results.reduce((s, r) => s + (r.usage?.costUsd ?? 0) + (r.judge?.costUsd ?? 0), 0), 0),
+      measured: { firstTurnUsd: mean(measured.first), laterTurnUsd: mean(measured.later), judgeUsd: mean(measured.judge), baselineUsd: mean(measured.baseline) },
+    };
+    await writeFile(join(dir, 'index.json'), `${JSON.stringify(run, null, 2)}\n`);
+  };
+
+  process.on('SIGINT', () => {
+    // pnpm and tsx each pass the signal on, so one Ctrl-C can arrive more than once within a moment.
+    if (!stopping) {
+      stopping = true;
+      firstStop = Date.now();
+      process.stderr.write('\nexplore: stopping after this unit (Ctrl-C again to stop it now)\n');
+      return;
+    }
+    if (Date.now() - firstStop < 1_000) return;
+    if (current !== null) {
+      current.reason = 'interrupted';
+      current.controller.abort();
+    }
+  });
+
+  const record = async (unit: Unit, results: readonly ExploreResult[], verdicts: readonly ExploreVerdict[], file: unknown, meets: boolean): Promise<void> => {
+    const stem = stemOf(unit);
+    await writeFile(join(dir, `${stem}.json`), `${JSON.stringify(file, null, 2)}\n`);
+    recorded.push({ unit, stem, results, verdicts });
+    const spent = results.reduce((sum, r) => sum + (r.usage?.costUsd ?? 0) + (r.judge?.costUsd ?? 0), 0);
+    const target = unit.kind === 'prompt' ? unit.prompt : unit.case;
+    index.entries.push({
+      id: stem,
+      useCase: target.useCase,
+      end: results.find((r) => r.end !== 'done' && r.turn?.interruptedAtMs == null)?.end ?? 'done',
+      meetsExpectation: meets,
+      promptId: target.id,
+      kind: unit.kind,
+      variant: unit.variant,
+      sample: unit.sample,
+      heldOut: target.heldOut === true,
+      failed: verdicts.filter((v) => !v.ok).map((v) => v.label),
+      checked: verdicts.map((v) => v.label),
+      costUsd: spent,
+    });
+    for (const r of results) if (r.judge?.costUsd != null) measured.judge.push(r.judge.costUsd);
+    await writeIndex();
+  };
+
+  const pending = new Set<Promise<void>>();
+  const later = (work: Promise<void>): void => {
+    const tracked = work.finally(() => pending.delete(tracked));
+    pending.add(tracked);
+  };
+
+  try {
+    for (const unit of units) {
+      if (stopping) break;
+      current = { controller: new AbortController(), reason: null };
+      const running = current;
+      const unitBrain = brainFor(unit.variant);
+      const rig: Rig = {
+        runId: id,
+        brain: unitBrain,
+        services,
+        emptyStage: EMPTY,
+        timeoutMs: options.timeoutMs,
+        running,
+        stopped: () => stopping,
+        judgeSettings,
+        judgeEarlier: Array.from({ length: options.judgeFrames - 1 }, (_, at) => (at + 1) / options.judgeFrames),
+        judgeSide: JUDGE_SIDE,
+        judgeSlots: judgeSlotsShared,
+      };
+      const label = stemOf(unit);
+      process.stdout.write(`  ${label} ...`);
+      const t0 = performance.now();
+
+      if (unit.kind === 'prompt') {
+        const prompt = unit.prompt;
+        if (baselines && prompt.baseline && !baselineCache.has(prompt.id) && env.brain.kind === 'claude-cli') {
+          try {
+            const base = await askBaseline(prompt.prompt, env.brain.bin, env.brain.model, env.brain.effort, running.controller.signal);
+            baselineCache.set(prompt.id, base);
+            if (base?.usage.costUsd != null) measured.baseline.push(base.usage.costUsd);
+          } catch (error) {
+            baselineCache.set(prompt.id, null);
+            process.stderr.write(`explore: baseline for ${prompt.id} failed: ${error instanceof Error ? error.message : String(error)}\n`);
+          }
+        }
+        const session = `explore-${id}-${label}`;
+        unitBrain.open?.({ session, capabilities: FULL_CAPABILITIES, screen: REFERENCE_SCREEN, services });
+        const played = await playTurn({
+          prompt,
+          session,
+          turn: `${session}-t1`,
+          idPrefix: 'x',
+          input: unitBrain.id === 'replay' ? { kind: 'demo', script: replayDemo(prompt) } : { kind: 'prompt', text: prompt.prompt },
+          context: { screen: REFERENCE_SCREEN, capabilities: FULL_CAPABILITIES, services, lead: LEAD_WINDOW, stage: EMPTY_STAGE, history: [], heard: [] },
+          snapshot: null,
+          brain: unitBrain,
+          timeoutMs: options.timeoutMs,
+          interruptAfterMs: null,
+          signal: running.controller.signal,
+          why: () => running.reason,
+        });
+        unitBrain.release?.(session);
+        if (played.system !== null && !variantChecked.has(unit.variant)) {
+          variantChecked.add(unit.variant);
+          if (played.system !== buildSystemPrompt({ capabilities: FULL_CAPABILITIES, services, variant: unit.variant })) {
+            process.stderr.write(`explore: WARNING the brain's system prompt is not the "${unit.variant}" prompt: PROMPT_VARIANT did not reach it, so the variants are not being compared\n`);
+          }
+        }
+        if (played.result.usage?.costUsd != null) measured.first.push(played.result.usage.costUsd);
+        const bad = unreadable(played.result);
+        if (bad > 0) process.stderr.write(`explore: ${bad} lines of ${label} do not re-parse\n`);
+        const base: ExploreResult = { ...played.result, variant: unit.variant, sample: unit.sample, baseline: baselineCache.get(prompt.id) ?? null };
+
+        // The final still and the judge, while the next prompt is being written.
+        let judgement: Promise<ExploreResult['judge']> = Promise.resolve(null);
+        let note: string | null = null;
+        if (eyes !== null && judgeSettings !== null && base.end === 'done' && base.lines.length > 0) {
+          try {
+            const reply = await eyes.look({
+              turn: `${session}-t1`,
+              base: EMPTY_STAGE,
+              lines: base.lines.map((line, at) => ({ seq: line.seq, line: played.accepted[at] as Line })),
+              viewport: { width: REFERENCE_SCREEN.width, height: REFERENCE_SCREEN.height, dpr: 1 },
+              playhead: null,
+              earlier: rig.judgeEarlier,
+              judgeSide: JUDGE_SIDE,
+            });
+            judgement = judgeStills(rig, `${prompt.prompt}`, reply);
+          } catch (error) {
+            note = error instanceof Error ? error.message : String(error);
+            process.stderr.write(`explore: no picture for ${label}: ${note}\n`);
+          }
+        }
+        later(
+          (async () => {
+            const judge = await judgement;
+            const finished: ExploreResult = { ...base, ...(judge === null ? {} : { judge }) };
+            const verdicts = verdictsOf(finished);
+            const result: ExploreResult = { ...finished, verdicts };
+            await record(unit, [result], verdicts, result, result.checks.meetsExpectation);
+          })(),
+        );
+        process.stdout.write(` ${base.end}${base.message === null ? '' : ` (${base.message})`}, ${base.totalMs} ms\n`);
+      } else if (eyes !== null) {
+        const done = await playCase(rig, unit.case, unit.variant, unit.sample, eyes);
+        const first = done.result.turns[0];
+        if (first?.usage?.costUsd != null) measured.first.push(first.usage.costUsd);
+        for (const turn of done.result.turns.slice(1)) if (turn.usage?.costUsd != null) measured.later.push(turn.usage.costUsd);
+        later(
+          done.settled.then(async (final) => {
+            await record(unit, final.turns, final.verdicts, final as ExploreCaseResult, final.turns.every((turn) => turn.end === 'done' || turn.turn?.interruptedAtMs != null));
+          }),
+        );
+        process.stdout.write(` ${done.result.turns.length} turns, ${Math.round(performance.now() - t0)} ms\n`);
+      } else {
+        process.stdout.write(' skipped (no browser)\n');
+      }
+      current = null;
+      while (pending.size > 3) await Promise.race(pending);
+    }
+    await Promise.all(pending);
+  } finally {
+    await Promise.all(pending).catch(() => undefined);
+    await writeIndex();
+    await eyes?.close().catch(() => undefined);
+    for (const found of made.values()) await found.brains.close();
+  }
+
+  process.stdout.write(`\n${summary(recorded, units.length)}\n\nwritten to ${dir}\n`);
+  if (stopping) process.stdout.write(`stopped early: ${recorded.length} of ${units.length} units ran\n`);
+}
+
+const judgeSlotsShared = slots(2);
+
+/** For the replay brain only: a fixture that stands in for the prompt, so the review page has plain text, drawings, a scene and type to show. */
+function replayDemo(prompt: ExplorePrompt): string {
+  const byExpectation: Readonly<Record<ExplorePrompt['expects'], string>> = {
+    plain: 'plainly',
+    drawn: 'sketchbook',
+    motion: 'sketchbook',
+    pixels: 'overture',
+    scene: 'overture',
+    any: 'overture',
+    type: 'titles',
+  };
+  return byExpectation[prompt.expects];
+}
+
+try {
+  await main();
+} catch (error) {
+  process.stderr.write(`explore: ${error instanceof Error ? error.message : String(error)}\n`);
+  process.exitCode = 1;
+}
+// Nothing may hold the process open once the run is written: a warm claude process, a timer, a pipe, a browser.
+process.exit(process.exitCode ?? 0);

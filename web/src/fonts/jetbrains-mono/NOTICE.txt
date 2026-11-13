@@ -1,0 +1,6 @@
+JetBrains Mono, Copyright 2020 The JetBrains Mono Project Authors (https://github.com/JetBrains/JetBrainsMono)
+SIL Open Font License 1.1; the full text is in OFL.txt.
+
+jetbrains-mono-400-fixed.ttf, jetbrains-mono-700-fixed.ttf are the Latin subset from the @fontsource/jetbrains-mono package with
+the GPOS, GSUB, GDEF and kern tables removed, made by `pnpm --filter @conduit/web fonts`.
+The glyphs are unchanged.

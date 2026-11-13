@@ -1,0 +1,6 @@
+VT323, Copyright 2011 The VT323 Project Authors (peter.hull@oikoi.com)
+SIL Open Font License 1.1; the full text is in OFL.txt.
+
+vt323-fixed.ttf is the Latin subset from the @fontsource/vt323 package with
+the GPOS, GSUB and GDEF tables removed, made by `pnpm --filter @conduit/web fonts`.
+The glyphs are unchanged.

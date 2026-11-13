@@ -1,0 +1,6 @@
+Inter, Copyright 2016 The Inter Project Authors (https://github.com/rsms/inter)
+SIL Open Font License 1.1; the full text is in OFL.txt.
+
+inter-400-fixed.ttf, inter-700-fixed.ttf are the Latin subset from the @fontsource/inter package with
+the GPOS, GSUB, GDEF and kern tables removed, made by `pnpm --filter @conduit/web fonts`.
+The glyphs are unchanged.
