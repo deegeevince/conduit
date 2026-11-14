@@ -58,7 +58,7 @@ export class TurnScore {
   constructor(base: StageBase, opened: TurnOpening = 'none') {
     this.base = base;
     this.opened = opened;
-    this.options = { retireChoices: retiresChoices(opened) };
+    this.options = { retireChoices: retiresChoices(opened), freshControls: opened === 'prompt' || opened === 'script' };
     this.current = buildSchedule([], base, this.options);
   }
 

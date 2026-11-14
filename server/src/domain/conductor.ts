@@ -1,4 +1,4 @@
-import { API, CANVAS, DATA_LIMITS, EMPTY_STAGE, PASTE_AS_DOCUMENT_CHARS, FULL_CAPABILITIES, LANGUAGE, LEAD_WINDOW, LineNormalizer, LineReader, TurnScore, buildSystemPrompt, draftFactsOf, serializeLine, settle, splitCells, wearingAt, worthALook } from '@conduit/language';
+import { API, CANVAS, DATA_LIMITS, EMPTY_STAGE, PASTE_AS_DOCUMENT_CHARS, FULL_CAPABILITIES, LANGUAGE, LEAD_WINDOW, LineNormalizer, LineReader, TurnScore, buildSystemPrompt, draftFactsOf, serializeLine, settle, splitCells, wearingAt, withoutUnknownBraces, worthALook } from '@conduit/language';
 import type { ActivityState, BrainChange, BrainChoice, BrainMode, CriticFinding, FixPolicy, PromptVariant, ToolChoice } from '@conduit/language';
 import type {
   BackEvent,
@@ -12,6 +12,7 @@ import type {
   Figure,
   HexColor,
   Issue,
+  Line,
   LineProblem,
   PaintLine,
   ReviewPolicy,
@@ -1227,13 +1228,15 @@ export class Conductor {
       this.reject(s, turn, serializeLine(event.line), [...event.issues, ...normalized.issues]);
       return undefined;
     }
-    const line = normalized.line;
+    const braced = this.withoutRawBraces(turn, normalized.line);
+    const line = braced.line;
+    const bracedIssues: Issue[] = braced.dropped.length === 0 ? [] : [{ code: 'unknown-name', severity: 'warn', message: `${braced.dropped.join(' ')} in the words names no control on stage, so it was taken out; a name in braces must be the id of a slider, toggle or pick you declared` }];
     const seq = s.nextSeq;
     s.nextSeq += 1;
     turn.lineCount += 1;
     const penBefore = turn.score.schedule.pen;
     const pushed = turn.score.push(line, seq, this.estimatePlayhead(turn));
-    const issues: Issue[] = [...event.issues, ...normalized.issues, ...pushed.issues];
+    const issues: Issue[] = [...event.issues, ...normalized.issues, ...bracedIssues, ...pushed.issues];
     const text = serializeLine(line);
     log.debug('turn.line', { turn: turn.id, seq, text });
     if (issues.some((issue) => issue.severity === 'warn')) this.noteProblem(turn, text, 'repaired', issues.filter((issue) => issue.severity === 'warn'));
@@ -1309,6 +1312,30 @@ export class Conductor {
     // `detail` goes to the confirm control only: not to the session log, not to the activity strip. A second net of redaction, keeping its lines.
     const detail = event.detail === undefined ? undefined : redactSecrets(event.detail, DETAIL_MAX, true);
     this.emit(s, turn, { type: 'permission', turn: turn.id, request: event.request, tool: event.tool, summary, risk: event.risk, expiresMs: left, ...(detail === undefined ? {} : { detail }) });
+  }
+
+  /**
+   * The learner never sees a raw `{…}`: braces that read as an expression of names that are no control on stage are taken out of the words
+   * (and said to the brain as a repair, in the next brief).
+   */
+  private withoutRawBraces(turn: ActiveTurn, line: Line): { readonly line: Line; readonly dropped: string[] } {
+    const ids = new Set(turn.score.schedule.elements.filter((element) => element.figure?.kind === 'control').map((element) => element.id));
+    const dropped: string[] = [];
+    const walk = (value: unknown): unknown => {
+      if (Array.isArray(value)) return value.map(walk);
+      if (typeof value !== 'object' || value === null) return value;
+      const out: Record<string, unknown> = {};
+      for (const [key, inner] of Object.entries(value)) {
+        if (key === 'text' && typeof inner === 'string' && inner.includes('{')) {
+          const cleaned = withoutUnknownBraces(inner, (name) => ids.has(name));
+          dropped.push(...cleaned.dropped);
+          out[key] = cleaned.text;
+        } else out[key] = typeof inner === 'object' ? walk(inner) : inner;
+      }
+      return out;
+    };
+    const walked = walk(line) as Line;
+    return { line: dropped.length === 0 ? line : walked, dropped };
   }
 
   private reject(s: Session, turn: ActiveTurn, raw: string, issues: readonly Issue[]): void {

@@ -178,10 +178,14 @@ interface Beside {
 function beside(input: ControlInput, m: Metrics, label: string, labelSpec: TextSpec, tailWidest: string, tailSpec: TextSpec, room: number): Beside {
   const tail = input.measure(tailWidest, tailSpec, room);
   if (label === '') return { label: { x: 0, y: 0, width: 0, height: 0 }, tail: { x: 0, y: 0, width: tail.width, height: tail.height }, width: tail.width, height: tail.height, labelText: { width: 0, height: 0, lineHeight: 0, lines: [] } };
-  const text = input.measure(label, labelSpec, Math.max(m.cellW, room));
+  const gap = m.gap * 2;
+  // The tail keeps the label's last line: the label gives way (it wraps in what the tail leaves) before the tail is put under it.
+  const whole = input.measure(label, labelSpec, Math.max(m.cellW, room));
+  const wholeLast = whole.lines[whole.lines.length - 1];
+  const fits = (wholeLast === undefined ? whole.width : wholeLast.width) + gap + tail.width <= room;
+  const text = fits || room - gap - tail.width < m.cellW * 3 ? whole : input.measure(label, labelSpec, room - gap - tail.width);
   const last = text.lines[text.lines.length - 1];
   const lastWidth = last === undefined ? text.width : last.width;
-  const gap = m.gap * 2;
   if (lastWidth + gap + tail.width <= room) {
     return {
       label: { x: 0, y: 0, width: text.width, height: text.height },

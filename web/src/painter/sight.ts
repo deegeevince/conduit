@@ -345,6 +345,8 @@ export function sightOf(timeline: Timeline, schedule: Schedule, base: StageBase,
         const asked = style.ink;
         const first = placed.runs.find((run) => run.opacity > 0.5);
         if (first !== undefined && asked.startsWith('#') && distance(mapToGamut(asked as `#${string}`, spec), first.colour) > RECOLOURED_DISTANCE) notes.push('recoloured');
+        // an ink named by role (`ink=ground`) that could not be read on what the words stand on was swapped for one that can: said, so the look pass stops asking for it
+        else if (first !== undefined && asked !== 'ink' && !asked.startsWith('#') && distance(spec.roles[asked as keyof typeof spec.roles] ?? first.colour, first.colour) > RECOLOURED_DISTANCE) notes.push('recoloured');
       }
     } else if (underText(entry) !== null) {
       // A figure with words laid over it that needed a plate to be read: whatever it is, a flat fill, a gradient, a sprite, a painting or a sheet that bleeds.
