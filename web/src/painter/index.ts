@@ -1434,7 +1434,7 @@ export function createPainter(options: PainterOptions): Painter {
     const signature = gone.map((line) => line.key).join('|');
     if (signature === heldBack) return;
     heldBack = signature;
-    emit('retired', { lines: gone, column: gone.length === 0 ? null : timeline.planAt(time).flow });
+    emit('retired', { lines: gone, column: gone.length === 0 ? null : timeline.planAt(shown.time).flow });
   };
 
   /** A fingertip is not a pixel: a choice smaller than 44 px is grown to 44 px around its centre for hit-testing only. */
