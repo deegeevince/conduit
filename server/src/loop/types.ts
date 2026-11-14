@@ -10,14 +10,16 @@
 //                the painter's geometry counts, the technique index and the language reference. It writes what
 //                is missing and proposes experiments, cheapest kind first: a technique, then a building block,
 //                then a style, then the prompt. It is never shown the held-out set.
-//   3. BUILD     For each proposal, a coding model (sonnet, effort high) works in a git worktree of its own,
-//                on a branch of its own, with the held-out files absent and the protected paths read-only.
+//   3. BUILD     For each proposal, a coding model (sonnet, effort high, --restricted, no shell) works in an export of
+//                the base commit outside the repository: no .git, no sealed path, the protected paths read-only.
 //                A technique is built as an overlay file, not written to Remote.
-//   4. GUARD     The diff is checked by code: protected paths untouched, no battery text in the source,
-//                typecheck and the prompt budget pass. A diff that fails is discarded unmeasured.
-//   5. RE-MEASURE The held-out set is run on the candidate and, interleaved, again on the baseline, by the same
-//                judge, blind to which is which.
-//   6. DECIDE    `decide` (guard.ts): kept only if better on what it aimed at and no worse anywhere else.
+//   4. GUARD     The diff is read back by code: protected paths untouched, no battery text in the source. The runner
+//                then makes a commit by plumbing and runs typecheck, timeline and the prompt budget on a detached
+//                copy, from the base commit's scripts. A diff that fails is discarded unmeasured.
+//   5. RE-MEASURE The held-out set is run on the candidate and, interleaved, again on the baseline, by the base
+//                commit's harness and the same judge, each arm with its own technique overlay.
+//   6. DECIDE    `decide` (guard.ts): kept only if better on what it aimed at and no worse anywhere else, paired by
+//                prompt, the gain and every veto clearing their own standard error.
 //   7. REVIEW    A reviewer (fable, effort xhigh) reads the kept diff and the numbers cold, looking for a gain
 //                that is the test being gamed rather than the answer being better.
 //   8. STEWARD   The steward (opus, effort medium) approves or refuses, merges an approved experiment into the
@@ -100,15 +102,78 @@ export interface FamilyScore {
   /** median output tokens, and median ms to the first visible line */
   readonly tokens: number;
   readonly firstLineMs: number;
+  /** answers the judge actually judged: a family with none is not in a measure at all (nothing judged is not a zero) */
+  readonly judged: number;
+  /** the family's own measure, when it has one: charts' `chartQuality`, explorables' `responds`, diagrams' readable text; null when nothing was judged on it */
+  readonly own: OwnMeasure | null;
 }
+
+export type OwnName = 'chartQuality' | 'responds' | 'readable';
+export interface OwnMeasure {
+  readonly name: OwnName;
+  /** `chartQuality` is a score from 1 to 5; the others are shares from 0 to 1 */
+  readonly value: number;
+}
+
+/** One prompt's numbers over its samples. Only `coherence` is required of a harness; the rest sharpen the pairing when it gives them. */
+export interface PromptRow {
+  readonly id: string;
+  readonly family: ExploreFamily;
+  readonly coherence: number | null;
+  readonly correct?: number | null;
+  readonly collisions?: number | null;
+  readonly tokens?: number | null;
+  readonly firstLineMs?: number | null;
+  readonly own?: number | null;
+}
+
+/** The three samples a prompt needs for a number to be about the prompt and not about one draw. */
+export const MIN_SAMPLES = 3;
 
 export interface Measure {
   readonly run: string;
   readonly pool: ExplorePool;
   /** the judge's rubric hash: two measures are comparable only when it is the same */
   readonly rubric: string;
+  /** samples per prompt in this run; never fewer than MIN_SAMPLES */
+  readonly samples: number;
   readonly families: Readonly<Partial<Record<ExploreFamily, FamilyScore>>>;
+  /** per prompt, so that two arms can be paired by prompt; empty in a pooled measure */
+  readonly prompts: readonly PromptRow[];
   readonly usd: number;
+}
+
+export type MetricName = 'coherence' | 'correct' | 'collisions' | 'tokens' | 'firstLineMs' | 'own';
+
+/** What one metric did between the arms, and how sure the run can be of it. */
+export interface Estimate {
+  readonly before: number;
+  readonly after: number;
+  /** after less before: the mean of the paired differences */
+  readonly delta: number;
+  /** standard error of that mean; Infinity when there are too few pairs to say */
+  readonly se: number;
+  /** degrees of freedom (pairs less one); 0 when it cannot be estimated */
+  readonly df: number;
+  /** what was paired: the same prompt in both arms (best), or the same round (when the harness reports no per-prompt number for this) */
+  readonly paired: 'prompts' | 'rounds';
+}
+
+export interface FamilyComparison {
+  /** answers judged in each arm, summed over its rounds */
+  readonly judgedBefore: number;
+  readonly judgedAfter: number;
+  readonly ownName: OwnName | null;
+  readonly metrics: Readonly<Partial<Record<MetricName, Estimate>>>;
+}
+
+/** Baseline and candidate, paired. A family is in it only when something was judged in it in every round of both arms. */
+export interface Comparison {
+  readonly pool: ExplorePool;
+  readonly rubric: string;
+  readonly samples: number;
+  readonly rounds: { readonly baseline: number; readonly candidate: number };
+  readonly families: Readonly<Partial<Record<ExploreFamily, FamilyComparison>>>;
 }
 
 export interface Decision {
@@ -135,8 +200,8 @@ export interface ExperimentRecord {
   readonly verdicts: readonly Verdict[];
   /** how far the judge agreed with the owner when this was decided */
   readonly taste: TasteAgreement | null;
-  /** no sheet of the owner's scores exists for this rubric: the run proposed and measured, and only the steward, by hand, may approve it */
+  /** no sheet of the owner's scores exists for this rubric: the run proposed and built nothing (outcome `proposed`) */
   readonly uncalibrated?: boolean;
   readonly usd: number;
-  readonly outcome: 'kept' | 'discarded' | 'refused' | 'failed' | 'awaiting-steward';
+  readonly outcome: 'kept' | 'discarded' | 'refused' | 'failed' | 'awaiting-steward' | 'proposed';
 }
