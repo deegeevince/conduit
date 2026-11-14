@@ -665,7 +665,9 @@ async function runCheck(cx: Cx, spec: Spec): Promise<Res> {
       const ctl = (await controls(cx.tab)).filter((c) => c.control === 'input' || c.control === 'slider' || c.control === 'toggle' || (c.control === 'pick' && c.form !== 'steps'));
       const apps = await cx.tab.eval<number>(`[...document.querySelectorAll('iframe')].filter((f) => f.getBoundingClientRect().height > 50).length`);
       const bad: string[] = [];
-      if (asks + ctl.length === 0) bad.push('nothing to answer or move (no ask, pick, slider or field)');
+      // a lesson page of parts ("0 of 3 done") is the language's own home for asks: the asks are written as each part is opened
+      const lessonPage = /\b\d+ of \d+ done\b/.test(await cx.tab.eval<string>(`document.body.innerText`));
+      if (asks + ctl.length === 0 && !lessonPage) bad.push('nothing to answer or move (no ask, pick, slider or field, no lesson page)');
       if (apps > 0) bad.push('the answer is a live app');
       const walks = script.split('\n').filter((l) => /^pick\b[^|]*\bsteps\b/.test(l));
       if (walks.length > 0) bad.push(`a stepper walks the working: ${walks[0]?.slice(0, 50)}`);
