@@ -76,13 +76,21 @@ export function mountHud(host: HTMLElement, app: StageApp): Hud {
       row('viewport', `${snap.viewport.width}x${snap.viewport.height} @${snap.viewport.dpr}`),
       row('screen', `${snap.screen.cols} cols, ${snap.screen.rows} rows`),
       row('link', diag.linkStatus, diag.linkStatus === 'open' ? 'ok' : 'bad'),
-      row('services', diag.services === null ? 'not heard yet' : `paint ${diag.services.paint ? 'on' : 'off'}`),
+      row('services', diag.services === null ? 'not heard yet' : `paint ${diag.services.paint ? 'on' : 'off'}, look and fix ${diag.services.review ? (app.review.on ? 'on' : 'switched off') : 'off'}`),
+      row('pass', snap.pass === null ? '-' : `${snap.pass.pass} ${snap.pass.state}`),
       row('heard', snap.anticipating ? 'ANTICIPATING (waiting for the turn to open)' : 'no', snap.anticipating ? 'warn' : ''),
       row('show all', snap.showingAll ? 'ON: later lines land settled' : 'off', snap.showingAll ? 'warn' : ''),
     );
     const pictures = snap.elements.filter((element) => element.kind === 'picture');
     for (const picture of pictures.slice(0, 6)) {
       children.push(row('painting', `${picture.id}: ${picture.painting ?? '-'}`, picture.painting === 'unpainted' ? 'warn' : ''));
+    }
+    for (const control of snap.controls.slice(0, 8)) {
+      children.push(row('control', `${control.id} (${control.control}) = ${control.valueText}${control.enabled ? '' : ' [disabled]'}${control.bound ? ' [bound]' : ''}`));
+    }
+    for (const chart of snap.charts.slice(0, 4)) {
+      const probe = app.charts?.probe(chart.key) ?? null;
+      children.push(row('chart', `${chart.id} ${chart.kind}, ${chart.points} points${chart.waiting ? ', waiting' : ''}${probe === null ? '' : `, ${probe.frameMs.median.toFixed(1)} ms median`}`));
     }
     if (snap.glyphStall) children.push(item('renderer is not drawing text', 'bad'));
     if (snap.fault !== null) children.push(item(`painter fault: ${snap.fault}`, 'bad'));

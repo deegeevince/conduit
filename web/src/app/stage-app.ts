@@ -1,7 +1,8 @@
 import { DEFAULT_LOOK, FIRST_LOAD_DEMO, LineNormalizer, LineReader, parseLine, parseReplayDirective, serializeLine } from '@conduit/language';
 import overtureScript from '@conduit/language/demos/overture.series?raw';
-import type { BackEvent, Issue, Line, LeadWindow, LookId, ScreenFacts, Services, Sight, StageEvent, TurnEndReason, TurnInput } from '@conduit/language';
+import type { BackEvent, ControlValue, ControlValues, DataTable, Issue, PassState, Line, LeadWindow, LookId, ScreenFacts, Services, Sight, StageEvent, TurnEndReason, TurnInput } from '@conduit/language';
 import type { ExportJob, ExportRequest, Exporter } from '../contracts/export';
+import type { ChartHost } from '../contracts/chart';
 import type { StageHook } from '../contracts/hook';
 import type { LinkStatus, StageLink } from '../contracts/link';
 import type { Painter } from '../contracts/painter';
@@ -12,9 +13,12 @@ import { createHttpLink } from '../link/http-link';
 import type { HttpLink } from '../link/http-link';
 import { LOOKS } from '../looks';
 import { createPainter } from '../painter';
+import { createChartEngine } from '../render/chart';
 import { createFilm } from '../painter/film';
 import { createPlainRenderer } from '../render/plain';
 import { canUseThree, createThreeRenderer } from '../render/three';
+import { createAccessLayer } from './access';
+import { createChartHost } from './chart-host';
 import { createHook } from './hook';
 import { observeRenderer } from './observe';
 import type { AppParams } from './params';
@@ -65,6 +69,12 @@ export interface StageApp {
   readonly painter: Painter;
   readonly link: StageLink;
   readonly hook: StageHook;
+  /** where this stage's charts live; null when this build has no charting engine */
+  readonly charts: ChartHost | null;
+  /** the line the charting engine's licence asks for, to show in the page; null when there is none */
+  readonly attribution: { readonly text: string; readonly href: string } | null;
+  /** whether the server can look at a draft and fix it, and whether the viewer has it switched on */
+  readonly review: { readonly available: boolean; readonly on: boolean; set(on: boolean): void };
   /** Interrupts whatever is playing, reports it, then starts a turn with this prompt. */
   prompt(text: string): Promise<string>;
   demo(name: string): Promise<string>;
@@ -103,6 +113,30 @@ const CONNECT_DELAYS_MS = [0, 400, 800, 1500, 2500, 4000] as const;
 /** the fixture is performed at a model's speed, as the server's replay brain does */
 const LOCAL_CHARS_PER_SECOND = 240;
 const LOCAL_TURN = 'local-first-load';
+const REVIEW_KEY = 'conduit.lookAndFix';
+const DATA_LIMIT_MS = 20000;
+
+function readReviewSetting(): boolean {
+  try {
+    return window.localStorage.getItem(REVIEW_KEY) !== 'off';
+  } catch {
+    return true;
+  }
+}
+
+function writeReviewSetting(on: boolean): void {
+  try {
+    window.localStorage.setItem(REVIEW_KEY, on ? 'on' : 'off');
+  } catch {
+    // the setting is for this visit only
+  }
+}
+
+function isTable(value: unknown): value is DataTable {
+  if (typeof value !== 'object' || value === null) return false;
+  const table = value as Partial<DataTable>;
+  return typeof table.id === 'string' && Array.isArray(table.columns) && Array.isArray(table.rows);
+}
 
 /** Fixtures that ship inside the page, so the first drawing never waits for the server. */
 const BUNDLED_SCRIPTS: Readonly<Record<string, string>> = { [FIRST_LOAD_DEMO]: overtureScript };
@@ -231,15 +265,25 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
 
   const link: HttpLink = createHttpLink();
   let painter: Painter;
+  host.style.touchAction = 'pinch-zoom';
+  const engine = createChartEngine();
+  const access = createAccessLayer(host, {
+    setControl: (id, value, commit) => painter.setControl(id, value, commit),
+    chartAct: (key, action) => (chartHost === null ? Promise.reject(new Error('No charts.')) : chartHost.act(key, action)),
+  });
+  const chartHost: ChartHost | null = engine === null ? null : createChartHost({ engine, stage: host, access });
   try {
     painter = createPainter({
       renderer,
       viewport,
       lockLook,
+      charts: chartHost,
       pointer: pointerKind(),
       reducedMotion: params.motion === 'reduced' ? true : params.motion === 'full' ? false : null,
     });
   } catch (cause) {
+    chartHost?.dispose();
+    access.dispose();
     try {
       renderer.dispose();
     } catch {
@@ -247,6 +291,13 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     }
     throw new Error(`The stage could not start: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
   }
+  const offControls = painter.on('controls', (views) => access.controls(views));
+  access.controls(painter.snapshot().controls);
+
+  let reviewOn = readReviewSetting();
+  /** the pass the open turn's look-and-fix is at, from the server's `pass` events; null between turns */
+  let passState: PassState | null = null;
+  const dataAbort = new AbortController();
 
   let lead: LeadWindow | null = null;
   let services: Services | null = null;
@@ -338,6 +389,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     else if (snap.clock === 'paused') text = 'paused';
     else if (playing) text = snap.clock === 'hidden' ? 'playing (this tab is in the background)' : 'playing';
     else text = waiting;
+    if (reviewOn && passState !== null && passState !== 'kept' && passState !== 'skipped' && (text === 'playing' || text === 'thinking')) text = 'checking the drawing';
     if (active && text === 'playing' && readingFailed.length > 0) text = readingFailed.join('; ');
     if (link_ === 'reconnecting') {
       text = `reconnecting; ${text}`;
@@ -427,6 +479,24 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     return true;
   }
 
+  /** Rows a chart draws by reference: fetched like a painting's news, handed to the painter; a failure is told as null so the chart says so. */
+  async function loadData(id: string, url: string | null): Promise<void> {
+    if (url === null) {
+      painter.dataArrived(id, null);
+      return;
+    }
+    const timer = setTimeout(() => dataAbort.abort(), DATA_LIMIT_MS);
+    try {
+      const response = await fetch(url, { signal: dataAbort.signal });
+      const body: unknown = response.ok ? await response.json() : null;
+      if (!disposed) painter.dataArrived(id, isTable(body) ? body : null);
+    } catch {
+      if (!disposed) painter.dataArrived(id, null);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   function noteReject(note: RejectNote): void {
     rejects.push(note);
     if (rejects.length > MAX_REJECTS) rejects.shift();
@@ -460,6 +530,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
         notice = null;
         readingNow.clear();
         readingFailed = [];
+        passState = null;
         pending = Math.max(0, pending);
         painter.openTurn(event.turn, event.input);
         if (stopPending) {
@@ -503,18 +574,21 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
         painter.assetArrived(event.key, event.status, event.url);
         return;
       case 'data':
-        // STUB (PLAN-v2.md, package A): fetch `event.url` (a DataTable) and hand it to `painter.dataArrived`; `failed` hands it null.
-        if (event.status === 'failed') painter.dataArrived(event.id, null);
+        void loadData(event.id, event.status === 'ready' ? event.url : null);
         return;
       case 'pass':
         // Look and fix: the painter answers `drafted` with a draft report; the other states are for the status line.
-        if (event.turn === currentTurn) painter.notePass(event.turn, event.pass, event.state);
+        // With the switch off the painter is not told, so no picture of the draft is made or sent.
+        if (event.turn !== currentTurn || !reviewOn) return;
+        passState = event.state;
+        painter.notePass(event.turn, event.pass, event.state);
         return;
       case 'end':
         if (event.turn !== currentTurn) return;
         endStarting();
         lastEnd = { reason: event.reason, message: event.message };
         readingNow.clear();
+        passState = null;
         currentTurn = null;
         painter.closeTurn(event.turn, event.reason);
         return;
@@ -603,6 +677,10 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
         return;
       }
     }
+    if (event.type === 'control' && event.turn === LOCAL_TURN) {
+      publishBack({ ...event, turn: mutedTurn });
+      return;
+    }
     if (('turn' in event && event.turn === LOCAL_TURN) || (event.type === 'report' && event.report.turn === LOCAL_TURN)) {
       // About the local demo: the server knows it under its own id, once it has one.
       if (event.type === 'started' || event.type === 'progress') return;
@@ -630,6 +708,18 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
       if (starting) return;
       sendBack(event);
       void submit({ kind: 'tap', id: event.id, text: event.text }, keyOfChoice(event.id), true).catch(noteTurnFailure);
+      return;
+    }
+    if (event.type === 'control' && event.send) {
+      // A press, or a change the viewer meant for the brain: it is also the next turn's input, as a choice's tap is.
+      if (starting) return;
+      sendBack(event);
+      const views = painter.snapshot().controls;
+      const view = views.find((candidate) => candidate.id === event.id);
+      const values: Record<string, ControlValue> = {};
+      for (const candidate of views) if (candidate.value !== null) values[candidate.id] = candidate.value;
+      const text = view === undefined ? event.text : view.control === 'pick' ? view.valueText : view.label !== '' ? view.label : event.text;
+      void submit({ kind: 'act', id: event.id, text, values: values satisfies ControlValues }, null, true).catch(noteTurnFailure);
       return;
     }
     sendBack(event);
@@ -699,26 +789,90 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   });
   observer?.observe(host);
 
-  let hoverTimer = 0;
+  /** the pointers a control has taken: the rest of their gesture is the control's */
+  const taken = new Set<number>();
+  let hoverFrame = 0;
+  let hoverAt: { readonly x: number; readonly y: number } | null = null;
+  const inChart = (event: Event): boolean => event.target instanceof Element && event.target.closest('.stage__chart') !== null;
+  const localPoint = (event: PointerEvent): { readonly x: number; readonly y: number } => {
+    const box = host.getBoundingClientRect();
+    return { x: event.clientX - box.left, y: event.clientY - box.top };
+  };
+  const controlAt = (point: { readonly x: number; readonly y: number }): string | null => {
+    const views = painter.snapshot().controls;
+    for (let index = views.length - 1; index >= 0; index -= 1) {
+      const view = views[index];
+      if (view === undefined || !view.enabled) continue;
+      const box = view.box;
+      if (point.x >= box.x && point.x <= box.x + box.width && point.y >= box.y && point.y <= box.y + box.height) return view.id;
+    }
+    return null;
+  };
   const tappableAt = (x: number, y: number): boolean =>
     painter.snapshot().elements.some((el) => el.tappable && x >= el.box.x && x <= el.box.x + el.box.width && y >= el.box.y && y <= el.box.y + el.box.height);
   const onPointerDown = (event: PointerEvent): void => {
-    if (event.button !== 0) return;
-    const box = host.getBoundingClientRect();
-    const x = event.clientX - box.left;
-    const y = event.clientY - box.top;
+    if (event.button !== 0 || inChart(event)) return;
+    const { x, y } = localPoint(event);
+    if (painter.pointer({ phase: 'down', x, y, pointer: event.pointerId })) {
+      taken.add(event.pointerId);
+      event.preventDefault();
+      try {
+        host.setPointerCapture(event.pointerId);
+      } catch {
+        // a pointer that has already gone: its up is not coming either
+        taken.delete(event.pointerId);
+      }
+      return;
+    }
     if (starting && tappableAt(x, y)) return;
     painter.tapAt(x, y);
   };
   const onPointerMove = (event: PointerEvent): void => {
-    const now = performance.now();
-    if (now - hoverTimer < 100) return;
-    hoverTimer = now;
-    const box = host.getBoundingClientRect();
-    host.style.cursor = !starting && tappableAt(event.clientX - box.left, event.clientY - box.top) ? 'pointer' : '';
+    if (inChart(event)) return;
+    const point = localPoint(event);
+    if (taken.has(event.pointerId)) {
+      // A drag is not throttled: the picture follows the finger in the same frame.
+      painter.pointer({ phase: 'move', x: point.x, y: point.y, pointer: event.pointerId });
+      return;
+    }
+    if (event.pointerType === 'touch') return;
+    hoverAt = point;
+    if (hoverFrame !== 0) return;
+    hoverFrame = requestAnimationFrame(() => {
+      hoverFrame = 0;
+      const at = hoverAt;
+      if (at === null || disposed) return;
+      const over = painter.pointer({ phase: 'move', x: at.x, y: at.y, pointer: -1 });
+      host.style.cursor = over || (!starting && tappableAt(at.x, at.y)) ? 'pointer' : '';
+    });
+  };
+  const onPointerEnd = (event: PointerEvent): void => {
+    if (!taken.has(event.pointerId)) return;
+    taken.delete(event.pointerId);
+    const point = localPoint(event);
+    painter.pointer({ phase: event.type === 'pointerup' ? 'up' : 'cancel', x: point.x, y: point.y, pointer: event.pointerId });
+    try {
+      host.releasePointerCapture(event.pointerId);
+    } catch {
+      // already released
+    }
+    // The keyboard carries on from the control that was worked; a text field gets its keyboard now, while the gesture is still the user's.
+    if (event.type === 'pointerup') {
+      const id = controlAt(point);
+      if (id !== null) access.focusControl(id);
+    }
+  };
+  const onPointerLeave = (event: PointerEvent): void => {
+    if (event.pointerType === 'touch' || taken.has(event.pointerId)) return;
+    hoverAt = null;
+    painter.pointer({ phase: 'move', x: -1e5, y: -1e5, pointer: -1 });
+    host.style.cursor = '';
   };
   host.addEventListener('pointerdown', onPointerDown);
   host.addEventListener('pointermove', onPointerMove);
+  host.addEventListener('pointerup', onPointerEnd);
+  host.addEventListener('pointercancel', onPointerEnd);
+  host.addEventListener('pointerleave', onPointerLeave);
 
   function getExporter(): Exporter {
     exporter ??= createExporter({ createRenderer: () => newRenderer(params) });
@@ -770,6 +924,24 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   const app: Omit<StageApp, 'hook'> = {
     painter,
     link,
+    charts: chartHost,
+    attribution: engine?.attribution ?? null,
+    review: {
+      get available() {
+        return services?.review === true;
+      },
+      get on() {
+        return reviewOn;
+      },
+      set(on) {
+        reviewOn = on;
+        writeReviewSetting(on);
+        link.setReview(on);
+        if (!on) passState = null;
+        lastStatus = '';
+        publishStatus();
+      },
+    },
     prompt: (text) => submit({ kind: 'prompt', text }, null, true),
     demo: (name) => submit({ kind: 'demo', script: name }, null, true),
     playScript: (text) => submit({ kind: 'script', text }, null, true),
@@ -829,6 +1001,12 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
       observer?.disconnect();
       host.removeEventListener('pointerdown', onPointerDown);
       host.removeEventListener('pointermove', onPointerMove);
+      host.removeEventListener('pointerup', onPointerEnd);
+      host.removeEventListener('pointercancel', onPointerEnd);
+      host.removeEventListener('pointerleave', onPointerLeave);
+      cancelAnimationFrame(hoverFrame);
+      dataAbort.abort();
+      offControls();
       offEvent();
       offLinkStatus();
       offDropped();
@@ -841,6 +1019,8 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
       exporter?.dispose();
       link.close();
       painter.dispose();
+      chartHost?.dispose();
+      access.dispose();
       renderer.dispose();
     },
   };
