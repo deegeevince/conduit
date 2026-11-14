@@ -1,0 +1,31 @@
+{
+ "id": "app-frame-fits-content",
+ "title": "a draggable-items app: its frame fits its content and every part is reachable",
+ "family": "placement",
+ "owner": "painter",
+ "kind": "draw",
+ "found": "2026-11-15",
+ "note": "A drag-and-drop app taller than the room had the targets below its frame, unreachable. The frame takes the content's height up to the room; the words give way; only then does it scroll.",
+ "own": [
+  "app-fills-stage"
+ ],
+ "surface": "main",
+ "priority": "high",
+ "turns": [
+  {
+   "say": "can you make a drag and drop game where I share cookies out to my friends",
+   "source": {
+    "log": "owner",
+    "turns": [
+     "t16"
+    ]
+   },
+   "check": [
+    {
+     "k": "app-fills-stage",
+     "min": 0.4
+    }
+   ]
+  }
+ ]
+}

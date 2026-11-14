@@ -1457,9 +1457,18 @@ interface FootRow {
 }
 
 /** The choices set in rows across `width`: each row as many as fit, the rest wrap. */
-function footRows(units: readonly Unit[], width: number, ctx: Context): { rows: FootRow[]; height: number; vgap: number; hgap: number } {
+function footRows(units: readonly Unit[], width: number, ctx: Context, limit?: number): { rows: FootRow[]; height: number; vgap: number; hgap: number } {
   // the choices are set a little smaller before they wrap onto a second row: the foot is room taken from everything else
   let laid = footRowsAt(units, width, ctx, 1);
+  // Given the height the foot has, a choice is never let go while setting the choices a step smaller (the same steps) makes them fit
+  if (limit !== undefined && laid.height > limit + EPS) {
+    for (const k of ctx.viewport.width < 600 ? [] : [0.85, 0.72]) {
+      const tighter = footRowsAt(units, width, ctx, k);
+      if (tighter.height < laid.height - EPS) laid = tighter;
+      if (laid.height <= limit + EPS) return laid;
+    }
+    return laid;
+  }
   // a phone keeps its choices at full size, one to a row, so that each is a target a thumb can find
   for (const k of ctx.viewport.width < 600 ? [] : [0.85, 0.72]) {
     if (laid.rows.length <= 1) break;
@@ -1519,12 +1528,12 @@ export function arrange(input: LayoutInput): Arrangement {
   if (foot !== undefined) {
     // the oldest choices let go when the foot cannot hold all of them
     let shown = footed;
-    let laid = footRows(shown, foot.width, ctx);
+    let laid = footRows(shown, foot.width, ctx, foot.height);
     while (laid.height > foot.height + EPS && shown.length > 1) {
       const [gone, ...kept] = shown;
       if (gone !== undefined) overflow.push(gone.main.item.key);
       shown = kept;
-      laid = footRows(shown, foot.width, ctx);
+      laid = footRows(shown, foot.width, ctx, foot.height);
     }
     let top = foot.y;
     for (const row of laid.rows) {
