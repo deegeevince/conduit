@@ -248,3 +248,9 @@ button.seg:not(.lit) { opacity: 0.62; }
 .tile { min-width: 104px; min-height: 80px; padding: 0 18px; font: 800 34px var(--font); color: var(--ink); background: var(--card); border: 3px solid var(--ink); border-radius: 16px; cursor: grab; touch-action: none; }
 .tile.picked { background: var(--accent); color: var(--on-accent); }
 .tile.lifted { box-shadow: 0 10px 22px rgba(0,0,0,.35); transform: scale(1.06); cursor: grabbing; }
+
+/* her working, kept: what she wrote for each try */
+.tries { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 8px; }
+.try { margin: 0; display: grid; gap: 4px; justify-items: start; }
+.try img { height: 84px; max-width: 220px; background: #fffdf6; border: 2px solid var(--line); border-radius: 10px; padding: 4px; }
+.try figcaption { color: var(--dim); font-size: 18px; }

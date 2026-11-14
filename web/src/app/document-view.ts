@@ -10,7 +10,7 @@
 //   http-link.ts   documentLink: DocumentLink = { sendState: (c) => send({ type: 'state', turn, document: id, change: c }), documents, open }
 
 import { accepts, initialState, nodeOf } from '@conduit/language';
-import type { DocNode, LessonAsk } from '@conduit/language';
+import type { DocNode, DocumentInk as KeptInk, InkDocument, LessonAsk } from '@conduit/language';
 import { DocumentHost, catalogueFromSummaries } from './document-host';
 import type { DocumentLink } from './document-host';
 import { createCrops } from './document-crops';
@@ -38,6 +38,9 @@ export interface DocumentViewOptions {
   readonly ink?: {
     upload(png: Blob): Promise<string>;
     read(request: { readonly image: string; readonly node: string; readonly ask: string }): Promise<{ readonly lines: readonly string[]; readonly unclear: boolean }>;
+    /** her writing kept with the document, and fetched again when it is opened */
+    keep(record: { readonly node: string; readonly ask: string; readonly n: number; readonly text: string; readonly doc: InkDocument }): void;
+    fetch(document: string): Promise<readonly KeptInk[]>;
   };
   /** where a photo of this conversation is, by its id: a question's crop is cut from it */
   readonly photoUrl?: (id: string) => string | null;
@@ -95,17 +98,27 @@ export function createDocumentView(options: DocumentViewOptions): DocumentView {
           read: options.ink.read,
           answer: (node, ask, text, said) => host?.write(node, ask, text, said),
           note: (text) => options.onNote?.(text),
+          keep: options.ink.keep,
+          tryNumber: (node, ask) => (host?.current.progress[node]?.tries[ask]?.length ?? 0) + 1,
+          onWorking: () => {
+            if (host !== null && doc !== null) host.setInput(input(doc, host.current));
+          },
         });
   const crops = createCrops(options.photoUrl ?? (() => null), () => {
     if (host !== null && doc !== null) host.setInput(input(doc, host.current));
   });
-  const input = (next: Document, state: DocState): LessonInput => ({ doc: next, state, crops: crops.of(next), stills: {}, catalogue, picture: true, ink: pen !== null });
+  const input = (next: Document, state: DocState): LessonInput => ({ doc: next, state, crops: crops.of(next), stills: {}, catalogue, picture: true, ink: pen !== null, ...(pen === null ? {} : { working: pen.working() }) });
 
   const refresh = (): void => {
     void options.link.documents().then((summaries) => {
       catalogue = catalogueFromSummaries(summaries, doc?.id ?? '');
       if (host !== null && doc !== null) host.setInput(input(doc, host.current));
     }, () => undefined);
+  };
+
+  /** her writing kept with this document (the papers as she left them, and every try's working), for a reload or another browser */
+  const keptInk = (id: string): void => {
+    void options.ink?.fetch(id).then((records) => pen?.restore(records), () => undefined);
   };
 
   const mount = (next: Document, state: DocState): void => {
@@ -131,12 +144,14 @@ export function createDocumentView(options: DocumentViewOptions): DocumentView {
             host?.setInput(input(view.document, view.state), true);
             options.onShown?.(view.document.id);
             refresh();
+            keptInk(view.document.id);
           }, (cause: unknown) => options.onNote?.(cause instanceof Error ? cause.message : 'That document could not be opened.'));
         },
         onNote: options.onNote,
         onPicture: () => toggle(false), onSlot: (slot) => pen?.slot(slot), onInkCheck: (node, ask) => void pen?.check(node, ask), onInkClear: (node, ask) => pen?.clear(node, ask) });
       options.onShown?.(next.id);
       refresh();
+      keptInk(next.id);
     } else host.setInput(input(next, host.current));
   };
 

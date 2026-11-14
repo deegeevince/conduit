@@ -3,9 +3,9 @@
 // `on {node, ask}`. A hand drawn there is read by the server (`readInk`: a cheap model only transcribes), and the words go back to the lesson as her
 // try, where the document's own matcher says whether it is right. Nothing here knows a worksheet: any ask with a slot gets a pen.
 
-import { overlayOn } from '../ink';
+import { exportSvg, overlayOn } from '../ink';
 import type { Overlay } from '../ink';
-import type { DocNode, Document, LessonAsk, NodeId } from '@conduit/language';
+import type { DocNode, Document, DocumentInk as KeptInk, InkDocument, LessonAsk, NodeId } from '@conduit/language';
 
 export interface InkSlot {
   readonly node: NodeId;
@@ -27,6 +27,20 @@ export interface DocumentInkOptions {
   /** what came of Check: her working as text for the ask, or null (and a sentence for her) */
   readonly answer: (node: NodeId, ask: string, text: string | null, said?: string) => void;
   readonly note: (text: string) => void;
+  /** her writing is kept with the document: the paper as it stands (`n` 0) and each try's strokes (`n` 1…) with what was read from them */
+  readonly keep: (record: { readonly node: string; readonly ask: string; readonly n: number; readonly text: string; readonly doc: InkDocument }) => void;
+  /** which try the next Check is, for this ask (the tries so far, and one) */
+  readonly tryNumber: (node: NodeId, ask: string) => number;
+  /** her tries' working changed: for the lesson to show */
+  readonly onWorking: () => void;
+}
+
+/** One try's working, as the lesson shows it: a small picture of the strokes and what the reader read. */
+export interface Working {
+  readonly n: number;
+  readonly text: string;
+  /** an image the sandbox may show (`data:`) */
+  readonly src: string;
 }
 
 export interface DocumentInk {
@@ -36,6 +50,10 @@ export interface DocumentInk {
   check(node: NodeId, ask: string): Promise<void>;
   /** a clean sheet */
   clear(node: NodeId, ask: string): void;
+  /** What was kept with the document (a reload, another browser): the papers as she left them, and every try's working. */
+  restore(records: readonly KeptInk[]): void;
+  /** every try's working, by ask (`node` and `ask` joined with a NUL) */
+  working(): Readonly<Record<string, readonly Working[]>>;
   /** how many strokes wait on the paper now (for the browser checks) */
   strokes(): number;
   dispose(): void;
@@ -67,6 +85,20 @@ export function createDocumentInk(options: DocumentInkOptions): DocumentInk {
   let current: { readonly key: string; readonly slot: InkSlot; overlay: Overlay } | null = null;
   /** what is written on a paper that has gone out of sight (scrolled away, the lesson drawn again), by ask, for when it is back */
   const kept = new Map<string, ReturnType<Overlay['ink']['document']>>();
+  const history = new Map<string, Working[]>();
+  const srcOf = (doc: InkDocument): string | null => {
+    const svg = exportSvg(doc);
+    return svg === null ? null : `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  };
+  let draftTimer: ReturnType<typeof setTimeout> | undefined;
+  const saveDraft = (): void => {
+    clearTimeout(draftTimer);
+    draftTimer = setTimeout(() => {
+      if (current === null) return;
+      const { slot, overlay } = current;
+      options.keep({ node: slot.node, ask: slot.ask, n: 0, text: '', doc: overlay.ink.document() });
+    }, 700);
+  };
 
   const drop = (): void => {
     if (current !== null && current.overlay.ink.model.strokes.length > 0) kept.set(current.key, current.overlay.ink.document());
@@ -108,6 +140,7 @@ export function createDocumentInk(options: DocumentInkOptions): DocumentInk {
       });
       overlay.container.setAttribute('data-document-ink', slot.ask);
       if (document_ !== null) overlay.ink.load(document_);
+      overlay.ink.onChange(saveDraft);
       current = { key, slot, overlay };
     },
     async check(node, ask) {
@@ -124,8 +157,16 @@ export function createDocumentInk(options: DocumentInkOptions): DocumentInk {
         const read = await options.read({ image, node, ask });
         const found = askOf(options.document(), node, ask);
         if (read.lines.length === 0) return options.answer(node, ask, null, 'I could not read that. Try writing it bigger, or press Type it.');
-        // her page is read once: what she wrote is now her try, kept as text in her tries
+        // her page is read once: what she wrote is now her try, kept as text in her tries, and its strokes are kept with the document
+        const n = options.tryNumber(node, ask);
+        const doc = ink.document();
+        const kind = `${node}\u0000${ask}`;
+        const src = srcOf(doc);
+        if (src !== null) history.set(kind, [...(history.get(kind) ?? []).filter((w) => w.n !== n), { n, text: read.lines.join('  '), src }]);
+        options.keep({ node, ask, n, text: read.lines.join('\n'), doc });
         ink.reset();
+        kept.delete(kind);
+        options.onWorking();
         options.answer(node, ask, tryText(read.lines, found?.step.check === 'working'));
       } catch (cause) {
         options.answer(node, ask, null, cause instanceof Error && cause.message !== '' ? `I could not read that (${cause.message}). Press Type it to type your answer.` : 'I could not read that. Press Type it to type your answer.');
@@ -134,6 +175,20 @@ export function createDocumentInk(options: DocumentInkOptions): DocumentInk {
     clear(node, ask) {
       if (current?.key === `${node}\u0000${ask}`) current.overlay.ink.reset();
     },
+    restore(records) {
+      for (const record of records) {
+        const kind = `${record.node}\u0000${record.ask}`;
+        if (record.n === 0) {
+          if (current?.key === kind) current.overlay.ink.load(record.doc);
+          else kept.set(kind, record.doc);
+          continue;
+        }
+        const src = srcOf(record.doc);
+        if (src !== null) history.set(kind, [...(history.get(kind) ?? []).filter((w) => w.n !== record.n), { n: record.n, text: record.text.split('\n').join('  '), src }].sort((a, b) => a.n - b.n));
+      }
+      options.onWorking();
+    },
+    working: () => Object.fromEntries(history),
     strokes: () => current?.overlay.ink.model.strokes.length ?? 0,
     dispose() {
       drop();

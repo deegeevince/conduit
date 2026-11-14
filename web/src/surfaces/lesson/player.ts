@@ -484,6 +484,7 @@ export class Player {
         { class: `ask closed${right === undefined ? ' worked' : ' right'}`, 'data-ask': ask.id },
         h('p', { class: 'ask-prompt' }, ask.prompt),
         right === undefined ? h('p', { class: 'verdict good' }, 'Let’s see how it works.') : h('p', { class: 'verdict good' }, h('span', { class: 'tick' }, '✓'), ` Yes! ${right} is right.`),
+        this.tries(node, ask),
       );
     }
     const card = h('article', { class: 'ask open', 'data-ask': ask.id, 'aria-label': 'Your turn' }, h('p', { class: 'ask-prompt' }, mask(ask.prompt)));
@@ -539,7 +540,7 @@ export class Player {
             },
           }),
         );
-        return this.hinted(card, view, ask, mask);
+        return this.hinted(card, view, ask, mask, node);
       }
       const writing = typedWriting({
         node: node.id,
@@ -555,10 +556,21 @@ export class Player {
       writing.element.querySelector('input')?.addEventListener('focus', () => window.setTimeout(() => card.scrollIntoView({ block: 'center', behavior: 'smooth' }), 250));
       card.append(writing.element);
     }
-    return this.hinted(card, view, ask, mask);
+    return this.hinted(card, view, ask, mask, node);
   }
 
-  private hinted(card: HTMLElement, view: NonNullable<ReturnType<typeof askView>>, ask: LessonAsk, mask: (text: string) => string): HTMLElement {
+  /** Her working for the tries of an ask, as she wrote it: a small picture of the strokes and the words read from them. Null when there is none. */
+  private tries(node: DocNode, ask: LessonAsk): HTMLElement | null {
+    const kept = this.input.working?.[`${node.id}\u0000${ask.id}`] ?? [];
+    if (kept.length === 0) return null;
+    const row = h('div', { class: 'tries', 'aria-label': 'What you wrote' });
+    for (const item of kept) row.append(h('figure', { class: 'try' }, h('img', { src: item.src, alt: `What you wrote: ${item.text}` }), h('figcaption', {}, item.text === '' ? '' : `${item.n}. ${item.text}`)));
+    return row;
+  }
+
+  private hinted(card: HTMLElement, view: NonNullable<ReturnType<typeof askView>>, ask: LessonAsk, mask: (text: string) => string, node?: DocNode): HTMLElement {
+    const tried = node === undefined ? null : this.tries(node, ask);
+    if (tried !== null) card.append(tried);
     if (view.wrong > 0) {
       const feedback = h('div', { class: 'nudge', role: 'status' }, h('p', { class: 'verdict' }, 'Not yet. Have another look.'));
       if (view.hint !== null) feedback.append(h('p', { class: 'hint' }, h('b', {}, `Hint ${Math.min(view.wrong, ask.hints.length)}: `), mask(view.hint)));

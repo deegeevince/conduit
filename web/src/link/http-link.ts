@@ -1,5 +1,5 @@
 import { API, checkStageEvent, STAGE_EVENT_TYPES, STREAM_HEARTBEAT } from '@conduit/language';
-import type { AppStatus, BackEvent, BrainChange, BrainChoice, CreateSessionRequest, DemoInfo, DocumentSummary, DocumentView, OpenDocumentResponse, StageEvent, StageEventType, StartTurnRequest, ToolChoice, TurnInput, UploadCrop, UploadResponse, VoiceResponse, VoiceStatus } from '@conduit/language';
+import type { AppStatus, BackEvent, InkDocument, BrainChange, BrainChoice, CreateSessionRequest, DemoInfo, DocumentInk, DocumentSummary, DocumentView, OpenDocumentResponse, StageEvent, StageEventType, StartTurnRequest, ToolChoice, TurnInput, UploadCrop, UploadResponse, VoiceResponse, VoiceStatus } from '@conduit/language';
 import type { LinkStatus, StageLink } from '../contracts/link';
 import type { PainterUpload } from '../contracts/painter';
 import { asAsks, asBrainChoice, asDemos, asSessionResponse, asStatus, asTools, asTurnId, messageOf } from './guards';
@@ -57,6 +57,10 @@ export interface HttpLink extends StageLink {
    * Rejects with the server's sentence; the link is left on the session it had.
    */
   resumeDocument(id: string, ready?: CreateSessionRequest): Promise<DocumentView>;
+  /** v3. Keeps her strokes with the session's document: `n` 0 is the paper as it stands, 1… is that try (with what was read from it). Best effort: a failure is a note, never a stop. */
+  keepInk(record: { readonly node: string; readonly ask: string; readonly n: number; readonly text: string; readonly doc: InkDocument }): Promise<void>;
+  /** v3. Every stroke kept with a document: the papers as they stand and every try's working, latest of each. */
+  documentInk(id: string): Promise<readonly DocumentInk[]>;
   /** v3. Reads what the person wrote by hand in an ask's answer area, from the picture of the ink (an upload id): the words, as the server's reader sees them. */
   readInk(request: { readonly image: string; readonly node: string; readonly ask: string }): Promise<{ readonly text: string; readonly lines: readonly string[]; readonly unclear: boolean }>;
 }
@@ -601,6 +605,21 @@ export function createHttpLink(): HttpLink {
       setStatus('open');
       void flush();
       return body.view;
+    },
+
+    async keepInk(record): Promise<void> {
+      if (session === null || !canSend()) return;
+      try {
+        const response = await fetch(API.keepInk(session), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(record) });
+        if (!response.ok) note(`her writing was not kept (${response.status})`);
+      } catch {
+        note('her writing was not kept: the server cannot be reached');
+      }
+    },
+
+    async documentInk(id: string): Promise<readonly DocumentInk[]> {
+      const body = await bodyOf(await fetch(API.documentInk(id), { cache: 'no-store' }));
+      return Array.isArray(body) ? (body as DocumentInk[]) : [];
     },
 
     async readInk(request): Promise<{ readonly text: string; readonly lines: readonly string[]; readonly unclear: boolean }> {

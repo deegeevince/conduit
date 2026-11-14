@@ -98,6 +98,8 @@ export interface LessonInput {
   readonly picture?: boolean;
   /** the page lays an ink area over the writing slot (`data-ink-slot`) of an open ask: the lesson draws a blank paper there and a Check that asks the page to read it, with the typed field one tap away */
   readonly ink?: boolean;
+  /** what her hand wrote for each try of an ask (`node`, a NUL, `ask`): a small picture of the strokes and the words read from them; shown with the ask */
+  readonly working?: Readonly<Record<string, readonly { readonly n: number; readonly text: string; readonly src: string }[]>>;
 }
 
 /** What the page read from her hand: `text` is her working as lines (a try); null says it could not be read, with a sentence for her. `seq` counts, so it is taken once. */

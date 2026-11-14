@@ -816,6 +816,10 @@ export const API = {
   documentOpen: (id: string): string => `/api/documents/${id}/open`,
   /** v3. POST `{ image, node, ask }` (the upload id of the picture of the ink): reads what a hand wrote in an ask's answer area. 200 `{ text, lines, unclear }`. */
   readInk: (session: string): string => `/api/sessions/${session}/read-ink`,
+  /** v3. POST `{ node, ask, n, text, doc }` (an `InkDocument`): keeps her strokes with the session's document (`n` 0: the paper as it stands; 1…: that try). 204. */
+  keepInk: (session: string): string => `/api/sessions/${session}/ink`,
+  /** v3. GET: every stroke kept with a document, latest of each (node, ask, n), as `DocumentInk[]`. */
+  documentInk: (id: string): string => `/api/documents/${id}/ink`,
   /** v3. GET: the cut of the photo a question sits on, kept with the document (a JPEG); 404 when none was cut. `node` is the question's id, encoded. */
   documentCrop: (id: string, node: string): string => `/api/documents/${id}/crop?node=${encodeURIComponent(node)}`,
   /** v3. GET: the document this session is making or has reopened, as `DocumentView`; 404 until it has one. */

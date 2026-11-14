@@ -437,6 +437,8 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     ink: {
       upload: async (png) => (await link.uploadPhoto(png)).id,
       read: (request) => link.readInk(request),
+      keep: (record) => void link.keepInk(record),
+      fetch: (document) => link.documentInk(document),
     },
     link: {
       sendState: (change) => {

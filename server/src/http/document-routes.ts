@@ -4,7 +4,7 @@
 import { API } from '@conduit/language';
 import type { DocumentSummary, DocumentView, OpenDocumentResponse } from '@conduit/language';
 import type { Hono } from 'hono';
-import { nodeOf } from '@conduit/language';
+import { INK_LIMITS, checkInkDocument, nodeOf } from '@conduit/language';
 import { DOCUMENT_ID } from '../domain/document';
 import { readInk } from '../judge/ink';
 import { parseCreateSession } from '../domain/validate';
@@ -81,6 +81,32 @@ export function registerDocumentRoutes(app: Hono, deps: HttpDeps): void {
     if (reading.failure !== null) throw errors.brainFailed(reading.failure);
     return c.json({ text: reading.lines.join('\n'), lines: reading.lines, unclear: reading.unclear });
   });
+
+  /**
+   * Body `{ node, ask, n, text, doc }`: her strokes (an `InkDocument`) for an ask, kept with the session's document. `n` 0 is the paper as it stands
+   * (rewritten as she writes, and cleared when she sends it); `n` 1, 2… is a try, with what the reader read from it in `text`. 204.
+   */
+  app.post(API.keepInk(':session'), async (c) => {
+    const session = param(c, 'session');
+    conductor.assertSession(session);
+    const raw: unknown = await c.req.json().catch(() => null);
+    const body = typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>) : {};
+    const view = conductor.documentOf(session);
+    if (view === null) throw errors.notFound(`a document for session ${session}`);
+    const node = typeof body['node'] === 'string' ? body['node'].slice(0, 200) : '';
+    const ask = typeof body['ask'] === 'string' ? body['ask'].slice(0, 64) : '';
+    const n = typeof body['n'] === 'number' && Number.isInteger(body['n']) && body['n'] >= 0 && body['n'] < 100 ? body['n'] : -1;
+    if (nodeOf(view.document, node) === null || ask === '' || n < 0) throw errors.badRequest('node, ask and n must name an ask of this document, and the try it was');
+    const problem = checkInkDocument(body['doc']);
+    if (problem !== null) throw errors.badRequest(`doc: ${problem}`);
+    if (JSON.stringify(body['doc']).length > INK_LIMITS.bytes) throw errors.badRequest('that is more ink than a try keeps');
+    const text = typeof body['text'] === 'string' ? body['text'].slice(0, 600) : '';
+    await docAssets.putInk(view.summary.id, { node, ask, n, at: Date.now(), text, doc: body['doc'] as never });
+    return c.body(null, 204);
+  });
+
+  /** 200 `DocumentInk[]`: every stroke kept with the document, latest of each (node, ask, n). */
+  app.get(API.documentInk(':id'), async (c) => c.json(await docAssets.ink(documentId(param(c, 'id')))));
 
   /** The cut of the photo a question sits on (JPEG), kept with the document; 404 when none was cut. `?node=` is the question's id. */
   app.get('/api/documents/:id/crop', async (c) => {
