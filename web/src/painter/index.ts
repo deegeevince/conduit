@@ -1138,6 +1138,7 @@ export function createPainter(options: PainterOptions): Painter {
     if (key !== null) runtime.moods.set(key, { ...(runtime.moods.get(key) ?? CALM), ...patch });
     touch();
   };
+  const SLOP_PX = 12;
   /** the part of a control under a point, host CSS pixels: the smallest zone that holds it, so a knob wins over its track */
   const hitControl = (x: number, y: number): { readonly site: ControlSite; readonly zone: ControlSite['layout']['zones'][number] } | null => {
     const sites = sitesNow();
@@ -1151,6 +1152,20 @@ export function createPainter(options: PainterOptions): Painter {
         const b = zone.box;
         if (lx < b.x || lx > b.x + b.width || ly < b.y || ly > b.y + b.height) continue;
         if (best === null || b.width * b.height < best.box.width * best.box.height) best = zone;
+      }
+      if (best === null && site.input.spec.control === 'pick') {
+        // A finger that lands in the gap between two options (or a hair outside the row) is meant for the nearest one: the pick answers within a thumb's reach
+        const reach = SLOP_PX / site.screen.scale;
+        let nearest = Number.POSITIVE_INFINITY;
+        for (const zone of site.layout.zones) {
+          if (!zone.part.startsWith('option:') && zone.part !== 'back' && zone.part !== 'next') continue;
+          const b = zone.box;
+          const d = Math.hypot(Math.max(b.x - lx, 0, lx - (b.x + b.width)), Math.max(b.y - ly, 0, ly - (b.y + b.height)));
+          if (d <= reach && d < nearest) {
+            nearest = d;
+            best = zone;
+          }
+        }
       }
       if (best !== null) return { site, zone: best };
     }
