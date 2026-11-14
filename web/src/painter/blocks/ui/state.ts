@@ -14,7 +14,8 @@ export function applyAction(state: UiState, action: UiAction, hit: UiHit, x: num
     case 'toggle':
       return { ...state, toggle: { ...state.toggle, [action.control]: !action.on }, focus: null };
     case 'field':
-      return { ...state, focus: action.control, text: { ...state.text, [action.control]: state.text[action.control] ?? action.value } };
+      // the first key typed replaces what the field was given (a hint, or a value to overwrite): the words stay as they are until then
+      return { ...state, focus: action.control };
     case 'slider':
       return { ...state, slider: { ...state.slider, [action.control]: Math.max(0, Math.min(1, (x - hit.x) / Math.max(1, hit.w))) }, focus: null };
     case 'press':

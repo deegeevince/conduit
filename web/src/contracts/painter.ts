@@ -365,6 +365,10 @@ export interface Painter {
    * `control` back event. `tapAt` stays the way a plain tap is reported.
    */
   pointer(input: PointerInput): boolean;
+  /** whether a field of a mock-up on stage has the keyboard (the app then keeps a real input focused, for a phone's keyboard) */
+  typing(): boolean;
+  /** a key (a character, `Backspace`, `Enter`, `Escape`) for the mock-up field that has the keyboard; true when it was taken */
+  key(key: string): boolean;
 
   /**
    * Sets a control's value: what the invisible form control laid over it,

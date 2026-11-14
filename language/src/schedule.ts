@@ -1652,6 +1652,8 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
           old.ghost = true;
           old.style = { ...old.style, stay: 'scene' };
           done = enterText(entry, line.id, line.text, { ...inherited, dur: null }, strikeEnd + beatSeconds(pace) * 0.5, old.span.order, old);
+          // the struck words are seen struck, and go as soon as the replacement has landed: nobody wants to read a strike-through at rest
+          leave(old, done, old.style.exit, 'resay');
         }
         pen = Math.max(pen, done);
         previousStart = start;

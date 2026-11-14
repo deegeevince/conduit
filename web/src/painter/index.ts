@@ -27,7 +27,7 @@ import { bodySize, marginOf, screenFacts } from './layout/metrics';
 import { Reporter } from './report';
 import { annotated } from './annotate';
 import { placedOf, sightOf } from './sight';
-import { isScreenBlock, setUiPicture, tapUi, uiBlockAt } from './ui-stage';
+import { isScreenBlock, releaseUi, setUiPicture, tapUi, typeUi, typingUi, uiBlockAt } from './ui-stage';
 import { buildTimeline, settledAfter, settledEnd as settledEndOf } from './timeline';
 import type { Timeline, TimelineContext, TimelineInstant } from './timeline';
 
@@ -1336,6 +1336,19 @@ export function createPainter(options: PainterOptions): Painter {
       if (state !== 'drafted') return;
       sendDraft(open, pass);
     },
+    typing() {
+      return timeline.schedule.elements.some((span) => isScreenBlock(span) && typingUi(span.key));
+    },
+    key(key) {
+      for (const span of timeline.schedule.elements) {
+        if (!isScreenBlock(span) || !typingUi(span.key)) continue;
+        if (!typeUi(span.key, key)) return false;
+        refreshTimeline();
+        drawNow();
+        return true;
+      }
+      return false;
+    },
     pointer(input) {
       const { x, y, phase } = input;
       if (x <= -1e5 || y <= -1e5) {
@@ -1367,6 +1380,12 @@ export function createPainter(options: PainterOptions): Painter {
           if (block !== null && tapUi(block, sx, sy)) {
             refreshTimeline();
             drawNow();
+            // a press lets go a moment after it
+            setTimeout(() => {
+              if (disposed || !releaseUi(block)) return;
+              refreshTimeline();
+              drawNow();
+            }, 160);
             return true;
           }
         }
