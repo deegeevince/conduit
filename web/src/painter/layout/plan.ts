@@ -47,6 +47,8 @@ export interface PlanInput {
    * right, rather than the words in a thin band under a block: a subject the words refer to is the first thing read and is never a postage stamp.
    */
   readonly beside?: boolean;
+  /** the width the flow would like beside the blocks (controls set two to a row): given, down to what the blocks least need, in a side-by-side division */
+  readonly flowWidth?: number;
 }
 
 /** How much of what a block would like it is given, 0 to 1: the worse of its height and its width. */
@@ -123,6 +125,12 @@ function place(division: Division, blocks: readonly StageBlock[], rooms: Map<str
   }
 }
 
+/** the most of a tall stage the words and controls of a figure answer may take from the figure */
+const FIGURE_FLOW_MOST = 0.7;
+
+/** the width a block beside the flow keeps whatever the flow asks for */
+const BLOCK_LEAST_WIDTH = 300;
+
 /** What a block is given at least before the words are asked to give way: four fifths of what it would like. */
 const GOOD_FIT = 0.8;
 
@@ -156,6 +164,8 @@ export function planStage(input: PlanInput): StagePlan {
   if (!visual) return { picture: null, rooms, flow: column, foot, crowded };
 
   // 2. and 3. the flow
+  // the flow may take width from the blocks beside it when it asks for it, down to the least the blocks need
+  const wider = (usual: number, whole: number): number => Math.max(usual, Math.min(input.flowWidth ?? 0, whole - BLOCK_LEAST_WIDTH));
   const words = input.flowHeight(column.width);
   let flow: Box;
   let area: Box;
@@ -164,12 +174,15 @@ export function planStage(input: PlanInput): StagePlan {
     const gutter = Math.max(16, margin * 0.75);
     if (viewport.width >= viewport.height) {
       const share = column.width * FIGURE_WIDE_SHARE;
-      area = { x: column.x, y: column.y, width: share - gutter / 2, height: column.height };
-      flow = { x: column.x + share + gutter / 2, y: column.y, width: column.width - share - gutter / 2, height: column.height };
+      const flowW = wider(column.width - share - gutter / 2, column.width - gutter);
+      area = { x: column.x, y: column.y, width: column.width - flowW - gutter, height: column.height };
+      flow = { x: column.x + column.width - flowW, y: column.y, width: flowW, height: column.height };
     } else {
-      const share = column.height * FIGURE_TALL_SHARE;
-      area = { x: column.x, y: column.y, width: column.width, height: share - gutter / 2 };
-      flow = { x: column.x, y: column.y + share + gutter / 2, width: column.width, height: column.height - share - gutter / 2 };
+      // the words (controls among them) have the room under the figure that it keeps, or more when they ask for it, down to what a figure can be shown in
+      const kept = column.height - column.height * FIGURE_TALL_SHARE - gutter / 2;
+      const given = Math.max(kept, Math.min(words, column.height * FIGURE_FLOW_MOST));
+      area = { x: column.x, y: column.y, width: column.width, height: column.height - given - gutter };
+      flow = { x: column.x, y: column.y + column.height - given, width: column.width, height: given };
     }
   } else if (words <= 0) {
     flow = { x: column.x, y: column.y + column.height, width: column.width, height: 0 };
@@ -177,8 +190,9 @@ export function planStage(input: PlanInput): StagePlan {
   } else if (input.beside === true && !needsPicture && unpinned.length > 0 && viewport.width >= viewport.height) {
     const gutter = Math.max(16, margin * 0.75);
     const share = column.width * BESIDE_SHARE;
-    area = { x: column.x, y: column.y, width: share - gutter / 2, height: column.height };
-    flow = { x: column.x + share + gutter / 2, y: column.y, width: column.width - share - gutter / 2, height: column.height };
+    const flowW = wider(column.width - share - gutter / 2, column.width - gutter);
+    area = { x: column.x, y: column.y, width: column.width - flowW - gutter, height: column.height };
+    flow = { x: column.x + column.width - flowW, y: column.y, width: flowW, height: column.height };
     flowWords = input.flowHeight(flow.width);
   } else {
     // The words may have more than their share when the blocks beside them need less than the rest: the empty band under a table is room the words use

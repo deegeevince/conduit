@@ -68,18 +68,21 @@ export function inside(census: Census): Violation[] {
 }
 
 const WORDY: readonly string[] = ['text', 'control'];
-const READ_BOXED: readonly string[] = ['text', 'control', 'node'];
+const READ_BOXED: readonly string[] = ['text', 'control', 'node', 'structure'];
 
 /** apart: no words over words (a control's label counts as words). Inside a canvas an overlap is the brain's: a note, not a fault. */
 export function apart(census: Census): Violation[] {
   const found: Violation[] = [];
-  const reading = census.leaves.filter((leaf) => leaf.opacity >= WHOLE && READ_BOXED.includes(leaf.kind) && (leaf.kind === 'node' || leaf.text.trim() !== '' || leaf.kind === 'control') && area(leaf.box) >= 16);
+  const reading = census.leaves.filter((leaf) => leaf.opacity >= WHOLE && READ_BOXED.includes(leaf.kind) && (leaf.kind === 'node' || leaf.kind === 'structure' || leaf.text.trim() !== '' || leaf.kind === 'control') && area(leaf.box) >= 16);
   for (let i = 0; i < reading.length; i += 1) {
     for (let j = i + 1; j < reading.length; j += 1) {
       const a = reading[i];
       const b = reading[j];
       if (a === undefined || b === undefined) continue;
-      if (!(WORDY.includes(a.kind) && WORDY.includes(b.kind))) continue;
+      // words over words, and a control over a table, a chart or a diagram (a structure's room is its own: a control's label may not stand in it)
+      const wordsOnWords = WORDY.includes(a.kind) && WORDY.includes(b.kind);
+      const controlOnStructure = (a.kind === 'control' && b.kind === 'structure') || (a.kind === 'structure' && b.kind === 'control');
+      if (!wordsOnWords && !controlOnStructure) continue;
       const meet = intersection(a.box, b.box);
       if (meet === null) continue;
       const share = area(meet) / Math.min(area(a.box), area(b.box));
