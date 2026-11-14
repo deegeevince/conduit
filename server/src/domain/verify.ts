@@ -250,7 +250,7 @@ export function lessonText(doc: Document, id: NodeId): string {
         const show = step.show === null ? '' : ` [picture: ${step.show.visual}${step.show.range === null ? '' : ` ${step.show.range[0]}..${step.show.range[1]}`}${Object.entries(step.show.args).map(([key, value]) => ` ${key}=${value}`).join('')}]`;
         out.push(`    step${show}: ${step.words}`);
       } else {
-        out.push(`    ASK ${step.id}: ${step.prompt}${step.pick === null ? ' (she types it)' : ` (she taps one of: ${step.pick.join(', ')})`}  ACCEPTED: ${step.accepted.join(' | ')}${step.unit === null ? '' : ` (${step.unit})`}`);
+        out.push(`    ASK ${step.id}: ${step.prompt}${step.check === 'order' ? ' (she drags tiles of these items into order)' : step.pick === null ? ' (she types it)' : ` (she taps one of: ${step.pick.join(', ')})`}  ${step.check === 'order' ? 'THE RIGHT ORDER' : 'ACCEPTED'}: ${step.accepted.join(step.check === 'order' ? ' , ' : ' | ')}${step.unit === null ? '' : ` (${step.unit})`}`);
         for (const hint of step.hints) out.push(`      hint: ${hint}`);
       }
     }

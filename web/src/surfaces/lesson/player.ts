@@ -28,6 +28,7 @@ import { afterOf, answerOf, atOf, cardsOf, gateOf, isDone, isLesson, isWaiting, 
 import type { Run } from './model';
 import { TECHNIQUE_NAMES, isTechnique } from './types';
 import type { CatalogueEntry, DocState, Held, LessonAsk, LessonInput, OpenAsk, StateChange, Technique, WriteResult } from './types';
+import { orderWriting } from './order';
 import { inkWriting, typedWriting } from './writing';
 import { drawVisual } from './widgets';
 import type { WidgetCtx } from './widgets/common';
@@ -499,6 +500,18 @@ export class Player {
         choices.append(btn);
       }
       card.append(choices);
+    } else if (ask.check === 'order') {
+      const held = this.state.held[node.id]?.[`order.${ask.id}`];
+      card.append(
+        orderWriting({
+          items: ask.accepted,
+          arranged: Array.isArray(held) ? held.filter((x): x is string => typeof x === 'string') : null,
+          unit: ask.unit,
+          seed: `${node.id}/${ask.id}`,
+          onMove: (arranged) => this.apply({ kind: 'held', node: node.id, key: `order.${ask.id}`, value: [...arranged] }),
+          onCheck: (arranged, stamp) => this.tryAnswer(node, ask, arranged.join(', '), stamp),
+        }),
+      );
     } else {
       const numeric = ask.accepted.every((a) => /^\d+$/.test(a.trim()));
       const decimal = ask.accepted.every((a) => /^[$\d.,\s]+[a-z]*$/i.test(a.trim()));

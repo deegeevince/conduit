@@ -1569,7 +1569,7 @@ function parseStep(head: Head, text: string | null, issues: Issues): LessonLine 
   return { verb: 'step', id, ...(parent === undefined ? {} : { in: parent }), ...(show === null ? {} : { show }), text: text ?? '' };
 }
 
-/** v3. `ask <id> [in=<part>] is=<a>[,<b>…] [pick=<x>,<y>,<z>] [unit=<unit>] [check=working] | <question>`: a try. */
+/** v3. `ask <id> [in=<part>] is=<a>[,<b>…] [pick=<x>,<y>,<z>] [unit=<unit>] [check=working|order] | <question>`: a try. */
 function parseAsk(head: Head, text: string | null, issues: Issues): LessonLine | null {
   let id = '-';
   head.words.forEach((word, index) => {
@@ -1580,15 +1580,15 @@ function parseAsk(head: Head, text: string | null, issues: Issues): LessonLine |
   let accepted: string[] = [];
   let pick: string[] | undefined;
   let unit: string | undefined;
-  let check: 'working' | undefined;
+  let check: 'working' | 'order' | undefined;
   const rest: Pair[] = [];
   for (const pair of head.pairs) {
     if (pair.key === 'in') {
       if (isLessonId(pair.value)) parent = pair.value;
       else issues.warn('bad-id', `"${pair.value}" is not a part id; in= ignored`, pair.token);
     } else if (pair.key === 'check') {
-      if (pair.value === 'working') check = 'working';
-      else issues.warn('bad-value', `check= is check=working; "${pair.value}" ignored`, pair.token);
+      if (pair.value === 'working' || pair.value === 'order') check = pair.value;
+      else issues.warn('bad-value', `check= is check=working or check=order; "${pair.value}" ignored`, pair.token);
     } else if (pair.key === 'is' || pair.key === 'answer') accepted = splitValues(pair.raw).filter((value) => value.length <= LESSON_LIMITS.answer);
     else if (pair.key === 'pick' || pair.key === 'choices') pick = splitValues(pair.raw).filter((value) => value.length <= LESSON_LIMITS.answer).slice(0, LESSON_LIMITS.pick);
     else if (pair.key === 'unit') {

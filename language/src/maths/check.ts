@@ -75,6 +75,22 @@ function summarise(statuses: readonly Cmp[]): AskStatus {
 const quote = (text: string): string => `"${text.length > 70 ? `${text.slice(0, 69)}…` : text}"`;
 const list = (answers: readonly Answer[]): string => answers.map(answerText).join(' or ');
 
+/**
+ * An ordering ask (`check=order`): `accepted` is the sequence. When the words say which way ("smallest to largest", "greatest first") and every item is a
+ * plain number, the sequence is held to it exactly; null when it is right or cannot be told, a sentence when it is not.
+ */
+export function orderProblem(prompt: string, items: readonly string[]): { readonly checked: boolean; readonly problem: string | null } {
+  const numbers = items.map((item) => (/^-?\d[\d,]*(?:\.\d+)?$/.test(item.trim()) ? Number(item.replace(/,/g, '')) : Number.NaN));
+  if (numbers.length < 2 || numbers.some((n) => !Number.isFinite(n))) return { checked: false, problem: null };
+  const small = /\b(?:smallest|least|lowest|fewest|ascending)\b/i.exec(prompt);
+  const large = /\b(?:largest|greatest|biggest|highest|most|descending)\b/i.exec(prompt);
+  const first = small !== null && (large === null || small.index < large.index) ? 'small' : large !== null ? 'large' : null;
+  if (first === null) return { checked: false, problem: null };
+  const sorted = [...numbers].sort((a, b) => (first === 'small' ? a - b : b - a));
+  const wrong = sorted.some((n, i) => n !== numbers[i]);
+  return { checked: true, problem: wrong ? `the items are listed ${items.join(', ')}, which is not ${first === 'small' ? 'smallest to largest' : 'largest to smallest'} (that is ${sorted.join(', ')})` : null };
+}
+
 /** The open sums in some words (`12 + 12 so far`): what the steps before an ask were working towards. */
 function openSumIn(words: string): Solved | null {
   const open = fragments(words).filter((f) => f.kind === 'question');
@@ -109,6 +125,14 @@ export function checkWay(node: NodeId, steps: readonly LessonStep[], context: Le
     statements(ask.prompt, 'ask', ask.id, `ask ${ask.id}`);
     ask.hints.forEach((hint, h) => statements(hint, 'hint', ask.id, `hint ${h + 1} of ${ask.id}`));
 
+    if (ask.check === 'order') {
+      // the ask's own words say which way; failing that, the question's
+      const own = orderProblem(ask.prompt, ask.accepted);
+      const ordered = own.checked || questionText === null ? own : orderProblem(questionText, ask.accepted);
+      asks.push({ ask: ask.id, status: ordered.problem !== null ? 'mismatch' : ordered.checked ? 'agree' : 'unchecked', source: 'prompt', computed: null, accepted: ask.accepted, reason: ordered.problem ?? (ordered.checked ? 'the sequence is in the order the words ask for' : 'the order asked for is not one this reads'), working: [], sure: ordered.checked });
+      if (ordered.problem !== null) note('ask', ask.id, `ask ${ask.id}: ${ordered.problem}`);
+      return;
+    }
     const own = solveQuestion(ask.prompt);
     let solved: Solved | null = own;
     let source: AskCheck['source'] = own === null ? null : 'prompt';
@@ -157,7 +181,8 @@ export function checkWay(node: NodeId, steps: readonly LessonStep[], context: Le
   if (questionSolved !== null) {
     computed = answerText(questionSolved.answers[0] as Answer);
     const mine = steps.filter((s): s is LessonAsk => s.kind === 'ask');
-    if (mine.length > 0 && !mine.some((a) => a.accepted.some((x) => compareAccepted(x, questionSolved.answers, a.unit) === 'same'))) {
+    // an ordering ask is its own check (the sequence is held to the words above): the question's sorted list is no single answer to be reached
+    if (mine.length > 0 && !mine.some((a) => a.check === 'order') && !mine.some((a) => a.accepted.some((x) => compareAccepted(x, questionSolved.answers, a.unit) === 'same'))) {
       const comparable = mine.some((a) => a.accepted.some((x) => compareAccepted(x, questionSolved.answers, a.unit) !== 'unknown'));
       if (comparable) note('question', null, `the question ${quote(questionText ?? '')} works out to ${list(questionSolved.answers)} and no ask of this way accepts it`, questionSolved.sure ? 'refuse' : 'note');
     }

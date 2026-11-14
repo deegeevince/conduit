@@ -242,3 +242,9 @@ button.seg:not(.lit) { opacity: 0.62; }
 .ruler-num { fill: var(--ink); font: 700 18px var(--font); }
 .ruler-unit { fill: var(--dim); font: 600 16px var(--font); }
 .ruler-guide { stroke: var(--accent); stroke-width: 2.5; stroke-dasharray: 5 4; }
+
+/* tiles to put in order */
+.tiles { display: flex; flex-wrap: wrap; gap: 12px; padding: 14px; border: 3px dashed var(--line); border-radius: 16px; touch-action: none; user-select: none; }
+.tile { min-width: 104px; min-height: 80px; padding: 0 18px; font: 800 34px var(--font); color: var(--ink); background: var(--card); border: 3px solid var(--ink); border-radius: 16px; cursor: grab; touch-action: none; }
+.tile.picked { background: var(--accent); color: var(--on-accent); }
+.tile.lifted { box-shadow: 0 10px 22px rgba(0,0,0,.35); transform: scale(1.06); cursor: grabbing; }

@@ -488,6 +488,34 @@ function workingChecks(): void {
   expect('working: money, over two lines', money.verdict, 'right');
 }
 
+
+// ---------------------------------------------------------------------------------------------------------------------------------
+// check=order
+
+function orderChecks(): void {
+  const ask = { accepted: ['101', '117', '120', '152', '165', '197'], unit: null, check: 'order' } as const;
+  const line = parseLine('ask a1 in=q18 is=101,117,120,152,165,197 check=order | Put these in order, smallest to largest.');
+  expect('check=order: the line reads', line.kind === 'line' && line.line.verb === 'ask' ? [line.line.check, line.line.is.length] : null, ['order', 6]);
+  expect('check=order: and writes back as it was', line.kind === 'line' ? serializeLine(line.line) : null, 'ask a1 in=q18 is=101,117,120,152,165,197 check=order | Put these in order, smallest to largest.');
+  expect('check=order: the right order is accepted', accepts(ask, '101, 117, 120, 152, 165, 197'), true);
+  expect('check=order: spaces or arrows will do', accepts(ask, '101 117 120 152 165 197'), true);
+  expect('check=order: a swap is not', accepts(ask, '101, 120, 117, 152, 165, 197'), false);
+  expect('check=order: the reverse is not', accepts(ask, '197, 165, 152, 120, 117, 101'), false);
+  expect('check=order: a tile missing is not', accepts(ask, '101, 117, 120, 152, 165'), false);
+  expect('check=order: the items are numbers, not text', accepts({ accepted: ['4', '10'], unit: null, check: 'order' }, '4.0, 10'), true);
+  expect('check=order: words are ordered as words', accepts({ accepted: ['small', 'medium', 'large'], unit: null, check: 'order' }, 'small, medium, large'), true);
+  const doc = (accepted: string, text: string): ReturnType<typeof maths.checkLessonDocument> =>
+    maths.checkLessonDocument(foldSource(['part w1 | Sheet', 'part q18 in=w1 | 18. Put these numbers in order, smallest to largest: 117 197 101 152 165 120', `ask a1 in=q18 is=${accepted} check=order | ${text}`].join('\n')).document);
+  const good = doc('101,117,120,152,165,197', 'Put these numbers in order, smallest to largest.');
+  expect('check=order: a sequence that is sorted agrees, and the items in the question are no spoiler', [good.ok, good.asks[0]?.status], [true, 'agree']);
+  const bad = doc('101,117,152,120,165,197', 'Put these numbers in order, smallest to largest.');
+  expect('check=order: a sequence that is not sorted is refused', [bad.ok, bad.asks[0]?.status], [false, 'mismatch']);
+  const down = doc('197,165,152,120,117,101', 'Put them in order, from the greatest to the least.');
+  expect('check=order: greatest first is read', [down.ok, down.asks[0]?.status], [true, 'agree']);
+  const unknown = doc('b,a,c', 'Put these in the order of the story.');
+  expect('check=order: an order it cannot tell is left alone', [unknown.ok, unknown.asks[0]?.status], [true, 'unchecked']);
+}
+
 // ---------------------------------------------------------------------------------------------------------------------------------
 // whatever is typed, it must not break
 
@@ -514,6 +542,7 @@ export function mathsChecks(): boolean {
   pieceChecks();
   lessonChecks();
   workingChecks();
+  orderChecks();
   hardChecks();
   process.stdout.write(`\nmaths checks: ${passed + failed} cases, ${passed} passed, ${failed} failed\n`);
   return failed === 0;

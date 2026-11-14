@@ -76,8 +76,11 @@ export interface AskLine {
   readonly is: readonly string[];
   readonly pick?: readonly string[];
   readonly unit?: string;
-  /** `working`: she writes her working, and it is the working that is checked, step by step (maths/working.ts), not one answer */
-  readonly check?: 'working';
+  /**
+   * `working`: she writes her working, and it is the working that is checked, step by step (maths/working.ts), not one answer.
+   * `order`: `is` is the items IN THE RIGHT ORDER (the question's own numbers or words); she drags tiles into order, and the sequence is compared exactly.
+   */
+  readonly check?: 'working' | 'order';
   readonly text: string;
 }
 
@@ -124,8 +127,8 @@ export interface LessonAsk {
   readonly pick: readonly string[] | null;
   readonly unit: string | null;
   readonly hints: readonly string[];
-  /** `working`: a try is her transcribed working, checked step by step; absent: a try is one answer */
-  readonly check?: 'working';
+  /** `working`: a try is her transcribed working, checked step by step; `order`: a try is her tiles in order (`accepted` is the sequence); absent: a try is one answer */
+  readonly check?: 'working' | 'order';
 }
 
 /** A stop of a lesson, in the order written. A reveal is passed by stepping; an ask opens when it holds an accepted answer. */
@@ -139,7 +142,16 @@ export interface OpenAsk {
 }
 
 export function openAskOf(ask: LessonAsk): OpenAsk {
-  return { id: ask.id, accepted: ask.accepted, unit: ask.unit };
+  // an ordering ask's items are the question's own words: nothing is sealed (the order is what is secret, and it is never written as a value)
+  return { id: ask.id, accepted: ask.check === 'order' ? [] : ask.accepted, unit: ask.unit };
+}
+
+/** The items of a try at an ordering ask: split on commas, semicolons, arrows and spaces, in the order given. */
+export function orderItems(text: string): string[] {
+  return text
+    .split(/\s*(?:,|;|>|→|\n)\s*|\s+/)
+    .map((item) => item.trim())
+    .filter((item) => item !== '');
 }
 
 // --- reading values ----------------------------------------------------------------------------------------------------------------
@@ -611,6 +623,11 @@ export function matchAnswer(accepted: string, given: string, unit: string | null
 export function accepts(ask: Pick<LessonAsk, 'accepted' | 'unit' | 'check'>, text: string): boolean {
   const given = text.trim();
   if (given === '') return false;
+  // `check=order`: the same items, in the same order, each matched as an answer is (numbers as numbers)
+  if (ask.check === 'order') {
+    const items = orderItems(given);
+    return items.length === ask.accepted.length && ask.accepted.every((wanted, index) => matchAnswer(wanted, items[index] ?? '', ask.unit));
+  }
   // `check=working`: what she wrote is her working, and it is right when every step is and it ends on an answer the ask accepts
   if (ask.check === 'working') {
     try {
@@ -745,6 +762,8 @@ function stepTexts(step: LessonReveal): { readonly where: 'step' | 'picture'; re
 /** What each accepted answer of `ask` is found in, among what is on the page when the ask opens: the way's title, every step before it, its own words and its hints. */
 function spoilersBefore(ask: LessonAsk, before: readonly LessonStep[], context: LessonContext): Spoiler[] {
   const found: Spoiler[] = [];
+  // the items of an ordering ask are the question's own: a step may say them; only the order is the answer
+  if (ask.check === 'order') return found;
   for (const answer of ask.accepted) {
     // a number the question itself is made of is no secret, so a step may use it
     if (context.question.some((words) => textHolds(words, answer, ask.unit))) continue;
