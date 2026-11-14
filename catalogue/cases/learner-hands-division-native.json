@@ -1,0 +1,28 @@
+{
+ "id": "learner-hands-division-native",
+ "title": "a division problem a child does with their hands is built from the language's own pieces, not an app",
+ "family": "teaching",
+ "owner": "prompt",
+ "kind": "flow",
+ "found": "2026-11-15",
+ "note": "Interactivity first comes from ask, pick, slider, bind, hit; a live app only when those cannot do it. The gaps (drag into a group, move a counter) are reported, not prompted.",
+ "own": [
+  "learner-native"
+ ],
+ "turns": [
+  {
+   "say": "a division problem my 7-year-old can do with their hands",
+   "source": {
+    "log": "20261115-094056-c1",
+    "turns": [
+     "t15"
+    ]
+   },
+   "check": [
+    {
+     "k": "learner-native"
+    }
+   ]
+  }
+ ]
+}

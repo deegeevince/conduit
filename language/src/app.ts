@@ -45,13 +45,6 @@ export function shelfOf(asked: readonly AppShelf[] | undefined, source: string):
   return out;
 }
 
-/** A young learner and a problem to solve: the answer is a small app they do with their hands (move, tap, count), not a lesson page or a stepper. */
-const YOUNG_LEARNER = /\b(\d{1,2}[- ]?(?:year|yr)s?[- ]?old|my\s+(?:kid|child|son|daughter|little\s+one)|(?:young|little)\s+(?:learner|child|kid)|(?:don'?t|doesn'?t)\s+know\s+\w+\s+yet|like\s+i'?m\s+\d)/i;
-const A_PROBLEM = /\b(question|problem|sum|puzzle|exercise|riddle|quiz|challenge|spell\w*|predict\w*)s?\b/i;
-export function asksForLearnerProblem(text: string): boolean {
-  return YOUNG_LEARNER.test(text) && A_PROBLEM.test(text) && !/\b(photo|worksheet|homework|pdf|page of)\b/i.test(text);
-}
-
 /** Making or copying something to play or use: the thing itself is the answer, whatever recipe the library would also offer (a walk-through of steps). */
 export function asksToMakeGame(text: string): boolean {
   return /\b(?:make|build|create|write|design|code|give\s+me)\b[^.?!]{0,40}\b(?:game|app)\b|\b(?:replicate|recreate|re-create|clone|rebuild|remake)\b/i.test(text);

@@ -8,7 +8,7 @@
  "note": "After one problem, 'now a different problem' kept the old drawing, added a second stepper and offered the answer as a choice chip.",
  "own": [
   "starts-new-scene",
-  "one-stepper"
+  "learner-native"
  ],
  "turns": [
   {
@@ -33,19 +33,7 @@
      "k": "starts-new-scene"
     },
     {
-     "k": "any",
-     "of": [
-      {
-       "k": "ask-first"
-      },
-      {
-       "k": "app-learner"
-      }
-     ]
-    },
-    {
-     "k": "one-stepper",
-     "max": 0
+     "k": "learner-native"
     }
    ]
   }

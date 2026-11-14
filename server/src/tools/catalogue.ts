@@ -658,6 +658,21 @@ async function runCheck(cx: Cx, spec: Spec): Promise<Res> {
       const drawn = last.split('\n').filter((l) => /^(circle|ellipse|rect|line|poly|path|arc|chart|table|flow|tree|cycle|timeline|map|slider|toggle|pick|app|pix|screen|code|button)\b/.test(l.trim()));
       return res(name, scenes.length === 0 ? ['no scene'] : drawn.length === 0 ? ['the last scene holds words only, no drawing or control'] : [], `the last scene has ${drawn.length} drawn or control line(s)`);
     }
+    case 'learner-native': {
+      // a problem posed to a learner is done through the language's own pieces: something to answer or move (ask, pick, slider, field), no stepper walking the answer, no live app, no number given as a choice
+      const script = cx.answer.script;
+      const asks = script.split('\n').filter((l) => /^ask\b/.test(l)).length;
+      const ctl = (await controls(cx.tab)).filter((c) => c.control === 'input' || c.control === 'slider' || c.control === 'toggle' || (c.control === 'pick' && c.form !== 'steps'));
+      const apps = await cx.tab.eval<number>(`[...document.querySelectorAll('iframe')].filter((f) => f.getBoundingClientRect().height > 50).length`);
+      const bad: string[] = [];
+      if (asks + ctl.length === 0) bad.push('nothing to answer or move (no ask, pick, slider or field)');
+      if (apps > 0) bad.push('the answer is a live app');
+      const walks = script.split('\n').filter((l) => /^pick\b[^|]*\bsteps\b/.test(l));
+      if (walks.length > 0) bad.push(`a stepper walks the working: ${walks[0]?.slice(0, 50)}`);
+      const bare = script.split('\n').filter((l) => /^say\b[^|]*\bchoice\b[^|]*\|\s*\W*\d+\W*$/.test(l));
+      if (bare.length > 0) bad.push(`a choice is a bare number: ${bare[0]?.slice(0, 50)}`);
+      return res(name, bad, `${asks} ask(s), ${ctl.length} control(s), no app, no stepper`);
+    }
     case 'app-learner': {
       // a learner's problem as a small live app: on stage, answers to pointers and touch, shows no answer at rest, and fits the screen
       const rows = (await cx.tab.eval<string[]>(`[...document.querySelectorAll('iframe')].map((f) => f.srcdoc || '')`)).join('\n');

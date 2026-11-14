@@ -7,7 +7,7 @@
  "found": "2026-11-15",
  "note": "Asked to teach a child a problem, the brain drew the working and a stepper that gives the intermediate answers. The question should be alone first, with a way to answer; help only on a tap.",
  "own": [
-  "ask-first"
+  "learner-native"
  ],
  "turns": [
   {
@@ -20,19 +20,7 @@
    },
    "check": [
     {
-     "k": "any",
-     "of": [
-      {
-       "k": "ask-first"
-      },
-      {
-       "k": "app-learner"
-      }
-     ]
-    },
-    {
-     "k": "one-stepper",
-     "max": 0
+     "k": "learner-native"
     }
    ]
   }
