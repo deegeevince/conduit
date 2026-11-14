@@ -51,7 +51,7 @@ let locale = Locale(identifier: localeId)
 func permissionFailure(_ status: SFSpeechRecognizerAuthorizationStatus) -> Never? {
   switch status {
   case .authorized: return nil
-  case .notDetermined: fail("permission_not_determined", "Speech Recognition has not been allowed yet. On this Mac run `pnpm voice-check` (or ops/transcribe/transcribe authorize) and click Allow in the dialog.")
+  case .notDetermined: fail("permission_not_determined", "Speech Recognition has not been allowed yet. On this Mac run `pnpm voice-check --authorize` and click Allow in the dialog.")
   case .denied: fail("permission_denied", "Speech Recognition is turned off for Conduit's voice helper. Open System Settings > Privacy & Security > Speech Recognition and switch it on, or run `tccutil reset SpeechRecognition` and allow it again.")
   case .restricted: fail("permission_restricted", "Speech Recognition is restricted on this Mac (a profile or Screen Time rule), so voice notes cannot be read here. Type the message instead.")
   @unknown default: fail("failed", "Speech Recognition gave an answer this helper does not know.")

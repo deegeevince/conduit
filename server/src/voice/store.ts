@@ -78,7 +78,7 @@ export function createVoiceNotes(deps: VoiceStoreDeps): VoiceNotes {
         const locale = answer.locale ?? deps.locale;
         const permission = answer.permission ?? 'unknown';
         if (permission === 'not_determined') {
-          return { available: false, state: 'permission_not_determined', locale, problem: 'Voice notes need Speech Recognition to be allowed once on the Mac running Conduit. Run `pnpm voice-check` there and click Allow.' };
+          return { available: false, state: 'permission_not_determined', locale, problem: 'Voice notes need Speech Recognition to be allowed once on the Mac running Conduit. Run `pnpm voice-check --authorize` there and click Allow in the dialog.' };
         }
         if (permission === 'denied') return { available: false, state: 'permission_denied', locale, problem: 'Speech Recognition is off for "Conduit Voice" on the Mac running Conduit. Switch it on in System Settings > Privacy & Security > Speech Recognition.' };
         if (permission === 'restricted') return { available: false, state: 'permission_restricted', locale, problem: 'Speech Recognition is restricted on the Mac running Conduit, so voice notes cannot be read. Type the message instead.' };
