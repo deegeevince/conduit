@@ -935,7 +935,7 @@ async function matrix(args: Args): Promise<void> {
   const labels = (args.rest[0] ?? '').split(',').filter((l) => l !== '');
   if (labels.length === 0) usage('matrix needs labels: head,v3-T1,...');
   const files = labels.map((l) => readResults(l)).filter((f): f is ResultFile => f !== null);
-  const cases = loadCases(null);
+  const cases = loadCases(null, false);
   const mark = (o: CaseOut | undefined): string => (o === undefined ? '-' : `${o.desk?.v === 'PASS' ? 'G' : o.desk?.v === 'OWN' ? 'o' : 'R'}${o.phone?.v === 'PASS' ? 'G' : o.phone?.v === 'OWN' ? 'o' : 'R'}`);
   const lines = ['# Branch matrix', '', 'Each cell is desk then phone: G = PASS, o = own checks pass but a general gate is red, R = red. Replayed on that branch head with this checkout\'s tool.', '', `| case | family | owner | ${files.map((f) => `${f.label} (${f.commit})`).join(' | ')} |`, `| --- | --- | --- | ${files.map(() => '---').join(' | ')} |`];
   for (const c of cases) lines.push(`| ${c.id} | ${c.family} | ${c.owner} | ${files.map((f) => mark(f.cases[c.id])).join(' | ')} |`);
