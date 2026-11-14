@@ -1293,7 +1293,9 @@ export class Conductor {
     if (owner?.figure?.kind !== 'structure' || owner.figure.structure !== 'screen') return;
     const head = found[1] ?? '';
     const part = /\bid=(\S+)/.exec(head)?.[1];
-    const words = (found[2] ?? '').trim();
+    // `q="harbour boats water"` is what the brain says to look for: a few concrete nouns, not the caption the placeholder carries
+    const asked = /\bq=(?:"([^"]*)"|(\S+))/i.exec(head);
+    const words = ((asked?.[1] ?? asked?.[2] ?? '').trim() || (found[2] ?? '').trim());
     if (part === undefined || words === '') return;
     const flags = head.toLowerCase().split(/\s+/);
     // A round picture is an avatar: a photograph of a stranger is never put beside a made-up name

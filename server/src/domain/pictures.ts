@@ -85,6 +85,8 @@ export interface PictureCandidate {
   readonly height: number | null;
   readonly credit: PictureCredit;
   readonly mature: boolean;
+  /** the words the source (or its crowd) tagged the photograph with, lower case; and its title's words are used the same way */
+  readonly tags?: readonly string[];
 }
 
 /**
@@ -183,23 +185,43 @@ export function creditLine(credit: PictureCredit): string {
   return `"${credit.title}"${by} / ${credit.licence} / ${credit.source}`;
 }
 
+/** Lower-case word stems for matching: "boats" and "boat" meet. */
+function stems(text: string): string[] {
+  return normaliseWords(text.replace(/-/g, ' ')).split(' ').filter((w) => w.length > 2).map((w) => (w.length > 4 && w.endsWith('s') ? w.slice(0, -1) : w));
+}
+
+/** The share (0..1) of the wanted words that the photograph's tags or title carry. Pure. */
+export function tagOverlap(candidate: PictureCandidate, words: string): number {
+  const wanted = [...new Set(stems(words))];
+  if (wanted.length === 0) return 0;
+  const have = new Set(stems(`${(candidate.tags ?? []).join(' ')} ${candidate.credit.title}`));
+  return wanted.filter((w) => have.has(w)).length / wanted.length;
+}
+
 /**
- * Candidates worth trying, best first: no mature ones, none too small, nearest the box's shape, larger before smaller
- * within reason. Pure, so it is tested without a network.
+ * Candidates worth trying, best first: no mature ones, none too small; the ones whose tags and title carry the wanted words
+ * first (a search can match a word in a hotel's description), then the nearest the box's shape (a hero wants a landscape, and
+ * a portrait one is the last resort), then larger before smaller within reason, then the source's own order. Pure, so it is
+ * tested without a network.
  */
-export function rankCandidates(candidates: readonly PictureCandidate[], aspect: number | null): readonly PictureCandidate[] {
+export function rankCandidates(candidates: readonly PictureCandidate[], aspect: number | null, words = ''): readonly PictureCandidate[] {
   const scored: { candidate: PictureCandidate; score: number }[] = [];
-  for (const candidate of candidates) {
-    if (candidate.mature) continue;
+  candidates.forEach((candidate, place) => {
+    if (candidate.mature) return;
     const { width, height } = candidate;
+    const order = 0.01 * Math.min(place, 20);
+    // an untagged photograph is no evidence either way; one tagged with other things and none of ours is a likely miss
+    const tagged = (candidate.tags ?? []).length > 0;
+    const match = words === '' ? 0 : tagged || candidate.credit.title !== 'Untitled' ? 1.2 * (1 - tagOverlap(candidate, words)) : 0.8;
     if (width !== null && height !== null) {
-      if (Math.max(width, height) < PICTURE_LIMITS.minSide) continue;
+      if (Math.max(width, height) < PICTURE_LIMITS.minSide) return;
       const shape = aspect === null ? 0 : Math.abs(Math.log(width / height / aspect));
+      const portrait = aspect !== null && aspect > 1 && height > width ? 0.6 : 0;
       const size = Math.min(1, Math.max(width, height) / 1200);
-      scored.push({ candidate, score: shape - 0.3 * size });
+      scored.push({ candidate, score: match + shape + portrait - 0.3 * size + order });
     } else {
-      scored.push({ candidate, score: 1 });
+      scored.push({ candidate, score: match + 1 + order });
     }
-  }
+  });
   return scored.sort((a, b) => a.score - b.score).map((entry) => entry.candidate);
 }

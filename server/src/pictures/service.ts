@@ -63,7 +63,7 @@ export function createPictureService(options: ServiceOptions): PictureService {
     // then the first two. At most two searches, so the rate limit is never spent on one picture.
     for (const words of narrowing(query.words)) {
       const found = await options.source.search({ words, aspect: query.aspect }, signal);
-      for (const candidate of rankCandidates(found, query.aspect).slice(0, PICTURE_LIMITS.maxTries)) {
+      for (const candidate of rankCandidates(found, query.aspect, query.words).slice(0, PICTURE_LIMITS.maxTries)) {
         if (signal.aborted) return null;
         const picture = await fetchOne(candidate, key, query.aspect, signal);
         if (picture !== null) {
