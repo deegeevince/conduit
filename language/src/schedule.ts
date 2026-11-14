@@ -11,7 +11,7 @@
 import { pickHasOption } from './bind';
 import { chartModelOf } from './chart';
 import { namesIn, numberOf, parseExpr } from './expr';
-import { lengthOf, outlineOf, pointAlong } from './geometry';
+import { lengthOf, outlineOf, pointAlong, refitInside } from './geometry';
 import { completeStyle, mergeStyles, patchStyle, resolveColours, resolveLook, resolveStyle } from './style';
 import type { ColorSheet, ElementStyle, LookDef, LookSheet, ResolvedLook, ResolvedProps, StyleContext, StyleDef, StyleSheet } from './style';
 import { isRuleRow, splitCells, splitEmphasis } from './text';
@@ -366,6 +366,8 @@ export interface ElementSpan {
   /** key of the group it is a part of */
   readonly parent: string | null;
   readonly carried: boolean;
+  /** a shape written `in=` another closed shape that did not sit inside it, and was shrunk toward its centre until it does: told in sight as `refit` */
+  readonly refit?: boolean;
   readonly replaces: string | null;
   /** null for carried elements: they are already there at time zero */
   readonly enter: (Span & { readonly effect: EnterEffect; readonly by: By }) | null;
@@ -851,7 +853,7 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
     start: number,
     duration: number,
     order: number,
-    extra: { text?: string; emphasis?: readonly Range[]; figure?: Figure; parent?: string | null; predecessor?: Live | null; href?: string },
+    extra: { text?: string; emphasis?: readonly Range[]; figure?: Figure; parent?: string | null; predecessor?: Live | null; href?: string; refit?: boolean },
   ): Live => {
     const span: MutableElement = {
       key: `${id}@${entry.seq}`,
@@ -873,6 +875,7 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
       driven: [],
       struck: false,
       ...(extra.href !== undefined && { href: extra.href }),
+      ...(extra.refit === true && { refit: true }),
     };
     const created: Live = { span, style, ghost: false, predecessor: extra.predecessor ?? null, frames: null, rows: null };
     elements.push(span);
@@ -1400,11 +1403,26 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
       lines.push({ seq, verb: line.verb, start, end: start + duration });
       return;
     }
-    const joined = joinGroup(seq, styleFor(seq, 'shape', line.styles, line.props), start);
+    // A shape written `in=` another closed shape is kept inside it: shrunk toward its own centre until it is, and told so
+    let refit = false;
+    let shapeStyle = styleFor(seq, 'shape', line.styles, line.props);
+    if (shapeStyle.group !== null) {
+      const host = findLive(shapeStyle.group, start);
+      const hostFigure = host === null || host.span.kind !== 'shape' ? null : figureAt(host.span, Number.POSITIVE_INFINITY);
+      if (hostFigure?.kind === 'shape') {
+        const fitted = refitInside(geometry, hostFigure.geometry);
+        if (fitted !== null) {
+          geometry = fitted.geometry;
+          refit = fitted.refit;
+        }
+        shapeStyle = { ...shapeStyle, group: null };
+      }
+    }
+    const joined = joinGroup(seq, shapeStyle, start);
     const style = joined.style;
     const duration = style.enter === 'draw' ? drawSeconds(lengthOf(geometry), pace, style.dur) : figureEnterSeconds(style.enter, pace, style.dur);
     const slot = takeSlot(line.id, start);
-    create(entry, 'shape', line.id, style, start + slot.delay, duration, slot.order, { figure: { kind: 'shape', geometry }, parent: joined.parent });
+    create(entry, 'shape', line.id, style, start + slot.delay, duration, slot.order, { figure: { kind: 'shape', geometry }, parent: joined.parent, refit });
     advanceForDrawn(style, start + slot.delay, duration);
     lines.push({ seq, verb: line.verb, start, end: start + slot.delay + duration });
   };

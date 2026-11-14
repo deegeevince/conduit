@@ -405,3 +405,71 @@ export function resample(line: Polyline, count: number): Point[] {
   for (let i = 0; i < steps; i += 1) points.push(pointAlong(line, line.closed ? i / steps : i / (steps - 1)));
   return points;
 }
+
+/** The shape scaled by `k` and then moved by (tx, ty). */
+function mapGeometry(geometry: ShapeGeometry, k: number, tx: number, ty: number): ShapeGeometry {
+  const fx = (x: number): number => x * k + tx;
+  const fy = (y: number): number => y * k + ty;
+  switch (geometry.shape) {
+    case 'circle':
+      return { ...geometry, cx: fx(geometry.cx), cy: fy(geometry.cy), r: geometry.r * k };
+    case 'ellipse':
+      return { ...geometry, cx: fx(geometry.cx), cy: fy(geometry.cy), rx: geometry.rx * k, ry: geometry.ry * k };
+    case 'rect':
+      return { ...geometry, x: fx(geometry.x), y: fy(geometry.y), w: geometry.w * k, h: geometry.h * k, r: geometry.r * k };
+    case 'line':
+    case 'poly':
+      return { ...geometry, points: geometry.points.map((p) => ({ x: fx(p.x), y: fy(p.y) })) };
+    case 'path': {
+      const commands: PathCommand[] = geometry.commands.map((c) => {
+        if (c.op === 'Z') return c;
+        if (c.op === 'C') return { op: 'C', x1: fx(c.x1), y1: fy(c.y1), x2: fx(c.x2), y2: fy(c.y2), x: fx(c.x), y: fy(c.y) };
+        return { op: c.op, x: fx(c.x), y: fy(c.y) };
+      });
+      return { shape: 'path', d: commands.map((c) => (c.op === 'Z' ? 'Z' : c.op === 'C' ? `C${c.x1},${c.y1} ${c.x2},${c.y2} ${c.x},${c.y}` : `${c.op}${c.x},${c.y}`)).join(' '), commands };
+    }
+  }
+}
+
+/** The shape scaled by `k` about the point `about`. */
+export function scaleGeometry(geometry: ShapeGeometry, k: number, about: Point): ShapeGeometry {
+  return mapGeometry(geometry, k, about.x * (1 - k), about.y * (1 - k));
+}
+
+function insideOutline(p: Point, pts: readonly Point[]): boolean {
+  let inside = false;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i, i += 1) {
+    const a = pts[i] as Point;
+    const b = pts[j] as Point;
+    if (a.y > p.y !== b.y > p.y && p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
+  }
+  return inside;
+}
+
+/**
+ * A closed shape put inside another: shrunk toward its own centre (and, when that centre is outside, drawn in toward the container's) until
+ * every point of its outline lies inside the container's. `refit` says it had to be; null when the container has no closed outline.
+ */
+export function refitInside(child: ShapeGeometry, container: ShapeGeometry): { geometry: ShapeGeometry; refit: boolean } | null {
+  const outer = outlineOf(container).filter((line) => line.closed && line.points.length >= 3).sort((a, b) => polylineLength(b) - polylineLength(a))[0];
+  if (outer === undefined || !outlineOf(child).every((line) => line.closed)) return null;
+  const fits = (g: ShapeGeometry): boolean => outlineOf(g).every((line) => line.points.every((p) => insideOutline(p, outer.points)));
+  if (fits(child)) return { geometry: child, refit: false };
+  const box = boundsOf(child);
+  const centre = { x: box.x + box.w / 2, y: box.y + box.h / 2 };
+  const cb = boundsOf(container);
+  const heart = { x: cb.x + cb.w / 2, y: cb.y + cb.h / 2 };
+  // draw the centre in, in steps, until it is inside; then shrink
+  let g = child;
+  let at = centre;
+  for (let i = 0; i < 20 && !insideOutline(at, outer.points); i += 1) {
+    const moved = { x: at.x + (heart.x - at.x) * 0.1, y: at.y + (heart.y - at.y) * 0.1 };
+    g = mapGeometry(g, 1, moved.x - at.x, moved.y - at.y);
+    at = moved;
+  }
+  for (let k = 0.95; k >= 0.1; k -= 0.05) {
+    const trial = scaleGeometry(g, k, at);
+    if (fits(trial)) return { geometry: trial, refit: true };
+  }
+  return { geometry: scaleGeometry(g, 0.1, at), refit: true };
+}

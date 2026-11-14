@@ -210,6 +210,7 @@ export function sightOf(timeline: Timeline, schedule: Schedule, base: StageBase,
     box ??= { x: 0, y: 0, w: 0, h: 0 };
     const topLeft = canvasToStage({ x: box.x, y: box.y }, fit, 'mid', viewport);
     const own: SightNote[] = [...(layoutNotes.get(element.key) ?? [])];
+    if (element.refit === true) own.push('refit');
     if (gone) {
       // the line the answer rests on (a `strong` line, or the first line said when nothing is `strong`) is told as lost; any other as retired
       const style = element.style;
