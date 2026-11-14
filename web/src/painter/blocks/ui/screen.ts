@@ -19,19 +19,71 @@ import type { UiHit, UiPart, UiScreenLayout, UiSlot, UiState } from './types';
 function responsive(nodes: readonly UiNode[]): UiNode[] {
   return nodes.map((node): UiNode => {
     if (!isUiContainer(node)) return node;
+    // a wrapping row of cards (three or more) is a grid on a page: two to a row on a phone, not one long stack of them
+    if (node.kind === 'row' && node.props.wrap && node.children.length >= 3 && node.children.every(isUiContainer)) {
+      const cards = responsive(node.children);
+      const rows: UiNode[] = [];
+      for (let i = 0; i < cards.length; i += 2) {
+        const pair = cards.slice(i, i + 2).map((card): UiNode => (isUiContainer(card) ? { ...card, props: { ...card.props, grow: true } } : card));
+        rows.push({ kind: 'row', id: `${node.id}~${i / 2 + 1}`, line: node.line, props: { ...node.props, wrap: false, grow: false, spread: false, align: 'start' }, children: pair });
+      }
+      return { ...node, kind: 'col', props: { ...node.props, wrap: false, align: null }, children: rows };
+    }
     const stack = node.kind === 'row' && !node.props.spread && node.children.length >= 2 && node.children.some((child) => isUiContainer(child) || child.kind === 'image');
     const children = responsive(node.children).map((child): UiNode => (stack && !isUiContainer(child) ? { ...child, flags: child.flags.filter((flag) => flag !== 'grow') } : stack && isUiContainer(child) ? { ...child, props: { ...child.props, grow: false } } : child));
     return stack ? { ...node, kind: 'col', props: { ...node.props, align: null }, children } : { ...node, children };
   });
 }
 
+/**
+ * A page shown as a phone is the glass it is: what the page has below the fold is not the screen's, and a card cut across the fold is a mistake the
+ * eye sees at once. What does not fit whole is left off, from the first thing that crosses the fold to the end of the page (a column is read down; a row
+ * of things side by side goes or stays as one). `boxes` are the parts' boxes in the glass.
+ */
+function aboveFold(nodes: readonly UiNode[], boxes: ReadonlyMap<string, { readonly y: number; readonly h: number }>, limit: number): UiNode[] {
+  const out: UiNode[] = [];
+  for (const node of nodes) {
+    const b = boxes.get(node.id);
+    if (b === undefined || b.y + b.h <= limit + 0.5) {
+      out.push(node);
+      continue;
+    }
+    // a column that crosses the fold keeps what fits of it; anything else that crosses it goes
+    if (isUiContainer(node) && node.kind === 'col' && b.y < limit) {
+      const inner = aboveFold(node.children, boxes, limit);
+      if (inner.length > 0) out.push({ ...node, children: inner });
+    }
+    break;
+  }
+  return out;
+}
+
+function countNodes(nodes: readonly UiNode[]): number {
+  return nodes.reduce((n, node) => n + 1 + (isUiContainer(node) ? countNodes(node.children) : 0), 0);
+}
+
 export function layoutScreen(written: UiScreen, tokens: UiTokens, measure: UiMeasure, state: UiState = NO_STATE, lines = 0): UiScreenLayout {
   // `device` is a property that can be set: the same lines laid out on another device
   const switched: UiScreen = state.device[written.id] === undefined ? written : { ...written, device: state.device[written.id] ?? written.device };
-  const screen: UiScreen = switched.device === 'phone' && (written.device === 'browser' || written.device === 'desktop') ? { ...switched, children: responsive(switched.children) } : switched;
+  const adapted = switched.device === 'phone' && (written.device === 'browser' || written.device === 'desktop');
+  let screen: UiScreen = adapted ? { ...switched, children: responsive(switched.children) } : switched;
   let size: { width: number; height: number } = UI_DEVICE_SIZE[screen.device];
   const kit = makeKit(tokens, screen.device, measure, state);
   let placed: Placed<Item> = solve(buildScreen(kit, screen, size.width, size.height), size.width, size.height);
+  if (adapted) {
+    // the page, as a phone shows it: its first screenful, whole (two passes: a part left off can let the ones above it settle)
+    for (let pass = 0; pass < 3; pass += 1) {
+      const boxes = new Map<string, { y: number; h: number }>();
+      walk(placed, (p, _x, y) => {
+        if (!boxes.has(p.node.payload.id)) boxes.set(p.node.payload.id, { y, h: p.h });
+      });
+      const kept = aboveFold(screen.children, boxes, size.height);
+      if (countNodes(kept) === countNodes(screen.children)) break;
+      screen = { ...screen, children: kept };
+      placed = solve(buildScreen(kit, screen, size.width, size.height), size.width, size.height);
+    }
+    lines = Math.min(lines, 1 + countNodes(screen.children));
+  }
   // A page is as long as its content (up to half as long again as the fold): a home page cut at the fold in the middle of its cards is not a page.
   // A phone or a tablet is the glass it is, and a long screen scrolls.
   if (screen.device === 'browser' || screen.device === 'desktop') {
