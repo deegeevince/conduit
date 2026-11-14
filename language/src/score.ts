@@ -263,6 +263,7 @@ function revised(origin: Line, change: ReviseLine): Line | null {
     case 'table':
     case 'chart':
     case 'code':
+    case 'tune':
       // The words of a structure or a card are its title.
       return { ...origin, styles: styles ?? origin.styles, props: { ...origin.props, ...change.props }, ...(change.text !== undefined && { title: change.text }) };
     case 'set':

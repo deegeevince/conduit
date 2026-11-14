@@ -69,6 +69,7 @@ import {
   CHART_WORD,
   CODE_LANGUAGES,
   CODE_ROW_SECONDS,
+  TUNE_VOICES,
   QUICK_ENTER_SECONDS,
   CONTROL,
   EXPR_FUNCTION,
@@ -208,6 +209,7 @@ sections.push(words('`link` ends', 'End', LINK_END));
 sections.push(words('`chart` kinds', 'Kind', CHART));
 sections.push(words('`chart` words', 'Word', CHART_WORD));
 sections.push(`### \`code\` languages\n\nWords that name a language and are never taken for an id: ${CODE_LANGUAGES.map((name) => `\`${name}\``).join(', ')}. Any other name is kept as written (\`lang=…\`) and shown plain.\n`);
+sections.push(`### \`tune\` voices\n\nThe instruments a tune is played on, by \`voice=\` (or as a bare word on the line): ${TUNE_VOICES.map((name) => `\`${name}\``).join(', ')}. The painter's own synthesiser makes them; none is loaded.\n`);
 sections.push(words('Controls', 'Control', CONTROL));
 sections.push(words('`pick` forms', 'Form', PICK));
 sections.push(words('Functions in `{…}`', 'Function', EXPR_FUNCTION));

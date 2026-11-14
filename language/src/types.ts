@@ -40,6 +40,7 @@ import type {
   StrokeCharacter,
   StructureVerb,
   Texture,
+  TuneVoice,
   Weight,
 } from './vocabulary';
 
@@ -328,6 +329,9 @@ export interface StructureLine {
   readonly lang?: string;
   /** v2.1. A code block: the file it is from, shown as its header */
   readonly file?: string;
+  /** v2.1. A tune: how fast it is played (quarter notes a minute) and on what; absent: the score's own `Q:`, and a piano */
+  readonly tempo?: number;
+  readonly voice?: TuneVoice;
   /** a table: its numbers are drawn as bars beside the figures */
   readonly bars?: boolean;
   /** the room it is laid out in, canvas units; absent means the whole canvas */

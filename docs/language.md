@@ -280,6 +280,7 @@ map      [id] [route] [x,y WxH] [| title]
 table    [id] [bars] [x,y WxH] [| title]
 chart    [id] [line|area|columns|candles|ohlc] [indexed] [log] [spark] [live] [approx] [x,y WxH] [data=<id> | data=dataset:<name> [instrument=<symbol>] [field=<name>]] [| title]
 code     [id] [lang] [file=<name>] [x,y WxH] [| title]
+tune     [id] [tempo=<bpm>] [voice=piano|strings|chip|bell] [x,y WxH] [| title]
 
 node [id] [number | x,y] [ask|end|note] [from=<id>[:label]] [x=<when>] [y=<value>] [prop=value…] | <words>
 link <a> <b> [c…] [both|plain] [dashed] [| label]
@@ -300,6 +301,11 @@ A structure is a diagram the brain names and the painter lays out. The line that
 - **`table`**: rows of cells between bars, as Markdown writes a table; the first row is the header, and a first column of names is set as row headers. Columns are sized by their content, numbers are aligned on the right, and rules are the look's hairlines. `*Stars*` mark a cell. `table bars` also draws its numbers as bars beside the figures: a ranking.
 - **`chart`**: see below.
 - **`code`**: source taken exactly. Each `| line` after it is one line of the source, **never split into cells and never trimmed at the front**: indentation is kept, a `|` inside the line is only a character, and a bare `|` is an empty line (it is a row of a code block and nowhere else; in a table or a sprite it says nothing). A line is cut at 1,160 characters and a block holds 400 lines. `lang` is a word of the reference (`python`, `ts`, `bash`, `c++`, `json`, …) or `lang=<anything>`; the painter highlights what it knows and sets the rest plain. `file=<name>` is the file the code is from, shown as its header, and `| title` is a heading above it. The painter sets it in the look's monospaced face inside its frame, scrolls it when it is long, and offers a copy action; the lines land one after another, quickly (a listing is read, not watched). The brain is taught to use `code` for any code, and never a `say` or a list line.
+- **`tune`**: music, as ABC notation (the plain-text score every model has read). Each `| row` after it is one line of the score, **taken exactly like a line of code** (the one space after the bar is the bar's; a row that begins `|:` or `||` has no such space and is all music; a line with no bar at all, when it is no verb, is read as a row of the tune just opened). The painter draws the tune as a piano roll in the look's inks (one colour a voice, a bar line each bar, the keys' names down the side), a playhead that moves with the sound, and each note lighting as it sounds; it plays it on its own synthesiser, with nothing to load. `tempo=<bpm>` (30 to 240, quarter notes a minute) wins over the score's `Q:`; `voice=` is the instrument, one of `piano`, `strings`, `chip` (a square-wave lead), `bell`, and a piano when it is not said. `| title` is the heading, and wins over `T:`. A tune holds 160 rows, 3,000 notes and 300 seconds.
+  - **The ABC read.** Fields `K:` (any tonic with `#` or `b`, major, minor and the church modes), `M:` (`4/4`, `6/8`, `C`, `C|`), `L:` (unit length; `1/8` by default, `1/16` under three quarters), `Q:` (`1/4=120`, `120`), `V:` (a voice), `T:` (title); a field may stand inside a line of music, in brackets (`[K:G]`, `[V:2]`). Notes `C`-`B` (the octave of middle C) and `c`-`b` (the one above), `,` and `'` for other octaves, `^` `^^` `_` `__` `=` for accidentals (they hold to the bar line, and the key signature is applied), lengths (`2`, `/2`, `3/2`, `/`), rests `z` and `x`, a bar's rest `Z`, `>` and `<` for dotted pairs, `-` for ties, `(3abc` and the other tuplets, chords `[CEG]` with a length inside or after. Bar lines `|`, `||`, `|]`, `[|`, repeats `|:`, `:|`, `:|:`, `::`, and first and second endings (`|1`, `:|2`, `[1`, `[2`). **Two voices**, `V:1` and `V:2`, each written from the start: a melody and a bass; any voice after the second is skipped. Skipped with a warning and never a failure: grace notes `{}`, overlays `&`, a field or a sign it does not know. Skipped quietly because they are about the page, not the sound: chord symbols `"Am"`, decorations (`!trill!`, `.`, `~`), slurs, lyrics (`w:`), `%` comments, and the fields `X: C: N: Z: O: S: R: B: D: F: G: H: I: P: A:`.
+  - **When it sounds.** The notes of a tune are not played as its rows arrive, because a bass written after the melody would begin late: the music **begins when the block is closed**, that is the moment the brain writes any line after it (a `say` will do), or the turn ends. From then the painter's clock and the music's agree: the playhead is at the sound. A tune stays on stage as a picture when the next turn begins, and the sound stops then (a new turn, `Stop` and `/stop` all stop it; the sound control mutes it). The first sound of a page needs a click or a key, and the Send that asked for the music is one. Nothing is loud: the master volume is low, notes are shaped, and a limiter keeps a thick chord from jumping.
+  - **Taught only when asked.** The system prompt does not teach `tune`; the turn's brief does, when the user's words are about music (play, song, melody, tune, sonata, music, chord, compose, MIDI, beat) or a tune is on stage, with an eight-bar example in two voices and the rule that a piece asked for is 16 to 32 bars unless the user asks for more.
+  - **Export.** The Save menu holds `Save MIDI`, a standard MIDI file of the tune on stage (a tempo track and a track a voice).
 
 **Rows.** A line that starts with `|` is a row of the table or chart being written. A row may be written before or after other lines (a table can be revealed with words between its rows). Each row lands a step after the last.
 
@@ -733,6 +739,7 @@ A new structure, chart kind or control is one entry in its table in `vocabulary.
 | `table [id] [bars] [x,y WxH] [\| title]` | starts at the pen and leaves the pen where it is | A table. Follow it with one `| cell | cell` line per row; the first is the header. |
 | `chart [id] [line\|area\|columns\|candles\|ohlc] [indexed] [log] [spark] [live] [approx] [x,y WxH] [data=<id>] [\| title]` | starts at the pen and leaves the pen where it is | A chart: an instrument with axes, a crosshair and zoom. Follow it with one `| when | value…` line per point, or name DATA from the brief. |
 | `code [id] [lang] [file=<name>] [x,y WxH] [\| title]` | starts at the pen and leaves the pen where it is | Code, taken exactly: follow it with one `| line` per line of the source, indentation kept, a bare `|` for an empty line. |
+| `tune [id] [tempo=<bpm>] [voice=piano\|strings\|chip\|bell] [x,y WxH] [\| title]` | starts at the pen and leaves the pen where it is | Music, in ABC notation: follow it with one `| line` per line of the score (K: M: L: Q: V:1 V:2, then the notes). It is drawn as a piano roll and played when it is whole. |
 | `node [id] [number \| x,y] [ask\|end\|note] [from=<id>[:label]] [x=<when>] [y=<value>] [prop=value…] \| <text>` | starts at the pen and moves the pen part of the way through its own drawing | One part of the structure above. from= also draws the link from that node. On a chart it is a mark: x= an event, y= a level, both a point. |
 | `link <a> <b> [c…] [both\|plain] [dashed] [\| label]` | starts at the pen and moves the pen part of the way through its own drawing | Join nodes with a routed connector, in a chain when more than two are named. |
 | `button [id] [prop=value…] \| <label>` | starts at the pen and moves the pen part of the way through its own drawing | A button. Pressing it is sent to you, with the value of every control on stage. |
@@ -1134,6 +1141,7 @@ Nominal scale against body: `xs` 0.64, `s` 0.8, `m` 1, `l` 1.5, `xl` 2.25, `xxl`
 | `table` | rows | the painter | rows `\| a \| b \| c`, the first the header; `bars` draws its numbers as bars too |
 | `chart` | rows, and nodes as marks | the painter's charting engine | rows `\| when \| value`: an instrument with axes, a crosshair and zoom |
 | `code` | rows | the painter's charting engine | rows `\| line` taken exactly as written, indentation kept: monospaced and highlighted, with a copy action |
+| `tune` | rows | the painter's charting engine | rows `\| line` of ABC notation, taken exactly: a piano roll that plays, with a playhead and the notes lighting as they sound |
 
 ### `node` shapes (flow, tree, cycle)
 
@@ -1175,6 +1183,10 @@ Nominal scale against body: `xs` 0.64, `s` 0.8, `m` 1, `l` 1.5, `xl` 2.25, `xxl`
 ### `code` languages
 
 Words that name a language and are never taken for an id: `text`, `plain`, `txt`, `ts`, `typescript`, `js`, `javascript`, `jsx`, `tsx`, `json`, `python`, `py`, `bash`, `sh`, `shell`, `zsh`, `css`, `scss`, `html`, `xml`, `svg`, `sql`, `c`, `cpp`, `c++`, `csharp`, `c#`, `cs`, `java`, `kotlin`, `swift`, `go`, `golang`, `rust`, `rs`, `ruby`, `rb`, `php`, `yaml`, `yml`, `toml`, `ini`, `md`, `markdown`, `diff`, `lua`, `r`, `haskell`, `scala`, `perl`, `dart`, `elixir`, `ocaml`, `regex`, `dockerfile`, `makefile`, `graphql`. Any other name is kept as written (`lang=…`) and shown plain.
+
+### `tune` voices
+
+The instruments a tune is played on, by `voice=` (or as a bare word on the line): `piano`, `strings`, `chip`, `bell`. The painter's own synthesiser makes them; none is loaded.
 
 ### Controls
 

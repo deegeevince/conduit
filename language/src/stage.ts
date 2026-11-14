@@ -4,6 +4,7 @@ import { figureAt, isStruckAt, lookAt, sceneAt, styleAt, valueAt, wearingAt } fr
 import type { CarriedElement, ElementSpan, Figure, Schedule, StageBase } from './schedule';
 import type { CanvasBox, ControlValues } from './types';
 import type { ElementKind } from './vocabulary';
+import { cachedTune, describeTune, tuneRowsOf } from './tune';
 
 /** One thing the user actually saw during a turn. */
 export interface ShownItem {
@@ -53,6 +54,7 @@ export function describeFigure(figure: Figure, box: CanvasBox | null = null): st
     }
     case 'structure': {
       if (figure.structure === 'code') return describeCode(figure);
+      if (figure.structure === 'tune') return describeTune(cachedTune(tuneRowsOf(figure.rows), { tempo: figure.tempo ?? null }), figure.rows.length);
       const name = figure.chart === null ? figure.structure : [...figure.words, `${figure.chart} chart`].join(' ');
       if (figure.data !== null) return `${name} of DATA ${figure.data}`;
       if (figure.dataset !== undefined && figure.dataset !== null) {

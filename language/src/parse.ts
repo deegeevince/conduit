@@ -2,6 +2,7 @@ import { STANDING_LIMITS } from './context';
 import { parsePathData } from './geometry';
 import { BUILTIN_STYLE_NAMES, own } from './style';
 import { splitCells } from './text';
+import { TUNE_TEMPO_RANGE } from './tune';
 import type {
   BindOn,
   CanvasBox,
@@ -44,6 +45,7 @@ import {
   CHART_WORDS,
   CLEARS,
   CODE_LANGUAGES,
+  TUNE_VOICES,
   CONTROL_VERBS,
   DIRECTIONS,
   ENTER_EFFECTS,
@@ -954,7 +956,7 @@ const FIELD_NAME = /^[A-Za-z0-9_.-]{1,24}$/;
 
 function parseStructure(verb: StructureVerb, head: Head, text: string | null, issues: Issues): Line {
   const own: readonly string[] =
-    verb === 'flow' || verb === 'tree' ? GROWTHS : verb === 'chart' ? [...CHART_KINDS, ...CHART_WORDS] : verb === 'map' ? ['route'] : verb === 'table' ? ['bars'] : verb === 'code' ? CODE_LANGUAGES : [];
+    verb === 'flow' || verb === 'tree' ? GROWTHS : verb === 'chart' ? [...CHART_KINDS, ...CHART_WORDS] : verb === 'map' ? ['route'] : verb === 'table' ? ['bars'] : verb === 'code' ? CODE_LANGUAGES : verb === 'tune' ? TUNE_VOICES : [];
   const { id, numbers, names } = splitWords(head.words, true, false, own);
   const { props, rest } = readStyleProps(head.pairs, issues);
   const line: { -readonly [K in keyof StructureLine]: StructureLine[K] } = { verb, id, styles: [], props };
@@ -968,6 +970,7 @@ function parseStructure(verb: StructureVerb, head: Head, text: string | null, is
     else if (verb === 'map' && name === 'route') line.route = true;
     else if (verb === 'table' && name === 'bars') line.bars = true;
     else if (verb === 'code' && line.lang === undefined && (oneOf(CODE_LANGUAGES, name) || /[+#]/.test(name))) line.lang = name;
+    else if (verb === 'tune' && oneOf(TUNE_VOICES, name)) line.voice = name;
     else styleWords.push(name);
   }
   let dataset: { name?: string; instrument?: string; field?: string } = {};
@@ -982,6 +985,10 @@ function parseStructure(verb: StructureVerb, head: Head, text: string | null, is
     else if (key === 'field' && verb === 'chart') dataset = { ...dataset, field: pair.raw };
     else if ((key === 'lang' || key === 'language') && verb === 'code' && /^[a-z][a-z0-9+#_.-]{0,15}$/.test(value)) line.lang = value;
     else if (key === 'file' && verb === 'code' && pair.raw !== '') line.file = pair.raw.slice(0, LIMITS.file);
+    else if ((key === 'voice' || key === 'instrument' || key === 'sound') && verb === 'tune' && oneOf(TUNE_VOICES, value)) line.voice = value;
+    else if ((key === 'voice' || key === 'instrument' || key === 'sound') && verb === 'tune') issues.warn('bad-value', `voice=${value} is not one of ${TUNE_VOICES.join(' | ')}; a piano is used`, pair.token);
+    else if ((key === 'tempo' || key === 'bpm') && verb === 'tune' && /^\d+(\.\d+)?$/.test(value) && Number(value) >= TUNE_TEMPO_RANGE.min && Number(value) <= TUNE_TEMPO_RANGE.max) line.tempo = Number(value);
+    else if ((key === 'tempo' || key === 'bpm') && verb === 'tune') issues.warn('bad-value', `tempo=${value} is not a number of beats a minute from ${TUNE_TEMPO_RANGE.min} to ${TUNE_TEMPO_RANGE.max}; the score's own is used`, pair.token);
     else issues.warn('unknown-key', `"${key}" is not a property here; ignored`, pair.token);
   }
   if (dataset.name !== undefined || dataset.instrument !== undefined || dataset.field !== undefined) {
@@ -1506,6 +1513,7 @@ const TEXT_LIMIT: Readonly<Partial<Record<Verb, number>>> = {
   card: LIMITS.text,
   bind: LIMITS.line,
   code: LIMITS.text,
+  tune: LIMITS.text,
   deck: LIMITS.text,
   standing: STANDING_LIMITS.chars,
 };

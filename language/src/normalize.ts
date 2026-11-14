@@ -25,6 +25,8 @@ export class LineReader {
   private table = false;
   /** a block of code is being written: every line that starts with a bar is a line of it, exactly as written, and a bare bar is an empty one */
   private code = false;
+  /** a tune is being written and nothing else has been said since: a line that is no verb at all is a line of its music, bar or no bar */
+  private tune = false;
   private readonly styles: Set<string>;
 
   /** `definedStyles`: the names of styles the brain defined in earlier turns */
@@ -34,7 +36,12 @@ export class LineReader {
 
   read(raw: string): ParseResult {
     const trimmed = raw.trim();
-    if (this.code && trimmed.startsWith('|')) return this.codeRow(raw);
+    if (this.code && trimmed.startsWith('|')) return this.tune && !/^\|(?:\s|$)/.test(trimmed) ? this.musicRow(trimmed) : this.codeRow(raw);
+    // ABC as a model writes it: `K:G`, `V:1`, `|: c d e f |`, `A2 B2 c2 d2`. Before any other line has been said, whatever is no verb is music.
+    if (this.tune && trimmed !== '' && !trimmed.startsWith('#')) {
+      const tried = parseLine(raw);
+      if (tried.kind === 'reject' && tried.issues.some((issue) => issue.code === 'unknown-verb')) return this.musicRow(trimmed);
+    }
     if (this.open !== null && trimmed.length >= 2 && !trimmed.startsWith('|') && this.isRow(trimmed)) return parseLine(`| ${trimmed}`);
     let result = parseLine(raw);
     // `fear | What if I can't?`: the name of a style the brain defined, where the verb goes, is speech in that style.
@@ -57,8 +64,9 @@ export class LineReader {
     const { line } = result;
     if (line.verb === 'table' || line.verb === 'chart') this.table = true;
     else if (line.verb === 'scene' || line.verb === 'deck' || line.verb === 'pix' || line.verb in STRUCTURE) this.table = false;
-    if (line.verb === 'code') this.code = true;
+    if (line.verb === 'code' || line.verb === 'tune') this.code = true;
     else if (line.verb === 'scene' || line.verb === 'deck' || line.verb === 'pix' || line.verb in STRUCTURE) this.code = false;
+    this.tune = line.verb === 'tune' || (this.tune && line.verb === 'row');
     if (line.verb === 'style') this.styles.add(line.name);
     if (line.verb === 'pix') this.open = ROW_ALPHABET + Object.keys(line.key).join('');
     else if (line.verb !== 'row' && line.verb !== 'frame' && !KEEPS_SPRITE_OPEN.has(line.verb)) this.open = null;
@@ -73,6 +81,14 @@ export class LineReader {
     const cut = cells.length > cap;
     const issues: Issue[] = cut ? [{ code: 'text-too-long', severity: 'warn', message: `a line of code is cut to ${cap} characters` }] : [];
     return { kind: 'line', line: { verb: 'row', id: '-', cells: cut ? cells.slice(0, cap) : cells }, issues };
+  }
+
+  /** A line of music: kept whole, and cut at the line's own limit like a line of code. */
+  private musicRow(text: string): ParseResult {
+    const cap = LIMITS.line - 40;
+    const cut = text.length > cap;
+    const issues: Issue[] = cut ? [{ code: 'text-too-long', severity: 'warn', message: `a line of music is cut to ${cap} characters` }] : [];
+    return { kind: 'line', line: { verb: 'row', id: '-', cells: cut ? text.slice(0, cap) : text }, issues };
   }
 
   private isRow(text: string): boolean {
@@ -180,7 +196,8 @@ export class LineNormalizer {
       case 'map':
       case 'table':
       case 'chart':
-      case 'code': {
+      case 'code':
+      case 'tune': {
         const id = line.id === '-' ? this.makeId() : line.id;
         this.sprite = null;
         if (STRUCTURE[line.verb].parts === 'rows') this.table = id;
