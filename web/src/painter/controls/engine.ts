@@ -28,7 +28,7 @@
 // Hover and focus never move or resize anything. The size of every zone, and
 // so of every target, is at least `minTarget` on its shorter side.
 
-import { controlShare } from '@conduit/language';
+import { controlShare, sliderStep, snapSliderValue } from '@conduit/language';
 import type { ControlSpec, ControlValue } from '@conduit/language';
 import type { BlockLook, BlockPart, MeasuredText, TextSpec } from '../../contracts/blocks';
 import type { ControlEngine, ControlInput, ControlKey, ControlLayout, ControlZone } from '../../contracts/controls';
@@ -150,7 +150,7 @@ export function withUnit(text: string, unit: string | null): string {
 
 /** What a slider says it holds, with the space the unit needs. */
 function sliderWords(spec: ControlSpec, value: number): string {
-  return withUnit(String(Number(value.toFixed(4))), spec.unit);
+  return withUnit(String(Number(value.toFixed(spec.step === null && sliderStep(spec) !== null ? 0 : 4))), spec.unit);
 }
 
 /** `Summer / Winter`: a toggle named for both of its states, off first. Null for any other words. */
@@ -299,28 +299,9 @@ function sliderGeo(width: number, m: Metrics): SliderGeo {
   return { x0: -width / 2 + r, x1: width / 2 - r };
 }
 
-function decimalsOf(spec: ControlSpec): number {
-  const places = (n: number): number => {
-    const text = String(Number(n.toPrecision(10)));
-    const dot = text.indexOf('.');
-    return dot < 0 ? 0 : text.length - dot - 1;
-  };
-  if (spec.step !== null && spec.step > 0) return Math.min(6, Math.max(places(spec.step), places(spec.min)));
-  const span = Math.abs(spec.max - spec.min);
-  return span === 0 || !Number.isFinite(span) ? 0 : Math.min(6, Math.max(0, Math.ceil(-Math.log10(span / 1000))));
-}
-
-/**
- * A number put on the slider's grid: its step counted from `min`, never outside its ends (whichever end is the
- * larger: a slider written `10 0` runs down), free of float noise. Not a number: where the slider starts.
- */
+/** A number put on the slider's grid (see `snapSliderValue`: a slider with no step and whole ends goes by 1). */
 export function snapSlider(spec: ControlSpec, raw: number): number {
-  if (!Number.isFinite(raw)) return spec.min;
-  const lo = Math.min(spec.min, spec.max);
-  const hi = Math.max(spec.min, spec.max);
-  let v = Math.min(hi, Math.max(lo, raw));
-  if (spec.step !== null && spec.step > 0 && Number.isFinite(spec.step)) v = Math.min(hi, Math.max(lo, spec.min + Math.round((v - spec.min) / spec.step) * spec.step));
-  return Number(v.toFixed(decimalsOf(spec)));
+  return snapSliderValue(spec, raw);
 }
 
 function layoutSlider(input: ControlInput, m: Metrics): ControlLayout {
@@ -621,8 +602,9 @@ function valueAfter(input: ControlInput, key: ControlKey): ControlValue | null {
       const held = typeof raw === 'number' && Number.isFinite(raw) ? raw : spec.min;
       const span = Math.abs(spec.max - spec.min);
       if (!(span > 0)) return null;
-      const stepped = spec.step !== null && spec.step > 0 && Number.isFinite(spec.step);
-      const unit = stepped && spec.step !== null ? spec.step : span / 20;
+      const grid = sliderStep(spec);
+      const stepped = grid !== null;
+      const unit = grid ?? span / 20;
       const big = stepped ? unit * 10 : span / 5;
       // towards `max` is "more", whichever end of the number line `max` is
       const toward = spec.max >= spec.min ? 1 : -1;
