@@ -12,7 +12,18 @@ html {
   text-size-adjust: 100%;
 }
 
+/* The page never scrolls. `overflow: hidden` on the root still lets a script or a focus move it (anything spilling past the viewport makes it scrollable,
+   and the whole app slides up under the finger on an iPad), so the body is pinned to the viewport and clips what spills. */
+html {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
 body {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  overflow: clip;
   margin: 0;
   background: var(--stage-ground);
   color: var(--stage-ink);
@@ -49,7 +60,7 @@ input {
 
 .page-stage {
   height: var(--app-height, 100dvh);
-  overflow: hidden;
+  overflow: clip;
   overscroll-behavior: none;
 }
 
@@ -63,7 +74,7 @@ input {
 .stage {
   position: relative;
   min-height: 0;
-  overflow: hidden;
+  overflow: clip;
   background: var(--stage-ground);
   touch-action: manipulation;
 }
@@ -612,7 +623,7 @@ input {
 .stage__apps {
   position: absolute;
   inset: 0;
-  overflow: hidden;
+  overflow: clip;
   pointer-events: none;
 }
 

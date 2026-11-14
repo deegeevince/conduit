@@ -46,6 +46,14 @@
   --sh-shadow: 0 8px 28px rgb(0 0 0 / 0.6);
 }
 
+body {
+  /* the page never scrolls: pinned to the viewport, it clips what spills, so no focus or script can slide the app up */
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  overflow: clip;
+}
+
 html,
 body {
   height: 100%;

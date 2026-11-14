@@ -125,6 +125,10 @@ const keepAboveKeyboard = (): void => {
 };
 window.visualViewport?.addEventListener('resize', keepAboveKeyboard);
 keepAboveKeyboard();
+// the page never scrolls: if anything moves it (a focus, a keyboard), it goes straight back
+window.addEventListener('scroll', () => {
+  if (window.scrollX !== 0 || window.scrollY !== 0) window.scrollTo(0, 0);
+});
 
 function unavailable(message: string): void {
   const note = document.createElement('p');
