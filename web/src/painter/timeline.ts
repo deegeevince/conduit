@@ -703,6 +703,13 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
         pinned: box === null || released.has(element.key) ? null : { x: box.x, y: box.y, width: box.w, height: box.h },
       });
     }
+    // A live app that is the whole answer (nothing else drawn or placed beside it) is given the whole stage, edge to edge inside the chrome, however short a height it asked for:
+    // a real page or tool is not a band. With anything beside it, it keeps the size it asked for.
+    if (pictureOrder === null && list.length === 1) {
+      const only = list[0];
+      const lone = only === undefined ? null : drawn.find((element) => element.key === only.key);
+      if (only !== undefined && lone?.figure?.kind === 'structure' && lone.figure.structure === 'app' && only.pinned === null) list[0] = { ...only, natural: { width: 2400, height: 2400 } };
+    }
     if (pictureOrder !== null) {
       kinds.set('canvas', 'picture');
       list.push({ key: 'canvas', kind: 'picture', order: pictureOrder, natural: { width: 1600, height: 900 }, least: { width: 160, height: 90 }, aspect: null, pinned: null });
