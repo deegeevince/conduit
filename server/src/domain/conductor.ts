@@ -290,7 +290,8 @@ export class Conductor {
     s.turn = turn;
     sessions.indexTurn(s, turn);
     log.info('turn.opened', { session: s.id, turn: turn.id, brain: brain.id, input: turn.input.kind, login: turn.login });
-    this.deps.sessionLog.write(s.id, { type: 'turn', turn: turn.id, input, brain: brain.id, login: turn.login });
+    const chosen = brain.choice?.(s.id);
+    this.deps.sessionLog.write(s.id, { type: 'turn', turn: turn.id, input, brain: brain.id, login: turn.login, ...(chosen?.model ? { model: chosen.model } : {}), ...(chosen?.effort ? { effort: chosen.effort } : {}) });
     this.emit(s, turn, { type: 'turn', turn: turn.id, input });
 
     // `run` ends its own turn and does not throw; this is the net under it, so that nothing can ever be an unhandled rejection from here.
