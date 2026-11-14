@@ -18,7 +18,7 @@ import { buildTimeline, settledEnd } from '../painter/timeline';
 import type { Timeline } from '../painter/timeline';
 import { createPlainRenderer } from '../render/plain';
 import { canUseThree, createThreeRenderer } from '../render/three';
-import { createChartEngine } from '../render/chart';
+import { CHARTS_READY, createChartEngine } from '../render/chart';
 import type { ChartHost } from '../contracts/chart';
 import { createHarnessChartHost } from './chart-host';
 import { loadChartFonts } from '../app/chart-host';
@@ -109,7 +109,7 @@ export function installHarness(): void {
     const score = new TurnScore(base);
     for (const { seq, line } of request.lines) score.push(line, seq, 0);
     const schedule = score.schedule;
-    const timeline: Timeline = buildTimeline(schedule, base, { viewport, reducedMotion: false, lockLook: null, paintings: new Map() });
+    const timeline: Timeline = buildTimeline(schedule, base, { viewport, reducedMotion: false, lockLook: null, paintings: new Map(), charts: { kinds: CHARTS_READY, data: new Map() } });
     const duration = settledEnd(timeline, null, base.scene.mood);
     const finished = request.playhead === null;
     const playhead = finished ? duration : Math.max(0, Math.min(request.playhead ?? 0, duration));
@@ -138,7 +138,7 @@ export function installHarness(): void {
       return timeline.frameAt({ time, ambient: time, wallTime: pinnedWallTime(time), clock: 'paused' });
     });
     // The resting stage, as the painter pictures it for the brain: the settled stage alone on a fresh schedule, camera at rest, ambient 3 s.
-    const rest = buildTimeline(new TurnScore(stage).schedule, stage, { viewport, reducedMotion: false, lockLook: null, paintings: new Map() });
+    const rest = buildTimeline(new TurnScore(stage).schedule, stage, { viewport, reducedMotion: false, lockLook: null, paintings: new Map(), charts: { kinds: CHARTS_READY, data: new Map() } });
     frames.push({ ...rest.frameAt({ time: 0, ambient: 3, wallTime: pinnedWallTime(3), clock: 'paused' }), camera: REST_POSE });
 
     const judge: string[] = [];

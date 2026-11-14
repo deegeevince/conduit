@@ -2,7 +2,7 @@
 
 This document answers one question: **how do I run it and poke at it?**
 
-> **v2.** The quality and expression round is planned (`PLAN-v2.md`) and its skeleton is in the code. This runbook describes v1 as it runs, with the commands and settings the skeleton added marked (v2). While v2 is being built, everything it starts uses ports 4600 to 4699: `PORT=4600 VITE_PORT=4601 VITE_API=http://127.0.0.1:4600 pnpm dev`.
+> **v2.** The quality and expression round is built and integrated (`PLAN-v2.md` records what it measured). Everything below is how it runs now; rows marked (v2) are new in this round. To run a second copy beside another (the round was built on 4600 and 4601): `PORT=4600 VITE_PORT=4601 VITE_API=http://127.0.0.1:4600 BRAIN=claude-cli CLAUDE_MODEL=sonnet pnpm dev`.
 
 ## Once
 
@@ -35,9 +35,9 @@ Both ports are strict: if one is taken the process fails instead of picking anot
 | `pnpm start` | production mode: the server serves the API and `web/dist` on 4300. Run `pnpm build` first. |
 | `pnpm timeline <name or path>` | prints when every line of a script would play. `pnpm timeline overture`. With no argument it checks every worked example in the prompt. |
 | `pnpm prompt` | prints the brain's system prompt for a painter that does everything. `pnpm prompt relay` adds the relay appendix, `pnpm prompt v3` is for a painter with no structures, charts or controls (today's), `pnpm prompt flat` for one that only sets type, `pnpm prompt model` with an image model as well, `pnpm prompt count` prints what each costs and fails above `PROMPT_BUDGET`. |
-| (v2) `pnpm library [list \| match "<message>" \| check \| lint [file…]]` | the technique library: what it holds, which techniques a message would be handed and what they add to the brief, every battery prompt against it, whether technique files may be written. `sync`, `push` and `usage` are not built yet. |
-| (v2) `pnpm improve --dry-run` | prints what a run of the improvement loop would do and what guards it. The loop itself is not built yet. |
-| (v2) `pnpm taste` | how far the judge agrees with the owner's own scores in `explore/taste/`. |
+| (v2) `pnpm library [list \| match "<message>" \| check \| lint [file…] \| sync \| push <file> \| usage]` | the technique library: what it holds and from where, which techniques a message would be handed and what they add to the brief, every battery prompt against it (with the time choosing takes), whether technique files may be written, a refresh from Remote, a write of one technique (a dry run unless `--apply`, and only as the steward: `REMOTE_AGENT=conduit-steward`), and how often each technique was handed over and how its answers judged. |
+| (v2) `pnpm improve [--dry-run \| --budget <usd> --experiments <n>]`, `improve status \| approve <id> \| refuse <id> --why "…" \| vault --file <path>` | the improvement loop (see "The improvement loop" below). `--dry-run` prints what a run would do and what guards it. |
+| (v2) `pnpm taste` | how far the judge agrees with the owner's own scores in `explore/taste/` (written by the taste page, `/taste.html`). |
 | `pnpm sessions [file]` | reads session logs back (see "The session log") |
 | `pnpm explore [flags]` | runs the exploration battery (see "The exploration battery") |
 | `pnpm docs:language` | regenerates the reference section of `docs/language.md` from the code |
@@ -61,13 +61,13 @@ Only the selected brain's settings are read.
 | `CLAUDE_MODEL` | when `BRAIN=claude-cli` | none | passed to `claude --model`, for example `sonnet` |
 | `BRAIN_EFFORT` | no | `low` | passed to `claude --effort` on every spawn and written over `CLAUDE_EFFORT` in the child, so a shell that exports `CLAUDE_EFFORT` never changes the brain's latency or cost. `low`, `medium`, `high`. The exploration battery's plain baseline uses the same value. |
 | `PROMPT_VARIANT` | no | `column` | which teaching of the prompt. One exists; a second, `hero`, was measured, scored level and was removed. The battery's `--variant` is how two are compared. |
-| (v2) `REVIEW` | no | `on` | look and fix: the brain is shown its draft and fixes it within the turn. Has no effect until the conductor runs the pass. |
+| (v2) `REVIEW` | no | `on` | look and fix: the brain is shown its draft and fixes it within the turn. The conductor runs the pass; the viewer's switch in the bar sends `x-conduit-review: off` to turn it off for them. |
 | (v2) `REVIEW_PASSES`, `REVIEW_DRAFT_WAIT_MS`, `REVIEW_FIRST_LINE_MS`, `REVIEW_PASS_MS` | no | `1`, `1500`, `12000`, `30000` | fix passes after the draft (0 to 2), and the three waits |
-| (v2) `LIBRARY` | no | `remote` | where techniques come from: `remote` (the Series account, with the file cache and the seed under it), `seed` (the repository's `techniques/seed` only), `none`. Reading Remote is not built yet: the seed is served and the log says so once. |
+| (v2) `LIBRARY` | no | `remote` | where techniques come from: `remote` (the Series account, with the file cache and the seed under it), `seed` (the repository's `techniques/seed` only), `none`. Remote is read in the background (now and every `LIBRARY_REFRESH_MS`); no turn waits for it. When it is unreachable, signed out or `REMOTE_BIN` names nothing, the cache and then the seed are served and the log says `library.unreachable` once. |
 | (v2) `REMOTE_BIN`, `REMOTE_ACTOR`, `REMOTE_ENV`, `LIBRARY_ROOT` | no | `remote`, `series@example.invalid`, `prod`, the Conduit root block | how Remote is read |
 | (v2) `LIBRARY_REFRESH_MS`, `LIBRARY_TIMEOUT_MS`, `LIBRARY_OVERLAY` | no | `600000`, `8000`, none | the background refresh, one call's deadline, and a folder of technique files laid over the library |
 | (v2) `DATASETS`, `DATASETS_ACTOR`, `DATASETS_TIMEOUT_MS` | no | `none`, none, `4000` | the owner's own Remote datasets for charts: off unless `remote`; the account is the owner's, never the Series one |
-| (v2) `EXPLORE_WEB_PORT` | no | `4661` | the web dev server the battery starts for its pictures |
+| (v2) `EXPLORE_WEB_PORT` | no | `4661` | the web dev server the battery starts for its pictures (or pass `--web <url>` to use one that is running) |
 | `CLAUDE_BIN` | no | `claude` | the Claude Code executable |
 | `CLAUDE_WARM` | no | `on` | `off` starts one process per turn instead of keeping one per conversation (an interrupted turn's process is killed at once) |
 | `CLAUDE_MAX_WARM` | no | `4` | conversations that may hold a process at once |
@@ -100,6 +100,8 @@ then ask the replay brain for `overture` (the first load plays it): the sketch u
 | `/` | the stage and the prompt. With no prompt yet, it performs `overture`. |
 | `/gallery.html` | one script, `styles`, as eight stills (one per look) and one live stage in the look you choose |
 | `/explore.html` | the exploration page: one card per prompt of a battery run (see below) |
+| (v2) `/taste.html` | the taste page: twenty answers from a run, one at a time, a thumb and a word each, saved to `explore/taste/`; the judge's score is hidden until you have scored. On a phone it is the page to use. |
+| (v2) `/bench-chart.html` | every kind of chart in every look, with the frame time of 10,000 points; for working on `web/src/render/chart/` |
 | `/bench-painter.html` | the painter on the plain renderer with no server: for working on layout and motion |
 | `/bench-renderer.html` | the WebGL renderer with no painter: for working on a look or an effect |
 
@@ -108,12 +110,18 @@ Query parameters on `/`:
 | Parameter | Effect |
 | --- | --- |
 | `debug=1` | shows the HUD: playhead, pen, lead, clock state, recent lines, last sight and back-channel events |
-| `demo=<name>` | the script performed on load: `overture`, `sketchbook`, `plainly`, `titles`, `styles`. `demo=none` performs nothing. |
+| `demo=<name>` | the script performed on load: `overture`, `sketchbook`, `plainly`, `titles`, `styles`, (v2) `diagrams`, `explorable`, `charts`. `demo=none` performs nothing. |
 | `look=<name>` | locks the stage to one of the eight looks |
 | `renderer=plain` | forces the DOM renderer. `renderer=three` forces WebGL. |
 | `motion=reduced` | behaves as if the OS asked for reduced motion. `motion=full` ignores the OS setting. |
 
 The bar under the stage has Show all (also the `.` key while the stage has focus: the stage is a focusable region, so the key never swallows a character typed elsewhere), Take away (video, frames, a picture as PNG or SVG, copy script, play a script) and Transcript.
+
+## (v2) The technique library, taste and the improvement loop
+
+- **The library.** `pnpm library` says what it holds and from where (Remote, the file cache `techniques/.cache/`, the seed in `techniques/seed/`). Turns are served from memory; Remote is read in the background. Writes to Remote are the steward's only: `REMOTE_SESSION_ID` and `REMOTE_AGENT=conduit-steward` set, `pnpm library push <file> --apply`, then a read back; without `--apply` it prints the exact command and body and writes nothing.
+- **Taste.** `pnpm explore` writes a run; open `/taste.html`, score twenty answers (on a phone, by Tailscale, if you like), and `pnpm taste` prints how far the judge agrees with you (`TASTE_FLOOR`: 75% and kappa 0.4).
+- **The loop.** `pnpm improve --dry-run` first. A run (`pnpm improve --budget 3 --experiments 1`) measures the tune set, asks the critic for a proposal, builds it in a worktree, refuses a diff that touches a protected path, measures baseline and candidate interleaved on the held-out set, asks a reviewer, and stops at `awaiting-steward`. With no taste sheet it runs **uncalibrated**: the records say so and nothing is approved without you. `pnpm improve status` lists what waits; `approve <id>` merges into the branch you are on (never `main`); `refuse <id> --why "…"`. Every experiment is in `loop/ledger.jsonl` and `loop/CHANGELOG.md`.
 
 ## The three brains
 
@@ -202,6 +210,8 @@ pnpm explore --brain replay            # no model, judge or conversations: each 
 pnpm explore --brain claude-cli --model sonnet --samples 2 --max-usd 6 --yes
 pnpm explore --only sky-blue,story     # a few prompts or conversations
 pnpm explore --held-out                # only what no example mirrors
+pnpm explore --pool heldout            # (v2) the sealed set, explore/sealed/heldout.json; --pool tune is the default. --battery <file> plays any battery file (the vault)
+pnpm explore --no-review               # (v2) leave look and fix off: the draft is the answer. On by default with claude-cli, through the same reviewTurn the server uses
 pnpm explore --samples 5               # samples per prompt (default 3); every check gets a pass rate
 pnpm explore --no-cases                # single-turn prompts only
 pnpm explore --no-judge                # skip the model that looks at the final still
@@ -240,6 +250,10 @@ __stage.tap('h2')
 __stage.interrupt()
 __stage.capture(768)   // a data URL of the stage now
 __stage.export({ kind: 'frames', width: 1280, height: 720, fps: 30 })
+__stage.controls()     // (v2) the controls on stage: id, kind, label, value, box, whether bound or sending
+__stage.control('height', 40)   // (v2) works one as the hand would; the same events, the same frame
+__stage.charts()       // (v2) the charts on stage
+await __stage.chart('x2', { hover: 3 })   // (v2) or { zoom: 2 }, { pan: 1 }, { reset: true }; resolves with the engine's probe: crosshair, range, ticks, frame time
 ```
 
 ## When something is wrong
