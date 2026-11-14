@@ -583,7 +583,7 @@ export function createPainter(options: PainterOptions): Painter {
       if (element.parent !== null) continue;
       if (item.kind === 'shown') {
         const tappable = element.changes.reduce<boolean>((tap, change) => (change.kind === 'set' && change.start <= item.time ? change.style.tap : tap), element.style.tap);
-        const text = element.figure === null ? element.text : describeFigure(element.figure);
+        const text = element.figure === null ? timeline.wordsAt(element, item.time) : describeFigure(element.figure);
         emit('transcript', { kind: 'shown', key: element.key, id: element.id, text, tappable, replaces: element.replaces });
       } else if (item.kind === 'struck') emit('transcript', { kind: 'struck', key: element.key });
       else emit('transcript', { kind: 'gone', key: element.key });

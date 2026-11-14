@@ -101,6 +101,8 @@ export interface Timeline {
   frameAt(instant: TimelineInstant): Frame;
   /** the same instant as the test hook and the HUD see it */
   viewsAt(instant: TimelineInstant): StageElementView[];
+  /** the words of an element as a person reads them at `time`: `{…}` worked out against what the controls hold, a brace that names nothing on stage left out; never the template's source */
+  wordsAt(element: ElementSpan, time: number): string;
   /** keys of elements whose entrance has begun by `time` and that have not left */
   onStageAt(time: number): string[];
   /** elements the painter retired early because the scene could not hold them, with the moment each began to leave. The schedule does not know these. */
@@ -2769,6 +2771,7 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
     frameAt: (instant) => cached(instant).frame,
     viewsAt: (instant) => cached(instant).views,
     controlsAt: (instant) => cached(instant).sites,
+    wordsAt: (element, time) => wordsNow(element, null, time)?.text ?? element.text,
     reactive,
     fitAt: (sceneId, time) => fitAt(sceneId, time),
     planAt: (time) => {
