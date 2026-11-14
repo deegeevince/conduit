@@ -147,36 +147,30 @@ function nearer(tint: Tint): Paint {
 /** `set`'s properties applied `t` of the way to `style`. */
 function applyProps(style: ElementStyle, tints: { ink?: Tint; stroke?: Tint; fill?: Tint }, props: ResolvedProps, t: number): ElementStyle {
   let out = style;
-  const discrete: { -readonly [K in keyof ResolvedProps]: ResolvedProps[K] } = {};
-  for (const [key, value] of Object.entries(props) as [keyof ResolvedProps, unknown][]) {
-    if (value === undefined) continue;
-    (discrete as Record<string, unknown>)[key] = value;
-  }
-  const numeric: Partial<Record<Blendable, number>> = {};
+  const numeric: { -readonly [K in Blendable]?: number } = {};
   for (const { key, rest } of NUMERIC) {
     const target = props[key];
-    delete (discrete as Record<string, unknown>)[key];
     if (typeof target !== 'number') continue;
-    const base = (out as unknown as Record<Blendable, number | null>)[key] ?? rest;
-    numeric[key] = base === null ? (t >= 0.5 ? target : (out as unknown as Record<Blendable, number>)[key]) : lerp(base, target, t);
+    const base = out[key] ?? rest;
+    if (base !== null) numeric[key] = lerp(base, target, t);
+    else if (t >= 0.5) numeric[key] = target;
   }
   // paints: ink, stroke and (plain) fill blend; a gradient or `none` steps at the half
   for (const key of ['ink', 'stroke', 'fill'] as const) {
     const target = props[key];
-    delete (discrete as Record<string, unknown>)[key];
     if (target === undefined) continue;
-    const from = tints[key] ?? (out[key] as Tint);
-    if (typeof target === 'string' && target !== 'none' && typeof (out[key] as unknown) === 'string' && out[key] !== 'none') {
-      const mixed = blendPaint(from, target, t);
+    const current = out[key];
+    if (typeof target === 'string' && target !== 'none' && typeof current === 'string' && current !== 'none') {
+      const mixed = blendPaint(tints[key] ?? current, target, t);
       tints[key] = mixed;
       out = { ...out, [key]: nearer(mixed) };
     } else if (t >= 0.5) {
-      tints[key] = undefined as unknown as Tint;
       delete tints[key];
       out = { ...out, [key]: target };
     }
   }
-  if (t >= 0.5) out = patchStyle(out, discrete);
+  // what blends was handled above; patching the rest at the half sets the same values the blends have reached by then
+  if (t >= 0.5) out = patchStyle(out, props);
   return { ...out, ...numeric };
 }
 

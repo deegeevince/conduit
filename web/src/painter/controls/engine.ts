@@ -11,13 +11,15 @@
 //
 //   grid    a hairline in `dim`: a resting outline, a track, a tick
 //   frame   a stroke in `ink`: an outline under the pointer or the finger
-//   fill    a plate: the ground a menu's list stands on
+//   fill    a plate: the ground a menu's list stands on, and the one a control stands on when it is placed with `at=`
+//           (or given a `fill`), so that its words are never read straight off a drawing
 //   bar     `accent`, filled: the stretch of a slider before its knob, a toggle that is on.
 //           EXCEPT a `bar` whose part name begins `ring`: that is a stroked
 //           2 px outline in `accent`, the focus ring, round the whole control.
 //   marker  `ink`, filled: a knob, a chosen option's ground, a pressed button's ground, a caret
 //   line    a stroke in `ink`: a chevron, a hairline under an input
-//   words   text in `ink`; label: text in `ink`; value: text in `dim`
+//   words   text in `ink`: every word a control says (a label, an option, what is typed); a slider's number is bold
+//   value   text in `dim`: a toggle's state, the name that is not true, a placeholder
 //
 // Text that sits over a `marker` shape of the same owner (a chosen option, a
 // pressed button) is set in the ground's colour, so the pair reads inverted.
@@ -26,15 +28,17 @@
 // Hover and focus never move or resize anything. The size of every zone, and
 // so of every target, is at least `minTarget` on its shorter side.
 
-import { controlText, controlShare } from '@conduit/language';
+import { controlShare } from '@conduit/language';
 import type { ControlSpec, ControlValue } from '@conduit/language';
-import type { BlockLook, BlockPart, TextSpec } from '../../contracts/blocks';
+import type { BlockLook, BlockPart, MeasuredText, TextSpec } from '../../contracts/blocks';
 import type { ControlEngine, ControlInput, ControlKey, ControlLayout, ControlZone } from '../../contracts/controls';
 import type { Box } from '../../contracts/space';
 import { atLeast, chevron, circleLine, inflate, rectLine, segment, shapePart, textPart } from './shapes';
 
 const LABEL: TextSpec = { size: 'm', weight: 'normal', face: null, letterCase: 'asis', shrink: 1 };
 const FINE: TextSpec = { size: 's', weight: 'normal', face: null, letterCase: 'asis', shrink: 1 };
+/** a slider's number: heavier than its label, so that it reads as the value and not as a second label */
+const VALUE: TextSpec = { size: 'm', weight: 'bold', face: null, letterCase: 'asis', shrink: 1 };
 
 /** Ticks are drawn only for a stepped slider with fewer stops than this. */
 const MAX_TICKS = 12;
@@ -116,11 +120,84 @@ function centre(box: Box, height: number): Box {
   return { x: box.x, y: box.y + (box.height - height) / 2, width: box.width, height };
 }
 
-function ring(sheet: Sheet, m: Metrics, w: number, h: number, radius: number, mood: ControlInput['mood']): void {
+function ring(sheet: Sheet, w: number, h: number, radius: number, mood: ControlInput['mood']): void {
   if (!mood.focus) return;
   const box = inflate({ x: 0, y: 0, width: w, height: h }, 3);
   sheet.shape('ring', 'bar', (dx, dy) => [rectLine({ x: box.x + dx, y: box.y + dy, width: box.width, height: box.height }, radius + 3)]);
-  void m;
+}
+
+/** How far a plate runs past the control's own box. */
+const PLATE_MARGIN = 2;
+
+/**
+ * The ground under a control, first of its parts, when the control is not in the flow: a control placed with `at=`
+ * stands on the drawing, and one the brain gave a `fill` wants it. Its words and its outline are read on this.
+ * A control in the flow stands on the stage's own ground and is left bare.
+ */
+function plate(sheet: Sheet, input: ControlInput, m: Metrics, w: number, h: number, radius: number): void {
+  if (input.control.style.at === null && input.control.style.fill === 'none') return;
+  const box = inflate({ x: 0, y: 0, width: w, height: h }, PLATE_MARGIN);
+  sheet.shape('ground', 'fill', (dx, dy) => [rectLine({ x: box.x + dx, y: box.y + dy, width: box.width, height: box.height }, m.grid ? 0 : radius + PLATE_MARGIN)]);
+}
+
+// ---------------------------------------------------------------- words
+
+/** A number with its unit: a space before a unit that is a word (`20 deg`, `3 kg`), none before a sign (`40%`, `20°`), none when the brain wrote its own. */
+export function withUnit(text: string, unit: string | null): string {
+  if (unit === null || unit === '') return text;
+  return /^[\s%°′″'"]/.test(unit) ? `${text}${unit}` : `${text} ${unit}`;
+}
+
+/** What a slider says it holds, with the space the unit needs. */
+function sliderWords(spec: ControlSpec, value: number): string {
+  return withUnit(String(Number(value.toFixed(4))), spec.unit);
+}
+
+/** `Summer / Winter`: a toggle named for both of its states, off first. Null for any other words. */
+export function stateNames(label: string): readonly [string, string] | null {
+  const parts = label.split(' / ').map((part) => part.trim());
+  const [off, on] = parts;
+  return parts.length === 2 && off !== undefined && on !== undefined && off !== '' && on !== '' ? [off, on] : null;
+}
+
+interface Beside {
+  /** the label's own box, from the top-left of the block */
+  readonly label: Box;
+  /** where the tail goes */
+  readonly tail: Box;
+  readonly width: number;
+  readonly height: number;
+  readonly labelText: MeasuredText;
+}
+
+/**
+ * A label and, after it, a short tail (a slider's value, a toggle's state): on the label's last line when the two
+ * fit across `room`, on a line below it when they do not. The tail is measured at its widest, so a number that
+ * grows as it is dragged never moves the label or the tail.
+ */
+function beside(input: ControlInput, m: Metrics, label: string, labelSpec: TextSpec, tailWidest: string, tailSpec: TextSpec, room: number): Beside {
+  const tail = input.measure(tailWidest, tailSpec, room);
+  if (label === '') return { label: { x: 0, y: 0, width: 0, height: 0 }, tail: { x: 0, y: 0, width: tail.width, height: tail.height }, width: tail.width, height: tail.height, labelText: { width: 0, height: 0, lineHeight: 0, lines: [] } };
+  const text = input.measure(label, labelSpec, Math.max(m.cellW, room));
+  const last = text.lines[text.lines.length - 1];
+  const lastWidth = last === undefined ? text.width : last.width;
+  const gap = m.gap * 2;
+  if (lastWidth + gap + tail.width <= room) {
+    return {
+      label: { x: 0, y: 0, width: text.width, height: text.height },
+      tail: { x: lastWidth + gap, y: text.height - text.lineHeight + (text.lineHeight - tail.height) / 2, width: tail.width, height: tail.height },
+      width: Math.max(text.width, lastWidth + gap + tail.width),
+      height: Math.max(text.height, tail.height),
+      labelText: text,
+    };
+  }
+  return {
+    label: { x: 0, y: 0, width: text.width, height: text.height },
+    tail: { x: 0, y: text.height, width: tail.width, height: tail.height },
+    width: Math.max(text.width, tail.width),
+    height: text.height + tail.height,
+    labelText: text,
+  };
 }
 
 /** A box outline at rest in `dim`, and in `ink` when the pointer or finger is on the control. */
@@ -146,11 +223,12 @@ function layoutButton(input: ControlInput, m: Metrics): ControlLayout {
   const height = Math.max(m.row, snapUp(m, text.height + m.pad));
   const sheet = new Sheet(input.control.key, -width / 2, -height / 2);
   const box = { x: 0, y: 0, width: width, height };
+  plate(sheet, input, m, width, height, input.look.radius);
   const pressed = input.mood.pressed === 'press';
   if (pressed) fillBox(sheet, 'ground', 'marker', box, input.look.radius);
   else outline(sheet, 'box', box, input.look.radius, lit(input));
-  sheet.text('label', 'label', label, centre({ x: m.pad, y: 0, width: width - 2 * m.pad, height }, text.height), LABEL, 'center');
-  ring(sheet, m, width, height, input.look.radius, input.mood);
+  sheet.text('label', 'words', label, centre({ x: m.pad, y: 0, width: width - 2 * m.pad, height }, text.height), LABEL, 'center');
+  ring(sheet, width, height, input.look.radius, input.mood);
   sheet.zone('press', box, false);
   return { width, height, parts: sheet.parts, zones: sheet.zones };
 }
@@ -160,37 +238,50 @@ function layoutButton(input: ControlInput, m: Metrics): ControlLayout {
 function layoutToggle(input: ControlInput, m: Metrics): ControlLayout {
   const on = heldValue(input) === true;
   const label = input.control.text;
-  const room = Math.max(m.cellW, input.maxWidth - 3 * m.cellW - m.gap);
-  if (m.grid) {
-    // `[x] label` and `[ ] label`, in the face
-    const mark = on ? '[x]' : '[ ]';
-    const box = 3 * m.cellW;
-    const text = input.measure(label, LABEL, Math.max(m.cellW, input.maxWidth - box - m.cellW));
-    const width = Math.max(input.minTarget, Math.min(input.maxWidth, box + (label === '' ? 0 : m.cellW + text.width)));
-    const height = Math.max(m.row, snapUp(m, text.height));
-    const sheet = new Sheet(input.control.key, -width / 2, -height / 2);
-    sheet.text('mark', on ? 'label' : 'value', mark, { x: 0, y: 0, width: box, height }, LABEL, 'left');
-    sheet.text('label', 'label', label, { x: box + m.cellW, y: 0, width: width - box - m.cellW, height }, LABEL, 'left');
-    if (input.mood.hover || input.mood.pressed !== null) outline(sheet, 'hover', { x: -m.cellW / 2, y: 0, width: width + m.cellW, height }, 0, true);
-    ring(sheet, m, width, height, 0, input.mood);
-    sheet.zone('switch', { x: 0, y: 0, width, height }, false);
-    return { width, height, parts: sheet.parts, zones: sheet.zones };
-  }
+  const names = stateNames(label);
+  // the mark: a track and a knob, or `[x]` in the fixed-pitch looks
   const trackH = Math.round(m.body * 1.15);
-  const trackW = Math.round(trackH * 1.8);
-  const text = input.measure(label, LABEL, room);
-  const width = Math.max(input.minTarget, Math.min(input.maxWidth, trackW + (label === '' ? 0 : m.gap + text.width)));
-  const height = Math.max(m.row, Math.ceil(text.height));
+  const markW = m.grid ? 3 * m.cellW : Math.round(trackH * 1.8);
+  const markH = m.grid ? m.row : trackH;
+  const wordsRoom = Math.max(m.cellW, input.maxWidth - markW - m.gap);
+
+  // both names, the track between them: the one that is true now is in ink, the other dim
+  const pair = names === null ? null : { off: input.measure(names[0], LABEL, Math.max(m.cellW, (wordsRoom - m.gap) / 2)), on: input.measure(names[1], LABEL, Math.max(m.cellW, (wordsRoom - m.gap) / 2)) };
+  // one name and the state after it
+  const single = pair === null ? beside(input, m, label, LABEL, 'off', FINE, wordsRoom) : null;
+
+  const wordsWidth = pair !== null ? pair.off.width + m.gap + pair.on.width + m.gap : single === null ? 0 : single.width + m.gap;
+  const width = Math.max(input.minTarget, Math.min(input.maxWidth, markW + (pair === null && label === '' && single !== null ? single.width + m.gap : wordsWidth)));
+  const wordsHeight = pair !== null ? Math.max(pair.off.height, pair.on.height) : single === null ? 0 : single.height;
+  const height = m.grid ? Math.max(m.row, snapUp(m, wordsHeight)) : Math.max(m.row, Math.ceil(wordsHeight));
   const sheet = new Sheet(input.control.key, -width / 2, -height / 2);
-  const track = { x: 0, y: (height - trackH) / 2, width: trackW, height: trackH };
-  const r = trackH / 2;
-  const knobR = r - Math.max(2, m.stroke * 1.5);
-  if (on) fillBox(sheet, 'track', 'bar', track, r);
-  else outline(sheet, 'track', track, r, lit(input));
-  const kx = on ? track.x + trackW - r : track.x + r;
-  sheet.shape('knob', 'marker', (dx, dy) => [circleLine(kx + dx, track.y + r + dy, knobR)]);
-  sheet.text('label', 'label', label, { x: trackW + m.gap, y: 0, width: width - trackW - m.gap, height }, LABEL, 'left');
-  ring(sheet, m, width, height, r, input.mood);
+  plate(sheet, input, m, width, height, m.grid ? 0 : input.look.radius);
+
+  const markX = pair === null ? 0 : pair.off.width + m.gap;
+  const markY = (height - markH) / 2;
+  if (m.grid) {
+    sheet.text('mark', on ? 'words' : 'value', on ? '[x]' : '[ ]', { x: markX, y: 0, width: markW, height }, LABEL, 'left');
+    if (input.mood.hover || input.mood.pressed !== null) outline(sheet, 'hover', { x: -m.cellW / 2, y: 0, width: width + m.cellW, height }, 0, true);
+  } else {
+    const track = { x: markX, y: markY, width: markW, height: trackH };
+    const r = trackH / 2;
+    const knobR = r - Math.max(2, m.stroke * 1.5);
+    if (on) fillBox(sheet, 'track', 'bar', track, r);
+    else outline(sheet, 'track', track, r, lit(input));
+    const kx = on ? track.x + markW - r : track.x + r;
+    sheet.shape('knob', 'marker', (dx, dy) => [circleLine(kx + dx, track.y + r + dy, knobR)]);
+  }
+  if (pair !== null && names !== null) {
+    sheet.text('off-name', on ? 'value' : 'words', names[0], { x: 0, y: (height - pair.off.height) / 2, width: pair.off.width, height: pair.off.height }, LABEL, 'left');
+    sheet.text('on-name', on ? 'words' : 'value', names[1], { x: markX + markW + m.gap, y: (height - pair.on.height) / 2, width: pair.on.width, height: pair.on.height }, LABEL, 'left');
+  } else if (single !== null) {
+    const x = markW + m.gap;
+    const y = (height - single.height) / 2;
+    sheet.text('label', 'words', label, { x, y: y + single.label.y, width: Math.min(single.label.width, width - x), height: single.label.height }, LABEL, 'left');
+    // the state is said in words as well as drawn: a toggle that is only a mark names neither of its states
+    sheet.text('state', 'value', on ? 'on' : 'off', { x: x + single.tail.x, y: y + single.tail.y, width: Math.min(single.tail.width, width - x - single.tail.x), height: single.tail.height }, FINE, 'left');
+  }
+  ring(sheet, width, height, m.grid ? 0 : trackH / 2, input.mood);
   sheet.zone('switch', { x: 0, y: 0, width, height }, false);
   return { width, height, parts: sheet.parts, zones: sheet.zones };
 }
@@ -214,41 +305,50 @@ function decimalsOf(spec: ControlSpec): number {
     const dot = text.indexOf('.');
     return dot < 0 ? 0 : text.length - dot - 1;
   };
-  if (spec.step !== null) return Math.min(6, Math.max(places(spec.step), places(spec.min)));
+  if (spec.step !== null && spec.step > 0) return Math.min(6, Math.max(places(spec.step), places(spec.min)));
   const span = Math.abs(spec.max - spec.min);
-  return span === 0 ? 0 : Math.min(6, Math.max(0, Math.ceil(-Math.log10(span / 1000))));
+  return span === 0 || !Number.isFinite(span) ? 0 : Math.min(6, Math.max(0, Math.ceil(-Math.log10(span / 1000))));
 }
 
-/** A number put on the slider's grid: its step from its lower end, never outside its ends, free of float noise. */
+/**
+ * A number put on the slider's grid: its step counted from `min`, never outside its ends (whichever end is the
+ * larger: a slider written `10 0` runs down), free of float noise. Not a number: where the slider starts.
+ */
 export function snapSlider(spec: ControlSpec, raw: number): number {
+  if (!Number.isFinite(raw)) return spec.min;
   const lo = Math.min(spec.min, spec.max);
   const hi = Math.max(spec.min, spec.max);
   let v = Math.min(hi, Math.max(lo, raw));
-  if (spec.step !== null && spec.step > 0) v = Math.min(hi, spec.min + Math.round((v - spec.min) / spec.step) * spec.step);
+  if (spec.step !== null && spec.step > 0 && Number.isFinite(spec.step)) v = Math.min(hi, Math.max(lo, spec.min + Math.round((v - spec.min) / spec.step) * spec.step));
   return Number(v.toFixed(decimalsOf(spec)));
 }
 
 function layoutSlider(input: ControlInput, m: Metrics): ControlLayout {
   const spec = input.spec;
   const value = heldValue(input);
-  const width = Math.min(input.maxWidth, Math.max(SLIDER_MIN_WIDTH, Math.min(input.maxWidth, 12 * m.body)));
-  const shown = controlText(spec, typeof value === 'number' ? value : spec.min);
-  const valueText = input.measure(shown, FINE, width);
-  const labelText = input.measure(input.control.text, LABEL, Math.max(m.cellW, width - valueText.width - m.gap));
-  const head = Math.max(labelText.height, valueText.height, m.body);
-  const height = snapUp(m, head + input.minTarget);
+  const number = typeof value === 'number' ? value : spec.min;
+  const shown = sliderWords(spec, number);
+  // wide enough for the label and its value on one line when the room allows, and never wider than the room
+  const oneLine = input.measure(input.control.text, LABEL, 1e6).width + 2 * m.gap + Math.max(input.measure(sliderWords(spec, spec.min), VALUE, 1e6).width, input.measure(sliderWords(spec, spec.max), VALUE, 1e6).width, input.measure(shown, VALUE, 1e6).width);
+  const width = Math.min(input.maxWidth, Math.max(SLIDER_MIN_WIDTH, 12 * m.body, oneLine));
+  // the value sits by the label, on its last line, and is placed for the widest number the slider can hold
+  const widest = [sliderWords(spec, spec.min), sliderWords(spec, spec.max), shown].reduce((a, b) => (input.measure(b, VALUE, width).width > input.measure(a, VALUE, width).width ? b : a));
+  const head = beside(input, m, input.control.text, LABEL, widest, VALUE, width);
+  const headHeight = Math.max(head.height, m.body);
+  const height = snapUp(m, headHeight + input.minTarget);
   const sheet = new Sheet(input.control.key, -width / 2, -height / 2);
-  const trackY = head + input.minTarget / 2;
+  plate(sheet, input, m, width, height, input.look.radius);
+  const trackY = headHeight + input.minTarget / 2;
   const geo = sliderGeo(width, m);
-  const share = controlShare(spec, typeof value === 'number' ? value : spec.min);
+  const share = controlShare(spec, number);
   const kx = geo.x0 + share * (geo.x1 - geo.x0);
   const r = m.knob / 2;
   const hot = lit(input);
   const x0 = geo.x0 + width / 2;
   const fx = kx + width / 2;
   // ticks first so the track and the knob lie over them
-  if (spec.step !== null && spec.step > 0 && spec.max > spec.min) {
-    const stops = Math.round((spec.max - spec.min) / spec.step) + 1;
+  if (spec.step !== null && spec.step > 0 && spec.max !== spec.min) {
+    const stops = Math.round(Math.abs(spec.max - spec.min) / spec.step) + 1;
     if (stops >= 2 && stops < MAX_TICKS) {
       const tick = Math.max(3, m.body * 0.3);
       sheet.shape('ticks', 'grid', (dx, dy) =>
@@ -262,12 +362,12 @@ function layoutSlider(input: ControlInput, m: Metrics): ControlLayout {
   sheet.shape('track', hot ? 'frame' : 'grid', (dx, dy) => [segment(x0 + dx, trackY + dy, geo.x1 + width / 2 + dx, trackY + dy)]);
   if (fx > x0) fillBox(sheet, 'filled', 'bar', { x: x0, y: trackY - m.stroke, width: fx - x0, height: 2 * m.stroke }, m.stroke);
   sheet.shape('knob', 'marker', (dx, dy) => [circleLine(fx + dx, trackY + dy, r)]);
-  sheet.text('label', 'label', input.control.text, { x: 0, y: 0, width: Math.max(m.cellW, width - valueText.width - m.gap), height: head }, LABEL, 'left');
-  sheet.text('value', 'value', shown, { x: width - valueText.width, y: 0, width: valueText.width, height: head }, FINE, 'right');
-  ring(sheet, m, width, height, 0, input.mood);
+  sheet.text('label', 'words', input.control.text, { x: head.label.x, y: head.label.y, width: Math.min(head.label.width, width), height: head.label.height }, LABEL, 'left');
+  sheet.text('value', 'words', shown, { x: head.tail.x, y: head.tail.y, width: Math.min(head.tail.width, Math.max(0, width - head.tail.x)), height: head.tail.height }, VALUE, 'left');
+  ring(sheet, width, height, 0, input.mood);
   const target = Math.max(input.minTarget, m.knob);
   sheet.zone('knob', { x: fx - target / 2, y: trackY - target / 2, width: target, height: target }, true);
-  sheet.zone('track', { x: 0, y: head, width, height: input.minTarget }, true);
+  sheet.zone('track', { x: 0, y: headHeight, width, height: input.minTarget }, true);
   return { width, height, parts: sheet.parts, zones: sheet.zones };
 }
 
@@ -310,6 +410,7 @@ function layoutRowOrTabs(input: ControlInput, m: Metrics): ControlLayout {
   const rule = tabs ? m.gap + m.stroke : 0;
   const height = Math.max(packed.height + rule, input.minTarget);
   const sheet = new Sheet(input.control.key, -width / 2, -height / 2);
+  plate(sheet, input, m, width, height, input.look.radius);
   const chosen = pickIndex(input);
   packed.cells.forEach((cell, i) => {
     const n = i + 1;
@@ -318,14 +419,14 @@ function layoutRowOrTabs(input: ControlInput, m: Metrics): ControlLayout {
     if (on) fillBox(sheet, `chosen`, 'marker', cell.box, input.look.radius);
     else if (!tabs) outline(sheet, `option:${n}`, cell.box, input.look.radius, lit(input) || input.mood.pressed === `option:${n}`);
     const room = { x: cell.box.x + m.pad, y: cell.box.y, width: cell.box.width - 2 * m.pad, height: cell.box.height };
-    sheet.text(`words:${n}`, 'label', input.spec.options[i] ?? '', centre(room, cell.text.height), LABEL, 'center');
+    sheet.text(`words:${n}`, 'words', input.spec.options[i] ?? '', centre(room, cell.text.height), LABEL, 'center');
     sheet.zone(`option:${n}`, cell.box, false);
   });
   if (tabs) {
     const y = packed.height + m.gap / 2;
     sheet.shape('rule', lit(input) ? 'frame' : 'grid', (dx, dy) => [segment(dx, y + dy, width + dx, y + dy)]);
   }
-  ring(sheet, m, width, height, input.look.radius, input.mood);
+  ring(sheet, width, height, input.look.radius, input.mood);
   return { width, height, parts: sheet.parts, zones: sheet.zones };
 }
 
@@ -336,15 +437,16 @@ function layoutMenu(input: ControlInput, m: Metrics): ControlLayout {
   const width = Math.min(input.maxWidth, Math.max(input.minTarget * 2, snapUp(m, widest + 2 * m.pad + chevronBox)));
   const height = m.row;
   const sheet = new Sheet(input.control.key, -width / 2, -height / 2);
+  plate(sheet, input, m, width, height, input.look.radius);
   const chosen = pickIndex(input);
   const field = { x: 0, y: 0, width, height };
   const current = options[chosen - 1] ?? '';
   const text = input.measure(current, LABEL, Math.max(m.cellW, width - 2 * m.pad - chevronBox));
   outline(sheet, 'field', field, input.look.radius, lit(input) || input.mood.open);
-  sheet.text('words', 'label', current, centre({ x: m.pad, y: 0, width: width - 2 * m.pad - chevronBox, height }, text.height), LABEL, 'left');
+  sheet.text('words', 'words', current, centre({ x: m.pad, y: 0, width: width - 2 * m.pad - chevronBox, height }, text.height), LABEL, 'left');
   const s = m.body * 0.45;
   sheet.shape('chevron', 'line', (dx, dy) => [chevron(width - m.pad - s + dx, height / 2 + dy, s, 'down')]);
-  ring(sheet, m, width, height, input.look.radius, input.mood);
+  ring(sheet, width, height, input.look.radius, input.mood);
   if (input.mood.open) {
     // the list hangs below the field and is not part of the control's own box
     const list = { x: 0, y: height + m.stroke, width, height: options.length * m.row };
@@ -355,7 +457,7 @@ function layoutMenu(input: ControlInput, m: Metrics): ControlLayout {
       const cell = { x: 0, y: list.y + i * m.row, width, height: m.row };
       if (n === chosen) fillBox(sheet, 'chosen', 'marker', cell, input.look.radius);
       const t = input.measure(option, LABEL, Math.max(m.cellW, width - 2 * m.pad));
-      sheet.text(`words:${n}`, 'label', option, centre({ x: m.pad, y: cell.y, width: width - 2 * m.pad, height: m.row }, t.height), LABEL, 'left');
+      sheet.text(`words:${n}`, 'words', option, centre({ x: m.pad, y: cell.y, width: width - 2 * m.pad, height: m.row }, t.height), LABEL, 'left');
       sheet.zone(`option:${n}`, cell, false);
     });
     sheet.zone('list', list, false);
@@ -378,6 +480,7 @@ function layoutSteps(input: ControlInput, m: Metrics): ControlLayout {
   const name = input.measure(options[chosen - 1] ?? '', LABEL, middle);
   const height = Math.max(button, snapUp(m, counterBox.height + name.height + m.gap));
   const sheet = new Sheet(input.control.key, -width / 2, -height / 2);
+  plate(sheet, input, m, width, height, input.look.radius);
   const s = m.body * 0.5;
   const arrow = (part: 'back' | 'next', x: number, enabled: boolean): void => {
     const box = { x, y: (height - button) / 2, width: button, height: button };
@@ -391,8 +494,8 @@ function layoutSteps(input: ControlInput, m: Metrics): ControlLayout {
   const cx = button + m.gap;
   const top = (height - counterBox.height - name.height - m.gap) / 2;
   sheet.text('counter', 'value', counter, { x: cx, y: top, width: middle, height: counterBox.height }, FINE, 'center');
-  sheet.text('words', 'label', options[chosen - 1] ?? '', { x: cx, y: top + counterBox.height + m.gap, width: middle, height: name.height }, LABEL, 'center');
-  ring(sheet, m, width, height, input.look.radius, input.mood);
+  sheet.text('words', 'words', options[chosen - 1] ?? '', { x: cx, y: top + counterBox.height + m.gap, width: middle, height: name.height }, LABEL, 'center');
+  ring(sheet, width, height, input.look.radius, input.mood);
   return { width, height, parts: sheet.parts, zones: sheet.zones };
 }
 
@@ -423,18 +526,19 @@ function layoutInput(input: ControlInput, m: Metrics): ControlLayout {
   const width = Math.min(input.maxWidth, Math.max(input.minTarget * 2, INPUT_WIDTH));
   const height = m.row;
   const sheet = new Sheet(input.control.key, -width / 2, -height / 2);
+  plate(sheet, input, m, width, height, input.look.radius);
   const room = Math.max(m.cellW, width - 2 * m.gap);
   const shown = held === '' ? input.control.text : tail(input, held, room);
   const text = input.measure(shown, LABEL, 1e6);
   const line = height - m.stroke;
   sheet.shape('rule', input.mood.focus || input.mood.hover ? 'line' : 'grid', (dx, dy) => [segment(dx, line + dy, width + dx, line + dy)]);
-  sheet.text('words', held === '' ? 'value' : 'label', shown, centre({ x: m.gap, y: 0, width: room, height }, text.height), LABEL, 'left');
+  sheet.text('words', held === '' ? 'value' : 'words', shown, centre({ x: m.gap, y: 0, width: room, height }, text.height), LABEL, 'left');
   if (input.mood.focus) {
     const caretX = m.gap + (held === '' ? 0 : Math.min(room, text.width)) + m.stroke;
     const caretH = Math.round(m.body * 1.1);
     fillBox(sheet, 'caret', 'marker', { x: caretX, y: (height - caretH) / 2, width: Math.max(1.5, m.stroke * 1.25), height: caretH }, 0);
   }
-  ring(sheet, m, width, height, 0, input.mood);
+  ring(sheet, width, height, 0, input.mood);
   sheet.zone('field', { x: 0, y: 0, width, height }, false);
   return { width, height, parts: sheet.parts, zones: sheet.zones };
 }
@@ -498,21 +602,31 @@ function valueAfter(input: ControlInput, key: ControlKey): ControlValue | null {
       return on ? false : null;
     }
     case 'slider': {
-      const held = typeof heldValue(input) === 'number' ? (heldValue(input) as number) : spec.min;
-      const unit = spec.step !== null && spec.step > 0 ? spec.step : Math.abs(spec.max - spec.min) / 20;
-      const dir = spec.max >= spec.min ? 1 : -1;
-      const big = spec.step !== null && spec.step > 0 ? spec.step * 10 : Math.abs(spec.max - spec.min) / 5;
+      const raw = heldValue(input);
+      const held = typeof raw === 'number' && Number.isFinite(raw) ? raw : spec.min;
+      const span = Math.abs(spec.max - spec.min);
+      if (!(span > 0)) return null;
+      const stepped = spec.step !== null && spec.step > 0 && Number.isFinite(spec.step);
+      const unit = stepped && spec.step !== null ? spec.step : span / 20;
+      const big = stepped ? unit * 10 : span / 5;
+      // towards `max` is "more", whichever end of the number line `max` is
+      const toward = spec.max >= spec.min ? 1 : -1;
+      // a stepped slider goes to the next stop in the direction pressed, even from a value that is between stops
+      const by = (sign: 1 | -1, stops: number): number => {
+        if (!stepped) return snapSlider(spec, held + sign * toward * (stops === 1 ? unit : big));
+        const at = ((held - spec.min) * toward) / unit;
+        const k = sign > 0 ? Math.floor(at + 1e-9) + stops : Math.ceil(at - 1e-9) - stops;
+        return snapSlider(spec, spec.min + toward * k * unit);
+      };
       const next =
-        key === 'less' ? held - dir * unit
-        : key === 'more' ? held + dir * unit
-        : key === 'page-less' ? held - dir * big
-        : key === 'page-more' ? held + dir * big
-        : key === 'first' ? spec.min
-        : key === 'last' ? spec.max
+        key === 'less' ? by(-1, 1)
+        : key === 'more' ? by(1, 1)
+        : key === 'page-less' ? by(-1, 10)
+        : key === 'page-more' ? by(1, 10)
+        : key === 'first' ? snapSlider(spec, spec.min)
+        : key === 'last' ? snapSlider(spec, spec.max)
         : null;
-      if (next === null) return null;
-      const snapped = snapSlider(spec, next);
-      return snapped === held ? null : snapped;
+      return next === null || next === held ? null : next;
     }
     case 'pick': {
       const count = spec.options.length;
