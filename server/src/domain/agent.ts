@@ -111,7 +111,7 @@ function hostIsPrivate(host: string): boolean {
   return h === 'localhost' || h.endsWith('.localhost') || h.endsWith('.local') || h.endsWith('.internal') || /^(?:127\.|10\.|192\.168\.|169\.254\.|0\.)/.test(h) || /^172\.(?:1[6-9]|2\d|3[01])\./.test(h) || h === '::1' || h.startsWith('[') || /^\d+$/.test(h);
 }
 
-/** A page the model may read freely is a public one, by plain `http(s)`, with no credential in it and a query that is not a carrier of something else. */
+/** A public page, by plain `http(s)`, with no credential in it. Whether its address could carry something out is `fetchIsQuiet`'s question, asked once a folder or a service is on. */
 function fetchIsPlain(raw: unknown): boolean {
   if (typeof raw !== 'string' || raw.length > 600) return false;
   let url: URL;
@@ -123,6 +123,22 @@ function fetchIsPlain(raw: unknown): boolean {
   if (url.protocol !== 'https:' && url.protocol !== 'http:') return false;
   if (url.username !== '' || url.password !== '') return false;
   return !hostIsPrivate(url.hostname);
+}
+
+/** Hosts of search and reference sites: the only places a fetch is free once anything beyond the web tools is on. */
+const SEARCH_HOSTS: readonly string[] = ['duckduckgo.com', 'google.com', 'bing.com', 'search.brave.com', 'wikipedia.org', 'wikimedia.org'];
+
+/**
+ * A fetch that cannot carry something out: no query, no fragment, a short path, and a search or reference site. When the model also
+ * holds a folder or a connected service, an address is a way to send what it read (`https://x.example/?d=<what it read>`), so only
+ * this kind runs unasked; every other asks, and the confirm control shows the whole address.
+ */
+function fetchIsQuiet(raw: unknown): boolean {
+  if (!fetchIsPlain(raw) || typeof raw !== 'string') return false;
+  const url = new URL(raw);
+  if (url.search !== '' || url.hash !== '' || url.pathname.length > 100) return false;
+  const host = url.hostname.toLowerCase();
+  return SEARCH_HOSTS.some((site) => host === site || host.endsWith(`.${site}`));
 }
 
 /** Whether a path the model gave names something inside `dir`. Symlinks are the CLI's own business (`--restricted` confines it); this is the net under that. */
@@ -140,7 +156,7 @@ function insideDir(raw: unknown, dir: string | null): boolean {
  * that `readOnlyHint` (the service's own annotation, passed in by the adapter) says only reads. Everything else is the worst thing its
  * name or the shape of its input says, and `run` when it says nothing: a call that cannot be classified is asked for.
  */
-export function riskOf(call: ToolCall, readOnlyHint = false, dir: string | null = null): ActionRisk {
+export function riskOf(call: ToolCall, readOnlyHint = false, dir: string | null = null, strictFetch = false): ActionRisk {
   const { service, action } = splitTool(call.tool);
   let risk: ActionRisk | null = null;
   for (const signal of INPUT_SIGNALS) {
@@ -153,7 +169,7 @@ export function riskOf(call: ToolCall, readOnlyHint = false, dir: string | null 
 
   if (service === null && READ_ONLY_TOOLS.includes(call.tool)) {
     if (risk === null || risk === 'write') {
-      if (call.tool === 'WebFetch') return fetchIsPlain(call.input['url']) ? 'read' : 'run';
+      if (call.tool === 'WebFetch') return !fetchIsPlain(call.input['url']) ? 'run' : strictFetch && !fetchIsQuiet(call.input['url']) ? 'send' : 'read';
       if (call.tool === 'WebSearch') return typeof call.input['query'] === 'string' ? 'read' : 'run';
       const where = call.input['file_path'] ?? call.input['path'] ?? (call.tool === 'Read' ? undefined : '.');
       return insideDir(where, dir) ? 'read' : 'run';
@@ -202,6 +218,24 @@ export function summaryOf(call: ToolCall): string {
   return redactSecrets(target === '' ? what : `${what} ${call.tool === 'WebSearch' ? `"${target}"` : target}`);
 }
 
+/** The most the confirm control is given of one call. */
+export const DETAIL_MAX = 4_000;
+
+/**
+ * The whole call for the confirm control, so that the owner consents to what will happen and not to a summary of it: the tool's name
+ * and every field of its input, pretty-printed, each string whole (a full address, a full path, a whole message), passed through
+ * `redactSecrets`. Goes to that one event and nowhere else; the log and the strip keep `summaryOf`.
+ */
+export function detailOf(call: ToolCall): string {
+  let body: string;
+  try {
+    body = JSON.stringify(call.input, (_key, value: unknown) => (typeof value === 'string' && value.length > 1_500 ? `${value.slice(0, 1_500)}… (${String(value.length - 1_500)} more characters)` : value), 2);
+  } catch {
+    body = '(the input could not be shown)';
+  }
+  return redactSecrets(`${call.tool}\n${body}`, DETAIL_MAX, true);
+}
+
 /** What the gate says about one call the CLI is asking to make. */
 export type CallVerdict =
   | { readonly kind: 'allow'; readonly risk: 'read' }
@@ -222,7 +256,9 @@ export function gateCall(call: ToolCall, settings: AgentSettings, on: ReadonlySe
   const offered = service === null ? settings.tools.includes(call.tool) : settings.services.some((entry) => entry.name === service);
   if (!settings.enabled || !offered || !on.has(name)) return { kind: 'deny', risk: riskOf(call, false, settings.dir), why: `${service === null ? call.tool : `${service}: ${action}`} is not switched on` };
   if (service === null && FILE_TOOLS.includes(call.tool) && settings.dir === null) return { kind: 'deny', risk: 'run', why: 'no folder has been named for file tools' };
-  const risk = riskOf(call, readOnlyHint, settings.dir);
+  // Anything beyond the web tools on makes an address a way out for what that thing could read: a fetch then runs unasked only when it is quiet.
+  const strictFetch = [...on].some((entry) => entry !== 'WebSearch' && entry !== 'WebFetch' && (settings.tools.includes(entry) || settings.services.some((s) => s.name === entry)));
+  const risk = riskOf(call, readOnlyHint, settings.dir, strictFetch);
   return risk === 'read' ? { kind: 'allow', risk } : { kind: 'ask', risk };
 }
 
@@ -240,10 +276,10 @@ const SECRET_SHAPES: readonly RegExp[] = [
  * the whole is cut to `max` characters. Used on every summary before it leaves the brain adapter. It is a net under the rule, not
  * the rule: the adapter builds a summary from the tool's name and the one field that names its target, never from its whole input.
  */
-export function redactSecrets(text: string, max = 160): string {
+export function redactSecrets(text: string, max = 160, keepLines = false): string {
   let out = text;
   for (const shape of SECRET_SHAPES) out = out.replace(shape, (_match: string, lead?: unknown) => (typeof lead === 'string' ? `${lead}[hidden]` : '[hidden]'));
-  out = out.replace(/\s+/g, ' ').trim();
+  out = keepLines ? out.replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim() : out.replace(/\s+/g, ' ').trim();
   return out.length > max ? `${out.slice(0, max - 1)}…` : out;
 }
 

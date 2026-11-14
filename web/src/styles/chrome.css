@@ -1020,6 +1020,27 @@ input {
   color: var(--chrome-text-quiet);
 }
 
+.permit__detail {
+  margin: 0 0 var(--space-2);
+  max-height: 14rem;
+  overflow: auto;
+  padding: var(--space-2);
+  border: 1px solid var(--chrome-text-quiet);
+  font-family: ui-monospace, monospace;
+  font-size: var(--chrome-text-size-small);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.permit__detail[hidden] {
+  display: none;
+}
+
+.permit__allow:disabled,
+.permit__deny:disabled {
+  opacity: 0.5;
+}
+
 .permit__hands[hidden] {
   display: none;
 }

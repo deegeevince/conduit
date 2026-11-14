@@ -37,6 +37,17 @@ function text(value: unknown, what: string): string {
   return value;
 }
 
+/**
+ * A permission request's id is the CLI's own (a 36-character UUID) and is looked up whole: cut, it matches nothing and the owner's answer is
+ * thrown away, so the deadline answers no. It is kept as it is, or refused when it cannot be one.
+ */
+const REQUEST_ID_MAX = 128;
+function requestId(value: unknown): string {
+  const id = text(value, 'request');
+  if (id === '' || id.length > REQUEST_ID_MAX) throw errors.badRequest(`request must be 1 to ${REQUEST_ID_MAX} characters`);
+  return id;
+}
+
 function num(value: unknown, what: string): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) throw errors.badRequest(`${what} must be a finite number`);
   return value;
@@ -380,7 +391,7 @@ function backEvent(value: unknown, index: number): BackEvent {
       };
     }
     case 'permit':
-      return { type, turn: text(raw.turn, 'turn'), request: text(raw.request, 'request').slice(0, LIMITS.name), allow: bool(raw.allow, 'allow') };
+      return { type, turn: text(raw.turn, 'turn'), request: requestId(raw.request), allow: bool(raw.allow, 'allow') };
   }
 }
 

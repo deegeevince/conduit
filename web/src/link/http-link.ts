@@ -188,7 +188,10 @@ export function createHttpLink(): HttpLink {
     };
   }
 
-  async function postBatch(id: string, batch: readonly BackEvent[]): Promise<boolean> {
+  /** `sent`; `gone` (the session is not there: nothing can be sent); `refused` (a 4xx: this body will never be accepted); `failed` (the network or a 5xx: it may be, later). */
+  type Posted = 'sent' | 'gone' | 'refused' | 'failed';
+
+  async function postBatch(id: string, batch: readonly BackEvent[]): Promise<Posted> {
     for (let tries = 0; tries <= MAX_RETRIES; tries += 1) {
       try {
         const response = await fetch(API.events(id), {
@@ -197,28 +200,64 @@ export function createHttpLink(): HttpLink {
           body: JSON.stringify({ events: batch }),
           keepalive: JSON.stringify(batch).length < 60000,
         });
-        if (response.ok) return true;
+        if (response.ok) return 'sent';
         if (response.status === 404) {
           setStatus('closed');
-          return false;
+          return 'gone';
         }
-        if (response.status >= 400 && response.status < 500) return false;
+        if (response.status >= 400 && response.status < 500) return 'refused';
       } catch {
         // network failure: retry
       }
       await new Promise((resolve) => setTimeout(resolve, 150 * (tries + 1)));
     }
-    return false;
+    return 'failed';
   }
+
+  /**
+   * How long an event is kept for sending again after the link has failed it. The owner's answer to a confirm control is kept the
+   * longest: a lost `permit` is a no the owner never gave, and it cannot be sent again from the page. A `progress` is only a
+   * heartbeat and is not kept at all.
+   */
+  const KEEP_MS: Readonly<Record<string, number>> = { permit: 300_000, progress: 0 };
+  const KEEP_OTHER_MS = 30_000;
+  const keptUntil = new WeakMap<BackEvent, number>();
+  const RESEND_PAUSE_MS = [500, 1_000, 2_000, 4_000];
+  let failedRounds = 0;
 
   async function drain(): Promise<void> {
     while (queue.length > 0 && canSend() && startingTurns === 0 && session !== null) {
       const batch = queue.slice(0, MAX_BATCH);
       queue = queue.slice(batch.length);
-      const delivered = await postBatch(session, batch);
-      if (!delivered) {
-        for (const listener of [...droppedListeners]) listener(batch.length);
+      const posted = await postBatch(session, batch);
+      if (posted === 'sent') {
+        failedRounds = 0;
+        continue;
       }
+      if (posted === 'refused' && batch.length > 1) {
+        // One bad event must not take forty-nine good ones with it: each goes alone, and only the refused is dropped.
+        let lost = 0;
+        for (const event of batch) {
+          if (session === null || (await postBatch(session, [event])) !== 'sent') lost += 1;
+        }
+        if (lost > 0) for (const listener of [...droppedListeners]) listener(lost);
+        continue;
+      }
+      if (posted === 'failed') {
+        const now = Date.now();
+        const keep = batch.filter((event) => {
+          const until = keptUntil.get(event) ?? now + (KEEP_MS[event.type] ?? KEEP_OTHER_MS);
+          keptUntil.set(event, until);
+          return until > now && (KEEP_MS[event.type] ?? 1) > 0;
+        });
+        if (keep.length < batch.length) for (const listener of [...droppedListeners]) listener(batch.length - keep.length);
+        // Back at the front, in order, and a pause before the next try: the link is down, not the events wrong.
+        queue = [...keep, ...queue];
+        if (keep.length > 0) await new Promise((resolve) => setTimeout(resolve, RESEND_PAUSE_MS[Math.min(failedRounds, RESEND_PAUSE_MS.length - 1)]));
+        failedRounds += 1;
+        continue;
+      }
+      for (const listener of [...droppedListeners]) listener(batch.length);
     }
   }
 

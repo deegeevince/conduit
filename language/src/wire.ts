@@ -303,9 +303,10 @@ export type StageEvent =
   /**
    * v2.1, agent mode. The brain wants to do something that needs the owner's yes. The chrome shows a confirm control on the stage and
    * answers with a `permit` back event; with no answer by `expiresMs` it is denied. Nothing that sends, buys, deletes, publishes or signs
-   * in is ever allowed without this (`askFirst`).
+   * in is ever allowed without this (`askFirst`). `detail` is the whole call, pretty-printed and redacted, for the confirm control and nowhere else:
+   * the owner cannot consent to what a 160-character summary cuts off. It is never logged.
    */
-  | { readonly type: 'permission'; readonly turn: string; readonly request: string; readonly tool: string; readonly summary: string; readonly risk: ActionRisk; readonly expiresMs: number }
+  | { readonly type: 'permission'; readonly turn: string; readonly request: string; readonly tool: string; readonly summary: string; readonly risk: ActionRisk; readonly expiresMs: number; readonly detail?: string }
   /**
    * News of a painting, whenever it comes: it is not on the turn clock and may
    * arrive after the turn has ended. `key` is the picture element's key

@@ -46,6 +46,7 @@ export function mountPermission(app: StageApp): PermissionControl {
         <p class="permit__what"></p>
         <p class="permit__risk"></p>
         <p class="permit__hands" hidden></p>
+        <pre class="permit__detail" tabindex="0" aria-label="The whole call, scrollable" hidden></pre>
       </div>
       <p class="permit__count"><progress class="permit__bar" max="1" value="1" aria-hidden="true"></progress><span class="permit__time"></span></p>
       <div class="dialog__buttons">
@@ -63,6 +64,7 @@ export function mountPermission(app: StageApp): PermissionControl {
   const what = part('.permit__what');
   const risk = part('.permit__risk');
   const hands = part('.permit__hands');
+  const detail = part('.permit__detail');
   const bar = part<HTMLProgressElement>('.permit__bar');
   const time = part('.permit__time');
   const deny = part<HTMLButtonElement>('.permit__deny');
@@ -73,9 +75,31 @@ export function mountPermission(app: StageApp): PermissionControl {
   let timer: ReturnType<typeof setInterval> | undefined;
   let before: Element | null = null;
 
-  const answer = (allowed: boolean): void => {
+  /** How long both buttons are dead after a request appears: a tap or a double-click already on its way must never land on a request nobody has read. */
+  const ARM_MS = 600;
+  let armTimer: ReturnType<typeof setTimeout> | undefined;
+  const disarm = (): void => {
+    clearTimeout(armTimer);
+    allow.disabled = true;
+    deny.disabled = true;
+  };
+  const arm = (request: string): void => {
+    disarm();
+    armTimer = setTimeout(() => {
+      // Only if it is still the same request on show.
+      if (showing?.request.request !== request) return;
+      allow.disabled = false;
+      deny.disabled = false;
+      deny.focus();
+    }, ARM_MS);
+  };
+
+  /** `bound` is the request the click was made on, read from the button itself; an answer for any other request than the one showing is nothing. */
+  const answer = (allowed: boolean, bound: string | null = null): void => {
     const current = showing;
     if (current === null) return;
+    if (bound !== null && bound !== current.request.request) return;
+    disarm();
     showing = null;
     clearInterval(timer);
     app.permit(current.request.turn, current.request.request, allowed);
@@ -89,7 +113,7 @@ export function mountPermission(app: StageApp): PermissionControl {
     const left = Math.max(0, current.until - Date.now());
     bar.value = Math.min(1, left / Math.max(1, current.request.expiresMs));
     time.textContent = left > 0 ? `No answer in ${Math.ceil(left / 1000)} s is a no.` : 'Out of time: denied.';
-    if (left <= 0) answer(false);
+    if (left <= 0) answer(false, current.request.request);
   };
 
   function next(): void {
@@ -108,18 +132,24 @@ export function mountPermission(app: StageApp): PermissionControl {
     const note = OWN_HANDS[request.risk];
     hands.hidden = note === undefined;
     hands.textContent = note ?? '';
+    // The whole call, never cut: a summary is not what the owner is consenting to. Scrollable; plain text, never markup.
+    detail.hidden = request.detail === undefined || request.detail === '';
+    detail.textContent = request.detail ?? '';
+    detail.scrollTop = 0;
+    allow.dataset['request'] = request.request;
+    deny.dataset['request'] = request.request;
     if (!dialog.open) {
       before = document.activeElement;
       dialog.showModal();
     }
-    deny.focus();
+    arm(request.request);
     tick();
     clearInterval(timer);
     timer = setInterval(tick, 250);
   }
 
-  deny.addEventListener('click', () => answer(false));
-  allow.addEventListener('click', () => answer(true));
+  deny.addEventListener('click', () => answer(false, deny.dataset['request'] ?? ''));
+  allow.addEventListener('click', () => answer(true, allow.dataset['request'] ?? ''));
   // Escape closes a modal dialog: that is a no, never a yes.
   dialog.addEventListener('cancel', (event) => {
     event.preventDefault();
@@ -141,6 +171,7 @@ export function mountPermission(app: StageApp): PermissionControl {
     }
     if (showing !== null && gone(showing)) {
       showing = null;
+      disarm();
       clearInterval(timer);
       next();
     }
@@ -151,6 +182,7 @@ export function mountPermission(app: StageApp): PermissionControl {
     dispose() {
       off();
       clearInterval(timer);
+      clearTimeout(armTimer);
       dialog.remove();
     },
   };

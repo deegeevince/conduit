@@ -43,7 +43,7 @@ import { factsOf, tableFromText } from './datasets';
 import type { DatasetLibrary } from './datasets';
 import { worthQueuing } from './critic';
 import type { Critic, FindingQueue } from './critic';
-import { redactSecrets } from './agent';
+import { DETAIL_MAX, redactSecrets } from './agent';
 import { askedOf, refusalProblem, reviewTurn } from './review';
 import type { FixAttempt } from './review';
 import type { TechniqueLibrary } from './techniques';
@@ -638,7 +638,11 @@ export class Conductor {
    */
   private answer(s: Session, request: string, turn: string | null, allow: boolean | null): void {
     const pending = s.permissions.get(request);
-    if (pending === undefined || (turn !== null && pending.turn !== turn)) return;
+    if (pending === undefined || (turn !== null && pending.turn !== turn)) {
+      // An answer from the owner (it names a turn) that matches nothing is said, not dropped: it is either late, doubled, or for a request that is not here.
+      if (turn !== null) this.deps.log.info('permit.unmatched', { session: s.id, request, turn, open: [...s.permissions.keys()].length, reason: pending === undefined ? 'no such request' : 'another turn' });
+      return;
+    }
     s.permissions.delete(request);
     clearTimeout(pending.timer);
     this.deps.sessionLog.write(s.id, { type: 'permission', turn: pending.turn, request, tool: pending.tool, summary: pending.summary, risk: pending.risk, allow, ms: this.deps.now() - pending.askedAt });
@@ -1072,7 +1076,9 @@ export class Conductor {
     timer.unref();
     const summary = redactSecrets(event.summary);
     s.permissions.set(event.request, { request: event.request, turn: turn.id, brain, tool: event.tool, summary, risk: event.risk, askedAt: now(), timer });
-    this.emit(s, turn, { type: 'permission', turn: turn.id, request: event.request, tool: event.tool, summary, risk: event.risk, expiresMs: left });
+    // `detail` goes to the confirm control only: not to the session log, not to the activity strip. A second net of redaction, keeping its lines.
+    const detail = event.detail === undefined ? undefined : redactSecrets(event.detail, DETAIL_MAX, true);
+    this.emit(s, turn, { type: 'permission', turn: turn.id, request: event.request, tool: event.tool, summary, risk: event.risk, expiresMs: left, ...(detail === undefined ? {} : { detail }) });
   }
 
   private reject(s: Session, turn: ActiveTurn, raw: string, issues: readonly Issue[]): void {

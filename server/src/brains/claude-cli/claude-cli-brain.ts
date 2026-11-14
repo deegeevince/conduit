@@ -6,7 +6,7 @@ import type { ActionRisk, AppStatus, BrainChange, BrainChoice, BrainEffort, Brai
 import type { BriefForm, Capabilities } from '@conduit/language';
 import { buildReviewBrief, isKeep } from '@conduit/language';
 import type { Brain, BrainEvent, BrainSession, ReviewRequest, Snapshot, TurnRequest } from '../../domain/brain';
-import { FILE_TOOLS, gateCall, NO_AGENT, summaryOf, toolChoices } from '../../domain/agent';
+import { detailOf, FILE_TOOLS, gateCall, NO_AGENT, summaryOf, toolChoices } from '../../domain/agent';
 import type { AgentSettings } from '../../domain/agent';
 import { askedOf } from '../../domain/review';
 import { brainEventsFromText } from '../../domain/lines';
@@ -258,6 +258,8 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
     readonly form: BriefForm;
     /** run once the message is on its way: what the process now knows */
     readonly sent: () => void;
+    /** a look at the draft or a fix of it: it holds the same process, and so the same tools, but may use none of them */
+    readonly noTools?: boolean;
   }
 
   function outgoingFor(request: TurnRequest, entry: Entry, form: BriefForm): Outgoing {
@@ -338,7 +340,7 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
     /** The CLI asks before a call. Whatever the answer, it is made here, by `gateCall`, and by the owner for what that says to ask. */
     const handleAsk = (ask: { requestId: string; toolUseId: string; tool: string; input: Readonly<Record<string, unknown>> }): void => {
       const call = { id: ask.toolUseId, tool: ask.tool, input: ask.input };
-      const verdict = modeOf(out.session) === 'agent' ? gateCall(call, agent, on) : ({ kind: 'deny', risk: 'run', why: 'this conversation has no tools' } as const);
+      const verdict = out.noTools === true ? ({ kind: 'deny', risk: 'run', why: 'a look at the draft uses no tools' } as const) : modeOf(out.session) === 'agent' ? gateCall(call, agent, on) : ({ kind: 'deny', risk: 'run', why: 'this conversation has no tools' } as const);
       const summary = summaryOf(call);
       if (inner.signal.aborted) {
         // The turn was stopped (or timed out) and the model has not heard yet: nothing more is asked of the owner, nothing runs.
@@ -379,7 +381,7 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
       entry.held.set(ask.requestId, { requestId: ask.requestId, toolUseId: ask.toolUseId, tool: ask.tool, summary, risk: verdict.risk, input: ask.input, timer: deadline, settle });
       turnLog.info('agent_permission_asked', { tool: ask.tool, risk: verdict.risk });
       box.push({ type: 'activity', id: ask.toolUseId, tool: ask.tool, summary, state: 'waiting', ms: null });
-      box.push({ type: 'permission', request: ask.requestId, tool: ask.tool, summary, risk: verdict.risk, expiresMs });
+      box.push({ type: 'permission', request: ask.requestId, tool: ask.tool, summary, risk: verdict.risk, expiresMs, detail: detailOf(call) });
       rearm();
     };
 
@@ -569,6 +571,7 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
       images: [],
       form: 'since',
       sent: () => undefined,
+      noTools: true,
     };
     try {
       for await (const event of turnOnce(out, signal, entry, true, startedAt, { sawText: false })) {
