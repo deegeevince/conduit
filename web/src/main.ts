@@ -9,6 +9,8 @@ import { mountHud } from './chrome/hud';
 import { runCommand } from './chrome/command-runner';
 import { isCommand } from './chrome/commands';
 import { mountActivity } from './chrome/activity';
+import { DRAW_WORDS, mountStageInk } from './ink/stage';
+import type { StageInk } from './ink/stage';
 import { mountPermission } from './chrome/permission';
 import { mountPicker } from './chrome/picker';
 import type { Picker } from './chrome/picker';
@@ -53,8 +55,9 @@ if (stageHost === null || bar === null) throw new Error('The page could not be b
 
 let app: StageApp | null = null;
 let picker: Picker | null = null;
+let stageInk: StageInk | null = null;
 const promptBar = mountPromptBar(bar, {
-  onSubmit: (text, photos, held) => {
+  onSubmit: (text, photos, held, voice) => {
     // The field is cleared at once so Enter feels immediate; if the turn is not accepted the words (and photos) come back.
     if (app === null) {
       promptBar.restore(text, held);
@@ -64,10 +67,26 @@ const promptBar = mountPromptBar(bar, {
       void runCommand(app, text, (choice) => picker?.show(choice));
       return false;
     }
-    void app.prompt(text, photos).catch(() => promptBar.restore(text, held));
+    const drawn = stageInk;
+    if (drawn !== null && drawn.pending()) {
+      // what was drawn on the stage goes up with these words: its picture is kept first, then one turn carries words, photos and marks
+      const mounted = app;
+      void (async () => {
+        const marks = await drawn.take();
+        await mounted.prompt(text === '' ? DRAW_WORDS : text, photos, marks ?? undefined, voice);
+        drawn.sent();
+      })().catch((cause: unknown) => {
+        promptBar.restore(text, held);
+        mounted.announce(cause instanceof Error ? cause.message : 'The drawing could not be sent.');
+      });
+      return true;
+    }
+    void app.prompt(text, photos, undefined, voice).catch(() => promptBar.restore(text, held));
     return true;
   },
   onStop: () => app?.interrupt(),
+  // ink waiting on the stage is something to send even with no words
+  hasExtra: () => stageInk?.pending() === true,
   // A photo (picked, taken, pasted or dropped) goes to the server as soon as it is added, and is shown back as the server kept it.
   photos: {
     upload: async (photo) => {
@@ -75,6 +94,17 @@ const promptBar = mountPromptBar(bar, {
       return (await app.link.uploadPhoto(photo)).id;
     },
     urlOf: (id) => app?.link.photoUrl(id) ?? null,
+  },
+  // A voice note is recorded in the page and read on the owner's own Mac (Apple's on-device recogniser); only its words come back.
+  voice: {
+    status: async () => {
+      if (app === null) throw new Error('The stage is still starting.');
+      return app.link.voiceStatus();
+    },
+    upload: async (recording) => {
+      if (app === null) throw new Error('The stage is still starting. Try again in a moment.');
+      return app.link.uploadVoice(recording);
+    },
   },
 });
 
@@ -111,6 +141,15 @@ async function start(): Promise<void> {
   const mounted = app;
   window.__stage = mounted.hook;
   const transcript = mountTranscript(promptBar.extra, mounted.painter, { onChoice: (key) => mounted.choose(key) });
+  stageInk = mountStageInk(stageHost, promptBar.extra, {
+    upload: async (png) => (await mounted.link.uploadPhoto(png)).id,
+    lastTurn: () => mounted.lastTurn(),
+    capture: (maxSide) => mounted.capture(maxSide),
+    prompt: (words, marks) => mounted.prompt(words, [], marks),
+    announce: (text) => mounted.announce(text),
+  });
+  // for the browser checks (web/scripts/ink-check.mjs): the ink layer's own latency numbers
+  (window as unknown as { __inkStats?: () => unknown }).__inkStats = () => stageInk?.ink.stats();
   mountActions(promptBar.extra, mounted, transcript, stageHost, { top: promptBar.top });
   mountSound(promptBar.top, mounted);
   picker = mountPicker(promptBar.extra, mounted);

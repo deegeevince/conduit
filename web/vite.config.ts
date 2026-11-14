@@ -38,6 +38,7 @@ export default defineConfig({
         'bench-surface': page('bench-surface.html'),
         ...optional('bench-chart', 'bench-chart.html'),
         ...optional('taste', 'taste.html'),
+        ...optional('bench-ink', 'bench-ink.html'),
       },
     },
   },

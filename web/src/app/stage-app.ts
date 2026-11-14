@@ -1,6 +1,6 @@
 import { DEFAULT_LOOK, FIRST_LOAD_DEMO, LineNormalizer, LineReader, parseLine, parseReplayDirective, serializeLine } from '@conduit/language';
 import overtureScript from '@conduit/language/demos/overture.series?raw';
-import type { ActivityState, ActionRisk, BackEvent, ControlValue, ControlValues, CriticFinding, DataTable, Issue, PassState, Line, LeadWindow, LookId, ScreenFacts, Services, Sight, StageEvent, TurnEndReason, TurnInput } from '@conduit/language';
+import type { ActivityState, ActionRisk, BackEvent, ControlValue, ControlValues, CriticFinding, DataTable, InkMarks, Issue, PassState, Line, LeadWindow, LookId, ScreenFacts, Services, Sight, StageEvent, TurnEndReason, TurnInput } from '@conduit/language';
 import type { AppAct, AppHost } from '../contracts/app';
 import type { ExportJob, ExportRequest, Exporter } from '../contracts/export';
 import type { ChartHost } from '../contracts/chart';
@@ -94,8 +94,8 @@ export interface StageApp {
   readonly attribution: { readonly text: string; readonly href: string } | null;
   /** whether the server can look at a draft and fix it, and whether the viewer has it switched on */
   readonly review: { readonly available: boolean; readonly on: boolean; set(on: boolean): void };
-  /** Interrupts whatever is playing, reports it, then starts a turn with this prompt (and the ids of the photos the server kept for it, `link.uploadPhoto`). */
-  prompt(text: string, photos?: readonly string[]): Promise<string>;
+  /** Interrupts whatever is playing, reports it, then starts a turn with this prompt (and the ids of the photos the server kept for it, `link.uploadPhoto`, the ink drawn on the stage, and the voice notes whose words it holds, `link.uploadVoice`). */
+  prompt(text: string, photos?: readonly string[], marks?: InkMarks, voice?: readonly string[]): Promise<string>;
   demo(name: string): Promise<string>;
   /** Stops the current turn where it is. */
   interrupt(): void;
@@ -1165,7 +1165,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
         publishStatus();
       },
     },
-    prompt: (text, photos) => submit(photos === undefined || photos.length === 0 ? { kind: 'prompt', text } : { kind: 'prompt', text, images: photos }, null, true),
+    prompt: (text, photos, marks, voice) => submit({ kind: 'prompt', text, ...(photos === undefined || photos.length === 0 ? {} : { images: photos }), ...(marks === undefined ? {} : { marks }), ...(voice === undefined || voice.length === 0 ? {} : { voice }) }, null, true),
     demo: (name) => submit({ kind: 'demo', script: name }, null, true),
     playScript: (text) => submit({ kind: 'script', text }, null, true),
     interrupt() {

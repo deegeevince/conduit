@@ -49,6 +49,8 @@ import { DETAIL_MAX, redactSecrets, splitTool } from './agent';
 import { NO_AUDIT } from '../audit';
 import type { Audit, AuditDecider } from '../audit';
 import { NO_UPLOADS } from './uploads';
+import { NO_VOICE } from './voice';
+import type { VoiceNotes } from './voice';
 import type { StoredUpload, UploadStore } from './uploads';
 import type { UsageMeter } from '../usage';
 import { currentIdentity, labelOf } from '../identity';
@@ -96,6 +98,8 @@ export interface ConductorDeps {
   readonly audit?: Audit;
   /** v2.1. The user's photos, kept in the data folder. Absent: no photo can be given. */
   readonly uploads?: UploadStore;
+  /** v2.1. The user's voice notes, read on this Mac. Absent: no voice note can be given. */
+  readonly voice?: VoiceNotes;
   /** v2.1 ops. The usage meter: every brain turn and review pass is written to it; its throttle only ever warns the owner, never refuses a turn. */
   readonly usage?: UsageMeter;
   /** milliseconds; injected so nothing in the domain reads the wall clock directly */
@@ -231,11 +235,21 @@ export class Conductor {
     }
 
     // The photos a prompt names are this conversation's own, or the turn does not open.
-    if (input.kind === 'prompt' && (input.images?.length ?? 0) > 0) {
+    // The picture of the ink (and the photo it was drawn over) are held the same way.
+    if (input.kind === 'prompt' && ((input.images?.length ?? 0) > 0 || input.marks !== undefined)) {
       const held = this.deps.uploads ?? NO_UPLOADS;
       if (!held.available) throw errors.badRequest('photos are switched off on this server');
-      const missing = (input.images ?? []).find((id) => !held.has(s.id, id));
+      const named = [...(input.images ?? []), ...(input.marks === undefined ? [] : [input.marks.image, ...(input.marks.background === undefined ? [] : [input.marks.background]), ...(input.marks.voice?.audio === undefined ? [] : [input.marks.voice.audio])])];
+      const missing = named.find((id) => !held.has(s.id, id));
       if (missing !== undefined) throw errors.badRequest(`this conversation has no photo ${missing}`);
+    }
+
+    // Likewise the voice notes: this conversation's own, or the turn does not open.
+    if (input.kind === 'prompt' && (input.voice?.length ?? 0) > 0) {
+      const notes = this.deps.voice ?? NO_VOICE;
+      if (!notes.available) throw errors.badRequest('voice notes are switched off on this server');
+      const missing = (input.voice ?? []).find((id) => !notes.has(s.id, id));
+      if (missing !== undefined) throw errors.badRequest(`this conversation has no voice note ${missing}`);
     }
 
     const brain = brains.forInput(input);
@@ -961,18 +975,22 @@ export class Conductor {
       };
       const pdfs = s.documents.flatMap((doc) => (doc.pdf === null ? [] : [{ id: doc.facts.id, bytes: doc.pdf }]));
       const snapshot = this.deps.sight === 'snapshot' && turn.previous !== null ? (this.deps.assets.snapshot(s.id, turn.previous) ?? null) : null;
+      const spoken = turn.input.kind === 'prompt' ? (turn.input.voice ?? []).flatMap((id) => this.deps.voice?.transcript(s.id, id) ?? []) : [];
       const input: TurnInput = gathered.text !== null && turn.input.kind === 'prompt' ? { ...turn.input, text: gathered.text } : turn.input;
+      // What was said in a voice note goes to the brain as words too (the transcript, beside the text the user sent); never into the log or the audit trail.
+      const withVoice: TurnInput = input.kind === 'prompt' && spoken.length > 0 ? { ...input, spoken } : input;
       // The photos this prompt names, as they were kept, after the stage's snapshot. A photo that cannot be read back is left out and said in the log.
       const images: Snapshot[] = [];
       if (input.kind === 'prompt') {
-        for (const id of input.images ?? []) {
+        // The photos, then the picture of the ink last: the brief says it is the one that was written or drawn.
+        for (const id of [...(input.images ?? []), ...(input.marks === undefined ? [] : [input.marks.image])]) {
           const loaded = await (this.deps.uploads ?? NO_UPLOADS).load(s.id, id);
           if (loaded === null) log.warn('turn.photo_missing', { session: s.id, turn: turn.id, photo: id });
           else images.push(loaded);
         }
       }
       if (turn.abort.signal.aborted) return;
-      const request = { turn: turn.id, session: s.id, input, context, snapshot, pdfs, look: this.deps.review.enabled && turn.lookAllowed, ...(images.length > 0 ? { images } : {}) };
+      const request = { turn: turn.id, session: s.id, input: withVoice, context, snapshot, pdfs, look: this.deps.review.enabled && turn.lookAllowed, ...(images.length > 0 ? { images } : {}) };
       const normalizer = new LineNormalizer(() => {
         s.nextAutoId += 1;
         return `x${s.nextAutoId}`;
