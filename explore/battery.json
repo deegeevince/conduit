@@ -1,5 +1,5 @@
 {
-  "version": 3,
+  "version": 4,
   "prompts": [
     {
       "id": "sky-blue",
@@ -8,7 +8,8 @@
       "expects": "drawn",
       "baseline": true,
       "information": true,
-      "heldOut": false
+      "heldOut": false,
+      "family": "mechanism"
     },
     {
       "id": "four-stroke",
@@ -17,7 +18,8 @@
       "expects": "drawn",
       "baseline": true,
       "information": true,
-      "heldOut": false
+      "heldOut": false,
+      "family": "mechanism"
     },
     {
       "id": "moon-phases",
@@ -26,7 +28,8 @@
       "expects": "drawn",
       "baseline": false,
       "information": true,
-      "heldOut": false
+      "heldOut": false,
+      "family": "mechanism"
     },
     {
       "id": "planets",
@@ -35,7 +38,8 @@
       "expects": "drawn",
       "baseline": true,
       "information": true,
-      "heldOut": false
+      "heldOut": false,
+      "family": "diagram"
     },
     {
       "id": "rent-or-buy",
@@ -44,7 +48,8 @@
       "expects": "drawn",
       "baseline": true,
       "information": true,
-      "heldOut": false
+      "heldOut": false,
+      "family": "diagram"
     },
     {
       "id": "heat-pump",
@@ -53,7 +58,8 @@
       "expects": "drawn",
       "baseline": true,
       "information": true,
-      "heldOut": false
+      "heldOut": false,
+      "family": "diagram"
     },
     {
       "id": "population",
@@ -62,7 +68,8 @@
       "expects": "drawn",
       "baseline": true,
       "information": true,
-      "heldOut": false
+      "heldOut": false,
+      "family": "chart"
     },
     {
       "id": "title-card",
@@ -70,7 +77,8 @@
       "prompt": "Make a title card for a documentary called The Last Glacier.",
       "expects": "any",
       "baseline": false,
-      "heldOut": false
+      "heldOut": false,
+      "family": "type"
     },
     {
       "id": "first-snow",
@@ -78,7 +86,8 @@
       "prompt": "Write me a short poem about the first snow, and perform it.",
       "expects": "any",
       "baseline": false,
-      "heldOut": false
+      "heldOut": false,
+      "family": "type"
     },
     {
       "id": "laid-off",
@@ -86,7 +95,8 @@
       "prompt": "I just got laid off.",
       "expects": "type",
       "baseline": false,
-      "heldOut": false
+      "heldOut": false,
+      "family": "type"
     },
     {
       "id": "pay-button",
@@ -94,7 +104,8 @@
       "prompt": "Prototype the animation for a Pay button: idle, pressed, loading, success.",
       "expects": "motion",
       "baseline": false,
-      "heldOut": false
+      "heldOut": false,
+      "family": "motion"
     },
     {
       "id": "logo-sting",
@@ -103,7 +114,8 @@
       "expects": "drawn",
       "baseline": false,
       "statedSeconds": 3,
-      "heldOut": false
+      "heldOut": false,
+      "family": "motion"
     },
     {
       "id": "bakery-clip",
@@ -112,7 +124,8 @@
       "expects": "motion",
       "baseline": false,
       "statedSeconds": 10,
-      "heldOut": false
+      "heldOut": false,
+      "family": "motion"
     },
     {
       "id": "bike-ad",
@@ -121,7 +134,8 @@
       "expects": "drawn",
       "baseline": false,
       "statedSeconds": 15,
-      "heldOut": false
+      "heldOut": false,
+      "family": "motion"
     },
     {
       "id": "story",
@@ -129,7 +143,8 @@
       "prompt": "Tell me a story as a scene.",
       "expects": "scene",
       "baseline": false,
-      "heldOut": false
+      "heldOut": false,
+      "family": "scene"
     },
     {
       "id": "lighthouse",
@@ -137,7 +152,8 @@
       "prompt": "Paint me a lighthouse in a storm.",
       "expects": "drawn",
       "baseline": false,
-      "heldOut": false
+      "heldOut": false,
+      "family": "scene"
     },
     {
       "id": "pixel-fox",
@@ -145,7 +161,8 @@
       "prompt": "Pixel art of a fox.",
       "expects": "pixels",
       "baseline": false,
-      "heldOut": false
+      "heldOut": false,
+      "family": "pixels"
     },
     {
       "id": "pixel-fire",
@@ -153,7 +170,8 @@
       "prompt": "An animated pixel campfire.",
       "expects": "pixels",
       "baseline": false,
-      "heldOut": false
+      "heldOut": false,
+      "family": "pixels"
     },
     {
       "id": "everest",
@@ -161,7 +179,8 @@
       "prompt": "What is the boiling point of water at the top of Everest?",
       "expects": "plain",
       "baseline": true,
-      "heldOut": false
+      "heldOut": false,
+      "family": "plain"
     },
     {
       "id": "git-undo",
@@ -169,7 +188,8 @@
       "prompt": "How do I undo my last git commit but keep the changes?",
       "expects": "plain",
       "baseline": true,
-      "heldOut": false
+      "heldOut": false,
+      "family": "plain"
     },
     {
       "id": "sleep-tips",
@@ -177,7 +197,8 @@
       "prompt": "Give me five tips for sleeping better.",
       "expects": "plain",
       "baseline": true,
-      "heldOut": false
+      "heldOut": false,
+      "family": "plain"
     },
     {
       "id": "show-me",
@@ -186,7 +207,8 @@
       "expects": "any",
       "baseline": false,
       "mayDescribeMedium": 1,
-      "heldOut": false
+      "heldOut": false,
+      "family": "open"
     },
     {
       "id": "silk-road",
@@ -195,7 +217,8 @@
       "expects": "drawn",
       "baseline": true,
       "heldOut": true,
-      "information": true
+      "information": true,
+      "family": "diagram"
     },
     {
       "id": "apollo-timeline",
@@ -204,7 +227,8 @@
       "expects": "drawn",
       "baseline": true,
       "heldOut": true,
-      "information": true
+      "information": true,
+      "family": "diagram"
     },
     {
       "id": "family-tree",
@@ -213,7 +237,8 @@
       "expects": "drawn",
       "baseline": true,
       "heldOut": true,
-      "information": true
+      "information": true,
+      "family": "diagram"
     },
     {
       "id": "umbrella-flow",
@@ -222,7 +247,8 @@
       "expects": "drawn",
       "baseline": true,
       "heldOut": true,
-      "information": true
+      "information": true,
+      "family": "diagram"
     },
     {
       "id": "pancakes",
@@ -231,7 +257,8 @@
       "expects": "drawn",
       "baseline": true,
       "heldOut": true,
-      "information": true
+      "information": true,
+      "family": "diagram"
     },
     {
       "id": "root-two",
@@ -240,7 +267,8 @@
       "expects": "drawn",
       "baseline": true,
       "heldOut": true,
-      "information": true
+      "information": true,
+      "family": "mechanism"
     },
     {
       "id": "water-cycle",
@@ -249,7 +277,8 @@
       "expects": "drawn",
       "baseline": true,
       "heldOut": true,
-      "information": true
+      "information": true,
+      "family": "diagram"
     },
     {
       "id": "pets-table",
@@ -258,7 +287,8 @@
       "expects": "drawn",
       "baseline": true,
       "heldOut": true,
-      "information": true
+      "information": true,
+      "family": "diagram"
     },
     {
       "id": "bubble-sort",
@@ -267,7 +297,8 @@
       "expects": "drawn",
       "baseline": true,
       "heldOut": true,
-      "information": true
+      "information": true,
+      "family": "mechanism"
     },
     {
       "id": "offside",
@@ -276,7 +307,8 @@
       "expects": "drawn",
       "baseline": true,
       "heldOut": true,
-      "information": true
+      "information": true,
+      "family": "mechanism"
     },
     {
       "id": "counting-apples",
@@ -284,7 +316,8 @@
       "prompt": "Make a counting game for a four-year-old, with apples.",
       "expects": "any",
       "baseline": false,
-      "heldOut": true
+      "heldOut": true,
+      "family": "open"
     },
     {
       "id": "toggle-state",
@@ -292,7 +325,8 @@
       "prompt": "Show a toggle switch going from off to on, with its label changing to match.",
       "expects": "motion",
       "baseline": false,
-      "heldOut": true
+      "heldOut": true,
+      "family": "motion"
     },
     {
       "id": "podcast-title",
@@ -301,7 +335,8 @@
       "expects": "type",
       "baseline": false,
       "heldOut": true,
-      "statedSeconds": 5
+      "statedSeconds": 5,
+      "family": "type"
     },
     {
       "id": "coffee-flow",

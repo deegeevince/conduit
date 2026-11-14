@@ -3,7 +3,13 @@
 //   pnpm explore                          every prompt and every scripted conversation, 3 samples each
 //   pnpm explore --dry-run                only print the plan: calls, estimated dollars
 //   pnpm explore --only id,id             just these prompts or cases
-//   pnpm explore --pool tune|heldout      the tune set (explore/battery.json, the default) or the sealed held-out set
+//   pnpm explore --pool tune|tune-b|heldout   the tune set (explore/battery.json, the default), v2's former held-out set (explore/tune-b.json),
+//                                         or the held-out set in BATTERY_SEALED_DIR (outside the repository; refused when that is unset; never printed)
+//   pnpm explore --screen 390x844         lay the answers out and picture them for this window (default 1280x720)
+//   pnpm explore --replay <run> --looks all --screen 390x844   geometry only, no model, no judge: every logged answer of a run laid out in each look
+//   pnpm explore --brain shipped          the configuration the owner runs: whatever .env says, one sample (the battery's own brain is sonnet at effort low)
+//   pnpm explore --compare <run> <run>    two runs of the same prompts, paired by prompt: the difference, its standard error, what moved
+//   pnpm explore --write-heldout          a cold writer makes thirty fresh prompts into BATTERY_SEALED_DIR/heldout.json; prints counts, never the prompts
 //   pnpm explore --battery <file>         any battery file (the vault); its own `pool` field says which set it is
 //   pnpm explore --held-out               just the prompts and cases that no worked example mirrors
 //   pnpm explore --samples 5              samples per prompt (default 3); each check gets a pass rate
@@ -36,11 +42,20 @@ import {
   EMPTY_STAGE,
   LANGUAGE,
   LEAD_WINDOW,
+  CHANGE_FLOOR,
+  LOOK_IDS,
   REFERENCE_SCREEN,
   EXPLORE_VARIANTS,
+  TurnScore,
+  barRows,
   buildSystemPrompt,
+  contentOf,
+  fixKeeps,
+  pairedDifference,
+  parseLine,
   passRates,
   summaryOf,
+  unfiled,
   verdictsOf,
 } from '@conduit/language';
 import type {
@@ -59,7 +74,10 @@ import type {
   ExploreVariant,
   ExploreVerdict,
   Line,
+  LookId,
+  ScreenFacts,
   Services,
+  StageBase,
 } from '@conduit/language';
 import type { Brain } from '../domain/brain';
 import { createBrains } from '../brains/registry';
@@ -71,11 +89,13 @@ import type { Env } from '../env';
 import { createLogger } from '../log';
 import { openEyes, repoRoot } from './explore-browser';
 import type { Eyes } from './explore-browser';
-import { playCase } from './explore-case';
+import { PHONE_SCREEN, playCase } from './explore-case';
+import { HELDOUT_COUNTS, promptsOf, writeHeldout } from './explore-heldout';
+import { answersOf, replayRun, writeReplay } from './explore-replay';
 import { callsOf, perCallFor, projectUsd } from './explore-cost';
 import type { Plan } from './explore-cost';
 import type { JudgeSettings } from './explore-judge';
-import { EMPTY, judgeStills, slots, techniquesFor } from './explore-rig';
+import { EMPTY, STRIP, compareStills, slots, techniquesFor } from './explore-rig';
 import { inspect } from './explore-inspect';
 import { rubricOf } from './explore-judge';
 import { createLibrary } from '../library/registry';
@@ -87,6 +107,18 @@ interface Options {
   readonly heldOut: boolean;
   /** which set to play: `tune` (explore/battery.json) or `heldout` (explore/sealed/heldout.json) */
   readonly pool: ExplorePool | null;
+  /** v2.1. The window answers are laid out and pictured for */
+  readonly screen: { readonly width: number; readonly height: number };
+  /** v2.1. A replay pass over a logged run (no model): the run's name or folder */
+  readonly replay: string | null;
+  /** v2.1. The looks a replay pass lays the answers out in: every one, or these */
+  readonly looks: readonly LookId[] | 'chosen';
+  /** v2.1. `battery`: sonnet at effort low, comparable with v2. `shipped`: the owner's `.env` as it stands */
+  readonly configuration: 'battery' | 'shipped';
+  readonly compare: readonly [string, string] | null;
+  readonly writeHeldout: boolean;
+  /** v2.1. Works the scripted explorable (language/demos/explorable.series) through the painter: a slider, a toggle and a pick must each register */
+  readonly selfCheck: boolean;
   /** a battery file instead (the vault, a loop candidate's set) */
   readonly batteryFile: string | null;
   readonly brain: string | null;
@@ -113,7 +145,13 @@ const DEFAULT_TIMEOUT_S = 180;
 // The web dev server the battery starts for its pictures. `EXPLORE_WEB_PORT` moves it, so two runs (a baseline and a candidate
 // of the improvement loop, say) can be up at once; the v2 round keeps everything it starts between 4600 and 4699.
 const WEB_PORT = Number(processEnvironment()['EXPLORE_WEB_PORT'] ?? '4661');
-const JUDGE_SIDE = 1024;
+
+/** The window facts the brain is told for a window of this size: the reference screen and the phone are as the app reports them. */
+function screenFactsOf(width: number, height: number): ScreenFacts {
+  if (width === REFERENCE_SCREEN.width && height === REFERENCE_SCREEN.height) return REFERENCE_SCREEN;
+  if (width === PHONE_SCREEN.width && height === PHONE_SCREEN.height) return PHONE_SCREEN;
+  return width >= height ? { ...REFERENCE_SCREEN, width, height } : { ...PHONE_SCREEN, width, height };
+}
 
 function usageError(message: string): never {
   process.stderr.write(`explore: ${message}\n`);
@@ -124,6 +162,14 @@ function parseArguments(argv: readonly string[]): Options {
   let only: string[] | null = null;
   let heldOut = false;
   let pool: ExplorePool | null = null;
+  let screen = { width: REFERENCE_SCREEN.width, height: REFERENCE_SCREEN.height };
+  let replay: string | null = null;
+  let looks: readonly LookId[] | 'chosen' = 'chosen';
+  let configuration: 'battery' | 'shipped' = 'battery';
+  let compare: readonly [string, string] | null = null;
+  let writeHeldout = false;
+  let selfCheck = false;
+  let samplesGiven = false;
   let batteryFile: string | null = null;
   let brain: string | null = null;
   let model: string | null = null;
@@ -148,14 +194,36 @@ function parseArguments(argv: readonly string[]): Options {
     else if (flag === '--held-out') heldOut = true;
     else if (flag === '--pool') {
       const name = value();
-      if (name !== 'tune' && name !== 'heldout') usageError('--pool must be tune or heldout (the vault is played with --battery <file>)');
+      if (name !== 'tune' && name !== 'tune-b' && name !== 'heldout') usageError('--pool must be tune, tune-b or heldout (the vault is played with --battery <file>)');
       pool = name;
     } else if (flag === '--battery') batteryFile = value();
-    else if (flag === '--brain') brain = value();
+    else if (flag === '--screen') {
+      const found = /^(\d{3,4})x(\d{3,4})$/.exec(value());
+      if (found === null) usageError('--screen must be like 1280x720 or 390x844');
+      screen = { width: Number(found[1]), height: Number(found[2]) };
+    } else if (flag === '--replay') replay = value();
+    else if (flag === '--looks') {
+      const named = value();
+      if (named === 'all') looks = LOOK_IDS;
+      else if (named === 'chosen') looks = 'chosen';
+      else {
+        looks = named.split(',').map((name) => LOOK_IDS.find((id) => id === name.trim()) ?? usageError(`unknown look "${name}" (known: ${LOOK_IDS.join(', ')})`));
+      }
+    } else if (flag === '--compare') compare = [value(), value()];
+    else if (flag === '--write-heldout') writeHeldout = true;
+    else if (flag === '--self-check') selfCheck = true;
+    else if (flag === '--brain') {
+      const named = value();
+      if (named === 'shipped') configuration = 'shipped';
+      else brain = named;
+    }
     else if (flag === '--model') model = value();
     else if (flag === '--no-baseline') baseline = false;
     else if (flag === '--timeout') timeoutS = Number(value());
-    else if (flag === '--samples') samples = Number(value());
+    else if (flag === '--samples') {
+      samples = Number(value());
+      samplesGiven = true;
+    }
     else if (flag === '--variant' || flag === '--variants') {
       variants = value().split(',').map((name) => {
         const found = EXPLORE_VARIANTS.find((item) => item === name.trim());
@@ -181,7 +249,9 @@ function parseArguments(argv: readonly string[]): Options {
   if (!Number.isInteger(judgeFrames) || judgeFrames < 1 || judgeFrames > 5) usageError('--judge-frames must be a whole number from 1 to 5');
   if (!Number.isFinite(maxUsd) || maxUsd <= 0) usageError('--max-usd must be a positive number');
   if (pool !== null && batteryFile !== null) usageError('--pool and --battery name the same thing twice');
-  return { only, heldOut, pool, batteryFile, brain, model, baseline, timeoutMs: timeoutS * 1000, samples, variants: variants ?? ['column'], cases, judge: judgeOn, review: reviewOn, judgeModel, judgeEffort, judgeFrames, dryRun, maxUsd, yes, web };
+  // The configuration the owner runs is looked at once, unless asked for more: it costs what the owner's own model costs.
+  if (configuration === 'shipped' && !samplesGiven) samples = 1;
+  return { screen, replay, looks, configuration, compare, writeHeldout, selfCheck, only, heldOut, pool, batteryFile, brain, model, baseline, timeoutMs: timeoutS * 1000, samples, variants: variants ?? ['column'], cases, judge: judgeOn, review: reviewOn, judgeModel, judgeEffort, judgeFrames, dryRun, maxUsd, yes, web };
 }
 
 function asNumber(value: unknown): number | null {
@@ -388,18 +458,103 @@ function summary(recorded: readonly Recorded[], planned: number): string {
   ].join('\n');
 }
 
+/**
+ * `--self-check`: the scripted explorable of the language's demos, worked through the painter the way the battery works every answer. A slider, a
+ * toggle and a pick must each change the picture beyond their own redraw and each send its event. No model is called.
+ */
+async function selfCheckMain(options: Options): Promise<void> {
+  const text = await readFile(join(repoRoot(), 'language', 'demos', 'explorable.series'), 'utf8');
+  const lines: { seq: number; line: Line }[] = [];
+  for (const raw of text.split('\n')) {
+    if (raw.trim() === '' || raw.trim().startsWith('#')) continue;
+    const parsed = parseLine(raw);
+    if (parsed.kind === 'line') lines.push({ seq: lines.length + 1, line: parsed.line });
+  }
+  const eyes: Eyes = await openEyes({ web: options.web, port: WEB_PORT, repo: repoRoot() }).catch((error: unknown) => usageError(`no browser: ${error instanceof Error ? error.message : String(error)}`));
+  try {
+    const window = { width: options.screen.width, height: options.screen.height, dpr: 1 };
+    const driven = await eyes.drive({ turn: 'self-check', base: EMPTY_STAGE, lines, viewport: window, side: 512 });
+    const rows = driven.controls.map((control) => [control.kind, control.id, control.bound ? 'bound' : 'not bound', control.reported ? 'event heard' : 'NO EVENT', control.changed === null ? '-' : `${(control.changed * 100).toFixed(2)}%`, control.ownChanged === null ? '-' : `${(control.ownChanged * 100).toFixed(2)}%`]);
+    process.stdout.write(`${lines.length} lines of language/demos/explorable.series, worked at ${window.width}x${window.height}\n${tabulate(['control', 'id', 'bound', 'event', 'picture changed (beyond controls)', 'on the controls themselves'], rows, new Set([4, 5]))}\n`);
+    const bad = driven.controls.filter((control) => control.kind !== 'button' && (!control.reported || control.changed === null || control.changed <= CHANGE_FLOOR));
+    for (const control of bad) process.stdout.write(`FAILED: ${control.kind} ${control.id}\n`);
+    process.exitCode = bad.length === 0 ? 0 : 1;
+  } finally {
+    await eyes.close().catch(() => undefined);
+  }
+}
+
+/** `--replay`: every answer of a logged run laid out again, in the looks and windows asked for, and counted. No brain, no judge, no model. */
+async function replayMain(options: Options, exploreDir: string): Promise<void> {
+  const dir = runFolder(exploreDir, options.replay ?? '');
+  if (!existsSync(join(dir, 'index.json'))) usageError(`no run at ${dir}`);
+  const screens = [options.screen];
+  const eyes: Eyes = await openEyes({ web: options.web, port: WEB_PORT, repo: repoRoot() }).catch((error: unknown) => usageError(`no browser: ${error instanceof Error ? error.message : String(error)}`));
+  try {
+    const count = (await answersOf(dir, options.only)).length;
+    process.stdout.write(`replay of ${dir}: ${count} answers, ${options.looks === 'chosen' ? 'the look each chose' : `${options.looks.length} looks`}, at ${screens.map((screen) => `${screen.width}x${screen.height}`).join(', ')}; no model is called\n`);
+    const report = await replayRun(eyes, { dir, looks: options.looks, screens, only: options.only }, (line) => process.stdout.write(`${line}\n`));
+    const table = await writeReplay(dir, report, screens.map((screen) => `${screen.width}x${screen.height}`));
+    process.stdout.write(`\n${table}\n`);
+    for (const failure of report.failed.slice(0, 8)) process.stdout.write(`could not lay out ${failure.answer}: ${failure.why}\n`);
+    const first = report.colliding.filter((entry) => entry.look === (options.looks === 'chosen' ? 'chosen' : (options.looks[0] ?? 'chosen')));
+    const names = [...new Set(first.map((entry) => entry.answer))];
+    process.stdout.write(`\n${names.length} answers collide in ${options.looks === 'chosen' ? 'their own look' : (options.looks[0] ?? '')}: ${names.slice(0, 24).join(', ')}${names.length > 24 ? ', ...' : ''}\nwritten to ${dir}\n`);
+  } finally {
+    await eyes.close().catch(() => undefined);
+  }
+}
+
+/** The rows of the bar this run could fill, with n and standard error; a row is met only when its mean less one error clears it. */
+function barTable(scored: ExploreSummary): string {
+  const rows = barRows(scored).map((row) => [String(row.row), row.what, row.value === null ? '-' : Number.isInteger(row.value) ? String(row.value) : row.value.toFixed(2), row.se === null ? '' : `±${row.se.toFixed(2)}`, String(row.n), row.bar, row.met === null ? 'not measured' : row.met ? 'met' : 'NOT MET']);
+  return `the bar, as this run measured it (${scored.configuration ?? 'battery'}, ${scored.screen ?? '1280x720'}, pool ${scored.pool}; met = mean less one standard error clears it):\n${tabulate(['row', 'what', 'value', 'se', 'n', 'bar', ''], rows, new Set([0, 2, 3, 4]))}`;
+}
+
 function familyTable(scored: ExploreSummary): string {
-  const pct = (m: Measure): string => (m.value === null ? '-' : `${Math.round(m.value * 100)}%`);
-  const num = (m: Measure): string => (m.value === null ? '-' : m.value.toFixed(2));
+  const pct = (m: Measure): string => (m.value === null ? '-' : `${Math.round(m.value * 100)}%${m.se === null ? '' : `±${Math.round(m.se * 100)}`}`);
+  const num = (m: Measure): string => (m.value === null ? '-' : `${m.value.toFixed(2)}${m.se === null ? '' : `±${m.se.toFixed(2)}`}`);
   const rows = Object.values(scored.families).map((line) => line.bar).map((f) => [f.family, String(f.answers), num(f.coherence), pct(f.coherenceFour), pct(f.textReadable), pct(f.labelsRight), pct(f.drawingCorrect), pct(f.structureNamed), num(f.chartQuality), pct(f.responds), `${f.overlaps}/${f.throughNodes}/${f.crossed}`]);
   return `families (pool ${scored.pool}, judge rubric ${scored.rubric === '' ? 'none' : scored.rubric}):\n${tabulate(['family', 'n', 'coher.', '>=4', 'text ok', 'labels', 'correct', 'named', 'chart q', 'responds', 'overlap/thru/cross'], rows, new Set([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]))}`;
+}
+
+/** A run's folder, given as its name or as a path. */
+function runFolder(exploreDir: string, name: string): string {
+  return /[\\/]/.test(name) ? resolve(name) : join(exploreDir, 'runs', name);
+}
+
+async function readSummary(dir: string): Promise<ExploreSummary> {
+  return JSON.parse(await readFile(join(dir, 'summary.json'), 'utf8')) as ExploreSummary;
+}
+
+/** Two runs of the same prompts, paired by prompt (P1-11): the difference in coherence with its own standard error, by family, and what moved most. */
+async function compareRuns(exploreDir: string, a: string, b: string): Promise<void> {
+  const [was, is] = await Promise.all([readSummary(runFolder(exploreDir, a)), readSummary(runFolder(exploreDir, b))]);
+  const note = was.rubric === is.rubric ? '' : `\nWARNING: the judge's rubric differs (${was.rubric || 'none'} against ${is.rubric || 'none'}): the scores are not comparable`;
+  const rows: string[][] = [];
+  for (const family of [null, ...new Set([...was.prompts, ...is.prompts].map((prompt) => prompt.family))]) {
+    const found = pairedDifference(was, is, family);
+    if (found.n === 0) continue;
+    const clears = found.mean !== null && found.se !== null && Math.abs(found.mean) > found.se;
+    rows.push([family ?? 'all', String(found.n), found.mean === null ? '-' : found.mean.toFixed(2), found.se === null ? '-' : found.se.toFixed(2), clears ? 'clears its error' : 'inside its error', found.moved.slice(0, 3).map((entry) => `${entry.id} ${entry.difference > 0 ? '+' : ''}${entry.difference.toFixed(1)}`).join(', ')]);
+  }
+  process.stdout.write(`${tabulate(['family', 'prompts', 'mean diff', 'se', 'reading', 'moved most'], rows, new Set([1, 2, 3]))}${note}\n`);
 }
 
 async function main(): Promise<void> {
   const options = parseArguments(process.argv.slice(2));
   const source: Record<string, string | undefined> = { ...processEnvironment() };
+  if (options.compare !== null) {
+    await compareRuns(loadEnv({ ...source, NODE_ENV: undefined, BRAIN: 'replay' }).exploreDir, options.compare[0], options.compare[1]);
+    return;
+  }
   source.NODE_ENV = undefined;
-  source.BRAIN = options.brain ?? (options.model !== null ? 'claude-cli' : source.BRAIN) ?? 'claude-cli';
+  // The battery's own brain is sonnet at effort low, so a run compares with v2's; the shipped configuration is the owner's `.env` as it stands.
+  if (options.configuration === 'battery' && options.brain === null) {
+    if (options.model === null) source.CLAUDE_MODEL = 'sonnet';
+    source.BRAIN_EFFORT = 'low';
+  }
+  source.BRAIN = options.replay !== null ? 'replay' : (options.brain ?? (options.model !== null ? 'claude-cli' : source.BRAIN) ?? 'claude-cli');
   if (source.BRAIN === 'relay') usageError('the relay brain needs a person on the other end; use --brain replay or --brain claude-cli');
   if (source.BRAIN === 'replay') source.REPLAY_SCRIPT = undefined;
   if (options.model !== null) source.CLAUDE_MODEL = options.model;
@@ -407,13 +562,40 @@ async function main(): Promise<void> {
   const replaying = env.brain.kind === 'replay';
   const claudeBin = env.brain.kind === 'claude-cli' ? env.brain.bin : (source['CLAUDE_BIN'] ?? 'claude');
 
-  const batteryPath = options.batteryFile !== null ? resolve(options.batteryFile) : options.pool === 'heldout' ? join(env.exploreDir, 'sealed', 'heldout.json') : join(env.exploreDir, 'battery.json');
-  const battery = JSON.parse(await readFile(batteryPath, 'utf8')) as ExploreBattery;
+  if (options.writeHeldout) {
+    if (env.sealedDir === null) usageError('BATTERY_SEALED_DIR is not set: the held-out set lives outside the repository, and there is nowhere to write it');
+    const existing = await promptsOf([join(env.exploreDir, 'battery.json'), join(env.exploreDir, 'tune-b.json')]);
+    const made = await writeHeldout({ dir: env.sealedDir, bin: claudeBin, model: options.model ?? 'sonnet', effort: 'medium', existing, overwrite: options.yes }, new AbortController().signal);
+    const counts = Object.entries(made.counts).map(([family, count]) => `${family} ${count}`).join(', ');
+    process.stdout.write(`held-out set written to ${made.path}: ${made.total} prompts (${counts}) in ${made.rounds} round${made.rounds === 1 ? '' : 's'}, ${made.dropped} dropped as repeats. Nothing was printed; planned counts: ${Object.entries(HELDOUT_COUNTS).map(([family, count]) => `${family} ${count}`).join(', ')}\n`);
+    return;
+  }
+  if (options.replay !== null) {
+    await replayMain(options, env.exploreDir);
+    return;
+  }
+  if (options.selfCheck) {
+    await selfCheckMain(options);
+    return;
+  }
+  if (options.pool === 'heldout' && env.sealedDir === null) usageError('--pool heldout reads only BATTERY_SEALED_DIR, which is not set. The held-out set is not in the repository (make one with --write-heldout)');
+  const batteryPath =
+    options.batteryFile !== null
+      ? resolve(options.batteryFile)
+      : options.pool === 'heldout'
+        ? join(env.sealedDir ?? '', 'heldout.json')
+        : options.pool === 'tune-b'
+          ? join(env.exploreDir, 'tune-b.json')
+          : join(env.exploreDir, 'battery.json');
+  const battery = JSON.parse(await readFile(batteryPath, 'utf8').catch(() => usageError(`no battery at ${options.pool === 'heldout' ? 'BATTERY_SEALED_DIR/heldout.json' : batteryPath}`))) as ExploreBattery;
+  const filed = unfiled(battery.prompts);
+  if (filed.length > 0) usageError(`${filed.length} prompt${filed.length === 1 ? '' : 's'} of ${options.pool === 'heldout' ? 'the held-out set' : relative(repoRoot(), batteryPath)} name no family (${options.pool === 'heldout' ? 'not listed' : filed.slice(0, 6).join(', ')}): a family is what the prompt says it is, never guessed from \`expects\``);
   const pool: ExplorePool = battery.pool ?? options.pool ?? 'tune';
+  const batteryLabel = pool === 'heldout' && options.batteryFile === null ? 'BATTERY_SEALED_DIR/heldout.json' : relative(repoRoot(), batteryPath);
   const known = new Set([...battery.prompts.map((p) => p.id), ...(battery.cases ?? []).map((c) => c.id)]);
   if (options.only !== null) {
     const missing = options.only.filter((id) => !known.has(id));
-    if (missing.length > 0) usageError(`no such prompt or case: ${missing.join(', ')} (known: ${[...known].join(', ')})`);
+    if (missing.length > 0) usageError(`no such prompt or case: ${missing.join(', ')}${pool === 'heldout' ? '' : ` (known: ${[...known].join(', ')})`}`);
   }
   // A replay brain plays a fixture whatever it is asked: there is nothing to judge and no conversation to carry.
   const judging = options.judge && !replaying;
@@ -474,7 +656,10 @@ async function main(): Promise<void> {
   // and the pictures all come from it. A run with no page measures nothing worth keeping, so it does not start.
   process.stdout.write('  starting the headless browser ...');
   const eyes: Eyes = await openEyes({ web: options.web, port: WEB_PORT, repo: repoRoot() }).catch((error: unknown) => usageError(`no browser: ${error instanceof Error ? error.message : String(error)}`));
-  const capabilities = await eyes.capabilities({ width: REFERENCE_SCREEN.width, height: REFERENCE_SCREEN.height, dpr: 1 }).catch(() => null);
+  const window = { width: options.screen.width, height: options.screen.height, dpr: 1 };
+  const screenFacts = screenFactsOf(window.width, window.height);
+  const judgeSide = Math.max(window.width, window.height);
+  const capabilities = await eyes.capabilities(window).catch(() => null);
   if (capabilities === null) {
     await eyes.close().catch(() => undefined);
     usageError('the page did not say what its painter can do');
@@ -510,8 +695,11 @@ async function main(): Promise<void> {
       variants: options.variants,
       judgeModel: judging ? options.judgeModel : null,
       pool,
-      battery: relative(repoRoot(), batteryPath),
+      battery: batteryLabel,
       rubric: judging ? rubricOf({ model: options.judgeModel, effort: options.judgeEffort }) : null,
+      configuration: replaying ? 'replay' : options.configuration,
+      effort: env.brain.kind === 'claude-cli' ? env.brain.effort : null,
+      screen: `${window.width}x${window.height}`,
       projection: { calls: callsOf(plan), usd: replaying ? null : Number(projected.toFixed(4)) },
       spentUsd: recorded.reduce((sum, item) => sum + item.results.reduce((s, r) => s + (r.usage?.costUsd ?? 0) + (r.judge?.costUsd ?? 0), 0), 0),
       measured: { firstTurnUsd: mean(measured.first), laterTurnUsd: mean(measured.later), judgeUsd: mean(measured.judge), baselineUsd: mean(measured.baseline) },
@@ -582,7 +770,8 @@ async function main(): Promise<void> {
         stopped: () => stopping,
         judgeSettings,
         judgeEarlier: Array.from({ length: options.judgeFrames - 1 }, (_, at) => (at + 1) / options.judgeFrames),
-        judgeSide: JUDGE_SIDE,
+        judgeSide,
+        screen: screenFacts,
         judgeSlots: judgeSlotsShared,
       };
       const label = stemOf(unit);
@@ -602,7 +791,7 @@ async function main(): Promise<void> {
           }
         }
         const session = `explore-${id}-${label}`;
-        unitBrain.open?.({ session, capabilities, screen: REFERENCE_SCREEN, services });
+        unitBrain.open?.({ session, capabilities, screen: screenFacts, services });
         const input: TurnInput = unitBrain.id === 'replay' ? { kind: 'demo', script: replayDemo(prompt) } : { kind: 'prompt', text: prompt.prompt };
         const chosen = techniquesFor(rig, input);
         const played = await playTurn({
@@ -611,7 +800,7 @@ async function main(): Promise<void> {
           turn: `${session}-t1`,
           idPrefix: 'x',
           input,
-          context: { screen: REFERENCE_SCREEN, capabilities, services, lead: LEAD_WINDOW, stage: EMPTY_STAGE, history: [], heard: [], techniques: chosen.cards },
+          context: { screen: screenFacts, capabilities, services, lead: LEAD_WINDOW, stage: EMPTY_STAGE, history: [], heard: [], techniques: chosen.cards },
           snapshot: null,
           brain: unitBrain,
           timeoutMs: options.timeoutMs,
@@ -623,7 +812,7 @@ async function main(): Promise<void> {
                 look: {
                   policy: env.review,
                   styles: () => [],
-                  draft: (lines) => eyes.look({ turn: `${session}-t1`, base: EMPTY_STAGE, lines, viewport: { width: REFERENCE_SCREEN.width, height: REFERENCE_SCREEN.height, dpr: 1 }, playhead: null, earlier: [], judgeSide: JUDGE_SIDE }),
+                  draft: (lines) => eyes.look({ turn: `${session}-t1`, base: EMPTY_STAGE, lines, viewport: window, playhead: null, earlier: [], judgeSide, strip: STRIP }),
                 },
               }
             : {}),
@@ -652,10 +841,11 @@ async function main(): Promise<void> {
                 turn: `${session}-t1`,
                 base: EMPTY_STAGE,
                 lines: base.lines.map((line, at) => ({ seq: line.seq, line: played.accepted[at] as Line })),
-                viewport: { width: REFERENCE_SCREEN.width, height: REFERENCE_SCREEN.height, dpr: 1 },
+                viewport: window,
                 playhead: null,
                 earlier: rig.judgeEarlier,
-                judgeSide: JUDGE_SIDE,
+                judgeSide,
+                strip: STRIP,
               },
               prompt.prompt,
               base,
@@ -667,18 +857,26 @@ async function main(): Promise<void> {
             process.stderr.write(`explore: no picture for ${label}: ${error instanceof Error ? error.message : String(error)}\n`);
           }
         }
-        // Did looking help? The draft is judged on its own, the answer as it ended is judged as always, and the review keeps both.
+        // Did looking help? A fix is measured by ONE call that is shown the draft and the answer as it ended in an order it is not told (P1-9), and
+        // only an answer that was looked at counts. What the fix did is counted from the lines: whether it opened a scene, whether it took something away.
         const looked = played.looked;
-        const draftJudgement: Promise<ExploreResult['judge']> =
-          looked !== undefined && looked.draft !== null && looked.review.result === 'fixed' && judgeSettings !== null ? judgeStills(rig, prompt.prompt, looked.draft, { chart: prompt.expects === 'chart' }) : Promise.resolve(null);
+        const afterPicture = looked !== undefined && looked.draft !== null && looked.review.result === 'fixed' && judgeSettings !== null ? await eyes.look({ turn: `${session}-t1`, base: EMPTY_STAGE, lines: base.lines.map((line, at) => ({ seq: line.seq, line: played.accepted[at] as Line })), viewport: window, playhead: null, earlier: [], judgeSide, strip: STRIP }).catch(() => null) : null;
+        const compared =
+          looked !== undefined && looked.draft !== null && afterPicture !== null && looked.review.result === 'fixed' ? compareStills(rig, prompt.prompt, looked.draft, afterPicture) : Promise.resolve(null);
         later(
           (async () => {
             const judge = await judgement;
-            const draftJudge = await draftJudgement;
+            const versus = await compared;
+            const same = judge?.failure === null ? (judge?.coherence ?? null) : null;
             const review: ExploreResult['review'] =
               looked === undefined
                 ? undefined
-                : { ...looked.review, before: looked.review.result === 'fixed' ? (draftJudge?.failure === null ? (draftJudge?.coherence ?? null) : null) : (judge?.failure === null ? (judge?.coherence ?? null) : null), after: judge?.failure === null ? (judge?.coherence ?? null) : null };
+                : {
+                    ...looked.review,
+                    ...fixFacts(looked.review.result, looked.draftLines, played.accepted, base.base ?? EMPTY_STAGE),
+                    before: looked.review.result === 'fixed' ? (versus?.failure === null ? (versus?.draft ?? null) : null) : same,
+                    after: looked.review.result === 'fixed' ? (versus?.failure === null ? (versus?.final ?? null) : null) : same,
+                  };
             const finished: ExploreResult = { ...base, ...measured2, ...(judge === null ? {} : { judge }), ...(review === undefined ? {} : { review }) };
             const verdicts = verdictsOf(finished);
             const result: ExploreResult = { ...finished, verdicts };
@@ -712,15 +910,28 @@ async function main(): Promise<void> {
   // The summary the loop reads: scores by family in the terms of the quality bar, never an answer.
   const answers = recorded.flatMap((item) => (item.unit.kind === 'prompt' ? item.results : item.results.slice(0, 1)));
   const scored = summaryOf(
-    { run: id, pool, battery: relative(repoRoot(), batteryPath), rubric: judging ? rubricOf({ model: options.judgeModel, effort: options.judgeEffort }) : '', brain: brain.id, model, samples: options.samples, spentUsd: recorded.reduce((sum, item) => sum + item.results.reduce((s2, r) => s2 + (r.usage?.costUsd ?? 0) + (r.judge?.costUsd ?? 0), 0), 0) },
+    { run: id, pool, battery: batteryLabel, rubric: judging ? rubricOf({ model: options.judgeModel, effort: options.judgeEffort }) : '', brain: brain.id, model, configuration: replaying ? 'replay' : options.configuration, effort: env.brain.kind === 'claude-cli' ? env.brain.effort : null, screen: `${window.width}x${window.height}`, samples: options.samples, spentUsd: recorded.reduce((sum, item) => sum + item.results.reduce((s2, r) => s2 + (r.usage?.costUsd ?? 0) + (r.judge?.costUsd ?? 0), 0), 0) },
     answers,
   );
   await writeFile(join(dir, 'summary.json'), `${JSON.stringify(scored, null, 2)}\n`);
-  process.stdout.write(`\n${summary(recorded, units.length)}\n\n${familyTable(scored)}\n\nwritten to ${dir}\n`);
+  process.stdout.write(`\n${summary(recorded, units.length)}\n\n${familyTable(scored)}\n\n${barTable(scored)}\n\nwritten to ${dir}\n`);
   if (stopping) process.stdout.write(`stopped early: ${recorded.length} of ${units.length} units ran\n`);
 }
 
+/** What a fix did, counted from the lines and not from the painter's word: whether it opened a scene, whether what it left takes something the draft had. */
+function fixFacts(result: NonNullable<ExploreResult['review']>['result'], draftLines: number, accepted: readonly Line[], base: StageBase): Pick<NonNullable<ExploreResult['review']>, 'openedScene' | 'tookAway' | 'refusedChanged'> {
+  const fix = accepted.slice(draftLines);
+  if (result === 'refused') return { refusedChanged: fix.length > 0 };
+  if (result !== 'fixed') return {};
+  const draft = new TurnScore(base);
+  accepted.slice(0, draftLines).forEach((line, at) => draft.push(line, at + 1, 0));
+  const final = new TurnScore(base);
+  accepted.forEach((line, at) => final.push(line, at + 1, 0));
+  return { openedScene: fix.some((line) => line.verb === 'scene'), tookAway: !fixKeeps(contentOf(draft.schedule), contentOf(final.schedule)).keeps };
+}
+
 const judgeSlotsShared = slots(2);
+
 
 /** For the replay brain only: a fixture that stands in for the prompt, so the review page has plain text, drawings, a scene and type to show. */
 function replayDemo(prompt: ExplorePrompt): string {

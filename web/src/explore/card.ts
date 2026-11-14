@@ -63,16 +63,23 @@ function measuresBlockOf(answer: ExploreResult): HTMLElement | null {
   const { geometry, drive, checks } = answer;
   const rows: HTMLElement[] = [];
   if (geometry !== undefined) {
-    rows.push(fact('overlapping text', String(geometry.textOverlaps)), fact('connectors through nodes', String(geometry.linksThroughNodes)), fact('labels crossed', String(geometry.crossedLabels)), fact('clipped', String(geometry.clipped)));
+    rows.push(fact('text over another box', String(geometry.textOverlaps)), fact('connectors through nodes', String(geometry.linksThroughNodes)), fact('labels crossed', String(geometry.crossedLabels)), fact('outside the screen or its room', String((geometry.outside ?? 0) + (geometry.outsideRoom ?? 0))), fact('clipped (the painter\u2019s own note)', String(geometry.clipped)));
+    if ((geometry.pairs ?? []).length > 0) rows.push(fact('which', (geometry.pairs ?? []).join('; ')));
+    if ((geometry.unrouted ?? 0) > 0) rows.push(fact('connectors not routed (not audited)', String(geometry.unrouted)));
+    if (geometry.carried !== undefined) rows.push(fact('carried from the turn before', `${geometry.carried.kept}, ${geometry.carried.moved} moved or entered again at time zero`));
   }
   if (checks.structures !== undefined && Object.keys(checks.structures).length > 0) {
     rows.push(fact('structures', Object.entries(checks.structures).map(([kind, n]) => `${n} ${kind}`).join(', ')), fact('placed by hand', String(checks.placedByHand ?? 0)));
   }
   for (const control of drive?.controls ?? []) {
-    const changed = control.changed === null ? '' : `, picture changes ${(control.changed * 100).toFixed(1)}%`;
+    const changed = control.changed === null ? '' : `, picture changes ${(control.changed * 100).toFixed(1)}% beyond its own redraw${control.ownChanged == null ? '' : ` (${(control.ownChanged * 100).toFixed(1)}% on the controls)`}`;
     rows.push(fact(`${control.kind} ${control.id}`, `${control.bound ? 'bound' : 'not bound'}, ${control.reported ? 'event heard' : 'no event'}${changed}${control.answered === null ? '' : control.answered ? ', answered' : ', not answered'}`));
   }
-  for (const chart of drive?.charts ?? []) rows.push(fact(`chart ${chart.id}`, `crosshair ${chart.crosshair ? 'ok' : 'FAILED'}, zoom ${chart.zoomed ? 'ok' : 'FAILED'}, ${chart.silent ? 'silent' : 'OPENED A TURN'}`));
+  for (const chart of drive?.charts ?? []) {
+    const stage = chart.stage;
+    const seen = stage === undefined ? '' : `, ${stage.fontPx === null ? 'type size not measured' : `type ${stage.fontPx.toFixed(1)} px`}, ${stage.tickProblems.length === 0 ? 'ticks clean' : `ticks: ${stage.tickProblems.join(' / ')}`}, ${stage.plotShare === null ? 'plot share not measured' : `plot ${Math.round(stage.plotShare * 100)}% of its room`}`;
+    rows.push(fact(`chart ${chart.id}`, `crosshair ${chart.crosshair ? 'ok' : 'FAILED'}, zoom ${chart.zoomed ? 'ok' : 'FAILED'}, ${chart.silent ? 'silent' : 'OPENED A TURN'}${seen}`));
+  }
   return rows.length === 0 ? null : h('div', { class: 'facts measures' }, ...rows);
 }
 
@@ -99,7 +106,9 @@ function judgeBlockOf(judge: ExploreJudgement | null): HTMLElement | null {
     judge.asked ? null : 'does not show what was asked',
     judge.textProblem === null ? null : `text: ${judge.textProblem}`,
     judge.wrongLabel === null ? null : `label: ${judge.wrongLabel}`,
-    judge.correct ? null : `wrong: ${judge.mistake ?? 'not correct'}`,
+    judge.correct ? null : `not correct: ${judge.mistake ?? 'not correct'}`,
+    judge.wrong == null ? null : `wrong (the owner's word): ${judge.wrong}`,
+    judge.boring === true ? 'boring (the owner\u2019s word): the timid default' : null,
   ].filter((item): item is string => item !== null);
   const last = judge.stills[judge.stills.length - 1];
   return h(

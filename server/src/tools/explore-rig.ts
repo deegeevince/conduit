@@ -1,12 +1,12 @@
 // What every unit of a run shares: the brain, the eyes, the judge, the limits.
 
 import { EMPTY_STAGE } from '@conduit/language';
-import type { Capabilities, ExploreJudgement, Services, StageBase, TechniqueCard, TurnInput } from '@conduit/language';
+import type { Capabilities, ExploreJudgement, ScreenFacts, Services, StageBase, TechniqueCard, TurnInput } from '@conduit/language';
 import type { Brain } from '../domain/brain';
 import type { TechniqueLibrary } from '../domain/techniques';
 import type { DriveReply, HarnessReply } from './explore-browser';
-import { judge, judgeResponds } from './explore-judge';
-import type { JudgeSettings } from './explore-judge';
+import { judge, judgeCompare, judgeResponds } from './explore-judge';
+import type { Compared, JudgeSettings } from './explore-judge';
 
 export interface Running {
   readonly controller: AbortController;
@@ -34,11 +34,16 @@ export interface Rig {
   /** shares of the answer at which the judge is also shown a picture, before the final one */
   readonly judgeEarlier: readonly number[];
   readonly judgeSide: number;
+  /** the window the run lays answers out and pictures them for, as the brain is told of it */
+  readonly screen: ScreenFacts;
   /** judge calls at once */
   readonly judgeSlots: { take(): Promise<() => void> };
 }
 
 export const EMPTY: StageBase = EMPTY_STAGE;
+
+/** Where an answer told in captions is also pictured, before its resting stage: what the judge sees of a story told a line at a time (P2-21). */
+export const STRIP: readonly number[] = [0.2, 0.45, 0.7];
 
 /** The techniques the library hands this turn, as the conductor does: only for a message the brain will read. Null: none fitted. */
 export function techniquesFor(rig: Rig, input: TurnInput): { readonly cards: readonly TechniqueCard[]; readonly ids: readonly string[] } {
@@ -66,6 +71,24 @@ export async function judgeStills(rig: Rig, request: string, reply: HarnessReply
     return { ...verdict, responds: failing === undefined, respondsWhy: (failing ?? usable[0])?.why ?? null, costUsd: cost };
   } catch (error) {
     return { model: settings.model, asked: false, textProblem: null, wrongLabel: null, correct: false, mistake: null, coherence: 1, why: '', costUsd: null, ms: 0, stills: [], failure: error instanceof Error ? error.message : String(error) };
+  } finally {
+    release();
+  }
+}
+
+/** Draft and final in one call (P1-9), through the same slots as every judgement. Never throws: a failed judge is a comparison with a `failure`. */
+export async function compareStills(rig: Rig, request: string, draft: HarnessReply, final: HarnessReply): Promise<Compared> {
+  const settings = rig.judgeSettings;
+  const failed = (failure: string): Compared => ({ draft: null, final: null, prefer: null, why: null, costUsd: null, failure });
+  const was = draft.judge[draft.judge.length - 1];
+  const is = final.judge[final.judge.length - 1];
+  if (settings === null) return failed('no judge in this run');
+  if (was === undefined || is === undefined) return failed('a picture is missing');
+  const release = await rig.judgeSlots.take();
+  try {
+    return await judgeCompare({ request, draft: was, final: is }, settings, new AbortController().signal);
+  } catch (error) {
+    return failed(error instanceof Error ? error.message : String(error));
   } finally {
     release();
   }

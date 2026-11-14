@@ -99,6 +99,18 @@ function inFlowMedianOf(elements: readonly ElementSpan[], schedule: Schedule): n
   return counts.length % 2 === 1 ? (counts[middle] ?? 0) : ((counts[middle - 1] ?? 0) + (counts[middle] ?? 0)) / 2;
 }
 
+/** The value each control of the answer is written at, by its id, as a chart's cells that follow a control are read. */
+function scopeOf(elements: readonly ElementSpan[]): Record<string, number> {
+  const scope: Record<string, number> = {};
+  for (const element of elements) {
+    const figure = element.figure;
+    if (figure?.kind !== 'control') continue;
+    const value = figure.value ?? figure.min;
+    scope[element.id] = typeof value === 'number' ? value : typeof value === 'boolean' ? (value ? 1 : 0) : 0;
+  }
+  return scope;
+}
+
 /** Structures, controls, charts and hand-placed text of the answer: what the new checks of the battery count. */
 function structureChecks(elements: readonly ElementSpan[]): Pick<ExploreChecks, 'structures' | 'parts' | 'controls' | 'bound' | 'chart' | 'callouts' | 'placedByHand'> {
   const structures: Partial<Record<StructureKind, number>> = {};
@@ -108,7 +120,8 @@ function structureChecks(elements: readonly ElementSpan[]): Pick<ExploreChecks, 
     if (figure?.kind !== 'structure') continue;
     structures[figure.structure] = (structures[figure.structure] ?? 0) + 1;
     if (figure.structure === 'chart' && chart === null && figure.chart !== null) {
-      const model = chartModelOf(figure.chart, figure.rows);
+      // A chart whose cells follow a slider is read at the values the answer wrote the controls at; with no scope every such cell is a number it cannot read (P1-12).
+      const model = chartModelOf(figure.chart, figure.rows, scopeOf(elements));
       chart = {
         kind: figure.chart,
         points: model.points.length,

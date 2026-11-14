@@ -76,6 +76,8 @@ export interface TurnLooked {
   readonly review: Omit<ExploreReview, 'before' | 'after' | 'addedWaitMs'> & { readonly addedWaitMs: number };
   /** the page's pictures of the draft; null when the look never reached the page */
   readonly draft: HarnessReply | null;
+  /** how many of the answer's lines were the draft: the rest are the fix */
+  readonly draftLines: number;
 }
 
 export interface TurnPlayed {
@@ -169,6 +171,7 @@ export async function playTurn(play: TurnPlay): Promise<TurnPlayed> {
     if (play.look !== undefined && !local.signal.aborted && accepted.length > 0 && interruptedAtMs === null) {
       const look = play.look;
       const draftEndMs = Math.round(performance.now() - started);
+      const draftLines = lines.length;
       const draftPlayMs = Math.round(score.schedule.end * 1000);
       let reply: HarnessReply | null = null;
       try {
@@ -220,6 +223,7 @@ export async function playTurn(play: TurnPlay): Promise<TurnPlayed> {
         looked = {
           review: { result: recordOut.result, passes: recordOut.passes, why: recordOut.why, firstLineMs: recordOut.firstLineMs, addedWaitMs: Math.max(0, finishedMs - ((firstLineMs ?? 0) + draftPlayMs)), costUsd: recordOut.costUsd, ...(reply === null ? {} : { draftStills: reply.thumbs.map((thumb) => `data:image/jpeg;base64,${thumb}`) }) },
           draft: reply,
+          draftLines,
         };
       }
     }
