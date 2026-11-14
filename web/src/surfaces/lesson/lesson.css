@@ -282,5 +282,9 @@ mark.fact { background: var(--accent); color: var(--on-accent, #fff); border-rad
 .gcell.on { background: var(--good-soft); border-color: var(--good); }
 
 /* a figure the question is about is the work surface: big, central, never a thumbnail */
-.ctx:not(.pinned) .crop { width: 100%; max-height: 52vh; object-fit: contain; object-position: top left; }
+.ctx:not(.pinned) .crop { grid-column: 1 / -1; width: 100%; max-height: 40vh; object-fit: contain; object-position: top left; }
 .dock .btn { min-height: 56px; }
+.ctx:not(.pinned) > * { grid-column: 1 / -1; }
+/* the question's own screen leaves room for the answer; once she is working it is the compact pinned header */
+.ctx:not(.pinned) .crop { max-height: 26vh; }
+.crumb { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
