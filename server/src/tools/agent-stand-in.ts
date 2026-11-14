@@ -27,6 +27,8 @@ const calls = [
   { tool: 'mcp__mail__send_email', input: { to: 'someone@example.com', subject: 'hello', body: `the key is ${SECRET}` } },
 ];
 
+// The CLI's request ids are 36-character UUIDs, and a stand-in with short ones hid a bug that cut them (review P0-1).
+const requestIdOf = (index: number): string => `3f2a9c1e-7b4d-4e0a-9f55-${String(100_000_000_000 + index)}`;
 const waiting = new Map<string, (allow: boolean) => void>();
 let turnRunning = false;
 let interrupted = false;
@@ -41,7 +43,7 @@ async function turn(): Promise<void> {
     send({ type: 'assistant', message: { content: [{ type: 'tool_use', id, name: call.tool, input: call.input }] } });
     const allowed = await new Promise<boolean>((resolve) => {
       waiting.set(id, resolve);
-      send({ type: 'control_request', request_id: `req_${index}`, request: { subtype: 'can_use_tool', tool_name: call.tool, input: call.input, tool_use_id: id } });
+      send({ type: 'control_request', request_id: requestIdOf(index), request: { subtype: 'can_use_tool', tool_name: call.tool, input: call.input, tool_use_id: id } });
     });
     if (allowed) {
       ran(call.tool);
@@ -79,7 +81,7 @@ process.stdin.on('data', (chunk: string) => {
       }
     } else if (message.type === 'control_response') {
       const requestId = message.response?.request_id ?? '';
-      const id = `toolu_${requestId.replace('req_', '')}`;
+      const id = `toolu_${calls.findIndex((_call, index) => requestIdOf(index) === requestId)}`;
       const resolve = waiting.get(id);
       if (resolve !== undefined) {
         waiting.delete(id);
