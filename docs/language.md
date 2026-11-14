@@ -635,6 +635,8 @@ Two one-way streams share the turn clock and the element ids.
 
 Pictures travel beside the back channel as plain uploads: the **snapshot** of a resting stage (painter to the next brief), the **draft** of an open turn (painter to the brain's look), and, only when an image model is configured, the **sketch** a picture element stands on.
 
+The **user's photos** (v2.1) come in by `POST /api/sessions/:id/uploads`, the body being the photo itself (JPEG, PNG, WebP or HEIC, at most 12 MB, read by its bytes, not by its name or Content-Type): the server converts it, shrinks it to 2048 pixels on its longest side, re-encodes it as a JPEG with every piece of metadata dropped (EXIF, so the place it was taken is gone), keeps it under `DATA_DIR/uploads/` and answers 201 `{ id, mime, width, height, bytes }` with the id `u1`, `u2`, … of that session (415 for anything else, 413 too large, 409 past 24 a session). `GET /api/sessions/:id/uploads/:uid` gives the kept JPEG back. The photo is made upright from its EXIF orientation before the metadata is dropped. To frame one question from a page, send `?crop=x,y,w,h` (fractions of the upright photo, from its top left): the part is the answer's photo and the whole page is kept beside it (`whole`); or later `POST /api/sessions/:id/uploads/:uid/crop` with `{ x, y, w, h }`, which makes a new photo and leaves the page as it was. A prompt carries up to four ids in `input.images`; the brain is shown those photos with the turn and may put one on stage with `pic u1`. Each upload is an `upload` entry in the audit trail (`pnpm audit-log --kind upload`) and an `upload` record in the session log, by id and size, never the bytes.
+
 The **clock state** in `progress` is one of `idle`, `waiting` (a turn is open or expected, no line yet), `playing`, `holding` (caught up with the pen), `paused` and `hidden`. `hidden` is reported, never papered over.
 
 A brain cannot listen while it is generating, so it hears the back channel only at breaks: an LLM brain at the start of its next turn, a relay agent between any two of its calls.
@@ -680,9 +682,9 @@ All paths are under the same origin's `/api`. Errors are always `{ "code": strin
 | `GET /api/relay/guide[?session=…]` | the brain's system prompt as plain text, with the relay appendix |
 | `GET /api/relay/status` | what is waiting and what is claimed |
 
-**Content-Type.** Every route that reads a body requires its type: `application/json`, `text/plain` for `lines`, `image/png` and `image/jpeg` for the uploads. Anything else is 415.
+**Content-Type.** Every route that reads a body requires its type: `application/json`, `text/plain` for `lines`, `image/png` and `image/jpeg` for the painter's uploads. Anything else is 415. The one exception is the user's own photos (`POST /api/sessions/:id/uploads`): what a photo is is read from its bytes, so its Content-Type is not trusted or required.
 
-**Server limits.** A request body is at most 64 KB (1 MiB for the painter's `events` and `turns` bodies and for uploads), a prompt at most 20,000 characters and a script at most 48,000. A brain may write at most 1000 lines in one turn. The server answers questions about the last 30 turns of a session.
+**Server limits.** A request body is at most 64 KB (1 MiB for the painter's `events` and `turns` bodies and for uploads), a photo at most 12 MB, a prompt at most 20,000 characters and a script at most 48,000. A brain may write at most 1000 lines in one turn. The server answers questions about the last 30 turns of a session.
 
 In relay answers, `pen` is exact (the server computes it from the accepted lines); `playhead` is the painter's last report with its age.
 
