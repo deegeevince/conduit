@@ -3,6 +3,7 @@
 Newest first. Each item is something the brain can show live when asked "showcase what's new": draw it, don't describe it. The server reads this file.
 
 ## v2.1 (live, being polished)
+- Only you can use it (your Tailscale login), every action is in an audit log, `/stop-all` stops everything, and `/usage` shows what it costs.
 - Lessons read properly: the table you are learning from gets the big room with the steps beside it; the answer stays on screen at rest; decision boxes are diamonds; text keeps readable contrast.
 - Music: ask for a tune or a sonata and it plays, drawn as a piano roll with a moving playhead; mute and stop in the bar; Save MIDI.
 - Follow-ups change the picture you have instead of redrawing it; a correction never removes or rewords a choice; "what's new" (or /new) gives a short live tour.
@@ -15,7 +16,7 @@ Newest first. Each item is something the brain can show live when asked "showcas
 - Diagrams fit their room: labels beside lines, words inside boxes, cycles keep every arrow, wide tables become cards on a phone.
 - Controls: a slider's value sits by its label, toggles name both states, every target is thumb-sized.
 - Coming next (v2.1 part two, not live): code blocks, slide decks with PDF export, pasted pictures, selectable text.
-- Agent is the only mode: reading and searching the web just happen; anything else waits for your Allow (or Deny) on stage, with the full details shown. Browser control (your Chrome, in its own tab) is built and switched off until login checks land.
+- Agent is the only mode: reading and searching the web just happen; anything else waits for your Allow (or Deny) on stage, with the full details shown. Browser control is on: your Chrome, in Conduit's own tab group, every action asked first.
 - Commands: /brain, /tools, /status, /asks, /look, /review, /export, /capture; "Take away" is now "Save".
 - A critic (Fable) looks at every answer after it lands and notes what to improve.
 
