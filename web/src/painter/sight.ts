@@ -295,6 +295,25 @@ export function sightOf(timeline: Timeline, schedule: Schedule, base: StageBase,
     return false;
   };
 
+  // free words standing on a diagram (the structure engines keep to their room, so this is a diagram that did not fit it, or words set where it is):
+  // said on both, the words as `collides` and the diagram as `overlaps`, so the look pass moves one of them
+  const ownedBy = (element: ElementSpan, structure: ElementSpan): boolean => element.parent === structure.key || element.key === structure.key;
+  const diagramUnder = (entry: Entry): Entry | null => {
+    const lines = lineBoxes.get(entry.element.key);
+    if (lines === undefined) return null;
+    for (const other of entries) {
+      if (!other.resting || other.element.kind !== 'structure' || ownedBy(entry.element, other.element) || areaOf(other.screenBox) <= 0) continue;
+      if (lines.some((line) => overlapArea(line, other.screenBox) > 0.25 * Math.max(1, areaOf(line)))) return other;
+    }
+    return null;
+  };
+  const textOnDiagram = (entry: Entry): boolean => {
+    const other = diagramUnder(entry);
+    if (other === null) return false;
+    if (!other.notes.includes('overlaps')) other.notes.push('overlaps');
+    return true;
+  };
+
   entries.forEach((entry, index) => {
     const { element, screenBox, notes } = entry;
     // A line has no thickness to measure; half a pixel of it is enough to be seen or not.
@@ -336,7 +355,7 @@ export function sightOf(timeline: Timeline, schedule: Schedule, base: StageBase,
       const style = element.style;
       if (placed !== undefined && entry.resting) {
         const layout = scene.layout;
-        if (textOverText(entry, index)) notes.push('collides');
+        if (textOverText(entry, index) || textOnDiagram(entry)) notes.push('collides');
         if (strokeThrough(element.key) && !notes.includes('crossed')) notes.push('crossed');
         const view = restViews.get(element.key);
         if (view !== undefined && view.contrast < (view.fontPx >= 24 ? 3 : 4.5) - 0.01) notes.push('faint');

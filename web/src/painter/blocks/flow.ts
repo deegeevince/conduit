@@ -7,9 +7,9 @@
 import type { Point, Polyline } from '@conduit/language';
 import type { BlockPart, StructureInput, StructureLayout } from '../../contracts/blocks';
 import type { Box } from '../../contracts/space';
-import { box, boxOfPoints, packOrdered, simplify, union } from './geom';
+import { box, boxOfPoints, packOrdered, polylinesCross, simplify, union } from './geom';
 import type { Draft, LinkSpec, NodeBox, Note } from './kit';
-import { best, connectorParts, Env, fit, isCrowded, labelPart, linkSpecs, nodeParts, placeBeside, sizeNode, WRAPS } from './kit';
+import { best, connectorParts, knockOut, Env, fit, isCrowded, labelPart, linkSpecs, nodeParts, placeBeside, sizeNode, WRAPS } from './kit';
 
 type Grow = 'right' | 'down';
 
@@ -56,11 +56,33 @@ function flowLayout(input: StructureInput, mayFold: boolean): StructureLayout {
   const attempts: (() => StructureLayout)[] = [];
   // the direction asked for, at the usual width of words; then the other direction; then each with words wider and narrower
   for (const wrap of WRAPS) for (const grow of mayFold ? [preferred, other] : [preferred]) attempts.push(() => fit(input, input.look.stroke, (env) => buildFlow(env, grow), undefined, wrap));
-  const chosen = best(attempts);
+  let chosen = best(attempts);
+  // Nothing fits its room: words set at widths in between the usual ones may (a narrow room and a tall chain: wider boxes, fewer ranks of lines)
+  if ((chosen.overflows ?? 0) > 0) {
+    const more: (() => StructureLayout)[] = [() => chosen];
+    for (const wrap of [1.3, 1.5, 1.7, 1.8, 1.9, 2, 2.1, 2.2, 2.6]) more.push(() => fit(input, input.look.stroke, (env) => buildFlow(env, preferred), undefined, wrap));
+    chosen = best(more);
+  }
   if (!mayFold || !isCrowded(chosen)) return chosen;
   // A long chain that fits no way is set like text: in rows, each row left to right, the end of one joined to the start of the next.
   const folded = foldChain(input);
-  return folded !== null && !isCrowded(folded) ? folded : chosen;
+  if (folded === null || isCrowded(folded)) return chosen;
+  // a fold that runs its connectors across one another is no better than a layout that merely fits
+  const links = linkSpecs(input);
+  const crossings = (l: StructureLayout): number => {
+    let n = 0;
+    for (let i = 0; i < links.length; i += 1)
+      for (let j = i + 1; j < links.length; j += 1) {
+        const a = links[i] as LinkSpec;
+        const b = links[j] as LinkSpec;
+        if (a.from === b.from || a.to === b.to || a.from === b.to || a.to === b.from) continue;
+        const p = l.routes.get(a.el.key);
+        const q = l.routes.get(b.el.key);
+        if (p !== undefined && q !== undefined) n += polylinesCross(p, q);
+      }
+    return n;
+  };
+  return (chosen.overflows ?? 0) > 0 || crossings(folded) <= crossings(chosen) ? folded : chosen;
 }
 
 /** The nodes in the order of a single path through every one of them, when the links are exactly that. */
@@ -152,6 +174,8 @@ function foldChain(input: StructureInput): StructureLayout | null {
       const bandBox = bands.map((band) => union([...band.boxes].filter(([k]) => k !== input.structure.key).map(([, v]) => v)));
       const gutter = (k: number): number => (k < 0 ? (bandBox[0] as Box).y - gap / 2 : Math.min(input.room.y + input.room.height - 2, (bandBox[k] as Box).y + (bandBox[k] as Box).height + gap / 2));
       let lane = 0;
+      // the words already set in the bands stay clear of the words set in the gutters
+      const taken: Box[] = parts.flatMap((p) => (p.kind === 'text' && p.role === 'label' ? [p.box] : []));
       for (const link of crossing) {
         const from = boxes.get(link.from);
         const to = boxes.get(link.to);
@@ -174,15 +198,26 @@ function foldChain(input: StructureInput): StructureLayout | null {
         let area = boxOfPoints(pts);
         if (link.label !== '') {
           const m = env.measure(link.label, env.wrapWidth, env.label());
-          const mid = pts.length === 4 ? ((pts[1] as Point).x + (pts[2] as Point).x) / 2 : ((pts[pts.length - 3] as Point).x + (pts[pts.length - 2] as Point).x) / 2;
-          const at = box(mid - m.width / 2, along - m.height / 2, m.width, m.height);
-          labels.push(labelPart(env, link.el.key, link.label, at, m, true));
+          // beside the line, longest run first, never on it; with no clear place the lines break round the word
+          const runs: (readonly [Point, Point])[] = [];
+          for (let i = 0; i + 1 < pts.length; i += 1) runs.push([pts[i] as Point, pts[i + 1] as Point]);
+          const len = (r: readonly [Point, Point]): number => Math.hypot(r[1].x - r[0].x, r[1].y - r[0].y);
+          runs.sort((x, y) => len(y) - len(x));
+          const nodeBoxes = input.nodes.flatMap((el) => boxes.get(el.key) ?? []);
+          const pick = placeBeside(runs, m.width, m.height, env.stroke * 1.5 + 3, { boxes: [...nodeBoxes, ...taken], lines: [...routes.values()] }, input.room);
+          const at = pick?.box ?? box(((pts[1] as Point).x + (pts[2] as Point).x) / 2 - m.width / 2, along - m.height / 2, m.width, m.height);
+          if ((pick === null || pick.penalty > 0) && knockOut(lines, at, env.stroke * 1.5, [...nodeBoxes, ...taken])) notes.push({ key: link.el.key, note: 'crossed' });
+          taken.push(at);
+          labels.push(labelPart(env, link.el.key, link.label, at, m, pick === null || pick.penalty > 0));
           area = union([area, at]);
         }
         boxes.set(link.el.key, area);
       }
       parts.push(...lines, ...heads, ...labels);
-      boxes.set(input.structure.key, union([...boxes.values()]));
+      const whole = union([...boxes.values()]);
+      boxes.set(input.structure.key, whole);
+      // the gutters and lanes are laid between the bands after the bands were fitted, so the whole may stand outside the room: such a fold is no answer
+      if (whole.x < input.room.x - 1 || whole.y < input.room.y - 1 || whole.x + whole.width > input.room.x + input.room.width + 1 || whole.y + whole.height > input.room.y + input.room.height + 1) continue;
       notes.push({ key: input.structure.key, note: worst >= 1 ? 'crowded' : 'shrunk' });
       if (worst >= 1) notes.pop();
       best = { layout: { boxes, parts, routes, notes: worst > 0 ? notes : [...notes, { key: input.structure.key, note: 'crowded' }], shrink }, score: worst };
@@ -370,7 +405,8 @@ function buildFlow(env: Env, grow: Grow): Draft {
   const labelM = edges.map((e) => (e.spec.label ? env.measure(e.spec.label, env.wrapWidth, small) : null));
   const labelA = (m: { width: number; height: number } | null): number => (m ? (down ? m.height : m.width) : 0);
   const head = env.headLength;
-  const tail = head * 1.6 + 0.2 * body;
+  // the run into a node after a lane: the arrowhead and a little more; the tightest spacing keeps only the head and a bare margin
+  const tail = (head * 1.6 + 0.2 * body) * Math.min(1, tight + 0.4);
   const gapOf: number[] = [];
   const reserve: number[] = [];
   const laneStep = Math.max(env.stroke * 2.5, 0.55 * body * tight);
@@ -512,9 +548,9 @@ function buildFlow(env: Env, grow: Grow): Draft {
       const ordered2 = [...runs.slice(0, 1), ...runs.slice(1).sort((x, y) => len(y) - len(x))];
       const blockers = { boxes: [...nodeBoxes, ...taken], lines: allLines };
       const off = env.stroke * 1.5 + 3;
-      const pick = placeBeside(ordered2, w, h, off, blockers, null);
+      const pick = placeBeside(ordered2, w, h, off, blockers, room);
       if (!pick) continue;
-      if (pick.penalty > 0) notes.push({ key: p.edge.spec.el.key, note: 'crossed' });
+      if (pick.penalty > 0 && knockOut(lines, pick.box, env.stroke * 1.5, blockers.boxes)) notes.push({ key: p.edge.spec.el.key, note: 'crossed' });
       taken.push(pick.box);
       labels.push(labelPart(env, p.edge.spec.el.key, p.edge.spec.label, pick.box, m, pick.penalty > 0));
       const lb = boxes.get(p.edge.spec.el.key);
