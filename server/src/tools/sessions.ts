@@ -29,6 +29,11 @@ interface Turn {
   readonly drafts: Of<'draft'>[];
   readonly data: Of<'data'>[];
   readonly controls: Of<'control'>[];
+  readonly fixes: Of<'fix'>[];
+  readonly critics: Of<'critic'>[];
+  readonly activities: Of<'activity'>[];
+  readonly permissions: Of<'permission'>[];
+  readonly uploads: Of<'upload'>[];
   review: Of<'review'> | null;
   end: Of<'end'> | null;
   usage: Of<'usage'> | null;
@@ -42,6 +47,8 @@ interface Conversation {
   readonly session: Of<'session'> | null;
   readonly turns: Turn[];
   readonly looseTaps: Of<'tap'>[];
+  /** settings changed and pictures given, each with the turn it came before (null: after the last) */
+  readonly loose: { readonly record: Of<'setting'> | Of<'upload'>; readonly before: string | null }[];
   readonly records: number;
 }
 
@@ -75,17 +82,20 @@ async function load(file: string): Promise<Conversation> {
   let session: Of<'session'> | null = null;
   const turns = new Map<string, Turn>();
   const looseTaps: Of<'tap'>[] = [];
+  const loose: { record: Of<'setting'> | Of<'upload'>; before: string | null }[] = [];
+  const nextTurnAfter = (at: number): string | null => records.find((r): r is Of<'turn'> => r.type === 'turn' && r.at >= at)?.turn ?? null;
   for (const record of records) {
     if (record.type === 'session') {
       session = record;
     } else if (record.type === 'turn') {
-      turns.set(record.turn, { open: record, briefs: [], lines: [], rejects: [], paints: [], fetches: [], taps: [], usages: [], passes: [], techniques: [], drafts: [], data: [], controls: [], review: null, end: null, usage: null, started: null, report: null, snapshot: null });
+      turns.set(record.turn, { open: record, briefs: [], lines: [], rejects: [], paints: [], fetches: [], taps: [], usages: [], passes: [], techniques: [], drafts: [], data: [], controls: [], fixes: [], critics: [], activities: [], permissions: [], uploads: [], review: null, end: null, usage: null, started: null, report: null, snapshot: null });
     } else if (record.type === 'tap') {
       const turn = record.turn === null ? undefined : turns.get(record.turn);
       if (turn === undefined) looseTaps.push(record);
       else turn.taps.push(record);
-    } else if (record.type === 'setting' || record.turn === null) {
-      // STUB(PLAN-v2.1 package S3): print settings, uploads, fixes, critic findings and tool calls with their turn.
+    } else if (record.type === 'setting' || (record.type === 'upload' && record.turn === null)) {
+      loose.push({ record, before: nextTurnAfter(record.at) });
+    } else if (record.turn === null) {
       continue;
     } else {
       const turn = turns.get(record.turn);
@@ -104,13 +114,18 @@ async function load(file: string): Promise<Conversation> {
       else if (record.type === 'draft') turn.drafts.push(record);
       else if (record.type === 'data') turn.data.push(record);
       else if (record.type === 'control') turn.controls.push(record);
+      else if (record.type === 'fix') turn.fixes.push(record);
+      else if (record.type === 'critic') turn.critics.push(record);
+      else if (record.type === 'activity') turn.activities.push(record);
+      else if (record.type === 'permission') turn.permissions.push(record);
+      else if (record.type === 'upload') turn.uploads.push(record);
       else if (record.type === 'review') turn.review = record;
       else if (record.type === 'started') turn.started = record;
       else if (record.type === 'report') turn.report = record;
       else if (record.type === 'snapshot') turn.snapshot = record;
     }
   }
-  return { file, session, turns: [...turns.values()], looseTaps, records: records.length };
+  return { file, session, turns: [...turns.values()], looseTaps, loose, records: records.length };
 }
 
 function money(value: number | null | undefined): string {
@@ -195,6 +210,16 @@ function printTurn(turn: Turn, withLines: boolean): void {
     const r = turn.review;
     out(`  look and fix: ${r.outcome.result}, ${r.outcome.passes} pass${r.outcome.passes === 1 ? '' : 'es'}${r.outcome.why === null ? '' : ` (${r.outcome.why})`}; first line of fix ${ms(r.firstLineMs)}, total ${ms(r.totalMs)}, cost ${money(r.costUsd)}`);
   }
+  for (const fix of turn.fixes) out(`  fix pass ${fix.pass} (${fix.form}) at ${((fix.at - turn.open.at) / 1000).toFixed(1)}s: ${fix.shown ? 'shown' : `refused${fix.why === null ? '' : ` (${fix.why})`}`}, ${fix.lines.length} line${fix.lines.length === 1 ? '' : 's'}`);
+  for (const critic of turn.critics) {
+    const f = critic.finding;
+    out(`  critic at ${((critic.at - turn.open.at) / 1000).toFixed(1)}s: coherence ${f.coherence}/5, ${f.readable ? 'readable' : 'NOT readable'}, ${f.asked ? 'as asked' : 'NOT as asked'}${critic.queued ? ', queued for the loop' : ''} (${ms(f.ms)}, ${money(f.costUsd)})`);
+    for (const problem of f.problems) out(`    ${problem.weight}${problem.id === null ? '' : ` [${problem.id}]`}: ${problem.what}`);
+    for (const suggestion of f.suggestions) out(`    suggest: ${suggestion}`);
+  }
+  for (const activity of turn.activities) if (activity.state !== 'running') out(`  tool ${activity.tool} ${activity.state}${activity.ms === null ? '' : ` in ${activity.ms}ms`}: ${activity.summary}`);
+  for (const permission of turn.permissions) out(`  permission (${permission.risk}) ${permission.tool}: ${permission.summary} -> ${permission.allow === null ? 'no answer (denied)' : permission.allow ? 'allowed' : 'denied'} after ${ms(permission.ms)}`);
+  for (const upload of turn.uploads) out(`  upload ${upload.id}: ${upload.mime}, ${upload.bytes} bytes, ${upload.width}x${upload.height}`);
   for (const paint of turn.paints) out(`  painting ${paint.key}: ${paint.status} in ${paint.ms}ms${paint.costUsd === null ? '' : `, ${money(paint.costUsd)}`}${paint.reason === null ? '' : ` (${paint.reason})`}`);
   if (turn.snapshot !== null) out(`  snapshot: ${turn.snapshot.file}`);
   if (withLines) for (const line of turn.lines) out(`  line ${line.seq}${line.pass !== undefined && line.pass > 1 ? ` (pass ${line.pass})` : ''} @${line.start.toFixed(2)}s  ${line.text}`);
@@ -266,7 +291,17 @@ async function main(): Promise<void> {
   const session = conversation.session;
   process.stdout.write(`${basename(conversation.file)}  ${session === null ? '' : `${session.brain}, started ${session.started}, language ${session.language}, paint ${session.services.paint ? 'on' : 'off'}`}\n\n`);
   for (const tap of conversation.looseTaps) process.stdout.write(`tap: ${JSON.stringify(tap.text)} (${tap.id})\n`);
-  for (const turn of conversation.turns) printTurn(turn, flags.has('--lines'));
+  const loose = (before: string | null): void => {
+    for (const item of conversation.loose.filter((entry) => entry.before === before)) {
+      const r = item.record;
+      process.stdout.write(r.type === 'setting' ? `setting: ${r.name} = ${r.value}\n` : `upload ${r.id}: ${r.mime}, ${r.bytes} bytes${r.file === null ? '' : `, ${r.file}`}\n`);
+    }
+  };
+  for (const turn of conversation.turns) {
+    loose(turn.open.turn);
+    printTurn(turn, flags.has('--lines'));
+  }
+  loose(null);
   process.stdout.write(`${conversation.turns.length} turns, ${conversation.records} records, cost ${money(costOf(conversation))}\n`);
 }
 
