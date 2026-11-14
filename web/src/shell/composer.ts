@@ -55,7 +55,7 @@ export function mountComposer(host: HTMLElement, handlers: ComposerHandlers): Co
     <div class="shcomposer__float"></div>
     <form class="pill" autocomplete="off">
       <button type="button" class="pill__btn pill__plus composer__plus" aria-label="More: photo, draw, save, transcript, model" title="More">${PLUS}</button>
-      <input class="vh" type="file" accept="image/*" multiple tabindex="-1" aria-hidden="true" data-photos="pick" />
+      <input class="vh" type="file" accept="image/*,application/pdf,.pdf" multiple tabindex="-1" aria-hidden="true" data-photos="pick" />
       <input class="vh" type="file" accept="image/*" capture="environment" tabindex="-1" aria-hidden="true" data-photos="camera" />
       <label class="vh" for="${id}-field">Ask anything</label>
       <textarea class="pill__field" id="${id}-field" name="prompt" rows="1" placeholder="Ask anything" enterkeyhint="send" maxlength="${PROMPT_MAX_CHARS}" autocomplete="off" autocapitalize="sentences" spellcheck="true" aria-describedby="${id}-hint"></textarea>
@@ -114,7 +114,7 @@ export function mountComposer(host: HTMLElement, handlers: ComposerHandlers): Co
     });
   }
   const entries = [
-    menu.add({ id: 'photo', label: 'Add a photo', gist: `up to ${UPLOAD_LIMITS.perTurn}, JPEG, PNG, WebP or HEIC`, order: 10, run: () => pick.click() }),
+    menu.add({ id: 'photo', label: 'Add a photo or PDF', gist: `up to ${UPLOAD_LIMITS.perTurn}, JPEG, PNG, WebP, HEIC or PDF`, order: 10, run: () => pick.click() }),
     menu.add({ id: 'camera', label: 'Take a photo', gist: "with this phone's camera", order: 20, hidden: !coarse, run: () => camera.click() }),
   ];
   void entries;

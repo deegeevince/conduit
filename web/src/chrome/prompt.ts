@@ -33,8 +33,8 @@ export interface PromptBar {
 
 let counter = 0;
 
-/** What the menu says under "Add a photo". */
-const PHOTO_GIST = `up to ${UPLOAD_LIMITS.perTurn}, JPEG, PNG, WebP or HEIC`;
+/** What the menu says under "Add a photo or PDF". */
+const PHOTO_GIST = `up to ${UPLOAD_LIMITS.perTurn}, JPEG, PNG, WebP, HEIC or PDF`;
 
 const ICON = (path: string): string => `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${path}</svg>`;
 const PLUS = ICON('<path d="M12 5v14M5 12h14"/>');
@@ -85,7 +85,7 @@ export function mountPromptBar(
         ${
           handlers.photos === undefined
             ? ''
-            : `<input class="visually-hidden" type="file" accept="image/*" multiple tabindex="-1" aria-hidden="true" data-photos="pick" />
+            : `<input class="visually-hidden" type="file" accept="image/*,application/pdf,.pdf" multiple tabindex="-1" aria-hidden="true" data-photos="pick" />
         <input class="visually-hidden" type="file" accept="image/*" capture="environment" tabindex="-1" aria-hidden="true" data-photos="camera" />`
         }
         <textarea class="prompt__input" id="${inputId}" name="prompt" rows="1" placeholder="${ASK}" aria-describedby="${inputId}-hint" enterkeyhint="send" maxlength="${PROMPT_MAX_CHARS}" autocomplete="off" autocapitalize="sentences" spellcheck="true"></textarea>
@@ -148,7 +148,7 @@ export function mountPromptBar(
   const photoEntries: { readonly kind: 'pick' | 'camera'; readonly set: (hidden: boolean) => void }[] = [];
   if (tray !== null) {
     for (const [kind, label, gist, order] of [
-      ['pick', 'Add a photo', PHOTO_GIST, 10],
+      ['pick', 'Add a photo or PDF', PHOTO_GIST, 10],
       ['camera', 'Take a photo', 'with this phone\'s camera', 20],
     ] as const) {
       const file = root.querySelector<HTMLInputElement>(`input[data-photos="${kind}"]`);
