@@ -118,8 +118,39 @@ export interface ChartModel {
   readonly series: readonly ChartSeries[];
   /** true when the series are the prices of one instrument (and perhaps its volume) */
   readonly candles: boolean;
+  /**
+   * How `x` is laid along the bottom. `scale`: equal steps are equal distances. `even`: one slot a row, each labelled
+   * with its own cell, whatever the cells are (names always; columns whose times are sparse or uneven, so that five
+   * columns are not stranded on a time axis from 1900 to 2024).
+   */
+  readonly layout: 'scale' | 'even';
+  /** What is drawn, which is what was asked unless the rows could not carry it (too few candles, too many columns). */
+  readonly draw: ChartKind;
+  /** What was decided about how to draw it, a sentence each, so that the brain's next brief can say so; empty when the chart is drawn as written. Never a fault. */
+  readonly notes: readonly string[];
   /** what is wrong with the rows, a sentence each, for the brain's next brief; empty when nothing is */
   readonly problems: readonly string[];
+}
+
+/** Fewer candles than this are not a price chart but a few blocks: the closes are drawn as a line. */
+export const CANDLES_LEAST = 8;
+/** More columns than this along a time or number axis are not read as columns: they are drawn as a line. */
+export const COLUMNS_MOST = 40;
+/** Steps along a time axis differ by no more than this (a month is 28 to 31 days) for the axis to count as even. */
+const EVEN_TIME = 1.12;
+const EVEN_NUMBER = 1.02;
+
+/** True when every step between the points is about the same: a to-scale axis and an evenly spaced one then look alike, and the to-scale one is the truer. */
+function stepsEven(points: readonly ChartPoint[], x: ChartModel['x']): boolean {
+  let least = Number.POSITIVE_INFINITY;
+  let most = 0;
+  for (let index = 1; index < points.length; index += 1) {
+    const step = (points[index]?.x ?? 0) - (points[index - 1]?.x ?? 0);
+    if (step <= 0) continue;
+    least = Math.min(least, step);
+    most = Math.max(most, step);
+  }
+  return most === 0 || most / least <= (x === 'time' ? EVEN_TIME : EVEN_NUMBER);
 }
 
 function valueOf(cell: string, scope: Scope): ReadNumber | null {
@@ -203,7 +234,53 @@ export function chartModelOf(kind: ChartKind, rows: readonly StructureRow[], sco
   if ((x === 'time' || x === 'number') && points.some((point, index) => index > 0 && point.x <= (points[index - 1]?.x ?? Number.NEGATIVE_INFINITY))) {
     problems.push('the rows are not in order along the bottom axis; write them from first to last');
   }
-  return { kind, x, points, series, candles, problems: problems.slice(0, 6) };
+  const notes: string[] = [];
+  let draw: ChartKind = kind;
+  let layout: ChartModel['layout'] = x === 'name' ? 'even' : 'scale';
+  if (price && !candles) draw = 'line';
+  else if (price && points.length < CANDLES_LEAST) {
+    draw = 'line';
+    notes.push(`${points.length} rows are too few for candles (about ${CANDLES_LEAST} are needed): the closes are drawn as a line`);
+  } else if (kind === 'columns' && x !== 'name') {
+    if (points.length > COLUMNS_MOST) {
+      draw = 'line';
+      notes.push(`${points.length} columns along a ${x === 'time' ? 'time' : 'number'} axis are too many to read as columns: drawn as a line`);
+    } else if (!stepsEven(points, x)) {
+      layout = 'even';
+      notes.push(`the ${x === 'time' ? 'times' : 'numbers'} are unevenly spaced: the columns stand evenly, one a row, each under its own label`);
+    }
+  }
+  return { kind, x, points, series, candles, layout, draw, notes, problems: problems.slice(0, 6) };
+}
+
+/** The most models kept for one set of rows: a slider reads them again at every value it passes through. */
+const MODELS_KEPT = 8;
+const kept = new WeakMap<object, Map<string, ChartModel>>();
+
+/**
+ * `chartModelOf`, remembered per owner (the rows, or whatever stands for them) and per controls' values. At most
+ * `MODELS_KEPT` a owner, the oldest read first to go, so that dragging a slider across a hundred values holds eight models and not a hundred.
+ */
+export function cachedChartModel(owner: object, kind: ChartKind, rows: readonly StructureRow[], scope: Scope = {}): ChartModel {
+  let held = kept.get(owner);
+  if (held === undefined) {
+    held = new Map();
+    kept.set(owner, held);
+  }
+  const key = `${kind}|${rows.length}|${JSON.stringify(scope)}`;
+  const known = held.get(key);
+  if (known !== undefined) {
+    held.delete(key);
+    held.set(key, known);
+    return known;
+  }
+  const made = chartModelOf(kind, rows, scope);
+  held.set(key, made);
+  for (const oldest of held.keys()) {
+    if (held.size <= MODELS_KEPT) break;
+    held.delete(oldest);
+  }
+  return made;
 }
 
 /** A number written as its series writes numbers: what an axis tick, a crosshair label and a mark's value say. */

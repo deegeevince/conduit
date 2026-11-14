@@ -14,4 +14,6 @@ export function createChartEngine(): ChartEngine | null {
   return createLightweightEngine();
 }
 
-export { chartThemeOf } from './theme';
+export { LABELS_PER_HEIGHT, measureChart } from './lightweight';
+export type { ChartMeasure } from './lightweight';
+export { chartThemeOf, labelPx, LEAST_LABEL_PX, TITLE_OVER_LABEL } from './theme';

@@ -6,9 +6,11 @@ import type { Face } from '@conduit/language';
 import type { ChartTheme } from '../../contracts/chart';
 import type { Colour } from '../../contracts/frame';
 import type { LookSpec } from '../../contracts/look';
+import type { Viewport } from '../../contracts/space';
 import { FACES } from '../../fonts/faces';
 import { fontFor } from '../../fonts';
 import { enforceInGamut, fromHsl, mix, toHsl, worstContrast } from '../../looks/colour-math';
+import { cellOf } from '../../painter/layout/metrics';
 
 /** The faces a chart is set in: a poster face is unreadable at label size, so it reads in the plain sans. */
 const CHART_FACE: Readonly<Record<Face, Face>> = { serif: 'serif', sans: 'sans', hand: 'hand', display: 'sans', mono: 'mono', terminal: 'terminal', teletext: 'teletext', dot: 'dot' };
@@ -18,7 +20,27 @@ const HARD_FACES: ReadonlySet<Face> = new Set<Face>(['terminal', 'teletext', 'do
 
 const SERIES_CONTRAST = 3;
 
-export function chartThemeOf(look: LookSpec): ChartTheme {
+/** The least a chart's text is ever set at, CSS pixels: below it a tick label is a smudge (A6). */
+export const LEAST_LABEL_PX = 11;
+/** A hand face is set larger: its strokes are thin. */
+const LEAST_HAND_PX = 14;
+/** The size words are in the stage's own steps: the title is `s` and a label is `xs`, so the title is this many times a label. */
+export const TITLE_OVER_LABEL = 0.8 / 0.64;
+
+/** What a screen of 1280x720 is, for a caller that has no viewport to hand (the bench, an export). */
+const DESK: Viewport = { width: 1280, height: 720, dpr: 1 };
+
+/**
+ * The chart's label size on this stage: the stage's own `xs` at this viewport and in this look, so a chart reads at
+ * the scale of the words round it, and never under 11 CSS pixels. The title (`s`, bold) and a mark's words (`xs`,
+ * in ink) are set from it: `fontPx * TITLE_OVER_LABEL` and `fontPx`.
+ */
+export function labelPx(look: LookSpec, viewport: Viewport): number {
+  const least = look.type.face === 'hand' ? LEAST_HAND_PX : LEAST_LABEL_PX;
+  return Math.max(least, Math.round(cellOf('xs', viewport, look).fontSize));
+}
+
+export function chartThemeOf(look: LookSpec, viewport: Viewport = DESK): ChartTheme {
   const { ground, ink, dim, accent } = look.roles;
   const grounds = look.groundAlt === null ? [ground] : [ground, look.groundAlt];
   const fit = (colour: Colour, minimum: number): Colour => enforceInGamut(colour, grounds, minimum, look.gamut);
@@ -30,7 +52,7 @@ export function chartThemeOf(look: LookSpec): ChartTheme {
   const hairline = mix(ground, ink, 0.2);
 
   const series = seriesColours(look, fit);
-  const [up, down] = candleColours(look, fit, series);
+  const [up, down] = candleColours(look, fit);
 
   return {
     ground,
@@ -43,7 +65,7 @@ export function chartThemeOf(look: LookSpec): ChartTheme {
     accent,
     face,
     fontFamily: fontFor(FACES[face].font).family,
-    fontPx: Math.max(face === 'hand' ? 14 : 11, Math.round(0.64 * look.type.minBody + (face === 'terminal' ? 2 : 0))),
+    fontPx: labelPx(look, viewport),
     hard: HARD_FACES.has(look.type.face) || look.id === 'pixel',
   };
 }
@@ -81,10 +103,9 @@ function seriesColours(look: LookSpec, fit: (c: Colour, m: number) => Colour): r
 }
 
 /** Up and down are told apart by more than hue: the adapter draws an up candle hollow. Hue still helps where the look has some. */
-function candleColours(look: LookSpec, fit: (c: Colour, m: number) => Colour, series: readonly Colour[]): readonly [Colour, Colour] {
+function candleColours(look: LookSpec, fit: (c: Colour, m: number) => Colour): readonly [Colour, Colour] {
   const g = look.gamut;
   if (g.kind === 'mono') return [fit(mix(g.low, g.high, 1), SERIES_CONTRAST), fit(mix(g.low, g.high, 0.62), SERIES_CONTRAST)];
   if (g.kind === 'palette') return [fit('#00ff00', SERIES_CONTRAST), fit('#ff0000', SERIES_CONTRAST)];
-  void series;
   return [fit(fromHsl(0.38, 0.55, 0.45), SERIES_CONTRAST), fit(fromHsl(0.01, 0.62, 0.5), SERIES_CONTRAST)];
 }
