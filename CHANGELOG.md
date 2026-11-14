@@ -3,6 +3,7 @@
 Newest first. Each item is something the brain can show live when asked "showcase what's new": draw it, don't describe it. The server reads this file.
 
 ## v2.1 (live, being polished)
+- Follow-ups change the picture you have instead of redrawing it; a correction never removes or rewords a choice; "what's new" (or /new) gives a short live tour.
 - Words, pictures, diagrams, charts and choices each get their own room from one stage plan (still being polished on phones and wide screens).
 - Text stays up long enough to read; tables and charts no longer collapse on wide, short screens.
 - Asked "what's new" or `/new`, the brain showcases this list live.
