@@ -1352,7 +1352,17 @@ function readSpeedAndOver(pairs: readonly Pair[], issues: Issues): { speed?: Cam
   return out;
 }
 
+const TABLE_PART = /^([a-z][a-z0-9_-]*)\.(row|cell)(\d+)(?:,(\d+))?$/;
+
 function parseSet(head: Head, text: string | null, issues: Issues): Line | null {
+  // `set t1.row2 mark=box`, `set t1.cell2,3 mark=box`: a row or a cell of a table
+  const tablePart = TABLE_PART.exec(head.words[0] ?? '');
+  if (tablePart?.[1] !== undefined && isValidElementId(tablePart[1]) && (tablePart[2] === 'row' ? tablePart[4] === undefined : tablePart[4] !== undefined)) {
+    const part = tablePart[2] === 'row' ? { row: Number(tablePart[3]) } : { cell: [Number(tablePart[3]), Number(tablePart[4])] as const };
+    const { props, rest } = readStyleProps(head.pairs, issues);
+    warnUnknownPairs(rest, issues);
+    return withWhen({ verb: 'set' as const, target: { kind: 'id' as const, id: tablePart[1] }, part, styles: [], props: { mark: props.mark ?? ('box' as const) } }, head.when);
+  }
   const target = readTarget(head.words[0], issues);
   if (target === null) return null;
   // L1. `set <id> [style…] [prop=value…] | <new text>` is what `revise` was: the engine makes it quiet when the line has not played and visible when it has.

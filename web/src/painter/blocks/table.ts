@@ -228,6 +228,33 @@ function buildTable(env: Env): Draft {
       if ((r === 0 && H === 1) || last) parts.push({ kind: 'shape', owner: key, part: `rule:${r}`, outline: [open([{ x: left, y: under }, { x: rightEdge, y: under }])], role: 'line', row: row.index });
       else if (rowsN > 6) parts.push({ kind: 'shape', owner: key, part: `rule:${r}`, outline: [open([{ x: left, y: under }, { x: rightEdge, y: under }])], role: 'grid', row: row.index });
     });
+    // Marked rows and cells (`set t1.row2 mark=box`, `set t1.cell2,3 mark=box`): a ground behind the words, drawn first so the words stay on top. Row 1 is the first row written.
+    const figure = input.structure.figure;
+    const marked = figure?.kind === 'structure' ? (figure.marks ?? []) : [];
+    const rect = (x: number, yy: number, w: number, h: number): Box => box(x, yy, w, h);
+    const ground: BlockPart[] = [];
+    marked.forEach((mark, i) => {
+      if (mark.mark === 'none') return;
+      const part = mark.part;
+      const r = ('row' in part ? part.row : part.cell[0]) - 1;
+      const top = bandTop[r];
+      const p = pitch[r];
+      if (top === undefined || p === undefined) return;
+      const pad = 0.25 * line;
+      let b: Box;
+      if ('row' in part) b = rect(left - pad, top, used + 2 * pad, p);
+      else {
+        const c = part.cell[1] - 1;
+        const cx = colX[c];
+        const cw = widths[c];
+        if (cx === undefined || cw === undefined) return;
+        b = rect(cx - pad, top, cw + 2 * pad, p);
+      }
+      const outline = [{ points: [{ x: b.x, y: b.y }, { x: b.x + b.width, y: b.y }, { x: b.x + b.width, y: b.y + b.height }, { x: b.x, y: b.y + b.height }], closed: true }];
+      ground.push({ kind: 'shape', owner: key, part: `mark:${i}`, outline, role: 'fill', row: parsed[r]?.index ?? r });
+      if ('cell' in part) ground.push({ kind: 'shape', owner: key, part: `markframe:${i}`, outline, role: 'frame', row: parsed[r]?.index ?? r });
+    });
+    parts.unshift(...ground);
     const boxes = new Map<string, Box>();
     const all = parts.map((p) => (p.kind === 'text' ? p.box : box(left, rm.y, used, 0)));
     boxes.set(key, all.length ? union([...all, box(left, rm.y, used, y - rm.y)]) : box(rm.x, rm.y, 0, 0));

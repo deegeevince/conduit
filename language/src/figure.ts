@@ -210,7 +210,7 @@ function shapeOf(verb: string, bare: readonly string[], tail: string | null, rad
   return null;
 }
 
-const FIGURE_ASK = /\b(anatom\w*|machine|engine|motor|pump|valve|circuit|mechanism|parts? of|cross[- ]section|cutaway|exploded|labell?ed|label (?:the|a|an|each)|inside (?:a|an|the|of)|heart|lungs?|kidney|brain|stomach|digestive|eye|ear|tooth|teeth|skeleton|cell|organ|flower|bicycle|bike|how (?:a|an|the|does|do)\b[^.?!]*\b(?:works?|function\w*|pumps?|circulat\w*|moves?|flows?|beats?))\b/i;
+const FIGURE_ASK = /\b(anatom\w*|parts? of|cross[- ]section|labell?ed|label (?:the|a|an|each|its)|(?:heart|lungs?|kidneys?|brain|stomach|digestive|eye|ear|tooth|teeth|skeleton|cell|flower|bicycle|bike)\b)/i;
 
 /** The cue of the figure chapter: whether the user's words ask for a labelled drawing of a thing with parts. */
 export const asksForFigure = (text: string): boolean => FIGURE_ASK.test(text);

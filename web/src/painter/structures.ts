@@ -328,9 +328,17 @@ function planOf(structure: ElementSpan, schedule: Schedule, env: StructureEnv): 
           ? { x: origin.x + box.x * unit, y: origin.y + box.y * unit, width: box.w * unit, height: box.h * unit }
           : { x: origin.x, y: origin.y, width: fit.box.width / ps, height: fit.box.height / ps };
     const obstacles = env.obstaclesOf(structure, start).map((o) => ({ x: o.x / ps, y: o.y / ps, width: o.width / ps, height: o.height / ps }));
-    const key = [signature(structure, present, rows, env.scope), look.id, look.name, env.viewport.width, env.viewport.height, room.x.toFixed(2), room.y.toFixed(2), room.width.toFixed(2), room.height.toFixed(2), obstacles.map((o) => `${o.x.toFixed(0)},${o.y.toFixed(0)},${o.width.toFixed(0)},${o.height.toFixed(0)}`).join(';'), env.engine === undefined ? 'e' : 'b', figure.structure === 'screen' ? uiKey(structure.key) : figure.structure === 'figure' ? figureKey(structure.key) : '', env.viewport.dpr].join('|');
+    // a table's marked rows and cells: the ones written, and the ones a control's value switches on
+    const marks =
+      figure.structure === 'table'
+        ? [
+            ...(figure.marks ?? []).filter((mark) => mark.equals === undefined),
+            ...(structure.driven ?? []).flatMap((change) => (change.effect.kind === 'mark' && env.scope[change.control.split('@')[0] ?? ''] === change.effect.equals ? [{ part: change.effect.part, mark: change.effect.mark }] : [])),
+          ]
+        : [];
+    const key = [signature(structure, present, rows, env.scope), JSON.stringify(marks), look.id, look.name, env.viewport.width, env.viewport.height, room.x.toFixed(2), room.y.toFixed(2), room.width.toFixed(2), room.height.toFixed(2), obstacles.map((o) => `${o.x.toFixed(0)},${o.y.toFixed(0)},${o.width.toFixed(0)},${o.height.toFixed(0)}`).join(';'), env.engine === undefined ? 'e' : 'b', figure.structure === 'screen' ? uiKey(structure.key) : figure.structure === 'figure' ? figureKey(structure.key) : '', env.viewport.dpr].join('|');
     const layout = remembered(key, () => {
-      const shown: ElementSpan = { ...structure, figure: { ...figure, rows: figure.rows.slice(0, rows) } };
+      const shown: ElementSpan = { ...structure, figure: { ...figure, rows: figure.rows.slice(0, rows), marks } };
       // v2.2: a mock-up is laid out and drawn by the interface kit, as finished frames
       if (figure.structure === 'screen' && env.engine === undefined) {
         try {
@@ -595,7 +603,7 @@ export function buildStructures(schedule: Schedule, env: StructureEnv): Structur
         const stroked = part.role === 'frame' || part.role === 'line' || part.role === 'grid' || part.role === 'lit' || ring || (part.role === 'marker' && !isControl);
         const colour = ring ? look.roles.accent : part.role === 'grid' ? look.roles.dim : paintColour(strokePaint, look);
         const filled = part.role === 'fill' || part.role === 'head' || (part.role === 'bar' && !ring) || part.role === 'marker' || part.role === 'note' || part.role === 'note2' || part.role === 'lit';
-        const fillColour = part.role === 'note' ? (style.fill !== 'none' && typeof style.fill === 'string' ? paintColour(style.fill, look) : look.roles.accent) : part.role === 'note2' ? look.roles.alt : part.role === 'lit' ? strongest(look) : part.role === 'fill' ? (style.fill !== 'none' && typeof style.fill === 'string' ? paintColour(style.fill, look) : mixHex(look.roles.ground, look.roles.ink, 0.1)) : part.role === 'head' ? colour : part.role === 'bar' ? (style.fill !== 'none' && typeof style.fill === 'string' ? paintColour(style.fill, look) : look.roles.accent) : isControl && part.role === 'marker' ? look.roles.ink : look.roles.accent;
+        const fillColour = part.role === 'note' ? (style.fill !== 'none' && typeof style.fill === 'string' ? paintColour(style.fill, look) : look.roles.accent) : part.role === 'note2' ? look.roles.alt : part.role === 'lit' ? strongest(look) : part.role === 'fill' && part.part.startsWith('mark:') ? mixHex(look.roles.ground, look.roles.accent, 0.3) : part.role === 'fill' ? (style.fill !== 'none' && typeof style.fill === 'string' ? paintColour(style.fill, look) : mixHex(look.roles.ground, look.roles.ink, 0.1)) : part.role === 'head' ? colour : part.role === 'bar' ? (style.fill !== 'none' && typeof style.fill === 'string' ? paintColour(style.fill, look) : look.roles.accent) : isControl && part.role === 'marker' ? look.roles.ink : look.roles.accent;
         const transform = pulse === 1 && shake === 0 ? IDENTITY : { ...about(centre, 0, pulse), e: about(centre, 0, pulse).e + shake };
         out.figures.push({
           kind: 'shape',

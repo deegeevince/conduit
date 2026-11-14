@@ -414,13 +414,13 @@ node [id] [${Object.keys(NODE)
   from= draws the arrow from that node (\`from=q1:yes\`). On a timeline the year comes first (\`node 1969 | Apollo 11\`); on a map the place (\`node 140,40 | Xi'an\`).
 link <a> <b> [c…] [both|plain] [dashed] | <label>
 | <cell> | <cell>
-  A row. *Stars* mark the one that matters.${
+  A row. *Stars* mark the one that matters. A grid of values is a table, never rects and words. Highlight: \`set t1.row2 mark=box\` or \`t1.cell2,3\` (row 1 is the header), per option \`bind pick=apple | set t1.row2 mark=box\`.${
         charts.length === 0
           ? ''
           : `
 A chart row is \`| when | value…\`, values split by bars or spaces: \`when\` a date (2026-03-09), a year, a number or a name; one value a series (a first row of words names them)${charts.includes('candles') ? ', or `open high low close [volume]` for candles' : ''}. Chart words: ${Object.entries(CHART_WORD)
               .map(([word, gist]) => (word === 'indexed' || word === 'spark' ? `${word} (${gist.split(':')[0]?.split(',')[0] ?? gist})` : word))
-              .join(', ')}. Numbers you recall are \`approx\`: never dress a guess as data. Never refuse to chart; use the period you recall. \`node x=<when> | label\` marks an event, \`y=<value>\` a level, both a point.`
+              .join(', ')}. Numbers you recall are \`approx\`: never dress a guess as data. \`node x=<when> | label\` marks an event, \`y=<value>\` a level, both a point.`
       }
 
 Words and \`wait\` may come between parts, a diagram a step at a time. Nodes and links take \`hit\`, \`set\`, \`drop\` and \`cam focus\` by id. On your own drawing, \`say callout near=<id> | name\` labels a part with a line to it (\`at=x,y\`: a spot).
@@ -543,7 +543,7 @@ The audience watches an empty stage while you deliberate. Write the first line n
 
 ${forms}
 
-Whatever the form: never talk about the stage, the medium, what you will do or your drawing. Answer the question.
+Never talk about the stage, the medium or what you will do. Answer the question.
 
 # What always holds
 

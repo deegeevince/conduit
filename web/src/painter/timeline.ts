@@ -2746,6 +2746,8 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
   };
   const reactive = schedule.elements.some((element) => {
     const figure = element.figure;
+    // a table whose rows or cells a control marks is laid out again when the control moves
+    if (element.kind === 'structure' && (element.driven ?? []).some((change) => change.effect.kind === 'mark')) return true;
     if (element.kind === 'node' || element.kind === 'structure') return element.text.includes('{') || (figure?.kind === 'structure' && figure.rows.some((row) => row.cells.some((cell) => cell.includes('{'))));
     return false;
   });

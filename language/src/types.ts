@@ -527,9 +527,14 @@ export interface AmbientLine {
   readonly when?: When;
 }
 
+/** A row or a cell of a table, by its place from 1: what `set t1.row2 mark=box` and `set t1.cell2,3 mark=box` name. */
+export type TablePart = { readonly row: number } | { readonly cell: readonly [number, number] };
+
 export interface SetLine {
   readonly verb: 'set';
   readonly target: Target;
+  /** L-VLOOKUP. A row or a cell of the table the target names: the change is a mark on it (`mark=none` clears it) */
+  readonly part?: TablePart;
   readonly styles: readonly string[];
   readonly props: StyleProps;
   readonly speed?: CameraSpeed;

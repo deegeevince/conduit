@@ -50,7 +50,7 @@ import {
   waitSeconds,
 } from './timing';
 import type { Anchor, AppShelf, LessonVerb, TuneVoice } from './vocabulary';
-import type { BindOn, CanvasBox, ControlLine, SceneLine, ControlValue, CreatingLine, DatasetRef, Issue, IssueCode, Line, Paint, Point, Range, ShapeGeometry, StructureLine, StyleProps, Target, When } from './types';
+import type { BindOn, CanvasBox, ControlLine, SceneLine, ControlValue, CreatingLine, DatasetRef, Issue, IssueCode, Line, Paint, Point, Range, ShapeGeometry, StructureLine, StyleProps, TablePart, Target, When } from './types';
 import { cachedTune, tuneRowsOf } from './tune';
 import { BACKDROP_LAYERS, CANVAS, CONTROL, DEFAULT_CANVAS, DEFAULT_CHART, DEFAULT_LOOK, DEFAULT_TUNE_VOICE, LESSON_VERBS, LIMITS, STRUCTURE } from './vocabulary';
 import type {
@@ -177,6 +177,8 @@ export type Figure =
       readonly dataset?: DatasetRef | null;
       /** a table: its numbers are drawn as bars too */
       readonly bars: boolean;
+      /** A table: the rows and cells marked (`set t1.row2 mark=box`), in the order written */
+      readonly marks?: readonly TableMark[];
       /** FG2. A figure: `cutaway` or `exploded`; absent or null: plain. Its parts, routes and steps are its rows, one line each. */
       readonly mode?: 'cutaway' | 'exploded' | null;
       /** v2.1. A code block: its language as the brain wrote it, and the file it is from; absent or null: none */
@@ -252,13 +254,24 @@ export interface CarriedElement {
   readonly href?: string;
 }
 
+/** A mark on a row or a cell of a table. */
+export interface TableMark {
+  readonly part: TablePart;
+  readonly mark: string;
+  /** driven by a control: the value (a pick's 1-based option, a toggle's 1 or 0, a number) at which the mark is on; absent: always on */
+  readonly equals?: number;
+  readonly control?: string;
+}
+
 /** What a control-driven change does to its element: what the same line would do on the clock. */
 export type DrivenEffect =
   | { readonly kind: 'set'; readonly props: ResolvedProps }
   | { readonly kind: 'move'; readonly to: Anchor | Point; readonly along: string | null }
   | { readonly kind: 'morph'; readonly geometry: ShapeGeometry; readonly props: ResolvedProps }
   /** the words are these while the binding holds: a swap, never a strike-through */
-  | { readonly kind: 'text'; readonly text: string; readonly emphasis: readonly Range[] };
+  | { readonly kind: 'text'; readonly text: string; readonly emphasis: readonly Range[] }
+  /** a row or a cell of a table is marked while the control holds `equals` */
+  | { readonly kind: 'mark'; readonly part: TablePart; readonly mark: string; readonly equals: number };
 
 /**
  * A change whose progress is a control's value instead of the turn clock
@@ -1632,7 +1645,21 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
           break;
         }
         let effect: DrivenEffect;
-        if (change.verb === 'set') {
+        if (change.verb === 'set' && change.part !== undefined) {
+          const asked = line.on.kind === 'is' ? line.on.value : null;
+          let equals: number | null = null;
+          if (asked !== null) {
+            const squashed = (text: string): string => text.trim().toLowerCase().replace(/[\s-]+/g, '');
+            if (spec.control === 'pick') equals = spec.options.findIndex((option) => squashed(option) === squashed(asked)) + 1 || (/^\d+$/.test(asked.trim()) ? Number(asked) : 0);
+            else if (spec.control === 'toggle') equals = ['on', 'yes', 'true', '1'].includes(asked.trim().toLowerCase()) ? 1 : 0;
+            else if (Number.isFinite(Number(asked))) equals = Number(asked);
+          }
+          if (equals === null || equals < 0 || (spec.control === 'pick' && equals === 0)) {
+            report(seq, 'bad-bind', `a row or a cell is marked while a control holds a value: bind ${line.control}=<option> | set <table>.row<n> mark=box`, line.control);
+            break;
+          }
+          effect = { kind: 'mark', part: change.part, mark: change.props.mark ?? 'box', equals };
+        } else if (change.verb === 'set') {
           const merged = mergeStyles(sheet, change.styles, change.props);
           for (const name of merged.unknown) report(seq, 'unknown-style', `no style called "${name}"; ignored`, name);
           effect = { kind: 'set', props: coloured(seq, merged.props) };
@@ -1667,7 +1694,7 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
         }
         for (const target of targets) {
           const fits =
-            effect.kind === 'set' || (effect.kind === 'move' && target.span.kind !== 'field' && target.span.kind !== 'node' && target.span.kind !== 'link') || (effect.kind === 'morph' && target.span.kind === 'shape') || (effect.kind === 'text' && target.span.kind === 'text');
+            effect.kind === 'set' || (effect.kind === 'move' && target.span.kind !== 'field' && target.span.kind !== 'node' && target.span.kind !== 'link') || (effect.kind === 'morph' && target.span.kind === 'shape') || (effect.kind === 'text' && target.span.kind === 'text') || (effect.kind === 'mark' && target.span.figure?.kind === 'structure' && target.span.figure.structure === 'table');
           if (!fits) {
             report(seq, 'bad-bind', unbindable(line.control, target.span.id, target.span.kind, target.span.figure, effect.kind), target.span.id);
             continue;
@@ -1821,6 +1848,20 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
 
       case 'set': {
         const start = startOf(entry, line.when);
+        if (line.part !== undefined) {
+          const owner = line.target.kind === 'id' ? findLive(line.target.id, start) : null;
+          const held = owner?.span.figure;
+          if (owner === null || held?.kind !== 'structure' || held.structure !== 'table') report(seq, 'unknown-id', `no table called "${line.target.kind === 'id' ? line.target.id : ''}" is on stage to mark a row or a cell of`);
+          else {
+            const same = (a: TablePart, b: TablePart): boolean => alike(a, b);
+            const rest = (held.marks ?? []).filter((mark) => mark.equals !== undefined || !same(mark.part, line.part as TablePart));
+            const mark = line.props.mark ?? 'box';
+            owner.span.figure = { ...held, marks: mark === 'none' ? rest : [...rest, { part: line.part, mark }] };
+          }
+          previousStart = start;
+          lines.push({ seq, verb: line.verb, start, end: start });
+          break;
+        }
         const merged = mergeStyles(sheet, line.styles, line.props);
         for (const name of merged.unknown) report(seq, 'unknown-style', `no style called "${name}"; ignored`, name);
         const props = coloured(seq, merged.props);

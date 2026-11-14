@@ -1000,13 +1000,20 @@ function arrangeLoose(
           y: Math.max(frame.y, Math.min(pin.y - size.height / 2, frame.y + frame.height - size.height)),
         };
         // a card the word lies wholly inside is its ground, not in its way
-        const inside = (o: Box & { readonly ground?: boolean }): boolean => o.ground === true && wanted.x >= o.x && wanted.y >= o.y && wanted.x + size.width <= o.x + o.width && wanted.y + size.height <= o.y + o.height;
-        const avoid = [...text, ...taken, ...across, ...solids.filter((o) => !inside(o))];
-        const found = nearestClear(wanted, size, frame, avoid, pad, { x: step.x, y: step.y / 2 });
+        // (a drawn box the word lies wholly inside is its container too, filled or not: a cell of a hand-drawn grid, a label in an outline. It is never what the word leaves.)
+        const inside = (o: Box & { readonly ground?: boolean }): boolean => wanted.x >= o.x && wanted.y >= o.y && wanted.x + size.width <= o.x + o.width && wanted.y + size.height <= o.y + o.height;
+        // what is drawn inside that container (a grid's own rules) is part of it, not in the word's way
+        const containers = solids.filter(inside);
+        const within = (o: Box, c: Box): boolean => o.x >= c.x - EPS && o.y >= c.y - EPS && o.x + o.width <= c.x + c.width + EPS && o.y + o.height <= c.y + c.height + EPS;
+        const avoid = [...text, ...taken, ...across, ...solids.filter((o) => !inside(o) && !containers.some((c) => c !== o && within(o, c)))];
+        // words pinned side by side inside one container (a grid's cells) are as close as their points say; the gap between lines of flowing words is not theirs
+        const found = nearestClear(wanted, size, frame, avoid, containers.length > 0 ? 0 : pad, { x: step.x, y: step.y / 2 });
         if (found === null) continue;
         const position = snapInside(found, size, frame, ctx);
         const moved = Math.hypot(position.x - wanted.x, position.y - wanted.y);
-        if (best === null || moved < best.moved - EPS) best = { loose, position, moved };
+        // never moved further than its own width: a word that would have to leave its place stays where it was told, at this size, and sight reports the overlap
+        const kept_ = moved > size.width ? snapInside(wanted, size, frame, ctx) : position;
+        if (best === null || moved < best.moved - EPS) best = { loose, position: kept_, moved: Math.min(moved, size.width) };
         if (moved <= reach) break;
       }
       if (best === null) {

@@ -282,7 +282,7 @@ export function serializeLine(line: Line): string {
       return [...head, ...line.styles, ...propTokens(line.props), ...whenToken(line.when)].join(' ');
     }
     case 'set': {
-      const head: string[] = ['set', targetToken(line.target), ...line.styles, ...propTokens(line.props)];
+      const head: string[] = ['set', line.part === undefined ? targetToken(line.target) : `${targetToken(line.target)}.${'row' in line.part ? `row${line.part.row}` : `cell${line.part.cell[0]},${line.part.cell[1]}`}`, ...line.styles, ...propTokens(line.props)];
       if (line.speed !== undefined) head.push(line.speed);
       if (line.over !== undefined) head.push(`over=${seconds(line.over)}`);
       return [...head, ...whenToken(line.when)].join(' ');
