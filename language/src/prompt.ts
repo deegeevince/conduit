@@ -911,6 +911,16 @@ export function buildTurnBrief(context: TurnContext, input: TurnInput, form: Bri
       .map((element) => `  ${element.id}${note(element) === '' ? '' : ` (${note(element)})`}: ${element.figure === null ? element.text : `[${describeCarried(element, stage.elements, reported(element))}]`}`);
     const more = visible.length > 24 ? `\n  and ${visible.length - 24} older things` : '';
     parts.push(`ON STAGE NOW (a new \`scene\` clears all but the pinned):\n${rows.join('\n')}${more}`);
+    // A follow-up about what is on stage changes it in place. The ids it can be changed by are named here, at the point of use, because
+    // the system prompt's rule was not enough: "now make it 40 years" opened a scene and drew the whole answer again (v2.1 review, P1-11).
+    const live = visible.flatMap((element) =>
+      element.figure?.kind === 'structure' ? [`${element.id} (${element.figure.structure})`] : element.figure?.kind === 'control' ? [`${element.id} (${element.figure.control})`] : [],
+    );
+    if (input.kind === 'prompt') {
+      parts.push(
+        `IF THIS CONTINUES WHAT IS ON STAGE (a follow-up, "now…", "and…", "make it…", a change to it): do not write \`scene\`; write only what changes, by id: \`set\`, \`move\`, \`revise\`, a new line added, or the structure, chart or control's own line again under its id with only what differs. A line said again under an id with nothing new is nothing, so never repeat what is there; the user keeps what they set.${live.length === 0 ? '' : ` Live ids you can change in place: ${live.join(', ')}.`} \`scene\` only for a new subject.`,
+      );
+    }
   }
 
   if (form === 'full') {
