@@ -28,8 +28,33 @@ type Context2D = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 export function chartsOver(frame: Frame, options: RasteriseOptions): ((context: Context2D, width: number, height: number) => void) | undefined {
   const charts = frame.charts;
   const still = options.chartStill;
-  if (charts === undefined || charts.length === 0 || still === undefined) return undefined;
+  const apps = frame.apps;
+  const appStill = options.appStill;
+  const drawsCharts = charts !== undefined && charts.length > 0 && still !== undefined;
+  const drawsApps = apps !== undefined && apps.length > 0 && appStill !== undefined;
+  if (!drawsCharts && !drawsApps) return undefined;
   return (context, width, height) => {
+    // a live app lies over the stage like a chart: the host's last picture of it goes where its room is
+    if (drawsApps) {
+      const appScale = Math.min(width / frame.viewport.width, height / frame.viewport.height);
+      for (const app of [...apps].sort((a, b) => a.z - b.z)) {
+        if (app.opacity <= 0.002) continue;
+        const picture = appStill(app.key);
+        if (picture === null) continue;
+        const room = chartBoxOf(app, frame);
+        context.save();
+        context.globalAlpha = Math.max(0, Math.min(1, app.opacity));
+        // the picture is laid at the room's width, never stretched: one taken at another height (the room was resized since) shows its top, cut where the room ends
+        const natural = picture as { width?: number; height?: number };
+        const pw = typeof natural.width === 'number' && natural.width > 0 ? natural.width : room.width;
+        const ph = typeof natural.height === 'number' && natural.height > 0 ? natural.height : room.height;
+        const fitScale = room.width / pw;
+        const shownH = Math.min(ph, room.height / fitScale);
+        context.drawImage(picture, 0, 0, pw, shownH, room.x * appScale, room.y * appScale, room.width * appScale, shownH * fitScale * appScale);
+        context.restore();
+      }
+    }
+    if (!drawsCharts) return;
     const scale = Math.min(width / frame.viewport.width, height / frame.viewport.height);
     const ordered = [...charts].sort((a, b) => a.z - b.z);
     for (const chart of ordered) {

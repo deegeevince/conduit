@@ -92,6 +92,15 @@ export interface UiPictureState {
   readonly landing: string;
 }
 
+/** A press. `send`: the brain hears it (`label` is what the button says); `to`: it goes to another screen. */
+export interface UiPress {
+  readonly kind: 'press';
+  readonly control: string;
+  readonly to?: string;
+  readonly send?: true;
+  readonly label?: string;
+}
+
 /** A thing a finger can use: what the bench turns a tap into. */
 export type UiAction =
   | { readonly kind: 'tab'; readonly bar: string; readonly index: number }
@@ -99,7 +108,7 @@ export type UiAction =
   | { readonly kind: 'toggle'; readonly control: string; readonly on: boolean }
   | { readonly kind: 'field'; readonly control: string; readonly value: string }
   | { readonly kind: 'slider'; readonly control: string; readonly from: number; readonly to: number }
-  | { readonly kind: 'press'; readonly control: string; readonly to?: string };
+  | UiPress;
 
 export interface UiHit {
   readonly id: string;
@@ -122,6 +131,8 @@ export interface UiState {
   readonly device: Readonly<Record<string, 'phone' | 'tablet' | 'desktop' | 'browser'>>;
   readonly focus: string | null;
   readonly pressed: string | null;
+  /** a switch that is being dragged, or is easing home: where its knob is, 0 (off) to 1 (on). Absent: the knob is where `toggle` says. */
+  readonly thumb?: Readonly<Record<string, number>>;
   /** v2.2 integration: photographs that have arrived for `image` parts, by part id */
   readonly picture?: Readonly<Record<string, UiPictureState>>;
 }

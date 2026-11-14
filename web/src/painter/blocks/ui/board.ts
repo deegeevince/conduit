@@ -148,6 +148,30 @@ export function arrangeBoard(layouts: readonly UiScreenLayout[], tokens: UiToken
 
   // one screen large, the rest small
   const n = cards.length;
+  if (room.w >= room.h * 1.3 && n > 1) {
+    // a room that is wider than it is tall: the rest stand in a column beside the large one, so that it has the whole height
+    const at = Math.max(0, Math.min(n - 1, options.focus));
+    const lead = cards[at];
+    if (lead === undefined) return { parts, placements, mode: 'focus', focus: 0, scale: 1 };
+    const column = 120;
+    const others = cards.map((c, i) => ({ c, i })).filter(({ i }) => i !== at);
+    const sLead = Math.min(1.2, (room.w - column - 3 * options.margin) / lead.shape.width, (room.h - 2 * options.margin - LABEL_H) / lead.shape.height);
+    const total = lead.shape.width * sLead + options.margin + column;
+    const lx = (room.w - total) / 2;
+    const ly = (room.h - lead.shape.height * sLead + LABEL_H) / 2;
+    label(lead, lx, ly, sLead);
+    emit(lead, at, lx, ly, sLead);
+    const gap = 12;
+    const sThumb = Math.min(column / Math.max(...others.map(({ c }) => c.shape.width)), ((room.h - 2 * options.margin - (others.length - 1) * gap) / others.length) / Math.max(...others.map(({ c }) => c.shape.height)), 0.2);
+    const heights = others.reduce((a, { c }) => a + c.shape.height * sThumb, 0) + (others.length - 1) * gap;
+    let ty = (room.h - heights) / 2;
+    const tx = lx + lead.shape.width * sLead + options.margin;
+    for (const { c, i } of others) {
+      emit(c, i, tx + (column - c.shape.width * sThumb) / 2, ty, sThumb);
+      ty += c.shape.height * sThumb + gap;
+    }
+    return { parts, placements, mode: 'focus', focus: at, scale: sLead };
+  }
   const stripH = Math.min(128, Math.max(88, room.h * 0.14));
   const main = cards[Math.max(0, Math.min(n - 1, options.focus))];
   if (main === undefined) return { parts, placements, mode: 'focus', focus: 0, scale: 1 };

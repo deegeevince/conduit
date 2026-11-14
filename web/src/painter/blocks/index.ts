@@ -8,6 +8,7 @@
 //   timeline.ts   an axis to scale, labels alternating, tiers when crowded
 //   map.ts        pins where the brain put them; eight places round each; a route
 //   table.ts      columns by content, numbers on their decimal point, bars
+//   app.ts        the place a live app runs in: its title, its lines arriving, its frame (the app itself is the app shell's)
 //   tune.ts       a piano roll for ABC rows, and the playhead and lit notes added while it sounds
 //   callouts.ts   boundary labelling: labels in clear room, leaders that never cross
 //   audit.ts      counts collisions in a layout (the bench's judge, and the painter's check)
@@ -21,6 +22,7 @@
 import type { StructureKind } from '@conduit/language';
 import { EMPTY_CALLOUT_LAYOUT, EMPTY_STRUCTURE_LAYOUT } from '../../contracts/blocks';
 import type { CalloutEngine, StructureEngine } from '../../contracts/blocks';
+import { layoutApp } from './app';
 import { layoutCallouts as callouts } from './callouts';
 import { layoutCycle } from './cycle';
 import { layoutFlow } from './flow';
@@ -32,7 +34,7 @@ import { layoutTree } from './tree';
 
 /** The structures this painter can lay out today. */
 /** `screen` (v2.2) is laid out and drawn by the interface kit (`painter/ui-stage.ts`), which hands the stage finished frames: this engine only says it is known. */
-export const STRUCTURES_READY: readonly StructureKind[] = ['flow', 'tree', 'cycle', 'timeline', 'map', 'table', 'tune', 'screen'];
+export const STRUCTURES_READY: readonly StructureKind[] = ['flow', 'tree', 'cycle', 'timeline', 'map', 'table', 'tune', 'app', 'screen'];
 
 /** True once `layoutCallouts` places labels with leaders; until then a `callout` is placed as a plain `near=` label. */
 export const CALLOUTS_READY = true;
@@ -55,6 +57,8 @@ export const layoutStructure: StructureEngine = (input) => {
       return layoutTable(input);
     case 'tune':
       return layoutTune(input);
+    case 'app':
+      return layoutApp(input);
     case 'screen':
       return EMPTY_STRUCTURE_LAYOUT;
     default:

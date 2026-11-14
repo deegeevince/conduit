@@ -1,4 +1,5 @@
 import type { BackEvent, ControlValue, Sight } from '@conduit/language';
+import type { AppProbe } from './app';
 import type { ExportJob, ExportRequest } from './export';
 import type { ChartProbe, ChartView } from './chart';
 import type { ControlView, LineView, PainterSnapshot, StageElementView, UiMockup } from './painter';
@@ -40,6 +41,8 @@ export interface StageHook {
   demo(name: string): Promise<string>;
   /** The same as tapping the element with this id. */
   tap(id: string): void;
+  /** v2.3. The live apps: whether each runs, is shown, what it has saved and what the host refused from it. */
+  apps(): readonly AppProbe[];
   /** The charts on stage: what each draws, its visible range, and what its crosshair is on. */
   charts(): readonly ChartView[];
   /**

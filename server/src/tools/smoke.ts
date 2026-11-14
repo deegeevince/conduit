@@ -4,7 +4,7 @@
 //   pnpm smoke [--url http://127.0.0.1:<port>] [--screens 1920x825,390x844] [--out <dir>] [--turns 1,2,3,4,5,6,7]
 //              [--timeout <seconds a turn may take>] [--parallel] [--demo] [--quiet]
 //
-// The conversation (PLAN: the deploy gate): 1 a lighthouse at dusk; 2 a flowchart; 3 a stock chart; 4 a sign-in mock-up; 5 type into its
+// The conversation (PLAN: the deploy gate): 1 a lighthouse at dusk; 2 a flowchart; 3 a stock chart; 4 a sign-in mock-up (the kit's screens, not a live app); 5 type into its
 // fields, flip its toggle and press its button with real events; 6 an insurance home page; 7 /new.
 // After each turn it waits for the page's own rest (the status line says `ready`, no turn open, nothing entering or leaving, no request in
 // flight, the stage unchanged for a moment) and then checks:
@@ -57,6 +57,7 @@ const STEPS: readonly Step[] = [
   { n: 1, say: 'draw a lighthouse at dusk', name: 'lighthouse', expects: 'drawing' },
   { n: 2, say: 'explain how a bill becomes a law, as a flowchart', name: 'flowchart', expects: 'structure' },
   { n: 3, say: "show Apple's stock over 2024 as a chart", name: 'chart', expects: 'chart' },
+  // "mock-up" with its hyphen: the live-app block taught since v2.1-app takes "mock up … I can click through" for a request for something that works, and this turn judges the interface kit
   { n: 4, say: 'mock up a sign-in screen I can click through', name: 'sign-in', expects: 'screen' },
   { n: 5, say: null, name: 'interact', expects: 'interact' },
   { n: 6, say: 'mock up the home page for an insurance company', name: 'insurance-home', expects: 'screen' },
@@ -333,6 +334,8 @@ interface Posted {
   readonly url: string;
   readonly kind: string | null;
   readonly text: string | null;
+  /** what was posted, as sent */
+  readonly body: string;
 }
 
 /** One headless Chrome with one page, driven over the DevTools protocol, and everything it reported: console errors, failed requests, requests in flight, turns POSTed. */
@@ -385,7 +388,7 @@ class Tab {
             } catch {
               // a body the gate cannot read is still a turn
             }
-            this.posted.push({ at: now, url: request.url, kind, text });
+            this.posted.push({ at: now, url: request.url, kind, text, body: request.postData ?? '' });
           }
           break;
         }
@@ -575,7 +578,7 @@ interface LiveElement {
 
 interface MockupView {
   readonly screen: string;
-  readonly hits: readonly { readonly id: string; readonly part: string; readonly action: string; readonly box: Box }[];
+  readonly hits: readonly { readonly id: string; readonly part: string; readonly action: string; readonly box: Box; readonly send?: boolean; readonly to?: string }[];
   readonly words: readonly { readonly owner: string; readonly text: string; readonly box: Box }[];
   readonly notes: readonly { readonly kind: string; readonly id: string; readonly message: string }[];
 }
@@ -831,6 +834,12 @@ class Conversation {
             if (screens.length > 0 && onStage.length === 0) problems.push('the screen structure is in the resting stage but not on screen');
             if (answer.hasHook && screens.length > 0 && answer.mockups.length === 0) problems.push('the screen structure is on stage but the painter lays out no mock-up (nothing to look at or touch)');
             else if (answer.hasHook && answer.mockups.every((mock) => mock.words.length === 0)) problems.push('the mock-up has no words at all');
+            // the smallest type of a mock-up that is being worked must read on the screen as drawn (a wide stage: the census's 12 px desk floor, less a quarter of a pixel
+            // for rounding; a phone's room cannot hold a phone's worth of screen at more than about 9 px, which is the least the kit sets)
+            const smallest = Math.min(...onStage.map((element) => (element.fontPx > 0 ? element.fontPx : Number.POSITIVE_INFINITY)));
+            const floor = view.width < 600 ? 9 : 11.75;
+            if (Number.isFinite(smallest) && smallest < floor) problems.push(`the smallest type in the mock-up is ${smallest.toFixed(1)} px on the screen (it must be at least ${floor})`);
+            else if (Number.isFinite(smallest)) facts.push(`smallest type ${smallest.toFixed(1)} px`);
             facts.push(`${screens.length} screen(s), ${answer.mockups.reduce((n, mock) => n + mock.hits.length, 0)} live parts`);
           }
           break;
@@ -1078,26 +1087,50 @@ class Conversation {
       else problems.push(`tapping the toggle ${toggle.id} changed nothing (${(share * 100).toFixed(1)}% of its pixels)`);
     } else facts.push('no toggle in this mock-up');
 
-    // the button: its press must reach the server as an act
-    // the button a person would press: a button of the screen itself, not its back arrow or a tab of the bar
-    const press = presses.find((hit) => /^button/.test(hit.part)) ?? presses.find((hit) => !/^(nav|tab)/.test(hit.part)) ?? presses[0];
+    // the button: a button the brain is to hear (no `to=`, or `send`) must reach the server as an act, with the screen's values and never a password's own
+    // words; a button that goes to a screen (`to=`) is the prototype's own step: it must bring that screen forward
+    const buttons = presses.filter((hit) => /^button/.test(hit.part));
+    const heard = buttons.find((hit) => hit.send === true);
+    const goes = buttons.find((hit) => hit.send !== true && hit.to !== undefined);
     let rest = '';
-    if (press !== undefined) {
+    if (heard !== undefined) {
       const mark = tab.posted.length;
-      const before = await tab.shot(regionOf(press.box));
-      const c = centre(where(press));
+      const before = await tab.shot(regionOf(heard.box));
+      const c = centre(where(heard));
       await tab.tap(c.x, c.y);
       let act: Posted | undefined;
       for (let waited = 0; waited < 6000 && act === undefined; waited += 200) {
         act = tab.posted.slice(mark).find((turn) => turn.kind === 'act');
         if (act === undefined) await sleep(200);
       }
-      const after = await tab.shot(regionOf(press.box));
+      const after = await tab.shot(regionOf(heard.box));
       const share = await tab.call<number>('changed', before, after);
-      if (act !== undefined) {
-        facts.push(`pressing ${press.id} reached the server as an act ("${(act.text ?? '').slice(0, 30)}")`);
+      if (act === undefined) problems.push(`pressing the button ${heard.id} ("${heard.part}") sent nothing to the server: no turn of kind act was posted in 6 s${share >= 0.03 ? ' (the button did change its look)' : ''}`);
+      else {
+        let said: { input?: { text?: string; screen?: string; values?: Record<string, unknown> } } = {};
+        try {
+          said = JSON.parse(act.body) as typeof said;
+        } catch {
+          problems.push('the act the button sent could not be read');
+        }
+        const values = said.input?.values ?? {};
+        if (act.body.includes(words[1] as string)) problems.push(`the act carried the password's own words ("${words[1]}"): a password may only be said to be filled`);
+        else if (fields.length >= 2 && !Object.values(values).includes('filled')) problems.push(`the act did not say the password is filled (values ${JSON.stringify(values).slice(0, 120)})`);
+        else if (fields.length >= 1 && !JSON.stringify(values).includes(words[0] as string)) problems.push(`the act did not carry what was typed in the first field (values ${JSON.stringify(values).slice(0, 120)})`);
+        else facts.push(`pressing ${heard.id} reached the server as an act ("${(act.text ?? '').slice(0, 30)}", screen ${said.input?.screen ?? '?'}, ${Object.keys(values).length} values, the password only as filled)`);
         rest = await this.rest(true);
-      } else problems.push(`pressing the button ${press.id} ("${press.part}") sent nothing to the server: no turn of kind act was posted in 6 s${share >= 0.03 ? ' (the button did change its look)' : ''}`);
+      }
+    } else if (goes !== undefined) {
+      // nothing here is for the brain to hear: the prototype's own step must still take the finger somewhere
+      const whole = { x: 0, y: 0, width: (await tab.call<Answer>('answer')).viewport.width, height: (await tab.call<Answer>('answer')).viewport.height };
+      const before = await tab.shot(whole);
+      const c = centre(where(goes));
+      await tab.tap(c.x, c.y);
+      await sleep(900);
+      const after = await tab.shot(whole);
+      const share = await tab.call<number>('changed', before, after);
+      if (share >= 0.03) facts.push(`no button of this mock-up is for the brain (each goes to a screen); pressing ${goes.id} to ${goes.to} changed ${(share * 100).toFixed(0)}% of the stage`);
+      else problems.push(`pressing ${goes.id} (to ${goes.to}) took the finger nowhere: ${(share * 100).toFixed(1)}% of the stage changed`);
     } else facts.push('no button in this mock-up');
 
     this.add(results, 'interactions', problems.length === 0 ? 'PASS' : 'FAIL', problems.length === 0 ? facts.join('; ') : `${problems.join('; ')} [${facts[0]}]`);

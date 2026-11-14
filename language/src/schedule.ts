@@ -40,6 +40,7 @@ import {
   spriteSeconds,
   CHART_ROW_SECONDS,
   CODE_ROW_SECONDS,
+  APP_ROW_SECONDS,
   UI_ROW_SECONDS,
   STRIKE_SECONDS,
   TABLE_ROW_SECONDS,
@@ -181,8 +182,10 @@ export type Figure =
       /** v2.1. A tune: how fast the brain asked for it to be played (quarter notes a minute; null: the score's own) and on what */
       readonly tempo?: number | null;
       readonly voice?: TuneVoice | null;
-      /** v2.1. A tune: the moment, on this turn's clock, that a later line closed the block, so the music is whole and can begin; null while the brain may still write notes */
+      /** v2.1. A tune or an app: the moment, on this turn's clock, that a later line closed the block, so the music is whole and can begin (an app's document is whole and can run); null while the brain may still write */
       readonly sealed?: number | null;
+      /** An app: the height it asked for, canvas units; null: the default */
+      readonly height?: number | null;
       /** the room it is laid out in, canvas units; null: the whole canvas */
       readonly box: CanvasBox | null;
       /** a map joins its pins in the order written */
@@ -611,6 +614,12 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
    * it has, and only a row that differs or goes beyond them does anything. The number is how many of its rows have been matched so far.
    */
   const echoing = new Map<Live, number>();
+  /**
+   * A mock-up written again: a `screen` block whose first screen has the id of a screen already on stage is not a second block. Its lines are put into
+   * the block that holds that screen, in the screen's place (`merging`, by the id of the new block). `old` are the rows the screen had, which a row that says
+   * the same keeps (and its time), `cursor` where the next row goes.
+   */
+  const merging = new Map<string, { target: Live; cursor: number; old: StructureRow[]; used: number }>();
 
   const byKey = new Map<string, Live>();
   /** the line that wrote each row of a table or chart in this turn */
@@ -702,12 +711,70 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
     return duration;
   };
 
+  /** The id of the screen a row of a mock-up opens (`screen m1 phone | Home`), or null for any other row. */
+  const screenOfRow = (cells: string): string | null => /^screen\s+(\S+)/.exec(cells.trim())?.[1] ?? null;
+
+  /** The live mock-up that already holds a screen with this id, and where its rows are: from its `screen` row up to the next one. */
+  const findScreen = (id: string, at: number): { readonly block: Live; readonly start: number; readonly end: number } | null => {
+    for (let i = live.length - 1; i >= 0; i -= 1) {
+      const block = live[i];
+      if (block === undefined || block.ghost || block.rows === null || block.span.figure?.kind !== 'structure' || block.span.figure.structure !== 'screen' || !isActive(block, at)) continue;
+      const start = block.rows.findIndex((row) => screenOfRow(row.cells[0] ?? '') === id);
+      if (start < 0) continue;
+      let end = start + 1;
+      while (end < block.rows.length && screenOfRow(block.rows[end]?.cells[0] ?? '') === null) end += 1;
+      return { block, start, end };
+    }
+    return null;
+  };
+
   const findLive = (id: string, at: number): Live | null => {
     for (let i = live.length - 1; i >= 0; i -= 1) {
       const candidate = live[i];
       if (candidate !== undefined && candidate.span.id === id && !candidate.ghost && isActive(candidate, at)) return candidate;
     }
     return null;
+  };
+
+  /**
+   * One line of a mock-up that is written again. A `screen` line takes the rows its screen had out of the block (keeping them to compare); every line, the
+   * screen's own included, goes in at the cursor. A row that says what the old one said is the old one, so that nothing moves for nothing; a row that
+   * differs is put right where it stands, with the time of the row it replaced (a screen being changed does not come in again from the top).
+   */
+  const mergeScreenLine = (blockId: string, cells: string, seq: number, at: number): void => {
+    const merge = merging.get(blockId);
+    if (merge === undefined) return;
+    const { target } = merge;
+    const rows = target.rows;
+    if (rows === null || target.span.figure?.kind !== 'structure') return;
+    const id = screenOfRow(cells);
+    if (id !== null) {
+      // a screen of the block: the rows it had are lifted out, and this one's go in their place. A screen the block does not have goes after the others.
+      const found = findScreen(id, at);
+      const mine = found !== null && found.block === target ? found : null;
+      if (mine !== null) {
+        merge.old = rows.splice(mine.start, mine.end - mine.start);
+        merge.cursor = mine.start;
+      } else {
+        merge.old = [];
+        merge.cursor = rows.length;
+      }
+      merge.used = 0;
+    }
+    if (rows.length >= LIMITS.rows + 1 && merge.used >= merge.old.length) {
+      report(seq, 'structure-limit', `a screen block has at most ${LIMITS.rows} rows; this one was ignored`);
+      return;
+    }
+    const kept = merge.old[merge.used];
+    merge.used += 1;
+    const wanted = [cells.slice(0, LIMITS.line)];
+    const before = rows[merge.cursor - 1]?.at ?? 0;
+    const tail = merge.old[merge.old.length - 1];
+    const landed: StructureRow = kept !== undefined && alike(kept.cells, wanted) ? kept : { cells: wanted, at: Math.max(before, kept?.at ?? tail?.at ?? at) };
+    rowSeq.set(landed, seq);
+    rows.splice(merge.cursor, 0, landed);
+    merge.cursor += 1;
+    target.span.figure = { ...target.span.figure, rows: [...rows] };
   };
 
   const resolveTargets = (target: Target, at: number, seq: number): Live[] => {
@@ -958,6 +1025,18 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
         lines.push({ seq, verb: line.verb, start, end });
         return;
       }
+      // A mock-up written again: the screen it opens is on stage already, so it is put there, in its place, and no second block is made.
+      if (line.verb === 'screen') {
+        const screenId = screenOfRow(line.title ?? '');
+        const found = screenId === null ? null : findScreen(screenId, start);
+        if (found !== null && found.block.span.id !== line.id) {
+          merging.set(line.id, { target: found.block, cursor: found.block.rows === null ? 0 : found.end, old: [], used: 0 });
+          mergeScreenLine(line.id, line.title ?? '', seq, start);
+          previousStart = priorStart;
+          lines.push({ seq, verb: line.verb, start, end: start });
+          return;
+        }
+      }
       const joined = joinGroup(seq, styleFor(seq, 'structure', line.styles, line.props), start);
       // A mock-up's title is its first line, taken as written: it is the first row of the block, and the block has no heading of its own.
       const ui = line.verb === 'screen';
@@ -973,6 +1052,7 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
         bars: line.verb === 'table' && line.bars === true,
         ...(line.verb === 'code' && { lang: line.lang ?? null, file: line.file ?? null }),
         ...(line.verb === 'tune' && { tempo: line.tempo ?? null, voice: line.voice ?? DEFAULT_TUNE_VOICE, sealed: null }),
+        ...(line.verb === 'app' && { height: line.height ?? null, sealed: null }),
         box: line.box ?? null,
         route: line.route ?? false,
         rows: openFigure?.kind === 'structure' ? openFigure.rows : [],
@@ -1377,10 +1457,10 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
     if (line.verb !== 'row' && line.verb !== 'revise' && line.verb !== 'cancel' && line.verb !== 'standing' && line.verb !== 'refine' && !isLessonVerb(line.verb)) {
       for (const candidate of live) {
         const figure = candidate.span.figure;
-        if (figure?.kind === 'structure' && figure.structure === 'tune' && !candidate.span.carried && (figure.sealed ?? null) === null && candidate.span.seq < seq) {
+        if (figure?.kind === 'structure' && (figure.structure === 'tune' || figure.structure === 'app') && !candidate.span.carried && (figure.sealed ?? null) === null && candidate.span.seq < seq) {
           candidate.span.figure = { ...figure, sealed: Math.max(pen, entry.floor) };
           // what of the music could not be played is said once, here, when the score is whole
-          for (const warning of cachedTune(tuneRowsOf(figure.rows), { tempo: figure.tempo ?? null, title: candidate.span.text === '' ? null : candidate.span.text }).warnings) report(seq, 'bad-value', `the tune: ${warning}`);
+          if (figure.structure === 'tune') for (const warning of cachedTune(tuneRowsOf(figure.rows), { tempo: figure.tempo ?? null, title: candidate.span.text === '' ? null : candidate.span.text }).warnings) report(seq, 'bad-value', `the tune: ${warning}`);
         }
       }
     }
@@ -1466,6 +1546,7 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
       case 'chart':
       case 'code':
       case 'tune':
+      case 'app':
       case 'screen':
       case 'pic':
       case 'node':
@@ -1542,17 +1623,23 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
       }
 
       case 'row': {
+        if (merging.has(line.id)) {
+          mergeScreenLine(line.id, line.cells, entry.seq, Math.max(pen, entry.floor));
+          lines.push({ seq: entry.seq, verb: line.verb, start: pen, end: pen });
+          break;
+        }
         const table = findLive(line.id, Math.max(pen, entry.floor));
         if (table !== null && table.span.figure?.kind === 'structure' && table.rows !== null) {
           // A row of a table or a chart: cells between bars. It lands a step after the row before it.
           const enter = table.span.enter;
           const charted = table.span.figure.structure === 'chart';
-          const coded = table.span.figure.structure === 'code' || table.span.figure.structure === 'tune' || table.span.figure.structure === 'screen';
+          const app = table.span.figure.structure === 'app';
+          const coded = table.span.figure.structure === 'code' || table.span.figure.structure === 'tune' || table.span.figure.structure === 'screen' || app;
           const interfaced = table.span.figure.structure === 'screen';
           // A line of code is one cell, exactly as written: a bar in it is a bar, a space is a space, and an empty line is a row.
           const cells = coded ? [line.cells] : splitCells(line.cells);
-          const step = (interfaced ? UI_ROW_SECONDS : coded ? CODE_ROW_SECONDS : charted ? CHART_ROW_SECONDS : TABLE_ROW_SECONDS)[pace];
-          const most = table.span.figure.structure === 'tune' ? LIMITS.tuneRows : coded ? LIMITS.codeRows : charted ? LIMITS.chartPoints : LIMITS.rows;
+          const step = (app ? APP_ROW_SECONDS : interfaced ? UI_ROW_SECONDS : coded ? CODE_ROW_SECONDS : charted ? CHART_ROW_SECONDS : TABLE_ROW_SECONDS)[pace];
+          const most = app ? LIMITS.appRows : table.span.figure.structure === 'tune' ? LIMITS.tuneRows : coded ? LIMITS.codeRows : charted ? LIMITS.chartPoints : LIMITS.rows;
           if (!coded && (isRuleRow(cells) || cells.every((cell) => cell === ''))) {
             lines.push({ seq, verb: line.verb, start: pen, end: pen });
             break;
@@ -1574,6 +1661,11 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
               break;
             }
             echoing.delete(table);
+          }
+          if (app && table.rows.reduce((sum, row) => sum + (row.cells[0]?.length ?? 0) + 1, 0) + (line.cells.length + 1) > LIMITS.appChars) {
+            report(seq, 'structure-limit', `an app is at most ${LIMITS.appChars} characters; this line and the rest were ignored: write less`);
+            lines.push({ seq, verb: line.verb, start: pen, end: pen });
+            break;
           }
           if (table.rows.length >= most) {
             report(seq, 'structure-limit', `a ${table.span.figure.structure} has at most ${most} rows; this one was ignored`);

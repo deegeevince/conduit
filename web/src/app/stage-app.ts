@@ -1,6 +1,7 @@
 import { DEFAULT_LOOK, FIRST_LOAD_DEMO, LineNormalizer, LineReader, parseLine, parseReplayDirective, serializeLine } from '@conduit/language';
 import overtureScript from '@conduit/language/demos/overture.series?raw';
 import type { ActivityState, ActionRisk, BackEvent, ControlValue, ControlValues, CriticFinding, DataTable, Issue, PassState, Line, LeadWindow, LookId, ScreenFacts, Services, Sight, StageEvent, TurnEndReason, TurnInput } from '@conduit/language';
+import type { AppAct, AppHost } from '../contracts/app';
 import type { ExportJob, ExportRequest, Exporter } from '../contracts/export';
 import type { ChartHost } from '../contracts/chart';
 import type { StageHook } from '../contracts/hook';
@@ -17,11 +18,13 @@ import type { Sound } from '../audio/sound';
 import { createPainter } from '../painter';
 import { createChartEngine } from '../render/chart';
 import { createFilm } from '../painter/film';
+import { createReel, lastAnswer } from '../painter/reel';
 import { createPlainRenderer } from '../render/plain';
 import { canUseThree, createThreeRenderer } from '../render/three';
 import { asDataTable } from '../link/guards';
 import { createAccessLayer } from './access';
 import { createChartHost } from './chart-host';
+import { createLiveApps } from './live-app';
 import { createHook } from './hook';
 import { observeRenderer } from './observe';
 import type { AppParams } from './params';
@@ -83,6 +86,8 @@ export interface StageApp {
   readonly hook: StageHook;
   /** where this stage's charts live; null when this build has no charting engine */
   readonly charts: ChartHost | null;
+  /** v2.3. Where live apps run: the sandboxed frames over the stage. `/stop-all` ends them. */
+  readonly apps: AppHost;
   /** v2.1. The stage's sound: a tune on it is played here. Muted, stopped and heard by the chrome. */
   readonly sound: Sound;
   /** the line the charting engine's licence asks for, to show in the page; null when there is none */
@@ -297,6 +302,8 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   });
   const chartHost: ChartHost | null = engine === null ? null : createChartHost({ engine, stage: host, access });
   const sound = createSound();
+  // Live apps run here, in sandboxed frames over the stage; what the user does in one goes up the back channel (`appAct`, below).
+  const liveApps: AppHost = createLiveApps({ stage: host, onAct: (act) => appAct(act), onNote: (text) => announce(text) });
   // A browser lets a page make sound once the person has done something on it: the Send that asks for music is that, and so is any first click or key.
   const wake = (): void => sound.unlock();
   document.addEventListener('pointerdown', wake, { capture: true });
@@ -309,10 +316,12 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
       charts: chartHost,
       tunes: sound,
       uploadUrl: (id) => link.photoUrl(id),
+      apps: liveApps,
       pointer: pointerKind(),
       reducedMotion: params.motion === 'reduced' ? true : params.motion === 'full' ? false : null,
     });
   } catch (cause) {
+    liveApps.dispose();
     chartHost?.dispose();
     access.dispose();
     try {
@@ -846,12 +855,27 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
       const view = views.find((candidate) => candidate.id === event.id);
       const values: Record<string, ControlValue> = {};
       for (const candidate of views) if (candidate.value !== null) values[candidate.id] = candidate.value;
-      const text = view === undefined ? event.text : view.control === 'pick' ? view.valueText : view.label !== '' ? view.label : event.text;
-      void submit({ kind: 'act', id: event.id, text, values: values satisfies ControlValues }, null, true).catch(noteTurnFailure);
+      // a button of a mock-up brings what its own screen holds (a field's words, a switch), and no other control's
+      const mockup = event.screen !== undefined;
+      const text = mockup || view === undefined ? event.text : view.control === 'pick' ? view.valueText : view.label !== '' ? view.label : event.text;
+      const held: ControlValues = mockup ? (event.values ?? {}) : values;
+      void submit({ kind: 'act', id: event.id, text, values: held, ...(mockup ? { screen: event.screen } : {}) }, null, true).catch(noteTurnFailure);
       return;
     }
     sendBack(event);
     publishStatus();
+  }
+
+  /**
+   * What the user did in a live app. It goes up the back channel as a control event marked as the app's: the brain is told of it on its next
+   * turn ("the user did X in the app"), or, when the app asked (`conduit.ask`), it is also the next turn's input, as a press is.
+   */
+  function appAct(act: AppAct): void {
+    if (disposed) return;
+    const at = painter.snapshot();
+    const said = typeof act.value === 'string' ? (act.name === 'state' ? act.value : JSON.stringify(act.value)) : String(act.value);
+    const text = (act.name === 'state' ? `state ${said}` : `${act.name} ${said}`).slice(0, 380);
+    publishBack({ type: 'control', turn: at.turn, id: act.id.slice(0, 24), value: act.value, text, playhead: at.playhead, send: act.ask, app: true });
   }
 
   function noteTurnFailure(cause: unknown): void {
@@ -1005,6 +1029,12 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   keys.autocomplete = 'off';
   keys.setAttribute('aria-hidden', 'true');
   keys.tabIndex = -1;
+  // a phone's keyboard must hand over exactly what is typed: no capital for the first letter of an email, no correction, no suggestion
+  keys.setAttribute('autocapitalize', 'off');
+  keys.setAttribute('autocorrect', 'off');
+  keys.setAttribute('spellcheck', 'false');
+  keys.setAttribute('enterkeyhint', 'done');
+  keys.setAttribute('inputmode', 'text');
   keys.style.cssText = 'position:absolute;left:0;top:0;width:1px;height:1px;opacity:0;border:0;padding:0;font-size:16px;pointer-events:none';
   host.append(keys);
   keys.addEventListener('keydown', (event) => {
@@ -1020,6 +1050,13 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   keys.addEventListener('blur', () => {
     if (painter.typing()) painter.key('Escape');
   });
+  // A phone raises its keyboard only for a focus that comes in the gesture itself, and a gesture that began on a field may end in a click or a touchend
+  // that the pointer's own `up` did not see (a touch can end on a thumbnail brought forward, or after the stage was made again under the finger).
+  const raiseKeyboard = (): void => {
+    if (painter.typing() && document.activeElement !== keys) keys.focus({ preventScroll: true });
+  };
+  host.addEventListener('click', raiseKeyboard);
+  host.addEventListener('touchend', raiseKeyboard);
   host.addEventListener('pointerdown', onPointerDown);
   host.addEventListener('pointermove', onPointerMove);
   host.addEventListener('pointerup', onPointerEnd);
@@ -1027,7 +1064,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   host.addEventListener('pointerleave', onPointerLeave);
 
   function getExporter(): Exporter {
-    exporter ??= createExporter({ createRenderer: () => newRenderer(params), chartStill: (frame, key) => { const chart = frame.charts?.find((candidate) => candidate.key === key); return chart === undefined ? null : (chartHost?.stillOf(chart) ?? null); } });
+    exporter ??= createExporter({ createRenderer: () => newRenderer(params), appStill: (key) => liveApps.still(key), appsFresh: () => liveApps.refresh(1500), chartStill: (frame, key) => { const chart = frame.charts?.find((candidate) => candidate.key === key); return chart === undefined ? null : (chartHost?.stillOf(chart) ?? null); } });
     return exporter;
   }
 
@@ -1036,7 +1073,9 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     return recording === null ? '' : recording.lines.map(({ line }) => serializeLine(line)).join('\n');
   }
 
-  const LABELS = { video: 'film', frames: 'frames', still: 'picture', script: 'script', pdf: 'pdf' } as const;
+  const LABELS = { video: 'film', still: 'picture', script: 'script', pdf: 'pdf' } as const;
+  /** The longest a film of several turns is made: a conversation longer than this keeps its latest turns, and says so. */
+  const REEL_MAX_SECONDS = 600;
 
   function startExport(request: ExportRequest): ExportJob {
     const recording = painter.recording();
@@ -1046,11 +1085,22 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     // What the viewer's hand held and what the charts were given go into the file: it shows the picture as they left it.
     const held: Record<string, ControlValue> = {};
     for (const view of snap.controls) if (view.value !== null) held[view.id] = view.value;
-    const film = createFilm(recording, { viewport: size, reducedMotion: snap.reducedMotion, arrival: 'at-once', controls: held, data: Object.fromEntries(dataTables) });
+    const filmOptions = { apps: true, viewport: size, reducedMotion: snap.reducedMotion, arrival: 'at-once' as const, controls: held, data: Object.fromEntries(dataTables) };
+    // A film is of the last answer (a prompt and the taps that carried it on) unless `scope` says the last turn alone, or the whole conversation.
+    let film;
+    let reelNote: string | null = null;
+    if (request.kind === 'video' && request.scope !== 'turn') {
+      const everything = painter.recordings();
+      const conversation = request.scope === 'conversation';
+      const turns = conversation ? everything : lastAnswer(everything);
+      const reel = createReel(turns.length > 0 ? turns : [recording], filmOptions, { cards: conversation, maxSeconds: REEL_MAX_SECONDS });
+      film = reel;
+      if (reel.leftOut > 0 || reel.cut) reelNote = `The film holds at most ${REEL_MAX_SECONDS / 60} minutes: ${reel.leftOut > 0 ? `the first ${reel.leftOut} turn${reel.leftOut === 1 ? '' : 's'} ${reel.leftOut === 1 ? 'is' : 'are'} left out` : 'the last turn is cut short'}`;
+    } else film = createFilm(recording, filmOptions);
     // A film is not touched by a second job: the exporter refuses it, and the one still running keeps the status line.
     const refused = exporting !== null && request.kind !== 'script' && !(request.kind === 'still' && request.format === 'svg');
     const job = getExporter().start(film, request.kind === 'still' ? { ...request, at: Math.min(request.at, film.duration) } : request);
-    const run = { label: LABELS[request.kind], fraction: 0, cancel: () => job.cancel() };
+    const run = { label: request.kind === 'video' && request.scope === 'conversation' ? 'conversation film' : LABELS[request.kind], fraction: 0, cancel: () => job.cancel() };
     if (!refused) exporting = run;
     job.onProgress((progress) => {
       run.fraction = progress.done;
@@ -1073,7 +1123,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
         ),
     );
     publishStatus();
-    return job;
+    return reelNote === null ? job : { ...job, done: job.done.then((made) => ({ ...made, note: reelNote })) };
   }
 
   /** Lines of Series played at once, as a turn of the app's own. */
@@ -1096,6 +1146,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     painter,
     link,
     charts: chartHost,
+    apps: liveApps,
     sound,
     attribution: engine?.attribution ?? null,
     review: {
@@ -1217,6 +1268,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
       sound.dispose();
       link.close();
       painter.dispose();
+      liveApps.dispose();
       chartHost?.dispose();
       access.dispose();
       renderer.dispose();

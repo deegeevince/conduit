@@ -21,6 +21,7 @@ import type {
   TurnInput,
   TurnReport,
 } from '@conduit/language';
+import type { AppHost } from './app';
 import type { ChartHost, ChartView } from './chart';
 import type { Recording } from './film';
 import type { Quality } from './frame';
@@ -44,6 +45,8 @@ export interface PainterOptions {
   readonly charts?: ChartHost | null;
   /** v2.1. Where this stage's music is made; absent or null: the stage is silent, and a tune on it is drawn and its playhead kept by the painter's own clock */
   readonly tunes?: TunePlayer | null;
+  /** v2.3. Where this stage's live apps run; absent or null: the stage has none, and the painter does not offer `app` */
+  readonly apps?: AppHost | null;
   /** v2.1. Where a picture the user gave is fetched from, by its id (`pic … from=u1`); null when the id is not this conversation's. Absent: the painter draws no uploads. */
   readonly uploadUrl?: (id: string) => string | null;
 }
@@ -101,7 +104,10 @@ export interface PointerInput {
 export interface UiMockup {
   readonly screen: string;
   /** what a finger works: `part` is what it is drawn as (`field`, `toggle`, `button`...), `action` what working it does */
-  readonly hits: readonly { readonly id: string; readonly part: string; readonly action: 'tab' | 'pick' | 'toggle' | 'field' | 'slider' | 'press'; readonly box: Box }[];
+  readonly hits: readonly { readonly id: string; readonly part: string; readonly action: 'tab' | 'pick' | 'toggle' | 'field' | 'slider' | 'press'; readonly box: Box;
+    /** a press: whether the brain hears it, and the screen it goes to */
+    readonly send?: boolean;
+    readonly to?: string }[];
   /** one box per line of words, where its ink is; `owner` is the part they belong to */
   readonly words: readonly { readonly owner: string; readonly text: string; readonly box: Box }[];
   /** what the kit's own lint says of the screen (overlap, lost words, words outside...) */
@@ -296,6 +302,12 @@ export interface Painter {
    * turn by default. Null before the first turn has ended.
    */
   recording(turn?: string): Recording | null;
+
+  /**
+   * Every turn that can still be performed again, oldest first (the last `KEPT_RECORDINGS`, 64), each with the playhead its lines arrived
+   * at and how it was opened: the conversation as this page has seen it. A turn that is still playing is not among them.
+   */
+  recordings(): readonly Recording[];
 
   /**
    * Schedules one line of the open turn at the pen and returns any semantic

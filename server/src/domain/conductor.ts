@@ -744,7 +744,7 @@ export class Conductor {
         this.adoptSeen(s, event.turn, event.seen);
         return;
       case 'control':
-        this.deps.sessionLog.write(s.id, { type: 'control', turn: event.turn, id: event.id, value: event.value, text: event.text, send: event.send });
+        this.deps.sessionLog.write(s.id, { type: 'control', turn: event.turn, id: event.id, value: event.value, text: event.text, send: event.send, ...(event.app === true && { app: true }) });
         this.adoptSeen(s, event.turn, event.seen);
         return;
       case 'state':

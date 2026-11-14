@@ -57,6 +57,11 @@ export interface RasteriseOptions {
    */
   readonly chartStill?: (key: string) => HTMLCanvasElement | null;
   /**
+   * The picture of a live app to draw into this one, by the app's key (`Frame.apps`): what the app host last had of it. An app runs in a
+   * sandboxed frame over the stage, so without this a picture of the stage would show only the placeholder. Null for an app with no picture.
+   */
+  readonly appStill?: (key: string) => CanvasImageSource | null;
+  /**
    * Called when the picture had to be taken before all of the frame's text was drawable (the renderer waits up to
    * 2 s for it first), so the caller can mark the picture incomplete or ask again.
    */

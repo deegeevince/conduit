@@ -11,7 +11,7 @@ import { UI_DEVICE_SIZE, UI_SPACE, isUiContainer, unstar } from './lang';
 import { hasIcon, placeIcon } from './icons';
 import type { UiMeasure } from './measure';
 import type { Align, Box as FlexBox, Node, Style } from './solve';
-import type { UiAction, UiPart, UiRect, UiShadow, UiState } from './types';
+import type { UiAction, UiPart, UiPress, UiRect, UiShadow, UiState } from './types';
 
 // ------------------------------------------------------------------ what a node carries
 
@@ -74,9 +74,21 @@ const DESK_TYPE: Partial<Record<keyof UiTokens['type'], UiTextToken>> = {
   hero: { size: 64, line: 72, weight: 'bold' },
 };
 
+/** A type scale with nothing set smaller than `min` points; a role that is taken up keeps its proportions and stays on the four-point grid. */
+function atLeast(type: UiTokens['type'], min: number | undefined): UiTokens['type'] {
+  if (min === undefined) return type;
+  const out = { ...type };
+  for (const role of Object.keys(type) as (keyof UiTokens['type'])[]) {
+    const token = type[role];
+    if (token.size >= min) continue;
+    out[role] = { ...token, size: min, line: Math.max(token.line, Math.ceil((min * 1.4) / 4) * 4) };
+  }
+  return out;
+}
+
 export function makeKit(t: UiTokens, device: UiDevice, measure: UiMeasure, state: UiState): Kit {
   const desk = device === 'desktop' || device === 'browser';
-  return { t, device, measure, state, type: desk ? { ...t.type, ...DESK_TYPE } : t.type };
+  return { t, device, measure, state, type: atLeast(desk ? { ...t.type, ...DESK_TYPE } : t.type, t.minText) };
 }
 
 const px4 = (n: number): number => Math.round(n / 4) * 4;
@@ -224,10 +236,16 @@ function buttonOf(k: Kit, p: UiPartNode): N {
   return mk(style, flex('row', { align: 'center', justify: 'center', pad: [0, 20, 0, 20] }), null, [labelNode], { id: p.id, part: 'button', hug: !wide, target: true, paint, action: pressOf(p) });
 }
 
-/** A press: and where it goes (`to=<screen>`), when it goes anywhere. */
-function pressOf(p: UiPartNode): { readonly kind: 'press'; readonly control: string; readonly to?: string } {
+/**
+ * A press: where it goes (`to=<screen>`), when it goes anywhere, and whether the brain hears it. A `button` with nowhere to go is sent (there is nothing
+ * else for it to do); one that goes to a screen is a prototype's own step and stays here unless it says `send`. `label` is what it says, for the turn.
+ */
+function pressOf(p: UiPartNode): UiPress {
   const to = p.attrs['to'];
-  return to === undefined || to === '' ? { kind: 'press', control: p.id } : { kind: 'press', control: p.id, to };
+  const goes = to !== undefined && to !== '';
+  const label = (p.fields[0] ?? '').trim();
+  const send = p.kind === 'button' && !p.flags.includes('disabled') && (p.flags.includes('send') || !goes);
+  return { kind: 'press', control: p.id, ...(goes ? { to } : {}), ...(send ? { send: true, label: label === '' ? 'Button' : label } : {}) };
 }
 
 function fieldOf(k: Kit, p: UiPartNode, labelled: boolean): N {
@@ -293,19 +311,38 @@ function itemOf(k: Kit, p: UiPartNode): N {
   return mk({ width: 'fill', height: 'hug', minH: 64 }, flex('row', { align: 'center', gap: 12, pad }), null, kids, { id: p.id, part: 'item', target: true, paint, action: toggled === null ? pressOf(p) : { kind: 'toggle', control: p.id, on: toggled } });
 }
 
+/** The two ends of a switch's knob: its centre when off and when on, in points from the switch's left edge. Pointing reads the same numbers. */
+export const SWITCH = { w: 52, h: 32, off: 16, on: 36 } as const;
+
+function mixHex(a: string, b: string, t: number): string {
+  if (t <= 0) return a;
+  if (t >= 1) return b;
+  const pa = /^#([0-9a-f]{6})$/i.exec(a);
+  const pb = /^#([0-9a-f]{6})$/i.exec(b);
+  if (pa === null || pb === null) return t < 0.5 ? a : b;
+  const n = (hex: string, shift: number): number => (parseInt(hex, 16) >> shift) & 255;
+  const ch = (shift: number): string => Math.round(n(pa[1] as string, shift) + (n(pb[1] as string, shift) - n(pa[1] as string, shift)) * t).toString(16).padStart(2, '0');
+  return `#${ch(16)}${ch(8)}${ch(0)}`;
+}
+
 function switchOf(k: Kit, id: string, on: boolean): N {
   const c = k.t.colour;
   const wire = k.t.wire;
+  // a finger (or an ease after it) holds the knob between the ends; otherwise it is at the end `on` says
+  const held = k.state.thumb?.[id];
+  const t = held === undefined ? (on ? 1 : 0) : Math.max(0, Math.min(1, held));
   const paint = (b: Rect, out: Out): void => {
-    const track: Rect = { x: b.x, y: b.y + (b.h - 32) / 2, w: 52, h: 32 };
-    rectOf(out, id, 'switch', track, { radius: 16, fill: on ? (wire ? c.ink : c.success) : wire ? c.surface : c.sunken, edge: wire ? { colour: c.edge, width: 1 } : null });
+    const track: Rect = { x: b.x, y: b.y + (b.h - SWITCH.h) / 2, w: SWITCH.w, h: SWITCH.h };
+    const offFill = wire ? c.surface : c.sunken;
+    const onFill = wire ? c.ink : c.success;
+    rectOf(out, id, 'switch', track, { radius: 16, fill: mixHex(offFill, onFill, t), edge: wire ? { colour: c.edge, width: 1 } : null });
     const r = 12;
-    const cx = on ? track.x + track.w - 16 : track.x + 16;
+    const cx = track.x + SWITCH.off + (SWITCH.on - SWITCH.off) * t;
     const cy = track.y + 16;
     const knob: Rect = { x: cx - r, y: cy - r, w: r * 2, h: r * 2 };
-    rectOf(out, id, 'knob', knob, { radius: r, fill: wire && !on ? c.ink : '#ffffff', ...(wire ? {} : { shadow: { colour: c.shadow, dy: 1, blur: 3, alpha: 0.25 } }) });
+    rectOf(out, id, 'knob', knob, { radius: r, fill: wire ? mixHex(c.ink, '#ffffff', t) : '#ffffff', ...(wire ? {} : { shadow: { colour: c.shadow, dy: 1, blur: 3, alpha: 0.25 } }) });
   };
-  return mk({ width: 52, height: 44, shrink: 0 }, null, { fit: () => ({ w: 52, h: 44 }), minW: 52 }, [], { id, part: 'switch', quiet: true, paint, owner: id });
+  return mk({ width: 52, height: 44, shrink: 0 }, null, { fit: () => ({ w: 52, h: 44 }), minW: 52 }, [], { id, part: 'switch', quiet: true, paint, owner: id, action: { kind: 'toggle', control: id, on } });
 }
 
 function toggleOf(k: Kit, p: UiPartNode): N {
@@ -373,7 +410,7 @@ function badgeOf(k: Kit, p: UiPartNode): N {
   const wire = k.t.wire;
   const paint = (b: Rect, out: Out): void => rectOf(out, p.id, 'badge', b, { radius: 12, fill: wire ? null : c.accentWash, edge: wire ? { colour: c.edge, width: 1 } : null });
   const word = text(k, p.fields[0] ?? '', { ...k.type.caption, weight: 'bold' }, { id: p.id, nowrap: true, colour: wire ? c.ink : tone, what: 'label' });
-  return mk({ width: 'hug', height: 24 }, flex('row', { align: 'center', pad: [0, 10, 0, 10] }), null, [word], { id: p.id, part: 'badge', hug: true, paint });
+  return mk({ width: 'hug', height: 'hug', minH: 24 }, flex('row', { align: 'center', pad: [2, 10, 2, 10] }), null, [word], { id: p.id, part: 'badge', hug: true, paint });
 }
 
 function priceOf(k: Kit, p: UiPartNode): N {
@@ -419,11 +456,12 @@ function imageOf(k: Kit, p: UiPartNode): N {
       if (!round) {
         const credit = `Photo: ${photo.credit}`;
         const room = Math.max(8, b.w - 20);
+        const creditSize = Math.max(11, k.t.minText ?? 0);
         let text = credit;
-        while (text.length > 8 && k.measure.width(text, 11, 'normal') > room) text = `${text.slice(0, Math.max(4, Math.floor(text.length * Math.min(0.95, room / k.measure.width(text, 11, 'normal')))) - 1).trimEnd()}...`;
-        const strip = { x: b.x, y: b.y + b.h - 22, w: b.w, h: 22 };
+        while (text.length > 8 && k.measure.width(text, creditSize, 'normal') > room) text = `${text.slice(0, Math.max(4, Math.floor(text.length * Math.min(0.95, room / k.measure.width(text, creditSize, 'normal')))) - 1).trimEnd()}...`;
+        const strip = { x: b.x, y: b.y + b.h - (creditSize + 11), w: b.w, h: creditSize + 11 };
         rectOf(out, p.id, 'credit-scrim', strip, { fill: '#000000', fillAlpha: 0.5 });
-        out.parts.push({ kind: 'text', key: out.key(p.id, 'credit'), owner: p.id, x: b.x + 10, y: strip.y + 3, w: room, h: 16, lines: [{ text, width: k.measure.width(text, 11, 'normal') }], size: 11, line: 16, weight: 'normal', colour: '#f4f6fa', align: 'left' });
+        out.parts.push({ kind: 'text', key: out.key(p.id, 'credit'), owner: p.id, x: b.x + 10, y: strip.y + 3, w: room, h: creditSize + 5, lines: [{ text, width: k.measure.width(text, creditSize, 'normal') }], size: creditSize, line: creditSize + 5, weight: 'normal', colour: '#f4f6fa', align: 'left' });
         // the four corners, in the ground the picture stands on
         const rr = Math.min(r, b.h / 2, b.w / 2);
         const corner = (cx: number, cy: number, sx: number, sy: number): void => {
@@ -704,7 +742,7 @@ const BLEED: ReadonlySet<string> = new Set(['nav', 'tabbar', 'progress']);
 /** The device's own furniture: the status bar and the home bar of a phone. */
 function statusBar(k: Kit, id: string): N {
   const c = k.t.colour;
-  const time = text(k, '9:41', { size: 15, line: 20, weight: 'bold' }, { id, nowrap: true, colour: c.ink, what: 'time' });
+  const time = text(k, '9:41', { size: Math.max(15, k.t.minText ?? 0), line: 20, weight: 'bold' }, { id, nowrap: true, colour: c.ink, what: 'time' });
   const right = mk({ width: 'hug', height: 'hug' }, flex('row', { gap: 6, align: 'center' }), null, [icon(id, 'wifi', 16, c.ink, 2.25), icon(id, 'battery', 20, c.ink, 2.25)], { id: `${id}:status-icons`, part: 'status', quiet: true });
   return mk({ width: 'fill', height: 44 }, flex('row', { align: 'center', justify: 'between', pad: [12, 28, 0, 28] }), null, [time, right], { id: `${id}:status`, part: 'status', quiet: true });
 }

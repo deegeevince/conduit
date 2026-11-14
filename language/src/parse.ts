@@ -48,6 +48,7 @@ import {
   CLEARS,
   CODE_LANGUAGES,
   TUNE_VOICES,
+  APP_HEIGHT,
   CONTROL_VERBS,
   DIRECTIONS,
   ENTER_EFFECTS,
@@ -991,6 +992,8 @@ function parseStructure(verb: StructureVerb, head: Head, text: string | null, is
     else if ((key === 'voice' || key === 'instrument' || key === 'sound') && verb === 'tune' && oneOf(TUNE_VOICES, value)) line.voice = value;
     else if ((key === 'voice' || key === 'instrument' || key === 'sound') && verb === 'tune') issues.warn('bad-value', `voice=${value} is not one of ${TUNE_VOICES.join(' | ')}; a piano is used`, pair.token);
     else if ((key === 'tempo' || key === 'bpm') && verb === 'tune' && /^\d+(\.\d+)?$/.test(value) && Number(value) >= TUNE_TEMPO_RANGE.min && Number(value) <= TUNE_TEMPO_RANGE.max) line.tempo = Number(value);
+    else if (key === 'height' && verb === 'app' && /^\d+(\.\d+)?$/.test(value)) line.height = Math.max(APP_HEIGHT.min, Math.min(APP_HEIGHT.max, Number(value)));
+    else if (key === 'height' && verb === 'app') issues.warn('bad-value', `height=${value} is not a number of canvas units from ${APP_HEIGHT.min} to ${APP_HEIGHT.max}; ${APP_HEIGHT.default} is used`, pair.token);
     else if ((key === 'tempo' || key === 'bpm') && verb === 'tune') issues.warn('bad-value', `tempo=${value} is not a number of beats a minute from ${TUNE_TEMPO_RANGE.min} to ${TUNE_TEMPO_RANGE.max}; the score's own is used`, pair.token);
     else issues.warn('unknown-key', `"${key}" is not a property here; ignored`, pair.token);
   }
@@ -1666,6 +1669,7 @@ const TEXT_LIMIT: Readonly<Partial<Record<Verb, number>>> = {
   bind: LIMITS.line,
   code: LIMITS.text,
   tune: LIMITS.text,
+  app: LIMITS.text,
   screen: LIMITS.text,
   deck: LIMITS.text,
   standing: STANDING_LIMITS.chars,

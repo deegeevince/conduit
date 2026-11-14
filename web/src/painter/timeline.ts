@@ -22,6 +22,7 @@ import type { ControlSite } from './controls-stage';
 import { layoutCard } from './controls';
 import type { ControlLayout } from '../contracts/controls';
 import { lookOf, measurerFor, tuneStartOf } from './structures';
+import { appCues } from './apps';
 import { CALM } from '../contracts/controls';
 import { registerLaidOut, laidOutOf } from './registry';
 import { buildStructures, probeStructure, setTextOnce } from './structures';
@@ -61,6 +62,8 @@ export interface TimelineContext {
   readonly controls?: ControlRuntime;
   /** the charting engine this stage has, and the DATA that has come for it (live); absent: the stage has no charts and draws none */
   readonly charts?: { readonly kinds: readonly string[]; readonly data: ReadonlyMap<string, ChartData> };
+  /** this stage has a host that runs live apps: the frame names each app for it. Absent or false: an app is only its placeholder. */
+  readonly apps?: boolean;
 }
 
 export interface TimelineInstant {
@@ -685,10 +688,11 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
       kinds.set(element.key, chart ? 'chart' : 'structure');
       // what it would like, and the least it can be read at (a chart: its title, a few ticks and a plot; a table: its rows at the look's floor)
       const tune = figure.structure === 'tune';
+      const live = figure.structure === 'app';
       // a mock-up takes what the stage can give it: its screens are scaled together to the room
       const mockup = figure.structure === 'screen';
-      const natural = mockup ? { width: 1600, height: 900 } : tune ? { width: 760, height: 260 } : chart ? { width: 560, height: 320 } : table ? { width: Math.max(280, 150 * columns), height: 60 + 34 * figure.rows.length } : { width: 640, height: 120 + 40 * parts };
-      const least = mockup ? { width: 300, height: 300 } : tune ? { width: 260, height: 150 } : chart ? { width: 260, height: 190 } : table ? { width: Math.max(200, 100 * columns), height: 40 + 24 * figure.rows.length } : { width: 160, height: 100 };
+      const natural = mockup ? { width: 1600, height: 900 } : live ? { width: 960, height: figure.height ?? 480 } : tune ? { width: 760, height: 260 } : chart ? { width: 560, height: 320 } : table ? { width: Math.max(280, 150 * columns), height: 60 + 34 * figure.rows.length } : { width: 640, height: 120 + 40 * parts };
+      const least = mockup ? { width: 300, height: 300 } : live ? { width: 280, height: 220 } : tune ? { width: 260, height: 150 } : chart ? { width: 260, height: 190 } : table ? { width: Math.max(200, 100 * columns), height: 40 + 24 * figure.rows.length } : { width: 160, height: 100 };
       list.push({
         key: element.key,
         kind: chart ? 'chart' : 'structure',
@@ -2533,8 +2537,10 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
       }
     }
     const chartFrameList = context.charts === undefined ? undefined : chartFrames(schedule, tq, aq, drawLook, { viewport, reducedMotion, camera, kinds: context.charts.kinds, data: context.charts.data, scope: scopeOf([...cindex.ids], (id) => controlNamed(id, tq)), fitOf: (element) => fitOfElement(element, drawLook, tq), roomOf: (element) => roomEasedOf(element, tq) });
+    const appCueList = context.apps === true ? appCues(schedule, tq, drawLook, { viewport, camera, closed: instant.closed === true, fitOf: (element) => fitOfElement(element, drawLook, tq), roomOf: (element) => roomEasedOf(element, tq) }) : [];
     const frame: Frame = {
       ...(chartFrameList === undefined ? {} : { charts: chartFrameList }),
+      ...(appCueList.length === 0 ? {} : { apps: appCueList }),
       ...(tuneCues.length === 0 ? {} : { tunes: tuneCues }),
       time: instant.time,
       ambient: instant.ambient,

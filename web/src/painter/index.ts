@@ -11,6 +11,7 @@ import { NO_SIGHT } from '@conduit/language';
 import type { DataTable, ControlValue, ControlValues, PassState, Sight } from '@conduit/language';
 import type { BackEvent, Capabilities, ClockState, ElementSpan, Issue, Line, Schedule, ScoreEntry, Services, StageBase, TurnEndReason, TurnInput, TurnReport } from '@conduit/language';
 import type { Recording } from '../contracts/film';
+import { noteArrivals as noteArrivalsInto } from './arrivals';
 import type { ElementFrame, Frame, Quality, ShapeFrame } from '../contracts/frame';
 import type { LookSpec } from '../contracts/look';
 import type { ControlView, LineView, Painter, PainterEvents, PainterOptions, PainterSnapshot } from '../contracts/painter';
@@ -27,7 +28,8 @@ import { bodySize, marginOf, screenFacts } from './layout/metrics';
 import { Reporter } from './report';
 import { annotated } from './annotate';
 import { placedOf, sightOf } from './sight';
-import { isScreenBlock, releaseUi, setUiPicture, tapUi, typeUi, typingUi, uiBlockAt, uiMockupViews } from './ui-stage';
+import { downUi, easeUi, easingUi, isScreenBlock, moveUi, setUiPicture, typeUi, typingUi, uiBlockAt, uiMockupViews, upUi } from './ui-stage';
+import type { UiSend } from './ui-stage';
 import { buildTimeline, settledAfter, settledEnd as settledEndOf } from './timeline';
 import type { Timeline, TimelineContext, TimelineInstant } from './timeline';
 
@@ -56,8 +58,29 @@ const GLYPH_HOLD_MS = 4000;
 const SKIP_FADE_SECONDS = 0.15;
 /** The longer side of a sketch or a snapshot sent to the server, in pixels. */
 const PICTURE_SIDE = 768;
-/** How many finished turns can still be recorded for export. */
-const KEPT_RECORDINGS = 8;
+/** How long a picture of the stage waits for each live app to draw itself first, ms. */
+const APP_PICTURE_MS = 1500;
+/** How many finished turns can still be recorded for export: a conversation of this many turns can be saved whole. */
+const KEPT_RECORDINGS = 64;
+
+/** What the viewer did to open a turn, in a few words: the title of its card in a saved conversation. */
+function askedOf(input: TurnInput): string {
+  const words = (text: string): string => text.replace(/\s+/g, ' ').trim().slice(0, 200);
+  switch (input.kind) {
+    case 'prompt':
+      return words(input.text);
+    case 'tap':
+      return `Tapped "${words(input.text)}"`;
+    case 'act':
+      return `Used "${words(input.text)}"`;
+    case 'demo':
+      return `Played the demo ${words(input.script)}`;
+    case 'script':
+      return 'Played a pasted script';
+    case 'refine':
+      return 'Kept making it better';
+  }
+}
 
 interface Turn {
   readonly id: string;
@@ -244,13 +267,7 @@ export function createPainter(options: PainterOptions): Painter {
 
   /** playhead seconds at which each part of a structure (and each row) was heard: what its layout epochs begin at */
   const arrivals = new Map<string, number>();
-  const noteArrivals = (schedule: Schedule, at: number): void => {
-    for (const element of schedule.elements) {
-      if (element.kind !== 'structure' && element.kind !== 'node' && element.kind !== 'link') continue;
-      if (!element.carried && !arrivals.has(element.key)) arrivals.set(element.key, at);
-      if (element.figure?.kind === 'structure') element.figure.rows.forEach((_, i) => arrivals.has(`${element.key}#r${i}`) || arrivals.set(`${element.key}#r${i}`, at));
-    }
-  };
+  const noteArrivals = (schedule: Schedule, at: number): void => noteArrivalsInto(arrivals, schedule, at);
   // What the user's hand holds: one store, the moods the pointer and keyboard give, and how far each bound change has eased.
   const store = createControlStore();
   const runtime = createRuntime(store);
@@ -298,10 +315,12 @@ export function createPainter(options: PainterOptions): Painter {
   const host = options.charts ?? null;
   /** where the music is made, when this stage can make it */
   const player = options.tunes ?? null;
+  /** where live apps run, when this stage can run them */
+  const appHost = options.apps ?? null;
   /** what has come of the data charts asked for by reference */
   const chartData = new Map<string, ChartData>();
   const chartKinds = host === null ? [] : CHARTS_READY.filter((kind) => host.kinds.includes(kind));
-  const timelineContext = (): TimelineContext => ({ viewport, reducedMotion, lockLook, paintings, onFault: noteFault, arrivals, controls: runtime, ...(host === null || chartKinds.length === 0 ? {} : { charts: { kinds: chartKinds, data: chartData } }) });
+  const timelineContext = (): TimelineContext => ({ viewport, reducedMotion, lockLook, paintings, onFault: noteFault, arrivals, controls: runtime, ...(host === null || chartKinds.length === 0 ? {} : { charts: { kinds: chartKinds, data: chartData } }), ...(appHost === null ? {} : { apps: true }) });
 
   const photoAspects = new Map<string, number>();
   /** The width over the height of the picture at `url`, once the browser has read it. */
@@ -397,7 +416,7 @@ export function createPainter(options: PainterOptions): Painter {
       sight: caps.capture ? 'snapshot' : 'report',
       // Series 4. Each list is what is really built: the structure and control engines say what they lay out, the renderer what it
       // paints. The brain is taught exactly these, so nothing here may be switched on ahead of the code that performs it.
-      structures: FULL_CAPABILITIES.structures.filter((kind) => (kind === 'chart' ? chartKinds.length > 0 : STRUCTURES_READY.includes(kind))),
+      structures: FULL_CAPABILITIES.structures.filter((kind) => (kind === 'chart' ? chartKinds.length > 0 : kind === 'app' ? appHost !== null : STRUCTURES_READY.includes(kind))),
       charts: FULL_CAPABILITIES.charts.filter((kind) => chartKinds.includes(kind)),
       controls: FULL_CAPABILITIES.controls.filter((kind) => CONTROLS_READY.includes(kind)),
       media: FULL_CAPABILITIES.media.filter((medium) => caps.media.includes(medium)),
@@ -553,16 +572,22 @@ export function createPainter(options: PainterOptions): Painter {
   };
 
   /** a chart draws itself in a surface of its own: a picture of the stage takes the engine's still of it */
-  const stills = (frame?: Frame): { chartStill?: (key: string) => HTMLCanvasElement | null } =>
-    host === null
+  const stills = (frame?: Frame): { chartStill?: (key: string) => HTMLCanvasElement | null; appStill?: (key: string) => CanvasImageSource | null } => ({
+    ...(host === null
       ? {}
       : {
-          chartStill: (key) => {
+          chartStill: (key: string) => {
             // a frame computed ahead of the playhead (a draft, a snapshot) has charts the stage has not mounted yet: draw them off screen
             const chart = frame?.charts?.find((candidate) => candidate.key === key);
             return (chart === undefined ? null : host.stillOf(chart)) ?? host.still(key);
           },
-        };
+        }),
+    // a live app runs in a frame over the stage: a picture of the stage takes the app's own picture of itself
+    ...(appHost === null ? {} : { appStill: (key: string) => appHost.still(key) }),
+  });
+
+  /** what a picture of the stage waits for first: each running app drawing itself as it stands (a moment, no more) */
+  const appsFresh = (): Promise<void> => (appHost === null ? Promise.resolve() : appHost.refresh(APP_PICTURE_MS).catch(() => undefined));
 
   const wantsSnapshot = (): boolean => renderer.capabilities.capture && services.sight === 'snapshot';
 
@@ -655,8 +680,8 @@ export function createPainter(options: PainterOptions): Painter {
     // A resting stage has no arrivals: everything on it is there. The turn's own (an interrupted turn is still settling) must not be read.
     const rest = buildTimeline(restSchedule(stage), stage, { ...timelineContext(), arrivals: new Map() });
     const frame: Frame = { ...rest.frameAt({ time: 0, ambient: 3, wallTime: pinnedWallTime(3), clock: 'paused' }), camera: REST_POSE };
-    void renderer
-      .rasterise(frame, { maxSide: PICTURE_SIDE, mime: 'image/jpeg', quality: 0.8, ...stills(frame) })
+    void appsFresh()
+      .then(() => renderer.rasterise(frame, { maxSide: PICTURE_SIDE, mime: 'image/jpeg', quality: 0.8, ...stills(frame) }))
       .then((blob) => {
         if (blob !== null && !disposed) emit('upload', { kind: 'snapshot', turn: turnId, blob });
       })
@@ -778,13 +803,13 @@ export function createPainter(options: PainterOptions): Painter {
     const lines = closing.score.score
       // A bare `cancel` already voided what it cancelled; played again at time zero it would void everything before it.
       .filter((entry) => !entry.void && entry.line.verb !== 'cancel' && (seen.has(entry.seq) || ((entry.line.verb === 'row' || entry.line.verb === 'frame') && spriteIds.has(entry.line.id))))
-      .map((entry) => ({ seq: entry.seq, line: entry.line }));
+      .map((entry) => ({ seq: entry.seq, line: entry.line, floor: entry.floor }));
     const pictures: Record<string, string> = {};
     for (const element of schedule.elements) {
       const painting = paintings.get(element.key);
       if (element.figure?.kind === 'picture' && painting !== undefined && painting.status === 'ready' && painting.url !== null) pictures[element.key] = painting.url;
     }
-    recordings.set(closing.id, { turn: closing.id, base: closing.base, lines, paintings: pictures, aspects: Object.fromEntries(photoAspects) });
+    recordings.set(closing.id, { turn: closing.id, base: closing.base, lines, paintings: pictures, aspects: Object.fromEntries(photoAspects), opened: closing.input.kind, asked: askedOf(closing.input) });
     lastRecorded = closing.id;
     for (const id of [...recordings.keys()]) {
       if (recordings.size <= KEPT_RECORDINGS) break;
@@ -841,6 +866,7 @@ export function createPainter(options: PainterOptions): Painter {
       if (frame.spec !== lastReadySpec && !reset) sendReady(frame.spec);
       if (reset) renderer.reset();
       if (host !== null) host.sync(frame.charts ?? [], viewport.dpr);
+      if (appHost !== null && !reset) appHost.sync(frame.apps ?? [], viewport.dpr);
       // the music follows the stage: begun when a tune is whole, held while the stage is paused or hidden, let go when its tune has left
       if (player !== null && !reset) player.sync(frame.tunes ?? [], { aq: reading.ambient, running: reading.state !== 'paused' && !reading.hidden });
       lastFrame = frame;
@@ -912,6 +938,8 @@ export function createPainter(options: PainterOptions): Painter {
     lastFrameAt = now;
     let reading = clock.advance(elapsed, horizon());
     promoteArrivals(reading);
+    // a knob of a mock-up easing home: the stage is made again with it a little nearer, every frame, until it rests
+    if (easingUi() && easeUi(now, reducedMotion)) refreshTimeline();
     const renderMs = draw(reading, false);
     const drawn = renderer.isDrawable();
     if (drawn || turn === null) {
@@ -1103,6 +1131,13 @@ export function createPainter(options: PainterOptions): Painter {
     store.set(site.key, value);
     refreshEases(false);
     if (timeline.reactive) refreshTimeline();
+  };
+  /** the finger that is on a mock-up, and the block it came down on */
+  let uiGrab: { readonly pointer: number; readonly block: string } | null = null;
+  /** A button of a mock-up was pressed and it is for the brain: said as a control is, with what every live part of its screen holds. */
+  const sayPress = (press: UiSend): void => {
+    const reading = clock.read();
+    emitBack({ type: 'control', turn: turn === null ? null : turn.id, id: press.id, value: true, text: press.text, playhead: reading.playhead, send: true, screen: press.screen, values: press.values });
   };
   let grab: { readonly pointer: number; readonly key: string; readonly zone: string; readonly from: ControlValue | null } | null = null;
   let pressedZone: { readonly pointer: number; readonly key: string; readonly zone: string } | null = null;
@@ -1397,6 +1432,14 @@ export function createPainter(options: PainterOptions): Painter {
         return false;
       }
       if (phase === 'move') {
+        if (uiGrab !== null && uiGrab.pointer === input.pointer) {
+          // a switch or slider of a mock-up follows the finger in the same frame
+          if (moveUi(uiGrab.block, x - viewport.width / 2, y - viewport.height / 2, input.pointer)) {
+            refreshTimeline();
+            drawNow();
+          }
+          return true;
+        }
         if (grab !== null && grab.pointer === input.pointer) {
           const site = sitesNow().find((candidate) => candidate.key === grab?.key);
           const zone = site?.layout.zones.find((candidate) => candidate.part === grab?.zone);
@@ -1416,15 +1459,14 @@ export function createPainter(options: PainterOptions): Painter {
           const sx = x - viewport.width / 2;
           const sy = y - viewport.height / 2;
           const block = uiBlockAt(blocks, sx, sy);
-          if (block !== null && tapUi(block, sx, sy)) {
-            refreshTimeline();
-            drawNow();
-            // a press lets go a moment after it
-            setTimeout(() => {
-              if (disposed || !releaseUi(block)) return;
+          const touched = block === null ? null : downUi(block, sx, sy, input.pointer);
+          if (block !== null && touched !== null && touched.taken) {
+            // the rest of this gesture is the mock-up's: a held switch or slider, a button that acts when the finger lets go
+            uiGrab = { pointer: input.pointer, block };
+            if (touched.changed) {
               refreshTimeline();
               drawNow();
-            }, 160);
+            }
             return true;
           }
         }
@@ -1448,6 +1490,17 @@ export function createPainter(options: PainterOptions): Painter {
         return true;
       }
       // up, cancel
+      if (uiGrab !== null && uiGrab.pointer === input.pointer) {
+        const held = uiGrab;
+        uiGrab = null;
+        const done = upUi(held.block, input.pointer, phase === 'cancel', x - viewport.width / 2, y - viewport.height / 2);
+        if (done.changed) {
+          refreshTimeline();
+          drawNow();
+        }
+        if (done.send !== undefined) sayPress(done.send);
+        return true;
+      }
       if (grab !== null && grab.pointer === input.pointer) {
         const done = grab;
         grab = null;
@@ -1505,7 +1558,7 @@ export function createPainter(options: PainterOptions): Painter {
       const host = (b: { readonly x: number; readonly y: number; readonly width: number; readonly height: number }): Box => ({ x: b.x + dx, y: b.y + dy, width: b.width, height: b.height });
       return uiMockupViews(blocks).map((view) => ({
         screen: view.screen,
-        hits: view.hits.map((hit) => ({ id: hit.id, part: hit.part, action: hit.action, box: host(hit) })),
+        hits: view.hits.map((hit) => ({ id: hit.id, part: hit.part, action: hit.action, box: host(hit), ...(hit.send === true ? { send: true } : {}), ...(hit.to === undefined ? {} : { to: hit.to }) })),
         words: view.words.map((word) => ({ owner: word.owner, text: word.text, box: host(word) })),
         notes: view.notes,
       }));
@@ -1588,6 +1641,10 @@ export function createPainter(options: PainterOptions): Painter {
       if (lastFrame !== null) fading = { from: lastFrame, startedAt: performance.now() };
       clock.jump(settledEnd());
       observe(clock.read());
+    },
+
+    recordings() {
+      return [...recordings.values()].map((found) => (latePaintings.size === 0 ? found : { ...found, paintings: { ...Object.fromEntries(latePaintings), ...found.paintings } }));
     },
 
     recording(id) {

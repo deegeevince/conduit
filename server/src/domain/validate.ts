@@ -249,7 +249,8 @@ export function parseTurnInput(body: unknown): TurnInput {
   const input = obj(obj(body, 'body').input, 'input');
   const kind = oneOf(input.kind, ['prompt', 'tap', 'demo', 'script', 'act'] as const, 'input.kind');
   if (kind === 'act') {
-    return { kind, id: text(input.id, 'input.id').slice(0, LIMITS.name), text: text(input.text, 'input.text').slice(0, CONTROL_TEXT_CHARS), values: controlValues(input.values ?? {}, 'input.values'), ...optionalSeen(input.seen, 'input.seen') };
+    const screenId = input.screen === undefined || input.screen === null ? '' : text(input.screen, 'input.screen').slice(0, LIMITS.name);
+    return { kind, id: text(input.id, 'input.id').slice(0, LIMITS.name), text: text(input.text, 'input.text').slice(0, CONTROL_TEXT_CHARS), values: controlValues(input.values ?? {}, 'input.values'), ...(screenId === '' ? {} : { screen: screenId }), ...optionalSeen(input.seen, 'input.seen') };
   }
   if (kind === 'script') {
     const source = text(input.text, 'input.text');
@@ -470,6 +471,9 @@ function backEvent(value: unknown, index: number): BackEvent {
         playhead: num(raw.playhead, 'playhead'),
         send: bool(raw.send, 'send'),
         ...optionalSeen(raw.seen, 'seen'),
+        ...(raw.app === true && { app: true as const }),
+        ...(raw.screen === undefined || raw.screen === null ? {} : { screen: text(raw.screen, 'screen').slice(0, LIMITS.name) }),
+        ...(raw.values === undefined || raw.values === null ? {} : { values: controlValues(raw.values, 'values') }),
       };
     case 'draft': {
       const placed = placedBoxes(raw.placed);

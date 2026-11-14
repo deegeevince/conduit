@@ -215,6 +215,7 @@ export function serializeLine(line: Line): string {
     case 'chart':
     case 'code':
     case 'tune':
+    case 'app':
     case 'screen': {
       const head: string[] = [line.verb, line.id];
       if (line.grow !== undefined) head.push(line.grow);
@@ -224,6 +225,7 @@ export function serializeLine(line: Line): string {
       if (line.bars === true) head.push('bars');
       if (line.voice !== undefined) head.push(line.voice);
       if (line.tempo !== undefined) head.push(`tempo=${line.tempo}`);
+      if (line.height !== undefined) head.push(`height=${line.height}`);
       if (line.lang !== undefined) head.push((CODE_LANGUAGES as readonly string[]).includes(line.lang) ? line.lang : `lang=${line.lang}`);
       head.push(...boxTokens(line.box), ...line.styles);
       if (line.file !== undefined) head.push(`file=${line.file}`);
