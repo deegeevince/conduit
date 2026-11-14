@@ -21,10 +21,10 @@ import { DOCUMENT_TEXT_CHARS, PASTE_AS_DOCUMENT_CHARS, STANDING_LIMITS, TECHNIQU
 import type { BriefForm, DocumentFacts, LineProblem, TechniqueCard, TurnContext, TurnMemory } from './context';
 
 export type { BriefForm };
-import { asksForLiveApp } from './app';
+import { asksForLearnerProblem, asksForLiveApp } from './app';
 import { FIGURE_CHAPTER, asksForFigure } from './figure';
 import { INTERFACE_CHAPTER } from './interface';
-import { DOCUMENT_CHAPTER, carriesDocument, documentBlocks, usesParts } from './teach';
+import { DOCUMENT_CHAPTER, carriesDocument, documentBlocks, hasLesson, usesParts } from './teach';
 import { inkBrief } from './ink';
 import { describeSight } from './sight';
 import { BUILTIN_STYLES } from './style';
@@ -556,7 +556,7 @@ Never talk about the stage, the medium or what you will do. Answer the question.
 - Expressive asks (a story, a mood, a thing to look at): commit. One bold idea, big, in layers, with motion and a wait before the line that matters.
 - Be right before pretty. Every part your words name is drawn; parts that connect touch; the subject ends whole inside the picture and fills it. Words stay inside their boxes.
 - A follow-up about what is on stage continues it; never write again what is there. \`scene\` is only for a new subject (a new problem is one: its own drawing, never the last one's, one stepper at most). A lesson's steps stack up, not captions.
-- A problem for a person or child to solve (a sum, a puzzle): the question alone first, with a way to answer (\`ask\`), and they try first; no working, no intermediate answer, no stepper through the solution. Help only on a tap, as hints that ask back (what do we know? what is asked?). Choices to a learner never hold the answer: name the next action ("I think I know").
+- A problem for a person or child to solve: a young learner does it with their hands, a small live \`app\` (drag to share, tap to count, build the groups) that notices what they did and asks for the answer at the end; one or two short lines of words beside it. Others get the question alone first with an \`ask\`, and help only on a tap as hints that ask back. Never working or an intermediate answer; arrows and steppers only explain how something works, never walk a solution. Choices to a learner never hold the answer ("I think I know").
 - Match the level asked or implied. A young learner (under 10, "my kid", "like I'm 7"): plain words, one small idea a step, the question shown; no letters for numbers or \`*\`/\`x\` signs before they are explained; count on the picture; words at size m or larger.
 - What the user says to hold from now on ("only visuals", "always brief"): record it once, \`standing | their words\`, and keep it on every later turn, answers about yourself or this app too.
 - Lines of one role (narration, steps, list items) share one style and size; only the one that matters differs. A demo with invented numbers says so ("a sketch", "example figures").
@@ -629,7 +629,7 @@ A brief may carry TECHNIQUES (recipes that worked): use what fits, never copy th
 
 # This screen
 
-Each turn's brief begins with SCREEN: what fits on a line and on the stage at each size, the canvas that suits the screen, the look, the scene. Outside \`layout=page\`: one idea a line, a handful of words. At most ${LIMITS.text} characters a line.
+Each turn's brief begins with SCREEN: what fits on a line and the stage at each size. Outside \`layout=page\`: one idea a line, a handful of words. At most ${LIMITS.text} characters a line.
 
 # Output
 
@@ -936,14 +936,14 @@ say | Ode to Joy, in C.`;
  * sandbox is and is not, the look's variables, the bridge, and a small complete example.
  */
 export const APP_CHAPTER = `A LIVE APP (the user wants something that WORKS, not a picture of one): \`app [id] [height=<n>] [uses=<shelf>] | <title>\`, then one \`| row\` per line of ONE HTML document, taken exactly: the body's content with an inline <style> and an inline <script>, no <html>, <head> or <body> tags. It runs for real in a locked sandbox on the stage and the user taps and types in it. Begin with a \`scene caption\` (a new subject, so the app stands alone), close the block with a \`say\` (the app starts when it is closed), and put nothing else on the stage: the app is the answer. Said again under its id, it is replaced: to change it, write the whole app again.
-CHOOSE IT only when the answer is something the person uses (an instrument, a tool, a working page, a game); when they point at one (a link, a picture) and ask to make, replicate or recreate it, the first answer is the thing itself, live, called a homage or sketch in its own words, never a picture of it with a stepper; if it is something to understand, draw, stage or chart it with the stage's own kinds (sliders bound to a chart or a diagram, steppers, a table).
+CHOOSE IT when the answer is something the person uses or plays (an instrument, a tool, a working page, a game): a game is always an app, never sliders and picks on a drawing; when they point at one (a link, a picture) and ask to make, replicate or recreate it, the first answer is the thing itself, live, called a homage or sketch in its own words, never a picture of it with a stepper; if it is something to understand, draw, stage or chart it with the stage's own kinds (sliders bound to a chart or a diagram, steppers, a table).
 THE SANDBOX: no network at all (no fetch, no external script, font, image or link), no cookies, no localStorage, no forms, popups, modals or navigation, no eval or new Function (a calculator parses its own sum). Everything is inline; pictures are inline SVG or data: URIs; sound is the Web Audio API (it starts on the first tap). It must work by itself on the first tap: real logic, real state, no placeholders, nothing "coming soon".
 THE SHELF (nothing can be fetched, so ask for a library instead of writing one): put \`uses=physics,sound,maths,charts,graphs\` (any of them) on the app line and each is already loaded, as a global. Without that word the global does not exist, so a Matter, Tone, katex or d3 in the code needs its word on the app line.
 - physics: matter.js, \`Matter\` (bodies, gravity, bounce, walls, mouse drag): a ball you throw, a pendulum, a stack. sound: Tone.js, \`Tone\` (synths, notes, scheduling; \`await Tone.start()\` in the first tap): a piano, a drum pad.
 - maths: KaTeX, \`katex.render(tex, element, {throwOnError:false})\`, its stylesheet already there: a formula that changes as the numbers do. charts and graphs: D3, \`d3\` (scales, axes, shapes, force layouts, drag, zoom): a chart of numbers, a network, a force-directed graph.
 - fonts: the stage's own faces, by name in font-family: Inter, Source Serif 4, Archivo Black, JetBrains Mono (400 and 700). Photos: \`const p = await conduit.picture('coffee beans roasting', { w: 800, h: 500 })\` (two or three plain nouns) is { url, credit } for an <img src>, or null (draw a placeholder). A real page shows real photos: ask for each hero and product picture this way, and draw a plain placeholder only when it is null. Always show p.credit small beside the photo; at most 4 a page. A picture may come back null or fail to load (set onerror on each <img>): then the page shows its drawn placeholder captioned "photo unavailable", never a broken image, and your words never say the photos are real or credited unless they arrived (say "photos where found").
 - Ask only for what it needs; a plain app asks for none. Draw into a canvas or an svg you make yourself.
-LOOK: the stage's own look comes as CSS variables, so the app matches it: var(--ink) text, var(--ground) background, var(--accent) and var(--alt) for actions and highlights, var(--dim) for quiet text, var(--font), var(--radius), var(--gap). The body already has them set; use them, never hard-code a colour or a font. Make it fill its room: size from window.innerWidth and innerHeight (never a fixed pixel height; it may be 280 to 1000 px wide), tap targets 44 px or more, all text 16 px or more, one clear thing to do. A card, fact or message never covers the play area's targets or titles: it sits in a strip below the play area or above the controls.
+LOOK: the stage's own look comes as CSS variables, so the app matches it: var(--ink) text, var(--ground) background, var(--accent) and var(--alt) for actions and highlights, var(--dim) for quiet text, var(--font), var(--radius), var(--gap). The body already has them set; use them, never hard-code a colour or a font. Make it fill its room: size from window.innerWidth and innerHeight (never a fixed pixel height; it may be 280 to 1000 px wide), tap targets 44 px or more, all text 16 px or more, one clear thing to do. A learner's problem is hands-on: they move, tap or count the things themselves, the app says "fair" or "not yet" from what they did, shows no answer at rest, asks the answer last with big buttons, and \`conduit.send\`s what they did; text and targets big enough for a thumb, the whole play area fitting a phone. A card, fact or message never covers the play area's targets or titles: it sits in a strip below the play area or above the controls.
 BRIDGE (a global \`conduit\`): \`conduit.send(name, value)\` tells the stage what the user did (you hear it on the next turn: "the user did X in the app"); \`conduit.ask(name, value)\` also asks you for a new answer now, so use it only when the user needs you ("finished", "more questions please"); \`conduit.state(obj)\` saves the app's state and \`conduit.state()\` returns it, so call it once at the start to restore and again after each change. A value is a short string, number or boolean.
 WHAT IT LOOKS LIKE: the look's variables are there for tools and widgets that should sit in the stage's style. A real webpage, a real app or anything asked to look real is styled as the real thing: its own palette, a proper type scale, a light page where that is natural, real spacing; never the stage's monospace or blueprint. Invent the brand: no real company's name, logo or colours. Alone, an app is the page: the whole stage, no frame, no caption; whatever it has to say it says itself, and the words you add go to the transcript.
 AT REST AND IN MOTION: it is never blank at rest: it opens already showing a meaningful state (played, filled, a result held), so a still picture of it says something.
@@ -1080,14 +1080,15 @@ export function buildTurnBrief(context: TurnContext, input: TurnInput, form: Bri
   // A live app is taught when the words ask for something that works, or when one is on stage to be changed; then it is the answer, and a tune or a mock-up is not also taught.
   const appOnStage = stage.elements.some((element) => element.figure?.kind === 'structure' && element.figure.structure === 'app');
   // (a technique that writes a document of parts, a recipe with a time on each step, is the answer to "walk me through it with a timer": the words of an app do not take over from it)
-  const liveApp = context.capabilities.structures.includes('app') && ((input.kind === 'prompt' && asksForLiveApp(input.text) && !usesParts(context.techniques)) || appOnStage);
+  const learnerApp = context.capabilities.structures.includes('app') && (input.kind === 'prompt' || input.kind === 'tap') && asksForLearnerProblem(input.text);
+  const liveApp = context.capabilities.structures.includes('app') && ((input.kind === 'prompt' && asksForLiveApp(input.text) && !usesParts(context.techniques)) || learnerApp || appOnStage);
   if (liveApp) parts.push(APP_CHAPTER.trimEnd());
   // `tune` is taught when the words are about music, or when a tune is already on stage to be changed; never in the system prompt, which is full.
   if (context.capabilities.structures.includes('tune') && (!liveApp || stage.elements.some((element) => element.figure?.kind === 'structure' && element.figure.structure === 'tune')) && (asksForMusic(input) || stage.elements.some((element) => element.figure?.kind === 'structure' && element.figure.structure === 'tune'))) parts.push(TUNE_CHAPTER);
   // A mock-up is taught when the words are about one, or when one is on stage to be changed; never in the system prompt, which is full.
   if (context.capabilities.structures.includes('screen') && (!liveApp || stage.elements.some((element) => element.figure?.kind === 'structure' && element.figure.structure === 'screen')) && (asksForInterface(input) || stage.elements.some((element) => element.figure?.kind === 'structure' && element.figure.structure === 'screen'))) parts.push(INTERFACE_CHAPTER);
   // The DOCUMENT chapter is carried while a document of parts exists, or when a technique the library chose writes one; never in the system prompt, which is full.
-  if (carriesDocument(context)) parts.push(DOCUMENT_CHAPTER);
+  if (carriesDocument(context) && !(learnerApp && !hasLesson(context))) parts.push(DOCUMENT_CHAPTER);
   // FG2: a labelled drawing is taught when the words ask for one, or while one is on stage to be changed; never in the system prompt.
   const figureOnStage = stage.elements.some((element) => element.figure?.kind === 'structure' && element.figure.structure === 'figure');
   if (context.capabilities.structures.includes('figure') && !liveApp && ((input.kind === 'prompt' && asksForFigure(input.text)) || figureOnStage)) parts.push(FIGURE_CHAPTER);
@@ -1206,7 +1207,7 @@ export function buildTurnBrief(context: TurnContext, input: TurnInput, form: Bri
     );
   }
 
-  const techniques = techniquesText(context.techniques ?? []);
+  const techniques = techniquesText(learnerApp ? (context.techniques ?? []).filter((card) => !usesParts([card])) : (context.techniques ?? []));
   if (techniques !== null) parts.push(techniques);
 
   if (input.kind === 'prompt' && (input.images?.length ?? 0) > 0) {

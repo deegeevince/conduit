@@ -649,7 +649,7 @@ async function runCheck(cx: Cx, spec: Spec): Promise<Res> {
     }
     case 'starts-new-scene': {
       const first = cx.answer.script.split('\n').find((l) => l.trim() !== '') ?? '';
-      return res(name, /^scene\b/.test(first) ? [] : [`the answer opens with "${first.slice(0, 40)}", not a scene: it continues the last drawing`], 'a new subject opens a scene');
+      return res(name, /^scene\b/.test(first) || (/^part\b/.test(first) && !/\bin=/.test(first)) ? [] : [`the answer opens with "${first.slice(0, 40)}", not a scene: it continues the last drawing`], 'a new subject opens a scene (or a top-level part)');
     }
     case 'last-scene-has-drawing': {
       // a tour ends on a scene that still shows something drawn (or a control), not on words and choices alone
@@ -657,6 +657,22 @@ async function runCheck(cx: Cx, spec: Spec): Promise<Res> {
       const last = scenes[scenes.length - 1] ?? '';
       const drawn = last.split('\n').filter((l) => /^(circle|ellipse|rect|line|poly|path|arc|chart|table|flow|tree|cycle|timeline|map|slider|toggle|pick|app|pix|screen|code|button)\b/.test(l.trim()));
       return res(name, scenes.length === 0 ? ['no scene'] : drawn.length === 0 ? ['the last scene holds words only, no drawing or control'] : [], `the last scene has ${drawn.length} drawn or control line(s)`);
+    }
+    case 'app-learner': {
+      // a learner's problem as a small live app: on stage, answers to pointers and touch, shows no answer at rest, and fits the screen
+      const rows = cx.answer.script.split('\n').filter((l) => l.startsWith('|')).map((l) => l.slice(1)).join('\n');
+      const frames = await cx.tab.eval<{ x: number; right: number; height: number }[]>(`[...document.querySelectorAll('iframe')].map((f) => { const r = f.getBoundingClientRect(); return { x: r.left, right: r.right, height: r.height }; }).filter((r) => r.height > 50)`);
+      const bad: string[] = [];
+      if (frames.length === 0 || rows.trim() === '') return { check: name, verdict: 'FAIL', detail: 'no live app on stage' };
+      if (!/(pointerdown|touchstart|mousedown|onclick|onpointer|addEventListener\(\s*['"](?:click|pointer|touch|mouse))/.test(rows)) bad.push('the app has no pointer or touch handlers');
+      if (/(pointermove|mousemove)/.test(rows) && !/(touch-action|touchmove)/.test(rows)) bad.push('the app drags with the pointer but is not set up for touch (touch-action)');
+      const visible = rows.replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]*>/g, ' ');
+      const said = cx.answer.script.split('\n').filter((l) => /^say\b/.test(l)).map((l) => l.split('|').slice(1).join('|')).join('\n');
+      const leak = /=\s*\d|\b(?:each|every)\b[^.\n]{0,25}\bgets?\s+\d|\bthe answer is\b/i.exec(`${visible}\n${said}`);
+      if (leak !== null) bad.push(`an answer or a working shows at rest: "${leak[0]}"`);
+      if (frames.some((f) => f.x < -1 || f.right > cx.screen.width + 1)) bad.push('the app does not fit the screen width');
+      if (cx.answer.script.split('\n').some((l) => /^pick\b[^|]*\bsteps\b/.test(l))) bad.push('a stepper is on stage beside the app');
+      return res(name, bad, 'a live app with pointer or touch handlers, fitting, no answer at rest');
     }
     case 'is-app': {
       const frames = await cx.tab.eval<number>(`[...document.querySelectorAll('iframe')].filter((f) => f.getBoundingClientRect().height > 50).length`);

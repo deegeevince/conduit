@@ -33,11 +33,19 @@
      "k": "starts-new-scene"
     },
     {
-     "k": "one-stepper",
-     "max": 0
+     "k": "any",
+     "of": [
+      {
+       "k": "ask-first"
+      },
+      {
+       "k": "app-learner"
+      }
+     ]
     },
     {
-     "k": "ask-first"
+     "k": "one-stepper",
+     "max": 0
     }
    ]
   }

@@ -20,7 +20,15 @@
    },
    "check": [
     {
-     "k": "ask-first"
+     "k": "any",
+     "of": [
+      {
+       "k": "ask-first"
+      },
+      {
+       "k": "app-learner"
+      }
+     ]
     },
     {
      "k": "one-stepper",
