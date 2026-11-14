@@ -2,8 +2,8 @@
 // inputs to the server's dev route and compares what comes back; it also probes the loaded font faces against the advance tables.
 // Dev only: the route it posts to answers only with ENGINE_DEV=1.
 
-import { ENGINE_VERSION, measureStage, scoreOfCase } from '../engine';
-import type { EngineCase, EngineView, StageFacts } from '../engine';
+import { ENGINE_VERSION, measureStage, planWall, scoreOfCase, wallNodesOfTurns } from '../engine';
+import type { EngineCase, EngineView, StageFacts, WallNode, WallPlan, WallShape, WallTurn } from '../engine';
 import { FACES } from '../fonts/faces';
 import { GLYPHS } from '../fonts/glyphs';
 import { FONTS } from '../fonts';
@@ -176,6 +176,36 @@ async function planted(ids: readonly string[], screen: Screen, look: LookId): Pr
   return { found: differing > 0, differing, of: ids.length };
 }
 
+// ---------------------------------------------------------------------------------------------------------------------------------
+// The wall (WL1): the page plans, the server plans, and the two plans must be equal, tile for tile.
+
+export interface WallCase {
+  readonly id: string;
+  readonly shape: WallShape;
+  readonly nodes?: readonly WallNode[];
+  readonly turns?: readonly WallTurn[];
+}
+
+/** The plans of these cases on the page and on the server. `plant` changes one node's lane on the page's side only (a wrong read of the same input). */
+async function wall(cases: readonly WallCase[], plant: boolean): Promise<{ of: number; equal: number; different: string[]; digests: number }> {
+  const response = await fetch('/api/engine/wall', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ cases }) });
+  if (!response.ok) throw new Error(`the wall route answered ${response.status}: ${(await response.text()).slice(0, 200)}`);
+  const served = new Map(((await response.json()) as { plans: { id: string; plan: WallPlan }[] }).plans.map((p) => [p.id, p.plan]));
+  let equal = 0;
+  let digests = 0;
+  const different: string[] = [];
+  for (const item of cases) {
+    let nodes = item.nodes ?? wallNodesOfTurns(item.turns ?? []);
+    if (plant && nodes.length > 1) nodes = nodes.map((node, i) => (i === nodes.length - 1 ? { ...node, lane: node.lane === null ? (nodes[0]?.id ?? null) : null } : node));
+    const mine = planWall(nodes, item.shape);
+    const theirs = served.get(item.id);
+    if (theirs !== undefined && theirs.digest === mine.digest) digests += 1;
+    if (theirs !== undefined && JSON.stringify(theirs) === JSON.stringify(mine)) equal += 1;
+    else different.push(item.id);
+  }
+  return { of: cases.length, equal, different: different.slice(0, 10), digests };
+}
+
 (window as unknown as { __parity: unknown }).__parity = {
   ready: true,
   version: ENGINE_VERSION,
@@ -187,4 +217,5 @@ async function planted(ids: readonly string[], screen: Screen, look: LookId): Pr
   timing: timed,
   probe,
   planted,
+  wall,
 };

@@ -57,6 +57,8 @@ export default defineConfig({
         ...optional('bench-lesson', 'bench-lesson.html'),
         ...optional('taste', 'taste.html'),
         ...optional('bench-ink', 'bench-ink.html'),
+        ...optional('bench-wall', 'bench-wall.html'),
+        ...optional('bench-wall-hands', 'bench-wall-hands.html'),
       },
     },
   },
