@@ -69,7 +69,7 @@ export interface LayoutInput {
    */
   /** v2.1: drawn things on the reading plane (stage units) that words given a point must stand clear of: an outline, a drawing, a structure the brain boxed */
   /** `ground`: a filled card, which words may stand wholly inside (a label on a card) but not across the edge of */
-  readonly obstacles?: readonly (Box & { readonly ground?: boolean })[];
+  readonly obstacles?: readonly (Box & { readonly ground?: boolean; /** a drawn shape: words pinned wholly inside it are in it, not in its way */ readonly shape?: boolean })[];
   readonly pins?: ReadonlyMap<string, { readonly x: number; readonly y: number; /** how much of its size the word keeps because the picture it stands on was made smaller (the stage plan gave the picture less room than the whole stage): 0..1, absent is 1 */ readonly k?: number }>;
   /**
    * The column each line without `at=left|right` belongs to in a `split` scene, decided once over every line of the scene, so a line keeps its
@@ -1001,19 +1001,23 @@ function arrangeLoose(
         };
         // a card the word lies wholly inside is its ground, not in its way
         // (a drawn box the word lies wholly inside is its container too, filled or not: a cell of a hand-drawn grid, a label in an outline. It is never what the word leaves.)
-        const inside = (o: Box & { readonly ground?: boolean }): boolean => wanted.x >= o.x && wanted.y >= o.y && wanted.x + size.width <= o.x + o.width && wanted.y + size.height <= o.y + o.height;
-        // what is drawn inside that container (a grid's own rules) is part of it, not in the word's way
+        const inside = (o: Box & { readonly ground?: boolean; readonly shape?: boolean }): boolean => (o.ground === true || o.shape === true) && wanted.x >= o.x && wanted.y >= o.y && wanted.x + size.width <= o.x + o.width && wanted.y + size.height <= o.y + o.height;
+        // the rules drawn inside that container (a grid's lines) are part of it, not in the word's way; a button or a card inside it still is
         const containers = solids.filter(inside);
         const within = (o: Box, c: Box): boolean => o.x >= c.x - EPS && o.y >= c.y - EPS && o.x + o.width <= c.x + c.width + EPS && o.y + o.height <= c.y + c.height + EPS;
-        const avoid = [...text, ...taken, ...across, ...solids.filter((o) => !inside(o) && !containers.some((c) => c !== o && within(o, c)))];
+        const avoid = [...text, ...taken, ...across, ...solids.filter((o) => !inside(o) && !(Math.min(o.width, o.height) <= step.y && containers.some((c) => c !== o && within(o, c))))];
         // words pinned side by side inside one container (a grid's cells) are as close as their points say; the gap between lines of flowing words is not theirs
         const found = nearestClear(wanted, size, frame, avoid, containers.length > 0 ? 0 : pad, { x: step.x, y: step.y / 2 });
         if (found === null) continue;
         const position = snapInside(found, size, frame, ctx);
         const moved = Math.hypot(position.x - wanted.x, position.y - wanted.y);
         // never moved further than its own width: a word that would have to leave its place stays where it was told, at this size, and sight reports the overlap
-        const kept_ = moved > size.width ? snapInside(wanted, size, frame, ctx) : position;
-        if (best === null || moved < best.moved - EPS) best = { loose, position: kept_, moved: Math.min(moved, size.width) };
+        // (and a word that has a container is never moved out of it; a word with none moves as it always did)
+        const smallest = containers.reduce<Box | null>((least, c) => (least === null || c.width * c.height < least.width * least.height ? c : least), null);
+        const leaves = smallest !== null && !within({ x: position.x, y: position.y, width: size.width, height: size.height }, smallest);
+        const stays = smallest !== null && (leaves || moved > size.width);
+        const kept_ = stays ? snapInside(wanted, size, frame, ctx) : position;
+        if (best === null || moved < best.moved - EPS) best = { loose, position: kept_, moved: stays ? 0 : moved };
         if (moved <= reach) break;
       }
       if (best === null) {

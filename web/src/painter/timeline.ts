@@ -926,7 +926,7 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
     }
     // drawn things that words given a point keep clear of: the outlines and drawings on the canvas (a filled card, or a shape that fills most of
     // the picture, is a ground the words are meant to stand on) and the boxes the brain gave structures
-    const solids: (Box & { ground?: boolean })[] = [];
+    const solids: (Box & { ground?: boolean; shape?: boolean })[] = [];
     for (const element of drawn) {
       if (!element.carried && (element.enter === null || element.enter.start > start)) continue;
       const gone = exitOf(element);
@@ -947,7 +947,7 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
       const ground = element.style.fill !== undefined && element.style.fill !== 'none';
       const at = canvasBoxOf(element, schedule, Math.max(start, element.enter?.end ?? 0));
       if (at === null || at.w * at.h > 0.6 * CANVAS[scene.canvas].width * CANVAS[scene.canvas].height) continue;
-      solids.push({ x: fit.box.x + at.x * fit.unit, y: fit.box.y + at.y * fit.unit, width: Math.max(1, at.w * fit.unit), height: Math.max(1, at.h * fit.unit), ...(ground ? { ground } : {}) });
+      solids.push({ x: fit.box.x + at.x * fit.unit, y: fit.box.y + at.y * fit.unit, width: Math.max(1, at.w * fit.unit), height: Math.max(1, at.h * fit.unit), shape: true, ...(ground ? { ground } : {}) });
     }
     const arrangement = arrange({
       viewport,
