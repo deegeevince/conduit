@@ -156,6 +156,10 @@ export interface CalloutInput {
     readonly target: Box | { readonly x: number; readonly y: number };
     /** the side the brain asked for, or `auto` */
     readonly side: 'auto' | 'above' | 'below' | 'left' | 'right';
+    /** v2.1: the target's own outline, in stage units, when it has one: the leader ends on the edge of the shape, not of its box */
+    readonly outline?: Polyline;
+    /** v2.1: the target is a filled shape, so a leader may end inside it; a bare outline is touched at its edge */
+    readonly filled?: boolean;
   }[];
   /** the box of the drawing the labels are about: labels go round it, not on it */
   readonly figure: Box;
