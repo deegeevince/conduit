@@ -42,7 +42,6 @@ Both ports are strict: if one is taken the process fails instead of picking anot
 | `pnpm explore [flags]` | runs the exploration battery (see "The exploration battery") |
 | `pnpm docs:language` | regenerates the reference section of `docs/language.md` from the code |
 | `pnpm --filter @conduit/web fonts` | rebuilds the processed font files in `web/src/fonts` (needs Node 22.6 or later) |
-| `pnpm --filter @conduit/server exec tsx src/tools/image-stand-in.ts [--port 4390] [--delay SECONDS] [--fail] [--refuse]` | a local stand-in for the OpenAI Images API, so paintings can be tried with no key and no spend |
 
 One brain at a time. To switch brains, stop the server and start it with another `BRAIN`; for a single run you can set it inline: `BRAIN=replay pnpm dev`.
 
@@ -79,20 +78,7 @@ Only the selected brain's settings are read.
 | `CLAUDE_IDLE_TIMEOUT_MS` | no | `30000` | give up if the model goes quiet for this long mid-answer |
 | `RELAY_IDLE_TIMEOUT_MS` | no | `180000` | a claimed turn that receives no lines for this long fails |
 | `REPLAY_SCRIPT` | no | none | with `BRAIN=replay`, the script every prompt plays. Unset: a prompt that is a demo's name plays that demo, anything else plays `overture`. |
-| `IMAGE_MODEL` | no | `none` | `none`, or `openai` for paintings. A `paint` line without one leaves its sketch and nothing else. |
-| `OPENAI_API_KEY` | with `IMAGE_MODEL=openai` | none | costs money per picture |
-| `OPENAI_BASE_URL` | no | `https://api.openai.com` | point at the stand-in: `http://127.0.0.1:4390` |
-| `OPENAI_IMAGE_MODEL`, `IMAGE_QUALITY`, `IMAGE_TIMEOUT_MS`, `IMAGE_MAX_PER_SESSION` | no | `gpt-image-1`, `low`, `90000`, `12` | |
 | `NODE_ENV` | no | | `production` makes the server serve `web/dist` (`pnpm start` sets it) |
-
-The OpenAI adapter has never been run against the real service (the owner has not approved spend). Use the stand-in:
-
-```sh
-pnpm --filter @conduit/server exec tsx src/tools/image-stand-in.ts &
-IMAGE_MODEL=openai OPENAI_API_KEY=stand-in OPENAI_BASE_URL=http://127.0.0.1:4390 BRAIN=replay pnpm dev
-```
-
-then ask the replay brain for `overture` (the first load plays it): the sketch under the painting is uploaded and the picture grows over it.
 
 ## Pages
 
@@ -308,6 +294,6 @@ await __stage.chart('x2', { hover: 3 })   // (v2) or { zoom: 2 }, { pan: 1 }, { 
 | `clock` is `waiting` for a long time with `BRAIN=relay` | nobody has claimed the prompt. `curl -s -X POST 'localhost:4300/api/relay/next'` |
 | `brain_failed … CLAUDE_BIN` | Claude Code is not installed or not on the PATH. |
 | the brain is slow to start writing | `pnpm sessions <file>` shows thinking tokens per turn; they should be zero. Check `BRAIN_EFFORT`. |
-| a painting never arrives | `paint` is off without `IMAGE_MODEL`; the sketch stays by design. With the stand-in, check it is running on the port `OPENAI_BASE_URL` names. |
+| a painting never arrives | there is no image model: a `paint` line leaves its sketch, by design. |
 | `__stage.state().fault` is not null | a frame or an element threw and the painter dropped it and kept running; the text says what. A script that names a colour or style like a built-in word is the usual cause. |
 | the stage is plain text without paper or grain | WebGL2 was unavailable and the plain renderer took over; `__stage.state().renderer` says which is running. |
