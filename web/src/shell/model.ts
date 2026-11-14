@@ -1,6 +1,6 @@
 // What the shell holds: messages, and the few pure rules that turn a conversation into what the canvas plays. No DOM here.
 
-import type { ConversationTurn } from '@conduit/language';
+import type { ConversationTurn, TurnTrace } from '@conduit/language';
 
 export interface ReplyChoice {
   readonly text: string;
@@ -45,6 +45,10 @@ export interface ReplyMessage {
   readonly note: string | null;
   /** the resting picture: a data address for a reply made on this page, a route for a past one */
   readonly still: string | null;
+  /** how it was made: grown from the stage's events while it is made, the log's own once it is past */
+  readonly trace: TurnTrace | null;
+  /** ms the reply has been in the making, while it is (the trace holds the time it took once it has ended) */
+  readonly elapsedMs: number | null;
 }
 
 export type Message = UserMessage | ReplyMessage;
@@ -111,7 +115,7 @@ export function messagesOfTurn(turn: ConversationTurn): [UserMessage, ReplyMessa
       inked: turn.inked,
       quiet: turn.kind !== 'prompt',
     },
-    { role: 'reply', id: `r-${turn.turn}`, turn: turn.turn, reply: replyFromTurn(turn), state: failed ? 'failed' : turn.end === 'interrupted' ? 'stopped' : 'done', note, still: turn.still },
+    { role: 'reply', id: `r-${turn.turn}`, turn: turn.turn, reply: replyFromTurn(turn), state: failed ? 'failed' : turn.end === 'interrupted' ? 'stopped' : 'done', note, still: turn.still, trace: turn.trace ?? null, elapsedMs: null },
   ];
 }
 

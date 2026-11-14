@@ -4,7 +4,7 @@
 
 import { CONVERSATION_ID } from './ids';
 import { DEFAULT_LOOK } from '@conduit/language';
-import type { ConversationSummary, ConversationView } from '@conduit/language';
+import type { BrainChoice, ConversationSummary, ConversationView } from '@conduit/language';
 import { readParams } from '../app/params';
 import { mountStage } from '../app/stage-app';
 import type { StageApp, StageStatus } from '../app/stage-app';
@@ -98,6 +98,8 @@ type Active = { readonly kind: 'live' } | { readonly kind: 'past'; readonly id: 
 let active: Active = { kind: 'live' };
 let pastView: ConversationView | null = null;
 let summaries: readonly ConversationSummary[] = [];
+/** what the brain is set to, for the head of a reply's timeline (the log has its own for past ones) */
+let brainNow: BrainChoice | null = null;
 /** the turn of the active conversation whose canvas is open */
 let canvasTurn: string | null = null;
 /** what the stage holds now: `<conversation>:<turn>` */
@@ -549,6 +551,14 @@ async function start(): Promise<void> {
       renderList();
       refreshList(200);
     },
+    brain: () => (brainNow === null ? null : { id: 'claude-cli', model: brainNow.model, effort: brainNow.effort }),
+    fetchTrace: async (turn) => {
+      const session = mounted.link.session;
+      if (session === null) return null;
+      const found = (await listConversations()).find((entry) => entry.session === session);
+      if (found === undefined) return null;
+      return (await readConversation(found.id)).turns.find((entry) => entry.turn === turn)?.trace ?? null;
+    },
     onStage: (turn) => {
       stageKey = `live:${turn}`;
       if (active.kind === 'live') {
@@ -558,7 +568,13 @@ async function start(): Promise<void> {
       }
     },
   });
-  mounted.hook.ready.then(() => mounted.link.brain()).then((choice) => picker?.show(choice), () => undefined);
+  mounted.hook.ready.then(() => mounted.link.brain()).then(
+    (choice) => {
+      brainNow = choice;
+      picker?.show(choice);
+    },
+    () => undefined,
+  );
   mounted.onStatus((status) => {
     showStatus(status);
     if (!status.busy) refreshList(600);

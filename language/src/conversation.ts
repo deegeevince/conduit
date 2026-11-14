@@ -1,6 +1,7 @@
 // The chat shell's read-only view of the session logs: a list of conversations, and one conversation as a thread of turns.
 // Nothing here writes. The server folds the logs it already keeps (`<DATA_DIR>/logs/*.jsonl`) into these shapes (server/src/domain/conversations.ts).
 
+import type { TurnTrace } from './trace';
 import type { TurnEndReason } from './wire';
 
 /** The routes the shell reads. `id` is a log file's stem, `20261114-172146-c1`. */
@@ -52,6 +53,8 @@ export interface ConversationTurn {
   readonly still: string | null;
   readonly end: TurnEndReason | null;
   readonly message: string | null;
+  /** how it was made: the timeline the shell opens under the reply */
+  readonly trace: TurnTrace;
 }
 
 export interface ConversationView {

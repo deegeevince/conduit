@@ -2,6 +2,8 @@
 // the resting picture when it drew). Plain DOM, selectable text, and a list a screen reader can walk message by message.
 
 import type { Message, ReplyChoice, ReplyMessage } from './model';
+import { phaseKind, span as spanOf, summaryLine, timelineOf } from './trace';
+import type { Entry } from './trace';
 
 export interface ThreadHandlers {
   readonly onOpenCanvas: (reply: ReplyMessage, opener: HTMLElement) => void;
@@ -38,6 +40,22 @@ export function mountThread(host: HTMLElement, handlers: ThreadHandlers): Thread
   const list = el('ol', 'thread');
   list.setAttribute('aria-label', 'Messages');
   host.append(list);
+  // one polite voice for the whole thread: it says what a reply being made has moved on to (drawing, looking, fixing), never counts or times
+  const voice = el('div', 'vh');
+  voice.setAttribute('role', 'status');
+  voice.setAttribute('aria-live', 'polite');
+  host.append(voice);
+  const spoken = new Map<string, string>();
+  /** per reply: whether "how it was made" is open, and which raw-lines boxes in it are */
+  const traceUi = new Map<string, { open: boolean; raw: Set<string>; scroll: Map<string, number> }>();
+  const uiOf = (id: string): { open: boolean; raw: Set<string>; scroll: Map<string, number> } => {
+    let held = traceUi.get(id);
+    if (held === undefined) {
+      held = { open: false, raw: new Set(), scroll: new Map() };
+      traceUi.set(id, held);
+    }
+    return held;
+  };
   const rows = new Map<string, HTMLLIElement>();
   const replies = new Map<string, ReplyMessage>();
   let note: HTMLElement | null = null;
@@ -75,6 +93,101 @@ export function mountThread(host: HTMLElement, handlers: ThreadHandlers): Thread
     bubble.append(document.createTextNode(message.said));
     row.append(bubble);
     return row;
+  };
+
+  const entryNode = (message: ReplyMessage, entry: Entry): HTMLLIElement => {
+    const ui = uiOf(message.id);
+    const item = el('li', `trace__item${entry.tone === undefined || entry.tone === 'plain' ? '' : ` trace__item--${entry.tone}`}`);
+    const when = el('span', 'trace__at');
+    if (entry.at !== null) {
+      when.append(el('span', 'vh', 'At '), document.createTextNode(spanOf(entry.at)));
+    } else {
+      when.setAttribute('aria-hidden', 'true');
+    }
+    const what = el('div', 'trace__what');
+    what.append(el('p', 'trace__title', entry.title));
+    if (entry.detail !== undefined) what.append(el('p', 'trace__detail', entry.detail));
+    if (entry.raw !== undefined) what.append(el('code', 'trace__line', entry.raw));
+    if (entry.lines !== undefined) {
+      const key = `${message.id}:${entry.key}`;
+      const boxId = `trace-raw-${key.replace(/[^A-Za-z0-9_-]/g, '_')}`;
+      const open = ui.raw.has(entry.key);
+      const button = el('button', 'trace__more');
+      button.type = 'button';
+      button.dataset['focus'] = `raw-${entry.key}`;
+      button.setAttribute('aria-expanded', String(open));
+      button.setAttribute('aria-controls', boxId);
+      button.textContent = open ? `Hide the raw ${entry.lines.label}` : `Show the raw ${entry.lines.label}`;
+      const box = el('pre', 'trace__raw', entry.lines.text);
+      box.id = boxId;
+      box.tabIndex = 0;
+      box.setAttribute('role', 'region');
+      box.setAttribute('aria-label', `Raw Series ${entry.lines.label}`);
+      box.dataset['scrollKey'] = entry.key;
+      box.hidden = !open;
+      button.addEventListener('click', () => {
+        const now = button.getAttribute('aria-expanded') !== 'true';
+        if (now) ui.raw.add(entry.key);
+        else ui.raw.delete(entry.key);
+        button.setAttribute('aria-expanded', String(now));
+        button.textContent = now ? `Hide the raw ${entry.lines?.label ?? ''}` : `Show the raw ${entry.lines?.label ?? ''}`;
+        box.hidden = !now;
+      });
+      what.append(button, box);
+    }
+    item.append(when, what);
+    return item;
+  };
+
+  /** the quiet line under a reply, and the timeline behind it */
+  const traceNode = (message: ReplyMessage): HTMLElement | null => {
+    const trace = message.trace;
+    if (trace === null) return null;
+    const ui = uiOf(message.id);
+    const wrap = el('div', `trace${message.state === 'working' ? ' trace--live' : ''}`);
+    const panelId = `trace-${message.id}`;
+    const button = el('button', 'trace__toggle');
+    button.type = 'button';
+    button.dataset['focus'] = 'trace';
+    button.setAttribute('aria-expanded', String(ui.open));
+    button.setAttribute('aria-controls', panelId);
+    const chevron = el('span', 'trace__chev');
+    chevron.setAttribute('aria-hidden', 'true');
+    button.append(chevron, el('span', 'trace__summary', summaryLine(trace, message.state === 'working' ? message.elapsedMs : null)));
+    const panel = el('div', 'trace__panel');
+    panel.id = panelId;
+    panel.hidden = !ui.open;
+    panel.setAttribute('role', 'group');
+    panel.setAttribute('aria-label', 'How this reply was made');
+    const fill = (): void => {
+      const entries = timelineOf(trace);
+      const listing = el('ol', 'trace__list');
+      for (const entry of entries) listing.append(entryNode(message, entry));
+      panel.replaceChildren(listing);
+      for (const box of panel.querySelectorAll<HTMLElement>('pre[data-scroll-key]')) box.scrollTop = ui.scroll.get(box.dataset['scrollKey'] ?? '') ?? 0;
+    };
+    if (ui.open) fill();
+    button.addEventListener('click', () => {
+      ui.open = button.getAttribute('aria-expanded') !== 'true';
+      button.setAttribute('aria-expanded', String(ui.open));
+      panel.hidden = !ui.open;
+      if (ui.open) fill();
+    });
+    wrap.append(button, panel);
+    return wrap;
+  };
+
+  const speak = (message: ReplyMessage): void => {
+    if (message.trace === null) return;
+    if (message.state !== 'working') {
+      spoken.delete(message.id);
+      return;
+    }
+    const kind = phaseKind(message.trace);
+    if (spoken.get(message.id) === kind) return;
+    const first = !spoken.has(message.id);
+    spoken.set(message.id, kind);
+    if (!first) voice.textContent = `Conduit is ${kind}`;
   };
 
   const replyRow = (message: ReplyMessage): HTMLLIElement => {
@@ -152,6 +265,9 @@ export function mountThread(host: HTMLElement, handlers: ThreadHandlers): Thread
       tools.append(copy);
     }
     if (tools.childElementCount > 0) body.append(tools);
+    const how = traceNode(message);
+    if (how !== null) body.append(how);
+    speak(message);
     row.append(body);
     return row;
   };
@@ -188,6 +304,8 @@ export function mountThread(host: HTMLElement, handlers: ThreadHandlers): Thread
       list.replaceChildren();
       rows.clear();
       replies.clear();
+      traceUi.clear();
+      spoken.clear();
       note = null;
       for (const message of messages) {
         const row = build(message);
@@ -206,6 +324,20 @@ export function mountThread(host: HTMLElement, handlers: ThreadHandlers): Thread
     put(message) {
       const follow = nearEnd();
       const had = rows.get(message.id);
+      const before = replies.get(message.id);
+      // only the trace moved (an event of the turn, a tick of the clock): that one node is swapped, so a reader's place in the row stays
+      if (had !== undefined && before !== undefined && message.role === 'reply') {
+        const strip = (reply: ReplyMessage): string => JSON.stringify({ ...reply, trace: null, elapsedMs: null });
+        const old = had.querySelector<HTMLElement>('.trace');
+        if (old !== null && strip(before) === strip(message)) {
+          for (const box of old.querySelectorAll<HTMLElement>('pre[data-scroll-key]')) uiOf(message.id).scroll.set(box.dataset['scrollKey'] ?? '', box.scrollTop);
+          replies.set(message.id, message);
+          const fresh = traceNode(message);
+          if (fresh !== null) keepFocus(had, () => old.replaceWith(fresh));
+          speak(message);
+          return;
+        }
+      }
       const row = build(message);
       if (had !== undefined) {
         keepFocus(had, () => had.replaceWith(row));
@@ -220,6 +352,8 @@ export function mountThread(host: HTMLElement, handlers: ThreadHandlers): Thread
       rows.get(id)?.remove();
       rows.delete(id);
       replies.delete(id);
+      traceUi.delete(id);
+      spoken.delete(id);
       sync();
     },
     setOpenTurn(turn) {

@@ -13,7 +13,7 @@ import type { FetchOutcome } from './documents';
 export type SessionRecord =
   | { readonly type: 'session'; readonly at: 0; readonly session: string; readonly started: string; readonly brain: BrainId; readonly language: number; readonly screen: ScreenFacts; readonly capabilities: Capabilities; readonly services: Services }
   /** the user typed, tapped a choice, or played a demo or a script */
-  | { readonly type: 'turn'; readonly at: number; readonly turn: string; readonly input: TurnInput; readonly brain: BrainId; readonly login?: string }
+  | { readonly type: 'turn'; readonly at: number; readonly turn: string; readonly input: TurnInput; readonly brain: BrainId; readonly login?: string; readonly model?: string; readonly effort?: string }
   /** what the brain was told; `system` only when a process first hears it */
   | { readonly type: 'brief'; readonly at: number; readonly turn: string; readonly form: BriefForm | 'script'; readonly text: string; readonly system: string | null; readonly withSnapshot: boolean; readonly pass?: number }
   /** one accepted line, as it was forwarded; `raw` is what the brain wrote when that differs */

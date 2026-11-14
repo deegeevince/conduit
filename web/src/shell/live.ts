@@ -2,7 +2,9 @@
 // the reply's words are the transcript's own lines (chrome/transcript.ts), re-read as they come; when the turn rests, a still of the stage is kept for its card.
 
 import { serializeLine } from '@conduit/language';
-import type { TurnInput } from '@conduit/language';
+import type { TurnInput, TurnTrace } from '@conduit/language';
+import { startTrace } from './trace-live';
+import type { LiveTrace } from './trace-live';
 import type { StageApp } from '../app/stage-app';
 import type { Transcript } from '../chrome/transcript';
 import { NO_REPLY, drewFromTranscript } from './model';
@@ -16,6 +18,10 @@ export interface LiveHooks {
   readonly onTurn: (turn: string) => void;
   /** the stage shows this turn's answer now (it is being made on it) */
   readonly onStage: (turn: string) => void;
+  /** the brain a reply is made with, for the head of its timeline */
+  readonly brain: () => TurnTrace['brain'];
+  /** the log's own account of a turn of this conversation (null when it cannot be had yet); it takes the place of what the events built */
+  readonly fetchTrace: (turn: string) => Promise<TurnTrace | null>;
 }
 
 export interface Live {
@@ -59,6 +65,10 @@ export function mountLive(app: StageApp, transcript: Transcript, hooks: LiveHook
   let pageOpen = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let disposed = false;
+  const traces = new Map<string, LiveTrace>();
+  const dirty = new Set<string>();
+  let flushTimer: ReturnType<typeof setTimeout> | undefined;
+  let clock: ReturnType<typeof setInterval> | undefined;
 
   const find = (id: string): Message | undefined => messages.find((message) => message.id === id);
   const replace = (message: Message): void => {
@@ -77,6 +87,62 @@ export function mountLive(app: StageApp, transcript: Transcript, hooks: LiveHook
     // the transcript tells weather as a line of its own: it is something drawn, not something said
     const weather = said.words.filter((line) => /^Weather: /.test(line));
     return { words: said.words.filter((line) => !weather.includes(line)), choices: said.choices.map((choice) => ({ text: choice.text, key: choice.key, open: choice.open })), drew: drewFromTranscript([...said.drawn, ...weather]) };
+  };
+
+  const builderOf = (turn: string): LiveTrace => {
+    let held = traces.get(turn);
+    if (held === undefined) {
+      held = startTrace(Date.now(), hooks.brain());
+      traces.set(turn, held);
+    }
+    return held;
+  };
+  const startFresh = (turn: string): LiveTrace => {
+    const held = startTrace(Date.now(), hooks.brain());
+    traces.set(turn, held);
+    return held;
+  };
+  const replyOfTurn = (turn: string): ReplyMessage | null => messages.find((message): message is ReplyMessage => message.role === 'reply' && message.turn === turn) ?? null;
+  /** the reply of each turn that moved gets its trace; a few times a second at most */
+  const flush = (): void => {
+    flushTimer = undefined;
+    for (const turn of dirty) {
+      const held = replyOfTurn(turn);
+      const built = traces.get(turn);
+      if (held === null || built === undefined) continue;
+      replace({ ...held, trace: built.snapshot(), elapsedMs: held.state === 'working' && built.snapshot().end === null ? built.elapsed(Date.now()) : null });
+    }
+    dirty.clear();
+  };
+  const touch = (turn: string): void => {
+    dirty.add(turn);
+    flushTimer ??= setTimeout(flush, 150);
+  };
+  const keepClock = (): void => {
+    const making = current !== null && reply(current.replyId)?.state === 'working' && traces.get(current.turn)?.snapshot().end === null;
+    if (making && clock === undefined) {
+      clock = setInterval(() => {
+        if (current !== null) touch(current.turn);
+        keepClock();
+      }, 1000);
+    } else if (!making && clock !== undefined) {
+      clearInterval(clock);
+      clock = undefined;
+    }
+  };
+  /** once a turn has ended its log is the truth: take the trace from there (usage and the look's tally are written after the last line) */
+  const settleTrace = (turn: string, wait: number): void => {
+    setTimeout(() => {
+      if (disposed) return;
+      void hooks.fetchTrace(turn).then(
+        (trace) => {
+          const held = replyOfTurn(turn);
+          if (disposed || trace === null || held === null) return;
+          replace({ ...held, trace, elapsedMs: null });
+        },
+        () => undefined,
+      );
+    }, wait);
   };
 
   const refresh = (): void => {
@@ -134,7 +200,7 @@ export function mountLive(app: StageApp, transcript: Transcript, hooks: LiveHook
       inked: input.kind === 'prompt' && input.marks !== undefined,
       quiet: input.kind !== 'prompt',
     };
-    const made: ReplyMessage = { role: 'reply', id: pending?.reply.id ?? `r-${event.turn}-${(counter += 1)}`, turn: event.turn, reply: NO_REPLY, state: 'working', note: null, still: null };
+    const made: ReplyMessage = { role: 'reply', id: pending?.reply.id ?? `r-${event.turn}-${(counter += 1)}`, turn: event.turn, reply: NO_REPLY, state: 'working', note: null, still: null, trace: builderOf(event.turn).snapshot(), elapsedMs: 0 };
     // a prompt the page already showed is the one that opened: it is adopted, not shown twice
     if (pending !== null && input.kind === 'prompt') pending = null;
     else if (pending !== null) {
@@ -148,9 +214,18 @@ export function mountLive(app: StageApp, transcript: Transcript, hooks: LiveHook
     current = { turn: event.turn, userId: user.id, replyId: made.id };
     hooks.onTurn(event.turn);
     hooks.onStage(event.turn);
+    keepClock();
   });
 
   const offLink = app.link.onEvent((event) => {
+    if ('turn' in event && !isPage(event.turn)) {
+      // the opening of a turn starts its clock; every later event of it is one more step in how it was made
+      const builder = event.type === 'turn' ? startFresh(event.turn) : builderOf(event.turn);
+      if (builder.take(event, Date.now())) touch(event.turn);
+      if (event.type === 'end') settleTrace(event.turn, 1500);
+      if (event.type === 'critic') settleTrace(event.turn, 1200);
+      if (event.type === 'end' || event.type === 'turn') setTimeout(keepClock, 0);
+    }
     if (event.type !== 'end' || isPage(event.turn)) return;
     ended.set(event.turn, { reason: event.reason, message: event.message });
     if (current?.turn === event.turn && (event.reason === 'failed' || event.reason === 'timeout')) settle('failed', null);
@@ -200,7 +275,7 @@ export function mountLive(app: StageApp, transcript: Transcript, hooks: LiveHook
         inked,
         quiet: false,
       };
-      const made: ReplyMessage = { role: 'reply', id: `r-pending-${counter}`, turn: null, reply: NO_REPLY, state: 'working', note: null, still: null };
+      const made: ReplyMessage = { role: 'reply', id: `r-pending-${counter}`, turn: null, reply: NO_REPLY, state: 'working', note: null, still: null, trace: null, elapsedMs: null };
       pending = { user, reply: made };
       replace(user);
       replace(made);
@@ -217,6 +292,8 @@ export function mountLive(app: StageApp, transcript: Transcript, hooks: LiveHook
     dispose() {
       disposed = true;
       clearTimeout(timer);
+      clearTimeout(flushTimer);
+      clearInterval(clock);
       offTranscript();
       offLink();
       offStatus();

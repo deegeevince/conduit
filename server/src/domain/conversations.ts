@@ -1,7 +1,9 @@
 // The chat shell's thread, folded from a session log. Pure: records in, a view out. Nothing here reads a disk or writes one.
 
 import { CONVERSATION_API } from '@conduit/language';
-import type { ConversationReply, ConversationSummary, ConversationTurn, ConversationView, ShownItem, TurnInput } from '@conduit/language';
+import type { ConversationReply, ConversationSummary, ConversationTurn, ConversationView, ShownItem, TraceTool, TurnInput, TurnTrace } from '@conduit/language';
+import { EMPTY_TRACE } from '@conduit/language';
+import { redactSecrets } from './agent';
 import type { SessionRecord } from './session-log';
 
 type Of<T extends SessionRecord['type']> = Extract<SessionRecord, { type: T }>;
@@ -72,6 +74,97 @@ export function summaryOf(id: string, records: readonly SessionRecord[], updated
   };
 }
 
+/** How a turn was made, from the records it left. A brief is told by its form and size only: its text holds the system prompt. */
+export function traceOf(open: Of<'turn'>, records: readonly SessionRecord[]): TurnTrace {
+  const at = (record: SessionRecord): number => Math.max(0, record.at - open.at);
+  const tools = new Map<string, TraceTool>();
+  let trace: TurnTrace = { ...EMPTY_TRACE, brain: { id: open.brain, model: open.model ?? null, effort: open.effort ?? null } };
+  const add = <K extends keyof TurnTrace>(key: K, value: TurnTrace[K] extends readonly (infer T)[] ? T : never): void => {
+    trace = { ...trace, [key]: [...(trace[key] as readonly unknown[]), value] };
+  };
+  for (const record of records) {
+    if (!('turn' in record) || record.turn !== open.turn) continue;
+    switch (record.type) {
+      case 'brief':
+        add('briefs', { at: at(record), pass: record.pass ?? 1, form: record.form, chars: record.text.length });
+        break;
+      case 'line':
+        add('lines', { at: at(record), text: record.text, pass: record.pass ?? 1 });
+        break;
+      case 'reject':
+        add('rejects', { at: at(record), raw: redactSecrets(record.raw, 400), why: record.issues.map((issue) => issue.message) });
+        break;
+      case 'tool':
+        add('tools', { id: `tool-${trace.tools.length}`, at: at(record), tool: record.tool, summary: redactSecrets(record.target ?? '', 160), state: 'done', ms: null });
+        break;
+      case 'activity': {
+        const held = tools.get(record.id);
+        const next: TraceTool = { id: record.id, at: held?.at ?? at(record), tool: record.tool, summary: redactSecrets(record.summary, 160), state: record.state, ms: record.ms ?? held?.ms ?? null };
+        tools.set(record.id, next);
+        trace = { ...trace, tools: [...trace.tools.filter((tool) => tool.id !== record.id), next].sort((a, b) => a.at - b.at) };
+        break;
+      }
+      case 'fetch':
+        add('readings', { at: at(record), label: safeHost(record.finalUrl ?? record.url), state: record.outcome === 'ok' ? 'done' : 'failed', message: record.reason === null ? null : redactSecrets(record.reason, 160) });
+        break;
+      case 'pass':
+        add('passes', { at: at(record), pass: record.pass, state: record.state, reason: record.reason });
+        break;
+      case 'fix':
+        add('fixes', { at: at(record), pass: record.pass, form: record.form, lines: record.lines, shown: record.shown, why: record.why });
+        break;
+      case 'permission':
+        add('asks', { at: at(record), tool: record.tool, summary: redactSecrets(record.summary, 160), risk: record.risk, allow: record.allow });
+        break;
+      case 'critic':
+        trace = {
+          ...trace,
+          critic: {
+            at: at(record),
+            coherence: record.finding.coherence,
+            readable: record.finding.readable,
+            asked: record.finding.asked,
+            problems: record.finding.problems.map((problem) => ({ what: problem.what, weight: problem.weight })),
+            suggestions: record.finding.suggestions,
+            model: record.finding.model,
+            costUsd: record.finding.costUsd,
+          },
+        };
+        break;
+      case 'usage':
+        add('usage', {
+          pass: record.pass ?? 1,
+          inputTokens: record.usage.inputTokens,
+          cacheReadTokens: record.usage.cacheReadTokens,
+          cacheWriteTokens: record.usage.cacheWriteTokens,
+          outputTokens: record.usage.outputTokens,
+          thinkingTokens: record.usage.thinkingTokens,
+          costUsd: record.usage.costUsd,
+          firstTextMs: record.usage.firstTextMs,
+          totalMs: record.usage.totalMs,
+        });
+        break;
+      case 'review':
+        trace = { ...trace, review: { result: record.outcome.result, passes: record.outcome.passes, why: record.outcome.why } };
+        break;
+      case 'end':
+        trace = { ...trace, end: { at: at(record), reason: record.reason, message: record.message === null ? null : redactSecrets(record.message, 300) } };
+        break;
+      default:
+        break;
+    }
+  }
+  return trace;
+}
+
+function safeHost(url: string): string {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return 'a page';
+  }
+}
+
 export function foldConversation(id: string, records: readonly SessionRecord[], updated: string): ConversationView {
   const turns = new Map<string, { open: Of<'turn'>; lines: string[]; report: Of<'report'> | null; snapshot: Of<'snapshot'> | null; end: Of<'end'> | null }>();
   for (const record of records) {
@@ -99,6 +192,7 @@ export function foldConversation(id: string, records: readonly SessionRecord[], 
     still: snapshot === null ? null : CONVERSATION_API.still(id, open.turn),
     end: end?.reason ?? null,
     message: end?.message ?? null,
+    trace: traceOf(open, records),
   }));
   return { summary: summaryOf(id, records, updated), turns: folded };
 }

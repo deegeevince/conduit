@@ -985,3 +985,190 @@ button {
 .composer .photos__note:not(.photos__note--problem) {
   display: none;
 }
+
+/* How it was made: one quiet line under a reply, and the timeline behind it. Text is --sh-text or --sh-quiet on the ground (both held to 4.5:1);
+   the one monospace in it is the raw Series line. */
+
+.trace {
+  margin-top: 0.35rem;
+  font-size: 0.8125rem;
+}
+
+.trace__toggle {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+  max-width: 100%;
+  min-height: 2rem;
+  padding: 0.3rem 0.5rem 0.3rem 0.25rem;
+  margin-left: -0.25rem;
+  border: 0;
+  border-radius: 0.5rem;
+  background: none;
+  color: var(--sh-quiet);
+  font: inherit;
+  text-align: left;
+  line-height: 1.35;
+}
+
+.trace__toggle:hover {
+  background: var(--sh-hover);
+  color: var(--sh-text);
+}
+
+.trace__toggle:focus-visible,
+.trace__more:focus-visible,
+.trace__raw:focus-visible {
+  outline: 2px solid var(--sh-accent);
+  outline-offset: 2px;
+}
+
+.trace__chev {
+  flex: none;
+  width: 0.45rem;
+  height: 0.45rem;
+  margin: 0.4rem 0.2rem 0 0.3rem;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 0.15s;
+}
+
+.trace__toggle[aria-expanded='true'] .trace__chev {
+  transform: rotate(45deg);
+}
+
+.trace--live .trace__summary::after {
+  content: '';
+  display: inline-block;
+  width: 0.4rem;
+  height: 0.4rem;
+  margin-left: 0.45rem;
+  border-radius: 50%;
+  background: var(--sh-accent);
+  animation: trace-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes trace-pulse {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .trace--live .trace__summary::after {
+    animation: none;
+  }
+  .trace__chev {
+    transition: none;
+  }
+}
+
+.trace__panel {
+  margin: 0.25rem 0 0.5rem;
+  padding: 0.25rem 0.75rem;
+  border: 1px solid var(--sh-rule);
+  border-radius: 0.75rem;
+  background: var(--sh-side);
+  color: var(--sh-text);
+}
+
+.trace__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.trace__item {
+  display: grid;
+  grid-template-columns: 3.6rem minmax(0, 1fr);
+  gap: 0.6rem;
+  padding: 0.5rem 0;
+  border-top: 1px solid var(--sh-rule);
+}
+
+.trace__item:first-child {
+  border-top: 0;
+}
+
+.trace__at {
+  color: var(--sh-quiet);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.trace__what p {
+  margin: 0;
+}
+
+.trace__title {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.trace__detail {
+  color: var(--sh-quiet);
+  overflow-wrap: anywhere;
+}
+
+.trace__item--quiet .trace__title {
+  font-weight: 500;
+  color: var(--sh-quiet);
+}
+
+.trace__item--alarm .trace__title {
+  color: var(--sh-danger);
+}
+
+.trace__item--alarm .trace__title::before {
+  content: '! ';
+}
+
+.trace__line,
+.trace__raw {
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+.trace__line {
+  display: block;
+  margin-top: 0.25rem;
+  color: var(--sh-text);
+  overflow-wrap: anywhere;
+}
+
+.trace__more {
+  margin-top: 0.3rem;
+  min-height: 2rem;
+  padding: 0.2rem 0;
+  border: 0;
+  background: none;
+  color: var(--sh-accent);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.trace__raw {
+  margin: 0.25rem 0 0;
+  padding: 0.5rem 0.6rem;
+  max-height: 14rem;
+  overflow: auto;
+  border-radius: 0.5rem;
+  background: var(--sh-ground);
+  border: 1px solid var(--sh-rule);
+  color: var(--sh-text);
+  white-space: pre;
+}
+
+@media (max-width: 480px) {
+  .trace__panel {
+    padding: 0.25rem 0.6rem;
+  }
+  .trace__item {
+    grid-template-columns: 3rem minmax(0, 1fr);
+    gap: 0.45rem;
+  }
+}
