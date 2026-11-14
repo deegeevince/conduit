@@ -2,6 +2,8 @@ import { describeFigure, EMPTY_STAGE, FULL_CAPABILITIES, NO_SERVICES, sceneAt, s
 import { CHARTS_READY } from '../render/chart';
 import { STRUCTURES_READY } from './blocks';
 import { CONTROLS_READY } from './controls';
+import { NO_SIGHT } from '@conduit/language';
+import type { PassState, Sight } from '@conduit/language';
 import type { BackEvent, Capabilities, ClockState, ElementSpan, Issue, Line, Schedule, ScoreEntry, Services, StageBase, TurnEndReason, TurnInput, TurnReport } from '@conduit/language';
 import type { Recording } from '../contracts/film';
 import type { ElementFrame, Frame, Quality, ShapeFrame } from '../contracts/frame';
@@ -19,11 +21,11 @@ import { QualityGovernor } from './governor';
 import { bodySize, marginOf, screenFacts } from './layout/metrics';
 import { Reporter } from './report';
 import { placedOf, sightOf } from './sight';
-import { buildTimeline, settledEnd as settledEndOf } from './timeline';
+import { buildTimeline, settledAfter, settledEnd as settledEndOf } from './timeline';
 import type { Timeline, TimelineContext, TimelineInstant } from './timeline';
 
 /** True once `notePass` answers `drafted` with a draft report (PLAN-v2.md, package T). Until then the server is told not to wait for one. */
-const DRAFTS_READY = false;
+const DRAFTS_READY = true;
 
 const HOME_SECONDS = 1.2;
 const SETTLE_SECONDS = 0.12;
@@ -422,6 +424,45 @@ export function createPainter(options: PainterOptions): Painter {
     skippedAt,
   });
 
+  let passState: { readonly turn: string; readonly pass: number; readonly state: PassState } | null = null;
+
+  /**
+   * How the lines so far WILL land, worked out from the schedule's end without waiting for the playhead and without touching anything
+   * on stage: sight and placed boxes from a timeline that is only read, and a picture of its resting frame when both sides want one.
+   */
+  const sendDraft = (open: Turn, pass: number): void => {
+    const at = timeline;
+    const schedule = at.schedule;
+    const when = Math.max(schedule.end, settledAfter(at, lockLook, open.base.scene.mood)) + 1e-6;
+    let sight: Sight;
+    let placed: ReturnType<typeof placedOf>;
+    try {
+      sight = sightOf(at, schedule, open.base, when, false);
+      const keys = new Set(schedule.elements.map((element) => element.key));
+      placed = placedOf(at, schedule, when, keys);
+    } catch (error) {
+      noteFault(error, 'draft');
+      emitBack({ type: 'draft', turn: open.id, pass, sight: NO_SIGHT, snapshot: false });
+      return;
+    }
+    const report = (snapshot: boolean): void => {
+      if (disposed) return;
+      emitBack({ type: 'draft', turn: open.id, pass, sight: { ...sight, snapshot }, placed: placed.map(({ key: _key, ...item }) => item), snapshot });
+    };
+    if (!(services.review && wantsSnapshot())) {
+      report(false);
+      return;
+    }
+    const frame: Frame = { ...at.frameAt({ time: when, ambient: 3, wallTime: pinnedWallTime(3), clock: 'paused' }), camera: REST_POSE };
+    void renderer
+      .rasterise(frame, { maxSide: PICTURE_SIDE, mime: 'image/jpeg', quality: 0.8 })
+      .then((blob) => {
+        if (blob !== null && !disposed) emit('upload', { kind: 'draft', turn: open.id, pass, blob });
+        report(blob !== null);
+      })
+      .catch(() => report(false));
+  };
+
   /** A picture of the stage a turn left, for the brain's next brief. */
   const sendSnapshot = (turnId: string, stage: StageBase): void => {
     if (!wantsSnapshot()) return;
@@ -818,7 +859,7 @@ export function createPainter(options: PainterOptions): Painter {
       fault: faultText(),
       controls: [],
       charts: [],
-      pass: null,
+      pass: passState === null || turn === null || passState.turn !== turn.id ? null : { pass: passState.pass, state: passState.state },
     };
   };
 
@@ -966,9 +1007,14 @@ export function createPainter(options: PainterOptions): Painter {
       tapOn(key);
     },
 
-    // Stubs: see contracts/painter.ts for what each must do (PLAN-v2.md, packages T, C and K).
     dataArrived() {},
-    notePass() {},
+    notePass(id, pass, state) {
+      const open = turn;
+      if (open === null || open.id !== id || settling !== null) return;
+      passState = { turn: id, pass, state };
+      if (state !== 'drafted') return;
+      sendDraft(open, pass);
+    },
     pointer() {
       return false;
     },
