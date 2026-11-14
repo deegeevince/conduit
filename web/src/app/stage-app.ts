@@ -608,7 +608,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
         if (disposed || !localOpen) return;
         index += 1;
         seq += 1;
-        lang.line(LOCAL_TURN, seq, serializeLine(step.line), [], painter.snapshot().playhead);
+        lang.line(LOCAL_TURN, seq, serializeLine(step.line), [], 0);
         painter.ingest(LOCAL_TURN, seq, step.line);
         publishStatus();
         next();
@@ -718,10 +718,10 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
         endStarting();
         const parsed = parseLine(event.text);
         if (parsed.kind === 'line') {
-          lang.line(event.turn, event.seq, event.text, event.issues, painter.snapshot().playhead);
+          lang.line(event.turn, event.seq, event.text, event.issues, 0);
           painter.ingest(event.turn, event.seq, parsed.line);
         } else {
-          lang.dropped(event.turn, event.text, parsed.kind === 'reject' ? parsed.issues : [{ code: 'not-a-line', severity: 'error', message: `server sent a ${parsed.kind}` }], painter.snapshot().playhead);
+          lang.dropped(event.turn, event.text, parsed.kind === 'reject' ? parsed.issues : [{ code: 'not-a-line', severity: 'error', message: `server sent a ${parsed.kind}` }], 0);
           noteReject({
             turn: event.turn,
             raw: event.text,
@@ -731,7 +731,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
         return;
       }
       case 'reject':
-        lang.dropped(event.turn, event.raw, event.issues, painter.snapshot().playhead);
+        lang.dropped(event.turn, event.raw, event.issues, 0);
         noteReject({ turn: event.turn, raw: event.raw, issues: event.issues });
         return;
       case 'asset':

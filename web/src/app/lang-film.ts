@@ -113,12 +113,17 @@ export function paneSurround(sources: readonly PaneSource[], log: LangLog, layou
   const items: Item[] = [];
   for (const source of sources) {
     const spans = spansOf(source.recording);
+    const floors = new Map(source.recording.lines.map((line) => [line.seq, line.floor ?? 0]));
+    let latest = 0;
     for (const entry of log.entriesOf(source.recording.turn)) {
+      // a line arrived at the playhead the recording kept for it; a dropped one came between the lines before and after it
+      const arrived = entry.kind === 'line' ? (floors.get(entry.seq) ?? latest) : latest;
+      latest = Math.max(latest, arrived);
       const dropped = entry.kind === 'dropped';
       const span = dropped ? undefined : spans.get(entry.seq);
       const noteText = entryNote(entry);
       items.push({
-        at: source.from + entry.playhead,
+        at: source.from + arrived,
         entry,
         rows: wrap(dropped ? plainTokens(entry.text, 'plain') : tokenize(entry.text), cols, 2),
         note: noteText === null ? [] : wrap(plainTokens(noteText, 'plain'), cols, 2),

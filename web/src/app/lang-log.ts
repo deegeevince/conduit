@@ -22,7 +22,7 @@ export interface LangEntry {
   readonly id: string | null;
   /** what the normaliser or the painter said of the line: shown quietly under it */
   readonly issues: readonly Issue[];
-  /** the playhead of the turn clock when it arrived, seconds */
+  /** unused by the page (0); a film takes each line's arrival from its recording */
   readonly playhead: number;
 }
 
