@@ -9,6 +9,9 @@ import { ease, quantise } from './ease';
  * distance, truck a share of the viewport width, angles are radians, shake a
  * share of the viewport height.
  */
+/** The camera's idle sway from the mood. Off: the owner found it made them dizzy. */
+const CAMERA_SWAYS = false;
+
 export const CAMERA_TRAVEL: Readonly<Record<CameraMove, { readonly dolly: number; readonly truck: number; readonly yaw: number; readonly shake: number }>> = {
   push: { dolly: 0.18, truck: 0, yaw: 0, shake: 0 },
   pull: { dolly: -0.25, truck: 0, yaw: 0, shake: 0 },
@@ -228,7 +231,8 @@ export function cameraAt(moves: readonly CameraSpan[], time: number, ambient: nu
 
   let swayX = 0;
   let swayY = 0;
-  if (!reducedMotion) {
+  // The owner: "stop the swaying motion, it's making me dizzy". The camera no longer sways on its own; motion the brain asks for still plays.
+  if (!reducedMotion && CAMERA_SWAYS) {
     const swayOf = (m: MoodCharacter): { x: number; y: number } => {
       if (m.swayPeriod <= 0) return { x: 0, y: 0 };
       const phase = (2 * Math.PI * a) / m.swayPeriod;
