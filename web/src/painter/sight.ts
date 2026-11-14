@@ -11,6 +11,7 @@ import { canvasToStage, stageToCanvas } from './canvas';
 import type { CanvasFit } from './canvas';
 import { mapToGamut } from './colour';
 import { canvasBoxOf } from './figures';
+import { setText } from './layout';
 import { cellOf } from './layout/metrics';
 import type { Timeline } from './timeline';
 import { laidOutOf } from './registry';
@@ -295,6 +296,35 @@ export function sightOf(timeline: Timeline, schedule: Schedule, base: StageBase,
     return false;
   };
 
+  // Words a bound `correct` can replace are set for the tallest of them; one that nevertheless comes out taller than that room (or wider) is told as a
+  // collision when it would run into other words, a control or a drawn structure beside it, so the look pass hears of it before anyone steps through.
+  const variantCollides = (entry: Entry): boolean => {
+    const element = entry.element;
+    const placed = textFrames.get(element.key);
+    if (placed === undefined || !entry.resting) return false;
+    const variants: { text: string; emphasis: readonly { start: number; end: number }[] }[] = [];
+    for (const change of element.driven) if (change.effect.kind === 'text') variants.push({ text: change.effect.text, emphasis: change.effect.emphasis });
+    if (variants.length === 0) return false;
+    const ps = planeScale(placed.layer, viewport);
+    const natural = cellOf(element.style.size, viewport, spec).fontSize / ps;
+    const first = placed.lines[0];
+    const left = first === undefined ? true : Math.abs(first.x + placed.width / 2) < 0.5;
+    for (const variant of variants) {
+      const set = setText({ look: spec, viewport, text: variant.text, emphasis: variant.emphasis, style: { ...element.style, layer: placed.layer }, shrink: Math.max(0.05, Math.min(1, placed.fontSize / natural)), maxWidth: placed.width, width: placed.width, align: left ? 'left' : 'center' });
+      const grown = set.placement.height - placed.height;
+      const wide = set.widest - placed.width;
+      if (grown <= 0.5 / ps && wide <= 0.5 / ps) continue;
+      const area: Rect = { x: (placed.x - placed.width / 2) * ps, y: (placed.y - placed.height / 2) * ps, w: Math.max(placed.width, set.widest) * ps, h: Math.max(placed.height, set.placement.height) * ps };
+      for (const other of entries) {
+        if (other === entry || !other.resting) continue;
+        const lines = other.element.kind === 'text' ? lineBoxes.get(other.element.key) : undefined;
+        const boxes = lines ?? (other.element.kind === 'control' || other.element.kind === 'structure' ? [other.screenBox] : []);
+        if (boxes.some((box) => overlapArea(area, box) > 6 && overlapArea(area, box) > 0.04 * Math.min(areaOf(area), areaOf(box)))) return true;
+      }
+    }
+    return false;
+  };
+
   // free words standing on a diagram (the structure engines keep to their room, so this is a diagram that did not fit it, or words set where it is):
   // said on both, the words as `collides` and the diagram as `overlaps`, so the look pass moves one of them
   const DIAGRAMS: ReadonlySet<string> = new Set(['flow', 'tree', 'cycle']);
@@ -359,7 +389,7 @@ export function sightOf(timeline: Timeline, schedule: Schedule, base: StageBase,
       const style = element.style;
       if (placed !== undefined && entry.resting) {
         const layout = scene.layout;
-        if (textOverText(entry, index) || textOnDiagram(entry)) notes.push('collides');
+        if (textOverText(entry, index) || textOnDiagram(entry) || variantCollides(entry)) notes.push('collides');
         if (strokeThrough(element.key) && !notes.includes('crossed')) notes.push('crossed');
         const view = restViews.get(element.key);
         if (view !== undefined && view.contrast < (view.fontPx >= 24 ? 3 : 4.5) - 0.01) notes.push('faint');

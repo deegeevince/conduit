@@ -7,7 +7,7 @@ import type { BlockPart } from '../../contracts/blocks';
 import type { Box } from '../../contracts/space';
 import { box, open, union } from './geom';
 import type { Draft } from './kit';
-import { best, Env, fit } from './kit';
+import { best, Env, fit, wordsIn } from './kit';
 import { isRuleRow, splitCells, splitEmphasis } from '@conduit/language';
 import type { Range } from '@conduit/language';
 
@@ -54,7 +54,10 @@ function readRows(env: Env): Read {
     if (cells.length === 0 || isRuleRow(cells)) return;
     parsed.push({ cells: row.cells.map((c) => {
         const s = splitEmphasis(c.trim());
-        return { text: s.plain, emphasis: s.emphasis };
+        // `{cash}` in a cell is the control's value, and `*{…}*` keeps its emphasis over the whole of what it became
+        const w = wordsIn(s.plain, s.emphasis, env.input.scope);
+        const whole = w.text !== s.plain && s.emphasis.length > 0 && s.emphasis.some((r) => r.start === 0 && r.end >= s.plain.length);
+        return { text: w.text, emphasis: whole ? [{ start: 0, end: w.text.length }] : [...w.emphasis] };
       }), index });
   });
   const ncols = Math.max(0, ...parsed.map((r) => r.cells.length));

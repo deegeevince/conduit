@@ -718,6 +718,18 @@ input {
   outline-color: var(--stage-accent);
 }
 
+/* A stepper is one control drawn as one: its focus is a ring round the whole of it, never the rectangle of whichever half-width button holds it. */
+.access__control .access__step:focus-visible {
+  outline: none;
+}
+
+.access__steps:has(.access__step:focus-visible) {
+  outline: var(--focus-ring);
+  outline-color: var(--stage-accent);
+  outline-offset: 3px;
+  border-radius: 12px;
+}
+
 .access__chart:focus-visible {
   outline-color: var(--stage-accent);
 }
