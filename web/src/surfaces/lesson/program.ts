@@ -126,6 +126,9 @@ function start(input: LessonInput): void {
   reportSlot();
   new MutationObserver(() => reportSlot()).observe(root, { childList: true, subtree: true });
   addEventListener('scroll', () => reportSlot(true), { passive: true });
+  // a new width (a scrollbar appearing, the room turned) moves the paper too
+  addEventListener('resize', () => reportSlot(true));
+  if (typeof ResizeObserver !== 'undefined') new ResizeObserver(() => reportSlot()).observe(root);
   window.__lessonCensus = () => (player === null ? null : takeCensus(player, root));
 }
 
