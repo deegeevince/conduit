@@ -1,5 +1,6 @@
 // Checks agent mode's safety against a scripted stand-in for `claude`, with no model and no network (v2.1, package G).
-//   pnpm --filter @conduit/server exec tsx src/tools/agent-check.ts
+//   pnpm --filter @conduit/server exec tsx src/tools/agent-check.ts          the stand-in, the policy table and the relay's look
+//   pnpm --filter @conduit/server exec tsx src/tools/agent-check.ts --real   also one tiny live turn (sonnet, effort low) through the real CLI
 // Each line printed is PASS or FAIL with what was observed. Exits 1 if any failed.
 //
 // What it shows: a read, a write and a send produce one free call and two `permission` events; neither held call runs without a
@@ -16,6 +17,8 @@ import { gateCall, redactSecrets, riskOf, summaryOf } from '../domain/agent';
 import type { AgentSettings } from '../domain/agent';
 import type { BrainEvent, TurnRequest } from '../domain/brain';
 import { createLogger } from '../log';
+import { RelayHub } from '../brains/relay/relay-hub';
+import { createRelayBrain } from '../brains/relay/relay-brain';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const tsx = resolve(here, '../../node_modules/.bin/tsx');
@@ -181,6 +184,57 @@ try {
     check(!flags.includes('--permission-prompt-tool') && flags.includes('--tools'), 'and its process has no tools flag beyond the empty one', flags.match(/--tools \S*/)?.[0] ?? 'no --tools');
     await w.brain.close?.();
     await plain.brain.close?.();
+  }
+  // 6. The relay can look: a review is offered to the claimer with its brief and the picture's file, `ok` keeps the draft, lines are the fix.
+  {
+    const hub = new RelayHub({ log: createLogger('error'), now: () => Date.now(), idleTimeoutMs: 5_000 });
+    const relay = createRelayBrain(hub);
+    const control = new AbortController();
+    const turnEvents: BrainEvent[] = [];
+    const turnDone = (async () => {
+      for await (const event of relay.respond(request(), control.signal)) turnEvents.push(event);
+    })();
+    const claimed = await hub.claim(1_000, control.signal);
+    check(claimed?.turn === 't1' && hub.reviewOf('t1') === null, 'the relay hands a turn to its claimer with no look attached', claimed?.turn ?? 'nothing');
+    hub.append('t1', [{ type: 'reject', raw: 'a draft line', issues: [] }]);
+    hub.end('t1');
+    await turnDone;
+    const picture = { mime: 'image/jpeg' as const, bytes: new Uint8Array([1, 2, 3]), width: 1, height: 1 };
+    const lookEvents: BrainEvent[] = [];
+    const looking = (async () => {
+      for await (const event of relay.review?.({ turn: 't1', session: 's', pass: 2, input: request().input, sight: null, picture, problems: [], styles: [], form: 'fix' }, control.signal) ?? []) lookEvents.push(event);
+    })();
+    const again = await hub.claim(1_000, control.signal);
+    const offer = hub.reviewOf('t1');
+    const path = /the file (\S+) /.exec(offer?.brief ?? '')?.[1] ?? null;
+    check(again?.turn === 't1' && offer?.pass === 2 && path !== null && existsSync(path), 'the look is claimed like a turn, with the review brief and a picture file', `${offer?.brief.length ?? 0} characters, picture at ${path ?? 'none'}`);
+    hub.append('t1', [{ type: 'reject', raw: 'ok', issues: [] }]);
+    hub.end('t1');
+    await looking;
+    check(!lookEvents.some((event) => event.type === 'reject') && lookEvents[0]?.type === 'brief', '`ok` is the draft kept: it is not a line and not a rejection', lookEvents.map((e) => e.type).join(','));
+    check(path !== null && !existsSync(path), 'the picture file is gone when the look is over', path ?? 'none');
+  }
+
+  if (process.argv.includes('--real')) {
+    // 7. One live turn through the real CLI: a search is free, a write is asked for, and the owner's no is final.
+    const dir = mkdtempSync(join(root, 'real-'));
+    const mailless: AgentSettings = { enabled: true, tools: ['WebSearch', 'Write'], services: [], dir, answerMs: 60_000 };
+    const brain = createClaudeCliBrain({ log: createLogger('error'), bin: 'claude', model: 'sonnet', firstTokenTimeoutMs: 90_000, idleTimeoutMs: 60_000, tools: [], effort: 'low', variant: 'column', warm: true, maxWarm: 1, warmIdleMs: 60_000, recycleTokens: 1_000_000, agent: mailless, modes: ['plain', 'agent'] });
+    brain.choose?.('s', { mode: 'agent' });
+    const seen: string[] = [];
+    const asked: string[] = [];
+    const base = request();
+    const turn: TurnRequest = { ...base, input: { kind: 'prompt', text: 'Use WebSearch for "Oslo weather today", then use the Write tool to save one line of it to weather.txt, then tell me in one line.' } };
+    for await (const event of brain.respond(turn, new AbortController().signal)) {
+      if (event.type === 'activity') seen.push(`${event.tool}:${event.state}`);
+      if (event.type === 'permission') {
+        asked.push(`${event.tool}:${event.risk} "${event.summary}"`);
+        brain.permit?.('s', event.request, false);
+      }
+    }
+    check(seen.includes('WebSearch:running') && seen.includes('WebSearch:done'), 'live: the search ran without being asked', seen.join(' '));
+    check(asked.length >= 1 && asked.every((a) => a.startsWith('Write:write')) && !existsSync(join(dir, 'weather.txt')), 'live: the write was asked for, the answer was no, and no file exists', asked.join(' | '));
+    await brain.close?.();
   }
 } finally {
   rmSync(root, { recursive: true, force: true });
