@@ -4,7 +4,7 @@ import { FIX_POLICY } from '@conduit/language';
 import { createBrains } from './brains/registry';
 import { createCritic, createFindingQueue } from './critic/registry';
 import { RelayHub } from './brains/relay/relay-hub';
-import { createStatusReader } from './domain/app-status';
+import { createChangelogReader, createStatusReader } from './domain/app-status';
 import { AssetStore } from './domain/assets';
 import { Conductor } from './domain/conductor';
 import { SessionStore } from './domain/session';
@@ -32,7 +32,9 @@ function boot(env: Env): void {
   // The steward's status, for the brief's note about the app; the first read starts now so the first turn has it.
   const status = createStatusReader(env.statusFile, now);
   status();
-  const brains = createBrains({ settings: env.brain, log: log.child({ part: 'brain' }), relayHub, agent: env.agent, modes: env.modes, status });
+  const news = createChangelogReader(env.changelogFile, now);
+  news();
+  const brains = createBrains({ settings: env.brain, log: log.child({ part: 'brain' }), relayHub, agent: env.agent, modes: env.modes, status, news });
   const assets = new AssetStore();
   const images = createImageModel(env.images, log.child({ part: 'images' }));
   const sessionLog = env.logDir === null ? NO_SESSION_LOG : createJsonlSessionLog({ log: log.child({ part: 'sessionlog' }), dir: env.logDir, now });
@@ -87,7 +89,7 @@ function boot(env: Env): void {
   });
   const withheld = withheldCredentialNames();
   if (withheld.length > 0) log.info('env.credentials_withheld', { names: withheld, note: 'no child process is given these; every model call is on the owner\'s login' });
-  const app = createApp({ env, log: log.child({ part: 'http' }), conductor, relayHub, assets, status });
+  const app = createApp({ env, log: log.child({ part: 'http' }), conductor, relayHub, assets, status, news });
 
   const server = serve({ fetch: app.fetch, hostname: env.host, port: env.port }, (info) => {
     log.info('server.listening', { host: env.host, port: info.port, brain: env.brain.kind, production: env.production });

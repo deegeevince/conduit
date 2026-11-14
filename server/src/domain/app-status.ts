@@ -37,23 +37,55 @@ export async function readStatusFile(file: string): Promise<AppStatus> {
   }
 }
 
-/** How long a read of the status file is trusted before the next brief asks the disk again. */
-const STATUS_FRESH_MS = 30_000;
+/** How long a read of a note file is trusted before the next brief asks the disk again. */
+const NOTE_FRESH_MS = 30_000;
 
-/**
- * What a brief can ask for without waiting: the last read, and a new read started in the background when it has grown old. Null until
- * the first read lands, and when the file has nothing in it (the brain is then told it does not know where the product stands).
- */
-export function createStatusReader(file: string, now: () => number): () => AppStatus | null {
-  let held: AppStatus | null = null;
+/** The last read of a small file the steward keeps, and a new read started in the background when it has grown old; never waits. */
+function cachedNote<T>(read: () => Promise<T | null>, now: () => number): () => T | null {
+  let held: T | null = null;
   let readAt = Number.NEGATIVE_INFINITY;
   return () => {
-    if (now() - readAt > STATUS_FRESH_MS) {
+    if (now() - readAt > NOTE_FRESH_MS) {
       readAt = now();
-      void readStatusFile(file).then((status) => {
-        held = status.live.length + status.building.length + status.waiting.length === 0 ? null : status;
+      void read().then((value) => {
+        held = value;
       });
     }
     return held;
   };
+}
+
+/**
+ * What a brief can ask for without waiting: the last read of the status file. Null until the first read lands, and when the file has
+ * nothing in it (the brain is then told it does not know where the product stands).
+ */
+export function createStatusReader(file: string, now: () => number): () => AppStatus | null {
+  return cachedNote(async () => {
+    const status = await readStatusFile(file);
+    return status.live.length + status.building.length + status.waiting.length === 0 ? null : status;
+  }, now);
+}
+
+/** The most characters of the changelog's newest section a brief carries. */
+const NEWS_CHARS = 2400;
+
+/** The newest version's section of the changelog: the first `## ` heading and the lines under it, up to the next one. Null when there is none. */
+export function newestSection(markdown: string): string | null {
+  const lines = markdown.replace(/\r\n/g, '\n').split('\n');
+  const start = lines.findIndex((line) => line.startsWith('## '));
+  if (start < 0) return null;
+  const end = lines.findIndex((line, index) => index > start && line.startsWith('## '));
+  const section = lines.slice(start, end < 0 ? undefined : end).join('\n').trim();
+  return section.length > NEWS_CHARS ? `${section.slice(0, NEWS_CHARS - 1).trimEnd()}…` : section;
+}
+
+/** The changelog's newest section, for the brief when the user asks what is new. Same rules as the status reader. */
+export function createChangelogReader(file: string, now: () => number): () => string | null {
+  return cachedNote(async () => {
+    try {
+      return newestSection(await readFile(file, 'utf8'));
+    } catch {
+      return null;
+    }
+  }, now);
 }

@@ -12,6 +12,7 @@ export type Command =
   | { readonly kind: 'show'; readonly setting: 'model' | 'effort' | 'brain' }
   | { readonly kind: 'set'; readonly change: BrainChange }
   | { readonly kind: 'tools'; readonly change: { readonly name: string; readonly on: boolean } | null }
+  | { readonly kind: 'new' }
   | { readonly kind: 'status' }
   | { readonly kind: 'asks'; readonly clear: boolean }
   | { readonly kind: 'look'; readonly look: LookId | null }
@@ -83,6 +84,8 @@ export function parseCommand(text: string): Command {
       if (rest.length < 2 || toolName === '' || (state !== 'on' && state !== 'off')) return refuse('/tools: say which and whether, like "/tools WebSearch off"');
       return { kind: 'tools', change: { name: toolName, on: state === 'on' } };
     }
+    case 'new':
+      return { kind: 'new' };
     case 'status':
       return { kind: 'status' };
     case 'asks':

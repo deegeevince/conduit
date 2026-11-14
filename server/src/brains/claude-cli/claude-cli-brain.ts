@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { buildSystemPrompt, buildTurnBrief } from '@conduit/language';
+import { asksWhatsNew, buildSystemPrompt, buildTurnBrief } from '@conduit/language';
 import type { ActionRisk, AppStatus, BrainChange, BrainChoice, BrainEffort, BrainMode, PromptVariant, ToolChoice } from '@conduit/language';
 import type { BriefForm, Capabilities } from '@conduit/language';
 import { buildReviewBrief, isKeep } from '@conduit/language';
@@ -39,6 +39,8 @@ export interface ClaudeCliDeps {
   readonly modes?: readonly BrainMode[];
   /** v2.1. The steward's account of where the product stands, as the brief's note about the app has it; read without waiting */
   readonly status?: () => AppStatus | null;
+  /** v2.1. The changelog's newest section, given to a turn that asks what is new; read without waiting */
+  readonly news?: () => string | null;
 }
 
 /** A call the CLI is holding for the owner's answer. */
@@ -271,6 +273,7 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
         mode: modeOf(request.session),
         tools: toolNamesOf(request.session),
         status: deps.status?.() ?? null,
+        news: asksWhatsNew(request.input) ? (deps.news?.() ?? null) : null,
       }),
       image: request.snapshot,
       pdfs: (request.pdfs ?? []).filter((pdf) => given.some((doc) => doc.id === pdf.id && doc.kind === 'pdf')).map((pdf) => pdf.bytes),

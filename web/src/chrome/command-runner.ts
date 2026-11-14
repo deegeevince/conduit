@@ -73,6 +73,10 @@ async function perform(app: StageApp, command: Command, onChoice: (choice: Brain
       }
       return;
     }
+    case 'new':
+      // Not a page of the app's own: a turn like any other, whose brief carries the changelog, so the brain draws what changed.
+      await app.prompt("What's new in this app? Showcase it.");
+      return;
     case 'status': {
       const status = await app.link.appStatus();
       const rows: string[][] = [];

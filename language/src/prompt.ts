@@ -783,6 +783,18 @@ export interface AboutYou {
   readonly tools?: readonly string[];
   /** v2.1. The steward's own account of where the product stands; null or absent: there is none, and the brain says it does not know */
   readonly status?: AppStatus | null;
+  /** v2.1. The changelog's newest section, given only on a turn that asks what is new (`asksWhatsNew`); null or absent: not asked, or there is none */
+  readonly news?: string | null;
+}
+
+/** Whether the user's words ask what is new in the app: "what's new", "what changed", "showcase", the `/new` command's own words. */
+export function asksWhatsNew(input: TurnInput): boolean {
+  return input.kind === 'prompt' && /\b(what(?:'|’)?s|what is|anything|something)\s+new\b|\bwhat(?:'|’)?s changed\b|\bwhat changed\b|\bshowcase\b|\bwhat(?:'|’)?s been (?:added|built)\b/i.test(input.text);
+}
+
+/** The newest changelog section as the brief gives it: what the brain is to do with it is said here, once, and never in the system prompt. */
+export function newsText(news: string): string {
+  return `WHAT'S NEW IN THIS APP, newest version first. The user asked for it: showcase each item live, drawn on stage, never listed; one picture a thing, as many scenes as it takes.\n${news}`;
 }
 
 /** How much of the steward's status a brief carries: the first lines of each list, each cut short. */
@@ -863,6 +875,7 @@ export function buildTurnBrief(context: TurnContext, input: TurnInput, form: Bri
   if (about !== undefined) {
     parts.push(aboutYouText(about));
     parts.push(appNoteText(form, about.status));
+    if (about.news !== undefined && about.news !== null && about.news !== '') parts.push(newsText(about.news));
   }
   const standing = standingText(context.standing);
   if (standing !== null) parts.push(standing);

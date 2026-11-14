@@ -6,7 +6,7 @@
 //   curl -s 'localhost:4300/api/relay/turns/t1/events?since=0&wait=5'
 //   curl -s -X POST localhost:4300/api/relay/turns/t1/end
 
-import { API, buildRelayAppendix, buildTurnBrief, LEAD_WINDOW } from '@conduit/language';
+import { API, asksWhatsNew, buildRelayAppendix, buildTurnBrief, LEAD_WINDOW } from '@conduit/language';
 import type { RelayAppendResponse, RelayClaim, RelayEventsResponse, RelayRejected } from '@conduit/language';
 import type { Hono } from 'hono';
 import type { BrainEvent } from '../domain/brain';
@@ -54,6 +54,7 @@ export function registerRelayRoutes(app: Hono, deps: HttpDeps): void {
             web: false,
             mode: 'steward',
             status: deps.status(),
+            news: asksWhatsNew(request.input) ? deps.news() : null,
           });
     conductor.noteBrief(request.turn, brief);
     const claim: RelayClaim = {

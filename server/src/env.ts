@@ -92,6 +92,8 @@ export interface Env {
   readonly uploads: boolean;
   /** v2.1. Absolute path of the steward's status file (`STATUS_FILE`, default `STATUS.md` at the repository's root): what `/status` shows */
   readonly statusFile: string;
+  /** v2.1. Absolute path of the changelog (`CHANGELOG_FILE`, default `CHANGELOG.md` at the repository's root): the newest section goes in the brief when the user asks what is new */
+  readonly changelogFile: string;
   /** v2.1. Absolute path of the folder, outside the repository, that holds the held-out battery (`BATTERY_SEALED_DIR`); null: there is none and nothing may be called held out */
   readonly sealedDir: string | null;
 }
@@ -318,6 +320,7 @@ export function loadEnv(source: Source): Env {
   };
   const uploads = choice('UPLOADS', ['on', 'off'] as const, 'on') === 'on';
   const statusFile = resolvePath(root, text('STATUS_FILE') ?? 'STATUS.md');
+  const changelogFile = resolvePath(root, text('CHANGELOG_FILE') ?? 'CHANGELOG.md');
   // package H. The held-out set does not live in the repository: a builder, a seed or a prompt edit cannot have read what is not there.
   const sealedDir = text('BATTERY_SEALED_DIR') === undefined ? null : resolvePath(root, text('BATTERY_SEALED_DIR') ?? '');
   if (sealedDir !== null && sealedDir.startsWith(root)) problems.push(`BATTERY_SEALED_DIR must be outside the repository, got ${sealedDir}`);
@@ -343,5 +346,5 @@ export function loadEnv(source: Source): Env {
   }
 
   if (problems.length > 0) throw new EnvError(problems);
-  return { production, host, trustedHosts, port, logLevel, brain, images, sight, promptVariant: parsePromptVariant(text('PROMPT_VARIANT')), review, library, datasets, logDir, readLinks: choice('READ_LINKS', ['on', 'off'] as const, 'on') === 'on', paintingsPerSession: 0, exploreDir, webDist, critic, agent, modes, refine, uploads, statusFile, sealedDir };
+  return { production, host, trustedHosts, port, logLevel, brain, images, sight, promptVariant: parsePromptVariant(text('PROMPT_VARIANT')), review, library, datasets, logDir, readLinks: choice('READ_LINKS', ['on', 'off'] as const, 'on') === 'on', paintingsPerSession: 0, exploreDir, webDist, critic, agent, modes, refine, uploads, statusFile, changelogFile, sealedDir };
 }

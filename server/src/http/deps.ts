@@ -14,4 +14,6 @@ export interface HttpDeps {
   readonly assets: AssetStore;
   /** the steward's status for the brief's note about the app; read without waiting */
   readonly status: () => AppStatus | null;
+  /** the changelog's newest section, for a turn that asks what is new; read without waiting */
+  readonly news: () => string | null;
 }

@@ -22,6 +22,8 @@ export interface BrainsDeps {
   readonly modes?: readonly BrainMode[];
   /** v2.1. The steward's status for the brief's note about the app; read without waiting */
   readonly status?: () => AppStatus | null;
+  /** v2.1. The changelog's newest section, for a turn that asks what is new; read without waiting */
+  readonly news?: () => string | null;
 }
 
 /**
@@ -56,6 +58,7 @@ export function createBrains(deps: BrainsDeps): BrainRegistry {
         ...(deps.agent === undefined ? {} : { agent: deps.agent }),
         ...(deps.modes === undefined ? {} : { modes: deps.modes }),
         ...(deps.status === undefined ? {} : { status: deps.status }),
+        ...(deps.news === undefined ? {} : { news: deps.news }),
       });
       break;
   }
