@@ -268,6 +268,8 @@ export interface UiTokens {
   readonly minText?: number;
   /** `density=` of the screen's style: parts set closer (compact) or roomier (comfortable) than the look's own measure; absent: the look's own */
   readonly pack?: 'compact' | 'comfortable';
+  /** a screen that still does not fit its glass at `density=compact`: a media grid shows its first row only, so that what comes after it (a carousel, a player, the tab bar) is on the screen */
+  readonly squeeze?: boolean;
   readonly radius: { readonly s: number; readonly m: number; readonly l: number; readonly device: number };
   readonly type: Readonly<Record<UiTextRole, UiTextToken>>;
   readonly elevation: { readonly none: UiElevation; readonly low: UiElevation; readonly high: UiElevation };

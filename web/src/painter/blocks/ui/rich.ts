@@ -102,11 +102,12 @@ function tileOf(k: Kit, p: UiPartNode, i: number, title: string, sub: string, o:
 }
 
 export function mediaOf(k: Kit, p: UiPartNode): N {
-  const items = p.fields.map(pieces);
   const wide = p.flags.includes('wide');
   const round = p.flags.includes('round');
   const asked = Number(p.attrs['cols']);
   const cols = Math.max(1, Math.min(6, Number.isFinite(asked) && asked >= 1 ? Math.floor(asked) : desk(k) ? 4 : 2));
+  const all = p.fields.map(pieces);
+  const items = k.t.squeeze === true ? all.slice(0, cols) : all;
   const rows: N[] = [];
   for (let at = 0; at < items.length; at += cols) {
     const line: N[] = items.slice(at, at + cols).map((it, j) => tileOf(k, p, at + j, it[0] ?? '', it[1] ?? '', { round, ratio: wide ? 16 / 10 : 1, width: 'fill', ...(p.attrs['to'] === undefined ? {} : { to: p.attrs['to'] }) }));
@@ -273,7 +274,7 @@ export function chatOf(k: Kit, p: UiPartNode): N {
   const people = new Set(all.flatMap((m) => (m.kind === 'say' && !m.mine && m.who !== '' ? [m.who] : [])));
   const group = people.size > 1;
   const room = UI_DEVICE_SIZE[k.device].width - gutterOf(k) * 2;
-  const most = Math.min(desk(k) ? 520 : 400, Math.floor(room * 0.76));
+  const most = Math.min(desk(k) ? 520 : 400, Math.floor(room * 0.8));
   const R = Math.max(8, k.t.radius.l + 2);
   const rows: N[] = [];
   all.forEach((m, i) => {

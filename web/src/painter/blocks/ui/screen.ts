@@ -117,7 +117,10 @@ export function layoutScreen(written: UiScreen, base: UiTokens, measure: UiMeasu
   const spilled = (layout: UiScreenLayout): number => layout.notes.filter((n) => n.kind === 'outside').length;
   if (!glass || tokens.pack !== undefined || spilled(first) === 0) return first;
   const tighter = layoutWith(written, { ...tokens, pack: 'compact' }, measure, state, lines);
-  return spilled(tighter) < spilled(first) ? tighter : first;
+  const best = spilled(tighter) < spilled(first) ? tighter : first;
+  if (spilled(best) === 0) return best;
+  const squeezed = layoutWith(written, { ...tokens, pack: 'compact', squeeze: true }, measure, state, lines);
+  return spilled(squeezed) < spilled(best) ? squeezed : best;
 }
 
 function layoutWith(written: UiScreen, tokens: UiTokens, measure: UiMeasure, state: UiState, lines: number): UiScreenLayout {
