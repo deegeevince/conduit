@@ -118,11 +118,35 @@ function boot(env: Env): void {
     }
   });
 
+  // An error nobody caught is logged, written to the audit trail and survived: one conversation's bug does not end every conversation. A
+  // process that does this over and over is not healthy, though: past `CRASH_LIMIT` in a minute it exits and lets launchd start it afresh.
+  const faults: number[] = [];
+  const CRASH_LIMIT = 10;
+  const survive = (kind: 'unhandled_rejection' | 'uncaught_exception') => (error: unknown): void => {
+    const at = now();
+    faults.push(at);
+    while (faults.length > 0 && (faults[0] ?? 0) < at - 60_000) faults.shift();
+    try {
+      log.error(`process.${kind}`, { error, faultsInLastMinute: faults.length });
+      audit.record({ kind: 'server', login: 'system', tool: kind, target: error instanceof Error ? error.message : String(error), decision: 'failed', decidedBy: 'system', note: 'the server kept serving' });
+    } catch {
+      // nothing left to say it with
+    }
+    if (faults.length >= CRASH_LIMIT) {
+      process.stderr.write(`conduit: ${faults.length} unhandled errors in a minute; exiting so the service manager can start a fresh process\n`);
+      process.exit(1);
+    }
+  };
+  process.on('unhandledRejection', survive('unhandled_rejection'));
+  process.on('uncaughtException', survive('uncaught_exception'));
+
   let closing = false;
   const shutdown = (signal: string): void => {
     if (closing) return;
     closing = true;
     log.info('server.closing', { signal });
+    // Whatever a child or a stream does, the process is gone within this: a shutdown that waits for a stuck one is a server that cannot be restarted.
+    setTimeout(() => process.exit(0), 6_000).unref();
     void conductor
       .close()
       .then(() => brains.close())

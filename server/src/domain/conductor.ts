@@ -258,7 +258,11 @@ export class Conductor {
     this.deps.sessionLog.write(s.id, { type: 'turn', turn: turn.id, input, brain: brain.id, login: turn.login });
     this.emit(s, turn, { type: 'turn', turn: turn.id, input });
 
-    void this.run(s, turn, brain, context);
+    // `run` ends its own turn and does not throw; this is the net under it, so that nothing can ever be an unhandled rejection from here.
+    this.run(s, turn, brain, context).catch((error: unknown) => {
+      log.error('turn.run_escaped', { session: s.id, turn: turn.id, error });
+      this.finish(s, turn, 'failed', 'the brain failed unexpectedly');
+    });
     return { turn: turn.id };
   }
 
@@ -670,22 +674,43 @@ export class Conductor {
     return Math.min(advanced, Math.max(turn.score.schedule.pen, clock.pen, clock.playhead));
   }
 
+  /**
+   * Ends a turn. It never throws: `run`'s `catch` calls this, and a throw out of a `catch` in a detached promise is an unhandled rejection
+   * that, on Node 22, ends the process: the owner's server and every conversation with it (the architecture review's F8). Each step is
+   * taken on its own, so one that fails is logged and the ones after it still happen: the turn is marked ended first, so nothing can
+   * end it twice, and `end` is sent whatever went wrong before it.
+   */
   private finish(s: Session, turn: ActiveTurn, reason: TurnEndReason, message: string | null): void {
     if (turn.endReason !== null) return;
     turn.endReason = reason;
-    if (reason !== 'done') turn.abort.abort();
-    s.draft.close(turn.id);
+    const step = (what: string, work: () => void): void => {
+      try {
+        work();
+      } catch (error) {
+        try {
+          this.deps.log.error('turn.finish_step_failed', { session: s.id, turn: turn.id, step: what, error });
+        } catch {
+          // a logger that throws is the last thing that can be done about
+        }
+      }
+    };
+    step('abort', () => {
+      if (reason !== 'done') turn.abort.abort();
+    });
+    step('draft', () => s.draft.close(turn.id));
     // Nothing the owner was asked and did not answer outlives the turn: it is a no.
-    this.denyPending(s, turn.id, 'turn');
+    step('permissions', () => this.denyPending(s, turn.id, 'turn'));
     // A call that began under the gate's own yes and had not ended when the turn did is still a call that was made.
-    for (const call of turn.calls.values()) if (!call.asked) this.recordCall(s, turn, call.tool, call.summary, 'allowed', 'policy', `still running when the turn ended (${reason})`);
-    turn.calls.clear();
-    this.deps.sessionLog.write(s.id, { type: 'end', turn: turn.id, reason, message, lines: turn.lineCount });
-    this.emit(s, turn, { type: 'end', turn: turn.id, reason, message });
-    this.deps.log.info('turn.ended', { session: s.id, turn: turn.id, reason, lines: turn.lineCount, durationMs: this.deps.now() - turn.openedAt });
-    this.wake(s.id);
+    step('audit', () => {
+      for (const call of turn.calls.values()) if (!call.asked) this.recordCall(s, turn, call.tool, call.summary, 'allowed', 'policy', `still running when the turn ended (${reason})`);
+      turn.calls.clear();
+    });
+    step('log', () => this.deps.sessionLog.write(s.id, { type: 'end', turn: turn.id, reason, message, lines: turn.lineCount }));
+    step('emit', () => this.emit(s, turn, { type: 'end', turn: turn.id, reason, message }));
+    step('say', () => this.deps.log.info('turn.ended', { session: s.id, turn: turn.id, reason, lines: turn.lineCount, durationMs: this.deps.now() - turn.openedAt }));
+    step('wake', () => this.wake(s.id));
     // After `end` has gone, and never waited for.
-    this.lookAtResult(s, turn);
+    step('critic', () => this.lookAtResult(s, turn));
   }
 
   /**
