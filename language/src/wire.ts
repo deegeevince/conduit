@@ -114,6 +114,8 @@ export interface Capabilities {
   readonly uploads: boolean;
   /** v2.1. True when `say href=` is drawn as a link the viewer can follow. False: the brain is not taught it and names a source in words. */
   readonly links: boolean;
+  /** SA2. The engine the page measures with (`ENGINE_VERSION`). The server measures a draft itself only when it is the server's own; absent or different: the draft gate. */
+  readonly engine?: string;
 }
 
 /** What the server can do for a turn that the painter cannot. The brain's prompt is filtered by these too. */
@@ -373,7 +375,8 @@ export type BackEvent =
       /** true when the element was a choice, so this tap is also the next turn's input */
       readonly choice: boolean;
     }
-  | { readonly type: 'report'; readonly report: TurnReport }
+  /** `boxes` (SA2): the digest of the boxes in `report.placed` (`digestOf`), for the server to hold against its own */
+  | { readonly type: 'report'; readonly report: TurnReport; readonly boxes?: string }
   /**
    * The user committed a change to a control (released a slider, flipped a
    * toggle, chose an option, pressed Enter in an input). Not sent while
@@ -400,7 +403,7 @@ export type BackEvent =
    * Sent in answer to `pass … drafted`. `snapshot` is true when a picture of
    * that stage was uploaded beside it (`API.draft`).
    */
-  | { readonly type: 'draft'; readonly turn: string; readonly pass: number; readonly sight: Sight; readonly placed?: readonly PlacedBox[]; readonly snapshot: boolean; readonly content?: ContentCount }
+  | { readonly type: 'draft'; readonly turn: string; readonly pass: number; readonly sight: Sight; readonly placed?: readonly PlacedBox[]; readonly snapshot: boolean; readonly content?: ContentCount; readonly boxes?: string }
   /** v2.1, agent mode. The owner's answer to a `permission` event. `allow: true` lets that one action happen once; there is no "always". */
   | { readonly type: 'permit'; readonly turn: string; readonly request: string; readonly allow: boolean };
 

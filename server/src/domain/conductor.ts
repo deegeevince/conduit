@@ -55,7 +55,9 @@ import type { VoiceNotes } from './voice';
 import type { StoredUpload, UploadStore } from './uploads';
 import type { UsageMeter } from '../usage';
 import { currentIdentity, labelOf } from '../identity';
+import { processEnvironment } from '../env';
 import { askedOf, refusalProblem, reviewTurn } from './review';
+import { ENGINE_VERSION, engineMismatch, measurable, measureDraft, tryFix } from './stage-facts';
 import type { FixAttempt } from './review';
 import type { TechniqueLibrary } from './techniques';
 
@@ -665,6 +667,14 @@ export class Conductor {
         const report = event.report;
         const turn = s.turns.get(report.turn);
         this.deps.sessionLog.write(s.id, { type: 'report', turn: report.turn, report });
+        if (event.boxes !== undefined && turn !== undefined && report.outcome === 'finished' && report.skippedAt === null && this.measuresHere(s) && measurable(turn.score.schedule)) {
+          // How the turn rested, as the page measured it, against the server's own measure of the same score.
+          const rested = measureDraft(turn.score, { ...s, held: report.controls ?? s.held });
+          if (rested !== null) {
+            this.noteBoxes(s, `${turn.id}#report`, 'server', rested.boxes, 'report', turn.id);
+            this.noteBoxes(s, `${turn.id}#report`, 'page', event.boxes, 'report', turn.id);
+          }
+        }
         if (turn === undefined || turn.reported) return;
         turn.reported = true;
         this.upsertMemory(s, rememberTurn(turn, report, s.snapshotTurns.has(turn.id)));
@@ -683,11 +693,13 @@ export class Conductor {
         this.deps.sessionLog.write(s.id, { type: 'tap', turn: event.turn, id: event.id, text: event.text, choice: event.choice });
         return;
       case 'control':
+        s.held = { ...s.held, [event.id]: event.value };
         this.deps.sessionLog.write(s.id, { type: 'control', turn: event.turn, id: event.id, value: event.value, text: event.text, send: event.send, ...(event.app === true && { app: true }) });
         return;
       case 'draft':
         // How the draft will land: what look and fix is waiting on. The picture, when there is one, arrives by upload.
         s.draft.receive(event.turn, event.pass, event.sight, event.placed ?? [], event.snapshot, event.content);
+        if (event.boxes !== undefined) this.noteBoxes(s, `${event.turn}#${event.pass}`, 'page', event.boxes, 'draft', event.turn);
         this.deps.sessionLog.write(s.id, { type: 'draft', turn: event.turn, pass: event.pass, noted: event.sight.items.filter((item) => item.notes.length > 0).length, picture: event.snapshot, file: null });
         return;
       case 'permit':
@@ -1043,6 +1055,20 @@ export class Conductor {
       log: this.deps.log,
       // Only a painter that said it can try a fix first is offered one: otherwise a draft that needs mending is left as it is.
       ...(s.capabilities.candidates ? { candidate: (candidatePass: number, lines: readonly string[]) => this.emit(s, turn, { type: 'candidate', turn: turn.id, pass: candidatePass, lines }) } : {}),
+      // SA2: a session whose page measures as the server does is measured here, at once; any other goes through the gate as before.
+      ...(this.measuresHere(s)
+        ? {
+            measure: (measurePass: number) => {
+              if (this.measuresHere(s) === false || !measurable(turn.score.schedule)) return null;
+              const measured = measureDraft(turn.score, s);
+              if (measured === null) return null;
+              this.deps.sessionLog.write(s.id, { type: 'measure', turn: turn.id, pass: measurePass, ms: Math.round(measured.ms * 10) / 10, boxes: measured.boxes, noted: measured.sight.items.filter((item) => item.notes.length > 0).length });
+              this.noteBoxes(s, `${turn.id}#${measurePass}`, 'server', measured.boxes, 'draft', turn.id);
+              return measured;
+            },
+            tryFix: (tryPass: number, lines: readonly string[]) => (this.measuresHere(s) ? tryFix(turn.score, lines, s) : null),
+          }
+        : {}),
       fix: this.deps.fix,
       ...(critic.available ? { critic } : {}),
       standing: s.standing,
@@ -1074,6 +1100,40 @@ export class Conductor {
         break;
       }
     }
+  }
+
+  /**
+   * SA2. True when this session's drafts are measured by the server: the page's engine is the server's and no digest has differed yet.
+   * The first time a session is found not to be, the log says why (`drift`), and its drafts go through the gate from then on.
+   */
+  private measuresHere(s: Session): boolean {
+    // Dev only: STAGE_MEASURE=off is the path before SA2 (the page measures, the server waits), for measuring what the change bought.
+    if (processEnvironment()['STAGE_MEASURE'] === 'off') return false;
+    const why = s.drift ?? engineMismatch(s.capabilities);
+    if (why === null) return true;
+    if (s.drift === null) {
+      s.drift = why;
+      this.deps.log.warn('engine.drift', { session: s.id, where: 'engine', why });
+      this.deps.sessionLog.write(s.id, { type: 'drift', turn: s.turn?.id ?? null, where: 'engine', page: s.capabilities.engine ?? null, server: ENGINE_VERSION, why });
+    }
+    return false;
+  }
+
+  /** SA2. One side's digest for a pass; when both are in and they differ, this session drifts. */
+  private noteBoxes(s: Session, key: string, side: 'page' | 'server', value: string, where: 'draft' | 'report', turn: string): void {
+    const held = s.boxes.get(key) ?? {};
+    held[side] = value;
+    s.boxes.set(key, held);
+    while (s.boxes.size > 64) s.boxes.delete(s.boxes.keys().next().value as string);
+    if (held.page === undefined || held.server === undefined) return;
+    if (held.page === held.server) {
+      this.deps.log.info('engine.agree', { session: s.id, turn, where, boxes: held.page });
+      return;
+    }
+    const why = `the page's boxes (${held.page}) and the server's (${held.server}) differ at ${key}`;
+    this.deps.log.warn('engine.drift', { session: s.id, where, page: held.page, server: held.server, why });
+    this.deps.sessionLog.write(s.id, { type: 'drift', turn, where, page: held.page, server: held.server, why });
+    if (s.drift === null) s.drift = why;
   }
 
   private noteRefused(turn: ActiveTurn, reason: string): void {

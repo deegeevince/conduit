@@ -65,6 +65,7 @@ import { AppError } from '../errors';
 import type { Logger } from '../log';
 import type { Brain, BrainEvent, Snapshot } from './brain';
 import type { Critic } from './critic';
+import type { Measured } from './stage-facts';
 
 /** What the painter said about a draft, as the conductor holds it while a look is decided. */
 export interface DraftReport {
@@ -90,6 +91,8 @@ export interface DraftGate {
   receive(turn: string, pass: number, sight: Sight, placed: readonly PlacedBox[], pictureComing: boolean, content?: ContentCount): void;
   receivePicture(turn: string, pass: number, picture: Snapshot): void;
   wait(turn: string, pass: number, deadlineMs: number, signal: AbortSignal): Promise<DraftReport | null>;
+  /** SA2. The picture of this pass if it has already arrived, else null. Never waits. */
+  peek(turn: string, pass: number): Snapshot | null;
   close(turn: string): void;
 }
 
@@ -177,6 +180,9 @@ export function createDraftGate(): DraftGate {
         signal.addEventListener('abort', finish, { once: true });
       });
     },
+    peek(turn, pass) {
+      return slots.get(key(turn, pass))?.picture ?? null;
+    },
     close(turn) {
       dropTurn(turn);
       if (current === turn) current = null;
@@ -232,6 +238,15 @@ export interface ReviewTurnArgs {
    * can try one (`Capabilities.candidates`). Absent: a draft that needs a fix gets none, never a redraw.
    */
   readonly candidate?: (pass: number, lines: readonly string[]) => void;
+  /**
+   * SA2. The server's own measurement of the turn's draft as it stands (`stage-facts`), for the screen and look in force. Present only for
+   * a session whose engine is the server's; `null` (a leaf threw, a photo only the page can size, or the session has drifted) falls
+   * back to the gate for that pass. A measured draft is never waited on the browser for: its picture is attached only if it has already
+   * arrived and the draft has drawing, and its fix is tried here (`tryFix`), not sent to the page.
+   */
+  readonly measure?: (pass: number) => Measured | null;
+  /** SA2. A fix tried on a copy of the turn's score, here; `null` as for `measure` */
+  readonly tryFix?: (pass: number, lines: readonly string[]) => { readonly measured: Measured; readonly rejects: readonly unknown[] } | null;
   /** v2.1. What a fix is held to; `FIX_POLICY` when left out */
   readonly fix?: FixPolicy;
   /** v2.1. A critic that compares the draft's picture with the candidate's in the background, after the fix is shown; only logged, never waited for */
@@ -287,7 +302,7 @@ export async function* reviewTurn(args: ReviewTurnArgs): AsyncGenerator<ReviewSt
     yield record();
     return;
   }
-  if (args.candidate === undefined) {
+  if (args.candidate === undefined && args.measure === undefined) {
     // A fix that cannot be tried first is never shown, and a model call spent on one would be wasted.
     decisions.push({ look: false, why: 'the painter cannot try a fix before showing it' });
     why = 'the painter cannot try a fix before showing it';
@@ -304,10 +319,17 @@ export async function* reviewTurn(args: ReviewTurnArgs): AsyncGenerator<ReviewSt
     if (pass === 1) t0 = now();
     const passStart = now();
     gate.open(args.turn, pass);
+    const draftedAt = now();
     yield { type: 'pass', pass, state: 'drafted', reason: null };
-    const report = await gate.wait(args.turn, pass, policy.draftWaitMs, signal);
+    // SA2: the facts are measured here, at once; only a session that cannot be measured waits on the page.
+    const measured = args.measure === undefined ? null : args.measure(pass);
+    const report: DraftReport | null =
+      measured !== null
+        ? { turn: args.turn, pass, sight: measured.sight, placed: measured.placed, picture: facts.drawn >= policy.minDrawn ? gate.peek(args.turn, pass) : null, content: measured.content }
+        : await gate.wait(args.turn, pass, policy.draftWaitMs, signal);
     if (signal.aborted) return;
-    const fix = worthAFix(facts, report?.sight ?? null, report?.picture != null, policy);
+    // A measured draft that has free drawing is worth a look whether or not its picture has come: the picture is a bonus, never waited for.
+    const fix = worthAFix(facts, report?.sight ?? null, report?.picture != null || (measured !== null && facts.drawn >= policy.minDrawn), policy);
     decisions.push(fix);
     if (!fix.look) {
       why = fix.why;
@@ -316,6 +338,7 @@ export async function* reviewTurn(args: ReviewTurnArgs): AsyncGenerator<ReviewSt
     }
 
     const next = pass + 1;
+    args.log?.info('review.decided', { turn: args.turn, pass, measured: measured !== null, draftedToLookingMs: Math.round(now() - draftedAt), ms: measured === null ? null : Math.round(measured.ms * 10) / 10 });
     yield { type: 'pass', pass: next, state: 'looking', reason: null };
     const wasSeq = args.state().lastSeq;
     const draftContent = report?.content ?? contentOf(state.schedule);
@@ -364,8 +387,18 @@ export async function* reviewTurn(args: ReviewTurnArgs): AsyncGenerator<ReviewSt
     // Tried out of sight. Nothing below touches the turn's score or the stage until the three rules have said yes.
     gate.open(args.turn, next);
     yield { type: 'pass', pass: next, state: 'staged', reason: null };
-    args.candidate(next, outcome.texts);
-    const tried = await gate.wait(args.turn, next, fixPolicy.candidateWaitMs, signal);
+    let tried: DraftReport | null;
+    const here = measured !== null && args.tryFix !== undefined ? args.tryFix(next, outcome.texts) : null;
+    if (here !== null) {
+      // SA2: tried on a copy of the turn's score, here. The page is not asked.
+      tried = { turn: args.turn, pass: next, sight: here.measured.sight, placed: here.measured.placed, picture: null, content: here.measured.content };
+      args.log?.info('review.tried', { turn: args.turn, pass: next, ms: Math.round(here.measured.ms * 10) / 10, rejects: here.rejects.length });
+    } else if (args.candidate !== undefined) {
+      args.candidate(next, outcome.texts);
+      tried = await gate.wait(args.turn, next, fixPolicy.candidateWaitMs, signal);
+    } else {
+      tried = null;
+    }
     if (signal.aborted) return;
     const verdict = await judgeFix(args, { policy: fixPolicy, form, pass: next, draft: report, draftContent, tried });
     decisions.push({ look: verdict.refusal === null, why: verdict.refusal ?? 'the fix keeps what was there and lands no worse' });

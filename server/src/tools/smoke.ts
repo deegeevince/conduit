@@ -90,10 +90,14 @@ interface Options {
   readonly parallel: boolean;
   readonly demo: boolean;
   readonly quiet: boolean;
+  /** SA2. Dev flags added to the page's address (`holdDraft=9000`, `engine=stale`); the page honours them only on this machine */
+  readonly page: string;
+  /** SA2. One prompt in place of the scripted conversation */
+  readonly say: string | null;
 }
 
 function usage(message: string): never {
-  process.stderr.write(`smoke: ${message}\nusage: pnpm smoke [--url http://127.0.0.1:<port>] [--screens 1920x825,390x844] [--out <dir>] [--turns 1,2,3,4,5,6,7] [--timeout <seconds>] [--parallel] [--demo] [--quiet]\n`);
+  process.stderr.write(`smoke: ${message}\nusage: pnpm smoke [--url http://127.0.0.1:<port>] [--screens 1920x825,390x844] [--out <dir>] [--turns 1,2,3,4,5,6,7] [--timeout <seconds>] [--parallel] [--demo] [--quiet] [--page <query>] [--say <prompt>]\n`);
   process.exit(2);
 }
 
@@ -127,6 +131,8 @@ function parseArgs(argv: readonly string[]): Options {
     parallel: flags.has('parallel'),
     demo: flags.has('demo'),
     quiet: flags.has('quiet'),
+    page: flags.get('page') ?? '',
+    say: flags.get('say') ?? null,
   };
 }
 
@@ -727,7 +733,8 @@ class Conversation {
       let aborted: string | null = null;
       try {
         await talk.start();
-        for (const step of STEPS) {
+        const steps: readonly Step[] = options.say === null ? STEPS : [{ n: 1, say: options.say, name: 'custom', expects: 'any' }];
+        for (const step of steps) {
           if (!options.turns.has(step.n)) continue;
           await talk.turn(step);
         }
@@ -751,7 +758,7 @@ class Conversation {
 
   private async start(): Promise<void> {
     const { tab } = this;
-    await tab.send('Page.navigate', { url: `${this.options.url}/${this.options.demo ? '' : '?demo=none'}` });
+    await tab.send('Page.navigate', { url: `${this.options.url}/${this.options.demo ? '' : '?demo=none'}${this.options.page === '' ? '' : `${this.options.demo ? '?' : '&'}${this.options.page}`}` });
     await waitFor('the page to be ready', 60_000, async () => {
       const probe = await tab.call<Probe>('probe').catch(() => null);
       return probe !== null && probe.ready ? probe : null;

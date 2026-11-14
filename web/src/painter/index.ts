@@ -31,7 +31,7 @@ import { placedOf, sightOf } from './sight';
 import { textSignature, textSpansOf } from './text-out';
 import { downUi, easeUi, easingUi, isScreenBlock, moveUi, setUiPicture, typeUi, typingUi, uiBlockAt, uiMockupViews, upUi } from './ui-stage';
 import type { UiSend } from './ui-stage';
-import { measureStage } from '../engine';
+import { ENGINE_VERSION, measureStage } from '../engine';
 import type { EngineInputs, EngineView } from '../engine';
 import { buildTimeline, settledAfter, settledEnd as settledEndOf } from './timeline';
 import type { Timeline, TimelineContext, TimelineInstant } from './timeline';
@@ -52,6 +52,18 @@ const LINKS_READY = false;
 const DATA_WAIT_MS = 20_000;
 /** ms the report on a draft waits for its picture before it goes without: under the server's own wait for it (1.5 s) */
 const DRAFT_PICTURE_MS = 1000;
+
+/** Dev only (a page served from this machine): `?holdDraft=<ms>` holds the draft report and its picture back, `?engine=<text>` pretends to be a stale bundle. Anywhere else: null. */
+function devFlag(name: string): string | null {
+  try {
+    const host = globalThis.location?.hostname;
+    if (host !== 'localhost' && host !== '127.0.0.1') return null;
+    return new URLSearchParams(globalThis.location.search).get(name);
+  } catch {
+    return null;
+  }
+}
+
 
 const HOME_SECONDS = 1.2;
 const SETTLE_SECONDS = 0.12;
@@ -430,6 +442,7 @@ export function createPainter(options: PainterOptions): Painter {
       decks: DECKS_READY,
       uploads: UPLOADS_READY,
       links: LINKS_READY,
+      engine: devFlag('engine') ?? ENGINE_VERSION,
     };
   };
 
@@ -651,10 +664,15 @@ export function createPainter(options: PainterOptions): Painter {
     }
     const { sight, placed, content } = facts;
     let reported = false;
+    const holdMs = Number(devFlag('holdDraft') ?? 0);
+    const held = (send: () => void): void => {
+      if (holdMs > 0) setTimeout(send, holdMs);
+      else send();
+    };
     const report = (snapshot: boolean): void => {
       if (disposed || reported) return;
       reported = true;
-      emitBack({ type: 'draft', turn: open.id, pass, sight: { ...sight, snapshot }, placed: placed.map(({ key: _key, ...item }) => item), snapshot, content });
+      held(() => emitBack({ type: 'draft', turn: open.id, pass, sight: { ...sight, snapshot }, placed: placed.map(({ key: _key, ...item }) => item), snapshot, content, boxes: facts.boxes }));
     };
     if (!(services.review && wantsSnapshot())) {
       report(false);
@@ -675,7 +693,7 @@ export function createPainter(options: PainterOptions): Painter {
       .rasterise(frame, { maxSide: PICTURE_SIDE, mime: 'image/jpeg', quality: 0.8, ...stills(frame) })
       .then((blob) => {
         clearTimeout(late);
-        if (blob !== null && !disposed) emit('upload', { kind: 'draft', turn: open.id, pass, blob });
+        if (blob !== null && !disposed) held(() => emit('upload', { kind: 'draft', turn: open.id, pass, blob }));
         report(blob !== null);
       })
       .catch(() => {

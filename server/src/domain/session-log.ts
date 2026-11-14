@@ -57,7 +57,11 @@ export type SessionRecord =
   /** v2.1. A picture the user gave: its id, kind and size, and the file it was saved as beside the log. Never the bytes. */
   | { readonly type: 'upload'; readonly at: number; readonly turn: string | null; readonly id: string; readonly mime: string; readonly bytes: number; readonly width: number; readonly height: number; readonly file: string | null }
   /** v2.1. A setting the user changed with a command or the picker (`/model`, `/effort`, `/brain`, `/tools`, `/review`) */
-  | { readonly type: 'setting'; readonly at: number; readonly name: string; readonly value: string };
+  | { readonly type: 'setting'; readonly at: number; readonly name: string; readonly value: string }
+  /** SA2. The server measured a pass's draft itself: how long it took, the digest of its boxes and the number of things it noted */
+  | { readonly type: 'measure'; readonly at: number; readonly turn: string; readonly pass: number; readonly ms: number; readonly boxes: string; readonly noted: number }
+  /** SA2. The page and the server do not measure alike (`where`: `engine` the version, `draft` or `report` a digest). From then on this session's drafts go through the page's gate. */
+  | { readonly type: 'drift'; readonly at: number; readonly turn: string | null; readonly where: 'engine' | 'draft' | 'report'; readonly page: string | null; readonly server: string | null; readonly why: string };
 
 /** Fields of a record without the time, which the log stamps. */
 export type SessionEntry = SessionRecord extends infer R ? (R extends { readonly at: number } ? Omit<R, 'at'> : never) : never;
