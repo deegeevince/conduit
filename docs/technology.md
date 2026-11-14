@@ -311,15 +311,15 @@ Verified on the integrated product (Node 22.14.0, pnpm 10.28.2, TypeScript 7.0.2
 - A stroked or filled shape's box matches `canvasToStage` projected through the camera to 0.00 px in `blueprint` with reduced motion; with the hand look's wobble and the camera's sway it is within 3 px.
 - Resting text keeps 4.5:1 or better in all eight looks (worst measured 4.52:1, `riso`), and no text of ten battery answers leaves the 16 px safe frame at any sampled instant, in full and reduced motion.
 
-**(v2) Checked while the skeleton was written** (Claude Code 2.1.325, the same machine):
+**(v2) Checked on the integrated product** (the same machine; headless Chrome with `--use-angle=metal`, the three renderer unless said, a replay brain for the demos and sonnet at `--effort low` for the rest):
 
-- `pnpm typecheck` is clean with the Series 4 language, the contracts and every stub in place; `pnpm prompt count` is within budget with everything on (8,814 of 8,850); `pnpm timeline` runs every prompt example with no rejected line and no warning; every seed technique's example parses and schedules cleanly (`pnpm library lint`).
-- A Series 4 script (seven structures, rows, marks, five controls, binds, callouts, paint) parses, schedules, and serialises back to the same lines.
-- One conversation of two turns with sonnet at `--effort low` and the Series 4 prompt, no techniques handed over: asked for a flowchart, it wrote `flow`, eight `node` lines with `from=`, and one sentence, in 166 output tokens (the same prompt in v1: 29 lines, 471 tokens, and a broken chart), first text at 1.7 s, no hidden reasoning. Asked for something to drag, it wrote a `slider`, two `bind` lines and a sentence with `{round(sqrt(2*9.8*2*sin(rad(angle)))*10)/10}`, which the evaluator reads; its bound changes were weak, which is what the explorable technique is for. The second turn read 92% of its input from cache.
-- `remote get memory <root> --content 1 --links 1` on the Series account: about one second; the shape of `links` is as the library's adapter expects.
-- Choosing techniques for 86 battery prompts: 37 to 84 microseconds each.
-
-Not verified, because not built: everything a stub stands for.
+- `pnpm typecheck` and `pnpm build` are clean; `pnpm prompt count` is 8,848 of 8,850 with everything on; `pnpm timeline` and `pnpm library lint` are clean on every demo, example and seed; `pnpm library check` hands a seed technique to 41 of 42 tune prompts that have one and none to the three plain ones, choosing in a median of 53 microseconds (p99 80).
+- The three demos (`diagrams`, `explorable`, `charts`) play to the end with no fault at 60 fps in all nine looks at 1440x900, on the plain renderer, and (explorable) at 375x667 with touch emulation. A tree, a cycle, a table with bars, a flow, a line chart, an indexed two-series chart, columns and candles drew correctly in every look; the machine looks colour the chart and keep its crosshair.
+- Controls: the slider moves by pointer drag, by touch drag and by arrow keys (each step sends its `control` event, 0.5 s to the sun's new place); the toggle by Space, the pick by arrow keys; a button opens an `act` turn. Each has an invisible form control over it with a name, role and value.
+- Charts: hover and zoom through the hook change the readout and the range and open no turn; their picture reaches a PNG, an SVG, a WebM film and a zip of frames (`chartStill` is wired into the exporter, and a draft's chart is drawn off screen).
+- Paint: `paint over=<group> as=<medium>` on the three renderer reaches the renderer (the painter now sets `medium`, `sketch` and `develop` on the picture); watercolor, gouache, pastel and pixel read as their medium, oil and woodcut were tuned to read as one, ink is three flat tones.
+- Look and fix inside the battery runs through the same `reviewTurn` the server uses: the draft is pictured by the page, the brain is shown it, a fix is parsed and played, and the judge scores both.
+- Seams found only by putting the parts together, and fixed: a card did not reserve its room in the flow (the say line and button drew over it); a structure carried to rest showed no rows (the resting picture of a table, and so the brain's snapshot of it, was blank); a renderer-made painting never reached the renderer; a chain of twenty steps ran off the right edge (it now folds into rows); the chart engine drew before its fonts were loaded; the battery's pictures had no charts in them.
 
 Not verified: the OpenAI adapter against the real service (no spend approved); QuickTime and VLC playback of an exported film; memory during a 60 s export; weather thinning over text and the 12 field kinds by eye; background-tab rendering.
 
