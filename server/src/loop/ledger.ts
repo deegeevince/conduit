@@ -69,7 +69,7 @@ export function entryFor(record: ExperimentRecord): string {
   }
   if (record.decision !== null) lines.push('', `Decision: ${record.decision.keep ? 'kept' : 'discarded'}. ${record.decision.reasons.join('; ')}.`);
   for (const verdict of record.verdicts) lines.push('', `${verdict.by === 'reviewer' ? 'Reviewer' : 'Steward'} ${verdict.approve ? 'found nothing wrong' : 'objected'}: ${verdict.why}`);
-  lines.push('', record.taste === null ? 'Taste: no sheet of the owner\'s scores yet, so the judge\'s steering is unchecked.' : `Taste: the judge agreed with the owner ${Math.round(record.taste.agreement * 100)}% (kappa ${record.taste.kappa.toFixed(2)}).`);
+  lines.push('', record.taste === null ? 'Taste: UNCALIBRATED. No sheet of the owner\'s scores yet, so the judge\'s steering is unchecked; nothing here is approved without the steward, by hand.' : `Taste: the judge agreed with the owner ${Math.round(record.taste.agreement * 100)}% (kappa ${record.taste.kappa.toFixed(2)}).`);
   lines.push('', `Cost: $${record.usd.toFixed(2)}.`);
   return lines.join('\n');
 }

@@ -70,7 +70,7 @@ function dryRun(): void {
   out('One run of the improvement loop (nothing is run by this command):');
   out(`  budget      $${budget.usd.toFixed(2)} (the CLI's own usage estimate on the owner's login), ${budget.experiments} experiments, ${budget.minutes} minutes. Money is set aside before each call, and each call carries its own cap.`);
   out(`  split       critic $${share.critic.toFixed(2)}, tune baseline $${share.tuneBaseline.toFixed(2)}; each experiment $${share.perExperiment.toFixed(2)} (builder $${share.builder.toFixed(2)}, measurement $${share.measure.toFixed(2)}, reviewer $${share.reviewer.toFixed(2)})`);
-  out('  gate        the judge must agree with the owner (taste floor) for the rubric in use, or the loop stops before it spends on a critic');
+  out('  gate        with a taste sheet for the rubric in use, the judge must agree with the owner (taste floor) or the loop stops before it spends on a critic; with none, the run is UNCALIBRATED: it proposes and measures, its records are marked, the steward approves by hand');
   out('  measure     the tune set on the base; its judgements, and nothing of the held-out set, go to the critic');
   out(`  critic      ${LOOP_ROLES.critic.model}, effort ${LOOP_ROLES.critic.effort}: proposes up to ${budget.experiments} experiments (${EXPERIMENT_ORDER.join(', then ')})`);
   out(`  builder     ${LOOP_ROLES.builder.model}, effort ${LOOP_ROLES.builder.effort}: one git worktree and branch per attempt, sealed paths absent; a refused diff is rebuilt once (${DEFAULTS.attempts} attempts)`);
@@ -142,7 +142,7 @@ async function status(): Promise<void> {
   const all = folded(lines);
   const waiting = all.filter((entry) => entry.record.outcome === 'awaiting-steward' && entry.verdict === null);
   out(waiting.length === 0 ? 'Nothing is awaiting the steward.' : 'Awaiting the steward:');
-  for (const { record } of waiting) out(`  ${record.id}  ${record.proposal.kind}: ${record.proposal.title}  (branch ${record.branch}; ${record.decision?.reasons.join('; ') ?? ''})`);
+  for (const { record } of waiting) out(`  ${record.id}${record.uncalibrated === true ? ' [UNCALIBRATED]' : ''}  ${record.proposal.kind}: ${record.proposal.title}  (branch ${record.branch}; ${record.decision?.reasons.join('; ') ?? ''})`);
   out('\nLast entries:');
   for (const { record, verdict } of all.slice(-8)) out(`  ${record.started.slice(0, 16)}  ${record.id}  ${record.outcome}${verdict === null ? '' : `, steward ${verdict.approve ? 'approved' : 'refused'}`}  $${record.usd.toFixed(2)}  ${record.proposal.title}`);
   const runs = lines.filter((line): line is Extract<LedgerLine, { kind: 'run' }> => line.kind === 'run');

@@ -136,15 +136,14 @@ export async function runLoop(deps: Deps, options: RunOptions, outer: AbortSigna
     meter.settle(tuneReservation, typeof tune === 'string' ? null : tune.usd);
     if (typeof tune === 'string') return finish(`could not measure the tune set: ${tune}`);
 
-    // the judge must have been checked against the owner before the loop is allowed to steer by it
+    // The judge must have been checked against the owner before the loop is allowed to steer by it. With no sheet at all (the owner has not
+    // scored twenty answers yet) the loop runs UNCALIBRATED: it may propose and measure, every record says so, and the steward approves by hand.
     const taste = await deps.taste(tune.rubric);
-    if (taste === null || taste.n < TASTE_FLOOR.n || taste.agreement < TASTE_FLOOR.agreement || taste.kappa < TASTE_FLOOR.kappa) {
-      return finish(
-        taste === null
-          ? 'the judge has not been checked against the owner for this rubric: score twenty answers on the taste page first'
-          : `the judge agrees with the owner too little to steer by (${Math.round(taste.agreement * 100)}% on ${taste.n}, kappa ${taste.kappa.toFixed(2)}; the floor is ${Math.round(TASTE_FLOOR.agreement * 100)}% and ${TASTE_FLOOR.kappa})`,
-      );
+    const uncalibrated = taste === null;
+    if (taste !== null && (taste.n < TASTE_FLOOR.n || taste.agreement < TASTE_FLOOR.agreement || taste.kappa < TASTE_FLOOR.kappa)) {
+      return finish(`the judge agrees with the owner too little to steer by (${Math.round(taste.agreement * 100)}% on ${taste.n}, kappa ${taste.kappa.toFixed(2)}; the floor is ${Math.round(TASTE_FLOOR.agreement * 100)}% and ${TASTE_FLOOR.kappa})`);
     }
+    if (uncalibrated) log('UNCALIBRATED: no taste sheet for this rubric; the records are marked and nothing is approved without the steward');
 
     // 2. the critic
     const briefFolder = join(scratch, 'briefing');
@@ -330,6 +329,7 @@ export async function runLoop(deps: Deps, options: RunOptions, outer: AbortSigna
           decision,
           verdicts,
           taste,
+          ...(uncalibrated ? { uncalibrated: true } : {}),
           usd: meter.spent - spentBefore,
           outcome,
         };

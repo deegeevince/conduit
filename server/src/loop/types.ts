@@ -135,6 +135,8 @@ export interface ExperimentRecord {
   readonly verdicts: readonly Verdict[];
   /** how far the judge agreed with the owner when this was decided */
   readonly taste: TasteAgreement | null;
+  /** no sheet of the owner's scores exists for this rubric: the run proposed and measured, and only the steward, by hand, may approve it */
+  readonly uncalibrated?: boolean;
   readonly usd: number;
   readonly outcome: 'kept' | 'discarded' | 'refused' | 'failed' | 'awaiting-steward';
 }
