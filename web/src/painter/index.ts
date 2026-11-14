@@ -1,14 +1,17 @@
-import { describeFigure, EMPTY_STAGE, FULL_CAPABILITIES, NO_SERVICES, sceneAt, serializeLine, TurnScore, valueAt } from '@conduit/language';
+import { controlText, describeFigure, EMPTY_STAGE, holdControl, FULL_CAPABILITIES, NO_SERVICES, sceneAt, serializeLine, TurnScore, valueAt } from '@conduit/language';
 import { CHARTS_READY } from '../render/chart';
 import { STRUCTURES_READY } from './blocks';
-import { CONTROLS_READY } from './controls';
+import { CONTROLS_READY, controlEngine, createControlStore, nextEases } from './controls';
+import { controlIndexOf, createRuntime, controlSpecOf, stateReader } from './bound';
+import type { ControlSite } from './controls-stage';
+import { CALM } from '../contracts/controls';
 import { NO_SIGHT } from '@conduit/language';
-import type { PassState, Sight } from '@conduit/language';
+import type { ControlValue, ControlValues, PassState, Sight } from '@conduit/language';
 import type { BackEvent, Capabilities, ClockState, ElementSpan, Issue, Line, Schedule, ScoreEntry, Services, StageBase, TurnEndReason, TurnInput, TurnReport } from '@conduit/language';
 import type { Recording } from '../contracts/film';
 import type { ElementFrame, Frame, Quality, ShapeFrame } from '../contracts/frame';
 import type { LookSpec } from '../contracts/look';
-import type { LineView, Painter, PainterEvents, PainterOptions, PainterSnapshot } from '../contracts/painter';
+import type { ControlView, LineView, Painter, PainterEvents, PainterOptions, PainterSnapshot } from '../contracts/painter';
 import { REST_POSE } from '../contracts/space';
 import type { CameraPose, Viewport } from '../contracts/space';
 import { PlayClock, pinnedWallTime } from './clock';
@@ -228,7 +231,32 @@ export function createPainter(options: PainterOptions): Painter {
       if (element.figure?.kind === 'structure') element.figure.rows.forEach((_, i) => arrivals.has(`${element.key}#r${i}`) || arrivals.set(`${element.key}#r${i}`, at));
     }
   };
-  const timelineContext = (): TimelineContext => ({ viewport, reducedMotion, lockLook, paintings, onFault: noteFault, arrivals });
+  // What the user's hand holds: one store, the moods the pointer and keyboard give, and how far each bound change has eased.
+  const store = createControlStore();
+  const runtime = createRuntime(store);
+  const declared = new Set<string>();
+  const declareControls = (schedule: Schedule): void => {
+    for (const element of schedule.elements) {
+      const spec = controlSpecOf(element);
+      if (spec === null || declared.has(element.key)) continue;
+      declared.add(element.key);
+      store.declare(element.key, element.id, spec);
+    }
+  };
+  let easedAt = -1;
+  let easedFor = -1;
+  /** Bound changes ease from where they are to where the controls now send them, when the store's revision (or the set of bindings) moves. */
+  const refreshEases = (force: boolean): void => {
+    const schedule = timeline.schedule;
+    const index = controlIndexOf(schedule);
+    if (!force && easedFor === store.revision && easedAt === index.driven.length) return;
+    easedFor = store.revision;
+    easedAt = index.driven.length;
+    const reading = clock.read();
+    runtime.eases = nextEases(index.driven, stateReader(index, runtime, reading.playhead), runtime.eases, reading.ambient);
+    runtime.version += 1;
+  };
+  const timelineContext = (): TimelineContext => ({ viewport, reducedMotion, lockLook, paintings, onFault: noteFault, arrivals, controls: runtime });
 
   /** Every picture the stage has is accounted for: waiting for its painting if the server can paint, unpainted if not. */
   const syncPaintings = (schedule: Schedule): void => {
@@ -255,13 +283,17 @@ export function createPainter(options: PainterOptions): Painter {
   const rebuild = (schedule: Schedule): void => {
     syncPaintings(schedule);
     queueSketches(schedule);
+    declareControls(schedule);
     timeline = buildTimeline(schedule, turn !== null && settling === null ? turn.base : base, timelineContext());
+    refreshEases(true);
   };
   const restSchedule = (stage: StageBase): Schedule => new TurnScore(stage).schedule;
   const rebuildRest = (): void => {
     const schedule = restSchedule(base);
     syncPaintings(schedule);
+    declareControls(schedule);
     timeline = buildTimeline(schedule, base, timelineContext());
+    refreshEases(true);
   };
   timeline = buildTimeline(restSchedule(base), base, timelineContext());
 
@@ -427,7 +459,15 @@ export function createPainter(options: PainterOptions): Painter {
 
   const wantsSnapshot = (): boolean => renderer.capabilities.capture && services.sight === 'snapshot';
 
+  /** What every control on the stage holds, by element id: the report's `controls`, and what the stage carries on. */
+  const heldValues = (schedule: Schedule): ControlValues => {
+    const byId = new Map<string, string>();
+    for (const element of schedule.elements) if (element.kind === 'control' && (element.exit === null || element.exit.start > clock.read().playhead)) byId.set(element.id, element.key);
+    return store.values(byId);
+  };
+
   const landingFor = (at: Timeline, schedule: Schedule, stage: StageBase, skippedAt: number | null) => ({
+    controls: heldValues(schedule),
     sight: (when: number) => sightOf(at, schedule, stage, when, wantsSnapshot()),
     placed: (when: number, keys: ReadonlySet<string>) => placedOf(at, schedule, when, keys),
     skippedAt,
@@ -739,6 +779,7 @@ export function createPainter(options: PainterOptions): Painter {
       if (now - undrawableSince > GLYPH_HOLD_MS) glyphStalled = true;
     }
     reading = advanceTurnState(reading, drawn || glyphStalled);
+    announceControls();
     observe(reading);
     // The frame just drawn may have met glyphs not yet typeset: say so now, the clock holds from the next frame.
     const waitingOnDraw = !drawn && !glyphStalled && turn !== null && turn.started && settling === null && reading.state === 'playing';
@@ -866,10 +907,129 @@ export function createPainter(options: PainterOptions): Painter {
       anticipating: anticipation !== null,
       showingAll,
       fault: faultText(),
-      controls: [],
+      controls: controlViews(),
       charts: [],
       pass: passState === null || turn === null || passState.turn !== turn.id ? null : { pass: passState.pass, state: passState.state },
     };
+  };
+
+  // Controls ---------------------------------------------------------------------------------------------------------------
+  const sitesNow = (): readonly ControlSite[] => timeline.controlsAt(instantOf(clock.read()));
+  const siteById = (id: string): ControlSite | null => {
+    const found = sitesNow().filter((site) => site.id === id);
+    return found[found.length - 1] ?? null;
+  };
+  const touch = (): void => {
+    runtime.version += 1;
+  };
+  const setMood = (key: string | null, patch: Partial<typeof CALM>): void => {
+    for (const [other, was] of [...runtime.moods]) {
+      if (other !== key && (was.hover || was.pressed !== null) && patch.pressed === undefined) runtime.moods.set(other, { ...was, hover: false });
+    }
+    if (key !== null) runtime.moods.set(key, { ...(runtime.moods.get(key) ?? CALM), ...patch });
+    touch();
+  };
+  /** the part of a control under a point, host CSS pixels: the smallest zone that holds it, so a knob wins over its track */
+  const hitControl = (x: number, y: number): { readonly site: ControlSite; readonly zone: ControlSite['layout']['zones'][number] } | null => {
+    const sites = sitesNow();
+    for (let i = sites.length - 1; i >= 0; i -= 1) {
+      const site = sites[i] as ControlSite;
+      if (!site.enabled) continue;
+      const lx = (x - site.screen.x) / site.screen.scale;
+      const ly = (y - site.screen.y) / site.screen.scale;
+      let best: ControlSite['layout']['zones'][number] | null = null;
+      for (const zone of site.layout.zones) {
+        const b = zone.box;
+        if (lx < b.x || lx > b.x + b.width || ly < b.y || ly > b.y + b.height) continue;
+        if (best === null || b.width * b.height < best.box.width * best.box.height) best = zone;
+      }
+      if (best !== null) return { site, zone: best };
+    }
+    return null;
+  };
+  const localOf = (site: ControlSite, x: number, y: number): { x: number; y: number } => ({ x: (x - site.screen.x) / site.screen.scale, y: (y - site.screen.y) / site.screen.scale });
+
+  const sayControl = (site: ControlSite, value: ControlValue): void => {
+    const spec = site.input.spec;
+    const reading = clock.read();
+    emitBack({ type: 'control', turn: turn === null ? null : turn.id, id: site.id, value, text: controlText(spec, value), playhead: reading.playhead, send: spec.control === 'button' ? true : spec.send });
+  };
+  /** the value a control holds changed; bound changes and `{…}` follow in the next frame, and a timeline that reads values is made again */
+  const holdValue = (site: ControlSite, value: ControlValue): void => {
+    store.set(site.key, value);
+    refreshEases(false);
+    if (timeline.reactive) refreshTimeline();
+  };
+  let grab: { readonly pointer: number; readonly key: string; readonly zone: string; readonly from: ControlValue | null } | null = null;
+  let pressedZone: { readonly pointer: number; readonly key: string; readonly zone: string } | null = null;
+
+  /** A pointer released on a part that acts on release: a press, a switch, an option, a field. */
+  const actOn = (site: ControlSite, zone: ControlSite['layout']['zones'][number], x: number, y: number): void => {
+    const spec = site.input.spec;
+    if (spec.control === 'button') {
+      sayControl(site, true);
+      return;
+    }
+    if (zone.part === 'field') {
+      if (spec.control === 'pick') {
+        runtime.open = runtime.open === site.key ? null : site.key;
+        touch();
+      } else setMood(site.key, { focus: true });
+      return;
+    }
+    if (zone.part === 'list') return;
+    const value = controlEngine.valueAt({ ...site.input, mood: CALM }, site.layout, zone, localOf(site, x, y));
+    if (value === null) return;
+    holdValue(site, value);
+    if (spec.control === 'pick' && zone.part.startsWith('option')) {
+      runtime.open = null;
+      touch();
+    }
+    sayControl(site, value);
+  };
+
+  const refreshTimeline = (): void => {
+    if (turn !== null) rebuild(timeline.schedule);
+    else if (reviewing && review !== null) timeline = buildTimeline(review.schedule, review.base, timelineContext());
+    else rebuildRest();
+  };
+
+  const viewOf = (site: ControlSite): ControlView => {
+    const spec = site.input.spec;
+    const half = (n: number): number => Math.max(22, (n * site.screen.scale) / 2);
+    const w = half(site.layout.width);
+    const h = half(site.layout.height);
+    const index = controlIndexOf(timeline.schedule);
+    return {
+      key: site.key,
+      id: site.id,
+      control: spec.control,
+      form: spec.form,
+      label: site.span.text,
+      options: spec.options,
+      min: spec.min,
+      max: spec.max,
+      step: spec.step,
+      unit: spec.unit,
+      value: site.value,
+      valueText: controlText(spec, site.value),
+      box: { x: site.screen.x - w, y: site.screen.y - h, width: 2 * w, height: 2 * h },
+      enabled: site.enabled,
+      send: spec.control === 'button' ? true : spec.send,
+      bound: index.driven.some((change) => change.control === site.key),
+    };
+  };
+  const controlViews = (): ControlView[] => sitesNow().map(viewOf);
+  let lastControlsSignature = '';
+  /** Tells the app when controls arrived, left, moved or took a new value: never on every frame of a drag. */
+  const announceControls = (): void => {
+    const views = controlViews();
+    if (views.length === 0 && lastControlsSignature === '') return;
+    const dragging = grab !== null;
+    const signature = views.map((v) => [v.key, v.enabled ? 1 : 0, Math.round(v.box.x), Math.round(v.box.y), Math.round(v.box.width), Math.round(v.box.height), dragging ? '' : v.valueText].join(':')).join('|');
+    if (signature === lastControlsSignature) return;
+    lastControlsSignature = signature;
+    emit('controls', views);
   };
 
   /** A fingertip is not a pixel: a choice smaller than 44 px is grown to 44 px around its centre for hit-testing only. */
@@ -1025,10 +1185,86 @@ export function createPainter(options: PainterOptions): Painter {
       if (state !== 'drafted') return;
       sendDraft(open, pass);
     },
-    pointer() {
+    pointer(input) {
+      const { x, y, phase } = input;
+      if (x <= -1e5 || y <= -1e5) {
+        // the pointer left the stage
+        for (const [key, mood] of [...runtime.moods]) if (mood.hover) runtime.moods.set(key, { ...mood, hover: false });
+        touch();
+        return false;
+      }
+      if (phase === 'move') {
+        if (grab !== null && grab.pointer === input.pointer) {
+          const site = sitesNow().find((candidate) => candidate.key === grab?.key);
+          const zone = site?.layout.zones.find((candidate) => candidate.part === grab?.zone);
+          if (site === undefined || zone === undefined) return true;
+          const value = controlEngine.valueAt({ ...site.input, mood: CALM }, site.layout, zone, localOf(site, x, y));
+          if (value !== null) holdValue(site, value);
+          return true;
+        }
+        const hit = hitControl(x, y);
+        setMood(hit === null ? null : hit.site.key, hit === null ? {} : { hover: true });
+        return hit !== null;
+      }
+      if (phase === 'down') {
+        const hit = hitControl(x, y);
+        if (hit === null) {
+          if (runtime.open !== null) {
+            runtime.open = null;
+            touch();
+          }
+          return false;
+        }
+        const { site, zone } = hit;
+        // a click anywhere but the open menu's own list closes it
+        if (runtime.open !== null && runtime.open !== site.key) runtime.open = null;
+        setMood(site.key, { hover: true, pressed: zone.part });
+        if (zone.drag) {
+          grab = { pointer: input.pointer, key: site.key, zone: zone.part, from: site.value };
+          const value = controlEngine.valueAt({ ...site.input, mood: CALM }, site.layout, zone, localOf(site, x, y));
+          if (value !== null) holdValue(site, value);
+        } else pressedZone = { pointer: input.pointer, key: site.key, zone: zone.part };
+        return true;
+      }
+      // up, cancel
+      if (grab !== null && grab.pointer === input.pointer) {
+        const done = grab;
+        grab = null;
+        const site = sitesNow().find((candidate) => candidate.key === done.key);
+        setMood(done.key, { pressed: null });
+        if (site === undefined) return true;
+        if (phase === 'cancel' && done.from !== null) holdValue(site, done.from);
+        else if (site.value !== null) sayControl(site, site.value);
+        return true;
+      }
+      if (pressedZone !== null && pressedZone.pointer === input.pointer) {
+        const done = pressedZone;
+        pressedZone = null;
+        setMood(done.key, { pressed: null });
+        if (phase === 'up') {
+          const hit = hitControl(x, y);
+          if (hit !== null && hit.site.key === done.key && hit.zone.part === done.zone) actOn(hit.site, hit.zone, x, y);
+        }
+        return true;
+      }
       return false;
     },
-    setControl() {},
+    setControl(id, value, commit) {
+      const site = siteById(id);
+      if (site === null) return;
+      const spec = site.input.spec;
+      if (spec.control === 'button') {
+        if (commit) sayControl(site, true);
+        return;
+      }
+      const held = holdControl(spec, value ?? undefined);
+      if (held === null) return;
+      holdValue(site, held);
+      if (commit) {
+        const now = siteById(id) ?? site;
+        sayControl(now, held);
+      }
+    },
 
     resize(next) {
       viewport = next;

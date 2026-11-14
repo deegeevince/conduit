@@ -6,9 +6,23 @@ import type { LookSpec, MotionRecipe, MoodCharacter } from '../contracts/look';
 import type { ElementPhase, StageElementView } from '../contracts/painter';
 import { layerZ, MAX_DOLLY, planeScale, projectToScreen, restDistance } from '../contracts/space';
 import type { Box, CameraPose, Viewport } from '../contracts/space';
+import type { ControlMood } from '../contracts/controls';
+import type { ControlValue } from '@conduit/language';
 import { LOOKS, specFor } from '../looks';
 import type { StructureEngine } from '../contracts/blocks';
-import { buildStructures } from './structures';
+import { createControlStore, compileTemplate, renderTemplate, scopeOf } from './controls';
+import type { Template } from './controls';
+import { boundElement, boundSchedule, controlIndexOf, createRuntime, heldBy, moodOf, controlSpecOf } from './bound';
+import type { BoundWords, ControlRuntime } from './bound';
+import { controlInputOf, controlLayoutOf, placeParts } from './controls-stage';
+import type { ControlSite } from './controls-stage';
+import { layoutCard } from './controls';
+import type { ControlLayout } from '../contracts/controls';
+import { lookOf, measurerFor } from './structures';
+import { CALM } from '../contracts/controls';
+import { registerLaidOut, laidOutOf } from './registry';
+import { buildStructures, setTextOnce } from './structures';
+import type { StructureFrames } from './structures';
 import { cameraAt } from './camera';
 import { canvasToStage, fitCanvas } from './canvas';
 import type { CanvasFit } from './canvas';
@@ -35,6 +49,8 @@ export interface TimelineContext {
   readonly arrivals?: ReadonlyMap<string, number>;
   /** a stand-in structure engine, for a bench; absent: the painter's own */
   readonly engine?: StructureEngine;
+  /** what the user's hand holds: control values, moods, how far bound changes have eased. Read at every frame. Absent: nothing is held and every control shows what was written. */
+  readonly controls?: ControlRuntime;
 }
 
 export interface TimelineInstant {
@@ -73,6 +89,10 @@ export interface Timeline {
   readonly lastLayoutChange: number;
   /** what a structure's layout could not keep clear (`crowded`, `crossed`, `clipped`), by element key, as of `time` */
   layoutNotesAt(time: number): ReadonlyMap<string, readonly SightNote[]>;
+  /** the controls on stage at this instant: where each is, what it holds, which parts the pointer can work */
+  controlsAt(instant: TimelineInstant): ControlSite[];
+  /** true when a structure or a chart reads a control's value: the timeline is then stale as soon as a control changes */
+  readonly reactive: boolean;
 }
 
 /** Seconds a laid-out element takes to approach a new place, before the mood scales it. */
@@ -269,6 +289,32 @@ function splitSides(schedule: Schedule, sceneId: string): ReadonlyMap<string, 'l
 
 export function buildTimeline(schedule: Schedule, base: StageBase, context: TimelineContext): Timeline {
   const { viewport, reducedMotion, lockLook, paintings, onFault } = context;
+  const runtime: ControlRuntime = context.controls ?? createRuntime(createControlStore());
+  const cindex = controlIndexOf(schedule);
+  const controlSpans = schedule.elements.filter((element) => element.kind === 'control');
+  const templates = new Map<string, Template>();
+  const templateOf = (element: ElementSpan): Template => {
+    let found = templates.get(element.key);
+    if (found === undefined) {
+      found = compileTemplate(element.text, (id) => cindex.ids.has(id));
+      templates.set(element.key, found);
+    }
+    return found;
+  };
+  /** the control a `{name}` means: the latest one of that id that has come on stage by `time` */
+  const controlNamed = (id: string, time: number): { readonly spec: NonNullable<ReturnType<typeof controlSpecOf>>; readonly value: import('@conduit/language').ControlValue | null } | null => {
+    let found: ElementSpan | null = null;
+    for (const span of controlSpans) if (span.id === id && (span.carried || (span.enter !== null && span.enter.start <= time)) && (span.exit === null || time < span.exit.end)) found = span;
+    const spec = found === null ? null : controlSpecOf(found);
+    return found === null || spec === null ? null : { spec, value: heldBy(runtime, found) };
+  };
+  /** the words of an element as the hand has them now: `{…}` worked out, or a bound `text` change */
+  const wordsNow = (element: ElementSpan, bound: BoundWords | null, time: number): BoundWords | null => {
+    if (bound !== null) return bound;
+    const template = templateOf(element);
+    if (!template.reactive) return null;
+    return renderTemplate(template, element.text, element.emphasis, (id) => controlNamed(id, time));
+  };
   // Words are laid out here; everything drawn is placed by painter/figures.ts.
   const elements = schedule.elements.filter((element) => element.kind === 'text');
   const byKey = new Map<string, ElementSpan>();
@@ -478,7 +524,7 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
     boundaries.push(scene.start);
     for (const item of scene.expected) boundaries.push(item.at);
   }
-  for (const element of elements) {
+  for (const element of [...elements, ...controlSpans]) {
     if (element.enter !== null) boundaries.push(element.enter.start);
     if (element.exit !== null) boundaries.push(element.exit.start);
     for (const change of element.changes) {
@@ -508,6 +554,9 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
    */
   const laidStyle = (style: ElementStyle): ElementStyle => (style.near !== null || style.group !== null || (typeof style.at === 'object' && style.at !== null) ? { ...style, at: 'center', near: null } : style);
 
+  /** the widest a control may be, in its layer's plane units: the room the flow has across */
+  const controlRoom = (span: ElementSpan, fit: CanvasFit): number => fit.flow.width / planeScale(span.style.layer, viewport);
+
   for (const start of starts) {
     const look = specAt(start);
     const scene = sceneAt(schedule, start);
@@ -518,20 +567,37 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
     });
     const replaced = new Set<string>();
     for (const element of present) if (element.replaces !== null) replaced.add(element.replaces);
-    const items: LayoutItem[] = present.map((element) => ({
-      key: element.key,
-      order: element.order,
-      text: element.text,
-      emphasis: element.emphasis,
-      style: laidStyle(styleAt(element, start)),
-      struck: isStruckAt(element, start) && replaced.has(element.key),
-      replaces: element.replaces,
-    }));
     const sceneFit = fitCanvas(scene.canvas, scene.layout, viewport, look);
+    const items: LayoutItem[] = present.map((element) => {
+      const template = templateOf(element);
+      const words = template.reactive ? renderTemplate(template, element.text, element.emphasis, (id) => controlNamed(id, start)) : null;
+      return {
+        key: element.key,
+        order: element.order,
+        text: words === null ? element.text : words.text,
+        emphasis: words === null ? element.emphasis : words.emphasis,
+        style: laidStyle(styleAt(element, start)),
+        struck: isStruckAt(element, start) && replaced.has(element.key),
+        replaces: element.replaces,
+      };
+    });
+    const liveControls: ElementSpan[] = [];
+    // a control takes a line's place in the flow, or its `at=`, as a block of the size it will be
+    for (const span of controlSpans) {
+      if (!span.carried && (span.enter === null || span.enter.start > start)) continue;
+      const gone = exitOf(span);
+      if (gone !== null && gone.start <= start) continue;
+      const spec = controlSpecOf(span);
+      if (spec === null || span.parent !== null) continue;
+      const layout = controlLayoutOf({ span, value: spec.value, mood: CALM, maxWidth: controlRoom(span, sceneFit), look, viewport, fit: sceneFit });
+      if (layout === null) continue;
+      liveControls.push(span);
+      items.push({ key: span.key, order: span.order, text: '', emphasis: [], style: laidStyle(styleAt(span, start)), struck: false, replaces: null, reserve: { width: layout.width, height: layout.height } });
+    }
     const sides = scene.layout === 'split' ? splitSides(schedule, scene.id) : undefined;
     // text given a point of the canvas is set by the layout, which keeps it off other text; this is where it wants its centre
     const pins = new Map<string, { x: number; y: number }>();
-    for (const element of present) {
+    for (const element of [...present, ...liveControls]) {
       const style = styleAt(element, start);
       if (style.near !== null || style.group !== null || typeof style.at !== 'object' || style.at === null) continue;
       const scale = planeScale(style.layer, viewport);
@@ -716,7 +782,9 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
   };
 
   // One element at one instant -------------------------------------------
-  const evaluate = (element: ElementSpan, tq: number, aq: number, look: LookSpec, camera: CameraPose, place: { x: number; y: number } | null): Evaluated | null => {
+  const evaluate = (rawElement: ElementSpan, tq: number, aq: number, look: LookSpec, camera: CameraPose, place: { x: number; y: number } | null): Evaluated | null => {
+    const bound = boundElement(rawElement, tq, aq, cindex, runtime);
+    const element = bound.element;
     const govern = governed.get(element.key);
     const enter = element.enter !== null && govern !== undefined ? { ...element.enter, start: element.enter.start + govern.enterShift, end: element.enter.end + govern.enterShift } : element.enter;
     if (enter !== null && tq < enter.start) return null;
@@ -725,9 +793,19 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
     if (exit !== null && tq >= exit.end) return null;
     const laid = poseAt(element.key, tq, exit === null ? null : exit.start);
     if (laid === null) return null;
-    const pose: Pose = place === null ? laid : { ...laid, x: place.x, y: place.y };
-
     const style = styleAt(element, tq);
+    const placed: Pose = place === null ? laid : { ...laid, x: place.x, y: place.y };
+    // words the hand has changed (`{…}`, or a bound `text`) are set again in the room the line has
+    const words = wordsNow(element, bound.words, tq);
+    let pose: Pose = placed;
+    if (words !== null) {
+      const first = placed.lines[0];
+      const left = first === undefined ? true : Math.abs(first.x + placed.width / 2) < 0.5;
+      const right = first !== undefined && Math.abs(first.x + first.width - placed.width / 2) < 0.5 && !left;
+      const natural = cellOf(style.size, viewport, look).fontSize / planeScale(placed.layer, viewport);
+      const set = setTextOnce({ look, viewport, text: words.text, emphasis: words.emphasis, style: { ...style, layer: placed.layer }, shrink: Math.max(0.05, Math.min(1, placed.fontSize / natural)), maxWidth: placed.width, width: placed.width, align: left ? 'left' : right ? 'right' : 'center' });
+      pose = { ...placed, runs: set.placement.runs, lines: set.placement.lines, height: Math.max(placed.height, set.placement.height) };
+    }
     const fs = pose.fontSize;
     const screenPx = fs * planeScale(pose.layer, viewport);
     const minRatio = minContrastFor(screenPx, pose.layer);
@@ -995,7 +1073,7 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
       id: element.id,
       kind: element.kind,
       painting: null,
-      text: element.text,
+      text: words === null ? element.text : words.text,
       layer: pose.layer,
       phase,
       box: { x: projected.x - (pose.width * s) / 2, y: projected.y - (pose.height * s) / 2, width: pose.width * s, height: pose.height * s },
@@ -1156,13 +1234,87 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
     viewport,
     reducedMotion,
     arrivals: context.arrivals ?? new Map(),
-    scope: {},
+    scope: scopeOf([...cindex.ids], (id) => controlNamed(id, 1e9)),
     specAt,
     fitOf: (element, spec) => fitOfElement(element, spec),
     flips: lockLook === null ? lookFlips : [],
     snapAt: (time) => moodAt(time, specAt(time)).snap,
     ...(context.engine === undefined ? {} : { engine: context.engine }),
   });
+
+  /** Where a control is at `time` and what it looks like, from where the flow (or its `at=`) put it. */
+  const presentControl = (span: ElementSpan, tq: number): boolean => {
+    if (!span.carried && (span.enter === null || tq < span.enter.start)) return false;
+    const gone = exitOf(span);
+    return gone === null || tq < gone.end;
+  };
+  /** The controls of a `card` (or any group) stand in a column inside it, one under another, where the group was put. */
+  const stackOf = (group: ElementSpan, tq: number, look: LookSpec) => {
+    const members = controlSpans.filter((member) => member.parent === group.key && presentControl(member, tq)).sort((a, b) => a.order - b.order);
+    if (members.length === 0) return null;
+    const fit = fitOfElement(group, look);
+    const ps = planeScale(group.style.layer, viewport);
+    const gap = cellOf('m', viewport, look).height / ps / 2;
+    const layouts = new Map<string, ControlLayout>();
+    let width = 0;
+    let height = -gap;
+    for (const member of members) {
+      const spec = controlSpecOf(member);
+      const layout = spec === null ? null : controlLayoutOf({ span: member, value: spec.value, mood: CALM, maxWidth: (fit.flow.width * 0.8) / ps, look, viewport, fit });
+      if (layout === null) continue;
+      layouts.set(member.key, layout);
+      width = Math.max(width, layout.width);
+      height += layout.height + gap;
+    }
+    const at = styleAt(group, tq).at;
+    const middle = typeof at === 'object' && at !== null ? { x: (fit.box.x + at.x * fit.unit) / ps, y: (fit.box.y + at.y * fit.unit) / ps } : { x: (fit.flow.x + fit.flow.width / 2) / ps, y: (fit.flow.y + fit.flow.height / 2) / ps };
+    const inner: Box = { x: middle.x - width / 2, y: middle.y - height / 2, width, height };
+    const slots = new Map<string, { x: number; y: number }>();
+    let top = inner.y;
+    for (const member of members) {
+      const layout = layouts.get(member.key);
+      if (layout === undefined) continue;
+      slots.set(member.key, { x: inner.x + layout.width / 2, y: top + layout.height / 2 });
+      top += layout.height + gap;
+    }
+    return { fit, ps, inner, slots, layouts };
+  };
+  const siteOf = (span: ElementSpan, tq: number, look: LookSpec, mood: ControlMood, value: ControlValue | null) => {
+    if (!presentControl(span, tq)) return null;
+    const gone = exitOf(span);
+    if (span.parent !== null) {
+      const group = schedule.elements.find((element) => element.key === span.parent);
+      const stack = group === undefined ? null : stackOf(group, tq, look);
+      const slot = stack?.slots.get(span.key);
+      if (stack === null || slot === undefined) return null;
+      const layout = controlLayoutOf({ span, value, mood, maxWidth: (stack.fit.flow.width * 0.8) / stack.ps, look, viewport, fit: stack.fit });
+      return layout === null ? null : { pose: null, layout, fit: stack.fit, centre: slot };
+    }
+    const pose = poseAt(span.key, tq, gone === null ? null : gone.start);
+    if (pose === null) return null;
+    const fit = fitOfElement(span, look);
+    const layout = controlLayoutOf({ span, value, mood, maxWidth: controlRoom(span, fit), look, viewport, fit });
+    if (layout === null) return null;
+    const left = pose.x + (pose.lines[0]?.x ?? -pose.width / 2);
+    return { pose, layout, fit, centre: { x: left + layout.width / 2, y: pose.y } };
+  };
+  if (controlSpans.length > 0) {
+    // a control is a thing the painter placed: `near=`, `cam focus` and the sight report find it where it is
+    const before = laidOutOf(schedule);
+    const byControl = new Map(controlSpans.map((span) => [span.key, span]));
+    registerLaidOut(schedule, {
+      boxOf(key, time) {
+        const span = byControl.get(key);
+        const spec = span === undefined ? null : controlSpecOf(span);
+        if (span === undefined || spec === null) return before?.boxOf(key, time) ?? null;
+        const site = siteOf(span, time, specAt(time), CALM, spec.value);
+        if (site === null) return null;
+        const ps = planeScale(span.style.layer, viewport);
+        return { x: ((site.centre.x - site.layout.width / 2) * ps - site.fit.box.x) / site.fit.unit, y: ((site.centre.y - site.layout.height / 2) * ps - site.fit.box.y) / site.fit.unit, w: (site.layout.width * ps) / site.fit.unit, h: (site.layout.height * ps) / site.fit.unit };
+      },
+      routeOf: (key, time) => before?.routeOf(key, time) ?? null,
+    });
+  }
 
   const isLiveAt = (element: ElementSpan, time: number): boolean => (element.carried || element.enter === null || element.enter.start <= time) && (element.exit === null || time < element.exit.end);
   const drawnLive = (id: string, time: number): ElementSpan | null => {
@@ -1588,7 +1740,7 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
     return tiles;
   };
 
-  const compute = (instant: TimelineInstant): { frame: Frame; views: StageElementView[] } => {
+  const compute = (instant: TimelineInstant): { frame: Frame; views: StageElementView[]; sites: ControlSite[] } => {
     const look = specAt(instant.time);
     const stepLook = look.motion;
     const tq = quantise(instant.time, stepLook.step);
@@ -1635,7 +1787,7 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
     });
 
     const fault = onFault ?? null;
-    const drawnFigures = figuresAt(schedule, base, tq, aq, { viewport, look: drawLook, camera, fit, reducedMotion, paintings, flashAllowed: allowedFlashes, ...(fault === null ? {} : { onFault: fault }) });
+    const drawnFigures = figuresAt(boundSchedule(schedule, tq, aq, context.controls), base, tq, aq, { viewport, look: drawLook, camera, fit, reducedMotion, paintings, flashAllowed: allowedFlashes, ...(fault === null ? {} : { onFault: fault }) });
     // A sprite whose colours would vanish into the ground stands on a tile.
     const tiles = tilesFor(drawnFigures.figures, drawLook);
     const figs =
@@ -1705,7 +1857,39 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
       }
     }
 
-    const laid = structures.any ? structures.frames(tq, aq, drawLook) : null;
+    let laid = structures.any ? structures.frames(tq, aq, drawLook) : null;
+    const sites: ControlSite[] = [];
+    if (controlSpans.length > 0) {
+      const out: StructureFrames = laid ?? { elements: [], figures: [], owners: [] };
+      for (const span of controlSpans) {
+        const spec = controlSpecOf(span);
+        if (spec === null) continue;
+        const value = heldBy(runtime, span);
+        const site = siteOf(span, tq, drawLook, moodOf(runtime, span.key), value);
+        if (site === null) continue;
+        const { layout, centre } = site;
+        const box: Box = { x: centre.x - layout.width / 2, y: centre.y - layout.height / 2, width: layout.width, height: layout.height };
+        const seen = out.owners.length;
+        structures.renderOwner({ structure: span, owner: span, parts: placeParts(layout.parts, centre.x, centre.y), before: null, q: 1, epochStart: 0, ownerBox: box, tq, aq, look: drawLook, style: styleAt(boundElement(span, tq, aq, cindex, runtime).element, tq) }, out);
+        const state = out.owners.length > seen ? out.owners[out.owners.length - 1] : undefined;
+        if (state === undefined) continue;
+        const z = layerZ(span.style.layer, viewport);
+        const p = projectToScreen({ x: centre.x, y: centre.y, z }, camera, viewport);
+        const input = controlInputOf({ span, value, mood: moodOf(runtime, span.key), maxWidth: controlRoom(span, site.fit), look: drawLook, viewport, fit: site.fit });
+        if (input === null) continue;
+        sites.push({ key: span.key, id: span.id, span, layout, input, value, layer: span.style.layer, centre, screen: { x: p.x, y: p.y, scale: p.scale }, enabled: state.phase === 'on' && state.opacity > 0.5 });
+      }
+      // the frame of each card that holds controls, round the column they stand in
+      for (const group of schedule.elements) {
+        const figure = group.figure;
+        if (figure === null || figure.kind !== 'group' || figure.card === undefined) continue;
+        const stack = stackOf(group, tq, drawLook);
+        if (stack === null) continue;
+        const card = layoutCard({ owner: group.key, title: figure.card.title, inner: stack.inner, measure: measurerFor(drawLook, viewport, group.style), look: lookOf(drawLook, viewport, stack.fit, stack.ps), lit: sites.some((site) => site.span.parent === group.key && (runtime.moods.get(site.key)?.hover === true || runtime.moods.get(site.key)?.focus === true)) });
+        structures.renderOwner({ structure: group, owner: group, parts: card.parts, before: null, q: 1, epochStart: 0, ownerBox: card.outer, tq, aq, look: drawLook, style: styleAt(group, tq) }, out);
+      }
+      laid = out;
+    }
     const laidFigures = laid === null ? figs.figures : [...figs.figures, ...laid.figures].sort((a, b) => LAYER_ORDER[a.layer] - LAYER_ORDER[b.layer] || a.z - b.z);
     const laidElements = laid === null ? evaluated.map((item) => item.frame) : [...evaluated.map((item) => item.frame), ...laid.elements].sort((a, b) => LAYER_ORDER[a.layer] - LAYER_ORDER[b.layer] || a.z - b.z);
     const laidViews: StageElementView[] = [];
@@ -1758,8 +1942,22 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
       cursor,
     };
     const drawnViews = laidViews.length === 0 ? figs.views : [...figs.views.filter((view) => !laidViews.some((laidView) => laidView.key === view.key)), ...laidViews];
-    return { frame, views: [...evaluated.map((item) => item.view), ...drawnViews] };
+    return { frame, views: [...evaluated.map((item) => item.view), ...drawnViews], sites };
   };
+
+  // The same instant asked of twice (a frame, then a pointer, then the snapshot) is made once, while nothing the hand holds has changed.
+  let last: { readonly instant: TimelineInstant; readonly version: number; readonly revision: number; readonly made: ReturnType<typeof compute> } | null = null;
+  const cached = (instant: TimelineInstant): ReturnType<typeof compute> => {
+    if (last !== null && last.version === runtime.version && last.revision === runtime.store.revision && last.instant.time === instant.time && last.instant.ambient === instant.ambient && last.instant.wallTime === instant.wallTime && last.instant.clock === instant.clock && last.instant.holdSince === instant.holdSince) return last.made;
+    const made = compute(instant);
+    last = { instant, version: runtime.version, revision: runtime.store.revision, made };
+    return made;
+  };
+  const reactive = schedule.elements.some((element) => {
+    const figure = element.figure;
+    if (element.kind === 'node' || element.kind === 'structure') return element.text.includes('{') || (figure?.kind === 'structure' && figure.rows.some((row) => row.cells.some((cell) => cell.includes('{'))));
+    return false;
+  });
 
   const retired = new Map<string, number>();
   for (const element of elements) {
@@ -1775,8 +1973,10 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
     retired,
     lastLayoutChange: structures.lastChange,
     layoutNotesAt: structures.notesAt,
-    frameAt: (instant) => compute(instant).frame,
-    viewsAt: (instant) => compute(instant).views,
+    frameAt: (instant) => cached(instant).frame,
+    viewsAt: (instant) => cached(instant).views,
+    controlsAt: (instant) => cached(instant).sites,
+    reactive,
     onStageAt: (time) =>
       schedule.elements
         .filter((element) => {

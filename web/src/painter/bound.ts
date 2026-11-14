@@ -22,10 +22,12 @@ export interface ControlRuntime {
   readonly moods: Map<string, ControlMood>;
   /** a menu is open on this control */
   open: string | null;
+  /** bumped whenever a mood, the open menu or an ease changes: with the store's revision it says whether a frame already made is still true */
+  version: number;
 }
 
 export function createRuntime(store: ControlRegistry): ControlRuntime {
-  return { store, eases: new Map(), moods: new Map(), open: null };
+  return { store, eases: new Map(), moods: new Map(), open: null, version: 0 };
 }
 
 export function moodOf(runtime: ControlRuntime, key: string): ControlMood {
@@ -33,14 +35,14 @@ export function moodOf(runtime: ControlRuntime, key: string): ControlMood {
   return runtime.open === key && !found.open ? { ...found, open: true } : found;
 }
 
-export function specOf(span: ElementSpan): ControlSpec | null {
+export function controlSpecOf(span: ElementSpan): ControlSpec | null {
   const figure = span.figure;
   return figure !== null && figure.kind === 'control' ? figure : null;
 }
 
 /** What a control holds now: the user's value, or what the brain wrote. */
 export function heldBy(runtime: ControlRuntime, span: ElementSpan): ControlValue | null {
-  const spec = specOf(span);
+  const spec = controlSpecOf(span);
   if (spec === null) return null;
   return runtime.store.get(span.key) ?? spec.value;
 }
@@ -82,7 +84,7 @@ export function stateReader(index: ControlIndex, runtime: ControlRuntime, time: 
   return (key) => {
     const span = index.byKey.get(key);
     if (span === undefined || !controlLive(span, time)) return null;
-    const spec = specOf(span);
+    const spec = controlSpecOf(span);
     return spec === null ? null : { spec, value: heldBy(runtime, span) };
   };
 }

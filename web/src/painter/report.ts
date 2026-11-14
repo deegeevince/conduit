@@ -1,5 +1,5 @@
 import { settle, shownAt } from '@conduit/language';
-import type { BackEvent, ClockState, ElementSpan, PlacedBox, Schedule, Sight, StageBase, TurnReport } from '@conduit/language';
+import type { BackEvent, ClockState, ControlValues, ElementSpan, PlacedBox, Schedule, Sight, StageBase, TurnReport } from '@conduit/language';
 
 /** Minimum gap between two `progress` events while nothing but the playhead changes. */
 export const PROGRESS_INTERVAL_MS = 500;
@@ -122,10 +122,11 @@ export class Reporter {
     base: StageBase,
     playhead: number,
     outcome: TurnReport['outcome'],
-    landing: { readonly sight: (at: number) => Sight; readonly placed: (at: number, keys: ReadonlySet<string>) => (PlacedBox & { readonly key: string })[]; readonly skippedAt: number | null },
+    landing: { readonly sight: (at: number) => Sight; readonly placed: (at: number, keys: ReadonlySet<string>) => (PlacedBox & { readonly key: string })[]; readonly skippedAt: number | null; readonly controls?: ControlValues },
   ): TurnReport {
     const at = reportAt(outcome, playhead);
-    const settled = withoutRetired(settle(schedule, base, at), retired, at);
+    const held = landing.controls ?? {};
+    const settled = withoutRetired(settle(schedule, base, at, held), retired, at);
     const placed = landing.placed(at, new Set(settled.elements.map((element) => element.key)));
     const byKey = new Map(placed.map((item) => [item.key, item.box]));
     // Each thing the stage carries on says where it really is, for the brief.
@@ -139,6 +140,7 @@ export class Reporter {
       sight: landing.sight(at),
       skippedAt: landing.skippedAt,
       placed: placed.map(({ key: _key, ...item }) => item),
+      ...(Object.keys(held).length === 0 ? {} : { controls: held }),
     };
     this.emit({ type: 'report', report });
     this.turn = null;

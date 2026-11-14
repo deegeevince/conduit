@@ -3,6 +3,9 @@
 
 import { LineNormalizer, LineReader, LOOK_IDS, parseReplayDirective } from '@conduit/language';
 import type { BackEvent, CanvasName, LookId } from '@conduit/language';
+import charts from '@conduit/language/demos/charts.series?raw';
+import diagrams from '@conduit/language/demos/diagrams.series?raw';
+import explorable from '@conduit/language/demos/explorable.series?raw';
 import overture from '@conduit/language/demos/overture.series?raw';
 import plainly from '@conduit/language/demos/plainly.series?raw';
 import sketchbook from '@conduit/language/demos/sketchbook.series?raw';
@@ -51,7 +54,7 @@ interface Settings {
   paint: boolean;
 }
 
-const SCRIPTS: Readonly<Record<string, string>> = { overture, sketchbook, plainly, titles, styles };
+const SCRIPTS: Readonly<Record<string, string>> = { overture, sketchbook, plainly, titles, styles, explorable, diagrams, charts };
 const PRESETS: Readonly<Record<string, { width: number; height: number }>> = {
   '375x667': { width: 375, height: 667 },
   '390x844': { width: 390, height: 844 },

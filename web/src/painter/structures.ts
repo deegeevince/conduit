@@ -135,14 +135,14 @@ function textStyleOf(owner: ElementStyle, spec: TextSpec): ElementStyle {
   return { ...owner, size: spec.size, weight: spec.weight, face: spec.face, case: spec.letterCase };
 }
 
-function measurerFor(look: LookSpec, viewport: Viewport, ownerStyle: ElementStyle): TextMeasure {
+export function measurerFor(look: LookSpec, viewport: Viewport, ownerStyle: ElementStyle): TextMeasure {
   return (text, spec, maxWidth): MeasuredText => {
     const set = setText({ look, viewport, text, emphasis: [], style: textStyleOf(ownerStyle, spec), shrink: spec.shrink, maxWidth, align: 'left' });
     return { width: set.widest, height: set.lines.length * set.lineHeight, lineHeight: set.lineHeight, lines: set.lines };
   };
 }
 
-function lookOf(look: LookSpec, viewport: Viewport, fit: CanvasFit, ps: number): BlockLook {
+export function lookOf(look: LookSpec, viewport: Viewport, fit: CanvasFit, ps: number): BlockLook {
   const body = cellOf('m', viewport, look);
   return {
     body: body.height / ps,
@@ -151,6 +151,30 @@ function lookOf(look: LookSpec, viewport: Viewport, fit: CanvasFit, ps: number):
     radius: look.type.snapToCells ? 0 : (body.height * 0.2) / ps,
     grid: look.type.snapToCells ? { cell: { width: body.width / ps, height: body.height / ps } } : null,
   };
+}
+
+/** A shape's outline as a short string: a part that moves or changes (a knob, a track) must not be taken for the one the renderer built before. */
+function shapeHash(outline: readonly Polyline[]): string {
+  let n = 0;
+  let sx = 0;
+  let sy = 0;
+  let wx = 0;
+  let x0 = Number.POSITIVE_INFINITY;
+  let x1 = Number.NEGATIVE_INFINITY;
+  let y0 = Number.POSITIVE_INFINITY;
+  let y1 = Number.NEGATIVE_INFINITY;
+  for (const line of outline)
+    for (const p of line.points) {
+      n += 1;
+      sx += p.x;
+      sy += p.y;
+      wx += (p.x * n - p.y) * (p.y + n);
+      x0 = Math.min(x0, p.x);
+      x1 = Math.max(x1, p.x);
+      y0 = Math.min(y0, p.y);
+      y1 = Math.max(y1, p.y);
+    }
+  return `${n}:${Math.round(sx * 20)}:${Math.round(sy * 20)}:${Math.round(wx)}:${Math.round(x0 * 10)}:${Math.round(x1 * 10)}:${Math.round(y0 * 10)}:${Math.round(y1 * 10)}`;
 }
 
 const TEXTS = new Map<string, ReturnType<typeof setText>>();
@@ -471,7 +495,7 @@ export function buildStructures(schedule: Schedule, env: StructureEnv): Structur
           layer: structure.style.layer,
           z,
           outline,
-          geometryKey: `${key}|${epochStart}|${q >= 1 ? 'r' : q.toFixed(2)}|${outline.reduce((n, l) => n + l.points.length, 0)}`,
+          geometryKey: `${key}|${epochStart}|${q >= 1 ? 'r' : q.toFixed(2)}|${shapeHash(outline)}`,
           transform,
           fill: filled ? { colour: mix(fillColour), to: null, opacity: part.role === 'fill' ? fill * 0.9 : part.role === 'head' ? 1 : fill } : null,
           stroke: stroked ? { colour: mix(colour), width, progress: draw, character: look.stroke.character } : null,
