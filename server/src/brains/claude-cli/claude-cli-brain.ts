@@ -329,6 +329,7 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
     if (signal.aborted) inner.abort();
 
     let timedOut: string | null = null;
+    let lookTools = 0;
     let timer: NodeJS.Timeout | undefined;
     const arm = (ms: number, what: string): void => {
       clearTimeout(timer);
@@ -368,7 +369,7 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
     /** The CLI asks before a call. Whatever the answer, it is made here, by `gateCall`, and by the owner for what that says to ask. */
     const handleAsk = (ask: { requestId: string; toolUseId: string; tool: string; input: Readonly<Record<string, unknown>> }): void => {
       const call = { id: ask.toolUseId, tool: ask.tool, input: ask.input };
-      const verdict = out.noTools === true ? ({ kind: 'deny', risk: 'run', why: 'a look at the draft uses no tools' } as const) : modeOf(out.session) === 'agent' ? gateCall(call, agent, on, false, entry.browser, permitsOf(out.session)) : ({ kind: 'deny', risk: 'run', why: kill.engaged() ? 'agent tools have been switched off by the kill switch' : 'this conversation has no tools' } as const);
+      const verdict = out.noTools === true ? ({ kind: 'deny', risk: 'run', why: 'no tools in a look; write lines' } as const) : modeOf(out.session) === 'agent' ? gateCall(call, agent, on, false, entry.browser, permitsOf(out.session)) : ({ kind: 'deny', risk: 'run', why: kill.engaged() ? 'agent tools have been switched off by the kill switch' : 'this conversation has no tools' } as const);
       const summary = summaryOf(call);
       if (inner.signal.aborted) {
         // The turn was stopped (or timed out) and the model has not heard yet: nothing more is asked of the owner, nothing runs.
@@ -387,7 +388,7 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
         return;
       }
       if (verdict.kind === 'deny') {
-        entry.proc.answer(ask.requestId, false, {}, `Not allowed: ${verdict.why}. Say so plainly and offer what you can do without it.`);
+        entry.proc.answer(ask.requestId, false, {}, out.noTools === true ? verdict.why : `Not allowed: ${verdict.why}. Say so plainly and offer what you can do without it.`);
         denied.add(ask.toolUseId);
         turnLog.info('agent_denied', { tool: ask.tool, why: verdict.why });
         box.push({ type: 'activity', id: ask.toolUseId, tool: ask.tool, summary, state: 'denied', ms: null });
@@ -461,11 +462,17 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
             continue;
           }
           if (out.noTools === true) {
-            // A look at the draft uses no tool, whatever the process was started with (a web tool the CLI allows itself is never asked about): it is stopped.
-            turnLog.warn('review_used_tool', { tool: use.tool });
-            timedOut = 'a look at the draft tried to use a tool';
-            inner.abort();
-            break;
+            // A look at the draft uses no tool. The process refuses the call at once, with a reason the model reads (`refuseTools`, `handleAsk`), and the
+            // look goes on; it is not an event of the turn. Only a model that goes on reaching for tools past the refusal is stopped.
+            notTools.add(use.id);
+            lookTools += 1;
+            turnLog.warn('review_used_tool', { tool: use.tool, refused: lookTools });
+            if (lookTools > 3) {
+              timedOut = 'a look at the draft kept using tools';
+              inner.abort();
+              break;
+            }
+            continue;
           }
           toolsChanged = true;
           if (splitTool(use.tool).service === 'chrome') chromeUses.set(use.id, use);
@@ -622,6 +629,7 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
       sent: () => undefined,
       noTools: true,
     };
+    entry.proc.refuseTools(true);
     try {
       for await (const event of turnOnce(out, signal, entry, true, startedAt, { sawText: false })) {
         // `ok`, alone on a line, is the draft kept: it is not a line and not a rejection.
@@ -634,6 +642,7 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
       if (!entry.proc.alive) discard(entry);
       throw error;
     } finally {
+      entry.proc.refuseTools(false);
       entry.running = null;
       release();
       if (!entry.proc.alive) discard(entry);

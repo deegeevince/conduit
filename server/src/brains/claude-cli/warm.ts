@@ -89,6 +89,9 @@
 //      So when nothing but the web tools is on, the CLI is told to allow them itself (`AgentRun.freeReads`), exactly what `gateCall` would say.
 //
 
+import { closeSync, mkdtempSync, openSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { errors } from '../../errors';
 import type { Snapshot } from '../../domain/brain';
 import type { Logger } from '../../log';
@@ -116,7 +119,16 @@ export interface WarmSettings {
   readonly tools: readonly string[];
   /** v2.1. Agent mode: the process has the session's tools and asks this process before every call that matters; null is the plain brain */
   readonly agent?: AgentRun | null;
+  /**
+   * A file whose presence makes the CLI refuse every tool call at once, with a reason the model reads and carries on from (a PreToolUse hook, which
+   * runs before any allow rule: a web tool the CLI allows itself is never asked about, so only a hook can refuse it). Used while a look at the
+   * draft is under way; without it a look that reached for a tool had to be interrupted and failed.
+   */
+  readonly refuseFlag?: string;
 }
+
+/** What the model is told when a look reaches for a tool. */
+export const LOOK_REFUSAL = 'no tools in a look; write lines';
 
 /** Why a process stopped being usable. */
 export type WarmEnd = 'closed' | 'crashed' | 'killed';
@@ -143,6 +155,8 @@ export interface WarmProcess {
   readonly alive: boolean;
   readonly turns: number;
   readonly contextTokens: number;
+  /** While on, every tool call the model makes is refused at once with LOOK_REFUSAL (a look at the draft uses none). */
+  refuseTools(on: boolean): void;
   ask(message: WarmMessage, signal: AbortSignal): AsyncIterable<ClaudeStreamEvent>;
   /** v2.1, agent mode. Answers a `can_use_tool` request the process put on stdout, by its `request_id`. Nothing is written once the process is gone. */
   answer(requestId: string, allow: boolean, input: Readonly<Record<string, unknown>>, message: string): void;
@@ -154,7 +168,9 @@ const STDERR_KEEP = 4_096;
 const STOP_POLITE_MS = 500;
 
 export function startWarmProcess(settings: WarmSettings, log: Logger, graceMs = 1000): WarmProcess {
-  const child = spawnTracked(settings.bin, warmArguments(settings), settings.effort, settings.agent == null ? undefined : { cwd: settings.agent.cwd });
+  const refuseDir = mkdtempSync(join(tmpdir(), 'conduit-refuse-'));
+  const refuseFlag = join(refuseDir, 'refuse');
+  const child = spawnTracked(settings.bin, warmArguments({ ...settings, refuseFlag }), settings.effort, settings.agent == null ? undefined : { cwd: settings.agent.cwd });
 
   let alive = true;
   let busy = false;
@@ -349,6 +365,14 @@ export function startWarmProcess(settings: WarmSettings, log: Logger, graceMs = 
       return contextTokens;
     },
     ask,
+    refuseTools(on) {
+      try {
+        if (on) closeSync(openSync(refuseFlag, 'w'));
+        else rmSync(refuseFlag, { force: true });
+      } catch {
+        // no flag: the look is stopped by the brain if it still reaches for a tool
+      }
+    },
     answer(requestId, allow, input, message) {
       if (!alive || exited) return;
       const response = allow ? { behavior: 'allow', updatedInput: input } : { behavior: 'deny', message };
@@ -365,8 +389,16 @@ export function startWarmProcess(settings: WarmSettings, log: Logger, graceMs = 
       await Promise.race([closed, new Promise<void>((resolve) => { deadline = setTimeout(resolve, STOP_POLITE_MS + KILL_GRACE_MS + 1_000); deadline.unref(); })]);
       clearTimeout(polite);
       clearTimeout(deadline);
+      rmSync(refuseDir, { recursive: true, force: true });
     },
   };
+}
+
+/** The settings that make the CLI refuse a call while `flag` exists: a command hook on every tool, answering with a denial and its reason. */
+export function refusalSettings(flag: string): string {
+  const reply = JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: LOOK_REFUSAL } });
+  const command = `[ -f '${flag}' ] && printf '%s' '${reply}'; exit 0`;
+  return JSON.stringify({ hooks: { PreToolUse: [{ matcher: '.*', hooks: [{ type: 'command', command }] }] } });
 }
 
 /** The exact argument list of a warm process, exported so the probe can print it. */
@@ -384,6 +416,7 @@ export function warmArguments(settings: WarmSettings): string[] {
     '--strict-mcp-config',
     ...(settings.agent == null ? ['--no-chrome'] : []),
     '--setting-sources', '',
+    ...(settings.refuseFlag === undefined ? [] : ['--settings', refusalSettings(settings.refuseFlag)]),
     '--no-session-persistence',
   ];
 }
