@@ -104,6 +104,7 @@ export function mountActions(host: HTMLElement, app: StageApp, transcript: Trans
       reveal(snap.turn);
     }
     if (snap.turn === null) revealedFor = null;
+    entries.get('page')?.set({ hidden: !app.apps.probe().some((probe) => probe.running && probe.loaded) });
     entries.get('midi')?.set({ hidden: !snap.elements.some((element) => element.kind === 'structure' && element.text.startsWith('tune')) });
     for (const [id, entry] of entries) if (NEEDS_ANSWER.has(id)) entry.set({ disabled: !answerReady });
   };
@@ -138,6 +139,7 @@ export function mountActions(host: HTMLElement, app: StageApp, transcript: Trans
     { id: 'copy', label: 'Copy script', gist: 'the answer as lines of Series, on the clipboard', needsAnswer: true },
     { id: 'save-script', label: 'Save script', gist: 'the same lines, as a .series file', needsAnswer: true },
     { id: 'play', label: 'Play a script…', gist: 'paste lines of Series and watch them on the stage', needsAnswer: false },
+    { id: 'page', label: 'Save as page', gist: 'the live app as one web page file, ready to publish', needsAnswer: true },
     { id: 'png', label: 'Save picture (PNG)', gist: 'the picture as it rests, as an image', needsAnswer: true },
     { id: 'svg', label: 'Save picture (SVG)', gist: 'the same picture as a drawing that scales', needsAnswer: true },
     { id: 'midi', label: 'Save MIDI', gist: 'the tune, as a standard MIDI file', needsAnswer: true },
@@ -296,6 +298,17 @@ export function mountActions(host: HTMLElement, app: StageApp, transcript: Trans
         playDialog.showModal();
         playText.focus();
         break;
+      case 'page': {
+        const page = app.apps.exportPage();
+        if (page === null) {
+          app.announce('There is no live app on the stage to save as a page');
+          break;
+        }
+        const name = page.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48) || 'page';
+        saveBlob(new Blob([page.html], { type: 'text/html' }), `${name}.html`);
+        app.announce(`Saved ${name}.html`);
+        break;
+      }
       case 'png':
         saveStill(app, 'png');
         break;

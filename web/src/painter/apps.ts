@@ -121,7 +121,7 @@ export function appCues(schedule: Schedule, tq: number, look: LookSpec, env: App
     const given = env.roomOf(element);
     const fit = env.fitOf(element);
     const room: Box = alone.has(element.scene)
-      ? { x: 0, y: 0, width: env.viewport.width / ps, height: env.viewport.height / ps }
+      ? { x: -env.viewport.width / ps / 2, y: -env.viewport.height / ps / 2, width: env.viewport.width / ps, height: env.viewport.height / ps }
       : given !== null
         ? { x: given.x / ps, y: given.y / ps, width: given.width / ps, height: given.height / ps }
         : figure.box === null
@@ -149,14 +149,14 @@ export function appCues(schedule: Schedule, tq: number, look: LookSpec, env: App
     const source = ready ? sourceOf(figure) : '';
     const uses = ready ? shelfOf(figure.uses, source) : (figure.uses ?? []);
     const tokenSet = appTokensOf(look, env.viewport);
-    const signature = [uses.join('+'), source.length, ready ? 1 : 0, element.carried ? 1 : 0, element.text, element.id, opacity.toFixed(3), element.order, box.x.toFixed(1), box.y.toFixed(1), box.width.toFixed(1), box.height.toFixed(1), rest.x.toFixed(1), rest.y.toFixed(1), rest.width.toFixed(1), rest.height.toFixed(1)].join('|');
+    const signature = [alone.has(element.scene) ? 'page' : '', uses.join('+'), source.length, ready ? 1 : 0, element.carried ? 1 : 0, element.text, element.id, opacity.toFixed(3), element.order, box.x.toFixed(1), box.y.toFixed(1), box.width.toFixed(1), box.height.toFixed(1), rest.x.toFixed(1), rest.y.toFixed(1), rest.width.toFixed(1), rest.height.toFixed(1)].join('|');
     live.add(element.key);
     const known = kept.get(element.key);
     if (known !== undefined && known.signature === signature && known.cue.tokens === tokenSet && known.cue.source === source) {
       out.push(known.cue);
       continue;
     }
-    const cue: AppCue = { key: element.key, id: element.id, title: element.text, source, ...(uses.length > 0 && { uses }), ready, carried: element.carried, box, rest, opacity, layer: element.style.layer, z: element.order, tokens: tokenSet };
+    const cue: AppCue = { key: element.key, id: element.id, title: element.text, source, ...(uses.length > 0 && { uses }), ...(alone.has(element.scene) && { page: true }), ready, carried: element.carried, box, rest, opacity, layer: element.style.layer, z: element.order, tokens: tokenSet };
     kept.set(element.key, { signature, cue });
     out.push(cue);
   }

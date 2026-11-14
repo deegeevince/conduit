@@ -15,6 +15,8 @@ export interface SurfaceSpec {
   readonly source: string;
   /** the library shelf the document asked for; the host puts each one in the page before the document's own script runs */
   readonly uses?: readonly AppShelf[];
+  /** the document is a whole page (the whole stage): it scrolls by itself and is not scaled to fit */
+  readonly page?: boolean;
   /** it may run now. False: nothing is made. */
   readonly ready: boolean;
   /** where it is on screen now, host CSS pixels, through the camera */
@@ -64,6 +66,8 @@ export interface SurfaceProbe {
 export interface SurfaceHost {
   /** Told every frame which surfaces are on stage. Starts each ready one once, places and fades them, ends the ones that have left. Cheap when nothing changed. */
   sync(specs: readonly SurfaceSpec[]): void;
+  /** The one running app on stage as a standalone `.html` page (its source, the libraries it used, the pictures it was handed, a stand-in for the bridge); null when none is running. */
+  exportPage(): { readonly title: string; readonly html: string } | null;
   /** The last picture of a surface, at its own size; null when it has none. */
   still(key: string): CanvasImageSource | null;
   /** Asks every running surface for a fresh picture, and resolves when they have answered or `ms` has passed. */

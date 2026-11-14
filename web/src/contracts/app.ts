@@ -47,6 +47,8 @@ export interface AppCue {
   readonly source: string;
   /** the library shelf the app asked for (`uses=`): the host puts each one in the app's document; absent: none */
   readonly uses?: readonly AppShelf[];
+  /** the app is the whole answer: it is the page (the whole stage), so it scrolls by itself and is not scaled to fit */
+  readonly page?: boolean;
   /** the block is whole (a later line closed it, or the turn ended) and every line has landed: it may run now */
   readonly ready: boolean;
   /** it came from an earlier turn: it was whole then */
@@ -77,6 +79,8 @@ export interface AppAct {
 }
 
 export interface AppHost {
+  /** Save as page: the running app as one standalone `.html` page, ready to publish; null when none is running. */
+  exportPage(): { readonly title: string; readonly html: string } | null;
   /** Told every frame which apps are on stage. Starts each ready one once, moves and fades them, removes the ones that have left. Cheap when nothing changed. */
   sync(cues: readonly AppCue[], dpr: number): void;
   /** The last picture of an app, drawn at its own size; null when it has none (not started, or it cannot draw itself). */

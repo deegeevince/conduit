@@ -15,7 +15,7 @@
 
 import type { AppTokens } from '../contracts/app';
 import type { SurfaceEmit, SurfaceHold, SurfaceHost, SurfaceProbe, SurfaceSpec } from '../contracts/surface';
-import { SURFACE_LIMITS, SURFACE_SOURCE_MAX, buildSurfaceDocument } from './document';
+import { SURFACE_LIMITS, SURFACE_SOURCE_MAX, buildStandalonePage, buildSurfaceDocument } from './document';
 import { loadShelf, shelfKey, shelfText } from './shelf';
 
 export interface SurfaceHostOptions {
@@ -27,6 +27,8 @@ export interface SurfaceHostOptions {
   readonly onSave?: (save: { readonly key: string; readonly id: string; readonly json: string }) => void;
   /** a line for the status line: a fault, a surface that stopped */
   readonly onNote?: (text: string) => void;
+  /** a picture for what an app asked for in words (`conduit.picture`): a `data:` address and the credit line to show, or null. The frame can reach nothing itself; the page asks the server's picture service on its behalf. Absent: every ask is answered with none. */
+  readonly onPicture?: (ask: { readonly query: string; readonly aspect: number }) => Promise<{ readonly url: string; readonly credit: string } | null>;
   /** the hostile bench only: leave the boot script's own removals out, so the policy and the sandbox are seen holding alone */
   readonly withoutDepth?: boolean;
 }
@@ -39,6 +41,7 @@ export type FromSurface =
   | { readonly type: 'save'; readonly json: string }
   | { readonly type: 'size'; readonly height: number; readonly width: number | null }
   | { readonly type: 'fault'; readonly message: string }
+  | { readonly type: 'picture'; readonly id: number; readonly query: string; readonly aspect: number }
   | { readonly type: 'still'; readonly id: number; readonly failed: string | null; readonly how: 'own' | 'dom' | null; readonly w: number; readonly h: number; readonly data: string | null };
 
 const NAME = /^[A-Za-z0-9_.:-]{1,32}$/;
@@ -53,6 +56,9 @@ const PING_MS = 1000;
 const MISSED_LIMIT = 3;
 /** An app whose content is larger than its room is laid out in a bigger frame and scaled down to the room; never below this (past it the frame scrolls). Never scaled up. */
 const FIT_MIN = 0.6;
+/** The most pictures one app may ask for, and the most characters of a `data:` address handed back (about 300 kB of picture). */
+const PICTURE_ASKS = 4;
+const PICTURE_URL_MAX = 420_000;
 const STORE = 'conduit.surface.';
 const MARK = 'conduit.surface.mark.';
 
@@ -116,6 +122,15 @@ export function readFromSurface(raw: unknown, channel: string): FromSurface | nu
     const wide = typeof width === 'number' && Number.isFinite(width) && width >= 0 && width <= 20_000 ? Math.round(width) : null;
     return typeof height === 'number' && Number.isFinite(height) && height >= 0 && height <= 20_000 ? { type, height: Math.round(height), width: wide } : null;
   }
+  if (type === 'picture') {
+    const id = data['id'];
+    const query = data['query'];
+    const w = data['w'];
+    const h = data['h'];
+    if (typeof id !== 'number' || !Number.isInteger(id) || typeof query !== 'string' || query.length > 80 || query.trim() === '') return null;
+    const aspect = typeof w === 'number' && typeof h === 'number' && w > 0 && h > 0 ? Math.max(0.25, Math.min(4, w / h)) : 16 / 9;
+    return { type, id, query: query.trim(), aspect };
+  }
   if (type === 'fault') {
     const message = data['message'];
     return typeof message === 'string' ? { type, message: message.slice(0, 200) } : null;
@@ -144,6 +159,9 @@ interface Running {
   readonly source: string;
   /** the libraries it was built with (`shelfKey`) */
   readonly shelf: string;
+  /** the libraries' text it was built with, and the pictures it was handed (by the words it asked with): what Save as page puts in the page */
+  readonly shelfText: string;
+  readonly gotPictures: Map<string, { readonly url: string; readonly credit: string }>;
   readonly fingerprint: string;
   spec: SurfaceSpec;
   loads: number;
@@ -154,6 +172,8 @@ interface Running {
   height: number | null;
   /** FIT. 1 until the document's content is larger than its room; then the factor it is scaled down by, never below `FIT_MIN` */
   fit: number;
+  /** how many pictures it has asked for */
+  pictures: number;
   /** the fit is made once for a room: content that grows with the frame (100vh, innerHeight) would otherwise be chased down */
   fitted: boolean;
   /** the room (rest size) the fit was made for: a new room starts again at 1 */
@@ -326,7 +346,7 @@ export function createSurfaceHost(options: SurfaceHostOptions): SurfaceHost {
     frame.style.visibility = 'hidden';
     frame.style.opacity = '0';
     const run: Running = {
-      key: spec.key, id: spec.id, channel, frame, source: spec.source, shelf: library, fingerprint: print, spec, loads: 0, loaded: false, shown: false, state, told: state, height: null, fit: 1, fitted: false, fitRoom: '', still: stills.get(spec.key) ?? null,
+      key: spec.key, id: spec.id, channel, frame, source: spec.source, shelf: library, shelfText: shelf, gotPictures: new Map(), fingerprint: print, spec, loads: 0, loaded: false, shown: false, state, told: state, height: null, fit: 1, pictures: 0, fitted: false, fitRoom: '', still: stills.get(spec.key) ?? null,
       refused: 0, emits: 0, faults: 0, window: { start: 0, count: 0 }, minute: { start: 0, count: 0 }, snaps: new Map(), snapSeq: 0, stillTimer: undefined, saveTimer: undefined, pinger: undefined, pings: 0, answered: 0, placed: '',
     };
     // a frame that loads a second time has navigated itself (a script, a link): it is removed, and what it was reaching for was never allowed to answer
@@ -412,7 +432,7 @@ export function createSurfaceHost(options: SurfaceHostOptions): SurfaceHost {
         const layoutW = rest.width / run.fit;
         const layoutH = rest.height / run.fit;
         const w = message.width ?? 0;
-        if (!run.fitted && rest.width > 0 && rest.height > 0 && (message.height > layoutH + 1 || w > layoutW + 1)) {
+        if (!run.fitted && run.spec.page !== true && rest.width > 0 && rest.height > 0 && (message.height > layoutH + 1 || w > layoutW + 1)) {
           // a hair under the exact fit, so a content that is one pixel over does not leave a scrollbar
           const next = Math.max(FIT_MIN, Math.min(run.fit, rest.height / message.height, w > 0 ? rest.width / w : 1) * 0.99);
           if (next < run.fit - 0.01) {
@@ -462,6 +482,25 @@ export function createSurfaceHost(options: SurfaceHostOptions): SurfaceHost {
         };
         image.onerror = () => done?.(false);
         image.src = message.data;
+        return;
+      }
+      case 'picture': {
+        run.pictures += 1;
+        const reply = (found: { readonly url: string; readonly credit: string } | null): void => post(run, found === null ? { type: 'picture', id: message.id, url: null } : { type: 'picture', id: message.id, url: found.url, credit: found.credit });
+        if (run.pictures > PICTURE_ASKS || options.onPicture === undefined) {
+          run.refused += run.pictures > PICTURE_ASKS ? 1 : 0;
+          reply(null);
+          return;
+        }
+        void options.onPicture({ query: message.query, aspect: message.aspect }).then(
+          (found) => {
+            if (disposed || running.get(run.key) !== run) return;
+const good = found !== null && found.url.startsWith('data:image/') && found.url.length <= PICTURE_URL_MAX ? { url: found.url, credit: found.credit.slice(0, 300) } : null;
+            if (good !== null) run.gotPictures.set(message.query, good);
+            reply(good);
+          },
+          () => reply(null),
+        );
         return;
       }
       case 'fault':
@@ -530,6 +569,13 @@ export function createSurfaceHost(options: SurfaceHostOptions): SurfaceHost {
         run.spec = spec;
         place(run, spec);
       }
+    },
+    exportPage() {
+      // the app on stage that is running and has loaded (the last one, when there are several)
+      const run = [...running.values()].filter((candidate) => candidate.loaded).pop();
+      if (run === undefined) return null;
+      const title = run.spec.title.trim() === '' ? run.id : run.spec.title.trim();
+      return { title, html: buildStandalonePage({ source: run.source, tokens: run.spec.tokens, shelf: run.shelfText, title, pictures: Object.fromEntries(run.gotPictures) }) };
     },
     still(key) {
       return running.get(key)?.still?.canvas ?? stills.get(key)?.canvas ?? null;
