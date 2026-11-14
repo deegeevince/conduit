@@ -4,7 +4,7 @@
 // checks targets, bounds and overlaps, exercises valueAt/valueAfter round
 // trips, the store, `driven` and `template`, and times layout.
 
-import { bindProgress, parseTemplate } from '@conduit/language';
+import { bindProgress, completeStyle, parseTemplate } from '@conduit/language';
 import type { ControlKind, ControlSpec, ControlValue, ElementSpan, PickForm } from '@conduit/language';
 import type { BlockLook, TextMeasure } from '../../contracts/blocks';
 import type { ControlInput, ControlKey, ControlLayout, ControlMood } from '../../contracts/controls';
@@ -12,7 +12,7 @@ import { CALM } from '../../contracts/controls';
 import type { Box } from '../../contracts/space';
 import { layoutCard } from './card';
 import { applyDriven, boundAmount, drivenLayers, nextEases } from './driven';
-import { controlEngine, snapSlider } from './engine';
+import { controlEngine, snapSlider, stateNames, withUnit } from './engine';
 import { createControlStore } from './store';
 import { compileTemplate, renderTemplate } from './template';
 
@@ -77,6 +77,10 @@ const SPECS: { name: string; spec: ControlSpec; label: string }[] = [
   { name: 'button', spec: spec('button'), label: 'Run the simulation again' },
   { name: 'toggle', spec: spec('toggle', { value: false }), label: 'Show the air resistance' },
   { name: 'slider', spec: spec('slider', { min: 0, max: 90, step: 5, unit: ' deg', value: 45 }), label: 'Launch angle' },
+  { name: 'slider-down', spec: spec('slider', { min: 10, max: 0, step: 2, unit: 'km', value: 6 }), label: 'Distance to the shore, in kilometres, at low tide' },
+  { name: 'slider-percent', spec: spec('slider', { min: 0, max: 100, step: 1, unit: '%', value: 40 }), label: 'Humidity' },
+  { name: 'toggle-pair', spec: spec('toggle', { value: true }), label: 'Summer / Winter' },
+  { name: 'toggle-long', spec: spec('toggle', { value: false }), label: 'Show the air resistance on the falling ball as well as its weight' },
   { name: 'slider-free', spec: spec('slider', { min: 0.5, max: 12.5, value: 3 }), label: 'Rate' },
   { name: 'row', spec: spec('pick', { form: 'row', options: ['Sine', 'Square', 'Saw', 'Triangle'], value: 2 }), label: '' },
   { name: 'row-many', spec: spec('pick', { form: 'row', options: ['Mercury', 'Venus', 'Earth', 'Mars', 'Jupiter', 'Saturn', 'Uranus'], value: 3 }), label: '' },
@@ -87,8 +91,10 @@ const SPECS: { name: string; spec: ControlSpec; label: string }[] = [
   { name: 'input-long', spec: spec('input', { value: 'a very long line of text that the field cannot possibly hold in one go at all' }), label: 'Ask' },
 ];
 
-function element(label: string, s: ControlSpec): ElementSpan {
-  return { key: `c@1`, id: 'c', kind: 'control', text: label, figure: { kind: 'control', ...s } } as unknown as ElementSpan;
+function element(label: string, s: ControlSpec, placed = false): ElementSpan {
+  const base = completeStyle({}, { kind: 'control', look: { enter: 'fade', by: 'all', exit: 'fade' }, layout: 'stack' });
+  const style = placed ? { ...base, at: { x: 40, y: 40 } } : base;
+  return { key: 'c@1', id: 'c', kind: 'control', seq: 1, order: 1, scene: 's', text: label, emphasis: [], style, figure: { kind: 'control', ...s }, parent: null, carried: false, replaces: null, enter: null, exit: null, changes: [], driven: [], struck: false };
 }
 
 const MOODS: readonly ControlMood[] = [CALM, { ...CALM, hover: true }, { ...CALM, focus: true }, { ...CALM, pressed: 'press' }, { ...CALM, open: true, focus: true }];
@@ -125,7 +131,7 @@ for (let i = 0; i < LOOKS.length; i += 1) {
         const body: Box = { x: -layout.width / 2, y: -layout.height / 2, width: layout.width, height: layout.height };
         for (const z of layout.zones) {
           const outsideOk = z.part === 'list' || z.part.startsWith('option:') && s.spec.form === 'menu';
-          check(Math.min(z.box.width, z.box.height) >= 44 - 0.01 || z.part === 'knob', `${tag}: zone ${z.part} is ${z.box.width}x${z.box.height}`);
+          check(Math.min(z.box.width, z.box.height) >= 44 - 0.01, `${tag}: zone ${z.part} is ${z.box.width}x${z.box.height}`);
           if (!outsideOk) check(within(z.box, body, 1), `${tag}: zone ${z.part} leaves the control`);
         }
         for (const p of layout.parts) if (p.kind === 'text') check(within(p.box, mood.open ? { ...body, height: body.height + 400 } : body, 1), `${tag}: text "${p.text}" leaves the control`);
@@ -207,6 +213,82 @@ for (let i = 0; i < LOOKS.length; i += 1) {
   }
 }
 
+// words: a unit gets its space, a toggle names both of its states
+{
+  check(withUnit('20', 'deg') === '20 deg' && withUnit('20', ' deg') === '20 deg' && withUnit('40', '%') === '40%' && withUnit('20', '°') === '20°' && withUnit('3', null) === '3', 'units: a space before a word, none before a sign');
+  const names = stateNames('Summer / Winter');
+  check(names !== null && names[0] === 'Summer' && names[1] === 'Winter' && stateNames('Summer') === null && stateNames('a / b / c') === null && stateNames(' / b') === null, 'toggle: two names split on a slash');
+  for (let i = 0; i < LOOKS.length; i += 1) {
+    for (const screen of [0, 1] as const) {
+      const at = (name: string, value: ControlValue | null, mood: ControlMood = CALM) => {
+        const entry = SPECS.find((x) => x.name === name) as (typeof SPECS)[number];
+        const input = inputFor(entry, i, screen, mood, value);
+        return { input, layout: controlEngine.layout(input) };
+      };
+      const tag = `${LOOKS[i]?.name} ${screen === 0 ? 'wide' : 'narrow'}`;
+      const textOf = (l: ControlLayout, part: string) => l.parts.find((p) => p.kind === 'text' && p.part === part);
+      // the slider's value stands by its label and has its unit's space
+      for (const name of ['slider', 'slider-down', 'slider-percent']) {
+        const { input, layout } = at(name, name === 'slider-down' ? 6 : 45);
+        const label = textOf(layout, 'label');
+        const value = textOf(layout, 'value');
+        check(label?.kind === 'text' && value?.kind === 'text', `${tag} ${name}: label and value`);
+        if (label?.kind !== 'text' || value?.kind !== 'text') continue;
+        const near = value.box.y >= label.box.y + label.box.height - 0.5 || value.box.x - (label.box.x + label.box.width) <= 3 * input.look.body;
+        check(near, `${tag} ${name}: the value is beside its label, not at the far end (${value.box.x} after ${label.box.x + label.box.width})`);
+        check(value.box.x + value.box.width <= layout.width / 2 + 1, `${tag} ${name}: the value stays in the control`);
+      }
+      check(textOf(at('slider', 45).layout, 'value')?.kind === 'text' && (textOf(at('slider', 45).layout, 'value') as { text: string }).text === '45 deg', `${tag}: "45 deg"`);
+      check((textOf(at('slider-percent', 40).layout, 'value') as { text: string }).text === '40%', `${tag}: "40%"`);
+      // the value does not move the label or itself as it grows
+      const a = at('slider', 5).layout.parts.find((p) => p.kind === 'text' && p.part === 'value');
+      const b = at('slider', 90).layout.parts.find((p) => p.kind === 'text' && p.part === 'value');
+      check(a?.kind === 'text' && b?.kind === 'text' && a.box.x === b.box.x && a.box.y === b.box.y, `${tag}: the value does not move as it changes`);
+      check(at('slider', 5).layout.height === at('slider', 90).layout.height, `${tag}: the slider is as tall at every value`);
+      // a toggle that names both states: one is in ink and the other dim, and they swap
+      const off = at('toggle-pair', false).layout;
+      const on = at('toggle-pair', true).layout;
+      const role = (l: ControlLayout, part: string) => { const p = textOf(l, part); return p?.kind === 'text' ? p.role : null; };
+      check(role(off, 'off-name') === 'words' && role(off, 'on-name') === 'value' && role(on, 'off-name') === 'value' && role(on, 'on-name') === 'words', `${tag}: toggle pair: the name that is true is in ink`);
+      // a single name says its state
+      const single = at('toggle', false).layout;
+      const state = textOf(single, 'state');
+      check(state?.kind === 'text' && state.text === 'off' && (textOf(at('toggle', true).layout, 'state') as { text: string }).text === 'on', `${tag}: toggle says on and off`);
+      const long = at('toggle-long', false).layout;
+      const lstate = textOf(long, 'state');
+      check(lstate?.kind === 'text', `${tag}: a long toggle label still says its state`);
+      // a control placed on the drawing stands on a plate, first; one in the flow is left bare
+      for (const entry of SPECS) {
+        const input = inputFor(entry, i, screen, CALM);
+        const bare = controlEngine.layout(input);
+        const placed = controlEngine.layout({ ...input, control: element(entry.label, entry.spec, true) });
+        const first = placed.parts[0];
+        check(first?.kind === 'shape' && first.role === 'fill' && first.part === 'ground', `${tag} ${entry.name}: a placed control has its plate under everything`);
+        check(!bare.parts.some((p) => p.kind === 'shape' && p.part === 'ground'), `${tag} ${entry.name}: a control in the flow has no plate`);
+        check(placed.width === bare.width && placed.height === bare.height, `${tag} ${entry.name}: the plate does not change its size`);
+      }
+    }
+  }
+}
+
+// the keyboard works on a stepped slider that runs down, off its grid, and with a nonsense value
+{
+  const down = spec('slider', { min: 10, max: 0, step: 2, value: 10 });
+  const press = (sp: ControlSpec, held: number, key: ControlKey) => controlEngine.valueAfter({ ...inputFor(SPECS[0] as (typeof SPECS)[number], 0, 0, CALM, held), spec: sp }, key);
+  check(press(down, 10, 'more') === 8 && press(down, 8, 'less') === 10 && press(down, 10, 'less') === null && press(down, 0, 'more') === null, 'slider written 10 0: "more" goes towards 0');
+  check(press(down, 10, 'last') === 0 && press(down, 0, 'first') === 10, 'slider written 10 0: first and last are its ends');
+  const five = spec('slider', { min: 0, max: 90, step: 5, value: 47 });
+  check(press(five, 47, 'more') === 50 && press(five, 47, 'less') === 45, 'a value off the grid steps to the grid in the direction pressed');
+  check(press(five, 45, 'page-more') === 90 && press(five, 40, 'page-less') === 0, 'page keys take ten steps, kept inside the ends');
+  check(press(five, Number.NaN, 'more') === 5, 'a value that is not a number counts as the start');
+  const flat = spec('slider', { min: 3, max: 3, value: 3 });
+  check(press(flat, 3, 'more') === null && press(flat, 3, 'last') === null, 'a slider with no travel does nothing');
+  check(snapSlider(down, 7) === 8 && snapSlider(down, 99) === 10 && snapSlider(down, -4) === 0 && snapSlider(down, Number.NaN) === 10, 'snap on a slider that runs down');
+  check(snapSlider(spec('slider', { min: 0, max: 10, step: 3 }), 10) === 9, 'a step never lands past the end');
+  const nostep = spec('slider', { min: 2, max: 8, value: 2 });
+  check(press(nostep, 2, 'more') === 2.3 && press(nostep, 8, 'page-less') === 6.8, `a free slider moves in twentieths: ${String(press(nostep, 2, 'more'))}, ${String(press(nostep, 8, 'page-less'))}`);
+}
+
 // bindings: progress, easing, composition
 {
   const sl = spec('slider', { min: 0, max: 10, value: 5 });
@@ -217,7 +299,7 @@ for (let i = 0; i < LOOKS.length; i += 1) {
     effect: { kind: 'set', props: { opacity: 0, ink: '#ff0000' } } as const,
     since: 0,
   };
-  const base = { size: 'm', ink: 'ink', weight: 'normal', face: null, fill: 'none', stroke: 'ink', opacity: 1, scale: null, rot: 0, thick: null, soft: 0, at: null, near: null } as never;
+  const base = element('', sl).style;
   const stateOf = (v: number) => (key: string) => (key === 'k' ? { spec: sl, value: v } : null);
   const at = (v: number) => applyDriven(base, drivenLayers([change], stateOf(v), new Map(), 0));
   check(at(0).style.opacity === 1, 'driven: slider at 0 changes nothing');
@@ -238,7 +320,8 @@ for (let i = 0; i < LOOKS.length; i += 1) {
   const a = (t: number) => drivenLayers([isChange], st(true), eases, t)[0]?.amount ?? -1;
   check(a(10) === 0 && Math.abs(a(10.125) - 0.5) < 1e-9 && a(10.25) === 1 && a(11) === 1, 'is: eases over a quarter of a second');
   const turned = nextEases([isChange], st(false), eases, 10.125);
-  check(Math.abs(boundAmount(turned.get('3:t') as never, 10.125) - 0.5) < 1e-9, 'is: an interrupted ease turns round from where it was');
+  const turning = turned.get('3:t');
+  check(turning !== undefined && Math.abs(boundAmount(turning, 10.125) - 0.5) < 1e-9, 'is: an interrupted ease turns round from where it was');
   check(bindProgress(isChange.on, tog, true) === 1, 'bindProgress agrees');
   // move and text
   const mv = { seq: 4, control: 'k', on: { kind: 'whole' } as const, effect: { kind: 'move', to: 'top', along: null } as const, since: 0 };
