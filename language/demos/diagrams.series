@@ -1,0 +1,51 @@
+# Diagrams: the painter lays out every part. The brain names the shape and
+# writes the parts; nothing here has a coordinate except the map's pins.
+
+scene caption
+flow right | Should I water this plant?
+node start end | A drooping leaf
+node dry ask from=start | Is the top inch of soil dry?
+node water from=dry:yes fill=accent | Water it, slowly
+node wait from=dry:no | Wait two days
+node light from=wait | Check the light instead
+say | Check the soil, not the calendar.
+wait 2
+
+scene caption
+tree down | Where a sentence comes from
+node root | Sentence
+node subject from=root | Subject
+node predicate from=root | Predicate
+node noun from=subject | The cat
+node verb from=predicate | sat on
+node object from=predicate | the mat
+say aside | Every sentence is a tree before it is a line.
+wait 2
+
+scene caption
+cycle | Water, always moving
+node sea | Sea
+node cloud | Cloud
+node rain | Rain
+node river | River
+link rain river | runs off
+say | Nothing is used up. It only changes where it is.
+wait 2
+
+scene caption
+timeline | The way to the Moon
+node 1957 | Sputnik
+node 1961 | First human in orbit
+node 1969 | Apollo 11
+node 1961 1972 note | The Apollo programme
+say aside | Twelve years from the first satellite to the first footprint.
+wait 2
+
+scene caption
+table bars | Cups of tea a year
+| Country | Cups
+| Turkey | 1,300
+| Ireland | 1,200
+| United Kingdom | 900
+| Japan | 560
+say | Turkey drinks more tea than anyone, and it is not close.

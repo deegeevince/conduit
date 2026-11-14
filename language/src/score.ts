@@ -158,7 +158,7 @@ export class TurnScore {
       } else if (line.verb === 'node' && other.verb === 'node' && other.from?.id === id) {
         const { from: _from, ...free } = other;
         this.entries[at] = { ...entry, line: free };
-      } else if (isControl && other.verb === 'bind' && other.control === id) this.retract(at, floor);
+      } else if (other.verb === 'bind' && ((isControl && other.control === id) || (other.change.verb === 'set' ? other.change.target.kind === 'id' && other.change.target.id === id : other.change.id === id))) this.retract(at, floor);
     });
   }
 

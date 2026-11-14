@@ -27,6 +27,21 @@ export const DEMOS = [
     title: 'Styles',
     summary: 'One short script with no look of its own, so the same lines can be compared in every look.',
   },
+  {
+    name: 'diagrams',
+    title: 'Diagrams',
+    summary: 'A flow, a tree, a cycle, a timeline and a table: the brain names the parts, the painter lays them out.',
+  },
+  {
+    name: 'explorable',
+    title: 'Explorable',
+    summary: 'A picture with a slider, a toggle and a pick bound to it, and a button that asks the brain.',
+  },
+  {
+    name: 'charts',
+    title: 'Charts',
+    summary: 'A line, columns, candles and an indexed comparison: rows in, an instrument with a crosshair out.',
+  },
 ] as const satisfies readonly DemoInfo[];
 
 export type DemoName = (typeof DEMOS)[number]['name'];

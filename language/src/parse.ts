@@ -966,6 +966,7 @@ function parseNode(head: Head, text: string | null, issues: Issues): Line | null
   const { props, rest } = readStyleProps(head.pairs, issues);
   const line: { -readonly [K in keyof NodeLine]: NodeLine[K] } = { verb: 'node', id, styles: [], props, values: numbers.slice(0, 2), text };
   const styleWords: string[] = [];
+  let arrowLabel = '';
   for (const name of names) {
     if (oneOf(NODE_SHAPES, name)) line.shape = name;
     else styleWords.push(name);
@@ -979,6 +980,10 @@ function parseNode(head: Head, text: string | null, issues: Issues): Line | null
       if (!isValidElementId(from)) issues.warn('bad-value', `${pair.token} ignored; from= names the node this one follows`, pair.token);
       else line.from = label === '' ? { id: from } : { id: from, label };
     } else if (pair.key === 'shape' && oneOf(NODE_SHAPES, pair.value)) line.shape = pair.value;
+    // `from=a label=yes`: the word on the arrow, written as a property.
+    else if ((pair.key === 'label' || pair.key === 'link') && pair.raw !== '') arrowLabel = pair.raw;
+    // `year=1969`, `date=1969`: the number a timeline node gives first.
+    else if ((pair.key === 'year' || pair.key === 'when' || pair.key === 'date') && parseNumber(pair.value, -VALUE_LIMIT, VALUE_LIMIT) !== null) line.values = [Number(pair.value), ...line.values].slice(0, 2);
     // A mark on a chart. `x` is kept as written: what it means (a date, a year, a name) is the chart's to say.
     else if (pair.key === 'x' && pair.raw !== '') line.x = pair.raw.slice(0, LIMITS.name);
     else if (pair.key === 'y') {
@@ -988,6 +993,7 @@ function parseNode(head: Head, text: string | null, issues: Issues): Line | null
     } else issues.warn('unknown-key', `"${pair.key}" is not a property here; ignored`, pair.token);
   }
   line.styles = readStyleNames(styleWords, issues);
+  if (arrowLabel !== '' && line.from !== undefined && line.from.label === undefined) line.from = { id: line.from.id, label: arrowLabel };
   return withWhen(line, head.when);
 }
 
@@ -1035,6 +1041,7 @@ function parseControl(verb: ControlVerb, head: Head, text: string | null, issues
   }
   let step: number | undefined;
   let value: number | undefined;
+  const ends: { min?: number; max?: number } = {};
   for (const pair of rest) {
     const { key } = pair;
     if (key === 'send') {
@@ -1051,12 +1058,15 @@ function parseControl(verb: ControlVerb, head: Head, text: string | null, issues
       else if (verb === 'toggle' && parseTap(pair.value) !== null) line.initial = parseTap(pair.value) ?? false;
       else issues.warn('bad-value', `${pair.token} ignored`, pair.token);
     } else if (key === 'form' && verb === 'pick' && oneOf(PICK_FORMS, pair.value)) line.form = pair.value;
+    else if ((key === 'min' || key === 'max') && verb === 'slider' && parseNumber(pair.value, -VALUE_LIMIT, VALUE_LIMIT) !== null) ends[key] = Number(pair.value);
     else issues.warn('unknown-key', `"${key}" is not a property here; ignored`, pair.token);
   }
   line.styles = readStyleNames(styleWords, issues);
 
   if (verb === 'slider') {
     let [min, max] = numbers;
+    if (min === undefined && ends.min !== undefined) min = ends.min;
+    if (max === undefined && ends.max !== undefined) max = ends.max;
     if (min === undefined || max === undefined) {
       issues.warn('missing-argument', 'slider needs its two ends (slider angle 0 90 | Angle); used 0 to 100');
       min = 0;
@@ -1073,7 +1083,12 @@ function parseControl(verb: ControlVerb, head: Head, text: string | null, issues
   } else if (numbers.length > 0 && verb !== 'pick') issues.warn('unknown-word', `numbers mean nothing on a ${verb} line; ignored`);
 
   if (verb === 'pick') {
-    const options = text === null ? [] : splitCells(text).filter((option) => option !== '');
+    let options = text === null ? [] : splitCells(text).filter((option) => option !== '');
+    // `pick view | Day, Night`, `Day / Night`: one cell that lists its options.
+    if (options.length === 1 && /,|\s\/\s/.test(options[0] ?? '')) {
+      options = (options[0] ?? '').split(/\s*(?:,|\s\/\s)\s*/).filter((option) => option !== '');
+      if (options.length >= 2) issues.warn('missing-text', 'options are separated by " | ": pick view | Day | Night');
+    }
     if (options.length < 2) {
       issues.error('missing-text', 'pick needs its options after the bar: pick view | Day | Night');
       return null;
@@ -1400,6 +1415,63 @@ function isControlVerb(verb: Verb): verb is ControlVerb {
   return (CONTROL_VERBS as readonly string[]).includes(verb);
 }
 
+/** Properties a model writes as `key: value` or `key:value` where Series writes `key=value`. */
+const COLON_KEYS: ReadonlySet<string> = new Set(['from', 'x', 'y', 'at', 'in', 'near', 'data', 'grow', 'unit', 'step', 'value', 'send', 'form', 'layout', 'canvas', 'mood', 'pace', 'align', 'clear', 'lines', 'fill', 'stroke', 'ink', 'size', 'thick', 'enter', 'exit', 'over', 'speed', 'dur', 'scale', 'rot', 'opacity', 'layer', 'loop', 'mark', 'id', 'min', 'max', 'year', 'kind', 'type']);
+
+/** Verbs whose words come after the bar; written without one, the words are found by other signs. */
+const WORDED: ReadonlySet<string> = new Set(['say', 'node', 'button', 'toggle', 'input', 'correct', 'card', 'bind']);
+
+const ARROW = /\s(?:->|-->|=>|→)\s/;
+const RANGE = /^(-?\d+(?:\.\d+)?)[-–—](\d+(?:\.\d+)?)$/;
+
+/** A model's Markdown habits, taken off the line before it is read: a quote marker, backticks or quotes round the whole line, a verb in bold. */
+function unwrap(raw: string): string {
+  let source = raw.replace(/^>\s*/, '');
+  const ticks = /^`([^`]+)`$/.exec(source);
+  if (ticks?.[1] !== undefined) source = ticks[1].trim();
+  const quoted = /^["“]([^"”]+)["”]$/.exec(source);
+  if (quoted?.[1] !== undefined && /^[a-z]+\b/i.test(quoted[1]) && quoted[1].includes('|')) source = quoted[1].trim();
+  return source.replace(/^(\*\*|__|\*|_)([a-z]+):?\1:?(?=\s|$)/i, '$2');
+}
+
+/**
+ * Words a head carries that mean what a property means but are written the way
+ * a model writes them: `from: a`, `from:a`, `0-90`, `0 to 90`, `1961-72`.
+ */
+function tidyHead(verb: string, tokens: string[]): string[] {
+  const out: string[] = [];
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index] ?? '';
+    const lower = token.toLowerCase();
+    const named = /^([a-z]+):(.+)$/i.exec(token);
+    if (named?.[1] !== undefined && named[2] !== undefined && COLON_KEYS.has(named[1].toLowerCase()) && !named[2].startsWith('//')) {
+      out.push(`${named[1]}=${named[2]}`);
+      continue;
+    }
+    const bare = /^([a-z]+):$/i.exec(token);
+    const next = tokens[index + 1];
+    if (bare?.[1] !== undefined && COLON_KEYS.has(bare[1].toLowerCase()) && next !== undefined) {
+      out.push(`${bare[1]}=${next}`);
+      index += 1;
+      continue;
+    }
+    if (index > 0 && token.length > 1 && token.endsWith(':') && !token.includes('=') && out.length === index) {
+      out.push(token.slice(0, -1));
+      continue;
+    }
+    const range = RANGE.exec(token);
+    if (range?.[1] !== undefined && range[2] !== undefined && Number(range[1]) < Number(range[2]) && (verb === 'slider' || verb === 'node' || verb === 'bind')) {
+      if (verb === 'bind') out.push(`${range[1]}..${range[2]}`);
+      else out.push(range[1], range[2]);
+      continue;
+    }
+    // `slider angle 0 to 90`: the "to" is only a word.
+    if (lower === 'to' && verb === 'slider' && /^-?\d/.test(tokens[index - 1] ?? '') && /^-?\d/.test(tokens[index + 1] ?? '')) continue;
+    out.push(token);
+  }
+  return out;
+}
+
 /**
  * Parses one raw line of Series.
  *
@@ -1431,13 +1503,47 @@ export function parseLine(raw: string): ParseResult {
     if (cells.trim() === '') return { kind: 'blank' };
     return { kind: 'line', line: { verb: 'row', id: '-', cells }, issues: [] };
   }
-  source = source.replace(/^(?:[-*•]|\d+[.)])\s+(?=[a-zA-Z])/, '');
+  source = unwrap(source.replace(/^(?:[-*•]|\d+[.)])\s+(?=[a-zA-Z])/, ''));
 
-  const pipe = source.indexOf('|');
+  let pipe = source.indexOf('|');
+  // `a -> b | then`: an arrow between two ids is a link.
+  const shorthand = /^([a-z][a-z0-9_-]*)\s*(?:->|-->|=>|→)\s*([a-z][a-z0-9_-]*)(.*)$/i.exec(source);
+  if (shorthand?.[1] !== undefined && shorthand[2] !== undefined && !oneOf(VERBS, shorthand[1].toLowerCase()) && isValidElementId(shorthand[1].toLowerCase())) {
+    source = `link ${shorthand[1]} ${shorthand[2]}${shorthand[3] ?? ''}`;
+    pipe = source.indexOf('|');
+  }
+  const firstWord = (/^([a-z]+):?(?=\s|$)/i.exec(source)?.[1] ?? '').toLowerCase();
+  const firstVerb = own(VERB_ALIASES, firstWord) ?? firstWord;
+  // `pick view: Day | Night`: the first option was written after the id's colon.
+  const picked = pipe >= 0 && firstVerb === 'pick' ? /^(\S+\s+[a-z][a-z0-9_-]*):\s+([^|=]+?)\s*\|(.*)$/i.exec(source) : null;
+  if (picked?.[1] !== undefined && picked[2] !== undefined) {
+    source = `${picked[1]} | ${picked[2]} |${picked[3] ?? ''}`;
+    pipe = source.indexOf('|');
+  }
+  let wordsAsWritten: string | null = null;
+  if (pipe < 0 && WORDED.has(firstVerb)) {
+    // Where the bar should be: after the arrow of a bind, at the quotes round a label, at the colon that follows the head.
+    const arrow = firstVerb === 'bind' ? ARROW.exec(source) : null;
+    const quoted = /^(.*?\S)\s+["“](.+?)["”]\s*$/.exec(source);
+    const colon = /^([^:=]*?\S):\s+(.+)$/.exec(source);
+    if (arrow !== null) source = `${source.slice(0, arrow.index)} | ${source.slice(arrow.index + arrow[0].length)}`;
+    else if (quoted?.[1] !== undefined && quoted[2] !== undefined && firstVerb !== 'say') source = `${quoted[1]} | ${quoted[2]}`;
+    else if (colon?.[1] !== undefined && colon[2] !== undefined && !COLON_KEYS.has((colon[1].split(/\s+/).pop() ?? '').toLowerCase())) source = `${colon[1]} | ${colon[2]}`;
+    else if (firstVerb === 'say' || firstVerb === 'button') {
+      // `say hello there`, `button go`: no bar, so the rest of the line is the words.
+      const rest = source.replace(/^\S+\s*/, '').trim();
+      if (rest !== '' && !/^\w+=/.test(rest)) {
+        source = `${firstVerb} | ${rest}`;
+        wordsAsWritten = `${firstVerb} had no " | "; the words after it were taken as its text`;
+      }
+    }
+    pipe = source.indexOf('|');
+  }
   const headSource = pipe < 0 ? source : source.slice(0, pipe);
   const rawText = pipe < 0 ? null : source.slice(pipe + 1);
   // `circle 80, 45 12`: a space after the comma of a coordinate pair is still the pair.
-  const tokens = headSource.trim().replace(/(\d),\s+(?=-?[\d.])/g, '$1,').split(/\s+/).filter((token) => token !== '');
+  const verbWord = (headSource.trim().split(/\s+/)[0] ?? '').toLowerCase().replace(/:$/, '');
+  const tokens = tidyHead(own(VERB_ALIASES, verbWord) ?? verbWord, headSource.trim().replace(/(\d),\s+(?=-?[\d.])/g, '$1,').split(/\s+/).filter((token) => token !== ''));
   const verbToken = (tokens[0] ?? '').toLowerCase().replace(/:$/, '');
   let verb = own(VERB_ALIASES, verbToken) ?? verbToken;
   const aliasWord = own(ALIAS_WORDS, verbToken);
@@ -1453,6 +1559,7 @@ export function parseLine(raw: string): ParseResult {
     return { kind: 'reject', issues: issues.list };
   }
 
+  if (wordsAsWritten !== null) issues.warn('missing-text', wordsAsWritten);
   const head = readHead(tokens.slice(1), issues);
   const limit = own(TEXT_LIMIT as Record<string, number>, verb);
   let spoken = rawText;

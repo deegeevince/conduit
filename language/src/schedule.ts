@@ -1530,7 +1530,10 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase): 
     if (candidate.rows === null || figure?.kind !== 'structure' || figure.chart === null || candidate.rows.length === 0 || candidate.rows.every((row) => rowSeq.get(row) === undefined)) continue;
     const { rows } = candidate;
     const kind = figure.chart;
-    for (const problem of chartModelOf(kind, rows, scope).problems) {
+    const model = chartModelOf(kind, rows, scope);
+    // A chart with only its header so far is not wrong yet.
+    if (model.points.length === 0) continue;
+    for (const problem of model.problems) {
       // The first row that brings the problem in: the problem stays once it is there.
       let low = 0;
       let high = rows.length - 1;
