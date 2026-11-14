@@ -12,6 +12,7 @@ dist/
 explore/runs/
 techniques/.cache/
 loop/runs/
+loop/queue/
 .DS_Store
 .idea/
 .vscode/
