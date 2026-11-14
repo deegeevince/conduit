@@ -2,6 +2,9 @@
 
 Newest first. Each item is something the brain can show live when asked "showcase what's new": draw it, don't describe it. The server reads this file.
 
+## v2.2 first slice (live)
+- Mock-ups described, not drawn: ask for a page, an app screen or a user journey and get a laid-out browser page or phones (nav, buttons, cards, forms) in a clean studio look or a wireframe, with a real credited Creative Commons photo where a picture belongs.
+
 ## v2.1 (live, being polished)
 - Only you can use it (your Tailscale login), every action is in an audit log, `/stop-all` stops everything, and `/usage` shows what it costs.
 - Lessons read properly: the table you are learning from gets the big room with the steps beside it; the answer stays on screen at rest; decision boxes are diamonds; text keeps readable contrast.
