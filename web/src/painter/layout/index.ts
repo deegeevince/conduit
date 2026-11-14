@@ -1069,7 +1069,8 @@ interface FootRow {
 function footRows(units: readonly Unit[], width: number, ctx: Context): { rows: FootRow[]; height: number; vgap: number; hgap: number } {
   // the choices are set a little smaller before they wrap onto a second row: the foot is room taken from everything else
   let laid = footRowsAt(units, width, ctx, 1);
-  for (const k of [0.85, 0.72]) {
+  // a phone keeps its choices at full size, one to a row, so that each is a target a thumb can find
+  for (const k of ctx.viewport.width < 600 ? [] : [0.85, 0.72]) {
     if (laid.rows.length <= 1) break;
     const tighter = footRowsAt(units, width, ctx, k);
     if (tighter.rows.length < laid.rows.length) laid = tighter;

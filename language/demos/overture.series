@@ -21,7 +21,7 @@ wait 0.8
 
 drop q
 path in=g three stroke=accent thick=3 dur=1s | M12 48 C23 43 29 51 20 55 C30 56 28 66 12 63
-path in=g two stroke=accent thick=3 dur=1s | M31 49 C34 43 45 46 44 53 L31 64 H47
+path in=g two stroke=accent thick=3 dur=0.9s | M31 50 C32 44 44 44 43 51 C42 56 37 59 31 64 H46
 wait 0.3
 say in=g yes at=50,85 size=xl enter=slam | Yes!
 wait 0.8
@@ -30,7 +30,7 @@ scene point stack brisk lines=2 align=center
 say size=l enter=fade dur=0.4s | Claude answers by drawing.
 say size=l enter=fade dur=0.4s | You draw, tap or talk back.
 wait 0.5
-say choice size=s enter=fade dur=0.3s | Teach my kid a maths problem
-say choice size=s enter=fade dur=0.3s | Explain how the heart pumps
-say choice size=s enter=fade dur=0.3s | Mock up an app screen
-say choice size=s enter=fade dur=0.3s | Build me a real webpage
+say choice size=l @13 enter=fade dur=0.3s | Teach my kid a maths problem
+say choice size=l @13 enter=fade dur=0.3s | Explain how the heart pumps
+say choice size=l @13 enter=fade dur=0.3s | Mock up an app screen
+say choice size=l @13 enter=fade dur=0.3s | Build me a real webpage
