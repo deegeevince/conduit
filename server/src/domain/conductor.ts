@@ -667,8 +667,9 @@ export class Conductor {
         const report = event.report;
         const turn = s.turns.get(report.turn);
         this.deps.sessionLog.write(s.id, { type: 'report', turn: report.turn, report });
-        if (event.boxes !== undefined && turn !== undefined && report.outcome === 'finished' && report.skippedAt === null && this.measuresHere(s) && measurable(turn.score.schedule)) {
-          // How the turn rested, as the page measured it, against the server's own measure of the same score.
+        if (event.boxes !== undefined && turn !== undefined && turn.input.kind === 'prompt' && report.outcome === 'finished' && report.skippedAt === null && this.measuresHere(s) && measurable(turn.score.schedule)) {
+          // How the turn rested, as the page measured it, against the server's own measure of the same score. Only for a typed prompt: a turn
+          // that carries on from the viewer's own doing (a mock-up's fields, a pressed button) rests on state only the page holds.
           const rested = measureDraft(turn.score, { ...s, held: report.controls ?? s.held });
           if (rested !== null) {
             this.noteBoxes(s, `${turn.id}#report`, 'server', rested.boxes, 'report', turn.id);
