@@ -256,3 +256,7 @@ button.seg:not(.lit) { opacity: 0.62; }
 .try figcaption { color: var(--dim); font-size: 18px; }
 
 .sees { font-size: 24px; font-weight: 600; }
+
+/* the question's own picture, tapped: the whole of it, as big as the screen allows (a map has to be read) */
+img.crop { cursor: zoom-in; }
+img.crop.zoom { position: fixed; inset: 8px; z-index: 50; width: calc(100% - 16px); height: calc(100% - 16px); max-width: none; max-height: none; object-fit: contain; background: #111; border: 3px solid var(--accent); border-radius: 16px; cursor: zoom-out; }

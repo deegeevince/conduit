@@ -366,7 +366,7 @@ export class Player {
       h('span', { class: 'qkicker' }, `${printed === null || context.id !== node.id ? '' : `${printed}.  `}${splitNumber(kicker).text}`),
       more,
       h('p', { class: 'qtext' }, text),
-      crop === undefined ? null : h('img', { class: 'crop', src: crop, alt: 'The question as it is written on the page' }),
+      crop === undefined ? null : h('img', { class: 'crop', src: crop, alt: 'The question as it is written on the page. Tap to see it bigger.', role: 'button', tabindex: 0, onclick: (e: Event) => (e.currentTarget as HTMLElement).classList.toggle('zoom') }),
     );
     more?.addEventListener('click', () => {
       this.expanded = !this.expanded;

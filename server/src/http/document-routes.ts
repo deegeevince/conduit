@@ -115,7 +115,8 @@ export function registerDocumentRoutes(app: Hono, deps: HttpDeps): void {
   app.get('/api/documents/:id/crop', async (c) => {
     const node = c.req.query('node') ?? '';
     const bytes = node === '' ? null : await docAssets.crop(documentId(param(c, 'id')), node);
-    if (bytes === null) throw errors.notFound('crop');
+    // none cut yet is an answer, not an error: the page asks again, and an error here would be in every console and every gate
+    if (bytes === null) return c.body(null, 204);
     c.header('content-type', 'image/jpeg');
     c.header('cache-control', 'private, max-age=86400');
     return c.body(bytes as Uint8Array<ArrayBuffer>);

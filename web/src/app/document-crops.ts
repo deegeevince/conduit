@@ -21,7 +21,7 @@ function load(url: string): Promise<HTMLImageElement | null> {
 async function serverCut(document: string, node: string): Promise<string | null> {
   try {
     const response = await fetch(API.documentCrop(document, node));
-    if (!response.ok) return null;
+    if (response.status !== 200) return null;
     const blob = await response.blob();
     return await new Promise<string | null>((done) => {
       const reader = new FileReader();
