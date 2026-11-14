@@ -4,7 +4,7 @@
 //   pnpm smoke [--url http://127.0.0.1:<port>] [--screens 1920x825,390x844] [--out <dir>] [--turns 1,2,3,4,5,6,7]
 //              [--timeout <seconds a turn may take>] [--parallel] [--demo] [--quiet] [--chat | --no-chat]
 //
-// A second pass drives the chat shell at /chat (`--chat` runs only it, `--no-chat` leaves it out; by default it runs after the conversation, one tab per screen, all at once):
+// A second pass drives the frozen chat shell at /chat, only when asked (`--chat` runs only it, `--with-chat` adds it after the conversation; `--no-chat` is the default and kept for old scripts):
 // send a prompt; the reply arrives; the trace under it opens; the canvas opens and the answer is ON IT (the same on-stage, no-overlap and nothing-cut-off checks, scoped to the
 // canvas's stage); and the composer is reachable with the canvas open (the pill is on screen, nothing covers it, a real tap and real keys put words in it).
 //
@@ -113,7 +113,7 @@ function parseArgs(argv: readonly string[]): Options {
     const arg = argv[i] as string;
     if (!arg.startsWith('--')) usage(`unexpected argument ${arg}`);
     const name = arg.slice(2);
-    if (['parallel', 'demo', 'quiet', 'chat', 'no-chat'].includes(name)) flags.set(name, 'true');
+    if (['parallel', 'demo', 'quiet', 'chat', 'no-chat', 'with-chat'].includes(name)) flags.set(name, 'true');
     else {
       const value = argv[i + 1];
       if (value === undefined || value.startsWith('--')) usage(`--${name} needs a value`);
@@ -139,7 +139,8 @@ function parseArgs(argv: readonly string[]): Options {
     quiet: flags.has('quiet'),
     page: flags.get('page') ?? '',
     say: flags.get('say') ?? null,
-    chat: flags.has('chat') ? 'only' : flags.has('no-chat') ? 'off' : 'with',
+    // /chat is frozen (the product is the main view at /), so its pass runs only when asked: `--chat` runs only it, `--with-chat` adds it
+    chat: flags.has('chat') ? 'only' : flags.has('with-chat') ? 'with' : 'off',
   };
 }
 
