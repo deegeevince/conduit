@@ -90,9 +90,26 @@ function sourceOf(figure: Extract<NonNullable<ElementSpan['figure']>, { kind: 's
   return source;
 }
 
+/**
+ * The scenes in which a live app is the whole answer: nothing else is drawn or placed there but words. Such an app is the page: it takes the whole stage, edge
+ * to edge, with no frame or caption drawn about it (the words are in the transcript). An app beside other drawing keeps its room and its caption.
+ */
+export function loneAppScenes(schedule: Schedule): ReadonlySet<string> {
+  const lone = new Set<string>();
+  const crowded = new Set<string>();
+  for (const element of schedule.elements) {
+    const app = element.figure?.kind === 'structure' && element.figure.structure === 'app';
+    if (app) lone.add(element.scene);
+    else if (element.kind !== 'text') crowded.add(element.scene);
+  }
+  for (const scene of crowded) lone.delete(scene);
+  return lone;
+}
+
 export function appCues(schedule: Schedule, tq: number, look: LookSpec, env: AppEnv): AppCue[] {
   const out: AppCue[] = [];
   const live = new Set<string>();
+  const alone = loneAppScenes(schedule);
   for (const element of schedule.elements) {
     const figure = element.figure;
     if (figure === null || figure.kind !== 'structure' || figure.structure !== 'app') continue;
@@ -103,8 +120,9 @@ export function appCues(schedule: Schedule, tq: number, look: LookSpec, env: App
     const ps = planeScale(element.style.layer, env.viewport);
     const given = env.roomOf(element);
     const fit = env.fitOf(element);
-    const room: Box =
-      given !== null
+    const room: Box = alone.has(element.scene)
+      ? { x: 0, y: 0, width: env.viewport.width / ps, height: env.viewport.height / ps }
+      : given !== null
         ? { x: given.x / ps, y: given.y / ps, width: given.width / ps, height: given.height / ps }
         : figure.box === null
           ? { x: fit.box.x / ps, y: fit.box.y / ps, width: fit.box.width / ps, height: fit.box.height / ps }
