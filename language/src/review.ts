@@ -16,8 +16,10 @@ import type { LineProblem } from './context';
 import type { Schedule } from './schedule';
 import { isInFlow } from './schedule';
 import { describeSight } from './sight';
-import type { Sight, SightNote } from './sight';
+import type { PlacedBox, Sight, SightNote } from './sight';
+import type { Line } from './types';
 import { BACKDROP_LAYERS } from './vocabulary';
+import type { ContentCount, CriticFinding } from './wire';
 
 export interface ReviewPolicy {
   readonly enabled: boolean;
@@ -109,7 +111,8 @@ export function worthAFix(facts: DraftFacts, sight: Sight | null, picture: boole
 export const REVIEW_KEEP = 'ok';
 
 export function isKeep(raw: string): boolean {
-  return /^(?:ok|okay|keep|kept)[.!]?$/i.test(raw.trim());
+  // The brief shows the word in backticks and a model copies them; "Looks good." means the same. Neither is a line to reject and report back.
+  return /^[`'"*\s]*(?:ok|okay|keep|kept|keep it|looks? (?:good|right|fine)|no changes?(?: needed)?|nothing to (?:fix|change))[.!]?[`'"*\s]*$/i.test(raw.trim());
 }
 
 export interface ReviewBriefInput {
@@ -121,33 +124,193 @@ export interface ReviewBriefInput {
   readonly picture: boolean;
   /** the pass about to be written: 2 for the first look */
   readonly pass: number;
+  /** v2.1. `fix` (the default) repairs what did not land; `refine` adds to a picture that did ("keep making it better") */
+  readonly form?: ReviewForm;
+  /** v2.1. Where everything on stage rests, by id, so that a fix can name what it moves: the painter's own boxes, canvas units */
+  readonly placed?: readonly PlacedBox[];
+  /** v2.1. What a critic that can see made of the picture; its problems are named in a fix, its suggestions in a refine pass */
+  readonly critic?: Pick<CriticFinding, 'problems' | 'suggestions'> | null;
+  /** v2.1, `refine` only: the passes asked for, for "pass 2 of 4" */
+  readonly of?: number;
+}
+
+/** The most boxes a brief lists: the largest things first. Past this a brain reads the picture. */
+const PLACED_IN_BRIEF = 24;
+
+function placedRows(placed: readonly PlacedBox[]): string[] {
+  return [...placed]
+    .sort((a, b) => b.box.w * b.box.h - a.box.w * a.box.h)
+    .slice(0, PLACED_IN_BRIEF)
+    .map((item) => `  ${item.id} (${item.kind}${item.parent === null ? '' : ` in ${item.parent}`}): ${Math.round(item.box.w)}x${Math.round(item.box.h)} at ${Math.round(item.box.x)},${Math.round(item.box.y)}`);
 }
 
 /**
  * The message a brain is given when it is shown its draft. It is the same
- * for every brain and every turn apart from what the painter reported, so a
- * measured gain belongs to the mechanism and not to a phrasing tuned on one
- * prompt. It asks for the smallest repair: what the viewer has not reached
- * yet is fixed quietly (`revise`), what they have seen is fixed in front of
- * them, and a redraw is the last resort.
+ * for every brain and every turn apart from what the painter (and, when one
+ * looked, the critic) reported, so a measured gain belongs to the mechanism
+ * and not to a phrasing tuned on one prompt.
+ *
+ * v2.1: it asks for a diff and says what becomes of one. What the brain writes
+ * now is tried out of sight; it is shown only if it takes nothing away and
+ * lands no worse. So the brief no longer offers a new scene at all: in v2 that
+ * offer was taken in most fixes, and the viewer watched the answer drawn twice.
  */
 export function buildReviewBrief(input: ReviewBriefInput): string {
+  const form: ReviewForm = input.form ?? 'fix';
   const rows: string[] = [];
   if (input.sight !== null) for (const line of describeSight(input.sight)) rows.push(`  ${line}`);
   for (const problem of input.problems) rows.push(`  ${problem.kind === 'rejected' ? 'REJECTED' : 'REPAIRED'} \`${problem.raw}\`: ${problem.why}`);
-  const seen = input.picture ? 'The picture attached is the stage as the lines you have just written will leave it.' : 'No picture could be taken; go by the report.';
+  const seen = input.picture ? 'The picture attached is the stage as the lines you have written will leave it.' : 'No picture could be taken; go by the report.';
+  const where = input.placed === undefined || input.placed.length === 0 ? null : `WHERE THINGS ARE (id: size at top-left corner, canvas units):\n${placedRows(input.placed).join('\n')}`;
+  const critic = input.critic ?? null;
+  if (form === 'refine') {
+    const wants = critic === null || critic.suggestions.length === 0 ? null : `A CRITIC WHO CAN SEE IT SAYS it would be better for:\n${critic.suggestions.map((line) => `  - ${line}`).join('\n')}`;
+    return [
+      `BETTER. This is not the user: it is the stage, showing you the picture as it stands${input.of === undefined ? '' : ` (pass ${Math.max(1, input.pass - 1)} of ${input.of})`}. ${seen}`,
+      wants,
+      where,
+      `THE USER ASKED: ${input.asked}`,
+      [
+        'Make it better by adding to it. What you write now is tried out of sight and shown only if the picture gains:',
+        '- build on what is there: a layer behind it, detail where it is plain, light and shadow, one more thing that belongs;',
+        '- change a thing by its id only to improve it (`set`, `move`, the same line again with what differs);',
+        '- never `scene`, never draw again what is already there, never take anything away;',
+        '- end with one short `say` naming what you added, and nothing about the method.',
+        `If nothing would make it better, write the one line \`${REVIEW_KEEP}\` and nothing else.`,
+        'Start at once.',
+      ].join('\n'),
+    ]
+      .filter((part): part is string => part !== null)
+      .join('\n\n');
+  }
+  const found = critic === null || critic.problems.length === 0 ? null : `A CRITIC WHO CAN SEE IT SAYS:\n${critic.problems.map((problem) => `  ${problem.id === null ? '' : `${problem.id}: `}${problem.what}`).join('\n')}`;
   return [
     `LOOK. This is not the user: it is the stage, showing you your own answer so far. ${seen}`,
     rows.length === 0 ? 'THE PAINTER REPORTS: nothing wrong that it can measure.' : `THE PAINTER REPORTS:\n${rows.join('\n')}`,
+    found,
+    where,
     `THE USER ASKED: ${input.asked}`,
     [
       `If it reads right and answers what was asked, write the one line \`${REVIEW_KEEP}\` and nothing else.`,
-      'If not, fix it now, in as few lines as it takes:',
-      '- patch what is there: `set`, `move`, `drop`, a shape declared again under its id, `correct`; `revise <id>` changes quietly anything the viewer has not reached yet;',
-      '- words crossed, crowded or beside the wrong thing: move the words, or let the painter place them (`say callout near=<id>`, or a structure in place of boxes placed by hand);',
-      '- only when it cannot be patched, open a new `scene` and draw it again, better;',
+      'If not, change only what is wrong, in as few lines as it takes. What you write now is tried out of sight and shown only if it is better:',
+      '- change a thing by its id: `set`, `move`, `revise <id> | new words`, `cancel <id>`, or its own line again with what differs;',
+      '- a diagram or a chart in the wrong place or too small: its opening line again with a room (`flow x1 4,6 152x62`); its parts stay as they are;',
+      '- words crossed, crowded or beside the wrong thing: `move` them, or let the painter place them (`say callout near=<id>`);',
+      '- never `scene`, never the lines that were right, never fewer parts than before: a fix that takes something away is thrown out and the draft stays;',
       '- add nothing the user did not ask for, and say nothing about the fix.',
       'Start at once.',
     ].join('\n'),
-  ].join('\n\n');
+  ]
+    .filter((part): part is string => part !== null)
+    .join('\n\n');
+}
+
+// ---------------------------------------------------------------- v2.1: true revision
+//
+// In v2 a fix was a second performance: in most fixes the brain opened a new scene and wrote the whole answer again, the viewer
+// watched the same diagram drawn twice, and nothing checked that the second was better (PLAN-v2.1.md, "True revision"). From v2.1:
+//
+//   1. A fix is a diff. It changes what is there (`set`, `move`, `revise`, `cancel`, `drop`, a thing declared again under its id with
+//      something different) and may add to it. It never opens a scene and never says again what has not changed (`fixLineAllowed`,
+//      and the schedule's own rule that a line declared again unchanged is nothing).
+//   2. A fix is tried before it is shown. Its lines go to the painter as a `candidate`; the painter applies them to a copy of the
+//      turn's score and reports how the copy lands. Nothing of it is on stage.
+//   3. A fix is shown only if it is no worse: it takes nothing away that the draft had (`fixKeeps`), it lands with no more wrong than
+//      the draft did (`landsNoWorse`), and, when a critic is on and answers in time, the critic does not prefer the draft
+//      (`criticPrefers`). Otherwise it is refused and the draft stands.
+//
+// The three rules are pure and are here, beside the two look decisions, for the same reason: the server, the battery and the loop
+// must decide identically, and the loop may not change them (this file is protected).
+
+/** Why a fix was not shown, in the words the log, the battery's card and `pass … refused` carry. */
+export type FixRefusal = 'it wrote nothing that changes the stage' | 'it took something away' | 'it landed worse than the draft' | 'the critic preferred the draft' | 'it could not be tried in time';
+
+/** What a pass after the draft is for. `fix`: repair what did not land. `refine`: make a picture that landed better ("keep making it better"). */
+export type ReviewForm = 'fix' | 'refine';
+
+export interface FixPolicy {
+  /** the share of the draft's free-drawn things a fix must leave on stage */
+  readonly keepDrawn: number;
+  /** the share of the draft's readable words (choices left out) a fix must leave; a fix may shorten, it may not empty */
+  readonly keepWords: number;
+  /** ms the server waits for the painter's report on a candidate before it gives the fix up */
+  readonly candidateWaitMs: number;
+  /** ms the critic has to compare draft and candidate; past it the first two rules decide alone */
+  readonly compareMs: number;
+}
+
+export const FIX_POLICY: FixPolicy = { keepDrawn: 0.8, keepWords: 0.6, candidateWaitMs: 1500, compareMs: 8_000 };
+
+/**
+ * Whether a line may be part of a pass after the draft. `scene` and `look` never are: a fix does not start again and does not change
+ * the whole stage's dress. `wait` is dropped without a word: a fix takes no time of its own. `why` is what the brain is told next turn.
+ */
+export function fixLineAllowed(line: Line): { readonly allowed: boolean; readonly why: string | null } {
+  if (line.verb === 'scene') return { allowed: false, why: 'a fix changes what is there; it never opens a new scene' };
+  if (line.verb === 'look') return { allowed: false, why: 'a fix does not change the look' };
+  if (line.verb === 'wait') return { allowed: false, why: null };
+  return { allowed: true, why: null };
+}
+
+/**
+ * What a schedule leaves on stage once everything in it has played: the count a fix is held to. Counted from elements that never
+ * leave (no exit), carried ones included, since a fix may not take away what an earlier turn left either.
+ */
+export function contentOf(schedule: Schedule): ContentCount {
+  let structures = 0;
+  let parts = 0;
+  let drawn = 0;
+  let controls = 0;
+  let words = 0;
+  const resting = new Set<string>();
+  for (const element of schedule.elements) if (element.exit === null) resting.add(element.key);
+  for (const element of schedule.elements) {
+    if (!resting.has(element.key)) continue;
+    if (element.kind === 'structure') {
+      structures += 1;
+      if (element.figure?.kind === 'structure') parts += element.figure.rows.length;
+    } else if (element.kind === 'node' || element.kind === 'link') {
+      if (element.parent === null || resting.has(element.parent)) parts += 1;
+    } else if (element.kind === 'shape' || element.kind === 'sprite' || element.kind === 'copy' || element.kind === 'picture') drawn += 1;
+    else if (element.kind === 'control') controls += 1;
+    else if (element.kind === 'text' && !element.style.tap && !element.struck) words += element.text.length;
+  }
+  return { structures, parts, drawn, controls, words };
+}
+
+/** Rule one of three: the fix takes nothing away. A structure, a part of one, or a control fewer is a refusal outright; drawing and words may shrink a little, not go. */
+export function fixKeeps(draft: ContentCount, candidate: ContentCount, policy: FixPolicy = FIX_POLICY): { readonly keeps: boolean; readonly why: string | null } {
+  if (candidate.structures < draft.structures) return { keeps: false, why: `a diagram was removed (${draft.structures} before, ${candidate.structures} after)` };
+  if (candidate.parts < draft.parts) return { keeps: false, why: `parts of a diagram were removed (${draft.parts} before, ${candidate.parts} after)` };
+  if (candidate.controls < draft.controls) return { keeps: false, why: `a control was removed (${draft.controls} before, ${candidate.controls} after)` };
+  if (candidate.drawn < Math.ceil(draft.drawn * policy.keepDrawn)) return { keeps: false, why: `drawing was removed (${draft.drawn} things before, ${candidate.drawn} after)` };
+  if (candidate.words < Math.floor(draft.words * policy.keepWords)) return { keeps: false, why: `words were removed (${draft.words} characters before, ${candidate.words} after)` };
+  return { keeps: true, why: null };
+}
+
+/** Rule two: by the painter's own measure the candidate lands with no more wrong than the draft. A candidate the painter did not report on in time is not shown. */
+export function landsNoWorse(draft: Sight | null, candidate: Sight | null): { readonly ok: boolean; readonly why: string | null } {
+  if (candidate === null) return { ok: false, why: 'the painter did not say how the fix would land' };
+  const before = blocking(draft);
+  const after = blocking(candidate);
+  return after > before ? { ok: false, why: `${after} things would not land, against ${before} in the draft` } : { ok: true, why: null };
+}
+
+/**
+ * Rule three, when a critic looked at both pictures in one call: the draft is kept only when the critic scores it higher. A tie goes to
+ * the fix for a `fix` pass (the painter already said it lands no worse) and to the draft for a `refine` pass (no gain is the signal to stop).
+ */
+export function criticPrefers(draft: Pick<CriticFinding, 'coherence'>, candidate: Pick<CriticFinding, 'coherence'>, form: ReviewForm): 'draft' | 'candidate' {
+  if (candidate.coherence > draft.coherence) return 'candidate';
+  if (candidate.coherence < draft.coherence) return 'draft';
+  return form === 'fix' ? 'candidate' : 'draft';
+}
+
+/** "Keep making it better" stops when the critic has nothing worth a pass, when a pass was refused, or when the passes are spent. */
+export function refineGoesOn(finding: Pick<CriticFinding, 'suggestions'> | null, passesDone: number, passesAsked: number, lastRefused: boolean): { readonly on: boolean; readonly why: string } {
+  if (passesDone >= passesAsked) return { on: false, why: `${passesAsked} passes done` };
+  if (lastRefused) return { on: false, why: 'the last pass made it no better' };
+  if (finding === null) return { on: false, why: 'the critic could not look' };
+  if (finding.suggestions.length === 0) return { on: false, why: 'the critic sees nothing more worth a pass' };
+  return { on: true, why: 'the critic sees something to add' };
 }

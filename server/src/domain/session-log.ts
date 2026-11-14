@@ -1,4 +1,4 @@
-import type { BriefForm, Capabilities, ControlValue, Issue, PassState, ReviewDecision, ReviewOutcome, ScreenFacts, Services, TurnEndReason, TurnInput, TurnReport } from '@conduit/language';
+import type { ActionRisk, ActivityState, BriefForm, Capabilities, ContentCount, ControlValue, CriticFinding, Issue, PassState, ReviewDecision, ReviewForm, ReviewOutcome, ScreenFacts, Services, TurnEndReason, TurnInput, TurnReport } from '@conduit/language';
 import type { BrainId, BrainUsage } from './brain';
 import type { FetchOutcome } from './documents';
 
@@ -43,7 +43,19 @@ export type SessionRecord =
   | { readonly type: 'data'; readonly at: number; readonly turn: string; readonly id: string; readonly source: string; readonly rows: number; readonly status: 'held' | 'ready' | 'failed'; readonly reason: string | null }
   /** a control the user worked */
   | { readonly type: 'control'; readonly at: number; readonly turn: string | null; readonly id: string; readonly value: ControlValue; readonly text: string; readonly send: boolean }
-  | { readonly type: 'tap'; readonly at: number; readonly turn: string | null; readonly id: string; readonly text: string; readonly choice: boolean };
+  | { readonly type: 'tap'; readonly at: number; readonly turn: string | null; readonly id: string; readonly text: string; readonly choice: boolean }
+  /** v2.1. A fix or a refine pass that was tried out of sight, and what became of it: shown, or refused and why. `lines` are what the brain wrote, shown or not. */
+  | { readonly type: 'fix'; readonly at: number; readonly turn: string; readonly pass: number; readonly form: ReviewForm; readonly lines: readonly string[]; readonly shown: boolean; readonly why: string | null; readonly draft: ContentCount | null; readonly candidate: ContentCount | null; readonly file: string | null }
+  /** v2.1. What the critic made of a turn's resting picture, seconds after the turn ended; `queued` when it was passed to the loop as evidence */
+  | { readonly type: 'critic'; readonly at: number; readonly turn: string; readonly finding: CriticFinding; readonly queued: boolean }
+  /** v2.1, a brain with tools. One tool call: what it was in a few safe words (`redactSecrets`), never its input or its result */
+  | { readonly type: 'tool'; readonly at: number; readonly turn: string; readonly id: string; readonly tool: string; readonly summary: string; readonly state: ActivityState; readonly ms: number | null }
+  /** v2.1. The owner was asked for a yes, and what they said; `allow` null: no answer in time, which is a no */
+  | { readonly type: 'permission'; readonly at: number; readonly turn: string; readonly request: string; readonly tool: string; readonly summary: string; readonly risk: ActionRisk; readonly allow: boolean | null; readonly ms: number }
+  /** v2.1. A picture the user gave: its id, kind and size, and the file it was saved as beside the log. Never the bytes. */
+  | { readonly type: 'upload'; readonly at: number; readonly turn: string | null; readonly id: string; readonly mime: string; readonly bytes: number; readonly width: number; readonly height: number; readonly file: string | null }
+  /** v2.1. A setting the user changed with a command or the picker (`/model`, `/effort`, `/brain`, `/tools`, `/review`) */
+  | { readonly type: 'setting'; readonly at: number; readonly name: string; readonly value: string };
 
 /** Fields of a record without the time, which the log stamps. */
 export type SessionEntry = SessionRecord extends infer R ? (R extends { readonly at: number } ? Omit<R, 'at'> : never) : never;

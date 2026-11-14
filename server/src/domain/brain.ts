@@ -1,4 +1,4 @@
-import type { BrainChange, BrainChoice, BriefForm, Capabilities, Issue, Line, LineProblem, ScreenFacts, Services, Sight, TurnContext, TurnInput } from '@conduit/language';
+import type { ActionRisk, ActivityState, BrainChange, BrainChoice, BriefForm, Capabilities, CriticFinding, Issue, Line, LineProblem, PlacedBox, ReviewForm, ScreenFacts, Services, Sight, ToolChoice, TurnContext, TurnInput } from '@conduit/language';
 
 export type BrainId = 'relay' | 'claude-cli' | 'replay';
 
@@ -52,6 +52,14 @@ export interface ReviewRequest {
   readonly problems: readonly LineProblem[];
   /** the ids of styles the conversation has defined, so that `fear | …` still reads as speech in the fix */
   readonly styles: readonly string[];
+  /** v2.1. `fix` (absent means this) or `refine`: which of `buildReviewBrief`'s two messages the brain is given */
+  readonly form?: ReviewForm;
+  /** v2.1. Where everything rests, by id, from the painter's draft report: the brief lists it so a fix can name what it moves */
+  readonly placed?: readonly PlacedBox[];
+  /** v2.1. What the critic made of the picture the brain is being shown, when it looked in time */
+  readonly critic?: Pick<CriticFinding, 'problems' | 'suggestions'> | null;
+  /** v2.1, `refine`: the passes asked for */
+  readonly of?: number;
 }
 
 /** What a turn cost. Every field a brain cannot measure is null, never a guess. */
@@ -87,7 +95,18 @@ export type BrainEvent =
    */
   | { readonly type: 'brief'; readonly form: BriefForm | 'script'; readonly text: string; readonly system: string | null; readonly withSnapshot: boolean }
   /** Yielded once, after the last line, by a brain that can measure itself. */
-  | { readonly type: 'usage'; readonly usage: BrainUsage };
+  | { readonly type: 'usage'; readonly usage: BrainUsage }
+  /**
+   * v2.1, a brain with tools. One tool call as it happens: yielded when it starts (`running`) and again, with the same `id`, when it
+   * ends. `summary` is a few plain words made by the brain adapter from the tool and its input, already passed through
+   * `redactSecrets`: the conductor logs it and sends it to the chrome's activity strip as it is. A tool's result is never yielded.
+   */
+  | { readonly type: 'activity'; readonly id: string; readonly tool: string; readonly summary: string; readonly state: ActivityState; readonly ms: number | null }
+  /**
+   * v2.1, a brain with tools. The model wants to do something that needs the owner's yes (`askFirst`). The brain adapter holds the call
+   * and yields this; the conductor shows it on stage and calls `Brain.permit` with the answer, or with `false` at `expiresMs`.
+   */
+  | { readonly type: 'permission'; readonly request: string; readonly tool: string; readonly summary: string; readonly risk: ActionRisk; readonly expiresMs: number };
 
 /** What a brain needs to get ready for a conversation before its first turn. */
 export interface BrainSession {
@@ -153,6 +172,18 @@ export interface Brain {
 
   /** Sets the model and/or effort for this conversation only. Whatever process the conversation holds is let go, so the next turn starts with the new settings. */
   choose?(session: string, change: BrainChange): BrainChoice;
+
+  /**
+   * v2.1, a brain with tools. The owner's answer to a `permission` event of this conversation. `false` denies it and the model is told
+   * so; a request that is unknown or already answered is ignored. Never called with `true` except from the owner's own `permit` event.
+   */
+  permit?(session: string, request: string, allow: boolean): void;
+
+  /** v2.1. What this conversation's brain may use, and what is switched on (`/tools`). A brain with no tools leaves this out. */
+  tools?(session: string): readonly ToolChoice[];
+
+  /** v2.1. Switches one tool or connected service on or off for this conversation. Only what the server's own allowlist offers can be switched on. */
+  setTool?(session: string, name: string, on: boolean): readonly ToolChoice[];
 
   /** The conversation is over: let go of whatever was kept for it. */
   release?(session: string): void;

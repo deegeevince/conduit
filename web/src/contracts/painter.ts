@@ -26,6 +26,8 @@ import type { Recording } from './film';
 import type { Quality } from './frame';
 import type { Renderer } from './renderer';
 import type { Box, Viewport } from './space';
+import type { StagePlanView } from './stage-plan';
+import type { TextSpanView } from './text-layer';
 
 export interface PainterOptions {
   /** already mounted */
@@ -39,6 +41,8 @@ export interface PainterOptions {
   readonly pointer: ScreenFacts['pointer'];
   /** where this stage's charts live; absent or null: the stage has none, and the painter advertises none */
   readonly charts?: ChartHost | null;
+  /** v2.1. Where a picture the user gave is fetched from, by its id (`pic … from=u1`); null when the id is not this conversation's. Absent: the painter draws no uploads. */
+  readonly uploadUrl?: (id: string) => string | null;
 }
 
 /** A picture the painter has made for someone else: the app sends it to the server. */
@@ -176,6 +180,10 @@ export interface PainterSnapshot {
   readonly charts: readonly ChartView[];
   /** where look-and-fix stands in the open turn; null when the turn has had no pass event */
   readonly pass: { readonly pass: number; readonly state: PassState } | null;
+  /** v2.1. How the stage is divided right now (`StagePlan`), camera at rest. Absent until the painter plans its stage as one layout. */
+  readonly plan?: StagePlanView;
+  /** v2.1. The deck on stage and the slide it stands at, from 1; null or absent when what is on stage is not a deck. */
+  readonly deck?: { readonly slide: number; readonly slides: number; readonly title: string } | null;
 }
 
 /** Words as they become visible, for the transcript and the live region. */
@@ -194,6 +202,11 @@ export interface PainterEvents {
   readonly upload: PainterUpload;
   /** the controls on stage changed: one arrived, left, moved or took a new value. Not sent on every frame of a drag. */
   readonly controls: readonly ControlView[];
+  /**
+   * v2.1, text out. The words on stage and where they are, for the chrome's text layer. Sent when words arrive, leave, change or come
+   * to rest in a new place, and when the camera comes to rest; never on every frame of a move (the layer is hidden while things move).
+   */
+  readonly text: readonly TextSpanView[];
 }
 
 /**
@@ -287,6 +300,21 @@ export interface Painter {
    * chrome reads. A pass event for a turn that is not open is dropped.
    */
   notePass(turn: string, pass: number, state: PassState): void;
+
+  /**
+   * v2.1, true revision (a `candidate` event). Tries the lines of a fix on a COPY of the open turn's score: it settles the copy to its
+   * end, computes sight, the placed boxes and `contentOf` for it, emits a `draft` back event for `pass` with all three, and, when the
+   * server wants pictures, an `upload` of kind `draft` first. Nothing on stage moves and the turn's own score is not touched: the lines
+   * that are to be shown arrive afterwards through `ingest`, like any others, or never. Lines the copy rejects are counted in the
+   * report's sight as they would be live. A candidate for a turn that is not open is dropped.
+   */
+  tryCandidate(turn: string, pass: number, lines: readonly Line[]): void;
+
+  /**
+   * v2.1, decks. Steps a deck to a slide: a number from 1, or the one after or before the slide on stage. The stage plays that slide
+   * from its start and stops at its end. Does nothing when what is on stage is not a deck, or the slide does not exist.
+   */
+  slide(to: number | 'next' | 'previous'): void;
 
   /**
    * Stops the turn where the playhead is: the unplayed future is discarded,

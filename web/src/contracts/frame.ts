@@ -43,6 +43,14 @@ export interface RunFrame {
   readonly reveal: number;
 }
 
+/**
+ * v2.1. A frame something is kept inside: a rectangle on the thing's own layer plane, stage units, camera at rest. Nothing of the
+ * thing is drawn outside it, whatever the camera does, in every renderer, in a rasterised still and in an SVG. Absent: not clipped.
+ * It is how a painting's parts stay inside the painting, a code block's lines inside its block, and a picture out of the words' band.
+ * Picking follows it: a point outside the clip does not hit the thing.
+ */
+export type Clip = Box;
+
 export interface ElementFrame {
   /** stable across frames for the same element; the renderer keys its objects on it */
   readonly key: string;
@@ -85,6 +93,8 @@ export interface ElementFrame {
   /** a struck predecessor lingering beside its replacement */
   readonly ghost: boolean;
   readonly tappable: boolean;
+  /** v2.1: see `Clip` */
+  readonly clip?: Clip;
   /**
    * 0..1: how solid a plate in the ground colour is behind each line box.
    * The painter raises it when text sits over something drawn, which is how
@@ -153,6 +163,8 @@ export interface ShapeFrame {
   readonly opacity: number;
   /** `rect full`: the renderer extends it to cover the whole screen on its layer, whatever the camera does */
   readonly bleed: boolean;
+  /** v2.1: see `Clip`. A shape with `bleed` is never clipped by the renderer and the painter never sets both. */
+  readonly clip?: Clip;
   readonly tappable: boolean;
   /**
    * How far the shape's edge fades out, in the shape's own units (`soft=`): light, cloud, shadow. Absent or 0 is a hard edge.
@@ -181,6 +193,8 @@ export interface SpriteFrame {
   readonly landed: number;
   readonly opacity: number;
   readonly tappable: boolean;
+  /** v2.1: see `Clip` */
+  readonly clip?: Clip;
 }
 
 /**
@@ -206,6 +220,8 @@ export interface PictureFrame {
   /** a painting has been asked for and has not arrived: the renderer may breathe the box's edge, and nothing else */
   readonly waiting: boolean;
   readonly tappable: boolean;
+  /** v2.1: see `Clip` */
+  readonly clip?: Clip;
   /**
    * Set when the painting is the renderer's own: the frame's figures whose keys are in `sketch` are re-rendered in this
    * medium into the picture's box, and `src` is null. `develop` reveals it over the sketch exactly as it reveals a
@@ -241,6 +257,8 @@ export interface ChartFrame {
   /** what to draw, already read from its rows or its data and themed from the look */
   readonly state: ChartState;
   readonly tappable: boolean;
+  /** v2.1: see `Clip` */
+  readonly clip?: Clip;
 }
 
 /**

@@ -632,6 +632,8 @@ function inputText(input: TurnInput, pastedAs?: string): string {
     const values = valuesText(input.values);
     return `The user worked your control ${input.id}: "${input.text}".${values === '' ? '' : ` Every control now: ${values}.`}`;
   }
+  // STUB(PLAN-v2.1 package S1): a refine turn is briefed by `buildReviewBrief` (form `refine`), pass by pass; this sentence is only what a brain that is asked anyway is told.
+  if (input.kind === 'refine') return `The user asked you to keep making what is on stage better, up to ${input.passes} passes.`;
   return `Play the fixture script "${input.script}".`;
 }
 

@@ -20,6 +20,8 @@ export interface RendererCapabilities {
   readonly textures: readonly Texture[];
   /** the stroke characters it draws on a single shape, whatever the look's own stroke is (`StrokeFrame.character`) */
   readonly brushes: readonly StrokeCharacter[];
+  /** v2.1. It honours `Clip` on every kind of frame it draws, in `render`, `rasterise` and `pick`. Absent: it does not, and the painter says so in sight (`clipped` is then the brain's to avoid). */
+  readonly clip?: boolean;
 }
 
 /**

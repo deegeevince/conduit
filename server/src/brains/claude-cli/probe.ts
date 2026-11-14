@@ -101,7 +101,9 @@ try {
           const read = u.cacheReadTokens ?? 0;
           const total = (u.inputTokens ?? 0) + read + (u.cacheWriteTokens ?? 0);
           out(`${stamp()}  USAGE ${JSON.stringify(u)}   cache read ${total === 0 ? 'n/a' : `${Math.round((100 * read) / total)}%`}`);
-        } else out(`${stamp()}  BRIEF ${event.form}, ${event.text.length} characters${event.system === null ? '' : `, with system prompt ${event.system.length}`}${event.withSnapshot ? ', with snapshot' : ''}`);
+        } else if (event.type === 'activity') out(`${stamp()}  TOOL ${event.tool} ${event.state}: ${event.summary}`);
+        else if (event.type === 'permission') out(`${stamp()}  ASKS ${event.tool} (${event.risk}): ${event.summary}`);
+        else out(`${stamp()}  BRIEF ${event.form}, ${event.text.length} characters${event.system === null ? '' : `, with system prompt ${event.system.length}`}${event.withSnapshot ? ', with snapshot' : ''}`);
       }
       out(`${stamp()}  ${turnAbort.signal.aborted ? 'interrupted' : 'done'}`);
     } catch (error) {

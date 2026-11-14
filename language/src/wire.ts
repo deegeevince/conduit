@@ -102,6 +102,15 @@ export interface Capabilities {
   readonly brushes: readonly StrokeCharacter[];
   /** true when it can report on a draft before the turn has finished playing: what look-and-fix needs */
   readonly drafts: boolean;
+  /**
+   * v2.1. True when it can try a fix on a copy of the turn's score and report on it without showing any of it (`candidate`), then show
+   * only the fix that was accepted: what true revision needs. False: the server falls back to no fix at all, never to a redraw.
+   */
+  readonly candidates: boolean;
+  /** v2.1. True when a turn can be a deck: scenes that are slides, stepped through by the viewer (`deck`). */
+  readonly decks: boolean;
+  /** v2.1. True when it can put a picture the user gave on stage (`pic … from=u1`). */
+  readonly uploads: boolean;
 }
 
 /** What the server can do for a turn that the painter cannot. The brain's prompt is filtered by these too. */
@@ -112,6 +121,14 @@ export interface Services {
   readonly sight: 'report' | 'snapshot';
   /** the brain looks at its draft and fixes it within the turn: the painter is asked for a draft report (and picture) when a `pass` event says `drafted` */
   readonly review: boolean;
+  /** v2.1. A critic looks at every real turn's resting picture in the background; what it finds is logged and queued for the loop. Absent: no. */
+  readonly critic?: boolean;
+  /** v2.1. The brain may ask for its picture to be made better pass by pass (`refine`), and the user may (`/better`). Absent: no. */
+  readonly refine?: boolean;
+  /** v2.1. The user may give pictures with a prompt (`TurnInput.images`), and the brain may put them on stage. Absent: no. */
+  readonly uploads?: boolean;
+  /** v2.1. What kind of mind is answering this conversation right now: it decides what the brain is told it can do. Absent: `plain`. */
+  readonly mode?: BrainMode;
 }
 
 export const NO_SERVICES: Services = { paint: false, sight: 'report', review: false };
@@ -140,13 +157,19 @@ export const FULL_CAPABILITIES: Capabilities = {
   textures: TEXTURES,
   brushes: STROKES,
   drafts: true,
+  candidates: true,
+  decks: true,
+  uploads: true,
 };
 
 /** What a painter that speaks Series 3 can do of Series 4: nothing. A `ready` that leaves the new lists out is read as this. */
-export const NO_V4_CAPABILITIES = { structures: [], charts: [], controls: [], media: [], textures: ['flat'], brushes: [], drafts: false } as const satisfies Pick<
+export const NO_V4_CAPABILITIES = { structures: [], charts: [], controls: [], media: [], textures: ['flat'], brushes: [], drafts: false, candidates: false, decks: false, uploads: false } as const satisfies Pick<
   Capabilities,
-  'structures' | 'charts' | 'controls' | 'media' | 'textures' | 'brushes' | 'drafts'
+  'structures' | 'charts' | 'controls' | 'media' | 'textures' | 'brushes' | 'drafts' | 'candidates' | 'decks' | 'uploads'
 >;
+
+/** What a painter of v2 could do of v2.1: nothing. A `ready` that leaves the three out is read as this. */
+export const NO_V21_CAPABILITIES = { candidates: false, decks: false, uploads: false } as const satisfies Pick<Capabilities, 'candidates' | 'decks' | 'uploads'>;
 
 export const REFERENCE_SCREEN: ScreenFacts = { width: 1280, height: 720, dpr: 2, cols: 58, rows: 11, canvas: 'wide', reducedMotion: false, pointer: 'fine' };
 
@@ -154,7 +177,8 @@ export const REFERENCE_SCREEN: ScreenFacts = { width: 1280, height: 720, dpr: 2,
 export const PROMPT_MAX_CHARS = 20_000;
 
 export type TurnInput =
-  | { readonly kind: 'prompt'; readonly text: string }
+  /** `images` (v2.1): ids of pictures the user gave with these words (`API.uploads`), in the order they were added; absent means none */
+  | { readonly kind: 'prompt'; readonly text: string; readonly images?: readonly string[] }
   /** the user tapped a choice; `text` is what the choice said */
   | { readonly kind: 'tap'; readonly id: string; readonly text: string }
   /** play a named fixture script; always answered by the replay brain */
@@ -166,7 +190,16 @@ export type TurnInput =
    * pressed, or a control marked `send` committed. `text` is the control's
    * label (a pick: the option chosen); `values` is every live control's value.
    */
-  | { readonly kind: 'act'; readonly id: string; readonly text: string; readonly values: ControlValues };
+  | { readonly kind: 'act'; readonly id: string; readonly text: string; readonly values: ControlValues }
+  /**
+   * v2.1. Keep making what is on stage better (`/better`, or a tapped "keep going"). No new answer is asked for: the critic looks at
+   * the resting picture, the brain is shown what it found and adds to the picture, and that repeats until the critic sees no gain,
+   * `passes` are spent (`REFINE_LIMITS`), or the user stops it. Answered by the configured brain when `Services.refine` is on.
+   */
+  | { readonly kind: 'refine'; readonly passes: number };
+
+/** How many passes "keep making it better" runs when nobody says, and the most it may be asked for. */
+export const REFINE_LIMITS = { passes: 4, max: 8 } as const;
 
 export type ClockState =
   /** no turn is open and nothing is left to play */
@@ -221,7 +254,21 @@ export interface TurnReport {
  * - `kept`: the brain looked and changed nothing.
  * - `skipped`: the server decided not to look, or gave up waiting; `reason` says why. The turn ends as it stands.
  */
-export type PassState = 'drafted' | 'looking' | 'fixing' | 'kept' | 'skipped';
+export type PassState =
+  | 'drafted'
+  | 'looking'
+  | 'fixing'
+  | 'kept'
+  | 'skipped'
+  /**
+   * v2.1. The brain has written a fix and none of it is on stage: its lines went to the painter as a `candidate`, and the server is
+   * deciding whether they are better than the draft. The draft goes on playing.
+   */
+  | 'staged'
+  /** v2.1. The fix was tried and thrown away (`reason` says why: it removed something, it landed worse, the critic preferred the draft). The draft stands. */
+  | 'refused'
+  /** v2.1. "Keep making it better": pass `pass` of `of` is being looked at and added to. The chrome says so and offers Stop. */
+  | 'refining';
 
 /** What became of a painting. `ready`: fetch `url`. `skipped`: no image model is configured. `failed`: one is, and it did not deliver. */
 export type AssetStatus = 'ready' | 'skipped' | 'failed';
@@ -238,7 +285,24 @@ export type StageEvent =
   | { readonly type: 'reject'; readonly turn: string; readonly raw: string; readonly issues: readonly Issue[] }
   | { readonly type: 'end'; readonly turn: string; readonly reason: TurnEndReason; readonly message: string | null }
   /** look-and-fix: `pass` is the pass that has just been drafted, or is being looked at or fixed (the draft is pass 1) */
-  | { readonly type: 'pass'; readonly turn: string; readonly pass: number; readonly state: PassState; readonly reason: string | null }
+  | { readonly type: 'pass'; readonly turn: string; readonly pass: number; readonly state: PassState; readonly reason: string | null; readonly of?: number }
+  /**
+   * v2.1, true revision. The lines of a fix the brain has written for pass `pass`, in order, already normalised. The painter does NOT
+   * show them: it applies them to a copy of the open turn's score, works out how that copy would land, and answers with a `draft` back
+   * event for this `pass` (and its picture, `API.draft`), exactly as it does for `pass … drafted`. The lines it is to show arrive
+   * afterwards as ordinary `line` events, or never (`pass … refused`).
+   */
+  | { readonly type: 'candidate'; readonly turn: string; readonly pass: number; readonly lines: readonly string[] }
+  /** v2.1. What the critic made of a turn's resting picture. Not on the turn clock: it comes seconds after the turn has ended. For the HUD and the transcript; the stage does nothing with it. */
+  | { readonly type: 'critic'; readonly turn: string; readonly finding: CriticFinding }
+  /** v2.1, agent mode. A tool the brain is using, as it happens: the chrome's activity strip. `summary` never holds a secret (`redactSecrets`). */
+  | { readonly type: 'activity'; readonly turn: string; readonly id: string; readonly tool: string; readonly summary: string; readonly state: ActivityState; readonly ms: number | null }
+  /**
+   * v2.1, agent mode. The brain wants to do something that needs the owner's yes. The chrome shows a confirm control on the stage and
+   * answers with a `permit` back event; with no answer by `expiresMs` it is denied. Nothing that sends, buys, deletes, publishes or signs
+   * in is ever allowed without this (`askFirst`).
+   */
+  | { readonly type: 'permission'; readonly turn: string; readonly request: string; readonly tool: string; readonly summary: string; readonly risk: ActionRisk; readonly expiresMs: number }
   /**
    * News of a painting, whenever it comes: it is not on the turn clock and may
    * arrive after the turn has ended. `key` is the picture element's key
@@ -254,7 +318,7 @@ export type StageEvent =
   | { readonly type: 'data'; readonly turn: string; readonly id: string; readonly status: 'ready' | 'failed'; readonly url: string | null; readonly reason: string | null };
 
 export type StageEventType = StageEvent['type'];
-export const STAGE_EVENT_TYPES: readonly StageEventType[] = ['hello', 'turn', 'reading', 'line', 'reject', 'end', 'pass', 'asset', 'data'];
+export const STAGE_EVENT_TYPES: readonly StageEventType[] = ['hello', 'turn', 'reading', 'line', 'reject', 'end', 'pass', 'asset', 'data', 'candidate', 'critic', 'activity', 'permission'];
 
 /** Painter to server: the back channel. */
 export type BackEvent =
@@ -298,10 +362,12 @@ export type BackEvent =
    * Sent in answer to `pass … drafted`. `snapshot` is true when a picture of
    * that stage was uploaded beside it (`API.draft`).
    */
-  | { readonly type: 'draft'; readonly turn: string; readonly pass: number; readonly sight: Sight; readonly placed?: readonly PlacedBox[]; readonly snapshot: boolean };
+  | { readonly type: 'draft'; readonly turn: string; readonly pass: number; readonly sight: Sight; readonly placed?: readonly PlacedBox[]; readonly snapshot: boolean; readonly content?: ContentCount }
+  /** v2.1, agent mode. The owner's answer to a `permission` event. `allow: true` lets that one action happen once; there is no "always". */
+  | { readonly type: 'permit'; readonly turn: string; readonly request: string; readonly allow: boolean };
 
 export type BackEventType = BackEvent['type'];
-export const BACK_EVENT_TYPES: readonly BackEventType[] = ['ready', 'started', 'progress', 'tap', 'report', 'control', 'draft'];
+export const BACK_EVENT_TYPES: readonly BackEventType[] = ['ready', 'started', 'progress', 'tap', 'report', 'control', 'draft', 'permit'];
 
 /** A back-channel event as the server keeps it. `cursor` increases over the session. */
 export interface BackEventRecord {
@@ -347,10 +413,21 @@ export type BrainModel = (typeof BRAIN_MODELS)[number];
 export const BRAIN_EFFORTS = ['low', 'medium', 'high'] as const;
 export type BrainEffort = (typeof BRAIN_EFFORTS)[number];
 
+/**
+ * v2.1. What kind of mind answers a conversation. It is one brain in three settings, never a second chat beside the canvas:
+ * - `plain`: the model with no tools. It writes Series and can do nothing else.
+ * - `agent`: the same model with tools (`claude` with an allowlist). What it does is shown as it happens and asked for first when it matters.
+ * - `steward`: the turn is held for the steward's own session to claim over the relay and answer.
+ */
+export const BRAIN_MODES = ['plain', 'agent', 'steward'] as const;
+export type BrainMode = (typeof BRAIN_MODES)[number];
+
 /** A change to one session's brain; what is left out stays as it is. */
 export interface BrainChange {
   readonly model?: BrainModel;
   readonly effort?: BrainEffort;
+  /** v2.1; refused unless the server offers it (`BrainChoice.modes`) */
+  readonly mode?: BrainMode;
 }
 
 /** What one session's brain is set to. `configurable` is false for a brain that has neither (the relay, a replay): `model` and `effort` are then null. */
@@ -358,7 +435,120 @@ export interface BrainChoice {
   readonly configurable: boolean;
   readonly model: string | null;
   readonly effort: BrainEffort | null;
+  /** v2.1; absent from a server that has one mode */
+  readonly mode?: BrainMode;
+  /** v2.1. The modes this server offers this session, for the picker; absent or one entry: nothing to choose */
+  readonly modes?: readonly BrainMode[];
 }
+
+/** v2.1, agent mode. What an action would do in the world, worst first where two apply. The owner is asked for every kind in `ASK_FIRST`. */
+export const ACTION_RISKS = ['read', 'write', 'run', 'send', 'buy', 'delete', 'publish', 'signin'] as const;
+export type ActionRisk = (typeof ACTION_RISKS)[number];
+
+/** Never allowed by a rule or a setting: only by the owner's own yes, once, on the stage. */
+export const ASK_FIRST: readonly ActionRisk[] = ['write', 'run', 'send', 'buy', 'delete', 'publish', 'signin'];
+
+/** Whether an action of this risk needs the owner's yes. Only `read` does not, and only for a tool on the server's allowlist. */
+export function askFirst(risk: ActionRisk): boolean {
+  return ASK_FIRST.includes(risk);
+}
+
+/**
+ * v2.1. One thing the brain may use in agent mode: a tool of the CLI's own (`WebSearch`, `WebFetch`, `Read`, …) or a connected service
+ * (an MCP server from the owner's allowlist, e.g. `remote`). Nothing is on that the owner's configuration did not offer; `on` is this
+ * session's choice (`/tools`). `reads` is true when everything it does only reads: such a tool runs without asking.
+ */
+export interface ToolChoice {
+  readonly name: string;
+  readonly kind: 'tool' | 'service';
+  readonly gist: string;
+  readonly on: boolean;
+  readonly reads: boolean;
+}
+
+/** v2.1. The steward's own account of where the product stands, short and in the present tense. Each list is lines of plain words. */
+export interface AppStatus {
+  readonly live: readonly string[];
+  readonly building: readonly string[];
+  readonly waiting: readonly string[];
+  /** ISO time the file was last changed; null when there is no file */
+  readonly updated: string | null;
+}
+
+/** `waiting`: it needs the owner's yes, or the owner's own hands (a sign-in, a code). `denied`: the owner said no, or did not answer. */
+export type ActivityState = 'running' | 'done' | 'failed' | 'waiting' | 'denied';
+
+/**
+ * v2.1, the live critic. What a judge that can see made of one resting picture. The same rubric the battery's judge is asked
+ * (`rubric` is its hash), so a finding in real use and a score in a measured run mean the same thing.
+ */
+export interface CriticFinding {
+  readonly turn: string;
+  /** the pass it looked at: the turn's last */
+  readonly pass: number;
+  /** 1 (it does not read) to 5 (it could not be clearer) */
+  readonly coherence: number;
+  readonly readable: boolean;
+  /** what was drawn is what was asked for */
+  readonly asked: boolean;
+  /** what is wrong, worst first, each in one sentence a builder could act on; `id` when it is about one thing on stage */
+  readonly problems: readonly { readonly id: string | null; readonly what: string; readonly weight: 'blocks' | 'hurts' | 'polish' }[];
+  /** what would most improve the picture, at most three, each one thing to add or change; empty: nothing worth a pass */
+  readonly suggestions: readonly string[];
+  readonly rubric: string;
+  readonly model: string;
+  readonly ms: number;
+  readonly costUsd: number | null;
+}
+
+/**
+ * v2.1. What an answer puts on stage, counted from its schedule at rest: what a fix may not take away. Counted by `contentOf`
+ * (language) on both sides, so the server's refusal and the painter's report agree.
+ */
+export interface ContentCount {
+  readonly structures: number;
+  /** nodes, links and rows of every structure, charts' rows included */
+  readonly parts: number;
+  readonly drawn: number;
+  readonly controls: number;
+  /** characters of text a viewer can read, choices left out */
+  readonly words: number;
+}
+
+/** v2.1. Pictures the user gives with a prompt: what is taken, and how much. */
+export const UPLOAD_LIMITS = { bytes: 8_000_000, perTurn: 4, perSession: 24, maxSide: 4096, types: ['image/png', 'image/jpeg', 'image/webp', 'image/gif'] } as const;
+
+/** v2.1. What the server says of a picture it has taken. `id` (`u1`, `u2`, …) is what `TurnInput.images` and `pic … from=` name. */
+export interface UploadResponse {
+  readonly id: string;
+  readonly mime: string;
+  readonly width: number;
+  readonly height: number;
+  readonly bytes: number;
+}
+
+/**
+ * v2.1. What the app itself answers to, typed with a leading `/`. One list: the prompt bar's `/help` prints it and the brief's "this
+ * app" note is made from it, so the brain can point at a command and can never invent one. A command is handled by the app and never
+ * reaches the brain.
+ */
+export const APP_COMMANDS = [
+  { name: 'help', args: '', gist: 'what you can type here' },
+  { name: 'model', args: `<${BRAIN_MODELS.join('|')}>`, gist: 'the model that answers, for this conversation; bare shows it' },
+  { name: 'effort', args: `<${BRAIN_EFFORTS.join('|')}>`, gist: 'how hard it thinks before it writes; bare shows it' },
+  { name: 'brain', args: `<${BRAIN_MODES.join('|')}>`, gist: 'plain: no tools. agent: it can act, and asks first. steward: the steward answers' },
+  { name: 'tools', args: '[name on|off]', gist: 'what the brain may use in agent mode (web search, connected services); bare lists them' },
+  { name: 'status', args: '', gist: 'what is live, what is being built and what is waiting on you' },
+  { name: 'look', args: '<name>', gist: 'the look of the stage; bare lists them' },
+  { name: 'review', args: '<on|off>', gist: 'whether a drawing is checked and fixed after its first draft' },
+  { name: 'better', args: '[passes]', gist: 'keep making the picture on stage better, pass by pass' },
+  { name: 'stop', args: '', gist: 'stop what is being written or made better' },
+  { name: 'show-all', args: '', gist: 'show the whole answer at once' },
+  { name: 'copy', args: '[script]', gist: 'copy the answer as text, or its Series script' },
+  { name: 'export', args: '<png|svg|film|frames|pdf|script>', gist: 'save the answer as a picture, a film, its slides or its script' },
+  { name: 'capture', args: '', gist: 'film the last answer for the steward to watch' },
+] as const satisfies readonly { readonly name: string; readonly args: string; readonly gist: string }[];
+export type AppCommandName = (typeof APP_COMMANDS)[number]['name'];
 
 export interface StartTurnResponse {
   readonly turn: string;
@@ -398,6 +588,16 @@ export const API = {
   snapshot: (session: string, turn: string): string => `/api/sessions/${session}/turns/${turn}/snapshot`,
   /** POST image/jpeg: the stage as pass `pass` of an open turn will leave it: what the brain is shown when it looks at its draft. */
   draft: (session: string, turn: string, pass: number): string => `/api/sessions/${session}/turns/${turn}/drafts/${pass}`,
+  /** v2.1. POST an image (`UPLOAD_LIMITS`): 201 `UploadResponse`. The picture is the session's and goes nowhere else. */
+  uploads: (session: string): string => `/api/sessions/${session}/uploads`,
+  /** v2.1. GET: the bytes of a picture the user gave, by its id. Same origin; what `pic … from=` draws. */
+  upload: (session: string, id: string): string => `/api/sessions/${session}/uploads/${encodeURIComponent(id)}`,
+  /** v2.1. GET: `AppStatus`, read from the steward's `STATUS.md`. What `/status` shows and what the brief's "this app" note is made from. */
+  status: '/api/status',
+  /** v2.1. GET: this session's `ToolChoice[]`. PUT `{ name, on }`: switches one tool or connected service for this session; answers the list. */
+  tools: (session: string): string => `/api/sessions/${session}/tools`,
+  /** v2.1. GET: what the critic made of a turn (`CriticFinding`), 404 until it has looked. */
+  critic: (session: string, turn: string): string => `/api/sessions/${session}/turns/${turn}/critic`,
   /** GET: the rows of DATA a chart draws by reference, as a `DataTable` */
   data: (session: string, id: string): string => `/api/sessions/${session}/data/${encodeURIComponent(id)}`,
   /** GET: the answers set out for the owner to score. POST: one score. */

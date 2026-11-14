@@ -84,7 +84,8 @@ async function load(file: string): Promise<Conversation> {
       const turn = record.turn === null ? undefined : turns.get(record.turn);
       if (turn === undefined) looseTaps.push(record);
       else turn.taps.push(record);
-    } else if (record.turn === null) {
+    } else if (record.type === 'setting' || record.turn === null) {
+      // STUB(PLAN-v2.1 package S3): print settings, uploads, fixes, critic findings and tool calls with their turn.
       continue;
     } else {
       const turn = turns.get(record.turn);
@@ -130,6 +131,7 @@ function inputText(input: TurnInput): string {
   if (input.kind === 'tap') return `tapped: ${JSON.stringify(input.text)} (${input.id})`;
   if (input.kind === 'demo') return `demo: ${input.script}`;
   if (input.kind === 'act') return `worked control ${input.id}: ${JSON.stringify(input.text)}`;
+  if (input.kind === 'refine') return `asked to keep making it better, up to ${input.passes} passes`;
   return `script of ${input.text.split('\n').length} lines (${input.text.length} characters)`;
 }
 

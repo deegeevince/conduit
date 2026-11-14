@@ -1,9 +1,10 @@
 // The edge between untrusted JSON and the typed domain. Every check names the field it found wrong.
 
-import { ALIGNS, BACK_EVENT_TYPES, BRAIN_EFFORTS, BRAIN_MODELS, CANVAS_NAMES, DEMOS, ELEMENT_KINDS, LAYOUTS, LIMITS, LOOK_IDS, MOODS, NO_SIGHT, NO_V4_CAPABILITIES, PACES, SIGHT_ITEMS, SIGHT_NOTE } from '@conduit/language';
+import { ALIGNS, BACK_EVENT_TYPES, BRAIN_EFFORTS, BRAIN_MODELS, CANVAS_NAMES, DEMOS, ELEMENT_KINDS, LAYOUTS, LIMITS, LOOK_IDS, MOODS, NO_SIGHT, NO_V21_CAPABILITIES, NO_V4_CAPABILITIES, PACES, SIGHT_ITEMS, SIGHT_NOTE } from '@conduit/language';
 import type {
   BackEvent,
   BrainChange,
+  ContentCount,
   CanvasBox,
   Capabilities,
   ControlValue,
@@ -106,6 +107,10 @@ function capabilities(value: unknown): Capabilities {
     textures: raw.textures === undefined ? NO_V4_CAPABILITIES.textures : (strings(raw.textures, 'capabilities.textures') as unknown as Capabilities['textures']),
     brushes: raw.brushes === undefined ? NO_V4_CAPABILITIES.brushes : (strings(raw.brushes, 'capabilities.brushes') as unknown as Capabilities['brushes']),
     drafts: raw.drafts === undefined ? NO_V4_CAPABILITIES.drafts : bool(raw.drafts, 'capabilities.drafts'),
+    // A painter of v2 leaves these out: no fix is tried on it, and it is taught neither decks nor the user's pictures.
+    candidates: raw.candidates === undefined ? NO_V21_CAPABILITIES.candidates : bool(raw.candidates, 'capabilities.candidates'),
+    decks: raw.decks === undefined ? NO_V21_CAPABILITIES.decks : bool(raw.decks, 'capabilities.decks'),
+    uploads: raw.uploads === undefined ? NO_V21_CAPABILITIES.uploads : bool(raw.uploads, 'capabilities.uploads'),
   };
 }
 
@@ -365,9 +370,19 @@ function backEvent(value: unknown, index: number): BackEvent {
         sight: sight(raw.sight),
         ...(placed === undefined ? {} : { placed }),
         snapshot: bool(raw.snapshot, 'snapshot'),
+        ...(raw.content === undefined || raw.content === null ? {} : { content: contentCount(raw.content) }),
       };
     }
+    case 'permit':
+      return { type, turn: text(raw.turn, 'turn'), request: text(raw.request, 'request').slice(0, LIMITS.name), allow: bool(raw.allow, 'allow') };
   }
+}
+
+/** What a draft or a candidate puts on stage, as the painter counted it. Whole numbers, none below zero. */
+function contentCount(value: unknown): ContentCount {
+  const raw = obj(value, 'content');
+  const count = (field: unknown, name: string): number => Math.max(0, Math.round(num(field, `content.${name}`)));
+  return { structures: count(raw.structures, 'structures'), parts: count(raw.parts, 'parts'), drawn: count(raw.drawn, 'drawn'), controls: count(raw.controls, 'controls'), words: count(raw.words, 'words') };
 }
 
 export function parseBackEvents(body: unknown): BackEvent[] {

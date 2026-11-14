@@ -31,6 +31,15 @@ import type { Timeline, TimelineContext, TimelineInstant } from './timeline';
 
 /** True once `notePass` answers `drafted` with a draft report (PLAN-v2.md, package T). Until then the server is told not to wait for one. */
 const DRAFTS_READY = true;
+/**
+ * STUB(PLAN-v2.1 package T): true once a `candidate` event is tried on a copy of the open turn's score and answered with a `draft`
+ * (sight, placed boxes, `content`, a picture) for its pass, none of it shown. Until then the server tries no fix on this painter.
+ */
+const CANDIDATES_READY = false;
+/** STUB(PLAN-v2.1 package T2): true once a `deck` turn stops at each slide and `Painter.slide` steps through them. */
+const DECKS_READY = false;
+/** STUB(PLAN-v2.1 package T2): true once `pic … from=<upload id>` draws the user's picture. */
+const UPLOADS_READY = false;
 
 const HOME_SECONDS = 1.2;
 const SETTLE_SECONDS = 0.12;
@@ -148,7 +157,7 @@ export function createPainter(options: PainterOptions): Painter {
   let viewport: Viewport = options.viewport;
   const reducedMotion = options.reducedMotion ?? (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches);
 
-  const listeners: { [K in keyof PainterEvents]: Set<Listener<K>> } = { back: new Set(), transcript: new Set(), clock: new Set(), upload: new Set(), controls: new Set() };
+  const listeners: { [K in keyof PainterEvents]: Set<Listener<K>> } = { back: new Set(), transcript: new Set(), clock: new Set(), upload: new Set(), controls: new Set(), text: new Set() }; // `text`: STUB(PLAN-v2.1 package T2), nothing emits it yet
   const emit = <K extends keyof PainterEvents>(type: K, event: PainterEvents[K]): void => {
     queueMicrotask(() => {
       for (const listener of listeners[type]) (listener as Listener<K>)(event);
@@ -346,6 +355,9 @@ export function createPainter(options: PainterOptions): Painter {
       textures: FULL_CAPABILITIES.textures.filter((texture) => texture === 'flat' || caps.textures.includes(texture)),
       brushes: FULL_CAPABILITIES.brushes.filter((brush) => caps.brushes.includes(brush)),
       drafts: DRAFTS_READY,
+      candidates: DRAFTS_READY && CANDIDATES_READY,
+      decks: DECKS_READY,
+      uploads: UPLOADS_READY,
     };
   };
 
@@ -1222,6 +1234,10 @@ export function createPainter(options: PainterOptions): Painter {
     dataArrived(id: string, rows: DataTable | null) {
       chartData.set(id, { table: rows, since: clock.read().ambient });
     },
+    // STUB(PLAN-v2.1 package T): try the lines on a copy of the turn's score and answer with a `draft` for this pass. Nothing is shown.
+    tryCandidate(_id, _pass, _lines) {},
+    // STUB(PLAN-v2.1 package T2): step a deck to a slide.
+    slide(_to) {},
     notePass(id, pass, state) {
       const open = turn;
       if (open === null || open.id !== id || settling !== null) return;

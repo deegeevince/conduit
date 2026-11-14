@@ -777,6 +777,8 @@ export class Conductor {
       return undefined;
     }
     if (turn.endReason !== null) return undefined;
+    // STUB(PLAN-v2.1 package S1): log a tool call (`activity`), send it to the stage, and hold a `permission` for the owner's answer.
+    if (event.type === 'activity' || event.type === 'permission') return undefined;
     if (event.type === 'reject') {
       this.reject(s, turn, event.raw, event.issues);
       return undefined;
@@ -886,6 +888,7 @@ function concerns(event: BackEvent, turn: string): boolean {
     case 'started':
     case 'progress':
     case 'draft':
+    case 'permit':
       return event.turn === turn;
   }
 }
