@@ -445,6 +445,10 @@ export function uiBlockAt(blockKeys: readonly string[], x: number, y: number): s
 const MARGIN = 20;
 /** below this a journey is shown as one screen large and the rest small: six phones side by side cannot be read in 390 points */
 const NARROW = 700;
+/** The smallest type, in pixels as drawn, of a screen that is being worked (a thumbnail in a strip is not read, it is pointed at). Wide stages: the desk floor of the census; narrow: the phone's. */
+const MIN_TEXT_PX = { wide: 12, narrow: 11 } as const;
+/** The largest the smallest type may be set, in points, before one screen is shown large instead of all of them small. */
+const MOST_TYPE = 19;
 
 function rowsOf(structure: ElementSpan): string[] {
   const figure = structure.figure;
@@ -465,19 +469,41 @@ export function layoutUi(args: { readonly structure: ElementSpan; readonly room:
   const doc = parseInterface(lines);
   if (doc.screens.length === 0 || room.width < 40 || room.height < 40) return { ...EMPTY_STRUCTURE_LAYOUT, boxes: new Map([[structure.key, room]]) };
   const run = runtimeOf(structure.key);
-  const tokens = tokensFor(spec);
+  const looks = tokensFor(spec);
   // A page cannot be read at 1280 points in 390: on a narrow stage a browser or a desk window is shown as the phone it would be (the same parts, laid out for it)
   const narrow = room.width < NARROW;
   const device: Record<string, 'phone'> = {};
   if (narrow) for (const screen of doc.screens) if ((screen.device === 'browser' || screen.device === 'desktop') && run.state.device[screen.id] === undefined) device[screen.id] = 'phone';
   const state: UiState = { ...run.state, device: { ...run.state.device, ...device }, picture: Object.fromEntries(PICTURES) };
   const counts = linesPerScreen(doc);
-  const layouts = doc.screens.map((screen, i) => layoutScreen(screen, tokens, measure, state, counts[i] ?? 0));
-  const focus = Math.max(0, Math.min(layouts.length - 1, run.focus));
-  const board = arrangeBoard(layouts, tokens, measure, { w: room.width, h: room.height }, { mode: layouts.length > 1 && (room.width < NARROW || run.solo) ? 'focus' : 'overview', focus, margin: MARGIN });
+  const focus = Math.max(0, Math.min(doc.screens.length - 1, run.focus));
+  const make = (tokens: UiTokens, mode: 'overview' | 'focus'): { readonly layouts: readonly UiScreenLayout[]; readonly board: Board } => {
+    const layouts = doc.screens.map((screen, i) => layoutScreen(screen, tokens, measure, state, counts[i] ?? 0));
+    return { layouts, board: arrangeBoard(layouts, tokens, measure, { w: room.width, h: room.height }, { mode, focus, margin: MARGIN }) };
+  };
+  // The smallest type on screen must read: what the board is scaled by, and the type's own size, are two halves of one number. Where the room is not tall
+  // enough for the screens at a scale that lets the smallest type be MIN_TEXT_PX, the type is set larger in points (the screens' proportions are the same
+  // and their parts keep their order); and where that would be more than a screen can hold, one screen is shown large and the rest as a strip.
+  const floor = narrow ? MIN_TEXT_PX.narrow : MIN_TEXT_PX.wide;
+  let mode: 'overview' | 'focus' = doc.screens.length > 1 && (narrow || run.solo) ? 'focus' : 'overview';
+  let tokens = looks;
+  let made = make(tokens, mode);
+  for (let pass = 0; pass < 4; pass += 1) {
+    const want = floor / Math.max(0.1, made.board.scale);
+    if (want <= looks.type.caption.size + 0.01) break;
+    if (want > MOST_TYPE && mode === 'overview' && doc.screens.length > 1) {
+      mode = 'focus';
+      made = make(tokens, mode);
+      continue;
+    }
+    const next = { ...looks, minText: Math.min(MOST_TYPE, Math.ceil(want * 4) / 4) };
+    if (tokens.minText !== undefined && next.minText <= tokens.minText + 0.01) break;
+    tokens = next;
+    made = make(tokens, mode);
+  }
+  const { layouts, board } = made;
   const last: Last = { room, board, layouts, doc, state };
   run.last = last;
-
   const frame = uiFrame(board.parts, { width: room.width, height: room.height, dpr, spec });
   // the frame's origin is its room's centre; on the stage it is the room's centre in stage units
   const sx = room.x + room.width / 2;
@@ -505,10 +531,12 @@ export function layoutUi(args: { readonly structure: ElementSpan; readonly room:
     return { ...figure, key, z: Math.min(8999, base + figure.z), transform: { ...figure.transform, e: figure.transform.e + sx, f: figure.transform.f + sy }, ...(clip === undefined ? {} : { clip }) } as FigureFrame;
   });
   let fontPx = Number.POSITIVE_INFINITY;
+  // the type of a thumbnail in a strip is not read, it is pointed at: the smallest type is the smallest of the screens that are worked
+  const thumbnail = new Set(board.mode === 'focus' ? layouts.filter((_, i) => i !== board.focus).map((layout) => layout.id) : []);
   const elements: ElementFrame[] = frame.elements.map((element) => {
     const key = prefix + element.key;
     rowOf.set(key, ownerRow.get(element.id) ?? 0);
-    fontPx = Math.min(fontPx, element.fontSize);
+    if (!thumbnail.has(element.id.split(':')[0]?.split('.')[0] ?? '')) fontPx = Math.min(fontPx, element.fontSize);
     const clip = shift(element.clip);
     return { ...element, key, z: Math.min(8999, base + element.z), x: element.x + sx, y: element.y + sy, ...(clip === undefined ? {} : { clip }) };
   });

@@ -112,11 +112,13 @@ export function deviceShape(device: UiDevice, name: string, t: UiTokens, measure
     const ax = (w - aw) / 2;
     under.push({ kind: 'rect', key: key('address'), owner: id, x: ax, y: 10, w: aw, h: bar - 20, radius: (bar - 20) / 2, fill: '#ffffff', edge: { colour: t.wire ? '#9aa1ae' : '#d6dae3', width: 1 } });
     under.push({ kind: 'path', key: key('lock'), owner: id, outline: placeIcon('lock', ax + 12, bar / 2 - 7, 14), fill: null, stroke: { colour: ink, width: 2 } });
+    const small = Math.max(13, t.minText ?? 0);
     const address = `${name.toLowerCase().replace(/[^a-z0-9]+/g, '') || 'site'}.example`;
-    under.push({ kind: 'text', key: key('url'), owner: id, x: ax + 34, y: bar / 2 - 10, w: aw - 46, h: 20, lines: [{ text: address, width: measure.width(address, 13, 'normal') }], size: 13, line: 20, weight: 'normal', colour: ink, align: 'left' });
+    under.push({ kind: 'text', key: key('url'), owner: id, x: ax + 34, y: bar / 2 - 10, w: aw - 46, h: 20, lines: [{ text: address, width: measure.width(address, small, 'normal') }], size: small, line: 20, weight: 'normal', colour: ink, align: 'left' });
   } else {
-    const wide = Math.min(w - 200, measure.width(name, 13, 'bold'));
-    under.push({ kind: 'text', key: key('title'), owner: id, x: (w - wide) / 2, y: bar / 2 - 10, w: wide, h: 20, lines: [{ text: name, width: wide }], size: 13, line: 20, weight: 'bold', colour: '#59606e', align: 'left' });
+    const small = Math.max(13, t.minText ?? 0);
+    const wide = Math.min(w - 200, measure.width(name, small, 'bold'));
+    under.push({ kind: 'text', key: key('title'), owner: id, x: (w - wide) / 2, y: bar / 2 - 10, w: wide, h: 20, lines: [{ text: name, width: wide }], size: small, line: 20, weight: 'bold', colour: '#59606e', align: 'left' });
   }
   return { width: w, height: h, inset: { x: 0, y: bar }, under, over };
 }

@@ -198,6 +198,11 @@ export interface UiTokens {
   readonly id: UiLookId;
   /** boxes and lines: surfaces are bare, a control is an outline, a picture is a crossed box */
   readonly wire: boolean;
+  /**
+   * The smallest type the screens may be set in, points. A board drawn small (several phones in a room that is not tall) sets it so that the smallest
+   * type still reads when it is scaled to the room: every role below it, and every hard-set size, is taken up to it. Absent: the scale as it is.
+   */
+  readonly minText?: number;
   readonly radius: { readonly s: number; readonly m: number; readonly l: number; readonly device: number };
   readonly type: Readonly<Record<UiTextRole, UiTextToken>>;
   readonly elevation: { readonly none: UiElevation; readonly low: UiElevation; readonly high: UiElevation };
