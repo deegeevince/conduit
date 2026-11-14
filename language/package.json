@@ -7,6 +7,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./maths": "./src/maths/index.ts",
     "./demos/*": "./demos/*"
   },
   "scripts": {

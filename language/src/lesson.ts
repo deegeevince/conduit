@@ -8,6 +8,7 @@
 // It touches no clock and no DOM, so the server and the page run the same code.
 
 import { evalExpr, namesIn, parseExpr } from './expr';
+import { checkWorking } from './maths/working';
 import { plainText } from './text';
 import type { Issue, IssueCode } from './types';
 import { LESSON_LIMITS, LIMITS, RESERVED_IDS, TECHNIQUES, VISUAL } from './vocabulary';
@@ -49,6 +50,8 @@ export interface AskLine {
   readonly is: readonly string[];
   readonly pick?: readonly string[];
   readonly unit?: string;
+  /** `working`: she writes her working, and it is the working that is checked, step by step (maths/working.ts), not one answer */
+  readonly check?: 'working';
   readonly text: string;
 }
 
@@ -95,6 +98,8 @@ export interface LessonAsk {
   readonly pick: readonly string[] | null;
   readonly unit: string | null;
   readonly hints: readonly string[];
+  /** `working`: a try is her transcribed working, checked step by step; absent: a try is one answer */
+  readonly check?: 'working';
 }
 
 /** A stop of a lesson, in the order written. A reveal is passed by stepping; an ask opens when it holds an accepted answer. */
@@ -563,9 +568,18 @@ export function matchAnswer(accepted: string, given: string, unit: string | null
 }
 
 /** Whether the typed or chosen `text` is accepted by any answer of `ask`. */
-export function accepts(ask: Pick<LessonAsk, 'accepted' | 'unit'>, text: string): boolean {
+export function accepts(ask: Pick<LessonAsk, 'accepted' | 'unit' | 'check'>, text: string): boolean {
   const given = text.trim();
-  return given !== '' && ask.accepted.some((answer) => matchAnswer(answer, given, ask.unit));
+  if (given === '') return false;
+  // `check=working`: what she wrote is her working, and it is right when every step is and it ends on an answer the ask accepts
+  if (ask.check === 'working') {
+    try {
+      return checkWorking(ask, given).verdict === 'right';
+    } catch {
+      return false;
+    }
+  }
+  return ask.accepted.some((answer) => matchAnswer(answer, given, ask.unit));
 }
 
 // --- the spoiler -------------------------------------------------------------------------------------------------------------------
@@ -978,7 +992,7 @@ export class LessonBook {
     const old = part.steps.findIndex((step) => step.id === id);
     if (old >= 0 && part.steps[old]?.kind !== 'ask') return this.refuse('bad-id', `${id} is a step in ${part.id}; an ask needs an id of its own`, id);
     const previous = old >= 0 ? part.steps[old] : undefined;
-    const ask: LessonAsk = { kind: 'ask', id, prompt: line.text, accepted, pick, unit: line.unit ?? null, hints: previous?.kind === 'ask' ? previous.hints : [] };
+    const ask: LessonAsk = { kind: 'ask', id, prompt: line.text, accepted, pick, unit: line.unit ?? null, hints: previous?.kind === 'ask' ? previous.hints : [], ...(line.check === undefined ? {} : { check: line.check }) };
     const before = old >= 0 ? part.steps.slice(0, old) : part.steps;
     const found = spoilersBefore(ask, before, this.contextOf(part.id));
     if (found.length > 0) return this.refuse('spoiler', spoilerMessage(id, found), found[0]?.answer);
@@ -991,7 +1005,7 @@ export class LessonBook {
     this.written.set(`${part.id}\n${requested}`, id);
     this.open = this.path(part.id);
     return {
-      line: { verb: 'ask', id, in: part.id, is: accepted, ...(pick === null ? {} : { pick }), ...(line.unit === undefined ? {} : { unit: line.unit }), text: line.text },
+      line: { verb: 'ask', id, in: part.id, is: accepted, ...(pick === null ? {} : { pick }), ...(line.unit === undefined ? {} : { unit: line.unit }), ...(line.check === undefined ? {} : { check: line.check }), text: line.text },
       issues: [],
     };
   }
