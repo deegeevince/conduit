@@ -98,7 +98,7 @@ export function takeCensus(player: Player, root: HTMLElement): LessonCensus {
     const kind = fig.getAttribute('data-kind');
     if (!isVisualKind(kind)) return [];
     const r = rect(fig);
-    const counters = [...fig.querySelectorAll('.counter, .blk i, .seg, .coin')];
+    const counters = [...fig.querySelectorAll('.counter, .blk, .seg, .coin')];
     const least = counters.length === 0 ? null : Math.min(...counters.map((c) => Math.min(c.getBoundingClientRect().width, c.getBoundingClientRect().height)));
     return [{ kind, box: r, share: Math.round((r.w / window.innerWidth) * 100) / 100, least: least === null ? null : Math.round(least) }];
   });
@@ -127,7 +127,7 @@ export function takeCensus(player: Player, root: HTMLElement): LessonCensus {
     sealed: { open: open.flatMap((a) => a.accepted), leaks },
     tryMs: player.lastTryMs,
     wide: wide.slice(0, 12),
-    here: player.here(),
+    here: player.describe(),
   };
 }
 

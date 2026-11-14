@@ -1,24 +1,34 @@
-// The lesson player: the sheet's outline, a question and its ways, a way's steps as a worked page, her tries and the hints, and the
-// catalogue's list. It runs inside the sandboxed surface (program.ts boots it), draws with the browser's own layout and real inputs, and keeps
-// section 3's six rules in code it owns:
+// The document view: draws a document node by its kind and lets a hand move through it, and nothing else. It runs inside the sandboxed surface
+// (program.ts boots it) with the browser's own layout and real inputs.
 //
-//   1. the question is a card at the top of every step (sticky, headline type, its crop of the photo beside it);
-//   2. the picture has the lead room (about half the width on a desk, the whole width on a phone, counters at least 36 pixels);
-//   3. steps stack into a worked page, nothing shown is taken away (a picture of the same kind is carried and grown, not redrawn);
+//   a part with children and no steps   a map: its children as cards, grouped under their sections, done ones filled in
+//   a part with steps                   a worked page: the steps stacked, a picture carried and grown, an ask that checks and stops the page
+//                                       until it holds an accepted answer; its children come under it once the steps are done, or on "Show me how"
+//   a painted scene / a live app        its still (or its words) and a way to open it: they are the painter's and the host's
+//   always                              the part's title as a card at the top, big; where it sits; back, next, up, resume
+//
+// Nothing here knows a worksheet. A question that asks first and keeps its ways in its children, a sheet, an explainer in three parts with a
+// branch: the brain composes those from these pieces (the TEACH chapter says how), and this draws them. The rules it keeps in code:
+//
+//   1. the part's title is a card at the top of every step (sticky, headline type, its picture beside it); when the part is help for an ask
+//      above it, the ask's part is the card and the part's own title is its kicker;
+//   2. a picture has the lead room (about half the width on a desk, the whole width on a phone, pieces at least 36 pixels);
+//   3. steps stack into a worked page, nothing shown is taken away;
 //   4. a picture is worked by hand (widgets/*), its state kept in `held`;
-//   5. a choice is a target of 72 pixels or more, a typed answer is a real field with the number keys;
-//   6. an open ask seals its answer: whatever draws goes through `sealed`/`maskSealed`, and nothing past the gate is drawn.
+//   5. a choice is a target of 72 pixels or more, a typed answer is a real field with the number keys, in a slot the ink area takes over;
+//   6. a shut ask seals its answer: whatever draws goes through `sealed`/`maskSealed`, and nothing past a gate is drawn.
 //
 // The document, the cursor, her tries and the gates are WS3's `advance` and `askView`; this file never writes state any other way.
 
-import { accepts, advance, maskSealed, sealed } from '@conduit/language';
-import type { DocEvent } from '@conduit/language';
+import { accepts, advance, askView, maskSealed, nodeOf, sealed } from '@conduit/language';
+import type { DocEvent, DocNode } from '@conduit/language';
 import { changesBetween } from './changes';
 import { h } from './dom';
-import { atOf, gateOf, questionDone, runsOf, shownOf, shutAsks, sheetOf, viewOf, wayDone, wayOf } from './model';
-import type { Question, Run, Sheet, Way } from './model';
-import { TECHNIQUE_NAMES } from './types';
+import { afterOf, answerOf, atOf, cardsOf, gateOf, isDone, isLesson, isWaiting, kidsOf, parentOf, pathOf, runsOf, shownOf, shutAsks, splitNumber, stepsOf, tally } from './model';
+import type { Run } from './model';
+import { TECHNIQUE_NAMES, isTechnique } from './types';
 import type { CatalogueEntry, DocState, Held, LessonAsk, LessonInput, OpenAsk, StateChange, Technique } from './types';
+import { typedWriting } from './writing';
 import { drawVisual } from './widgets';
 import type { WidgetCtx } from './widgets/common';
 
@@ -27,10 +37,14 @@ export interface PlayerPort {
   commit(changes: readonly StateChange[], state: DocState): void;
   /** she opened another sheet in the catalogue */
   open(document: string): void;
+  /** she asked for a painted scene or a live app to be opened where it is drawn */
+  openPart(node: string): void;
+  /** she asked to put the document away and see the picture under it */
+  picture(): void;
 }
 
-/** What is on screen when it is not the way the cursor rests on. Ephemeral: the cursor is what is kept. */
-type Screen = { readonly kind: 'outline' } | { readonly kind: 'catalogue' } | { readonly kind: 'ways'; readonly question: string } | null;
+/** What is on screen when it is not the part the cursor rests on. Ephemeral: the cursor is what is kept. */
+type Screen = { readonly kind: 'map'; readonly node: string } | { readonly kind: 'catalogue' } | null;
 
 const TECHNIQUE_GLYPH: Readonly<Record<Technique, string>> = {
   'draw-it': 'M4 20 L20 4 M14 4 H20 V10',
@@ -56,6 +70,11 @@ function glyph(technique: Technique | null): SVGSVGElement {
   return svg;
 }
 
+/** A part's name for a person: a technique's own name when the part is a way of doing something, else its title. */
+function nameOf(node: DocNode): string {
+  return isTechnique(node.tag) ? TECHNIQUE_NAMES[node.tag] : splitNumber(node.title).text;
+}
+
 export class Player {
   private input: LessonInput;
   private state: DocState;
@@ -76,12 +95,11 @@ export class Player {
   ) {
     this.input = input;
     this.state = input.state;
-    const here = wayOf(sheetOf(input.doc), input.state.cursor.node);
-    // a sheet she has not begun opens on its list; one she has begun opens where she was
-    this.screen = here === null || (input.state.progress[here.way.node.id]?.seen ?? 0) === 0 ? { kind: 'outline' } : null;
+    // a document she has not begun opens on its map; one she has begun opens where she was
+    this.screen = (input.state.progress[input.state.cursor.node]?.seen ?? 0) === 0 ? { kind: 'map', node: input.doc.root } : null;
   }
 
-  /** The document grew (a way was written, a step arrived): draw again, keep the place. */
+  /** The document grew (a part was written, a step arrived): draw again, keep the place. */
   update(input: LessonInput): void {
     this.input = { ...input, state: this.state };
     this.render();
@@ -93,20 +111,29 @@ export class Player {
   get lastTryMs(): number | null {
     return this.tryMs;
   }
-  get sheet(): Sheet {
-    return sheetOf(this.input.doc);
+  private get doc(): LessonInput['doc'] {
+    return this.input.doc;
   }
-  get shownScreen(): 'outline' | 'question' | 'play' | 'catalogue' {
-    if (this.screen === null) return wayOf(this.sheet, this.state.cursor.node) === null ? 'outline' : 'play';
-    return this.screen.kind === 'ways' ? 'question' : this.screen.kind;
+  /** The part the screen is about: the cursor's, unless a map or the catalogue is up. */
+  private get here(): DocNode | null {
+    return nodeOf(this.doc, this.state.cursor.node);
+  }
+  get shownScreen(): 'map' | 'part' | 'catalogue' {
+    if (this.screen !== null) return this.screen.kind;
+    const node = this.here;
+    return node === null || this.isMap(node) ? 'map' : 'part';
+  }
+  /** A part is drawn as a map when it has nothing of its own to step through, show or run. */
+  private isMap(node: DocNode): boolean {
+    return !isLesson(node) && (node.body === null || node.body.kind === 'lesson') && node.children.length > 0;
   }
 
   // ------------------------------------------------------------ changes
 
   private apply(event: DocEvent): void {
-    const next = advance(this.input.doc, this.state, event);
+    const next = advance(this.doc, this.state, event);
     if (next === this.state) return;
-    const changes = changesBetween(this.input.doc, this.state, next);
+    const changes = changesBetween(this.doc, this.state, next);
     this.state = next;
     this.port.commit(changes, next);
   }
@@ -117,39 +144,44 @@ export class Player {
     window.scrollTo(0, 0);
   }
 
-  private openWay(way: Way): void {
-    const finished = wayDone(this.state, way);
+  /** Go to a part: where she was in it, or its first step. */
+  private go(node: DocNode, at?: number): void {
     this.screen = null;
     this.justShown = null;
-    this.apply({ kind: 'go', node: way.node.id, at: finished ? { at: 0 } : 'resume' });
+    this.apply({ kind: 'go', node: node.id, at: at === undefined ? 'resume' : { at } });
     this.render();
     window.scrollTo(0, 0);
   }
 
-  private tryAnswer(way: Way, ask: LessonAsk, text: string, stamp: number): void {
+  private tryAnswer(node: DocNode, ask: LessonAsk, text: string, stamp: number): void {
     const clean = text.trim();
     if (clean === '') return;
-    this.apply({ kind: 'try', node: way.node.id, ask: ask.id, value: clean });
+    this.apply({ kind: 'try', node: node.id, ask: ask.id, value: clean });
     delete this.draft[ask.id];
     this.render();
     this.tryMs = Math.round(performance.now() - stamp);
     requestAnimationFrame(() => this.root.querySelector('.nudge, .ask.closed:last-of-type')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
   }
 
-  private next(way: Way): void {
+  private next(node: DocNode): void {
     const at = atOf(this.state);
-    if (at >= way.steps.length - 1) return;
+    if (at >= stepsOf(node).length - 1) return;
     this.justShown = at + 1;
     this.apply({ kind: 'next' });
     this.render();
     this.scrollToLatest();
   }
-  private back(question: Question): void {
+  private back(node: DocNode): void {
     this.justShown = null;
-    if (atOf(this.state) > 0) {
-      this.apply({ kind: 'back' });
+    const at = atOf(this.state);
+    if (at > 0) {
+      this.apply({ kind: 'stop', at: at - 1 });
       this.render();
-    } else this.show({ kind: 'ways', question: question.node.id });
+      return;
+    }
+    const up = parentOf(this.doc, node);
+    if (up !== null && up.id !== this.doc.root) this.go(up);
+    else this.show({ kind: 'map', node: this.doc.root });
   }
 
   private scrollToLatest(): void {
@@ -168,22 +200,16 @@ export class Player {
     const where = this.shownScreen;
     const page = h('div', { class: `page view-${where}` });
     page.append(this.header());
-    const sheet = this.sheet;
     if (where === 'catalogue') page.append(this.catalogue());
-    else if (where === 'outline') page.append(this.outline());
-    else if (this.screen !== null && this.screen.kind === 'ways') {
-      const id = this.screen.question;
-      const q = sheet.questions.find((n) => n.node.id === id);
-      if (q !== undefined) page.append(this.questionCard(q), this.ways(q));
-    } else {
-      const here = wayOf(sheet, this.state.cursor.node);
-      if (here !== null) this.play(page, here.question, here.way);
+    else if (where === 'map') page.append(this.map(this.screen !== null && this.screen.kind === 'map' ? (nodeOf(this.doc, this.screen.node) ?? this.here) : this.here));
+    else {
+      const node = this.here;
+      if (node !== null) this.part(page, node);
     }
     this.root.replaceChildren(page);
     window.scrollTo(x, y);
     this.watch();
     this.fit();
-    this.root.querySelector('.tab.on')?.scrollIntoView({ block: 'nearest', inline: 'center' });
     this.root.querySelectorAll('.fig').forEach((fig) => fig.classList.toggle('tall', fig.getBoundingClientRect().height > window.innerHeight * 0.46));
     if (keep?.act === 'answer') {
       const field = this.root.querySelector('[data-act="answer"]');
@@ -194,7 +220,7 @@ export class Player {
     }
   }
 
-  /** A question that has scrolled to the top of the screen is "docked": on a phone it shows fewer lines and opens to the whole on a tap. */
+  /** A card that has scrolled to the top of the screen is "docked": on a phone it shows fewer lines and opens to the whole on a tap. */
   private watch(): void {
     this.watcher?.disconnect();
     this.watcher = null;
@@ -211,7 +237,7 @@ export class Player {
     this.watcher.observe(mark);
   }
 
-  /** The height of the question card is the top the picture sticks under. */
+  /** The height of the title card is the top the picture sticks under. */
   private fit(): void {
     const card = this.root.querySelector('.qcard');
     const top = card instanceof HTMLElement ? card.getBoundingClientRect().height + 8 : 0;
@@ -219,73 +245,98 @@ export class Player {
   }
 
   private header(): HTMLElement {
-    const sheet = this.sheet;
-    const here = wayOf(sheet, this.state.cursor.node);
-    const q = this.screen === null && here !== null ? here.question : null;
+    const node = this.screen === null ? this.here : null;
+    const up = node === null ? null : parentOf(this.doc, node);
+    const crumb = node === null ? this.doc.title : pathOf(this.doc, node).slice(1).map((p) => splitNumber(p.title).text).join('  ›  ');
     return h(
       'header',
       { class: 'topbar' },
-      h('button', { type: 'button', class: 'nav', 'data-act': 'outline', onclick: () => this.show({ kind: 'outline' }) }, 'All questions'),
-      h('span', { class: 'crumb' }, q === null ? sheet.title : `${sheet.title}  ·  question ${q.number} of ${sheet.questions.length}`),
-      this.input.catalogue.length > 0 ? h('button', { type: 'button', class: 'nav', 'data-act': 'catalogue', onclick: () => this.show({ kind: 'catalogue' }) }, 'My sheets') : null,
+      h('button', { type: 'button', class: 'nav', 'data-act': 'map', onclick: () => this.show({ kind: 'map', node: this.doc.root }) }, 'Map'),
+      up !== null && up.id !== this.doc.root ? h('button', { type: 'button', class: 'nav', 'data-act': 'up', onclick: () => this.go(up) }, '‹ Up') : null,
+      h('span', { class: 'crumb' }, crumb),
+      this.input.catalogue.length > 0 ? h('button', { type: 'button', class: 'nav', 'data-act': 'catalogue', onclick: () => this.show({ kind: 'catalogue' }) }, 'My documents') : null,
+      this.input.picture === true ? h('button', { type: 'button', class: 'nav', 'data-act': 'picture', onclick: () => this.port.picture() }, 'Picture') : null,
     );
   }
 
-  private outline(): HTMLElement {
-    const sheet = this.sheet;
-    const done = sheet.questions.filter((q) => questionDone(q, this.state)).length;
-    const view = h('main', { class: 'outline' }, h('h1', { class: 'title' }, sheet.title), h('p', { class: 'sub' }, `${done} of ${sheet.questions.length} questions done`));
-    const resume = wayOf(sheet, this.state.cursor.node);
-    if (resume !== null && !wayDone(this.state, resume.way) && (this.state.progress[resume.way.node.id]?.seen ?? 0) > 0) {
-      const { way, question } = resume;
+  // ------------------------------------------------------------ the map
+
+  private map(node: DocNode | null): HTMLElement {
+    const at = node ?? nodeOf(this.doc, this.doc.root);
+    if (at === null) return h('main', { class: 'map' });
+    const t = tally(this.doc, this.state, at);
+    const view = h('main', { class: 'map' }, h('h1', { class: 'title' }, splitNumber(at.title).text), h('p', { class: 'sub' }, `${t.done} of ${t.total} done`));
+    const here = this.here;
+    if (here !== null && (this.state.progress[here.id]?.seen ?? 0) > 0 && !isDone(this.doc, this.state, here) && here.id !== at.id && isLesson(here)) {
       view.append(
         h(
           'button',
-          { type: 'button', class: 'resume', 'data-act': 'resume', onclick: () => this.openWay(way) },
+          { type: 'button', class: 'resume', 'data-act': 'resume', onclick: () => this.go(here) },
           h('span', { class: 'resume-kicker' }, 'Carry on where you were'),
-          h('span', { class: 'resume-text' }, `Question ${question.number}: ${way.node.title}`),
-          h('span', { class: 'resume-step' }, `step ${Math.min(this.state.progress[way.node.id]?.seen ?? 0, way.steps.length)} of ${way.steps.length}`),
+          h('span', { class: 'resume-text' }, nameOf(here)),
+          h('span', { class: 'resume-step' }, `step ${Math.min(this.state.progress[here.id]?.seen ?? 0, stepsOf(here).length)} of ${stepsOf(here).length}`),
         ),
       );
     }
-    for (const section of sheet.sections) {
+    for (const group of cardsOf(this.doc, at)) {
       const block = h('section', { class: 'section' });
-      if (section.node !== null) block.append(h('h2', {}, section.node.title));
-      const list = h('ul', { class: 'qlist' });
-      for (const q of section.questions) {
-        const ready = q.ways.filter((w) => w.ready).length;
-        const isDone = questionDone(q, this.state);
-        const note = isDone ? 'Done' : ready > 0 ? `${ready} ${ready === 1 ? 'way' : 'ways'} to try` : 'Getting ready…';
-        list.append(
-          h(
-            'li',
-            {},
-            h(
-              'button',
-              { type: 'button', class: `qrow${isDone ? ' done' : ''}${ready === 0 ? ' wait' : ''}`, 'data-act': `q:${q.node.id}`, onclick: () => this.show({ kind: 'ways', question: q.node.id }) },
-              h('span', { class: 'qnum' }, isDone ? '✓' : String(q.number)),
-              h('span', { class: 'qtext' }, q.node.title),
-              h('span', { class: 'qnote' }, note),
-            ),
-          ),
-        );
+      if (group.head !== null) {
+        const ht = tally(this.doc, this.state, group.head);
+        block.append(h('h2', {}, splitNumber(group.head.title).text, h('span', { class: 'count' }, `${ht.done} of ${ht.total}`)));
       }
-      block.append(list);
+      const grid = h('ul', { class: 'cards' });
+      for (const item of group.items) grid.append(h('li', {}, this.card(item)));
+      block.append(grid);
       view.append(block);
     }
     return view;
   }
 
-  private questionCard(q: Question): HTMLElement {
-    const crop = this.input.crops[q.node.id];
-    const long = q.node.title.length > 70;
+  /** One part as a card: its number and words, its picture if it has one, and where she is with it. */
+  private card(node: DocNode): HTMLElement {
+    const { printed, text } = splitNumber(node.title);
+    const done = isDone(this.doc, this.state, node);
+    const answer = answerOf(this.doc, this.state, node);
+    const waiting = isWaiting(node) && !isLesson(node) && node.children.length === 0;
+    const started = (this.state.progress[node.id]?.seen ?? 0) > 0;
+    const crop = this.input.crops[node.id];
+    const note = done ? (answer === null ? 'Done' : answer) : waiting ? 'Getting ready…' : started ? 'Carry on' : isTechnique(node.tag) ? TECHNIQUE_NAMES[node.tag] : 'Open';
+    const card = h(
+      'button',
+      { type: 'button', class: `pcard${done ? ' done' : ''}${waiting ? ' wait' : ''}${crop === undefined ? '' : ' with-crop'}`, 'data-act': `open:${node.id}`, onclick: () => (this.isMap(node) ? this.show({ kind: 'map', node: node.id }) : this.go(node)) },
+      h('span', { class: 'pnum' }, done ? '✓' : (printed ?? (isTechnique(node.tag) ? '' : '•'))),
+      crop === undefined ? null : h('img', { class: 'pcrop', src: crop, alt: '' }),
+      h('span', { class: 'ptext' }, isTechnique(node.tag) ? nameOf(node) : text),
+      h('span', { class: `pnote${done && answer !== null ? ' answer' : ''}` }, note),
+    );
+    if (isTechnique(node.tag) && !done) card.prepend(glyph(node.tag));
+    return card;
+  }
+
+  // ------------------------------------------------------------ a part
+
+  /** The title card: the part's, or (when it is help for an ask above it) the part with the ask, so what she is working on never leaves the screen. */
+  private titleCard(node: DocNode, open: readonly OpenAsk[]): HTMLElement {
+    let context: DocNode = node;
+    if (open.length > 0) {
+      for (const above of pathOf(this.doc, node).slice(0, -1).reverse()) {
+        if (stepsOf(above).some((s) => s.kind === 'ask' && open.some((o) => o.id === s.id))) {
+          context = above;
+          break;
+        }
+      }
+    }
+    const { printed, text } = splitNumber(context.title);
+    const kicker = context.id === node.id ? (parentOf(this.doc, node)?.title ?? '') : nameOf(node);
+    const crop = this.input.crops[context.id];
+    const long = text.length > 70;
     const more = long ? h('button', { type: 'button', class: 'more', 'data-act': 'more', 'aria-expanded': String(this.expanded) }, this.expanded ? 'Show less' : 'Read it all') : null;
     const card = h(
       'section',
-      { class: `qcard${crop === undefined ? '' : ' with-crop'}${long ? ' long' : ''}${this.docked ? ' docked' : ''}${this.expanded ? ' expanded' : ''}`, 'data-act': 'question', 'aria-label': 'The question' },
-      h('span', { class: 'qkicker' }, `Question ${q.number}`),
+      { class: `qcard${crop === undefined ? '' : ' with-crop'}${long ? ' long' : ''}${this.docked ? ' docked' : ''}${this.expanded ? ' expanded' : ''}`, 'data-act': 'question', 'aria-label': 'What this is about' },
+      h('span', { class: 'qkicker' }, `${printed === null || context.id !== node.id ? '' : `${printed}.  `}${splitNumber(kicker).text}`),
       more,
-      h('p', { class: 'qtext' }, q.node.title),
+      h('p', { class: 'qtext' }, text),
       crop === undefined ? null : h('img', { class: 'crop', src: crop, alt: 'The question as it is written on the page' }),
     );
     more?.addEventListener('click', () => {
@@ -298,75 +349,85 @@ export class Player {
     return h('div', { class: 'qwrap' }, h('div', { class: 'sentinel', 'aria-hidden': 'true' }), card);
   }
 
-  private ways(q: Question): HTMLElement {
-    const view = h('main', { class: 'ways' }, h('h2', {}, q.ways.length === 0 ? 'Getting some ways ready for you…' : 'Pick a way to work it out'));
-    if (q.ways.length === 0) view.append(h('p', { class: 'wait-note' }, 'This takes a moment. You can look at another question while you wait.'));
-    for (const way of q.ways) {
-      const seen = this.state.progress[way.node.id]?.seen ?? 0;
-      const finished = wayDone(this.state, way);
-      const steps = way.steps.length;
-      const note = !way.ready ? 'Getting ready…' : finished ? 'You did this one' : seen > 0 ? `Step ${Math.min(seen, steps)} of ${steps}` : `${steps} ${steps === 1 ? 'step' : 'steps'}`;
-      const card = h(
-        'button',
-        { type: 'button', class: `way${finished ? ' done' : ''}`, 'data-act': `way:${way.node.id}`, onclick: () => this.openWay(way) },
-        glyph(way.technique),
-        h('span', { class: 'way-body' }, h('span', { class: 'way-tech' }, way.technique === null ? 'A way' : TECHNIQUE_NAMES[way.technique]), h('span', { class: 'way-title' }, way.node.title)),
-        h('span', { class: 'way-note' }, note),
-      );
-      if (!way.ready) card.disabled = true;
-      view.append(card);
-    }
+  private part(page: HTMLElement, node: DocNode): void {
+    const steps = stepsOf(node);
+    const shown = shownOf(this.doc, this.state, node);
+    const open = shutAsks(this.doc, this.state, node);
+    const mask = (text: string): string => maskSealed(text, open);
+    const seal = (value: string | number): string => (sealed(value, open) ? '?' : String(value));
+    page.append(this.titleCard(node, open));
+    const main = h('main', { class: 'work' });
+    for (const run of runsOf(steps, shown)) main.append(this.run(run, node, mask, seal, shown));
+    if (node.body !== null && node.body.kind === 'scene') main.append(this.scene(node));
+    else if (node.body !== null && node.body.kind === 'app') main.append(this.app(node));
+    const gate = gateOf(this.doc, this.state, node);
+    const kids = kidsOf(this.doc, node);
+    const waiting = isWaiting(node);
+    const over = shown >= steps.length && gate === null;
+    if (gate !== null && kids.length > 0) main.append(this.help(kids));
+    else if (over && !waiting) main.append(kids.length > 0 ? this.inside(node, kids) : this.finish(node));
+    else if (over && waiting && steps.length === 0) main.append(h('p', { class: 'wait-note' }, 'This part is being written. It will be here in a moment.'));
+    page.append(main, this.dock(node, shown, steps.length, gate !== null, waiting, over));
+  }
+
+  private scene(node: DocNode): HTMLElement {
+    const still = this.input.stills[node.id];
+    return h(
+      'section',
+      { class: 'leaf scene', 'data-act': `scene:${node.id}` },
+      still === undefined ? h('p', { class: 'words' }, node.title) : h('img', { class: 'still', src: still, alt: node.title }),
+      h('button', { type: 'button', class: 'btn soft', 'data-act': 'open-part', onclick: () => this.port.openPart(node.id) }, 'Open it'),
+    );
+  }
+
+  private app(node: DocNode): HTMLElement {
+    return h('section', { class: 'leaf app' }, h('p', { class: 'words' }, `${node.title}: a live app.`), h('button', { type: 'button', class: 'btn main', 'data-act': 'open-part', onclick: () => this.port.openPart(node.id) }, 'Open it'));
+  }
+
+  /** The way in to the parts under a part whose ask has not been got past: asked for, not shown. */
+  private help(kids: readonly DocNode[]): HTMLElement {
+    const first = kids[0];
+    return h('section', { class: 'help' }, first === undefined ? null : h('button', { type: 'button', class: 'btn soft wide', 'data-act': 'help', onclick: () => this.go(first, 0) }, 'Show me how'));
+  }
+
+  /** A part's children once its own steps are done: cards to open. */
+  private inside(node: DocNode, kids: readonly DocNode[]): HTMLElement {
+    const next = afterOf(this.doc, node);
+    const view = h('section', { class: 'inside' }, h('h2', {}, kids.some((k) => isTechnique(k.tag)) ? 'Other ways to see it' : 'Inside this part'));
+    const grid = h('ul', { class: 'cards' });
+    for (const kid of kids) grid.append(h('li', {}, this.card(kid)));
+    view.append(grid);
+    if (next !== null) view.append(h('button', { type: 'button', class: 'btn main', 'data-act': 'next-part', onclick: () => this.go(next) }, 'Next part'));
     return view;
   }
 
-  // ------------------------------------------------------------ playing a way
-
-  /** What may not be on screen now, and how a drawer says a word or a number through it. */
-  private sealing(q: Question, way: Way): { readonly open: readonly OpenAsk[]; readonly words: (text: string) => string; readonly seal: (value: string | number) => string } {
-    const open = shutAsks(this.input.doc, this.state, way, q.node.title);
-    return { open, words: (text) => maskSealed(text, open), seal: (value) => (sealed(value, open) ? '?' : String(value)) };
+  /** The end of a part with nothing under it: back to what asked for it, or on. */
+  private finish(node: DocNode): HTMLElement {
+    const up = parentOf(this.doc, node);
+    const helping = up !== null && shutAsks(this.doc, this.state, up).length > 0;
+    const next = afterOf(this.doc, node);
+    const row = h('div', { class: 'finish-row' });
+    if (helping && up !== null) row.append(h('button', { type: 'button', class: 'btn main', 'data-act': 'back-to', onclick: () => this.go(up) }, `Back to ${splitNumber(up.title).text.slice(0, 28)}`));
+    if (next !== null) row.append(h('button', { type: 'button', class: `btn ${helping ? 'soft' : 'main'}`, 'data-act': 'next-part', onclick: () => this.go(next) }, helping ? 'Skip to the next part' : 'Next part'));
+    row.append(h('button', { type: 'button', class: 'btn soft', 'data-act': 'map-2', onclick: () => this.show({ kind: 'map', node: this.doc.root }) }, 'Map'));
+    return h('section', { class: 'finish', 'data-act': 'finish' }, h('h2', {}, helping ? 'Now you try' : 'That is this part'), h('p', {}, helping ? 'Go back and write your answer.' : 'You have been all the way through it.'), row);
   }
 
-  private play(page: HTMLElement, q: Question, way: Way): void {
-    const shown = shownOf(way, this.state);
-    const seal = this.sealing(q, way);
-    page.append(this.questionCard(q), this.tabs(q, way));
-    const main = h('main', { class: 'work' });
-    for (const run of runsOf(way, shown)) main.append(this.run(run, way, seal, shown));
-    const gate = gateOf(this.input.doc, this.state, way);
-    const filling = way.node.status === 'filling' || way.node.status === 'outlined';
-    const finished = shown >= way.steps.length && gate === null && !filling;
-    if (finished) main.append(this.finish(q, way));
-    page.append(main);
-    page.append(this.dock(q, way, shown, gate !== null, filling, finished));
-  }
-
-  private tabs(q: Question, way: Way): HTMLElement {
-    const bar = h('nav', { class: 'tabs', 'aria-label': 'Ways to work it out' });
-    for (const w of q.ways) {
-      const on = w.node.id === way.node.id;
-      const tab = h('button', { type: 'button', class: `tab${on ? ' on' : ''}`, 'data-act': `tab:${w.node.id}`, 'aria-current': on ? 'true' : null, onclick: () => { if (!on) this.openWay(w); } }, w.technique === null ? w.node.title : TECHNIQUE_NAMES[w.technique]);
-      if (!w.ready) tab.disabled = true;
-      bar.append(tab);
-    }
-    return bar;
-  }
-
-  private run(run: Run, way: Way, seal: ReturnType<Player['sealing']>, shown: number): HTMLElement {
+  private run(run: Run, node: DocNode, mask: (text: string) => string, seal: (value: string | number) => string, shown: number): HTMLElement {
     const section = h('section', { class: `run${run.figure === null ? '' : ' has-fig'}` });
     if (run.figure !== null) {
       const figure = run.figure;
       const key = figure.key;
-      const held = this.state.held[way.node.id] ?? {};
+      const held = this.state.held[node.id] ?? {};
       const ctx: WidgetCtx = {
         key,
         get: (name): Held | undefined => held[`${key}.${name}`],
         set: (name, value) => {
           this.fresh = name;
-          this.apply({ kind: 'held', node: way.node.id, key: `${key}.${name}`, value });
+          this.apply({ kind: 'held', node: node.id, key: `${key}.${name}`, value });
           this.render();
         },
-        seal: seal.seal,
+        seal,
         fresh: this.fresh,
       };
       section.append(h('div', { class: 'fig', 'data-kind': figure.spec.kind, 'data-act': `fig:${figure.spec.kind}` }, drawVisual(figure.spec, ctx)));
@@ -379,17 +440,17 @@ export class Player {
             'article',
             { class: `say${index === shown - 1 ? ' latest' : ''}${this.justShown === index ? ' arrive' : ''}`, 'data-step': index },
             h('span', { class: 'say-n' }, String(index + 1)),
-            h('p', { class: 'words' }, seal.words(step.words)),
+            h('p', { class: 'words' }, mask(step.words)),
           ),
         );
-      } else says.append(this.ask(way, step, seal.words));
+      } else says.append(this.ask(node, step, mask));
     }
     section.append(says);
     return section;
   }
 
-  private ask(way: Way, ask: LessonAsk, words: (text: string) => string): HTMLElement {
-    const view = viewOf(this.input.doc, this.state, way, ask);
+  private ask(node: DocNode, ask: LessonAsk, mask: (text: string) => string): HTMLElement {
+    const view = askView(this.doc, this.state, node.id, ask.id);
     if (view === null) return h('article', { class: 'ask closed' });
     const right = view.accepted ? view.tries.find((t) => accepts(ask, t)) : undefined;
     if (view.open && !view.refused) {
@@ -397,10 +458,10 @@ export class Player {
         'article',
         { class: `ask closed${right === undefined ? ' worked' : ' right'}`, 'data-ask': ask.id },
         h('p', { class: 'ask-prompt' }, ask.prompt),
-        h('p', { class: 'verdict good' }, right === undefined ? 'Let’s see how it works.' : `Yes! ${right} is right.`),
+        right === undefined ? h('p', { class: 'verdict good' }, 'Let’s see how it works.') : h('p', { class: 'verdict good' }, h('span', { class: 'tick' }, '✓'), ` Yes! ${right} is right.`),
       );
     }
-    const card = h('article', { class: 'ask open', 'data-ask': ask.id, 'aria-label': 'Your turn' }, h('p', { class: 'ask-prompt' }, words(ask.prompt)));
+    const card = h('article', { class: 'ask open', 'data-ask': ask.id, 'aria-label': 'Your turn' }, h('p', { class: 'ask-prompt' }, mask(ask.prompt)));
     if (view.refused) {
       card.append(h('p', { class: 'ask-note' }, 'Let’s work this one out together. Have a think, then press Next.'));
       return card;
@@ -409,7 +470,7 @@ export class Player {
       const choices = h('div', { class: 'choices', role: 'group', 'aria-label': 'Choose your answer' });
       for (const label of ask.pick) {
         const tried = view.tries.includes(label);
-        const btn = h('button', { type: 'button', class: `choice${tried ? ' tried' : ''}`, 'data-act': `pick:${label}`, onclick: (e: Event) => this.tryAnswer(way, ask, label, e.timeStamp) }, label, ask.unit === null ? null : h('span', { class: 'unit' }, ` ${ask.unit}`));
+        const btn = h('button', { type: 'button', class: `choice${tried ? ' tried' : ''}`, 'data-act': `pick:${label}`, onclick: (e: Event) => this.tryAnswer(node, ask, label, e.timeStamp) }, label, ask.unit === null ? null : h('span', { class: 'unit' }, ` ${ask.unit}`));
         if (tried) btn.disabled = true;
         choices.append(btn);
       }
@@ -417,62 +478,36 @@ export class Player {
     } else {
       const numeric = ask.accepted.every((a) => /^\d+$/.test(a.trim()));
       const decimal = ask.accepted.every((a) => /^[$\d.,\s]+[a-z]*$/i.test(a.trim()));
-      const field = h('input', {
-        class: 'field',
-        'data-act': 'answer',
-        type: 'text',
+      const writing = typedWriting({
+        node: node.id,
+        ask: ask.id,
+        initial: this.draft[ask.id] ?? '',
+        unit: ask.unit,
         inputmode: numeric ? 'numeric' : decimal ? 'decimal' : 'text',
-        enterkeyhint: 'done',
-        autocomplete: 'off',
-        autocapitalize: 'none',
-        spellcheck: false,
-        'aria-label': 'Your answer',
-        placeholder: 'Type your answer',
+        onInput: (text) => {
+          this.draft[ask.id] = text;
+        },
+        onCheck: (text, stamp) => this.tryAnswer(node, ask, text, stamp),
       });
-      field.value = this.draft[ask.id] ?? '';
-      field.addEventListener('input', () => {
-        this.draft[ask.id] = field.value;
-      });
-      const submit = (e: Event): void => this.tryAnswer(way, ask, field.value, e.timeStamp);
-      field.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') submit(e);
-      });
-      field.addEventListener('focus', () => window.setTimeout(() => card.scrollIntoView({ block: 'center', behavior: 'smooth' }), 250));
-      card.append(h('div', { class: 'answer-row' }, field, ask.unit === null ? null : h('span', { class: 'unit' }, ask.unit), h('button', { type: 'button', class: 'btn main check', 'data-act': 'check', onclick: submit }, 'Check')));
+      writing.element.querySelector('input')?.addEventListener('focus', () => window.setTimeout(() => card.scrollIntoView({ block: 'center', behavior: 'smooth' }), 250));
+      card.append(writing.element);
     }
     if (view.wrong > 0) {
       const feedback = h('div', { class: 'nudge', role: 'status' }, h('p', { class: 'verdict' }, 'Not yet. Have another look.'));
-      if (view.hint !== null) feedback.append(h('p', { class: 'hint' }, h('b', {}, `Hint ${Math.min(view.wrong, ask.hints.length)}: `), words(view.hint)));
+      if (view.hint !== null) feedback.append(h('p', { class: 'hint' }, h('b', {}, `Hint ${Math.min(view.wrong, ask.hints.length)}: `), mask(view.hint)));
       card.append(feedback);
     }
     return card;
   }
 
-  private finish(q: Question, way: Way): HTMLElement {
-    const next = this.sheet.questions.find((n) => n.number === q.number + 1);
-    const others = q.ways.filter((w) => w.ready && w.node.id !== way.node.id);
-    return h(
-      'section',
-      { class: 'finish', 'data-act': 'finish' },
-      h('h2', {}, 'You worked it out!'),
-      h('p', {}, others.length > 0 ? 'That is one way. Want to see how another way does it?' : 'That is one way to do it.'),
-      h(
-        'div',
-        { class: 'finish-row' },
-        others.length > 0 ? h('button', { type: 'button', class: 'btn main', 'data-act': 'another', onclick: () => this.show({ kind: 'ways', question: q.node.id }) }, 'Try another way') : null,
-        next === undefined ? null : h('button', { type: 'button', class: `btn ${others.length > 0 ? 'soft' : 'main'}`, 'data-act': 'next-question', onclick: () => this.show({ kind: 'ways', question: next.node.id }) }, 'Next question'),
-        h('button', { type: 'button', class: 'btn soft', 'data-act': 'outline-2', onclick: () => this.show({ kind: 'outline' }) }, 'All questions'),
-      ),
-    );
-  }
-
-  private dock(q: Question, way: Way, shown: number, gated: boolean, filling: boolean, finished: boolean): HTMLElement {
-    const back = h('button', { type: 'button', class: 'btn soft', 'data-act': 'back', onclick: () => this.back(q) }, shown <= 1 ? 'Ways' : 'Back');
-    let primary: HTMLElement | null;
-    if (finished) primary = null;
-    else if (gated) primary = h('button', { type: 'button', class: 'btn main grow', 'data-act': 'next', disabled: true }, 'Answer to go on');
-    else if (shown < way.steps.length) primary = h('button', { type: 'button', class: 'btn main grow', 'data-act': 'next', onclick: () => this.next(way) }, 'Next');
-    else primary = h('button', { type: 'button', class: 'btn main grow', 'data-act': 'next', disabled: true }, filling ? 'Getting the next step ready…' : 'Next');
+  private dock(node: DocNode, shown: number, count: number, gated: boolean, waiting: boolean, over: boolean): HTMLElement {
+    const up = parentOf(this.doc, node);
+    const back = h('button', { type: 'button', class: 'btn soft', 'data-act': 'back', onclick: () => this.back(node) }, shown <= 1 ? (up !== null && up.id !== this.doc.root ? 'Up' : 'Map') : 'Back');
+    let primary: HTMLElement | null = null;
+    if (gated) primary = null;
+    else if (shown < count) primary = h('button', { type: 'button', class: 'btn main grow', 'data-act': 'next', onclick: () => this.next(node) }, 'Next');
+    else if (count > 0 && waiting) primary = h('button', { type: 'button', class: 'btn main grow', 'data-act': 'next', disabled: true }, 'Getting the next step ready…');
+    else if (!over) primary = null;
     return h('footer', { class: 'dock' }, back, primary);
   }
 
@@ -480,75 +515,80 @@ export class Player {
 
   private catalogue(): HTMLElement {
     const entries = this.input.catalogue;
-    const view = h('main', { class: 'catalogue' }, h('h1', { class: 'title' }, 'My sheets'));
+    const view = h('main', { class: 'catalogue' }, h('h1', { class: 'title' }, 'My documents'));
     const seg = h('div', { class: 'seg-control', role: 'tablist' });
     (['sheet', 'technique'] as const).forEach((mode) => {
-      seg.append(h('button', { type: 'button', class: `segb${this.by === mode ? ' on' : ''}`, role: 'tab', 'aria-selected': this.by === mode, 'data-act': `by:${mode}`, onclick: () => { this.by = mode; this.render(); } }, mode === 'sheet' ? 'By sheet' : 'By way of thinking'));
+      seg.append(h('button', { type: 'button', class: `segb${this.by === mode ? ' on' : ''}`, role: 'tab', 'aria-selected': this.by === mode, 'data-act': `by:${mode}`, onclick: () => { this.by = mode; this.render(); } }, mode === 'sheet' ? 'By document' : 'By way of thinking'));
     });
     view.append(seg);
     if (this.by === 'sheet') {
-      for (const entry of entries) view.append(this.sheetCard(entry));
+      for (const entry of entries) view.append(this.entryCard(entry));
     } else {
-      const groups = new Map<Technique, { sheet: CatalogueEntry; id: string; title: string; done: boolean }[]>();
-      for (const entry of entries) for (const q of entry.questions) for (const t of q.techniques) groups.set(t, [...(groups.get(t) ?? []), { sheet: entry, id: q.id, title: q.title, done: q.done }]);
+      const groups = new Map<Technique, { entry: CatalogueEntry; id: string; title: string; done: boolean }[]>();
+      for (const entry of entries) for (const q of entry.questions) for (const t of q.techniques) groups.set(t, [...(groups.get(t) ?? []), { entry, id: q.id, title: q.title, done: q.done }]);
       for (const [technique, rows] of [...groups.entries()].sort((a, b) => b[1].length - a[1].length)) {
         const block = h('section', { class: 'tgroup' }, h('h2', {}, glyph(technique), ` ${TECHNIQUE_NAMES[technique]}`, h('span', { class: 'count' }, `${rows.length}`)));
-        for (const row of rows) block.append(h('button', { type: 'button', class: `qrow${row.done ? ' done' : ''}`, 'data-act': `open:${row.sheet.id}:${row.id}`, onclick: () => this.openEntry(row.sheet, row.id) }, h('span', { class: 'qnum' }, row.done ? '✓' : '•'), h('span', { class: 'qtext' }, row.title), h('span', { class: 'qnote' }, row.sheet.title)));
+        for (const row of rows) block.append(h('button', { type: 'button', class: `qrow${row.done ? ' done' : ''}`, 'data-act': `open:${row.entry.id}:${row.id}`, onclick: () => this.openEntry(row.entry, row.id) }, h('span', { class: 'qnum' }, row.done ? '✓' : '•'), h('span', { class: 'qtext' }, splitNumber(row.title).text), h('span', { class: 'qnote' }, row.entry.title)));
         view.append(block);
       }
     }
-    if (entries.length === 0) view.append(h('p', { class: 'sub' }, 'Nothing here yet. A sheet you start will be kept here.'));
+    if (entries.length === 0) view.append(h('p', { class: 'sub' }, 'Nothing here yet. What you start will be kept here.'));
     return view;
   }
 
-  private sheetCard(entry: CatalogueEntry): HTMLElement {
+  private entryCard(entry: CatalogueEntry): HTMLElement {
     const done = entry.questions.filter((q) => q.done).length;
     const card = h('section', { class: `sheetcard${entry.current ? ' current' : ''}` }, h('h2', {}, entry.title), h('p', { class: 'sub' }, `${done} of ${entry.questions.length} done`));
     const list = h('ul', { class: 'qlist' });
-    for (const q of entry.questions) list.append(h('li', {}, h('button', { type: 'button', class: `qrow${q.done ? ' done' : ''}`, 'data-act': `open:${entry.id}:${q.id}`, onclick: () => this.openEntry(entry, q.id) }, h('span', { class: 'qnum' }, q.done ? '✓' : '•'), h('span', { class: 'qtext' }, q.title), h('span', { class: 'qnote' }, q.techniques.map((t) => TECHNIQUE_NAMES[t]).join(', ')))));
+    for (const q of entry.questions) list.append(h('li', {}, h('button', { type: 'button', class: `qrow${q.done ? ' done' : ''}`, 'data-act': `open:${entry.id}:${q.id}`, onclick: () => this.openEntry(entry, q.id) }, h('span', { class: 'qnum' }, q.done ? '✓' : '•'), h('span', { class: 'qtext' }, splitNumber(q.title).text), h('span', { class: 'qnote' }, q.techniques.map((t) => TECHNIQUE_NAMES[t]).join(', ')))));
     card.append(list);
     return card;
   }
 
-  private openEntry(entry: CatalogueEntry, question: string): void {
-    if (entry.current) this.show({ kind: 'ways', question });
+  private openEntry(entry: CatalogueEntry, node: string): void {
+    const target = nodeOf(this.doc, node);
+    if (entry.current && target !== null) this.go(target, 0);
     else this.port.open(entry.id);
   }
 
   // ------------------------------------------------------------ for the brain and the census
 
-  /** The page as the brain is told of it (`HERE`): where she is, what is on stage, what she holds. */
-  here(): string {
-    const sheet = this.sheet;
-    if (this.screen !== null) {
-      if (this.screen.kind === 'ways') {
-        const id = this.screen.question;
-        const q = sheet.questions.find((n) => n.node.id === id);
-        return q === undefined ? `HERE the sheet "${sheet.title}".` : `HERE question ${q.number} "${q.node.title}", choosing a way (${q.ways.length} offered).`;
-      }
-      return this.screen.kind === 'catalogue' ? 'HERE the list of her sheets.' : `HERE the sheet "${sheet.title}", the list of questions.`;
-    }
-    const here = wayOf(sheet, this.state.cursor.node);
-    if (here === null) return `HERE the sheet "${sheet.title}", the list of questions.`;
-    const shown = shownOf(here.way, this.state);
-    const asks = here.way.steps.slice(0, shown).filter((s): s is LessonAsk => s.kind === 'ask');
-    const tried = asks.map((a) => `${a.id}: ${(this.state.progress[here.way.node.id]?.tries[a.id] ?? []).map((t) => `"${t}"`).join(', ') || 'not tried'}`).join('; ');
-    const stage = runsOf(here.way, shown).flatMap((r) => (r.figure === null ? [] : [r.figure.spec.kind])).join(', ');
-    const held = Object.entries(this.state.held[here.way.node.id] ?? {}).map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(' ');
-    return `HERE ${here.way.node.id} step ${shown} of ${here.way.steps.length}. On stage: question card "${here.question.node.title}"${stage === '' ? '' : `; ${stage}`}. Tried: ${tried === '' ? 'nothing yet' : tried}. Held: ${held === '' ? 'nothing' : held}`;
+  /** The view as the brain is told of it (`HERE`): where she is, what is on stage, what she holds. */
+  describe(): string {
+    if (this.screen !== null) return this.screen.kind === 'catalogue' ? 'HERE the list of her documents.' : `HERE the map of "${this.doc.title}".`;
+    const node = this.here;
+    if (node === null) return `HERE the document "${this.doc.title}".`;
+    if (this.isMap(node)) return `HERE the map of "${node.title}".`;
+    const steps = stepsOf(node);
+    const shown = shownOf(this.doc, this.state, node);
+    const asks = steps.slice(0, shown).filter((s): s is LessonAsk => s.kind === 'ask');
+    const tried = asks.map((a) => `${a.id}: ${(this.state.progress[node.id]?.tries[a.id] ?? []).map((t) => `"${t}"`).join(', ') || 'not tried'}`).join('; ');
+    const stage = runsOf(steps, shown).flatMap((r) => (r.figure === null ? [] : [r.figure.spec.kind])).join(', ');
+    const held = Object.entries(this.state.held[node.id] ?? {}).map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(' ');
+    return `HERE ${node.id} step ${shown} of ${steps.length}. On stage: card "${node.title}"${stage === '' ? '' : `; ${stage}`}. Tried: ${tried === '' ? 'nothing yet' : tried}. Held: ${held === '' ? 'nothing' : held}`;
   }
 
-  /** How many steps she has been shown on the way she is on (0 off a way). */
+  /** How many steps she has been shown on the part she is on (0 off a part). */
   shownSteps(): number {
     if (this.screen !== null) return 0;
-    const here = wayOf(this.sheet, this.state.cursor.node);
-    return here === null ? 0 : shownOf(here.way, this.state);
+    const node = this.here;
+    return node === null ? 0 : shownOf(this.doc, this.state, node);
   }
 
-  /** What is sealed on the page now, and the question's own words: what the census looks for on screen. */
-  sealedNow(): { readonly open: readonly OpenAsk[]; readonly question: string } {
-    if (this.screen !== null) return { open: [], question: '' };
-    const here = wayOf(this.sheet, this.state.cursor.node);
-    return here === null ? { open: [], question: '' } : { open: shutAsks(this.input.doc, this.state, here.way, here.question.node.title), question: here.question.node.title };
+  /** What is sealed on the page now: what the census looks for on screen. */
+  sealedNow(): { readonly open: readonly OpenAsk[] } {
+    if (this.screen !== null) return { open: [] };
+    const node = this.here;
+    return { open: node === null ? [] : shutAsks(this.doc, this.state, node) };
+  }
+
+  get shownNode(): DocNode | null {
+    return this.screen === null ? this.here : null;
+  }
+
+  /** Whether the part drawn is one that has anything of its own: used by the census to tell a map from a part. */
+  get tallies(): { readonly done: number; readonly total: number } {
+    const root = nodeOf(this.doc, this.doc.root);
+    return root === null ? { done: 0, total: 0 } : tally(this.doc, this.state, root);
   }
 }

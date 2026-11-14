@@ -35,6 +35,10 @@ export interface DocumentHostOptions {
   readonly onChange?: (change: StateChange, state: DocState) => void;
   /** she opened another sheet in the catalogue */
   readonly onOpen?: (document: string) => void;
+  /** she asked for a painted scene or an app in the document to be opened where it is drawn */
+  readonly onOpenPart?: (node: NodeId) => void;
+  /** she asked to put the document away and see the picture */
+  readonly onPicture?: () => void;
   /** a line for the status line: a fault, a frame that stopped */
   readonly onNote?: (text: string) => void;
 }
@@ -67,7 +71,8 @@ export class DocumentHost {
   private summary: unknown = null;
   private wanted: ((summary: unknown) => void) | null = null;
   private readonly observer: ResizeObserver | null;
-  private handlers: Pick<DocumentHostOptions, 'onChange' | 'onOpen' | 'onNote'>;
+  /** who is listening now (the link, or the page's own) */
+  handlers: Pick<DocumentHostOptions, 'onChange' | 'onOpen' | 'onOpenPart' | 'onPicture' | 'onNote'>;
   private problem: string | null;
 
   constructor(private readonly options: DocumentHostOptions) {
@@ -115,6 +120,11 @@ export class DocumentHost {
     if (name === 'hello') return this.push();
     if (name === 'open') {
       if (typeof value === 'string') this.handlers.onOpen?.(value);
+      return;
+    }
+    if (name === 'picture') return this.handlers.onPicture?.();
+    if (name === 'openpart') {
+      if (typeof value === 'string') this.handlers.onOpenPart?.(value);
       return;
     }
     if (name === 'census') {
@@ -170,7 +180,7 @@ export class DocumentHost {
   // ------------------------------------------------------------ for the page
 
   /** Who hears what she does (the link, or the bench's own). */
-  listen(handlers: Pick<DocumentHostOptions, 'onChange' | 'onOpen' | 'onNote'>): void {
+  listen(handlers: Pick<DocumentHostOptions, 'onChange' | 'onOpen' | 'onOpenPart' | 'onPicture' | 'onNote'>): void {
     this.handlers = handlers;
   }
 
@@ -230,7 +240,7 @@ export function bindDocumentLink(host: DocumentHost, link: DocumentLink, context
   host.listen({
     onChange: (change) => link.sendState(change),
     onOpen: (id) => {
-      void link.open(id).then(async (view) => host.setInput({ doc: view.document, state: view.state, crops: context.crops(), catalogue: await refresh() }, true));
+      void link.open(id).then(async (view) => host.setInput({ doc: view.document, state: view.state, crops: context.crops(), stills: {}, catalogue: await refresh() }, true));
     },
   });
   return { refresh };

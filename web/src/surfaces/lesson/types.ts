@@ -90,7 +90,11 @@ export interface LessonInput {
   readonly state: DocState;
   /** a question's own crop of the photo it came from, as a picture the sandbox may show (a data: address) */
   readonly crops: Readonly<Record<NodeId, string>>;
+  /** a painted scene's still, or an app's: what the page has drawn of it, as a data: address */
+  readonly stills: Readonly<Record<NodeId, string>>;
   readonly catalogue: readonly CatalogueEntry[];
+  /** the page has a picture under the document: the view offers a way back to it */
+  readonly picture?: boolean;
 }
 
 /**
@@ -127,7 +131,7 @@ export interface CensusTarget extends Rect {
   readonly kind: 'choice' | 'button' | 'tap' | 'field';
 }
 export interface LessonCensus {
-  readonly view: 'outline' | 'question' | 'play' | 'catalogue';
+  readonly view: 'map' | 'part' | 'catalogue';
   readonly node: NodeId;
   readonly viewport: { readonly w: number; readonly h: number; readonly scrollW: number };
   readonly question: { readonly text: string; readonly px: number; readonly box: Rect; readonly onScreen: boolean } | null;

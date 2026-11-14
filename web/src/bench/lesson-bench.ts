@@ -10,7 +10,10 @@
 //   ?nocatalogue=1                no "My sheets"
 
 import { DocumentHost } from '../app/document-host';
-import { advance, findNode, initialState } from '@conduit/language';
+import type { DocumentLink } from '../app/document-host';
+import { createDocumentView } from '../app/document-view';
+import type { DocumentView } from '../app/document-view';
+import { advance, findNode, foldSource, initialState } from '@conduit/language';
 import type { DocNode, LessonStep, NodeStatus } from '@conduit/language';
 import { FIXTURES, catalogueFrom, standInCrop } from '../surfaces/lesson/fixtures';
 import type { DocState, Document, LessonInput, StateChange } from '../surfaces/lesson/types';
@@ -19,7 +22,14 @@ const params = new URLSearchParams(location.search);
 const DOCS = FIXTURES;
 const id = params.get('fixture') ?? 'case0';
 const dark = params.get('dark') === '1';
-let doc: Document = DOCS[id] ?? DOCS['case0'] ?? Object.values(DOCS)[0] ?? fail();
+/** `?series=<address>`: lessons the brain wrote (the lines of a recorded run), read by the same fold as the wire's. They are never copied into the repository. */
+async function fromSeries(address: string): Promise<Document> {
+  const folded = foldSource(await (await fetch(address)).text(), 'prompt');
+  for (const found of folded.issues) console.error(`series: ${found.issue.message}`);
+  return { ...folded.document, id: 'series' };
+}
+const series = params.get('series');
+let doc: Document = series !== null ? await fromSeries(series) : (DOCS[id] ?? DOCS['case0'] ?? Object.values(DOCS)[0] ?? fail());
 
 interface BenchWindow extends Window {
   __lesson?: unknown;
@@ -63,35 +73,50 @@ function crops(d: Document): LessonInput['crops'] {
 function input(): LessonInput {
   const states: Record<string, DocState> = {};
   for (const key of Object.keys(DOCS)) states[key] = key === doc.id ? state : load(DOCS[key] ?? doc);
+  if (series !== null) return { doc, state, crops: {}, stills: {}, catalogue: [] };
   const catalogue = params.get('nocatalogue') === '1' ? [] : catalogueFrom(Object.values(DOCS), states, doc.id);
-  return { doc, state, crops: crops(doc), catalogue };
+  return { doc, state, crops: crops(doc), stills: {}, catalogue };
 }
 
 const changes: StateChange[] = [];
 const notes: string[] = [];
 const mount = document.getElementById('lesson');
 if (mount === null) throw new Error('no mount');
-const host = new DocumentHost({
-  mount,
-  dark,
-  input: input(),
-  onChange: (change, next) => {
-    changes.push(change);
-    state = next;
-    save(doc.id, next);
-  },
-  onNote: (text) => notes.push(text),
-  onOpen: (open) => {
-    const next = DOCS[open];
-    if (next !== undefined) {
-      const u = new URL(location.href);
-      u.searchParams.set('fixture', next.id);
-      u.searchParams.delete('open');
-      u.searchParams.delete('reset');
-      location.href = u.toString();
-    }
-  },
-});
+const auto = params.get('auto') === '1';
+const onChange = (change: StateChange, next: DocState): void => {
+  changes.push(change);
+  state = next;
+  save(doc.id, next);
+};
+const onOpen = (open: string): void => {
+  const next = DOCS[open];
+  if (next !== undefined) {
+    const u = new URL(location.href);
+    u.searchParams.set('fixture', next.id);
+    u.searchParams.delete('open');
+    u.searchParams.delete('reset');
+    location.href = u.toString();
+  }
+};
+
+let view: DocumentView | null = null;
+let direct: DocumentHost | null = null;
+if (auto) {
+  // the session has a document: the view appears over the stage by itself, as the `doc` events arrive (a stage that has not been drawn on)
+  const link: DocumentLink = {
+    sendState: (change) => changes.push(change),
+    documents: async () => Object.values(DOCS).map((d) => ({ id: d.id, title: d.title, updated: new Date(1_000_000).toISOString(), cursor: d.root, outline: [] })),
+    open: async (open) => ({ document: DOCS[open] ?? doc, state: initialState(DOCS[open] ?? doc) }),
+  };
+  view = createDocumentView({ stage: mount, link, dark: () => dark, onNote: (text) => notes.push(text) });
+  const nodes = Object.values(doc.nodes);
+  const byDepth = (n: DocNode): number => { let d = 0; for (let at: DocNode | undefined = n; at !== undefined && at.parent !== null; at = doc.nodes[at.parent]) d += 1; return d; };
+  const batches: DocNode[][] = [nodes.filter((n) => byDepth(n) === 0), nodes.filter((n) => byDepth(n) === 1), nodes.filter((n) => byDepth(n) >= 2)];
+  batches.forEach((batch, n) => window.setTimeout(() => view?.onDoc({ type: 'doc', turn: 't1', document: doc.id, title: doc.title, root: doc.root, nodes: batch }), 300 + n * 500));
+} else {
+  direct = new DocumentHost({ mount, dark, input: input(), onChange, onNote: (text) => notes.push(text), onOpen });
+}
+const host = { get current(): DocState { return (view?.host() ?? direct)?.current ?? state; }, get probe() { return (view?.host() ?? direct)?.probe() ?? []; } };
 
 if (params.get('stream') === '1') {
   // the brain writes ahead while she is on the sheet: a way named, then its first step, then the rest, then verified
@@ -105,7 +130,7 @@ if (params.get('stream') === '1') {
     const put = (n: number, status: NodeStatus): void => {
       const node: DocNode = { ...target, status, body: n === 0 ? null : { kind: 'lesson', steps: steps.slice(0, n) } };
       doc = { ...doc, nodes: { ...doc.nodes, [target.id]: node } };
-      host.setInput(input());
+      direct?.setInput(input());
     };
     put(0, 'outlined');
     window.setTimeout(() => put(1, 'filling'), 1500);
@@ -115,11 +140,12 @@ if (params.get('stream') === '1') {
 }
 
 win.__lesson = {
-  host,
+  doc: () => doc,
   state: () => host.current,
   changes,
   notes,
-  census: () => host.census(),
-  probe: () => host.probe(),
-  still: () => host.still(),
+  census: () => (view?.host() ?? direct)?.census(),
+  probe: () => host.probe,
+  still: () => (view?.host() ?? direct)?.still(),
+  view: () => (view === null ? null : { shown: view.shown }),
 };

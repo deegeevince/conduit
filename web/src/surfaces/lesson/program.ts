@@ -3,7 +3,8 @@
 // the host's bridge: `conduit.send` for what a hand changed, `conduit.state` for a copy of her state, and the page's `data` messages in.
 //
 //   in   the page's payload rides the look's tokens (`tokens.lesson`): the document, her state, the palette; and a count that asks for the census
-//   out  `cursor`, `try`, `held` (what advance committed, written small: a value is at most 300 characters), `open` (another sheet), `hello`
+//   out  `cursor`, `try`, `held` (what advance committed, written small: a value is at most 300 characters), `open` (another document),
+//        `openpart` (a painted scene or an app, to be opened where it is drawn), `hello`
 //        (once, so the page sends the payload), `census` (the summary the page asked for)
 //
 // The page's copy of her state is made by the same `advance` from the same changes, so the two cannot disagree; the lesson keeps its own state
@@ -96,7 +97,7 @@ function commit(changes: readonly StateChange[], state: DocState): void {
 
 function start(input: LessonInput): void {
   if (root === null) return;
-  player = new Player(root, input, { commit, open: (id) => bridge?.send('open', id) });
+  player = new Player(root, input, { commit, open: (id) => bridge?.send('open', id), openPart: (id) => bridge?.send('openpart', id), picture: () => bridge?.send('picture', 1) });
   player.render();
   window.__lessonCensus = () => (player === null ? null : takeCensus(player, root));
 }
