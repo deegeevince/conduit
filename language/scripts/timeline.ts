@@ -5,7 +5,7 @@
 //                                 and that each line reads back as itself
 import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { DEMOS, EMPTY_STAGE, LineNormalizer, parseLine, LineReader, PROMPT_EXAMPLE_STRUCTURE, PROMPT_EXAMPLES, PROMPT_EXAMPLES_FLAT, serializeLine, TurnScore } from '../src/index';
+import { DEMOS, EMPTY_STAGE, LineNormalizer, parseLine, LineReader, PROMPT_EXAMPLE_STRUCTURE, PROMPT_EXAMPLES, PROMPT_EXAMPLES_FLAT, PROMPT_EXAMPLES_KERNEL, serializeLine, TurnScore } from '../src/index';
 import type { Issue } from '../src/index';
 import { lessonChecks } from './lesson-checks';
 import { teachChecks } from './teach-checks';
@@ -65,10 +65,37 @@ function run(title: string, source: string): boolean {
   return clean;
 }
 
+/** L2: a worked example in the fixed prompt is held out of the battery: no battery prompt is the subject of an example, and none shares its three longest words. */
+function heldOut(): boolean {
+  let clean = true;
+  const words = (text: string): Set<string> => new Set(text.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter((word) => word.length > 3));
+  for (const file of ['battery.json', 'visuals.json']) {
+    let prompts: readonly { readonly prompt: string }[] = [];
+    try {
+      const parsed = JSON.parse(readFileSync(fileURLToPath(new URL(`../../explore/${file}`, import.meta.url)), 'utf8')) as { prompts?: { prompt: string }[]; cases?: { prompt: string }[] };
+      prompts = [...(parsed.prompts ?? []), ...(parsed.cases ?? [])].filter((item) => typeof item.prompt === 'string');
+    } catch {
+      continue;
+    }
+    for (const example of [...PROMPT_EXAMPLES_KERNEL, PROMPT_EXAMPLE_STRUCTURE]) {
+      const own = words(example.title.split('"')[1] ?? example.title);
+      for (const item of prompts) {
+        const shared = [...words(item.prompt)].filter((word) => own.has(word));
+        if (shared.length >= 3) {
+          clean = false;
+          process.stdout.write(`example "${example.title.slice(0, 40)}" shares ${shared.join(', ')} with the ${file} prompt "${item.prompt}"\n`);
+        }
+      }
+    }
+  }
+  return clean;
+}
+
 const argument = process.argv[2];
 let ok = true;
 if (argument === undefined || argument === 'examples' || argument === 'all') {
-  for (const example of [...PROMPT_EXAMPLES, PROMPT_EXAMPLE_STRUCTURE, ...PROMPT_EXAMPLES_FLAT]) ok = run(`prompt example ${example.title}`, example.lines.join('\n')) && ok;
+  ok = heldOut() && ok;
+  for (const example of [...PROMPT_EXAMPLES, PROMPT_EXAMPLE_STRUCTURE, ...PROMPT_EXAMPLES_KERNEL, ...PROMPT_EXAMPLES_FLAT]) ok = run(`prompt example ${example.title}`, example.lines.join('\n')) && ok;
 }
 if (argument === undefined || argument === 'all') {
   ok = reviewChecks() && ok;

@@ -39,7 +39,6 @@ import {
   CAMERA,
   CANVAS,
   CHART_WORD,
-  ENTER,
   FX,
   HIT,
   LANGUAGE,
@@ -182,6 +181,61 @@ export const PROMPT_EXAMPLES: readonly PromptExample[] = [
 ];
 
 /**
+ * L2. The worked answers the fixed prompt keeps besides the first two: a model copies what it is shown, so each is a different shape of answer
+ * on a subject the battery never asks about (the held-out check is in `scripts/teach-checks.ts`). They are parsed by `pnpm timeline`.
+ */
+export const PROMPT_EXAMPLES_KERNEL: readonly PromptExample[] = [
+  {
+    title: '"Laptop or tablet for school?" A comparison: a table with every row a good plain answer would give, then the verdict.',
+    lines: [
+      'scene caption',
+      'table | Laptop or tablet for school',
+      '| | Laptop | Tablet',
+      '| Typing | *Full keyboard* | Add-on keyboard',
+      '| Weight | 1.4 kg | 0.5 kg',
+      '| Battery | 8 to 12 hours | 10 to 14 hours',
+      '| Price | from $400 | from $330',
+      'say | For essays and code, the laptop; for reading and notes, the tablet.',
+    ],
+  },
+  {
+    title: '"How much daylight does Oslo get?" Numbers over time: a chart, figures you recall marked, one event, and the source.',
+    lines: [
+      'scene caption',
+      'chart line approx | Hours of daylight in Oslo, by month',
+      '| Jan | 6.5',
+      '| Mar | 11.5',
+      '| *Jun* | 18.8',
+      '| Sep | 12.7',
+      '| Dec | 5.9',
+      'node x=Jun | Midsummer: the sun barely sets',
+      'say aside | From timeanddate.com, rounded.',
+    ],
+  },
+  {
+    title: '"How much more pizza is a bigger one?" A quantity: a slider bound to the picture, and a sentence that does the sum.',
+    lines: [
+      'scene figure',
+      'circle pie 30,50 12 fill=accent',
+      'slider d 20 40 30 unit=cm | Pizza width',
+      'bind d 20..40 | circle pie 30,50 24 fill=accent',
+      'say | At {d} cm it is about {round(3.14*d*d/4)} square cm: *double the width, four times the pizza*.',
+    ],
+  },
+  {
+    title: '"Tell me a story." A story: one style and size for every line of narration, silence between, the line that matters last.',
+    lines: [
+      'scene caption calm slow',
+      'say | The last bus left at midnight, and so did its driver.',
+      'wait',
+      'say | Thirty years of the same route, the same forty stops.',
+      'wait 2',
+      'say strong | Tonight there was one passenger, and she was not going anywhere.',
+    ],
+  },
+];
+
+/**
  * The worked answer for a painter that lays out structures: it takes the
  * lever's place, because what a model most needs to be shown is that a diagram
  * is named, not placed. The lever (a free drawing with callouts) and every
@@ -281,12 +335,15 @@ const TAUGHT_APART: readonly string[] = ['structure', 'control'];
 const PLAIN_FX: readonly string[] = ['grain', 'glow', 'vignette', 'scanlines', 'grid'];
 /** Words of v2.1 whose forms are written in "More to say with", so the list of verbs does not say them twice when the vocabulary gains them. */
 const TAUGHT_HERE: readonly string[] = ['code', 'deck', 'standing', 'refine', 'pic', 'tune'];
+/** L2: the verbs that left the kernel. Each is taught by a chapter in the brief (`drawingKit`, `pixelChapter`), on the cue of its kind of answer. */
+const CHAPTERED: readonly string[] = ['ellipse', 'poly', 'pix', 'row', 'frame', 'group', 'use', 'ambient', 'cam'];
 
 /** The system prompt for any brain that writes Series. */
 export function buildSystemPrompt({ capabilities, services }: PromptOptions): string {
   const draws = capabilities.kinds.includes('shape');
-  const pixels = capabilities.kinds.includes('sprite');
-  const weather = capabilities.kinds.includes('field') && capabilities.ambient.length > 0;
+  // L2: pixels, weather, depth and the camera are chapters (`drawingKit`, `pixelChapter`): they ride in the brief on their cue and not in this prompt.
+  const pixels = false;
+  const weather = false;
   // What the painter makes by itself, and what only an image model can.
   const media = draws && capabilities.kinds.includes('picture') ? capabilities.media : [];
   const modelPaints = draws && services.paint && capabilities.kinds.includes('picture');
@@ -298,17 +355,15 @@ export function buildSystemPrompt({ capabilities, services }: PromptOptions): st
   // `tune` is taught only on a turn about music (`tuneChapter`, in the brief), never here: the system prompt is full.
   const shapes = structures.filter((name) => name !== 'code' && name !== 'tune' && name !== 'screen' && name !== 'app' && name !== 'figure');
   const controls = capabilities.controls;
-  const textures = draws ? capabilities.textures.filter((name) => name !== 'flat') : [];
-  const brushes = draws ? capabilities.brushes : [];
-  const deep = capabilities.depth && capabilities.layers.length > 1;
-  const camera = capabilities.camera.length > 0;
+  const deep = false;
+  const camera = false;
   const beat = PACE_TIMING.steady.beat;
 
   const taught = (name: Verb): boolean => {
     const spec = VERB[name];
     // Structures and controls are taught in sections of their own, in fewer words than a form and a gloss apiece.
     if (TAUGHT_APART.includes(spec.family)) return false;
-    if (name === 'cam') return camera;
+    if (CHAPTERED.includes(name)) return false;
     // Taught with the rest of paint, in its own section.
     if (name === 'paint') return false;
     if (TAUGHT_HERE.includes(name)) return false;
@@ -366,7 +421,7 @@ export function buildSystemPrompt({ capabilities, services }: PromptOptions): st
   // A painter that lays out structures is served by a server that hands over techniques, so the worked answers that are craft
   // (the mechanism, the staged memory, the hard thing) ride in the brief when they fit. What stays is what anchors the syntax.
   const first = PROMPT_EXAMPLES[0];
-  const anchors = [first, PROMPT_EXAMPLE_STRUCTURE].filter((example): example is PromptExample => example !== undefined);
+  const anchors = [first, PROMPT_EXAMPLE_STRUCTURE, ...PROMPT_EXAMPLES_KERNEL].filter((example): example is PromptExample => example !== undefined);
   const chosen = !draws ? PROMPT_EXAMPLES_FLAT : structures.includes('flow') ? anchors : PROMPT_EXAMPLES;
   const examples = chosen.map((example) => `${example.title}\n\n${example.lines.join('\n')}`).join('\n\n');
 
@@ -387,7 +442,7 @@ export function buildSystemPrompt({ capabilities, services }: PromptOptions): st
     // Taught only what the painter paints: a `code` block that nothing draws loses the code, which `say` lines would have kept.
     structures.includes('code') ? '- Code, a command, a config: a `code` block, never `say` lines. Slides, a deck: see "More to say with".' : '- Code, a command, a config: one `say` line per line of source, exactly as written.',
     structures.includes('screen') ? '- A mock-up, a page, an app screen: INTERFACE lines, never rects.' : '',
-    pixels ? `- Asked for pixel art, a drawing${paints ? ', a painting' : ''}, an animation: make exactly that. Never build a picture out of letters; never describe what you could show.` : '',
+    draws ? `- Asked for pixel art, a drawing${paints ? ', a painting' : ''}, an animation: make exactly that. Never build a picture out of letters; never describe what you could show.` : '',
   ]
     .filter((line) => line !== '')
     .join('\n');
@@ -457,41 +512,7 @@ Braces in text hold a value or arithmetic: \`say | At {angle}, a {round(10/tan(r
 Drawings live on a canvas of square units that the painter fits to the screen; 0,0 is the top-left, y runs down. Words and controls are never placed by coordinates: they flow, and a row of labelled things is a structure, not \`say at=x,y\` lines. A bare shape is an outline in ink that draws itself; \`fill=\` alone makes it flat. Shapes appear in the order written, later ones on top.
 
 - Put words on a drawing with \`say label near=<id> | …\`.
-- To change a shape, declare it again under the same id: it morphs into the new one.${
-        pixels
-          ? `
-
-# Pixels
-
-\`pix\`, then one \`| row\` per row, every row exactly as wide as the first (a short row is padded). A cell is \`.\` or a space (empty), \`#\` (ink), or one hex digit for the sixteen sprite colours: 0 black, 1 navy, 2 plum, 3 green, 4 brown, 5 grey, 6 silver, 7 white, 8 red, 9 orange, a yellow, b lime, c sky blue, d lavender, e pink, f peach. Eight to sixteen cells a side; an animation is two to four frames, each started by a \`frame\` line (give \`fps=\`). \`scale=\` is canvas units per cell; left out, the painter sizes it.`
-          : ''
-      }${
-        weather
-          ? `
-
-# Atmosphere
-
-\`ambient <kind> [light|heavy]\` fills the scene with ${capabilities.ambient.join(', ')}. One is plenty; it sits behind the subject unless \`layer=fg\`.`
-          : ''
-      }${
-        textures.length > 0 || brushes.length > 0 || paints
-          ? `
-
-# Paint
-
-${[
-  textures.length > 0 ? `\`tex=\` makes a fill ${textures.join(', ')}; \`soft=N\` fades an edge (light, cloud, shadow).` : '',
-  brushes.length > 0 ? `\`brush=\` gives one line a stroke of its own (${brushes.filter((name) => name === 'ink' || name === 'dry' || name === 'marker' || name === 'pencil').join(', ')} …).` : '',
-  media.length > 0 ? `\`paint [over=<group>] as=<medium>\` re-renders what you drew as a painting (${media.join(' | ')}): it adds nothing you did not draw: draw the picture first, in big shapes.` : '',
-  modelPaints
-    ? `\`paint ${media.length > 0 ? 'as=photo ' : ''}| <what to paint>\` asks an image model: many seconds, and it may never come, so your sketch shows meanwhile. One an answer at most${media.length > 0 ? '' : `; \`as=\` names the medium (${words(MEDIUM)}), \`mask=\` its edge (${words(MASK)})`}.`
-    : '',
-]
-  .filter((line) => line !== '')
-  .join(' ')}
-`
-          : ''
-      }
+- To change a shape, declare it again under the same id: it morphs into the new one.
 `
     : '';
 
@@ -514,23 +535,6 @@ ${[
     .join('\n');
   const moreGuide = more === '' ? '' : `\n# More to say with\n\n${more}\n`;
 
-  const depth = deep
-    ? `
-# Depth${camera ? ' and camera' : ''}
-
-The stage is deep: flat layers at different distances, like the planes of an animation stand.
-${table(LAYER, capabilities.layers)}
-${
-  camera
-    ? `
-\`cam <move>\` moves through them, so near things slide past far ones:
-${table(CAMERA, capabilities.camera)}
-Speed: slow | steady | fast. A camera move runs underneath the lines that follow it; put it just before the lines it should carry. One move a scene is usually plenty, and a push wants a later \`cam pull\` or \`cam rest\`. Before a close-up, clear the words (\`drop all\`) so they are not pushed off.`
-    : ''
-}
-`
-    : '';
-
   return `You answer on a stage, not a page.
 
 You write ${LANGUAGE.name}: one command per line. A painter in the user's browser performs each line as it arrives${draws ? ': it draws, sets type, moves things' : ': it sets type and moves it'}${camera ? ', moves a camera' : ''}, while you are still writing the next line. Nobody reads your lines; they watch what the lines do.
@@ -552,6 +556,8 @@ Never talk about the stage, the medium or what you will do. Answer the question.
 - A follow-up about what is on stage continues it: \`set\`, \`hit\`, \`move\`, add. \`scene\` is only for a new subject; never write again what is there. A lesson's steps stack up, not captions; a step to try keeps its subject.
 - Match the level asked or implied. A young learner (under 10, "my kid", "like I'm 7"): plain words, one small idea a step, the question shown; no letters for numbers or \`*\`/\`x\` signs before they are explained; count on the picture ("5, 10, 15, 20"); words at size m or larger.
 - What the user says to hold from now on ("only visuals", "always brief"): record it once, \`standing | their words\`, and keep it on every later turn, answers about yourself or this app too.
+- Lines of one role (narration, steps, list items) share one style and size; only the one line that matters differs. A demo or simulation with invented numbers says so on its face ("a sketch", "example figures").
+- "What can you do?", "show me": show a tiny example of each thing (a chart, a diagram, a control), never a list. "Top news": about five headlines as a list, a line each with its source. A tap or a step that wants sound can play a short \`tune\`.
 - No live price feed: figures come from DATA or the web, with source and date, or you say you have none. Never copy a protected character, logo or artwork: make an original, or a homage in the style, and say so.
 
 # Lines
@@ -590,23 +596,19 @@ Define the voices this conversation needs, then speak in them: \`style fear size
 Properties, on a line or in a style:
 ${props}
 
-enter: ${Object.entries(ENTER)
-    .filter(([name]) => allows(capabilities, 'enter', name) && (draws || (name !== 'draw' && name !== 'pop')))
-    .map(([name, gist]) => `${name} (${gist.split(':')[0]?.split('.')[0] ?? gist})`)
-    .join(', ')}. A loop is a constant demand for attention; use one where something is alive.
+A loop is a constant demand for attention; use one where something is alive.
 
 # Looks
 
 A look is the whole visual world: ground, inks, typeface, the texture of the surface. There is no house look. ${
     offered.length > 1
-      ? `Choose one that suits the answer, or make your own, as the first line of the answer (later, straight after a \`scene\` line). Stay in it until the subject changes register.
+      ? `Paper is the default. A strong look (blueprint, chalk, night, a retro one) only when the user asks for it or the answer is a real schematic or a mood; a look chosen for one drawing does not carry to an unrelated answer: go back to paper. Choose or make your own as the first line of the answer (later, straight after a \`scene\` line).
 
 ${lookLines}
 
 Your own: \`look dusk like=night ground=#2b1d3a accent=#ff9e7d face=hand fx=grain,vignette\`. fx, any mix: ${fxLines}.${draws ? ` stroke: ${words(STROKE)}.` : ''} Every colour you choose is kept readable on its ground.`
       : `This painter performs in one look (${offered[0] ?? capabilities.looks[0] ?? 'its own'}); you do not choose it.`
   }
-${depth}
 # What is already there
 
 The stage persists across turns. \`set <id>\` restyles or changes something (\`set a2 ink=dim\`, \`set scene opacity=0.3\`, \`set a1 stay=pin\`)${draws ? '; `move <id> x,y slow` sends it somewhere, `along=<path id>` along a curve' : ''}; \`hit <id>\` points at it (${words(HIT)}); \`drop <id>\` removes it.
@@ -851,13 +853,56 @@ export function newsText(news: string): string {
 
 /** Whether the user's words are about music, so that this turn is taught `tune`: play, song, melody, tune, sonata, music, chord, compose, MIDI, beat. */
 export function asksForMusic(input: TurnInput): boolean {
-  return input.kind === 'prompt' && /\b(play(?:s|ing|ed)?|songs?|melod(?:y|ies)|tunes?|sonatas?|sonatinas?|music(?:al)?|chords?|compos(?:e|es|ing|ition)|midi|beats?|lullab(?:y|ies)|waltz(?:es)?|jingles?|riffs?|minuets?|nocturnes?|etudes?|fugues?|symphon(?:y|ies)|harmon(?:y|ies)|piano|violin)\b/i.test(input.text);
+  return input.kind === 'prompt' && /\b(play(?:s|ing|ed)?|sound effects?|chimes?|beeps?|drums?|songs?|melod(?:y|ies)|tunes?|sonatas?|sonatinas?|music(?:al)?|chords?|compos(?:e|es|ing|ition)|midi|beats?|lullab(?:y|ies)|waltz(?:es)?|jingles?|riffs?|minuets?|nocturnes?|etudes?|fugues?|symphon(?:y|ies)|harmon(?:y|ies)|piano|violin)\b/i.test(input.text);
 }
 
 /** Whether the user's words are about an interface, so that this turn is taught `screen`: mock-up, wireframe, screen, page, app, site, figma, landing, UI, journey. */
 export function asksForInterface(input: TurnInput): boolean {
   return input.kind === 'prompt' && /\b(mock[- ]?ups?|wire[- ]?frames?|screens?|pages?|apps?|sites?|web-?sites?|figma|landing|ui|ux|user journey|journey|interfaces?|prototypes?|storyboards?)\b/i.test(input.text);
 }
+
+/**
+ * L2. What left the kernel for a drawing: the shapes and groups that are not in the fixed prompt, weather, depth, the camera and paint. They
+ * are generated from the same tables as the kernel was, so a word added to a table is taught here without anyone remembering to. Carried on
+ * every turn that draws or stages (`asksToStage`), and while a drawing is on stage.
+ */
+export function drawingKit(capabilities: Capabilities, services: Services): string | null {
+  if (!capabilities.kinds.includes('shape')) return null;
+  const verb = (name: Verb): string => `${VERB[name].form}\n  ${VERB[name].gist}`;
+  const weather = capabilities.kinds.includes('field') && capabilities.ambient.length > 0;
+  const camera = capabilities.camera.length > 0;
+  const deep = capabilities.depth && capabilities.layers.length > 1;
+  const media = capabilities.kinds.includes('picture') ? capabilities.media : [];
+  const modelPaints = services.paint && capabilities.kinds.includes('picture');
+  const textures = capabilities.textures.filter((name) => name !== 'flat');
+  const brushes = capabilities.brushes;
+  const out: string[] = ['MORE TO DRAW AND STAGE (these words are yours on this turn; the canvas is above):', (['ellipse', 'poly', 'group', 'use', ...(weather ? (['ambient'] as const) : []), ...(camera ? (['cam'] as const) : [])] as Verb[]).map(verb).join('\n')];
+  if (weather) out.push(`Atmosphere: \`ambient <kind> [light|heavy]\` fills the scene with ${capabilities.ambient.join(', ')}. One is plenty; it sits behind the subject unless \`layer=fg\`.`);
+  if (deep) out.push(`Depth: flat layers at different distances, like the planes of an animation stand (\`layer=\`).\n${table(LAYER, capabilities.layers)}`);
+  if (camera) out.push(`\`cam <move>\` moves through them, so near things slide past far ones:\n${table(CAMERA, capabilities.camera)}\nSpeed: slow | steady | fast. A camera move runs underneath the lines that follow it; put it just before the lines it should carry. One move a scene is usually plenty, and a push wants a later \`cam pull\` or \`cam rest\`. Before a close-up, clear the words (\`drop all\`) so they are not pushed off.`);
+  const paint = [
+    textures.length > 0 ? `\`tex=\` makes a fill ${textures.join(', ')}; \`soft=N\` fades an edge (light, cloud, shadow).` : '',
+    brushes.length > 0 ? `\`brush=\` gives one line a stroke of its own (${brushes.filter((name) => name === 'ink' || name === 'dry' || name === 'marker' || name === 'pencil').join(', ')} …).` : '',
+    media.length > 0 ? `\`paint [over=<group>] as=<medium>\` re-renders what you drew as a painting (${media.join(' | ')}): it adds nothing you did not draw: draw the picture first, in big shapes.` : '',
+    modelPaints ? `\`paint ${media.length > 0 ? 'as=photo ' : ''}| <what to paint>\` asks an image model: many seconds, and it may never come, so your sketch shows meanwhile. One an answer at most${media.length > 0 ? '' : `; \`as=\` names the medium (${words(MEDIUM)}), \`mask=\` its edge (${words(MASK)})`}.` : '',
+  ].filter((line) => line !== '');
+  if (paint.length > 0) out.push(`Paint: ${paint.join(' ')}`);
+  return out.join('\n');
+}
+
+/** L2. Pixel art, taught when the words ask for it or a sprite is on stage: `pix`, `row`, `frame` and the sixteen colours. */
+export function pixelChapter(capabilities: Capabilities): string | null {
+  if (!capabilities.kinds.includes('sprite')) return null;
+  return `PIXELS: ${(['pix', 'row', 'frame'] as Verb[]).map((name) => `${VERB[name].form}\n  ${VERB[name].gist}`).join('\n')}\nOne \`| row\` per row, every row exactly as wide as the first (a short row is padded). A cell is \`.\` or a space (empty), \`#\` (ink), or one hex digit for the sixteen sprite colours: 0 black, 1 navy, 2 plum, 3 green, 4 brown, 5 grey, 6 silver, 7 white, 8 red, 9 orange, a yellow, b lime, c sky blue, d lavender, e pink, f peach. Eight to sixteen cells a side; an animation is two to four frames, each started by a \`frame\` line (give \`fps=\`). \`scale=\` is canvas units per cell; left out, the painter sizes it.`;
+}
+
+const PIXELS_WORDS = /\b(pixel|pixels|pixelated|sprites?|8[- ]?bit|16[- ]?bit|retro game|pix)\b/i;
+/** Whether the words are about pixel art: the cue of the pixel chapter. */
+export const asksForPixels = (text: string): boolean => PIXELS_WORDS.test(text);
+
+const STAGING = /\b(poems?|perform\w*|sting|title card|clip|opening|trailer|storyboard|films?|shots?|cinematic|camera|weather|rain|snow|fog|night|sunset|dawn|mood)\b/i;
+/** Whether the words call for staging as well as drawing (depth, weather, a camera): a poem performed, a title, a clip. */
+export const asksToStage = (text: string): boolean => DRAWS.test(text) || STAGING.test(text);
 
 /**
  * SA5. The canvas, taught only on a turn that draws (or while a drawing is on stage): its sizes, and how to draw well in few lines. Words and
@@ -1047,6 +1092,17 @@ export function buildTurnBrief(context: TurnContext, input: TurnInput, form: Bri
   const figureOnStage = stage.elements.some((element) => element.figure?.kind === 'structure' && element.figure.structure === 'figure');
   if (context.capabilities.structures.includes('figure') && !liveApp && ((input.kind === 'prompt' && asksForFigure(input.text)) || figureOnStage)) parts.push(FIGURE_CHAPTER);
   if (drawsNow) parts.push(DRAWING_CHAPTER(`${screen.canvas} (${canvas.width}x${canvas.height})${screen.canvas === 'wide' ? '; a figure scene that names no canvas gets square (100x100)' : ''}`));
+  // L2: the shapes, weather, depth and camera that left the fixed prompt ride with a drawing or a staged answer; pixel art has a chapter of its own.
+  const stagesNow = context.capabilities.kinds.includes('shape') && ((input.kind === 'prompt' && asksToStage(input.text)) || onStageDrawn);
+  if (stagesNow) {
+    const kit = drawingKit(context.capabilities, context.services);
+    if (kit !== null) parts.push(kit);
+  }
+  const spritesOnStage = stage.elements.some((element) => element.kind === 'sprite');
+  if ((input.kind === 'prompt' && asksForPixels(input.text)) || spritesOnStage) {
+    const pixels = pixelChapter(context.capabilities);
+    if (pixels !== null) parts.push(pixels);
+  }
   const standing = standingText(context.standing);
   if (standing !== null) parts.push(standing);
   // A conversation the user has come back to: the stage is empty, but what was said before is not forgotten. Told once, in the first full brief.

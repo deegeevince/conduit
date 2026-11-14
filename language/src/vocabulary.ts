@@ -430,7 +430,7 @@ export const LOOK = {
     exit: 'fade',
   },
   chalk: {
-    gist: 'A blackboard. Explaining, working something out by hand.',
+    gist: 'A blackboard: only when asked for, or for working something out by hand.',
     ground: '#22302b',
     ink: '#eef0e6',
     dim: '#9aa79c',
@@ -444,7 +444,7 @@ export const LOOK = {
     exit: 'fade',
   },
   blueprint: {
-    gist: 'White line on drafting blue. Mechanisms, plans, how a thing is built.',
+    gist: 'White line on drafting blue: only when asked for, or for a real plan or schematic. Never the default for a mechanism.',
     ground: '#18407a',
     ink: '#f2f6ff',
     dim: '#a9c0e6',
