@@ -1,8 +1,9 @@
 // One frame as a vector drawing.
 
-import type { Affine, ElementFrame, FigureFrame, Frame, PictureFrame, ShapeFrame, SpriteFrame } from '../contracts/frame';
+import type { Affine, Clip, ElementFrame, FigureFrame, Frame, PictureFrame, ShapeFrame, SpriteFrame } from '../contracts/frame';
 import type { FontResolver, RendererFont } from '../contracts/renderer';
 import { layerZ, projectToScreen } from '../contracts/space';
+import { chartBoxOf, clipQuad } from '../render/place';
 import type { Vec3 } from '../contracts/space';
 import type { Layer } from '@conduit/language';
 
@@ -95,6 +96,20 @@ function lineBoxFor(element: ElementFrame, y: number): { y: number; height: numb
     }
   }
   return best === undefined ? { y, height: element.fontSize * 1.3 } : { y: best.y, height: best.height };
+}
+
+/**
+ * Keeps a drawn thing inside its frame (`Clip`): the frame as it lies through the frame's camera, as a clip path in the
+ * picture's own coordinates. Nothing of the thing outside it is in the file's drawing.
+ */
+function framed(svg: string, clip: Clip | undefined, layer: Layer, frame: Frame, defs: string[]): string {
+  if (clip === undefined || svg === '') return svg;
+  const id = `k-${defs.length}`;
+  const points = clipQuad(clip, layer, frame.camera, frame.viewport)
+    .map((p) => `${n(p.x)},${n(p.y)}`)
+    .join(' ');
+  defs.push(`<clipPath id="${id}"><polygon points="${points}"/></clipPath>`);
+  return `<g clip-path="url(#${id})">${svg}</g>`;
 }
 
 interface Piece {
@@ -317,7 +332,7 @@ export async function frameToSvg(frame: Frame, size?: SvgSize, resolve?: FontRes
 
   for (const element of frame.elements) {
     if (element.opacity <= 0.001 || element.runs.length === 0) continue;
-    pieces.push({ layer: LAYER_ORDER[element.layer], z: element.z, order: order++, svg: textSvg(element, frame, fonts, resolve) });
+    pieces.push({ layer: LAYER_ORDER[element.layer], z: element.z, order: order++, svg: framed(textSvg(element, frame, fonts, resolve), element.clip, element.layer, frame, defs) });
   }
   const figures: readonly FigureFrame[] = frame.figures;
   // A painting the renderer makes itself is a shader's work and has no vector form: its sketch is drawn as it is, whole, and the file says so.
@@ -335,7 +350,9 @@ export async function frameToSvg(frame: Frame, size?: SvgSize, resolve?: FontRes
     if (figure.kind === 'shape') svg = shapeSvg(whole === undefined ? figure : { ...figure, opacity: Math.max(figure.opacity, whole), stroke: figure.stroke === null ? null : { ...figure.stroke, progress: Math.max(figure.stroke.progress, 1) } }, frame, defs);
     else if (figure.kind === 'sprite') svg = spriteSvg(figure, frame);
     else svg = await pictureSvg(figure, frame, defs);
-    if (svg !== '') pieces.push({ layer: LAYER_ORDER[figure.layer], z: figure.z, order: order++, svg });
+    // A shape that bleeds covers the whole picture and is not framed.
+    const frameOf = figure.kind === 'shape' && figure.bleed ? undefined : figure.clip;
+    if (svg !== '') pieces.push({ layer: LAYER_ORDER[figure.layer], z: figure.z, order: order++, svg: framed(svg, frameOf, figure.layer, frame, defs) });
   }
   pieces.sort((p, q) => p.layer - q.layer || p.z - q.z || p.order - q.order);
 
@@ -346,7 +363,8 @@ export async function frameToSvg(frame: Frame, size?: SvgSize, resolve?: FontRes
       if (chart.opacity <= 0.001) continue;
       const still = chartStill(chart.key);
       if (still === null) continue;
-      charts.push(`<image id="${escapeXml(chart.id)}" href="${still.toDataURL('image/png')}" x="${n(chart.box.x)}" y="${n(chart.box.y)}" width="${n(chart.box.width)}" height="${n(chart.box.height)}" preserveAspectRatio="none"${chart.opacity < 0.999 ? ` opacity="${n(chart.opacity)}"` : ''}/>`);
+      const box = chartBoxOf(chart, frame);
+      charts.push(framed(`<image id="${escapeXml(chart.id)}" href="${still.toDataURL('image/png')}" x="${n(box.x)}" y="${n(box.y)}" width="${n(box.width)}" height="${n(box.height)}" preserveAspectRatio="none"${chart.opacity < 0.999 ? ` opacity="${n(chart.opacity)}"` : ''}/>`, chart.clip, chart.layer, frame, defs));
     }
   }
 

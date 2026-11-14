@@ -1,6 +1,8 @@
-import { PROCEDURAL_MEDIA, STROKES, TEXTURES } from '@conduit/language';
+import { PROCEDURAL_MEDIA, STROKES, TEXTURES, chartModelOf } from '@conduit/language';
 import type { AmbientKind, ClockState, InkRole, Layer, LookId, Mark, Mask, Size, StrokeCharacter } from '@conduit/language';
-import type { ElementFrame, FigureFrame, FieldFrame, Frame, Quality, RunFrame } from '../contracts/frame';
+import type { ChartState } from '../contracts/chart';
+import type { ChartTheme } from '../contracts/chart';
+import type { ChartFrame, ElementFrame, FigureFrame, FieldFrame, Frame, PictureFrame, Quality, RunFrame, ShapeFrame, SpriteFrame } from '../contracts/frame';
 import type { LookSpec } from '../contracts/look';
 import { planeScale } from '../contracts/space';
 import type { Box, CameraPose, Viewport } from '../contracts/space';
@@ -527,4 +529,101 @@ function mixHex(a: string, b: string, t: number): string {
   const channel = (hex: string, i: number): number => parseInt(hex.slice(1 + i * 2, 3 + i * 2), 16);
   const part = (i: number): string => Math.round(channel(a, i) * (1 - t) + channel(b, i) * t).toString(16).padStart(2, '0');
   return `#${part(0)}${part(1)}${part(2)}`;
+}
+
+/** What the clip bench puts across a frame. */
+export type ClipKind = 'text' | 'marks' | 'fill' | 'stroke' | 'sprite' | 'picture' | 'medium' | 'chart';
+
+export const CLIP_KINDS: readonly ClipKind[] = ['text', 'marks', 'fill', 'stroke', 'sprite', 'picture', 'medium', 'chart'];
+
+/** The rectangle every clip fixture is kept inside, on the layer's own plane: the middle third of the screen, whatever the layer's depth. */
+export function clipBoxFor(layer: Layer, viewport: Viewport): Box {
+  const s = planeScale(layer, viewport);
+  const w = (viewport.width * 0.36) / s;
+  const h = (viewport.height * 0.28) / s;
+  return { x: -w / 2, y: -h / 2, width: w, height: h };
+}
+
+/**
+ * One thing, much larger than its frame, on one layer, kept inside `clipBoxFor(layer)`. Nothing else is on the stage, so
+ * a pixel that differs from the empty stage outside the frame is the frame leaking.
+ */
+export function clipFixture(look: LookId, viewport: Viewport, camera: CameraPose, kind: ClipKind, layer: Layer, picture: string | null): { readonly frame: Frame; readonly clip: Box } {
+  const spec = LOOKS[look];
+  const base = fixtureFrame(look, viewport, camera, 3, { figures: NO_FIGURES });
+  const s = planeScale(layer, viewport);
+  const W = viewport.width / s;
+  const H = viewport.height / s;
+  const clip = clipBoxFor(layer, viewport);
+  const frameOf = (parts: Partial<Frame>): Frame => ({ ...base, elements: [], figures: [], fields: [], cursor: null, ...parts });
+  const rect = (w: number, h: number): { x: number; y: number }[] => [
+    { x: -w / 2, y: -h / 2 },
+    { x: w / 2, y: -h / 2 },
+    { x: w / 2, y: h / 2 },
+    { x: -w / 2, y: h / 2 },
+  ];
+  const shape = (key: string, parts: Partial<ShapeFrame>): ShapeFrame => ({
+    kind: 'shape',
+    key,
+    id: key,
+    layer,
+    z: 1,
+    outline: [{ points: rect(W * 1.3, H * 1.2), closed: true }],
+    geometryKey: key,
+    transform: IDENTITY,
+    fill: null,
+    stroke: null,
+    opacity: 1,
+    bleed: false,
+    tappable: false,
+    clip,
+    ...parts,
+  });
+
+  if (kind === 'text' || kind === 'marks') {
+    const body = benchBodySize(viewport, spec);
+    const item: Spec =
+      kind === 'text'
+        ? { key: 'clip-text', text: 'CLIPPED ACROSS A FRAME', size: 'xl', role: 'ink', bold: true }
+        : { key: 'clip-marks', text: ' MARKS AND A PLATE ACROSS A FRAME ', size: 'xl', role: 'ink', mark: 'invert', markRole: 'accent', strike: 0.7 };
+    const made = build(spec, body * 1.5, item, 0, 0, s, 0);
+    const element: ElementFrame = { ...made, layer, x: 0, y: 0, clip, plate: kind === 'marks' ? 0.8 : 0 };
+    return { frame: frameOf({ elements: [element] }), clip };
+  }
+  if (kind === 'fill') {
+    return { frame: frameOf({ figures: [shape('clip-fill', { fill: { colour: spec.roles.accent, to: spec.roles.alt, opacity: 1, texture: 'hatch' } })] }), clip };
+  }
+  if (kind === 'stroke') {
+    const wave = Array.from({ length: 60 }, (_, i) => ({ x: -W * 0.6 + (i / 59) * W * 1.2, y: Math.sin((i / 59) * Math.PI * 4) * H * 0.2 }));
+    return { frame: frameOf({ figures: [shape('clip-stroke', { outline: [{ points: wave, closed: false }], stroke: { colour: spec.roles.ink, width: Math.max(6, H * 0.04), progress: 1, character: 'clean' } })] }), clip };
+  }
+  if (kind === 'sprite') {
+    const cols = 14;
+    const rows = 14;
+    const cells = Array.from({ length: cols * rows }, (_, i) => ((i % cols) + Math.floor(i / cols)) % 2 === 0 ? spec.roles.ink : spec.roles.accent);
+    const sprite: SpriteFrame = { kind: 'sprite', key: 'clip-sprite', id: 'clip-sprite', layer, z: 1, cols, rows, cells, cellsKey: 'clip', cell: (W * 0.9) / cols, transform: IDENTITY, landed: rows, opacity: 1, tappable: false, clip };
+    return { frame: frameOf({ figures: [sprite] }), clip };
+  }
+  if (kind === 'picture') {
+    const art: PictureFrame = { kind: 'picture', key: 'clip-picture', id: 'clip-picture', layer, z: 1, box: { x: -W * 0.55, y: -H * 0.5, width: W * 1.1, height: H }, transform: IDENTITY, src: picture, develop: 1, mask: 'none', opacity: 1, waiting: false, tappable: false, clip };
+    return { frame: frameOf({ figures: [art] }), clip };
+  }
+  if (kind === 'medium') {
+    // The sketch the painting follows: not shown itself (the painter fades it as the painting develops), drawn by the picture.
+    const sketch = shape('clip-sketch', { fill: { colour: spec.roles.accent, to: spec.roles.alt, opacity: 1 }, stroke: { colour: spec.roles.ink, width: 3, progress: 1, character: 'clean' }, opacity: 0, clip: undefined });
+    const art: PictureFrame = { kind: 'picture', key: 'clip-medium', id: 'clip-medium', layer, z: 2, box: { x: -W * 0.55, y: -H * 0.5, width: W * 1.1, height: H }, transform: IDENTITY, src: null, develop: 1, mask: 'none', opacity: 1, waiting: false, tappable: false, clip, medium: 'watercolor', sketch: ['clip-sketch'] };
+    return { frame: frameOf({ figures: [sketch, art] }), clip };
+  }
+  // A chart: the engine's still is drawn over the picture, so the frame is the picture-taker's to keep it inside.
+  const model = chartModelOf('line', [
+    { cells: ['a', '1'], at: 0 },
+    { cells: ['b', '3'], at: 0 },
+    { cells: ['c', '2'], at: 0 },
+  ]);
+  const theme: ChartTheme = { ground: spec.roles.ground, ink: spec.roles.ink, grid: spec.roles.dim, crosshair: spec.roles.ink, series: [spec.roles.accent], up: spec.roles.accent, down: spec.roles.alt, accent: spec.roles.accent, face: spec.type.face, fontFamily: 'monospace', fontPx: 12, hard: false };
+  const state: ChartState = { kind: 'line', words: [], title: '', model, marks: [], theme, reveal: 1, landed: 3, interactive: false, waiting: false, failed: false, reducedMotion: true };
+  // The room, as the screen sees it with the camera at rest: far larger than the frame.
+  const rest: Box = { x: viewport.width * 0.05, y: viewport.height * 0.1, width: viewport.width * 0.9, height: viewport.height * 0.8 };
+  const chart: ChartFrame = { key: 'clip-chart', id: 'clip-chart', layer, z: 1, box: rest, rest, opacity: 1, state, tappable: false, clip };
+  return { frame: frameOf({ charts: [chart] }), clip };
 }

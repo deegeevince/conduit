@@ -5,6 +5,7 @@
 import type { Layer } from '@conduit/language';
 import type { Affine, FigureFrame, PictureFrame, ShapeFrame, SpriteFrame } from '../../contracts/frame';
 import { layerZ, projectToScreen } from '../../contracts/space';
+import { clipQuad } from '../place';
 import type { CameraPose, Viewport } from '../../contracts/space';
 
 export interface PlainFigures {
@@ -19,6 +20,8 @@ const LAYERS: readonly Layer[] = ['far', 'bg', 'mid', 'fg'];
 const MIN_STROKE_DEVICE_PX = 1.25;
 
 interface Node {
+  /** holds `root` and, when the figure has a frame, the clip path that keeps it inside; this is what sits in the layer's svg */
+  readonly outer: SVGGElement;
   readonly root: SVGGElement;
   readonly body: SVGElement;
   readonly layer: Layer;
@@ -32,7 +35,7 @@ function px(value: number): string {
 }
 
 function put(node: Node, target: Element, name: string, value: string): void {
-  const key = `${target === node.root ? 'r' : 'b'}:${name}`;
+  const key = `${target === node.outer ? 'o' : target === node.root ? 'r' : 'b'}:${name}`;
   if (node.written.get(key) === value) return;
   node.written.set(key, value);
   if (value === '') target.removeAttribute(name);
@@ -92,8 +95,10 @@ export function createPlainFigures(host: HTMLElement): PlainFigures {
     const root = document.createElementNS(SVG, 'g');
     const body = document.createElementNS(SVG, figure.kind === 'shape' ? 'path' : 'g');
     root.appendChild(body);
-    svg.appendChild(root);
-    return { root, body, layer: figure.layer, written: new Map(), shape: '' };
+    const outer = document.createElementNS(SVG, 'g');
+    outer.appendChild(root);
+    svg.appendChild(outer);
+    return { outer, root, body, layer: figure.layer, written: new Map(), shape: '' };
   };
 
   const gradient = (layer: Layer, id: string, from: string, to: string): void => {
@@ -164,6 +169,35 @@ export function createPlainFigures(host: HTMLElement): PlainFigures {
     filter.appendChild(blur);
     definitions.appendChild(filter);
     return id;
+  };
+
+  /**
+   * Keeps a figure inside its frame (`Clip`). The frame is carried through the camera to the screen as a polygon (so a
+   * truck, a dolly or a turn moves it as it moves the figure), and clips the figure's outer group, which has no transform
+   * of its own: the polygon is in the layer svg's own coordinates.
+   */
+  const frame = (node: Node, figure: FigureFrame, camera: CameraPose, viewport: Viewport): void => {
+    const clip = figure.kind === 'shape' && figure.bleed ? undefined : figure.clip;
+    const id = `k-${figure.key.replace(/[^a-z0-9_-]/gi, '_')}`;
+    if (clip === undefined) {
+      put(node, node.outer, 'clip-path', '');
+      return;
+    }
+    const definitions = defs.get(figure.layer);
+    if (definitions === undefined) return;
+    let path = definitions.querySelector(`#${CSS.escape(id)}`);
+    if (path === null) {
+      path = document.createElementNS(SVG, 'clipPath');
+      path.setAttribute('id', id);
+      path.appendChild(document.createElementNS(SVG, 'polygon'));
+      definitions.appendChild(path);
+    }
+    const points = clipQuad(clip, figure.layer, camera, viewport)
+      .map((p) => `${px(p.x)},${px(p.y)}`)
+      .join(' ');
+    const polygon = path.firstElementChild;
+    if (polygon !== null && polygon.getAttribute('points') !== points) polygon.setAttribute('points', points);
+    put(node, node.outer, 'clip-path', `url(#${id})`);
   };
 
   const drawShape = (node: Node, figure: ShapeFrame, m: Affine, viewport: Viewport): void => {
@@ -316,6 +350,7 @@ export function createPlainFigures(host: HTMLElement): PlainFigures {
           nodes.set(figure.key, node);
         }
         const matrix = screenMatrix(figure.transform, figure.layer, camera, viewport);
+        frame(node, figure, camera, viewport);
         if (figure.kind === 'shape') drawShape(node, figure, matrix, viewport);
         else if (figure.kind === 'sprite') drawSprite(node, figure, matrix);
         else drawPicture(node, figure, matrix);
@@ -325,7 +360,8 @@ export function createPlainFigures(host: HTMLElement): PlainFigures {
       }
       for (const [key, node] of nodes) {
         if (seen.has(key)) continue;
-        node.root.remove();
+        node.outer.remove();
+        defs.get(node.layer)?.querySelector(`#${CSS.escape(`k-${key.replace(/[^a-z0-9_-]/gi, '_')}`)}`)?.remove();
         nodes.delete(key);
       }
       for (const layer of LAYERS) {
@@ -340,7 +376,7 @@ export function createPlainFigures(host: HTMLElement): PlainFigures {
         // Drawing order within a layer is z order; the list arrives sorted.
         for (const key of list) {
           const node = nodes.get(key);
-          if (node !== undefined) svg.appendChild(node.root);
+          if (node !== undefined) svg.appendChild(node.outer);
         }
       }
     },

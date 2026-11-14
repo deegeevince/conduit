@@ -5,8 +5,10 @@ import type { Film } from '../contracts/film';
 import type { Frame } from '../contracts/frame';
 import type { Renderer } from '../contracts/renderer';
 import type { Viewport } from '../contracts/space';
+import { chartBoxOf, clipQuad } from '../render/place';
 import type { LookId } from '@conduit/language';
 import { createZipSink } from './frames';
+import { createPdfSink } from './pdf';
 import { frameToSvg } from './svg';
 import { createVideoSink, videoFormats } from './video';
 import type { VideoSink } from './video';
@@ -26,7 +28,22 @@ export interface ExporterDeps {
 
 type Outcome = { readonly blob: Blob; readonly fileName: string };
 
+/**
+ * v2.1. A PDF with one page for each of these moments of the film, in order: a deck's slides, or any set of stills. Each page
+ * is a JPEG of the stage at that time, at `width` x `height`. It is the exporter's own request until `contracts/export.ts`
+ * carries it (a request to the integrator, with the exact line, is in the hand-back); `Exporter.start` already accepts it.
+ */
+export interface PdfRequest {
+  readonly kind: 'pdf';
+  readonly width: number;
+  readonly height: number;
+  /** film times, one page each */
+  readonly at: readonly number[];
+}
+
 const MAX_PIXELS = 4096 * 2304;
+/** A deck of this many slides is a book; a PDF held in memory stays well under a browser's limits. */
+const PDF_MAX_PAGES = 200;
 
 /** The longest a painting may take to load for a film; one that stalls is drawn as its waiting frame rather than holding the export. */
 const PRELOAD_MS = 10000;
@@ -93,7 +110,12 @@ function survey(film: Film, from: number, to: number): { urls: string[]; looks: 
   return { urls: [...urls], looks: [...looks] };
 }
 
-export function createExporter(deps: ExporterDeps): Exporter {
+/** The exporter, with the PDF request it already accepts beyond `Exporter`'s own. Assignable to `Exporter`. */
+export interface PdfExporter extends Exporter {
+  start(film: Film, request: ExportRequest | PdfRequest): ExportJob;
+}
+
+export function createExporter(deps: ExporterDeps): PdfExporter {
   let running: { readonly controller: AbortController; readonly settled: Promise<unknown> } | null = null;
   let probe: Promise<{ video: readonly ('webm' | 'mp4')[]; frames: boolean; svg: boolean }> | null = null;
   let disposed = false;
@@ -104,7 +126,7 @@ export function createExporter(deps: ExporterDeps): Exporter {
     return canvas;
   };
 
-  const run = async (film: Film, request: ExportRequest, signal: AbortSignal, report: (progress: ExportProgress) => void): Promise<Outcome> => {
+  const run = async (film: Film, request: ExportRequest | PdfRequest, signal: AbortSignal, report: (progress: ExportProgress) => void): Promise<Outcome> => {
     const guard = (): void => {
       if (signal.aborted) throw abortError();
     };
@@ -132,6 +154,7 @@ export function createExporter(deps: ExporterDeps): Exporter {
 
     const width = Math.max(2, Math.round(request.width));
     const height = Math.max(2, Math.round(request.height));
+    if (request.kind === 'pdf' && request.at.length > PDF_MAX_PAGES) throw new Error(`A PDF made here holds at most ${PDF_MAX_PAGES} pages and this is ${request.at.length}.`);
     if (width * height > MAX_PIXELS) throw new Error('That size is larger than this exporter will draw. Try 3840 by 2160 or smaller.');
     const viewport: Viewport = { width: film.viewport.width, height: film.viewport.height, dpr: width / film.viewport.width };
 
@@ -143,8 +166,15 @@ export function createExporter(deps: ExporterDeps): Exporter {
     let sink: VideoSink | null = null;
     try {
       if (!renderer.capabilities.capture) throw new Error('This browser draws the stage without a way to capture it, so it cannot be exported as pictures.');
-      const span = request.kind === 'still' ? { from: request.at, to: request.at } : range(film, request.from, request.to);
+      const times = request.kind === 'pdf' ? request.at.map((at) => Math.max(0, Math.min(at, film.duration))) : [];
+      const span = request.kind === 'pdf' ? { from: Math.min(0, ...times), to: Math.max(0, ...times) } : request.kind === 'still' ? { from: request.at, to: request.at } : range(film, request.from, request.to);
       const { urls, looks } = survey(film, span.from, Math.max(span.from, span.to));
+      // A deck's slides are far apart in time: the paintings and looks of every page are found from the page's own moment, not the span between.
+      for (const at of times) {
+        const frame = film.frameAt(at);
+        if (!looks.includes(frame.look)) looks.push(frame.look);
+        for (const figure of frame.figures) if (figure.kind === 'picture' && figure.src !== null && !urls.includes(figure.src)) urls.push(figure.src);
+      }
       await wait(renderer.mount(host, viewport, looks[0] ?? film.frameAt(span.from).look, { looks }));
       guard();
       // Paintings load together, each with a limit: one stalled fetch leaves its picture on the waiting frame and nothing else.
@@ -163,6 +193,27 @@ export function createExporter(deps: ExporterDeps): Exporter {
         }
         throw new Error('The text of this picture would not finish drawing. Try again, or export a shorter range.');
       };
+
+      if (request.kind === 'pdf') {
+        const pdf = createPdfSink();
+        for (let index = 0; index < times.length; index += 1) {
+          guard();
+          // A page is a JPEG: the renderer flattens it on its ground, and a slide has no use for transparency.
+          const frame = film.frameAt(times[index] ?? 0);
+          let jpeg: Blob | null = null;
+          for (let attempt = 0; attempt < 3 && jpeg === null; attempt += 1) {
+            let incomplete = false;
+            const taken = await wait(renderer.rasterise(frame, { maxSide, mime: 'image/jpeg', quality: 0.92, onIncomplete: () => (incomplete = true), ...(deps.chartStill === undefined ? {} : { chartStill: (key: string) => deps.chartStill?.(frame, key) ?? null }) }));
+            guard();
+            if (taken === null) throw new Error('This renderer could not capture the picture.');
+            if (!incomplete) jpeg = taken;
+          }
+          if (jpeg === null) throw new Error('The text of a page would not finish drawing. Try again, or export fewer pages.');
+          pdf.add(new Uint8Array(await wait(jpeg.arrayBuffer())));
+          report({ done: (index + 1) / times.length, frame: index + 1, frames: times.length });
+        }
+        return { blob: pdf.finish(), fileName: `conduit-${times.length}-pages.pdf` };
+      }
 
       if (request.kind === 'still') {
         const blob = await picture(film.frameAt(Math.max(0, Math.min(request.at, film.duration))));
@@ -221,8 +272,17 @@ export function createExporter(deps: ExporterDeps): Exporter {
         for (const chart of [...charts].sort((a, b) => a.z - b.z)) {
           const still = chart.opacity <= 0.002 ? null : deps.chartStill(frame, chart.key);
           if (still === null) continue;
+          const box = chartBoxOf(chart, frame);
+          context.save();
+          if (chart.clip !== undefined) {
+            context.beginPath();
+            clipQuad(chart.clip, chart.layer, frame.camera, frame.viewport).forEach((p, i) => (i === 0 ? context.moveTo(p.x * scale, p.y * scale) : context.lineTo(p.x * scale, p.y * scale)));
+            context.closePath();
+            context.clip();
+          }
           context.globalAlpha = Math.max(0, Math.min(1, chart.opacity));
-          context.drawImage(still, chart.box.x * scale, chart.box.y * scale, chart.box.width * scale, chart.box.height * scale);
+          context.drawImage(still, box.x * scale, box.y * scale, box.width * scale, box.height * scale);
+          context.restore();
         }
         context.globalAlpha = 1;
         return overlay;
@@ -270,7 +330,7 @@ export function createExporter(deps: ExporterDeps): Exporter {
       return probe;
     },
 
-    start(film, request) {
+    start(film, request: ExportRequest | PdfRequest) {
       if (disposed) throw new Error('The exporter has been disposed.');
       const controller = new AbortController();
       const listeners = new Set<(progress: ExportProgress) => void>();

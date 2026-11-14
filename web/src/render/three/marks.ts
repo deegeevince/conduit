@@ -1,8 +1,9 @@
 import type { Layer } from '@conduit/language';
 import { Color, Group, Mesh, PlaneGeometry, ShaderMaterial, Vector2 } from 'three';
 import type { Object3D } from 'three';
-import type { CursorFrame, ElementFrame } from '../../contracts/frame';
+import type { Clip, CursorFrame, ElementFrame } from '../../contracts/frame';
 import { FACES } from '../../fonts/faces';
+import { CLIP_FRAGMENT_DECL, CLIP_TEST, CLIP_VERTEX_DECL, clipVertex, makeClipUniform, setClip } from './clip';
 import { BAYER4 } from './glsl';
 import { ORDER, placeElement, renderOrderOf } from './stage';
 import { inkColour } from './style';
@@ -34,14 +35,18 @@ interface Entry {
   readonly group: Group;
   readonly slots: Slot[];
   used: number;
+  /** the frame the element's marks are kept inside */
+  clip: Clip | undefined;
   root: Object3D | null;
   seen: boolean;
 }
 
 const VERTEX = /* glsl */ `
 varying vec2 vUv;
+${CLIP_VERTEX_DECL}
 void main() {
   vUv = uv;
+  ${clipVertex('modelMatrix * vec4(position, 1.0)')}
   gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
 }
 `;
@@ -54,8 +59,10 @@ uniform float uDither;
 uniform vec2 uBox;
 uniform float uFeather;
 varying vec2 vUv;
+${CLIP_FRAGMENT_DECL}
 ${BAYER4}
 void main() {
+  ${CLIP_TEST}
   vec2 p = (vUv - 0.5) * uBox;
   float alpha = uOpacity;
   if (uKind > 1.5) {
@@ -87,7 +94,7 @@ function geometry(): PlaneGeometry {
 
 export function createMarkPool(): MarkPool {
   const entries = new Map<string, Entry>();
-  const cursorEntry: Entry = { group: new Group(), slots: [], used: 0, root: null, seen: true };
+  const cursorEntry: Entry = { group: new Group(), slots: [], used: 0, clip: undefined, root: null, seen: true };
   let activeKey: string | null = null;
 
   const makeSlot = (): Slot => {
@@ -99,6 +106,7 @@ export function createMarkPool(): MarkPool {
         uDither: { value: 0 },
         uBox: { value: new Vector2(1, 1) },
         uFeather: { value: 1 },
+        uConduitClip: makeClipUniform(),
       },
       vertexShader: VERTEX,
       fragmentShader: FRAGMENT,
@@ -139,6 +147,7 @@ export function createMarkPool(): MarkPool {
     set('uKind', kind === 'rect' ? 0 : kind === 'disc' ? 1 : 2);
     set('uDither', style.hard ? 1 : 0);
     set('uFeather', feather);
+    setClip(u['uConduitClip'], entry.clip);
   };
 
   const finish = (entry: Entry): void => {
@@ -275,7 +284,7 @@ export function createMarkPool(): MarkPool {
       for (const element of elements) {
         let entry = entries.get(element.key);
         if (entry === undefined) {
-          entry = { group: new Group(), slots: [], used: 0, root: null, seen: true };
+          entry = { group: new Group(), slots: [], used: 0, clip: undefined, root: null, seen: true };
           entries.set(element.key, entry);
         }
         entry.seen = true;
@@ -285,6 +294,7 @@ export function createMarkPool(): MarkPool {
           entry.root = root;
         }
         placeElement(entry.group, element);
+        entry.clip = element.clip;
         begin(entry);
         build(entry, element, style, gridUnit);
         finish(entry);

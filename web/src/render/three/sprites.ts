@@ -4,6 +4,7 @@ import type { Group } from 'three';
 import type { Layer } from '@conduit/language';
 import { BufferAttribute, BufferGeometry, DataTexture, DoubleSide, Matrix4, Mesh, NearestFilter, RGBAFormat, ShaderMaterial, UnsignedByteType, Vector2 } from 'three';
 import type { Affine, SpriteFrame } from '../../contracts/frame';
+import { CLIP_FRAGMENT_DECL, CLIP_TEST, CLIP_VERTEX_DECL, clipVertex, makeClipUniform, setClip } from './clip';
 import { PIXEL_SCALE } from './glsl';
 import { renderOrderOf } from './stage';
 import { VIEW_PX, inkColour } from './style';
@@ -28,6 +29,7 @@ uniform vec2 uCells;
 uniform float uCell;
 uniform float uSnap;
 ${PIXEL_SCALE}
+${CLIP_VERTEX_DECL}
 varying vec2 vCell;
 
 vec2 pixelsOf(vec4 clip) {
@@ -38,6 +40,7 @@ void main() {
   vec2 extent = uCells * uCell;
   vec2 corner = position.xy;
   vCell = corner / uCell + uCells * 0.5;
+  ${clipVertex('modelMatrix * vec4(corner, 0.0, 1.0)')}
   mat4 mvp = projectionMatrix * modelViewMatrix;
   vec4 centre = mvp * vec4(0.0, 0.0, 0.0, 1.0);
   vec4 clip = mvp * vec4(corner, 0.0, 1.0);
@@ -69,8 +72,10 @@ uniform highp sampler2D tCells;
 uniform vec2 uCells;
 uniform float uLanded;
 uniform float uOpacity;
+${CLIP_FRAGMENT_DECL}
 varying vec2 vCell;
 void main() {
+  ${CLIP_TEST}
   vec2 cell = floor(vCell);
   if (cell.x < 0.0 || cell.y < 0.0 || cell.x >= uCells.x || cell.y >= uCells.y) discard;
   // Rows arrive one after another from the top; the one arriving is drawn at its share of opacity.
@@ -115,6 +120,7 @@ export function createSpritePool(): SpritePool {
         uLanded: { value: 0 },
         uOpacity: { value: 1 },
         uViewPx: VIEW_PX,
+        uConduitClip: makeClipUniform(),
       },
       vertexShader: VERTEX,
       fragmentShader: FRAGMENT,
@@ -195,6 +201,7 @@ export function createSpritePool(): SpritePool {
         set('uSnap', upright(sprite.transform) ? 1 : 0);
         set('uLanded', sprite.landed);
         set('uOpacity', sprite.opacity);
+        setClip(u['uConduitClip'], sprite.clip);
         matrixOf(sprite.transform, entry.mesh.matrix);
         entry.mesh.matrixWorldNeedsUpdate = true;
         entry.mesh.renderOrder = renderOrderOf(sprite.layer, 'fill', sprite.z) + 1;
