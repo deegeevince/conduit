@@ -2,6 +2,10 @@
 
 Newest first. Each item is something the brain can show live when asked "showcase what's new": draw it, don't describe it. The server reads this file.
 
+## Mock-ups you can really work (live)
+- A button in a mock-up tells Conduit when you press it (with what the fields hold; a password only as "filled"), so it can answer; a button that goes to a screen stays a prototype's own step unless it says so.
+- Switches and sliders follow your finger and settle with an ease; the writing in a mock-up is large enough to read; a page on a phone shows its first screenful whole; asking for a change redraws the screens you meant instead of drawing a second copy.
+
 ## Saving films (live)
 - Save film now saves the latest answer as you saw it: the prompt it began with and the taps and controls that carried it on, not only the last tap.
 - Save whole conversation: one WebM of every turn in order, each after a card with what you asked, with the sound of any tunes. At most ten minutes; a longer conversation keeps its latest turns.
