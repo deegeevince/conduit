@@ -384,16 +384,32 @@ async function runCheck(cx: Cx, spec: Spec): Promise<Res> {
       const missing = order.filter((_, i) => picked[i] === undefined);
       if (missing.length > 0) return { check: name, verdict: 'FAIL', detail: `not on stage: ${missing.join(', ')}` };
       const boxes = picked as LiveElement[];
-      const ys = boxes.map((e) => centre(e.box).y).sort((a, b) => a - b);
-      const mid = ys[Math.floor(ys.length / 2)] as number;
       const lineH = Math.max(...boxes.map((e) => e.box.height));
       const bad: string[] = [];
+      // One row where it fits. A strip too narrow for its words wraps into rows (2 x 6, 3 x 4): the check then asks each row to be level and in
+      // order left to right, and the rows to follow one another top to bottom, the next row beginning at the left of where the last one ended.
+      const rows: number[][] = [];
       boxes.forEach((e, i) => {
-        if (Math.abs(centre(e.box).y - mid) > 0.6 * lineH) bad.push(`${order[i]} is off the row by ${Math.round(Math.abs(centre(e.box).y - mid))} px`);
-        const prev = boxes[i - 1];
-        if (prev !== undefined && centre(e.box).x <= centre(prev.box).x) bad.push(`${order[i]} is not to the right of ${order[i - 1]}`);
+        const last = rows[rows.length - 1];
+        const y = centre(e.box).y;
+        if (last !== undefined && Math.abs(y - centre((boxes[last[0] as number] as LiveElement).box).y) <= 0.6 * lineH) last.push(i);
+        else rows.push([i]);
       });
-      return res(name, bad, `${order.length} labels on one row, in order`);
+      const widths = rows.map((r) => r.length);
+      const even = widths.slice(0, -1).every((n) => n === widths[0]) && (widths[widths.length - 1] as number) <= (widths[0] as number);
+      if (rows.length > 1 && (!even || rows.length > 4)) bad.push(`the labels stand in ${rows.length} rows of ${widths.join('/')}, not one row or an even wrap`);
+      rows.forEach((r, ri) => {
+        r.forEach((i, k) => {
+          const e = boxes[i] as LiveElement;
+          const prev = k > 0 ? (boxes[r[k - 1] as number] as LiveElement) : undefined;
+          if (prev !== undefined && centre(e.box).x <= centre(prev.box).x) bad.push(`${order[i]} is not to the right of ${order[r[k - 1] as number]}`);
+          if (ri > 0 && k === 0) {
+            const above = boxes[(rows[ri - 1] as number[])[0] as number] as LiveElement;
+            if (centre(e.box).y <= centre(above.box).y) bad.push(`${order[i]} is not below the row before it`);
+          }
+        });
+      });
+      return res(name, bad, rows.length === 1 ? `${order.length} labels on one row, in order` : `${order.length} labels in ${rows.length} rows of ${widths[0]}, in reading order`);
     }
     case 'min-font': {
       const found = wordBoxes(cx, words, match);
