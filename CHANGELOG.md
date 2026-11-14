@@ -3,7 +3,9 @@
 Newest first. Each item is something the brain can show live when asked "showcase what's new": draw it, don't describe it. The server reads this file.
 
 ## v2.1 (live, being polished)
-- Words, pictures, diagrams, charts and choices each get their own room from one stage plan (still being polished on phones and wide screens) gives words, pictures, diagrams, charts and choices their own room, on desk and phone.
+- Words, pictures, diagrams, charts and choices each get their own room from one stage plan (still being polished on phones and wide screens).
+- Text stays up long enough to read; tables and charts no longer collapse on wide, short screens.
+- Asked "what's new" or `/new`, the brain showcases this list live.
 - Fixes change only what's wrong: a correction is tried out of sight and thrown away if it removes something or looks worse.
 - Standing asks: say "from now on…" once ("reply only in visuals") and it holds every turn.
 - Charts read properly: real type sizes, labels that stay on the chart, the right chart for the data, a framed panel in the machine looks.
