@@ -1,0 +1,34 @@
+{
+ "id": "red-focus-box-on-click",
+ "title": "a red focus box on click",
+ "family": "focus",
+ "owner": "painter",
+ "kind": "ui",
+ "found": "2026-11-14",
+ "note": "Clicking a stepper control leaves a red rectangle round it.",
+ "own": [
+  "no-red-outline"
+ ],
+ "turns": [
+  {
+   "say": "can you explain to me how to read a company balance sheet, step by step and interactive",
+   "source": {
+    "log": "20261114-213331-c6",
+    "turns": [
+     "t11"
+    ]
+   },
+   "do": [
+    {
+     "a": "click-control",
+     "id": "step"
+    }
+   ],
+   "check": [
+    {
+     "k": "no-red-outline"
+    }
+   ]
+  }
+ ]
+}

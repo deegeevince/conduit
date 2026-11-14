@@ -1,0 +1,29 @@
+{
+ "id": "chord-c-major-bind",
+ "title": "chords: \"C major\" option binds nothing",
+ "family": "bind",
+ "owner": "painter",
+ "kind": "draw",
+ "found": "2026-11-14",
+ "note": "A pick option with two words (\"C major\") is split on the space so its bind never matches and the keys do not change.",
+ "own": [
+  "options-differ"
+ ],
+ "turns": [
+  {
+   "say": "show a piano and the keys of a chord, picking the chord natively",
+   "source": {
+    "log": "20261114-200136-c2",
+    "turns": [
+     "t42"
+    ]
+   },
+   "check": [
+    {
+     "k": "options-differ",
+     "id": "chord"
+    }
+   ]
+  }
+ ]
+}

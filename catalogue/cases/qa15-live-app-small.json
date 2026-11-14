@@ -1,0 +1,32 @@
+{
+ "id": "qa15-live-app-small",
+ "title": "QA1-15: a live app fills a small part of the canvas",
+ "family": "placement",
+ "owner": "painter",
+ "kind": "draw",
+ "found": "2026-11-14",
+ "note": "The piano is a short strip at the top, most of the stage is empty.",
+ "own": [
+  "app-fills-stage"
+ ],
+ "surface": "main",
+ "priority": "low",
+ "turns": [
+  {
+   "say": "a piano I can play",
+   "source": {
+    "log": "20261114-235408-c187",
+    "logs": "qa",
+    "turns": [
+     "p1"
+    ]
+   },
+   "check": [
+    {
+     "k": "app-fills-stage",
+     "min": 0.5
+    }
+   ]
+  }
+ ]
+}

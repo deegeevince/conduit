@@ -1,0 +1,27 @@
+{
+ "id": "qa12-chat-draw-toolbar",
+ "title": "QA1-12: Draw toolbar covers a third of the phone canvas (/chat)",
+ "family": "chrome",
+ "owner": "painter",
+ "kind": "ui",
+ "found": "2026-11-14",
+ "note": "The toolbar covers the canvas, the words field is cut and Send wraps.",
+ "own": [
+  "no-overlap"
+ ],
+ "surface": "chat",
+ "priority": "low",
+ "turns": [
+  {
+   "say": "show me the C, F, G chords",
+   "source": {
+    "log": "20261114-235736-c233",
+    "logs": "qa",
+    "turns": [
+     "p1"
+    ]
+   },
+   "check": []
+  }
+ ]
+}

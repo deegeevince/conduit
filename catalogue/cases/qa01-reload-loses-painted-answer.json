@@ -1,0 +1,37 @@
+{
+ "id": "qa01-reload-loses-painted-answer",
+ "title": "QA1-01: a reload loses the painted conversation (on /)",
+ "family": "state",
+ "owner": "painter",
+ "kind": "ui",
+ "found": "2026-11-14",
+ "note": "After a reload the main view comes back with no answer on stage.",
+ "own": [
+  "kept-after-reload"
+ ],
+ "surface": "main",
+ "priority": "core",
+ "turns": [
+  {
+   "say": "explain how a refrigerator works, step by step",
+   "source": {
+    "log": "20261114-233618-c9",
+    "logs": "qa",
+    "turns": [
+     "p1"
+    ]
+   },
+   "do": [
+    {
+     "a": "reload"
+    }
+   ],
+   "check": [
+    {
+     "k": "kept-after-reload"
+    }
+   ]
+  }
+ ],
+ "generic": false
+}

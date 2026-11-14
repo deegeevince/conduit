@@ -1,0 +1,65 @@
+{
+ "id": "product-name-field-over-caption",
+ "title": "the product-name field over a caption",
+ "family": "flow-placement",
+ "owner": "painter",
+ "kind": "draw",
+ "found": "2026-11-14",
+ "note": "An input asking for a name is laid on top of the closing caption.",
+ "own": [
+  "fields-clear",
+  "no-overlap"
+ ],
+ "turns": [
+  {
+   "say": "can you create an animation of how this thing works for my launch video?",
+   "source": {
+    "log": "20261114-231621-c2",
+    "turns": [
+     "t3"
+    ]
+   }
+  },
+  {
+   "say": "no, the point is that the model emits tokens as actual language for a different client, the browser",
+   "source": {
+    "log": "20261114-231621-c2",
+    "turns": [
+     "t4"
+    ]
+   }
+  },
+  {
+   "say": "show the same tokens as plain chat text, side by side",
+   "source": {
+    "log": "20261114-231621-c2",
+    "turns": [
+     "t5"
+    ]
+   }
+  },
+  {
+   "say": "make the token stream faster and denser",
+   "source": {
+    "log": "20261114-231621-c2",
+    "turns": [
+     "t6"
+    ]
+   }
+  },
+  {
+   "say": "add our product name at the end",
+   "source": {
+    "log": "20261114-231621-c2",
+    "turns": [
+     "t7"
+    ]
+   },
+   "check": [
+    {
+     "k": "fields-clear"
+    }
+   ]
+  }
+ ]
+}

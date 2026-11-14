@@ -1,0 +1,31 @@
+{
+ "id": "qa02-raw-braces-in-reply",
+ "title": "QA1-02: raw {..} syntax in reply or transcript text",
+ "family": "raw-template",
+ "owner": "kit",
+ "kind": "draw",
+ "found": "2026-11-14",
+ "note": "The reply text shows {rate}, {slices} / 8 and ${...} literally.",
+ "own": [
+  "no-raw-braces"
+ ],
+ "surface": "main",
+ "priority": "core",
+ "turns": [
+  {
+   "say": "a monthly budget I can adjust with sliders",
+   "source": {
+    "log": "20261114-233911-c49",
+    "logs": "qa",
+    "turns": [
+     "p1"
+    ]
+   },
+   "check": [
+    {
+     "k": "no-raw-braces"
+    }
+   ]
+  }
+ ]
+}

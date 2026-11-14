@@ -1,0 +1,27 @@
+{
+ "id": "qa10-chat-label-list",
+ "title": "QA1-10: label list dumped in the chat reply (/chat)",
+ "family": "prompt-show-dont-list",
+ "owner": "prompt",
+ "kind": "draw",
+ "found": "2026-11-14",
+ "note": "The reply carries one paragraph per label word before the sentence.",
+ "own": [
+  "no-overlap"
+ ],
+ "surface": "chat",
+ "priority": "low",
+ "turns": [
+  {
+   "say": "label the parts of an eye",
+   "source": {
+    "log": "20261114-234348-c92",
+    "logs": "qa",
+    "turns": [
+     "p1"
+    ]
+   },
+   "check": []
+  }
+ ]
+}

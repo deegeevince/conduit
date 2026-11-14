@@ -1,0 +1,31 @@
+{
+ "id": "pen-stroke-is-a-press",
+ "title": "a pen stroke starting on a live mock-up part is taken as a press",
+ "family": "ink-input",
+ "owner": "painter",
+ "kind": "ui",
+ "found": "2026-11-14",
+ "note": "A ring drawn round a button starts on the button; the stage takes it as a press and the pen draws nothing.",
+ "own": [
+  "pen-draws"
+ ],
+ "turns": [
+  {
+   "say": "mock up a checkout page for a bakery",
+   "source": {
+    "scenario": "mockup",
+    "index": 0
+   },
+   "do": [
+    {
+     "a": "pen-ring"
+    }
+   ],
+   "check": [
+    {
+     "k": "pen-draws"
+    }
+   ]
+  }
+ ]
+}

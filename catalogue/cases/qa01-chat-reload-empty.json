@@ -1,0 +1,37 @@
+{
+ "id": "qa01-chat-reload-empty",
+ "title": "QA1-01 on /chat: reload gives an empty conversation",
+ "family": "state",
+ "owner": "painter",
+ "kind": "ui",
+ "found": "2026-11-14",
+ "note": "On the frozen /chat surface the reload shows an empty New conversation.",
+ "own": [
+  "kept-after-reload"
+ ],
+ "surface": "chat",
+ "priority": "low",
+ "turns": [
+  {
+   "say": "explain how a refrigerator works, step by step",
+   "source": {
+    "log": "20261114-233618-c9",
+    "logs": "qa",
+    "turns": [
+     "p1"
+    ]
+   },
+   "do": [
+    {
+     "a": "reload"
+    }
+   ],
+   "check": [
+    {
+     "k": "kept-after-reload"
+    }
+   ]
+  }
+ ],
+ "generic": false
+}

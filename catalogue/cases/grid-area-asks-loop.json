@@ -1,0 +1,28 @@
+{
+ "id": "grid-area-asks-loop",
+ "title": "grid-area questions loop (asks without an accepted answer)",
+ "family": "lesson-asks",
+ "owner": "brain",
+ "kind": "flow",
+ "found": "2026-11-14",
+ "note": "Fill-ahead writes asks with an empty accepted answer because the shape was never transcribed; the verifier refuses and the part is retried forever.",
+ "own": [
+  "asks-answered"
+ ],
+ "turns": [
+  {
+   "say": "write the next part of the lesson now: each small square is 1 cm; what is the area of this shape?",
+   "source": {
+    "log": "20261114-222813-c3",
+    "turns": [
+     "a1"
+    ]
+   },
+   "check": [
+    {
+     "k": "asks-answered"
+    }
+   ]
+  }
+ ]
+}

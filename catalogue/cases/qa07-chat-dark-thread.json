@@ -1,0 +1,27 @@
+{
+ "id": "qa07-chat-dark-thread",
+ "title": "QA1-07: dark-theme thread text near invisible (/chat)",
+ "family": "legibility",
+ "owner": "painter",
+ "kind": "draw",
+ "found": "2026-11-14",
+ "note": "Thread text, title and user bubble are dark grey on near black in dark appearance.",
+ "own": [
+  "legible"
+ ],
+ "surface": "chat",
+ "priority": "low",
+ "turns": [
+  {
+   "say": "mock up a checkout screen I can click through",
+   "source": {
+    "log": "20261114-235216-c165",
+    "logs": "qa",
+    "turns": [
+     "p1"
+    ]
+   },
+   "check": []
+  }
+ ]
+}
