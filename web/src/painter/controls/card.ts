@@ -29,7 +29,7 @@ export interface CardLayout {
 
 export function layoutCard(input: CardInput): CardLayout {
   const { look, inner } = input;
-  const pad = look.grid !== null ? look.grid.cell.width * 2 : Math.round(look.body * 0.8);
+  const pad = look.grid !== null ? look.grid.cell.width * 2 : Math.round(look.body * 0.5);
   const rowH = look.grid !== null ? look.grid.cell.height : Math.round(look.body * 1.3);
   const title = input.title === '' ? null : input.measure(input.title, TITLE, Math.max(rowH, inner.width + 2 * pad - 2 * pad));
   const head = title === null ? 0 : Math.ceil(title.height / 2);

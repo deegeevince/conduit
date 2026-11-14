@@ -563,6 +563,38 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
   /** the widest a control may be, in its layer's plane units: the room the flow has across */
   const controlRoom = (span: ElementSpan, fit: CanvasFit): number => fit.flow.width / planeScale(span.style.layer, viewport);
 
+  /** a card with no place of its own stands in the flow */
+  function cardIsInFlow(style: ElementStyle): boolean {
+    return style.near === null && style.group === null && !(typeof style.at === 'object' && style.at !== null);
+  }
+  /**
+   * The column of controls inside a card and the frame round it, measured with the card at the origin: `inner` is where the column
+   * goes relative to the card's own centre, `outer` the frame. The same arithmetic draws the card and reserves its room in the flow.
+   */
+  function cardRoom(group: ElementSpan, tq: number, look: LookSpec, fit: CanvasFit) {
+    if (group.figure?.kind !== 'group' || group.figure.card === undefined) return null;
+    const ps = planeScale(group.style.layer, viewport);
+    const gap = cellOf('m', viewport, look).height / ps / 4;
+    let width = 0;
+    let height = -gap;
+    let count = 0;
+    for (const member of controlSpans) {
+      if (member.parent !== group.key || (!member.carried && (member.enter === null || member.enter.start > tq))) continue;
+      const gone = exitOf(member);
+      if (gone !== null && gone.start <= tq) continue;
+      const spec = controlSpecOf(member);
+      const layout = spec === null ? null : controlLayoutOf({ span: member, value: spec.value, mood: CALM, maxWidth: (fit.flow.width * 0.8) / ps, look, viewport, fit });
+      if (layout === null) continue;
+      width = Math.max(width, layout.width);
+      height += layout.height + gap;
+      count += 1;
+    }
+    if (count === 0) return null;
+    const inner: Box = { x: -width / 2, y: -height / 2, width, height };
+    const card = layoutCard({ owner: group.key, title: group.figure.card.title, inner, measure: measurerFor(look, viewport, group.style), look: lookOf(look, viewport, fit, ps) });
+    return { inner, outer: card.outer };
+  }
+
   for (const start of starts) {
     const look = specAt(start);
     const scene = sceneAt(schedule, start);
@@ -599,6 +631,19 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
       if (layout === null) continue;
       liveControls.push(span);
       items.push({ key: span.key, order: span.order, text: '', emphasis: [], style: laidStyle(styleAt(span, start)), struck: false, replaces: null, reserve: { width: layout.width, height: layout.height } });
+    }
+    // a card of controls takes the room it will fill, as one block of the flow, so that words and controls after it stand clear of it
+    for (const group of drawn) {
+      if (group.figure?.kind !== 'group' || group.figure.card === undefined) continue;
+      if (!group.carried && (group.enter === null || group.enter.start > start)) continue;
+      const gone = exitOf(group);
+      if (gone !== null && gone.start <= start) continue;
+      const style = styleAt(group, start);
+      if (!cardIsInFlow(style)) continue;
+      const room = cardRoom(group, start, look, sceneFit);
+      if (room === null) continue;
+      liveControls.push(group);
+      items.push({ key: group.key, order: group.order, text: '', emphasis: [], style: { ...laidStyle(style), stay: 'pin' }, struck: false, replaces: null, reserve: { width: room.outer.width, height: room.outer.height } });
     }
     const sides = scene.layout === 'split' ? splitSides(schedule, scene.id) : undefined;
     // text given a point of the canvas is set by the layout, which keeps it off other text; this is where it wants its centre
@@ -1260,7 +1305,7 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
     if (members.length === 0) return null;
     const fit = fitOfElement(group, look);
     const ps = planeScale(group.style.layer, viewport);
-    const gap = cellOf('m', viewport, look).height / ps / 2;
+    const gap = cellOf('m', viewport, look).height / ps / 4;
     const layouts = new Map<string, ControlLayout>();
     let width = 0;
     let height = -gap;
@@ -1273,7 +1318,15 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
       height += layout.height + gap;
     }
     const at = styleAt(group, tq).at;
-    const middle = typeof at === 'object' && at !== null ? { x: (fit.box.x + at.x * fit.unit) / ps, y: (fit.box.y + at.y * fit.unit) / ps } : { x: (fit.flow.x + fit.flow.width / 2) / ps, y: (fit.flow.y + fit.flow.height / 2) / ps };
+    let middle = typeof at === 'object' && at !== null ? { x: (fit.box.x + at.x * fit.unit) / ps, y: (fit.box.y + at.y * fit.unit) / ps } : { x: (fit.flow.x + fit.flow.width / 2) / ps, y: (fit.flow.y + fit.flow.height / 2) / ps };
+    const pose = typeof at === 'object' && at !== null ? null : poseAt(group.key, tq, null);
+    if (pose !== null) {
+      // the flow gave the card a block; the column sits in it, under the frame's title
+      const room = cardRoom(group, tq, look, fit);
+      const outer = room?.outer ?? { x: 0, y: 0, width, height };
+      const shift = room === null ? 0 : outer.y + outer.height / 2 - (room.inner.y + room.inner.height / 2);
+      middle = { x: pose.x, y: pose.y - shift };
+    }
     const inner: Box = { x: middle.x - width / 2, y: middle.y - height / 2, width, height };
     const slots = new Map<string, { x: number; y: number }>();
     let top = inner.y;

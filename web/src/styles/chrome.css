@@ -787,6 +787,10 @@ input {
   align-items: center;
   min-height: var(--control-height);
   padding: 0 var(--space-2);
+  max-width: 15rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .action--review[hidden] {

@@ -107,6 +107,7 @@ export function mountActions(host: HTMLElement, app: StageApp, transcript: Trans
     credit.target = '_blank';
     credit.rel = 'noopener noreferrer';
     credit.textContent = app.attribution.text;
+    credit.title = app.attribution.text;
     group.append(credit);
   }
 

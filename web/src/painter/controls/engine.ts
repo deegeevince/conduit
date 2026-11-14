@@ -60,9 +60,9 @@ function metricsOf(input: ControlInput): Metrics {
   const grid = look.grid !== null;
   const cellW = look.grid?.cell.width ?? 1;
   const cellH = look.grid?.cell.height ?? 1;
-  const pad = grid ? cellW * 2 : Math.round(look.body * 0.6);
-  const gap = grid ? cellW : Math.max(4, Math.round(look.body * 0.35));
-  const wanted = look.body * 1.3 + pad;
+  const pad = grid ? cellW * 2 : Math.round(look.body * 0.35);
+  const gap = grid ? cellW : Math.max(4, Math.round(look.body * 0.3));
+  const wanted = look.body * 1.15 + pad;
   const row = Math.max(input.minTarget, grid ? Math.ceil(wanted / cellH) * cellH : Math.ceil(wanted));
   // two strokes larger than the track is the floor; a knob must also be big enough to see and to aim at
   const knob = Math.max(3 * look.stroke, Math.round(look.body * 0.85));

@@ -3,11 +3,11 @@
 # button asks the brain for what it cannot know.
 
 scene figure lines=3
-line ground 10,78 150,78 thick=1
+line ground 10,78 104,78 thick=1
 rect post 30,48 3x30 fill=ink
-line shadow 33,78 120,78 stroke=accent thick=2
+line shadow 33,78 90,78 stroke=accent thick=2
 circle sun 30,14 6 fill=accent soft=3
-path sky stroke=none | M30 14 Q90 6 140 60
+path sky stroke=none | M30 14 Q70 6 98 52
 card tools | Try it
 slider height 10 80 20 unit=deg in=tools | Height of the sun
 toggle shade on in=tools | Show the shadow
@@ -17,5 +17,5 @@ bind height | line shadow 33,78 38,78
 bind shade=off | set shadow opacity=0
 bind view=dusk | set sun fill=#ff8a4c
 bind view=night | set sun fill=dim
-say | At {height} degrees a 3 m post throws a shadow {round(3/tan(rad(height)), 1)} m long.
+say | With the sun at {height}, a 3 m post throws a shadow {round(3/tan(rad(height)), 1)} m long.
 button ask | Why is it longer at dusk?
