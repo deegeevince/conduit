@@ -42,6 +42,7 @@ import type {
   Texture,
   TuneVoice,
   Weight,
+  AppShelf,
 } from './vocabulary';
 
 export type HexColor = HexString;
@@ -334,6 +335,8 @@ export interface StructureLine {
   readonly voice?: TuneVoice;
   /** an app: the height it asks for, canvas units (the stage gives it the width); absent: the default */
   readonly height?: number;
+  /** v2.1. an app: the library shelf it asks for (`uses=physics,sound`); absent: none */
+  readonly uses?: readonly AppShelf[];
   /** a table: its numbers are drawn as bars beside the figures */
   readonly bars?: boolean;
   /** the room it is laid out in, canvas units; absent means the whole canvas */

@@ -14,6 +14,9 @@ const base = args[0] ?? 'http://127.0.0.1:4881';
 const flag = (name) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : undefined; };
 const chromePath = flag('--chrome') ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const only = flag('--only');
+// --shelf: every fixture runs in an app that asked for the whole library shelf, so the libraries are in the page beside it
+const shelf = args.includes('--shelf');
+const USES = JSON.stringify(['physics', 'sound', 'maths', 'charts', 'graphs']);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const hits = [];
@@ -50,7 +53,7 @@ async function check(name, depth) {
   await sleep(1200);
   const fixture = (await evaluate('window.__surfaceBench.fixtures')).find((f) => f.name === name);
   const settle = name === 'busy-loop' ? 6500 : 2600;
-  const result = JSON.parse(await evaluate(`window.__surfaceBench.run(${JSON.stringify(name)}, ${depth}, ${settle}).then(function(r){return JSON.stringify(r)})`));
+  const result = JSON.parse(await evaluate(`window.__surfaceBench.run(${JSON.stringify(name)}, ${depth}, ${settle}, undefined, ${shelf ? USES : 'undefined'}).then(function(r){return JSON.stringify(r)})`));
   const must = JSON.parse(await evaluate(`JSON.stringify(window.__surfaceBench.must(${JSON.stringify(name)}))`).catch(() => 'null') ?? 'null');
   const mine = hits.filter((url) => url.startsWith(`/${name}`));
   const said = result.events.filter((e) => e.name === 'result').map((e) => String(e.value));
@@ -64,6 +67,7 @@ async function check(name, depth) {
   if (said.some((v) => v.startsWith('RAN:')) && must?.denied) problems.push(`it got through: ${said.join(' ')}`);
   if (must?.ended && result.probe?.held !== must.ended) problems.push(`not ended as ${must.ended}: held is ${result.probe?.held}`);
   if (must?.events !== undefined && result.events.length > must.events) problems.push(`${result.events.length} events reached the stage, at most ${must.events}`);
+  if (must?.pictures !== undefined && (result.pictureAsks ?? 0) > must.pictures) problems.push(`${result.pictureAsks} picture asks reached the host, at most ${must.pictures}`);
   if (must?.refused !== undefined && (result.probe?.refused ?? 0) < must.refused) problems.push(`only ${result.probe?.refused ?? 0} messages refused, at least ${must.refused}`);
   const ok = problems.length === 0;
   if (!ok) failures += 1;

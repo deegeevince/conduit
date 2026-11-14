@@ -58,7 +58,7 @@ export function tokenCss(tokens: SurfaceTokens): string {
  * so is anything that could set rules for the page or reach outside it. The policy stops each of the latter on its own; this keeps the page's
  * own text honest as well.
  */
-export function cleanMarkup(source: string): string {
+export function cleanMarkup(source: string, defer = true): string {
   return source
     .replace(/<!doctype[^>]*>/gi, '')
     .replace(/<\/?(?:html|head|body)\b[^>]*>/gi, '')
@@ -66,6 +66,8 @@ export function cleanMarkup(source: string): string {
     .replace(/<base\b[^>]*>/gi, '')
     .replace(/<link\b[^>]*>/gi, '')
     .replace(/<(iframe|object|embed|frame|frameset|applet)\b[\s\S]*?(?:<\/\1\s*>|$)/gi, '')
+    // an inline script is written inert and set going by the bridge once the frame has a layout (see `release` in the bridge)
+    .replace(/<script\b([^>]*)>/gi, (tag: string, attrs: string) => (!defer || /\b(?:src|type)\s*=/i.test(attrs) ? tag : `<script${attrs} type="application/x-conduit-app">`))
     .replace(/<form\b/gi, '<div data-was-form')
     .replace(/<\/form\s*>/gi, '</div>');
 }
@@ -83,6 +85,8 @@ const BRIDGE = String.raw`(function () {
   var boot = __BOOT__;
   var state = boot.state;
   var shooter = null;
+  var pictureAsks = 0;
+  var pictureWaits = {};
   // Side doors the policy cannot close (WebRTC reaches the network without asking it): the constructors are removed before any of the app's
   // code runs. Depth, not a wall; the frame has no second realm to take them back from (frames and workers are refused by policy).
   var doors = ['RTCPeerConnection', 'webkitRTCPeerConnection', 'RTCDataChannel', 'RTCSessionDescription', 'RTCIceCandidate', 'WebTransport', 'EventSource', 'WebSocket', 'XMLHttpRequest', 'fetch', 'Worker', 'SharedWorker'];
@@ -120,6 +124,18 @@ const BRIDGE = String.raw`(function () {
     },
     // conduit.snapshot(function () { return canvas; }): the app draws its own picture, when the document cannot be copied faithfully
     snapshot: function (draw) { shooter = typeof draw === 'function' ? draw : null; },
+    // await conduit.picture('words', { w, h }): a photograph for the words, as { url: a data: address, credit: the line to show }, or null (no picture service, none found, too many asked for). The page asks on the app's behalf; the frame reaches nothing.
+    picture: function (query, size) {
+      return new Promise(function (resolve) {
+        if (pictureAsks >= 4 || typeof query !== 'string' || query.replace(/\s+/g, '') === '') { resolve(null); return; }
+        pictureAsks += 1;
+        var ask = pictureAsks;
+        var o = size && typeof size === 'object' ? size : {};
+        pictureWaits[ask] = resolve;
+        post('picture', { id: ask, query: query.slice(0, 80), w: +o.w > 0 ? Math.min(+o.w, 4000) : 0, h: +o.h > 0 ? Math.min(+o.h, 4000) : 0 });
+        setTimeout(function () { if (pictureWaits[ask]) { delete pictureWaits[ask]; resolve(null); } }, 25000);
+      });
+    },
     tokens: boot.tokens
   };
   Object.freeze(api);
@@ -203,21 +219,61 @@ const BRIDGE = String.raw`(function () {
     if (!data || data.conduit !== 1 || data.ch !== boot.ch) return;
     if (data.type === 'ping' && typeof data.n === 'number') post('pong', { n: data.n });
     else if (data.type === 'shoot' && typeof data.id === 'number') shoot(data.id);
+    else if (data.type === 'picture' && typeof data.id === 'number') { var wait = pictureWaits[data.id]; if (wait) { delete pictureWaits[data.id]; wait(typeof data.url === 'string' && data.url.indexOf('data:image/') === 0 ? { url: data.url, credit: String(data.credit || '').slice(0, 300) } : null); } }
     else if (data.type === 'data' && data.tokens && typeof data.tokens === 'object') wear(data.tokens);
   });
   addEventListener('error', function (event) { post('fault', { message: String(event.message || 'error').slice(0, 200) }); });
   addEventListener('unhandledrejection', function (event) { post('fault', { message: String((event.reason && event.reason.message) || event.reason || 'rejected').slice(0, 200) }); });
   var started = false;
   var lastHeight = 0;
+  var lastWidth = 0;
   function ready() { if (started) return; started = true; post('ready', {}); report(); setInterval(report, 700); }
-  function report() { var h = Math.ceil(document.documentElement.scrollHeight); if (h !== lastHeight) { lastHeight = h; post('size', { height: h }); } }
-  addEventListener('load', ready);
-  if (document.readyState === 'complete') ready();
+  function report() { var h = Math.ceil(document.documentElement.scrollHeight); var w = Math.ceil(document.documentElement.scrollWidth); if (h !== lastHeight || w !== lastWidth) { lastHeight = h; lastWidth = w; post('size', { height: h, width: w }); } }
+  addEventListener('resize', function () { if (started) report(); });
+  // The app's own scripts were written inert (cleanMarkup) and run here, once the frame has a layout: a script that measures its room as it starts
+  // (a canvas sized from its box) reads zero in a frame that has only just been made. Order is kept; the events it may have missed are told again.
+  var sawDom = false;
+  var sawLoad = false;
+  var released = false;
+  addEventListener('DOMContentLoaded', function () { sawDom = true; });
+  addEventListener('load', function () { sawLoad = true; });
+  function release() {
+    if (released) return;
+    released = true;
+    var held = document.querySelectorAll('script[type="application/x-conduit-app"]');
+    for (var i = 0; i < held.length; i++) {
+      var live = document.createElement('script');
+      live.textContent = held[i].textContent;
+      held[i].parentNode.replaceChild(live, held[i]);
+    }
+    if (sawDom) { try { document.dispatchEvent(new Event('DOMContentLoaded', { bubbles: true })); } catch (e) {} }
+    if (sawLoad) { try { window.dispatchEvent(new Event('load')); } catch (e) {} }
+    ready();
+  }
+  function laidOut(tries) {
+    var box = document.body && document.body.getBoundingClientRect();
+    if ((box && box.width > 0) || tries > 60) release();
+    else setTimeout(function () { laidOut(tries + 1); }, 8);
+  }
+  function begin() { laidOut(0); }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', begin);
+  else begin();
 })();`;
+
+/** The page's own base rules: the look's variables are used by them, and a real page says its own over them. */
+const BASE_CSS = [
+  '*,*::before,*::after{box-sizing:border-box}',
+  'html,body{margin:0;min-height:100%}',
+  'body{background:var(--ground);color:var(--ink);font:var(--font-px)/1.45 var(--font);-webkit-text-size-adjust:100%}',
+  ':where(button,input,select,textarea){font:inherit;color:inherit}',
+  ':where(button){min-height:44px;padding:0 calc(var(--gap)*1.4);border:0;border-radius:var(--radius);background:var(--accent);color:var(--on-accent);cursor:pointer}',
+  ':where(input,select,textarea){min-height:44px;padding:0 var(--gap);border:1px solid var(--line);border-radius:var(--radius);background:transparent}',
+  ':where(a){color:var(--accent)}',
+].join('');
 
 /** The page, whole. `channel` is the secret the host and this page share for the life of the frame; `state` is the app's saved state as JSON text, or null. */
 /** `depth` false leaves the boot script's own removals out, so a check can see the policy hold alone (the hostile bench only; a host never sets it). */
-export function buildSurfaceDocument(input: { readonly source: string; readonly tokens: SurfaceTokens; readonly channel: string; readonly state: string | null; readonly depth?: boolean }): string {
+export function buildSurfaceDocument(input: { readonly source: string; readonly tokens: SurfaceTokens; readonly channel: string; readonly state: string | null; readonly depth?: boolean; readonly shelf?: string }): string {
   const { tokens } = input;
   let restored: unknown = null;
   if (input.state !== null) {
@@ -233,15 +289,7 @@ export function buildSurfaceDocument(input: { readonly source: string; readonly 
     state: restored,
     tokens: { ink: tokens.ink, ground: tokens.ground, accent: tokens.accent, onAccent: tokens.onAccent, alt: tokens.alt, dim: tokens.dim, line: tokens.line, good: tokens.good, bad: tokens.bad, font: tokens.font, fontPx: tokens.fontPx, radius: tokens.radius, gap: tokens.gap, dark: tokens.dark },
   });
-  const base = [
-    '*,*::before,*::after{box-sizing:border-box}',
-    'html,body{margin:0;min-height:100%}',
-    'body{background:var(--ground);color:var(--ink);font:var(--font-px)/1.45 var(--font);-webkit-text-size-adjust:100%}',
-    ':where(button,input,select,textarea){font:inherit;color:inherit}',
-    ':where(button){min-height:44px;padding:0 calc(var(--gap)*1.4);border:0;border-radius:var(--radius);background:var(--accent);color:var(--on-accent);cursor:pointer}',
-    ':where(input,select,textarea){min-height:44px;padding:0 var(--gap);border:1px solid var(--line);border-radius:var(--radius);background:transparent}',
-    ':where(a){color:var(--accent)}',
-  ].join('');
+  const base = BASE_CSS;
   return [
     '<!doctype html>',
     '<html lang="en"><head>',
@@ -250,8 +298,54 @@ export function buildSurfaceDocument(input: { readonly source: string; readonly 
     '<meta name="viewport" content="width=device-width, initial-scale=1">',
     `<style>${tokenCss(tokens)}${base}</style>`,
     `<script>${BRIDGE.replace('__BOOT__', () => boot).replace('__STATE_MAX__', String(SURFACE_LIMITS.state))}</script>`,
+    // the vetted libraries the app asked for (web/src/surfaces/shelf): after the bridge (so its removals have run) and before the app's own script
+    ...(input.shelf === undefined || input.shelf === '' ? [] : [input.shelf]),
     '</head><body>',
     cleanMarkup(input.source.slice(0, SURFACE_SOURCE_MAX)),
+    '</body></html>',
+  ].join('\n');
+}
+
+/**
+ * A live app as one standalone page, ready to publish: the brain's source, the shelf libraries it used (inlined), pictures it asked for embedded as `data:`
+ * addresses with their credits kept, and the bridge replaced by a small stand-in so `conduit.*` calls do not throw: `state` lives in `localStorage` (so a cart survives a
+ * reload), `send` and `ask` do nothing, `snapshot` does nothing, and `picture` answers from the pictures already embedded. No policy, no frame: it is the page.
+ */
+export function buildStandalonePage(input: { readonly source: string; readonly tokens: SurfaceTokens; readonly shelf: string; readonly title: string; readonly pictures: Readonly<Record<string, { readonly url: string; readonly credit: string }>> }): string {
+  const title = input.title.trim() === '' ? 'Page' : input.title.trim();
+  const safeTitle = title.replace(/[<>&"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' })[c] ?? c);
+  const credits = Object.values(input.pictures).map((p) => p.credit).filter((c) => c !== '');
+  const stub = String.raw`(function () {
+  var pictures = __PICTURES__;
+  var key = 'conduit.page.' + __KEY__;
+  window.conduit = Object.freeze({
+    send: function () {},
+    ask: function () {},
+    state: function (next) {
+      try {
+        if (arguments.length === 0) { var text = localStorage.getItem(key); return text === null ? null : JSON.parse(text); }
+        localStorage.setItem(key, JSON.stringify(next));
+      } catch (e) {}
+      return arguments.length === 0 ? null : undefined;
+    },
+    snapshot: function () {},
+    picture: function (query) { var found = pictures[String(query)]; return Promise.resolve(found === undefined ? null : found); },
+    tokens: __TOKENS__
+  });
+})();`;
+  const tokens = scriptJson({ ink: input.tokens.ink, ground: input.tokens.ground, accent: input.tokens.accent, onAccent: input.tokens.onAccent, alt: input.tokens.alt, dim: input.tokens.dim, line: input.tokens.line, good: input.tokens.good, bad: input.tokens.bad, font: input.tokens.font, fontPx: input.tokens.fontPx, radius: input.tokens.radius, gap: input.tokens.gap, dark: input.tokens.dark });
+  return [
+    '<!doctype html>',
+    '<html lang="en"><head>',
+    '<meta charset="utf-8">',
+    '<meta name="viewport" content="width=device-width, initial-scale=1">',
+    `<title>${safeTitle}</title>`,
+    ...(credits.length === 0 ? [] : [`<!-- Picture credits:\n${credits.map((c) => c.replace(/--+/g, '-')).join('\n')}\n-->`]),
+    `<style>${tokenCss(input.tokens)}${BASE_CSS}</style>`,
+    `<script>${stub.replace('__PICTURES__', () => scriptJson(input.pictures)).replace('__KEY__', () => scriptJson(title)).replace('__TOKENS__', () => tokens)}</script>`,
+    ...(input.shelf === '' ? [] : [input.shelf]),
+    '</head><body>',
+    cleanMarkup(input.source.slice(0, SURFACE_SOURCE_MAX), false),
     '</body></html>',
   ].join('\n');
 }

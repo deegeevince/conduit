@@ -48,7 +48,7 @@ import {
   dwellSeconds,
   waitSeconds,
 } from './timing';
-import type { Anchor, TuneVoice } from './vocabulary';
+import type { Anchor, AppShelf, TuneVoice } from './vocabulary';
 import type { BindOn, CanvasBox, ControlLine, SceneLine, ControlValue, CreatingLine, DatasetRef, Issue, IssueCode, Line, Paint, Point, Range, ShapeGeometry, StructureLine, StyleProps, Target, When } from './types';
 import { cachedTune, tuneRowsOf } from './tune';
 import { BACKDROP_LAYERS, CANVAS, CONTROL, DEFAULT_CANVAS, DEFAULT_CHART, DEFAULT_LOOK, DEFAULT_TUNE_VOICE, LIMITS, STRUCTURE } from './vocabulary';
@@ -186,6 +186,8 @@ export type Figure =
       readonly sealed?: number | null;
       /** An app: the height it asked for, canvas units; null: the default */
       readonly height?: number | null;
+      /** v2.1. An app: the library shelf it asked for; absent or empty: none */
+      readonly uses?: readonly AppShelf[];
       /** the room it is laid out in, canvas units; null: the whole canvas */
       readonly box: CanvasBox | null;
       /** a map joins its pins in the order written */
@@ -1055,7 +1057,7 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
         bars: line.verb === 'table' && line.bars === true,
         ...(line.verb === 'code' && { lang: line.lang ?? null, file: line.file ?? null }),
         ...(line.verb === 'tune' && { tempo: line.tempo ?? null, voice: line.voice ?? DEFAULT_TUNE_VOICE, sealed: null }),
-        ...(line.verb === 'app' && { height: line.height ?? null, sealed: null }),
+        ...(line.verb === 'app' && { height: line.height ?? null, sealed: null, ...((line.uses?.length ?? 0) > 0 && { uses: line.uses }) }),
         box: line.box ?? null,
         route: line.route ?? false,
         rows: openFigure?.kind === 'structure' ? openFigure.rows : [],

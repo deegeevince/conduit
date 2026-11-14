@@ -47,6 +47,8 @@ import {
   CODE_LANGUAGES,
   TUNE_VOICES,
   APP_HEIGHT,
+  APP_SHELVES,
+  APP_SHELF_ALIASES,
   CONTROL_VERBS,
   DIRECTIONS,
   ENTER_EFFECTS,
@@ -81,7 +83,7 @@ import {
   WEIGHTS,
 } from './vocabulary';
 import { REFINE_LIMITS } from './wire';
-import type { AmbientKind, Amount, Anchor, CameraMove, CameraSpeed, ControlVerb, FxName, ShapeVerb, StructureVerb, Verb } from './vocabulary';
+import type { AmbientKind, Amount, AppShelf, Anchor, CameraMove, CameraSpeed, ControlVerb, FxName, ShapeVerb, StructureVerb, Verb } from './vocabulary';
 
 const NAME_PATTERN = /^[a-z][a-z0-9_-]*$/;
 const HEX_PATTERN = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/;
@@ -989,7 +991,15 @@ function parseStructure(verb: StructureVerb, head: Head, text: string | null, is
     else if ((key === 'voice' || key === 'instrument' || key === 'sound') && verb === 'tune' && oneOf(TUNE_VOICES, value)) line.voice = value;
     else if ((key === 'voice' || key === 'instrument' || key === 'sound') && verb === 'tune') issues.warn('bad-value', `voice=${value} is not one of ${TUNE_VOICES.join(' | ')}; a piano is used`, pair.token);
     else if ((key === 'tempo' || key === 'bpm') && verb === 'tune' && /^\d+(\.\d+)?$/.test(value) && Number(value) >= TUNE_TEMPO_RANGE.min && Number(value) <= TUNE_TEMPO_RANGE.max) line.tempo = Number(value);
-    else if (key === 'height' && verb === 'app' && /^\d+(\.\d+)?$/.test(value)) line.height = Math.max(APP_HEIGHT.min, Math.min(APP_HEIGHT.max, Number(value)));
+    else if ((key === 'uses' || key === 'use' || key === 'with') && verb === 'app') {
+      const asked: AppShelf[] = [];
+      for (const word of value.split(/[,+\s]+/).filter((entry) => entry !== '')) {
+        const shelf = oneOf(APP_SHELVES, word) ? word : APP_SHELF_ALIASES[word];
+        if (shelf === undefined) issues.warn('bad-value', `uses=${word} is not on the shelf (${APP_SHELVES.join(' | ')}); ignored`, pair.token);
+        else if (!asked.includes(shelf)) asked.push(shelf);
+      }
+      if (asked.length > 0) line.uses = asked;
+    } else if (key === 'height' && verb === 'app' && /^\d+(\.\d+)?$/.test(value)) line.height = Math.max(APP_HEIGHT.min, Math.min(APP_HEIGHT.max, Number(value)));
     else if (key === 'height' && verb === 'app') issues.warn('bad-value', `height=${value} is not a number of canvas units from ${APP_HEIGHT.min} to ${APP_HEIGHT.max}; ${APP_HEIGHT.default} is used`, pair.token);
     else if ((key === 'tempo' || key === 'bpm') && verb === 'tune') issues.warn('bad-value', `tempo=${value} is not a number of beats a minute from ${TUNE_TEMPO_RANGE.min} to ${TUNE_TEMPO_RANGE.max}; the score's own is used`, pair.token);
     else issues.warn('unknown-key', `"${key}" is not a property here; ignored`, pair.token);
