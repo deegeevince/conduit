@@ -131,6 +131,7 @@ export function sightOf(timeline: Timeline, schedule: Schedule, base: StageBase,
     readonly resting: boolean;
     readonly notes: SightNote[];
   }
+  const layoutNotes = timeline.layoutNotesAt(restAt);
   const entries: Entry[] = [];
   for (const element of shown) {
     const fit = fitOf(element.scene);
@@ -151,7 +152,7 @@ export function sightOf(timeline: Timeline, schedule: Schedule, base: StageBase,
     }
     box ??= { x: 0, y: 0, w: 0, h: 0 };
     const topLeft = canvasToStage({ x: box.x, y: box.y }, fit, 'mid', viewport);
-    entries.push({ element, box, screenBox: { x: topLeft.x, y: topLeft.y, w: box.w * fit.unit, h: box.h * fit.unit }, resting, notes: [] });
+    entries.push({ element, box, screenBox: { x: topLeft.x, y: topLeft.y, w: box.w * fit.unit, h: box.h * fit.unit }, resting, notes: [...(layoutNotes.get(element.key) ?? [])] });
   }
 
   const filled = (entry: Entry): ShapeFrame | null => {

@@ -219,7 +219,16 @@ export function createPainter(options: PainterOptions): Painter {
     return `${total}x, last: ${lastFault}`;
   };
 
-  const timelineContext = (): TimelineContext => ({ viewport, reducedMotion, lockLook, paintings, onFault: noteFault });
+  /** playhead seconds at which each part of a structure (and each row) was heard: what its layout epochs begin at */
+  const arrivals = new Map<string, number>();
+  const noteArrivals = (schedule: Schedule, at: number): void => {
+    for (const element of schedule.elements) {
+      if (element.kind !== 'structure' && element.kind !== 'node' && element.kind !== 'link') continue;
+      if (!element.carried && !arrivals.has(element.key)) arrivals.set(element.key, at);
+      if (element.figure?.kind === 'structure') element.figure.rows.forEach((_, i) => arrivals.has(`${element.key}#r${i}`) || arrivals.set(`${element.key}#r${i}`, at));
+    }
+  };
+  const timelineContext = (): TimelineContext => ({ viewport, reducedMotion, lockLook, paintings, onFault: noteFault, arrivals });
 
   /** Every picture the stage has is accounted for: waiting for its painting if the server can paint, unpainted if not. */
   const syncPaintings = (schedule: Schedule): void => {
@@ -889,7 +898,7 @@ export function createPainter(options: PainterOptions): Painter {
     if (anticipation !== null) return;
     const reading = clock.read();
     const views = timeline.viewsAt(instantOf(reading));
-    const view = views.find((item) => item.key === key);
+    const view = views.find((item) => item.key === key) ?? views.find((item) => item.key === key.split('/')[0]);
     if (view === undefined) return;
     emitBack({ type: 'tap', turn: turn === null ? null : turn.id, id: view.id, text: view.text, playhead: reading.playhead, choice: view.tappable });
   };
@@ -942,6 +951,7 @@ export function createPainter(options: PainterOptions): Painter {
       open.issues.set(seq, [...result.issues]);
       open.ack = Math.max(open.ack, seq);
       if (!open.started) startTurnState();
+      noteArrivals(result.schedule, reading.playhead);
       rebuild(result.schedule);
       // Once the viewer has asked to see it all, what the brain writes next lands already settled.
       if (open.showingAll) clock.jump(settledEnd());

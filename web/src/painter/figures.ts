@@ -24,6 +24,7 @@ import { ease } from './ease';
 import { bodySize } from './layout/metrics';
 import { morphedOutline, wobbled } from './outline';
 import { has, own } from './own';
+import { laidOutOf } from './registry';
 
 /** What is known about a painting at this moment. Arrival is not on the turn clock, so it comes in from outside. */
 export interface Painting {
@@ -340,6 +341,8 @@ function nearestShare(line: Polyline, point: Pt): number {
 }
 
 function trackOutline(key: string, sc: Scn): Polyline | null {
+  const route = laidOutOf(sc.schedule)?.routeOf(key, sc.tq);
+  if (route !== undefined && route !== null) return route;
   const track = sc.idx.byKey.get(key);
   const figure = track?.figure;
   if (track === undefined || figure === undefined || figure === null || figure.kind !== 'shape') return null;
@@ -686,6 +689,7 @@ export function groupMatrixAt(group: ElementSpan, schedule: Schedule, time: numb
 /** The box a drawn element occupies on the canvas at `time`, canvas units: used for `near=`, for `cam focus`, and for the sight report. */
 export function canvasBoxOf(element: ElementSpan, schedule: Schedule, time: number): CanvasRect | null {
   if (element.kind === 'text' || element.kind === 'field') return null;
+  if (element.kind === 'structure' || element.kind === 'node' || element.kind === 'link' || element.kind === 'control') return laidOutOf(schedule)?.boxOf(element.key, time) ?? null;
   return unionBox(element, schedule, time, null, 'out');
 }
 
@@ -739,7 +743,7 @@ function isHex(paint: Paint): paint is `#${string}` {
   return paint.startsWith('#');
 }
 
-function paintColour(paint: Paint, look: LookSpec): Colour {
+export function paintColour(paint: Paint, look: LookSpec): Colour {
   let cache = paintCache.get(look);
   if (cache === undefined) {
     cache = new Map();

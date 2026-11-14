@@ -1,5 +1,5 @@
-import { ENTER_SECONDS, exitSeconds, isInFlow, isStruckAt, lookOfStage, PACE_TIMING, sceneAt, styleAt, valueAt } from '@conduit/language';
-import type { ClockState, ElementChange, ElementSpan, ElementStyle, ExitEffect, Layer, LookId, Mood, ResolvedLook, SceneSpan, Schedule, StageBase } from '@conduit/language';
+import { describeFigure, ENTER_SECONDS, exitSeconds, isInFlow, isStruckAt, lookOfStage, PACE_TIMING, sceneAt, styleAt, valueAt } from '@conduit/language';
+import type { SightNote, ClockState, ElementChange, ElementSpan, ElementStyle, ExitEffect, Layer, LookId, Mood, ResolvedLook, SceneSpan, Schedule, StageBase } from '@conduit/language';
 import type { CameraSpan } from '@conduit/language';
 import type { Colour, ElementFrame, FigureFrame, Frame, RunFrame, ShapeFrame } from '../contracts/frame';
 import type { LookSpec, MotionRecipe, MoodCharacter } from '../contracts/look';
@@ -7,6 +7,8 @@ import type { ElementPhase, StageElementView } from '../contracts/painter';
 import { layerZ, MAX_DOLLY, planeScale, projectToScreen, restDistance } from '../contracts/space';
 import type { Box, CameraPose, Viewport } from '../contracts/space';
 import { LOOKS, specFor } from '../looks';
+import type { StructureEngine } from '../contracts/blocks';
+import { buildStructures } from './structures';
 import { cameraAt } from './camera';
 import { canvasToStage, fitCanvas } from './canvas';
 import type { CanvasFit } from './canvas';
@@ -29,6 +31,10 @@ export interface TimelineContext {
   readonly paintings: ReadonlyMap<string, Painting>;
   /** told of anything that threw while a frame was made; the element that threw is left out of that frame. Without it the error is thrown. */
   readonly onFault?: (error: unknown, where: string) => void;
+  /** playhead seconds at which each element (and each row, `<key>#r<i>`) was heard; what a structure's layout epochs begin at. Absent: all at the start. */
+  readonly arrivals?: ReadonlyMap<string, number>;
+  /** a stand-in structure engine, for a bench; absent: the painter's own */
+  readonly engine?: StructureEngine;
 }
 
 export interface TimelineInstant {
@@ -63,6 +69,10 @@ export interface Timeline {
   onStageAt(time: number): string[];
   /** elements the painter retired early because the scene could not hold them, with the moment each began to leave. The schedule does not know these. */
   readonly retired: ReadonlyMap<string, number>;
+  /** the last moment a structure's layout changed: the stage is still easing toward it for a moment after */
+  readonly lastLayoutChange: number;
+  /** what a structure's layout could not keep clear (`crowded`, `crossed`, `clipped`), by element key, as of `time` */
+  layoutNotesAt(time: number): ReadonlyMap<string, readonly SightNote[]>;
 }
 
 /** Seconds a laid-out element takes to approach a new place, before the mood scales it. */
@@ -1142,6 +1152,18 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
     return fitOfScene(scene ?? { id: base.scene.id, canvas: base.scene.canvas, layout: base.scene.layout }, spec);
   };
 
+  const structures = buildStructures(schedule, {
+    viewport,
+    reducedMotion,
+    arrivals: context.arrivals ?? new Map(),
+    scope: {},
+    specAt,
+    fitOf: (element, spec) => fitOfElement(element, spec),
+    flips: lockLook === null ? lookFlips : [],
+    snapAt: (time) => moodAt(time, specAt(time)).snap,
+    ...(context.engine === undefined ? {} : { engine: context.engine }),
+  });
+
   const isLiveAt = (element: ElementSpan, time: number): boolean => (element.carried || element.enter === null || element.enter.start <= time) && (element.exit === null || time < element.exit.end);
   const drawnLive = (id: string, time: number): ElementSpan | null => {
     for (let i = drawn.length - 1; i >= 0; i -= 1) {
@@ -1662,6 +1684,35 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
       }
     }
 
+    const laid = structures.any ? structures.frames(tq, aq, drawLook) : null;
+    const laidFigures = laid === null ? figs.figures : [...figs.figures, ...laid.figures].sort((a, b) => LAYER_ORDER[a.layer] - LAYER_ORDER[b.layer] || a.z - b.z);
+    const laidElements = laid === null ? evaluated.map((item) => item.frame) : [...evaluated.map((item) => item.frame), ...laid.elements].sort((a, b) => LAYER_ORDER[a.layer] - LAYER_ORDER[b.layer] || a.z - b.z);
+    const laidViews: StageElementView[] = [];
+    if (laid !== null) {
+      for (const owner of laid.owners) {
+        const ps = planeScale(owner.layer, viewport);
+        const z = layerZ(owner.layer, viewport);
+        const a = projectToScreen({ x: owner.box.x, y: owner.box.y, z }, camera, viewport);
+        const b = projectToScreen({ x: owner.box.x + owner.box.width, y: owner.box.y + owner.box.height, z }, camera, viewport);
+        const span = schedule.elements.find((element) => element.key === owner.key);
+        void ps;
+        laidViews.push({
+          key: owner.key,
+          id: owner.id,
+          kind: owner.kind,
+          text: span === undefined ? '' : span.figure === null ? span.text : describeFigure(span.figure),
+          layer: owner.layer,
+          phase: owner.phase,
+          box: { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), width: Math.abs(b.x - a.x), height: Math.abs(b.y - a.y) },
+          fontPx: owner.fontPx * a.scale,
+          colour: owner.colour,
+          contrast: owner.contrast,
+          painting: null,
+          opacity: owner.opacity,
+          tappable: owner.tappable,
+        });
+      }
+    }
     const frame: Frame = {
       time: instant.time,
       ambient: instant.ambient,
@@ -1680,12 +1731,13 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
       agitation: reducedMotion ? 0 : mood.agitation,
       dim: mood.dim,
       reducedMotion,
-      elements: evaluated.map((item) => item.frame),
-      figures: figs.figures,
+      elements: laidElements,
+      figures: laidFigures,
       fields: figs.fields,
       cursor,
     };
-    return { frame, views: [...evaluated.map((item) => item.view), ...figs.views] };
+    const drawnViews = laidViews.length === 0 ? figs.views : [...figs.views.filter((view) => !laidViews.some((laidView) => laidView.key === view.key)), ...laidViews];
+    return { frame, views: [...evaluated.map((item) => item.view), ...drawnViews] };
   };
 
   const retired = new Map<string, number>();
@@ -1700,6 +1752,8 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
     paintings,
     specAt,
     retired,
+    lastLayoutChange: structures.lastChange,
+    layoutNotesAt: structures.notesAt,
     frameAt: (instant) => compute(instant).frame,
     viewsAt: (instant) => compute(instant).views,
     onStageAt: (time) =>
@@ -1742,6 +1796,7 @@ export function settledAfter(timeline: Timeline, lockLook: LookId | null, fallba
   }
   if (lockLook === null) for (const span of schedule.looks) note((span.start + span.end) / 2);
   for (const time of timeline.retired.values()) note(time);
+  note(timeline.lastLayoutChange);
   if (last <= 0) return 0;
   const look = timeline.specAt(last);
   const scene = sceneAt(schedule, last);
