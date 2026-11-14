@@ -12,6 +12,8 @@ import { createExporter } from '../export';
 import { createHttpLink } from '../link/http-link';
 import type { HttpLink } from '../link/http-link';
 import { LOOKS } from '../looks';
+import { createSound } from '../audio/sound';
+import type { Sound } from '../audio/sound';
 import { createPainter } from '../painter';
 import { createChartEngine } from '../render/chart';
 import { createFilm } from '../painter/film';
@@ -81,6 +83,8 @@ export interface StageApp {
   readonly hook: StageHook;
   /** where this stage's charts live; null when this build has no charting engine */
   readonly charts: ChartHost | null;
+  /** v2.1. The stage's sound: a tune on it is played here. Muted, stopped and heard by the chrome. */
+  readonly sound: Sound;
   /** the line the charting engine's licence asks for, to show in the page; null when there is none */
   readonly attribution: { readonly text: string; readonly href: string } | null;
   /** whether the server can look at a draft and fix it, and whether the viewer has it switched on */
@@ -292,12 +296,18 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     chartAct: (key, action) => (chartHost === null ? Promise.reject(new Error('No charts.')) : chartHost.act(key, action)),
   });
   const chartHost: ChartHost | null = engine === null ? null : createChartHost({ engine, stage: host, access });
+  const sound = createSound();
+  // A browser lets a page make sound once the person has done something on it: the Send that asks for music is that, and so is any first click or key.
+  const wake = (): void => sound.unlock();
+  document.addEventListener('pointerdown', wake, { capture: true });
+  document.addEventListener('keydown', wake, { capture: true });
   try {
     painter = createPainter({
       renderer,
       viewport,
       lockLook,
       charts: chartHost,
+      tunes: sound,
       pointer: pointerKind(),
       reducedMotion: params.motion === 'reduced' ? true : params.motion === 'full' ? false : null,
     });
@@ -718,6 +728,8 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
    * sent; if the request cannot be made the stage goes back to how it was and the caller learns why.
    */
   async function submit(input: TurnInput, tappedKey: string | null, anticipate: boolean): Promise<string> {
+    // before anything is awaited, so that it is still the click or the key that sent it
+    sound.unlock();
     if (connecting) await connected;
     // Nothing is stopped for a turn that cannot be sent.
     if (link.status !== 'open') {
@@ -726,6 +738,8 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
       throw new Error('the connection is down, so nothing was sent; try again in a moment');
     }
     stopLocal();
+    // a new turn is a new answer: what was playing stops, and this gesture is what lets the next music begin
+    sound.stop();
     submission += 1;
     const mine = submission;
     stoppedByUser = false;
@@ -1052,6 +1066,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     painter,
     link,
     charts: chartHost,
+    sound,
     attribution: engine?.attribution ?? null,
     review: {
       get available() {
@@ -1073,6 +1088,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     demo: (name) => submit({ kind: 'demo', script: name }, null, true),
     playScript: (text) => submit({ kind: 'script', text }, null, true),
     interrupt() {
+      sound.stop();
       if (localOpen) {
         stopLocal();
         stoppedByUser = true;
@@ -1165,6 +1181,9 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
       offContext?.();
       statusListeners.clear();
       exporter?.dispose();
+      document.removeEventListener('pointerdown', wake, { capture: true });
+      document.removeEventListener('keydown', wake, { capture: true });
+      sound.dispose();
       link.close();
       painter.dispose();
       chartHost?.dispose();

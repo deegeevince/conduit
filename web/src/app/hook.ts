@@ -39,6 +39,7 @@ export function createHook(app: Omit<StageApp, 'hook'>, ready: Promise<void>): S
       painter.setControl(id, value ?? null, true);
     },
     interrupt: () => app.interrupt(),
+    music: () => ({ muted: app.sound.muted, playing: app.sound.playing(), notes: app.sound.log() }),
     showAll: () => app.showAll(),
     script: () => app.script(),
     playScript: (script) => app.playScript(script),

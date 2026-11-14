@@ -573,6 +573,7 @@ export const STRUCTURE = {
   table: { gist: 'rows `| a | b | c`, the first the header; `bars` draws its numbers as bars too', parts: 'rows', lays: 'painter' },
   chart: { gist: 'rows `| when | value`: an instrument with axes, a crosshair and zoom', parts: 'rows', lays: 'engine' },
   code: { gist: 'rows `| line` taken exactly as written, indentation kept: monospaced and highlighted, with a copy action', parts: 'rows', lays: 'engine' },
+  tune: { gist: 'rows `| line` of ABC notation, taken exactly: a piano roll that plays, with a playhead and the notes lighting as they sound', parts: 'rows', lays: 'engine' },
 } as const satisfies Record<string, { gist: string; parts: 'nodes' | 'rows'; lays: 'painter' | 'axis' | 'brain' | 'engine' }>;
 export type StructureKind = keyof typeof STRUCTURE;
 export const STRUCTURE_KINDS = keysOf(STRUCTURE);
@@ -587,6 +588,14 @@ export const CODE_LANGUAGES = [
   'lua', 'r', 'haskell', 'scala', 'perl', 'dart', 'elixir', 'ocaml', 'regex', 'dockerfile', 'makefile', 'graphql',
 ] as const;
 export type CodeLanguage = (typeof CODE_LANGUAGES)[number];
+
+/**
+ * The instruments a `tune` can be played on: a soft piano, bowed strings, a square-wave chip lead, a bell. The painter's own synthesiser
+ * makes them; there is nothing to load, and nothing to choose between but the word.
+ */
+export const TUNE_VOICES = ['piano', 'strings', 'chip', 'bell'] as const;
+export type TuneVoice = (typeof TUNE_VOICES)[number];
+export const DEFAULT_TUNE_VOICE: TuneVoice = 'piano';
 
 /** Which way a flow or a tree grows. */
 export const GROWTH = { right: 'left to right', down: 'top to bottom' } as const;
@@ -834,6 +843,12 @@ export const VERB = {
   code: {
     form: 'code [id] [lang] [file=<name>] [x,y WxH] [| title]',
     gist: 'Code, taken exactly: follow it with one `| line` per line of the source, indentation kept, a bare `|` for an empty line.',
+    time: 'starts',
+    family: 'structure',
+  },
+  tune: {
+    form: 'tune [id] [tempo=<bpm>] [voice=piano|strings|chip|bell] [x,y WxH] [| title]',
+    gist: 'Music, in ABC notation: follow it with one `| line` per line of the score (K: M: L: Q: V:1 V:2, then the notes). It is drawn as a piano roll and played when it is whole.',
     time: 'starts',
     family: 'structure',
   },
@@ -1103,6 +1118,12 @@ export const LIMITS = {
   cells: 8,
   /** lines in one `code` block; more is scrolled, not cut, up to this */
   codeRows: 400,
+  /** lines in one `tune` block */
+  tuneRows: 160,
+  /** notes in one tune; a chord is one note a pitch */
+  tuneNotes: 3000,
+  /** seconds of music in one tune; more is cut */
+  tuneSeconds: 300,
   /** characters in the file name of a `code` block */
   file: 48,
   /** characters in a link's address */

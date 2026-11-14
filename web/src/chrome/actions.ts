@@ -3,7 +3,7 @@
 
 import type { StageApp } from '../app/stage-app';
 import type { ExportRequest } from '../contracts/export';
-import { SIZES, copyScript, saveBlob, saveScript, saveStill } from './files';
+import { SIZES, copyScript, saveBlob, saveMidi, saveScript, saveStill } from './files';
 
 export interface Actions {
   dispose(): void;
@@ -123,6 +123,8 @@ export function mountActions(host: HTMLElement, app: StageApp, transcript: Trans
     }
     if (snap.turn === null) revealedFor = null;
     if (credit !== null) credit.hidden = snap.charts.length === 0;
+    const midi = menu.querySelector<HTMLButtonElement>('[data-item="midi"]');
+    if (midi !== null) midi.hidden = !snap.elements.some((element) => element.kind === 'structure' && element.text.startsWith('tune'));
     for (const item of menu.querySelectorAll<HTMLButtonElement>('[data-needs-answer]')) {
       item.setAttribute('aria-disabled', String(!answerReady));
     }
@@ -160,6 +162,7 @@ export function mountActions(host: HTMLElement, app: StageApp, transcript: Trans
     { id: 'play', label: 'Play a script…', gist: 'paste lines of Series and watch them on the stage', needsAnswer: false },
     { id: 'png', label: 'Save picture (PNG)', gist: 'the picture as it rests, as an image', needsAnswer: true },
     { id: 'svg', label: 'Save picture (SVG)', gist: 'the same picture as a drawing that scales', needsAnswer: true },
+    { id: 'midi', label: 'Save MIDI', gist: 'the tune, as a standard MIDI file', needsAnswer: true },
     { id: 'film', label: 'Save film…', gist: 'the answer playing, as a video', needsAnswer: true },
     { id: 'frames', label: 'Save frames…', gist: 'every frame, as numbered images in a zip', needsAnswer: true },
   ] as const;
@@ -428,6 +431,9 @@ export function mountActions(host: HTMLElement, app: StageApp, transcript: Trans
         break;
       case 'svg':
         saveStill(app, 'svg');
+        break;
+      case 'midi':
+        saveMidi(app);
         break;
       case 'film':
         openExport(film);

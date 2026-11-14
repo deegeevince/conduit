@@ -38,6 +38,11 @@ export const DEMOS = [
     summary: 'Source taken exactly: indentation kept, a bar inside a line only a character, a bare bar an empty line. Three listings in three languages.',
   },
   {
+    name: 'tune',
+    title: 'Tune',
+    summary: 'Music as ABC notation in two voices: a piano roll with a playhead, played by the painter\'s own synthesiser once the block is closed.',
+  },
+  {
     name: 'deck',
     title: 'Deck',
     summary: 'A talk of three slides: `deck` makes each scene a slide, and the stage stops at the end of each for the viewer to step on.',

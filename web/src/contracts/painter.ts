@@ -27,6 +27,7 @@ import type { Quality } from './frame';
 import type { Renderer } from './renderer';
 import type { Box, Viewport } from './space';
 import type { StagePlanView } from './stage-plan';
+import type { TunePlayer } from './tune';
 import type { TextSpanView } from './text-layer';
 
 export interface PainterOptions {
@@ -41,6 +42,8 @@ export interface PainterOptions {
   readonly pointer: ScreenFacts['pointer'];
   /** where this stage's charts live; absent or null: the stage has none, and the painter advertises none */
   readonly charts?: ChartHost | null;
+  /** v2.1. Where this stage's music is made; absent or null: the stage is silent, and a tune on it is drawn and its playhead kept by the painter's own clock */
+  readonly tunes?: TunePlayer | null;
   /** v2.1. Where a picture the user gave is fetched from, by its id (`pic … from=u1`); null when the id is not this conversation's. Absent: the painter draws no uploads. */
   readonly uploadUrl?: (id: string) => string | null;
 }

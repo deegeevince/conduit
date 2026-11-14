@@ -271,7 +271,7 @@ const DRAWN_FAMILIES: readonly string[] = ['drawing', 'pixels', 'composition', '
 const TAUGHT_APART: readonly string[] = ['structure', 'control'];
 const PLAIN_FX: readonly string[] = ['grain', 'glow', 'vignette', 'scanlines', 'grid'];
 /** Words of v2.1 whose forms are written in "More to say with", so the list of verbs does not say them twice when the vocabulary gains them. */
-const TAUGHT_HERE: readonly string[] = ['code', 'deck', 'standing', 'refine', 'pic'];
+const TAUGHT_HERE: readonly string[] = ['code', 'deck', 'standing', 'refine', 'pic', 'tune'];
 
 /** The system prompt for any brain that writes Series. */
 export function buildSystemPrompt({ capabilities, services }: PromptOptions): string {
@@ -286,7 +286,8 @@ export function buildSystemPrompt({ capabilities, services }: PromptOptions): st
   // A chart is taught only when there is an engine to draw it.
   const structures = draws ? capabilities.structures.filter((name) => name !== 'chart' || charts.length > 0) : [];
   // `code` is taught where the verbs for what you write are ("More to say with"), in its own words, and not twice in the list of shapes.
-  const shapes = structures.filter((name) => name !== 'code');
+  // `tune` is taught only on a turn about music (`tuneChapter`, in the brief), never here: the system prompt is full.
+  const shapes = structures.filter((name) => name !== 'code' && name !== 'tune');
   const controls = capabilities.controls;
   const textures = draws ? capabilities.textures.filter((name) => name !== 'flat') : [];
   const brushes = draws ? capabilities.brushes : [];
@@ -814,6 +815,26 @@ export function newsText(news: string): string {
   return `WHAT'S NEW IN THIS APP, newest version first. SHOW IT, never tell it: this answer is a tour, not a list. One short \`scene\` for each item that can be seen: draw that very thing (a real slider that moves a drawing, a real flow or cycle, a real chart of numbers you do not invent, a real table, a choice), and one caption naming it. No paragraphs, no bullet text, no scene that is only words. Skip an item you cannot draw. Say what is not live yet in one line at the very end. As many scenes as it takes; this overrides the habit of a short answer.\n${news}`;
 }
 
+/** Whether the user's words are about music, so that this turn is taught `tune`: play, song, melody, tune, sonata, music, chord, compose, MIDI, beat. */
+export function asksForMusic(input: TurnInput): boolean {
+  return input.kind === 'prompt' && /\b(play(?:s|ing|ed)?|songs?|melod(?:y|ies)|tunes?|sonatas?|sonatinas?|music(?:al)?|chords?|compos(?:e|es|ing|ition)|midi|beats?|lullab(?:y|ies)|waltz(?:es)?|jingles?|riffs?|minuets?|nocturnes?|etudes?|fugues?|symphon(?:y|ies)|harmon(?:y|ies)|piano|violin)\b/i.test(input.text);
+}
+
+/**
+ * What `tune` is, said only on a turn about music (never in the system prompt, which is full): the verb, an eight-bar score in two voices,
+ * and how long a requested piece is. The score is real ABC, so the model has seen the notation and needs only the shape of the block.
+ */
+export const TUNE_CHAPTER = `MUSIC (the user wants sound; the painter plays it, you do not describe it): \`tune [id] [tempo=<bpm>] [voice=piano|strings|chip|bell] | <title>\`, then one \`| row\` per line of ABC notation, taken exactly. Fields K: key, M: metre, L: unit note, Q: tempo, V:1 melody and V:2 bass. Notes C D E F G A B then c d e f g a b (an octave up), \`,\` down and \`'\` up an octave, ^ _ = accidentals, lengths 2 /2 3/2, z rest, [CEG] chord, - tie, | bars, |: :| repeats. The painter draws a piano roll and plays it from the first note as soon as you write any line after it, so close the tune with a \`say\`; its rows are notes, never words. A piece asked for is short, 16 to 32 bars, unless the user asks for more. A sonata is two or three short movements, each its own tune, with a line between. Said again, a tune is replaced; to change one, write it again. Example, eight bars in two voices:
+tune ode tempo=104 | Ode to joy
+| M:4/4
+| L:1/4
+| K:C
+| V:1
+| E E F G | G F E D | C C D E | E3/2 D/2 D2 | E E F G | G F E D | C C D E | D3/2 C/2 C2 |]
+| V:2
+| [C,E,]2 [G,,B,,]2 | [C,E,]2 [G,,B,,]2 | [C,E,]2 [F,,A,,]2 | [G,,B,,]2 [G,,B,,]2 | [C,E,]2 [G,,B,,]2 | [C,E,]2 [G,,B,,]2 | [F,,A,,]2 [E,,G,,]2 | [G,,B,,]2 [C,E,]2 |]
+say | Ode to Joy, in C.`;
+
 /** How much of the steward's status a brief carries: the first lines of each list, each cut short. */
 const STATUS_LINES = { perList: 3, chars: 110 } as const;
 
@@ -895,6 +916,8 @@ export function buildTurnBrief(context: TurnContext, input: TurnInput, form: Bri
     parts.push(appNoteText(form, about.status, context.services));
     if (about.news !== undefined && about.news !== null && about.news !== '') parts.push(newsText(about.news));
   }
+  // `tune` is taught when the words are about music, or when a tune is already on stage to be changed; never in the system prompt, which is full.
+  if (context.capabilities.structures.includes('tune') && (asksForMusic(input) || stage.elements.some((element) => element.figure?.kind === 'structure' && element.figure.structure === 'tune'))) parts.push(TUNE_CHAPTER);
   const standing = standingText(context.standing);
   if (standing !== null) parts.push(standing);
 

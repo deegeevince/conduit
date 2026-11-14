@@ -1,4 +1,4 @@
-import { CANVAS, describeFigure, outlineOf, ENTER_SECONDS, exitSeconds, isInFlow, isStruckAt, lookOfStage, PACE_TIMING, sceneAt, styleAt, valueAt } from '@conduit/language';
+import { CANVAS, DEFAULT_TUNE_VOICE, cachedTune, describeFigure, outlineOf, tuneRowsOf, ENTER_SECONDS, exitSeconds, isInFlow, isStruckAt, lookOfStage, PACE_TIMING, sceneAt, styleAt, valueAt } from '@conduit/language';
 import type { SightNote, ClockState, ElementChange, ElementSpan, ElementStyle, ExitEffect, Layer, LookId, Mood, ResolvedLook, SceneSpan, Schedule, StageBase } from '@conduit/language';
 import type { CameraSpan, Layout } from '@conduit/language';
 import type { Colour, ElementFrame, FigureFrame, Frame, RunFrame, ShapeFrame } from '../contracts/frame';
@@ -10,6 +10,7 @@ import type { ControlMood } from '../contracts/controls';
 import type { ControlValue } from '@conduit/language';
 import { LOOKS, specFor } from '../looks';
 import type { StructureEngine } from '../contracts/blocks';
+import type { TuneCue } from '../contracts/tune';
 import { chartFrames } from './charts';
 import type { ChartData } from './charts';
 import { createControlStore, compileTemplate, renderTemplate, scopeOf } from './controls';
@@ -20,7 +21,7 @@ import { controlInputOf, controlLayoutOf, placeParts } from './controls-stage';
 import type { ControlSite } from './controls-stage';
 import { layoutCard } from './controls';
 import type { ControlLayout } from '../contracts/controls';
-import { lookOf, measurerFor } from './structures';
+import { lookOf, measurerFor, tuneStartOf } from './structures';
 import { CALM } from '../contracts/controls';
 import { registerLaidOut, laidOutOf } from './registry';
 import { buildStructures, setTextOnce } from './structures';
@@ -73,6 +74,13 @@ export interface TimelineInstant {
    * lit the instant the hold starts. Without it the blink keeps ambient phase.
    */
   readonly holdSince?: number;
+  /**
+   * Where each tune on stage is in its music, seconds from its first note, as the player has it (null: not sounding). A tune the map does not
+   * name is placed by the clock alone: it begins when its block is whole and runs from there, which is how a still, a film or a draft is made.
+   */
+  readonly tunes?: ReadonlyMap<string, number | null>;
+  /** the turn is closed: a tune that was the last thing said is whole */
+  readonly closed?: boolean;
 }
 
 /**
@@ -588,6 +596,7 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
   const forced = new Map<string, Forced>();
   const epochs: Epoch[] = [];
 
+  const tuneSpans = schedule.elements.filter((element) => element.figure?.kind === 'structure' && element.figure.structure === 'tune');
   const exitOf = (element: ElementSpan): { start: number; end: number; effect: ExitEffect } | null => {
     const own = element.exit;
     const extra = forced.get(element.key);
@@ -664,8 +673,9 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
       const columns = table ? Math.max(1, ...figure.rows.map((row) => row.cells.length)) : 1;
       kinds.set(element.key, chart ? 'chart' : 'structure');
       // what it would like, and the least it can be read at (a chart: its title, a few ticks and a plot; a table: its rows at the look's floor)
-      const natural = chart ? { width: 560, height: 320 } : table ? { width: Math.max(280, 150 * columns), height: 60 + 34 * figure.rows.length } : { width: 640, height: 120 + 40 * parts };
-      const least = chart ? { width: 260, height: 190 } : table ? { width: Math.max(200, 100 * columns), height: 40 + 24 * figure.rows.length } : { width: 160, height: 100 };
+      const tune = figure.structure === 'tune';
+      const natural = tune ? { width: 760, height: 260 } : chart ? { width: 560, height: 320 } : table ? { width: Math.max(280, 150 * columns), height: 60 + 34 * figure.rows.length } : { width: 640, height: 120 + 40 * parts };
+      const least = tune ? { width: 260, height: 150 } : chart ? { width: 260, height: 190 } : table ? { width: Math.max(200, 100 * columns), height: 40 + 24 * figure.rows.length } : { width: 160, height: 100 };
       list.push({
         key: element.key,
         kind: chart ? 'chart' : 'structure',
@@ -2282,7 +2292,29 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
       }
     }
 
-    let laid = structures.any ? structures.frames(tq, aq, drawLook) : null;
+    // The tunes on stage: where each is in its music, and which the player may begin
+    const tunePositions = new Map<string, number | null>();
+    const tuneCues: TuneCue[] = [];
+    for (const span of tuneSpans) {
+      const figure = span.figure;
+      if (figure === null || figure.kind !== 'structure' || (!span.carried && (span.enter === null || tq < span.enter.start))) continue;
+      const left = exitOf(span);
+      if (left !== null && tq >= left.end) continue;
+      const begins = tuneStartOf(span);
+      const played = instant.tunes?.has(span.key) === true;
+      tunePositions.set(span.key, played ? (instant.tunes?.get(span.key) ?? null) : span.carried || begins === null || tq < begins ? null : tq - begins);
+      // a tune that has come to rest with its turn is still named, so that what is playing plays out; only a tune of this turn may begin
+      const last = figure.rows[figure.rows.length - 1]?.at ?? 0;
+      const sealed = figure.sealed ?? null;
+      tuneCues.push({
+        key: span.key,
+        id: span.id,
+        voice: figure.voice ?? DEFAULT_TUNE_VOICE,
+        model: cachedTune(tuneRowsOf(figure.rows), { tempo: figure.tempo ?? null, title: span.text === '' ? null : span.text }),
+        ready: !span.carried && tq >= last && (sealed === null ? instant.closed === true : tq >= sealed),
+      });
+    }
+    let laid = structures.any ? structures.frames(tq, aq, drawLook, tunePositions) : null;
     const sites: ControlSite[] = [];
     if (controlSpans.length > 0) {
       const out: StructureFrames = laid ?? { elements: [], figures: [], owners: [] };
@@ -2346,6 +2378,7 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
     const chartFrameList = context.charts === undefined ? undefined : chartFrames(schedule, tq, aq, drawLook, { viewport, reducedMotion, camera, kinds: context.charts.kinds, data: context.charts.data, scope: scopeOf([...cindex.ids], (id) => controlNamed(id, tq)), fitOf: (element) => fitOfElement(element, drawLook, tq), roomOf: (element) => roomEasedOf(element, tq) });
     const frame: Frame = {
       ...(chartFrameList === undefined ? {} : { charts: chartFrameList }),
+      ...(tuneCues.length === 0 ? {} : { tunes: tuneCues }),
       time: instant.time,
       ambient: instant.ambient,
       wallTime: instant.wallTime,

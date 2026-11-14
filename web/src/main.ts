@@ -13,6 +13,7 @@ import { mountPermission } from './chrome/permission';
 import { mountPicker } from './chrome/picker';
 import type { Picker } from './chrome/picker';
 import { mountPromptBar } from './chrome/prompt';
+import { mountSound } from './chrome/sound';
 import { mountTranscript } from './chrome/transcript';
 import { FONTS, fontFor } from './fonts';
 import { LOOKS } from './looks';
@@ -102,6 +103,7 @@ async function start(): Promise<void> {
   window.__stage = mounted.hook;
   const transcript = mountTranscript(promptBar.extra, mounted.painter, { onChoice: (key) => mounted.choose(key) });
   mountActions(promptBar.extra, mounted, transcript, stageHost, { top: promptBar.top });
+  mountSound(promptBar.top, mounted);
   picker = mountPicker(promptBar.extra, mounted);
   mountActivity(promptBar.activity, mounted);
   mountPermission(mounted);

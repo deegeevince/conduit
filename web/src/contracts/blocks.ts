@@ -101,9 +101,10 @@ export type BlockPart =
        * `frame` (an outline round a node), `fill` (its ground), `line` (a
        * connector, a leader, an axis), `head` (an arrowhead), `grid` (a tick, a
        * rule: drawn in `dim`), `bar` (a bar or column of a chart), `marker` (a
-       * pin, a point, a dot on a timeline).
+       * pin, a point, a dot on a timeline), and, for a tune's roll, `note` (a note of the first voice: the look's accent), `note2` (of the
+       * second: its alt) and `lit` (a note sounding now).
        */
-      readonly role: 'frame' | 'fill' | 'line' | 'head' | 'grid' | 'bar' | 'marker';
+      readonly role: 'frame' | 'fill' | 'line' | 'head' | 'grid' | 'bar' | 'marker' | 'note' | 'note2' | 'lit';
       /** the row of a table or a chart it belongs to: it lands when that row does. Absent: it comes with its owner. */
       readonly row?: number;
       /** a dashed line is already cut into dashes here, as separate polylines */

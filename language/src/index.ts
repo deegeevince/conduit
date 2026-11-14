@@ -12,6 +12,7 @@ export * from './schedule';
 export * from './score';
 export * from './bind';
 export * from './chart';
+export * from './tune';
 export * from './stage';
 export * from './sight';
 export * from './wire';

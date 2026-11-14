@@ -1,6 +1,7 @@
 // What leaves the page as a file or on the clipboard: the Save menu and the slash commands both go through here, so
 // each does one thing one way.
 
+import { parseScript, parseTune, tuneToMidi } from '@conduit/language';
 import type { ExportJob, ExportRequest } from '../contracts/export';
 import type { StageApp } from '../app/stage-app';
 
@@ -79,4 +80,23 @@ export async function copyText(app: StageApp, text: string, said: string, failed
 
 export function copyScript(app: StageApp): Promise<void> {
   return copyText(app, app.script(), 'Script copied', 'The script could not be copied. Use Save script instead.');
+}
+
+/** A standard MIDI file of the last tune the answer wrote: its notes and tempo, a track a voice, the instrument it was played on. */
+export function saveMidi(app: StageApp): void {
+  const { lines } = parseScript(app.script());
+  const opener = [...lines].reverse().find((line) => line.verb === 'tune');
+  if (opener === undefined || opener.verb !== 'tune') {
+    app.announce('There is no tune to save yet');
+    return;
+  }
+  const rows = lines.filter((line) => line.verb === 'row' && line.id === opener.id).map((line) => (line.verb === 'row' ? line.cells : ''));
+  const model = parseTune(rows, { tempo: opener.tempo ?? null, title: opener.title ?? null });
+  if (model.notes.length === 0) {
+    app.announce('The tune has no notes to save');
+    return;
+  }
+  const bytes = tuneToMidi(model, opener.voice ?? 'piano');
+  saveBlob(new Blob([bytes.buffer as ArrayBuffer], { type: 'audio/midi' }), `conduit-${stamp()}.mid`);
+  app.announce('Saved the tune as a MIDI file');
 }

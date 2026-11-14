@@ -57,6 +57,8 @@ export interface StageHook {
   control(id: string, value?: ControlValue): void;
   /** The same as pressing Stop. */
   interrupt(): void;
+  /** The music: whether it is muted, which tunes are sounding, and the notes handed to the audio clock so far (for a test that cannot hear). */
+  music(): { readonly muted: boolean; readonly playing: readonly string[]; readonly notes: readonly { readonly key: string; readonly voice: string; readonly midi: number; readonly score: number; readonly when: number; readonly began: number; readonly handed: number }[] };
 
   /** The same as pressing "Show all". */
   showAll(): void;

@@ -45,9 +45,10 @@ import {
   dwellSeconds,
   waitSeconds,
 } from './timing';
-import type { Anchor } from './vocabulary';
+import type { Anchor, TuneVoice } from './vocabulary';
 import type { BindOn, CanvasBox, ControlLine, SceneLine, ControlValue, CreatingLine, DatasetRef, Issue, IssueCode, Line, Paint, Point, Range, ShapeGeometry, StructureLine, StyleProps, Target, When } from './types';
-import { BACKDROP_LAYERS, CANVAS, CONTROL, DEFAULT_CANVAS, DEFAULT_CHART, DEFAULT_LOOK, LIMITS, STRUCTURE } from './vocabulary';
+import { cachedTune, tuneRowsOf } from './tune';
+import { BACKDROP_LAYERS, CANVAS, CONTROL, DEFAULT_CANVAS, DEFAULT_CHART, DEFAULT_LOOK, DEFAULT_TUNE_VOICE, LIMITS, STRUCTURE } from './vocabulary';
 import type {
   Align,
   AmbientKind,
@@ -175,6 +176,11 @@ export type Figure =
       /** v2.1. A code block: its language as the brain wrote it, and the file it is from; absent or null: none */
       readonly lang?: string | null;
       readonly file?: string | null;
+      /** v2.1. A tune: how fast the brain asked for it to be played (quarter notes a minute; null: the score's own) and on what */
+      readonly tempo?: number | null;
+      readonly voice?: TuneVoice | null;
+      /** v2.1. A tune: the moment, on this turn's clock, that a later line closed the block, so the music is whole and can begin; null while the brain may still write notes */
+      readonly sealed?: number | null;
       /** the room it is laid out in, canvas units; null: the whole canvas */
       readonly box: CanvasBox | null;
       /** a map joins its pins in the order written */
@@ -955,6 +961,7 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
         ...(line.verb === 'chart' && { dataset: line.dataset ?? null }),
         bars: line.verb === 'table' && line.bars === true,
         ...(line.verb === 'code' && { lang: line.lang ?? null, file: line.file ?? null }),
+        ...(line.verb === 'tune' && { tempo: line.tempo ?? null, voice: line.voice ?? DEFAULT_TUNE_VOICE, sealed: null }),
         box: line.box ?? null,
         route: line.route ?? false,
         rows: openFigure?.kind === 'structure' ? openFigure.rows : [],
@@ -1350,6 +1357,17 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
         if (candidate.span.carried && candidate.style.tap && !candidate.ghost && isActive(candidate, at)) leave(candidate, at, candidate.style.exit, 'answered');
       }
     }
+    // A tune is whole when the brain says anything else: then its music can begin, and the picture knows when.
+    if (line.verb !== 'row' && line.verb !== 'revise' && line.verb !== 'cancel' && line.verb !== 'standing' && line.verb !== 'refine') {
+      for (const candidate of live) {
+        const figure = candidate.span.figure;
+        if (figure?.kind === 'structure' && figure.structure === 'tune' && !candidate.span.carried && (figure.sealed ?? null) === null && candidate.span.seq < seq) {
+          candidate.span.figure = { ...figure, sealed: Math.max(pen, entry.floor) };
+          // what of the music could not be played is said once, here, when the score is whole
+          for (const warning of cachedTune(tuneRowsOf(figure.rows), { tempo: figure.tempo ?? null, title: candidate.span.text === '' ? null : candidate.span.text }).warnings) report(seq, 'bad-value', `the tune: ${warning}`);
+        }
+      }
+    }
     switch (line.verb) {
       case 'style': {
         sheet[line.name] = line.like === undefined ? { props: line.props } : { like: line.like, props: line.props };
@@ -1421,6 +1439,7 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
       case 'table':
       case 'chart':
       case 'code':
+      case 'tune':
       case 'pic':
       case 'node':
       case 'link':
@@ -1501,11 +1520,11 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
           // A row of a table or a chart: cells between bars. It lands a step after the row before it.
           const enter = table.span.enter;
           const charted = table.span.figure.structure === 'chart';
-          const coded = table.span.figure.structure === 'code';
+          const coded = table.span.figure.structure === 'code' || table.span.figure.structure === 'tune';
           // A line of code is one cell, exactly as written: a bar in it is a bar, a space is a space, and an empty line is a row.
           const cells = coded ? [line.cells] : splitCells(line.cells);
           const step = (coded ? CODE_ROW_SECONDS : charted ? CHART_ROW_SECONDS : TABLE_ROW_SECONDS)[pace];
-          const most = coded ? LIMITS.codeRows : charted ? LIMITS.chartPoints : LIMITS.rows;
+          const most = table.span.figure.structure === 'tune' ? LIMITS.tuneRows : coded ? LIMITS.codeRows : charted ? LIMITS.chartPoints : LIMITS.rows;
           if (!coded && (isRuleRow(cells) || cells.every((cell) => cell === ''))) {
             lines.push({ seq, verb: line.verb, start: pen, end: pen });
             break;
