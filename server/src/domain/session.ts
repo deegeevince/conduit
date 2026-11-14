@@ -1,4 +1,5 @@
 import { STREAM_HEARTBEAT } from '@conduit/language';
+import { Observations } from './observations';
 import type {
   ActionRisk,
   BackEventRecord,
@@ -187,6 +188,8 @@ export interface Session {
   readonly findings: Map<string, CriticFinding>;
   /** v2.1. Confirm controls waiting for the owner, by request id */
   readonly permissions: Map<string, PendingPermission>;
+  /** SA3. What the session has seen and been told, as observations */
+  readonly obs: Observations;
 }
 
 /** In-memory sessions. There is no database; a restart forgets everything, by design. */
@@ -242,6 +245,7 @@ export class SessionStore {
       standing: [],
       findings: new Map(),
       permissions: new Map(),
+      obs: new Observations(),
     };
     this.sessions.set(session.id, session);
     return session;

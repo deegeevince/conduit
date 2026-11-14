@@ -739,7 +739,7 @@ function problemText(problem: LineProblem): string {
 }
 
 /** How the most recent answer landed: the part of the brief that makes up for the brain writing blind. */
-function landedText(memory: TurnMemory): string | null {
+function landedText(memory: TurnMemory, eyes: boolean): string | null {
   const rows: string[] = [];
   if (memory.outcome === 'unseen' || memory.outcome === 'failed') rows.push('  Nothing of it was seen.');
   if (memory.outcome === 'interrupted') {
@@ -747,7 +747,8 @@ function landedText(memory: TurnMemory): string | null {
     rows.push(`  The user interrupted${memory.playhead === null ? '' : ` at ${memory.playhead.toFixed(1)}s`}. The last things seen: ${shown}. Everything you wrote after that never happened.`);
   }
   if (memory.skippedAt !== null) rows.push(`  The user pressed "show all" at ${memory.skippedAt.toFixed(1)}s instead of watching it play: it was slower than they wanted.`);
-  if (memory.sight !== null) for (const line of describeSight(memory.sight)) rows.push(`  ${line}`);
+  // SA3: with an EYES block the sight lines are not printed; the digest carries what mattered of them.
+  if (memory.sight !== null && !eyes) for (const line of describeSight(memory.sight)) rows.push(`  ${line}`);
   for (const problem of memory.problems) rows.push(problemText(problem));
   if (memory.snapshot) rows.push('  The picture attached to this message is the stage as that answer left it.');
   return rows.length === 0 ? null : `HOW YOUR LAST ANSWER LANDED:\n${rows.join('\n')}`;
@@ -1056,9 +1057,10 @@ export function buildTurnBrief(context: TurnContext, input: TurnInput, form: Bri
       const shown = last.shown.length === 0 ? '(nothing)' : transcriptOf(last.shown).split('\n').join(' / ');
       parts.push(`LAST TURN: ${inputText(last.input)}\n  They saw: ${shown}`);
     }
-    const landed = landedText(last);
+    const landed = landedText(last, context.eyes !== undefined);
     if (landed !== null) parts.push(landed);
   }
+  if (context.eyes !== undefined && context.eyes !== null) parts.push(context.eyes);
 
   const taps = heard.flatMap((record) => (record.event.type === 'tap' && !record.event.choice ? [record.event] : []));
   if (taps.length > 0) parts.push(`THE USER POINTED AT: ${taps.map((tap) => `${tap.id} ("${tap.text}")`).join(', ')}`);

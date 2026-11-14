@@ -57,6 +57,9 @@ import type { UsageMeter } from '../usage';
 import { currentIdentity, labelOf } from '../identity';
 import { processEnvironment } from '../env';
 import { askedOf, refusalProblem, reviewTurn } from './review';
+import { quoted } from '@conduit/language';
+import { briefEyes, itemObservation, observeInput } from './observations';
+import type { NewObservation } from './observations';
 import { ENGINE_VERSION, engineMismatch, measurable, measureDraft, tryFix } from './stage-facts';
 import type { FixAttempt } from './review';
 import type { TechniqueLibrary } from './techniques';
@@ -258,7 +261,12 @@ export class Conductor {
     const brain = brains.forInput(input);
     // A process is started for the first thing the user says, not for a page that only looks (the gallery, the explorer).
     if (brain === brains.configured && (input.kind === 'prompt' || input.kind === 'tap' || input.kind === 'act')) this.prepareBrain(s);
-    const context = buildContext(s, this.servicesFor(s.capabilities, s.id));
+    // SA3. What the person did becomes observations, and the brain is given the digest of what has been seen since it last wrote.
+    const before = s.obs.all().length === 0 ? 0 : (s.obs.all()[s.obs.all().length - 1]?.seq ?? 0);
+    observeInput(s, input, now());
+    for (const made of s.obs.all().filter((one) => one.seq > before)) this.deps.sessionLog.write(s.id, { type: 'obs', turn: null, obs: made });
+    const briefed = briefEyes(s);
+    const context = { ...buildContext(s, this.servicesFor(s.capabilities, s.id)), ...(briefed.eyes === null ? {} : { eyes: briefed.eyes }) };
     const turn: ActiveTurn = {
       id: sessions.nextTurnId(),
       session: s.id,
@@ -293,6 +301,7 @@ export class Conductor {
     sessions.indexTurn(s, turn);
     log.info('turn.opened', { session: s.id, turn: turn.id, brain: brain.id, input: turn.input.kind, login: turn.login });
     this.deps.sessionLog.write(s.id, { type: 'turn', turn: turn.id, input, brain: brain.id, login: turn.login });
+    this.deps.sessionLog.write(s.id, { type: 'attention', turn: turn.id, ...briefed.record });
     this.emit(s, turn, { type: 'turn', turn: turn.id, input });
 
     // `run` ends its own turn and does not throw; this is the net under it, so that nothing can ever be an unhandled rejection from here.
@@ -692,9 +701,19 @@ export class Conductor {
         return;
       case 'tap':
         this.deps.sessionLog.write(s.id, { type: 'tap', turn: event.turn, id: event.id, text: event.text, choice: event.choice });
+        this.observe(s, event.turn, { source: 'person', kind: 'tap', on: event.id, note: `you tapped ${quoted(event.text, 60)}` });
         return;
+      case 'observe': {
+        if (!s.obs.allowObserve(this.deps.now())) {
+          this.deps.log.debug('observe.dropped', { session: s.id, items: event.items.length });
+          return;
+        }
+        for (const item of event.items) this.observe(s, s.turn?.id ?? null, itemObservation(item));
+        return;
+      }
       case 'control':
         s.held = { ...s.held, [event.id]: event.value };
+        this.observe(s, event.turn, { source: 'person', kind: 'state', on: event.id, note: `you ${event.app === true ? 'did in the app' : 'set'} ${event.id}: ${quoted(event.text, 60)}` });
         this.deps.sessionLog.write(s.id, { type: 'control', turn: event.turn, id: event.id, value: event.value, text: event.text, send: event.send, ...(event.app === true && { app: true }) });
         return;
       case 'draft':
@@ -1116,6 +1135,7 @@ export class Conductor {
       s.drift = why;
       this.deps.log.warn('engine.drift', { session: s.id, where: 'engine', why });
       this.deps.sessionLog.write(s.id, { type: 'drift', turn: s.turn?.id ?? null, where: 'engine', page: s.capabilities.engine ?? null, server: ENGINE_VERSION, why });
+      this.observe(s, s.turn?.id ?? null, { source: 'server', kind: 'drift', severity: 'fault', note: why });
     }
     return false;
   }
@@ -1135,6 +1155,7 @@ export class Conductor {
     this.deps.log.warn('engine.drift', { session: s.id, where, page: held.page, server: held.server, why });
     this.deps.sessionLog.write(s.id, { type: 'drift', turn, where, page: held.page, server: held.server, why });
     if (s.drift === null) s.drift = why;
+    this.observe(s, turn, { source: 'server', kind: 'drift', severity: 'fault', note: why });
   }
 
   private noteRefused(turn: ActiveTurn, reason: string): void {
@@ -1143,7 +1164,14 @@ export class Conductor {
     if (turn.problems.length > MAX_PROBLEMS) turn.problems.splice(0, turn.problems.length - MAX_PROBLEMS);
   }
 
+  /** SA3. Adds one observation to the session's feed and writes it to the log. */
+  private observe(s: Session, turn: string | null, made: NewObservation): void {
+    const one = s.obs.add(made, this.deps.now());
+    this.deps.sessionLog.write(s.id, { type: 'obs', turn, obs: one });
+  }
+
   private logFix(s: Session, turn: ActiveTurn, attempt: FixAttempt): void {
+    if (!attempt.shown && attempt.why !== null) this.observe(s, turn.id, { source: 'server', kind: 'refusal', severity: 'blocking', answer: true, note: `a fix was refused: ${attempt.why}` });
     this.deps.sessionLog.write(s.id, {
       type: 'fix',
       turn: turn.id,
@@ -1403,6 +1431,7 @@ export class Conductor {
     turn.rejects += 1;
     this.noteProblem(turn, raw, 'rejected', issues);
     this.deps.sessionLog.write(s.id, { type: 'reject', turn: turn.id, raw, issues });
+    this.observe(s, turn.id, { source: 'server', kind: 'refusal', severity: 'blocking', answer: true, note: `a line was refused: ${quoted(raw.split('\n')[0] ?? '', 70)}` });
     this.emit(s, turn, { type: 'reject', turn: turn.id, raw, issues });
   }
 
@@ -1522,6 +1551,7 @@ function dollars(amount: number): string {
 function concerns(event: BackEvent, turn: string): boolean {
   switch (event.type) {
     case 'ready':
+    case 'observe':
       return true;
     case 'tap':
     case 'control':

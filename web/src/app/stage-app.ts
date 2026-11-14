@@ -28,6 +28,7 @@ import { createTextLayer } from './text-layer';
 import { createLiveApps } from './live-app';
 import { createHook } from './hook';
 import { observeRenderer } from './observe';
+import { startObserver } from './observer';
 import type { AppParams } from './params';
 import { applyLook } from './theme';
 
@@ -841,6 +842,8 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
         return;
       }
     }
+    // A live app that reports its state: the eyes say so, so the brain knows the app is running and what it last held
+    if (event.type === 'control' && event.app === true && event.text.startsWith('state ')) eyes.surface(event.id, `app ${event.id} reported its state`);
     publishBack(event);
   });
 
@@ -938,11 +941,16 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     }, 0);
   }
 
+  // SA3: what only the page knows goes up as `observe` events, once the session exists
+  const eyes = startObserver(sendBack, document, connected);
   let resizeTimer: ReturnType<typeof setTimeout> | undefined;
   const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => {
     clearTimeout(resizeTimer);
     resizeTimer = setTimeout(() => {
-      if (!disposed) painter.resize(viewportOf(host));
+      if (disposed) return;
+      const next = viewportOf(host);
+      painter.resize(next);
+      eyes.viewport(next.width, next.height, next.dpr);
     }, 100);
   });
   observer?.observe(host);
@@ -1245,6 +1253,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     dispose() {
       disposed = true;
       clearTimeout(resizeTimer);
+      eyes.dispose();
       clearTimeout(startTimer);
       clearTimeout(noticeTimer);
       clearTimeout(localTimer);

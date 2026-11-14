@@ -163,6 +163,11 @@ export interface TurnContext {
    * look checks the draft against it. Absent or empty: none.
    */
   readonly standing?: readonly string[];
+  /**
+   * SA3. The `EYES` block (`digestOf`): what the eyes saw and the person did since the brain last wrote, urgent first, in six lines. When it is
+   * given it takes the place of the sight lines under HOW YOUR LAST ANSWER LANDED. Absent: the older sight lines are printed as before.
+   */
+  readonly eyes?: string | null;
 }
 
 /** v2.1. The most standing asks a conversation holds, and the most characters of each; the oldest goes when a seventh comes. */
