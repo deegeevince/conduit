@@ -560,7 +560,7 @@ export interface FoldResult {
 
 type Opening = TurnInput['kind'];
 
-const OPENINGS: readonly string[] = ['prompt', 'tap', 'act', 'refine', 'demo', 'script'];
+const OPENINGS: readonly string[] = ['prompt', 'tap', 'act', 'refine', 'repair', 'demo', 'script'];
 const END_REASONS: readonly string[] = ['done', 'interrupted', 'failed', 'timeout'];
 
 function isRecordObject(value: unknown): value is Readonly<Record<string, unknown>> {

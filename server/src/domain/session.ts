@@ -117,6 +117,8 @@ export interface ActiveTurn {
   readonly refused: { readonly raw: string; readonly why: string }[];
   /** v3. The reader's refusals were already put to the brain once */
   amended: boolean;
+  /** v3. When the brain stopped writing (`finish`), server time; null while it writes */
+  endedAt: number | null;
   /** v2.1 ops. Tool calls begun and not yet ended, by the CLI's call id: what the audit trail records when a call ends, or when the turn does first */
   readonly calls: Map<string, { readonly tool: string; readonly summary: string; asked: boolean }>;
 }
@@ -198,6 +200,14 @@ export interface Session {
   continued: { readonly id: string; readonly earlier: string } | null;
   /** SA3. What the session has seen and been told, as observations */
   readonly obs: Observations;
+  /** v3. The person is typing until this server time (`presence`); 0 when they are not. A repair never starts while it is in the future. */
+  typingUntil: number;
+  /** v3. Whether the person allows repairs (`/review repair`); on until the page says off */
+  repairOn: boolean;
+  /** v3. The repair waiting or running, of the answer `of`; any new turn aborts it */
+  repair: { readonly of: string; readonly abort: AbortController } | null;
+  /** v3. Answers a repair was started for: one each, kept or not */
+  readonly repaired: Set<string>;
 }
 
 /** In-memory sessions. There is no database; a restart forgets everything, by design. */
@@ -256,6 +266,10 @@ export class SessionStore {
       permissions: new Map(),
       continued: null,
       obs: new Observations(),
+      typingUntil: 0,
+      repairOn: true,
+      repair: null,
+      repaired: new Set(),
     };
     this.sessions.set(session.id, session);
     return session;

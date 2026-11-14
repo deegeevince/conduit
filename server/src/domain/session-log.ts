@@ -68,6 +68,45 @@ export type SessionRecord =
   | { readonly type: 'node'; readonly at: number; readonly turn: string | null; readonly node: NodeId; readonly status: NodeStatus; readonly reset?: true; readonly why: string | null }
   /** v3 (2.5). Something the person did that `advance` committed: where they are, what a control holds, an answer tried, a reveal reached, a node finished. Logged only when it changed something. */
   | { readonly type: 'state'; readonly at: number; readonly turn: string | null; readonly change: StateChange }
+  /**
+   * v3. A repair of an answer, after the critic judged it broken: what the critic found (`gates`, the finding's coherence), what the brain
+   * wrote, what the stage measured with it tried (`blockingBefore`, `blockingAfter`), and what became of it. `state`: `kept` (`repair` is the turn
+   * that showed it), `refused` (nothing changed; `why`), `nothing` (the brain wrote nothing), `failed`, `cancelled` (a new turn came), `skipped` (a
+   * limit held it back before the brain was asked). `ms` is the whole repair from the critic's verdict; `sinceEndMs` from the answer's `end`.
+   */
+  | {
+      readonly type: 'repair';
+      readonly at: number;
+      readonly turn: string;
+      readonly repair: string | null;
+      readonly state: 'kept' | 'refused' | 'nothing' | 'failed' | 'cancelled' | 'skipped';
+      readonly gates: readonly string[];
+      readonly why: string | null;
+      readonly lines: readonly string[];
+      readonly coherenceBefore: number;
+      readonly blockingBefore: number | null;
+      readonly blockingAfter: number | null;
+      readonly costUsd: number | null;
+      readonly ms: number;
+      readonly tryMs: number | null;
+      readonly firstLineMs: number | null;
+      readonly sinceEndMs: number;
+    }
+  /** v3. The critic's second look at a repaired answer: the score before and after, and its own account of the progress (`fixed`, `stillFailing`, `newFailures`). */
+  | {
+      readonly type: 'repair-judged';
+      readonly at: number;
+      readonly turn: string;
+      readonly repair: string;
+      readonly coherenceBefore: number;
+      readonly coherenceAfter: number;
+      readonly trend: string | null;
+      readonly fixed: readonly string[];
+      readonly stillFailing: readonly string[];
+      readonly newFailures: readonly string[];
+      readonly note: string;
+      readonly ms: number;
+    }
   /** SA2. The server measured a pass's draft itself: how long it took, the digest of its boxes and the number of things it noted */
   | { readonly type: 'measure'; readonly at: number; readonly turn: string; readonly pass: number; readonly ms: number; readonly boxes: string; readonly noted: number }
   /** SA2. The page and the server do not measure alike (`where`: `engine` the version, `draft` or `report` a digest). From then on this session's drafts go through the page's gate. */

@@ -106,7 +106,7 @@ export interface StageApp {
   /** the line the charting engine's licence asks for, to show in the page; null when there is none */
   readonly attribution: { readonly text: string; readonly href: string } | null;
   /** whether the server can look at a draft and fix it, and whether the viewer has it switched on */
-  readonly review: { readonly available: boolean; readonly on: boolean; set(on: boolean): void };
+  readonly review: { readonly available: boolean; readonly on: boolean; set(on: boolean): void; /** v3. Whether the server may tidy an answer after the critic has judged it (`/review repair`) */ readonly repair: boolean; setRepair(on: boolean): void };
   /** who the screen is for: raises the type and targets in the lesson view and the legibility floor the stage is held to */
   readonly audience: { readonly value: Audience; set(audience: Audience): void };
   /** Interrupts whatever is playing, reports it, then starts a turn with this prompt (the photos the server kept for it, `link.uploadPhoto`; the ink drawn on the stage; the voice notes whose words it holds, `link.uploadVoice`). */
@@ -163,6 +163,7 @@ const CONNECT_DELAYS_MS = [0, 400, 800, 1500, 2500, 4000] as const;
 const LOCAL_CHARS_PER_SECOND = 240;
 const LOCAL_TURN = 'local-first-load';
 const REVIEW_KEY = 'conduit.lookAndFix';
+const REPAIR_KEY = 'conduit.repair';
 const DATA_LIMIT_MS = 20000;
 /** turns the app plays for itself (a help page, a look); the server never hears of them */
 const PAGE_PREFIX = 'local-page-';
@@ -173,6 +174,22 @@ function readReviewSetting(): boolean {
     return window.localStorage.getItem(REVIEW_KEY) !== 'off';
   } catch {
     return true;
+  }
+}
+
+function readRepairSetting(): boolean {
+  try {
+    return window.localStorage.getItem(REPAIR_KEY) !== 'off';
+  } catch {
+    return true;
+  }
+}
+
+function writeRepairSetting(on: boolean): void {
+  try {
+    window.localStorage.setItem(REPAIR_KEY, on ? 'on' : 'off');
+  } catch {
+    // the setting is for this visit only
   }
 }
 
@@ -387,8 +404,11 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   access.controls(painter.snapshot().controls);
 
   let reviewOn = readReviewSetting();
+  let repairOn = readRepairSetting();
   /** the pass the open turn's look-and-fix is at, from the server's `pass` events; null between turns */
   let passState: PassState | null = null;
+  /** v3. The server's repair turn whose lines are playing: the status line says "Tidying up the last answer…" until it reports */
+  let tidying: string | null = null;
   let passInfo: { readonly pass: number; readonly of: number | null; readonly reason: string | null } | null = null;
   /** one controller per data call: a slow table does not cancel the others, and leaving the page cancels all */
   const dataCalls = new Set<AbortController>();
@@ -548,6 +568,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     else if (playing) text = snap.clock === 'hidden' ? 'playing (this tab is in the background)' : 'playing';
     else text = waiting;
     if (passState !== null && (text === 'playing' || text === 'thinking')) text = passText(passState) ?? text;
+    if (tidying !== null && text === 'playing') text = 'Tidying up the last answer…';
     if (active && text === 'playing' && readingFailed.length > 0) text = readingFailed.join('; ');
     if (link_ === 'reconnecting') {
       text = `reconnecting; ${text}`;
@@ -573,6 +594,10 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
       case 'looking':
       case 'fixing':
         return reviewOn ? 'checking the drawing' : null;
+      case 'repairing':
+        return 'Tidying up the last answer…';
+      case 'repaired':
+        return 'Tidied';
       case 'kept':
       case 'skipped':
         return null;
@@ -734,6 +759,8 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
         readingFailed = [];
         passState = null;
         passInfo = null;
+        // a turn of the person's (or the server's own repair turn, which `pass … repairing` follows) ends any tidying that was playing
+        if (event.input.kind !== 'repair') tidying = null;
         tellAgent({ type: 'over', turn: null });
         pending = Math.max(0, pending);
         painter.openTurn(event.turn, event.input);
@@ -795,6 +822,20 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
         // Look and fix: the painter answers `drafted` with a draft report; the other states are for the status line.
         // With the switch off the painter is not told, so no picture of the draft is made or sent. A better-pass is the viewer's
         // own request and goes on whatever that switch says. A reconnect does not play a pass again.
+        // v3. The server is tidying the answer on stage (a turn of its own, `repair`): while its lines play the status line says so, and once the
+        // painter has reported them played out, "Tidied", once. The turn has ended by then (`end` comes with the last line), so this is not tied to it.
+        if (event.state === 'repairing' || event.state === 'repaired') {
+          if (!firstTime(`pass:${event.turn}:${event.pass}:${event.state}`)) return;
+          if (event.state === 'repairing') {
+            tidying = event.turn;
+            lastStatus = '';
+            publishStatus();
+          } else if (tidying === event.turn) {
+            tidying = null;
+            announce('Tidied');
+          }
+          return;
+        }
         if (event.turn !== currentTurn || (!reviewOn && event.state !== 'refining')) return;
         if (!firstTime(`pass:${event.turn}:${event.pass}:${event.state}`)) return;
         passState = event.state;
@@ -1131,6 +1172,44 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
 
   // SA3: what only the page knows goes up as `observe` events, once the session exists
   const eyes = startObserver(sendBack, document, connected);
+  // v3: the server tidies an answer after the critic has judged it, never while the person is typing, and only if they allow it (`/review repair`).
+  // `presence` says both: it goes up when either changes, and again every few seconds while keys keep coming.
+  let typing = false;
+  let typingTimer: ReturnType<typeof setTimeout> | undefined;
+  let presenceSentAt = Number.NEGATIVE_INFINITY;
+  const sendPresence = (): void => {
+    presenceSentAt = performance.now();
+    void connected.then(() => {
+      if (!disposed) sendBack({ type: 'presence', typing, repair: repairOn });
+    }, () => undefined);
+  };
+  const isField = (target: EventTarget | null): boolean => target instanceof HTMLTextAreaElement || (target instanceof HTMLInputElement && /^(text|search|email|url|tel|password|number)?$/.test(target.type));
+  const typingStops = (): void => {
+    clearTimeout(typingTimer);
+    if (typing) {
+      typing = false;
+      sendPresence();
+    }
+  };
+  const onTyping = (event: Event): void => {
+    if (!isField(event.target)) return;
+    const field = event.target as HTMLTextAreaElement | HTMLInputElement;
+    if (field.value === '') {
+      typingStops();
+      return;
+    }
+    const was = typing;
+    typing = true;
+    clearTimeout(typingTimer);
+    typingTimer = setTimeout(typingStops, 5000);
+    if (!was || performance.now() - presenceSentAt > 3000) sendPresence();
+  };
+  const onTypingEnds = (event: Event): void => {
+    if (isField(event.target)) typingStops();
+  };
+  document.addEventListener('input', onTyping, true);
+  document.addEventListener('focusout', onTypingEnds, true);
+  sendPresence();
   let resizeTimer: ReturnType<typeof setTimeout> | undefined;
   const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => {
     clearTimeout(resizeTimer);
@@ -1380,6 +1459,14 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
         lastStatus = '';
         publishStatus();
       },
+      get repair() {
+        return repairOn;
+      },
+      setRepair(on) {
+        repairOn = on;
+        writeRepairSetting(on);
+        sendPresence();
+      },
     },
     prompt: (text, photos, marks, voice, sources) => submit({ kind: 'prompt', text, ...(photos === undefined || photos.length === 0 ? {} : { images: photos }), ...(marks === undefined ? {} : { marks }), ...(voice === undefined || voice.length === 0 ? {} : { voice }), ...(sources === undefined || sources.length === 0 ? {} : { sources }) }, null, true),
     demo: (name) => submit({ kind: 'demo', script: name }, null, true),
@@ -1456,6 +1543,9 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
       disposed = true;
       clearTimeout(resizeTimer);
       eyes.dispose();
+      document.removeEventListener('input', onTyping, true);
+      document.removeEventListener('focusout', onTypingEnds, true);
+      clearTimeout(typingTimer);
       clearTimeout(startTimer);
       clearTimeout(noticeTimer);
       clearTimeout(localTimer);

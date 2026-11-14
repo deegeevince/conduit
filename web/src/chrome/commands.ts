@@ -16,7 +16,7 @@ export type Command =
   | { readonly kind: 'status' }
   | { readonly kind: 'asks'; readonly clear: boolean }
   | { readonly kind: 'look'; readonly look: LookId | null }
-  | { readonly kind: 'review'; readonly on: boolean | null }
+  | { readonly kind: 'review'; readonly on: boolean | null; /** v3. `/review repair on|off`: the server tidies an answer after the critic has judged it */ readonly repair?: boolean | null }
   | { readonly kind: 'better'; readonly passes: number }
   | { readonly kind: 'stop' }
   | { readonly kind: 'stop-all'; readonly resume: boolean }
@@ -103,7 +103,8 @@ export function parseCommand(text: string): Command {
     }
     case 'review':
       if (rest.length === 0) return { kind: 'review', on: null };
-      return rest.length === 1 && (first === 'on' || first === 'off') ? { kind: 'review', on: first === 'on' } : refuse('/review: say on or off');
+      if (first === 'repair') return rest.length === 1 ? { kind: 'review', on: null, repair: null } : rest.length === 2 && ((rest[1] ?? '').toLowerCase() === 'on' || (rest[1] ?? '').toLowerCase() === 'off') ? { kind: 'review', on: null, repair: (rest[1] ?? '').toLowerCase() === 'on' } : refuse('/review repair: say on or off');
+      return rest.length === 1 && (first === 'on' || first === 'off') ? { kind: 'review', on: first === 'on' } : refuse('/review: say on or off, or "repair on" or "repair off"');
     case 'better': {
       if (rest.length === 0) return { kind: 'better', passes: REFINE_LIMITS.passes };
       const passes = Number(first);

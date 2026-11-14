@@ -1,4 +1,5 @@
-import { API, CANVAS, DATA_LIMITS, EMPTY_STAGE, isLessonVerb, PASTE_AS_DOCUMENT_CHARS, FULL_CAPABILITIES, LANGUAGE, LEAD_WINDOW, LineNormalizer, LineReader, TurnScore, buildSystemPrompt, draftFactsOf, serializeLine, settle, splitCells, wearingAt, withoutUnknownBraces, worthALook } from '@conduit/language';
+import { API, CANVAS, DATA_LIMITS, EMPTY_STAGE, isLessonVerb, PASTE_AS_DOCUMENT_CHARS, FULL_CAPABILITIES, LANGUAGE, LEAD_WINDOW, LineNormalizer, LineReader, PRESENCE_TYPING_MS, TurnScore, buildSystemPrompt, draftFactsOf, hasLesson, repairWorth, serializeLine, settle, splitCells, wearingAt, withoutUnknownBraces, worthALook } from '@conduit/language';
+import type { RepairWorth } from '@conduit/language';
 import type { ActivityState, BrainChange, BrainChoice, BrainMode, CriticFinding, DocumentSummary, DocumentView, FixPolicy, NodeId, NodeStatus, OpenDocumentResponse, PromptVariant, Seen, ToolChoice } from '@conduit/language';
 import type {
   BackEvent,
@@ -64,7 +65,9 @@ import type { StoredUpload, UploadStore } from './uploads';
 import type { UsageMeter } from '../usage';
 import { currentIdentity, labelOf } from '../identity';
 import { processEnvironment } from '../env';
-import { askedOf, refusalProblem, reviewTurn } from './review';
+import { asksForLesson } from '@conduit/language';
+import { askedOf, refusalProblem, repairTurn, reviewTurn } from './review';
+import type { RepairOutcome } from './review';
 import { quoted } from '@conduit/language';
 import { briefEyes, itemObservation, observeInput } from './observations';
 import type { NewObservation } from './observations';
@@ -401,6 +404,8 @@ export class Conductor {
     const { sessions, brains, log, now } = this.deps;
     const s = sessions.require(session, now());
 
+    // v3. A new prompt (or tap) cancels a repair that is waiting or running: the person has moved on and the answer it would mend is no longer the one on stage.
+    s.repair?.abort.abort();
     const previous = s.turn;
     // T1 (b). A bare prompt (words only: no photo, ink or voice) sent while a turn is writing a document does not cancel the write: it is refused with a plain note and
     // stays in the box. A person who means to stop it presses Stop; a prompt that carries something (a photo, ink, a voice note) or a tap still replaces the open turn.
@@ -474,6 +479,7 @@ export class Conductor {
       refused: [],
       amended: false,
       calls: new Map(),
+      endedAt: null,
     };
     s.nextOrdinal += 1;
     s.heardFrom = s.nextCursor - 1;
@@ -519,7 +525,8 @@ export class Conductor {
   receive(session: string, events: readonly BackEvent[]): void {
     const s = this.deps.sessions.require(session, this.deps.now());
     for (const event of events) {
-      this.record(s, event);
+      // `presence` is the server's own business (typing, the repair switch); it is no part of what a relay agent reads
+      if (event.type !== 'presence') this.record(s, event);
       this.apply(s, event);
     }
   }
@@ -798,6 +805,7 @@ export class Conductor {
       permissions += s.permissions.size;
       try {
         this.ahead.release(s.id);
+        s.repair?.abort.abort();
         this.denyPending(s, null, 'kill');
         const turn = s.turn;
         if (turn !== null && turn.endReason === null) {
@@ -918,6 +926,10 @@ export class Conductor {
 
         if (turn === undefined || turn.reported) return;
         turn.reported = true;
+        if (turn.input.kind === 'repair' && report.outcome === 'finished') {
+          this.deps.sessionLog.write(s.id, { type: 'pass', turn: turn.id, pass: 2, state: 'repaired', reason: null });
+          this.emit(s, turn, { type: 'pass', turn: turn.id, pass: 2, state: 'repaired', reason: null });
+        }
         this.upsertMemory(s, rememberTurn(turn, report, s.snapshotTurns.has(turn.id)));
         const superseded = [...s.turns.values()].some((other) => other.ordinal > turn.ordinal && other.reported);
         if (!superseded) s.stage = report.stage;
@@ -958,6 +970,15 @@ export class Conductor {
         s.draft.receive(event.turn, event.pass, event.sight, event.placed ?? [], event.snapshot, event.content);
         if (event.boxes !== undefined) this.noteBoxes(s, `${event.turn}#${event.pass}`, 'page', event.boxes, 'draft', event.turn);
         this.deps.sessionLog.write(s.id, { type: 'draft', turn: event.turn, pass: event.pass, noted: event.sight.items.filter((item) => item.notes.length > 0).length, picture: event.snapshot, file: null });
+        return;
+      case 'presence':
+        // A `typing` that is not renewed lapses: a lost "stopped typing" never holds a repair back for long.
+        s.typingUntil = event.typing ? this.deps.now() + PRESENCE_TYPING_MS : 0;
+        if (s.repairOn !== event.repair) {
+          s.repairOn = event.repair;
+          this.deps.sessionLog.write(s.id, { type: 'setting', name: 'repair', value: event.repair ? 'on' : 'off' });
+          if (!event.repair) s.repair?.abort.abort();
+        }
         return;
       case 'permit':
         // The only road to a yes. The request must be one this session raised for this turn.
@@ -1010,6 +1031,7 @@ export class Conductor {
   private finish(s: Session, turn: ActiveTurn, reason: TurnEndReason, message: string | null): void {
     if (turn.endReason !== null) return;
     turn.endReason = reason;
+    turn.endedAt = this.deps.now();
     const step = (what: string, work: () => void): void => {
       try {
         work();
@@ -1444,8 +1466,10 @@ export class Conductor {
    */
   private lookAtResult(s: Session, turn: ActiveTurn): void {
     const { critic, sessionLog, findings, now, log } = this.deps;
-    if (!critic.available || turn.criticAsked || turn.endReason !== 'done' || turn.snapshotFile === null || turn.brain === 'replay') return;
-    if (turn.input.kind === 'demo' || turn.input.kind === 'script') return;
+    // CRITIC_SCRIPTS=on (a test rig's switch, never the owner's): a played script is judged, and mended, like an answer, so a known-bad one can be replayed.
+    const scripts = processEnvironment()['CRITIC_SCRIPTS'] === 'on';
+    if (!critic.available || turn.criticAsked || turn.endReason !== 'done' || turn.snapshotFile === null || (turn.brain === 'replay' && !scripts)) return;
+    if ((turn.input.kind === 'demo' || turn.input.kind === 'script') && !scripts) return;
     const snapshot = this.deps.assets.snapshot(s.id, turn.id);
     if (snapshot === undefined) return;
     const facts = draftFactsOf(turn.score.schedule, 0);
@@ -1483,10 +1507,206 @@ export class Conductor {
         sessionLog.write(s.id, { type: 'critic', turn: turn.id, finding, queued });
         this.emit(s, turn, { type: 'critic', turn: turn.id, finding });
         if (queued) findings.add({ at: new Date(now()).toISOString(), log: sessionLog.fileOf(s.id), turn: turn.id, asked: request.asked, finding, snapshot: file });
+        // v3. A repaired answer is judged once more, against the verdict it had; any other is a candidate for a repair of its own.
+        if (turn.input.kind === 'repair') this.noteRepairJudged(s, turn, finding, request.previous?.finding ?? null);
+        else this.considerRepair(s, turn, finding);
       } catch (error) {
         log.warn('critic.failed', { session: s.id, turn: turn.id, error });
       }
     })();
+  }
+
+  // ------------------------------------------------------------------------------------------------------------------------------
+  // v3: critic-driven repair. The critic sees the picture an answer left at rest. When it says that picture is broken in a way the brain can
+  // work around, the server asks the brain (the warm process that wrote it) for fix lines, tries them on a copy of the answer's score here,
+  // and shows them as an in-place edit only if the stage then measures strictly better. One repair per answer; never while the person is
+  // typing or a new turn is running; a new turn cancels it; never on a lesson, an app or a mock-up. The critic then judges the repaired
+  // answer once more, with its `progress`, and the log has both scores.
+  // ------------------------------------------------------------------------------------------------------------------------------
+
+  /** Why this answer is not repaired, or null when it may be. */
+  private repairLimit(s: Session, turn: ActiveTurn): string | null {
+    if (s.turn !== turn || turn.endReason !== 'done') return 'a newer turn is on the stage';
+    if (!turn.reported) return 'the answer has not come to rest';
+    if (this.deps.brains.configured.review === undefined) return 'this brain cannot look at an answer again';
+    if (turn.input.kind === 'act') return 'the person is working a control';
+    const view = this.docs.viewOfSession(s.id);
+    if (asksForLesson(turn.input) || (view !== null && hasLesson({ document: { document: view.document, state: view.state } }))) return 'a lesson or document turn';
+    const structures = turn.score.schedule.elements.filter((element) => element.exit === null && element.figure?.kind === 'structure');
+    if (structures.some((element) => element.figure?.kind === 'structure' && element.figure.structure === 'app')) return 'an app';
+    if (structures.some((element) => element.figure?.kind === 'structure' && element.figure.structure === 'screen')) return 'a mock-up';
+    if (!this.measuresHere(s) || !measurable(turn.score.schedule)) return 'the server cannot measure this stage';
+    return null;
+  }
+
+  private considerRepair(s: Session, turn: ActiveTurn, finding: CriticFinding): void {
+    const worth = repairWorth(finding);
+    if (!worth.wanted || s.repaired.has(turn.id)) return;
+    const { now, sessionLog, log } = this.deps;
+    const skipped = (why: string): void => {
+      log.info('repair.skipped', { session: s.id, turn: turn.id, why });
+      sessionLog.write(s.id, { type: 'repair', turn: turn.id, repair: null, state: 'skipped', gates: worth.gates, why, lines: [], coherenceBefore: finding.coherence, blockingBefore: null, blockingAfter: null, costUsd: null, ms: 0, tryMs: null, firstLineMs: null, sinceEndMs: now() - (turn.endedAt ?? now()) });
+    };
+    if (!s.repairOn) return skipped('switched off (/review repair off)');
+    const limit = this.repairLimit(s, turn);
+    if (limit !== null) return skipped(limit);
+    s.repaired.add(turn.id);
+    const abort = new AbortController();
+    s.repair = { of: turn.id, abort };
+    void this.runRepair(s, turn, finding, worth, abort).catch((error: unknown) => log.error('repair.escaped', { session: s.id, turn: turn.id, error })).finally(() => {
+      if (s.repair?.abort === abort) s.repair = null;
+    });
+  }
+
+  private async runRepair(s: Session, turn: ActiveTurn, finding: CriticFinding, worth: RepairWorth, abort: AbortController): Promise<void> {
+    const { now, sessionLog, log } = this.deps;
+    const started = now();
+    const signal = AbortSignal.any([abort.signal, s.abort.signal]);
+    const write = (state: 'kept' | 'refused' | 'nothing' | 'failed' | 'cancelled' | 'skipped', patch: { repair?: string; why?: string | null; lines?: readonly string[]; blockingBefore?: number | null; blockingAfter?: number | null; costUsd?: number | null; tryMs?: number | null; firstLineMs?: number | null } = {}): void => {
+      const entry = { type: 'repair' as const, turn: turn.id, repair: null, state, gates: worth.gates, why: null, lines: [], coherenceBefore: finding.coherence, blockingBefore: null, blockingAfter: null, costUsd: null, ms: now() - started, tryMs: null, firstLineMs: null, sinceEndMs: now() - (turn.endedAt ?? started), ...patch };
+      sessionLog.write(s.id, entry);
+      log.info(`repair.${state}`, { session: s.id, turn: turn.id, gates: worth.gates.join(','), why: entry.why, repair: entry.repair, blockingBefore: entry.blockingBefore, blockingAfter: entry.blockingAfter, costUsd: entry.costUsd, ms: entry.ms });
+    };
+    const here = (): boolean => !signal.aborted && s.turn === turn && turn.endReason === 'done' && turn.reported;
+    const gone = (): string => (signal.aborted ? 'a new turn began, or the switch went off' : 'the stage moved on');
+    let kept: RepairOutcome | null = null;
+    try {
+      // Never while the person is typing: wait for the keys to stop, for a while, and give up quietly if they do not.
+      const patience = now() + 20_000;
+      while (s.typingUntil > now() && now() < patience && !signal.aborted) await new Promise<void>((resolve) => setTimeout(resolve, 400));
+      if (!here()) return write('cancelled', { why: gone() });
+      if (s.typingUntil > now()) return write('skipped', { why: 'the person is still typing' });
+      const rest = measureDraft(turn.score, s);
+      if (rest === null) return write('skipped', { why: 'the server could not measure this stage' });
+      this.deps.canvas?.seed(s, rest);
+      const briefed = briefEyes(s, this.deps.canvasTools === true);
+      this.deps.canvas?.beginTurn(s.id, turn.id, briefed.record.rev[0]);
+      log.info('repair.started', { session: s.id, turn: turn.id, gates: worth.gates.join(','), blocking: rest.sight.items.filter((item) => item.notes.length > 0).length, sinceEndMs: now() - (turn.endedAt ?? started) });
+      const normalizer = new LineNormalizer(() => {
+        s.nextAutoId += 1;
+        return `x${s.nextAutoId}`;
+      }, Object.keys(s.stage.styles));
+      let outcome: RepairOutcome;
+      try {
+        const steps = repairTurn({
+          brain: this.deps.brains.configured,
+          policy: { ...this.deps.review, enabled: true, firstLineMs: 30_000, passMs: 75_000 },
+          gate: s.draft,
+          turn: turn.id,
+          session: s.id,
+          input: turn.input,
+          styles: () => Object.keys(turn.score.schedule.styles),
+          drafts: true,
+          state: () => ({ schedule: turn.score.schedule, rejects: turn.rejects, lastSeq: s.nextSeq - 1, problems: turn.problems }),
+          signal,
+          now,
+          log,
+          tryFix: (_pass, lines) => tryFix(turn.score, lines, s),
+          fix: this.deps.fix,
+          form: 'repair',
+          finding: { problems: finding.problems, suggestions: finding.suggestions },
+          standing: s.standing,
+          eyes: briefed.eyes,
+          written: turn.score.score.filter((entry) => !entry.void).map((entry) => serializeLine(entry.line)),
+          rest,
+          picture: this.deps.assets.snapshot(s.id, turn.id) ?? null,
+        });
+        for (;;) {
+          const step = await steps.next();
+          if (step.done === true) {
+            outcome = step.value;
+            break;
+          }
+          // the brain's brief, usage and activity: logged and billed under the answer it is mending, as a pass after the draft
+          if (step.value.type !== 'pass' && step.value.type !== 'record') this.ingest(s, turn, step.value, normalizer, 2, true);
+        }
+      } finally {
+        const used = this.deps.canvas?.endTurn(s.id, turn.id) ?? null;
+        if (used !== null) log.info('repair.tools', { session: s.id, turn: turn.id, calls: used.calls, pulled: used.pulled.length });
+      }
+      const detail = { why: outcome.why, lines: outcome.texts, blockingBefore: outcome.blockingBefore, blockingAfter: outcome.blockingAfter, costUsd: outcome.costUsd, tryMs: outcome.tryMs, firstLineMs: outcome.firstLineMs };
+      if (outcome.state !== 'kept') return write(signal.aborted ? 'cancelled' : outcome.state, detail);
+      // Between the brain's last word and the page: if a new turn began meanwhile, nothing is shown.
+      if (!here()) return write('cancelled', { ...detail, why: gone() });
+      kept = outcome;
+      const shown = this.showRepair(s, turn, normalizer, outcome);
+      write('kept', { ...detail, repair: shown });
+    } catch (error) {
+      if (kept === null) write(signal.aborted ? 'cancelled' : 'failed', { why: error instanceof Error ? error.message : String(error) });
+      else log.error('repair.show_failed', { session: s.id, turn: turn.id, error });
+    }
+  }
+
+  /** Opens the repair as a turn of its own (`input.kind` `repair`, `previous` the answer it mends) and puts its lines on the page, in place. Answers its id. */
+  private showRepair(s: Session, of: ActiveTurn, normalizer: LineNormalizer, outcome: RepairOutcome): string {
+    const { sessions, now } = this.deps;
+    const brain = this.deps.brains.configured;
+    const input: TurnInput = { kind: 'repair', of: of.id };
+    const turn: ActiveTurn = {
+      id: sessions.nextTurnId(),
+      session: s.id,
+      input,
+      brain: brain.id,
+      login: of.login,
+      openedAt: now(),
+      abort: new AbortController(),
+      score: new TurnScore(s.stage, 'repair'),
+      endReason: null,
+      clock: null,
+      shownIds: [],
+      previous: of.id,
+      reader: new LineReader(Object.keys(s.stage.styles)),
+      problems: [],
+      relayCursor: s.nextCursor - 1,
+      ordinal: s.nextOrdinal,
+      lineCount: 0,
+      rejects: 0,
+      lookAllowed: false,
+      review: undefined,
+      reported: false,
+      sent: [],
+      missed: [],
+      snapshotFile: null,
+      criticAsked: false,
+      refused: [],
+      amended: false,
+      calls: new Map(),
+      endedAt: null,
+    };
+    s.nextOrdinal += 1;
+    s.heardFrom = s.nextCursor - 1;
+    s.turn = turn;
+    sessions.indexTurn(s, turn);
+    this.journal(s, { type: 'turn', turn: turn.id, input, brain: brain.id, login: turn.login });
+    this.emit(s, turn, { type: 'turn', turn: turn.id, input });
+    this.emit(s, turn, { type: 'pass', turn: turn.id, pass: 2, state: 'repairing', reason: null });
+    this.deps.sessionLog.write(s.id, { type: 'pass', turn: turn.id, pass: 2, state: 'repairing', reason: null });
+    for (const event of outcome.lines) if (this.ingest(s, turn, event, normalizer, 2) === 'stop') break;
+    // `repaired` is said when the painter reports the repair played out (`apply`, `report`), so that "Tidied" is about the picture the person sees
+    this.finish(s, turn, 'done', null);
+    return turn.id;
+  }
+
+  /** The critic's second look at a repaired answer: both scores, and its own account of the progress, in the log. */
+  private noteRepairJudged(s: Session, turn: ActiveTurn, finding: CriticFinding, before: CriticFinding | null): void {
+    const of = turn.input.kind === 'repair' ? turn.input.of : null;
+    if (of === null) return;
+    const earlier = before ?? s.findings.get(of) ?? null;
+    const progress = finding.progress ?? null;
+    this.deps.sessionLog.write(s.id, {
+      type: 'repair-judged',
+      turn: of,
+      repair: turn.id,
+      coherenceBefore: earlier?.coherence ?? finding.previous?.coherence ?? 0,
+      coherenceAfter: finding.coherence,
+      trend: progress?.trend ?? null,
+      fixed: progress?.fixed ?? [],
+      stillFailing: progress?.stillFailing ?? [],
+      newFailures: progress?.newFailures ?? [],
+      note: progress?.note ?? '',
+      ms: finding.ms,
+    });
+    this.deps.log.info('repair.judged', { session: s.id, turn: of, repair: turn.id, before: earlier?.coherence ?? null, after: finding.coherence, trend: progress?.trend ?? null });
   }
 
   /**
@@ -1524,7 +1744,7 @@ export class Conductor {
   }
 
   /** One event of a brain's pass, carried to the log, the score and the painter. Returns `stop` when the turn can take no more. */
-  private ingest(s: Session, turn: ActiveTurn, event: BrainEvent, normalizer: LineNormalizer, pass: number): 'stop' | undefined {
+  private ingest(s: Session, turn: ActiveTurn, event: BrainEvent, normalizer: LineNormalizer, pass: number, repairing = false): 'stop' | undefined {
     const { log, sessionLog } = this.deps;
     // What the brain was told and what the turn cost are recorded even when the turn was cut short; its lines no longer matter.
     if (event.type === 'brief') {
@@ -1539,7 +1759,7 @@ export class Conductor {
     }
     if (event.type === 'usage') {
       this.deps.usage?.record({
-        kind: pass === 1 ? 'turn' : 'review',
+        kind: turn.input.kind === 'repair' || repairing ? 'repair' : pass === 1 ? 'turn' : 'review',
         model: this.deps.brains.configured.choice?.(s.id).model ?? null,
         session: s.id,
         turn: turn.id,
@@ -2039,6 +2259,7 @@ function concerns(event: BackEvent, turn: string): boolean {
   switch (event.type) {
     case 'ready':
     case 'observe':
+    case 'presence':
       return true;
     case 'tap':
     case 'control':

@@ -691,10 +691,14 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
           ...(request.critic === undefined ? {} : { critic: request.critic }),
           ...(request.of === undefined ? {} : { of: request.of }),
           ...(request.standing === undefined ? {} : { standing: request.standing }),
+          ...(request.eyes === undefined ? {} : { eyes: request.eyes }),
+          ...(request.written === undefined ? {} : { written: request.written }),
         }),
       },
       request.picture,
       signal,
+      // A repair mends the answer at rest, whenever it is: the conversation's own process is the one to ask, whatever it wrote last.
+      request.form === 'repair',
     );
   }
 
@@ -703,10 +707,10 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
     yield* followUp({ turn: request.turn, session: request.session, styles: request.styles, text: request.text }, null, signal);
   }
 
-  async function* followUp(message: { readonly turn: string; readonly session: string; readonly styles: readonly string[]; readonly text: string }, image: Snapshot | null, signal: AbortSignal): AsyncGenerator<BrainEvent> {
+  async function* followUp(message: { readonly turn: string; readonly session: string; readonly styles: readonly string[]; readonly text: string }, image: Snapshot | null, signal: AbortSignal, anyTurn = false): AsyncGenerator<BrainEvent> {
     if (signal.aborted) return;
     const entry = pool.get(message.session);
-    if (entry === undefined || !entry.proc.alive || entry.running !== null || entry.lastTurn !== message.turn) {
+    if (entry === undefined || !entry.proc.alive || entry.running !== null || (!anyTurn && entry.lastTurn !== message.turn)) {
       throw errors.brainFailed('the process that wrote the draft is no longer here to look at it');
     }
     let release!: () => void;
