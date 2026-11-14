@@ -5,6 +5,11 @@ import { serializeLine, TurnScore } from '@conduit/language';
 import type { Film, FilmOptions, Recording } from '../contracts/film';
 import { pinnedWallTime } from './clock';
 import type { Painting } from './figures';
+import { CHARTS_READY } from '../render/chart';
+import { controlSpecOf, createRuntime } from './bound';
+import { createControlStore } from './controls';
+import type { ChartData } from './charts';
+import { holdControl } from '@conduit/language';
 import { buildTimeline, settledEnd } from './timeline';
 
 /**
@@ -26,7 +31,18 @@ export function createFilm(recording: Recording, options: FilmOptions): Film {
       paintings.set(element.key, url === undefined ? { status: 'unpainted', url: null, since: 0 } : { status: 'ready', url, since: element.enter?.start ?? 0 });
     }
   }
-  const timeline = buildTimeline(schedule, recording.base, { viewport: options.viewport, reducedMotion: options.reducedMotion, lockLook: null, paintings });
+  // What the hand held, and the data that came: a film is a pure function of these as of everything else.
+  const store = createControlStore();
+  for (const element of schedule.elements) {
+    const spec = controlSpecOf(element);
+    if (spec === null) continue;
+    store.declare(element.key, element.id, spec);
+    const held = holdControl(spec, options.controls?.[element.id]);
+    if (held !== null) store.set(element.key, held);
+  }
+  const data = new Map<string, ChartData>();
+  for (const [id, table] of Object.entries(options.data ?? {})) data.set(id, { table, since: -10 });
+  const timeline = buildTimeline(schedule, recording.base, { viewport: options.viewport, reducedMotion: options.reducedMotion, lockLook: null, paintings, controls: createRuntime(store), charts: { kinds: CHARTS_READY, data } });
   const duration = settledEnd(timeline, null, recording.base.scene.mood);
   const script = recording.lines.map((entry) => serializeLine(entry.line)).join('\n');
   return {

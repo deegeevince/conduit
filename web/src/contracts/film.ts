@@ -4,7 +4,7 @@
 // The exporter, the review page of the exploration harness and "play a
 // script" are all built on this and on nothing else.
 
-import type { Line, StageBase } from '@conduit/language';
+import type { ControlValues, DataTable, Line, StageBase } from '@conduit/language';
 import type { Frame } from './frame';
 import type { Viewport } from './space';
 
@@ -29,6 +29,10 @@ export interface FilmOptions {
    * uses. Holds a slow brain caused are not reproduced.
    */
   readonly arrival: 'at-once';
+  /** what the user's hand held, by control id: a film of an explorable shows the picture as they left it. Absent: every control shows what was written. */
+  readonly controls?: ControlValues;
+  /** the rows of DATA that charts drew by reference, by id; null: it could not be had. Absent: such charts are waiting. */
+  readonly data?: Readonly<Record<string, DataTable | null>>;
 }
 
 /**

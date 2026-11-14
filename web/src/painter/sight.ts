@@ -13,6 +13,7 @@ import { mapToGamut } from './colour';
 import { canvasBoxOf } from './figures';
 import { cellOf } from './layout/metrics';
 import type { Timeline } from './timeline';
+import { laidOutOf } from './registry';
 
 /** Under this many screen pixels on its longer side a drawn thing is "tiny". */
 const TINY_PX = 12;
@@ -77,6 +78,46 @@ function fillRatio(element: ElementSpan): number {
   const ys = line.points.map((p) => p.y);
   const box = (Math.max(...xs) - Math.min(...xs)) * (Math.max(...ys) - Math.min(...ys));
   return box <= 0 ? 0 : Math.min(1, shoelace(line.points) / box);
+}
+
+interface Pt {
+  readonly x: number;
+  readonly y: number;
+}
+
+/** Whether the segment p to q passes through the inside of `box` (Liang-Barsky); `pad` shrinks the box so grazing an edge is not a hit. */
+function segmentHits(p: Pt, q: Pt, box: Rect, padX: number, padY: number): boolean {
+  const x0 = box.x + padX;
+  const y0 = box.y + padY;
+  const x1 = box.x + box.w - padX;
+  const y1 = box.y + box.h - padY;
+  if (x1 <= x0 || y1 <= y0) return false;
+  const dx = q.x - p.x;
+  const dy = q.y - p.y;
+  let t0 = 0;
+  let t1 = 1;
+  const clip = (direction: number, distance: number): boolean => {
+    if (direction === 0) return distance >= 0;
+    const t = distance / direction;
+    if (direction < 0) {
+      if (t > t1) return false;
+      if (t > t0) t0 = t;
+    } else {
+      if (t < t0) return false;
+      if (t < t1) t1 = t;
+    }
+    return true;
+  };
+  return clip(-dx, p.x - x0) && clip(dx, x1 - p.x) && clip(-dy, p.y - y0) && clip(dy, y1 - p.y) && t0 < t1;
+}
+
+function segmentsCross(a: Pt, b: Pt, c: Pt, d: Pt): boolean {
+  const o = (p: Pt, q: Pt, r: Pt): number => (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x);
+  const d1 = o(c, d, a);
+  const d2 = o(c, d, b);
+  const d3 = o(a, b, c);
+  const d4 = o(a, b, d);
+  return d1 * d2 < 0 && d3 * d4 < 0;
 }
 
 function round(box: Rect): CanvasBox {
@@ -187,6 +228,37 @@ export function sightOf(timeline: Timeline, schedule: Schedule, base: StageBase,
       placed.lines.map((line) => ({ x: (placed.x + line.x) * ps, y: (placed.y + line.y) * ps, w: line.width * ps, h: line.height * ps })),
     );
   }
+  // Every stroke on stage as screen-unit segments, by its layer: what a word must not be run through by.
+  interface Stroke {
+    readonly owner: string;
+    readonly layer: string;
+    readonly points: readonly Pt[];
+  }
+  const strokes: Stroke[] = [];
+  for (const figure of frame.figures) {
+    if (figure.kind !== 'shape' || figure.stroke === null || figure.stroke.progress < 0.01 || figure.opacity < 0.3 || figure.key.endsWith('/leader')) continue;
+    const ps = planeScale(figure.layer, viewport);
+    const t = figure.transform;
+    for (const line of figure.outline) {
+      const points = line.points.map((p) => ({ x: (t.a * p.x + t.c * p.y + t.e) * ps, y: (t.b * p.x + t.d * p.y + t.f) * ps }));
+      strokes.push({ owner: figure.key.split('/')[0] ?? figure.key, layer: figure.layer, points: line.closed ? [...points, ...points.slice(0, 1)] : points });
+    }
+  }
+  /** a drawn stroke runs through the letters of this line */
+  const strokeThrough = (key: string): boolean => {
+    const placed = textFrames.get(key);
+    const lines = lineBoxes.get(key);
+    if (placed === undefined || lines === undefined) return false;
+    for (const stroke of strokes) {
+      if (stroke.layer !== placed.layer || stroke.owner === key) continue;
+      for (const box of lines) {
+        const padX = Math.min(box.w * 0.08, 6);
+        const padY = box.h * 0.22;
+        for (let i = 0; i + 1 < stroke.points.length; i += 1) if (segmentHits(stroke.points[i] as Pt, stroke.points[i + 1] as Pt, box, padX, padY)) return true;
+      }
+    }
+    return false;
+  };
   const textOverText = (entry: Entry, index: number): boolean => {
     const mine = lineBoxes.get(entry.element.key);
     if (mine === undefined) return false;
@@ -236,6 +308,7 @@ export function sightOf(timeline: Timeline, schedule: Schedule, base: StageBase,
       if (placed !== undefined && entry.resting) {
         const layout = scene.layout;
         if (textOverText(entry, index)) notes.push('collides');
+        if (strokeThrough(element.key) && !notes.includes('crossed')) notes.push('crossed');
         const view = restViews.get(element.key);
         if (view !== undefined && view.contrast < (view.fontPx >= 24 ? 3 : 4.5) - 0.01) notes.push('faint');
         if (placed.lines.length > WRAPPED_LINES && layout !== 'page') notes.push('wrapped');
@@ -254,6 +327,56 @@ export function sightOf(timeline: Timeline, schedule: Schedule, base: StageBase,
         if (overlapArea(under, other.screenBox) > 0) {
           notes.push('overlaps');
           break;
+        }
+      }
+    }
+
+    if (entry.resting) {
+      const laid = laidOutOf(schedule);
+      const figure = element.figure;
+      if (figure !== null && figure.kind === 'link' && laid !== null) {
+        // a connector that runs through a thing that is not one of its ends, or across another connector
+        const route = laid.routeOf(element.key, restAt);
+        if (route !== null && route.points.length >= 2) {
+          const ends = new Set([figure.from, figure.to]);
+          let hit = false;
+          for (const other of entries) {
+            if (other === entry || !other.resting || other.element.parent !== element.parent) continue;
+            const otherFigure = other.element.figure;
+            if (other.element.kind === 'node' && !ends.has(other.element.key)) {
+              const b = laid.boxOf(other.element.key, restAt);
+              if (b !== null) for (let i = 0; i + 1 < route.points.length && !hit; i += 1) hit = segmentHits(route.points[i] as Pt, route.points[i + 1] as Pt, b, Math.min(1, b.w * 0.1), Math.min(1, b.h * 0.1));
+            } else if (otherFigure !== null && otherFigure.kind === 'link' && other.element.key < element.key && !ends.has(otherFigure.from) && !ends.has(otherFigure.to)) {
+              const other2 = laid.routeOf(other.element.key, restAt);
+              if (other2 !== null)
+                for (let i = 0; i + 1 < route.points.length && !hit; i += 1)
+                  for (let j = 0; j + 1 < other2.points.length && !hit; j += 1) hit = segmentsCross(route.points[i] as Pt, route.points[i + 1] as Pt, other2.points[j] as Pt, other2.points[j + 1] as Pt);
+            }
+          }
+          if (hit && !notes.includes('crossed')) notes.push('crossed');
+        }
+      }
+      // things that are meant to stand apart standing on one another: two nodes, two controls, a control and a line of words
+      if (element.kind === 'node' || element.kind === 'control') {
+        for (const other of entries) {
+          if (other === entry || !other.resting || other.element.parent !== element.parent) continue;
+          const kind = other.element.kind;
+          if (kind !== 'node' && kind !== 'control') continue;
+          const smaller = Math.min(areaOf(screenBox), areaOf(other.screenBox));
+          if (overlapArea(screenBox, other.screenBox) > 0.1 * smaller) {
+            if (!notes.includes('crowded')) notes.push('crowded');
+            break;
+          }
+        }
+        if (element.kind === 'control' && !notes.includes('crowded')) {
+          for (const [key, boxes] of lineBoxes) {
+            const text = schedule.elements.find((candidate) => candidate.key === key);
+            if (text === undefined || text.parent === element.parent && element.parent !== null) continue;
+            if (boxes.some((line) => overlapArea(screenBox, line) > 0.12 * areaOf(line))) {
+              notes.push('crowded');
+              break;
+            }
+          }
         }
       }
     }
@@ -310,7 +433,14 @@ export function placedOf(timeline: Timeline, schedule: Schedule, playhead: numbe
       box = canvasBoxOf(element, schedule, restAt);
     }
     if (box === null) continue;
-    out.push({ key: element.key, id: element.id, kind: element.kind, parent: element.parent === null ? null : (idOf.get(element.parent) ?? null), box: round(box) });
+    const entry = { key: element.key, id: element.id, kind: element.kind, parent: element.parent === null ? null : (idOf.get(element.parent) ?? null), box: round(box) };
+    // a connector says where it really runs, so a count of what it passes through is of the drawn route and not of a straight line between two centres
+    const route = element.kind === 'link' ? laidOutOf(schedule)?.routeOf(element.key, restAt) : null;
+    if (route === null || route === undefined) out.push(entry);
+    else {
+      const routed = { ...entry, route: route.points.map((p) => ({ x: Math.round(p.x * 10) / 10, y: Math.round(p.y * 10) / 10 })) };
+      out.push(routed);
+    }
   }
   return out;
 }
