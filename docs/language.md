@@ -455,6 +455,8 @@ Every line stands alone on the wire: the normaliser writes `in=` and an id on ev
 
 **The document's types** (`language/src/document.ts`): `Document`, `DocNode`, `Cursor`, `Play`, `DocState`, and `advance(doc, state, event)`, the only writer of what the person did; `foldDocument(records)` makes a document from a conversation's log, and a flat conversation is one (the root is one part, every `scene` opens a scene node, and a turn with no `scene` line adds a segment to the open scene). A node is `outlined`, `filling` while a turn writes to it, `filled` when the turn finished, `verified` or `refused` when the verifier has said (a refused way is never checked wrong).
 
+**How the brain is taught it** (`language/src/teach.ts`, WS7). Not in the fixed prompt: the TEACH chapter rides in the turn's brief when the words ask for working-out, a lesson, a worksheet or homework, or a photo with a request to help with the page, and stays while a lesson goes on. It opens with the routing card (a lesson is written as these lines and never as a painted scene), gives the forms, pictures and ways from the tables, says how to read a sheet (outline every question first, fill only the first), how to build a way, and teaches "never lead with the answer" beside the seal. Every brief of a conversation with a document also carries `DOCUMENT` (the tree, at most forty lines, far siblings folded, with her progress) and `HERE` (the steps in front of her, her tries and the hints shown), built from `TurnContext.document`.
+
 Limits are `LESSON_LIMITS`: 400 parts, 6 deep, 40 steps and asks to a part, 8 answers, 6 choices and 6 hints to an ask.
 
 ## 5. Time
