@@ -341,9 +341,11 @@ function layoutSlider(input: ControlInput, m: Metrics): ControlLayout {
       shown: label,
     };
   } else head = beside(input, m, input.control.text, LABEL_S, widest, VALUE_S, width);
-  const headHeight = Math.max(head.height, m.body);
+  const headHeight = Math.max(head.height, compact >= 3 ? m.body * 0.7 : m.body);
   // tight: the track sits close under the label and the target reaches up behind it, so a column of them takes less height; the target stays whole inside the box
-  const tight = compact >= 1;
+  // (a coarse target is tall, so the track tucks up under the label; a fine one is already low and is left as it is)
+  const tightHeight = Math.max(headHeight + m.knob / 2 - m.body * 0.04 + m.knob / 2 + 2, input.minTarget);
+  const tight = compact >= 1 && tightHeight < headHeight + input.minTarget;
   // the knob stands clear of the words above it whatever the target is
   const clear = headHeight - m.body * 0.04 + m.knob / 2;
   const height = tight ? snapUp(m, Math.max(clear + m.knob / 2 + 2, input.minTarget)) : snapUp(m, headHeight + input.minTarget);

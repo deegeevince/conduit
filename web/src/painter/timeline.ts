@@ -851,6 +851,8 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
       const roomOf = (span: ElementSpan): number => Math.min(roomWide / planeScale(span.style.layer, viewport), controlRoom(span, controlFit));
       const compact = Math.min(3, Math.max(0, level)) as 0 | 1 | 2 | 3;
       const items: LayoutItem[] = [...baseItems];
+      // a control the brain set at a point of the canvas keeps its point unless that stands it on a table or a chart: then it takes its place in the flow
+      const controlStyle = (span: ElementSpan, time: number): ElementStyle => (freed.has(span.key) ? { ...styleAt(span, time), at: null } : laidStyle(styleAt(span, time)));
       const liveControls: ElementSpan[] = [];
       // the scene's controls that have not come yet: their room is kept for them, so that nothing moves or changes size when they do
       const upcoming: LayoutItem[] = [];
@@ -872,11 +874,11 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
           continue;
         }
         if (coming) {
-          upcoming.push({ key: span.key, order: span.order, text: '', emphasis: [], style: laidStyle(styleAt(span, span.enter?.start ?? start)), struck: false, replaces: null, reserve: { width: layout.width, height: layout.height, ...(compact > 0 ? { tight: true } : {}) } });
+          upcoming.push({ key: span.key, order: span.order, text: '', emphasis: [], style: controlStyle(span, span.enter?.start ?? start), struck: false, replaces: null, reserve: { width: layout.width, height: layout.height, ...(compact > 0 ? { tight: true } : {}) } });
           continue;
         }
         liveControls.push(span);
-        items.push({ key: span.key, order: span.order, text: '', emphasis: [], style: laidStyle(styleAt(span, start)), struck: false, replaces: null, reserve: { width: layout.width, height: layout.height, ...(compact > 0 ? { tight: true } : {}) } });
+        items.push({ key: span.key, order: span.order, text: '', emphasis: [], style: controlStyle(span, start), struck: false, replaces: null, reserve: { width: layout.width, height: layout.height, ...(compact > 0 ? { tight: true } : {}) } });
       }
       let scrollInfo: ScrollArea | null = null;
       if (scroll && members.length > 0) {
@@ -925,7 +927,7 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
         liveControls.push(group);
         items.push({ key: group.key, order: group.order, text: '', emphasis: [], style: { ...laidStyle(style), stay: 'pin' }, struck: false, replaces: null, reserve: { width: room.outer.width, height: room.outer.height } });
       }
-      const probe: LayoutInput = { viewport, look, layout: arrLayout, align: scene.align, expected: valueAt(scene.expected, start, null), items: [...items, ...comingItems, ...upcoming], foot: safe, ...(sides === undefined ? {} : { sides }) };
+      const probe: LayoutInput = { viewport, look, layout: arrLayout, align: scene.align, expected: valueAt(scene.expected, start, null), items: [...items, ...comingItems, ...upcoming], foot: safe, ...(sides === undefined ? {} : { sides }), ...(columns === 2 && !scroll ? { controlColumns: 2 as const } : {}) };
       const needs = needsOf(probe, safe.width);
       // a scene's words never ask for less than they did a moment ago, so the picture does not breathe as lines come and go
       const floor = flowFloor.get(scene.id) ?? 0;
@@ -940,7 +942,6 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
           layout: scene.layout,
           blocks: list,
           beside,
-          ...(columns === 2 && !scroll ? { flowWidth: 2 * 22 * cellOf('m', viewport, look).width + 2 * cellOf('m', viewport, look).width } : {}),
           flowHeight: (width) => (wanted <= 0 ? 0 : Math.max(floor, width === safe.width ? wanted : needsOf(probe, width).flow)),
           flowOrder: needs.order === null ? null : Math.min(needs.order, firstWord),
           flowLeast: (width) => (width === safe.width ? needs.least : needsOf(probe, width).least),
@@ -996,39 +997,59 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
       const spills = trial !== null && [...trial.placements.values()].some((placed) => flowing.has(placed.key) && placed.y + placed.height / 2 > bottom);
       const fits = controlNeed <= plan.flow.height + 1 && !spills;
       // two to a row only where a control still has room for its words
-      const viable = columns === 1 || roomWide >= 22 * cellOf('m', viewport, look).width;
+      const viable = columns === 1 || roomWide >= 32 * cellOf('m', viewport, look).width;
 
       return { items, liveControls, plan, fit, arrLayout, sides, fits: (fits && viable) || scroll, viable, compact, columns: scroll ? (1 as const) : columns, room: roomWide, scrollInfo };
     };
     // Controls are measured for the room they will really have (the flow's width once the stage is divided, which the controls' own height helps decide),
     // so the flow reserves what they take. When a column of them does not fit, they are set closer, then on one line, then two to a row.
+    const freed = new Set<string>();
     let controlFit = sceneFit;
     // the room the flow really has is known only once the stage is divided: a first pass finds it, so that the controls are measured for it from the start
     controlFit = solve(sceneFit, 0, 1).fit;
     let solved!: ReturnType<typeof solve>;
     let ran = false;
-    const tries: readonly (readonly [number, 1 | 2])[] = [[0, 1], [1, 1], [2, 1], [3, 1], [2, 2], [3, 2]];
-    const roomy = viewport.width >= 560;
-    for (const [level, columns] of tries) {
-      if (columns === 2 && !roomy) continue;
-      for (let pass = 0; pass < 3; pass += 1) {
-        solved = solve(controlFit, level, columns);
-        ran = true;
-        const settled = Math.abs(solved.fit.flow.width - controlFit.flow.width) < 0.5 && Math.abs(solved.fit.flow.height - controlFit.flow.height) < 0.5;
-        controlFit = solved.fit;
-        if (settled) break;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const tries: readonly (readonly [number, 1 | 2])[] = [[0, 1], [1, 1], [2, 1], [3, 1], [2, 2], [3, 2]];
+      const roomy = viewport.width >= 560;
+      for (const [level, columns] of tries) {
+        if (columns === 2 && !roomy) continue;
+        for (let pass = 0; pass < 3; pass += 1) {
+          solved = solve(controlFit, level, columns);
+          ran = true;
+          const settled = Math.abs(solved.fit.flow.width - controlFit.flow.width) < 0.5 && Math.abs(solved.fit.flow.height - controlFit.flow.height) < 0.5;
+          controlFit = solved.fit;
+          if (settled) break;
+        }
+        if (solved.fits) break;
       }
-      if (solved.fits) break;
-    }
-    // none fits: the controls stand in an area of their own that scrolls, in two columns where there is width for them
-    if (!ran || !solved.fits) {
-      const wide = roomy && solve(controlFit, 3, 2).viable;
-      for (let pass = 0; pass < 3; pass += 1) {
-        solved = solve(controlFit, 3, wide ? 2 : 1, true);
-        const settled = Math.abs(solved.fit.flow.width - controlFit.flow.width) < 0.5 && Math.abs(solved.fit.flow.height - controlFit.flow.height) < 0.5;
-        controlFit = solved.fit;
-        if (settled) break;
+      // none fits: the controls stand in an area of their own that scrolls, in two columns where there is width for them
+      if (!ran || !solved.fits) {
+        const wide = roomy && solve(controlFit, 3, 2).viable;
+        for (let pass = 0; pass < 3; pass += 1) {
+          solved = solve(controlFit, 3, wide ? 2 : 1, true);
+          const settled = Math.abs(solved.fit.flow.width - controlFit.flow.width) < 0.5 && Math.abs(solved.fit.flow.height - controlFit.flow.height) < 0.5;
+          controlFit = solved.fit;
+          if (settled) break;
+        }
       }
+
+      // a control at a point of the canvas that would stand on a table or a chart is let go of its point and flows
+      let more = false;
+      for (const span of controlSpans) {
+        if (span.scene !== scene.id || span.parent !== null || freed.has(span.key)) continue;
+        const at = styleAt(span, start).at;
+        if (typeof at !== 'object' || at === null) continue;
+        const item = solved.items.find((candidate) => candidate.key === span.key);
+        if (item?.reserve === undefined) continue;
+        // beside a table, a chart or a diagram a point set by coordinates cannot be kept clear of it once the flow has moved the control: it flows instead
+        const onBlock = [...solved.plan.rooms].some(([key]) => blocks.kinds.get(key) !== 'picture');
+        if (onBlock) {
+          freed.add(span.key);
+          more = true;
+        }
+      }
+      if (!more) break;
     }
     const { items, liveControls, arrLayout, sides } = solved;
     let plan = solved.plan;
