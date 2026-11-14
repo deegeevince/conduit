@@ -8,6 +8,7 @@ import { measureEm, prefixEm } from '../../../fonts/measure';
 import { wrapMeasured } from '../../layout/wrap';
 
 export type UiWeight = 'normal' | 'bold';
+export type UiFace = 'sans' | 'serif' | 'display';
 
 export interface UiLine {
   readonly text: string;
@@ -16,28 +17,28 @@ export interface UiLine {
 
 export interface UiMeasure {
   /** the width of one line of text, points */
-  width(text: string, size: number, weight: UiWeight): number;
+  width(text: string, size: number, weight: UiWeight, face?: UiFace): number;
   /** the text broken to fit `maxWidth`: lines, and the widest of them */
-  wrap(text: string, size: number, weight: UiWeight, maxWidth: number): { readonly lines: readonly UiLine[]; readonly widest: number };
+  wrap(text: string, size: number, weight: UiWeight, maxWidth: number, face?: UiFace): { readonly lines: readonly UiLine[]; readonly widest: number };
   /** the longest word: the least the text can be set across */
-  longestWord(text: string, size: number, weight: UiWeight): number;
+  longestWord(text: string, size: number, weight: UiWeight, face?: UiFace): number;
 }
 
 /** The painter's own advance tables, for the sans face the kit is set in. */
 export function paintersMeasure(): UiMeasure {
-  const width = (text: string, size: number, weight: UiWeight): number => measureEm(foldText(text), 'sans', weight) * size;
+  const width = (text: string, size: number, weight: UiWeight, face: UiFace = 'sans'): number => measureEm(foldText(text), face, weight) * size;
   return {
     width,
-    wrap(text, size, weight, maxWidth) {
+    wrap(text, size, weight, maxWidth, face = 'sans') {
       const folded = foldText(text);
       if (folded === '') return { lines: [{ text: '', width: 0 }], widest: 0 };
-      const prefix = prefixEm(folded, 'sans', weight);
+      const prefix = prefixEm(folded, face, weight);
       const wrapped = wrapMeasured(folded, prefix, maxWidth / size, Number.POSITIVE_INFINITY);
       const lines = wrapped.spans.map((span) => ({ text: folded.slice(span.start, span.end), width: ((prefix[span.end] ?? 0) - (prefix[span.start] ?? 0)) * size }));
       return { lines, widest: Math.max(0, ...lines.map((l) => l.width)) };
     },
-    longestWord(text, size, weight) {
-      return Math.max(0, ...foldText(text).split(/\s+/).map((word) => width(word, size, weight)));
+    longestWord(text, size, weight, face = 'sans') {
+      return Math.max(0, ...foldText(text).split(/\s+/).map((word) => width(word, size, weight, face)));
     },
   };
 }

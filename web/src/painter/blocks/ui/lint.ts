@@ -66,12 +66,13 @@ export function lintScreen(screen: UiScreen, placed: Placed<Item>, lines: number
   };
   visitBoxes(placed, 0, 0);
 
-  const visit = (p: Placed<Item>, ox: number, oy: number, parent: Placed<Item> | null, px: number, py: number): void => {
+  const visit = (p: Placed<Item>, ox: number, oy: number, parent: Placed<Item> | null, px: number, py: number, rail = false): void => {
     const x = ox + p.x;
     const y = oy + p.y;
     const it = p.node.payload;
     // outside its screen, or outside what holds it
-    if (parent !== null && !it.quiet) {
+    // what a row that moves holds goes on past its box, and is meant to
+    if (parent !== null && !it.quiet && !rail) {
       if (x < -EPS || y < -EPS || x + p.w > placed.w + EPS || y + p.h > placed.h + EPS) note('outside', it.id, `${it.part} lies outside its screen`);
       else if (p.w > 0 && p.h > 0 && (x < px - EPS || y < py - EPS || x + p.w > px + parent.w + EPS || y + p.h > py + parent.h + EPS)) note('outside', it.id, `${it.part} lies outside its container`);
     }
@@ -80,7 +81,7 @@ export function lintScreen(screen: UiScreen, placed: Placed<Item>, lines: number
       const needH = p.node.leaf.fit(p.w).h;
       const own = it.owner === undefined ? undefined : boxes.get(it.owner);
       if (needW > p.w + EPS || needH > p.h + EPS) note('lost-words', it.owner ?? it.id, `words need ${Math.ceil(needW)} by ${Math.ceil(needH)} and have ${Math.floor(p.w)} by ${Math.floor(p.h)}`);
-      else if (own !== undefined && (x < own.x - EPS || y < own.y - EPS || x + p.w > own.x + own.w + EPS || y + p.h > own.y + own.h + EPS)) note('lost-words', it.owner ?? it.id, 'words lie outside their own part');
+      else if (!rail && own !== undefined && (x < own.x - EPS || y < own.y - EPS || x + p.w > own.x + own.w + EPS || y + p.h > own.y + own.h + EPS)) note('lost-words', it.owner ?? it.id, 'words lie outside their own part');
     }
     if (it.target === true && (p.w < MIN_TARGET - 0.01 || p.h < MIN_TARGET - 0.01)) note('small-target', it.owner ?? it.id, `${it.part} is ${Math.round(p.w)} by ${Math.round(p.h)} points: a finger needs ${MIN_TARGET}`);
     if (parent !== null && it.quiet !== true) {
@@ -107,7 +108,7 @@ export function lintScreen(screen: UiScreen, placed: Placed<Item>, lines: number
         }
       }
     }
-    for (const k of kids) visit(k, x, y, p, x, y);
+    for (const k of kids) visit(k, x, y, p, x, y, rail || it.scroll !== undefined);
   };
   visit(placed, 0, 0, null, 0, 0);
   return notes;

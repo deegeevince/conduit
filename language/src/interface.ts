@@ -27,6 +27,48 @@ export const UI_DEVICE_SIZE: Readonly<Record<UiDevice, { readonly width: number;
 export const UI_LOOKS = ['wireframe', 'studio'] as const;
 export type UiLookId = (typeof UI_LOOKS)[number];
 
+// ------------------------------------------------------------------ the style of a mock-up
+
+/**
+ * What the brain sets on a `screen` line to make a mock-up read as the kind of app it is: `theme=dark|light accent=<colour name or hex> radius=sharp|soft|round
+ * type=geometric|humanist|serif density=compact|comfortable`. The kit derives the whole token set from these (the grounds, the inks, the lines, the accent and
+ * what is written on it, all at a contrast of at least 4.5); the brain never writes a colour for a part. A screen that says none of them takes the one before it,
+ * so one screen line of a journey can set them all.
+ */
+export const UI_THEMES = ['dark', 'light'] as const;
+export const UI_RADII = ['sharp', 'soft', 'round'] as const;
+export const UI_TYPES = ['geometric', 'humanist', 'serif'] as const;
+export const UI_DENSITIES = ['compact', 'comfortable'] as const;
+
+export interface UiStyle {
+  readonly theme?: (typeof UI_THEMES)[number];
+  /** a colour name or `#rrggbb`, as written; the kit reads it (`web/src/painter/blocks/ui/theme.ts`) */
+  readonly accent?: string;
+  readonly radius?: (typeof UI_RADII)[number];
+  readonly type?: (typeof UI_TYPES)[number];
+  readonly density?: (typeof UI_DENSITIES)[number];
+}
+
+export const UI_STYLE_KEYS = ['theme', 'accent', 'radius', 'type', 'density'] as const;
+
+function pickWord<T extends string>(value: string | undefined, allowed: readonly T[], key: string, notes: UiNote[], line: number): T | undefined {
+  if (value === undefined) return undefined;
+  const v = value.toLowerCase();
+  if ((allowed as readonly string[]).includes(v)) return v as T;
+  notes.push({ line, message: `${key}=${value}: use ${allowed.join(', ')}; ignored` });
+  return undefined;
+}
+
+/** The words of a `screen` line that set the style. A colour that is neither a hex nor a name the kit knows is kept as written (the kit names it and falls back). */
+function styleOf(attrs: Readonly<Record<string, string>>, notes: UiNote[], line: number): UiStyle {
+  const accent = attrs['accent'];
+  const theme = pickWord(attrs['theme'], UI_THEMES, 'theme', notes, line);
+  const radius = pickWord(attrs['radius'], UI_RADII, 'radius', notes, line);
+  const type = pickWord(attrs['type'], UI_TYPES, 'type', notes, line);
+  const density = pickWord(attrs['density'], UI_DENSITIES, 'density', notes, line);
+  return { ...(theme === undefined ? {} : { theme }), ...(accent === undefined || accent === '' ? {} : { accent }), ...(radius === undefined ? {} : { radius }), ...(type === undefined ? {} : { type }), ...(density === undefined ? {} : { density }) };
+}
+
 // ------------------------------------------------------------------ the words
 
 /** The spacing scale, on a four-point grid. `gap=` and `pad=` take these words or a number of points. */
@@ -55,6 +97,15 @@ export const UI_PART_KINDS = [
   'slider',
   'input',
   'chart',
+  // the richer parts: each holds its own words, so that a screen of an app is a few lines (see the chapter)
+  'media',
+  'carousel',
+  'player',
+  'chat',
+  'map',
+  'stat',
+  'people',
+  'segment',
 ] as const;
 export type UiPartKind = (typeof UI_PART_KINDS)[number];
 
@@ -86,6 +137,14 @@ export const UI_VARIANTS: Readonly<Record<UiPartKind, readonly string[]>> = {
   slider: [],
   input: ['error', 'password'],
   chart: ['wide', 'square'],
+  media: ['round', 'wide'],
+  carousel: ['round', 'wide', 'square'],
+  player: ['large', 'playing'],
+  chat: [],
+  map: ['tall', 'route'],
+  stat: ['up', 'down'],
+  people: ['chevron'],
+  segment: ['tabs', 'chips'],
 };
 
 // ------------------------------------------------------------------ the tree
@@ -142,6 +201,8 @@ export interface UiScreen {
   readonly fromLabel: string | null;
   readonly name: string;
   readonly line: number;
+  /** the theme words of its `screen` line, or the screen before it's when it says none */
+  readonly style: UiStyle;
   readonly children: readonly UiNode[];
 }
 
@@ -179,6 +240,8 @@ export interface UiTextToken {
   readonly size: number;
   readonly line: number;
   readonly weight: 'normal' | 'bold';
+  /** the face it is set in; absent: the sans */
+  readonly face?: 'sans' | 'serif' | 'display';
 }
 
 export interface UiElevation {
@@ -203,6 +266,10 @@ export interface UiTokens {
    * type still reads when it is scaled to the room: every role below it, and every hard-set size, is taken up to it. Absent: the scale as it is.
    */
   readonly minText?: number;
+  /** `density=` of the screen's style: parts set closer (compact) or roomier (comfortable) than the look's own measure; absent: the look's own */
+  readonly pack?: 'compact' | 'comfortable';
+  /** a screen that still does not fit its glass at `density=compact`: a media grid shows its first row only, so that what comes after it (a carousel, a player, the tab bar) is on the screen */
+  readonly squeeze?: boolean;
   readonly radius: { readonly s: number; readonly m: number; readonly l: number; readonly device: number };
   readonly type: Readonly<Record<UiTextRole, UiTextToken>>;
   readonly elevation: { readonly none: UiElevation; readonly low: UiElevation; readonly high: UiElevation };
@@ -227,6 +294,8 @@ export interface UiTokens {
     /** the edge of a field and of a card */
     readonly edge: string;
     readonly accent: string;
+    /** the accent as words and lines on the grounds (a tab, a ghost button, an icon): the accent itself, moved until it reads at 4.5 */
+    readonly accentInk: string;
     /** what is written on an accent surface */
     readonly onAccent: string;
     /** the tint an accent is washed to behind its own words */
@@ -314,6 +383,7 @@ interface MutableScreen {
   fromLabel: string | null;
   name: string;
   line: number;
+  style: UiStyle;
   children: UiNode[];
 }
 
@@ -410,7 +480,9 @@ export class InterfaceReader {
       // a label of several words, written without quotes, runs on over the bare words after it
       const spill = w.flags.filter((f, i) => i > 0 && f !== idWord && !(UI_DEVICES as readonly string[]).includes(f));
       const label = labelParts.length > 0 ? [labelParts.join(':'), ...spill].join(' ') : null;
-      const made: MutableScreen = { id, device, from: fromId === undefined || fromId === '' ? null : fromId, fromLabel: label, name: fields[0] ?? '', line, children: [] };
+      // the style a screen does not say is the one before it: a journey is one app
+      const style: UiStyle = { ...(screens[screens.length - 1]?.style ?? {}), ...styleOf(w.attrs, notes, line) };
+      const made: MutableScreen = { id, device, from: fromId === undefined || fromId === '' ? null : fromId, fromLabel: label, name: fields[0] ?? '', line, style, children: [] };
       this.screen = made;
       screens.push(made);
       byId.set(id, made);
@@ -514,7 +586,8 @@ export function nodeLine(node: UiNode, parent: string): string {
 /** A screen as a line that stands alone. */
 export function screenLine(screen: UiScreen): string {
   const from = screen.from === null ? '' : ` from=${screen.from}${screen.fromLabel === null ? '' : `:${screen.fromLabel}`}`;
-  return `screen ${screen.id} ${screen.device}${from}${screen.name === '' ? '' : ` | ${screen.name}`}`;
+  const style = UI_STYLE_KEYS.filter((key) => screen.style[key] !== undefined).map((key) => ` ${key}=${quoteIfNeeded(screen.style[key] as string)}`).join('');
+  return `screen ${screen.id} ${screen.device}${from}${style}${screen.name === '' ? '' : ` | ${screen.name}`}`;
 }
 
 /**
@@ -587,6 +660,8 @@ export const INTERFACE_CHAPTER: string = [
   '- A clickable mock-up is the same `screen`: its tabs, picks, toggles, sliders, fields (typing shows in them; `password` shows dots) and buttons answer taps, and a button with `to=<screen>` goes to that screen (write the next screen after it). A button with no `to=` is sent to you when it is pressed ("the user pressed Sign in", with what every field holds; a password is only said to be filled), so you can answer it; add `send` to a button that has a `to=` when you must hear it too (a sign-in that opens the next screen). Never build a mock-up from `card`, `input`, `toggle` or `button` lines outside a `screen`.',
   '- To change a mock-up that is on stage, reuse its screen ids: write `screen s1 …` again with the lines it should now have and that screen is replaced where it stands (the screens you do not write stay as they are); a new id is a new screen. Never draw a mock-up a second time under new ids to change it.',
   '- Icons are plain words: home search user bell cart heart star check close back menu plus shield car house umbrella phone mail lock card calendar camera map pin clock info warning document profile bank wallet chart-line.',
+  '- Make the mock-up read as the kind of app it is: on the first screen line set `theme=dark|light accent=<colour word or #hex> radius=sharp|soft|round type=geometric|humanist|serif density=compact|comfortable` (the kit derives every ground, ink and line from them, readable; later screens follow the first). Music, video, banking and games are dark with one accent; shops, health and news are light; a reading app is serif. Name the app yourself: never a real app\'s name, logo or colours.',
+  '- Richer parts, each one line that holds its own words (items are `Title / Subtitle`; cover art is drawn from the title, no `q` needed): `media [cols=2|3] [round] [title="…"] | Mix / Sub | …` a grid of covers; `carousel [round|wide] [title="…" more="See all"] | A / sub | …` a row you drag (put it directly in the screen, not in a padded col); `player [large] [len=3:48] | Title / Artist` (a bar with play and progress; `large` is the now-playing page; `to=<screen>`); `chat | ~Today 9:41 | Maya: words | me: words | …` bubbles; `map [route] [pins=3] | Place | 4 min away`; `stat [up|down] [spark=1,3,2,5] | Label | $4,200 | +2.4% this month`; `people [to=<screen>] | *Name / last words / 2m* | …` avatars, the starred one unread; `segment [tabs] | *All* | Music | Podcasts` chips or underlined tabs. A phone screen is about 700 points: a media grid or a carousel takes a third of it, a stat or a player a tenth, so one grid and one carousel at most, then the player, then the tabbar.',
   '- `look wireframe` is boxes and lines; `look studio` is a finished design. The same lines serve both.',
   'Open with `scene caption` (the mock-up takes the stage; your one `say` is its caption), then the look, then the screens. Write the words a real product would: real labels and copy. At most twelve parts a phone screen. A button that matters most is `primary`; one a screen. A website is a `browser` screen (nav links=… first, then a hero, one row of cards, a footer; no more than one and a half screens of it); an app is `phone`. Start with `look studio` for a finished design, or `look wireframe` when asked for a wireframe. End with one short sentence (`say | …`, under twelve words) and no choices, never a list of the parts: the mock-up is the answer and needs the room.',
   '',
@@ -607,4 +682,21 @@ export const INTERFACE_CHAPTER: string = [
   'button primary wide | Sign in',
   'button ghost wide | Create an account',
   'end',
+  '',
+  'Example ("a music app home and now-playing"):',
+  'scene caption',
+  'look studio',
+  'screen home phone theme=dark accent=green radius=round type=geometric | Home',
+  'col pad=m gap=m',
+  'heading | Good evening',
+  'segment | *All* | Music | Podcasts',
+  'media cols=2 | Daily Mix / Slow mornings | Late Jazz / Evening',
+  'end',
+  'carousel round title="Artists you follow" | Marla Quinn / Artist | The Low Tide / Band | Juno Park / Artist',
+  'space s',
+  'player to=now | Blue Hour / Marla Quinn',
+  'tabbar icons=home,search,queue | *Home* | Search | Library',
+  'screen now phone from=home:Now playing | Now playing',
+  'nav back | Daily Mix',
+  'player large len=3:48 | Blue Hour / Marla Quinn',
 ].join('\n');

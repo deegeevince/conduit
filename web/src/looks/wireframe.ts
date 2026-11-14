@@ -40,6 +40,7 @@ export const WIREFRAME_TOKENS: UiTokens = {
     line: '#c9ced8',
     edge: '#1d2129',
     accent: '#1d2129',
+    accentInk: '#1d2129',
     onAccent: '#ffffff',
     accentWash: '#eceef2',
     success: '#1d2129',

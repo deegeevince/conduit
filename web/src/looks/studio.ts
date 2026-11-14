@@ -34,6 +34,7 @@ export const STUDIO_TOKENS: UiTokens = {
     line: '#e1e5ee',
     edge: '#d3d8e4',
     accent: '#1f5eff',
+    accentInk: '#1f5eff',
     onAccent: '#ffffff',
     accentWash: '#e4ecff',
     success: '#12a36a',
