@@ -134,6 +134,20 @@ export function lintTechnique(title: string, summary: string, reason: string, ma
   return problems;
 }
 
+/**
+ * Query expansion: ways a person asks for a kind of answer that the techniques'
+ * own summaries do not use. A cue is a pattern in the message; when it fires,
+ * the words that the matching techniques are written in are added to what the
+ * message said. They are cues about the shape of a request ("let me ...", "a
+ * chart", "draw how ...") and never about a subject, so a new technique is
+ * reached by them only if it is written in these words.
+ */
+const CUES: readonly (readonly [RegExp, readonly string[]])[] = [
+  [/\b(?:charts?|graphs?|plot|histogram|distributions?|trend|curve|over time|since \d{4})\b/i, ['chart', 'number']],
+  [/\b(?:let me|slider|calculator|converter|play with|interactive|switch between|toggle|drag)\b/i, ['drag', 'interactive', 'explore']],
+  [/\bdraw (?:me )?how\b|\bhow does (?:a|an|the)\b[^?.]*\b(?:work|happen)s?\b|\bcross[- ]section\b|\banatomy\b/i, ['mechanism', 'machine', 'part']],
+];
+
 /** What a message is matched on. */
 export interface TechniqueQuery {
   readonly input: TurnInput;
@@ -221,6 +235,7 @@ export const MATCH_NEAR = 0.6;
 export function selectTechniques(index: readonly TechniqueTerms[], query: TechniqueQuery, limit: number = TECHNIQUE_LIMITS.cards): TechniqueHit[] {
   const said = query.input.kind === 'prompt' || query.input.kind === 'tap' || query.input.kind === 'act' ? query.input.text : '';
   const words = new Set(wordsOf(said));
+  for (const [cue, anchors] of CUES) if (cue.test(said)) for (const anchor of anchors) words.add(anchor);
   if (query.documents) for (const word of ['document', 'paper', 'report', 'article']) words.add(word);
   if (words.size === 0 || index.length === 0) return [];
   const spread = new Map<string, number>();

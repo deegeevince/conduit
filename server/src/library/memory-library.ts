@@ -33,11 +33,19 @@ export function createMemoryLibrary(sources: LibrarySources): TechniqueLibrary {
   let failure: string | null = null;
   let closed = false;
 
+  /** One throwaway choice, so that the first real one does not pay for compiling the matcher: it is on a turn's path and has 1 ms. */
+  const warm = (): void => {
+    selectTechniques(index, { input: { kind: 'prompt', text: 'show me how a flowchart of a price over time compares' }, documents: false });
+  };
+  warm();
+
   const rebuild = (): void => {
     // The overlay is last in `initial`, so it is laid over the remote layer again here.
     const overlay = sources.initial.filter((technique) => technique.source === 'overlay');
-    const rest = sources.initial.filter((technique) => technique.source !== 'overlay');
+    // The file cache is the last good read of the remote; once there is a newer one it is no longer a layer, so a technique deleted from Remote goes.
+    const rest = sources.initial.filter((technique) => technique.source !== 'overlay' && technique.source !== 'cache');
     index = merge([rest, remote, overlay]).map(termsOf);
+    warm();
   };
 
   const status = (): LibraryStatus => {
