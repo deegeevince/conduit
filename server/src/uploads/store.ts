@@ -155,6 +155,10 @@ export function createUploadStore(deps: UploadStoreDeps): UploadStore {
       }
     },
 
+    reserve: (session, upTo) => {
+      const held = heldFor(session);
+      if (upTo + 1 > held.next) held.next = upTo + 1;
+    },
     has: (session, id) => sessions.get(session)?.ids.has(id) === true,
   };
 }

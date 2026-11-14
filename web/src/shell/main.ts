@@ -206,7 +206,7 @@ const composer = mountComposer(part('.shell-composer'), {
     if (active.kind === 'past') {
       // a message in an earlier conversation picks that conversation up
       const id = active.id;
-      if ((live?.messages().length ?? 0) > 0) {
+      if (!canTakeUp(id)) {
         composer.restore(text, held);
         continueOnFreshPage(id, text);
         return false;
@@ -226,6 +226,8 @@ const composer = mountComposer(part('.shell-composer'), {
   photos: {
     upload: async (photo) => {
       if (app === null) throw new Error('The stage is still starting. Try again in a moment.');
+      // a photo given while an earlier conversation is on view belongs to it: the conversation is taken up first, so the photo is named above that log's own
+      if (active.kind === 'past' && canTakeUp(active.id)) await takeUp(active.id);
       return (await app.link.uploadPhoto(photo)).id;
     },
     urlOf: (id) => app?.link.photoUrl(id) ?? null,
@@ -373,7 +375,7 @@ function chooseReply(choice: ReplyChoice, reply: ReplyMessage): void {
     return;
   }
   const id = active.id;
-  if ((live?.messages().length ?? 0) > 0) {
+  if (!canTakeUp(id)) {
     continueOnFreshPage(id, choice.text);
     return;
   }
@@ -381,7 +383,12 @@ function chooseReply(choice: ReplyChoice, reply: ReplyMessage): void {
 }
 
 /** The server lets this page's session take up the conversation on view, and the page shows it as its own: earlier turns, then what comes next. */
+function canTakeUp(id: string): boolean {
+  return continuedId === id || (live?.messages().length ?? 0) === 0;
+}
+
 async function takeUp(id: string): Promise<void> {
+  if (continuedId === id) return;
   const session = app?.link.session ?? null;
   const view = pastView;
   if (session === null || view === null || live === null) throw new Error('The stage is still starting. Try again in a moment.');

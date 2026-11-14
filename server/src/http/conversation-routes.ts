@@ -9,7 +9,7 @@ import { createInterface } from 'node:readline';
 import { CONVERSATION_API } from '@conduit/language';
 import type { ContinueResponse, ConversationSummary, ConversationView } from '@conduit/language';
 import type { Hono } from 'hono';
-import { CONVERSATION_ID, earlierText, foldConversation, highestTurn, summaryOf } from '../domain/conversations';
+import { CONVERSATION_ID, earlierText, foldConversation, highestPhoto, highestTurn, summaryOf } from '../domain/conversations';
 import type { SessionRecord } from '../domain/session-log';
 import { errors } from '../errors';
 import type { HttpDeps } from './deps';
@@ -114,7 +114,7 @@ export function registerConversationRoutes(app: Hono, deps: HttpDeps): void {
     const view = foldConversation(id, records, updated);
     if (view.turns.length === 0) throw errors.notFound(`conversation ${id}`);
     const first = records.find((record) => record.type === 'session');
-    deps.conductor.continueConversation(session, id, earlierText(view), highestTurn(records), first?.type === 'session' ? first.session : id.slice(16));
+    deps.conductor.continueConversation(session, id, earlierText(view), highestTurn(records), highestPhoto(records), first?.type === 'session' ? first.session : id.slice(16));
     c.header('Cache-Control', 'no-store');
     return c.json<ContinueResponse>({ id, session });
   });

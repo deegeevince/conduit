@@ -240,6 +240,13 @@ export function earlierText(view: ConversationView, budget = EARLIER_BUDGET_CHAR
   return `${left > 0 ? `(${left} earlier ${left === 1 ? 'turn' : 'turns'} left out)\n\n` : ''}${kept.join('\n\n')}`;
 }
 
+/** The highest photo number a log holds (`u4` is 4): the photos of a conversation taken up again are named above it, so no id is two photos. */
+export function highestPhoto(records: readonly SessionRecord[]): number {
+  let top = 0;
+  for (const record of records) if (record.type === 'upload') top = Math.max(top, Number(/^u(\d+)$/.exec(record.id)?.[1] ?? 0));
+  return top;
+}
+
 /** The highest turn number a log holds (`t12` is 12), so that a session writing on keeps its ids above it. */
 export function highestTurn(records: readonly SessionRecord[]): number {
   let top = 0;
