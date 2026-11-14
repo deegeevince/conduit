@@ -1,6 +1,6 @@
 // The live critic (PLAN-v2.1 package S3): a judge that can see, asked about real turns, behind `domain/critic.ts`.
 //
-// It never runs on a turn's path except `compare`, which is bounded by its caller's deadline. `look` is one at a time per session (a
+// It never runs on a turn's path: `compare` is started after a fix is shown and not waited for. `look` is one at a time per session (a
 // newer turn's look replaces one that has not started), at most `policy.perHour`, and bounded by `policy.lookMs`. It never throws: a
 // finding it could not make is null and the reason is logged once per kind.
 
@@ -110,13 +110,19 @@ export function createLiveCritic(deps: LiveCriticDeps): Critic {
 
     async compare(request, draft, candidate, deadlineMs, signal): Promise<CriticComparison | null> {
       if (!policy.enabled) return null;
+      if (!spend()) {
+        tell('ceiling', { perHour: policy.perHour });
+        return null;
+      }
       try {
         const bounded = AbortSignal.any([signal, closing.signal, AbortSignal.timeout(Math.max(1, deadlineMs))]);
         // Which picture is shown first is decided here and never said.
         const draftFirst = Math.random() < 0.5;
         const got = await judgePair(inputOf(request), pictureOf(draft), pictureOf(candidate), draftFirst, settings(Math.max(1, deadlineMs)), bounded);
         if ('failure' in got) {
-          if (!bounded.aborted) tell('compare', { turn: request.turn, why: got.failure });
+          // A timeout is logged every time: the deadline is the thing to measure. Other failures once per kind.
+          if (bounded.aborted) log.warn('critic.compare_timeout', { turn: request.turn, deadlineMs, why: got.failure });
+          else tell('compare', { turn: request.turn, why: got.failure });
           return null;
         }
         return { draft: got.a, candidate: got.b };

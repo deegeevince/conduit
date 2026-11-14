@@ -12,9 +12,9 @@
 // - `look` never runs on the turn's path. The conductor calls it after `end` has been sent and the resting snapshot has arrived, and
 //   does not wait for it. A critic that is slow, fails or is switched off changes nothing a viewer sees.
 // - One look at a time per session; a newer turn's look replaces an older one that has not started. At most `CriticPolicy.perHour`.
-// - `compare` is the only call on a turn's path, and only inside look-and-fix or a refine pass, under `FixPolicy.compareMs`: it is
-//   shown two pictures in one message, in an order it is not told, and says which is better. Past the deadline it resolves null and
-//   the pure rules decide alone.
+// - `compare` is never waited for. Look-and-fix shows a fix on the two pure rules and starts the comparison in the background, under
+//   `FixPolicy.compareMs`: it is shown two pictures in one message, in an order it is not told, and says which is better; the answer
+//   is logged (`review.compare`). Past the deadline it resolves null and the timeout is logged. It counts against `perHour`.
 // - Never throws. A finding it could not make is null, and the reason is logged once.
 // - What it is shown is the picture and the user's words. Never a document, a pasted table, an upload, or anything a tool returned.
 

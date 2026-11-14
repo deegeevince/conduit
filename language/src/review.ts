@@ -238,11 +238,11 @@ export interface FixPolicy {
   readonly keepWords: number;
   /** ms the server waits for the painter's report on a candidate before it gives the fix up */
   readonly candidateWaitMs: number;
-  /** ms the critic has to compare draft and candidate; past it the first two rules decide alone */
+  /** ms the critic has, after the fix is already shown, to compare draft and candidate in the background; only logged, never waited for */
   readonly compareMs: number;
 }
 
-export const FIX_POLICY: FixPolicy = { keepDrawn: 0.8, keepWords: 0.6, candidateWaitMs: 1500, compareMs: 8_000 };
+export const FIX_POLICY: FixPolicy = { keepDrawn: 0.8, keepWords: 0.6, candidateWaitMs: 1500, compareMs: 60_000 };
 
 /**
  * Whether a line may be part of a pass after the draft. `scene` and `look` never are: a fix does not start again and does not change
