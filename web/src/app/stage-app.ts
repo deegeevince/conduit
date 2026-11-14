@@ -884,7 +884,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     return recording === null ? '' : recording.lines.map(({ line }) => serializeLine(line)).join('\n');
   }
 
-  const LABELS = { video: 'film', frames: 'frames', still: 'picture', script: 'script' } as const;
+  const LABELS = { video: 'film', frames: 'frames', still: 'picture', script: 'script', pdf: 'pdf' } as const;
 
   function startExport(request: ExportRequest): ExportJob {
     const recording = painter.recording();

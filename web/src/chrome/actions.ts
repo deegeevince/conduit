@@ -15,7 +15,7 @@ export interface TranscriptView {
 
 type Formats = Awaited<ReturnType<StageApp['formats']>>;
 
-const NO_FORMATS: Formats = { video: [], frames: false, svg: false };
+const NO_FORMATS: Formats = { video: [], frames: false, svg: false, pdf: false };
 
 const SIZES = [
   { id: 'landscape', label: '1920 by 1080, landscape', width: 1920, height: 1080 },
