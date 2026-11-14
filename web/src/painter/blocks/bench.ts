@@ -1,6 +1,6 @@
 // The structure bench. No browser: text is sized by a stand-in measurer
 // (proportional or fixed pitch by the look's face), the looks are the real
-// nine, the rooms the real safe frames at 1440x900 and 375x667.
+// nine, the rooms the real safe frames at 1280x720 and 375x667.
 //
 //   pnpm --filter @conduit/language exec tsx ../web/src/painter/blocks/bench.ts [generated=3000] [--verbose]
 //
@@ -103,7 +103,7 @@ interface Screen {
   readonly height: number;
 }
 const SCREENS: Screen[] = [
-  { name: '1440x900', width: 1440, height: 900 },
+  { name: '1280x720', width: 1280, height: 720 },
   { name: '375x667', width: 375, height: 667 },
 ];
 
@@ -115,6 +115,10 @@ interface Setup {
   readonly room: Box;
   readonly canvas: StructureInput['canvas'];
 }
+
+// `--room=0.55`: the block is given that share of the safe frame's height, as when words and choices share the column with it
+const ROOM_SHARE = Number((process.argv.find((a) => a.startsWith('--room=')) ?? '--room=1').slice(7));
+const shorter = (b: Box): Box => ({ ...b, height: b.height * ROOM_SHARE });
 
 function setupFor(look: LookSpec, screen: Screen): Setup {
   const viewport = { width: screen.width, height: screen.height, dpr: 1 };
@@ -129,18 +133,23 @@ function setupFor(look: LookSpec, screen: Screen): Setup {
     measure: measurerFor(look, viewport),
     blockLook: {
       body: m.height,
-      minShrink: 0.6,
+      minShrink: 0.7,
       stroke: Math.max(1.5, Math.min(4, look.stroke.thick * unit * 0.4)),
       radius: fixed || look.stroke.character === 'pixel' ? 0 : 4,
       grid: fixed ? { cell: { width: m.width, height: m.height } } : null,
     },
-    room: safeFrame(viewport, look),
+    room: shorter(safeFrame(viewport, look)),
     canvas: { origin: { x: -80 * unit, y: -45 * unit }, unit },
   };
 }
 
+// `--real`: the words are set by the painter's own measurer (its advance tables), not the stand-in; run it with
+//   npx tsx --import ../web/src/bench/node-register.mjs ../web/src/painter/blocks/bench.ts --real
+const realMeasurer = process.argv.includes('--real') ? (await import('../structures')).measurerFor : null;
+
 function inputFor(p: Parsed, s: Setup, room: Box = s.room): StructureInput {
-  return { structure: p.structure, nodes: p.nodes, links: p.links, room, canvas: s.canvas, measure: s.measure, look: s.blockLook, scope: {}, obstacles: [] };
+  const measure = realMeasurer === null ? s.measure : realMeasurer(s.look, { width: s.screen.width, height: s.screen.height, dpr: 1 }, p.structure.style);
+  return { structure: p.structure, nodes: p.nodes, links: p.links, room, canvas: s.canvas, measure, look: s.blockLook, scope: {}, obstacles: [] };
 }
 
 // ---------------------------------------------------------------- scripts on disk
@@ -415,7 +424,7 @@ for (const [k, v] of times) {
     }
   }
   const med = (a: number[]): number => [...a].sort((x, y) => x - y)[Math.floor(a.length / 2)] as number;
-  process.stdout.write(`\n40-node flows: fitted to a 1440x900 room median ${med(results.fitted).toFixed(2)} ms (worst ${Math.max(...results.fitted).toFixed(2)}); loose room median ${med(results.loose).toFixed(2)} ms (worst ${Math.max(...results.loose).toFixed(2)})\n`);
+  process.stdout.write(`\n40-node flows: fitted to a 1280x720 room median ${med(results.fitted).toFixed(2)} ms (worst ${Math.max(...results.fitted).toFixed(2)}); loose room median ${med(results.loose).toFixed(2)} ms (worst ${Math.max(...results.loose).toFixed(2)})\n`);
 }
 
 // 4. stability: append one node to a shown layout

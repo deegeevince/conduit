@@ -7,7 +7,7 @@ import type { BlockPart, StructureInput, StructureLayout } from '../../contracts
 import type { Box } from '../../contracts/space';
 import { box, boxOfPoints, simplify, union } from './geom';
 import type { Draft, LinkSpec, NodeBox, Note } from './kit';
-import { connectorParts, Env, firstClear, fit, labelPart, linkSpecs, nodeParts, sizeNode } from './kit';
+import { best, connectorParts, Env, fit, labelPart, linkSpecs, nodeParts, placeBeside, sizeNode, WRAPS } from './kit';
 
 type Grow = 'right' | 'down';
 
@@ -21,17 +21,16 @@ interface T {
   link: LinkSpec | null;
 }
 
+const pairsOf = (pts: readonly Point[]): (readonly [Point, Point])[] => pts.slice(0, -1).map((q, i) => [q, pts[i + 1] as Point] as const);
+
 export function layoutTree(input: StructureInput): StructureLayout {
   const f = input.structure.figure;
   const forced = f?.kind === 'structure' ? f.grow : null;
   const preferred: Grow = forced ?? 'down';
-  const first = fit(input, input.look.stroke, (env) => buildTree(env, preferred));
-  if (forced || (first.shrink === 1 && !first.notes.some((n) => n.note === 'crowded'))) return first;
-  const second = fit(input, input.look.stroke, (env) => buildTree(env, 'right'));
-  const crowded = (l: StructureLayout): boolean => l.notes.some((n) => n.note === 'crowded');
-  if (crowded(first) && !crowded(second)) return second;
-  if (!crowded(first) && !crowded(second) && second.shrink > first.shrink * 1.15) return second;
-  return first;
+  const other: Grow = preferred === 'right' ? 'down' : 'right';
+  const attempts: (() => StructureLayout)[] = [];
+  for (const wrap of WRAPS) for (const grow of [preferred, other]) attempts.push(() => fit(input, input.look.stroke, (env) => buildTree(env, grow), undefined, wrap));
+  return best(attempts);
 }
 
 function buildTree(env: Env, grow: Grow): Draft {
@@ -105,7 +104,7 @@ function buildTree(env: Env, grow: Grow): Draft {
     for (const k of t.kids) settle(k, x + k.x, depth + 1);
   };
   forest.kids.forEach((k) => settle(k, k.x, 0));
-  const small = env.small();
+  const small = env.label();
   const labelM = new Map<T, { width: number; height: number }>();
   for (const t of trees.values()) if (t.link?.label) labelM.set(t, env.measure(t.link.label, env.wrapWidth, small));
 
@@ -194,21 +193,13 @@ function buildTree(env: Env, grow: Grow): Draft {
     for (const p of placed) {
       const m = labelM.get(p.t);
       if (!m || !p.t.link) continue;
-      const own = routes.get(p.t.link.el.key) as Polyline;
       const a = p.stem[0] as Point;
       const b = p.stem[1] as Point;
-      const head2 = env.headLength;
-      const c = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-      const cands: Box[] = [];
-      cands.push(box(c.x - m.width / 2, c.y - m.height / 2 - (down ? head2 / 2 : 0), m.width, m.height));
-      const off = (down ? m.width : m.height) / 2 + env.stroke * 2 + 2;
-      cands.push(box(c.x + (down ? off : -m.width / 2), c.y + (down ? -m.height / 2 : off), m.width, m.height));
-      cands.push(box(c.x - (down ? off + m.width : m.width / 2), c.y - (down ? m.height / 2 : off + m.height), m.width, m.height));
-      const pick = firstClear(cands, { boxes: [...nodeBoxes, ...taken], lines: allLines }, own, null);
+      const pick = placeBeside([[a, b], ...pairsOf(p.pts)], m.width, m.height, env.stroke * 1.5 + 3, { boxes: [...nodeBoxes, ...taken], lines: allLines }, null);
       if (!pick) continue;
       if (pick.penalty > 0) notes.push({ key: p.t.link.el.key, note: 'crossed' });
       taken.push(pick.box);
-      labels.push(labelPart(env, p.t.link.el.key, p.t.link.label, pick.box, m, true));
+      labels.push(labelPart(env, p.t.link.el.key, p.t.link.label, pick.box, m, pick.penalty > 0));
     }
     for (const p of placed) {
       const key = (p.t.link as LinkSpec).el.key;

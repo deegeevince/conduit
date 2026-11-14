@@ -36,7 +36,7 @@ export class Env {
   readonly wrapWidth: number;
   private readonly cache = new Map<string, MeasuredText>();
 
-  constructor(input: StructureInput, shrink: number, tight: number, stroke: number) {
+  constructor(input: StructureInput, shrink: number, tight: number, stroke: number, wrap = 1) {
     this.input = input;
     this.shrink = shrink;
     this.tight = tight;
@@ -45,7 +45,7 @@ export class Env {
     const s = input.structure.style;
     this.spec = { size: s.size, weight: s.weight, face: s.face, letterCase: s.case, shrink };
     const sixteen = input.measure('n'.repeat(16), this.spec, 1e9).width;
-    this.wrapWidth = Math.max(this.body * 4, Math.min(sixteen, input.room.width / 3 - this.body));
+    this.wrapWidth = Math.max(this.body * 4, Math.min(sixteen * wrap, (input.room.width / 3 - this.body) * wrap));
   }
 
   measure(text: string, maxWidth: number = this.wrapWidth, spec: TextSpec = this.spec): MeasuredText {
@@ -61,6 +61,11 @@ export class Env {
   /** A caption-sized spec: the look's `xs`, for ticks and labels. */
   small(): TextSpec {
     return { ...this.spec, size: 'xs', weight: 'normal' as TextSpec['weight'] };
+  }
+
+  /** The size of a word on a link, a branch, a pin or a callout: `s`, in ink. Only an axis tick is `xs`. */
+  label(): TextSpec {
+    return { ...this.spec, size: 's', weight: 'normal' as TextSpec['weight'] };
   }
 
   get grid(): { width: number; height: number } | null {
@@ -210,7 +215,7 @@ export function connectorParts(env: Env, l: LinkSpec, pts: readonly Point[], lin
 }
 
 export function labelPart(env: Env, owner: string, text: string, at: Box, m: { width: number; height: number }, plate: boolean): BlockPart {
-  return { kind: 'text', owner, part: 'label', text, emphasis: [], box: box(at.x, at.y, m.width, m.height), spec: env.small(), align: 'center', role: 'label', plate };
+  return { kind: 'text', owner, part: 'label', text, emphasis: [], box: box(at.x, at.y, m.width, m.height), spec: env.label(), align: 'center', role: 'label', plate };
 }
 
 export interface Blockers {
@@ -225,6 +230,37 @@ export function clash(b: Box, blockers: Blockers, skipLine: Polyline | null, gap
   for (const o of blockers.boxes) if (overlaps(g, o)) n += 1;
   for (const l of blockers.lines) if (l !== skipLine && polylineHitsBox(l, g)) n += 1;
   return n;
+}
+
+/**
+ * Places for a label BESIDE a drawn run (never on it), nearest the middle first: above and below a horizontal run, to the
+ * right and left of a vertical one, then the same a third and two thirds of the way along. `off` is the clear space kept
+ * between the line and the words.
+ */
+export function besideRun(a: Point, b: Point, w: number, h: number, off: number): Box[] {
+  const out: Box[] = [];
+  const horizontal = Math.abs(b.x - a.x) >= Math.abs(b.y - a.y);
+  for (const o of [off, off * 3]) {
+    for (const t of [0.5, 0.3, 0.7, 0.15, 0.85]) {
+      const c = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+      if (horizontal) out.push(box(c.x - w / 2, c.y - h - o, w, h), box(c.x - w / 2, c.y + o, w, h));
+      else out.push(box(c.x + o, c.y - h / 2, w, h), box(c.x - o - w, c.y - h / 2, w, h));
+    }
+  }
+  return out;
+}
+
+/** The clear place beside the first of `runs` that has one (runs are tried in the order given); null when every place clashes, with the least bad. */
+export function placeBeside(runs: readonly (readonly [Point, Point])[], w: number, h: number, off: number, blockers: Blockers, room: Box | null): { box: Box; penalty: number } | null {
+  let best: { box: Box; penalty: number } | null = null;
+  for (const [a, b] of runs) {
+    if (Math.hypot(b.x - a.x, b.y - a.y) < 1) continue;
+    const pick = firstClear(besideRun(a, b, w, h, off), blockers, null, room);
+    if (pick === null) continue;
+    if (pick.penalty === 0) return pick;
+    if (best === null || pick.penalty < best.penalty) best = pick;
+  }
+  return best;
 }
 
 /** First candidate with no clash, else the one with the least (and its penalty). */
@@ -250,36 +286,67 @@ export interface Draft {
   finish(room: Box): { parts: BlockPart[]; boxes: Map<string, Box>; routes: Map<string, Polyline>; notes: Note[] };
 }
 
-export function fit(input: StructureInput, stroke: number, build: (env: Env) => Draft, extra?: (draft: Draft) => boolean): StructureLayout {
+/** The least a structure is ever set at: below the look's own floor it is still on the page and inside its room, and says `crowded`. */
+export const HARD_SHRINK = 0.3;
+
+export function fit(input: StructureInput, stroke: number, build: (env: Env) => Draft, extra?: (draft: Draft) => boolean, wrap = 1): StructureLayout {
   const room = input.room;
-  const minShrink = Math.max(0.3, input.look.minShrink);
+  const floor = Math.max(HARD_SHRINK, input.look.minShrink);
   const cellW = input.look.grid?.cell.width ?? 0;
   const cellH = input.look.grid?.cell.height ?? 0;
-  const fits = (d: Draft): boolean => d.width + cellW <= room.width + 0.5 && d.height + cellH <= room.height + 0.5 && (extra ? extra(d) : true);
-  let env = new Env(input, 1, 1, stroke);
+  const fits = (d: Draft, slack = 0): boolean => d.width + cellW <= room.width + 0.5 - slack && d.height + cellH <= room.height + 0.5 - slack && (extra ? extra(d) : true);
+  let env = new Env(input, 1, 1, stroke, wrap);
   let draft = build(env);
   let shrink = 1;
   let tight = 1;
   if (!fits(draft)) {
     tight = 0.6;
-    env = new Env(input, 1, tight, stroke);
+    env = new Env(input, 1, tight, stroke, wrap);
     draft = build(env);
-    for (let i = 0; i < 6 && !fits(draft) && shrink > minShrink + 1e-9; i += 1) {
+    // Down to the look's floor first; then, rather than leave a part outside its room, below it, said as `crowded`.
+    for (let i = 0; i < 14 && !fits(draft) && shrink > HARD_SHRINK + 1e-9; i += 1) {
       const scale = Math.min(room.width / Math.max(1, draft.width), room.height / Math.max(1, draft.height));
-      shrink = Math.max(minShrink, Math.min(shrink * 0.97, shrink * scale * 0.985));
-      env = new Env(input, shrink, tight, stroke);
+      const lower = shrink > floor + 1e-9 ? floor : HARD_SHRINK;
+      shrink = Math.max(lower, Math.min(shrink * 0.97, shrink * scale * 0.985));
+      env = new Env(input, shrink, tight, stroke, wrap);
       draft = build(env);
     }
   }
   const ok = fits(draft);
   const done = draft.finish(room);
   const notes = [...done.notes];
-  if (!ok) notes.push({ key: input.structure.key, note: 'crowded' });
-  if (shrink < 1 && ok) notes.push({ key: input.structure.key, note: 'shrunk' });
+  if (!ok || shrink < input.look.minShrink - 1e-9) notes.push({ key: input.structure.key, note: 'crowded' });
+  else if (shrink < 1) notes.push({ key: input.structure.key, note: 'shrunk' });
   const all = [...done.boxes.values()];
   const boxes = done.boxes;
   boxes.set(input.structure.key, union(all));
   return { boxes, parts: done.parts, routes: done.routes, notes, shrink };
+}
+
+export const isCrowded = (l: StructureLayout): boolean => l.notes.some((n) => n.note === 'crowded');
+
+/** How wide a node's words may run, as shares of the usual: a narrow room does better with fewer, longer lines, a short one with more, shorter. */
+export const WRAPS: readonly number[] = [1, 0.7, 1.6, 2.4];
+
+/**
+ * The best of several attempts, tried in the order given: one that is not `crowded` over one that is, then the larger type; the
+ * earlier one unless a later one is clearly better (the first is the one that stays put when a part is appended).
+ */
+export function best(attempts: readonly (() => StructureLayout)[]): StructureLayout {
+  let top: StructureLayout | null = null;
+  for (const attempt of attempts) {
+    const l = attempt();
+    if (top === null) {
+      top = l;
+      if (!isCrowded(l) && l.shrink >= 1) break;
+      continue;
+    }
+    const a = isCrowded(top);
+    const b = isCrowded(l);
+    if (a && !b) top = l;
+    else if (a === b && l.shrink > top.shrink * 1.15) top = l;
+  }
+  return top as StructureLayout;
 }
 
 /** Back to front: grounds, connectors, heads, frames, words. */
