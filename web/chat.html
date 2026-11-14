@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
+    <meta name="color-scheme" content="light dark" />
+    <!-- A frame in this page may hold nothing but an inline document (web/src/surfaces/document.ts, PAGE_FRAME_POLICY): a live app cannot navigate itself away with data in the address. -->
+    <meta http-equiv="Content-Security-Policy" content="frame-src about: blob:" />
+    <meta name="theme-color" content="#ffffff" />
+    <link rel="stylesheet" href="/src/styles/tokens.css" />
+    <link rel="stylesheet" href="/src/styles/chrome.css" />
+    <link rel="stylesheet" href="/src/styles/voice.css" />
+    <link rel="stylesheet" href="/src/shell/shell.css" />
+    <title>Conduit</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/shell/main.ts"></script>
+  </body>
+</html>

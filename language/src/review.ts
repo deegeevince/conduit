@@ -35,7 +35,7 @@ export interface ReviewPolicy {
   readonly passMs: number;
 }
 
-export const REVIEW_POLICY: ReviewPolicy = { enabled: true, passes: 1, minDrawn: 3, draftWaitMs: 1500, firstLineMs: 12_000, passMs: 30_000 };
+export const REVIEW_POLICY: ReviewPolicy = { enabled: true, passes: 1, minDrawn: 3, draftWaitMs: 8000, firstLineMs: 12_000, passMs: 30_000 };
 
 /** The notes that mean a viewer cannot read or find something. Any one of them is reason enough to look. */
 export const BLOCKING_NOTES: readonly SightNote[] = ['clipped', 'off-canvas', 'covered', 'overlaps', 'collides', 'crossed', 'faint', 'tiny', 'crowded', 'sparse', 'lost'];
@@ -162,7 +162,7 @@ export function buildReviewBrief(input: ReviewBriefInput): string {
   const rows: string[] = [];
   if (input.sight !== null) for (const line of describeSight(input.sight)) rows.push(`  ${line}`);
   for (const problem of input.problems) rows.push(`  ${problem.kind === 'rejected' ? 'REJECTED' : 'REPAIRED'} \`${problem.raw}\`: ${problem.why}`);
-  const seen = input.picture ? 'The picture attached is the stage as the lines you have written will leave it.' : 'No picture could be taken; go by the report.';
+  const seen = input.picture ? 'The picture attached is the stage as the lines you have written will leave it.' : 'No picture is attached and none can be fetched: use no tool, go by the measurements.';
   const where = input.placed === undefined || input.placed.length === 0 ? null : `WHERE THINGS ARE (id: size at top-left corner, canvas units):\n${placedRows(input.placed).join('\n')}`;
   const critic = input.critic ?? null;
   if (form === 'refine') {
@@ -188,7 +188,7 @@ export function buildReviewBrief(input: ReviewBriefInput): string {
   const found = critic === null || critic.problems.length === 0 ? null : `A CRITIC WHO CAN SEE IT SAYS:\n${critic.problems.map((problem) => `  ${problem.id === null ? '' : `${problem.id}: `}${problem.what}`).join('\n')}`;
   return [
     `LOOK. This is not the user: it is the stage, showing you your own answer so far. ${seen}`,
-    rows.length === 0 ? 'THE PAINTER REPORTS: nothing wrong that it can measure.' : `THE PAINTER REPORTS:\n${rows.join('\n')}`,
+    rows.length === 0 ? 'THE STAGE MEASURES: nothing wrong that it can measure.' : `THE STAGE MEASURES:\n${rows.join('\n')}`,
     found,
     where,
     `THE USER ASKED: ${input.asked}`,
@@ -197,7 +197,6 @@ export function buildReviewBrief(input: ReviewBriefInput): string {
       `If it reads right, answers what was asked and keeps to what was asked for every reply, write the one line \`${REVIEW_KEEP}\` and nothing else.`,
       'If not, change only what is wrong, in as few lines as it takes. What you write now is tried out of sight and shown only if it is better:',
       '- change a thing by its id: `set`, `move`, `revise <id> | new words`, `cancel <id>`, or its own line again with what differs;',
-      '- a diagram or a chart in the wrong place or too small: its opening line again with a room (`flow x1 4,6 152x62`); its parts stay as they are;',
       '- words crossed, crowded or beside the wrong thing: `move` them, or let the painter place them (`say callout near=<id>`);',
       '- never `scene`, never the lines that were right, never fewer parts than before: a fix that takes something away is thrown out and the draft stays;',
       '- add nothing the user did not ask for, and say nothing about the fix.',

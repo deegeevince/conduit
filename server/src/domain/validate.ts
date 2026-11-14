@@ -1,6 +1,6 @@
 // The edge between untrusted JSON and the typed domain. Every check names the field it found wrong.
 
-import { STATE_LIMITS, AMBIENT_KINDS, CAMERA_MOVES, CHART_KINDS, CONTROL_KINDS, ENTER_EFFECTS, EXIT_EFFECTS, FACES, FX_NAMES, LAYERS, LOOPS, MARKS, PROCEDURAL_MEDIA, STROKES, STRUCTURE_KINDS, TEXTURES, ALIGNS, BACK_EVENT_TYPES, BRAIN_EFFORTS, BRAIN_MODES, BRAIN_MODELS, CANVAS_NAMES, DEMOS, ELEMENT_KINDS, LAYOUTS, LIMITS, LOOK_IDS, MOODS, NO_SIGHT, NO_V21_CAPABILITIES, NO_V4_CAPABILITIES, PACES, SIGHT_ITEMS, SIGHT_NOTE, UPLOAD_LIMITS, checkInkMarks, VOICE_LIMITS } from '@conduit/language';
+import { STATE_LIMITS, AMBIENT_KINDS, CAMERA_MOVES, CHART_KINDS, CONTROL_KINDS, ENTER_EFFECTS, EXIT_EFFECTS, FACES, FX_NAMES, LAYERS, LOOPS, MARKS, PROCEDURAL_MEDIA, STROKES, STRUCTURE_KINDS, TEXTURES, ALIGNS, BACK_EVENT_TYPES, BRAIN_EFFORTS, BRAIN_MODES, BRAIN_MODELS, CANVAS_NAMES, DEMOS, ELEMENT_KINDS, LAYOUTS, LIMITS, LOOK_IDS, MOODS, NO_SIGHT, NO_V21_CAPABILITIES, NO_V4_CAPABILITIES, PACES, SIGHT_ITEMS, SIGHT_NOTE, UPLOAD_LIMITS, checkInkMarks, VOICE_LIMITS, AGENT_PERMITS } from '@conduit/language';
 import type {
   BackEvent,
   BrainChange,
@@ -133,6 +133,7 @@ function capabilities(value: unknown): Capabilities {
     decks: raw.decks === undefined ? NO_V21_CAPABILITIES.decks : bool(raw.decks, 'capabilities.decks'),
     uploads: raw.uploads === undefined ? NO_V21_CAPABILITIES.uploads : bool(raw.uploads, 'capabilities.uploads'),
     links: raw.links === undefined ? NO_V21_CAPABILITIES.links : bool(raw.links, 'capabilities.links'),
+    ...(typeof raw.engine === 'string' ? { engine: raw.engine.slice(0, 64) } : {}),
   };
 }
 
@@ -480,7 +481,7 @@ function backEvent(value: unknown, index: number): BackEvent {
         ...optionalSeen(raw.seen, 'seen'),
       };
     case 'report':
-      return { type, report: report(raw.report) };
+      return { type, report: report(raw.report), ...(typeof raw.boxes === 'string' ? { boxes: raw.boxes.slice(0, 64) } : {}) };
     case 'control':
       return {
         type,
@@ -505,6 +506,7 @@ function backEvent(value: unknown, index: number): BackEvent {
         ...(placed === undefined ? {} : { placed }),
         snapshot: bool(raw.snapshot, 'snapshot'),
         ...(raw.content === undefined || raw.content === null ? {} : { content: contentCount(raw.content) }),
+        ...(typeof raw.boxes === 'string' ? { boxes: raw.boxes.slice(0, 64) } : {}),
       };
     }
     case 'permit':
@@ -538,15 +540,16 @@ export function parseStartTurn(body: unknown): StartTurnRequest {
 /** Body of `PUT …/brain`: a model and/or an effort, each from the allowlist. Anything else is refused by name. */
 export function parseBrainChange(body: unknown): BrainChange {
   const o = obj(body, 'body');
-  const unknown = Object.keys(o).filter((key) => key !== 'model' && key !== 'effort' && key !== 'mode');
+  const unknown = Object.keys(o).filter((key) => key !== 'model' && key !== 'effort' && key !== 'mode' && key !== 'permits');
   if (unknown.length > 0) throw errors.badRequest(`unknown setting ${unknown.join(', ')}: only model, effort and mode can be set`);
-  if (o.model === undefined && o.effort === undefined && o.mode === undefined) {
+  if (o.model === undefined && o.effort === undefined && o.mode === undefined && o.permits === undefined) {
     throw errors.badRequest(`say a model (${BRAIN_MODELS.join(' | ')}), an effort (${BRAIN_EFFORTS.join(' | ')}) or a mode (${BRAIN_MODES.join(' | ')})`);
   }
   return {
     ...(o.model === undefined ? {} : { model: oneOf(o.model, BRAIN_MODELS, 'model') }),
     ...(o.effort === undefined ? {} : { effort: oneOf(o.effort, BRAIN_EFFORTS, 'effort') }),
     ...(o.mode === undefined ? {} : { mode: oneOf(o.mode, BRAIN_MODES, 'mode') }),
+    ...(o.permits === undefined ? {} : { permits: oneOf(o.permits, AGENT_PERMITS, 'permits') }),
   };
 }
 

@@ -12,7 +12,7 @@ import type { ElementFrame, FigureFrame, Frame, PictureFrame, RunFrame, ShapeFra
 import { IDENTITY } from '../../../contracts/frame';
 import type { LookSpec } from '../../../contracts/look';
 import { REST_POSE } from '../../../contracts/space';
-import { foldText } from '../../../fonts';
+import { foldText } from '../../../fonts/fold';
 import { prefixEm } from '../../../fonts/measure';
 import type { UiClip, UiPart, UiRect } from './types';
 
@@ -197,7 +197,8 @@ export function uiFrame(parts: readonly UiPart[], o: FrameOptions): Frame {
       p.lines.forEach((line, i) => {
         if (line.text === '') return;
         const text = foldText(line.text);
-        const prefix = prefixEm(text, 'sans', p.weight);
+        const face = p.face ?? 'sans';
+        const prefix = prefixEm(text, face, p.weight);
         const total = (prefix[text.length] ?? 0) * p.size;
         const x0 = p.align === 'left' ? p.x : p.align === 'center' ? p.x + (p.w - total) / 2 : p.x + p.w - total;
         const yc = p.y + i * p.line + p.line / 2;
@@ -217,7 +218,7 @@ export function uiFrame(parts: readonly UiPart[], o: FrameOptions): Frame {
           id: p.owner,
           layer: 'mid',
           z: z++,
-          face: 'sans',
+          face,
           x: x0 + total / 2 - cx,
           y: yc - cy,
           width: total,

@@ -63,6 +63,9 @@ const SCRIPTS: Readonly<Record<string, string>> = { overture, sketchbook, plainl
 const PRESETS: Readonly<Record<string, { width: number; height: number }>> = {
   '375x667': { width: 375, height: 667 },
   '390x844': { width: 390, height: 844 },
+  '719x223': { width: 719, height: 223 },
+  '390x691': { width: 390, height: 691 },
+  '520x300': { width: 520, height: 300 },
   '1280x720': { width: 1280, height: 720 },
   '1440x900': { width: 1440, height: 900 },
 };

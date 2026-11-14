@@ -2,13 +2,13 @@
 // is through the camera, whether its document is whole and may run, how far it is in or out, and the look as CSS variables, and hands the
 // app host an `AppCue` for each (the way `chartFrames` hands the chart host a `ChartFrame`). Pure: (schedule, time, look) in, cues out.
 
-import { appSourceOf, styleAt } from '@conduit/language';
+import { appSourceOf, shelfOf, styleAt } from '@conduit/language';
 import type { ElementSpan, Face, Schedule } from '@conduit/language';
 import type { AppCue, AppTokens } from '../contracts/app';
 import type { LookSpec } from '../contracts/look';
 import { layerZ, planeScale, projectToScreen, REST_POSE } from '../contracts/space';
 import type { Box, CameraPose, Viewport } from '../contracts/space';
-import { chartThemeOf } from '../render/chart';
+import { chartThemeOf } from '../render/chart/theme';
 import { contrastRatio, enforceInGamut, luminance, mix } from '../looks/colour-math';
 import { clamp01 } from './affine';
 import type { CanvasFit } from './canvas';
@@ -90,9 +90,26 @@ function sourceOf(figure: Extract<NonNullable<ElementSpan['figure']>, { kind: 's
   return source;
 }
 
+/**
+ * The scenes in which a live app is the whole answer: nothing else is drawn or placed there but words. Such an app is the page: it takes the whole stage, edge
+ * to edge, with no frame or caption drawn about it (the words are in the transcript). An app beside other drawing keeps its room and its caption.
+ */
+export function loneAppScenes(schedule: Schedule): ReadonlySet<string> {
+  const lone = new Set<string>();
+  const crowded = new Set<string>();
+  for (const element of schedule.elements) {
+    const app = element.figure?.kind === 'structure' && element.figure.structure === 'app';
+    if (app) lone.add(element.scene);
+    else if (element.kind !== 'text') crowded.add(element.scene);
+  }
+  for (const scene of crowded) lone.delete(scene);
+  return lone;
+}
+
 export function appCues(schedule: Schedule, tq: number, look: LookSpec, env: AppEnv): AppCue[] {
   const out: AppCue[] = [];
   const live = new Set<string>();
+  const alone = loneAppScenes(schedule);
   for (const element of schedule.elements) {
     const figure = element.figure;
     if (figure === null || figure.kind !== 'structure' || figure.structure !== 'app') continue;
@@ -103,8 +120,9 @@ export function appCues(schedule: Schedule, tq: number, look: LookSpec, env: App
     const ps = planeScale(element.style.layer, env.viewport);
     const given = env.roomOf(element);
     const fit = env.fitOf(element);
-    const room: Box =
-      given !== null
+    const room: Box = alone.has(element.scene)
+      ? { x: -env.viewport.width / ps / 2, y: -env.viewport.height / ps / 2, width: env.viewport.width / ps, height: env.viewport.height / ps }
+      : given !== null
         ? { x: given.x / ps, y: given.y / ps, width: given.width / ps, height: given.height / ps }
         : figure.box === null
           ? { x: fit.box.x / ps, y: fit.box.y / ps, width: fit.box.width / ps, height: fit.box.height / ps }
@@ -115,8 +133,11 @@ export function appCues(schedule: Schedule, tq: number, look: LookSpec, env: App
     const b = corner(env.camera, room.x + room.width, room.y + room.height);
     const ra = corner(REST_POSE, room.x, room.y);
     const rb = corner(REST_POSE, room.x + room.width, room.y + room.height);
-    const box: Box = { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), width: Math.abs(b.x - a.x), height: Math.abs(b.y - a.y) };
-    const rest: Box = { x: Math.min(ra.x, rb.x), y: Math.min(ra.y, rb.y), width: Math.abs(rb.x - ra.x), height: Math.abs(rb.y - ra.y) };
+    // The page is the stage, edge to edge down to the composer, whatever the camera is doing: it is never moved or sized by it.
+    const page = alone.has(element.scene);
+    const whole: Box = { x: 0, y: 0, width: env.viewport.width, height: env.viewport.height };
+    const box: Box = page ? whole : { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), width: Math.abs(b.x - a.x), height: Math.abs(b.y - a.y) };
+    const rest: Box = page ? whole : { x: Math.min(ra.x, rb.x), y: Math.min(ra.y, rb.y), width: Math.abs(rb.x - ra.x), height: Math.abs(rb.y - ra.y) };
 
     let opacity = 1;
     if (enter !== null && tq < enter.end) opacity = enter.end > enter.start ? clamp01((tq - enter.start) / (enter.end - enter.start)) : 1;
@@ -129,15 +150,16 @@ export function appCues(schedule: Schedule, tq: number, look: LookSpec, env: App
     // whole when a later line closed it (or the turn ended) and its last line has landed; what an earlier turn left was whole then
     const ready = element.carried || (tq >= last && (sealed === null ? env.closed : tq >= sealed));
     const source = ready ? sourceOf(figure) : '';
+    const uses = ready ? shelfOf(figure.uses, source) : (figure.uses ?? []);
     const tokenSet = appTokensOf(look, env.viewport);
-    const signature = [source.length, ready ? 1 : 0, element.carried ? 1 : 0, element.text, element.id, opacity.toFixed(3), element.order, box.x.toFixed(1), box.y.toFixed(1), box.width.toFixed(1), box.height.toFixed(1), rest.x.toFixed(1), rest.y.toFixed(1), rest.width.toFixed(1), rest.height.toFixed(1)].join('|');
+    const signature = [alone.has(element.scene) ? 'page' : '', uses.join('+'), source.length, ready ? 1 : 0, element.carried ? 1 : 0, element.text, element.id, opacity.toFixed(3), element.order, box.x.toFixed(1), box.y.toFixed(1), box.width.toFixed(1), box.height.toFixed(1), rest.x.toFixed(1), rest.y.toFixed(1), rest.width.toFixed(1), rest.height.toFixed(1)].join('|');
     live.add(element.key);
     const known = kept.get(element.key);
     if (known !== undefined && known.signature === signature && known.cue.tokens === tokenSet && known.cue.source === source) {
       out.push(known.cue);
       continue;
     }
-    const cue: AppCue = { key: element.key, id: element.id, title: element.text, source, ready, carried: element.carried, box, rest, opacity, layer: element.style.layer, z: element.order, tokens: tokenSet };
+    const cue: AppCue = { key: element.key, id: element.id, title: element.text, source, ...(uses.length > 0 && { uses }), ...(alone.has(element.scene) && { page: true }), ready, carried: element.carried, box, rest, opacity, layer: element.style.layer, z: element.order, tokens: tokenSet };
     kept.set(element.key, { signature, cue });
     out.push(cue);
   }

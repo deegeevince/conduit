@@ -1,4 +1,4 @@
-// The brain picker: one small button in the bar that says what is answering ("opus · medium · agent") and opens a panel
+// The brain picker: an entry of the composer's [+] menu, "Model and effort", that says what is answering ("opus · medium · agent") and opens a panel
 // to change the model, the effort and the mode, and to switch the check of the drawing. Native radio groups and a native
 // checkbox, so every part of it works from the keyboard with a name, a role and a value; nothing is announced but the
 // change the viewer makes.
@@ -7,6 +7,7 @@ import { BRAIN_EFFORTS, BRAIN_MODELS } from '@conduit/language';
 import type { BrainChange, BrainChoice } from '@conduit/language';
 import type { StageApp } from '../app/stage-app';
 import { brainLabel } from './commands';
+import type { ComposerMenu } from './menu';
 
 export interface Picker {
   /** the picker's own copy of what the brain is set to changed elsewhere (`/model`) */
@@ -16,21 +17,15 @@ export interface Picker {
 
 let counter = 0;
 
-export function mountPicker(host: HTMLElement, app: StageApp): Picker {
+export function mountPicker(menu: ComposerMenu, app: StageApp): Picker {
   counter += 1;
   const panelId = `brain-panel-${counter}`;
-  const group = document.createElement('div');
-  group.className = 'picker';
-  group.innerHTML = `
-    <button class="action action--brain" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="${panelId}" hidden>Brain</button>
-    <div class="picker__panel" id="${panelId}" role="dialog" aria-label="Brain settings" hidden></div>`;
-  host.prepend(group);
-  const button = group.querySelector<HTMLButtonElement>('.action--brain');
-  const panel = group.querySelector<HTMLElement>('.picker__panel');
-  if (button === null || panel === null) throw new Error('The brain picker could not be built.');
+  const panel = menu.addView('brain', 'Model and effort');
+  panel.classList.add('picker__panel');
+  panel.id = panelId;
+  const entry = menu.add({ id: 'brain', label: 'Model and effort', order: 60, view: 'brain', hidden: true });
 
   let choice: BrainChoice | null = null;
-  let open = false;
   let busy = false;
 
   const radios = (name: string, legend: string, values: readonly string[], current: string | null, gists?: Readonly<Record<string, string>>): HTMLFieldSetElement => {
@@ -97,22 +92,9 @@ export function mountPicker(host: HTMLElement, app: StageApp): Picker {
     parts.push(note);
     panel.replaceChildren(...parts);
     const label = choice === null ? null : brainLabel(choice);
-    button.textContent = label ?? 'Settings';
-    button.hidden = choice === null || (label === null && !review.available);
-    group.hidden = button.hidden;
+    entry.set({ label: label === null ? 'Settings' : 'Model and effort', ...(label === null ? {} : { gist: label }), hidden: choice === null || (label === null && !review.available) });
   };
 
-  const setOpen = (next: boolean, focus = false): void => {
-    open = next;
-    panel.hidden = !next;
-    button.setAttribute('aria-expanded', String(next));
-    if (next) {
-      draw();
-      if (focus) (panel.querySelector<HTMLInputElement>('input:checked') ?? panel.querySelector<HTMLInputElement>('input'))?.focus();
-    }
-  };
-
-  button.addEventListener('click', () => setOpen(!open, true));
   panel.addEventListener('change', (event) => {
     const target = event.target;
     if (!(target instanceof HTMLInputElement)) return;
@@ -137,7 +119,7 @@ export function mountPicker(host: HTMLElement, app: StageApp): Picker {
         choice = next;
         draw();
         // The panel was drawn again: the viewer's place in it is kept.
-        if (open) panel.querySelector<HTMLInputElement>(`input[data-field="${field}"]:checked`)?.focus();
+        if (panel.contains(document.activeElement) || document.activeElement === document.body) panel.querySelector<HTMLInputElement>(`input[data-field="${field}"]:checked`)?.focus();
         app.announce(`${field === 'mode' ? 'Brain' : field === 'model' ? 'Model' : 'Effort'}: ${target.value} (the next answer starts fresh)`);
       },
       (cause: unknown) => {
@@ -147,28 +129,9 @@ export function mountPicker(host: HTMLElement, app: StageApp): Picker {
       },
     );
   });
-  panel.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      event.stopPropagation();
-      setOpen(false);
-      button.focus();
-    } else if (event.key === 'Tab') {
-      // Tabbing out of the panel closes it, as leaving a menu does.
-      const inputs = [...panel.querySelectorAll<HTMLInputElement>('input')];
-      const last = inputs[inputs.length - 1];
-      const first = inputs[0];
-      if ((!event.shiftKey && document.activeElement === last) || (event.shiftKey && document.activeElement === first)) setOpen(false);
-    }
-  });
-  const onPointer = (event: PointerEvent): void => {
-    if (open && event.target instanceof Node && !group.contains(event.target)) setOpen(false);
-  };
-  document.addEventListener('pointerdown', onPointer);
-
   // The review switch is offered once the server has said it can; the choice is read again when the panel opens.
   const timer = setInterval(() => {
-    if (!open) draw();
+    if (!panel.contains(document.activeElement)) draw();
   }, 2000);
   draw();
 
@@ -179,8 +142,8 @@ export function mountPicker(host: HTMLElement, app: StageApp): Picker {
     },
     dispose() {
       clearInterval(timer);
-      document.removeEventListener('pointerdown', onPointer);
-      group.remove();
+      entry.remove();
+      panel.remove();
     },
   };
 }

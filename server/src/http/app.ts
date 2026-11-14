@@ -11,10 +11,12 @@ import { SERVER_LIMITS } from '../domain/session';
 import { AppError, errors, toErrorBody } from '../errors';
 import { UPLOAD_LIMITS, VOICE_LIMITS } from '@conduit/language';
 import { registerAssetRoutes } from './asset-routes';
+import { registerConversationRoutes } from './conversation-routes';
 import { registerUploadRoutes } from './upload-routes';
 import { registerDocumentRoutes } from './document-routes';
 import { registerVoiceRoutes } from './voice-routes';
 import type { HttpDeps } from './deps';
+import { registerEngineRoutes } from './engine-routes';
 import { registerExploreRoutes } from './explore-routes';
 import { registerRelayRoutes } from './relay-routes';
 import { registerTasteRoutes } from './taste-routes';
@@ -78,7 +80,7 @@ export function createApp(deps: HttpDeps): Hono {
   const withPhoto = limited(UPLOAD_LIMITS.bytes);
   const withVoice = limited(VOICE_LIMITS.bytes);
   // Only the two session POSTs that can carry a report get the larger limit, and only the two uploads a picture's.
-  const carriesReport = /^\/api\/sessions\/[^/]+\/(?:events|turns)$/;
+  const carriesReport = /^\/api\/(?:sessions\/[^/]+\/(?:events|turns)|engine\/measure)$/;
   const carriesPicture = /^\/api\/sessions\/[^/]+\/(?:sketches\/[^/]+|turns\/[^/]+\/(?:snapshot|drafts\/\d+))$/;
   app.use('/api/*', (c, next) => {
     if (c.req.method !== 'POST') return ordinary(c, next);
@@ -94,10 +96,12 @@ export function createApp(deps: HttpDeps): Hono {
   registerDocumentRoutes(app, deps);
   registerAssetRoutes(app, deps);
   registerUploadRoutes(app, deps);
+  registerConversationRoutes(app, deps);
   registerVoiceRoutes(app, deps);
   registerStatusRoutes(app, deps);
   registerOpsRoutes(app, deps);
   registerExploreRoutes(app, deps);
+  registerEngineRoutes(app, deps);
   registerTasteRoutes(app, deps);
   registerRelayRoutes(app, deps);
   app.all('/api/*', (c) => {

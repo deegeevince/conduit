@@ -6,7 +6,8 @@ import type { CriticFinding, ExploreJudgement } from '@conduit/language';
 import { askObject } from './ask';
 import { shareOf } from './ask';
 import type { JudgeSettings, JudgeUsage, Picture } from './ask';
-import { CHART_ADDENDUM, COMPARE_SYSTEM, FINDING_ADDENDUM, RESPONDS_SYSTEM, SYSTEM, rubricOf } from './rubric';
+import { readGates, readProgress } from './gates';
+import { CHART_ADDENDUM, COMPARE_SYSTEM, FOLLOW_UP_ADDENDUM, LIVE_SYSTEM, RESPONDS_SYSTEM, SYSTEM, WORST_CASE_ADDENDUM, rubricOf } from './rubric';
 
 export type { JudgeSettings, Picture } from './ask';
 export { rubricOf } from './rubric';
@@ -93,6 +94,12 @@ export interface FindingInput {
   readonly asked: string;
   /** the ids on the stage, so that a problem can name its thing */
   readonly ids: readonly string[];
+  /** critic v2: what the painter measured, one short line per element that landed badly (its id first); evidence, not a verdict */
+  readonly measured?: readonly string[];
+  /** critic v2: the answer is a mock-up, so the worst-case gate is asked (as a note) */
+  readonly mockup?: boolean;
+  /** critic v2: the same answer revised in place: the picture it had and the verdict it was given */
+  readonly previous?: { readonly picture: Picture; readonly finding: CriticFinding } | null;
 }
 
 const WEIGHTS = ['blocks', 'hurts', 'polish'] as const;
@@ -129,12 +136,49 @@ function requestText(input: FindingInput, pictures: string): string {
   return `The user's request:\n${input.asked}\n\n${pictures}\n\nThe ids of what is on the stage: ${input.ids.length === 0 ? '(none given)' : input.ids.join(', ')}.`;
 }
 
+/** What the live critic is told of an earlier verdict: its numbers and what failed, never anything the author thought. */
+function earlierVerdict(finding: CriticFinding): string {
+  const failed = (finding.gates ?? []).filter((g) => !g.pass).map((g) => `  - ${g.gate} (tier ${g.tier}): ${g.evidence}`);
+  const raised = finding.problems.filter((p) => p.raised !== false).slice(0, 5).map((p) => `  - ${p.gate ?? 'problem'}${p.id === null ? '' : ` [${p.id}]`}: ${p.what}`);
+  return `coherence ${finding.coherence}; lowest failing tier: ${finding.failedTier ?? 'none'}.\n${failed.length === 0 ? '  (every gate passed)' : failed.join('\n')}${raised.length === 0 ? '' : `\nWhat you raised:\n${raised.join('\n')}`}`;
+}
+
+/** The live critic's question (critic v2): fresh context, gates by tier, and when the answer was revised in place, the picture and verdict from before. */
+function lookText(input: FindingInput): string {
+  const pictures = input.previous === undefined || input.previous === null
+    ? 'One picture follows: the stage as the answer left it.'
+    : `Two pictures follow. The FIRST is the stage as the previous answer left it, and the verdict you gave it is below; it is for reference, do not judge it again. The SECOND is the stage as this answer left it: judge that one, by every gate.\n\nYour earlier verdict on the FIRST:\n${earlierVerdict(input.previous.finding)}`;
+  const measured = input.measured === undefined || input.measured.length === 0 ? '' : `\n\nWhat the painter measured on the stage (measurements, not opinions; trust the picture over them): \n${input.measured.map((line) => `- ${line}`).join('\n')}`;
+  const extra = `${input.mockup === true ? `\n\n${WORST_CASE_ADDENDUM}` : ''}${input.previous === undefined || input.previous === null ? '' : `\n\n${FOLLOW_UP_ADDENDUM}`}`;
+  return `${requestText(input, pictures)}${measured}${extra}`;
+}
+
 /** One resting picture, as the live critic looks at it. Null when the judge could not be read twice or failed. */
 export async function judgeFinding(input: FindingInput, picture: Picture, settings: JudgeSettings, signal: AbortSignal): Promise<{ finding: CriticFinding | null; failure: string | null }> {
-  const got = await askObject(`${SYSTEM}\n${FINDING_ADDENDUM}`, requestText(input, 'One picture follows: the stage as the answer left it.'), [picture], settings, signal);
+  const mockup = input.mockup === true;
+  const previous = input.previous ?? null;
+  const got = await askObject(LIVE_SYSTEM, lookText(input), previous === null ? [picture] : [previous.picture, picture], settings, signal);
   if (got.object === null) return { finding: null, failure: describe(got.failure, got.stderr, got.reply) };
-  const finding = findingOf(got.object, input, settings, got.ms, got.cost, got.usage);
-  return { finding, failure: finding === null ? 'the judge answered without a coherence score' : null };
+  const base = findingOf(got.object, input, settings, got.ms, got.cost, got.usage);
+  if (base === null) return { finding: null, failure: 'the judge answered without a coherence score' };
+  const read = readGates(got.object, base.coherence, new Set(input.ids), mockup);
+  // a judge that sent no gates is read as before: its problems stand as it weighed them
+  if (read === null) return { finding: base, failure: null };
+  const progress = previous === null ? null : readProgress(got.object['progress']);
+  const finding: CriticFinding = {
+    ...base,
+    coherence: read.coherence,
+    readable: read.gates.find((g) => g.gate === 'readable')?.pass !== false,
+    problems: read.problems,
+    gates: read.gates,
+    failedTier: read.failedTier,
+    mockup,
+    ...(read.judgedCoherence === undefined ? {} : { judgedCoherence: read.judgedCoherence }),
+    ...(previous === null
+      ? {}
+      : { previous: { turn: previous.finding.turn, coherence: previous.finding.coherence, failedTier: previous.finding.failedTier ?? null, failed: (previous.finding.gates ?? []).filter((g) => !g.pass).map((g) => g.gate) }, progress }),
+  };
+  return { finding, failure: null };
 }
 
 /**

@@ -15,7 +15,8 @@
 
 import type { AppTokens } from '../contracts/app';
 import type { SurfaceEmit, SurfaceHold, SurfaceHost, SurfaceProbe, SurfaceSpec } from '../contracts/surface';
-import { SURFACE_LIMITS, SURFACE_SOURCE_MAX, buildSurfaceDocument } from './document';
+import { SURFACE_LIMITS, SURFACE_SOURCE_MAX, buildStandalonePage, buildSurfaceDocument } from './document';
+import { loadShelf, shelfKey, shelfText } from './shelf';
 
 export interface SurfaceHostOptions {
   /** the element the surfaces' layer goes in (the stage) */
@@ -26,6 +27,8 @@ export interface SurfaceHostOptions {
   readonly onSave?: (save: { readonly key: string; readonly id: string; readonly json: string }) => void;
   /** a line for the status line: a fault, a surface that stopped */
   readonly onNote?: (text: string) => void;
+  /** a picture for what an app asked for in words (`conduit.picture`): a `data:` address and the credit line to show, or null. The frame can reach nothing itself; the page asks the server's picture service on its behalf. Absent: every ask is answered with none. */
+  readonly onPicture?: (ask: { readonly query: string; readonly aspect: number }) => Promise<{ readonly url: string; readonly credit: string } | null>;
   /** the hostile bench only: leave the boot script's own removals out, so the policy and the sandbox are seen holding alone */
   readonly withoutDepth?: boolean;
 }
@@ -36,8 +39,9 @@ export type FromSurface =
   | { readonly type: 'pong'; readonly n: number }
   | { readonly type: 'emit'; readonly name: string; readonly value: string | number | boolean; readonly ask: boolean }
   | { readonly type: 'save'; readonly json: string }
-  | { readonly type: 'size'; readonly height: number }
+  | { readonly type: 'size'; readonly height: number; readonly width: number | null }
   | { readonly type: 'fault'; readonly message: string }
+  | { readonly type: 'picture'; readonly id: number; readonly query: string; readonly aspect: number }
   | { readonly type: 'still'; readonly id: number; readonly failed: string | null; readonly how: 'own' | 'dom' | null; readonly w: number; readonly h: number; readonly data: string | null };
 
 const NAME = /^[A-Za-z0-9_.:-]{1,32}$/;
@@ -50,6 +54,11 @@ const SAVE_TELL_MS = 2500;
 /** A ping a second; three missed in a row and the surface is replaced by its still. */
 const PING_MS = 1000;
 const MISSED_LIMIT = 3;
+/** An app whose content is larger than its room is laid out in a bigger frame and scaled down to the room; never below this (past it the frame scrolls). Never scaled up. */
+const FIT_MIN = 0.6;
+/** The most pictures one app may ask for, and the most characters of a `data:` address handed back (about 300 kB of picture). */
+const PICTURE_ASKS = 4;
+const PICTURE_URL_MAX = 420_000;
 const STORE = 'conduit.surface.';
 const MARK = 'conduit.surface.mark.';
 
@@ -109,7 +118,18 @@ export function readFromSurface(raw: unknown, channel: string): FromSurface | nu
   }
   if (type === 'size') {
     const height = data['height'];
-    return typeof height === 'number' && Number.isFinite(height) && height >= 0 && height <= 20_000 ? { type, height: Math.round(height) } : null;
+    const width = data['width'];
+    const wide = typeof width === 'number' && Number.isFinite(width) && width >= 0 && width <= 20_000 ? Math.round(width) : null;
+    return typeof height === 'number' && Number.isFinite(height) && height >= 0 && height <= 20_000 ? { type, height: Math.round(height), width: wide } : null;
+  }
+  if (type === 'picture') {
+    const id = data['id'];
+    const query = data['query'];
+    const w = data['w'];
+    const h = data['h'];
+    if (typeof id !== 'number' || !Number.isInteger(id) || typeof query !== 'string' || query.length > 80 || query.trim() === '') return null;
+    const aspect = typeof w === 'number' && typeof h === 'number' && w > 0 && h > 0 ? Math.max(0.25, Math.min(4, w / h)) : 16 / 9;
+    return { type, id, query: query.trim(), aspect };
   }
   if (type === 'fault') {
     const message = data['message'];
@@ -137,6 +157,11 @@ interface Running {
   readonly channel: string;
   readonly frame: HTMLIFrameElement;
   readonly source: string;
+  /** the libraries it was built with (`shelfKey`) */
+  readonly shelf: string;
+  /** the libraries' text it was built with, and the pictures it was handed (by the words it asked with): what Save as page puts in the page */
+  readonly shelfText: string;
+  readonly gotPictures: Map<string, { readonly url: string; readonly credit: string }>;
   readonly fingerprint: string;
   spec: SurfaceSpec;
   loads: number;
@@ -145,6 +170,14 @@ interface Running {
   state: string | null;
   told: string | null;
   height: number | null;
+  /** FIT. 1 until the document's content is larger than its room; then the factor it is scaled down by, never below `FIT_MIN` */
+  fit: number;
+  /** how many pictures it has asked for */
+  pictures: number;
+  /** the fit is made once for a room: content that grows with the frame (100vh, innerHeight) would otherwise be chased down */
+  fitted: boolean;
+  /** the room (rest size) the fit was made for: a new room starts again at 1 */
+  fitRoom: string;
   still: { readonly canvas: HTMLCanvasElement; readonly how: 'own' | 'dom' } | null;
   refused: number;
   emits: number;
@@ -268,15 +301,23 @@ export function createSurfaceHost(options: SurfaceHostOptions): SurfaceHost {
     const scaleX = rest.width > 0 ? spec.box.width / rest.width : 1;
     const scaleY = rest.height > 0 ? spec.box.height / rest.height : 1;
     // The frame is laid out at the size it has at rest and moved by the camera: a transform, never a new layout.
-    const placed = `${rest.width.toFixed(1)}x${rest.height.toFixed(1)}`;
+    const room = `${rest.width.toFixed(1)}x${rest.height.toFixed(1)}`;
+    if (room !== run.fitRoom) {
+      run.fitRoom = room;
+      run.fit = 1;
+      run.fitted = false;
+    }
+    const fit = run.fit;
+    const placed = `${room}@${fit.toFixed(3)}`;
     if (placed !== run.placed) {
-      style.width = `${rest.width}px`;
-      style.height = `${rest.height}px`;
+      // FIT: at a fit below 1 the frame is laid out larger by 1/fit and scaled by fit, so the room is filled and nothing is clipped
+      style.width = `${rest.width / fit}px`;
+      style.height = `${rest.height / fit}px`;
       // a surface that was drawn at another size has a picture of the wrong shape: it draws itself again once it has settled in the new room
       if (run.placed !== '' && run.loaded) scheduleStill(run, STILL_AFTER_ACT_MS);
       run.placed = placed;
     }
-    style.transform = `translate(${spec.box.x}px, ${spec.box.y}px) scale(${scaleX}, ${scaleY})`;
+    style.transform = `translate(${spec.box.x}px, ${spec.box.y}px) scale(${scaleX * fit}, ${scaleY * fit})`;
     style.zIndex = String(Math.round(spec.z));
     // It is shown only when the camera is at rest and it has fully arrived: otherwise the stage's own picture of it is what is seen, which moves with the camera.
     const atRest = Math.abs(spec.box.x - rest.x) < 2 && Math.abs(spec.box.y - rest.y) < 2 && Math.abs(spec.box.width - rest.width) < 2 && Math.abs(spec.box.height - rest.height) < 2;
@@ -287,10 +328,11 @@ export function createSurfaceHost(options: SurfaceHostOptions): SurfaceHost {
     style.pointerEvents = show && spec.opacity > 0.9 ? 'auto' : 'none';
   };
 
-  const create = (spec: SurfaceSpec): Running => {
+  const create = (spec: SurfaceSpec, shelf: string): Running => {
     const channel = randomToken();
     const source = spec.source.slice(0, SURFACE_SOURCE_MAX);
-    const print = fingerprint(source);
+    const library = shelfKey(spec.uses);
+    const print = fingerprint(library === '' ? source : `${library}\u0000${source}`);
     const state = stored(print);
     const frame = document.createElement('iframe');
     // The sandbox: scripts, and nothing else. It is set before the document is, and never widened.
@@ -304,7 +346,7 @@ export function createSurfaceHost(options: SurfaceHostOptions): SurfaceHost {
     frame.style.visibility = 'hidden';
     frame.style.opacity = '0';
     const run: Running = {
-      key: spec.key, id: spec.id, channel, frame, source: spec.source, fingerprint: print, spec, loads: 0, loaded: false, shown: false, state, told: state, height: null, still: stills.get(spec.key) ?? null,
+      key: spec.key, id: spec.id, channel, frame, source: spec.source, shelf: library, shelfText: shelf, gotPictures: new Map(), fingerprint: print, spec, loads: 0, loaded: false, shown: false, state, told: state, height: null, fit: 1, pictures: 0, fitted: false, fitRoom: '', still: stills.get(spec.key) ?? null,
       refused: 0, emits: 0, faults: 0, window: { start: 0, count: 0 }, minute: { start: 0, count: 0 }, snaps: new Map(), snapSeq: 0, stillTimer: undefined, saveTimer: undefined, pinger: undefined, pings: 0, answered: 0, placed: '',
     };
     // a frame that loads a second time has navigated itself (a script, a link): it is removed, and what it was reaching for was never allowed to answer
@@ -316,8 +358,10 @@ export function createSurfaceHost(options: SurfaceHostOptions): SurfaceHost {
       }
     });
     mark(print, true);
-    frame.srcdoc = buildSurfaceDocument({ source, tokens: spec.tokens, channel, state, ...(options.withoutDepth === true ? { depth: false } : {}) });
+    frame.srcdoc = buildSurfaceDocument({ source, tokens: spec.tokens, channel, state, ...(shelf === '' ? {} : { shelf }), ...(options.withoutDepth === true ? { depth: false } : {}) });
     running.set(spec.key, run);
+    // it has its room before its script runs (still hidden): an app that measures itself at the start sees its real size, not a frame of no size
+    place(run, spec);
     layer.append(frame);
     return run;
   };
@@ -381,9 +425,25 @@ export function createSurfaceHost(options: SurfaceHostOptions): SurfaceHost {
       case 'pong':
         run.answered = Math.max(run.answered, message.n);
         return;
-      case 'size':
+      case 'size': {
         run.height = message.height;
+        // FIT: what the document measures is in the frame's own pixels, laid out `rest / fit` large. Content past that is scaled down to the room (the parent sets the frame's size and transform; nothing reaches into the frame).
+        const rest = run.spec.rest;
+        const layoutW = rest.width / run.fit;
+        const layoutH = rest.height / run.fit;
+        const w = message.width ?? 0;
+        if (!run.fitted && run.spec.page !== true && rest.width > 0 && rest.height > 0 && (message.height > layoutH + 1 || w > layoutW + 1)) {
+          // a hair under the exact fit, so a content that is one pixel over does not leave a scrollbar
+          const next = Math.max(FIT_MIN, Math.min(run.fit, rest.height / message.height, w > 0 ? rest.width / w : 1) * 0.99);
+          if (next < run.fit - 0.01) {
+            run.fit = next;
+            run.fitted = true;
+            place(run, run.spec);
+            scheduleStill(run, STILL_AFTER_ACT_MS);
+          }
+        }
         return;
+      }
       case 'emit': {
         if (now - run.minute.start > 60_000) run.minute = { start: now, count: 0 };
         run.minute.count += 1;
@@ -424,6 +484,25 @@ export function createSurfaceHost(options: SurfaceHostOptions): SurfaceHost {
         image.src = message.data;
         return;
       }
+      case 'picture': {
+        run.pictures += 1;
+        const reply = (found: { readonly url: string; readonly credit: string } | null): void => post(run, found === null ? { type: 'picture', id: message.id, url: null } : { type: 'picture', id: message.id, url: found.url, credit: found.credit });
+        if (run.pictures > PICTURE_ASKS || options.onPicture === undefined) {
+          run.refused += run.pictures > PICTURE_ASKS ? 1 : 0;
+          reply(null);
+          return;
+        }
+        void options.onPicture({ query: message.query, aspect: message.aspect }).then(
+          (found) => {
+            if (disposed || running.get(run.key) !== run) return;
+const good = found !== null && found.url.startsWith('data:image/') && found.url.length <= PICTURE_URL_MAX ? { url: found.url, credit: found.credit.slice(0, 300) } : null;
+            if (good !== null) run.gotPictures.set(message.query, good);
+            reply(good);
+          },
+          () => reply(null),
+        );
+        return;
+      }
       case 'fault':
         run.faults += 1;
         if (run.faults <= 3) options.onNote?.(`The app "${run.spec.title === '' ? run.id : run.spec.title}" hit an error: ${message.message}`);
@@ -432,9 +511,15 @@ export function createSurfaceHost(options: SurfaceHostOptions): SurfaceHost {
   };
   window.addEventListener('message', onMessage);
 
-  return {
+  /** the libraries being fetched from the build (one chunk each), and the ones that could not be */
+  const loadingShelf = new Set<string>();
+  const missingShelf = new Set<string>();
+  let lastSpecs: readonly SurfaceSpec[] = [];
+
+  const api: SurfaceHost = {
     sync(specs) {
       if (disposed) return;
+      lastSpecs = specs;
       const wanted = new Set(specs.map((spec) => spec.key));
       named = specs.map((spec) => spec.key);
       for (const run of [...running.values()]) if (!wanted.has(run.key)) destroy(run, null);
@@ -443,18 +528,39 @@ export function createSurfaceHost(options: SurfaceHostOptions): SurfaceHost {
         if (held.has(spec.key) || !spec.ready || spec.source === '') continue;
         let run = running.get(spec.key);
         // a surface written again in place is a new document: it starts afresh (its saved state is kept under the old text)
-        if (run !== undefined && run.source !== spec.source) {
+        if (run !== undefined && (run.source !== spec.source || run.shelf !== shelfKey(spec.uses))) {
           destroy(run, null);
           run = undefined;
         }
         if (run === undefined) {
-          const print = fingerprint(spec.source.slice(0, SURFACE_SOURCE_MAX));
+          // the libraries it asked for come from the build as lazy chunks: it starts when they are in hand, and this is told again then
+          const library = shelfKey(spec.uses);
+          let shelf = '';
+          if (library !== '') {
+            const text = shelfText(spec.uses);
+            if (text === null && !missingShelf.has(library)) {
+              if (!loadingShelf.has(library)) {
+                loadingShelf.add(library);
+                void loadShelf(spec.uses).then((ok) => {
+                  loadingShelf.delete(library);
+                  if (!ok) {
+                    missingShelf.add(library);
+                    options.onNote?.(`The app "${spec.title === '' ? spec.id : spec.title}" asked for a library (${library}) that this build does not have.`);
+                  }
+                  if (!disposed) api.sync(lastSpecs);
+                });
+              }
+              continue;
+            }
+            shelf = text ?? '';
+          }
+          const print = fingerprint(library === '' ? spec.source.slice(0, SURFACE_SOURCE_MAX) : `${library}\u0000${spec.source.slice(0, SURFACE_SOURCE_MAX)}`);
           if (marked(print)) {
             held.set(spec.key, { id: spec.id, why: 'marked', print });
             options.onNote?.(`The app "${spec.title === '' ? spec.id : spec.title}" froze this page last time, so it does not run by itself.`);
             continue;
           }
-          run = create(spec);
+          run = create(spec, shelf);
         }
         if (run.spec.tokens !== spec.tokens) {
           post(run, { type: 'data', tokens: spec.tokens satisfies AppTokens });
@@ -463,6 +569,13 @@ export function createSurfaceHost(options: SurfaceHostOptions): SurfaceHost {
         run.spec = spec;
         place(run, spec);
       }
+    },
+    exportPage() {
+      // the app on stage that is running and has loaded (the last one, when there are several)
+      const run = [...running.values()].filter((candidate) => candidate.loaded).pop();
+      if (run === undefined) return null;
+      const title = run.spec.title.trim() === '' ? run.id : run.spec.title.trim();
+      return { title, html: buildStandalonePage({ source: run.source, tokens: run.spec.tokens, shelf: run.shelfText, title, pictures: Object.fromEntries(run.gotPictures) }) };
     },
     still(key) {
       return running.get(key)?.still?.canvas ?? stills.get(key)?.canvas ?? null;
@@ -497,13 +610,14 @@ export function createSurfaceHost(options: SurfaceHostOptions): SurfaceHost {
         box: run.spec.rest,
         state: run.state,
         height: run.height,
+        fit: run.fit,
         still: run.still === null ? null : { how: run.still.how, width: run.still.canvas.width, height: run.still.canvas.height },
         refused: run.refused,
         emits: run.emits,
         faults: run.faults,
         sandbox: run.frame.getAttribute('sandbox'),
       }));
-      const off = [...held].map(([key, entry]) => ({ key, id: entry.id, running: false, loaded: false, shown: false, held: entry.why, box: null, state: null, height: null, still: null, refused: 0, emits: 0, faults: 0, sandbox: null }));
+      const off = [...held].map(([key, entry]) => ({ key, id: entry.id, running: false, loaded: false, shown: false, held: entry.why, box: null, state: null, height: null, fit: 1, still: null, refused: 0, emits: 0, faults: 0, sandbox: null }));
       return [...live, ...off];
     },
     dispose() {
@@ -513,4 +627,5 @@ export function createSurfaceHost(options: SurfaceHostOptions): SurfaceHost {
       layer.remove();
     },
   };
+  return api;
 }

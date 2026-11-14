@@ -8,6 +8,7 @@
 // makes `revise` and `cancel` trivial (edit the score, rebuild), and what
 // keeps a schedule reproducible: the same score always gives the same times.
 
+import { pickHasOption } from './bind';
 import { chartModelOf } from './chart';
 import { namesIn, numberOf, parseExpr } from './expr';
 import { lengthOf, outlineOf, pointAlong } from './geometry';
@@ -48,7 +49,7 @@ import {
   dwellSeconds,
   waitSeconds,
 } from './timing';
-import type { Anchor, LessonVerb, TuneVoice } from './vocabulary';
+import type { Anchor, AppShelf, LessonVerb, TuneVoice } from './vocabulary';
 import type { BindOn, CanvasBox, ControlLine, SceneLine, ControlValue, CreatingLine, DatasetRef, Issue, IssueCode, Line, Paint, Point, Range, ShapeGeometry, StructureLine, StyleProps, Target, When } from './types';
 import { cachedTune, tuneRowsOf } from './tune';
 import { BACKDROP_LAYERS, CANVAS, CONTROL, DEFAULT_CANVAS, DEFAULT_CHART, DEFAULT_LOOK, DEFAULT_TUNE_VOICE, LESSON_VERBS, LIMITS, STRUCTURE } from './vocabulary';
@@ -186,6 +187,8 @@ export type Figure =
       readonly sealed?: number | null;
       /** An app: the height it asked for, canvas units; null: the default */
       readonly height?: number | null;
+      /** v2.1. An app: the library shelf it asked for; absent or empty: none */
+      readonly uses?: readonly AppShelf[];
       /** the room it is laid out in, canvas units; null: the whole canvas */
       readonly box: CanvasBox | null;
       /** a map joins its pins in the order written */
@@ -469,6 +472,8 @@ export interface Schedule {
 export interface ScheduleOptions {
   /** the turn was opened for a prompt, a tap or a control: choices an earlier turn offered leave as the answer's first line begins (D2c) */
   readonly retireChoices?: boolean;
+  /** the turn answers a new prompt: a control it declares that an earlier turn left on stage starts at the value it declares (or its start), not the one the user left it at */
+  readonly freshControls?: boolean;
 }
 
 type Mutable<T> = { -readonly [K in keyof T]: T[K] };
@@ -572,6 +577,7 @@ export function lookOfStage(base: StageBase): ResolvedLook {
 }
 
 export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, options: ScheduleOptions = {}): Schedule {
+  const answerOptions = options;
   const issues: ScheduleIssue[] = [];
   const sheet: Record<string, StyleDef> = { ...base.styles };
   const colors: Record<string, `#${string}`> = { ...base.colors };
@@ -1052,7 +1058,7 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
         bars: line.verb === 'table' && line.bars === true,
         ...(line.verb === 'code' && { lang: line.lang ?? null, file: line.file ?? null }),
         ...(line.verb === 'tune' && { tempo: line.tempo ?? null, voice: line.voice ?? DEFAULT_TUNE_VOICE, sealed: null }),
-        ...(line.verb === 'app' && { height: line.height ?? null, sealed: null }),
+        ...(line.verb === 'app' && { height: line.height ?? null, sealed: null, ...((line.uses?.length ?? 0) > 0 && { uses: line.uses }) }),
         box: line.box ?? null,
         route: line.route ?? false,
         rows: openFigure?.kind === 'structure' ? openFigure.rows : [],
@@ -1245,11 +1251,13 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
       const before = findLive(line.id, start);
       const was = before?.span.figure?.kind === 'control' ? before.span.figure : null;
       const same = was !== null && was.control === line.verb && was.min === min && was.max === max && was.options.length === options.length;
-      if (same && line.initial === undefined && was.value !== null && line.verb !== 'input') value = was.value;
-      else if (same && line.verb === 'input' && was.value !== null && was.value !== '') value = was.value;
+      // A new question's control starts again: what the hand left on an earlier answer's control does not carry (this turn's own redeclaring still does).
+      const restart = same && answerOptions.freshControls === true && before?.span.carried === true;
+      if (same && !restart && line.initial === undefined && was.value !== null && line.verb !== 'input') value = was.value;
+      else if (same && !restart && line.verb === 'input' && was.value !== null && was.value !== '') value = was.value;
       const { plain, emphasis } = splitEmphasis(line.text ?? '');
       // D2(b): a control said again exactly as it stands is nothing: it keeps what the user set and what it drives.
-      if (before !== null && was !== null && same && was.form === (line.verb === 'pick' ? (line.form ?? 'row') : null) && was.step === (line.range?.step ?? null) && was.unit === (line.unit ?? null) && was.send === (line.verb === 'button' ? true : (line.send ?? false)) && alike(was.options, options) && before.span.text === plain && alike(before.span.emphasis, emphasis) && sameStyle(before.style, joined.style) && before.span.parent === joined.parent && (line.initial === undefined || line.initial === was.value)) {
+      if (before !== null && was !== null && same && (!restart || value === was.value) && was.form === (line.verb === 'pick' ? (line.form ?? 'row') : null) && was.step === (line.range?.step ?? null) && was.unit === (line.unit ?? null) && was.send === (line.verb === 'button' ? true : (line.send ?? false)) && alike(was.options, options) && before.span.text === plain && alike(before.span.emphasis, emphasis) && sameStyle(before.style, joined.style) && before.span.parent === joined.parent && (line.initial === undefined || line.initial === was.value)) {
         previousStart = priorStart;
         lines.push({ seq, verb: line.verb, start, end: start });
         return;
@@ -1568,6 +1576,11 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
         if (control === null || control.span.figure?.kind !== 'control') {
           const other = control === null ? null : control.span.kind;
           report(seq, 'bad-bind', other === null ? `no control called "${line.control}" is on stage to bind; write the slider, toggle or pick first` : `"${line.control}" is a ${other}, not a control; only a button, toggle, slider, pick or input can drive a change`, line.control);
+          break;
+        }
+        const spec = control.span.figure;
+        if (line.on.kind === 'is' && spec.control === 'pick' && !pickHasOption(spec, line.on.value)) {
+          report(seq, 'bad-bind', `"${line.on.value}" is not an option of "${line.control}"; its options are ${spec.options.map((option, i) => `${i + 1} ${option}`).join(', ')}; bind one by its exact words or its number`, line.control);
           break;
         }
         const { change } = line;

@@ -13,7 +13,7 @@ import type { FetchOutcome } from './documents';
 export type SessionRecord =
   | { readonly type: 'session'; readonly at: 0; readonly session: string; readonly started: string; readonly brain: BrainId; readonly language: number; readonly screen: ScreenFacts; readonly capabilities: Capabilities; readonly services: Services; /** v3. The document this session opens again (`API.documentOpen`): its id is the stem of the file that began it. The document is the fold of that file and every file that says this. */ readonly resumes?: string }
   /** the user typed, tapped a choice, or played a demo or a script */
-  | { readonly type: 'turn'; readonly at: number; readonly turn: string; readonly input: TurnInput; readonly brain: BrainId; readonly login?: string }
+  | { readonly type: 'turn'; readonly at: number; readonly turn: string; readonly input: TurnInput; readonly brain: BrainId; readonly login?: string; readonly model?: string; readonly effort?: string }
   /** what the brain was told; `system` only when a process first hears it */
   | { readonly type: 'brief'; readonly at: number; readonly turn: string; readonly form: BriefForm | 'script'; readonly text: string; readonly system: string | null; readonly withSnapshot: boolean; readonly pass?: number }
   /** one accepted line, as it was forwarded; `raw` is what the brain wrote when that differs */
@@ -51,7 +51,7 @@ export type SessionRecord =
   /** v2.1. What the critic made of a turn's resting picture, seconds after the turn ended; `queued` when it was passed to the loop as evidence */
   | { readonly type: 'critic'; readonly at: number; readonly turn: string; readonly finding: CriticFinding; readonly queued: boolean }
   /** v2.1, a brain with tools. One tool call, at its start and again at its end: what it was in a few safe words (`redactSecrets`), never its input or its result. Takes the place of `tool`, which older logs still hold. */
-  | { readonly type: 'activity'; readonly at: number; readonly turn: string; readonly id: string; readonly tool: string; readonly summary: string; readonly state: ActivityState; readonly ms: number | null }
+  | { readonly type: 'activity'; readonly at: number; readonly turn: string; readonly id: string; readonly tool: string; readonly summary: string; readonly state: ActivityState; readonly ms: number | null; readonly permit?: 'auto' }
   /** v2.1. The owner was asked for a yes, and what they said; `allow` null: no answer in time, which is a no */
   | { readonly type: 'permission'; readonly at: number; readonly turn: string; readonly request: string; readonly tool: string; readonly summary: string; readonly risk: ActionRisk; readonly allow: boolean | null; readonly ms: number }
   /** v2.1. A picture the user gave: its id, kind and size, and the file it was saved as beside the log. Never the bytes. */
@@ -64,7 +64,11 @@ export type SessionRecord =
    */
   | { readonly type: 'node'; readonly at: number; readonly turn: string | null; readonly node: NodeId; readonly status: NodeStatus; readonly reset?: true; readonly why: string | null }
   /** v3 (2.5). Something the person did that `advance` committed: where they are, what a control holds, an answer tried, a reveal reached, a node finished. Logged only when it changed something. */
-  | { readonly type: 'state'; readonly at: number; readonly turn: string | null; readonly change: StateChange };
+  | { readonly type: 'state'; readonly at: number; readonly turn: string | null; readonly change: StateChange }
+  /** SA2. The server measured a pass's draft itself: how long it took, the digest of its boxes and the number of things it noted */
+  | { readonly type: 'measure'; readonly at: number; readonly turn: string; readonly pass: number; readonly ms: number; readonly boxes: string; readonly noted: number }
+  /** SA2. The page and the server do not measure alike (`where`: `engine` the version, `draft` or `report` a digest). From then on this session's drafts go through the page's gate. */
+  | { readonly type: 'drift'; readonly at: number; readonly turn: string | null; readonly where: 'engine' | 'draft' | 'report'; readonly page: string | null; readonly server: string | null; readonly why: string };
 
 /** Fields of a record without the time, which the log stamps. */
 export type SessionEntry = SessionRecord extends infer R ? (R extends { readonly at: number } ? Omit<R, 'at'> : never) : never;

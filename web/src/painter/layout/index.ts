@@ -1,7 +1,7 @@
 import { isInFlow } from '@conduit/language';
 import type { Align, Anchor, ElementStyle, Face, Layer, Layout, Point, Range, Size, Weight } from '@conduit/language';
 import type { LookSpec } from '../../contracts/look';
-import { foldText } from '../../fonts';
+import { foldText } from '../../fonts/fold';
 import { FACES } from '../../fonts/faces';
 import { measureEm, prefixEm } from '../../fonts/measure';
 import { planeBounds, planeScale } from '../../contracts/space';
@@ -834,6 +834,28 @@ function pushClear(
   return start;
 }
 
+const offsetCache = new Map<string, readonly { dx: number; dy: number }[]>();
+
+/** The lattice offsets of a grid, nearest first. The same grid is asked for many times in one layout: sorted once. */
+function offsetsOf(maxX: number, maxY: number, step: { x: number; y: number }): readonly { dx: number; dy: number }[] {
+  const key = `${maxX}|${maxY}|${step.x}|${step.y}`;
+  const known = offsetCache.get(key);
+  if (known !== undefined) return known;
+  const offsets: { dx: number; dy: number; d: number }[] = [];
+  for (let i = -maxX; i <= maxX; i += 1) {
+    for (let j = -maxY; j <= maxY; j += 1) {
+      if (i === 0 && j === 0) continue;
+      const dx = i * step.x;
+      const dy = j * step.y;
+      offsets.push({ dx, dy, d: Math.hypot(dx, dy) });
+    }
+  }
+  offsets.sort((a, b) => a.d - b.d || Math.abs(a.dx) - Math.abs(b.dx));
+  if (offsetCache.size >= 64) offsetCache.clear();
+  offsetCache.set(key, offsets);
+  return offsets;
+}
+
 /**
  * The place nearest to `start` where a box of `size` inside `frame` lies clear
  * of every rectangle in `occupied` (with `pad` between), or null when there is
@@ -851,16 +873,7 @@ function nearestClear(
   if (free(start)) return start;
   const maxX = Math.ceil(frame.width / step.x);
   const maxY = Math.ceil(frame.height / step.y);
-  const offsets: { dx: number; dy: number; d: number }[] = [];
-  for (let i = -maxX; i <= maxX; i += 1) {
-    for (let j = -maxY; j <= maxY; j += 1) {
-      if (i === 0 && j === 0) continue;
-      const dx = i * step.x;
-      const dy = j * step.y;
-      offsets.push({ dx, dy, d: Math.hypot(dx, dy) });
-    }
-  }
-  offsets.sort((a, b) => a.d - b.d || Math.abs(a.dx) - Math.abs(b.dx));
+  const offsets = offsetsOf(maxX, maxY, step);
   for (const { dx, dy } of offsets) {
     const p = { x: start.x + dx, y: start.y + dy };
     if (p.x < frame.x - EPS || p.y < frame.y - EPS || p.x + size.width > frame.x + frame.width + EPS || p.y + size.height > frame.y + frame.height + EPS) continue;

@@ -1,4 +1,4 @@
-import { API, CANVAS, DATA_LIMITS, EMPTY_STAGE, isLessonVerb, PASTE_AS_DOCUMENT_CHARS, FULL_CAPABILITIES, LANGUAGE, LEAD_WINDOW, LineNormalizer, LineReader, TurnScore, buildSystemPrompt, draftFactsOf, serializeLine, settle, splitCells, wearingAt, worthALook } from '@conduit/language';
+import { API, CANVAS, DATA_LIMITS, EMPTY_STAGE, isLessonVerb, PASTE_AS_DOCUMENT_CHARS, FULL_CAPABILITIES, LANGUAGE, LEAD_WINDOW, LineNormalizer, LineReader, TurnScore, buildSystemPrompt, draftFactsOf, serializeLine, settle, splitCells, wearingAt, withoutUnknownBraces, worthALook } from '@conduit/language';
 import type { ActivityState, BrainChange, BrainChoice, BrainMode, CriticFinding, DocumentSummary, DocumentView, FixPolicy, NodeId, NodeStatus, OpenDocumentResponse, PromptVariant, Seen, ToolChoice } from '@conduit/language';
 import type {
   BackEvent,
@@ -12,6 +12,7 @@ import type {
   Figure,
   HexColor,
   Issue,
+  Line,
   LineProblem,
   PaintLine,
   ReviewPolicy,
@@ -62,7 +63,9 @@ import type { VoiceNotes } from './voice';
 import type { StoredUpload, UploadStore } from './uploads';
 import type { UsageMeter } from '../usage';
 import { currentIdentity, labelOf } from '../identity';
+import { processEnvironment } from '../env';
 import { askedOf, refusalProblem, reviewTurn } from './review';
+import { ENGINE_VERSION, engineMismatch, measurable, measureDraft, tryFix } from './stage-facts';
 import type { FixAttempt } from './review';
 import type { TechniqueLibrary } from './techniques';
 
@@ -434,7 +437,8 @@ export class Conductor {
     s.turn = turn;
     sessions.indexTurn(s, turn);
     log.info('turn.opened', { session: s.id, turn: turn.id, brain: brain.id, input: turn.input.kind, login: turn.login });
-    this.journal(s, { type: 'turn', turn: turn.id, input, brain: brain.id, login: turn.login });
+    const chosen = brain.choice?.(s.id);
+    this.journal(s, { type: 'turn', turn: turn.id, input, brain: brain.id, login: turn.login, ...(chosen?.model ? { model: chosen.model } : {}), ...(chosen?.effort ? { effort: chosen.effort } : {}) });
     this.emit(s, turn, { type: 'turn', turn: turn.id, input });
 
     // `run` ends its own turn and does not throw; this is the net under it, so that nothing can ever be an unhandled rejection from here.
@@ -636,7 +640,7 @@ export class Conductor {
       throw errors.badRequest(`this server does not offer the ${change.mode} brain; it offers ${this.deps.modes.join(', ')}`);
     }
     const choice = brain.choose(session, change);
-    this.deps.log.info('session.brain_set', { session, model: choice.model, effort: choice.effort, mode: choice.mode });
+    this.deps.log.info('session.brain_set', { session, model: choice.model, effort: choice.effort, mode: choice.mode, permits: choice.permits });
     const write = (name: string, value: string | undefined): void => {
       if (value === undefined) return;
       this.deps.sessionLog.write(session, { type: 'setting', name, value });
@@ -645,6 +649,7 @@ export class Conductor {
     write('model', change.model);
     write('effort', change.effort);
     write('mode', change.mode);
+    write('permits', change.permits);
     return { ...choice, modes: this.deps.modes.length > 1 ? this.deps.modes : choice.modes };
   }
 
@@ -817,6 +822,16 @@ export class Conductor {
         const report = event.report;
         const turn = s.turns.get(report.turn);
         this.journal(s, { type: 'report', turn: report.turn, report });
+        if (event.boxes !== undefined && turn !== undefined && turn.input.kind === 'prompt' && report.outcome === 'finished' && report.skippedAt === null && this.measuresHere(s) && measurable(turn.score.schedule)) {
+          // How the turn rested, as the page measured it, against the server's own measure of the same score. Only for a typed prompt: a turn
+          // that carries on from the viewer's own doing (a mock-up's fields, a pressed button) rests on state only the page holds.
+          const rested = measureDraft(turn.score, { ...s, held: report.controls ?? s.held });
+          if (rested !== null) {
+            this.noteBoxes(s, `${turn.id}#report`, 'server', rested.boxes, 'report', turn.id);
+            this.noteBoxes(s, `${turn.id}#report`, 'page', event.boxes, 'report', turn.id);
+          }
+        }
+
         if (turn === undefined || turn.reported) return;
         turn.reported = true;
         this.upsertMemory(s, rememberTurn(turn, report, s.snapshotTurns.has(turn.id)));
@@ -836,6 +851,7 @@ export class Conductor {
         this.adoptSeen(s, event.turn, event.seen);
         return;
       case 'control':
+        s.held = { ...s.held, [event.id]: event.value };
         this.deps.sessionLog.write(s.id, { type: 'control', turn: event.turn, id: event.id, value: event.value, text: event.text, send: event.send, ...(event.app === true && { app: true }) });
         this.adoptSeen(s, event.turn, event.seen);
         return;
@@ -846,6 +862,7 @@ export class Conductor {
       case 'draft':
         // How the draft will land: what look and fix is waiting on. The picture, when there is one, arrives by upload.
         s.draft.receive(event.turn, event.pass, event.sight, event.placed ?? [], event.snapshot, event.content);
+        if (event.boxes !== undefined) this.noteBoxes(s, `${event.turn}#${event.pass}`, 'page', event.boxes, 'draft', event.turn);
         this.deps.sessionLog.write(s.id, { type: 'draft', turn: event.turn, pass: event.pass, noted: event.sight.items.filter((item) => item.notes.length > 0).length, picture: event.snapshot, file: null });
         return;
       case 'permit':
@@ -1207,6 +1224,20 @@ export class Conductor {
       log: this.deps.log,
       // Only a painter that said it can try a fix first is offered one: otherwise a draft that needs mending is left as it is.
       ...(s.capabilities.candidates ? { candidate: (candidatePass: number, lines: readonly string[]) => this.emit(s, turn, { type: 'candidate', turn: turn.id, pass: candidatePass, lines }) } : {}),
+      // SA2: a session whose page measures as the server does is measured here, at once; any other goes through the gate as before.
+      ...(this.measuresHere(s)
+        ? {
+            measure: (measurePass: number) => {
+              if (this.measuresHere(s) === false || !measurable(turn.score.schedule)) return null;
+              const measured = measureDraft(turn.score, s);
+              if (measured === null) return null;
+              this.deps.sessionLog.write(s.id, { type: 'measure', turn: turn.id, pass: measurePass, ms: Math.round(measured.ms * 10) / 10, boxes: measured.boxes, noted: measured.sight.items.filter((item) => item.notes.length > 0).length });
+              this.noteBoxes(s, `${turn.id}#${measurePass}`, 'server', measured.boxes, 'draft', turn.id);
+              return measured;
+            },
+            tryFix: (tryPass: number, lines: readonly string[]) => (this.measuresHere(s) ? tryFix(turn.score, lines, s) : null),
+          }
+        : {}),
       fix: this.deps.fix,
       ...(critic.available ? { critic } : {}),
       standing: s.standing,
@@ -1238,6 +1269,40 @@ export class Conductor {
         break;
       }
     }
+  }
+
+  /**
+   * SA2. True when this session's drafts are measured by the server: the page's engine is the server's and no digest has differed yet.
+   * The first time a session is found not to be, the log says why (`drift`), and its drafts go through the gate from then on.
+   */
+  private measuresHere(s: Session): boolean {
+    // Dev only: STAGE_MEASURE=off is the path before SA2 (the page measures, the server waits), for measuring what the change bought.
+    if (processEnvironment()['STAGE_MEASURE'] === 'off') return false;
+    const why = s.drift ?? engineMismatch(s.capabilities);
+    if (why === null) return true;
+    if (s.drift === null) {
+      s.drift = why;
+      this.deps.log.warn('engine.drift', { session: s.id, where: 'engine', why });
+      this.deps.sessionLog.write(s.id, { type: 'drift', turn: s.turn?.id ?? null, where: 'engine', page: s.capabilities.engine ?? null, server: ENGINE_VERSION, why });
+    }
+    return false;
+  }
+
+  /** SA2. One side's digest for a pass; when both are in and they differ, this session drifts. */
+  private noteBoxes(s: Session, key: string, side: 'page' | 'server', value: string, where: 'draft' | 'report', turn: string): void {
+    const held = s.boxes.get(key) ?? {};
+    held[side] = value;
+    s.boxes.set(key, held);
+    while (s.boxes.size > 64) s.boxes.delete(s.boxes.keys().next().value as string);
+    if (held.page === undefined || held.server === undefined) return;
+    if (held.page === held.server) {
+      this.deps.log.info('engine.agree', { session: s.id, turn, where, boxes: held.page });
+      return;
+    }
+    const why = `the page's boxes (${held.page}) and the server's (${held.server}) differ at ${key}`;
+    this.deps.log.warn('engine.drift', { session: s.id, where, page: held.page, server: held.server, why });
+    this.deps.sessionLog.write(s.id, { type: 'drift', turn, where, page: held.page, server: held.server, why });
+    if (s.drift === null) s.drift = why;
   }
 
   private noteRefused(turn: ActiveTurn, reason: string): void {
@@ -1272,7 +1337,9 @@ export class Conductor {
     const snapshot = this.deps.assets.snapshot(s.id, turn.id);
     if (snapshot === undefined) return;
     const facts = draftFactsOf(turn.score.schedule, 0);
-    if (!worthALook(facts, { ...this.deps.review, enabled: true, passes: 1 }).look) return;
+    // A turn that only changed what an earlier turn left on the stage draws nothing new, but it is the follow-up the critic is for (critic v2)
+    const previous = this.previousForCritic(s, turn);
+    if (previous === null && !worthALook(facts, { ...this.deps.review, enabled: true, passes: 1 }).look) return;
     turn.criticAsked = true;
     const picture = snapshot;
     const file = turn.snapshotFile;
@@ -1284,11 +1351,16 @@ export class Conductor {
       input: turn.input.kind,
       picture,
       sight: s.history.find((memory) => memory.turn === turn.id)?.sight ?? null,
+      mockup: turn.score.schedule.elements.some((element) => element.exit === null && element.figure?.kind === 'structure' && element.figure.structure === 'screen'),
+      previous,
     };
     void (async () => {
       try {
-        const finding = await critic.look(request, s.abort.signal);
-        if (finding === null || s.abort.signal.aborted) return;
+        const judged = await critic.look(request, s.abort.signal);
+        if (judged === null || s.abort.signal.aborted) return;
+        const finding = this.withRepeats(s, turn.id, judged);
+        const raised = finding.problems.filter((problem) => problem.raised !== false).length;
+        log.info('critic.verdict', { session: s.id, turn: turn.id, coherence: finding.coherence, failedTier: finding.failedTier ?? null, failed: (finding.gates ?? []).filter((gate) => !gate.pass).map((gate) => gate.gate).join(','), raised, held: finding.problems.length - raised, followUp: request.previous !== null && request.previous !== undefined, trend: finding.progress?.trend ?? null });
         const queued = worthQueuing(finding, this.deps.criticQueueBelow);
         s.findings.set(turn.id, finding);
         while (s.findings.size > SERVER_LIMITS.turnsKept) {
@@ -1303,6 +1375,34 @@ export class Conductor {
         log.warn('critic.failed', { session: s.id, turn: turn.id, error });
       }
     })();
+  }
+
+  /**
+   * Critic v2. A turn that changed the same answer in place (something from the turn before is still on the stage at rest) is shown the
+   * picture and the verdict from before: the critic's own record, never what the brain was told or thought. Null when this is a new
+   * picture, when the turn before was not judged, or when its picture is gone.
+   */
+  private previousForCritic(s: Session, turn: ActiveTurn): { readonly picture: Snapshot; readonly finding: CriticFinding } | null {
+    if (turn.previous === null || turn.input.kind === 'tap') return null;
+    const finding = s.findings.get(turn.previous);
+    const picture = this.deps.assets.snapshot(s.id, turn.previous);
+    if (finding === undefined || picture === undefined) return null;
+    const inPlace = turn.score.schedule.elements.some((element) => element.carried && element.exit === null && element.kind !== 'field');
+    return inPlace ? { picture, finding } : null;
+  }
+
+  /** Critic v2. Counts each gate that failed here against the session's earlier turns; the judge is not asked, and cannot talk a count down. */
+  private withRepeats(s: Session, turn: string, finding: CriticFinding): CriticFinding {
+    const failed = (finding.gates ?? []).filter((gate) => !gate.pass).map((gate) => gate.gate);
+    if (failed.length === 0) return finding;
+    const repeats: { gate: string; count: number; turns: string[] }[] = [];
+    for (const gate of failed) {
+      const turns = s.gateFails.get(gate) ?? [];
+      if (!turns.includes(turn)) turns.push(turn);
+      s.gateFails.set(gate, turns);
+      if (turns.length >= 2) repeats.push({ gate, count: turns.length, turns: [...turns] });
+    }
+    return repeats.length === 0 ? finding : { ...finding, repeats };
   }
 
   /** What the critic is told was asked: the user's words, never a document or a table they pasted. */
@@ -1358,8 +1458,9 @@ export class Conductor {
       // The adapter has made these safe; a second net costs nothing and a secret that reaches a log or a stage is the one thing this must not do.
       const summary = redactSecrets(event.summary);
       this.noteCall(s, turn, event.id, event.tool, summary, event.state);
-      sessionLog.write(s.id, { type: 'activity', turn: turn.id, id: event.id, tool: event.tool, summary, state: event.state, ms: event.ms });
-      this.emit(s, turn, { type: 'activity', turn: turn.id, id: event.id, tool: event.tool, summary, state: event.state, ms: event.ms });
+      const permit = event.permit === 'auto' ? ({ permit: 'auto' } as const) : {};
+      sessionLog.write(s.id, { type: 'activity', turn: turn.id, id: event.id, tool: event.tool, summary, state: event.state, ms: event.ms, ...permit });
+      this.emit(s, turn, { type: 'activity', turn: turn.id, id: event.id, tool: event.tool, summary, state: event.state, ms: event.ms, ...permit });
       return undefined;
     }
     if (event.type === 'permission') {
@@ -1392,13 +1493,15 @@ export class Conductor {
       this.reject(s, turn, serializeLine(event.line), [...event.issues, ...normalized.issues]);
       return undefined;
     }
-    const line = normalized.line;
+    const braced = this.withoutRawBraces(turn, normalized.line);
+    const line = braced.line;
+    const bracedIssues: Issue[] = braced.dropped.length === 0 ? [] : [{ code: 'unknown-name', severity: 'warn', message: `${braced.dropped.join(' ')} in the words names no control on stage, so it was taken out; a name in braces must be the id of a slider, toggle or pick you declared` }];
     const seq = s.nextSeq;
     s.nextSeq += 1;
     turn.lineCount += 1;
     const penBefore = turn.score.schedule.pen;
     const pushed = turn.score.push(line, seq, this.estimatePlayhead(turn));
-    const issues: Issue[] = [...event.issues, ...normalized.issues, ...pushed.issues];
+    const issues: Issue[] = [...event.issues, ...normalized.issues, ...bracedIssues, ...pushed.issues];
     const text = serializeLine(line);
     log.debug('turn.line', { turn: turn.id, seq, text });
     if (issues.some((issue) => issue.severity === 'warn')) this.noteProblem(turn, text, 'repaired', issues.filter((issue) => issue.severity === 'warn'));
@@ -1475,6 +1578,30 @@ export class Conductor {
     // `detail` goes to the confirm control only: not to the session log, not to the activity strip. A second net of redaction, keeping its lines.
     const detail = event.detail === undefined ? undefined : redactSecrets(event.detail, DETAIL_MAX, true);
     this.emit(s, turn, { type: 'permission', turn: turn.id, request: event.request, tool: event.tool, summary, risk: event.risk, expiresMs: left, ...(detail === undefined ? {} : { detail }) });
+  }
+
+  /**
+   * The learner never sees a raw `{…}`: braces that read as an expression of names that are no control on stage are taken out of the words
+   * (and said to the brain as a repair, in the next brief).
+   */
+  private withoutRawBraces(turn: ActiveTurn, line: Line): { readonly line: Line; readonly dropped: string[] } {
+    const ids = new Set(turn.score.schedule.elements.filter((element) => element.figure?.kind === 'control').map((element) => element.id));
+    const dropped: string[] = [];
+    const walk = (value: unknown): unknown => {
+      if (Array.isArray(value)) return value.map(walk);
+      if (typeof value !== 'object' || value === null) return value;
+      const out: Record<string, unknown> = {};
+      for (const [key, inner] of Object.entries(value)) {
+        if (key === 'text' && typeof inner === 'string' && inner.includes('{')) {
+          const cleaned = withoutUnknownBraces(inner, (name) => ids.has(name));
+          dropped.push(...cleaned.dropped);
+          out[key] = cleaned.text;
+        } else out[key] = typeof inner === 'object' ? walk(inner) : inner;
+      }
+      return out;
+    };
+    const walked = walk(line) as Line;
+    return { line: dropped.length === 0 ? line : walked, dropped };
   }
 
   private reject(s: Session, turn: ActiveTurn, raw: string, issues: readonly Issue[]): void {

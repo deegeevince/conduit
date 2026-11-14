@@ -6,8 +6,11 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.engine.json",
+    "shelf": "node scripts/build-shelf.mjs",
+    "predev": "node scripts/build-shelf.mjs",
     "dev": "vite",
+    "prebuild": "node scripts/build-shelf.mjs",
     "build": "vite build",
     "preview": "vite preview",
     "fonts": "node --experimental-strip-types --no-warnings scripts/build-fonts.mjs",
@@ -31,8 +34,16 @@
     "@fontsource/vt323": "^5.3.0",
     "@types/node": "^22.14.0",
     "@types/three": "^0.187.0",
+    "d3": "7.9.0",
+    "esbuild": "0.28.2",
+    "katex": "0.16.22",
     "lucide-static": "^1.72.0",
+    "matter-js": "0.20.0",
+    "tone": "15.1.22",
     "typescript": "^7.0.2",
     "vite": "^8.3.8"
+  },
+  "exports": {
+    "./engine": "./src/engine/index.ts"
   }
 }

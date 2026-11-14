@@ -118,7 +118,7 @@ export const PROMPT_EXAMPLES: readonly PromptExample[] = [
     lines: [
       'scene page',
       'say strong | Mary Shelley.',
-      'say | She began it at eighteen, in the wet summer of 1816, kept indoors by a volcano\'s ash. Published two years later.',
+      'say | She began it at eighteen, in 1816, kept indoors by a volcano\'s ash.',
     ],
   },
   {
@@ -184,7 +184,7 @@ export const PROMPT_EXAMPLES: readonly PromptExample[] = [
  * other kind of answer are techniques, handed over in the brief when they fit.
  */
 export const PROMPT_EXAMPLE_STRUCTURE: PromptExample = {
-  title: '"Should I water this plant?" A decision: name the structure and give its words; the painter gives every part its room, so nothing is placed over it.',
+  title: '"Should I water this plant?" A decision: name the structure and its words; the painter gives every part its room.',
   lines: [
     'scene caption',
     'flow down | Water the plant?',
@@ -401,7 +401,7 @@ ${shapes
   })
   .join('\n')}
 
-Each may take an id, a room (\`x,y WxH\`) and \` | a title\`. Then its parts, a line each:
+Each may take an id, a room (\`x,y WxH\`) and \` | a title\`; then its parts, a line each:
 node [id] [${Object.keys(NODE)
           .filter((shape) => shape !== 'step')
           .join('|')}] [from=<id>[:label]] | <words>
@@ -414,10 +414,10 @@ link <a> <b> [c…] [both|plain] [dashed] | <label>
           : `
 A chart row is \`| when | value…\`, values split by bars or spaces: \`when\` a date (2026-03-09), a year, a number or a name; one value a series (a first row of words names them)${charts.includes('candles') ? ', or `open high low close [volume]` for candles' : ''}. Chart words: ${Object.entries(CHART_WORD)
               .map(([word, gist]) => (word === 'indexed' || word === 'spark' ? `${word} (${gist.split(':')[0]?.split(',')[0] ?? gist})` : word))
-              .join(', ')}. Numbers you recall are \`approx\`: never dress a guess as data. Never refuse to chart: use the period you recall. \`node x=<when> | label\` marks an event, \`y=<value>\` a level, both a point.`
+              .join(', ')}. Numbers you recall are \`approx\`: never dress a guess as data. Never refuse to chart; use the period you recall. \`node x=<when> | label\` marks an event, \`y=<value>\` a level, both a point.`
       }
 
-Words and \`wait\` may come between parts: a diagram a step at a time. Nodes and links take \`hit\`, \`set\`, \`drop\` and \`cam focus\` by id. On your own drawing, \`say callout near=<id> | name\` labels a part with a line to it (\`at=x,y\` for a spot).
+Words and \`wait\` may come between parts, a diagram a step at a time. Nodes and links take \`hit\`, \`set\`, \`drop\` and \`cam focus\` by id. On your own drawing, \`say callout near=<id> | name\` labels a part with a line to it (\`at=x,y\`: a spot).
 `;
 
   const has = (kind: (typeof controls)[number]): boolean => controls.includes(kind);
@@ -428,10 +428,10 @@ Words and \`wait\` may come between parts: a diagram a step at a time. Nodes and
 # Controls
 
 ${[
-  has('button') ? "button [id] | <label>\n  A press is sent to you with every control's value." : '',
+  has('button') ? "button [id] | <label>\n  A press reaches you with every control's value." : '',
   has('toggle') ? 'toggle [id] [on|off] | <label>' : '',
   has('slider') ? 'slider [id] <min> <max> [value] [step=N] [unit=…] | <label>' : '',
-  has('pick') ? `pick [id] [${Object.keys(PICK).filter((form) => form !== 'row').join('|')}] [N] | <a> | <b> | <c>\n  One of several, N chosen to begin with; \`steps\` walks through them.` : '',
+  has('pick') ? `pick [id] [${Object.keys(PICK).filter((form) => form !== 'row').join('|')}] [N] | <a> | <b> | <c>\n  One of several, N chosen first; \`steps\` walks through them.` : '',
   has('input') ? 'input [id] | <placeholder>' : '',
   draws ? 'card <id> [x,y WxH] | <title>\n  A frame; its parts say in=<id>.' : '',
 ]
@@ -440,8 +440,8 @@ ${[
 
 A control sits in the flow like a line, or takes at=, near=, in=. \`bind\` makes it change the stage at once:
 bind angle | move sun along=arc
-  The change (a \`set\`, \`move\`, \`correct\`${draws ? ', or shape declared again' : ''}) is as far along as the control. \`bind angle 0..45 | …\` runs it over part of the range; \`bind view=night | …\` holds it while a pick or toggle has that value (an option's words or number, on, off).
-Braces in text hold a value or arithmetic on values: \`say | At {angle}, a {round(10/tan(rad(angle)))} m shadow\` ({angle} carries the slider's unit)${structures.includes('chart') ? '; a chart cell may too' : ''}. Give every slider something to drive. \`send\` on a control makes its change the user's next message.
+  The change (a \`set\`, \`move\`, \`correct\`${draws ? ', or shape declared again' : ''}) is as far along as the control. \`bind angle 0..45 | …\` runs it over part of the range; \`bind view=night | …\` holds it while a pick or toggle has that value (an option's exact words, spaces too: \`bind chord=C major | …\`; or its number; on, off).
+Braces in text hold a value or arithmetic: \`say | At {angle}, a {round(10/tan(rad(angle)))} m shadow\` ({angle} carries the slider's unit; a name that is not a declared control's id is cut)${structures.includes('chart') ? '; a chart cell may too' : ''}. A slider must drive something. \`send\` on a control makes its change the user's next message.
 `;
 
   const drawing = draws
@@ -454,21 +454,21 @@ Drawings live on a canvas with square units; the painter fits it to the screen. 
         .map(([name, spec]) => `${name} ${spec.width}x${spec.height}`)
         .join(', ')}.
 
-A shape with nothing else said is an outline in ink that draws itself. \`fill=\` alone makes it a flat shape. Shapes appear in the order you write them, each one drawing while the next begins, and later ones sit on top.
+A bare shape is an outline in ink that draws itself. \`fill=\` alone makes it a flat shape. Shapes appear in the order you write them, each one drawing while the next begins, and later ones sit on top.
 
 To draw well in few lines:
-- Work back to front: the ground or sky first (\`rect full\` covers the screen), then the subject as three or four big simple shapes, then two or three details. Eight to fifteen shapes make a picture; forty make a mess.
-- Name your colours once (\`color sky=#1b2a49\`), then use the names. Four or five are plenty.
+- Work back to front: the ground or sky first (\`rect full\` covers the screen), then the subject as three or four big shapes, then two or three details. Eight to fifteen shapes make a picture, forty a mess.
+- Name your colours once (\`color sky=#1b2a49\`), then use the names: four or five.
 - Anything with parts is a \`group\`: its parts say \`in=<id>\` and measure from the group's \`at=\`, so it can be placed, moved, turned or copied (\`use\`) as one.
 - Curves are \`path\` with SVG path data.
-- Put words on a drawing with \`say label near=<id> | …\`; the painter finds the room.
+- Put words on a drawing with \`say label near=<id> | …\`.
 - To change a shape, declare it again under the same id: it morphs into the new one.${
         pixels
           ? `
 
 # Pixels
 
-\`pix\`, then one \`| row\` per row, every row exactly as wide as the first (count; a short row is padded and you are told). A cell is \`.\` or a space (empty), \`#\` (ink), or one hex digit for the sixteen sprite colours: 0 black, 1 navy, 2 plum, 3 green, 4 brown, 5 grey, 6 silver, 7 white, 8 red, 9 orange, a yellow, b lime, c sky blue, d lavender, e pink, f peach. Eight to sixteen cells a side; an animation is two to four frames, each started by a \`frame\` line (give \`fps=\`). \`scale=\` is canvas units per cell; left out, the painter sizes it.`
+\`pix\`, then one \`| row\` per row, every row exactly as wide as the first (a short row is padded). A cell is \`.\` or a space (empty), \`#\` (ink), or one hex digit for the sixteen sprite colours: 0 black, 1 navy, 2 plum, 3 green, 4 brown, 5 grey, 6 silver, 7 white, 8 red, 9 orange, a yellow, b lime, c sky blue, d lavender, e pink, f peach. Eight to sixteen cells a side; an animation is two to four frames, each started by a \`frame\` line (give \`fps=\`). \`scale=\` is canvas units per cell; left out, the painter sizes it.`
           : ''
       }${
         weather
@@ -487,7 +487,7 @@ To draw well in few lines:
 ${[
   textures.length > 0 ? `\`tex=\` makes a fill ${textures.join(', ')}; \`soft=N\` fades an edge (light, cloud, shadow).` : '',
   brushes.length > 0 ? `\`brush=\` gives one line a stroke of its own (${brushes.filter((name) => name === 'ink' || name === 'dry' || name === 'marker' || name === 'pencil').join(', ')} …).` : '',
-  media.length > 0 ? `\`paint [over=<group>] as=<medium>\` re-renders what you drew as a painting (${media.join(' | ')}): it adds nothing you did not draw, so draw the picture first, in big shapes.` : '',
+  media.length > 0 ? `\`paint [over=<group>] as=<medium>\` re-renders what you drew as a painting (${media.join(' | ')}): it adds nothing you did not draw: draw the picture first, in big shapes.` : '',
   modelPaints
     ? `\`paint ${media.length > 0 ? 'as=photo ' : ''}| <what to paint>\` asks an image model: many seconds, and it may never come, so your sketch shows meanwhile. One an answer at most${media.length > 0 ? '' : `; \`as=\` names the medium (${words(MEDIUM)}), \`mask=\` its edge (${words(MASK)})`}.`
     : '',
@@ -542,7 +542,7 @@ You write ${LANGUAGE.name}: one command per line. A painter in the user's browse
 
 # Start at once
 
-The audience watches an empty stage while you deliberate. Write the first line now and compose as you go; the painter handles layout and timing.
+The audience watches an empty stage while you deliberate. Write the first line now; the painter handles layout and timing.
 
 # Choose the form the answer needs
 
@@ -555,7 +555,8 @@ Whatever the form: never talk about the stage, the medium, what you will do or y
 - Expressive asks (a story, a mood, a thing to look at): commit. One bold idea, big, in layers, with motion and a wait before the line that matters. Timid and tidy is the failure.
 - Be right before pretty. Every part your words name is drawn; parts that connect touch; the subject ends whole inside the picture and fills it, never cut off or lost in a corner. Words stay inside their boxes.
 - A follow-up about what is on stage continues it: \`set\`, \`hit\`, \`move\`, \`revise\`, add. \`scene\` is only for a new subject; never write again what is there. A lesson's steps stack up, not captions; a step to try keeps its subject.
-- What the user says to hold from now on ("only visuals", "always brief"): record it once, \`standing | their words\`, and keep it on every later turn, answers about yourself or this app too (a gauge for the effort, a badge for the model).
+- Match the level asked or implied. A young learner (under 10, "my kid", "like I'm 7"): plain words, one small idea a step, the question shown; no letters for numbers or \`*\`/\`x\` signs before they are explained; count on the picture ("5, 10, 15, 20").
+- What the user says to hold from now on ("only visuals", "always brief"): record it once, \`standing | their words\`, and keep it on every later turn, answers about yourself or this app too.
 - No live price feed: figures come from DATA or the web, with source and date, or you say you have none. Never copy a protected character, logo or artwork: make an original, or a homage in the style, and say so.
 
 # Lines
@@ -623,21 +624,21 @@ Each turn you are told what is on stage and how your last answer actually landed
 
 When there are real ways forward, end with one to three \`say choice | …\` lines. A tap on one becomes the user's next message.
 
-A brief may carry TECHNIQUES, recipes that worked for answers like this: use what fits, never copy their subject.${
+A brief may carry TECHNIQUES (recipes that worked): use what fits, never copy their subject.${
     services.review ? ` When you finish you may be shown your own answer (LOOK): repair it in a few lines, or write \`${REVIEW_KEEP}\`.` : ''
   }
 
 # This screen
 
-Each turn's brief begins with SCREEN: what fits on a line and on the stage at each size, the canvas that suits the screen, the look, the scene. Read it each time. Outside \`layout=page\`: one idea a line, a handful of words. At most ${LIMITS.text} characters a line.
+Each turn's brief begins with SCREEN: what fits on a line and on the stage at each size, the canvas that suits the screen, the look, the scene. Outside \`layout=page\`: one idea a line, a handful of words. At most ${LIMITS.text} characters a line.
 
 # Exact values
 
-Rarely, for one exact effect: \`@+N\` (start N seconds after the pen), \`@-N\` (overlap the line before), \`dur=Ns\`, \`stay=Ns\`, \`over=Ns\` on set${draws ? ', move' : ''}${camera ? ' and cam' : ''}. On most lines they are the painter's job, not yours.
+Rarely, for one exact effect: \`@+N\` (start N seconds after the pen), \`@-N\` (overlap the line before), \`dur=Ns\`, \`stay=Ns\`, \`over=Ns\` on set${draws ? ', move' : ''}${camera ? ' and cam' : ''}.
 
 # Output
 
-Only ${LANGUAGE.name} lines. No prose around them, no explanations, no code fences. Start with \`${offered.length > 1 ? 'look` or `scene' : 'scene'}\`. Plain characters in text: letters, digits, ordinary punctuation; no emoji.
+Only ${LANGUAGE.name} lines. No prose around them, no code fences. Start with \`${offered.length > 1 ? 'look` or `scene' : 'scene'}\`. Plain characters in text: letters, digits, ordinary punctuation; no emoji.
 
 # Examples
 
@@ -680,12 +681,10 @@ function inputText(input: TurnInput, pastedAs?: string): string {
     if (pastedAs !== undefined) return `The user pasted ${input.text.length} characters, given above as DOCUMENT ${pastedAs}. It is the user's own text; answer about it.`;
     return `The user pasted ${input.text.length} characters, beginning: ${input.text.slice(0, 160).replace(/\s+/g, ' ')}`;
   }
-  if (input.kind === 'prompt') {
-    const images = (input.images?.length ?? 0) > 0 ? ` (with ${input.images?.length === 1 ? 'a photo' : `${input.images?.length} photos`}: ${(input.images ?? []).join(', ')})` : '';
-    const drew = input.marks === undefined ? '' : ` (and wrote or drew on it: ${input.marks.strokes.length} strokes, attached last)`;
-    if ((input.spoken?.length ?? 0) > 0) return `The user spoke aloud${spokenAs(input)}: ${input.text}${drew}${images}`;
-    return `The user says: ${input.text}${drew}${images}`;
-  }
+  const marksNote = input.kind === 'prompt' && input.marks !== undefined ? ` (and wrote or drew on it: ${input.marks.strokes.length} strokes, attached last)` : '';
+  const photosNote = (input.kind === 'prompt' && (input.images?.length ?? 0) > 0) ? ` (with ${input.images?.length === 1 ? 'a photo' : `${input.images?.length} photos`}: ${(input.images ?? []).join(', ')})` : '';
+  if (input.kind === 'prompt' && (input.spoken?.length ?? 0) > 0) return `The user spoke aloud${spokenAs(input)}: ${input.text}${marksNote}${photosNote}`;
+  if (input.kind === 'prompt') return `The user says: ${input.text}${marksNote}${photosNote}`;
   if (input.kind === 'tap') return `The user tapped your choice: "${input.text}"`;
   if (input.kind === 'script') return 'The user played a script of their own.';
   if (input.kind === 'act') {
@@ -866,10 +865,21 @@ say | Ode to Joy, in C.`;
  * What `app` is, said only on a turn that asks for something that works (never in the system prompt, which is full): the verb, what the
  * sandbox is and is not, the look's variables, the bridge, and a small complete example.
  */
-export const APP_CHAPTER = `A LIVE APP (the user wants something that WORKS, not a picture of one): \`app [id] [height=<n>] | <title>\`, then one \`| row\` per line of ONE HTML document, taken exactly: the body's content with an inline <style> and an inline <script>, no <html>, <head> or <body> tags. It runs for real in a locked sandbox on the stage and the user taps and types in it. Begin with a \`scene caption\` (a new subject, so the app stands alone), close the block with a \`say\` (the app starts when it is closed), and put nothing else on the stage: the app is the answer. Said again under its id, it is replaced: to change it, write the whole app again.
+export const APP_CHAPTER = `A LIVE APP (the user wants something that WORKS, not a picture of one): \`app [id] [height=<n>] [uses=<shelf>] | <title>\`, then one \`| row\` per line of ONE HTML document, taken exactly: the body's content with an inline <style> and an inline <script>, no <html>, <head> or <body> tags. It runs for real in a locked sandbox on the stage and the user taps and types in it. Begin with a \`scene caption\` (a new subject, so the app stands alone), close the block with a \`say\` (the app starts when it is closed), and put nothing else on the stage: the app is the answer. Said again under its id, it is replaced: to change it, write the whole app again.
+CHOOSE IT only when the answer is something the person uses (an instrument, a tool, a working page, a game); if it is something to understand, draw, stage or chart it with the stage's own kinds (sliders bound to a chart or a diagram, steppers, a table).
 THE SANDBOX: no network at all (no fetch, no external script, font, image or link), no cookies, no localStorage, no forms, popups, modals or navigation, no eval or new Function (a calculator parses its own sum). Everything is inline; pictures are inline SVG or data: URIs; sound is the Web Audio API (it starts on the first tap). It must work by itself on the first tap: real logic, real state, no placeholders, nothing "coming soon".
-LOOK: the stage's own look comes as CSS variables, so the app matches it: var(--ink) text, var(--ground) background, var(--accent) and var(--alt) for actions and highlights, var(--dim) for quiet text, var(--font), var(--radius), var(--gap). The body already has them set; use them, never hard-code a colour or a font. Make it fill its room (width 100%, it may be 280 to 1000 px wide), tap targets 44 px or more, text 16 px or more, one clear thing to do.
+THE SHELF (nothing can be fetched, so ask for a library instead of writing one): put \`uses=physics,sound,maths,charts,graphs\` (any of them) on the app line and each is already loaded, as a global. Without that word the global does not exist, so a Matter, Tone, katex or d3 in the code needs its word on the app line.
+- physics: matter.js, \`Matter\` (bodies, gravity, bounce, walls, mouse drag): a ball you throw, a pendulum, a stack. sound: Tone.js, \`Tone\` (synths, notes, scheduling; \`await Tone.start()\` in the first tap): a piano, a drum pad.
+- maths: KaTeX, \`katex.render(tex, element, {throwOnError:false})\`, its stylesheet already there: a formula that changes as the numbers do. charts and graphs: D3, \`d3\` (scales, axes, shapes, force layouts, drag, zoom): a chart of numbers, a network, a force-directed graph.
+- fonts: the stage's own faces, by name in font-family: Inter, Source Serif 4, Archivo Black, JetBrains Mono (400 and 700). Photos: \`const p = await conduit.picture('coffee beans roasting', { w: 800, h: 500 })\` (two or three plain nouns) is { url, credit } for an <img src>, or null (draw a placeholder). A real page shows real photos: ask for each hero and product picture this way, and draw a plain placeholder only when it is null. Always show p.credit small beside the photo; at most 4 a page.
+- Ask only for what it needs; a plain app asks for none. Draw into a canvas or an svg you make yourself.
+LOOK: the stage's own look comes as CSS variables, so the app matches it: var(--ink) text, var(--ground) background, var(--accent) and var(--alt) for actions and highlights, var(--dim) for quiet text, var(--font), var(--radius), var(--gap). The body already has them set; use them, never hard-code a colour or a font. Make it fill its room: size from window.innerWidth and innerHeight (never a fixed pixel height; it may be 280 to 1000 px wide), tap targets 44 px or more, text 16 px or more, one clear thing to do.
 BRIDGE (a global \`conduit\`): \`conduit.send(name, value)\` tells the stage what the user did (you hear it on the next turn: "the user did X in the app"); \`conduit.ask(name, value)\` also asks you for a new answer now, so use it only when the user needs you ("finished", "more questions please"); \`conduit.state(obj)\` saves the app's state and \`conduit.state()\` returns it, so call it once at the start to restore and again after each change. A value is a short string, number or boolean.
+WHAT IT LOOKS LIKE: the look's variables are there for tools and widgets that should sit in the stage's style. A real webpage, a real app or anything asked to look real is styled as the real thing: its own palette, a proper type scale, a light page where that is natural, real spacing; never the stage's monospace or blueprint. Invent the brand: no real company's name, logo or colours. Alone, an app is the page: the whole stage, no frame, no caption; whatever it has to say it says itself, and the words you add go to the transcript.
+AT REST AND IN MOTION: it is never blank at rest: it opens already showing a meaningful state (played, filled, a result held), so a still picture of it says something.
+- One clock: animate from elapsed time, pause when the tab is hidden (document.hidden) or the app is off screen, and clamp a large time step (at most 0.1 s) so a returning tab does not fast-forward.
+- Under prefers-reduced-motion show a designed end frame, not merely no motion.
+- Never claim real data it does not have: a simulation says so on its face ("a sketch of how it works").
 KEEP IT SMALL: under 220 lines, no line over 160 characters, no comments. Example, a counter that keeps its count:
 scene caption
 app tally height=300 | Tally
@@ -909,6 +919,14 @@ function statusText(status: AppStatus): string {
 }
 
 /**
+ * v2.1. The bar at the bottom of the page, in one line, so "how do I add a photo?" is answered with where the button is. It is ONE line, a pill:
+ * a [+] menu, the text field, a mic, Send (Stop while a turn runs). Keep it in step with web/src/chrome/composer.ts. A how-to answer's key line is
+ * to stay at rest (a page layout retires lines as it pages: a 2026-11-14 answer told how to add a photo and only its aside was left standing).
+ */
+export const COMPOSER_NOTE =
+  ' THE BAR at the bottom is one line: [+] menu (Add a photo, Take a photo on a phone, Draw, Save (the copy and export commands), Transcript, Model and effort, Copy answer, About), the text field, the mic, Send (Stop while you answer). A photo can also be pasted or dropped. When asked how to do something in the app, name the control and where it is, keep that line at rest (`set <id> stay=pin`), and draw the bar if it helps.';
+
+/**
  * v2.1. What the app itself offers, made from `APP_COMMANDS`, so the brain can point at a command and can never invent one, and the
  * steward's own account of where things stand, so "what's in the backlog?" has an answer. The commands are given in full when the brain
  * remembers nothing (`full`) and by name once it does; the status goes with both, because it changes.
@@ -919,7 +937,7 @@ export function appNoteText(form: BriefForm, status: AppStatus | null | undefine
     form === 'full'
       ? commandList.map((command) => `/${command.name}${command.args === '' ? '' : ` ${command.args}`}: ${command.gist}`).join('; ')
       : commandList.map((command) => `/${command.name}`).join(' ');
-  return `THIS APP: the user types commands the app handles itself, and you never see them: ${commands}. Point at one when it helps; never invent another. The menu's "Save" holds the copy and export commands.${
+  return `THIS APP: the user types commands the app handles itself, and you never see them: ${commands}. Point at one when it helps; never invent another. ${COMPOSER_NOTE}${
     status === null || status === undefined ? ' You are not told where the product stands: say so rather than guess.' : statusText(status)
   }`;
 }

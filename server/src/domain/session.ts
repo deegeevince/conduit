@@ -4,6 +4,7 @@ import type {
   BackEventRecord,
   Capabilities,
   ClockState,
+  ControlValues,
   CriticFinding,
   DataTable,
   LineProblem,
@@ -174,6 +175,12 @@ export interface Session {
   nextTable: number;
   /** where the painter's report on a draft is waited for */
   readonly draft: DraftGate;
+  /** SA2. What the user last set each control to, by element id: an input to the server's own measurement */
+  held: ControlValues;
+  /** SA2. Why this session's drafts are no longer measured here (the page's engine or a digest differed); null while they are */
+  drift: string | null;
+  /** SA2. The digest of a pass's boxes as the server and the page each said it, by `turn#pass` (or `turn#report`); compared when both are in */
+  readonly boxes: Map<string, { page?: string; server?: string }>;
   /** turns a snapshot has been uploaded for */
   snapshotTurns: Set<string>;
   /** aborted when the session is dropped: stops paintings that outlive their turns */
@@ -182,6 +189,8 @@ export interface Session {
   standing: string[];
   /** v2.1. What the critic made of each turn, by turn id; bounded like the turns themselves */
   readonly findings: Map<string, CriticFinding>;
+  /** critic v2. Turns in which each gate failed, by gate id: counted by the server so a gate that keeps failing is seen to (never by the judge) */
+  readonly gateFails: Map<string, string[]>;
   /** v2.1. Confirm controls waiting for the owner, by request id */
   readonly permissions: Map<string, PendingPermission>;
 }
@@ -231,10 +240,14 @@ export class SessionStore {
       draft: createDraftGate(),
       lateAssets: [],
       paintings: 0,
+      held: {},
+      drift: null,
+      boxes: new Map(),
       snapshotTurns: new Set(),
       abort: new AbortController(),
       standing: [],
       findings: new Map(),
+      gateFails: new Map(),
       permissions: new Map(),
     };
     this.sessions.set(session.id, session);

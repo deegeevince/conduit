@@ -51,6 +51,9 @@ const ICONS = [
   // talk
   ['chat', 'message-circle'], ['message', 'message-square'], ['thumbs-up', 'thumbs-up'], ['bot', 'bot'], ['at', 'at-sign'], ['hash', 'hash'], ['help', 'message-circle-question-mark'],
   ['timer', 'timer'], ['hourglass', 'hourglass'], ['alarm', 'alarm-clock'],
+  // players and money moving
+  ['skip-back', 'skip-back'], ['skip-forward', 'skip-forward'], ['shuffle', 'shuffle'], ['repeat', 'repeat'], ['music', 'audio-waveform'], ['volume', 'volume-2'], ['disc', 'disc-3'],
+  ['queue', 'list-music'], ['arrow-up-right', 'arrow-up-right'], ['arrow-down-left', 'arrow-down-left'], ['transfer', 'arrow-left-right'], ['podcast', 'mic-vocal'], ['radio', 'radio'],
 ];
 
 const round = (n) => Number(n.toFixed(2));

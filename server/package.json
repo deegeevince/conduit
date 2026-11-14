@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@conduit/language": "workspace:*",
+    "@conduit/web": "workspace:*",
     "@hono/node-server": "^2.1.8",
     "hono": "^4.13.18",
     "tsx": "^4.23.15"

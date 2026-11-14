@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { asksWhatsNew, buildSystemPrompt, buildTurnBrief, VERBS } from '@conduit/language';
-import type { ActionRisk, AppStatus, BrainChange, BrainChoice, BrainEffort, BrainMode, PromptVariant, ToolChoice } from '@conduit/language';
+import type { ActionRisk, AgentPermits, AppStatus, BrainChange, BrainChoice, BrainEffort, BrainMode, PromptVariant, ToolChoice } from '@conduit/language';
 import type { BriefForm, Capabilities } from '@conduit/language';
 import { buildReviewBrief, isKeep } from '@conduit/language';
 import type { AmendRequest, Brain, BrainEvent, BrainSession, ReviewRequest, Snapshot, TurnRequest } from '../../domain/brain';
@@ -121,6 +121,9 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
   // v2.1, agent mode. What the owner's configuration offers, what each conversation has switched on, and the mode it is in.
   const agent = deps.agent ?? NO_AGENT;
   const switchedOn = new Map<string, Set<string>>();
+  /** `/tools auto` and `/tools ask`: how a conversation's permit prompts are answered; read at each call, so a change is at once */
+  const permitsChosen = new Map<string, AgentPermits>();
+  const permitsOf = (session: string): AgentPermits => (kill.engaged() ? 'ask' : (permitsChosen.get(session) ?? agent.permits ?? 'ask'));
   // The brain is the agent whenever the server has one; there is no plain beside it. The one exception is the kill switch: while it is
   // engaged the brain has no tools at all (`plain`), until the owner switches them back on.
   const kill = deps.kill ?? NEVER_ENGAGED;
@@ -327,6 +330,7 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
     if (signal.aborted) inner.abort();
 
     let timedOut: string | null = null;
+    let lookTools = 0;
     let timer: NodeJS.Timeout | undefined;
     const arm = (ms: number, what: string): void => {
       clearTimeout(timer);
@@ -340,6 +344,8 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
     const notTools = new Set<string>();
     const running = new Map<string, { readonly tool: string; readonly summary: string; readonly at: number }>();
     const denied = new Set<string>();
+    /** calls the owner's `auto` level let through: their activity events say so */
+    const autoAllowed = new Set<string>();
     /** browser calls in flight, so that their results can teach the gate where its tabs are */
     const chromeUses = new Map<string, { readonly id: string; readonly tool: string; readonly input: Readonly<Record<string, unknown>> }>();
     const rearm = (): void => {
@@ -364,7 +370,7 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
     /** The CLI asks before a call. Whatever the answer, it is made here, by `gateCall`, and by the owner for what that says to ask. */
     const handleAsk = (ask: { requestId: string; toolUseId: string; tool: string; input: Readonly<Record<string, unknown>> }): void => {
       const call = { id: ask.toolUseId, tool: ask.tool, input: ask.input };
-      const verdict = out.noTools === true ? ({ kind: 'deny', risk: 'run', why: 'a look at the draft uses no tools' } as const) : modeOf(out.session) === 'agent' ? gateCall(call, agent, on, false, entry.browser) : ({ kind: 'deny', risk: 'run', why: kill.engaged() ? 'agent tools have been switched off by the kill switch' : 'this conversation has no tools' } as const);
+      const verdict = out.noTools === true ? ({ kind: 'deny', risk: 'run', why: 'no tools in a look; write lines' } as const) : modeOf(out.session) === 'agent' ? gateCall(call, agent, on, false, entry.browser, permitsOf(out.session)) : ({ kind: 'deny', risk: 'run', why: kill.engaged() ? 'agent tools have been switched off by the kill switch' : 'this conversation has no tools' } as const);
       const summary = summaryOf(call);
       if (inner.signal.aborted) {
         // The turn was stopped (or timed out) and the model has not heard yet: nothing more is asked of the owner, nothing runs.
@@ -374,10 +380,16 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
       }
       if (verdict.kind === 'allow') {
         entry.proc.answer(ask.requestId, true, ask.input, '');
+        if (verdict.permit === 'auto') {
+          // Allowed by the owner's `auto` level, not by the owner: said on the strip and in the log, with the risk it would have been asked at.
+          autoAllowed.add(ask.toolUseId);
+          turnLog.info('agent_auto_allowed', { tool: ask.tool, risk: verdict.risk, permit: 'auto' });
+          if (!running.has(ask.toolUseId)) box.push({ type: 'activity', id: ask.toolUseId, tool: ask.tool, summary, state: 'running', ms: null, permit: 'auto' });
+        }
         return;
       }
       if (verdict.kind === 'deny') {
-        entry.proc.answer(ask.requestId, false, {}, `Not allowed: ${verdict.why}. Say so plainly and offer what you can do without it.`);
+        entry.proc.answer(ask.requestId, false, {}, out.noTools === true ? verdict.why : `Not allowed: ${verdict.why}. Say so plainly and offer what you can do without it.`);
         denied.add(ask.toolUseId);
         turnLog.info('agent_denied', { tool: ask.tool, why: verdict.why });
         box.push({ type: 'activity', id: ask.toolUseId, tool: ask.tool, summary, state: 'denied', ms: null });
@@ -451,18 +463,24 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
             continue;
           }
           if (out.noTools === true) {
-            // A look at the draft uses no tool, whatever the process was started with (a web tool the CLI allows itself is never asked about): it is stopped.
-            turnLog.warn('review_used_tool', { tool: use.tool });
-            timedOut = 'a look at the draft tried to use a tool';
-            inner.abort();
-            break;
+            // A look at the draft uses no tool. The process refuses the call at once, with a reason the model reads (`refuseTools`, `handleAsk`), and the
+            // look goes on; it is not an event of the turn. Only a model that goes on reaching for tools past the refusal is stopped.
+            notTools.add(use.id);
+            lookTools += 1;
+            turnLog.warn('review_used_tool', { tool: use.tool, refused: lookTools });
+            if (lookTools > 3) {
+              timedOut = 'a look at the draft kept using tools';
+              inner.abort();
+              break;
+            }
+            continue;
           }
           toolsChanged = true;
           if (splitTool(use.tool).service === 'chrome') chromeUses.set(use.id, use);
           const summary = summaryOf(use);
           running.set(use.id, { tool: use.tool, summary, at: Date.now() });
           turnLog.info('brain_tool', { tool: use.tool, summary });
-          box.push({ type: 'activity', id: use.id, tool: use.tool, summary, state: 'running', ms: null });
+          box.push({ type: 'activity', id: use.id, tool: use.tool, summary, state: 'running', ms: null, ...(autoAllowed.has(use.id) ? { permit: 'auto' as const } : {}) });
         }
         // What a browser tool returned is read for tab ids, each tab's address and credential fields, and nothing else (`noteBrowserResult`).
         for (const found of toolResultTextsOf(event)) {
@@ -478,7 +496,7 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
           toolsChanged = true;
           running.delete(result.id);
           const state = denied.has(result.id) ? 'denied' : result.failed ? 'failed' : 'done';
-          if (state !== 'denied') box.push({ type: 'activity', id: result.id, tool: began.tool, summary: began.summary, state, ms: Date.now() - began.at });
+          if (state !== 'denied') box.push({ type: 'activity', id: result.id, tool: began.tool, summary: began.summary, state, ms: Date.now() - began.at, ...(autoAllowed.has(result.id) ? { permit: 'auto' as const } : {}) });
         }
         if (!inner.signal.aborted && (toolsChanged || state.sawText)) rearm();
         const delta = textDeltaOf(event);
@@ -630,6 +648,7 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
       sent: () => undefined,
       noTools: true,
     };
+    entry.proc.refuseTools(true);
     try {
       for await (const event of turnOnce(out, signal, entry, true, startedAt, { sawText: false })) {
         // `ok`, alone on a line, is the draft kept: it is not a line and not a rejection.
@@ -642,6 +661,7 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
       if (!entry.proc.alive) discard(entry);
       throw error;
     } finally {
+      entry.proc.refuseTools(false);
       entry.running = null;
       release();
       if (!entry.proc.alive) discard(entry);
@@ -664,9 +684,15 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
         log.warn('claude_open_failed', { session: session.session, message: error instanceof Error ? error.message : String(error) });
       }
     },
-    choice: (session) => ({ configurable: true, ...settingsOf(session), ...(agent.enabled ? { mode: modeOf(session), modes: deps.modes ?? (['agent'] as const) } : {}) }) satisfies BrainChoice,
+    choice: (session) => ({ configurable: true, ...settingsOf(session), ...(agent.enabled ? { mode: modeOf(session), modes: deps.modes ?? (['agent'] as const), permits: permitsOf(session) } : {}) }) satisfies BrainChoice,
     choose(session, change: BrainChange) {
-      const { mode, ...rest } = change;
+      const { mode, permits, ...rest } = change;
+      if (permits !== undefined) {
+        if (!agent.enabled) throw errors.badRequest('permits are an agent mode setting, and agent mode is not offered by this server (AGENT=on)');
+        // Read at each call by the gate; the process is not started again for it.
+        permitsChosen.set(session, permits);
+        if (mode === undefined && Object.keys(rest).length === 0) return { configurable: true, ...settingsOf(session), mode: modeOf(session), modes: deps.modes ?? (['agent'] as const), permits: permitsOf(session) };
+      }
       if (mode !== undefined && mode !== 'steward') {
         if (mode === 'agent' && !agent.enabled) throw errors.badRequest('agent mode is not offered by this server (AGENT=on)');
         // The brain is the agent; there is no plain beside it. A request for it is refused in words, not obeyed or ignored.
@@ -681,7 +707,7 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
         log.info('claude_warm_replaced', { session, why: 'settings_changed' });
         discard(entry);
       }
-      return { configurable: true, ...next, ...(agent.enabled ? { mode: modeOf(session), modes: deps.modes ?? (['agent'] as const) } : {}) };
+      return { configurable: true, ...next, ...(agent.enabled ? { mode: modeOf(session), modes: deps.modes ?? (['agent'] as const), permits: permitsOf(session) } : {}) };
     },
     ...(agent.enabled
       ? {
@@ -703,6 +729,7 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
       : {}),
     release(session) {
       chosen.delete(session);
+      permitsChosen.delete(session);
       switchedOn.delete(session);
       const entry = pool.get(session);
       if (entry !== undefined) discard(entry);

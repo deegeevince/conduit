@@ -41,31 +41,38 @@ export function contains(outer: Box, inner: Box, slack = 0): boolean {
   return inner.x >= outer.x - slack && inner.y >= outer.y - slack && right(inner) <= right(outer) + slack && bottom(inner) <= bottom(outer) + slack;
 }
 
+// The clipping state of one `segmentHitsBox` call. Module-level and the clip a plain function, not a closure made per call: this is the
+// hot loop of every routed diagram, and a closure per call cost most of a phone-width flowchart's measuring under tsx's `keepNames`.
+let clipT0 = 0;
+let clipT1 = 1;
+const CLIP_EPS = 1e-6;
+
+function clip(p: number, q: number): boolean {
+  if (Math.abs(p) < CLIP_EPS) return q > CLIP_EPS;
+  const t = q / p;
+  if (p < 0) {
+    if (t > clipT1) return false;
+    if (t > clipT0) clipT0 = t;
+  } else {
+    if (t < clipT0) return false;
+    if (t < clipT1) clipT1 = t;
+  }
+  return true;
+}
+
 /** Whether the segment ab passes through the interior of the box (touching an edge does not count). */
 export function segmentHitsBox(a: Point, b: Point, r: Box): boolean {
-  const eps = 1e-6;
-  let t0 = 0;
-  let t1 = 1;
+  const eps = CLIP_EPS;
+  clipT0 = 0;
+  clipT1 = 1;
   const dx = b.x - a.x;
   const dy = b.y - a.y;
-  const clip = (p: number, q: number): boolean => {
-    if (Math.abs(p) < eps) return q > eps;
-    const t = q / p;
-    if (p < 0) {
-      if (t > t1) return false;
-      if (t > t0) t0 = t;
-    } else {
-      if (t < t0) return false;
-      if (t < t1) t1 = t;
-    }
-    return true;
-  };
   return (
     clip(-dx, a.x - r.x - eps) &&
     clip(dx, right(r) - a.x - eps) &&
     clip(-dy, a.y - r.y - eps) &&
     clip(dy, bottom(r) - a.y - eps) &&
-    t1 - t0 > eps / Math.max(1, Math.hypot(dx, dy))
+    clipT1 - clipT0 > eps / Math.max(1, Math.hypot(dx, dy))
   );
 }
 
@@ -305,4 +312,53 @@ export function packOrdered(desired: readonly number[], min: readonly number[], 
     }
   }
   return out;
+}
+
+/** An open polyline with the stretch inside `r` taken out: what is left is one or more open pieces (the line visibly breaks round a word set in `r`). */
+export function cutOutBox(line: Polyline, r: Box): Polyline[] {
+  if (line.closed || line.points.length < 2) return [line];
+  const pieces: Polyline[] = [];
+  let run: Point[] = [];
+  const flush = (): void => {
+    if (run.length >= 2) pieces.push({ points: run, closed: false });
+    run = [];
+  };
+  const x0 = r.x;
+  const x1 = r.x + r.width;
+  const y0 = r.y;
+  const y1 = r.y + r.height;
+  const pts = line.points;
+  for (let i = 0; i + 1 < pts.length; i += 1) {
+    const a = pts[i] as Point;
+    const b = pts[i + 1] as Point;
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    // the parameter range of the segment inside the box (Liang-Barsky)
+    let t0 = 0;
+    let t1 = 1;
+    let hit = true;
+    for (const [p, q] of [[-dx, a.x - x0], [dx, x1 - a.x], [-dy, a.y - y0], [dy, y1 - a.y]] as const) {
+      if (Math.abs(p) < 1e-9) {
+        if (q < 0) hit = false;
+      } else {
+        const t = q / p;
+        if (p < 0) t0 = Math.max(t0, t);
+        else t1 = Math.min(t1, t);
+      }
+    }
+    if (!hit || t0 >= t1) {
+      if (run.length === 0) run.push(a);
+      run.push(b);
+      continue;
+    }
+    const at = (t: number): Point => ({ x: a.x + dx * t, y: a.y + dy * t });
+    if (t0 > 1e-9) {
+      if (run.length === 0) run.push(a);
+      run.push(at(t0));
+    }
+    flush();
+    if (t1 < 1 - 1e-9) run.push(at(t1), b);
+  }
+  flush();
+  return pieces;
 }

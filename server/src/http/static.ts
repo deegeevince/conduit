@@ -38,6 +38,8 @@ export function registerStatic(app: Hono, directory: string): void {
       throw errors.badRequest('malformed path');
     }
     if (path.endsWith('/')) path += 'index.html';
+    // The chat shell is a second page beside the first (chat.html); `/chat` is its address.
+    if (path === '/chat') path = '/chat.html';
     const file = resolve(root, `.${path}`);
     if (file !== root && !file.startsWith(root + sep)) throw errors.notFound(c.req.path);
 

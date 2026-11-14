@@ -95,7 +95,7 @@ const clock = (ms: number): string => `${Math.floor(ms / 60_000)}:${String(Math.
  * A tap records until the next tap, a hold records while held. The button is hidden where there is no microphone to use, and the strip says
  * plainly when the Mac cannot read a note (permission not given, a language it cannot recognise on the device) instead of recording into nothing.
  */
-export function mountVoice(button: HTMLButtonElement, before: HTMLElement, field: HTMLElement, port: VoicePort, handlers: VoiceHandlers): Voice {
+export function mountVoice(button: HTMLButtonElement, host: HTMLElement, field: HTMLElement, port: VoicePort, handlers: VoiceHandlers): Voice {
   button.innerHTML = MIC;
   const supported = typeof navigator.mediaDevices?.getUserMedia === 'function' && typeof MediaRecorder !== 'undefined';
   button.hidden = !supported;
@@ -113,7 +113,7 @@ export function mountVoice(button: HTMLButtonElement, before: HTMLElement, field
       <button type="button" class="voice__action voice__cancel" hidden>Cancel</button>
     </div>
     <label class="voice__auto"><input type="checkbox" /> Send voice notes as soon as they are read</label>`;
-  before.before(strip);
+  host.append(strip);
   const part = <T extends HTMLElement>(selector: string): T => {
     const found = strip.querySelector<T>(selector);
     if (found === null) throw new Error('The voice strip could not be built.');

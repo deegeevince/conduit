@@ -18,6 +18,11 @@ export function applyAction(state: UiState, action: UiAction, hit: UiHit, x: num
       return { ...state, focus: action.control };
     case 'slider':
       return { ...state, slider: { ...state.slider, [action.control]: sliderAt(hit, x) }, focus: null };
+    case 'flip':
+      return { ...state, toggle: { ...state.toggle, [action.control]: !action.on }, focus: null };
+    case 'scroll':
+      // a row that is dragged follows the finger (ui-stage holds the gesture); a bare use of it changes nothing
+      return state;
     case 'press':
       return { ...state, pressed: action.control, focus: null };
   }

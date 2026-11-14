@@ -115,6 +115,8 @@ export interface Capabilities {
   readonly uploads: boolean;
   /** v2.1. True when `say href=` is drawn as a link the viewer can follow. False: the brain is not taught it and names a source in words. */
   readonly links: boolean;
+  /** SA2. The engine the page measures with (`ENGINE_VERSION`). The server measures a draft itself only when it is the server's own; absent or different: the draft gate. */
+  readonly engine?: string;
 }
 
 /** What the server can do for a turn that the painter cannot. The brain's prompt is filtered by these too. */
@@ -184,10 +186,11 @@ export const PROMPT_MAX_CHARS = 20_000;
 export type TurnInput =
   /**
    * `images` (v2.1): ids of pictures the user gave with these words (`API.uploads`), in the order they were added; absent means none.
+   * `marks` (v2.1): what the user wrote or drew on the stage with these words.
    * `voice` (v2.1): ids of voice notes (`API.voice`) these words came from or go with (`n1`, `n2`, ...). `spoken` is what the server heard in
    * them, filled by the server for the brain and never read from a request.
    */
-  | { readonly kind: 'prompt'; readonly text: string; readonly images?: readonly string[]; readonly voice?: readonly string[]; readonly spoken?: readonly string[]; readonly marks?: InkMarks }
+  | { readonly kind: 'prompt'; readonly text: string; readonly images?: readonly string[]; readonly marks?: InkMarks; readonly voice?: readonly string[]; readonly spoken?: readonly string[] }
   /** the user tapped a choice; `text` is what the choice said */
   /** v3. `seen`: where the person stood in the document when they tapped (2.5) */
   | { readonly kind: 'tap'; readonly id: string; readonly text: string; readonly seen?: Seen }
@@ -308,7 +311,7 @@ export type StageEvent =
   /** v2.1. What the critic made of a turn's resting picture. Not on the turn clock: it comes seconds after the turn has ended. For the HUD and the transcript; the stage does nothing with it. */
   | { readonly type: 'critic'; readonly turn: string; readonly finding: CriticFinding }
   /** v2.1, agent mode. A tool the brain is using, as it happens: the chrome's activity strip. `summary` never holds a secret (`redactSecrets`). */
-  | { readonly type: 'activity'; readonly turn: string; readonly id: string; readonly tool: string; readonly summary: string; readonly state: ActivityState; readonly ms: number | null }
+  | { readonly type: 'activity'; readonly turn: string; readonly id: string; readonly tool: string; readonly summary: string; readonly state: ActivityState; readonly ms: number | null; readonly permit?: 'auto' }
   /**
    * v2.1, agent mode. The brain wants to do something that needs the owner's yes. The chrome shows a confirm control on the stage and
    * answers with a `permit` back event; with no answer by `expiresMs` it is denied. Nothing that sends, buys, deletes, publishes or signs
@@ -383,7 +386,8 @@ export type BackEvent =
       /** v3. Where the person stood in the document, and what every leaf held, at this instant */
       readonly seen?: Seen;
     }
-  | { readonly type: 'report'; readonly report: TurnReport }
+  /** `boxes` (SA2): the digest of the boxes in `report.placed` (`digestOf`), for the server to hold against its own */
+  | { readonly type: 'report'; readonly report: TurnReport; readonly boxes?: string }
   /**
    * The user committed a change to a control (released a slider, flipped a
    * toggle, chose an option, pressed Enter in an input). Not sent while
@@ -411,7 +415,7 @@ export type BackEvent =
    * Sent in answer to `pass … drafted`. `snapshot` is true when a picture of
    * that stage was uploaded beside it (`API.draft`).
    */
-  | { readonly type: 'draft'; readonly turn: string; readonly pass: number; readonly sight: Sight; readonly placed?: readonly PlacedBox[]; readonly snapshot: boolean; readonly content?: ContentCount }
+  | { readonly type: 'draft'; readonly turn: string; readonly pass: number; readonly sight: Sight; readonly placed?: readonly PlacedBox[]; readonly snapshot: boolean; readonly content?: ContentCount; readonly boxes?: string }
   /** v2.1, agent mode. The owner's answer to a `permission` event. `allow: true` lets that one action happen once; there is no "always". */
   | { readonly type: 'permit'; readonly turn: string; readonly request: string; readonly allow: boolean }
   /**
@@ -477,8 +481,14 @@ export type BrainEffort = (typeof BRAIN_EFFORTS)[number];
 export const BRAIN_MODES = ['plain', 'agent', 'steward'] as const;
 export type BrainMode = (typeof BRAIN_MODES)[number];
 
+/** v2.1, agent mode. How a call that needs a yes is answered: `ask` puts every one to the owner on stage; `auto` lets the browser's read, write and run calls (in its own tabs) through, and still asks for the rest. */
+export const AGENT_PERMITS = ['ask', 'auto'] as const;
+export type AgentPermits = (typeof AGENT_PERMITS)[number];
+
 /** A change to one session's brain; what is left out stays as it is. */
 export interface BrainChange {
+  /** v2.1; `/tools auto`, `/tools ask`. Takes effect at once, with no fresh process. */
+  readonly permits?: AgentPermits;
   readonly model?: BrainModel;
   readonly effort?: BrainEffort;
   /** v2.1; refused unless the server offers it (`BrainChoice.modes`) */
@@ -492,6 +502,8 @@ export interface BrainChoice {
   readonly effort: BrainEffort | null;
   /** v2.1; absent from a server that has one mode */
   readonly mode?: BrainMode;
+  /** v2.1. How this session's permit prompts are answered; absent from a server with no agent mode */
+  readonly permits?: AgentPermits;
   /** v2.1. The modes this server offers this session, for the picker; absent or one entry: nothing to choose */
   readonly modes?: readonly BrainMode[];
 }
@@ -546,8 +558,8 @@ export interface CriticFinding {
   readonly readable: boolean;
   /** what was drawn is what was asked for */
   readonly asked: boolean;
-  /** what is wrong, worst first, each in one sentence a builder could act on; `id` when it is about one thing on stage */
-  readonly problems: readonly { readonly id: string | null; readonly what: string; readonly weight: 'blocks' | 'hurts' | 'polish' }[];
+  /** what is wrong, worst first (raised ones before held-back ones), each in one sentence a builder could act on; `id` when it is about one thing on stage */
+  readonly problems: readonly CriticProblem[];
   /** what would most improve the picture, at most three, each one thing to add or change; empty: nothing worth a pass */
   readonly suggestions: readonly string[];
   readonly rubric: string;
@@ -564,6 +576,48 @@ export interface CriticFinding {
     readonly costUsd: number | null;
     readonly ms: number;
   };
+  /** critic v2: every gate the judge was asked, each pass or fail with the evidence for it. Absent on findings logged before the gates. */
+  readonly gates?: readonly CriticGate[];
+  /** critic v2: the lowest tier with a failing gate (1 on stage and readable, 2 answers the ask, 3 polish and taste); null when every gate of every tier passed */
+  readonly failedTier?: CriticTier | null;
+  /** critic v2: the answer is a mock-up, so the worst-case gate was asked */
+  readonly mockup?: boolean;
+  /** critic v2: the coherence the judge gave, when the gates moved it (a tier that fails caps it; a failure of polish alone does not take it under 3) */
+  readonly judgedCoherence?: number;
+  /** critic v2: for an in-place follow-up on the answer the critic had already judged: how this picture stands against that verdict */
+  readonly previous?: { readonly turn: string; readonly coherence: number; readonly failedTier: CriticTier | null; readonly failed: readonly string[] } | null;
+  readonly progress?: { readonly trend: 'better' | 'worse' | 'same' | 'mixed'; readonly fixed: readonly string[]; readonly stillFailing: readonly string[]; readonly newFailures: readonly string[]; readonly note: string } | null;
+  /** critic v2: gates that failed here and in earlier turns of the session, counted by the server, never by the judge */
+  readonly repeats?: readonly { readonly gate: string; readonly count: number; readonly turns: readonly string[] }[];
+}
+
+export type CriticTier = 1 | 2 | 3;
+/** who owns the fix: the brain's content, the painter's layout, the kit (shapes, structures, type), the app host (web app, page, device) or the prompt */
+export type CriticOwner = 'brain' | 'painter' | 'kit' | 'host' | 'prompt';
+
+export interface CriticGate {
+  /** a fixed id, never reworded: on-stage, readable, no-overlap (tier 1); answers-ask, hierarchy, composition (tier 2); polish, taste (tier 3); worst-case (a mock-up's note, never an alarm) */
+  readonly gate: string;
+  readonly tier: CriticTier;
+  readonly pass: boolean;
+  /** what and where in the picture (an element id when the stage report gives one) */
+  readonly evidence: string;
+}
+
+export interface CriticProblem {
+  readonly id: string | null;
+  readonly what: string;
+  readonly weight: 'blocks' | 'hurts' | 'polish';
+  /** critic v2: the gate it fails */
+  readonly gate?: string;
+  readonly tier?: CriticTier;
+  /** critic v2: what and where in the picture */
+  readonly evidence?: string;
+  readonly owner?: CriticOwner;
+  /** critic v2: false when a lower tier fails (or it is a worst-case note): logged, never an alarm; its weight is then `polish` */
+  readonly raised?: boolean;
+  /** critic v2: the weight the judge gave it before the gates held it back or lifted it */
+  readonly judgedWeight?: 'blocks' | 'hurts' | 'polish';
 }
 
 /**
@@ -644,7 +698,7 @@ export const APP_COMMANDS = [
   { name: 'effort', args: `<${BRAIN_EFFORTS.join('|')}>`, gist: 'how hard it thinks before it writes; bare shows it' },
   // Hidden from /help, the picker and the brain's note: the brain always has its tools and always asks first; `steward` is the developer's own mode (STEWARD=on).
   { name: 'brain', args: `<${BRAIN_MODES.join('|')}>`, gist: 'agent: the brain can act, and asks first (always). steward: the steward answers' },
-  { name: 'tools', args: '[name on|off]', gist: 'what the brain may use in agent mode (web search, connected services); bare lists them' },
+  { name: 'tools', args: '[name on|off | auto | ask]', gist: 'what the brain may use in agent mode (web search, connected services); bare lists them; auto lets its browser reads, writes and runs go without asking (sending, buying, deleting, posting and sign-in pages still ask), ask brings every prompt back' },
   { name: 'new', args: '', gist: "what is new in this app, shown live" },
   { name: 'status', args: '', gist: 'what is live, what is being built and what is waiting on you' },
   { name: 'asks', args: '[clear]', gist: 'what you asked to hold for every reply; clear forgets them' },
@@ -786,6 +840,8 @@ export const API = {
   capture: (session: string, turn: string): string => `/api/sessions/${session}/turns/${turn}/capture`,
   /** v2.2. GET: the bytes of a photograph the server found for an `image` part (a JPEG, re-encoded, cached). The key is in the `picture` event's url. */
   picture: (key: string): string => `/api/pictures/${key}`,
+  /** v2.2. GET `?q=<words>&aspect=<w over h>`: a photograph for a live app's `conduit.picture`. `{ found: false }` when the picture service is off or found nothing, else `{ found: true, url, credit, landing }` with `url` as `API.picture`. */
+  pictureSearch: '/api/picture-search',
   /** v2.1. GET: `AppStatus`, read from the steward's `STATUS.md`. What `/status` shows and what the brief's "this app" note is made from. */
   status: '/api/status',
   /** v2.1 ops. POST: the kill switch (`/stop-all`): every turn ended, every question waiting for the owner refused, every helper process killed, agent tools off. GET: whether they are off. DELETE: switches them back on. */

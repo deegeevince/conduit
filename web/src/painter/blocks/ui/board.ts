@@ -9,7 +9,7 @@ import type { UiTokens } from './lang';
 import { deviceShape } from './device';
 import type { DeviceShape } from './device';
 import type { UiMeasure } from './measure';
-import type { UiPart, UiScreenLayout } from './types';
+import type { UiClip, UiPart, UiScreenLayout } from './types';
 
 export interface BoardPlacement {
   readonly id: string;
@@ -44,12 +44,24 @@ export interface BoardOptions {
 const LABEL_H = 24;
 const GAP = 52;
 
+/** A shape's own clip (a row that moves keeps what is in it inside its box), moved and scaled with it. */
+function scaleClip<T extends UiPart>(p: T, s: number, ox: number, oy: number): T {
+  return p.clip === undefined ? p : { ...p, clip: { x: ox + p.clip.x * s, y: oy + p.clip.y * s, w: p.clip.w * s, h: p.clip.h * s } };
+}
+
+/** The part of two boxes they share. */
+function overlap(a: UiClip, b: UiClip): UiClip {
+  const x0 = Math.max(a.x, b.x);
+  const y0 = Math.max(a.y, b.y);
+  return { x: x0, y: y0, w: Math.max(0, Math.min(a.x + a.w, b.x + b.w) - x0), h: Math.max(0, Math.min(a.y + a.h, b.y + b.h) - y0) };
+}
+
 /** Moves and scales one shape from points to pixels. */
 export function scalePart(p: UiPart, s: number, ox: number, oy: number): UiPart {
   switch (p.kind) {
     case 'rect':
       return {
-        ...p,
+        ...scaleClip(p, s, ox, oy),
         x: ox + p.x * s,
         y: oy + p.y * s,
         w: p.w * s,
@@ -59,11 +71,11 @@ export function scalePart(p: UiPart, s: number, ox: number, oy: number): UiPart 
         ...(p.shadow === undefined ? {} : { shadow: { ...p.shadow, dy: p.shadow.dy * s, blur: p.shadow.blur * s } }),
       };
     case 'path':
-      return { ...p, outline: p.outline.map((l) => ({ closed: l.closed, points: l.points.map((q) => ({ x: ox + q.x * s, y: oy + q.y * s })) })), stroke: p.stroke === null ? null : { ...p.stroke, width: p.stroke.width * s } };
+      return { ...scaleClip(p, s, ox, oy), outline: p.outline.map((l) => ({ closed: l.closed, points: l.points.map((q) => ({ x: ox + q.x * s, y: oy + q.y * s })) })), stroke: p.stroke === null ? null : { ...p.stroke, width: p.stroke.width * s } };
     case 'picture':
-      return { ...p, x: ox + p.x * s, y: oy + p.y * s, w: p.w * s, h: p.h * s };
+      return { ...scaleClip(p, s, ox, oy), x: ox + p.x * s, y: oy + p.y * s, w: p.w * s, h: p.h * s };
     case 'text':
-      return { ...p, x: ox + p.x * s, y: oy + p.y * s, w: p.w * s, h: p.h * s, size: p.size * s, line: p.line * s, lines: p.lines.map((l) => ({ text: l.text, width: l.width * s })) };
+      return { ...scaleClip(p, s, ox, oy), x: ox + p.x * s, y: oy + p.y * s, w: p.w * s, h: p.h * s, size: p.size * s, line: p.line * s, lines: p.lines.map((l) => ({ text: l.text, width: l.width * s })) };
   }
 }
 
@@ -95,7 +107,7 @@ function bestGrid(sizes: readonly { w: number; h: number }[], room: { w: number;
 }
 
 export function arrangeBoard(layouts: readonly UiScreenLayout[], tokens: UiTokens, measure: UiMeasure, room: { readonly w: number; readonly h: number }, options: BoardOptions): Board {
-  const cards: Card[] = layouts.map((layout) => ({ layout, shape: deviceShape(layout.device as Parameters<typeof deviceShape>[0], layout.name, tokens, measure, layout.id, layout.height) }));
+  const cards: Card[] = layouts.map((layout) => ({ layout, shape: deviceShape(layout.device as Parameters<typeof deviceShape>[0], layout.name, layout.tokens, measure, layout.id, layout.height) }));
   const parts: UiPart[] = [];
   const placements: BoardPlacement[] = [];
   const dark = lum(tokens.colour.ground) < 0.35;
@@ -107,7 +119,10 @@ export function arrangeBoard(layouts: readonly UiScreenLayout[], tokens: UiToken
     for (const p of card.shape.under) parts.push(scalePart(p, s, x, y));
     // a screen is glass: what a long page has below the fold is not drawn outside it
     const clip = { x: cx, y: cy, w: card.layout.width * s, h: card.layout.height * s };
-    for (const p of card.layout.parts) parts.push({ ...scalePart(p, s, cx, cy), clip });
+    for (const p of card.layout.parts) {
+      const scaled = scalePart(p, s, cx, cy);
+      parts.push({ ...scaled, clip: scaled.clip === undefined ? clip : overlap(scaled.clip, clip) });
+    }
     for (const p of card.shape.over) parts.push(scalePart(p, s, x, y));
     placements.push({ id: card.layout.id, index, x, y, scale: s, contentX: cx, contentY: cy, width: card.shape.width * s, height: card.shape.height * s });
   };

@@ -1,4 +1,4 @@
-import { contentOf, controlText, describeFigure, EMPTY_STAGE, holdControl, FULL_CAPABILITIES, NO_SERVICES, sceneAt, serializeLine, TurnScore, valueAt } from '@conduit/language';
+import { controlText, describeFigure, EMPTY_STAGE, holdControl, FULL_CAPABILITIES, NO_SERVICES, sceneAt, serializeLine, TurnScore, valueAt } from '@conduit/language';
 import { CHARTS_READY } from '../render/chart';
 import { STRUCTURES_READY } from './blocks';
 import { CONTROLS_READY, controlEngine, createControlStore, nextEases } from './controls';
@@ -8,7 +8,7 @@ import type { ChartData } from './charts';
 import type { ChartView } from '../contracts/chart';
 import { CALM } from '../contracts/controls';
 import { NO_SIGHT } from '@conduit/language';
-import type { DataTable, ControlValue, ControlValues, PassState, Sight } from '@conduit/language';
+import type { DataTable, ControlValue, ControlValues, PassState } from '@conduit/language';
 import type { BackEvent, Capabilities, ClockState, ElementSpan, Issue, Line, Schedule, ScoreEntry, Services, StageBase, TurnEndReason, TurnInput, TurnReport } from '@conduit/language';
 import type { Recording } from '../contracts/film';
 import { noteArrivals as noteArrivalsInto } from './arrivals';
@@ -31,6 +31,8 @@ import { placedOf, sightOf } from './sight';
 import { textSignature, textSpansOf } from './text-out';
 import { downUi, easeUi, easingUi, isScreenBlock, moveUi, setUiPicture, typeUi, typingUi, uiBlockAt, uiMockupViews, upUi } from './ui-stage';
 import type { UiSend } from './ui-stage';
+import { ENGINE_VERSION, measureStage } from '../engine';
+import type { EngineInputs, EngineView } from '../engine';
 import { buildTimeline, settledAfter, settledEnd as settledEndOf } from './timeline';
 import type { Timeline, TimelineContext, TimelineInstant } from './timeline';
 
@@ -50,6 +52,18 @@ const LINKS_READY = false;
 const DATA_WAIT_MS = 20_000;
 /** ms the report on a draft waits for its picture before it goes without: under the server's own wait for it (1.5 s) */
 const DRAFT_PICTURE_MS = 1000;
+
+/** Dev only (a page served from this machine): `?holdDraft=<ms>` holds the draft report and its picture back, `?engine=<text>` pretends to be a stale bundle. Anywhere else: null. */
+function devFlag(name: string): string | null {
+  try {
+    const host = globalThis.location?.hostname;
+    if (host !== 'localhost' && host !== '127.0.0.1') return null;
+    return new URLSearchParams(globalThis.location.search).get(name);
+  } catch {
+    return null;
+  }
+}
+
 
 const HOME_SECONDS = 1.2;
 const SETTLE_SECONDS = 0.12;
@@ -428,6 +442,7 @@ export function createPainter(options: PainterOptions): Painter {
       decks: DECKS_READY,
       uploads: UPLOADS_READY,
       links: LINKS_READY,
+      engine: devFlag('engine') ?? ENGINE_VERSION,
     };
   };
 
@@ -628,34 +643,46 @@ export function createPainter(options: PainterOptions): Painter {
     }
   };
 
+  const engineView = (): EngineView => ({ width: viewport.width, height: viewport.height, dpr: viewport.dpr, pointer: 'fine', reducedMotion, look: (turn?.base ?? base).look, lockLook, insets: { top: 0, right: 0, bottom: 0, left: 0 } });
+  const engineInputs = (schedule: Schedule): EngineInputs => {
+    const charts = new Map<string, DataTable>();
+    for (const [key, data] of chartData) if (data.table !== null) charts.set(key, data.table);
+    const pictures = new Map<string, { width: number; height: number }>();
+    for (const [key, painting] of paintings) if (painting.aspect !== undefined) pictures.set(key, { width: painting.aspect, height: 1 });
+    return { held: heldValues(schedule), charts, pictures, chartKinds };
+  };
+
   const sendDraftOf = (open: Turn, pass: number, candidate: Schedule | null): void => {
     // A draft (and a candidate) is judged as it will rest: nothing is waited for, so no part is still arriving and every chart is whole.
-    const at = buildTimeline(candidate ?? timeline.schedule, open.base, { ...timelineContext(), arrivals: new Map() });
-    const schedule = at.schedule;
-    const when = Math.max(schedule.end, settledAfter(at, lockLook, open.base.scene.mood)) + 1e-6;
-    let sight: Sight;
-    let placed: ReturnType<typeof placedOf>;
-    try {
-      sight = sightOf(at, schedule, open.base, when, false);
-      // only what is on the stage when it rests: what left in an earlier scene or turn is not there to be reported
-      const keys = new Set(schedule.elements.filter((element) => element.exit === null || element.exit.start > when).map((element) => element.key));
-      placed = placedOf(at, schedule, when, keys);
-    } catch (error) {
-      noteFault(error, 'draft');
+    // The measuring is the engine's, the same code the server runs (`@conduit/web/engine`).
+    const source = candidate ?? timeline.schedule;
+    const facts = measureStage(source, open.base, engineView(), engineInputs(source));
+    if (facts.fault !== null) {
+      noteFault(new Error(facts.fault), 'draft');
       emitBack({ type: 'draft', turn: open.id, pass, sight: NO_SIGHT, snapshot: false });
       return;
     }
-    const content = contentOf(schedule);
+    const { sight, placed, content } = facts;
     let reported = false;
+    const holdMs = Number(devFlag('holdDraft') ?? 0);
+    const held = (send: () => void): void => {
+      if (holdMs > 0) setTimeout(send, holdMs);
+      else send();
+    };
     const report = (snapshot: boolean): void => {
       if (disposed || reported) return;
       reported = true;
-      emitBack({ type: 'draft', turn: open.id, pass, sight: { ...sight, snapshot }, placed: placed.map(({ key: _key, ...item }) => item), snapshot, content });
+      held(() => emitBack({ type: 'draft', turn: open.id, pass, sight: { ...sight, snapshot }, placed: placed.map(({ key: _key, ...item }) => item), snapshot, content, boxes: facts.boxes }));
     };
     if (!(services.review && wantsSnapshot())) {
       report(false);
       return;
     }
+    // the picture is of a timeline the engine does not keep: built once more, for the raster only
+    // the picture below is of the same timeline; the engine keeps its own, so this one is built once more for the raster only
+    const at = buildTimeline(source, open.base, { ...timelineContext(), arrivals: new Map() });
+    const schedule = at.schedule;
+    const when = Math.max(schedule.end, settledAfter(at, lockLook, open.base.scene.mood)) + 1e-6;
     const plain: Frame = { ...at.frameAt({ time: when, ambient: 3, wallTime: pinnedWallTime(3), clock: 'paused' }), camera: REST_POSE };
     // the brain's own picture carries each element's id and a ruler of canvas units: a separate frame, rasterised on its own, never the stage
     const frame = annotated(plain, at, schedule, when, plain.spec);
@@ -666,7 +693,7 @@ export function createPainter(options: PainterOptions): Painter {
       .rasterise(frame, { maxSide: PICTURE_SIDE, mime: 'image/jpeg', quality: 0.8, ...stills(frame) })
       .then((blob) => {
         clearTimeout(late);
-        if (blob !== null && !disposed) emit('upload', { kind: 'draft', turn: open.id, pass, blob });
+        if (blob !== null && !disposed) held(() => emit('upload', { kind: 'draft', turn: open.id, pass, blob }));
         report(blob !== null);
       })
       .catch(() => {
@@ -1337,6 +1364,7 @@ export function createPainter(options: PainterOptions): Painter {
       }
       const opened: Turn = { id, input, base, score: new TurnScore(base, input.kind), seqs: new Set(), issues: new Map(), ack: 0, closed: false, started: false, showingAll: false, skippedAt: null };
       turn = opened;
+      if (input.kind === 'prompt' || input.kind === 'script') store.restart();
       memory = null;
       clock.openTurn();
       reporter.openTurn(id);

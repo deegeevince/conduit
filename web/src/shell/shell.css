@@ -1,0 +1,1133 @@
+/* The chat shell. Its own tokens, light and dark, each held to 4.5:1 for text (checked in the page by web/scripts/shell-check.mjs).
+   Nothing here reads a variable the stage sets: the shell is separate from the stage by construction. From the stage the shell is given
+   one bit (is its ground light or dark: web/src/shell/theme.ts), to the stage it gives one box (the room it leaves: web/src/shell/canvas.ts). */
+
+:root {
+  color-scheme: light;
+  --sh-ground: #ffffff;
+  --sh-side: #f5f4f0;
+  --sh-raised: #ecebe5;
+  --sh-hover: #e2e1da;
+  --sh-text: #1b1b19;
+  --sh-quiet: #595852;
+  --sh-line: #8d8b82;
+  --sh-rule: #d8d6ce;
+  --sh-accent: #1a4fc4;
+  --sh-on-accent: #ffffff;
+  --sh-danger: #a8231a;
+  --sh-shadow: 0 8px 28px rgb(0 0 0 / 0.16);
+
+  /* the chrome pieces the shell reuses (the photo tray, the brain picker, the voice strip, the permission dialog) read these */
+  --chrome-ground: var(--sh-ground);
+  --chrome-text: var(--sh-text);
+  --chrome-text-quiet: var(--sh-quiet);
+  --chrome-line: var(--sh-line);
+  --chrome-focus: var(--sh-accent);
+
+  --sh-list-w: 17rem;
+  --sh-canvas-w: min(46vw, 56rem);
+  --sh-bar-h: 3.25rem;
+  --sh-read-w: 46rem;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --sh-ground: #151518;
+  --sh-side: #1c1c20;
+  --sh-raised: #2a2a2f;
+  --sh-hover: #35353b;
+  --sh-text: #f1f0ec;
+  --sh-quiet: #aaa9a2;
+  --sh-line: #7d7c85;
+  --sh-rule: #36363c;
+  --sh-accent: #8fb0ff;
+  --sh-on-accent: #101014;
+  --sh-danger: #ff9b92;
+  --sh-shadow: 0 8px 28px rgb(0 0 0 / 0.6);
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  background: var(--sh-ground);
+  color: var(--sh-text);
+  font-family: var(--chrome-font);
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+button {
+  cursor: pointer;
+}
+
+/* The frame */
+
+.shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  height: var(--app-height, 100dvh);
+  background: var(--sh-ground);
+}
+
+@media (min-width: 720px) {
+  .shell {
+    grid-template-columns: var(--sh-list-w) minmax(0, 1fr);
+  }
+}
+
+@media (min-width: 1100px) {
+  .shell[data-canvas='open'] {
+    grid-template-columns: var(--sh-list-w) minmax(0, 1fr) var(--sh-canvas-w);
+  }
+}
+
+/* The list of conversations: a drawer on a phone, a column from 720px */
+
+.shell-list {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--sh-side);
+  border-right: 1px solid var(--sh-rule);
+}
+
+@media (max-width: 719px) {
+  .shell-list {
+    position: fixed;
+    z-index: 40;
+    inset: 0 auto 0 0;
+    width: min(20rem, 86vw);
+    padding-top: env(safe-area-inset-top);
+    box-shadow: var(--sh-shadow);
+    visibility: hidden;
+    transform: translateX(-100%);
+  }
+
+  .shell[data-drawer='open'] .shell-list {
+    visibility: visible;
+    transform: none;
+  }
+}
+
+@media (max-width: 719px) and (prefers-reduced-motion: no-preference) {
+  .shell-list {
+    transition: transform 0.18s ease-out, visibility 0.18s;
+  }
+}
+
+.shell-scrim {
+  position: fixed;
+  z-index: 35;
+  inset: 0;
+  background: rgb(0 0 0 / 0.45);
+}
+
+.shell-scrim[hidden] {
+  display: none;
+}
+
+.shell-list__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.75rem 0.75rem 0.5rem 1rem;
+}
+
+.shell-list__name {
+  margin: 0;
+  font-size: 1.0625rem;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
+
+.shell-list__items {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 0;
+  padding: 0.25rem 0.5rem 1rem;
+  list-style: none;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.shell-list__empty {
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  color: var(--sh-quiet);
+  font-size: 0.875rem;
+}
+
+.conv {
+  display: block;
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0.5rem 0.75rem;
+  border: 0;
+  border-radius: 0.625rem;
+  background: transparent;
+  color: var(--sh-text);
+  font: inherit;
+  text-align: left;
+}
+
+.conv:hover {
+  background: var(--sh-hover);
+}
+
+.conv[aria-current='true'] {
+  background: var(--sh-raised);
+}
+
+.conv__title {
+  display: block;
+  overflow: hidden;
+  font-size: 0.9375rem;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.conv__when {
+  display: block;
+  margin-top: 0.125rem;
+  color: var(--sh-quiet);
+  font-size: 0.8125rem;
+}
+
+/* Buttons the shell draws itself */
+
+.sh-btn {
+  display: inline-grid;
+  place-items: center;
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  padding: 0 0.75rem;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--sh-text);
+  font: inherit;
+  font-size: 0.9375rem;
+}
+
+.sh-btn:hover {
+  background: var(--sh-hover);
+}
+
+.sh-btn--text {
+  display: inline-flex;
+  gap: 0.375rem;
+  align-items: center;
+}
+
+.sh-btn[aria-disabled='true'] {
+  color: var(--sh-quiet);
+}
+
+:focus-visible {
+  outline: 2px solid var(--sh-accent);
+  outline-offset: 2px;
+}
+
+/* The thread */
+
+.shell-thread {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--sh-ground);
+}
+
+.shell-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-height: var(--sh-bar-h);
+  padding: env(safe-area-inset-top) max(0.5rem, env(safe-area-inset-right)) 0 max(0.5rem, env(safe-area-inset-left));
+  border-bottom: 1px solid var(--sh-rule);
+}
+
+.shell-bar__menu {
+  flex: 0 0 auto;
+}
+
+@media (min-width: 720px) {
+  .shell-bar__menu {
+    display: none;
+  }
+}
+
+.shell-bar__title {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  font-size: 1rem;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.shell-bar__slot {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+}
+
+.shell-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scroll-padding-bottom: 1rem;
+}
+
+.thread {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  max-width: var(--sh-read-w);
+  margin: 0 auto;
+  padding: 1.25rem max(1rem, env(safe-area-inset-right)) 1.5rem max(1rem, env(safe-area-inset-left));
+  list-style: none;
+}
+
+.thread__empty {
+  margin: 18vh 0 0;
+  text-align: center;
+}
+
+.thread__empty h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.5rem;
+  font-weight: 650;
+}
+
+.thread__empty p {
+  margin: 0 auto;
+  max-width: 28rem;
+  color: var(--sh-quiet);
+}
+
+.thread__note {
+  margin: 0;
+  padding: 0.75rem 1rem;
+  border-radius: 0.75rem;
+  background: var(--sh-side);
+  color: var(--sh-quiet);
+  font-size: 0.875rem;
+}
+
+.vh {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.msg {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.msg--user {
+  align-items: flex-end;
+}
+
+.bubble {
+  max-width: min(85%, 34rem);
+  padding: 0.625rem 1rem;
+  border-radius: 1.25rem;
+  background: var(--sh-raised);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  line-height: 1.5;
+}
+
+.msg--quiet .bubble {
+  background: transparent;
+  border: 1px solid var(--sh-rule);
+  color: var(--sh-quiet);
+  font-size: 0.9375rem;
+}
+
+.bubble__photos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  margin: 0 0 0.5rem;
+  padding: 0;
+  list-style: none;
+}
+
+.bubble__photos img {
+  display: block;
+  width: 7.5rem;
+  height: 7.5rem;
+  border-radius: 0.75rem;
+  object-fit: cover;
+  background: var(--sh-hover);
+}
+
+.bubble__photos li:only-child img {
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  max-height: 14rem;
+}
+
+.bubble__tag {
+  display: flex;
+  gap: 0.375rem;
+  align-items: center;
+  margin: 0 0 0.25rem;
+  color: var(--sh-quiet);
+  font-size: 0.8125rem;
+  white-space: normal;
+}
+
+.reply {
+  max-width: 100%;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.reply p {
+  margin: 0 0 0.625rem;
+}
+
+.reply__thinking {
+  display: inline-flex;
+  gap: 0.375rem;
+  align-items: center;
+  color: var(--sh-quiet);
+}
+
+.reply__dots {
+  display: inline-flex;
+  gap: 0.25rem;
+}
+
+.reply__dots i {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 50%;
+  background: currentcolor;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .reply__dots i {
+    animation: sh-pulse 1.2s ease-in-out infinite;
+  }
+
+  .reply__dots i:nth-child(2) {
+    animation-delay: 0.15s;
+  }
+
+  .reply__dots i:nth-child(3) {
+    animation-delay: 0.3s;
+  }
+
+  @keyframes sh-pulse {
+    0%,
+    80%,
+    100% {
+      opacity: 0.35;
+    }
+
+    40% {
+      opacity: 1;
+    }
+  }
+}
+
+.reply__note {
+  margin: 0 0 0.5rem;
+  color: var(--sh-danger);
+  font-size: 0.9375rem;
+}
+
+.reply__note--quiet {
+  color: var(--sh-quiet);
+}
+
+.reply__choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.25rem 0 0.5rem;
+  padding: 0;
+  list-style: none;
+}
+
+.chip {
+  min-height: 2.75rem;
+  padding: 0.375rem 1rem;
+  border: 1px solid var(--sh-line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--sh-text);
+  font: inherit;
+  font-size: 0.9375rem;
+}
+
+.chip:hover:not(:disabled) {
+  background: var(--sh-hover);
+}
+
+.chip:disabled {
+  color: var(--sh-quiet);
+  border-color: var(--sh-rule);
+  cursor: default;
+}
+
+.card {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  width: min(100%, 26rem);
+  min-height: 2.75rem;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--sh-line);
+  border-radius: 0.875rem;
+  background: var(--sh-side);
+  color: var(--sh-text);
+  font: inherit;
+  text-align: left;
+}
+
+.card:hover {
+  background: var(--sh-raised);
+}
+
+.card[aria-current='true'] {
+  border-color: var(--sh-accent);
+  box-shadow: inset 0 0 0 1px var(--sh-accent);
+}
+
+.card__thumb {
+  flex: 0 0 auto;
+  width: 8rem;
+  height: 5.5rem;
+  object-fit: cover;
+  background: var(--sh-hover);
+}
+
+.card__text {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.125rem;
+  min-width: 0;
+  padding: 0.625rem 0.875rem;
+}
+
+.card__label {
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.card__kinds {
+  color: var(--sh-quiet);
+  font-size: 0.8125rem;
+}
+
+.reply__tools {
+  display: flex;
+  gap: 0.25rem;
+  margin-top: 0.375rem;
+}
+
+.reply__tools .sh-btn {
+  min-height: 2.25rem;
+  font-size: 0.8125rem;
+  color: var(--sh-quiet);
+}
+
+.reply__tools .sh-btn:hover {
+  color: var(--sh-text);
+}
+
+/* The composer: one pill. [+], the field, the mic, Send. Anything else (a status, the photos, the voice strip) sits above it and only when there is something to say. */
+
+.shcomposer {
+  position: relative;
+  flex: 0 0 auto;
+  width: 100%;
+  max-width: var(--sh-read-w);
+  margin: 0 auto;
+  padding: 0.25rem max(0.75rem, env(safe-area-inset-right)) max(0.75rem, env(safe-area-inset-bottom)) max(0.75rem, env(safe-area-inset-left));
+}
+
+.composer__status {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 0 0.375rem;
+  padding: 0.375rem 0.875rem;
+  border-radius: 999px;
+  background: var(--sh-raised);
+  color: var(--sh-text);
+  font-size: 0.875rem;
+}
+
+.composer__status[hidden] {
+  display: none;
+}
+
+.composer__status button {
+  min-height: 2.25rem;
+  padding: 0 0.75rem;
+  border: 1px solid var(--sh-line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--sh-text);
+  font: inherit;
+}
+
+.pill {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  gap: 0.125rem;
+  padding: 0.25rem;
+  border: 1px solid var(--sh-rule);
+  border-radius: 1.75rem;
+  background: var(--sh-raised);
+}
+
+.pill:focus-within {
+  border-color: var(--sh-line);
+}
+
+.pill__btn {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--sh-text);
+}
+
+.pill__btn:hover {
+  background: var(--sh-hover);
+}
+
+.pill__btn[hidden] {
+  display: none;
+}
+
+.pill__btn[aria-pressed='true'] {
+  background: var(--sh-accent);
+  color: var(--sh-on-accent);
+}
+
+.pill__field {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 2.75rem;
+  max-height: 40vh;
+  padding: 0.6875rem 0.375rem;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--sh-text);
+  font: inherit;
+  line-height: 1.375rem;
+  resize: none;
+  outline: none;
+}
+
+.pill__field::placeholder {
+  color: var(--sh-quiet);
+  opacity: 1;
+}
+
+.pill:has(.pill__field:focus-visible) {
+  outline: 2px solid var(--sh-accent);
+  outline-offset: 2px;
+}
+
+.pill__send {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--sh-text);
+  color: var(--sh-ground);
+}
+
+.pill__send[aria-disabled='true'] {
+  background: var(--sh-hover);
+  color: var(--sh-quiet);
+}
+
+/* the chrome pieces that sit above the pill read as part of it */
+.shcomposer .prompt__photos,
+.shcomposer .voice {
+  margin: 0 0 0.375rem;
+}
+
+.shcomposer .photos__note:empty {
+  display: none;
+}
+
+.shcomposer .activity {
+  margin: 0 0 0.375rem;
+}
+
+.shcomposer .photo__remove,
+.shcomposer .photos__note,
+.shcomposer .voice__note,
+.shcomposer .voice__time,
+.shcomposer .voice__auto {
+  color: var(--sh-quiet);
+}
+
+/* The canvas: a side panel from 1100px, the whole screen below it. The stage inside is the stage as it is everywhere else. */
+
+.shell-canvas {
+  position: fixed;
+  z-index: 30;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--sh-ground);
+  visibility: hidden;
+  transform: translateY(1rem);
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .shell-canvas {
+    transition: transform 0.18s ease-out, opacity 0.18s ease-out, visibility 0.18s;
+  }
+}
+
+.shell[data-canvas='open'] .shell-canvas {
+  visibility: visible;
+  transform: none;
+  opacity: 1;
+}
+
+@media (min-width: 1100px) {
+  .shell-canvas {
+    position: fixed;
+    inset: 0 0 0 auto;
+    width: var(--sh-canvas-w);
+    border-left: 1px solid var(--sh-rule);
+    transform: translateX(100%);
+    opacity: 1;
+  }
+
+  .shell[data-canvas='open'] .shell-canvas {
+    position: relative;
+    inset: auto;
+    width: auto;
+  }
+}
+
+.shell-canvas__head {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-height: var(--sh-bar-h);
+  padding: env(safe-area-inset-top) max(0.5rem, env(safe-area-inset-right)) 0 max(0.5rem, env(safe-area-inset-left));
+  border-bottom: 1px solid var(--sh-rule);
+  background: var(--sh-ground);
+}
+
+.shell-canvas__title {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.shell-canvas__title:focus {
+  outline: none;
+}
+
+.shell-canvas__tools {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.125rem;
+}
+
+.shell-canvas__room {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  padding-bottom: env(safe-area-inset-bottom);
+  background: var(--sh-ground);
+}
+
+.shell-canvas__room .stage {
+  flex: 1 1 auto;
+}
+
+/* the stage's own words panel opens over the room, not over the page */
+.shell-canvas .transcript__panel {
+  position: absolute;
+  z-index: 5;
+  inset: 0;
+  width: auto;
+  max-height: none;
+  border: 0;
+  background: var(--sh-ground);
+}
+
+.shell-canvas .transcript__toggle,
+.shell-canvas .action {
+  min-height: 2.75rem;
+  border-color: transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--sh-text);
+  font-size: 0.875rem;
+}
+
+.shell-canvas .transcript__toggle:hover,
+.shell-canvas .action:hover {
+  background: var(--sh-hover);
+}
+
+.shell-canvas .action--idle {
+  color: var(--sh-quiet);
+}
+
+.shell-canvas .action-menu {
+  position: relative;
+}
+
+.shell-canvas .action-menu__list {
+  position: fixed;
+  z-index: 8;
+  top: calc(var(--sh-bar-h) + env(safe-area-inset-top));
+  right: 0.5rem;
+  left: auto;
+  bottom: auto;
+  width: min(22rem, calc(100vw - 1rem));
+  max-height: calc(var(--app-height, 100dvh) - var(--sh-bar-h) - 1rem);
+  overflow-y: auto;
+  color: var(--sh-text);
+  background: var(--sh-ground);
+  border: 1px solid var(--sh-rule);
+  box-shadow: var(--sh-shadow);
+}
+
+.shell-canvas .action-credit {
+  color: var(--sh-quiet);
+}
+
+/* the unavailable stage and the ink bar speak in the shell's own colours */
+.shell-canvas__room .stage__unavailable {
+  color: var(--sh-text);
+}
+
+.shell-canvas .picker__panel {
+  z-index: 8;
+}
+
+.shell-bar .picker {
+  position: relative;
+}
+
+.shell-bar .picker__panel {
+  position: absolute;
+  z-index: 25;
+  top: 100%;
+  right: 0;
+  left: auto;
+  bottom: auto;
+  width: min(22rem, 92vw);
+  background: var(--sh-ground);
+  color: var(--sh-text);
+  border: 1px solid var(--sh-rule);
+  box-shadow: var(--sh-shadow);
+}
+
+.shell-bar .action {
+  min-height: 2.75rem;
+  border-color: transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--sh-text);
+  font-size: 0.875rem;
+}
+
+.shell-bar .action:hover {
+  background: var(--sh-hover);
+}
+
+/* the permission dialog is the shell's alone */
+.permit {
+  background: var(--sh-ground);
+  color: var(--sh-text);
+  border: 1px solid var(--sh-line);
+}
+
+.shell-canvas__nav {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.125rem;
+  min-height: var(--sh-bar-h);
+  padding: 0 max(0.5rem, env(safe-area-inset-right)) env(safe-area-inset-bottom) max(0.5rem, env(safe-area-inset-left));
+  border-top: 1px solid var(--sh-rule);
+  background: var(--sh-ground);
+}
+
+.shell-canvas__where {
+  min-width: 0;
+  color: var(--sh-quiet);
+  font-size: 0.875rem;
+  white-space: nowrap;
+}
+
+.shell-canvas__nav [hidden] {
+  display: none;
+}
+
+.shell-canvas__nav button:disabled {
+  color: var(--sh-quiet);
+  opacity: 0.55;
+  cursor: default;
+}
+
+.shell-canvas__top {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.shell-canvas__room {
+  padding-bottom: 0;
+}
+
+/* the header and the navigator stay above the stage's words panel, which covers only the room */
+.shell-canvas__head,
+.shell-canvas__nav {
+  position: relative;
+  z-index: 6;
+}
+
+/* the photo rules are said only when something is wrong; the thumbnails say the rest */
+.shcomposer .photos__note:not(.photos__note--problem) {
+  display: none;
+}
+
+/* How it was made: one quiet line under a reply, and the timeline behind it. Text is --sh-text or --sh-quiet on the ground (both held to 4.5:1);
+   the one monospace in it is the raw Series line. */
+
+.trace {
+  margin-top: 0.35rem;
+  font-size: 0.8125rem;
+}
+
+.trace__toggle {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+  max-width: 100%;
+  min-height: 2rem;
+  padding: 0.3rem 0.5rem 0.3rem 0.25rem;
+  margin-left: -0.25rem;
+  border: 0;
+  border-radius: 0.5rem;
+  background: none;
+  color: var(--sh-quiet);
+  font: inherit;
+  text-align: left;
+  line-height: 1.35;
+}
+
+.trace__toggle:hover {
+  background: var(--sh-hover);
+  color: var(--sh-text);
+}
+
+.trace__toggle:focus-visible,
+.trace__more:focus-visible,
+.trace__raw:focus-visible {
+  outline: 2px solid var(--sh-accent);
+  outline-offset: 2px;
+}
+
+.trace__chev {
+  flex: none;
+  width: 0.45rem;
+  height: 0.45rem;
+  margin: 0.4rem 0.2rem 0 0.3rem;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 0.15s;
+}
+
+.trace__toggle[aria-expanded='true'] .trace__chev {
+  transform: rotate(45deg);
+}
+
+.trace--live .trace__summary::after {
+  content: '';
+  display: inline-block;
+  width: 0.4rem;
+  height: 0.4rem;
+  margin-left: 0.45rem;
+  border-radius: 50%;
+  background: var(--sh-accent);
+  animation: trace-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes trace-pulse {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .trace--live .trace__summary::after {
+    animation: none;
+  }
+  .trace__chev {
+    transition: none;
+  }
+}
+
+.trace__panel {
+  margin: 0.25rem 0 0.5rem;
+  padding: 0.25rem 0.75rem;
+  border: 1px solid var(--sh-rule);
+  border-radius: 0.75rem;
+  background: var(--sh-side);
+  color: var(--sh-text);
+}
+
+.trace__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.trace__item {
+  display: grid;
+  grid-template-columns: 3.6rem minmax(0, 1fr);
+  gap: 0.6rem;
+  padding: 0.5rem 0;
+  border-top: 1px solid var(--sh-rule);
+}
+
+.trace__item:first-child {
+  border-top: 0;
+}
+
+.trace__at {
+  color: var(--sh-quiet);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.trace__what p {
+  margin: 0;
+}
+
+.trace__title {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.trace__detail {
+  color: var(--sh-quiet);
+  overflow-wrap: anywhere;
+}
+
+.trace__item--quiet .trace__title {
+  font-weight: 500;
+  color: var(--sh-quiet);
+}
+
+.trace__item--alarm .trace__title {
+  color: var(--sh-danger);
+}
+
+.trace__item--alarm .trace__title::before {
+  content: '! ';
+}
+
+.trace__line,
+.trace__raw {
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+.trace__line {
+  display: block;
+  margin-top: 0.25rem;
+  color: var(--sh-text);
+  overflow-wrap: anywhere;
+}
+
+.trace__more {
+  margin-top: 0.3rem;
+  min-height: 2rem;
+  padding: 0.2rem 0;
+  border: 0;
+  background: none;
+  color: var(--sh-accent);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.trace__raw {
+  margin: 0.25rem 0 0;
+  padding: 0.5rem 0.6rem;
+  max-height: 14rem;
+  overflow: auto;
+  border-radius: 0.5rem;
+  background: var(--sh-ground);
+  border: 1px solid var(--sh-rule);
+  color: var(--sh-text);
+  white-space: pre;
+}
+
+@media (max-width: 480px) {
+  .trace__panel {
+    padding: 0.25rem 0.6rem;
+  }
+  .trace__item {
+    grid-template-columns: 3rem minmax(0, 1fr);
+    gap: 0.45rem;
+  }
+}

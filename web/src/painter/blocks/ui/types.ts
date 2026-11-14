@@ -4,6 +4,7 @@
 // frame adapter (frame.ts) turns it into one for any look and any scale.
 
 import type { Polyline } from '@conduit/language';
+import type { UiTokens } from './lang';
 
 export interface UiShadow {
   readonly colour: string;
@@ -66,6 +67,8 @@ export interface UiText {
   readonly weight: 'normal' | 'bold';
   readonly colour: string;
   readonly align: 'left' | 'center' | 'right';
+  /** the face it is set in; absent: the sans */
+  readonly face?: 'sans' | 'serif' | 'display';
 }
 
 /** A photograph from the server, drawn where an `image` placeholder was: the picture itself, cover-fitted into its box. Its corners and its credit are rects and text beside it. */
@@ -108,6 +111,10 @@ export type UiAction =
   | { readonly kind: 'toggle'; readonly control: string; readonly on: boolean }
   | { readonly kind: 'field'; readonly control: string; readonly value: string }
   | { readonly kind: 'slider'; readonly control: string; readonly from: number; readonly to: number }
+  /** a play button, a heart, a shuffle: flips on a tap, with no knob to drag */
+  | { readonly kind: 'flip'; readonly control: string; readonly on: boolean }
+  /** a row that moves sideways under a finger: how far it can go, points */
+  | { readonly kind: 'scroll'; readonly control: string; readonly max: number }
   | UiPress;
 
 export interface UiHit {
@@ -127,6 +134,8 @@ export interface UiState {
   readonly toggle: Readonly<Record<string, boolean>>;
   readonly text: Readonly<Record<string, string>>;
   readonly slider: Readonly<Record<string, number>>;
+  /** a carousel's offset along its row, points, by part id: what a drag has done to it */
+  readonly scroll?: Readonly<Record<string, number>>;
   /** `set <screen> device=desktop`: a screen's device, switched. The same lines reflow. */
   readonly device: Readonly<Record<string, 'phone' | 'tablet' | 'desktop' | 'browser'>>;
   readonly focus: string | null;
@@ -181,6 +190,8 @@ export interface UiScreenLayout {
   readonly parts: readonly UiPart[];
   readonly hits: readonly UiHit[];
   /** every part's box by id, in screen points: what pointing, sight and lint read */
+  /** the tokens this screen was laid out in (the look's, as its theme words changed them): the device's own glass is the screen's colour */
+  readonly tokens: UiTokens;
   readonly boxes: ReadonlyMap<string, { readonly x: number; readonly y: number; readonly w: number; readonly h: number; readonly kind: string }>;
   readonly slots: readonly UiSlot[];
   readonly notes: readonly UiLintNote[];

@@ -13,6 +13,9 @@
 //   rest               the turn ended and the page came to rest, no fault, the brain did not fail
 //   answer-on-stage    what the report says rests on the stage IS on the stage at rest (on screen, opaque, inked in the screenshot);
 //                      what was asked for is there (a `screen` structure for a mock-up, a chart for a chart)
+//   composer           (turn 1) the bar is ONE line (a pill: [+] the field, the mic, Send), centred at a max width on a desk, with no status row at rest;
+//                      the [+] menu opens with a real tap, lists photo / Draw / Save / Transcript / model / Copy answer / About, Draw and the Transcript and
+//                      Save's list work from it, Escape closes it and puts the focus back on [+], Shift+Enter makes a line and the field grows and shrinks
 //   prompt-readable    the prompt box's text and placeholder: computed contrast >= 4.5, and as rendered in pixels with real typing
 //   chrome-readable    every visible chrome button's label: computed contrast >= 4.5 (icons 3), and as rendered in pixels
 //   no-overlap         no words on words: the stage's text boxes, the words of a mock-up, the painter's own sight notes
@@ -64,7 +67,7 @@ const STEPS: readonly Step[] = [
   { n: 7, say: '/new', name: 'new', expects: 'any' },
 ];
 
-const CHECKS = ['prompt-registers', 'rest', 'answer-on-stage', 'prompt-readable', 'chrome-readable', 'no-overlap', 'nothing-cut-off', 'no-console-errors', 'no-failed-requests', 'interactions'] as const;
+const CHECKS = ['prompt-registers', 'rest', 'composer', 'answer-on-stage', 'prompt-readable', 'chrome-readable', 'no-overlap', 'nothing-cut-off', 'no-console-errors', 'no-failed-requests', 'interactions'] as const;
 
 const TEXT_CONTRAST = 4.5;
 const ICON_CONTRAST = 3;
@@ -72,6 +75,8 @@ const ICON_CONTRAST = 3;
 const PIXEL_CONTRAST = 3;
 /** how long the stage must stand unchanged, with nothing in flight, to be at rest */
 const STABLE_MS = 2200;
+/** how long one DevTools call may take before the gate calls the browser stuck and says where (a screenshot of a big page is seconds, never a minute) */
+const CDP_TIMEOUT_MS = 60_000;
 
 // ---------------------------------------------------------------------------------------------------------------------------------
 // Arguments
@@ -85,10 +90,14 @@ interface Options {
   readonly parallel: boolean;
   readonly demo: boolean;
   readonly quiet: boolean;
+  /** SA2. Dev flags added to the page's address (`holdDraft=9000`, `engine=stale`); the page honours them only on this machine */
+  readonly page: string;
+  /** SA2. One prompt in place of the scripted conversation */
+  readonly say: string | null;
 }
 
 function usage(message: string): never {
-  process.stderr.write(`smoke: ${message}\nusage: pnpm smoke [--url http://127.0.0.1:<port>] [--screens 1920x825,390x844] [--out <dir>] [--turns 1,2,3,4,5,6,7] [--timeout <seconds>] [--parallel] [--demo] [--quiet]\n`);
+  process.stderr.write(`smoke: ${message}\nusage: pnpm smoke [--url http://127.0.0.1:<port>] [--screens 1920x825,390x844] [--out <dir>] [--turns 1,2,3,4,5,6,7] [--timeout <seconds>] [--parallel] [--demo] [--quiet] [--page <query>] [--say <prompt>]\n`);
   process.exit(2);
 }
 
@@ -122,6 +131,8 @@ function parseArgs(argv: readonly string[]): Options {
     parallel: flags.has('parallel'),
     demo: flags.has('demo'),
     quiet: flags.has('quiet'),
+    page: flags.get('page') ?? '',
+    say: flags.get('say') ?? null,
   };
 }
 
@@ -310,8 +321,25 @@ const PAGE_LIB = String.raw`(() => {
     for (let i = 0; i < da.length; i += 4) if (Math.abs(da[i] - db[i]) + Math.abs(da[i + 1] - db[i + 1]) + Math.abs(da[i + 2] - db[i + 2]) > 24) n++;
     return n / (pa.width * pa.height);
   };
+  const rect = (sel) => { const el = document.querySelector(sel); if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height, hidden: !visible(el) }; };
+  const composerInfo = () => {
+    const box = (sel) => rect(sel);
+    const top = document.querySelector('.prompt__top');
+    const active = document.activeElement;
+    return {
+      bar: box('.bar'), composer: box('.composer'), plus: box('.composer__plus'), input: box('.prompt__input'), mic: box('.prompt__voice'), send: box('.prompt__button'),
+      topShown: !!top && !top.hidden && getComputedStyle(top).display !== 'none', status: (document.querySelector('.prompt__status') || {}).textContent || '',
+      menuOpen: !!document.querySelector('.composer__menu') && !document.querySelector('.composer__menu').hidden,
+      items: [...document.querySelectorAll('.composer__view:not([hidden]) .composer__item')].filter((el) => !el.hidden).map((el) => ({ id: el.dataset.item, label: (el.querySelector('.composer__label') || {}).textContent, checked: el.getAttribute('aria-checked') })),
+      view: ((document.querySelector('.composer__view:not([hidden])') || {}).dataset || {}).view || null,
+      focus: active ? (active.className || active.tagName).toString().slice(0, 60) : null,
+      inkOpen: !!document.querySelector('.ink-stage') && !document.querySelector('.ink-stage').hidden,
+      transcriptOpen: !!document.querySelector('.transcript__panel') && !document.querySelector('.transcript__panel').hidden,
+      value: (document.querySelector('.prompt__input') || {}).value, iw: window.innerWidth,
+    };
+  };
   const page = () => ({ sw: document.documentElement.scrollWidth, sh: document.documentElement.scrollHeight, iw: window.innerWidth, ih: window.innerHeight, bw: document.body.scrollWidth, bh: document.body.scrollHeight });
-  window.__smoke = { probe, promptInfo, chromeButtons, answer, analyse, inkIn, changed, page };
+  window.__smoke = { rect, composerInfo, probe, promptInfo, chromeButtons, answer, analyse, inkIn, changed, page };
 })();`;
 
 // ---------------------------------------------------------------------------------------------------------------------------------
@@ -347,6 +375,9 @@ class Tab {
   readonly snapshots = new Map<string, string>();
   private readonly flying = new Map<string, string>();
   private consumed = { consoleErrors: 0, failedRequests: 0 };
+  /** the address of every script the page has parsed, by id: to say where the page's JavaScript was when the browser stopped answering */
+  private readonly scripts = new Map<string, string>();
+  private onPaused: ((frames: string) => void) | null = null;
 
   private constructor(
     readonly browser: Cdp,
@@ -373,6 +404,14 @@ class Tab {
           // a failed request is counted once, as a failed request
           if (p['entry']?.level === 'error' && p['entry']?.source !== 'network') this.consoleErrors.push({ at: now, text: `${p['entry']?.source}: ${String(p['entry']?.text).slice(0, 300)}` });
           break;
+        case 'Debugger.scriptParsed':
+          this.scripts.set(String(p['scriptId']), String(p['url'] ?? '').replace(/^https?:\/\/[^/]+/, '') || `(script ${String(p['scriptId'])})`);
+          break;
+        case 'Debugger.paused': {
+          const frames = (p['callFrames'] as { functionName: string; location: { scriptId: string; lineNumber: number; columnNumber: number } }[]).slice(0, 10);
+          this.onPaused?.(frames.map((frame) => `${frame.functionName === '' ? '(anonymous)' : frame.functionName} ${this.scripts.get(frame.location.scriptId) ?? '?'}:${frame.location.lineNumber + 1}:${frame.location.columnNumber + 1}`).join(' < '));
+          break;
+        }
         case 'Network.requestWillBeSent': {
           const request = p['request'] as { url: string; method: string; postData?: string };
           if (!/\/stream(\?|$)/.test(request.url) && !/^(blob|data):/.test(request.url)) this.flying.set(String(p['requestId']), request.url);
@@ -435,7 +474,7 @@ class Tab {
       const mobile = width < 600;
       const dpr = mobile ? 2 : 1;
       const tab = new Tab(browser, sessionId, child, profile, width, height, mobile, dpr);
-      for (const domain of ['Page', 'Runtime', 'Network', 'Log']) await tab.send(`${domain}.enable`);
+      for (const domain of ['Page', 'Runtime', 'Network', 'Log', 'Debugger']) await tab.send(`${domain}.enable`);
       await tab.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: dpr, mobile });
       if (mobile) await tab.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
       await tab.send('Page.addScriptToEvaluateOnNewDocument', { source: PAGE_LIB });
@@ -447,8 +486,42 @@ class Tab {
     }
   }
 
-  send<T = unknown>(method: string, params: Record<string, unknown> = {}): Promise<T> {
-    return this.browser.send<T>(method, params, this.session);
+  /**
+   * A DevTools call that cannot hang the gate. Chrome answers every call unless the page's own thread is stuck (a loop in the page's code) or its
+   * compositor is: then a call is never answered, and a gate that waits for it waits for ever, in silence. After `CDP_TIMEOUT_MS` the gate says
+   * which call, and where the page's JavaScript is (the debugger is asked to pause it and read the stack).
+   */
+  async send<T = unknown>(method: string, params: Record<string, unknown> = {}, limitMs = CDP_TIMEOUT_MS): Promise<T> {
+    const call = this.browser.send<T>(method, params, this.session);
+    call.catch(() => undefined);
+    let timer: NodeJS.Timeout | undefined;
+    const limit = new Promise<'stalled'>((resolve) => {
+      timer = setTimeout(() => resolve('stalled'), limitMs);
+    });
+    try {
+      const done = await Promise.race([call, limit]);
+      if (done !== 'stalled') return done;
+    } finally {
+      clearTimeout(timer);
+    }
+    throw new Error(`the browser did not answer ${method} in ${Math.round(limitMs / 1000)} s: ${await this.whereStuck()}`);
+  }
+
+  /** where the page's JavaScript is right now: the top of its stack, or the plain fact that it is not running any */
+  private async whereStuck(): Promise<string> {
+    const stack = new Promise<string>((resolve) => {
+      this.onPaused = resolve;
+    });
+    this.browser.send('Debugger.pause', {}, this.session).catch(() => undefined);
+    let timer: NodeJS.Timeout | undefined;
+    const none = new Promise<string>((resolve) => {
+      timer = setTimeout(() => resolve('the page is running no JavaScript (the renderer or the compositor is stuck, not the page code)'), 4000);
+    });
+    const found = await Promise.race([stack, none]);
+    clearTimeout(timer);
+    this.onPaused = null;
+    this.browser.send('Debugger.resume', {}, this.session).catch(() => undefined);
+    return found.startsWith('the page is') ? found : `the page's JavaScript was inside: ${found}`;
   }
 
   async eval<T>(expression: string): Promise<T> {
@@ -503,10 +576,10 @@ class Tab {
     await sleep(80);
   }
 
-  async key(key: 'Enter' | 'Backspace'): Promise<void> {
-    const code = key === 'Enter' ? 13 : 8;
-    await this.send('Input.dispatchKeyEvent', { type: 'keyDown', key, code: key, windowsVirtualKeyCode: code, nativeVirtualKeyCode: code, ...(key === 'Enter' ? { text: '\r' } : {}) });
-    await this.send('Input.dispatchKeyEvent', { type: 'keyUp', key, code: key, windowsVirtualKeyCode: code, nativeVirtualKeyCode: code });
+  async key(key: 'Enter' | 'Backspace' | 'Tab' | 'Escape', modifiers = 0): Promise<void> {
+    const code = { Enter: 13, Backspace: 8, Tab: 9, Escape: 27 }[key];
+    await this.send('Input.dispatchKeyEvent', { type: 'keyDown', key, code: key, modifiers, windowsVirtualKeyCode: code, nativeVirtualKeyCode: code, ...(key === 'Enter' ? { text: '\r' } : {}) });
+    await this.send('Input.dispatchKeyEvent', { type: 'keyUp', key, code: key, modifiers, windowsVirtualKeyCode: code, nativeVirtualKeyCode: code });
   }
 
   async type(text: string): Promise<void> {
@@ -624,6 +697,9 @@ class Conversation {
   private lastSig = '';
   private stableSince = 0;
   private current = 0;
+  /** what the gate is doing now, for the line it prints when one step takes long (so a stall is never silent) */
+  private phase = 'starting';
+  private phaseSince = Date.now();
   private note: (text: string) => void;
 
   private constructor(
@@ -637,20 +713,40 @@ class Conversation {
     };
   }
 
-  static async run(options: Options, screen: Options['screens'][number]): Promise<{ readonly records: readonly TurnRecord[]; readonly seconds: number; readonly sheet: string | null; readonly dir: string }> {
+  private at(phase: string): void {
+    this.phase = phase;
+    this.phaseSince = Date.now();
+  }
+
+  static async run(options: Options, screen: Options['screens'][number]): Promise<{ readonly records: readonly TurnRecord[]; readonly seconds: number; readonly sheet: string | null; readonly dir: string; readonly aborted: string | null }> {
     const dir = join(options.out, screen.name);
     await mkdir(dir, { recursive: true });
     const started = Date.now();
     const tab = await Tab.open(screen.width, screen.height);
     try {
       const talk = new Conversation(tab, options, screen, dir);
-      await talk.start();
-      for (const step of STEPS) {
-        if (!options.turns.has(step.n)) continue;
-        await talk.turn(step);
+      // one line when a step takes long, so that a stall is never silent: which turn, which step, how long
+      const beat = setInterval(() => {
+        const idle = Math.round((Date.now() - talk.phaseSince) / 1000);
+        if (idle >= 45) process.stdout.write(`[${screen.name}] still in turn ${talk.current}: ${talk.phase} (${idle} s)\n`);
+      }, 15_000);
+      let aborted: string | null = null;
+      try {
+        await talk.start();
+        const steps: readonly Step[] = options.say === null ? STEPS : [{ n: 1, say: options.say, name: 'custom', expects: 'any' }];
+        for (const step of steps) {
+          if (!options.turns.has(step.n)) continue;
+          await talk.turn(step);
+        }
+      } catch (error) {
+        // a stuck browser ends this screen's run, with what was judged so far and the reason, not the whole gate with a stack trace
+        aborted = `turn ${talk.current}, ${talk.phase}: ${error instanceof Error ? error.message : String(error)}`;
+        process.stdout.write(`[${screen.name}] ABORTED in ${aborted}\n`);
+      } finally {
+        clearInterval(beat);
       }
-      const sheet = await talk.contactSheet();
-      return { records: talk.records, seconds: (Date.now() - started) / 1000, sheet, dir };
+      const sheet = await talk.contactSheet().catch(() => null);
+      return { records: talk.records, seconds: (Date.now() - started) / 1000, sheet, dir, aborted };
     } finally {
       await tab.close();
     }
@@ -662,7 +758,7 @@ class Conversation {
 
   private async start(): Promise<void> {
     const { tab } = this;
-    await tab.send('Page.navigate', { url: `${this.options.url}/${this.options.demo ? '' : '?demo=none'}` });
+    await tab.send('Page.navigate', { url: `${this.options.url}/${this.options.demo ? '' : '?demo=none'}${this.options.page === '' ? '' : `${this.options.demo ? '?' : '&'}${this.options.page}`}` });
     await waitFor('the page to be ready', 60_000, async () => {
       const probe = await tab.call<Probe>('probe').catch(() => null);
       return probe !== null && probe.ready ? probe : null;
@@ -743,12 +839,15 @@ class Conversation {
     let said = step.say ?? '';
     let restNote = '';
     let sent = true;
+    this.at('asking');
     if (step.say !== null) {
       this.note(`turn ${step.n}: ${step.say}`);
       sent = await this.say(step.say, results);
+      this.at('waiting for the page to rest');
       restNote = sent ? await this.rest(true) : 'the turn never started';
     } else {
       this.note(`turn ${step.n}: work the mock-up`);
+      this.at('working the mock-up');
       const out = await this.interact(results);
       said = out.said;
       restNote = out.rest;
@@ -756,16 +855,25 @@ class Conversation {
     this.add(results, 'rest', restNote === '' ? 'PASS' : 'FAIL', restNote === '' ? `at rest ${((Date.now() - began) / 1000).toFixed(0)} s after asking` : restNote);
 
     // everything below judges the page AT REST
+    this.at('taking the picture');
     const picture = await tab.shot();
     const file = `t${step.n}-${step.name}.png`;
     await writeFile(join(this.dir, file), Buffer.from(picture.split(',')[1] ?? '', 'base64'));
     const answer = await tab.call<Answer>('answer');
     await writeFile(join(this.dir, file.replace(/\.png$/, '.answer.json')), JSON.stringify({ look: (await tab.call<Probe>('probe')).look, ...answer }, null, 1));
+    this.at('checking the answer');
     await this.checkAnswer(step, answer, picture, results);
+    this.at('checking the prompt box');
     await this.checkPrompt(results);
+    this.at('checking the chrome');
     await this.checkChrome(picture, results);
     this.checkOverlap(step, answer, results);
+    this.at('checking nothing is cut off');
     await this.checkCutOff(answer, results);
+    if (step.n === 1) {
+      this.at('working the composer');
+      await this.checkComposer(results);
+    }
     const logged = tab.drain();
     this.add(results, 'no-console-errors', logged.consoleErrors.length === 0 ? 'PASS' : 'FAIL', logged.consoleErrors.length === 0 ? 'nothing logged as an error' : `${logged.consoleErrors.length}: ${[...new Set(logged.consoleErrors.map((entry) => entry.text))].slice(0, 3).join(' | ')}`);
     this.add(results, 'no-failed-requests', logged.failedRequests.length === 0 ? 'PASS' : 'FAIL', logged.failedRequests.length === 0 ? 'every request answered' : `${logged.failedRequests.length}: ${[...new Set(logged.failedRequests.map((entry) => entry.text))].slice(0, 3).join(' | ')}`);
@@ -940,6 +1048,121 @@ class Conversation {
     this.add(results, 'chrome-readable', problems.length === 0 ? 'PASS' : 'FAIL', problems.length === 0 ? `${buttons.length} buttons and labels, the faintest ${worstLabel} at ${fmt(worst)}:1` : problems.slice(0, 4).join('; ') + (problems.length > 4 ? ` and ${problems.length - 4} more` : ''));
   }
 
+  // ---- the composer
+
+  /** the bar as the owner asked for it (a ChatGPT-like single line), worked with real taps and real keys */
+  private async checkComposer(results: CheckResult[]): Promise<void> {
+    const { tab } = this;
+    interface Rect { readonly x: number; readonly y: number; readonly w: number; readonly h: number; readonly hidden: boolean }
+    interface Info {
+      readonly bar: Rect | null; readonly composer: Rect | null; readonly plus: Rect | null; readonly input: Rect | null; readonly mic: Rect | null; readonly send: Rect | null;
+      readonly topShown: boolean; readonly status: string; readonly menuOpen: boolean; readonly items: readonly { readonly id: string; readonly label: string; readonly checked: string | null }[];
+      readonly view: string | null; readonly focus: string | null; readonly inkOpen: boolean; readonly transcriptOpen: boolean; readonly value: string; readonly iw: number;
+    }
+    const problems: string[] = [];
+    const facts: string[] = [];
+    const info = (): Promise<Info> => tab.call<Info>('composerInfo');
+    const tapOn = async (selector: string): Promise<boolean> => {
+      const r = await tab.call<Rect | null>('rect', selector);
+      if (r === null || r.hidden) return false;
+      await tab.tap(r.x + r.w / 2, r.y + r.h / 2);
+      await sleep(250);
+      return true;
+    };
+    const wanted = ['photo', 'draw', 'save', 'transcript', 'brain', 'copy-answer', 'about'];
+
+    // 1. one line at rest, centred and no wider than a pill on a desk, no status row
+    const at = await info();
+    if (at.bar === null || at.composer === null || at.plus === null || at.input === null || at.send === null) {
+      this.add(results, 'composer', 'FAIL', `a part of the bar is missing: ${['bar', 'composer', 'plus', 'input', 'send'].filter((key) => (at as unknown as Record<string, unknown>)[key] === null).join(', ')}`);
+      return;
+    }
+    const middle = (r: Rect): number => r.y + r.h / 2;
+    const parts = [at.plus, at.input, at.send, ...(at.mic === null || at.mic.hidden ? [] : [at.mic])];
+    if (at.bar.h > 80) problems.push(`the bar is ${round(at.bar.h)} px tall at rest (one line is at most 80)`);
+    if (parts.some((part) => Math.abs(middle(part) - middle(at.input as Rect)) > 6)) problems.push('the [+], the field, the mic and Send are not on one line');
+    if (at.topShown) problems.push(`a status row is showing at rest ("${at.status}")`);
+    if (this.screen.width >= 720) {
+      if (at.composer.w > 800) problems.push(`the pill is ${round(at.composer.w)} px wide on a desk (it is to sit centred at a max width)`);
+      if (Math.abs(at.composer.x + at.composer.w / 2 - at.iw / 2) > 2) problems.push('the pill is not centred');
+    } else if (at.composer.x < 0 || at.composer.x + at.composer.w > at.iw || at.composer.w < at.iw - 40) problems.push(`the pill is ${round(at.composer.w)} px in a ${at.iw} px screen`);
+    facts.push(`bar ${round(at.bar.h)} px, pill ${round(at.composer.w)} px`);
+
+    // 2. the keyboard: Tab reaches [+] (it is the first stop of the bar), and Shift+Enter makes a new line while Enter would send
+    const field = at.input;
+    await tab.eval(`document.querySelector('.prompt__input').focus()`);
+    await tab.key('Tab', 8);
+    await sleep(80);
+    if (!(await info()).focus?.includes('composer__plus')) problems.push('Shift+Tab from the field does not land on [+]');
+    await tab.eval(`document.querySelector('.prompt__input').focus()`);
+    const mark = tab.posted.length;
+    await tab.type('first');
+    await tab.key('Enter', 8);
+    await tab.type('second');
+    const multi = await tab.call<PromptInfo>('promptInfo');
+    if (multi.value !== 'first\nsecond') problems.push(`Shift+Enter did not make a new line (the field holds ${JSON.stringify(multi.value)})`);
+    if (multi.rect.h <= field.h + 8) problems.push(`the field did not grow for a second line (${round(field.h)} -> ${round(multi.rect.h)} px)`);
+    if (tab.posted.length !== mark) problems.push('Shift+Enter sent a turn');
+    for (let i = 0; i < 'first\nsecond'.length; i += 1) await tab.key('Backspace');
+    await sleep(100);
+    const back = await tab.call<PromptInfo>('promptInfo');
+    if (back.rect.h > field.h + 2) problems.push(`the field did not shrink back to one line (${round(back.rect.h)} px)`);
+    else facts.push('Shift+Enter grows the field, and it rests at one line again');
+
+    // 3. the [+] menu, by real taps
+    if (!(await tapOn('.composer__plus'))) problems.push('[+] cannot be tapped');
+    let now = await info();
+    if (!now.menuOpen) problems.push('tapping [+] did not open the menu');
+    else {
+      const ids = now.items.map((item) => item.id);
+      const missing = wanted.filter((id) => !ids.includes(id));
+      if (missing.length > 0) problems.push(`the menu has no ${missing.join(', ')} (it has ${ids.join(', ')})`);
+      const camera = ids.includes('camera');
+      if (this.tab.mobile !== camera) problems.push(camera ? 'the menu offers a camera on a desk' : 'the menu does not offer "Take a photo" on a phone');
+      facts.push(`menu: ${now.items.map((item) => item.label).join(', ')}`);
+      await tab.key('Escape');
+      await sleep(150);
+      now = await info();
+      if (now.menuOpen) problems.push('Escape did not close the menu');
+      else if (!now.focus?.includes('composer__plus')) problems.push(`after Escape the focus is on ${now.focus}, not on [+]`);
+    }
+
+    // Draw, from the menu: the layer opens over the stage and closes again
+    await tapOn('.composer__plus');
+    if (!(await tapOn('[data-item="draw"]'))) problems.push('the menu has no Draw to tap');
+    now = await info();
+    if (!now.inkOpen) problems.push('Draw in the menu did not open the drawing layer');
+    if (now.menuOpen) problems.push('the menu stayed open after Draw');
+    await tapOn('.composer__plus');
+    await tapOn('[data-item="draw"]');
+    if ((await info()).inkOpen) problems.push('Draw in the menu did not close the drawing layer');
+    else facts.push('Draw opens and closes from the menu');
+
+    // the Transcript, from the menu
+    await tapOn('.composer__plus');
+    await tapOn('[data-item="transcript"]');
+    if (!(await info()).transcriptOpen) problems.push('Transcript in the menu did not open the transcript');
+    await tapOn('.composer__plus');
+    await tapOn('[data-item="transcript"]');
+    if ((await info()).transcriptOpen) problems.push('Transcript in the menu did not close the transcript');
+
+    // Save opens a list of its own, with Back
+    await tapOn('.composer__plus');
+    await tapOn('[data-item="save"]');
+    now = await info();
+    if (now.view !== 'save' || now.items.length < 4) problems.push(`Save in the menu did not open its list (view ${now.view}, ${now.items.length} entries)`);
+    await tapOn('.composer__back');
+    now = await info();
+    if (now.view !== 'root') problems.push(`Back from Save did not return to the menu (view ${now.view})`);
+    await tab.key('Escape');
+    await sleep(100);
+    now = await info();
+    if (now.menuOpen) problems.push('the menu would not close');
+    if (now.value !== '') problems.push(`the field was left holding "${now.value}"`);
+
+    this.add(results, 'composer', problems.length === 0 ? 'PASS' : 'FAIL', problems.length === 0 ? facts.join('; ') : problems.join('; '));
+  }
+
   // ---- overlap
 
   private checkOverlap(step: Step, answer: Answer, results: CheckResult[]): void {
@@ -1105,7 +1328,8 @@ class Conversation {
       }
       const after = await tab.shot(regionOf(heard.box));
       const share = await tab.call<number>('changed', before, after);
-      if (act === undefined) problems.push(`pressing the button ${heard.id} ("${heard.part}") sent nothing to the server: no turn of kind act was posted in 6 s${share >= 0.03 ? ' (the button did change its look)' : ''}`);
+      const viewNow = (await tab.call<Answer>('answer')).viewport;
+      if (act === undefined) problems.push(`pressing the button ${heard.id} ("${heard.part}") sent nothing to the server: no turn of kind act was posted in 6 s${share >= 0.03 ? ' (the button did change its look)' : ''}; posted since the tap: ${tab.posted.slice(mark).map((turn) => turn.kind ?? '?').join(', ') || 'nothing'}; the button was at ${boxText(heard.box)} in a ${viewNow.width}x${viewNow.height} stage and the page was at "${(await tab.call<Probe>('probe')).status}"`);
       else {
         let said: { input?: { text?: string; screen?: string; values?: Record<string, unknown> } } = {};
         try {
@@ -1188,7 +1412,10 @@ class Conversation {
       }
       return canvas.toDataURL('image/png');
     })()`;
-    const out = await tab.browser.send<{ result: { value?: string }; exceptionDetails?: { text: string } }>('Runtime.evaluate', { expression: script, awaitPromise: true, returnByValue: true }, sessionId);
+    const out = await Promise.race([
+      tab.browser.send<{ result: { value?: string }; exceptionDetails?: { text: string } }>('Runtime.evaluate', { expression: script, awaitPromise: true, returnByValue: true }, sessionId),
+      sleep(CDP_TIMEOUT_MS).then(() => ({ result: {} as { value?: string } })),
+    ]);
     await tab.browser.send('Target.closeTarget', { targetId }).catch(() => undefined);
     const url = out.result.value;
     if (url === undefined) return null;
@@ -1240,13 +1467,28 @@ async function main(): Promise<void> {
         }
       }
     }
+    if (run.aborted !== null) {
+      failures += 1;
+      process.stdout.write(`  FAIL ${screen.name} stopped: ${run.aborted}\n`);
+    }
     process.stdout.write(`  ${screen.name}: ${run.seconds.toFixed(0)} s, contact sheet ${run.sheet ?? 'none'}\n`);
-    summary.push({ screen: screen.name, seconds: run.seconds, sheet: run.sheet, turns: run.records.map((record) => ({ turn: record.step.n, said: record.said, picture: record.picture, seconds: record.seconds, results: record.results })) });
+    summary.push({ screen: screen.name, aborted: run.aborted, seconds: run.seconds, sheet: run.sheet, turns: run.records.map((record) => ({ turn: record.step.n, said: record.said, picture: record.picture, seconds: record.seconds, results: record.results })) });
   }
   await writeFile(join(options.out, 'smoke.json'), JSON.stringify({ url: options.url, at: new Date().toISOString(), failures, screens: summary }, null, 2));
   process.stdout.write(`\n${failures === 0 ? 'PASS: the build may go live.' : `FAIL: ${failures} check${failures === 1 ? '' : 's'} failed. The build must not go live.`}\n`);
   process.exit(failures === 0 ? 0 : 1);
 }
+
+// A gate that is killed from outside must say so: a silent end after some turns is what a stuck run looks like, and it is not one.
+for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) {
+  process.on(signal, () => {
+    process.stderr.write(`smoke: stopped by ${signal} (something outside the gate ended it)\n`);
+    process.exit(2);
+  });
+}
+process.on('exit', (code) => {
+  if (code !== 0 && code !== 1) process.stderr.write(`smoke: exit ${code}\n`);
+});
 
 main().catch((error: unknown) => {
   process.stderr.write(`smoke: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}\n`);

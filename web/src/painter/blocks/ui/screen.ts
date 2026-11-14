@@ -9,8 +9,9 @@ import { lintScreen } from './lint';
 import type { UiMeasure } from './measure';
 import { solve, walk } from './solve';
 import type { Placed } from './solve';
+import { themed } from './theme';
 import { NO_STATE } from './types';
-import type { UiHit, UiPart, UiScreenLayout, UiSlot, UiState } from './types';
+import type { UiClip, UiHit, UiPart, UiScreenLayout, UiSlot, UiState } from './types';
 
 /**
  * A page shown as the phone it would be (a narrow stage): what sat side by side on a wide page goes one under the other, as a responsive page does.
@@ -64,7 +65,91 @@ function countNodes(nodes: readonly UiNode[]): number {
   return nodes.reduce((n, node) => n + 1 + (isUiContainer(node) ? countNodes(node.children) : 0), 0);
 }
 
-export function layoutScreen(written: UiScreen, tokens: UiTokens, measure: UiMeasure, state: UiState = NO_STATE, lines = 0): UiScreenLayout {
+/** Where a row that moves is, and how far it can: its box in the screen's points, and the offset its finger has given it. */
+interface Rail {
+  readonly id: string;
+  readonly clip: UiClip;
+  readonly offset: number;
+}
+
+/**
+ * The tree walked as the screen is drawn: every node with its absolute box, and the rail it is inside, if it is inside one. What a rail holds is moved by its offset
+ * (its children's own boxes, and everything in them) and drawn only inside the rail's box. `visit` gets the node, its box as it is drawn, and the rail.
+ */
+function walkDrawn(root: Placed<Item>, state: UiState, visit: (p: Placed<Item>, x: number, y: number, depth: number, rail: Rail | null, max: number | null) => void): void {
+  const go = (p: Placed<Item>, ox: number, oy: number, depth: number, rail: Rail | null, dx: number): void => {
+    const x = ox + p.x - dx;
+    const y = oy + p.y;
+    const id = p.node.payload.scroll;
+    if (id === undefined) {
+      visit(p, x, y, depth, rail, null);
+      for (const k of p.children) go(k, x, y, depth + 1, rail, 0);
+      return;
+    }
+    // the content runs to the right edge of its last child and its own padding beyond it
+    const pad = p.node.box?.pad[1] ?? 0;
+    const right = p.children.reduce((m, k) => Math.max(m, k.x + k.w), 0) + pad;
+    const max = Math.max(0, right - p.w);
+    const offset = Math.max(0, Math.min(max, state.scroll?.[id] ?? 0));
+    visit(p, x, y, depth, rail, max);
+    const here: Rail = { id, clip: { x, y, w: p.w, h: p.h }, offset };
+    for (const k of p.children) go(k, x, y, depth + 1, here, offset);
+  };
+  go(root, 0, 0, 0, null, 0);
+}
+
+/** Every node that is not inside a rail: what the page's own width is judged by. */
+function outsideRails(root: Placed<Item>, visit: (p: Placed<Item>, x: number, depth: number) => void, ox = 0, depth = 0): void {
+  const x = ox + root.x;
+  visit(root, x, depth);
+  if (root.node.payload.scroll !== undefined) return;
+  for (const k of root.children) outsideRails(k, visit, x, depth + 1);
+}
+
+const DROPPABLE: ReadonlySet<string> = new Set(['item', 'text', 'note']);
+
+/** The same nodes without the last row of the last list: an `item`, a `text` or a `note` at the end of a column that holds at least two of them. Null when there is none to drop. */
+function dropLast(nodes: readonly UiNode[]): UiNode[] | null {
+  for (let i = nodes.length - 1; i >= 0; i -= 1) {
+    const node = nodes[i] as UiNode;
+    if (!isUiContainer(node) || node.kind !== 'col') continue;
+    const rows = node.children.filter((child) => !isUiContainer(child) && DROPPABLE.has(child.kind));
+    const last = node.children[node.children.length - 1];
+    if (rows.length >= 2 && last !== undefined && !isUiContainer(last) && DROPPABLE.has(last.kind)) return nodes.map((n, j) => (j === i ? { ...node, children: node.children.slice(0, -1) } : n));
+    const inner = dropLast(node.children);
+    if (inner !== null) return nodes.map((n, j) => (j === i ? { ...node, children: inner } : n));
+  }
+  return null;
+}
+
+/**
+ * One screen, laid out. What the screen's own words (`theme=`, `accent=`, ...) make of the look's tokens is read here. A phone or a tablet is the glass it is: when
+ * what was written does not fit it and the screen did not say how closely to set it, it is set again at `density=compact`, and that one is kept if it fits better.
+ */
+export function layoutScreen(written: UiScreen, base: UiTokens, measure: UiMeasure, state: UiState = NO_STATE, lines = 0): UiScreenLayout {
+  const tokens = themed(base, written.style);
+  const first = layoutWith(written, tokens, measure, state, lines);
+  const glass = first.device === 'phone' || first.device === 'tablet';
+  const spilled = (layout: UiScreenLayout): number => layout.notes.filter((n) => n.kind === 'outside').length;
+  if (!glass || tokens.pack === 'compact' || spilled(first) === 0) return first;
+  const tighter = layoutWith(written, { ...tokens, pack: 'compact' }, measure, state, lines);
+  const best = spilled(tighter) < spilled(first) ? tighter : first;
+  if (spilled(best) === 0) return best;
+  let squeezed = layoutWith(written, { ...tokens, pack: 'compact', squeeze: true }, measure, state, lines);
+  let kept = spilled(squeezed) < spilled(best) ? squeezed : best;
+  // still too long: the last rows of the last list go, one at a time, rather than a row cut across the glass (never the bars, buttons or fields)
+  let screen = written;
+  for (let step = 0; step < 6 && spilled(kept) > 0; step += 1) {
+    const shorter = dropLast(screen.children);
+    if (shorter === null) break;
+    screen = { ...screen, children: shorter };
+    squeezed = layoutWith(screen, { ...tokens, pack: 'compact', squeeze: true }, measure, state, Math.max(0, lines - step - 1));
+    if (spilled(squeezed) <= spilled(kept)) kept = squeezed;
+  }
+  return kept;
+}
+
+function layoutWith(written: UiScreen, tokens: UiTokens, measure: UiMeasure, state: UiState, lines: number): UiScreenLayout {
   // `device` is a property that can be set: the same lines laid out on another device
   const switched: UiScreen = state.device[written.id] === undefined ? written : { ...written, device: state.device[written.id] ?? written.device };
   const adapted = switched.device === 'phone' && (written.device === 'browser' || written.device === 'desktop');
@@ -76,7 +161,7 @@ export function layoutScreen(written: UiScreen, tokens: UiTokens, measure: UiMea
     // cards two to a row only when two fit across at this size of type: otherwise they stack, as a responsive page does
     const wide = (): boolean => {
       let over = false;
-      walk(placed, (p, x, _y, depth) => {
+      outsideRails(placed, (p, x, depth) => {
         if (depth > 0 && p.w > 0 && x + p.w > size.width + 0.5) over = true;
       });
       return over;
@@ -126,11 +211,15 @@ export function layoutScreen(written: UiScreen, tokens: UiTokens, measure: UiMea
   const hits: UiHit[] = [];
   const slots: UiSlot[] = [];
   const boxes = new Map<string, { x: number; y: number; w: number; h: number; kind: string }>();
-  walk(placed, (p, x, y) => {
+  walkDrawn(placed, state, (p, x, y, _depth, rail, max) => {
     const it = p.node.payload;
     const b = { x, y, w: p.w, h: p.h };
+    const before = parts.length;
     it.paint?.(b, out);
-    if (it.action !== undefined) {
+    // what is inside a row that moves is drawn only inside it
+    if (rail !== null) for (let i = before; i < parts.length; i += 1) parts[i] = { ...(parts[i] as UiPart), clip: rail.clip };
+    if (max !== null && it.scroll !== undefined) hits.push({ id: it.scroll, part: 'carousel', ...b, action: { kind: 'scroll', control: it.scroll, max } });
+    if (it.action !== undefined && rail === null) {
       const control = it.action.kind === 'tab' ? it.action.bar : it.action.kind === 'pick' ? it.action.control : it.action.control;
       hits.push({ id: control, part: it.part, ...b, action: it.action });
     }
@@ -139,6 +228,7 @@ export function layoutScreen(written: UiScreen, tokens: UiTokens, measure: UiMea
     if (it.quiet !== true && !boxes.has(it.id)) boxes.set(it.id, { ...b, kind: it.part });
   });
   return {
+    tokens,
     id: screen.id,
     device: screen.device,
     name: screen.name,

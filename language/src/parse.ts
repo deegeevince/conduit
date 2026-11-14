@@ -49,6 +49,8 @@ import {
   CODE_LANGUAGES,
   TUNE_VOICES,
   APP_HEIGHT,
+  APP_SHELVES,
+  APP_SHELF_ALIASES,
   CONTROL_VERBS,
   DIRECTIONS,
   ENTER_EFFECTS,
@@ -84,7 +86,7 @@ import {
   LESSON_LIMITS,
 } from './vocabulary';
 import { REFINE_LIMITS } from './wire';
-import type { AmbientKind, Amount, Anchor, CameraMove, CameraSpeed, ControlVerb, FxName, ShapeVerb, StructureVerb, Verb } from './vocabulary';
+import type { AmbientKind, Amount, AppShelf, Anchor, CameraMove, CameraSpeed, ControlVerb, FxName, ShapeVerb, StructureVerb, Verb } from './vocabulary';
 
 const NAME_PATTERN = /^[a-z][a-z0-9_-]*$/;
 const HEX_PATTERN = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/;
@@ -992,7 +994,15 @@ function parseStructure(verb: StructureVerb, head: Head, text: string | null, is
     else if ((key === 'voice' || key === 'instrument' || key === 'sound') && verb === 'tune' && oneOf(TUNE_VOICES, value)) line.voice = value;
     else if ((key === 'voice' || key === 'instrument' || key === 'sound') && verb === 'tune') issues.warn('bad-value', `voice=${value} is not one of ${TUNE_VOICES.join(' | ')}; a piano is used`, pair.token);
     else if ((key === 'tempo' || key === 'bpm') && verb === 'tune' && /^\d+(\.\d+)?$/.test(value) && Number(value) >= TUNE_TEMPO_RANGE.min && Number(value) <= TUNE_TEMPO_RANGE.max) line.tempo = Number(value);
-    else if (key === 'height' && verb === 'app' && /^\d+(\.\d+)?$/.test(value)) line.height = Math.max(APP_HEIGHT.min, Math.min(APP_HEIGHT.max, Number(value)));
+    else if ((key === 'uses' || key === 'use' || key === 'with') && verb === 'app') {
+      const asked: AppShelf[] = [];
+      for (const word of value.split(/[,+\s]+/).filter((entry) => entry !== '')) {
+        const shelf = oneOf(APP_SHELVES, word) ? word : APP_SHELF_ALIASES[word];
+        if (shelf === undefined) issues.warn('bad-value', `uses=${word} is not on the shelf (${APP_SHELVES.join(' | ')}); ignored`, pair.token);
+        else if (!asked.includes(shelf)) asked.push(shelf);
+      }
+      if (asked.length > 0) line.uses = asked;
+    } else if (key === 'height' && verb === 'app' && /^\d+(\.\d+)?$/.test(value)) line.height = Math.max(APP_HEIGHT.min, Math.min(APP_HEIGHT.max, Number(value)));
     else if (key === 'height' && verb === 'app') issues.warn('bad-value', `height=${value} is not a number of canvas units from ${APP_HEIGHT.min} to ${APP_HEIGHT.max}; ${APP_HEIGHT.default} is used`, pair.token);
     else if ((key === 'tempo' || key === 'bpm') && verb === 'tune') issues.warn('bad-value', `tempo=${value} is not a number of beats a minute from ${TUNE_TEMPO_RANGE.min} to ${TUNE_TEMPO_RANGE.max}; the score's own is used`, pair.token);
     else issues.warn('unknown-key', `"${key}" is not a property here; ignored`, pair.token);
@@ -1237,16 +1247,21 @@ function parseCard(head: Head, text: string | null, issues: Issues): Line {
 function parseBind(head: Head, rawText: string | null, issues: Issues): Line | null {
   let control: string | undefined;
   let on: BindOn = { kind: 'whole' };
+  // `bind chord=C major | …`: the words after a `name=value` are the rest of an option written with spaces.
+  const lead = head.pairs[0];
+  const spoken = lead !== undefined && lead.key !== 'is' && lead.key !== 'when' && isValidElementId(lead.key);
+  const rest: string[] = [];
   for (const word of head.words) {
     const span = SPAN_PATTERN.exec(word);
     if (span !== null) on = { kind: 'range', from: Number(span[1]), to: Number(span[2]) };
+    else if (spoken) rest.push(word);
     else if (control === undefined && isValidElementId(word)) control = word;
     else issues.warn('unknown-word', `"${word}" means nothing in a bind; ignored`, word);
   }
   for (const pair of head.pairs) {
     if (control === undefined && isValidElementId(pair.key)) {
       control = pair.key;
-      on = { kind: 'is', value: pair.value };
+      on = { kind: 'is', value: [pair.value, ...rest.map((w) => w.toLowerCase())].join(' ') };
     } else if (pair.key === 'is' || pair.key === 'when') on = { kind: 'is', value: pair.value };
     else issues.warn('unknown-key', `"${pair.key}" is not part of a bind; ignored`, pair.token);
   }

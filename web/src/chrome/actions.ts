@@ -3,6 +3,7 @@
 
 import type { StageApp } from '../app/stage-app';
 import type { ExportRequest } from '../contracts/export';
+import type { ComposerMenu, MenuEntryHandle } from './menu';
 import { SIZES, copyAnswer, copyScript, saveBlob, saveMidi, saveScript, saveStill } from './files';
 
 export interface Actions {
@@ -14,9 +15,10 @@ export interface TranscriptView {
   revealTurn(turn: string): void;
 }
 
-/** Where the actions go: Show all and the chart credit beside the status line, Save with the bar's other controls. */
+/** Where the actions go: Show all in the small line above the bar, Save and Copy answer in the composer's [+] menu. */
 export interface ActionSlots {
   readonly top: HTMLElement;
+  readonly menu: ComposerMenu;
 }
 
 type Formats = Awaited<ReturnType<StageApp['formats']>>;
@@ -39,7 +41,7 @@ function sceneCount(lines: readonly { readonly text: string }[]): number {
  *   transcript opens at this turn, because the stage can only rest on the
  *   last one (on a narrow screen it says so in the status line instead, because the
  *   sheet would cover the stage).
- * - **Save**: a menu button with: Copy script, Save script, Play a
+ * - **Save**: an entry of the composer's [+] menu that opens a list of: Copy script, Save script, Play a
  *   script (a textarea in a dialog; sends input kind `script`), Save picture
  *   (PNG, SVG), Save film (the latest answer: the prompt it began with and
  *   the taps and controls that carried it on; the formats `Exporter.formats()`
@@ -48,23 +50,17 @@ function sceneCount(lines: readonly { readonly text: string }[]): number {
  *   of what was asked, at most ten minutes, with the music of any tunes), both
  *   with progress in the status line and Cancel. Each item says in a line what it does. Enabled
  *   once a turn has ended.
- * - **The chart credit**: the charting engine's name and link, only while a chart is on stage.
+ * - **Copy answer**: an entry of the [+] menu itself (the words of the answer, as Markdown).
+ *
+ * (The charting engine's credit is on the chart itself, and in the menu's About.)
  *
  * All of it works from the keyboard, announces what it did in the status
  * line, and follows the chrome rules in DESIGN.md.
  */
 export function mountActions(host: HTMLElement, app: StageApp, transcript: TranscriptView, stage: HTMLElement, slots: ActionSlots): Actions {
   counter += 1;
-  const menuId = `save-menu-${counter}`;
 
-  const group = document.createElement('div');
-  group.className = 'actions';
-  group.innerHTML = `
-    <div class="action-menu">
-      <button class="action action--take" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="${menuId}">Save</button>
-      <div class="action-menu__list" id="${menuId}" role="menu" aria-label="Save" hidden></div>
-    </div>`;
-  host.append(group);
+  const menu = slots.menu;
 
   const showButton = document.createElement('button');
   showButton.className = 'action action--show';
@@ -73,23 +69,6 @@ export function mountActions(host: HTMLElement, app: StageApp, transcript: Trans
   showButton.textContent = 'Show all';
   showButton.hidden = true;
   slots.top.append(showButton);
-
-  const takeButton = group.querySelector<HTMLButtonElement>('.action--take');
-  const menu = group.querySelector<HTMLElement>('.action-menu__list');
-  if (takeButton === null || menu === null) throw new Error('The actions could not be built.');
-
-  // The charting engine's licence asks for its name and a link on the page: shown while a chart is, and only then.
-  let credit: HTMLAnchorElement | null = null;
-  if (app.attribution !== null) {
-    credit = document.createElement('a');
-    credit.className = 'action-credit';
-    credit.href = app.attribution.href;
-    credit.target = '_blank';
-    credit.rel = 'noopener noreferrer';
-    credit.textContent = app.attribution.text;
-    credit.hidden = true;
-    slots.top.append(credit);
-  }
 
   let formats: Formats = NO_FORMATS;
   let formatsKnown = false;
@@ -125,12 +104,9 @@ export function mountActions(host: HTMLElement, app: StageApp, transcript: Trans
       reveal(snap.turn);
     }
     if (snap.turn === null) revealedFor = null;
-    if (credit !== null) credit.hidden = snap.charts.length === 0;
-    const midi = menu.querySelector<HTMLButtonElement>('[data-item="midi"]');
-    if (midi !== null) midi.hidden = !snap.elements.some((element) => element.kind === 'structure' && element.text.startsWith('tune'));
-    for (const item of menu.querySelectorAll<HTMLButtonElement>('[data-needs-answer]')) {
-      item.setAttribute('aria-disabled', String(!answerReady));
-    }
+    entries.get('page')?.set({ hidden: !app.apps.probe().some((probe) => probe.running && probe.loaded) });
+    entries.get('midi')?.set({ hidden: !snap.elements.some((element) => element.kind === 'structure' && element.text.startsWith('tune')) });
+    for (const [id, entry] of entries) if (NEEDS_ANSWER.has(id)) entry.set({ disabled: !answerReady });
   };
 
   const showAll = (): void => {
@@ -157,124 +133,23 @@ export function mountActions(host: HTMLElement, app: StageApp, transcript: Trans
   };
   stage.addEventListener('keydown', onKey);
 
-  // The menu
+  // The menu: Save is a list of its own inside the composer's [+] menu; Copy answer sits in the [+] menu itself.
 
   const ITEMS = [
-    { id: 'copy-answer', label: 'Copy answer', gist: 'the words, as Markdown: headings, lists, tables, code', needsAnswer: true },
     { id: 'copy', label: 'Copy script', gist: 'the answer as lines of Series, on the clipboard', needsAnswer: true },
     { id: 'save-script', label: 'Save script', gist: 'the same lines, as a .series file', needsAnswer: true },
     { id: 'play', label: 'Play a script…', gist: 'paste lines of Series and watch them on the stage', needsAnswer: false },
+    { id: 'page', label: 'Save as page', gist: 'the live app as one web page file, ready to publish', needsAnswer: true },
     { id: 'png', label: 'Save picture (PNG)', gist: 'the picture as it rests, as an image', needsAnswer: true },
     { id: 'svg', label: 'Save picture (SVG)', gist: 'the same picture as a drawing that scales', needsAnswer: true },
     { id: 'midi', label: 'Save MIDI', gist: 'the tune, as a standard MIDI file', needsAnswer: true },
     { id: 'film', label: 'Save film…', gist: 'the latest answer playing, taps and all, as a video', needsAnswer: true },
     { id: 'conversation', label: 'Save whole conversation…', gist: 'every turn in order, each after a title card, as one WebM', needsAnswer: true },
   ] as const;
-  type ItemId = (typeof ITEMS)[number]['id'];
-
-  for (const item of ITEMS) {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'action-menu__item';
-    button.setAttribute('role', 'menuitem');
-    button.dataset['item'] = item.id;
-    if (item.needsAnswer) button.dataset['needsAnswer'] = '';
-    button.tabIndex = -1;
-    counter += 1;
-    const gistId = `save-gist-${counter}`;
-    const label = document.createElement('span');
-    label.className = 'action-menu__label';
-    label.textContent = item.label;
-    const gist = document.createElement('span');
-    gist.className = 'action-menu__gist';
-    gist.id = gistId;
-    gist.textContent = item.gist;
-    button.setAttribute('aria-describedby', gistId);
-    button.append(label, gist);
-    menu.append(button);
-  }
-
-  const items = (): HTMLButtonElement[] => [...menu.querySelectorAll<HTMLButtonElement>('.action-menu__item')].filter((item) => !item.hidden);
-
-  const applyFormats = (): void => {
-    const hide = (id: ItemId, hidden: boolean): void => {
-      const item = menu.querySelector<HTMLButtonElement>(`[data-item="${id}"]`);
-      if (item !== null) item.hidden = hidden;
-    };
-    hide('svg', formatsKnown && !formats.svg);
-    hide('film', formatsKnown && formats.video.length === 0);
-    hide('conversation', formatsKnown && !formats.video.includes('webm'));
-  };
-
-  let menuOpen = false;
-  const setMenu = (open: boolean, focusFirst = false): void => {
-    menuOpen = open;
-    menu.hidden = !open;
-    takeButton.setAttribute('aria-expanded', String(open));
-    if (!open) return;
-    refresh();
-    applyFormats();
-    if (!formatsKnown) {
-      app.formats().then(
-        (found) => {
-          formats = found;
-          formatsKnown = true;
-          applyFormats();
-        },
-        () => {
-          formats = NO_FORMATS;
-          formatsKnown = true;
-          applyFormats();
-        },
-      );
-    }
-    if (focusFirst) items()[0]?.focus();
-  };
-
-  takeButton.addEventListener('click', () => setMenu(!menuOpen, true));
-  takeButton.addEventListener('keydown', (event) => {
-    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-      event.preventDefault();
-      setMenu(true);
-      const list = items();
-      (event.key === 'ArrowUp' ? list[list.length - 1] : list[0])?.focus();
-    }
-  });
-  menu.addEventListener('keydown', (event) => {
-    const list = items();
-    const index = list.indexOf(document.activeElement as HTMLButtonElement);
-    switch (event.key) {
-      case 'ArrowDown':
-        event.preventDefault();
-        list[(index + 1) % list.length]?.focus();
-        break;
-      case 'ArrowUp':
-        event.preventDefault();
-        list[(index - 1 + list.length) % list.length]?.focus();
-        break;
-      case 'Home':
-        event.preventDefault();
-        list[0]?.focus();
-        break;
-      case 'End':
-        event.preventDefault();
-        list[list.length - 1]?.focus();
-        break;
-      case 'Escape':
-        event.preventDefault();
-        event.stopPropagation();
-        setMenu(false);
-        takeButton.focus();
-        break;
-      case 'Tab':
-        setMenu(false);
-        break;
-    }
-  });
-  const onDocumentPointer = (event: PointerEvent): void => {
-    if (menuOpen && event.target instanceof Node && !group.contains(event.target)) setMenu(false);
-  };
-  document.addEventListener('pointerdown', onDocumentPointer);
+  type ItemId = (typeof ITEMS)[number]['id'] | 'copy-answer';
+  const NEEDS_ANSWER = new Set<string>([...ITEMS.filter((item) => item.needsAnswer).map((item) => item.id), 'copy-answer']);
+  const entries = new Map<string, MenuEntryHandle>();
+  const refused = (): void => app.announce('Save works once an answer has finished');
 
   // Dialogs
 
@@ -289,7 +164,7 @@ export function mountActions(host: HTMLElement, app: StageApp, transcript: Trans
     dialog.addEventListener('mousedown', (event) => {
       if (event.target === dialog) dialog.close();
     });
-    dialog.addEventListener('close', () => takeButton.focus({ preventScroll: true }));
+    dialog.addEventListener('close', () => menu.button.focus({ preventScroll: true }));
     return dialog;
   };
 
@@ -407,18 +282,7 @@ export function mountActions(host: HTMLElement, app: StageApp, transcript: Trans
     parts.dialog.showModal();
   };
 
-  menu.addEventListener('click', (event) => {
-    const target = event.target;
-    if (!(target instanceof HTMLElement)) return;
-    const item = target.closest<HTMLButtonElement>('.action-menu__item');
-    if (item === null) return;
-    if (item.getAttribute('aria-disabled') === 'true') {
-      app.announce('Save works once an answer has finished');
-      return;
-    }
-    const id = item.dataset['item'] as ItemId | undefined;
-    setMenu(false);
-    takeButton.focus({ preventScroll: true });
+  const run = (id: ItemId): void => {
     switch (id) {
       case 'copy-answer':
         void copyAnswer(app);
@@ -434,6 +298,17 @@ export function mountActions(host: HTMLElement, app: StageApp, transcript: Trans
         playDialog.showModal();
         playText.focus();
         break;
+      case 'page': {
+        const page = app.apps.exportPage();
+        if (page === null) {
+          app.announce('There is no live app on the stage to save as a page');
+          break;
+        }
+        const name = page.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48) || 'page';
+        saveBlob(new Blob([page.html], { type: 'text/html' }), `${name}.html`);
+        app.announce(`Saved ${name}.html`);
+        break;
+      }
       case 'png':
         saveStill(app, 'png');
         break;
@@ -449,10 +324,34 @@ export function mountActions(host: HTMLElement, app: StageApp, transcript: Trans
       case 'conversation':
         openExport(conversation);
         break;
-      case undefined:
-        break;
     }
+  };
+
+  menu.addView('save', 'Save');
+  entries.set('copy-answer', menu.add({ id: 'copy-answer', label: 'Copy answer', gist: 'the words, as Markdown', order: 70, disabled: true, refusal: refused, run: () => run('copy-answer') }));
+  entries.set('save', menu.add({ id: 'save', label: 'Save', gist: 'script, picture, film', order: 40, view: 'save' }));
+  ITEMS.forEach((item, index) => {
+    entries.set(item.id, menu.add({ id: item.id, label: item.label, gist: item.gist, order: index, disabled: item.needsAnswer, refusal: refused, run: () => run(item.id) }, 'save'));
   });
+
+  const applyFormats = (): void => {
+    const hide = (id: ItemId, hidden: boolean): void => entries.get(id)?.set({ hidden });
+    hide('svg', formatsKnown && !formats.svg);
+    hide('film', formatsKnown && formats.video.length === 0);
+    hide('conversation', formatsKnown && !formats.video.includes('webm'));
+  };
+  app.formats().then(
+    (found) => {
+      formats = found;
+      formatsKnown = true;
+      applyFormats();
+    },
+    () => {
+      formats = NO_FORMATS;
+      formatsKnown = true;
+      applyFormats();
+    },
+  );
 
   const offStatus = app.onStatus(refresh);
   const offClock = app.painter.on('clock', refresh);
@@ -466,13 +365,11 @@ export function mountActions(host: HTMLElement, app: StageApp, transcript: Trans
       offClock();
       stage.removeEventListener('keydown', onKey);
       stage.removeAttribute('aria-keyshortcuts');
-      document.removeEventListener('pointerdown', onDocumentPointer);
       playDialog.remove();
       film.dialog.remove();
       conversation.dialog.remove();
-      credit?.remove();
+      for (const entry of entries.values()) entry.remove();
       showButton.remove();
-      group.remove();
     },
   };
 }
