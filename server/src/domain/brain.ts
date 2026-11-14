@@ -29,6 +29,8 @@ export interface TurnRequest {
    * document to its model attaches the ones the brief says are attached; others ignore this.
    */
   readonly pdfs?: readonly { readonly id: string; readonly bytes: Uint8Array }[];
+  /** v2.1. The pictures the user gave with these words (`TurnInput.images`), after the stage's snapshot. A brain that cannot take images ignores them. */
+  readonly images?: readonly Snapshot[];
 }
 
 /**

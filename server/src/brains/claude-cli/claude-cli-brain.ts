@@ -255,7 +255,7 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
     readonly sent: () => void;
   }
 
-  function outgoingFor(request: TurnRequest & { readonly images?: readonly Snapshot[] }, entry: Entry, form: BriefForm): Outgoing {
+  function outgoingFor(request: TurnRequest, entry: Entry, form: BriefForm): Outgoing {
     const held = request.context.documents ?? [];
     const given = form === 'full' ? held : held.filter((doc) => !entry.heardDocs.has(doc.id));
     return {
