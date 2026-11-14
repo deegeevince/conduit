@@ -11,7 +11,7 @@ import { styleAt } from '@conduit/language';
 import type { ElementSpan, ElementStyle, Polyline, Range, Schedule, Scope, SightNote } from '@conduit/language';
 import { EMPTY_STRUCTURE_LAYOUT } from '../contracts/blocks';
 import type { BlockLook, BlockPart, MeasuredText, StructureEngine, StructureLayout, TextMeasure, TextSpec } from '../contracts/blocks';
-import type { ElementFrame, RunFrame, ShapeFrame } from '../contracts/frame';
+import type { Colour, ElementFrame, RunFrame, ShapeFrame } from '../contracts/frame';
 import { IDENTITY } from '../contracts/frame';
 import type { LookSpec, MotionRecipe } from '../contracts/look';
 import { planeScale } from '../contracts/space';
@@ -587,7 +587,38 @@ export function buildStructures(schedule: Schedule, env: StructureEnv): Structur
         const cx0 = box.x + box.width / 2;
         const cy0 = box.y + box.height / 2;
         const overInk = inks.some((b) => cx0 >= b.x && cx0 <= b.x + b.width && cy0 >= b.y && cy0 <= b.y + b.height);
-        const ink = (emphasised: boolean): string => overInk ? look.roles.ground : mix(resolveInk(role as never, look, { minRatio, weight: spec.weight, emphasised, onBar: false }));
+        // what the words stand on: a filled shape under their centre (a node's own ground, a bar). The ink is judged against it as well as the look's grounds,
+        // so white words are never set on yellow: the ink is whichever of the look's colours reads best on it.
+        let under: Colour | null = null;
+        for (let i = out.figures.length - 1; i >= 0 && under === null; i -= 1) {
+          const figure = out.figures[i];
+          if (figure === undefined || figure.kind !== 'shape' || figure.fill === null || figure.fill.opacity < 0.5 || figure.opacity < 0.5 || !figure.key.startsWith(`${owner.key}/`)) continue;
+          let inside = false;
+          for (const line of figure.outline) {
+            if (!line.closed) continue;
+            let x0 = Number.POSITIVE_INFINITY;
+            let y0 = Number.POSITIVE_INFINITY;
+            let x1 = Number.NEGATIVE_INFINITY;
+            let y1 = Number.NEGATIVE_INFINITY;
+            for (const point of line.points) {
+              x0 = Math.min(x0, point.x);
+              y0 = Math.min(y0, point.y);
+              x1 = Math.max(x1, point.x);
+              y1 = Math.max(y1, point.y);
+            }
+            if (cx0 >= x0 && cx0 <= x1 && cy0 >= y0 && cy0 <= y1) inside = true;
+          }
+          if (inside) under = figure.fill.colour;
+        }
+        const ink = (emphasised: boolean): string => {
+          if (overInk) return look.roles.ground;
+          const base = mix(resolveInk(role as never, look, { minRatio, weight: spec.weight, emphasised, onBar: false, behind: under }));
+          if (under === null || contrastRatio(base, under) >= minRatio) return base;
+          // the role's own colour cannot be made to read on it: the look's ink or its ground, whichever has the better ratio
+          const dark = resolveInk('ink', look, { minRatio, weight: spec.weight, emphasised, onBar: false, behind: under });
+          const light = look.roles.ground;
+          return contrastRatio(dark, under) >= contrastRatio(light, under) ? dark : light;
+        };
         const place = set.placement;
         const runs: RunFrame[] = place.runs.map((run) => ({ text: run.text, x: run.x, y: run.y, width: run.width, colour: ink(run.emphasised), opacity, dx, dy, scale, reveal: 1 }));
         const cx = box.x + box.width / 2 + shake;

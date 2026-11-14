@@ -124,6 +124,8 @@ const FLICKER_SLOT = 0.36;
 /** The flash governor: nothing lights up or goes dark more than three times a second. */
 const FLASH_FLOOR_SECONDS = 0.34;
 /** A subject block goes beside the words, on a wide stage, when they take more than this share of the stage's height across its full width. */
+/** How long a new scene's words take to settle from the place of the old scene's. */
+const CARRY_SECONDS = 0.55;
 const BESIDE_WORDS_SHARE = 0.3;
 /** A structure is set at least this share of the look's size: an engine that would shrink it further is asked for more room first. */
 const READ_SHRINK = 0.8;
@@ -1006,6 +1008,28 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
     const previous = previousEpoch?.arrangement.placements.get(key);
     if (previousEpoch === undefined || previousEpoch.look !== epoch.look) return poseOf(current);
     const q = (time - epoch.start) / (SETTLE_SECONDS * epoch.snap);
+    if (previous === undefined && previousEpoch.scene !== epoch.scene && current.layer === 'mid') {
+      // A new scene's words take the old scene's place rather than appearing somewhere else while the old ones fade where they were: the Nth line
+      // of the new scene comes in from the place of the Nth line of the old (the last, if the old had fewer), over the time a settle takes.
+      const own = byKey.get(key);
+      const inFlowOf = (epochOf: Epoch): { key: string; placement: Placement }[] =>
+        [...epochOf.arrangement.placements]
+          .filter(([other, placement]) => {
+            const element = byKey.get(other);
+            return element !== undefined && element.scene === epochOf.scene && placement.layer === 'mid' && isInFlow(styleAt(element, epochOf.start), sceneAt(schedule, epochOf.start).layout);
+          })
+          .map(([other, placement]) => ({ key: other, placement }))
+          .sort((a, b) => (byKey.get(a.key)?.order ?? 0) - (byKey.get(b.key)?.order ?? 0));
+      const fresh = inFlowOf(epoch);
+      const old = inFlowOf(previousEpoch);
+      const rank = fresh.findIndex((item) => item.key === key);
+      const heir = rank < 0 || old.length === 0 ? undefined : old[Math.min(rank, old.length - 1)];
+      const entered = own?.enter?.start ?? epoch.start;
+      const p = (time - entered) / (CARRY_SECONDS * epoch.snap);
+      if (heir === undefined || p >= 1 || p < 0) return poseOf(current);
+      const curve = epoch.look.motion.ease === 'hold' ? 'out' : epoch.look.motion.ease;
+      return blendPose(poseOf(heir.placement), current, ease(curve, Math.max(0, p)), scaleLimit);
+    }
     if (previous === undefined) {
       // A line that arrives while the lines above it scroll away starts where the block would have put it before the scroll, and rides up with them:
       // placed at its final slot at once it would sit on the lines still on their way.
@@ -2154,6 +2178,23 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
     return out;
   };
 
+  /** The frame with any ink that cannot be read on `behind` swapped for the look's ink or ground, whichever reads better there. */
+  const reinked = (frame: ElementFrame, look: LookSpec, behind: readonly Colour[]): ElementFrame => {
+    if (behind.length === 0) return frame;
+    const px = frame.fontSize * planeScale(frame.layer, viewport) * frame.scale;
+    const minimum = minContrastFor(px, frame.layer);
+    const worstOf = (colour: Colour): number => Math.min(...behind.map((under) => contrastRatio(colour, under)));
+    const better = (colour: Colour): Colour => {
+      if (worstOf(colour) >= minimum) return colour;
+      const best = [look.roles.ink, look.roles.ground].reduce((a, b) => (worstOf(b) > worstOf(a) ? b : a));
+      return worstOf(best) > worstOf(colour) ? best : colour;
+    };
+    const runs = frame.runs.map((run) => (run.opacity > 0.5 && run.reveal > 0 ? { ...run, colour: better(run.colour) } : run));
+    const changed = runs.some((run, i) => run !== frame.runs[i]);
+    const markColour = frame.mark === 'box' ? better(frame.markColour) : frame.markColour;
+    return changed || markColour !== frame.markColour ? { ...frame, runs, markColour } : frame;
+  };
+
   /** The plate an element needs where it lies over drawn things, and the colours behind its words once the plate is on. */
   const backdropFor = (frame: ElementFrame, look: LookSpec, backings: readonly Backing[]): { plate: number; behind: Colour[] } | null => {
     if (backings.length === 0 || frame.mark === 'invert') return null;
@@ -2338,7 +2379,10 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
           evaluated.push(done);
           continue;
         }
-        const frame: ElementFrame = { ...done.frame, plate: backdrop.plate };
+        // What the plate leaves behind the words is what they are judged against. When even that cannot be read in the ink they have (alt-ink choice chips on a
+        // saturated ground, say), the ink is changed for whichever of the look's ink and ground has the better ratio on it, the chip's frame with it.
+        const recoloured = reinked(done.frame, drawLook, backdrop.behind);
+        const frame: ElementFrame = { ...recoloured, plate: backdrop.plate };
         const judged = judge(frame, drawLook, backdrop.behind);
         const view: StageElementView = { ...done.view, colour: judged.colour, contrast: Number.isFinite(judged.worst) ? judged.worst : 21 };
         evaluated.push({ ...done, frame, view });
