@@ -23,7 +23,10 @@ export type Motion = 'glide' | 'fade';
 export const GLIDE = {
   /** seconds to a neighbour, and the most any glide takes */
   neighbour: 0.45,
-  longest: 1.1,
+  /** steward decision 3 (WL0): a far glide may take up to 1.3 s, so that its zoom stays slow; 1.2 here leaves room for a frame's jitter */
+  longest: 1.2,
+  /** the fastest the lens may zoom, e-folds a second (the trace's own limit is 4.5); the curve's rho is lowered and its time lengthened to keep under it */
+  zoomCap: 3.8,
   /** the picture's fastest travel across the screen, in lengths of its longer side a second (the peak of the ease-out) */
   speedCap: 9,
   /** the reduced-motion cross-fade, seconds */
@@ -32,7 +35,8 @@ export const GLIDE = {
 
 const RHO = Math.SQRT2;
 
-const easeOut = (u: number): number => 1 - (1 - u) ** 2;
+/** An ease-out that starts fast and settles with no overshoot; the sine form has the gentlest peak (pi/2 times the average rate), which keeps a long zoom under the zoom cap. */
+const easeOut = (u: number): number => Math.sin((u * Math.PI) / 2);
 
 export interface GlidePath {
   readonly duration: number;
@@ -159,26 +163,31 @@ export function glidePath(a: Lens, b: Lens, screen: Screen, floor = 0): GlidePat
       }
       top = lo;
     }
+    // Every curve (rho) and every time that could do: the shortest that keeps both the picture's speed across the screen and the zoom
+    // rate under their caps, else the one that breaks them least. A lower rho pulls back less (less zoom); a longer time spreads it.
     let best: GlidePath | null = null;
-    let last = -1;
-    for (const wanted of [RHO, 2, 2.8, 4]) {
+    let bestScore = Infinity;
+    let bestDuration = Infinity;
+    const seen = new Set<number>();
+    for (const wanted of [4, 2.8, 2, RHO, 1.1, 0.8, 0.55, 0.35, 0.2, 0.1]) {
       const rho = Math.min(wanted, top);
-      if (rho === last) continue;
-      last = rho;
+      if (seen.has(rho)) continue;
+      seen.add(rho);
       const curve = vanWijk(a, b, vw, rho);
       const natural = Math.min(GLIDE.longest, Math.max(GLIDE.neighbour, 0.3 + 0.17 * curve.S));
-      for (const duration of natural >= GLIDE.longest ? [GLIDE.longest] : [natural, GLIDE.longest]) {
+      for (const duration of [natural, 0.7, 0.9, 1.1, GLIDE.longest]) {
+        if (duration < natural - 1e-9) continue;
         const m = measure(curve.at, duration, unit);
-        const found: GlidePath = { duration, straight: false, rho, at: curve.at, ...m };
-        if (best === null || m.peak < best.peak) best = found;
-        if (within(m)) {
-          path = found;
-          break;
+        const score = Math.max(m.peak / GLIDE.speedCap, m.peakZoom / GLIDE.zoomCap, 1);
+        // inside the caps the quickest wins; outside them the least over
+        if (score < bestScore - 1e-9 || (Math.abs(score - bestScore) <= 1e-9 && duration < bestDuration)) {
+          bestScore = score;
+          bestDuration = duration;
+          best = { duration, straight: false, rho, at: curve.at, ...m };
         }
       }
-      if (path !== null) break;
     }
-    path = path ?? best;
+    path = best;
   }
   const found = path as GlidePath;
   remembered = { key, path: found };

@@ -10,6 +10,11 @@
 //     the ten-second tour, a crowd sweep, an idle wall, reduced motion, three laps of 300 tiles for the caps, the retake of a changed frame's
 //     picture, and screenshots of the map, mid-glide and arrived. Prints the numbers and writes <out>/wall-bench.json.
 //
+//   pnpm wall-bench hands [--port 4990] [--logs <dir>] [--data <DATA_DIR>] [--out <dir>] [--screens 390x844,1280x720] [--throttle 4] [--sources made,real]
+//     (WL2) Drives web/bench-wall-hands.html with REAL input over DevTools (Input.dispatchTouchEvent, mouse wheel, key events), the CPU slowed:
+//     pinch out, two-finger pan, tap a tile and arrive; a flick that coasts; wheel pan and ctrl+wheel zoom; arrows, 0 and Escape; ten idle
+//     seconds; reduced motion; a tap where a far frame's slider is. The numbers come from the page's per-frame trace of the lens.
+//
 // Ports 4990 to 4999 only. The data folder defaults to a throwaway one.
 
 import { execFile } from 'node:child_process';
@@ -391,6 +396,81 @@ class Tab {
     });
   }
 
+  hands<T>(fn: string, ...args: unknown[]): Promise<T> {
+    return this.eval<T>(`window.__hands.${fn}(${args.map((a) => JSON.stringify(a)).join(',')})`);
+  }
+
+  async openHands(config: Config, source: string, extra = ''): Promise<void> {
+    await this.send('Emulation.setDeviceMetricsOverride', { width: config.width, height: config.height, deviceScaleFactor: 2, mobile: config.screen === 'phone' });
+    await this.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
+    await this.send('Page.navigate', { url: `http://127.0.0.1:${port}/bench-wall-hands.html?source=${source}&screen=${config.screen}${extra}` });
+    await waitFor('the hands page', 60_000, async () => {
+      const failed = await this.eval<string | null>('window.__wallError ?? null').catch(() => null);
+      if (failed !== null) throw new Error(`the hands page failed: ${failed}`);
+      return (await this.eval<boolean>('Boolean(window.__hands && window.__hands.ready)').catch(() => false)) ? true : null;
+    });
+  }
+
+  // ----- real input
+  async touch(type: 'touchStart' | 'touchMove' | 'touchEnd' | 'touchCancel', points: { x: number; y: number; id: number }[]): Promise<void> {
+    await this.send('Input.dispatchTouchEvent', { type, touchPoints: points.map((p) => ({ x: p.x, y: p.y, id: p.id, radiusX: 4, radiusY: 4, force: 0.5 })) });
+  }
+
+  /** a tap: finger down, a short hold, up */
+  async tap(x: number, y: number, holdMs = 50): Promise<void> {
+    await this.touch('touchStart', [{ x, y, id: 1 }]);
+    await sleep(holdMs);
+    await this.touch('touchEnd', []);
+  }
+
+  /** two fingers about (cx, cy): their distance goes from d0 to d1 and the middle by (dx, dy), over ms, a move every ~16 ms; `hold` leaves them down */
+  async twoFingers(cx: number, cy: number, d0: number, d1: number, dx: number, dy: number, ms: number, hold = false): Promise<void> {
+    const at = (k: number): { x: number; y: number; id: number }[] => {
+      const d = d0 + (d1 - d0) * k;
+      const mx = cx + dx * k;
+      const my = cy + dy * k;
+      return [
+        { x: mx - d / 2, y: my, id: 1 },
+        { x: mx + d / 2, y: my, id: 2 },
+      ];
+    };
+    const first = at(0);
+    await this.touch('touchStart', [first[0] as { x: number; y: number; id: number }]);
+    await this.touch('touchStart', first);
+    const steps = Math.max(2, Math.round(ms / 16));
+    for (let i = 1; i <= steps; i += 1) {
+      await sleep(ms / steps);
+      await this.touch('touchMove', at(i / steps));
+    }
+    if (!hold) await this.touchesUp(at(1));
+  }
+
+  async touchesUp(points: { x: number; y: number; id: number }[]): Promise<void> {
+    await this.touch('touchEnd', points.slice(1));
+    await this.touch('touchEnd', []);
+  }
+
+  /** one finger: down at (x0, y0), moves to (x1, y1) over ms, and lifts at once (a flick) */
+  async drag(x0: number, y0: number, x1: number, y1: number, ms: number): Promise<void> {
+    await this.touch('touchStart', [{ x: x0, y: y0, id: 1 }]);
+    const steps = Math.max(2, Math.round(ms / 16));
+    for (let i = 1; i <= steps; i += 1) {
+      await sleep(ms / steps);
+      await this.touch('touchMove', [{ x: x0 + (x1 - x0) * (i / steps), y: y0 + (y1 - y0) * (i / steps), id: 1 }]);
+    }
+    await this.touch('touchEnd', []);
+  }
+
+  async wheel(x: number, y: number, deltaX: number, deltaY: number, ctrl = false): Promise<void> {
+    await this.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x, y, deltaX, deltaY, modifiers: ctrl ? 2 : 0 });
+  }
+
+  async key(key: string, code: string, vk: number): Promise<void> {
+    const text = key.length === 1 ? key : undefined;
+    await this.send('Input.dispatchKeyEvent', { type: 'keyDown', key, code, windowsVirtualKeyCode: vk, text });
+    await this.send('Input.dispatchKeyEvent', { type: 'keyUp', key, code, windowsVirtualKeyCode: vk });
+  }
+
   async throttle(rate: number): Promise<void> {
     await this.send('Emulation.setCPUThrottlingRate', { rate });
   }
@@ -405,6 +485,8 @@ class Tab {
     await writeFile(path, Buffer.from(data, 'base64'));
   }
 }
+
+const sleep = (ms: number): Promise<void> => new Promise((done) => setTimeout(done, ms));
 
 const mb = (bytes: number): string => (bytes / 1048576).toFixed(1);
 
@@ -633,7 +715,423 @@ async function tourCommand(): Promise<void> {
   }
 }
 
-if (command === 'tour') {
+
+// ---------------------------------------------------------------------------------------------------------------------------------
+// hands: the lens under real input (WL2)
+
+interface HandsTrace {
+  readonly marks: number[][];
+  readonly events: { kind: string; t: number; tile: number | null }[];
+  readonly drawn: number;
+  readonly kinds: string[];
+}
+
+interface LensNow {
+  readonly x: number;
+  readonly y: number;
+  readonly scale: number;
+  readonly kind: string;
+  readonly focus: number | null;
+  readonly live: number | null;
+}
+
+/** Numbers from a per-frame lens trace. */
+function analyse(trace: HandsTrace): { frames: number; drawn: number; peakZoom: number; peakSpeed: number; distinct: number; fadeFrames: number } {
+  let peakZoom = 0;
+  let peakSpeed = 0;
+  const seen = new Set<string>();
+  const m = trace.marks;
+  for (let i = 0; i < m.length; i += 1) {
+    const cur = m[i] as number[];
+    seen.add(`${cur[1]}|${cur[2]}|${cur[3]}`);
+    if (i === 0) continue;
+    const prev = m[i - 1] as number[];
+    const dt = ((cur[0] as number) - (prev[0] as number)) / 1000;
+    if (dt <= 0) continue;
+    peakZoom = Math.max(peakZoom, Math.abs(Math.log((cur[3] as number) / (prev[3] as number))) / dt);
+    peakSpeed = Math.max(peakSpeed, (Math.hypot((cur[1] as number) - (prev[1] as number), (cur[2] as number) - (prev[2] as number)) * (cur[3] as number)) / dt);
+  }
+  return { frames: m.length, drawn: trace.drawn, peakZoom, peakSpeed, distinct: seen.size, fadeFrames: m.filter((x) => (x[4] as number) >= 0).length };
+}
+
+/** From the frame where the lens leaves `start` to the end: does it ever go past `end` along the line, or zoom past both ends' scales? */
+function overshootOf(trace: HandsTrace, start: { x: number; y: number; scale: number }, end: { x: number; y: number; scale: number }): { overshoot: number; changedAfterArrival: number } {
+  const ax = end.x - start.x;
+  const ay = end.y - start.y;
+  const len2 = ax * ax + ay * ay;
+  let over = 0;
+  let after = 0;
+  let arrived = false;
+  for (const row of trace.marks) {
+    const x = row[1] as number;
+    const y = row[2] as number;
+    const k = row[3] as number;
+    if (len2 > 1e-6) {
+      const along = ((x - start.x) * ax + (y - start.y) * ay) / len2;
+      over = Math.max(over, along - 1, -along);
+    }
+    over = Math.max(over, k / Math.max(start.scale, end.scale) - 1);
+    if (arrived && (Math.abs(x - end.x) > 1e-6 || Math.abs(y - end.y) > 1e-6 || Math.abs(k - end.scale) > 1e-9)) after += 1;
+    if (Math.abs(x - end.x) < 1e-6 && Math.abs(y - end.y) < 1e-6 && Math.abs(k - end.scale) < 1e-9) arrived = true;
+  }
+  return { overshoot: Math.max(0, over), changedAfterArrival: after };
+}
+
+const lastEvent = (t: HandsTrace, kind: string, from = 0): { t: number; tile: number | null } | undefined => [...t.events].reverse().find((e) => e.kind === kind && e.t >= from);
+
+async function handsCommand(): Promise<void> {
+  const out = resolve(flag('out', join(tmpdir(), 'wall-hands-out')));
+  await mkdir(out, { recursive: true });
+  await mkdir(workDir, { recursive: true });
+  const rate = Number(flag('throttle', '4'));
+  const configs: Config[] = flag('screens', '390x844,1280x720').split(',').map((s) => {
+    const [w, h] = s.split('x').map(Number);
+    return { name: s, width: w ?? 390, height: h ?? 844, screen: (w ?? 0) < 700 ? 'phone' : 'desk' };
+  });
+  const sources = flag('sources', logsDir === '' ? 'made' : 'real,made').split(',');
+  const server = await listen();
+  const chrome = CHROME_CANDIDATES.find((path) => existsSync(path));
+  if (chrome === undefined) throw new Error('no Chrome found: set CHROME_BIN');
+  const profile = await mkdtemp(join(tmpdir(), 'conduit-wall-hands-'));
+  const child: ChildProcess = spawnTracked(chrome, ['--headless=new', '--use-angle=metal', '--ignore-gpu-blocklist', '--no-first-run', '--no-default-browser-check', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--window-size=1280,800', 'about:blank'], undefined, { quiet: true });
+  const results: Record<string, unknown> = { rate, when: new Date().toISOString() };
+  const say = (text: string): void => void process.stdout.write(`${text}\n`);
+  const f2 = (v: number): string => v.toFixed(2);
+  try {
+    const endpoint = await waitFor('Chrome', 20_000, async () => {
+      const [p, path] = (await readFile(join(profile, 'DevToolsActivePort'), 'utf8')).split('\n');
+      return p !== undefined && path !== undefined ? `ws://127.0.0.1:${p}${path}` : null;
+    });
+    const browser = await Cdp.open(endpoint);
+    say(`${(await browser.send<{ product: string }>('Browser.getVersion')).product}, CPU slowed ${rate}x, real touch, wheel and key events`);
+    for (const config of configs) {
+      for (const source of sources) {
+        const key = `${config.name}/${source}`;
+        const res: Record<string, unknown> = {};
+        results[key] = res;
+        const tab = await Tab.open(browser);
+        await tab.openHands(config, source);
+        const info = await tab.hands<Record<string, unknown>>('info');
+        say(`\n=== ${key}: ${String(info['tiles'])} tiles, touch-action "${String(info['touchAction'])}"`);
+        res['info'] = info;
+        await tab.hands('warm');
+        await tab.throttle(rate);
+        const W = config.width;
+        const H = config.height;
+        const where = (): Promise<LensNow> => tab.hands<LensNow>('lens');
+        const waitRest = async (limit = 4000): Promise<void> => {
+          const until = performance.now() + limit;
+          while (performance.now() < until) {
+            if ((await where()).kind === 'rest') return;
+            await sleep(40);
+          }
+        };
+
+        // ---- 1. pinch out, pan, tap a tile, arrive
+        const taps: Record<string, unknown>[] = [];
+        for (const target of ['visible', 'far'] as const) {
+          await tab.hands('place', 'map');
+          await sleep(200);
+          await tab.hands('traceStart');
+          // about a tile that is on the map's screen (the middle of a sparse wall may be bare ground)
+          const atMap = (await tab.hands<{ index: number; x: number; y: number }[]>('onScreen')).filter((t) => t.x > 4 && t.y > 4 && t.x < W - 4 && t.y < H - 4).sort((a, b) => Math.hypot(a.x - W / 2, a.y - H / 2) - Math.hypot(b.x - W / 2, b.y - H / 2))[0];
+          const cx = atMap?.x ?? W / 2;
+          const cy = atMap?.y ?? H / 2;
+          // spread: fingers apart (zoom in about the middle), a two-finger pan, then pinch back a little so a tile fills a good part of the view
+          await tab.twoFingers(cx, cy, W * 0.12, W * 0.42, 0, 0, 800);
+          await sleep(120);
+          await tab.twoFingers(W / 2, H / 2, W * 0.3, W * 0.3, (cx - W / 2) * -0.15, (cy - H / 2) * -0.15, 500);
+          await sleep(150);
+          const before = await where();
+          // a tile on screen that is not the one at the centre; or, for "far", the last tile (the map is first reached by a pinch in)
+          let index: number;
+          let point: { x: number; y: number };
+          if (target === 'visible') {
+            const seen = await tab.hands<{ index: number; x: number; y: number; w: number }[]>('onScreen');
+            const pick = seen.filter((t) => t.x > 12 && t.y > 12 && t.x < W - 12 && t.y < H - 12).sort((a, b) => Math.hypot(b.x - W / 2, b.y - H / 2) - Math.hypot(a.x - W / 2, a.y - H / 2))[0] ?? seen[0];
+            if (pick === undefined) throw new Error(`no tile on screen to tap: lens ${JSON.stringify(await where())}, seen ${JSON.stringify(seen)}, pinched about ${cx},${cy} (${String(atMap?.index)})`);
+            index = pick.index;
+            point = { x: Math.min(W - 6, Math.max(6, pick.x)), y: Math.min(H - 6, Math.max(6, pick.y)) };
+          } else {
+            // pinch back in to the map, then tap the farthest tile that is on the screen
+            await tab.twoFingers(cx, cy, W * 0.45, W * 0.1, 0, 0, 700);
+            await sleep(150);
+            const seen = await tab.hands<{ index: number; x: number; y: number; w: number }[]>('onScreen');
+            const here = (await where()).focus ?? 0;
+            const pick = seen.filter((t) => t.x > 12 && t.y > 12 && t.x < W - 12 && t.y < H - 12).sort((a, b) => Math.abs(b.index - here) - Math.abs(a.index - here))[0];
+            if (pick === undefined) throw new Error('no far tile on screen');
+            index = pick.index;
+            point = { x: pick.x, y: pick.y };
+          }
+          const from = await where();
+          await tab.tap(point.x, point.y);
+          await waitRest(3000);
+          await sleep(300);
+          const trace = await tab.hands<HandsTrace>('traceStop');
+          const a = analyse(trace);
+          const arrive = lastEvent(trace, 'arrive');
+          const up = [...trace.events].reverse().find((e) => e.kind === 'up:touch');
+          const end = await where();
+          const tp = await tab.hands<{ x: number; y: number } | null>('tilePoint', index);
+          // the glide's own marks: from the tap
+          const glideMarks = { ...trace, marks: trace.marks.filter((m) => (up === undefined ? true : (m[0] as number) >= up.t - 1)) };
+          const target1 = { x: end.x, y: end.y, scale: end.scale };
+          const o = overshootOf(glideMarks, from, target1);
+          const arrivalMs = arrive !== undefined && up !== undefined ? arrive.t - up.t : -1;
+          const row = { target, tile: index, focus: end.focus, live: end.live, arrivalMs: Math.round(arrivalMs), overshoot: Number(o.overshoot.toFixed(4)), changedAfterArrival: o.changedAfterArrival, zoomPeak: Number(a.peakZoom.toFixed(2)), frames: a.frames, kinds: trace.kinds, startScale: before.scale, endScale: end.scale, centred: tp !== null && Math.hypot(tp.x - W / 2, tp.y - H / 2) < 1.5 };
+          taps.push(row);
+          say(`pinch out, pan, tap ${target} tile ${index}: arrived in ${arrivalMs.toFixed(0)} ms (limit 1300), overshoot ${o.overshoot.toFixed(4)}, changed after arrival ${o.changedAfterArrival}, zoom peak over the whole trace ${f2(a.peakZoom)} e-folds/s, ${a.frames} frames, live tile ${String(end.live)}, lens kinds ${trace.kinds.join('/')}`);
+          if (target === 'visible') {
+            await tab.shot(join(out, `${config.screen}-${source}-arrived.png`));
+          }
+        }
+        res['taps'] = taps;
+
+        // ---- screenshots mid-pinch and mid-glide
+        await tab.hands('place', 'map');
+        await sleep(200);
+        await tab.shot(join(out, `${config.screen}-${source}-map.png`));
+        const shotTile = (await tab.hands<{ index: number; x: number; y: number }[]>('onScreen')).filter((t) => t.x > 4 && t.y > 4 && t.x < W - 4 && t.y < H - 4).sort((a, b) => Math.hypot(a.x - W / 2, a.y - H / 2) - Math.hypot(b.x - W / 2, b.y - H / 2))[0];
+        const sx = shotTile?.x ?? W / 2;
+        const sy = shotTile?.y ?? H / 2;
+        await tab.twoFingers(sx, sy, W * 0.12, W * 0.4, 0, 0, 500, true);
+        await sleep(100);
+        await tab.shot(join(out, `${config.screen}-${source}-pinch.png`));
+        await tab.touchesUp([
+          { x: sx - W * 0.2, y: sy, id: 1 },
+          { x: sx + W * 0.2, y: sy, id: 2 },
+        ]);
+        await waitRest();
+        await tab.hands('place', 'map');
+        await sleep(150);
+        {
+          const seen = await tab.hands<{ index: number; x: number; y: number }[]>('onScreen');
+          const pick = seen.filter((t) => t.x > 12 && t.y > 12 && t.x < W - 12 && t.y < H - 12)[Math.floor(seen.length / 2)];
+          if (pick !== undefined) {
+            await tab.tap(pick.x, pick.y);
+            await sleep(170);
+            await tab.shot(join(out, `${config.screen}-${source}-glide.png`));
+            await waitRest();
+          }
+        }
+        say(`pictures: ${join(out, `${config.screen}-${source}-{map,pinch,glide,arrived}.png`)}`);
+
+        if (source !== 'made') {
+          await tab.throttle(1);
+          await browser.send('Target.closeTarget', { targetId: tab.targetId }).catch(() => undefined);
+          continue;
+        }
+
+        // ---- 2. a flick that coasts
+        await tab.hands('place', 'map');
+        await sleep(200);
+        await tab.hands('traceStart');
+        const start = await where();
+        await tab.drag(W * 0.8, H * 0.5, W * 0.3, H * 0.5, 110);
+        await sleep(60);
+        const mid = await where();
+        await waitRest(4000);
+        await sleep(300);
+        const flick = await tab.hands<HandsTrace>('traceStop');
+        const fa = analyse(flick);
+        // monotone: the lens keeps moving the way the finger threw it (x only grows) and ends still
+        let reversed = 0;
+        for (let i = 1; i < flick.marks.length; i += 1) if ((flick.marks[i]?.[1] as number) < (flick.marks[i - 1]?.[1] as number) - 1e-9) reversed += 1;
+        const coastFrames = flick.marks.filter((m) => (m[0] as number) > 0).length;
+        const endNow = await where();
+        const lastDraw = flick.marks.length;
+        res['flick'] = { frames: lastDraw, coastFrames, reversed, moved: endNow.x - start.x, kinds: flick.kinds, endKind: endNow.kind, distinct: fa.distinct };
+        say(`flick: the lens went ${(endNow.x - start.x).toFixed(0)} world units (${(((endNow.x - start.x) * start.scale)).toFixed(0)} px at the map), kinds ${flick.kinds.join('/')}, reversals ${reversed}, ended ${endNow.kind}; in coast ${mid.kind}`);
+
+        // ---- 3. wheel: pan, ctrl+wheel zoom
+        await tab.hands('place', 'map');
+        await sleep(200);
+        await tab.hands('traceStart');
+        const w0 = await where();
+        for (let i = 0; i < 8; i += 1) {
+          await tab.wheel(W / 2, H / 2, 20, 40, false);
+          await sleep(24);
+        }
+        await sleep(300);
+        const w1 = await where();
+        for (let i = 0; i < 14; i += 1) {
+          await tab.wheel(W * 0.4, H * 0.45, 0, -50, true);
+          await sleep(24);
+        }
+        await sleep(400);
+        const w2 = await where();
+        for (let i = 0; i < 10; i += 1) {
+          await tab.wheel(W / 2, H / 2, 0, 160, true);
+          await sleep(18);
+        }
+        await waitRest();
+        await sleep(300);
+        const wheel = await tab.hands<HandsTrace>('traceStop');
+        const wa = analyse(wheel);
+        res['wheel'] = { panned: { dx: w1.x - w0.x, dy: w1.y - w0.y }, zoomed: w2.scale / w1.scale, zoomPeak: wa.peakZoom };
+        say(`wheel: pan moved the lens by (${(w1.x - w0.x).toFixed(0)}, ${(w1.y - w0.y).toFixed(0)}) world units; ctrl+wheel zoomed x${f2(w2.scale / w1.scale)} then out; zoom peak ${f2(wa.peakZoom)} e-folds/s (limit 4.5)`);
+
+        // ---- 4. keys
+        await tab.hands('place', 0);
+        await sleep(200);
+        const keyRows: Record<string, unknown>[] = [];
+        const press = async (label: string, k: string, code: string, vk: number): Promise<void> => {
+          await tab.hands('traceStart');
+          const b = await where();
+          await tab.key(k, code, vk);
+          await sleep(100);
+          await waitRest(3000);
+          await sleep(150);
+          const t = await tab.hands<HandsTrace>('traceStop');
+          const e = await where();
+          const arrive = lastEvent(t, 'arrive');
+          const go = lastEvent(t, 'go');
+          const an = analyse(t);
+          const ov = overshootOf(t, b, e);
+          const ms = arrive !== undefined && go !== undefined ? Math.round(arrive.t - go.t) : -1;
+          keyRows.push({ label, ms, focus: e.focus, scale: e.scale, overshoot: ov.overshoot, zoomPeak: an.peakZoom });
+          say(`key ${label}: ${ms} ms, focus ${String(e.focus)}, scale ${e.scale.toFixed(3)}, overshoot ${ov.overshoot.toFixed(4)}, zoom peak ${f2(an.peakZoom)}`);
+        };
+        const forward = config.screen === 'phone' ? ['ArrowDown', 'ArrowDown', 40] : ['ArrowRight', 'ArrowRight', 39];
+        const back = config.screen === 'phone' ? ['ArrowUp', 'ArrowUp', 38] : ['ArrowLeft', 'ArrowLeft', 37];
+        await press('next', forward[0] as string, forward[1] as string, forward[2] as number);
+        await press('previous', back[0] as string, back[1] as string, back[2] as number);
+        await press('0 (the map)', '0', 'Digit0', 48);
+        await press('0 (back)', '0', 'Digit0', 48);
+        await press('Escape (the map)', 'Escape', 'Escape', 27);
+        await press('Escape (back)', 'Escape', 'Escape', 27);
+        res['keys'] = keyRows;
+
+        // ---- 5. ten idle seconds, at the map and at a frame
+        const idles: Record<string, unknown> = {};
+        for (const at of ['map', 3] as const) {
+          await tab.hands('place', at);
+          await sleep(500);
+          await tab.hands('traceStart');
+          const s0 = await tab.hands<{ planCalls: number }>('stats');
+          await sleep(10_000);
+          const s1 = await tab.hands<{ planCalls: number }>('stats');
+          const t = await tab.hands<HandsTrace>('traceStop');
+          const ia = analyse(t);
+          idles[String(at)] = { frames: ia.frames, distinct: ia.distinct, drawn: ia.drawn, planCalls: s1.planCalls - s0.planCalls };
+          say(`idle 10 s at ${at === 'map' ? 'the map' : 'a frame'}: ${ia.frames} frames, ${ia.distinct} distinct lens value(s), ${ia.drawn} frames drawn, plan calls ${s1.planCalls - s0.planCalls}`);
+        }
+        res['idle'] = idles;
+
+        // ---- 6. reduced motion, emulated
+        await tab.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
+        await tab.openHands(config, source);
+        await tab.hands('warm');
+        await tab.throttle(rate);
+        const reduced: Record<string, unknown>[] = [];
+        await tab.hands('place', 'map');
+        await sleep(200);
+        const mapSeen = (await tab.hands<{ index: number; x: number; y: number }[]>('onScreen')).filter((t) => t.x > 8 && t.y > 8 && t.x < W - 8 && t.y < H - 8);
+        const picks = [mapSeen[1], mapSeen[Math.floor(mapSeen.length / 2)], mapSeen[mapSeen.length - 1]].filter((t): t is { index: number; x: number; y: number } => t !== undefined);
+        for (const pick of picks) {
+          await tab.hands('place', 'map');
+          await sleep(200);
+          await tab.hands('traceStart');
+          const from0 = await where();
+          await tab.tap(pick.x, pick.y);
+          await waitRest(2000);
+          await sleep(500);
+          const t = await tab.hands<HandsTrace>('traceStop');
+          const e = await where();
+          const a = analyse(t);
+          const same = (m: number[], l: { x: number; y: number; scale: number }): boolean => Math.abs((m[1] as number) - l.x) < 1e-6 && Math.abs((m[2] as number) - l.y) < 1e-6 && Math.abs((m[3] as number) - l.scale) < 1e-9;
+          const travel = t.marks.filter((m) => !same(m, from0) && !same(m, e)).length;
+          const arrive = lastEvent(t, 'arrive');
+          const up = [...t.events].reverse().find((x) => x.kind === 'up:touch');
+          reduced.push({ to: pick.index, travelFrames: travel, fadeFrames: a.fadeFrames, arrivalMs: arrive !== undefined && up !== undefined ? Math.round(arrive.t - up.t) : -1, motion: ((await tab.hands<Record<string, unknown>>('info'))['motion']) });
+        }
+        res['reduced'] = reduced;
+        say(`reduced motion (emulated): ${reduced.map((r) => `to ${String(r['to'])}: ${String(r['travelFrames'])} frames of travel, ${String(r['fadeFrames'])} cross-fade frames, ${String(r['arrivalMs'])} ms`).join('; ')}`);
+        await tab.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
+        await tab.openHands(config, source);
+        await tab.hands('warm');
+        await tab.throttle(rate);
+
+        // ---- 7. the far slider
+        const slider: Record<string, unknown> = {};
+        // a positive control: at full size and at rest the live slider answers a touch
+        await tab.hands('place', 0);
+        await tab.hands('setSlider', 0, 40);
+        await sleep(300);
+        const rect0 = await tab.hands<{ x: number; y: number } | null>('sliderRectNow');
+        if (rect0 === null) throw new Error('the live frame is not showing at full size');
+        await tab.tap(rect0.x + W * 0.25, rect0.y, 60);
+        await sleep(200);
+        const live0 = await tab.hands<Record<string, number>>('values');
+        slider['liveControl'] = { before: 40, after: live0['0'] };
+        say(`far slider: positive control, a touch on the live slider at full size moves its value 40 -> ${String(live0['0'])}`);
+        // held values on the frames that are on screen at the map: each tap goes where one of their sliders would be
+        await tab.hands('place', 'map');
+        await sleep(200);
+        const onMap = (await tab.hands<{ index: number; x: number; y: number }[]>('onScreen')).filter((t) => t.x > 8 && t.y > 8 && t.x < W - 8 && t.y < H - 8);
+        const chosen = [onMap[2], onMap[Math.floor(onMap.length / 2)], onMap[onMap.length - 2]].filter((t): t is { index: number; x: number; y: number } => t !== undefined);
+        const heldValues = [25, 70, 10];
+        for (const [i, t] of chosen.entries()) await tab.hands('setSlider', t.index, heldValues[i] ?? 33);
+        const held = await tab.hands<Record<string, number>>('values');
+        const attempts: Record<string, unknown>[] = [];
+        const tapFar = async (index: number, via: 'touch' | 'mouse', scale: 'map' | 'part'): Promise<void> => {
+          await tab.hands('place', 'map');
+          await sleep(250);
+          if (scale === 'part') {
+            // zoom in a little with a real pinch so the far frame is bigger, still not at full size
+            await tab.twoFingers(W / 2, H / 2, W * 0.12, W * 0.24, 0, 0, 400);
+            await sleep(200);
+          }
+          const sp = await tab.hands<{ x: number; y: number; inside: boolean; element: string } | null>('sliderPoint', index);
+          if (sp === null || !sp.inside) {
+            attempts.push({ index, via, scale, skipped: 'the far slider is off screen' });
+            return;
+          }
+          const before = await tab.hands<Record<string, number>>('values');
+          const lensBefore = await where();
+          if (via === 'touch') await tab.tap(sp.x, sp.y, 60);
+          else {
+            await tab.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: sp.x, y: sp.y, button: 'left', clickCount: 1, buttons: 1 });
+            await sleep(40);
+            await tab.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: sp.x, y: sp.y, button: 'left', clickCount: 1 });
+          }
+          await sleep(100);
+          const during = await where();
+          await waitRest(3000);
+          await sleep(300);
+          const after = await tab.hands<Record<string, number>>('values');
+          const liveNow = await tab.hands<{ liveIndex: number | null; value: string }>('liveState');
+          const sameValues = JSON.stringify(before) === JSON.stringify(after);
+          attempts.push({ index, via, scale, elementAtPoint: sp.element, startedAtScale: Number(lensBefore.scale.toFixed(3)), wentThere: during.focus === index, arrivedLive: liveNow.liveIndex === index, valuesBefore: before, valuesAfter: after, unchanged: sameValues, liveSliderShows: liveNow.value });
+        };
+        await tapFar(chosen[0]?.index ?? 0, 'touch', 'map');
+        await tapFar(chosen[1]?.index ?? 0, 'touch', 'part');
+        await tapFar(0, 'touch', 'map');
+        await tapFar(chosen[2]?.index ?? 0, 'mouse', 'map');
+        slider['attempts'] = attempts;
+        slider['valuesStart'] = held;
+        res['farSlider'] = slider;
+        for (const a of attempts) {
+          if (a['skipped'] !== undefined) say(`far slider: tile ${String(a['index'])} (${String(a['via'])}, ${String(a['scale'])}): skipped, ${String(a['skipped'])}`);
+          else say(`far slider: tapped where tile ${String(a['index'])}'s slider is (${String(a['via'])}, from ${String(a['scale'])}, scale ${String(a['startedAtScale'])}, the element there is ${String(a['elementAtPoint'])}): went there ${String(a['wentThere'])}, arrived live ${String(a['arrivedLive'])}, no value changed ${String(a['unchanged'])}, its live slider shows ${String(a['liveSliderShows'])}`);
+        }
+        await tab.throttle(1);
+        await browser.send('Target.closeTarget', { targetId: tab.targetId }).catch(() => undefined);
+      }
+    }
+    browser.close();
+  } finally {
+    await stop(child);
+    await rm(profile, { recursive: true, force: true });
+    server.close();
+    await writeFile(join(out, 'wall-hands.json'), JSON.stringify(results, null, 1));
+    say(`\nnumbers: ${join(out, 'wall-hands.json')}`);
+  }
+}
+
+if (command === 'hands') {
+  await handsCommand();
+} else if (command === 'tour') {
   await tourCommand();
 } else {
   await mkdir(workDir, { recursive: true });
