@@ -24,6 +24,7 @@ export type Command =
   | { readonly kind: 'show-all' }
   | { readonly kind: 'copy'; readonly what: 'script' | 'answer' }
   | { readonly kind: 'export'; readonly format: ExportFormat }
+  | { readonly kind: 'lines'; readonly on: boolean | null }
   | { readonly kind: 'capture' }
   | { readonly kind: 'refused'; readonly message: string };
 
@@ -125,6 +126,9 @@ export function parseCommand(text: string): Command {
       const format: ExportFormat | null = oneOf(first, EXPORT_FORMATS);
       return rest.length === 1 && format !== null ? { kind: 'export', format } : refuse(`/export: one of ${EXPORT_FORMATS.join(' | ')}`);
     }
+    case 'lines':
+      if (rest.length === 0) return { kind: 'lines', on: null };
+      return rest.length === 1 && (first === 'on' || first === 'off') ? { kind: 'lines', on: first === 'on' } : refuse('/lines: bare switches it, or say on or off');
     case 'capture':
       return { kind: 'capture' };
   }

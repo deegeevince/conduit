@@ -135,7 +135,11 @@ export function createExporter(deps: ExporterDeps): Exporter {
     const height = Math.max(2, Math.round(request.height));
     if (request.kind === 'pdf' && request.at.length > PDF_MAX_PAGES) throw new Error(`A PDF made here holds at most ${PDF_MAX_PAGES} pages and this is ${request.at.length}.`);
     if (width * height > MAX_PIXELS) throw new Error('That size is larger than this exporter will draw. Try 3840 by 2160 or smaller.');
-    const viewport: Viewport = { width: film.viewport.width, height: film.viewport.height, dpr: width / film.viewport.width };
+    // A film with a surround (the language pane) is the stage inside a bigger picture: the stage is drawn at its own size, the rest is drawn around it.
+    const surround = request.kind === 'video' ? film.surround : undefined;
+    const viewport: Viewport = { width: film.viewport.width, height: film.viewport.height, dpr: surround === undefined ? width / film.viewport.width : width / surround.width };
+    const stageWidth = surround === undefined ? width : Math.round(film.viewport.width * viewport.dpr);
+    const stageHeight = surround === undefined ? height : Math.round(film.viewport.height * viewport.dpr);
 
     const host = document.createElement('div');
     host.setAttribute('aria-hidden', 'true');
@@ -272,6 +276,29 @@ export function createExporter(deps: ExporterDeps): Exporter {
         context.globalAlpha = 1;
         return overlay;
       };
+      let sheet: HTMLCanvasElement | null = null;
+      /** The stage laid in the picture that surrounds it, drawn at `seconds` of the film. */
+      const surrounded = (stage: CanvasImageSource, seconds: number): CanvasImageSource => {
+        if (surround === undefined) return stage;
+        sheet ??= document.createElement('canvas');
+        if (sheet.width !== width || sheet.height !== height) {
+          sheet.width = width;
+          sheet.height = height;
+        }
+        const context = sheet.getContext('2d');
+        if (context === null) return stage;
+        const scale = width / surround.width;
+        context.setTransform(1, 0, 0, 1, 0, 0);
+        context.globalAlpha = 1;
+        context.fillStyle = '#000';
+        context.fillRect(0, 0, width, height);
+        context.save();
+        context.scale(scale, scale);
+        surround.draw(context, seconds);
+        context.restore();
+        context.drawImage(stage, Math.round(surround.stage.x * scale), Math.round(surround.stage.y * scale), stageWidth, stageHeight);
+        return sheet;
+      };
       for (let index = 0; index < frames; index += 1) {
         guard();
         const frame = draw(film.frameAt(timeOf(index)));
@@ -283,7 +310,7 @@ export function createExporter(deps: ExporterDeps): Exporter {
           renderer.render(frame);
         }
         if (!renderer.isDrawable()) incompleteFrames += 1;
-        await wait(sink.add(withCharts(frame, canvas, width, height), index / fps));
+        await wait(sink.add(surrounded(withCharts(frame, canvas, stageWidth, stageHeight), timeOf(index)), index / fps));
         tick(index + 1);
         if (performance.now() - lastYield > 12) {
           await nextTurn();
@@ -294,7 +321,7 @@ export function createExporter(deps: ExporterDeps): Exporter {
       const hasSound = sink.hasSound;
       const blob = await wait(sink.finish());
       sink = null;
-      return { blob, hasSound, fileName: `conduit-${request.scope === 'conversation' ? 'conversation' : 'film'}-${width}x${height}.${request.format}` };
+      return { blob, hasSound, fileName: `conduit-${request.scope === 'conversation' ? 'conversation' : 'film'}${surround === undefined ? '' : '-lines'}-${width}x${height}.${request.format}` };
     } catch (error) {
       if (signal.aborted && !(error instanceof DOMException && error.name === 'AbortError')) throw abortError();
       throw error;

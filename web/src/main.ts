@@ -6,6 +6,7 @@ import { mountStage } from './app/stage-app';
 import type { StageApp, StageStatus } from './app/stage-app';
 import { mountActions } from './chrome/actions';
 import { mountHud } from './chrome/hud';
+import { mountLangPane } from './chrome/lang-pane';
 import { runCommand } from './chrome/command-runner';
 import { copyAnswer } from './chrome/files';
 import { isCommand } from './chrome/commands';
@@ -51,6 +52,7 @@ if (params.look !== null) {
 root.innerHTML = `
   <main class="stage" id="stage" aria-label="Stage" tabindex="0"></main>
   <footer class="bar" id="bar"></footer>`;
+const appRoot: HTMLElement = root;
 const stageHost = root.querySelector<HTMLElement>('#stage');
 const bar = root.querySelector<HTMLElement>('#bar');
 if (stageHost === null || bar === null) throw new Error('The page could not be built.');
@@ -157,6 +159,7 @@ async function start(): Promise<void> {
   picker = mountPicker(promptBar.menu, mounted);
   mountAbout(promptBar.menu, mounted);
   mountActivity(promptBar.activity, mounted);
+  mountLangPane(appRoot, stageHost, mounted, promptBar.menu);
   mountPermission(mounted);
   const show = (status: StageStatus): void => {
     promptBar.setStatus(status.text, status.announce);
