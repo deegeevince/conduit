@@ -657,8 +657,6 @@ async function act(cx: Cx, action: Action): Promise<void> {
 /** the pen over a live mock-up part: a ring started on the pay button must draw, not press */
 async function penRing(cx: Cx): Promise<Res> {
   const { tab } = cx;
-  const part = (await tab.call<Answer>('answer')).mockups.flatMap((m) => m.hits).find((h) => /pay|order|checkout|place/i.test(h.part)) ?? (await tab.call<Answer>('answer')).mockups.flatMap((m) => m.hits)[0];
-  if (part === undefined) return { check: 'pen-draws', verdict: 'FAIL', detail: 'no live part on the mock-up to ring' };
   const plus = await tab.call<{ x: number; y: number; w: number; h: number } | null>('rect', '.composer__plus');
   if (plus === null) return { check: 'pen-draws', verdict: 'FAIL', detail: 'no + menu' };
   await tab.tap(plus.x + plus.w / 2, plus.y + plus.h / 2);
@@ -667,6 +665,12 @@ async function penRing(cx: Cx): Promise<Res> {
   if (draw === null) return { check: 'pen-draws', verdict: 'FAIL', detail: 'the + menu has no Draw' };
   await tab.tap(draw.x + draw.w / 2, draw.y + draw.h / 2);
   await sleep(700);
+  // the part is chosen with the ink bar up: a stroke can only start on a part the bar does not cover (the bar is the pen's own tool, over the stage's top edge)
+  const bar = await tab.call<{ x: number; y: number; w: number; h: number } | null>('rect', '.ink-stage__bar');
+  const covered = (h: { box: { x: number; y: number; width: number; height: number } }): boolean => bar !== null && h.box.x + h.box.width / 2 >= bar.x - 4 && h.box.x + h.box.width / 2 <= bar.x + bar.w + 4 && h.box.y + h.box.height / 2 >= bar.y - 4 && h.box.y + h.box.height / 2 <= bar.y + bar.h + 4;
+  const hits = (await tab.call<Answer>('answer')).mockups.flatMap((m) => m.hits).filter((h) => !covered(h));
+  const part = hits.find((h) => /pay|order|checkout|place/i.test(h.part)) ?? hits.find((h) => /button/i.test(h.part)) ?? hits[0];
+  if (part === undefined) return { check: 'pen-draws', verdict: 'FAIL', detail: 'no live part on the mock-up to ring' };
   const before = (await tab.call<Answer>('answer')).mockups[0]?.screen;
   const b = part.box;
   const cx0 = b.x + b.width / 2;
