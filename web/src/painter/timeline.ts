@@ -17,7 +17,8 @@ import { createControlStore, compileTemplate, renderTemplate, scopeOf } from './
 import type { Template } from './controls';
 import { boundElement, boundSchedule, controlIndexOf, createRuntime, heldBy, moodOf, controlSpecOf } from './bound';
 import type { BoundWords, ControlRuntime } from './bound';
-import { controlInputOf, controlLayoutOf, placeParts } from './controls-stage';
+import { targetPx } from './target';
+import { controlInputOf, controlLayoutOf, placeParts, scrollCues } from './controls-stage';
 import type { ControlSite } from './controls-stage';
 import { layoutCard } from './controls';
 import type { ControlLayout } from '../contracts/controls';
@@ -37,7 +38,7 @@ import { ease, quantise } from './ease';
 import { canvasBoxOf, figuresAt, groupMatrixAt, spriteColours } from './figures';
 import type { Painting } from './figures';
 import { revealShare } from '../fonts/measure';
-import { arrange, needsOf } from './layout';
+import { arrange, controlRoomOf, controlsNeedOf, needsOf } from './layout';
 import { planStage, viewOfPlan } from './layout/plan';
 import type { StageBlock, StagePlan, StagePlanView } from '../contracts/stage-plan';
 import { STRUCTURES_READY } from './blocks';
@@ -262,6 +263,15 @@ function judge(frame: ElementFrame, look: LookSpec, backdrop: Colour | readonly 
   return { worst, colour, visible };
 }
 
+/** A controls area that scrolls: its first control stands in the flow for the window, the others are set in it by the painter (plane units, tops from the window's top) */
+interface ScrollArea {
+  readonly host: string;
+  readonly windowH: number;
+  readonly contentH: number;
+  readonly width: number;
+  readonly members: ReadonlyMap<string, { readonly top: number; readonly dx: number; readonly width: number; readonly height: number }>;
+}
+
 interface Epoch {
   readonly start: number;
   readonly look: LookSpec;
@@ -272,6 +282,8 @@ interface Epoch {
   readonly plan: StagePlan;
   readonly fit: CanvasFit;
   readonly kinds: ReadonlyMap<string, StageBlock['kind']>;
+  /** how this epoch's controls were set (see `ControlInput.compact`) and the widest each may be, stage units */
+  readonly controls: { readonly compact: 0 | 1 | 2; readonly room: number; readonly scroll: ScrollArea | null };
 }
 
 interface Forced {
@@ -652,6 +664,12 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
 
   /** the widest a control may be, in its layer's plane units: the room the flow has across */
   const controlRoom = (span: ElementSpan, fit: CanvasFit): number => fit.flow.width / planeScale(span.style.layer, viewport);
+  /** how this scene's controls are set at `time`, as the flow reserved room for them: the widest, and how closely (read after the epochs are laid out) */
+  const controlSetting = (span: ElementSpan, fit: CanvasFit, time: number): { readonly maxWidth: number; readonly compact: 0 | 1 | 2 } => {
+    const found = sceneEpochAt(span.scene, time);
+    if (found === null) return { maxWidth: controlRoom(span, fit), compact: 0 };
+    return { maxWidth: found.epoch.controls.room / planeScale(span.style.layer, viewport), compact: found.epoch.controls.compact };
+  };
 
   /** a card with no place of its own stands in the flow */
   function cardIsInFlow(style: ElementStyle): boolean {
@@ -744,6 +762,7 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
   };
 
   const besideOf = new Map<string, boolean>();
+  const sceneSetting = new Map<string, number>();
   const needOf = new Map<string, number>();
   for (const start of starts) {
     const look = specAt(start);
@@ -761,7 +780,7 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
     // what the controls are sized for: the flow's width, which only a side-by-side layout narrows
     const first = planStage({ viewport, look, layout: scene.layout, blocks: blocks.list, flowHeight: () => 0, flowOrder: null, footHeight: () => 0 });
     const sceneFit = fitIn(scene.canvas, first.picture ?? safe, first.flow, viewport);
-    const items: LayoutItem[] = present.map((element) => {
+    const baseItems: LayoutItem[] = present.map((element) => {
       const template = templateOf(element);
       const source = sourceOf(element);
       const rendered = template.reactive ? renderTemplate(template, source.text, source.emphasis, (id) => controlNamed(id, start)) : null;
@@ -780,117 +799,223 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
         replaces: element.replaces,
       };
     });
-    const liveControls: ElementSpan[] = [];
-    // a control takes a line's place in the flow, or its `at=`, as a block of the size it will be
-    for (const span of controlSpans) {
-      if (!span.carried && (span.enter === null || span.enter.start > start)) continue;
-      const gone = exitOf(span);
-      if (gone !== null && gone.start <= start) continue;
-      const spec = controlSpecOf(span);
-      if (spec === null || span.parent !== null) continue;
-      const layout = controlLayoutOf({ span, value: spec.value, mood: CALM, maxWidth: controlRoom(span, sceneFit), look, viewport, fit: sceneFit });
-      if (layout === null) continue;
-      liveControls.push(span);
-      items.push({ key: span.key, order: span.order, text: '', emphasis: [], style: laidStyle(styleAt(span, start)), struck: false, replaces: null, reserve: { width: layout.width, height: layout.height } });
-    }
-    // a card of controls takes the room it will fill, as one block of the flow, so that words and controls after it stand clear of it
-    for (const group of drawn) {
-      if (group.figure?.kind !== 'group' || group.figure.card === undefined) continue;
-      if (!group.carried && (group.enter === null || group.enter.start > start)) continue;
-      const gone = exitOf(group);
-      if (gone !== null && gone.start <= start) continue;
-      const style = styleAt(group, start);
-      if (!cardIsInFlow(style)) continue;
-      const room = cardRoom(group, start, look, sceneFit);
-      if (room === null) continue;
-      liveControls.push(group);
-      items.push({ key: group.key, order: group.order, text: '', emphasis: [], style: { ...laidStyle(style), stay: 'pin' }, struck: false, replaces: null, reserve: { width: room.outer.width, height: room.outer.height } });
-    }
-    // The words and the choices are measured across the column; the plan divides the stage; the canvas is fitted into the picture's region.
-    // what the scene will still say is counted for the plan too, so that the room the blocks and the foot are given is the one they keep
-    const comingItems: LayoutItem[] = elements
-      .filter((element) => element.scene === scene.id && !element.carried && element.replaces === null && element.enter !== null && element.enter.start > start)
-      .map((element) => ({ key: element.key, order: element.order, text: element.text, emphasis: element.emphasis, style: laidStyle(styleAt(element, element.enter?.start ?? start)), struck: false, replaces: null }));
-    // a subject block with the words that refer to it, on a wide stage: it takes the lead room and the words stand beside it (decided once for the scene,
-    // from everything the scene will say, so that nothing moves from one side to the other as lines arrive)
-    const unpinnedBlocks = blocks.list.filter((block) => block.kind !== 'picture' && block.pinned === null);
-    const bare = !blocks.list.some((block) => block.kind === 'picture' || block.pinned !== null);
-    let beside = false;
-    if (viewport.width >= 900 && viewport.width >= 1.5 * viewport.height && bare && unpinnedBlocks.length === 1 && unpinnedBlocks[0]?.kind === 'structure' && scene.layout !== 'figure' && scene.layout !== 'caption' && scene.layout !== 'solo') {
-      const known = besideOf.get(scene.id);
-      if (known !== undefined) beside = known;
-      else {
-        // everything the scene says, whether or not it is on stage at this moment: the same answer at every moment, and at rest
-        const all: LayoutItem[] = elements.filter((element) => element.scene === scene.id && element.replaces === null).map((element) => ({ key: element.key, order: element.order, text: element.text, emphasis: element.emphasis, style: laidStyle(styleAt(element, element.enter?.start ?? start)), struck: false, replaces: null }));
-        const flat: LayoutInput = { viewport, look, layout: scene.layout, align: scene.align, expected: null, items: all, foot: safe };
-        beside = needsOf(flat, safe.width).flow > safe.height * BESIDE_WORDS_SHARE;
-        besideOf.set(scene.id, beside);
-      }
-    }
-    // A wide stage with controls on it sets them in a column of their own, to the left, and the words to the right: the controls keep their
-    // place whatever the words do, and neither covers the other. A narrow stage keeps one column.
-    const withControls = controlSpans.some((span) => span.scene === scene.id && span.parent === null) || drawn.some((group) => group.scene === scene.id && group.figure?.kind === 'group' && group.figure.card !== undefined);
-    const arrLayout: Layout = withControls && !beside && viewport.width >= 900 && viewport.width >= 1.5 * viewport.height && (scene.layout === 'stack' || scene.layout === 'caption' || scene.layout === 'solo') ? 'split' : scene.layout;
-    const sides = arrLayout === 'split' ? (scene.layout === 'split' ? splitSides(schedule, scene.id) : new Map<string, 'left' | 'right'>([...controlSpans, ...drawn].filter((span) => span.scene === scene.id).map((span): [string, 'left' | 'right'] => [span.key, 'left']).concat(elements.filter((span) => span.scene === scene.id).map((span): [string, 'left' | 'right'] => [span.key, 'right'])))) : undefined;
-    const probe: LayoutInput = { viewport, look, layout: arrLayout, align: scene.align, expected: valueAt(scene.expected, start, null), items: [...items, ...comingItems], foot: safe, ...(sides === undefined ? {} : { sides }) };
-    const needs = needsOf(probe, safe.width);
-    // a scene's words never ask for less than they did a moment ago, so the picture does not breathe as lines come and go
-    const floor = flowFloor.get(scene.id) ?? 0;
-    const wanted = needs.flow > 0 ? Math.max(needs.flow, floor) : floor;
-    // where the scene's words begin, among its blocks, is a fact of the scene, not of the moment: words that have retired still say which side they were on,
-    // so that a table does not hop above and below the words as the first lines leave
-    const firstWord = elements.reduce((least, element) => (element.scene === scene.id && cardIsInFlow(styleAt(element, element.enter?.start ?? start)) ? Math.min(least, element.order) : least), Number.POSITIVE_INFINITY);
-    const planWith = (list: readonly StageBlock[]): StagePlan =>
-      planStage({
-        viewport,
-        look,
-        layout: scene.layout,
-        blocks: list,
-        beside,
-        flowHeight: (width) => (wanted <= 0 ? 0 : Math.max(floor, width === safe.width ? wanted : needsOf(probe, width).flow)),
-        flowOrder: needs.order === null ? null : Math.min(needs.order, firstWord),
-        flowLeast: (width) => (width === safe.width ? needs.least : needsOf(probe, width).least),
-        footHeight: (width) => (width === safe.width ? needs.foot : needsOf(probe, width).foot),
-      });
-    // Planned twice: the first plan gives a structure the room the stage allows it; the engine is run in that room, and a structure it had to cut or
-    // shrink below reading size is asked again with the room it really needs (the words give way to it, down to their own least: the headings and a line under them).
-    let plan = planWith(blocks.list);
-    const grown = blocks.list.map((block) => {
-      if (block.kind !== 'structure' || block.pinned !== null) return block;
-      const room = plan.rooms.get(block.key);
-      const span = drawnByKey.get(block.key);
-      if (room === undefined || span === undefined) return block;
-      const id = `${block.key}|${viewport.width}x${viewport.height}|${Math.round(room.width)}|${look.id}`;
-      let need = needOf.get(id);
-      if (need === undefined) {
-        const args = { viewport, look, fit: sceneFit, scope: scopeOf([...cindex.ids], (name) => controlNamed(name, 1e9)), ...(context.engine === undefined ? {} : { engine: context.engine }) };
-        // the first height at which the engine neither cuts nor shrinks the structure below reading size, within what the stage can give; failing
-        // that, the first at which it does not cut it; failing that, all the stage has
-        let uncut: number | null = null;
-        let readable: number | null = null;
-        const heights = [1, 1.15, 1.3, 1.5, 1.75, 2.1, 2.5].map((more) => Math.min(room.height * more, safe.height)).filter((h, i, all) => i === 0 || h > (all[i - 1] as number) + 1);
-        for (const height of heights) {
-          const probed = probeStructure(span, schedule, { ...args, room: { ...room, height } });
-          if (probed === null) {
-            readable = room.height;
-            break;
-          }
-          if (probed.crowded) continue;
-          uncut ??= height;
-          if (probed.shrink >= READ_SHRINK) {
-            readable = height;
-            break;
-          }
+    const solve = (controlFit: CanvasFit, level: number, columns: 1 | 2, scroll = false) => {
+      // The words and the choices are measured across the column; the plan divides the stage; the canvas is fitted into the picture's region.
+      // what the scene will still say is counted for the plan too, so that the room the blocks and the foot are given is the one they keep
+      const comingItems: LayoutItem[] = elements
+        .filter((element) => element.scene === scene.id && !element.carried && element.replaces === null && element.enter !== null && element.enter.start > start)
+        .map((element) => ({ key: element.key, order: element.order, text: element.text, emphasis: element.emphasis, style: laidStyle(styleAt(element, element.enter?.start ?? start)), struck: false, replaces: null }));
+      // a subject block with the words that refer to it, on a wide stage: it takes the lead room and the words stand beside it (decided once for the scene,
+      // from everything the scene will say, so that nothing moves from one side to the other as lines arrive)
+      const unpinnedBlocks = blocks.list.filter((block) => block.kind !== 'picture' && block.pinned === null);
+      const bare = !blocks.list.some((block) => block.kind === 'picture' || block.pinned !== null);
+      let beside = false;
+      if (viewport.width >= 900 && viewport.width >= 1.5 * viewport.height && bare && unpinnedBlocks.length === 1 && unpinnedBlocks[0]?.kind === 'structure' && scene.layout !== 'figure' && scene.layout !== 'caption' && scene.layout !== 'solo') {
+        const known = besideOf.get(scene.id);
+        if (known !== undefined) beside = known;
+        else {
+          // everything the scene says, whether or not it is on stage at this moment: the same answer at every moment, and at rest
+          const all: LayoutItem[] = elements.filter((element) => element.scene === scene.id && element.replaces === null).map((element) => ({ key: element.key, order: element.order, text: element.text, emphasis: element.emphasis, style: laidStyle(styleAt(element, element.enter?.start ?? start)), struck: false, replaces: null }));
+          const flat: LayoutInput = { viewport, look, layout: scene.layout, align: scene.align, expected: null, items: all, foot: safe };
+          beside = needsOf(flat, safe.width).flow > safe.height * BESIDE_WORDS_SHARE;
+          besideOf.set(scene.id, beside);
         }
-        need = Math.max(readable ?? uncut ?? safe.height, room.height);
-        if (need <= room.height + 1) need = 0;
-        needOf.set(id, need);
       }
-      return need > room.height ? { ...block, natural: { ...block.natural, height: Math.max(block.natural.height, need) } } : block;
-    });
-    if (grown.some((block, i) => block !== blocks.list[i])) plan = planWith(grown);
-    flowFloor.set(scene.id, wanted);
-    const fit = fitIn(scene.canvas, plan.picture ?? safe, plan.flow, viewport);
+      // A wide stage with controls on it sets them in a column of their own, to the left, and the words to the right: the controls keep their
+      // place whatever the words do, and neither covers the other. A narrow stage keeps one column.
+      const withControls = controlSpans.some((span) => span.scene === scene.id && span.parent === null) || drawn.some((group) => group.scene === scene.id && group.figure?.kind === 'group' && group.figure.card !== undefined);
+      const arrLayout: Layout = withControls && !beside && viewport.width >= 900 && viewport.width >= 1.5 * viewport.height && (scene.layout === 'stack' || scene.layout === 'caption' || scene.layout === 'solo') ? 'split' : scene.layout;
+      const sides = arrLayout === 'split' ? (scene.layout === 'split' ? splitSides(schedule, scene.id) : new Map<string, 'left' | 'right'>([...controlSpans, ...drawn].filter((span) => span.scene === scene.id).map((span): [string, 'left' | 'right'] => [span.key, 'left']).concat(elements.filter((span) => span.scene === scene.id).map((span): [string, 'left' | 'right'] => [span.key, 'right'])))) : undefined;
+      // what the controls may be wide: the column they stand in (half of it when they stand two to a row), at the width the flow really has
+      const roomInput: LayoutInput = { viewport, look, layout: arrLayout, align: scene.align, expected: null, items: [], foot: safe, ...(sides === undefined ? {} : { sides }), ...(columns === 2 ? { controlColumns: 2 as const } : {}) };
+      // a scrolling area keeps a column of its own at the right for its cues
+      const cueW = scroll ? targetPx() / planeScale('mid', viewport) : 0;
+      const roomRaw = controlRoomOf(roomInput, controlFit.flow);
+      const roomWide = scroll ? Math.max(1, roomRaw - (columns === 2 ? cueW / 2 : cueW)) : roomRaw;
+      const roomOf = (span: ElementSpan): number => roomWide / planeScale(span.style.layer, viewport);
+      const compact = (level === 1 ? 1 : level >= 2 ? 2 : 0) as 0 | 1 | 2;
+      const items: LayoutItem[] = [...baseItems];
+      const liveControls: ElementSpan[] = [];
+      // the scene's controls that have not come yet: their room is kept for them, so that nothing moves or changes size when they do
+      const upcoming: LayoutItem[] = [];
+      // a controls area that scrolls: every control of the scene stands in it, and the flow reserves the one window
+      const members: { span: ElementSpan; layout: ControlLayout; present: boolean }[] = [];
+      // a control takes a line's place in the flow, or its `at=`, as a block of the size it will be
+      for (const span of controlSpans) {
+        const coming = !span.carried && span.scene === scene.id && span.parent === null && (span.enter === null || span.enter.start > start);
+        if (!span.carried && (span.enter === null || span.enter.start > start) && !coming) continue;
+        const gone = exitOf(span);
+        if (gone !== null && gone.start <= start) continue;
+        const spec = controlSpecOf(span);
+        if (spec === null || span.parent !== null) continue;
+        const layout = controlLayoutOf({ span, value: spec.value, mood: CALM, maxWidth: roomOf(span), look, viewport, fit: controlFit, compact });
+        if (layout === null) continue;
+        if (scroll) {
+          members.push({ span, layout, present: !coming });
+          if (!coming) liveControls.push(span);
+          continue;
+        }
+        if (coming) {
+          upcoming.push({ key: span.key, order: span.order, text: '', emphasis: [], style: laidStyle(styleAt(span, span.enter?.start ?? start)), struck: false, replaces: null, reserve: { width: layout.width, height: layout.height, ...(compact > 0 ? { tight: true } : {}) } });
+          continue;
+        }
+        liveControls.push(span);
+        items.push({ key: span.key, order: span.order, text: '', emphasis: [], style: laidStyle(styleAt(span, start)), struck: false, replaces: null, reserve: { width: layout.width, height: layout.height, ...(compact > 0 ? { tight: true } : {}) } });
+      }
+      let scrollInfo: ScrollArea | null = null;
+      if (scroll && members.length > 0) {
+        const gap = (cellOf('m', viewport, look).height * 0.5 * 0.3) / planeScale('mid', viewport);
+        const gutter = (2 * cellOf('m', viewport, look).width) / planeScale('mid', viewport);
+        const across = columns === 2 ? 2 : 1;
+        const placed = new Map<string, { top: number; dx: number; width: number; height: number }>();
+        const colW = roomWide / planeScale('mid', viewport);
+        let rowTop = 0;
+        let rowHeight = 0;
+        let widest = 0;
+        members.forEach((member, index) => {
+          const col = index % across;
+          if (col === 0) {
+            rowTop = index === 0 ? 0 : rowTop + rowHeight + gap;
+            rowHeight = 0;
+          }
+          rowHeight = Math.max(rowHeight, member.layout.height);
+          placed.set(member.span.key, { top: rowTop, dx: col * (colW + gutter), width: member.layout.width, height: member.layout.height });
+          widest = Math.max(widest, col * (colW + gutter) + member.layout.width);
+        });
+        const contentH = rowTop + rowHeight;
+        const body = cellOf('m', viewport, look).height / planeScale('mid', viewport);
+        // the window is what the stage can spare: the words keep two lines under it
+        const windowH = Math.min(contentH, Math.max(controlFit.flow.height / planeScale('mid', viewport) - 2.5 * body, 2 * rowHeight));
+        const host = members.find((member) => member.present)?.span ?? null;
+        if (host !== null) {
+          scrollInfo = { host: host.key, windowH, contentH, width: widest + cueW, members: placed };
+          items.push({ key: host.key, order: host.order, text: '', emphasis: [], style: laidStyle(styleAt(host, start)), struck: false, replaces: null, reserve: { width: widest + cueW, height: windowH, tight: true } });
+        }
+      }
+      // a card of controls takes the room it will fill, as one block of the flow, so that words and controls after it stand clear of it
+      for (const group of drawn) {
+        if (group.figure?.kind !== 'group' || group.figure.card === undefined) continue;
+        if (!group.carried && (group.enter === null || group.enter.start > start)) continue;
+        const gone = exitOf(group);
+        if (gone !== null && gone.start <= start) continue;
+        const style = styleAt(group, start);
+        if (!cardIsInFlow(style)) continue;
+        const room = cardRoom(group, start, look, controlFit);
+        if (room === null) continue;
+        liveControls.push(group);
+        items.push({ key: group.key, order: group.order, text: '', emphasis: [], style: { ...laidStyle(style), stay: 'pin' }, struck: false, replaces: null, reserve: { width: room.outer.width, height: room.outer.height } });
+      }
+      const probe: LayoutInput = { viewport, look, layout: arrLayout, align: scene.align, expected: valueAt(scene.expected, start, null), items: [...items, ...comingItems, ...upcoming], foot: safe, ...(sides === undefined ? {} : { sides }) };
+      const needs = needsOf(probe, safe.width);
+      // a scene's words never ask for less than they did a moment ago, so the picture does not breathe as lines come and go
+      const floor = flowFloor.get(scene.id) ?? 0;
+      const wanted = needs.flow > 0 ? Math.max(needs.flow, floor) : floor;
+      // where the scene's words begin, among its blocks, is a fact of the scene, not of the moment: words that have retired still say which side they were on,
+      // so that a table does not hop above and below the words as the first lines leave
+      const firstWord = elements.reduce((least, element) => (element.scene === scene.id && cardIsInFlow(styleAt(element, element.enter?.start ?? start)) ? Math.min(least, element.order) : least), Number.POSITIVE_INFINITY);
+      const planWith = (list: readonly StageBlock[]): StagePlan =>
+        planStage({
+          viewport,
+          look,
+          layout: scene.layout,
+          blocks: list,
+          beside,
+          flowHeight: (width) => (wanted <= 0 ? 0 : Math.max(floor, width === safe.width ? wanted : needsOf(probe, width).flow)),
+          flowOrder: needs.order === null ? null : Math.min(needs.order, firstWord),
+          flowLeast: (width) => (width === safe.width ? needs.least : needsOf(probe, width).least),
+          footHeight: (width) => (width === safe.width ? needs.foot : needsOf(probe, width).foot),
+        });
+      // Planned twice: the first plan gives a structure the room the stage allows it; the engine is run in that room, and a structure it had to cut or
+      // shrink below reading size is asked again with the room it really needs (the words give way to it, down to their own least: the headings and a line under them).
+      let plan = planWith(blocks.list);
+      const grown = blocks.list.map((block) => {
+        if (block.kind !== 'structure' || block.pinned !== null) return block;
+        const room = plan.rooms.get(block.key);
+        const span = drawnByKey.get(block.key);
+        if (room === undefined || span === undefined) return block;
+        const id = `${block.key}|${viewport.width}x${viewport.height}|${Math.round(room.width)}|${look.id}`;
+        let need = needOf.get(id);
+        if (need === undefined) {
+          const args = { viewport, look, fit: sceneFit, scope: scopeOf([...cindex.ids], (name) => controlNamed(name, 1e9)), ...(context.engine === undefined ? {} : { engine: context.engine }) };
+          // the first height at which the engine neither cuts nor shrinks the structure below reading size, within what the stage can give; failing
+          // that, the first at which it does not cut it; failing that, all the stage has
+          let uncut: number | null = null;
+          let readable: number | null = null;
+          const heights = [1, 1.15, 1.3, 1.5, 1.75, 2.1, 2.5].map((more) => Math.min(room.height * more, safe.height)).filter((h, i, all) => i === 0 || h > (all[i - 1] as number) + 1);
+          for (const height of heights) {
+            const probed = probeStructure(span, schedule, { ...args, room: { ...room, height } });
+            if (probed === null) {
+              readable = room.height;
+              break;
+            }
+            if (probed.crowded) continue;
+            uncut ??= height;
+            if (probed.shrink >= READ_SHRINK) {
+              readable = height;
+              break;
+            }
+          }
+          need = Math.max(readable ?? uncut ?? safe.height, room.height);
+          if (need <= room.height + 1) need = 0;
+          needOf.set(id, need);
+        }
+        return need > room.height ? { ...block, natural: { ...block.natural, height: Math.max(block.natural.height, need) } } : block;
+      });
+      if (grown.some((block, i) => block !== blocks.list[i])) plan = planWith(grown);
+      flowFloor.set(scene.id, wanted);
+      const fit = fitIn(scene.canvas, plan.picture ?? safe, plan.flow, viewport);
+      // whether the controls, set as they are, fit what the plan gave the flow: alone, and with the least the words can be (a split stage keeps them apart)
+      const asked = [...items, ...upcoming].filter((item) => item.reserve !== undefined && item.style.tap !== true);
+      const flowOf = (list: readonly LayoutItem[]) => ({ ...probe, items: list, expected: null });
+      const controlNeed = asked.length === 0 ? 0 : controlsNeedOf(flowOf(asked), plan.flow);
+      const wordsLeast = asked.length === 0 || arrLayout === 'split' ? 0 : Math.min(needsOf(flowOf(items.filter((item) => item.reserve === undefined)), plan.flow.width).least, cellOf('m', viewport, look).height);
+      // and as the flow really sets them: nothing of what is on stage may stand past the bottom of its room
+      const trial = asked.length === 0 ? null : arrange({ ...probe, items, expected: null, flow: plan.flow, ...(plan.foot === null ? {} : { foot: plan.foot }) });
+      const bottom = plan.flow.y + plan.flow.height + 1;
+      const flowing = new Set(items.filter((item) => item.style.tap !== true).map((item) => item.key));
+      const spills = trial !== null && [...trial.placements.values()].some((placed) => flowing.has(placed.key) && placed.y + placed.height / 2 > bottom);
+      const fits = controlNeed + wordsLeast <= plan.flow.height + 1 && !spills;
+      // two to a row only where a control still has room for its words
+      const viable = columns === 1 || roomWide >= 14 * cellOf('m', viewport, look).width;
+
+      return { items, liveControls, plan, fit, arrLayout, sides, fits: fits || scroll, viable, compact, columns: scroll ? (1 as const) : columns, room: roomWide, scrollInfo };
+    };
+    // Controls are measured for the room they will really have (the flow's width once the stage is divided, which the controls' own height helps decide),
+    // so the flow reserves what they take. When a column of them does not fit, they are set closer, then on one line, then two to a row.
+    let controlFit = sceneFit;
+    let solved!: ReturnType<typeof solve>;
+    let ran = false;
+    const from = sceneSetting.get(scene.id) ?? 0;
+    const tries: readonly (readonly [number, 1 | 2])[] = [[0, 1], [1, 1], [2, 1], [2, 2]];
+    const roomy = viewport.width >= 560;
+    for (const [tryIndex, [level, columns]] of tries.entries()) {
+      // the same answer at every moment of the scene: it can only get closer, never looser, as the scene goes on
+      if (tryIndex < from || (columns === 2 && !roomy)) continue;
+      if (tryIndex >= tries.length) break;
+      sceneSetting.set(scene.id, tryIndex);
+      for (let pass = 0; pass < 3; pass += 1) {
+        solved = solve(controlFit, level, columns);
+        ran = true;
+        const settled = Math.abs(solved.fit.flow.width - controlFit.flow.width) < 0.5 && Math.abs(solved.fit.flow.height - controlFit.flow.height) < 0.5;
+        controlFit = solved.fit;
+        if (settled) break;
+      }
+      if (solved.fits) break;
+    }
+    // none fits: the controls stand in an area of their own that scrolls, in two columns where there is width for them
+    if (!ran || !solved.fits) {
+      const wide = roomy && solve(controlFit, 2, 2).viable;
+      sceneSetting.set(scene.id, tries.length);
+      for (let pass = 0; pass < 3; pass += 1) {
+        solved = solve(controlFit, 2, wide ? 2 : 1, true);
+        const settled = Math.abs(solved.fit.flow.width - controlFit.flow.width) < 0.5 && Math.abs(solved.fit.flow.height - controlFit.flow.height) < 0.5;
+        controlFit = solved.fit;
+        if (settled) break;
+      }
+    }
+    const { items, liveControls, arrLayout, sides } = solved;
+    let plan = solved.plan;
+    const fit = solved.fit;
     // text given a point of the canvas is set by the layout, which keeps it off other text; this is where it wants its centre
     const pins = new Map<string, { x: number; y: number; k: number }>();
     // words on the picture keep their size against the picture: when the plan gives it less than the whole stage, they shrink with it
@@ -963,6 +1088,7 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
       ...(plan.foot === null ? {} : { foot: plan.foot }),
       pins,
       ...(sides === undefined ? {} : { sides }),
+      ...(solved.columns === 2 ? { controlColumns: 2 as const } : {}),
     });
     for (const key of arrangement.overflow) {
       const element = byKey.get(key);
@@ -971,7 +1097,7 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
       forced.set(key, { start, end: start + exitSeconds(effect, paceAt(start)), effect });
     }
     const mood = moodAt(start, look);
-    epochs.push({ start, look, snap: mood.snap, arrangement, scene: scene.id, plan, fit, kinds: blocks.kinds });
+    epochs.push({ start, look, snap: mood.snap, arrangement, scene: scene.id, plan, fit, kinds: blocks.kinds, controls: { compact: solved.compact, room: solved.room, scroll: solved.scrollInfo } });
   }
 
   const epochIndexAt = (time: number): number => {
@@ -1749,6 +1875,13 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
     const gone = exitOf(span);
     return gone === null || tq < gone.end;
   };
+  /** The scrolling controls area this control stands in at `tq`, when its scene set them in one */
+  const scrollAreaOf = (span: ElementSpan, tq: number): ScrollArea | null => {
+    if (span.parent !== null) return null;
+    const found = sceneEpochAt(span.scene, tq);
+    const area = found?.epoch.controls.scroll ?? null;
+    return area !== null && area.members.has(span.key) ? area : null;
+  };
   /** The controls of a `card` (or any group) stand in a column inside it, one under another, where the group was put. */
   const stackOf = (group: ElementSpan, tq: number, look: LookSpec) => {
     const members = controlSpans.filter((member) => member.parent === group.key && presentControl(member, tq)).sort((a, b) => a.order - b.order);
@@ -1800,10 +1933,27 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
       const layout = controlLayoutOf({ span, value, mood, maxWidth: (stack.fit.flow.width * 0.8) / stack.ps, look, viewport, fit: stack.fit });
       return layout === null ? null : { pose: null, layout, fit: stack.fit, centre: slot };
     }
+    const area = scrollAreaOf(span, tq);
+    if (area !== null) {
+      const member = area.members.get(span.key);
+      const host = poseAt(area.host, tq, null);
+      if (member === undefined || host === null) return null;
+      const fit = fitOfElement(span, look, tq);
+      const setting = controlSetting(span, fit, tq);
+      const layout = controlLayoutOf({ span, value, mood, maxWidth: setting.maxWidth, look, viewport, fit, compact: setting.compact });
+      if (layout === null) return null;
+      const left = host.x + (host.lines[0]?.x ?? -host.width / 2);
+      const top = host.y - host.height / 2;
+      const max = Math.max(0, area.contentH - area.windowH);
+      const offset = Math.min(max, Math.max(0, runtime.scroll.get(span.scene) ?? 0));
+      const centre = { x: left + member.dx + layout.width / 2, y: top + member.top + layout.height / 2 - offset };
+      return { pose: host, layout, fit, centre, window: { box: { x: left, y: top, width: area.width, height: area.windowH }, scene: span.scene, offset, max, step: Math.max(1, area.contentH / Math.max(1, area.members.size)) } };
+    }
     const pose = poseAt(span.key, tq, gone === null ? null : gone.start);
     if (pose === null) return null;
     const fit = fitOfElement(span, look, tq);
-    const layout = controlLayoutOf({ span, value, mood, maxWidth: controlRoom(span, fit), look, viewport, fit });
+    const setting = controlSetting(span, fit, tq);
+    const layout = controlLayoutOf({ span, value, mood, maxWidth: setting.maxWidth, look, viewport, fit, compact: setting.compact });
     if (layout === null) return null;
     const left = pose.x + (pose.lines[0]?.x ?? -pose.width / 2);
     return { pose, layout, fit, centre: { x: left + layout.width / 2, y: pose.y } };
@@ -2652,16 +2802,22 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
         const site = siteOf(span, tq, drawLook, moodOf(runtime, span.key), value);
         if (site === null) continue;
         const { layout, centre } = site;
+        const window = 'window' in site ? site.window : undefined;
         const box: Box = { x: centre.x - layout.width / 2, y: centre.y - layout.height / 2, width: layout.width, height: layout.height };
+        // in a scrolling area the scene's controls show through its window only, and the first of them draws the cues that say there is more
+        const cues = window === undefined || span.key !== (scrollAreaOf(span, tq)?.host ?? null) ? [] : scrollCues(span.key, window.box, window.offset, window.max, targetPx() / planeScale(span.style.layer, viewport));
         const seen = out.owners.length;
-        structures.renderOwner({ structure: span, owner: span, parts: placeParts(layout.parts, centre.x, centre.y), before: null, q: 1, epochStart: 0, ownerBox: box, tq, aq, look: drawLook, style: styleAt(boundElement(span, tq, aq, cindex, runtime).element, tq) }, out);
+        structures.renderOwner({ structure: span, owner: span, parts: [...placeParts(layout.parts, centre.x, centre.y), ...cues], before: null, q: 1, epochStart: 0, ownerBox: box, tq, aq, look: drawLook, style: styleAt(boundElement(span, tq, aq, cindex, runtime).element, tq), ...(window === undefined ? {} : { cut: window.box }) }, out);
         const state = out.owners.length > seen ? out.owners[out.owners.length - 1] : undefined;
         if (state === undefined) continue;
         const z = layerZ(span.style.layer, viewport);
         const p = projectToScreen({ x: centre.x, y: centre.y, z }, camera, viewport);
-        const input = controlInputOf({ span, value, mood: moodOf(runtime, span.key), maxWidth: controlRoom(span, site.fit), look: drawLook, viewport, fit: site.fit });
+        const setting = controlSetting(span, site.fit, tq);
+        const input = controlInputOf({ span, value, mood: moodOf(runtime, span.key), maxWidth: setting.maxWidth, look: drawLook, viewport, fit: site.fit, compact: setting.compact });
         if (input === null) continue;
-        sites.push({ key: span.key, id: span.id, span, layout, input, value, layer: span.style.layer, centre, screen: { x: p.x, y: p.y, scale: p.scale }, enabled: state.phase === 'on' && state.opacity > 0.5 });
+        // half of it in the window is enough to work it; less and it waits to be scrolled to
+        const shown = window === undefined ? 1 : Math.max(0, Math.min(box.y + box.height, window.box.y + window.box.height) - Math.max(box.y, window.box.y)) / Math.max(1, box.height);
+        sites.push({ key: span.key, id: span.id, span, layout, input, value, layer: span.style.layer, centre, screen: { x: p.x, y: p.y, scale: p.scale }, enabled: state.phase === 'on' && state.opacity > 0.5 && shown >= 0.5, ...(window === undefined ? {} : { window }) });
       }
       // the frame of each card that holds controls, round the column they stand in
       for (const group of schedule.elements) {

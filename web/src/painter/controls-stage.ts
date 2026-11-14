@@ -8,12 +8,13 @@ import type { BlockPart } from '../contracts/blocks';
 import type { ControlInput, ControlLayout, ControlMood } from '../contracts/controls';
 import type { ElementSpan, ControlValue } from '@conduit/language';
 import type { LookSpec } from '../contracts/look';
-import type { Viewport } from '../contracts/space';
+import type { Box, Viewport } from '../contracts/space';
 import { planeScale } from '../contracts/space';
 import type { CanvasFit } from './canvas';
 import { controlEngine } from './controls';
 import { lookOf, measurerFor } from './structures';
 import { controlSpecOf } from './bound';
+import { chevron, rectLine, segment, shapePart } from './controls/shapes';
 
 import { targetPx } from './target';
 
@@ -29,20 +30,22 @@ export interface ControlLayoutArgs {
   readonly look: LookSpec;
   readonly viewport: Viewport;
   readonly fit: CanvasFit;
+  /** how closely the scene's controls are set (see `ControlInput.compact`) */
+  readonly compact?: 0 | 1 | 2;
 }
 
 /** What the engine is handed for one control: also what it is asked to turn a pointer into a value with. */
 export function controlInputOf(args: ControlLayoutArgs): ControlInput | null {
-  const { span, value, mood, maxWidth, look, viewport, fit } = args;
+  const { span, value, mood, maxWidth, look, viewport, fit, compact = 0 } = args;
   const spec = controlSpecOf(span);
   if (spec === null) return null;
   const ps = planeScale(span.style.layer, viewport);
-  return { control: span, spec, value, maxWidth, measure: measurerFor(look, viewport, span.style), look: lookOf(look, viewport, fit, ps), minTarget: targetPx() / ps, mood };
+  return { control: span, spec, value, maxWidth, measure: measurerFor(look, viewport, span.style), look: lookOf(look, viewport, fit, ps), minTarget: targetPx() / ps, mood, compact };
 }
 
 export function controlLayoutOf(args: ControlLayoutArgs): ControlLayout | null {
   const { span, value, mood, maxWidth, look, viewport } = args;
-  const key = [span.key, String(value), mood.hover ? 1 : 0, mood.pressed ?? '', mood.focus ? 1 : 0, mood.open ? 1 : 0, maxWidth.toFixed(1), targetPx(), look.id, look.name, viewport.width, viewport.height, span.text, span.style.size, span.style.face ?? ''].join('|');
+  const key = [span.key, String(value), mood.hover ? 1 : 0, mood.pressed ?? '', mood.focus ? 1 : 0, mood.open ? 1 : 0, maxWidth.toFixed(1), targetPx(), look.id, look.name, viewport.width, viewport.height, span.text, span.style.size, span.style.face ?? '', args.compact ?? 0].join('|');
   const known = LAYOUTS.get(key);
   if (known !== undefined) return known;
   const input = controlInputOf(args);
@@ -78,4 +81,39 @@ export interface ControlSite {
   readonly screen: { readonly x: number; readonly y: number; readonly scale: number };
   /** worked only when it is whole: not entering, not leaving */
   readonly enabled: boolean;
+  /** a control in a controls area that scrolls: the box (its layer's plane units) it shows through, and how far the area can scroll */
+  readonly window?: { readonly box: Box; readonly scene: string; readonly offset: number; readonly max: number; readonly step: number };
+}
+
+/** Where the cues of a scrolling controls area stand, in the area's plane units: a column of its own at the window's right, the way up at its top, the way down at its foot. */
+export function scrollCueBoxes(window: Box, target: number): { readonly up: Box; readonly down: Box; readonly track: Box } {
+  const x = window.x + window.width - target;
+  return {
+    up: { x, y: window.y, width: target, height: target },
+    down: { x, y: window.y + window.height - target, width: target, height: target },
+    track: { x: x + target / 2 - 1, y: window.y + target, width: 2, height: Math.max(0, window.height - 2 * target) },
+  };
+}
+
+/** What draws the cues, in plane units, owned by one control of the area: a chevron at each end, and a track with a thumb between that says how far the area is scrolled. */
+export function scrollCues(owner: string, window: Box, offset: number, max: number, target: number): BlockPart[] {
+  const cue = scrollCueBoxes(window, target);
+  const parts: BlockPart[] = [];
+  const s = target / 5;
+  const mid = (b: Box): { x: number; y: number } => ({ x: b.x + b.width / 2, y: b.y + b.height / 2 });
+  if (max > 0) {
+    const up = mid(cue.up);
+    const down = mid(cue.down);
+    const role = (live: boolean): 'line' | 'grid' => (live ? 'line' : 'grid');
+    parts.push(shapePart(owner, 'cue-up', role(offset > 0.5), [{ closed: false, points: [{ x: up.x - s, y: up.y + s / 2 }, { x: up.x, y: up.y - s / 2 }, { x: up.x + s, y: up.y + s / 2 }] }]));
+    parts.push(shapePart(owner, 'cue-down', role(offset < max - 0.5), [chevron(down.x, down.y, 2 * s, 'down')]));
+    if (cue.track.height > 0) {
+      const share = Math.min(1, window.height / (window.height + max));
+      const thumb = Math.max(cue.track.height * share, target / 2);
+      const top = cue.track.y + (cue.track.height - thumb) * (offset / max);
+      parts.push(shapePart(owner, 'cue-track', 'grid', [segment(cue.track.x + 1, cue.track.y, cue.track.x + 1, cue.track.y + cue.track.height)]));
+      parts.push(shapePart(owner, 'cue-thumb', 'bar', [rectLine({ x: cue.track.x - 1, y: top, width: 4, height: thumb }, 2)]));
+    }
+  }
+  return parts;
 }

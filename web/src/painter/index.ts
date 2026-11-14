@@ -4,6 +4,7 @@ import { setTarget, targetPx } from './target';
 import { STRUCTURES_READY } from './blocks';
 import { CONTROLS_READY, controlEngine, createControlStore, nextEases } from './controls';
 import { controlIndexOf, createRuntime, controlSpecOf, stateReader } from './bound';
+import { scrollCueBoxes } from './controls-stage';
 import type { ControlSite } from './controls-stage';
 import type { ChartData } from './charts';
 import type { ChartView } from '../contracts/chart';
@@ -1147,6 +1148,7 @@ export function createPainter(options: PainterOptions): Painter {
     for (let i = sites.length - 1; i >= 0; i -= 1) {
       const site = sites[i] as ControlSite;
       if (!site.enabled) continue;
+      if (site.window !== undefined && !within(screenBox(site, site.window.box), x, y)) continue;
       const lx = (x - site.screen.x) / site.screen.scale;
       const ly = (y - site.screen.y) / site.screen.scale;
       let best: ControlSite['layout']['zones'][number] | null = null;
@@ -1174,6 +1176,45 @@ export function createPainter(options: PainterOptions): Painter {
     return null;
   };
   const localOf = (site: ControlSite, x: number, y: number): { x: number; y: number } => ({ x: (x - site.screen.x) / site.screen.scale, y: (y - site.screen.y) / site.screen.scale });
+
+  // Scrolling controls areas ----------------------------------------------------------------------------------------------
+  /** a box in a site's layer plane units, on screen (host CSS pixels) */
+  const screenBox = (site: ControlSite, b: Box): Box => ({ x: site.screen.x + (b.x - site.centre.x) * site.screen.scale, y: site.screen.y + (b.y - site.centre.y) * site.screen.scale, width: b.width * site.screen.scale, height: b.height * site.screen.scale });
+  const within = (b: Box, x: number, y: number): boolean => x >= b.x && x <= b.x + b.width && y >= b.y && y <= b.y + b.height;
+  /** each scrolling area on stage once, with its window on screen and how it is scrolled */
+  const areasNow = (): { readonly site: ControlSite; readonly window: NonNullable<ControlSite['window']>; readonly box: Box }[] => {
+    const seen = new Set<string>();
+    const out: { site: ControlSite; window: NonNullable<ControlSite['window']>; box: Box }[] = [];
+    for (const site of sitesNow()) {
+      if (site.window === undefined || seen.has(site.window.scene)) continue;
+      seen.add(site.window.scene);
+      out.push({ site, window: site.window, box: screenBox(site, site.window.box) });
+    }
+    return out;
+  };
+  /** scroll an area by `delta` (stage units, positive: down); false when it is already at that end */
+  const scrollArea = (scene: string, delta: number): boolean => {
+    const area = areasNow().find((candidate) => candidate.window.scene === scene);
+    if (area === undefined) return false;
+    const next = Math.min(area.window.max, Math.max(0, area.window.offset + delta));
+    if (Math.abs(next - area.window.offset) < 1e-6) return false;
+    runtime.scroll.set(scene, next);
+    touch();
+    return true;
+  };
+  /** the cue under a point, when it is one: which area and which way */
+  const cueAt = (x: number, y: number): { readonly scene: string; readonly dir: 1 | -1; readonly step: number } | null => {
+    for (const area of areasNow()) {
+      if (area.window.max <= 0) continue;
+      const k = area.site.screen.scale;
+      const target = targetPx();
+      const cue = scrollCueBoxes(area.window.box, target / k);
+      if (within(screenBox(area.site, cue.up), x, y)) return { scene: area.window.scene, dir: -1, step: area.window.step };
+      if (within(screenBox(area.site, cue.down), x, y)) return { scene: area.window.scene, dir: 1, step: area.window.step };
+    }
+    return null;
+  };
+  let scrollGrab: { readonly pointer: number; readonly scene: string; y: number; readonly scale: number } | null = null;
 
   const sayControl = (site: ControlSite, value: ControlValue): void => {
     const spec = site.input.spec;
@@ -1227,6 +1268,17 @@ export function createPainter(options: PainterOptions): Painter {
     else rebuildRest();
   };
 
+  /** a box kept inside the window its control scrolls in: one that is wholly out of it waits at the end it is past, never past the stage */
+  const inWindow = (site: ControlSite, box: Box): Box => {
+    if (site.window === undefined) return box;
+    const win = screenBox(site, site.window.box);
+    const target = targetPx();
+    const top = Math.max(box.y, win.y);
+    const bottom = Math.min(box.y + box.height, win.y + win.height);
+    if (bottom - top >= 1) return { x: box.x, y: top, width: box.width, height: bottom - top };
+    const above = box.y + box.height <= win.y;
+    return { x: box.x, y: above ? win.y : win.y + win.height - Math.min(target, win.height), width: box.width, height: Math.min(target, win.height) };
+  };
   const viewOf = (site: ControlSite): ControlView => {
     const spec = site.input.spec;
     const half = (n: number): number => Math.max(22, (n * site.screen.scale) / 2);
@@ -1250,7 +1302,7 @@ export function createPainter(options: PainterOptions): Painter {
       unit: spec.unit,
       value: site.value,
       valueText: controlText(spec, site.value),
-      box: { x: site.screen.x - w, y: site.screen.y - h, width: 2 * w, height: 2 * h },
+      box: site.window === undefined ? { x: site.screen.x - w, y: site.screen.y - h, width: 2 * w, height: 2 * h } : inWindow(site, { x: site.screen.x - w, y: site.screen.y - h, width: 2 * w, height: 2 * h }),
       enabled: site.enabled,
       send: spec.control === 'button' ? true : spec.send,
       bound: index.driven.some((change) => change.control === site.key),
@@ -1560,6 +1612,19 @@ export function createPainter(options: PainterOptions): Painter {
       }
       return false;
     },
+    wheel(x, y, dy) {
+      const area = areasNow().find((candidate) => candidate.window.max > 0 && within(candidate.box, x, y));
+      return area !== undefined && scrollArea(area.window.scene, dy / area.site.screen.scale);
+    },
+    reveal(id) {
+      const site = sitesNow().find((candidate) => candidate.id === id && candidate.window !== undefined);
+      if (site === undefined || site.window === undefined) return;
+      const top = site.centre.y - site.layout.height / 2;
+      const bottom = top + site.layout.height;
+      const win = site.window.box;
+      if (top < win.y) scrollArea(site.window.scene, top - win.y);
+      else if (bottom > win.y + win.height) scrollArea(site.window.scene, bottom - (win.y + win.height));
+    },
     pointer(input) {
       const { x, y, phase } = input;
       if (x <= -1e5 || y <= -1e5) {
@@ -1583,6 +1648,11 @@ export function createPainter(options: PainterOptions): Painter {
           if (site === undefined || zone === undefined) return true;
           const value = controlEngine.valueAt({ ...site.input, mood: CALM }, site.layout, zone, localOf(site, x, y));
           if (value !== null) holdValue(site, value);
+          return true;
+        }
+        if (scrollGrab !== null && scrollGrab.pointer === input.pointer) {
+          scrollArea(scrollGrab.scene, (scrollGrab.y - y) / scrollGrab.scale);
+          scrollGrab.y = y;
           return true;
         }
         const hit = hitControl(x, y);
@@ -1614,8 +1684,19 @@ export function createPainter(options: PainterOptions): Painter {
             return true;
           }
         }
+        const cue = cueAt(x, y);
+        if (cue !== null) {
+          scrollArea(cue.scene, cue.dir * cue.step);
+          return true;
+        }
         const hit = hitControl(x, y);
         if (hit === null) {
+          // a finger on the area of scrolling controls that is not on a control takes hold of it
+          const held = areasNow().find((area) => area.window.max > 0 && within(area.box, x, y));
+          if (held !== undefined) {
+            scrollGrab = { pointer: input.pointer, scene: held.window.scene, y, scale: held.site.screen.scale };
+            return true;
+          }
           if (runtime.open !== null) {
             runtime.open = null;
             touch();
@@ -1634,6 +1715,10 @@ export function createPainter(options: PainterOptions): Painter {
         return true;
       }
       // up, cancel
+      if (scrollGrab !== null && scrollGrab.pointer === input.pointer) {
+        scrollGrab = null;
+        return true;
+      }
       if (uiGrab !== null && uiGrab.pointer === input.pointer) {
         const held = uiGrab;
         uiGrab = null;

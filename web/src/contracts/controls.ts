@@ -41,6 +41,11 @@ export interface ControlInput {
   /** the smallest side a target may have, stage units: 44 CSS pixels on screen at the control's layer */
   readonly minTarget: number;
   readonly mood: ControlMood;
+  /**
+   * How closely a column that did not fit sets its controls. Absent or 0: as they like. 1: tight, a slider's track sits close under its label.
+   * 2: tight, and a slider's label stands on one line beside its value, cut with an ellipsis where it is too long (the control's accessible name stays whole).
+   */
+  readonly compact?: 0 | 1 | 2;
 }
 
 /** A part of a control that the pointer can work, in the control's own coordinates (origin at its centre, stage units). */

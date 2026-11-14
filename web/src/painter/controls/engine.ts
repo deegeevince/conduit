@@ -168,6 +168,8 @@ interface Beside {
   readonly width: number;
   readonly height: number;
   readonly labelText: MeasuredText;
+  /** the words the label is drawn as when they are not the control's own (cut with an ellipsis) */
+  readonly shown?: string;
 }
 
 /**
@@ -318,12 +320,33 @@ function layoutSlider(input: ControlInput, m: Metrics): ControlLayout {
   const width = Math.min(input.maxWidth, Math.max(SLIDER_MIN_WIDTH, 12 * m.body, oneLine));
   // the value sits by the label, on its last line, and is placed for the widest number the slider can hold
   const widest = [sliderWords(spec, spec.min), sliderWords(spec, spec.max), shown].reduce((a, b) => (input.measure(b, VALUE, width).width > input.measure(a, VALUE, width).width ? b : a));
-  const head = beside(input, m, input.control.text, LABEL, widest, VALUE, width);
+  const compact = input.compact ?? 0;
+  let head: Beside;
+  if (compact >= 2) {
+    // one line: the value keeps its place at the right of the label, the label gives up its end
+    const tailBox = input.measure(widest, VALUE, width);
+    const room = Math.max(m.cellW, width - 2 * m.gap - tailBox.width);
+    const label = fitHead(input, input.control.text, room);
+    const text = input.measure(label, LABEL, 1e6);
+    const high = Math.max(text.height, tailBox.height);
+    head = {
+      label: { x: 0, y: (high - text.height) / 2, width: Math.min(text.width, room), height: text.height },
+      tail: { x: width - tailBox.width, y: (high - tailBox.height) / 2, width: tailBox.width, height: tailBox.height },
+      width,
+      height: high,
+      labelText: { ...text, lines: [] },
+      shown: label,
+    };
+  } else head = beside(input, m, input.control.text, LABEL, widest, VALUE, width);
   const headHeight = Math.max(head.height, m.body);
-  const height = snapUp(m, headHeight + input.minTarget);
+  // tight: the track sits close under the label and the target reaches up behind it, so a column of them takes less height; the target stays whole inside the box
+  const tight = compact >= 1;
+  // the knob stands clear of the words above it whatever the target is
+  const clear = headHeight + m.knob / 2 + 3;
+  const height = tight ? snapUp(m, Math.max(headHeight + input.minTarget * 0.8, clear + input.minTarget / 2)) : snapUp(m, headHeight + input.minTarget);
   const sheet = new Sheet(input.control.key, -width / 2, -height / 2);
   plate(sheet, input, m, width, height, input.look.radius);
-  const trackY = headHeight + input.minTarget / 2;
+  const trackY = tight ? Math.max(clear, height - input.minTarget / 2) : headHeight + input.minTarget / 2;
   const geo = sliderGeo(width, m);
   const share = controlShare(spec, number);
   const kx = geo.x0 + share * (geo.x1 - geo.x0);
@@ -347,12 +370,12 @@ function layoutSlider(input: ControlInput, m: Metrics): ControlLayout {
   sheet.shape('track', hot ? 'frame' : 'grid', (dx, dy) => [segment(x0 + dx, trackY + dy, geo.x1 + width / 2 + dx, trackY + dy)]);
   if (fx > x0) fillBox(sheet, 'filled', 'bar', { x: x0, y: trackY - m.stroke, width: fx - x0, height: 2 * m.stroke }, m.stroke);
   sheet.shape('knob', 'marker', (dx, dy) => [circleLine(fx + dx, trackY + dy, r)]);
-  sheet.text('label', 'words', input.control.text, { x: head.label.x, y: head.label.y, width: Math.min(head.label.width, width), height: head.label.height }, LABEL, 'left');
-  sheet.text('value', 'words', shown, { x: head.tail.x, y: head.tail.y, width: Math.min(head.tail.width, Math.max(0, width - head.tail.x)), height: head.tail.height }, VALUE, 'left');
+  sheet.text('label', 'words', head.shown ?? input.control.text, { x: head.label.x, y: head.label.y, width: Math.min(head.label.width, width), height: head.label.height }, LABEL, 'left');
+  sheet.text('value', 'words', shown, { x: head.tail.x, y: head.tail.y, width: Math.min(head.tail.width, Math.max(0, width - head.tail.x)), height: head.tail.height }, VALUE, compact >= 2 ? 'right' : 'left');
   ring(sheet, width, height, 0, input.mood);
   const target = Math.max(input.minTarget, m.knob);
   sheet.zone('knob', { x: fx - target / 2, y: trackY - target / 2, width: target, height: target }, true);
-  sheet.zone('track', { x: 0, y: headHeight, width, height: input.minTarget }, true);
+  sheet.zone('track', { x: 0, y: tight ? Math.min(trackY - input.minTarget / 2, height - input.minTarget) : headHeight, width, height: input.minTarget }, true);
   return { width, height, parts: sheet.parts, zones: sheet.zones };
 }
 
@@ -504,6 +527,11 @@ function tail(input: ControlInput, text: string, room: number): string {
     else hi = mid - 1;
   }
   return `…${text.slice(text.length - lo)}`;
+}
+
+/** A label cut to `room` on one line: its start, then an ellipsis. */
+function fitHead(input: ControlInput, text: string, room: number): string {
+  return head(input, text, room);
 }
 
 /** The head of `text` that fits `room`, with an ellipsis after it when it was cut: a placeholder is read from its start. */
