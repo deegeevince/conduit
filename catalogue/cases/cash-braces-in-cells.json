@@ -1,0 +1,28 @@
+{
+ "id": "cash-braces-in-cells",
+ "title": "{cash} raw in table cells",
+ "family": "raw-template",
+ "owner": "kit",
+ "kind": "draw",
+ "found": "2026-11-14",
+ "note": "Table cells show the literal {cash} instead of the live value.",
+ "own": [
+  "no-raw-braces"
+ ],
+ "turns": [
+  {
+   "say": "let me change the numbers myself, with sliders and a table",
+   "source": {
+    "log": "20261114-213331-c6",
+    "turns": [
+     "t12"
+    ]
+   },
+   "check": [
+    {
+     "k": "no-raw-braces"
+    }
+   ]
+  }
+ ]
+}

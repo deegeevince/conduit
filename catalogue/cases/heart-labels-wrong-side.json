@@ -1,0 +1,29 @@
+{
+ "id": "heart-labels-wrong-side",
+ "title": "the heart: labels on the wrong side of their parts",
+ "family": "callout-side",
+ "owner": "painter",
+ "kind": "draw",
+ "found": "2026-11-14",
+ "note": "Callouts sit on a chamber that is not theirs and their leaders cross.",
+ "own": [
+  "labels-side",
+  "no-overlap"
+ ],
+ "turns": [
+  {
+   "say": "how a heart pumps blood",
+   "source": {
+    "log": "20261114-213331-c6",
+    "turns": [
+     "t6"
+    ]
+   },
+   "check": [
+    {
+     "k": "labels-side"
+    }
+   ]
+  }
+ ]
+}

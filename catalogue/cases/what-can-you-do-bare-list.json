@@ -1,0 +1,28 @@
+{
+ "id": "what-can-you-do-bare-list",
+ "title": "\"what can you do\" answered as a bare list",
+ "family": "prompt-show-dont-list",
+ "owner": "prompt",
+ "kind": "draw",
+ "found": "2026-11-14",
+ "note": "The answer is a bold list of five capabilities with nothing to try.",
+ "own": [
+  "shows-not-lists"
+ ],
+ "turns": [
+  {
+   "say": "what kinds of things does this expression interface let us do",
+   "source": {
+    "log": "20261114-213331-c6",
+    "turns": [
+     "t13"
+    ]
+   },
+   "check": [
+    {
+     "k": "shows-not-lists"
+    }
+   ]
+  }
+ ]
+}

@@ -1,0 +1,25 @@
+{
+ "id": "flowchart-phone-fit",
+ "title": "flowchart: boxes overlap and run off a phone",
+ "family": "flowchart",
+ "owner": "painter",
+ "kind": "draw",
+ "found": "2026-11-14",
+ "note": "On a phone the flowchart boxes overlap each other, the note covers boxes, and the lower ones run off the bottom.",
+ "own": [
+  "no-overlap",
+  "nothing-cut-off",
+  "legible"
+ ],
+ "turns": [
+  {
+   "say": "explain how a CPU executes an instruction, as a flowchart",
+   "source": {
+    "log": "20261114-145703-c2",
+    "turns": [
+     "t2"
+    ]
+   }
+  }
+ ]
+}

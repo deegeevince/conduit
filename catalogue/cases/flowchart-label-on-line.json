@@ -1,0 +1,29 @@
+{
+ "id": "flowchart-label-on-line",
+ "title": "flowchart: a link label sits on its line",
+ "family": "flowchart",
+ "owner": "painter",
+ "kind": "draw",
+ "found": "2026-11-14",
+ "note": "The \"results\" label lies on the return connector so the line strikes through the word.",
+ "own": [
+  "flow-labels-off-lines",
+  "no-overlap"
+ ],
+ "turns": [
+  {
+   "say": "show the tool calls of one turn of an AI app as a live flow",
+   "source": {
+    "log": "20261114-200136-c2",
+    "turns": [
+     "t24"
+    ]
+   },
+   "check": [
+    {
+     "k": "flow-labels-off-lines"
+    }
+   ]
+  }
+ ]
+}

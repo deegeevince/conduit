@@ -1,0 +1,49 @@
+{
+ "id": "months-strip-scattered",
+ "title": "the months strip scattered",
+ "family": "table-placement",
+ "owner": "painter",
+ "kind": "draw",
+ "found": "2026-11-14",
+ "note": "Twelve labelled cells: the month names are not on their cells (some above, some below, off their x).",
+ "own": [
+  "row-aligned",
+  "words-in-grid",
+  "no-overlap"
+ ],
+ "turns": [
+  {
+   "say": "teach a month puzzle: a strip of the twelve months, find the month that comes a few months after a given one, and show the question too",
+   "source": {
+    "log": "20261114-223300-c4",
+    "turns": [
+     "t10"
+    ]
+   },
+   "check": [
+    {
+     "k": "row-aligned",
+     "order": [
+      "Jan",
+      "Feb",
+      "Mar",
+      "Apr",
+      "May",
+      "Jun",
+      "Jul",
+      "Aug",
+      "Sep",
+      "Oct",
+      "Nov",
+      "Dec"
+     ]
+    },
+    {
+     "k": "words-in-grid",
+     "match": "^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)$",
+     "of": "cells"
+    }
+   ]
+  }
+ ]
+}

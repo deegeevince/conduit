@@ -1,0 +1,28 @@
+{
+ "id": "show-all-pill-over-caption",
+ "title": "the Show all pill over the caption",
+ "family": "chrome-placement",
+ "owner": "painter",
+ "kind": "ui",
+ "found": "2026-11-14",
+ "note": "While an answer plays, the Show all pill sits on top of the caption text.",
+ "own": [
+  "showall-clear"
+ ],
+ "turns": [
+  {
+   "say": "how a heart pumps blood, as the answer plays",
+   "source": {
+    "log": "20261114-213331-c6",
+    "turns": [
+     "t6"
+    ]
+   },
+   "check": [
+    {
+     "k": "showall-clear"
+    }
+   ]
+  }
+ ]
+}

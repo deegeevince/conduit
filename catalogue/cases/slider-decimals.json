@@ -1,0 +1,36 @@
+{
+ "id": "slider-decimals",
+ "title": "slider decimals on a whole-number question",
+ "family": "controls",
+ "owner": "kit",
+ "kind": "draw",
+ "found": "2026-11-14",
+ "note": "A counting slider shows 3.0 or 2.5 where only whole numbers make sense.",
+ "own": [
+  "slider-whole"
+ ],
+ "turns": [
+  {
+   "say": "teach counting the squares inside a rectangle to a seven year old, with two sliders (whole numbers)",
+   "source": {
+    "log": "20261114-192800-c1",
+    "turns": [
+     "t14"
+    ]
+   },
+   "do": [
+    {
+     "a": "control",
+     "id": "r",
+     "value": 3,
+     "wait": 700
+    }
+   ],
+   "check": [
+    {
+     "k": "slider-whole"
+    }
+   ]
+  }
+ ]
+}

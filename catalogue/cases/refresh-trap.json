@@ -1,0 +1,33 @@
+{
+ "id": "refresh-trap",
+ "title": "the refresh trap in the lesson view",
+ "family": "flow-state",
+ "owner": "painter",
+ "kind": "ui",
+ "found": "2026-11-14",
+ "note": "After a refresh the person is put back inside a lesson view with no way out.",
+ "own": [
+  "refresh-escape"
+ ],
+ "turns": [
+  {
+   "say": "teach one of these problems to a seven year old in small steps she can interact with",
+   "source": {
+    "log": "20261114-192800-c1",
+    "turns": [
+     "t8"
+    ]
+   },
+   "do": [
+    {
+     "a": "reload"
+    }
+   ],
+   "check": [
+    {
+     "k": "refresh-escape"
+    }
+   ]
+  }
+ ]
+}

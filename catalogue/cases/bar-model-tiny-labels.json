@@ -1,0 +1,38 @@
+{
+ "id": "bar-model-tiny-labels",
+ "title": "tiny bar-model labels for a young learner",
+ "family": "small-type",
+ "owner": "painter",
+ "kind": "draw",
+ "found": "2026-11-14",
+ "note": "A word problem as a bar model: the bar labels and sentences are small and dim for a seven-year-old.",
+ "own": [
+  "min-font",
+  "legible"
+ ],
+ "turns": [
+  {
+   "say": "teach a seven year old a sharing word problem with a bar model, one step at a time",
+   "source": {
+    "log": "20261114-223300-c4",
+    "turns": [
+     "t7"
+    ]
+   },
+   "check": [
+    {
+     "k": "min-font",
+     "match": "^[A-Za-z]+: ?[0-9?]+$",
+     "px": 14,
+     "phonePx": 12
+    },
+    {
+     "k": "min-font",
+     "match": "\\.$",
+     "px": 14,
+     "phonePx": 12
+    }
+   ]
+  }
+ ]
+}

@@ -1,0 +1,27 @@
+{
+ "id": "explainer-no-tappable-stops",
+ "title": "a \"step by step\" explainer with no tappable stops",
+ "family": "steps",
+ "owner": "prompt",
+ "kind": "draw",
+ "found": "2026-11-14",
+ "note": "Asked to explain step by step the answer is a picture with no stops to tap.",
+ "own": [
+  "tappable-stops"
+ ],
+ "turns": [
+  {
+   "say": "explain how a heat pump works, step by step",
+   "source": {
+    "scenario": "explainer",
+    "index": 0
+   },
+   "check": [
+    {
+     "k": "tappable-stops",
+     "min": 3
+    }
+   ]
+  }
+ ]
+}

@@ -78,7 +78,7 @@ function scriptFor(request: TurnRequest, defaultScript: string | null): string {
  * script always produces the same chunks with the same delays.
  */
 export function createReplayBrain(deps: ReplayDeps): Brain {
-  const perSecond = deps.charsPerSecond ?? DEFAULT_CHARS_PER_SECOND;
+  const perSecond = Number(process.env['REPLAY_CPS'] ?? '') || (deps.charsPerSecond ?? DEFAULT_CHARS_PER_SECOND);
 
   async function* chunks(source: string, signal: AbortSignal): AsyncGenerator<string> {
     for (const raw of source.split('\n')) {

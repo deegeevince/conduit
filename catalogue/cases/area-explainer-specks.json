@@ -1,0 +1,38 @@
+{
+ "id": "area-explainer-specks",
+ "title": "area explainer: counting numbers are specks outside the grid",
+ "family": "small-type",
+ "owner": "painter",
+ "kind": "draw",
+ "found": "2026-11-14",
+ "note": "The numbers that count the squares are tiny and scattered around the outside of the grid, not inside the squares.",
+ "own": [
+  "min-font",
+  "words-in-grid",
+  "legible"
+ ],
+ "turns": [
+  {
+   "say": "interactive teaching mode for a seven year old: the area of a shape on a grid of squares",
+   "source": {
+    "log": "20261114-223300-c4",
+    "turns": [
+     "t6"
+    ]
+   },
+   "check": [
+    {
+     "k": "min-font",
+     "match": "^[0-9]$",
+     "px": 14,
+     "phonePx": 12
+    },
+    {
+     "k": "words-in-grid",
+     "match": "^[1-5]$",
+     "of": "largest-shape"
+    }
+   ]
+  }
+ ]
+}

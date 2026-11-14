@@ -1,0 +1,30 @@
+{
+ "id": "news-one-headline",
+ "title": "the news summary with only one headline",
+ "family": "agent-reading",
+ "owner": "prompt",
+ "kind": "draw",
+ "found": "2026-11-14",
+ "note": "Asked for today's top tech news, the answer covers one or two stories because only the top of the page was read.",
+ "own": [
+  "script-count"
+ ],
+ "turns": [
+  {
+   "say": "summarise today's top tech news",
+   "source": {
+    "log": "20261114-200136-c2",
+    "turns": [
+     "t26"
+    ]
+   },
+   "check": [
+    {
+     "k": "script-count",
+     "re": "^say \\S+ \\| ",
+     "min": 5
+    }
+   ]
+  }
+ ]
+}

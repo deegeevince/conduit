@@ -1,0 +1,35 @@
+{
+ "id": "answer-not-complete-at-rest",
+ "title": "an answer not complete at rest: four checks show 2",
+ "family": "completeness",
+ "owner": "brain",
+ "kind": "draw",
+ "found": "2026-11-14",
+ "note": "The list under \"Read it in four checks\" loses items at rest; only some of the four show.",
+ "own": [
+  "all-present",
+  "answer-on-stage"
+ ],
+ "turns": [
+  {
+   "say": "can you explain to me how to read a company balance sheet",
+   "source": {
+    "log": "20261114-213331-c6",
+    "turns": [
+     "t10"
+    ]
+   },
+   "check": [
+    {
+     "k": "all-present",
+     "items": [
+      "^1\\.",
+      "^2\\.",
+      "^3\\.",
+      "^4\\."
+     ]
+    }
+   ]
+  }
+ ]
+}

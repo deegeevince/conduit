@@ -1,0 +1,29 @@
+{
+ "id": "hidden-step-text-drawn",
+ "title": "a hidden step's text drawn on stage",
+ "family": "stepped-placement",
+ "owner": "painter",
+ "kind": "draw",
+ "found": "2026-11-14",
+ "note": "The explanation for steps 2 to 6 is drawn under step 1, instead of only the current step's text showing.",
+ "own": [
+  "steps-hidden"
+ ],
+ "turns": [
+  {
+   "say": "create something that is step by step interactive",
+   "source": {
+    "log": "20261114-213331-c6",
+    "turns": [
+     "t11"
+    ]
+   },
+   "check": [
+    {
+     "k": "steps-hidden",
+     "id": "explain"
+    }
+   ]
+  }
+ ]
+}
