@@ -100,6 +100,8 @@ export interface Arrangement {
 const EPS = 1e-6;
 const HEADING_SIZES: ReadonlySet<Size> = new Set<Size>(['l', 'xl', 'xxl']);
 const MIN_SHRINK = 0.04;
+/** how far words may shrink, beside a card or a control, before the oldest line is let go */
+const WITH_CONTROLS_SHRINK = 0.72;
 /** the space between paragraphs of a `page`, in lines of body text */
 const PARAGRAPH_GAP = 0.6;
 /** lines a stack reserves room for when the brain did not say how many to expect */
@@ -600,7 +602,9 @@ function arrangeFlow(units: readonly Unit[], ctx: Context): FlowResult {
   // A column never shrinks once it is placed. When what is present would pass the bottom of its box, the oldest lines leave at the top (they are
   // retired and the rest move up, eased like a `page`); lines that stay `pin` and the newest line are kept. Each column scrolls on its own.
   for (let guard = 0; guard < 4096; guard += 1) {
-    const full = plan.find((column) => layoutColumn(column, 1, ctx).end > ctx.safe.height + EPS && retirable(column) >= 0);
+    // A column with a card or a control in it sets its words a little smaller before it lets any of them go: the hand's controls and the line
+    // that explains them are meant to be on the stage together.
+    const full = plan.find((column) => layoutColumn(column, column.units.some((unit) => unit.main.item.reserve !== undefined) ? WITH_CONTROLS_SHRINK : 1, ctx).end > ctx.safe.height + EPS && retirable(column) >= 0);
     if (full === undefined) break;
     const gone = retirable(full);
     const [dropped] = full.units.splice(gone, 1);

@@ -1325,7 +1325,8 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
       const room = cardRoom(group, tq, look, fit);
       const outer = room?.outer ?? { x: 0, y: 0, width, height };
       const shift = room === null ? 0 : outer.y + outer.height / 2 - (room.inner.y + room.inner.height / 2);
-      middle = { x: pose.x, y: pose.y - shift };
+      const left = pose.x + (pose.lines[0]?.x ?? -pose.width / 2);
+      middle = { x: left + outer.width / 2, y: pose.y - shift };
     }
     const inner: Box = { x: middle.x - width / 2, y: middle.y - height / 2, width, height };
     const slots = new Map<string, { x: number; y: number }>();
