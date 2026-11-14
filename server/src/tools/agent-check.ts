@@ -18,6 +18,7 @@ import { detailOf, gateCall, NO_AGENT, redactSecrets, riskOf, summaryOf } from '
 import type { AgentSettings } from '../domain/agent';
 import type { BrainEvent, TurnRequest } from '../domain/brain';
 import { newBrowserState, noteBrowserResult } from '../domain/browser';
+import { deniedAfterResolving } from '../domain/destinations';
 import { agentArguments } from '../brains/claude-cli/process';
 import { createLogger } from '../log';
 import { RelayHub } from '../brains/relay/relay-hub';
@@ -118,6 +119,25 @@ const states = (events: BrainEvent[], tool: string): string[] => events.flatMap(
   check(gateCall(exfil, fetchSettings, withFolder).kind === 'ask', 'gateCall: with a folder on, a fetch with a query is asked for', 'Read on');
   check(gateCall(call('WebFetch', { url: 'https://x.example/page' }), fetchSettings, new Set(['WebSearch', 'WebFetch', 'mail'])).kind === 'ask', 'gateCall: with a service on, a fetch to any other host is asked for', 'mail on');
   check(gateCall(call('WebFetch', { url: 'https://en.wikipedia.org/wiki/Oslo' }), fetchSettings, withFolder).kind === 'allow', 'gateCall: and a quiet fetch to a reference site still runs', 'wikipedia');
+  // Private destinations are refused in every permit level, whatever the risk would have been; a public name that points at one is refused after resolving.
+  const everything = new Set(['WebSearch', 'WebFetch', 'chrome']);
+  const wide: AgentSettings = { ...fetchSettings, tools: ['WebSearch', 'WebFetch'], services: [{ name: 'chrome', config: '/x', gist: '' }] };
+  for (const permits of ['auto', 'ask'] as const) {
+    for (const target of ['http://localhost:4300/api/health', 'http://127.0.0.1:4300/x', 'http://192.168.1.1/', 'http://[::1]:4300/', 'http://2130706433/', 'http://[::ffff:7f00:1]/', 'http://169.254.169.254/latest', 'http://printer.local/', 'http://nas.lan/', 'http://app.internal/', 'http://100.101.102.103/']) {
+      check(gateCall(call('mcp__chrome__navigate', { url: target, tabId: 1 }), wide, everything, false, newBrowserState(), permits).kind === 'deny', `private destinations: navigate to ${target} is denied in ${permits}`, target);
+      check(gateCall(call('WebFetch', { url: target, prompt: 'x' }), wide, everything, false, null, permits).kind === 'deny', `private destinations: WebFetch of ${target} is denied in ${permits}`, target);
+    }
+    const owned = newBrowserState();
+    noteBrowserResult(owned, call('mcp__chrome__tabs_context_mcp', { createIfEmpty: true }), ['{"availableTabs":[{"tabId":1,"title":"New Tab","url":"chrome://newtab/"}],"tabGroupId":1}']);
+    const publicNav = gateCall(call('mcp__chrome__navigate', { url: 'https://en.wikipedia.org/wiki/Oslo', tabId: 1 }), wide, everything, false, owned, permits);
+    check(publicNav.kind !== 'deny', `private destinations: a public name is not refused in ${permits}`, publicNav.kind);
+  }
+  const allowedHost = gateCall(call('WebFetch', { url: 'http://192.168.1.1/' }), { ...wide, allowPrivate: ['192.168.1.1'] }, everything, false, null, 'auto');
+  check(allowedHost.kind !== 'deny', 'private destinations: a host the owner listed is not refused (and the list is empty by default)', allowedHost.kind);
+  const fake = async (host: string): Promise<string[]> => { if (host === 'sneaky.example.com') return ['10.0.0.5']; if (host === 'fine.example.com') return ['93.184.216.34']; throw new Error('nxdomain'); };
+  check((await deniedAfterResolving({ url: 'https://sneaky.example.com/x' }, [], fake)) !== null, 'private destinations: a public name that resolves to a private number is refused', 'sneaky.example.com -> 10.0.0.5');
+  check((await deniedAfterResolving({ url: 'https://fine.example.com/x' }, [], fake)) === null, 'private destinations: a public name that resolves to a public number is not', 'fine.example.com');
+  check((await deniedAfterResolving({ url: 'https://sneaky.example.com/x' }, ['sneaky.example.com'], fake)) === null, 'private destinations: an allowed host is not resolved away', 'allow list');
   const longUrl = `https://example.com/${'q'.repeat(300)}?q=1`;
   const shown = detailOf(call('WebFetch', { url: longUrl, prompt: 'x' }));
   check(shown.includes(longUrl), 'the confirm control is given the whole address, not 160 characters of it', `${shown.length} characters`);
@@ -146,7 +166,7 @@ const states = (events: BrainEvent[], tool: string): string[] => events.flatMap(
   row('navigate with no tab named is refused', verdict('navigate', { url: 'https://chatgpt.com' }), 'deny:run');
   row('navigating to a public site is a read', verdict('navigate', { url: 'https://chatgpt.com', tabId: 7 }), 'allow:read');
   row('navigating to an address that carries a query is asked for', verdict('navigate', { url: 'https://x.example/?d=what-it-read', tabId: 7 }), 'ask:send');
-  row('navigating to the owner\'s own network is asked for', verdict('navigate', { url: 'http://192.168.1.1/', tabId: 7 }), 'ask:run');
+  row('navigating to the owner\'s own network is denied (private destinations, every mode)', verdict('navigate', { url: 'http://192.168.1.1/', tabId: 7 }), 'deny:run');
   row('navigating to a sign-in address is asked for, at the highest risk', verdict('navigate', { url: 'https://chatgpt.com/auth/login', tabId: 7 }), 'ask:signin');
   row('navigating to a checkout is asked for, at the highest risk', verdict('navigate', { url: 'https://shop.example/checkout', tabId: 7 }), 'ask:buy');
   row('a click is asked for', verdict('computer', { action: 'left_click', coordinate: [1, 2], tabId: 7 }), 'ask:run');

@@ -17,6 +17,7 @@ import type { LibrarySettings } from './domain/techniques';
 import type { PictureSettings } from './domain/pictures';
 import { readPictureSettings } from './pictures/registry';
 import { dataPaths, resolveDataDir } from './data-dir';
+import { loadPrivateHostAllowList } from './domain/destinations';
 import type { DataPaths } from './data-dir';
 import type { LogLevel } from './log';
 
@@ -363,6 +364,7 @@ export function loadEnv(source: Source): Env {
         dir: agentDir,
         answerMs: integer('AGENT_ANSWER_MS', NO_AGENT.answerMs, 5_000, 3_600_000),
         permits: choice('AGENT_PERMITS', AGENT_PERMITS, 'ask'),
+        allowPrivate: loadPrivateHostAllowList(resolveDataDir(source)),
       }
     : NO_AGENT;
   // `plain` is only what a server without the agent has (AGENT=off, or a brain with no tools to give); it is never a choice beside `agent`.

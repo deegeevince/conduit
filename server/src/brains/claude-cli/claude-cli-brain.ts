@@ -7,6 +7,7 @@ import type { BriefForm, Capabilities } from '@conduit/language';
 import { buildReviewBrief, isKeep } from '@conduit/language';
 import type { AmendRequest, Brain, BrainEvent, BrainSession, ReviewRequest, Snapshot, TurnRequest } from '../../domain/brain';
 import { detailOf, FILE_TOOLS, gateCall, NO_AGENT, splitTool, summaryOf, toolChoices } from '../../domain/agent';
+import { addressesIn, deniedAfterResolving } from '../../domain/destinations';
 import { newBrowserState, noteBrowserResult } from '../../domain/browser';
 import type { BrowserState } from '../../domain/browser';
 import type { AgentSettings } from '../../domain/agent';
@@ -422,6 +423,20 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
 
     /** The CLI asks before a call. Whatever the answer, it is made here, by `gateCall`, and by the owner for what that says to ask. */
     const handleAsk = (ask: { requestId: string; toolUseId: string; tool: string; input: Readonly<Record<string, unknown>> }): void => {
+      // A public name that points at a private number is refused too, which needs the name resolved: the answer waits for that, and for nothing else.
+      if (out.noTools !== true && modeOf(out.session) === 'agent' && addressesIn(ask.input).length > 0 && !isCanvasTool(ask.tool)) {
+        void deniedAfterResolving(ask.input, agent.allowPrivate).then((why) => {
+          if (why === null) return handleAskNow(ask);
+          if (inner.signal.aborted) return entry.proc.answer(ask.requestId, false, {}, 'The turn was stopped.');
+          denied.add(ask.toolUseId);
+          turnLog.info('agent_private_destination', { tool: ask.tool });
+          entry.proc.answer(ask.requestId, false, {}, `Not allowed: ${why}. Say so plainly and offer what you can do without it.`);
+        });
+        return;
+      }
+      handleAskNow(ask);
+    };
+    const handleAskNow = (ask: { requestId: string; toolUseId: string; tool: string; input: Readonly<Record<string, unknown>> }): void => {
       const call = { id: ask.toolUseId, tool: ask.tool, input: ask.input };
       // SA4. The canvas tools read the stage and write nothing; the CLI is told to allow them itself, and this is only the net under that.
       if (isCanvasTool(ask.tool) && !inner.signal.aborted) {

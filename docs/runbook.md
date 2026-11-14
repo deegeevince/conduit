@@ -202,6 +202,8 @@ The brain can use the owner's own Chrome through Claude in Chrome, in tabs of it
 2. In `.env`: `AGENT_SERVICES=chrome` (alongside any others: `AGENT_SERVICES=chrome,remote=/path/mcp.json`). Restart the server.
 3. `/tools` now lists `chrome` as on; `/tools chrome off` switches it off for a conversation. If the extension is not connected, the first browser call fails and the brain says so; nothing else changes.
 
+Private destinations are refused in every permit level, `auto` included: loopback and `localhost`, private ranges (10/8, 172.16/12, 192.168/16, fc00::/7), link-local, shared 100.64/10, `.local` `.internal` `.lan` names, single-word hosts, and any public name that resolves to one of those (`domain/destinations.ts`). The owner may allow particular hosts, one per line, in `<DATA_DIR>/private-hosts.allow`; the file does not exist by default.
+
 What it does there, by what it is (`riskOf`/`gateCall`, `domain/browser.ts`):
 
 | Call | Risk | Answer |

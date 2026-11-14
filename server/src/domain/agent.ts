@@ -23,6 +23,7 @@ import { resolve as resolvePath, sep } from 'node:path';
 import type { ActionRisk, AgentPermits, ToolChoice } from '@conduit/language';
 import { browserVerdict, newBrowserState, quietAddress, sensitivityOf } from './browser';
 import type { BrowserState } from './browser';
+import { deniedDestination } from './destinations';
 
 /** What the server's configuration offers a session. Everything else does not exist as far as a brain is concerned. */
 export interface AgentSettings {
@@ -38,6 +39,8 @@ export interface AgentSettings {
   readonly answerMs: number;
   /** the permit level a new conversation starts at (`AGENT_PERMITS`); `/tools auto` and `/tools ask` change one conversation's */
   readonly permits?: AgentPermits;
+  /** private hosts the owner has allowed by name (`<DATA_DIR>/private-hosts.allow`); empty unless they wrote one */
+  readonly allowPrivate?: readonly string[];
 }
 
 export const NO_AGENT: AgentSettings = { enabled: false, tools: [], services: [], dir: null, answerMs: 120_000, permits: 'ask' };
@@ -284,6 +287,9 @@ export function gateCall(call: ToolCall, settings: AgentSettings, on: ReadonlySe
   const name = service ?? call.tool;
   const offered = service === null ? settings.tools.includes(call.tool) : settings.services.some((entry) => entry.name === service);
   if (!settings.enabled || !offered || !on.has(name)) return { kind: 'deny', risk: riskOf(call, false, settings.dir), why: `${service === null ? call.tool : `${service}: ${action}`} is not switched on` };
+  // Where a call goes: this machine and private networks are refused in every permit level (destinations.ts).
+  const elsewhere = deniedDestination(call.input, settings.allowPrivate);
+  if (elsewhere !== null) return { kind: 'deny', risk: 'run', why: elsewhere };
   if (service === null && FILE_TOOLS.includes(call.tool) && settings.dir === null) return { kind: 'deny', risk: 'run', why: 'no folder has been named for file tools' };
   if (service === 'chrome') {
     // The owner's browser has its own rules (`browser.ts`): its own tabs only, a credential never typed, a sign-in or payment page always asked.
