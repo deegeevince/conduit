@@ -420,6 +420,8 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   let heldReport: BackEvent | null = null;
   // v3. The document on the stage: when the session has one, the lesson view is laid over the stage (PLAN-v3-core WS6), the pen over its writing
   // slot (the ink module), her state goes up as `state` events, and a reload opens the last document again where she was (`resumeDocument`).
+  /** Words that only ask to go on to the next question of a document on screen: the cursor moves, no turn is made. */
+  const NEXT_QUESTION = /^\s*(?:ok(?:ay)?[, ]*|now[, ]*)?(?:go to |show |on to |move to |try )?(?:the )?next(?: question| one| part)?(?:[\s,.!]+(?:but|and|please|actually|also|show|the|question|too|me|it)){0,8}[\s.!]*$/i;
   const RESUME_KEY = 'conduit.document';
   const rememberDocument = (id: string | null): void => {
     try {
@@ -1248,7 +1250,10 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
         publishStatus();
       },
     },
-    prompt: (text, photos, marks, voice) => submit({ kind: 'prompt', text, ...(photos === undefined || photos.length === 0 ? {} : { images: photos }), ...(marks === undefined ? {} : { marks }), ...(voice === undefined || voice.length === 0 ? {} : { voice }) }, null, true),
+    prompt: (text, photos, marks, voice) =>
+      (photos === undefined || photos.length === 0) && marks === undefined && NEXT_QUESTION.test(text) && documents.next()
+        ? Promise.resolve('')
+        : submit({ kind: 'prompt', text, ...(photos === undefined || photos.length === 0 ? {} : { images: photos }), ...(marks === undefined ? {} : { marks }), ...(voice === undefined || voice.length === 0 ? {} : { voice }) }, null, true),
     demo: (name) => submit({ kind: 'demo', script: name }, null, true),
     playScript: (text) => submit({ kind: 'script', text }, null, true),
     interrupt() {

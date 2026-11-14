@@ -344,6 +344,36 @@ export class Player {
 
   // ------------------------------------------------------------ a part
 
+  /** The facts she has been asked to look at: the `[bracketed]` words of the thinking rungs of the asks of `node` that she has opened. */
+  private factsOf(node: DocNode): readonly string[] {
+    const out: string[] = [];
+    for (const step of stepsOf(node)) {
+      if (step.kind !== 'ask') continue;
+      const heldNow = this.state.held[node.id]?.[`hint.${step.id}`];
+      const asked = typeof heldNow === 'number' ? heldNow : 0;
+      for (const text of step.hints.slice(0, asked)) for (const m of text.matchAll(/\[([^\]]+)\]/g)) if (m[1] !== undefined) out.push(m[1]);
+    }
+    return out;
+  }
+
+  private factsOpen(node: DocNode): boolean {
+    return stepsOf(node).some((step) => step.kind === 'ask' && Number(this.state.held[node.id]?.[`hint.${step.id}`] ?? 0) > 0);
+  }
+
+  /** The question's words with each fact marked (underlined and highlighted), where the words hold it. */
+  private marked(text: string, facts: readonly string[]): (string | HTMLElement)[] {
+    const found = facts.flatMap((fact) => (text.indexOf(fact) >= 0 ? [{ at: text.indexOf(fact), fact }] : [])).sort((a, b) => a.at - b.at);
+    const out: (string | HTMLElement)[] = [];
+    let from = 0;
+    for (const { at, fact } of found) {
+      if (at < from) continue;
+      out.push(text.slice(from, at), h('mark', { class: 'fact' }, fact));
+      from = at + fact.length;
+    }
+    out.push(text.slice(from));
+    return out.filter((part) => part !== '');
+  }
+
   /** The title card: the part's, or (when it is help for an ask above it) the part with the ask, so what she is working on never leaves the screen. */
   private titleCard(node: DocNode, open: readonly OpenAsk[]): HTMLElement {
     let context: DocNode = node;
@@ -359,13 +389,15 @@ export class Player {
     const kicker = context.id === node.id ? (parentOf(this.doc, node)?.title ?? '') : nameOf(node);
     const crop = this.input.crops[context.id];
     const long = text.length > 70;
+    // Once she has left the question's own screen (a way, the thinking help, her working) the whole question stays pinned at the top left, smaller, never shortened.
+    const pinned = context.id !== node.id || this.factsOpen(context) || stepsOf(context).some((step) => step.kind === 'ask' && (askView(this.doc, this.state, context.id, step.id)?.tries.length ?? 0) > 0);
     const more = long ? h('button', { type: 'button', class: 'more', 'data-act': 'more', 'aria-expanded': String(this.expanded) }, this.expanded ? 'Show less' : 'Read it all') : null;
     const card = h(
       'section',
-      { class: `qcard${crop === undefined ? '' : ' with-crop'}${long ? ' long' : ''}${this.docked ? ' docked' : ''}${this.expanded ? ' expanded' : ''}`, 'data-act': 'question', 'aria-label': 'What this is about' },
+      { class: `qcard${pinned ? ' pinned' : ''}${crop === undefined ? '' : ' with-crop'}${long ? ' long' : ''}${this.docked ? ' docked' : ''}${this.expanded ? ' expanded' : ''}`, 'data-act': 'question', 'aria-label': 'What this is about' },
       h('span', { class: 'qkicker' }, `${printed === null || context.id !== node.id ? '' : `${printed}.  `}${splitNumber(kicker).text}`),
       more,
-      h('p', { class: 'qtext' }, text),
+      h('p', { class: 'qtext' }, ...this.marked(text, this.factsOf(context))),
       crop === undefined ? null : h('img', { class: 'crop', src: crop, alt: 'The question as it is written on the page. Tap to see it bigger.', role: 'button', tabindex: 0, onclick: (e: Event) => (e.currentTarget as HTMLElement).classList.toggle('zoom') }),
     );
     more?.addEventListener('click', () => {
@@ -577,9 +609,37 @@ export class Player {
     if (tried !== null) card.append(tried);
     if (view.wrong > 0) {
       const seen = node === undefined ? undefined : this.sees.get(`${node.id}\u0000${ask.id}`);
-      const feedback = h('div', { class: 'nudge', role: 'status' }, h('p', { class: 'verdict' }, seen === undefined ? 'Not yet. Have another look.' : 'Not yet.'), seen === undefined ? null : h('p', { class: 'sees' }, seen));
-      if (view.hint !== null) feedback.append(h('p', { class: 'hint' }, h('b', {}, `Hint ${Math.min(view.wrong, ask.hints.length)}: `), mask(view.hint)));
-      card.append(feedback);
+      card.append(h('div', { class: 'nudge', role: 'status' }, h('p', { class: 'verdict' }, seen === undefined ? 'Not yet. Have another look.' : 'Not yet.'), seen === undefined ? null : h('p', { class: 'sees' }, seen)));
+    }
+    // Help is hers to ask for, as a way of thinking and not a step toward the answer: nothing shows until she taps "How could I think about this?", and one rung more each tap.
+    // The rungs are the ask's hints, written as questions back to her (what do we know, what is it asking); a `[bracketed]` fact in one is marked in the question itself. The last
+    // rung offers the question's ways to think it through, and then she has a go.
+    if (node !== undefined && (ask.hints.length > 0 || kidsOf(this.doc, node).some((kid) => isTechnique(kid.tag)))) {
+      const key = `hint.${ask.id}`;
+      const ways = kidsOf(this.doc, node).filter((kid) => isTechnique(kid.tag));
+      const rungs = ask.hints.length + (ways.length > 0 ? 1 : 0);
+      const heldNow = this.state.held[node.id]?.[key];
+      const asked = Math.min(typeof heldNow === 'number' ? heldNow : 0, rungs);
+      if (asked > 0) {
+        const box = h('div', { class: 'nudge hints', role: 'status' });
+        ask.hints.slice(0, asked).forEach((text, at) => box.append(h('p', { class: 'hint', 'data-hint': at + 1 }, mask(text).replace(/\[([^\]]+)\]/g, '$1'))));
+        if (asked > ask.hints.length) {
+          const row = h('div', { class: 'ways-row' }, h('p', { class: 'hint' }, 'How could we think about it? Pick a way.'));
+          for (const way of ways) row.append(h('button', { type: 'button', class: 'btn soft', 'data-act': `think:${way.tag ?? ''}`, onclick: () => this.go(way) }, isTechnique(way.tag) ? TECHNIQUE_NAMES[way.tag] : way.title));
+          box.append(row);
+        }
+        card.append(box);
+      }
+      if (asked < rungs) {
+        card.append(
+          h('button', { type: 'button', class: 'btn soft hint-btn', 'data-act': 'hint', onclick: () => {
+            this.apply({ kind: 'held', node: node.id, key, value: asked + 1 });
+            this.render();
+          } }, asked === 0 ? 'How could I think about this?' : 'Next thought'),
+        );
+      } else if (asked > 0) {
+        card.append(h('button', { type: 'button', class: 'btn main hint-btn', 'data-act': 'have-a-go', onclick: () => this.root.querySelector<HTMLElement>('.field, [data-slot]')?.focus() }, 'Have a go'));
+      }
     }
     return card;
   }
