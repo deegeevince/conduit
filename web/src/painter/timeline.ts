@@ -778,7 +778,7 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
     }
     // drawn things that words given a point keep clear of: the outlines and drawings on the canvas (a filled card, or a shape that fills most of
     // the picture, is a ground the words are meant to stand on) and the boxes the brain gave structures
-    const solids: Box[] = [];
+    const solids: (Box & { ground?: boolean })[] = [];
     for (const element of drawn) {
       if (!element.carried && (element.enter === null || element.enter.start > start)) continue;
       const gone = exitOf(element);
@@ -789,10 +789,11 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
         solids.push({ x: fit.box.x + figure.box.x * fit.unit, y: fit.box.y + figure.box.y * fit.unit, width: figure.box.w * fit.unit, height: figure.box.h * fit.unit });
         continue;
       }
-      if ((element.kind !== 'shape' && element.kind !== 'copy') || element.style.layer !== 'mid' || (element.style.fill !== undefined && element.style.fill !== 'none')) continue;
+      if ((element.kind !== 'shape' && element.kind !== 'copy') || element.style.layer !== 'mid') continue;
+      const ground = element.style.fill !== undefined && element.style.fill !== 'none';
       const at = canvasBoxOf(element, schedule, Math.max(start, element.enter?.end ?? 0));
       if (at === null || at.w * at.h > 0.6 * CANVAS[scene.canvas].width * CANVAS[scene.canvas].height) continue;
-      solids.push({ x: fit.box.x + at.x * fit.unit, y: fit.box.y + at.y * fit.unit, width: Math.max(1, at.w * fit.unit), height: Math.max(1, at.h * fit.unit) });
+      solids.push({ x: fit.box.x + at.x * fit.unit, y: fit.box.y + at.y * fit.unit, width: Math.max(1, at.w * fit.unit), height: Math.max(1, at.h * fit.unit), ...(ground ? { ground } : {}) });
     }
     const arrangement = arrange({
       viewport,
@@ -1641,7 +1642,7 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
    */
   let calloutLeaders = new Map<string, { points: { x: number; y: number }[]; closed: boolean; layer: Layer }>();
   const calloutMemo = new Map<string, ReturnType<typeof layoutCallouts>>();
-  const placeLoose = (tq: number, look: LookSpec): Map<string, { x: number; y: number }> => {
+  const placeLooseAt = (tq: number, look: LookSpec): Map<string, { x: number; y: number }> => {
     const out = new Map<string, { x: number; y: number }>();
     const cell = cellOf('m', viewport, look);
     const taken: Rect[] = [];
@@ -1829,6 +1830,48 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
       }
     }
     return out;
+  };
+
+  /**
+   * Labels beside the thing they name stand where the scene's whole drawing puts them, from the moment they appear: a label never moves because
+   * a shape or another label arrives after it. The scene is placed once, at the moment everything in it has come; a label whose target moves
+   * keeps following it, and a label that is gone by then is placed as it stands.
+   */
+  const settledLoose = new Map<string, { out: Map<string, { x: number; y: number }>; leaders: typeof calloutLeaders }>();
+  const placeLoose = (tq: number, look: LookSpec): Map<string, { x: number; y: number }> => {
+    const now = placeLooseAt(tq, look);
+    const scene = sceneAt(schedule, tq);
+    let rest = tq;
+    for (const element of schedule.elements) if (element.scene === scene.id && !element.carried && element.enter !== null) rest = Math.max(rest, element.enter.end);
+    if (rest <= tq + 1e-6) return now;
+    const nowLeaders = calloutLeaders;
+    const cacheKey = `${scene.id}|${rest.toFixed(3)}|${look.id}|${look.name}`;
+    let final = settledLoose.get(cacheKey);
+    if (final === undefined) {
+      const out = placeLooseAt(rest, look);
+      final = { out, leaders: calloutLeaders };
+      settledLoose.set(cacheKey, final);
+      if (settledLoose.size > 16) settledLoose.delete(settledLoose.keys().next().value as string);
+    }
+    const merged = new Map(now);
+    const leaders = new Map(nowLeaders);
+    for (const [key, position] of final.out) {
+      const element = byKey.get(key);
+      const near = element === undefined ? null : styleAt(element, tq).near;
+      if (element === undefined || near === null || !isLiveAt(element, tq)) continue;
+      const target = drawnLive(near.id, rest);
+      const was = drawnLive(near.id, tq);
+      if (target === null || was === null || target.key !== was.key) continue;
+      const a = canvasBoxOf(was, schedule, tq);
+      const b = canvasBoxOf(target, schedule, rest);
+      if (a === null || b === null || Math.abs(a.x - b.x) > 0.3 || Math.abs(a.y - b.y) > 0.3 || Math.abs(a.w - b.w) > 0.3 || Math.abs(a.h - b.h) > 0.3) continue;
+      merged.set(key, position);
+      const leader = final.leaders.get(key);
+      if (leader === undefined) leaders.delete(key);
+      else leaders.set(key, leader);
+    }
+    calloutLeaders = leaders;
+    return merged;
   };
 
   interface Poly {
