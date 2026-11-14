@@ -356,3 +356,34 @@ body { font-size: calc(20px * var(--ts, 1)); }
   .page:has(> .qwrap):has(> main.work) .run.has-fig, .page:has(> .qwrap):has(> main.work) .run.has-fig:has(.grid-widget) { grid-template-columns: minmax(0, 1fr); gap: 16px; }
   .paper { height: clamp(140px, 26vh, 280px); }
 }
+
+
+/* the line near Check for a try that was not right: shown on a phone, where the longer words are below the fold */
+.vline { display: none; margin: 0; font-size: calc(20px * var(--ts, 1)); font-weight: 800; color: var(--nudge); }
+
+/* a phone: the question, the paper and Check all on the first screen, no scroll */
+@media (max-width: 600px) {
+  .topbar { gap: 6px; }
+  .topbar .nav { min-height: 44px; }
+  /* the picture of the question is tucked behind a tap (Read it all); the words are the question */
+  .ctx:not(.pinned):not(.expanded) .crop:not(.zoom) { display: none; }
+  .ctx.long .more { min-height: 40px; }
+  .ctx.long:not(.expanded):not(.pinned) .ctx-text { -webkit-line-clamp: 2; }
+  .ask-prompt { font-size: calc(22px * var(--ts, 1)); margin: 0; }
+  .writing { gap: 8px; }
+  .paper { height: clamp(120px, 20vh, 190px); }
+  .writing .answer-row { flex-wrap: nowrap; gap: 6px; }
+  .writing .answer-row .btn { flex: 1 1 0; min-width: 0; padding: 0 6px; font-size: calc(18px * var(--ts, 1)); white-space: nowrap; min-height: 52px; }
+  .writing .answer-row .btn.check { flex: 1.1 1 0; }
+  .vline { display: block; }
+  .nudge:not(.hints) .verdict { display: none; }
+  .nudge:not(.hints):not(:has(.sees)) { display: none; }
+  .try img { height: 40px; }
+  .tries { margin-top: 0; gap: 8px; }
+  .hint { font-size: calc(19px * var(--ts, 1)); }
+}
+/* a desk: the answer side fits a 1080 screen, so "Show me how" is not left half behind the dock */
+@media (min-width: 1200px) and (hover: hover) and (pointer: fine) {
+  .paper { height: clamp(140px, 20vh, 220px); }
+  .try img { height: 64px; }
+}

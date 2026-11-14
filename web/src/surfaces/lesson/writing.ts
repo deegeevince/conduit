@@ -59,6 +59,8 @@ export interface InkWritingOptions {
   readonly reading: boolean;
   /** a sentence under the paper (the last read could not be made out) */
   readonly note: string | null;
+  /** a short line near Check for the last try that was not right (the phone shows it there, where the longer words would be below the fold) */
+  readonly verdict?: string | null;
   readonly onCheck: (stamp: number) => void;
   readonly onClear: () => void;
   readonly onType: () => void;
@@ -83,5 +85,6 @@ export function inkWriting(options: InkWritingOptions): HTMLElement {
       h('button', { type: 'button', class: 'btn soft', 'data-act': 'clear', onclick: () => options.onClear() }, 'Start again'),
       h('button', { type: 'button', class: 'btn soft', 'data-act': 'type', onclick: () => options.onType() }, 'Type it'),
     ),
+    options.verdict === undefined || options.verdict === null ? null : h('p', { class: 'vline', role: 'status' }, options.verdict),
   );
 }

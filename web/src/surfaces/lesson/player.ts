@@ -27,7 +27,7 @@ import { h } from './dom';
 import { afterOf, answerOf, atOf, cardsOf, gateOf, isDone, isLesson, isWaiting, kidsOf, parentOf, pathOf, runsOf, shownOf, shutAsks, splitNumber, stepsOf, tally } from './model';
 import type { Run } from './model';
 import { TECHNIQUE_NAMES, isTechnique } from './types';
-import type { CatalogueEntry, DocState, Held, LessonAsk, LessonInput, OpenAsk, StateChange, Technique, WriteResult } from './types';
+import type { CatalogueEntry, DocState, Held, LessonAsk, LessonInput, LessonStep, OpenAsk, StateChange, Technique, WriteResult } from './types';
 import { orderWriting } from './order';
 import { inkWriting, typedWriting } from './writing';
 import { drawVisual } from './widgets';
@@ -113,8 +113,32 @@ export class Player {
 
   /** The document grew (a part was written, a step arrived): draw again, keep the place. */
   update(input: LessonInput): void {
-    this.input = { ...input, state: this.state };
+    this.input = { ...input, doc: this.input.doc, state: this.state };
+    this.pending = input.doc;
     this.render();
+  }
+
+  /** The newest document that came while she was working on a part that it rewrites: held, and taken the moment she is off that part. */
+  private pending: LessonInput['doc'] | null = null;
+
+  /**
+   * An update that lands while she is working never takes her screen, her ink or her try away. It goes in at once where it only adds (a hint, a way,
+   * a card, another part). Where it rewrites the part she is on (the brain sent it back and wrote it again: other steps, or the check refused it) she
+   * keeps the part as she has it, and the new one is taken when she moves off it.
+   */
+  private keepWhatSheIsOn(next: LessonInput['doc']): LessonInput['doc'] {
+    const id = this.state.cursor.node;
+    const had = nodeOf(this.input.doc, id);
+    if (had === null || this.screen !== null) return next;
+    const before = stepsOf(had);
+    if (before.length === 0) return next;
+    const now = nodeOf(next, id);
+    const idOf = (step: LessonStep | undefined): string => (step === undefined ? '' : `${step.kind}:${(step as { id?: string }).id ?? ''}`);
+    const after = now === null ? [] : stepsOf(now);
+    const adds = now !== null && before.every((step, at) => idOf(step) === idOf(after[at]));
+    if (!adds) return { ...next, nodes: { ...next.nodes, [id]: had } };
+    if (now !== null && now.status === 'refused' && had.status !== 'refused') return { ...next, nodes: { ...next.nodes, [id]: { ...now, status: had.status } } };
+    return next;
   }
 
   /** The page read her hand (or could not). Taken once; a reading is her try at the ask it was for. */
@@ -215,6 +239,24 @@ export class Player {
   }
 
   /**
+   * A sheet opened where she left off: the paper is brought into view (under the pinned question, clear of the dock), not left below the fold.
+   * Only moves the page down when the paper is not wholly on screen; it never scrolls the paper under the card.
+   */
+  landOnPaper(): void {
+    const paper = this.root.querySelector('[data-ink-slot]');
+    if (paper === null) return;
+    const r = paper.getBoundingClientRect();
+    const dock = this.root.querySelector('.dock')?.getBoundingClientRect();
+    const card = this.root.querySelector('.ctx.pinned')?.getBoundingClientRect();
+    const floor = dock === undefined ? window.innerHeight : dock.top;
+    if (r.bottom <= floor - 4) return;
+    let by = r.bottom - floor + 12;
+    const ceiling = (card === undefined ? 0 : card.bottom) + 4;
+    if (r.top - by < ceiling) by = r.top - ceiling;
+    if (by > 0) window.scrollBy(0, by);
+  }
+
+  /**
    * Bring what was just said (the verdict, a hint) into view, but never at the cost of the paper: she tries again with the pencil, so the paper stays
    * on screen, just under the pinned question. On a phone the words below may then need a scroll; the pencil is never the thing that goes.
    */
@@ -237,6 +279,11 @@ export class Player {
   // ------------------------------------------------------------ drawing
 
   render(): void {
+    if (this.pending !== null) {
+      const kept = this.keepWhatSheIsOn(this.pending);
+      this.input = { ...this.input, doc: kept };
+      if (kept === this.pending) this.pending = null;
+    }
     const keep = document.activeElement instanceof HTMLElement ? { act: document.activeElement.dataset['act'], at: document.activeElement instanceof HTMLInputElement ? document.activeElement.selectionStart : null } : null;
     const x = window.scrollX;
     const y = window.scrollY;
@@ -640,6 +687,7 @@ export class Player {
             unit: ask.unit,
             reading: this.reading === ask.id,
             note: this.unread?.ask === ask.id ? this.unread.said : null,
+            verdict: view.wrong > 0 ? 'Not yet. Try again with the pencil.' : null,
             onCheck: () => {
               this.reading = ask.id;
               this.unread = null;
