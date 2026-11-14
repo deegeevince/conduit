@@ -7,7 +7,7 @@ import type { UsageView } from '../link/http-link';
 import type { StageApp } from '../app/stage-app';
 import { confirmation, parseCommand, usageOf } from './commands';
 import type { Command } from './commands';
-import { copyScript, defaultSize, runExport, saveScript, saveStill } from './files';
+import { copyAnswer, copyScript, defaultSize, runExport, saveScript, saveStill } from './files';
 
 /** A cell or a line of Series made from words that came from elsewhere: one line, no bar, no longer than it needs to be. */
 function plain(text: string, limit = 160): string {
@@ -190,7 +190,7 @@ async function perform(app: StageApp, command: Command, onChoice: (choice: Brain
       return;
     case 'copy':
       if (command.what === 'script') await copyScript(app);
-      else app.announce('Say "/copy script" to copy the answer as lines of Series. Copying the words themselves comes with the text layer.');
+      else await copyAnswer(app);
       return;
     case 'export':
       exportAs(app, command.format);

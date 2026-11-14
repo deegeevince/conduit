@@ -7,6 +7,7 @@ import type { StageApp, StageStatus } from './app/stage-app';
 import { mountActions } from './chrome/actions';
 import { mountHud } from './chrome/hud';
 import { runCommand } from './chrome/command-runner';
+import { copyAnswer } from './chrome/files';
 import { isCommand } from './chrome/commands';
 import { mountActivity } from './chrome/activity';
 import { DRAW_WORDS, mountStageInk } from './ink/stage';
@@ -140,7 +141,7 @@ async function start(): Promise<void> {
   }
   const mounted = app;
   window.__stage = mounted.hook;
-  const transcript = mountTranscript(promptBar.extra, mounted.painter, { onChoice: (key) => mounted.choose(key) });
+  const transcript = mountTranscript(promptBar.extra, mounted.painter, { onChoice: (key) => mounted.choose(key), onCopyAnswer: (turn) => void copyAnswer(mounted, turn) });
   stageInk = mountStageInk(stageHost, promptBar.extra, {
     upload: async (png) => (await mounted.link.uploadPhoto(png)).id,
     lastTurn: () => mounted.lastTurn(),

@@ -7,7 +7,10 @@ import type { Box } from './space';
 /** What a run of words is, for how it is copied: a heading becomes `# …`, a choice is left out of "copy answer", code keeps its spaces. */
 export type TextRole = 'heading' | 'body' | 'aside' | 'choice' | 'label' | 'node' | 'cell' | 'code' | 'control';
 
-/** One wrapped line of one element as it is on screen now, camera included. */
+/**
+ * One wrapped line of one element as it is on screen now, camera included. `box` is the line as an upright rectangle in host CSS pixels
+ * whose centre is where the drawn line's centre is; the span's `rotation` turns it about that centre. Its width is the drawn glyphs'.
+ */
 export interface TextLine {
   readonly text: string;
   /** host CSS pixels */
@@ -33,4 +36,23 @@ export interface TextSpanView {
   readonly order: number;
   /** for `cell` and `node`: the structure it belongs to and its row and column, so that a table is copied as a table */
   readonly within: { readonly key: string; readonly row: number; readonly column: number } | null;
+  /** v2.1. A heading's level, 1 (the loudest) to 3; 0 for anything else */
+  readonly level: number;
+  /** v2.1. What the owner is when it is a structure (`table`, `chart`, `code`, `screen`...), else null: how its words are copied */
+  readonly structure: string | null;
+  /** v2.1. A code block's language as written; null for anything else */
+  readonly lang: string | null;
+  /**
+   * v2.1. False for words that are the stage's but are not drawn as text a layer could sit on: a chart's rows, which its charting engine draws in
+   * a canvas. `lines` is then empty: they are copied and read, not laid over the picture.
+   */
+  readonly placed: boolean;
+}
+
+/** The element a key on stage belongs to: a structure's parts are `<owner>/<part>`, a mock-up's lines `<owner>/…#<n>`. */
+export function ownerKeyOf(key: string): string {
+  const slash = key.indexOf('/');
+  const head = slash < 0 ? key : key.slice(0, slash);
+  const hash = head.indexOf('#');
+  return hash < 0 ? head : head.slice(0, hash);
 }

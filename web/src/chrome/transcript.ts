@@ -63,7 +63,7 @@ let counter = 0;
  * panel anyone can open. Struck text stays, marked as struck. Choices are
  * real buttons, so the stage can be driven from the keyboard.
  */
-export function mountTranscript(host: HTMLElement, painter: Painter, handlers: { readonly onChoice: (key: string) => void }): Transcript {
+export function mountTranscript(host: HTMLElement, painter: Painter, handlers: { readonly onChoice: (key: string) => void; /** copies the words of a turn's answer as Markdown; absent: no button */ readonly onCopyAnswer?: (turn: string) => void }): Transcript {
   counter += 1;
   const panelId = `transcript-panel-${counter}`;
 
@@ -244,10 +244,21 @@ export function mountTranscript(host: HTMLElement, painter: Painter, handlers: {
         heading.dataset['turn'] = event.turn;
         const said = event.input.kind === 'prompt' ? 'You said' : event.input.kind === 'tap' ? 'You chose' : event.input.kind === 'act' ? 'You pressed' : event.input.kind === 'script' ? 'You played' : event.input.kind === 'refine' ? 'You asked' : 'Demo';
         const text = event.input.kind === 'prompt' || event.input.kind === 'tap' || event.input.kind === 'act' ? event.input.text : event.input.kind === 'script' ? 'a script' : event.input.kind === 'refine' ? 'keep making it better' : event.input.script;
-        heading.textContent = `${said}: ${text}`;
+        const line = `${said}: ${text}`;
+        heading.textContent = line;
+        if (handlers.onCopyAnswer !== undefined) {
+          const copy = document.createElement('button');
+          copy.type = 'button';
+          copy.className = 'transcript__copy';
+          copy.textContent = 'Copy answer';
+          copy.setAttribute('aria-label', `Copy the answer to: ${text}`);
+          const turn = event.turn;
+          copy.addEventListener('click', () => handlers.onCopyAnswer?.(turn));
+          heading.append(' ', copy);
+        }
         headings.set(event.turn, heading);
         stickToEnd(() => body.append(heading));
-        announce(heading.textContent);
+        announce(line);
         trim();
         return;
       }
