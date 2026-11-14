@@ -93,9 +93,13 @@ void main() {
   float medium = 1.0;
   if (uHasPicture > 0.5 && uDevelop > 0.0) {
     // A wash: it appears first where the noise is lowest and spreads, with a soft wet edge. At 1 it is exactly the picture.
-    float field = fbm(vBox * 0.012 + uSeed * 7.0) * 0.85 + 0.15 * vnoise(vBox * 0.05);
-    float width = 0.22;
-    float grown = smoothstep(field, field + width, uDevelop * (1.0 + width));
+    // (WL0) a painting that has fully grown is exactly the texture: the wash's noise is not worth its cost on a wall of them
+    float grown = 1.0;
+    if (uDevelop < 1.0) {
+      float field = fbm(vBox * 0.012 + uSeed * 7.0) * 0.85 + 0.15 * vnoise(vBox * 0.05);
+      float width = 0.22;
+      grown = smoothstep(field, field + width, uDevelop * (1.0 + width));
+    }
     vec3 art;
     if (uMedium > 0.5) {
       // The sketch, painted: the box's own coordinates, top left to bottom right, into the surface the sketch was drawn on.
@@ -151,8 +155,40 @@ function seedOf(key: string): number {
 
 const KEEP_SECONDS = 30;
 
+// (WL0) A byte budget for what the pools hold, and word of what they let go. Textures are counted as mipmapped RGBA: a third more than the base level.
+const poolsHeld = new Set<Map<string, Held>>();
+let budgetBytes = Infinity;
+const evictListeners = new Set<(url: string) => void>();
+
+const bytesOf = (h: Held): number => Math.round(h.width * h.height * 4 * (4 / 3));
+
+/** The most bytes of paintings the pools may hold; the ones named longest ago go first. Infinity (the default) keeps only the 30 s age. */
+export function setPictureBudget(bytes: number): void {
+  budgetBytes = bytes;
+}
+
+/** What the pools hold now: textures and their bytes, and the CPU copy of each (the decoded bitmap three keeps) */
+export function pictureStats(): { readonly textures: number; readonly bytes: number } {
+  let textures = 0;
+  let bytes = 0;
+  for (const pool of poolsHeld) {
+    for (const h of pool.values()) {
+      textures += 1;
+      bytes += bytesOf(h);
+    }
+  }
+  return { textures, bytes };
+}
+
+/** Told the url of every painting a pool lets go of, by age or by the budget. Returns the way to stop listening. */
+export function onPictureEvicted(listener: (url: string) => void): () => void {
+  evictListeners.add(listener);
+  return () => evictListeners.delete(listener);
+}
+
 export function createPicturePool(): PicturePool {
   const held = new Map<string, Held>();
+  poolsHeld.add(held);
   const loading = new Map<string, Promise<void>>();
   const entries = new Map<string, Entry>();
   let clock = 0;
@@ -326,12 +362,31 @@ export function createPicturePool(): PicturePool {
         if (texture.shown && clock - texture.lastNamed > KEEP_SECONDS) {
           texture.texture.dispose();
           held.delete(url);
+          for (const listener of evictListeners) listener(url);
+        }
+      }
+      if (budgetBytes < Infinity) {
+        let total = 0;
+        for (const pool of poolsHeld) for (const h of pool.values()) total += bytesOf(h);
+        if (total > budgetBytes) {
+          // not named by this frame
+          // big and old first: a still goes before a thumb that was named a moment later
+          const score = (h: Held): number => (clock - h.lastNamed + 1) * bytesOf(h);
+          const idle = [...held].filter(([, h]) => h.lastNamed < clock || !h.shown).sort((a, b) => score(b[1]) - score(a[1]));
+          for (const [url, h] of idle) {
+            if (total <= budgetBytes) break;
+            total -= bytesOf(h);
+            h.texture.dispose();
+            held.delete(url);
+            for (const listener of evictListeners) listener(url);
+          }
         }
       }
     },
 
     dispose() {
       disposed = true;
+      poolsHeld.delete(held);
       for (const entry of entries.values()) release(entry);
       entries.clear();
       for (const texture of held.values()) texture.texture.dispose();
