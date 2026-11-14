@@ -96,3 +96,48 @@ export function agreementLine(found: TasteAgreement | null): string {
   const enough = found.n >= TASTE_FLOOR.n && found.agreement >= TASTE_FLOOR.agreement && found.kappa >= TASTE_FLOOR.kappa;
   return `the judge agrees with the owner on ${Math.round(found.agreement * found.n)} of ${found.n} answers (${Math.round(found.agreement * 100)}%, kappa ${found.kappa.toFixed(2)}, thumbs up from ${found.cut})${enough ? '' : ': below the floor; do not steer by it'}`;
 }
+
+// -- the page and the server ------------------------------------------------
+
+/** How many answers one sitting asks the owner about. */
+export const TASTE_SITTING = 20;
+
+/** One answer as the page sees it: never the judge's score, which stays on the server until the sitting is done. */
+export interface TasteCard {
+  readonly run: string;
+  readonly answer: string;
+  readonly prompt: string;
+  readonly family: ExploreFamily;
+}
+
+/** Where a sitting stands. `GET API.taste` and the reply to each `POST` are one of these. */
+export interface TasteState {
+  /** the sheet's id: the file stem under `explore/taste/` */
+  readonly id: string;
+  readonly total: number;
+  readonly scored: number;
+  /** the answer to show now; null when the sitting is done, or when there was nothing to ask about */
+  readonly next: TasteCard | null;
+  /** the few after it, so the page can fetch them while the owner decides */
+  readonly ahead: readonly TasteCard[];
+  /** present when the sitting is done: the line and the numbers, with the answers on which the two eyes differ */
+  readonly result: { readonly line: string; readonly agreement: TasteAgreement | null; readonly differ: readonly TasteDiffer[] } | null;
+  /** why there is nothing to ask about, when that is so */
+  readonly empty: string | null;
+}
+
+/** An answer on which the judge and the owner differ, with both readings and the prompt. */
+export interface TasteDiffer {
+  readonly run: string;
+  readonly answer: string;
+  readonly prompt: string;
+  readonly judge: number;
+  readonly up: boolean;
+  readonly word: string;
+}
+
+/** `POST API.taste`: one score, or the undoing of the last one. */
+export type TasteRequest =
+  | { readonly id: string; readonly run: string; readonly answer: string; readonly up: boolean; readonly word: string }
+  | { readonly id: string; readonly undo: true }
+  | { readonly new: true };

@@ -1,0 +1,258 @@
+/* The taste page: one answer at a time, thumb-sized controls, light or dark by the system. */
+
+:root {
+  color-scheme: light dark;
+  --ground: #f4f2ed;
+  --panel: #ffffff;
+  --ink: #1d1c1a;
+  --quiet: #5f5b53;
+  --line: #d9d5cb;
+  --up: #2c6e3f;
+  --up-ground: #dcefe1;
+  --down: #b3261e;
+  --down-ground: #f6dedb;
+  --accent: #1f5fbf;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ground: #151412;
+    --panel: #1e1d1a;
+    --ink: #ece9e1;
+    --quiet: #a39e92;
+    --line: #36342f;
+    --up: #7fcf94;
+    --up-ground: #1f3a28;
+    --down: #ff8a80;
+    --down-ground: #46211e;
+    --accent: #7fb0ff;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body.page-taste {
+  margin: 0;
+  min-height: 100dvh;
+  background: var(--ground);
+  color: var(--ink);
+  font: 1rem/1.4 ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.page-taste #app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+}
+
+.bar {
+  appearance: none;
+  display: block;
+  width: 100%;
+  height: 6px;
+  border: 0;
+  background: var(--line);
+  accent-color: var(--accent);
+}
+
+.bar::-webkit-progress-bar {
+  background: var(--line);
+}
+
+.bar::-webkit-progress-value {
+  background: var(--accent);
+}
+
+.bar::-moz-progress-bar {
+  background: var(--accent);
+}
+
+.sheet,
+.plain {
+  flex: 1;
+  width: 100%;
+  max-width: 44rem;
+  margin: 0 auto;
+  padding: 0.75rem max(16px, env(safe-area-inset-left)) 1rem max(16px, env(safe-area-inset-right));
+}
+
+.plain {
+  padding-top: 2rem;
+}
+
+.count {
+  margin: 0 0 0.5rem;
+  color: var(--quiet);
+  font-size: 0.875rem;
+}
+
+.screen {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  cursor: pointer;
+}
+
+.stage {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 640px;
+  height: 360px;
+  transform-origin: 0 0;
+}
+
+.note {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  padding: 1rem;
+  text-align: center;
+}
+
+.prompt {
+  margin: 0.75rem 0;
+  font-size: 1.125rem;
+  line-height: 1.35;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.chip {
+  min-height: 44px;
+  padding: 0 1rem;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background: var(--panel);
+  color: var(--ink);
+  font: inherit;
+}
+
+.chip[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--ground);
+}
+
+.word {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--ink);
+  font-size: 16px; /* 16px and up keeps iOS from zooming the page on focus */
+}
+
+.thumbs {
+  position: sticky;
+  bottom: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  padding: 12px max(16px, env(safe-area-inset-left)) max(12px, env(safe-area-inset-bottom));
+  background: var(--ground);
+  border-top: 1px solid var(--line);
+}
+
+.thumb {
+  min-height: 76px;
+  border: 2px solid;
+  border-radius: 16px;
+  font-size: 2.5rem;
+  line-height: 1;
+}
+
+.thumb:active {
+  transform: scale(0.97);
+}
+
+.thumb.up {
+  border-color: var(--up);
+  background: var(--up-ground);
+}
+
+.thumb.down {
+  border-color: var(--down);
+  background: var(--down-ground);
+}
+
+.link {
+  grid-column: 1 / -1;
+  min-height: 44px;
+  border: 0;
+  background: none;
+  color: var(--quiet);
+  font: inherit;
+  text-decoration: underline;
+}
+
+.link[hidden] {
+  display: none;
+}
+
+.big {
+  margin: 0 0 1rem;
+  font-size: 1.5rem;
+  line-height: 1.3;
+}
+
+.quiet {
+  color: var(--quiet);
+  margin: 0.25rem 0 0;
+}
+
+.said {
+  margin: 0;
+}
+
+.differ {
+  list-style: none;
+  margin: 0 0 1.5rem;
+  padding: 0;
+}
+
+.differ li {
+  padding: 0.75rem 0;
+  border-top: 1px solid var(--line);
+}
+
+.go {
+  min-height: 56px;
+  padding: 0 1.5rem;
+  border: 0;
+  border-radius: 12px;
+  background: var(--accent);
+  color: var(--ground);
+  font: inherit;
+  font-weight: 600;
+}
+
+button:focus-visible,
+input:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .thumb:active {
+    transform: none;
+  }
+}
