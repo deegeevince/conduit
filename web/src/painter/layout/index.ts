@@ -996,3 +996,53 @@ export function arrange(input: LayoutInput): Arrangement {
   for (const placement of [...result.placements, ...free]) placements.set(placement.key, placement);
   return { placements, next: result.next, overflow: result.overflow };
 }
+
+// ---------------------------------------------------------------- one block of words
+
+/** What the structure engines are handed to size text, and what the painter sets a structure's words with: the very same code the flow uses. */
+export interface SetText {
+  /** the placement of the block with its centre at the origin, `width` wide when `width` was given and as wide as its longest line when not */
+  readonly placement: Placement;
+  /** the widest line, layer units */
+  readonly widest: number;
+  readonly lines: readonly { readonly text: string; readonly width: number }[];
+  readonly lineHeight: number;
+  readonly fontSize: number;
+}
+
+interface SetTextInput {
+  readonly look: LookSpec;
+  readonly viewport: Viewport;
+  readonly text: string;
+  readonly emphasis: readonly Range[];
+  /** the style it is set in; only size, weight, face and case are read, and `layer` says which plane's units the answer is in */
+  readonly style: ElementStyle;
+  /** the share of the look's size it is shrunk to (1: as the look has it) */
+  readonly shrink: number;
+  /** the room across, in layer units */
+  readonly maxWidth: number;
+  /** the width of the block when it is to be set inside a wider box; absent: its own widest line */
+  readonly width?: number;
+  readonly align: 'left' | 'center' | 'right';
+}
+
+const NO_INPUT: LayoutInput = { viewport: { width: 1, height: 1, dpr: 1 }, look: undefined as unknown as LookSpec, layout: 'free', align: 'auto', expected: null, items: [] };
+
+/** Sets words exactly as the flow would, away from the flow: the measure behind `TextMeasure` and the runs behind a node's words. */
+export function setText(input: SetTextInput): SetText {
+  const { look, viewport } = input;
+  const body = cellOf('m', viewport, look);
+  const ctx: Context = { input: { ...NO_INPUT, viewport, look }, look, viewport, snap: false, bodyW: body.width, bodyH: body.height, safe: safeFrame(viewport, look) };
+  const item: LayoutItem = { key: '', order: 0, text: input.text, emphasis: input.emphasis, style: input.style, struck: false, replaces: null };
+  const prep = prepare(item, look);
+  const block = makeBlock(prep, Math.max(0.05, input.shrink), Math.max(1, input.maxWidth), 0, null, ctx);
+  const width = input.width ?? block.width;
+  const placement = emit(block, -width / 2, -block.height / 2, width, input.align, ctx);
+  return {
+    placement: { ...placement, x: 0, y: 0 },
+    widest: block.width,
+    lines: block.spans.map((span, row) => ({ text: prep.text.slice(span.start, span.end), width: block.lineWidths[row] ?? 0 })),
+    lineHeight: block.cell.height,
+    fontSize: block.cell.fontSize,
+  };
+}
