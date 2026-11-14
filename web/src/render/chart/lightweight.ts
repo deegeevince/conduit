@@ -195,7 +195,7 @@ interface Slotter {
   time(slot: number): number;
 }
 
-const PAD_BARS = 2;
+const PAD_BARS = 1;
 
 class LightweightHandle implements ChartHandle {
   readonly element: HTMLDivElement;
