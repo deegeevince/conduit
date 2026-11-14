@@ -677,6 +677,7 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
           ...(request.of === undefined ? {} : { of: request.of }),
           ...(request.standing === undefined ? {} : { standing: request.standing }),
           ...(request.eyes === undefined ? {} : { eyes: request.eyes }),
+          ...(request.written === undefined ? {} : { written: request.written }),
         }),
       },
       request.picture,

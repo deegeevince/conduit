@@ -2,6 +2,10 @@
 
 Newest first. Each item is something the brain can show live when asked "showcase what's new": draw it, don't describe it. The server reads this file.
 
+## Tidying up a broken answer (new)
+- When the critic looks at an answer and says it cannot be read (words on words, things off the stage, text too small) and the brain can mend it, Conduit now does. The brain is shown what the critic found and writes a few fix lines; they are tried out of sight and kept only if the stage then measures better. A kept repair is shown as a change in place, with "Tidying up the last answer…" and then "Tidied" in the status line. If the repair is not better, nothing changes.
+- One try per answer. Never while you are typing, never while a new answer is being made (a new question cancels it), never on a lesson, an app or a mock-up. `/review repair off` switches it off for you; it is on by default. The critic then looks at the repaired answer once more, so the log has the score before and after.
+
 ## Agent auto mode (new)
 - `/tools auto` lets the brain's browser work without a prompt for each step: reading, scrolling, clicking, typing ordinary text, opening and closing its own tabs. `/tools ask` brings every prompt back. The server's default is `AGENT_PERMITS=auto|ask` (ask unless said).
 - Still asked on stage, every time, even in auto: sending, buying, deleting, posting, signing in, and anything on a sign-in, payment or checkout page. Never allowed in any mode: typing a password or card number, touching a tab the brain did not open, downloads.

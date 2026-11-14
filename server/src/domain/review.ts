@@ -264,6 +264,8 @@ export interface ReviewTurnArgs {
   readonly standing?: readonly string[];
   /** v3, `repair`: the brain's EYES digest, handed to the brief */
   readonly eyes?: string | null;
+  /** v3, `repair`: the answer's own lines, as written */
+  readonly written?: readonly string[];
 }
 
 /**
@@ -546,6 +548,7 @@ export async function* collectFix(args: ReviewTurnArgs, at: { pass: number; repo
           ...(args.of === undefined ? {} : { of: args.of }),
           ...(args.standing === undefined || args.standing.length === 0 ? {} : { standing: args.standing }),
           ...(args.eyes === undefined ? {} : { eyes: args.eyes }),
+          ...(args.written === undefined ? {} : { written: args.written }),
         },
         controller.signal,
       )

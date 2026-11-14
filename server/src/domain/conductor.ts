@@ -921,6 +921,10 @@ export class Conductor {
 
         if (turn === undefined || turn.reported) return;
         turn.reported = true;
+        if (turn.input.kind === 'repair' && report.outcome === 'finished') {
+          this.deps.sessionLog.write(s.id, { type: 'pass', turn: turn.id, pass: 2, state: 'repaired', reason: null });
+          this.emit(s, turn, { type: 'pass', turn: turn.id, pass: 2, state: 'repaired', reason: null });
+        }
         this.upsertMemory(s, rememberTurn(turn, report, s.snapshotTurns.has(turn.id)));
         const superseded = [...s.turns.values()].some((other) => other.ordinal > turn.ordinal && other.reported);
         if (!superseded) s.stage = report.stage;
@@ -1519,6 +1523,7 @@ export class Conductor {
   private repairLimit(s: Session, turn: ActiveTurn): string | null {
     if (s.turn !== turn || turn.endReason !== 'done') return 'a newer turn is on the stage';
     if (!turn.reported) return 'the answer has not come to rest';
+    if (this.deps.brains.configured.review === undefined) return 'this brain cannot look at an answer again';
     if (turn.input.kind === 'act') return 'the person is working a control';
     const view = this.docs.viewOfSession(s.id);
     if (asksForLesson(turn.input) || (view !== null && hasLesson({ document: { document: view.document, state: view.state } }))) return 'a lesson or document turn';
@@ -1597,6 +1602,7 @@ export class Conductor {
           finding: { problems: finding.problems, suggestions: finding.suggestions },
           standing: s.standing,
           eyes: briefed.eyes,
+          written: turn.score.score.filter((entry) => !entry.void).map((entry) => serializeLine(entry.line)),
           rest,
           picture: this.deps.assets.snapshot(s.id, turn.id) ?? null,
         });
@@ -1671,8 +1677,7 @@ export class Conductor {
     this.emit(s, turn, { type: 'pass', turn: turn.id, pass: 2, state: 'repairing', reason: null });
     this.deps.sessionLog.write(s.id, { type: 'pass', turn: turn.id, pass: 2, state: 'repairing', reason: null });
     for (const event of outcome.lines) if (this.ingest(s, turn, event, normalizer, 2) === 'stop') break;
-    this.emit(s, turn, { type: 'pass', turn: turn.id, pass: 2, state: 'repaired', reason: null });
-    this.deps.sessionLog.write(s.id, { type: 'pass', turn: turn.id, pass: 2, state: 'repaired', reason: null });
+    // `repaired` is said when the painter reports the repair played out (`apply`, `report`), so that "Tidied" is about the picture the person sees
     this.finish(s, turn, 'done', null);
     return turn.id;
   }

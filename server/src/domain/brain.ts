@@ -68,6 +68,8 @@ export interface ReviewRequest {
   readonly standing?: readonly string[];
   /** v3, `repair`: the brain's EYES digest, built when the repair opens; the brief names it in its own block */
   readonly eyes?: string | null;
+  /** v3, `repair`: the answer's own lines, as written */
+  readonly written?: readonly string[];
 }
 
 /**

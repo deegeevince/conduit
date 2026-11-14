@@ -373,6 +373,8 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   let repairOn = readRepairSetting();
   /** the pass the open turn's look-and-fix is at, from the server's `pass` events; null between turns */
   let passState: PassState | null = null;
+  /** v3. The server's repair turn whose lines are playing: the status line says "Tidying up the last answer…" until it reports */
+  let tidying: string | null = null;
   let passInfo: { readonly pass: number; readonly of: number | null; readonly reason: string | null } | null = null;
   /** one controller per data call: a slow table does not cancel the others, and leaving the page cancels all */
   const dataCalls = new Set<AbortController>();
@@ -519,6 +521,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     else if (playing) text = snap.clock === 'hidden' ? 'playing (this tab is in the background)' : 'playing';
     else text = waiting;
     if (passState !== null && (text === 'playing' || text === 'thinking')) text = passText(passState) ?? text;
+    if (tidying !== null && text === 'playing') text = 'Tidying up the last answer…';
     if (active && text === 'playing' && readingFailed.length > 0) text = readingFailed.join('; ');
     if (link_ === 'reconnecting') {
       text = `reconnecting; ${text}`;
@@ -704,6 +707,8 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
         readingFailed = [];
         passState = null;
         passInfo = null;
+        // a turn of the person's (or the server's own repair turn, which `pass … repairing` follows) ends any tidying that was playing
+        if (event.input.kind !== 'repair') tidying = null;
         tellAgent({ type: 'over', turn: null });
         pending = Math.max(0, pending);
         painter.openTurn(event.turn, event.input);
@@ -761,7 +766,21 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
         // Look and fix: the painter answers `drafted` with a draft report; the other states are for the status line.
         // With the switch off the painter is not told, so no picture of the draft is made or sent. A better-pass is the viewer's
         // own request and goes on whatever that switch says. A reconnect does not play a pass again.
-        if (event.turn !== currentTurn || (!reviewOn && event.state !== 'refining' && event.state !== 'repairing' && event.state !== 'repaired')) return;
+        // v3. The server is tidying the answer on stage (a turn of its own, `repair`): while its lines play the status line says so, and once the
+        // painter has reported them played out, "Tidied", once. The turn has ended by then (`end` comes with the last line), so this is not tied to it.
+        if (event.state === 'repairing' || event.state === 'repaired') {
+          if (!firstTime(`pass:${event.turn}:${event.pass}:${event.state}`)) return;
+          if (event.state === 'repairing') {
+            tidying = event.turn;
+            lastStatus = '';
+            publishStatus();
+          } else if (tidying === event.turn) {
+            tidying = null;
+            announce('Tidied');
+          }
+          return;
+        }
+        if (event.turn !== currentTurn || (!reviewOn && event.state !== 'refining')) return;
         if (!firstTime(`pass:${event.turn}:${event.pass}:${event.state}`)) return;
         passState = event.state;
         passInfo = { pass: event.pass, of: event.of ?? null, reason: event.reason };
