@@ -102,7 +102,10 @@ function boot(env: Env): void {
   const app = createApp({ env, log: log.child({ part: 'http' }), conductor, relayHub, assets, status, news });
 
   const server = serve({ fetch: app.fetch, hostname: env.host, port: env.port }, (info) => {
-    log.info('server.listening', { host: env.host, port: info.port, brain: env.brain.kind, production: env.production });
+    log.info('server.listening', { host: env.host, port: info.port, brain: env.brain.kind, production: env.production, owners: env.ownerLogins.length });
+    if (env.ownerLogins.length === 0 && env.trustedHosts.length > 0) {
+      log.warn('identity.not_enforced', { note: 'OWNER_LOGINS is not set: anyone on the tailnet who can reach this server may use it. Set it to the owner\'s Tailscale login (GET /api/whoami shows what the server sees).' });
+    }
   });
 
   let closing = false;

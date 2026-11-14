@@ -69,6 +69,8 @@ export interface ActiveTurn {
   readonly session: string;
   readonly input: TurnInput;
   readonly brain: BrainId;
+  /** v2.1 ops. Who asked: the Tailscale login the request carried, or `local` for the owner at the keyboard (`identity.ts`) */
+  readonly login: string;
   readonly openedAt: number;
   /** aborting it stops the brain */
   readonly abort: AbortController;

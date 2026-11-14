@@ -44,6 +44,7 @@ import type { DatasetLibrary } from './datasets';
 import { worthQueuing } from './critic';
 import type { Critic, FindingQueue } from './critic';
 import { DETAIL_MAX, redactSecrets } from './agent';
+import { currentIdentity, labelOf } from '../identity';
 import { askedOf, refusalProblem, reviewTurn } from './review';
 import type { FixAttempt } from './review';
 import type { TechniqueLibrary } from './techniques';
@@ -213,6 +214,7 @@ export class Conductor {
       session: s.id,
       input,
       brain: brain.id,
+      login: labelOf(currentIdentity()),
       openedAt: now(),
       abort: new AbortController(),
       score: new TurnScore(s.stage, input.kind),
@@ -238,8 +240,8 @@ export class Conductor {
     s.heardFrom = s.nextCursor - 1;
     s.turn = turn;
     sessions.indexTurn(s, turn);
-    log.info('turn.opened', { session: s.id, turn: turn.id, brain: brain.id, input: turn.input.kind });
-    this.deps.sessionLog.write(s.id, { type: 'turn', turn: turn.id, input, brain: brain.id });
+    log.info('turn.opened', { session: s.id, turn: turn.id, brain: brain.id, input: turn.input.kind, login: turn.login });
+    this.deps.sessionLog.write(s.id, { type: 'turn', turn: turn.id, input, brain: brain.id, login: turn.login });
     this.emit(s, turn, { type: 'turn', turn: turn.id, input });
 
     void this.run(s, turn, brain, context);

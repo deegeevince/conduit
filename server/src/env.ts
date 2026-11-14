@@ -58,6 +58,8 @@ export interface Env {
   readonly host: string;
   /** Extra hostnames (e.g. a Tailscale name) the API answers on, besides loopback. */
   readonly trustedHosts: readonly string[];
+  /** v2.1 ops. The Tailscale logins that may use this server (`OWNER_LOGINS`, a comma list, lower-cased); empty: nobody is refused on identity. Never committed: read from the environment. */
+  readonly ownerLogins: readonly string[];
   readonly port: number;
   readonly logLevel: LogLevel;
   readonly brain: BrainSettings;
@@ -212,6 +214,9 @@ export function loadEnv(source: Source): Env {
   const production = text('NODE_ENV') === 'production';
   const host = text('HOST') ?? '127.0.0.1';
   const trustedHosts = (text('TRUSTED_HOSTS') ?? '').split(',').map((h) => h.trim().toLowerCase()).filter((h) => h !== '');
+  const ownerLogins = [...new Set((text('OWNER_LOGINS') ?? '').split(',').map((login) => login.trim().toLowerCase()).filter((login) => login !== ''))];
+  const badLogin = ownerLogins.find((login) => /\s/.test(login) || login.length > 254);
+  if (badLogin !== undefined) problems.push('OWNER_LOGINS is a comma list of Tailscale logins, with no spaces inside one');
   const port = integer('PORT', 4300, 1, 65535);
 
   const rawLevel = text('LOG_LEVEL') ?? 'info';
@@ -363,5 +368,5 @@ export function loadEnv(source: Source): Env {
   }
 
   if (problems.length > 0) throw new EnvError(problems);
-  return { production, host, trustedHosts, port, logLevel, brain, images, sight, promptVariant: parsePromptVariant(text('PROMPT_VARIANT')), review, library, datasets, logDir, data, readLinks: choice('READ_LINKS', ['on', 'off'] as const, 'on') === 'on', paintingsPerSession: 0, exploreDir, webDist, critic, agent, modes, refine, uploads, statusFile, changelogFile, sealedDir };
+  return { production, host, trustedHosts, ownerLogins, port, logLevel, brain, images, sight, promptVariant: parsePromptVariant(text('PROMPT_VARIANT')), review, library, datasets, logDir, data, readLinks: choice('READ_LINKS', ['on', 'off'] as const, 'on') === 'on', paintingsPerSession: 0, exploreDir, webDist, critic, agent, modes, refine, uploads, statusFile, changelogFile, sealedDir };
 }
