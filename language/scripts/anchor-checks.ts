@@ -7,6 +7,8 @@
 import { fileURLToPath } from 'node:url';
 import {
   ANCHOR_LIMITS,
+  LineNormalizer,
+  LineReader,
   anchorsOfMarks,
   anchorTokens,
   layerOf,
@@ -23,6 +25,7 @@ import {
   resolve,
   resolveText,
   serializeAnnotate,
+  serializeLine,
   writeAnchor,
 } from '../src/index';
 import type { Action, AnnotateLine, DocAnchor, Op, Selector, Structure, TextItem } from '../src/index';
@@ -415,13 +418,70 @@ function decoderChecks(): void {
   expect('ink on nothing folds to nothing', anchorsOfMarks({}), []);
 }
 
-/** Through `parseLine` and the normaliser: only once the hunks in anchors-AN1-language.patch are applied. */
+/** Through `LineReader`, the normaliser and `serializeLine`: only once the hunks in anchors-AN1-language.patch are applied. */
 function lineChecks(): boolean {
   if (parseLine('anchor ^terms on=u3 page=2 | net of GST').kind !== 'line') {
-    process.stdout.write('  anchor checks: parseLine does not know the anchor words yet (apply anchors-AN1-language.patch); the line checks through it were skipped\n');
+    process.stdout.write('  anchor checks: parseLine does not know the anchor words yet (apply anchors-AN1-language.patch); the checks through it were skipped\n');
     return true;
   }
-  return true;
+  const through = (raw: string): { written: string; again: string; verb: string } | { why: string } => {
+    const read = new LineReader().read(raw);
+    if (read.kind !== 'line') return { why: `does not parse: ${read.kind === 'reject' ? read.issues.map((i) => i.message).join('; ') : read.kind}` };
+    const normalized = new LineNormalizer(() => 'x1').normalize(read.line);
+    if (normalized.line === null) return { why: `dropped: ${normalized.issues.map((i) => i.message).join('; ')}` };
+    const written = serializeLine(normalized.line);
+    const again = parseLine(written);
+    return { written, again: again.kind === 'line' ? serializeLine(again.line) : 'does not parse', verb: normalized.line.verb };
+  };
+  // every example line of PLAN-anchors section 1 and 4, and the old meanings of `link` and `move`
+  const examples: readonly string[] = [
+    'anchor ^terms on=u3 page=2 | net of GST',
+    'anchor ^logo on=u3 page=2 box=0.12,0.4,0.3,0.08 | the logo',
+    'anchor ^costs on=u7 sheet=Costs cells=B2:D9',
+    'anchor ^clip on=n2 t=12.5..31',
+    'anchor ^p4 on=u9 page=4',
+    'anchor ^q on=q7',
+    'anchor ^btn on=login part=signin/submit',
+    'anchor ^pt on=rev x=2024-03 to=2024-06 series=Revenue',
+    'anchor ^t on=u3 page=1 span=81..91 | net of GST',
+    'mark ^terms highlight',
+    'mark ^terms note | this clause is the one that disagrees',
+    'link ^terms ^logo | the price and the page it came from',
+    'link ^terms ^logo none',
+    'fill ^costs | 14 | 15',
+    'redact ^terms | a name',
+    'move ^p4 before=^q',
+    'doc terms from=u3 pages=1..2 | The agreement',
+    'link rain river | runs off',
+    'move sun 120,20 slow',
+    'move sun top',
+  ];
+  let clean = true;
+  for (const raw of examples) {
+    const got = through(raw);
+    if ('why' in got) {
+      clean = false;
+      expect(`line ${raw}: ${got.why}`, true, false);
+    } else {
+      expect(`line round trips: ${raw}`, got.again, got.written);
+      expect(`line keeps its words: ${raw}`, got.written.replace(/ id=x1/, ''), raw.replace(/^(link \S+ \S+)$/, '$1'));
+    }
+  }
+  expect('the plan\'s own spelling of a box reads, and is written once, canonically', (through('anchor ^logo on=u3 page=2 box=0.12,0.40,0.30,0.08 | the logo') as { written: string }).written, 'anchor ^logo on=u3 page=2 box=0.12,0.4,0.3,0.08 | the logo');
+  expect('link between anchors is not a stage link', (through('link ^a ^b | why') as { verb: string }).verb, 'tie');
+  expect('link between nodes is still a stage link', (through('link rain river | runs off') as { verb: string }).verb, 'link');
+  expect('move of an anchor is a shift', (through('move ^a after=^b') as { verb: string }).verb, 'shift');
+  expect('move of an element is still a move', (through('move sun 120,20') as { verb: string }).verb, 'move');
+  for (const bad of ['anchor ^terms page=2 | x', 'link ^a ^b', 'move ^a', 'fill ^a', 'doc t | x', 'anchor ^1 on=u3 page=2 | x']) {
+    expect(`line is refused: ${bad}`, 'why' in through(bad), true);
+  }
+  // each selector through the real reader
+  SELECTORS.forEach((anchor, index) => {
+    const raw = serializeAnnotate({ verb: 'anchor', id: '^terms', anchor });
+    const got = through(raw);
+    expect(`selector ${index} (${anchor.sel.kind}) through the reader: ${raw.slice(0, 70)}`, 'why' in got ? got.why : got.written, raw);
+  });
+  return clean;
 }
 
 export function anchorChecks(): boolean {

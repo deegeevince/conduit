@@ -394,6 +394,9 @@ export const ANNOTATE_VERB = {
 export type AnnotateVerb = 'anchor' | 'mark' | 'fill' | 'redact' | 'doc';
 export const ANNOTATE_VERBS: readonly AnnotateVerb[] = ['anchor', 'mark', 'fill', 'redact', 'doc'];
 
+/** Every `Line['verb']` an anchor line has: `tie` is written `link`, `shift` is written `move` (a `link a b` between nodes stays a `link`). */
+export const ANNOTATE_LINE_VERBS: readonly AnnotateLine['verb'][] = ['anchor', 'mark', 'tie', 'fill', 'redact', 'shift', 'doc'];
+
 export function isAnnotateVerb(verb: string): verb is AnnotateVerb {
   return (ANNOTATE_VERBS as readonly string[]).includes(verb);
 }
