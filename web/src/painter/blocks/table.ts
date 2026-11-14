@@ -160,7 +160,7 @@ function buildTable(env: Env): Draft {
     const rightEdge = x0 + used;
     let y = rm.y;
     if (titleM) {
-      parts.push({ kind: 'text', owner: key, part: 'title', text: title, emphasis: [], box: box(rm.x, y, titleM.width, titleM.height), spec: { ...env.spec, size: 'l' }, align: 'left', role: 'title', plate: false });
+      parts.push({ kind: 'text', owner: key, part: 'title', text: title, emphasis: [], box: box(left, y, titleM.width, titleM.height), spec: { ...env.spec, size: 'l' }, align: 'left', role: 'title', plate: false });
       y += titleH;
     }
     const maxValue = barCol >= 0 ? Math.max(0, ...parsed.slice(H).map((_, i) => numberValue(((grid[i + H] as Cell[])[barCol] as Cell).text))) : 0;

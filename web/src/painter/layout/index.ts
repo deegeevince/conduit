@@ -1091,7 +1091,7 @@ export function arrange(input: LayoutInput): Arrangement {
  * What the stage plan needs to know of the words before it divides the stage (PLAN-v2.1, D1): how tall the flow is across a column `width`
  * wide with all that is expected come, and how tall the choices are across the same width. Set with the very code `arrange` uses.
  */
-export function needsOf(input: LayoutInput, width: number): { readonly flow: number; readonly foot: number; readonly order: number | null } {
+export function needsOf(input: LayoutInput, width: number): { readonly flow: number; readonly foot: number; readonly order: number | null; readonly least: number } {
   const { look } = input;
   const ctx = contextOf(input, { x: -width / 2, y: -1e6, width, height: 2e6 });
   const built = buildUnits(input, look);
@@ -1099,7 +1099,16 @@ export function needsOf(input: LayoutInput, width: number): { readonly flow: num
   const flow = input.foot === undefined ? built.flow : built.flow.filter((unit) => !isChoice(unit));
   const flowNeed = flow.length === 0 && (input.expected ?? 0) <= 0 ? 0 : arrangeFlow(flow, ctx).need;
   const order = flow.length === 0 ? null : Math.min(...flow.map((unit) => unit.main.item.order));
-  return { flow: flowNeed, foot: choices.length === 0 ? 0 : footRows(choices, width, ctx).height, order };
+  // the least the words can be given and still show what matters: the headings and the tallest single line under them, which is what a full column keeps
+  let least = 0;
+  if (flowNeed > 0) {
+    const headings = flow.filter(isHeading);
+    const bodies = flow.filter((unit) => !isHeading(unit));
+    least = headings.length === 0 ? 0 : arrangeFlow(headings, ctx).need;
+    for (const unit of bodies) least = Math.max(least, arrangeFlow([...headings, unit], ctx).need);
+    least = Math.min(least, flowNeed);
+  }
+  return { flow: flowNeed, foot: choices.length === 0 ? 0 : footRows(choices, width, ctx).height, order, least };
 }
 
 // ---------------------------------------------------------------- one block of words

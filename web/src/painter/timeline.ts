@@ -639,15 +639,18 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
 
   /** The thing the plan divides the stage for at `start`: a picture when anything is drawn on the canvas, and each structure or chart. */
   const flowFloor = new Map<string, number>();
-  const blocksAt = (start: number): { list: StageBlock[]; kinds: Map<string, StageBlock['kind']> } => {
+  const blocksAt = (start: number, sceneId: string): { list: StageBlock[]; kinds: Map<string, StageBlock['kind']> } => {
     const list: StageBlock[] = [];
     const kinds = new Map<string, StageBlock['kind']>();
     let pictureOrder: number | null = null;
     for (const element of drawn) {
-      if (!element.carried && (element.enter === null || element.enter.start > start)) continue;
+      // what is there at `start`, and what this scene will bring later: a block's room is kept for it before it comes, so it never moves when it does
+      const later = !element.carried && element.scene === sceneId && (element.enter === null || element.enter.start > start);
+      if (!element.carried && (element.enter === null || element.enter.start > start) && !later) continue;
       const gone = exitOf(element);
       if (gone !== null && gone.start <= start) continue;
       if (element.kind === 'shape' || element.kind === 'sprite' || element.kind === 'copy' || element.kind === 'picture') {
+        if (later) continue;
         pictureOrder = pictureOrder === null ? element.order : Math.min(pictureOrder, element.order);
         continue;
       }
@@ -657,13 +660,18 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
       if (chart ? context.charts === undefined || figure.chart === null || !context.charts.kinds.includes(figure.chart) : context.engine === undefined && !STRUCTURES_READY.includes(figure.structure)) continue;
       const parts = chart ? 0 : schedule.elements.filter((member) => member.parent === element.key && (member.kind === 'node' || member.kind === 'link')).length + figure.rows.length;
       const box = figure.box;
+      const table = figure.structure === 'table' || figure.structure === 'code';
+      const columns = table ? Math.max(1, ...figure.rows.map((row) => row.cells.length)) : 1;
       kinds.set(element.key, chart ? 'chart' : 'structure');
+      // what it would like, and the least it can be read at (a chart: its title, a few ticks and a plot; a table: its rows at the look's floor)
+      const natural = chart ? { width: 560, height: 320 } : table ? { width: Math.max(280, 150 * columns), height: 60 + 34 * figure.rows.length } : { width: 640, height: 120 + 40 * parts };
+      const least = chart ? { width: 260, height: 190 } : table ? { width: Math.max(200, 100 * columns), height: 40 + 24 * figure.rows.length } : { width: 160, height: 100 };
       list.push({
         key: element.key,
         kind: chart ? 'chart' : 'structure',
         order: element.order,
-        natural: chart ? { width: 640, height: 360 } : { width: 640, height: 120 + 40 * parts },
-        least: chart ? { width: 200, height: 140 } : { width: 160, height: 100 },
+        natural,
+        least,
         aspect: figure.structure === 'cycle' || figure.structure === 'map' ? 16 / 9 : null,
         pinned: box === null ? null : { x: box.x, y: box.y, width: box.w, height: box.h },
       });
@@ -686,7 +694,7 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
     const replaced = new Set<string>();
     for (const element of present) if (element.replaces !== null) replaced.add(element.replaces);
     // The stage plan's blocks: what is on stage that takes room besides the words (PLAN-v2.1, D1)
-    const blocks = blocksAt(start);
+    const blocks = blocksAt(start, scene.id);
     const safe = safeFrame(viewport, look);
     // what the controls are sized for: the flow's width, which only a side-by-side layout narrows
     const first = planStage({ viewport, look, layout: scene.layout, blocks: blocks.list, flowHeight: () => 0, flowOrder: null, footHeight: () => 0 });
@@ -732,7 +740,11 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
     }
     const sides = scene.layout === 'split' ? splitSides(schedule, scene.id) : undefined;
     // The words and the choices are measured across the column; the plan divides the stage; the canvas is fitted into the picture's region.
-    const probe: LayoutInput = { viewport, look, layout: scene.layout, align: scene.align, expected: valueAt(scene.expected, start, null), items, foot: safe, ...(sides === undefined ? {} : { sides }) };
+    // what the scene will still say is counted for the plan too, so that the room the blocks and the foot are given is the one they keep
+    const comingItems: LayoutItem[] = elements
+      .filter((element) => element.scene === scene.id && !element.carried && element.replaces === null && element.enter !== null && element.enter.start > start)
+      .map((element) => ({ key: element.key, order: element.order, text: element.text, emphasis: element.emphasis, style: laidStyle(styleAt(element, element.enter?.start ?? start)), struck: false, replaces: null }));
+    const probe: LayoutInput = { viewport, look, layout: scene.layout, align: scene.align, expected: valueAt(scene.expected, start, null), items: [...items, ...comingItems], foot: safe, ...(sides === undefined ? {} : { sides }) };
     const needs = needsOf(probe, safe.width);
     // a scene's words never ask for less than they did a moment ago, so the picture does not breathe as lines come and go
     const floor = flowFloor.get(scene.id) ?? 0;
@@ -744,6 +756,7 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
       blocks: blocks.list,
       flowHeight: (width) => (wanted <= 0 ? 0 : Math.max(floor, width === safe.width ? wanted : needsOf(probe, width).flow)),
       flowOrder: needs.order,
+      flowLeast: (width) => (width === safe.width ? needs.least : needsOf(probe, width).least),
       footHeight: (width) => (width === safe.width ? needs.foot : needsOf(probe, width).foot),
     });
     flowFloor.set(scene.id, wanted);
