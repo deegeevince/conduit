@@ -175,8 +175,8 @@ export function lookOf(look: LookSpec, viewport: Viewport, fit: CanvasFit, ps: n
   const body = cellOf('m', viewport, look);
   return {
     body: body.height / ps,
-    // HOTFIX (overlap): words may shrink further (was 0.7) before a structure gives up and spills out of its room onto other words
-    minShrink: 0.45,
+    // D's fit does the shrinking itself (to 0.3); the words keep their size here
+    minShrink: 0.7,
     stroke: (look.stroke.thick * fit.unit) / ps,
     radius: look.type.snapToCells ? 0 : (body.height * 0.2) / ps,
     grid: look.type.snapToCells ? { cell: { width: body.width / ps, height: body.height / ps } } : null,
