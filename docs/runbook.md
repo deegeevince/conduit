@@ -168,33 +168,56 @@ curl -s -X POST 'localhost:4300/api/relay/turns/t1/lines?end=1' -H 'content-type
 
 If the viewer interrupts, the events carry a `report` with `"outcome":"interrupted"` and what was shown, and the next claim's `brief` says "The user interrupted at 3.4s … Everything you wrote after that never happened." A rejected line never fails the whole request: the answer says which lines were dropped and why. `curl -s localhost:4300/api/relay/status` shows what is waiting and what is claimed.
 
-## (v2.1) Modes: plain, agent, steward
+## (v2.1) The brain is an agent
 
-One brain, three settings, chosen per conversation with `/brain` or the picker, from what the server offers (`Env.modes`). It is always the canvas's brain; none of them is a second chat.
-
-| Mode | What it is | Turned on by |
-| --- | --- | --- |
-| `plain` | the model with no tools beyond the read-only web tools in `BRAIN_TOOLS` | always |
-| `agent` | the same `claude` process with the tools and connected services the owner offered; reading is free, everything else is asked for on the stage, one call at a time | `AGENT=on` |
-| `steward` | the turn is held for another Claude Code session to claim over the relay and answer | `STEWARD=on` |
-
-### Agent mode
+There is one brain, and it is always the agent: every conversation starts with the tools the owner offered switched on (the two web tools by default, and any connected service or the browser once it is listed). Reading is free and instant; anything else is asked for on the stage, each time. There is no "plain" to choose, no mode in the picker, and `/brain` is not in `/help`. The only other mode is the developer's `steward` (`STEWARD=on`, then `/brain steward`).
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
-| `AGENT` | `off` | `on` offers the mode |
+| `AGENT` | `on` (with `BRAIN=claude-cli`) | `off` gives a server with no agent: the brain keeps only the read-only web tools in `BRAIN_TOOLS` |
 | `AGENT_TOOLS` | `WebSearch,WebFetch` | the CLI's own tools offered (`Read`, `Glob`, `Grep`, `Write`, `Edit` too); a file tool exists only when `AGENT_DIR` is set |
-| `AGENT_SERVICES` | none | connected services, `name=/path/outside/the/repo.json,...`: each is an MCP configuration file (it may hold a credential, so it is never inside the repository). Calls to a service always ask, unless the service's own annotation says a tool only reads |
+| `AGENT_SERVICES` | none | connected services, `name=/path/outside/the/repo.json,...` (an MCP configuration file; it may hold a credential, so never inside the repository), and the word `chrome` for the owner's browser (below). Calls to a service always ask, unless the service's own annotation says a tool only reads |
 | `AGENT_DIR` | none | the one folder file tools may touch; the process is started in it with `--restricted` |
 | `AGENT_ANSWER_MS` | `120000` | how long the owner has to answer a confirm control; no answer is a no |
 
-Until the owner names services and a folder, agent mode has the two web tools and nothing else. The rules are code (`server/src/domain/agent.ts`, `server/src/brains/claude-cli/`), not prompt:
+`/tools` lists what is offered and switches one thing off or on for this conversation (`/tools chrome off`). The rules are code (`server/src/domain/agent.ts`, `browser.ts`, `server/src/brains/claude-cli/`), not prompt:
 
-- The process is started with `--tools <exactly the offered ones>`, `--permission-mode manual`, `--permission-prompts host`, `--permission-prompt-tool stdio` and `--restricted`, and each service's `--mcp-config` with `--strict-mcp-config`. Never `--dangerously-skip-permissions`, `bypassPermissions`, `acceptEdits` or `--bare`. The CLI asks this process before every call that is not a plain read inside the folder (the probe is at the top of `warm.ts`); `gateCall` answers: a tool not switched on is denied, a `read` runs, anything else is put to the owner as a `permission` event (`write`, `run`, `send`, `buy`, `delete`, `publish`, `signin`) and held until a `permit` arrives or the deadline passes. There is no "always allow".
-- A call is classified by `riskOf` from the tool's name and the shape of its input, erring upward: a page on a private address, a path outside the folder, an unknown tool are asked for. A service's tools are `read` only on the service's own read-only annotation, which the CLI does not pass on today, so for now every call to a service asks.
-- A tool's input and result stay in the CLI's own conversation. The activity strip, the log and the confirm control get a few words (`summaryOf`: the tool and the one field that names its target, through `redactSecrets`).
+- The process is started with `--tools <exactly the offered ones>`, `--permission-mode manual`, `--permission-prompts host`, `--permission-prompt-tool stdio` and `--restricted`, and each service's `--mcp-config` with `--strict-mcp-config`. Never `--dangerously-skip-permissions`, `bypassPermissions`, `acceptEdits` or `--bare`. The CLI asks this process before every call that is not already allowed; `gateCall` answers: a tool not switched on is denied, a `read` runs, anything else is put to the owner as a `permission` event (`write`, `run`, `send`, `buy`, `delete`, `publish`, `signin`) and held until a `permit` arrives or the deadline passes. There is no "always allow". The confirm control shows the whole call (`detail`, scrollable, redacted), waits about half a second before its buttons work, and ties each click to its own request.
+- When nothing but the two web tools is on, the CLI is told to allow them itself (`--allowedTools`): a prompt is answered as fast as without an agent (measured: first line 1.7 to 2.1 s, either way; with the web tools asked about instead, the brain searched before drawing in about one turn in four). With a folder, a service or the browser on, a fetch with a query string, or to any host but a search or reference site, is asked for and shown in full, so that a fetch cannot carry out what the other tools read.
+- A look at the draft and the fix that follows use no tools: a call in one asks nothing and the pass is stopped.
+- A tool's input and result stay in the CLI's own conversation. The activity strip, the log and the session record get a few words (`summaryOf`, through `redactSecrets`); only the confirm control gets the whole call.
 - Something that needs the owner's own hands (a sign-in, a code, a payment) is a `signin` or `buy`: it is asked for and then left to the owner.
-- `pnpm --filter @conduit/server exec tsx src/tools/agent-check.ts` checks all of this against a scripted stand-in for `claude` (no model, no network); add `--real` for one tiny live turn.
+- `pnpm agent-check` checks all of this with no model: the policy tables, a scripted stand-in for `claude`, and the real road of an answer over HTTP (it starts the server on port 4785, answers a confirm control with the CLI's 36-character request id and checks the write happened). `pnpm agent-check -- --real` adds one tiny live turn.
+
+### The browser (`chrome`)
+
+The brain can use the owner's own Chrome through Claude in Chrome, in tabs of its own. To turn it on:
+
+1. Chrome is open on this Mac with the Claude in Chrome extension installed and signed in to the same Claude account as the `claude` CLI.
+2. In `.env`: `AGENT_SERVICES=chrome` (alongside any others: `AGENT_SERVICES=chrome,remote=/path/mcp.json`). Restart the server.
+3. `/tools` now lists `chrome` as on; `/tools chrome off` switches it off for a conversation. If the extension is not connected, the first browser call fails and the brain says so; nothing else changes.
+
+What it does there, by what it is (`riskOf`/`gateCall`, `domain/browser.ts`):
+
+| Call | Risk | Answer |
+| --- | --- | --- |
+| tab list, screenshot, zoom, scroll, hover, wait, page text, page tree, find, console | `read` | runs |
+| navigate to a plain public http(s) address (no query, no fragment, a short path) | `read` | runs |
+| navigate to an address with a query or fragment, or a long path | `send` | asked, full address shown |
+| navigate to a private address, `back`/`forward` | `run` | asked |
+| click, key, form input, type | `run` | asked, each time |
+| open the session's tab (`tabs_context_mcp` with `createIfEmpty`), `tabs_create_mcp`, `tabs_close_mcp` | `write` | asked |
+| anything at all on a page whose address looks like a sign-in | `signin` | asked, at the highest risk |
+| anything at all on a payment or checkout page, navigating to one | `buy` | asked, at the highest risk |
+
+Always refused, with or without a permit, and the brain is told so and told to leave it to the owner:
+
+- typing a password, a card number, a one-time code or anything shaped like a secret (`type`, `form_input`, or keys that spell it);
+- typing anything on a sign-in, payment or checkout page, or on a page a read showed a password or card field on;
+- any call on a tab the brain did not open itself (the tab list of an earlier group, the owner's tabs); a `navigate` with no tab named;
+- `browser_batch` (several calls in one: the gate would see one), `javascript_tool`, `file_upload`, `upload_image`, `gif_creator` (a download), `resize_window`, `read_network_requests`, and choosing or switching the owner's browser. These are removed from the process (`--disallowedTools`) and refused again if one is called.
+
+The owner signs in to any site themselves, in their own Chrome, and tells the brain to go on. The brain gets an image from the owner's ChatGPT by opening chatgpt.com in its tab, typing the prompt (asked), waiting, and taking a screenshot. **The picture cannot yet be put on the stage**: this build has no upload store and `pic from=` has no route (the package for pictures in is S4), so the brain says the image is made and waiting in their tab and leaves the tab open. What S4 needs from here: the screenshot arrives in the stream as an inline `image` block (and, with `save_to_disk`, as a file under `$TMPDIR/claude-chrome-screenshots-*`); store it in the upload store and tell the brain its id.
 
 ### Steward mode
 

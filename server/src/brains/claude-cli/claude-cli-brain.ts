@@ -138,8 +138,11 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
   const agentRunOf = (session: string): AgentRun | null => {
     if (modeOf(session) !== 'agent') return null;
     const on = onOf(session);
+    const builtIns = agent.tools.filter((name) => on.has(name) && (agent.dir !== null || !FILE_TOOLS.includes(name)));
+    const services = agent.services.filter((service) => on.has(service.name));
     return {
-      builtIns: agent.tools.filter((name) => on.has(name) && (agent.dir !== null || !FILE_TOOLS.includes(name))),
+      builtIns,
+      freeReads: services.length === 0 && builtIns.every((name) => name === 'WebSearch' || name === 'WebFetch'),
       mcpConfigs: agent.services.filter((service) => on.has(service.name) && service.config !== '').map((service) => service.config),
       chrome: agent.services.some((service) => service.name === 'chrome') && on.has('chrome'),
       cwd: folder(),
@@ -439,6 +442,13 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
           if (NOT_TOOLS.has(use.tool.toLowerCase())) {
             notTools.add(use.id);
             continue;
+          }
+          if (out.noTools === true) {
+            // A look at the draft uses no tool, whatever the process was started with (a web tool the CLI allows itself is never asked about): it is stopped.
+            turnLog.warn('review_used_tool', { tool: use.tool });
+            timedOut = 'a look at the draft tried to use a tool';
+            inner.abort();
+            break;
           }
           toolsChanged = true;
           if (splitTool(use.tool).service === 'chrome') chromeUses.set(use.id, use);

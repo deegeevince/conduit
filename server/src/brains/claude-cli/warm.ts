@@ -47,6 +47,47 @@
 //   5. `--restricted` with `--strict-mcp-config` and `--setting-sources ''` starts and behaves as above.
 //   6. If prompts did not arrive (an older CLI), the fallback is read-only: `--permission-prompts none` and an allowlist of
 //      READ_ONLY_TOOLS. It is not needed on 2.1.325 and is not built.
+//
+// CLAUDE IN CHROME (v2.1, package chrome). Probed on this machine with Claude Code 2.1.325, haiku, effort low, stream-json both ways, an empty
+// temporary folder, 2026-11-14, with the extension connected to this Mac's Chrome. Every can_use_tool of the probe was answered by a script that
+// allowed only the exact calls below and denied the rest. What was observed:
+//
+//   1. `claude --help` lists `--chrome` ("Enable Claude in Chrome integration") and `--no-chrome`. No MCP configuration file is needed.
+//   2. `--chrome --tools ""` (no --strict-mcp-config): the init event lists the browser's 20 tools as `mcp__claude-in-chrome__<name>`
+//      (browser_batch, computer, file_upload, find, form_input, get_page_text, gif_creator, javascript_tool, list_connected_browsers,
+//      navigate, read_console_messages, read_network_requests, read_page, resize_window, select_browser, switch_browser, tabs_close_mcp,
+//      tabs_context_mcp, tabs_create_mcp, upload_image) and
+//        "mcp_servers":[{"name":"linear","status":"needs-auth","source":"user"},{"name":"claude-in-chrome","status":"connected","source":"dynamic"}]
+//      (the user's own `linear` server is there because strict mode was off).
+//   3. `--chrome --tools "" --strict-mcp-config --setting-sources ""`: the same 20 tools and
+//        "mcp_servers":[{"name":"claude-in-chrome","status":"connected","source":"dynamic"}]
+//      so `--strict-mcp-config` does NOT keep the browser out and `--tools` does not name or limit it: `--chrome` adds a server of its own.
+//      Without `--chrome` (strict, no tools): "tools":[] and "mcp_servers":[].
+//   4. With the agent flags (`--permission-mode manual --permission-prompts host --permission-prompt-tool stdio --restricted --strict-mcp-config`)
+//      and `--chrome --tools WebSearch`: 19 browser tools (`javascript_tool` is not there: `--restricted` removes it), and each is asked of the host
+//      by `can_use_tool` with its name `mcp__claude-in-chrome__<name>` and its input. `--disallowedTools mcp__claude-in-chrome__<name> ...`
+//      removes the named tools from the init list (checked with browser_batch, gif_creator, javascript_tool).
+//   5. Read-only live probe, one new tab, owner's other tabs never touched. `tabs_context_mcp` with no arguments answered: "This session has no
+//      tab group of its own. Any tabs opened earlier in this conversation may still be open in Chrome, in a group this session cannot see or
+//      control. Use createIfEmpty: true to create this session's group." and `tabs_create_mcp` first: "Call tabs_context_mcp with createIfEmpty:
+//      true first". So the extension scopes a session to a tab group of its own. `tabs_context_mcp {"createIfEmpty":true}` answered
+//        {"availableTabs":[{"tabId":1448947380,"title":"New Tab","url":"chrome://newtab/"}],"tabGroupId":1630827894}
+//      plus a "Tab Context" text block ("  • tabId 1448947380: \"New Tab\" (\"chrome://newtab/\")"). Then `navigate {"url":"https://example.com",
+//      "tabId":...}` -> "Navigated to https://example.com/" and a Tab Context block naming the tab and its address; `get_page_text {"tabId":...}` ->
+//      "Title: Example Domain\nURL: https://example.com/\nSource element: <body>\n---\nThis domain is for use in documentation examples..."; then
+//      `tabs_close_mcp {"tabId":...}` -> "Closed tab 1448947380. Group is now empty (auto-removed)." No sign-in, typing, download or other site.
+//      The model also tried `browser_batch` (several calls in one) first: the host sees one call, not its parts, so it is removed (CHROME_REMOVED).
+//   6. `computer {"action":"screenshot","tabId":...,"save_to_disk":true}` -> text "Successfully captured screenshot (1568x763, jpeg) - ID: ss_..." and an
+//      inline `image` block (base64 jpeg) in the tool_result; the file was written to $TMPDIR/claude-chrome-screenshots-XXXXXX/screenshot-<ms>-0.jpg
+//      (mode 0600), outside the agent folder. NOT probed, and so unknown: the result's text for `tabs_create_mcp`, anything on chatgpt.com
+//      (the probe never visited it), a click, a keystroke, a download.
+//   7. The agent-mode brain is the same `claude` process either way; `chrome` is on when the owner lists it in AGENT_SERVICES and the session has it
+//      on in /tools. Its gate is domain/browser.ts.
+//   8. (agent by default) A plain drawing prompt ("Draw a lighthouse on a cliff at dusk"), sonnet, effort low, with WebSearch and WebFetch the only
+//      tools: when the web tools were ASKED about (`--permission-prompt-tool stdio`, no `--allowedTools`) the model searched before drawing in 3 of 13
+//      replays (15 to 45 s to the first line, against 1.5 to 2); with `--allowedTools WebSearch WebFetch` 0 of 7, and as the plain brain, 0 of 24.
+//      So when nothing but the web tools is on, the CLI is told to allow them itself (`AgentRun.freeReads`), exactly what `gateCall` would say.
+//
 
 import { errors } from '../../errors';
 import type { Snapshot } from '../../domain/brain';

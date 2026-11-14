@@ -26,6 +26,14 @@ export function toolArguments(tools: readonly string[]): string[] {
 export interface AgentRun {
   readonly builtIns: readonly string[];
   readonly mcpConfigs: readonly string[];
+  /**
+   * The web tools are allowed by the CLI itself, with no round trip to this process. Set only when nothing else is on (no folder, no service,
+   * no browser): then a search and a page read are free in every case, which is all `gateCall` would say, and the brain behaves as it did
+   * without an agent. Measured: when WebSearch was asked about instead, the same model searched for a plain drawing in about one turn in four
+   * (15 to 45 s to the first line, against 2). With anything else on, the web tools are asked about so that a fetch cannot carry out what the
+   * other tools read (`gateCall`'s strict fetch).
+   */
+  readonly freeReads?: boolean;
   /** the owner's Chrome, through Claude in Chrome (`--chrome`), with the tools that cannot be gated removed */
   readonly chrome?: boolean;
   /** the folder the process starts in and that file tools are confined to; an empty temporary one when the owner named none */
@@ -35,6 +43,7 @@ export interface AgentRun {
 export function agentArguments(run: AgentRun): string[] {
   return [
     '--tools', run.builtIns.join(','),
+    ...(run.freeReads === true ? ['--allowedTools', ...run.builtIns.filter((name) => name === 'WebSearch' || name === 'WebFetch')] : []),
     '--permission-mode', 'manual',
     '--permission-prompts', 'host',
     '--permission-prompt-tool', 'stdio',
