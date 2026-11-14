@@ -373,7 +373,8 @@ body { font-size: calc(20px * var(--ts, 1)); }
   .writing { gap: 8px; }
   .paper { height: clamp(120px, 20vh, 190px); }
   .writing .answer-row { flex-wrap: nowrap; gap: 6px; }
-  .writing .answer-row .btn { flex: 1 1 0; min-width: 0; padding: 0 6px; font-size: calc(18px * var(--ts, 1)); white-space: nowrap; min-height: 52px; }
+  .writing .answer-row .btn { flex: 1 1 0; min-width: 0; padding: 0 6px; font-size: calc(16px * var(--ts, 1)); white-space: nowrap; min-height: 52px; }
+  .writing .answer-row .btn.soft[data-act=clear] { flex: 1.5 1 0; }
   .writing .answer-row .btn.check { flex: 1.1 1 0; }
   .vline { display: block; }
   .nudge:not(.hints) .verdict { display: none; }
@@ -387,3 +388,6 @@ body { font-size: calc(20px * var(--ts, 1)); }
   .paper { height: clamp(140px, 20vh, 220px); }
   .try img { height: 64px; }
 }
+
+/* the room for a scrollbar is always kept: the paper must not change width (and be laid over again) the moment the page grows past the screen */
+html { scrollbar-gutter: stable; }

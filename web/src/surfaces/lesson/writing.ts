@@ -80,7 +80,7 @@ export function inkWriting(options: InkWritingOptions): HTMLElement {
       'div',
       { class: 'answer-row' },
       options.reading
-        ? h('button', { type: 'button', class: 'btn main check', 'data-act': 'check', disabled: true }, 'Reading your writing…')
+        ? h('button', { type: 'button', class: 'btn main check', 'data-act': 'check', disabled: true }, 'Reading…')
         : h('button', { type: 'button', class: 'btn main check', 'data-act': 'check', onclick: (e: Event) => options.onCheck(e.timeStamp) }, 'Check'),
       h('button', { type: 'button', class: 'btn soft', 'data-act': 'clear', onclick: () => options.onClear() }, 'Start again'),
       h('button', { type: 'button', class: 'btn soft', 'data-act': 'type', onclick: () => options.onType() }, 'Type it'),
