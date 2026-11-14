@@ -2,6 +2,30 @@
 
 Newest first. Each item is something the brain can show live when asked "showcase what's new": draw it, don't describe it. The server reads this file.
 
+## Working through a page, a question at a time (live)
+- Photograph a worksheet and Conduit shows it as a map: each section and its questions as cards, in order, each with a small crop from the photo. Everything is prepared and checked in the background before you reach it.
+- Tap a question and it fills the screen, in the page's own words, with room underneath to write. You try first, with the pen, as on paper; nothing is shown before you do. Tap Check and Conduit reads your writing and drawing: a right answer gets a short celebration and goes on the card, a wrong one gets a kind word about what it saw and one hint.
+- Help comes in small steps, only when you ask. "How could I think about this?" is a ladder of questions back to you, one tap each (what do we know, what is it asking, which way could we think about it), with the facts marked in the question, which stays pinned in the corner. "Show me how" plays one way through as steps you tap, and stops before the answer.
+- A shape on a grid can be counted by tapping its squares. If Conduit cannot read a question or a figure well enough, it says "needs a person to check" instead of guessing.
+- Stop any time. Reload within five minutes and it reopens where you were, your working still there; later, it offers to carry on or dismiss. Close takes you back to the canvas, and + then New conversation starts fresh.
+- Units are set properly (cm², not cm2).
+
+## The brain can see what it draws (live)
+- After drawing, Conduit looks at its own picture and fixes what is wrong: a label on the wrong part, a label that spills out of its shape, lines that cross, words sitting on a diagram. It also has stage tools to draw and check on the canvas as it works.
+
+## Labels on the right side (live)
+- In a labelled picture (a heart, a machine, a cutaway) each label now stands outside the drawing, on the side nearest its part, in order, with a short line to exactly the part it names. Small screens get smaller type and stacked labels rather than overlap. The exploded view is complete when it comes to rest.
+
+## Answers that do not overlap (live)
+- A step-by-step answer reserves room for its longest version, so a changing number or a new step no longer lands on top of the text beside it. Tables and text that change as you move a slider or tap a button stay tidy.
+
+## Live table numbers (live)
+- Numbers in a table's cells can be worked out from the controls: move a slider and the table follows. A control may be named after the table that uses it.
+
+## PDF in (live)
+- Add a PDF the way you add a photo (+, paste, or drag and drop). Its first ten pages are drawn page by page, and its own text goes along with them, so a quote from it matches the page exactly.
+- Up to ten photos or PDF pages in one message.
+
 ## Agent auto mode (new)
 - `/tools auto` lets the brain's browser work without a prompt for each step: reading, scrolling, clicking, typing ordinary text, opening and closing its own tabs. `/tools ask` brings every prompt back. The server's default is `AGENT_PERMITS=auto|ask` (ask unless said).
 - Still asked on stage, every time, even in auto: sending, buying, deleting, posting, signing in, and anything on a sign-in, payment or checkout page. Never allowed in any mode: typing a password or card number, touching a tab the brain did not open, downloads.
