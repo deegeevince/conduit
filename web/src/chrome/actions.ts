@@ -37,10 +37,8 @@ function sceneCount(lines: readonly { readonly text: string }[]): number {
  * - **Show all**: a button, and the key `.` while the stage itself has focus
  *   (never in a field or elsewhere on the page, so a single-character
  *   shortcut cannot catch anyone typing: WCAG 2.1.4). Visible while a turn is open or playing; calls
- *   `painter.showAll()`. If the answer had more than one scene, the
- *   transcript opens at this turn, because the stage can only rest on the
- *   last one (on a narrow screen it says so in the status line instead, because the
- *   sheet would cover the stage).
+ *   `painter.showAll()`. It only skips to the end and never opens a panel; if the answer had more than one scene,
+ *   the status line says the earlier ones are in the Transcript.
  * - **Save**: an entry of the composer's [+] menu that opens a list of: Copy script, Save script, Play a
  *   script (a textarea in a dialog; sends input kind `script`), Save picture
  *   (PNG, SVG), Save film (the latest answer: the prompt it began with and
@@ -76,11 +74,10 @@ export function mountActions(host: HTMLElement, app: StageApp, transcript: Trans
   let showable = false;
   let revealedFor: string | null = null;
 
-  // On a phone the transcript is a sheet over the stage: it opens only when the viewer opens it.
-  const narrow = window.matchMedia('(max-width: 719px)');
-  const reveal = (turn: string): void => {
-    if (narrow.matches) app.announce('Earlier scenes are in the Transcript');
-    else transcript.revealTurn(turn);
+  // Show all only skips to the end. It never opens a panel (the owner: "it pops up the transcript too. bug"); when the stage can rest on the
+  // last of several scenes only, it says where the others are, once, and the viewer opens the Transcript if they want it.
+  const reveal = (_turn: string): void => {
+    app.announce('Earlier scenes are in the Transcript');
   };
 
   const refresh = (): void => {
