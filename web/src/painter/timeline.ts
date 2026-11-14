@@ -13,6 +13,7 @@ import type { StructureEngine } from '../contracts/blocks';
 import type { TuneCue } from '../contracts/tune';
 import { chartFrames } from './charts';
 import type { ChartData } from './charts';
+import { wordsIn } from './blocks/kit';
 import { createControlStore, compileTemplate, renderTemplate, scopeOf } from './controls';
 import type { Template } from './controls';
 import { boundElement, boundSchedule, controlIndexOf, createRuntime, heldBy, moodOf, controlSpecOf } from './bound';
@@ -2735,7 +2736,10 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
       laidViews.push({ key: chart.key, id: chart.id, kind: 'structure', text: span?.figure == null ? '' : describeFigure(span.figure), layer: chart.layer, phase: chart.state.interactive ? 'on' : 'entering', box: chart.box, fontPx: chart.state.theme.fontPx, colour: chart.state.theme.ink, contrast: 21, painting: null, opacity: chart.opacity, tappable: false });
     }
     const drawnViews = laidViews.length === 0 ? figs.views : [...figs.views.filter((view) => !laidViews.some((laidView) => laidView.key === view.key)), ...laidViews];
-    return { frame, views: [...evaluated.map((item) => item.view), ...drawnViews], sites };
+    // the words that describe a diagram carry what its cells show now: a `{cash}` in a cell is the control's value here too, as a reader of the page hears it
+    const scopeNow = scopeOf([...cindex.ids], (id) => controlNamed(id, tq));
+    const told = (view: StageElementView): StageElementView => (view.kind === 'structure' && view.text.includes('{') ? { ...view, text: wordsIn(view.text, [], scopeNow).text } : view);
+    return { frame, views: [...evaluated.map((item) => item.view), ...drawnViews].map(told), sites };
   };
 
   // The same instant asked of twice (a frame, then a pointer, then the snapshot) is made once, while nothing the hand holds has changed.

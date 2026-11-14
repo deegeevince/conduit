@@ -252,14 +252,14 @@ export const PAGE_LIB = String.raw`(() => {
     const reports = s.events().filter((e) => e.type === 'report');
     const last = reports[reports.length - 1];
     const live = s.elements().map((e) => ({ id: e.id, kind: e.kind, text: e.text.slice(0, 70), phase: e.phase, opacity: e.opacity, box: e.box, layer: e.layer, contrast: e.contrast, fontPx: e.fontPx, painting: e.painting }));
-    const base = { live, charts: s.charts().map((c) => ({ id: c.id, kind: c.kind, waiting: c.waiting, points: c.points, box: c.box })), controls: s.controls().map((c) => ({ id: c.id, control: c.control, label: c.label, enabled: c.enabled, box: c.box })), script: s.script(), viewport: s.state().viewport, hasHook: typeof s.mockups === 'function', mockups: typeof s.mockups === 'function' ? s.mockups() : [] };
+    const base = { live, charts: s.charts().map((c) => ({ id: c.id, kind: c.kind, waiting: c.waiting, points: c.points, box: c.box })), controls: s.controls().map((c) => ({ id: c.id, control: c.control, label: c.label, enabled: c.enabled, box: c.box })), script: s.script(), viewport: s.state().viewport, hasHook: typeof s.mockups === 'function', mockups: typeof s.mockups === 'function' ? s.mockups() : [], leaders: typeof s.leaders === 'function' ? s.leaders() : null };
     if (!last) return Object.assign({ report: null }, base);
     const r = last.report;
     return Object.assign({
       report: {
         turn: r.turn, outcome: r.outcome,
         shown: r.shown.map((x) => ({ id: x.id, kind: x.kind, text: String(x.text).slice(0, 60), struck: x.struck, partial: x.partial, part: !!x.part })),
-        sight: r.sight.items.map((i) => ({ id: i.id, kind: i.kind, resting: i.resting, notes: i.notes })),
+        sight: r.sight.items.map((i) => ({ id: i.id, kind: i.kind, resting: i.resting, notes: i.notes, box: i.box })),
         stage: r.stage.elements.map((e) => ({ id: e.id, kind: e.kind, struck: e.struck, parent: e.parent, structure: e.figure && e.figure.kind === 'structure' ? e.figure.structure : null, rows: e.figure && e.figure.kind === 'structure' ? e.figure.rows.length : 0 })),
       },
     }, base);
@@ -669,7 +669,7 @@ export interface Answer {
     readonly turn: string;
     readonly outcome: string;
     readonly shown: readonly { readonly id: string; readonly kind: string; readonly text: string; readonly struck: boolean; readonly partial: boolean; readonly part: boolean }[];
-    readonly sight: readonly { readonly id: string; readonly kind: string; readonly resting: boolean; readonly notes: readonly string[] }[];
+    readonly sight: readonly { readonly id: string; readonly kind: string; readonly resting: boolean; readonly notes: readonly string[]; readonly box: { readonly x: number; readonly y: number; readonly w: number; readonly h: number } }[];
     readonly stage: readonly { readonly id: string; readonly kind: string; readonly struck: boolean; readonly parent: string | null; readonly structure: string | null; readonly rows: number }[];
   } | null;
   readonly live: readonly LiveElement[];
@@ -679,6 +679,8 @@ export interface Answer {
   readonly viewport: { readonly width: number; readonly height: number };
   readonly hasHook: boolean;
   readonly mockups: readonly MockupView[];
+  /** the leader lines of the callouts (null on a build whose hook does not say) */
+  readonly leaders: readonly { readonly label: string; readonly part: string; readonly end: { readonly x: number; readonly y: number }; readonly distance: number; readonly nearer: { readonly id: string; readonly distance: number } | null }[] | null;
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------------
@@ -1245,7 +1247,7 @@ export class Conversation {
     if (outside.length > 0) problems.push(`outside the stage (${width}x${height}): ${outside.slice(0, 4).join(', ')}${outside.length > 4 ? ` and ${outside.length - 4} more` : ''}`);
     if (answer.report !== null) {
       const clipped = answer.report.sight.filter((item) => item.resting && ['text', 'control'].includes(item.kind) && (item.notes.includes('clipped') || item.notes.includes('off-canvas')));
-      if (clipped.length > 0) problems.push(`the painter's sight says part of it fell outside the screen: ${clipped.slice(0, 4).map((item) => item.id).join(', ')}`);
+      if (clipped.length > 0) problems.push(`the painter's sight says part of it fell outside the screen: ${clipped.slice(0, 4).map((item) => `${item.id} ${item.box.x},${item.box.y} ${item.box.w}x${item.box.h} [${item.notes.join('/')}]`).join(', ')}`);
     }
     const page = await this.tab.call<{ sw: number; sh: number; iw: number; ih: number; bw: number; bh: number }>('page');
     if (page.sw > page.iw + 1 || page.bw > page.iw + 1) problems.push(`the page scrolls sideways (${page.sw} wide in ${page.iw})`);

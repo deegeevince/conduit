@@ -323,14 +323,26 @@ export function layoutCallouts(input: CalloutInput): CalloutLayout {
           else if (mode === 'outer') boxes[m.i] = side === 'left' ? box(fig.x - g - w, c - h / 2, w, h) : box(right(fig) + g, c - h / 2, w, h);
           else {
             // stacked against the outline: as near the ink as is clear of it, at this label's own height
-            const ink = inkBand(c - h / 2 - hugGap, c + h / 2 + hugGap);
-            if (side === 'left') {
-              const edge = ink === null ? fig.x + fig.width / 2 - hugGap : ink.min - hugGap;
-              boxes[m.i] = box(edge - w, c - h / 2, w, h);
-            } else {
-              const edge = ink === null ? fig.x + fig.width / 2 + hugGap : ink.max + hugGap;
-              boxes[m.i] = box(edge, c - h / 2, w, h);
+            const hugAt = (cy: number): Box => {
+              const ink = inkBand(cy - h / 2 - hugGap, cy + h / 2 + hugGap);
+              if (side === 'left') return box((ink === null ? fig.x + fig.width / 2 - hugGap : ink.min - hugGap) - w, cy - h / 2, w, h);
+              return box(ink === null ? fig.x + fig.width / 2 + hugGap : ink.max + hugGap, cy - h / 2, w, h);
+            };
+            let placed = hugAt(c);
+            // where the drawing is widest there is no room for the words at that height: slide along the column to the nearest height where the label stands inside the room, clear of ink and of the labels already set
+            if (!contains(room, placed, 0.5)) {
+              const stepY = Math.max(1, h * 0.5);
+              slide: for (let k = 1; k * stepY <= room.height; k += 1) {
+                for (const dir of [1, -1]) {
+                  const trial = hugAt(c + dir * k * stepY);
+                  if (!contains(room, trial, 0.5) || inkHits(trial)) continue;
+                  if (boxes.some((other, j) => j !== m.i && other !== undefined && overlaps(inflate(trial, 1), other))) continue;
+                  placed = trial;
+                  break slide;
+                }
+              }
             }
+            boxes[m.i] = placed;
           }
         });
       }
