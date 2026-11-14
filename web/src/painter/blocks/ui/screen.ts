@@ -1,8 +1,8 @@
 // One screen, laid out (PLAN-v2.2 E13): the tree the kit builds, the boxes the solver gives it, and the shapes and
 // words each box is drawn as. Pure and deterministic: the same screen, look, measurer and state always give the same parts.
 
-import type { UiScreen, UiTokens } from './lang';
-import { UI_DEVICE_SIZE, linesPerScreen, parseInterface } from './lang';
+import type { UiNode, UiScreen, UiTokens } from './lang';
+import { UI_DEVICE_SIZE, isUiContainer, linesPerScreen, parseInterface } from './lang';
 import { buildScreen, makeKit } from './kit';
 import type { Item, Out } from './kit';
 import { lintScreen } from './lint';
@@ -12,9 +12,23 @@ import type { Placed } from './solve';
 import { NO_STATE } from './types';
 import type { UiHit, UiPart, UiScreenLayout, UiSlot, UiState } from './types';
 
+/**
+ * A page shown as the phone it would be (a narrow stage): what sat side by side on a wide page goes one under the other, as a responsive page does.
+ * A row of two or more that holds a column or a picture stacks; the rest of the rows (a title and a badge, two buttons) stay rows, and wrap only if they must.
+ */
+function responsive(nodes: readonly UiNode[]): UiNode[] {
+  return nodes.map((node): UiNode => {
+    if (!isUiContainer(node)) return node;
+    const stack = node.kind === 'row' && !node.props.spread && node.children.length >= 2 && node.children.some((child) => isUiContainer(child) || child.kind === 'image');
+    const children = responsive(node.children).map((child): UiNode => (stack && !isUiContainer(child) ? { ...child, flags: child.flags.filter((flag) => flag !== 'grow') } : stack && isUiContainer(child) ? { ...child, props: { ...child.props, grow: false } } : child));
+    return stack ? { ...node, kind: 'col', props: { ...node.props, align: null }, children } : { ...node, children };
+  });
+}
+
 export function layoutScreen(written: UiScreen, tokens: UiTokens, measure: UiMeasure, state: UiState = NO_STATE, lines = 0): UiScreenLayout {
   // `device` is a property that can be set: the same lines laid out on another device
-  const screen: UiScreen = state.device[written.id] === undefined ? written : { ...written, device: state.device[written.id] ?? written.device };
+  const switched: UiScreen = state.device[written.id] === undefined ? written : { ...written, device: state.device[written.id] ?? written.device };
+  const screen: UiScreen = switched.device === 'phone' && (written.device === 'browser' || written.device === 'desktop') ? { ...switched, children: responsive(switched.children) } : switched;
   let size: { width: number; height: number } = UI_DEVICE_SIZE[screen.device];
   const kit = makeKit(tokens, screen.device, measure, state);
   let placed: Placed<Item> = solve(buildScreen(kit, screen, size.width, size.height), size.width, size.height);

@@ -182,7 +182,11 @@ export function layoutUi(args: { readonly structure: ElementSpan; readonly room:
   if (doc.screens.length === 0 || room.width < 40 || room.height < 40) return { ...EMPTY_STRUCTURE_LAYOUT, boxes: new Map([[structure.key, room]]) };
   const run = runtimeOf(structure.key);
   const tokens = tokensFor(spec);
-  const state: UiState = { ...run.state, picture: Object.fromEntries(PICTURES) };
+  // A page cannot be read at 1280 points in 390: on a narrow stage a browser or a desk window is shown as the phone it would be (the same parts, laid out for it)
+  const narrow = room.width < NARROW;
+  const device: Record<string, 'phone'> = {};
+  if (narrow) for (const screen of doc.screens) if ((screen.device === 'browser' || screen.device === 'desktop') && run.state.device[screen.id] === undefined) device[screen.id] = 'phone';
+  const state: UiState = { ...run.state, device: { ...run.state.device, ...device }, picture: Object.fromEntries(PICTURES) };
   const counts = linesPerScreen(doc);
   const layouts = doc.screens.map((screen, i) => layoutScreen(screen, tokens, measure, state, counts[i] ?? 0));
   const focus = Math.max(0, Math.min(layouts.length - 1, run.focus));
