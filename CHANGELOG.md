@@ -2,6 +2,11 @@
 
 Newest first. Each item is something the brain can show live when asked "showcase what's new": draw it, don't describe it. The server reads this file.
 
+## Agent auto mode (new)
+- `/tools auto` lets the brain's browser work without a prompt for each step: reading, scrolling, clicking, typing ordinary text, opening and closing its own tabs. `/tools ask` brings every prompt back. The server's default is `AGENT_PERMITS=auto|ask` (ask unless said).
+- Still asked on stage, every time, even in auto: sending, buying, deleting, posting, signing in, and anything on a sign-in, payment or checkout page. Never allowed in any mode: typing a password or card number, touching a tab the brain did not open, downloads.
+- The bar says "agent · auto" beside the model; each call allowed this way shows on the activity strip as "auto" and is logged with `permit: auto`. The kill switch stops it at once.
+
 ## The bar is one line (new)
 - The bottom of the page is one pill, like a chat app's: a + button, the message box, the microphone, Send (Stop while Conduit answers). The box grows upwards when you type several lines (Shift+Enter makes a new line) and rests at one.
 - The + menu holds the rest: Add a photo, Take a photo (on a phone), Draw, Save, Transcript, Model and effort, Copy answer, and About (keys, commands, the charting credit). It opens with Enter or Space and answers the arrow keys and Escape.

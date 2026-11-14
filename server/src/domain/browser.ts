@@ -97,6 +97,8 @@ export interface BrowserVerdict {
   readonly risk: ActionRisk;
   /** set: never allowed, not even by the owner; this is what the brain is told */
   readonly deny: string | null;
+  /** the call is aimed at a sign-in, payment or checkout page (or goes to one): always asked, at every permit level */
+  readonly sensitive: boolean;
 }
 
 const luhn = (digits: string): boolean => {
@@ -139,8 +141,8 @@ const tabOf = (call: ToolCall): number | null => {
 export function browserVerdict(call: ToolCall, state: BrowserState): BrowserVerdict {
   const { action: name } = splitTool(call.tool);
   const input = call.input;
-  const refuse = (why: string, risk: ActionRisk = 'run'): BrowserVerdict => ({ risk, deny: why });
-  const ask = (risk: ActionRisk): BrowserVerdict => ({ risk, deny: null });
+  const refuse = (why: string, risk: ActionRisk = 'run'): BrowserVerdict => ({ risk, deny: why, sensitive: false });
+  const ask = (risk: ActionRisk, sensitive = false): BrowserVerdict => ({ risk, deny: null, sensitive });
 
   if (name === 'browser_batch') return refuse('browser_batch is not available: make each call on its own, so that each is shown and approved');
   if (CHROME_REMOVED.includes(name)) return refuse(`${name} is not available in this browser`);
@@ -174,12 +176,14 @@ export function browserVerdict(call: ToolCall, state: BrowserState): BrowserVerd
   }
 
   let risk: ActionRisk;
+  let targetSensitive = false;
   if (name === 'navigate') {
     const target = input['url'];
     if (typeof target !== 'string' || target.trim() === '') return refuse('navigate needs a url');
     if (/^(?:back|forward)$/i.test(target.trim())) risk = 'run';
     else {
       const sens = sensitivityOf(target);
+      if (sens !== null) targetSensitive = true;
       const quiet = quietAddress(target.trim());
       if (quiet === 'refused') risk = 'run';
       else risk = sens ?? (quiet === 'quiet' ? 'read' : 'send');
@@ -189,7 +193,7 @@ export function browserVerdict(call: ToolCall, state: BrowserState): BrowserVerd
   else risk = 'run';
 
   // Anything on a page that is a sign-in, payment or checkout is asked for, and at the highest risk.
-  return ask(onSensitive === null ? risk : worse(risk, onSensitive));
+  return ask(onSensitive === null ? risk : worse(risk, onSensitive), onSensitive !== null || targetSensitive);
 }
 
 /** The words a tab's own address and the ids in one JSON block of `tabs_context_mcp`; never page text. */

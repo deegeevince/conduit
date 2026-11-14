@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs';
 import { resolve as resolvePath } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parsePromptVariant, REFINE_LIMITS, REVIEW_POLICY } from '@conduit/language';
+import { AGENT_PERMITS } from '@conduit/language';
 import type { BrainMode, PromptVariant, ReviewPolicy } from '@conduit/language';
 import { CHROME_GIST, NO_AGENT } from './domain/agent';
 import type { AgentSettings } from './domain/agent';
@@ -94,7 +95,7 @@ export interface Env {
   readonly webDist: string | null;
   /** v2.1. The live critic (`CRITIC`, `CRITIC_MODEL`, `CRITIC_EFFORT`, `CRITIC_PER_HOUR`): on by default with the claude-cli brain, off with the others */
   readonly critic: CriticPolicy;
-  /** v2.1. What agent mode may use (`AGENT`, `AGENT_TOOLS`, `AGENT_SERVICES`, `AGENT_DIR`, `AGENT_ANSWER_MS`): off, with nothing offered, unless the owner says */
+  /** v2.1. What agent mode may use (`AGENT`, `AGENT_TOOLS`, `AGENT_SERVICES`, `AGENT_DIR`, `AGENT_ANSWER_MS`, `AGENT_PERMITS=ask|auto`): off, with nothing offered, unless the owner says */
   readonly agent: AgentSettings;
   /** v2.1. The kinds of mind a session may choose (`/brain`): `plain` always; `agent` when `AGENT=on`; `steward` when `STEWARD=on` */
   readonly modes: readonly BrainMode[];
@@ -345,6 +346,7 @@ export function loadEnv(source: Source): Env {
         services,
         dir: agentDir,
         answerMs: integer('AGENT_ANSWER_MS', NO_AGENT.answerMs, 5_000, 3_600_000),
+        permits: choice('AGENT_PERMITS', AGENT_PERMITS, 'ask'),
       }
     : NO_AGENT;
   // `plain` is only what a server without the agent has (AGENT=off, or a brain with no tools to give); it is never a choice beside `agent`.

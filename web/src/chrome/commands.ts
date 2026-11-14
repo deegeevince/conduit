@@ -81,6 +81,8 @@ export function parseCommand(text: string): Command {
     }
     case 'tools': {
       if (rest.length === 0) return { kind: 'tools', change: null };
+      // `/tools auto` lets the brain's browser reads, writes and runs go without asking; `/tools ask` brings every prompt back.
+      if (rest.length === 1 && (first === 'auto' || first === 'ask')) return { kind: 'set', change: { permits: first } };
       const state = (rest[rest.length - 1] ?? '').toLowerCase();
       const toolName = rest.slice(0, -1).join(' ');
       if (rest.length < 2 || toolName === '' || (state !== 'on' && state !== 'off')) return refuse('/tools: say which and whether, like "/tools WebSearch off"');
@@ -133,12 +135,14 @@ export function brainLabel(choice: BrainChoice): string | null {
   if (!choice.configurable || choice.model === null || choice.effort === null) return null;
   // The brain is always the agent: only the developer's own mode is worth a word on the button.
   const mode = choice.mode === 'steward' ? ' · steward' : '';
-  return `${choice.model} · ${choice.effort}${mode}`;
+  const permits = choice.permits === undefined || choice.mode === 'steward' ? '' : ` · agent · ${choice.permits}`;
+  return `${choice.model} · ${choice.effort}${mode}${permits}`;
 }
 
 /** The words that confirm a change or answer a bare command. */
 export function confirmation(command: Command, choice: BrainChoice): string {
   if (command.kind === 'show' && command.setting === 'brain') return choice.mode === undefined ? 'This server has one mode of brain.' : choice.mode === 'agent' ? 'The brain can use its tools and asks you first, every time.' : `Brain: ${choice.mode}`;
+  if (command.kind === 'set' && command.change.permits !== undefined) return command.change.permits === 'auto' ? 'Agent: auto. The brain\'s browser reads, writes and runs in its own tabs go without asking; sending, buying, deleting, posting and sign-in pages still ask. /tools ask turns it off.' : 'Agent: ask. The brain asks before every action again.';
   if (command.kind === 'set' && command.change.mode !== undefined) return `Brain: ${choice.mode ?? command.change.mode} (next answer starts fresh)`;
   if (!choice.configurable) return 'This brain has no model or effort to set.';
   if (command.kind === 'show') return command.setting === 'model' ? `Model: ${choice.model}` : `Effort: ${choice.effort}`;

@@ -113,7 +113,7 @@ function withStewardMode(real: Brain, relay: Brain, offered: readonly BrainMode[
       if (change.mode === 'steward') {
         if (!offered.includes('steward')) throw errors.badRequest('steward mode is not offered by this server (STEWARD=on)');
         stewarded.add(session);
-        const rest: BrainChange = { ...(change.model === undefined ? {} : { model: change.model }), ...(change.effort === undefined ? {} : { effort: change.effort }) };
+        const rest: BrainChange = { ...(change.model === undefined ? {} : { model: change.model }), ...(change.effort === undefined ? {} : { effort: change.effort }), ...(change.permits === undefined ? {} : { permits: change.permits }) };
         return modeChoice(session, real.choose?.(session, rest) ?? real.choice?.(session) ?? { configurable: false, model: null, effort: null });
       }
       if (change.mode !== undefined) stewarded.delete(session);

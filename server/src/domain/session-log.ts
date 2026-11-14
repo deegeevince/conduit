@@ -51,7 +51,7 @@ export type SessionRecord =
   /** v2.1. What the critic made of a turn's resting picture, seconds after the turn ended; `queued` when it was passed to the loop as evidence */
   | { readonly type: 'critic'; readonly at: number; readonly turn: string; readonly finding: CriticFinding; readonly queued: boolean }
   /** v2.1, a brain with tools. One tool call, at its start and again at its end: what it was in a few safe words (`redactSecrets`), never its input or its result. Takes the place of `tool`, which older logs still hold. */
-  | { readonly type: 'activity'; readonly at: number; readonly turn: string; readonly id: string; readonly tool: string; readonly summary: string; readonly state: ActivityState; readonly ms: number | null }
+  | { readonly type: 'activity'; readonly at: number; readonly turn: string; readonly id: string; readonly tool: string; readonly summary: string; readonly state: ActivityState; readonly ms: number | null; readonly permit?: 'auto' }
   /** v2.1. The owner was asked for a yes, and what they said; `allow` null: no answer in time, which is a no */
   | { readonly type: 'permission'; readonly at: number; readonly turn: string; readonly request: string; readonly tool: string; readonly summary: string; readonly risk: ActionRisk; readonly allow: boolean | null; readonly ms: number }
   /** v2.1. A picture the user gave: its id, kind and size, and the file it was saved as beside the log. Never the bytes. */

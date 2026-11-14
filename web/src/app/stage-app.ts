@@ -76,7 +76,7 @@ export interface Diagnostics {
 
 /** What the agent is doing, for the chrome: a tool in use, something that needs the owner's yes, or a new turn that clears both. */
 export type AgentNote =
-  | { readonly type: 'activity'; readonly turn: string; readonly id: string; readonly tool: string; readonly summary: string; readonly state: ActivityState; readonly ms: number | null }
+  | { readonly type: 'activity'; readonly turn: string; readonly id: string; readonly tool: string; readonly summary: string; readonly state: ActivityState; readonly ms: number | null; readonly permit?: 'auto' }
   | { readonly type: 'permission'; readonly turn: string; readonly request: string; readonly tool: string; readonly summary: string; readonly risk: ActionRisk; readonly expiresMs: number; readonly detail?: string }
   /** the turn these belonged to has ended or been stopped: nothing about it is still waiting for an answer */
   | { readonly type: 'over'; readonly turn: string | null };

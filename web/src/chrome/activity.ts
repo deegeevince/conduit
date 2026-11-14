@@ -15,6 +15,7 @@ interface Call {
   summary: string;
   state: ActivityState;
   ms: number | null;
+  auto: boolean;
 }
 
 const STATE_WORDS: Readonly<Record<ActivityState, string>> = {
@@ -66,13 +67,13 @@ export function mountActivity(host: HTMLElement, app: StageApp): ActivityStrip {
     const latest = all[all.length - 1];
     if (latest === undefined) return;
     const running = all.filter((call) => call.state === 'running' || call.state === 'waiting').length;
-    line.textContent = `${latest.tool}: ${latest.summary} (${STATE_WORDS[latest.state]})${all.length > 1 ? `, ${all.length} calls` : ''}`;
+    line.textContent = `${latest.tool}: ${latest.summary} (${STATE_WORDS[latest.state]}${latest.auto ? ', auto' : ''})${all.length > 1 ? `, ${all.length} calls` : ''}`;
     line.title = running > 0 ? 'What the brain is doing; open the list' : 'What the brain did; open the list';
     list.replaceChildren(
       ...all.map((call) => {
         const item = document.createElement('li');
         item.className = `activity__item activity__item--${call.state}`;
-        item.textContent = `${call.tool}: ${call.summary}. ${STATE_WORDS[call.state][0]?.toUpperCase() ?? ''}${STATE_WORDS[call.state].slice(1)}${seconds(call.ms)}.`;
+        item.textContent = `${call.tool}: ${call.summary}. ${STATE_WORDS[call.state][0]?.toUpperCase() ?? ''}${STATE_WORDS[call.state].slice(1)}${seconds(call.ms)}${call.auto ? ' (allowed by auto)' : ''}.`;
         return item;
       }),
     );
@@ -96,11 +97,12 @@ export function mountActivity(host: HTMLElement, app: StageApp): ActivityStrip {
     }
     if (note.type !== 'activity') return;
     const known = calls.get(note.id);
-    if (known === undefined) calls.set(note.id, { id: note.id, tool: note.tool, summary: note.summary, state: note.state, ms: note.ms });
+    if (known === undefined) calls.set(note.id, { id: note.id, tool: note.tool, summary: note.summary, state: note.state, ms: note.ms, auto: note.permit === 'auto' });
     else {
       known.summary = note.summary;
       known.state = note.state;
       known.ms = note.ms;
+      if (note.permit === 'auto') known.auto = true;
     }
     if (note.state === 'waiting' || note.state === 'denied' || note.state === 'failed') status.textContent = `${note.tool}: ${note.summary}, ${STATE_WORDS[note.state]}`;
     draw();
