@@ -42,6 +42,10 @@ export function visualOf(show: ShowSpec | null): VisualSpec | null {
       const coins = known(list(a, 'coins'));
       return coins.length === 0 ? null : { kind: 'coins', coins, target: num(a, 'target') };
     }
+    case 'ruler': {
+      const mm = known(list(a, 'mm')).filter((n) => n >= 5 && n <= 300).slice(0, 6);
+      return mm.length === 0 ? null : { kind: 'ruler', mm };
+    }
     case 'clock': {
       const time = /^(\d{1,2}):(\d{2})$/.exec(Object.hasOwn(a, 'time') ? (a['time'] ?? '') : '');
       return { kind: 'clock', minutes: time === null ? 0 : ((Number(time[1]) % 12) * 60 + Number(time[2])) % 720 };

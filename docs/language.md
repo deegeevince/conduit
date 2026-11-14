@@ -448,6 +448,7 @@ Every line stands alone on the wire: the normaliser writes `in=` and an id on ev
 | `bar` | `total` (number, absent when it is the gap); `parts` (numbers) | a bar model: a whole and its parts |
 | `coins` | `coins` (numbers), `target` (number) | coins to count and add up |
 | `clock` | `time` (like `3:30`), `mode` (word) | a clock face to read or to set |
+| `ruler` | `mm` (numbers: each straight road in millimetres, in order; drawn, never written) | a ruler she drags along a road, its zero clicking onto a place, to read the length off herself |
 
 **The techniques** (`TECHNIQUE`, a fixed list): `draw-it`, `share-it-out`, `count-on-a-line`, `make-ten`, `break-it-apart`, `find-the-pattern`, `read-the-question`, `work-backwards`.
 
@@ -834,7 +835,7 @@ A new structure, chart kind or control is one entry in its table in `vocabulary.
 | `screen <id> phone\|tablet\|desktop\|browser [from=<screen>[:label]] [\| name]` | starts at the pen and leaves the pen where it is | A mock-up: a device at its true size. The parts of the screen follow, one a line (nav, heading, button, field, item, image, row, col, end…); the painter lays them out. Taught by the INTERFACE chapter in the brief; on the wire its first line is the title and each later line a row, taken as written. |
 | `node [id] [number \| x,y] [ask\|end\|note] [from=<id>[:label]] [x=<when>] [y=<value>] [prop=value…] \| <text>` | starts at the pen and moves the pen part of the way through its own drawing | One part of the structure above. from= also draws the link from that node. On a chart it is a mark: x= an event, y= a level, both a point. |
 | `link <a> <b> [c…] [both\|plain] [dashed] [\| label]` | starts at the pen and moves the pen part of the way through its own drawing | Join nodes with a routed connector, in a chain when more than two are named. |
-| `button [id] [prop=value…] \| <label>` | starts at the pen and moves the pen part of the way through its own drawing | A button. Pressing it is sent to you, with the value of every control on stage. (A `button` line inside a `screen`, a mock-up's own, is read by the interface chapter: see 4.19.) |
+| `button [id] [prop=value…] \| <label>` | starts at the pen and moves the pen part of the way through its own drawing | A button. Pressing it is sent to you, with the value of every control on stage. |
 | `toggle [id] [on\|off] [send] \| <label>` | starts at the pen and moves the pen part of the way through its own drawing | A switch. |
 | `slider [id] <min> <max> [value] [step=N] [unit=…] [send] \| <label>` | starts at the pen and moves the pen part of the way through its own drawing | A number the user drags. |
 | `pick [id] [tabs\|menu\|steps] [N] [send] \| <a> \| <b> \| <c>` | starts at the pen and moves the pen part of the way through its own drawing | One of several options. N is the one chosen to begin with. |

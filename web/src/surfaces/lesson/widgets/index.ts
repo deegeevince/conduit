@@ -1,4 +1,4 @@
-// The six widgets, and the one function that draws a visual by its kind. Shared pieces (the context, `press`, `readout`) are in common.ts.
+// The seven widgets, and the one function that draws a visual by its kind. Shared pieces (the context, `press`, `readout`) are in common.ts.
 
 import { bar } from './bar';
 import { blocks } from './blocks';
@@ -7,9 +7,10 @@ import { coins } from './coins';
 import type { WidgetCtx, Widgets } from './common';
 import { groups } from './groups';
 import { numberline } from './numberline';
+import { ruler } from './ruler';
 import type { VisualSpec } from '../types';
 
-export const WIDGETS: Widgets = { numberline, groups, blocks, bar, coins, clock };
+export const WIDGETS: Widgets = { numberline, groups, blocks, bar, coins, clock, ruler };
 
 export function drawVisual(spec: VisualSpec, ctx: WidgetCtx): HTMLElement {
   switch (spec.kind) {
@@ -25,6 +26,8 @@ export function drawVisual(spec: VisualSpec, ctx: WidgetCtx): HTMLElement {
       return coins.draw(spec, ctx);
     case 'clock':
       return clock.draw(spec, ctx);
+    case 'ruler':
+      return ruler.draw(spec, ctx);
   }
 }
 

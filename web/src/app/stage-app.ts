@@ -433,6 +433,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     dark: () => document.documentElement.style.colorScheme === 'dark',
     onNote: (text) => announce(text),
     onShown: (id) => rememberDocument(id),
+    photoUrl: (id) => link.photoUrl(id),
     ink: {
       upload: async (png) => (await link.uploadPhoto(png)).id,
       read: (request) => link.readInk(request),

@@ -11,8 +11,9 @@
 
 import { initialState, nodeOf } from '@conduit/language';
 import type { DocNode } from '@conduit/language';
-import { DocumentHost, bindDocumentLink, catalogueFromSummaries } from './document-host';
+import { DocumentHost, catalogueFromSummaries } from './document-host';
 import type { DocumentLink } from './document-host';
+import { createCrops } from './document-crops';
 import { createDocumentInk } from './document-ink';
 import type { DocumentInk } from './document-ink';
 import type { CatalogueEntry, DocState, Document, LessonInput, NodeId } from '../surfaces/lesson/types';
@@ -38,6 +39,8 @@ export interface DocumentViewOptions {
     upload(png: Blob): Promise<string>;
     read(request: { readonly image: string; readonly node: string; readonly ask: string }): Promise<{ readonly lines: readonly string[]; readonly unclear: boolean }>;
   };
+  /** where a photo of this conversation is, by its id: a question's crop is cut from it */
+  readonly photoUrl?: (id: string) => string | null;
   /** a document is on screen (or put away) for this id: the page may remember it to resume */
   readonly onShown?: (document: string) => void;
 }
@@ -93,7 +96,10 @@ export function createDocumentView(options: DocumentViewOptions): DocumentView {
           answer: (node, ask, text, said) => host?.write(node, ask, text, said),
           note: (text) => options.onNote?.(text),
         });
-  const input = (next: Document, state: DocState): LessonInput => ({ doc: next, state, crops: {}, stills: {}, catalogue, picture: true, ink: pen !== null });
+  const crops = createCrops(options.photoUrl ?? (() => null), () => {
+    if (host !== null && doc !== null) host.setInput(input(doc, host.current));
+  });
+  const input = (next: Document, state: DocState): LessonInput => ({ doc: next, state, crops: crops.of(next), stills: {}, catalogue, picture: true, ink: pen !== null });
 
   const refresh = (): void => {
     void options.link.documents().then((summaries) => {
@@ -107,8 +113,19 @@ export function createDocumentView(options: DocumentViewOptions): DocumentView {
     if (host === null) {
       layer.style.display = shown ? 'flex' : 'none';
       host = new DocumentHost({ mount: body, dark: options.dark(), input: input(next, state), onNote: options.onNote });
-      bindDocumentLink(host, options.link, { currentId: () => doc?.id ?? '', crops: () => ({}) });
-      host.listen({ ...host.handlers, onPicture: () => toggle(false), onSlot: (slot) => pen?.slot(slot), onInkCheck: (node, ask) => void pen?.check(node, ask), onInkClear: (node, ask) => pen?.clear(node, ask) });
+      host.listen({
+        onChange: (change) => options.link.sendState(change),
+        // another sheet from the catalogue: opened again in a session of its own, and drawn from where she was in it
+        onOpen: (id) => {
+          void options.link.open(id).then((view) => {
+            doc = view.document;
+            host?.setInput(input(view.document, view.state), true);
+            options.onShown?.(view.document.id);
+            refresh();
+          }, (cause: unknown) => options.onNote?.(cause instanceof Error ? cause.message : 'That document could not be opened.'));
+        },
+        onNote: options.onNote,
+        onPicture: () => toggle(false), onSlot: (slot) => pen?.slot(slot), onInkCheck: (node, ask) => void pen?.check(node, ask), onInkClear: (node, ask) => pen?.clear(node, ask) });
       options.onShown?.(next.id);
       refresh();
     } else host.setInput(input(next, host.current));
