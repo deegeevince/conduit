@@ -762,7 +762,6 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
   };
 
   const besideOf = new Map<string, boolean>();
-  const sceneSetting = new Map<string, number>();
   const needOf = new Map<string, number>();
   for (const start of starts) {
     const look = specAt(start);
@@ -809,10 +808,16 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
       // from everything the scene will say, so that nothing moves from one side to the other as lines arrive)
       const unpinnedBlocks = blocks.list.filter((block) => block.kind !== 'picture' && block.pinned === null);
       const bare = !blocks.list.some((block) => block.kind === 'picture' || block.pinned !== null);
+      const sceneHasControls = controlSpans.some((span) => span.scene === scene.id && span.parent === null);
       let beside = false;
-      if (viewport.width >= 900 && viewport.width >= 1.5 * viewport.height && bare && unpinnedBlocks.length === 1 && unpinnedBlocks[0]?.kind === 'structure' && scene.layout !== 'figure' && scene.layout !== 'caption' && scene.layout !== 'solo') {
+      if (viewport.width >= 900 && viewport.width >= 1.5 * viewport.height && bare && unpinnedBlocks.length === 1 && unpinnedBlocks[0]?.kind === 'structure' && scene.layout !== 'figure' && (sceneHasControls || (scene.layout !== 'caption' && scene.layout !== 'solo'))) {
         const known = besideOf.get(scene.id);
         if (known !== undefined) beside = known;
+        else if (sceneHasControls) {
+          // controls and a subject block: the controls stand in a column of their own and the block takes the rest, so that neither covers the other
+          beside = true;
+          besideOf.set(scene.id, true);
+        }
         else {
           // everything the scene says, whether or not it is on stage at this moment: the same answer at every moment, and at rest
           const all: LayoutItem[] = elements.filter((element) => element.scene === scene.id && element.replaces === null).map((element) => ({ key: element.key, order: element.order, text: element.text, emphasis: element.emphasis, style: laidStyle(styleAt(element, element.enter?.start ?? start)), struck: false, replaces: null }));
@@ -864,7 +869,7 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
       }
       let scrollInfo: ScrollArea | null = null;
       if (scroll && members.length > 0) {
-        const gap = (cellOf('m', viewport, look).height * 0.5 * 0.3) / planeScale('mid', viewport);
+        const gap = (cellOf('m', viewport, look).height * 0.5 * 0.2) / planeScale('mid', viewport);
         const gutter = (2 * cellOf('m', viewport, look).width) / planeScale('mid', viewport);
         const across = columns === 2 ? 2 : 1;
         const placed = new Map<string, { top: number; dx: number; width: number; height: number }>();
@@ -964,35 +969,32 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
       if (grown.some((block, i) => block !== blocks.list[i])) plan = planWith(grown);
       flowFloor.set(scene.id, wanted);
       const fit = fitIn(scene.canvas, plan.picture ?? safe, plan.flow, viewport);
-      // whether the controls, set as they are, fit what the plan gave the flow: alone, and with the least the words can be (a split stage keeps them apart)
+      // whether the controls, set as they are, fit what the plan gave the flow (the words give way to them)
       const asked = [...items, ...upcoming].filter((item) => item.reserve !== undefined && item.style.tap !== true);
       const flowOf = (list: readonly LayoutItem[]) => ({ ...probe, items: list, expected: null });
       const controlNeed = asked.length === 0 ? 0 : controlsNeedOf(flowOf(asked), plan.flow);
-      const wordsLeast = asked.length === 0 || arrLayout === 'split' ? 0 : Math.min(needsOf(flowOf(items.filter((item) => item.reserve === undefined)), plan.flow.width).least, cellOf('m', viewport, look).height);
-      // and as the flow really sets them: nothing of what is on stage may stand past the bottom of its room
+      // and as the flow really sets them: no control may stand past the bottom of its room
       const trial = asked.length === 0 ? null : arrange({ ...probe, items, expected: null, flow: plan.flow, ...(plan.foot === null ? {} : { foot: plan.foot }) });
       const bottom = plan.flow.y + plan.flow.height + 1;
-      const flowing = new Set(items.filter((item) => item.style.tap !== true).map((item) => item.key));
+      const flowing = new Set(items.filter((item) => item.reserve !== undefined && item.style.tap !== true).map((item) => item.key));
       const spills = trial !== null && [...trial.placements.values()].some((placed) => flowing.has(placed.key) && placed.y + placed.height / 2 > bottom);
-      const fits = controlNeed + wordsLeast <= plan.flow.height + 1 && !spills;
+      const fits = controlNeed <= plan.flow.height + 1 && !spills;
       // two to a row only where a control still has room for its words
-      const viable = columns === 1 || roomWide >= 14 * cellOf('m', viewport, look).width;
+      const viable = columns === 1 || roomWide >= 24 * cellOf('m', viewport, look).width;
 
-      return { items, liveControls, plan, fit, arrLayout, sides, fits: fits || scroll, viable, compact, columns: scroll ? (1 as const) : columns, room: roomWide, scrollInfo };
+      return { items, liveControls, plan, fit, arrLayout, sides, fits: (fits && viable) || scroll, viable, compact, columns: scroll ? (1 as const) : columns, room: roomWide, scrollInfo };
     };
     // Controls are measured for the room they will really have (the flow's width once the stage is divided, which the controls' own height helps decide),
     // so the flow reserves what they take. When a column of them does not fit, they are set closer, then on one line, then two to a row.
     let controlFit = sceneFit;
+    // the room the flow really has is known only once the stage is divided: a first pass finds it, so that the controls are measured for it from the start
+    controlFit = solve(sceneFit, 0, 1).fit;
     let solved!: ReturnType<typeof solve>;
     let ran = false;
-    const from = sceneSetting.get(scene.id) ?? 0;
     const tries: readonly (readonly [number, 1 | 2])[] = [[0, 1], [1, 1], [2, 1], [2, 2]];
     const roomy = viewport.width >= 560;
-    for (const [tryIndex, [level, columns]] of tries.entries()) {
-      // the same answer at every moment of the scene: it can only get closer, never looser, as the scene goes on
-      if (tryIndex < from || (columns === 2 && !roomy)) continue;
-      if (tryIndex >= tries.length) break;
-      sceneSetting.set(scene.id, tryIndex);
+    for (const [level, columns] of tries) {
+      if (columns === 2 && !roomy) continue;
       for (let pass = 0; pass < 3; pass += 1) {
         solved = solve(controlFit, level, columns);
         ran = true;
@@ -1005,7 +1007,6 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
     // none fits: the controls stand in an area of their own that scrolls, in two columns where there is width for them
     if (!ran || !solved.fits) {
       const wide = roomy && solve(controlFit, 2, 2).viable;
-      sceneSetting.set(scene.id, tries.length);
       for (let pass = 0; pass < 3; pass += 1) {
         solved = solve(controlFit, 2, wide ? 2 : 1, true);
         const settled = Math.abs(solved.fit.flow.width - controlFit.flow.width) < 0.5 && Math.abs(solved.fit.flow.height - controlFit.flow.height) < 0.5;

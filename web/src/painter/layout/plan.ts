@@ -123,6 +123,9 @@ function place(division: Division, blocks: readonly StageBlock[], rooms: Map<str
   }
 }
 
+/** the most of a tall stage the words and controls of a figure answer may take from the figure */
+const FIGURE_FLOW_MOST = 0.7;
+
 /** What a block is given at least before the words are asked to give way: four fifths of what it would like. */
 const GOOD_FIT = 0.8;
 
@@ -167,9 +170,11 @@ export function planStage(input: PlanInput): StagePlan {
       area = { x: column.x, y: column.y, width: share - gutter / 2, height: column.height };
       flow = { x: column.x + share + gutter / 2, y: column.y, width: column.width - share - gutter / 2, height: column.height };
     } else {
-      const share = column.height * FIGURE_TALL_SHARE;
-      area = { x: column.x, y: column.y, width: column.width, height: share - gutter / 2 };
-      flow = { x: column.x, y: column.y + share + gutter / 2, width: column.width, height: column.height - share - gutter / 2 };
+      // the words (controls among them) have the room under the figure that it keeps, or more when they ask for it, down to what a figure can be shown in
+      const kept = column.height - column.height * FIGURE_TALL_SHARE - gutter / 2;
+      const given = Math.max(kept, Math.min(words, column.height * FIGURE_FLOW_MOST));
+      area = { x: column.x, y: column.y, width: column.width, height: column.height - given - gutter };
+      flow = { x: column.x, y: column.y + column.height - given, width: column.width, height: given };
     }
   } else if (words <= 0) {
     flow = { x: column.x, y: column.y + column.height, width: column.width, height: 0 };

@@ -342,11 +342,11 @@ function layoutSlider(input: ControlInput, m: Metrics): ControlLayout {
   // tight: the track sits close under the label and the target reaches up behind it, so a column of them takes less height; the target stays whole inside the box
   const tight = compact >= 1;
   // the knob stands clear of the words above it whatever the target is
-  const clear = headHeight + m.knob / 2 + 3;
-  const height = tight ? snapUp(m, Math.max(headHeight + input.minTarget * 0.8, clear + input.minTarget / 2)) : snapUp(m, headHeight + input.minTarget);
+  const clear = headHeight - m.body * 0.2 + m.knob / 2;
+  const height = tight ? snapUp(m, Math.max(clear + m.knob / 2 + 2, input.minTarget)) : snapUp(m, headHeight + input.minTarget);
   const sheet = new Sheet(input.control.key, -width / 2, -height / 2);
   plate(sheet, input, m, width, height, input.look.radius);
-  const trackY = tight ? Math.max(clear, height - input.minTarget / 2) : headHeight + input.minTarget / 2;
+  const trackY = tight ? clear : headHeight + input.minTarget / 2;
   const geo = sliderGeo(width, m);
   const share = controlShare(spec, number);
   const kx = geo.x0 + share * (geo.x1 - geo.x0);
@@ -375,7 +375,7 @@ function layoutSlider(input: ControlInput, m: Metrics): ControlLayout {
   ring(sheet, width, height, 0, input.mood);
   const target = Math.max(input.minTarget, m.knob);
   sheet.zone('knob', { x: fx - target / 2, y: trackY - target / 2, width: target, height: target }, true);
-  sheet.zone('track', { x: 0, y: tight ? Math.min(trackY - input.minTarget / 2, height - input.minTarget) : headHeight, width, height: input.minTarget }, true);
+  sheet.zone('track', { x: 0, y: tight ? height - input.minTarget : headHeight, width, height: input.minTarget }, true);
   return { width, height, parts: sheet.parts, zones: sheet.zones };
 }
 

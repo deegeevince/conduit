@@ -136,7 +136,7 @@ const WITH_CONTROLS_SHRINK = 0.72;
 /** the space between paragraphs of a `page`, in lines of body text */
 const PARAGRAPH_GAP = 0.6;
 /** the share of the usual gap between two controls that are set tight */
-const TIGHT_GAP = 0.3;
+const TIGHT_GAP = 0.2;
 /** lines a stack reserves room for when the brain did not say how many to expect */
 const FALLBACK_LINES = 3;
 const FREE_CANDIDATES: readonly Anchor[] = ['center', 'top', 'bottom', 'left', 'right', 'top-left', 'top-right', 'bottom-left', 'bottom-right'];
