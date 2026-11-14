@@ -1,6 +1,7 @@
 // What can be counted about an answer, from the lines it was written in and the schedule they add up to.
 import { isInFlow } from '@conduit/language';
-import type { ElementSpan, ExploreChecks, ExploreExpectation, ElementKind, Issue, Line, Schedule } from '@conduit/language';
+import { chartModelOf } from '@conduit/language';
+import type { ElementSpan, ExploreChecks, ExploreExpectation, ElementKind, Issue, Line, Schedule, StructureKind } from '@conduit/language';
 
 const ABOUT_THE_MEDIUM: readonly RegExp[] = [
   /\bstage\b/i,
@@ -98,6 +99,43 @@ function inFlowMedianOf(elements: readonly ElementSpan[], schedule: Schedule): n
   return counts.length % 2 === 1 ? (counts[middle] ?? 0) : ((counts[middle - 1] ?? 0) + (counts[middle] ?? 0)) / 2;
 }
 
+/** Structures, controls, charts and hand-placed text of the answer: what the new checks of the battery count. */
+function structureChecks(elements: readonly ElementSpan[]): Pick<ExploreChecks, 'structures' | 'parts' | 'controls' | 'bound' | 'chart' | 'callouts' | 'placedByHand'> {
+  const structures: Partial<Record<StructureKind, number>> = {};
+  let chart: ExploreChecks['chart'] = null;
+  for (const element of elements) {
+    const figure = element.figure;
+    if (figure?.kind !== 'structure') continue;
+    structures[figure.structure] = (structures[figure.structure] ?? 0) + 1;
+    if (figure.structure === 'chart' && chart === null && figure.chart !== null) {
+      const model = chartModelOf(figure.chart, figure.rows);
+      chart = {
+        kind: figure.chart,
+        points: model.points.length,
+        series: model.series.filter((series) => series.role !== 'volume').length,
+        marks: elements.filter((other) => other.parent === element.key && other.kind === 'node').length,
+        // a chart that draws its own rows (no DATA) must say it is made up of illustrations: `approx`
+        approx: figure.words.includes('approx'),
+        data: figure.data !== null,
+        problems: model.problems,
+      };
+    }
+  }
+  const controls = elements.filter((element) => element.kind === 'control');
+  const driven = new Set(elements.flatMap((element) => element.driven.map((change) => change.control)));
+  const inStructure = (element: ElementSpan): boolean => element.parent !== null && elements.some((other) => other.key === element.parent && other.figure?.kind === 'structure');
+  return {
+    structures,
+    parts: elements.filter((element) => (element.kind === 'node' || element.kind === 'link') && inStructure(element)).length,
+    controls: controls.length,
+    // bound: a control that some change on stage follows (a `bind`)
+    bound: controls.filter((control) => driven.has(control.key)).length,
+    chart,
+    callouts: elements.filter((element) => element.kind === 'text' && element.style.leader).length,
+    placedByHand: elements.filter((element) => element.kind === 'text' && element.style.at !== null && typeof element.style.at === 'object' && !inStructure(element)).length,
+  };
+}
+
 export function checksOf(
   accepted: readonly Line[],
   rejects: number,
@@ -128,5 +166,6 @@ export function checksOf(
     labels: text.filter((element) => element.style.near !== null || element.style.group !== null || element.style.at !== null).length,
     inFlowMedian: inFlowMedianOf(elements, schedule),
     spriteFrames: Math.max(0, ...elements.map((element) => (element.figure?.kind === 'sprite' ? element.figure.sprite.frames.length : 0))),
+    ...structureChecks(elements),
   };
 }

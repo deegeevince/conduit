@@ -160,7 +160,7 @@ export interface ExploreChecks {
   readonly controls?: number;
   readonly bound?: number;
   /** for a chart: its kind, how many points and series it has, how many marks, and what `chartModelOf` found wrong with its rows */
-  readonly chart?: { readonly kind: ChartKind; readonly points: number; readonly series: number; readonly marks: number; readonly approx: boolean; readonly problems: readonly string[] } | null;
+  readonly chart?: { readonly kind: ChartKind; readonly points: number; readonly series: number; readonly marks: number; readonly approx: boolean; /** its points come by reference (`data=`), not as its own rows */ readonly data: boolean; readonly problems: readonly string[] } | null;
   /** labels with a leader line (`callout`) */
   readonly callouts?: number;
   /** text placed at a canvas point (`at=x,y`) outside a structure: what a blind writer gets wrong, and what structures and callouts are meant to replace */
@@ -191,10 +191,22 @@ export interface ExploreReview extends ReviewOutcome {
   readonly before: number | null;
   readonly after: number | null;
   readonly costUsd: number | null;
+  /** small JPEG data URLs of the draft as the painter pictured it before the fix, for the review page to set beside the final picture; the judge's first score is `before` */
+  readonly draftStills?: readonly string[];
 }
 
 /** What happened when the run worked an answer's controls. */
 export interface ExploreDrive {
+  /** one entry per chart worked: hovered at its middle, then zoomed */
+  readonly charts?: readonly {
+    readonly id: string;
+    /** the crosshair showed a value, formatted as the data was written (the chart engine's own `probe`) */
+    readonly crosshair: boolean;
+    /** zooming changed the visible range */
+    readonly zoomed: boolean;
+    /** neither hovering nor zooming opened a turn or sent a `control` event */
+    readonly silent: boolean;
+  }[];
   /** one entry per control worked */
   readonly controls: readonly {
     readonly id: string;
@@ -271,7 +283,7 @@ export interface ExploreTurnMeta {
   readonly case: string;
   /** 1-based */
   readonly index: number;
-  readonly kind: 'prompt' | 'tap' | 'fix';
+  readonly kind: 'prompt' | 'tap' | 'fix' | 'act';
   readonly said: string;
   /** `since`: the process still held the conversation. `full`: it was told everything. null when the brain does not say. */
   readonly form: BriefForm | 'script' | null;
@@ -369,6 +381,11 @@ export interface ExploreRun {
   readonly samples?: number;
   readonly variants?: readonly ExploreVariant[];
   readonly judgeModel?: string | null;
+  /** which set this run played, and the file it was read from (relative to the repository) */
+  readonly pool?: ExplorePool;
+  readonly battery?: string;
+  /** the hash of the judge's instructions and model: scores of two runs are comparable only when it is the same */
+  readonly rubric?: string | null;
   /** what the run was projected to cost before it began, and what it did */
   readonly projection?: { readonly calls: number; readonly usd: number | null } | null;
   readonly spentUsd?: number | null;
@@ -435,7 +452,38 @@ export function verdictsOf(result: ExploreResult): ExploreVerdict[] {
     if (turn.cacheReadShare !== null) out.push({ label: 'cache reads over 80%', ok: turn.cacheReadShare > 0.8, detail: `${Math.round(turn.cacheReadShare * 100)}%` });
     if (turn.problem !== null) out.push({ label: 'turn could be played', ok: false, detail: turn.problem });
   }
+  // Structures: named when the prompt has an obvious one, and nothing placed by hand in its stead.
+  if (prompt.structure !== undefined) {
+    const named = (checks.structures?.[prompt.structure] ?? 0) > 0;
+    const byHand = checks.placedByHand ?? 0;
+    out.push({ label: 'structure named, nothing placed by hand', ok: named && byHand === 0, detail: `${prompt.structure}: ${named ? 'named' : 'not named'}, ${byHand} placed by coordinates` });
+  }
+  const geometry = result.geometry;
+  if (geometry !== undefined && Object.keys(checks.structures ?? {}).length > 0) {
+    out.push(
+      { label: 'painter: no overlapping text', ok: geometry.textOverlaps === 0, detail: `${geometry.textOverlaps} pairs` },
+      { label: 'painter: no connector through a node', ok: geometry.linksThroughNodes === 0, detail: `${geometry.linksThroughNodes}` },
+      { label: 'painter: no label crossed', ok: geometry.crossedLabels === 0, detail: `${geometry.crossedLabels}` },
+    );
+  }
+  if (checks.chart != null) {
+    out.push({ label: 'chart: approx when it has no DATA', ok: checks.chart.data || checks.chart.approx, detail: checks.chart.data ? 'draws DATA' : checks.chart.approx ? 'says approx' : 'its own numbers, not marked approx' });
+    out.push({ label: 'chart: rows read cleanly', ok: checks.chart.problems.length === 0, detail: checks.chart.problems.join(' / ') || 'nothing wrong' });
+  }
+  const drive = result.drive;
+  if (drive !== undefined) {
+    for (const control of drive.controls) {
+      out.push({ label: 'control: its event was sent', ok: control.reported, detail: `${control.kind} ${control.id}` });
+      if (control.changed !== null) out.push({ label: 'control: the picture changes at its two ends', ok: control.changed > 0.005, detail: `${control.id}: ${(control.changed * 100).toFixed(2)}% of pixels` });
+      if (control.answered !== null) out.push({ label: 'control: its turn was answered', ok: control.answered, detail: control.id });
+    }
+    for (const chart of drive.charts ?? []) {
+      out.push({ label: 'chart: crosshair shows a formatted value', ok: chart.crosshair, detail: chart.id }, { label: 'chart: zoom changes the range', ok: chart.zoomed, detail: chart.id }, { label: 'chart: reading opens no turn', ok: chart.silent, detail: chart.id });
+    }
+  }
   const judge = result.judge ?? null;
+  if (judge !== null && judge.failure === null && judge.responds != null) out.push({ label: 'judge: the picture responds', ok: judge.responds, detail: judge.respondsWhy ?? '' });
+  if (judge !== null && judge.failure === null && judge.chartQuality != null) out.push({ label: 'judge: chart quality 3 or more', ok: judge.chartQuality >= 3, detail: `${judge.chartQuality} of 5: ${judge.chartWhy ?? ''}` });
   if (judge !== null && judge.failure === null) {
     out.push(
       { label: 'judge: shows what was asked', ok: judge.asked, detail: judge.asked ? 'it does' : judge.why },
@@ -471,4 +519,194 @@ export function passRates(sets: readonly (readonly ExploreVerdict[])[]): { label
 export function viewerWaitOf(firstLineMs: number | null, lastLineMs: number | null, playSeconds: number): number | null {
   if (firstLineMs === null || lastLineMs === null) return null;
   return Math.round(Math.max(lastLineMs, firstLineMs + playSeconds * 1000));
+}
+
+
+// -- families and the summary the loop reads ---------------------------------
+
+/** The family a prompt's scores are added up under. */
+export function familyOf(prompt: ExplorePrompt): ExploreFamily {
+  if (prompt.family !== undefined) return prompt.family;
+  switch (prompt.expects) {
+    case 'structure':
+      return 'diagram';
+    case 'chart':
+      return 'chart';
+    case 'explorable':
+      return 'explorable';
+    case 'drawn':
+      return prompt.information === true ? 'diagram' : 'mechanism';
+    case 'plain':
+    case 'type':
+    case 'pixels':
+    case 'scene':
+    case 'motion':
+      return prompt.expects;
+    case 'any':
+      return 'open';
+  }
+}
+
+/** One measure: a share (0..1) or a mean, over `n` answers. Null where nothing could be measured. */
+export interface Measure {
+  readonly value: number | null;
+  readonly n: number;
+}
+
+/** What a family's answers came to, in the terms of the quality bar (PLAN-v2.md section 3). Each field names its row. */
+export interface FamilyScore {
+  readonly family: ExploreFamily;
+  /** answers (samples of prompts, and the turns of cases that are single answers) */
+  readonly answers: number;
+  readonly judged: number;
+  /** rows 1, 6, 26, 27: the judge's coherence */
+  readonly coherence: Measure;
+  /** row 1: share scoring 4 or more */
+  readonly coherenceFour: Measure;
+  /** row 2 */
+  readonly textReadable: Measure;
+  readonly labelsRight: Measure;
+  /** row 3 */
+  readonly drawingCorrect: Measure;
+  /** row 5: of the prompts that name a structure */
+  readonly structureNamed: Measure;
+  /** row 7 */
+  readonly chartQuality: Measure;
+  readonly chartQualityLowest: number | null;
+  /** row 8: of charts, the share that mark `approx` when they have no DATA and read cleanly */
+  readonly chartHygiene: Measure;
+  /** rows 15 to 17 */
+  readonly controlEvents: Measure;
+  readonly sliderChanges: Measure;
+  readonly responds: Measure;
+  /** row 10 */
+  readonly chartRead: Measure;
+  /** row 4, counted over every answer that names a structure: totals, which must all be 0 */
+  readonly overlaps: number;
+  readonly throughNodes: number;
+  readonly crossed: number;
+  /** rows 11 and 12 (the look): the mean of the judge's gain over the draft, and answers worse after */
+  readonly lookGain: Measure;
+  readonly lookWorse: Measure;
+  /** row 28 */
+  readonly cost: { readonly usd: number | null };
+}
+
+/** The numbers the improvement loop compares, with the bar's rows beside them. */
+export interface FamilyLine {
+  readonly n: number;
+  /** mean judge coherence, 1 to 5 (0 when nothing was judged) */
+  readonly coherence: number;
+  /** shares of judged answers: the drawing is right, the text is readable, it shows what was asked */
+  readonly correct: number;
+  readonly readable: number;
+  readonly asked: number;
+  /** painter-measured collisions per answer: text overlaps, crossed labels, links through nodes */
+  readonly collisions: number;
+  /** medians: output tokens, ms to the first visible line */
+  readonly tokens: number;
+  readonly firstLineMs: number;
+  readonly bar: FamilyScore;
+}
+
+/** What `pnpm explore` writes beside the run's index, and the loop reads: scores, never answers. */
+export interface ExploreSummary {
+  readonly run: string;
+  readonly pool: ExplorePool;
+  readonly battery: string;
+  /** the judge's rubric hash; empty when the run had no judge */
+  readonly rubric: string;
+  readonly brain: string;
+  readonly model: string | null;
+  readonly samples: number;
+  readonly spentUsd: number | null;
+  /** dollars the run spent, brain and judge */
+  readonly usd: number;
+  /** per family: the loop's own numbers (shape of `FamilyScore` in server/src/loop/types.ts) and, under `bar`, every row of the quality bar */
+  readonly families: Readonly<Partial<Record<ExploreFamily, FamilyLine>>>;
+  /** per prompt id, the mean coherence over its samples and how many checks failed: enough to say which prompts moved, and nothing the critic could learn an answer from */
+  readonly prompts: readonly { readonly id: string; readonly family: ExploreFamily; readonly coherence: number | null; readonly failed: number; readonly checked: number }[];
+}
+
+const measure = (flags: readonly boolean[]): Measure => ({ value: flags.length === 0 ? null : flags.filter(Boolean).length / flags.length, n: flags.length });
+const average = (values: readonly number[]): Measure => ({ value: values.length === 0 ? null : values.reduce((a, b) => a + b, 0) / values.length, n: values.length });
+
+/** The answers of one family, with the prompt each answers. Cases that fix an answer are counted by `lookGain` only. */
+export function scoreFamily(family: ExploreFamily, answers: readonly ExploreResult[]): FamilyScore {
+  const judged = answers.filter((answer) => answer.judge != null && answer.judge.failure === null);
+  const judges = judged.map((answer) => answer.judge as ExploreJudgement);
+  const charts = answers.filter((answer) => answer.checks.chart != null);
+  const named = answers.filter((answer) => answer.prompt.structure !== undefined);
+  const withStructure = answers.filter((answer) => answer.geometry !== undefined && Object.keys(answer.checks.structures ?? {}).length > 0);
+  const controls = answers.flatMap((answer) => answer.drive?.controls ?? []);
+  const qualities = judges.flatMap((j) => (j.chartQuality == null ? [] : [j.chartQuality]));
+  const reviews = answers.flatMap((answer) => (answer.review?.before != null && answer.review.after != null ? [answer.review.after - answer.review.before] : []));
+  const sum = (pick: (g: ExploreGeometry) => number): number => withStructure.reduce((total, answer) => total + (answer.geometry === undefined ? 0 : pick(answer.geometry)), 0);
+  const costs = answers.flatMap((answer) => (answer.usage?.costUsd == null ? [] : [answer.usage.costUsd]));
+  return {
+    family,
+    answers: answers.length,
+    judged: judged.length,
+    coherence: average(judges.map((j) => j.coherence)),
+    coherenceFour: measure(judges.map((j) => j.coherence >= 4)),
+    textReadable: measure(judges.map((j) => j.textProblem === null)),
+    labelsRight: measure(judges.map((j) => j.wrongLabel === null)),
+    drawingCorrect: measure(judges.map((j) => j.correct)),
+    structureNamed: measure(named.map((answer) => (answer.checks.structures?.[answer.prompt.structure as StructureKind] ?? 0) > 0 && (answer.checks.placedByHand ?? 0) === 0)),
+    chartQuality: average(qualities),
+    chartQualityLowest: qualities.length === 0 ? null : Math.min(...qualities),
+    chartHygiene: measure(charts.map((answer) => { const chart = answer.checks.chart; return chart != null && (chart.data || chart.approx) && chart.problems.length === 0; })),
+    controlEvents: measure(controls.map((control) => control.reported && control.answered !== false)),
+    sliderChanges: measure(controls.flatMap((control) => (control.changed === null ? [] : [control.changed > 0.005]))),
+    responds: measure(judges.flatMap((j) => (j.responds == null ? [] : [j.responds]))),
+    chartRead: measure(answers.flatMap((answer) => (answer.drive?.charts ?? []).map((chart) => chart.crosshair && chart.zoomed && chart.silent))),
+    overlaps: sum((g) => g.textOverlaps),
+    throughNodes: sum((g) => g.linksThroughNodes),
+    crossed: sum((g) => g.crossedLabels),
+    lookGain: average(reviews),
+    lookWorse: measure(reviews.map((gain) => gain < 0)),
+    cost: { usd: costs.length === 0 ? null : costs.reduce((a, b) => a + b, 0) },
+  };
+}
+
+/** The summary of a run, from its answers by prompt id. */
+export function summaryOf(
+  meta: Omit<ExploreSummary, 'families' | 'prompts' | 'usd'>,
+  answers: readonly ExploreResult[],
+): ExploreSummary {
+  const byFamily = new Map<ExploreFamily, ExploreResult[]>();
+  for (const answer of answers) {
+    const family = familyOf(answer.prompt);
+    byFamily.set(family, [...(byFamily.get(family) ?? []), answer]);
+  }
+  const middle = (values: readonly number[]): number => {
+    if (values.length === 0) return 0;
+    const sorted = [...values].sort((a, b) => a - b);
+    const at = Math.floor(sorted.length / 2);
+    return sorted.length % 2 === 1 ? (sorted[at] ?? 0) : ((sorted[at - 1] ?? 0) + (sorted[at] ?? 0)) / 2;
+  };
+  const families: Partial<Record<ExploreFamily, FamilyLine>> = {};
+  for (const [family, group] of byFamily) {
+    const bar = scoreFamily(family, group);
+    const judges = group.flatMap((answer) => (answer.judge != null && answer.judge.failure === null ? [answer.judge] : []));
+    families[family] = {
+      n: group.length,
+      coherence: bar.coherence.value ?? 0,
+      correct: bar.drawingCorrect.value ?? 0,
+      readable: bar.textReadable.value ?? 0,
+      asked: judges.length === 0 ? 0 : judges.filter((j) => j.asked).length / judges.length,
+      collisions: group.length === 0 ? 0 : (bar.overlaps + bar.throughNodes + bar.crossed) / group.length,
+      tokens: middle(group.flatMap((answer) => (answer.usage?.outputTokens == null ? [] : [answer.usage.outputTokens]))),
+      firstLineMs: middle(group.flatMap((answer) => (answer.firstVisibleMs === null ? [] : [answer.firstVisibleMs]))),
+      bar,
+    };
+  }
+  const byPrompt = new Map<string, ExploreResult[]>();
+  for (const answer of answers) byPrompt.set(answer.prompt.id, [...(byPrompt.get(answer.prompt.id) ?? []), answer]);
+  const prompts = [...byPrompt].map(([id, group]) => {
+    const scores = group.flatMap((answer) => (answer.judge != null && answer.judge.failure === null ? [answer.judge.coherence] : []));
+    const verdicts = group.flatMap((answer) => answer.verdicts ?? []);
+    return { id, family: familyOf((group[0] as ExploreResult).prompt), coherence: scores.length === 0 ? null : scores.reduce((a, b) => a + b, 0) / scores.length, failed: verdicts.filter((v) => !v.ok).length, checked: verdicts.length };
+  });
+  return { ...meta, usd: meta.spentUsd ?? 0, families, prompts };
 }

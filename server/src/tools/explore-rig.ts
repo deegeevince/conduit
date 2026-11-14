@@ -1,10 +1,11 @@
 // What every unit of a run shares: the brain, the eyes, the judge, the limits.
 
-import { EMPTY_STAGE, FULL_CAPABILITIES, NO_V4_CAPABILITIES } from '@conduit/language';
-import type { Capabilities, ExploreJudgement, Services, StageBase } from '@conduit/language';
+import { EMPTY_STAGE } from '@conduit/language';
+import type { Capabilities, ExploreJudgement, Services, StageBase, TechniqueCard, TurnInput } from '@conduit/language';
 import type { Brain } from '../domain/brain';
-import type { HarnessReply } from './explore-browser';
-import { judge } from './explore-judge';
+import type { TechniqueLibrary } from '../domain/techniques';
+import type { DriveReply, HarnessReply } from './explore-browser';
+import { judge, judgeResponds } from './explore-judge';
 import type { JudgeSettings } from './explore-judge';
 
 export interface Running {
@@ -17,6 +18,13 @@ export interface Rig {
   readonly runId: string;
   readonly brain: Brain;
   readonly services: Services;
+  /**
+   * What the painter behind the battery's pictures says it can do, asked of the page itself: the brain is taught exactly this,
+   * so a run can never measure a brain taught words nobody performs.
+   */
+  readonly capabilities: Capabilities;
+  /** the techniques a brief may carry, chosen the way the server chooses them (from memory, the seed and the cache: no network) */
+  readonly library: TechniqueLibrary;
   readonly emptyStage: StageBase;
   readonly timeoutMs: number;
   readonly running: Running;
@@ -32,24 +40,30 @@ export interface Rig {
 
 export const EMPTY: StageBase = EMPTY_STAGE;
 
-/**
- * What the battery's brain is told the painter can do. It must be what the
- * painter behind the battery's pictures really does, or a run measures a brain
- * taught words nobody performs. Today that painter lays out no structure and
- * draws no control, so nothing of Series 4 is claimed here. PLAN-v2.md,
- * package H: ask the harness page (`window.__harness.capabilities`) instead of
- * writing it down, so this can never drift from the painter again.
- */
-export const HARNESS_CAPABILITIES: Capabilities = { ...FULL_CAPABILITIES, ...NO_V4_CAPABILITIES };
+/** The techniques the library hands this turn, as the conductor does: only for a message the brain will read. Null: none fitted. */
+export function techniquesFor(rig: Rig, input: TurnInput): { readonly cards: readonly TechniqueCard[]; readonly ids: readonly string[] } {
+  const cards = input.kind === 'prompt' || input.kind === 'tap' || input.kind === 'act' ? rig.library.cardsFor({ input, documents: false }) : [];
+  return { cards, ids: cards.map((card) => card.id) };
+}
 
 /** Asks the judge about a picture, a few at a time. Never throws: a failed judge is a judgement with a `failure`. */
-export async function judgeStills(rig: Rig, request: string, reply: HarnessReply): Promise<ExploreJudgement | null> {
+export async function judgeStills(rig: Rig, request: string, reply: HarnessReply, options: { readonly chart?: boolean; readonly drive?: DriveReply | null } = {}): Promise<ExploreJudgement | null> {
   const settings = rig.judgeSettings;
   if (settings === null) return null;
   const release = await rig.judgeSlots.take();
   try {
-    const verdict = await judge({ request, images: reply.judge, thumbs: reply.thumbs }, settings, new AbortController().signal);
-    return reply.complete ? verdict : { ...verdict, why: `${verdict.why} (the picture was taken before all its text could be drawn)`.trim() };
+    const signal = new AbortController().signal;
+    const asked = await judge({ request, images: reply.judge, thumbs: reply.thumbs, chart: options.chart === true }, settings, signal);
+    const verdict = reply.complete ? asked : { ...asked, why: `${asked.why} (the picture was taken before all its text could be drawn)`.trim() };
+    // Does the picture respond? Asked of the two ends of each control that something follows, blind to everything but the request and the two pictures.
+    const worked = (options.drive?.controls ?? []).filter((control) => control.ends !== null && control.bound);
+    if (worked.length === 0 || verdict.failure !== null) return verdict;
+    const answers = await Promise.all(worked.map((control) => judgeResponds({ request, control: control.description, images: control.ends as readonly [string, string] }, settings, signal)));
+    const usable = answers.filter((answer) => answer.responds !== null);
+    if (usable.length === 0) return verdict;
+    const cost = answers.reduce((total, answer) => total + (answer.costUsd ?? 0), verdict.costUsd ?? 0);
+    const failing = usable.find((answer) => answer.responds === false);
+    return { ...verdict, responds: failing === undefined, respondsWhy: (failing ?? usable[0])?.why ?? null, costUsd: cost };
   } catch (error) {
     return { model: settings.model, asked: false, textProblem: null, wrongLabel: null, correct: false, mistake: null, coherence: 1, why: '', costUsd: null, ms: 0, stills: [], failure: error instanceof Error ? error.message : String(error) };
   } finally {

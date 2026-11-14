@@ -7,17 +7,23 @@
 // `sendSnapshot` in the painter sends), the ones a judge is shown, and thumbnails for the review page.
 
 import { TurnScore, settle, shownAt } from '@conduit/language';
-import type { Line, StageBase, TurnReport } from '@conduit/language';
+import type { Capabilities, ExploreGeometry, Line, StageBase, TurnReport } from '@conduit/language';
 import type { Frame } from '../contracts/frame';
 import type { Renderer } from '../contracts/renderer';
 import { REST_POSE } from '../contracts/space';
 import type { Viewport } from '../contracts/space';
 import { pinnedWallTime } from '../painter/clock';
-import { sightOf } from '../painter/sight';
+import { placedOf, sightOf } from '../painter/sight';
 import { buildTimeline, settledEnd } from '../painter/timeline';
 import type { Timeline } from '../painter/timeline';
 import { createPlainRenderer } from '../render/plain';
 import { canUseThree, createThreeRenderer } from '../render/three';
+import { createChartEngine } from '../render/chart';
+import type { ChartHost } from '../contracts/chart';
+import { createHarnessChartHost } from './chart-host';
+import { capabilitiesOf, drive } from './drive';
+import type { DriveReply, DriveRequest } from './drive';
+import { geometryOf } from './geometry';
 
 export interface HarnessRequest {
   readonly turn: string;
@@ -44,6 +50,8 @@ export interface HarnessReply {
   /** false when a picture had to be taken before all of the frame's text could be drawn */
   readonly complete: boolean;
   readonly renderer: string;
+  /** what the painter measured about the resting stage */
+  readonly geometry: ExploreGeometry;
 }
 
 const SNAPSHOT_SIDE = 768;
@@ -63,10 +71,19 @@ export function installHarness(): void {
   let mountedFor = '';
   let mounted: Promise<void> | null = null;
   let chain: Promise<unknown> = Promise.resolve();
+  let charts: ChartHost | null = null;
+  const chartsFor = (): ChartHost | null => {
+    if (charts !== null || host === null) return charts;
+    const engine = createChartEngine();
+    if (engine !== null) charts = createHarnessChartHost(engine, host);
+    return charts;
+  };
 
   const rendererFor = async (viewport: Viewport, look: Parameters<Renderer['mount']>[2]): Promise<Renderer> => {
     const key = `${viewport.width}x${viewport.height}@${viewport.dpr}`;
     if (renderer !== null && key !== mountedFor) {
+      charts?.dispose();
+      charts = null;
       renderer.dispose();
       host?.remove();
       renderer = null;
@@ -122,20 +139,45 @@ export function installHarness(): void {
 
     const judge: string[] = [];
     const thumbs: string[] = [];
+    const chartHost = chartsFor();
     for (const frame of frames) {
-      const png = await r.rasterise(frame, { maxSide: request.judgeSide, mime: 'image/png', onIncomplete });
-      const jpg = await r.rasterise(frame, { maxSide: 480, mime: 'image/jpeg', quality: 0.8, onIncomplete });
+      // A chart draws itself in a surface over the stage: give it this frame's state, let it draw, and hand its picture to the renderer.
+      chartHost?.sync(frame.charts ?? [], 1);
+      if (chartHost !== null && (frame.charts?.length ?? 0) > 0) await new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done())));
+      const chartStill = chartHost === null ? undefined : (key: string): HTMLCanvasElement | null => chartHost.still(key);
+      const png = await r.rasterise(frame, { maxSide: request.judgeSide, mime: 'image/png', onIncomplete, ...(chartStill === undefined ? {} : { chartStill }) });
+      const jpg = await r.rasterise(frame, { maxSide: 480, mime: 'image/jpeg', quality: 0.8, onIncomplete, ...(chartStill === undefined ? {} : { chartStill }) });
       if (png === null || jpg === null) throw new Error('the renderer returned no picture');
       judge.push(await base64Of(png));
       thumbs.push(await base64Of(jpg));
     }
     const last = frames[frames.length - 1];
-    const shot = last === undefined ? null : await r.rasterise(last, { maxSide: SNAPSHOT_SIDE, mime: 'image/jpeg', quality: 0.8, onIncomplete });
-    return { report, duration, judge, thumbs, snapshot: shot === null ? null : await base64Of(shot), complete, renderer: canUseThree() ? 'three' : 'plain' };
+    const lastStill = chartHost === null ? undefined : (key: string): HTMLCanvasElement | null => chartHost.still(key);
+    const shot = last === undefined ? null : await r.rasterise(last, { maxSide: SNAPSHOT_SIDE, mime: 'image/jpeg', quality: 0.8, onIncomplete, ...(lastStill === undefined ? {} : { chartStill: lastStill }) });
+    const keys = new Set(schedule.elements.filter((element) => !element.carried).map((element) => element.key));
+    const geometry = geometryOf(schedule, placedOf(timeline, schedule, at, keys), report.sight);
+    return { report, duration, judge, thumbs, snapshot: shot === null ? null : await base64Of(shot), complete, renderer: canUseThree() ? 'three' : 'plain', geometry };
   }
+
+  const environment = async (viewport: Viewport): Promise<{ renderer: Renderer; viewport: Viewport; charts: ChartHost | null }> => {
+    const r = await rendererFor(viewport, 'paper');
+    return { renderer: r, viewport, charts: chartsFor() };
+  };
 
   (window as unknown as { __harness: unknown }).__harness = {
     ready: true,
+    /** What the painter behind these pictures says it can do at this viewport: the brain is taught exactly this. */
+    capabilities: (viewport: Viewport): Promise<Capabilities | null> => {
+      const job = chain.then(async () => capabilitiesOf(await environment(viewport)));
+      chain = job.catch(() => undefined);
+      return job;
+    },
+    /** Works every control and chart the answer left, through the real painter. */
+    drive: (request: DriveRequest & { readonly viewport: Viewport }): Promise<DriveReply> => {
+      const job = chain.then(async () => drive(await environment(request.viewport), request));
+      chain = job.catch(() => undefined);
+      return job;
+    },
     run: (request: HarnessRequest): Promise<HarnessReply> => {
       // One at a time: they share one renderer.
       const job = chain.then(() => run(request));

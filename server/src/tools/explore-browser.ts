@@ -20,6 +20,35 @@ export interface HarnessReply {
   readonly snapshot: string | null;
   readonly complete: boolean;
   readonly renderer: string;
+  readonly geometry: import('@conduit/language').ExploreGeometry;
+}
+
+export interface DriveRequest {
+  readonly turn: string;
+  readonly base: import('@conduit/language').StageBase;
+  readonly lines: readonly { readonly seq: number; readonly line: import('@conduit/language').Line }[];
+  readonly viewport: { readonly width: number; readonly height: number; readonly dpr: number };
+  readonly side: number;
+}
+
+/** What working an answer's controls and charts came to, as web/src/explore/drive.ts reports it. */
+export interface DriveReply {
+  readonly capabilities: import('@conduit/language').Capabilities | null;
+  readonly controls: readonly {
+    readonly id: string;
+    readonly kind: import('@conduit/language').ControlKind;
+    readonly label: string;
+    readonly bound: boolean;
+    readonly send: boolean;
+    readonly changed: number | null;
+    readonly reported: boolean;
+    readonly description: string;
+    readonly ends: readonly [string, string] | null;
+  }[];
+  readonly values: import('@conduit/language').ControlValues;
+  readonly pressed: { readonly id: string; readonly text: string; readonly values: import('@conduit/language').ControlValues } | null;
+  readonly charts: readonly { readonly id: string; readonly kind: string; readonly crosshair: boolean; readonly zoomed: boolean; readonly silent: boolean; readonly frameMs: { readonly median: number; readonly worst: number }; readonly ticks: { readonly x: readonly string[]; readonly y: readonly string[] } }[];
+  readonly fault: string | null;
 }
 
 export interface HarnessRequest {
@@ -34,6 +63,10 @@ export interface HarnessRequest {
 
 export interface Eyes {
   look(request: HarnessRequest): Promise<HarnessReply>;
+  /** what the page's painter says it can do at this window: the brain is taught exactly this */
+  capabilities(viewport: { readonly width: number; readonly height: number; readonly dpr: number }): Promise<import('@conduit/language').Capabilities | null>;
+  /** works every control and chart of an answer through the page's painter */
+  drive(request: DriveRequest): Promise<DriveReply>;
   close(): Promise<void>;
 }
 
@@ -167,6 +200,8 @@ export async function openEyes(options: EyesOptions): Promise<Eyes> {
 
     return {
       look: (request) => evaluate<HarnessReply>(`window.__harness.run(${JSON.stringify(request)})`),
+      capabilities: (viewport) => evaluate(`window.__harness.capabilities(${JSON.stringify(viewport)})`),
+      drive: (request) => evaluate<DriveReply>(`window.__harness.drive(${JSON.stringify({ ...request, viewport: request.viewport })})`),
       close,
     };
   } catch (error) {

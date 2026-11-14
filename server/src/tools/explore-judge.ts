@@ -4,6 +4,7 @@
 // The judge is a separate process from the brain (it never shares a conversation) with no tools, no settings, a
 // pinned model and a pinned effort.
 
+import { createHash } from 'node:crypto';
 import type { ExploreJudgement } from '@conduit/language';
 import { spawnTracked } from '../brains/claude-cli/process';
 import { failureOf, parseStreamLine, resultFactsOf } from '../brains/claude-cli/stream-json';
@@ -29,6 +30,30 @@ Answer these questions about the last picture, in the context of the request:
 Be strict and specific. A plain text answer with nothing drawn is fine when the request was a plain question; it is wrong when the request asked to see something. Do not reward length. If the stage is empty or nearly so, say so in why and score 1.
 
 Reply with ONE JSON object and nothing else, with exactly the keys asked, textProblem, wrongLabel, correct, mistake, coherence, why.`;
+
+// Two further questions, added to the instructions only when they apply. Neither names a brain, a prompt, a draft, a fix or an experiment:
+// the judge is shown a request and pictures and nothing about which arm of a comparison they came from, so it cannot be flattered by it.
+const CHART_ADDENDUM = `
+This answer is a CHART. Also give:
+- chartQuality: a whole number from 1 to 5 for how it stands against a professional charting product. 1: clip art, a picture of a chart. 3: correct and readable but plainly generated. 5: could be a screenshot of a trading terminal or a newspaper data desk. Look for: axes with sensibly formatted ticks (units, thousands, dates at a sensible grain), time and number axes drawn to scale, gridlines that recede, series told apart without relying on hue alone, a legend when there is more than one series, direct labels or units, nothing overlapping, nothing decorative, the data's story visible at a glance, honest baselines. Deduct for every thing a data editor would send back.
+- chartWhy: one sentence naming what holds the score down.
+Reply with those two keys as well as the others.`;
+
+const RESPONDS_SYSTEM = `You review an interactive picture on a "stage". You are shown what the user asked for, a description of one control, and two stills of the stage: the first with the control at one end of its range (or off), the second with it at the other end (or on). Judge only what you can see.
+
+Answer:
+- responds: true when the picture changes between the two stills in the way the request needs: the right thing changes, in the right direction, by an amount a person would notice. false when nothing relevant changes, the wrong thing changes, or it changes in the wrong direction.
+- respondsWhy: one sentence on what changes between the pictures, or what should have and did not.
+
+Reply with ONE JSON object and nothing else, with exactly the keys responds, respondsWhy.`;
+
+/**
+ * A hash of everything that makes two scores comparable: the instructions in every form, the model, the effort. It is written on
+ * every judgement and on the run; a comparison across two values of it is refused by the loop.
+ */
+export function rubricOf(settings: Pick<JudgeSettings, 'model' | 'effort'>): string {
+  return createHash('sha256').update([SYSTEM, CHART_ADDENDUM, RESPONDS_SYSTEM, settings.model, settings.effort].join('\u0000')).digest('hex').slice(0, 12);
+}
 
 function neutral(model: string, failure: string, ms: number, costUsd: number | null, stills: readonly string[]): ExploreJudgement {
   return { model, asked: false, textProblem: null, wrongLabel: null, correct: false, mistake: null, coherence: 1, why: '', costUsd, ms, stills, failure };
@@ -60,21 +85,36 @@ export interface JudgeInput {
   readonly images: readonly string[];
   /** small JPEGs (base64) kept with the verdict for the review page */
   readonly thumbs: readonly string[];
+  /** the answer is a chart: ask `chartQuality` too */
+  readonly chart?: boolean;
 }
 
-export async function judge(input: JudgeInput, settings: JudgeSettings, signal: AbortSignal): Promise<ExploreJudgement> {
+export interface RespondsInput {
+  readonly request: string;
+  /** what the control is and what its two ends are, in words */
+  readonly control: string;
+  /** base64 PNGs: one end, the other end */
+  readonly images: readonly [string, string];
+}
+
+interface Asked {
+  readonly reply: string;
+  readonly failure: string | null;
+  readonly cost: number | null;
+  readonly stderr: string;
+  readonly ms: number;
+}
+
+/** One call of the judge's process: a system prompt, a text and pictures in; the reply out. No tools, no settings, no conversation. */
+async function ask(system: string, text: string, images: readonly string[], settings: JudgeSettings, signal: AbortSignal): Promise<Asked> {
   const started = Date.now();
-  const stills = input.thumbs.map((data) => `data:image/jpeg;base64,${data}`);
   const args = [
     '-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose',
-    '--model', settings.model, '--effort', settings.effort, '--system-prompt', SYSTEM,
+    '--model', settings.model, '--effort', settings.effort, '--system-prompt', system,
     '--tools', '', '--strict-mcp-config', '--setting-sources', '', '--no-session-persistence',
   ];
   const child = spawnTracked(settings.bin, args, settings.effort);
-  const content = [
-    { type: 'text', text: `The user's request:\n${input.request}\n\n${input.images.length > 1 ? `${input.images.length} pictures follow; the last is the stage as the answer left it.` : 'One picture follows: the stage as the answer left it.'}` },
-    ...input.images.map((data) => ({ type: 'image', source: { type: 'base64', media_type: 'image/png', data } })),
-  ];
+  const content = [{ type: 'text', text }, ...images.map((data) => ({ type: 'image', source: { type: 'base64', media_type: 'image/png', data } }))];
   child.stdin?.on('error', () => undefined);
   child.stdin?.end(`${JSON.stringify({ type: 'user', message: { role: 'user', content } })}\n`);
 
@@ -97,8 +137,8 @@ export async function judge(input: JudgeInput, settings: JudgeSettings, signal: 
     failure = failureOf(event);
     const facts = resultFactsOf(event);
     cost = facts?.totalCostUsd ?? null;
-    const text = (event as { result?: unknown }).result;
-    if (typeof text === 'string') reply = text;
+    const result = (event as { result?: unknown }).result;
+    if (typeof result === 'string') reply = result;
   };
   child.stdout?.setEncoding('utf8');
   child.stdout?.on('data', (chunk: string) => {
@@ -117,12 +157,24 @@ export async function judge(input: JudgeInput, settings: JudgeSettings, signal: 
   clearTimeout(timer);
   signal.removeEventListener('abort', onAbort);
   if (pending.trim() !== '') handle(pending);
-  const ms = Date.now() - started;
+  return { reply, failure, cost, stderr, ms: Date.now() - started };
+}
 
-  if (failure !== null) return neutral(settings.model, `the judge failed: ${String(failure)}`, ms, cost, stills);
+function scoreOf(value: unknown): number | null {
+  const score = Number(value);
+  return Number.isFinite(score) ? Math.max(1, Math.min(5, Math.round(score))) : null;
+}
+
+export async function judge(input: JudgeInput, settings: JudgeSettings, signal: AbortSignal): Promise<ExploreJudgement> {
+  const stills = input.thumbs.map((data) => `data:image/jpeg;base64,${data}`);
+  const rubric = rubricOf(settings);
+  const text = `The user's request:\n${input.request}\n\n${input.images.length > 1 ? `${input.images.length} pictures follow; the last is the stage as the answer left it.` : 'One picture follows: the stage as the answer left it.'}`;
+  const got = await ask(input.chart === true ? `${SYSTEM}\n${CHART_ADDENDUM}` : SYSTEM, text, input.images, settings, signal);
+  const { ms, cost, stderr, reply } = got;
+  if (got.failure !== null) return { ...neutral(settings.model, `the judge failed: ${String(got.failure)}`, ms, cost, stills), rubric };
   const parsed = objectIn(reply);
-  if (parsed === null) return neutral(settings.model, `the judge did not answer in JSON${stderr === '' ? '' : ` (${stderr.trim()})`}: ${reply.slice(0, 160)}`, ms, cost, stills);
-  const score = Number(parsed['coherence']);
+  if (parsed === null) return { ...neutral(settings.model, `the judge did not answer in JSON${stderr === '' ? '' : ` (${stderr.trim()})`}: ${reply.slice(0, 160)}`, ms, cost, stills), rubric };
+  const chartQuality = input.chart === true ? scoreOf(parsed['chartQuality']) : null;
   return {
     model: settings.model,
     asked: parsed['asked'] === true,
@@ -130,11 +182,23 @@ export async function judge(input: JudgeInput, settings: JudgeSettings, signal: 
     wrongLabel: textOrNull(parsed['wrongLabel']),
     correct: parsed['correct'] === true,
     mistake: textOrNull(parsed['mistake']),
-    coherence: Number.isFinite(score) ? Math.max(1, Math.min(5, Math.round(score))) : 1,
+    coherence: scoreOf(parsed['coherence']) ?? 1,
     why: typeof parsed['why'] === 'string' ? parsed['why'].trim() : '',
+    ...(input.chart === true ? { chartQuality, chartWhy: typeof parsed['chartWhy'] === 'string' ? parsed['chartWhy'].trim() : null } : {}),
+    rubric,
     costUsd: cost,
     ms,
     stills,
     failure: null,
   };
+}
+
+/** Does the picture change between a control's two ends as the request needs? A separate, small call: it sees only the two stills. */
+export async function judgeResponds(input: RespondsInput, settings: JudgeSettings, signal: AbortSignal): Promise<{ responds: boolean | null; why: string | null; costUsd: number | null; failure: string | null }> {
+  const text = `The user's request:\n${input.request}\n\nThe control: ${input.control}\n\nTwo pictures follow: the control at one end, then at the other.`;
+  const got = await ask(RESPONDS_SYSTEM, text, input.images, settings, signal);
+  if (got.failure !== null) return { responds: null, why: null, costUsd: got.cost, failure: String(got.failure) };
+  const parsed = objectIn(got.reply);
+  if (parsed === null || typeof parsed['responds'] !== 'boolean') return { responds: null, why: null, costUsd: got.cost, failure: `the judge did not answer in JSON: ${got.reply.slice(0, 120)}` };
+  return { responds: parsed['responds'], why: typeof parsed['respondsWhy'] === 'string' ? parsed['respondsWhy'].trim() : null, costUsd: got.cost, failure: null };
 }
