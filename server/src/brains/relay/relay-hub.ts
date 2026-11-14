@@ -1,5 +1,10 @@
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { buildReviewBrief, isKeep } from '@conduit/language';
 import type { RelayStatus } from '@conduit/language';
-import type { BrainEvent, TurnRequest } from '../../domain/brain';
+import { askedOf } from '../../domain/review';
+import type { BrainEvent, ReviewRequest, TurnRequest } from '../../domain/brain';
 import { errors } from '../../errors';
 import type { Logger } from '../../log';
 
@@ -10,8 +15,17 @@ export interface RelayHubDeps {
   readonly idleTimeoutMs: number;
 }
 
+/** A look at a draft, offered to the agent that claimed the turn: what it is told, and where the picture of the draft is. */
+export interface ReviewOffer {
+  readonly pass: number;
+  /** `buildReviewBrief`, then a line naming the file the picture is in */
+  readonly brief: string;
+  readonly picturePath: string | null;
+}
+
 interface Entry {
   readonly request: TurnRequest;
+  readonly review?: ReviewOffer;
   readonly signal: AbortSignal;
   readonly offeredAt: number;
   state: 'pending' | 'claimed';
@@ -30,6 +44,7 @@ interface Claimer {
 }
 
 const REMEMBERED_CLOSED = 200;
+const REMEMBERED_REQUESTS = 40;
 
 /**
  * The meeting point between a turn that needs a brain and an outside agent
@@ -43,6 +58,8 @@ export class RelayHub {
   private readonly pending: Entry[] = [];
   private readonly claimers: Claimer[] = [];
   private readonly closed = new Set<string>();
+  /** the request each recent turn was offered with, so that a look at its draft can be offered with the same context */
+  private readonly offered = new Map<string, TurnRequest>();
 
   constructor(deps: RelayHubDeps) {
     this.deps = deps;
@@ -54,9 +71,64 @@ export class RelayHub {
    * timeout: a user is allowed to wait for a human. Ends quietly on abort.
    */
   async *offer(request: TurnRequest, signal: AbortSignal): AsyncGenerator<BrainEvent> {
+    this.offered.set(request.turn, request);
+    if (this.offered.size > REMEMBERED_REQUESTS) {
+      const oldest = this.offered.keys().next();
+      if (oldest.done !== true) this.offered.delete(oldest.value);
+    }
+    yield* this.park(request, signal, undefined);
+  }
+
+  /**
+   * A look at the draft of a turn this hub offered, put to whoever claimed the turn (or to the next to claim: the steward's session
+   * answers it as it answered the turn). It is claimed like a turn, answered with lines like one (`pnpm relay say`), and ended like one.
+   * What it is told is `buildReviewBrief`'s message, the same for every brain, and the file the picture of the draft was written to.
+   */
+  async *offerReview(request: ReviewRequest, signal: AbortSignal): AsyncGenerator<BrainEvent> {
+    const original = this.offered.get(request.turn);
+    if (original === undefined) throw errors.brainFailed(`the relay no longer holds turn ${request.turn} to look at it`);
+    let picturePath: string | null = null;
+    if (request.picture !== null) {
+      const dir = join(tmpdir(), 'conduit-relay');
+      mkdirSync(dir, { recursive: true });
+      picturePath = join(dir, `${request.turn}-pass${request.pass}.${request.picture.mime === 'image/png' ? 'png' : 'jpg'}`);
+      writeFileSync(picturePath, request.picture.bytes);
+    }
+    const text = buildReviewBrief({
+      asked: askedOf(request.input),
+      sight: request.sight,
+      problems: request.problems,
+      picture: request.picture !== null,
+      pass: request.pass,
+      ...(request.form === undefined ? {} : { form: request.form }),
+      ...(request.placed === undefined ? {} : { placed: request.placed }),
+      ...(request.critic === undefined ? {} : { critic: request.critic }),
+      ...(request.of === undefined ? {} : { of: request.of }),
+      ...(request.standing === undefined ? {} : { standing: request.standing }),
+    });
+    const brief = picturePath === null ? text : `${text}\n\nTHE PICTURE OF THE DRAFT is the file ${picturePath} (read it to see it).`;
+    try {
+      yield { type: 'brief', form: 'since', text: brief, system: null, withSnapshot: request.picture !== null };
+      for await (const event of this.park(original, signal, { pass: request.pass, brief, picturePath })) {
+        // `ok`, alone on a line, is the draft kept: it is not a line and not a rejection.
+        if (event.type === 'reject' && isKeep(event.raw)) continue;
+        yield event;
+      }
+    } finally {
+      if (picturePath !== null) rmSync(picturePath, { force: true });
+    }
+  }
+
+  /** The look being asked of whoever claims this turn now, for the relay route to tell the claimer (it answers the turn's own brief otherwise). */
+  reviewOf(turn: string): ReviewOffer | null {
+    return this.entries.get(turn)?.review ?? null;
+  }
+
+  private async *park(request: TurnRequest, signal: AbortSignal, review: ReviewOffer | undefined): AsyncGenerator<BrainEvent> {
     const now = this.deps.now();
     const entry: Entry = {
       request,
+      ...(review === undefined ? {} : { review }),
       signal,
       offeredAt: now,
       state: 'pending',

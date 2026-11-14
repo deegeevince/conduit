@@ -14,6 +14,32 @@ export function toolArguments(tools: readonly string[]): string[] {
   return ['--tools', tools.join(','), '--allowedTools', ...tools, '--disallowedTools', ...DENIED_TOOLS];
 }
 
+/**
+ * Agent mode's flags (v2.1, package G). The CLI's own tools are exactly `builtIns` and nothing else; the permission mode is `manual`, so
+ * nothing runs on a rule; and `--permission-prompt-tool stdio` makes the CLI ask this process, on its stdin and stdout, before every call
+ * that has not been settled, which is every call that is not a plain read inside the working folder (see the notes at the top of warm.ts).
+ * `--restricted` takes away the tools that run code and confines the file tools to the working folder. Connected services come only from
+ * `mcpConfigs`, with `--strict-mcp-config` (added by the caller). Never `--dangerously-skip-permissions`, `bypassPermissions`,
+ * `acceptEdits` or `--bare`: `agentArguments` cannot produce them.
+ */
+export interface AgentRun {
+  readonly builtIns: readonly string[];
+  readonly mcpConfigs: readonly string[];
+  /** the folder the process starts in and that file tools are confined to; an empty temporary one when the owner named none */
+  readonly cwd: string;
+}
+
+export function agentArguments(run: AgentRun): string[] {
+  return [
+    '--tools', run.builtIns.join(','),
+    '--permission-mode', 'manual',
+    '--permission-prompts', 'host',
+    '--permission-prompt-tool', 'stdio',
+    '--restricted',
+    ...(run.mcpConfigs.length === 0 ? [] : ['--mcp-config', ...run.mcpConfigs]),
+  ];
+}
+
 const DENIED_TOOLS = ['Bash', 'Edit', 'Write', 'Read', 'Glob', 'Grep', 'NotebookEdit', 'Task', 'Agent', 'PowerShell'];
 
 export interface ClaudeRun {

@@ -1,15 +1,22 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { buildSystemPrompt, buildTurnBrief } from '@conduit/language';
-import type { BrainChange, BrainChoice, BrainEffort, PromptVariant } from '@conduit/language';
+import type { ActionRisk, BrainChange, BrainChoice, BrainEffort, BrainMode, PromptVariant, ToolChoice } from '@conduit/language';
 import type { BriefForm, Capabilities } from '@conduit/language';
 import { buildReviewBrief, isKeep } from '@conduit/language';
 import type { Brain, BrainEvent, BrainSession, ReviewRequest, Snapshot, TurnRequest } from '../../domain/brain';
+import { FILE_TOOLS, gateCall, NO_AGENT, summaryOf, toolChoices } from '../../domain/agent';
+import type { AgentSettings } from '../../domain/agent';
 import { askedOf } from '../../domain/review';
 import { brainEventsFromText } from '../../domain/lines';
 import { AppError, errors } from '../../errors';
 import type { Logger } from '../../log';
 import { startWarmProcess } from './warm';
 import type { WarmProcess } from './warm';
-import { failureOf, resultFactsOf, textDeltaOf } from './stream-json';
+import { Mailbox } from './mailbox';
+import type { AgentRun } from './process';
+import { cancelledAskOf, failureOf, permissionAskOf, resultFactsOf, textDeltaOf, toolResultsOf, toolUsesOf } from './stream-json';
 import type { ClaudeResultFacts } from './stream-json';
 
 export interface ClaudeCliDeps {
@@ -26,6 +33,23 @@ export interface ClaudeCliDeps {
   readonly maxWarm: number;
   readonly warmIdleMs: number;
   readonly recycleTokens: number;
+  /** v2.1. What agent mode may use; absent is `NO_AGENT`: the brain has one mode, `plain` */
+  readonly agent?: AgentSettings;
+  /** v2.1. The kinds of mind the server offers a session; `steward` is the registry's, not this brain's */
+  readonly modes?: readonly BrainMode[];
+}
+
+/** A call the CLI is holding for the owner's answer. */
+interface Held {
+  readonly requestId: string;
+  readonly toolUseId: string;
+  readonly tool: string;
+  readonly summary: string;
+  readonly risk: ActionRisk;
+  readonly input: Readonly<Record<string, unknown>>;
+  readonly timer: NodeJS.Timeout;
+  /** says what became of it: the owner's answer, the deadline, or the turn ending */
+  readonly settle: (allow: boolean, why: 'owner' | 'deadline' | 'turn') => void;
 }
 
 /** What one conversation holds: a process that has heard the system prompt and everything since. */
@@ -36,6 +60,10 @@ interface Entry {
   readonly model: string;
   readonly effort: BrainEffort;
   readonly proc: WarmProcess;
+  /** what the process was started with beyond model and effort: the mode and, in agent mode, the tools and services it was given */
+  readonly agentKey: string;
+  /** calls this process has put to the owner and not had answered, by the CLI's request id */
+  readonly held: Map<string, Held>;
   systemSent: boolean;
   /** the capabilities the system prompt was written for; a later difference is told in a brief, never by a new prompt */
   capabilities: Capabilities;
@@ -52,6 +80,9 @@ interface Entry {
 
 /** How long a new turn waits for the previous one to finish unwinding before it abandons that process. */
 const UNWIND_WAIT_MS = 3_000;
+
+/** A tool that is running (a page being read, a service answering) is allowed longer than a model that has gone quiet. */
+const TOOL_IDLE_MS = 180_000;
 
 /**
  * A real streaming model as the brain, through the Claude Code CLI, so no API
@@ -72,6 +103,45 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
   const chosen = new Map<string, { model: string; effort: BrainEffort }>();
   const settingsOf = (session: string): { model: string; effort: BrainEffort } => chosen.get(session) ?? { model: deps.model, effort: deps.effort };
 
+  // v2.1, agent mode. What the owner's configuration offers, what each conversation has switched on, and the mode it is in.
+  const agent = deps.agent ?? NO_AGENT;
+  const modeChosen = new Map<string, 'plain' | 'agent'>();
+  const switchedOn = new Map<string, Set<string>>();
+  const modeOf = (session: string): 'plain' | 'agent' => (agent.enabled && modeChosen.get(session) === 'agent' ? 'agent' : 'plain');
+  /** Everything offered is on until the owner switches it off (`/tools`): it was the owner who offered it. Nothing else can ever be on. */
+  const onOf = (session: string): Set<string> => {
+    let on = switchedOn.get(session);
+    if (on === undefined) {
+      on = new Set([...agent.tools, ...agent.services.map((service) => service.name)]);
+      switchedOn.set(session, on);
+    }
+    return on;
+  };
+  let scratch: string | null = null;
+  /** The folder the process starts in: the owner's, or an empty one of ours when none was named (and then no file tool is offered at all). */
+  const folder = (): string => {
+    if (agent.dir !== null) return agent.dir;
+    scratch ??= mkdtempSync(join(tmpdir(), 'conduit-agent-'));
+    return scratch;
+  };
+  const agentRunOf = (session: string): AgentRun | null => {
+    if (modeOf(session) !== 'agent') return null;
+    const on = onOf(session);
+    return {
+      builtIns: agent.tools.filter((name) => on.has(name) && (agent.dir !== null || !FILE_TOOLS.includes(name))),
+      mcpConfigs: agent.services.filter((service) => on.has(service.name)).map((service) => service.config),
+      cwd: folder(),
+    };
+  };
+  const agentKeyOf = (session: string): string => {
+    const run = agentRunOf(session);
+    return run === null ? 'plain' : `agent|${run.builtIns.join(',')}|${run.mcpConfigs.join(',')}`;
+  };
+  const webOn = (session: string): boolean => {
+    const run = agentRunOf(session);
+    return run === null ? deps.tools.length > 0 : run.builtIns.some((name) => name === 'WebSearch' || name === 'WebFetch');
+  };
+
   // The system prompt is fixed for a conversation: it is built from what the painter can do and what the server offers,
   // never from the screen or the look, which change within a conversation and belong to each turn's brief.
   const systemFor = (s: Pick<BrainSession, 'capabilities' | 'services'>): string => {
@@ -82,7 +152,9 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
     session,
     system,
     ...settingsOf(session),
-    proc: startWarmProcess({ bin: deps.bin, tools: deps.tools, ...settingsOf(session), systemPrompt: system }, log),
+    proc: startWarmProcess({ bin: deps.bin, tools: deps.tools, ...settingsOf(session), systemPrompt: system, agent: agentRunOf(session) }, log),
+    agentKey: agentKeyOf(session),
+    held: new Map(),
     systemSent: false,
     capabilities,
     lastTurn: null,
@@ -94,6 +166,7 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
 
   const discard = (entry: Entry): void => {
     if (pool.get(entry.session) === entry) pool.delete(entry.session);
+    for (const held of [...entry.held.values()]) held.settle(false, 'turn');
     void entry.proc.stop().catch(() => undefined);
   };
 
@@ -142,7 +215,7 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
     };
     const current = pool.get(session);
     const wanted = settingsOf(session);
-    const stale = current !== undefined && (current.model !== wanted.model || current.effort !== wanted.effort);
+    const stale = current !== undefined && (current.model !== wanted.model || current.effort !== wanted.effort || current.agentKey !== agentKeyOf(session));
     if (deps.warm && current !== undefined && !stale && current.proc.alive && current.running === null && current.proc.contextTokens <= deps.recycleTokens) {
       const heardEverything = current.proc.turns > 0 && current.lastTurn === (context.history.at(-1)?.turn ?? null);
       return { entry: current, form: heardEverything ? 'since' : 'full', reused: current.proc.turns > 0, release: claim(current) };
@@ -166,12 +239,14 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
     readonly text: string;
     readonly image: Snapshot | null;
     readonly pdfs: readonly Uint8Array[];
+    /** v2.1. The user's own pictures for this turn, after the stage's snapshot */
+    readonly images: readonly Snapshot[];
     readonly form: BriefForm;
     /** run once the message is on its way: what the process now knows */
     readonly sent: () => void;
   }
 
-  function outgoingFor(request: TurnRequest, entry: Entry, form: BriefForm): Outgoing {
+  function outgoingFor(request: TurnRequest & { readonly images?: readonly Snapshot[] }, entry: Entry, form: BriefForm): Outgoing {
     const held = request.context.documents ?? [];
     const given = form === 'full' ? held : held.filter((doc) => !entry.heardDocs.has(doc.id));
     return {
@@ -183,10 +258,11 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
         effort: entry.effort,
         sees: request.snapshot !== null,
         look: deps.warm && request.look === true,
-        web: deps.tools.length > 0,
+        web: webOn(request.session),
       }),
       image: request.snapshot,
       pdfs: (request.pdfs ?? []).filter((pdf) => given.some((doc) => doc.id === pdf.id && doc.kind === 'pdf')).map((pdf) => pdf.bytes),
+      images: request.images ?? [],
       form,
       sent: () => {
         entry.lastTurn = request.turn;
@@ -224,37 +300,120 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
       }, ms);
       timer.unref();
     };
+    // Which clock is running depends on what the turn is waiting for. A call held for the owner stops it: the owner has `answerMs`.
+    const running = new Map<string, { readonly tool: string; readonly summary: string; readonly at: number }>();
+    const denied = new Set<string>();
+    const rearm = (): void => {
+      if (entry.held.size > 0) clearTimeout(timer);
+      else if (running.size > 0) arm(Math.max(deps.idleTimeoutMs, TOOL_IDLE_MS), 'a tool call took longer than the brain waits for one');
+      else if (state.sawText) arm(deps.idleTimeoutMs, 'claude went quiet, longer than CLAUDE_IDLE_TIMEOUT_MS');
+      else arm(deps.firstTokenTimeoutMs, 'no first token from claude within CLAUDE_FIRST_TOKEN_TIMEOUT_MS');
+    };
 
     let firstTextAt: number | null = null;
     let facts: ClaudeResultFacts | null = null;
     let failure: string | null = null;
-    const toolCalls: { tool: string; target: string | null }[] = [];
+    const box = new Mailbox<BrainEvent>();
+    const on = onOf(out.session);
+
+    /** The CLI asks before a call. Whatever the answer, it is made here, by `gateCall`, and by the owner for what that says to ask. */
+    const handleAsk = (ask: { requestId: string; toolUseId: string; tool: string; input: Readonly<Record<string, unknown>> }): void => {
+      const call = { id: ask.toolUseId, tool: ask.tool, input: ask.input };
+      const verdict = modeOf(out.session) === 'agent' ? gateCall(call, agent, on) : ({ kind: 'deny', risk: 'run', why: 'this conversation has no tools' } as const);
+      const summary = summaryOf(call);
+      if (inner.signal.aborted) {
+        // The turn was stopped (or timed out) and the model has not heard yet: nothing more is asked of the owner, nothing runs.
+        entry.proc.answer(ask.requestId, false, {}, 'The turn was stopped.');
+        denied.add(ask.toolUseId);
+        return;
+      }
+      if (verdict.kind === 'allow') {
+        entry.proc.answer(ask.requestId, true, ask.input, '');
+        return;
+      }
+      if (verdict.kind === 'deny') {
+        entry.proc.answer(ask.requestId, false, {}, `Not allowed: ${verdict.why}. Say so plainly and offer what you can do without it.`);
+        denied.add(ask.toolUseId);
+        turnLog.info('agent_denied', { tool: ask.tool, why: verdict.why });
+        box.push({ type: 'activity', id: ask.toolUseId, tool: ask.tool, summary, state: 'denied', ms: null });
+        return;
+      }
+      const expiresMs = Date.now() + agent.answerMs;
+      const settle = (allow: boolean, why: 'owner' | 'deadline' | 'turn'): void => {
+        const held = entry.held.get(ask.requestId);
+        if (held === undefined) return;
+        entry.held.delete(ask.requestId);
+        clearTimeout(held.timer);
+        if (allow) {
+          entry.proc.answer(ask.requestId, true, ask.input, '');
+          box.push({ type: 'activity', id: ask.toolUseId, tool: ask.tool, summary, state: 'running', ms: null });
+        } else {
+          entry.proc.answer(ask.requestId, false, {}, why === 'owner' ? 'The owner said no. Do not try it another way; say what you could not do and offer what you can.' : 'The owner did not answer in time, which is a no. Do not try it another way; say what you could not do.');
+          denied.add(ask.toolUseId);
+          box.push({ type: 'activity', id: ask.toolUseId, tool: ask.tool, summary, state: 'denied', ms: null });
+        }
+        turnLog.info('agent_permission_settled', { tool: ask.tool, risk: verdict.risk, allowed: allow, by: why });
+        if (!inner.signal.aborted) rearm();
+      };
+      const deadline = setTimeout(() => settle(false, 'deadline'), agent.answerMs);
+      deadline.unref();
+      entry.held.set(ask.requestId, { requestId: ask.requestId, toolUseId: ask.toolUseId, tool: ask.tool, summary, risk: verdict.risk, input: ask.input, timer: deadline, settle });
+      turnLog.info('agent_permission_asked', { tool: ask.tool, risk: verdict.risk });
+      box.push({ type: 'activity', id: ask.toolUseId, tool: ask.tool, summary, state: 'waiting', ms: null });
+      box.push({ type: 'permission', request: ask.requestId, tool: ask.tool, summary, risk: verdict.risk, expiresMs });
+      rearm();
+    };
+
+    inner.signal.addEventListener('abort', () => {
+      for (const held of [...entry.held.values()]) held.settle(false, 'turn');
+    }, { once: true });
 
     async function* chunks(): AsyncGenerator<string> {
-      arm(deps.firstTokenTimeoutMs, 'no first token from claude within CLAUDE_FIRST_TOKEN_TIMEOUT_MS');
-      for await (const event of entry.proc.ask({ text, image: out.image, pdfs }, inner.signal)) {
-        if (state.sawText) arm(deps.idleTimeoutMs, 'claude went quiet, longer than CLAUDE_IDLE_TIMEOUT_MS');
+      rearm();
+      for await (const event of entry.proc.ask({ text, image: out.image, pdfs, images: out.images }, inner.signal)) {
         if (event.type === 'system' && (event as { subtype?: unknown }).subtype === 'init') {
           const init = event as { tools?: readonly unknown[]; mcp_servers?: readonly unknown[]; model?: string };
           const tools = init.tools?.length ?? 0;
           const mcp = init.mcp_servers?.length ?? 0;
-          turnLog.info('claude_init', { model: init.model, effort: entry.effort, requested: entry.model });
-          if (tools > deps.tools.length || mcp > 0) turnLog.warn('claude_not_isolated', { model: init.model, tools, mcp_servers: mcp });
+          turnLog.info('claude_init', { model: init.model, effort: entry.effort, requested: entry.model, mode: modeOf(out.session) });
+          if (entry.agentKey === 'plain' && (tools > deps.tools.length || mcp > 0)) turnLog.warn('claude_not_isolated', { model: init.model, tools, mcp_servers: mcp });
           continue;
         }
-        if (event.type === 'assistant') {
-          // Tool use is logged by name and its query or URL; what a page said is never logged.
-          const content = (event as { message?: { content?: unknown } }).message?.content;
-          if (Array.isArray(content)) {
-            for (const block of content as { type?: unknown; name?: unknown; input?: { query?: unknown; url?: unknown } }[]) {
-              if (block?.type !== 'tool_use') continue;
-              const target = block.input?.query ?? block.input?.url;
-              const call = { tool: String(block.name), target: typeof target === 'string' ? target.slice(0, 300) : null };
-              turnLog.info('brain_tool', call);
-              toolCalls.push(call);
-            }
-          }
+        const ask = permissionAskOf(event);
+        if (ask !== null) {
+          handleAsk(ask);
+          continue;
         }
+        const withdrawn = cancelledAskOf(event);
+        if (withdrawn !== null) {
+          const held = entry.held.get(withdrawn);
+          if (held !== undefined) {
+            entry.held.delete(withdrawn);
+            clearTimeout(held.timer);
+            box.push({ type: 'activity', id: held.toolUseId, tool: held.tool, summary: held.summary, state: 'denied', ms: null });
+            rearm();
+          }
+          continue;
+        }
+        // A tool call is told by name and by the one field that names its target, passed through `redactSecrets` (`summaryOf`);
+        // its whole input and what it returned never leave this function.
+        let toolsChanged = false;
+        for (const use of toolUsesOf(event)) {
+          toolsChanged = true;
+          const summary = summaryOf(use);
+          running.set(use.id, { tool: use.tool, summary, at: Date.now() });
+          turnLog.info('brain_tool', { tool: use.tool, summary });
+          box.push({ type: 'activity', id: use.id, tool: use.tool, summary, state: 'running', ms: null });
+        }
+        for (const result of toolResultsOf(event)) {
+          const began = running.get(result.id);
+          if (began === undefined) continue;
+          toolsChanged = true;
+          running.delete(result.id);
+          const state = denied.has(result.id) ? 'denied' : result.failed ? 'failed' : 'done';
+          if (state !== 'denied') box.push({ type: 'activity', id: result.id, tool: began.tool, summary: began.summary, state, ms: Date.now() - began.at });
+        }
+        if (!inner.signal.aborted && (toolsChanged || state.sawText)) rearm();
         const delta = textDeltaOf(event);
         if (delta !== null) {
           // An interrupted turn is drained to its result so the process survives; nothing it still says is a line.
@@ -262,7 +421,7 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
           if (!state.sawText) {
             state.sawText = true;
             firstTextAt = Date.now();
-            arm(deps.idleTimeoutMs, 'claude went quiet, longer than CLAUDE_IDLE_TIMEOUT_MS');
+            rearm();
           }
           yield delta;
           continue;
@@ -274,16 +433,23 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
       }
     }
 
-    try {
-      for await (const event of brainEventsFromText(chunks(), out.styles)) {
-        while (toolCalls.length > 0) yield { type: 'tool', ...(toolCalls.shift() as { tool: string; target: string | null }) };
-        yield event;
+    const pump = (async (): Promise<void> => {
+      try {
+        for await (const event of brainEventsFromText(chunks(), out.styles)) box.push(event);
+        box.close();
+      } catch (error) {
+        box.fail(error);
       }
-      while (toolCalls.length > 0) yield { type: 'tool', ...(toolCalls.shift() as { tool: string; target: string | null }) };
+    })();
+
+    try {
+      yield* box.drain();
     } finally {
       clearTimeout(timer);
       signal.removeEventListener('abort', onOuterAbort);
       inner.abort();
+      await pump;
+      for (const held of [...entry.held.values()]) held.settle(false, 'turn');
     }
 
     if (timedOut !== null) throw errors.brainTimeout(`claude timed out: ${timedOut}`);
@@ -360,9 +526,21 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
       turn: request.turn,
       session: request.session,
       styles: request.styles,
-      text: buildReviewBrief({ asked: askedOf(request.input), sight: request.sight, problems: request.problems, picture: request.picture !== null, pass: request.pass }),
+      text: buildReviewBrief({
+        asked: askedOf(request.input),
+        sight: request.sight,
+        problems: request.problems,
+        picture: request.picture !== null,
+        pass: request.pass,
+        ...(request.form === undefined ? {} : { form: request.form }),
+        ...(request.placed === undefined ? {} : { placed: request.placed }),
+        ...(request.critic === undefined ? {} : { critic: request.critic }),
+        ...(request.of === undefined ? {} : { of: request.of }),
+        ...(request.standing === undefined ? {} : { standing: request.standing }),
+      }),
       image: request.picture,
       pdfs: [],
+      images: [],
       form: 'since',
       sent: () => undefined,
     };
@@ -400,9 +578,14 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
         log.warn('claude_open_failed', { session: session.session, message: error instanceof Error ? error.message : String(error) });
       }
     },
-    choice: (session) => ({ configurable: true, ...settingsOf(session) }) satisfies BrainChoice,
+    choice: (session) => ({ configurable: true, ...settingsOf(session), ...(agent.enabled ? { mode: modeOf(session), modes: deps.modes ?? (['plain', 'agent'] as const) } : {}) }) satisfies BrainChoice,
     choose(session, change: BrainChange) {
-      const next = { ...settingsOf(session), ...change };
+      const { mode, ...rest } = change;
+      if (mode !== undefined && mode !== 'steward') {
+        if (mode === 'agent' && !agent.enabled) throw errors.badRequest('agent mode is not offered by this server (AGENT=on)');
+        modeChosen.set(session, mode);
+      }
+      const next = { ...settingsOf(session), ...rest };
       chosen.set(session, next);
       // The warm process was started with the old settings. One that is mid-turn finishes it and is replaced by the next turn (acquire sees it is stale).
       const entry = pool.get(session);
@@ -410,10 +593,30 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
         log.info('claude_warm_replaced', { session, why: 'settings_changed' });
         discard(entry);
       }
-      return { configurable: true, ...next };
+      return { configurable: true, ...next, ...(agent.enabled ? { mode: modeOf(session), modes: deps.modes ?? (['plain', 'agent'] as const) } : {}) };
     },
+    ...(agent.enabled
+      ? {
+          permit(session: string, request: string, allow: boolean): void {
+            // Only the owner's `permit` reaches here; a request that is unknown, answered or from another conversation is ignored.
+            pool.get(session)?.held.get(request)?.settle(allow, 'owner');
+          },
+          tools: (session: string): readonly ToolChoice[] => toolChoices(agent, onOf(session)),
+          setTool(session: string, name: string, on: boolean): readonly ToolChoice[] {
+            const offered = agent.tools.includes(name) || agent.services.some((service) => service.name === name);
+            if (offered) {
+              const set = onOf(session);
+              if (on) set.add(name);
+              else set.delete(name);
+            }
+            return toolChoices(agent, onOf(session));
+          },
+        }
+      : {}),
     release(session) {
       chosen.delete(session);
+      modeChosen.delete(session);
+      switchedOn.delete(session);
       const entry = pool.get(session);
       if (entry !== undefined) discard(entry);
     },
@@ -421,7 +624,9 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
       if (sweep) clearInterval(sweep);
       const all = [...pool.values()];
       pool.clear();
+      for (const entry of all) for (const held of [...entry.held.values()]) held.settle(false, 'turn');
       await Promise.all(all.map((entry) => entry.proc.stop().catch(() => undefined)));
+      if (scratch !== null) rmSync(scratch, { recursive: true, force: true });
     },
   };
 }
