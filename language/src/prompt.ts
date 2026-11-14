@@ -512,7 +512,7 @@ ${[
     capabilities.uploads ? '`pic u1` puts a photo the user gave on stage (the brief names them); label or trace it.' : '',
     services.refine ? 'Asked to iterate or improve it: end with `refine 3`; you are shown the picture and add to it.' : '',
     capabilities.links ? '`say href=<url> | site` is a link; cite every web source as one.' : '',
-    draws ? 'A heart, a leaf, a bird, a person: one smooth closed `path`, never circles and rectangles stuck together.' : '',
+    draws ? 'A heart, a leaf, a bird, a person: one smooth closed `path`, never circles and rectangles stuck together. Not for anatomy, a machine or labelled parts.' : '',
     structures.includes('chart') && controls.includes('slider')
       ? 'Numbers a control changes: a `chart` whose cells hold braces (`| 4 | {rate*4}`) beside the slider, never hand-drawn axes.'
       : '',

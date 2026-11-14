@@ -404,6 +404,7 @@ function sightItem(value: unknown, what: string): SightItem {
     box: { x: num(box.x, `${what}.box.x`), y: num(box.y, `${what}.box.y`), w: num(box.w, `${what}.box.w`), h: num(box.h, `${what}.box.h`) },
     resting: bool(raw.resting, `${what}.resting`),
     notes: [...new Set(notes)],
+    ...(typeof raw.within === 'string' && raw.within.length > 0 ? { within: raw.within.replace(/\s+/g, ' ').slice(0, SIGHT_ID_CHARS) } : {}),
   };
 }
 

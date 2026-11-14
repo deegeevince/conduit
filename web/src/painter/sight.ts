@@ -28,6 +28,14 @@ const TINY_PX = 12;
 const CLIPPED_SHARE = 0.05;
 /** A later opaque figure that hides more than this share of a box has "covered" it. */
 const COVERED_SHARE = 0.6;
+/** `spills`: a filled shape with more than this share of its area inside a bigger filled shape, and less than SPILL_CLEAN of it (so a visible part is outside) */
+const SPILL_MOSTLY = 0.7;
+const SPILL_CLEAN = 0.97;
+/** the container is at least this many times the area of what spills out of it, or the two are just overlapping shapes */
+const SPILL_CONTAINER = 1.5;
+const SPILL_GRID = 28;
+/** `wrong-part`: a leader's end is this far (screen units) from the part it names, or farther, and it is not on it */
+const WRONG_PART_TOLERANCE = 6;
 /** Text below this share of the size its size word asks for has been "shrunk". */
 const SHRUNK_BELOW = 0.85;
 /** More lines than this outside `layout=page` is "wrapped". */
@@ -205,6 +213,7 @@ export function sightOf(timeline: Timeline, schedule: Schedule, base: StageBase,
     box ??= { x: 0, y: 0, w: 0, h: 0 };
     const topLeft = canvasToStage({ x: box.x, y: box.y }, fit, 'mid', viewport);
     const own: SightNote[] = [...(layoutNotes.get(element.key) ?? [])];
+    if (element.refit === true) own.push('refit');
     if (gone) {
       // the line the answer rests on (a `strong` line, or the first line said when nothing is `strong`) is told as lost; any other as retired
       const style = element.style;
@@ -510,12 +519,153 @@ export function sightOf(timeline: Timeline, schedule: Schedule, base: StageBase,
     }
   }
 
+  // A filled shape that lies mostly inside a bigger filled shape but spills past its edge (a chamber that pokes out of the heart): said of the inner one, naming the outer,
+  // so the look pass can move it. The brain's geometry is not moved for it.
+  const within = new Map<Entry, string>();
+  {
+    interface Solid {
+      readonly entry: Entry;
+      readonly layer: string;
+      readonly poly: readonly Pt[];
+      readonly area: number;
+    }
+    const solids: Solid[] = [];
+    for (const entry of entries) {
+      if (!entry.resting || entry.element.kind !== 'shape') continue;
+      const first = figureFrames.get(entry.element.key)?.find((figure) => figure.kind === 'shape');
+      if (first === undefined || first.kind !== 'shape' || first.fill === null || first.fill.opacity * first.opacity < 0.5 || first.bleed) continue;
+      const line = first.outline[0];
+      if (line === undefined || !line.closed || line.points.length < 3) continue;
+      const ps = planeScale(first.layer, viewport);
+      const t = first.transform;
+      const poly = line.points.map((p) => ({ x: (t.a * p.x + t.c * p.y + t.e) * ps, y: (t.b * p.x + t.d * p.y + t.f) * ps }));
+      const area = shoelace(poly);
+      if (area > 0) solids.push({ entry, layer: first.layer, poly, area });
+    }
+    const inside = (poly: readonly Pt[], x: number, y: number): boolean => {
+      let in2 = false;
+      for (let i = 0, j = poly.length - 1; i < poly.length; j = i, i += 1) {
+        const a = poly[i] as Pt;
+        const b = poly[j] as Pt;
+        if (a.y > y !== b.y > y && x < ((b.x - a.x) * (y - a.y)) / (b.y - a.y) + a.x) in2 = !in2;
+      }
+      return in2;
+    };
+    for (const inner of solids) {
+      const xs = inner.poly.map((p) => p.x);
+      const ys = inner.poly.map((p) => p.y);
+      const x0 = Math.min(...xs);
+      const x1 = Math.max(...xs);
+      const y0 = Math.min(...ys);
+      const y1 = Math.max(...ys);
+      const grid: Pt[] = [];
+      for (let i = 0; i < SPILL_GRID; i += 1) {
+        for (let j = 0; j < SPILL_GRID; j += 1) {
+          const p = { x: x0 + ((i + 0.5) / SPILL_GRID) * (x1 - x0), y: y0 + ((j + 0.5) / SPILL_GRID) * (y1 - y0) };
+          if (inside(inner.poly, p.x, p.y)) grid.push(p);
+        }
+      }
+      if (grid.length === 0) continue;
+      let bestShare = 0;
+      let bestOuter: Solid | null = null;
+      for (const outer of solids) {
+        if (outer === inner || outer.layer !== inner.layer || outer.area < inner.area * SPILL_CONTAINER) continue;
+        const share = grid.filter((p) => inside(outer.poly, p.x, p.y)).length / grid.length;
+        if (share > SPILL_MOSTLY && share < SPILL_CLEAN && share > bestShare) {
+          bestShare = share;
+          bestOuter = outer;
+        }
+      }
+      if (bestOuter !== null) {
+        inner.entry.notes.push('spills');
+        within.set(inner.entry, bestOuter.entry.element.id);
+      }
+    }
+  }
+
+  // Leaders (a label's line to the part it names) that cross one another: told of both labels, so the look pass moves one.
+  {
+    const leaders = frame.figures.filter((figure): figure is ShapeFrame => figure.kind === 'shape' && figure.key.endsWith('/leader') && figure.opacity >= 0.3);
+    const lines = leaders.map((figure) => {
+      const ps = planeScale(figure.layer, viewport);
+      return { key: figure.key.slice(0, -'/leader'.length), points: (figure.outline[0]?.points ?? []).map((p) => ({ x: p.x * ps, y: p.y * ps })) };
+    });
+    for (let i = 0; i < lines.length; i += 1) {
+      for (let j = i + 1; j < lines.length; j += 1) {
+        const a = lines[i] as (typeof lines)[number];
+        const b = lines[j] as (typeof lines)[number];
+        let cross = false;
+        for (let p = 0; p + 1 < a.points.length && !cross; p += 1) for (let q = 0; q + 1 < b.points.length && !cross; q += 1) cross = segmentsCross(a.points[p] as Pt, a.points[p + 1] as Pt, b.points[q] as Pt, b.points[q + 1] as Pt);
+        if (!cross) continue;
+        for (const key of [a.key, b.key]) {
+          const entry = entries.find((candidate) => candidate.element.key === key);
+          if (entry !== undefined && entry.resting && !entry.notes.includes('tangled')) entry.notes.push('tangled');
+        }
+      }
+    }
+  }
+
+  // A leader must end on the part its label names, and nearer to it than to any other part that has a label: else the label points at the wrong thing.
+  {
+    const outlineOfId = (id: string): Pt[][] => {
+      const out: Pt[][] = [];
+      for (const entry of entries) {
+        if (!entry.resting || entry.element.id !== id || entry.element.kind !== 'shape') continue;
+        for (const figure of figureFrames.get(entry.element.key) ?? []) {
+          if (figure.kind !== 'shape') continue;
+          const ps = planeScale(figure.layer, viewport);
+          const t = figure.transform;
+          for (const line of figure.outline) {
+            const points = line.points.map((p) => ({ x: (t.a * p.x + t.c * p.y + t.e) * ps, y: (t.b * p.x + t.d * p.y + t.f) * ps }));
+            out.push(line.closed ? [...points, ...points.slice(0, 1)] : points);
+          }
+        }
+      }
+      return out;
+    };
+    const near = (p: Pt, lines: readonly (readonly Pt[])[]): number => {
+      let best = Number.POSITIVE_INFINITY;
+      for (const line of lines) {
+        for (let i = 0; i + 1 < line.length; i += 1) {
+          const a = line[i] as Pt;
+          const b = line[i + 1] as Pt;
+          const dx = b.x - a.x;
+          const dy = b.y - a.y;
+          const len2 = dx * dx + dy * dy;
+          const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2));
+          best = Math.min(best, Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy)));
+        }
+      }
+      return best;
+    };
+    const called = new Map<string, Pt[][]>();
+    for (const entry of entries) {
+      const target = entry.element.kind === 'text' && entry.resting ? entry.element.style.near : null;
+      if (target !== null && !called.has(target.id)) called.set(target.id, outlineOfId(target.id));
+    }
+    for (const figure of frame.figures) {
+      if (figure.kind !== 'shape' || !figure.key.endsWith('/leader') || figure.opacity < 0.3) continue;
+      const entry = entries.find((candidate) => candidate.element.key === figure.key.slice(0, -'/leader'.length));
+      const wanted = entry?.element.style.near;
+      const own = wanted === null || wanted === undefined ? undefined : called.get(wanted.id);
+      const pts = figure.outline[0]?.points;
+      if (entry === undefined || own === undefined || own.length === 0 || pts === undefined || pts.length < 2) continue;
+      const ps = planeScale(figure.layer, viewport);
+      const last = pts[pts.length - 1] as Pt;
+      const end = { x: last.x * ps, y: last.y * ps };
+      const mine = near(end, own);
+      let wrong = mine > WRONG_PART_TOLERANCE;
+      for (const [id, lines] of called) if (id !== wanted?.id && lines.length > 0 && near(end, lines) < mine - 0.5) wrong = true;
+      if (wrong && !entry.notes.includes('wrong-part')) entry.notes.push('wrong-part');
+    }
+  }
+
   const noted = entries.filter((entry) => entry.notes.length > 0);
   const rest = entries.filter((entry) => entry.notes.length === 0);
   const keep = new Set<Entry>([...noted.slice(-SIGHT_ITEMS), ...rest.slice(-Math.max(0, SIGHT_ITEMS - noted.length))]);
   const items: SightItem[] = entries
     .filter((entry) => keep.has(entry))
-    .map((entry) => ({ id: entry.element.id, kind: entry.element.kind, box: round(entry.box), resting: entry.resting, notes: entry.notes }));
+    .map((entry) => ({ id: entry.element.id, kind: entry.element.kind, box: round(entry.box), resting: entry.resting, notes: entry.notes, ...(within.has(entry) ? { within: within.get(entry) as string } : {}) }));
   const fit = timeline.fitAt(scene.id, restAt);
   return { canvas: scene.canvas, coverage: fit.coverage, items, snapshot };
 }

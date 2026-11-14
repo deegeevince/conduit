@@ -1201,7 +1201,7 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
     const laid = poseAt(element.key, tq, exit === null ? null : exit.start);
     if (laid === null) return null;
     const style = styleAt(element, tq);
-    const placed: Pose = place === null ? laid : { ...laid, x: place.x, y: place.y };
+    const placed: Pose = place === null ? laid : { ...laid, x: place.x, y: place.y, comp: laid.comp * (calloutScales.get(element.key) ?? 1) };
     // words the hand has changed (`{…}`, or a bound `text`) are set again in the room the line has
     const words = wordsNow(element, bound.words, tq);
     let pose: Pose = placed;
@@ -1860,6 +1860,8 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
    * layer plane. A pure function of time, like everything else.
    */
   let calloutLeaders = new Map<string, { points: { x: number; y: number }[]; closed: boolean; layer: Layer }>();
+  /** a label set smaller to find clear room beside its drawing: the scale of its type, by key, for the labels placed as of the last `placeLoose` */
+  let calloutScales = new Map<string, number>();
   const calloutMemo = new Map<string, ReturnType<typeof layoutCallouts>>();
   const placeLooseAt = (tq: number, look: LookSpec): Map<string, { x: number; y: number }> => {
     const out = new Map<string, { x: number; y: number }>();
@@ -1920,11 +1922,17 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
         obstacles.push({ rect: toScreenRect(box, fit), owner: element, outline: big });
       }
     };
-    const callouts: { key: string; ps: number; w: number; h: number; target: Rect; side: 'auto' | 'above' | 'below' | 'left' | 'right'; fit: CanvasFit; layer: Layer }[] = [];
+    const callouts: { key: string; ps: number; w: number; h: number; px: number; element: ElementSpan; target: Rect; side: 'auto' | 'above' | 'below' | 'left' | 'right'; fit: CanvasFit; layer: Layer }[] = [];
     calloutLeaders = new Map();
+    calloutScales = new Map();
     for (const element of elements) {
-      if (element.exit !== null && tq >= element.exit.end) continue;
-      if (!element.carried && (element.enter === null || tq < element.enter.start)) continue;
+      // as `evaluate` has it: what the stage governs (a line it holds longer, or brings in later) moves the element's own times
+      const govern = governed.get(element.key);
+      const ownExit = exitOf(element);
+      const exitEnd = ownExit === null ? null : ownExit === element.exit && govern !== undefined ? ownExit.end + govern.exitShift : ownExit.end;
+      const enterStart = element.enter === null ? null : govern === undefined ? element.enter.start : element.enter.start + govern.enterShift;
+      if (exitEnd !== null && tq >= exitEnd) continue;
+      if (!element.carried && (enterStart === null || tq < enterStart)) continue;
       const style = styleAt(element, tq);
       if (style.near === null && element.parent === null) continue;
       const exit = exitOf(element);
@@ -1954,7 +1962,7 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
         // a label with a line to the part it names is placed with the others of its drawing: no two leaders cross, no label sits on a stroke
         const box = canvasBoxOf(target, schedule, tq);
         if (box !== null) {
-          callouts.push({ key: element.key, ps, w, h, target: toScreenRect(box, fitOfElement(target, look, tq)), side: style.near.side, fit, layer: pose.layer });
+          callouts.push({ key: element.key, ps, w, h, px: pose.fontSize * ps, element: target, target: toScreenRect(box, fitOfElement(target, look, tq)), side: style.near.side, fit, layer: pose.layer });
           continue;
         }
       }
@@ -1998,38 +2006,114 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
       buildObstacles();
       seedText();
       const first = callouts[0] as (typeof callouts)[number];
-      const region: Box = { x: first.fit.box.x, y: first.fit.box.y, width: first.fit.box.width, height: first.fit.box.height };
       const outerX = -viewport.width / 2 + edge;
       const outerY = -viewport.height / 2 + topEdge;
-      const room: Box = { x: Math.max(region.x, outerX), y: Math.max(region.y, outerY), width: Math.min(region.x + region.width, viewport.width / 2 - edge) - Math.max(region.x, outerX), height: Math.min(region.y + region.height, viewport.height / 2 - edge) - Math.max(region.y, outerY) };
-      const targets = new Set(callouts.map((callout) => callout.key));
-      // the drawing the labels are about: everything drawn that is not a label, and every stroke of it, which no leader may cross but at its target
+      // the drawing the labels are about: everything drawn that is not a label, and every stroke and fill of it, which no label may sit on and no leader may cross but at its target.
+      // A move or a group's offset is in the box the schedule gives a shape, so each outline is fitted to that box.
       let fx0 = Number.POSITIVE_INFINITY;
       let fy0 = Number.POSITIVE_INFINITY;
       let fx1 = Number.NEGATIVE_INFINITY;
       let fy1 = Number.NEGATIVE_INFINITY;
-      for (const rect of [...obstacles.map((o) => o.rect), ...callouts.map((c) => c.target)]) {
+      // a backdrop (a rectangle that is the whole canvas, or most of it) is the ground the drawing stands on, not a part of it
+      const backdrop = (element: ElementSpan): boolean => {
+        const geometry = element.figure?.kind === 'shape' ? element.figure.geometry : null;
+        if (geometry === null || geometry.shape !== 'rect') return false;
+        if (geometry.full) return true;
+        const at = canvasBoxOf(element, schedule, tq);
+        const fit = fitOfElement(element, look, tq);
+        return at !== null && at.w * at.h > (0.6 * (fit.box.width * fit.box.height)) / (fit.unit * fit.unit);
+      };
+      for (const rect of [...obstacles.filter((o) => !backdrop(o.owner)).map((o) => o.rect), ...callouts.map((c) => c.target)]) {
         fx0 = Math.min(fx0, rect.x);
         fy0 = Math.min(fy0, rect.y);
         fx1 = Math.max(fx1, rect.x + rect.w);
         fy1 = Math.max(fy1, rect.y + rect.h);
       }
-      const strokes: { points: { x: number; y: number }[]; closed: boolean }[] = [];
-      for (const element of drawn) {
-        if (element.kind !== 'shape' || element.figure?.kind !== 'shape' || !isLiveAt(element, tq)) continue;
-        const fit = fitOfElement(element, look, tq);
-        for (const line of outlineOf(element.figure.geometry)) strokes.push({ closed: line.closed, points: line.points.map((p) => ({ x: fit.box.x + p.x * fit.unit, y: fit.box.y + p.y * fit.unit })) });
+      interface Line {
+        points: { x: number; y: number }[];
+        closed: boolean;
       }
+      const strokes: Line[] = [];
+      const fills: Line[] = [];
+      const outlines = new Map<string, Line & { filled: boolean }>();
+      for (const element of drawn) {
+        if (element.kind !== 'shape' || element.figure?.kind !== 'shape' || !isLiveAt(element, tq) || backdrop(element)) continue;
+        const fit = fitOfElement(element, look, tq);
+        const lines = outlineOf(element.figure.geometry);
+        if (lines.length === 0) continue;
+        let gx0 = Number.POSITIVE_INFINITY;
+        let gy0 = Number.POSITIVE_INFINITY;
+        let gx1 = Number.NEGATIVE_INFINITY;
+        let gy1 = Number.NEGATIVE_INFINITY;
+        for (const line of lines) {
+          for (const p of line.points) {
+            gx0 = Math.min(gx0, p.x);
+            gy0 = Math.min(gy0, p.y);
+            gx1 = Math.max(gx1, p.x);
+            gy1 = Math.max(gy1, p.y);
+          }
+        }
+        const at = canvasBoxOf(element, schedule, tq);
+        const sx = at !== null && gx1 - gx0 > 1e-6 ? at.w / (gx1 - gx0) : 1;
+        const sy = at !== null && gy1 - gy0 > 1e-6 ? at.h / (gy1 - gy0) : 1;
+        const ox = at === null ? 0 : at.x - gx0 * sx;
+        const oy = at === null ? 0 : at.y - gy0 * sy;
+        const solid = styleAt(element, tq).fill !== 'none';
+        const huge = at !== null && at.w * at.h > (0.5 * (fit.box.width * fit.box.height)) / (fit.unit * fit.unit);
+        let longest: (Line & { filled: boolean }) | null = null;
+        let longestLength = -1;
+        for (const line of lines) {
+          const points = line.points.map((p) => ({ x: fit.box.x + (ox + p.x * sx) * fit.unit, y: fit.box.y + (oy + p.y * sy) * fit.unit }));
+          strokes.push({ closed: line.closed, points });
+          if (solid && line.closed && !huge) fills.push({ closed: true, points });
+          let length = 0;
+          for (let i = 1; i < points.length; i += 1) length += Math.hypot((points[i] as { x: number }).x - (points[i - 1] as { x: number }).x, (points[i] as { y: number }).y - (points[i - 1] as { y: number }).y);
+          if (length > longestLength) {
+            longestLength = length;
+            longest = { points, closed: line.closed, filled: solid && line.closed };
+          }
+        }
+        if (longest !== null) outlines.set(element.key, longest);
+      }
+      // where labels may go: the stage round the drawing, up to the words the layout has put on each side of it
+      const clearance = cell.width;
+      let wx0 = outerX;
+      let wx1 = viewport.width / 2 - edge;
+      let wy0 = outerY;
+      let wy1 = viewport.height / 2 - edge;
+      const midX = (fx0 + fx1) / 2;
+      const midY = (fy0 + fy1) / 2;
+      for (const t of taken) {
+        const overX = t.x < fx1 && t.x + t.w > fx0;
+        const overY = t.y < fy1 && t.y + t.h > fy0;
+        if (overX && overY) continue;
+        if (overY) {
+          if (t.x + t.w <= midX) wx0 = Math.max(wx0, t.x + t.w + clearance);
+          else if (t.x >= midX) wx1 = Math.min(wx1, t.x - clearance);
+        } else if (overX) {
+          if (t.y + t.h <= midY) wy0 = Math.max(wy0, t.y + t.h + clearance);
+          else if (t.y >= midY) wy1 = Math.min(wy1, t.y - clearance);
+        }
+      }
+      const room: Box = { x: wx0, y: wy0, width: Math.max(1, wx1 - wx0), height: Math.max(1, wy1 - wy0) };
+      // the type may be made smaller to find room, but not under the look's own floor
+      let floorScale = 0.5;
+      for (const callout of callouts) floorScale = Math.max(floorScale, Math.min(1, look.type.minFont / Math.max(1, callout.px)));
       const body = cell.height;
       const input: CalloutInput = {
-        labels: callouts.map((callout) => ({ key: callout.key, size: { width: callout.w, height: callout.h }, target: { x: callout.target.x, y: callout.target.y, width: callout.target.w, height: callout.target.h }, side: callout.side })),
+        labels: callouts.map((callout) => {
+          const outline = outlines.get(callout.element.key);
+          return { key: callout.key, size: { width: callout.w, height: callout.h }, target: { x: callout.target.x, y: callout.target.y, width: callout.target.w, height: callout.target.h }, side: callout.side, ...(outline === undefined ? {} : { outline: { points: outline.points, closed: outline.closed }, filled: outline.filled }) };
+        }),
         figure: { x: fx0, y: fy0, width: Math.max(1, fx1 - fx0), height: Math.max(1, fy1 - fy0) },
         room,
         obstacles: taken.map((rect) => ({ x: rect.x, y: rect.y, width: rect.w, height: rect.h })),
         strokes,
+        fills,
+        floorScale,
         look: { body, minShrink: 0.7, stroke: look.stroke.thick * first.fit.unit, radius: 0, grid: null },
       };
-      const signature = JSON.stringify([input.labels.map((l) => [l.key, Math.round(l.size.width), Math.round(l.size.height), l.target, l.side]), input.figure, room, input.obstacles.length, strokes.length, body, look.id].map((part) => (typeof part === 'object' ? JSON.parse(JSON.stringify(part, (_k, v) => (typeof v === 'number' ? Math.round(v * 2) / 2 : v))) : part)));
+      const signature = JSON.stringify([input.labels.map((l) => [l.key, Math.round(l.size.width), Math.round(l.size.height), l.target, l.side]), input.figure, room, input.obstacles.length, strokes.length, fills.length, strokes.reduce((sum, line) => sum + line.points.reduce((a, q) => a + Math.round(q.x) * 7 + Math.round(q.y) * 13, 0), 0), floorScale, body, look.id].map((part) => (typeof part === 'object' ? JSON.parse(JSON.stringify(part, (_k, v) => (typeof v === 'number' ? Math.round(v * 2) / 2 : v))) : part)));
       let laid = calloutMemo.get(signature);
       if (laid === undefined) {
         try {
@@ -2040,10 +2124,11 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
         calloutMemo.set(signature, laid);
         if (calloutMemo.size > 80) calloutMemo.delete(calloutMemo.keys().next().value as string);
       }
-      void targets;
       for (const callout of callouts) {
         const placed = laid.boxes.get(callout.key);
         if (placed !== undefined) out.set(callout.key, { x: (placed.x + placed.width / 2) / callout.ps, y: (placed.y + placed.height / 2) / callout.ps });
+        const smaller = laid.scales?.get(callout.key);
+        if (smaller !== undefined) calloutScales.set(callout.key, smaller);
         const leader = laid.leaders.get(callout.key);
         if (leader !== undefined) calloutLeaders.set(callout.key, { points: leader.points.map((p) => ({ x: p.x / callout.ps, y: p.y / callout.ps })), closed: leader.closed, layer: callout.layer });
       }
@@ -2056,7 +2141,7 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
    * a shape or another label arrives after it. The scene is placed once, at the moment everything in it has come; a label whose target moves
    * keeps following it, and a label that is gone by then is placed as it stands.
    */
-  const settledLoose = new Map<string, { out: Map<string, { x: number; y: number }>; leaders: typeof calloutLeaders }>();
+  const settledLoose = new Map<string, { out: Map<string, { x: number; y: number }>; leaders: typeof calloutLeaders; scales: Map<string, number> }>();
   const placeLoose = (tq: number, look: LookSpec): Map<string, { x: number; y: number }> => {
     const now = placeLooseAt(tq, look);
     const scene = sceneAt(schedule, tq);
@@ -2064,16 +2149,18 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
     for (const element of schedule.elements) if (element.scene === scene.id && !element.carried && element.enter !== null) rest = Math.max(rest, element.enter.end);
     if (rest <= tq + 1e-6) return now;
     const nowLeaders = calloutLeaders;
+    const nowScales = calloutScales;
     const cacheKey = `${scene.id}|${rest.toFixed(3)}|${look.id}|${look.name}`;
     let final = settledLoose.get(cacheKey);
     if (final === undefined) {
       const out = placeLooseAt(rest, look);
-      final = { out, leaders: calloutLeaders };
+      final = { out, leaders: calloutLeaders, scales: calloutScales };
       settledLoose.set(cacheKey, final);
       if (settledLoose.size > 16) settledLoose.delete(settledLoose.keys().next().value as string);
     }
     const merged = new Map(now);
     const leaders = new Map(nowLeaders);
+    const scales = new Map(nowScales);
     for (const [key, position] of final.out) {
       const element = byKey.get(key);
       const near = element === undefined ? null : styleAt(element, tq).near;
@@ -2088,8 +2175,12 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
       const leader = final.leaders.get(key);
       if (leader === undefined) leaders.delete(key);
       else leaders.set(key, leader);
+      const smaller = final.scales.get(key);
+      if (smaller === undefined) scales.delete(key);
+      else scales.set(key, smaller);
     }
     calloutLeaders = leaders;
+    calloutScales = scales;
     return merged;
   };
 

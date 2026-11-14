@@ -558,7 +558,7 @@ async function* collectFix(args: ReviewTurnArgs, at: { pass: number; report: Dra
           firstLineMs = now() - at.passStart;
         }
         wrote += 1;
-        const allowed = fixLineAllowed(event.line);
+        const allowed = fixLineAllowed(event.line, state.schedule);
         if (!allowed.allowed) {
           if (allowed.why !== null) yield rejectedFixLine(event.line, allowed.why);
           continue;

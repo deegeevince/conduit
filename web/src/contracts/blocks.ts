@@ -188,6 +188,10 @@ export interface CalloutInput {
   readonly obstacles: readonly Box[];
   /** outlines a leader may cross only at its target: every stroke the brain drew, as polylines in stage units */
   readonly strokes: readonly Polyline[];
+  /** v2.1: every filled closed shape of the drawing, as polygons in stage units: ink a label must not sit on, though no stroke of it is touched */
+  readonly fills?: readonly Polyline[];
+  /** v2.1: the smallest scale the labels' type may be shrunk to (1 = never); under it a label is not made smaller */
+  readonly floorScale?: number;
   readonly look: BlockLook;
 }
 
@@ -198,6 +202,8 @@ export interface CalloutLayout {
   readonly leaders: ReadonlyMap<string, Polyline>;
   /** labels that could not be placed clear, or whose leader has to cross a stroke: `collides`, `crossed` */
   readonly notes: readonly { readonly key: string; readonly note: SightNote }[];
+  /** v2.1: a label that had to be set smaller to find clear room, as the scale of its type (absent = as measured) */
+  readonly scales?: ReadonlyMap<string, number>;
 }
 
 /** Places all the callouts of a drawing together, so that their leaders never cross and no label sits on a stroke. */
