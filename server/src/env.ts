@@ -12,6 +12,10 @@ import type { LogLevel } from './log';
 /** The Conduit root block on the Series account: every technique hangs off it. */
 export const CONDUIT_ROOT_BLOCK = '00000000-0000-4000-8000-000000000000';
 
+/** The only tools a brain may ever hold: read-only web. Nothing else is accepted. */
+export const BRAIN_TOOL_NAMES = ['WebSearch', 'WebFetch'] as const;
+export type BrainTool = (typeof BRAIN_TOOL_NAMES)[number];
+
 export type BrainSettings =
   | { readonly kind: 'relay'; readonly idleTimeoutMs: number }
   | {
@@ -20,6 +24,8 @@ export type BrainSettings =
       readonly model: string;
       readonly firstTokenTimeoutMs: number;
       readonly idleTimeoutMs: number;
+      /** the read-only web tools the brain holds (`BRAIN_TOOLS`); empty means none */
+      readonly tools: readonly BrainTool[];
       /** passed to `claude --effort` and written over CLAUDE_EFFORT in the child, so the owner's shell never changes the brain. `low` keeps hidden planning short: the stage is empty while the model deliberates. */
       readonly effort: 'low' | 'medium' | 'high';
       /** how the system prompt teaches a diagram */
@@ -170,11 +176,17 @@ export function loadEnv(source: Source): Env {
   } else if (kind === 'relay') {
     brain = { kind, idleTimeoutMs: integer('RELAY_IDLE_TIMEOUT_MS', 180_000, 1_000, 3_600_000) };
   } else if (kind === 'claude-cli') {
+    const rawTools = (text('BRAIN_TOOLS') ?? 'WebSearch,WebFetch').split(',').map((name) => name.trim()).filter((name) => name !== '');
+    const unknown = rawTools.filter((name) => !(BRAIN_TOOL_NAMES as readonly string[]).includes(name));
+    if (unknown.length > 0) problems.push(`BRAIN_TOOLS may only name ${BRAIN_TOOL_NAMES.join(' and ')}, got "${unknown.join(', ')}"`);
+    const tools = [...new Set(rawTools)].filter((name): name is BrainTool => (BRAIN_TOOL_NAMES as readonly string[]).includes(name));
     brain = {
       kind,
       bin: text('CLAUDE_BIN') ?? 'claude',
       model: required('CLAUDE_MODEL', 'when BRAIN=claude-cli (for example: sonnet)'),
-      firstTokenTimeoutMs: integer('CLAUDE_FIRST_TOKEN_TIMEOUT_MS', 60_000, 1_000, 600_000),
+      tools,
+      // a search takes seconds before the first word, so tools buy a longer, still bounded, wait
+      firstTokenTimeoutMs: integer('CLAUDE_FIRST_TOKEN_TIMEOUT_MS', tools.length > 0 ? 120_000 : 60_000, 1_000, 600_000),
       idleTimeoutMs: integer('CLAUDE_IDLE_TIMEOUT_MS', 30_000, 1_000, 600_000),
       effort: choice('BRAIN_EFFORT', ['low', 'medium', 'high'] as const, 'low'),
       variant: parsePromptVariant(text('PROMPT_VARIANT')),

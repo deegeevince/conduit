@@ -18,6 +18,7 @@ export interface ClaudeCliDeps {
   readonly model: string;
   readonly firstTokenTimeoutMs: number;
   readonly idleTimeoutMs: number;
+  readonly tools: readonly string[];
   readonly effort: 'low' | 'medium' | 'high';
   readonly variant: PromptVariant;
   /** keep one process per conversation between turns (see warm.ts); false is v0's fresh process per turn */
@@ -81,7 +82,7 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
     session,
     system,
     ...settingsOf(session),
-    proc: startWarmProcess({ bin: deps.bin, ...settingsOf(session), systemPrompt: system }, log),
+    proc: startWarmProcess({ bin: deps.bin, tools: deps.tools, ...settingsOf(session), systemPrompt: system }, log),
     systemSent: false,
     capabilities,
     lastTurn: null,
@@ -182,6 +183,7 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
         effort: entry.effort,
         sees: request.snapshot !== null,
         look: deps.warm && request.look === true,
+        web: deps.tools.length > 0,
       }),
       image: request.snapshot,
       pdfs: (request.pdfs ?? []).filter((pdf) => given.some((doc) => doc.id === pdf.id && doc.kind === 'pdf')).map((pdf) => pdf.bytes),
@@ -226,6 +228,7 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
     let firstTextAt: number | null = null;
     let facts: ClaudeResultFacts | null = null;
     let failure: string | null = null;
+    const toolCalls: { tool: string; target: string | null }[] = [];
 
     async function* chunks(): AsyncGenerator<string> {
       arm(deps.firstTokenTimeoutMs, 'no first token from claude within CLAUDE_FIRST_TOKEN_TIMEOUT_MS');
@@ -236,8 +239,21 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
           const tools = init.tools?.length ?? 0;
           const mcp = init.mcp_servers?.length ?? 0;
           turnLog.info('claude_init', { model: init.model, effort: entry.effort, requested: entry.model });
-          if (tools > 0 || mcp > 0) turnLog.warn('claude_not_isolated', { model: init.model, tools, mcp_servers: mcp });
+          if (tools > deps.tools.length || mcp > 0) turnLog.warn('claude_not_isolated', { model: init.model, tools, mcp_servers: mcp });
           continue;
+        }
+        if (event.type === 'assistant') {
+          // Tool use is logged by name and its query or URL; what a page said is never logged.
+          const content = (event as { message?: { content?: unknown } }).message?.content;
+          if (Array.isArray(content)) {
+            for (const block of content as { type?: unknown; name?: unknown; input?: { query?: unknown; url?: unknown } }[]) {
+              if (block?.type !== 'tool_use') continue;
+              const target = block.input?.query ?? block.input?.url;
+              const call = { tool: String(block.name), target: typeof target === 'string' ? target.slice(0, 300) : null };
+              turnLog.info('brain_tool', call);
+              toolCalls.push(call);
+            }
+          }
         }
         const delta = textDeltaOf(event);
         if (delta !== null) {
@@ -259,7 +275,11 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
     }
 
     try {
-      yield* brainEventsFromText(chunks(), out.styles);
+      for await (const event of brainEventsFromText(chunks(), out.styles)) {
+        while (toolCalls.length > 0) yield { type: 'tool', ...(toolCalls.shift() as { tool: string; target: string | null }) };
+        yield event;
+      }
+      while (toolCalls.length > 0) yield { type: 'tool', ...(toolCalls.shift() as { tool: string; target: string | null }) };
     } finally {
       clearTimeout(timer);
       signal.removeEventListener('abort', onOuterAbort);

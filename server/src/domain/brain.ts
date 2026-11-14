@@ -87,7 +87,9 @@ export type BrainEvent =
    */
   | { readonly type: 'brief'; readonly form: BriefForm | 'script'; readonly text: string; readonly system: string | null; readonly withSnapshot: boolean }
   /** Yielded once, after the last line, by a brain that can measure itself. */
-  | { readonly type: 'usage'; readonly usage: BrainUsage };
+  | { readonly type: 'usage'; readonly usage: BrainUsage }
+  /** The brain called a read-only web tool: its name and the query or URL, never what came back. */
+  | { readonly type: 'tool'; readonly tool: string; readonly target: string | null };
 
 /** What a brain needs to get ready for a conversation before its first turn. */
 export interface BrainSession {

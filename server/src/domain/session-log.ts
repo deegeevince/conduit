@@ -20,6 +20,8 @@ export type SessionRecord =
   | { readonly type: 'line'; readonly at: number; readonly turn: string; readonly seq: number; readonly text: string; readonly start: number; readonly issues: readonly Issue[]; readonly pass?: number }
   | { readonly type: 'reject'; readonly at: number; readonly turn: string; readonly raw: string; readonly issues: readonly Issue[] }
   | { readonly type: 'end'; readonly at: number; readonly turn: string; readonly reason: TurnEndReason; readonly message: string | null; readonly lines: number }
+  /** the brain searched the web or read a page: tool name and query or URL only */
+  | { readonly type: 'tool'; readonly at: number; readonly turn: string; readonly tool: string; readonly target: string | null; readonly pass?: number }
   | { readonly type: 'usage'; readonly at: number; readonly turn: string; readonly usage: BrainUsage; readonly pass?: number }
   /** the painter's first line of this turn began to play: the user saw something */
   | { readonly type: 'started'; readonly at: number; readonly turn: string }

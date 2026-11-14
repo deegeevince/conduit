@@ -35,6 +35,7 @@ export function createBrains(deps: BrainsDeps): BrainRegistry {
         model: settings.model,
         firstTokenTimeoutMs: settings.firstTokenTimeoutMs,
         idleTimeoutMs: settings.idleTimeoutMs,
+        tools: settings.tools,
         effort: settings.effort,
         variant: settings.variant,
         warm: settings.warm,
