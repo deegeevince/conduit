@@ -14,7 +14,7 @@
 // fill once the hour's spending has reached `AHEAD_NEAR_CAP` of the cap (fill ahead stands down first; what she reaches is still written on
 // her own turn), and it does not offer a part the verifier has not passed (nothing here sets `verified` but the verdict).
 
-import type { DocNode, Document, DocumentView, NodeId, NodeStatus } from '@conduit/language';
+import type { Crop, DocNode, Document, DocumentView, NodeId, NodeStatus } from '@conduit/language';
 import { nodeOf } from '@conduit/language';
 import type { Logger } from '../log';
 import { roomAhead } from '../usage';
@@ -57,6 +57,10 @@ export interface FillJob {
   readonly note: string | null;
   /** how the part before it was written, so that a document stays one shape */
   readonly shape: string | null;
+  /** the part's box on the photo (`crop=x,y,w,h`), when the outline gave one */
+  readonly crop: Crop | null;
+  /** the photo is shown to this write: the first try is from the words alone, and a try that was refused is written from the page itself */
+  readonly photo: boolean;
 }
 
 export interface FillOutcome {
@@ -161,8 +165,9 @@ export function shapeBefore(doc: Document, node: DocNode): string | null {
 /** The words the brain is given for one part. It is the TEACH chapter's own rules that say how; this says which part, and what was learned from the last try. */
 export function fillPrompt(job: FillJob): string {
   return [
-    `AHEAD: write part ${job.short} now, "${job.title}", and nothing else. She is not waiting for it: write it complete, once, in the lines the chapter gives, every line with its own in=. A question gets its ways as parts in=${job.short}; a part of a different kind (a chapter) gets its steps in=${job.short}. Write no outline, no \`reply\`, and no line for any other part.`,
+    `AHEAD: write part ${job.short} now, "${job.title}", and nothing else. She is not waiting for it: write it complete, once, in the lines the chapter gives, every line with its own in=. A question gets three to five ways (never fewer than three), each a part in=${job.short} with its own tag, small steps, and an ask whose answer is the question's own answer, reached last; a part of a different kind (a chapter) gets its steps in=${job.short}. Write no outline, no \`reply\`, and no line for any other part.`,
     job.shape ?? '',
+    job.photo ? `The page itself is attached: this question is the part of it at ${job.crop === null ? 'its place in the outline' : `x ${job.crop.x}%, y ${job.crop.y}%, ${job.crop.w}% wide, ${job.crop.h}% high`}. Read the question from there, with whatever the words above leave out (a picture, a table, a pattern, a clock), and write only what can be worked from what is on it.` : '',
     job.note === null ? '' : `The first try of this part was refused by the checker: ${job.note} Write it again so that none of that is true.`,
   ]
     .filter((line) => line !== '')
@@ -407,6 +412,8 @@ export function createAhead(host: AheadHost, policy: AheadPolicy): Ahead {
       attempt: tries.fills,
       note: tries.note,
       shape: view === null ? null : shapeBefore(view.document, unit),
+      crop: unit.crop ?? null,
+      photo: tries.fills > 1,
     };
     log.info('ahead.fill', { session: run.session, node: unit.id, attempt: tries.fills });
     try {
@@ -482,6 +489,8 @@ export function createAhead(host: AheadHost, policy: AheadPolicy): Ahead {
     }
     log.warn('ahead.refused', { session: run.session, node: unit.id, kind: verdict.kind, refusals: tries.refusals, why, sources: [...new Set(verdict.refused.map((finding) => finding.source))] });
     if (tries.refusals >= 2 || tries.fills >= policy.fillsPerPart) {
+      // the ways that passed are still checked ways: said, so that a page can offer them beside "let's work this one out together"
+      for (const way of ways) if (way.body !== null && !verdict.refused.some((finding) => finding.node === way.id)) host.setStatus(run.session, way.id, 'verified', { why: 'this way passed every check; the part has others that did not' });
       forParent(run, unit, why);
       return;
     }
@@ -527,10 +536,11 @@ export function createAhead(host: AheadHost, policy: AheadPolicy): Ahead {
 
 /** What the brain is told when the reader refused lines of its turn: the lines and why, and what to write. */
 export function refusalBrief(refused: readonly { readonly raw: string; readonly why: string }[]): string {
-  const lines = refused.slice(0, 8).map((item) => `- ${item.raw}\n  ${item.why}`);
+  // a hint refused for want of its ask is only the ask's refusal again
+  const lines = refused.filter((item) => !(/^hint\b/.test(item.raw) && /no ask is called that|has no ask to belong to/.test(item.why))).slice(0, 8).map((item) => `- ${item.raw}\n  ${item.why}`);
   return [
     'THE READER REFUSED THESE LINES, so the page does not have them (everything else you wrote is kept):',
     ...lines,
-    'Write again only what mends them: the same id replaces a step, so a step that gave the answer away is written again first, then the ask and its hints. Give the ask its sum from what she has seen, never its answer. If nothing needs mending, write `ok`.',
+    'Write again only what mends them (an ask that was refused takes its hints with it: write them again after it): the same id replaces a step, so a step that gave the answer away is written again first, then the ask and its hints. Give the ask its sum from what she has seen, never its answer. If nothing needs mending, write `ok`.',
   ].join('\n');
 }

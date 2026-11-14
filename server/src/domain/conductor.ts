@@ -1541,6 +1541,10 @@ export class Conductor {
         heard: [],
         document: { document: view.document, state: view.state },
       };
+      // a try that was refused is written from the page itself: the first photo this conversation was given
+      const photoId = job.photo ? (job.crop?.from ?? [...s.turns.values()].flatMap((turnOf) => (turnOf.input.kind === 'prompt' ? (turnOf.input.images ?? []) : []))[0] ?? null) : null;
+      const photo = photoId === null ? null : await (this.deps.uploads ?? NO_UPLOADS).load(s.id, photoId);
+      const asked: TurnInput = photo !== null && photoId !== null ? { kind: 'prompt', text: input.text, images: [photoId] } : input;
       const normalizer = new LineNormalizer(() => {
         s.nextAutoId += 1;
         return `x${s.nextAutoId}`;
@@ -1584,7 +1588,7 @@ export class Conductor {
           this.journal(s, { type: 'line', turn, seq, text, start: 0, issues: [...event.issues, ...normalized.issues], pass, node });
         }
       };
-      for await (const event of brain.respond({ turn, session: slot, input, context, snapshot: null, look: false, quiet: true }, signal)) handle(event, 1);
+      for await (const event of brain.respond({ turn, session: slot, input: asked, context, snapshot: null, look: false, quiet: true, ...(photo === null ? {} : { images: [photo] }) }, signal)) handle(event, 1);
       if (refused.length > 0 && brain.amend !== undefined && !signal.aborted) {
         amended = true;
         const mend = refused.splice(0);

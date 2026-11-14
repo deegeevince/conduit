@@ -392,6 +392,7 @@ function numberWords(tokens: readonly string[]): { value: number; used: number }
   let total = 0;
   let any = false;
   let current = 0;
+  let last: 'small' | 'tens' | 'hundred' | 'thousand' | 'and' | null = null;
   const at = (offset: number): string => tokens[index + offset] ?? '';
   const take = (): boolean => {
     const word = at(0);
@@ -402,7 +403,11 @@ function numberWords(tokens: readonly string[]): { value: number; used: number }
       return true;
     }
     const small = Object.hasOwn(SMALL_WORDS, word) ? SMALL_WORDS[word] : undefined;
+    // `one ten` is two numbers (a child counting, "one ten at a time"), not eleven: a number word may only follow a tens word (`forty two`) or a hundred
+    if (small !== undefined && any && (current % 100 === 0 ? false : !(last === 'tens' && small >= 1 && small <= 9)) && last !== 'and' && last !== 'hundred') return false;
+    if (Object.hasOwn(TENS_WORDS, word) && any && last !== 'and' && last !== 'hundred' && last !== 'thousand' && current % 100 !== 0) return false;
     if (small !== undefined) {
+      last = 'small';
       current += small;
       index += 1;
       any = true;
@@ -410,23 +415,27 @@ function numberWords(tokens: readonly string[]): { value: number; used: number }
     }
     const tens = Object.hasOwn(TENS_WORDS, word) ? TENS_WORDS[word] : undefined;
     if (tens !== undefined) {
+      last = 'tens';
       current += tens;
       index += 1;
       any = true;
       return true;
     }
     if (word === 'hundred' && any) {
+      last = 'hundred';
       current = (current === 0 ? 1 : current) * 100;
       index += 1;
       return true;
     }
     if (word === 'thousand' && any) {
+      last = 'thousand';
       total += (current === 0 ? 1 : current) * 1000;
       current = 0;
       index += 1;
       return true;
     }
     if (word === 'and' && any && (Object.hasOwn(SMALL_WORDS, at(1)) || Object.hasOwn(TENS_WORDS, at(1)))) {
+      last = 'and';
       index += 1;
       return true;
     }
@@ -580,7 +589,12 @@ export function matchAnswer(accepted: string, given: string, unit: string | null
       if (asked !== null && asked.dim === g.dim) return sameNumber(g.base / asked.factor, a.written);
       return asked === null && sameNumber(a.written, g.written);
     }
-    if (g.dim === 'none') return sameNumber(g.written, a.written) || sameNumber(g.written, a.base);
+    if (g.dim === 'none') {
+      // a bare number is in the ask's own unit when it has one: `1` is a centimetre, not the `1m` an ask for centimetres also accepts
+      const asked = unit === null ? null : unitOf(unit.toLowerCase());
+      if (asked !== null && asked.dim === a.dim) return sameNumber(g.written * asked.factor, a.base);
+      return sameNumber(g.written, a.written) || sameNumber(g.written, a.base);
+    }
     return false;
   }
   if (a !== null || g !== null) return false;

@@ -191,7 +191,7 @@ export function solve(text: string): Solved | null {
   let run = all.slice(start, end);
   // a lone `?` after a plain sum is the sentence's question mark: `What is 6 + 4?`
   if (run.length >= 2 && run[run.length - 1]?.t === 'gap' && run[run.length - 2]?.t === 'num' && !run.some((token) => token.t === 'eq')) run = run.slice(0, -1);
-  while (run[0] !== undefined && (run[0].t === 'eq' || (run[0].t === 'op' && run[0].op !== '-') || run[0].t === 'less' || run[0].t === 'more')) run = run.slice(1);
+  while (run[0] !== undefined && (run[0].t === 'eq' || run[0].t === 'op' || run[0].t === 'less' || run[0].t === 'more')) run = run.slice(1);
   // `A less than B` is `B - A`; `double A` is `2 * A`; `half of A` is `A / 2`
   const parts: (Token | string)[] = [];
   for (let i = 0; i < run.length; i += 1) {
