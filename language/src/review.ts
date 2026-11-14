@@ -38,7 +38,7 @@ export interface ReviewPolicy {
 export const REVIEW_POLICY: ReviewPolicy = { enabled: true, passes: 1, minDrawn: 3, draftWaitMs: 8000, firstLineMs: 12_000, passMs: 30_000 };
 
 /** The notes that mean a viewer cannot read or find something. Any one of them is reason enough to look. */
-export const BLOCKING_NOTES: readonly SightNote[] = ['clipped', 'off-canvas', 'covered', 'overlaps', 'collides', 'crossed', 'spills', 'tangled', 'faint', 'tiny', 'crowded', 'sparse', 'lost'];
+export const BLOCKING_NOTES: readonly SightNote[] = ['clipped', 'off-canvas', 'covered', 'overlaps', 'collides', 'crossed', 'spills', 'tangled', 'wrong-part', 'faint', 'tiny', 'crowded', 'sparse', 'lost'];
 
 /** What can be told about a draft from its lines alone, before the painter has said anything. */
 export interface DraftFacts {
@@ -197,7 +197,7 @@ export function buildReviewBrief(input: ReviewBriefInput): string {
       `If it reads right, answers what was asked and keeps to what was asked for every reply, write the one line \`${REVIEW_KEEP}\` and nothing else.`,
       'If not, change only what is wrong, in as few lines as it takes. What you write now is tried out of sight and shown only if it is better:',
       '- change a thing by its id: `set`, `move`, `revise <id> | new words`, `cancel <id>`, or its own line again with what differs;',
-      '- words crossed, crowded or beside the wrong thing: `move` them, or let the painter place them (`say callout near=<id>`);',
+      '- a label made with `say callout near=<id>` is placed by the stage and cannot be moved by coordinates: if it is beside the wrong thing, name the right part in `near=` or move the part itself; other words crossed or crowded can be `move`d;',
       '- never `scene`, never the lines that were right, never fewer parts than before: a fix that takes something away is thrown out and the draft stays;',
       '- add nothing the user did not ask for, and say nothing about the fix.',
       'Start at once.',
@@ -247,10 +247,15 @@ export const FIX_POLICY: FixPolicy = { keepDrawn: 0.8, keepWords: 0.6, candidate
  * Whether a line may be part of a pass after the draft. `scene` and `look` never are: a fix does not start again and does not change
  * the whole stage's dress. `wait` is dropped without a word: a fix takes no time of its own. `why` is what the brain is told next turn.
  */
-export function fixLineAllowed(line: Line): { readonly allowed: boolean; readonly why: string | null } {
+export function fixLineAllowed(line: Line, schedule?: Schedule): { readonly allowed: boolean; readonly why: string | null } {
   if (line.verb === 'scene') return { allowed: false, why: 'a fix changes what is there; it never opens a new scene' };
   if (line.verb === 'look') return { allowed: false, why: 'a fix does not change the look' };
   if (line.verb === 'wait') return { allowed: false, why: null };
+  // a callout stands where the stage puts it, with its leader: a `move` by coordinates would only part it from its line
+  if (line.verb === 'move' && schedule !== undefined) {
+    const target = [...schedule.elements].reverse().find((element) => element.id === line.id && element.kind === 'text');
+    if (target !== undefined && (target.style.near !== null || target.style.leader)) return { allowed: false, why: 'placed by the stage: a callout cannot be moved by coordinates; name the right part in near= or move the part' };
+  }
   return { allowed: true, why: null };
 }
 
