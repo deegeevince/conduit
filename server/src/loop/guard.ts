@@ -110,3 +110,27 @@ export function decide(proposal: Proposal, before: Measure, after: Measure, rule
   if (!gained) reasons.push(`nothing it aimed at (${proposal.aims.join(', ')}) rose by ${rule.gain} or more`);
   return { keep: gained && !lost, reasons };
 }
+
+/** Where each kind of experiment may change files. A technique that edits the painter, or a style that edits the prompt, is a different experiment under another name. */
+export const KIND_ROOTS: Readonly<Record<'technique' | 'block' | 'style' | 'prompt', readonly string[]>> = {
+  technique: ['techniques/'],
+  block: ['web/src/painter/', 'web/src/render/', 'language/src/'],
+  style: ['web/src/looks/', 'web/src/styles/', 'web/src/render/'],
+  prompt: ['language/src/prompt.ts'],
+};
+
+export function outsideKind(kind: keyof typeof KIND_ROOTS, files: readonly string[]): string[] {
+  const roots = KIND_ROOTS[kind];
+  return files.filter((file) => !roots.some((root) => file === root || file.startsWith(root)));
+}
+
+/** Runs of six words from each prompt, to look for in a diff: the prompt itself, or a long piece of it, in source is a battery answered by rote. */
+export function phrasesOf(prompts: readonly string[], words = 6): string[] {
+  const out = new Set<string>();
+  for (const prompt of prompts) {
+    const tokens = prompt.toLowerCase().replace(/\s+/g, ' ').trim().split(' ');
+    if (tokens.length <= words) out.add(tokens.join(' '));
+    for (let i = 0; i + words <= tokens.length; i++) out.add(tokens.slice(i, i + words).join(' '));
+  }
+  return [...out].filter((phrase) => phrase.length >= 12);
+}
