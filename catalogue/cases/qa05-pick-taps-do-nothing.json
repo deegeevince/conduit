@@ -1,0 +1,31 @@
+{
+ "id": "qa05-pick-taps-do-nothing",
+ "title": "QA1-05: tapping pick options does not change the value",
+ "family": "interaction",
+ "owner": "painter",
+ "kind": "ui",
+ "found": "2026-11-14",
+ "note": "Tapping options 2-4 of a pick leaves the value on the first (phone and iPad).",
+ "own": [
+  "pick-taps"
+ ],
+ "surface": "main",
+ "priority": "core",
+ "turns": [
+  {
+   "say": "teach me fractions interactively",
+   "source": {
+    "log": "20261114-235637-c221",
+    "logs": "qa",
+    "turns": [
+     "p1"
+    ]
+   },
+   "check": [
+    {
+     "k": "pick-taps"
+    }
+   ]
+  }
+ ]
+}

@@ -1,0 +1,31 @@
+{
+ "id": "qa08-favicon-404",
+ "title": "QA1-08: /favicon.ico returns 404 on every load",
+ "family": "chrome",
+ "owner": "painter",
+ "kind": "ui",
+ "found": "2026-11-14",
+ "note": "A failed request on every page load.",
+ "own": [
+  "no-failed-requests"
+ ],
+ "surface": "main",
+ "priority": "core",
+ "turns": [
+  {
+   "say": "explain how a refrigerator works, step by step",
+   "source": {
+    "log": "20261114-233618-c9",
+    "logs": "qa",
+    "turns": [
+     "p1"
+    ]
+   },
+   "check": [
+    {
+     "k": "no-failed-requests"
+    }
+   ]
+  }
+ ]
+}

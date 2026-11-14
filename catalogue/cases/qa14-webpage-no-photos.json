@@ -1,0 +1,31 @@
+{
+ "id": "qa14-webpage-no-photos",
+ "title": "QA1-14: a webpage with empty photo blocks that claims real photos",
+ "family": "placement",
+ "owner": "prompt",
+ "kind": "draw",
+ "found": "2026-11-14",
+ "note": "The florist page has empty beige blocks where the reply says photos are real.",
+ "own": [
+  "photos-present"
+ ],
+ "surface": "main",
+ "priority": "core",
+ "turns": [
+  {
+   "say": "make a real webpage for a florist",
+   "source": {
+    "log": "20261114-235434-c194",
+    "logs": "qa",
+    "turns": [
+     "p1"
+    ]
+   },
+   "check": [
+    {
+     "k": "photos-present"
+    }
+   ]
+  }
+ ]
+}

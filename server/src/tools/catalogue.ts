@@ -35,6 +35,7 @@ interface Source {
   readonly turns?: readonly string[];
   readonly scenario?: string;
   readonly index?: number;
+  readonly logs?: 'qa';
 }
 type Spec = { readonly k: string } & Record<string, unknown>;
 type Action = { readonly a: string } & Record<string, unknown>;
@@ -54,6 +55,11 @@ interface Case {
   readonly note: string;
   /** the checks that are this case's own: its per-turn `check` entries and these general ones */
   readonly own: readonly string[];
+  /** false: the case reloads or leaves the stage, so the general gates do not apply */
+  readonly generic?: boolean;
+  /** `chat`: the frozen /chat surface; not run unless --chat */
+  readonly surface?: 'main' | 'chat';
+  readonly priority?: 'core' | 'low';
   readonly turns: readonly CaseTurn[];
 }
 
@@ -73,6 +79,8 @@ interface Args {
   readonly url: string | null;
   readonly maxUsd: number;
   readonly logs: string;
+  readonly qaLogs: string | null;
+  readonly chat: boolean;
   readonly timeoutMs: number;
 }
 
@@ -95,7 +103,7 @@ function parseArgs(argv: readonly string[]): Args {
       continue;
     }
     const name = arg.slice(2);
-    if (['live', 'replay', 'no-board', 'quiet'].includes(name)) flags.set(name, 'true');
+    if (['live', 'replay', 'no-board', 'quiet', 'chat'].includes(name)) flags.set(name, 'true');
     else {
       const value = argv[i + 1];
       if (value === undefined || value.startsWith('--')) usage(`--${name} needs a value`);
@@ -127,18 +135,20 @@ function parseArgs(argv: readonly string[]): Args {
     url: flags.get('url')?.replace(/\/+$/, '') ?? null,
     maxUsd: Number(flags.get('max-usd') ?? 3),
     logs: resolve(flags.get('logs') ?? join(homedir(), 'Library', 'Application Support', 'Conduit', 'logs')),
+    qaLogs: flags.get('qa-logs') ?? process.env['QA_LOGS'] ?? null,
+    chat: flags.has('chat'),
     timeoutMs: Number(flags.get('timeout') ?? 180) * 1000,
   };
 }
 
-function loadCases(only: readonly string[] | null): Case[] {
+function loadCases(only: readonly string[] | null, chat = true): Case[] {
   const all = readdirSync(casesDir)
     .filter((name) => name.endsWith('.json'))
     .sort()
     .map((name) => JSON.parse(readFileSync(join(casesDir, name), 'utf8')) as Case);
   const unknown = (only ?? []).filter((id) => !all.some((c) => c.id === id));
   if (unknown.length > 0) usage(`no case ${unknown.join(', ')}`);
-  return all.filter((c) => only === null || only.includes(c.id));
+  return all.filter((c) => (only === null || only.includes(c.id)) && (chat || c.surface !== 'chat' || (only?.includes(c.id) ?? false)));
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------------
@@ -156,7 +166,7 @@ async function recordAll(args: Args): Promise<void> {
   const readLog = (session: string): Record<string, unknown>[] => {
     let rows = logCache.get(session);
     if (rows === undefined) {
-      const file = join(args.logs, `${session}.jsonl`);
+      const file = session.startsWith('/') ? `${session}.jsonl` : join(args.logs, `${session}.jsonl`);
       rows = existsSync(file) ? readFileSync(file, 'utf8').split('\n').filter((l) => l.trim() !== '').map((l) => JSON.parse(l) as Record<string, unknown>) : [];
       logCache.set(session, rows);
     }
@@ -169,8 +179,17 @@ async function recordAll(args: Args): Promise<void> {
     for (const turn of c.turns) {
       let script = '';
       if (turn.source.log !== undefined) {
-        const wanted = turn.source.turns?.[0] ?? '';
-        script = readLog(turn.source.log)
+        let wanted = turn.source.turns?.[0] ?? '';
+        const session = turn.source.logs === 'qa' ? `${args.qaLogs ?? ''}/${turn.source.log}`.replace(/^\/+/, '/') : turn.source.log;
+        if (turn.source.logs === 'qa') {
+          if (args.qaLogs === null) {
+            missing = 'qa logs (--qa-logs <dir>)';
+            continue;
+          }
+          const first = readLog(session).find((row) => row['type'] === 'turn' && (row['input'] as { kind?: string } | undefined)?.kind === 'prompt');
+          wanted = String(first?.['turn'] ?? '');
+        }
+        script = readLog(session)
           .filter((row) => row['type'] === 'line' && row['turn'] === wanted && (row['pass'] === 1 || row['pass'] === undefined))
           .map((row) => String(row['text']))
           .join('\n');
@@ -214,7 +233,10 @@ interface Cx {
   answer: Answer;
   picture: string;
   /** what the page showed at the moment of a mid-turn watch */
-  readonly watched: { showAllOver: string | null };
+  readonly watched: { showAllOver: string | null; pillSeen: number };
+  before: string;
+  words: string;
+  early: string[];
 }
 type Verdict = 'PASS' | 'FAIL' | 'SKIP';
 interface Res {
@@ -377,6 +399,22 @@ async function runCheck(cx: Cx, spec: Spec): Promise<Res> {
     }
     case 'labels-side':
       return labelsSide(cx);
+    case 'same-role-same-size': {
+      // lines of one role in one sequence (narration: a plain `say`) share one size and one alignment
+      const ids = [...cx.answer.script.matchAll(/^say (\S+)((?: [^|\s=]+(?:=\S+)?)*) \|/gm)].filter((m) => !/\b(title|strong|aside|choice|label|caption|small)\b/.test(m[2] as string)).map((m) => m[1] as string);
+      const lines = ids.map((id) => shown(cx.answer).find((e) => e.id === id)).filter((e): e is LiveElement => e !== undefined && e.fontPx > 0);
+      if (lines.length < 3) return { check: name, verdict: 'FAIL', detail: `only ${lines.length} narration line(s) on stage at rest` };
+      const sizes = lines.map((e) => e.fontPx);
+      const ratio = Math.max(...sizes) / Math.min(...sizes);
+      const lefts = lines.map((e) => e.box.x);
+      const mids = lines.map((e) => centre(e.box).x);
+      const spread = (xs: number[]): number => Math.max(...xs) - Math.min(...xs);
+      const aligned = Math.min(spread(lefts), spread(mids)) <= 0.04 * cx.screen.width;
+      const bad: string[] = [];
+      if (ratio > 1.15) bad.push(`sizes ${sizes.map((n) => n.toFixed(0)).join('/')} px in one sequence`);
+      if (!aligned) bad.push(`the lines do not share one alignment (left edges spread ${Math.round(spread(lefts))} px, centres ${Math.round(spread(mids))} px)`);
+      return res(name, bad, `${lines.length} narration lines at one size and one alignment`);
+    }
     case 'no-raw-braces': {
       const texts = [...cx.answer.live.map((e) => e.text), ...(await cx.tab.eval<string[]>(`[window.__stage.elements().map((e) => String(e.text || '')).join('\\n'), document.body.innerText].join('\\n').split('\\n')`))];
       const hits = [...new Set(texts.filter((t) => /\{[A-Za-z_][A-Za-z0-9_ *+\-/.]{0,20}\}/.test(t)).map((t) => t.trim().slice(0, 40)))];
@@ -414,7 +452,7 @@ async function runCheck(cx: Cx, spec: Spec): Promise<Res> {
       return res(name, [...bad, ...noted.map((s) => `${s.id} ${s.notes.join('/')}`)], 'no link label on a line');
     }
     case 'showall-clear':
-      return cx.watched.showAllOver === null ? { check: name, verdict: 'PASS', detail: 'the Show all pill never stood on words while the answer played' } : { check: name, verdict: 'FAIL', detail: cx.watched.showAllOver };
+      return cx.watched.pillSeen === 0 ? { check: name, verdict: 'SKIP', detail: 'the Show all pill never appeared while the answer played' } : cx.watched.showAllOver === null ? { check: name, verdict: 'PASS', detail: `the Show all pill (seen ${cx.watched.pillSeen} times) never stood on words` } : { check: name, verdict: 'FAIL', detail: cx.watched.showAllOver };
     case 'fields-clear': {
       const fields = await cx.tab.eval<{ x: number; y: number; width: number; height: number; label: string }[]>(
         `[...document.querySelectorAll('input:not([type=file]),textarea,[contenteditable=true]')].filter((e) => !e.closest('.composer,.prompt,.ink-bar,.transcript__panel')).map((e) => { const r = e.getBoundingClientRect(); return { x: r.left, y: r.top, width: r.width, height: r.height, label: String(e.placeholder || e.getAttribute('aria-label') || '') }; }).filter((r) => r.width > 8 && r.height > 8)`,
@@ -445,13 +483,17 @@ async function runCheck(cx: Cx, spec: Spec): Promise<Res> {
       return look !== spec['look'] ? { check: name, verdict: 'PASS', detail: `the look is ${look}` } : { check: name, verdict: 'FAIL', detail: `the look is still ${look} for an unrelated answer` };
     }
     case 'no-red-outline': {
-      const hit = await cx.tab.eval<{ red: number; box: unknown } | null>(redScan(JSON.stringify(cx.picture)));
-      return hit === null ? { check: name, verdict: 'FAIL', detail: 'no control was clicked' } : hit.red > 40 ? { check: name, verdict: 'FAIL', detail: `${hit.red} red outline pixels round the clicked control` } : { check: name, verdict: 'PASS', detail: 'no red box round the clicked control' };
+      const after = await cx.tab.eval<{ red: number } | null>(redScan(JSON.stringify(cx.picture)));
+      const before = await cx.tab.eval<{ red: number } | null>(redScan(JSON.stringify(cx.before)));
+      if (after === null || before === null) return { check: name, verdict: 'FAIL', detail: 'no control was clicked' };
+      const grew = after.red - before.red;
+      return grew > 40 ? { check: name, verdict: 'FAIL', detail: `${grew} more red pixels round the clicked control after the click: a red box` } : { check: name, verdict: 'PASS', detail: 'no red box appeared round the clicked control' };
     }
     case 'refresh-escape': {
       const view = await cx.tab.eval<{ doc: boolean; escape: boolean; prompt: boolean }>(
-        `(() => { const d = document.querySelector('.stage__document'); const vis = (e) => { const r = e.getBoundingClientRect(); const cs = getComputedStyle(e); return r.width > 4 && r.height > 4 && cs.display !== 'none' && cs.visibility !== 'hidden'; }; const doc = !!d && vis(d) && (d.innerText || '').trim().length > 0; const escape = [...document.querySelectorAll('button,[role=button],a')].some((b) => vis(b) && /close|new conversation|new chat|back to|leave|exit/i.test((b.getAttribute('aria-label') || '') + ' ' + b.textContent)); const p = document.querySelector('.composer textarea, .composer input, .prompt textarea, .prompt input'); return { doc, escape, prompt: !!p && vis(p) }; })()`,
+        `(() => { const d = document.querySelector('.stage__document'); const vis = (e) => { const r = e.getBoundingClientRect(); const cs = getComputedStyle(e); return r.width > 4 && r.height > 4 && cs.display !== 'none' && cs.visibility !== 'hidden'; }; const doc = !!d && vis(d) && (d.innerText || '').trim().length > 0; const escape = [...document.querySelectorAll('button,[role=button],a')].some((b) => vis(b) && /close|new conversation|new chat|back to|leave|exit/i.test((b.getAttribute('aria-label') || '') + ' ' + b.textContent)); return { doc, escape, prompt: true }; })()`,
       );
+      view.prompt = (await cx.tab.call<unknown>('promptInfo')) !== null;
       if (view.doc && !view.escape) return { check: name, verdict: 'FAIL', detail: 'after a refresh the lesson view is forced on with no Close or New conversation' };
       return !view.prompt ? { check: name, verdict: 'FAIL', detail: 'after a refresh the prompt box is not usable' } : { check: name, verdict: 'PASS', detail: view.doc ? 'the lesson view is open and has a way out' : 'the stage is not held by a lesson view' };
     }
@@ -487,6 +529,69 @@ async function runCheck(cx: Cx, spec: Spec): Promise<Res> {
       const stops = Math.max(...picks.map((c) => c.options.length), picks.length, 0);
       return stops >= Number(spec['min']) ? { check: name, verdict: 'PASS', detail: `${stops} tappable stops` } : { check: name, verdict: 'FAIL', detail: `${stops} tappable stop(s), wanted ${String(spec['min'])}: a step-by-step answer you cannot step through` };
     }
+    case 'no-failed-requests': {
+      const bad = [...new Set([...cx.early, ...cx.tab.failedRequests.map((f) => f.text)])];
+      return res(name, bad.map((b) => `failed request ${b.slice(0, 60)}`), 'every request answered');
+    }
+    case 'controls-reachable': {
+      const all = await controls(cx.tab);
+      const bad = all.filter((c) => c.box.y + c.box.height > cx.screen.height + 1 || c.box.y < -1 || c.box.x + c.box.width > cx.screen.width + 1).map((c) => `control "${c.label.slice(0, 18)}" is at y ${Math.round(c.box.y)}, off a ${cx.screen.height} px stage`);
+      return all.length === 0 ? { check: name, verdict: 'FAIL', detail: 'no controls on stage' } : res(name, bad, `${all.length} controls all on the stage`);
+    }
+    case 'pick-taps': {
+      const picks = (await controls(cx.tab)).filter((c) => c.control === 'pick' && c.options.length >= 3);
+      if (picks.length === 0) return { check: name, verdict: 'FAIL', detail: 'no pick with 3 or more options' };
+      const bad: string[] = [];
+      for (const p of picks.slice(0, 2)) {
+        for (const i of [2, 1]) {
+          const now = (await controls(cx.tab)).find((c) => c.id === p.id) ?? p;
+          const before = JSON.stringify(now.value);
+          await cx.tab.tap(now.box.x + (now.box.width * (i + 0.5)) / now.options.length, now.box.y + now.box.height / 2);
+          await sleep(500);
+          const after = JSON.stringify(((await controls(cx.tab)).find((c) => c.id === p.id) ?? p).value);
+          if (after === before) bad.push(`tapping option ${i + 1} of "${p.id}" left the value at ${before}`);
+        }
+      }
+      return res(name, bad, `taps move ${picks.length} pick(s)`);
+    }
+    case 'page-fits': {
+      const m = await cx.tab.eval<{ top: number; over: number }>(`({ top: Math.round(document.scrollingElement.scrollTop), over: Math.round(document.scrollingElement.scrollHeight - innerHeight) })`);
+      return res(name, m.top !== 0 || m.over > 2 ? [`the page itself scrolls (scrollTop ${m.top}, ${m.over} px taller than the window)`] : [], 'the page does not scroll');
+    }
+    case 'figure-fills': {
+      const parts = cx.answer.live.filter((e) => e.kind !== 'text' && e.phase === 'on' && area(e.box) > 400 && area(e.box) < 0.8 * cx.screen.width * cx.screen.height);
+      if (parts.length === 0) return { check: name, verdict: 'FAIL', detail: 'no figure on stage' };
+      const y0 = Math.min(...parts.map((e) => e.box.y));
+      const y1 = Math.max(...parts.map((e) => e.box.y + e.box.height));
+      const share = (y1 - y0) / Math.max(1, cx.answer.viewport.height);
+      return share >= Number(spec['min'] ?? 0.5) ? { check: name, verdict: 'PASS', detail: `the figure spans ${Math.round(share * 100)}% of the stage height` } : { check: name, verdict: 'FAIL', detail: `the figure spans only ${Math.round(share * 100)}% of the stage height` };
+    }
+    case 'has-shapes': {
+      const n = cx.answer.live.filter((e) => e.kind !== 'text' && e.phase === 'on' && area(e.box) > 100).length;
+      return n >= Number(spec['min']) ? { check: name, verdict: 'PASS', detail: `${n} shapes on stage` } : { check: name, verdict: 'FAIL', detail: `${n} shape(s) on stage, wanted ${String(spec['min'])}: a table and a bar, no shapes` };
+    }
+    case 'photos-present': {
+      const claims = /photo|picture|image/i.test(cx.answer.script);
+      const has = /<img\s|background-image|url\(|^pic\b/m.test(cx.answer.script);
+      return !claims ? { check: name, verdict: 'PASS', detail: 'no photo claimed' } : has ? { check: name, verdict: 'PASS', detail: 'the page carries pictures' } : { check: name, verdict: 'FAIL', detail: 'the answer claims photos but the page has no img, background image or pic' };
+    }
+    case 'kit-lint-clean': {
+      const notes = cx.answer.mockups.flatMap((m) => m.notes).filter((n) => ['outside', 'overlap', 'lost-words'].includes(n.kind));
+      return res(name, notes.map((n) => `${n.kind} ${n.id}`), `${cx.answer.mockups.length} mock-up(s), no lint notes`);
+    }
+    case 'app-fills-stage': {
+      const frames = await cx.tab.eval<{ height: number }[]>(`[...document.querySelectorAll('iframe')].map((f) => ({ height: f.getBoundingClientRect().height })).filter((r) => r.height > 50)`);
+      if (frames.length === 0) return { check: name, verdict: 'FAIL', detail: 'no live app on stage' };
+      const share = Math.max(...frames.map((f) => f.height)) / cx.screen.height;
+      return share >= Number(spec['min'] ?? 0.5) ? { check: name, verdict: 'PASS', detail: `the app is ${Math.round(share * 100)}% of the window height` } : { check: name, verdict: 'FAIL', detail: `the app is only ${Math.round(share * 100)}% of the window height` };
+    }
+    case 'kept-after-reload': {
+      const now = shown(cx.answer).map((e) => e.text.trim()).join(' ');
+      const words = cx.words.split(/\s+/).filter((w) => w.length > 3);
+      const kept = words.length === 0 ? 0 : words.filter((w) => now.includes(w)).length / words.length;
+      const apps = await cx.tab.eval<number>(`document.querySelectorAll('iframe').length`);
+      return kept >= 0.6 || apps > 0 ? { check: name, verdict: 'PASS', detail: `${Math.round(kept * 100)}% of the words are back after a reload` } : { check: name, verdict: 'FAIL', detail: `after a reload only ${Math.round(kept * 100)}% of the words are back: the painted answer is gone` };
+    }
     case 'pen-draws':
       return { check: name, verdict: 'SKIP', detail: 'worked by the pen-ring action' };
     default:
@@ -517,6 +622,7 @@ async function act(cx: Cx, action: Action): Promise<void> {
       const ctl = (await controls(tab)).find((c) => c.id === action['id']);
       if (ctl === undefined) return;
       await tab.eval(`window.__catalogueClicked = ${JSON.stringify(ctl.box)}`);
+      cx.before = await tab.shot();
       await tab.tap(ctl.box.x + ctl.box.width * 0.85, ctl.box.y + ctl.box.height / 2);
       await sleep(900);
       cx.picture = await tab.shot();
@@ -627,7 +733,7 @@ async function runCell(args: Args, c: Case, screen: Args['screens'][number], url
   const tab = await Tab.open(screen.width, screen.height);
   const options: Options = { url, screens: [screen], out, turns: new Set(), timeoutMs: args.timeoutMs, parallel: false, demo: false, quiet: true, page: '', say: null, chat: 'off' };
   const conv = new Conversation(tab, options, screen, dir);
-  const cx: Cx = { tab, c: conv, screen, dir, mobile: tab.mobile, answer: null as unknown as Answer, picture: '', watched: { showAllOver: null } };
+  const cx: Cx = { tab, c: conv, screen, dir, mobile: tab.mobile, answer: null as unknown as Answer, picture: '', watched: { showAllOver: null, pillSeen: 0 }, before: '', words: '', early: [] };
   const details: Res[] = [];
   let cost = 0;
   try {
@@ -638,6 +744,7 @@ async function runCell(args: Args, c: Case, screen: Args['screens'][number], url
       n += 1;
       conv.current = n;
       const results: CheckResult[] = [];
+      if (n === 1) cx.early = tab.failedRequests.map((f) => f.text);
       tab.drain();
       const sent = await conv.say(turn.say, results);
       // a poller beside the wait: the Show all pill is only there while an answer plays
@@ -646,10 +753,11 @@ async function runCell(args: Args, c: Case, screen: Args['screens'][number], url
         while (polling) {
           const over = await tab
             .eval<string | null>(
-              `(() => { const b = [...document.querySelectorAll('button,[role=button]')].find((e) => /show all/i.test((e.textContent || '') + (e.getAttribute('aria-label') || ''))); if (!b) return null; const r = b.getBoundingClientRect(); if (r.width < 4) return null; const words = (window.__stage.elements() || []).filter((e) => e.kind === 'text' && e.phase === 'on' && e.opacity > 0.3); for (const w of words) { const x = Math.max(0, Math.min(r.right, w.box.x + w.box.width) - Math.max(r.left, w.box.x)); const y = Math.max(0, Math.min(r.bottom, w.box.y + w.box.height) - Math.max(r.top, w.box.y)); if (x * y > 0.15 * Math.min(r.width * r.height, w.box.width * w.box.height)) return 'the Show all pill stands on "' + String(w.text).slice(0, 24) + '"'; } return null; })()`,
+              `(() => { const b = [...document.querySelectorAll('button,[role=button]')].find((e) => /show all/i.test((e.textContent || '') + (e.getAttribute('aria-label') || ''))); if (!b) return null; const r = b.getBoundingClientRect(); if (r.width < 4) return null; window.__pillSeen = (window.__pillSeen || 0) + 1; const words = (window.__stage.elements() || []).filter((e) => e.kind === 'text' && e.phase === 'on' && e.opacity > 0.3); for (const w of words) { const x = Math.max(0, Math.min(r.right, w.box.x + w.box.width) - Math.max(r.left, w.box.x)); const y = Math.max(0, Math.min(r.bottom, w.box.y + w.box.height) - Math.max(r.top, w.box.y)); if (x * y > 0.15 * Math.min(r.width * r.height, w.box.width * w.box.height)) return 'the Show all pill stands on "' + String(w.text).slice(0, 24) + '"'; } return null; })()`,
             )
             .catch(() => null);
           if (over !== null) cx.watched.showAllOver ??= over;
+          cx.watched.pillSeen = await tab.eval<number>('window.__pillSeen || 0').catch(() => 0);
           await sleep(250);
         }
       })();
@@ -657,6 +765,7 @@ async function runCell(args: Args, c: Case, screen: Args['screens'][number], url
       polling = false;
       await poll;
       details.push({ check: `rest${c.turns.length > 1 ? `-${n}` : ''}`, verdict: note === '' ? 'PASS' : 'FAIL', detail: note === '' ? 'at rest' : note });
+      cx.words = shown(await tab.call<Answer>('answer')).map((e) => e.text.trim()).join(' ');
       for (const action of turn.do ?? []) {
         if (action.a === 'pen-ring') details.push(await penRing(cx));
         else await act(cx, action);
@@ -667,7 +776,7 @@ async function runCell(args: Args, c: Case, screen: Args['screens'][number], url
         cx.answer = await tab.call<Answer>('answer');
         await writeFile(join(dir, `${screen.name}-t${n}.png`), Buffer.from(cx.picture.split(',')[1] ?? '', 'base64'));
         for (const spec of turn.check ?? []) if (!(spec.k === 'pen-draws')) details.push(await runCheck(cx, spec));
-        if (n === c.turns.length) for (const r of await generic(cx)) details.push(r);
+        if (n === c.turns.length && c.generic !== false) for (const r of await generic(cx)) if (!details.some((d) => d.check === r.check)) details.push(r);
         cx.picture = '';
       }
       if (args.mode === 'live') {
@@ -684,7 +793,7 @@ async function runCell(args: Args, c: Case, screen: Args['screens'][number], url
     await tab.close().catch(() => undefined);
   }
   void watch;
-  const failed = details.filter((d) => d.verdict === 'FAIL').map((d) => d.check);
+  const failed = details.filter((d) => d.verdict === 'FAIL' || d.verdict === 'SKIP').map((d) => d.check);
   const ownNames = new Set([...c.own, ...c.turns.flatMap((t) => (t.check ?? []).map((s) => s.k))]);
   const ownFailed = failed.filter((name) => ownNames.has(name) || name.startsWith('rest'));
   const verdict = failed.length === 0 ? 'PASS' : ownFailed.length === 0 ? 'OWN' : 'FAIL';
@@ -825,7 +934,7 @@ async function matrix(args: Args): Promise<void> {
 }
 
 async function run(args: Args): Promise<void> {
-  const cases = loadCases(args.only);
+  const cases = loadCases(args.only, args.chat);
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   const out = join(args.data, 'catalogue', 'runs', `${args.label}-${stamp}`);
   await mkdir(out, { recursive: true });

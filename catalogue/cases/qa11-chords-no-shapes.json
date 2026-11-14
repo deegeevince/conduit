@@ -1,0 +1,32 @@
+{
+ "id": "qa11-chords-no-shapes",
+ "title": "QA1-11: chords answered with a table and a bar, no chord shapes",
+ "family": "completeness",
+ "owner": "prompt",
+ "kind": "draw",
+ "found": "2026-11-14",
+ "note": "No fretboard or key diagrams, a big gap between table and roll.",
+ "own": [
+  "has-shapes"
+ ],
+ "surface": "main",
+ "priority": "core",
+ "turns": [
+  {
+   "say": "show me the C, F, G chords",
+   "source": {
+    "log": "20261114-235728-c229",
+    "logs": "qa",
+    "turns": [
+     "p1"
+    ]
+   },
+   "check": [
+    {
+     "k": "has-shapes",
+     "min": 8
+    }
+   ]
+  }
+ ]
+}
