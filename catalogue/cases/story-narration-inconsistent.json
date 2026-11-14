@@ -1,0 +1,29 @@
+{
+ "id": "story-narration-inconsistent",
+ "title": "\"Tell me a story\": narration at three sizes and scattered positions",
+ "family": "consistency",
+ "owner": "painter",
+ "kind": "draw",
+ "found": "2026-11-14",
+ "note": "Lines of one role in one sequence come out at different sizes and positions: a tiny line at the top, two normal ones, one tiny under them.",
+ "own": [
+  "same-role-same-size",
+  "legible"
+ ],
+ "turns": [
+  {
+   "say": "tell me a story",
+   "source": {
+    "log": "20261114-234746-c2",
+    "turns": [
+     "t4"
+    ]
+   },
+   "check": [
+    {
+     "k": "same-role-same-size"
+    }
+   ]
+  }
+ ]
+}

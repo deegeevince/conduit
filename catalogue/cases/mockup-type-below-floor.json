@@ -1,0 +1,27 @@
+{
+ "id": "mockup-type-below-floor",
+ "title": "mock-up type at 8-10 px, under the floor",
+ "family": "small-type",
+ "owner": "kit",
+ "kind": "draw",
+ "found": "2026-11-14",
+ "note": "The mock-up's smallest type is 8.3 to 10.6 px, under the 11.75 px floor.",
+ "own": [
+  "mockup-type-floor",
+  "legible"
+ ],
+ "turns": [
+  {
+   "say": "mock up a checkout page for a bakery",
+   "source": {
+    "scenario": "mockup",
+    "index": 0
+   },
+   "check": [
+    {
+     "k": "mockup-type-floor"
+    }
+   ]
+  }
+ ]
+}

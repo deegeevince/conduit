@@ -1,0 +1,31 @@
+{
+ "id": "qa06-page-scrolls-blank-strip",
+ "title": "QA1-06: the page itself scrolls and leaves a blank strip",
+ "family": "placement",
+ "owner": "painter",
+ "kind": "ui",
+ "found": "2026-11-14",
+ "note": "On iPad the shell is scrolled up, leaving a blank strip and cutting the diagram top.",
+ "own": [
+  "page-fits"
+ ],
+ "surface": "main",
+ "priority": "core",
+ "turns": [
+  {
+   "say": "label the parts of a car engine",
+   "source": {
+    "log": "20261114-234558-c107",
+    "logs": "qa",
+    "turns": [
+     "p1"
+    ]
+   },
+   "check": [
+    {
+     "k": "page-fits"
+    }
+   ]
+  }
+ ]
+}

@@ -1,0 +1,33 @@
+{
+ "id": "stepped-balance-overlap",
+ "title": "stepped balance sheet: a long step overlaps the stepper",
+ "family": "stepped-placement",
+ "owner": "painter",
+ "kind": "draw",
+ "found": "2026-11-14",
+ "note": "On the longest step the bound explanation grows over the stepper and the choices.",
+ "own": [
+  "no-overlap",
+  "nothing-cut-off",
+  "legible"
+ ],
+ "turns": [
+  {
+   "say": "can you explain to me how to read a company balance sheet, step by step and interactive",
+   "source": {
+    "log": "20261114-213331-c6",
+    "turns": [
+     "t11"
+    ]
+   },
+   "do": [
+    {
+     "a": "control",
+     "id": "step",
+     "index": 4,
+     "wait": 900
+    }
+   ]
+  }
+ ]
+}

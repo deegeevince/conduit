@@ -38,7 +38,9 @@
     "wall-check": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/wall-check.ts",
     "wall-bench": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/wall-bench.ts",
     "smoke": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/smoke.ts",
+    "scenarios": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/scenarios.ts",
     "voice-check": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/voice-check.ts",
+    "catalogue": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/catalogue.ts",
     "audit": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/audit.ts",
     "audit-log": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/audit.ts"
   },

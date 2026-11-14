@@ -1,0 +1,36 @@
+{
+ "id": "raw-rk-braces",
+ "title": "raw {r*k} in a caption",
+ "family": "raw-template",
+ "owner": "kit",
+ "kind": "draw",
+ "found": "2026-11-14",
+ "note": "A bound caption shows {r}, {k} and {r*k} un-evaluated.",
+ "own": [
+  "no-raw-braces"
+ ],
+ "turns": [
+  {
+   "say": "teach counting the squares inside a rectangle to a seven year old, with two sliders",
+   "source": {
+    "log": "20261114-192800-c1",
+    "turns": [
+     "t14"
+    ]
+   },
+   "do": [
+    {
+     "a": "control",
+     "id": "s",
+     "index": 3,
+     "wait": 900
+    }
+   ],
+   "check": [
+    {
+     "k": "no-raw-braces"
+    }
+   ]
+  }
+ ]
+}

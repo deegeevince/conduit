@@ -147,7 +147,7 @@ function lineChecks(): void {
     'part w1 | Sheet 1',
     'part s1 in=w1 | Take away tens',
     'part q1 in=s1 | 64 − 30 =',
-    'part q1a in=q1 tag=count-on-a-line | Hop back along a number line',
+    'part q1a in=q1 tag=count-on-a-line for=q1 | Hop back along a number line',
     'step x1 in=q1a show=numberline 0..70 mark=64 | Find 64 on the line.',
   ]);
   expect('count-back: the ask in the second way has an id of its own, and its hint follows it', written.filter((line) => line.startsWith('ask ') || line.startsWith('hint ')).map((line) => line.split(' ').slice(0, 3).join(' ')), [
@@ -183,7 +183,11 @@ function lineChecks(): void {
   expect('an ask with no answer is refused', read('part w1 | A\nask a1 in=w1 | 1 + 1?').refused.map((r) => r.codes), [['missing-argument']]);
   expect('an ask whose choices hold no answer is refused', read('part w1 | A\nask a1 in=w1 is=4 pick=1,2,3 | 2 + 2?').refused.map((r) => r.codes), [['bad-ask']]);
   expect('a picture a visual does not have is dropped and the step stays', read('part w1 | A\nstep in=w1 show=numberline 0..9 colour=red | words').refused, []);
-  expect('an unknown technique is dropped, the part stays', read('part w1 tag=guess | A').lines.map(serializeLine), ['part w1 | A']);
+  expect('any one word is a tag, and it is no help by itself', read('part w1 tag=guess | A').lines.map(serializeLine), ['part w1 tag=guess | A']);
+  expect('a tag that is not one word is dropped, the part stays', read('part w1 tag=A_Guess! | A').lines.map(serializeLine), ['part w1 | A']);
+  const helped = foldSource('part w | W\npart q in=w | Q\nask a1 in=q is=7 | How many?\npart h in=q tag=way | H\npart g in=q for=a1 tag=x | G\npart n in=q | N', 'prompt').document;
+  expect('for= says what a part helps; a tag alone helps the last ask of its question; neither is no help', ['h', 'g', 'n'].map((id) => nodeOf(helped, `w/q/${id}`)?.for ?? null), ['a1', 'a1', null]);
+  expect('a choice and a tick need no answer and seal nothing', read('part q | Q\nask c in=q check=any pick=a,b | Which?\nask d in=q check=done | Done').lines.map(serializeLine), ['part q | Q', 'ask c in=q pick=a,b check=any | Which?', 'ask d in=q check=done | Done']);
   expect('values with a space use _', serializeLine(read('part w1 | A\nask a1 in=w1 is=ten_pence | Which coin?').lines[1] ?? { verb: 'end' }), 'ask a1 in=w1 is=ten_pence | Which coin?');
   const spoiled: LessonStep[] = [
     { kind: 'step', id: 's1', show: null, words: 'It is 34.' },

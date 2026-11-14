@@ -1,0 +1,31 @@
+{
+ "id": "qa16-kit-tabbar-outside",
+ "title": "QA1-16: kit tabbar or carousel outside its screen",
+ "family": "overlap",
+ "owner": "kit",
+ "kind": "draw",
+ "found": "2026-11-14",
+ "note": "Kit lint flags homeN.tabbar and carousel as outside on the recipe mock-up.",
+ "own": [
+  "kit-lint-clean"
+ ],
+ "surface": "main",
+ "priority": "core",
+ "turns": [
+  {
+   "say": "mock up a recipe app I can click through",
+   "source": {
+    "log": "20261114-235302-c177",
+    "logs": "qa",
+    "turns": [
+     "p1"
+    ]
+   },
+   "check": [
+    {
+     "k": "kit-lint-clean"
+    }
+   ]
+  }
+ ]
+}

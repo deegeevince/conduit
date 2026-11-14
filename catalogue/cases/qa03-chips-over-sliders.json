@@ -1,0 +1,32 @@
+{
+ "id": "qa03-chips-over-sliders",
+ "title": "QA1-03: chips over the sliders, the last slider below the stage",
+ "family": "overlap",
+ "owner": "painter",
+ "kind": "draw",
+ "found": "2026-11-14",
+ "note": "Suggestion chips sit on the Transport and Fun sliders and the Savings slider is pushed off the stage.",
+ "own": [
+  "controls-reachable",
+  "no-overlap"
+ ],
+ "surface": "main",
+ "priority": "core",
+ "turns": [
+  {
+   "say": "a monthly budget I can adjust with sliders",
+   "source": {
+    "log": "20261114-233911-c49",
+    "logs": "qa",
+    "turns": [
+     "p1"
+    ]
+   },
+   "check": [
+    {
+     "k": "controls-reachable"
+    }
+   ]
+  }
+ ]
+}

@@ -1,0 +1,46 @@
+{
+ "id": "vlookup-table-ejected",
+ "title": "VLOOKUP table words ejected from their cells",
+ "family": "table-placement",
+ "owner": "painter",
+ "kind": "draw",
+ "found": "2026-11-14",
+ "note": "A hand-drawn table: the headers and values sit around the grid, which is empty.",
+ "own": [
+  "words-in-grid",
+  "no-overlap"
+ ],
+ "turns": [
+  {
+   "say": "can you explain vlookup interactively",
+   "source": {
+    "log": "20261114-231621-c2",
+    "turns": [
+     "t11"
+    ]
+   },
+   "check": [
+    {
+     "k": "words-in-grid",
+     "words": [
+      "Fruit",
+      "Price",
+      "Stock",
+      "Apple",
+      "Banana",
+      "Cherry",
+      "Mango",
+      "1.20",
+      "0.50",
+      "3.00",
+      "1.80",
+      "40",
+      "120",
+      "15",
+      "25"
+     ]
+    }
+   ]
+  }
+ ]
+}

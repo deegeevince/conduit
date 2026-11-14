@@ -1,0 +1,52 @@
+{
+ "id": "controls-not-reset",
+ "title": "controls not reset between questions",
+ "family": "flow-state",
+ "owner": "painter",
+ "kind": "flow",
+ "found": "2026-11-14",
+ "note": "The second question opens with the sliders where the first one left them.",
+ "own": [
+  "controls-default"
+ ],
+ "turns": [
+  {
+   "say": "teach counting the rectangles inside a grid to a seven year old, with two sliders",
+   "source": {
+    "log": "20261114-192800-c1",
+    "turns": [
+     "t14"
+    ]
+   },
+   "do": [
+    {
+     "a": "control",
+     "id": "r",
+     "value": 4,
+     "wait": 400
+    },
+    {
+     "a": "control",
+     "id": "k",
+     "value": 3,
+     "wait": 400
+    }
+   ]
+  },
+  {
+   "say": "now a new question with another shape, same way",
+   "source": {
+    "log": "20261114-192800-c1",
+    "turns": [
+     "t14"
+    ]
+   },
+   "check": [
+    {
+     "k": "controls-default",
+     "expect": 0
+    }
+   ]
+  }
+ ]
+}

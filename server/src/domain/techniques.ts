@@ -151,6 +151,7 @@ export function lintTechnique(title: string, summary: string, reason: string, ma
  */
 const CUES: readonly (readonly [RegExp, readonly string[]])[] = [
   [/\b(?:charts?|graphs?|plot|histogram|distributions?|trend|curve|over time|since \d{4})\b/i, ['chart', 'number']],
+  [/\b(?:homework|work ?sheets?|my (?:kid|child|son|daughter|boy|girl)|\d{1,2}[- ]?(?:year|yr)s?[- ]?olds?|sums?|times tables?|number bonds?|working[- ]?outs?|(?:show|work) (?:the |it |this |that )?(?:working|out)|lessons?|tutor\w*|practi[cs]e (?:sheet|questions))\b/i, ['homework', 'worksheet', 'child']],
   [/\b(?:let me|slider|calculator|converter|play with|interactive|switch between|toggle|drag)\b/i, ['drag', 'interactive', 'explore']],
   [/\bdraw (?:me )?how\b|\bhow (?:does )?(?:a|an|the)\b[^?.]*\b(?:work|happen|pump|beat|move|flow|circulate|digest|breathe|turn|spin|rise|fall)s?\b|\bcross[- ]section\b|\banatomy\b/i, ['mechanism', 'machine', 'part']],
 ];

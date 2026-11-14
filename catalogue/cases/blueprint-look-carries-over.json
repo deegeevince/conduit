@@ -1,0 +1,38 @@
+{
+ "id": "blueprint-look-carries-over",
+ "title": "the blueprint look carrying over to unrelated answers",
+ "family": "look-carryover",
+ "owner": "prompt",
+ "kind": "flow",
+ "found": "2026-11-14",
+ "note": "A look picked for one flowchart stays for the next, unrelated, plain-words answer.",
+ "own": [
+  "look-not"
+ ],
+ "turns": [
+  {
+   "say": "show the tool calls of one turn of an AI app as a live flow",
+   "source": {
+    "log": "20261114-200136-c2",
+    "turns": [
+     "t24"
+    ]
+   }
+  },
+  {
+   "say": "what was the underlying technique used to do this? explain in plain words",
+   "source": {
+    "log": "20261114-200136-c2",
+    "turns": [
+     "t38"
+    ]
+   },
+   "check": [
+    {
+     "k": "look-not",
+     "look": "blueprint"
+    }
+   ]
+  }
+ ]
+}

@@ -98,7 +98,8 @@ export interface DataFacts {
 export const DATA_LIMITS = { rows: 20_000, tables: 4 } as const;
 
 /** The most a turn's techniques may add to its brief, in characters, and how many a turn is given. */
-export const TECHNIQUE_LIMITS = { cards: 3, chars: 1650 } as const;
+/** `documentChars`: a card that writes a document of parts carries the rules of its audience, so it is allowed more room than a recipe for a picture. */
+export const TECHNIQUE_LIMITS = { cards: 3, chars: 1650, documentChars: 4400 } as const;
 
 /**
  * `full` is for a brain that remembers nothing: a fresh process, or a relay

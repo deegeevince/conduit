@@ -1,0 +1,27 @@
+{
+ "id": "qa04-slider-label-over-caption",
+ "title": "QA1-04: a slider label overlaps the caption",
+ "family": "overlap",
+ "owner": "painter",
+ "kind": "draw",
+ "found": "2026-11-14",
+ "note": "The Parts shaded slider label overlaps the sentence and the 3/8 caption at rest (seen on iPad).",
+ "own": [
+  "no-overlap"
+ ],
+ "surface": "main",
+ "priority": "core",
+ "turns": [
+  {
+   "say": "teach me fractions interactively",
+   "source": {
+    "log": "20261114-235634-c220",
+    "logs": "qa",
+    "turns": [
+     "p1"
+    ]
+   },
+   "check": []
+  }
+ ]
+}

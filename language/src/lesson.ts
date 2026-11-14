@@ -12,7 +12,7 @@ import { checkWorking } from './maths/working';
 import { plainText } from './text';
 import type { Issue, IssueCode } from './types';
 import { LESSON_LIMITS, LIMITS, RESERVED_IDS, TECHNIQUES, VISUAL } from './vocabulary';
-import type { LessonVerb, TechniqueId, VisualKind, VisualParam } from './vocabulary';
+import type { LessonVerb, VisualKind, VisualParam } from './vocabulary';
 
 // --- the lines ---------------------------------------------------------------------------------------------------------------------
 
@@ -21,7 +21,10 @@ export interface PartLine {
   readonly verb: 'part';
   readonly id: string;
   readonly in?: string;
-  readonly tag?: TechniqueId;
+  /** any word: what kind of part this is (a way, a variation, a clause, a day). It means nothing to the reader; a card may teach the words it wants */
+  readonly tag?: string;
+  /** the ask (or part) this part helps: the help relation. A part with `for` is help for that ask, whatever its tag says */
+  readonly for?: string;
   /** the question's box on the photo it was read from; the lesson page crops it */
   readonly crop?: Crop;
   readonly title: string;
@@ -79,8 +82,10 @@ export interface AskLine {
   /**
    * `working`: she writes her working, and it is the working that is checked, step by step (maths/working.ts), not one answer.
    * `order`: `is` is the items IN THE RIGHT ORDER (the question's own numbers or words); she drags tiles into order, and the sequence is compared exactly.
+   * `any`: a choice with no single right answer (`pick=` the options, or her own words): the gate opens when she holds a value. `done`: a tick; the gate opens when she ticks it.
+   * Neither takes `is`: nothing is sealed.
    */
-  readonly check?: 'working' | 'order';
+  readonly check?: 'working' | 'order' | 'any' | 'done';
   readonly text: string;
 }
 
@@ -128,7 +133,7 @@ export interface LessonAsk {
   readonly unit: string | null;
   readonly hints: readonly string[];
   /** `working`: a try is her transcribed working, checked step by step; `order`: a try is her tiles in order (`accepted` is the sequence); absent: a try is one answer */
-  readonly check?: 'working' | 'order';
+  readonly check?: 'working' | 'order' | 'any' | 'done';
 }
 
 /** A stop of a lesson, in the order written. A reveal is passed by stepping; an ask opens when it holds an accepted answer. */
@@ -143,7 +148,7 @@ export interface OpenAsk {
 
 export function openAskOf(ask: LessonAsk): OpenAsk {
   // an ordering ask's items are the question's own words: nothing is sealed (the order is what is secret, and it is never written as a value)
-  return { id: ask.id, accepted: ask.check === 'order' ? [] : ask.accepted, unit: ask.unit };
+  return { id: ask.id, accepted: ask.check === 'order' || ask.check === 'any' || ask.check === 'done' ? [] : ask.accepted, unit: ask.unit };
 }
 
 /** The items of a try at an ordering ask: split on commas, semicolons, arrows and spaces, in the order given. */
@@ -284,8 +289,14 @@ export function numbersOf(value: string | undefined): readonly (number | null)[]
   return value.split(',').map((part) => (part === '?' ? null : Number(part)));
 }
 
-export function technique(word: string): TechniqueId | null {
-  return TECHNIQUES.find((id) => id === word) ?? null;
+/** A tag is any one lower-case word (letters, digits, `-`): what kind of part this is. Null when it is not one. */
+export function tagWord(word: string): string | null {
+  return /^[a-z][a-z0-9-]{0,31}$/.test(word) ? word : null;
+}
+
+/** The tags documents were written with before `for=` existed: a part with one and no `for=` is help for its question, so old documents read as they did. */
+export function isLegacyTag(word: string): boolean {
+  return (TECHNIQUES as readonly string[]).includes(word);
 }
 
 // --- the answer matcher ------------------------------------------------------------------------------------------------------------
@@ -625,6 +636,8 @@ export function matchAnswer(accepted: string, given: string, unit: string | null
 export function accepts(ask: Pick<LessonAsk, 'accepted' | 'unit' | 'check'>, text: string): boolean {
   const given = text.trim();
   if (given === '') return false;
+  // no single right answer: she is through the gate when she holds a value (a choice made, a tick)
+  if (ask.check === 'any' || ask.check === 'done') return true;
   // `check=order`: the same items, in the same order, each matched as an answer is (numbers as numbers)
   if (ask.check === 'order') {
     const items = orderItems(given);
@@ -765,7 +778,7 @@ function stepTexts(step: LessonReveal): { readonly where: 'step' | 'picture'; re
 function spoilersBefore(ask: LessonAsk, before: readonly LessonStep[], context: LessonContext): Spoiler[] {
   const found: Spoiler[] = [];
   // the items of an ordering ask are the question's own: a step may say them; only the order is the answer
-  if (ask.check === 'order') return found;
+  if (ask.check === 'order' || ask.check === 'any' || ask.check === 'done') return found;
   for (const answer of ask.accepted) {
     // a number the question itself is made of is no secret, so a step may use it
     if (context.question.some((words) => textHolds(words, answer, ask.unit))) continue;
@@ -827,7 +840,9 @@ interface PartRecord {
   readonly id: string;
   readonly parent: string | null;
   title: string;
-  tag: TechniqueId | null;
+  tag: string | null;
+  /** the ask or part it helps */
+  help: string | null;
   crop: Crop | null;
   readonly children: string[];
   steps: LessonStep[];
@@ -848,7 +863,9 @@ export interface BookPart {
   readonly id: string;
   readonly parent: string | null;
   readonly title: string;
-  readonly tag: TechniqueId | null;
+  readonly tag: string | null;
+  /** the ask (or, written before `for=`, the part) it helps; null when it is no help */
+  readonly help: string | null;
   readonly crop: Crop | null;
   readonly children: readonly string[];
   readonly steps: readonly LessonStep[];
@@ -940,7 +957,7 @@ export class LessonBook {
       const record = this.records.get(part);
       return record === undefined ? [] : [record];
     });
-    const firstWay = chain.findIndex((record) => record.tag !== null);
+    const firstWay = chain.findIndex((record) => record.help !== null);
     if (firstWay < 0) return { question: chain.map((record) => record.title), way: null };
     const way = chain.slice(firstWay).map((record) => record.title).join(' · ');
     return { question: chain.slice(0, firstWay).map((record) => record.title), way };
@@ -986,12 +1003,13 @@ export class LessonBook {
       if (line.in !== undefined && line.in !== known.parent) issues.push(issue('bad-value', 'warn', `part ${line.id} already sits in ${known.parent ?? 'the document'}; it stays there`, line.in));
       known.title = line.title;
       if (line.tag !== undefined) known.tag = line.tag;
+      if (line.for !== undefined || line.tag !== undefined) known.help = this.helpOf(line, known.parent) ?? known.help;
       if (line.crop !== undefined) known.crop = line.crop;
     } else {
       if (this.records.size >= LESSON_LIMITS.parts) return this.refuse('element-limit', `at most ${LESSON_LIMITS.parts} parts in one document`);
       const depth = parent === null ? 1 : this.path(parent).length + 1;
       if (depth > LESSON_LIMITS.depth) return this.refuse('structure-limit', `parts sit at most ${LESSON_LIMITS.depth} deep; ${line.id} would be ${depth}`);
-      this.records.set(line.id, { id: line.id, parent, title: line.title, tag: line.tag ?? null, crop: line.crop ?? null, children: [], steps: [] });
+      this.records.set(line.id, { id: line.id, parent, title: line.title, tag: line.tag ?? null, help: this.helpOf(line, parent), crop: line.crop ?? null, children: [], steps: [] });
       this.order.push(line.id);
       if (parent !== null) this.records.get(parent)?.children.push(line.id);
     }
@@ -999,8 +1017,20 @@ export class LessonBook {
     this.open = [...(at === null ? [] : this.path(at)), line.id];
     const record = this.records.get(line.id);
     const tag = record?.tag ?? null;
+    const help = record?.help ?? null;
     const crop = record?.crop ?? null;
-    return { line: { verb: 'part', id: line.id, ...(at === null ? {} : { in: at }), ...(tag === null ? {} : { tag }), ...(crop === null ? {} : { crop }), title: line.title }, issues };
+    return { line: { verb: 'part', id: line.id, ...(at === null ? {} : { in: at }), ...(tag === null ? {} : { tag }), ...(help === null ? {} : { for: help }), ...(crop === null ? {} : { crop }), title: line.title }, issues };
+  }
+
+  /**
+   * What a part helps. `for=` says it. A part written with a `tag=` and no `for=` helps the last ask of the part it sits in (else the part itself): documents
+   * written before `for=` existed, and a brain that only tags a way, read as help. A part with neither is no help.
+   */
+  private helpOf(line: PartLine, parent: string | null): string | null {
+    if (line.for !== undefined) return line.for;
+    if (line.tag === undefined || parent === null) return null;
+    const steps = this.records.get(parent)?.steps ?? [];
+    return [...steps].reverse().find((step) => step.kind === 'ask')?.id ?? parent;
   }
 
   /** The part a step or an ask goes in: the one it names, else the one last written. */
@@ -1035,9 +1065,11 @@ export class LessonBook {
     if ('refused' in target) return target.refused;
     const { part } = target;
     const accepted = line.is.slice(0, LESSON_LIMITS.accepted);
-    if (accepted.length === 0) return this.refuse('bad-ask', 'an ask needs is=<answer>');
+    const open = line.check === 'any' || line.check === 'done';
+    if (accepted.length === 0 && !open) return this.refuse('bad-ask', 'an ask needs is=<answer>');
     const pick = line.pick ?? null;
-    if (pick !== null) {
+    if (open && line.check === 'done' && pick !== null) return this.refuse('bad-ask', 'a done tick has no choices; use check=any pick=… for a choice');
+    if (pick !== null && !open) {
       if (pick.length < 2) return this.refuse('bad-ask', `pick= needs at least two choices; ask ${line.id} has ${pick.length}`);
       if (!accepted.some((answer) => pick.some((choice) => matchAnswer(answer, choice, line.unit ?? null)))) {
         return this.refuse('bad-ask', `none of the choices in pick=${pick.join(',')} is an answer the ask accepts (${accepted.join(', ')}); the learner could not get it right`);
@@ -1057,7 +1089,7 @@ export class LessonBook {
     const old = part.steps.findIndex((step) => step.id === id);
     if (old >= 0 && part.steps[old]?.kind !== 'ask') return this.refuse('bad-id', `${id} is a step in ${part.id}; an ask needs an id of its own`, id);
     const previous = old >= 0 ? part.steps[old] : undefined;
-    const ask: LessonAsk = { kind: 'ask', id, prompt: line.text, accepted, pick, unit: line.unit ?? null, hints: previous?.kind === 'ask' ? previous.hints : [], ...(line.check === undefined ? {} : { check: line.check }) };
+    const ask: LessonAsk = { kind: 'ask', id, prompt: line.text, accepted: open ? [] : accepted, pick, unit: line.unit ?? null, hints: previous?.kind === 'ask' ? previous.hints : [], ...(line.check === undefined ? {} : { check: line.check }) };
     const before = old >= 0 ? part.steps.slice(0, old) : part.steps;
     const found = spoilersBefore(ask, before, this.contextOf(part.id));
     if (found.length > 0) return this.refuse('spoiler', spoilerMessage(id, found), found[0]?.answer);
@@ -1070,7 +1102,7 @@ export class LessonBook {
     this.written.set(`${part.id}\n${requested}`, id);
     this.open = this.path(part.id);
     return {
-      line: { verb: 'ask', id, in: part.id, is: accepted, ...(pick === null ? {} : { pick }), ...(line.unit === undefined ? {} : { unit: line.unit }), ...(line.check === undefined ? {} : { check: line.check }), text: line.text },
+      line: { verb: 'ask', id, in: part.id, is: open ? [] : accepted, ...(pick === null ? {} : { pick }), ...(line.unit === undefined ? {} : { unit: line.unit }), ...(line.check === undefined ? {} : { check: line.check }), text: line.text },
       issues: [],
     };
   }

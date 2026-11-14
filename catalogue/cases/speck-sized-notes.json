@@ -1,0 +1,23 @@
+{
+ "id": "speck-sized-notes",
+ "title": "speck-sized notes and tags",
+ "family": "small-type",
+ "owner": "painter",
+ "kind": "draw",
+ "found": "2026-11-14",
+ "note": "A tag and a hint are set at a fraction of body size and dim on the dark ground.",
+ "own": [
+  "legible"
+ ],
+ "turns": [
+  {
+   "say": "next question for a young learner, but show the question too, with a strip of cells",
+   "source": {
+    "log": "20261114-223300-c4",
+    "turns": [
+     "t11"
+    ]
+   }
+  }
+ ]
+}
