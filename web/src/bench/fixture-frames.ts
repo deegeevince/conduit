@@ -1,3 +1,4 @@
+import { PROCEDURAL_MEDIA, STROKES, TEXTURES } from '@conduit/language';
 import type { AmbientKind, ClockState, InkRole, Layer, LookId, Mark, Mask, Size, StrokeCharacter } from '@conduit/language';
 import type { ElementFrame, FigureFrame, FieldFrame, Frame, Quality, RunFrame } from '../contracts/frame';
 import type { LookSpec } from '../contracts/look';
@@ -11,7 +12,7 @@ import { safeFrame } from '../painter/layout/metrics';
 /** What the bench draws besides text: one of each figure, and a field. */
 export interface FixtureFigures {
   /** `text`, `figures` or `both` */
-  readonly content: 'text' | 'figures' | 'both';
+  readonly content: 'text' | 'figures' | 'both' | 'paint';
   /** how much of the wavy path is drawn, 0..1 */
   readonly progress: number;
   /** how many rows of the sprite have landed */
@@ -169,7 +170,7 @@ export function fixtureFrame(look: LookId, viewport: Viewport, camera: CameraPos
     return element;
   };
 
-  const showText = shown.content !== 'figures';
+  const showText = shown.content !== 'figures' && shown.content !== 'paint';
   const sizes: readonly Size[] = ['xs', 's', 'm', 'l', 'xl', 'xxl'];
   const roles: readonly InkRole[] = ['ink', 'dim', 'accent', 'alt', 'ink', 'accent'];
   sizes.forEach((size, i) => {
@@ -246,7 +247,7 @@ export function fixtureFrame(look: LookId, viewport: Viewport, camera: CameraPos
     dim: options.dim ?? 0,
     reducedMotion: options.reducedMotion ?? false,
     elements,
-    figures: shown.content === 'text' ? [] : figuresFor(spec, viewport, shown),
+    figures: shown.content === 'text' ? [] : shown.content === 'paint' ? paintFigures(spec, viewport, shown.develop) : figuresFor(spec, viewport, shown),
     fields: shown.field === null ? [] : [fieldFor(spec, shown, ambient, fit.flow)],
     cursor: showText ? cursor : null,
   };
@@ -434,4 +435,96 @@ function planeBoundsOf(layer: Layer, viewport: Viewport): { x: number; y: number
   const width = viewport.width / scale;
   const height = viewport.height / scale;
   return { x: -width / 2, y: -height / 2, width, height };
+}
+
+/**
+ * Every texture, every brush and every medium, each in its own cell: the renderer's paint, to be judged in each look.
+ * Row one is the fill textures (and a soft edge), row two the stroke characters, row three the media over a small
+ * sketch. `develop` is how far the paintings have grown over their sketches (the sketch fades as it rises, as the
+ * painter does it).
+ */
+export function paintFigures(spec: LookSpec, viewport: Viewport, develop: number): FigureFrame[] {
+  const W = viewport.width;
+  const H = viewport.height;
+  const out: FigureFrame[] = [];
+  const columns = 7;
+  const cw = W / columns;
+  const pad = cw * 0.12;
+  const rowH = H / 3.4;
+  const left = -W / 2;
+  const top = -H / 2 + H * 0.04;
+  const roles = spec.roles;
+  const rect = (x: number, y: number, w: number, h: number) => [
+    { x, y },
+    { x: x + w, y },
+    { x: x + w, y: y + h },
+    { x, y: y + h },
+  ];
+  const blob = (cx: number, cy: number, rx: number, ry: number, n = 40) => Array.from({ length: n }, (_, i) => ({ x: cx + Math.cos((i / n) * Math.PI * 2) * rx * (1 + 0.04 * Math.sin(i * 3)), y: cy + Math.sin((i / n) * Math.PI * 2) * ry }));
+
+  // Row one: textures.
+  const textures = [...TEXTURES];
+  textures.forEach((texture, i) => {
+    const x = left + i * cw + pad;
+    out.push({
+      kind: 'shape', key: `tex:${texture}`, id: `tex-${texture}`, layer: 'mid', z: 1,
+      outline: [{ points: i % 2 === 0 ? rect(x, top, cw - 2 * pad, rowH * 0.8) : blob(x + (cw - 2 * pad) / 2, top + rowH * 0.4, (cw - 2 * pad) / 2, rowH * 0.4), closed: true }],
+      geometryKey: `tex:${texture}`, transform: IDENTITY, fill: { colour: roles.accent, to: null, opacity: 1, texture }, stroke: { colour: roles.ink, width: 1.2, progress: 1, character: 'clean' }, opacity: 1, bleed: false, tappable: false,
+    });
+  });
+  out.push({
+    kind: 'shape', key: 'soft', id: 'soft', layer: 'mid', z: 1,
+    outline: [{ points: blob(left + 6 * cw + cw / 2, top + rowH * 0.4, cw * 0.3, rowH * 0.3), closed: true }],
+    geometryKey: 'soft', transform: IDENTITY, fill: { colour: roles.accent, to: null, opacity: 1 }, stroke: null, opacity: 1, bleed: false, tappable: false, soft: cw * 0.12,
+  });
+
+  // Row two: brushes.
+  STROKES.forEach((character, i) => {
+    const x = left + i * cw + pad;
+    const y = top + rowH;
+    const w = cw - 2 * pad;
+    const points = Array.from({ length: 32 }, (_, k) => ({ x: x + (k / 31) * w, y: y + rowH * 0.45 + Math.sin((k / 31) * Math.PI * 2.2) * rowH * 0.25 }));
+    out.push({
+      kind: 'shape', key: `brush:${character}`, id: `brush-${character}`, layer: 'mid', z: 1,
+      outline: [{ points, closed: false }, { points: rect(x, y + rowH * 0.78, w, rowH * 0.1), closed: true }],
+      geometryKey: `brush:${character}:${w}`, transform: IDENTITY, fill: null, stroke: { colour: roles.ink, width: Math.max(2.2, cw * 0.045), progress: 1, character }, opacity: 1, bleed: false, tappable: false,
+    });
+  });
+
+  // Row three: media, each over its own small sketch of a hill, a house, a sun and a tree.
+  PROCEDURAL_MEDIA.forEach((medium, i) => {
+    const x = left + i * cw + pad;
+    const y = top + 2 * rowH + rowH * 0.1;
+    const w = cw - 2 * pad;
+    const h = rowH * 0.85;
+    const sketch: string[] = [];
+    const part = (name: string, points: { x: number; y: number }[], fill: string | null, stroke: string | null) => {
+      const key = `sk:${medium}:${name}`;
+      sketch.push(key);
+      out.push({
+        kind: 'shape', key, id: key, layer: 'mid', z: 1 + sketch.length * 0.01,
+        outline: [{ points, closed: true }], geometryKey: key, transform: IDENTITY,
+        fill: fill === null ? null : { colour: fill, to: null, opacity: 1 }, stroke: stroke === null ? null : { colour: stroke, width: 1.6, progress: 1, character: 'clean' },
+        opacity: Math.max(0, 1 - develop * 1.6), bleed: false, tappable: false,
+      });
+    };
+    part('sky', rect(x, y, w, h), mixHex(roles.ground, roles.ink, 0.16), null);
+    part('sun', blob(x + w * 0.78, y + h * 0.22, w * 0.11, w * 0.11), '#e8b43a', '#b87a10');
+    part('hill', [{ x, y: y + h }, { x, y: y + h * 0.7 }, { x: x + w * 0.3, y: y + h * 0.6 }, { x: x + w * 0.7, y: y + h * 0.72 }, { x: x + w, y: y + h * 0.66 }, { x: x + w, y: y + h }], '#4a8a4c', '#2d5c30');
+    part('house', rect(x + w * 0.18, y + h * 0.5, w * 0.3, h * 0.26), '#c8553d', '#6e2a1c');
+    part('roof', [{ x: x + w * 0.14, y: y + h * 0.5 }, { x: x + w * 0.33, y: y + h * 0.32 }, { x: x + w * 0.52, y: y + h * 0.5 }], '#6e3b2a', '#3a1d12');
+    part('trunk', rect(x + w * 0.66, y + h * 0.62, w * 0.04, h * 0.18), '#6b4a2b', null);
+    part('crown', blob(x + w * 0.68, y + h * 0.5, w * 0.12, h * 0.14), '#2f7a3c', '#1b4a24');
+    out.push({
+      kind: 'picture', key: `paint:${medium}`, id: `paint-${medium}`, layer: 'mid', z: 2,
+      box: { x, y, width: w, height: h }, transform: IDENTITY, src: null, develop, mask: 'none', opacity: 1, waiting: false, tappable: false, medium, sketch,
+    });
+  });
+  return out;
+}
+
+function mixHex(a: string, b: string, t: number): string {
+  const channel = (hex: string, i: number): number => parseInt(hex.slice(1 + i * 2, 3 + i * 2), 16);
+  const part = (i: number): string => Math.round(channel(a, i) * (1 - t) + channel(b, i) * t).toString(16).padStart(2, '0');
+  return `#${part(0)}${part(1)}${part(2)}`;
 }

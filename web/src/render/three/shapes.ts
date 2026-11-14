@@ -169,11 +169,11 @@ void main() {
     float k = floor(u * streaks);
     float inside = fract(u * streaks);
     float born = hash11(k + uSeed * 91.0);
-    float runs = 1.0 - gate * (0.15 + 0.8 * born);
+    float runs = 1.0 - gate * (0.1 + 0.5 * born);
     float jag = (vnoise(vec2(along / 9.0, k * 3.7)) - 0.5) * 0.22;
     float alive = 1.0 - smoothstep(runs - 0.05, runs + 0.05, vDist + jag);
-    float gap = gate * (0.04 + 0.18 * smoothstep(0.1, 1.0, vDist)) + 0.03;
-    float bar = smoothstep(gap, gap + 0.14, inside) * smoothstep(gap, gap + 0.14, 1.0 - inside);
+    float gap = gate * (0.02 + 0.1 * smoothstep(0.1, 1.0, vDist)) + 0.02;
+    float bar = smoothstep(gap, gap + 0.06, inside) * smoothstep(gap, gap + 0.06, 1.0 - inside);
     float tooth = 0.72 + 0.28 * hash21(floor(grainAt) + 17.0);
     alpha *= alive * bar * tooth;
   }
@@ -271,14 +271,15 @@ void main() {
     alpha *= 0.28 + 0.72 * smoothstep(0.24, 0.72, n);
   } else if (kind == 5) {
     // weave: canvas under paint; threads pass over and under
-    float cellSize = max(pitch * 0.55, 2.0 / max(vPpu, 1e-3));
+    float cellSize = max(pitch * 1.3, 3.6 / max(vPpu, 1e-3));
     vec2 g = vLocal / cellSize;
     vec2 id = floor(g);
     vec2 f = fract(g);
     float over = mod(id.x + id.y, 2.0);
     float thread = over > 0.5 ? sin(f.x * 3.14159265) : sin(f.y * 3.14159265);
-    float shade = mix(0.5, thread, 0.9);
-    colour *= 0.88 + 0.16 * shade;
+    float shade = mix(0.35, thread, 0.9);
+    float knot = hash21(id + uSeed * 23.0);
+    colour *= 0.78 + 0.24 * shade + 0.05 * (knot - 0.5);
   }
   if (alpha <= 0.002) discard;
   gl_FragColor = vec4(colour, alpha);

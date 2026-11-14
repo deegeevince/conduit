@@ -17,7 +17,32 @@ export function sizeOf(frame: Frame, maxSide: number): { width: number; height: 
   return { width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(height * scale)) };
 }
 
-function encode(pixels: Uint8Array, width: number, height: number, options: RasteriseOptions): Promise<Blob | null> {
+type Context2D = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
+
+/**
+ * What is drawn into a picture after the stage, over it: the charts, which are not the renderer's to draw (a charting
+ * engine draws each into a surface of its own that lies over the stage). Each is the engine's own still, at the box
+ * the chart has on screen, scaled to the picture's size.
+ */
+export function chartsOver(frame: Frame, options: RasteriseOptions): ((context: Context2D, width: number, height: number) => void) | undefined {
+  const charts = frame.charts;
+  const still = options.chartStill;
+  if (charts === undefined || charts.length === 0 || still === undefined) return undefined;
+  return (context, width, height) => {
+    const scale = Math.min(width / frame.viewport.width, height / frame.viewport.height);
+    const ordered = [...charts].sort((a, b) => a.z - b.z);
+    for (const chart of ordered) {
+      if (chart.opacity <= 0.002) continue;
+      const picture = still(chart.key);
+      if (picture === null) continue;
+      context.globalAlpha = Math.max(0, Math.min(1, chart.opacity));
+      context.drawImage(picture, chart.box.x * scale, chart.box.y * scale, chart.box.width * scale, chart.box.height * scale);
+    }
+    context.globalAlpha = 1;
+  };
+}
+
+function encode(pixels: Uint8Array, width: number, height: number, options: RasteriseOptions, compose?: (context: Context2D, width: number, height: number) => void): Promise<Blob | null> {
   // Rows come off the GPU bottom first.
   const flipped = new Uint8ClampedArray(width * height * 4);
   const stride = width * 4;
@@ -29,6 +54,7 @@ function encode(pixels: Uint8Array, width: number, height: number, options: Rast
     const context = canvas.getContext('2d');
     if (context === null) return Promise.resolve(null);
     context.putImageData(image, 0, 0);
+    compose?.(context, width, height);
     return canvas.convertToBlob({ type: options.mime, quality: options.quality ?? 0.92 });
   }
   const canvas = document.createElement('canvas');
@@ -37,6 +63,7 @@ function encode(pixels: Uint8Array, width: number, height: number, options: Rast
   const context = canvas.getContext('2d');
   if (context === null) return Promise.resolve(null);
   context.putImageData(image, 0, 0);
+  compose?.(context, width, height);
   return new Promise((resolve) => canvas.toBlob(resolve, options.mime, options.quality ?? 0.92));
 }
 
@@ -73,7 +100,7 @@ export function rasteriseFrame(
       options.onIncomplete?.();
     }
     if (pixels === null) return null;
-    return encode(pixels, width, height, options);
+    return encode(pixels, width, height, options, chartsOver(frame, options));
   });
   tail = job.catch(() => undefined);
   return job;

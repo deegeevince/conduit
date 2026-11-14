@@ -118,6 +118,54 @@ export function createPlainFigures(host: HTMLElement): PlainFigures {
     stops[1]?.setAttribute('offset', '1');
   };
 
+  /** A pattern for a hatched or dotted fill, in the shape's own units so it stays put on the shape: one per kind, colour and pitch. */
+  const pattern = (layer: Layer, texture: 'hatch' | 'dots', colour: string, pitch: number): string => {
+    const id = `t-${texture}-${colour.replace(/[^a-z0-9]/gi, '')}-${Math.round(pitch * 100)}`;
+    const definitions = defs.get(layer);
+    if (definitions === undefined || definitions.querySelector(`#${CSS.escape(id)}`) !== null) return id;
+    const made = document.createElementNS(SVG, 'pattern');
+    made.setAttribute('id', id);
+    made.setAttribute('patternUnits', 'userSpaceOnUse');
+    made.setAttribute('width', px(pitch));
+    made.setAttribute('height', px(pitch));
+    if (texture === 'hatch') {
+      // pen lines at 45 degrees, a stroke apart
+      made.setAttribute('patternTransform', 'rotate(-45)');
+      const line = document.createElementNS(SVG, 'rect');
+      line.setAttribute('width', px(pitch));
+      line.setAttribute('height', px(pitch * 0.3));
+      line.setAttribute('fill', colour);
+      made.appendChild(line);
+    } else {
+      const dot = document.createElementNS(SVG, 'circle');
+      dot.setAttribute('cx', px(pitch / 2));
+      dot.setAttribute('cy', px(pitch / 2));
+      dot.setAttribute('r', px(pitch * 0.22));
+      dot.setAttribute('fill', colour);
+      made.appendChild(dot);
+    }
+    definitions.appendChild(made);
+    return id;
+  };
+
+  /** A blur for a soft edge, one per size. */
+  const softness = (layer: Layer, size: number): string => {
+    const id = `s-${Math.round(size * 100)}`;
+    const definitions = defs.get(layer);
+    if (definitions === undefined || definitions.querySelector(`#${CSS.escape(id)}`) !== null) return id;
+    const filter = document.createElementNS(SVG, 'filter');
+    filter.setAttribute('id', id);
+    filter.setAttribute('x', '-50%');
+    filter.setAttribute('y', '-50%');
+    filter.setAttribute('width', '200%');
+    filter.setAttribute('height', '200%');
+    const blur = document.createElementNS(SVG, 'feGaussianBlur');
+    blur.setAttribute('stdDeviation', px(size * 0.5));
+    filter.appendChild(blur);
+    definitions.appendChild(filter);
+    return id;
+  };
+
   const drawShape = (node: Node, figure: ShapeFrame, m: Affine, viewport: Viewport): void => {
     const body = node.body;
     const key = figure.geometryKey;
@@ -130,7 +178,12 @@ export function createPlainFigures(host: HTMLElement): PlainFigures {
     const stroke = figure.stroke;
     put(node, node.root, 'transform', figure.bleed ? '' : matrixText(m));
     put(node, node.root, 'opacity', figure.opacity >= 1 ? '' : px(figure.opacity));
-    if (figure.fill === null) put(node, body, 'fill', 'none');
+    put(node, body, 'filter', figure.soft !== undefined && figure.soft > 0 && !figure.bleed ? `url(#${softness(node.layer, figure.soft)})` : '');
+    const texture = figure.fill?.texture;
+    if (figure.fill !== null && (texture === 'hatch' || texture === 'dots')) {
+      put(node, body, 'fill', `url(#${pattern(node.layer, texture, figure.fill.colour, Math.max(1, (figure.stroke?.width ?? 1.2) * 2.2))})`);
+      put(node, body, 'fill-opacity', figure.fill.opacity >= 1 ? '' : px(figure.fill.opacity));
+    } else if (figure.fill === null) put(node, body, 'fill', 'none');
     else if (figure.fill.to === null) {
       put(node, body, 'fill', figure.fill.colour);
       put(node, body, 'fill-opacity', figure.fill.opacity >= 1 ? '' : px(figure.fill.opacity));
@@ -245,7 +298,16 @@ export function createPlainFigures(host: HTMLElement): PlainFigures {
     sync(figures, camera, viewport) {
       const seen = new Set<string>();
       const wanted = new Map<Layer, string[]>();
+      // The renderer cannot paint a sketch in a medium, so it keeps the sketch: a painting that is wanted shows its sketch whole instead of fading it away to nothing.
+      const sketched = new Map<string, number>();
       for (const figure of figures) {
+        if (figure.kind !== 'picture' || figure.medium === undefined || figure.src !== null || figure.develop <= 0) continue;
+        for (const key of figure.sketch ?? []) sketched.set(key, figure.opacity);
+      }
+      for (const original of figures) {
+        const whole = original.kind === 'shape' ? sketched.get(original.key) : undefined;
+        const figure: FigureFrame =
+          original.kind === 'shape' && whole !== undefined ? { ...original, opacity: Math.max(original.opacity, whole), stroke: original.stroke === null ? null : { ...original.stroke, progress: 1 } } : original;
         seen.add(figure.key);
         let node = nodes.get(figure.key);
         if (node === undefined) {
