@@ -1,5 +1,5 @@
 import { API, CANVAS, DATA_LIMITS, EMPTY_STAGE, PASTE_AS_DOCUMENT_CHARS, FULL_CAPABILITIES, LANGUAGE, LEAD_WINDOW, LineNormalizer, LineReader, TurnScore, buildSystemPrompt, draftFactsOf, serializeLine, settle, splitCells, wearingAt, worthALook } from '@conduit/language';
-import type { ActivityState, BrainChange, BrainChoice, BrainMode, CriticFinding, FixPolicy, PromptVariant, ToolChoice } from '@conduit/language';
+import type { ActivityState, BrainChange, BrainChoice, BrainMode, CriticFinding, DocumentSummary, DocumentView, FixPolicy, NodeId, NodeStatus, OpenDocumentResponse, PromptVariant, Seen, ToolChoice } from '@conduit/language';
 import type {
   BackEvent,
   BackEventRecord,
@@ -35,10 +35,12 @@ import type { ImageModel } from './images';
 import { creditLine } from './pictures';
 import type { PictureService } from './pictures';
 import type { HeldDocument } from './documents';
+import { NO_DOCUMENTS, readDocLine } from './document';
+import type { DocChange, Documents, LoadedDocument } from './document';
 import { buildContext, holdStanding, parseStanding, rememberTurn } from './memory';
 import type { StandingAsk } from './memory';
 import { MAX_PROBLEMS, SERVER_LIMITS } from './session';
-import type { SessionLog } from './session-log';
+import type { SessionEntry, SessionLog } from './session-log';
 import type { ActiveTurn, Session, SessionStore, StageSink } from './session';
 import { readPasted } from '../reading/pasted';
 import { factsOf, tableFromText } from './datasets';
@@ -94,6 +96,8 @@ export interface ConductorDeps {
   readonly audit?: Audit;
   /** v2.1 ops. The usage meter: every brain turn and review pass is written to it; its throttle only ever warns the owner, never refuses a turn. */
   readonly usage?: UsageMeter;
+  /** v3. The document each conversation makes: a fold over its session log (PLAN-v3-core 2.11). Absent: no conversation has one. */
+  readonly documents?: Documents;
   /** milliseconds; injected so nothing in the domain reads the wall clock directly */
   readonly now: () => number;
 }
@@ -136,6 +140,73 @@ export class Conductor {
     return this.deps.audit ?? NO_AUDIT;
   }
 
+  private get docs(): Documents {
+    return this.deps.documents ?? NO_DOCUMENTS;
+  }
+
+  /**
+   * v3. Writes a record to the session log and gives the same record to the conversation's document, which is a fold over exactly these
+   * records: so the document in memory and the one folded from the file after a restart cannot differ. A `state` or `node` record that
+   * changed nothing is not written. What changed in the document is sent to the painter as a `doc` event.
+   */
+  private journal(s: Session, entry: SessionEntry): DocChange | null {
+    const change = this.docs.record(s.id, entry);
+    const gated = entry.type === 'state' || entry.type === 'node';
+    if (!gated || change?.applied === true) this.deps.sessionLog.write(s.id, entry);
+    if (change !== null && change.nodes.length > 0) {
+      const turnId = 'turn' in entry ? entry.turn : null;
+      const turn = turnId === null ? null : (s.turns.get(turnId) ?? null);
+      this.emit(s, turn, { type: 'doc', turn: turnId, document: change.document, title: change.title, root: change.root, nodes: change.nodes });
+    }
+    return change;
+  }
+
+  /** The person's place and values at the instant they acted (`seen`, on a tap, a control or an act): taken as state when it says something the server had not heard. */
+  private adoptSeen(s: Session, turn: string | null, seen: Seen | undefined): void {
+    if (seen === undefined) return;
+    this.journal(s, { type: 'state', turn, change: { kind: 'sync', seen } });
+  }
+
+  /** v3. The catalogue: every document there is, newest first. */
+  listDocuments(): Promise<readonly DocumentSummary[]> {
+    return this.docs.list();
+  }
+
+  /** v3. One document, live or folded from its log, with the person's state in it; null when there is none. */
+  documentView(id: string): Promise<DocumentView | null> {
+    return this.docs.view(id);
+  }
+
+  /** v3. The document this session is making or has opened again; null while it has none. */
+  documentOf(session: string): DocumentView | null {
+    this.assertSession(session);
+    return this.docs.viewOfSession(session);
+  }
+
+  /**
+   * v3. Opens a document again in a new session, with its own log file that says what it continues (`resumes`). The brain is a fresh
+   * process and learns the place from the brief (`context.document`); the page is given the view to draw.
+   */
+  async resumeDocument(id: string, request: CreateSessionRequest): Promise<OpenDocumentResponse> {
+    const loaded = await this.docs.load(id);
+    if (loaded === null) throw errors.notFound(`document ${id}`);
+    const created = this.createSession(request, loaded);
+    const view = this.docs.viewOfSession(created.session);
+    if (view === null) throw errors.notFound(`document ${id}`);
+    this.deps.log.info('document.resumed', { session: created.session, document: id, nodes: Object.keys(view.document.nodes).length });
+    return { ...created, view };
+  }
+
+  /**
+   * v3, for WS5. Sets a node's status from outside the turn that wrote it (`verified`, `refused`), or sends it back to be written again
+   * (`reset`: its body goes, its children stay). Logged as a `node` record and sent as a `doc` event. False when it changed nothing.
+   */
+  setNodeStatus(session: string, node: NodeId, status: NodeStatus, options: { readonly turn?: string | null; readonly why?: string; readonly reset?: boolean } = {}): boolean {
+    const s = this.deps.sessions.require(session, this.deps.now());
+    const change = this.journal(s, { type: 'node', turn: options.turn ?? null, node, status, ...(options.reset === true ? { reset: true as const } : {}), why: options.why ?? null });
+    return change?.applied === true;
+  }
+
   /** One line of the audit trail about this turn, in the name of whoever started it. */
   private auditTurn(s: Session, turn: ActiveTurn, entry: Omit<Parameters<Audit['record']>[0], 'session' | 'turn'>): void {
     this.audit.record({ login: turn.login, ...entry, session: s.id, turn: turn.id });
@@ -158,11 +229,12 @@ export class Conductor {
     };
   }
 
-  createSession(request: CreateSessionRequest): CreateSessionResponse {
+  createSession(request: CreateSessionRequest, resume: LoadedDocument | null = null): CreateSessionResponse {
     const { sessions, now, log } = this.deps;
     const session = sessions.create(request.screen, request.capabilities, now(), { ...EMPTY_STAGE, look: request.look, lookName: request.look });
     this.record(session, { type: 'ready', screen: request.screen, capabilities: request.capabilities, look: request.look });
-    this.deps.sessionLog.write(session.id, {
+    this.docs.begin(session.id, this.deps.sessionLog.fileOf(session.id), resume);
+    this.journal(session, {
       type: 'session',
       session: session.id,
       started: new Date(now()).toISOString(),
@@ -171,6 +243,7 @@ export class Conductor {
       screen: request.screen,
       capabilities: request.capabilities,
       services: this.servicesFor(session.capabilities, session.id),
+      ...(resume === null ? {} : { resumes: resume.fold.id }),
     });
     log.info('session.created', { session: session.id, cols: request.screen.cols, rows: request.screen.rows });
     return { session: session.id, lead: LEAD_WINDOW };
@@ -225,6 +298,7 @@ export class Conductor {
       this.closeMemoryWithoutReport(s, previous);
     }
 
+    if (input.kind === 'tap' || input.kind === 'act') this.adoptSeen(s, previous?.id ?? null, input.seen);
     const brain = brains.forInput(input);
     // A process is started for the first thing the user says, not for a page that only looks (the gallery, the explorer).
     if (brain === brains.configured && (input.kind === 'prompt' || input.kind === 'tap' || input.kind === 'act')) this.prepareBrain(s);
@@ -573,6 +647,7 @@ export class Conductor {
     this.denyPending(session, null);
     this.deps.brains.configured.release?.(session.id);
     this.deps.assets.drop(session.id);
+    this.docs.release(session.id);
     this.deps.sessionLog.close(session.id);
     session.closeSink?.();
     session.sink = null;
@@ -647,9 +722,15 @@ export class Conductor {
         return;
       case 'tap':
         this.deps.sessionLog.write(s.id, { type: 'tap', turn: event.turn, id: event.id, text: event.text, choice: event.choice });
+        this.adoptSeen(s, event.turn, event.seen);
         return;
       case 'control':
         this.deps.sessionLog.write(s.id, { type: 'control', turn: event.turn, id: event.id, value: event.value, text: event.text, send: event.send });
+        this.adoptSeen(s, event.turn, event.seen);
+        return;
+      case 'state':
+        // The person did something the page committed: logged if it changed anything, and what it moved is in the next brief.
+        this.journal(s, { type: 'state', turn: event.turn, change: event.change });
         return;
       case 'draft':
         // How the draft will land: what look and fix is waiting on. The picture, when there is one, arrives by upload.
@@ -729,7 +810,7 @@ export class Conductor {
       for (const call of turn.calls.values()) if (!call.asked) this.recordCall(s, turn, call.tool, call.summary, 'allowed', 'policy', `still running when the turn ended (${reason})`);
       turn.calls.clear();
     });
-    step('log', () => this.deps.sessionLog.write(s.id, { type: 'end', turn: turn.id, reason, message, lines: turn.lineCount }));
+    step('log', () => void this.journal(s, { type: 'end', turn: turn.id, reason, message, lines: turn.lineCount }));
     step('emit', () => this.emit(s, turn, { type: 'end', turn: turn.id, reason, message }));
     step('say', () => this.deps.log.info('turn.ended', { session: s.id, turn: turn.id, reason, lines: turn.lineCount, durationMs: this.deps.now() - turn.openedAt }));
     step('wake', () => this.wake(s.id));
@@ -933,12 +1014,15 @@ export class Conductor {
         sessionLog.write(s.id, { type: 'techniques', turn: turn.id, ids: techniques.map((card) => card.id) });
       }
       const data: DataFacts[] = s.tables.map((table) => factsOf(table, gathered.data.has(table.id)));
+      const documentNow = this.docs.viewOfSession(s.id);
       const context = {
         ...base,
         documents: s.documents.map((doc): DocumentFacts => ({ ...doc.facts, fresh: fresh.has(doc.facts.id) })),
         unread: gathered.unread,
         techniques,
         ...(data.length > 0 ? { data } : {}),
+        // v3. The document and where the person is in it: WS7's DOCUMENT and HERE blocks are made from these.
+        ...(documentNow === null ? {} : { document: { document: documentNow.document, state: documentNow.state } }),
       };
       const pdfs = s.documents.flatMap((doc) => (doc.pdf === null ? [] : [{ id: doc.facts.id, bytes: doc.pdf }]));
       const snapshot = this.deps.sight === 'snapshot' && turn.previous !== null ? (this.deps.assets.snapshot(s.id, turn.previous) ?? null) : null;
@@ -1160,6 +1244,7 @@ export class Conductor {
         this.keep(s, turn, ask);
         return undefined;
       }
+      if (this.deps.documents !== undefined && this.takeDocumentLine(s, turn, event.raw, pass)) return undefined;
       this.reject(s, turn, event.raw, event.issues);
       return undefined;
     }
@@ -1191,7 +1276,8 @@ export class Conductor {
     log.debug('turn.line', { turn: turn.id, seq, text });
     if (issues.some((issue) => issue.severity === 'warn')) this.noteProblem(turn, text, 'repaired', issues.filter((issue) => issue.severity === 'warn'));
     const start = pushed.schedule.lines.find((timed) => timed.seq === seq)?.start ?? penBefore;
-    sessionLog.write(s.id, { type: 'line', turn: turn.id, seq, text, start, issues, pass });
+    const node = this.docs.place(s.id, text);
+    this.journal(s, { type: 'line', turn: turn.id, seq, text, start, issues, pass, ...(node === null ? {} : { node }) });
     this.emit(s, turn, { type: 'line', turn: turn.id, seq, text, issues });
     if (line.verb === 'paint') this.paint(s, turn, seq, line, pushed.schedule);
     if (line.verb === 'row') this.findPicture(s, turn, line.id, line.cells, pushed.schedule);
@@ -1237,6 +1323,23 @@ export class Conductor {
       decidedBy,
       ...(note === undefined ? {} : { note }),
     });
+  }
+
+  /**
+   * v3. A document line (`part`, `step`, `ask`, `hint`, `reply`: 2.10) that the parser did not know yet comes here as a reject. It is the
+   * document's, not a fault: it is logged as a line and given to the document, and the painter hears of it as a `doc` event. Once the parser
+   * reads these verbs they arrive as lines and are placed in `ingest`; the document is built from the same record either way.
+   */
+  private takeDocumentLine(s: Session, turn: ActiveTurn, raw: string, pass: number): boolean {
+    if (readDocLine(raw) === null || turn.lineCount >= SERVER_LIMITS.linesPerTurn) return false;
+    const seq = s.nextSeq;
+    s.nextSeq += 1;
+    turn.lineCount += 1;
+    const text = raw.replace(/\s+/g, ' ').trim();
+    const node = this.docs.place(s.id, text);
+    this.deps.log.debug('turn.document_line', { turn: turn.id, seq, text });
+    this.journal(s, { type: 'line', turn: turn.id, seq, text, start: turn.score.schedule.pen, issues: [], pass, ...(node === null ? {} : { node }) });
+    return true;
   }
 
   /** `standing | …` or `standing drop n`: kept for the conversation and given back in every later brief. */
@@ -1393,6 +1496,8 @@ function concerns(event: BackEvent, turn: string): boolean {
       return event.turn === null || event.turn === turn;
     case 'report':
       return event.report.turn === turn;
+    case 'state':
+      return event.turn === null || event.turn === turn;
     case 'started':
     case 'progress':
     case 'draft':

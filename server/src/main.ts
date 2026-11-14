@@ -14,6 +14,8 @@ import { createApp } from './http/app';
 import { createImageModel } from './images/registry';
 import { createDatasets, createLibrary } from './library/registry';
 import { createDocumentReader } from './reading/web-reader';
+import { createCatalogue } from './documents/catalogue';
+import { createDocuments } from './documents/store';
 import { createJsonlSessionLog } from './logs/jsonl-session-log';
 import { NO_SESSION_LOG } from './domain/session-log';
 import { createLogger } from './log';
@@ -89,6 +91,8 @@ function boot(env: Env): void {
     refreshDatasets();
     setInterval(refreshDatasets, env.datasets.refreshMs).unref();
   }
+  // v3. The documents conversations make, and the catalogue of them in the data folder (an index over the session logs, rebuilt from them when it is behind).
+  const documents = createDocuments({ catalogue: createCatalogue({ dir: env.data.documents, logs: env.logDir, log: log.child({ part: 'documents' }), now }), log: log.child({ part: 'documents' }), now });
   const conductor = new Conductor({
     sessions: new SessionStore(),
     brains,
@@ -112,6 +116,7 @@ function boot(env: Env): void {
     modes: env.modes,
     audit,
     usage,
+    documents,
     now,
   });
   const withheld = withheldCredentialNames();
@@ -157,6 +162,7 @@ function boot(env: Env): void {
     void conductor
       .close()
       .then(() => brains.close())
+      .then(() => documents.close())
       .then(() => sessionLog.closeAll())
       .catch((error: unknown) => log.error('server.close_failed', { error }))
       .finally(() => {

@@ -2,6 +2,7 @@
 // server and painter, and the HTTP bodies around them. Both sides import these
 // types, so a field cannot be renamed on one side only.
 
+import type { DocNode, DocState, Document, NodeId, NodeStatus, Seen, StateChange } from './doc-spine';
 import type { StageBase } from './schedule';
 import type { PlacedBox, Sight } from './sight';
 import type { ShownItem } from './stage';
@@ -183,7 +184,8 @@ export type TurnInput =
   /** `images` (v2.1): ids of pictures the user gave with these words (`API.uploads`), in the order they were added; absent means none */
   | { readonly kind: 'prompt'; readonly text: string; readonly images?: readonly string[] }
   /** the user tapped a choice; `text` is what the choice said */
-  | { readonly kind: 'tap'; readonly id: string; readonly text: string }
+  /** v3. `seen`: where the person stood in the document when they tapped (2.5) */
+  | { readonly kind: 'tap'; readonly id: string; readonly text: string; readonly seen?: Seen }
   /** play a named fixture script; always answered by the replay brain */
   | { readonly kind: 'demo'; readonly script: string }
   /** play these lines of Series: a script copied from an earlier answer, edited or not. Always answered by the replay brain. */
@@ -193,7 +195,7 @@ export type TurnInput =
    * pressed, or a control marked `send` committed. `text` is the control's
    * label (a pick: the option chosen); `values` is every live control's value.
    */
-  | { readonly kind: 'act'; readonly id: string; readonly text: string; readonly values: ControlValues }
+  | { readonly kind: 'act'; readonly id: string; readonly text: string; readonly values: ControlValues; readonly seen?: Seen }
   /**
    * v2.1. Keep making what is on stage better (`/better`, or a tapped "keep going"). No new answer is asked for: the critic looks at
    * the resting picture, the brain is shown what it found and adds to the picture, and that repeats until the critic sees no gain,
@@ -325,7 +327,14 @@ export type StageEvent =
    * normaliser wrote it). Only a picture that was found is announced: with none, nothing is said and the placeholder stays. `url` is same
    * origin (`API.picture`); `credit` is the line drawn at its foot and `landing` the page it is credited to.
    */
-  | { readonly type: 'picture'; readonly turn: string; readonly id: string; readonly url: string; readonly credit: string; readonly landing: string };
+  | { readonly type: 'picture'; readonly turn: string; readonly id: string; readonly url: string; readonly credit: string; readonly landing: string }
+  /**
+   * v3 (2.10, 2.11). A node of the conversation's document changed: a part was named, a step, an `ask` or a `hint` landed in it, or its
+   * status moved (`outlined` to `filling` to `filled`, then `verified` or `refused`). `nodes` are whole nodes, the changed ones and any
+   * parent whose children changed, so the page replaces by id and never has to merge; a later event for the same node is newer. `turn` is
+   * null for a change made off the turn clock (an answer verified ahead). Not transient: a reconnecting stream is given it again.
+   */
+  | { readonly type: 'doc'; readonly turn: string | null; readonly document: string; readonly title: string; readonly root: NodeId; readonly nodes: readonly DocNode[] };
 
 export type StageEventType = StageEvent['type'];
 
@@ -335,7 +344,7 @@ export type StageEventType = StageEvent['type'];
  * the beat is a named event the page reads but does not pass on as a stage event.)
  */
 export const STREAM_HEARTBEAT = { eventName: 'heartbeat', everyMs: 15_000, silentMs: 40_000 } as const;
-export const STAGE_EVENT_TYPES: readonly StageEventType[] = ['hello', 'turn', 'reading', 'line', 'reject', 'end', 'pass', 'asset', 'data', 'picture', 'candidate', 'critic', 'activity', 'permission'];
+export const STAGE_EVENT_TYPES: readonly StageEventType[] = ['hello', 'turn', 'reading', 'line', 'reject', 'end', 'pass', 'asset', 'data', 'picture', 'candidate', 'critic', 'activity', 'permission', 'doc'];
 
 /** Painter to server: the back channel. */
 export type BackEvent =
@@ -364,6 +373,8 @@ export type BackEvent =
       readonly playhead: number;
       /** true when the element was a choice, so this tap is also the next turn's input */
       readonly choice: boolean;
+      /** v3. Where the person stood in the document, and what every leaf held, at this instant */
+      readonly seen?: Seen;
     }
   | { readonly type: 'report'; readonly report: TurnReport }
   /**
@@ -372,7 +383,7 @@ export type BackEvent =
    * dragging: local bindings need no round trip. `send` is true when the
    * change is also the next turn's input, as a choice's tap is.
    */
-  | { readonly type: 'control'; readonly turn: string | null; readonly id: string; readonly value: ControlValue; readonly text: string; readonly playhead: number; readonly send: boolean }
+  | { readonly type: 'control'; readonly turn: string | null; readonly id: string; readonly value: ControlValue; readonly text: string; readonly playhead: number; readonly send: boolean; readonly seen?: Seen }
   /**
    * How pass `pass` of an open turn will land: sight for the stage as the
    * lines so far will leave it, computed without waiting for the playhead.
@@ -381,10 +392,16 @@ export type BackEvent =
    */
   | { readonly type: 'draft'; readonly turn: string; readonly pass: number; readonly sight: Sight; readonly placed?: readonly PlacedBox[]; readonly snapshot: boolean; readonly content?: ContentCount }
   /** v2.1, agent mode. The owner's answer to a `permission` event. `allow: true` lets that one action happen once; there is no "always". */
-  | { readonly type: 'permit'; readonly turn: string; readonly request: string; readonly allow: boolean };
+  | { readonly type: 'permit'; readonly turn: string; readonly request: string; readonly allow: boolean }
+  /**
+   * v3 (2.5). The person's state moved, committed in the page by `advance`: a place reached, a control committed, an answer tried, a
+   * node finished. The server logs it (a `state` record), applies it to its copy of the document's state, and tells the mind where the
+   * person is. Not sent while dragging and never a tick. `turn` is the open turn, or null.
+   */
+  | { readonly type: 'state'; readonly turn: string | null; readonly document: string; readonly change: StateChange };
 
 export type BackEventType = BackEvent['type'];
-export const BACK_EVENT_TYPES: readonly BackEventType[] = ['ready', 'started', 'progress', 'tap', 'report', 'control', 'draft', 'permit'];
+export const BACK_EVENT_TYPES: readonly BackEventType[] = ['ready', 'started', 'progress', 'tap', 'report', 'control', 'draft', 'permit', 'state'];
 
 /** A back-channel event as the server keeps it. `cursor` increases over the session. */
 export interface BackEventRecord {
@@ -602,6 +619,56 @@ export interface StartTurnResponse {
   readonly warning?: string;
 }
 
+/** v3. One line of a document's outline in the catalogue: a node that is not itself a lesson way, with what is under it. */
+export interface OutlineItem {
+  readonly id: NodeId;
+  readonly title: string;
+  readonly depth: number;
+  readonly status: NodeStatus;
+  /** children that hold a lesson: the ways written for it */
+  readonly ways: number;
+  readonly tags: readonly string[];
+  readonly done: boolean;
+}
+
+/** v3 (2.11). A document as the catalogue lists it. Held in `<DATA_DIR>/documents/index.json`; never holds a photo or anything read from one beyond the question's own words. */
+export interface DocumentSummary {
+  readonly id: string;
+  readonly title: string;
+  /** ISO time the conversation began; null when it is not known */
+  readonly created: string | null;
+  /** ISO time the document last changed */
+  readonly updated: string;
+  /** the session logs the document is folded from, oldest first: a document opened again continues in a later file */
+  readonly files: readonly string[];
+  readonly nodes: number;
+  /** nodes whose body is a lesson */
+  readonly lessons: number;
+  /** named and not written: nothing under them yet */
+  readonly outlined: number;
+  readonly done: number;
+  readonly cursor: NodeId;
+  readonly outline: readonly OutlineItem[];
+  /** by technique: the nodes tagged with each, for the catalogue's second listing */
+  readonly techniques: readonly { readonly tag: string; readonly nodes: readonly NodeId[] }[];
+  /** a picture of the furthest place reached; null until the page has made one */
+  readonly thumbnail: string | null;
+  /** a session is making it now */
+  readonly live: boolean;
+}
+
+/** v3. A document with the person's place, tries and answers in it. */
+export interface DocumentView {
+  readonly document: Document;
+  readonly state: DocState;
+  readonly summary: DocumentSummary;
+}
+
+/** v3. The answer to opening a document again: a new session, bound to it, and what to draw. */
+export interface OpenDocumentResponse extends CreateSessionResponse {
+  readonly view: DocumentView;
+}
+
 export interface PostEventsRequest {
   readonly events: readonly BackEvent[];
 }
@@ -666,6 +733,14 @@ export const API = {
   exploreRun: (run: string): string => `/api/explore/runs/${run}`,
   /** GET: one prompt's result in a run */
   exploreResult: (run: string, prompt: string): string => `/api/explore/runs/${run}/${prompt}`,
+  /** v3. GET: the catalogue, `DocumentSummary[]`, newest first: every conversation that made a document, from the index in the data folder. */
+  documents: '/api/documents',
+  /** v3. GET: one document and the person's state in it as `DocumentView`, folded from the log if it is not live. 404 for one that is not in the catalogue. */
+  document: (id: string): string => `/api/documents/${id}`,
+  /** v3. POST a `CreateSessionRequest`: opens the document again in a new session (after a restart, or from the catalogue). 201 `OpenDocumentResponse`. */
+  documentOpen: (id: string): string => `/api/documents/${id}/open`,
+  /** v3. GET: the document this session is making or has reopened, as `DocumentView`; 404 until it has one. */
+  sessionDocument: (session: string): string => `/api/sessions/${session}/document`,
   relayNext: '/api/relay/next',
   relayGuide: '/api/relay/guide',
   relayStatus: '/api/relay/status',

@@ -21,6 +21,7 @@ const SHAPES: Record<StageEventType, Record<string, Shape>> = {
   critic: { turn: 'string', finding: 'object' },
   activity: { turn: 'string', id: 'string', tool: 'string', summary: 'string', state: 'string', ms: 'number|null' },
   permission: { turn: 'string', request: 'string', tool: 'string', summary: 'string', risk: 'string', expiresMs: 'number' },
+  doc: { turn: 'string|null', document: 'string', title: 'string', root: 'string', nodes: 'array' },
 };
 
 function isShape(value: unknown, shape: Shape): boolean {
