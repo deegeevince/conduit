@@ -14,11 +14,8 @@
 .qwrap { display: contents; }
 .sentinel { height: 1px; margin-bottom: -1px; }
 .crumb { overflow-wrap: anywhere; }
-.ctx { position: sticky; top: 0; z-index: 5; margin: 4px 0 8px; padding: 12px 18px 14px; background: var(--card); border: 3px solid var(--accent); border-radius: var(--r-l); display: grid; gap: 2px 20px; grid-template-columns: 1fr; box-shadow: 0 6px 0 var(--ground); }
 .ctx-kicker { color: var(--dim); font-size: calc(18px * var(--ts, 1)); font-weight: 700; }
 .more { display: none; }
-.ctx .ctx-text { margin: 0; font-size: calc(28px * var(--ts, 1)); font-weight: 800; line-height: 1.2; overflow-wrap: anywhere; }
-.ctx .crop { max-width: 100%; max-height: 120px; border-radius: var(--r-m); border: 2px solid var(--line); background: #fff; justify-self: start; }
 
 /* waiting */
 .wait-note { color: var(--dim); font-size: calc(20px * var(--ts, 1)); }
@@ -187,15 +184,11 @@ button.seg:not(.lit) { opacity: 0.62; }
 /* a desk: the picture beside its steps, with the lead room */
 @media (min-width: 900px) {
   .page { padding: 0 32px 24px; }
-  .ctx { padding: 14px 28px 18px; }
-  .ctx .ctx-text { font-size: calc(36px * var(--ts, 1)); }
   :root { --cs: 52px; }
   .tiles { justify-content: center; }
   .tile { flex: 0 1 auto; min-width: 220px; padding: 14px 18px; }
   .cards { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
   .pcard .ptext { font-size: calc(22px * var(--ts, 1)); }
-  .ctx.with-crop { grid-template-columns: 1fr auto; align-items: center; }
-  .ctx .crop { grid-column: 2; grid-row: 1 / span 2; max-height: 150px; }
   .run.has-fig { grid-template-columns: minmax(0, 46fr) minmax(0, 54fr); gap: 32px; align-items: start; }
   .words { font-size: calc(28px * var(--ts, 1)); }
   .ask-prompt { font-size: calc(30px * var(--ts, 1)); }
@@ -212,13 +205,6 @@ button.seg:not(.lit) { opacity: 0.62; }
   .tile { flex-basis: calc(50% - 6px); }
 }
 @media (max-width: 899px) {
-  .ctx { grid-template-columns: 1fr auto; padding: 8px 14px 10px; }
-  .ctx .ctx-text { grid-column: 1 / -1; font-size: calc(24px * var(--ts, 1)); }
-  .ctx.long .more { display: block; min-height: 48px; padding: 0 14px; border: 2px solid var(--line); border-radius: var(--r-m); background: var(--soft); color: var(--ink); font-size: calc(18px * var(--ts, 1)); font-weight: 700; }
-  .ctx.long:not(.expanded) .ctx-text { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-  .ctx.docked:not(.expanded) .ctx-text { font-size: calc(22px * var(--ts, 1)); -webkit-line-clamp: 2; }
-  .ctx.docked .crop { display: none; }
-  .ctx .crop { grid-column: 1 / -1; }
   .tile { flex: 1 1 calc(50% - 6px); min-width: 0; padding: 8px 6px; }
 }
 @media (max-width: 899px) and (max-height: 640px) {
@@ -227,7 +213,7 @@ button.seg:not(.lit) { opacity: 0.62; }
 
 /* the paper: the page lays its ink layer over this box (data-ink-slot); until then it is a blank ruled card */
 .writing { display: grid; gap: 12px; }
-.paper { position: relative; width: 100%; height: clamp(180px, 28vh, 300px); border: 3px solid var(--ink); border-radius: var(--r-m); background: #fffdf6 repeating-linear-gradient(to bottom, transparent 0, transparent 47px, #cfc9b8 47px, #cfc9b8 48px); display: grid; place-items: center; touch-action: none; }
+.paper { position: relative; width: 100%; height: clamp(140px, 22vh, 260px); border: 3px solid var(--ink); border-radius: var(--r-m); background: #fffdf6 repeating-linear-gradient(to bottom, transparent 0, transparent 47px, #cfc9b8 47px, #cfc9b8 48px); display: grid; place-items: center; touch-action: none; }
 /* paper is paper in every look: the pencil's ink is dark, so the sheet it writes on is light */
 .paper-hint { color: #6b665a; font-size: calc(20px * var(--ts, 1)); pointer-events: none; }
 
@@ -282,14 +268,49 @@ mark.fact { background: var(--accent); color: var(--on-accent, #fff); border-rad
 .gcell.on { background: var(--good-soft); border-color: var(--good); }
 
 /* a figure the question is about is the work surface: big, central, never a thumbnail */
-.ctx:not(.pinned) .crop { grid-column: 1 / -1; width: 100%; max-height: 40vh; object-fit: contain; object-position: top left; }
 .dock .btn { min-height: 56px; }
-.ctx:not(.pinned) > * { grid-column: 1 / -1; }
 /* the question's own screen leaves room for the answer; once she is working it is the compact pinned header */
-.ctx:not(.pinned) .crop { max-height: 26vh; }
 .crumb { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* the look's own corners and the audience's type: the kit's controls follow them too */
 body { font-size: calc(20px * var(--ts, 1)); }
 .btn { border-radius: var(--r-m); font-size: calc(20px * var(--ts, 1)); min-height: max(56px, var(--tt, 48px)); }
 .nav, .segb, .more { min-height: max(48px, var(--tt, 48px)); }
+
+
+/* the question card (context): calm and sized to the screen; its picture beside the words on a desk, under them on a phone, never over them.
+   Unpinned it sits in the page (it does not stick, so a long question never covers the answer); pinned it is the small header that stays. */
+.ctx { position: static; margin: 4px 0 10px; padding: 12px 18px 14px; background: var(--card); border: 3px solid var(--accent); border-radius: var(--r-l); display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px 20px; align-items: start; }
+.ctx.pinned { position: sticky; top: 0; z-index: 5; }
+.ctx .ctx-text { margin: 0; font-size: calc(28px * var(--ts, 1)); font-weight: 800; line-height: 1.22; overflow-wrap: anywhere; }
+.ctx .crop { justify-self: start; max-width: 100%; max-height: min(22vh, 180px); object-fit: contain; object-position: top left; border-radius: var(--r-m); border: 2px solid var(--line); background: #fff; }
+.ctx.pinned .crop { max-height: 84px; }
+@media (min-width: 900px) {
+  .ctx { padding: 14px 24px 16px; }
+  .ctx.with-crop:not(.pinned) { grid-template-columns: minmax(0, 1fr) minmax(220px, 34%); }
+  .ctx.with-crop:not(.pinned) > * { grid-column: 1; }
+  .ctx.with-crop:not(.pinned) .crop { grid-column: 2; grid-row: 1 / span 3; justify-self: end; width: 100%; max-height: 200px; }
+  .ctx .ctx-text { font-size: calc(30px * var(--ts, 1)); }
+}
+@media (max-width: 899px) {
+  .ctx { padding: 8px 14px 10px; }
+  .ctx .ctx-text { font-size: calc(22px * var(--ts, 1)); }
+  .ctx.long .more { display: block; justify-self: start; min-height: 48px; padding: 0 14px; border: 2px solid var(--line); border-radius: var(--r-m); background: var(--soft); color: var(--ink); font-size: calc(18px * var(--ts, 1)); font-weight: 700; }
+  .ctx.long:not(.expanded):not(.pinned) .ctx-text { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .ctx:not(.pinned) .crop { max-height: 96px; }
+}
+/* tapped: the whole of the picture, as big as the screen allows */
+.ctx .crop.zoom, .ctx.with-crop .crop.zoom { grid-column: auto; grid-row: auto; justify-self: auto; position: fixed; inset: 8px; z-index: 50; width: calc(100% - 16px); height: calc(100% - 16px); max-width: none; max-height: none; object-fit: contain; object-position: center; background: #111; border: 3px solid var(--accent); cursor: zoom-out; }
+.ctx .ctx-text { order: 1; }
+.ctx .more { order: 2; }
+.ctx .crop { order: 3; }
+.ctx-kicker { order: 0; }
+@media (min-width: 900px) {
+  .ctx .ctx-text { font-size: calc(27px * var(--ts, 1)); }
+  .ctx-kicker { font-size: calc(17px * var(--ts, 1)); }
+}
+@media (max-width: 899px) {
+  .ctx:not(.pinned) .ctx-kicker { display: none; }
+  .nav { padding: 0 12px; white-space: nowrap; }
+  .topbar { gap: 8px; }
+}

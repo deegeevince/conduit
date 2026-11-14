@@ -270,7 +270,8 @@ export class Player {
   /** The height of the title card is the top the picture sticks under. */
   private fit(): void {
     const card = this.root.querySelector('.ctx');
-    const top = card instanceof HTMLElement ? card.getBoundingClientRect().height + 8 : 0;
+    // only the pinned card sticks; the question's own screen is part of the page, so a picture sticks to the very top
+    const top = card instanceof HTMLElement && card.classList.contains('pinned') ? card.getBoundingClientRect().height + 8 : 0;
     document.documentElement.style.setProperty('--qh', `${Math.round(top)}px`);
   }
 
