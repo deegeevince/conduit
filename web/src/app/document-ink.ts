@@ -94,7 +94,7 @@ export function createDocumentInk(options: DocumentInkOptions): DocumentInk {
         regions: [{ id: 'answer', kind: 'answer', label: 'her answer', box: { x: 0, y: 0, w: slot.w, h: slot.h } }],
         on: { node: slot.node, ask: slot.ask, label: found === null ? 'her answer' : `her handwritten answer to: ${found.step.prompt.slice(0, 80)}` },
         fingerDraws: true,
-        penSize: 4,
+        penSize: 7,
         announce: options.note,
       });
       overlay.container.setAttribute('data-document-ink', slot.ask);

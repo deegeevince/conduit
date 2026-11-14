@@ -9,8 +9,8 @@
 //                  when a session is opened again (`GET /api/sessions/:id/document`):  docs.load(view);  on a new session:  docs.reset();
 //   http-link.ts   documentLink: DocumentLink = { sendState: (c) => send({ type: 'state', turn, document: id, change: c }), documents, open }
 
-import { initialState, nodeOf } from '@conduit/language';
-import type { DocNode } from '@conduit/language';
+import { accepts, initialState, nodeOf } from '@conduit/language';
+import type { DocNode, LessonAsk } from '@conduit/language';
 import { DocumentHost, catalogueFromSummaries } from './document-host';
 import type { DocumentLink } from './document-host';
 import { createCrops } from './document-crops';
@@ -114,7 +114,16 @@ export function createDocumentView(options: DocumentViewOptions): DocumentView {
       layer.style.display = shown ? 'flex' : 'none';
       host = new DocumentHost({ mount: body, dark: options.dark(), input: input(next, state), onNote: options.onNote });
       host.listen({
-        onChange: (change) => options.link.sendState(change),
+        onChange: (change) => {
+          // the server's own reading of a try wants the page's verdict beside it (the lesson's matcher ran here, with no round trip)
+          if (change.kind === 'try' && change.right === undefined && doc !== null) {
+            const body = doc.nodes[change.node]?.body;
+            const step = body?.kind === 'lesson' ? body.steps.find((candidate): candidate is LessonAsk => candidate.kind === 'ask' && candidate.id === change.ask) : undefined;
+            options.link.sendState({ ...change, right: step !== undefined && accepts(step, change.value) });
+            return;
+          }
+          options.link.sendState(change);
+        },
         // another sheet from the catalogue: opened again in a session of its own, and drawn from where she was in it
         onOpen: (id) => {
           void options.link.open(id).then((view) => {

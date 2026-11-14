@@ -227,8 +227,9 @@ button.seg:not(.lit) { opacity: 0.62; }
 
 /* the paper: the page lays its ink layer over this box (data-ink-slot); until then it is a blank ruled card */
 .writing { display: grid; gap: 12px; }
-.paper { position: relative; width: 100%; height: clamp(180px, 28vh, 300px); border: 3px solid var(--ink); border-radius: 16px; background: var(--card) repeating-linear-gradient(to bottom, transparent 0, transparent 47px, var(--line) 47px, var(--line) 48px); display: grid; place-items: center; touch-action: none; }
-.paper-hint { color: var(--dim); font-size: 20px; pointer-events: none; }
+.paper { position: relative; width: 100%; height: clamp(180px, 28vh, 300px); border: 3px solid var(--ink); border-radius: 16px; background: #fffdf6 repeating-linear-gradient(to bottom, transparent 0, transparent 47px, #cfc9b8 47px, #cfc9b8 48px); display: grid; place-items: center; touch-action: none; }
+/* paper is paper in every look: the pencil's ink is dark, so the sheet it writes on is light */
+.paper-hint { color: #6b665a; font-size: 20px; pointer-events: none; }
 
 /* the ruler (a visual): a strip she drags along a road */
 .vis-ruler .vis-ruler-slide { width: 100%; touch-action: none; }
