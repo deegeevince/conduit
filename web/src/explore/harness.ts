@@ -127,7 +127,7 @@ export function installHarness(): void {
 
   async function run(request: HarnessRequest): Promise<HarnessReply> {
     const { base, viewport } = request;
-    const score = new TurnScore(base);
+    const score = new TurnScore(base, 'prompt');
     for (const { seq, line } of request.lines) score.push(line, seq, 0);
     const schedule = score.schedule;
     // A runtime that holds each control at the value the answer wrote: a bound shape is then drawn where its slider stands, as in the app.

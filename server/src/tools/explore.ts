@@ -923,9 +923,9 @@ function fixFacts(result: NonNullable<ExploreResult['review']>['result'], draftL
   const fix = accepted.slice(draftLines);
   if (result === 'refused') return { refusedChanged: fix.length > 0 };
   if (result !== 'fixed') return {};
-  const draft = new TurnScore(base);
+  const draft = new TurnScore(base, 'prompt');
   accepted.slice(0, draftLines).forEach((line, at) => draft.push(line, at + 1, 0));
-  const final = new TurnScore(base);
+  const final = new TurnScore(base, 'prompt');
   accepted.forEach((line, at) => final.push(line, at + 1, 0));
   return { openedScene: fix.some((line) => line.verb === 'scene'), tookAway: !fixKeeps(contentOf(draft.schedule), contentOf(final.schedule)).keeps };
 }

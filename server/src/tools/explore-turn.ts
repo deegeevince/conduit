@@ -104,7 +104,7 @@ export async function playTurn(play: TurnPlay): Promise<TurnPlayed> {
   const base: StageBase = context.stage;
   let nextId = 0;
   const normalizer = new LineNormalizer(() => `${play.idPrefix}x${++nextId}`);
-  const score = new TurnScore(base);
+  const score = new TurnScore(base, 'prompt');
   const lines: { seq: number; text: string; ms: number; issues: readonly Issue[] }[] = [];
   const accepted: Line[] = [];
   const rejects: { raw: string; ms: number; issues: readonly Issue[] }[] = [];
