@@ -17,7 +17,7 @@ import { layerZ, planeScale, projectToScreen } from '../contracts/space';
 import type { Box, CameraPose, Viewport } from '../contracts/space';
 import { about, apply, clamp01, hash, lerp, mixHex, mul, rotation, scaling, translation } from './affine';
 import type { Pt } from './affine';
-import { canvasToStage, fitCanvas } from './canvas';
+import { canvasToStage } from './canvas';
 import type { CanvasFit } from './canvas';
 import { contrastRatio, mapToGamut } from './colour';
 import { ease } from './ease';
@@ -40,6 +40,8 @@ export interface FigureContext {
   readonly camera: CameraPose;
   /** the fit of the scene the frame belongs to; each element is fitted to the scene it was made in */
   readonly fit: CanvasFit;
+  /** v2.1: the fit of a scene at this instant (the stage plan's, eased); absent: every scene is fitted as `fit` */
+  readonly fitOf?: (sceneId: string) => CanvasFit;
   readonly reducedMotion: boolean;
   /** by element key */
   readonly paintings: ReadonlyMap<string, Painting>;
@@ -368,7 +370,69 @@ function centreOf(element: ElementSpan, trans: Trans, natural: Pt, sc: Scn): Pt 
       return { x: here.x + (a.x - anchor.x) * (1 - trans.p), y: here.y + (a.y - anchor.y) * (1 - trans.p) };
     }
   }
-  return { x: lerp(a.x, b.x, trans.p), y: lerp(a.y, b.y, trans.p) };
+  // A move ends inside the picture (PLAN-v2.1, D4): what it carries never leaves the canvas, whatever point was written.
+  // (a stage that carries what a move left has only the point, so a written place is held to the same rule when it puts most of the thing inside)
+  const end = element.parent === null && trans.to.at !== null && (move !== null || mostlyInside(b, element, trans.to, sc)) ? keptInside(b, element, trans.to, sc) : b;
+  return { x: lerp(a.x, end.x, trans.p), y: lerp(a.y, end.y, trans.p) };
+}
+
+/**
+ * The extent of a group about its own origin, canvas units, from the shapes that stand directly in it: what its place keeps inside the
+ * canvas. Null when it holds nothing measurable.
+ */
+function groupExtent(group: ElementSpan, sc: Scn): { minX: number; minY: number; maxX: number; maxY: number } | null {
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  for (const member of sc.idx.children.get(group.key) ?? []) {
+    const figure = member.figure;
+    if (figure === null || figure.kind !== 'shape') continue;
+    const box = boundsOf(figure.geometry);
+    minX = Math.min(minX, box.x);
+    minY = Math.min(minY, box.y);
+    maxX = Math.max(maxX, box.x + box.w);
+    maxY = Math.max(maxY, box.y + box.h);
+  }
+  return Number.isFinite(minX) ? { minX, minY, maxX, maxY } : null;
+}
+
+/** A thing whose written place has its middle on the canvas: it is meant to be seen there, so what hangs over the edge is pulled in. */
+function mostlyInside(at: Pt, element: ElementSpan, style: ElementStyle, sc: Scn): boolean {
+  const canvas = canvasOf(element, sc);
+  const figure = element.figure;
+  if (figure === null || (figure.kind !== 'group' && figure.kind !== 'shape' && figure.kind !== 'sprite')) return false;
+  if (figure.kind === 'shape') {
+    const box = boundsOf(figure.geometry);
+    if (box.w >= canvas.width * 0.9 || box.h >= canvas.height * 0.9) return false;
+  }
+  return at.x >= 0 && at.x <= canvas.width && at.y >= 0 && at.y <= canvas.height && style.at !== null;
+}
+
+/** The point `at` (where a move ends) pulled in just far enough that the thing, whole, stands inside its canvas; a thing larger than the canvas is centred. */
+function keptInside(at: Pt, element: ElementSpan, style: ElementStyle, sc: Scn): Pt {
+  const canvas = canvasOf(element, sc);
+  const figure = element.figure;
+  let left: number;
+  let right: number;
+  let up: number;
+  let down: number;
+  if (figure !== null && figure.kind === 'group') {
+    const extent = groupExtent(element, sc);
+    if (extent === null) return at;
+    const scale = style.scale ?? 1;
+    // the group's origin is where its members' own units begin: its extent hangs off the point
+    left = -extent.minX * scale;
+    right = extent.maxX * scale;
+    up = -extent.minY * scale;
+    down = extent.maxY * scale;
+  } else {
+    const half = halfExtent(element, sc, style.scale);
+    if (half.x === 0 && half.y === 0) return at;
+    [left, right, up, down] = [half.x, half.x, half.y, half.y];
+  }
+  const fit = (value: number, before: number, after: number, size: number): number => (before + after >= size ? (size - after + before) / 2 : Math.min(Math.max(value, before), size - after));
+  return { x: fit(at.x, left, right, canvas.width), y: fit(at.y, up, down, canvas.height) };
 }
 
 function extrasOf(element: ElementSpan, style: ElementStyle, sc: Scn, cell: number): Extras {
@@ -735,6 +799,18 @@ interface Frm {
   readonly fades: ReadonlyMap<string, number>;
   readonly defaultFit: CanvasFit;
   readonly fixedFit: CanvasFit | null;
+  readonly fitOf: ((sceneId: string) => CanvasFit) | null;
+  /** v2.1 (D3): the painting that stands on a group, by the group's key: the group's members are a frame, kept inside the picture's box */
+  readonly standing: ReadonlyMap<string, ElementSpan>;
+  /** v2.1 (D3): which edges of each scene's canvas filled shapes cover end to end, by scene id: those edges are open, and shapes on them run on to the picture's region */
+  readonly open: ReadonlyMap<string, OpenEdges>;
+}
+
+interface OpenEdges {
+  readonly left: boolean;
+  readonly right: boolean;
+  readonly top: boolean;
+  readonly bottom: boolean;
 }
 
 const paintCache = new WeakMap<LookSpec, Map<string, Colour>>();
@@ -772,10 +848,10 @@ function strongest(look: LookSpec): Colour {
 function fitFor(frm: Frm, element: ElementSpan): CanvasFit {
   if (frm.fixedFit !== null) return frm.fixedFit;
   const scene = frm.sc.idx.scenes.get(element.scene) ?? frm.sc.schedule.scenes[0];
-  if (scene === undefined) return frm.defaultFit;
+  if (scene === undefined || frm.fitOf === null) return frm.defaultFit;
   const known = frm.fits.get(scene.id);
   if (known !== undefined) return known;
-  const made = fitCanvas(scene.canvas, scene.layout, frm.viewport, frm.look);
+  const made = frm.fitOf(scene.id);
   frm.fits.set(scene.id, made);
   return made;
 }
@@ -929,24 +1005,27 @@ function wobbledFor(lines: readonly Polyline[], seed: string, amount: number): r
 
 /** How close to the canvas edge (canvas units) a point must be to be on it. */
 const EDGE_TOLERANCE = 0.5;
-/** How far past the screen edge a bleeding shape runs, as a share of the screen: room for the camera to sway and dolly. */
-const BLEED_SLACK = 0.3;
 
 const bleedMemo = new WeakMap<readonly Polyline[], Map<string, readonly Polyline[]>>();
 
 /**
- * A filled shape that lies along the left, right or bottom edge of the canvas runs on to (and past) the screen edge, so land, water and sky reach
- * the sides of the screen instead of ending in a vertical cut inside it. Only the points that lie on the edge move, outward; the rest of the
- * outline is the brain's. Returns the outline unchanged (and an empty key) when nothing touches an edge.
+ * Bleed is one decision per scene and edge (PLAN-v2.1, D3). An edge of the canvas is open when filled shapes cover the whole of it; then every
+ * filled shape lying along it runs on to the edge of the picture's region (never past: the region clips everything drawn on the canvas), so
+ * land, water and sky reach the sides of the picture and a shape that only grazes an edge no one else covers stays where it was drawn.
+ * Only the points that lie on an edge move, outward; the rest of the outline is the brain's. A gradient runs top to bottom of its own box,
+ * so it runs on sideways only: extending it up or down would stretch the gradient (a renderer cannot hold it to its own box until a frame
+ * says what that box is). Returns the outline unchanged (and an empty key) when nothing is to move.
  */
-function bleedOutline(lines: readonly Polyline[], placed: Placed, frm: Frm): { lines: readonly Polyline[]; key: string } {
+function bleedOutline(lines: readonly Polyline[], placed: Placed, frm: Frm, gradient: boolean): { lines: readonly Polyline[]; key: string } {
   const { a, b, c, d, e, f } = placed.M;
   if (Math.abs(b) > 1e-3 || Math.abs(c) > 1e-3 || Math.abs(a) < 1e-6 || Math.abs(d) < 1e-6) return { lines, key: '' };
+  const open = frm.open.get(placed.el.scene);
+  if (open === undefined || (!open.left && !open.right && !open.top && !open.bottom)) return { lines, key: '' };
   const canvas = canvasOf(placed.el, frm.sc);
   const fit = fitFor(frm, placed.owner);
-  const { viewport } = frm;
   let left = false;
   let right = false;
+  let top = false;
   let bottom = false;
   const onEdge = (line: Polyline, test: (p: Pt) => boolean, along: (p: Pt) => number): boolean => {
     const hits = line.points.filter(test);
@@ -956,16 +1035,19 @@ function bleedOutline(lines: readonly Polyline[], placed: Placed, frm: Frm): { l
   };
   for (const line of lines) {
     if (!line.closed || line.points.length < 3) continue;
-    if (onEdge(line, (p) => Math.abs(a * p.x + e) <= EDGE_TOLERANCE, (p) => d * p.y + f)) left = true;
-    if (onEdge(line, (p) => Math.abs(a * p.x + e - canvas.width) <= EDGE_TOLERANCE, (p) => d * p.y + f)) right = true;
-    if (onEdge(line, (p) => Math.abs(d * p.y + f - canvas.height) <= EDGE_TOLERANCE, (p) => a * p.x + e)) bottom = true;
+    if (open.left && onEdge(line, (p) => Math.abs(a * p.x + e) <= EDGE_TOLERANCE, (p) => d * p.y + f)) left = true;
+    if (open.right && onEdge(line, (p) => Math.abs(a * p.x + e - canvas.width) <= EDGE_TOLERANCE, (p) => d * p.y + f)) right = true;
+    if (!gradient && open.top && onEdge(line, (p) => Math.abs(d * p.y + f) <= EDGE_TOLERANCE, (p) => a * p.x + e)) top = true;
+    if (!gradient && open.bottom && onEdge(line, (p) => Math.abs(d * p.y + f - canvas.height) <= EDGE_TOLERANCE, (p) => a * p.x + e)) bottom = true;
   }
-  if (!left && !right && !bottom) return { lines, key: '' };
-  // Canvas units from each canvas edge to past the matching screen edge.
-  const reachLeft = Math.round((viewport.width / 2 + fit.box.x + BLEED_SLACK * viewport.width) / fit.unit);
-  const reachRight = Math.round((viewport.width / 2 - (fit.box.x + fit.box.width) + BLEED_SLACK * viewport.width) / fit.unit);
-  const reachBottom = Math.round((viewport.height / 2 - (fit.box.y + fit.box.height) + BLEED_SLACK * viewport.height) / fit.unit);
-  const key = `${left ? `L${reachLeft}` : ''}${right ? `R${reachRight}` : ''}${bottom ? `B${reachBottom}` : ''}|${a.toFixed(2)}|${d.toFixed(2)}`;
+  if (!left && !right && !top && !bottom) return { lines, key: '' };
+  // Canvas units from each canvas edge to the matching edge of the picture's region.
+  const region = fit.region;
+  const reachLeft = Math.max(0, Math.round((fit.box.x - region.x) / fit.unit));
+  const reachRight = Math.max(0, Math.round((region.x + region.width - (fit.box.x + fit.box.width)) / fit.unit));
+  const reachTop = Math.max(0, Math.round((fit.box.y - region.y) / fit.unit));
+  const reachBottom = Math.max(0, Math.round((region.y + region.height - (fit.box.y + fit.box.height)) / fit.unit));
+  const key = `${left ? `L${reachLeft}` : ''}${right ? `R${reachRight}` : ''}${top ? `T${reachTop}` : ''}${bottom ? `B${reachBottom}` : ''}|${a.toFixed(2)}|${d.toFixed(2)}`;
   let byKey = bleedMemo.get(lines);
   if (byKey === undefined) {
     byKey = new Map();
@@ -984,7 +1066,8 @@ function bleedOutline(lines: readonly Polyline[], placed: Placed, frm: Frm): { l
         const cy = d * p.y + f;
         if (left && Math.abs(cx) <= EDGE_TOLERANCE) x -= reachLeft / a;
         else if (right && Math.abs(cx - canvas.width) <= EDGE_TOLERANCE) x += reachRight / a;
-        if (bottom && Math.abs(cy - canvas.height) <= EDGE_TOLERANCE) y += reachBottom / d;
+        if (top && Math.abs(cy) <= EDGE_TOLERANCE) y -= reachTop / d;
+        else if (bottom && Math.abs(cy - canvas.height) <= EDGE_TOLERANCE) y += reachBottom / d;
         return { x, y };
       }),
     };
@@ -992,6 +1075,96 @@ function bleedOutline(lines: readonly Polyline[], placed: Placed, frm: Frm): { l
   byKey.set(key, made);
   return { lines: made, key };
 }
+
+/** The frame a thing on a canvas is kept inside (D3): the picture's box for a member of a painted group, else the scene's picture region. */
+function clipOf(placed: Placed, frm: Frm): Box | undefined {
+  if (frm.fixedFit !== null || frm.fitOf === null) return undefined;
+  const fit = fitFor(frm, placed.owner);
+  const ps = planeScale(layerOf(placed), frm.viewport);
+  let rect: Box = fit.region;
+  // a member of a group a painting stands on is kept inside that painting's box
+  let parent = placed.el.parent;
+  for (let hops = 0; parent !== null && hops < 16; hops += 1) {
+    const picture = frm.standing.get(parent);
+    if (picture !== undefined) {
+      const box = pictureBoxOf(picture, frm.sc);
+      const inside: Box = { x: fit.box.x + box.x * fit.unit, y: fit.box.y + box.y * fit.unit, width: box.w * fit.unit, height: box.h * fit.unit };
+      const x0 = Math.max(rect.x, inside.x);
+      const y0 = Math.max(rect.y, inside.y);
+      const x1 = Math.min(rect.x + rect.width, inside.x + inside.width);
+      const y1 = Math.min(rect.y + rect.height, inside.y + inside.height);
+      rect = { x: x0, y: y0, width: Math.max(0, x1 - x0), height: Math.max(0, y1 - y0) };
+      break;
+    }
+    parent = frm.sc.idx.byKey.get(parent)?.parent ?? null;
+  }
+  return { x: rect.x / ps, y: rect.y / ps, width: rect.width / ps, height: rect.height / ps };
+}
+
+/** Whether an element is a member (at any depth) of a group a painting stands on. */
+function underPainting(element: ElementSpan, standing: ReadonlyMap<string, ElementSpan>, sc: Pick<Scn, 'idx'>): boolean {
+  let parent = element.parent;
+  for (let hops = 0; parent !== null && hops < 16; hops += 1) {
+    if (standing.has(parent)) return true;
+    parent = sc.idx.byKey.get(parent)?.parent ?? null;
+  }
+  return false;
+}
+
+/** `{ clip }` or nothing, to spread into a frame. */
+function clipField(placed: Placed, frm: Frm): { clip?: Box } {
+  const clip = clipOf(placed, frm);
+  return clip === undefined ? {} : { clip };
+}
+
+/**
+ * Which edges of each scene's canvas the filled shapes on stage cover end to end. A shape inside a group a painting stands on is a frame of its
+ * own and does not count (nor bleed).
+ */
+function openEdgesOf(placed: readonly Placed[], standing: ReadonlyMap<string, ElementSpan>, sc: Scn): Map<string, OpenEdges> {
+  type Span = [number, number];
+  const covered = new Map<string, { left: Span[]; right: Span[]; top: Span[]; bottom: Span[] }>();
+  const inPainting = (element: ElementSpan): boolean => underPainting(element, standing, sc);
+  for (const item of placed) {
+    const figure = item.el.figure;
+    if (figure === null || figure.kind !== 'shape' || item.trans.to.bleed === 'none' || inPainting(item.el)) continue;
+    const { a, b, c, d, e, f } = item.M;
+    if (Math.abs(b) > 1e-3 || Math.abs(c) > 1e-3 || Math.abs(a) < 1e-6 || Math.abs(d) < 1e-6) continue;
+    const canvas = canvasOf(item.el, sc);
+    const into = covered.get(item.el.scene) ?? { left: [], right: [], top: [], bottom: [] };
+    covered.set(item.el.scene, into);
+    for (const line of morphedOutline(figure.geometry, morphsOf(item.el), sc.tq, sc.curve).polylines) {
+      if (!line.closed || line.points.length < 3) continue;
+      const along = (test: (x: number, y: number) => boolean, pick: (x: number, y: number) => number, list: Span[]): void => {
+        const hits = line.points.map((p) => ({ x: a * p.x + e, y: d * p.y + f })).filter((p) => test(p.x, p.y)).map((p) => pick(p.x, p.y));
+        if (hits.length >= 2) list.push([Math.min(...hits), Math.max(...hits)]);
+      };
+      along((x) => Math.abs(x) <= EDGE_TOLERANCE, (_x, y) => y, into.left);
+      along((x) => Math.abs(x - canvas.width) <= EDGE_TOLERANCE, (_x, y) => y, into.right);
+      along((_x, y) => Math.abs(y) <= EDGE_TOLERANCE, (x) => x, into.top);
+      along((_x, y) => Math.abs(y - canvas.height) <= EDGE_TOLERANCE, (x) => x, into.bottom);
+    }
+  }
+  const whole = (spans: Span[], length: number): boolean => {
+    if (spans.length === 0) return false;
+    const sorted = [...spans].sort((x, y) => x[0] - y[0]);
+    let reach = 0;
+    for (const [from, to] of sorted) {
+      if (from > reach + OPEN_GAP) return false;
+      reach = Math.max(reach, to);
+    }
+    return reach >= length - OPEN_GAP;
+  };
+  const out = new Map<string, OpenEdges>();
+  for (const [scene, lists] of covered) {
+    const canvas = CANVAS[sc.idx.scenes.get(scene)?.canvas ?? 'wide'];
+    out.set(scene, { left: whole(lists.left, canvas.height), right: whole(lists.right, canvas.height), top: whole(lists.top, canvas.width), bottom: whole(lists.bottom, canvas.width) });
+  }
+  return out;
+}
+
+/** The gap, in canvas units, that two shapes along an edge may leave and still cover it. */
+const OPEN_GAP = 1.5;
 
 function shapeFrame(placed: Placed, frm: Frm): ShapeFrame | null {
   const figure = placed.el.figure as FigureOf<'shape'>;
@@ -1008,8 +1181,7 @@ function shapeFrame(placed: Placed, frm: Frm): ShapeFrame | null {
   const latest = done[done.length - 1]?.geometry ?? figure.geometry;
   const fill = fillOf(placed.trans, look, placed.flash, arrival);
   const fullBleed = latest.shape === 'rect' && latest.full;
-  // A gradient runs top to bottom of the shape's own box, so a gradient fill keeps its box: it is not extended.
-  const edged = fill !== null && !fullBleed && placed.trans.to.bleed !== 'none' && fill.to === null ? bleedOutline(morph.polylines, placed, frm) : { lines: morph.polylines, key: '' };
+  const edged = fill !== null && !fullBleed && placed.trans.to.bleed !== 'none' && !underPainting(placed.el, frm.standing, frm.sc) ? bleedOutline(morph.polylines, placed, frm, fill.to !== null) : { lines: morph.polylines, key: '' };
   return {
     kind: 'shape',
     key: placed.key,
@@ -1023,6 +1195,7 @@ function shapeFrame(placed: Placed, frm: Frm): ShapeFrame | null {
     stroke: strokeOf(placed.trans, look, placed.flash, draw),
     opacity: clamp01(env.opacity * placed.opacity * (frm.fades.get(placed.owner.key) ?? 1)),
     bleed: fullBleed,
+    ...(fullBleed ? {} : clipField(placed, frm)),
     tappable: placed.trans.to.tap,
   };
 }
@@ -1154,6 +1327,7 @@ function spriteFrame(placed: Placed, frm: Frm): SpriteFrame | null {
     transform: toStage(placed, frm, env),
     landed,
     opacity: clamp01(env.opacity * placed.opacity * (frm.fades.get(placed.owner.key) ?? 1)),
+    ...clipField(placed, frm),
     tappable: placed.trans.to.tap,
   };
 }
@@ -1195,6 +1369,7 @@ function pictureFrame(placed: Placed, frm: Frm): PictureFrame | null {
       mask: figure.mask,
       opacity: clamp01(env.opacity * placed.opacity),
       waiting: false,
+      ...clipField(placed, frm),
       tappable: placed.trans.to.tap,
       medium: figure.medium,
       sketch: [],
@@ -1213,6 +1388,7 @@ function pictureFrame(placed: Placed, frm: Frm): PictureFrame | null {
     mask: figure.mask,
     opacity: clamp01(env.opacity * placed.opacity),
     waiting: painting !== undefined && painting.status === 'waiting',
+    ...clipField(placed, frm),
     tappable: placed.trans.to.tap,
   };
 }
@@ -1329,11 +1505,14 @@ export function figuresAt(schedule: Schedule, base: StageBase, time: number, amb
     if (develop <= 0) continue;
     for (const key of sketchKeysOf(picture, schedule)) fades.set(key, Math.min(fades.get(key) ?? 1, 1 - develop));
   }
-  const frm: Frm = { sc, viewport, look, paintings: context.paintings, body: bodySize(viewport, look), fits: new Map(), envs: new Map(), fades, defaultFit: context.fit, fixedFit: context.fixedFit ?? null };
+  const standing = new Map<string, ElementSpan>();
+  for (const picture of schedule.elements) if (picture.figure?.kind === 'picture' && picture.figure.over !== null && isOnStage(picture, time)) standing.set(picture.figure.over, picture);
+  const placedAll = placeAll(sc);
+  const frm: Frm = { sc, viewport, look, paintings: context.paintings, body: bodySize(viewport, look), fits: new Map(), envs: new Map(), fades, defaultFit: context.fit, fixedFit: context.fixedFit ?? null, fitOf: context.fitOf ?? null, standing, open: context.fitOf === undefined ? new Map() : openEdgesOf(placedAll, standing, sc) };
 
   const figures: FigureFrame[] = [];
   const byOwner = new Map<string, FigureFrame[]>();
-  for (const item of placeAll(sc)) {
+  for (const item of placedAll) {
     const kind = item.el.figure?.kind;
     let frame: FigureFrame | null = null;
     try {

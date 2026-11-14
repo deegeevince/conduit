@@ -7,7 +7,7 @@ import type { CanvasBox, ElementSpan, PlacedBox, Schedule, Sight, SightItem, Sig
 import type { ElementFrame, FigureFrame, ShapeFrame } from '../contracts/frame';
 import type { LookSpec } from '../contracts/look';
 import { planeScale } from '../contracts/space';
-import { canvasToStage, fitCanvas, stageToCanvas } from './canvas';
+import { canvasToStage, stageToCanvas } from './canvas';
 import type { CanvasFit } from './canvas';
 import { mapToGamut } from './colour';
 import { canvasBoxOf } from './figures';
@@ -16,6 +16,12 @@ import type { Timeline } from './timeline';
 import { laidOutOf } from './registry';
 
 /** Under this many screen pixels on its longer side a drawn thing is "tiny". */
+/** A thing covering more of the canvas than this is a backdrop, not the subject. */
+const SUBJECT_MAX_SHARE = 0.6;
+/** The drawn things' bounds cover less than this share of the canvas: the picture is mostly empty. */
+const SPARSE_COVER = 0.25;
+/** The drawn things fit in a quarter of the canvas at one of its corners. */
+const CORNER_SHARE = 0.5;
 const TINY_PX = 12;
 /** More than this share of a box outside the screen is "clipped". */
 const CLIPPED_SHARE = 0.05;
@@ -147,7 +153,7 @@ export function sightOf(timeline: Timeline, schedule: Schedule, base: StageBase,
   const spec: LookSpec = timeline.specAt(restAt);
   const fitOf = (sceneId: string): CanvasFit => {
     const owner = schedule.scenes.find((candidate) => candidate.id === sceneId) ?? scene;
-    return fitCanvas(owner.canvas, owner.layout, viewport, spec);
+    return timeline.fitAt(owner.id, restAt);
   };
   const shown = schedule.elements
     .filter((element) => !element.carried && element.enter !== null && element.enter.start < playhead && element.kind !== 'group' && element.kind !== 'field')
@@ -285,6 +291,13 @@ export function sightOf(timeline: Timeline, schedule: Schedule, base: StageBase,
     if (seen <= 0) notes.push('off-canvas');
     else if (1 - seen / area > CLIPPED_SHARE) notes.push('clipped');
     if (element.kind !== 'text' && Math.max(screenBox.w, screenBox.h) < TINY_PX) notes.push('tiny');
+    // A subject that ends outside the picture's region (the final frame, not the first): the stage clips it there, and what is cut off is gone.
+    if (entry.resting && element.kind !== 'text' && !notes.includes('clipped') && !notes.includes('off-canvas') && element.figure?.kind !== 'group') {
+      const region = fitOf(element.scene).region;
+      const regionRect: Rect = { x: region.x, y: region.y, w: region.width, h: region.height };
+      const inside = overlapArea(probe, regionRect);
+      if (area > 0 && 1 - inside / area > CLIPPED_SHARE && !figureFrames.get(element.key)?.some((figure) => figure.kind === 'shape' && figure.bleed)) notes.push('clipped');
+    }
 
     // A later figure with an opaque fill that lies over most of it.
     if (entry.resting) {
@@ -389,13 +402,47 @@ export function sightOf(timeline: Timeline, schedule: Schedule, base: StageBase,
     }
   });
 
+  // The final frame as a whole: a drawing that rests in a corner of its picture with most of the picture empty is `sparse`, said of its largest part.
+  {
+    const fit = timeline.fitAt(scene.id, restAt);
+    const canvas: Rect = { x: fit.box.x, y: fit.box.y, w: fit.box.width, h: fit.box.height };
+    const subjects = entries.filter((entry) => {
+      if (!entry.resting || entry.element.scene !== scene.id || entry.element.parent !== null) return false;
+      const kind = entry.element.kind;
+      if (kind !== 'shape' && kind !== 'sprite' && kind !== 'copy' && kind !== 'group') return false;
+      // a backdrop (a sheet that bleeds, or most of the canvas) is not the subject
+      if (figureFrames.get(entry.element.key)?.some((figure) => figure.kind === 'shape' && figure.bleed)) return false;
+      return entry.screenBox.w * entry.screenBox.h > 0 && entry.screenBox.w * entry.screenBox.h < SUBJECT_MAX_SHARE * canvas.w * canvas.h;
+    });
+    if (subjects.length > 0 && canvas.w > 0 && canvas.h > 0) {
+      let x0 = Number.POSITIVE_INFINITY;
+      let y0 = Number.POSITIVE_INFINITY;
+      let x1 = Number.NEGATIVE_INFINITY;
+      let y1 = Number.NEGATIVE_INFINITY;
+      for (const entry of subjects) {
+        x0 = Math.min(x0, entry.screenBox.x);
+        y0 = Math.min(y0, entry.screenBox.y);
+        x1 = Math.max(x1, entry.screenBox.x + entry.screenBox.w);
+        y1 = Math.max(y1, entry.screenBox.y + entry.screenBox.h);
+      }
+      const covered = ((Math.min(x1, canvas.x + canvas.w) - Math.max(x0, canvas.x)) * (Math.min(y1, canvas.y + canvas.h) - Math.max(y0, canvas.y))) / (canvas.w * canvas.h);
+      const cx = (x0 + x1) / 2 - canvas.x;
+      const cy = (y0 + y1) / 2 - canvas.y;
+      const inCorner = x1 - x0 <= canvas.w * CORNER_SHARE && y1 - y0 <= canvas.h * CORNER_SHARE && (cx < canvas.w * 0.4 || cx > canvas.w * 0.6) && (cy < canvas.h * 0.4 || cy > canvas.h * 0.6);
+      const biggest = subjects.reduce((best, entry) => (entry.screenBox.w * entry.screenBox.h > best.screenBox.w * best.screenBox.h ? entry : best));
+      // a lone small subject standing in the middle is minimal on purpose; one pushed to a side, or a spread of small parts, is not composed
+      const offCentre = Math.abs(cx - canvas.w / 2) > canvas.w * 0.15 || Math.abs(cy - canvas.h / 2) > canvas.h * 0.15;
+      if (((covered < SPARSE_COVER && (subjects.length > 1 || offCentre)) || inCorner) && !biggest.notes.includes('sparse')) biggest.notes.push('sparse');
+    }
+  }
+
   const noted = entries.filter((entry) => entry.notes.length > 0);
   const rest = entries.filter((entry) => entry.notes.length === 0);
   const keep = new Set<Entry>([...noted.slice(-SIGHT_ITEMS), ...rest.slice(-Math.max(0, SIGHT_ITEMS - noted.length))]);
   const items: SightItem[] = entries
     .filter((entry) => keep.has(entry))
     .map((entry) => ({ id: entry.element.id, kind: entry.element.kind, box: round(entry.box), resting: entry.resting, notes: entry.notes }));
-  const fit = fitCanvas(scene.canvas, scene.layout, viewport, spec);
+  const fit = timeline.fitAt(scene.id, restAt);
   return { canvas: scene.canvas, coverage: fit.coverage, items, snapshot };
 }
 
@@ -411,7 +458,6 @@ export function placedOf(timeline: Timeline, schedule: Schedule, playhead: numbe
   const scene = schedule.scenes.reduce((found, candidate) => (candidate.start <= playhead ? candidate : found), schedule.scenes[0]);
   if (scene === undefined) return [];
   const restAt = Math.max(playhead, schedule.end) + 0.5;
-  const spec: LookSpec = timeline.specAt(restAt);
   const frame = timeline.frameAt({ time: restAt, ambient: restAt, wallTime: 0, clock: 'idle' });
   const textFrames = new Map<string, ElementFrame>();
   for (const element of frame.elements) textFrames.set(element.key, element);
@@ -421,7 +467,7 @@ export function placedOf(timeline: Timeline, schedule: Schedule, playhead: numbe
   for (const element of schedule.elements) {
     if (!keys.has(element.key) || element.kind === 'field') continue;
     const owner = schedule.scenes.find((candidate) => candidate.id === element.scene) ?? scene;
-    const fit = fitCanvas(owner.canvas, owner.layout, viewport, spec);
+    const fit = timeline.fitAt(owner.id, restAt);
     let box: Rect | null = null;
     if (element.kind === 'text') {
       const placed = textFrames.get(element.key);

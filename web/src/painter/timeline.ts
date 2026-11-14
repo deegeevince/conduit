@@ -23,22 +23,25 @@ import type { ControlLayout } from '../contracts/controls';
 import { lookOf, measurerFor } from './structures';
 import { CALM } from '../contracts/controls';
 import { registerLaidOut, laidOutOf } from './registry';
-import { buildStructures, setTextOnce, structureExtent } from './structures';
+import { buildStructures, setTextOnce } from './structures';
 import { CALLOUTS_READY, layoutCallouts } from './blocks';
 import type { CalloutInput } from '../contracts/blocks';
 import type { StructureFrames } from './structures';
 import { cameraAt } from './camera';
-import { canvasToStage, fitCanvas } from './canvas';
+import { canvasToStage, fitIn, lerpFit } from './canvas';
 import type { CanvasFit } from './canvas';
 import { contrastRatio, mapToGamut, minContrastFor, plateFor, resolveInk, spriteBacking } from './colour';
 import { ease, quantise } from './ease';
 import { canvasBoxOf, figuresAt, groupMatrixAt, spriteColours } from './figures';
 import type { Painting } from './figures';
 import { revealShare } from '../fonts/measure';
-import { arrange } from './layout';
+import { arrange, needsOf } from './layout';
+import { planStage, viewOfPlan } from './layout/plan';
+import type { StageBlock, StagePlan, StagePlanView } from '../contracts/stage-plan';
+import { STRUCTURES_READY } from './blocks';
 import { has, own as lookup } from './own';
 import { placeLabel } from './layout/labels';
-import type { Arrangement, LayoutItem, Placement, PlacedRun } from './layout';
+import type { Arrangement, LayoutInput, LayoutItem, Placement, PlacedRun } from './layout';
 import { bodySize, cellOf, marginOf, safeFrame, topInset } from './layout/metrics';
 
 export interface TimelineContext {
@@ -99,6 +102,10 @@ export interface Timeline {
   controlsAt(instant: TimelineInstant): ControlSite[];
   /** true when a structure or a chart reads a control's value: the timeline is then stale as soon as a control changes */
   readonly reactive: boolean;
+  /** v2.1: where a scene's canvas is at `time` (eased between layout epochs), for what reads canvas boxes off the stage */
+  fitAt(sceneId: string, time: number): CanvasFit;
+  /** v2.1: how the stage is divided at `time`, host CSS pixels with the camera at rest */
+  planAt(time: number): StagePlanView;
 }
 
 /** Seconds a laid-out element takes to approach a new place, before the mood scales it. */
@@ -241,6 +248,11 @@ interface Epoch {
   readonly look: LookSpec;
   readonly snap: number;
   readonly arrangement: Arrangement;
+  /** v2.1: the scene this epoch lays out, how its stage was divided, and the canvas fitted into the picture's region */
+  readonly scene: string;
+  readonly plan: StagePlan;
+  readonly fit: CanvasFit;
+  readonly kinds: ReadonlyMap<string, StageBlock['kind']>;
 }
 
 interface Forced {
@@ -540,11 +552,40 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
     }
   }
   if (lockLook === null) for (const span of schedule.looks) boundaries.push((span.start + span.end) / 2);
+  // The stage plan changes when a picture first has something on it, a structure or a chart comes or goes, or the last of them leaves: those moments are epochs too.
+  {
+    const kindOf = (element: ElementSpan): 'picture' | 'block' | null => {
+      if (element.kind === 'shape' || element.kind === 'sprite' || element.kind === 'copy' || element.kind === 'picture') return 'picture';
+      return element.kind === 'structure' ? 'block' : null;
+    };
+    const drawnHere = schedule.elements.filter((element) => kindOf(element) !== null);
+    const moments = new Set<number>();
+    for (const element of drawnHere) {
+      if (element.enter !== null) moments.add(element.enter.start);
+      if (element.exit !== null) moments.add(element.exit.start);
+    }
+    const signature = (time: number): string => {
+      let picture = false;
+      const keys: string[] = [];
+      for (const element of drawnHere) {
+        if (!element.carried && (element.enter === null || element.enter.start > time)) continue;
+        if (element.exit !== null && element.exit.start <= time) continue;
+        if (kindOf(element) === 'picture') picture = true;
+        else keys.push(element.key);
+      }
+      return `${picture ? 'p' : ''}|${keys.join(',')}`;
+    };
+    let last = signature(0);
+    for (const time of [...moments].sort((a, b) => a - b)) {
+      const now = signature(time);
+      if (now !== last) boundaries.push(time);
+      last = now;
+    }
+  }
   boundaries.sort((a, b) => a - b);
   const starts = boundaries.filter((time, i) => time >= 0 && (i === 0 || time - (boundaries[i - 1] ?? 0) > 1e-9));
 
   const forced = new Map<string, Forced>();
-  const wordsOfScene = new Map<string, Box[]>();
   const epochs: Epoch[] = [];
 
   const exitOf = (element: ElementSpan): { start: number; end: number; effect: ExitEffect } | null => {
@@ -596,6 +637,44 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
     return { inner, outer: card.outer };
   }
 
+  /** The thing the plan divides the stage for at `start`: a picture when anything is drawn on the canvas, and each structure or chart. */
+  const flowFloor = new Map<string, number>();
+  const blocksAt = (start: number): { list: StageBlock[]; kinds: Map<string, StageBlock['kind']> } => {
+    const list: StageBlock[] = [];
+    const kinds = new Map<string, StageBlock['kind']>();
+    let pictureOrder: number | null = null;
+    for (const element of drawn) {
+      if (!element.carried && (element.enter === null || element.enter.start > start)) continue;
+      const gone = exitOf(element);
+      if (gone !== null && gone.start <= start) continue;
+      if (element.kind === 'shape' || element.kind === 'sprite' || element.kind === 'copy' || element.kind === 'picture') {
+        pictureOrder = pictureOrder === null ? element.order : Math.min(pictureOrder, element.order);
+        continue;
+      }
+      const figure = element.figure;
+      if (element.kind !== 'structure' || figure === null || figure.kind !== 'structure') continue;
+      const chart = figure.structure === 'chart';
+      if (chart ? context.charts === undefined || figure.chart === null || !context.charts.kinds.includes(figure.chart) : context.engine === undefined && !STRUCTURES_READY.includes(figure.structure)) continue;
+      const parts = chart ? 0 : schedule.elements.filter((member) => member.parent === element.key && (member.kind === 'node' || member.kind === 'link')).length + figure.rows.length;
+      const box = figure.box;
+      kinds.set(element.key, chart ? 'chart' : 'structure');
+      list.push({
+        key: element.key,
+        kind: chart ? 'chart' : 'structure',
+        order: element.order,
+        natural: chart ? { width: 640, height: 360 } : { width: 640, height: 120 + 40 * parts },
+        least: chart ? { width: 200, height: 140 } : { width: 160, height: 100 },
+        aspect: figure.structure === 'cycle' || figure.structure === 'map' ? 16 / 9 : null,
+        pinned: box === null ? null : { x: box.x, y: box.y, width: box.w, height: box.h },
+      });
+    }
+    if (pictureOrder !== null) {
+      kinds.set('canvas', 'picture');
+      list.push({ key: 'canvas', kind: 'picture', order: pictureOrder, natural: { width: 1600, height: 900 }, least: { width: 160, height: 90 }, aspect: null, pinned: null });
+    }
+    return { list, kinds };
+  };
+
   for (const start of starts) {
     const look = specAt(start);
     const scene = sceneAt(schedule, start);
@@ -606,7 +685,12 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
     });
     const replaced = new Set<string>();
     for (const element of present) if (element.replaces !== null) replaced.add(element.replaces);
-    const sceneFit = fitCanvas(scene.canvas, scene.layout, viewport, look);
+    // The stage plan's blocks: what is on stage that takes room besides the words (PLAN-v2.1, D1)
+    const blocks = blocksAt(start);
+    const safe = safeFrame(viewport, look);
+    // what the controls are sized for: the flow's width, which only a side-by-side layout narrows
+    const first = planStage({ viewport, look, layout: scene.layout, blocks: blocks.list, flowHeight: () => 0, flowOrder: null, footHeight: () => 0 });
+    const sceneFit = fitIn(scene.canvas, first.picture ?? safe, first.flow, viewport);
     const items: LayoutItem[] = present.map((element) => {
       const template = templateOf(element);
       const words = template.reactive ? renderTemplate(template, element.text, element.emphasis, (id) => controlNamed(id, start)) : null;
@@ -646,33 +730,31 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
       liveControls.push(group);
       items.push({ key: group.key, order: group.order, text: '', emphasis: [], style: { ...laidStyle(style), stay: 'pin' }, struck: false, replaces: null, reserve: { width: room.outer.width, height: room.outer.height } });
     }
-    // HOTFIX (overlap): a structure takes the room it will have when whole, as one block of the flow, as a control does, so words
-    // stand above or below it and never over it. Only where words are stacked; elsewhere the scene's own arrangement keeps them apart.
-    if (scene.layout === 'stack' || scene.layout === 'page' || scene.layout === 'list') {
-      for (const span of schedule.elements) {
-        if (span.kind !== 'structure' || span.figure?.kind !== 'structure' || span.scene !== scene.id) continue;
-        if (!span.carried && (span.enter === null || span.enter.start > start)) continue;
-        const gone = exitOf(span);
-        if (gone !== null && gone.start <= start) continue;
-        const ps = planeScale(span.style.layer, viewport);
-        const extent = structureExtent(span, schedule, { viewport, scope: scopeOf([...cindex.ids], (id) => controlNamed(id, 1e9)), ...(context.engine === undefined ? {} : { engine: context.engine }) }, look, sceneFit);
-        if (extent === null) continue;
-        // never more than most of the room: a taller structure is laid out smaller, in the room it is given, rather than pushing words off
-        const width = Math.min(extent.width, sceneFit.flow.width / ps);
-        // a little air above and below, so the words either side do not touch its outermost boxes
-        const air = (cellOf('m', viewport, look).height / ps) * 1.6;
-        const height = Math.min(extent.height + air, (sceneFit.flow.height / ps) * 0.62);
-        items.push({ key: span.key, order: span.order, text: '', emphasis: [], style: { ...laidStyle(styleAt(span, start)), at: null, stay: 'pin' }, struck: false, replaces: null, reserve: { width, height } });
-      }
-    }
     const sides = scene.layout === 'split' ? splitSides(schedule, scene.id) : undefined;
+    // The words and the choices are measured across the column; the plan divides the stage; the canvas is fitted into the picture's region.
+    const probe: LayoutInput = { viewport, look, layout: scene.layout, align: scene.align, expected: valueAt(scene.expected, start, null), items, foot: safe, ...(sides === undefined ? {} : { sides }) };
+    const needs = needsOf(probe, safe.width);
+    // a scene's words never ask for less than they did a moment ago, so the picture does not breathe as lines come and go
+    const floor = flowFloor.get(scene.id) ?? 0;
+    const wanted = needs.flow > 0 ? Math.max(needs.flow, floor) : floor;
+    const plan = planStage({
+      viewport,
+      look,
+      layout: scene.layout,
+      blocks: blocks.list,
+      flowHeight: (width) => (wanted <= 0 ? 0 : Math.max(floor, width === safe.width ? wanted : needsOf(probe, width).flow)),
+      flowOrder: needs.order,
+      footHeight: (width) => (width === safe.width ? needs.foot : needsOf(probe, width).foot),
+    });
+    flowFloor.set(scene.id, wanted);
+    const fit = fitIn(scene.canvas, plan.picture ?? safe, plan.flow, viewport);
     // text given a point of the canvas is set by the layout, which keeps it off other text; this is where it wants its centre
     const pins = new Map<string, { x: number; y: number }>();
     for (const element of [...present, ...liveControls]) {
       const style = styleAt(element, start);
       if (style.near !== null || style.group !== null || typeof style.at !== 'object' || style.at === null) continue;
       const scale = planeScale(style.layer, viewport);
-      pins.set(element.key, { x: (sceneFit.box.x + style.at.x * sceneFit.unit) / scale, y: (sceneFit.box.y + style.at.y * sceneFit.unit) / scale });
+      pins.set(element.key, { x: (fit.box.x + style.at.x * fit.unit) / scale, y: (fit.box.y + style.at.y * fit.unit) / scale });
     }
     const arrangement = arrange({
       viewport,
@@ -681,7 +763,8 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
       align: scene.align,
       expected: valueAt(scene.expected, start, null),
       items,
-      flow: sceneFit.flow,
+      flow: plan.flow,
+      ...(plan.foot === null ? {} : { foot: plan.foot }),
       pins,
       ...(sides === undefined ? {} : { sides }),
     });
@@ -691,19 +774,8 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
       const effect = styleAt(element, start).exit;
       forced.set(key, { start, end: start + exitSeconds(effect, paceAt(start)), effect });
     }
-    // HOTFIX (overlap): where the scene's free words stand, for structures the flow holds no room for (a caption under a diagram)
-    if (!(scene.layout === 'stack' || scene.layout === 'page' || scene.layout === 'list')) {
-      const list = wordsOfScene.get(scene.id) ?? [];
-      for (const element of present) {
-        const style = styleAt(element, start);
-        const placement = arrangement.placements.get(element.key);
-        if (placement === undefined || (typeof style.at === 'object' && style.at !== null) || style.near !== null || style.group !== null || style.layer !== 'mid') continue;
-        list.push({ x: placement.x - placement.width / 2, y: placement.y - placement.height / 2, width: placement.width, height: placement.height });
-      }
-      wordsOfScene.set(scene.id, list);
-    }
     const mood = moodAt(start, look);
-    epochs.push({ start, look, snap: mood.snap, arrangement });
+    epochs.push({ start, look, snap: mood.snap, arrangement, scene: scene.id, plan, fit, kinds: blocks.kinds });
   }
 
   const epochIndexAt = (time: number): number => {
@@ -1296,20 +1368,102 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
   };
 
   // Drawn things, labels and plates --------------------------------------
-  const fitMemo = new Map<string, CanvasFit>();
-  const fitOfScene = (scene: Pick<SceneSpan, 'id' | 'canvas' | 'layout'>, spec: LookSpec): CanvasFit => {
-    const key = `${scene.id}|${specIds.get(spec) ?? 0}`;
-    let found = fitMemo.get(key);
-    if (found === undefined) {
-      found = fitCanvas(scene.canvas, scene.layout, viewport, spec);
-      fitMemo.set(key, found);
-    }
-    return found;
+  // The canvas's place is the stage plan's, per layout epoch of its scene, eased between epochs as the words are.
+  const sceneEpochs = new Map<string, number[]>();
+  epochs.forEach((epoch, index) => {
+    const list = sceneEpochs.get(epoch.scene) ?? [];
+    list.push(index);
+    sceneEpochs.set(epoch.scene, list);
+  });
+  /** The epoch of a scene that holds at `time` (the first, before the scene begins; the last, after it ends), and the one before it. */
+  const sceneEpochAt = (sceneId: string, time: number): { epoch: Epoch; previous: Epoch | null } | null => {
+    const list = sceneEpochs.get(sceneId);
+    if (list === undefined || list.length === 0) return null;
+    let at = 0;
+    list.forEach((index, k) => {
+      if ((epochs[index]?.start ?? 0) <= time) at = k;
+    });
+    const epoch = epochs[list[at] as number] as Epoch;
+    const previous = at > 0 ? (epochs[list[at - 1] as number] ?? null) : null;
+    return { epoch, previous };
   };
+  const fitAt = (sceneId: string, time: number): CanvasFit => {
+    const found = sceneEpochAt(sceneId, time);
+    if (found === null) {
+      const scene = schedule.scenes.find((candidate) => candidate.id === sceneId) ?? schedule.scenes[0];
+      const safe = safeFrame(viewport, specAt(time));
+      return fitIn(scene?.canvas ?? base.scene.canvas, safe, safe, viewport);
+    }
+    const { epoch, previous } = found;
+    if (previous === null || previous.look !== epoch.look) return epoch.fit;
+    const q = (time - epoch.start) / (SETTLE_SECONDS * epoch.snap);
+    if (q >= 1) return epoch.fit;
+    const curve = epoch.look.motion.ease === 'hold' ? 'out' : epoch.look.motion.ease;
+    return lerpFit(previous.fit, epoch.fit, ease(curve, Math.max(0, q)));
+  };
+  const fitOfScene = (scene: Pick<SceneSpan, 'id' | 'canvas' | 'layout'>, _spec: LookSpec, time: number): CanvasFit => fitAt(scene.id, time);
   const sceneOfElement = (element: ElementSpan) => schedule.scenes.find((scene) => scene.id === element.scene) ?? schedule.scenes[0];
-  const fitOfElement = (element: ElementSpan, spec: LookSpec): CanvasFit => {
+  const fitOfElement = (element: ElementSpan, spec: LookSpec, time: number): CanvasFit => {
     const scene = sceneOfElement(element);
-    return fitOfScene(scene ?? { id: base.scene.id, canvas: base.scene.canvas, layout: base.scene.layout }, spec);
+    return fitOfScene(scene ?? { id: base.scene.id, canvas: base.scene.canvas, layout: base.scene.layout }, spec, time);
+  };
+  /** The room the plan gave a structure or a chart (reading-plane stage units) as of `time`: this epoch's, else the nearest the scene has one in. */
+  const roomOfBlock = (element: ElementSpan, time: number): Box | null => {
+    const list = sceneEpochs.get(element.scene);
+    if (list === undefined) return null;
+    const here = sceneEpochAt(element.scene, time);
+    const own = here?.epoch.plan.rooms.get(element.key);
+    if (own !== undefined) return own;
+    for (const index of list) {
+      const room = epochs[index]?.plan.rooms.get(element.key);
+      if (room !== undefined && (epochs[index]?.start ?? 0) >= time) return room;
+    }
+    for (const index of [...list].reverse()) {
+      const room = epochs[index]?.plan.rooms.get(element.key);
+      if (room !== undefined) return room;
+    }
+    return null;
+  };
+  /** The same, eased across the move between layout epochs, as the canvas is: a chart's frame follows it every frame. */
+  const roomEasedOf = (element: ElementSpan, time: number): Box | null => {
+    const found = sceneEpochAt(element.scene, time);
+    const room = roomOfBlock(element, time);
+    if (found === null || room === null || found.previous === null || found.previous.look !== found.epoch.look) return room;
+    const was = found.previous.plan.rooms.get(element.key);
+    const now = found.epoch.plan.rooms.get(element.key);
+    if (was === undefined || now === undefined) return room;
+    const q = (time - found.epoch.start) / (SETTLE_SECONDS * found.epoch.snap);
+    if (q >= 1) return now;
+    const t = ease(found.epoch.look.motion.ease === 'hold' ? 'out' : found.epoch.look.motion.ease, Math.max(0, q));
+    return { x: lerp(was.x, now.x, t), y: lerp(was.y, now.y, t), width: lerp(was.width, now.width, t), height: lerp(was.height, now.height, t) };
+  };
+  /** The times at which a block's room changes: its structure is laid out again from each. */
+  const roomTimesOf = (element: ElementSpan): number[] => {
+    const times: number[] = [];
+    let last: Box | undefined;
+    for (const index of sceneEpochs.get(element.scene) ?? []) {
+      const epoch = epochs[index];
+      const room = epoch?.plan.rooms.get(element.key);
+      if (epoch === undefined || room === undefined) continue;
+      if (last !== undefined && (Math.abs(room.x - last.x) > 0.5 || Math.abs(room.y - last.y) > 0.5 || Math.abs(room.width - last.width) > 0.5 || Math.abs(room.height - last.height) > 0.5)) times.push(epoch.start);
+      last = room;
+    }
+    return times;
+  };
+  /** Words standing in a block's room (placed text: titles on a diagram, a label on a point): the engines lay the block out around them. */
+  const obstaclesOfBlock = (element: ElementSpan, time: number): Box[] => {
+    const room = roomOfBlock(element, time);
+    const found = sceneEpochAt(element.scene, time);
+    if (room === null || found === undefined || found === null) return [];
+    const out: Box[] = [];
+    for (const placement of found.epoch.arrangement.placements.values()) {
+      if (placement.layer !== 'mid') continue;
+      for (const line of placement.lines) {
+        const box: Box = { x: placement.x + line.x, y: placement.y + line.y, width: line.width, height: line.height };
+        if (box.x < room.x + room.width && box.x + box.width > room.x && box.y < room.y + room.height && box.y + box.height > room.y) out.push(box);
+      }
+    }
+    return out;
   };
 
   const structures = buildStructures(schedule, {
@@ -1318,14 +1472,12 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
     arrivals: context.arrivals ?? new Map(),
     scope: scopeOf([...cindex.ids], (id) => controlNamed(id, 1e9)),
     specAt,
-    fitOf: (element, spec) => fitOfElement(element, spec),
+    fitOf: (element, spec, time) => fitOfElement(element, spec, time),
+    roomOf: roomOfBlock,
+    roomTimes: roomTimesOf,
+    obstaclesOf: obstaclesOfBlock,
     flips: lockLook === null ? lookFlips : [],
     snapAt: (time) => moodAt(time, specAt(time)).snap,
-    avoid: (structure) => wordsOfScene.get(structure.scene) ?? [],
-    placed: (structure, time) => {
-      const placement = epochs[epochIndexAt(time)]?.arrangement.placements.get(structure.key);
-      return placement === undefined ? null : { x: placement.x - placement.width / 2, y: placement.y - placement.height / 2, width: placement.width, height: placement.height };
-    },
     ...(context.engine === undefined ? {} : { engine: context.engine }),
   });
 
@@ -1339,7 +1491,7 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
   const stackOf = (group: ElementSpan, tq: number, look: LookSpec) => {
     const members = controlSpans.filter((member) => member.parent === group.key && presentControl(member, tq)).sort((a, b) => a.order - b.order);
     if (members.length === 0) return null;
-    const fit = fitOfElement(group, look);
+    const fit = fitOfElement(group, look, tq);
     const ps = planeScale(group.style.layer, viewport);
     const gap = cellOf('m', viewport, look).height / ps / 4;
     const layouts = new Map<string, ControlLayout>();
@@ -1388,7 +1540,7 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
     }
     const pose = poseAt(span.key, tq, gone === null ? null : gone.start);
     if (pose === null) return null;
-    const fit = fitOfElement(span, look);
+    const fit = fitOfElement(span, look, tq);
     const layout = controlLayoutOf({ span, value, mood, maxWidth: controlRoom(span, fit), look, viewport, fit });
     if (layout === null) return null;
     const left = pose.x + (pose.lines[0]?.x ?? -pose.width / 2);
@@ -1403,7 +1555,7 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
       boxOf(key, time) {
         const chart = chartSpans.find((candidate) => candidate.key === key);
         if (chart !== undefined && chart.figure?.kind === 'structure') {
-          const fit = fitOfElement(chart, specAt(time));
+          const fit = fitOfElement(chart, specAt(time), time);
           const room = chart.figure.box;
           return room === null ? { x: (fit.box.x - fit.box.x) / fit.unit, y: 0, w: fit.box.width / fit.unit, h: fit.box.height / fit.unit } : { x: room.x, y: room.y, w: room.w, h: room.h };
         }
@@ -1480,7 +1632,7 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
         if (!isLiveAt(element, tq)) continue;
         const box = canvasBoxOf(element, schedule, tq);
         if (box === null) continue;
-        const fit = fitOfElement(element, look);
+        const fit = fitOfElement(element, look, tq);
         const big = box.w * box.h > 0.2 * (fit.box.width * fit.box.height) / (fit.unit * fit.unit);
         const shape = element.figure?.kind === 'shape' ? element.figure.geometry.shape : null;
         // a large closed shape is an outline a label must not cross; a large line or path has no edge to keep clear of
@@ -1522,7 +1674,7 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
       const ps = planeScale(pose.layer, viewport);
       const w = pose.width * ps;
       const h = pose.height * ps;
-      const fit = fitOfElement(element, look);
+      const fit = fitOfElement(element, look, tq);
       if (style.near === null) {
         // Words that are a part of a group (`say in=<group>`) stand where the group's own units put them, and go with it.
         const group = element.parent === null ? undefined : drawnByKey.get(element.parent);
@@ -1543,7 +1695,7 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
         // a label with a line to the part it names is placed with the others of its drawing: no two leaders cross, no label sits on a stroke
         const box = canvasBoxOf(target, schedule, tq);
         if (box !== null) {
-          callouts.push({ key: element.key, ps, w, h, target: toScreenRect(box, fitOfElement(target, look)), side: style.near.side, fit, layer: pose.layer });
+          callouts.push({ key: element.key, ps, w, h, target: toScreenRect(box, fitOfElement(target, look, tq)), side: style.near.side, fit, layer: pose.layer });
           continue;
         }
       }
@@ -1559,7 +1711,7 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
       }
       const box = canvasBoxOf(target, schedule, seenAt);
       if (box === null) continue;
-      const targetRect = toScreenRect(box, fitOfElement(target, look));
+      const targetRect = toScreenRect(box, fitOfElement(target, look, tq));
       const region: Rect = { x: fit.box.x, y: fit.box.y, w: fit.box.width, h: fit.box.height };
       // One body line away, measured to where the label's letters are: its box has leading above and below them.
       const gap = cell.height * 0.6;
@@ -1606,7 +1758,7 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
       const strokes: { points: { x: number; y: number }[]; closed: boolean }[] = [];
       for (const element of drawn) {
         if (element.kind !== 'shape' || element.figure?.kind !== 'shape' || !isLiveAt(element, tq)) continue;
-        const fit = fitOfElement(element, look);
+        const fit = fitOfElement(element, look, tq);
         for (const line of outlineOf(element.figure.geometry)) strokes.push({ closed: line.closed, points: line.points.map((p) => ({ x: fit.box.x + p.x * fit.unit, y: fit.box.y + p.y * fit.unit })) });
       }
       const body = cell.height;
@@ -1918,7 +2070,7 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
     const mood = moodAt(instant.time, drawLook);
     const pair = moodPair(instant.time, drawLook);
     const nowScene = sceneAt(schedule, tq);
-    const fit = fitOfScene(nowScene, drawLook);
+    const fit = fitOfScene(nowScene, drawLook, tq);
 
     const moves: readonly CameraSpan[] = schedule.camera;
     const camera = cameraAt(moves, instant.time, instant.ambient, {
@@ -1932,7 +2084,7 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
         if (target !== undefined) {
           const box = canvasBoxOf(target, schedule, time);
           if (box === null) return null;
-          const c = canvasToStage({ x: box.x + box.w / 2, y: box.y + box.h / 2 }, fitOfElement(target, drawLook), target.style.layer, viewport);
+          const c = canvasToStage({ x: box.x + box.w / 2, y: box.y + box.h / 2 }, fitOfElement(target, drawLook, time), target.style.layer, viewport);
           return { x: c.x, y: c.y };
         }
         const pose = poseAt(key, time, null);
@@ -1943,7 +2095,7 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
         if (target === undefined) return null;
         const box = canvasBoxOf(target, schedule, time);
         if (box === null) return null;
-        const f = fitOfElement(target, drawLook);
+        const f = fitOfElement(target, drawLook, time);
         return { width: box.w * f.unit, height: box.h * f.unit };
       },
       isDrawn: (key) => drawnByKey.has(key),
@@ -1956,7 +2108,7 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
     });
 
     const fault = onFault ?? null;
-    const drawnFigures = figuresAt(boundSchedule(schedule, tq, aq, context.controls), base, tq, aq, { viewport, look: drawLook, camera, fit, reducedMotion, paintings, flashAllowed: allowedFlashes, ...(fault === null ? {} : { onFault: fault }) });
+    const drawnFigures = figuresAt(boundSchedule(schedule, tq, aq, runtime), base, tq, aq, { viewport, look: drawLook, camera, fit, fitOf: (sceneId) => fitAt(sceneId, tq), reducedMotion, paintings, flashAllowed: allowedFlashes, ...(fault === null ? {} : { onFault: fault }) });
     // A sprite whose colours would vanish into the ground stands on a tile.
     const tiles = tilesFor(drawnFigures.figures, drawLook);
     const figs =
@@ -2109,7 +2261,7 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
         });
       }
     }
-    const chartFrameList = context.charts === undefined ? undefined : chartFrames(schedule, tq, aq, drawLook, { viewport, reducedMotion, camera, kinds: context.charts.kinds, data: context.charts.data, scope: scopeOf([...cindex.ids], (id) => controlNamed(id, tq)), fitOf: (element) => fitOfElement(element, drawLook), avoid: (element) => wordsOfScene.get(element.scene) ?? [] });
+    const chartFrameList = context.charts === undefined ? undefined : chartFrames(schedule, tq, aq, drawLook, { viewport, reducedMotion, camera, kinds: context.charts.kinds, data: context.charts.data, scope: scopeOf([...cindex.ids], (id) => controlNamed(id, tq)), fitOf: (element) => fitOfElement(element, drawLook, tq), roomOf: (element) => roomEasedOf(element, tq) });
     const frame: Frame = {
       ...(chartFrameList === undefined ? {} : { charts: chartFrameList }),
       time: instant.time,
@@ -2174,6 +2326,12 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
     viewsAt: (instant) => cached(instant).views,
     controlsAt: (instant) => cached(instant).sites,
     reactive,
+    fitAt: (sceneId, time) => fitAt(sceneId, time),
+    planAt: (time) => {
+      const found = sceneEpochAt(sceneAt(schedule, time).id, time);
+      const epoch = found === null ? epochs[epochIndexAt(time)] : found.epoch;
+      return epoch === undefined ? { picture: null, rooms: [], flow: { x: 0, y: 0, width: viewport.width, height: viewport.height }, foot: null } : viewOfPlan(epoch.plan, epoch.kinds, viewport);
+    },
     onStageAt: (time) =>
       schedule.elements
         .filter((element) => {

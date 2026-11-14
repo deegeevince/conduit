@@ -1,4 +1,4 @@
-import { controlText, describeFigure, EMPTY_STAGE, holdControl, FULL_CAPABILITIES, NO_SERVICES, sceneAt, serializeLine, TurnScore, valueAt } from '@conduit/language';
+import { contentOf, controlText, describeFigure, EMPTY_STAGE, holdControl, FULL_CAPABILITIES, NO_SERVICES, sceneAt, serializeLine, TurnScore, valueAt } from '@conduit/language';
 import { CHARTS_READY } from '../render/chart';
 import { STRUCTURES_READY } from './blocks';
 import { CONTROLS_READY, controlEngine, createControlStore, nextEases } from './controls';
@@ -25,17 +25,17 @@ import type { Painting } from './figures';
 import { QualityGovernor } from './governor';
 import { bodySize, marginOf, screenFacts } from './layout/metrics';
 import { Reporter } from './report';
+import { annotated } from './annotate';
 import { placedOf, sightOf } from './sight';
 import { buildTimeline, settledAfter, settledEnd as settledEndOf } from './timeline';
 import type { Timeline, TimelineContext, TimelineInstant } from './timeline';
 
 /** True once `notePass` answers `drafted` with a draft report (PLAN-v2.md, package T). Until then the server is told not to wait for one. */
 const DRAFTS_READY = true;
-/**
- * STUB(PLAN-v2.1 package T): true once a `candidate` event is tried on a copy of the open turn's score and answered with a `draft`
- * (sight, placed boxes, `content`, a picture) for its pass, none of it shown. Until then the server tries no fix on this painter.
- */
-const CANDIDATES_READY = false;
+/** True: a `candidate` event is tried on a copy of the open turn's score and answered with a `draft` (sight, placed boxes, `content`, a picture) for its pass, none of it shown. */
+const CANDIDATES_READY = true;
+/** Sequence numbers a candidate's lines carry on the copy of the score: far above any a turn will reach, so they never meet a real one. */
+const CANDIDATE_SEQ = 1_000_000;
 /** STUB(PLAN-v2.1 package T2): true once a `deck` turn stops at each slide and `Painter.slide` steps through them. */
 const DECKS_READY = false;
 /** STUB(PLAN-v2.1 package T2): true once `pic … from=<upload id>` draws the user's picture. */
@@ -529,8 +529,9 @@ export function createPainter(options: PainterOptions): Painter {
    * How the lines so far WILL land, worked out from the schedule's end without waiting for the playhead and without touching anything
    * on stage: sight and placed boxes from a timeline that is only read, and a picture of its resting frame when both sides want one.
    */
-  const sendDraft = (open: Turn, pass: number): void => {
-    const at = timeline;
+  const sendDraft = (open: Turn, pass: number, candidate: Schedule | null = null): void => {
+    // A draft (and a candidate) is judged as it will rest: nothing is waited for, so no part is still arriving and every chart is whole.
+    const at = buildTimeline(candidate ?? timeline.schedule, open.base, { ...timelineContext(), arrivals: new Map() });
     const schedule = at.schedule;
     const when = Math.max(schedule.end, settledAfter(at, lockLook, open.base.scene.mood)) + 1e-6;
     let sight: Sight;
@@ -544,15 +545,18 @@ export function createPainter(options: PainterOptions): Painter {
       emitBack({ type: 'draft', turn: open.id, pass, sight: NO_SIGHT, snapshot: false });
       return;
     }
+    const content = contentOf(schedule);
     const report = (snapshot: boolean): void => {
       if (disposed) return;
-      emitBack({ type: 'draft', turn: open.id, pass, sight: { ...sight, snapshot }, placed: placed.map(({ key: _key, ...item }) => item), snapshot });
+      emitBack({ type: 'draft', turn: open.id, pass, sight: { ...sight, snapshot }, placed: placed.map(({ key: _key, ...item }) => item), snapshot, content });
     };
     if (!(services.review && wantsSnapshot())) {
       report(false);
       return;
     }
-    const frame: Frame = { ...at.frameAt({ time: when, ambient: 3, wallTime: pinnedWallTime(3), clock: 'paused' }), camera: REST_POSE };
+    const plain: Frame = { ...at.frameAt({ time: when, ambient: 3, wallTime: pinnedWallTime(3), clock: 'paused' }), camera: REST_POSE };
+    // the brain's own picture carries each element's id and a ruler of canvas units: a separate frame, rasterised on its own, never the stage
+    const frame = annotated(plain, at, schedule, when, plain.spec);
     void renderer
       .rasterise(frame, { maxSide: PICTURE_SIDE, mime: 'image/jpeg', quality: 0.8, ...stills(frame) })
       .then((blob) => {
@@ -592,6 +596,7 @@ export function createPainter(options: PainterOptions): Painter {
       box: { x: -crop.width / 2 - box.x * unit, y: -crop.height / 2 - box.y * unit, width: box.w * unit, height: box.h * unit },
       unit,
       flow: { x: -crop.width / 2, y: -crop.height / 2, width: crop.width, height: crop.height },
+      region: { x: -crop.width / 2, y: -crop.height / 2, width: crop.width, height: crop.height },
       coverage: 1,
     };
     const drawn = figuresAt(schedule, timelineBase(), when, when + 5, { viewport: crop, look: spec, camera: REST_POSE, fit, fixedFit: fit, reducedMotion: true, paintings: new Map() });
@@ -962,6 +967,7 @@ export function createPainter(options: PainterOptions): Painter {
       controls: controlViews(),
       charts: chartViews(frame),
       pass: passState === null || turn === null || passState.turn !== turn.id ? null : { pass: passState.pass, state: passState.state },
+      plan: timeline.planAt(reading.playhead),
     };
   };
 
@@ -1234,8 +1240,16 @@ export function createPainter(options: PainterOptions): Painter {
     dataArrived(id: string, rows: DataTable | null) {
       chartData.set(id, { table: rows, since: clock.read().ambient });
     },
-    // STUB(PLAN-v2.1 package T): try the lines on a copy of the turn's score and answer with a `draft` for this pass. Nothing is shown.
-    tryCandidate(_id, _pass, _lines) {},
+    tryCandidate(id, pass, lines) {
+      const open = turn;
+      if (!CANDIDATES_READY || open === null || open.id !== id || settling !== null) return;
+      // a copy of the turn's score, the fix's lines pushed on it, and how that would land: the turn's own score and the stage are not touched
+      const copy = new TurnScore(open.base);
+      for (const entry of open.score.score) copy.push(entry.line, entry.seq, entry.floor);
+      const floor = Math.max(0, clock.read().playhead);
+      lines.forEach((line, index) => copy.push(line, CANDIDATE_SEQ + index, floor));
+      sendDraft(open, pass, copy.schedule);
+    },
     // STUB(PLAN-v2.1 package T2): step a deck to a slide.
     slide(_to) {},
     notePass(id, pass, state) {

@@ -2,7 +2,8 @@
 // server. Plays a fixture script from @conduit/language/demos locally.
 
 import { LineNormalizer, LineReader, LOOK_IDS, parseReplayDirective } from '@conduit/language';
-import type { BackEvent, CanvasName, LookId } from '@conduit/language';
+import { fitIn } from '../painter/canvas';
+import type { BackEvent, CanvasName, Line, LookId } from '@conduit/language';
 import charts from '@conduit/language/demos/charts.series?raw';
 import diagrams from '@conduit/language/demos/diagrams.series?raw';
 import explorable from '@conduit/language/demos/explorable.series?raw';
@@ -15,9 +16,7 @@ import type { Frame } from '../contracts/frame';
 import type { RasteriseOptions, Renderer } from '../contracts/renderer';
 import { planeScale } from '../contracts/space';
 import type { Painter, PainterUpload, TranscriptEvent } from '../contracts/painter';
-import { LOOKS } from '../looks';
 import { createPainter } from '../painter';
-import { fitCanvas } from '../painter/canvas';
 import { createChartHost } from '../app/chart-host';
 import { createChartEngine } from '../render/chart';
 import { createPlainRenderer } from '../render/plain';
@@ -39,6 +38,10 @@ declare global {
       end: () => void;
       /** the pictures the painter sent for the server, newest last */
       uploads: () => { kind: string; key: string; bytes: number }[];
+      /** tries raw Series lines as a fix on the open hand-made turn (`tryCandidate`); the answer is a `draft` in `__backLog` and a picture in `draftPicture` */
+      candidate: (pass: number, raws: readonly string[]) => void;
+      /** the newest draft picture sent, base64 JPEG, or null */
+      draftPicture: () => Promise<string | null>;
     };
     __uploads?: PainterUpload[];
     /** the frame the renderer was last given */
@@ -394,7 +397,31 @@ function end(): void {
   manual = null;
 }
 
+function candidate(pass: number, raws: readonly string[]): void {
+  if (painter === null || manual === null) return;
+  const lines: Line[] = [];
+  for (const raw of raws) {
+    const parsed = reader.read(raw);
+    if (parsed.kind !== 'line') continue;
+    const line = normalizer.normalize(parsed.line).line;
+    if (line !== null) lines.push(line);
+  }
+  painter.tryCandidate(manual, pass, lines);
+}
+async function draftPicture(): Promise<string | null> {
+  const drafts = (window.__uploads ?? []).filter((upload) => upload.kind === 'draft');
+  const last = drafts[drafts.length - 1];
+  if (last === undefined) return null;
+  const reader2 = new FileReader();
+  return new Promise((resolve) => {
+    reader2.onload = () => resolve(String(reader2.result).split(',')[1] ?? null);
+    reader2.readAsDataURL(last.blob);
+  });
+}
+
 window.__bench = {
+  candidate,
+  draftPicture,
   play,
   settings,
   open,
@@ -413,7 +440,10 @@ function drawOutline(): void {
   }
   const s = painter.snapshot();
   const v = viewport();
-  const fit = fitCanvas(canvasSelect.value as CanvasName, s.scene.layout, v, LOOKS[s.look]);
+  // the outline is where the selected canvas would stand in the picture's region of the stage plan (the whole stage when nothing is drawn)
+  const region = s.plan?.picture ?? null;
+  const picture = region === null ? { x: -v.width / 2, y: -v.height / 2, width: v.width, height: v.height } : { x: region.x - v.width / 2, y: region.y - v.height / 2, width: region.width, height: region.height };
+  const fit = fitIn(canvasSelect.value as CanvasName, picture, picture, v);
   outline.style.display = 'block';
   outline.style.left = `${v.width / 2 + fit.box.x}px`;
   outline.style.top = `${v.height / 2 + fit.box.y}px`;

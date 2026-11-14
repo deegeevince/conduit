@@ -12,7 +12,6 @@ import type { Box, CameraPose, Viewport } from '../contracts/space';
 import { chartThemeOf } from '../render/chart';
 import type { CanvasFit } from './canvas';
 import { clamp01 } from './affine';
-import { clearOf } from './structures';
 
 /** What has come of the DATA a chart asked for, by id. A table is there; null: it could not be had; absent: still on its way. */
 export interface ChartData {
@@ -29,8 +28,8 @@ export interface ChartEnv {
   readonly data: ReadonlyMap<string, ChartData>;
   readonly scope: Scope;
   readonly fitOf: (element: ElementSpan) => CanvasFit;
-  /** HOTFIX (overlap): boxes of the scene's free words (plane units); the chart keeps clear of them, like a structure */
-  readonly avoid?: (element: ElementSpan) => readonly Box[];
+  /** v2.1: the room the stage plan gave the chart at this instant (eased between layout epochs), reading-plane stage units; null: it has none */
+  readonly roomOf: (element: ElementSpan) => Box | null;
 }
 
 const models = new WeakMap<object, Map<string, ChartModel>>();
@@ -89,11 +88,13 @@ export function chartFrames(schedule: Schedule, tq: number, aq: number, look: Lo
     if (exit !== null && tq >= exit.end) continue;
     const ps = planeScale(element.style.layer, env.viewport);
     const fit = env.fitOf(element);
-    const own: Box =
-      figure.box === null
-        ? { x: fit.box.x / ps, y: fit.box.y / ps, width: fit.box.width / ps, height: fit.box.height / ps }
-        : { x: (fit.box.x + figure.box.x * fit.unit) / ps, y: (fit.box.y + figure.box.y * fit.unit) / ps, width: (figure.box.w * fit.unit) / ps, height: (figure.box.h * fit.unit) / ps };
-    const room: Box = env.avoid === undefined ? own : clearOf(own, env.avoid(element));
+    const given = figure.box === null ? env.roomOf(element) : null;
+    const room: Box =
+      given !== null
+        ? { x: given.x / ps, y: given.y / ps, width: given.width / ps, height: given.height / ps }
+        : figure.box === null
+          ? { x: fit.box.x / ps, y: fit.box.y / ps, width: fit.box.width / ps, height: fit.box.height / ps }
+          : { x: (fit.box.x + figure.box.x * fit.unit) / ps, y: (fit.box.y + figure.box.y * fit.unit) / ps, width: (figure.box.w * fit.unit) / ps, height: (figure.box.h * fit.unit) / ps };
     const z = layerZ(element.style.layer, env.viewport);
     const corner = (pose: CameraPose, x: number, y: number) => projectToScreen({ x, y, z }, pose, env.viewport);
     const a = corner(env.camera, room.x, room.y);
