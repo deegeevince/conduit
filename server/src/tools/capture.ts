@@ -1,6 +1,6 @@
 // pnpm capture: a logged turn, seen as motion.
 //
-//   pnpm capture <log> <turn> [--screen 1280x720|390x844] [--look <id>] [--out <dir>] [--fps 15] [--no-video]
+//   pnpm capture <log> <turn> [--screen 1280x720|1920x825|390x844] [--look <id>] [--out <dir>] [--fps 15] [--no-video]
 //   pnpm capture --all <log> [same flags]       every turn of the log that drew something
 //
 // Replays the turn's logged lines at their logged arrival times (the playhead each arrived at, as the painter was told it), from the
@@ -28,13 +28,13 @@ import type { SessionRecord } from '../domain/session-log';
 const WEB_PORT = 4729;
 const CHROME_PORT = 4761;
 const STRIP_FRAMES = 12;
-const SCREENS: Readonly<Record<string, { width: number; height: number }>> = { '1280x720': { width: 1280, height: 720 }, '390x844': { width: 390, height: 844 } };
+const SCREENS: Readonly<Record<string, { width: number; height: number }>> = { '1280x720': { width: 1280, height: 720 }, '390x844': { width: 390, height: 844 }, '1920x825': { width: 1920, height: 825 } };
 const repoRoot = resolve(import.meta.dirname, '..', '..', '..');
 const sleep = (ms: number): Promise<void> => new Promise((done) => setTimeout(done, ms));
 
 function usage(message: string): never {
   process.stderr.write(`capture: ${message}\n`);
-  process.stderr.write('usage: pnpm capture <log> <turn> [--screen 1280x720|390x844] [--look <id>] [--out <dir>] [--fps n] [--no-video] [--web <url>]\n       pnpm capture --all <log> [flags]\n');
+  process.stderr.write('usage: pnpm capture <log> <turn> [--screen 1280x720|1920x825|390x844] [--look <id>] [--out <dir>] [--fps n] [--no-video] [--web <url>]\n       pnpm capture --all <log> [flags]\n');
   process.exit(2);
 }
 
