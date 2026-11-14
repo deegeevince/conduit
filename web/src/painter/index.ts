@@ -15,7 +15,7 @@ import type { ElementFrame, Frame, Quality, ShapeFrame } from '../contracts/fram
 import type { LookSpec } from '../contracts/look';
 import type { ControlView, LineView, Painter, PainterEvents, PainterOptions, PainterSnapshot } from '../contracts/painter';
 import { REST_POSE } from '../contracts/space';
-import type { CameraPose, Viewport } from '../contracts/space';
+import type { Box, CameraPose, Viewport } from '../contracts/space';
 import { PlayClock, pinnedWallTime } from './clock';
 import type { ClockReading, Horizon } from './clock';
 import { resolveInk } from './colour';
@@ -27,7 +27,7 @@ import { bodySize, marginOf, screenFacts } from './layout/metrics';
 import { Reporter } from './report';
 import { annotated } from './annotate';
 import { placedOf, sightOf } from './sight';
-import { isScreenBlock, setUiPicture, tapUi, uiBlockAt } from './ui-stage';
+import { isScreenBlock, setUiPicture, tapUi, uiBlockAt, uiMockupViews } from './ui-stage';
 import { buildTimeline, settledAfter, settledEnd as settledEndOf } from './timeline';
 import type { Timeline, TimelineContext, TimelineInstant } from './timeline';
 
@@ -1438,6 +1438,19 @@ export function createPainter(options: PainterOptions): Painter {
       if (settling !== null) timeline = buildTimeline(timeline.schedule, turn?.base ?? base, timelineContext());
       sendReady(lastReadySpec ?? timeline.specAt(0));
       drawNow();
+    },
+
+    mockups() {
+      const blocks = timeline.schedule.elements.filter(isScreenBlock).map((span) => span.key);
+      const dx = viewport.width / 2;
+      const dy = viewport.height / 2;
+      const host = (b: { readonly x: number; readonly y: number; readonly width: number; readonly height: number }): Box => ({ x: b.x + dx, y: b.y + dy, width: b.width, height: b.height });
+      return uiMockupViews(blocks).map((view) => ({
+        screen: view.screen,
+        hits: view.hits.map((hit) => ({ id: hit.id, part: hit.part, action: hit.action, box: host(hit) })),
+        words: view.words.map((word) => ({ owner: word.owner, text: word.text, box: host(word) })),
+        notes: view.notes,
+      }));
     },
 
     snapshot: snapshotNow,

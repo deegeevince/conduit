@@ -82,16 +82,16 @@ export interface Eyes {
   close(): Promise<void>;
 }
 
-const CHROME_CANDIDATES = [
+export const CHROME_CANDIDATES = [
   processEnvironment()['CHROME_BIN'],
   '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
   '/usr/bin/google-chrome',
   '/usr/bin/chromium',
 ].filter((path): path is string => typeof path === 'string' && path !== '');
 
-const sleep = (ms: number): Promise<void> => new Promise((done) => setTimeout(done, ms));
+export const sleep = (ms: number): Promise<void> => new Promise((done) => setTimeout(done, ms));
 
-async function waitFor<T>(what: string, ms: number, probe: () => Promise<T | null>): Promise<T> {
+export async function waitFor<T>(what: string, ms: number, probe: () => Promise<T | null>): Promise<T> {
   const until = Date.now() + ms;
   for (;;) {
     const found = await probe().catch(() => null);
@@ -101,7 +101,7 @@ async function waitFor<T>(what: string, ms: number, probe: () => Promise<T | nul
   }
 }
 
-function stop(child: ChildProcess): Promise<void> {
+export function stop(child: ChildProcess): Promise<void> {
   return new Promise((done) => {
     if (child.exitCode !== null || child.signalCode !== null) return done();
     child.once('close', () => done());
@@ -111,13 +111,17 @@ function stop(child: ChildProcess): Promise<void> {
 }
 
 /** A DevTools connection to one page. */
-class Cdp {
+export class Cdp {
   private id = 0;
+  private readonly listeners = new Set<(event: { method: string; params: Record<string, unknown>; sessionId?: string }) => void>();
   private readonly waiting = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
   constructor(private readonly socket: WebSocket) {
     socket.addEventListener('message', (event) => {
-      const message = JSON.parse(String(event.data)) as { id?: number; result?: unknown; error?: { message: string } };
-      if (message.id === undefined) return;
+      const message = JSON.parse(String(event.data)) as { id?: number; result?: unknown; error?: { message: string }; method?: string; params?: Record<string, unknown>; sessionId?: string };
+      if (message.id === undefined) {
+        if (message.method !== undefined) for (const listener of this.listeners) listener({ method: message.method, params: message.params ?? {}, ...(message.sessionId === undefined ? {} : { sessionId: message.sessionId }) });
+        return;
+      }
       const entry = this.waiting.get(message.id);
       if (entry === undefined) return;
       this.waiting.delete(message.id);
@@ -142,6 +146,11 @@ class Cdp {
       this.waiting.set(id, { resolve: resolve as (value: unknown) => void, reject });
       this.socket.send(JSON.stringify({ id, method, params, ...(sessionId === undefined ? {} : { sessionId }) }));
     });
+  }
+  /** DevTools events (`Network.requestWillBeSent`...) as they arrive; returns the way to stop listening */
+  onEvent(listener: (event: { method: string; params: Record<string, unknown>; sessionId?: string }) => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
   }
   close(): void {
     this.socket.close();

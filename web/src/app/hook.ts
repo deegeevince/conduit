@@ -33,6 +33,7 @@ export function createHook(app: Omit<StageApp, 'hook'>, ready: Promise<void>): S
       if (view === undefined || app.charts === null) return Promise.reject(new Error(`No chart with the id "${id}" is on stage.`));
       return app.charts.act(view.key, action);
     },
+    mockups: () => painter.mockups(),
     controls: () => painter.snapshot().controls,
     control(id, value) {
       if (!painter.snapshot().controls.some((candidate) => candidate.id === id)) throw new Error(`No control with the id "${id}" is on stage.`);
