@@ -1,9 +1,12 @@
-import { API, CANVAS, EMPTY_STAGE, PASTE_AS_DOCUMENT_CHARS, FULL_CAPABILITIES, LANGUAGE, LEAD_WINDOW, LineNormalizer, LineReader, TurnScore, buildSystemPrompt, serializeLine, settle, wearingAt } from '@conduit/language';
+import { API, CANVAS, DATA_LIMITS, EMPTY_STAGE, PASTE_AS_DOCUMENT_CHARS, FULL_CAPABILITIES, LANGUAGE, LEAD_WINDOW, LineNormalizer, LineReader, TurnScore, buildSystemPrompt, serializeLine, settle, wearingAt } from '@conduit/language';
 import type { PromptVariant } from '@conduit/language';
 import type {
   BackEvent,
   BackEventRecord,
+  Capabilities,
   CreateSessionRequest,
+  DataFacts,
+  DataTable,
   CreateSessionResponse,
   DocumentFacts,
   Figure,
@@ -11,6 +14,8 @@ import type {
   Issue,
   LineProblem,
   PaintLine,
+  PassState,
+  ReviewPolicy,
   Schedule,
   Services,
   RelayClock,
@@ -24,7 +29,7 @@ import { AppError, errors } from '../errors';
 import type { Logger } from '../log';
 import { ASSET_LIMITS } from './assets';
 import type { AssetStore } from './assets';
-import type { Brain, BrainRegistry, Snapshot } from './brain';
+import type { Brain, BrainEvent, BrainRegistry, Snapshot } from './brain';
 import { DOCUMENT_LIMITS, findUrls, hostOf } from './documents';
 import type { DocumentReader } from './documents';
 import type { ImageModel } from './images';
@@ -33,7 +38,9 @@ import { buildContext, rememberTurn } from './memory';
 import { MAX_PROBLEMS, SERVER_LIMITS } from './session';
 import type { SessionLog } from './session-log';
 import type { ActiveTurn, Session, SessionStore, StageSink } from './session';
+import { factsOf, tableFromText } from './datasets';
 import type { DatasetLibrary } from './datasets';
+import { reviewTurn } from './review';
 import type { TechniqueLibrary } from './techniques';
 
 export interface ConductorDeps {
@@ -51,8 +58,10 @@ export interface ConductorDeps {
   readonly variant: PromptVariant;
   /** the techniques a turn's brief may carry; answers from memory and never waits */
   readonly library: TechniqueLibrary;
-  /** the owner's own datasets, for a chart drawn by reference; `NO_DATASETS` unless switched on. Not yet read by a turn (PLAN-v2.md, package S1). */
+  /** the owner's own datasets, for a chart drawn by reference; `NO_DATASETS` unless switched on */
   readonly datasets: DatasetLibrary;
+  /** look and fix: whether the brain is shown its draft, and every deadline of it */
+  readonly review: ReviewPolicy;
   /** paintings a conversation may ask the image model for */
   readonly maxPaintings: number;
   /** milliseconds; injected so nothing in the domain reads the wall clock directly */
@@ -66,6 +75,9 @@ export interface EventsPage {
 
 const REAP_INTERVAL_MS = 60_000;
 
+/** The longest a turn waits on the owner's datasets before it goes on without them: it is a network call on the turn's path. */
+const DATASET_WAIT_MS = 5_000;
+
 /**
  * Runs conversations. It owns the two one-way streams: lines flow from a
  * brain to the painter, and the painter's back channel flows in. HTTP routes
@@ -75,17 +87,23 @@ export class Conductor {
   private readonly deps: ConductorDeps;
   private readonly waiters = new Map<string, Set<() => void>>();
   private readonly reaper: NodeJS.Timeout;
-  private readonly services: Services;
 
   constructor(deps: ConductorDeps) {
     this.deps = deps;
-    // `review` stays off until the conductor can run the pass (PLAN-v2.md, package S1): a painter told to expect a look that never comes would only wait.
-    this.services = { paint: deps.images.available, sight: deps.sight, review: false };
     deps.sessions.onDrop = (session) => this.release(session, 'session.evicted');
     this.reaper = setInterval(() => {
       for (const session of deps.sessions.reap(deps.now())) this.release(session, 'session.reaped');
     }, REAP_INTERVAL_MS);
     this.reaper.unref();
+  }
+
+  /**
+   * What the server offers a conversation. A look is promised only when the policy is on, the painter says it can report on a
+   * draft, and the configured brain can look: a painter told to expect one that never comes would only wait.
+   */
+  private servicesFor(capabilities: Capabilities): Services {
+    const { review, brains, images, sight } = this.deps;
+    return { paint: images.available, sight, review: review.enabled && review.passes >= 1 && capabilities.drafts && brains.configured.review !== undefined };
   }
 
   createSession(request: CreateSessionRequest): CreateSessionResponse {
@@ -100,7 +118,7 @@ export class Conductor {
       language: LANGUAGE.version,
       screen: request.screen,
       capabilities: request.capabilities,
-      services: this.services,
+      services: this.servicesFor(session.capabilities),
     });
     log.info('session.created', { session: session.id, cols: request.screen.cols, rows: request.screen.rows });
     return { session: session.id, lead: LEAD_WINDOW };
@@ -120,7 +138,7 @@ export class Conductor {
     s.closeSink?.();
     s.sink = sink;
     s.closeSink = close ?? null;
-    sink({ type: 'hello', session: s.id, lead: LEAD_WINDOW, services: this.services });
+    sink({ type: 'hello', session: s.id, lead: LEAD_WINDOW, services: this.servicesFor(s.capabilities) });
     const turn = s.turn;
     if (turn !== null && !turn.reported) for (const event of turn.sent) sink(event);
     // A painting that settled after its turn was reported, with nobody listening, would otherwise never arrive.
@@ -149,13 +167,14 @@ export class Conductor {
         log.info('turn.interrupted', { session: s.id, turn: previous.id, by: 'next-turn' });
         this.finish(s, previous, 'interrupted', null);
       }
+      s.draft.close(previous.id);
       this.closeMemoryWithoutReport(s, previous);
     }
 
     const brain = brains.forInput(input);
     // A process is started for the first thing the user says, not for a page that only looks (the gallery, the explorer).
-    if (brain === brains.configured && (input.kind === 'prompt' || input.kind === 'tap')) this.prepareBrain(s);
-    const context = buildContext(s, this.services);
+    if (brain === brains.configured && (input.kind === 'prompt' || input.kind === 'tap' || input.kind === 'act')) this.prepareBrain(s);
+    const context = buildContext(s, this.servicesFor(s.capabilities));
     const turn: ActiveTurn = {
       id: sessions.nextTurnId(),
       session: s.id,
@@ -173,6 +192,8 @@ export class Conductor {
       relayCursor: s.nextCursor - 1,
       ordinal: s.nextOrdinal,
       lineCount: 0,
+      rejects: 0,
+      review: undefined,
       reported: false,
       sent: [],
     };
@@ -272,7 +293,7 @@ export class Conductor {
   /** The brain system prompt for a session's capabilities, or for the full set when no session is given. It never depends on the screen. */
   guideFor(session: string | null): string {
     const capabilities = session === null ? FULL_CAPABILITIES : this.deps.sessions.require(session, this.deps.now()).capabilities;
-    return buildSystemPrompt({ capabilities, services: this.services, variant: this.deps.variant });
+    return buildSystemPrompt({ capabilities, services: this.servicesFor(capabilities), variant: this.deps.variant });
   }
 
   /** The turn's line reader, which lives as long as the turn does. */
@@ -309,6 +330,23 @@ export class Conductor {
     const index = s.history.findIndex((memory) => memory.turn === turn);
     const memory = s.history[index];
     if (memory !== undefined) s.history[index] = { ...memory, snapshot: true };
+  }
+
+  /**
+   * The painter's picture of the stage as pass `pass` of an open turn will leave it. It is what the brain is shown when it looks at its
+   * draft; it is kept beside the session log, and nowhere else: a draft's picture is never the next turn's snapshot.
+   */
+  receiveDraftPicture(session: string, turn: string, pass: number, snapshot: Snapshot): void {
+    const s = this.deps.sessions.require(session, this.deps.now());
+    if (!s.turns.has(turn)) throw errors.notFound(`turn ${turn}`);
+    s.draft.receivePicture(turn, pass, snapshot);
+    const file = this.deps.sessionLog.saveSnapshot(s.id, `${turn}-draft${pass}`, snapshot.mime, snapshot.bytes);
+    if (file !== '') this.deps.sessionLog.write(s.id, { type: 'draft', turn, pass, noted: 0, picture: true, file });
+  }
+
+  /** The rows of a table this conversation holds, for the painter's `data` fetch; undefined when there is none under that id. */
+  dataFor(session: string, id: string): DataTable | undefined {
+    return this.deps.sessions.require(session, this.deps.now()).tables.find((table) => table.id === id);
   }
 
   /** Throws `not_found` unless the session exists. */
@@ -407,6 +445,14 @@ export class Conductor {
       case 'tap':
         this.deps.sessionLog.write(s.id, { type: 'tap', turn: event.turn, id: event.id, text: event.text, choice: event.choice });
         return;
+      case 'control':
+        this.deps.sessionLog.write(s.id, { type: 'control', turn: event.turn, id: event.id, value: event.value, text: event.text, send: event.send });
+        return;
+      case 'draft':
+        // How the draft will land: what look and fix is waiting on. The picture, when there is one, arrives by upload.
+        s.draft.receive(event.turn, event.pass, event.sight, event.placed ?? [], event.snapshot);
+        this.deps.sessionLog.write(s.id, { type: 'draft', turn: event.turn, pass: event.pass, noted: event.sight.items.filter((item) => item.notes.length > 0).length, picture: event.snapshot, file: null });
+        return;
     }
   }
 
@@ -418,7 +464,7 @@ export class Conductor {
     if (s.preparedFor !== '') return;
     s.preparedFor = 'opened';
     try {
-      this.deps.brains.configured.open?.({ session: s.id, capabilities: s.capabilities, screen: s.screen, services: this.services });
+      this.deps.brains.configured.open?.({ session: s.id, capabilities: s.capabilities, screen: s.screen, services: this.servicesFor(s.capabilities) });
     } catch (error) {
       this.deps.log.warn('brain.open_failed', { session: s.id, error });
     }
@@ -449,6 +495,7 @@ export class Conductor {
     if (turn.endReason !== null) return;
     turn.endReason = reason;
     if (reason !== 'done') turn.abort.abort();
+    s.draft.close(turn.id);
     this.deps.sessionLog.write(s.id, { type: 'end', turn: turn.id, reason, message, lines: turn.lineCount });
     this.emit(s, turn, { type: 'end', turn: turn.id, reason, message });
     this.deps.log.info('turn.ended', { session: s.id, turn: turn.id, reason, lines: turn.lineCount, durationMs: this.deps.now() - turn.openedAt });
@@ -460,7 +507,86 @@ export class Conductor {
    * fetched (in parallel, each announced to the stage the moment it starts). Failures are kept, not thrown:
    * the brain is told what could not be read and answers honestly.
    */
-  private async gather(s: Session, turn: ActiveTurn, brain: Brain): Promise<{ fresh: Set<string>; unread: UnreadFacts[] }> {
+  /**
+   * Everything a prompt brings for the brain to read or draw from. A pasted table is data and costs nothing to read; the links and
+   * the owner's dataset are fetched at the same time, each announced to the stage and each with its own deadline.
+   * `text` is the prompt the brain is shown when it is not the one the user typed (a table too long to retype is taken out of it).
+   */
+  private async gather(s: Session, turn: ActiveTurn, brain: Brain): Promise<{ fresh: Set<string>; unread: UnreadFacts[]; data: Set<string>; text: string | null }> {
+    const data = new Set<string>();
+    const input = turn.input;
+    if (input.kind !== 'prompt' || brain.id === 'replay') return { fresh: new Set(), unread: [], data, text: null };
+    const say = (label: string, state: 'start' | 'done' | 'failed', message: string | null): void => this.emit(s, turn, { type: 'reading', turn: turn.id, label, state, message });
+
+    const pasted = tableFromText(input.text, 'd0', 'pasted by the user');
+    if (pasted !== null) {
+      say('your table', 'start', null);
+      data.add(this.holdTable(s, turn, pasted).id);
+      say('your table', 'done', null);
+      // A short table is also in the words; a long one is only data, and the words that came with it are what is left.
+      if (input.text.length >= PASTE_AS_DOCUMENT_CHARS) {
+        const rest = input.text.split('\n').filter((line) => !/[\t|,]/.test(line)).join('\n').trim();
+        return { fresh: new Set(), unread: [], data, text: `${rest === '' ? '' : `${rest}\n`}(a table of ${pasted.rows.length} rows follows as DATA)` };
+      }
+    }
+
+    const [documents, dataset] = await Promise.all([this.gatherDocuments(s, turn, brain), pasted === null ? this.gatherDataset(s, turn, input.text, say) : Promise.resolve(null)]);
+    if (dataset !== null) {
+      if (dataset.table !== null) data.add(dataset.table.id);
+      else documents.unread.push({ url: dataset.label, why: dataset.why });
+    }
+    return { ...documents, data, text: null };
+  }
+
+  /** The owner's own rows, when the prompt names a dataset the index knows. A network call with one short deadline: a failure is told to the brain, never thrown. */
+  private async gatherDataset(
+    s: Session,
+    turn: ActiveTurn,
+    prompt: string,
+    say: (label: string, state: 'start' | 'done' | 'failed', message: string | null) => void,
+  ): Promise<{ label: string; table: DataTable | null; why: string } | null> {
+    const entry = this.deps.datasets.find(prompt)[0];
+    if (entry === undefined) return null;
+    const label = `your dataset ${entry.dataset}`;
+    say(label, 'start', null);
+    const started = this.deps.now();
+    try {
+      const signal = AbortSignal.any([turn.abort.signal, AbortSignal.timeout(DATASET_WAIT_MS)]);
+      const rows = await Promise.race([
+        this.deps.datasets.rows(entry, signal),
+        new Promise<never>((_, reject) => signal.addEventListener('abort', () => reject(new Error(turn.abort.signal.aborted ? 'the turn was interrupted' : `no answer within ${DATASET_WAIT_MS} ms`)), { once: true })),
+      ]);
+      const table = this.holdTable(s, turn, { ...rows, source: rows.source === '' ? `your dataset ${entry.dataset}` : rows.source });
+      if (!turn.abort.signal.aborted) say(label, 'done', null);
+      this.deps.log.info('turn.dataset', { session: s.id, turn: turn.id, dataset: entry.dataset, rows: table.rows.length, ms: this.deps.now() - started });
+      return { label, table, why: '' };
+    } catch (error) {
+      const why = error instanceof Error ? error.message : 'it could not be read';
+      this.deps.log.warn('turn.dataset_failed', { session: s.id, turn: turn.id, dataset: entry.dataset, why });
+      if (!turn.abort.signal.aborted) say(label, 'failed', why);
+      return { label, table: null, why };
+    }
+  }
+
+  /** Keeps a table under the next id; the oldest goes when the conversation holds more than `DATA_LIMITS.tables`. */
+  private holdTable(s: Session, turn: ActiveTurn, table: DataTable): DataTable {
+    const held: DataTable = { ...table, id: `d${s.nextTable}`, rows: table.rows.slice(0, DATA_LIMITS.rows) };
+    s.nextTable += 1;
+    s.tables.push(held);
+    while (s.tables.length > DATA_LIMITS.tables) s.tables.shift();
+    this.deps.sessionLog.write(s.id, { type: 'data', turn: turn.id, id: held.id, source: held.source, rows: held.rows.length, status: 'held', reason: null });
+    return held;
+  }
+
+  /** A chart said `data=<id>`: tell the painter where its rows are, or that there are none. Not on the turn clock, like a painting. */
+  private announceData(s: Session, turn: ActiveTurn, id: string): void {
+    const table = s.tables.find((held) => held.id === id);
+    const reason = table === undefined ? `the conversation holds no data called ${id}` : null;
+    this.deps.sessionLog.write(s.id, { type: 'data', turn: turn.id, id, source: table?.source ?? '', rows: table?.rows.length ?? 0, status: table === undefined ? 'failed' : 'ready', reason });
+    this.emit(s, turn, { type: 'data', turn: turn.id, id, status: table === undefined ? 'failed' : 'ready', url: table === undefined ? null : API.data(s.id, id), reason });
+  }
+
+  private async gatherDocuments(s: Session, turn: ActiveTurn, brain: Brain): Promise<{ fresh: Set<string>; unread: UnreadFacts[] }> {
     const fresh = new Set<string>();
     const unread: UnreadFacts[] = [];
     const input = turn.input;

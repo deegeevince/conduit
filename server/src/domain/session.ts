@@ -2,8 +2,10 @@ import type {
   BackEventRecord,
   Capabilities,
   ClockState,
+  DataTable,
   LineProblem,
   LineReader,
+  ReviewOutcome,
   ScreenFacts,
   StageBase,
   StageEvent,
@@ -16,6 +18,8 @@ import { PROMPT_MAX_CHARS } from '@conduit/language';
 import { errors } from '../errors';
 import type { BrainId } from './brain';
 import type { HeldDocument } from './documents';
+import { createDraftGate } from './review';
+import type { DraftGate } from './review';
 
 /** lines remembered as having gone wrong, per turn */
 export const MAX_PROBLEMS = 8;
@@ -83,6 +87,10 @@ export interface ActiveTurn {
   /** position in the session's turns; a later turn has a larger ordinal */
   readonly ordinal: number;
   lineCount: number;
+  /** lines of this turn that were dropped outright, over every pass: what look-and-fix counts */
+  rejects: number;
+  /** how look-and-fix went, once it has been considered; it goes into the turn's memory */
+  review: ReviewOutcome | undefined;
   /** the memory of this turn is closed: a report arrived, or the next turn replaced it */
   reported: boolean;
   /** everything sent to the painter for this turn, so a reconnecting stream can be brought up to date */
@@ -127,6 +135,11 @@ export interface Session {
   /** what the user gave the brain to read, oldest first; every turn's brief draws on it */
   documents: HeldDocument[];
   nextDocument: number;
+  /** rows a chart draws by reference (`data=d1`), oldest first, at most `DATA_LIMITS.tables` */
+  tables: DataTable[];
+  nextTable: number;
+  /** where the painter's report on a draft is waited for */
+  readonly draft: DraftGate;
   /** turns a snapshot has been uploaded for */
   snapshotTurns: Set<string>;
   /** aborted when the session is dropped: stops paintings that outlive their turns */
@@ -173,6 +186,9 @@ export class SessionStore {
       preparedFor: '',
       documents: [],
       nextDocument: 1,
+      tables: [],
+      nextTable: 1,
+      draft: createDraftGate(),
       lateAssets: [],
       paintings: 0,
       snapshotTurns: new Set(),
