@@ -106,6 +106,22 @@ function outsideRails(root: Placed<Item>, visit: (p: Placed<Item>, x: number, de
   for (const k of root.children) outsideRails(k, visit, x, depth + 1);
 }
 
+const DROPPABLE: ReadonlySet<string> = new Set(['item', 'text', 'note']);
+
+/** The same nodes without the last row of the last list: an `item`, a `text` or a `note` at the end of a column that holds at least two of them. Null when there is none to drop. */
+function dropLast(nodes: readonly UiNode[]): UiNode[] | null {
+  for (let i = nodes.length - 1; i >= 0; i -= 1) {
+    const node = nodes[i] as UiNode;
+    if (!isUiContainer(node) || node.kind !== 'col') continue;
+    const rows = node.children.filter((child) => !isUiContainer(child) && DROPPABLE.has(child.kind));
+    const last = node.children[node.children.length - 1];
+    if (rows.length >= 2 && last !== undefined && !isUiContainer(last) && DROPPABLE.has(last.kind)) return nodes.map((n, j) => (j === i ? { ...node, children: node.children.slice(0, -1) } : n));
+    const inner = dropLast(node.children);
+    if (inner !== null) return nodes.map((n, j) => (j === i ? { ...node, children: inner } : n));
+  }
+  return null;
+}
+
 /**
  * One screen, laid out. What the screen's own words (`theme=`, `accent=`, ...) make of the look's tokens is read here. A phone or a tablet is the glass it is: when
  * what was written does not fit it and the screen did not say how closely to set it, it is set again at `density=compact`, and that one is kept if it fits better.
@@ -119,8 +135,18 @@ export function layoutScreen(written: UiScreen, base: UiTokens, measure: UiMeasu
   const tighter = layoutWith(written, { ...tokens, pack: 'compact' }, measure, state, lines);
   const best = spilled(tighter) < spilled(first) ? tighter : first;
   if (spilled(best) === 0) return best;
-  const squeezed = layoutWith(written, { ...tokens, pack: 'compact', squeeze: true }, measure, state, lines);
-  return spilled(squeezed) < spilled(best) ? squeezed : best;
+  let squeezed = layoutWith(written, { ...tokens, pack: 'compact', squeeze: true }, measure, state, lines);
+  let kept = spilled(squeezed) < spilled(best) ? squeezed : best;
+  // still too long: the last rows of the last list go, one at a time, rather than a row cut across the glass (never the bars, buttons or fields)
+  let screen = written;
+  for (let step = 0; step < 6 && spilled(kept) > 0; step += 1) {
+    const shorter = dropLast(screen.children);
+    if (shorter === null) break;
+    screen = { ...screen, children: shorter };
+    squeezed = layoutWith(screen, { ...tokens, pack: 'compact', squeeze: true }, measure, state, Math.max(0, lines - step - 1));
+    if (spilled(squeezed) <= spilled(kept)) kept = squeezed;
+  }
+  return kept;
 }
 
 function layoutWith(written: UiScreen, tokens: UiTokens, measure: UiMeasure, state: UiState, lines: number): UiScreenLayout {
