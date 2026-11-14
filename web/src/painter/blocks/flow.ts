@@ -354,7 +354,8 @@ function buildFlow(env: Env, grow: Grow): Draft {
       outs.set(s.u, [...(outs.get(s.u) ?? []), s]);
       ins.set(s.v, [...(ins.get(s.v) ?? []), s]);
     }
-  const portAt = (v: V, k: number, n: number): number => (v.real ? v.pos - v.c / 2 + ((k + 1) / (n + 1)) * v.c : v.pos);
+  // a link meets a diamond near its points, so its ports gather in the middle of the side; a box spreads them along it
+  const portAt = (v: V, k: number, n: number): number => (v.real ? v.pos - v.c / 2 + (v.real.el.figure?.kind === 'node' && v.real.el.figure.shape === 'ask' ? 0.5 + (((k + 1) / (n + 1)) - 0.5) * 0.35 : (k + 1) / (n + 1)) * v.c : v.pos);
   for (const [v, list] of outs) {
     list.sort((x, y) => x.v.pos - y.v.pos || x.edge - y.edge);
     list.forEach((s, k) => (s.out = portAt(v, k, list.length)));

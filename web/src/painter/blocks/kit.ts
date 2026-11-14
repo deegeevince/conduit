@@ -5,7 +5,7 @@ import type { ElementSpan, Point, Polyline, Range, SightNote } from '@conduit/la
 import { evalExpr, formatValue, parseTemplate } from '@conduit/language';
 import type { BlockPart, MeasuredText, StructureInput, StructureLayout, TextSpec } from '../../contracts/blocks';
 import type { Box } from '../../contracts/space';
-import { arrowhead, box, boxOfPoints, centreOf, clippedRect, dashes, inflate, lengthOf, overlaps, polylineHitsBox, polylinesCross, right, roundedRect, bottom, trim, atDistance, union } from './geom';
+import { arrowhead, box, boxOfPoints, centreOf, diamond, dashes, inflate, lengthOf, overlaps, polylineHitsBox, polylinesCross, right, roundedRect, bottom, trim, atDistance, union } from './geom';
 
 export type Note = { readonly key: string; readonly note: SightNote };
 
@@ -138,17 +138,21 @@ export interface NodeBox {
   height: number;
 }
 
+/** How much bigger than its words a diamond is: the words are a rectangle in its middle, and a rectangle fills half a diamond. */
+const DIAMOND = 1.8;
+
 /** A node as big as its words need, with half a body line of margin all round. */
 export function sizeNode(env: Env, el: ElementSpan, maxWidth: number = env.wrapWidth): NodeBox {
   const w = wordsOf(el, env.input.scope);
-  const m = env.measure(w.text, maxWidth);
   const shape = el.figure?.kind === 'node' ? el.figure.shape : 'step';
+  // a question is a diamond, and the words sit in its middle: they are set narrower and taller, and the frame is as much bigger as it takes
+  const m = env.measure(w.text, shape === 'ask' ? Math.max(env.body * 6, maxWidth * 0.7) : maxWidth);
   let width = m.width + env.body;
   let height = m.height + env.body;
   if (shape === 'end') width = Math.max(width + height * 0.3, height * 1.4);
   if (shape === 'ask') {
-    width += height * 0.3;
-    height += env.body * 0.2;
+    width = (m.width + env.body * 0.6) * DIAMOND;
+    height = (m.height + env.body * 0.6) * DIAMOND;
   }
   return { el, text: w.text, emphasis: w.emphasis, m, width: env.up(width, 'x'), height: env.up(height, 'y') };
 }
@@ -163,7 +167,7 @@ export function nodeParts(env: Env, n: NodeBox, at: Box, fills: BlockPart[], fra
   const radius = env.input.look.radius;
   if (shape !== 'note') {
     const outline: Polyline =
-      shape === 'ask' ? clippedRect(at, Math.min(at.height * 0.28, env.body * 0.9)) : shape === 'end' ? roundedRect(at, at.height / 2) : roundedRect(at, radius);
+      shape === 'ask' ? diamond(at) : shape === 'end' ? roundedRect(at, at.height / 2) : roundedRect(at, radius);
     fills.push({ kind: 'shape', owner: n.el.key, part: 'fill', outline: [outline], role: 'fill' });
     frames.push({ kind: 'shape', owner: n.el.key, part: 'box', outline: [outline], role: 'frame' });
   }

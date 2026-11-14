@@ -232,6 +232,16 @@ export function clippedRect(b: Box, c: number): Polyline {
   ]);
 }
 
+/** The four midpoints of a box's sides: a diamond. */
+export function diamond(b: Box): Polyline {
+  return closedLine([
+    { x: b.x + b.width / 2, y: b.y },
+    { x: right(b), y: b.y + b.height / 2 },
+    { x: b.x + b.width / 2, y: bottom(b) },
+    { x: b.x, y: b.y + b.height / 2 },
+  ]);
+}
+
 export function rectOutline(b: Box): Polyline {
   return roundedRect(b, 0);
 }
