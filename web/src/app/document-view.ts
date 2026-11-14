@@ -129,6 +129,13 @@ export function createDocumentView(options: DocumentViewOptions): DocumentView {
     doc = next;
     if (host === null) {
       layer.style.display = shown ? 'flex' : 'none';
+      // a lesson that takes over the stage fades in, calmly (not under reduced motion), and says so
+      if (shown && !(typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches)) {
+        layer.style.opacity = '0';
+        layer.style.transition = 'opacity 450ms ease';
+        requestAnimationFrame(() => requestAnimationFrame(() => (layer.style.opacity = '1')));
+      }
+      if (shown) options.onNote?.('Opened as a worksheet. “Back to the picture” returns to the painted answer.');
       host = new DocumentHost({ mount: body, dark: options.dark(), input: input(next, state), onNote: options.onNote });
       host.listen({
         onChange: (change) => {

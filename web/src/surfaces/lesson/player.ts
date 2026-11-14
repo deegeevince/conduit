@@ -285,7 +285,7 @@ export class Player {
       up !== null && up.id !== this.doc.root ? h('button', { type: 'button', class: 'nav', 'data-act': 'up', onclick: () => this.go(up) }, '‹ Up') : null,
       h('span', { class: 'crumb' }, crumb),
       this.input.catalogue.length > 0 ? h('button', { type: 'button', class: 'nav', 'data-act': 'catalogue', onclick: () => this.show({ kind: 'catalogue' }) }, 'My documents') : null,
-      this.input.picture === true ? h('button', { type: 'button', class: 'nav', 'data-act': 'picture', onclick: () => this.port.picture() }, 'Picture') : null,
+      this.input.picture === true ? h('button', { type: 'button', class: 'nav', 'data-act': 'picture', onclick: () => this.port.picture() }, 'Back to the picture') : null,
     );
   }
 
@@ -652,7 +652,7 @@ export class Player {
     const back = h('button', { type: 'button', class: 'btn soft', 'data-act': 'back', onclick: () => this.back(node) }, shown <= 1 ? (up !== null && up.id !== this.doc.root ? 'Up' : 'Map') : 'Back');
     let primary: HTMLElement | null = null;
     if (gated) primary = null;
-    else if (shown < count) primary = h('button', { type: 'button', class: 'btn main grow', 'data-act': 'next', onclick: () => this.next(node) }, 'Next');
+    else if (shown < count) primary = h('button', { type: 'button', class: 'btn main', 'data-act': 'next', onclick: () => this.next(node) }, 'Next');
     else if (count > 0 && waiting) primary = h('button', { type: 'button', class: 'btn main grow', 'data-act': 'next', disabled: true }, 'Getting the next step ready…');
     else if (!over) primary = null;
     return h('footer', { class: 'dock' }, back, primary);

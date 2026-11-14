@@ -14,7 +14,7 @@ function apply(el: Element, attrs: Attrs): void {
 function fill(el: Element, children: readonly Child[]): void {
   for (const child of children) {
     if (child === null || child === false || child === undefined) continue;
-    el.append(typeof child === 'string' ? document.createTextNode(child) : child);
+    el.append(typeof child === 'string' ? document.createTextNode(child.replace(/\b(mm|cm|dm|km|m)([23])\b/g, (_w, u: string, n: string) => `${u}${n === '2' ? '²' : '³'}`)) : child);
   }
 }
 
