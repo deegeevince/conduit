@@ -1,4 +1,4 @@
-import type { BrainChange, BrainChoice, BrainMode } from '@conduit/language';
+import type { AppStatus, BrainChange, BrainChoice, BrainMode } from '@conduit/language';
 import type { AgentSettings } from '../domain/agent';
 import type { Brain, BrainRegistry, ReviewRequest } from '../domain/brain';
 import { errors } from '../errors';
@@ -20,6 +20,8 @@ export interface BrainsDeps {
    */
   readonly agent?: AgentSettings;
   readonly modes?: readonly BrainMode[];
+  /** v2.1. The steward's status for the brief's note about the app; read without waiting */
+  readonly status?: () => AppStatus | null;
 }
 
 /**
@@ -53,6 +55,7 @@ export function createBrains(deps: BrainsDeps): BrainRegistry {
         recycleTokens: settings.recycleTokens,
         ...(deps.agent === undefined ? {} : { agent: deps.agent }),
         ...(deps.modes === undefined ? {} : { modes: deps.modes }),
+        ...(deps.status === undefined ? {} : { status: deps.status }),
       });
       break;
   }

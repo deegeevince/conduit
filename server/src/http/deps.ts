@@ -1,3 +1,4 @@
+import type { AppStatus } from '@conduit/language';
 import type { RelayHub } from '../brains/relay/relay-hub';
 import type { AssetStore } from '../domain/assets';
 import type { Conductor } from '../domain/conductor';
@@ -11,4 +12,6 @@ export interface HttpDeps {
   readonly conductor: Conductor;
   readonly relayHub: RelayHub;
   readonly assets: AssetStore;
+  /** the steward's status for the brief's note about the app; read without waiting */
+  readonly status: () => AppStatus | null;
 }

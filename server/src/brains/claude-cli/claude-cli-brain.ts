@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buildSystemPrompt, buildTurnBrief } from '@conduit/language';
-import type { ActionRisk, BrainChange, BrainChoice, BrainEffort, BrainMode, PromptVariant, ToolChoice } from '@conduit/language';
+import type { ActionRisk, AppStatus, BrainChange, BrainChoice, BrainEffort, BrainMode, PromptVariant, ToolChoice } from '@conduit/language';
 import type { BriefForm, Capabilities } from '@conduit/language';
 import { buildReviewBrief, isKeep } from '@conduit/language';
 import type { Brain, BrainEvent, BrainSession, ReviewRequest, Snapshot, TurnRequest } from '../../domain/brain';
@@ -37,6 +37,8 @@ export interface ClaudeCliDeps {
   readonly agent?: AgentSettings;
   /** v2.1. The kinds of mind the server offers a session; `steward` is the registry's, not this brain's */
   readonly modes?: readonly BrainMode[];
+  /** v2.1. The steward's account of where the product stands, as the brief's note about the app has it; read without waiting */
+  readonly status?: () => AppStatus | null;
 }
 
 /** A call the CLI is holding for the owner's answer. */
@@ -132,6 +134,13 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
       mcpConfigs: agent.services.filter((service) => on.has(service.name)).map((service) => service.config),
       cwd: folder(),
     };
+  };
+  /** The names of what the model may use on this turn in agent mode (built-in tools and connected services); none in plain mode. */
+  const toolNamesOf = (session: string): readonly string[] => {
+    const run = agentRunOf(session);
+    if (run === null) return [];
+    const on = onOf(session);
+    return [...run.builtIns, ...agent.services.filter((service) => on.has(service.name)).map((service) => service.name)];
   };
   const agentKeyOf = (session: string): string => {
     const run = agentRunOf(session);
@@ -259,6 +268,9 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
         sees: request.snapshot !== null,
         look: deps.warm && request.look === true,
         web: webOn(request.session),
+        mode: modeOf(request.session),
+        tools: toolNamesOf(request.session),
+        status: deps.status?.() ?? null,
       }),
       image: request.snapshot,
       pdfs: (request.pdfs ?? []).filter((pdf) => given.some((doc) => doc.id === pdf.id && doc.kind === 'pdf')).map((pdf) => pdf.bytes),

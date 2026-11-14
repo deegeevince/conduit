@@ -41,7 +41,20 @@ export function registerRelayRoutes(app: Hono, deps: HttpDeps): void {
       relayHub.release(request.turn);
       return c.body(null, 204);
     }
-    const brief = buildTurnBrief(request.context, request.input);
+    // A turn claimed again is the look at its draft: the brief is the review's (what it is asked, and the file the picture is in).
+    const review = relayHub.reviewOf(request.turn);
+    const brief =
+      review !== null
+        ? review.brief
+        : buildTurnBrief(request.context, request.input, 'full', undefined, {
+            model: 'the steward (the owner\'s own Claude Code session)',
+            effort: 'its own',
+            sees: false,
+            look: false,
+            web: false,
+            mode: 'steward',
+            status: deps.status(),
+          });
     conductor.noteBrief(request.turn, brief);
     const claim: RelayClaim = {
       turn: request.turn,
