@@ -13,7 +13,9 @@ import type { SurfaceHost, SurfaceProbe } from '../contracts/surface';
 import { createSurfaceHost } from '../surfaces/host';
 import { decode } from '../surfaces/lesson/changes';
 import { lessonSource } from '../surfaces/lesson/source';
-import { tokensFor } from '../surfaces/lesson/tokens';
+import { tokensFor, tokensFromLook } from '../surfaces/lesson/tokens';
+import { audienceBar } from '../core/contracts';
+import type { Audience } from '../core/contracts';
 import { isTechnique } from '../surfaces/lesson/types';
 import type { CatalogueEntry, DocState, Document, DocumentSummary, LessonInput, LessonPayload, LessonTokens, NodeId, StateChange, WriteResult } from '../surfaces/lesson/types';
 
@@ -32,6 +34,10 @@ export interface DocumentHostOptions {
   readonly mount: HTMLElement;
   readonly dark: boolean;
   readonly input: LessonInput;
+  /** the stage's look as an app wears it (the same tokens the host gives a live app); null until the stage has one */
+  readonly look?: () => AppTokens | null;
+  /** who the person is, for the type and the targets */
+  readonly audience?: () => Audience;
   readonly onChange?: (change: StateChange, state: DocState) => void;
   /** she opened another sheet in the catalogue */
   readonly onOpen?: (document: string) => void;
@@ -105,7 +111,9 @@ export class DocumentHost {
 
   /** The look's tokens with the payload on them: a new object each time, so the host sends it. */
   private carry(): AppTokens & { readonly lesson: LessonPayload } {
-    const palette = tokensFor(this.dark);
+    const app = this.options.look?.() ?? null;
+    const bar = audienceBar(this.options.audience?.() ?? 'adult', typeof window !== 'undefined' && window.innerWidth <= 600);
+    const palette = app === null ? tokensFor(this.dark) : tokensFromLook(app, bar.scale, bar.minTarget + 4);
     this.rev += 1;
     const lesson: LessonPayload = { rev: this.rev, tokens: palette, input: { ...this.input, state: this.state }, replace: this.replace, census: this.asked, ...(this.written === undefined ? {} : { write: this.written }) };
     this.replace = false;
@@ -224,6 +232,10 @@ export class DocumentHost {
   write(node: NodeId, ask: string, text: string | null, said?: string, sees?: string | null): void {
     this.writeSeq += 1;
     this.written = { seq: this.writeSeq, node, ask, text, ...(said === undefined ? {} : { said }), ...(sees === undefined || sees === null ? {} : { sees }) };
+    this.push();
+  }
+  /** the look or the audience changed: send the lesson its palette again */
+  restyle(): void {
     this.push();
   }
   setDark(dark: boolean): void {

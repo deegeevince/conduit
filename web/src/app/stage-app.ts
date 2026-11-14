@@ -6,6 +6,9 @@ import type { ExportJob, ExportRequest, Exporter } from '../contracts/export';
 import type { ChartHost } from '../contracts/chart';
 import type { StageHook } from '../contracts/hook';
 import { createDocumentView } from './document-view';
+import { readAudience, writeAudience } from './audience';
+import type { Audience } from '../core/contracts';
+import { appTokensOf } from '../painter/apps';
 import type { DocumentView as DocumentLayer } from './document-view';
 import type { LinkStatus, StageLink } from '../contracts/link';
 import type { Painter } from '../contracts/painter';
@@ -15,6 +18,7 @@ import { createExporter } from '../export';
 import { createHttpLink } from '../link/http-link';
 import type { HttpLink } from '../link/http-link';
 import { LOOKS } from '../looks';
+import type { LookSpec } from '../contracts/look';
 import { createSound } from '../audio/sound';
 import type { Sound } from '../audio/sound';
 import { createPainter } from '../painter';
@@ -97,6 +101,8 @@ export interface StageApp {
   readonly attribution: { readonly text: string; readonly href: string } | null;
   /** whether the server can look at a draft and fix it, and whether the viewer has it switched on */
   readonly review: { readonly available: boolean; readonly on: boolean; set(on: boolean): void };
+  /** who the screen is for: raises the type and targets in the lesson view and the legibility floor the stage is held to */
+  readonly audience: { readonly value: Audience; set(audience: Audience): void };
   /** Interrupts whatever is playing, reports it, then starts a turn with this prompt (the photos the server kept for it, `link.uploadPhoto`; the ink drawn on the stage; the voice notes whose words it holds, `link.uploadVoice`). */
   prompt(text: string, photos?: readonly string[], marks?: InkMarks, voice?: readonly string[]): Promise<string>;
   demo(name: string): Promise<string>;
@@ -302,10 +308,13 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     throw new Error(`The stage could not start: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
   }
   let shownSpec: object | null = null;
+  let restyleDocument: (() => void) | null = null;
+  let audience: Audience = readAudience();
   const observed = observeRenderer(rawRenderer, (frame) => {
     if (frame.spec === shownSpec) return;
     shownSpec = frame.spec;
     applyLook(host, frame.spec);
+    restyleDocument?.();
   });
   const renderer = observed.renderer;
 
@@ -442,6 +451,8 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   const documents: DocumentLayer = createDocumentView({
     stage: host,
     dark: () => document.documentElement.style.colorScheme === 'dark',
+    look: () => (shownSpec === null ? null : appTokensOf(shownSpec as LookSpec, viewportOf(host))),
+    audience: () => audience,
     onNote: (text) => announce(text),
     onShown: (id, title) => rememberDocument(id, title),
     photoUrl: (id) => link.photoUrl(id),
@@ -467,6 +478,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
       },
     },
   });
+  restyleDocument = () => documents.restyle();
   let currentDocumentId: string | null = null;
 
   /** what the server is fetching for this turn, by name, and what it could not read */
@@ -1296,6 +1308,16 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     apps: liveApps,
     sound,
     attribution: engine?.attribution ?? null,
+    audience: {
+      get value() {
+        return audience;
+      },
+      set(next) {
+        audience = next;
+        writeAudience(next);
+        documents.restyle();
+      },
+    },
     review: {
       get available() {
         return services?.review === true;

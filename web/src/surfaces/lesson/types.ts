@@ -75,6 +75,11 @@ export interface LessonTokens {
   readonly nudgeSoft: string;
   readonly font: string;
   readonly dark: boolean;
+  /** the look's corner radius, CSS pixels (0 in a look whose machine had none) */
+  readonly radius?: number;
+  /** the audience's type scale (1 for an adult) and the least a target may be, CSS pixels */
+  readonly scale?: number;
+  readonly target?: number;
 }
 
 /** One sheet, as the catalogue lists it (the server's index, WS4, read into this). */

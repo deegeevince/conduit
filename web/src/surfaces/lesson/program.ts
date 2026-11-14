@@ -48,6 +48,12 @@ function wear(tokens: LessonTokens): void {
   set('--nudge', tokens.nudge);
   set('--nudge-soft', tokens.nudgeSoft);
   set('--font', tokens.font);
+  const radius = tokens.radius ?? 12;
+  set('--r-s', `${Math.round(radius * 0.6)}px`);
+  set('--r-m', `${Math.round(radius * 1.2)}px`);
+  set('--r-l', `${Math.round(radius * 1.8)}px`);
+  set('--ts', String(tokens.scale ?? 1));
+  set('--tt', `${tokens.target ?? 48}px`);
   if (tokens.dark) document.documentElement.setAttribute('data-dark', '');
   else document.documentElement.removeAttribute('data-dark');
 }

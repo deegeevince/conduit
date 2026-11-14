@@ -31,6 +31,9 @@ export interface DocStageEvent {
 export interface DocumentViewOptions {
   /** the stage's element: the view is laid over it */
   readonly stage: HTMLElement;
+  /** the stage's look as an app wears it, and the person's audience */
+  readonly look?: () => import('../contracts/app').AppTokens | null;
+  readonly audience?: () => import('../core/contracts').Audience;
   readonly link: DocumentLink;
   readonly dark: () => boolean;
   readonly onNote?: (text: string) => void;
@@ -56,6 +59,8 @@ export interface DocumentView {
   /** show the picture under it, or the document again */
   toggle(show?: boolean): void;
   readonly shown: boolean;
+  /** the look or the audience changed */
+  restyle(): void;
   /** a picture of the document as she sees it (the surface hands over its own still through the bridge), or null when it is not on screen */
   still(): Promise<Blob | null>;
   host(): DocumentHost | null;
@@ -87,7 +92,7 @@ export function createDocumentView(options: DocumentViewOptions): DocumentView {
   pill.type = 'button';
   pill.textContent = 'Show the document';
   pill.setAttribute('data-act', 'document');
-  pill.style.cssText = 'position:absolute;right:12px;bottom:12px;z-index:6;min-height:48px;padding:0 18px;border-radius:24px;border:2px solid #888;background:#fff;color:#111;font:700 18px system-ui;display:none';
+  pill.style.cssText = 'position:absolute;right:12px;bottom:12px;z-index:6;min-height:48px;padding:0 18px;border-radius:24px;border:2px solid var(--stage-accent,#888);background:var(--stage-ground,#fff);color:var(--stage-ink,#111);font:700 18px system-ui;display:none';
   options.stage.append(layer, pill);
 
   const pen: DocumentInk | null =
@@ -134,7 +139,7 @@ export function createDocumentView(options: DocumentViewOptions): DocumentView {
         requestAnimationFrame(() => requestAnimationFrame(() => (layer.style.opacity = '1')));
       }
       if (shown) options.onNote?.('Opened as a worksheet. Close returns to the picture.');
-      host = new DocumentHost({ mount: body, dark: options.dark(), input: input(next, state), onNote: options.onNote });
+      host = new DocumentHost({ mount: body, dark: options.dark(), input: input(next, state), onNote: options.onNote, ...(options.look === undefined ? {} : { look: options.look }), ...(options.audience === undefined ? {} : { audience: options.audience }) });
       host.listen({
         onChange: (change) => {
           // the server's own reading of a try wants the page's verdict beside it (the lesson's matcher ran here, with no round trip)
@@ -199,6 +204,9 @@ export function createDocumentView(options: DocumentViewOptions): DocumentView {
       pill.style.display = 'none';
     },
     toggle,
+    restyle() {
+      host?.restyle();
+    },
     get shown() {
       return shown && host !== null;
     },
