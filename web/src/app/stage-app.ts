@@ -274,12 +274,15 @@ function newRenderer(params: AppParams): Renderer {
  * streams together. Stage events drive the painter; the painter's back
  * channel goes up the link. This is the only place those three meet.
  */
+/** A reload reopens a document by itself only if it was the active thing in the last five minutes (an accidental reload mid-question); later it is offered, never forced. */
+const RESUME_WITHIN_MS = 5 * 60_000;
+
 export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   const { host, params, lockLook } = options;
   // a reload that will open a document again does not play the welcome demo under it
   const reopening = ((): boolean => {
     try {
-      return !new URLSearchParams(window.location.search).has('fresh') && window.localStorage.getItem('conduit.document') !== null;
+      return !new URLSearchParams(window.location.search).has('fresh') && window.localStorage.getItem('conduit.document') !== null && Date.now() - Number(window.localStorage.getItem('conduit.document.at') ?? 0) < RESUME_WITHIN_MS;
     } catch {
       return false;
     }
@@ -421,10 +424,17 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   // v3. The document on the stage: when the session has one, the lesson view is laid over the stage (PLAN-v3-core WS6), the pen over its writing
   // slot (the ink module), her state goes up as `state` events, and a reload opens the last document again where she was (`resumeDocument`).
   const RESUME_KEY = 'conduit.document';
-  const rememberDocument = (id: string | null): void => {
+  const rememberDocument = (id: string | null, title?: string): void => {
     try {
-      if (id === null) window.localStorage.removeItem(RESUME_KEY);
-      else window.localStorage.setItem(RESUME_KEY, id);
+      if (id === null) {
+        window.localStorage.removeItem(RESUME_KEY);
+        window.localStorage.removeItem(`${RESUME_KEY}.at`);
+        window.localStorage.removeItem(`${RESUME_KEY}.title`);
+      } else {
+        window.localStorage.setItem(RESUME_KEY, id);
+        window.localStorage.setItem(`${RESUME_KEY}.at`, String(Date.now()));
+        if (title !== undefined) window.localStorage.setItem(`${RESUME_KEY}.title`, title);
+      }
     } catch {
       // storage may be blocked: the document is still kept by the server, and the catalogue still lists it
     }
@@ -433,7 +443,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     stage: host,
     dark: () => document.documentElement.style.colorScheme === 'dark',
     onNote: (text) => announce(text),
-    onShown: (id) => rememberDocument(id),
+    onShown: (id, title) => rememberDocument(id, title),
     photoUrl: (id) => link.photoUrl(id),
     ink: {
       upload: async (png) => (await link.uploadPhoto(png)).id,
@@ -443,7 +453,10 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     },
     link: {
       sendState: (change) => {
-        if (currentDocumentId !== null) sendBack({ type: 'state', turn: currentTurn, document: currentDocumentId, change });
+        if (currentDocumentId !== null) {
+          rememberDocument(currentDocumentId);
+          sendBack({ type: 'state', turn: currentTurn, document: currentDocumentId, change });
+        }
       },
       documents: () => link.documents(),
       open: async (id) => {
@@ -954,13 +967,63 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     }
   }
 
+  /** A quiet line over the stage: the last document is offered, never forced. Dismiss forgets it; Continue opens it where she was. */
+  function offerResume(id: string): void {
+    let title = 'your last document';
+    try {
+      title = window.localStorage.getItem(`${RESUME_KEY}.title`) ?? title;
+    } catch {
+      // the offer still reads
+    }
+    const bar = document.createElement('div');
+    bar.setAttribute('data-resume-offer', '');
+    bar.setAttribute('role', 'status');
+    bar.style.cssText = 'position:absolute;left:50%;transform:translateX(-50%);top:12px;z-index:7;display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:center;max-width:calc(100% - 24px);padding:8px 12px;border-radius:14px;border:1px solid #8886;background:#fffffff2;color:#111;font:600 16px system-ui';
+    const text = document.createElement('span');
+    text.textContent = `Continue ${title} where you left off?`;
+    const mk = (label: string, onClick: () => void): HTMLButtonElement => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = label;
+      button.style.cssText = 'min-height:44px;padding:0 16px;border-radius:12px;border:2px solid #555;background:#fff;color:#111;font:700 16px system-ui';
+      button.addEventListener('click', onClick);
+      return button;
+    };
+    bar.append(
+      text,
+      mk('Continue', () => {
+        bar.remove();
+        void link.resumeDocument(id).then(
+          (view) => {
+            currentDocumentId = view.document.id;
+            documents.load({ document: view.document, state: view.state });
+          },
+          () => rememberDocument(null),
+        );
+      }),
+      mk('Dismiss', () => {
+        bar.remove();
+        rememberDocument(null);
+      }),
+    );
+    host.append(bar);
+  }
+
   async function connectWithRetry(ready: Parameters<StageLink['connect']>[0]): Promise<void> {
     let lastError: unknown = null;
     for (const delay of CONNECT_DELAYS_MS) {
       if (disposed) return;
       if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
       try {
-        const resume = fresh ? null : resumeId();
+        const stored = fresh ? null : resumeId();
+        const recent = ((): boolean => {
+          try {
+            return Date.now() - Number(window.localStorage.getItem(`${RESUME_KEY}.at`) ?? 0) < RESUME_WITHIN_MS;
+          } catch {
+            return false;
+          }
+        })();
+        const resume = recent ? stored : null;
         let resumed = false;
         if (resume !== null) {
           try {
@@ -974,6 +1037,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
           }
         }
         if (!resumed) await link.connect(ready);
+        if (!resumed && stored !== null) offerResume(stored);
         connecting = false;
         connectSettle?.resolve();
         publishStatus();

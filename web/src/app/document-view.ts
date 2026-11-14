@@ -45,7 +45,7 @@ export interface DocumentViewOptions {
   /** where a photo of this conversation is, by its id: a question's crop is cut from it */
   readonly photoUrl?: (id: string) => string | null;
   /** a document is on screen (or put away) for this id: the page may remember it to resume */
-  readonly onShown?: (document: string) => void;
+  readonly onShown?: (document: string, title: string) => void;
 }
 
 export interface DocumentView {
@@ -133,7 +133,7 @@ export function createDocumentView(options: DocumentViewOptions): DocumentView {
         layer.style.transition = 'opacity 450ms ease';
         requestAnimationFrame(() => requestAnimationFrame(() => (layer.style.opacity = '1')));
       }
-      if (shown) options.onNote?.('Opened as a worksheet. “Back to the picture” returns to the painted answer.');
+      if (shown) options.onNote?.('Opened as a worksheet. Close returns to the picture.');
       host = new DocumentHost({ mount: body, dark: options.dark(), input: input(next, state), onNote: options.onNote });
       host.listen({
         onChange: (change) => {
@@ -151,14 +151,14 @@ export function createDocumentView(options: DocumentViewOptions): DocumentView {
           void options.link.open(id).then((view) => {
             doc = view.document;
             host?.setInput(input(view.document, view.state), true);
-            options.onShown?.(view.document.id);
+            options.onShown?.(view.document.id, view.document.title);
             refresh();
             keptInk(view.document.id);
           }, (cause: unknown) => options.onNote?.(cause instanceof Error ? cause.message : 'That document could not be opened.'));
         },
         onNote: options.onNote,
         onPicture: () => toggle(false), onSlot: (slot) => pen?.slot(slot), onInkCheck: (node, ask) => void pen?.check(node, ask), onInkClear: (node, ask) => pen?.clear(node, ask) });
-      options.onShown?.(next.id);
+      options.onShown?.(next.id, next.title);
       refresh();
       keptInk(next.id);
     } else host.setInput(input(next, host.current));

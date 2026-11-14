@@ -285,7 +285,7 @@ export class Player {
       up !== null && up.id !== this.doc.root ? h('button', { type: 'button', class: 'nav', 'data-act': 'up', onclick: () => this.go(up) }, '‹ Up') : null,
       h('span', { class: 'crumb' }, crumb),
       this.input.catalogue.length > 0 ? h('button', { type: 'button', class: 'nav', 'data-act': 'catalogue', onclick: () => this.show({ kind: 'catalogue' }) }, 'My documents') : null,
-      this.input.picture === true ? h('button', { type: 'button', class: 'nav', 'data-act': 'picture', onclick: () => this.port.picture() }, 'Back to the picture') : null,
+      this.input.picture === true ? h('button', { type: 'button', class: 'nav', 'data-act': 'picture', onclick: () => this.port.picture(), 'aria-label': 'Close and go back to the picture' }, 'Close') : null,
     );
   }
 

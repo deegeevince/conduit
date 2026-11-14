@@ -26,10 +26,22 @@ export function mountAbout(menu: ComposerMenu, app: StageApp, extra?: (body: HTM
     body.append(credit);
   }
   extra?.(body);
+  const fresh = menu.add({
+    id: 'new-conversation',
+    label: 'New conversation',
+    gist: 'start clean; documents stay in My documents',
+    order: 75,
+    run: () => {
+      const url = new URL(window.location.href);
+      url.searchParams.set('fresh', '1');
+      window.location.assign(url.toString());
+    },
+  });
   const entry = menu.add({ id: 'about', label: 'About', gist: 'keys, commands, credits', order: 80, view: 'about' });
   return {
     dispose() {
       entry.remove();
+      fresh.remove();
       body.remove();
     },
   };
