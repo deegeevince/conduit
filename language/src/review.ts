@@ -162,7 +162,7 @@ export function buildReviewBrief(input: ReviewBriefInput): string {
   const rows: string[] = [];
   if (input.sight !== null) for (const line of describeSight(input.sight)) rows.push(`  ${line}`);
   for (const problem of input.problems) rows.push(`  ${problem.kind === 'rejected' ? 'REJECTED' : 'REPAIRED'} \`${problem.raw}\`: ${problem.why}`);
-  const seen = input.picture ? 'The picture attached is the stage as the lines you have written will leave it.' : 'No picture is attached; go by the measurements.';
+  const seen = input.picture ? 'The picture attached is the stage as the lines you have written will leave it.' : 'No picture is attached and none can be fetched: use no tool, go by the measurements.';
   const where = input.placed === undefined || input.placed.length === 0 ? null : `WHERE THINGS ARE (id: size at top-left corner, canvas units):\n${placedRows(input.placed).join('\n')}`;
   const critic = input.critic ?? null;
   if (form === 'refine') {
