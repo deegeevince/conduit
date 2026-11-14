@@ -770,8 +770,8 @@ export function commandsFor(services: Pick<Services, 'refine'> | undefined): rea
   return APP_COMMANDS.filter((command) => !HIDDEN_COMMANDS.includes(command.name) && (!('needs' in command) || services?.[command.needs] === true));
 }
 
-/** Commands that work but are not listed: not in `/help`, not in the brain's note of the app. `/brain` is the developer's (`/brain steward`). */
-export const HIDDEN_COMMANDS: readonly AppCommandName[] = ['brain'];
+/** Commands that work but are not listed: not in `/help`, not in the brain's note of the app (which is held to a token budget). `/brain` is the developer's (`/brain steward`); `/lines` is for whoever is watching, and the [+] menu says it. */
+export const HIDDEN_COMMANDS: readonly AppCommandName[] = ['brain', 'lines'];
 
 export interface StartTurnResponse {
   readonly turn: string;
