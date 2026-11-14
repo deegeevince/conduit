@@ -7,6 +7,9 @@ Newest first. Each item is something the brain can show live when asked "showcas
 - Save whole conversation: one WebM of every turn in order, each after a card with what you asked, with the sound of any tunes. At most ten minutes; a longer conversation keeps its latest turns.
 - Save frames (the zip of pictures) is gone; Save picture and Save MIDI stay.
 
+## Mock-ups you can use (live)
+- Mock-up buttons tell Conduit what you pressed (and what you typed, never a password); toggles and sliders follow your finger; follow-ups change the mock-up you have; bigger text; page mock-ups fit a phone.
+
 ## Working apps and films (live)
 - Ask for something that works (a calculator, a playlist, a practice sheet that checks answers) and Conduit builds a real little app on the canvas, locked down with no internet or access to anything else; what you do in it reaches Conduit. Mock-ups stay mock-ups.
 - Save film now saves your latest answer with its taps; Save whole conversation makes one video of everything, with sound; Save frames is gone.
