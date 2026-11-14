@@ -2,6 +2,14 @@
 
 Newest first. Each item is something the brain can show live when asked "showcase what's new": draw it, don't describe it. The server reads this file.
 
+## Everything where it belongs, nothing lost (new)
+- Sliders and other controls stand in a column of their own beside a chart or a table, measured at the room they really have: all six sliders of a budget show at once on a computer, a tablet or a phone, and none sits on the drawing. On a very short screen they scroll inside their own window.
+- Nothing an answer says is silently lost. When the words do not fit, they are set a little smaller together; whatever still does not fit waits behind a small "earlier" button at the top of the words, which shows those lines in order and closes again.
+- "How does it work, step by step" keeps the picture and gives a "1 of 4" stepper beside it: one sentence a tap, the part it names lit up. A thing with a form you can see (a chord, a layout) is drawn, not put in a table.
+- A row of boxes too narrow for its words (twelve months on a phone) wraps into rows, every word in its box. A hand-drawn table's rows open up instead of landing on each other, and narration keeps the order it was told in.
+- On a phone, labels stay on the screen and their lines end on their own part. An app or a page keeps the answer's words beside it instead of covering them, and a mock-up's buttons and tab bar stay inside its screen.
+- In homework, the pencil stays for the next try after a wrong answer, after Help and after "Show me how", on an iPad, a phone or a computer. A pen stroke that starts on a button draws; it never presses it.
+
 ## Step-by-step documents that are not homework (new)
 - Ask to be walked through a recipe, a lease or a trip and Conduit writes a document of parts you work through: each step with a "Done" tick to mark it off, a choice where the call is yours (how thick, fine or question it, which day first), and help on a step when you ask. Homework help is the same pieces with a young learner's rules.
 - Help for a young learner is a ladder of questions back to her, facts first (what do we know, with the facts marked in the question), then what is being asked, then ways to go at it, and then she has a go. Doing a way together is always an ask she answers, never an answer shown.
