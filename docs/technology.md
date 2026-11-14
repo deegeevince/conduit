@@ -2,7 +2,7 @@
 
 This document answers one question: **why does the code have this shape?** What the product is and what was decided about it is in [product.md](product.md). The language is specified in [language.md](language.md). How to run it is in [runbook.md](runbook.md).
 
-> **v2.** The quality and expression round is planned and its skeleton (contracts, the language, stubs) is in the code. Sections and rows marked (v2) describe that skeleton and what will stand on it; `PLAN-v2.md` is the build. A stub says "STUB" at the top of its file and names its package.
+> **v2.** The quality and expression round is built and integrated. Sections marked (v2) are what it added; `PLAN-v2.md` records what it measured against the bar. Everything marked here as built is built: no stub remains.
 
 ## The shape
 

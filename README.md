@@ -18,7 +18,7 @@ say | The tide does the counting.
 
 Paste a link to a PDF or a web page, or a long passage, and it reads it and answers about it on the stage. The server fetches public addresses only.
 
-**v2, the quality and expression round, is planned and not yet built**: diagrams the brain names and the painter lays out, charts drawn by a charting engine, controls that drive a drawing with no round trip, the brain looking at its own draft and fixing it, a library of techniques, and a loop that improves all of it. The decisions are in [docs/product.md](docs/product.md); the build is in [PLAN-v2.md](PLAN-v2.md).
+**v2, the quality and expression round, is built**: diagrams the brain names and the painter lays out, charts drawn by a charting engine, controls that drive a drawing with no round trip, the brain looking at its own draft and fixing it, a library of techniques, and a loop that improves all of it. The decisions are in [docs/product.md](docs/product.md); what it measured is in [PLAN-v2.md](PLAN-v2.md).
 
 It is not a chat replacement. A fact is plain prose at reading speed; a drawing is used where a drawing shows more than words.
 
