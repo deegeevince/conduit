@@ -1,7 +1,8 @@
 import { DEFAULT_LOOK, FIRST_LOAD_DEMO, LineNormalizer, LineReader, parseLine, parseReplayDirective, serializeLine } from '@conduit/language';
 import overtureScript from '@conduit/language/demos/overture.series?raw';
-import type { BackEvent, Issue, Line, LeadWindow, LookId, ScreenFacts, Services, Sight, StageEvent, TurnEndReason, TurnInput } from '@conduit/language';
+import type { BackEvent, ControlValues, DataTable, Issue, Line, LeadWindow, LookId, ScreenFacts, Services, Sight, StageEvent, TurnEndReason, TurnInput } from '@conduit/language';
 import type { ExportJob, ExportRequest, Exporter } from '../contracts/export';
+import type { ChartHost } from '../contracts/chart';
 import type { StageHook } from '../contracts/hook';
 import type { LinkStatus, StageLink } from '../contracts/link';
 import type { Painter } from '../contracts/painter';
@@ -12,13 +13,17 @@ import { createHttpLink } from '../link/http-link';
 import type { HttpLink } from '../link/http-link';
 import { LOOKS } from '../looks';
 import { createPainter } from '../painter';
+import { createChartEngine } from '../render/chart';
 import { createFilm } from '../painter/film';
 import { createPlainRenderer } from '../render/plain';
 import { canUseThree, createThreeRenderer } from '../render/three';
+import { createAccessLayer } from './access';
+import { createChartHost } from './chart-host';
 import { createHook } from './hook';
 import { observeRenderer } from './observe';
 import type { AppParams } from './params';
 import { applyLook } from './theme';
+import { reviewSwitch } from './review-switch';
 
 export interface StageAppOptions {
   /** the element the stage fills; its size is the painter's viewport */
@@ -65,6 +70,12 @@ export interface StageApp {
   readonly painter: Painter;
   readonly link: StageLink;
   readonly hook: StageHook;
+  /** where this stage's charts live; null when this build has no charting engine */
+  readonly charts: ChartHost | null;
+  /** the line the charting engine's licence asks for, to show in the page; null when there is none */
+  readonly attribution: { readonly text: string; readonly href: string } | null;
+  /** whether the server can look at a draft and fix it, and whether the viewer has it switched on */
+  readonly review: { readonly available: boolean; readonly on: boolean; set(on: boolean): void };
   /** Interrupts whatever is playing, reports it, then starts a turn with this prompt. */
   prompt(text: string): Promise<string>;
   demo(name: string): Promise<string>;
