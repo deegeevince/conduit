@@ -28,6 +28,11 @@ export interface LayoutItem {
    * as `height` needs, in layer units, with no text. Its placement says where it goes; nothing is drawn for it here.
    */
   readonly reserve?: { readonly width: number; readonly height: number };
+  /**
+   * Every words this line can be given (a bound `correct` changes them as a control moves): the room is made for the tallest and the widest of
+   * them at the size chosen, once, so that nothing around the line moves or is covered whichever one is showing. Absent: its own words only.
+   */
+  readonly variants?: readonly { readonly text: string; readonly emphasis: readonly Range[] }[];
 }
 
 export interface LayoutInput {
@@ -224,6 +229,18 @@ function cellFor(size: Size, k: number, layer: Layer, ctx: Context): Cell {
 }
 
 function makeBlock(prep: Prep, k: number, availWidth: number, indent: number, bullet: string | null, ctx: Context): Block {
+  const variants = prep.item.variants;
+  if (variants === undefined || variants.length < 2) return makeOneBlock(prep, k, availWidth, indent, bullet, ctx);
+  // the room is the tallest of the words it can be given, then the widest: set once, for all of them
+  let best: Block | null = null;
+  for (const variant of variants) {
+    const made = makeOneBlock(prepare({ ...prep.item, text: variant.text, emphasis: variant.emphasis, variants: undefined }, ctx.look), k, availWidth, indent, bullet, ctx);
+    if (best === null || made.height > best.height + EPS || (Math.abs(made.height - best.height) <= EPS && made.width > best.width)) best = made;
+  }
+  return best ?? makeOneBlock(prep, k, availWidth, indent, bullet, ctx);
+}
+
+function makeOneBlock(prep: Prep, k: number, availWidth: number, indent: number, bullet: string | null, ctx: Context): Block {
   const own = prep.face === ctx.look.type.face;
   const pitch = own ? ctx.look.type.pitch : FACES[prep.face].pitch;
   let block = buildBlock(prep, k, availWidth, indent, bullet, ctx, own, pitch);

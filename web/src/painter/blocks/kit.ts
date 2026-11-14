@@ -11,8 +11,13 @@ export type Note = { readonly key: string; readonly note: SightNote };
 
 /** The words of an element with any `{…}` worked out from the controls' values. */
 export function wordsOf(el: ElementSpan, scope: StructureInput['scope']): { text: string; emphasis: readonly Range[] } {
-  if (!el.text.includes('{')) return { text: el.text, emphasis: el.emphasis };
-  const parts = parseTemplate(el.text, (name) => Object.hasOwn(scope, name));
+  return wordsIn(el.text, el.emphasis, scope);
+}
+
+/** Any words (a table's cell, a chart's) with `{…}` worked out from the controls' values; the emphasis is kept when nothing was worked out. */
+export function wordsIn(source: string, emphasis: readonly Range[], scope: StructureInput['scope']): { text: string; emphasis: readonly Range[] } {
+  if (!source.includes('{')) return { text: source, emphasis };
+  const parts = parseTemplate(source, (name) => Object.hasOwn(scope, name));
   let out = '';
   let changed = false;
   for (const part of parts) {
@@ -22,7 +27,7 @@ export function wordsOf(el: ElementSpan, scope: StructureInput['scope']): { text
       changed = true;
     }
   }
-  return changed ? { text: out, emphasis: [] } : { text: el.text, emphasis: el.emphasis };
+  return changed ? { text: out, emphasis: [] } : { text: source, emphasis };
 }
 
 /** Everything one layout attempt shares. */

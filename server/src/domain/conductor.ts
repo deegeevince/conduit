@@ -770,6 +770,7 @@ export class Conductor {
     step('abort', () => {
       if (reason !== 'done') turn.abort.abort();
     });
+    step('braces', () => this.noteUndeclaredBraces(turn));
     step('draft', () => s.draft.close(turn.id));
     // Nothing the owner was asked and did not answer outlives the turn: it is a no.
     step('permissions', () => this.denyPending(s, turn.id, 'turn'));
@@ -1329,7 +1330,7 @@ export class Conductor {
     }
     const braced = this.withoutRawBraces(turn, normalized.line);
     const line = braced.line;
-    const bracedIssues: Issue[] = braced.dropped.length === 0 ? [] : [{ code: 'unknown-name', severity: 'warn', message: `${braced.dropped.join(' ')} in the words names no control on stage, so it was taken out; a name in braces must be the id of a slider, toggle or pick you declared` }];
+    const bracedIssues: Issue[] = [];
     const seq = s.nextSeq;
     s.nextSeq += 1;
     turn.lineCount += 1;
@@ -1414,27 +1415,42 @@ export class Conductor {
   }
 
   /**
-   * The learner never sees a raw `{…}`: braces that read as an expression of names that are no control on stage are taken out of the words
-   * (and said to the brain as a repair, in the next brief).
+   * The learner never sees a raw `{…}`. A brace naming a control that is not (yet) on stage is kept while the turn runs, because the brain may
+   * declare the slider after the table or sentence that reads it; the painter works it out against every control of the turn. When the turn
+   * ends, the names that were never declared are said to the brain as a repair (the painter takes them out of the words).
    */
   private withoutRawBraces(turn: ActiveTurn, line: Line): { readonly line: Line; readonly dropped: string[] } {
-    const ids = new Set(turn.score.schedule.elements.filter((element) => element.figure?.kind === 'control').map((element) => element.id));
-    const dropped: string[] = [];
     const walk = (value: unknown): unknown => {
       if (Array.isArray(value)) return value.map(walk);
       if (typeof value !== 'object' || value === null) return value;
       const out: Record<string, unknown> = {};
       for (const [key, inner] of Object.entries(value)) {
         if (key === 'text' && typeof inner === 'string' && inner.includes('{')) {
-          const cleaned = withoutUnknownBraces(inner, (name) => ids.has(name));
-          dropped.push(...cleaned.dropped);
+          const cleaned = withoutUnknownBraces(inner, () => true);
+          if (withoutUnknownBraces(inner, (name) => this.declared(turn, name)).dropped.length > 0) this.bracesWaiting.set(turn, [...(this.bracesWaiting.get(turn) ?? []), inner]);
           out[key] = cleaned.text;
         } else out[key] = typeof inner === 'object' ? walk(inner) : inner;
       }
       return out;
     };
     const walked = walk(line) as Line;
-    return { line: dropped.length === 0 ? line : walked, dropped };
+    return { line: walked, dropped: [] };
+  }
+
+  /** braces that named a control not on stage when they were written, by turn */
+  private readonly bracesWaiting = new WeakMap<ActiveTurn, string[]>();
+
+  private declared(turn: ActiveTurn, name: string): boolean {
+    return turn.score.schedule.elements.some((element) => element.figure?.kind === 'control' && element.id === name);
+  }
+
+  /** At the turn's end: braces that name no control declared anywhere in it. */
+  private noteUndeclaredBraces(turn: ActiveTurn): void {
+    const waiting = this.bracesWaiting.get(turn);
+    if (waiting === undefined) return;
+    const never = waiting.flatMap((text) => withoutUnknownBraces(text, (name) => this.declared(turn, name)).dropped);
+    if (never.length === 0) return;
+    this.noteProblem(turn, never.join(' '), 'repaired', [{ code: 'unknown-name', severity: 'warn', message: `${never.join(' ')} in the words names no control declared in the turn, so it was taken out; a name in braces must be the id of a slider, toggle or pick you declared` }]);
   }
 
   private reject(s: Session, turn: ActiveTurn, raw: string, issues: readonly Issue[]): void {

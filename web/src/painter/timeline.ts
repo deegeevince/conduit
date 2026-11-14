@@ -1,4 +1,4 @@
-import { CANVAS, DEFAULT_TUNE_VOICE, cachedTune, describeFigure, outlineOf, tuneRowsOf, ENTER_SECONDS, exitSeconds, isInFlow, isStruckAt, lookOfStage, PACE_TIMING, sceneAt, styleAt, valueAt } from '@conduit/language';
+import { CANVAS, DEFAULT_TUNE_VOICE, withoutUnknownBraces, cachedTune, describeFigure, outlineOf, tuneRowsOf, ENTER_SECONDS, exitSeconds, isInFlow, isStruckAt, lookOfStage, PACE_TIMING, sceneAt, styleAt, valueAt } from '@conduit/language';
 import type { SightNote, ClockState, ElementChange, ElementSpan, ElementStyle, ExitEffect, Layer, LookId, Mood, ResolvedLook, SceneSpan, Schedule, StageBase } from '@conduit/language';
 import type { CameraSpan, Layout } from '@conduit/language';
 import type { Colour, ElementFrame, FigureFrame, Frame, RunFrame, ShapeFrame } from '../contracts/frame';
@@ -328,10 +328,21 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
   const cindex = controlIndexOf(schedule);
   const controlSpans = schedule.elements.filter((element) => element.kind === 'control');
   const templates = new Map<string, Template>();
+  /** the words as written, less any `{name}` of a control that is declared nowhere in the document (said to the brain as a repair; never shown raw) */
+  const sources = new Map<string, { readonly text: string; readonly emphasis: ElementSpan['emphasis'] }>();
+  const sourceOf = (element: ElementSpan): { readonly text: string; readonly emphasis: ElementSpan['emphasis'] } => {
+    let found = sources.get(element.key);
+    if (found === undefined) {
+      const cleaned = element.text.includes('{') ? withoutUnknownBraces(element.text, (id) => cindex.ids.has(id)) : null;
+      found = cleaned === null || cleaned.dropped.length === 0 ? { text: element.text, emphasis: element.emphasis } : { text: cleaned.text, emphasis: [] };
+      sources.set(element.key, found);
+    }
+    return found;
+  };
   const templateOf = (element: ElementSpan): Template => {
     let found = templates.get(element.key);
     if (found === undefined) {
-      found = compileTemplate(element.text, (id) => cindex.ids.has(id));
+      found = compileTemplate(sourceOf(element).text, (id) => cindex.ids.has(id));
       templates.set(element.key, found);
     }
     return found;
@@ -343,12 +354,22 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
     const spec = found === null ? null : controlSpecOf(found);
     return found === null || spec === null ? null : { spec, value: heldBy(runtime, found) };
   };
+  /**
+   * Every other words a bound `text` change (`bind … | correct id | …`) can give the element. The layout reserves room for the longest of them
+   * and the element's own, so that stepping through never moves a neighbour or covers one.
+   */
+  const textVariants = (element: ElementSpan): readonly BoundWords[] => {
+    const out: BoundWords[] = [];
+    for (const change of element.driven) if (change.effect.kind === 'text') out.push({ text: change.effect.text, emphasis: change.effect.emphasis });
+    return out;
+  };
   /** the words of an element as the hand has them now: `{…}` worked out, or a bound `text` change */
   const wordsNow = (element: ElementSpan, bound: BoundWords | null, time: number): BoundWords | null => {
     if (bound !== null) return bound;
     const template = templateOf(element);
-    if (!template.reactive) return null;
-    return renderTemplate(template, element.text, element.emphasis, (id) => controlNamed(id, time));
+    const source = sourceOf(element);
+    if (!template.reactive) return source.text !== element.text || textVariants(element).length > 0 ? { text: source.text, emphasis: source.emphasis } : null;
+    return renderTemplate(template, source.text, source.emphasis, (id) => controlNamed(id, time));
   };
   // Words are laid out here; everything drawn is placed by painter/figures.ts.
   // the words of a scene whose answer is one live app are not drawn on the stage: they are in the transcript, and the app is the page
@@ -739,12 +760,16 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
     const sceneFit = fitIn(scene.canvas, first.picture ?? safe, first.flow, viewport);
     const items: LayoutItem[] = present.map((element) => {
       const template = templateOf(element);
-      const words = template.reactive ? renderTemplate(template, element.text, element.emphasis, (id) => controlNamed(id, start)) : null;
+      const source = sourceOf(element);
+      const rendered = template.reactive ? renderTemplate(template, source.text, source.emphasis, (id) => controlNamed(id, start)) : null;
+      const words = rendered ?? source;
+      const others = textVariants(element);
       return {
         key: element.key,
         order: element.order,
-        text: words === null ? element.text : words.text,
-        emphasis: words === null ? element.emphasis : words.emphasis,
+        text: words.text,
+        emphasis: words.emphasis,
+        ...(others.length > 0 && { variants: [words, ...others] }),
         style: laidStyle(styleAt(element, start)),
         struck: isStruckAt(element, start) && replaced.has(element.key),
         replaces: element.replaces,
@@ -1186,7 +1211,10 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
       const right = first !== undefined && Math.abs(first.x + first.width - placed.width / 2) < 0.5 && !left;
       const natural = cellOf(style.size, viewport, look).fontSize / planeScale(placed.layer, viewport);
       const set = setTextOnce({ look, viewport, text: words.text, emphasis: words.emphasis, style: { ...style, layer: placed.layer }, shrink: Math.max(0.05, Math.min(1, placed.fontSize / natural)), maxWidth: placed.width, width: placed.width, align: left ? 'left' : right ? 'right' : 'center' });
-      pose = { ...placed, runs: set.placement.runs, lines: set.placement.lines, height: Math.max(placed.height, set.placement.height) };
+      // the top stays where the layout put it, whatever the words: a shorter one leaves the room below empty, a longer one (never, when the layout was made for the longest) grows down
+      const drop = (set.placement.height - placed.height) / 2;
+      const moved = <T extends { readonly y: number }>(items: readonly T[]): T[] => items.map((item) => ({ ...item, y: item.y + drop }));
+      pose = { ...placed, runs: moved(set.placement.runs), lines: moved(set.placement.lines), height: Math.max(placed.height, set.placement.height) };
     }
     const fs = pose.fontSize;
     const screenPx = fs * planeScale(pose.layer, viewport);
