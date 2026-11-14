@@ -1,8 +1,9 @@
 // The stage's own controls beyond the prompt: "Show all" for the viewer's
-// time, and what can be taken away from an answer.
+// time, and what can be saved from an answer.
 
-import type { ExportRequest } from '../contracts/export';
 import type { StageApp } from '../app/stage-app';
+import type { ExportRequest } from '../contracts/export';
+import { SIZES, copyScript, saveBlob, saveScript, saveStill } from './files';
 
 export interface Actions {
   dispose(): void;
@@ -13,35 +14,16 @@ export interface TranscriptView {
   revealTurn(turn: string): void;
 }
 
+/** Where the actions go: Show all and the chart credit beside the status line, Save with the bar's other controls. */
+export interface ActionSlots {
+  readonly top: HTMLElement;
+}
+
 type Formats = Awaited<ReturnType<StageApp['formats']>>;
 
 const NO_FORMATS: Formats = { video: [], frames: false, svg: false };
 
-const SIZES = [
-  { id: 'landscape', label: '1920 by 1080, landscape', width: 1920, height: 1080 },
-  { id: 'portrait', label: '1080 by 1920, portrait', width: 1080, height: 1920 },
-  { id: 'square', label: '1080 by 1080, square', width: 1080, height: 1080 },
-] as const;
-
 let counter = 0;
-
-function stamp(): string {
-  const now = new Date();
-  const pad = (value: number): string => String(value).padStart(2, '0');
-  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
-}
-
-function saveBlob(blob: Blob, fileName: string): void {
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = fileName;
-  link.hidden = true;
-  document.body.append(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 30_000);
-}
 
 function sceneCount(lines: readonly { readonly text: string }[]): number {
   return lines.filter((line) => /^scene(\s|$)/.test(line.text)).length;
@@ -57,48 +39,43 @@ function sceneCount(lines: readonly { readonly text: string }[]): number {
  *   transcript opens at this turn, because the stage can only rest on the
  *   last one (on a narrow screen it says so in the status line instead, because the
  *   sheet would cover the stage).
- * - **Take away**: a menu button with: Copy script, Save script, Play a
+ * - **Save**: a menu button with: Copy script, Save script, Play a
  *   script (a textarea in a dialog; sends input kind `script`), Save picture
  *   (PNG, SVG), Save film (the formats `Exporter.formats()` offers, at
  *   1920x1080 or 1080x1920 or 1080x1080, 30 or 60 fps) with a progress bar
- *   and Cancel, Save frames. Enabled once a turn has ended.
+ *   and Cancel, Save frames. Each item says in a line what it does. Enabled
+ *   once a turn has ended.
+ * - **The chart credit**: the charting engine's name and link, only while a chart is on stage.
  *
  * All of it works from the keyboard, announces what it did in the status
  * line, and follows the chrome rules in DESIGN.md.
  */
-export function mountActions(host: HTMLElement, app: StageApp, transcript: TranscriptView, stage: HTMLElement): Actions {
+export function mountActions(host: HTMLElement, app: StageApp, transcript: TranscriptView, stage: HTMLElement, slots: ActionSlots): Actions {
   counter += 1;
-  const menuId = `take-menu-${counter}`;
+  const menuId = `save-menu-${counter}`;
 
   const group = document.createElement('div');
   group.className = 'actions';
   group.innerHTML = `
-    <button class="action action--show" type="button" title="Show all (or press . while the stage has focus)" hidden>Show all</button>
-    <button class="action action--review" type="button" aria-pressed="true" title="After the first draft, the drawing is checked and fixed" hidden>Check the drawing: on</button>
     <div class="action-menu">
-      <button class="action action--take" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="${menuId}">Take away</button>
-      <div class="action-menu__list" id="${menuId}" role="menu" aria-label="Take away" hidden></div>
+      <button class="action action--take" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="${menuId}">Save</button>
+      <div class="action-menu__list" id="${menuId}" role="menu" aria-label="Save" hidden></div>
     </div>`;
-  host.prepend(group);
+  host.append(group);
 
-  const showButton = group.querySelector<HTMLButtonElement>('.action--show');
+  const showButton = document.createElement('button');
+  showButton.className = 'action action--show';
+  showButton.type = 'button';
+  showButton.title = 'Show all (or press . while the stage has focus)';
+  showButton.textContent = 'Show all';
+  showButton.hidden = true;
+  slots.top.append(showButton);
+
   const takeButton = group.querySelector<HTMLButtonElement>('.action--take');
   const menu = group.querySelector<HTMLElement>('.action-menu__list');
-  const reviewButton = group.querySelector<HTMLButtonElement>('.action--review');
-  if (showButton === null || takeButton === null || menu === null || reviewButton === null) throw new Error('The actions could not be built.');
+  if (takeButton === null || menu === null) throw new Error('The actions could not be built.');
 
-  // Look and fix: offered only when the server can do it; the choice is remembered for the browser.
-  const showReview = (): void => {
-    reviewButton.hidden = !app.review.available;
-    reviewButton.setAttribute('aria-pressed', String(app.review.on));
-    reviewButton.textContent = `Check the drawing: ${app.review.on ? 'on' : 'off'}`;
-  };
-  reviewButton.addEventListener('click', () => {
-    app.review.set(!app.review.on);
-    showReview();
-  });
-
-  // The charting engine's licence asks for its name and a link on the page.
+  // The charting engine's licence asks for its name and a link on the page: shown while a chart is, and only then.
   let credit: HTMLAnchorElement | null = null;
   if (app.attribution !== null) {
     credit = document.createElement('a');
@@ -107,8 +84,8 @@ export function mountActions(host: HTMLElement, app: StageApp, transcript: Trans
     credit.target = '_blank';
     credit.rel = 'noopener noreferrer';
     credit.textContent = app.attribution.text;
-    credit.title = app.attribution.text;
-    group.append(credit);
+    credit.hidden = true;
+    slots.top.append(credit);
   }
 
   let formats: Formats = NO_FORMATS;
@@ -125,7 +102,6 @@ export function mountActions(host: HTMLElement, app: StageApp, transcript: Trans
   };
 
   const refresh = (): void => {
-    showReview();
     const status = app.status();
     const snap = app.painter.snapshot();
     showable = status.busy;
@@ -146,6 +122,7 @@ export function mountActions(host: HTMLElement, app: StageApp, transcript: Trans
       reveal(snap.turn);
     }
     if (snap.turn === null) revealedFor = null;
+    if (credit !== null) credit.hidden = snap.charts.length === 0;
     for (const item of menu.querySelectorAll<HTMLButtonElement>('[data-needs-answer]')) {
       item.setAttribute('aria-disabled', String(!answerReady));
     }
@@ -178,13 +155,13 @@ export function mountActions(host: HTMLElement, app: StageApp, transcript: Trans
   // The menu
 
   const ITEMS = [
-    { id: 'copy', label: 'Copy script', needsAnswer: true },
-    { id: 'save-script', label: 'Save script', needsAnswer: true },
-    { id: 'play', label: 'Play a script…', needsAnswer: false },
-    { id: 'png', label: 'Save picture (PNG)', needsAnswer: true },
-    { id: 'svg', label: 'Save picture (SVG)', needsAnswer: true },
-    { id: 'film', label: 'Save film…', needsAnswer: true },
-    { id: 'frames', label: 'Save frames…', needsAnswer: true },
+    { id: 'copy', label: 'Copy script', gist: 'the answer as lines of Series, on the clipboard', needsAnswer: true },
+    { id: 'save-script', label: 'Save script', gist: 'the same lines, as a .series file', needsAnswer: true },
+    { id: 'play', label: 'Play a script…', gist: 'paste lines of Series and watch them on the stage', needsAnswer: false },
+    { id: 'png', label: 'Save picture (PNG)', gist: 'the picture as it rests, as an image', needsAnswer: true },
+    { id: 'svg', label: 'Save picture (SVG)', gist: 'the same picture as a drawing that scales', needsAnswer: true },
+    { id: 'film', label: 'Save film…', gist: 'the answer playing, as a video', needsAnswer: true },
+    { id: 'frames', label: 'Save frames…', gist: 'every frame, as numbered images in a zip', needsAnswer: true },
   ] as const;
   type ItemId = (typeof ITEMS)[number]['id'];
 
@@ -196,7 +173,17 @@ export function mountActions(host: HTMLElement, app: StageApp, transcript: Trans
     button.dataset['item'] = item.id;
     if (item.needsAnswer) button.dataset['needsAnswer'] = '';
     button.tabIndex = -1;
-    button.textContent = item.label;
+    counter += 1;
+    const gistId = `save-gist-${counter}`;
+    const label = document.createElement('span');
+    label.className = 'action-menu__label';
+    label.textContent = item.label;
+    const gist = document.createElement('span');
+    gist.className = 'action-menu__gist';
+    gist.id = gistId;
+    gist.textContent = item.gist;
+    button.setAttribute('aria-describedby', gistId);
+    button.append(label, gist);
     menu.append(button);
   }
 
@@ -367,7 +354,8 @@ export function mountActions(host: HTMLElement, app: StageApp, transcript: Trans
 
   const sizeOf = (select: HTMLSelectElement): { width: number; height: number } => SIZES.find((size) => size.id === select.value) ?? SIZES[0];
 
-  const runExport = (request: ExportRequest, error: HTMLElement, dialog: HTMLDialogElement): void => {
+  /** Starts the export; a refusal is shown in the dialog that asked, a finished file is saved. */
+  const startExport = (request: ExportRequest, error: HTMLElement, dialog: HTMLDialogElement): void => {
     try {
       const job = app.export(request);
       dialog.close();
@@ -387,11 +375,11 @@ export function mountActions(host: HTMLElement, app: StageApp, transcript: Trans
   film.form.addEventListener('submit', (event) => {
     event.preventDefault();
     const format = film.format?.value === 'mp4' ? 'mp4' : 'webm';
-    runExport({ kind: 'video', format, ...sizeOf(film.size), fps: Number(film.fps.value) }, film.error, film.dialog);
+    startExport({ kind: 'video', format, ...sizeOf(film.size), fps: Number(film.fps.value) }, film.error, film.dialog);
   });
   frames.form.addEventListener('submit', (event) => {
     event.preventDefault();
-    runExport({ kind: 'frames', ...sizeOf(frames.size), fps: Number(frames.fps.value) }, frames.error, frames.dialog);
+    startExport({ kind: 'frames', ...sizeOf(frames.size), fps: Number(frames.fps.value) }, frames.error, frames.dialog);
   });
 
   const openExport = (parts: ReturnType<typeof makeExportDialog>): void => {
@@ -411,45 +399,13 @@ export function mountActions(host: HTMLElement, app: StageApp, transcript: Trans
     parts.dialog.showModal();
   };
 
-  const stillSize = (): { width: number; height: number } => {
-    const viewport = app.painter.snapshot().viewport;
-    const scale = 1920 / Math.max(viewport.width, viewport.height);
-    return { width: Math.round(viewport.width * scale), height: Math.round(viewport.height * scale) };
-  };
-
-  const saveStill = (format: 'png' | 'svg'): void => {
-    try {
-      // Infinity: the film clamps it to the moment everything has come to rest.
-      const job = app.export({ kind: 'still', format, ...stillSize(), at: Number.POSITIVE_INFINITY });
-      job.done.then(
-        ({ blob, fileName }) => {
-          saveBlob(blob, fileName);
-          app.announce(`Saved ${fileName}`);
-        },
-        () => undefined,
-      );
-    } catch (cause) {
-      app.announce(cause instanceof Error ? cause.message : String(cause));
-    }
-  };
-
-  const copyScript = async (): Promise<void> => {
-    const text = app.script();
-    try {
-      await navigator.clipboard.writeText(text);
-      app.announce('Script copied');
-    } catch {
-      app.announce('The script could not be copied. Use Save script instead.');
-    }
-  };
-
   menu.addEventListener('click', (event) => {
     const target = event.target;
     if (!(target instanceof HTMLElement)) return;
     const item = target.closest<HTMLButtonElement>('.action-menu__item');
     if (item === null) return;
     if (item.getAttribute('aria-disabled') === 'true') {
-      app.announce('Take away works once an answer has finished');
+      app.announce('Save works once an answer has finished');
       return;
     }
     const id = item.dataset['item'] as ItemId | undefined;
@@ -457,11 +413,10 @@ export function mountActions(host: HTMLElement, app: StageApp, transcript: Trans
     takeButton.focus({ preventScroll: true });
     switch (id) {
       case 'copy':
-        void copyScript();
+        void copyScript(app);
         break;
       case 'save-script':
-        saveBlob(new Blob([`${app.script()}\n`], { type: 'text/plain' }), `conduit-${stamp()}.series`);
-        app.announce('Saved the script');
+        saveScript(app);
         break;
       case 'play':
         playError.hidden = true;
@@ -469,10 +424,10 @@ export function mountActions(host: HTMLElement, app: StageApp, transcript: Trans
         playText.focus();
         break;
       case 'png':
-        saveStill('png');
+        saveStill(app, 'png');
         break;
       case 'svg':
-        saveStill('svg');
+        saveStill(app, 'svg');
         break;
       case 'film':
         openExport(film);
@@ -502,6 +457,7 @@ export function mountActions(host: HTMLElement, app: StageApp, transcript: Trans
       film.dialog.remove();
       frames.dialog.remove();
       credit?.remove();
+      showButton.remove();
       group.remove();
     },
   };

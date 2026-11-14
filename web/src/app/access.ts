@@ -148,12 +148,33 @@ export function createAccessLayer(stage: HTMLElement, handlers: AccessHandlers):
         range.min = String(view.min);
         range.max = String(view.max);
         range.step = view.step === null ? 'any' : String(view.step);
-        // A drag in progress changes the picture at once and sends nothing; letting go, or a key, commits.
+        // A drag in progress changes the picture at once and sends nothing; letting go commits. A key held down
+        // changes the picture at every repeat and commits once, when the key is released (or the slider is left).
+        const KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown']);
+        let keyHeld = false;
+        let uncommitted = false;
+        const commitNow = (): void => {
+          uncommitted = false;
+          if (guard()) handlers.setControl(latest.id, Number(range.value), true);
+        };
         range.addEventListener('input', () => {
           if (guard()) handlers.setControl(latest.id, Number(range.value), false);
         });
+        range.addEventListener('keydown', (event) => {
+          if (KEYS.has(event.key)) keyHeld = true;
+        });
+        range.addEventListener('keyup', (event) => {
+          if (!KEYS.has(event.key)) return;
+          keyHeld = false;
+          if (uncommitted) commitNow();
+        });
+        range.addEventListener('blur', () => {
+          keyHeld = false;
+          if (uncommitted) commitNow();
+        });
         range.addEventListener('change', () => {
-          if (guard()) handlers.setControl(latest.id, Number(range.value), true);
+          if (keyHeld) uncommitted = true;
+          else commitNow();
         });
         holder.append(range);
         focusable = () => range;

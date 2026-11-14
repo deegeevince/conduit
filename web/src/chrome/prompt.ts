@@ -9,10 +9,12 @@ export interface PromptBar {
   setCancel(cancel: (() => void) | null): void;
   /** puts words back in the field after they could not be sent, unless the user has typed something new */
   restore(text: string): void;
-  /** the small model and effort label; null hides it */
-  setBrain(label: string | null): void;
-  /** a slot beside the status line, for the transcript toggle */
+  /** the row with the status line: Show all and Cancel sit beside it */
+  readonly top: HTMLElement;
+  /** the row of the bar's own controls: the brain picker, the transcript, Save */
   readonly extra: HTMLElement;
+  /** a slot above the status for what the agent is doing */
+  readonly activity: HTMLElement;
   focus(): void;
   dispose(): void;
 }
@@ -32,29 +34,31 @@ export function mountPromptBar(
   const root = document.createElement('div');
   root.className = 'prompt';
   root.innerHTML = `
+    <div class="prompt__activity"></div>
     <div class="prompt__top">
       <p class="prompt__status"></p>
-      <p class="prompt__brain" title="Model and effort for this session: /model, /effort, /help" hidden></p>
       <button class="prompt__cancel" type="button" hidden>Cancel</button>
       <p class="visually-hidden prompt__notice" role="status"></p>
-      <div class="prompt__extra"></div>
     </div>
+    <div class="prompt__extra"></div>
     <form class="prompt__form" autocomplete="off">
       <label class="visually-hidden" for="${inputId}">Ask anything</label>
-      <textarea class="prompt__input" id="${inputId}" name="prompt" rows="1" placeholder="Ask anything, or paste a link or a long text" enterkeyhint="send" maxlength="${PROMPT_MAX_CHARS}" autocomplete="off" autocapitalize="sentences" spellcheck="true"></textarea>
+      <textarea class="prompt__input" id="${inputId}" name="prompt" rows="1" placeholder="Ask anything" aria-describedby="${inputId}-hint" enterkeyhint="send" maxlength="${PROMPT_MAX_CHARS}" autocomplete="off" autocapitalize="sentences" spellcheck="true"></textarea>
+      <span class="visually-hidden" id="${inputId}-hint">You can also paste a link or a long text. Lines starting with a slash are commands: /help lists them.</span>
       <button class="prompt__button" type="button">Send</button>
     </form>`;
   host.append(root);
 
   const status = root.querySelector<HTMLElement>('.prompt__status');
   const notice = root.querySelector<HTMLElement>('.prompt__notice');
-  const brain = root.querySelector<HTMLElement>('.prompt__brain');
+  const top = root.querySelector<HTMLElement>('.prompt__top');
+  const activity = root.querySelector<HTMLElement>('.prompt__activity');
   const cancel = root.querySelector<HTMLButtonElement>('.prompt__cancel');
   const extra = root.querySelector<HTMLElement>('.prompt__extra');
   const form = root.querySelector<HTMLFormElement>('.prompt__form');
   const input = root.querySelector<HTMLTextAreaElement>('.prompt__input');
   const button = root.querySelector<HTMLButtonElement>('.prompt__button');
-  if (status === null || brain === null || notice === null || extra === null || cancel === null || form === null || input === null || button === null) {
+  if (status === null || top === null || activity === null || notice === null || extra === null || cancel === null || form === null || input === null || button === null) {
     throw new Error('The prompt bar could not be built.');
   }
 
@@ -107,11 +111,9 @@ export function mountPromptBar(
   document.addEventListener('keydown', onKey);
 
   return {
+    top,
     extra,
-    setBrain(label) {
-      brain.hidden = label === null;
-      brain.textContent = label ?? '';
-    },
+    activity,
     setStatus(text, announce = false) {
       if (status.textContent === text) return;
       status.textContent = text;
