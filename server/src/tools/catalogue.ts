@@ -736,7 +736,10 @@ async function criticGates(dataDir: string, since: number): Promise<{ problems: 
 async function runCell(args: Args, c: Case, screen: Args['screens'][number], url: string, out: string, watch: boolean): Promise<Cell> {
   const dir = join(out, c.id);
   await mkdir(dir, { recursive: true });
-  const tab = await Tab.open(screen.width, screen.height);
+  let opened: Tab | null = null;
+  for (let attempt = 0; attempt < 3 && opened === null; attempt += 1) opened = await Tab.open(screen.width, screen.height).catch(() => null);
+  if (opened === null) return { verdict: 'ERR', failed: ['run'], details: [{ check: 'run', verdict: 'FAIL', detail: 'Chrome would not start (three tries)' }] };
+  const tab: Tab = opened;
   const options: Options = { url, screens: [screen], out, turns: new Set(), timeoutMs: args.timeoutMs, parallel: false, demo: false, quiet: true, page: '', say: null, chat: 'off' };
   const conv = new Conversation(tab, options, screen, dir);
   const cx: Cx = { tab, c: conv, screen, dir, mobile: tab.mobile, answer: null as unknown as Answer, picture: '', watched: { showAllOver: null, pillSeen: 0 }, before: '', words: '', early: [] };
