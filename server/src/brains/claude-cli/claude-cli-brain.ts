@@ -1,5 +1,5 @@
 import { buildSystemPrompt, buildTurnBrief } from '@conduit/language';
-import type { PromptVariant } from '@conduit/language';
+import type { BrainChange, BrainChoice, BrainEffort, PromptVariant } from '@conduit/language';
 import type { BriefForm, Capabilities } from '@conduit/language';
 import { buildReviewBrief, isKeep } from '@conduit/language';
 import type { Brain, BrainEvent, BrainSession, ReviewRequest, Snapshot, TurnRequest } from '../../domain/brain';
@@ -31,6 +31,9 @@ export interface ClaudeCliDeps {
 interface Entry {
   readonly session: string;
   readonly system: string;
+  /** what the process was started with; a turn that finds the session set to something else replaces it */
+  readonly model: string;
+  readonly effort: BrainEffort;
   readonly proc: WarmProcess;
   systemSent: boolean;
   /** the capabilities the system prompt was written for; a later difference is told in a brief, never by a new prompt */
@@ -64,6 +67,9 @@ const UNWIND_WAIT_MS = 3_000;
 export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
   const { log } = deps;
   const pool = new Map<string, Entry>();
+  /** what the owner chose for a conversation (`/model`, `/effort`); a conversation without a choice runs on the server's settings */
+  const chosen = new Map<string, { model: string; effort: BrainEffort }>();
+  const settingsOf = (session: string): { model: string; effort: BrainEffort } => chosen.get(session) ?? { model: deps.model, effort: deps.effort };
 
   // The system prompt is fixed for a conversation: it is built from what the painter can do and what the server offers,
   // never from the screen or the look, which change within a conversation and belong to each turn's brief.
@@ -74,7 +80,8 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
   const makeEntry = (session: string, system: string, capabilities: Capabilities): Entry => ({
     session,
     system,
-    proc: startWarmProcess({ bin: deps.bin, model: deps.model, effort: deps.effort, systemPrompt: system }, log),
+    ...settingsOf(session),
+    proc: startWarmProcess({ bin: deps.bin, ...settingsOf(session), systemPrompt: system }, log),
     systemSent: false,
     capabilities,
     lastTurn: null,
@@ -133,12 +140,14 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
       return release;
     };
     const current = pool.get(session);
-    if (deps.warm && current !== undefined && current.proc.alive && current.running === null && current.proc.contextTokens <= deps.recycleTokens) {
+    const wanted = settingsOf(session);
+    const stale = current !== undefined && (current.model !== wanted.model || current.effort !== wanted.effort);
+    if (deps.warm && current !== undefined && !stale && current.proc.alive && current.running === null && current.proc.contextTokens <= deps.recycleTokens) {
       const heardEverything = current.proc.turns > 0 && current.lastTurn === (context.history.at(-1)?.turn ?? null);
       return { entry: current, form: heardEverything ? 'since' : 'full', reused: current.proc.turns > 0, release: claim(current) };
     }
     if (current !== undefined) {
-      const why = !current.proc.alive ? 'dead' : current.running !== null ? 'busy' : 'recycled';
+      const why = stale ? 'settings_changed' : !current.proc.alive ? 'dead' : current.running !== null ? 'busy' : 'recycled';
       log.info('claude_warm_replaced', { session, why, contextTokens: current.proc.contextTokens });
       discard(current);
     }
@@ -221,6 +230,7 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
           const init = event as { tools?: readonly unknown[]; mcp_servers?: readonly unknown[]; model?: string };
           const tools = init.tools?.length ?? 0;
           const mcp = init.mcp_servers?.length ?? 0;
+          turnLog.info('claude_init', { model: init.model, effort: entry.effort, requested: entry.model });
           if (tools > 0 || mcp > 0) turnLog.warn('claude_not_isolated', { model: init.model, tools, mcp_servers: mcp });
           continue;
         }
@@ -365,7 +375,20 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
         log.warn('claude_open_failed', { session: session.session, message: error instanceof Error ? error.message : String(error) });
       }
     },
+    choice: (session) => ({ configurable: true, ...settingsOf(session) }) satisfies BrainChoice,
+    choose(session, change: BrainChange) {
+      const next = { ...settingsOf(session), ...change };
+      chosen.set(session, next);
+      // The warm process was started with the old settings. One that is mid-turn finishes it and is replaced by the next turn (acquire sees it is stale).
+      const entry = pool.get(session);
+      if (entry !== undefined && entry.running === null) {
+        log.info('claude_warm_replaced', { session, why: 'settings_changed' });
+        discard(entry);
+      }
+      return { configurable: true, ...next };
+    },
     release(session) {
+      chosen.delete(session);
       const entry = pool.get(session);
       if (entry !== undefined) discard(entry);
     },

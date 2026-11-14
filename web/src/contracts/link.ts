@@ -1,4 +1,4 @@
-import type { BackEvent, CreateSessionRequest, DemoInfo, StageEvent, TurnInput } from '@conduit/language';
+import type { BackEvent, BrainChange, BrainChoice, CreateSessionRequest, DemoInfo, StageEvent, TurnInput } from '@conduit/language';
 import type { PainterUpload } from './painter';
 
 export type LinkStatus =
@@ -29,6 +29,12 @@ export interface StageLink {
 
   /** Sends one of the painter's pictures to the server. Best effort: a failed upload is dropped with a note for the HUD and nothing waits for it. */
   upload(upload: PainterUpload): void;
+
+  /** What this session's brain is set to (`/model`, `/effort`). */
+  brain(): Promise<BrainChoice>;
+
+  /** Sets the model and/or effort for this session only. Rejects with the server's sentence when the value is refused. */
+  setBrain(change: BrainChange): Promise<BrainChoice>;
 
   flush(): Promise<void>;
   listDemos(): Promise<readonly DemoInfo[]>;

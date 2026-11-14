@@ -1,5 +1,5 @@
 import { API, STAGE_EVENT_TYPES } from '@conduit/language';
-import type { BackEvent, CreateSessionRequest, CreateSessionResponse, DemoInfo, StageEvent, StageEventType, StartTurnRequest, TurnInput } from '@conduit/language';
+import type { BackEvent, BrainChange, BrainChoice, CreateSessionRequest, CreateSessionResponse, DemoInfo, StageEvent, StageEventType, StartTurnRequest, TurnInput } from '@conduit/language';
 import type { LinkStatus, StageLink } from '../contracts/link';
 import type { PainterUpload } from '../contracts/painter';
 
@@ -26,6 +26,15 @@ export interface HttpLink extends StageLink {
    * a draft report or look at one. (Request to the server's package: honour it per turn.)
    */
   setReview(on: boolean): void;
+}
+
+async function brainAnswer(response: Response): Promise<BrainChoice> {
+  const body: unknown = await response.json().catch(() => null);
+  if (!response.ok) {
+    const message = isRecord(body) && typeof body.message === 'string' ? body.message : `the server refused it (${response.status})`;
+    throw new Error(message);
+  }
+  return body as BrainChoice;
 }
 
 export function createHttpLink(): HttpLink {
@@ -292,6 +301,16 @@ export function createHttpLink(): HttpLink {
       queue.push(event);
       if (queue.length > 500) queue.shift();
       scheduleFlush();
+    },
+
+    async brain(): Promise<BrainChoice> {
+      if (session === null) throw new Error('Not connected.');
+      return brainAnswer(await fetch(API.brain(session)));
+    },
+
+    async setBrain(change: BrainChange): Promise<BrainChoice> {
+      if (session === null) throw new Error('Not connected.');
+      return brainAnswer(await fetch(API.brain(session), { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(change) }));
     },
 
     flush,

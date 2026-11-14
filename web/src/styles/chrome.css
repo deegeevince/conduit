@@ -122,6 +122,17 @@ input {
   color: var(--chrome-text-quiet);
 }
 
+.prompt__brain {
+  margin: 0;
+  font-size: var(--chrome-text-size-small);
+  color: var(--chrome-text-quiet);
+  white-space: nowrap;
+}
+
+.prompt__brain[hidden] {
+  display: none;
+}
+
 .prompt__extra {
   display: flex;
   align-items: center;

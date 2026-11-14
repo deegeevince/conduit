@@ -340,6 +340,26 @@ export interface StartTurnRequest {
   readonly events?: readonly BackEvent[];
 }
 
+/** The models the owner may choose from the prompt bar (`/model`). The server's own default may be any model the CLI knows; only a choice is held to this list. */
+export const BRAIN_MODELS = ['sonnet', 'opus', 'fable', 'haiku'] as const;
+export type BrainModel = (typeof BRAIN_MODELS)[number];
+
+export const BRAIN_EFFORTS = ['low', 'medium', 'high'] as const;
+export type BrainEffort = (typeof BRAIN_EFFORTS)[number];
+
+/** A change to one session's brain; what is left out stays as it is. */
+export interface BrainChange {
+  readonly model?: BrainModel;
+  readonly effort?: BrainEffort;
+}
+
+/** What one session's brain is set to. `configurable` is false for a brain that has neither (the relay, a replay): `model` and `effort` are then null. */
+export interface BrainChoice {
+  readonly configurable: boolean;
+  readonly model: string | null;
+  readonly effort: BrainEffort | null;
+}
+
 export interface StartTurnResponse {
   readonly turn: string;
 }
@@ -368,6 +388,8 @@ export const API = {
   stream: (session: string): string => `/api/sessions/${session}/stream`,
   turns: (session: string): string => `/api/sessions/${session}/turns`,
   events: (session: string): string => `/api/sessions/${session}/events`,
+  /** GET: this session's `BrainChoice`. PUT a `BrainChange`: sets it for this session only and answers the new `BrainChoice`; the next turn starts a fresh process. */
+  brain: (session: string): string => `/api/sessions/${session}/brain`,
   /** GET: the bytes of a painting. The id is in the `asset` event's url; nothing builds this path by hand. */
   asset: (session: string, asset: string): string => `/api/sessions/${session}/assets/${asset}`,
   /** POST image/png: the painter's rendering of the sketch a picture element stands on. `key` is the element key. */

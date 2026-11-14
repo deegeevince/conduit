@@ -1,8 +1,9 @@
 // The edge between untrusted JSON and the typed domain. Every check names the field it found wrong.
 
-import { ALIGNS, BACK_EVENT_TYPES, CANVAS_NAMES, DEMOS, ELEMENT_KINDS, LAYOUTS, LIMITS, LOOK_IDS, MOODS, NO_SIGHT, NO_V4_CAPABILITIES, PACES, SIGHT_ITEMS, SIGHT_NOTE } from '@conduit/language';
+import { ALIGNS, BACK_EVENT_TYPES, BRAIN_EFFORTS, BRAIN_MODELS, CANVAS_NAMES, DEMOS, ELEMENT_KINDS, LAYOUTS, LIMITS, LOOK_IDS, MOODS, NO_SIGHT, NO_V4_CAPABILITIES, PACES, SIGHT_ITEMS, SIGHT_NOTE } from '@conduit/language';
 import type {
   BackEvent,
+  BrainChange,
   CanvasBox,
   Capabilities,
   ControlValue,
@@ -380,4 +381,16 @@ export function parseStartTurn(body: unknown): StartTurnRequest {
   const raw = obj(body, 'body').events;
   if (raw === undefined) return { input };
   return { input, events: list(raw, 'events').map((item, index) => backEvent(item, index)) };
+}
+
+/** Body of `PUT …/brain`: a model and/or an effort, each from the allowlist. Anything else is refused by name. */
+export function parseBrainChange(body: unknown): BrainChange {
+  const o = obj(body, 'body');
+  const unknown = Object.keys(o).filter((key) => key !== 'model' && key !== 'effort');
+  if (unknown.length > 0) throw errors.badRequest(`unknown setting ${unknown.join(', ')}: only model and effort can be set`);
+  if (o.model === undefined && o.effort === undefined) throw errors.badRequest(`say a model (${BRAIN_MODELS.join(' | ')}) or an effort (${BRAIN_EFFORTS.join(' | ')})`);
+  return {
+    ...(o.model === undefined ? {} : { model: oneOf(o.model, BRAIN_MODELS, 'model') }),
+    ...(o.effort === undefined ? {} : { effort: oneOf(o.effort, BRAIN_EFFORTS, 'effort') }),
+  };
 }

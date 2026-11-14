@@ -6,6 +6,7 @@ import { mountStage } from './app/stage-app';
 import type { StageApp, StageStatus } from './app/stage-app';
 import { mountActions } from './chrome/actions';
 import { mountHud } from './chrome/hud';
+import { brainLabel, confirmation, isCommand, parseCommand } from './chrome/commands';
 import { mountPromptBar } from './chrome/prompt';
 import { mountTranscript } from './chrome/transcript';
 import { FONTS, fontFor } from './fonts';
@@ -52,10 +53,34 @@ const promptBar = mountPromptBar(bar, {
       promptBar.restore(text);
       return;
     }
+    if (isCommand(text)) {
+      void runCommand(app, text);
+      return;
+    }
     void app.prompt(text).catch(() => promptBar.restore(text));
   },
   onStop: () => app?.interrupt(),
 });
+/** A line starting with `/` is for the app, not the brain: it never becomes a turn and the stage is left alone. */
+async function runCommand(stage: StageApp, text: string): Promise<void> {
+  const command = parseCommand(text);
+  if (command.kind === 'refused') {
+    stage.announce(command.message);
+    return;
+  }
+  if (command.kind === 'help') {
+    stage.announce(confirmation(command, { configurable: false, model: null, effort: null }));
+    return;
+  }
+  try {
+    const choice = command.kind === 'set' ? await stage.link.setBrain(command.change) : await stage.link.brain();
+    promptBar.setBrain(brainLabel(choice));
+    stage.announce(confirmation(command, choice));
+  } catch (cause) {
+    stage.announce(cause instanceof Error ? cause.message : String(cause));
+  }
+}
+
 promptBar.setStatus('connecting');
 promptBar.setBusy(false);
 
@@ -95,6 +120,7 @@ async function start(): Promise<void> {
     promptBar.setCancel(status.cancel);
     promptBar.setBusy(status.busy);
   };
+  mounted.link.brain().then((choice) => promptBar.setBrain(brainLabel(choice)), () => undefined);
   mounted.onStatus(show);
   show(mounted.status());
   if (params.debug) mountHud(document.body, mounted);

@@ -1,5 +1,5 @@
 import { API, CANVAS, DATA_LIMITS, EMPTY_STAGE, PASTE_AS_DOCUMENT_CHARS, FULL_CAPABILITIES, LANGUAGE, LEAD_WINDOW, LineNormalizer, LineReader, TurnScore, buildSystemPrompt, serializeLine, settle, wearingAt } from '@conduit/language';
-import type { PromptVariant } from '@conduit/language';
+import type { BrainChange, BrainChoice, PromptVariant } from '@conduit/language';
 import type {
   BackEvent,
   BackEventRecord,
@@ -350,6 +350,23 @@ export class Conductor {
   }
 
   /** Throws `not_found` unless the session exists. */
+  /** What this session's brain is set to; `configurable: false` when the brain has no model or effort. */
+  brainChoice(session: string): BrainChoice {
+    this.assertSession(session);
+    const brain = this.deps.brains.configured;
+    return brain.choice?.(session) ?? { configurable: false, model: null, effort: null };
+  }
+
+  /** Sets the model and/or effort of this session's brain; the next turn starts fresh with them. */
+  setBrain(session: string, change: BrainChange): BrainChoice {
+    this.assertSession(session);
+    const brain = this.deps.brains.configured;
+    if (brain.choose === undefined) throw errors.badRequest(`the ${brain.id} brain has no model or effort to set`);
+    const choice = brain.choose(session, change);
+    this.deps.log.info('session.brain_set', { session, model: choice.model, effort: choice.effort });
+    return choice;
+  }
+
   assertSession(session: string): void {
     this.deps.sessions.require(session, this.deps.now());
   }

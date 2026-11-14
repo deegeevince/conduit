@@ -9,6 +9,8 @@ export interface PromptBar {
   setCancel(cancel: (() => void) | null): void;
   /** puts words back in the field after they could not be sent, unless the user has typed something new */
   restore(text: string): void;
+  /** the small model and effort label; null hides it */
+  setBrain(label: string | null): void;
   /** a slot beside the status line, for the transcript toggle */
   readonly extra: HTMLElement;
   focus(): void;
@@ -32,6 +34,7 @@ export function mountPromptBar(
   root.innerHTML = `
     <div class="prompt__top">
       <p class="prompt__status"></p>
+      <p class="prompt__brain" title="Model and effort for this session: /model, /effort, /help" hidden></p>
       <button class="prompt__cancel" type="button" hidden>Cancel</button>
       <p class="visually-hidden prompt__notice" role="status"></p>
       <div class="prompt__extra"></div>
@@ -45,12 +48,13 @@ export function mountPromptBar(
 
   const status = root.querySelector<HTMLElement>('.prompt__status');
   const notice = root.querySelector<HTMLElement>('.prompt__notice');
+  const brain = root.querySelector<HTMLElement>('.prompt__brain');
   const cancel = root.querySelector<HTMLButtonElement>('.prompt__cancel');
   const extra = root.querySelector<HTMLElement>('.prompt__extra');
   const form = root.querySelector<HTMLFormElement>('.prompt__form');
   const input = root.querySelector<HTMLTextAreaElement>('.prompt__input');
   const button = root.querySelector<HTMLButtonElement>('.prompt__button');
-  if (status === null || notice === null || extra === null || cancel === null || form === null || input === null || button === null) {
+  if (status === null || brain === null || notice === null || extra === null || cancel === null || form === null || input === null || button === null) {
     throw new Error('The prompt bar could not be built.');
   }
 
@@ -104,6 +108,10 @@ export function mountPromptBar(
 
   return {
     extra,
+    setBrain(label) {
+      brain.hidden = label === null;
+      brain.textContent = label ?? '';
+    },
     setStatus(text, announce = false) {
       if (status.textContent === text) return;
       status.textContent = text;

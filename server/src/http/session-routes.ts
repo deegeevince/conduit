@@ -2,11 +2,11 @@
 // the Conductor and back; no handler holds state or touches a brain.
 
 import { API } from '@conduit/language';
-import type { CreateSessionResponse, StageEvent, StartTurnResponse } from '@conduit/language';
+import type { BrainChoice, CreateSessionResponse, StageEvent, StartTurnResponse } from '@conduit/language';
 import type { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { SERVER_LIMITS } from '../domain/session';
-import { parseBackEvents, parseCreateSession, parseStartTurn } from '../domain/validate';
+import { parseBackEvents, parseBrainChange, parseCreateSession, parseStartTurn } from '../domain/validate';
 import { listScripts } from '../brains/replay/scripts';
 import type { HttpDeps } from './deps';
 import { jsonBody, param } from './json';
@@ -76,6 +76,15 @@ export function registerSessionRoutes(app: Hono, deps: HttpDeps): void {
     conductor.assertSession(session);
     if (request.events !== undefined) conductor.receive(session, request.events);
     return c.json<StartTurnResponse>(conductor.startTurn(session, request.input, { look: c.req.header('x-conduit-review')?.trim().toLowerCase() !== 'off' }), 202);
+  });
+
+  /** 200 BrainChoice: what this session's brain is set to. */
+  app.get(API.brain(':session'), (c) => c.json<BrainChoice>(conductor.brainChoice(param(c, 'session'))));
+
+  /** Body: BrainChange. 200 BrainChoice. Sets the model and/or effort for this session only; 400 for a value outside the allowlist or a brain with nothing to set. */
+  app.put(API.brain(':session'), async (c) => {
+    const change = parseBrainChange(await jsonBody(c));
+    return c.json<BrainChoice>(conductor.setBrain(param(c, 'session'), change));
   });
 
   /** Body: PostEventsRequest. 204. The back channel. */

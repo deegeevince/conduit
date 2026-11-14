@@ -1,4 +1,4 @@
-import type { BriefForm, Capabilities, Issue, Line, LineProblem, ScreenFacts, Services, Sight, TurnContext, TurnInput } from '@conduit/language';
+import type { BrainChange, BrainChoice, BriefForm, Capabilities, Issue, Line, LineProblem, ScreenFacts, Services, Sight, TurnContext, TurnInput } from '@conduit/language';
 
 export type BrainId = 'relay' | 'claude-cli' | 'replay';
 
@@ -145,6 +145,12 @@ export interface Brain {
    *   usable: an abandoned look must not cost the warm process.
    */
   review?(request: ReviewRequest, signal: AbortSignal): AsyncIterable<BrainEvent>;
+
+  /** What this conversation's brain is set to. A brain with no model or effort leaves this out. */
+  choice?(session: string): BrainChoice;
+
+  /** Sets the model and/or effort for this conversation only. Whatever process the conversation holds is let go, so the next turn starts with the new settings. */
+  choose?(session: string, change: BrainChange): BrainChoice;
 
   /** The conversation is over: let go of whatever was kept for it. */
   release?(session: string): void;
