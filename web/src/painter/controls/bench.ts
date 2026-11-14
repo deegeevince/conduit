@@ -131,7 +131,7 @@ for (let i = 0; i < LOOKS.length; i += 1) {
         const body: Box = { x: -layout.width / 2, y: -layout.height / 2, width: layout.width, height: layout.height };
         for (const z of layout.zones) {
           const outsideOk = z.part === 'list' || z.part.startsWith('option:') && s.spec.form === 'menu';
-          check(Math.min(z.box.width, z.box.height) >= 44 - 0.01 || z.part === 'knob', `${tag}: zone ${z.part} is ${z.box.width}x${z.box.height}`);
+          check(Math.min(z.box.width, z.box.height) >= 44 - 0.01, `${tag}: zone ${z.part} is ${z.box.width}x${z.box.height}`);
           if (!outsideOk) check(within(z.box, body, 1), `${tag}: zone ${z.part} leaves the control`);
         }
         for (const p of layout.parts) if (p.kind === 'text') check(within(p.box, mood.open ? { ...body, height: body.height + 400 } : body, 1), `${tag}: text "${p.text}" leaves the control`);
