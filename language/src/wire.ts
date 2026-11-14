@@ -569,6 +569,7 @@ export const APP_COMMANDS = [
   { name: 'review', args: '<on|off>', gist: 'whether a drawing is checked and fixed after its first draft' },
   { name: 'better', args: '[passes]', gist: 'keep making the picture on stage better, pass by pass', needs: 'refine' },
   { name: 'stop', args: '', gist: 'stop what is being written or made better' },
+  { name: 'usage', args: '', gist: 'what the model calls have used, per hour and per day, and where the hour stands against the cap you set' },
   { name: 'stop-all', args: '[resume]', gist: 'stop everything now, in every conversation: answers, questions waiting for you, helper processes. Agent tools stay off until "/stop-all resume"' },
   { name: 'show-all', args: '', gist: 'show the whole answer at once' },
   { name: 'copy', args: '[script]', gist: 'copy the answer as text, or its Series script' },
@@ -591,6 +592,8 @@ export const HIDDEN_COMMANDS: readonly AppCommandName[] = ['brain'];
 
 export interface StartTurnResponse {
   readonly turn: string;
+  /** v2.1 ops. Said when the hour's model spending is near, or past, the cap the owner set (`USAGE_HOURLY_CAP`); the turn goes ahead whatever it says. */
+  readonly warning?: string;
 }
 
 export interface PostEventsRequest {
@@ -637,6 +640,8 @@ export const API = {
   status: '/api/status',
   /** v2.1 ops. POST: the kill switch (`/stop-all`): every turn ended, every question waiting for the owner refused, every helper process killed, agent tools off. GET: whether they are off. DELETE: switches them back on. */
   kill: '/api/kill',
+  /** v2.1 ops. GET: what the server's model calls have used, per hour and per day, and where the hour stands against the cap (`UsageSummary`). What `/usage` shows. */
+  usage: '/api/usage',
   /** v2.1. GET: this session's `ToolChoice[]`. PUT `{ name, on }`: switches one tool or connected service for this session; answers the list. */
   tools: (session: string): string => `/api/sessions/${session}/tools`,
   /** v2.1. GET: `{ asks: string[] }`, what the user asked to hold on every reply. DELETE `{}` forgets them all, `{ drop: n }` the nth (from 1); answers the same. */

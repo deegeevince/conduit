@@ -31,12 +31,30 @@ export interface HttpLink extends StageLink {
   appStatus(): Promise<AppStatus>;
   /** v2.1. What the user asked to hold for every reply (`/asks`); `clear` forgets them. Needs the server's `asks` route (see the hand-back). */
   asks(clear: boolean): Promise<readonly string[]>;
+  /** v2.1 ops. What the server's model calls have used (`/usage`). */
+  usage(): Promise<UsageView>;
   /** v2.1 ops. The kill switch (`/stop-all`): stops everything the server is doing, for every conversation, and turns agent tools off. Answers what was stopped. */
   killAll(): Promise<KillAnswer>;
   /** v2.1 ops. Switches agent tools back on after a kill (`/stop-all resume`). */
   resumeAgent(): Promise<void>;
   /** v2.1. Saves a film of a turn made in the page beside the session's log, for the steward to watch (`/capture`). */
   saveCapture(turn: string, film: Blob): Promise<void>;
+}
+
+/** One hour or one day of model use, as `/api/usage` gives it; only what `/usage` shows. */
+export interface UsageBucketView {
+  readonly start: string;
+  readonly calls: number;
+  readonly costUsd: number;
+  readonly unmetered: number;
+  readonly outputTokens: number;
+  readonly byKind: Readonly<Record<string, { readonly calls: number; readonly costUsd: number }>>;
+}
+
+export interface UsageView {
+  readonly throttle: { readonly capUsd: number | null; readonly spentLastHourUsd: number; readonly state: 'off' | 'ok' | 'near' | 'over'; readonly nearAtUsd: number | null };
+  readonly hours: readonly UsageBucketView[];
+  readonly days: readonly UsageBucketView[];
 }
 
 /** What the kill switch says it did: how many answers it ended, questions it refused and processes it killed, and how many would not die. */
@@ -391,8 +409,12 @@ export function createHttpLink(): HttpLink {
         restore();
         throw new Error(`The turn was refused (${response.status}).`);
       }
-      const turn = asTurnId(await response.json().catch(() => null));
+      const answer: unknown = await response.json().catch(() => null);
+      const turn = asTurnId(answer);
       if (turn === null) throw new Error('The server did not say which turn it opened.');
+      // The turn goes ahead whatever this says: the owner is told the hour is near the cap they set, and decides.
+      const warning = typeof answer === 'object' && answer !== null ? (answer as { warning?: unknown }).warning : undefined;
+      if (typeof warning === 'string' && warning !== '') note(warning);
       return turn;
     },
 
@@ -446,6 +468,12 @@ export function createHttpLink(): HttpLink {
       const asks = asAsks(await bodyOf(response));
       if (asks === null) throw new Error('the server answered with something that is not a list of asks');
       return asks;
+    },
+
+    async usage(): Promise<UsageView> {
+      const body = (await bodyOf(await fetch(`${API.usage}?hours=24&days=7`))) as Partial<UsageView> | null;
+      if (body === null || typeof body !== 'object' || !Array.isArray(body.hours) || !Array.isArray(body.days) || typeof body.throttle !== 'object' || body.throttle === null) throw new Error('the server answered with something that is not a usage summary');
+      return body as UsageView;
     },
 
     async killAll(): Promise<KillAnswer> {

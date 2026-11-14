@@ -3,6 +3,7 @@
 
 import { commandsFor, LOOK_IDS, NEW_COMMAND_TEXT, REFINE_LIMITS } from '@conduit/language';
 import type { BrainChoice, Services } from '@conduit/language';
+import type { UsageView } from '../link/http-link';
 import type { StageApp } from '../app/stage-app';
 import { confirmation, parseCommand, usageOf } from './commands';
 import type { Command } from './commands';
@@ -20,6 +21,28 @@ export function pageSource(title: string, columns: readonly string[], rows: read
   for (const row of rows) lines.push(`| ${row.map((cell) => plain(cell)).join(' | ')}`);
   if (closing !== null) lines.push(`say | ${plain(closing, 200)}`);
   return lines.join('\n');
+}
+
+/** The `/usage` page: the last day by the hour as columns, the last week by the day as rows, and where the hour stands against the cap. */
+export function usagePage(usage: UsageView): string {
+  const money = (amount: number): string => (amount >= 100 ? `$${Math.round(amount)}` : amount >= 1 ? `$${amount.toFixed(2)}` : `$${amount.toFixed(3)}`);
+  const lines = ['scene stack', 'chart columns | Model use per hour, last 24 hours (cost-equivalent dollars)', '| hour | dollars'];
+  for (const hour of usage.hours) lines.push(`| ${new Date(hour.start).getHours()}h | ${hour.costUsd.toFixed(3)}`);
+  lines.push('table rows | Per day');
+  lines.push('| Day | Calls | Cost-equivalent | Of which the critic');
+  const week = [...usage.days].reverse();
+  for (const [index, day] of week.entries()) {
+    const critic = (day.byKind['critic']?.costUsd ?? 0) + (day.byKind['compare']?.costUsd ?? 0);
+    lines.push(`| ${index === 0 ? 'Today' : day.start} | ${day.calls}${day.unmetered > 0 ? ` (${day.unmetered} unpriced)` : ''} | ${money(day.costUsd)} | ${money(critic)}`);
+  }
+  const { capUsd, spentLastHourUsd, state } = usage.throttle;
+  const hour = `The last hour used ${money(spentLastHourUsd)}`;
+  let closing = `${hour}. No hourly cap is set (USAGE_HOURLY_CAP).`;
+  if (capUsd !== null) {
+    const share = Math.round((spentLastHourUsd / capUsd) * 100);
+    closing = state === 'ok' ? `${hour} of the ${money(capUsd)} an hour you set (${share}%).` : `${hour} of the ${money(capUsd)} an hour you set (${share}%): the critic and the lessons have stopped. Your own answers have not.`;
+  }
+  return `${lines.join('\n')}\nsay | ${plain(closing, 200)}`;
 }
 
 export function helpPage(services?: Pick<Services, 'refine'>): string {
@@ -134,6 +157,9 @@ async function perform(app: StageApp, command: Command, onChoice: (choice: Brain
     }
     case 'stop':
       app.interrupt();
+      return;
+    case 'usage':
+      app.showPage(usagePage(await app.link.usage()));
       return;
     case 'stop-all': {
       if (command.resume) {

@@ -19,6 +19,7 @@ import { NO_SESSION_LOG } from './domain/session-log';
 import { createLogger } from './log';
 import { createAudit } from './audit';
 import { createKillSwitch } from './kill';
+import { createUsageMeter } from './usage';
 import { ensureDataDirs, extraRepos, migrateLegacyData } from './data-dir';
 
 const RELAY_IDLE_FALLBACK_MS = 180_000;
@@ -39,6 +40,7 @@ function boot(env: Env): void {
   const audit = createAudit(env.data.audit, now, log.child({ part: 'audit' }));
   audit.record({ kind: 'server', login: 'system', tool: 'start', target: `port ${env.port}`, decision: 'done', decidedBy: 'system', note: `brain ${env.brain.kind}; agent ${env.agent.enabled ? 'on' : 'off'}; owners ${env.ownerLogins.length}` });
 
+  const usage = createUsageMeter(env.data.usage, env.usageCapUsd, now);
   const kill = createKillSwitch(`${env.data.state}/agent-off.json`, now);
   if (kill.engaged()) log.warn('kill.still_engaged', { state: kill.state(), note: 'agent tools stay off until the owner switches them back on (/stop-all resume, or DELETE /api/kill)' });
 
@@ -99,20 +101,21 @@ function boot(env: Env): void {
     datasets,
     review: env.review,
     maxPaintings: env.paintingsPerSession,
-    critic: createCritic({ policy: env.critic, bin: env.brain.kind === 'claude-cli' ? env.brain.bin : 'claude', log: log.child({ part: 'critic' }), now }),
+    critic: createCritic({ policy: env.critic, bin: env.brain.kind === 'claude-cli' ? env.brain.bin : 'claude', log: log.child({ part: 'critic' }), now, meter: usage, throttle: usage }),
     findings: createFindingQueue(env.critic.enabled && env.logDir !== null ? env.data.queue : null, log.child({ part: 'critic' })),
     fix: FIX_POLICY,
     criticQueueBelow: env.critic.queueBelow,
     modes: env.modes,
     audit,
+    usage,
     now,
   });
   const withheld = withheldCredentialNames();
   if (withheld.length > 0) log.info('env.credentials_withheld', { names: withheld, note: 'no child process is given these; every model call is on the owner\'s login' });
-  const app = createApp({ env, log: log.child({ part: 'http' }), conductor, relayHub, audit, kill, assets, status, news });
+  const app = createApp({ env, log: log.child({ part: 'http' }), conductor, relayHub, audit, kill, usage, assets, status, news });
 
   const server = serve({ fetch: app.fetch, hostname: env.host, port: env.port }, (info) => {
-    log.info('server.listening', { host: env.host, port: info.port, brain: env.brain.kind, production: env.production, owners: env.ownerLogins.length });
+    log.info('server.listening', { host: env.host, port: info.port, brain: env.brain.kind, production: env.production, owners: env.ownerLogins.length, usageCapUsd: env.usageCapUsd });
     if (env.ownerLogins.length === 0 && env.trustedHosts.length > 0) {
       log.warn('identity.not_enforced', { note: 'OWNER_LOGINS is not set: anyone on the tailnet who can reach this server may use it. Set it to the owner\'s Tailscale login (GET /api/whoami shows what the server sees).' });
     }

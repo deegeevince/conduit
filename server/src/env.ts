@@ -58,6 +58,8 @@ export interface Env {
   readonly host: string;
   /** Extra hostnames (e.g. a Tailscale name) the API answers on, besides loopback. */
   readonly trustedHosts: readonly string[];
+  /** v2.1 ops. `USAGE_HOURLY_CAP`: cost-equivalent dollars in any rolling hour at which the critic and the lessons tool stand down (they back off from 80% of it); null: no throttle. The owner's own turns are never refused. */
+  readonly usageCapUsd: number | null;
   /** v2.1 ops. The Tailscale logins that may use this server (`OWNER_LOGINS`, a comma list, lower-cased); empty: nobody is refused on identity. Never committed: read from the environment. */
   readonly ownerLogins: readonly string[];
   readonly port: number;
@@ -217,6 +219,9 @@ export function loadEnv(source: Source): Env {
   const ownerLogins = [...new Set((text('OWNER_LOGINS') ?? '').split(',').map((login) => login.trim().toLowerCase()).filter((login) => login !== ''))];
   const badLogin = ownerLogins.find((login) => /\s/.test(login) || login.length > 254);
   if (badLogin !== undefined) problems.push('OWNER_LOGINS is a comma list of Tailscale logins, with no spaces inside one');
+  const rawCap = text('USAGE_HOURLY_CAP');
+  const usageCapUsd = rawCap === undefined || rawCap === 'off' ? null : Number(rawCap);
+  if (usageCapUsd !== null && !(Number.isFinite(usageCapUsd) && usageCapUsd > 0)) problems.push(`USAGE_HOURLY_CAP is dollars (cost-equivalent) per hour, more than 0, or "off"; got "${rawCap ?? ''}"`);
   const port = integer('PORT', 4300, 1, 65535);
 
   const rawLevel = text('LOG_LEVEL') ?? 'info';
@@ -368,5 +373,5 @@ export function loadEnv(source: Source): Env {
   }
 
   if (problems.length > 0) throw new EnvError(problems);
-  return { production, host, trustedHosts, ownerLogins, port, logLevel, brain, images, sight, promptVariant: parsePromptVariant(text('PROMPT_VARIANT')), review, library, datasets, logDir, data, readLinks: choice('READ_LINKS', ['on', 'off'] as const, 'on') === 'on', paintingsPerSession: 0, exploreDir, webDist, critic, agent, modes, refine, uploads, statusFile, changelogFile, sealedDir };
+  return { production, host, trustedHosts, ownerLogins, usageCapUsd: usageCapUsd !== null && Number.isFinite(usageCapUsd) && usageCapUsd > 0 ? usageCapUsd : null, port, logLevel, brain, images, sight, promptVariant: parsePromptVariant(text('PROMPT_VARIANT')), review, library, datasets, logDir, data, readLinks: choice('READ_LINKS', ['on', 'off'] as const, 'on') === 'on', paintingsPerSession: 0, exploreDir, webDist, critic, agent, modes, refine, uploads, statusFile, changelogFile, sealedDir };
 }

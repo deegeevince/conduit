@@ -2,6 +2,7 @@
 
 import type { Hono } from 'hono';
 import { readAudit } from '../audit';
+import { readUsage, summarizeUsage } from '../usage';
 import { killAllChildren } from '../brains/claude-cli/process';
 import { currentIdentity, labelOf } from '../identity';
 import type { HttpDeps } from './deps';
@@ -12,6 +13,27 @@ export function registerOpsRoutes(app: Hono, deps: HttpDeps): void {
   app.get('/api/whoami', (c) => {
     const who = currentIdentity();
     return c.json({ login: who.login, name: who.name, via: who.via, label: labelOf(who), enforced: deps.env.ownerLogins.length > 0 });
+  });
+
+  /**
+   * 200 `UsageSummary`: what the server's model calls have used. `hours` is the last `hours` hours (default 48, at most 720), zero-filled,
+   * oldest first and ending with this one; `days` the last `days` days (default 14, at most 365). Each bucket has the calls, the tokens,
+   * the cost-equivalent in dollars (what the same tokens would have cost on the API: every call is on the owner's login), the time the
+   * calls took, and the split by kind (turn, review, critic, compare, lessons) and by model. `throttle` says where the last hour
+   * stands against `USAGE_HOURLY_CAP`.
+   */
+  app.get('/api/usage', (c) => {
+    const whole = (name: string, fallback: number, max: number): number => {
+      const raw = c.req.query(name);
+      if (raw === undefined || raw === '') return fallback;
+      const value = Number(raw);
+      if (!Number.isInteger(value) || value < 1 || value > max) throw errors.badRequest(`${name} must be a whole number from 1 to ${max}`);
+      return value;
+    };
+    const hours = whole('hours', 48, 720);
+    const days = whole('days', 14, 365);
+    const now = Date.now();
+    return c.json(summarizeUsage(readUsage(deps.env.data.usage, now - (Math.max(days, Math.ceil(hours / 24)) + 1) * 86_400_000), deps.usage, now, hours, days));
   });
 
   /**

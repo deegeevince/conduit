@@ -9,6 +9,8 @@ export interface JudgeSettings {
   readonly model: string;
   readonly effort: 'low' | 'medium' | 'high';
   readonly timeoutMs: number;
+  /** v2.1 ops. Told about every call this makes, whatever came of it (a failed one may still have been paid for): the usage meter. */
+  readonly meter?: (call: { readonly model: string; readonly usage: JudgeUsage; readonly failure: string | null }) => void;
 }
 
 /** A picture, base64 (no prefix). */
@@ -114,6 +116,11 @@ export async function ask(system: string, text: string, pictures: readonly Pictu
   const ms = Date.now() - started;
   const facts = got.facts;
   const usage: JudgeUsage = { inputTokens: facts?.inputTokens ?? 0, cacheReadTokens: facts?.cacheReadTokens ?? 0, cacheWriteTokens: facts?.cacheWriteTokens ?? 0, outputTokens: facts?.outputTokens ?? 0, thinkingTokens: facts?.thinkingTokens ?? null, costUsd: cost, ms };
+  try {
+    settings.meter?.({ model: settings.model, usage, failure });
+  } catch {
+    // the meter never decides what a judgement is
+  }
   return { reply, failure, cost, usage, stderr, ms };
 }
 

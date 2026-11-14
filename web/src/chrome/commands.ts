@@ -20,6 +20,7 @@ export type Command =
   | { readonly kind: 'better'; readonly passes: number }
   | { readonly kind: 'stop' }
   | { readonly kind: 'stop-all'; readonly resume: boolean }
+  | { readonly kind: 'usage' }
   | { readonly kind: 'show-all' }
   | { readonly kind: 'copy'; readonly what: 'script' | 'answer' }
   | { readonly kind: 'export'; readonly format: ExportFormat }
@@ -108,6 +109,8 @@ export function parseCommand(text: string): Command {
     }
     case 'stop':
       return { kind: 'stop' };
+    case 'usage':
+      return { kind: 'usage' };
     case 'stop-all':
       if (rest.length === 0) return { kind: 'stop-all', resume: false };
       return first === 'resume' && rest.length === 1 ? { kind: 'stop-all', resume: true } : refuse('/stop-all: bare stops everything, "/stop-all resume" switches agent tools back on');

@@ -3,6 +3,7 @@
 import { NO_CRITIC, NO_FINDING_QUEUE } from '../domain/critic';
 import type { Critic, CriticPolicy, FindingQueue } from '../domain/critic';
 import type { Logger } from '../log';
+import type { Throttle, UsageMeter } from '../usage';
 import { createLiveCritic } from './live';
 import { createFileQueue } from './queue';
 
@@ -12,6 +13,9 @@ export interface CriticDeps {
   readonly bin: string;
   readonly log: Logger;
   readonly now: () => number;
+  /** v2.1 ops. Every judge call is metered here, and the critic stands down when the throttle says `near` or `over` */
+  readonly meter?: UsageMeter;
+  readonly throttle?: Throttle;
 }
 
 export function createCritic(deps: CriticDeps): Critic {

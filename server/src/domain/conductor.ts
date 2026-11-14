@@ -46,6 +46,7 @@ import type { Critic, FindingQueue } from './critic';
 import { DETAIL_MAX, redactSecrets } from './agent';
 import { NO_AUDIT } from '../audit';
 import type { Audit, AuditDecider } from '../audit';
+import type { UsageMeter } from '../usage';
 import { currentIdentity, labelOf } from '../identity';
 import { askedOf, refusalProblem, reviewTurn } from './review';
 import type { FixAttempt } from './review';
@@ -87,6 +88,8 @@ export interface ConductorDeps {
   readonly modes: readonly BrainMode[];
   /** v2.1 ops. The audit trail: every tool call, permission asked and answered, setting changed and connector used. Absent: nothing is written. */
   readonly audit?: Audit;
+  /** v2.1 ops. The usage meter: every brain turn and review pass is written to it; its throttle only ever warns the owner, never refuses a turn. */
+  readonly usage?: UsageMeter;
   /** milliseconds; injected so nothing in the domain reads the wall clock directly */
   readonly now: () => number;
 }
@@ -263,7 +266,23 @@ export class Conductor {
       log.error('turn.run_escaped', { session: s.id, turn: turn.id, error });
       this.finish(s, turn, 'failed', 'the brain failed unexpectedly');
     });
-    return { turn: turn.id };
+    return { turn: turn.id, ...this.usageWarning() };
+  }
+
+  /**
+   * The owner's own turn is never refused for what it costs. When the hour is near the cap (`USAGE_HOURLY_CAP`), or past it, the answer
+   * to the turn says so, once the critic and the lessons tool have already stood down: the owner decides whether to go on.
+   */
+  private usageWarning(): { readonly warning?: string } {
+    const meter = this.deps.usage;
+    if (meter === undefined || meter.capUsd === null) return {};
+    const now = this.deps.now();
+    const state = meter.state(now);
+    if (state !== 'near' && state !== 'over') return {};
+    const spent = meter.spentLastHour(now);
+    this.deps.log.warn('usage.cap', { state, spentLastHourUsd: Math.round(spent * 100) / 100, capUsd: meter.capUsd });
+    const used = 'The last hour has used ' + dollars(spent) + ' of the ' + dollars(meter.capUsd) + ' an hour you set.';
+    return { warning: state === 'over' ? used + ' This answer goes ahead; the critic and the lessons have stopped. See /usage.' : used + ' The critic and the lessons have stopped; your answers have not. See /usage.' };
   }
 
   /**
@@ -1085,6 +1104,20 @@ export class Conductor {
       return undefined;
     }
     if (event.type === 'usage') {
+      this.deps.usage?.record({
+        kind: pass === 1 ? 'turn' : 'review',
+        model: this.deps.brains.configured.choice?.(s.id).model ?? null,
+        session: s.id,
+        turn: turn.id,
+        login: turn.login,
+        inputTokens: event.usage.inputTokens,
+        cacheReadTokens: event.usage.cacheReadTokens,
+        cacheWriteTokens: event.usage.cacheWriteTokens,
+        outputTokens: event.usage.outputTokens,
+        thinkingTokens: event.usage.thinkingTokens,
+        costUsd: event.usage.costUsd,
+        ms: event.usage.totalMs,
+      });
       sessionLog.write(s.id, { type: 'usage', turn: turn.id, usage: event.usage, pass });
       log.info('turn.usage', {
         session: s.id,
@@ -1296,6 +1329,10 @@ function wordsWithoutRows(text: string, width: number): string {
     .filter((line) => line.trim() === '' || cellsOf(line.trim()) !== width)
     .join('\n')
     .trim();
+}
+
+function dollars(amount: number): string {
+  return '$' + amount.toFixed(2);
 }
 
 function concerns(event: BackEvent, turn: string): boolean {

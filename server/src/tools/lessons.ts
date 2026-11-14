@@ -7,6 +7,7 @@
 //                                 the painter bugs to loop/queue/painter-bugs.md and move the cursor. REMOTE_AGENT=conduit-steward.
 //   --data <dir>                  the data folder, with `loop/queue/` and `logs/` in it (default: DATA_DIR, else ~/Library/Application Support/Conduit); `--from` is its older spelling
 //   --all                         ignore the cursor: every finding again
+//   --force                       go ahead although the last hour is near the cap (USAGE_HOURLY_CAP): lessons stand down first
 //
 // A proposal is a technique in the library's own format that targets what the brain controls: how it writes Series. A problem that is
 // the painter's (text drawn over text by the layout, a clipped label, a wrong default) is not a technique; it goes to the steward's list.
@@ -23,6 +24,7 @@ import { addUsage } from '../judge/ask';
 import type { JudgeSettings, JudgeUsage } from '../judge/ask';
 import { PROPOSED_PREFIX, lintTechnique } from '../domain/techniques';
 import { dataPaths, resolveDataDir, withDataFlag } from '../data-dir';
+import { appendUsage, capFromEnv, throttleOf } from '../usage';
 import { CONDUIT_ROOT_BLOCK } from '../env';
 import { readTechniqueDir } from '../library/files';
 import { createRemoteWriter, STEWARD, stewardIdentity } from '../library/remote/remote-cli';
@@ -131,7 +133,29 @@ function readCursor(): Set<string> {
 function claudeBin(): string {
   return process.env['CLAUDE_BIN'] ?? 'claude';
 }
-const SETTINGS: JudgeSettings = { bin: claudeBin(), model: 'sonnet', effort: 'low', timeoutMs: 240_000 };
+const SETTINGS: JudgeSettings = {
+  bin: claudeBin(),
+  model: 'sonnet',
+  effort: 'low',
+  timeoutMs: 240_000,
+  // Every call this tool makes goes into the same usage meter the server writes to, so the hour's total is the machine's.
+  meter: ({ model, usage }) =>
+    void appendUsage(dataFolders.usage, {
+      time: new Date().toISOString(),
+      kind: 'lessons',
+      model,
+      session: null,
+      turn: null,
+      login: null,
+      inputTokens: usage.inputTokens,
+      cacheReadTokens: usage.cacheReadTokens,
+      cacheWriteTokens: usage.cacheWriteTokens,
+      outputTokens: usage.outputTokens,
+      thinkingTokens: usage.thinkingTokens,
+      costUsd: usage.costUsd,
+      ms: usage.ms,
+    }),
+};
 
 function run(file: string, args: readonly string[], cwd: string): Promise<{ code: number; output: string }> {
   return new Promise((done) => {
@@ -311,6 +335,12 @@ async function main(): Promise<void> {
   const seedExample = readFileSync(join(settings.seedDir, 'flow-process.md'), 'utf8');
   const system = systemPrompt(language, seedExample, [...existing].filter((t) => !t.startsWith(PROPOSED_PREFIX.toLowerCase())).slice(0, 80));
 
+  // The lessons are the first thing to stand down when the hour's spending nears the cap (USAGE_HOURLY_CAP). `--force` is the owner's word.
+  const hour = throttleOf(dataFolders.usage, capFromEnv(process.env));
+  const level = hour.state(Date.now());
+  if ((level === 'near' || level === 'over') && !argv.includes('--force')) {
+    fail(`the last hour has used $${hour.spentLastHour(Date.now()).toFixed(2)} of the $${String(hour.capUsd)} an hour set (USAGE_HOURLY_CAP): lessons stand down first. Run it later, or with --force`);
+  }
   let asked = await askObject(system, requestText(fresh), [], SETTINGS, limit);
   if (asked.object === null) fail(`the model gave no answer I can read (${asked.failure ?? asked.reply.slice(0, 200)})`);
   let { proposals, bugs } = readReply(asked.object ?? {}, fresh);

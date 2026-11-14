@@ -5,6 +5,7 @@ import type { Conductor } from '../domain/conductor';
 import type { Audit } from '../audit';
 import type { Env } from '../env';
 import type { KillSwitch } from '../kill';
+import type { UsageMeter } from '../usage';
 import type { Logger } from '../log';
 
 /** What the HTTP edge is allowed to reach. */
@@ -17,6 +18,8 @@ export interface HttpDeps {
   readonly audit: Audit;
   /** v2.1 ops. The kill switch's memory: agent tools are off while it is engaged */
   readonly kill: KillSwitch;
+  /** v2.1 ops. The usage meter: what `/api/usage` summarises */
+  readonly usage: UsageMeter;
   readonly assets: AssetStore;
   /** the steward's status for the brief's note about the app; read without waiting */
   readonly status: () => AppStatus | null;

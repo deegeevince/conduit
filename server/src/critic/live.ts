@@ -10,12 +10,15 @@ import type { Critic, CriticComparison, CriticPolicy, CriticRequest } from '../d
 import { judgeFinding, judgePair } from '../judge';
 import type { FindingInput, JudgeSettings, Picture } from '../judge';
 import type { Logger } from '../log';
+import type { Throttle, UsageKind, UsageMeter } from '../usage';
 
 export interface LiveCriticDeps {
   readonly policy: CriticPolicy;
   readonly bin: string;
   readonly log: Logger;
   readonly now: () => number;
+  readonly meter?: UsageMeter;
+  readonly throttle?: Throttle;
 }
 
 const HOUR = 3_600_000;
@@ -41,7 +44,32 @@ interface Lane {
 
 export function createLiveCritic(deps: LiveCriticDeps): Critic {
   const { policy, log, now } = deps;
-  const settings = (timeoutMs: number): JudgeSettings => ({ bin: deps.bin, model: policy.model, effort: policy.effort, timeoutMs });
+  /** What a call is told to the meter as: `request` is the turn it is about. */
+  const settings = (timeoutMs: number, kind: UsageKind = 'critic', request?: { readonly session: string; readonly turn: string }): JudgeSettings => ({
+    bin: deps.bin,
+    model: policy.model,
+    effort: policy.effort,
+    timeoutMs,
+    ...(deps.meter === undefined
+      ? {}
+      : {
+          meter: (call: { readonly model: string; readonly usage: { readonly inputTokens: number; readonly cacheReadTokens: number; readonly cacheWriteTokens: number; readonly outputTokens: number; readonly thinkingTokens: number | null; readonly costUsd: number | null; readonly ms: number } }) =>
+            deps.meter?.record({
+              kind,
+              model: call.model,
+              session: request?.session ?? null,
+              turn: request?.turn ?? null,
+              login: null,
+              inputTokens: call.usage.inputTokens,
+              cacheReadTokens: call.usage.cacheReadTokens,
+              cacheWriteTokens: call.usage.cacheWriteTokens,
+              outputTokens: call.usage.outputTokens,
+              thinkingTokens: call.usage.thinkingTokens,
+              costUsd: call.usage.costUsd,
+              ms: call.usage.ms,
+            }),
+        }),
+  });
   const starts: number[] = [];
   const lanes = new Map<string, Lane>();
   const told = new Set<string>();
@@ -54,23 +82,33 @@ export function createLiveCritic(deps: LiveCriticDeps): Critic {
     log.warn(`critic.${kind}`, fields);
   };
 
-  /** Spends one of the hour's looks, or says there are none left. */
-  const spend = (): boolean => {
+  /** Spends one of the hour's looks, or says why not: the owner's spending is near the cap they set, or the hour's looks are used. */
+  const spend = (): 'ok' | 'throttled' | 'ceiling' => {
     const at = now();
+    // The critic is the first to stand down when the hour's spending nears the cap: it is the one thing here the owner did not ask for.
+    const throttled = deps.throttle?.state(at);
+    if (throttled === 'near' || throttled === 'over') {
+      tell(`throttled_${throttled}`, { state: throttled, capUsd: deps.throttle?.capUsd ?? 0 });
+      return 'throttled';
+    }
     while (starts.length > 0 && (starts[0] ?? 0) <= at - HOUR) starts.shift();
-    if (starts.length >= policy.perHour) return false;
+    if (starts.length >= policy.perHour) return 'ceiling';
     starts.push(at);
-    return true;
+    return 'ok';
+  };
+
+  /** Whether a look may be made now; the reason is logged once, when it is the ceiling (a throttle says so itself). */
+  const allowed = (): boolean => {
+    const verdict = spend();
+    if (verdict === 'ceiling') tell('ceiling', { perHour: policy.perHour });
+    return verdict === 'ok';
   };
 
   const lookNow = async (request: CriticRequest, signal: AbortSignal): Promise<CriticFinding | null> => {
-    if (!spend()) {
-      tell('ceiling', { perHour: policy.perHour });
-      return null;
-    }
+    if (!allowed()) return null;
     try {
       const bounded = AbortSignal.any([signal, closing.signal, epoch.signal, AbortSignal.timeout(policy.lookMs)]);
-      const got = await judgeFinding(inputOf(request), pictureOf(request.picture), settings(policy.lookMs), bounded);
+      const got = await judgeFinding(inputOf(request), pictureOf(request.picture), settings(policy.lookMs, 'critic', request), bounded);
       if (got.finding === null) tell('failed', { turn: request.turn, why: got.failure ?? 'no finding' });
       return got.finding;
     } catch (error) {
@@ -112,15 +150,12 @@ export function createLiveCritic(deps: LiveCriticDeps): Critic {
 
     async compare(request, draft, candidate, deadlineMs, signal): Promise<CriticComparison | null> {
       if (!policy.enabled) return null;
-      if (!spend()) {
-        tell('ceiling', { perHour: policy.perHour });
-        return null;
-      }
+      if (!allowed()) return null;
       try {
         const bounded = AbortSignal.any([signal, closing.signal, epoch.signal, AbortSignal.timeout(Math.max(1, deadlineMs))]);
         // Which picture is shown first is decided here and never said.
         const draftFirst = Math.random() < 0.5;
-        const got = await judgePair(inputOf(request), pictureOf(draft), pictureOf(candidate), draftFirst, settings(Math.max(1, deadlineMs)), bounded);
+        const got = await judgePair(inputOf(request), pictureOf(draft), pictureOf(candidate), draftFirst, settings(Math.max(1, deadlineMs), 'compare', request), bounded);
         if ('failure' in got) {
           // A timeout is logged every time: the deadline is the thing to measure. Other failures once per kind.
           if (bounded.aborted) log.warn('critic.compare_timeout', { turn: request.turn, deadlineMs, why: got.failure });
