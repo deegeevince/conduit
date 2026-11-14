@@ -40,6 +40,8 @@ const CANDIDATE_SEQ = 1_000_000;
 const DECKS_READY = false;
 /** STUB(PLAN-v2.1 package T2): true once `pic … from=<upload id>` draws the user's picture. */
 const UPLOADS_READY = false;
+/** STUB(PLAN-v2.1 part two): true once `say href=` is drawn as a link the viewer can follow. The brain is taught `href` only when it is. */
+const LINKS_READY = false;
 
 const HOME_SECONDS = 1.2;
 const SETTLE_SECONDS = 0.12;
@@ -358,6 +360,7 @@ export function createPainter(options: PainterOptions): Painter {
       candidates: DRAFTS_READY && CANDIDATES_READY,
       decks: DECKS_READY,
       uploads: UPLOADS_READY,
+      links: LINKS_READY,
     };
   };
 

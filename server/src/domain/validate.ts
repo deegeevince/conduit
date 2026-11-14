@@ -116,6 +116,7 @@ function capabilities(value: unknown): Capabilities {
     candidates: raw.candidates === undefined ? NO_V21_CAPABILITIES.candidates : bool(raw.candidates, 'capabilities.candidates'),
     decks: raw.decks === undefined ? NO_V21_CAPABILITIES.decks : bool(raw.decks, 'capabilities.decks'),
     uploads: raw.uploads === undefined ? NO_V21_CAPABILITIES.uploads : bool(raw.uploads, 'capabilities.uploads'),
+    links: raw.links === undefined ? NO_V21_CAPABILITIES.links : bool(raw.links, 'capabilities.links'),
   };
 }
 

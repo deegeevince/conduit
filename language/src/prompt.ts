@@ -371,7 +371,8 @@ export function buildSystemPrompt({ capabilities, services }: PromptOptions): st
       ? `- A story, a memory, a mood: stage it. A scene in layers${weather ? ', weather' : ''}${camera ? ', a camera' : ''}, a handful of words as captions.`
       : '- A story or a mood: few lines, one at a time, with silence between them.',
     '- A feeling, a hard truth, a decision: few words, timed. Size, silence' + (camera ? ', one camera move.' : '.'),
-    structures.length > 0 ? '- Code, a command, a config: a `code` block, never `say` lines. Slides, a deck: see "More to say with".' : '',
+    // Taught only what the painter paints: a `code` block that nothing draws loses the code, which `say` lines would have kept.
+    structures.includes('code') ? '- Code, a command, a config: a `code` block, never `say` lines. Slides, a deck: see "More to say with".' : '- Code, a command, a config: one `say` line per line of source, exactly as written.',
     pixels ? `- Asked for pixel art, a drawing${paints ? ', a painting' : ''}, an animation: make exactly that. Never build a picture out of letters; never describe what you could show.` : '',
   ]
     .filter((line) => line !== '')
@@ -493,13 +494,13 @@ ${[
 
   // v2.1: the kinds of answer the painter owns. Each is taught only to a painter that can do it, and in the fewest words.
   const more = [
-    structures.length > 0
+    structures.includes('code')
       ? '`code [id] [lang] [file=name]`, then one `| ` line per source line, exactly as written, indentation kept (a bare `|` is an empty line). The painter frames and highlights it.'
       : '',
     capabilities.decks ? '`deck | title` opens a turn of slides: each `scene` after it is one, four to eight, a heading and three lines or one picture at most.' : '',
     capabilities.uploads ? '`pic <id> from=u1` puts a picture the user gave on stage (the brief names them); label or trace it.' : '',
     services.refine ? 'Asked to iterate or improve it: end with `refine 3`; you are shown the picture and add to it.' : '',
-    '`say href=<url> | site` is a link; cite every web source as one.',
+    capabilities.links ? '`say href=<url> | site` is a link; cite every web source as one.' : '',
     draws ? 'A heart, a leaf, a bird, a person: one smooth closed `path` of curves, never circles and rectangles stuck together.' : '',
     structures.includes('chart') && controls.includes('slider')
       ? 'Numbers a control changes: a `chart` whose cells hold braces (`| 4 | {rate*4}`) beside the slider, never hand-drawn axes.'
@@ -827,7 +828,7 @@ export function appNoteText(form: BriefForm, status: AppStatus | null | undefine
 }
 
 /** A short, true note of the brain's own setup. Per turn, never in the system prompt, so the prompt stays fixed and the cache survives. */
-export function aboutYouText(about: AboutYou): string {
+export function aboutYouText(about: AboutYou, links = false): string {
   const mode = about.mode ?? 'plain';
   const tools = about.tools ?? [];
   const acts =
@@ -836,7 +837,7 @@ export function aboutYouText(about: AboutYou): string {
       : mode === 'steward'
         ? "Steward mode: the owner's own Claude Code session answers this canvas, with its own tools."
         : about.web || tools.length > 0
-          ? 'You can search the web and read pages (WebSearch, WebFetch), read-only. Use search for anything current: prices, news, today, recent facts; never guess a live figure. Search before your first line or between lines, then say the answer and cite each source as a link on stage. Lines of the language are text you write, never tool calls: there is no tool named scene or say. You cannot act on their accounts or files, or run commands (/brain agent would let you, with their yes): say so plainly, then offer what you can do.'
+          ? `You can search the web and read pages (WebSearch, WebFetch), read-only. Use search for anything current: prices, news, today, recent facts; never guess a live figure. Search before your first line or between lines, then say the answer and ${links ? 'cite each source as a link on stage' : 'name each source in a short line'}. Lines of the language are text you write, never tool calls: there is no tool named scene or say. You cannot act on their accounts or files, or run commands (/brain agent would let you, with their yes): say so plainly, then offer what you can do.`
           : 'No tools here: you cannot act on their accounts or files; say so plainly (/brain agent would let you, with their yes), then offer what you can do.';
   return [
     `ABOUT YOU: model ${about.model}, effort ${about.effort}, on the owner's Claude subscription via the Claude Code CLI; no API key.`,
@@ -873,7 +874,7 @@ export function buildTurnBrief(context: TurnContext, input: TurnInput, form: Bri
   if (changed !== null) parts.push(`THE PAINTER CHANGED: ${changed}`);
 
   if (about !== undefined) {
-    parts.push(aboutYouText(about));
+    parts.push(aboutYouText(about, context.capabilities.links));
     parts.push(appNoteText(form, about.status));
     if (about.news !== undefined && about.news !== null && about.news !== '') parts.push(newsText(about.news));
   }

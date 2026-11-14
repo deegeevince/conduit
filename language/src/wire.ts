@@ -111,6 +111,8 @@ export interface Capabilities {
   readonly decks: boolean;
   /** v2.1. True when it can put a picture the user gave on stage (`pic … from=u1`). */
   readonly uploads: boolean;
+  /** v2.1. True when `say href=` is drawn as a link the viewer can follow. False: the brain is not taught it and names a source in words. */
+  readonly links: boolean;
 }
 
 /** What the server can do for a turn that the painter cannot. The brain's prompt is filtered by these too. */
@@ -160,16 +162,17 @@ export const FULL_CAPABILITIES: Capabilities = {
   candidates: true,
   decks: true,
   uploads: true,
+  links: true,
 };
 
 /** What a painter that speaks Series 3 can do of Series 4: nothing. A `ready` that leaves the new lists out is read as this. */
-export const NO_V4_CAPABILITIES = { structures: [], charts: [], controls: [], media: [], textures: ['flat'], brushes: [], drafts: false, candidates: false, decks: false, uploads: false } as const satisfies Pick<
+export const NO_V4_CAPABILITIES = { structures: [], charts: [], controls: [], media: [], textures: ['flat'], brushes: [], drafts: false, candidates: false, decks: false, uploads: false, links: false } as const satisfies Pick<
   Capabilities,
-  'structures' | 'charts' | 'controls' | 'media' | 'textures' | 'brushes' | 'drafts' | 'candidates' | 'decks' | 'uploads'
+  'structures' | 'charts' | 'controls' | 'media' | 'textures' | 'brushes' | 'drafts' | 'candidates' | 'decks' | 'uploads' | 'links'
 >;
 
-/** What a painter of v2 could do of v2.1: nothing. A `ready` that leaves the three out is read as this. */
-export const NO_V21_CAPABILITIES = { candidates: false, decks: false, uploads: false } as const satisfies Pick<Capabilities, 'candidates' | 'decks' | 'uploads'>;
+/** What a painter of v2 could do of v2.1: nothing. A `ready` that leaves these out is read as this. */
+export const NO_V21_CAPABILITIES = { candidates: false, decks: false, uploads: false, links: false } as const satisfies Pick<Capabilities, 'candidates' | 'decks' | 'uploads'>;
 
 export const REFERENCE_SCREEN: ScreenFacts = { width: 1280, height: 720, dpr: 2, cols: 58, rows: 11, canvas: 'wide', reducedMotion: false, pointer: 'fine' };
 
