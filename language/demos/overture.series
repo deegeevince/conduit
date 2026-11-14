@@ -1,50 +1,36 @@
-# Overture: what a first visit performs. Inside twenty seconds it has to
-# prove, without saying so, that this is not a text box: a drawing that draws
-# itself, real pixels, a staged scene with depth and a camera, and a sketch
-# that a painting would grow over. Words only where words are best.
+# Overture: what a first visit performs, about fifteen seconds, no model call.
+# One short exchange played as it would stream (a question typed, a bar model
+# drawn, a try written with the pen, a verdict), then the point in two lines
+# and four things to tap. It sets no look of its own: it is drawn in whichever
+# look the person has, with colour roles only, so paper and night both hold.
+# The drawing is one group on a square canvas, so it fills a phone's width and
+# a desktop's height alike, and every word sits in the group's own coordinates.
 
-scene hello caption calm
-line ground 18,72 142,72 stroke=dim
-rect wall 62,50 30x22
-poly roof 57,50 77,33 97,50
-rect door 73,60 8x12 fill=accent
-circle sun 126,22 8 stroke=accent thick=1.2
-say face=hand size=l | Hello.
-pix cat at=36,62 scale=2 loop=bob
-| .0......0.
-| 090....090
-| 0990000990
-| 0999999990
-| 0907997090
-| 0999ee9990
-| 0997997990
-| .09999990.
-| ..000000..
-wait 3
+scene ask free calm align=center canvas=square
+group g
+rect in=g composer 4,12 92x14 r=7 stroke=dim thick=0.8 dur=0.6s
+say in=g prompt at=50,19 enter=type | Help my 7-year-old with 64 ÷ 2
+wait 0.4
 
-color sky=#0b1026 dusk=#1c2a52 far=#18223f near=#24325a lit=#ffcf70 wall=#0e1730
-scene night caption calm slow
-look night
-rect full layer=far fill=sky>dusk
-ambient stars light
-circle moon 128,20 9 layer=far fill=#f6f1d5
-path layer=bg fill=far stroke=none | M0 60 Q40 40 82 56 T160 48 V90 H0 Z
-path hill fill=near stroke=none | M0 74 Q52 58 100 72 T160 66 V90 H0 Z
-group house at=132,56
-rect in=house 0,0 16x12 fill=wall
-poly in=house -2,0 8,-9 18,0 fill=wall
-rect in=house 6,4 4x5 fill=lit
-cam push slow
-say | Evening comes.
-ambient fireflies light layer=fg
-wait 2
-paint as=gouache | a small house on rolling blue hills under a huge pale moon, one window lit, stars
-wait 5
+say in=g total at=50,36 size=xl | 64
+rect in=g whole 6,42 88x28 stroke=ink thick=1.2 dur=1.2s
+line in=g cut 50,42 50,70 stroke=ink thick=1.2
+say in=g q at=28,56 size=xxl ink=accent | ?
+say in=g half at=72,56 size=xl | half
+wait 0.8
 
-cam rest
-plan lines=5
-say strong | What shall we make?
-say choice | explain something with a drawing
-say choice | pixel art
-say choice | a story, staged
-say choice | just the facts, plainly
+drop q
+path in=g three stroke=accent thick=3 dur=1s | M12 48 C23 43 29 51 20 55 C30 56 28 66 12 63
+path in=g two stroke=accent thick=3 dur=1s | M31 49 C34 43 45 46 44 53 L31 64 H47
+wait 0.3
+say in=g yes at=50,85 size=xl enter=slam | Yes!
+wait 0.8
+
+scene point stack brisk lines=2 align=center
+say size=l enter=fade dur=0.4s | Claude answers by drawing.
+say size=l enter=fade dur=0.4s | You draw, tap or talk back.
+wait 0.5
+say choice size=s enter=fade dur=0.3s | Teach my kid a maths problem
+say choice size=s enter=fade dur=0.3s | Explain how the heart pumps
+say choice size=s enter=fade dur=0.3s | Mock up an app screen
+say choice size=s enter=fade dur=0.3s | Build me a real webpage

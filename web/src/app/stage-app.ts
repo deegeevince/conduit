@@ -294,7 +294,22 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
       return false;
     }
   })();
-  const autoplay = reopening ? null : options.autoplay;
+  // the intro (the first-load demo) is for a fresh first open: not when a document is kept to come back to, and never twice in one session
+  const introSeen = ((): boolean => {
+    try {
+      return window.sessionStorage.getItem('conduit.intro') !== null || window.localStorage.getItem('conduit.document') !== null;
+    } catch {
+      return false;
+    }
+  })();
+  const autoplay = reopening || (options.autoplay === FIRST_LOAD_DEMO && introSeen) ? null : options.autoplay;
+  if (autoplay === FIRST_LOAD_DEMO) {
+    try {
+      window.sessionStorage.setItem('conduit.intro', '1');
+    } catch {
+      // without storage the intro may play again; nothing else depends on it
+    }
+  }
   const notes: string[] = [];
   const rejects: RejectNote[] = [];
   const statusListeners = new Set<(status: StageStatus) => void>();
@@ -610,6 +625,8 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     if (source === undefined) return false;
     const steps = localSteps(source);
     localOpen = true;
+    // reduced motion: nothing is performed, the intro is put on stage at once in its end state
+    const settled = painter.snapshot().reducedMotion;
     painter.openTurn(LOCAL_TURN, { kind: 'demo', script: name });
     let index = 0;
     let seq = 0;
@@ -620,6 +637,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
         localOpen = false;
         localTimer = undefined;
         painter.closeTurn(LOCAL_TURN, 'done');
+        if (settled) painter.showAll();
         publishStatus();
         return;
       }
@@ -630,7 +648,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
         painter.ingest(LOCAL_TURN, seq, step.line);
         publishStatus();
         next();
-      }, step.delayMs);
+      }, settled ? 0 : step.delayMs);
     };
     next();
     return true;

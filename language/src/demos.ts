@@ -5,7 +5,7 @@ export const DEMOS = [
   {
     name: 'overture',
     title: 'Overture',
-    summary: 'The first-load performance: a drawing, pixels, a staged scene with a camera, a sketch waiting for a painting. Ends on choices.',
+    summary: 'The first-load intro, about fifteen seconds: a question typed, a bar model drawn, a try written with the pen, then the point and four things to tap.',
   },
   {
     name: 'sketchbook',
