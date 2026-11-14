@@ -1,0 +1,68 @@
+/* The kit a surface program wears (PLAN-v3-core 2.6: "tokens arrive as CSS variables with a small kit stylesheet, so it wears the look").
+   Variables are written onto :root by the host from the shell's tokens; the defaults below are only for a page opened with none.
+   Nothing here is the lesson's: a button, a field and the base type are what any surface of ours starts from. */
+
+:root {
+  --ground: #fbf6ea;
+  --card: #ffffff;
+  --ink: #1c2233;
+  --dim: #4a5368;
+  --accent: #2459d9;
+  --on-accent: #ffffff;
+  --soft: #e6ecfb;
+  --line: #cdc4ad;
+  --good: #11663a;
+  --good-soft: #def2e5;
+  --nudge: #7a3b00;
+  --nudge-soft: #fff0d3;
+  --font: ui-rounded, 'SF Pro Rounded', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --c0: #f2b705;
+  --c1: #2a5bd7;
+  --c2: #3fbf74;
+  --on-c0: #1c2233;
+  --on-c1: #ffffff;
+  --on-c2: #0b2415;
+  color-scheme: light;
+}
+:root[data-dark] {
+  --ground: #141925;
+  --card: #1e2535;
+  --ink: #f3efe4;
+  --dim: #b9c0d0;
+  --accent: #8fadff;
+  --on-accent: #0b1330;
+  --soft: #28324b;
+  --line: #4a5470;
+  --good: #8fe0b0;
+  --good-soft: #17382a;
+  --nudge: #ffd08f;
+  --nudge-soft: #3d2c12;
+  --c0: #f2b705;
+  --c1: #7d9dff;
+  --c2: #3fbf74;
+  --on-c0: #1c2233;
+  --on-c1: #0b1330;
+  --on-c2: #0b2415;
+  color-scheme: dark;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--ground); color: var(--ink); font: 400 20px/1.45 var(--font); }
+button, input { font: inherit; color: inherit; }
+button { cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+:focus-visible { outline: 4px solid var(--accent); outline-offset: 3px; }
+
+.btn {
+  min-height: 56px; padding: 0 22px; border-radius: 16px; border: 3px solid transparent;
+  font-size: 20px; font-weight: 700; line-height: 1.2;
+}
+.btn.main { background: var(--accent); color: var(--on-accent); }
+.btn.soft { background: var(--soft); color: var(--ink); border-color: var(--line); }
+.btn:disabled { background: var(--soft); color: var(--dim); border-color: transparent; cursor: default; }
+.btn.wide { width: 100%; }
+.btn:active:not(:disabled) { transform: translateY(1px); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
+}
