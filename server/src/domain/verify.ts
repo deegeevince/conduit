@@ -12,8 +12,10 @@
 // A check of this file is `mechanical`: it is free and it is exact where it knows. What it cannot know (a word problem, a picture) goes to the
 // second check, a cheap model asked cold (`judge/lesson.ts`), whose verdict is joined to this one by `settle`.
 
-import { TECHNIQUE, accepts, evalExpr, lintLesson, matchAnswer, nodeOf, parseExpr, parseInterface, parseQuantity, pathOf, serializeLine, spoilerMessage } from '@conduit/language';
+import { TECHNIQUE, lintLesson, matchAnswer, nodeOf, parseInterface, pathOf, serializeLine, spoilerMessage } from '@conduit/language';
 import type { DocNode, Document, LessonAsk, LessonContext, LessonStep, NodeId } from '@conduit/language';
+import type { AskCheck } from '@conduit/language/maths';
+import { checkLesson } from './maths';
 
 // ---------------------------------------------------------------------------------------------------------------------------------
 // what a check finds
@@ -46,236 +48,6 @@ export interface Mechanical {
   readonly asks: number;
   /** the part's own answer, when its words are a sum this file can do (a worksheet's question) */
   readonly own: string | null;
-}
-
-// ---------------------------------------------------------------------------------------------------------------------------------
-// the solver: arithmetic in the words of a question or an ask
-// ---------------------------------------------------------------------------------------------------------------------------------
-
-const UNIT_WORDS =
-  'millimetres?|millimeters?|centimetres?|centimeters?|kilometres?|kilometers?|metres?|meters?|kilograms?|kilos?|grams?|millilitres?|milliliters?|centilitres?|litres?|liters?|seconds?|secs?|minutes?|mins?|hours?|pence|pounds?|dollars?|cents?|mm|cm|km|kg|ml|cl|m|g|l|p';
-
-type Token =
-  | { readonly t: 'num'; readonly text: string; readonly value: number; readonly dim: string; readonly factor: number }
-  | { readonly t: 'gap'; readonly dim: string; readonly factor: number }
-  | { readonly t: 'op'; readonly op: '+' | '-' | '*' | '/' }
-  | { readonly t: 'eq' }
-  | { readonly t: 'less' | 'more' | 'double' | 'half' }
-  | { readonly t: 'paren'; readonly open: boolean }
-  | { readonly t: 'other' };
-
-const SCAN = new RegExp(
-  [
-    String.raw`(?<gap>\[\s*\]|_{2,}|□|\(\s*\)|\?)(?:\s*(?<gapunit>${UNIT_WORDS})\b)?`,
-    String.raw`(?<num>[£$€]?\d[\d,]*(?:\.\d+)?(?:\s*(?:${UNIT_WORDS})\b)?)`,
-    String.raw`(?<less>\b(?:less|fewer|smaller) than\b)`,
-    String.raw`(?<more>\b(?:more|greater|bigger) than\b)`,
-    String.raw`(?<double>\b(?:double|twice)\b)`,
-    String.raw`(?<half>\bhalf of\b|\bhalf\b)`,
-    String.raw`(?<op>[-+*/])`,
-    String.raw`(?<eq>=)`,
-    String.raw`(?<open>\()`,
-    String.raw`(?<close>\))`,
-    String.raw`(?<space>\s+)`,
-    String.raw`(?<other>[\s\S])`,
-  ].join('|'),
-  'gi',
-);
-
-function unitInfo(word: string): { readonly dim: string; readonly factor: number } {
-  const q = parseQuantity(`1 ${word}`);
-  return q === null ? { dim: 'none', factor: 1 } : { dim: q.dim, factor: q.base };
-}
-
-function tokenize(source: string): Token[] {
-  const text = source
-    // the words a child's page uses for the signs
-    .replace(/\b(?:plus|add(?:ed to)?)\b/gi, '+')
-    .replace(/\b(?:minus|take away|subtract(?:ed from)?|takeaway)\b/gi, '-')
-    .replace(/\b(?:times|multiplied by|lots of|groups of|rows of)\b/gi, '*')
-    .replace(/\b(?:divided by|shared by|over)\b/gi, '/')
-    .replace(/\b(?:equals?|is equal to|makes|make)\b/gi, '=')
-    .replace(/[−–—]/g, '-')
-    .replace(/[×✕✖]/g, '*')
-    .replace(/÷/g, '/')
-    .replace(/(?<=[\d\])\s])\s*[x·]\s*(?=[\d[(£$€_□?])/gi, ' * ')
-    .replace(/(?<=\d)\s*:\s*(?=\d)/g, ':');
-  const tokens: Token[] = [];
-  for (const match of text.matchAll(SCAN)) {
-    const g = match.groups ?? {};
-    if (g['gap'] !== undefined) {
-      const unit = g['gapunit'] === undefined ? { dim: 'none', factor: 1 } : unitInfo(g['gapunit']);
-      tokens.push({ t: 'gap', ...unit });
-    } else if (g['num'] !== undefined) {
-      const q = parseQuantity(g['num'].replace(/,/g, ''));
-      if (q === null) tokens.push({ t: 'other' });
-      else tokens.push({ t: 'num', text: g['num'], value: q.base, dim: q.dim, factor: q.dim === 'none' ? 1 : q.base / q.written || 1 });
-    } else if (g['less'] !== undefined) tokens.push({ t: 'less' });
-    else if (g['more'] !== undefined) tokens.push({ t: 'more' });
-    else if (g['double'] !== undefined) tokens.push({ t: 'double' });
-    else if (g['half'] !== undefined) tokens.push({ t: 'half' });
-    else if (g['op'] !== undefined) tokens.push({ t: 'op', op: g['op'] as '+' | '-' | '*' | '/' });
-    else if (g['eq'] !== undefined) tokens.push({ t: 'eq' });
-    else if (g['open'] !== undefined) tokens.push({ t: 'paren', open: true });
-    else if (g['close'] !== undefined) tokens.push({ t: 'paren', open: false });
-    else if (g['space'] !== undefined) continue;
-    else tokens.push({ t: 'other' });
-  }
-  return tokens;
-}
-
-/** What a sum in words comes to: the number, and the forms a child might be accepted in. */
-export interface Solved {
-  /** the sum as it was read, for the reason given when it disagrees */
-  readonly sum: string;
-  readonly value: number;
-  readonly candidates: readonly string[];
-}
-
-const canonical = (n: number): string => (Number.isInteger(n) ? String(n) : String(Math.round(n * 1e9) / 1e9));
-
-const CLOCK = String.raw`(\d{1,2}):(\d{2})`;
-const SPAN = String.raw`(\d+(?:\.\d+)?|a quarter of an|half an|an?)\s*(minutes?|mins?|hours?|hrs?)`;
-const spanMinutes = (amount: string, unit: string): number => {
-  const n = /^half/i.test(amount) ? 0.5 : /^a quarter/i.test(amount) ? 0.25 : /^an?$/i.test(amount) ? 1 : Number(amount);
-  return Math.round(n * (/^h/i.test(unit) ? 60 : 1));
-};
-const clockText = (minutes: number): string => {
-  const m = ((minutes % 720) + 720) % 720;
-  return `${Math.floor(m / 60) === 0 ? 12 : Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`;
-};
-
-/** A time of day moved by a span (`3:15 + 40 minutes`, `40 minutes after 3:15`, `20 minutes before 4:00`), or the minutes between two (`from 3:15 to 3:45`). Null when the words are neither. */
-export function solveClock(text: string): Solved | null {
-  const plain = text.replace(/[−–—]/g, '-');
-  const forward = new RegExp(`${CLOCK}\\s*(?:am|pm)?\\s*(\\+|plus|and|-|minus)\\s*${SPAN}\\s*(?:=\\s*)?[?.]?\\s*$`, 'i').exec(plain);
-  if (forward?.[1] !== undefined && forward[2] !== undefined && forward[3] !== undefined && forward[4] !== undefined && forward[5] !== undefined) {
-    const at = Number(forward[1]) * 60 + Number(forward[2]);
-    const move = spanMinutes(forward[4], forward[5]);
-    const answer = clockText(/^(?:-|minus)$/i.test(forward[3]) ? at - move : at + move);
-    return { sum: plain.trim().slice(-80), value: Number.NaN, candidates: [answer] };
-  }
-  const after = new RegExp(`${SPAN}\\s*(after|later than|past|before|earlier than)\\s*${CLOCK}[^\\d]*$`, 'i').exec(plain);
-  if (after?.[1] !== undefined && after[2] !== undefined && after[3] !== undefined && after[4] !== undefined && after[5] !== undefined) {
-    const at = Number(after[4]) * 60 + Number(after[5]);
-    const move = spanMinutes(after[1], after[2]);
-    const answer = clockText(/^(?:before|earlier)/i.test(after[3]) ? at - move : at + move);
-    return { sum: plain.trim().slice(-80), value: Number.NaN, candidates: [answer] };
-  }
-  const between = new RegExp(`from\\s*${CLOCK}\\s*(?:am|pm)?\\s*to\\s*${CLOCK}[^\\d]*$`, 'i').exec(plain);
-  if (between?.[1] !== undefined && between[2] !== undefined && between[3] !== undefined && between[4] !== undefined && /\b(?:minutes?|mins?)\b/i.test(plain)) {
-    const gap = (Number(between[3]) * 60 + Number(between[4]) - (Number(between[1]) * 60 + Number(between[2])) + 720) % 720;
-    return { sum: plain.trim().slice(-80), value: gap, candidates: [String(gap)] };
-  }
-  return null;
-}
-
-/** The sum made of the trailing tokens of a text: `64 - 30 =`, `10 x [ ] = 100`, `50 less than 200 =`, `25 cm + [ ] cm = 1 m`, `double 50`. Null when it is not one this can do. */
-export function solve(text: string): Solved | null {
-  const clock = solveClock(text);
-  if (clock !== null) return clock;
-  const all = tokenize(text);
-  // the trailing run of tokens that belong to a sum, ignoring the sentence's own full stop and question mark
-  let end = all.length;
-  while (end > 0 && (all[end - 1]?.t === 'other' || (all[end - 1]?.t === 'gap' && end >= 2 && all[end - 2]?.t === 'num'))) {
-    const last = all[end - 1];
-    if (last?.t === 'other') end -= 1;
-    else break;
-  }
-  let start = end;
-  while (start > 0) {
-    const token = all[start - 1];
-    if (token === undefined || token.t === 'other') break;
-    start -= 1;
-  }
-  let run = all.slice(start, end);
-  // a lone `?` after a plain sum is the sentence's question mark: `What is 6 + 4?`
-  if (run.length >= 2 && run[run.length - 1]?.t === 'gap' && run[run.length - 2]?.t === 'num' && !run.some((token) => token.t === 'eq')) run = run.slice(0, -1);
-  while (run[0] !== undefined && (run[0].t === 'eq' || run[0].t === 'op' || run[0].t === 'less' || run[0].t === 'more')) run = run.slice(1);
-  // `A less than B` is `B - A`; `double A` is `2 * A`; `half of A` is `A / 2`
-  const parts: (Token | string)[] = [];
-  for (let i = 0; i < run.length; i += 1) {
-    const token = run[i];
-    const next = run[i + 1];
-    const after = run[i + 2];
-    if (token === undefined) continue;
-    if ((token.t === 'num' || token.t === 'gap') && (next?.t === 'less' || next?.t === 'more') && (after?.t === 'num' || after?.t === 'gap')) {
-      parts.push({ t: 'paren', open: true }, after, { t: 'op', op: next.t === 'less' ? '-' : '+' }, token, { t: 'paren', open: false });
-      i += 2;
-    } else if (token.t === 'double' && (next?.t === 'num' || next?.t === 'gap')) {
-      parts.push({ t: 'paren', open: true }, { t: 'num', text: '2', value: 2, dim: 'none', factor: 1 }, { t: 'op', op: '*' }, next, { t: 'paren', open: false });
-      i += 1;
-    } else if (token.t === 'half' && (next?.t === 'num' || next?.t === 'gap')) {
-      parts.push({ t: 'paren', open: true }, next, { t: 'op', op: '/' }, { t: 'num', text: '2', value: 2, dim: 'none', factor: 1 }, { t: 'paren', open: false });
-      i += 1;
-    } else parts.push(token);
-  }
-  const flat = parts.filter((part): part is Token => typeof part !== 'string');
-  if (flat.some((token) => token.t === 'less' || token.t === 'more' || token.t === 'double' || token.t === 'half')) return null;
-  const gaps = flat.filter((token) => token.t === 'gap').length;
-  const eqs = flat.filter((token) => token.t === 'eq').length;
-  const operators = flat.filter((token) => token.t === 'op' || token.t === 'paren').length;
-  if (eqs > 1 || gaps > 1 || flat.filter((token) => token.t === 'num').length < 1) return null;
-  // a sum has a sign in it, or is a gap set equal to a number; a number and an equals sign alone is a fragment of something longer
-  if (operators === 0 && !(gaps === 1 && eqs === 1 && flat.some((token) => token.t === 'num'))) return null;
-
-  const dims = new Set(flat.flatMap((token) => (token.t === 'num' && token.dim !== 'none' ? [token.dim] : [])));
-  if (dims.size > 1) return null;
-  const toSource = (tokens: readonly Token[]): string => tokens.map((token) => (token.t === 'num' ? String(token.value) : token.t === 'gap' ? 'x' : token.t === 'op' ? token.op : token.t === 'paren' ? (token.open ? '(' : ')') : '')).join(' ');
-  const eqAt = flat.findIndex((token) => token.t === 'eq');
-  const left = eqAt < 0 ? flat : flat.slice(0, eqAt);
-  const right = eqAt < 0 ? [] : flat.slice(eqAt + 1);
-  const value = (tokens: readonly Token[], x: number): number => {
-    if (tokens.length === 0) return Number.NaN;
-    const expr = parseExpr(toSource(tokens));
-    return expr === null ? Number.NaN : evalExpr(expr, { x });
-  };
-  const gap = flat.find((token): token is Extract<Token, { t: 'gap' }> => token.t === 'gap');
-  const firstUnit = flat.find((token): token is Extract<Token, { t: 'num' }> => token.t === 'num' && token.dim !== 'none');
-  let result: number;
-  let unitFactor = gap !== undefined && gap.dim !== 'none' ? gap.factor : (firstUnit?.factor ?? 1);
-  if (gap === undefined) {
-    // `A op B =` (with or without a trailing gap): the left side's value
-    result = eqAt < 0 ? value(left, 0) : value(left, 0);
-    if (eqAt >= 0 && right.length > 0 && !(right.length === 1 && right[0]?.t === 'num')) return null;
-    // a sum that is already written with its answer is a statement, not a question
-    if (eqAt >= 0 && right.length === 1 && right[0]?.t === 'num') return null;
-  } else if (right.length === 1 && right[0]?.t === 'gap') {
-    result = value(left, 0);
-  } else if (eqAt < 0) {
-    return null;
-  } else {
-    // one gap, in the left side or the right: f(x) = left - right, found from f(0) and f(1) and checked at the root
-    const f = (x: number): number => value(left, x) - value(right, x);
-    const f0 = f(0);
-    const slope = f(1) - f0;
-    let root = Number.isFinite(f0) && Number.isFinite(slope) && Math.abs(slope) > 1e-12 ? -f0 / slope : Number.NaN;
-    if (!(Math.abs(f(root)) < 1e-7 * Math.max(1, Math.abs(root)))) {
-      // not a straight line (the unknown divides something): the whole numbers and halves a child would meet
-      root = Number.NaN;
-      for (let n = 1; n <= 20_000 && Number.isNaN(root); n += 1) if (Math.abs(f(n)) < 1e-9) root = n;
-      for (let n = 0.5; n <= 100 && Number.isNaN(root); n += 1) if (Math.abs(f(n)) < 1e-9) root = n;
-    }
-    if (!Number.isFinite(root)) return null;
-    result = root;
-    // an unknown with no unit of its own, among terms with one, is in the unit written first
-    if (gap.dim === 'none' && firstUnit === undefined) unitFactor = 1;
-  }
-  if (!Number.isFinite(result)) return null;
-  const inUnit = result / unitFactor;
-  const candidates = new Set<string>([canonical(inUnit)]);
-  if (dims.size > 0) candidates.add(canonical(result));
-  return { sum: text.trim().replace(/\s+/g, ' ').slice(-80), value: inUnit, candidates: [...candidates] };
-}
-
-/** The sum a part's title is, with a printed number in front of it taken off (`5. 125 - 50 =`). */
-export function solveTitle(title: string): Solved | null {
-  return solve(title.replace(/^\s*\(?\d{1,3}[.)]\s+/, ''));
-}
-
-/** The sum an ask puts at the end of its words (`What is 6 + 4?`), not a statement earlier in them (`6 + 2 = 8. Now count on the 4 green.`). */
-export function solveAsk(prompt: string): Solved | null {
-  return solve(prompt);
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------------
@@ -323,7 +95,10 @@ function lessonCheck(doc: Document, node: DocNode): Mechanical {
   let confirmed = 0;
   let recomputed = 0;
   let asks = 0;
-  const own = profile === 'steps' ? null : solveTitle(node.title);
+  // the exact checker: every ask recomputed from its words (or the question's), every sum the page states
+  const maths = checkLesson(doc, node.id);
+  const askStatus = new Map<string, AskCheck['status']>();
+  for (const checked of maths.asks) askStatus.set(`${checked.node}\u0000${checked.ask}`, checked.status);
   const refuse = (source: FindingSource, at: NodeId, ask: string | null, why: string): void => void findings.push({ severity: 'refuse', source, node: at, ask, why });
   const note = (source: FindingSource, at: NodeId, ask: string | null, why: string): void => void findings.push({ severity: 'note', source, node: at, ask, why });
 
@@ -346,28 +121,19 @@ function lessonCheck(doc: Document, node: DocNode): Mechanical {
     for (const spoiler of lintLesson(waySteps, lessonContext(doc, way.id))) {
       refuse('lint', way.id, spoiler.in, spoilerMessage(spoiler.in ?? '?', [spoiler]));
     }
-    let reaches = own === null;
     for (const ask of asksOf(way)) {
       asks += 1;
       for (const hint of ask.hints) if (/\bwrong\b/i.test(hint)) note('shape', way.id, ask.id, `a hint of ${ask.id} says "wrong"`);
       if (ask.hints.length === 0) note('shape', way.id, ask.id, `ask ${ask.id} has no hint`);
-      if (ask.pick !== null) {
-        const right = ask.pick.filter((choice) => accepts(ask, choice)).length;
-        if (right !== 1) refuse('solver', way.id, ask.id, `${right} of the choices ${ask.pick.join(', ')} are accepted by ask ${ask.id}; one should be`);
-      }
-      const solved = solveAsk(ask.prompt);
-      if (solved !== null) {
+      const status = askStatus.get(`${way.id}\u0000${ask.id}`);
+      if (status === 'agree') {
         recomputed += 1;
-        if (solved.candidates.some((candidate) => accepts(ask, candidate))) confirmed += 1;
-        else refuse('solver', way.id, ask.id, `"${solved.sum}" is ${solved.candidates[0] ?? '?'}, and the ask accepts ${ask.accepted.join(' or ')}`);
-      }
-      if (own !== null && own.candidates.some((candidate) => accepts(ask, candidate))) reaches = true;
-    }
-    if (!reaches && own !== null && asksOf(way).length > 0) {
-      refuse('solver', way.id, null, `the question "${own.sum}" is ${own.candidates[0] ?? '?'}, and no ask of way ${shortId(way.id)} accepts that: a way must ask for its question's answer`);
+        confirmed += 1;
+      } else if (status === 'mismatch') recomputed += 1;
     }
   }
-  return { kind: 'lesson', node: node.id, findings, confirmed, recomputed, asks, own: own === null ? null : (own.candidates[0] ?? null) };
+  for (const found of maths.findings) findings.push({ severity: found.severity, source: 'solver', node: found.node, ask: found.ask, why: found.why });
+  return { kind: 'lesson', node: node.id, findings, confirmed, recomputed, asks, own: profile === 'steps' ? null : maths.own };
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------------
@@ -503,17 +269,13 @@ export function settle(mechanical: Mechanical, model: ModelVerdict | null, solve
 
 /** Whether the free check, ask by ask, agrees with an accepted answer: for `settle`. */
 export function solverOpinion(doc: Document, id: NodeId): (ask: string | null) => 'agrees' | 'disagrees' | 'silent' {
-  const node = nodeOf(doc, id);
-  const ways = node === null ? [] : profileOf(doc, node) === 'steps' ? [node] : waysOf(doc, node);
-  const byAsk = new Map<string, LessonAsk>();
-  for (const way of ways) for (const ask of asksOf(way)) byAsk.set(ask.id, ask);
-  return (askId) => {
-    const ask = askId === null ? undefined : byAsk.get(askId);
-    if (ask === undefined) return 'silent';
-    const solved = solveAsk(ask.prompt);
-    if (solved === null) return 'silent';
-    return solved.candidates.some((candidate) => accepts(ask, candidate)) ? 'agrees' : 'disagrees';
-  };
+  const byAsk = new Map<string, 'agrees' | 'disagrees'>();
+  for (const checked of checkLesson(doc, id).asks) {
+    if (checked.status === 'unchecked') continue;
+    const now = checked.status === 'agree' ? 'agrees' : 'disagrees';
+    byAsk.set(checked.ask, byAsk.get(checked.ask) === 'disagrees' ? 'disagrees' : now);
+  }
+  return (askId) => (askId === null ? undefined : byAsk.get(askId)) ?? 'silent';
 }
 
 export { matchAnswer };
