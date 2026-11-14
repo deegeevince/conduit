@@ -12,12 +12,6 @@ import type { HttpDeps } from './deps';
 import { errors } from '../errors';
 import { jsonBody, param } from './json';
 
-/**
- * Where the standing asks are listed and cleared. Not in `API` (`wire.ts` is frozen): a request to the integrator asks for
- * `asks: (session) => `/api/sessions/${session}/asks`` there, and this line then reads it from `API`.
- */
-const ASKS_PATH = (session: string): string => `/api/sessions/${session}/asks`;
-
 /** A slow client may fall this many events behind before its stream is cut; it reconnects and is brought up to date. */
 const MAX_UNWRITTEN = 1000;
 
@@ -111,10 +105,10 @@ export function registerSessionRoutes(app: Hono, deps: HttpDeps): void {
   });
 
   /** 200 `{ asks }`: what the user asked to hold on every reply (`/asks`). */
-  app.get(ASKS_PATH(':session'), (c) => c.json({ asks: conductor.asksOf(param(c, 'session')) }));
+  app.get(API.asks(':session'), (c) => c.json({ asks: conductor.asksOf(param(c, 'session')) }));
 
   /** Body: `{}` forgets them all, `{ drop: n }` forgets the nth (from 1). 200 `{ asks }` with what is left. */
-  app.delete(ASKS_PATH(':session'), async (c) => {
+  app.delete(API.asks(':session'), async (c) => {
     const drop = parseAsksClear(c.req.header('content-length') === '0' || c.req.header('content-length') === undefined ? {} : await jsonBody(c));
     return c.json({ asks: conductor.forgetAsks(param(c, 'session'), drop) });
   });

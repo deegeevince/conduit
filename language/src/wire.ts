@@ -599,6 +599,8 @@ export const API = {
   status: '/api/status',
   /** v2.1. GET: this session's `ToolChoice[]`. PUT `{ name, on }`: switches one tool or connected service for this session; answers the list. */
   tools: (session: string): string => `/api/sessions/${session}/tools`,
+  /** v2.1. GET: `{ asks: string[] }`, what the user asked to hold on every reply. DELETE `{}` forgets them all, `{ drop: n }` the nth (from 1); answers the same. */
+  asks: (session: string): string => `/api/sessions/${session}/asks`,
   /** v2.1. GET: what the critic made of a turn (`CriticFinding`), 404 until it has looked. */
   critic: (session: string, turn: string): string => `/api/sessions/${session}/turns/${turn}/critic`,
   /** GET: the rows of DATA a chart draws by reference, as a `DataTable` */

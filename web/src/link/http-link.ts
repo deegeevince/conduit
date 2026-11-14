@@ -35,11 +35,6 @@ export interface HttpLink extends StageLink {
   saveCapture(turn: string, film: Blob): Promise<void>;
 }
 
-/** Where the standing asks live. Not in `API` (frozen); the server's package is asked to serve it: GET answers `{ asks: string[] }`, DELETE clears and answers the same. */
-function asksPath(session: string): string {
-  return `/api/sessions/${session}/asks`;
-}
-
 async function bodyOf(response: Response): Promise<unknown> {
   const body: unknown = await response.json().catch(() => null);
   if (!response.ok) throw new Error(messageOf(body, `the server refused it (${response.status})`));
@@ -359,7 +354,7 @@ export function createHttpLink(): HttpLink {
 
     async asks(clear: boolean): Promise<readonly string[]> {
       if (session === null) throw new Error('Not connected.');
-      const response = await fetch(asksPath(session), { method: clear ? 'DELETE' : 'GET' });
+      const response = await fetch(API.asks(session), { method: clear ? 'DELETE' : 'GET' });
       if (response.status === 404) throw new Error('this server does not keep standing asks yet');
       const asks = asAsks(await bodyOf(response));
       if (asks === null) throw new Error('the server answered with something that is not a list of asks');
