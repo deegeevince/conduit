@@ -44,6 +44,8 @@ const UPLOADS_READY = false;
 const LINKS_READY = false;
 /** ms a chart waits for the rows it draws by reference before it is shown without them */
 const DATA_WAIT_MS = 20_000;
+/** ms the report on a draft waits for its picture before it goes without: under the server's own wait for it (1.5 s) */
+const DRAFT_PICTURE_MS = 1000;
 
 const HOME_SECONDS = 1.2;
 const SETTLE_SECONDS = 0.12;
@@ -536,7 +538,23 @@ export function createPainter(options: PainterOptions): Painter {
    * How the lines so far WILL land, worked out from the schedule's end without waiting for the playhead and without touching anything
    * on stage: sight and placed boxes from a timeline that is only read, and a picture of its resting frame when both sides want one.
    */
+  /** The server waits for a reply to every `drafted` and every `candidate`: when there is nothing to say, say so at once and say why, never nothing. */
+  const emptyDraft = (id: string, pass: number, why: string): void => {
+    if (disposed) return;
+    console.warn(`[conduit painter] no draft report for ${id} pass ${pass}: ${why}`);
+    emitBack({ type: 'draft', turn: id, pass, sight: NO_SIGHT, snapshot: false });
+  };
+
   const sendDraft = (open: Turn, pass: number, candidate: Schedule | null = null): void => {
+    try {
+      sendDraftOf(open, pass, candidate);
+    } catch (error) {
+      noteFault(error, 'draft');
+      emptyDraft(open.id, pass, error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  const sendDraftOf = (open: Turn, pass: number, candidate: Schedule | null): void => {
     // A draft (and a candidate) is judged as it will rest: nothing is waited for, so no part is still arriving and every chart is whole.
     const at = buildTimeline(candidate ?? timeline.schedule, open.base, { ...timelineContext(), arrivals: new Map() });
     const schedule = at.schedule;
@@ -554,8 +572,10 @@ export function createPainter(options: PainterOptions): Painter {
       return;
     }
     const content = contentOf(schedule);
+    let reported = false;
     const report = (snapshot: boolean): void => {
-      if (disposed) return;
+      if (disposed || reported) return;
+      reported = true;
       emitBack({ type: 'draft', turn: open.id, pass, sight: { ...sight, snapshot }, placed: placed.map(({ key: _key, ...item }) => item), snapshot, content });
     };
     if (!(services.review && wantsSnapshot())) {
@@ -565,13 +585,20 @@ export function createPainter(options: PainterOptions): Painter {
     const plain: Frame = { ...at.frameAt({ time: when, ambient: 3, wallTime: pinnedWallTime(3), clock: 'paused' }), camera: REST_POSE };
     // the brain's own picture carries each element's id and a ruler of canvas units: a separate frame, rasterised on its own, never the stage
     const frame = annotated(plain, at, schedule, when, plain.spec);
+    // The words and numbers go as soon as the picture is there or DRAFT_PICTURE_MS has passed, whichever is first: a slow picture (a phone,
+    // a busy page) must not make the server give the whole fix up (v2.1 review, W-6). A picture that comes later is still uploaded.
+    const late = setTimeout(() => report(false), DRAFT_PICTURE_MS);
     void renderer
       .rasterise(frame, { maxSide: PICTURE_SIDE, mime: 'image/jpeg', quality: 0.8, ...stills(frame) })
       .then((blob) => {
+        clearTimeout(late);
         if (blob !== null && !disposed) emit('upload', { kind: 'draft', turn: open.id, pass, blob });
         report(blob !== null);
       })
-      .catch(() => report(false));
+      .catch(() => {
+        clearTimeout(late);
+        report(false);
+      });
   };
 
   /** A picture of the stage a turn left, for the brain's next brief. */
@@ -1268,18 +1295,31 @@ export function createPainter(options: PainterOptions): Painter {
     },
     tryCandidate(id, pass, lines) {
       const open = turn;
-      if (!CANDIDATES_READY || open === null || open.id !== id || settling !== null) return;
+      if (!CANDIDATES_READY || open === null || open.id !== id || settling !== null) {
+        emptyDraft(id, pass, !CANDIDATES_READY ? 'this painter cannot try a fix' : open === null || open.id !== id ? 'that turn is not the one open' : 'the turn is settling');
+        return;
+      }
       // a copy of the turn's score, the fix's lines pushed on it, and how that would land: the turn's own score and the stage are not touched
-      const copy = open.score.fork();
-      const floor = Math.max(0, clock.read().playhead);
-      lines.forEach((line, index) => copy.push(line, CANDIDATE_SEQ + index, floor));
+      let copy: TurnScore;
+      try {
+        copy = open.score.fork();
+        const floor = Math.max(0, clock.read().playhead);
+        lines.forEach((line, index) => copy.push(line, CANDIDATE_SEQ + index, floor));
+      } catch (error) {
+        noteFault(error, 'candidate');
+        emptyDraft(id, pass, error instanceof Error ? error.message : String(error));
+        return;
+      }
       sendDraft(open, pass, copy.schedule);
     },
     // STUB(PLAN-v2.1 package T2): step a deck to a slide.
     slide(_to) {},
     notePass(id, pass, state) {
       const open = turn;
-      if (open === null || open.id !== id || settling !== null) return;
+      if (open === null || open.id !== id || settling !== null) {
+        if (state === 'drafted') emptyDraft(id, pass, open === null || open.id !== id ? 'that turn is not the one open' : 'the turn is settling');
+        return;
+      }
       passState = { turn: id, pass, state };
       if (state !== 'drafted') return;
       sendDraft(open, pass);
