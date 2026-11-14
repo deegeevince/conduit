@@ -143,8 +143,13 @@ function setupFor(look: LookSpec, screen: Screen): Setup {
   };
 }
 
+// `--real`: the words are set by the painter's own measurer (its advance tables), not the stand-in; run it with
+//   npx tsx --import ../web/src/bench/node-register.mjs ../web/src/painter/blocks/bench.ts --real
+const realMeasurer = process.argv.includes('--real') ? (await import('../structures')).measurerFor : null;
+
 function inputFor(p: Parsed, s: Setup, room: Box = s.room): StructureInput {
-  return { structure: p.structure, nodes: p.nodes, links: p.links, room, canvas: s.canvas, measure: s.measure, look: s.blockLook, scope: {}, obstacles: [] };
+  const measure = realMeasurer === null ? s.measure : realMeasurer(s.look, { width: s.screen.width, height: s.screen.height, dpr: 1 }, p.structure.style);
+  return { structure: p.structure, nodes: p.nodes, links: p.links, room, canvas: s.canvas, measure, look: s.blockLook, scope: {}, obstacles: [] };
 }
 
 // ---------------------------------------------------------------- scripts on disk
