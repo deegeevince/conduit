@@ -225,7 +225,8 @@ export function digestFull(feed: readonly Observation[], attention: Attention, b
   const eyes = counted(feed, (one) => (one.source === 'eyes' || one.source === 'server' ? (one.kind === 'refusal' ? null : one.kind) : null));
   const blocking = feed.filter((one) => one.source === 'engine' && one.severity === 'blocking').length;
   const notes = feed.filter((one) => one.source === 'engine' && one.severity === 'note').length;
-  const layout = blocking + notes > 0 || (attention.clean ?? 0) > 0 ? `layout  blocking ${blocking} · notes ${notes}${attention.clean === null ? '' : ` · clean ${attention.clean}`}` : '';
+  const layoutParts = [blocking > 0 ? `blocking ${blocking}` : '', notes > 0 ? `notes ${notes}` : '', attention.clean === null || attention.clean === 0 ? '' : `clean ${attention.clean}`].filter((part) => part !== '');
+  const layout = layoutParts.length === 0 ? '' : `layout  ${layoutParts.join(' · ')}`;
   const countsLine = [person === '' ? '' : `person  ${person}`, layout, eyes === '' ? '' : `eyes  ${eyes}`].filter((part) => part !== '').join('      ');
   const watching = [attention.watch.length === 0 ? '' : `watching ${attention.watch.join(', ')}`, attention.ignore.length === 0 ? '' : `ignoring ${attention.ignore.join(', ')}`, attention.tools ? 'detail: canvas_observe kind=<kind> since=<rev>' : ''].filter((part) => part !== '');
   const counts: Record<string, number> = {};
