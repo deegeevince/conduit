@@ -24,6 +24,7 @@ import { canUseThree, createThreeRenderer } from '../render/three';
 import { asDataTable } from '../link/guards';
 import { createAccessLayer } from './access';
 import { createChartHost } from './chart-host';
+import { createTextLayer } from './text-layer';
 import { createLiveApps } from './live-app';
 import { createHook } from './hook';
 import { observeRenderer } from './observe';
@@ -120,6 +121,8 @@ export interface StageApp {
   sentEvents(): readonly BackEvent[];
   /** The canonical lines of the last turn that ended, one per line; '' before there is one. */
   script(): string;
+  /** v2.1. The words of an answer as Markdown (headings, lists, tables, fenced code; choices left out): the turn's, as it last came to rest on stage, or what is on stage now. */
+  answerMarkdown(turn?: string): string;
   playScript(text: string): Promise<string>;
   sight(): Sight | null;
   capture(maxSide?: number): Promise<string | null>;
@@ -296,6 +299,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   let painter: Painter;
   host.style.touchAction = 'pinch-zoom';
   const engine = createChartEngine();
+  const text = createTextLayer(host);
   const access = createAccessLayer(host, {
     setControl: (id, value, commit) => painter.setControl(id, value, commit),
     chartAct: (key, action) => (chartHost === null ? Promise.reject(new Error('No charts.')) : chartHost.act(key, action)),
@@ -324,6 +328,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     liveApps.dispose();
     chartHost?.dispose();
     access.dispose();
+    text.dispose();
     try {
       renderer.dispose();
     } catch {
@@ -332,6 +337,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     throw new Error(`The stage could not start: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
   }
   const offControls = painter.on('controls', (views) => access.controls(views));
+  const offText = painter.on('text', (spans) => text.update(spans, painter.snapshot().turn ?? painter.recording()?.turn ?? null));
   access.controls(painter.snapshot().controls);
 
   let reviewOn = readReviewSetting();
@@ -1197,6 +1203,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
       publishStatus();
     },
     script: scriptText,
+    answerMarkdown: (turn) => text.markdown(turn),
     sight: () => lastSight,
     async capture(maxSide = 768) {
       const frame = observed.lastFrame();
@@ -1236,6 +1243,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
       for (const call of dataCalls) call.abort();
       agentListeners.clear();
       offControls();
+      offText();
       offEvent();
       offLinkStatus();
       offDropped();
@@ -1255,6 +1263,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
       liveApps.dispose();
       chartHost?.dispose();
       access.dispose();
+      text.dispose();
       renderer.dispose();
     },
   };
