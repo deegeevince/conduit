@@ -207,7 +207,7 @@ export function createPainter(options: PainterOptions): Painter {
   setTarget('adult', options.pointer);
   const reducedMotion = options.reducedMotion ?? (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches);
 
-  const listeners: { [K in keyof PainterEvents]: Set<Listener<K>> } = { back: new Set(), transcript: new Set(), clock: new Set(), upload: new Set(), controls: new Set(), text: new Set() };
+  const listeners: { [K in keyof PainterEvents]: Set<Listener<K>> } = { back: new Set(), transcript: new Set(), clock: new Set(), upload: new Set(), controls: new Set(), text: new Set(), retired: new Set() };
   const emit = <K extends keyof PainterEvents>(type: K, event: PainterEvents[K]): void => {
     queueMicrotask(() => {
       for (const listener of listeners[type]) (listener as Listener<K>)(event);
@@ -1315,6 +1315,7 @@ export function createPainter(options: PainterOptions): Painter {
   // is on it has changed, and once, empty, when it begins to move: the layer is not there to be dragged over while things slide.
   const still = { time: Number.NaN, camera: '', width: 0, height: 0, frames: 0, hash: '', sent: '' };
   const announceText = (): void => {
+    harvest();
     const shown = lastFrame;
     if (shown === null || listeners.text.size === 0) return;
     const camera = JSON.stringify(shown.camera);
@@ -1328,6 +1329,10 @@ export function createPainter(options: PainterOptions): Painter {
       if (still.sent !== '') {
         still.sent = '';
         emit('text', []);
+      }
+      if (heldBack !== '') {
+        heldBack = '';
+        emit('retired', { lines: [], column: null });
       }
       return;
     }
@@ -1353,6 +1358,31 @@ export function createPainter(options: PainterOptions): Painter {
     if (signature === still.sent) return;
     still.sent = signature;
     emit('text', spans);
+    announceRetired(shown);
+  };
+
+  /** What the layout let go of in this scene, as it rests: for the control that brings it back to be read (the chrome owns that). */
+  let heldBack = '';
+  /** the lines the layout let go this turn, kept by key: once the turn is over the schedule no longer carries them, but they are still what the answer said */
+  const letGo = new Map<string, { text: string; order: number; scene: string; tap: boolean }>();
+  const harvest = (): void => {
+    for (const key of timeline.retired.keys()) {
+      if (letGo.has(key)) continue;
+      const element = timeline.schedule.elements.find((candidate) => candidate.key === key);
+      if (element !== undefined && element.kind === 'text') letGo.set(key, { text: element.text, order: element.order, scene: element.scene, tap: element.style.tap });
+    }
+  };
+  const announceRetired = (shown: Frame): void => {
+    const scene = sceneAt(timeline.schedule, shown.time);
+    const on = new Set(shown.elements.map((element) => element.key));
+    const gone = [...letGo]
+      .filter(([key, line]) => line.scene === scene.id && !line.tap && !on.has(key))
+      .sort((a, b) => a[1].order - b[1].order)
+      .map(([key, line]) => ({ key, text: line.text }));
+    const signature = gone.map((line) => line.key).join('|');
+    if (signature === heldBack) return;
+    heldBack = signature;
+    emit('retired', { lines: gone, column: gone.length === 0 ? null : timeline.planAt(time).flow });
   };
 
   /** A fingertip is not a pixel: a choice smaller than 44 px is grown to 44 px around its centre for hit-testing only. */
@@ -1417,6 +1447,7 @@ export function createPainter(options: PainterOptions): Painter {
         base = pageUnder;
         pageUnder = null;
       }
+      letGo.clear();
       const opened: Turn = { id, input, base, score: new TurnScore(base, input.kind), seqs: new Set(), issues: new Map(), ack: 0, closed: false, started: false, showingAll: false, skippedAt: null };
       turn = opened;
       if (input.kind === 'prompt' || input.kind === 'script') store.restart();

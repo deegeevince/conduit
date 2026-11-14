@@ -124,7 +124,7 @@ const MIN_SHRINK = 0.04;
 /** how far words may shrink, beside a card or a control, before the oldest line is let go */
 const WITH_CONTROLS_SHRINK = 0.72;
 /** how far words may shrink, with no control among them, before the oldest line is let go */
-const REST_SHRINK = 1;
+const REST_SHRINK = 0.6;
 /** the space between paragraphs of a `page`, in lines of body text */
 const PARAGRAPH_GAP = 0.6;
 /** lines a stack reserves room for when the brain did not say how many to expect */
@@ -693,6 +693,7 @@ function arrangeFlow(units: readonly Unit[], ctx: Context): FlowResult {
   const restShrink = Math.max(MIN_SHRINK, REST_SHRINK, Math.min(1, ctx.look.type.minFont / Math.max(1, cellOf('m', ctx.viewport, ctx.look).fontSize)));
   // A column never shrinks once it is placed. When what is present would pass the bottom of its box, the oldest lines leave at the top (they are
   // retired and the rest move up, eased like a `page`); lines that stay `pin` and the newest line are kept. Each column scrolls on its own.
+  const originals = plan.map((column) => [...column.units]);
   for (let guard = 0; guard < 4096; guard += 1) {
     // A column with a card or a control in it sets its words a little smaller before it lets any of them go: the hand's controls and the line
     // that explains them are meant to be on the stage together.
@@ -705,6 +706,25 @@ function arrangeFlow(units: readonly Unit[], ctx: Context): FlowResult {
       for (const ghost of dropped.ghosts) overflow.push(ghost.item.key);
     }
   }
+  // A heading never stands without the lines it introduces: when two or more of the lines under it have left and none is left, it goes with them (and is
+  // told as let go, like they are, for the control that brings them back).
+  plan.forEach((column, index) => {
+    const before = originals[index] ?? [];
+    for (let guard = 0; guard < before.length; guard += 1) {
+      const orphan = column.units.findIndex((unit, at) => {
+        const o = before.indexOf(unit);
+        const next = column.units[at + 1];
+        if (o < 0 || at >= column.units.length - 1 || !isHeading(unit) || unit.main.item.style.stay === 'pin' || unit.main.item.reserve !== undefined) return false;
+        if (next !== undefined && !isHeading(next)) return false;
+        let gone = 0;
+        for (let k = o + 1; k < before.length && !isHeading(before[k] as Unit); k += 1) if (!column.units.includes(before[k] as Unit)) gone += 1;
+        return gone >= 2;
+      });
+      if (orphan < 0) break;
+      const [dropped] = column.units.splice(orphan, 1);
+      if (dropped !== undefined) overflow.push(dropped.main.item.key);
+    }
+  });
   // Only a single line (or pinned ones) taller than the room is ever made smaller, and never below the smallest the look allows.
   const f = fitFactor(plan, ctx) ?? MIN_SHRINK;
 

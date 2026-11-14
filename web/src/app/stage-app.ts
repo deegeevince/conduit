@@ -31,6 +31,7 @@ import { canUseThree, createThreeRenderer } from '../render/three';
 import { asDataTable } from '../link/guards';
 import { createAccessLayer } from './access';
 import { createChartHost } from './chart-host';
+import { createEarlier } from './earlier';
 import { createTextLayer } from './text-layer';
 import { createLiveApps } from './live-app';
 import { createHook } from './hook';
@@ -394,6 +395,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   host.style.touchAction = 'pinch-zoom';
   const engine = createChartEngine();
   const text = createTextLayer(host);
+  const earlier = createEarlier(host);
   const access = createAccessLayer(host, {
     setControl: (id, value, commit) => painter.setControl(id, value, commit),
     chartAct: (key, action) => (chartHost === null ? Promise.reject(new Error('No charts.')) : chartHost.act(key, action)),
@@ -433,6 +435,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   }
   setTarget(audience, pointerKind());
   const offControls = painter.on('controls', (views) => access.controls(views));
+  const offRetired = painter.on('retired', (view) => earlier.update(view));
   const offText = painter.on('text', (spans) => text.update(spans, painter.snapshot().turn ?? painter.recording()?.turn ?? null));
   access.controls(painter.snapshot().controls);
 
@@ -1720,6 +1723,8 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
       agentListeners.clear();
       offControls();
       offText();
+      offRetired();
+      earlier.dispose();
       offEvent();
       offLinkStatus();
       offDropped();

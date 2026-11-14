@@ -181,7 +181,11 @@ export function planStage(input: PlanInput): StagePlan {
     flow = { x: column.x + share + gutter / 2, y: column.y, width: column.width - share - gutter / 2, height: column.height };
     flowWords = input.flowHeight(flow.width);
   } else {
-    const most = Math.min(words, column.height * FLOW_SHARE_MAX);
+    // The words may have more than their share when the blocks beside them need less than the rest: the empty band under a table is room the words use
+    // (at rest nothing the answer said is let go while the stage has room for it).
+    const asked = !needsPicture && unpinned.length > 0 ? (viewport.width >= viewport.height * 1.2 ? Math.max(...unpinned.map((block) => block.natural.height)) : unpinned.reduce((sum, block) => sum + block.natural.height, 0) + gap * (unpinned.length - 1)) : 0;
+    const share = asked > 0 ? Math.max(column.height * FLOW_SHARE_MAX, Math.min(column.height * 0.8, column.height - gap - asked)) : column.height * FLOW_SHARE_MAX;
+    const most = Math.min(words, share);
     // words written before every block stand above it; otherwise they stand below, as a caption does
     const firstBlock = blocks.reduce<number | null>((least, block) => (block.kind === 'picture' ? least : least === null ? block.order : Math.min(least, block.order)), null);
     const above = !needsPicture && input.flowOrder !== null && firstBlock !== null && input.flowOrder < firstBlock;
