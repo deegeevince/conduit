@@ -342,7 +342,7 @@ function layoutSlider(input: ControlInput, m: Metrics): ControlLayout {
   // tight: the track sits close under the label and the target reaches up behind it, so a column of them takes less height; the target stays whole inside the box
   const tight = compact >= 1;
   // the knob stands clear of the words above it whatever the target is
-  const clear = headHeight - m.body * 0.2 + m.knob / 2;
+  const clear = headHeight - m.body * 0.04 + m.knob / 2;
   const height = tight ? snapUp(m, Math.max(clear + m.knob / 2 + 2, input.minTarget)) : snapUp(m, headHeight + input.minTarget);
   const sheet = new Sheet(input.control.key, -width / 2, -height / 2);
   plate(sheet, input, m, width, height, input.look.radius);

@@ -269,6 +269,8 @@ interface ScrollArea {
   readonly windowH: number;
   readonly contentH: number;
   readonly width: number;
+  /** how far a tap on a cue moves the area: one row */
+  readonly step: number;
   readonly members: ReadonlyMap<string, { readonly top: number; readonly dx: number; readonly width: number; readonly height: number }>;
 }
 
@@ -890,10 +892,14 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
         const contentH = rowTop + rowHeight;
         const body = cellOf('m', viewport, look).height / planeScale('mid', viewport);
         // the window is what the stage can spare: the words keep two lines under it
-        const windowH = Math.min(contentH, Math.max(controlFit.flow.height / planeScale('mid', viewport) - 2.5 * body, 2 * rowHeight));
+        const spare = controlFit.flow.height / planeScale('mid', viewport) - 2.5 * body;
+        // whole rows only, so that no control shows as a sliver at the foot of the window
+        const bottoms = [...placed.values()].map((slot) => slot.top + slot.height);
+        const whole = Math.max(0, ...bottoms.filter((bottom) => bottom <= spare + 1e-6));
+        const windowH = Math.min(contentH, whole > 0 ? whole : Math.max(spare, rowHeight));
         const host = members.find((member) => member.present)?.span ?? null;
         if (host !== null) {
-          scrollInfo = { host: host.key, windowH, contentH, width: widest + cueW, members: placed };
+          scrollInfo = { host: host.key, windowH, contentH, width: widest + cueW, step: Math.max(1, contentH / Math.max(1, Math.ceil(members.length / across))), members: placed };
           items.push({ key: host.key, order: host.order, text: '', emphasis: [], style: laidStyle(styleAt(host, start)), struck: false, replaces: null, reserve: { width: widest + cueW, height: windowH, tight: true } });
         }
       }
@@ -1948,7 +1954,7 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
       const max = Math.max(0, area.contentH - area.windowH);
       const offset = Math.min(max, Math.max(0, runtime.scroll.get(span.scene) ?? 0));
       const centre = { x: left + member.dx + layout.width / 2, y: top + member.top + layout.height / 2 - offset };
-      return { pose: host, layout, fit, centre, window: { box: { x: left, y: top, width: area.width, height: area.windowH }, scene: span.scene, offset, max, step: Math.max(1, area.contentH / Math.max(1, area.members.size)) } };
+      return { pose: host, layout, fit, centre, window: { box: { x: left, y: top, width: area.width, height: area.windowH }, scene: span.scene, offset, max, step: area.step } };
     }
     const pose = poseAt(span.key, tq, gone === null ? null : gone.start);
     if (pose === null) return null;
