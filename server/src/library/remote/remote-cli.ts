@@ -38,7 +38,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Logger } from '../../log';
 import type { LibrarySettings, Technique, TechniqueDraft, TechniqueWriter, WriteResult } from '../../domain/techniques';
-import { lintTechnique, parseTechniqueBody } from '../../domain/techniques';
+import { isProposedTitle, lintTechnique, parseTechniqueBody } from '../../domain/techniques';
 import { parseJson, runRemote } from './run';
 
 export type RemoteSettings = Extract<LibrarySettings, { kind: 'remote' }>;
@@ -128,6 +128,8 @@ export async function readRemoteTechniques(settings: RemoteSettings, known: Read
   const result = new Map<string, Technique>();
   const stale: IndexEntry[] = [];
   for (const entry of index) {
+    // `Proposed technique:` notes are drafts from `pnpm lessons`: not measured, never read for the brain (no body is even fetched).
+    if (isProposedTitle(entry.title)) continue;
     const have = known.get(entry.id);
     if (skip.has(entry.id) && skip.get(entry.id) === entry.fingerprint) continue;
     if (have !== undefined && entry.fingerprint !== null && have.fingerprint === entry.fingerprint) result.set(entry.id, { ...have, title: entry.title, summary: entry.summary, reason: entry.reason, source: 'remote' });
