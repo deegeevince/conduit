@@ -821,7 +821,7 @@ async function startServer(args: Args, replayFile: string, out: string): Promise
   const live = args.mode === 'live';
   const child: ChildProcess = spawn('pnpm', ['--filter', '@conduit/server', 'start'], {
     cwd: args.build,
-    env: { ...process.env, PORT: String(args.port), DATA_DIR: live ? args.data : data, BRAIN: live ? 'claude-cli' : 'replay', ...(live ? {} : { REPLAY_CASE: replayFile, REPLAY_CPS: '6000' }), IMAGE_MODEL: 'none', PICTURES: 'openverse', AGENT_PERMITS: 'auto', NODE_ENV: 'production' },
+    env: { ...process.env, PORT: String(args.port), DATA_DIR: live ? args.data : data, BRAIN: live ? 'claude-cli' : 'replay', ...(live ? { CLAUDE_MODEL: process.env['CLAUDE_MODEL'] ?? 'sonnet' } : {}), ...(live ? {} : { REPLAY_CASE: replayFile, REPLAY_CPS: '6000' }), IMAGE_MODEL: 'none', PICTURES: 'openverse', AGENT_PERMITS: 'auto', NODE_ENV: 'production' },
     stdio: 'ignore',
   });
   const url = `http://127.0.0.1:${args.port}`;
