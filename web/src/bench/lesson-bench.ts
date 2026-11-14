@@ -75,7 +75,7 @@ function input(): LessonInput {
   for (const key of Object.keys(DOCS)) states[key] = key === doc.id ? state : load(DOCS[key] ?? doc);
   if (series !== null) return { doc, state, crops: {}, stills: {}, catalogue: [] };
   const catalogue = params.get('nocatalogue') === '1' ? [] : catalogueFrom(Object.values(DOCS), states, doc.id);
-  return { doc, state, crops: crops(doc), stills: {}, catalogue };
+  return { doc, state, crops: crops(doc), stills: {}, catalogue, ...(params.get('ink') === '1' ? { ink: true } : {}) };
 }
 
 const changes: StateChange[] = [];
