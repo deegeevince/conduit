@@ -1472,6 +1472,17 @@ async function main(): Promise<void> {
   process.exit(failures === 0 ? 0 : 1);
 }
 
+// A gate that is killed from outside must say so: a silent end after some turns is what a stuck run looks like, and it is not one.
+for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) {
+  process.on(signal, () => {
+    process.stderr.write(`smoke: stopped by ${signal} (something outside the gate ended it)\n`);
+    process.exit(2);
+  });
+}
+process.on('exit', (code) => {
+  if (code !== 0 && code !== 1) process.stderr.write(`smoke: exit ${code}\n`);
+});
+
 main().catch((error: unknown) => {
   process.stderr.write(`smoke: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}\n`);
   process.exit(2);
