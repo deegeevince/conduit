@@ -29,3 +29,4 @@ export * from './prompt';
 export * from './demos';
 export * from './explore';
 export * from './taste';
+export * as maths from './maths/index';

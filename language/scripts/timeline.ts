@@ -9,6 +9,7 @@ import { DEMOS, EMPTY_STAGE, LineNormalizer, parseLine, LineReader, PROMPT_EXAMP
 import type { Issue } from '../src/index';
 import { lessonChecks } from './lesson-checks';
 import { teachChecks } from './teach-checks';
+import { mathsChecks } from './maths-checks';
 import { eventChecks, reviewChecks } from './review-checks';
 
 function describe(issues: readonly Issue[]): string {
@@ -73,6 +74,7 @@ if (argument === undefined || argument === 'all') {
   ok = eventChecks() && ok;
   ok = lessonChecks() && ok;
   ok = teachChecks() && ok;
+  ok = mathsChecks() && ok;
   for (const demo of DEMOS) ok = run(`demo ${demo.name}`, readFileSync(fileURLToPath(new URL(`../demos/${demo.name}.series`, import.meta.url)), 'utf8')) && ok;
   const seedDir = fileURLToPath(new URL('../../techniques/seed/', import.meta.url));
   for (const file of readdirSync(seedDir).filter((name) => name.endsWith('.md')).sort()) {

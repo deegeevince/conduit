@@ -1209,8 +1209,8 @@ export const LESSON_VERB = {
     family: 'lesson',
   },
   ask: {
-    form: 'ask <id> [in=<part>] is=<a>[,<b>…] [pick=<x>,<y>,<z>] [unit=<unit>] | <question>',
-    gist: 'A try: the learner types the answer, or taps one of the large choices in `pick=`. It is checked on the page, at once; every answer you will accept is in `is=` and nowhere else. A `_` stands for a space inside a value.',
+    form: 'ask <id> [in=<part>] is=<a>[,<b>…] [pick=<x>,<y>,<z>] [unit=<unit>] [check=working] | <question>',
+    gist: 'A try: the learner types the answer, or taps one of the large choices in `pick=`. It is checked on the page, at once; every answer you will accept is in `is=` and nowhere else. A `_` stands for a space inside a value. `check=working` is for a question she works out on paper: her ink is read into lines of working, each step is checked with real arithmetic, and she is right when every step is and it ends on an answer in `is=`.',
     time: 'instant',
     family: 'lesson',
   },
