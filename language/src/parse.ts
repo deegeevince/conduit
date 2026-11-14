@@ -1,22 +1,29 @@
 import { parsePathData } from './geometry';
 import { BUILTIN_STYLE_NAMES, own } from './style';
+import { splitCells } from './text';
 import type {
+  BindOn,
   CanvasBox,
   CamLine,
+  CardLine,
   ColourRef,
+  ControlLine,
   FillRef,
   HexColor,
   Issue,
   IssueCode,
   Line,
+  LinkLine,
   LookProps,
   Near,
+  NodeLine,
   ParseResult,
   Point,
   SceneLine,
   Seconds,
   ShapeGeometry,
   SpriteKey,
+  StructureLine,
   StyleProps,
   Target,
   When,
@@ -31,34 +38,43 @@ import {
   CAMERA_MOVES,
   CAMERA_SPEEDS,
   CANVAS_NAMES,
+  CHART_KINDS,
+  CHART_WORDS,
   CLEARS,
+  CONTROL_VERBS,
   DIRECTIONS,
   ENTER_EFFECTS,
   EXIT_EFFECTS,
   FACES,
   FX_NAMES,
+  GROWTHS,
   HIT_GESTURES,
   INK_ROLES,
   LAYERS,
   LAYOUTS,
   LETTERCASES,
   LIMITS,
+  LINK_ENDS,
   LOOPS,
   MARKS,
   MASKS,
   MEDIUMS,
   MOODS,
+  NODE_SHAPES,
   PACES,
+  PICK_FORMS,
   RESERVED_IDS,
   SHAPE_VERBS,
   SIDES,
   SIZES,
   STAY_WORDS,
   STROKES,
+  STRUCTURE_VERBS,
+  TEXTURES,
   VERBS,
   WEIGHTS,
 } from './vocabulary';
-import type { AmbientKind, Amount, Anchor, CameraMove, CameraSpeed, FxName, ShapeVerb, Verb } from './vocabulary';
+import type { AmbientKind, Amount, Anchor, CameraMove, CameraSpeed, ControlVerb, FxName, ShapeVerb, StructureVerb, Verb } from './vocabulary';
 
 const NAME_PATTERN = /^[a-z][a-z0-9_-]*$/;
 const HEX_PATTERN = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/;
@@ -81,6 +97,40 @@ const VERB_ALIASES: Readonly<Record<string, Verb>> = {
   picture: 'paint',
   weather: 'ambient',
   particles: 'ambient',
+  flowchart: 'flow',
+  graph: 'flow',
+  diagram: 'flow',
+  edge: 'link',
+  connect: 'link',
+  pin: 'node',
+  event: 'node',
+  switch: 'toggle',
+  checkbox: 'toggle',
+  textbox: 'input',
+  bars: 'chart',
+  barchart: 'chart',
+  candles: 'chart',
+  candlestick: 'chart',
+  plot: 'chart',
+  tabs: 'pick',
+  menu: 'pick',
+  stepper: 'pick',
+  select: 'pick',
+  dropdown: 'pick',
+  radio: 'pick',
+};
+
+/** Aliases that say more than the verb: the word they stand for is put back after it (`tabs | a | b` reads as `pick tabs | a | b`). */
+const ALIAS_WORDS: Readonly<Record<string, string>> = {
+  bars: 'columns',
+  barchart: 'columns',
+  candles: 'candles',
+  candlestick: 'candles',
+  tabs: 'tabs',
+  menu: 'menu',
+  dropdown: 'menu',
+  select: 'menu',
+  stepper: 'steps',
 };
 
 const CAMERA_ALIASES: Readonly<Record<string, CameraMove>> = {
@@ -97,7 +147,12 @@ const MAX_SCENE_LINES = 12;
 const MAX_THICK = 40;
 const MAX_SCALE = 100;
 const MAX_FPS = 24;
+const MAX_SOFT = 40;
 const COORDINATE_LIMIT = 1000;
+/** A node's number may be a year or a count far larger than any coordinate. */
+const VALUE_LIMIT = 1e9;
+/** `0..90`, `-10..40`, `60..20`: a span of numbers, on a slider or a bind. */
+const SPAN_PATTERN = /^(-?(?:\d+\.?\d*|\.\d+))\.\.(-?(?:\d+\.?\d*|\.\d+))$/;
 
 interface Pair {
   readonly key: string;
@@ -279,6 +334,27 @@ function readStyleProps(pairs: readonly Pair[], issues: Issues): { props: StyleP
         else bad(pair, 'a number of canvas units');
         break;
       }
+      case 'brush':
+        if (oneOf(STROKES, value)) props.brush = value;
+        else bad(pair, STROKES.join(' | '));
+        break;
+      case 'tex':
+      case 'texture':
+        if (oneOf(TEXTURES, value)) props.tex = value;
+        else bad(pair, TEXTURES.join(' | '));
+        break;
+      case 'soft': {
+        const soft = parseNumber(value, 0, MAX_SOFT);
+        if (soft !== null) props.soft = soft;
+        else bad(pair, 'a number of canvas units');
+        break;
+      }
+      case 'leader': {
+        const leader = parseTap(value);
+        if (leader !== null) props.leader = leader;
+        else bad(pair, 'yes | no');
+        break;
+      }
       case 'weight':
         if (oneOf(WEIGHTS, value)) props.weight = value;
         else bad(pair, WEIGHTS.join(' | '));
@@ -453,16 +529,23 @@ function withWhen<T extends object>(line: T, when: When | undefined): T & { when
  * the built-in styles are all about text, so on anything drawn the first
  * word is always the id (`pix ghost`, `circle stamp`).
  */
-function splitWords(words: readonly string[], idAllowed: boolean, builtinsAreStyles = false): { id: string; numbers: number[]; names: string[] } {
+function splitWords(
+  words: readonly string[],
+  idAllowed: boolean,
+  builtinsAreStyles = false,
+  /** words of the verb's own vocabulary: never an id, even first (`flow down`, `toggle on`) */
+  notIds: readonly string[] = [],
+  limit = COORDINATE_LIMIT,
+): { id: string; numbers: number[]; names: string[] } {
   const numbers: number[] = [];
   const names: string[] = [];
   let id = '-';
   words.forEach((word, index) => {
     if (GEOMETRY_PATTERN.test(word)) {
-      for (const part of word.split(/[,x]/)) numbers.push(Math.min(COORDINATE_LIMIT, Math.max(-COORDINATE_LIMIT, Number(part))));
+      for (const part of word.split(/[,x]/)) numbers.push(Math.min(limit, Math.max(-limit, Number(part))));
       return;
     }
-    if (idAllowed && index === 0 && word !== '-' && isValidElementId(word) && !(builtinsAreStyles && BUILTIN_STYLE_NAMES.has(word))) {
+    if (idAllowed && index === 0 && word !== '-' && isValidElementId(word) && !notIds.includes(word) && !(builtinsAreStyles && BUILTIN_STYLE_NAMES.has(word))) {
       id = word;
       return;
     }
@@ -787,10 +870,6 @@ function parseUse(head: Head, issues: Issues): Line | null {
 }
 
 function parsePaint(head: Head, text: string | null, issues: Issues): Line | null {
-  if (text === null) {
-    issues.error('missing-text', 'paint needs what to paint after " | "');
-    return null;
-  }
   const { id, numbers, names } = splitWords(head.words, true);
   const { props, rest } = readStyleProps(head.pairs, issues);
   const line: { -readonly [K in keyof Extract<Line, { verb: 'paint' }>]: Extract<Line, { verb: 'paint' }>[K] } = {
@@ -798,7 +877,7 @@ function parsePaint(head: Head, text: string | null, issues: Issues): Line | nul
     id,
     styles: readStyleNames(names, issues),
     props,
-    prompt: text,
+    prompt: text ?? '',
   };
   const [x, y, w, h] = numbers;
   if (x !== undefined && y !== undefined && w !== undefined && h !== undefined && w > 0 && h > 0) line.box = { x, y, w, h } satisfies CanvasBox;
@@ -838,6 +917,229 @@ function parseAmbient(head: Head, issues: Issues): Line | null {
   }
   const line = { verb: 'ambient' as const, id, kind, styles: readStyleNames(names, issues), props };
   return withWhen(amount === undefined ? line : { ...line, amount }, head.when);
+}
+
+/** A corner and a size among the bare numbers of a line: the room a structure, a card or a painting is given. */
+function boxOf(numbers: readonly number[], issues: Issues, what: string): CanvasBox | undefined {
+  const [x, y, w, h] = numbers;
+  if (x !== undefined && y !== undefined && w !== undefined && h !== undefined && w > 0 && h > 0) return { x, y, w, h };
+  if (numbers.length > 0) issues.warn('bad-geometry', `${what} takes a corner and a size (10,10 80x60), or nothing for the whole canvas`);
+  return undefined;
+}
+
+function parseStructure(verb: StructureVerb, head: Head, text: string | null, issues: Issues): Line {
+  const own: readonly string[] = verb === 'flow' || verb === 'tree' ? GROWTHS : verb === 'chart' ? [...CHART_KINDS, ...CHART_WORDS] : verb === 'map' ? ['route'] : verb === 'table' ? ['bars'] : [];
+  const { id, numbers, names } = splitWords(head.words, true, false, own);
+  const { props, rest } = readStyleProps(head.pairs, issues);
+  const line: { -readonly [K in keyof StructureLine]: StructureLine[K] } = { verb, id, styles: [], props };
+  const styleWords: string[] = [];
+  for (const name of names) {
+    if ((verb === 'flow' || verb === 'tree') && oneOf(GROWTHS, name)) line.grow = name;
+    else if (verb === 'chart' && oneOf(CHART_KINDS, name)) line.chart = name;
+    else if (verb === 'chart' && oneOf(CHART_WORDS, name)) line.words = CHART_WORDS.filter((word) => word === name || (line.words ?? []).includes(word));
+    else if (verb === 'chart' && (name === 'candlestick' || name === 'candlesticks')) line.chart = 'candles';
+    else if (verb === 'chart' && (name === 'bars' || name === 'bar' || name === 'histogram')) line.chart = 'columns';
+    else if (verb === 'map' && name === 'route') line.route = true;
+    else if (verb === 'table' && name === 'bars') line.bars = true;
+    else styleWords.push(name);
+  }
+  for (const pair of rest) {
+    const { key, value } = pair;
+    if ((key === 'grow' || key === 'dir') && (verb === 'flow' || verb === 'tree') && oneOf(GROWTHS, value)) line.grow = value;
+    else if ((key === 'kind' || key === 'type') && verb === 'chart' && oneOf(CHART_KINDS, value)) line.chart = value;
+    else if (key === 'data' && verb === 'chart' && isValidElementId(value)) line.data = value;
+    else issues.warn('unknown-key', `"${key}" is not a property here; ignored`, pair.token);
+  }
+  line.styles = readStyleNames(styleWords, issues);
+  const box = boxOf(numbers, issues, verb);
+  if (box !== undefined) line.box = box;
+  if (text !== null) line.title = text;
+  return withWhen(line, head.when);
+}
+
+function parseNode(head: Head, text: string | null, issues: Issues): Line | null {
+  if (text === null) {
+    issues.error('missing-text', 'node needs its words after " | "');
+    return null;
+  }
+  const { id, numbers, names } = splitWords(head.words, true, false, NODE_SHAPES, VALUE_LIMIT);
+  const { props, rest } = readStyleProps(head.pairs, issues);
+  const line: { -readonly [K in keyof NodeLine]: NodeLine[K] } = { verb: 'node', id, styles: [], props, values: numbers.slice(0, 2), text };
+  const styleWords: string[] = [];
+  for (const name of names) {
+    if (oneOf(NODE_SHAPES, name)) line.shape = name;
+    else styleWords.push(name);
+  }
+  for (const pair of rest) {
+    if (pair.key === 'from' || pair.key === 'after' || pair.key === 'parent') {
+      // The id is a word of the language; the label is the brain's own and keeps its case.
+      const colon = pair.raw.indexOf(':');
+      const from = (colon < 0 ? pair.raw : pair.raw.slice(0, colon)).toLowerCase();
+      const label = colon < 0 ? '' : pair.raw.slice(colon + 1);
+      if (!isValidElementId(from)) issues.warn('bad-value', `${pair.token} ignored; from= names the node this one follows`, pair.token);
+      else line.from = label === '' ? { id: from } : { id: from, label };
+    } else if (pair.key === 'shape' && oneOf(NODE_SHAPES, pair.value)) line.shape = pair.value;
+    // A mark on a chart. `x` is kept as written: what it means (a date, a year, a name) is the chart's to say.
+    else if (pair.key === 'x' && pair.raw !== '') line.x = pair.raw.slice(0, LIMITS.name);
+    else if (pair.key === 'y') {
+      const y = parseNumber(pair.value.replace(/[,$%]/g, ''), -VALUE_LIMIT, VALUE_LIMIT);
+      if (y !== null) line.y = y;
+      else issues.warn('bad-value', `${pair.token} ignored; y= is a number on the chart's scale`, pair.token);
+    } else issues.warn('unknown-key', `"${pair.key}" is not a property here; ignored`, pair.token);
+  }
+  line.styles = readStyleNames(styleWords, issues);
+  return withWhen(line, head.when);
+}
+
+function parseLink(head: Head, text: string | null, issues: Issues): Line | null {
+  const { props, rest } = readStyleProps(head.pairs, issues);
+  const line: { -readonly [K in keyof LinkLine]: LinkLine[K] } = { verb: 'link', id: '-', nodes: [], props };
+  const nodes: string[] = [];
+  for (const word of head.words) {
+    if (word === 'dashed') line.dashed = true;
+    else if (oneOf(LINK_ENDS, word)) line.ends = word;
+    else if (word === '>' || word === '->' || word === 'to') continue;
+    else if (isValidElementId(word)) nodes.push(word);
+    else issues.warn('unknown-word', `"${word}" means nothing in a link; ignored`, word);
+  }
+  for (const pair of rest) {
+    if (pair.key === 'id' && isValidElementId(pair.value)) line.id = pair.value;
+    else if (pair.key === 'ends' && oneOf(LINK_ENDS, pair.value)) line.ends = pair.value;
+    else issues.warn('unknown-key', `"${pair.key}" is not a property here; ignored`, pair.token);
+  }
+  if (nodes.length < 2) {
+    issues.error('missing-argument', 'link needs the ids of two nodes: link rain river | runs off');
+    return null;
+  }
+  line.nodes = nodes.slice(0, LIMITS.nodes);
+  if (text !== null) line.text = text;
+  return withWhen(line, head.when);
+}
+
+function parseControl(verb: ControlVerb, head: Head, text: string | null, issues: Issues): Line | null {
+  const own: readonly string[] = verb === 'toggle' ? ['on', 'off', 'send'] : verb === 'pick' ? [...PICK_FORMS, 'send'] : ['send'];
+  // `slider angle 0..90 30` and `slider angle 0 90 30` read the same.
+  const words = head.words.flatMap((word) => {
+    const span = verb === 'slider' ? SPAN_PATTERN.exec(word) : null;
+    return span === null ? [word] : [span[1] ?? '0', span[2] ?? '0'];
+  });
+  const { id, numbers, names } = splitWords(words, true, false, own, VALUE_LIMIT);
+  const { props, rest } = readStyleProps(head.pairs, issues);
+  const line: { -readonly [K in keyof ControlLine]: ControlLine[K] } = { verb, id, styles: [], props };
+  const styleWords: string[] = [];
+  for (const name of names) {
+    if (name === 'send') line.send = true;
+    else if (verb === 'toggle' && (name === 'on' || name === 'off')) line.initial = name === 'on';
+    else if (verb === 'pick' && oneOf(PICK_FORMS, name)) line.form = name;
+    else styleWords.push(name);
+  }
+  let step: number | undefined;
+  let value: number | undefined;
+  for (const pair of rest) {
+    const { key } = pair;
+    if (key === 'send') {
+      const send = parseTap(pair.value);
+      if (send !== null) line.send = send;
+    } else if (key === 'step' && verb === 'slider') {
+      const parsed = parseNumber(pair.value, 0, VALUE_LIMIT);
+      if (parsed !== null && parsed > 0) step = parsed;
+      else issues.warn('bad-value', `${pair.token} ignored; expected a step larger than zero`, pair.token);
+    } else if (key === 'unit' && verb === 'slider') line.unit = pair.raw.slice(0, 8);
+    else if (key === 'value' || key === 'at') {
+      const parsed = parseNumber(pair.value, -VALUE_LIMIT, VALUE_LIMIT);
+      if (parsed !== null && (verb === 'slider' || verb === 'pick')) value = parsed;
+      else if (verb === 'toggle' && parseTap(pair.value) !== null) line.initial = parseTap(pair.value) ?? false;
+      else issues.warn('bad-value', `${pair.token} ignored`, pair.token);
+    } else if (key === 'form' && verb === 'pick' && oneOf(PICK_FORMS, pair.value)) line.form = pair.value;
+    else issues.warn('unknown-key', `"${key}" is not a property here; ignored`, pair.token);
+  }
+  line.styles = readStyleNames(styleWords, issues);
+
+  if (verb === 'slider') {
+    let [min, max] = numbers;
+    if (min === undefined || max === undefined) {
+      issues.warn('missing-argument', 'slider needs its two ends (slider angle 0 90 | Angle); used 0 to 100');
+      min = 0;
+      max = 100;
+    }
+    if (min === max) {
+      issues.error('bad-value', 'the two ends of a slider must differ');
+      return null;
+    }
+    if (min > max) [min, max] = [max, min];
+    line.range = step === undefined ? { min, max } : { min, max, step };
+    const initial = value ?? numbers[2];
+    if (initial !== undefined) line.initial = Math.min(max, Math.max(min, initial));
+  } else if (numbers.length > 0 && verb !== 'pick') issues.warn('unknown-word', `numbers mean nothing on a ${verb} line; ignored`);
+
+  if (verb === 'pick') {
+    const options = text === null ? [] : splitCells(text).filter((option) => option !== '');
+    if (options.length < 2) {
+      issues.error('missing-text', 'pick needs its options after the bar: pick view | Day | Night');
+      return null;
+    }
+    if (options.length > LIMITS.options) issues.warn('structure-limit', `a pick has at most ${LIMITS.options} options; the rest were ignored`);
+    line.options = options.slice(0, LIMITS.options);
+    const chosen = value ?? numbers[0];
+    if (chosen !== undefined) line.initial = Math.min(line.options.length, Math.max(1, Math.round(chosen)));
+  } else if (text !== null) line.text = text;
+  else if (verb === 'button') {
+    issues.error('missing-text', 'button needs its label after " | "');
+    return null;
+  }
+  return withWhen(line, head.when);
+}
+
+function parseCard(head: Head, text: string | null, issues: Issues): Line {
+  const { id, numbers, names } = splitWords(head.words, true);
+  const { props, rest } = readStyleProps(head.pairs, issues);
+  warnUnknownPairs(rest, issues);
+  const line: { -readonly [K in keyof CardLine]: CardLine[K] } = { verb: 'card', id, styles: readStyleNames(names, issues), props };
+  const box = boxOf(numbers, issues, 'card');
+  if (box !== undefined) line.box = box;
+  if (text !== null) line.title = text;
+  return withWhen(line, head.when);
+}
+
+/** `bind angle | …`, `bind angle 20..60 | …`, `bind mode=night | …`: the control, when the change applies, and the change itself as a line of its own. */
+function parseBind(head: Head, rawText: string | null, issues: Issues): Line | null {
+  let control: string | undefined;
+  let on: BindOn = { kind: 'whole' };
+  for (const word of head.words) {
+    const span = SPAN_PATTERN.exec(word);
+    if (span !== null) on = { kind: 'range', from: Number(span[1]), to: Number(span[2]) };
+    else if (control === undefined && isValidElementId(word)) control = word;
+    else issues.warn('unknown-word', `"${word}" means nothing in a bind; ignored`, word);
+  }
+  for (const pair of head.pairs) {
+    if (control === undefined && isValidElementId(pair.key)) {
+      control = pair.key;
+      on = { kind: 'is', value: pair.value };
+    } else if (pair.key === 'is' || pair.key === 'when') on = { kind: 'is', value: pair.value };
+    else issues.warn('unknown-key', `"${pair.key}" is not part of a bind; ignored`, pair.token);
+  }
+  if (control === undefined) {
+    issues.error('missing-id', 'bind needs the id of a control: bind angle | move sun along=arc');
+    return null;
+  }
+  const inner = rawText === null ? null : parseLine(rawText);
+  if (inner === null || inner.kind !== 'line') {
+    issues.error('bad-bind', 'bind needs the change after " | ": a set, move, correct or shape line');
+    return null;
+  }
+  const change = inner.line;
+  const drawn = isShapeVerb(change.verb as Verb);
+  if (change.verb !== 'set' && change.verb !== 'move' && change.verb !== 'correct' && !drawn) {
+    issues.error('bad-bind', `a control cannot drive "${change.verb}"; it drives set, move, correct, or a shape declared again`);
+    return null;
+  }
+  if ('id' in change && change.id === '-') {
+    issues.error('bad-bind', 'the shape a control changes must be named: draw it first under an id, then bind its new form');
+    return null;
+  }
+  for (const issue of inner.issues) issues.warn(issue.code, issue.message, issue.token);
+  // Narrowed above: only the four kinds of change reach here.
+  return { verb: 'bind', control, on, change: change as Extract<Line, { verb: 'bind' }>['change'] };
 }
 
 function readSpeedAndOver(pairs: readonly Pair[], issues: Issues): { speed?: CameraSpeed; over?: number; rest: Pair[] } {
@@ -1068,10 +1370,34 @@ const TEXT_LIMIT: Readonly<Partial<Record<Verb, number>>> = {
   revise: LIMITS.text,
   path: LIMITS.line,
   paint: LIMITS.prompt,
+  flow: LIMITS.text,
+  tree: LIMITS.text,
+  cycle: LIMITS.text,
+  timeline: LIMITS.text,
+  map: LIMITS.text,
+  table: LIMITS.text,
+  chart: LIMITS.text,
+  node: LIMITS.text,
+  link: LIMITS.text,
+  button: LIMITS.text,
+  toggle: LIMITS.text,
+  slider: LIMITS.text,
+  pick: LIMITS.text,
+  input: LIMITS.text,
+  card: LIMITS.text,
+  bind: LIMITS.line,
 };
 
 function isShapeVerb(verb: Verb): verb is ShapeVerb {
   return (SHAPE_VERBS as readonly string[]).includes(verb);
+}
+
+function isStructureVerb(verb: Verb): verb is StructureVerb {
+  return (STRUCTURE_VERBS as readonly string[]).includes(verb);
+}
+
+function isControlVerb(verb: Verb): verb is ControlVerb {
+  return (CONTROL_VERBS as readonly string[]).includes(verb);
 }
 
 /**
@@ -1114,6 +1440,8 @@ export function parseLine(raw: string): ParseResult {
   const tokens = headSource.trim().replace(/(\d),\s+(?=-?[\d.])/g, '$1,').split(/\s+/).filter((token) => token !== '');
   const verbToken = (tokens[0] ?? '').toLowerCase().replace(/:$/, '');
   let verb = own(VERB_ALIASES, verbToken) ?? verbToken;
+  const aliasWord = own(ALIAS_WORDS, verbToken);
+  if (aliasWord !== undefined && verb !== verbToken) tokens.splice(1, 0, aliasWord);
   // `strong | Five tips`: the name of a style where the verb goes is speech in that style.
   if (!oneOf(VERBS, verb) && pipe >= 0 && BUILTIN_STYLE_NAMES.has(verbToken)) {
     issues.warn('unknown-verb', `"${verbToken}" is a style, not a verb; read as: say ${verbToken} | …`, verbToken);
@@ -1143,8 +1471,24 @@ export function parseLine(raw: string): ParseResult {
   let line: Line | null;
   if (isShapeVerb(verb)) {
     line = parseShape(verb, head, text, issues);
+  } else if (isStructureVerb(verb)) {
+    line = parseStructure(verb, head, text, issues);
+  } else if (isControlVerb(verb)) {
+    line = parseControl(verb, head, text, issues);
   } else {
     switch (verb) {
+      case 'node':
+        line = parseNode(head, text, issues);
+        break;
+      case 'link':
+        line = parseLink(head, text, issues);
+        break;
+      case 'card':
+        line = parseCard(head, text, issues);
+        break;
+      case 'bind':
+        line = parseBind(head, rawText, issues);
+        break;
       case 'scene':
         line = parseScene(head, issues);
         break;

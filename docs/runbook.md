@@ -2,6 +2,8 @@
 
 This document answers one question: **how do I run it and poke at it?**
 
+> **v2.** The quality and expression round is planned (`PLAN-v2.md`) and its skeleton is in the code. This runbook describes v1 as it runs, with the commands and settings the skeleton added marked (v2). While v2 is being built, everything it starts uses ports 4600 to 4699: `PORT=4600 VITE_PORT=4601 VITE_API=http://127.0.0.1:4600 pnpm dev`.
+
 ## Once
 
 ```sh
@@ -32,7 +34,10 @@ Both ports are strict: if one is taken the process fails instead of picking anot
 | `pnpm build` | builds the web app into `web/dist` |
 | `pnpm start` | production mode: the server serves the API and `web/dist` on 4300. Run `pnpm build` first. |
 | `pnpm timeline <name or path>` | prints when every line of a script would play. `pnpm timeline overture`. With no argument it checks every worked example in the prompt. |
-| `pnpm prompt` | prints the brain's system prompt. `pnpm prompt relay` adds the relay appendix, `pnpm prompt flat` is the variant for a painter that only sets type, `pnpm prompt count` prints what each costs and fails above `PROMPT_BUDGET`. |
+| `pnpm prompt` | prints the brain's system prompt for a painter that does everything. `pnpm prompt relay` adds the relay appendix, `pnpm prompt v3` is for a painter with no structures, charts or controls (today's), `pnpm prompt flat` for one that only sets type, `pnpm prompt model` with an image model as well, `pnpm prompt count` prints what each costs and fails above `PROMPT_BUDGET`. |
+| (v2) `pnpm library [list \| match "<message>" \| check \| lint [file…]]` | the technique library: what it holds, which techniques a message would be handed and what they add to the brief, every battery prompt against it, whether technique files may be written. `sync`, `push` and `usage` are not built yet. |
+| (v2) `pnpm improve --dry-run` | prints what a run of the improvement loop would do and what guards it. The loop itself is not built yet. |
+| (v2) `pnpm taste` | how far the judge agrees with the owner's own scores in `explore/taste/`. |
 | `pnpm sessions [file]` | reads session logs back (see "The session log") |
 | `pnpm explore [flags]` | runs the exploration battery (see "The exploration battery") |
 | `pnpm docs:language` | regenerates the reference section of `docs/language.md` from the code |
@@ -55,7 +60,14 @@ Only the selected brain's settings are read.
 | `SIGHT` | no | `snapshot` | what a brain is told about how its last answer landed: `report` (the structured report) or `snapshot` (the report and a picture of the resting stage). With `report` the browser takes and sends no picture. |
 | `CLAUDE_MODEL` | when `BRAIN=claude-cli` | none | passed to `claude --model`, for example `sonnet` |
 | `BRAIN_EFFORT` | no | `low` | passed to `claude --effort` on every spawn and written over `CLAUDE_EFFORT` in the child, so a shell that exports `CLAUDE_EFFORT` never changes the brain's latency or cost. `low`, `medium`, `high`. The exploration battery's plain baseline uses the same value. |
-| `PROMPT_VARIANT` | no | `column` | how the brain's prompt teaches a diagram: `column` (the drawing beside the explanation) or `hero` (the drawing carries the answer, in steps). Any brain; the exploration battery sets it per run with `--variant`. |
+| `PROMPT_VARIANT` | no | `column` | which teaching of the prompt. One exists; a second, `hero`, was measured, scored level and was removed. The battery's `--variant` is how two are compared. |
+| (v2) `REVIEW` | no | `on` | look and fix: the brain is shown its draft and fixes it within the turn. Has no effect until the conductor runs the pass. |
+| (v2) `REVIEW_PASSES`, `REVIEW_DRAFT_WAIT_MS`, `REVIEW_FIRST_LINE_MS`, `REVIEW_PASS_MS` | no | `1`, `1500`, `12000`, `30000` | fix passes after the draft (0 to 2), and the three waits |
+| (v2) `LIBRARY` | no | `remote` | where techniques come from: `remote` (the Series account, with the file cache and the seed under it), `seed` (the repository's `techniques/seed` only), `none`. Reading Remote is not built yet: the seed is served and the log says so once. |
+| (v2) `REMOTE_BIN`, `REMOTE_ACTOR`, `REMOTE_ENV`, `LIBRARY_ROOT` | no | `remote`, `series@example.invalid`, `prod`, the Conduit root block | how Remote is read |
+| (v2) `LIBRARY_REFRESH_MS`, `LIBRARY_TIMEOUT_MS`, `LIBRARY_OVERLAY` | no | `600000`, `8000`, none | the background refresh, one call's deadline, and a folder of technique files laid over the library |
+| (v2) `DATASETS`, `DATASETS_ACTOR`, `DATASETS_TIMEOUT_MS` | no | `none`, none, `4000` | the owner's own Remote datasets for charts: off unless `remote`; the account is the owner's, never the Series one |
+| (v2) `EXPLORE_WEB_PORT` | no | `4661` | the web dev server the battery starts for its pictures |
 | `CLAUDE_BIN` | no | `claude` | the Claude Code executable |
 | `CLAUDE_WARM` | no | `on` | `off` starts one process per turn instead of keeping one per conversation (an interrupted turn's process is killed at once) |
 | `CLAUDE_MAX_WARM` | no | `4` | conversations that may hold a process at once |
@@ -180,12 +192,14 @@ pnpm sessions <file> --csv        # one row per turn
 
 ## The exploration battery
 
-`explore/battery.json` holds thirty-five prompts (the original twenty-two and thirteen held out: no worked example in the brain's prompt mirrors them) and five scripted conversations. Each prompt has the use it tests, what it expects (`plain`, `drawn`, `pixels`, `scene`, `type`, `motion`, `any`), whether it is an information prompt (the two prompt variants are compared on those), whether a stated duration is to be honoured, and whether to compare it with a plain-English answer. The conversations are two to four turns on one brain session: a look change mid-conversation, an interruption, tapping a choice, and "look at what you drew; fix it" on a diagram and on a chart (the second turn receives the sight report and the picture).
+`explore/battery.json` holds fifty-eight prompts and ten scripted conversations: v1's thirty-five and five, and (v2) twenty-three prompts and five conversations for structures, charts, explorables and drawings that need a look. `explore/sealed/heldout.json` is a second set of twenty-eight prompts and three conversations that decides whether the improvement loop keeps an experiment; do not tune against it (its README says why). Until the battery's runner is extended (`PLAN-v2.md`, package H) it runs the first file only, teaches the brain no Series 4, and cannot work a control.
+
+Of v1's thirty-five prompts, thirteen are held out in the older sense: no worked example in the brain's prompt mirrors them. Each prompt has the use it tests, what it expects (`plain`, `drawn`, `pixels`, `scene`, `type`, `motion`, `any`), whether it is an information prompt (the two prompt variants are compared on those), whether a stated duration is to be honoured, and whether to compare it with a plain-English answer. The conversations are two to four turns on one brain session: a look change mid-conversation, an interruption, tapping a choice, and "look at what you drew; fix it" on a diagram and on a chart (the second turn receives the sight report and the picture).
 
 ```sh
 pnpm explore --dry-run                 # print the plan, the call count and the projected dollars; run nothing
 pnpm explore --brain replay            # no model, judge or conversations: each prompt plays the demo named by its id, else one chosen by what it expects
-pnpm explore --brain claude-cli --model sonnet --samples 2 --variant column,hero --max-usd 6 --yes
+pnpm explore --brain claude-cli --model sonnet --samples 2 --max-usd 6 --yes
 pnpm explore --only sky-blue,story     # a few prompts or conversations
 pnpm explore --held-out                # only what no example mirrors
 pnpm explore --samples 5               # samples per prompt (default 3); every check gets a pass rate
@@ -194,10 +208,10 @@ pnpm explore --no-judge                # skip the model that looks at the final 
 pnpm explore --judge-model sonnet --judge-effort medium --judge-frames 3
 pnpm explore --no-baseline             # skip the plain-English comparison
 pnpm explore --timeout 120             # seconds a turn may take (default 180)
-pnpm explore --web http://127.0.0.1:4461   # use this running web dev server for the judge's pictures
+pnpm explore --web http://127.0.0.1:4661   # use this running web dev server for the judge's pictures
 ```
 
-A run projected over `--max-usd` (default 5) refuses to start without `--yes`; the projection over-estimates the judge. The judge's pictures are made by the painter's own engine in a headless Chrome (`CHROME_BIN` names it when it is not in a usual place) behind a Vite dev server the tool starts on port 4461 unless `--web` names one; both are stopped when the run ends. The judge is `claude -p` shown the final still and the prompt, and returns whether it shows what was asked, whether any text is unreadable or overlaps, whether a label points at the wrong thing, whether it is correct, and a coherence score from 1 to 5. `--variant column,hero` runs both teachings of a diagram on the information prompts; the runner builds one brain per variant and warns if `PROMPT_VARIANT` did not reach it. Compare variants by judge score and tokens, not dollars (cache warmth confounds cost).
+A run projected over `--max-usd` (default 5) refuses to start without `--yes`; the projection over-estimates the judge. The judge's pictures are made by the painter's own engine in a headless Chrome (`CHROME_BIN` names it when it is not in a usual place) behind a Vite dev server the tool starts on port 4661 (`EXPLORE_WEB_PORT`) unless `--web` names one; both are stopped when the run ends. The judge is `claude -p` shown the final still and the prompt, and returns whether it shows what was asked, whether any text is unreadable or overlaps, whether a label points at the wrong thing, whether it is correct, and a coherence score from 1 to 5. `--variant` runs more than one teaching of the prompt on the information prompts when more than one exists (one does). Compare variants by judge score and tokens, not dollars (cache warmth confounds cost).
 
 Each sample is a fresh conversation, so every one pays a cold start; it is not the warm latency the server gives. A run is written to `explore/runs/<id>/` (an `index.json`, one `<prompt>_<variant>_s<n>.json` per sample and one `<case>_<variant>_s<n>.json` per conversation; not tracked) and a table is printed: first visible line, first and last word, the viewer's wait at reading speed, output tokens, cost per sample, the checks and the judge's score, with pass rates and like-for-like baseline sums in the footer. One Ctrl-C finishes the current unit and writes the run; a second abandons it. The baseline runs at the same effort as the brain.
 

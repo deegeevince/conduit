@@ -502,6 +502,14 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
       case 'asset':
         painter.assetArrived(event.key, event.status, event.url);
         return;
+      case 'data':
+        // STUB (PLAN-v2.md, package A): fetch `event.url` (a DataTable) and hand it to `painter.dataArrived`; `failed` hands it null.
+        if (event.status === 'failed') painter.dataArrived(event.id, null);
+        return;
+      case 'pass':
+        // Look and fix: the painter answers `drafted` with a draft report; the other states are for the status line.
+        if (event.turn === currentTurn) painter.notePass(event.turn, event.pass, event.state);
+        return;
       case 'end':
         if (event.turn !== currentTurn) return;
         endStarting();

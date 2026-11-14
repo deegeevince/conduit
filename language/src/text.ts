@@ -64,3 +64,18 @@ export function countWords(text: string): number {
 export function plainLength(text: string): number {
   return plainText(text).length;
 }
+
+/**
+ * The cells of a pick, a table row or a chart row: split on bars and trimmed.
+ * A closing bar (`| a | b |`, as Markdown writes a row) adds no empty cell.
+ */
+export function splitCells(text: string): string[] {
+  const cells = text.split('|').map((cell) => cell.trim());
+  while (cells.length > 0 && cells[cells.length - 1] === '') cells.pop();
+  return cells;
+}
+
+/** A Markdown table's rule row (`---|:---:|---`): it says nothing and is skipped. */
+export function isRuleRow(cells: readonly string[]): boolean {
+  return cells.length > 0 && cells.every((cell) => /^:?-{2,}:?$/.test(cell));
+}

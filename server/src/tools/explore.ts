@@ -15,7 +15,7 @@
 //   pnpm explore --model haiku            the claude-cli model for this run (default: CLAUDE_MODEL)
 //   pnpm explore --timeout 120            seconds a turn may take before it is recorded as a timeout (default 180)
 //   pnpm explore --max-usd 5 --yes        a run projected over --max-usd (default 5) refuses to start without --yes
-//   pnpm explore --web http://127.0.0.1:4461   use this running web dev server for the judge's pictures (default: start one)
+//   pnpm explore --web http://127.0.0.1:4661   use this running web dev server for the judge's pictures (default: start one)
 //
 // For each prompt, variant and sample: a TurnRequest over an empty stage is handed to the brain exactly as the
 // conductor would (LineNormalizer, TurnScore), with a fresh conversation. Every line is recorded with the
@@ -32,7 +32,6 @@ import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   EMPTY_STAGE,
-  FULL_CAPABILITIES,
   LANGUAGE,
   LEAD_WINDOW,
   REFERENCE_SCREEN,
@@ -69,7 +68,7 @@ import { playCase } from './explore-case';
 import { callsOf, perCallFor, projectUsd } from './explore-cost';
 import type { Plan } from './explore-cost';
 import type { JudgeSettings } from './explore-judge';
-import { EMPTY, judgeStills, slots } from './explore-rig';
+import { EMPTY, judgeStills, slots, HARNESS_CAPABILITIES } from './explore-rig';
 import type { Rig, Running } from './explore-rig';
 import { playTurn, unreadable } from './explore-turn';
 
@@ -95,7 +94,9 @@ interface Options {
 
 const BASELINE_SYSTEM = 'Answer in plain English. Be concise and complete.';
 const DEFAULT_TIMEOUT_S = 180;
-const WEB_PORT = 4461;
+// The web dev server the battery starts for its pictures. `EXPLORE_WEB_PORT` moves it, so two runs (a baseline and a candidate
+// of the improvement loop, say) can be up at once; the v2 round keeps everything it starts between 4600 and 4699.
+const WEB_PORT = Number(processEnvironment()['EXPLORE_WEB_PORT'] ?? '4661');
 const JUDGE_SIDE = 1024;
 
 function usageError(message: string): never {
@@ -424,7 +425,7 @@ async function main(): Promise<void> {
     return found.brain;
   };
   const brain = brainFor(options.variants[0] ?? 'column');
-  const services: Services = { paint: env.images.kind !== 'none', sight: 'snapshot' };
+  const services: Services = { paint: env.images.kind !== 'none', sight: 'snapshot', review: false };
 
   const started = new Date();
   const baseId = `${stamp(started)}-${brain.id}`;
@@ -433,7 +434,7 @@ async function main(): Promise<void> {
   const dir = join(runsDir, id);
   await mkdir(dir, { recursive: true });
 
-  const promptChars = buildSystemPrompt({ capabilities: FULL_CAPABILITIES, services }).length;
+  const promptChars = buildSystemPrompt({ capabilities: HARNESS_CAPABILITIES, services }).length;
   process.stdout.write(`run ${id}: ${units.length} units through ${brain.id}${model === null ? '' : ` (${model})`}${judging ? `, judged by ${options.judgeModel}` : ''}, samples ${options.samples}, variants ${options.variants.join(',')}\n`);
 
   let eyes: Eyes | null = null;
@@ -557,14 +558,14 @@ async function main(): Promise<void> {
           }
         }
         const session = `explore-${id}-${label}`;
-        unitBrain.open?.({ session, capabilities: FULL_CAPABILITIES, screen: REFERENCE_SCREEN, services });
+        unitBrain.open?.({ session, capabilities: HARNESS_CAPABILITIES, screen: REFERENCE_SCREEN, services });
         const played = await playTurn({
           prompt,
           session,
           turn: `${session}-t1`,
           idPrefix: 'x',
           input: unitBrain.id === 'replay' ? { kind: 'demo', script: replayDemo(prompt) } : { kind: 'prompt', text: prompt.prompt },
-          context: { screen: REFERENCE_SCREEN, capabilities: FULL_CAPABILITIES, services, lead: LEAD_WINDOW, stage: EMPTY_STAGE, history: [], heard: [] },
+          context: { screen: REFERENCE_SCREEN, capabilities: HARNESS_CAPABILITIES, services, lead: LEAD_WINDOW, stage: EMPTY_STAGE, history: [], heard: [] },
           snapshot: null,
           brain: unitBrain,
           timeoutMs: options.timeoutMs,
@@ -575,7 +576,7 @@ async function main(): Promise<void> {
         unitBrain.release?.(session);
         if (played.system !== null && !variantChecked.has(unit.variant)) {
           variantChecked.add(unit.variant);
-          if (played.system !== buildSystemPrompt({ capabilities: FULL_CAPABILITIES, services, variant: unit.variant })) {
+          if (played.system !== buildSystemPrompt({ capabilities: HARNESS_CAPABILITIES, services, variant: unit.variant })) {
             process.stderr.write(`explore: WARNING the brain's system prompt is not the "${unit.variant}" prompt: PROMPT_VARIANT did not reach it, so the variants are not being compared\n`);
           }
         }
@@ -655,6 +656,9 @@ function replayDemo(prompt: ExplorePrompt): string {
     scene: 'overture',
     any: 'overture',
     type: 'titles',
+    structure: 'sketchbook',
+    explorable: 'sketchbook',
+    chart: 'sketchbook',
   };
   return byExpectation[prompt.expects];
 }

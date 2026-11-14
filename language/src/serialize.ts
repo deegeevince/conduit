@@ -1,4 +1,4 @@
-import type { ColourRef, FillRef, Line, LookProps, Point, ShapeGeometry, SpriteKey, StyleProps, Target, When } from './types';
+import type { BindOn, CanvasBox, ColourRef, FillRef, Line, LookProps, Point, ShapeGeometry, SpriteKey, StyleProps, Target, When } from './types';
 
 function seconds(value: number): string {
   return `${Number(value.toFixed(3))}s`;
@@ -45,6 +45,7 @@ function propTokens(props: StyleProps): string[] {
   if (props.layer !== undefined) out.push(`layer=${props.layer}`);
   if (props.at !== undefined) out.push(typeof props.at === 'string' ? `at=${props.at}` : `at=${point(props.at)}`);
   if (props.near !== undefined) out.push(props.near.side === 'auto' ? `near=${props.near.id}` : `near=${props.near.id}:${props.near.side}`);
+  if (props.leader !== undefined) out.push(`leader=${props.leader ? 'yes' : 'no'}`);
   if (props.in !== undefined) out.push(`in=${props.in}`);
   if (props.size !== undefined) out.push(`size=${props.size}`);
   if (props.ink !== undefined) out.push(`ink=${colour(props.ink)}`);
@@ -56,6 +57,9 @@ function propTokens(props: StyleProps): string[] {
   if (props.stroke !== undefined) out.push(`stroke=${props.stroke === 'none' ? 'none' : colour(props.stroke)}`);
   if (props.bleed !== undefined) out.push(`bleed=${props.bleed}`);
   if (props.thick !== undefined) out.push(`thick=${number(props.thick)}`);
+  if (props.brush !== undefined) out.push(`brush=${props.brush}`);
+  if (props.tex !== undefined) out.push(`tex=${props.tex}`);
+  if (props.soft !== undefined) out.push(`soft=${number(props.soft)}`);
   if (props.scale !== undefined) out.push(`scale=${number(props.scale)}`);
   if (props.rot !== undefined) out.push(`rot=${number(props.rot)}`);
   if (props.opacity !== undefined) out.push(`opacity=${number(props.opacity)}`);
@@ -106,6 +110,16 @@ function keyToken(key: SpriteKey): string[] {
   const entries = Object.entries(key);
   if (entries.length === 0) return [];
   return [`key=${entries.map(([char, value]) => `${char}:${value === 'none' ? 'none' : colour(value)}`).join(',')}`];
+}
+
+function boxTokens(box: CanvasBox | undefined): string[] {
+  return box === undefined ? [] : [`${number(box.x)},${number(box.y)}`, `${number(box.w)}x${number(box.h)}`];
+}
+
+function bindTokens(control: string, on: BindOn): string[] {
+  if (on.kind === 'is') return [`${control}=${on.value}`];
+  if (on.kind === 'range') return [control, `${number(on.from)}..${number(on.to)}`];
+  return [control];
 }
 
 function withText(head: string[], text: string | undefined): string {
@@ -172,15 +186,64 @@ export function serializeLine(line: Line): string {
     case 'use':
       return ['use', line.id, line.source, ...line.styles, ...propTokens(line.props), ...whenToken(line.when)].join(' ');
     case 'paint': {
-      const head: string[] = ['paint', line.id];
-      if (line.box !== undefined) head.push(`${number(line.box.x)},${number(line.box.y)}`, `${number(line.box.w)}x${number(line.box.h)}`);
+      const head: string[] = ['paint', line.id, ...boxTokens(line.box)];
       head.push(...line.styles);
       if (line.over !== undefined) head.push(`over=${line.over}`);
       if (line.medium !== undefined) head.push(`as=${line.medium}`);
       if (line.sketch !== undefined) head.push(`sketch=${line.sketch}`);
       if (line.mask !== undefined) head.push(`mask=${line.mask}`);
-      return withText([...head, ...propTokens(line.props), ...whenToken(line.when)], line.prompt);
+      return withText([...head, ...propTokens(line.props), ...whenToken(line.when)], line.prompt === '' ? undefined : line.prompt);
     }
+    case 'flow':
+    case 'tree':
+    case 'cycle':
+    case 'timeline':
+    case 'map':
+    case 'table':
+    case 'chart': {
+      const head: string[] = [line.verb, line.id];
+      if (line.grow !== undefined) head.push(line.grow);
+      if (line.chart !== undefined) head.push(line.chart);
+      head.push(...(line.words ?? []));
+      if (line.route === true) head.push('route');
+      if (line.bars === true) head.push('bars');
+      head.push(...boxTokens(line.box), ...line.styles);
+      if (line.data !== undefined) head.push(`data=${line.data}`);
+      return withText([...head, ...propTokens(line.props), ...whenToken(line.when)], line.title);
+    }
+    case 'node': {
+      const head: string[] = ['node', line.id, ...line.values.map(number)];
+      if (line.shape !== undefined) head.push(line.shape);
+      if (line.from !== undefined) head.push(line.from.label === undefined ? `from=${line.from.id}` : `from=${line.from.id}:${line.from.label}`);
+      if (line.x !== undefined) head.push(`x=${line.x}`);
+      if (line.y !== undefined) head.push(`y=${number(line.y)}`);
+      return withText([...head, ...line.styles, ...propTokens(line.props), ...whenToken(line.when)], line.text);
+    }
+    case 'link': {
+      const head: string[] = ['link', ...line.nodes, `id=${line.id}`];
+      if (line.ends !== undefined) head.push(line.ends);
+      if (line.dashed === true) head.push('dashed');
+      return withText([...head, ...propTokens(line.props), ...whenToken(line.when)], line.text);
+    }
+    case 'button':
+    case 'toggle':
+    case 'slider':
+    case 'pick':
+    case 'input': {
+      const head: string[] = [line.verb, line.id];
+      if (line.form !== undefined) head.push(line.form);
+      if (line.range !== undefined) head.push(number(line.range.min), number(line.range.max));
+      if (typeof line.initial === 'number') head.push(number(line.initial));
+      if (typeof line.initial === 'boolean') head.push(line.initial ? 'on' : 'off');
+      if (line.range?.step !== undefined) head.push(`step=${number(line.range.step)}`);
+      if (line.unit !== undefined) head.push(`unit=${line.unit}`);
+      if (line.send === true) head.push('send');
+      return withText([...head, ...line.styles, ...propTokens(line.props), ...whenToken(line.when)], line.options === undefined ? line.text : line.options.join(' | '));
+    }
+    case 'card':
+      return withText(['card', line.id, ...boxTokens(line.box), ...line.styles, ...propTokens(line.props), ...whenToken(line.when)], line.title);
+    case 'bind':
+      return `${['bind', ...bindTokens(line.control, line.on)].join(' ')} | ${serializeLine(line.change)}`;
     case 'ambient': {
       const head: string[] = ['ambient', line.id, line.kind];
       if (line.amount !== undefined) head.push(line.amount);

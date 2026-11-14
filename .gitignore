@@ -10,6 +10,8 @@ dist/
 *.log
 /logs/
 explore/runs/
+techniques/.cache/
+loop/runs/
 .DS_Store
 .idea/
 .vscode/

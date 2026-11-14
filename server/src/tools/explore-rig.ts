@@ -1,7 +1,7 @@
 // What every unit of a run shares: the brain, the eyes, the judge, the limits.
 
-import { EMPTY_STAGE } from '@conduit/language';
-import type { ExploreJudgement, Services, StageBase } from '@conduit/language';
+import { EMPTY_STAGE, FULL_CAPABILITIES, NO_V4_CAPABILITIES } from '@conduit/language';
+import type { Capabilities, ExploreJudgement, Services, StageBase } from '@conduit/language';
 import type { Brain } from '../domain/brain';
 import type { HarnessReply } from './explore-browser';
 import { judge } from './explore-judge';
@@ -31,6 +31,16 @@ export interface Rig {
 }
 
 export const EMPTY: StageBase = EMPTY_STAGE;
+
+/**
+ * What the battery's brain is told the painter can do. It must be what the
+ * painter behind the battery's pictures really does, or a run measures a brain
+ * taught words nobody performs. Today that painter lays out no structure and
+ * draws no control, so nothing of Series 4 is claimed here. PLAN-v2.md,
+ * package H: ask the harness page (`window.__harness.capabilities`) instead of
+ * writing it down, so this can never drift from the painter again.
+ */
+export const HARNESS_CAPABILITIES: Capabilities = { ...FULL_CAPABILITIES, ...NO_V4_CAPABILITIES };
 
 /** Asks the judge about a picture, a few at a time. Never throws: a failed judge is a judgement with a `failure`. */
 export async function judgeStills(rig: Rig, request: string, reply: HarnessReply): Promise<ExploreJudgement | null> {

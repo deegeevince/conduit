@@ -35,7 +35,69 @@ export interface TurnMemory {
   readonly problems: readonly LineProblem[];
   /** true when a picture of the resting stage is held for this turn */
   readonly snapshot: boolean;
+  /** how look-and-fix went for this turn; absent when the turn was never considered for it */
+  readonly review?: ReviewOutcome;
 }
+
+/** What became of look-and-fix in one turn. `why` is the reason it was skipped, in a few words. */
+export interface ReviewOutcome {
+  readonly result: 'fixed' | 'kept' | 'skipped';
+  /** passes the brain wrote, the draft included */
+  readonly passes: number;
+  readonly why: string | null;
+}
+
+/**
+ * A technique as the brain is handed it: a recipe that judged well on answers
+ * like the one being asked for. Techniques are chosen per turn and ride in the
+ * turn's brief. They are never part of the system prompt, which is fixed for a
+ * conversation so that the warm process and the prompt cache hold.
+ */
+export interface TechniqueCard {
+  /** the library's id for it, for the session log and the usage count */
+  readonly id: string;
+  readonly title: string;
+  /** when to use it, and when not, in a sentence or two */
+  readonly when: string;
+  /** a short worked example in Series; each line parses */
+  readonly example: readonly string[];
+}
+
+/**
+ * Rows the server holds for this conversation and a chart can draw by
+ * reference: a table the user pasted, or rows read from the owner's own
+ * datasets. The brain is told what is in it and never retypes it.
+ */
+export interface DataTable {
+  /** `d1`, `d2`, …: what `chart … data=` names */
+  readonly id: string;
+  /** where it came from, in a few words: `pasted by the user`, `your dataset prices (ACME, daily)` */
+  readonly source: string;
+  /** the column names, the first being what runs along the bottom */
+  readonly columns: readonly string[];
+  /** every row, cells as text, in order */
+  readonly rows: readonly (readonly string[])[];
+}
+
+/** What the brain is told about a `DataTable`: enough to say true things about it and to draw it, never the whole of it. */
+export interface DataFacts {
+  readonly id: string;
+  readonly source: string;
+  readonly columns: readonly string[];
+  readonly count: number;
+  /** the first two and the last two rows, as written */
+  readonly sample: readonly (readonly string[])[];
+  /** per numeric column: its least, its most, its first and its last value, as written */
+  readonly range: Readonly<Record<string, { readonly min: string; readonly max: string; readonly first: string; readonly last: string }>>;
+  /** it arrived with this turn's message */
+  readonly fresh: boolean;
+}
+
+/** The most rows of DATA the server holds for one table, and the most tables a conversation holds. */
+export const DATA_LIMITS = { rows: 20_000, tables: 4 } as const;
+
+/** The most a turn's techniques may add to its brief, in characters, and how many a turn is given. */
+export const TECHNIQUE_LIMITS = { cards: 3, chars: 1650 } as const;
 
 /**
  * `full` is for a brain that remembers nothing: a fresh process, or a relay
@@ -91,6 +153,10 @@ export interface TurnContext {
   readonly documents?: readonly DocumentFacts[];
   /** links in this turn's message that could not be read */
   readonly unread?: readonly UnreadFacts[];
+  /** the few techniques that fit this turn's message, best first; absent or empty means none fitted, or the library had nothing */
+  readonly techniques?: readonly TechniqueCard[];
+  /** tables a chart can draw by reference; absent means none */
+  readonly data?: readonly DataFacts[];
 }
 
 /** What a relay agent can know about the two clocks between its calls. */

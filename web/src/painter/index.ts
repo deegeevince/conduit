@@ -1,4 +1,7 @@
 import { describeFigure, EMPTY_STAGE, FULL_CAPABILITIES, NO_SERVICES, sceneAt, serializeLine, TurnScore, valueAt } from '@conduit/language';
+import { CHARTS_READY } from '../render/chart';
+import { STRUCTURES_READY } from './blocks';
+import { CONTROLS_READY } from './controls';
 import type { BackEvent, Capabilities, ClockState, ElementSpan, Issue, Line, Schedule, ScoreEntry, Services, StageBase, TurnEndReason, TurnInput, TurnReport } from '@conduit/language';
 import type { Recording } from '../contracts/film';
 import type { ElementFrame, Frame, Quality, ShapeFrame } from '../contracts/frame';
@@ -18,6 +21,9 @@ import { Reporter } from './report';
 import { placedOf, sightOf } from './sight';
 import { buildTimeline, settledEnd as settledEndOf } from './timeline';
 import type { Timeline, TimelineContext, TimelineInstant } from './timeline';
+
+/** True once `notePass` answers `drafted` with a draft report (PLAN-v2.md, package T). Until then the server is told not to wait for one. */
+const DRAFTS_READY = false;
 
 const HOME_SECONDS = 1.2;
 const SETTLE_SECONDS = 0.12;
@@ -135,7 +141,7 @@ export function createPainter(options: PainterOptions): Painter {
   let viewport: Viewport = options.viewport;
   const reducedMotion = options.reducedMotion ?? (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches);
 
-  const listeners: { [K in keyof PainterEvents]: Set<Listener<K>> } = { back: new Set(), transcript: new Set(), clock: new Set(), upload: new Set() };
+  const listeners: { [K in keyof PainterEvents]: Set<Listener<K>> } = { back: new Set(), transcript: new Set(), clock: new Set(), upload: new Set(), controls: new Set() };
   const emit = <K extends keyof PainterEvents>(type: K, event: PainterEvents[K]): void => {
     queueMicrotask(() => {
       for (const listener of listeners[type]) (listener as Listener<K>)(event);
@@ -262,6 +268,15 @@ export function createPainter(options: PainterOptions): Painter {
       fx: FULL_CAPABILITIES.fx.filter((name) => caps.fx.includes(name)),
       ambient: FULL_CAPABILITIES.ambient.filter((kind) => caps.ambient.includes(kind)),
       sight: caps.capture ? 'snapshot' : 'report',
+      // Series 4. Each list is what is really built: the structure and control engines say what they lay out, the renderer what it
+      // paints. The brain is taught exactly these, so nothing here may be switched on ahead of the code that performs it.
+      structures: FULL_CAPABILITIES.structures.filter((kind) => (kind === 'chart' ? CHARTS_READY.length > 0 : STRUCTURES_READY.includes(kind))),
+      charts: FULL_CAPABILITIES.charts.filter((kind) => CHARTS_READY.includes(kind)),
+      controls: FULL_CAPABILITIES.controls.filter((kind) => CONTROLS_READY.includes(kind)),
+      media: FULL_CAPABILITIES.media.filter((medium) => caps.media.includes(medium)),
+      textures: FULL_CAPABILITIES.textures.filter((texture) => texture === 'flat' || caps.textures.includes(texture)),
+      brushes: FULL_CAPABILITIES.brushes.filter((brush) => caps.brushes.includes(brush)),
+      drafts: DRAFTS_READY,
     };
   };
 
@@ -801,6 +816,9 @@ export function createPainter(options: PainterOptions): Painter {
       anticipating: anticipation !== null,
       showingAll,
       fault: faultText(),
+      controls: [],
+      charts: [],
+      pass: null,
     };
   };
 
@@ -947,6 +965,14 @@ export function createPainter(options: PainterOptions): Painter {
     tapElement(key) {
       tapOn(key);
     },
+
+    // Stubs: see contracts/painter.ts for what each must do (PLAN-v2.md, packages T, C and K).
+    dataArrived() {},
+    notePass() {},
+    pointer() {
+      return false;
+    },
+    setControl() {},
 
     resize(next) {
       viewport = next;

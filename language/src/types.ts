@@ -8,29 +8,38 @@ import type {
   CameraMove,
   CameraSpeed,
   CanvasName,
+  ChartKind,
+  ChartWord,
   Clear,
+  ControlVerb,
   Direction,
   EnterEffect,
   ExitEffect,
   Face,
   FxName,
+  Growth,
   HexString,
   HitGesture,
   InkRole,
   Layer,
   Layout,
   LetterCase,
+  LinkEnd,
   Loop,
   Mark,
   Mask,
   Medium,
   Mood,
+  NodeShape,
   Pace,
+  PickForm,
   ShapeVerb,
   Side,
   Size,
   StayWord,
   StrokeCharacter,
+  StructureVerb,
+  Texture,
   Weight,
 } from './vocabulary';
 
@@ -100,6 +109,14 @@ export interface StyleProps {
   readonly bleed?: Bleed;
   /** outline thickness, canvas units */
   readonly thick?: number;
+  /** the character of this one line; absent means the look's own */
+  readonly brush?: StrokeCharacter;
+  /** what the fill is made of; absent means `flat` */
+  readonly tex?: Texture;
+  /** how far the edge fades out, canvas units; absent means a hard edge */
+  readonly soft?: number;
+  /** a label with a line to what it names: with `near=` the line ends on that element, with `at=x,y` at that point, and the painter finds the label clear room */
+  readonly leader?: boolean;
   readonly scale?: number;
   /** degrees, clockwise */
   readonly rot?: number;
@@ -283,9 +300,148 @@ export interface PaintLine {
   /** what happens to the sketch once the painting has arrived; default `fade` */
   readonly sketch?: 'fade' | 'keep';
   readonly mask?: Mask;
-  /** what to paint, in plain words */
+  /** what it is, in plain words: the transcript's name for it, and the request when an image model is configured. '' when the brain gave none. */
   readonly prompt: string;
   readonly when?: When;
+}
+
+/** Opens a structure: a diagram whose parts the brain names and the painter lays out. The verb is its kind. */
+export interface StructureLine {
+  readonly verb: StructureVerb;
+  /** `-` until the normaliser assigns one */
+  readonly id: string;
+  readonly styles: readonly string[];
+  readonly props: StyleProps;
+  /** which way a flow or a tree grows; absent means the painter chooses from the room it has */
+  readonly grow?: Growth;
+  /** what a chart draws; absent means a line */
+  readonly chart?: ChartKind;
+  /** the words on a chart line that change how it reads (`indexed`, `log`, `spark`, `live`, `approx`), in the vocabulary's order */
+  readonly words?: readonly ChartWord[];
+  /** a chart: the id of DATA the brief named, drawn instead of rows the brain would have to retype */
+  readonly data?: string;
+  /** a table: its numbers are drawn as bars beside the figures */
+  readonly bars?: boolean;
+  /** the room it is laid out in, canvas units; absent means the whole canvas */
+  readonly box?: CanvasBox;
+  /** a map joins its pins in the order they were written */
+  readonly route?: boolean;
+  /** a title the painter sets with the structure */
+  readonly title?: string;
+  readonly when?: When;
+}
+
+/** Where a node's incoming link comes from, written `from=<id>` or `from=<id>:<label>`. */
+export interface NodeFrom {
+  readonly id: string;
+  /** one word on the link, e.g. `yes` */
+  readonly label?: string;
+}
+
+/** One part of a flow, tree, cycle, timeline or map. `props.in` names its structure once the normaliser has run. */
+export interface NodeLine {
+  readonly verb: 'node';
+  /** `-` until the normaliser assigns one */
+  readonly id: string;
+  readonly styles: readonly string[];
+  readonly props: StyleProps;
+  readonly shape?: NodeShape;
+  /**
+   * Its numbers, as written: on a timeline one number is when (two are a span);
+   * on a map two numbers are where, in canvas units. Empty elsewhere.
+   */
+  readonly values: readonly number[];
+  readonly from?: NodeFrom;
+  /**
+   * On a chart, where the mark goes: `x` alone is an event (a labelled line at that time), `y` alone is a level (a labelled
+   * line at that value), both are a point. `x` is as written: a date, a year, a number or a category's name.
+   */
+  readonly x?: string;
+  readonly y?: number;
+  /** may contain *emphasis* markers and `{…}` expressions */
+  readonly text: string;
+  readonly when?: When;
+}
+
+/** Joins nodes with routed connectors: two ids make one link, more make a chain. */
+export interface LinkLine {
+  readonly verb: 'link';
+  /** `-` until the normaliser assigns one; the second link of a chain is `<id>-2`, and so on */
+  readonly id: string;
+  /** the ids of the nodes joined, in order; at least two */
+  readonly nodes: readonly string[];
+  readonly ends?: LinkEnd;
+  readonly dashed?: boolean;
+  /** every word on a link line is a node, so a link takes properties but no style names */
+  readonly props: StyleProps;
+  /** a label on the link (on the first link of a chain) */
+  readonly text?: string;
+  readonly when?: When;
+}
+
+/** The value a control holds: a slider's number, a toggle's state, the 1-based index of a pick's option, an input's text. A button holds none. */
+export type ControlValue = number | boolean | string;
+
+/** Every live control's value by element id: the stage's data model, sent with a button press and told to the brain each turn. */
+export type ControlValues = Readonly<Record<string, ControlValue>>;
+
+/** Puts a control on stage. The verb is its kind. */
+export interface ControlLine {
+  readonly verb: ControlVerb;
+  /** `-` until the normaliser assigns one */
+  readonly id: string;
+  readonly styles: readonly string[];
+  readonly props: StyleProps;
+  /** how a pick shows its options; absent means side by side */
+  readonly form?: PickForm;
+  /** a pick's options, in order */
+  readonly options?: readonly string[];
+  /** a slider's ends, and its step when it has one */
+  readonly range?: { readonly min: number; readonly max: number; readonly step?: number };
+  /** what it holds to begin with: a slider's number, a toggle's state, the 1-based index of a pick's option */
+  readonly initial?: ControlValue;
+  /** written after a slider's value */
+  readonly unit?: string;
+  /** a change the user commits is sent to the brain as their next message; a button always sends */
+  readonly send?: boolean;
+  /** the label of a button, toggle or slider; the placeholder of an input. Absent on a pick, whose words are its options. */
+  readonly text?: string;
+  readonly when?: When;
+}
+
+/** A framed group for controls and what they change. Its parts say `in=<id>`, exactly as for a group. */
+export interface CardLine {
+  readonly verb: 'card';
+  readonly id: string;
+  readonly styles: readonly string[];
+  readonly props: StyleProps;
+  /** canvas units; absent means the frame is drawn round its parts */
+  readonly box?: CanvasBox;
+  readonly title?: string;
+  readonly when?: When;
+}
+
+/**
+ * When a bound change applies.
+ * `whole`: it is as far along as the control is across its whole range (a toggle: off is 0, on is 1; a pick: first option 0, last 1).
+ * `range`: it runs from 0 to 1 as the control's value goes from `from` to `to`, in the control's own units (a pick: option numbers); `from` may be the larger.
+ * `is`: it has landed while the control holds this value (an option's number or its words, `on`, `off`), and is undone otherwise.
+ */
+export type BindOn =
+  | { readonly kind: 'whole' }
+  | { readonly kind: 'range'; readonly from: number; readonly to: number }
+  | { readonly kind: 'is'; readonly value: string };
+
+/** The changes a control can drive: anything `set`, `move`, `correct` or a shape declared again can do on the clock. */
+export type BoundChange = SetLine | MoveLine | ShapeLine | CorrectLine;
+
+/** Lets a control drive a change on stage in the painter, with no round trip to the brain. */
+export interface BindLine {
+  readonly verb: 'bind';
+  /** the id of the control */
+  readonly control: string;
+  readonly on: BindOn;
+  readonly change: BoundChange;
 }
 
 export interface AmbientLine {
@@ -395,6 +551,12 @@ export type Line =
   | GroupLine
   | UseLine
   | PaintLine
+  | StructureLine
+  | NodeLine
+  | LinkLine
+  | ControlLine
+  | CardLine
+  | BindLine
   | AmbientLine
   | SetLine
   | MoveLine
@@ -407,7 +569,7 @@ export type Line =
   | CancelLine;
 
 /** The lines that put a new element on stage. */
-export type CreatingLine = SayLine | ShapeLine | PixLine | GroupLine | UseLine | PaintLine | AmbientLine;
+export type CreatingLine = SayLine | ShapeLine | PixLine | GroupLine | UseLine | PaintLine | AmbientLine | StructureLine | NodeLine | LinkLine | ControlLine | CardLine;
 
 export type IssueSeverity =
   /** the line was dropped */
@@ -441,7 +603,15 @@ export type IssueCode =
   | 'too-late'
   | 'reserved-name'
   | 'element-limit'
-  | 'ragged-sprite';
+  | 'ragged-sprite'
+  /** a node, a link or a table row with no structure to belong to */
+  | 'no-structure'
+  /** more nodes, links, rows, cells or options than a structure or a control holds */
+  | 'structure-limit'
+  /** a `bind` that names something that is not a control, or a change a control cannot drive */
+  | 'bad-bind'
+  /** a `{…}` in text that does not read as an expression of the controls on stage */
+  | 'bad-expression';
 
 export interface Issue {
   readonly code: IssueCode;

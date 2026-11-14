@@ -60,6 +60,13 @@ function meets(expects: ExploreExpectation, elements: readonly ElementSpan[], sc
     }
     case 'drawn':
       return shapes.length >= 4;
+    // The full checks for these two (the structure the prompt has in mind was the one named; a control drives something) are package H's.
+    case 'structure':
+      return elements.some((element) => element.kind === 'structure');
+    case 'chart':
+      return elements.some((element) => element.figure?.kind === 'structure' && element.figure.structure === 'chart' && (element.figure.rows.length >= 3 || element.figure.data !== null));
+    case 'explorable':
+      return elements.some((element) => element.kind === 'control' && element.figure?.kind === 'control' && element.figure.control !== 'button');
     case 'pixels':
       return elements.some((element) => element.figure?.kind === 'sprite' && (element.figure.sprite.frames[0]?.length ?? 0) >= 4);
     case 'scene': {

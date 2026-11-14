@@ -16,6 +16,8 @@ export const SIGHT_NOTE = {
   wrapped: 'it broke over more lines than is comfortable',
   recoloured: 'its colour was changed to stay readable',
   collides: 'its words run into other words',
+  crossed: 'a drawn line runs through its words',
+  crowded: 'there were too many parts for the room, so they came out small: give the structure the whole scene, or split it in two',
   faint: 'it is hard to read against what is behind it',
   tiny: 'it came out too small to make out',
   partial: 'the answer stopped while it was still arriving',

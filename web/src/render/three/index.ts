@@ -1,4 +1,4 @@
-import { AMBIENT_KINDS, ELEMENT_KINDS, FX_NAMES, LOOK_IDS } from '@conduit/language';
+import { AMBIENT_KINDS, FX_NAMES, LOOK_IDS } from '@conduit/language';
 import type { Face, LookId } from '@conduit/language';
 import { Color, ColorManagement, LinearSRGBColorSpace, NoToneMapping, Vector3, WebGLRenderTarget, WebGLRenderer } from 'three';
 import type { Frame, PictureFrame, Quality, ShapeFrame, SpriteFrame } from '../../contracts/frame';
@@ -383,7 +383,8 @@ export function createProbedRenderer(): ThreeRenderer {
   const renderer: ThreeRenderer = {
     id: 'three',
     fontFile,
-    capabilities: { depth: true, post: true, looks: ALL_LOOKS, kinds: ELEMENT_KINDS, fx: FX_NAMES, ambient: AMBIENT_KINDS, capture: true },
+    // `kinds` is what this renderer draws from a Frame. Structures and controls reach it as shapes and text, so they are not its to advertise.
+    capabilities: { depth: true, post: true, looks: ALL_LOOKS, kinds: ['text', 'shape', 'sprite', 'group', 'copy', 'picture', 'field'], fx: FX_NAMES, ambient: AMBIENT_KINDS, capture: true, media: [], textures: ['flat'], brushes: [] },
 
     async mount(target, initial, look, options) {
       if (!canUseThree()) throw new Error('WebGL2 is not available');

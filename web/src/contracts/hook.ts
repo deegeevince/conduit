@@ -1,6 +1,7 @@
-import type { BackEvent, Sight } from '@conduit/language';
+import type { BackEvent, ControlValue, Sight } from '@conduit/language';
 import type { ExportJob, ExportRequest } from './export';
-import type { LineView, PainterSnapshot, StageElementView } from './painter';
+import type { ChartProbe, ChartView } from './chart';
+import type { ControlView, LineView, PainterSnapshot, StageElementView } from './painter';
 
 /**
  * `window.__stage`: how a tester (human or agent) inspects and drives a stage
@@ -39,6 +40,21 @@ export interface StageHook {
   demo(name: string): Promise<string>;
   /** The same as tapping the element with this id. */
   tap(id: string): void;
+  /** The charts on stage: what each draws, its visible range, and what its crosshair is on. */
+  charts(): readonly ChartView[];
+  /**
+   * Works a chart as a pointer would, for a test: `hover` puts the crosshair at a share of the chart's width (0 left, 1 right),
+   * `zoom` by a factor about its centre, `pan` by a share of its width, `reset` puts the view back. Resolves with what the chart
+   * shows after the engine has drawn it. Throws when no chart has the id.
+   */
+  chart(id: string, action: { readonly hover: number } | { readonly zoom: number } | { readonly pan: number } | { readonly reset: true }): Promise<ChartProbe>;
+  /** The controls on stage, with their values and where they are on screen. */
+  controls(): readonly ControlView[];
+  /**
+   * The same as the user setting this control and letting go: bindings follow at once, a `control` back event is sent, and a
+   * button or a control marked `send` opens a turn. A button takes no value. Throws when no live control has the id.
+   */
+  control(id: string, value?: ControlValue): void;
   /** The same as pressing Stop. */
   interrupt(): void;
 

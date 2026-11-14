@@ -67,6 +67,8 @@ const STROKE_DEFAULTS: Readonly<Record<StrokeCharacter, { thick: number; wobble:
   marker: { thick: 1.4, wobble: 0.12 },
   chalk: { thick: 1.1, wobble: 0.25 },
   pixel: { thick: 1.4, wobble: 0 },
+  ink: { thick: 1.6, wobble: 0.06 },
+  dry: { thick: 1.8, wobble: 0.15 },
 };
 
 const DEFAULT_AMOUNT = 0.5;

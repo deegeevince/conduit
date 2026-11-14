@@ -1,7 +1,12 @@
 import type {
   AssetStatus,
   BackEvent,
+  ControlKind,
+  ControlValue,
+  DataTable,
   ElementKind,
+  PassState,
+  PickForm,
   Services,
   ClockState,
   Issue,
@@ -16,6 +21,7 @@ import type {
   TurnInput,
   TurnReport,
 } from '@conduit/language';
+import type { ChartHost, ChartView } from './chart';
 import type { Recording } from './film';
 import type { Quality } from './frame';
 import type { Renderer } from './renderer';
@@ -31,6 +37,8 @@ export interface PainterOptions {
   readonly reducedMotion: boolean | null;
   /** the primary pointer, read by the app from the media query; the painter reports it to the brain and reads nothing itself */
   readonly pointer: ScreenFacts['pointer'];
+  /** where this stage's charts live; absent or null: the stage has none, and the painter advertises none */
+  readonly charts?: ChartHost | null;
 }
 
 /** A picture the painter has made for someone else: the app sends it to the server. */
@@ -38,7 +46,49 @@ export type PainterUpload =
   /** the stage as a turn left it, for the brain's next brief */
   | { readonly kind: 'snapshot'; readonly turn: string; readonly blob: Blob }
   /** the sketch a picture element stands on, for the image model */
-  | { readonly kind: 'sketch'; readonly key: string; readonly blob: Blob };
+  | { readonly kind: 'sketch'; readonly key: string; readonly blob: Blob }
+  /** the stage as pass `pass` of an open turn will leave it, for the brain to look at before the turn ends */
+  | { readonly kind: 'draft'; readonly turn: string; readonly pass: number; readonly blob: Blob };
+
+/**
+ * A control as the app sees it: enough to lay a real, invisible form control
+ * over it for the keyboard and for a screen reader, and for the test hook to
+ * work it. The painter draws the control; the app never does.
+ */
+export interface ControlView {
+  readonly key: string;
+  readonly id: string;
+  readonly control: ControlKind;
+  /** how a pick shows its options; null for every other control */
+  readonly form: PickForm | null;
+  /** its label; a pick has none of its own */
+  readonly label: string;
+  readonly options: readonly string[];
+  readonly min: number;
+  readonly max: number;
+  readonly step: number | null;
+  readonly unit: string | null;
+  readonly value: ControlValue | null;
+  /** its value as words, as `{name}` shows it */
+  readonly valueText: string;
+  /** where it is on screen now, host CSS pixels; never smaller than 44 px on its shorter side */
+  readonly box: Box;
+  /** false while it is entering, leaving or covered: it is then drawn but cannot be worked */
+  readonly enabled: boolean;
+  /** a change the user commits becomes their next message */
+  readonly send: boolean;
+  /** true when at least one change on stage follows it: the battery checks that a slider drives something */
+  readonly bound: boolean;
+}
+
+/** A pointer, as the app hands it to the painter. `x`, `y` are host CSS pixels. */
+export interface PointerInput {
+  readonly phase: 'down' | 'move' | 'up' | 'cancel';
+  readonly x: number;
+  readonly y: number;
+  /** the browser's pointer id, so two fingers on two sliders do not fight */
+  readonly pointer: number;
+}
 
 export type ElementPhase = 'entering' | 'on' | 'leaving' | 'struck';
 
@@ -120,6 +170,12 @@ export interface PainterSnapshot {
    * (`3x TypeError: ... [circle@4]`). Null when no frame has ever failed.
    */
   readonly fault: string | null;
+  /** the controls on stage, in drawing order */
+  readonly controls: readonly ControlView[];
+  /** the charts on stage, with what their engine says of them */
+  readonly charts: readonly ChartView[];
+  /** where look-and-fix stands in the open turn; null when the turn has had no pass event */
+  readonly pass: { readonly pass: number; readonly state: PassState } | null;
 }
 
 /** Words as they become visible, for the transcript and the live region. */
@@ -134,8 +190,10 @@ export interface PainterEvents {
   readonly back: BackEvent;
   readonly transcript: TranscriptEvent;
   readonly clock: ClockState;
-  /** a picture for the server: a snapshot shortly after a turn's report, a sketch shortly after a `paint` line */
+  /** a picture for the server: a snapshot shortly after a turn's report, a sketch shortly after a `paint` line, a draft when the server says a pass has been drafted */
   readonly upload: PainterUpload;
+  /** the controls on stage changed: one arrived, left, moved or took a new value. Not sent on every frame of a drag. */
+  readonly controls: readonly ControlView[];
 }
 
 /**
@@ -181,6 +239,13 @@ export interface Painter {
   assetArrived(key: string, status: AssetStatus, url: string | null): void;
 
   /**
+   * News of DATA a chart draws by reference (`chart … data=d1`). `rows` is the table when it is ready, null when it could
+   * not be had. Like a painting it is not on the turn clock: the chart reveals itself over `CHART_REVEAL_SECONDS` on the
+   * ambient clock from the moment the rows are there, and nothing scheduled moves.
+   */
+  dataArrived(id: string, rows: DataTable | null): void;
+
+  /**
    * "Show all now". Settles the open or playing turn to its final state at
    * once: the playhead jumps to the end of everything scheduled, and while
    * the brain is still writing, every further line lands already settled.
@@ -203,8 +268,25 @@ export interface Painter {
    */
   ingest(turn: string, seq: number, line: Line): readonly Issue[];
 
-  /** The brain has stopped writing. The playhead may now run past the pen to the end. */
+  /**
+   * The brain has stopped writing: every pass of the turn is over. The playhead
+   * may now run past the pen to the end. A turn that is looked at and fixed
+   * stays open between its passes, so until this is called the playhead holds
+   * at the pen as it does for any slow brain.
+   */
   closeTurn(turn: string, reason: TurnEndReason): void;
+
+  /**
+   * Where look-and-fix stands in the open turn (a `pass` event from the
+   * server). On `drafted` the painter works out how the lines so far WILL
+   * land, without waiting for the playhead: it settles a copy of the
+   * schedule to its end, computes sight for it, emits a `draft` back event,
+   * and, when the renderer can capture and the server wants pictures, emits
+   * an `upload` of kind `draft` first. Nothing on stage moves because of it.
+   * The other states only change what `snapshot().pass` says, which the
+   * chrome reads. A pass event for a turn that is not open is dropped.
+   */
+  notePass(turn: string, pass: number, state: PassState): void;
 
   /**
    * Stops the turn where the playhead is: the unplayed future is discarded,
@@ -235,6 +317,25 @@ export interface Painter {
 
   /** The same as tapping the element with this key; for keyboard users of the transcript. */
   tapElement(key: string): void;
+
+  /**
+   * A pointer went down, moved or came up. Returns true when a control took
+   * it (the app then leaves it alone: no tap, no text selection, no scroll).
+   * A drag changes the control's value and everything bound to it in the
+   * same frame, with no word to the server; the commit on `up` emits one
+   * `control` back event. `tapAt` stays the way a plain tap is reported.
+   */
+  pointer(input: PointerInput): boolean;
+
+  /**
+   * Sets a control's value: what the invisible form control laid over it,
+   * the keyboard and the test hook call. `commit` false is a drag in
+   * progress (bindings follow, nothing is sent); true is the user letting go
+   * (a `control` back event is emitted, and for a control marked `send`, or a
+   * button, the event says so and the app opens a turn). A value outside the
+   * control's range is clamped; an id that is not a live control does nothing.
+   */
+  setControl(id: string, value: ControlValue | null, commit: boolean): void;
 
   resize(viewport: Viewport): void;
   snapshot(): PainterSnapshot;

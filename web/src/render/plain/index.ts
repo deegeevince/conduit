@@ -42,7 +42,7 @@ function px(value: number): string {
  * depth with scale and parallax; it simulates no screen.
  */
 export function createPlainRenderer(): Renderer {
-  const capabilities: RendererCapabilities = { depth: false, post: false, looks: LOOK_IDS, kinds: ['text', 'shape', 'sprite', 'group', 'copy', 'picture'], fx: [], ambient: [], capture: false };
+  const capabilities: RendererCapabilities = { depth: false, post: false, looks: LOOK_IDS, kinds: ['text', 'shape', 'sprite', 'group', 'copy', 'picture'], fx: [], ambient: [], capture: false, media: [], textures: ['flat'], brushes: [] };
   let root: HTMLDivElement | null = null;
   let cursor: HTMLDivElement | null = null;
   const nodes = new Map<string, Node>();

@@ -397,7 +397,7 @@ export function startPage(): void {
               if (mine !== generation) return;
               column.loaded.set(entry.id, result);
               const first = answersOf(result)[0];
-              if (first !== undefined && promptText.textContent === 'loading') promptText.textContent = isCase(result) ? result.case.turns.map((t) => (t.do === 'prompt' ? t.text : t.do === 'tap' ? '(taps a choice)' : `(${t.text ?? 'look at what you drew; fix it'})`)).join('  →  ') : first.prompt.prompt;
+              if (first !== undefined && promptText.textContent === 'loading') promptText.textContent = isCase(result) ? result.case.turns.map((t) => (t.do === 'prompt' ? t.text : t.do === 'tap' ? '(taps a choice)' : t.do === 'control' ? `(sets ${t.id ?? 'a control'} to ${t.to})` : t.do === 'press' ? '(presses a button)' : `(${t.text ?? 'look at what you drew; fix it'})`)).join('  →  ') : first.prompt.prompt;
               card.show(result as ExploreResult);
               renderTotals();
               applyFilters();

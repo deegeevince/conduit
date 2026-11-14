@@ -39,7 +39,8 @@ export interface ShapePool {
   dispose(): void;
 }
 
-const CHARACTER = { clean: 0, pencil: 1, marker: 2, chalk: 3, pixel: 4 } as const;
+// `ink` and `dry` are drawn as marker and chalk until the brush shaders exist (PLAN-v2.md, package R); the renderer does not advertise them until then.
+const CHARACTER = { clean: 0, pencil: 1, marker: 2, chalk: 3, pixel: 4, ink: 2, dry: 3 } as const;
 
 const STROKE_VERTEX = /* glsl */ `
 attribute vec2 aOff;

@@ -6,18 +6,40 @@
 // they live here, together with the pure functions both sides use to turn an
 // answer into verdicts and verdicts into pass rates.
 
+import type { ReviewOutcome } from './context';
 import type { Issue } from './types';
 import type { StageBase } from './schedule';
-import type { ElementKind, LookId } from './vocabulary';
-import type { BriefForm } from './prompt';
+import type { SightNote } from './sight';
+import type { ChartKind, ControlKind, ElementKind, LookId, StructureKind } from './vocabulary';
+import { PROMPT_VARIANTS } from './prompt';
+import type { BriefForm, PromptVariant } from './prompt';
 import type { TurnEndReason } from './wire';
 
-/** What kind of answer a prompt is fishing for. `plain` prompts check that the brain does NOT stage a fact. */
-export type ExploreExpectation = 'plain' | 'drawn' | 'pixels' | 'scene' | 'type' | 'motion' | 'any';
+/**
+ * What kind of answer a prompt is fishing for. `plain` prompts check that the brain does NOT stage a fact.
+ * `structure`: the answer names a structure (a flow, a table, a chart …) instead of placing boxes by coordinates.
+ * `explorable`: the answer hands over at least one control that drives something on stage.
+ * `chart`: the answer is a chart drawn by the charting engine, judged against professional chart quality.
+ */
+export type ExploreExpectation = 'plain' | 'drawn' | 'pixels' | 'scene' | 'type' | 'motion' | 'any' | 'structure' | 'explorable' | 'chart';
 
-/** The two ways of teaching a diagram that `PROMPT_VARIANT` chooses between. */
-export type ExploreVariant = 'column' | 'hero';
-export const EXPLORE_VARIANTS: readonly ExploreVariant[] = ['column', 'hero'];
+/**
+ * What a prompt belongs to when scores are added up. The quality bar is set per
+ * family (PLAN-v2.md): a rise in one may not be paid for by a fall in another.
+ */
+export type ExploreFamily = 'diagram' | 'chart' | 'explorable' | 'mechanism' | 'scene' | 'type' | 'plain' | 'pixels' | 'paint' | 'motion' | 'open';
+
+/**
+ * Which set a battery file is, by who may see it.
+ * `tune`: anyone, including the improvement loop's critic and builder; failures here are what they read.
+ * `heldout`: decides whether an experiment is kept. The critic and the builder never see its prompts, its answers or its stills, only its scores.
+ * `vault`: kept outside the repository by the steward and run rarely, to catch a system that has learned the held-out set by being selected on it.
+ */
+export type ExplorePool = 'tune' | 'heldout' | 'vault';
+
+/** The teachings of the prompt a run can set side by side (`PROMPT_VARIANT`). One exists; see `PromptVariant`. */
+export type ExploreVariant = PromptVariant;
+export const EXPLORE_VARIANTS: readonly ExploreVariant[] = PROMPT_VARIANTS;
 
 export interface ExplorePrompt {
   /** short and stable: file names and URLs are built from it */
@@ -36,6 +58,14 @@ export interface ExplorePrompt {
   readonly statedSeconds?: number;
   /** how many lines about the medium itself are tolerated (the open invitation may say one thing); default 0 */
   readonly mayDescribeMedium?: number;
+  /** the family its scores are added up under; absent: worked out from `expects` */
+  readonly family?: ExploreFamily;
+  /** the structure a good answer names, when the prompt has an obvious one: the check is that it was named, and that nothing was placed by coordinates in its stead */
+  readonly structure?: StructureKind;
+  /** the least number of controls a good answer hands over (an `explorable` prompt: at least 1) */
+  readonly controls?: number;
+  /** true when the first draft is expected to need a look: a free drawing with many labelled parts. The run reports the judge's score before and after the look. */
+  readonly needsLook?: boolean;
 }
 
 /** One step of a scripted conversation. */
@@ -53,7 +83,15 @@ export type ExploreCaseTurn =
   /** the viewer taps the first choice the previous answer left on stage */
   | { readonly do: 'tap' }
   /** the viewer says: look at what you drew and fix it. The brain gets the sight report and the picture of the stage. */
-  | { readonly do: 'fix'; readonly text?: string };
+  | { readonly do: 'fix'; readonly text?: string }
+  /**
+   * The viewer works a control the previous answer left on stage: the first one, or the one with this id. `to` is where it is put:
+   * a slider to its `min`, `mid` or `max`; a toggle is `flip`ped; a pick goes to its `next` option. No turn opens unless the control sends.
+   * The run records the still before and after, whether pixels changed, and the `control` back event.
+   */
+  | { readonly do: 'control'; readonly id?: string; readonly to: 'min' | 'mid' | 'max' | 'flip' | 'next' }
+  /** the viewer presses the first button the previous answer left on stage: a turn opens with an `act` input carrying every control's value */
+  | { readonly do: 'press'; readonly id?: string };
 
 export interface ExploreCase {
   readonly id: string;
@@ -68,6 +106,8 @@ export interface ExploreCase {
 
 export interface ExploreBattery {
   readonly version: number;
+  /** which set this file is; absent means `tune` */
+  readonly pool?: ExplorePool;
   readonly prompts: readonly ExplorePrompt[];
   readonly cases?: readonly ExploreCase[];
 }
@@ -112,6 +152,62 @@ export interface ExploreChecks {
   readonly inFlowMedian?: number | null;
   /** distinct frames of the sprites drawn (the most any one sprite has) */
   readonly spriteFrames?: number;
+  /** structures named, by kind */
+  readonly structures?: Readonly<Partial<Record<StructureKind, number>>>;
+  /** nodes and rows written inside structures */
+  readonly parts?: number;
+  /** controls put on stage, and how many of them a `bind` or a `{…}` follows */
+  readonly controls?: number;
+  readonly bound?: number;
+  /** for a chart: its kind, how many points and series it has, how many marks, and what `chartModelOf` found wrong with its rows */
+  readonly chart?: { readonly kind: ChartKind; readonly points: number; readonly series: number; readonly marks: number; readonly approx: boolean; readonly problems: readonly string[] } | null;
+  /** labels with a leader line (`callout`) */
+  readonly callouts?: number;
+  /** text placed at a canvas point (`at=x,y`) outside a structure: what a blind writer gets wrong, and what structures and callouts are meant to replace */
+  readonly placedByHand?: number;
+}
+
+/** What the painter measured about the final stage, with no model in the loop: geometry a judge cannot be talked out of. */
+export interface ExploreGeometry {
+  /** pairs of resting text boxes that overlap */
+  readonly textOverlaps: number;
+  /** resting labels a drawn stroke runs through */
+  readonly crossedLabels: number;
+  /** connectors that pass through a node that is not one of their ends */
+  readonly linksThroughNodes: number;
+  /** resting things with any part outside the safe frame */
+  readonly clipped: number;
+  /** the sight notes of the final stage, counted */
+  readonly notes: Readonly<Partial<Record<SightNote, number>>>;
+}
+
+/** How look-and-fix went for one answer in a run: what was decided and why, what it cost, and whether the picture got better. */
+export interface ExploreReview extends ReviewOutcome {
+  /** from the end of the draft to the first line of the fix; null when there was no fix */
+  readonly firstLineMs: number | null;
+  /** how much longer the viewer waited because of the look: the end of the last pass against the end of the draft's own playing; never below 0 */
+  readonly addedWaitMs: number;
+  /** the judge's coherence for the draft alone and for the answer as it ended; null where the judge did not run */
+  readonly before: number | null;
+  readonly after: number | null;
+  readonly costUsd: number | null;
+}
+
+/** What happened when the run worked an answer's controls. */
+export interface ExploreDrive {
+  /** one entry per control worked */
+  readonly controls: readonly {
+    readonly id: string;
+    readonly kind: ControlKind;
+    /** something on stage follows it */
+    readonly bound: boolean;
+    /** the share of the picture's pixels that differ between its two ends (a slider's min and max, a toggle's off and on); null for a button */
+    readonly changed: number | null;
+    /** a `control` back event with this id and the value set was recorded */
+    readonly reported: boolean;
+    /** for a button or a control that sends: a turn opened with an `act` input and was answered */
+    readonly answered: boolean | null;
+  }[];
 }
 
 export interface ExploreBaseline {
@@ -143,6 +239,23 @@ export interface ExploreJudgement {
   readonly ms: number;
   /** the pictures the judge saw, small JPEG data URLs: the last one is the final still */
   readonly stills: readonly string[];
+  /**
+   * For an answer with controls, when the judge was shown the stage with a control at each end: does the picture change with
+   * the control in the way the request needs (the right thing moves, in the right direction)? Null when it was not asked.
+   */
+  readonly responds?: boolean | null;
+  /** one sentence on what changes between the pictures, or what should have and did not */
+  readonly respondsWhy?: string | null;
+  /**
+   * For a chart: how it stands against a professional charting product, 1 (clip art: a picture of a chart) to 5 (could be a
+   * screenshot of a trading terminal or a newspaper's data desk): axes with sensibly formatted ticks, gridlines that recede,
+   * series told apart, a legend when there is more than one, units, nothing overlapping, nothing decorative. Null when the
+   * answer was not a chart.
+   */
+  readonly chartQuality?: number | null;
+  readonly chartWhy?: string | null;
+  /** a hash of the judge's instructions and model: two scores are comparable only when it is the same */
+  readonly rubric?: string;
   /** set when the judge could not give a verdict; every other field is then neutral */
   readonly failure: string | null;
 }
@@ -201,6 +314,14 @@ export interface ExploreResult {
   readonly turn?: ExploreTurnMeta;
   readonly judge?: ExploreJudgement | null;
   readonly verdicts?: readonly ExploreVerdict[];
+  /** what the painter measured about the final stage */
+  readonly geometry?: ExploreGeometry;
+  /** how look-and-fix went; absent when the run had it off */
+  readonly review?: ExploreReview;
+  /** what happened when the run worked the answer's controls; absent when it left none */
+  readonly drive?: ExploreDrive;
+  /** the ids of the techniques the brief carried */
+  readonly techniques?: readonly string[];
 }
 
 /** A scripted conversation, played once: its turns in order, each a full result that starts from the stage the one before left. */

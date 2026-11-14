@@ -11,7 +11,7 @@
 import { lengthOf, outlineOf, pointAlong } from './geometry';
 import { completeStyle, mergeStyles, patchStyle, resolveColours, resolveLook, resolveStyle } from './style';
 import type { ColorSheet, ElementStyle, LookDef, LookSheet, ResolvedLook, ResolvedProps, StyleContext, StyleDef, StyleSheet } from './style';
-import { splitEmphasis } from './text';
+import { isRuleRow, splitCells, splitEmphasis } from './text';
 import {
   AMBIENT_SECONDS,
   beatSeconds,
@@ -22,6 +22,7 @@ import {
   exitSeconds,
   figureEnterSeconds,
   HIT_SECONDS,
+  LINK_SECONDS,
   LOOK_CHANGE_SECONDS,
   MORPH_SECONDS,
   MOVE_SECONDS,
@@ -34,13 +35,15 @@ import {
   SET_SECONDS,
   SOLO_OVERLAP,
   spriteSeconds,
+  CHART_ROW_SECONDS,
   STRIKE_SECONDS,
+  TABLE_ROW_SECONDS,
   tailSeconds,
   waitSeconds,
 } from './timing';
 import type { Anchor } from './vocabulary';
-import type { CanvasBox, CreatingLine, Issue, IssueCode, Line, Paint, Point, Range, ShapeGeometry, StyleProps, Target, When } from './types';
-import { BACKDROP_LAYERS, CANVAS, DEFAULT_CANVAS, DEFAULT_LOOK, LIMITS } from './vocabulary';
+import type { BindOn, CanvasBox, ControlLine, ControlValue, CreatingLine, Issue, IssueCode, Line, Paint, Point, Range, ShapeGeometry, StructureLine, StyleProps, Target, When } from './types';
+import { BACKDROP_LAYERS, CANVAS, CONTROL, DEFAULT_CANVAS, DEFAULT_CHART, DEFAULT_LOOK, LIMITS, STRUCTURE } from './vocabulary';
 import type {
   Align,
   AmbientKind,
@@ -49,18 +52,26 @@ import type {
   CameraMove,
   CameraSpeed,
   CanvasName,
+  ChartKind,
+  ChartWord,
   Clear,
+  ControlKind,
   Direction,
   ElementKind,
   EnterEffect,
   ExitEffect,
+  Growth,
   HitGesture,
   Layout,
+  LinkEnd,
   LookId,
   Mask,
   Medium,
   Mood,
+  NodeShape,
   Pace,
+  PickForm,
+  StructureKind,
   Verb,
 } from './vocabulary';
 
@@ -102,11 +113,70 @@ export interface SpriteData {
   readonly fps: number | null;
 }
 
-/** What an element is, when it is not words. */
+/** One row of a table or a chart: its cells as written, and when it lands. */
+export interface StructureRow {
+  readonly cells: readonly string[];
+  /** on the clock of the turn that wrote it; 0 for a row carried in from an earlier turn */
+  readonly at: number;
+}
+
+/** What a control is and holds. The painter draws it in the look and owns its value while the user works it. */
+export interface ControlSpec {
+  readonly control: ControlKind;
+  /** how a pick shows its options; null for every other control */
+  readonly form: PickForm | null;
+  /** a pick's options */
+  readonly options: readonly string[];
+  /** a slider's ends; 0 and 1 for every other control */
+  readonly min: number;
+  readonly max: number;
+  /** a slider's step; null: continuous */
+  readonly step: number | null;
+  /** written after a slider's value */
+  readonly unit: string | null;
+  /**
+   * What it holds: a slider's number, a toggle's state, the 1-based index of a
+   * pick's option, an input's text; null for a button. As written when the line
+   * is scheduled; in a carried element, as the user left it.
+   */
+  readonly value: ControlValue | null;
+  /** a change the user commits becomes their next message; a button always sends */
+  readonly send: boolean;
+}
+
+/** What an element is, when it is not words. A node, a link and a control carry words as well: they are in the element's `text`. */
 export type Figure =
   | { readonly kind: 'shape'; readonly geometry: ShapeGeometry }
   | { readonly kind: 'sprite'; readonly sprite: SpriteData }
-  | { readonly kind: 'group' }
+  /** `card`: the group is framed, with a title; `box` is the frame as given, or null to frame its parts */
+  | { readonly kind: 'group'; readonly card?: { readonly title: string; readonly box: CanvasBox | null } }
+  /**
+   * A diagram the painter lays out. Its nodes and links are elements of their
+   * own whose `parent` is this one; the rows of a table or a chart are here.
+   * Where anything in it goes is the painter's decision and is in no schedule.
+   */
+  | {
+      readonly kind: 'structure';
+      readonly structure: StructureKind;
+      readonly grow: Growth | null;
+      readonly chart: ChartKind | null;
+      /** a chart's words (`indexed`, `log`, `spark`, `live`, `approx`); empty for anything else */
+      readonly words: readonly ChartWord[];
+      /** a chart: the id of the DATA it draws, when its points come by reference; null when they are its rows */
+      readonly data: string | null;
+      /** a table: its numbers are drawn as bars too */
+      readonly bars: boolean;
+      /** the room it is laid out in, canvas units; null: the whole canvas */
+      readonly box: CanvasBox | null;
+      /** a map joins its pins in the order written */
+      readonly route: boolean;
+      readonly rows: readonly StructureRow[];
+    }
+  /** `values`: one number on a timeline (two: a span), a point on a map, nothing elsewhere. `x`, `y`: where a mark on a chart goes. */
+  | { readonly kind: 'node'; readonly shape: NodeShape; readonly values: readonly number[]; readonly x?: string; readonly y?: number }
+  /** `from` and `to` are the keys of the two nodes */
+  | { readonly kind: 'link'; readonly from: string; readonly to: string; readonly ends: LinkEnd; readonly dashed: boolean }
+  | ({ readonly kind: 'control' } & ControlSpec)
   /** `source` is the key of the element it is another copy of */
   | { readonly kind: 'copy'; readonly source: string }
   | {
@@ -149,6 +219,33 @@ export interface CarriedElement {
   readonly struck: boolean;
   /** key of the struck element this one replaced, if any */
   readonly replaces: string | null;
+  /** changes a control drives on it; they persist with the stage. Absent means none. */
+  readonly driven?: readonly DrivenChange[];
+}
+
+/** What a control-driven change does to its element: what the same line would do on the clock. */
+export type DrivenEffect =
+  | { readonly kind: 'set'; readonly props: ResolvedProps }
+  | { readonly kind: 'move'; readonly to: Anchor | Point; readonly along: string | null }
+  | { readonly kind: 'morph'; readonly geometry: ShapeGeometry; readonly props: ResolvedProps }
+  /** the words are these while the binding holds: a swap, never a strike-through */
+  | { readonly kind: 'text'; readonly text: string; readonly emphasis: readonly Range[] };
+
+/**
+ * A change whose progress is a control's value instead of the turn clock
+ * (`bind`). It is not on the clock: it takes no time, holds nothing, and the
+ * schedule is the same whatever the user does with the control. The painter
+ * evaluates it every frame from the control's value: several on one element
+ * apply in the order written, each from where the one before leaves it.
+ */
+export interface DrivenChange {
+  readonly seq: number;
+  /** key of the control element */
+  readonly control: string;
+  readonly on: BindOn;
+  readonly effect: DrivenEffect;
+  /** when the binding came into being, on the clock of the turn that wrote it; 0 when carried */
+  readonly since: number;
 }
 
 /** Everything that persists from one turn to the next. */
@@ -231,7 +328,7 @@ export interface ElementSpan {
   /** creation order on the stage, which is also drawing order within a layer. A replacement inherits the order of what it replaces, so it keeps the slot. */
   readonly order: number;
   readonly scene: string;
-  /** plain text, emphasis markers removed; '' unless `kind` is `text` */
+  /** plain text, emphasis markers removed: the words of a text, a node, a link's label, a control's label, a structure's title; '' for anything else */
   readonly text: string;
   readonly emphasis: readonly Range[];
   /** the style it enters with; later changes are in `changes` */
@@ -247,6 +344,8 @@ export interface ElementSpan {
   /** null while nothing has asked it to leave */
   readonly exit: (Span & { readonly effect: ExitEffect; readonly cause: ExitCause }) | null;
   readonly changes: readonly ElementChange[];
+  /** changes a control drives on it (`bind`), in the order written; not on the clock */
+  readonly driven: readonly DrivenChange[];
   /** carried in already struck through */
   readonly struck: boolean;
 }
@@ -319,8 +418,9 @@ export interface Schedule {
 
 type Mutable<T> = { -readonly [K in keyof T]: T[K] };
 
-interface MutableElement extends Omit<Mutable<ElementSpan>, 'changes'> {
+interface MutableElement extends Omit<Mutable<ElementSpan>, 'changes' | 'driven'> {
   changes: ElementChange[];
+  driven: DrivenChange[];
 }
 
 interface MutableScene extends Omit<Mutable<SceneSpan>, 'mood' | 'pace' | 'expected'> {
@@ -339,6 +439,16 @@ interface Live {
   predecessor: Live | null;
   /** a sprite's frames while they are still being written */
   frames: { cells: string; at: number }[][] | null;
+  /** a table's or a chart's rows while they are still being written */
+  rows: StructureRow[] | null;
+}
+
+function isStructureLine(line: CreatingLine): line is StructureLine {
+  return Object.hasOwn(STRUCTURE, line.verb);
+}
+
+function isControlLine(line: CreatingLine): line is ControlLine {
+  return Object.hasOwn(CONTROL, line.verb);
 }
 
 /** The least the pen moves for anything drawn, so two shapes written together still arrive one after the other. */
@@ -348,9 +458,9 @@ function isActive(live: Live, at: number): boolean {
   return live.span.exit === null || live.span.exit.start > at;
 }
 
-/** Whether the scene's layout, not the element itself, decides where it goes. Only text flows. */
+/** Whether the scene's layout, not the element itself, decides where it goes. Text flows, and so does a control: it takes a line of the flow like a choice does. */
 export function isInFlow(style: ElementStyle, layout: Layout, kind: ElementKind = 'text'): boolean {
-  if (kind !== 'text' || style.layer !== 'mid' || style.near !== null || style.group !== null) return false;
+  if ((kind !== 'text' && kind !== 'control') || style.layer !== 'mid' || style.near !== null || style.group !== null) return false;
   if (style.at === null) return true;
   return layout === 'split' && (style.at === 'left' || style.at === 'right');
 }
@@ -419,6 +529,7 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase): 
       enter: null,
       exit: null,
       changes: [],
+      driven: [...(element.driven ?? [])],
       struck: element.struck,
     };
     const entry: Live = {
@@ -427,6 +538,7 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase): 
       ghost: element.struck,
       predecessor: null,
       frames: element.figure?.kind === 'sprite' ? element.figure.sprite.frames.map((frame) => frame.map((row) => ({ ...row }))) : null,
+      rows: element.figure?.kind === 'structure' ? [...element.figure.rows] : null,
     };
     elements.push(span);
     live.push(entry);
@@ -461,11 +573,16 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase): 
       target.span.exit = { start, end: start + duration, effect, cause };
     }
     if (target.predecessor !== null) leave(target.predecessor, start, effect, cause);
-    // A group takes its parts with it, and a thing takes its copies.
-    if (target.span.kind === 'group' || target.span.kind === 'shape' || target.span.kind === 'sprite') {
+    // A group takes its parts with it, a structure its nodes and links, a node the links that touch it, and a thing its copies.
+    const { kind } = target.span;
+    if (kind === 'group' || kind === 'shape' || kind === 'sprite' || kind === 'structure' || kind === 'node') {
       for (const other of live) {
         if (other === target || !isActive(other, start)) continue;
-        const dependent = other.span.parent === target.span.key || (other.span.figure?.kind === 'copy' && other.span.figure.source === target.span.key);
+        const figure = other.span.figure;
+        const dependent =
+          (kind !== 'node' && other.span.parent === target.span.key) ||
+          (figure?.kind === 'copy' && figure.source === target.span.key) ||
+          (kind === 'node' && figure?.kind === 'link' && (figure.from === target.span.key || figure.to === target.span.key));
         if (dependent) leave(other, start, effect, 'parent');
       }
     }
@@ -568,9 +685,10 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase): 
       enter: { start, end: start + duration, effect: style.enter, by: style.by },
       exit: null,
       changes: [],
+      driven: [],
       struck: false,
     };
-    const created: Live = { span, style, ghost: false, predecessor: extra.predecessor ?? null, frames: null };
+    const created: Live = { span, style, ghost: false, predecessor: extra.predecessor ?? null, frames: null, rows: null };
     elements.push(span);
     live.push(created);
     byKey.set(span.key, created);
@@ -595,7 +713,7 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase): 
     create(entry, 'text', id, style, start, duration, order, { text: plain, emphasis, predecessor, parent });
     let tail = scene.layout === 'page' && isInFlow(style, scene.layout) ? pageTailSeconds(plain, pace) : tailSeconds(duration, style.by, plain, pace);
     // A label is read with the thing it is on, not after it.
-    if (style.near !== null) tail = Math.min(tail, beatSeconds(pace) * 0.5);
+    if (style.near !== null || style.leader) tail = Math.min(tail, beatSeconds(pace) * 0.5);
     return start + duration + tail;
   };
 
@@ -635,7 +753,8 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase): 
         // Choices (tap=yes) gather under the content: they neither replace one another nor are replaced by the next line of content.
         if (isOneAtATime(scene.layout) && isInFlow(style, scene.layout) && !style.tap) {
           for (const candidate of live) {
-            if (!isActive(candidate, start) || candidate.span.scene !== scene.id || candidate.style.tap) continue;
+            // A control, like a choice, stays where it can be worked while the lines above it change.
+            if (!isActive(candidate, start) || candidate.span.scene !== scene.id || candidate.style.tap || candidate.span.kind === 'control') continue;
             if (candidate.style.stay === 'pin' || !isInFlow(candidate.style, scene.layout, candidate.span.kind)) continue;
             enterStart = Math.max(enterStart, start + leave(candidate, start, candidate.style.exit, 'solo') * SOLO_OVERLAP);
           }
@@ -647,7 +766,7 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase): 
       return;
     }
 
-    if (line.verb === 'group') {
+    if (line.verb === 'group' || line.verb === 'card') {
       const same = findLive(line.id, start);
       if (same !== null && same.span.kind === 'group') {
         // A group written again is the same group, restyled or moved: its parts stay.
@@ -662,8 +781,150 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase): 
       }
       const style = styleFor(seq, 'group', line.styles, line.props);
       const slot = takeSlot(line.id, start);
-      create(entry, 'group', line.id, style, start, 0, slot.order, { figure: { kind: 'group' } });
+      const card = line.verb === 'card' ? splitEmphasis(line.title ?? '') : null;
+      create(entry, 'group', line.id, style, start, 0, slot.order, {
+        figure: card === null || line.verb !== 'card' ? { kind: 'group' } : { kind: 'group', card: { title: card.plain, box: line.box ?? null } },
+      });
       lines.push({ seq, verb: line.verb, start, end: start });
+      return;
+    }
+
+    if (isStructureLine(line)) {
+      const joined = joinGroup(seq, styleFor(seq, 'structure', line.styles, line.props), start);
+      const { plain, emphasis } = splitEmphasis(line.title ?? '');
+      // The title, when there is one, fades in; the parts that follow carry the rest of the entrance.
+      const duration = plain === '' ? 0 : figureEnterSeconds(joined.style.enter, pace, joined.style.dur);
+      const slot = takeSlot(line.id, start);
+      const created = create(entry, 'structure', line.id, joined.style, start + slot.delay, duration, slot.order, {
+        text: plain,
+        emphasis,
+        figure: {
+          kind: 'structure',
+          structure: line.verb,
+          grow: line.grow ?? null,
+          chart: line.verb === 'chart' ? (line.chart ?? DEFAULT_CHART) : null,
+          words: line.verb === 'chart' ? (line.words ?? []) : [],
+          data: line.verb === 'chart' ? (line.data ?? null) : null,
+          bars: line.verb === 'table' && line.bars === true,
+          box: line.box ?? null,
+          route: line.route ?? false,
+          rows: [],
+        },
+        parent: joined.parent,
+      });
+      if (STRUCTURE[line.verb].parts === 'rows') created.rows = [];
+      lines.push({ seq, verb: line.verb, start, end: start + slot.delay + duration });
+      return;
+    }
+
+    if (line.verb === 'node') {
+      const owner = line.props.in === undefined ? null : findLive(line.props.in, start);
+      // A chart takes nodes too: they are its marks.
+      if (owner === null || owner.span.figure?.kind !== 'structure' || (STRUCTURE[owner.span.figure.structure].parts !== 'nodes' && owner.span.figure.structure !== 'chart')) {
+        report(seq, 'no-structure', `no flow, tree, cycle, timeline, map or chart called "${line.props.in ?? ''}" is on stage for this node; write the structure first`, line.props.in);
+        lines.push({ seq, verb: line.verb, start, end: start });
+        return;
+      }
+      const siblings = live.filter((candidate) => candidate.span.kind === 'node' && candidate.span.parent === owner.span.key && isActive(candidate, start));
+      if (siblings.length >= (owner.span.figure.structure === 'chart' ? LIMITS.marks : LIMITS.nodes) && findLive(line.id, start) === null) {
+        report(seq, 'structure-limit', `a structure has at most ${LIMITS.nodes} nodes; this one was ignored. Split it into two`);
+        lines.push({ seq, verb: line.verb, start, end: start });
+        return;
+      }
+      // A node lives on its structure's layer; `in=` is how it was attached and is not a group to join.
+      const style: ElementStyle = { ...styleFor(seq, 'node', line.styles, line.props), group: null, layer: owner.style.layer };
+      const { plain, emphasis } = splitEmphasis(line.text);
+      const duration = figureEnterSeconds(style.enter, pace, style.dur);
+      const slot = takeSlot(line.id, start);
+      const created = create(entry, 'node', line.id, style, start + slot.delay, duration, slot.order, {
+        text: plain,
+        emphasis,
+        figure: { kind: 'node', shape: line.shape ?? 'step', values: line.values, ...(line.x !== undefined && { x: line.x }), ...(line.y !== undefined && { y: line.y }) },
+        parent: owner.span.key,
+      });
+      if (line.from !== undefined) {
+        const source = findLive(line.from.id, start);
+        if (source === null || source.span.kind !== 'node' || source.span.parent !== owner.span.key) {
+          report(seq, 'unknown-id', `no node called "${line.from.id}" is in this structure to link from; the node stands unlinked`, line.from.id);
+        } else {
+          nextOrder += 1;
+          const linkStyle: ElementStyle = { ...styleFor(seq, 'link', [], {}), layer: owner.style.layer };
+          // The link arrives with its node: it is drawn toward it while the node fades in.
+          create(entry, 'link', `${line.id}-in`, linkStyle, start + slot.delay, LINK_SECONDS * PACE_TIMING[pace].ease, nextOrder - 1, {
+            text: line.from.label ?? '',
+            figure: { kind: 'link', from: source.span.key, to: created.span.key, ends: 'arrow', dashed: false },
+            parent: owner.span.key,
+          });
+        }
+      }
+      advanceForDrawn(style, start + slot.delay, duration);
+      lines.push({ seq, verb: line.verb, start, end: start + slot.delay + duration });
+      return;
+    }
+
+    if (line.verb === 'link') {
+      const ends = line.nodes.map((id) => findLive(id, start));
+      const missing = line.nodes.filter((_, index) => ends[index]?.span.kind !== 'node');
+      for (const id of missing) report(seq, 'unknown-id', `no node called "${id}" is on stage to link`, id);
+      const style = styleFor(seq, 'link', [], line.props);
+      const duration = style.dur ?? LINK_SECONDS * PACE_TIMING[pace].ease;
+      const label = splitEmphasis(line.text ?? '');
+      let at = start;
+      let made = 0;
+      for (let index = 0; index + 1 < ends.length; index += 1) {
+        const from = ends[index];
+        const to = ends[index + 1];
+        if (from === null || to === null || from === undefined || to === undefined || from.span.kind !== 'node' || to.span.kind !== 'node') continue;
+        const owner = from.span.parent === null ? null : (byKey.get(from.span.parent) ?? null);
+        const links = live.filter((candidate) => candidate.span.kind === 'link' && candidate.span.parent === from.span.parent && isActive(candidate, start));
+        if (links.length >= LIMITS.links) {
+          report(seq, 'structure-limit', `a structure has at most ${LIMITS.links} links; the rest of this line was ignored`);
+          break;
+        }
+        const id = made === 0 ? line.id : `${line.id}-${made + 1}`;
+        const slot = takeSlot(id, at);
+        create(entry, 'link', id, { ...style, layer: owner?.style.layer ?? style.layer }, at + slot.delay, duration, slot.order, {
+          text: made === 0 ? label.plain : '',
+          emphasis: made === 0 ? label.emphasis : [],
+          figure: { kind: 'link', from: from.span.key, to: to.span.key, ends: line.ends ?? 'arrow', dashed: line.dashed ?? false },
+          parent: from.span.parent,
+        });
+        advanceForDrawn(style, at + slot.delay, duration);
+        // A chain is drawn link after link, each beginning when the last is half done.
+        at = Math.max(at, at + slot.delay + Math.max(MIN_STAGGER, duration * DRAW_HOLD));
+        made += 1;
+      }
+      lines.push({ seq, verb: line.verb, start, end: made === 0 ? start : at - duration * DRAW_HOLD + duration });
+      return;
+    }
+
+    if (isControlLine(line)) {
+      const alive = live.filter((candidate) => candidate.span.kind === 'control' && isActive(candidate, start) && candidate.span.id !== line.id);
+      if (alive.length >= LIMITS.controls) {
+        report(seq, 'structure-limit', `at most ${LIMITS.controls} controls can be on stage at once; this one was ignored`);
+        lines.push({ seq, verb: line.verb, start, end: start });
+        return;
+      }
+      const joined = joinGroup(seq, styleFor(seq, 'control', line.styles, line.props), start);
+      const options = line.options ?? [];
+      const min = line.range?.min ?? 0;
+      const max = line.range?.max ?? 1;
+      let value: ControlValue | null = null;
+      if (line.verb === 'slider') value = typeof line.initial === 'number' ? line.initial : min;
+      else if (line.verb === 'toggle') value = line.initial === true;
+      else if (line.verb === 'pick') value = typeof line.initial === 'number' ? line.initial : 1;
+      else if (line.verb === 'input') value = '';
+      const { plain, emphasis } = splitEmphasis(line.text ?? '');
+      const duration = figureEnterSeconds(joined.style.enter, pace, joined.style.dur);
+      const slot = takeSlot(line.id, start);
+      create(entry, 'control', line.id, joined.style, start + slot.delay, duration, slot.order, {
+        text: plain,
+        emphasis,
+        figure: { kind: 'control', control: line.verb, form: line.verb === 'pick' ? (line.form ?? 'row') : null, options, min, max, step: line.range?.step ?? null, unit: line.unit ?? null, value, send: line.verb === 'button' ? true : (line.send ?? false) },
+        parent: joined.parent,
+      });
+      advanceForDrawn(joined.style, start + slot.delay, duration);
+      lines.push({ seq, verb: line.verb, start, end: start + slot.delay + duration });
       return;
     }
 
@@ -837,13 +1098,114 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase): 
       case 'use':
       case 'paint':
       case 'ambient':
+      case 'flow':
+      case 'tree':
+      case 'cycle':
+      case 'timeline':
+      case 'map':
+      case 'table':
+      case 'chart':
+      case 'node':
+      case 'link':
+      case 'button':
+      case 'toggle':
+      case 'slider':
+      case 'pick':
+      case 'input':
+      case 'card':
         scheduleCreating(entry, line);
         break;
 
+      case 'bind': {
+        // Not on the clock: a binding takes no time and holds nothing. It lasts as long as the element it changes.
+        const at = Math.max(pen, entry.floor);
+        lines.push({ seq, verb: line.verb, start: at, end: at });
+        const control = findLive(line.control, at);
+        if (control === null || control.span.figure?.kind !== 'control') {
+          report(seq, 'bad-bind', `no control called "${line.control}" is on stage to bind; write the slider, toggle or pick first`, line.control);
+          break;
+        }
+        const { change } = line;
+        const targets: Live[] = change.verb === 'set' ? resolveTargets(change.target, at, seq) : [findLive(change.id, at)].filter((found): found is Live => found !== null);
+        if (targets.length === 0) {
+          if (change.verb !== 'set') report(seq, 'unknown-id', `nothing called "${change.id}" is on stage for the control to change; draw it first`, change.id);
+          break;
+        }
+        let effect: DrivenEffect;
+        if (change.verb === 'set') {
+          const merged = mergeStyles(sheet, change.styles, change.props);
+          for (const name of merged.unknown) report(seq, 'unknown-style', `no style called "${name}"; ignored`, name);
+          effect = { kind: 'set', props: coloured(seq, merged.props) };
+        } else if (change.verb === 'move') {
+          let along: string | null = null;
+          let to = change.to;
+          if (change.along !== undefined) {
+            const track = findLive(change.along, at);
+            const figure = track?.span.figure;
+            const outline = figure?.kind === 'shape' ? outlineOf(figure.geometry)[0] : undefined;
+            // A link may be travelled too; where it runs is the painter's to say, so the end is left to it.
+            if (track !== null && figure?.kind === 'link') along = track.span.key;
+            else if (track === null || outline === undefined) report(seq, 'unknown-id', `no drawn shape called "${change.along}" is on stage to travel along; moved straight`, change.along);
+            else {
+              along = track.span.key;
+              to ??= pointAlong(outline, 1);
+            }
+          }
+          if (to === undefined && along === null) break;
+          effect = { kind: 'move', to: to ?? 'center', along };
+        } else if (change.verb === 'correct') {
+          const { plain, emphasis } = splitEmphasis(change.text);
+          effect = { kind: 'text', text: plain, emphasis };
+        } else {
+          const merged = mergeStyles(sheet, change.styles, change.props);
+          effect = { kind: 'morph', geometry: change.geometry, props: coloured(seq, merged.props) };
+        }
+        const bound = live.reduce((count, candidate) => (isActive(candidate, at) ? count + candidate.span.driven.length : count), 0);
+        if (bound + targets.length > LIMITS.binds) {
+          report(seq, 'structure-limit', `at most ${LIMITS.binds} bound changes can be on stage at once; this one was ignored`);
+          break;
+        }
+        for (const target of targets) {
+          const fits =
+            effect.kind === 'set' || (effect.kind === 'move' && target.span.kind !== 'field') || (effect.kind === 'morph' && target.span.kind === 'shape') || (effect.kind === 'text' && target.span.kind === 'text');
+          if (!fits) {
+            report(seq, 'bad-bind', `"${target.span.id}" is a ${target.span.kind}; a control cannot drive that change on it`, target.span.id);
+            continue;
+          }
+          target.span.driven.push({ seq, control: control.span.key, on: line.on, effect, since: at });
+        }
+        break;
+      }
+
       case 'row': {
-        const sprite = findLive(line.id, Math.max(pen, entry.floor));
+        const table = findLive(line.id, Math.max(pen, entry.floor));
+        if (table !== null && table.span.figure?.kind === 'structure' && table.rows !== null) {
+          // A row of a table or a chart: cells between bars. It lands a step after the row before it.
+          const cells = splitCells(line.cells);
+          const enter = table.span.enter;
+          const charted = table.span.figure.structure === 'chart';
+          const step = (charted ? CHART_ROW_SECONDS : TABLE_ROW_SECONDS)[pace];
+          const most = charted ? LIMITS.chartPoints : LIMITS.rows;
+          if (isRuleRow(cells) || cells.every((cell) => cell === '')) {
+            lines.push({ seq, verb: line.verb, start: pen, end: pen });
+            break;
+          }
+          if (table.rows.length >= most) {
+            report(seq, 'structure-limit', `a ${table.span.figure.structure} has at most ${most} rows; this one was ignored`);
+            lines.push({ seq, verb: line.verb, start: pen, end: pen });
+            break;
+          }
+          if (cells.length > LIMITS.cells) report(seq, 'structure-limit', `a row has at most ${LIMITS.cells} cells; the rest were cut`);
+          const at = Math.max(enter === null ? 0 : enter.end + table.rows.length * step, pen, entry.floor);
+          table.rows.push({ cells: cells.slice(0, LIMITS.cells), at });
+          table.span.figure = { ...table.span.figure, rows: [...table.rows] };
+          if (!BACKDROP_LAYERS.includes(table.style.layer)) pen = Math.max(pen, at + step);
+          lines.push({ seq, verb: line.verb, start: at, end: at + step });
+          break;
+        }
+        const sprite = table;
         if (sprite === null || sprite.span.kind !== 'sprite' || sprite.span.figure?.kind !== 'sprite' || sprite.frames === null) {
-          report(seq, 'no-sprite', `no sprite called "${line.id}" is being drawn; write a pix line first`, line.id);
+          report(seq, 'no-sprite', `no sprite, table or chart called "${line.id}" is being written; write a pix, table or chart line first`, line.id);
           lines.push({ seq, verb: line.verb, start: pen, end: pen });
           break;
         }
@@ -1156,6 +1518,7 @@ export function figureAt(element: ElementSpan, at: number): Figure | null {
   if (figure.kind === 'sprite') {
     return { kind: 'sprite', sprite: { ...figure.sprite, frames: figure.sprite.frames.map((rows, index) => (index === 0 ? rows.filter((row) => row.at <= at) : rows)) } };
   }
+  if (figure.kind === 'structure' && figure.rows.length > 0) return { ...figure, rows: figure.rows.filter((row) => row.at <= at) };
   return figure;
 }
 

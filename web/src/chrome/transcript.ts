@@ -222,8 +222,8 @@ export function mountTranscript(host: HTMLElement, painter: Painter, handlers: {
         const heading = document.createElement('h2');
         heading.className = 'transcript__turn';
         heading.dataset['turn'] = event.turn;
-        const said = event.input.kind === 'prompt' ? 'You said' : event.input.kind === 'tap' ? 'You chose' : event.input.kind === 'script' ? 'You played' : 'Demo';
-        const text = event.input.kind === 'prompt' || event.input.kind === 'tap' ? event.input.text : event.input.kind === 'script' ? 'a script' : event.input.script;
+        const said = event.input.kind === 'prompt' ? 'You said' : event.input.kind === 'tap' ? 'You chose' : event.input.kind === 'act' ? 'You pressed' : event.input.kind === 'script' ? 'You played' : 'Demo';
+        const text = event.input.kind === 'prompt' || event.input.kind === 'tap' || event.input.kind === 'act' ? event.input.text : event.input.kind === 'script' ? 'a script' : event.input.script;
         heading.textContent = `${said}: ${text}`;
         headings.set(event.turn, heading);
         stickToEnd(() => body.append(heading));

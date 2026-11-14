@@ -2,7 +2,9 @@
 
 This document is the specification. The code in `language/` implements it, and where prose and code disagree, that is a bug in one of them: fix it and say which. The reference tables at the end are generated from the code (`pnpm docs:language`), so they cannot disagree.
 
-Series is version 3. Version 2 could only set type; version 3 can draw. Everything version 2 said still means what it meant, with three exceptions listed in section 12.
+Series is version 4. Version 2 could only set type; version 3 can draw; version 4 can name a structure and have the painter lay it out, chart data on an instrument, put controls on stage that drive the drawing with no round trip, and be shown its own draft and fix it. Everything version 3 said still means what it meant, with the exceptions listed in section 12.
+
+> **State of the build.** Version 4 is specified here and parsed, scheduled and carried by `language/` today. The painter does not yet perform structures, charts, controls or its own paint, and says so in what it advertises, so no brain is taught them yet. `PLAN-v2.md` is the build.
 
 ## 1. What Series is for
 
@@ -24,8 +26,13 @@ The design rule is the one behind MIDI: **the brain sends intent, the painter ho
 | what stays and what leaves | where a label goes beside the thing it names |
 | the look: ground, inks, face, surface | contrast, and keeping it legible |
 | which weather | where every raindrop is |
+| which structure, its parts and what leads to what | where every part goes, how every connector runs, where every label sits |
+| the numbers of a chart and what to mark on it | the axes, the ticks, the scale, the crosshair |
+| which control, and what it changes | what the control looks like, and every frame while it is dragged |
 
 Most of the language is at **mind level**: it says what something means. A small part is **hand level**: an exact time or length, for the rare moment the brain wants one specific effect. A drawing's coordinates are not hand level: where the roof goes is the brain's meaning, and it is written in the canvas's own units, never in pixels.
+
+**Coordinates are for things that have a place, not for layout.** Measured over a hundred answers, a brain places a roof on a house well and places boxes, arrows and their labels badly: it cannot see what it has covered. So version 4 moves layout to the side that can see. Where a thing IS (the piston, the city on the coast) stays the brain's, in coordinates. Where a box in a flowchart goes, how an arrow gets round it and where a label finds room is the painter's: the brain names the structure (section 4.13) or asks for a callout (section 4.3).
 
 **The form of an answer is the brain's choice.** Plain prose at reading speed (`layout=page`) is a first-class answer, and for a question of fact it is the right one. Drawing, staging and timing are for what they say better than words. The language makes the plain answer the cheapest thing to write.
 
@@ -45,6 +52,8 @@ verb  word…  key=value…  @time  | text
 - **A line that starts with `|` is a row**: one row of cells of the sprite being written (section 4.6).
 - A blank line is ignored. A line starting with `#` is a comment and is ignored.
 - A line starting with `#!` is a comment to every reader except the replay brain, for which it is a directive (section 10).
+- A line starting with `|` is also a row of the table or chart being written (section 4.13): its cells are separated by bars.
+- Inside text, `{…}` is a value when it reads as arithmetic on the controls on stage (section 4.14), and is ordinary text otherwise.
 
 ### Ids are optional
 
@@ -64,13 +73,16 @@ A brain is a model writing fast. The parser is forgiving about everything except
 | a row of cells written without its leading `\|` while a sprite is being written | read as a row |
 | a `\| text` line when no sprite is being written | said as plain text |
 | a path command that cannot be read | skipped; what was understood is drawn |
-| unknown verb; `say`, `correct`, `path` or `paint` without text; a shape without its geometry; a missing required id or argument; a line with nothing to do | the line is rejected |
+| a row of a table or chart written without its leading `\|` | read as a row |
+| a Markdown table's rule row (`\|---\|---\|`), a closing bar | skipped; ignored |
+| a `node` with no structure open; a `bind` that names no control, or a change a control cannot drive | the line is rejected, and the brain is told why |
+| unknown verb; `say`, `correct`, `node` or `path` without text; a shape without its geometry; a missing required id or argument; a line with nothing to do | the line is rejected |
 
-Aliases are accepted and never emitted: the verbs `camera`, `text`, `sprite`, `pixel`, `pixels`, `colour`, `polygon`, `polyline`, `image`, `picture`, `weather`, `particles`; the camera moves `push-in`, `pull-back`, `pull-out`, `zoom`, `reset`; the properties `color`, `font`, `rotate`, `stroke-width`. In a `scene` header a bare layout, mood, pace or canvas word is accepted in place of `layout=`, `mood=`, `pace=`, `canvas=`.
+Aliases are accepted and never emitted: the verbs `camera`, `text`, `sprite`, `pixel`, `pixels`, `colour`, `polygon`, `polyline`, `image`, `picture`, `weather`, `particles`, `flowchart`, `graph`, `diagram` (a `flow`), `edge`, `connect` (a `link`), `pin`, `event` (a `node`), `plot`, `bars`, `barchart`, `candles`, `candlestick` (a `chart`, of that kind), `tabs`, `menu`, `stepper`, `select`, `dropdown`, `radio` (a `pick`, in that form), `switch`, `checkbox` (a `toggle`), `textbox` (an `input`); the camera moves `push-in`, `pull-back`, `pull-out`, `zoom`, `reset`; the properties `color`, `font`, `rotate`, `stroke-width`. In a `scene` header a bare layout, mood, pace or canvas word is accepted in place of `layout=`, `mood=`, `pace=`, `canvas=`.
 
 ### Explicit lines
 
-Three things a brain may leave implicit are settled before a line is scheduled or forwarded: the id of anything it did not name, which sprite a row belongs to, and whether a first word is an id or a style. `LineReader` and `LineNormalizer` in `language/src/normalize.ts` do this, in arrival order, once, on the server. After that every line stands alone: the wire carries `row cat | ..0..0..` and `say x7 strong | …`, never the short forms. `serializeLine` writes the one canonical form of a line; `parseLine(serializeLine(x))` equals `x`.
+Things a brain may leave implicit are settled before a line is scheduled or forwarded: the id of anything it did not name, which sprite, table or chart a row belongs to, which structure a node belongs to (`in=<its id>`), and whether a first word is an id or a style. A sprite is closed by the next line that is not one of its rows; a table, a chart and a structure of nodes stay open across speech, waits and changes, so they can be told a part at a time, until another structure or a new scene opens. `LineReader` and `LineNormalizer` in `language/src/normalize.ts` do this, in arrival order, once, on the server. After that every line stands alone: the wire carries `row cat | ..0..0..` and `say x7 strong | …`, never the short forms. `serializeLine` writes the one canonical form of a line; `parseLine(serializeLine(x))` equals `x`.
 
 ### Names
 
@@ -78,7 +90,7 @@ Element ids, scene ids, style names, colour names and look names match `[a-z][a-
 
 ## 3. The stage
 
-- The stage holds **elements**. Every element has an id, a kind, a layer, a lifetime and a style, whatever it is. The kinds are in the reference: text, shape, sprite, group, copy, picture, field.
+- The stage holds **elements**. Every element has an id, a kind, a layer, a lifetime and a style, whatever it is. The kinds are in the reference: text, shape, sprite, group, copy, picture, field, structure, node, link, control. A node, a link and a control are things like any other: `set`, `hit`, `drop`, `cam focus` and a tap reach them by id.
 - The stage has four **layers** in depth: `far`, `bg`, `mid` (the subject and the reading plane, the default) and `fg`. The brain never writes a depth. Things on `far` and `bg` are backdrop: they never hold the pen.
 - Content is grouped into **scenes**. A scene has a **layout**, a **canvas**, a **mood**, a **pace**, and optionally the number of text lines to expect. Opening a scene clears the previous one (section 4.1).
 - **The canvas** is the scene's drawing space: a rectangle of square units with 0,0 at its top-left and y running down. There are three: `wide` (160 x 90), `square` (100 x 100) and `tall` (90 x 160). The painter fits the whole canvas, never cropped or stretched, into the room the layout leaves for pictures. The same coordinates therefore draw the same picture on every screen, and a script written once plays anywhere. Points outside the canvas are allowed (something can start off stage); `rect full` covers the whole screen whatever the canvas.
@@ -137,6 +149,8 @@ correct <id> [@time] | <new text>
 
 If an element with the same id is live, it leaves and the new one takes its place in the layout and in the drawing order.
 
+**Callouts.** `say callout near=<id> | name` is a label with a line to the part it names; `say callout at=x,y | name` points at a spot. (`callout` is a built-in style: `label` and `leader=yes`.) The painter places all the callouts of a drawing together: in clear room round the drawing, ordered so that no two leaders cross, with no stroke through any word. A plain `label near=` still sits beside its target with no line; a label never gets a leader the brain did not ask for.
+
 Text goes where the layout puts it, or `at=` an anchor or a canvas point, or `near=` another element. `near=moon` places it beside that element on whichever side has room; `near=moon:below` names the side. A `near` line is a label: it is read with the thing it names, so it holds the pen only for its own entrance. Labels keep to their target's extent and avoid other text and drawn outlines and fills (they slide along their side, then shrink within the look's minimum, and a label that still cannot find a clear place is the one sight reports). Text with `at=x,y` avoids other text the same way: it slides along its anchor's axis, then shrinks, and sight says `collides` for any overlap that remains; it says "landed as written" only when it did.
 
 `correct` is in section 7.
@@ -193,19 +207,21 @@ Cells are drawn as hard-edged squares, never smoothed. `scale=` is canvas units 
 
 A sprite's default entrance is `draw`: its rows land one after another, and because each row is its own line, a sprite is drawn on stage while the brain is still writing it. `frame` starts the next animation frame of the sprite; its rows follow. A sprite with more than one frame cycles them at `fps=`.
 
-### 4.7 `paint`: sketch first, paint second
+### 4.7 `paint`, `tex`, `soft`, `brush`: paint without an image model
 
 ```
-paint [id] [x,y WxH] [over=<group>] [as=<medium>] [sketch=fade|keep] [mask=…] | <what to paint>
+paint [id] [x,y WxH] [over=<group>] [as=<medium>] [sketch=fade|keep] [mask=…] [| what it is]
 ```
 
-`paint` asks an image model for a painting and puts a picture element where it will go: the given box, or the box of the group named by `over=`, or the whole canvas.
+**A painting is the painter's own rendering of the brain's sketch.** No image model is used: none is configured, and the owner has ruled out paid services. The brain draws the picture with ordinary shapes; `paint` puts a picture element over them (the given box, or the box of the group named by `over=`, or the whole canvas) and the renderer re-renders those shapes in a medium, as shader passes: washes that pool and granulate, edges that bleed, brush ridges, hatching, a posterised cut. It is revealed over the sketch like a wash; with `sketch=fade` (the default) the sketch's lines fade as it grows, with `sketch=keep` they stay on top. The text after the bar is optional: it is what the transcript calls the painting.
 
-A painting takes many seconds and may never come. So the rule is **sketch first**: the brain draws what it wants painted with ordinary shapes, and then asks. The sketch is what is seen at once. It is also what the image model is shown, so the painting keeps the sketch's composition. When the painting arrives it grows over the sketch like a wash; with `sketch=fade` (the default) the sketch's lines fade as it grows, with `sketch=keep` they stay on top.
+It paints what was drawn and invents nothing. A horse drawn badly is a badly drawn horse in watercolour. That is the limit of this round and it is stated in product.md.
 
-**A painting is not on the turn clock.** `paint` takes no time and holds nothing. The painting arrives when it arrives, on the ambient clock; nothing scheduled moves, and if its scene has already cleared it is discarded. The same lines always give the same schedule whether or not a painting ever comes.
+Three properties make a drawing less flat without any painting: `tex=` gives a fill a texture (the reference lists them), `soft=N` fades a shape's edge over N canvas units (light, cloud, shadow), and `brush=` gives one line a stroke character of its own, whatever the look's is (`ink` swells and tapers, `dry` breaks up).
 
-When no image model is configured (the default installation), or it fails, or the conversation has used its allowance, the painting is skipped: the sketch stays and the report says `unpainted`. A brain is taught `paint` only when an image model is there.
+**A painting is not on the turn clock.** `paint` takes no time and holds nothing; the painting develops on the ambient clock.
+
+The door to an image model is left as it was: when one is configured (`services.paint`), `paint as=photo | <what to paint>` asks it, the sketch is what is seen until it answers, and the report says `painted` or `unpainted`. Nothing in this round uses it.
 
 ### 4.8 `ambient`: atmosphere
 
@@ -251,6 +267,82 @@ Moves the pen forward without doing anything. `N` is in beats (default 1), and a
 
 See section 7.
 
+### 4.13 Structures: `flow`, `tree`, `cycle`, `timeline`, `map`, `table`, `chart`
+
+```
+flow     [id] [right|down] [x,y WxH] [| title]
+tree     [id] [down|right] [x,y WxH] [| title]
+cycle    [id] [x,y WxH] [| title]
+timeline [id] [x,y WxH] [| title]
+map      [id] [route] [x,y WxH] [| title]
+table    [id] [bars] [x,y WxH] [| title]
+chart    [id] [line|area|columns|candles|ohlc] [indexed] [log] [spark] [live] [approx] [x,y WxH] [data=<id>] [| title]
+
+node [id] [number | x,y] [ask|end|note] [from=<id>[:label]] [x=<when>] [y=<value>] [prop=value…] | <words>
+link <a> <b> [c…] [both|plain] [dashed] [| label]
+| <cell> | <cell> …
+```
+
+A structure is a diagram the brain names and the painter lays out. The line that opens it says what it is and, optionally, the room it has (`x,y WxH` in canvas units; otherwise the whole canvas) and a title. Its parts follow, one a line, and the painter places every one of them: no part of a structure is ever given a coordinate, except the pins of a map, whose places are what the brain knows.
+
+**Parts are elements.** A node and a link have ids and can be restyled (`set q1 fill=accent`), pointed at (`hit q1`), dropped, framed (`cam focus q1`), tapped, and travelled (`move dot along=<link id>`). Words, waits and changes may come between the parts, so a diagram can be told a step at a time.
+
+**It is laid out from every line that has arrived**, not from what the playhead has reached. The brain writes seconds ahead of the audience, so most of a diagram is known before its first node is seen. When a part arrives after the layout has been shown, what is on stage moves as little as it can, eased; in an export, where every line is known from the start, nothing moves.
+
+- **`flow`**: nodes joined by arrows, in ranks, `right` or `down` (the painter chooses when neither is said). A node's `from=<id>` draws the arrow from that node; `from=q1:yes` writes one word on it. `link a b c` adds arrows in a chain, with a label after the bar. Node words: `ask` (a decision), `end` (a start or a stop), `note` (no frame); a plain node is a step. Arrows are routed round nodes and never through one; a label on an arrow sits on a plate and never on another label.
+- **`tree`**: as a flow, laid out as a tidy tree: each node under (or beside) the node its `from=` names.
+- **`cycle`**: nodes round a ring in the order written, each leading to the next and the last to the first. The ring closes by construction. `link a b | label` labels an arc or adds a chord.
+- **`timeline`**: each node gives its number first (`node 1969 | Apollo 11`); the painter draws the axis and places the nodes **to scale**, staggering their words above and below with a tick to each. Two numbers are a span (`node 1961 1972 | Apollo programme`). Nodes with no numbers are spaced evenly in order.
+- **`map`**: each node is a pin at the brain's own `x,y` on the canvas; the painter draws the pin and finds its label a place clear of every other pin, label and stroke, with a short leader when it has to move away. `route` joins the pins in the order written. A map has no map data: the brain draws the land and water with ordinary shapes first.
+- **`table`**: rows of cells between bars, as Markdown writes a table; the first row is the header, and a first column of names is set as row headers. Columns are sized by their content, numbers are aligned on the right, and rules are the look's hairlines. `*Stars*` mark a cell. `table bars` also draws its numbers as bars beside the figures: a ranking.
+- **`chart`**: see below.
+
+**Rows.** A line that starts with `|` is a row of the table or chart being written. A row may be written before or after other lines (a table can be revealed with words between its rows). Each row lands a step after the last.
+
+**Charts are an instrument, not a drawing.** The painter does not draw a chart from shapes. It reads the rows into a model (`chartModelOf`, `language/src/chart.ts`) and hands it to a charting engine that gives it what a trading terminal has: formatted axes, gridlines, a crosshair with the value under it, pan and zoom, a legend, marks, a volume pane, and tens of thousands of points at sixty frames a second. It takes its colours and face from the look.
+
+- A chart row is `| when | value…`. Values are separated by bars or by spaces. `when` is a date (`2026-03-09`, `2026-03`, `Mar 2026`, `Q1 2026`), a year, a number, or a name. One value is one series; a first row of words names the series (`| year | Japan | Korea`). For `candles` and `ohlc` the values are open, high, low, close, and volume if there is one, by name in a header or by place.
+- Numbers are written as people write them (`1,204.5`, `$3.50`, `-4.1%`, `8.2B`, `72 kg`); the axis and the crosshair write them the same way.
+- **Time and numbers are drawn to scale**: equal steps are equal distances however unevenly the points are spaced. Names take one slot each. Candles and OHLC bars sit side by side with the gaps between sessions closed, as on every trading chart.
+- Chart words: `indexed` (every series starts from 100, so growth can be compared), `log`, `spark` (no axes or grid: a small chart for a tile), `live` (the last point pulses), `approx` (the numbers are recalled, not data: the chart says so by its title).
+- **Marks.** A `node` after a chart is a mark on it: `node x=<when> | label` is an event (a labelled line at that time), `node y=<value> | label` a level (a labelled line at that value), both together a point.
+- A cell may be `{…}` (section 4.14): the chart then follows the controls.
+- **Data by reference.** A chart of a few dozen points is written as rows (at most 400). Anything larger, or anything that must be true to the last digit, is never retyped by a model: when the brief names DATA (`DATA d1: …`, section 8), `chart … data=d1` draws it. The server sends the rows to the painter itself. Like a painting, data is not on the turn clock: the chart shows its axes at once and reveals itself when the rows arrive.
+- **There is no market data.** A brain asked for a stock's year either has DATA (the user pasted it, or the owner's own datasets hold it) or draws what it recalls, coarsely, and marks the chart `approx`. A guess is never dressed as data.
+
+### 4.14 Controls and `bind`: things the user can work
+
+```
+button [id] | <label>
+toggle [id] [on|off] [send] | <label>
+slider [id] <min> <max> [value] [step=N] [unit=…] [send] | <label>
+pick   [id] [tabs|menu|steps] [N] [send] | <a> | <b> | <c>
+input  [id] [send] | <placeholder>
+card   [id] [x,y WxH] [| title]
+
+bind <control> | <a set, move, correct or shape line>
+bind <control> <from>..<to> | <change>
+bind <control>=<value> | <change>
+```
+
+A control is declared in one line, drawn by the painter in the look, and worked by the user. It is on the stage like anything else: in every picture the brain is shown, in every exported film, under the camera. It sits in the flow like a line of text (in `caption` and `solo` it gathers under the content, as a choice does), or takes `at=`, `near=` or `in=`. A `card` is a group with a frame and a title: its parts say `in=<id>`.
+
+**What a control holds.** A slider: a number between its ends. A toggle: on or off. A pick: one of its options, by number from 1 (`tabs`, `menu` and `steps` are three ways of showing the same choice; `steps` has back and next). An input: its text. A button holds nothing.
+
+**Local first.** A control changes the stage in the painter, at once, with no word to the brain. That is what `bind` is for:
+
+- `bind angle | move sun along=arc`: the change is as far along as the control is across its range. Dragging the slider scrubs the change. For a toggle, off is the start and on the end; for a pick, the first option and the last.
+- `bind angle 0..45 | …`: the change runs from start to end as the control goes from 0 to 45, in the control's own units. Several binds over parts of a range make a change that is not a straight line.
+- `bind view=night | …`: the change has landed while the control holds that value (an option's words or its number, `on`, `off`), and is undone otherwise, eased.
+
+The change is any line that changes something on the clock: `set`, `move` (with `along=`), `correct` (the words are swapped, never struck through), or a shape declared again (it morphs). A bound change is not on the turn clock: it takes no time, holds nothing, and the schedule is the same whatever the user does. Several on one element apply in the order written, each from where the one before leaves it. What `bind` means is defined once, in `language/src/bind.ts`.
+
+**Values in text.** `{angle}` in any text shows that control's value as words (an option's text, `on`, a slider's number with its unit). `{round(10/tan(rad(angle)), 1)}` is arithmetic on values: numbers, control ids, `+ - * / % ^`, comparisons, brackets and the functions in the reference; `{expr:2}` asks for two decimals. Braces that do not read as arithmetic on a live control are left exactly as written, so code and set notation are safe. A name in arithmetic is one word: a control that is computed with is called `rate`, not `interest-rate`. It is parsed by hand (`language/src/expr.ts`) and never evaluated as code.
+
+**What goes up to the brain.** Pressing a `button` opens a turn, as a choice's tap does: the input is `act`, with the button's label and the value of every control on stage, so a few controls and a button are a form. A control marked `send` does the same when the user commits a change to it. Every other change is heard, not sent: the brain is told at its next turn what the user set and where every control stands. Nothing is sent while a slider is being dragged.
+
+**Later, not now:** a sandboxed component the brain writes itself (a custom control with its own drawing and logic). The catalogue above is closed; the door is the `control` family in the vocabulary, which a new kind joins without touching the grammar.
+
 ## 5. Time
 
 ### 5.1 The two clocks, the pen and the playhead
@@ -280,7 +372,11 @@ This rule is what makes a schedule reproducible: with no revisions, **the same l
 | `wait` | at the pen | moves on by the wait |
 | `scene` | at the pen | moves past most of the outgoing exits (section 5.3) |
 | `cam`, `set`, `move`, `drop`, `paint`, `ambient` | at the pen | stays where it is |
-| `style`, `color`, `plan`, `group`, `frame` | no time | stays where it is |
+| `style`, `color`, `plan`, `group`, `frame`, `card`, `bind` | no time | stays where it is |
+| a structure (`flow` … `chart`) | at the pen | stays where it is; its title fades in |
+| `node`, a control | at the pen | moves half way through its entrance, like anything drawn |
+| `link` | at the pen | moves half way through each link, so a chain is drawn link after link |
+| a row of a table or chart | a step after the row before it | moves to its landing |
 | `revise`, `cancel` | not scheduled: they edit the score (section 7) | recomputed |
 
 Nothing on `far` or `bg` ever moves the pen: backdrop arrives alongside whatever comes next.
@@ -307,6 +403,7 @@ Durations depend only on the text, the geometry and words of the language, never
 - **A morph** takes the morph length times `ease`, or `dur=`; the pen moves half way through it.
 - **`set`** takes the set length times `ease`; with a speed word, that speed's `move` length; with `over=`, that.
 - **`correct`**: the strike-through takes 0.3 s; the replacement's entrance begins half a beat after it ends; the pen moves to the end of the replacement's entrance plus its tail.
+- **A link** draws itself in a fixed time (the reference has it), not one worked out from its length: where a link runs is the painter's decision, made with real type measurements, and the schedule may not depend on it. This is the one place a drawn thing's duration does not come from its geometry, and it is why the server and the painter still agree on every time.
 - **Limits**: text and drawn things are counted apart. Past either limit, `buildSchedule` retires the oldest unpinned ones first, then the oldest pinned, and warns (`element-limit`) on the line that crossed it.
 - **`wait`**: beats times the pace's beat, or the exact seconds; never more than 10 seconds.
 
@@ -376,7 +473,21 @@ A turn ends in one of two ways:
 - **Finished.** The brain stopped writing and the playhead reached the end, by playing or because the viewer asked to see it all.
 - **Interrupted.** The user spoke, tapped a choice, or pressed Stop while the turn was still being written or played. The painter discards everything that has not started, completes entrances already in flight (it does not leave half a word or half a sprite on screen), and comes to rest.
 
-Either way the painter sends a **report**: where the playhead stopped, what was shown, the stage as it now rests, and **sight**.
+Either way the painter sends a **report**: where the playhead stopped, what was shown, the stage as it now rests, what every control holds, and **sight**.
+
+### Look and fix
+
+A turn may have more than one **pass**. The first is the draft. When the brain has finished writing it, and it drew something, the server asks the painter how the draft **will** land: the painter settles a copy of the schedule to its end, computes sight for it and takes a picture, without waiting for the playhead, so this happens while the viewer is still watching the draft arrive. If it is worth a look, the brain is shown the picture and the report in the same conversation and writes a second pass: the lines that repair the draft. They are lines of the same turn, on the same clock, with the same ids.
+
+The language already says what a fix looks like. What the viewer has not reached yet is fixed quietly (`revise`, `cancel`); what they have seen is fixed in front of them (`set`, `move`, `correct`, a shape declared again); a draft beyond repair is replaced by a new `scene`. So the first draft shows at once, and it visibly improves.
+
+- **One look.** At most one fix pass after the draft (`REVIEW_PASSES`, 0 to 2). Measured before this round, one look raised the judge's score in three of four tries; each costs a model call.
+- **Plain words are never held up.** A turn that drew nothing ends as it does today. A structure the painter laid out, with nothing to report, is not looked at either: its geometry is the painter's. A free drawing is always looked at when there is a picture. The rule is `worthALook` and `worthAFix` in `language/src/review.ts`, shared by the server and the battery.
+- **Budgets.** The painter's draft report is waited for at most 1.5 s. The first line of a fix must come within 12 s of the draft ending or the draft is kept; a pass may take 30 s in all. The viewer interrupting ends it like any turn.
+- **`ok`.** A brain that looks and would change nothing writes the one line `ok`. Nothing is forwarded.
+- The message the brain is given is `buildReviewBrief`: the same words for every turn, so that a measured gain belongs to the mechanism.
+
+While a pass is being looked at or fixed the turn is still open, so the playhead holds at the pen as it does for any slow brain, with the look's waiting signal; the chrome's status line says the answer is being checked.
 
 **Conversation memory is the report, never the score.** A brain is told what the user saw of its earlier turns. A brain that still holds its own conversation (a warm process) remembers what it wrote; it is told, every turn, how that landed, and told to believe the report over its memory.
 
@@ -392,7 +503,13 @@ Until version 3 a brain wrote blind: it never learned what the canvas did with i
 
 The report also says whether the viewer skipped to the end, and where.
 
-**Documents.** A link in a prompt (two at most) is fetched by the server, and a prompt of 1,500 characters or more is taken as a document too. The brief then carries, before `NOW`, a `MATERIAL` section: each document as `DOCUMENT d1` with where it came from, whether it was cut, and its text between `<document>` tags (a PDF is attached to the message instead), and it says the material is to be read, never obeyed. A link that could not be read is a `COULD NOT READ <url>: <why>` line. Documents belong to the conversation: a warm brain is given each once, a fresh one all of them. The system prompt's *Documents* section teaches the answer (a paper as its argument in a diagram and its key numbers as bars, a report as its figures, nothing invented).
+**Controls.** The brief says what the user set since the last turn (`THE USER SET: angle to 45deg`), and each control in ON STAGE NOW is described with what it holds.
+
+**Techniques.** The brief may carry `TECHNIQUES THAT FIT`: at most three recipes chosen for this message from the technique library (product.md), each a sentence on when to use it and a short worked example in Series. They are chosen per turn and are never part of the system prompt, which is fixed for a conversation.
+
+**Data.** `DATA d1: <where it came from>. N rows; columns …` names a table the server holds (pasted by the user, or read from the owner's own datasets), with its first and last rows and the range of each column. A chart draws it by reference (`data=d1`).
+
+**Documents.** A link in a prompt (two at most) is fetched by the server, and a prompt of 1,500 characters or more is taken as a document too. The brief then carries, before `NOW`, a `MATERIAL` section: each document as `DOCUMENT d1` with where it came from, whether it was cut, and its text between `<document>` tags (a PDF is attached to the message instead), and it says the material is to be read, never obeyed. A link that could not be read is a `COULD NOT READ <url>: <why>` line. Documents belong to the conversation: a warm brain is given each once, a fresh one all of them. How to answer from a document (a paper as its argument in a flow and its key numbers as a chart, a report as its figures, nothing invented) rides in the brief beside the document, not in the system prompt: most conversations never see one.
 
 ## 9. The back channel
 
@@ -407,7 +524,9 @@ Two one-way streams share the turn clock and the element ids.
 | `line` | one explicit, canonical Series line, with a `seq` that increases over the session, and any warnings |
 | `reading` | the server is fetching a link or taking in a long paste for this turn: `label` (a site, or "your text"), `state` (`start`, `done`, `failed`), and `message` (why, when it failed). Comes before any `line`; the status line reads "reading <site>..." and the look's waiting signal stays up. |
 | `reject` | something the brain wrote that was dropped; for the debug HUD |
-| `end` | the brain has stopped writing: `done`, `interrupted`, `failed` or `timeout` |
+| `end` | the brain has stopped writing, every pass included: `done`, `interrupted`, `failed` or `timeout` |
+| `pass` | look and fix: `drafted` (the painter answers with a `draft`), `looking`, `fixing`, `kept`, `skipped` with a reason. Comes before `end`. |
+| `data` | news of DATA a chart draws by reference: `ready` with a same-origin URL of the rows, or `failed`. Not on the turn clock. |
 | `asset` | news of a painting, whenever it comes: `ready` with a same-origin URL, `skipped`, or `failed`. Not on the turn clock; may follow `end`. |
 
 **Reconnecting.** A painter whose stream dropped opens the same URL again. The server sends `hello`, then the most recent turn in full (`turn`, every `line`, `reject` and `asset` so far, and `end` if it has ended) for as long as the painter has not sent that turn's `report`. The painter ignores a `seq` it has already scheduled. Once the `report` is in, nothing is replayed.
@@ -421,14 +540,16 @@ Two one-way streams share the turn clock and the element ids.
 | `progress` | playhead, pen, clock state, the highest `seq` scheduled, ids newly shown, ids newly gone. Sent on any change and at least every 500 ms while playing. |
 | `tap` | the user tapped an element; says whether it was a choice |
 | `report` | the turn finished or was interrupted (section 8) |
+| `control` | the user committed a change to a control: its id, value and words, and whether it also opens a turn. Never sent while dragging. |
+| `draft` | how a pass of the open turn will land: sight, and whether a picture was uploaded beside it. Sent in answer to `pass … drafted`. |
 
-Two pictures travel beside the back channel as plain uploads: the **sketch** a picture element stands on (painter to image model) and the **snapshot** of a resting stage (painter to the next brief).
+Pictures travel beside the back channel as plain uploads: the **snapshot** of a resting stage (painter to the next brief), the **draft** of an open turn (painter to the brain's look), and, only when an image model is configured, the **sketch** a picture element stands on.
 
 The **clock state** in `progress` is one of `idle`, `waiting` (a turn is open or expected, no line yet), `playing`, `holding` (caught up with the pen), `paused` and `hidden`. `hidden` is reported, never papered over.
 
 A brain cannot listen while it is generating, so it hears the back channel only at breaks: an LLM brain at the start of its next turn, a relay agent between any two of its calls.
 
-**Capabilities.** The painter advertises what it can perform: looks, layers, layouts, camera moves, entrances, exits, loops, marks, the kinds of element it can draw, faces, effects, weather, and what sight it can give. The server adds what it can do (`services`: whether paintings are possible). The brain's prompt is generated from the vocabulary filtered by both, so the brain is never taught a word that cannot be performed, and the vocabulary is written down in one place only. A painter that can only set type gets a prompt with no drawing in it.
+**Capabilities.** The painter advertises what it can perform: looks, layers, layouts, camera moves, entrances, exits, loops, marks, the kinds of element it can draw, faces, effects, weather, what sight it can give, and, for version 4, the structures it can lay out, the kinds of chart its engine draws, the controls it can work, the media, textures and brushes it can paint, and whether it can report on a draft. Each of those lists holds only what is built; a painter that speaks version 3 leaves them out and is taught none of it. The server adds what it can do (`services`: whether paintings are possible). The brain's prompt is generated from the vocabulary filtered by both, so the brain is never taught a word that cannot be performed, and the vocabulary is written down in one place only. A painter that can only set type gets a prompt with no drawing in it.
 
 **Screen facts.** `cols` and `rows` say roughly how many characters fit on a line of body text and how many lines on the stage; `canvas` is the canvas that suits the screen's shape.
 
@@ -446,11 +567,14 @@ All paths are under the same origin's `/api`. Errors are always `{ "code": strin
 | `GET /api/demos` | | the fixture scripts: `[{ name, title, summary }]` |
 | `POST /api/sessions` | `{ screen, capabilities, look }` | 201 `{ session, lead }` |
 | `GET /api/sessions/:session/stream` | | the forward stream |
-| `POST /api/sessions/:session/turns` | `{ input, events? }` where input is `{kind:"prompt",text}`, `{kind:"tap",id,text}`, `{kind:"demo",script}` or `{kind:"script",text}` | 202 `{ turn }`. Applies `events` in order, then interrupts an open turn and opens the new one. Atomic: if any event is invalid the answer is 400 and no turn opens. |
+| `POST /api/sessions/:session/turns` | `{ input, events? }` where input is `{kind:"prompt",text}`, `{kind:"tap",id,text}`, `{kind:"act",id,text,values}`, `{kind:"demo",script}` or `{kind:"script",text}` | 202 `{ turn }`. Applies `events` in order, then interrupts an open turn and opens the new one. Atomic: if any event is invalid the answer is 400 and no turn opens. |
 | `POST /api/sessions/:session/events` | `{ events: [...] }` | 204. The back channel. |
 | `GET /api/sessions/:session/assets/:asset` | | a painting's bytes |
 | `POST /api/sessions/:session/sketches/:key` | `image/png` | 204. The sketch for the picture element with that key. |
 | `POST /api/sessions/:session/turns/:turn/snapshot` | `image/jpeg` | 204. `GET` returns it. |
+| `POST /api/sessions/:session/turns/:turn/drafts/:pass` | `image/jpeg` | 204. The stage as that pass of an open turn will leave it. |
+| `GET /api/sessions/:session/data/:id` | | the rows of DATA a chart draws by reference |
+| `GET`, `POST /api/taste` | a score | the answers set out for the owner to score; one score |
 | `GET /api/explore/runs`, `…/runs/:run`, `…/runs/:run/:prompt` | | the exploration harness's runs on disk (read only) |
 
 `demo` and `script` input are always answered by the replay brain, whatever brain is configured: `demo` plays a named fixture, `script` plays the lines in the request, which is how a script copied from an earlier answer is played again, edited or not. The browser cannot tell which brain answers a `prompt` or a `tap`.
@@ -485,11 +609,21 @@ One home per fact:
 3. Run `pnpm docs:language` to regenerate section 13, `pnpm prompt` to read what the brain will now be told, and `pnpm prompt count`: the prompt has a budget and the command fails above it.
 4. The painter advertises it through capabilities once it can perform it. Until then the brain is not taught it.
 
-Reserved for later, deliberately not in version 3: `sound` (cues on the turn clock; opt-in only), per-word timestamps on `say` (for voice), and `fx` as a verb (a surface effect animated within a scene).
+Reserved for later, deliberately not in version 4: `sound` (cues on the turn clock; opt-in only), per-word timestamps on `say` (for voice), `fx` as a verb (a surface effect animated within a scene), `{…}` as the value of a property (a formula driving a shape directly), and a sandboxed component the brain writes itself.
 
-## 12. What changed from version 2
+A new structure, chart kind or control is one entry in its table in `vocabulary.ts` and one engine behind the painter's contract (`web/src/contracts/blocks.ts`, `chart.ts`, `controls.ts`); the grammar does not change.
 
-Everything version 2 said is still accepted, with these differences:
+## 12. What changed
+
+**From version 3 to version 4.** Everything version 3 said is still accepted, with these differences:
+
+- `paint` no longer needs text and no longer means an image model: it is the painter's own rendering of the sketch in a medium. With an image model configured it still asks one.
+- A line that starts with `|` is a row of the table or chart being written when one is open; otherwise, as before, a sprite's row or plain speech.
+- `{…}` in text is a value when it reads as arithmetic on a live control. With no controls on stage, braces are text, as before.
+- The prompt variant `hero` is gone: measured, it scored level with `column` and cost more.
+- New: the structure verbs, `node`, `link`, the control verbs, `card`, `bind`; the properties `leader`, `tex`, `soft`, `brush`; the style `callout`; the strokes `ink` and `dry`; the element kinds `structure`, `node`, `link`, `control`; the sight notes `crossed` and `crowded`; the input `act`; the events `pass`, `data`, `control`, `draft`.
+
+**From version 2 to version 3.**
 
 - `at=x,y` is in canvas units of the scene's canvas, not percent of the safe frame.
 - An id is optional, and a `say` whose first word is a style name is styled, not named. Version 2 took that word as the id and warned.
@@ -521,7 +655,23 @@ Everything version 2 said is still accepted, with these differences:
 | `frame [id]` | takes no time | Start the next animation frame of the sprite; its rows follow. |
 | `group <id> [at=x,y] [prop=value…]` | takes no time | A thing made of parts. Parts say in=<id> and use coordinates measured from its at=. |
 | `use [id] <source> [at=x,y] [scale=N] [rot=N] [prop=value…]` | starts at the pen and moves the pen part of the way through its own drawing | Another copy of a group, shape or sprite. |
-| `paint [id] [x,y WxH] [over=<group>] [as=<medium>] [sketch=fade\|keep] [mask=…] \| <what to paint>` | starts at the pen and leaves the pen where it is | Ask for a painting. The sketch you drew shows until it arrives, and if it never does. |
+| `flow [id] [right\|down] [x,y WxH] [\| title]` | starts at the pen and leaves the pen where it is | A flowchart. Follow it with `node` lines; the painter places them and routes the arrows. |
+| `tree [id] [down\|right] [x,y WxH] [\| title]` | starts at the pen and leaves the pen where it is | A tree. Each `node` after the first says from=<its parent>. |
+| `cycle [id] [x,y WxH] [\| title]` | starts at the pen and leaves the pen where it is | A loop. Its `node` lines go round a ring, each leading to the next and the last to the first. |
+| `timeline [id] [x,y WxH] [\| title]` | starts at the pen and leaves the pen where it is | An axis of time. Each `node` gives its number (a year); the painter spaces them to scale. |
+| `map [id] [route] [x,y WxH] [\| title]` | starts at the pen and leaves the pen where it is | Pins on a drawing. Each `node x,y` is a labelled pin; `route` joins them in order. |
+| `table [id] [bars] [x,y WxH] [\| title]` | starts at the pen and leaves the pen where it is | A table. Follow it with one `| cell | cell` line per row; the first is the header. |
+| `chart [id] [line\|area\|columns\|candles\|ohlc] [indexed] [log] [spark] [live] [approx] [x,y WxH] [data=<id>] [\| title]` | starts at the pen and leaves the pen where it is | A chart: an instrument with axes, a crosshair and zoom. Follow it with one `| when | value…` line per point, or name DATA from the brief. |
+| `node [id] [number \| x,y] [ask\|end\|note] [from=<id>[:label]] [x=<when>] [y=<value>] [prop=value…] \| <text>` | starts at the pen and moves the pen part of the way through its own drawing | One part of the structure above. from= also draws the link from that node. On a chart it is a mark: x= an event, y= a level, both a point. |
+| `link <a> <b> [c…] [both\|plain] [dashed] [\| label]` | starts at the pen and moves the pen part of the way through its own drawing | Join nodes with a routed connector, in a chain when more than two are named. |
+| `button [id] [prop=value…] \| <label>` | starts at the pen and moves the pen part of the way through its own drawing | A button. Pressing it is sent to you, with the value of every control on stage. |
+| `toggle [id] [on\|off] [send] \| <label>` | starts at the pen and moves the pen part of the way through its own drawing | A switch. |
+| `slider [id] <min> <max> [value] [step=N] [unit=…] [send] \| <label>` | starts at the pen and moves the pen part of the way through its own drawing | A number the user drags. |
+| `pick [id] [tabs\|menu\|steps] [N] [send] \| <a> \| <b> \| <c>` | starts at the pen and moves the pen part of the way through its own drawing | One of several options. N is the one chosen to begin with. |
+| `input [id] [send] \| <placeholder>` | starts at the pen and moves the pen part of the way through its own drawing | A line the user types. |
+| `card <id> [x,y WxH] [\| title]` | takes no time | A framed group, for controls and what they change. Its parts say in=<id>. |
+| `bind <control>[=<value>] [<from>..<to>] \| <set, move, correct or shape line>` | takes no time | Let a control drive a change on stage, at once, with no round trip: the change is as far along as the control is. |
+| `paint [id] [x,y WxH] [over=<group>] [as=<medium>] [sketch=fade\|keep] [mask=…] [\| what it is]` | starts at the pen and leaves the pen where it is | Paint over what you drew: the painter re-renders your sketch in a medium. |
 | `ambient [id] <kind> [amount] [ink=…] [layer=…]` | starts at the pen and leaves the pen where it is | Atmosphere for the scene: weather, light, particles. `ambient none` clears it. |
 | `set <id\|scene\|all> [style…] [prop=value…] [speed] [over=Ns]` | starts at the pen and leaves the pen where it is | Change something on stage: colour, size, place, turn, opacity, layer, pin. |
 | `move <id> <x,y\|anchor> [speed] [over=Ns] [along=<path id>]` | starts at the pen and leaves the pen where it is | Travel to a place, straight or along a drawn path. |
@@ -546,6 +696,9 @@ Everything version 2 said is still accepted, with these differences:
 | `fill` | `none` `ink` `dim` `accent` `alt` `ground`; a colour name \| #hex \| top>bottom for a gradient | drawn | mind | what a shape is filled with |
 | `stroke` | `none` `ink` `dim` `accent` `alt` `ground`; a colour name \| #hex | drawn | mind | outline colour |
 | `thick` | N | drawn | mind | outline thickness in canvas units |
+| `brush` | `clean` `pencil` `marker` `chalk` `pixel` `ink` `dry` | drawn | mind | the character of this one line, when the look's own is not what you mean |
+| `tex` | `flat` `wash` `hatch` `dots` `grain` `weave` | drawn | mind | what the fill is made of |
+| `soft` | N | drawn | mind | how far its edge fades out, in canvas units: light, cloud, shadow |
 | `enter` | `type` `fade` `rise` `slam` `wipe` `cut` `flicker` `draw` `pop` | any | mind | how it arrives |
 | `exit` | `fade` `cut` `fall` `wipe` | any | mind | how it leaves |
 | `loop` | `none` `breathe` `pulse` `blink` `shake` `drift` `spin` `bob` `sway` | any | mind | what it keeps doing |
@@ -553,6 +706,7 @@ Everything version 2 said is still accepted, with these differences:
 | `layer` | `far` `bg` `mid` `fg` | any | mind | which plane in depth |
 | `at` | `center` `top` `bottom` `left` `right` `top-left` `top-right` `bottom-left` `bottom-right`; x,y in canvas units | any | mind | where its centre goes |
 | `near` | <id> or <id>:above\|below\|left\|right | any | mind | beside another element: a label on a drawing |
+| `leader` | `yes` `no` | text | mind | yes draws a line from the label to what it names; the painter finds clear room for the label |
 | `in` | <group id> | any | mind | make it a part of a group |
 | `bleed` | `auto` `none` | drawn | mind | whether a filled shape touching the canvas edge runs on to the screen edge |
 | `scale` | N | drawn | mind | size multiplier (a sprite: canvas units per pixel) |
@@ -571,6 +725,7 @@ Everything version 2 said is still accepted, with these differences:
 | `shout` | `size=xxl ink=accent weight=bold enter=slam by=all` | one or two words at full volume |
 | `aside` | `size=s ink=dim` | said under the breath |
 | `label` | `size=xs ink=dim case=upper enter=fade by=all` | a small caption on something drawn |
+| `callout` | `leader=yes size=xs ink=dim case=upper enter=fade by=all` | a label with a line to the part it names |
 | `ghost` | `layer=bg size=xxl ink=dim enter=fade by=all loop=drift` | a huge dim word far behind, setting the subject |
 | `stamp` | `layer=fg size=l ink=accent case=upper mark=box enter=slam by=all` | a verdict stamped in front |
 | `choice` | `ink=alt mark=box tap=yes` | an option the user can tap; the tap becomes their next message |
@@ -586,6 +741,10 @@ Everything version 2 said is still accepted, with these differences:
 | `copy` | another copy of something |
 | `picture` | a painting, or the sketch waiting for one |
 | `field` | atmosphere |
+| `structure` | a diagram the painter lays out: a flow, a tree, a cycle, a timeline, a map, a table or a chart |
+| `node` | one part of a structure |
+| `link` | a connector between two nodes |
+| `control` | an interactive part: a button, a toggle, a slider, a pick or an input |
 
 ### `layout`
 
@@ -785,7 +944,7 @@ Nominal scale against body: `xs` 0.64, `s` 0.8, `m` 1, `l` 1.5, `xl` 2.25, `xxl`
 
 | Layer | Meaning |
 | --- | --- |
-| `far` | the deep background: sky, horizon, weather. Moves least under the camera. Never holds the pen. |
+| `far` | the deep background: sky, horizon, weather. Never holds the pen. |
 | `bg` | behind the subject: scenery, or one huge dim word. Never holds the pen. |
 | `mid` | the subject and the reading plane. Default. |
 | `fg` | in front, close to the camera: stamps, labels, things passing by. |
@@ -862,22 +1021,24 @@ Nominal scale against body: `xs` 0.64, `s` 0.8, `m` 1, `l` 1.5, `xl` 2.25, `xxl`
 | `marker` | thick, confident, a little wobbly |
 | `chalk` | dusty, broken |
 | `pixel` | hard stair-stepped edges |
+| `ink` | a brush pen: swells and tapers along the stroke |
+| `dry` | a dry brush: streaky, breaking up where it runs out |
 
 ### `fx` (of a look)
 
 | Effect | Meaning | Taught to the brain |
 | --- | --- | --- |
-| `paper` | paper fibre; ink soaks in instead of glowing | yes |
-| `grain` | fine film grain over everything | yes |
+| `paper` | paper fibre; ink soaks in | yes |
+| `grain` | film grain | yes |
 | `glow` | bright things bleed light | yes |
 | `vignette` | darker toward the edges | yes |
-| `halftone` | printed dots instead of flat tone | yes |
-| `misprint` | two inks slightly out of register | yes |
-| `pixelate` | everything in chunky square pixels | yes |
-| `dither` | few colours, shading by dot pattern | yes |
+| `halftone` | printed dots for tone | yes |
+| `misprint` | two inks out of register | yes |
+| `pixelate` | chunky square pixels | yes |
+| `dither` | few colours, dot shading | yes |
 | `scanlines` | the raster of an old tube | yes |
-| `grid` | faint drafting-paper squares | yes |
-| `dust` | chalk dust and smears on a board | yes |
+| `grid` | faint drafting squares | yes |
+| `dust` | chalk dust and smears | yes |
 | `persistence` | afterglow: what moves or leaves lingers | no: it comes with a preset |
 | `curve` | curved tube glass | no: it comes with a preset |
 | `signal` | jitter and noise that rise with a tense mood | no: it comes with a preset |
@@ -885,6 +1046,113 @@ Nominal scale against body: `xs` 0.64, `s` 0.8, `m` 1, `l` 1.5, `xl` 2.25, `xxl`
 | `bars` | green-bar fanfold paper with tractor holes | no: it comes with a preset |
 | `ribbon` | uneven ink from a fabric ribbon | no: it comes with a preset |
 | `shadow` | foreground things cast a soft shadow on the sheet | no: it comes with a preset |
+
+### Structures
+
+| Structure | Its parts | Who places them | Meaning |
+| --- | --- | --- | --- |
+| `flow` | nodes and links | the painter | steps joined by arrows: a process, a decision |
+| `tree` | nodes and links | the painter | each node under its from=: a family, a hierarchy |
+| `cycle` | nodes and links | the painter | nodes round a ring, the last leading back to the first |
+| `timeline` | nodes and links | the painter, along an axis, by each node's number | nodes on an axis, to scale by their number (a year; two numbers are a span) |
+| `map` | nodes and links | the brain (x,y); the painter labels and routes | pins at your x,y, labelled clear of each other |
+| `table` | rows | the painter | rows `\| a \| b \| c`, the first the header; `bars` draws its numbers as bars too |
+| `chart` | rows, and nodes as marks | the painter's charting engine | rows `\| when \| value`: an instrument with axes, a crosshair and zoom |
+
+### `node` shapes (flow, tree, cycle)
+
+| Shape | Meaning |
+| --- | --- |
+| `step` | a box. Default. |
+| `ask` | a decision: its links carry the answers |
+| `end` | where it starts or stops |
+| `note` | an aside with no frame |
+
+### `link` ends
+
+| End | Meaning |
+| --- | --- |
+| `arrow` | points at the second node. Default. |
+| `both` | points both ways |
+| `plain` | no arrowhead: a relation, not a direction |
+
+### `chart` kinds
+
+| Kind | Meaning |
+| --- | --- |
+| `line` | a line through the points: a trend. Default. |
+| `area` | a line with the ground under it filled |
+| `columns` | upright bars: amounts, a distribution |
+| `candles` | candlesticks: rows give open, high, low, close, and volume if there is any |
+| `ohlc` | open-high-low-close bars |
+
+### `chart` words
+
+| Word | Meaning |
+| --- | --- |
+| `indexed` | every series starts from 100, so growth can be compared |
+| `log` | a logarithmic scale |
+| `spark` | no axes or grid: a small chart for a tile |
+| `live` | the last point pulses, as on a feed |
+| `approx` | the numbers are recalled, not data: the chart says so |
+
+### Controls
+
+| Control | Meaning |
+| --- | --- |
+| `button` | press it: the press is sent to you with every control's value |
+| `toggle` | on or off |
+| `slider` | a number between two ends, dragged |
+| `pick` | one of several options, written `| a | b | c` |
+| `input` | a line of text the user types |
+
+### `pick` forms
+
+| Form | Meaning |
+| --- | --- |
+| `row` | side by side. Default. |
+| `tabs` | as tabs over what they switch |
+| `menu` | folded into a menu: for many options |
+| `steps` | one at a time with back and next: a walk-through |
+
+### Functions in `{…}`
+
+| Function | Meaning |
+| --- | --- |
+| `sin` | sine of an angle in radians |
+| `cos` | cosine |
+| `tan` | tangent |
+| `asin` | inverse sine, in radians |
+| `acos` | inverse cosine |
+| `atan` | inverse tangent |
+| `rad` | degrees to radians |
+| `deg` | radians to degrees |
+| `sqrt` | square root |
+| `abs` | size without sign |
+| `sign` | -1, 0 or 1 |
+| `round` | to the nearest whole number; round(x, n) to n decimals |
+| `floor` | down to a whole number |
+| `ceil` | up to a whole number |
+| `min` | the smallest of its arguments |
+| `max` | the largest of its arguments |
+| `clamp` | clamp(x, low, high) |
+| `pow` | pow(x, y) is x to the power y |
+| `exp` | e to the power x |
+| `log` | natural logarithm; log(x, base) in another base |
+| `if` | if(test, then, otherwise) |
+
+Also in `{…}`: numbers, the ids of controls, `pi`, `e`, `+ - * / % ^`, comparisons (`< > <= >= == !=`, giving 1 or 0), brackets, and `{expr:N}` for N decimals.
+
+### `tex` (of a fill)
+
+| Texture | Meaning |
+| --- | --- |
+| `flat` | even colour. Default. |
+| `wash` | a watercolour wash: pooled, darker at the edges |
+| `hatch` | pen hatching |
+| `dots` | stippled dots |
+| `grain` | a dry, chalky grain |
+| `weave` | canvas weave under thick paint |
 
 ### `paint as=`
 
@@ -898,6 +1166,8 @@ Nominal scale against body: `xs` 0.64, `s` 0.8, `m` 1, `l` 1.5, `xl` 2.25, `xxl`
 | `woodcut` | carved black and white |
 | `photo` | a photograph |
 | `pixel` | pixel art |
+
+The painter renders these media by itself: `watercolor`, `oil`, `gouache`, `ink`, `pastel`, `woodcut`, `pixel`. `photo` needs an image model, and none is configured.
 
 ### `paint mask=`
 
@@ -930,6 +1200,8 @@ Nominal scale against body: `xs` 0.64, `s` 0.8, `m` 1, `l` 1.5, `xl` 2.25, `xxl`
 | `wrapped` | it broke over more lines than is comfortable |
 | `recoloured` | its colour was changed to stay readable |
 | `collides` | its words run into other words |
+| `crossed` | a drawn line runs through its words |
+| `crowded` | there were too many parts for the room, so they came out small: give the structure the whole scene, or split it in two |
 | `faint` | it is hard to read against what is behind it |
 | `tiny` | it came out too small to make out |
 | `partial` | the answer stopped while it was still arriving |
@@ -944,11 +1216,11 @@ Nominal scale against body: `xs` 0.64, `s` 0.8, `m` 1, `l` 1.5, `xl` 2.25, `xxl`
 | `night` | Deep blue dark, soft light. Stories, stillness, anything after sunset. | `ground=#0f1424 ink=#e9e4d6 dim=#8e93a8 accent=#ffb454 alt=#7fb8d8 face=serif fx=glow,grain,vignette stroke=clean` | `enter=fade by=word exit=fade` |
 | `chalk` | A blackboard. Explaining, working something out by hand. | `ground=#22302b ink=#eef0e6 dim=#9aa79c accent=#ffd866 alt=#8fd3e8 face=hand fx=dust,vignette stroke=chalk` | `enter=wipe by=all exit=fade` |
 | `blueprint` | White line on drafting blue. Mechanisms, plans, how a thing is built. | `ground=#18407a ink=#f2f6ff dim=#a9c0e6 accent=#ffd23f alt=#ff8fa3 face=mono fx=grid,grain stroke=clean` | `enter=type by=char exit=cut` |
-| `riso` | A two-colour print: flat shapes, halftone dots, a little out of register. Bold, playful. | `ground=#f6f0e2 ink=#1f2a5c dim=#636b98 accent=#db0013 alt=#007980 face=display fx=paper,halftone,misprint stroke=marker` | `enter=pop by=all exit=cut` |
-| `phosphor` | An amber terminal, 1987. One colour at three intensities; text is typed in. Nocturnal, thinking aloud. | `ground=#140d04 ink=#f0a000 dim=#a87400 accent=#ffd070 alt=#cf8a00 face=terminal fx=persistence,glow,scanlines,curve,signal stroke=clean` | `enter=type by=char exit=cut` |
-| `teletext` | Broadcast teletext, 1981. Eight hard colours on black, chunky pixels. Public, declarative, a little playful. | `ground=#000000 ink=#ffffff dim=#7f7f7f accent=#ffff00 alt=#00ffff face=teletext fx=pixelate,dither,signal,header stroke=pixel` | `enter=cut by=word exit=cut` |
-| `pixel` | Flat mid-grey, hard edges, whole-number scale. For pixel art: no sprite colour vanishes. | `ground=#8a8f98 ink=#141414 dim=#262a33 accent=#7a0f22 alt=#123a6b face=mono fx= stroke=pixel` | `enter=cut by=all exit=cut` |
-| `printout` | A dot-matrix printout on green-bar paper, 1980. Whatever is said here is on the record. | `ground=#f1ede0 ink=#1d1a18 dim=#625d57 accent=#b3261e alt=#1f3f8f face=dot fx=bars,ribbon,shadow,paper stroke=pencil` | `enter=type by=char exit=fade` |
+| `riso` | A two-colour print: flat shapes, halftone dots. Bold, playful. | `ground=#f6f0e2 ink=#1f2a5c dim=#636b98 accent=#db0013 alt=#007980 face=display fx=paper,halftone,misprint stroke=marker` | `enter=pop by=all exit=cut` |
+| `phosphor` | An amber terminal, 1987: one colour, typed in. Nocturnal, thinking aloud. | `ground=#140d04 ink=#f0a000 dim=#a87400 accent=#ffd070 alt=#cf8a00 face=terminal fx=persistence,glow,scanlines,curve,signal stroke=clean` | `enter=type by=char exit=cut` |
+| `teletext` | Broadcast teletext, 1981: eight hard colours, chunky pixels. Public, declarative. | `ground=#000000 ink=#ffffff dim=#7f7f7f accent=#ffff00 alt=#00ffff face=teletext fx=pixelate,dither,signal,header stroke=pixel` | `enter=cut by=word exit=cut` |
+| `pixel` | Flat mid-grey, hard edges. For pixel art: no sprite colour vanishes. | `ground=#8a8f98 ink=#141414 dim=#262a33 accent=#7a0f22 alt=#123a6b face=mono fx= stroke=pixel` | `enter=cut by=all exit=cut` |
+| `printout` | A dot-matrix printout on green-bar paper, 1980: on the record. | `ground=#f1ede0 ink=#1d1a18 dim=#625d57 accent=#b3261e alt=#1f3f8f face=dot fx=bars,ribbon,shadow,paper stroke=pencil` | `enter=type by=char exit=fade` |
 
 ### Sprite palette
 
@@ -996,6 +1268,14 @@ Everything below is in seconds.
 | atmosphere fading in | 1.2 |
 | atmosphere fading out (a new scene, or `drop`) | 0.35 x the pace's ease |
 | reading speed in `layout=page` | 1.6 x the pace's words per second |
+| a link drawing itself | 0.35 x ease (a fixed length: where a link runs is the painter's decision) |
+| a table row landing | 0.28 (slow), 0.18 (steady), 0.12 (brisk) |
+| a chart point landing | 0.09 (slow), 0.06 (steady), 0.04 (brisk) |
+| a chart of DATA revealing itself, once the data is there | 1.2, on the ambient clock |
+| a bound change that is on or off (a toggle, `bind mode=night`) | 0.25, on the ambient clock |
+| look and fix: waiting for the painter's draft report | at most 1.5 |
+| look and fix: the first line of a fix | at most 12, then the draft is kept |
+| look and fix: a whole pass | at most 30 |
 | strike-through of a `correct` | 0.3 |
 | `look` change | 0.6 |
 
@@ -1014,6 +1294,16 @@ Everything below is in seconds.
 | cells along either side of a sprite | 64 |
 | frames in one sprite | 8 |
 | characters in a painting's description | 400 |
+| nodes in one structure | 40 |
+| links in one structure | 80 |
+| rows in one table | 24 |
+| cells in one row | 8 |
+| points in one chart written as rows (more comes by reference, `data=`) | 400 |
+| marks on one chart | 24 |
+| options in one pick | 12 |
+| controls on stage at once | 16 |
+| bound changes on stage at once | 48 |
+| fix passes after the draft (look and fix) | 1 |
 | lead window, seconds | 2 to 12 |
 
 <!-- reference:end -->

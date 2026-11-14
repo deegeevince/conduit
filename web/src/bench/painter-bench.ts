@@ -236,7 +236,7 @@ function build(): Painter {
       while (sketches.children.length > 6) sketches.firstElementChild?.remove();
     }),
   );
-  next.setServices({ paint: paintBox.checked, sight: 'snapshot' });
+  next.setServices({ paint: paintBox.checked, sight: 'snapshot', review: false });
   painter = next;
   window.__painter = next;
   return next;
@@ -302,7 +302,7 @@ presetSelect.addEventListener('change', () => {
   renderer.resize(viewport());
 });
 lookSelect.addEventListener('change', build);
-paintBox.addEventListener('change', () => painter?.setServices({ paint: paintBox.checked, sight: 'snapshot' }));
+paintBox.addEventListener('change', () => painter?.setServices({ paint: paintBox.checked, sight: 'snapshot', review: false }));
 showAllButton.addEventListener('click', () => painter?.showAll());
 anticipateButton.addEventListener('click', () => {
   const choice = painter?.snapshot().elements.find((element) => element.tappable);

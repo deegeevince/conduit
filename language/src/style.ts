@@ -18,6 +18,7 @@ import type {
   Size,
   StayWord,
   StrokeCharacter,
+  Texture,
   Weight,
 } from './vocabulary';
 
@@ -118,6 +119,7 @@ export const BUILTIN_STYLES = {
   shout: { gist: 'one or two words at full volume', props: { size: 'xxl', weight: 'bold', ink: 'accent', enter: 'slam', by: 'all' } },
   aside: { gist: 'said under the breath', props: { size: 's', ink: 'dim' } },
   label: { gist: 'a small caption on something drawn', props: { size: 'xs', ink: 'dim', case: 'upper', enter: 'fade', by: 'all' } },
+  callout: { gist: 'a label with a line to the part it names', props: { size: 'xs', ink: 'dim', case: 'upper', enter: 'fade', by: 'all', leader: true } },
   ghost: { gist: 'a huge dim word far behind, setting the subject', props: { layer: 'bg', size: 'xxl', ink: 'dim', enter: 'fade', by: 'all', loop: 'drift' } },
   stamp: { gist: 'a verdict stamped in front', props: { layer: 'fg', size: 'l', ink: 'accent', mark: 'box', case: 'upper', enter: 'slam', by: 'all' } },
   choice: { gist: 'an option the user can tap; the tap becomes their next message', props: { tap: true, mark: 'box', ink: 'alt' } },
@@ -155,6 +157,14 @@ export interface ElementStyle {
   readonly bleed: Bleed;
   /** outline thickness in canvas units; null: the look's own */
   readonly thick: number | null;
+  /** the character of this one line; null: the look's own */
+  readonly brush: StrokeCharacter | null;
+  /** what the fill is made of */
+  readonly tex: Texture;
+  /** how far the edge fades out, canvas units; 0 is a hard edge */
+  readonly soft: number;
+  /** a label with a line to what it names; the painter places such labels together, in clear room, with lines that do not cross */
+  readonly leader: boolean;
   /** null: the painter sizes it (a sprite: a share of the canvas; anything else: as drawn) */
   readonly scale: number | null;
   /** degrees, clockwise */
@@ -252,6 +262,8 @@ function defaultEnter(props: ResolvedProps, context: StyleContext): { enter: Ent
   if (kind === 'shape') return { enter: props.stroke === 'none' || (props.stroke === undefined && props.fill !== undefined && props.fill !== 'none') ? 'fade' : 'draw', by: 'all' };
   if (kind === 'sprite') return { enter: 'draw', by: 'all' };
   if (kind === 'group') return { enter: 'cut', by: 'all' };
+  // A connector draws itself from the node it leaves to the node it reaches; everything else laid out by the painter fades in where it will rest.
+  if (kind === 'link') return { enter: 'draw', by: 'all' };
   return { enter: 'fade', by: 'all' };
 }
 
@@ -282,6 +294,10 @@ export function completeStyle(props: ResolvedProps, context: StyleContext): Elem
     stroke,
     bleed: props.bleed ?? 'auto',
     thick: props.thick ?? null,
+    brush: props.brush ?? null,
+    tex: props.tex ?? 'flat',
+    soft: props.soft ?? 0,
+    leader: props.leader ?? false,
     scale: props.scale ?? null,
     rot: props.rot ?? 0,
     opacity: props.opacity ?? 1,
@@ -325,6 +341,10 @@ export function patchStyle(style: ElementStyle, props: ResolvedProps): ElementSt
     ...(props.stroke !== undefined && { stroke: props.stroke }),
     ...(props.bleed !== undefined && { bleed: props.bleed }),
     ...(props.thick !== undefined && { thick: props.thick }),
+    ...(props.brush !== undefined && { brush: props.brush }),
+    ...(props.tex !== undefined && { tex: props.tex }),
+    ...(props.soft !== undefined && { soft: props.soft }),
+    ...(props.leader !== undefined && { leader: props.leader }),
     ...(props.scale !== undefined && { scale: props.scale }),
     ...(props.rot !== undefined && { rot: props.rot }),
     ...(props.opacity !== undefined && { opacity: props.opacity }),

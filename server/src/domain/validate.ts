@@ -1,7 +1,25 @@
 // The edge between untrusted JSON and the typed domain. Every check names the field it found wrong.
 
-import { ALIGNS, CANVAS_NAMES, DEMOS, ELEMENT_KINDS, LAYOUTS, LOOK_IDS, MOODS, NO_SIGHT, PACES, SIGHT_ITEMS, SIGHT_NOTE } from '@conduit/language';
-import type { BackEvent, CanvasBox, Capabilities, PlacedBox, ClockState, CreateSessionRequest, StartTurnRequest, LookId, ScreenFacts, Sight, SightItem, SightNote, StageBase, TurnInput, TurnReport } from '@conduit/language';
+import { ALIGNS, BACK_EVENT_TYPES, CANVAS_NAMES, DEMOS, ELEMENT_KINDS, LAYOUTS, LIMITS, LOOK_IDS, MOODS, NO_SIGHT, NO_V4_CAPABILITIES, PACES, SIGHT_ITEMS, SIGHT_NOTE } from '@conduit/language';
+import type {
+  BackEvent,
+  CanvasBox,
+  Capabilities,
+  ControlValue,
+  ControlValues,
+  PlacedBox,
+  ClockState,
+  CreateSessionRequest,
+  StartTurnRequest,
+  LookId,
+  ScreenFacts,
+  Sight,
+  SightItem,
+  SightNote,
+  StageBase,
+  TurnInput,
+  TurnReport,
+} from '@conduit/language';
 import { errors } from '../errors';
 import { SERVER_LIMITS } from './session';
 
@@ -79,7 +97,34 @@ function capabilities(value: unknown): Capabilities {
     fx: strings(raw.fx, 'capabilities.fx') as unknown as Capabilities['fx'],
     ambient: strings(raw.ambient, 'capabilities.ambient') as unknown as Capabilities['ambient'],
     sight: oneOf(raw.sight, ['none', 'report', 'snapshot'] as const, 'capabilities.sight'),
+    // A painter that speaks Series 3 leaves these out: it is then taught none of what they gate.
+    structures: raw.structures === undefined ? NO_V4_CAPABILITIES.structures : (strings(raw.structures, 'capabilities.structures') as unknown as Capabilities['structures']),
+    charts: raw.charts === undefined ? NO_V4_CAPABILITIES.charts : (strings(raw.charts, 'capabilities.charts') as unknown as Capabilities['charts']),
+    controls: raw.controls === undefined ? NO_V4_CAPABILITIES.controls : (strings(raw.controls, 'capabilities.controls') as unknown as Capabilities['controls']),
+    media: raw.media === undefined ? NO_V4_CAPABILITIES.media : (strings(raw.media, 'capabilities.media') as unknown as Capabilities['media']),
+    textures: raw.textures === undefined ? NO_V4_CAPABILITIES.textures : (strings(raw.textures, 'capabilities.textures') as unknown as Capabilities['textures']),
+    brushes: raw.brushes === undefined ? NO_V4_CAPABILITIES.brushes : (strings(raw.brushes, 'capabilities.brushes') as unknown as Capabilities['brushes']),
+    drafts: raw.drafts === undefined ? NO_V4_CAPABILITIES.drafts : bool(raw.drafts, 'capabilities.drafts'),
   };
+}
+
+const CONTROL_TEXT_CHARS = 400;
+
+function controlValue(value: unknown, what: string): ControlValue {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') return value.slice(0, CONTROL_TEXT_CHARS);
+  throw errors.badRequest(`${what} must be a number, true or false, or text`);
+}
+
+/** Every control's value by id. A stage holds at most `LIMITS.controls`; a few more are let through so that a control just dropped does not fail the request. */
+function controlValues(value: unknown, what: string): ControlValues {
+  const raw = obj(value, what);
+  const entries = Object.entries(raw);
+  if (entries.length > LIMITS.controls * 4) throw errors.badRequest(`${what} holds more than ${LIMITS.controls * 4} controls`);
+  const out: Record<string, ControlValue> = {};
+  for (const [id, held] of entries) out[id.slice(0, LIMITS.name)] = controlValue(held, `${what}.${id}`);
+  return out;
 }
 
 export function parseCreateSession(body: unknown): CreateSessionRequest {
@@ -89,7 +134,10 @@ export function parseCreateSession(body: unknown): CreateSessionRequest {
 
 export function parseTurnInput(body: unknown): TurnInput {
   const input = obj(obj(body, 'body').input, 'input');
-  const kind = oneOf(input.kind, ['prompt', 'tap', 'demo', 'script'] as const, 'input.kind');
+  const kind = oneOf(input.kind, ['prompt', 'tap', 'demo', 'script', 'act'] as const, 'input.kind');
+  if (kind === 'act') {
+    return { kind, id: text(input.id, 'input.id').slice(0, LIMITS.name), text: text(input.text, 'input.text').slice(0, CONTROL_TEXT_CHARS), values: controlValues(input.values ?? {}, 'input.values') };
+  }
   if (kind === 'script') {
     const source = text(input.text, 'input.text');
     if (source.trim() === '') throw errors.badRequest('input.text must not be empty');
@@ -128,6 +176,13 @@ function sheet(value: unknown, what: string): Obj {
   const raw = value === undefined ? {} : obj(value, what);
   if (JSON.stringify(raw).length > STAGE_SHEET_BYTES) throw errors.badRequest(`${what} is larger than ${STAGE_SHEET_BYTES} bytes`);
   return raw;
+}
+
+/** The changes a control drives on an element: carried as the painter sent them, bounded in number and size. The painter and the schedule are the only readers. */
+function driven(value: unknown, what: string): NonNullable<StageBase['elements'][number]['driven']> {
+  const changes = list(value, what).slice(0, LIMITS.binds);
+  if (JSON.stringify(changes).length > STAGE_SHEET_BYTES) throw errors.badRequest(`${what} is larger than ${STAGE_SHEET_BYTES} bytes`);
+  return changes.map((item, index) => obj(item, `${what}[${index}]`)) as unknown as NonNullable<StageBase['elements'][number]['driven']>;
 }
 
 function stage(value: unknown): StageBase {
@@ -173,6 +228,7 @@ function stage(value: unknown): StageBase {
         struck: bool(element.struck, `${what}.struck`),
         replaces: link('replaces'),
         ...(element.placed === undefined || element.placed === null ? {} : { placed: canvasBox(element.placed, `${what}.placed`) }),
+        ...(element.driven === undefined || element.driven === null ? {} : { driven: driven(element.driven, `${what}.driven`) }),
       };
     }),
   };
@@ -253,6 +309,7 @@ function report(value: unknown): TurnReport {
     sight: sight(raw.sight),
     skippedAt: raw.skippedAt === null || raw.skippedAt === undefined ? null : num(raw.skippedAt, 'report.skippedAt'),
     ...(placed === undefined ? {} : { placed }),
+    ...(raw.controls === undefined || raw.controls === null ? {} : { controls: controlValues(raw.controls, 'report.controls') }),
   };
 }
 
@@ -260,7 +317,7 @@ const CLOCK_STATES: readonly ClockState[] = ['idle', 'waiting', 'playing', 'hold
 
 function backEvent(value: unknown, index: number): BackEvent {
   const raw = obj(value, `events[${index}]`);
-  const type = oneOf(raw.type, ['ready', 'started', 'progress', 'tap', 'report'] as const, `events[${index}].type`);
+  const type = oneOf(raw.type, BACK_EVENT_TYPES, `events[${index}].type`);
   switch (type) {
     case 'ready':
       return { type, screen: screen(raw.screen), capabilities: capabilities(raw.capabilities), look: look(raw.look, 'look') };
@@ -288,6 +345,27 @@ function backEvent(value: unknown, index: number): BackEvent {
       };
     case 'report':
       return { type, report: report(raw.report) };
+    case 'control':
+      return {
+        type,
+        turn: raw.turn === null ? null : text(raw.turn, 'turn'),
+        id: text(raw.id, 'id').slice(0, LIMITS.name),
+        value: controlValue(raw.value, 'value'),
+        text: text(raw.text, 'text').slice(0, CONTROL_TEXT_CHARS),
+        playhead: num(raw.playhead, 'playhead'),
+        send: bool(raw.send, 'send'),
+      };
+    case 'draft': {
+      const placed = placedBoxes(raw.placed);
+      return {
+        type,
+        turn: text(raw.turn, 'turn'),
+        pass: Math.max(1, Math.round(num(raw.pass, 'pass'))),
+        sight: sight(raw.sight),
+        ...(placed === undefined ? {} : { placed }),
+        snapshot: bool(raw.snapshot, 'snapshot'),
+      };
+    }
   }
 }
 

@@ -3,9 +3,14 @@
 import { existsSync } from 'node:fs';
 import { resolve as resolvePath } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parsePromptVariant } from '@conduit/language';
-import type { PromptVariant } from '@conduit/language';
+import { parsePromptVariant, REVIEW_POLICY } from '@conduit/language';
+import type { PromptVariant, ReviewPolicy } from '@conduit/language';
+import type { DatasetSettings } from './domain/datasets';
+import type { LibrarySettings } from './domain/techniques';
 import type { LogLevel } from './log';
+
+/** The Conduit root block on the Series account: every technique hangs off it. */
+export const CONDUIT_ROOT_BLOCK = '00000000-0000-4000-8000-000000000000';
 
 export type BrainSettings =
   | { readonly kind: 'relay'; readonly idleTimeoutMs: number }
@@ -59,8 +64,14 @@ export interface Env {
   readonly images: ImageSettings;
   /** what a brain is told about how its last answer landed: the structured report, or that and a picture */
   readonly sight: 'report' | 'snapshot';
-  /** how the system prompt teaches a diagram (`PROMPT_VARIANT`: column | hero) */
+  /** which teaching of the system prompt (`PROMPT_VARIANT`); one exists */
   readonly promptVariant: PromptVariant;
+  /** look and fix: whether the brain is shown its draft, how many times, and how long anything may take (`REVIEW`, `REVIEW_PASSES`, `REVIEW_*_MS`) */
+  readonly review: ReviewPolicy;
+  /** where techniques come from (`LIBRARY`, `REMOTE_*`, `LIBRARY_*`) */
+  readonly library: LibrarySettings;
+  /** whether the owner's own datasets may be read for a chart (`DATASETS`, `DATASETS_*`); off unless asked for */
+  readonly datasets: DatasetSettings;
   /** absolute path of the folder session logs are written to; null when LOG_DIR=off */
   readonly logDir: string | null;
   /** paintings a conversation may ask the image model for; 0 when there is no image model */
@@ -194,8 +205,51 @@ export function loadEnv(source: Source): Env {
 
   const sight = choice('SIGHT', ['report', 'snapshot'] as const, 'snapshot');
   const root = fileURLToPath(new URL('../../', import.meta.url));
+
+  const review: ReviewPolicy = {
+    enabled: choice('REVIEW', ['on', 'off'] as const, 'on') === 'on',
+    passes: integer('REVIEW_PASSES', REVIEW_POLICY.passes, 0, 2),
+    minDrawn: REVIEW_POLICY.minDrawn,
+    draftWaitMs: integer('REVIEW_DRAFT_WAIT_MS', REVIEW_POLICY.draftWaitMs, 100, 10_000),
+    firstLineMs: integer('REVIEW_FIRST_LINE_MS', REVIEW_POLICY.firstLineMs, 1_000, 120_000),
+    passMs: integer('REVIEW_PASS_MS', REVIEW_POLICY.passMs, 2_000, 300_000),
+  };
+
+  // Only the selected library's settings are read, exactly as with brains. The seed in the repository is under all of them.
+  const seedDir = resolvePath(root, 'techniques/seed');
+  const overlayDir = text('LIBRARY_OVERLAY') === undefined ? null : resolvePath(root, text('LIBRARY_OVERLAY') ?? '');
+  const libraryKind = choice('LIBRARY', ['remote', 'seed', 'none'] as const, 'remote');
+  let library: LibrarySettings = { kind: 'none' };
+  if (libraryKind === 'seed') library = { kind: 'seed', seedDir, overlayDir };
+  else if (libraryKind === 'remote') {
+    library = {
+      kind: 'remote',
+      bin: text('REMOTE_BIN') ?? 'remote',
+      actor: text('REMOTE_ACTOR') ?? 'series@example.invalid',
+      env: choice('REMOTE_ENV', ['prod', 'local'] as const, 'prod'),
+      root: text('LIBRARY_ROOT') ?? CONDUIT_ROOT_BLOCK,
+      seedDir,
+      cacheDir: resolvePath(root, 'techniques/.cache'),
+      overlayDir,
+      refreshMs: integer('LIBRARY_REFRESH_MS', 600_000, 10_000, 86_400_000),
+      timeoutMs: integer('LIBRARY_TIMEOUT_MS', 8_000, 500, 60_000),
+    };
+  }
   const logDir = resolveLogDir(source);
   const exploreDir = resolvePath(root, 'explore');
+
+  // The owner's own data: read only when switched on, and never from the account the techniques live on.
+  const datasets: DatasetSettings =
+    choice('DATASETS', ['none', 'remote'] as const, 'none') === 'remote'
+      ? {
+          kind: 'remote',
+          bin: text('REMOTE_BIN') ?? 'remote',
+          actor: text('DATASETS_ACTOR') ?? null,
+          env: choice('REMOTE_ENV', ['prod', 'local'] as const, 'prod'),
+          timeoutMs: integer('DATASETS_TIMEOUT_MS', 4_000, 500, 30_000),
+          refreshMs: integer('DATASETS_REFRESH_MS', 900_000, 10_000, 86_400_000),
+        }
+      : { kind: 'none' };
 
   let webDist: string | null = null;
   if (production) {
@@ -204,5 +258,5 @@ export function loadEnv(source: Source): Env {
   }
 
   if (problems.length > 0) throw new EnvError(problems);
-  return { production, host, trustedHosts, port, logLevel, brain, images, sight, promptVariant: parsePromptVariant(text('PROMPT_VARIANT')), logDir, readLinks: choice('READ_LINKS', ['on', 'off'] as const, 'on') === 'on', paintingsPerSession: images.kind === 'none' ? 0 : images.maxPerSession, exploreDir, webDist };
+  return { production, host, trustedHosts, port, logLevel, brain, images, sight, promptVariant: parsePromptVariant(text('PROMPT_VARIANT')), review, library, datasets, logDir, readLinks: choice('READ_LINKS', ['on', 'off'] as const, 'on') === 'on', paintingsPerSession: images.kind === 'none' ? 0 : images.maxPerSession, exploreDir, webDist };
 }

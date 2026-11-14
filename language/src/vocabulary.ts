@@ -4,14 +4,14 @@
 // because the gloss is what the brain reads when it chooses. Glosses are kept
 // short on purpose: every one of them is paid for in the brain's prompt.
 
-export const LANGUAGE = { name: 'Series', version: 3 } as const;
+export const LANGUAGE = { name: 'Series', version: 4 } as const;
 
 function keysOf<T extends Record<string, unknown>>(table: T): readonly (keyof T & string)[] {
   return Object.keys(table) as (keyof T & string)[];
 }
 
 export const LAYER = {
-  far: 'the deep background: sky, horizon, weather. Moves least under the camera. Never holds the pen.',
+  far: 'the deep background: sky, horizon, weather. Never holds the pen.',
   bg: 'behind the subject: scenery, or one huge dim word. Never holds the pen.',
   mid: 'the subject and the reading plane. Default.',
   fg: 'in front, close to the camera: stamps, labels, things passing by.',
@@ -299,6 +299,8 @@ export const STROKE = {
   marker: 'thick, confident, a little wobbly',
   chalk: 'dusty, broken',
   pixel: 'hard stair-stepped edges',
+  ink: 'a brush pen: swells and tapers along the stroke',
+  dry: 'a dry brush: streaky, breaking up where it runs out',
 } as const;
 export type StrokeCharacter = keyof typeof STROKE;
 export const STROKES = keysOf(STROKE);
@@ -310,17 +312,17 @@ export const STROKES = keysOf(STROKE);
  * works, but the brain's prompt does not spend words on it.
  */
 export const FX = {
-  paper: { gist: 'paper fibre; ink soaks in instead of glowing', taught: true },
-  grain: { gist: 'fine film grain over everything', taught: true },
+  paper: { gist: 'paper fibre; ink soaks in', taught: true },
+  grain: { gist: 'film grain', taught: true },
   glow: { gist: 'bright things bleed light', taught: true },
   vignette: { gist: 'darker toward the edges', taught: true },
-  halftone: { gist: 'printed dots instead of flat tone', taught: true },
-  misprint: { gist: 'two inks slightly out of register', taught: true },
-  pixelate: { gist: 'everything in chunky square pixels', taught: true },
-  dither: { gist: 'few colours, shading by dot pattern', taught: true },
+  halftone: { gist: 'printed dots for tone', taught: true },
+  misprint: { gist: 'two inks out of register', taught: true },
+  pixelate: { gist: 'chunky square pixels', taught: true },
+  dither: { gist: 'few colours, dot shading', taught: true },
   scanlines: { gist: 'the raster of an old tube', taught: true },
-  grid: { gist: 'faint drafting-paper squares', taught: true },
-  dust: { gist: 'chalk dust and smears on a board', taught: true },
+  grid: { gist: 'faint drafting squares', taught: true },
+  dust: { gist: 'chalk dust and smears', taught: true },
   persistence: { gist: 'afterglow: what moves or leaves lingers', taught: false },
   curve: { gist: 'curved tube glass', taught: false },
   signal: { gist: 'jitter and noise that rise with a tense mood', taught: false },
@@ -345,6 +347,25 @@ export const MEDIUM = {
 } as const;
 export type Medium = keyof typeof MEDIUM;
 export const MEDIUMS = keysOf(MEDIUM);
+/**
+ * The media the painter renders by itself, as shader passes over the sketch the
+ * brain drew: no image model, nothing fetched. It re-renders the brain's own
+ * shapes in that medium; it invents nothing that was not drawn. `photo` is the
+ * one medium only an image model can make.
+ */
+export const PROCEDURAL_MEDIA: readonly Medium[] = ['watercolor', 'oil', 'gouache', 'ink', 'pastel', 'woodcut', 'pixel'];
+
+/** What a fill is made of, beyond flat colour. Procedural: drawn by the painter's shaders in the fill's own colour, fixed to the surface so nothing shimmers. */
+export const TEXTURE = {
+  flat: 'even colour. Default.',
+  wash: 'a watercolour wash: pooled, darker at the edges',
+  hatch: 'pen hatching',
+  dots: 'stippled dots',
+  grain: 'a dry, chalky grain',
+  weave: 'canvas weave under thick paint',
+} as const;
+export type Texture = keyof typeof TEXTURE;
+export const TEXTURES = keysOf(TEXTURE);
 
 export const MASK = {
   none: 'the whole rectangle. Default.',
@@ -437,7 +458,7 @@ export const LOOK = {
     exit: 'cut',
   },
   riso: {
-    gist: 'A two-colour print: flat shapes, halftone dots, a little out of register. Bold, playful.',
+    gist: 'A two-colour print: flat shapes, halftone dots. Bold, playful.',
     ground: '#f6f0e2',
     ink: '#1f2a5c',
     dim: '#636b98',
@@ -451,7 +472,7 @@ export const LOOK = {
     exit: 'cut',
   },
   phosphor: {
-    gist: 'An amber terminal, 1987. One colour at three intensities; text is typed in. Nocturnal, thinking aloud.',
+    gist: 'An amber terminal, 1987: one colour, typed in. Nocturnal, thinking aloud.',
     ground: '#140d04',
     ink: '#f0a000',
     dim: '#a87400',
@@ -465,7 +486,7 @@ export const LOOK = {
     exit: 'cut',
   },
   teletext: {
-    gist: 'Broadcast teletext, 1981. Eight hard colours on black, chunky pixels. Public, declarative, a little playful.',
+    gist: 'Broadcast teletext, 1981: eight hard colours, chunky pixels. Public, declarative.',
     ground: '#000000',
     ink: '#ffffff',
     dim: '#7f7f7f',
@@ -479,7 +500,7 @@ export const LOOK = {
     exit: 'cut',
   },
   pixel: {
-    gist: 'Flat mid-grey, hard edges, whole-number scale. For pixel art: no sprite colour vanishes.',
+    gist: 'Flat mid-grey, hard edges. For pixel art: no sprite colour vanishes.',
     ground: '#8a8f98',
     ink: '#141414',
     dim: '#262a33',
@@ -493,7 +514,7 @@ export const LOOK = {
     exit: 'cut',
   },
   printout: {
-    gist: 'A dot-matrix printout on green-bar paper, 1980. Whatever is said here is on the record.',
+    gist: 'A dot-matrix printout on green-bar paper, 1980: on the record.',
     ground: '#f1ede0',
     ink: '#1d1a18',
     dim: '#625d57',
@@ -538,6 +559,99 @@ export const SPRITE_PALETTE: readonly HexString[] = [
   '#f7c9a3',
 ];
 
+/**
+ * Structures: diagrams the brain names and the painter lays out. The brain says
+ * what the parts are and how they relate; the painter places every part, routes
+ * every connector and keeps every label clear. Each is also a verb.
+ */
+export const STRUCTURE = {
+  flow: { gist: 'steps joined by arrows: a process, a decision', parts: 'nodes', lays: 'painter' },
+  tree: { gist: 'each node under its from=: a family, a hierarchy', parts: 'nodes', lays: 'painter' },
+  cycle: { gist: 'nodes round a ring, the last leading back to the first', parts: 'nodes', lays: 'painter' },
+  timeline: { gist: 'nodes on an axis, to scale by their number (a year; two numbers are a span)', parts: 'nodes', lays: 'axis' },
+  map: { gist: 'pins at your x,y, labelled clear of each other', parts: 'nodes', lays: 'brain' },
+  table: { gist: 'rows `| a | b | c`, the first the header; `bars` draws its numbers as bars too', parts: 'rows', lays: 'painter' },
+  chart: { gist: 'rows `| when | value`: an instrument with axes, a crosshair and zoom', parts: 'rows', lays: 'engine' },
+} as const satisfies Record<string, { gist: string; parts: 'nodes' | 'rows'; lays: 'painter' | 'axis' | 'brain' | 'engine' }>;
+export type StructureKind = keyof typeof STRUCTURE;
+export const STRUCTURE_KINDS = keysOf(STRUCTURE);
+
+/** Which way a flow or a tree grows. */
+export const GROWTH = { right: 'left to right', down: 'top to bottom' } as const;
+export type Growth = keyof typeof GROWTH;
+export const GROWTHS = keysOf(GROWTH);
+
+/**
+ * What a chart draws. A chart is an instrument, not a drawing: the painter
+ * hands it to a charting engine that gives it formatted axes, gridlines, a
+ * crosshair with the value under it, pan and zoom, a legend, and enough speed
+ * for thousands of points. It takes its colours and its face from the look.
+ */
+export const CHART = {
+  line: 'a line through the points: a trend. Default.',
+  area: 'a line with the ground under it filled',
+  columns: 'upright bars: amounts, a distribution',
+  candles: 'candlesticks: rows give open, high, low, close, and volume if there is any',
+  ohlc: 'open-high-low-close bars',
+} as const;
+export type ChartKind = keyof typeof CHART;
+export const CHART_KINDS = keysOf(CHART);
+export const DEFAULT_CHART: ChartKind = 'line';
+
+/** Words on a chart line that change how it reads. */
+export const CHART_WORD = {
+  indexed: 'every series starts from 100, so growth can be compared',
+  log: 'a logarithmic scale',
+  spark: 'no axes or grid: a small chart for a tile',
+  live: 'the last point pulses, as on a feed',
+  approx: 'the numbers are recalled, not data: the chart says so',
+} as const;
+export type ChartWord = keyof typeof CHART_WORD;
+export const CHART_WORDS = keysOf(CHART_WORD);
+
+/** What a node of a flow, a tree or a cycle is drawn as. Timelines and maps draw their own markers. */
+export const NODE = {
+  step: 'a box. Default.',
+  ask: 'a decision: its links carry the answers',
+  end: 'where it starts or stops',
+  note: 'an aside with no frame',
+} as const;
+export type NodeShape = keyof typeof NODE;
+export const NODE_SHAPES = keysOf(NODE);
+
+/** The ends of a link. */
+export const LINK_END = {
+  arrow: 'points at the second node. Default.',
+  both: 'points both ways',
+  plain: 'no arrowhead: a relation, not a direction',
+} as const;
+export type LinkEnd = keyof typeof LINK_END;
+export const LINK_ENDS = keysOf(LINK_END);
+
+/**
+ * Controls: the catalogue of interactive parts. The brain declares one in a
+ * line; the painter draws it in the look and makes it work. Each is also a verb.
+ */
+export const CONTROL = {
+  button: 'press it: the press is sent to you with every control\'s value',
+  toggle: 'on or off',
+  slider: 'a number between two ends, dragged',
+  pick: 'one of several options, written `| a | b | c`',
+  input: 'a line of text the user types',
+} as const;
+export type ControlKind = keyof typeof CONTROL;
+export const CONTROL_KINDS = keysOf(CONTROL);
+
+/** How a `pick` shows its options. */
+export const PICK = {
+  row: 'side by side. Default.',
+  tabs: 'as tabs over what they switch',
+  menu: 'folded into a menu: for many options',
+  steps: 'one at a time with back and next: a walk-through',
+} as const;
+export type PickForm = keyof typeof PICK;
+export const PICK_FORMS = keysOf(PICK);
+
 export type VerbTime =
   /** starts at the pen and moves the pen past itself */
   | 'holds'
@@ -552,7 +666,7 @@ export type VerbTime =
   /** edits lines that have not played yet */
   | 'edit';
 
-export type VerbFamily = 'plan' | 'words' | 'text' | 'drawing' | 'pixels' | 'composition' | 'picture' | 'atmosphere' | 'change' | 'camera' | 'time' | 'mind';
+export type VerbFamily = 'plan' | 'words' | 'text' | 'drawing' | 'pixels' | 'composition' | 'structure' | 'control' | 'picture' | 'atmosphere' | 'change' | 'camera' | 'time' | 'mind';
 
 export const VERB = {
   scene: {
@@ -663,9 +777,105 @@ export const VERB = {
     time: 'draws',
     family: 'composition',
   },
+  flow: {
+    form: 'flow [id] [right|down] [x,y WxH] [| title]',
+    gist: 'A flowchart. Follow it with `node` lines; the painter places them and routes the arrows.',
+    time: 'starts',
+    family: 'structure',
+  },
+  tree: {
+    form: 'tree [id] [down|right] [x,y WxH] [| title]',
+    gist: 'A tree. Each `node` after the first says from=<its parent>.',
+    time: 'starts',
+    family: 'structure',
+  },
+  cycle: {
+    form: 'cycle [id] [x,y WxH] [| title]',
+    gist: 'A loop. Its `node` lines go round a ring, each leading to the next and the last to the first.',
+    time: 'starts',
+    family: 'structure',
+  },
+  timeline: {
+    form: 'timeline [id] [x,y WxH] [| title]',
+    gist: 'An axis of time. Each `node` gives its number (a year); the painter spaces them to scale.',
+    time: 'starts',
+    family: 'structure',
+  },
+  map: {
+    form: 'map [id] [route] [x,y WxH] [| title]',
+    gist: 'Pins on a drawing. Each `node x,y` is a labelled pin; `route` joins them in order.',
+    time: 'starts',
+    family: 'structure',
+  },
+  table: {
+    form: 'table [id] [bars] [x,y WxH] [| title]',
+    gist: 'A table. Follow it with one `| cell | cell` line per row; the first is the header.',
+    time: 'starts',
+    family: 'structure',
+  },
+  chart: {
+    form: 'chart [id] [line|area|columns|candles|ohlc] [indexed] [log] [spark] [live] [approx] [x,y WxH] [data=<id>] [| title]',
+    gist: 'A chart: an instrument with axes, a crosshair and zoom. Follow it with one `| when | value…` line per point, or name DATA from the brief.',
+    time: 'starts',
+    family: 'structure',
+  },
+  node: {
+    form: 'node [id] [number | x,y] [ask|end|note] [from=<id>[:label]] [x=<when>] [y=<value>] [prop=value…] | <text>',
+    gist: 'One part of the structure above. from= also draws the link from that node. On a chart it is a mark: x= an event, y= a level, both a point.',
+    time: 'draws',
+    family: 'structure',
+  },
+  link: {
+    form: 'link <a> <b> [c…] [both|plain] [dashed] [| label]',
+    gist: 'Join nodes with a routed connector, in a chain when more than two are named.',
+    time: 'draws',
+    family: 'structure',
+  },
+  button: {
+    form: 'button [id] [prop=value…] | <label>',
+    gist: 'A button. Pressing it is sent to you, with the value of every control on stage.',
+    time: 'draws',
+    family: 'control',
+  },
+  toggle: {
+    form: 'toggle [id] [on|off] [send] | <label>',
+    gist: 'A switch.',
+    time: 'draws',
+    family: 'control',
+  },
+  slider: {
+    form: 'slider [id] <min> <max> [value] [step=N] [unit=…] [send] | <label>',
+    gist: 'A number the user drags.',
+    time: 'draws',
+    family: 'control',
+  },
+  pick: {
+    form: 'pick [id] [tabs|menu|steps] [N] [send] | <a> | <b> | <c>',
+    gist: 'One of several options. N is the one chosen to begin with.',
+    time: 'draws',
+    family: 'control',
+  },
+  input: {
+    form: 'input [id] [send] | <placeholder>',
+    gist: 'A line the user types.',
+    time: 'draws',
+    family: 'control',
+  },
+  card: {
+    form: 'card <id> [x,y WxH] [| title]',
+    gist: 'A framed group, for controls and what they change. Its parts say in=<id>.',
+    time: 'instant',
+    family: 'control',
+  },
+  bind: {
+    form: 'bind <control>[=<value>] [<from>..<to>] | <set, move, correct or shape line>',
+    gist: 'Let a control drive a change on stage, at once, with no round trip: the change is as far along as the control is.',
+    time: 'instant',
+    family: 'control',
+  },
   paint: {
-    form: 'paint [id] [x,y WxH] [over=<group>] [as=<medium>] [sketch=fade|keep] [mask=…] | <what to paint>',
-    gist: 'Ask for a painting. The sketch you drew shows until it arrives, and if it never does.',
+    form: 'paint [id] [x,y WxH] [over=<group>] [as=<medium>] [sketch=fade|keep] [mask=…] [| what it is]',
+    gist: 'Paint over what you drew: the painter re-renders your sketch in a medium.',
     time: 'starts',
     family: 'picture',
   },
@@ -730,6 +940,14 @@ export const VERBS = keysOf(VERB);
 export const SHAPE_VERBS = ['circle', 'ellipse', 'rect', 'line', 'poly', 'path'] as const satisfies readonly Verb[];
 export type ShapeVerb = (typeof SHAPE_VERBS)[number];
 
+/** The verbs that open a structure. The verb is the structure's kind. */
+export const STRUCTURE_VERBS = STRUCTURE_KINDS satisfies readonly Verb[];
+export type StructureVerb = StructureKind;
+
+/** The verbs that put a control on stage. The verb is the control's kind. */
+export const CONTROL_VERBS = CONTROL_KINDS satisfies readonly Verb[];
+export type ControlVerb = ControlKind;
+
 /** What an element is. Everything on stage has an id, a layer, a lifetime and a style, whatever its kind. */
 export const ELEMENT_KIND = {
   text: 'words',
@@ -739,6 +957,10 @@ export const ELEMENT_KIND = {
   copy: 'another copy of something',
   picture: 'a painting, or the sketch waiting for one',
   field: 'atmosphere',
+  structure: 'a diagram the painter lays out: a flow, a tree, a cycle, a timeline, a map, a table or a chart',
+  node: 'one part of a structure',
+  link: 'a connector between two nodes',
+  control: 'an interactive part: a button, a toggle, a slider, a pick or an input',
 } as const;
 export type ElementKind = keyof typeof ELEMENT_KIND;
 export const ELEMENT_KINDS = keysOf(ELEMENT_KIND);
@@ -771,6 +993,9 @@ export const STYLE_PROP = {
   fill: { values: ['none', ...INK_ROLES], also: 'a colour name | #hex | top>bottom for a gradient', gist: 'what a shape is filled with', level: 'mind', scope: 'drawn' },
   stroke: { values: ['none', ...INK_ROLES], also: 'a colour name | #hex', gist: 'outline colour', level: 'mind', scope: 'drawn' },
   thick: { values: null, also: 'N', gist: 'outline thickness in canvas units', level: 'mind', scope: 'drawn' },
+  brush: { values: STROKES, also: null, gist: "the character of this one line, when the look's own is not what you mean", level: 'mind', scope: 'drawn' },
+  tex: { values: TEXTURES, also: null, gist: 'what the fill is made of', level: 'mind', scope: 'drawn' },
+  soft: { values: null, also: 'N', gist: 'how far its edge fades out, in canvas units: light, cloud, shadow', level: 'mind', scope: 'drawn' },
   enter: { values: ENTER_EFFECTS, also: null, gist: 'how it arrives', level: 'mind', scope: 'any' },
   exit: { values: EXIT_EFFECTS, also: null, gist: 'how it leaves', level: 'mind', scope: 'any' },
   loop: { values: LOOPS, also: null, gist: 'what it keeps doing', level: 'mind', scope: 'any' },
@@ -778,6 +1003,7 @@ export const STYLE_PROP = {
   layer: { values: LAYERS, also: null, gist: 'which plane in depth', level: 'mind', scope: 'any' },
   at: { values: ANCHORS, also: 'x,y in canvas units', gist: 'where its centre goes', level: 'mind', scope: 'any' },
   near: { values: null, also: '<id> or <id>:above|below|left|right', gist: 'beside another element: a label on a drawing', level: 'mind', scope: 'any' },
+  leader: { values: ['yes', 'no'], also: null, gist: 'yes draws a line from the label to what it names; the painter finds clear room for the label', level: 'mind', scope: 'text' },
   in: { values: null, also: '<group id>', gist: 'make it a part of a group', level: 'mind', scope: 'any' },
   bleed: { values: BLEEDS, also: null, gist: 'whether a filled shape touching the canvas edge runs on to the screen edge', level: 'mind', scope: 'drawn' },
   scale: { values: null, also: 'N', gist: 'size multiplier (a sprite: canvas units per pixel)', level: 'mind', scope: 'drawn' },
@@ -821,4 +1047,22 @@ export const LIMITS = {
   frames: 8,
   /** characters in a painting's description */
   prompt: 400,
+  /** nodes in one structure */
+  nodes: 40,
+  /** links in one structure */
+  links: 80,
+  /** rows in one table */
+  rows: 24,
+  /** points in one chart written out as rows; more than this is data, and comes by reference (`data=`) */
+  chartPoints: 400,
+  /** marks on one chart */
+  marks: 24,
+  /** cells in one row of a table or chart */
+  cells: 8,
+  /** options in one pick */
+  options: 12,
+  /** controls alive on stage at once */
+  controls: 16,
+  /** bound changes alive on stage at once */
+  binds: 48,
 } as const;

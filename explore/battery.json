@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "prompts": [
     {
       "id": "sky-blue",
@@ -302,6 +302,253 @@
       "baseline": false,
       "heldOut": true,
       "statedSeconds": 5
+    },
+    {
+      "id": "coffee-flow",
+      "useCase": "a decision, as a flowchart",
+      "prompt": "Draw me a flowchart for choosing between a flat white, a latte and a cappuccino.",
+      "expects": "structure",
+      "baseline": false,
+      "heldOut": true,
+      "family": "diagram",
+      "structure": "flow",
+      "information": true
+    },
+    {
+      "id": "letter-journey",
+      "useCase": "a process in steps",
+      "prompt": "How does a letter get from my postbox to a house in another city? Show the steps.",
+      "expects": "structure",
+      "baseline": true,
+      "heldOut": true,
+      "family": "diagram",
+      "structure": "flow",
+      "information": true
+    },
+    {
+      "id": "rock-cycle",
+      "useCase": "a cycle",
+      "prompt": "Show me the rock cycle.",
+      "expects": "structure",
+      "baseline": false,
+      "heldOut": true,
+      "family": "diagram",
+      "structure": "cycle",
+      "information": true
+    },
+    {
+      "id": "printing-timeline",
+      "useCase": "events with dates, to scale",
+      "prompt": "Make a timeline of printing, from Gutenberg to the laser printer.",
+      "expects": "structure",
+      "baseline": false,
+      "heldOut": true,
+      "family": "diagram",
+      "structure": "timeline",
+      "information": true
+    },
+    {
+      "id": "vertebrates-tree",
+      "useCase": "a hierarchy",
+      "prompt": "Show me the main groups of vertebrates as a tree.",
+      "expects": "structure",
+      "baseline": false,
+      "heldOut": true,
+      "family": "diagram",
+      "structure": "tree",
+      "information": true
+    },
+    {
+      "id": "trains-planes",
+      "useCase": "a comparison with many rows",
+      "prompt": "Train or plane from London to Paris: compare them at a glance.",
+      "expects": "structure",
+      "baseline": true,
+      "heldOut": true,
+      "family": "diagram",
+      "structure": "table",
+      "information": true
+    },
+    {
+      "id": "longest-rivers",
+      "useCase": "a ranking",
+      "prompt": "What are the five longest rivers? Show how they compare.",
+      "expects": "structure",
+      "baseline": false,
+      "heldOut": true,
+      "family": "diagram",
+      "structure": "table",
+      "information": true
+    },
+    {
+      "id": "nile-map",
+      "useCase": "places in relation to each other",
+      "prompt": "Show me a map of the Nile from its sources to the sea, with the main cities.",
+      "expects": "structure",
+      "baseline": false,
+      "heldOut": true,
+      "family": "diagram",
+      "structure": "map",
+      "information": true
+    },
+    {
+      "id": "toilet-flush",
+      "useCase": "a labelled mechanism",
+      "prompt": "How does a toilet flush? Draw it and label the parts.",
+      "expects": "drawn",
+      "baseline": true,
+      "heldOut": true,
+      "family": "mechanism",
+      "information": true,
+      "needsLook": true
+    },
+    {
+      "id": "eye-parts",
+      "useCase": "parts and callouts",
+      "prompt": "Draw the human eye in cross-section and label its parts.",
+      "expects": "drawn",
+      "baseline": false,
+      "heldOut": true,
+      "family": "mechanism",
+      "information": true,
+      "needsLook": true
+    },
+    {
+      "id": "stock-year",
+      "useCase": "a price over a year",
+      "prompt": "Show me how Apple stock did over the last year.",
+      "expects": "chart",
+      "baseline": false,
+      "heldOut": true,
+      "family": "chart",
+      "structure": "chart",
+      "information": true
+    },
+    {
+      "id": "growth-rates",
+      "useCase": "comparing growth",
+      "prompt": "Compare the economic growth of China, India and the United States since 2000 on one chart.",
+      "expects": "chart",
+      "baseline": false,
+      "heldOut": true,
+      "family": "chart",
+      "structure": "chart",
+      "information": true
+    },
+    {
+      "id": "height-distribution",
+      "useCase": "a distribution",
+      "prompt": "Show me the distribution of adult heights for men and women.",
+      "expects": "chart",
+      "baseline": false,
+      "heldOut": true,
+      "family": "chart",
+      "structure": "chart",
+      "information": true
+    },
+    {
+      "id": "dashboard-tile",
+      "useCase": "a live-looking tile",
+      "prompt": "Make a dashboard tile for monthly recurring revenue: the number, how it changed, and its trend.",
+      "expects": "chart",
+      "baseline": false,
+      "heldOut": true,
+      "family": "chart",
+      "structure": "chart"
+    },
+    {
+      "id": "co2-century",
+      "useCase": "a long series with an event marked",
+      "prompt": "Chart atmospheric CO2 since 1960 and mark when it passed 400 parts per million.",
+      "expects": "chart",
+      "baseline": false,
+      "heldOut": true,
+      "family": "chart",
+      "structure": "chart",
+      "information": true
+    },
+    {
+      "id": "ramp-angle",
+      "useCase": "a slider that drives a drawing",
+      "prompt": "Let me change the steepness of a ramp and see how hard a box is to push up it.",
+      "expects": "explorable",
+      "baseline": false,
+      "heldOut": true,
+      "family": "explorable",
+      "controls": 1
+    },
+    {
+      "id": "compound-interest",
+      "useCase": "a slider that drives a chart",
+      "prompt": "Let me play with the interest rate and see what 1,000 becomes over 30 years.",
+      "expects": "explorable",
+      "baseline": false,
+      "heldOut": true,
+      "family": "explorable",
+      "controls": 1,
+      "structure": "chart"
+    },
+    {
+      "id": "day-night",
+      "useCase": "a toggle that changes a scene",
+      "prompt": "Show me the same street by day and by night, and let me switch between them.",
+      "expects": "explorable",
+      "baseline": false,
+      "heldOut": true,
+      "family": "explorable",
+      "controls": 1
+    },
+    {
+      "id": "heart-steps",
+      "useCase": "a walk-through",
+      "prompt": "Take me through one heartbeat, a step at a time, and let me go back and forth.",
+      "expects": "explorable",
+      "baseline": false,
+      "heldOut": true,
+      "family": "explorable",
+      "controls": 1,
+      "needsLook": true
+    },
+    {
+      "id": "tip-form",
+      "useCase": "a small form",
+      "prompt": "Make me a tip calculator.",
+      "expects": "explorable",
+      "baseline": false,
+      "heldOut": true,
+      "family": "explorable",
+      "controls": 2
+    },
+    {
+      "id": "bicycle-parts",
+      "useCase": "a busy labelled drawing",
+      "prompt": "Draw a bicycle and label eight of its parts.",
+      "expects": "drawn",
+      "baseline": false,
+      "heldOut": true,
+      "family": "mechanism",
+      "needsLook": true
+    },
+    {
+      "id": "solar-eclipse",
+      "useCase": "a geometric arrangement",
+      "prompt": "Draw how a solar eclipse happens, with the Sun, Moon and Earth and the shadow.",
+      "expects": "drawn",
+      "baseline": false,
+      "heldOut": true,
+      "family": "mechanism",
+      "information": true,
+      "needsLook": true
+    },
+    {
+      "id": "harbour-painting",
+      "useCase": "a painting from a sketch",
+      "prompt": "Paint me a small harbour at dawn, in watercolour.",
+      "expects": "drawn",
+      "baseline": false,
+      "heldOut": true,
+      "family": "paint",
+      "needsLook": true
     }
   ],
   "cases": [
@@ -397,6 +644,95 @@
           "do": "fix"
         }
       ]
+    },
+    {
+      "id": "slider-drives",
+      "useCase": "a control drives the drawing with no round trip",
+      "why": "A slider at its two ends must change the picture, and working it must send one control event and open no turn.",
+      "heldOut": true,
+      "judged": true,
+      "turns": [
+        {
+          "do": "prompt",
+          "text": "Let me drag the height of the sun and watch the shadow of a tree."
+        },
+        {
+          "do": "control",
+          "to": "min"
+        },
+        {
+          "do": "control",
+          "to": "max"
+        }
+      ]
+    },
+    {
+      "id": "button-acts",
+      "useCase": "a button sends the form to the brain",
+      "why": "Pressing a button opens a turn whose input carries every control value, and the answer uses them.",
+      "heldOut": true,
+      "judged": true,
+      "turns": [
+        {
+          "do": "prompt",
+          "text": "Ask me my weight and height with two sliders, then work out my BMI when I press a button."
+        },
+        {
+          "do": "control",
+          "to": "max"
+        },
+        {
+          "do": "press"
+        }
+      ]
+    },
+    {
+      "id": "steps-walk",
+      "useCase": "a walk-through stepped by the viewer",
+      "why": "Each step of a pick must change the drawing and its caption; stepping back must restore them.",
+      "heldOut": true,
+      "judged": true,
+      "turns": [
+        {
+          "do": "prompt",
+          "text": "Walk me through how a lock on a canal lifts a boat, one step at a time."
+        },
+        {
+          "do": "control",
+          "to": "next"
+        },
+        {
+          "do": "control",
+          "to": "next"
+        }
+      ]
+    },
+    {
+      "id": "chart-read",
+      "useCase": "a chart is read, not just seen",
+      "why": "Hovering shows a crosshair with formatted values; zooming changes the visible range; neither opens a turn.",
+      "heldOut": true,
+      "judged": true,
+      "turns": [
+        {
+          "do": "prompt",
+          "text": "Chart the price of gold by year since 2000."
+        }
+      ]
+    },
+    {
+      "id": "fix-labels",
+      "useCase": "look at what you drew; fix it (now within the turn)",
+      "why": "A busy labelled drawing: the judge scores the draft and the answer after the look. The look is the product default here, not a second user message.",
+      "heldOut": true,
+      "judged": true,
+      "turns": [
+        {
+          "do": "prompt",
+          "text": "Draw a volcano in cross-section with every part labelled."
+        }
+      ]
     }
-  ]
+  ],
+  "pool": "tune"
 }

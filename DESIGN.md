@@ -2,6 +2,8 @@
 
 This document answers one question: **what must things on the stage look and move like, and what must they never be?** The values themselves (hex codes, amounts, recipes) live in `language/src/vocabulary.ts` (what a look is, in the brain's words) and `web/src/looks/*.ts` (what the painter adds); this file says why they are what they are and specifies the part that cannot be data.
 
+> Sections marked **(v2)** specify what the quality and expression round builds. They are the design the builders work to; `PLAN-v2.md` says who builds what. Everything unmarked is v1 as it runs.
+
 ## What a look is
 
 A look is four things a brain can name and the things that follow from them:
@@ -57,7 +59,7 @@ A look is four things a brain can name and the things that follow from them:
 
 **Never, in any preset**
 
-- Neon glow, frosted glass, drop shadows on a dark ground, rounded "card" containers around text.
+- Neon glow, frosted glass, drop shadows on a dark ground, rounded "card" containers around text. (A `card` is a frame for controls and what they change: a hairline in `dim`, square corners, a title set as a label. It is never put round a paragraph to dress it.)
 - Purple-to-blue synthwave palettes, grids receding to a horizon.
 - RGB-split "glitch" effects.
 - An effect that is on all the time at full strength. The surface is the room the answer is in; if it is noticed before the answer, it is too strong.
@@ -214,8 +216,79 @@ Never: more than the look's inks at once from the presets' own roles (a brain's 
 - **Bleed.** A filled shape that touches the canvas's left, right or bottom edge runs on to the viewport's edge, so land, water and sky reach the screen edges; `bleed=none` opts a shape out.
 - **Fill.** Flat, or a top-to-bottom gradient. A fill sits under its own stroke. Fills let the surface show (paper tooth, halftone, dust): a fill is ink, not a sticker.
 - **Morph.** One shape becomes another by moving its outline, eased in and out, over most of a second. No cross-fade.
-- **Labels.** A `near=` label sits one body line from the thing it names (never farther than its extent), on the side with most room, in the look's `dim`, and keeps clear of other labels, other text, drawn outlines and fills, and the canvas edge. A label never gets a leader line the brain did not draw.
+- **Labels.** A `near=` label sits one body line from the thing it names (never farther than its extent), on the side with most room, in the look's `dim`, and keeps clear of other labels, other text, drawn outlines and fills, **every drawn stroke however thin**, and the canvas edge. A label never gets a leader line the brain did not ask for.
+- **Callouts (v2).** A `callout` is the asking. All the callouts of a drawing are placed together, as a technical illustrator places them: in clear room round the drawing's box, in columns to its left and right (above and below when the drawing is wide), ordered along each column in the order of what they point at, so that **no two leaders cross**. A leader is one straight hairline in `dim`, from the edge of the label to the edge of the part, ending in a dot one stroke wide on the part; it crosses no other label and no stroke except where it lands. Labels in a column share an edge. When there is not room for every callout at the look's `xs`, the drawing is given less room before the labels are made smaller.
 - **Size.** Something drawn smaller than 12 px on screen is reported to the brain as `tiny`. The painter does not enlarge it: where things are is the brain's meaning.
+
+## Structures (v2)
+
+A structure is a diagram the brain named and the painter laid out. The viewer should not be able to tell that nobody chose a coordinate: it should look as if a careful person drew it on this surface, in this look.
+
+**Rules for all of them**
+
+- **Nothing touches.** No node on a node, no label on a label, no connector through a node that is not one of its ends, no connector through a label. These are measured by the painter on every layout and are zero, not small. What cannot be kept clear is reported to the brain (`crossed`, `crowded`) and is never silently overlapped.
+- **Words decide sizes.** A node is as big as its words need at the look's body size, with a margin of half a body line. Words wrap at about sixteen characters a line before a node grows wider than a third of its room. Nodes of one rank share a height; nodes of one structure never differ in type size.
+- **Fit by spacing, then by size, then by saying so.** A structure too big for its room first tightens its gaps, then shrinks as a whole to the look's minimum size, then reports `crowded`. It never clips and never shrinks one node.
+- **It is drawn in the look.** A node's frame is the look's stroke, in the look's hand (pencil wanders, chalk skips, blueprint is exact). A fill is a flat wash that lets the surface show. Corners are square in the looks whose machine had none and take a small radius in the others. On the fixed-pitch looks everything sits on the character grid.
+- **It arrives in the order it was written.** A node fades in where it will rest; a connector draws itself from the node it leaves to the node it reaches, arriving as that node does. When a late part changes the layout, what is on stage moves once, eased, by the least it can. Nothing in a structure pops, bounces or re-flows twice.
+- **Colour means something.** A structure uses `ink` for frames and words, `dim` for connectors, ticks and rules, and `accent` only where the brain put it (`fill=accent`, a starred row). The painter never colours nodes to tell them apart.
+
+**Each one**
+
+- **Flow.** Ranks along the growing axis; within a rank, the order that crosses the fewest connectors. Connectors are orthogonal with one or two bends, rounded by the look's radius, leaving a node from the middle of a side and entering at the middle of a side; two connectors into one side share it evenly. An arrowhead is a small filled triangle, two strokes long. A decision (`ask`) is a box with clipped corners, not a diamond: a diamond wastes half its box and forces small type. An `end` is a pill. A label on a connector sits at the middle of its first segment, on a plate of the ground.
+- **Tree.** A tidy tree: a parent centred over its children, subtrees as close as they can be without touching, siblings on one line. Connectors are elbows.
+- **Cycle.** Nodes on a circle starting at twelve o'clock, clockwise, evenly spaced. Arcs follow the circle between nodes, with one arrowhead each. Five or fewer nodes: words inside the nodes. More: the nodes become dots and their words sit outside the ring, each on its own radius. The middle of the ring is left empty unless the structure has a title, which goes there.
+- **Timeline.** One horizontal axis in `dim` with ticks at round numbers. An event is a dot on the axis with its words above or below, alternating, joined by a short tick; words never overlap, and stack in two tiers when dates crowd. A span is a bar along the axis. On a portrait screen the axis is vertical and the words are to its right.
+- **Map.** A pin is a dot one and a half strokes across, in `accent`. A label goes in the first of eight places round its pin that is clear (right, then above right, and so on round), and when none is, moves out along a leader no longer than three body lines. A route is one line through the pins in order, under them, in `dim`.
+- **Table.** No box round it and no vertical rules. One hairline under the header and one under the last row; a lighter hairline between rows only when there are more than six. The header is the look's `label` style. A first column of names is ranged left in `ink`; numbers are ranged right and share their decimal place; other cells are ranged left. Rows are one and a half body lines apart. A starred cell is `accent`. `table bars`: a bar in `dim` runs from the numbers' left edge, proportional from zero, the starred row's in `accent`; the figure stays at the right of its bar. A table wider than its room wraps its longest column before it shrinks.
+
+## Charts (v2)
+
+**A chart is an instrument.** It is read, not admired. The standard is a trading terminal and a good newspaper's data desk; the failure is clip art: a picture of a chart.
+
+- **It is drawn by the charting engine**, crisp, in a surface of its own over the stage. The look's paper, grain, halftone and scanlines do not lie on it, and that is deliberate: texture on a chart is noise on data. The camera scales the surface; a scene with a chart should not push in on it.
+- **It wears the look and nothing else.** Ground: the look's ground, so the chart sits on the stage and not in a panel; no border, no card, no shadow. Text: the look's face at `xs`, never under 11 px, in `ink` at reduced weight. Gridlines: horizontal only by default, a hairline no more than a quarter of the way from ground to ink, so they are found when looked for and gone when not. Series: `accent` first, then `alt`, then steps round the hue from them, every one at least 3:1 on the ground. In one-phosphor and eight-colour looks, series are told apart by line style and brightness as well.
+- **Candles.** Up and down are told apart by more than hue: an up candle is hollow, a down candle is filled. Wicks are one device pixel. Volume is a pane a fifth of the height, in `dim`.
+- **Axes.** Ticks are round numbers written as the data was written (`$1.2M`, `4.5%`, `1,204`), five to seven up the side. Time ticks are chosen from the span: years, then months, then days, never a clutter of full dates. The side axis is on the right, where the last value is. No axis titles: the chart's title says what and in what unit.
+- **To scale.** Time and numbers along the bottom are to scale, whatever the spacing of the points. Columns start from zero. A truncated axis on a line or candles is allowed and is how prices are read; on columns it is a lie and is not.
+- **Legend.** With two or more series: names in a row under the title, each with a short stroke of its series' colour and, when the crosshair is on, its value. No box.
+- **Crosshair.** A hairline in `dim` both ways, the time and the value written on the axes in an inverted tab, on hover and on touch. Nothing else moves when it does.
+- **Marks.** An event is a hairline up the chart with its label at the top; a level is a hairline across with its label at the right, on the axis; a point is a small filled dot with its label beside it, clear of the series.
+- **Arrival.** The axes are there at once at their final scale. A line runs from left to right; columns and candles rise in order. Nothing rescales while it arrives. From DATA, the chart shows its axes and a quiet empty plot until the rows come, then reveals itself: never a spinner.
+- **`approx`.** A small `label` reading "approximate" beside the title, in `dim`. It is not a warning triangle and not a footnote: it is part of the chart's name.
+- **`spark`.** No axes, no grid, no crosshair labels; a line or an area that fills its room. `live` adds one soft pulse on the last point, on ambient time, still in reduced motion.
+- **Never.** Three-dimensional bars, gradients under a line that are not the series' own colour fading to the ground, drop shadows, rounded bar tops, a legend in a box, a title in a banner, pie charts, more than five series, a second value axis.
+
+## Controls (v2)
+
+A control is a thing on the stage that the user works. It is drawn by the painter from the look's own stroke and type, so a slider on `chalk` is chalk and a slider on `blueprint` is ruled.
+
+- **Size.** Every control's target is at least 44 px on its shorter side, whatever is drawn inside it.
+- **Button.** Its label in the look's body face with the `box` mark: the same thing a choice is. Pressed: the box fills, within one frame.
+- **Toggle.** A short track with a knob at one end and its label to the right; on, the track is `accent`. In fixed-pitch looks it is `[x]` and `[ ]` in the face.
+- **Slider.** A hairline track, a filled stretch from the start to the knob in `accent`, a round knob two strokes larger than the track's height, the label above on the left and the value above on the right, in `dim`, with its unit. Ticks only when it has a step and fewer than twelve of them.
+- **Pick.** `row`: its options side by side, the chosen one with the `invert` mark. `tabs`: the same on a hairline that runs the width of what they switch. `menu`: the chosen option with a small chevron; opened, the options stack below it on a plate. `steps`: back and next either side of "2 of 4" and the step's name.
+- **Input.** A hairline under the text, the placeholder in `dim`, a caret that blinks once a second.
+- **States.** Hover lifts nothing and glows nothing: the stroke goes from `dim` to `ink`. Focus is a 2 px outline in `accent`, always visible. Disabled (entering, leaving, covered) is 40% opacity and takes no pointer.
+- **What follows a control follows it in the same frame.** A bound change is as far along as the slider is, with no easing of its own, so the drawing is under the finger. A change bound to on or off eases over a quarter of a second. Reduced motion keeps both.
+- **Never.** A control that changes nothing; a slider whose value is not shown; a control drawn in the chrome's face; a native widget showing through.
+
+## Paint (v2)
+
+- **A painting is the sketch, re-rendered.** The renderer draws the sketch's shapes into a surface of their own and passes it through the medium: `watercolor` (washes that pool at their edges and granulate into the paper, shapes that bleed a little into their neighbours, the paper showing through), `gouache` (flat, opaque, a dry edge), `oil` (ridges along the direction each shape was drawn, lit from the upper left), `ink` (three tones and a dry-brush edge), `pastel` (chalky, smudged along the stroke), `woodcut` (two tones, cut lines following the form), `pixel`. Every medium is fixed to the canvas: nothing shimmers when the camera moves.
+- **It develops as in v1**: revealed through a noise threshold with a wet edge, over two and a half seconds of ambient time.
+- **Textures** are the fill's own colour, never a pattern in another one: `wash` darkens toward the edge, `hatch` is pen lines at 45 degrees a stroke apart, `dots` a stipple, `grain` a dry chalk, `weave` canvas under paint.
+- **`soft=`** fades an edge over its length and never moves the outline: light, cloud, shadow, a glow that is not neon.
+- **Brushes.** `ink` is a brush pen: it starts thin, swells to its thickness and tapers, heavier on the inside of a turn. `dry` breaks into streaks where the stroke runs long.
+- **Never.** A medium applied to text; a painting that hides a label; a filter over the whole stage (that is what a look's surface is).
+
+## Look and fix, on stage (v2)
+
+- **The first draft shows at once.** Nothing about a draft says it is one.
+- **While the brain looks**, the stage is as it is whenever the brain is slow: the playhead holds at the pen when it gets there, ambient motion runs, the look's waiting signal shows. The status line reads "checking the drawing". There is no badge, no overlay and no progress bar on the stage.
+- **A fix is a performance, not a flash.** What is moved travels; what is redrawn morphs; a label that was wrong is corrected in place. A fix to something the viewer has not reached yet is silent. A redraw opens a new scene and the old one leaves by its own exits.
+- **If nothing is wrong, nothing happens.** The turn simply ends.
+- **The viewer can switch it off** in the bar under the stage; the setting is remembered for the browser.
 
 ## Pixels
 
@@ -245,6 +318,8 @@ The chrome is the prompt bar, the status line, the transcript panel, the two act
 - It takes its ground and text colours from the current look (`--stage-ground`, `--stage-ink`, `--stage-dim`, `--stage-accent`), so the bar belongs to the stage instead of framing it. All other values are the tokens in `web/src/styles/tokens.css`.
 - Type is the system UI face at one size, with one smaller size for status and the HUD. The looks' faces are for the stage only.
 - Flat surfaces, a single hairline in `--stage-dim`, square corners (2 px). No frosted glass, no gradient text, no shadows.
+- (v2) Every control and every chart on the stage has a real, invisible form control or region laid exactly over it by the app, with its label, value and range, so the keyboard reaches it in drawing order and a screen reader says what it is. Arrow keys work a slider and a pick; Enter and Space press a button and flip a toggle. The transcript says what a control was set to.
+- (v2) The **taste page** is a working tool like the exploration page: one answer at a time, as large as the window allows, two buttons (thumbs up, thumbs down) and one short field for a word. The judge's score is hidden until the answer has been scored. At the end it says how far the two agree and shows the answers on which they differ, side by side.
 - One input, one primary button ("Send" at rest, "Stop" while a turn is open). Beside it, while a turn is open or playing: **Show all**. Once a turn has ended: **Take away** (copy or save the script, play a script, save a picture, save a film, save frames). Controls are at least 44 px tall.
 - Enter always submits: with text, it interrupts the answer and opens the new turn; Escape stops; `.` is Show all only while the stage has focus (WCAG 2.1.4; the button is always there).
 - A prompt that cannot be sent is not thrown away: the words go back in the input and the status line says so.
@@ -259,5 +334,7 @@ The **exploration page** is a working tool, not part of the product's face: syst
 ## Considered and not built
 
 - **A vector monitor look (Asteroids, 1979).** Now cheap, since strokes exist: glowing lines on black with a beam's overshoot at the corners. A good first addition; not needed to prove anything.
-- **Bitmap brushes and blur.** Would make painterly work possible without the image model, at the cost of clean vector export and a much larger renderer.
+- **Bitmap brushes and blur.** v2 builds the part of this that needs no bitmap: media as shader passes over the sketch, procedural textures, soft edges and two brushes (see Paint). Still not built: brushes that lay down a scanned stroke, and a blur of what is behind a shape.
+- **Drawing charts from shapes, in the look's hand.** The first v2 plan. Withdrawn: a pencil-stroked bar chart is a picture of a chart, and the owner's bar is an instrument.
+- **A chart inside the WebGL scene** (the engine's picture as a texture, under the look's surface and the camera). It would give the chart the look's paper and the camera's depth, at the price of a soft, re-uploaded picture on every crosshair move. Kept for the machine looks, where a crisp surface over a curved tube is wrong; decided when the charts are on stage and can be looked at.
 - **Keyframes.** Per-property animation curves would serve motion prototyping. Left out until the harness shows that is a use worth the tokens.

@@ -3,7 +3,7 @@
 // and the next turn is asked of the SAME brain session, so a warm process, the cache, a look change, an interruption,
 // a tap and "look at what you drew; fix it" are all exercised for real.
 
-import { FULL_CAPABILITIES, LEAD_WINDOW, REFERENCE_SCREEN, verdictsOf } from '@conduit/language';
+import { LEAD_WINDOW, REFERENCE_SCREEN, verdictsOf } from '@conduit/language';
 import type {
   ExploreCase,
   ExploreCaseResult,
@@ -26,7 +26,7 @@ import type { Eyes, HarnessReply } from './explore-browser';
 import { cacheShareOf, playTurn } from './explore-turn';
 import type { TurnPlay } from './explore-turn';
 import type { Rig } from './explore-rig';
-import { judgeStills } from './explore-rig';
+import { judgeStills, HARNESS_CAPABILITIES } from './explore-rig';
 
 export const PHONE_SCREEN: ScreenFacts = { width: 390, height: 844, dpr: 3, cols: 30, rows: 14, canvas: 'tall', reducedMotion: false, pointer: 'coarse' };
 
@@ -71,7 +71,7 @@ export async function playCase(rig: Rig, scripted: ExploreCase, variant: Explore
   const judgements: (Promise<ExploreJudgement | null> | null)[] = [];
   const conversation: string[] = [];
 
-  rig.brain.open?.({ session, capabilities: FULL_CAPABILITIES, screen, services });
+  rig.brain.open?.({ session, capabilities: HARNESS_CAPABILITIES, screen, services });
 
   for (let index = 1; index <= scripted.turns.length; index += 1) {
     const step: ExploreCaseTurn | undefined = scripted.turns[index - 1];
@@ -90,7 +90,7 @@ export async function playCase(rig: Rig, scripted: ExploreCase, variant: Explore
     }
     if (changes.length > 0 && step.do === 'prompt') {
       // The server tells the brain again whenever the painter says `ready`; a brain that rebuilds for it would be caught here.
-      rig.brain.open?.({ session, capabilities: FULL_CAPABILITIES, screen, services });
+      rig.brain.open?.({ session, capabilities: HARNESS_CAPABILITIES, screen, services });
     }
 
     let input: TurnInput;
@@ -101,6 +101,11 @@ export async function playCase(rig: Rig, scripted: ExploreCase, variant: Explore
     } else if (step.do === 'fix') {
       said = step.text ?? FIX_TEXT;
       input = { kind: 'prompt', text: said };
+    } else if (step.do === 'control' || step.do === 'press') {
+      // Working a control needs the painter, which this runner does not yet drive between turns (PLAN-v2.md, package H).
+      problem = `this run cannot ${step.do === 'press' ? 'press a button' : 'work a control'} yet`;
+      said = '(a control would be worked here)';
+      input = { kind: 'prompt', text: 'Go on.' };
     } else {
       const choice = stage.elements.find((element) => element.style.tap && !element.struck && element.parent === null);
       if (choice === undefined) {
@@ -123,7 +128,7 @@ export async function playCase(rig: Rig, scripted: ExploreCase, variant: Explore
       turn: `${session}-t${index}`,
       idPrefix: `t${index}`,
       input,
-      context: { screen, capabilities: FULL_CAPABILITIES, services, lead: LEAD_WINDOW, stage, history: [...history], heard: [] },
+      context: { screen, capabilities: HARNESS_CAPABILITIES, services, lead: LEAD_WINDOW, stage, history: [...history], heard: [] },
       snapshot,
       brain: rig.brain,
       timeoutMs: rig.timeoutMs,
@@ -132,7 +137,7 @@ export async function playCase(rig: Rig, scripted: ExploreCase, variant: Explore
       why: () => rig.running.reason,
     };
     const done = await playTurn(play);
-    const kind = step.do;
+    const kind = step.do === 'control' || step.do === 'press' ? 'prompt' : step.do;
     const meta: ExploreResult['turn'] = {
       case: scripted.id,
       index,

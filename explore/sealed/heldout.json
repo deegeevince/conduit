@@ -1,0 +1,354 @@
+{
+  "version": 3,
+  "pool": "heldout",
+  "prompts": [
+    {
+      "id": "visa-flow",
+      "useCase": "a decision, as a flowchart",
+      "prompt": "Do I need to renew my passport before my trip? Give me a flowchart.",
+      "expects": "structure",
+      "baseline": false,
+      "heldOut": true,
+      "family": "diagram",
+      "structure": "flow",
+      "information": true
+    },
+    {
+      "id": "bread-steps",
+      "useCase": "a process in steps",
+      "prompt": "How does wheat in a field become bread on a table? Show the stages.",
+      "expects": "structure",
+      "baseline": true,
+      "heldOut": true,
+      "family": "diagram",
+      "structure": "flow",
+      "information": true
+    },
+    {
+      "id": "carbon-cycle",
+      "useCase": "a cycle",
+      "prompt": "Show me the carbon cycle as a loop.",
+      "expects": "structure",
+      "baseline": false,
+      "heldOut": true,
+      "family": "diagram",
+      "structure": "cycle",
+      "information": true
+    },
+    {
+      "id": "flight-timeline",
+      "useCase": "events with dates, to scale",
+      "prompt": "Make a timeline of human flight from the Wright brothers to the Moon landing.",
+      "expects": "structure",
+      "baseline": false,
+      "heldOut": true,
+      "family": "diagram",
+      "structure": "timeline",
+      "information": true
+    },
+    {
+      "id": "roman-gods-tree",
+      "useCase": "a hierarchy",
+      "prompt": "Show me the family tree of the main Greek gods, from Cronus down.",
+      "expects": "structure",
+      "baseline": false,
+      "heldOut": true,
+      "family": "diagram",
+      "structure": "tree",
+      "information": true
+    },
+    {
+      "id": "ev-or-petrol",
+      "useCase": "a comparison with many rows",
+      "prompt": "Electric car or petrol car: compare them at a glance.",
+      "expects": "structure",
+      "baseline": true,
+      "heldOut": true,
+      "family": "diagram",
+      "structure": "table",
+      "information": true
+    },
+    {
+      "id": "tallest-mountains",
+      "useCase": "a ranking",
+      "prompt": "Show me the six tallest mountains and how they compare.",
+      "expects": "structure",
+      "baseline": false,
+      "heldOut": true,
+      "family": "diagram",
+      "structure": "table",
+      "information": true
+    },
+    {
+      "id": "trans-siberian-map",
+      "useCase": "places in relation to each other",
+      "prompt": "Show me the route of the Trans-Siberian railway with its main stops.",
+      "expects": "structure",
+      "baseline": false,
+      "heldOut": true,
+      "family": "diagram",
+      "structure": "map",
+      "information": true
+    },
+    {
+      "id": "fridge-works",
+      "useCase": "a labelled mechanism",
+      "prompt": "How does a fridge keep things cold? Draw it and label the parts.",
+      "expects": "drawn",
+      "baseline": true,
+      "heldOut": true,
+      "family": "mechanism",
+      "information": true,
+      "needsLook": true
+    },
+    {
+      "id": "tooth-parts",
+      "useCase": "parts and callouts",
+      "prompt": "Draw a tooth in cross-section and label its parts.",
+      "expects": "drawn",
+      "baseline": false,
+      "heldOut": true,
+      "family": "mechanism",
+      "information": true,
+      "needsLook": true
+    },
+    {
+      "id": "bitcoin-year",
+      "useCase": "a price over a year",
+      "prompt": "Show me how Bitcoin did over the last year.",
+      "expects": "chart",
+      "baseline": false,
+      "heldOut": true,
+      "family": "chart",
+      "structure": "chart",
+      "information": true
+    },
+    {
+      "id": "life-expectancy",
+      "useCase": "comparing growth",
+      "prompt": "Compare life expectancy in Japan, Nigeria and Brazil since 1960 on one chart.",
+      "expects": "chart",
+      "baseline": false,
+      "heldOut": true,
+      "family": "chart",
+      "structure": "chart",
+      "information": true
+    },
+    {
+      "id": "exam-distribution",
+      "useCase": "a distribution",
+      "prompt": "Show me a typical distribution of exam marks out of 100 for a class of 200.",
+      "expects": "chart",
+      "baseline": false,
+      "heldOut": true,
+      "family": "chart",
+      "structure": "chart"
+    },
+    {
+      "id": "uptime-tile",
+      "useCase": "a live-looking tile",
+      "prompt": "Make a status tile for a website: uptime this month, and response time over the last day.",
+      "expects": "chart",
+      "baseline": false,
+      "heldOut": true,
+      "family": "chart",
+      "structure": "chart"
+    },
+    {
+      "id": "oil-shock",
+      "useCase": "a long series with an event marked",
+      "prompt": "Chart the oil price through the 1970s and mark the two shocks.",
+      "expects": "chart",
+      "baseline": false,
+      "heldOut": true,
+      "family": "chart",
+      "structure": "chart",
+      "information": true
+    },
+    {
+      "id": "pendulum-length",
+      "useCase": "a slider that drives a drawing",
+      "prompt": "Let me change the length of a pendulum and see how its swing changes.",
+      "expects": "explorable",
+      "baseline": false,
+      "heldOut": true,
+      "family": "explorable",
+      "controls": 1
+    },
+    {
+      "id": "mortgage-rate",
+      "useCase": "a slider that drives a chart",
+      "prompt": "Let me move the mortgage rate and see the monthly payment on 300,000 over 25 years.",
+      "expects": "explorable",
+      "baseline": false,
+      "heldOut": true,
+      "family": "explorable",
+      "controls": 1,
+      "structure": "chart"
+    },
+    {
+      "id": "seasons-toggle",
+      "useCase": "a toggle that changes a scene",
+      "prompt": "Show me the same tree in summer and in winter, and let me switch.",
+      "expects": "explorable",
+      "baseline": false,
+      "heldOut": true,
+      "family": "explorable",
+      "controls": 1
+    },
+    {
+      "id": "butterfly-steps",
+      "useCase": "a walk-through",
+      "prompt": "Take me through how a caterpillar becomes a butterfly, a step at a time, and let me go back.",
+      "expects": "explorable",
+      "baseline": false,
+      "heldOut": true,
+      "family": "explorable",
+      "controls": 1,
+      "needsLook": true
+    },
+    {
+      "id": "unit-converter",
+      "useCase": "a small form",
+      "prompt": "Make me a converter between kilometres and miles.",
+      "expects": "explorable",
+      "baseline": false,
+      "heldOut": true,
+      "family": "explorable",
+      "controls": 1
+    },
+    {
+      "id": "sailboat-parts",
+      "useCase": "a busy labelled drawing",
+      "prompt": "Draw a sailing boat and label eight of its parts.",
+      "expects": "drawn",
+      "baseline": false,
+      "heldOut": true,
+      "family": "mechanism",
+      "needsLook": true
+    },
+    {
+      "id": "tides-moon",
+      "useCase": "a geometric arrangement",
+      "prompt": "Draw how the Moon causes the tides, with the Earth, the Moon and the bulges of water.",
+      "expects": "drawn",
+      "baseline": false,
+      "heldOut": true,
+      "family": "mechanism",
+      "information": true,
+      "needsLook": true
+    },
+    {
+      "id": "orchard-painting",
+      "useCase": "a painting from a sketch",
+      "prompt": "Paint me an orchard in late autumn, in gouache.",
+      "expects": "drawn",
+      "baseline": false,
+      "heldOut": true,
+      "family": "paint",
+      "needsLook": true
+    },
+    {
+      "id": "capital-plain",
+      "useCase": "a fact: no staging",
+      "prompt": "What is the capital of Canada?",
+      "expects": "plain",
+      "baseline": true,
+      "heldOut": true,
+      "family": "plain"
+    },
+    {
+      "id": "apology-words",
+      "useCase": "a hard thing: few words",
+      "prompt": "I forgot my best friend's wedding anniversary dinner. What do I say?",
+      "expects": "type",
+      "baseline": false,
+      "heldOut": true,
+      "family": "type"
+    },
+    {
+      "id": "night-train",
+      "useCase": "a scene",
+      "prompt": "Tell me a short story about a night train, as a scene.",
+      "expects": "scene",
+      "baseline": false,
+      "heldOut": true,
+      "family": "scene"
+    },
+    {
+      "id": "owl-pixels",
+      "useCase": "pixel art",
+      "prompt": "Pixel art of an owl.",
+      "expects": "pixels",
+      "baseline": false,
+      "heldOut": true,
+      "family": "pixels"
+    },
+    {
+      "id": "opening-titles",
+      "useCase": "a title card with a stated length",
+      "prompt": "Make a five-second opening title for a film called Salt Road.",
+      "expects": "type",
+      "baseline": false,
+      "heldOut": true,
+      "family": "type",
+      "statedSeconds": 5
+    }
+  ],
+  "cases": [
+    {
+      "id": "slider-drives-h",
+      "useCase": "a control drives the drawing with no round trip",
+      "why": "Held-out twin of slider-drives.",
+      "heldOut": true,
+      "judged": true,
+      "turns": [
+        {
+          "do": "prompt",
+          "text": "Let me drag how far a lamp is from a wall and see how big the shadow of a hand gets."
+        },
+        {
+          "do": "control",
+          "to": "min"
+        },
+        {
+          "do": "control",
+          "to": "max"
+        }
+      ]
+    },
+    {
+      "id": "button-acts-h",
+      "useCase": "a button sends the form to the brain",
+      "why": "Held-out twin of button-acts.",
+      "heldOut": true,
+      "judged": true,
+      "turns": [
+        {
+          "do": "prompt",
+          "text": "Ask me how many people and how many slices each with two sliders, then tell me how many pizzas to order when I press a button."
+        },
+        {
+          "do": "control",
+          "to": "max"
+        },
+        {
+          "do": "press"
+        }
+      ]
+    },
+    {
+      "id": "chart-read-h",
+      "useCase": "a chart is read, not just seen",
+      "why": "Held-out twin of chart-read.",
+      "heldOut": true,
+      "judged": true,
+      "turns": [
+        {
+          "do": "prompt",
+          "text": "Chart the world's population by decade since 1950."
+        }
+      ]
+    }
+  ]
+}

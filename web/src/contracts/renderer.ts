@@ -1,4 +1,4 @@
-import type { AmbientKind, ElementKind, Face, FxName, LookId } from '@conduit/language';
+import type { AmbientKind, ElementKind, Face, FxName, LookId, Medium, StrokeCharacter, Texture } from '@conduit/language';
 import type { Frame, Quality } from './frame';
 import type { Viewport } from './space';
 
@@ -14,6 +14,12 @@ export interface RendererCapabilities {
   readonly ambient: readonly AmbientKind[];
   /** `rasterise` returns pictures */
   readonly capture: boolean;
+  /** the media it renders a sketch in by itself (`PictureFrame.medium`); empty when it cannot */
+  readonly media: readonly Medium[];
+  /** the fill textures it draws (`FillFrame.texture`), `flat` included */
+  readonly textures: readonly Texture[];
+  /** the stroke characters it draws on a single shape, whatever the look's own stroke is (`StrokeFrame.character`) */
+  readonly brushes: readonly StrokeCharacter[];
 }
 
 /**
@@ -42,6 +48,12 @@ export interface RasteriseOptions {
   readonly quality?: number;
   /** false draws the stage without the look's surface effects, on its flat ground: what a sketch sent to an image model wants */
   readonly fx?: boolean;
+  /**
+   * The picture of a chart to draw into this one, by the chart's key (`Frame.charts`): the charting engine's own still.
+   * A chart draws itself in a surface over the stage, so without this a picture of the stage would have a hole where
+   * the chart is. Null for a chart that has nothing to show yet: its room is left as the ground.
+   */
+  readonly chartStill?: (key: string) => HTMLCanvasElement | null;
   /**
    * Called when the picture had to be taken before all of the frame's text was drawable (the renderer waits up to
    * 2 s for it first), so the caller can mark the picture incomplete or ask again.

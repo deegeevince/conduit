@@ -3,7 +3,8 @@
 // same Frame always draws the same picture, which is what makes seeking to a
 // time and inspecting it possible.
 
-import type { AmbientKind, ClockState, Face, Layer, LookId, Mark, Mask, Polyline, StrokeCharacter, Weight } from '@conduit/language';
+import type { AmbientKind, ClockState, Face, Layer, LookId, Mark, Mask, Medium, Polyline, StrokeCharacter, Texture, Weight } from '@conduit/language';
+import type { ChartState } from './chart';
 import type { LookSpec } from './look';
 import type { Box, CameraPose, Viewport } from './space';
 
@@ -121,6 +122,13 @@ export interface FillFrame {
   /** the colour at the bottom of the shape's box when the fill is a gradient; null for a flat fill */
   readonly to: Colour | null;
   readonly opacity: number;
+  /**
+   * What the fill is made of (`tex=`). Absent means `flat`. A texture is drawn
+   * by the renderer's own shader in the fill's colour, fixed to the shape so
+   * that nothing shimmers when the shape or the camera moves. A renderer that
+   * has none (it says so in `RendererCapabilities.textures`) draws flat.
+   */
+  readonly texture?: Texture;
 }
 
 /**
@@ -146,6 +154,11 @@ export interface ShapeFrame {
   /** `rect full`: the renderer extends it to cover the whole screen on its layer, whatever the camera does */
   readonly bleed: boolean;
   readonly tappable: boolean;
+  /**
+   * How far the shape's edge fades out, in the shape's own units (`soft=`): light, cloud, shadow. Absent or 0 is a hard edge.
+   * It widens what is drawn by that much and never moves the outline, so picking and layout are as for a hard shape.
+   */
+  readonly soft?: number;
 }
 
 /** A sprite at one instant: real pixels. A renderer draws each cell as a hard-edged square, never smoothed. */
@@ -193,9 +206,42 @@ export interface PictureFrame {
   /** a painting has been asked for and has not arrived: the renderer may breathe the box's edge, and nothing else */
   readonly waiting: boolean;
   readonly tappable: boolean;
+  /**
+   * Set when the painting is the renderer's own: the frame's figures whose keys are in `sketch` are re-rendered in this
+   * medium into the picture's box, and `src` is null. `develop` reveals it over the sketch exactly as it reveals a
+   * painting that was fetched. Absent when the picture is waiting for, or showing, an image model's painting.
+   */
+  readonly medium?: Medium;
+  /** the keys of the figures that are the sketch, in drawing order; with `medium` */
+  readonly sketch?: readonly string[];
 }
 
 export type FigureFrame = ShapeFrame | SpriteFrame | PictureFrame;
+
+/**
+ * One chart at one instant. A chart is not drawn from shapes: it is handed to
+ * a charting engine (contracts/chart.ts), which draws it crisp in a surface of
+ * its own that sits over the stage. So a ChartFrame says where that surface
+ * goes and what the engine should be showing; a renderer does two things with
+ * it and no more: it keeps the chart's room clear on the stage, and, when it
+ * is asked for a picture (`rasterise`), it draws the engine's own still of the
+ * chart into that room, so that a snapshot, an exported film and the brain's
+ * look at its draft all show the chart.
+ */
+export interface ChartFrame {
+  readonly key: string;
+  readonly id: string;
+  readonly layer: Layer;
+  readonly z: number;
+  /** where the chart's surface goes on screen now, host CSS pixels: the room it was given, through the camera */
+  readonly box: Box;
+  /** the same room with the camera at rest: the size the chart is drawn at, so that a camera move scales it and never re-lays it out */
+  readonly rest: Box;
+  readonly opacity: number;
+  /** what to draw, already read from its rows or its data and themed from the look */
+  readonly state: ChartState;
+  readonly tappable: boolean;
+}
 
 /**
  * A field of particles at one instant. The renderer owns every particle: the
@@ -277,6 +323,8 @@ export interface Frame {
   readonly elements: readonly ElementFrame[];
   /** everything drawn: shapes, sprites, pictures. Within a layer, text and figures are drawn together in `z` order. */
   readonly figures: readonly FigureFrame[];
+  /** the charts on stage. Absent means none: a frame from a painter with no charting engine never has any. */
+  readonly charts?: readonly ChartFrame[];
   /** atmosphere, drawn behind everything else on its layer */
   readonly fields: readonly FieldFrame[];
   readonly cursor: CursorFrame | null;

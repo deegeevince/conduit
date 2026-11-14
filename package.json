@@ -21,7 +21,10 @@
     "docs:language": "pnpm --filter @conduit/language exec tsx scripts/gen-reference.ts",
     "timeline": "pnpm --filter @conduit/language exec tsx scripts/timeline.ts",
     "sessions": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/sessions.ts",
-    "explore": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/explore.ts"
+    "explore": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/explore.ts",
+    "library": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/library.ts",
+    "improve": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/improve.ts",
+    "taste": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/taste.ts"
   },
   "devDependencies": {
     "concurrently": "^10.0.7",

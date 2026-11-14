@@ -3,11 +3,13 @@ import { createBrains } from './brains/registry';
 import { RelayHub } from './brains/relay/relay-hub';
 import { AssetStore } from './domain/assets';
 import { Conductor } from './domain/conductor';
+import { NO_DATASETS } from './domain/datasets';
 import { SessionStore } from './domain/session';
 import { EnvError, loadEnv, processEnvironment } from './env';
 import type { Env } from './env';
 import { createApp } from './http/app';
 import { createImageModel } from './images/registry';
+import { createLibrary } from './library/registry';
 import { createDocumentReader } from './reading/web-reader';
 import { createJsonlSessionLog } from './logs/jsonl-session-log';
 import { NO_SESSION_LOG } from './domain/session-log';
@@ -28,6 +30,18 @@ function boot(env: Env): void {
   const assets = new AssetStore();
   const images = createImageModel(env.images, log.child({ part: 'images' }));
   const sessionLog = env.logDir === null ? NO_SESSION_LOG : createJsonlSessionLog({ log: log.child({ part: 'sessionlog' }), dir: env.logDir, now });
+  // The seed is in memory from here on. Remote is read in the background, now and every `refreshMs`; no turn waits for it.
+  const library = createLibrary(env.library, log.child({ part: 'library' }), now);
+  const refreshLibrary = (): void => {
+    void library.refresh(new AbortController().signal).then((status) => {
+      if (status.failure !== null) log.warn('library.unreachable', { failure: status.failure, serving: status.techniques });
+      else log.info('library.refreshed', { techniques: status.techniques, bySource: status.bySource });
+    });
+  };
+  if (env.library.kind === 'remote') {
+    refreshLibrary();
+    setInterval(refreshLibrary, env.library.refreshMs).unref();
+  }
   const conductor = new Conductor({
     sessions: new SessionStore(),
     brains,
@@ -38,6 +52,9 @@ function boot(env: Env): void {
     reader: createDocumentReader({ enabled: env.readLinks, log: log.child({ part: 'reading' }) }),
     sight: env.sight,
     variant: env.promptVariant,
+    library,
+    // The Remote adapter for datasets is not built (PLAN-v2.md, package S2); `env.datasets` is read and waits for it.
+    datasets: NO_DATASETS,
     maxPaintings: env.paintingsPerSession,
     now,
   });

@@ -4,7 +4,7 @@
 //        pnpm timeline            checks every worked example in the brain's prompt
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { EMPTY_STAGE, LineNormalizer, LineReader, PROMPT_EXAMPLE_HERO, PROMPT_EXAMPLES, PROMPT_EXAMPLES_FLAT, serializeLine, TurnScore } from '../src/index';
+import { EMPTY_STAGE, LineNormalizer, LineReader, PROMPT_EXAMPLE_STRUCTURE, PROMPT_EXAMPLES, PROMPT_EXAMPLES_FLAT, serializeLine, TurnScore } from '../src/index';
 import type { Issue } from '../src/index';
 
 function describe(issues: readonly Issue[]): string {
@@ -55,7 +55,7 @@ function run(title: string, source: string): boolean {
 const argument = process.argv[2];
 let ok = true;
 if (argument === undefined || argument === 'examples') {
-  for (const example of [...PROMPT_EXAMPLES, PROMPT_EXAMPLE_HERO, ...PROMPT_EXAMPLES_FLAT]) ok = run(`prompt example ${example.title}`, example.lines.join('\n')) && ok;
+  for (const example of [...PROMPT_EXAMPLES, PROMPT_EXAMPLE_STRUCTURE, ...PROMPT_EXAMPLES_FLAT]) ok = run(`prompt example ${example.title}`, example.lines.join('\n')) && ok;
 }
 if (argument !== undefined && argument !== 'examples') {
   const path = argument.endsWith('.series') ? argument : fileURLToPath(new URL(`../demos/${argument}.series`, import.meta.url));

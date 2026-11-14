@@ -84,6 +84,20 @@ export const PAGE_MIN_TAIL = 0.3;
 
 export const CAMERA_SHAKE_SECONDS = 0.45;
 export const SET_SECONDS = 0.5;
+/**
+ * A connector drawing itself, at steady pace. A fixed length, not one worked out
+ * from its route: where a link runs is the painter's decision, made with real
+ * type measurements, and the schedule may not depend on it.
+ */
+export const LINK_SECONDS = 0.35;
+/** A row of a table landing. */
+export const TABLE_ROW_SECONDS: Readonly<Record<Pace, number>> = { slow: 0.28, steady: 0.18, brisk: 0.12 };
+/** A point of a chart landing: quick, because a chart may have hundreds and the line should run, not tick. */
+export const CHART_ROW_SECONDS: Readonly<Record<Pace, number>> = { slow: 0.09, steady: 0.06, brisk: 0.04 };
+/** A chart drawn from DATA reveals itself over this long once the data is there, on the ambient clock: like a painting, data is not on the turn clock. */
+export const CHART_REVEAL_SECONDS = 1.2;
+/** A control-driven change that is on or off (a toggle, `bind mode=night`) eases over this long, on the ambient clock. */
+export const BOUND_SECONDS = 0.25;
 export const STRIKE_SECONDS = 0.3;
 export const LOOK_CHANGE_SECONDS = 0.6;
 export const MIN_TYPED_SECONDS = 0.2;

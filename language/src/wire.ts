@@ -6,10 +6,12 @@ import type { StageBase } from './schedule';
 import type { PlacedBox, Sight } from './sight';
 import type { ShownItem } from './stage';
 import type { LeadWindow } from './timing';
-import type { Issue } from './types';
+import type { ControlValue, ControlValues, Issue } from './types';
 import {
   AMBIENT_KINDS,
   CAMERA_MOVES,
+  CHART_KINDS,
+  CONTROL_KINDS,
   ELEMENT_KINDS,
   ENTER_EFFECTS,
   EXIT_EFFECTS,
@@ -21,8 +23,32 @@ import {
   LOOK_IDS,
   LOOPS,
   MARKS,
+  PROCEDURAL_MEDIA,
+  STROKES,
+  STRUCTURE_KINDS,
+  TEXTURES,
 } from './vocabulary';
-import type { AmbientKind, CameraMove, CanvasName, ElementKind, EnterEffect, ExitEffect, Face, FxName, Layer, Layout, LookId, Loop, Mark } from './vocabulary';
+import type {
+  AmbientKind,
+  CameraMove,
+  CanvasName,
+  ChartKind,
+  ControlKind,
+  ElementKind,
+  EnterEffect,
+  ExitEffect,
+  Face,
+  FxName,
+  Layer,
+  Layout,
+  LookId,
+  Loop,
+  Mark,
+  Medium,
+  StrokeCharacter,
+  StructureKind,
+  Texture,
+} from './vocabulary';
 
 /** What the painter can see and the brain cannot. */
 export interface ScreenFacts {
@@ -62,17 +88,33 @@ export interface Capabilities {
   readonly ambient: readonly AmbientKind[];
   /** what it can tell the brain about how a turn landed: nothing, the structured report, or the report and a picture */
   readonly sight: 'none' | 'report' | 'snapshot';
+  /** the structures it can lay out. Empty until the painter can; the brain is taught only these. */
+  readonly structures: readonly StructureKind[];
+  /** the kinds of chart its charting engine draws; `chart` is in `structures` only when this is not empty */
+  readonly charts: readonly ChartKind[];
+  /** the controls it can draw and work, bindings included. Empty until the painter can. */
+  readonly controls: readonly ControlKind[];
+  /** the media it can render a sketch in by itself (`paint as=`), with no image model */
+  readonly media: readonly Medium[];
+  /** the fill textures it can draw (`tex=`); `flat` is always there */
+  readonly textures: readonly Texture[];
+  /** the line characters it can draw on one shape (`brush=`) */
+  readonly brushes: readonly StrokeCharacter[];
+  /** true when it can report on a draft before the turn has finished playing: what look-and-fix needs */
+  readonly drafts: boolean;
 }
 
 /** What the server can do for a turn that the painter cannot. The brain's prompt is filtered by these too. */
 export interface Services {
-  /** an image model is configured, so `paint` produces a painting; without it the sketch is all there is */
+  /** an image model is configured, so `paint` can ask it for a painting; without one a painting is the painter's own rendering of the sketch */
   readonly paint: boolean;
   /** what the server wants back about how a turn landed: the report alone, or the report and a picture of the resting stage */
   readonly sight: 'report' | 'snapshot';
+  /** the brain looks at its draft and fixes it within the turn: the painter is asked for a draft report (and picture) when a `pass` event says `drafted` */
+  readonly review: boolean;
 }
 
-export const NO_SERVICES: Services = { paint: false, sight: 'report' };
+export const NO_SERVICES: Services = { paint: false, sight: 'report', review: false };
 
 export const FULL_CAPABILITIES: Capabilities = {
   language: LANGUAGE.version,
@@ -91,7 +133,20 @@ export const FULL_CAPABILITIES: Capabilities = {
   fx: FX_NAMES,
   ambient: AMBIENT_KINDS,
   sight: 'snapshot',
+  structures: STRUCTURE_KINDS,
+  charts: CHART_KINDS,
+  controls: CONTROL_KINDS,
+  media: PROCEDURAL_MEDIA,
+  textures: TEXTURES,
+  brushes: STROKES,
+  drafts: true,
 };
+
+/** What a painter that speaks Series 3 can do of Series 4: nothing. A `ready` that leaves the new lists out is read as this. */
+export const NO_V4_CAPABILITIES = { structures: [], charts: [], controls: [], media: [], textures: ['flat'], brushes: [], drafts: false } as const satisfies Pick<
+  Capabilities,
+  'structures' | 'charts' | 'controls' | 'media' | 'textures' | 'brushes' | 'drafts'
+>;
 
 export const REFERENCE_SCREEN: ScreenFacts = { width: 1280, height: 720, dpr: 2, cols: 58, rows: 11, canvas: 'wide', reducedMotion: false, pointer: 'fine' };
 
@@ -105,7 +160,13 @@ export type TurnInput =
   /** play a named fixture script; always answered by the replay brain */
   | { readonly kind: 'demo'; readonly script: string }
   /** play these lines of Series: a script copied from an earlier answer, edited or not. Always answered by the replay brain. */
-  | { readonly kind: 'script'; readonly text: string };
+  | { readonly kind: 'script'; readonly text: string }
+  /**
+   * The user worked a control whose change is meant for the brain: a button
+   * pressed, or a control marked `send` committed. `text` is the control's
+   * label (a pick: the option chosen); `values` is every live control's value.
+   */
+  | { readonly kind: 'act'; readonly id: string; readonly text: string; readonly values: ControlValues };
 
 export type ClockState =
   /** no turn is open and nothing is left to play */
@@ -144,7 +205,23 @@ export interface TurnReport {
   readonly skippedAt: number | null;
   /** the real, resolved world box of everything left on the stage (see `PlacedBox`); the brief's positions come from here, not from the lines as written */
   readonly placed?: readonly PlacedBox[];
+  /** what every control left on the stage holds, by element id. Absent means there are none. The same values are written into `stage`. */
+  readonly controls?: ControlValues;
 }
+
+/**
+ * Where look-and-fix stands within a turn. A turn has one or more passes: the
+ * draft the brain writes first, then, when the server decides it is worth it,
+ * a pass in which the brain is shown its draft and fixes it. All of a turn's
+ * passes share its clock, its ids and its `seq` numbering.
+ *
+ * - `drafted`: the brain has finished pass `pass`. The painter answers with a `draft` back event (and a picture, when it can) for the stage as the lines so far will leave it, without waiting for the playhead.
+ * - `looking`: the brain has been shown the draft and has not written yet. The stage holds at the pen as usual; the chrome may say so.
+ * - `fixing`: the first line of the fix has arrived.
+ * - `kept`: the brain looked and changed nothing.
+ * - `skipped`: the server decided not to look, or gave up waiting; `reason` says why. The turn ends as it stands.
+ */
+export type PassState = 'drafted' | 'looking' | 'fixing' | 'kept' | 'skipped';
 
 /** What became of a painting. `ready`: fetch `url`. `skipped`: no image model is configured. `failed`: one is, and it did not deliver. */
 export type AssetStatus = 'ready' | 'skipped' | 'failed';
@@ -160,15 +237,24 @@ export type StageEvent =
   /** something the brain wrote that was dropped; for the debug HUD only */
   | { readonly type: 'reject'; readonly turn: string; readonly raw: string; readonly issues: readonly Issue[] }
   | { readonly type: 'end'; readonly turn: string; readonly reason: TurnEndReason; readonly message: string | null }
+  /** look-and-fix: `pass` is the pass that has just been drafted, or is being looked at or fixed (the draft is pass 1) */
+  | { readonly type: 'pass'; readonly turn: string; readonly pass: number; readonly state: PassState; readonly reason: string | null }
   /**
    * News of a painting, whenever it comes: it is not on the turn clock and may
    * arrive after the turn has ended. `key` is the picture element's key
    * (`<id>@<seq>`); `url` is same-origin and set only when `status` is `ready`.
    */
-  | { readonly type: 'asset'; readonly turn: string; readonly key: string; readonly status: AssetStatus; readonly url: string | null; readonly reason: string | null };
+  | { readonly type: 'asset'; readonly turn: string; readonly key: string; readonly status: AssetStatus; readonly url: string | null; readonly reason: string | null }
+  /**
+   * News of DATA a chart draws by reference (`chart … data=d1`). Like a
+   * painting it is not on the turn clock: `ready` says where to fetch the
+   * rows (same origin, JSON: a `DataTable`), and the chart reveals itself
+   * when they are there. `failed`: the chart shows that it has no data.
+   */
+  | { readonly type: 'data'; readonly turn: string; readonly id: string; readonly status: 'ready' | 'failed'; readonly url: string | null; readonly reason: string | null };
 
 export type StageEventType = StageEvent['type'];
-export const STAGE_EVENT_TYPES: readonly StageEventType[] = ['hello', 'turn', 'reading', 'line', 'reject', 'end', 'asset'];
+export const STAGE_EVENT_TYPES: readonly StageEventType[] = ['hello', 'turn', 'reading', 'line', 'reject', 'end', 'pass', 'asset', 'data'];
 
 /** Painter to server: the back channel. */
 export type BackEvent =
@@ -198,9 +284,24 @@ export type BackEvent =
       /** true when the element was a choice, so this tap is also the next turn's input */
       readonly choice: boolean;
     }
-  | { readonly type: 'report'; readonly report: TurnReport };
+  | { readonly type: 'report'; readonly report: TurnReport }
+  /**
+   * The user committed a change to a control (released a slider, flipped a
+   * toggle, chose an option, pressed Enter in an input). Not sent while
+   * dragging: local bindings need no round trip. `send` is true when the
+   * change is also the next turn's input, as a choice's tap is.
+   */
+  | { readonly type: 'control'; readonly turn: string | null; readonly id: string; readonly value: ControlValue; readonly text: string; readonly playhead: number; readonly send: boolean }
+  /**
+   * How pass `pass` of an open turn will land: sight for the stage as the
+   * lines so far will leave it, computed without waiting for the playhead.
+   * Sent in answer to `pass … drafted`. `snapshot` is true when a picture of
+   * that stage was uploaded beside it (`API.draft`).
+   */
+  | { readonly type: 'draft'; readonly turn: string; readonly pass: number; readonly sight: Sight; readonly placed?: readonly PlacedBox[]; readonly snapshot: boolean };
 
 export type BackEventType = BackEvent['type'];
+export const BACK_EVENT_TYPES: readonly BackEventType[] = ['ready', 'started', 'progress', 'tap', 'report', 'control', 'draft'];
 
 /** A back-channel event as the server keeps it. `cursor` increases over the session. */
 export interface BackEventRecord {
@@ -273,6 +374,12 @@ export const API = {
   sketch: (session: string, key: string): string => `/api/sessions/${session}/sketches/${encodeURIComponent(key)}`,
   /** POST image/jpeg: what the stage looked like when a turn came to rest. GET: the same picture back. */
   snapshot: (session: string, turn: string): string => `/api/sessions/${session}/turns/${turn}/snapshot`,
+  /** POST image/jpeg: the stage as pass `pass` of an open turn will leave it: what the brain is shown when it looks at its draft. */
+  draft: (session: string, turn: string, pass: number): string => `/api/sessions/${session}/turns/${turn}/drafts/${pass}`,
+  /** GET: the rows of DATA a chart draws by reference, as a `DataTable` */
+  data: (session: string, id: string): string => `/api/sessions/${session}/data/${encodeURIComponent(id)}`,
+  /** GET: the answers set out for the owner to score. POST: one score. */
+  taste: '/api/taste',
   /** GET: the runs of the exploration battery on disk, newest first */
   exploreRuns: '/api/explore/runs',
   /** GET: one run's index */

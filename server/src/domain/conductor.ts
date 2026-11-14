@@ -33,6 +33,8 @@ import { buildContext, rememberTurn } from './memory';
 import { MAX_PROBLEMS, SERVER_LIMITS } from './session';
 import type { SessionLog } from './session-log';
 import type { ActiveTurn, Session, SessionStore, StageSink } from './session';
+import type { DatasetLibrary } from './datasets';
+import type { TechniqueLibrary } from './techniques';
 
 export interface ConductorDeps {
   readonly sessions: SessionStore;
@@ -47,6 +49,10 @@ export interface ConductorDeps {
   readonly sight: 'report' | 'snapshot';
   /** how the system prompt teaches a diagram */
   readonly variant: PromptVariant;
+  /** the techniques a turn's brief may carry; answers from memory and never waits */
+  readonly library: TechniqueLibrary;
+  /** the owner's own datasets, for a chart drawn by reference; `NO_DATASETS` unless switched on. Not yet read by a turn (PLAN-v2.md, package S1). */
+  readonly datasets: DatasetLibrary;
   /** paintings a conversation may ask the image model for */
   readonly maxPaintings: number;
   /** milliseconds; injected so nothing in the domain reads the wall clock directly */
@@ -73,7 +79,8 @@ export class Conductor {
 
   constructor(deps: ConductorDeps) {
     this.deps = deps;
-    this.services = { paint: deps.images.available, sight: deps.sight };
+    // `review` stays off until the conductor can run the pass (PLAN-v2.md, package S1): a painter told to expect a look that never comes would only wait.
+    this.services = { paint: deps.images.available, sight: deps.sight, review: false };
     deps.sessions.onDrop = (session) => this.release(session, 'session.evicted');
     this.reaper = setInterval(() => {
       for (const session of deps.sessions.reap(deps.now())) this.release(session, 'session.reaped');
@@ -512,10 +519,14 @@ export class Conductor {
       const gathered = await this.gather(s, turn, brain);
       fresh = gathered.fresh;
       if (turn.abort.signal.aborted) return;
+      // The few techniques that fit what was just said. From memory: no network, file or model is on this path.
+      const techniques = turn.input.kind === 'prompt' || turn.input.kind === 'tap' || turn.input.kind === 'act' ? this.deps.library.cardsFor({ input: turn.input, documents: s.documents.length > 0 }) : [];
+      if (techniques.length > 0) log.debug('techniques.chosen', { session: s.id, turn: turn.id, techniques: techniques.map((card) => card.id) });
       const context = {
         ...base,
         documents: s.documents.map((doc): DocumentFacts => ({ ...doc.facts, fresh: fresh.has(doc.facts.id) })),
         unread: gathered.unread,
+        techniques,
       };
       const pdfs = s.documents.flatMap((doc) => (doc.pdf === null ? [] : [{ id: doc.facts.id, bytes: doc.pdf }]));
       const snapshot = this.deps.sight === 'snapshot' && turn.previous !== null ? (this.deps.assets.snapshot(s.id, turn.previous) ?? null) : null;
@@ -657,11 +668,13 @@ function concerns(event: BackEvent, turn: string): boolean {
     case 'ready':
       return true;
     case 'tap':
+    case 'control':
       return event.turn === null || event.turn === turn;
     case 'report':
       return event.report.turn === turn;
     case 'started':
     case 'progress':
+    case 'draft':
       return event.turn === turn;
   }
 }

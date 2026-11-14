@@ -46,8 +46,29 @@ export function describeFigure(figure: Figure, box: CanvasBox | null = null): st
       const size = `sprite ${width}x${rows.length}${frames > 1 ? `, ${frames} frames` : ''}`;
       return box === null ? size : `${size} at ${round(box.x + box.w / 2)},${round(box.y + box.h / 2)}`;
     }
-    case 'group':
-      return box === null ? 'group' : `group ${round(box.w)}x${round(box.h)} at ${round(box.x + box.w / 2)},${round(box.y + box.h / 2)}`;
+    case 'group': {
+      const name = figure.card === undefined ? 'group' : figure.card.title === '' ? 'card' : `card "${figure.card.title}"`;
+      return box === null ? name : `${name} ${round(box.w)}x${round(box.h)} at ${round(box.x + box.w / 2)},${round(box.y + box.h / 2)}`;
+    }
+    case 'structure': {
+      const name = figure.chart === null ? figure.structure : `${figure.chart} chart`;
+      if (figure.data !== null) return `${name} of DATA ${figure.data}`;
+      if (figure.rows.length === 0) return name;
+      // A chart of many points is named by its first and last, not recited.
+      const rows = figure.rows.length > 8 ? [...figure.rows.slice(0, 2), { cells: [`… ${figure.rows.length - 3} more …`] }, ...figure.rows.slice(-1)] : figure.rows;
+      return `${name}: ${rows.map((row) => row.cells.join(' | ')).join(' / ')}`;
+    }
+    case 'node':
+      return figure.values.length === 0 ? `${figure.shape} node` : `node at ${figure.values.map(round).join(figure.values.length === 2 ? ',' : ' ')}`;
+    case 'link':
+      return `link ${figure.from.split('@')[0] ?? figure.from} to ${figure.to.split('@')[0] ?? figure.to}`;
+    case 'control': {
+      if (figure.control === 'slider') return `slider ${figure.min} to ${figure.max}, at ${String(figure.value ?? figure.min)}${figure.unit ?? ''}`;
+      if (figure.control === 'toggle') return `toggle, ${figure.value === true ? 'on' : 'off'}`;
+      if (figure.control === 'pick') return `pick of ${figure.options.join(' | ')}, on ${figure.options[Number(figure.value ?? 1) - 1] ?? ''}`;
+      if (figure.control === 'input') return `input${figure.value === '' || figure.value === null ? '' : `, holding "${String(figure.value)}"`}`;
+      return 'button';
+    }
     case 'copy':
       return `copy of ${figure.source.split('@')[0] ?? figure.source}`;
     case 'picture':
@@ -107,10 +128,21 @@ export function restingBox(element: CarriedElement, all: readonly CarriedElement
   return { x: world.x + groupAt.x, y: world.y + groupAt.y, w: world.w, h: world.h };
 }
 
-/** A carried thing as the brief names it: the words, or what is drawn and where it really rests. `known` is a box the painter reported for it, when the element carries none. */
+/**
+ * A carried thing as the brief names it: the words, or what is drawn and where it really rests. `known` is a box the painter reported for it, when the element carries none.
+ * A structure is named with the words of its nodes (they are left out of the brief as parts); a node, a link and a control with their own.
+ */
 export function describeCarried(element: CarriedElement, all: readonly CarriedElement[], known: CanvasBox | null = null): string {
-  if (element.figure === null) return element.text;
-  return describeFigure(element.figure, known ?? restingBox(element, all));
+  const { figure } = element;
+  if (figure === null) return element.text;
+  const said = describeFigure(figure, known ?? restingBox(element, all));
+  if (figure.kind === 'structure') {
+    const nodes = all.filter((other) => other.parent === element.key && other.kind === 'node' && other.text !== '');
+    const title = element.text === '' ? '' : ` "${element.text}"`;
+    return nodes.length === 0 ? `${said}${title}` : `${said}${title}: ${nodes.map((node) => `${node.id} ${node.text}`).join(' / ')}`;
+  }
+  if (figure.kind === 'node' || figure.kind === 'link' || figure.kind === 'control') return element.text === '' ? said : `${said}: ${element.text}`;
+  return said;
 }
 
 /**
@@ -128,12 +160,29 @@ export function shownAt(schedule: Schedule, at: number): ShownItem[] {
       return {
         id: element.id,
         kind: element.kind,
-        text: element.kind === 'group' ? `group of ${parts} part${parts === 1 ? '' : 's'}` : figure === null ? element.text : describeFigure(figure),
+        text: element.kind === 'group' ? `group of ${parts} part${parts === 1 ? '' : 's'}` : figure === null ? element.text : wordsOf(element, figure, schedule, at),
         struck: isStruckAt(element, at),
         partial: element.enter !== null && element.enter.end > at,
         ...(element.parent !== null && element.kind !== 'text' && { part: true }),
       };
     });
+}
+
+/**
+ * A drawn thing that carries words, as the transcript and the brain's memory
+ * name it. A structure is named with the words of its nodes, because they are
+ * its content and its nodes are left out of the transcript as parts; a node, a
+ * link and a control are named with their own words.
+ */
+function wordsOf(element: ElementSpan, figure: Figure, schedule: Schedule, at: number): string {
+  const said = describeFigure(figure);
+  if (figure.kind === 'structure') {
+    const nodes = schedule.elements.filter((other) => other.parent === element.key && other.kind === 'node' && other.enter !== null && other.enter.start < at && other.text !== '');
+    const title = element.text === '' ? '' : ` "${element.text}"`;
+    return nodes.length === 0 ? `${said}${title}` : `${said}${title}: ${nodes.map((node) => node.text).join(' / ')}`;
+  }
+  if (figure.kind === 'node' || figure.kind === 'link' || figure.kind === 'control') return element.text === '' ? said : `${said}: ${element.text}`;
+  return said;
 }
 
 /** The stage as it rests at `at`: the base the next turn starts from. Exits in flight are treated as complete, and so are entrances. */
@@ -144,8 +193,14 @@ export function settle(schedule: Schedule, base: StageBase, at: number): StageBa
     .map((element) => {
       // A sprite caught half-drawn rests whole: every row that was written is carried.
       const figure = element.figure?.kind === 'sprite' ? element.figure : figureAt(element, at);
+      // A table or a chart caught half-written rests whole too.
+      const whole = element.figure?.kind === 'structure' ? element.figure : figure;
       const carried: Figure | null =
-        figure?.kind === 'sprite' ? { kind: 'sprite', sprite: { ...figure.sprite, frames: figure.sprite.frames.map((rows) => rows.map((row) => ({ cells: row.cells, at: 0 }))) } } : figure;
+        whole?.kind === 'sprite'
+          ? { kind: 'sprite', sprite: { ...whole.sprite, frames: whole.sprite.frames.map((rows) => rows.map((row) => ({ cells: row.cells, at: 0 }))) } }
+          : whole?.kind === 'structure'
+            ? { ...whole, rows: whole.rows.map((row) => ({ cells: row.cells, at: 0 })) }
+            : whole;
       return {
         key: element.key,
         id: element.id,
@@ -159,6 +214,7 @@ export function settle(schedule: Schedule, base: StageBase, at: number): StageBa
         parent: element.parent,
         struck: isStruckAt(element, at),
         replaces: element.replaces,
+        ...(element.driven.length > 0 && { driven: element.driven.map((change) => ({ ...change, since: 0 })) }),
       };
     });
   return {

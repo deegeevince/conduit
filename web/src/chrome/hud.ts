@@ -118,6 +118,8 @@ export function mountHud(host: HTMLElement, app: StageApp): Hud {
       else if (event.type === 'tap') detail = `${event.id} ${event.choice ? 'choice' : ''} "${event.text}"`;
       else if (event.type === 'report') detail = `${event.report.turn} ${event.report.outcome} shown ${event.report.shown.length}`;
       else if (event.type === 'started') detail = event.turn;
+      else if (event.type === 'control') detail = `${event.id} = ${event.text}${event.send ? ' (sent)' : ''}`;
+      else if (event.type === 'draft') detail = `${event.turn} pass ${event.pass}, ${event.sight.items.length} things${event.snapshot ? ', picture' : ''}`;
       else detail = `${event.look} ${event.screen.cols}x${event.screen.rows}`;
       children.push(item(`${event.type} ${detail}`));
     }

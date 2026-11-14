@@ -6,7 +6,7 @@
 
 import { parseLine } from './parse';
 import type { Issue, Line, ParseResult } from './types';
-import { LIMITS } from './vocabulary';
+import { LIMITS, STRUCTURE } from './vocabulary';
 
 /** Lines that do not end a sprite being written: its next row may follow them. */
 const KEEPS_SPRITE_OPEN: ReadonlySet<string> = new Set(['wait', 'plan', 'color', 'style', 'look', 'cam', 'hit']);
@@ -21,6 +21,8 @@ const ROW_ALPHABET = '.#0123456789abcdefABCDEF';
  */
 export class LineReader {
   private open: string | null = null;
+  /** a table or a chart is being written: a line of cells without its leading bar is still a row of it */
+  private table = false;
   private readonly styles: Set<string>;
 
   /** `definedStyles`: the names of styles the brain defined in earlier turns */
@@ -43,8 +45,15 @@ export class LineReader {
         }
       }
     }
+    // `Install | 8,000 | 2,500` under a table: cells whose first word is no verb are a row that lost its leading bar.
+    if (result.kind === 'reject' && this.table && trimmed.includes('|') && result.issues.some((issue) => issue.code === 'unknown-verb')) {
+      const retried = parseLine(`| ${trimmed}`);
+      if (retried.kind === 'line') result = retried;
+    }
     if (result.kind !== 'line') return result;
     const { line } = result;
+    if (line.verb === 'table' || line.verb === 'chart') this.table = true;
+    else if (line.verb === 'scene' || line.verb === 'pix' || line.verb in STRUCTURE) this.table = false;
     if (line.verb === 'style') this.styles.add(line.name);
     if (line.verb === 'pix') this.open = ROW_ALPHABET + Object.keys(line.key).join('');
     else if (line.verb !== 'row' && line.verb !== 'frame' && !KEEPS_SPRITE_OPEN.has(line.verb)) this.open = null;
@@ -71,8 +80,15 @@ export interface Normalized {
  * - On a `say` line, a first word that is the name of a style the brain
  *   defined is a style, not an id: `say fear | What if I can't?` means what
  *   it looks like.
- * - `| row` and `frame` are attached to the sprite being written. A `| text`
- *   line with no sprite open is plain speech.
+ * - `| row` and `frame` are attached to the sprite being written, and a
+ *   `| cell | cell` row to the table or chart being written. A `| text` line
+ *   with neither open is plain speech.
+ * - A `node` is attached to the structure being written (`in=<its id>`).
+ *
+ * A sprite is closed by the next line that is not one of its rows. A table, a
+ * chart and a structure of nodes stay open across speech, waits and changes,
+ * so they can be built a part at a time with words between; another structure
+ * or a new scene closes them.
  *
  * The server runs this once per line before scheduling and forwarding, so the
  * painter only ever receives explicit lines and never needs one.
@@ -81,6 +97,10 @@ export class LineNormalizer {
   private readonly makeId: () => string;
   private readonly styles: Set<string>;
   private sprite: string | null = null;
+  /** the table or chart whose rows are being written */
+  private table: string | null = null;
+  /** the flow, tree, cycle, timeline or map whose nodes are being written */
+  private structure: string | null = null;
 
   constructor(makeId: () => string, definedStyles: Iterable<string> = []) {
     this.makeId = makeId;
@@ -95,6 +115,7 @@ export class LineNormalizer {
       case 'row': {
         if (line.id !== '-') return { line, issues: [] };
         if (this.sprite !== null) return { line: { ...line, id: this.sprite }, issues: [] };
+        if (this.table !== null) return { line: { ...line, id: this.table }, issues: [] };
         // Speech after all: a bar and some words, with no sprite open. Not cut to a sprite's width.
         const text = line.cells.trim();
         const cut = text.length > LIMITS.text;
@@ -131,8 +152,46 @@ export class LineNormalizer {
         }
         if (id === '-') id = this.makeId();
         this.sprite = line.verb === 'pix' ? id : null;
+        // A sprite begun after a table takes the rows from here on.
+        if (line.verb === 'pix') this.table = null;
         return { line: { ...line, id, styles }, issues: [] };
       }
+      case 'flow':
+      case 'tree':
+      case 'cycle':
+      case 'timeline':
+      case 'map':
+      case 'table':
+      case 'chart': {
+        const id = line.id === '-' ? this.makeId() : line.id;
+        this.sprite = null;
+        if (STRUCTURE[line.verb].parts === 'rows') this.table = id;
+        // A chart takes rows and, as its marks, nodes; a table takes rows only.
+        if (STRUCTURE[line.verb].parts === 'nodes' || line.verb === 'chart') this.structure = id;
+        return { line: { ...line, id }, issues: [] };
+      }
+      case 'node': {
+        this.sprite = null;
+        const structure = line.props.in ?? this.structure;
+        if (structure === null) {
+          return { line: null, issues: [{ code: 'no-structure', severity: 'error', message: 'node has no structure to belong to; write flow, tree, cycle, timeline or map first' }] };
+        }
+        return { line: { ...line, id: line.id === '-' ? this.makeId() : line.id, props: { ...line.props, in: structure } }, issues: [] };
+      }
+      case 'link':
+      case 'button':
+      case 'toggle':
+      case 'slider':
+      case 'pick':
+      case 'input':
+      case 'card':
+        this.sprite = null;
+        return { line: line.id === '-' ? { ...line, id: this.makeId() } : line, issues: [] };
+      case 'scene':
+        this.sprite = null;
+        this.table = null;
+        this.structure = null;
+        return { line, issues: [] };
       default:
         if (!KEEPS_SPRITE_OPEN.has(line.verb)) this.sprite = null;
         return { line, issues: [] };

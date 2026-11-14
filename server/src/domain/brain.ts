@@ -1,4 +1,4 @@
-import type { BriefForm, Capabilities, Issue, Line, ScreenFacts, Services, TurnContext, TurnInput } from '@conduit/language';
+import type { BriefForm, Capabilities, Issue, Line, LineProblem, ScreenFacts, Services, Sight, TurnContext, TurnInput } from '@conduit/language';
 
 export type BrainId = 'relay' | 'claude-cli' | 'replay';
 
@@ -27,6 +27,29 @@ export interface TurnRequest {
    * document to its model attaches the ones the brief says are attached; others ignore this.
    */
   readonly pdfs?: readonly { readonly id: string; readonly bytes: Uint8Array }[];
+}
+
+/**
+ * A second look at an answer the brain has just written: what the conductor
+ * hands a brain for a fix pass of look-and-fix. It is the same turn, the same
+ * conversation and the same stage; the brain is shown how its draft will land
+ * and writes the lines that repair it.
+ */
+export interface ReviewRequest {
+  readonly turn: string;
+  readonly session: string;
+  /** the pass about to be written: 2 for the first look */
+  readonly pass: number;
+  /** what the user asked, exactly as the turn's request had it */
+  readonly input: TurnInput;
+  /** how the lines so far will land, from the painter's `draft` event; null when it did not answer in time */
+  readonly sight: Sight | null;
+  /** the stage as the lines so far will leave it; null when there is no picture */
+  readonly picture: Snapshot | null;
+  /** lines of this turn so far that were dropped or repaired */
+  readonly problems: readonly LineProblem[];
+  /** the ids of styles the conversation has defined, so that `fear | …` still reads as speech in the fix */
+  readonly styles: readonly string[];
 }
 
 /** What a turn cost. Every field a brain cannot measure is null, never a guess. */
@@ -101,6 +124,27 @@ export interface Brain {
    * - Works for a session it has never seen `open` for.
    */
   respond(request: TurnRequest, signal: AbortSignal): AsyncIterable<BrainEvent>;
+
+  /**
+   * Shows the brain its own draft and yields the lines of the fix: look and
+   * fix. Called by the conductor after `respond` has returned for the same
+   * turn and before the turn ends, at most `ReviewPolicy.passes` times. The
+   * brain must still hold the conversation of that `respond` (the claude-cli
+   * brain: the same warm process); a brain that cannot, or that has no eyes,
+   * leaves this out and the turn ends as drafted.
+   *
+   * Contract, beyond `respond`'s:
+   * - The message it sends its model is `buildReviewBrief` (language), with
+   *   the picture attached when there is one. Nothing else is added: the
+   *   wording is the same for every turn so that a measured gain belongs to
+   *   the mechanism.
+   * - A reply that is the one line `ok` (`isKeep`) yields nothing: the draft is kept.
+   * - Yields a `brief` (form `since`) before any line and a `usage` after the
+   *   last, like `respond`, so that the log and the bill show the pass.
+   * - Aborting `signal` interrupts the model and leaves the conversation
+   *   usable: an abandoned look must not cost the warm process.
+   */
+  review?(request: ReviewRequest, signal: AbortSignal): AsyncIterable<BrainEvent>;
 
   /** The conversation is over: let go of whatever was kept for it. */
   release?(session: string): void;

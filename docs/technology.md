@@ -2,6 +2,8 @@
 
 This document answers one question: **why does the code have this shape?** What the product is and what was decided about it is in [product.md](product.md). The language is specified in [language.md](language.md). How to run it is in [runbook.md](runbook.md).
 
+> **v2.** The quality and expression round is planned and its skeleton (contracts, the language, stubs) is in the code. Sections and rows marked (v2) describe that skeleton and what will stand on it; `PLAN-v2.md` is the build. A stub says "STUB" at the top of its file and names its package.
+
 ## The shape
 
 A pnpm workspace with three packages. Imports point inward: `server` and `web` depend on `language`; `language` depends on nothing.
@@ -13,6 +15,9 @@ language/   Series itself: vocabulary, line types, parser, normaliser, serialise
 server/     Sessions, turns, the two streams, the brains, the image model, the session log.
 web/        The painter, its renderers, the exporter, and a small amount of chrome. Browser.
 explore/    The exploration battery (a JSON file) and, untracked, the runs it produces.
+            (v2) sealed/ the held-out set; taste/ the owner's own scores.
+techniques/ (v2) seed/ the techniques in the repository: the library's fallback and its first contents. .cache/ is untracked.
+loop/       (v2) The improvement loop's changelog and ledger.
 ```
 
 Domain types are plain interfaces in the middle. Edges translate. Every outside system sits behind an interface the domain owns:
@@ -25,6 +30,12 @@ Domain types are plain interfaces in the middle. Edges translate. Every outside 
 | `Renderer` (`web/src/contracts/renderer.ts`) | painter | three.js, plain DOM |
 | `StageLink` (`web/src/contracts/link.ts`) | web app | HTTP (SSE down, POST up) |
 | `Exporter` (`web/src/contracts/export.ts`) | web app | WebCodecs and a zip writer |
+| (v2) `StructureEngine`, `CalloutEngine` (`web/src/contracts/blocks.ts`) | painter | `web/src/painter/blocks/` |
+| (v2) `ControlEngine`, `ControlStore` (`web/src/contracts/controls.ts`) | painter | `web/src/painter/controls/` |
+| (v2) `ChartEngine` (`web/src/contracts/chart.ts`) | painter | `lightweight-charts` |
+| (v2) `TechniqueLibrary`, `TechniqueWriter` (`server/src/domain/techniques.ts`) | server domain | memory over seed, file cache and Remote; none |
+| (v2) `DatasetLibrary` (`server/src/domain/datasets.ts`) | server domain | Remote; none |
+| (v2) `Brain.review` (`server/src/domain/brain.ts`) | server domain | claude-cli |
 
 Each vendor is imported in exactly one place, so replacing one is a change to one place:
 
@@ -38,6 +49,11 @@ Each vendor is imported in exactly one place, so replacing one is a change to on
 | `node:fs` for session logs | `server/src/logs/jsonl-session-log.ts` |
 | `node:dns`, `node:net`, `node:http(s)`, `node:zlib` (reading links) | `server/src/reading/safe-fetch.ts` |
 | `hono`, `@hono/node-server` | files under `server/src/http/`, and `server/src/main.ts` for `serve` |
+| (v2) `lightweight-charts` | `web/src/render/chart/lightweight.ts` |
+| (v2) the `remote` command: its arguments, its output, the tree's write rules | `server/src/library/remote/remote-cli.ts` |
+| (v2) `node:fs` for the technique seed, overlay and cache | `server/src/library/files.ts` |
+| (v2) `git` (worktrees, branches, diffs) | `server/src/loop/git.ts` |
+| (v2) `claude -p` as an agent with tools (the critic, the builder, the reviewer, the edit and reader passes) | `server/src/loop/agents.ts` |
 | `process.env` | `server/src/env.ts` reads it through `loadEnv`; handed over only by `main.ts` and the tools under `server/src/tools/` and `brains/claude-cli/probe.ts` |
 | the console | `server/src/log.ts` (and one line in `main.ts` for a failed boot) |
 
@@ -75,6 +91,30 @@ Only the painter knows where the playhead is, what was shown, and how it landed.
 
 A painting takes ten seconds or never comes. If it were on the turn clock the schedule would depend on an image model. So it is not: `paint` creates a picture element instantly, and the painting's arrival is an input to `frameAt` alongside time (which paintings can be drawn, and since when on the ambient clock). The schedule, the pen, memory and exported timing are identical with and without it. An export uses the paintings that had arrived when it was started.
 
+### 7. (v2) Layout is the painter's, and it is pure
+
+A flow, a tree, a table: where its parts go is decided by an engine in the painter (`web/src/painter/blocks/`) that is a pure function. It is handed the parts, the room, and a function that measures text exactly as the painter sets it; it returns boxes, outlines and text. It touches no DOM and reads no clock, so the same parts give the same layout on screen, in an exported film and under `tsx` with no browser, which is how the battery counts collisions without a model's opinion.
+
+The engines return the things the painter already turns into frames. **No renderer learns anything about structures or controls**: a node is a shape and some text by the time it is drawn, so the three.js renderer, the plain renderer, picking, the snapshot and the SVG export work unchanged.
+
+Timing stays in `language/`. A link's duration is a fixed length, not one worked out from its route, because the route is a decision made with font metrics and the schedule may not depend on those. That is the one place a drawn thing's time does not come from its geometry, and it is what keeps idea 1 true.
+
+A structure is laid out from every line that has arrived, not from what the playhead has reached. Live, a late part moves what is on stage once, eased; in a film, where every line is known at time zero, nothing moves.
+
+### 8. (v2) What the user does is an input, like time
+
+A frame was a pure function of time and of which paintings had arrived. v2 adds two more inputs of the same kind: **what every control holds** (`ControlStore`) and **which DATA has arrived**. A bound change is an ordinary change (`set`, `move`, a morph) whose progress is read from a control instead of from the clock; what that means is one function in `language/src/bind.ts`. So a dragged slider is a new frame, not a new schedule: nothing is rebuilt, nothing is sent, and the same turn exported with the slider elsewhere is a different, equally exact film.
+
+Charts are the exception to "everything is a frame". The charting engine is stateful and draws in a surface of its own. The port makes it behave: `ChartHandle.apply(state)` takes a value and shows exactly that, any state can follow any other, and `still()` gives a picture of it. So a chart can be seeked, replayed and exported like the rest, and only its live crosshair and zoom, which are the user's, live inside the engine.
+
+### 9. (v2) A turn can have a second pass
+
+Look and fix is a second call to the same warm process inside one turn (`Brain.review`). The painter makes it cheap in the only way that matters: when the server says the draft is written (`pass … drafted`), the painter settles a copy of the schedule to its end, computes sight and rasterises that frame off screen (idea 3: a frame is a function of time, so the frame at the end exists before the playhead gets there), and sends both. The look therefore runs while the draft plays. Whether to look at all is two pure functions in `language/src/review.ts`, called by the conductor and by the battery alike.
+
+### 10. (v2) Craft is data, and it is never on the turn's path
+
+The system prompt is the language. Everything about how to answer a kind of question well is a technique: a block in Remote, mirrored to a file cache, with a seed in the repository. The server keeps an index in memory and chooses for each message with a few dozen string comparisons. Remote is read by a background refresh that nothing awaits. The same shape will hold anything else that must be both remote and instant.
+
 ## The two streams
 
 Server to painter is Server-Sent Events; painter to server is small POSTs. Not a WebSocket: the two directions are independent and deliberately one-way, SSE is plain HTTP that the Vite proxy and `curl` both handle, and it reconnects by itself. The relay is plain HTTP for the same reason.
@@ -102,6 +142,20 @@ Pictures travel beside the streams as ordinary requests: a painting down (`GET`)
 **Start-up.** `Renderer.mount(host, viewport, look, { looks })` resolves only when the starting look's face is typeset for the whole `GLYPHS` set and a real frame of its ground has been presented, and clears the canvas to the look's ground at once, so nothing looks unstyled and the first line is drawn, not just reported. Warm-up draws into an off-screen target, never into the visible canvas and never resizing it. A locked stage (a gallery cell) passes `looks: [its look]` and never compiles or warms another; otherwise the other looks' fonts and programs are warmed in idle time afterwards, one per task, 400 ms apart, on parked 160x100 kits, so a later `look` line neither stalls nor compiles anything. `web/index.html` preloads the VT323 file so it downloads beside the script, and mount rejects after 15 s if fonts never load (the app then falls back to the plain renderer). An element is atomic in the renderer: its marks (bar, box, underline, strike) are drawn only once all its runs are typeset. Measured on an Apple M4 Max through Chrome's Metal backend (production build, cold profile): type is on the canvas, in pixels, about 0.8 to 1.0 s after navigation; through the whole `overture` script at 1440x900, device pixel ratio 2, in each of the eight looks, 1,980 page frames are 16.7 ms at the median and 95th percentile and none is over 20 ms except one 33 ms frame in `phosphor`; the stage stays at `full` quality at 60 fps. Drawing begins about 0.6 s after navigation.
 
 **Performance.** The painter measures the time spent inside `render`, not the interval between frames, so a display capped at 30 Hz is not mistaken for a slow renderer. Two seconds with mean render time above 20 ms and the renderer drops to `lite` (the look without its expensive passes) for the rest of the session. If WebGL2 is unavailable or the WebGL renderer fails to mount, the plain DOM renderer is used: same painter, same words, no screen simulation.
+
+**(v2) Charts.** The decision was between writing a charting engine and using one. Written here because it is the largest dependency the project has taken.
+
+| | Our own, on the stage's renderer | `lightweight-charts` behind a port |
+| --- | --- | --- |
+| Quality the owner asked for (a trading terminal's) | months away: time scales, tick formatting, crosshair, pan and zoom with inertia and pinch, candles, panes, 60 fps with dense data | there today; it is what TradingView ships |
+| In the look's surface, under the camera | yes | no: it draws with canvas 2D in a DOM surface over the stage |
+| Snapshot, film, the brain's look at its draft | free | through its `takeScreenshot`, drawn into the frame by the renderer |
+| Vector export | yes | no: an SVG carries the chart as a picture |
+| Cost | a second product to maintain | one dependency (Apache-2.0, and one small MIT dependency of its own), its mark on each chart, and one adapter file |
+
+**Chosen: the library, behind `ChartEngine`.** The owner's bar is the library's own standard, the brain's part (rows in, a model out) is the same either way, and the port means the choice can be undone in one file. Checked against its documentation (version 5.3): line, area, baseline, bar, candlestick and histogram series, `addSeries(definition, options, paneIndex)` and `addPane` for a volume pane, `createSeriesMarkers` and price lines for marks, `subscribeCrosshairMove` and `setCrosshairPosition`, `takeScreenshot()` returning a canvas, `createChartEx` and `createOptionsChart` for a bottom axis that is not trading time. Its licence asks for its notice and a link to TradingView on the page; the `attributionLogo` option puts the link on the chart, and it is left on.
+
+Three things the adapter must do that the library does not do by itself, and they are the adapter's acceptance: (1) **to scale**: the library spaces points evenly, as trading charts do; for anything but candles the adapter uses a numeric bottom axis so that 1800, 1900, 1950, 2000 are not four equal steps. (2) **names along the bottom** (a distribution's bins): one slot a row, labelled by a tick formatter. (3) **the reveal**: the library draws data the moment it is set; the adapter drives arrival from `ChartState.reveal` with the price range pinned to its final value. It has no horizontal bars; a ranking is a `table bars`, drawn by the painter.
 
 **The plain renderer** is the proof that the painter does not depend on three.js. In v1 it draws shapes and sprites as inline SVG, no weather and no surface, and advertises exactly that; the brain's prompt follows.
 
@@ -155,7 +209,9 @@ With the last row, and the v1 prompt, three sonnet answers took 133 to 670 outpu
 
 The process gets a first-token timeout and an idle timeout. When the user interrupts, the turn is drained to the process's `result` without yielding text, so the process survives and the next brief is `since`; one that goes quiet is killed. With `CLAUDE_WARM=off` a process serves one turn and is killed when it ends or is interrupted. Nothing is orphaned.
 
-**The prompt.** Generated from the vocabulary, filtered by what the painter and the server can do. `pnpm prompt count` prints its size in characters and estimated tokens; `PROMPT_BUDGET` is 8,850 tokens (raised from 8,500 for the Documents section) and it fails above it. v0's prompt taught thirteen verbs; this one teaches twenty-eight. `PROMPT_VARIANT=column|hero` chooses how a diagram is taught (default `column`; `hero` makes the drawing carry the answer in steps); both fit the budget.
+**(v2) What is in the prompt, and what left it.** The budget did not move: 8,850 tokens. With everything on, the prompt is 8,814 (`pnpm prompt count`). Room for structures, charts, controls and paint (about 1,450 tokens) was made by moving out what is not language: the advice for documents now rides in the brief of a turn that has a document (282 tokens); three of five worked examples became techniques (about 650); the arithmetic of a stated length became a technique (55); glosses a word does not need were cut (about 300). The second teaching of a diagram, `hero`, is deleted. A painter that does not advertise structures still gets the v1 examples, so today's stage is taught what it was. An image model would add 63 tokens and take the prompt over; none is configured, and whoever configures one finds the room first.
+
+**The prompt.** Generated from the vocabulary, filtered by what the painter and the server can do. `pnpm prompt count` prints its size in characters and estimated tokens; `PROMPT_BUDGET` is 8,850 tokens (raised from 8,500 in v1 for the Documents section, which has since moved to the brief) and it fails above it. v0's prompt taught thirteen verbs; v1's twenty-eight; with everything on, v2's teaches forty-four. `PROMPT_VARIANT` names a teaching of the prompt so that two can be measured side by side; one exists (`column`).
 
 ## Reading links
 
@@ -170,6 +226,35 @@ The conversation holds up to four documents (30 MB of PDF). A warm process is gi
 `ImageModel.generate(request)` takes words, a medium, the look's palette, an aspect, and the painter's rendering of the sketch when it arrived in time. The conductor starts it when a `paint` line is accepted and the conversation has allowance left, waits at most a second and a half for the sketch (the painter renders and sends it as soon as the `paint` line reaches it, from the schedule and not from what the playhead has drawn, because a brain's pen runs seconds ahead of the playhead), and announces the result with an `asset` event. The bytes are held in memory, bounded per session, and served from the same origin, so the browser still talks to nothing but its own server and holds no key.
 
 The OpenAI adapter uses the edits endpoint when there is a sketch and the generations endpoint when there is not. **It has not been run against the real service**: no key has been approved. It is written against a stand-in and marked untested in its file.
+
+## (v2) The technique library
+
+`server/src/domain/techniques.ts` holds the port and the two pure functions: reading a technique's body (a fixed layout: what it is for, use it when, not when, an example fenced as `series`, what failed, score) and choosing techniques for a message.
+
+**Choosing.** Each technique is indexed once on its title, its summary and its link reason, which are written to say when it applies; not on its body, whose prose is full of ordinary words. A message's words are stemmed and matched; a word counts for more the fewer techniques use it. A technique is handed over only if it clears a floor, matches on two words or on one word of its own title, and scores at least 60% of the best. At most three, at most 1,650 characters in all. Measured on the 86 prompts of the two batteries against the 19 seed techniques: about 50 microseconds a prompt, and no plain question is handed a recipe.
+
+**Sources**, later ones winning by title: the seed (`techniques/seed/*.md`, read at boot), the file cache of the last good read of Remote, Remote itself, and an overlay folder (`LIBRARY_OVERLAY`) that an experiment of the improvement loop lays over the rest.
+
+**Reading Remote.** One call lists every technique: `remote get memory <root> --links 1` returns the root's links, each with the linked block's id, title, summary, reason and fingerprint (checked on this machine: about one second). A technique's body is fetched (`--content 1`) only when its fingerprint differs from the cache's. The refresh runs at boot and every ten minutes and is awaited by nothing.
+
+**Writing** is not on the server's path at all: it is `pnpm library push`, used by a person, a review or the loop's steward. It refuses what `lintTechnique` refuses (no example, an example that does not parse, a date, a change number, history, a possible secret, a reason that does not begin "only if"), reads the block again, sends that read's fingerprint, re-applies on a conflict, and sets `REMOTE_SESSION_ID` and `REMOTE_AGENT`. An edit pass and a reader pass by cold `claude -p` sessions come before the write.
+
+**Datasets** (`DatasetLibrary`) are the same idea with one difference that is stated rather than hidden: finding whether a prompt names a stored series is instant and from memory, but reading its rows is a network call on the turn's path. It is treated exactly as reading a link is: a `reading` event, one short deadline, and a brief that says it could not be read when it could not.
+
+## (v2) The improvement loop
+
+`pnpm improve` (`server/src/tools/improve.ts`, `server/src/loop/`). The steps and who does each are in product.md. What is built as code rather than asked of a model, in `server/src/loop/guard.ts`:
+
+- `PROTECTED_PATHS` and `touchesProtected`: the batteries, the judge, the runner, the guard itself, the look-and-fix policy, the changelog, `package.json`.
+- `SEALED_PATHS`: what a builder's worktree is made without.
+- `leaksBattery`: battery text in source.
+- `decide(proposal, before, after)`: the rule for keeping an experiment, with every reason in words for the changelog.
+
+A builder is a `claude -p` process with tools, confined to its worktree by the CLI's own permission flags; the critic and the reviewer have no tools that write. All of them are on the owner's login. The budget is counted in the dollars the CLI reports for each call: on a subscription that is a measure of use, not a bill, and it is the one number every call returns.
+
+## (v2) Taste
+
+`language/src/taste.ts` holds the types and `agreementOf`: the share of answers on which the judge and the owner agree, at the cut of the judge's score that agrees best, with Cohen's kappa. The page writes a sheet to `explore/taste/`; `pnpm taste` and the battery's footer print the line. Each judgement carries a hash of the judge's instructions and model, so agreement is always about the judge that is in use.
 
 ## The session log
 
@@ -226,10 +311,20 @@ Verified on the integrated product (Node 22.14.0, pnpm 10.28.2, TypeScript 7.0.2
 - A stroked or filled shape's box matches `canvasToStage` projected through the camera to 0.00 px in `blueprint` with reduced motion; with the hand look's wobble and the camera's sway it is within 3 px.
 - Resting text keeps 4.5:1 or better in all eight looks (worst measured 4.52:1, `riso`), and no text of ten battery answers leaves the 16 px safe frame at any sampled instant, in full and reduced motion.
 
+**(v2) Checked while the skeleton was written** (Claude Code 2.1.325, the same machine):
+
+- `pnpm typecheck` is clean with the Series 4 language, the contracts and every stub in place; `pnpm prompt count` is within budget with everything on (8,814 of 8,850); `pnpm timeline` runs every prompt example with no rejected line and no warning; every seed technique's example parses and schedules cleanly (`pnpm library lint`).
+- A Series 4 script (seven structures, rows, marks, five controls, binds, callouts, paint) parses, schedules, and serialises back to the same lines.
+- One conversation of two turns with sonnet at `--effort low` and the Series 4 prompt, no techniques handed over: asked for a flowchart, it wrote `flow`, eight `node` lines with `from=`, and one sentence, in 166 output tokens (the same prompt in v1: 29 lines, 471 tokens, and a broken chart), first text at 1.7 s, no hidden reasoning. Asked for something to drag, it wrote a `slider`, two `bind` lines and a sentence with `{round(sqrt(2*9.8*2*sin(rad(angle)))*10)/10}`, which the evaluator reads; its bound changes were weak, which is what the explorable technique is for. The second turn read 92% of its input from cache.
+- `remote get memory <root> --content 1 --links 1` on the Series account: about one second; the shape of `links` is as the library's adapter expects.
+- Choosing techniques for 86 battery prompts: 37 to 84 microseconds each.
+
+Not verified, because not built: everything a stub stands for.
+
 Not verified: the OpenAI adapter against the real service (no spend approved); QuickTime and VLC playback of an exported film; memory during a 60 s export; weather thinning over text and the 12 field kinds by eye; background-tab rendering.
 
 Carried over from v0 and still true: three and troika render together under Vite; the processed font files are exactly fixed pitch; with text limited to `GLYPHS` the page makes no request to another origin.
 
 ## Deliberately absent
 
-Tests, CI, linters, pre-commit hooks (the owner's choice). A database. Authentication (it is a local program). A tweening library. A post-processing library. API-key model adapters for the brain. Sound. Kerning.
+Tests, CI, linters, pre-commit hooks (the owner's choice). (v2) Paid services of any kind: an image model, a market data feed, an embedding service, an API key. (v2) A model on the turn's path other than the brain: techniques are chosen by string matching, not by a second model. A database. Authentication (it is a local program). A tweening library. A post-processing library. API-key model adapters for the brain. Sound. Kerning.
