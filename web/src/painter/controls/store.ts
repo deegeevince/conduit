@@ -28,6 +28,8 @@ export interface ControlRegistry extends ControlStore {
    * be leaving, and the painter drops it when it has gone.
    */
   declare(key: string, id: string, spec: ControlSpec): void;
+  /** A new question begins: what the hand left on the controls of an earlier answer is not carried to a control of the same id that this one declares. */
+  restart(): void;
 }
 
 export function createControlStore(): ControlRegistry {
@@ -51,6 +53,9 @@ export function createControlStore(): ControlRegistry {
         if (value !== undefined) out[id] = value;
       }
       return out satisfies ControlValues;
+    },
+    restart() {
+      lastOfId.clear();
     },
     declare(key, id, spec) {
       const signature = controlSignature(spec);

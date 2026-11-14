@@ -1337,6 +1337,7 @@ export function createPainter(options: PainterOptions): Painter {
       }
       const opened: Turn = { id, input, base, score: new TurnScore(base, input.kind), seqs: new Set(), issues: new Map(), ack: 0, closed: false, started: false, showingAll: false, skippedAt: null };
       turn = opened;
+      if (input.kind === 'prompt' || input.kind === 'script') store.restart();
       memory = null;
       clock.openTurn();
       reporter.openTurn(id);
