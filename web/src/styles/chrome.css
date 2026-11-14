@@ -93,99 +93,13 @@ input {
   color: var(--stage-ink);
 }
 
-/* The bar */
-
-.bar {
-  background: var(--chrome-ground);
-  border-top: 1px solid var(--chrome-line);
-  min-width: 0;
-  padding: var(--space-2) max(var(--space-3), env(safe-area-inset-right)) max(var(--space-2), env(safe-area-inset-bottom)) max(var(--space-3), env(safe-area-inset-left));
-}
-
-.prompt {
-  position: relative;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: var(--space-1);
-  max-width: 60rem;
-  margin: 0 auto;
-}
-
-/* The bar, on a phone first. Row one: what is happening, with Show all and Cancel when they apply. Row two: the bar's own
-   controls (the brain picker, the transcript, Save), never wrapping. Row three: the field and Send. From 720px the two top
-   rows share one line. */
-
-.prompt__top {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0 var(--space-2);
-  min-width: 0;
-  min-height: 2rem;
-}
-
-.prompt__status {
-  margin: 0 auto 0 0;
-  min-width: 0;
-  flex: 1 1 6rem;
-  font-size: var(--chrome-text-size-small);
-  color: var(--chrome-text-quiet);
-  overflow-wrap: anywhere;
-}
-
-.prompt__extra {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-width: 0;
-}
+/* The bar: ONE line. See the composer, below. */
 
 .prompt__activity:empty {
   display: none;
 }
 
-.actions {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  flex: 0 0 auto;
-}
-
-.action-menu {
-  position: static;
-}
-
-.prompt__form {
-  display: flex;
-  align-items: flex-end;
-  gap: var(--space-2);
-}
-
-/* Photos (v2.1): the buttons beside the field, the strip of thumbnails above it, and the page-wide drop target. */
-
-.prompt__photo {
-  flex: 0 0 auto;
-  display: grid;
-  place-items: center;
-  width: var(--control-height);
-  height: var(--control-height);
-  padding: 0;
-  background: transparent;
-  color: var(--chrome-text);
-  border: 1px solid var(--chrome-line);
-  cursor: pointer;
-}
-
-/* the camera button only where there is a camera to point: a touch screen */
-.prompt__photo--camera {
-  display: none;
-}
-
-@media (pointer: coarse) {
-  .prompt__photo--camera {
-    display: grid;
-  }
-}
+/* Photos (v2.1): the strip of thumbnails above the field, and the page-wide drop target. */
 
 .prompt__photos {
   display: grid;
@@ -295,140 +209,7 @@ input {
   display: none;
 }
 
-.prompt__photo:focus-visible,
-.photo__remove:focus-visible {
-  outline: var(--focus-ring);
-  outline-offset: 2px;
-}
-
-.prompt__input {
-  flex: 1 1 auto;
-  min-width: 0;
-  box-sizing: border-box;
-  height: var(--control-height);
-  min-height: var(--control-height);
-  max-height: 40vh;
-  max-height: 40dvh;
-  padding: calc((var(--control-height) - 1.4em) / 2) var(--space-3);
-  line-height: 1.4;
-  font-family: inherit;
-  resize: none;
-  overflow-y: auto;
-  background: var(--chrome-ground);
-  color: var(--chrome-text);
-  border: 1px solid var(--chrome-line);
-  font-size: max(1rem, 16px);
-}
-
-.prompt__input::placeholder {
-  color: var(--chrome-text-quiet);
-  opacity: 1;
-}
-
-.prompt__button,
-.transcript__toggle,
-.action,
-.prompt__cancel,
-.gallery__again {
-  min-height: var(--control-height);
-  min-width: var(--control-height);
-  padding: 0 var(--space-3);
-  background: var(--chrome-text);
-  color: var(--chrome-ground);
-  border: 1px solid var(--chrome-text);
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.prompt__button {
-  min-width: 5rem;
-  font-weight: 600;
-}
-
-.prompt__button--stop {
-  background: var(--chrome-ground);
-  color: var(--chrome-text);
-}
-
-.transcript__toggle,
-.action,
-.prompt__cancel,
-.gallery__again {
-  background: transparent;
-  color: var(--chrome-text);
-  border-color: var(--chrome-line);
-  font-size: var(--chrome-text-size-small);
-}
-
-.action--idle {
-  opacity: 0.72;
-  cursor: default;
-}
-
-.prompt__cancel[hidden],
-.action[hidden] {
-  display: none;
-}
-
 /* The Save menu and the brain picker open upwards from the bar and are never wider than the screen less its gutters. */
-
-.action-menu__list,
-.picker__panel {
-  position: absolute;
-  z-index: 15;
-  right: 0;
-  bottom: calc(100% + var(--space-1));
-  display: grid;
-  width: min(22rem, 100%);
-  max-height: calc(var(--app-height, 100dvh) - 9rem);
-  overflow-y: auto;
-  background: var(--chrome-ground);
-  border: 1px solid var(--chrome-text);
-}
-
-.action-menu__list[hidden],
-.action-menu__item[hidden] {
-  display: none;
-}
-
-.action-menu__item {
-  display: grid;
-  gap: 1px;
-  min-height: var(--control-height);
-  padding: var(--space-2) var(--space-3);
-  background: transparent;
-  color: var(--chrome-text);
-  border: 0;
-  border-bottom: 1px solid var(--chrome-line);
-  text-align: left;
-  cursor: pointer;
-}
-
-.action-menu__gist,
-.picker__gist {
-  font-size: 0.75rem;
-  line-height: 1.3;
-  color: var(--chrome-text-quiet);
-}
-
-.action-menu__item:focus-visible .action-menu__gist {
-  color: inherit;
-}
-
-.action-menu__item:last-child {
-  border-bottom: 0;
-}
-
-.action-menu__item[aria-disabled='true'] {
-  color: var(--chrome-text-quiet);
-  cursor: default;
-}
-
-.action-menu__item:focus-visible {
-  outline-offset: -3px;
-  background: var(--chrome-line);
-  color: var(--chrome-ground);
-}
 
 .dialog {
   width: min(32rem, calc(100vw - 2 * var(--space-4)));
@@ -524,10 +305,6 @@ input {
   cursor: default;
 }
 
-.transcript__toggle[aria-expanded='true'] {
-  border-color: var(--chrome-text);
-}
-
 /* The transcript: a side panel on wide screens, a sheet above the bar on narrow ones. */
 
 .transcript__panel {
@@ -611,45 +388,7 @@ input {
 
 /* From 720px: one line for the status and the controls. */
 
-@media (min-width: 720px) {
-  .prompt {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-
-  .prompt__activity {
-    grid-column: 1 / -1;
-    grid-row: 1;
-  }
-
-  .prompt__top {
-    grid-column: 1;
-    grid-row: 2;
-    flex-wrap: nowrap;
-  }
-
-  .prompt__extra {
-    grid-column: 2;
-    grid-row: 2;
-  }
-
-  .prompt__form {
-    grid-column: 1 / -1;
-    grid-row: 3;
-  }
-
-  .prompt__photos {
-    grid-column: 1 / -1;
-    grid-row: 3;
-  }
-
-  .prompt__photos:not([hidden]) + .prompt__form {
-    grid-row: 4;
-  }
-}
-
-/* The transcript on a phone is a sheet above the bar. */
-
-@media (max-width: 719px) {
+/* The transcript on a phone is a sheet above the bar. */@media (max-width: 719px) {
   .transcript__panel {
     top: auto;
     left: 0;
@@ -657,16 +396,6 @@ input {
     max-height: 42%;
     border-left: 0;
     border-top: 1px solid var(--chrome-line);
-  }
-
-  .prompt__extra .action--brain {
-    flex: 1 1 auto;
-    min-width: 0;
-    justify-content: flex-start;
-  }
-
-  .action-credit {
-    flex: 1 1 100%;
   }
 }
 
@@ -834,8 +563,8 @@ input {
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  .prompt__button,
-  .transcript__toggle,
+  .composer__btn,
+  .composer__item,
   .transcript__choice,
   .action,
   .gallery__look,
@@ -1000,55 +729,7 @@ input {
 
 /* The chart credit: the engine's name and link, while a chart is on stage. */
 
-.action-credit {
-  flex: 0 1 auto;
-  min-width: 0;
-  min-height: 1.5rem;
-  display: inline-flex;
-  align-items: center;
-  font-size: 0.75rem;
-  color: var(--chrome-text-quiet);
-  text-decoration: underline;
-  overflow-wrap: anywhere;
-}
-
-.action-credit[hidden] {
-  display: none;
-}
-
 /* The brain picker */
-
-.picker {
-  position: static;
-  display: flex;
-  min-width: 0;
-  flex: 0 1 auto;
-}
-
-.action--brain {
-  display: block;
-  min-width: 0;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  line-height: calc(var(--control-height) - 2px);
-}
-
-.action--brain[hidden] {
-  display: none;
-}
-
-.picker__panel {
-  left: 0;
-  right: auto;
-  gap: var(--space-3);
-  padding: var(--space-3);
-}
-
-.picker__panel[hidden] {
-  display: none;
-}
 
 .picker__group {
   display: flex;
@@ -1232,6 +913,478 @@ input {
   font-weight: 600;
 }
 
-.picker[hidden] {
+/* Ink (v2.1): the Draw toggle in the bar. The layer it opens is styled by web/src/ink/styles.ts. */
+
+/* The stage's words as real text (v2.1, web/src/app/text-layer.ts). Transparent: the drawn words are the picture, these are their twins, there to be selected and read. */
+
+.stage__text {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.stage__text[data-moving] {
+  visibility: hidden;
+}
+
+.stage__text-block {
+  margin: 0;
+  padding: 0;
+  font: inherit;
+}
+
+.stage__text-line {
+  position: absolute;
+  display: block;
+  box-sizing: content-box;
+  white-space: pre;
+  color: transparent;
+  background: none;
+  transform-origin: 50% 50%;
+  pointer-events: auto;
+  user-select: text;
+  -webkit-user-select: text;
+  -webkit-touch-callout: default;
+  cursor: text;
+}
+
+/* a choice and a mock-up's live parts are worked by a finger, not read by a cursor: they let every tap through, and are not part of a selection */
+.stage__text-block--choice .stage__text-line,
+.stage__text-block--control .stage__text-line {
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.stage__text-line::selection {
+  color: transparent;
+  background: color-mix(in srgb, var(--stage-accent, #3b82f6) 38%, transparent);
+}
+
+.transcript__copy {
+  margin-left: var(--space-2);
+  padding: 0 var(--space-2);
+  font: inherit;
+  font-weight: 400;
+  color: var(--chrome-text-quiet);
+  background: none;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.stage__text[data-selecting] {
+  pointer-events: auto;
+  cursor: text;
+}
+
+/* The composer (v2.1): ONE line at the bottom, a single pill like a chat app's. [+] opens a menu of what is not needed every time (a photo, Draw,
+   Save, the Transcript, the model, Copy answer, About); the field rests at one line and grows upwards; then the mic, then Send, which is Stop
+   while a turn runs. Status is not a row: a short routine status is the field's placeholder, and only what needs saying is a small line that
+   floats above the pill, over the stage's edge, taking no room (so the stage never changes size for it). */
+
+.bar {
+  position: relative;
+  /* above the drawing layer (30) that Draw lays over the stage, so the menu and the line above the bar stay in reach while one draws */
+  z-index: 40;
+  min-width: 0;
+  background: var(--chrome-ground);
+  padding: var(--space-2) max(var(--space-3), env(safe-area-inset-right)) max(var(--space-2), env(safe-area-inset-bottom)) max(var(--space-3), env(safe-area-inset-left));
+}
+
+.prompt {
+  position: relative;
+  max-width: 48rem;
+  margin: 0 auto;
+}
+
+.composer {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--chrome-ground);
+  color: var(--chrome-text);
+  border: 1px solid var(--chrome-line);
+  border-radius: 1.75rem;
+}
+
+.composer:focus-within {
+  border-color: var(--chrome-text);
+}
+
+.prompt__form {
+  display: flex;
+  align-items: flex-end;
+  gap: 0;
+  min-width: 0;
+  padding: 3px;
+}
+
+.prompt__extra {
+  display: contents;
+}
+
+.composer__btn {
+  position: relative;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: var(--control-height);
+  height: var(--control-height);
+  padding: 0;
+  background: transparent;
+  color: var(--chrome-text);
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.composer__btn[hidden] {
+  display: none;
+}
+
+.composer__btn:hover {
+  background: color-mix(in srgb, var(--chrome-text) 10%, transparent);
+}
+
+.composer__btn:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.composer__plus svg {
+  transition: none;
+}
+
+.composer__plus--open svg {
+  transform: rotate(45deg);
+}
+
+.composer__badge {
+  position: absolute;
+  top: 2px;
+  right: 0;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  padding: 0 0.3em;
+  display: grid;
+  place-items: center;
+  background: var(--chrome-text);
+  color: var(--chrome-ground);
+  border-radius: 999px;
+  font-size: 0.75rem;
+  line-height: 1;
+}
+
+.composer__badge[hidden] {
+  display: none;
+}
+
+.prompt__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  box-sizing: border-box;
+  height: var(--control-height);
+  min-height: var(--control-height);
+  max-height: 40vh;
+  max-height: 40dvh;
+  margin: 0;
+  padding: calc((var(--control-height) - 1.4em) / 2) var(--space-2);
+  line-height: 1.4;
+  font-family: inherit;
+  resize: none;
+  overflow-y: auto;
+  background: transparent;
+  color: var(--chrome-text);
+  border: 0;
+  border-radius: 0;
+  outline: none;
+  font-size: max(1rem, 16px);
+}
+
+.prompt__input::placeholder {
+  color: var(--chrome-text-quiet);
+  opacity: 1;
+}
+
+/* Send: a filled circle with an arrow. While a turn runs it is Stop: an outlined circle with a square. */
+.prompt__button {
+  background: var(--chrome-text);
+  color: var(--chrome-ground);
+}
+
+.prompt__button:hover {
+  background: var(--chrome-text);
+  opacity: 0.88;
+}
+
+.prompt__button--stop {
+  background: var(--chrome-ground);
+  color: var(--chrome-text);
+  box-shadow: inset 0 0 0 2px var(--chrome-text);
+}
+
+.prompt__button--stop:hover {
+  background: color-mix(in srgb, var(--chrome-text) 10%, var(--chrome-ground));
+  opacity: 1;
+}
+
+/* the line above the pill: floats over the stage's lower edge and takes no room; only its own contents take the pointer */
+.prompt__float {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + var(--space-2));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  pointer-events: none;
+}
+
+.prompt__float > * {
+  max-width: 100%;
+}
+
+.prompt__top,
+.prompt__activity .activity,
+.prompt__float .voice {
+  pointer-events: auto;
+  background: var(--chrome-ground);
+  border: 1px solid var(--chrome-line);
+  border-radius: 1rem;
+}
+
+.prompt__top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1) var(--space-2);
+  min-width: 0;
+  padding: 2px var(--space-3);
+}
+
+.prompt__top[hidden] {
+  display: none;
+}
+
+.prompt__status {
+  margin: 0;
+  min-width: 0;
+  font-size: var(--chrome-text-size-small);
+  color: var(--chrome-text);
+  overflow-wrap: anywhere;
+  text-align: center;
+}
+
+/* a routine status is in the placeholder; its words are kept here for the page's own checks and for a screen reader's reading */
+.prompt__status--quiet {
+  display: none;
+}
+
+.prompt__float .voice {
+  padding: var(--space-2) var(--space-3);
+  width: 100%;
+}
+
+.prompt__activity:empty {
+  display: none;
+}
+
+.prompt__activity {
+  max-width: 100%;
+}
+
+.prompt__activity .activity {
+  padding: 0 var(--space-3);
+}
+
+.action,
+.prompt__cancel,
+.gallery__again {
+  min-height: 2rem;
+  min-width: 2rem;
+  padding: 0 var(--space-3);
+  background: transparent;
+  color: var(--chrome-text);
+  border: 1px solid var(--chrome-line);
+  border-radius: 1rem;
+  font-size: var(--chrome-text-size-small);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.gallery__again {
+  min-height: var(--control-height);
+  min-width: var(--control-height);
+  border-radius: var(--radius);
+}
+
+.action--idle {
+  opacity: 0.72;
+  cursor: default;
+}
+
+.prompt__cancel[hidden],
+.action[hidden] {
+  display: none;
+}
+
+.prompt__voice--recording {
+  background: var(--chrome-text);
+  color: var(--chrome-ground);
+}
+
+/* the [+] menu: opens upwards from the pill, as wide as the pill on a phone and a fixed width on a desk, never off the screen */
+.composer__menu {
+  position: absolute;
+  z-index: 15;
+  left: 0;
+  bottom: calc(100% + var(--space-2));
+  width: min(21rem, 100%);
+  max-height: calc(var(--app-height, 100dvh) - 6rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--chrome-ground);
+  color: var(--chrome-text);
+  border: 1px solid var(--chrome-text);
+  border-radius: 1rem;
+  box-shadow: 0 6px 24px rgb(0 0 0 / 0.18);
+}
+
+.composer__menu[hidden],
+.composer__view[hidden] {
+  display: none;
+}
+
+.composer__list {
+  display: grid;
+  padding: var(--space-1);
+}
+
+.composer__item {
+  display: grid;
+  gap: 1px;
+  min-height: var(--control-height);
+  padding: var(--space-2) var(--space-3);
+  background: transparent;
+  color: var(--chrome-text);
+  border: 0;
+  border-radius: 0.625rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.composer__item[hidden],
+.composer__gist[hidden] {
+  display: none;
+}
+
+.composer__item:hover {
+  background: color-mix(in srgb, var(--chrome-text) 9%, transparent);
+}
+
+.composer__item[aria-disabled='true'] {
+  color: var(--chrome-text-quiet);
+  cursor: default;
+}
+
+.composer__item[aria-checked='true'] .composer__label::after {
+  content: ' \2713';
+}
+
+.composer__item[aria-haspopup='true'] .composer__label::after {
+  content: ' \203A';
+}
+
+.composer__gist,
+.picker__gist {
+  font-size: 0.75rem;
+  line-height: 1.3;
+  color: var(--chrome-text-quiet);
+}
+
+.composer__item:focus-visible {
+  outline-offset: -3px;
+  background: var(--chrome-text);
+  color: var(--chrome-ground);
+}
+
+.composer__item:focus-visible .composer__gist {
+  color: inherit;
+}
+
+.composer__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-3) var(--space-1) var(--space-1);
+  border-bottom: 1px solid var(--chrome-line);
+}
+
+.composer__back {
+  display: grid;
+  place-items: center;
+  width: var(--control-height);
+  height: var(--control-height);
+  padding: 0;
+  background: transparent;
+  color: var(--chrome-text);
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.composer__title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+/* the model picker's panel and About, inside the menu */
+.picker__panel,
+.about {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-3);
+}
+
+.about__line {
+  margin: 0;
+  font-size: var(--chrome-text-size-small);
+  color: var(--chrome-text);
+}
+
+.about__credit {
+  font-size: 0.75rem;
+  color: var(--chrome-text-quiet);
+  text-decoration: underline;
+  overflow-wrap: anywhere;
+}
+
+.picker__group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+@media (max-width: 719px) {
+  .composer__menu {
+    width: 100%;
+  }
+}
+
+.composer .prompt__photos {
+  padding: var(--space-2) var(--space-3) 0 var(--space-3);
+}
+
+.prompt__photos[hidden] {
   display: none;
 }

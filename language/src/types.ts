@@ -640,6 +640,7 @@ export type IssueSeverity =
 
 export type IssueCode =
   | 'not-a-line'
+  | 'unknown-name'
   | 'too-long'
   | 'unknown-verb'
   | 'missing-id'

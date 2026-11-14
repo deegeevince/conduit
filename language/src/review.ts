@@ -35,7 +35,7 @@ export interface ReviewPolicy {
   readonly passMs: number;
 }
 
-export const REVIEW_POLICY: ReviewPolicy = { enabled: true, passes: 1, minDrawn: 3, draftWaitMs: 1500, firstLineMs: 12_000, passMs: 30_000 };
+export const REVIEW_POLICY: ReviewPolicy = { enabled: true, passes: 1, minDrawn: 3, draftWaitMs: 8000, firstLineMs: 12_000, passMs: 30_000 };
 
 /** The notes that mean a viewer cannot read or find something. Any one of them is reason enough to look. */
 export const BLOCKING_NOTES: readonly SightNote[] = ['clipped', 'off-canvas', 'covered', 'overlaps', 'collides', 'crossed', 'faint', 'tiny', 'crowded', 'sparse', 'lost'];

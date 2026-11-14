@@ -23,6 +23,7 @@ import type { BriefForm, DocumentFacts, LineProblem, TechniqueCard, TurnContext,
 export type { BriefForm };
 import { asksForLiveApp } from './app';
 import { INTERFACE_CHAPTER } from './interface';
+import { inkBrief } from './ink';
 import { describeSight } from './sight';
 import { BUILTIN_STYLES } from './style';
 import type { LookDef, StyleDef } from './style';
@@ -116,7 +117,7 @@ export const PROMPT_EXAMPLES: readonly PromptExample[] = [
     lines: [
       'scene page',
       'say strong | Mary Shelley.',
-      'say | She began it at eighteen, in the wet summer of 1816, kept indoors by a volcano\'s ash. Published two years later.',
+      'say | She began it at eighteen, in 1816, kept indoors by a volcano\'s ash.',
     ],
   },
   {
@@ -182,7 +183,7 @@ export const PROMPT_EXAMPLES: readonly PromptExample[] = [
  * other kind of answer are techniques, handed over in the brief when they fit.
  */
 export const PROMPT_EXAMPLE_STRUCTURE: PromptExample = {
-  title: '"Should I water this plant?" A decision: name the structure and give its words; the painter gives every part its room, so nothing is placed over it.',
+  title: '"Should I water this plant?" A decision: name the structure and its words; the painter gives every part its room.',
   lines: [
     'scene caption',
     'flow down | Water the plant?',
@@ -439,7 +440,7 @@ ${[
 A control sits in the flow like a line, or takes at=, near=, in=. \`bind\` makes it change the stage at once:
 bind angle | move sun along=arc
   The change (a \`set\`, \`move\`, \`correct\`${draws ? ', or shape declared again' : ''}) is as far along as the control. \`bind angle 0..45 | …\` runs it over part of the range; \`bind view=night | …\` holds it while a pick or toggle has that value (an option's words or number, on, off).
-Braces in text hold a value or arithmetic on values: \`say | At {angle}, a {round(10/tan(rad(angle)))} m shadow\` ({angle} carries the slider's unit)${structures.includes('chart') ? '; a chart cell may too' : ''}. Give every slider something to drive. \`send\` on a control makes its change the user's next message.
+Braces in text hold a value or arithmetic on values: \`say | At {angle}, a {round(10/tan(rad(angle)))} m shadow\` ({angle} carries the slider's unit; a name that is not a declared control's id is cut)${structures.includes('chart') ? '; a chart cell may too' : ''}. Give every slider something to drive. \`send\` on a control makes its change the user's next message.
 `;
 
   const drawing = draws
@@ -466,7 +467,7 @@ To draw well in few lines:
 
 # Pixels
 
-\`pix\`, then one \`| row\` per row, every row exactly as wide as the first (count; a short row is padded and you are told). A cell is \`.\` or a space (empty), \`#\` (ink), or one hex digit for the sixteen sprite colours: 0 black, 1 navy, 2 plum, 3 green, 4 brown, 5 grey, 6 silver, 7 white, 8 red, 9 orange, a yellow, b lime, c sky blue, d lavender, e pink, f peach. Eight to sixteen cells a side; an animation is two to four frames, each started by a \`frame\` line (give \`fps=\`). \`scale=\` is canvas units per cell; left out, the painter sizes it.`
+\`pix\`, then one \`| row\` per row, every row exactly as wide as the first (a short row is padded). A cell is \`.\` or a space (empty), \`#\` (ink), or one hex digit for the sixteen sprite colours: 0 black, 1 navy, 2 plum, 3 green, 4 brown, 5 grey, 6 silver, 7 white, 8 red, 9 orange, a yellow, b lime, c sky blue, d lavender, e pink, f peach. Eight to sixteen cells a side; an animation is two to four frames, each started by a \`frame\` line (give \`fps=\`). \`scale=\` is canvas units per cell; left out, the painter sizes it.`
           : ''
       }${
         weather
@@ -485,7 +486,7 @@ To draw well in few lines:
 ${[
   textures.length > 0 ? `\`tex=\` makes a fill ${textures.join(', ')}; \`soft=N\` fades an edge (light, cloud, shadow).` : '',
   brushes.length > 0 ? `\`brush=\` gives one line a stroke of its own (${brushes.filter((name) => name === 'ink' || name === 'dry' || name === 'marker' || name === 'pencil').join(', ')} …).` : '',
-  media.length > 0 ? `\`paint [over=<group>] as=<medium>\` re-renders what you drew as a painting (${media.join(' | ')}): it adds nothing you did not draw, so draw the picture first, in big shapes.` : '',
+  media.length > 0 ? `\`paint [over=<group>] as=<medium>\` re-renders what you drew as a painting (${media.join(' | ')}): it adds nothing you did not draw: draw the picture first, in big shapes.` : '',
   modelPaints
     ? `\`paint ${media.length > 0 ? 'as=photo ' : ''}| <what to paint>\` asks an image model: many seconds, and it may never come, so your sketch shows meanwhile. One an answer at most${media.length > 0 ? '' : `; \`as=\` names the medium (${words(MEDIUM)}), \`mask=\` its edge (${words(MASK)})`}.`
     : '',
@@ -540,7 +541,7 @@ You write ${LANGUAGE.name}: one command per line. A painter in the user's browse
 
 # Start at once
 
-The audience watches an empty stage while you deliberate. Write the first line now and compose as you go; the painter handles layout and timing.
+The audience watches an empty stage while you deliberate. Write the first line now; the painter handles layout and timing.
 
 # Choose the form the answer needs
 
@@ -553,7 +554,8 @@ Whatever the form: never talk about the stage, the medium, what you will do or y
 - Expressive asks (a story, a mood, a thing to look at): commit. One bold idea, big, in layers, with motion and a wait before the line that matters. Timid and tidy is the failure.
 - Be right before pretty. Every part your words name is drawn; parts that connect touch; the subject ends whole inside the picture and fills it, never cut off or lost in a corner. Words stay inside their boxes.
 - A follow-up about what is on stage continues it: \`set\`, \`hit\`, \`move\`, \`revise\`, add. \`scene\` is only for a new subject; never write again what is there. A lesson's steps stack up, not captions; a step to try keeps its subject.
-- What the user says to hold from now on ("only visuals", "always brief"): record it once, \`standing | their words\`, and keep it on every later turn, answers about yourself or this app too (a gauge for the effort, a badge for the model).
+- Match the level asked or implied. A young learner (under 10, "my kid", "like I'm 7"): plain words, one small idea a step, the question shown; no letters for numbers or \`*\`/\`x\` signs before they are explained; count on the picture ("5, 10, 15, 20").
+- What the user says to hold from now on ("only visuals", "always brief"): record it once, \`standing | their words\`, and keep it on every later turn, answers about yourself or this app too.
 - No live price feed: figures come from DATA or the web, with source and date, or you say you have none. Never copy a protected character, logo or artwork: make an original, or a homage in the style, and say so.
 
 # Lines
@@ -621,21 +623,21 @@ Each turn you are told what is on stage and how your last answer actually landed
 
 When there are real ways forward, end with one to three \`say choice | …\` lines. A tap on one becomes the user's next message.
 
-A brief may carry TECHNIQUES, recipes that worked for answers like this: use what fits, never copy their subject.${
+A brief may carry TECHNIQUES (recipes that worked): use what fits, never copy their subject.${
     services.review ? ` When you finish you may be shown your own answer (LOOK): repair it in a few lines, or write \`${REVIEW_KEEP}\`.` : ''
   }
 
 # This screen
 
-Each turn's brief begins with SCREEN: what fits on a line and on the stage at each size, the canvas that suits the screen, the look, the scene. Read it each time. Outside \`layout=page\`: one idea a line, a handful of words. At most ${LIMITS.text} characters a line.
+Each turn's brief begins with SCREEN: what fits on a line and on the stage at each size, the canvas that suits the screen, the look, the scene. Outside \`layout=page\`: one idea a line, a handful of words. At most ${LIMITS.text} characters a line.
 
 # Exact values
 
-Rarely, for one exact effect: \`@+N\` (start N seconds after the pen), \`@-N\` (overlap the line before), \`dur=Ns\`, \`stay=Ns\`, \`over=Ns\` on set${draws ? ', move' : ''}${camera ? ' and cam' : ''}. On most lines they are the painter's job, not yours.
+Rarely, for one exact effect: \`@+N\` (start N seconds after the pen), \`@-N\` (overlap the line before), \`dur=Ns\`, \`stay=Ns\`, \`over=Ns\` on set${draws ? ', move' : ''}${camera ? ' and cam' : ''}.
 
 # Output
 
-Only ${LANGUAGE.name} lines. No prose around them, no explanations, no code fences. Start with \`${offered.length > 1 ? 'look` or `scene' : 'scene'}\`. Plain characters in text: letters, digits, ordinary punctuation; no emoji.
+Only ${LANGUAGE.name} lines. No prose around them, no code fences. Start with \`${offered.length > 1 ? 'look` or `scene' : 'scene'}\`. Plain characters in text: letters, digits, ordinary punctuation; no emoji.
 
 # Examples
 
@@ -664,12 +666,24 @@ Lead is pen minus playhead: how far ahead of the audience you are. Keep it betwe
 `;
 }
 
+/** How a prompt that began as a voice note is put to the brain: said aloud, read on the owner's Mac, so a word may be misheard. When the words sent are not the transcript (the owner corrected it), the transcript is given too. */
+function spokenAs(input: TurnInput): string {
+  if (input.kind !== 'prompt') return '';
+  const heard = (input.spoken ?? []).map((words) => words.trim()).filter((words) => words !== '');
+  const same = heard.length === 1 && heard[0]?.toLowerCase() === input.text.trim().toLowerCase();
+  const extra = same ? '' : ` What the speech recogniser first heard, which may differ: "${heard.join(' / ').replace(/\s+/g, ' ')}".`;
+  return ` as a voice note (read on their own device, so a word can be misheard).${extra} Their words`;
+}
+
 function inputText(input: TurnInput, pastedAs?: string): string {
   if (input.kind === 'prompt' && input.text.length >= PASTE_AS_DOCUMENT_CHARS) {
     if (pastedAs !== undefined) return `The user pasted ${input.text.length} characters, given above as DOCUMENT ${pastedAs}. It is the user's own text; answer about it.`;
     return `The user pasted ${input.text.length} characters, beginning: ${input.text.slice(0, 160).replace(/\s+/g, ' ')}`;
   }
-  if (input.kind === 'prompt') return `The user says: ${input.text}${(input.images?.length ?? 0) > 0 ? ` (with ${input.images?.length === 1 ? 'a photo' : `${input.images?.length} photos`}: ${(input.images ?? []).join(', ')})` : ''}`;
+  const marksNote = input.kind === 'prompt' && input.marks !== undefined ? ` (and wrote or drew on it: ${input.marks.strokes.length} strokes, attached last)` : '';
+  const photosNote = (input.kind === 'prompt' && (input.images?.length ?? 0) > 0) ? ` (with ${input.images?.length === 1 ? 'a photo' : `${input.images?.length} photos`}: ${(input.images ?? []).join(', ')})` : '';
+  if (input.kind === 'prompt' && (input.spoken?.length ?? 0) > 0) return `The user spoke aloud${spokenAs(input)}: ${input.text}${marksNote}${photosNote}`;
+  if (input.kind === 'prompt') return `The user says: ${input.text}${marksNote}${photosNote}`;
   if (input.kind === 'tap') return `The user tapped your choice: "${input.text}"`;
   if (input.kind === 'script') return 'The user played a script of their own.';
   if (input.kind === 'act') {
@@ -903,6 +917,14 @@ function statusText(status: AppStatus): string {
 }
 
 /**
+ * v2.1. The bar at the bottom of the page, in one line, so "how do I add a photo?" is answered with where the button is. It is ONE line, a pill:
+ * a [+] menu, the text field, a mic, Send (Stop while a turn runs). Keep it in step with web/src/chrome/composer.ts. A how-to answer's key line is
+ * to stay at rest (a page layout retires lines as it pages: a 2026-11-14 answer told how to add a photo and only its aside was left standing).
+ */
+export const COMPOSER_NOTE =
+  ' THE BAR at the bottom is one line: [+] menu (Add a photo, Take a photo on a phone, Draw, Save (the copy and export commands), Transcript, Model and effort, Copy answer, About), the text field, the mic, Send (Stop while you answer). A photo can also be pasted or dropped. When asked how to do something in the app, name the control and where it is, keep that line at rest (`set <id> stay=pin`), and draw the bar if it helps.';
+
+/**
  * v2.1. What the app itself offers, made from `APP_COMMANDS`, so the brain can point at a command and can never invent one, and the
  * steward's own account of where things stand, so "what's in the backlog?" has an answer. The commands are given in full when the brain
  * remembers nothing (`full`) and by name once it does; the status goes with both, because it changes.
@@ -913,7 +935,7 @@ export function appNoteText(form: BriefForm, status: AppStatus | null | undefine
     form === 'full'
       ? commandList.map((command) => `/${command.name}${command.args === '' ? '' : ` ${command.args}`}: ${command.gist}`).join('; ')
       : commandList.map((command) => `/${command.name}`).join(' ');
-  return `THIS APP: the user types commands the app handles itself, and you never see them: ${commands}. Point at one when it helps; never invent another. The menu's "Save" holds the copy and export commands.${
+  return `THIS APP: the user types commands the app handles itself, and you never see them: ${commands}. Point at one when it helps; never invent another. ${COMPOSER_NOTE}${
     status === null || status === undefined ? ' You are not told where the product stands: say so rather than guess.' : statusText(status)
   }`;
 }
@@ -1092,6 +1114,8 @@ export function buildTurnBrief(context: TurnContext, input: TurnInput, form: Bri
         : `The user attached photos (${ids}) that this stage cannot show; answer from what you see in them.`,
     );
   }
+
+  if (input.kind === 'prompt' && input.marks !== undefined) parts.push(inkBrief(input.marks));
 
   parts.push(`NOW: ${inputText(input, documents.find((doc) => doc.kind === 'pasted' && doc.fresh)?.id)}`);
   return parts.join('\n\n');

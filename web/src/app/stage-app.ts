@@ -1,6 +1,6 @@
 import { DEFAULT_LOOK, FIRST_LOAD_DEMO, LineNormalizer, LineReader, parseLine, parseReplayDirective, serializeLine } from '@conduit/language';
 import overtureScript from '@conduit/language/demos/overture.series?raw';
-import type { ActivityState, ActionRisk, BackEvent, ControlValue, ControlValues, CriticFinding, DataTable, Issue, PassState, Line, LeadWindow, LookId, ScreenFacts, Services, Sight, StageEvent, TurnEndReason, TurnInput } from '@conduit/language';
+import type { ActivityState, ActionRisk, BackEvent, ControlValue, ControlValues, CriticFinding, DataTable, InkMarks, Issue, PassState, Line, LeadWindow, LookId, ScreenFacts, Services, Sight, StageEvent, TurnEndReason, TurnInput } from '@conduit/language';
 import type { AppAct, AppHost } from '../contracts/app';
 import type { ExportJob, ExportRequest, Exporter } from '../contracts/export';
 import type { ChartHost } from '../contracts/chart';
@@ -24,6 +24,7 @@ import { canUseThree, createThreeRenderer } from '../render/three';
 import { asDataTable } from '../link/guards';
 import { createAccessLayer } from './access';
 import { createChartHost } from './chart-host';
+import { createTextLayer } from './text-layer';
 import { createLiveApps } from './live-app';
 import { createHook } from './hook';
 import { observeRenderer } from './observe';
@@ -94,8 +95,8 @@ export interface StageApp {
   readonly attribution: { readonly text: string; readonly href: string } | null;
   /** whether the server can look at a draft and fix it, and whether the viewer has it switched on */
   readonly review: { readonly available: boolean; readonly on: boolean; set(on: boolean): void };
-  /** Interrupts whatever is playing, reports it, then starts a turn with this prompt (and the ids of the photos the server kept for it, `link.uploadPhoto`). */
-  prompt(text: string, photos?: readonly string[]): Promise<string>;
+  /** Interrupts whatever is playing, reports it, then starts a turn with this prompt (and the ids of the photos the server kept for it, `link.uploadPhoto`, the ink drawn on the stage, and the voice notes whose words it holds, `link.uploadVoice`). */
+  prompt(text: string, photos?: readonly string[], marks?: InkMarks, voice?: readonly string[]): Promise<string>;
   demo(name: string): Promise<string>;
   /** Stops the current turn where it is. */
   interrupt(): void;
@@ -120,6 +121,8 @@ export interface StageApp {
   sentEvents(): readonly BackEvent[];
   /** The canonical lines of the last turn that ended, one per line; '' before there is one. */
   script(): string;
+  /** v2.1. The words of an answer as Markdown (headings, lists, tables, fenced code; choices left out): the turn's, as it last came to rest on stage, or what is on stage now. */
+  answerMarkdown(turn?: string): string;
   playScript(text: string): Promise<string>;
   sight(): Sight | null;
   capture(maxSide?: number): Promise<string | null>;
@@ -296,6 +299,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   let painter: Painter;
   host.style.touchAction = 'pinch-zoom';
   const engine = createChartEngine();
+  const text = createTextLayer(host);
   const access = createAccessLayer(host, {
     setControl: (id, value, commit) => painter.setControl(id, value, commit),
     chartAct: (key, action) => (chartHost === null ? Promise.reject(new Error('No charts.')) : chartHost.act(key, action)),
@@ -324,6 +328,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     liveApps.dispose();
     chartHost?.dispose();
     access.dispose();
+    text.dispose();
     try {
       renderer.dispose();
     } catch {
@@ -332,6 +337,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     throw new Error(`The stage could not start: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
   }
   const offControls = painter.on('controls', (views) => access.controls(views));
+  const offText = painter.on('text', (spans) => text.update(spans, painter.snapshot().turn ?? painter.recording()?.turn ?? null));
   access.controls(painter.snapshot().controls);
 
   let reviewOn = readReviewSetting();
@@ -1165,7 +1171,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
         publishStatus();
       },
     },
-    prompt: (text, photos) => submit(photos === undefined || photos.length === 0 ? { kind: 'prompt', text } : { kind: 'prompt', text, images: photos }, null, true),
+    prompt: (text, photos, marks, voice) => submit({ kind: 'prompt', text, ...(photos === undefined || photos.length === 0 ? {} : { images: photos }), ...(marks === undefined ? {} : { marks }), ...(voice === undefined || voice.length === 0 ? {} : { voice }) }, null, true),
     demo: (name) => submit({ kind: 'demo', script: name }, null, true),
     playScript: (text) => submit({ kind: 'script', text }, null, true),
     interrupt() {
@@ -1213,6 +1219,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
       publishStatus();
     },
     script: scriptText,
+    answerMarkdown: (turn) => text.markdown(turn),
     sight: () => lastSight,
     async capture(maxSide = 768) {
       const frame = observed.lastFrame();
@@ -1252,6 +1259,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
       for (const call of dataCalls) call.abort();
       agentListeners.clear();
       offControls();
+      offText();
       offEvent();
       offLinkStatus();
       offDropped();
@@ -1271,6 +1279,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
       liveApps.dispose();
       chartHost?.dispose();
       access.dispose();
+      text.dispose();
       renderer.dispose();
     },
   };

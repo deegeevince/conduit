@@ -14,7 +14,7 @@ import type { Recording } from '../contracts/film';
 import { noteArrivals as noteArrivalsInto } from './arrivals';
 import type { ElementFrame, Frame, Quality, ShapeFrame } from '../contracts/frame';
 import type { LookSpec } from '../contracts/look';
-import type { ControlView, LineView, Painter, PainterEvents, PainterOptions, PainterSnapshot } from '../contracts/painter';
+import type { ControlView, LineView, Painter, PainterEvents, PainterOptions, PainterSnapshot, UiMockup } from '../contracts/painter';
 import { REST_POSE } from '../contracts/space';
 import type { Box, CameraPose, Viewport } from '../contracts/space';
 import { PlayClock, pinnedWallTime } from './clock';
@@ -28,6 +28,7 @@ import { bodySize, marginOf, screenFacts } from './layout/metrics';
 import { Reporter } from './report';
 import { annotated } from './annotate';
 import { placedOf, sightOf } from './sight';
+import { textSignature, textSpansOf } from './text-out';
 import { downUi, easeUi, easingUi, isScreenBlock, moveUi, setUiPicture, typeUi, typingUi, uiBlockAt, uiMockupViews, upUi } from './ui-stage';
 import type { UiSend } from './ui-stage';
 import { buildTimeline, settledAfter, settledEnd as settledEndOf } from './timeline';
@@ -187,7 +188,7 @@ export function createPainter(options: PainterOptions): Painter {
   let viewport: Viewport = options.viewport;
   const reducedMotion = options.reducedMotion ?? (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches);
 
-  const listeners: { [K in keyof PainterEvents]: Set<Listener<K>> } = { back: new Set(), transcript: new Set(), clock: new Set(), upload: new Set(), controls: new Set(), text: new Set() }; // `text`: STUB(PLAN-v2.1 package T2), nothing emits it yet
+  const listeners: { [K in keyof PainterEvents]: Set<Listener<K>> } = { back: new Set(), transcript: new Set(), clock: new Set(), upload: new Set(), controls: new Set(), text: new Set() };
   const emit = <K extends keyof PainterEvents>(type: K, event: PainterEvents[K]): void => {
     queueMicrotask(() => {
       for (const listener of listeners[type]) (listener as Listener<K>)(event);
@@ -951,6 +952,7 @@ export function createPainter(options: PainterOptions): Painter {
     }
     reading = advanceTurnState(reading, drawn || glyphStalled);
     announceControls();
+    announceText();
     observe(reading);
     // The frame just drawn may have met glyphs not yet typeset: say so now, the clock holds from the next frame.
     const waitingOnDraw = !drawn && !glyphStalled && turn !== null && turn.started && settling === null && reading.state === 'playing';
@@ -1213,6 +1215,64 @@ export function createPainter(options: PainterOptions): Painter {
     emit('controls', views);
   };
 
+  /** the mock-ups on stage as they rest, in host CSS pixels (the test hook's `mockups()`, and the text layer's way to leave a mock-up's live parts to the finger) */
+  const mockupViews = (): readonly UiMockup[] => {
+    const blocks = timeline.schedule.elements.filter(isScreenBlock).map((span) => span.key);
+    const dx = viewport.width / 2;
+    const dy = viewport.height / 2;
+    const host = (b: { readonly x: number; readonly y: number; readonly width: number; readonly height: number }): Box => ({ x: b.x + dx, y: b.y + dy, width: b.width, height: b.height });
+    return uiMockupViews(blocks).map((view) => ({
+      screen: view.screen,
+      hits: view.hits.map((hit) => ({ id: hit.id, part: hit.part, action: hit.action, box: host(hit), ...(hit.send === true ? { send: true } : {}), ...(hit.to === undefined ? {} : { to: hit.to }) })),
+      words: view.words.map((word) => ({ owner: word.owner, text: word.text, box: host(word) })),
+      notes: view.notes,
+    }));
+  };
+
+  // Text out (PLAN-v2.1 T2): the words on stage and where they are, for the chrome's text layer. Sent when the stage has come to rest and what
+  // is on it has changed, and once, empty, when it begins to move: the layer is not there to be dragged over while things slide.
+  const still = { time: Number.NaN, camera: '', width: 0, height: 0, frames: 0, hash: '', sent: '' };
+  const announceText = (): void => {
+    const shown = lastFrame;
+    if (shown === null || listeners.text.size === 0) return;
+    const camera = JSON.stringify(shown.camera);
+    if (shown.time !== still.time || camera !== still.camera || viewport.width !== still.width || viewport.height !== still.height) {
+      still.time = shown.time;
+      still.camera = camera;
+      still.width = viewport.width;
+      still.height = viewport.height;
+      still.frames = 0;
+      still.hash = '';
+      if (still.sent !== '') {
+        still.sent = '';
+        emit('text', []);
+      }
+      return;
+    }
+    still.frames += 1;
+    if (still.frames < 3) return;
+    // a cheap look at what could have moved while the clock stood still: a control dragged, a field typed in, a value that took a new number
+    let hash = `${shown.elements.length}`;
+    for (const element of shown.elements) hash += `|${Math.round(element.x * 4)},${Math.round(element.y * 4)},${Math.round(element.opacity * 20)},${element.runs.length}`;
+    if (hash === still.hash) return;
+    still.hash = hash;
+    let spans = textSpansOf(shown, timeline.schedule);
+    if (spans.some((span) => span.structure === 'screen')) {
+      const hits = mockupViews().flatMap((view) => view.hits.map((hit) => hit.box));
+      spans = spans.map((span) => {
+        if (span.structure !== 'screen' || span.lines.length === 0) return span;
+        const box = (span.lines[0] as { readonly box: Box }).box;
+        const cx = box.x + box.width / 2;
+        const cy = box.y + box.height / 2;
+        return hits.some((hit) => cx >= hit.x && cx <= hit.x + hit.width && cy >= hit.y && cy <= hit.y + hit.height) ? { ...span, role: 'control' } : span;
+      });
+    }
+    const signature = textSignature(spans);
+    if (signature === still.sent) return;
+    still.sent = signature;
+    emit('text', spans);
+  };
+
   /** A fingertip is not a pixel: a choice smaller than 44 px is grown to 44 px around its centre for hit-testing only. */
   const nearTappable = (x: number, y: number): string | null => {
     const MIN_TARGET = 44;
@@ -1277,6 +1337,7 @@ export function createPainter(options: PainterOptions): Painter {
       }
       const opened: Turn = { id, input, base, score: new TurnScore(base, input.kind), seqs: new Set(), issues: new Map(), ack: 0, closed: false, started: false, showingAll: false, skippedAt: null };
       turn = opened;
+      if (input.kind === 'prompt' || input.kind === 'script') store.restart();
       memory = null;
       clock.openTurn();
       reporter.openTurn(id);
@@ -1551,18 +1612,7 @@ export function createPainter(options: PainterOptions): Painter {
       drawNow();
     },
 
-    mockups() {
-      const blocks = timeline.schedule.elements.filter(isScreenBlock).map((span) => span.key);
-      const dx = viewport.width / 2;
-      const dy = viewport.height / 2;
-      const host = (b: { readonly x: number; readonly y: number; readonly width: number; readonly height: number }): Box => ({ x: b.x + dx, y: b.y + dy, width: b.width, height: b.height });
-      return uiMockupViews(blocks).map((view) => ({
-        screen: view.screen,
-        hits: view.hits.map((hit) => ({ id: hit.id, part: hit.part, action: hit.action, box: host(hit), ...(hit.send === true ? { send: true } : {}), ...(hit.to === undefined ? {} : { to: hit.to }) })),
-        words: view.words.map((word) => ({ owner: word.owner, text: word.text, box: host(word) })),
-        notes: view.notes,
-      }));
-    },
+    mockups: mockupViews,
 
     snapshot: snapshotNow,
 

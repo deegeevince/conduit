@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Ink bench</title>
+    <style>html,body{margin:0;background:#f4efe4;font:16px system-ui,sans-serif}main{max-width:1100px;margin:0 auto;padding:12px}#sheet{margin-top:8px}pre{white-space:pre-wrap;background:#fff;padding:8px;border-radius:8px}</style>
+  </head>
+  <body>
+    <main>
+      <label>Photo <input type="file" id="photo" accept="image/*" /></label>
+      <div id="sheet"></div>
+      <pre id="log" aria-live="polite"></pre>
+    </main>
+    <script type="module" src="/src/ink/bench.ts"></script>
+  </body>
+</html>

@@ -470,6 +470,8 @@ export interface Schedule {
 export interface ScheduleOptions {
   /** the turn was opened for a prompt, a tap or a control: choices an earlier turn offered leave as the answer's first line begins (D2c) */
   readonly retireChoices?: boolean;
+  /** the turn answers a new prompt: a control it declares that an earlier turn left on stage starts at the value it declares (or its start), not the one the user left it at */
+  readonly freshControls?: boolean;
 }
 
 type Mutable<T> = { -readonly [K in keyof T]: T[K] };
@@ -573,6 +575,7 @@ export function lookOfStage(base: StageBase): ResolvedLook {
 }
 
 export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, options: ScheduleOptions = {}): Schedule {
+  const answerOptions = options;
   const issues: ScheduleIssue[] = [];
   const sheet: Record<string, StyleDef> = { ...base.styles };
   const colors: Record<string, `#${string}`> = { ...base.colors };
@@ -1246,11 +1249,13 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
       const before = findLive(line.id, start);
       const was = before?.span.figure?.kind === 'control' ? before.span.figure : null;
       const same = was !== null && was.control === line.verb && was.min === min && was.max === max && was.options.length === options.length;
-      if (same && line.initial === undefined && was.value !== null && line.verb !== 'input') value = was.value;
-      else if (same && line.verb === 'input' && was.value !== null && was.value !== '') value = was.value;
+      // A new question's control starts again: what the hand left on an earlier answer's control does not carry (this turn's own redeclaring still does).
+      const restart = same && answerOptions.freshControls === true && before?.span.carried === true;
+      if (same && !restart && line.initial === undefined && was.value !== null && line.verb !== 'input') value = was.value;
+      else if (same && !restart && line.verb === 'input' && was.value !== null && was.value !== '') value = was.value;
       const { plain, emphasis } = splitEmphasis(line.text ?? '');
       // D2(b): a control said again exactly as it stands is nothing: it keeps what the user set and what it drives.
-      if (before !== null && was !== null && same && was.form === (line.verb === 'pick' ? (line.form ?? 'row') : null) && was.step === (line.range?.step ?? null) && was.unit === (line.unit ?? null) && was.send === (line.verb === 'button' ? true : (line.send ?? false)) && alike(was.options, options) && before.span.text === plain && alike(before.span.emphasis, emphasis) && sameStyle(before.style, joined.style) && before.span.parent === joined.parent && (line.initial === undefined || line.initial === was.value)) {
+      if (before !== null && was !== null && same && (!restart || value === was.value) && was.form === (line.verb === 'pick' ? (line.form ?? 'row') : null) && was.step === (line.range?.step ?? null) && was.unit === (line.unit ?? null) && was.send === (line.verb === 'button' ? true : (line.send ?? false)) && alike(was.options, options) && before.span.text === plain && alike(before.span.emphasis, emphasis) && sameStyle(before.style, joined.style) && before.span.parent === joined.parent && (line.initial === undefined || line.initial === was.value)) {
         previousStart = priorStart;
         lines.push({ seq, verb: line.verb, start, end: start });
         return;

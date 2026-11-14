@@ -7,6 +7,46 @@ import { numberOf } from './expr';
 import type { ControlSpec } from './schedule';
 import type { BindOn, ControlValue } from './types';
 
+/** A slider with whole ends goes by 1 only when it runs at least this far: a 0 to 1 slider is a fraction (an opacity, a share), not a count. */
+const WHOLE_SPAN = 4;
+
+/**
+ * The grid a slider's value lives on: its own step; or, when it has none and both its ends are whole numbers and it runs at least 4, 1 (a count, a percentage: 25.06% is
+ * never wanted); otherwise null, which is continuous. A step is the slider's own only when it is written.
+ */
+export function sliderStep(spec: ControlSpec): number | null {
+  if (spec.step !== null && spec.step > 0 && Number.isFinite(spec.step)) return spec.step;
+  if (Math.abs(spec.max - spec.min) >= WHOLE_SPAN && Number.isInteger(spec.min) && Number.isInteger(spec.max)) return 1;
+  return null;
+}
+
+/** How many decimals a slider's value is held and shown to. */
+export function sliderDecimals(spec: ControlSpec): number {
+  const places = (n: number): number => {
+    const text = String(Number(n.toPrecision(10)));
+    const dot = text.indexOf('.');
+    return dot < 0 ? 0 : text.length - dot - 1;
+  };
+  const step = sliderStep(spec);
+  if (step !== null) return Math.min(6, Math.max(places(step), places(spec.min)));
+  const span = Math.abs(spec.max - spec.min);
+  return span === 0 || !Number.isFinite(span) ? 0 : Math.min(6, Math.max(0, Math.ceil(-Math.log10(span / 1000))));
+}
+
+/**
+ * A number put on the slider's grid: its step counted from `min`, never outside its ends (whichever end is the
+ * larger: a slider written `10 0` runs down), free of float noise. Not a number: where the slider starts.
+ */
+export function snapSliderValue(spec: ControlSpec, raw: number): number {
+  if (!Number.isFinite(raw)) return spec.min;
+  const lo = Math.min(spec.min, spec.max);
+  const hi = Math.max(spec.min, spec.max);
+  let v = Math.min(hi, Math.max(lo, raw));
+  const step = sliderStep(spec);
+  if (step !== null) v = Math.min(hi, Math.max(lo, spec.min + Math.round((v - spec.min) / step) * step));
+  return Number(v.toFixed(sliderDecimals(spec)));
+}
+
 /** Where a control stands across its whole range, 0..1. A toggle is 0 or 1; a pick is its option's place among the options; an input and a button have no range and stand at 0. */
 export function controlShare(spec: ControlSpec, value: ControlValue | null): number {
   if (spec.control === 'toggle') return value === true ? 1 : 0;
@@ -54,7 +94,7 @@ export function bindProgress(on: BindOn, spec: ControlSpec, value: ControlValue 
 export function controlText(spec: ControlSpec, value: ControlValue | null): string {
   if (spec.control === 'toggle') return value === true ? 'on' : 'off';
   if (spec.control === 'pick') return spec.options[(typeof value === 'number' ? value : 1) - 1] ?? '';
-  if (spec.control === 'slider') return `${String(typeof value === 'number' ? Number(value.toFixed(4)) : spec.min)}${spec.unit ?? ''}`;
+  if (spec.control === 'slider') return `${String(typeof value === 'number' ? Number(value.toFixed(spec.step === null && sliderStep(spec) !== null ? 0 : 4)) : spec.min)}${spec.unit ?? ''}`;
   return String(value ?? '');
 }
 
@@ -66,7 +106,11 @@ export function controlText(spec: ControlSpec, value: ControlValue | null): stri
  */
 export function holdControl(spec: ControlSpec, value: ControlValue | undefined): ControlValue | null {
   if (value === undefined) return null;
-  if (spec.control === 'slider' && typeof value === 'number' && Number.isFinite(value)) return Math.min(spec.max, Math.max(spec.min, value));
+  if (spec.control === 'slider' && typeof value === 'number' && Number.isFinite(value)) {
+    const held = Math.min(spec.max, Math.max(spec.min, value));
+    // a slider with no step of its own and whole ends holds whole numbers
+    return spec.step === null && sliderStep(spec) !== null ? Math.min(spec.max, Math.max(spec.min, Math.round(held))) : held;
+  }
   if (spec.control === 'toggle' && typeof value === 'boolean') return value;
   if (spec.control === 'pick' && typeof value === 'number' && Number.isFinite(value) && spec.options.length > 0) return Math.min(spec.options.length, Math.max(1, Math.round(value)));
   if (spec.control === 'input' && typeof value === 'string') return value;

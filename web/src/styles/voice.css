@@ -1,0 +1,114 @@
+/* Voice notes (v2.1): the microphone beside the photo buttons, and the strip above the field while recording and reading. */
+
+.prompt__voice {
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.prompt__voice[hidden] {
+  display: none;
+}
+
+.prompt__voice--recording {
+  background: var(--chrome-text);
+  color: var(--chrome-ground);
+}
+
+.voice {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.voice[hidden] {
+  display: none;
+}
+
+.voice__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+
+.voice__meter {
+  flex: 0 0 auto;
+  width: 6rem;
+  height: 0.75rem;
+  border: 1px solid var(--chrome-line);
+  background: var(--chrome-ground);
+  overflow: hidden;
+}
+
+.voice__meter[hidden],
+.voice__time[hidden],
+.voice__action[hidden] {
+  display: none;
+}
+
+.voice__level {
+  --level: 0;
+  display: block;
+  height: 100%;
+  width: calc(var(--level) * 100%);
+  background: var(--chrome-text);
+}
+
+.voice__time {
+  font-family: var(--chrome-font-mono);
+  font-size: var(--chrome-text-size-small);
+  color: var(--chrome-text-quiet);
+  font-variant-numeric: tabular-nums;
+}
+
+.voice__note {
+  flex: 1 1 12rem;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--chrome-text-size-small);
+  color: var(--chrome-text-quiet);
+  overflow-wrap: anywhere;
+}
+
+.voice__note:empty {
+  display: none;
+}
+
+.voice__note--problem {
+  color: var(--chrome-text);
+  border-left: 3px solid var(--chrome-focus);
+  padding-left: var(--space-2);
+}
+
+.voice__action {
+  min-height: var(--control-height);
+  padding: 0 var(--space-3);
+  background: transparent;
+  color: var(--chrome-text);
+  border: 1px solid var(--chrome-line);
+  font: inherit;
+  cursor: pointer;
+}
+
+.voice__auto {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--chrome-text-size-small);
+  color: var(--chrome-text-quiet);
+}
+
+.prompt__voice:focus-visible,
+.voice__action:focus-visible,
+.voice__auto input:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+
+@media (max-width: 40rem) {
+  .voice {
+    grid-column: 1 / -1;
+  }
+}

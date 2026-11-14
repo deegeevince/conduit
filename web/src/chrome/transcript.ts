@@ -1,5 +1,6 @@
 import { AMBIENT_KINDS } from '@conduit/language';
 import type { Painter, TranscriptEvent } from '../contracts/painter';
+import type { ComposerMenu, MenuEntryHandle } from './menu';
 
 export interface Transcript {
   /** shows or hides the visible panel; the live region is always present */
@@ -55,16 +56,9 @@ let counter = 0;
  * panel anyone can open. Struck text stays, marked as struck. Choices are
  * real buttons, so the stage can be driven from the keyboard.
  */
-export function mountTranscript(host: HTMLElement, painter: Painter, handlers: { readonly onChoice: (key: string) => void }): Transcript {
+export function mountTranscript(host: HTMLElement, painter: Painter, handlers: { /** the composer's [+] menu: the Transcript is one of its entries */ readonly menu: ComposerMenu; readonly onChoice: (key: string) => void; /** copies the words of a turn's answer as Markdown; absent: no button */ readonly onCopyAnswer?: (turn: string) => void }): Transcript {
   counter += 1;
   const panelId = `transcript-panel-${counter}`;
-
-  const toggle = document.createElement('button');
-  toggle.type = 'button';
-  toggle.className = 'transcript__toggle';
-  toggle.textContent = 'Transcript';
-  toggle.setAttribute('aria-expanded', 'false');
-  toggle.setAttribute('aria-controls', panelId);
 
   const panel = document.createElement('section');
   panel.className = 'transcript__panel';
@@ -88,7 +82,8 @@ export function mountTranscript(host: HTMLElement, painter: Painter, handlers: {
   live.setAttribute('aria-relevant', 'additions');
   live.setAttribute('aria-label', 'Spoken text');
 
-  host.append(toggle, panel, live);
+  host.append(panel, live);
+  const toggle: MenuEntryHandle = handlers.menu.add({ id: 'transcript', label: 'Transcript', gist: 'everything said, as text', order: 50, check: true, checked: false, run: () => setOpen(!open) });
 
   const entries = new Map<string, Entry>();
   const headings = new Map<string, HTMLElement>();
@@ -141,19 +136,17 @@ export function mountTranscript(host: HTMLElement, painter: Painter, handlers: {
   const setOpen = (next: boolean): void => {
     open = next;
     panel.hidden = !next;
-    toggle.setAttribute('aria-expanded', String(next));
+    toggle.set({ checked: next });
     if (next) body.scrollTop = body.scrollHeight;
   };
-  toggle.addEventListener('click', () => setOpen(!open));
   // No tab stop of its own: the panel is a labelled region, and the scrolling body is focusable by the browser when it has nothing focusable inside.
   const closeOnEscape = (event: KeyboardEvent): void => {
     if (event.key !== 'Escape' || !open) return;
     event.preventDefault();
     setOpen(false);
-    toggle.focus();
+    handlers.menu.button.focus();
   };
   panel.addEventListener('keydown', closeOnEscape);
-  toggle.addEventListener('keydown', closeOnEscape);
 
   const bar = host.closest<HTMLElement>('.bar');
   const measure = (): void => {
@@ -236,10 +229,21 @@ export function mountTranscript(host: HTMLElement, painter: Painter, handlers: {
         heading.dataset['turn'] = event.turn;
         const said = event.input.kind === 'prompt' ? 'You said' : event.input.kind === 'tap' ? 'You chose' : event.input.kind === 'act' ? 'You pressed' : event.input.kind === 'script' ? 'You played' : event.input.kind === 'refine' ? 'You asked' : 'Demo';
         const text = event.input.kind === 'prompt' || event.input.kind === 'tap' || event.input.kind === 'act' ? event.input.text : event.input.kind === 'script' ? 'a script' : event.input.kind === 'refine' ? 'keep making it better' : event.input.script;
-        heading.textContent = `${said}: ${text}`;
+        const line = `${said}: ${text}`;
+        heading.textContent = line;
+        if (handlers.onCopyAnswer !== undefined) {
+          const copy = document.createElement('button');
+          copy.type = 'button';
+          copy.className = 'transcript__copy';
+          copy.textContent = 'Copy answer';
+          copy.setAttribute('aria-label', `Copy the answer to: ${text}`);
+          const turn = event.turn;
+          copy.addEventListener('click', () => handlers.onCopyAnswer?.(turn));
+          heading.append(' ', copy);
+        }
         headings.set(event.turn, heading);
         stickToEnd(() => body.append(heading));
-        announce(heading.textContent);
+        announce(line);
         trim();
         return;
       }
