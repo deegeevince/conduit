@@ -23,14 +23,14 @@
     {
      "k": "min-font",
      "match": "^[A-Za-z]+: ?[0-9?]+$",
-     "px": 14,
-     "phonePx": 12
+     "px": 16,
+     "phonePx": 14
     },
     {
      "k": "min-font",
      "match": "\\.$",
-     "px": 14,
-     "phonePx": 12
+     "px": 16,
+     "phonePx": 14
     }
    ]
   }

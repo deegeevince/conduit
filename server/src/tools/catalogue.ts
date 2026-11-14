@@ -343,17 +343,19 @@ const wordBoxes = (cx: Cx, words: readonly string[] | undefined, match: string |
 };
 
 function gridBox(cx: Cx, of: string | undefined, matched: readonly LiveElement[]): LiveElement['box'] | null {
-  const shapes = cx.answer.live.filter((e) => e.kind === 'shape' && e.phase !== 'struck' && area(e.box) > 0);
+  const shapes = cx.answer.live.filter((e) => (e.kind === 'shape' || e.kind === 'structure') && e.phase !== 'struck' && area(e.box) > 0 && area(e.box) < 0.85 * cx.screen.width * cx.screen.height);
   if (of === 'cells') {
     // the cells of a strip: the box that holds all of the shapes sitting among the words
-    const near = shapes.filter((s) => matched.some((m) => Math.abs(centre(s.box).y - centre(m.box).y) < 3 * m.box.height));
+    const near = cx.answer.live.filter((e) => e.kind === 'shape' && e.phase !== 'struck' && area(e.box) > 0 && matched.some((m) => Math.abs(centre(e.box).y - centre(m.box).y) < 3 * m.box.height));
     if (near.length === 0) return null;
     const x0 = Math.min(...near.map((s) => s.box.x));
     const y0 = Math.min(...near.map((s) => s.box.y));
     return { x: x0, y: y0, width: Math.max(...near.map((s) => s.box.x + s.box.width)) - x0, height: Math.max(...near.map((s) => s.box.y + s.box.height)) - y0 };
   }
-  const big = shapes.filter((s) => area(s.box) < 0.85 * cx.screen.width * cx.screen.height).sort((a, b) => area(b.box) - area(a.box))[0];
-  return big === undefined ? null : big.box;
+  // the shape or table that holds the most of the words (a grid, whatever kind the painter calls it)
+  const holds = (b: LiveElement['box']): number => matched.filter((m) => { const c = centre(m.box); return c.x >= b.x - 3 && c.x <= b.x + b.width + 3 && c.y >= b.y - 3 && c.y <= b.y + b.height + 3; }).length;
+  const best = shapes.sort((a, b) => holds(b.box) - holds(a.box) || area(b.box) - area(a.box))[0];
+  return best === undefined ? null : best.box;
 }
 
 async function runCheck(cx: Cx, spec: Spec): Promise<Res> {
@@ -412,6 +414,10 @@ async function runCheck(cx: Cx, spec: Spec): Promise<Res> {
       const aligned = Math.min(spread(lefts), spread(mids)) <= 0.04 * cx.screen.width;
       const bad: string[] = [];
       if (ratio > 1.15) bad.push(`sizes ${sizes.map((n) => n.toFixed(0)).join('/')} px in one sequence`);
+      const ys = lines.map((e) => e.box.y);
+      if (ys.some((y, i) => i > 0 && y <= (ys[i - 1] as number))) bad.push('the lines are not in the order they were written, top to bottom');
+      const gaps = ys.slice(1).map((y, i) => y - (ys[i] as number)).filter((g) => g > 0);
+      if (gaps.length >= 2 && Math.max(...gaps) > 1.6 * Math.min(...gaps)) bad.push(`uneven spacing between lines (${gaps.map((g) => Math.round(g)).join('/')} px)`);
       if (!aligned) bad.push(`the lines do not share one alignment (left edges spread ${Math.round(spread(lefts))} px, centres ${Math.round(spread(mids))} px)`);
       return res(name, bad, `${lines.length} narration lines at one size and one alignment`);
     }
