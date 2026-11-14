@@ -526,6 +526,8 @@ export interface ContentCount {
   readonly controls: number;
   /** characters of text a viewer can read, choices left out */
   readonly words: number;
+  /** the words of every choice (a tap element) on stage, in the order they were written: a fix may not drop or reword one. Absent from a painter of v2.1 before this; read as none. */
+  readonly choices?: readonly string[];
 }
 
 /** v2.1. Pictures the user gives with a prompt: what is taken, and how much. */

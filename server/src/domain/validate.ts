@@ -388,7 +388,8 @@ function backEvent(value: unknown, index: number): BackEvent {
 function contentCount(value: unknown): ContentCount {
   const raw = obj(value, 'content');
   const count = (field: unknown, name: string): number => Math.max(0, Math.round(num(field, `content.${name}`)));
-  return { structures: count(raw.structures, 'structures'), parts: count(raw.parts, 'parts'), drawn: count(raw.drawn, 'drawn'), controls: count(raw.controls, 'controls'), words: count(raw.words, 'words') };
+  const choices = raw.choices === undefined ? [] : list(raw.choices, 'content.choices').slice(0, LIMITS.elements).map((item) => text(item, 'content.choices').slice(0, LIMITS.text));
+  return { structures: count(raw.structures, 'structures'), parts: count(raw.parts, 'parts'), drawn: count(raw.drawn, 'drawn'), controls: count(raw.controls, 'controls'), words: count(raw.words, 'words'), choices };
 }
 
 export function parseBackEvents(body: unknown): BackEvent[] {

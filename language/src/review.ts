@@ -265,6 +265,7 @@ export function contentOf(schedule: Schedule): ContentCount {
   let drawn = 0;
   let controls = 0;
   let words = 0;
+  const choices: string[] = [];
   const resting = new Set<string>();
   for (const element of schedule.elements) if (element.exit === null) resting.add(element.key);
   for (const element of schedule.elements) {
@@ -276,16 +277,29 @@ export function contentOf(schedule: Schedule): ContentCount {
       if (element.parent === null || resting.has(element.parent)) parts += 1;
     } else if (element.kind === 'shape' || element.kind === 'sprite' || element.kind === 'copy' || element.kind === 'picture') drawn += 1;
     else if (element.kind === 'control') controls += 1;
-    else if (element.kind === 'text' && !element.style.tap && !element.struck) words += element.text.length;
+    else if (element.kind === 'text' && !element.struck) {
+      if (element.style.tap) choices.push(element.text);
+      else words += element.text.length;
+    }
   }
-  return { structures, parts, drawn, controls, words };
+  return { structures, parts, drawn, controls, words, choices };
 }
 
-/** Rule one of three: the fix takes nothing away. A structure, a part of one, or a control fewer is a refusal outright; drawing and words may shrink a little, not go. */
+/** Rule one of three: the fix takes nothing away. A structure, a part of one, a control or a choice fewer (or reworded) is a refusal outright; drawing and words may shrink a little, not go. */
 export function fixKeeps(draft: ContentCount, candidate: ContentCount, policy: FixPolicy = FIX_POLICY): { readonly keeps: boolean; readonly why: string | null } {
   if (candidate.structures < draft.structures) return { keeps: false, why: `a diagram was removed (${draft.structures} before, ${candidate.structures} after)` };
   if (candidate.parts < draft.parts) return { keeps: false, why: `parts of a diagram were removed (${draft.parts} before, ${candidate.parts} after)` };
   if (candidate.controls < draft.controls) return { keeps: false, why: `a control was removed (${draft.controls} before, ${candidate.controls} after)` };
+  // A choice is the user's next move: a fix may not drop one or put other words in it (it once overwrote one with the answer sentence).
+  const offered = draft.choices ?? [];
+  if (offered.length > 0) {
+    const left = [...(candidate.choices ?? [])];
+    for (const choice of offered) {
+      const at = left.indexOf(choice);
+      if (at < 0) return { keeps: false, why: `a choice was removed or reworded ("${choice.slice(0, 60)}")` };
+      left.splice(at, 1);
+    }
+  }
   if (candidate.drawn < Math.ceil(draft.drawn * policy.keepDrawn)) return { keeps: false, why: `drawing was removed (${draft.drawn} things before, ${candidate.drawn} after)` };
   if (candidate.words < Math.floor(draft.words * policy.keepWords)) return { keeps: false, why: `words were removed (${draft.words} characters before, ${candidate.words} after)` };
   return { keeps: true, why: null };
