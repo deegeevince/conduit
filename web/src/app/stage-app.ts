@@ -1042,7 +1042,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     pageCount += 1;
     const turn = `${PAGE_PREFIX}${pageCount}`;
     const steps = localSteps(source);
-    painter.openTurn(turn, { kind: 'script', text: source });
+    painter.openTurn(turn, { kind: 'script', text: source }, { page: true });
     steps.forEach((step, index) => painter.ingest(turn, index + 1, step.line));
     painter.closeTurn(turn, 'done');
     publishStatus();
@@ -1102,7 +1102,11 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     },
     refine: (passes) => submit({ kind: 'refine', passes }, null, false),
     showPage,
-    lastTurn: () => painter.snapshot().turn ?? painter.recording()?.turn ?? null,
+    // A page of the app's own is not a turn the server knows: Save, /export and /capture never name it to the server.
+    lastTurn: () => {
+      const turn = painter.snapshot().turn ?? painter.recording()?.turn ?? null;
+      return turn !== null && turn.startsWith(PAGE_PREFIX) ? null : turn;
+    },
     choose(key) {
       painter.tapElement(key);
     },

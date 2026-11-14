@@ -176,6 +176,8 @@ export function createPainter(options: PainterOptions): Painter {
 
   const withLook = (stage: StageBase): StageBase => (lockLook === null || stage.look === lockLook ? stage : { ...stage, look: lockLook });
   let base: StageBase = withLook(EMPTY_STAGE);
+  /** the stage a page of the app's own (`/help`) is covering; null when no page is up */
+  let pageUnder: StageBase | null = null;
   let turn: Turn | null = null;
   let memory: Memory | null = null;
   /** the last finished or interrupted turn, kept so `seek` and `step` can still inspect it */
@@ -1141,7 +1143,7 @@ export function createPainter(options: PainterOptions): Painter {
   };
 
   const painter: Painter = {
-    openTurn(id, input) {
+    openTurn(id, input, options) {
       // A turn id is opened once. A replayed `turn` for the one playing, settling or already played must not cut it off.
       if (openedTurns.has(id)) return;
       openedTurns.add(id);
@@ -1152,6 +1154,13 @@ export function createPainter(options: PainterOptions): Painter {
         const stage = settledStage;
         rest(stage ?? base, null, clock.read().ambient);
         settledStage = null;
+      }
+      if (options?.page === true) {
+        pageUnder ??= base;
+      } else if (pageUnder !== null) {
+        // The page is gone with the next real turn: the stage it covered is the one the server has described to the brain.
+        base = pageUnder;
+        pageUnder = null;
       }
       const opened: Turn = { id, input, base, score: new TurnScore(base, input.kind), seqs: new Set(), issues: new Map(), ack: 0, closed: false, started: false, showingAll: false, skippedAt: null };
       turn = opened;
