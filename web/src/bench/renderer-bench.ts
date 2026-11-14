@@ -13,6 +13,7 @@ import { PHOSPHOR_CURVE, createProbedRenderer } from '../render/three';
 import type { ThreeProbe, ThreeRenderer } from '../render/three';
 import { CLIP_KINDS, clipFixture, fixtureFrame } from './fixture-frames';
 import type { ClipKind, FixtureFigures } from './fixture-frames';
+import { createExporter } from '../export';
 import { frameToSvg } from '../export/svg';
 import { createPlainRenderer } from '../render/plain';
 import type { Renderer } from '../contracts/renderer';
@@ -694,7 +695,54 @@ async function plainShow(look: LookId, kind: ClipKind, layer: Layer, empty: bool
   return { left: Math.min(...quad.map((p) => p.x)), top: Math.min(...quad.map((p) => p.y)), right: Math.max(...quad.map((p) => p.x)), bottom: Math.max(...quad.map((p) => p.y)) };
 }
 
+/** The frame cost with `count` clipped things on the stage beside the bench's usual content (0 for the baseline). */
+function clipPerf(count: number, frames: number): { count: number; p50: number; p95: number; max: number; mean: number } {
+  const kinds: readonly ClipKind[] = ['text', 'marks', 'fill', 'stroke', 'sprite', 'picture'];
+  const base = buildFrame();
+  const extra: Frame[] = [];
+  for (let i = 0; i < count; i++) {
+    const { frame } = clipFixture(base.look, viewport, REST_POSE, kinds[i % kinds.length] ?? 'fill', 'mid', pictureUrl);
+    extra.push({ ...frame, elements: frame.elements.map((e) => ({ ...e, key: `${e.key}#${i}`, id: `${e.id}#${i}` })), figures: frame.figures.map((f) => ({ ...f, key: `${f.key}#${i}`, id: `${f.id}#${i}` })) });
+  }
+  const times: number[] = [];
+  for (let i = 0; i < frames; i++) {
+    const shown: Frame = { ...base, ambient: base.ambient + i / 60, elements: [...base.elements, ...extra.flatMap((f) => f.elements)], figures: [...base.figures, ...extra.flatMap((f) => f.figures)] };
+    const began = performance.now();
+    renderer.render(shown);
+    renderer.probe().read(0, 0, 1, 1);
+    times.push(performance.now() - began);
+  }
+  return { count, p50: percentile(times, 0.5), p95: percentile(times, 0.95), max: Math.max(...times), mean: times.reduce((a, c) => a + c, 0) / times.length };
+}
+
+/** A PDF of three stand-in slides (three looks, a clipped fixture on each) through the real exporter, as base64. */
+async function pdfTest(width: number, height: number): Promise<{ base64: string; bytes: number; ms: number }> {
+  const slides: readonly LookId[] = ['paper', 'night', 'chalk'];
+  const viewport: Viewport = { width: 1280, height: 720, dpr: 1 };
+  const film = {
+    duration: slides.length,
+    viewport,
+    frameAt: (seconds: number): Frame => {
+      const look = slides[Math.min(slides.length - 1, Math.floor(seconds))] ?? 'paper';
+      const kinds: readonly ClipKind[] = ['marks', 'fill', 'picture'];
+      return clipFixture(look, viewport, REST_POSE, kinds[Math.floor(seconds)] ?? 'fill', 'mid', pictureUrl).frame;
+    },
+    script: () => '',
+  };
+  const exporter = createExporter({ createRenderer: createProbedRenderer });
+  const began = performance.now();
+  const job = exporter.start(film, { kind: 'pdf', width, height, at: [0, 1, 2] });
+  const { blob } = await job.done;
+  const buffer = new Uint8Array(await blob.arrayBuffer());
+  let binary = '';
+  for (let i = 0; i < buffer.length; i += 0x8000) binary += String.fromCharCode(...buffer.subarray(i, i + 0x8000));
+  exporter.dispose();
+  return { base64: btoa(binary), bytes: buffer.length, ms: performance.now() - began };
+}
+
 interface Bench {
+  pdfTest: typeof pdfTest;
+  clipPerf: typeof clipPerf;
   plainShow: typeof plainShow;
   clipSvg: typeof clipSvg;
   clipLive: typeof clipLive;
@@ -939,6 +987,8 @@ const bench: Bench = {
   clipLive,
   clipSvg,
   plainShow,
+  clipPerf,
+  pdfTest,
   rasterise,
   cost,
   get mountMs() {
