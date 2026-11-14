@@ -597,7 +597,8 @@ function isHeading(unit: Unit): boolean {
 /** The oldest line of a column that may leave to make room: never the newest, never a pinned one, and a heading only when no body line is left to go. */
 function retirable(column: Column): number {
   const last = column.units.length - 1;
-  const free = (unit: Unit, index: number): boolean => index < last && unit.main.item.style.stay !== 'pin';
+  // a control (it has a reserve) is something the user is using and the drawing is bound to: it never leaves to make room for words
+  const free = (unit: Unit, index: number): boolean => index < last && unit.main.item.style.stay !== 'pin' && unit.main.item.reserve === undefined;
   const body = column.units.findIndex((unit, index) => free(unit, index) && !isHeading(unit));
   return body >= 0 ? body : column.units.findIndex(free);
 }

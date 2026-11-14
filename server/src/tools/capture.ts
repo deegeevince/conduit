@@ -431,8 +431,10 @@ function parseArgs(argv: readonly string[]): Options {
     else if (arg.startsWith('--')) usage(`unknown flag ${arg}`);
     else positional.push(arg);
   }
-  const screen = SCREENS[screenName];
-  if (screen === undefined) usage(`--screen is one of ${Object.keys(SCREENS).join(', ')}`);
+  // the named screens, or any WxH (the stage under the prompt bar is shorter than the window: 1280x619, 390x743)
+  const sized = /^(\d{3,4})x(\d{3,4})$/.exec(screenName);
+  const screen = SCREENS[screenName] ?? (sized === null ? undefined : { width: Number(sized[1]), height: Number(sized[2]) });
+  if (screen === undefined) usage(`--screen is WxH, like ${Object.keys(SCREENS).join(', ')}`);
   const log = positional[0];
   if (log === undefined) usage('which log?');
   if (!all && positional[1] === undefined) usage('which turn? (or --all)');
