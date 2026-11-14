@@ -58,7 +58,7 @@ const STEPS: readonly Step[] = [
   { n: 2, say: 'explain how a bill becomes a law, as a flowchart', name: 'flowchart', expects: 'structure' },
   { n: 3, say: "show Apple's stock over 2024 as a chart", name: 'chart', expects: 'chart' },
   // "mock-up" with its hyphen: the live-app block taught since v2.1-app takes "mock up … I can click through" for a request for something that works, and this turn judges the interface kit
-  { n: 4, say: 'make a mock-up of a sign-in screen I can click through', name: 'sign-in', expects: 'screen' },
+  { n: 4, say: 'mock up a sign-in screen I can click through', name: 'sign-in', expects: 'screen' },
   { n: 5, say: null, name: 'interact', expects: 'interact' },
   { n: 6, say: 'mock up the home page for an insurance company', name: 'insurance-home', expects: 'screen' },
   { n: 7, say: '/new', name: 'new', expects: 'any' },
