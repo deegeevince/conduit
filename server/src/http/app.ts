@@ -11,6 +11,7 @@ import { SERVER_LIMITS } from '../domain/session';
 import { AppError, errors, toErrorBody } from '../errors';
 import { UPLOAD_LIMITS } from '@conduit/language';
 import { registerAssetRoutes } from './asset-routes';
+import { registerConversationRoutes } from './conversation-routes';
 import { registerUploadRoutes } from './upload-routes';
 import type { HttpDeps } from './deps';
 import { registerExploreRoutes } from './explore-routes';
@@ -89,6 +90,7 @@ export function createApp(deps: HttpDeps): Hono {
   registerSessionRoutes(app, deps);
   registerAssetRoutes(app, deps);
   registerUploadRoutes(app, deps);
+  registerConversationRoutes(app, deps);
   registerStatusRoutes(app, deps);
   registerOpsRoutes(app, deps);
   registerExploreRoutes(app, deps);
