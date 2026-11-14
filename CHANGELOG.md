@@ -2,7 +2,15 @@
 
 Newest first. Each item is something the brain can show live when asked "showcase what's new": draw it, don't describe it. The server reads this file.
 
-## Step-by-step documents that are not homework (new)
+## Everything where it belongs, nothing lost (live)
+- Sliders and other controls stand in a column of their own beside a chart or a table, measured at the room they really have: all six sliders of a budget show at once on a computer, a tablet or a phone, and none sits on the drawing. On a very short screen they scroll inside their own window.
+- Nothing an answer says is silently lost. When the words do not fit, they are set a little smaller together; whatever still does not fit waits behind a small "earlier" button at the top of the words, which shows those lines in order and closes again.
+- "How does it work, step by step" keeps the picture and gives a "1 of 4" stepper beside it: one sentence a tap, the part it names lit up. A thing with a form you can see (a chord, a layout) is drawn, not put in a table.
+- A row of boxes too narrow for its words (twelve months on a phone) wraps into rows, every word in its box. A hand-drawn table's rows open up instead of landing on each other, and narration keeps the order it was told in.
+- On a phone, labels stay on the screen and their lines end on their own part. An app or a page keeps the answer's words beside it instead of covering them, and a mock-up's buttons and tab bar stay inside its screen.
+- In homework, the pencil stays for the next try after a wrong answer, after Help and after "Show me how", on an iPad, a phone or a computer. A pen stroke that starts on a button draws; it never presses it.
+
+## Step-by-step documents that are not homework (live)
 - Ask to be walked through a recipe, a lease or a trip and Conduit writes a document of parts you work through: each step with a "Done" tick to mark it off, a choice where the call is yours (how thick, fine or question it, which day first), and help on a step when you ask. Homework help is the same pieces with a young learner's rules.
 - Help for a young learner is a ladder of questions back to her, facts first (what do we know, with the facts marked in the question), then what is being asked, then ways to go at it, and then she has a go. Doing a way together is always an ask she answers, never an answer shown.
 
@@ -30,16 +38,16 @@ Newest first. Each item is something the brain can show live when asked "showcas
 - Add a PDF the way you add a photo (+, paste, or drag and drop). Its first ten pages are drawn page by page, and its own text goes along with them, so a quote from it matches the page exactly.
 - Up to ten photos or PDF pages in one message.
 
-## Tidying up a broken answer (new)
+## Tidying up a broken answer (live)
 - When the critic looks at an answer and says it cannot be read (words on words, things off the stage, text too small) and the brain can mend it, Conduit now does. The brain is shown what the critic found and writes a few fix lines; they are tried out of sight and kept only if the stage then measures better. A kept repair is shown as a change in place, with "Tidying up the last answer…" and then "Tidied" in the status line. If the repair is not better, nothing changes.
 - One try per answer. Never while you are typing, never while a new answer is being made (a new question cancels it), never on a lesson, an app or a mock-up. `/review repair off` switches it off for you; it is on by default. The critic then looks at the repaired answer once more, so the log has the score before and after.
 
-## Agent auto mode (new)
+## Agent auto mode (live)
 - `/tools auto` lets the brain's browser work without a prompt for each step: reading, scrolling, clicking, typing ordinary text, opening and closing its own tabs. `/tools ask` brings every prompt back. The server's default is `AGENT_PERMITS=auto|ask` (ask unless said).
 - Still asked on stage, every time, even in auto: sending, buying, deleting, posting, signing in, and anything on a sign-in, payment or checkout page. Never allowed in any mode: typing a password or card number, touching a tab the brain did not open, downloads.
 - The bar says "agent · auto" beside the model; each call allowed this way shows on the activity strip as "auto" and is logged with `permit: auto`. The kill switch stops it at once.
 
-## The bar is one line (new)
+## The bar is one line (live)
 - The bottom of the page is one pill, like a chat app's: a + button, the message box, the microphone, Send (Stop while Conduit answers). The box grows upwards when you type several lines (Shift+Enter makes a new line) and rests at one.
 - The + menu holds the rest: Add a photo, Take a photo (on a phone), Draw, Save, Transcript, Model and effort, Copy answer, and About (keys, commands, the charting credit). It opens with Enter or Space and answers the arrow keys and Escape.
 - Status is not a row any more: "thinking" and "playing" are the box's own hint; only an error or an export in progress shows as a small line above the bar.
