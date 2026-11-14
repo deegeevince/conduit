@@ -35,8 +35,9 @@ let exitHookInstalled = false;
 /** Spawns and tracks a child so that it cannot outlive the server. The only call to `spawn` in the server. */
 export function spawnTracked(bin: string, args: readonly string[], effort?: 'low' | 'medium' | 'high', tool?: ToolProcess): ChildProcess {
   installExitHook();
-  // The owner's shell may export CLAUDE_EFFORT; the brain's effort is its own setting. The brain runs on the owner's login, never on an API key.
-  const env = childEnvironment({ ...(effort === undefined ? {} : { CLAUDE_EFFORT: effort, ANTHROPIC_API_KEY: '', ANTHROPIC_AUTH_TOKEN: '' }), ...tool?.env });
+  // The owner's shell may export CLAUDE_EFFORT; the brain's effort is its own setting. `childEnvironment` keeps every credential out,
+  // whatever the effort: the brain, the judge and the loop's agents run on the owner's login, never on an API key.
+  const env = childEnvironment({ ...(effort === undefined ? {} : { CLAUDE_EFFORT: effort }), ...tool?.env });
   const child = spawn(bin, [...args], { cwd: tool?.cwd ?? tmpdir(), stdio: tool?.quiet === true ? ['ignore', 'ignore', 'ignore'] : ['pipe', 'pipe', 'pipe'], shell: false, env });
   live.add(child);
   const forget = (): void => {

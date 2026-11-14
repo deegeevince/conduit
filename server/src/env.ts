@@ -101,9 +101,41 @@ export function processEnvironment(): Source {
   return process.env;
 }
 
-/** What a child process is given: the server's environment with these names overridden. */
+/**
+ * Names that select or carry a paid credential. A child process is never given one: every model call goes through the `claude` CLI on the
+ * owner's login (the subscription), and a key in the owner's shell would silently turn that into a metered API call. The CLI's own
+ * subscription token (`CLAUDE_CODE_OAUTH_TOKEN`) is the login itself and is let through.
+ */
+const CREDENTIAL_NAMES: readonly RegExp[] = [
+  /^ANTHROPIC_/i,
+  /^CLAUDE_CODE_USE_/i,
+  /^CLAUDE_CODE_(?:API_KEY|SKIP_.*_AUTH)/i,
+  /^(?:AWS|GOOGLE|GCLOUD|GCP|AZURE|VERTEX|BEDROCK|OPENAI|OPENROUTER|GEMINI|MISTRAL|COHERE|GROQ|XAI|HF|HUGGINGFACE)_/i,
+  /^CLOUD_ML_REGION$/i,
+  /(?:^|_)(?:API_?KEY|AUTH_TOKEN|ACCESS_KEY(?:_ID)?|SECRET(?:_KEY|_ACCESS_KEY)?|PASSWORD|BEARER_TOKEN)$/i,
+];
+const CREDENTIAL_EXCEPTIONS: readonly string[] = ['CLAUDE_CODE_OAUTH_TOKEN'];
+
+/** Whether a variable of this name is kept from every child process. Exported for the tools that print what a run will be given. */
+export function isCredentialName(name: string): boolean {
+  return !CREDENTIAL_EXCEPTIONS.includes(name) && CREDENTIAL_NAMES.some((pattern) => pattern.test(name));
+}
+
+/**
+ * What a child process is given: the server's environment without anything that selects or carries a paid credential, with `overrides`
+ * laid over it. This is the only place a child's environment is made (the brain, the judge, the critic, the loop's agents, the browser,
+ * the Remote CLI), so no key can reach any of them; an override that names a credential is dropped too.
+ */
 export function childEnvironment(overrides: Readonly<Record<string, string>>): NodeJS.ProcessEnv {
-  return { ...process.env, ...overrides };
+  const out: NodeJS.ProcessEnv = {};
+  for (const [name, value] of Object.entries(process.env)) if (value !== undefined && !isCredentialName(name)) out[name] = value;
+  for (const [name, value] of Object.entries(overrides)) if (!isCredentialName(name)) out[name] = value;
+  return out;
+}
+
+/** The names `childEnvironment` is holding back right now, for one line in the boot log. Names only, never a value. */
+export function withheldCredentialNames(): string[] {
+  return Object.keys(process.env).filter((name) => process.env[name] !== undefined && isCredentialName(name)).sort();
 }
 
 /** The folder session logs go to, or null when LOG_DIR=off. Shared with the tool that reads them back. */
