@@ -55,7 +55,11 @@ Only the selected brain's settings are read.
 | `HOST` | no | `127.0.0.1` | address to bind. Leave it alone. |
 | `PORT` | no | `4300` | |
 | `LOG_LEVEL` | no | `info` | `debug`, `info`, `warn`, `error` |
-| `LOG_DIR` | no | `logs` | where session logs go; `off` writes none |
+| `DATA_DIR` | no | `~/Library/Application Support/Conduit` | where the owner's data lives, outside the repository (see "Operating it") |
+| `LOG_DIR` | no | `<DATA_DIR>/logs` | where session logs go; `off` writes none |
+| `OWNER_LOGINS` | no | unset | comma list of Tailscale logins allowed through `tailscale serve`; unset: nobody is refused on identity (never commit it) |
+| `USAGE_HOURLY_CAP` | no | off | dollars (cost-equivalent) per rolling hour; the critic and `pnpm lessons` stand down from 80% of it; your own turns are only warned |
+| `MIGRATE_FROM` | no | none | comma list of other checkouts whose `logs/` are copied into `DATA_DIR` on the first start |
 | `SIGHT` | no | `snapshot` | what a brain is told about how its last answer landed: `report` (the structured report) or `snapshot` (the report and a picture of the resting stage). With `report` the browser takes and sends no picture. |
 | `CLAUDE_MODEL` | when `BRAIN=claude-cli` | none | passed to `claude --model`, for example `sonnet` |
 | `BRAIN_EFFORT` | no | `low` | passed to `claude --effort` on every spawn and written over `CLAUDE_EFFORT` in the child, so a shell that exports `CLAUDE_EFFORT` never changes the brain's latency or cost. `low`, `medium`, `high`. The exploration battery's plain baseline uses the same value. |
@@ -230,6 +234,30 @@ PORT=<port> pnpm --filter @conduit/server exec tsx src/tools/relay.ts end t3 | s
 ```
 
 (`pnpm relay …` once the root `package.json` has the script.) There is no default port, so the tool can never claim a turn from a server that is not yours. A turn claimed a second time is the look at its draft: the brief says so and names the file the picture is in; answer with fix lines or `ok`.
+
+## Operating it (v2.1 ops)
+
+Conduit runs on the owner's Mac, on 4600, published to the tailnet by `tailscale serve`. This is how it is kept safe and kept up.
+
+**Identity.** `tailscale serve` connects from 127.0.0.1 and says who the caller is in headers (measured on this Mac): `Tailscale-User-Login`, `Tailscale-User-Name`, `Tailscale-User-Profile-Pic`, `Tailscale-Headers-Info`, plus `X-Forwarded-For`, `X-Forwarded-Host`, `X-Forwarded-Proto`. `serve` overwrites any `Tailscale-User-*` header the client sends, so a header that came through it can be believed. `server/src/identity.ts` is the one place it is decided: a request from loopback with none of those marks is the owner at the keyboard (`local`); one that came through `serve` must carry a login in `OWNER_LOGINS`, else 403; a request not from loopback is always refused. The login is logged on every turn (`turn.opened`, the session log's `turn` record) and in the audit. `GET /api/whoami` says what the server takes you to be; open it through the tailnet address to read your own login for `OWNER_LOGINS`.
+
+**The data folder.** `DATA_DIR` holds `logs/` (session logs and pictures), `uploads/`, `audit.jsonl`, `usage.jsonl`, `cache/` (technique library, dataset index), `loop/queue/` (critic findings, lessons usage) and `state/` (the kill switch). The first start copies the old places (the repository's `logs/`, `loop/queue/`, `techniques/.cache/`, the dataset cache, and any checkout in `MIGRATE_FROM`) into it, once (`state/migrated.json`); it never moves, deletes or overwrites. `pnpm sessions`, `capture`, `lessons` and `critic-usage` read it; each takes `--data <dir>` for another (`--from` is the older spelling).
+
+**The audit trail.** `audit.jsonl`: every tool call, permission asked and answered (including a `permit` that matched nothing), setting change, connector or service use (Chrome is `chrome`), refused request, kill and start, each with time, session, turn, login, tool, target (secrets and address queries removed), the decision and who decided (`policy`, `owner`, `timeout`, `turn`, `kill`, `system`). `GET /api/audit?limit=&kind=&session=&login=&since=`; `pnpm audit-log` (or `pnpm run audit`; a bare `pnpm audit` is pnpm's own vulnerability check and never reaches this).
+
+**The kill switch.** `/stop-all` in the app, or `curl -X POST http://127.0.0.1:4600/api/kill`. In under a second or two, whatever any child is doing: every turn ends `interrupted`, every question waiting for you is refused, every brain and critic process is SIGKILLed with everything below it (it does not wait for one to agree), and agent tools are off, and stay off across a restart, until `/stop-all resume` (`DELETE /api/kill`). The answer says what it did and which pids, if any, would not die. Tabs the brain opened in Chrome belong to the extension's tab group and cannot be closed once the brain is gone: the answer counts them and you close the group by hand.
+
+**Usage.** `usage.jsonl` meters every model call the server makes (turn, review pass, critic look, comparison) and `pnpm lessons`: tokens, cost-equivalent, ms, model. `GET /api/usage?hours=48&days=14`; `/usage` in the app. With `USAGE_HOURLY_CAP` set, the critic and lessons back off at 80% of the cap; the owner's turns are never refused, and the answer to one carries a `warning` when the hour is near or over.
+
+**As a service.** `ops/install.sh` builds the committed code into `~/.conduit/app` and loads `~/Library/LaunchAgents/com.conduit.server.plist` (RunAtLoad, KeepAlive; logs to `<DATA_DIR>/service.log`); `ops/uninstall.sh` reverses it and leaves the data. Port 4600 must be free first (stop the nohup server). `--dry-run` shows the plist without loading anything.
+
+```sh
+OWNER_LOGINS='<your tailscale login>' ops/install.sh --keep-awake
+```
+
+**Sleep.** A sleeping Mac serves nothing. `--keep-awake` runs the server under `caffeinate -is`: no idle sleep, and no system sleep on AC power, for as long as it runs. A closed lid on battery still sleeps, and so does a Mac in Low Power Mode; keep it on power with the lid open, or set System Settings, Battery/Energy, "Prevent automatic sleeping on power adapter".
+
+**A crash does not stop it.** An unhandled rejection or exception is logged, audited and survived; ten in a minute exit so launchd restarts it. A turn's `finish` never throws. Shutdown exits within 6 s whatever a child is doing.
 
 ## Links and long text
 
