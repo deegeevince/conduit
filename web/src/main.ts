@@ -3,6 +3,7 @@
 import { DEFAULT_LOOK, FIRST_LOAD_DEMO } from '@conduit/language';
 import { readParams } from './app/params';
 import { mountStage } from './app/stage-app';
+import { sourcesOf } from './chrome/photos';
 import type { StageApp, StageStatus } from './app/stage-app';
 import { mountActions } from './chrome/actions';
 import { mountHud } from './chrome/hud';
@@ -75,7 +76,7 @@ const promptBar = mountPromptBar(bar, {
       const mounted = app;
       void (async () => {
         const marks = await drawn.take();
-        await mounted.prompt(text === '' ? DRAW_WORDS : text, photos, marks ?? undefined, voice);
+        await mounted.prompt(text === '' ? DRAW_WORDS : text, photos, marks ?? undefined, voice, sourcesOf(held));
         drawn.sent();
       })().catch((cause: unknown) => {
         promptBar.restore(text, held);
@@ -83,7 +84,7 @@ const promptBar = mountPromptBar(bar, {
       });
       return true;
     }
-    void app.prompt(text, photos, undefined, voice).catch(() => promptBar.restore(text, held));
+    void app.prompt(text, photos, undefined, voice, sourcesOf(held)).catch(() => promptBar.restore(text, held));
     return true;
   },
   onStop: () => app?.interrupt(),

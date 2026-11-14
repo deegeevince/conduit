@@ -7,6 +7,7 @@ import { DEFAULT_LOOK } from '@conduit/language';
 import type { BrainChoice, ConversationSummary, ConversationView } from '@conduit/language';
 import { readParams } from '../app/params';
 import { mountStage } from '../app/stage-app';
+import { sourcesOf } from '../chrome/photos';
 import type { StageApp, StageStatus } from '../app/stage-app';
 import { copyAnswer } from '../chrome/files';
 import { mountAbout } from '../chrome/about';
@@ -196,12 +197,12 @@ const composer = mountComposer(part('.shell-composer'), {
         // what was drawn on the canvas goes up with these words: its picture is kept first, then one turn carries words, photos and marks
         void (async () => {
           const marks = await drawn.take();
-          await mounted.prompt(text === '' ? DRAW_WORDS : text, photos, marks ?? undefined, voice);
+          await mounted.prompt(text === '' ? DRAW_WORDS : text, photos, marks ?? undefined, voice, sourcesOf(held));
           drawn.sent();
         })().catch(failed);
         return;
       }
-      void mounted.prompt(text, photos, undefined, voice).catch(failed);
+      void mounted.prompt(text, photos, undefined, voice, sourcesOf(held)).catch(failed);
     };
     if (active.kind === 'past') {
       // a message in an earlier conversation picks that conversation up

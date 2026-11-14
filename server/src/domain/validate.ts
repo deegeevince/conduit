@@ -1,6 +1,6 @@
 // The edge between untrusted JSON and the typed domain. Every check names the field it found wrong.
 
-import { STATE_LIMITS, AMBIENT_KINDS, CAMERA_MOVES, CHART_KINDS, CONTROL_KINDS, ENTER_EFFECTS, EXIT_EFFECTS, FACES, FX_NAMES, LAYERS, LOOPS, MARKS, PROCEDURAL_MEDIA, STROKES, STRUCTURE_KINDS, TEXTURES, ALIGNS, BACK_EVENT_TYPES, BRAIN_EFFORTS, BRAIN_MODES, BRAIN_MODELS, CANVAS_NAMES, DEMOS, ELEMENT_KINDS, LAYOUTS, LIMITS, LOOK_IDS, MOODS, NO_SIGHT, NO_V21_CAPABILITIES, NO_V4_CAPABILITIES, PACES, SIGHT_ITEMS, SIGHT_NOTE, UPLOAD_LIMITS, checkInkMarks, decodeObserveItems, VOICE_LIMITS, AGENT_PERMITS } from '@conduit/language';
+import { STATE_LIMITS, AMBIENT_KINDS, CAMERA_MOVES, CHART_KINDS, CONTROL_KINDS, ENTER_EFFECTS, EXIT_EFFECTS, FACES, FX_NAMES, LAYERS, LOOPS, MARKS, PROCEDURAL_MEDIA, STROKES, STRUCTURE_KINDS, TEXTURES, ALIGNS, BACK_EVENT_TYPES, BRAIN_EFFORTS, BRAIN_MODES, BRAIN_MODELS, CANVAS_NAMES, DEMOS, ELEMENT_KINDS, LAYOUTS, LIMITS, LOOK_IDS, MOODS, NO_SIGHT, NO_V21_CAPABILITIES, NO_V4_CAPABILITIES, PACES, SIGHT_ITEMS, SIGHT_NOTE, UPLOAD_LIMITS, checkInkMarks, decodeObserveItems, decodeSources, VOICE_LIMITS, AGENT_PERMITS } from '@conduit/language';
 import type {
   BackEvent,
   BrainChange,
@@ -284,7 +284,9 @@ export function parseTurnInput(body: unknown): TurnInput {
     const images = photoIds(input.images);
     const marks = inkMarks(input.marks);
     const voice = voiceIds(input.voice);
-    return { kind, text: value, ...(images.length === 0 ? {} : { images }), ...(voice.length === 0 ? {} : { voice }), ...(marks === undefined ? {} : { marks }) };
+    const sources = input.sources === undefined ? [] : decodeSources(input.sources);
+    if (sources === null) throw errors.badRequest('input.sources must be a short list of { name, pages: [{ n, text }] }');
+    return { kind, text: value, ...(images.length === 0 ? {} : { images }), ...(voice.length === 0 ? {} : { voice }), ...(marks === undefined ? {} : { marks }), ...(sources.length === 0 ? {} : { sources }) };
   }
   if (kind === 'tap') {
     const said = text(input.text, 'input.text');

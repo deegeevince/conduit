@@ -20,6 +20,7 @@
     "@conduit/language": "workspace:*",
     "lightweight-charts": "5.3.0",
     "mp4-muxer": "^5.2.2",
+    "pdfjs-dist": "5.7.284",
     "three": "^0.187.0",
     "troika-three-text": "^0.53.1",
     "webm-muxer": "^5.1.4"

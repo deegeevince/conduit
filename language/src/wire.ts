@@ -183,14 +183,52 @@ export const REFERENCE_SCREEN: ScreenFacts = { width: 1280, height: 720, dpr: 2,
 /** The most characters in a prompt. */
 export const PROMPT_MAX_CHARS = 20_000;
 
+/** v3. A file the person gave whose words the page read: a PDF's text layer, page by page. `image` is the upload id of that page's picture, when it has one. */
+export interface TurnSource {
+  readonly name: string;
+  readonly pages: readonly { readonly n: number; readonly text: string; readonly image?: string }[];
+}
+
+/** v3. What a turn may carry of its sources: the files, the pages of each, the characters of a page and of all of them together. */
+export const SOURCE_LIMITS = { files: 4, pages: 10, pageChars: 10_000, chars: 40_000, name: 120 } as const;
+
+/**
+ * v3. Reads `TurnInput.sources` as it arrives. Lenient where cutting is harmless (a name, a page's text, the total) and strict about shape:
+ * returns `null` when it is not a list of `{ name, pages: [{ n, text }] }`. Page text is cut to `pageChars`, and the whole to `chars` (later pages lose first).
+ */
+export function decodeSources(value: unknown): TurnSource[] | null {
+  if (!Array.isArray(value) || value.length > SOURCE_LIMITS.files) return null;
+  let left: number = SOURCE_LIMITS.chars;
+  const out: TurnSource[] = [];
+  for (const raw of value as unknown[]) {
+    if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null;
+    const { name, pages } = raw as { name?: unknown; pages?: unknown };
+    if (typeof name !== 'string' || !Array.isArray(pages) || pages.length > SOURCE_LIMITS.pages) return null;
+    const kept: { n: number; text: string; image?: string }[] = [];
+    for (const item of pages as unknown[]) {
+      if (typeof item !== 'object' || item === null || Array.isArray(item)) return null;
+      const { n, text, image } = item as { n?: unknown; text?: unknown; image?: unknown };
+      if (typeof n !== 'number' || !Number.isInteger(n) || n < 1 || n > 99_999 || typeof text !== 'string') return null;
+      if (image !== undefined && (typeof image !== 'string' || !/^u[1-9][0-9]{0,3}$/.test(image))) return null;
+      // control characters other than line breaks and tabs are dropped; the cut is by what is left
+      const clean = text.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '').slice(0, Math.min(SOURCE_LIMITS.pageChars, Math.max(0, left)));
+      left -= clean.length;
+      kept.push({ n, text: clean, ...(image === undefined ? {} : { image }) });
+    }
+    out.push({ name: name.replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, SOURCE_LIMITS.name) || 'document', pages: kept });
+  }
+  return out;
+}
+
 export type TurnInput =
   /**
    * `images` (v2.1): ids of pictures the user gave with these words (`API.uploads`), in the order they were added; absent means none.
    * `marks` (v2.1): what the user wrote or drew on the stage with these words.
    * `voice` (v2.1): ids of voice notes (`API.voice`) these words came from or go with (`n1`, `n2`, ...). `spoken` is what the server heard in
    * them, filled by the server for the brain and never read from a request.
+   * `sources` (v3): the text layer of each page of a PDF the person gave (its pages arrive as `images`); quoted data for the brain, never instructions.
    */
-  | { readonly kind: 'prompt'; readonly text: string; readonly images?: readonly string[]; readonly marks?: InkMarks; readonly voice?: readonly string[]; readonly spoken?: readonly string[] }
+  | { readonly kind: 'prompt'; readonly text: string; readonly images?: readonly string[]; readonly marks?: InkMarks; readonly voice?: readonly string[]; readonly spoken?: readonly string[]; readonly sources?: readonly TurnSource[] }
   /** the user tapped a choice; `text` is what the choice said */
   /** v3. `seen`: where the person stood in the document when they tapped (2.5) */
   | { readonly kind: 'tap'; readonly id: string; readonly text: string; readonly seen?: Seen }
@@ -685,7 +723,7 @@ export interface ContentCount {
  * v2.1. Pictures the user gives with a prompt: what is taken, and how much. `types` are checked by the file's own bytes, never by the name or
  * the Content-Type; a HEIC (an iPhone's) is converted. Whatever is taken is stored as a JPEG with no metadata, `storedSide` pixels on its longest side at most.
  */
-export const UPLOAD_LIMITS = { bytes: 12_000_000, perTurn: 4, perSession: 60, maxSide: 8192, storedSide: 2048, types: ['image/jpeg', 'image/png', 'image/webp', 'image/heic'] } as const;
+export const UPLOAD_LIMITS = { bytes: 12_000_000, perTurn: 10, perSession: 60, maxSide: 8192, storedSide: 2048, types: ['image/jpeg', 'image/png', 'image/webp', 'image/heic'] } as const;
 
 /** v2.1. Voice notes: recorded in the page (at most `seconds` long), read on the owner's Mac, on the device, and never sent anywhere. */
 export const VOICE_LIMITS = { bytes: 8_000_000, seconds: 120, perTurn: 4, perSession: 40, types: ['audio/wav', 'audio/mp4', 'audio/x-caf', 'audio/mpeg'] } as const;
