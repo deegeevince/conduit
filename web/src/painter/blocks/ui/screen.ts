@@ -16,12 +16,14 @@ import type { UiHit, UiPart, UiScreenLayout, UiSlot, UiState } from './types';
  * A page shown as the phone it would be (a narrow stage): what sat side by side on a wide page goes one under the other, as a responsive page does.
  * A row of two or more that holds a column or a picture stacks; the rest of the rows (a title and a badge, two buttons) stay rows, and wrap only if they must.
  */
-function responsive(nodes: readonly UiNode[]): UiNode[] {
+function responsive(nodes: readonly UiNode[], grid = true): UiNode[] {
   return nodes.map((node): UiNode => {
     if (!isUiContainer(node)) return node;
-    // a wrapping row of cards (three or more) is a grid on a page: two to a row on a phone, not one long stack of them
-    if (node.kind === 'row' && node.props.wrap && node.children.length >= 3 && node.children.every(isUiContainer)) {
-      const cards = responsive(node.children);
+    // a row of buttons or badges that is too wide for the glass goes on to a second line, as it does on a phone
+    if (node.kind === 'row' && !node.props.wrap && node.children.length >= 2 && node.children.every((child) => !isUiContainer(child) && (child.kind === 'button' || child.kind === 'badge'))) return { ...node, props: { ...node.props, wrap: true } };
+    // a wrapping row of cards (three or more) is a grid on a page: two to a row on a phone, not one long stack of them (when two fit across)
+    if (grid && node.kind === 'row' && node.props.wrap && node.children.length >= 3 && node.children.every(isUiContainer)) {
+      const cards = responsive(node.children, grid);
       const rows: UiNode[] = [];
       for (let i = 0; i < cards.length; i += 2) {
         const pair = cards.slice(i, i + 2).map((card): UiNode => (isUiContainer(card) ? { ...card, props: { ...card.props, grow: true } } : card));
@@ -30,7 +32,7 @@ function responsive(nodes: readonly UiNode[]): UiNode[] {
       return { ...node, kind: 'col', props: { ...node.props, wrap: false, align: null }, children: rows };
     }
     const stack = node.kind === 'row' && !node.props.spread && node.children.length >= 2 && node.children.some((child) => isUiContainer(child) || child.kind === 'image');
-    const children = responsive(node.children).map((child): UiNode => (stack && !isUiContainer(child) ? { ...child, flags: child.flags.filter((flag) => flag !== 'grow') } : stack && isUiContainer(child) ? { ...child, props: { ...child.props, grow: false } } : child));
+    const children = responsive(node.children, grid).map((child): UiNode => (stack && !isUiContainer(child) ? { ...child, flags: child.flags.filter((flag) => flag !== 'grow') } : stack && isUiContainer(child) ? { ...child, props: { ...child.props, grow: false } } : child));
     return stack ? { ...node, kind: 'col', props: { ...node.props, align: null }, children } : { ...node, children };
   });
 }
@@ -71,6 +73,18 @@ export function layoutScreen(written: UiScreen, tokens: UiTokens, measure: UiMea
   const kit = makeKit(tokens, screen.device, measure, state);
   let placed: Placed<Item> = solve(buildScreen(kit, screen, size.width, size.height), size.width, size.height);
   if (adapted) {
+    // cards two to a row only when two fit across at this size of type: otherwise they stack, as a responsive page does
+    const wide = (): boolean => {
+      let over = false;
+      walk(placed, (p, x, _y, depth) => {
+        if (depth > 0 && p.w > 0 && x + p.w > size.width + 0.5) over = true;
+      });
+      return over;
+    };
+    if (wide()) {
+      screen = { ...switched, children: responsive(switched.children, false) };
+      placed = solve(buildScreen(kit, screen, size.width, size.height), size.width, size.height);
+    }
     // the page, as a phone shows it: its first screenful, whole (two passes: a part left off can let the ones above it settle)
     for (let pass = 0; pass < 3; pass += 1) {
       const boxes = new Map<string, { y: number; h: number }>();
