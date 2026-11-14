@@ -544,8 +544,11 @@ export interface ContentCount {
   readonly choices?: readonly string[];
 }
 
-/** v2.1. Pictures the user gives with a prompt: what is taken, and how much. */
-export const UPLOAD_LIMITS = { bytes: 8_000_000, perTurn: 4, perSession: 24, maxSide: 4096, types: ['image/png', 'image/jpeg', 'image/webp', 'image/gif'] } as const;
+/**
+ * v2.1. Pictures the user gives with a prompt: what is taken, and how much. `types` are checked by the file's own bytes, never by the name or
+ * the Content-Type; a HEIC (an iPhone's) is converted. Whatever is taken is stored as a JPEG with no metadata, `storedSide` pixels on its longest side at most.
+ */
+export const UPLOAD_LIMITS = { bytes: 12_000_000, perTurn: 4, perSession: 24, maxSide: 8192, storedSide: 2048, types: ['image/jpeg', 'image/png', 'image/webp', 'image/heic'] } as const;
 
 /** v2.1. What the server says of a picture it has taken. `id` (`u1`, `u2`, …) is what `TurnInput.images` and `pic … from=` name. */
 export interface UploadResponse {
@@ -554,6 +557,19 @@ export interface UploadResponse {
   readonly width: number;
   readonly height: number;
   readonly bytes: number;
+  /** a photo given with a crop (`?crop=x,y,w,h`): the whole page, kept beside the cropped part this response is about, for framing again */
+  readonly whole?: UploadResponse;
+}
+
+/**
+ * v2.1. A part of a photo, as fractions (0 to 1) of its width and height from the top left of the photo as it stands upright: `x`, `y` the corner, `w`, `h`
+ * the size, at least 0.02 each. A parent framing one question from a whole page gives this, with the upload (`?crop=x,y,w,h`) or later by id (`API.uploadCrop`).
+ */
+export interface UploadCrop {
+  readonly x: number;
+  readonly y: number;
+  readonly w: number;
+  readonly h: number;
 }
 
 /**
@@ -640,6 +656,8 @@ export const API = {
   uploads: (session: string): string => `/api/sessions/${session}/uploads`,
   /** v2.1. GET: the bytes of a picture the user gave, by its id. Same origin; what `pic … from=` draws. */
   upload: (session: string, id: string): string => `/api/sessions/${session}/uploads/${encodeURIComponent(id)}`,
+  /** v2.1. POST `UploadCrop` as JSON: a new photo that is that part of this one (201 `UploadResponse`, with its own id); this one is left as it was, so the page can be framed again. */
+  uploadCrop: (session: string, id: string): string => `/api/sessions/${session}/uploads/${encodeURIComponent(id)}/crop`,
   /** v2.1. POST video/webm: a film of a turn made in the page (`/capture`), saved beside the session's log for the steward to watch. 204. */
   capture: (session: string, turn: string): string => `/api/sessions/${session}/turns/${turn}/capture`,
   /** v2.2. GET: the bytes of a photograph the server found for an `image` part (a JPEG, re-encoded, cached). The key is in the `picture` event's url. */

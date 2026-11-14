@@ -3,6 +3,7 @@ import type { RelayHub } from '../brains/relay/relay-hub';
 import type { AssetStore } from '../domain/assets';
 import type { Conductor } from '../domain/conductor';
 import type { PictureService } from '../domain/pictures';
+import type { UploadStore } from '../domain/uploads';
 import type { Audit } from '../audit';
 import type { Env } from '../env';
 import type { KillSwitch } from '../kill';
@@ -24,6 +25,8 @@ export interface HttpDeps {
   readonly assets: AssetStore;
   /** v2.2. Photographs found for the `image` parts of a mock-up: what `GET /api/pictures/:key` serves */
   readonly pictures: PictureService;
+  /** v2.1. The user's photos: what `POST /api/sessions/:id/uploads` keeps and the painter draws */
+  readonly uploads: UploadStore;
   /** the steward's status for the brief's note about the app; read without waiting */
   readonly status: () => AppStatus | null;
   /** the changelog's newest section, for a turn that asks what is new; read without waiting */

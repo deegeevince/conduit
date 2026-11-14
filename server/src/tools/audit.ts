@@ -1,5 +1,5 @@
 // The audit trail, read back. Not part of the server.
-// Usage: pnpm audit-log [--data <dir>] [--kind tool|permission_asked|permission_answered|setting|connector|kill|refused|server]
+// Usage: pnpm audit-log [--data <dir>] [--kind tool|permission_asked|permission_answered|setting|connector|kill|refused|upload|server]
 //                       [--session <id>] [--login <login>] [--since <ISO time | 30m | 6h | 2d>] [--limit n] [--json]
 //        (`pnpm run audit` is the same: a bare `pnpm audit` is pnpm's own check for vulnerable packages and never reaches this script.)
 // Prints the newest entries first, one line each: time, who, kind, tool, target, what was decided and by whom.

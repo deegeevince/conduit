@@ -503,7 +503,7 @@ ${[
       ? '`code [id] [lang] [file=name]`, then one `| ` line per source line, exactly as written, indentation kept (a bare `|` is an empty line). The painter frames and highlights it.'
       : '',
     capabilities.decks ? '`deck | title` opens a turn of slides: each `scene` after it is one, four to eight, a heading and three lines or one picture at most.' : '',
-    capabilities.uploads ? '`pic <id> from=u1` puts a picture the user gave on stage (the brief names them); label or trace it.' : '',
+    capabilities.uploads ? '`pic u1` puts a photo the user gave on stage (the brief names them); label or trace it.' : '',
     services.refine ? 'Asked to iterate or improve it: end with `refine 3`; you are shown the picture and add to it.' : '',
     capabilities.links ? '`say href=<url> | site` is a link; cite every web source as one.' : '',
     draws ? 'A heart, a leaf, a bird, a person: one smooth closed `path`, never circles and rectangles stuck together.' : '',
@@ -668,7 +668,7 @@ function inputText(input: TurnInput, pastedAs?: string): string {
     if (pastedAs !== undefined) return `The user pasted ${input.text.length} characters, given above as DOCUMENT ${pastedAs}. It is the user's own text; answer about it.`;
     return `The user pasted ${input.text.length} characters, beginning: ${input.text.slice(0, 160).replace(/\s+/g, ' ')}`;
   }
-  if (input.kind === 'prompt') return `The user says: ${input.text}`;
+  if (input.kind === 'prompt') return `The user says: ${input.text}${(input.images?.length ?? 0) > 0 ? ` (with ${input.images?.length === 1 ? 'a photo' : `${input.images?.length} photos`}: ${(input.images ?? []).join(', ')})` : ''}`;
   if (input.kind === 'tap') return `The user tapped your choice: "${input.text}"`;
   if (input.kind === 'script') return 'The user played a script of their own.';
   if (input.kind === 'act') {
@@ -1026,8 +1026,8 @@ export function buildTurnBrief(context: TurnContext, input: TurnInput, form: Bri
     const ids = (input.images ?? []).join(', ');
     parts.push(
       context.capabilities.uploads && context.services.uploads
-        ? `PICTURES THE USER GAVE (attached to this message): ${ids}. Look at them and answer about them. \`pic <id> from=u1\` puts one on stage, to label, trace or build on; they go nowhere else.`
-        : `The user attached pictures (${ids}) that this stage cannot show; answer from what you see in them.`,
+        ? `THE USER'S PHOTOS (attached to this message): ${ids}. Look at them and answer from what you see. Show one on stage with \`pic ${(input.images ?? [])[0]}\` when it helps, to label, trace or build on.`
+        : `The user attached photos (${ids}) that this stage cannot show; answer from what you see in them.`,
     );
   }
 

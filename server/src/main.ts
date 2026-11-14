@@ -12,6 +12,8 @@ import { EnvError, loadEnv, processEnvironment, withheldCredentialNames } from '
 import type { Env } from './env';
 import { createApp } from './http/app';
 import { createImageModel } from './images/registry';
+import { NO_UPLOADS } from './domain/uploads';
+import { createUploadStore } from './uploads/store';
 import { createDatasets, createLibrary } from './library/registry';
 import { createDocumentReader } from './reading/web-reader';
 import { createJsonlSessionLog } from './logs/jsonl-session-log';
@@ -60,6 +62,8 @@ function boot(env: Env): void {
   const images = createImageModel(env.images, log.child({ part: 'images' }));
   // v2.2. Photographs for a mock-up's `image` parts: off unless `PICTURES=openverse`. Only the words of the line ever leave the machine.
   const pictures = createPictures(env.pictures, log.child({ part: 'pictures' }));
+  // v2.1. The user's photos: kept under the data folder as safe JPEGs, or not taken at all with `UPLOADS=off`.
+  const uploads = env.uploads ? createUploadStore({ dir: env.data.uploads, log: log.child({ part: 'uploads' }), now }) : NO_UPLOADS;
   const sessionLog = env.logDir === null ? NO_SESSION_LOG : createJsonlSessionLog({ log: log.child({ part: 'sessionlog' }), dir: env.logDir, now });
   // The seed is in memory from here on. Remote is read in the background, now and every `refreshMs`; no turn waits for it.
   const library = createLibrary(env.library, log.child({ part: 'library' }), now);
@@ -97,6 +101,7 @@ function boot(env: Env): void {
     sessionLog,
     images,
     pictures,
+    uploads,
     reader: createDocumentReader({ enabled: env.readLinks, log: log.child({ part: 'reading' }) }),
     sight: env.sight,
     variant: env.promptVariant,
@@ -116,7 +121,7 @@ function boot(env: Env): void {
   });
   const withheld = withheldCredentialNames();
   if (withheld.length > 0) log.info('env.credentials_withheld', { names: withheld, note: 'no child process is given these; every model call is on the owner\'s login' });
-  const app = createApp({ env, log: log.child({ part: 'http' }), conductor, relayHub, audit, kill, usage, assets, pictures, status, news });
+  const app = createApp({ env, log: log.child({ part: 'http' }), conductor, relayHub, audit, kill, usage, assets, pictures, uploads, status, news });
 
   const server = serve({ fetch: app.fetch, hostname: env.host, port: env.port }, (info) => {
     log.info('server.listening', { host: env.host, port: info.port, brain: env.brain.kind, production: env.production, owners: env.ownerLogins.length, usageCapUsd: env.usageCapUsd });
