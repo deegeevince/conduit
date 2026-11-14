@@ -1154,3 +1154,27 @@ button {
     padding-bottom: 0;
   }
 }
+
+/* "continued": where an older conversation was picked up again. Quiet: a hairline and one small word. */
+.msg--continued {
+  position: relative;
+}
+
+.thread__divider {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  align-self: stretch;
+  margin: 0.5rem 0 1rem;
+  color: var(--sh-quiet);
+  font-size: 0.8125rem;
+  letter-spacing: 0.02em;
+}
+
+.thread__divider::before,
+.thread__divider::after {
+  content: '';
+  flex: 1 1 auto;
+  height: 1px;
+  background: var(--sh-rule);
+}

@@ -1003,6 +1003,10 @@ export function buildTurnBrief(context: TurnContext, input: TurnInput, form: Bri
   if (context.capabilities.structures.includes('screen') && (!liveApp || stage.elements.some((element) => element.figure?.kind === 'structure' && element.figure.structure === 'screen')) && (asksForInterface(input) || stage.elements.some((element) => element.figure?.kind === 'structure' && element.figure.structure === 'screen'))) parts.push(INTERFACE_CHAPTER);
   const standing = standingText(context.standing);
   if (standing !== null) parts.push(standing);
+  // A conversation the user has come back to: the stage is empty, but what was said before is not forgotten. Told once, in the first full brief.
+  if (form === 'full' && context.earlier !== undefined && context.earlier !== '') {
+    parts.push(`EARLIER, BEFORE THIS SESSION (the user came back to this conversation; the stage is empty now, and these words are all that is kept of it):\n${context.earlier}`);
+  }
 
   const visible = stage.elements.filter((element) => !element.struck && element.parent === null);
   if (visible.length === 0) {

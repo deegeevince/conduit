@@ -31,6 +31,8 @@ export interface UserMessage {
   readonly inked: boolean;
   /** a tap, a played script or a pressed control: shown quietly, not as the person's own words */
   readonly quiet: boolean;
+  /** the conversation was picked up again here: a quiet divider says so above this message */
+  readonly continued?: boolean;
 }
 
 export type ReplyState = 'working' | 'done' | 'stopped' | 'failed';
@@ -114,6 +116,7 @@ export function messagesOfTurn(turn: ConversationTurn): [UserMessage, ReplyMessa
       voice: turn.voice,
       inked: turn.inked,
       quiet: turn.kind !== 'prompt',
+      ...(turn.continued === true ? { continued: true } : {}),
     },
     { role: 'reply', id: `r-${turn.turn}`, turn: turn.turn, reply: replyFromTurn(turn), state: failed ? 'failed' : turn.end === 'interrupted' ? 'stopped' : 'done', note, still: turn.still, trace: turn.trace ?? null, elapsedMs: null },
   ];

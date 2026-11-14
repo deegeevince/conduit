@@ -28,6 +28,8 @@ export interface Live {
   messages(): readonly Message[];
   /** what the person said first, for the title; '' before anything */
   firstWords(): string;
+  /** an older conversation this page has taken up: its messages come first, its turns can be replayed on the canvas. Only before this page has said anything. */
+  seed(earlier: readonly Message[], turns: readonly AnswerTurn[]): void;
   /** the turns this page has had, with the lines each was told in, from the painter's own recordings */
   answerTurns(): AnswerTurn[];
   /** shows the message at once, before the stage has opened the turn */
@@ -58,6 +60,10 @@ function saidOf(input: TurnInput): string {
 
 export function mountLive(app: StageApp, transcript: Transcript, hooks: LiveHooks): Live {
   const messages: Message[] = [];
+  let earlier: readonly Message[] = [];
+  let earlierTurns: readonly AnswerTurn[] = [];
+  /** the first thing said on this page, after an older conversation was taken up, gets the divider */
+  const startsHere = (except?: string): boolean => earlier.length > 0 && !messages.some((message) => message.role === 'user' && message.id !== except);
   const ended = new Map<string, { readonly reason: string; readonly message: string | null }>();
   let counter = 0;
   let pending: { readonly user: UserMessage; readonly reply: ReplyMessage } | null = null;
@@ -199,6 +205,7 @@ export function mountLive(app: StageApp, transcript: Transcript, hooks: LiveHook
       voice: input.kind === 'prompt' && (input.voice?.length ?? 0) > 0,
       inked: input.kind === 'prompt' && input.marks !== undefined,
       quiet: input.kind !== 'prompt',
+      ...(startsHere(pending?.user.id) ? { continued: true } : {}),
     };
     const made: ReplyMessage = { role: 'reply', id: pending?.reply.id ?? `r-${event.turn}-${(counter += 1)}`, turn: event.turn, reply: NO_REPLY, state: 'working', note: null, still: null, trace: builderOf(event.turn).snapshot(), elapsedMs: 0 };
     // a prompt the page already showed is the one that opened: it is adopted, not shown twice
@@ -256,10 +263,16 @@ export function mountLive(app: StageApp, transcript: Transcript, hooks: LiveHook
   });
 
   return {
-    messages: () => [...messages],
-    firstWords: () => messages.find((message): message is UserMessage => message.role === 'user' && !message.quiet)?.said ?? '',
-    answerTurns: () =>
-      app.painter.recordings().map((recording) => ({ turn: recording.turn, kind: recording.opened ?? 'none', lines: recording.lines.map((entry) => serializeLine(entry.line)) })),
+    messages: () => [...earlier, ...messages],
+    seed(before, turns) {
+      earlier = before;
+      earlierTurns = turns;
+    },
+    firstWords: () => [...earlier, ...messages].find((message): message is UserMessage => message.role === 'user' && !message.quiet)?.said ?? '',
+    answerTurns: () => [
+      ...earlierTurns,
+      ...app.painter.recordings().map((recording) => ({ turn: recording.turn, kind: recording.opened ?? 'none', lines: recording.lines.map((entry) => serializeLine(entry.line)) })),
+    ],
     addPending(text, photos, voice, inked) {
       counter += 1;
       const user: UserMessage = {
@@ -274,6 +287,7 @@ export function mountLive(app: StageApp, transcript: Transcript, hooks: LiveHook
         voice,
         inked,
         quiet: false,
+        ...(startsHere() ? { continued: true } : {}),
       };
       const made: ReplyMessage = { role: 'reply', id: `r-pending-${counter}`, turn: null, reply: NO_REPLY, state: 'working', note: null, still: null, trace: null, elapsedMs: null };
       pending = { user, reply: made };

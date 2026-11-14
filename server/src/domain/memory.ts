@@ -15,6 +15,7 @@ export function buildContext(session: Session, services: Services): TurnContext 
     heard: heardSince(session, session.heardFrom),
     // What the user asked to hold: given back in every brief, so a later turn cannot forget it.
     ...(session.standing.length > 0 ? { standing: [...session.standing] } : {}),
+    ...(session.continued === null ? {} : { earlier: session.continued.earlier }),
   };
 }
 

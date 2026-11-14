@@ -96,7 +96,7 @@ async function load(file: string): Promise<Conversation> {
       else turn.taps.push(record);
     } else if (record.type === 'setting' || (record.type === 'upload' && record.turn === null)) {
       loose.push({ record, before: nextTurnAfter(record.at) });
-    } else if (record.turn === null) {
+    } else if (record.type === 'continued' || record.turn === null) {
       continue;
     } else {
       const turn = turns.get(record.turn);

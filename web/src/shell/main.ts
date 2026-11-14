@@ -25,7 +25,7 @@ import { FONTS, fontFor } from '../fonts';
 import { DRAW_WORDS, mountStageInk } from '../ink/stage';
 import type { StageInk } from '../ink/stage';
 import { LOOKS } from '../looks';
-import { listConversations, readConversation } from './api';
+import { continueConversation, listConversations, readConversation } from './api';
 import { mountCanvas } from './canvas';
 import { mountComposer } from './composer';
 import { mountList } from './list';
@@ -38,7 +38,8 @@ import { stageScheme, systemScheme, watchStage, watchSystem, wear } from './them
 import { mountThread } from './thread';
 
 const UNTITLED = 'New conversation';
-const PAST_NOTE = 'This conversation has ended. Your next message starts a new one.';
+const PAST_NOTE = 'An earlier conversation. Send a message to pick it up where it left off.';
+const DRAFT_KEY = 'conduit-continue';
 /** From this width the canvas is a panel beside the thread; below it, the whole screen */
 const SIDE_PANEL = '(min-width: 1100px)';
 const DRAWER = '(max-width: 719px)';
@@ -122,6 +123,8 @@ let summaries: readonly ConversationSummary[] = [];
 let brainNow: BrainChoice | null = null;
 /** the turn of the active conversation whose canvas is open */
 let canvasTurn: string | null = null;
+/** the id of an older conversation this page took up: it is this page's conversation now */
+let continuedId: string | null = null;
 /** what the stage holds now: `<conversation>:<turn>` */
 let stageKey: string | null = null;
 let opener: HTMLElement | null = null;
@@ -179,25 +182,42 @@ const composer = mountComposer(part('.shell-composer'), {
       });
       return false;
     }
-    showLive();
     const drawn = stageInk;
     const inked = drawn !== null && drawn.pending();
-    live?.addPending(text === '' ? DRAW_WORDS : text, photos, voice.length > 0, inked);
     const failed = (cause: unknown): void => {
       live?.dropPending();
       composer.restore(text, held);
       say(cause instanceof Error ? cause.message : 'That could not be sent.');
     };
-    if (drawn !== null && inked) {
-      // what was drawn on the canvas goes up with these words: its picture is kept first, then one turn carries words, photos and marks
-      void (async () => {
-        const marks = await drawn.take();
-        await mounted.prompt(text === '' ? DRAW_WORDS : text, photos, marks ?? undefined, voice);
-        drawn.sent();
-      })().catch(failed);
+    const send = (): void => {
+      live?.addPending(text === '' ? DRAW_WORDS : text, photos, voice.length > 0, inked);
+      if (drawn !== null && inked) {
+        // what was drawn on the canvas goes up with these words: its picture is kept first, then one turn carries words, photos and marks
+        void (async () => {
+          const marks = await drawn.take();
+          await mounted.prompt(text === '' ? DRAW_WORDS : text, photos, marks ?? undefined, voice);
+          drawn.sent();
+        })().catch(failed);
+        return;
+      }
+      void mounted.prompt(text, photos, undefined, voice).catch(failed);
+    };
+    if (active.kind === 'past') {
+      // a message in an earlier conversation picks that conversation up
+      const id = active.id;
+      if ((live?.messages().length ?? 0) > 0) {
+        composer.restore(text, held);
+        continueOnFreshPage(id, text);
+        return false;
+      }
+      void takeUp(id).then(() => {
+        showLive();
+        send();
+      }, failed);
       return true;
     }
-    void mounted.prompt(text, photos, undefined, voice).catch(failed);
+    showLive();
+    send();
     return true;
   },
   onStop: () => app?.interrupt(),
@@ -277,7 +297,7 @@ async function showPast(id: string): Promise<void> {
 
 async function pick(id: string): Promise<void> {
   closeDrawer();
-  if (id === 'live') showLive();
+  if (id === 'live' || id === continuedId) showLive();
   else await showPast(id);
   // a conversation chosen on a phone is read from its end
   thread.scrollToEnd();
@@ -297,6 +317,7 @@ function startNew(): void {
 function liveId(): string | null {
   const session = app?.link.session ?? null;
   if (session === null || (live?.messages().length ?? 0) === 0) return null;
+  if (continuedId !== null) return continuedId;
   return summaries.find((entry) => entry.session === session)?.id ?? null;
 }
 
@@ -336,13 +357,53 @@ function chooseReply(choice: ReplyChoice, reply: ReplyMessage): void {
     app.choose(choice.key);
     return;
   }
-  // a choice from an earlier reply, or from a conversation that has ended, is a new message with those words
-  showLive();
-  live?.addPending(choice.text, [], false, false);
-  void app.prompt(choice.text).catch((cause: unknown) => {
-    live?.dropPending();
-    say(cause instanceof Error ? cause.message : 'That could not be sent.');
-  });
+  // a choice from an earlier reply, or from an earlier conversation (which it picks up), is a new message with those words
+  const mounted = app;
+  const send = (): void => {
+    showLive();
+    live?.addPending(choice.text, [], false, false);
+    void mounted.prompt(choice.text).catch((cause: unknown) => {
+      live?.dropPending();
+      say(cause instanceof Error ? cause.message : 'That could not be sent.');
+    });
+  };
+  if (active.kind !== 'past') {
+    send();
+    return;
+  }
+  const id = active.id;
+  if ((live?.messages().length ?? 0) > 0) {
+    continueOnFreshPage(id, choice.text);
+    return;
+  }
+  void takeUp(id).then(send, (cause: unknown) => say(cause instanceof Error ? cause.message : 'That could not be sent.'));
+}
+
+/** The server lets this page's session take up the conversation on view, and the page shows it as its own: earlier turns, then what comes next. */
+async function takeUp(id: string): Promise<void> {
+  const session = app?.link.session ?? null;
+  const view = pastView;
+  if (session === null || view === null || live === null) throw new Error('The stage is still starting. Try again in a moment.');
+  await continueConversation(id, session);
+  live.seed(
+    view.turns.flatMap((turn) => messagesOfTurn(turn)),
+    view.turns.map((turn) => ({ turn: turn.turn, kind: turn.kind, lines: turn.lines })),
+  );
+  continuedId = id;
+  if (stageKey?.startsWith(`${id}:`) === true) stageKey = `live:${stageKey.slice(id.length + 1)}`;
+}
+
+/** This page's session has a conversation of its own already, and one conversation holds one session: the older one is opened on a fresh page, with the words kept. */
+function continueOnFreshPage(id: string, text: string): void {
+  try {
+    sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ id, text }));
+  } catch {
+    // the words are not kept; the page still opens on the conversation
+  }
+  say('Opening that conversation on a fresh page. Send your message again there.', 6000);
+  const url = new URL(window.location.href);
+  url.searchParams.set('c', id);
+  window.location.assign(url);
 }
 
 // ---- opening the canvas
@@ -624,6 +685,18 @@ void (async () => {
   renderList();
   if (wanted !== null && CONVERSATION_ID.test(wanted)) await showPast(wanted);
   await first;
+  // words kept across the fresh page that opened a conversation to continue it
+  try {
+    const kept = sessionStorage.getItem(DRAFT_KEY);
+    sessionStorage.removeItem(DRAFT_KEY);
+    const draft = kept === null ? null : (JSON.parse(kept) as { id?: unknown; text?: unknown });
+    if (draft !== null && draft.id === wanted && typeof draft.text === 'string') {
+      composer.restore(draft.text);
+      composer.focus();
+    }
+  } catch {
+    // nothing kept
+  }
 })();
 
 declare global {

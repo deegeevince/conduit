@@ -56,6 +56,8 @@ export type SessionRecord =
   | { readonly type: 'permission'; readonly at: number; readonly turn: string; readonly request: string; readonly tool: string; readonly summary: string; readonly risk: ActionRisk; readonly allow: boolean | null; readonly ms: number }
   /** v2.1. A picture the user gave: its id, kind and size, and the file it was saved as beside the log. Never the bytes. */
   | { readonly type: 'upload'; readonly at: number; readonly turn: string | null; readonly id: string; readonly mime: string; readonly bytes: number; readonly width: number; readonly height: number; readonly file: string | null }
+  /** v2.1. This session took up an older conversation: its records from here on are appended to that log (`from` is its first session's id) */
+  | { readonly type: 'continued'; readonly at: number; readonly session: string; readonly from: string; readonly started: string }
   /** v2.1. A setting the user changed with a command or the picker (`/model`, `/effort`, `/brain`, `/tools`, `/review`) */
   | { readonly type: 'setting'; readonly at: number; readonly name: string; readonly value: string };
 
@@ -78,6 +80,8 @@ export interface SessionLog {
   saveSnapshot(session: string, turn: string, mime: string, bytes: Uint8Array): string;
   /** v2.1. The name of the session's log file, as the critic's queue records it; empty when nothing is written. */
   fileOf(session: string): string;
+  /** v2.1. From now on this session's records go to the existing log `stem` (a conversation's id), not a file of its own. Nothing written before is moved. */
+  adopt(session: string, stem: string): void;
   /** The session is over: flush and close its file. */
   close(session: string): void;
   /** Flushes and closes everything, at shutdown. */
@@ -89,6 +93,7 @@ export const NO_SESSION_LOG: SessionLog = {
   write: () => undefined,
   saveSnapshot: () => '',
   fileOf: () => '',
+  adopt: () => undefined,
   close: () => undefined,
   closeAll: async () => undefined,
 };

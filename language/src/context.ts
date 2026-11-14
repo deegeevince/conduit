@@ -163,6 +163,8 @@ export interface TurnContext {
    * look checks the draft against it. Absent or empty: none.
    */
   readonly standing?: readonly string[];
+  /** v2.1. A returning conversation: a short account of what was said and answered before this page's session began (words only, within a budget). Absent: none. */
+  readonly earlier?: string;
 }
 
 /** v2.1. The most standing asks a conversation holds, and the most characters of each; the oldest goes when a seventh comes. */
