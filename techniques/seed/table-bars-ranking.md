@@ -1,6 +1,6 @@
 # A ranking as a table with bars
 
-summary: A ranking, the largest, the top five, the biggest, the longest, the most, by size, by area, things with names put in order of a number.
+summary: A ranking, the largest, the top five, the biggest, the longest, the most, by size, by area, things with names ranked by a number.
 reason: only if you are ranking named things by one number
 
 Ranks named things in a table whose numbers are drawn as bars beside the figures.

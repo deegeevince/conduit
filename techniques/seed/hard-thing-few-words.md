@@ -1,4 +1,4 @@
-# A hard thing said in few words, with time
+# Few words and silence for something painful
 
 summary: Advice on something painful or frightening, a hard conversation, a loss, bad news, fear, grief, a mistake to admit, being laid off, what to say.
 reason: only if the user is facing something hard and needs few words, not information

@@ -1,6 +1,6 @@
 # How a thing works: a mechanism drawn and its parts named
 
-summary: How does a thing work: a machine, a mechanism, an engine, a pump, a lever, a device, the parts of something, a cross-section, anatomy.
+summary: How does a thing work: a machine, a mechanism, an engine, a pump, a lever, a device, the parts of something, a cross-section, anatomy, how it happens, an eclipse, a shadow, the sun moon and earth.
 reason: only if you are drawing a thing and naming its parts
 
 Draws the thing big from a few simple shapes and names each part with a callout, then changes one part to show it working.

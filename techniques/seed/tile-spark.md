@@ -1,6 +1,6 @@
-# A dashboard tile: one number and its recent shape
+# A dashboard tile: one number and its recent trend
 
-summary: A dashboard tile, a KPI, a metric card, a status widget, one headline number with a small chart, a ticker tile, live-looking.
+summary: A dashboard tile, a KPI, a metric card, a status widget, one headline number with a small trend line, a ticker tile, live-looking.
 reason: only if you are making a tile that shows one number and its trend
 
 Makes a tile: a label, one big number, how it changed, and a small chart with no axes.

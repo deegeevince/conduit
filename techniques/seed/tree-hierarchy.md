@@ -1,6 +1,6 @@
 # A hierarchy as a tree
 
-summary: A family tree, an org chart, a classification, a breakdown of a whole into parts, who reports to whom, kinds of a thing.
+summary: A family tree, who is whose parent, a classification, a breakdown of a whole, who reports to whom, kinds of a thing.
 reason: only if you are drawing a family, a hierarchy or a breakdown into kinds
 
 Draws parents and children as a tree; each node names its parent with from=.

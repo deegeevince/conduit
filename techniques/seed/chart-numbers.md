@@ -1,11 +1,11 @@
 # Numbers over time as a chart
 
-summary: Numbers over time or along a scale: growth, population, prices, temperature, a trend, a line chart, a bar chart, how it changed, from 1800 to today.
+summary: Numbers over time or along a scale: growth, population, prices, temperature, a trend, a line chart, a bar chart, how it grew or fell, from 1800 to today, since 1960, over the decades, rising, levels, concentration, a measurement over years, when it passed a level.
 reason: only if the answer is a series of numbers along time or a scale
 
 Shows a series as a chart the charting engine draws: formatted axes, a crosshair, zoom.
 
-**Use it when** the answer is five or more numbers of one kind along time or a scale. `line` for a trend, `area` for a quantity that fills, `columns` for amounts in separate periods or a distribution. Star the point that matters and mark the event that explains the shape.
+**Use it when** the answer is five or more numbers of one kind along time or a scale. `line` for a trend, `area` for a quantity that fills, `columns` for amounts in separate periods. Star the point that matters and mark the event that explains the shape.
 
 **Not when** there are one or two numbers (say them), the things have names and not an order (a ranking is `table bars`), or the numbers are of different kinds (a table).
 

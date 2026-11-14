@@ -1,6 +1,6 @@
 # A quantity the user can drag
 
-summary: How one quantity depends on another: an angle, a rate, a speed, a dose, interest, what happens if, the more the, let me try it, interactive, explore, drag.
+summary: How one quantity depends on another: an angle, a rate, a speed, a dose, interest, what happens if, the more the, let me try it, let me change, see how, steepness, a slope, interactive, explore, drag.
 reason: only if the answer is how one quantity changes another
 
 Gives the user a slider bound to the drawing, so the answer is found by dragging.
