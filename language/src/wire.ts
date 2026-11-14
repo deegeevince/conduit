@@ -3,6 +3,7 @@
 // types, so a field cannot be renamed on one side only.
 
 import type { DocNode, DocState, Document, NodeId, NodeStatus, Seen, StateChange } from './document';
+import type { InkMarks } from './ink';
 import type { StageBase } from './schedule';
 import type { PlacedBox, Sight } from './sight';
 import type { ShownItem } from './stage';
@@ -182,7 +183,7 @@ export const PROMPT_MAX_CHARS = 20_000;
 
 export type TurnInput =
   /** `images` (v2.1): ids of pictures the user gave with these words (`API.uploads`), in the order they were added; absent means none */
-  | { readonly kind: 'prompt'; readonly text: string; readonly images?: readonly string[] }
+  | { readonly kind: 'prompt'; readonly text: string; readonly images?: readonly string[]; readonly marks?: InkMarks }
   /** the user tapped a choice; `text` is what the choice said */
   /** v3. `seen`: where the person stood in the document when they tapped (2.5) */
   | { readonly kind: 'tap'; readonly id: string; readonly text: string; readonly seen?: Seen }
@@ -581,7 +582,7 @@ export interface ContentCount {
  * v2.1. Pictures the user gives with a prompt: what is taken, and how much. `types` are checked by the file's own bytes, never by the name or
  * the Content-Type; a HEIC (an iPhone's) is converted. Whatever is taken is stored as a JPEG with no metadata, `storedSide` pixels on its longest side at most.
  */
-export const UPLOAD_LIMITS = { bytes: 12_000_000, perTurn: 4, perSession: 24, maxSide: 8192, storedSide: 2048, types: ['image/jpeg', 'image/png', 'image/webp', 'image/heic'] } as const;
+export const UPLOAD_LIMITS = { bytes: 12_000_000, perTurn: 4, perSession: 60, maxSide: 8192, storedSide: 2048, types: ['image/jpeg', 'image/png', 'image/webp', 'image/heic'] } as const;
 
 /** v2.1. What the server says of a picture it has taken. `id` (`u1`, `u2`, …) is what `TurnInput.images` and `pic … from=` name. */
 export interface UploadResponse {

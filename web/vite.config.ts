@@ -41,6 +41,7 @@ export default defineConfig({
         ...optional('bench-chart', 'bench-chart.html'),
         ...optional('bench-lesson', 'bench-lesson.html'),
         ...optional('taste', 'taste.html'),
+        ...optional('bench-ink', 'bench-ink.html'),
       },
     },
   },

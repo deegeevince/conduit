@@ -18,6 +18,7 @@ export * from './interface';
 export * from './stage';
 export * from './sight';
 export * from './wire';
+export * from './ink';
 export * from './events';
 export * from './context';
 export * from './review';

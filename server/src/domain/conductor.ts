@@ -334,10 +334,12 @@ export class Conductor {
     }
 
     // The photos a prompt names are this conversation's own, or the turn does not open.
-    if (input.kind === 'prompt' && (input.images?.length ?? 0) > 0) {
+    // The picture of the ink (and the photo it was drawn over) are held the same way.
+    if (input.kind === 'prompt' && ((input.images?.length ?? 0) > 0 || input.marks !== undefined)) {
       const held = this.deps.uploads ?? NO_UPLOADS;
       if (!held.available) throw errors.badRequest('photos are switched off on this server');
-      const missing = (input.images ?? []).find((id) => !held.has(s.id, id));
+      const named = [...(input.images ?? []), ...(input.marks === undefined ? [] : [input.marks.image, ...(input.marks.background === undefined ? [] : [input.marks.background]), ...(input.marks.voice?.audio === undefined ? [] : [input.marks.voice.audio])])];
+      const missing = named.find((id) => !held.has(s.id, id));
       if (missing !== undefined) throw errors.badRequest(`this conversation has no photo ${missing}`);
     }
 
@@ -1088,7 +1090,8 @@ export class Conductor {
       // The photos this prompt names, as they were kept, after the stage's snapshot. A photo that cannot be read back is left out and said in the log.
       const images: Snapshot[] = [];
       if (input.kind === 'prompt') {
-        for (const id of input.images ?? []) {
+        // The photos, then the picture of the ink last: the brief says it is the one that was written or drawn.
+        for (const id of [...(input.images ?? []), ...(input.marks === undefined ? [] : [input.marks.image])]) {
           const loaded = await (this.deps.uploads ?? NO_UPLOADS).load(s.id, id);
           if (loaded === null) log.warn('turn.photo_missing', { session: s.id, turn: turn.id, photo: id });
           else images.push(loaded);
