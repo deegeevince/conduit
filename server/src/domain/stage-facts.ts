@@ -1,8 +1,8 @@
 // The server's own measurement of a draft (SA2): the same engine the page runs (`@conduit/web/engine`), on the turn's score, for the screen
 // the page said it has and the look in force. Nothing here waits for the browser.
 
-import { ENGINE_VERSION, digestOf, measureStage, scoreOfCase, tryLines } from '@conduit/web/engine';
-import type { EngineInputs, EngineView, LineProblem } from '@conduit/web/engine';
+import { ENGINE_VERSION, digestOf, measureStage, planWall, scoreOfCase, tryLines } from '@conduit/web/engine';
+import type { EngineInputs, EngineView, LineProblem, WallNode, WallPlan, WallShape } from '@conduit/web/engine';
 import type { Capabilities, ContentCount, ControlValues, DataTable, PlacedBox, Schedule, ScreenFacts, Sight, TurnScore } from '@conduit/language';
 
 /** What the server holds that a measurement reads, and no more: a session satisfies this. */
@@ -72,6 +72,28 @@ export function warmEngine(): number {
   const inputs: EngineInputs = { held: {}, charts: new Map(), pictures: new Map() };
   for (let run = 0; run < 3; run += 1) measureStage(score.schedule, score.base, view, inputs);
   return performance.now() - started;
+}
+
+const WALL_PLANS = 64;
+const wallPlans = new Map<string, WallPlan>();
+
+/**
+ * The wall's plan at a document revision for a view, derived by the same `planWall` the page calls and kept by (`rev`, `viewKey`) so a brief
+ * and a turn do not plan twice. `nodes` is what the revision holds (before the v3 merge: `wallNodesOfTurns` of the folded log). Nothing is
+ * stored but this cache: it is never read back as truth, and a rev that comes again with other nodes is the caller's mistake.
+ */
+export function wallAt(rev: string | number, viewKey: string, nodes: readonly WallNode[], shape: WallShape): WallPlan {
+  const key = `${rev}|${viewKey}`;
+  const have = wallPlans.get(key);
+  if (have !== undefined) {
+    wallPlans.delete(key);
+    wallPlans.set(key, have);
+    return have;
+  }
+  const plan = planWall(nodes, shape);
+  wallPlans.set(key, plan);
+  if (wallPlans.size > WALL_PLANS) wallPlans.delete(wallPlans.keys().next().value as string);
+  return plan;
 }
 
 export { digestOf, ENGINE_VERSION };

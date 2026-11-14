@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Conduit: wall hands bench</title>
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #ece8df; overscroll-behavior: none; }
+      #room { position: fixed; left: 0; top: 0; }
+      #live { position: absolute; left: 0; top: 0; width: 100%; height: 100%; display: none; font: 16px/1.3 system-ui, sans-serif; color: #222; }
+      #live .card { position: absolute; left: 8%; right: 8%; top: 34%; padding: 14px 16px; background: #fffe; border-radius: 12px; box-shadow: 0 2px 12px #0003; }
+      #live input[type=range] { width: 100%; margin: 14px 0 6px; }
+      #hud { position: fixed; left: 8px; bottom: 8px; font: 11px/1.3 ui-monospace, monospace; color: #222; background: #fffc; padding: 4px 6px; border-radius: 4px; pointer-events: none; white-space: pre; }
+    </style>
+  </head>
+  <body>
+    <div id="room"><div id="host"></div><div id="live"><div class="card"><div id="live-title">Frame</div><input id="live-slider" type="range" min="0" max="100" step="1" value="40" /><div>Value <output id="live-value">40</output></div></div></div></div>
+    <div id="hud"></div>
+    <script type="module" src="/src/bench/wall-hands.ts"></script>
+  </body>
+</html>

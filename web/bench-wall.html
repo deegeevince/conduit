@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Conduit: wall bench</title>
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #ece8df; overscroll-behavior: none; }
+      #host { position: fixed; left: 0; top: 0; touch-action: none; }
+      #hud { position: fixed; left: 8px; bottom: 8px; font: 11px/1.3 ui-monospace, monospace; color: #222; background: #fffc; padding: 4px 6px; border-radius: 4px; pointer-events: none; white-space: pre; }
+    </style>
+  </head>
+  <body>
+    <div id="host"></div>
+    <div id="hud"></div>
+    <script type="module" src="/src/bench/wall-bench.ts"></script>
+  </body>
+</html>
