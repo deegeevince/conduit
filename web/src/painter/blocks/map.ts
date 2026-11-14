@@ -23,7 +23,7 @@ function buildMap(env: Env): Draft {
     const w = wordsOf(el, input.scope);
     const x = input.canvas.origin.x + (v[0] ?? 0) * input.canvas.unit;
     const y = input.canvas.origin.y + (v[1] ?? 0) * input.canvas.unit;
-    return { el, text: w.text, emphasis: w.emphasis, p: { x, y }, m: env.measure(w.text) };
+    return { el, text: w.text, emphasis: w.emphasis, p: { x, y }, m: env.measure(w.text, env.wrapWidth, env.label()) };
   });
   const f = input.structure.figure;
   const route: Polyline | null = f?.kind === 'structure' && f.route && pins.length > 1 ? open(pins.map((p) => p.p)) : null;
@@ -129,7 +129,7 @@ function buildMap(env: Env): Draft {
         if (lab.lead) parts.push({ kind: 'shape', owner: pin.el.key, part: 'leader', outline: [lab.lead], role: 'line' });
         const side = lab.side;
         const align: 'left' | 'right' | 'center' = side === 0 || side === 1 || side === 7 ? 'left' : side === 4 || side === 3 || side === 5 ? 'right' : 'center';
-        parts.push({ kind: 'text', owner: pin.el.key, part: 'label', text: pin.text, emphasis: pin.emphasis, box: lab.b, spec: env.spec, align, role: 'label', plate: false });
+        parts.push({ kind: 'text', owner: pin.el.key, part: 'label', text: pin.text, emphasis: pin.emphasis, box: lab.b, spec: env.label(), align, role: 'label', plate: false });
         all = union([all, lab.b]);
       }
       boxes.set(pin.el.key, all);

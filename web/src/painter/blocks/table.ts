@@ -7,12 +7,15 @@ import type { BlockPart } from '../../contracts/blocks';
 import type { Box } from '../../contracts/space';
 import { box, open, union } from './geom';
 import type { Draft } from './kit';
-import { Env, fit } from './kit';
+import { best, Env, fit } from './kit';
 import { isRuleRow, splitCells, splitEmphasis } from '@conduit/language';
 import type { Range } from '@conduit/language';
 
 export function layoutTable(input: StructureInput): StructureLayout {
-  return fit(input, input.look.stroke, (env) => buildTable(env));
+  // the table as columns; and, for a room too narrow to read it so, each row as a record: its name, then each column's label and value
+  const records = (wrap: number) => (): StructureLayout => fit(input, input.look.stroke, (env) => buildRecords(env), undefined, wrap);
+  const columns = (): StructureLayout => fit(input, input.look.stroke, (env) => buildTable(env));
+  return best([columns, records(1)]);
 }
 
 const NUMBER = /^[-+−]?[$£€¥]?\s?\d[\d,]*(\.\d+)?\s?(%|[a-zA-Z]{1,3})?$/;
@@ -33,12 +36,17 @@ interface Cell {
   head: number;
 }
 
-function buildTable(env: Env): Draft {
-  const input = env.input;
-  const room = input.room;
-  const body = env.body;
-  const f = input.structure.figure;
-  const wantBars = f?.kind === 'structure' && f.bars;
+interface Read {
+  readonly parsed: { cells: { text: string; emphasis: Range[] }[]; index: number }[];
+  readonly ncols: number;
+  readonly H: number;
+  readonly numeric: boolean[];
+  readonly headerSpec: TextSpec;
+  readonly specOf: (r: number) => TextSpec;
+}
+
+function readRows(env: Env): Read {
+  const f = env.input.structure.figure;
   const rawRows = f?.kind === 'structure' ? f.rows : [];
   const parsed: { cells: { text: string; emphasis: Range[] }[]; index: number }[] = [];
   rawRows.forEach((row, index) => {
@@ -63,7 +71,17 @@ function buildTable(env: Env): Draft {
   const H = dataFirst ? 0 : 1;
   if (dataFirst) for (let c = 0; c < ncols; c += 1) numeric[c] = numericIn(parsed, c);
   const specOf = (r: number): TextSpec => (r < H ? headerSpec : env.spec);
-  
+  return { parsed, ncols, H, numeric, headerSpec, specOf };
+}
+
+function buildTable(env: Env): Draft {
+  const input = env.input;
+  const room = input.room;
+  const body = env.body;
+  const f = input.structure.figure;
+  const wantBars = f?.kind === 'structure' && f.bars;
+  const { parsed, ncols, H, numeric, specOf } = readRows(env);
+
   const decimalSplit = (text: string): [string, string] => {
     const i = text.indexOf('.');
     if (i >= 0) return [text.slice(0, i), text.slice(i)];
@@ -213,4 +231,85 @@ function buildTable(env: Env): Draft {
     return { parts, boxes, routes: new Map(), notes: [] };
   };
   return { width: W, height, finish };
+}
+
+/** Each row of a table as a record, for a room too narrow for its columns: the name, then a label and its value on every line. */
+function buildRecords(env: Env): Draft {
+  const input = env.input;
+  const body = env.body;
+  const { parsed, ncols, H, specOf } = readRows(env);
+  const line = body;
+  const colGap = env.up(0.8 * body, 'x');
+  const heads = H === 1 ? (parsed[0]?.cells ?? []) : [];
+  const labelW = Math.max(0, ...heads.slice(1).map((h) => (h.text === '' ? 0 : env.measure(h.text, 1e9, specOf(0)).width)));
+  const valueMax = Math.max(body * 4, input.room.width - labelW - colGap);
+  interface Item {
+    readonly c: number;
+    readonly label: { text: string; m: MeasuredText } | null;
+    readonly value: { text: string; emphasis: Range[]; m: MeasuredText };
+    readonly h: number;
+  }
+  interface Card {
+    readonly row: number;
+    readonly items: Item[];
+    readonly h: number;
+  }
+  const records: Card[] = [];
+  for (let r = H; r < parsed.length; r += 1) {
+    const row = parsed[r] as (typeof parsed)[number];
+    const items: Item[] = [];
+    for (let c = 0; c < ncols; c += 1) {
+      const cell = row.cells[c];
+      if (cell === undefined || cell.text === '') continue;
+      const first = c === 0;
+      const m = env.measure(cell.text, first ? input.room.width : valueMax, specOf(r));
+      const head = heads[c];
+      const label = !first && head !== undefined && head.text !== '' ? { text: head.text, m: env.measure(head.text, 1e9, specOf(0)) } : null;
+      items.push({ c, label, value: { text: cell.text, emphasis: cell.emphasis, m }, h: Math.max(m.height, label?.m.height ?? 0) });
+    }
+    const h = items.reduce((sum, it) => sum + it.h, 0) + 0.45 * line * Math.max(0, items.length - 1);
+    records.push({ row: row.index, items, h });
+  }
+  const gapR = env.up(0.9 * line, 'y');
+  const title = env.title();
+  const widest = Math.max(0, ...records.flatMap((rc) => rc.items.map((it) => (it.c === 0 ? it.value.m.width : labelW + colGap + it.value.m.width))));
+  const total = records.reduce((sum, rc) => sum + rc.h, 0) + Math.max(0, records.length - 1) * gapR;
+  const finish = (rm: Box): ReturnType<Draft['finish']> => {
+    const key = input.structure.key;
+    const parts: BlockPart[] = [];
+    const tp = title.part(rm);
+    if (tp !== null) parts.push(tp);
+    const x0 = env.within(rm.x + Math.max(0, (rm.width - widest) / 2), rm.x, rm.x + Math.max(0, rm.width - widest), 'x');
+    let y = env.after(rm.y + title.h, 'y');
+    const top = y;
+    const all: Box[] = [];
+    records.forEach((rc, ri) => {
+      rc.items.forEach((it) => {
+        if (it.c === 0) {
+          const b = box(env.snap(x0, 'x'), y, it.value.m.width, it.value.m.height);
+          parts.push({ kind: 'text', owner: key, part: `cell:${ri}:0`, text: it.value.text, emphasis: it.value.emphasis.length > 0 ? it.value.emphasis : [{ start: 0, end: it.value.text.length }], box: b, spec: specOf(H), align: 'left', role: 'cell', row: rc.row, plate: false });
+          all.push(b);
+        } else {
+          if (it.label !== null) {
+            const lb = box(env.snap(x0, 'x'), y + (it.h - it.label.m.height) / 2, it.label.m.width, it.label.m.height);
+            parts.push({ kind: 'text', owner: key, part: `head:${ri}:${it.c}`, text: it.label.text, emphasis: [], box: lb, spec: specOf(0), align: 'left', role: 'header', row: rc.row, plate: false });
+            all.push(lb);
+          }
+          const vb = box(env.snap(x0 + labelW + colGap, 'x'), y + (it.h - it.value.m.height) / 2, it.value.m.width, it.value.m.height);
+          parts.push({ kind: 'text', owner: key, part: `cell:${ri}:${it.c}`, text: it.value.text, emphasis: it.value.emphasis, box: vb, spec: specOf(H), align: 'left', role: 'cell', row: rc.row, plate: false });
+          all.push(vb);
+        }
+        y += it.h + 0.45 * line;
+      });
+      y += -0.45 * line + gapR;
+      if (ri + 1 < records.length) {
+        const ry = y - gapR / 2;
+        parts.push({ kind: 'shape', owner: key, part: `rule:${ri}`, outline: [open([{ x: x0, y: ry }, { x: x0 + widest, y: ry }])], role: 'grid', row: rc.row });
+      }
+    });
+    const boxes = new Map<string, Box>();
+    boxes.set(key, all.length > 0 ? union([...all, box(x0, top, widest, Math.max(0, y - gapR - top))]) : box(rm.x, rm.y, 0, 0));
+    return { parts, boxes, routes: new Map(), notes: [] };
+  };
+  return { width: widest, height: total + title.h, finish };
 }

@@ -51,6 +51,22 @@ function buildCycle(env: Env): Draft {
   const phi = (i: number): number => (2 * Math.PI * i) / Math.max(1, n);
   const dir = (i: number): Point => ({ x: Math.sin(phi(i)), y: -Math.cos(phi(i)) });
 
+  /** no part of the ring (the ellipse the dots sit on) passes through the words at `b` */
+  const ringClear = (b: Box, R: number): boolean => {
+    const pad = rd + gap * 0.4;
+    const x0 = b.x - pad;
+    const x1 = right(b) + pad;
+    const y0 = b.y - pad;
+    const y1 = bottom(b) + pad;
+    for (let q = 0; q < 48; q += 1) {
+      const a = (2 * Math.PI * q) / 48;
+      const x = k * R * Math.sin(a);
+      const y = -R * Math.cos(a);
+      if (x > x0 && x < x1 && y > y0 && y < y1) return false;
+    }
+    return true;
+  };
+
   /** frames (and words) round a centre at the origin, on the ellipse of half-height `R` */
   const arrange = (R: number): Placed[] =>
     nodes.map((nd, i) => {
@@ -68,7 +84,7 @@ function buildCycle(env: Env): Draft {
           side === 'top' ? box(q.x - w / 2, q.y - h, w, h) : side === 'bottom' ? box(q.x - w / 2, q.y, w, h) : side === 'right' ? box(q.x, q.y - h / 2, w, h) : box(q.x - w, q.y - h / 2, w, h);
         const nx = Math.max(b.x, Math.min(0, right(b)));
         const ny = Math.max(b.y, Math.min(0, bottom(b)));
-        if (Math.hypot(nx, ny) >= dist + rd + gap * 0.5) return { frame, words: b };
+        if (Math.hypot(nx, ny) >= dist + rd + gap * 0.5 && ringClear(b, R)) return { frame, words: b };
       }
       return { frame, words: box(p.x, p.y, w, h) };
     });

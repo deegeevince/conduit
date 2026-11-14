@@ -7,7 +7,7 @@ import type { Point, Polyline } from '@conduit/language';
 import { EMPTY_STRUCTURE_LAYOUT } from '../../contracts/blocks';
 import type { BlockPart, StructureInput, StructureLayout } from '../../contracts/blocks';
 import type { Box } from '../../contracts/space';
-import { box, circle, open, overlaps, polylineHitsBox, roundedRect, union } from './geom';
+import { box, circle, open, overlaps, packOrdered, polylineHitsBox, roundedRect, union } from './geom';
 import type { Draft, Note } from './kit';
 import { Env, fit, niceStep, wordsOf } from './kit';
 
@@ -71,7 +71,7 @@ function buildTimeline(env: Env): Draft {
   const titleH = titleM ? titleM.height + body : 0;
   const U = vertical ? room.height - titleH : room.width;
   const ext = (m: { width: number; height: number }): { eu: number; ev: number } => (vertical ? { eu: m.height, ev: m.width } : { eu: m.width, ev: m.height });
-  const maxTiers = env.shrink <= input.look.minShrink + 1e-6 ? 6 : 2;
+  const maxTiers = Math.max(2, items.length);
   const minShrinkNow = env.shrink <= input.look.minShrink + 1e-6;
 
   const attempt = (wrap: number) => {
@@ -118,6 +118,23 @@ function buildTimeline(env: Env): Draft {
     const slots: Slot[] = [];
     const notes: Note[] = [];
     const gap = 0.35 * body;
+    // A vertical axis: the words stand in one column to its right, in the order of their dates, as near their dots as they can be
+    // with room between them; each leader runs from its dot to its words, and leaders in one order never cross.
+    let needU = U;
+    let column: number[] | null = null;
+    if (vertical && items.length > 0) {
+      const eus = meas.map((m) => ext(m).eu);
+      const spacing = eus.slice(1).map((e, i) => (e + (eus[i] as number)) / 2 + gap);
+      const packed = packOrdered(dotU, spacing, items.map(() => 1));
+      const first = (packed[0] as number) - (eus[0] as number) / 2;
+      const last = (packed[packed.length - 1] as number) + (eus[eus.length - 1] as number) / 2;
+      const span = last - first;
+      let shift = 0;
+      if (first < 0) shift = -first;
+      else if (last > U) shift = Math.max(-first, U - last);
+      column = packed.map((p) => p + shift);
+      needU = Math.max(U, span);
+    }
     items.forEach((it, idx) => {
       const m = meas[idx] as (typeof meas)[number];
       const e = ext(m);
@@ -131,6 +148,15 @@ function buildTimeline(env: Env): Draft {
           order.push({ side: first as 1 | -1, tier });
           order.push({ side: -first as 1 | -1, tier });
         }
+      }
+      if (column !== null) {
+        const centre = column[idx] as number;
+        const b = toBox(centre - e.eu / 2, below0, e.eu, e.ev);
+        const lead: Point[] = [{ x: ER, y: uc }, { x: below0 - 0.25 * body, y: centre }];
+        placed.push(b);
+        leads.push({ points: lead, closed: false });
+        slots.push({ eu: e.eu, ev: e.ev, box: b, u: uc, lead, v0: 0 });
+        return;
       }
       let best: { b: Box; lead: Point[]; bad: number } | null = null;
       for (const o of order) {
@@ -161,7 +187,7 @@ function buildTimeline(env: Env): Draft {
     });
     const everything = [...placed, ...tickBoxes, toBox(0, -ER, U, 2 * ER)];
     const bounds = union(everything);
-    return { dotU, lo, hi, meas, slots, notes, step, ticks, tickBoxes, bounds, uOf, bad: notes.length, tickLen, toBox, wrap };
+    return { dotU, lo, hi, meas, slots, notes, step, ticks, tickBoxes, bounds, uOf, bad: notes.length, tickLen, toBox, wrap, needU };
   };
 
   const wide = vertical ? Math.max(env.wrapWidth, Math.min(room.width * 0.6, env.wrapWidth * 1.8)) : env.wrapWidth;
@@ -173,7 +199,7 @@ function buildTimeline(env: Env): Draft {
   void minShrinkNow;
   const bounds = r.bounds;
   const width = vertical ? bounds.width : U;
-  const height = (vertical ? U : bounds.height) + titleH;
+  const height = (vertical ? r.needU : bounds.height) + titleH;
 
   const finish = (rm: Box): ReturnType<Draft['finish']> => {
     // `u` runs from the room's start; `v` is centred in what the title leaves.
