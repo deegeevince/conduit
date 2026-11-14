@@ -122,7 +122,7 @@ function fieldOf(k: Kit, p: UiPartNode, labelled: boolean): N {
       out.parts.push({ kind: 'rect', key: out.key(p.id, 'caret'), owner: p.id, x: b.x + 12 + w + 1, y: b.y + (b.h - 20) / 2, w: 1.5, h: 20, radius: 0, fill: c.accent, edge: null });
     }
   };
-  const value = text(k, shown === '' ? ' ' : shown, k.type.body, { id: p.id, nowrap: true, squeeze: true, colour: valueInk, what: 'value', grow: 1 });
+  const value = text(k, shown === '' ? ' ' : shown, k.type.body, { id: p.id, nowrap: true, ellipsis: true, colour: valueInk, what: 'value', grow: 1 });
   const input = mk({ width: 'fill', height: 48 }, flex('row', { align: 'center', pad: [0, 12, 0, 12] }), null, [value], { id: `${p.id}:input`, part: 'field-input', target: true, paint, action: { kind: 'field', control: p.id, value: shown }, owner: p.id });
   const kids: N[] = [];
   if (label !== '') kids.push(text(k, label, { ...k.type.note, weight: 'bold' }, { id: p.id, nowrap: true, squeeze: true, colour: c.ink, what: 'label' }));
