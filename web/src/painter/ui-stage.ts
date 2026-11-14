@@ -244,7 +244,9 @@ export function drawUi(call: DrawnCall): { readonly drawn: boolean; readonly pha
   }
   let any = false;
   const appear = (key: string): number => {
-    const at = structure.carried ? 0 : (rows[drawn.rowOf.get(key) ?? 0]?.at ?? 0);
+    // a mock-up carried in from an earlier turn, or a resting stage's own (its clock is at 0), is whole: there is no row still to land
+    if (structure.carried) return 1;
+    const at = rows[drawn.rowOf.get(key) ?? 0]?.at ?? 0;
     const start = Math.max(at, base);
     if (tq < start) return 0;
     const p = Math.max(0, Math.min(1, (tq - start) / UI_ROW_FADE));
