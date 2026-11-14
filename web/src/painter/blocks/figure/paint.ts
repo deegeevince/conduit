@@ -190,7 +190,7 @@ export function paintFigure(layout: FigureLayout, options: PaintOptions): Painte
       const t1 = Math.min(1, (d + on) / length);
       dashes.push([{ x: a.x + (b.x - a.x) * t0, y: a.y + (b.y - a.y) * t0 }, { x: a.x + (b.x - a.x) * t1, y: a.y + (b.y - a.y) * t1 }]);
     }
-    shape('guide', 'guide', dashes, dashes.map(() => false), null, edge(look.dim, hairline * 1.4), 0.8);
+    shape('guide', 'guide', dashes, dashes.map(() => false), null, edge(look.dim, hairline * 1.4), 1);
   }
 
   const shadow = shadowInk(look);

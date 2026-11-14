@@ -139,7 +139,11 @@ async function shots() {
         await pressStepper(size, 'next');
         await shot(`${fixture}-${size.name}-step${s}.png`);
       }
-      console.log(`shots ${fixture} ${size.name}: rest + ${first.steps} steps`);
+      // reduced motion: the same figure at step 1 with chevrons only
+      await open(size, fixture, { reduced: true });
+      await pressStepper(size, 'next');
+      await shot(`${fixture}-${size.name}-reduced-step1.png`);
+      console.log(`shots ${fixture} ${size.name}: rest + ${first.steps} steps + reduced motion`);
     }
   }
 }
