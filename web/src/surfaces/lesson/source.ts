@@ -32,7 +32,7 @@ let made: LessonSource | null = null;
 export function lessonSource(): LessonSource {
   if (made !== null) return made;
   const source = `<style>${squeeze(kit)}${squeeze(lessonCss)}</style><div id="root"></div><script>${unpack(program)}</script>`;
-  const problem = source.length > SURFACE_SOURCE_MAX ? `the lesson is ${source.length} characters and the host runs ${SURFACE_SOURCE_MAX}` : cleanMarkup(source) !== source ? 'the host would change the lesson program when it cleaned its markup' : null;
+  const problem = source.length > SURFACE_SOURCE_MAX ? `the lesson is ${source.length} characters and the host runs ${SURFACE_SOURCE_MAX}` : cleanMarkup(source, false) !== source ? 'the host would change the lesson program when it cleaned its markup (apart from writing its script inert, which it does to every surface and sets going once the frame has a layout)' : null;
   made = { source, problem };
   return made;
 }
