@@ -22,6 +22,7 @@
     "timeline": "pnpm --filter @conduit/language exec tsx scripts/timeline.ts",
     "sessions": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/sessions.ts",
     "capture": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/capture.ts",
+    "golden": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/golden.ts",
     "relay": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/relay.ts",
     "server-check": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/server-check.ts",
     "agent-check": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/agent-check.ts",

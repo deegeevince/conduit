@@ -1,0 +1,2581 @@
+{
+  "case": {
+    "id": "look-change",
+    "useCase": "a conversation across a look and a window change",
+    "why": "A change of look or window must not throw away the warm brain or the cache (P0-1): turns 2 and 3 should be since, warm and cached.",
+    "heldOut": true,
+    "judged": true,
+    "turns": [
+      {
+        "do": "prompt",
+        "text": "Tell me how a bicycle stays upright."
+      },
+      {
+        "do": "prompt",
+        "text": "Now show me how it steers.",
+        "look": "chalk"
+      },
+      {
+        "do": "prompt",
+        "text": "Sum it all up in one picture.",
+        "screen": "phone"
+      }
+    ]
+  },
+  "variant": "column",
+  "sample": 1,
+  "turns": [
+    {
+      "prompt": {
+        "id": "look-change-t1",
+        "useCase": "a conversation across a look and a window change",
+        "prompt": "Tell me how a bicycle stays upright.",
+        "expects": "any",
+        "baseline": false
+      },
+      "lines": [
+        {
+          "seq": 1,
+          "text": "scene layout=figure lines=4",
+          "ms": 2453,
+          "issues": []
+        },
+        {
+          "seq": 2,
+          "text": "color ground2=#8a7a5a",
+          "ms": 2453,
+          "issues": []
+        },
+        {
+          "seq": 3,
+          "text": "line road 10,76 150,76 thick=1.5",
+          "ms": 2453,
+          "issues": []
+        },
+        {
+          "seq": 4,
+          "text": "circle rear 50,62 13 thick=2",
+          "ms": 2759,
+          "issues": []
+        },
+        {
+          "seq": 5,
+          "text": "circle front 110,62 13 thick=2",
+          "ms": 2760,
+          "issues": []
+        },
+        {
+          "seq": 6,
+          "text": "line frame 50,62 70,40 98,40 110,62 thick=2",
+          "ms": 2841,
+          "issues": []
+        },
+        {
+          "seq": 7,
+          "text": "line fork 98,40 110,62 thick=2",
+          "ms": 3111,
+          "issues": []
+        },
+        {
+          "seq": 8,
+          "text": "line bars 94,34 102,34 thick=2",
+          "ms": 3131,
+          "issues": []
+        },
+        {
+          "seq": 9,
+          "text": "path lean stroke=accent thick=1.5 | M80 22 q10 -8 22 0 m-5 -4 l5 4 l-6 3",
+          "ms": 3907,
+          "issues": []
+        },
+        {
+          "seq": 10,
+          "text": "path steer stroke=accent thick=1.5 | M120 40 q10 4 14 14 m-1 -6 l1 6 l-6 -1",
+          "ms": 4256,
+          "issues": []
+        },
+        {
+          "seq": 11,
+          "text": "say t1x1 label near=front:below | front wheel steers under the fall",
+          "ms": 4329,
+          "issues": []
+        },
+        {
+          "seq": 12,
+          "text": "say t1x2 label near=rear:below | speed",
+          "ms": 4659,
+          "issues": []
+        },
+        {
+          "seq": 13,
+          "text": "say t1x3 strong | A moving bike steers itself upright.",
+          "ms": 4659,
+          "issues": []
+        },
+        {
+          "seq": 14,
+          "text": "say t1x4 | When it leans left, you steer left, so the wheels swing back under the body. Small corrections, constantly, mostly unnoticed.",
+          "ms": 5127,
+          "issues": []
+        },
+        {
+          "seq": 15,
+          "text": "say t1x5 | Speed helps: the faster the wheels turn, the more gentle the corrections needed. Spinning wheels add some gyroscopic stability.",
+          "ms": 5528,
+          "issues": []
+        },
+        {
+          "seq": 16,
+          "text": "say t1x6 | The fork's geometry (trail) makes the front wheel trail behind its steering axis, so it tends to turn into a lean on its own.",
+          "ms": 5996,
+          "issues": []
+        },
+        {
+          "seq": 17,
+          "text": "say t1x7 aside | Standing still, none of this works. That is why it falls.",
+          "ms": 6443,
+          "issues": []
+        }
+      ],
+      "rejects": [],
+      "end": "done",
+      "message": null,
+      "firstVisibleMs": 2453,
+      "totalMs": 6443,
+      "usage": {
+        "outputTokens": 441,
+        "thinkingTokens": 0,
+        "cacheReadTokens": 7496,
+        "cacheWriteTokens": 648,
+        "inputTokens": 2,
+        "costUsd": 0.0077556
+      },
+      "checks": {
+        "lines": 17,
+        "rejects": 0,
+        "warnings": 0,
+        "kinds": {
+          "shape": 8,
+          "text": 7
+        },
+        "words": 87,
+        "scenes": 1,
+        "cameraMoves": 0,
+        "depthLayers": 0,
+        "handLevel": 0,
+        "aboutTheMedium": [],
+        "playSeconds": 32.378055029078524,
+        "meetsExpectation": true,
+        "opening": "scene",
+        "shapes": 8,
+        "labels": 2,
+        "inFlowMedian": 5,
+        "spriteFrames": 0
+      },
+      "baseline": null,
+      "firstTextMs": 2016,
+      "viewerWaitMs": 34831,
+      "turn": {
+        "case": "look-change",
+        "index": 1,
+        "kind": "prompt",
+        "said": "Tell me how a bicycle stays upright.",
+        "form": "full",
+        "cacheReadShare": 0.9202062361895409,
+        "withSnapshot": false,
+        "interruptedAtMs": null,
+        "changed": null,
+        "problem": null
+      },
+      "judge": {
+        "model": "sonnet",
+        "asked": true,
+        "textProblem": null,
+        "wrongLabel": "The \"SPEED\" label sits beside the rear wheel with no arrow or value, so it points at nothing meaningful; the caption \"FRONT WHEEL STEERS UNDER THE FALL\" is placed under the ground line, not near the front wheel.",
+        "correct": false,
+        "mistake": "The bicycle drawing is malformed: the frame is disconnected and the fork/head tube slopes the wrong way, the saddle floats, there are no handlebars, and the red arrows are ambiguous and do not clearly show a lean or steering motion.",
+        "coherence": 3,
+        "why": "The text column is clean and readable, but the bicycle sketch is crude and incorrect, and its labels and arrows are loosely placed, so the diagram does not clearly support the explanation.",
+        "costUsd": 0.0082033,
+        "ms": 6647,
+        "stills": [
+          "data:image/jpeg;base64,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"
+        ],
+        "failure": null
+      },
+      "verdicts": [
+        {
+          "label": "four in-flow lines or fewer",
+          "ok": false,
+          "detail": "median 5 in a scene"
+        },
+        {
+          "label": "judge: labels point right",
+          "ok": false,
+          "detail": "The \"SPEED\" label sits beside the rear wheel with no arrow or value, so it points at nothing meaningful; the caption \"FRONT WHEEL STEERS UNDER THE FALL\" is placed under the ground line, not near the front wheel."
+        },
+        {
+          "label": "judge: drawing correct",
+          "ok": false,
+          "detail": "The bicycle drawing is malformed: the frame is disconnected and the fork/head tube slopes the wrong way, the saddle floats, there are no handlebars, and the red arrows are ambiguous and do not clearly show a lean or steering motion."
+        },
+        {
+          "label": "judge: coherence 4 or more",
+          "ok": false,
+          "detail": "3 of 5: The text column is clean and readable, but the bicycle sketch is crude and incorrect, and its labels and arrows are loosely placed, so the diagram does not clearly support the explanation."
+        },
+        {
+          "label": "meets expectation",
+          "ok": true,
+          "detail": "the prompt expects: any"
+        },
+        {
+          "label": "finished",
+          "ok": true,
+          "detail": "done"
+        },
+        {
+          "label": "no rejected line",
+          "ok": true,
+          "detail": "0 rejected, 0 warnings"
+        },
+        {
+          "label": "silent about the medium",
+          "ok": true,
+          "detail": "nothing"
+        },
+        {
+          "label": "few exact times",
+          "ok": true,
+          "detail": "0% of lines"
+        },
+        {
+          "label": "starts with look or scene",
+          "ok": true,
+          "detail": "starts with scene"
+        },
+        {
+          "label": "first line within 4 s",
+          "ok": true,
+          "detail": "2.5 s"
+        },
+        {
+          "label": "under 1500 tokens",
+          "ok": true,
+          "detail": "441 output tokens"
+        },
+        {
+          "label": "judge: shows what was asked",
+          "ok": true,
+          "detail": "The text column is clean and readable, but the bicycle sketch is crude and incorrect, and its labels and arrows are loosely placed, so the diagram does not clearly support the explanation."
+        },
+        {
+          "label": "judge: text readable",
+          "ok": true,
+          "detail": "nothing wrong"
+        }
+      ]
+    },
+    {
+      "prompt": {
+        "id": "look-change-t2",
+        "useCase": "a conversation across a look and a window change",
+        "prompt": "Now show me how it steers.",
+        "expects": "any",
+        "baseline": false
+      },
+      "lines": [
+        {
+          "seq": 1,
+          "text": "look chalk",
+          "ms": 2337,
+          "issues": []
+        },
+        {
+          "seq": 2,
+          "text": "color lean=#ffd866",
+          "ms": 2338,
+          "issues": []
+        },
+        {
+          "seq": 3,
+          "text": "scene layout=figure lines=4 mood=calm",
+          "ms": 2338,
+          "issues": []
+        },
+        {
+          "seq": 4,
+          "text": "line road 10,78 150,78 thick=1.5",
+          "ms": 2363,
+          "issues": []
+        },
+        {
+          "seq": 5,
+          "text": "group bike at=80,0",
+          "ms": 2681,
+          "issues": []
+        },
+        {
+          "seq": 6,
+          "text": "circle t2x1 -28,64 12 in=bike stroke=ink thick=2",
+          "ms": 2729,
+          "issues": []
+        },
+        {
+          "seq": 7,
+          "text": "circle t2x2 28,64 12 in=bike stroke=ink thick=2",
+          "ms": 2834,
+          "issues": []
+        },
+        {
+          "seq": 8,
+          "text": "line t2x3 -28,64 -10,44 18,44 in=bike thick=2",
+          "ms": 3018,
+          "issues": []
+        },
+        {
+          "seq": 9,
+          "text": "line t2x4 18,44 28,64 in=bike thick=2",
+          "ms": 3064,
+          "issues": []
+        },
+        {
+          "seq": 10,
+          "text": "line t2x5 14,36 22,36 in=bike thick=2",
+          "ms": 3162,
+          "issues": []
+        },
+        {
+          "seq": 11,
+          "text": "say t2x6 label near=bike:above | bike leans left",
+          "ms": 3358,
+          "issues": []
+        },
+        {
+          "seq": 12,
+          "text": "set bike rot=-8 over=1s",
+          "ms": 3399,
+          "issues": []
+        },
+        {
+          "seq": 13,
+          "text": "wait 1",
+          "ms": 3400,
+          "issues": []
+        },
+        {
+          "seq": 14,
+          "text": "path fall stroke=lean thick=1.5 | M62 30 q-10 6 -12 18 m-1 -6 l1 6 l6 -2",
+          "ms": 3829,
+          "issues": []
+        },
+        {
+          "seq": 15,
+          "text": "say t2x7 | The bike leans, and starts to fall left.",
+          "ms": 4028,
+          "issues": []
+        },
+        {
+          "seq": 16,
+          "text": "wait 1",
+          "ms": 4062,
+          "issues": []
+        },
+        {
+          "seq": 17,
+          "text": "set bike rot=0 over=1s",
+          "ms": 4167,
+          "issues": []
+        },
+        {
+          "seq": 18,
+          "text": "path steer stroke=accent thick=1.5 | M104 30 q-8 4 -12 12 m0 -6 l0 6 l6 0",
+          "ms": 4562,
+          "issues": []
+        },
+        {
+          "seq": 19,
+          "text": "say t2x8 strong | Steer into the lean.",
+          "ms": 4662,
+          "issues": []
+        },
+        {
+          "seq": 20,
+          "text": "say t2x9 | The front wheel turns left, under the fall, and the wheels get back beneath the body.",
+          "ms": 4862,
+          "issues": []
+        },
+        {
+          "seq": 21,
+          "text": "say t2x10 | Too far and it flops the other way. So you steer back and forth, in small unnoticed wiggles.",
+          "ms": 5261,
+          "issues": []
+        },
+        {
+          "seq": 22,
+          "text": "say t2x11 aside | Faster means slower, gentler corrections.",
+          "ms": 5428,
+          "issues": []
+        },
+        {
+          "seq": 23,
+          "text": "say t2x12 choice | why does it self-correct",
+          "ms": 5561,
+          "issues": []
+        },
+        {
+          "seq": 24,
+          "text": "say t2x13 choice | how do you turn a corner",
+          "ms": 5946,
+          "issues": []
+        }
+      ],
+      "rejects": [],
+      "end": "done",
+      "message": null,
+      "firstVisibleMs": 2363,
+      "totalMs": 5947,
+      "usage": {
+        "outputTokens": 454,
+        "thinkingTokens": 0,
+        "cacheReadTokens": 7814,
+        "cacheWriteTokens": 1872,
+        "inputTokens": 4,
+        "costUsd": 0.012817400000000001
+      },
+      "checks": {
+        "lines": 24,
+        "rejects": 0,
+        "warnings": 0,
+        "kinds": {
+          "shape": 8,
+          "group": 1,
+          "text": 8
+        },
+        "words": 64,
+        "scenes": 1,
+        "cameraMoves": 0,
+        "depthLayers": 0,
+        "handLevel": 0.083,
+        "aboutTheMedium": [],
+        "playSeconds": 25.14352796363958,
+        "meetsExpectation": true,
+        "opening": "look",
+        "shapes": 8,
+        "labels": 1,
+        "inFlowMedian": 7,
+        "spriteFrames": 0
+      },
+      "baseline": null,
+      "firstTextMs": 2006,
+      "viewerWaitMs": 27481,
+      "base": {
+        "look": "chalk",
+        "lookName": "chalk",
+        "scene": {
+          "id": "s1",
+          "index": 1,
+          "layout": "figure",
+          "canvas": "wide",
+          "align": "auto",
+          "mood": "neutral",
+          "pace": "steady",
+          "expected": 4
+        },
+        "styles": {},
+        "colors": {
+          "ground2": "#8a7a5a"
+        },
+        "looks": {},
+        "elements": [
+          {
+            "key": "road@3",
+            "id": "road",
+            "kind": "shape",
+            "order": 0,
+            "scene": "s1",
+            "text": "",
+            "emphasis": [],
+            "style": {
+              "size": "m",
+              "ink": "ink",
+              "weight": "normal",
+              "face": null,
+              "enter": "draw",
+              "by": "all",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": null,
+              "near": null,
+              "group": null,
+              "fill": "none",
+              "stroke": "ink",
+              "bleed": "auto",
+              "thick": 1.5,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": {
+              "kind": "shape",
+              "geometry": {
+                "shape": "line",
+                "points": [
+                  {
+                    "x": 10,
+                    "y": 76
+                  },
+                  {
+                    "x": 150,
+                    "y": 76
+                  }
+                ]
+              }
+            },
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "rear@4",
+            "id": "rear",
+            "kind": "shape",
+            "order": 1,
+            "scene": "s1",
+            "text": "",
+            "emphasis": [],
+            "style": {
+              "size": "m",
+              "ink": "ink",
+              "weight": "normal",
+              "face": null,
+              "enter": "draw",
+              "by": "all",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": null,
+              "near": null,
+              "group": null,
+              "fill": "none",
+              "stroke": "ink",
+              "bleed": "auto",
+              "thick": 2,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": {
+              "kind": "shape",
+              "geometry": {
+                "shape": "circle",
+                "cx": 50,
+                "cy": 62,
+                "r": 13
+              }
+            },
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "front@5",
+            "id": "front",
+            "kind": "shape",
+            "order": 2,
+            "scene": "s1",
+            "text": "",
+            "emphasis": [],
+            "style": {
+              "size": "m",
+              "ink": "ink",
+              "weight": "normal",
+              "face": null,
+              "enter": "draw",
+              "by": "all",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": null,
+              "near": null,
+              "group": null,
+              "fill": "none",
+              "stroke": "ink",
+              "bleed": "auto",
+              "thick": 2,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": {
+              "kind": "shape",
+              "geometry": {
+                "shape": "circle",
+                "cx": 110,
+                "cy": 62,
+                "r": 13
+              }
+            },
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "frame@6",
+            "id": "frame",
+            "kind": "shape",
+            "order": 3,
+            "scene": "s1",
+            "text": "",
+            "emphasis": [],
+            "style": {
+              "size": "m",
+              "ink": "ink",
+              "weight": "normal",
+              "face": null,
+              "enter": "draw",
+              "by": "all",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": null,
+              "near": null,
+              "group": null,
+              "fill": "none",
+              "stroke": "ink",
+              "bleed": "auto",
+              "thick": 2,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": {
+              "kind": "shape",
+              "geometry": {
+                "shape": "line",
+                "points": [
+                  {
+                    "x": 50,
+                    "y": 62
+                  },
+                  {
+                    "x": 70,
+                    "y": 40
+                  },
+                  {
+                    "x": 98,
+                    "y": 40
+                  },
+                  {
+                    "x": 110,
+                    "y": 62
+                  }
+                ]
+              }
+            },
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "fork@7",
+            "id": "fork",
+            "kind": "shape",
+            "order": 4,
+            "scene": "s1",
+            "text": "",
+            "emphasis": [],
+            "style": {
+              "size": "m",
+              "ink": "ink",
+              "weight": "normal",
+              "face": null,
+              "enter": "draw",
+              "by": "all",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": null,
+              "near": null,
+              "group": null,
+              "fill": "none",
+              "stroke": "ink",
+              "bleed": "auto",
+              "thick": 2,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": {
+              "kind": "shape",
+              "geometry": {
+                "shape": "line",
+                "points": [
+                  {
+                    "x": 98,
+                    "y": 40
+                  },
+                  {
+                    "x": 110,
+                    "y": 62
+                  }
+                ]
+              }
+            },
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "bars@8",
+            "id": "bars",
+            "kind": "shape",
+            "order": 5,
+            "scene": "s1",
+            "text": "",
+            "emphasis": [],
+            "style": {
+              "size": "m",
+              "ink": "ink",
+              "weight": "normal",
+              "face": null,
+              "enter": "draw",
+              "by": "all",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": null,
+              "near": null,
+              "group": null,
+              "fill": "none",
+              "stroke": "ink",
+              "bleed": "auto",
+              "thick": 2,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": {
+              "kind": "shape",
+              "geometry": {
+                "shape": "line",
+                "points": [
+                  {
+                    "x": 94,
+                    "y": 34
+                  },
+                  {
+                    "x": 102,
+                    "y": 34
+                  }
+                ]
+              }
+            },
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "lean@9",
+            "id": "lean",
+            "kind": "shape",
+            "order": 6,
+            "scene": "s1",
+            "text": "",
+            "emphasis": [],
+            "style": {
+              "size": "m",
+              "ink": "ink",
+              "weight": "normal",
+              "face": null,
+              "enter": "draw",
+              "by": "all",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": null,
+              "near": null,
+              "group": null,
+              "fill": "none",
+              "stroke": "accent",
+              "bleed": "auto",
+              "thick": 1.5,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": {
+              "kind": "shape",
+              "geometry": {
+                "shape": "path",
+                "d": "M80 22 q10 -8 22 0 m-5 -4 l5 4 l-6 3",
+                "commands": [
+                  {
+                    "op": "M",
+                    "x": 80,
+                    "y": 22
+                  },
+                  {
+                    "op": "C",
+                    "x1": 86.66666666666667,
+                    "y1": 16.666666666666668,
+                    "x2": 94,
+                    "y2": 16.666666666666668,
+                    "x": 102,
+                    "y": 22
+                  },
+                  {
+                    "op": "M",
+                    "x": 97,
+                    "y": 18
+                  },
+                  {
+                    "op": "L",
+                    "x": 102,
+                    "y": 22
+                  },
+                  {
+                    "op": "L",
+                    "x": 96,
+                    "y": 25
+                  }
+                ]
+              }
+            },
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "steer@10",
+            "id": "steer",
+            "kind": "shape",
+            "order": 7,
+            "scene": "s1",
+            "text": "",
+            "emphasis": [],
+            "style": {
+              "size": "m",
+              "ink": "ink",
+              "weight": "normal",
+              "face": null,
+              "enter": "draw",
+              "by": "all",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": null,
+              "near": null,
+              "group": null,
+              "fill": "none",
+              "stroke": "accent",
+              "bleed": "auto",
+              "thick": 1.5,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": {
+              "kind": "shape",
+              "geometry": {
+                "shape": "path",
+                "d": "M120 40 q10 4 14 14 m-1 -6 l1 6 l-6 -1",
+                "commands": [
+                  {
+                    "op": "M",
+                    "x": 120,
+                    "y": 40
+                  },
+                  {
+                    "op": "C",
+                    "x1": 126.66666666666667,
+                    "y1": 42.666666666666664,
+                    "x2": 131.33333333333334,
+                    "y2": 47.333333333333336,
+                    "x": 134,
+                    "y": 54
+                  },
+                  {
+                    "op": "M",
+                    "x": 133,
+                    "y": 48
+                  },
+                  {
+                    "op": "L",
+                    "x": 134,
+                    "y": 54
+                  },
+                  {
+                    "op": "L",
+                    "x": 128,
+                    "y": 53
+                  }
+                ]
+              }
+            },
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "t1x1@11",
+            "id": "t1x1",
+            "kind": "text",
+            "order": 8,
+            "scene": "s1",
+            "text": "front wheel steers under the fall",
+            "emphasis": [],
+            "style": {
+              "size": "xs",
+              "ink": "dim",
+              "weight": "normal",
+              "face": null,
+              "enter": "fade",
+              "by": "all",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "upper",
+              "stay": "scene",
+              "layer": "mid",
+              "at": null,
+              "near": {
+                "id": "front",
+                "side": "below"
+              },
+              "group": null,
+              "fill": "none",
+              "stroke": "ink",
+              "bleed": "auto",
+              "thick": null,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": null,
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "t1x2@12",
+            "id": "t1x2",
+            "kind": "text",
+            "order": 9,
+            "scene": "s1",
+            "text": "speed",
+            "emphasis": [],
+            "style": {
+              "size": "xs",
+              "ink": "dim",
+              "weight": "normal",
+              "face": null,
+              "enter": "fade",
+              "by": "all",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "upper",
+              "stay": "scene",
+              "layer": "mid",
+              "at": null,
+              "near": {
+                "id": "rear",
+                "side": "below"
+              },
+              "group": null,
+              "fill": "none",
+              "stroke": "ink",
+              "bleed": "auto",
+              "thick": null,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": null,
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "t1x3@13",
+            "id": "t1x3",
+            "kind": "text",
+            "order": 10,
+            "scene": "s1",
+            "text": "A moving bike steers itself upright.",
+            "emphasis": [],
+            "style": {
+              "size": "l",
+              "ink": "ink",
+              "weight": "bold",
+              "face": null,
+              "enter": "fade",
+              "by": "word",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": null,
+              "near": null,
+              "group": null,
+              "fill": "none",
+              "stroke": "ink",
+              "bleed": "auto",
+              "thick": null,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": null,
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "t1x4@14",
+            "id": "t1x4",
+            "kind": "text",
+            "order": 11,
+            "scene": "s1",
+            "text": "When it leans left, you steer left, so the wheels swing back under the body. Small corrections, constantly, mostly unnoticed.",
+            "emphasis": [],
+            "style": {
+              "size": "m",
+              "ink": "ink",
+              "weight": "normal",
+              "face": null,
+              "enter": "fade",
+              "by": "word",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": null,
+              "near": null,
+              "group": null,
+              "fill": "none",
+              "stroke": "ink",
+              "bleed": "auto",
+              "thick": null,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": null,
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "t1x5@15",
+            "id": "t1x5",
+            "kind": "text",
+            "order": 12,
+            "scene": "s1",
+            "text": "Speed helps: the faster the wheels turn, the more gentle the corrections needed. Spinning wheels add some gyroscopic stability.",
+            "emphasis": [],
+            "style": {
+              "size": "m",
+              "ink": "ink",
+              "weight": "normal",
+              "face": null,
+              "enter": "fade",
+              "by": "word",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": null,
+              "near": null,
+              "group": null,
+              "fill": "none",
+              "stroke": "ink",
+              "bleed": "auto",
+              "thick": null,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": null,
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "t1x6@16",
+            "id": "t1x6",
+            "kind": "text",
+            "order": 13,
+            "scene": "s1",
+            "text": "The fork's geometry (trail) makes the front wheel trail behind its steering axis, so it tends to turn into a lean on its own.",
+            "emphasis": [],
+            "style": {
+              "size": "m",
+              "ink": "ink",
+              "weight": "normal",
+              "face": null,
+              "enter": "fade",
+              "by": "word",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": null,
+              "near": null,
+              "group": null,
+              "fill": "none",
+              "stroke": "ink",
+              "bleed": "auto",
+              "thick": null,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": null,
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "t1x7@17",
+            "id": "t1x7",
+            "kind": "text",
+            "order": 14,
+            "scene": "s1",
+            "text": "Standing still, none of this works. That is why it falls.",
+            "emphasis": [],
+            "style": {
+              "size": "s",
+              "ink": "dim",
+              "weight": "normal",
+              "face": null,
+              "enter": "fade",
+              "by": "word",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": null,
+              "near": null,
+              "group": null,
+              "fill": "none",
+              "stroke": "ink",
+              "bleed": "auto",
+              "thick": null,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": null,
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          }
+        ]
+      },
+      "turn": {
+        "case": "look-change",
+        "index": 2,
+        "kind": "prompt",
+        "said": "Now show me how it steers.",
+        "form": "since",
+        "cacheReadShare": 0.8063983488132095,
+        "withSnapshot": true,
+        "interruptedAtMs": null,
+        "changed": "look changed to chalk",
+        "problem": null
+      },
+      "judge": {
+        "model": "sonnet",
+        "asked": false,
+        "textProblem": "The grey 'BIKE LEANS LEFT' label is small and faint against the dark board, and the small 'Faster means slower, gentler corrections.' line is also dim.",
+        "wrongLabel": "The yellow arrows point at empty space above the bike and the frame rather than at the front wheel turning or the lean, so 'BIKE LEANS LEFT' is not tied to anything drawn.",
+        "correct": false,
+        "mistake": "The bicycle is drawn upright and broken, with a disconnected frame, no handlebar or visible turned front wheel, and no lean, so it does not show steering or the claimed left lean.",
+        "coherence": 2,
+        "why": "The text column is clear, but the bike drawing is fragmentary and the arrows and label float without connecting to it, so the visual does not show steering.",
+        "costUsd": 0.0083613,
+        "ms": 7392,
+        "stills": [
+          "data:image/jpeg;base64,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"
+        ],
+        "failure": null
+      },
+      "verdicts": [
+        {
+          "label": "four in-flow lines or fewer",
+          "ok": false,
+          "detail": "median 7 in a scene"
+        },
+        {
+          "label": "judge: shows what was asked",
+          "ok": false,
+          "detail": "The text column is clear, but the bike drawing is fragmentary and the arrows and label float without connecting to it, so the visual does not show steering."
+        },
+        {
+          "label": "judge: text readable",
+          "ok": false,
+          "detail": "The grey 'BIKE LEANS LEFT' label is small and faint against the dark board, and the small 'Faster means slower, gentler corrections.' line is also dim."
+        },
+        {
+          "label": "judge: labels point right",
+          "ok": false,
+          "detail": "The yellow arrows point at empty space above the bike and the frame rather than at the front wheel turning or the lean, so 'BIKE LEANS LEFT' is not tied to anything drawn."
+        },
+        {
+          "label": "judge: drawing correct",
+          "ok": false,
+          "detail": "The bicycle is drawn upright and broken, with a disconnected frame, no handlebar or visible turned front wheel, and no lean, so it does not show steering or the claimed left lean."
+        },
+        {
+          "label": "judge: coherence 4 or more",
+          "ok": false,
+          "detail": "2 of 5: The text column is clear, but the bike drawing is fragmentary and the arrows and label float without connecting to it, so the visual does not show steering."
+        },
+        {
+          "label": "meets expectation",
+          "ok": true,
+          "detail": "the prompt expects: any"
+        },
+        {
+          "label": "finished",
+          "ok": true,
+          "detail": "done"
+        },
+        {
+          "label": "no rejected line",
+          "ok": true,
+          "detail": "0 rejected, 0 warnings"
+        },
+        {
+          "label": "silent about the medium",
+          "ok": true,
+          "detail": "nothing"
+        },
+        {
+          "label": "few exact times",
+          "ok": true,
+          "detail": "8% of lines"
+        },
+        {
+          "label": "first line within 4 s",
+          "ok": true,
+          "detail": "2.4 s"
+        },
+        {
+          "label": "under 1500 tokens",
+          "ok": true,
+          "detail": "454 output tokens"
+        },
+        {
+          "label": "warm (brief was since)",
+          "ok": true,
+          "detail": "form since"
+        },
+        {
+          "label": "cache reads over 80%",
+          "ok": true,
+          "detail": "81%"
+        }
+      ]
+    },
+    {
+      "prompt": {
+        "id": "look-change-t3",
+        "useCase": "a conversation across a look and a window change",
+        "prompt": "Sum it all up in one picture.",
+        "expects": "any",
+        "baseline": false
+      },
+      "lines": [
+        {
+          "seq": 1,
+          "text": "scene layout=figure canvas=tall lines=4 mood=calm",
+          "ms": 2153,
+          "issues": []
+        },
+        {
+          "seq": 2,
+          "text": "color lean=#ffd866",
+          "ms": 2153,
+          "issues": []
+        },
+        {
+          "seq": 3,
+          "text": "line road 8,92 82,92 thick=1.5",
+          "ms": 2173,
+          "issues": []
+        },
+        {
+          "seq": 4,
+          "text": "group bike at=45,70",
+          "ms": 2243,
+          "issues": []
+        },
+        {
+          "seq": 5,
+          "text": "circle t3x1 -20,14 10 in=bike thick=2",
+          "ms": 2496,
+          "issues": []
+        },
+        {
+          "seq": 6,
+          "text": "circle t3x2 20,14 10 in=bike thick=2",
+          "ms": 2497,
+          "issues": []
+        },
+        {
+          "seq": 7,
+          "text": "line t3x3 -20,14 -8,-6 12,-6 in=bike thick=2",
+          "ms": 2645,
+          "issues": []
+        },
+        {
+          "seq": 8,
+          "text": "line t3x4 12,-6 20,14 in=bike thick=2",
+          "ms": 2838,
+          "issues": []
+        },
+        {
+          "seq": 9,
+          "text": "line t3x5 8,-12 16,-12 in=bike thick=2",
+          "ms": 2846,
+          "issues": []
+        },
+        {
+          "seq": 10,
+          "text": "path fall stroke=lean thick=1.5 | M24 52 q-8 4 -10 14 m-1 -6 l1 6 l6 -2",
+          "ms": 3183,
+          "issues": []
+        },
+        {
+          "seq": 11,
+          "text": "path steer stroke=accent thick=1.5 | M64 52 q-8 4 -10 12 m0 -6 l0 6 l6 0",
+          "ms": 3447,
+          "issues": []
+        },
+        {
+          "seq": 12,
+          "text": "say t3x6 label near=fall:above | lean",
+          "ms": 3519,
+          "issues": []
+        },
+        {
+          "seq": 13,
+          "text": "say t3x7 label near=steer:above | steer under",
+          "ms": 3581,
+          "issues": []
+        },
+        {
+          "seq": 14,
+          "text": "say t3x8 label near=road:below | speed",
+          "ms": 3614,
+          "issues": []
+        },
+        {
+          "seq": 15,
+          "text": "say t3x9 strong | Lean, steer under, recover.",
+          "ms": 3747,
+          "issues": []
+        },
+        {
+          "seq": 16,
+          "text": "say t3x10 | Speed makes the corrections gentle. Fork trail helps the front wheel turn into the lean on its own.",
+          "ms": 4078,
+          "issues": []
+        },
+        {
+          "seq": 17,
+          "text": "say t3x11 aside | Stand still and it all stops working.",
+          "ms": 4602,
+          "issues": []
+        }
+      ],
+      "rejects": [],
+      "end": "done",
+      "message": null,
+      "firstVisibleMs": 2173,
+      "totalMs": 4602,
+      "usage": {
+        "outputTokens": 365,
+        "thinkingTokens": 0,
+        "cacheReadTokens": 9686,
+        "cacheWriteTokens": 1381,
+        "inputTokens": 4,
+        "costUsd": 0.0101506
+      },
+      "checks": {
+        "lines": 17,
+        "rejects": 0,
+        "warnings": 0,
+        "kinds": {
+          "shape": 8,
+          "group": 1,
+          "text": 6
+        },
+        "words": 33,
+        "scenes": 1,
+        "cameraMoves": 0,
+        "depthLayers": 0,
+        "handLevel": 0,
+        "aboutTheMedium": [],
+        "playSeconds": 14.203775438065783,
+        "meetsExpectation": true,
+        "opening": "scene",
+        "shapes": 8,
+        "labels": 3,
+        "inFlowMedian": 3,
+        "spriteFrames": 0
+      },
+      "baseline": null,
+      "firstTextMs": 1864,
+      "viewerWaitMs": 16357,
+      "base": {
+        "look": "chalk",
+        "lookName": "chalk",
+        "scene": {
+          "id": "s2",
+          "index": 2,
+          "layout": "figure",
+          "canvas": "wide",
+          "align": "auto",
+          "mood": "calm",
+          "pace": "steady",
+          "expected": 4
+        },
+        "styles": {},
+        "colors": {
+          "ground2": "#8a7a5a",
+          "lean": "#ffd866"
+        },
+        "looks": {},
+        "elements": [
+          {
+            "key": "road@4",
+            "id": "road",
+            "kind": "shape",
+            "order": 15,
+            "scene": "s2",
+            "text": "",
+            "emphasis": [],
+            "style": {
+              "size": "m",
+              "ink": "ink",
+              "weight": "normal",
+              "face": null,
+              "enter": "draw",
+              "by": "all",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": null,
+              "near": null,
+              "group": null,
+              "fill": "none",
+              "stroke": "ink",
+              "bleed": "auto",
+              "thick": 1.5,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": {
+              "kind": "shape",
+              "geometry": {
+                "shape": "line",
+                "points": [
+                  {
+                    "x": 10,
+                    "y": 78
+                  },
+                  {
+                    "x": 150,
+                    "y": 78
+                  }
+                ]
+              }
+            },
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "bike@5",
+            "id": "bike",
+            "kind": "group",
+            "order": 16,
+            "scene": "s2",
+            "text": "",
+            "emphasis": [],
+            "style": {
+              "size": "m",
+              "ink": "ink",
+              "weight": "normal",
+              "face": null,
+              "enter": "cut",
+              "by": "all",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": {
+                "x": 80,
+                "y": 0
+              },
+              "near": null,
+              "group": null,
+              "fill": "none",
+              "stroke": "ink",
+              "bleed": "auto",
+              "thick": null,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": {
+              "kind": "group"
+            },
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "t2x1@6",
+            "id": "t2x1",
+            "kind": "shape",
+            "order": 17,
+            "scene": "s2",
+            "text": "",
+            "emphasis": [],
+            "style": {
+              "size": "m",
+              "ink": "ink",
+              "weight": "normal",
+              "face": null,
+              "enter": "draw",
+              "by": "all",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": null,
+              "near": null,
+              "group": "bike",
+              "fill": "none",
+              "stroke": "ink",
+              "bleed": "auto",
+              "thick": 2,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": {
+              "kind": "shape",
+              "geometry": {
+                "shape": "circle",
+                "cx": -28,
+                "cy": 64,
+                "r": 12
+              }
+            },
+            "parent": "bike@5",
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "t2x2@7",
+            "id": "t2x2",
+            "kind": "shape",
+            "order": 18,
+            "scene": "s2",
+            "text": "",
+            "emphasis": [],
+            "style": {
+              "size": "m",
+              "ink": "ink",
+              "weight": "normal",
+              "face": null,
+              "enter": "draw",
+              "by": "all",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": null,
+              "near": null,
+              "group": "bike",
+              "fill": "none",
+              "stroke": "ink",
+              "bleed": "auto",
+              "thick": 2,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": {
+              "kind": "shape",
+              "geometry": {
+                "shape": "circle",
+                "cx": 28,
+                "cy": 64,
+                "r": 12
+              }
+            },
+            "parent": "bike@5",
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "t2x3@8",
+            "id": "t2x3",
+            "kind": "shape",
+            "order": 19,
+            "scene": "s2",
+            "text": "",
+            "emphasis": [],
+            "style": {
+              "size": "m",
+              "ink": "ink",
+              "weight": "normal",
+              "face": null,
+              "enter": "draw",
+              "by": "all",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": null,
+              "near": null,
+              "group": "bike",
+              "fill": "none",
+              "stroke": "ink",
+              "bleed": "auto",
+              "thick": 2,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": {
+              "kind": "shape",
+              "geometry": {
+                "shape": "line",
+                "points": [
+                  {
+                    "x": -28,
+                    "y": 64
+                  },
+                  {
+                    "x": -10,
+                    "y": 44
+                  },
+                  {
+                    "x": 18,
+                    "y": 44
+                  }
+                ]
+              }
+            },
+            "parent": "bike@5",
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "t2x4@9",
+            "id": "t2x4",
+            "kind": "shape",
+            "order": 20,
+            "scene": "s2",
+            "text": "",
+            "emphasis": [],
+            "style": {
+              "size": "m",
+              "ink": "ink",
+              "weight": "normal",
+              "face": null,
+              "enter": "draw",
+              "by": "all",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": null,
+              "near": null,
+              "group": "bike",
+              "fill": "none",
+              "stroke": "ink",
+              "bleed": "auto",
+              "thick": 2,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": {
+              "kind": "shape",
+              "geometry": {
+                "shape": "line",
+                "points": [
+                  {
+                    "x": 18,
+                    "y": 44
+                  },
+                  {
+                    "x": 28,
+                    "y": 64
+                  }
+                ]
+              }
+            },
+            "parent": "bike@5",
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "t2x5@10",
+            "id": "t2x5",
+            "kind": "shape",
+            "order": 21,
+            "scene": "s2",
+            "text": "",
+            "emphasis": [],
+            "style": {
+              "size": "m",
+              "ink": "ink",
+              "weight": "normal",
+              "face": null,
+              "enter": "draw",
+              "by": "all",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": null,
+              "near": null,
+              "group": "bike",
+              "fill": "none",
+              "stroke": "ink",
+              "bleed": "auto",
+              "thick": 2,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": {
+              "kind": "shape",
+              "geometry": {
+                "shape": "line",
+                "points": [
+                  {
+                    "x": 14,
+                    "y": 36
+                  },
+                  {
+                    "x": 22,
+                    "y": 36
+                  }
+                ]
+              }
+            },
+            "parent": "bike@5",
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "t2x6@11",
+            "id": "t2x6",
+            "kind": "text",
+            "order": 22,
+            "scene": "s2",
+            "text": "bike leans left",
+            "emphasis": [],
+            "style": {
+              "size": "xs",
+              "ink": "dim",
+              "weight": "normal",
+              "face": null,
+              "enter": "fade",
+              "by": "all",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "upper",
+              "stay": "scene",
+              "layer": "mid",
+              "at": null,
+              "near": {
+                "id": "bike",
+                "side": "above"
+              },
+              "group": null,
+              "fill": "none",
+              "stroke": "ink",
+              "bleed": "auto",
+              "thick": null,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": null,
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "fall@14",
+            "id": "fall",
+            "kind": "shape",
+            "order": 23,
+            "scene": "s2",
+            "text": "",
+            "emphasis": [],
+            "style": {
+              "size": "m",
+              "ink": "ink",
+              "weight": "normal",
+              "face": null,
+              "enter": "draw",
+              "by": "all",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": null,
+              "near": null,
+              "group": null,
+              "fill": "none",
+              "stroke": "#ffd866",
+              "bleed": "auto",
+              "thick": 1.5,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": {
+              "kind": "shape",
+              "geometry": {
+                "shape": "path",
+                "d": "M62 30 q-10 6 -12 18 m-1 -6 l1 6 l6 -2",
+                "commands": [
+                  {
+                    "op": "M",
+                    "x": 62,
+                    "y": 30
+                  },
+                  {
+                    "op": "C",
+                    "x1": 55.333333333333336,
+                    "y1": 34,
+                    "x2": 51.333333333333336,
+                    "y2": 40,
+                    "x": 50,
+                    "y": 48
+                  },
+                  {
+                    "op": "M",
+                    "x": 49,
+                    "y": 42
+                  },
+                  {
+                    "op": "L",
+                    "x": 50,
+                    "y": 48
+                  },
+                  {
+                    "op": "L",
+                    "x": 56,
+                    "y": 46
+                  }
+                ]
+              }
+            },
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "t2x7@15",
+            "id": "t2x7",
+            "kind": "text",
+            "order": 24,
+            "scene": "s2",
+            "text": "The bike leans, and starts to fall left.",
+            "emphasis": [],
+            "style": {
+              "size": "m",
+              "ink": "ink",
+              "weight": "normal",
+              "face": null,
+              "enter": "wipe",
+              "by": "all",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": null,
+              "near": null,
+              "group": null,
+              "fill": "none",
+              "stroke": "ink",
+              "bleed": "auto",
+              "thick": null,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": null,
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "steer@18",
+            "id": "steer",
+            "kind": "shape",
+            "order": 25,
+            "scene": "s2",
+            "text": "",
+            "emphasis": [],
+            "style": {
+              "size": "m",
+              "ink": "ink",
+              "weight": "normal",
+              "face": null,
+              "enter": "draw",
+              "by": "all",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": null,
+              "near": null,
+              "group": null,
+              "fill": "none",
+              "stroke": "accent",
+              "bleed": "auto",
+              "thick": 1.5,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": {
+              "kind": "shape",
+              "geometry": {
+                "shape": "path",
+                "d": "M104 30 q-8 4 -12 12 m0 -6 l0 6 l6 0",
+                "commands": [
+                  {
+                    "op": "M",
+                    "x": 104,
+                    "y": 30
+                  },
+                  {
+                    "op": "C",
+                    "x1": 98.66666666666667,
+                    "y1": 32.666666666666664,
+                    "x2": 94.66666666666667,
+                    "y2": 36.666666666666664,
+                    "x": 92,
+                    "y": 42
+                  },
+                  {
+                    "op": "M",
+                    "x": 92,
+                    "y": 36
+                  },
+                  {
+                    "op": "L",
+                    "x": 92,
+                    "y": 42
+                  },
+                  {
+                    "op": "L",
+                    "x": 98,
+                    "y": 42
+                  }
+                ]
+              }
+            },
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "t2x8@19",
+            "id": "t2x8",
+            "kind": "text",
+            "order": 26,
+            "scene": "s2",
+            "text": "Steer into the lean.",
+            "emphasis": [],
+            "style": {
+              "size": "l",
+              "ink": "ink",
+              "weight": "bold",
+              "face": null,
+              "enter": "wipe",
+              "by": "all",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": null,
+              "near": null,
+              "group": null,
+              "fill": "none",
+              "stroke": "ink",
+              "bleed": "auto",
+              "thick": null,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": null,
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "t2x9@20",
+            "id": "t2x9",
+            "kind": "text",
+            "order": 27,
+            "scene": "s2",
+            "text": "The front wheel turns left, under the fall, and the wheels get back beneath the body.",
+            "emphasis": [],
+            "style": {
+              "size": "m",
+              "ink": "ink",
+              "weight": "normal",
+              "face": null,
+              "enter": "wipe",
+              "by": "all",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": null,
+              "near": null,
+              "group": null,
+              "fill": "none",
+              "stroke": "ink",
+              "bleed": "auto",
+              "thick": null,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": null,
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "t2x10@21",
+            "id": "t2x10",
+            "kind": "text",
+            "order": 28,
+            "scene": "s2",
+            "text": "Too far and it flops the other way. So you steer back and forth, in small unnoticed wiggles.",
+            "emphasis": [],
+            "style": {
+              "size": "m",
+              "ink": "ink",
+              "weight": "normal",
+              "face": null,
+              "enter": "wipe",
+              "by": "all",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": null,
+              "near": null,
+              "group": null,
+              "fill": "none",
+              "stroke": "ink",
+              "bleed": "auto",
+              "thick": null,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": null,
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "t2x11@22",
+            "id": "t2x11",
+            "kind": "text",
+            "order": 29,
+            "scene": "s2",
+            "text": "Faster means slower, gentler corrections.",
+            "emphasis": [],
+            "style": {
+              "size": "s",
+              "ink": "dim",
+              "weight": "normal",
+              "face": null,
+              "enter": "wipe",
+              "by": "all",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": null,
+              "near": null,
+              "group": null,
+              "fill": "none",
+              "stroke": "ink",
+              "bleed": "auto",
+              "thick": null,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": null,
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "t2x12@23",
+            "id": "t2x12",
+            "kind": "text",
+            "order": 30,
+            "scene": "s2",
+            "text": "why does it self-correct",
+            "emphasis": [],
+            "style": {
+              "size": "m",
+              "ink": "alt",
+              "weight": "normal",
+              "face": null,
+              "enter": "wipe",
+              "by": "all",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "box",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": null,
+              "near": null,
+              "group": null,
+              "fill": "none",
+              "stroke": "ink",
+              "bleed": "auto",
+              "thick": null,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": true,
+              "dur": null
+            },
+            "figure": null,
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "t2x13@24",
+            "id": "t2x13",
+            "kind": "text",
+            "order": 31,
+            "scene": "s2",
+            "text": "how do you turn a corner",
+            "emphasis": [],
+            "style": {
+              "size": "m",
+              "ink": "alt",
+              "weight": "normal",
+              "face": null,
+              "enter": "wipe",
+              "by": "all",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "box",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": null,
+              "near": null,
+              "group": null,
+              "fill": "none",
+              "stroke": "ink",
+              "bleed": "auto",
+              "thick": null,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": true,
+              "dur": null
+            },
+            "figure": null,
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          }
+        ]
+      },
+      "turn": {
+        "case": "look-change",
+        "index": 3,
+        "kind": "prompt",
+        "said": "Sum it all up in one picture.",
+        "form": "since",
+        "cacheReadShare": 0.8748983831632192,
+        "withSnapshot": true,
+        "interruptedAtMs": null,
+        "changed": "window became phone (390x844)",
+        "problem": null
+      },
+      "judge": {
+        "model": "sonnet",
+        "asked": true,
+        "textProblem": "The small labels LEAN, STEER UNDER and SPEED are faint grey on dark green and small, so they are hard to read; the 'Stand still and it all stops working' line is also dim.",
+        "wrongLabel": "The SPEED label sits under the ground line with no arrow or marker, so it points at nothing in particular. The LEAN arrow also sits above the rear wheel and does not clearly show a lean direction.",
+        "correct": false,
+        "mistake": "The bicycle is crudely drawn and incomplete (broken frame, no handlebars or seat, gaps in the wheels), and the arrows do not clearly show lean versus steering, so the summary picture does not convincingly depict the mechanism.",
+        "coherence": 2,
+        "why": "The small, sketchy bicycle sits at the top, a large empty gap separates it from the text block at the bottom, and the faint labels barely connect to the drawing, so it does not read as one composed picture.",
+        "costUsd": 0.0083253,
+        "ms": 9789,
+        "stills": [
+          "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/4gHYSUNDX1BST0ZJTEUAAQEAAAHIAAAAAAQwAABtbnRyUkdCIFhZWiAH4AABAAEAAAAAAABhY3NwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAA9tYAAQAAAADTLQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAlkZXNjAAAA8AAAACRyWFlaAAABFAAAABRnWFlaAAABKAAAABRiWFlaAAABPAAAABR3dHB0AAABUAAAABRyVFJDAAABZAAAAChnVFJDAAABZAAAAChiVFJDAAABZAAAAChjcHJ0AAABjAAAADxtbHVjAAAAAAAAAAEAAAAMZW5VUwAAAAgAAAAcAHMAUgBHAEJYWVogAAAAAAAAb6IAADj1AAADkFhZWiAAAAAAAABimQAAt4UAABjaWFlaIAAAAAAAACSgAAAPhAAAts9YWVogAAAAAAAA9tYAAQAAAADTLXBhcmEAAAAAAAQAAAACZmYAAPKnAAANWQAAE9AAAApbAAAAAAAAAABtbHVjAAAAAAAAAAEAAAAMZW5VUwAAACAAAAAcAEcAbwBvAGcAbABlACAASQBuAGMALgAgADIAMAAxADb/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAHgAN4DASIAAhEBAxEB/8QAGwABAQACAwEAAAAAAAAAAAAAAAEEBQIDBgf/xAA6EAABBAIBAwIEBQIGAQMFAAABAAIDBAURIQYSMRNBFCJRYQcVMnGBI0IkM1JikaEWY3KxgpKywfD/xAAXAQEBAQEAAAAAAAAAAAAAAAAAAQID/8QAIREBAAICAwACAwEAAAAAAAAAAAERAiEDEjFBURNxgZH/2gAMAwEAAhEDEQA/APhARFQjgKoiAFURAREQERXSIiukRFEREBERA0oqiCIrpREEREUUVRBFCqiDioVUQFQgVQFQoqgIiICIqiCIiKIiICIiAiIgIiICaREERUqIgiIioUVUQQqLkuKChVEQUIiICIgRFCIiKIiICIiIIiICIiAiIgIiIooVUQRERAUKqIIoVUQECKoCIiAqgRAREQEREQREQEREBERAREQEREBERFCoqogIiIIUVKiAFUCICIgQVERARERBFsDipm/Ed742CDh5PcdO1st4G9jwfYH35C7fyK58vDCSxjyAfBc/sDT/ALtg8fYoNUi5SNDXuaHBwBI2PdRBEV0ucUb5ZWRxNLpHkNa0eST4CDrRbUYeR7QYrNWQkhumPJ+Y703xrfB+3G/HK4zYeWKOWR0sfpxjl3a/l2t9o+Xzy3nx8w55QprEWxtYmava9B8kRIY6QuHcGgN3vyAfI19z4Xe3p+2RG57omNkGwS48acxp3xxovG/2KDToti7FStgknMkfotHyvAcRJwDoaH3A51yQunJUZMfOIpXxvJG9s3ryR7ge4P2QYiIiAhREVEREBRVQoKiIgKhRVAREQFzieYpWSN0S0hw2NjhcERG0ZmHs/RVrACT1AD3uAdxs6LiDvXv/ABpchnrnZGHEPe0EGRxcXO520k78tPIWpWRRri1YbEZooAQSZJTpo4Umoi5WNujSqIqC5wyGKaOQAEscHaJI3r9uVwRBsW5eZlj1Y4oY9uLnNaHAO2zt5534J53vbidrkMxKPT1Xr7jeHs2HEDR3rROjz7kE/daxEGeMpL8XNYdFC+SZgbIHAkOOwe7W/O2jjx7a1wu/8+sljmSsjka7e973ywMPO/fQJ+/K1teCWzPHBWikmmkIayONpc5x+gA8lbDKYO3iqsUuQMcE0ju34VztTNGv1Obrge312OQszljExEzteszFoc3ORFuGDcJBjOj8gB2ABvXH1I391hXbLrll88jWtkfy7t3on3P239uPppdBUWmRERARERQqKqICIiAiIgoREQEREQRF6HoBsEnVuPitQxzRTOdF2yQtlG3NIae1xAOiR5WOTLpjOX0uMdpiHX03h4LsNy/kpjBjqbNvLf1SPP6WN+5P/wDe600haZHGMFrCT2gnZAXr+rhZw+IxnSbmQmxCfi7IiB7/AFZB8sbvqWtI+vngrylurYpWHQXIJYJ267o5Wlrh+4K58Oc53nM++fr7/rpnHXX+ulERd3IRbvFdJ5/L1PisbiblmvsD1I4yQTvXB91gZLGXcZIyPIVZa73juaJG67h9R9UGGvUYPoTO5qpBZp14hXn32PklA3o68efP2Xl19C6AqiTpnK5GsyefK0HarRNL3Ad40NMAIJ3v/j+Vy5uX8WPZvjw7zTeM/DzqXA4MflFKGxkLLT69gvYDCAQWtiLiDyDydex+y+S2JJZrEstl75J3uLpHvcXOc4nkknydra38Vn6rJbt6jkYGPc4STSxPYC7fzAkj6haZThxxq4m5+ZXOZ8qhRVRdmERERBERAUKqFFRERARECCoiICIiILOwd92KzNHIMb3uqzsmDd67u1wOv50sFclJiMoqViam4exz3XtvIX32qFChjZHFx9WGIGZ29/qefJ0db0F5W7bsXrUlm5NJPPIdukkdsldCLnx8OHHFYRTWeeWfsizMPWguZOtBbsNrV3vAkld/a3319/p7b8rDXqsxWwlHorFNgIsZy08zTSNeC2NngNGvB4HB3z3fZdWG06o68tw5L4XpK5aoYmtGyCIMkPe8NDRtx99a0PHA58leOy2WyGXnE2TtzWpRvTpXbI2dnX88rCRFsWXSyd+jFJFSvWq8UhDnshmcwOI8EgHlYiKTETqSJrx7vqardk6DxWZZnslfq2pXR2YLExIil5J+XuPuHc++weN6XhF9A/Ctrs1HmOlZSPSyNcyQk9x7Jma0QBx45O/9I0frh4/8Muqbk5h+AbXlA32zytaf+N7H8qYxGOo0s3lt4tFt+oOm8v09KxmYoy1g8uax50WPLfPa4bB1+61C0iFRVREEREBERFRERAVCiqAiIgIiIihVERVc1zddzSNjY2PIUXsvxMkq/GYmvjyDXhosb/8AVsjz+wavGokuYikMRlDHGMHtLtcA/Ta9rhMPjuqOkXVMTTfF1Jj++Z5Di83GHZ01vnY0AAAfueeMTPZ6k3pHG4LBulEB/wARd9Ro26bQHB8643rx488rq/DOd8HW2NDZDHHM4xSnuI/puaQ7f145176UX5eXRbLqeGKv1JlYa5aYY7crWdvjtDzrX8LWqoLYdP4e5nsxWxmNiMtqd2mj6ADZJ+wAJ/ha9e0/CvI1MNmr2VuOjElWjK6r3StYfWI03QJBPHdwPqkrD0VjqnGdAXq2M6ZpRS2YHR/mF2UB0jnNJ742+3n38e2tja1n4tXMo3qevlWXboq5Csy1Uf8AEOIDSOQ3R+Xnnt9tjxtfP5pZJ5pJZnuklkcXve87LieSSfcr3VXI4zKfhTax+RmkGZxtkS0uWNb6J1tnPLuTIePft59lKW7YeC69ydb/AAmYlfk8VK0RTQz6c4s7i7hzgT5cTzv/AKGsfr3AV8TdhuYol+IvN9Ws7nTdgEt550N8b519dFeWXvsgLFz8HcdO+MGKnfdC2Q9u9EOOt+f7hx9AET14FQqqFUREREEREVCipUQFVAqgIiIgqFFQgqLtqytgsRyPhjna07Mcm+132OiD/wBr07esK0b4XxdK9PAxv79Pge9rvHykF3I499+UVtstjIOoPw8x2XxNcC7jA6DIaf8AM8AA94ZsnQHJPHl304+er1/T/X2S6fyEtvE1aFZ0p3JHHG5rHDXAIDvbyPoVk5W50pma78hBA7E5YEONUAyQyuJ+Y+NAa/b9ioevDr6T+DONrsnzPUeVgjkx2Kpvf2ySGMveR4YR5OtjX1e36rY9P5PoWGCxL1JBip3GPbIKdGVshOtaDu/s4/gnz3cLW5z8TYrTK9PG9OYmHFVyOyvJCS2TQI29oOj537887J0U9WNbfO7UzrFmWZ/6pHl5/cna616uj1fBUMzv/GOn5nyN7f6tYuDPuAXcFdsXXTo4DEOmulyDH6fc7H7cOXHe+7z83/Q+iI8esnGVmXMjWrSzsrsmkDDK/wDSzZ1s/ZektdaNsvDn9M9NsPf3n06RaD9j83hcbnV8Ng2O3pjp6L1iD8lZw7Od6bp3A/8A1wqNd1d09Z6ZzUlC0WvboPilb+mRh8OH/wAH7grSr6jT/ETDZoMx3WXT9d+LDi5ktUuEsH2GzyOGt8jTR76C8r1RjumazmO6dzE9xji7bZoi0sG9N5LRvY2fChMfTzUUb5ZWRxNL5HkNa1o2ST4AX0j8Q2t6b6JwXSToohfDvzC3JG/ey4EAHR1sbLefZjT7rh071L0z0fQkmo0Bmc3IztEllgEMQIOxrXdsHXIPI3yFrZPxAlsX3W7vT3TtqZw0TNTL9gN7QOXew1/wi+PFIt+3qCoKrYj05iHPDtmQibZ88f5n3/6H33oFUcUVKiIIiIBUVURQKoEQEREQVCi5ICIiAiIgIiIOcMT5pWxxNL3u8ALNlw16MtDoQe7kdsjXca3vg+Ne/jhY+PsNq2RJIwyM0WuYCB3AjRGyD7FbGHNmLcTYXNq+mGNjY5oc0+d9xad89x+3cde6DDjxdqRzQ0RfM7tbuZgDjvXHPI+44WNYgkrzOimbp40eCCCCNggjggjna27s1FKGiSCVgbGWaZICOWlpIBHkgu5JJ2d/Zaq3P8ROZO0MGmta0ezQAAP+AOUHSiIgIiICIiCFRUqICIiAoqoUVQiBEBEREVVQKooiIiCIiAiIgIiICIiAiIgIiICIiAuK5LiiyIiIghRCiiIiAiIiKFVAqiiIiIIiICIiAiIgIiICIiAiIgIiIChVUKKiIiIIUQooiIgIiIihVQKooiIiCIiAiIgIiICIiAiIgIiICIiAoVVCioiIiCIiKIiICIiIoVUCqKIiIgiIgIiICIiAiIgIiICIiAiIgKFVQoqIiIgiIiiIiAiIiKFVAqiiIiIIiICIiAiIgIiICIiAiIgIiIChVUKKiIiIIiIoiIgIiIihVQKooiIiCIiAiIgIiICIiAiIgIiICIiAoVVCioiIiCIiKIiICIiIoVUCqKIiIgiIgIiICIiAiIgIiICIiAiIgKFVQoqIiIghRCigRAiAiIiKFVFUURERBERAREQEREBERAREQEREBERAXFclxRZEREQQohRQIoFUBEREFyXFUIKiIgIiICIiAiIgIiICIiAiIgIiIIVFSogIiIChVURQKqKoN30p0/N1DemibMytVrQusWrUgJZDG0cuP1PgAe5K0p8+dr3E7/yP8KqkUJ1Z6hsvlmcPPoQHtaz+Xkn+FuOi+mMAzpSvluoIX3ZbgnlbDGJy9kEWw4s9Ma7i4eXuAAG9FS1p8uVC+zV/wzqVulbcd+jYkyzaD7nriUtcJg0PbXij/v039bvYkAcrFq/hli30Ona+QyRo5e9SlsuhaPUfK4hz2Ds/sDWt5J1snQ53pZ1l8kRdk1eaARGeKSMSsEkZe0jvaSR3D6jg8/ZfRemqmCw/R1POXsP+eMnkkjvODt/Ba2I4+0OHaXnR7zvQPHKqU+einZNF10V5TTbIIjP2HsDyCQ3u8b0CdLoX2XL1pshksP0HTxVOGgwVxbtsgefSsSNa+R7Xb0Dodo3snRHuux3SfSFu1DNXrvgoVK81uaT/ABQjsR97I4mlzmdxd3klxjboDgfVS16viyL7Bk+mej6uOzWUvQ2aVKKavSiZGJWyGYMEkvoskO9EFoHqeASfoF4DBYmr1J1tSxmMZNWp3LLY2iaQSPjZ/cS4AAnQJ8JaU88i+x0fw6xV3N4qL4a3XitT27skMkvaY8fHoR93drTnHXJPh3K1LPw4x9qzg/y/MmzVuTWW25o49shZA0Pf2OP6+CRvQBI44SzrLwuMwdvI4vKZCD021MdG2Sd8ju39Tu1rR9XE74+xWsX3d3S+LjwuGw8cOQx+KvSWcxkGW3B0/o12BrWHsbsb3vWiR3e5C1lnpbpH08tkbUD6GPp0YWOLBP2unleS10LZdPcRGAB3aaSd6AS16vjaLZZ2Kp8QLOIp3q+LkJbC628Pc8t13fMGge44G9b8r1nS+BwDOgrmd6ofM0SXG1qrYD/Vd2N7nhg/TztoLnbAAPG9KpTwKL63B0x0vV6WN6xSsz2LtSW7FCXTSS14ySyHTmNEf6htzn+PGvdXJ9BY+UxYDGY+y3JQX69GXLvefSle5jjKO0nWmnWg0b+UknlSzq+RovsdzovpaebFUKlfIVLlw24qxlm/qWRHEfTmcwj5Q6QEADyFjYHoTB1fiX5Wy27YqejVlh/quh+Lk7nGMei0vd2NbrgjucdbGkter5IVF9WzeB6MxWBGTuw342XL9g06sby2wYYz2Bh7thje4OJJBdw0D3XzfM461jLnpXKdimXtEscVgaf6buWnwN8e+glpMMFERVBRUqIoqoqEHqcN1vk8VioceyvjbUNcudXdcqMmfX7js9hd4559+Vrn9TZt9C1RdlLfwdqR0s0AkIY9zjskgccn2WnRCZbOxn8xYt17U+UvSWa7eyGV07i+Nutaad7H8LHjyN2O3HajuWW2omhrJmyuD2gDQAdvYGuP2WIiI2mfzNjN24p7DIYmQwsrwwwtIZFG0aDRsk/U8kkkldr+psy/BfkzsjOcZwPQ3wQDsAnyQDyB4WnCqK3dnqzP2o6Uc+YvvZSLTXBmd/TLf0kfcfXyqOreoBmDlRmb/wCYlnpGx6x7+z/Tv6fZaNES2VayN23G5lq3YmY6UzubJIXAyEaLzv8AuOvPldNWxNUsR2KsskM8bg9kkbi1zSPBBHgrrRBs7Wfy1qFsVnJW5WAyH5pSSfU137Pkh2hsFdVHMZKgYPgshbr+g8yRCKZzRG4jRc3R4JHBKwUQbmLqnORSUpIspaZLSMjoJGv09hkO3/N5Oz53tYl7MZK+bHxt+1P8TIJphJK5wkeAQHHfkgEgLBRBs8pmbGQx+Novjhhq0I3MijiaRsuO3vcSSS5x1v24GgFhPt2H1I6r55XVo3OeyIvJY1x1sgeATof8LpRBs3Z/LuwzMQclbOMY7ubV9U+mDvfj9+f3XbkOqM7kbdWzey12exV0YJHzHcZHgt+h+/ladEGZcyl+7f8Ajrl2zPd2D68krnP2PHzE7Xdic9lsMLAxORtUxYb2y+jKWd4++v3P/K1qhRXdPbsWIoY555ZY4QWxNe8kMBJJAHtskldcsj5X90r3PdoDbjs6XBEQRERQqIUQECIg9Hi8fi61KlczkkrhceRDFEdNYxru10khAJ1vemtGzryON9VzprJjKOrVcbc7JB6sAkbyYiR2kkcb+ZoOv7jrzwsvp/MYuOpXx2SqzGCSZnryOn7omt9QF0jY+3Yf2jt2HAEeQu2XrzKyS23FsLW2AfljL4+0kkl22uBJO+dkg6aNaACi6aWPA5aT4f0sdakNhpfE1kZc5zQASdDnWiD+xBXfl8K6DNXqGNEtv4IBszm6PzjtY8jXlvqHQ+xC21Xr2/DYhkkqVp2xsjj7JHSOGmOa7gF5A5Y3gDt4HHAWtwfVF7CXblmg2HvtOBk9Vnftof3Fu+OCQAfqETTXY7F3sjLLHRqzTyRN7ntY3lo3r/nZAA9yQBytmOnbD8DQtw1rU1m5M5rGxsJYIxsAk68uc2TXPiMrYR/iDlmRs/oUXWWlhNh0RL3BpcQ0ju7QNPc3gDQ4Gkb11bbJUeylXYabDFWaySVohjdEI3NbpwPOu7e97J5O02RTSydP5SPH2bslRzK1Z3bI97mj+4N4BO3DbgNjY5C2uL6SfPDibNy1DHXuPc98ccrHSsrMBc6Xt3vWmyDxwWEHXG9dmM7LlacMVmFnqxySPE3c4u097nluyd67nE8knf7neVX6stVWxPp1qsNyOsKotAOL2sAABaCe1p48gb2SUNNcMLkZDbMdC0G1gXSh7CDGO0u5379rSf2BPgLrr4q9Yx816CtI+pC4NfIBwCSBr78uaOPHcPqFtrXV+QtYuxRmaztnDQ+Rr5Gud2sYzbgHad8sbf1AgbOgNqYrquzjadCCCpUc6nKJGSPDiTqQSaI7tcua3ZA3poGxzummJ/4zm/Umj/Krhli7e+MRHuGw4j5fP9j/ANu078Ks6Zzb5Y424u0XSNDmEMOnA9vg+N7e0a87IHnhduT6nvZCk6o5sMNd0geWRBw21rQGsJJJLRonnZJJJJKyT1rlH38tblc18uRO3kSSM9MDu7Wt7XA9o7jpp2OBsHSmzTpw/SeSyFimJmMp1LDHTfE2JGsaI29pc75iN6DmnXuCD45WLJgbZiLqrHWnxRvlsCFhc2FrXOGy8fK4ENJBaSNe62c3WMs75vXxlF8U0PoyR7kAd80Z3sO2P8lg0CBoH67XU/rC8cfJUZBVjY6NsTXNa7bGiIRHXOuW93JB/W7WtoaaiPE5CS3DWbTn9ebRYxzCO4Fodvn27SHb+h34XccDk/ziTFtql96P9UbHNcANb33A9utEc71ytzL11krV0z5CKvYZ6kj2w9paxjXtLXRtaOAwgnjW/J3s7XT0XmYsRkbdyWdkXydwhdCZBMWuD2sB50e9rOT7AnewNjTV/kWV9Fsv5fZ7HPMbf6Z2XDu2Nef7H/8A2n6Fd+O6es3MZkb0kkNeKm0fLNKxjpHnkMa1xB2W9zh9e0gbPC2EfXGWiirCIxiWvC+Fsji9/DmFhcGucWh2ieQBvZ2jesrMs9ebI0qt6WGaKYPlc/bnMZGzbtO+YlsY5O+S4+6GmF1JgJsS/uZFOa0fZDJM8Dt9ft/qNb9g9r2g/wC0rQr0GQ6pt5DHQ07sMMzImFrXPfKdE/3hvf2hw2edc7O9rz6pIiIiCIiKiIiAiIg9Zi8NRPTDMjbpXLEz5H6EdyOBojaP1acwk7OwAPJaf5wpulMy2zJG3GzNLWer2Oc0uawucOfuC12xoEdriQNHWIczY+NxtljI2nHsjbAzW2jsPdyPu4kn9ysnI9TZC9UsVZHMjrTPjc6OPYADO8tbySSNyOcd7Jcdk7UXRnsM7FYzEySQzNmtQmaR7uG/Ny1rf2YWkn/dr2WVd6PvxSsgpll202AS2YoHtcYCSPlOjzw5pPj+7jTSVhdQ5+xnpWzXYK4sBziJYw4O7C4kR63rtbsgcbAAG9ALuyvVFzIR5FggrVRkJWTWvhw8GVzS88lzjwS/ZHjhugNImmPF09kNUZbFeSKtblEbZA3vcNnz2N+bwCRxzo63pbBmAqvzOHxzZZe+aIWLkhAAjiO37A9tQgOPPk69lZ+t8rMHNcyoI/TLGMEWhETG6MvbzsO7Xa3vjtaPDWgYDOo8hFnLWWrPZBcnD29zG/5YcNfJvZbocA+Qhpyd05lJJ74ix9iFtRpkkZYIjexnaXgHu1t3YC7QGyATrSz8z0hfrGt8DSszsc5taRwHd/iR2h7QAOAHvDB9SCuuv1nko4fTlZXnGohuRrgSIw1oDg0gO2GtB7gTxsaPKysj1hYZbpik6OarAyJ7g9haZZdd7w5w04t9Vzzret88ptdNWzpu9+fV8TKYI7EwDw/1muY1miS4uBI1oE79xyOCFl5Hpv4XDWLdb1robYd2TQgOY2u0Aeo/t2B3Oe0D5tAscOVrquZdVzk2Shp1GiX1WuqgObEGSNc1zAA4OA04gaKyJeqcm+rHVa+KOnHFJCyuyMdjWveXng++zwTzoeUTTFvYPI0bFWvarObPaA9KMOa5xJOtEAnTt8dp0fst71J0pLSY6PH4+6/4Jzo7Vl7h2yOAadtb5A2T/Bb7nnCl6pnt9U081diYZa72vDIy7y1xcDtxcf1Het69hoa1h0s/epxY2OFzPSoWjdiY4EtdLtvLhvn9AH7bQ052Ol83BK6OTGzmRrWuLGAPdouc0cDZ33NcCPILTvWlwvYU0sHTvzWYfVtEuZWa5peI/Aeed8uDhrXss6PrXNwyl1Ww2tH6sUgiibpo9Mksbzslu3OJBJ2SSdkkrW5PLvyFSrDLVrMfAxsfrMDu97WjTQduIGh/pA35OyqaU4DK7hAozOM2uztHdvbGP9v9sjD9u4LY5Lpa4eoH4/F1Z5Iy3cUsxDGTNaQx0gc7Tewv3o/cDkrsZ11nI21GxzQt+FdG6MiFuz2dhAJ1yCY2kj3IH0Guqn1jlq8hkkkZYkMb4++UHu+Z4eSS0gnkeDsa2CCOFNmjF9M2RPWs5iB8OMLXzSubI0P9Nje4jXJaXcBpI0S4a2vNlb+91Tfu45tKVsIjFVtQub3bLGmMjy4gf5TOAAOCdbJK0CpKIiIgiIgIUUKKIiICIiDfw9OOmw9OxFaifftl74qfId6Le4OkJI0Btrvfw0ri/pbMMgfM6ppjX+mdyN/UWtcG+eSQ8aA5PI1wdcanUl2pHUEMdTvrRuibI+Br3OY4PHae7Y1p7uNaPvtcr3VOUuZKtedM1k9ad1mLsYO1srn95do72S7R5+gHgKLpgZTF3sVYEGRqy15DstDxw4AkbafBGweRwVn5Lpu/VjmnhqW304SWSyvh7TG9vaJA4AnQD3doJ86+xAw58xes2a1i3ObEsDy9jpR3Eku7j3Hy7nflZUvVGYljbHJde6JrZGhhaC353l7jrXkuJO/PtvSqaZ2Q6QsxW5K2Onhuy1ot3O13piCXnce362eCABye13HCwMThmXcVevT3I67YdRwscCXTTHkMGh7gO5+oAOt7XdY6qyMotiNtauLRJk9KEA7IcHHuOzsh7gTvejrxwsbG521jqjYK7K7uyb14nyxB5jfoAkA8f2jyDrXGuVDTa5vpC/DmoqVCjN2Oj7RI86ZK+NrRK4OPHb3k6+u268hY3T+Cks5i9VtwOldTZIx8Ubxt0xPpxtDhwf6jm/wCfC6q/VWWh9TunZMJHPe8TRNdsuLCedb1uNh1vXyjhYuNzVvHRysrekBLNHM4lnksDwB9O0952PsPohplz9KZiBt10lZobUaHykSsPBYH/Lz82mkE63oEb8hYeRwuSxsEU16nNDBKGlkjm/K7uaHgb8b7XA68j3WeOsMuIPQjlgjhJeXRtrx9rw8acHDXzD9/oD5AIw8rnsllhL+Y2nT+rI2V3cBwQCBrQ4ADjwOEXTvh6XzE1avPFTLmWGufGBI3uLQxz9lu9gFrXEEgbA42sWLFWW5mPHXa9mvP3hssZiPqMHknsOjvXOlmnqzMhrBDbMHbB8PuJgaS3ta3e9b7u1jRvzoa8LCZmLjb5ueo02DXNbuLR+gxel7e/Zxv+VU03E/STjLVgp368s74hNYEm2CsxxHp9x15cHs4Gzt2tLV4/A5DJWrMFGJkzq5094laGb3oAOJAJOuAOT7LMPVVtzrDn1aLnWIHQSkxnb9gbcdHk/KCAdtBAIAKwMdmbuOpWqtSRrI7BBee0FwIa5u2n2Pa9w2PqVF07ZOnctG2JxpSESfp7SHE8RnwD/6sf8u15BCxcri72JsCHI1pa8jgXNDxw8AkdzT4I2DyOCtqes88WVWfH6bWeySLthjHaWaLeQ3kbaHaPBdyeeVrruav3oDFdmFjfJklja+T9Rd+sjuGy47559/AVTTXFRERBERARERRRUqICIiAEUCqAgXp8TAWU6rvhmmtMHsnc5unvcQ8jscRrWm6AH9w59ljyYas/tkN2vWL3lzojI1/pM04+Qdk/KB+5H8hoUW7FCvUx9qyZ4rLyztia0BwHcQO488HRdxrg6O12x4ypFSD5GTTTuhEgBeGN+ccO+vBDvPkhvsUHn0Xo8lWrw0Ya1ZlcyTzdjZfoPlO9nkAgxnzxt/1WPZw1WISFuTruDQO0bBLnbdscE612jz9R542RpEW9tUK9YUanqxudNL3TT6Ha0DQ0CCdgfMfbfHHC4WqNea9Tr12CsJGB75HygtOx3EgHxrkDnnQ+6DSqr0MtSrjsZbe18FpzyGxP0Ha23Q//J/3BY3wrDiKrah72yvsujYQXyNjY3vHD/roEOHPnj6oPO7RegOCq+nsXwXPlbHHpoJdst38oO/7vb/SQViR46rNkbMAsmsyFo/zy3Zdtoc3ewPJdr9h45IK1SbW7bh6TYPVmybNAOJDG72Bscc7PzBvsNh3ng6yZMZTENRnrxCMs2ZXgD5nub5Id+prTvt5HHk9yWPNqLcnEQfBWJo78MrmFrWBpADie087I1+p2v8A2nelpkQREQEREBEQoqIiIChVUQFVECC74REQUIoqgIiICIiIIiIOySZ8jImPdtsTS1g14Gyf/kldaIgIiIO34iX4b4fvPo9/f2e3drW/+z/yupEQEREBERFFFSogIiIBUQogIoFUFRAiAgRERUQIiiIiAiIiCIiAiIgIiICIiKIihQEREBEUKAiKFACq4qhBVVFQgIiICqiIioiIoiIgIiICIiAiIgIibQCoiIgiIiiiFEBcVSogKhQIg5IoqgqKBVAREQFdqIiKiiu0UREQEREBE2ogu1EREEREURFEBEUKCIihQf/Z"
+        ],
+        "failure": null
+      },
+      "verdicts": [
+        {
+          "label": "judge: text readable",
+          "ok": false,
+          "detail": "The small labels LEAN, STEER UNDER and SPEED are faint grey on dark green and small, so they are hard to read; the 'Stand still and it all stops working' line is also dim."
+        },
+        {
+          "label": "judge: labels point right",
+          "ok": false,
+          "detail": "The SPEED label sits under the ground line with no arrow or marker, so it points at nothing in particular. The LEAN arrow also sits above the rear wheel and does not clearly show a lean direction."
+        },
+        {
+          "label": "judge: drawing correct",
+          "ok": false,
+          "detail": "The bicycle is crudely drawn and incomplete (broken frame, no handlebars or seat, gaps in the wheels), and the arrows do not clearly show lean versus steering, so the summary picture does not convincingly depict the mechanism."
+        },
+        {
+          "label": "judge: coherence 4 or more",
+          "ok": false,
+          "detail": "2 of 5: The small, sketchy bicycle sits at the top, a large empty gap separates it from the text block at the bottom, and the faint labels barely connect to the drawing, so it does not read as one composed picture."
+        },
+        {
+          "label": "meets expectation",
+          "ok": true,
+          "detail": "the prompt expects: any"
+        },
+        {
+          "label": "finished",
+          "ok": true,
+          "detail": "done"
+        },
+        {
+          "label": "no rejected line",
+          "ok": true,
+          "detail": "0 rejected, 0 warnings"
+        },
+        {
+          "label": "silent about the medium",
+          "ok": true,
+          "detail": "nothing"
+        },
+        {
+          "label": "few exact times",
+          "ok": true,
+          "detail": "0% of lines"
+        },
+        {
+          "label": "first line within 4 s",
+          "ok": true,
+          "detail": "2.2 s"
+        },
+        {
+          "label": "four in-flow lines or fewer",
+          "ok": true,
+          "detail": "median 3 in a scene"
+        },
+        {
+          "label": "under 1500 tokens",
+          "ok": true,
+          "detail": "365 output tokens"
+        },
+        {
+          "label": "warm (brief was since)",
+          "ok": true,
+          "detail": "form since"
+        },
+        {
+          "label": "cache reads over 80%",
+          "ok": true,
+          "detail": "87%"
+        },
+        {
+          "label": "judge: shows what was asked",
+          "ok": true,
+          "detail": "The small, sketchy bicycle sits at the top, a large empty gap separates it from the text block at the bottom, and the faint labels barely connect to the drawing, so it does not read as one composed picture."
+        }
+      ]
+    }
+  ],
+  "fix": null,
+  "verdicts": [
+    {
+      "label": "turn 1: judge: drawing correct",
+      "ok": false,
+      "detail": "The bicycle drawing is malformed: the frame is disconnected and the fork/head tube slopes the wrong way, the saddle floats, there are no handlebars, and the red arrows are ambiguous and do not clearly show a lean or steering motion."
+    },
+    {
+      "label": "turn 1: judge: coherence 4 or more",
+      "ok": false,
+      "detail": "3 of 5: The text column is clean and readable, but the bicycle sketch is crude and incorrect, and its labels and arrows are loosely placed, so the diagram does not clearly support the explanation."
+    },
+    {
+      "label": "turn 2: judge: shows what was asked",
+      "ok": false,
+      "detail": "The text column is clear, but the bike drawing is fragmentary and the arrows and label float without connecting to it, so the visual does not show steering."
+    },
+    {
+      "label": "turn 2: judge: text readable",
+      "ok": false,
+      "detail": "The grey 'BIKE LEANS LEFT' label is small and faint against the dark board, and the small 'Faster means slower, gentler corrections.' line is also dim."
+    },
+    {
+      "label": "turn 2: judge: drawing correct",
+      "ok": false,
+      "detail": "The bicycle is drawn upright and broken, with a disconnected frame, no handlebar or visible turned front wheel, and no lean, so it does not show steering or the claimed left lean."
+    },
+    {
+      "label": "turn 2: judge: coherence 4 or more",
+      "ok": false,
+      "detail": "2 of 5: The text column is clear, but the bike drawing is fragmentary and the arrows and label float without connecting to it, so the visual does not show steering."
+    },
+    {
+      "label": "turn 3: judge: text readable",
+      "ok": false,
+      "detail": "The small labels LEAN, STEER UNDER and SPEED are faint grey on dark green and small, so they are hard to read; the 'Stand still and it all stops working' line is also dim."
+    },
+    {
+      "label": "turn 3: judge: drawing correct",
+      "ok": false,
+      "detail": "The bicycle is crudely drawn and incomplete (broken frame, no handlebars or seat, gaps in the wheels), and the arrows do not clearly show lean versus steering, so the summary picture does not convincingly depict the mechanism."
+    },
+    {
+      "label": "turn 3: judge: coherence 4 or more",
+      "ok": false,
+      "detail": "2 of 5: The small, sketchy bicycle sits at the top, a large empty gap separates it from the text block at the bottom, and the faint labels barely connect to the drawing, so it does not read as one composed picture."
+    },
+    {
+      "label": "turn 1: finished",
+      "ok": true,
+      "detail": "done"
+    },
+    {
+      "label": "turn 1: no rejected line",
+      "ok": true,
+      "detail": "0 rejected, 0 warnings"
+    },
+    {
+      "label": "turn 1: first line within 4 s",
+      "ok": true,
+      "detail": "2.5 s"
+    },
+    {
+      "label": "turn 1: judge: shows what was asked",
+      "ok": true,
+      "detail": "The text column is clean and readable, but the bicycle sketch is crude and incorrect, and its labels and arrows are loosely placed, so the diagram does not clearly support the explanation."
+    },
+    {
+      "label": "turn 1: judge: text readable",
+      "ok": true,
+      "detail": "nothing wrong"
+    },
+    {
+      "label": "turn 2: finished",
+      "ok": true,
+      "detail": "done"
+    },
+    {
+      "label": "turn 2: no rejected line",
+      "ok": true,
+      "detail": "0 rejected, 0 warnings"
+    },
+    {
+      "label": "turn 2: first line within 4 s",
+      "ok": true,
+      "detail": "2.4 s"
+    },
+    {
+      "label": "turn 2: warm (brief was since)",
+      "ok": true,
+      "detail": "form since"
+    },
+    {
+      "label": "turn 2: cache reads over 80%",
+      "ok": true,
+      "detail": "81%"
+    },
+    {
+      "label": "turn 3: finished",
+      "ok": true,
+      "detail": "done"
+    },
+    {
+      "label": "turn 3: no rejected line",
+      "ok": true,
+      "detail": "0 rejected, 0 warnings"
+    },
+    {
+      "label": "turn 3: first line within 4 s",
+      "ok": true,
+      "detail": "2.2 s"
+    },
+    {
+      "label": "turn 3: warm (brief was since)",
+      "ok": true,
+      "detail": "form since"
+    },
+    {
+      "label": "turn 3: cache reads over 80%",
+      "ok": true,
+      "detail": "87%"
+    },
+    {
+      "label": "turn 3: judge: shows what was asked",
+      "ok": true,
+      "detail": "The small, sketchy bicycle sits at the top, a large empty gap separates it from the text block at the bottom, and the faint labels barely connect to the drawing, so it does not read as one composed picture."
+    }
+  ]
+}

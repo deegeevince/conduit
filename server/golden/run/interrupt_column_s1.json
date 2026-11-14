@@ -1,0 +1,957 @@
+{
+  "case": {
+    "id": "interrupt",
+    "useCase": "a viewer who cuts the answer off",
+    "why": "Speaking mid-answer must stop the old answer, leave the process warm, and tell the next brief what was and was not seen.",
+    "heldOut": true,
+    "judged": true,
+    "turns": [
+      {
+        "do": "prompt",
+        "text": "Tell me the story of the first powered flight, scene by scene.",
+        "interruptAfterMs": 3500
+      },
+      {
+        "do": "prompt",
+        "text": "Actually, just show me the plane."
+      }
+    ]
+  },
+  "variant": "column",
+  "sample": 1,
+  "turns": [
+    {
+      "prompt": {
+        "id": "interrupt-t1",
+        "useCase": "a viewer who cuts the answer off",
+        "prompt": "Tell me the story of the first powered flight, scene by scene.",
+        "expects": "any",
+        "baseline": false
+      },
+      "lines": [
+        {
+          "seq": 1,
+          "text": "look sand like=paper ground=#efe6d0 accent=#b5451b face=serif fx=paper,grain",
+          "ms": 2302,
+          "issues": []
+        },
+        {
+          "seq": 2,
+          "text": "color sky=#cfe3ea",
+          "ms": 2650,
+          "issues": []
+        },
+        {
+          "seq": 3,
+          "text": "color dune=#d8c08a",
+          "ms": 2651,
+          "issues": []
+        },
+        {
+          "seq": 4,
+          "text": "scene layout=caption mood=calm",
+          "ms": 2651,
+          "issues": []
+        },
+        {
+          "seq": 5,
+          "text": "rect t1x1 full layer=far fill=sky>#efe6d0",
+          "ms": 2695,
+          "issues": []
+        },
+        {
+          "seq": 6,
+          "text": "path dune layer=bg fill=dune stroke=none | M0 70 Q40 60 80 68 T160 64 V90 H0 Z",
+          "ms": 3166,
+          "issues": []
+        },
+        {
+          "seq": 7,
+          "text": "say t1x2 title | Kitty Hawk, 1903",
+          "ms": 3402,
+          "issues": []
+        },
+        {
+          "seq": 8,
+          "text": "wait 1",
+          "ms": 3402,
+          "issues": []
+        },
+        {
+          "seq": 9,
+          "text": "drop all",
+          "ms": 3403,
+          "issues": []
+        },
+        {
+          "seq": 10,
+          "text": "scene layout=caption mood=calm",
+          "ms": 3403,
+          "issues": []
+        },
+        {
+          "seq": 11,
+          "text": "rect t1x3 full layer=far fill=sky>#efe6d0",
+          "ms": 3465,
+          "issues": []
+        },
+        {
+          "seq": 12,
+          "text": "path dune layer=bg fill=dune stroke=none | M0 70 Q40 60 80 68 T160 64 V90 H0 Z",
+          "ms": 3765,
+          "issues": []
+        },
+        {
+          "seq": 13,
+          "text": "rect shed 20,48 30x22 fill=dim",
+          "ms": 3832,
+          "issues": []
+        },
+        {
+          "seq": 14,
+          "text": "poly roof 18,48 35,38 52,48 fill=ink",
+          "ms": 4154,
+          "issues": []
+        },
+        {
+          "seq": 15,
+          "text": "say t1x4 | Scene one. Wilbur and Orville Wright, bicycle makers from Ohio, spend years on wings, wind tunnels and a light engine.",
+          "ms": 4530,
+          "issues": []
+        },
+        {
+          "seq": 16,
+          "text": "wait 1",
+          "ms": 4566,
+          "issues": []
+        },
+        {
+          "seq": 17,
+          "text": "set scene opacity=0.2",
+          "ms": 4664,
+          "issues": []
+        },
+        {
+          "seq": 18,
+          "text": "scene layout=caption mood=tense",
+          "ms": 4764,
+          "issues": []
+        },
+        {
+          "seq": 19,
+          "text": "rect t1x5 full layer=far fill=sky>#efe6d0",
+          "ms": 4953,
+          "issues": []
+        },
+        {
+          "seq": 20,
+          "text": "path dune layer=bg fill=dune stroke=none | M0 70 Q40 60 80 68 T160 64 V90 H0 Z",
+          "ms": 5064,
+          "issues": []
+        },
+        {
+          "seq": 21,
+          "text": "line rail 20,69 140,69 thick=1",
+          "ms": 5163,
+          "issues": []
+        },
+        {
+          "seq": 22,
+          "text": "group plane at=30,56",
+          "ms": 5303,
+          "issues": []
+        },
+        {
+          "seq": 23,
+          "text": "rect t1x6 0,0 30x3 in=plane fill=ink",
+          "ms": 5433,
+          "issues": []
+        },
+        {
+          "seq": 24,
+          "text": "rect t1x7 0,10 30x3 in=plane fill=ink",
+          "ms": 5566,
+          "issues": []
+        },
+        {
+          "seq": 25,
+          "text": "line t1x8 5,3 5,10 in=plane thick=0.6",
+          "ms": 5767,
+          "issues": []
+        },
+        {
+          "seq": 26,
+          "text": "line t1x9 25,3 25,10 th in=plane",
+          "ms": 5814,
+          "issues": [
+            {
+              "code": "unknown-style",
+              "severity": "warn",
+              "message": "no style called \"th\"; ignored",
+              "token": "th"
+            }
+          ]
+        }
+      ],
+      "rejects": [],
+      "end": "interrupted",
+      "message": "the viewer spoke 3500 ms after the first line",
+      "firstVisibleMs": 2695,
+      "totalMs": 5814,
+      "usage": {
+        "outputTokens": null,
+        "thinkingTokens": null,
+        "cacheReadTokens": null,
+        "cacheWriteTokens": null,
+        "inputTokens": null,
+        "costUsd": null
+      },
+      "checks": {
+        "lines": 26,
+        "rejects": 0,
+        "warnings": 1,
+        "kinds": {
+          "shape": 13,
+          "text": 2,
+          "group": 1
+        },
+        "words": 23,
+        "scenes": 3,
+        "cameraMoves": 0,
+        "depthLayers": 2,
+        "handLevel": 0,
+        "aboutTheMedium": [],
+        "playSeconds": 12.644285714285715,
+        "meetsExpectation": true,
+        "opening": "look",
+        "shapes": 13,
+        "labels": 0,
+        "inFlowMedian": 1,
+        "spriteFrames": 0
+      },
+      "baseline": null,
+      "firstTextMs": 1911,
+      "viewerWaitMs": null,
+      "turn": {
+        "case": "interrupt",
+        "index": 1,
+        "kind": "prompt",
+        "said": "Tell me the story of the first powered flight, scene by scene.",
+        "form": "full",
+        "cacheReadShare": null,
+        "withSnapshot": false,
+        "interruptedAtMs": 5802,
+        "changed": null,
+        "problem": null
+      },
+      "verdicts": [
+        {
+          "label": "meets expectation",
+          "ok": true,
+          "detail": "the prompt expects: any"
+        },
+        {
+          "label": "finished",
+          "ok": true,
+          "detail": "interrupted: the viewer spoke 3500 ms after the first line"
+        },
+        {
+          "label": "no rejected line",
+          "ok": true,
+          "detail": "0 rejected, 1 warnings"
+        },
+        {
+          "label": "silent about the medium",
+          "ok": true,
+          "detail": "nothing"
+        },
+        {
+          "label": "few exact times",
+          "ok": true,
+          "detail": "0% of lines"
+        },
+        {
+          "label": "starts with look or scene",
+          "ok": true,
+          "detail": "starts with look"
+        },
+        {
+          "label": "first line within 4 s",
+          "ok": true,
+          "detail": "2.7 s"
+        },
+        {
+          "label": "four in-flow lines or fewer",
+          "ok": true,
+          "detail": "median 1 in a scene"
+        }
+      ]
+    },
+    {
+      "prompt": {
+        "id": "interrupt-t2",
+        "useCase": "a viewer who cuts the answer off",
+        "prompt": "Actually, just show me the plane.",
+        "expects": "any",
+        "baseline": false
+      },
+      "lines": [
+        {
+          "seq": 1,
+          "text": "scene layout=figure mood=calm",
+          "ms": 3284,
+          "issues": []
+        },
+        {
+          "seq": 2,
+          "text": "rect t2x1 full layer=far fill=sky>#efe6d0",
+          "ms": 3284,
+          "issues": []
+        },
+        {
+          "seq": 3,
+          "text": "path dune layer=bg fill=dune stroke=none | M0 70 Q40 62 80 68 T160 66 V90 H0 Z",
+          "ms": 3293,
+          "issues": []
+        },
+        {
+          "seq": 4,
+          "text": "group plane at=40,34 loop=bob",
+          "ms": 3628,
+          "issues": []
+        },
+        {
+          "seq": 5,
+          "text": "rect t2x2 0,0 70x3 r=1 in=plane fill=ink",
+          "ms": 3628,
+          "issues": []
+        },
+        {
+          "seq": 6,
+          "text": "rect t2x3 0,16 70x3 r=1 in=plane fill=ink",
+          "ms": 3761,
+          "issues": []
+        },
+        {
+          "seq": 7,
+          "text": "line t2x4 12,3 12,16 in=plane thick=0.8",
+          "ms": 3972,
+          "issues": []
+        },
+        {
+          "seq": 8,
+          "text": "line t2x5 35,3 35,16 in=plane thick=0.8",
+          "ms": 3989,
+          "issues": []
+        },
+        {
+          "seq": 9,
+          "text": "line t2x6 58,3 58,16 in=plane thick=0.8",
+          "ms": 4090,
+          "issues": []
+        },
+        {
+          "seq": 10,
+          "text": "rect t2x7 28,20 12x4 in=plane fill=accent",
+          "ms": 4325,
+          "issues": []
+        },
+        {
+          "seq": 11,
+          "text": "circle t2x8 52,25 3 in=plane fill=none thick=0.8",
+          "ms": 4485,
+          "issues": []
+        },
+        {
+          "seq": 12,
+          "text": "circle t2x9 8,24 3 in=plane fill=none thick=0.8",
+          "ms": 4661,
+          "issues": []
+        },
+        {
+          "seq": 13,
+          "text": "line t2x10 -14,10 -4,10 in=plane thick=0.8",
+          "ms": 4818,
+          "issues": []
+        },
+        {
+          "seq": 14,
+          "text": "line t2x11 -14,6 -14,14 in=plane thick=0.8",
+          "ms": 4922,
+          "issues": []
+        },
+        {
+          "seq": 15,
+          "text": "line t2x12 70,10 82,10 in=plane thick=0.8",
+          "ms": 5021,
+          "issues": []
+        },
+        {
+          "seq": 16,
+          "text": "say t2x13 label near=plane:above | 1903 Wright Flyer",
+          "ms": 5151,
+          "issues": []
+        },
+        {
+          "seq": 17,
+          "text": "say t2x14 | Two wings, a wood frame covered in muslin, and a 12 horsepower engine turning two propellers.",
+          "ms": 5486,
+          "issues": []
+        },
+        {
+          "seq": 18,
+          "text": "say t2x15 aside | First flight: December 17, 1903. 12 seconds, 120 feet.",
+          "ms": 5685,
+          "issues": []
+        },
+        {
+          "seq": 19,
+          "text": "say t2x16 label near=plane:below | wingspan 40 ft 4 in",
+          "ms": 6082,
+          "issues": []
+        },
+        {
+          "seq": 20,
+          "text": "say t2x17 choice | Tell the story scene by scene",
+          "ms": 6310,
+          "issues": []
+        }
+      ],
+      "rejects": [],
+      "end": "done",
+      "message": null,
+      "firstVisibleMs": 3284,
+      "totalMs": 6310,
+      "usage": {
+        "outputTokens": 465,
+        "thinkingTokens": 0,
+        "cacheReadTokens": 7819,
+        "cacheWriteTokens": 1825,
+        "inputTokens": 4,
+        "costUsd": 0.012739900000000002
+      },
+      "checks": {
+        "lines": 20,
+        "rejects": 0,
+        "warnings": 0,
+        "kinds": {
+          "shape": 13,
+          "group": 1,
+          "text": 5
+        },
+        "words": 39,
+        "scenes": 1,
+        "cameraMoves": 0,
+        "depthLayers": 2,
+        "handLevel": 0,
+        "aboutTheMedium": [],
+        "playSeconds": 15.747142857142855,
+        "meetsExpectation": true,
+        "opening": "scene",
+        "shapes": 13,
+        "labels": 2,
+        "inFlowMedian": 3,
+        "spriteFrames": 0
+      },
+      "baseline": null,
+      "firstTextMs": 2956,
+      "viewerWaitMs": 19031,
+      "base": {
+        "look": "paper",
+        "lookName": "sand",
+        "scene": {
+          "id": "s2",
+          "index": 2,
+          "layout": "caption",
+          "canvas": "wide",
+          "align": "auto",
+          "mood": "calm",
+          "pace": "steady",
+          "expected": null
+        },
+        "styles": {},
+        "colors": {
+          "sky": "#cfe3ea",
+          "dune": "#d8c08a"
+        },
+        "looks": {
+          "sand": {
+            "like": "paper",
+            "props": {
+              "ground": "#efe6d0",
+              "accent": "#b5451b",
+              "face": "serif",
+              "fx": [
+                "paper",
+                "grain"
+              ]
+            }
+          }
+        },
+        "elements": [
+          {
+            "key": "t1x3@11",
+            "id": "t1x3",
+            "kind": "shape",
+            "order": 3,
+            "scene": "s2",
+            "text": "",
+            "emphasis": [],
+            "style": {
+              "size": "m",
+              "ink": "ink",
+              "weight": "normal",
+              "face": null,
+              "enter": "fade",
+              "by": "all",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "far",
+              "at": null,
+              "near": null,
+              "group": null,
+              "fill": {
+                "from": "#cfe3ea",
+                "to": "#efe6d0"
+              },
+              "stroke": "none",
+              "bleed": "auto",
+              "thick": null,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": {
+              "kind": "shape",
+              "geometry": {
+                "shape": "rect",
+                "x": 0,
+                "y": 0,
+                "w": 160,
+                "h": 90,
+                "r": 0,
+                "full": true
+              }
+            },
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "dune@12",
+            "id": "dune",
+            "kind": "shape",
+            "order": 4,
+            "scene": "s2",
+            "text": "",
+            "emphasis": [],
+            "style": {
+              "size": "m",
+              "ink": "ink",
+              "weight": "normal",
+              "face": null,
+              "enter": "fade",
+              "by": "all",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "bg",
+              "at": null,
+              "near": null,
+              "group": null,
+              "fill": "#d8c08a",
+              "stroke": "none",
+              "bleed": "auto",
+              "thick": null,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": {
+              "kind": "shape",
+              "geometry": {
+                "shape": "path",
+                "d": "M0 70 Q40 60 80 68 T160 64 V90 H0 Z",
+                "commands": [
+                  {
+                    "op": "M",
+                    "x": 0,
+                    "y": 70
+                  },
+                  {
+                    "op": "C",
+                    "x1": 26.666666666666664,
+                    "y1": 63.333333333333336,
+                    "x2": 53.333333333333336,
+                    "y2": 62.666666666666664,
+                    "x": 80,
+                    "y": 68
+                  },
+                  {
+                    "op": "C",
+                    "x1": 106.66666666666666,
+                    "y1": 73.33333333333333,
+                    "x2": 133.33333333333334,
+                    "y2": 72,
+                    "x": 160,
+                    "y": 64
+                  },
+                  {
+                    "op": "L",
+                    "x": 160,
+                    "y": 90
+                  },
+                  {
+                    "op": "L",
+                    "x": 0,
+                    "y": 90
+                  },
+                  {
+                    "op": "Z"
+                  }
+                ]
+              }
+            },
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "shed@13",
+            "id": "shed",
+            "kind": "shape",
+            "order": 5,
+            "scene": "s2",
+            "text": "",
+            "emphasis": [],
+            "style": {
+              "size": "m",
+              "ink": "ink",
+              "weight": "normal",
+              "face": null,
+              "enter": "fade",
+              "by": "all",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": null,
+              "near": null,
+              "group": null,
+              "fill": "dim",
+              "stroke": "none",
+              "bleed": "auto",
+              "thick": null,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": {
+              "kind": "shape",
+              "geometry": {
+                "shape": "rect",
+                "x": 20,
+                "y": 48,
+                "w": 30,
+                "h": 22,
+                "r": 0,
+                "full": false
+              }
+            },
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "roof@14",
+            "id": "roof",
+            "kind": "shape",
+            "order": 6,
+            "scene": "s2",
+            "text": "",
+            "emphasis": [],
+            "style": {
+              "size": "m",
+              "ink": "ink",
+              "weight": "normal",
+              "face": null,
+              "enter": "fade",
+              "by": "all",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": null,
+              "near": null,
+              "group": null,
+              "fill": "ink",
+              "stroke": "none",
+              "bleed": "auto",
+              "thick": null,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": {
+              "kind": "shape",
+              "geometry": {
+                "shape": "poly",
+                "points": [
+                  {
+                    "x": 18,
+                    "y": 48
+                  },
+                  {
+                    "x": 35,
+                    "y": 38
+                  },
+                  {
+                    "x": 52,
+                    "y": 48
+                  }
+                ]
+              }
+            },
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "t1x4@15",
+            "id": "t1x4",
+            "kind": "text",
+            "order": 7,
+            "scene": "s2",
+            "text": "Scene one. Wilbur and Orville Wright, bicycle makers from Ohio, spend years on wings, wind tunnels and a light engine.",
+            "emphasis": [],
+            "style": {
+              "size": "m",
+              "ink": "ink",
+              "weight": "normal",
+              "face": null,
+              "enter": "fade",
+              "by": "word",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": null,
+              "near": null,
+              "group": null,
+              "fill": "none",
+              "stroke": "ink",
+              "bleed": "auto",
+              "thick": null,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": null,
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          }
+        ]
+      },
+      "turn": {
+        "case": "interrupt",
+        "index": 2,
+        "kind": "prompt",
+        "said": "Actually, just show me the plane.",
+        "form": "since",
+        "cacheReadShare": 0.8104270315091211,
+        "withSnapshot": true,
+        "interruptedAtMs": null,
+        "changed": null,
+        "problem": null
+      },
+      "verdicts": [
+        {
+          "label": "judge: drawing correct",
+          "ok": false,
+          "detail": "The plane drawing is a crude side-on biplane with two flat bars and wheels, which looks more like a tram or ladder than an aircraft; it lacks propellers, an engine and a recognisable Flyer shape, even though the text mentions two propellers."
+        },
+        {
+          "label": "judge: coherence 4 or more",
+          "ok": false,
+          "detail": "3 of 5: The layout is clean and all text is readable, but the plane is a simplistic, hard-to-recognise sketch and the side text and button add clutter beyond 'just show me the plane'."
+        },
+        {
+          "label": "meets expectation",
+          "ok": true,
+          "detail": "the prompt expects: any"
+        },
+        {
+          "label": "finished",
+          "ok": true,
+          "detail": "done"
+        },
+        {
+          "label": "no rejected line",
+          "ok": true,
+          "detail": "0 rejected, 0 warnings"
+        },
+        {
+          "label": "silent about the medium",
+          "ok": true,
+          "detail": "nothing"
+        },
+        {
+          "label": "few exact times",
+          "ok": true,
+          "detail": "0% of lines"
+        },
+        {
+          "label": "first line within 4 s",
+          "ok": true,
+          "detail": "3.3 s"
+        },
+        {
+          "label": "four in-flow lines or fewer",
+          "ok": true,
+          "detail": "median 3 in a scene"
+        },
+        {
+          "label": "under 1500 tokens",
+          "ok": true,
+          "detail": "465 output tokens"
+        },
+        {
+          "label": "warm (brief was since)",
+          "ok": true,
+          "detail": "form since"
+        },
+        {
+          "label": "cache reads over 80%",
+          "ok": true,
+          "detail": "81%"
+        },
+        {
+          "label": "judge: shows what was asked",
+          "ok": true,
+          "detail": "The layout is clean and all text is readable, but the plane is a simplistic, hard-to-recognise sketch and the side text and button add clutter beyond 'just show me the plane'."
+        },
+        {
+          "label": "judge: text readable",
+          "ok": true,
+          "detail": "nothing wrong"
+        },
+        {
+          "label": "judge: labels point right",
+          "ok": true,
+          "detail": "nothing wrong"
+        },
+        {
+          "label": "brief says the last answer was cut off",
+          "ok": true,
+          "detail": "it does"
+        }
+      ],
+      "judge": {
+        "model": "sonnet",
+        "asked": true,
+        "textProblem": null,
+        "wrongLabel": null,
+        "correct": false,
+        "mistake": "The plane drawing is a crude side-on biplane with two flat bars and wheels, which looks more like a tram or ladder than an aircraft; it lacks propellers, an engine and a recognisable Flyer shape, even though the text mentions two propellers.",
+        "coherence": 3,
+        "why": "The layout is clean and all text is readable, but the plane is a simplistic, hard-to-recognise sketch and the side text and button add clutter beyond 'just show me the plane'.",
+        "costUsd": 0.0074853,
+        "ms": 5130,
+        "stills": [
+          "data:image/jpeg;base64,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"
+        ],
+        "failure": null
+      }
+    }
+  ],
+  "fix": null,
+  "verdicts": [
+    {
+      "label": "turn 2: judge: drawing correct",
+      "ok": false,
+      "detail": "The plane drawing is a crude side-on biplane with two flat bars and wheels, which looks more like a tram or ladder than an aircraft; it lacks propellers, an engine and a recognisable Flyer shape, even though the text mentions two propellers."
+    },
+    {
+      "label": "turn 2: judge: coherence 4 or more",
+      "ok": false,
+      "detail": "3 of 5: The layout is clean and all text is readable, but the plane is a simplistic, hard-to-recognise sketch and the side text and button add clutter beyond 'just show me the plane'."
+    },
+    {
+      "label": "turn 1: finished",
+      "ok": true,
+      "detail": "interrupted: the viewer spoke 3500 ms after the first line"
+    },
+    {
+      "label": "turn 1: no rejected line",
+      "ok": true,
+      "detail": "0 rejected, 1 warnings"
+    },
+    {
+      "label": "turn 1: first line within 4 s",
+      "ok": true,
+      "detail": "2.7 s"
+    },
+    {
+      "label": "turn 2: finished",
+      "ok": true,
+      "detail": "done"
+    },
+    {
+      "label": "turn 2: no rejected line",
+      "ok": true,
+      "detail": "0 rejected, 0 warnings"
+    },
+    {
+      "label": "turn 2: first line within 4 s",
+      "ok": true,
+      "detail": "3.3 s"
+    },
+    {
+      "label": "turn 2: warm (brief was since)",
+      "ok": true,
+      "detail": "form since"
+    },
+    {
+      "label": "turn 2: cache reads over 80%",
+      "ok": true,
+      "detail": "81%"
+    },
+    {
+      "label": "turn 2: judge: shows what was asked",
+      "ok": true,
+      "detail": "The layout is clean and all text is readable, but the plane is a simplistic, hard-to-recognise sketch and the side text and button add clutter beyond 'just show me the plane'."
+    },
+    {
+      "label": "turn 2: judge: text readable",
+      "ok": true,
+      "detail": "nothing wrong"
+    },
+    {
+      "label": "turn 2: brief says the last answer was cut off",
+      "ok": true,
+      "detail": "it does"
+    }
+  ]
+}
