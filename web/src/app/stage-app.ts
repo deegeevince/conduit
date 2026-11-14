@@ -855,8 +855,11 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
       const view = views.find((candidate) => candidate.id === event.id);
       const values: Record<string, ControlValue> = {};
       for (const candidate of views) if (candidate.value !== null) values[candidate.id] = candidate.value;
-      const text = view === undefined ? event.text : view.control === 'pick' ? view.valueText : view.label !== '' ? view.label : event.text;
-      void submit({ kind: 'act', id: event.id, text, values: values satisfies ControlValues }, null, true).catch(noteTurnFailure);
+      // a button of a mock-up brings what its own screen holds (a field's words, a switch), and no other control's
+      const mockup = event.screen !== undefined;
+      const text = mockup || view === undefined ? event.text : view.control === 'pick' ? view.valueText : view.label !== '' ? view.label : event.text;
+      const held: ControlValues = mockup ? (event.values ?? {}) : values;
+      void submit({ kind: 'act', id: event.id, text, values: held, ...(mockup ? { screen: event.screen } : {}) }, null, true).catch(noteTurnFailure);
       return;
     }
     sendBack(event);

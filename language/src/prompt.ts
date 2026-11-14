@@ -674,6 +674,7 @@ function inputText(input: TurnInput, pastedAs?: string): string {
   if (input.kind === 'script') return 'The user played a script of their own.';
   if (input.kind === 'act') {
     const values = valuesText(input.values);
+    if (input.screen !== undefined) return `The user pressed "${input.text}" on screen ${input.screen} of your mock-up (button ${input.id}).${values === '' ? '' : ` What the screen's fields and controls hold now: ${values}.`} Answer the press: change the mock-up, or say what it did.`;
     return `The user worked your control ${input.id}: "${input.text}".${values === '' ? '' : ` Every control now: ${values}.`}`;
   }
   if (input.kind === 'refine') return `The user asked you to keep making what is on stage better, up to ${input.passes} passes. The stage shows you the picture each pass; you add to it.`;

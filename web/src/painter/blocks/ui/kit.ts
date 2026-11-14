@@ -11,7 +11,7 @@ import { UI_DEVICE_SIZE, UI_SPACE, isUiContainer, unstar } from './lang';
 import { hasIcon, placeIcon } from './icons';
 import type { UiMeasure } from './measure';
 import type { Align, Box as FlexBox, Node, Style } from './solve';
-import type { UiAction, UiPart, UiRect, UiShadow, UiState } from './types';
+import type { UiAction, UiPart, UiPress, UiRect, UiShadow, UiState } from './types';
 
 // ------------------------------------------------------------------ what a node carries
 
@@ -224,10 +224,16 @@ function buttonOf(k: Kit, p: UiPartNode): N {
   return mk(style, flex('row', { align: 'center', justify: 'center', pad: [0, 20, 0, 20] }), null, [labelNode], { id: p.id, part: 'button', hug: !wide, target: true, paint, action: pressOf(p) });
 }
 
-/** A press: and where it goes (`to=<screen>`), when it goes anywhere. */
-function pressOf(p: UiPartNode): { readonly kind: 'press'; readonly control: string; readonly to?: string } {
+/**
+ * A press: where it goes (`to=<screen>`), when it goes anywhere, and whether the brain hears it. A `button` with nowhere to go is sent (there is nothing
+ * else for it to do); one that goes to a screen is a prototype's own step and stays here unless it says `send`. `label` is what it says, for the turn.
+ */
+function pressOf(p: UiPartNode): UiPress {
   const to = p.attrs['to'];
-  return to === undefined || to === '' ? { kind: 'press', control: p.id } : { kind: 'press', control: p.id, to };
+  const goes = to !== undefined && to !== '';
+  const label = (p.fields[0] ?? '').trim();
+  const send = p.kind === 'button' && !p.flags.includes('disabled') && (p.flags.includes('send') || !goes);
+  return { kind: 'press', control: p.id, ...(goes ? { to } : {}), ...(send ? { send: true, label: label === '' ? 'Button' : label } : {}) };
 }
 
 function fieldOf(k: Kit, p: UiPartNode, labelled: boolean): N {
@@ -293,19 +299,38 @@ function itemOf(k: Kit, p: UiPartNode): N {
   return mk({ width: 'fill', height: 'hug', minH: 64 }, flex('row', { align: 'center', gap: 12, pad }), null, kids, { id: p.id, part: 'item', target: true, paint, action: toggled === null ? pressOf(p) : { kind: 'toggle', control: p.id, on: toggled } });
 }
 
+/** The two ends of a switch's knob: its centre when off and when on, in points from the switch's left edge. Pointing reads the same numbers. */
+export const SWITCH = { w: 52, h: 32, off: 16, on: 36 } as const;
+
+function mixHex(a: string, b: string, t: number): string {
+  if (t <= 0) return a;
+  if (t >= 1) return b;
+  const pa = /^#([0-9a-f]{6})$/i.exec(a);
+  const pb = /^#([0-9a-f]{6})$/i.exec(b);
+  if (pa === null || pb === null) return t < 0.5 ? a : b;
+  const n = (hex: string, shift: number): number => (parseInt(hex, 16) >> shift) & 255;
+  const ch = (shift: number): string => Math.round(n(pa[1] as string, shift) + (n(pb[1] as string, shift) - n(pa[1] as string, shift)) * t).toString(16).padStart(2, '0');
+  return `#${ch(16)}${ch(8)}${ch(0)}`;
+}
+
 function switchOf(k: Kit, id: string, on: boolean): N {
   const c = k.t.colour;
   const wire = k.t.wire;
+  // a finger (or an ease after it) holds the knob between the ends; otherwise it is at the end `on` says
+  const held = k.state.thumb?.[id];
+  const t = held === undefined ? (on ? 1 : 0) : Math.max(0, Math.min(1, held));
   const paint = (b: Rect, out: Out): void => {
-    const track: Rect = { x: b.x, y: b.y + (b.h - 32) / 2, w: 52, h: 32 };
-    rectOf(out, id, 'switch', track, { radius: 16, fill: on ? (wire ? c.ink : c.success) : wire ? c.surface : c.sunken, edge: wire ? { colour: c.edge, width: 1 } : null });
+    const track: Rect = { x: b.x, y: b.y + (b.h - SWITCH.h) / 2, w: SWITCH.w, h: SWITCH.h };
+    const offFill = wire ? c.surface : c.sunken;
+    const onFill = wire ? c.ink : c.success;
+    rectOf(out, id, 'switch', track, { radius: 16, fill: mixHex(offFill, onFill, t), edge: wire ? { colour: c.edge, width: 1 } : null });
     const r = 12;
-    const cx = on ? track.x + track.w - 16 : track.x + 16;
+    const cx = track.x + SWITCH.off + (SWITCH.on - SWITCH.off) * t;
     const cy = track.y + 16;
     const knob: Rect = { x: cx - r, y: cy - r, w: r * 2, h: r * 2 };
-    rectOf(out, id, 'knob', knob, { radius: r, fill: wire && !on ? c.ink : '#ffffff', ...(wire ? {} : { shadow: { colour: c.shadow, dy: 1, blur: 3, alpha: 0.25 } }) });
+    rectOf(out, id, 'knob', knob, { radius: r, fill: wire ? mixHex(c.ink, '#ffffff', t) : '#ffffff', ...(wire ? {} : { shadow: { colour: c.shadow, dy: 1, blur: 3, alpha: 0.25 } }) });
   };
-  return mk({ width: 52, height: 44, shrink: 0 }, null, { fit: () => ({ w: 52, h: 44 }), minW: 52 }, [], { id, part: 'switch', quiet: true, paint, owner: id });
+  return mk({ width: 52, height: 44, shrink: 0 }, null, { fit: () => ({ w: 52, h: 44 }), minW: 52 }, [], { id, part: 'switch', quiet: true, paint, owner: id, action: { kind: 'toggle', control: id, on } });
 }
 
 function toggleOf(k: Kit, p: UiPartNode): N {

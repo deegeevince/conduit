@@ -17,10 +17,17 @@ export function applyAction(state: UiState, action: UiAction, hit: UiHit, x: num
       // the first key typed replaces what the field was given (a hint, or a value to overwrite): the words stay as they are until then
       return { ...state, focus: action.control };
     case 'slider':
-      return { ...state, slider: { ...state.slider, [action.control]: Math.max(0, Math.min(1, (x - hit.x) / Math.max(1, hit.w))) }, focus: null };
+      return { ...state, slider: { ...state.slider, [action.control]: sliderAt(hit, x) }, focus: null };
     case 'press':
       return { ...state, pressed: action.control, focus: null };
   }
+}
+
+/** A slider's knob is 24 points across and its centre stays 12 points inside the track's ends: the value a point of the track is. */
+export const SLIDER_INSET = 12;
+
+export function sliderAt(hit: { readonly x: number; readonly w: number }, x: number): number {
+  return Math.max(0, Math.min(1, (x - hit.x - SLIDER_INSET) / Math.max(1, hit.w - 2 * SLIDER_INSET)));
 }
 
 /** Keys into the field that has focus. */
