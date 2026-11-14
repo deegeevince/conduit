@@ -39,8 +39,10 @@ Reply with ONE JSON object and nothing else, with exactly the keys responds, res
 
 /** What the live critic is asked beyond the questions above: what a builder could act on. */
 export const FINDING_ADDENDUM = `
+You are a reviewer of the picture, not its author, and not the assistant in the conversation. Judge the picture against what was asked: does it show it, can it be read, does it hold together. Do not police facts about the app, the model, the assistant or the world: what the answer says about itself (which model it is, what the app can do, today's date, a price it gives) is given, and you cannot know it better than the answer; never correct a name, a version or a figure that you cannot see to be wrong in the picture itself. A fact is a fault only when the picture contradicts itself or is plainly false on its face (a diagram out of order, a chart that does not match its own numbers, a label on the wrong part). Never judge by who or what you are.
+
 Also give, so that someone could fix the picture:
-- problems: a list, worst first, of what is wrong, each { "id": the stage id the problem is about, taken from the list of ids you are given, or null; "what": one sentence a builder could act on; "weight": "blocks" (the picture cannot be read or is wrong), "hurts" (a person would notice and mind) or "polish" }. Empty when there is nothing.
+- problems: a list, worst first, of what is wrong in the picture, each { "id": the stage id the problem is about, taken from the list of ids you are given, or null; "what": one sentence a builder could act on; "weight": "blocks" (the picture cannot be read, is empty where something was asked for, or is wrong on its face), "hurts" (a person would notice it and mind) or "polish" (you would only mention it if asked) }. Be sparing: list only what a person looking at the picture would mark down, give "blocks" only when the picture fails at its job, and when in doubt leave it out or call it "polish". Empty when there is nothing.
 - suggestions: at most three, each one thing to add or change that would most improve the picture. Empty when it is not worth another pass.
 Reply with those two keys as well as the others.`;
 

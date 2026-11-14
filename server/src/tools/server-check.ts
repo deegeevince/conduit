@@ -5,6 +5,7 @@ import { asksWhatsNew, FIX_POLICY, NEW_COMMAND_TEXT, newsText, NO_SIGHT } from '
 import type { ContentCount, TurnInput } from '@conduit/language';
 import type { Snapshot } from '../domain/brain';
 import type { Critic } from '../domain/critic';
+import { worthQueuing } from '../domain/critic';
 import { judgeFix } from '../domain/review';
 import type { DraftReport } from '../domain/review';
 import { createLogger } from '../log';
@@ -47,7 +48,17 @@ function newsChecks(): void {
   check(!newsText('x').includes('The user asked for it'), 'the brief no longer says the user asked for the changelog', 'checked');
 }
 
+function queueChecks(): void {
+  const finding = (coherence: number, weights: readonly ('blocks' | 'hurts' | 'polish')[]) => ({ coherence, problems: weights.map((weight) => ({ id: null, what: 'x', weight })) });
+  check(!worthQueuing(finding(2, []), 4), 'a low score with no problem named is not queued', 'checked');
+  check(!worthQueuing(finding(2, ['hurts', 'polish', 'polish']), 4), 'one hurt and some polish is not queued', 'checked');
+  check(worthQueuing(finding(2, ['hurts', 'hurts']), 4), 'two hurts are queued', 'checked');
+  check(worthQueuing(finding(3, ['blocks']), 4), 'a blocking problem is queued', 'checked');
+  check(!worthQueuing(finding(4, ['blocks']), 4), 'a good score is never queued', 'checked');
+}
+
 await criticChecks();
+queueChecks();
 newsChecks();
 process.stdout.write(failed === 0 ? '\nall passed\n' : `\n${failed} failed\n`);
 process.exitCode = failed === 0 ? 0 : 1;

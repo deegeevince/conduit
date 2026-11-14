@@ -34,6 +34,17 @@ export interface CriticPolicy {
   readonly queueBelow: number;
 }
 
+/**
+ * Whether a finding is evidence worth keeping for the loop: a low score AND a problem that blocks, or at least two that hurt. A critic that
+ * queued five turns of six, one of them on a fact it had wrong about itself, taught the loop noise (v2.1 review, P1-9).
+ */
+export function worthQueuing(finding: Pick<CriticFinding, 'coherence' | 'problems'>, queueBelow: number): boolean {
+  if (finding.coherence >= queueBelow) return false;
+  const blocks = finding.problems.filter((problem) => problem.weight === 'blocks').length;
+  const hurts = finding.problems.filter((problem) => problem.weight === 'hurts').length;
+  return blocks >= 1 || hurts >= 2;
+}
+
 export const CRITIC_POLICY: CriticPolicy = { enabled: true, model: 'sonnet', effort: 'low', perHour: 60, lookMs: 45_000, queueBelow: 4 };
 
 /** What the critic is asked about: one resting picture and what was asked for. */

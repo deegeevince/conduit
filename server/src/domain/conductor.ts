@@ -41,6 +41,7 @@ import type { ActiveTurn, Session, SessionStore, StageSink } from './session';
 import { readPasted } from '../reading/pasted';
 import { factsOf, tableFromText } from './datasets';
 import type { DatasetLibrary } from './datasets';
+import { worthQueuing } from './critic';
 import type { Critic, FindingQueue } from './critic';
 import { redactSecrets } from './agent';
 import { askedOf, refusalProblem, reviewTurn } from './review';
@@ -938,7 +939,7 @@ export class Conductor {
       try {
         const finding = await critic.look(request, s.abort.signal);
         if (finding === null || s.abort.signal.aborted) return;
-        const queued = finding.coherence < this.deps.criticQueueBelow;
+        const queued = worthQueuing(finding, this.deps.criticQueueBelow);
         s.findings.set(turn.id, finding);
         while (s.findings.size > SERVER_LIMITS.turnsKept) {
           const oldest = s.findings.keys().next();
