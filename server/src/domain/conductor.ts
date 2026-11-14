@@ -1108,7 +1108,9 @@ export class Conductor {
     const snapshot = this.deps.assets.snapshot(s.id, turn.id);
     if (snapshot === undefined) return;
     const facts = draftFactsOf(turn.score.schedule, 0);
-    if (!worthALook(facts, { ...this.deps.review, enabled: true, passes: 1 }).look) return;
+    // A turn that only changed what an earlier turn left on the stage draws nothing new, but it is the follow-up the critic is for (critic v2)
+    const previous = this.previousForCritic(s, turn);
+    if (previous === null && !worthALook(facts, { ...this.deps.review, enabled: true, passes: 1 }).look) return;
     turn.criticAsked = true;
     const picture = snapshot;
     const file = turn.snapshotFile;
@@ -1121,7 +1123,7 @@ export class Conductor {
       picture,
       sight: s.history.find((memory) => memory.turn === turn.id)?.sight ?? null,
       mockup: turn.score.schedule.elements.some((element) => element.exit === null && element.figure?.kind === 'structure' && element.figure.structure === 'screen'),
-      previous: this.previousForCritic(s, turn),
+      previous,
     };
     void (async () => {
       try {
