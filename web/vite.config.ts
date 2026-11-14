@@ -50,6 +50,7 @@ export default defineConfig({
         'bench-renderer': page('bench-renderer.html'),
         'bench-ui': page('bench-ui.html'),
         'bench-surface': page('bench-surface.html'),
+        'bench-parity': page('bench-parity.html'),
         ...optional('bench-chart', 'bench-chart.html'),
         ...optional('taste', 'taste.html'),
         ...optional('bench-ink', 'bench-ink.html'),

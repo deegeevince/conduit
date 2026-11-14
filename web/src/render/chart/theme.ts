@@ -8,7 +8,7 @@ import type { Colour } from '../../contracts/frame';
 import type { LookSpec } from '../../contracts/look';
 import type { Viewport } from '../../contracts/space';
 import { FACES } from '../../fonts/faces';
-import { fontFor } from '../../fonts';
+import { familyFor } from '../../fonts/families';
 import { enforceInGamut, fromHsl, mix, toHsl, worstContrast } from '../../looks/colour-math';
 import { cellOf } from '../../painter/layout/metrics';
 
@@ -64,7 +64,7 @@ export function chartThemeOf(look: LookSpec, viewport: Viewport = DESK): ChartTh
     down,
     accent,
     face,
-    fontFamily: fontFor(FACES[face].font).family,
+    fontFamily: familyFor(FACES[face].font),
     fontPx: labelPx(look, viewport),
     hard: HARD_FACES.has(look.type.face) || look.id === 'pixel',
   };

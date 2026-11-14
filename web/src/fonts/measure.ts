@@ -10,6 +10,11 @@ import type { FaceMetrics } from './faces';
 const CACHE_LIMIT = 6000;
 const cache = new Map<string, Float64Array>();
 
+/** Forgets every running width made so far (a bench that changes a table has to). */
+export function clearMeasureCache(): void {
+  cache.clear();
+}
+
 function metricsOf(face: Face, weight: Weight): FaceMetrics | null {
   const spec = FACES[face];
   return weight === 'bold' && spec.boldMetrics !== null ? spec.boldMetrics : spec.metrics;
