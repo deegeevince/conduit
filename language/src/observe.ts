@@ -130,6 +130,11 @@ const LINT: Readonly<Record<SightNote, { readonly kind: ObsKind; readonly severi
   recoloured: { kind: 'legible', severity: 'note', words: 'recoloured to stay readable' },
   crowded: { kind: 'fit', severity: 'note', words: 'too many parts for the room' },
   sparse: { kind: 'fit', severity: 'note', words: 'most of the picture is empty' },
+  // FG1: a label that spills out of the shape that mostly holds it, or whose leader line ends on the wrong part or crosses another, is the layout's to mend
+  spills: { kind: 'inside', severity: 'blocking', words: 'it spills out past the shape that mostly holds it' },
+  'wrong-part': { kind: 'apart', severity: 'blocking', words: 'its leader line ends on the wrong part' },
+  tangled: { kind: 'apart', severity: 'blocking', words: 'its leader line crosses another label\'s' },
+  refit: { kind: 'fit', severity: 'note', words: 'shrunk toward its centre to fit inside its shape' },
   retired: null,
   partial: null,
   painted: null,
