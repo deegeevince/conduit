@@ -82,6 +82,16 @@ export function copyScript(app: StageApp): Promise<void> {
   return copyText(app, app.script(), 'Script copied', 'The script could not be copied. Use Save script instead.');
 }
 
+/** The answer's words as Markdown, for a turn (the one on stage when none is named). Says so when there is nothing to copy. */
+export async function copyAnswer(app: StageApp, turn?: string): Promise<void> {
+  const markdown = app.answerMarkdown(turn);
+  if (markdown.trim() === '') {
+    app.announce('There are no words to copy yet. Say "/copy script" to copy the answer as lines of Series.');
+    return;
+  }
+  await copyText(app, markdown, 'Answer copied as Markdown', 'The answer could not be copied.');
+}
+
 /** A standard MIDI file of the last tune the answer wrote: its notes and tempo, a track a voice, the instrument it was played on. */
 export function saveMidi(app: StageApp): void {
   const { lines } = parseScript(app.script());

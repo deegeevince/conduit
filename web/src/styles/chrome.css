@@ -1257,3 +1257,68 @@ input {
 .action__count[hidden] {
   display: none;
 }
+
+/* The stage's words as real text (v2.1, web/src/app/text-layer.ts). Transparent: the drawn words are the picture, these are their twins, there to be selected and read. */
+
+.stage__text {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.stage__text[data-moving] {
+  visibility: hidden;
+}
+
+.stage__text-block {
+  margin: 0;
+  padding: 0;
+  font: inherit;
+}
+
+.stage__text-line {
+  position: absolute;
+  display: block;
+  box-sizing: content-box;
+  white-space: pre;
+  color: transparent;
+  background: none;
+  transform-origin: 50% 50%;
+  pointer-events: auto;
+  user-select: text;
+  -webkit-user-select: text;
+  -webkit-touch-callout: default;
+  cursor: text;
+}
+
+/* a choice and a mock-up's live parts are worked by a finger, not read by a cursor: they let every tap through, and are not part of a selection */
+.stage__text-block--choice .stage__text-line,
+.stage__text-block--control .stage__text-line {
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.stage__text-line::selection {
+  color: transparent;
+  background: color-mix(in srgb, var(--stage-accent, #3b82f6) 38%, transparent);
+}
+
+.transcript__copy {
+  margin-left: var(--space-2);
+  padding: 0 var(--space-2);
+  font: inherit;
+  font-weight: 400;
+  color: var(--chrome-text-quiet);
+  background: none;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.stage__text[data-selecting] {
+  pointer-events: auto;
+  cursor: text;
+}

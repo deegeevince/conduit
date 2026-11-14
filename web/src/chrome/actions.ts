@@ -3,7 +3,7 @@
 
 import type { StageApp } from '../app/stage-app';
 import type { ExportRequest } from '../contracts/export';
-import { SIZES, copyScript, saveBlob, saveMidi, saveScript, saveStill } from './files';
+import { SIZES, copyAnswer, copyScript, saveBlob, saveMidi, saveScript, saveStill } from './files';
 
 export interface Actions {
   dispose(): void;
@@ -160,6 +160,7 @@ export function mountActions(host: HTMLElement, app: StageApp, transcript: Trans
   // The menu
 
   const ITEMS = [
+    { id: 'copy-answer', label: 'Copy answer', gist: 'the words, as Markdown: headings, lists, tables, code', needsAnswer: true },
     { id: 'copy', label: 'Copy script', gist: 'the answer as lines of Series, on the clipboard', needsAnswer: true },
     { id: 'save-script', label: 'Save script', gist: 'the same lines, as a .series file', needsAnswer: true },
     { id: 'play', label: 'Play a script…', gist: 'paste lines of Series and watch them on the stage', needsAnswer: false },
@@ -419,6 +420,9 @@ export function mountActions(host: HTMLElement, app: StageApp, transcript: Trans
     setMenu(false);
     takeButton.focus({ preventScroll: true });
     switch (id) {
+      case 'copy-answer':
+        void copyAnswer(app);
+        break;
       case 'copy':
         void copyScript(app);
         break;
