@@ -547,7 +547,7 @@ export function createShapePool(): ShapePool {
         const strokeOrder = renderOrderOf(shape.layer, 'stroke', shape.z);
         if (entry.fill !== null && entry.fillMaterial !== null && shape.fill !== null) {
           const material = entry.fillMaterial;
-          const box = boxOf(shape);
+          const box = shape.fill.span ?? boxOf(shape);
           (material.uniforms['uFrom']?.value as Color).copy(inkColour(style, shape.fill.colour));
           (material.uniforms['uTo']?.value as Color).copy(inkColour(style, shape.fill.to ?? shape.fill.colour));
           const span = material.uniforms['uSpan']?.value as Vector2;

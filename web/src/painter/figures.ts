@@ -1006,6 +1006,18 @@ function wobbledFor(lines: readonly Polyline[], seed: string, amount: number): r
 /** How close to the canvas edge (canvas units) a point must be to be on it. */
 const EDGE_TOLERANCE = 0.5;
 
+/**
+ * How far a bleeding shape may run (stage units): the picture's region, taken out to the stage's own edge on every side the ground covers
+ * but the bottom, where the words stand. A landscape then reaches the sides and the top of the screen and is not a picture in a frame; what
+ * is not ground (a lighthouse, a ship) is still clipped to the region, so nothing drawn runs under the words.
+ */
+function bleedRectOf(region: Box, viewport: Viewport, open: OpenEdges): Box {
+  const left = open.left ? Math.min(region.x, -viewport.width / 2) : region.x;
+  const right = open.right ? Math.max(region.x + region.width, viewport.width / 2) : region.x + region.width;
+  const top = open.top ? Math.min(region.y, -viewport.height / 2) : region.y;
+  return { x: left, y: top, width: right - left, height: region.y + region.height - top };
+}
+
 const bleedMemo = new WeakMap<readonly Polyline[], Map<string, readonly Polyline[]>>();
 
 /**
@@ -1016,7 +1028,7 @@ const bleedMemo = new WeakMap<readonly Polyline[], Map<string, readonly Polyline
  * so it runs on sideways only: extending it up or down would stretch the gradient (a renderer cannot hold it to its own box until a frame
  * says what that box is). Returns the outline unchanged (and an empty key) when nothing is to move.
  */
-function bleedOutline(lines: readonly Polyline[], placed: Placed, frm: Frm, gradient: boolean): { lines: readonly Polyline[]; key: string } {
+function bleedOutline(lines: readonly Polyline[], placed: Placed, frm: Frm): { lines: readonly Polyline[]; key: string } {
   const { a, b, c, d, e, f } = placed.M;
   if (Math.abs(b) > 1e-3 || Math.abs(c) > 1e-3 || Math.abs(a) < 1e-6 || Math.abs(d) < 1e-6) return { lines, key: '' };
   const open = frm.open.get(placed.el.scene);
@@ -1037,12 +1049,12 @@ function bleedOutline(lines: readonly Polyline[], placed: Placed, frm: Frm, grad
     if (!line.closed || line.points.length < 3) continue;
     if (open.left && onEdge(line, (p) => Math.abs(a * p.x + e) <= EDGE_TOLERANCE, (p) => d * p.y + f)) left = true;
     if (open.right && onEdge(line, (p) => Math.abs(a * p.x + e - canvas.width) <= EDGE_TOLERANCE, (p) => d * p.y + f)) right = true;
-    if (!gradient && open.top && onEdge(line, (p) => Math.abs(d * p.y + f) <= EDGE_TOLERANCE, (p) => a * p.x + e)) top = true;
-    if (!gradient && open.bottom && onEdge(line, (p) => Math.abs(d * p.y + f - canvas.height) <= EDGE_TOLERANCE, (p) => a * p.x + e)) bottom = true;
+    if (open.top && onEdge(line, (p) => Math.abs(d * p.y + f) <= EDGE_TOLERANCE, (p) => a * p.x + e)) top = true;
+    if (open.bottom && onEdge(line, (p) => Math.abs(d * p.y + f - canvas.height) <= EDGE_TOLERANCE, (p) => a * p.x + e)) bottom = true;
   }
   if (!left && !right && !top && !bottom) return { lines, key: '' };
   // Canvas units from each canvas edge to the matching edge of the picture's region.
-  const region = fit.region;
+  const region = bleedRectOf(fit.region, frm.viewport, open);
   const reachLeft = Math.max(0, Math.round((fit.box.x - region.x) / fit.unit));
   const reachRight = Math.max(0, Math.round((region.x + region.width - (fit.box.x + fit.box.width)) / fit.unit));
   const reachTop = Math.max(0, Math.round((fit.box.y - region.y) / fit.unit));
@@ -1077,11 +1089,12 @@ function bleedOutline(lines: readonly Polyline[], placed: Placed, frm: Frm, grad
 }
 
 /** The frame a thing on a canvas is kept inside (D3): the picture's box for a member of a painted group, else the scene's picture region. */
-function clipOf(placed: Placed, frm: Frm): Box | undefined {
+function clipOf(placed: Placed, frm: Frm, bleeds: boolean): Box | undefined {
   if (frm.fixedFit !== null || frm.fitOf === null) return undefined;
   const fit = fitFor(frm, placed.owner);
   const ps = planeScale(layerOf(placed), frm.viewport);
-  let rect: Box = fit.region;
+  const open = frm.open.get(placed.el.scene);
+  let rect: Box = bleeds && open !== undefined ? bleedRectOf(fit.region, frm.viewport, open) : fit.region;
   // a member of a group a painting stands on is kept inside that painting's box
   let parent = placed.el.parent;
   for (let hops = 0; parent !== null && hops < 16; hops += 1) {
@@ -1112,8 +1125,8 @@ function underPainting(element: ElementSpan, standing: ReadonlyMap<string, Eleme
 }
 
 /** `{ clip }` or nothing, to spread into a frame. */
-function clipField(placed: Placed, frm: Frm): { clip?: Box } {
-  const clip = clipOf(placed, frm);
+function clipField(placed: Placed, frm: Frm, bleeds = false): { clip?: Box } {
+  const clip = clipOf(placed, frm, bleeds);
   return clip === undefined ? {} : { clip };
 }
 
@@ -1166,6 +1179,19 @@ function openEdgesOf(placed: readonly Placed[], standing: ReadonlyMap<string, El
 /** The gap, in canvas units, that two shapes along an edge may leave and still cover it. */
 const OPEN_GAP = 1.5;
 
+/** The top and height of an outline as the brain drew it, in the shape's own units: what a gradient runs over, though the outline is made to run on. */
+function spanOf(lines: readonly Polyline[]): { readonly top: number; readonly height: number } {
+  let top = Infinity;
+  let bottom = -Infinity;
+  for (const line of lines) {
+    for (const p of line.points) {
+      top = Math.min(top, p.y);
+      bottom = Math.max(bottom, p.y);
+    }
+  }
+  return top === Infinity ? { top: 0, height: 0 } : { top, height: bottom - top };
+}
+
 function shapeFrame(placed: Placed, frm: Frm): ShapeFrame | null {
   const figure = placed.el.figure as FigureOf<'shape'>;
   const env = envelope(placed.owner, frm);
@@ -1181,7 +1207,7 @@ function shapeFrame(placed: Placed, frm: Frm): ShapeFrame | null {
   const latest = done[done.length - 1]?.geometry ?? figure.geometry;
   const fill = fillOf(placed.trans, look, placed.flash, arrival);
   const fullBleed = latest.shape === 'rect' && latest.full;
-  const edged = fill !== null && !fullBleed && placed.trans.to.bleed !== 'none' && !underPainting(placed.el, frm.standing, frm.sc) ? bleedOutline(morph.polylines, placed, frm, fill.to !== null) : { lines: morph.polylines, key: '' };
+  const edged = fill !== null && !fullBleed && placed.trans.to.bleed !== 'none' && !underPainting(placed.el, frm.standing, frm.sc) ? bleedOutline(morph.polylines, placed, frm) : { lines: morph.polylines, key: '' };
   return {
     kind: 'shape',
     key: placed.key,
@@ -1191,11 +1217,11 @@ function shapeFrame(placed: Placed, frm: Frm): ShapeFrame | null {
     outline: wobbledFor(edged.lines, placed.el.key, amount),
     geometryKey: `${placed.key}|${morph.token}|${look.name}|${amount}${edged.key === '' ? '' : `|bleed${edged.key}`}`,
     transform: toStage(placed, frm, env),
-    fill,
+    fill: fill === null || fill.to === null || edged.key === '' ? fill : { ...fill, span: spanOf(morph.polylines) },
     stroke: strokeOf(placed.trans, look, placed.flash, draw),
     opacity: clamp01(env.opacity * placed.opacity * (frm.fades.get(placed.owner.key) ?? 1)),
     bleed: fullBleed,
-    ...(fullBleed ? {} : clipField(placed, frm)),
+    ...(fullBleed ? {} : clipField(placed, frm, edged.key !== '')),
     tappable: placed.trans.to.tap,
   };
 }

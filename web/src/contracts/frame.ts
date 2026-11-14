@@ -139,6 +139,11 @@ export interface FillFrame {
    * has none (it says so in `RendererCapabilities.textures`) draws flat.
    */
   readonly texture?: Texture;
+  /**
+   * v2.1. The top and height, in the shape's own units, that a gradient runs over, when the outline has been made to run on past what
+   * the brain drew (bleed). Absent: the outline's own box. A flat fill ignores it.
+   */
+  readonly span?: { readonly top: number; readonly height: number };
 }
 
 /**
