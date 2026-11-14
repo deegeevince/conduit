@@ -304,12 +304,11 @@ export class Player {
     const card = h(
       'button',
       { type: 'button', class: `pcard${done ? ' done' : ''}${waiting ? ' wait' : ''}${crop === undefined ? '' : ' with-crop'}`, 'data-act': `open:${node.id}`, onclick: () => (this.isMap(node) ? this.show({ kind: 'map', node: node.id }) : this.go(node)) },
-      h('span', { class: 'pnum' }, done ? '✓' : (printed ?? (isTechnique(node.tag) ? '' : '•'))),
+      h('span', { class: 'pnum' }, done ? '✓' : isTechnique(node.tag) ? glyph(node.tag) : (printed ?? '•')),
       crop === undefined ? null : h('img', { class: 'pcrop', src: crop, alt: '' }),
-      h('span', { class: 'ptext' }, isTechnique(node.tag) ? nameOf(node) : text),
+      h('span', { class: 'ptext' }, text),
       h('span', { class: `pnote${done && answer !== null ? ' answer' : ''}` }, note),
     );
-    if (isTechnique(node.tag) && !done) card.prepend(glyph(node.tag));
     return card;
   }
 
@@ -407,7 +406,7 @@ export class Player {
     const helping = up !== null && shutAsks(this.doc, this.state, up).length > 0;
     const next = afterOf(this.doc, node);
     const row = h('div', { class: 'finish-row' });
-    if (helping && up !== null) row.append(h('button', { type: 'button', class: 'btn main', 'data-act': 'back-to', onclick: () => this.go(up) }, `Back to ${splitNumber(up.title).text.slice(0, 28)}`));
+    if (helping && up !== null) row.append(h('button', { type: 'button', class: 'btn main', 'data-act': 'back-to', onclick: () => this.go(up) }, 'Try it now'));
     if (next !== null) row.append(h('button', { type: 'button', class: `btn ${helping ? 'soft' : 'main'}`, 'data-act': 'next-part', onclick: () => this.go(next) }, helping ? 'Skip to the next part' : 'Next part'));
     row.append(h('button', { type: 'button', class: 'btn soft', 'data-act': 'map-2', onclick: () => this.show({ kind: 'map', node: this.doc.root }) }, 'Map'));
     return h('section', { class: 'finish', 'data-act': 'finish' }, h('h2', {}, helping ? 'Now you try' : 'That is this part'), h('p', {}, helping ? 'Go back and write your answer.' : 'You have been all the way through it.'), row);

@@ -80,6 +80,7 @@ function input(): LessonInput {
 
 const changes: StateChange[] = [];
 const notes: string[] = [];
+const slots: unknown[] = [];
 const mount = document.getElementById('lesson');
 if (mount === null) throw new Error('no mount');
 const auto = params.get('auto') === '1';
@@ -114,7 +115,7 @@ if (auto) {
   const batches: DocNode[][] = [nodes.filter((n) => byDepth(n) === 0), nodes.filter((n) => byDepth(n) === 1), nodes.filter((n) => byDepth(n) >= 2)];
   batches.forEach((batch, n) => window.setTimeout(() => view?.onDoc({ type: 'doc', turn: 't1', document: doc.id, title: doc.title, root: doc.root, nodes: batch }), 300 + n * 500));
 } else {
-  direct = new DocumentHost({ mount, dark, input: input(), onChange, onNote: (text) => notes.push(text), onOpen });
+  direct = new DocumentHost({ mount, dark, input: input(), onChange, onNote: (text) => notes.push(text), onOpen, onSlot: (slot) => slots.push(slot) });
 }
 const host = { get current(): DocState { return (view?.host() ?? direct)?.current ?? state; }, get probe() { return (view?.host() ?? direct)?.probe() ?? []; } };
 
@@ -144,6 +145,7 @@ win.__lesson = {
   state: () => host.current,
   changes,
   notes,
+  slots,
   census: () => (view?.host() ?? direct)?.census(),
   probe: () => host.probe,
   still: () => (view?.host() ?? direct)?.still(),

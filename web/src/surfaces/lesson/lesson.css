@@ -27,10 +27,11 @@
 .map h2 { display: flex; align-items: center; gap: 8px; }
 .cards { list-style: none; margin: 0 0 16px; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .cards > li { display: flex; }
+.cards > li:only-child { grid-column: 1 / -1; }
 .pcard { width: 100%; min-height: 132px; padding: 12px 14px; display: grid; grid-template-columns: 44px minmax(0, 1fr); grid-template-areas: 'n t' 'c c' 'm m'; gap: 6px 10px; align-content: start; text-align: left; background: var(--card); border: 3px solid var(--line); border-radius: 20px; color: var(--ink); }
 .pcard:hover { border-color: var(--accent); }
-.pcard > .pnum, .pcard > .glyph { grid-area: n; width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; background: var(--soft); color: var(--ink); font-size: 20px; font-weight: 800; }
-.pcard > .glyph { padding: 6px; fill: none; stroke: var(--accent); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.pcard > .pnum { grid-area: n; width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; background: var(--soft); color: var(--ink); font-size: 20px; font-weight: 800; }
+.pcard > .pnum .glyph { width: 28px; height: 28px; fill: none; stroke: var(--accent); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
 .pcard .pcrop { grid-area: c; width: 100%; max-height: 92px; object-fit: contain; border-radius: 10px; background: #fff; border: 2px solid var(--line); }
 .pcard .ptext { grid-area: t; font-size: 20px; font-weight: 700; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
 .pcard .pnote { grid-area: m; align-self: end; font-size: 18px; font-weight: 700; color: var(--dim); }

@@ -49,6 +49,11 @@ export function atWidth(host: HTMLElement, paint: (width: number) => void, min =
   };
   run();
   if (typeof ResizeObserver === 'undefined') return;
-  const observer = new ResizeObserver(() => run());
+  let frame = 0;
+  // painted on the next frame, not inside the observer's own callback (that is a resize loop the browser warns of)
+  const observer = new ResizeObserver(() => {
+    cancelAnimationFrame(frame);
+    frame = requestAnimationFrame(run);
+  });
   observer.observe(host);
 }

@@ -39,6 +39,8 @@ export interface DocumentHostOptions {
   readonly onOpenPart?: (node: NodeId) => void;
   /** she asked to put the document away and see the picture */
   readonly onPicture?: () => void;
+  /** where the writing area is in the frame, or null: the ink module is laid over it (`overlayOn`, in the page) and keyed on `{ node, ask }` */
+  readonly onSlot?: (slot: { readonly node: NodeId; readonly ask: string; readonly x: number; readonly y: number; readonly w: number; readonly h: number } | null) => void;
   /** a line for the status line: a fault, a frame that stopped */
   readonly onNote?: (text: string) => void;
 }
@@ -72,7 +74,7 @@ export class DocumentHost {
   private wanted: ((summary: unknown) => void) | null = null;
   private readonly observer: ResizeObserver | null;
   /** who is listening now (the link, or the page's own) */
-  handlers: Pick<DocumentHostOptions, 'onChange' | 'onOpen' | 'onOpenPart' | 'onPicture' | 'onNote'>;
+  handlers: Pick<DocumentHostOptions, 'onChange' | 'onOpen' | 'onOpenPart' | 'onPicture' | 'onSlot' | 'onNote'>;
   private problem: string | null;
 
   constructor(private readonly options: DocumentHostOptions) {
@@ -123,6 +125,17 @@ export class DocumentHost {
       return;
     }
     if (name === 'picture') return this.handlers.onPicture?.();
+    if (name === 'slot') {
+      let read: unknown = null;
+      try {
+        read = typeof value === 'string' ? JSON.parse(value) : null;
+      } catch {
+        read = null;
+      }
+      const s = Array.isArray(read) ? read : [];
+      this.handlers.onSlot?.(typeof s[0] === 'string' && typeof s[1] === 'string' && s.slice(2).every((n) => typeof n === 'number') ? { node: s[0], ask: s[1], x: Number(s[2]), y: Number(s[3]), w: Number(s[4]), h: Number(s[5]) } : null);
+      return;
+    }
     if (name === 'openpart') {
       if (typeof value === 'string') this.handlers.onOpenPart?.(value);
       return;
@@ -180,7 +193,7 @@ export class DocumentHost {
   // ------------------------------------------------------------ for the page
 
   /** Who hears what she does (the link, or the bench's own). */
-  listen(handlers: Pick<DocumentHostOptions, 'onChange' | 'onOpen' | 'onOpenPart' | 'onPicture' | 'onNote'>): void {
+  listen(handlers: Pick<DocumentHostOptions, 'onChange' | 'onOpen' | 'onOpenPart' | 'onPicture' | 'onSlot' | 'onNote'>): void {
     this.handlers = handlers;
   }
 

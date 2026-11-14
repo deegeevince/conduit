@@ -95,10 +95,32 @@ function commit(changes: readonly StateChange[], state: DocState): void {
   bridge?.state(state);
 }
 
+/**
+ * Where the writing area is, for the ink module to be laid over it (it is mounted in the page over this frame with `overlayOn`, since the bridge
+ * carries 300 characters and a hand's marks are more): `[node, ask, x, y, w, h]` in the frame's own pixels, or `[]` when there is none. Told when
+ * it changes and once things have settled after a scroll, so a hand drawing does not spend the host's allowance of events.
+ */
+let slotTold = '';
+let slotWait = 0;
+function reportSlot(): void {
+  window.clearTimeout(slotWait);
+  slotWait = window.setTimeout(() => {
+    const el = root?.querySelector('[data-ink-slot]');
+    const r = el?.getBoundingClientRect();
+    const told = el === null || el === undefined || r === undefined ? '[]' : JSON.stringify([el.getAttribute('data-ink-slot'), el.getAttribute('data-ask'), Math.round(r.x), Math.round(r.y), Math.round(r.width), Math.round(r.height)]);
+    if (told === slotTold || told.length > 290) return;
+    slotTold = told;
+    bridge?.send('slot', told);
+  }, 400);
+}
+
 function start(input: LessonInput): void {
   if (root === null) return;
   player = new Player(root, input, { commit, open: (id) => bridge?.send('open', id), openPart: (id) => bridge?.send('openpart', id), picture: () => bridge?.send('picture', 1) });
   player.render();
+  reportSlot();
+  new MutationObserver(reportSlot).observe(root, { childList: true, subtree: true });
+  addEventListener('scroll', reportSlot, { passive: true });
   window.__lessonCensus = () => (player === null ? null : takeCensus(player, root));
 }
 
