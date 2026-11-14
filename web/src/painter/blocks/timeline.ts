@@ -7,7 +7,7 @@ import type { Point, Polyline } from '@conduit/language';
 import { EMPTY_STRUCTURE_LAYOUT } from '../../contracts/blocks';
 import type { BlockPart, StructureInput, StructureLayout } from '../../contracts/blocks';
 import type { Box } from '../../contracts/space';
-import { box, circle, open, overlaps, packOrdered, polylineHitsBox, roundedRect, union } from './geom';
+import { box, circle, open, overlaps, packOrdered, polylineHitsBox, polylinesCross, roundedRect, union } from './geom';
 import type { Draft, Note } from './kit';
 import { Env, fit, niceStep, wordsOf } from './kit';
 
@@ -185,6 +185,65 @@ function buildTimeline(env: Env): Draft {
       leads.push({ points: pick.lead, closed: false });
       slots.push({ eu: e.eu, ev: e.ev, box: pick.b, u: uc, lead: pick.lead, v0: 0 });
     });
+    // A horizontal axis, labels crowding it in tiers: one row on each side instead, the words moved along the axis so that they
+    // clear each other and joined to their dots by slanted leaders. Used when it keeps every leader clear and is the lower.
+    if (!vertical && items.length > 1 && (notes.length > 0 || Math.max(...placed.map((p) => p.y + p.height)) - Math.min(...placed.map((p) => p.y)) > maxEv * 2.4)) {
+      const configs: ((i: number) => number)[] = [() => 0, ...[6, 5, 4, 3, 2].map((k) => (i: number) => (i % k === k - 1 ? 1 : 0))];
+      for (const rowOf of configs) {
+        const rows: number[][] = [[], []];
+        items.forEach((_, i) => (rows[rowOf(i)] as number[]).push(i));
+        const sBoxes: (Box | null)[] = items.map(() => null);
+        const sLeads: Point[][] = items.map(() => []);
+        let ok = true;
+        // row 0 is above the axis (clear of the tick labels), row 1 below it
+        rows.forEach((idxs, row) => {
+          if (idxs.length === 0 || !ok) return;
+          const eus = idxs.map((i) => ext(meas[i] as (typeof meas)[number]).eu);
+          const spacing = eus.slice(1).map((e, k) => (e + (eus[k] as number)) / 2 + gap);
+          const packed = packOrdered(idxs.map((i) => dotU[i] as number), spacing, idxs.map(() => 1));
+          const first = (packed[0] as number) - (eus[0] as number) / 2;
+          const last = (packed[packed.length - 1] as number) + (eus[eus.length - 1] as number) / 2;
+          if (last - first > U) {
+            ok = false;
+            return;
+          }
+          const shift = first < 0 ? -first : last > U ? U - last : 0;
+          idxs.forEach((i, k) => {
+            const e = ext(meas[i] as (typeof meas)[number]);
+            const centre = (packed[k] as number) + shift;
+            const v0 = row === 1 ? below0 : -above0 - e.ev;
+            sBoxes[i] = toBox(centre - e.eu / 2, v0, e.eu, e.ev);
+            const near = row === 1 ? v0 - 0.25 * body : v0 + e.ev + 0.25 * body;
+            sLeads[i] = [{ x: dotU[i] as number, y: row === 1 ? ER : -ER }, { x: centre, y: near }];
+          });
+        });
+        if (!ok) continue;
+        let bad = 0;
+        const all = sBoxes as Box[];
+        sLeads.forEach((lead, i) => {
+          const line: Polyline = { points: lead, closed: false };
+          all.forEach((b, j) => {
+            if (j !== i && polylineHitsBox(line, box(b.x - 1, b.y - 1, b.width + 2, b.height + 2))) bad += 1;
+          });
+          for (const tb of tickBoxes) if (polylineHitsBox(line, box(tb.x - 1, tb.y - 1, tb.width + 2, tb.height + 2))) bad += 1;
+          sLeads.forEach((other, j) => {
+            if (j > i && polylinesCross(line, { points: other, closed: false }) > 0) bad += 1;
+          });
+        });
+        if (bad > 0) continue;
+        placed.length = 0;
+        leads.length = 0;
+        slots.length = 0;
+        notes.length = 0;
+        items.forEach((_, i) => {
+          const b = sBoxes[i] as Box;
+          placed.push(b);
+          leads.push({ points: sLeads[i] as Point[], closed: false });
+          slots.push({ eu: 0, ev: 0, box: b, u: dotU[i] as number, lead: sLeads[i] as Point[], v0: 0 });
+        });
+        break;
+      }
+    }
     const everything = [...placed, ...tickBoxes, toBox(0, -ER, U, 2 * ER)];
     const bounds = union(everything);
     return { dotU, lo, hi, meas, slots, notes, step, ticks, tickBoxes, bounds, uOf, bad: notes.length, tickLen, toBox, wrap, needU };
