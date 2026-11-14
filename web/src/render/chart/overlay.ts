@@ -32,21 +32,85 @@ export interface Scene {
   readonly now: number;
 }
 
-/** A line of marks' words that has been taken, so that the next mark whose words would meet them goes down a line. */
+/** A rectangle some words have taken, so that the next mark's words stand clear of it. */
 interface Taken {
-  readonly from: number;
-  readonly to: number;
-  readonly row: number;
+  readonly x: number;
+  readonly y: number;
+  readonly w: number;
+  readonly h: number;
 }
 
 /** Words over a plot are set with a halo in the ground, so a gridline or a candle does not strike through them. */
 function halo(ctx: CanvasRenderingContext2D, theme: ChartTheme, text: string, x: number, y: number, alpha: number): void {
   ctx.lineJoin = 'round';
-  ctx.lineWidth = 3.5;
-  ctx.strokeStyle = rgba(theme.ground, 0.85 * alpha);
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = rgba(theme.ground, 0.92 * alpha);
   ctx.strokeText(text, x, y);
   ctx.fillStyle = rgba(theme.ink, alpha);
   ctx.fillText(text, x, y);
+}
+
+/** The words set in lines no wider than `width`; a word wider than that is cut with an ellipsis as a last resort. */
+function wrap(ctx: CanvasRenderingContext2D, text: string, width: number, most: number): string[] {
+  const lines: string[] = [];
+  let line = '';
+  for (const word of text.split(/\s+/)) {
+    const tryLine = line === '' ? word : `${line} ${word}`;
+    if (line !== '' && ctx.measureText(tryLine).width > width) {
+      lines.push(line);
+      line = word;
+    } else line = tryLine;
+  }
+  if (line !== '') lines.push(line);
+  const kept = lines.slice(0, most);
+  if (lines.length > most) kept[most - 1] = fitText(ctx, `${kept[most - 1] ?? ''} ${lines.slice(most).join(' ')}`, width);
+  return kept.map((l) => fitText(ctx, l, width));
+}
+
+/** The data as short straight segments in CSS pixels: what words must not be laid across. */
+function dataSegments(scene: Scene): { a: { x: number; y: number }; b: { x: number; y: number } }[] {
+  const { plot, geometry } = scene;
+  const out: { a: { x: number; y: number }; b: { x: number; y: number } }[] = [];
+  for (const series of plot.series) {
+    if (series.colour < 0) continue;
+    let last: { x: number; y: number } | null = null;
+    plot.axis.kept.forEach((slot, j) => {
+      const v = series.values[plot.axis.keptPoint[j] ?? 0];
+      const x = geometry.slotX(slot);
+      const y = v === null || v === undefined ? null : geometry.yOf(v);
+      if (x === null || y === null) {
+        last = null;
+        return;
+      }
+      const here = { x, y };
+      if (last !== null) out.push({ a: last, b: here });
+      last = here;
+    });
+  }
+  return out;
+}
+
+/** A segment passes through a rectangle (padded). */
+function crosses(a: { x: number; y: number }, b: { x: number; y: number }, r: Taken, pad: number): boolean {
+  const x0 = r.x - pad;
+  const y0 = r.y - pad;
+  const x1 = r.x + r.w + pad;
+  const y1 = r.y + r.h + pad;
+  let t0 = 0;
+  let t1 = 1;
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  for (const [p, q] of [[-dx, a.x - x0], [dx, x1 - a.x], [-dy, a.y - y0], [dy, y1 - a.y]] as const) {
+    if (p === 0) {
+      if (q < 0) return false;
+      continue;
+    }
+    const t = q / p;
+    if (p < 0) t0 = Math.max(t0, t);
+    else t1 = Math.min(t1, t);
+    if (t0 > t1) return false;
+  }
+  return true;
 }
 
 function drawMarks(ctx: CanvasRenderingContext2D, scene: Scene, width: number, plotTop: number): void {
@@ -55,46 +119,75 @@ function drawMarks(ctx: CanvasRenderingContext2D, scene: Scene, width: number, p
   const px = theme.fontPx;
   ctx.font = fontOf(theme, px);
   ctx.textBaseline = 'alphabetic';
-  const taken: Taken[] = [];
   const step = px + 4;
+  // the rules first, all of them, so that no rule is drawn over words set after it
+  const ruleXs: { mark: ChartMark; x: number }[] = [];
   for (const mark of state.marks) {
-    const alpha = mark.arrived;
-    if (alpha <= 0) continue;
-    if (mark.x !== null && mark.y === null) eventMark(ctx, scene, mark, geometry, width, plotTop, taken, step);
-    else if (mark.x === null && mark.y !== null && scene.hasScale) levelMark(ctx, scene, mark, geometry, width, plotTop);
+    if (mark.arrived <= 0) continue;
+    if (mark.x !== null && mark.y === null) {
+      const x = geometry.xOf(mark.x);
+      if (x === null || x < 0 || x > width) continue;
+      const at = Math.round(x) + 0.5;
+      ruleXs.push({ mark, x: at });
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = rgba(theme.crosshair, 0.9 * mark.arrived);
+      ctx.beginPath();
+      ctx.moveTo(at, plotTop);
+      ctx.lineTo(at, scene.axisBottom);
+      ctx.stroke();
+    } else if (mark.x === null && mark.y !== null && scene.hasScale) levelRule(ctx, scene, mark, geometry, width, plotTop);
+  }
+  const segments = dataSegments(scene);
+  const taken: Taken[] = [];
+  for (const { mark, x } of ruleXs) eventLabel(ctx, scene, mark, x, width, plotTop, taken, step, ruleXs, segments);
+  for (const mark of state.marks) {
+    if (mark.arrived <= 0) continue;
+    if (mark.x === null && mark.y !== null && scene.hasScale) levelLabel(ctx, scene, mark, geometry, plotTop);
     else if (mark.x !== null && mark.y !== null && scene.hasScale) pointMark(ctx, scene, mark, geometry, width, plotTop);
   }
 }
 
-function eventMark(ctx: CanvasRenderingContext2D, scene: Scene, mark: ChartMark, geometry: Geometry, width: number, plotTop: number, taken: Taken[], step: number): void {
+/**
+ * An event's words go where nothing is: on the side of their rule that has room, on the first row from the top that no other words, no other
+ * rule and no stretch of the data crosses; wrapped to two or three lines before they are ever cut.
+ */
+function eventLabel(ctx: CanvasRenderingContext2D, scene: Scene, mark: ChartMark, px: number, width: number, plotTop: number, taken: Taken[], step: number, rules: readonly { mark: ChartMark; x: number }[], segments: ReturnType<typeof dataSegments>): void {
   const theme = scene.state.theme;
-  const x = mark.x === null ? null : geometry.xOf(mark.x);
-  if (x === null || x < 0 || x > width) return;
-  const px = Math.round(x) + 0.5;
-  ctx.lineWidth = 1;
-  ctx.strokeStyle = rgba(theme.crosshair, 0.9 * mark.arrived);
-  ctx.beginPath();
-  ctx.moveTo(px, plotTop);
-  ctx.lineTo(px, scene.axisBottom);
-  ctx.stroke();
-  // the words go to whichever side of the line has room, and are cut with an ellipsis if neither has enough
   const roomRight = width - px - 10;
   const roomLeft = px - 10;
-  const full = ctx.measureText(mark.label).width;
-  const flip = full > roomRight && roomLeft > roomRight;
-  const text = fitText(ctx, mark.label, Math.max(40, flip ? roomLeft : roomRight));
-  const w = ctx.measureText(text).width;
-  const from = flip ? px - 5 - w : px + 5;
-  // two events whose words would meet: the later one goes down a line
-  let row = 0;
-  while (taken.some((t) => t.row === row && from < t.to + 6 && from + w > t.from - 6)) row += 1;
-  taken.push({ from, to: from + w, row });
-  ctx.textAlign = flip ? 'right' : 'left';
-  halo(ctx, theme, text, flip ? px - 5 : px + 5, plotTop + theme.fontPx + 2 + row * step, mark.arrived);
+  const rows = Math.max(1, Math.floor((scene.axisBottom - plotTop - 8) / step));
+  let best: { x: number; y: number; lines: string[]; w: number; h: number; left: boolean; cost: number } | null = null;
+  for (const left of roomRight >= roomLeft ? [false, true] : [true, false]) {
+    const room = left ? roomLeft : roomRight;
+    if (room < 56) continue;
+    for (const most of [1, 2, 3]) {
+      const lines = wrap(ctx, mark.label, Math.min(room, 300), most);
+      const w = Math.max(...lines.map((l) => ctx.measureText(l).width));
+      const h = lines.length * step;
+      for (let row = 0; row + lines.length <= rows; row += 1) {
+        const rect: Taken = { x: left ? px - 5 - w : px + 5, y: plotTop + 4 + row * step, w, h };
+        let cost = 0;
+        if (taken.some((t) => rect.x < t.x + t.w + 6 && rect.x + rect.w > t.x - 6 && rect.y < t.y + t.h + 2 && rect.y + rect.h > t.y - 2)) cost += 100;
+        if (rules.some((r) => r.mark !== mark && r.x > rect.x - 3 && r.x < rect.x + rect.w + 3)) cost += 40;
+        if (segments.some((s) => crosses(s.a, s.b, rect, 2))) cost += 30;
+        // words cut short are worse than words wrapped over more lines
+        if (lines.join(' ') !== mark.label.trim().replace(/\s+/g, ' ')) cost += 25;
+        cost += (lines.length - 1) * 2 + row * 0.2;
+        if (best === null || cost < best.cost) best = { x: rect.x, y: rect.y, lines, w, h, left, cost };
+        if (cost < 3) break;
+      }
+      if (best !== null && best.cost < 3) break;
+    }
+    if (best !== null && best.cost < 3) break;
+  }
+  if (best === null) return;
+  taken.push({ x: best.x, y: best.y, w: best.w, h: best.h });
+  ctx.textAlign = best.left ? 'right' : 'left';
+  best.lines.forEach((line, i) => halo(ctx, theme, line, best.left ? best.x + best.w : best.x, best.y + theme.fontPx + 2 + i * step, mark.arrived));
   ctx.textAlign = 'left';
 }
 
-function levelMark(ctx: CanvasRenderingContext2D, scene: Scene, mark: ChartMark, geometry: Geometry, width: number, plotTop: number): void {
+function levelRule(ctx: CanvasRenderingContext2D, scene: Scene, mark: ChartMark, geometry: Geometry, width: number, plotTop: number): void {
   const theme = scene.state.theme;
   const y = mark.y === null ? null : geometry.yOf(mark.y);
   if (y === null || y < plotTop || y > scene.axisBottom) return;
@@ -105,8 +198,14 @@ function levelMark(ctx: CanvasRenderingContext2D, scene: Scene, mark: ChartMark,
   ctx.moveTo(0, py);
   ctx.lineTo(width, py);
   ctx.stroke();
+}
+
+function levelLabel(ctx: CanvasRenderingContext2D, scene: Scene, mark: ChartMark, geometry: Geometry, plotTop: number): void {
+  const theme = scene.state.theme;
+  const y = mark.y === null ? null : geometry.yOf(mark.y);
+  if (y === null || y < plotTop || y > scene.axisBottom) return;
   ctx.textAlign = 'left';
-  halo(ctx, theme, mark.label, 8, py - 5, mark.arrived);
+  halo(ctx, theme, mark.label, 8, Math.round(y) + 0.5 - 5, mark.arrived);
 }
 
 function pointMark(ctx: CanvasRenderingContext2D, scene: Scene, mark: ChartMark, geometry: Geometry, width: number, plotTop: number): void {
