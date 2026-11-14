@@ -39,8 +39,8 @@ const CANDIDATES_READY = true;
 const CANDIDATE_SEQ = 1_000_000;
 /** STUB(PLAN-v2.1 package T2): true once a `deck` turn stops at each slide and `Painter.slide` steps through them. */
 const DECKS_READY = false;
-/** STUB(PLAN-v2.1 package T2): true once `pic … from=<upload id>` draws the user's picture. */
-const UPLOADS_READY = false;
+/** True: `pic … from=<upload id>` draws the user's photo, fetched from `options.uploadUrl` (the session's own `/api/sessions/<id>/uploads/<upload id>`). */
+const UPLOADS_READY = true;
 /** STUB(PLAN-v2.1 part two): true once `say href=` is drawn as a link the viewer can follow. The brain is taught `href` only when it is. */
 const LINKS_READY = false;
 /** ms a chart waits for the rows it draws by reference before it is shown without them */
@@ -303,10 +303,48 @@ export function createPainter(options: PainterOptions): Painter {
   const chartKinds = host === null ? [] : CHARTS_READY.filter((kind) => host.kinds.includes(kind));
   const timelineContext = (): TimelineContext => ({ viewport, reducedMotion, lockLook, paintings, onFault: noteFault, arrivals, controls: runtime, ...(host === null || chartKinds.length === 0 ? {} : { charts: { kinds: chartKinds, data: chartData } }) });
 
+  const photoAspects = new Map<string, number>();
+  /** The width over the height of the picture at `url`, once the browser has read it. */
+  const shapeOf = (url: string): Promise<number> =>
+    new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve(image.naturalHeight > 0 ? image.naturalWidth / image.naturalHeight : 1);
+      image.onerror = () => reject(new Error('the photo could not be read'));
+      image.src = url;
+    });
+
+  /** The user's photo `from` for the picture with this key: loaded once, then handed to the same arrival path a painting uses. A photo this conversation does not hold is drawn as nothing. */
+  const fetchPhoto = (key: string, from: string): void => {
+    const url = options.uploadUrl?.(from) ?? null;
+    if (url === null) {
+      paintings.set(key, { status: 'unpainted', url: null, since: 0 });
+      return;
+    }
+    paintings.set(key, { status: 'waiting', url: null, since: 0 });
+    // Loaded twice over: the renderer takes it into its own cache, and the page reads its shape, so that it is fitted whole and never stretched.
+    Promise.all([renderer.preload(url), shapeOf(url)]).then(
+      ([, aspect]) => {
+        if (disposed) return;
+        photoAspects.set(key, aspect);
+        arrived.set(key, url);
+        promoteArrivals(clock.read());
+        drawNow();
+      },
+      () => {
+        if (!disposed) paintings.set(key, { status: 'unpainted', url: null, since: 0 });
+      },
+    );
+  };
+
   /** Every picture the stage has is accounted for: waiting for its painting if the server can paint, unpainted if not. */
   const syncPaintings = (schedule: Schedule): void => {
     for (const element of schedule.elements) {
       if (element.figure?.kind !== 'picture' || paintings.has(element.key)) continue;
+      // A photo the user gave is fetched, not painted: it is on its way from the moment the line is read, and grows once it is on stage.
+      if (element.figure.from !== undefined && element.figure.from !== null) {
+        fetchPhoto(element.key, element.figure.from);
+        continue;
+      }
       paintings.set(element.key, { status: services.paint && !element.carried ? 'waiting' : 'unpainted', url: null, since: 0 });
     }
   };
@@ -320,7 +358,7 @@ export function createPainter(options: PainterOptions): Painter {
   const queueSketches = (schedule: Schedule): void => {
     if (!canSketch()) return;
     for (const element of schedule.elements) {
-      if (element.figure?.kind !== 'picture' || element.carried || sketched.has(element.key) || sketchQueue.has(element.key)) continue;
+      if (element.figure?.kind !== 'picture' || element.figure.from != null || element.carried || sketched.has(element.key) || sketchQueue.has(element.key)) continue;
       sketchQueue.set(element.key, 0);
     }
   };
@@ -703,7 +741,8 @@ export function createPainter(options: PainterOptions): Painter {
       }
       if (picture.carried || picture.enter === null || picture.enter.start <= reading.playhead) {
         arrived.delete(key);
-        paintings.set(key, { status: 'ready', url, since: reading.ambient });
+        const aspect = photoAspects.get(key);
+        paintings.set(key, { status: 'ready', url, since: reading.ambient, ...(aspect === undefined ? {} : { aspect }) });
         latePaintings.set(key, url);
         if (latePaintings.size > 64) latePaintings.delete(latePaintings.keys().next().value as string);
       }
@@ -745,7 +784,7 @@ export function createPainter(options: PainterOptions): Painter {
       const painting = paintings.get(element.key);
       if (element.figure?.kind === 'picture' && painting !== undefined && painting.status === 'ready' && painting.url !== null) pictures[element.key] = painting.url;
     }
-    recordings.set(closing.id, { turn: closing.id, base: closing.base, lines, paintings: pictures });
+    recordings.set(closing.id, { turn: closing.id, base: closing.base, lines, paintings: pictures, aspects: Object.fromEntries(photoAspects) });
     lastRecorded = closing.id;
     for (const id of [...recordings.keys()]) {
       if (recordings.size <= KEPT_RECORDINGS) break;

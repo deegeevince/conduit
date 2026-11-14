@@ -1,4 +1,6 @@
 import { PROMPT_MAX_CHARS } from '@conduit/language';
+import { PHOTO_RULES, mountPhotoTray } from './photos';
+import type { Photo, PhotoPort } from './photos';
 
 export interface PromptBar {
   /** shows what the link and the turn are doing, in words: connecting, thinking, playing, stopped. Only a status that asks to be announced reaches a screen reader (routine playing/thinking changes do not; the transcript's log carries the content) */
@@ -7,8 +9,8 @@ export interface PromptBar {
   setBusy(busy: boolean): void;
   /** while an export runs the status line offers Cancel; null removes it */
   setCancel(cancel: (() => void) | null): void;
-  /** puts words back in the field after they could not be sent, unless the user has typed something new */
-  restore(text: string): void;
+  /** puts words (and the photos that went with them) back in the field after they could not be sent, unless the user has typed something new */
+  restore(text: string, photos?: readonly Photo[]): void;
   /** the row with the status line: Show all and Cancel sit beside it */
   readonly top: HTMLElement;
   /** the row of the bar's own controls: the brain picker, the transcript, Save */
@@ -21,13 +23,22 @@ export interface PromptBar {
 
 let counter = 0;
 
+const CAMERA = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l1.5-2h7L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>';
+const PICTURE = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="5" width="16" height="14"/><circle cx="9" cy="10" r="1.6"/><path d="M4 17l5-5 4 4 3-3 4 4"/></svg>';
+
 /** The most of the viewport the field may grow to before it scrolls. */
 const MAX_FIELD_VIEWPORT = 0.4;
 
 /** The one input: a labelled text area that grows with what is typed, a submit/stop button and a status line. Enter submits, Shift+Enter breaks the line; Escape stops. */
 export function mountPromptBar(
   host: HTMLElement,
-  handlers: { readonly onSubmit: (text: string) => void; readonly onStop: () => void },
+  handlers: {
+    /** `photos` are the ids of the photos kept for these words, `held` the same photos as the tray shows them. Answer false when the words were not a turn (a command): the photos stay. */
+    readonly onSubmit: (text: string, photos: readonly string[], held: readonly Photo[]) => boolean;
+    readonly onStop: () => void;
+    /** how a photo gets to the server and back; absent: the bar has no photo button */
+    readonly photos?: PhotoPort;
+  },
 ): PromptBar {
   counter += 1;
   const inputId = `prompt-input-${counter}`;
@@ -43,6 +54,14 @@ export function mountPromptBar(
     <div class="prompt__extra"></div>
     <form class="prompt__form" autocomplete="off">
       <label class="visually-hidden" for="${inputId}">Ask anything</label>
+      ${
+        handlers.photos === undefined
+          ? ''
+          : `<button class="prompt__photo prompt__photo--camera" type="button" aria-label="Take a photo" title="Take a photo">${CAMERA}</button>
+      <button class="prompt__photo prompt__photo--pick" type="button" aria-label="Add a photo" title="Add a photo. ${PHOTO_RULES}">${PICTURE}</button>
+      <input class="visually-hidden" type="file" accept="image/*" multiple tabindex="-1" aria-hidden="true" data-photos="pick" />
+      <input class="visually-hidden" type="file" accept="image/*" capture="environment" tabindex="-1" aria-hidden="true" data-photos="camera" />`
+      }
       <textarea class="prompt__input" id="${inputId}" name="prompt" rows="1" placeholder="Ask anything" aria-describedby="${inputId}-hint" enterkeyhint="send" maxlength="${PROMPT_MAX_CHARS}" autocomplete="off" autocapitalize="sentences" spellcheck="true"></textarea>
       <span class="visually-hidden" id="${inputId}-hint">You can also paste a link or a long text. Lines starting with a slash are commands: /help lists them.</span>
       <button class="prompt__button" type="button">Send</button>
@@ -58,6 +77,7 @@ export function mountPromptBar(
   const form = root.querySelector<HTMLFormElement>('.prompt__form');
   const input = root.querySelector<HTMLTextAreaElement>('.prompt__input');
   const button = root.querySelector<HTMLButtonElement>('.prompt__button');
+  const tray = handlers.photos === undefined || form === null ? null : mountPhotoTray(form, handlers.photos, () => undefined);
   if (status === null || top === null || activity === null || notice === null || extra === null || cancel === null || form === null || input === null || button === null) {
     throw new Error('The prompt bar could not be built.');
   }
@@ -76,12 +96,34 @@ export function mountPromptBar(
     if (!window.matchMedia('(pointer: coarse)').matches) input.focus({ preventScroll: true });
   });
 
+  // The photo buttons open the camera or the library (a phone) or the file picker (a desktop); what they pick goes where a paste or a drop goes.
+  const camera = root.querySelector<HTMLButtonElement>('.prompt__photo--camera');
+  const pick = root.querySelector<HTMLButtonElement>('.prompt__photo--pick');
+  for (const [trigger, kind] of [[camera, 'camera'], [pick, 'pick']] as const) {
+    const file = root.querySelector<HTMLInputElement>(`input[data-photos="${kind}"]`);
+    if (trigger === null || file === null || tray === null) continue;
+    trigger.addEventListener('click', () => file.click());
+    file.addEventListener('change', () => {
+      tray.add([...(file.files ?? [])]);
+      // the same photo may be chosen again after it was removed
+      file.value = '';
+    });
+  }
+
   const submit = (): void => {
-    const text = input.value.trim();
-    if (text === '') return;
+    const typed = input.value.trim();
+    const photos = tray?.ids() ?? [];
+    if (tray !== null && tray.busy()) {
+      tray.say('A photo is still being sent. One moment.');
+      return;
+    }
+    if (typed === '' && photos.length === 0) return;
+    const text = typed === '' ? (photos.length === 1 ? 'Please look at this photo.' : 'Please look at these photos.') : typed;
+    const held = tray?.held() ?? [];
     input.value = '';
     fit();
-    handlers.onSubmit(text);
+    const accepted = handlers.onSubmit(text, photos, held);
+    if (accepted !== false) tray?.clear();
   };
 
   const refocus = (): void => {
@@ -130,11 +172,12 @@ export function mountPromptBar(
       button.classList.toggle('prompt__button--stop', next);
       button.setAttribute('aria-keyshortcuts', next ? 'Escape' : '');
     },
-    restore(text) {
+    restore(text, photos) {
       if (input.value === '') {
         input.value = text;
         fit();
       }
+      if (photos !== undefined && photos.length > 0 && tray !== null && tray.held().length === 0) tray.putBack(photos);
     },
     focus() {
       input.focus({ preventScroll: true });
@@ -142,6 +185,7 @@ export function mountPromptBar(
     dispose() {
       document.removeEventListener('keydown', onKey);
       window.removeEventListener('resize', fit);
+      tray?.dispose();
       root.remove();
     },
   };
