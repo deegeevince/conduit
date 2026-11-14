@@ -101,7 +101,14 @@ export function registerAssetRoutes(app: Hono, deps: HttpDeps): void {
     const asked = Number(c.req.query('aspect') ?? '');
     const aspect = Number.isFinite(asked) && asked > 0.2 && asked < 5 ? asked : 16 / 9;
     if (words === '') return c.json({ found: false });
-    const picture = await pictures.find({ words, aspect }, AbortSignal.timeout(12_000)).catch(() => null);
+    // the service is strict about tags: when the whole phrase finds nothing, the first two words, then the first one, are tried
+    const parts = words.split(' ');
+    const tries = [...new Set([words, parts.slice(0, 2).join(' '), parts.slice(-2).join(' '), parts[0] ?? ''])].filter((entry) => entry !== '');
+    let picture = null;
+    for (const attempt of tries.slice(0, 3)) {
+      picture = await pictures.find({ words: attempt, aspect }, AbortSignal.timeout(12_000)).catch(() => null);
+      if (picture !== null) break;
+    }
     deps.audit.record({ kind: 'connector', tool: pictures.id, target: words, decision: picture === null ? 'failed' : 'allowed', decidedBy: 'policy', note: 'a photograph for a live app; only these words left the machine' });
     if (picture === null) return c.json({ found: false });
     return c.json({ found: true, url: API.picture(picture.key), credit: creditLine(picture.credit), landing: picture.credit.landingUrl });

@@ -18,6 +18,8 @@ export interface BenchResult {
   readonly frames: number;
   /** the document's own address, to show the page was never navigated */
   readonly href: string;
+  /** how many pictures the host was asked to find */
+  readonly pictureAsks: number;
 }
 
 async function run(name: string, depth: boolean, settleMs: number, program?: string, uses?: readonly AppShelf[], room?: { readonly width: number; readonly height: number }): Promise<BenchResult> {
@@ -27,7 +29,8 @@ async function run(name: string, depth: boolean, settleMs: number, program?: str
   if (source === undefined) throw new Error(`no fixture called ${name}`);
   const events: SurfaceEmit[] = [];
   const notes: string[] = [];
-  const host = createSurfaceHost({ stage, onEmit: (emit) => events.push(emit), onNote: (text) => notes.push(text), ...(depth ? {} : { withoutDepth: true }) });
+  let pictureAsks = 0;
+  const host = createSurfaceHost({ stage, onPicture: async () => { pictureAsks += 1; return null; }, onEmit: (emit) => events.push(emit), onNote: (text) => notes.push(text), ...(depth ? {} : { withoutDepth: true }) });
   const box = { x: 20, y: 20, width: room?.width ?? 640, height: room?.height ?? 400 };
   const spec = { key: `${name}@1`, id: name, title: name, source, ...(uses === undefined ? {} : { uses }), ready: true, box, rest: box, opacity: 1, z: 1, tokens: TOKENS };
   host.sync([spec]);
@@ -40,7 +43,7 @@ async function run(name: string, depth: boolean, settleMs: number, program?: str
   const probe = host.probe().find((entry) => entry.key === spec.key) ?? null;
   const frames = document.querySelectorAll('iframe').length;
   host.dispose();
-  return { name, events, notes, probe, frames, href: location.href };
+  return { name, events, notes, probe, frames, href: location.href, pictureAsks };
 }
 
 declare global {

