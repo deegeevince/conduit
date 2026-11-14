@@ -458,7 +458,13 @@ function imageOf(k: Kit, p: UiPartNode): N {
         const room = Math.max(8, b.w - 20);
         const creditSize = Math.max(11, k.t.minText ?? 0);
         let text = credit;
-        while (text.length > 8 && k.measure.width(text, creditSize, 'normal') > room) text = `${text.slice(0, Math.max(4, Math.floor(text.length * Math.min(0.95, room / k.measure.width(text, creditSize, 'normal')))) - 1).trimEnd()}...`;
+        // `keep` counts the credit's own characters kept, and falls by at least one each pass, so this always ends. (It once sliced the text it had already
+        // shortened and put three dots back: a credit only a little too long grew by two characters a pass for ever, and a phone's mock-up hung the page.)
+        let keep = credit.length;
+        while (keep > 4 && k.measure.width(text, creditSize, 'normal') > room) {
+          keep = Math.min(keep - 1, Math.max(4, Math.floor(keep * Math.min(0.95, room / k.measure.width(text, creditSize, 'normal')))));
+          text = `${credit.slice(0, keep).trimEnd()}...`;
+        }
         const strip = { x: b.x, y: b.y + b.h - (creditSize + 11), w: b.w, h: creditSize + 11 };
         rectOf(out, p.id, 'credit-scrim', strip, { fill: '#000000', fillAlpha: 0.5 });
         out.parts.push({ kind: 'text', key: out.key(p.id, 'credit'), owner: p.id, x: b.x + 10, y: strip.y + 3, w: room, h: creditSize + 5, lines: [{ text, width: k.measure.width(text, creditSize, 'normal') }], size: creditSize, line: creditSize + 5, weight: 'normal', colour: '#f4f6fa', align: 'left' });

@@ -2,8 +2,15 @@
 
 Newest first. Each item is something the brain can show live when asked "showcase what's new": draw it, don't describe it. The server reads this file.
 
-## Voice notes in (new)
-- Tap the microphone (or hold it) beside the photo button and speak, up to two minutes, with a level meter and a timer. The words appear in the message box to check before you send; a setting sends them at once. Works from a phone, an iPad or the desktop.
+## The bar is one line (new)
+- The bottom of the page is one pill, like a chat app's: a + button, the message box, the microphone, Send (Stop while Conduit answers). The box grows upwards when you type several lines (Shift+Enter makes a new line) and rests at one.
+- The + menu holds the rest: Add a photo, Take a photo (on a phone), Draw, Save, Transcript, Model and effort, Copy answer, and About (keys, commands, the charting credit). It opens with Enter or Space and answers the arrow keys and Escape.
+- Status is not a row any more: "thinking" and "playing" are the box's own hint; only an error or an export in progress shows as a small line above the bar.
+- Sliders with whole-number ends and no step now move by whole numbers: 25%, not 25.06%.
+- A mock-up on a narrow phone screen could hang the page when a photo's credit was only a little too long for it; fixed.
+
+## Voice notes in
+- Tap the microphone (or hold it) beside Send and speak, up to two minutes, with a level meter and a timer. The words appear in the message box to check before you send; a setting sends them at once. Works from a phone, an iPad or the desktop.
 - It is read on the Mac that runs Conduit, on the device, and never sent to a third party. The audio is deleted once read, and the audit log records that a note was read, never the words. If the Mac cannot read it (permission not given, a language it cannot do on the device) it says so and offers typing.
 
 ## Saving films (live)
@@ -19,7 +26,7 @@ Newest first. Each item is something the brain can show live when asked "showcas
 - Save film now saves your latest answer with its taps; Save whole conversation makes one video of everything, with sound; Save frames is gone.
 
 ## Photos in (live)
-- Add photos to a message: the photo button (the camera on a phone), paste, or drag and drop; up to 4, shown before sending. Conduit reads them (a worksheet becomes a table of its questions) and can show them on the canvas. Stored privately, upright, with location and other hidden details stripped.
+- Add photos to a message: the + menu (Add a photo, or Take a photo on a phone), paste, or drag and drop; up to 4, shown before sending. Conduit reads them (a worksheet becomes a table of its questions) and can show them on the canvas. Stored privately, upright, with location and other hidden details stripped.
 
 ## v2.2 first slice (live)
 - Mock-ups stay on screen, can be clicked through (type into fields, passwords as dots, buttons go to the next screen), get relevant photos, and the bottom bar stays readable in every look.

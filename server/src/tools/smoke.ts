@@ -1321,7 +1321,8 @@ class Conversation {
       }
       const after = await tab.shot(regionOf(heard.box));
       const share = await tab.call<number>('changed', before, after);
-      if (act === undefined) problems.push(`pressing the button ${heard.id} ("${heard.part}") sent nothing to the server: no turn of kind act was posted in 6 s${share >= 0.03 ? ' (the button did change its look)' : ''}`);
+      const viewNow = (await tab.call<Answer>('answer')).viewport;
+      if (act === undefined) problems.push(`pressing the button ${heard.id} ("${heard.part}") sent nothing to the server: no turn of kind act was posted in 6 s${share >= 0.03 ? ' (the button did change its look)' : ''}; posted since the tap: ${tab.posted.slice(mark).map((turn) => turn.kind ?? '?').join(', ') || 'nothing'}; the button was at ${boxText(heard.box)} in a ${viewNow.width}x${viewNow.height} stage and the page was at "${(await tab.call<Probe>('probe')).status}"`);
       else {
         let said: { input?: { text?: string; screen?: string; values?: Record<string, unknown> } } = {};
         try {
