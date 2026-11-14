@@ -117,7 +117,7 @@ export const PROMPT_EXAMPLES: readonly PromptExample[] = [
     lines: [
       'scene page',
       'say strong | Mary Shelley.',
-      'say | She began it at eighteen, in the wet summer of 1816, kept indoors by a volcano\'s ash. Published two years later.',
+      'say | She began it at eighteen, in 1816, kept indoors by a volcano\'s ash.',
     ],
   },
   {
@@ -183,7 +183,7 @@ export const PROMPT_EXAMPLES: readonly PromptExample[] = [
  * other kind of answer are techniques, handed over in the brief when they fit.
  */
 export const PROMPT_EXAMPLE_STRUCTURE: PromptExample = {
-  title: '"Should I water this plant?" A decision: name the structure and give its words; the painter gives every part its room, so nothing is placed over it.',
+  title: '"Should I water this plant?" A decision: name the structure and its words; the painter gives every part its room.',
   lines: [
     'scene caption',
     'flow down | Water the plant?',
@@ -440,7 +440,7 @@ ${[
 A control sits in the flow like a line, or takes at=, near=, in=. \`bind\` makes it change the stage at once:
 bind angle | move sun along=arc
   The change (a \`set\`, \`move\`, \`correct\`${draws ? ', or shape declared again' : ''}) is as far along as the control. \`bind angle 0..45 | …\` runs it over part of the range; \`bind view=night | …\` holds it while a pick or toggle has that value (an option's words or number, on, off).
-Braces in text hold a value or arithmetic on values: \`say | At {angle}, a {round(10/tan(rad(angle)))} m shadow\` ({angle} carries the slider's unit; a name in braces must be the id of a control you declared, spelled the same, or it is cut from the words)${structures.includes('chart') ? '; a chart cell may too' : ''}. Give every slider something to drive. \`send\` on a control makes its change the user's next message.
+Braces in text hold a value or arithmetic on values: \`say | At {angle}, a {round(10/tan(rad(angle)))} m shadow\` ({angle} carries the slider's unit; a name that is not a declared control's id is cut)${structures.includes('chart') ? '; a chart cell may too' : ''}. Give every slider something to drive. \`send\` on a control makes its change the user's next message.
 `;
 
   const drawing = draws
@@ -467,7 +467,7 @@ To draw well in few lines:
 
 # Pixels
 
-\`pix\`, then one \`| row\` per row, every row exactly as wide as the first (count; a short row is padded and you are told). A cell is \`.\` or a space (empty), \`#\` (ink), or one hex digit for the sixteen sprite colours: 0 black, 1 navy, 2 plum, 3 green, 4 brown, 5 grey, 6 silver, 7 white, 8 red, 9 orange, a yellow, b lime, c sky blue, d lavender, e pink, f peach. Eight to sixteen cells a side; an animation is two to four frames, each started by a \`frame\` line (give \`fps=\`). \`scale=\` is canvas units per cell; left out, the painter sizes it.`
+\`pix\`, then one \`| row\` per row, every row exactly as wide as the first (a short row is padded). A cell is \`.\` or a space (empty), \`#\` (ink), or one hex digit for the sixteen sprite colours: 0 black, 1 navy, 2 plum, 3 green, 4 brown, 5 grey, 6 silver, 7 white, 8 red, 9 orange, a yellow, b lime, c sky blue, d lavender, e pink, f peach. Eight to sixteen cells a side; an animation is two to four frames, each started by a \`frame\` line (give \`fps=\`). \`scale=\` is canvas units per cell; left out, the painter sizes it.`
           : ''
       }${
         weather
@@ -486,7 +486,7 @@ To draw well in few lines:
 ${[
   textures.length > 0 ? `\`tex=\` makes a fill ${textures.join(', ')}; \`soft=N\` fades an edge (light, cloud, shadow).` : '',
   brushes.length > 0 ? `\`brush=\` gives one line a stroke of its own (${brushes.filter((name) => name === 'ink' || name === 'dry' || name === 'marker' || name === 'pencil').join(', ')} …).` : '',
-  media.length > 0 ? `\`paint [over=<group>] as=<medium>\` re-renders what you drew as a painting (${media.join(' | ')}): it adds nothing you did not draw, so draw the picture first, in big shapes.` : '',
+  media.length > 0 ? `\`paint [over=<group>] as=<medium>\` re-renders what you drew as a painting (${media.join(' | ')}): it adds nothing you did not draw: draw the picture first, in big shapes.` : '',
   modelPaints
     ? `\`paint ${media.length > 0 ? 'as=photo ' : ''}| <what to paint>\` asks an image model: many seconds, and it may never come, so your sketch shows meanwhile. One an answer at most${media.length > 0 ? '' : `; \`as=\` names the medium (${words(MEDIUM)}), \`mask=\` its edge (${words(MASK)})`}.`
     : '',
@@ -541,7 +541,7 @@ You write ${LANGUAGE.name}: one command per line. A painter in the user's browse
 
 # Start at once
 
-The audience watches an empty stage while you deliberate. Write the first line now and compose as you go; the painter handles layout and timing.
+The audience watches an empty stage while you deliberate. Write the first line now; the painter handles layout and timing.
 
 # Choose the form the answer needs
 
@@ -554,8 +554,8 @@ Whatever the form: never talk about the stage, the medium, what you will do or y
 - Expressive asks (a story, a mood, a thing to look at): commit. One bold idea, big, in layers, with motion and a wait before the line that matters. Timid and tidy is the failure.
 - Be right before pretty. Every part your words name is drawn; parts that connect touch; the subject ends whole inside the picture and fills it, never cut off or lost in a corner. Words stay inside their boxes.
 - A follow-up about what is on stage continues it: \`set\`, \`hit\`, \`move\`, \`revise\`, add. \`scene\` is only for a new subject; never write again what is there. A lesson's steps stack up, not captions; a step to try keeps its subject.
-- Match the level the user names or implies. For a young learner (an age under 10, "my kid", "explain it like 7"): plain words a 7-year-old reads, one small idea a step, the question shown; no letters for numbers and no \`*\` or \`x\` signs before they are explained; count or skip-count on the picture ("5, 10, 15, 20").
-- What the user says to hold from now on ("only visuals", "always brief"): record it once, \`standing | their words\`, and keep it on every later turn, answers about yourself or this app too (a gauge for the effort, a badge for the model).
+- Match the level asked or implied. A young learner (under 10, "my kid", "like I'm 7"): plain words, one small idea a step, the question shown; no letters for numbers or \`*\`/\`x\` signs before they are explained; count on the picture ("5, 10, 15, 20").
+- What the user says to hold from now on ("only visuals", "always brief"): record it once, \`standing | their words\`, and keep it on every later turn, answers about yourself or this app too.
 - No live price feed: figures come from DATA or the web, with source and date, or you say you have none. Never copy a protected character, logo or artwork: make an original, or a homage in the style, and say so.
 
 # Lines
@@ -623,21 +623,21 @@ Each turn you are told what is on stage and how your last answer actually landed
 
 When there are real ways forward, end with one to three \`say choice | …\` lines. A tap on one becomes the user's next message.
 
-A brief may carry TECHNIQUES, recipes that worked for answers like this: use what fits, never copy their subject.${
+A brief may carry TECHNIQUES (recipes that worked): use what fits, never copy their subject.${
     services.review ? ` When you finish you may be shown your own answer (LOOK): repair it in a few lines, or write \`${REVIEW_KEEP}\`.` : ''
   }
 
 # This screen
 
-Each turn's brief begins with SCREEN: what fits on a line and on the stage at each size, the canvas that suits the screen, the look, the scene. Read it each time. Outside \`layout=page\`: one idea a line, a handful of words. At most ${LIMITS.text} characters a line.
+Each turn's brief begins with SCREEN: what fits on a line and on the stage at each size, the canvas that suits the screen, the look, the scene. Outside \`layout=page\`: one idea a line, a handful of words. At most ${LIMITS.text} characters a line.
 
 # Exact values
 
-Rarely, for one exact effect: \`@+N\` (start N seconds after the pen), \`@-N\` (overlap the line before), \`dur=Ns\`, \`stay=Ns\`, \`over=Ns\` on set${draws ? ', move' : ''}${camera ? ' and cam' : ''}. On most lines they are the painter's job, not yours.
+Rarely, for one exact effect: \`@+N\` (start N seconds after the pen), \`@-N\` (overlap the line before), \`dur=Ns\`, \`stay=Ns\`, \`over=Ns\` on set${draws ? ', move' : ''}${camera ? ' and cam' : ''}.
 
 # Output
 
-Only ${LANGUAGE.name} lines. No prose around them, no explanations, no code fences. Start with \`${offered.length > 1 ? 'look` or `scene' : 'scene'}\`. Plain characters in text: letters, digits, ordinary punctuation; no emoji.
+Only ${LANGUAGE.name} lines. No prose around them, no code fences. Start with \`${offered.length > 1 ? 'look` or `scene' : 'scene'}\`. Plain characters in text: letters, digits, ordinary punctuation; no emoji.
 
 # Examples
 
