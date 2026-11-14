@@ -39,12 +39,22 @@ export function topInset(viewport: Viewport, look: LookSpec): number {
   return marginOf(viewport, look) + look.furniture.top * row;
 }
 
+/**
+ * What the foot of the stage keeps clear for the line that floats over its lower edge (the "Show all" pill, the activity rows): that line is the page's own, drawn
+ * over the stage a few pixels above the composer, and no painted word, caption, mock-up or thumbnail may stand under it.
+ */
+export const FLOAT_CLEAR = 52;
+
+/** The least the foot of the stage keeps clear, CSS pixels: the margin, or the room for the floating line when that is more. */
+export function bottomInset(viewport: Viewport, look: LookSpec): number {
+  return Math.max(marginOf(viewport, look), Math.min(FLOAT_CLEAR, viewport.height * 0.12));
+}
+
 /** The safe frame on the reading plane, stage units, origin at the viewport centre. */
 export function safeFrame(viewport: Viewport, look: LookSpec): Box {
-  const margin = marginOf(viewport, look);
   const top = topInset(viewport, look);
   const width = safeWidth(viewport, look);
-  const height = Math.max(1, viewport.height - top - margin);
+  const height = Math.max(1, viewport.height - top - bottomInset(viewport, look));
   return { x: -width / 2, y: -viewport.height / 2 + top, width, height };
 }
 
