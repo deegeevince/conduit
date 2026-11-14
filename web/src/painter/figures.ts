@@ -1012,9 +1012,12 @@ const EDGE_TOLERANCE = 0.5;
  * is not ground (a lighthouse, a ship) is still clipped to the region, so nothing drawn runs under the words.
  */
 function bleedRectOf(region: Box, viewport: Viewport, open: OpenEdges): Box {
-  const left = open.left ? Math.min(region.x, -viewport.width / 2) : region.x;
-  const right = open.right ? Math.max(region.x + region.width, viewport.width / 2) : region.x + region.width;
-  const top = open.top ? Math.min(region.y, -viewport.height / 2) : region.y;
+  // past the screen's edge by a quarter of it: a camera that pans or pushes in moves the planes, and must not find where the ground ends
+  const beyondX = viewport.width * 0.25;
+  const beyondY = viewport.height * 0.25;
+  const left = open.left ? Math.min(region.x, -viewport.width / 2 - beyondX) : region.x;
+  const right = open.right ? Math.max(region.x + region.width, viewport.width / 2 + beyondX) : region.x + region.width;
+  const top = open.top ? Math.min(region.y, -viewport.height / 2 - beyondY) : region.y;
   return { x: left, y: top, width: right - left, height: region.y + region.height - top };
 }
 

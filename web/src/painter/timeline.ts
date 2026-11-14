@@ -1,4 +1,4 @@
-import { describeFigure, outlineOf, ENTER_SECONDS, exitSeconds, isInFlow, isStruckAt, lookOfStage, PACE_TIMING, sceneAt, styleAt, valueAt } from '@conduit/language';
+import { CANVAS, describeFigure, outlineOf, ENTER_SECONDS, exitSeconds, isInFlow, isStruckAt, lookOfStage, PACE_TIMING, sceneAt, styleAt, valueAt } from '@conduit/language';
 import type { SightNote, ClockState, ElementChange, ElementSpan, ElementStyle, ExitEffect, Layer, LookId, Mood, ResolvedLook, SceneSpan, Schedule, StageBase } from '@conduit/language';
 import type { CameraSpan } from '@conduit/language';
 import type { Colour, ElementFrame, FigureFrame, Frame, RunFrame, ShapeFrame } from '../contracts/frame';
@@ -749,12 +749,15 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
     flowFloor.set(scene.id, wanted);
     const fit = fitIn(scene.canvas, plan.picture ?? safe, plan.flow, viewport);
     // text given a point of the canvas is set by the layout, which keeps it off other text; this is where it wants its centre
-    const pins = new Map<string, { x: number; y: number }>();
+    const pins = new Map<string, { x: number; y: number; k: number }>();
+    // words on the picture keep their size against the picture: when the plan gives it less than the whole stage, they shrink with it
+    const wholeUnit = Math.max(1e-6, Math.min(safe.width / CANVAS[scene.canvas].width, safe.height / CANVAS[scene.canvas].height));
+    const keeps = Math.max(0.55, Math.min(1, fit.unit / wholeUnit));
     for (const element of [...present, ...liveControls]) {
       const style = styleAt(element, start);
       if (style.near !== null || style.group !== null || typeof style.at !== 'object' || style.at === null) continue;
       const scale = planeScale(style.layer, viewport);
-      pins.set(element.key, { x: (fit.box.x + style.at.x * fit.unit) / scale, y: (fit.box.y + style.at.y * fit.unit) / scale });
+      pins.set(element.key, { x: (fit.box.x + style.at.x * fit.unit) / scale, y: (fit.box.y + style.at.y * fit.unit) / scale, k: keeps });
     }
     const arrangement = arrange({
       viewport,

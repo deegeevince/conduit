@@ -55,7 +55,7 @@ export interface LayoutInput {
    * other text, otherwise it slides to the nearest clear place and, failing
    * that, shrinks within the look's minimum.
    */
-  readonly pins?: ReadonlyMap<string, { readonly x: number; readonly y: number }>;
+  readonly pins?: ReadonlyMap<string, { readonly x: number; readonly y: number; /** how much of its size the word keeps because the picture it stands on was made smaller (the stage plan gave the picture less room than the whole stage): 0..1, absent is 1 */ readonly k?: number }>;
   /**
    * The column each line without `at=left|right` belongs to in a `split` scene, decided once over every line of the scene, so a line keeps its
    * column when the oldest lines of the other one retire.
@@ -904,8 +904,9 @@ function arrangeLoose(
       const avoid = [...text, ...taken, ...across];
       const reach = 4 * step.y;
       let best: { loose: Loose; position: { x: number; y: number }; moved: number } | null = null;
+      const kept = pin.k ?? 1;
       for (const shrink of CLEAR_SHRINK) {
-        const loose = buildLoose(unit, 'center', frame, ctx, shrink);
+        const loose = buildLoose(unit, 'center', frame, ctx, shrink * kept);
         const size = { width: loose.width, height: loose.height };
         const wanted = {
           x: Math.max(frame.x, Math.min(pin.x - size.width / 2, frame.x + frame.width - size.width)),
@@ -919,7 +920,7 @@ function arrangeLoose(
         if (moved <= reach) break;
       }
       if (best === null) {
-        const loose = buildLoose(unit, 'center', frame, ctx, 1);
+        const loose = buildLoose(unit, 'center', frame, ctx, kept);
         const size = { width: loose.width, height: loose.height };
         const wanted = {
           x: Math.max(frame.x, Math.min(pin.x - size.width / 2, frame.x + frame.width - size.width)),

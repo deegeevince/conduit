@@ -46,6 +46,8 @@ type Of<T extends SessionRecord['type']> = Extract<SessionRecord, { type: T }>;
 interface LoggedTurn {
   readonly turn: string;
   readonly asked: string;
+  /** how the turn was opened (`input.kind`), which decides whether the choices it was answering leave */
+  readonly opened: string;
   readonly at: number;
   /** ms the viewer first saw something (the painter's `started`), else the first line's arrival */
   readonly shownAt: number;
@@ -80,6 +82,7 @@ async function readLog(file: string): Promise<LoggedTurn[]> {
     return {
       turn: open.turn,
       asked,
+      opened: input.kind,
       at: open.at,
       shownAt,
       // The playhead a line arrived at is how long the viewer had been watching; it can never be later than where the line started.
@@ -230,6 +233,7 @@ interface Job {
   readonly language: string;
   readonly turn: string;
   readonly asked: string;
+  readonly opened: string;
   readonly base: StageBase | null;
   readonly lines: readonly { readonly seq: number; readonly text: string; readonly floor: number }[];
   readonly viewport: { readonly width: number; readonly height: number; readonly dpr: number };
@@ -266,7 +270,7 @@ const PAGE_SCRIPT = String.raw`async (job) => {
   // The score, as the painter heard it: each line pushed at the playhead it arrived at; each part's arrival noted for its layout epochs.
   const normalizer = new L.LineNormalizer(() => 'cx' + (++counter));
   let counter = 0;
-  const score = new L.TurnScore(base);
+  const score = new L.TurnScore(base, job.opened);
   const arrivals = new Map();
   let rejected = 0;
   for (const entry of job.lines) {
@@ -454,6 +458,7 @@ async function captureOne(page: Page, options: Options, turns: readonly LoggedTu
     language: `/@fs${repoRoot}/language/src/index.ts`,
     turn: turn.turn,
     asked: turn.asked,
+    opened: turn.opened,
     base: baseOf(turns, index),
     lines: turn.lines,
     viewport: { ...options.screen, dpr: 1 },
