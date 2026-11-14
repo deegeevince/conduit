@@ -5,9 +5,9 @@
  "owner": "brain",
  "kind": "draw",
  "found": "2026-11-14",
- "note": "The list under \"Read it in four checks\" loses items at rest; only some of the four show.",
+ "note": "The list under \"Read it in four checks\" loses items at rest; only some of the four show. Fixed when every item is on stage at rest, or the answer gives them as stops to tap.",
  "own": [
-  "all-present",
+  "all-present|tappable-stops",
   "answer-on-stage"
  ],
  "turns": [
@@ -21,12 +21,21 @@
    },
    "check": [
     {
-     "k": "all-present",
-     "items": [
-      "^1\\.",
-      "^2\\.",
-      "^3\\.",
-      "^4\\."
+     "k": "any",
+     "of": [
+      {
+       "k": "all-present",
+       "items": [
+        "^1\\.",
+        "^2\\.",
+        "^3\\.",
+        "^4\\."
+       ]
+      },
+      {
+       "k": "tappable-stops",
+       "min": 3
+      }
      ]
     }
    ]
