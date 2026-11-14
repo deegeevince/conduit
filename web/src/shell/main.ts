@@ -372,11 +372,14 @@ function syncNav(): void {
 function setOpen(open: boolean): void {
   shell.dataset['canvas'] = open ? 'open' : 'closed';
   // On a screen with no room for a panel the canvas covers everything: nothing behind it is reachable, by keyboard or by a screen reader.
+  // The composer is the one thing left reachable: its pill floats over the canvas's foot, so the owner can type while looking at the answer.
   const covered = open && overlay();
-  for (const element of [part('#shell-list'), main]) {
+  const behind = [part('#shell-list'), ...[...main.children].filter((element) => !element.classList.contains('shell-composer'))];
+  for (const element of behind) {
     if (covered) element.setAttribute('inert', '');
     else element.removeAttribute('inert');
   }
+  if (covered) main.removeAttribute('inert');
   applyTheme();
 }
 
@@ -482,6 +485,12 @@ window.matchMedia(DRAWER).addEventListener('change', (event) => {
   if (!event.matches) closeDrawer();
 });
 window.matchMedia(SIDE_PANEL).addEventListener('change', () => setOpen(canvasOpen()));
+
+// The canvas leaves room for the pill under it: the pill's height (it grows with a status line or a photo) is the canvas's bottom margin on a phone.
+const pillBox = part('.shell-composer');
+const measurePill = (): void => shell.style.setProperty('--sh-pill-h', `${Math.ceil(pillBox.getBoundingClientRect().height)}px`);
+if (typeof ResizeObserver !== 'undefined') new ResizeObserver(measurePill).observe(pillBox);
+measurePill();
 
 const keepAboveKeyboard = (): void => {
   const viewport = window.visualViewport;

@@ -1131,3 +1131,26 @@ button {
     gap: 0.45rem;
   }
 }
+
+/* On a phone the canvas covers the thread but not the composer: the pill sits at the foot of the screen, the canvas ends above it, and
+   a message sent from there leaves the canvas open on the new answer. */
+@media (max-width: 1099px) {
+  .shell[data-canvas='open'] .shell-composer {
+    position: fixed;
+    z-index: 31;
+    top: calc(var(--app-height, 100dvh) - var(--sh-pill-h, 4rem));
+    right: 0;
+    left: 0;
+    background: var(--sh-ground);
+    border-top: 1px solid var(--sh-rule);
+  }
+
+  .shell[data-canvas='open'] .shell-canvas {
+    inset: 0 0 auto 0;
+    height: calc(var(--app-height, 100dvh) - var(--sh-pill-h, 4rem));
+  }
+
+  .shell[data-canvas='open'] .shell-canvas__nav {
+    padding-bottom: 0;
+  }
+}
