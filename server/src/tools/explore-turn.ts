@@ -176,16 +176,25 @@ export async function playTurn(play: TurnPlay): Promise<TurnPlayed> {
       } catch (error) {
         process.stderr.write(`explore: the draft of ${play.turn} could not be pictured: ${error instanceof Error ? error.message : String(error)}\n`);
       }
-      const gate = createDraftGate();
-      if (reply !== null) {
-        gate.open(play.turn, 1);
-        const picture: Snapshot | null =
-          reply.snapshot === null
-            ? null
-            : { mime: 'image/jpeg', bytes: new Uint8Array(Buffer.from(reply.snapshot, 'base64')), width: Math.round(play.context.screen.width * Math.min(1, 768 / Math.max(play.context.screen.width, play.context.screen.height))), height: Math.round(play.context.screen.height * Math.min(1, 768 / Math.max(play.context.screen.width, play.context.screen.height))) };
-        gate.receive(play.turn, 1, reply.report.sight, reply.placed, picture !== null);
-        if (picture !== null) gate.receivePicture(play.turn, 1, picture);
-      }
+      const real = createDraftGate();
+      const picture: Snapshot | null =
+        reply === null || reply.snapshot === null
+          ? null
+          : (() => {
+              const scale = Math.min(1, 768 / Math.max(play.context.screen.width, play.context.screen.height));
+              return { mime: 'image/jpeg' as const, bytes: new Uint8Array(Buffer.from(reply.snapshot as string, 'base64')), width: Math.round(play.context.screen.width * scale), height: Math.round(play.context.screen.height * scale) };
+            })();
+      // The page has already reported on this draft; the gate hands that over when the review opens the first pass, as the server's gate does when the painter's report comes.
+      const gate: typeof real = {
+        ...real,
+        open(turn, pass) {
+          real.open(turn, pass);
+          if (pass === 1 && reply !== null) {
+            real.receive(turn, pass, reply.report.sight, reply.placed, picture !== null);
+            if (picture !== null) real.receivePicture(turn, pass, picture);
+          }
+        },
+      };
       let recordOut: Extract<ReviewStepOf, { type: 'record' }>['record'] | null = null;
       fixing = true;
       for await (const step of reviewTurn({
@@ -205,7 +214,7 @@ export async function playTurn(play: TurnPlay): Promise<TurnPlayed> {
         else if (step.type !== 'pass') onEvent(step);
       }
       fixing = false;
-      gate.close(play.turn);
+      real.close(play.turn);
       if (recordOut !== null) {
         const finishedMs = draftEndMs + recordOut.totalMs;
         looked = {
