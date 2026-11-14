@@ -41,6 +41,7 @@ import type { ActiveTurn, Session, SessionStore, StageSink } from './session';
 import { factsOf, tableFromText } from './datasets';
 import type { DatasetLibrary } from './datasets';
 import type { Critic, FindingQueue } from './critic';
+import { redactSecrets } from './agent';
 import { askedOf, refusalProblem, reviewTurn } from './review';
 import type { FixAttempt } from './review';
 import type { TechniqueLibrary } from './techniques';
@@ -986,8 +987,10 @@ export class Conductor {
     if (turn.endReason !== null) return undefined;
     if (event.type === 'activity') {
       // A few safe words about a call (the brain adapter has redacted them), logged and shown as it happens. Never its input or its result.
-      sessionLog.write(s.id, { type: 'activity', turn: turn.id, id: event.id, tool: event.tool, summary: event.summary, state: event.state, ms: event.ms });
-      this.emit(s, turn, { type: 'activity', turn: turn.id, id: event.id, tool: event.tool, summary: event.summary, state: event.state, ms: event.ms });
+      // The adapter has made these safe; a second net costs nothing and a secret that reaches a log or a stage is the one thing this must not do.
+      const summary = redactSecrets(event.summary);
+      sessionLog.write(s.id, { type: 'activity', turn: turn.id, id: event.id, tool: event.tool, summary, state: event.state, ms: event.ms });
+      this.emit(s, turn, { type: 'activity', turn: turn.id, id: event.id, tool: event.tool, summary, state: event.state, ms: event.ms });
       return undefined;
     }
     if (event.type === 'permission') {
@@ -1054,8 +1057,9 @@ export class Conductor {
     const brain = this.deps.brains.configured;
     const timer = setTimeout(() => this.answer(s, event.request, null, null), left);
     timer.unref();
-    s.permissions.set(event.request, { request: event.request, turn: turn.id, brain, tool: event.tool, summary: event.summary, risk: event.risk, askedAt: now(), timer });
-    this.emit(s, turn, { type: 'permission', turn: turn.id, request: event.request, tool: event.tool, summary: event.summary, risk: event.risk, expiresMs: left });
+    const summary = redactSecrets(event.summary);
+    s.permissions.set(event.request, { request: event.request, turn: turn.id, brain, tool: event.tool, summary, risk: event.risk, askedAt: now(), timer });
+    this.emit(s, turn, { type: 'permission', turn: turn.id, request: event.request, tool: event.tool, summary, risk: event.risk, expiresMs: left });
   }
 
   private reject(s: Session, turn: ActiveTurn, raw: string, issues: readonly Issue[]): void {
