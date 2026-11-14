@@ -84,7 +84,7 @@ function buttonOf(k: Kit, p: UiPartNode): N {
     }
     rectOf(out, p.id, 'button', b, { radius, fill, ...(pressed ? { fillAlpha: 0.82 } : {}), edge, ...(shadow === undefined ? {} : { shadow }) });
   };
-  const labelNode = text(k, label, k.type.label, { id: p.id, nowrap: true, colour: ink, align: 'center', what: 'label' });
+  const labelNode = text(k, label, k.type.label, { id: p.id, nowrap: true, colour: ink, align: 'center', what: 'label', ...(k.t.rowFit === 3 ? { ellipsis: true } : {}) });
   const style: Style = wide ? { width: 'fill', height } : { width: 'hug', height };
   return mk(style, flex('row', { align: 'center', justify: 'center', pad: [0, 20, 0, 20] }), null, [labelNode], { id: p.id, part: 'button', hug: !wide, target: true, paint, action: pressOf(p) });
 }
@@ -480,7 +480,9 @@ function boxOf(k: Kit, c: UiContainer, kids: N[], ctx: Ctx): N {
   const dir = c.kind;
   const card = p.card;
   const pad = p.pad ?? (card ? 16 : 0);
-  const gap = gapOf(p.gap, 8 + packOf(k) * 4);
+  const held = dir === 'row' && c.children.some((n) => !isUiContainer(n) && n.kind === 'button');
+  const fit = held ? (k.t.rowFit ?? 0) : 0;
+  const gap = fit >= 1 ? Math.min(gapOf(p.gap, 8 + packOf(k) * 4), 4) : gapOf(p.gap, 8 + packOf(k) * 4);
   // a row of cards stands them at one height; any other row centres what is in it
   const cards = dir === 'row' && c.children.filter((n) => isUiContainer(n) && n.props.card).length > 1;
   const align: Align = p.align ?? (dir === 'row' ? (cards ? 'stretch' : 'center') : 'stretch');
@@ -506,7 +508,7 @@ function boxOf(k: Kit, c: UiContainer, kids: N[], ctx: Ctx): N {
         }
       : undefined;
   const item: Item = { id: c.id, part: c.kind, quiet: !card, ...(paint === undefined ? {} : { paint }) };
-  return mk(style, flex(dir, { gap, pad, align, justify: p.spread ? 'between' : 'start', wrap: p.wrap }), null, kids, item);
+  return mk(style, flex(dir, { gap, pad, align, justify: p.spread ? 'between' : 'start', wrap: p.wrap || fit >= 2 }), null, kids, item);
 }
 
 function build(k: Kit, node: UiContainer | UiPartNode, ctx: Ctx): N {

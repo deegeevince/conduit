@@ -270,6 +270,11 @@ export interface UiTokens {
   readonly pack?: 'compact' | 'comfortable';
   /** a screen that still does not fit its glass at `density=compact`: a media grid shows its first row only, so that what comes after it (a carousel, a player, the tab bar) is on the screen */
   readonly squeeze?: boolean;
+  /**
+   * A row holding a button or a link that runs past its row or card is set again, one step at a time: 1 the gap between its parts is cut to 4, 2 the row wraps,
+   * 3 the label is cut short with an ellipsis. Absent or 0: as written. A button never lies outside its row.
+   */
+  readonly rowFit?: 0 | 1 | 2 | 3;
   readonly radius: { readonly s: number; readonly m: number; readonly l: number; readonly device: number };
   readonly type: Readonly<Record<UiTextRole, UiTextToken>>;
   readonly elevation: { readonly none: UiElevation; readonly low: UiElevation; readonly high: UiElevation };
