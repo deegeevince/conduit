@@ -400,7 +400,7 @@ ${shapes
   })
   .join('\n')}
 
-Each may take an id, a room (\`x,y WxH\`) and \` | a title\`. Then its parts, a line each:
+Each may take an id, a room (\`x,y WxH\`) and \` | a title\`; then its parts, a line each:
 node [id] [${Object.keys(NODE)
           .filter((shape) => shape !== 'step')
           .join('|')}] [from=<id>[:label]] | <words>
@@ -413,10 +413,10 @@ link <a> <b> [c…] [both|plain] [dashed] | <label>
           : `
 A chart row is \`| when | value…\`, values split by bars or spaces: \`when\` a date (2026-03-09), a year, a number or a name; one value a series (a first row of words names them)${charts.includes('candles') ? ', or `open high low close [volume]` for candles' : ''}. Chart words: ${Object.entries(CHART_WORD)
               .map(([word, gist]) => (word === 'indexed' || word === 'spark' ? `${word} (${gist.split(':')[0]?.split(',')[0] ?? gist})` : word))
-              .join(', ')}. Numbers you recall are \`approx\`: never dress a guess as data. Never refuse to chart: use the period you recall. \`node x=<when> | label\` marks an event, \`y=<value>\` a level, both a point.`
+              .join(', ')}. Numbers you recall are \`approx\`: never dress a guess as data. Never refuse to chart; use the period you recall. \`node x=<when> | label\` marks an event, \`y=<value>\` a level, both a point.`
       }
 
-Words and \`wait\` may come between parts: a diagram a step at a time. Nodes and links take \`hit\`, \`set\`, \`drop\` and \`cam focus\` by id. On your own drawing, \`say callout near=<id> | name\` labels a part with a line to it (\`at=x,y\` for a spot).
+Words and \`wait\` may come between parts, a diagram a step at a time. Nodes and links take \`hit\`, \`set\`, \`drop\` and \`cam focus\` by id. On your own drawing, \`say callout near=<id> | name\` labels a part with a line to it (\`at=x,y\`: a spot).
 `;
 
   const has = (kind: (typeof controls)[number]): boolean => controls.includes(kind);
@@ -427,10 +427,10 @@ Words and \`wait\` may come between parts: a diagram a step at a time. Nodes and
 # Controls
 
 ${[
-  has('button') ? "button [id] | <label>\n  A press is sent to you with every control's value." : '',
+  has('button') ? "button [id] | <label>\n  A press reaches you with every control's value." : '',
   has('toggle') ? 'toggle [id] [on|off] | <label>' : '',
   has('slider') ? 'slider [id] <min> <max> [value] [step=N] [unit=…] | <label>' : '',
-  has('pick') ? `pick [id] [${Object.keys(PICK).filter((form) => form !== 'row').join('|')}] [N] | <a> | <b> | <c>\n  One of several, N chosen to begin with; \`steps\` walks through them.` : '',
+  has('pick') ? `pick [id] [${Object.keys(PICK).filter((form) => form !== 'row').join('|')}] [N] | <a> | <b> | <c>\n  One of several, N chosen first; \`steps\` walks through them.` : '',
   has('input') ? 'input [id] | <placeholder>' : '',
   draws ? 'card <id> [x,y WxH] | <title>\n  A frame; its parts say in=<id>.' : '',
 ]
@@ -439,8 +439,8 @@ ${[
 
 A control sits in the flow like a line, or takes at=, near=, in=. \`bind\` makes it change the stage at once:
 bind angle | move sun along=arc
-  The change (a \`set\`, \`move\`, \`correct\`${draws ? ', or shape declared again' : ''}) is as far along as the control. \`bind angle 0..45 | …\` runs it over part of the range; \`bind view=night | …\` holds it while a pick or toggle has that value (an option's exact words, even with spaces: \`bind chord=C major | …\`, or its number; on, off).
-Braces in text hold a value or arithmetic on values: \`say | At {angle}, a {round(10/tan(rad(angle)))} m shadow\` ({angle} carries the slider's unit; a name that is not a declared control's id is cut)${structures.includes('chart') ? '; a chart cell may too' : ''}. Give every slider something to drive. \`send\` on a control makes its change the user's next message.
+  The change (a \`set\`, \`move\`, \`correct\`${draws ? ', or shape declared again' : ''}) is as far along as the control. \`bind angle 0..45 | …\` runs it over part of the range; \`bind view=night | …\` holds it while a pick or toggle has that value (an option's exact words, spaces too: \`bind chord=C major | …\`; or its number; on, off).
+Braces in text hold a value or arithmetic: \`say | At {angle}, a {round(10/tan(rad(angle)))} m shadow\` ({angle} carries the slider's unit; a name that is not a declared control's id is cut)${structures.includes('chart') ? '; a chart cell may too' : ''}. A slider must drive something. \`send\` on a control makes its change the user's next message.
 `;
 
   const drawing = draws
@@ -453,14 +453,14 @@ Drawings live on a canvas with square units; the painter fits it to the screen. 
         .map(([name, spec]) => `${name} ${spec.width}x${spec.height}`)
         .join(', ')}.
 
-A shape with nothing else said is an outline in ink that draws itself. \`fill=\` alone makes it a flat shape. Shapes appear in the order you write them, each one drawing while the next begins, and later ones sit on top.
+A bare shape is an outline in ink that draws itself. \`fill=\` alone makes it a flat shape. Shapes appear in the order you write them, each one drawing while the next begins, and later ones sit on top.
 
 To draw well in few lines:
-- Work back to front: the ground or sky first (\`rect full\` covers the screen), then the subject as three or four big simple shapes, then two or three details. Eight to fifteen shapes make a picture; forty make a mess.
-- Name your colours once (\`color sky=#1b2a49\`), then use the names. Four or five are plenty.
+- Work back to front: the ground or sky first (\`rect full\` covers the screen), then the subject as three or four big shapes, then two or three details. Eight to fifteen shapes make a picture, forty a mess.
+- Name your colours once (\`color sky=#1b2a49\`), then use the names: four or five.
 - Anything with parts is a \`group\`: its parts say \`in=<id>\` and measure from the group's \`at=\`, so it can be placed, moved, turned or copied (\`use\`) as one.
 - Curves are \`path\` with SVG path data.
-- Put words on a drawing with \`say label near=<id> | …\`; the painter finds the room.
+- Put words on a drawing with \`say label near=<id> | …\`.
 - To change a shape, declare it again under the same id: it morphs into the new one.${
         pixels
           ? `
