@@ -91,8 +91,9 @@ function sourceOf(figure: Extract<NonNullable<ElementSpan['figure']>, { kind: 's
 }
 
 /**
- * The scenes in which a live app is the whole answer: nothing else is drawn or placed there but words. Such an app is the page: it takes the whole stage, edge
- * to edge, with no frame or caption drawn about it (the words are in the transcript). An app beside other drawing keeps its room and its caption.
+ * The scenes in which a live app is the whole answer: nothing else is drawn or placed there, and no words either. Such an app is the page: it takes the whole
+ * stage, edge to edge, with no frame or caption drawn about it. An app beside other drawing, or beside the answer's words, is a block like any other: it
+ * keeps the room the stage plan gives it and the words stay on stage beside it or above it, never under it.
  */
 export function loneAppScenes(schedule: Schedule): ReadonlySet<string> {
   const lone = new Set<string>();
@@ -100,7 +101,7 @@ export function loneAppScenes(schedule: Schedule): ReadonlySet<string> {
   for (const element of schedule.elements) {
     const app = element.figure?.kind === 'structure' && element.figure.structure === 'app';
     if (app) lone.add(element.scene);
-    else if (element.kind !== 'text') crowded.add(element.scene);
+    else crowded.add(element.scene);
   }
   for (const scene of crowded) lone.delete(scene);
   return lone;

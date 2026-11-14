@@ -22,7 +22,7 @@ import type { ControlSite } from './controls-stage';
 import { layoutCard } from './controls';
 import type { ControlLayout } from '../contracts/controls';
 import { lookOf, measurerFor, tuneStartOf } from './structures';
-import { appCues, loneAppScenes } from './apps';
+import { appCues } from './apps';
 import { CALM } from '../contracts/controls';
 import { registerLaidOut, laidOutOf } from './registry';
 import { buildStructures, probeStructure, setTextOnce } from './structures';
@@ -374,9 +374,7 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
     return renderTemplate(template, source.text, source.emphasis, (id) => controlNamed(id, time));
   };
   // Words are laid out here; everything drawn is placed by painter/figures.ts.
-  // the words of a scene whose answer is one live app are not drawn on the stage: they are in the transcript, and the app is the page
-  const aloneScenes = loneAppScenes(schedule);
-  const elements = schedule.elements.filter((element) => element.kind === 'text' && !aloneScenes.has(element.scene));
+  const elements = schedule.elements.filter((element) => element.kind === 'text');
   const byKey = new Map<string, ElementSpan>();
   for (const element of elements) byKey.set(element.key, element);
   const drawn = schedule.elements.filter((element) => element.kind !== 'text');
@@ -815,8 +813,10 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
     // from everything the scene will say, so that nothing moves from one side to the other as lines arrive)
     const unpinnedBlocks = blocks.list.filter((block) => block.kind !== 'picture' && block.pinned === null);
     const bare = !blocks.list.some((block) => block.kind === 'picture' || block.pinned !== null);
+    // a live app is a tool to be used: on a wide stage it takes the lead room whatever the scene's layout, and the words stand beside it
+    const liveApp = unpinnedBlocks.length === 1 && drawnByKey.get(unpinnedBlocks[0]?.key ?? '')?.figure?.kind === 'structure' && (drawnByKey.get(unpinnedBlocks[0]?.key ?? '')?.figure as { structure?: string } | null | undefined)?.structure === 'app';
     let beside = false;
-    if (viewport.width >= 900 && viewport.width >= 1.5 * viewport.height && bare && unpinnedBlocks.length === 1 && unpinnedBlocks[0]?.kind === 'structure' && scene.layout !== 'figure' && scene.layout !== 'caption' && scene.layout !== 'solo') {
+    if (viewport.width >= 900 && viewport.width >= 1.5 * viewport.height && bare && unpinnedBlocks.length === 1 && unpinnedBlocks[0]?.kind === 'structure' && scene.layout !== 'figure' && (liveApp || (scene.layout !== 'caption' && scene.layout !== 'solo'))) {
       const known = besideOf.get(scene.id);
       if (known !== undefined) beside = known;
       else {
