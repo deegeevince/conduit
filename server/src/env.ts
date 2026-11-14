@@ -102,6 +102,8 @@ export interface Env {
   readonly refine: { readonly enabled: boolean; readonly passes: number };
   /** v2.1. Pictures with a prompt (`UPLOADS`): on by default */
   readonly uploads: boolean;
+  /** v2.1. Voice notes, read on this Mac (`VOICE`, `VOICE_LOCALE`, `VOICE_KEEP`): on by default; the audio is deleted once read unless `VOICE_KEEP=on`; `VOICE_LOCALE` (like `en-US`) names the language, else the Mac's own */
+  readonly voice: { readonly enabled: boolean; readonly locale: string | null; readonly keep: boolean };
   /** v2.1. Absolute path of the steward's status file (`STATUS_FILE`, default `STATUS.md` at the repository's root): what `/status` shows */
   readonly statusFile: string;
   /** v2.1. Absolute path of the changelog (`CHANGELOG_FILE`, default `CHANGELOG.md` at the repository's root): the newest section goes in the brief when the user asks what is new */
@@ -353,6 +355,9 @@ export function loadEnv(source: Source): Env {
     passes: integer('REFINE_PASSES', REFINE_LIMITS.passes, 1, REFINE_LIMITS.max),
   };
   const uploads = choice('UPLOADS', ['on', 'off'] as const, 'on') === 'on';
+  const voiceLocale = text('VOICE_LOCALE');
+  if (voiceLocale !== undefined && !/^[A-Za-z]{2,3}([-_][A-Za-z0-9]{2,8})?$/.test(voiceLocale)) problems.push(`VOICE_LOCALE must be a language like en-US, got "${voiceLocale}"`);
+  const voice = { enabled: choice('VOICE', ['on', 'off'] as const, 'on') === 'on', locale: voiceLocale === undefined ? null : voiceLocale.replace('_', '-'), keep: choice('VOICE_KEEP', ['on', 'off'] as const, 'off') === 'on' };
   const statusFile = resolvePath(root, text('STATUS_FILE') ?? 'STATUS.md');
   const changelogFile = resolvePath(root, text('CHANGELOG_FILE') ?? 'CHANGELOG.md');
   // package H. The held-out set does not live in the repository: a builder, a seed or a prompt edit cannot have read what is not there.
@@ -380,5 +385,5 @@ export function loadEnv(source: Source): Env {
   }
 
   if (problems.length > 0) throw new EnvError(problems);
-  return { production, host, trustedHosts, ownerLogins, usageCapUsd: usageCapUsd !== null && Number.isFinite(usageCapUsd) && usageCapUsd > 0 ? usageCapUsd : null, port, logLevel, brain, images, pictures, sight, promptVariant: parsePromptVariant(text('PROMPT_VARIANT')), review, library, datasets, logDir, data, readLinks: choice('READ_LINKS', ['on', 'off'] as const, 'on') === 'on', paintingsPerSession: 0, exploreDir, webDist, critic, agent, modes, refine, uploads, statusFile, changelogFile, sealedDir };
+  return { production, host, trustedHosts, ownerLogins, usageCapUsd: usageCapUsd !== null && Number.isFinite(usageCapUsd) && usageCapUsd > 0 ? usageCapUsd : null, port, logLevel, brain, images, pictures, sight, promptVariant: parsePromptVariant(text('PROMPT_VARIANT')), review, library, datasets, logDir, data, readLinks: choice('READ_LINKS', ['on', 'off'] as const, 'on') === 'on', paintingsPerSession: 0, exploreDir, webDist, critic, agent, modes, refine, uploads, voice, statusFile, changelogFile, sealedDir };
 }

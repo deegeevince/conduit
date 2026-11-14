@@ -12,6 +12,7 @@
 //   kill                    the kill switch was pulled, or agent tools were switched back on
 //   refused                 a request this server turned away on identity
 //   upload                  a photo the owner gave: taken (id, size, where kept; never the bytes) or turned away and why
+//   voice                   a voice note the owner gave: taken and read on this Mac (id, size, language, recogniser; never the audio or the words) or turned away and why
 //   server                  the server started, or kept serving after an error it did not expect
 //
 // `decidedBy`: `policy` (the gate in domain/agent.ts), `owner` (their yes or no on the stage), `timeout` (no answer is a no),
@@ -23,7 +24,7 @@ import { redactSecrets } from './domain/agent';
 import { currentIdentity, labelOf } from './identity';
 import type { Logger } from './log';
 
-export type AuditKind = 'tool' | 'permission_asked' | 'permission_answered' | 'setting' | 'connector' | 'kill' | 'refused' | 'upload' | 'server';
+export type AuditKind = 'tool' | 'permission_asked' | 'permission_answered' | 'setting' | 'connector' | 'kill' | 'refused' | 'upload' | 'voice' | 'server';
 export type AuditDecision = 'allowed' | 'denied' | 'asked' | 'done' | 'failed';
 export type AuditDecider = 'policy' | 'owner' | 'timeout' | 'turn' | 'kill' | 'system';
 
