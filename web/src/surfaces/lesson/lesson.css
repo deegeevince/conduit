@@ -260,8 +260,8 @@ mark.fact { background: var(--accent); color: var(--on-accent, #fff); border-rad
 
 /* a transcribed shape on a grid: squares she taps to tick, big enough for a finger or a pencil */
 .grid-widget { display: grid; gap: 10px; justify-items: start; }
-.gridfig { display: grid; grid-template-columns: repeat(var(--cols), minmax(44px, 64px)); gap: 3px; padding: 8px; background: var(--card); border: 3px solid var(--line); border-radius: var(--r-m); }
-.gcell { aspect-ratio: 1; min-width: 44px; border: 2px solid var(--line); border-radius: var(--r-s); background: var(--card); color: var(--good); font-size: calc(28px * var(--ts, 1)); font-weight: 800; padding: 0; }
+.gridfig { display: grid; width: max-content; grid-template-columns: repeat(var(--cols), clamp(40px, min(calc(46vh / var(--rows, 6)), calc((100vw - 76px) / var(--cols))), 72px)); gap: 3px; padding: 8px; background: var(--card); border: 3px solid var(--line); border-radius: var(--r-m); }
+.gcell { aspect-ratio: 1; min-width: 0; border: 2px solid var(--line); border-radius: var(--r-s); background: var(--card); color: var(--good); font-size: calc(28px * var(--ts, 1)); font-weight: 800; padding: 0; }
 .gcell.empty { border-color: transparent; background: transparent; }
 .gcell.whole { background: var(--soft); border-color: var(--accent); }
 .gcell.half { background: linear-gradient(135deg, var(--soft) 50%, var(--card) 50%); border-color: var(--accent); }
@@ -316,3 +316,15 @@ body { font-size: calc(20px * var(--ts, 1)); }
   .nav { padding: 0 12px; white-space: nowrap; }
   .topbar { gap: 8px; }
 }
+
+/* a figure the question is about is the work surface: big, whole and never covered. A shape on a grid scrolls inside its own box if it is wider than the screen. */
+.gridwrap { max-width: 100%; overflow-x: auto; border-radius: var(--r-m); }
+.grid-widget { width: 100%; }
+.surface-frame { position: relative; display: block; width: 100%; line-height: 0; cursor: crosshair; touch-action: manipulation; }
+.surface-img { width: 100%; max-height: 52vh; object-fit: contain; object-position: top left; display: block; background: #fff; border: 2px solid var(--line); border-radius: var(--r-m); }
+.surface-ring { position: absolute; width: 44px; height: 44px; margin: -22px 0 0 -22px; border: 4px solid var(--accent); border-radius: 50%; pointer-events: none; }
+@media (min-width: 900px) {
+  .run.has-fig:has(.grid-widget) { grid-template-columns: minmax(0, 60fr) minmax(0, 40fr); }
+}
+
+@media (max-width: 899px) { .topbar { flex-wrap: wrap; } }

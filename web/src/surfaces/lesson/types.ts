@@ -171,4 +171,6 @@ export interface LessonCensus {
   /** elements that reach past the right edge of the screen (the page must never scroll sideways) */
   readonly wide: readonly string[];
   readonly here: string;
+  /** the figure the steps shown refer to (to tick, circle, count, measure, shade, mark): referred to, on screen, and big enough to work */
+  readonly surface: { readonly referred: boolean; readonly shown: boolean; readonly big: boolean };
 }
