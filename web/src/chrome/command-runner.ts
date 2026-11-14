@@ -135,6 +135,23 @@ async function perform(app: StageApp, command: Command, onChoice: (choice: Brain
     case 'stop':
       app.interrupt();
       return;
+    case 'stop-all': {
+      if (command.resume) {
+        await app.link.resumeAgent();
+        app.announce('Agent tools are switched back on. Choose "/brain agent" in a conversation to use them.');
+        return;
+      }
+      // The page stops first, so the owner sees it stop before the server has answered; then the server stops everything else.
+      app.interrupt();
+      const stopped = await app.link.killAll();
+      const parts = [
+        `${stopped.turns} answer${stopped.turns === 1 ? '' : 's'} ended`,
+        `${stopped.permissionsDenied} question${stopped.permissionsDenied === 1 ? '' : 's'} refused`,
+        `${stopped.children} helper process${stopped.children === 1 ? '' : 'es'} killed`,
+      ];
+      app.announce(`Stopped everything: ${parts.join(', ')}. Agent tools are off until "/stop-all resume".${stopped.survivors > 0 ? ` ${stopped.survivors} process${stopped.survivors === 1 ? '' : 'es'} would not die; see the audit.` : ''}`);
+      return;
+    }
     case 'show-all':
       if (app.status().busy) app.showAll();
       else app.announce('Nothing is being written.');

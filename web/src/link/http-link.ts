@@ -31,8 +31,21 @@ export interface HttpLink extends StageLink {
   appStatus(): Promise<AppStatus>;
   /** v2.1. What the user asked to hold for every reply (`/asks`); `clear` forgets them. Needs the server's `asks` route (see the hand-back). */
   asks(clear: boolean): Promise<readonly string[]>;
+  /** v2.1 ops. The kill switch (`/stop-all`): stops everything the server is doing, for every conversation, and turns agent tools off. Answers what was stopped. */
+  killAll(): Promise<KillAnswer>;
+  /** v2.1 ops. Switches agent tools back on after a kill (`/stop-all resume`). */
+  resumeAgent(): Promise<void>;
   /** v2.1. Saves a film of a turn made in the page beside the session's log, for the steward to watch (`/capture`). */
   saveCapture(turn: string, film: Blob): Promise<void>;
+}
+
+/** What the kill switch says it did: how many answers it ended, questions it refused and processes it killed, and how many would not die. */
+export interface KillAnswer {
+  readonly engaged: true;
+  readonly turns: number;
+  readonly permissionsDenied: number;
+  readonly children: number;
+  readonly survivors: number;
 }
 
 async function bodyOf(response: Response): Promise<unknown> {
@@ -433,6 +446,18 @@ export function createHttpLink(): HttpLink {
       const asks = asAsks(await bodyOf(response));
       if (asks === null) throw new Error('the server answered with something that is not a list of asks');
       return asks;
+    },
+
+    async killAll(): Promise<KillAnswer> {
+      const body = await bodyOf(await fetch(API.kill, { method: 'POST' }));
+      const answer = body as (Partial<KillAnswer> & { descendants?: unknown }) | null;
+      if (answer === null || typeof answer !== 'object' || answer.engaged !== true) throw new Error('the server did not say it had stopped');
+      const count = (value: unknown): number => (typeof value === 'number' && Number.isFinite(value) ? value : 0);
+      return { engaged: true, turns: count(answer.turns), permissionsDenied: count(answer.permissionsDenied), children: count(answer.children) + count(answer.descendants), survivors: Array.isArray(answer.survivors) ? answer.survivors.length : 0 };
+    },
+
+    async resumeAgent(): Promise<void> {
+      await bodyOf(await fetch(API.kill, { method: 'DELETE' }));
     },
 
     async saveCapture(turn: string, film: Blob): Promise<void> {
