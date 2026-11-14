@@ -42,6 +42,8 @@ const DECKS_READY = false;
 const UPLOADS_READY = false;
 /** STUB(PLAN-v2.1 part two): true once `say href=` is drawn as a link the viewer can follow. The brain is taught `href` only when it is. */
 const LINKS_READY = false;
+/** ms a chart waits for the rows it draws by reference before it is shown without them */
+const DATA_WAIT_MS = 20_000;
 
 const HOME_SECONDS = 1.2;
 const SETTLE_SECONDS = 0.12;
@@ -1169,6 +1171,17 @@ export function createPainter(options: PainterOptions): Painter {
         open.ack = Math.max(open.ack, seq);
         if (!open.started) startTurnState();
         return [];
+      }
+      // A chart that draws data by reference waits for its `data` event. If that event was lost the chart would wait for ever: past
+      // DATA_WAIT_MS it is told the rows could not be had, and says so (v2.1 review, W-3).
+      if (line.verb === 'chart' && line.data !== undefined && !chartData.has(line.data)) {
+        const wanted = line.data;
+        setTimeout(() => {
+          if (!chartData.has(wanted)) {
+            console.error(`[conduit painter] the data ${wanted} never arrived; the chart is shown without it`);
+            chartData.set(wanted, { table: null, since: clock.read().ambient });
+          }
+        }, DATA_WAIT_MS);
       }
       const reading = clock.read();
       const result = open.score.push(line, seq, reading.playhead);

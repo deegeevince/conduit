@@ -1,6 +1,6 @@
 // Checks of the rules that decide whether a fix is shown (language/src/review.ts), on cases that went wrong in real use.
 // Run by `pnpm timeline`.
-import { contentOf, EMPTY_STAGE, fixKeeps, LineNormalizer, LineReader, TurnScore } from '../src/index';
+import { checkStageEvent, contentOf, EMPTY_STAGE, fixKeeps, LineNormalizer, LineReader, TurnScore } from '../src/index';
 
 function build(lines: readonly string[], base?: TurnScore): TurnScore {
   const score = base ?? new TurnScore(EMPTY_STAGE);
@@ -44,5 +44,23 @@ export function reviewChecks(): boolean {
   expect('a fix that leaves the choice alone is kept', fixKeeps(draftContent, contentOf(untouched.schedule)).keeps, true);
   const added = build(["say x12 choice | and what is effort?"], draft.fork());
   expect('a fix that adds a choice is kept', fixKeeps(draftContent, contentOf(added.schedule)).keeps, true);
+  return ok;
+}
+
+export function eventChecks(): boolean {
+  let ok = true;
+  const expect = (what: string, got: boolean): void => {
+    if (!got) {
+      ok = false;
+      process.stdout.write(`  EVENT CHECK FAILED: ${what}\n`);
+    }
+  };
+  expect('a good line is accepted', 'event' in checkStageEvent('line', { turn: 't1', seq: 3, text: 'say | hi', issues: [] }));
+  expect('a line with no text is refused', 'why' in checkStageEvent('line', { turn: 't1', seq: 3, issues: [] }));
+  expect('a line with a string seq is refused', 'why' in checkStageEvent('line', { turn: 't1', seq: '3', text: 'x', issues: [] }));
+  expect('an unknown type is refused', 'why' in checkStageEvent('surprise', { turn: 't1' }));
+  expect('a non-object is refused', 'why' in checkStageEvent('end', 'done'));
+  expect('an end with no message is accepted (null)', 'event' in checkStageEvent('end', { turn: 't1', reason: 'done' }));
+  expect('a permission without an expiry is refused', 'why' in checkStageEvent('permission', { turn: 't1', request: 'r', tool: 'Write', summary: 's', risk: 'write' }));
   return ok;
 }

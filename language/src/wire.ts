@@ -321,6 +321,13 @@ export type StageEvent =
   | { readonly type: 'data'; readonly turn: string; readonly id: string; readonly status: 'ready' | 'failed'; readonly url: string | null; readonly reason: string | null };
 
 export type StageEventType = StageEvent['type'];
+
+/**
+ * The stream's liveness. The server writes a `heartbeat` event (and a comment) every `everyMs` while a stream is open; a page that has
+ * heard nothing at all for `silentMs` takes the stream for half-open, says so, and reconnects. (An EventSource never shows comments, so
+ * the beat is a named event the page reads but does not pass on as a stage event.)
+ */
+export const STREAM_HEARTBEAT = { eventName: 'heartbeat', everyMs: 15_000, silentMs: 40_000 } as const;
 export const STAGE_EVENT_TYPES: readonly StageEventType[] = ['hello', 'turn', 'reading', 'line', 'reject', 'end', 'pass', 'asset', 'data', 'candidate', 'critic', 'activity', 'permission'];
 
 /** Painter to server: the back channel. */

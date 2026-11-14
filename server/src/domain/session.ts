@@ -1,3 +1,4 @@
+import { STREAM_HEARTBEAT } from '@conduit/language';
 import type {
   ActionRisk,
   BackEventRecord,
@@ -44,7 +45,7 @@ export const SERVER_LIMITS = {
   /** characters in a script the user plays (input kind `script`) */
   scriptChars: 48_000,
   /** an idle SSE stream gets a comment this often so proxies keep it open */
-  heartbeatMs: 15_000,
+  heartbeatMs: STREAM_HEARTBEAT.everyMs,
   /** longest a relay long-poll may be held */
   longPollMs: 30_000,
   /** lines a brain may write in one turn before it is cut off */
