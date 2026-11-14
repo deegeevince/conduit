@@ -41,6 +41,8 @@ import type { Ahead, AheadHost, AheadPolicy, AheadStatus, FillJob, FillOutcome }
 import type { LessonCheckResult } from '../judge/lesson';
 import { NO_THROTTLE } from '../usage';
 import type { DocChange, Documents, LoadedDocument } from './document';
+import type { DocumentAssets } from '../documents/assets';
+import { cropJpeg } from '../pictures/image';
 import { buildContext, holdStanding, parseStanding, rememberTurn } from './memory';
 import type { StandingAsk } from './memory';
 import { MAX_PROBLEMS, SERVER_LIMITS } from './session';
@@ -110,6 +112,8 @@ export interface ConductorDeps {
   readonly usage?: UsageMeter;
   /** v3. The document each conversation makes: a fold over its session log (PLAN-v3-core 2.11). Absent: no conversation has one. */
   readonly documents?: Documents;
+  /** v3. What a document keeps beside its words: the cut of the photo each question sits on */
+  readonly docAssets?: DocumentAssets;
   /**
    * v3 (WS5). Fill ahead and verify: the parts of a document that are named and not written are written in the background, and each is
    * checked before it is offered. Absent: nothing is written ahead. `check` is the second, cheap model check (`judge/lesson.ts`).
@@ -189,6 +193,7 @@ export class Conductor {
     const change = this.docs.record(s.id, entry);
     const gated = entry.type === 'state' || entry.type === 'node';
     if (!gated || change?.applied === true) this.deps.sessionLog.write(s.id, entry);
+    if (change !== null && change.nodes.length > 0) this.cutCrops(s, change);
     if (change !== null && change.nodes.length > 0) {
       const turnId = 'turn' in entry ? entry.turn : null;
       const turn = turnId === null ? null : (s.turns.get(turnId) ?? null);
@@ -197,6 +202,40 @@ export class Conductor {
     // Something that decides what is waiting moved: a turn ended, a session began (or opened a document again), the person went somewhere.
     if (entry.type === 'end' || entry.type === 'session' || (entry.type === 'state' && change?.applied === true)) this.ahead.wake(s.id);
     return change;
+  }
+
+  /** The questions already cut (or being cut) for a document, by the rectangle: a question named again with the same box is not cut twice. */
+  private readonly cuts = new Set<string>();
+
+  /**
+   * v3. A question that sits on a photo (`crop=`) has its part of the photo cut by the server, from the session's own photo, and kept with the
+   * DOCUMENT (`docAssets`), so another browser or device that opens the document sees it. Off the turn's clock: a cut that fails is logged and the
+   * page cuts it for itself from the photo while the session lasts.
+   */
+  private cutCrops(s: Session, change: DocChange): void {
+    const assets = this.deps.docAssets;
+    const uploads = this.deps.uploads;
+    if (assets === undefined || uploads === undefined || !uploads.available) return;
+    for (const node of change.nodes) {
+      const crop = node.crop;
+      if (crop === undefined) continue;
+      const key = `${change.document}|${node.id}|${crop.x},${crop.y},${crop.w},${crop.h}|${crop.from ?? ''}`;
+      if (this.cuts.has(key)) continue;
+      this.cuts.add(key);
+      void (async () => {
+        const photo = await uploads.load(s.id, crop.from ?? 'u1');
+        if (photo === null) {
+          this.cuts.delete(key);
+          return;
+        }
+        const jpeg = await cropJpeg(photo.bytes, { x: crop.x / 100, y: crop.y / 100, w: crop.w / 100, h: crop.h / 100 });
+        await assets.putCrop(change.document, node.id, jpeg);
+        this.deps.log.info('document.crop_cut', { session: s.id, document: change.document, node: node.id, bytes: jpeg.byteLength });
+      })().catch((error: unknown) => {
+        this.cuts.delete(key);
+        this.deps.log.warn('document.crop_failed', { session: s.id, node: node.id, error });
+      });
+    }
   }
 
   /** The person's place and values at the instant they acted (`seen`, on a tap, a control or an act): taken as state when it says something the server had not heard. */

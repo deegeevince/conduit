@@ -19,7 +19,7 @@ function documentId(raw: string): string {
 }
 
 export function registerDocumentRoutes(app: Hono, deps: HttpDeps): void {
-  const { conductor, uploads, usage, env } = deps;
+  const { conductor, uploads, usage, env, docAssets } = deps;
 
   /** 200 `DocumentSummary[]`: the catalogue, newest first. */
   app.get(API.documents, async (c) => c.json<readonly DocumentSummary[]>(await conductor.listDocuments()));
@@ -80,5 +80,15 @@ export function registerDocumentRoutes(app: Hono, deps: HttpDeps): void {
     );
     if (reading.failure !== null) throw errors.brainFailed(reading.failure);
     return c.json({ text: reading.lines.join('\n'), lines: reading.lines, unclear: reading.unclear });
+  });
+
+  /** The cut of the photo a question sits on (JPEG), kept with the document; 404 when none was cut. `?node=` is the question's id. */
+  app.get('/api/documents/:id/crop', async (c) => {
+    const node = c.req.query('node') ?? '';
+    const bytes = node === '' ? null : await docAssets.crop(documentId(param(c, 'id')), node);
+    if (bytes === null) throw errors.notFound('crop');
+    c.header('content-type', 'image/jpeg');
+    c.header('cache-control', 'private, max-age=86400');
+    return c.body(bytes as Uint8Array<ArrayBuffer>);
   });
 }

@@ -21,6 +21,7 @@ import { createDatasets, createLibrary } from './library/registry';
 import { createDocumentReader } from './reading/web-reader';
 import { createCatalogue } from './documents/catalogue';
 import { createDocuments } from './documents/store';
+import { createDocumentAssets } from './documents/assets';
 import { createJsonlSessionLog } from './logs/jsonl-session-log';
 import { NO_SESSION_LOG } from './domain/session-log';
 import { createLogger } from './log';
@@ -104,6 +105,7 @@ function boot(env: Env): void {
     setInterval(refreshDatasets, env.datasets.refreshMs).unref();
   }
   // v3. The documents conversations make, and the catalogue of them in the data folder (an index over the session logs, rebuilt from them when it is behind).
+  const docAssets = createDocumentAssets({ dir: env.data.documents, log: log.child({ part: 'documents' }) });
   const documents = createDocuments({ catalogue: createCatalogue({ dir: env.data.documents, logs: env.logDir, log: log.child({ part: 'documents' }), now }), log: log.child({ part: 'documents' }), now });
   const conductor = new Conductor({
     sessions: new SessionStore(),
@@ -131,6 +133,7 @@ function boot(env: Env): void {
     audit,
     usage,
     documents,
+    docAssets,
     ahead: {
       policy: env.ahead,
       // The second check of what is written ahead: a cheap model, asked cold, through the judge's own process; its calls are on the meter.
@@ -151,7 +154,7 @@ function boot(env: Env): void {
   });
   const withheld = withheldCredentialNames();
   if (withheld.length > 0) log.info('env.credentials_withheld', { names: withheld, note: 'no child process is given these; every model call is on the owner\'s login' });
-  const app = createApp({ env, log: log.child({ part: 'http' }), conductor, relayHub, audit, kill, usage, assets, pictures, uploads, voice, status, news });
+  const app = createApp({ env, log: log.child({ part: 'http' }), conductor, relayHub, audit, kill, usage, assets, docAssets, pictures, uploads, voice, status, news });
 
   const server = serve({ fetch: app.fetch, hostname: env.host, port: env.port }, (info) => {
     log.info('server.listening', { host: env.host, port: info.port, brain: env.brain.kind, production: env.production, owners: env.ownerLogins.length, usageCapUsd: env.usageCapUsd });

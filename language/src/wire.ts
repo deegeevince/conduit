@@ -3,7 +3,7 @@
 // types, so a field cannot be renamed on one side only.
 
 import type { DocNode, DocState, Document, NodeId, NodeStatus, Seen, StateChange } from './document';
-import type { InkMarks } from './ink';
+import type { InkDocument, InkMarks } from './ink';
 import type { StageBase } from './schedule';
 import type { PlacedBox, Sight } from './sight';
 import type { ShownItem } from './stage';
@@ -717,6 +717,16 @@ export interface DocumentSummary {
   readonly live: boolean;
 }
 
+/** v3. What her hand wrote for one ask of a document: the paper as it stands (`n` 0) or the strokes of a try (`n` 1…), and the lines the reader made of them. */
+export interface DocumentInk {
+  readonly node: string;
+  readonly ask: string;
+  readonly n: number;
+  readonly at: number;
+  readonly text: string;
+  readonly doc: InkDocument;
+}
+
 /** v3. A document with the person's place, tries and answers in it. */
 export interface DocumentView {
   readonly document: Document;
@@ -806,6 +816,8 @@ export const API = {
   documentOpen: (id: string): string => `/api/documents/${id}/open`,
   /** v3. POST `{ image, node, ask }` (the upload id of the picture of the ink): reads what a hand wrote in an ask's answer area. 200 `{ text, lines, unclear }`. */
   readInk: (session: string): string => `/api/sessions/${session}/read-ink`,
+  /** v3. GET: the cut of the photo a question sits on, kept with the document (a JPEG); 404 when none was cut. `node` is the question's id, encoded. */
+  documentCrop: (id: string, node: string): string => `/api/documents/${id}/crop?node=${encodeURIComponent(node)}`,
   /** v3. GET: the document this session is making or has reopened, as `DocumentView`; 404 until it has one. */
   sessionDocument: (session: string): string => `/api/sessions/${session}/document`,
   relayNext: '/api/relay/next',

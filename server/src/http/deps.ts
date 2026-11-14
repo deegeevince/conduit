@@ -1,6 +1,7 @@
 import type { AppStatus } from '@conduit/language';
 import type { RelayHub } from '../brains/relay/relay-hub';
 import type { AssetStore } from '../domain/assets';
+import type { DocumentAssets } from '../documents/assets';
 import type { Conductor } from '../domain/conductor';
 import type { PictureService } from '../domain/pictures';
 import type { UploadStore } from '../domain/uploads';
@@ -24,6 +25,8 @@ export interface HttpDeps {
   /** v2.1 ops. The usage meter: what `/api/usage` summarises */
   readonly usage: UsageMeter;
   readonly assets: AssetStore;
+  /** v3. What a document keeps beside its words: the cut of the photo for each question, and her strokes */
+  readonly docAssets: DocumentAssets;
   /** v2.2. Photographs found for the `image` parts of a mock-up: what `GET /api/pictures/:key` serves */
   readonly pictures: PictureService;
   /** v2.1. The user's photos: what `POST /api/sessions/:id/uploads` keeps and the painter draws */
