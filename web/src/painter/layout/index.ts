@@ -731,7 +731,7 @@ function arrangeFlow(units: readonly Unit[], ctx: Context): FlowResult {
   resolveAlternatives(plan, ctx);
   // The words are set a step smaller together (one size per role, never below the look's floor) before any line is let go: a line that retires is a
   // line the answer said and the stage no longer shows.
-  const restShrink = Math.max(MIN_SHRINK, REST_SHRINK, Math.min(1, ctx.look.type.minFont / Math.max(1, cellOf('m', ctx.viewport, ctx.look).fontSize)));
+  const restShrink = ctx.input.items.some((item) => item.reserve !== undefined) ? 1 : Math.max(MIN_SHRINK, REST_SHRINK, Math.min(1, ctx.look.type.minFont / Math.max(1, cellOf('m', ctx.viewport, ctx.look).fontSize)));
   // A column never shrinks once it is placed. When what is present would pass the bottom of its box, the oldest lines leave at the top (they are
   // retired and the rest move up, eased like a `page`); lines that stay `pin` and the newest line are kept. Each column scrolls on its own.
   const originals = plan.map((column) => [...column.units]);
