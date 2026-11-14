@@ -395,7 +395,7 @@ link <a> <b> [c…] [both|plain] [dashed] | <label>
           : `
 A chart row is \`| when | value…\`, values split by bars or spaces: \`when\` a date (2026-03-09), a year, a number or a name; one value a series (a first row of words names them)${charts.includes('candles') ? ', or `open high low close [volume]` for candles' : ''}. Chart words: ${Object.entries(CHART_WORD)
               .map(([word, gist]) => (word === 'indexed' || word === 'spark' ? `${word} (${gist.split(':')[0]?.split(',')[0] ?? gist})` : word))
-              .join(', ')}. Numbers you recall are \`approx\`: never dress a guess as data, and never refuse to chart: chart the nearest period you do recall and say so. \`node x=<when> | label\` marks an event, \`y=<value>\` a level, both a point.`
+              .join(', ')}. Numbers you recall are \`approx\`: never dress a guess as data. Never refuse to chart: use the period you recall. \`node x=<when> | label\` marks an event, \`y=<value>\` a level, both a point.`
       }
 
 Words and \`wait\` may come between parts: tell a diagram a step at a time. Nodes and links take \`hit\`, \`set\`, \`drop\` and \`cam focus\` by id. On your own drawing, \`say callout near=<id> | name\` labels a part with a line to it (\`at=x,y\` for a spot).
@@ -422,7 +422,7 @@ ${[
 A control sits in the flow like a line, or takes at=, near=, in=. \`bind\` makes it change the stage at once:
 bind angle | move sun along=arc
   The change (a \`set\`, \`move\`, \`correct\`${draws ? ', or shape declared again' : ''}) is as far along as the control. \`bind angle 0..45 | …\` runs it over part of the range; \`bind view=night | …\` holds it while a pick or toggle has that value (an option's words or number, on, off).
-Braces in text hold a value or arithmetic on values: \`say | {angle} degrees, a {round(10/tan(rad(angle)))} m shadow\`${structures.includes('chart') ? '; a chart cell may too' : ''}. Give every slider something to drive. \`send\` on a control makes its change the user's next message.
+Braces in text hold a value or arithmetic on values: \`say | At {angle}, a {round(10/tan(rad(angle)))} m shadow\` ({angle} carries the slider's unit)${structures.includes('chart') ? '; a chart cell may too' : ''}. Give every slider something to drive. \`send\` on a control makes its change the user's next message.
 `;
 
   const drawing = draws
