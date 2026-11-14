@@ -123,6 +123,8 @@ const HEADING_SIZES: ReadonlySet<Size> = new Set<Size>(['l', 'xl', 'xxl']);
 const MIN_SHRINK = 0.04;
 /** how far words may shrink, beside a card or a control, before the oldest line is let go */
 const WITH_CONTROLS_SHRINK = 0.72;
+/** how far words may shrink, with no control among them, before the oldest line is let go */
+const REST_SHRINK = 1;
 /** the space between paragraphs of a `page`, in lines of body text */
 const PARAGRAPH_GAP = 0.6;
 /** lines a stack reserves room for when the brain did not say how many to expect */
@@ -686,12 +688,15 @@ function arrangeFlow(units: readonly Unit[], ctx: Context): FlowResult {
   const page = ctx.input.layout === 'page';
   const plan = makePlan([...units], ctx);
   resolveAlternatives(plan, ctx);
+  // The words are set a step smaller together (one size per role, never below the look's floor) before any line is let go: a line that retires is a
+  // line the answer said and the stage no longer shows.
+  const restShrink = Math.max(MIN_SHRINK, REST_SHRINK, Math.min(1, ctx.look.type.minFont / Math.max(1, cellOf('m', ctx.viewport, ctx.look).fontSize)));
   // A column never shrinks once it is placed. When what is present would pass the bottom of its box, the oldest lines leave at the top (they are
   // retired and the rest move up, eased like a `page`); lines that stay `pin` and the newest line are kept. Each column scrolls on its own.
   for (let guard = 0; guard < 4096; guard += 1) {
     // A column with a card or a control in it sets its words a little smaller before it lets any of them go: the hand's controls and the line
     // that explains them are meant to be on the stage together.
-    const full = plan.find((column) => layoutColumn(column, column.units.some((unit) => unit.main.item.reserve !== undefined) ? WITH_CONTROLS_SHRINK : 1, ctx).end > ctx.safe.height + EPS && retirable(column) >= 0);
+    const full = plan.find((column) => layoutColumn(column, column.units.some((unit) => unit.main.item.reserve !== undefined) ? WITH_CONTROLS_SHRINK : restShrink, ctx).end > ctx.safe.height + EPS && retirable(column) >= 0);
     if (full === undefined) break;
     const gone = retirable(full);
     const [dropped] = full.units.splice(gone, 1);
@@ -1035,15 +1040,176 @@ function narrationColumn(units: readonly Unit[], ctx: Context): Map<string, { lo
   return out;
 }
 
+/**
+ * Words told a point each, one under another (a question, its hint, a drawing, the line that asks the next thing), set larger than the room between their
+ * points. Each word taken in turn and moved aside past the one before it runs on down the stage and over the drawing; so when the words as told do not stand
+ * clear of one another, or of what is drawn, they are one stack: top to bottom as told, one size, as near their points as the room between the drawn
+ * things allows (a drawing, or a word beside the column, splits the stack into the stretches of stage between them). Where a stretch cannot hold its words
+ * even set a little smaller, nothing is decided here and the words are placed one by one as ever.
+ */
+function pinnedStacks(units: readonly Unit[], ctx: Context, taken: ReadonlySet<string>): Map<string, { loose: Loose; position: { x: number; y: number } }> {
+  const out = new Map<string, { loose: Loose; position: { x: number; y: number } }>();
+  const pins = ctx.input.pins;
+  if (pins === undefined) return out;
+  const frame = frameOf('mid', ctx);
+  const solids = (ctx.input.obstacles ?? []).filter((o) => o.ground !== true);
+  const pinOf = (unit: Unit): { x: number; y: number; k?: number } => pins.get(unit.main.item.key) as { x: number; y: number; k?: number };
+  const eligible = (unit: Unit): boolean => {
+    const item = unit.main.item;
+    const pin = pins.get(item.key);
+    if (pin === undefined || taken.has(item.key) || item.style.layer !== 'mid' || item.style.tap || item.reserve !== undefined || item.style.leader || unit.ghosts.length > 0) return false;
+    return !solids.some((o) => o.shape === true && pin.x >= o.x && pin.x <= o.x + o.width && pin.y >= o.y && pin.y <= o.y + o.height);
+  };
+  const members = units.filter(eligible).sort((a, b) => pinOf(a).y - pinOf(b).y || a.main.item.order - b.main.item.order);
+  const step = ctx.bodyH / layerScale('mid', ctx);
+  const used = new Set<string>();
+  for (const start of members) {
+    if (used.has(start.main.item.key)) continue;
+    const x0 = pinOf(start).x;
+    const run = members.filter((unit) => !used.has(unit.main.item.key) && Math.abs(pinOf(unit).x - x0) <= 0.03 * frame.width);
+    if (run.length < 3) {
+      used.add(start.main.item.key);
+      continue;
+    }
+    const inRun = new Set(run.map((unit) => unit.main.item.key));
+    // the words that stand beside the column, and what is drawn: the column keeps clear of both
+    const beside: Rect[] = [...solids];
+    for (const unit of units) {
+      const q = pins.get(unit.main.item.key);
+      if (q === undefined || inRun.has(unit.main.item.key) || unit.main.item.style.layer !== 'mid') continue;
+      const reserve = unit.main.item.reserve;
+      if (reserve !== undefined) {
+        beside.push({ x: q.x - reserve.width / 2, y: q.y - reserve.height / 2, width: reserve.width, height: reserve.height });
+        continue;
+      }
+      if (unit.main.item.style.tap) continue;
+      const l = buildLoose(unit, 'center', frame, ctx, q.k ?? 1);
+      beside.push({ x: q.x - l.width / 2, y: q.y - l.height / 2, width: l.width, height: l.height });
+    }
+    const asTold = run.map((unit) => {
+      const loose = buildLoose(unit, 'center', frame, ctx, pinOf(unit).k ?? 1);
+      return { x: pinOf(unit).x - loose.width / 2, y: pinOf(unit).y - loose.height / 2, width: loose.width, height: loose.height };
+    });
+    // a column is crowded when at least two pairs of its lines lie a quarter over one another as told (one pair is a label over its value: that is told)
+    let pairs = 0;
+    asTold.forEach((r, i) => asTold.slice(i + 1).forEach((o) => (pairs += overlapWith(r, [o], 0) > 0.25 * Math.min(r.width * r.height, o.width * o.height) ? 1 : 0)));
+    const crowded = pairs >= 1;
+    if (!crowded) {
+      for (const unit of run) used.add(unit.main.item.key);
+      continue;
+    }
+    const left = Math.min(...asTold.map((r) => r.x));
+    const right = Math.max(...asTold.map((r) => r.x + r.width));
+    // the stretches of stage the column may stand in: the frame less every drawn or told thing that reaches across the column's width
+    const blocks = beside
+      .filter((o) => o.x < right - EPS && o.x + o.width > left + EPS && o.y < frame.y + frame.height && o.y + o.height > frame.y)
+      .sort((a, b) => a.y - b.y);
+    const gap = 0.3 * step;
+    const stretches: { y: number; height: number }[] = [];
+    let cursor = frame.y;
+    for (const block of blocks) {
+      if (block.y - 2 * gap > cursor + EPS) stretches.push({ y: cursor, height: block.y - 2 * gap - cursor });
+      cursor = Math.max(cursor, block.y + block.height + 2 * gap);
+    }
+    if (frame.y + frame.height > cursor + EPS) stretches.push({ y: cursor, height: frame.y + frame.height - cursor });
+    if (stretches.length === 0) continue;
+    const stretchOf = (centre: number): number => {
+      let best = 0;
+      let distance = Infinity;
+      stretches.forEach((s, i) => {
+        const d = centre < s.y ? s.y - centre : centre > s.y + s.height ? centre - s.y - s.height : 0;
+        if (d < distance - EPS) {
+          distance = d;
+          best = i;
+        }
+      });
+      return best;
+    };
+    for (const shrink of [1, 0.9, 0.8, 0.7, 0.6, 0.5]) {
+      const looses = run.map((unit) => buildLoose(unit, 'center', frame, ctx, shrink * (pinOf(unit).k ?? 1)));
+      const groups = stretches.map(() => [] as number[]);
+      run.forEach((unit, i) => (groups[stretchOf(pinOf(unit).y)] as number[]).push(i));
+      const laid = new Map<number, Rect>();
+      let ok = true;
+      groups.forEach((indices, s) => {
+        if (indices.length === 0 || !ok) return;
+        const stretch = stretches[s] as { y: number; height: number };
+        const total = indices.reduce((sum, i) => sum + (looses[i] as Loose).height, 0) + gap * (indices.length - 1);
+        if (total > stretch.height + EPS) {
+          ok = false;
+          return;
+        }
+        // as near their points as they can stand, in order: the least squares of the moves, solved by pooling neighbours that would overlap
+        const heights = indices.map((i) => (looses[i] as Loose).height);
+        const offsets: number[] = [];
+        heights.reduce((sum, h) => (offsets.push(sum), sum + h + gap), 0);
+        const wanted = indices.map((i, k) => pinOf(run[i] as Unit).y - heights[k]! / 2 - (offsets[k] as number));
+        const pools: { sum: number; count: number }[] = [];
+        for (const w of wanted) {
+          pools.push({ sum: w, count: 1 });
+          while (pools.length > 1) {
+            const b = pools[pools.length - 1] as { sum: number; count: number };
+            const a = pools[pools.length - 2] as { sum: number; count: number };
+            if (a.sum / a.count <= b.sum / b.count + EPS) break;
+            pools.splice(pools.length - 2, 2, { sum: a.sum + b.sum, count: a.count + b.count });
+          }
+        }
+        const base = pools.flatMap((pool) => Array.from({ length: pool.count }, () => pool.sum / pool.count));
+        indices.forEach((i, k) => {
+          const loose = looses[i] as Loose;
+          const top = Math.max(stretch.y, Math.min(base[k] as number, stretch.y + stretch.height - total)) + (offsets[k] as number);
+          const x = Math.max(frame.x, Math.min(pinOf(run[i] as Unit).x - loose.width / 2, frame.x + frame.width - loose.width));
+          laid.set(i, { x, y: top, width: loose.width, height: loose.height });
+        });
+      });
+      if (!ok) continue;
+      const rects = run.map((_, i) => laid.get(i) as Rect);
+      if (rects.some((r, i) => rects.slice(i + 1).some((o) => overlapWith(r, [o], 0) > 0) || overlapWith(r, beside, 0) > 0)) continue;
+      run.forEach((unit, i) => {
+        const r = rects[i] as Rect;
+        out.set(unit.main.item.key, { loose: looses[i] as Loose, position: snapInside({ x: r.x, y: r.y }, r, frame, ctx) });
+        used.add(unit.main.item.key);
+      });
+      break;
+    }
+  }
+  return out;
+}
+
 /** Shrink factors tried, in order, when a word cannot be placed clear of the text at full size. */
 const CLEAR_SHRINK: readonly number[] = [1, 0.8, 0.64, 0.5, 0.4];
 
-function arrangeLoose(
+function arrangeLoose(units: readonly Unit[], ctx: Context, flowOccupied: readonly Rect[], occupied: Record<Layer, Rect[]>, regions: readonly Rect[]): Placement[] {
+  const copy = (): Record<Layer, Rect[]> => ({ far: [...occupied.far], bg: [...occupied.bg], mid: [...occupied.mid], fg: [...occupied.fg] });
+  const first = arrangeLooseWith(units, ctx, flowOccupied, copy(), regions, false);
+  const crowd = (list: readonly Placement[]): number => {
+    const boxes = list.filter((placement) => placement.layer === 'mid').map((placement) => {
+      const rects: Rect[] = [];
+      occupy(placement, rects);
+      return rects;
+    });
+    let total = 0;
+    boxes.forEach((rects, i) => {
+      for (const rect of rects) {
+        total += overlapWith(rect, flowOccupied, 0);
+        for (const other of boxes.slice(i + 1)) total += overlapWith(rect, other, 0);
+      }
+    });
+    return total;
+  };
+  // Words told a point that could not all stand clear of one another are set again as stacks, top to bottom as told; the better of the two is kept.
+  if (crowd(first) <= EPS) return first;
+  const stacked = arrangeLooseWith(units, ctx, flowOccupied, copy(), regions, true);
+  return crowd(stacked) < crowd(first) - EPS ? stacked : first;
+}
+
+function arrangeLooseWith(
   units: readonly Unit[],
   ctx: Context,
   flowOccupied: readonly Rect[],
   occupied: Record<Layer, Rect[]>,
   regions: readonly Rect[],
+  stacks: boolean,
 ): Placement[] {
   const placed = new Map<string, Placement[]>();
   // The reading plane first, so the far and near planes can keep clear of everything on it.
@@ -1054,6 +1220,7 @@ function arrangeLoose(
   };
   const order = [...units].sort((a, b) => rank(a) - rank(b));
   const columnOf = narrationColumn(units, ctx);
+  if (stacks) for (const [key, laid] of pinnedStacks(units, ctx, new Set(columnOf.keys()))) columnOf.set(key, laid);
   for (const unit of order) {
     const style = unit.main.item.style;
     const layer = style.layer;
