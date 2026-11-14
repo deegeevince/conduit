@@ -19,7 +19,7 @@ import { describeSight } from './sight';
 import type { PlacedBox, Sight, SightNote } from './sight';
 import type { Line } from './types';
 import { BACKDROP_LAYERS } from './vocabulary';
-import type { ContentCount, CriticFinding } from './wire';
+import type { ContentCount, CriticFinding, CriticProblem } from './wire';
 
 export interface ReviewPolicy {
   readonly enabled: boolean;
@@ -86,7 +86,8 @@ export function worthALook(facts: DraftFacts, policy: ReviewPolicy = REVIEW_POLI
   return { look: true, why: 'something was drawn' };
 }
 
-function blocking(sight: Sight | null): number {
+/** How many things the painter's measure says do not land. */
+export function blockingCount(sight: Sight | null): number {
   if (sight === null) return 0;
   return sight.items.filter((item) => item.notes.some((note) => BLOCKING_NOTES.includes(note))).length;
 }
@@ -99,7 +100,7 @@ function blocking(sight: Sight | null): number {
  */
 export function worthAFix(facts: DraftFacts, sight: Sight | null, picture: boolean, policy: ReviewPolicy = REVIEW_POLICY): ReviewDecision {
   if (sight === null && !picture) return { look: false, why: 'the painter sent no draft report in time' };
-  const wrong = blocking(sight);
+  const wrong = blockingCount(sight);
   if (wrong > 0) return { look: true, why: `${wrong} thing${wrong === 1 ? '' : 's'} did not land` };
   if (facts.rejects > 0) return { look: true, why: `${facts.rejects} line${facts.rejects === 1 ? ' was' : 's were'} dropped` };
   if (facts.drawn >= policy.minDrawn && picture) return { look: true, why: 'a free drawing: only a look can say whether it reads' };
@@ -136,6 +137,8 @@ export interface ReviewBriefInput {
   readonly of?: number;
   /** v2.1. What the user asked to hold on every reply (`TurnContext.standing`): a draft that breaks one is not right, however well it landed */
   readonly standing?: readonly string[];
+  /** v3. `repair`: the brain's own EYES digest, what the stage and the person have shown since it last wrote */
+  readonly eyes?: string | null;
 }
 
 /** The most boxes a brief lists: the largest things first. Past this a brain reads the picture. */
@@ -192,6 +195,32 @@ export function buildReviewBrief(input: ReviewBriefInput): string {
       .filter((part): part is string => part !== null)
       .join('\n\n');
   }
+  if (form === 'repair') {
+    const raised = (critic?.problems ?? []).filter((problem) => problem.raised !== false);
+    const named = raised.map((problem) => `  - ${problem.id === null ? '(no one element)' : problem.id}${problem.gate === undefined ? '' : ` [${problem.gate}${problem.owner === undefined ? '' : `, ${problem.owner}`}]`}: ${problem.what}${problem.evidence === undefined || problem.evidence === '' ? '' : `\n      seen: ${problem.evidence}`}`);
+    return [
+      `REPAIR. This is not the user and nothing new was asked: the answer you wrote is on the stage at rest, and a critic who can see it found it broken. ${seen}`,
+      `THE CRITIC FOUND:\n${named.length === 0 ? '  (nothing it could name)' : named.join('\n')}`,
+      rows.length === 0 ? 'THE STAGE MEASURES: nothing wrong that it can measure.' : `THE STAGE MEASURES:\n${rows.join('\n')}`,
+      input.eyes === undefined || input.eyes === null || input.eyes.trim() === '' ? null : `EYES (what has been seen since you last wrote):\n${input.eyes}`,
+      where,
+      `THE USER ASKED: ${input.asked}`,
+      input.standing === undefined || input.standing.length === 0 ? null : `AND ASKED EARLIER, FOR EVERY REPLY:\n${input.standing.map((ask) => `  - ${ask}`).join('\n')}`,
+      [
+        'Write fix lines for what the critic found, not a new answer. What you write is tried out of sight and kept only if the stage then measures strictly better and nothing new is wrong:',
+        '- change a thing by its id: `set <id> size=... fill=...`, `move <id> x,y` (or the same through the canvas tools\' own intents), `revise <id> | shorter words`, `drop <id>` for a thing that only gets in the way;',
+        '- a table or grid that is empty or mis-sized is opened again by its id with what differs;',
+        '- a label made with `say callout near=<id>` is placed by the stage: name the right part in `near=`, or move the part;',
+        '- never `scene`, never the lines that were right, never fewer parts than before (that fix is thrown out);',
+        '- if the canvas tools help (`canvas_fits`, `canvas_try`), use them before you write; nothing else is available;',
+        '- say nothing about the fix.',
+        `If you cannot mend it with lines, write the one line \`${REVIEW_KEEP}\` and nothing else.`,
+        'Start at once.',
+      ].join('\n'),
+    ]
+      .filter((part): part is string => part !== null)
+      .join('\n\n');
+  }
   const found = critic === null || critic.problems.length === 0 ? null : `A CRITIC WHO CAN SEE IT SAYS:\n${critic.problems.map((problem) => `  ${problem.id === null ? '' : `${problem.id}: `}${problem.what}`).join('\n')}`;
   return [
     `LOOK. This is not the user: it is the stage, showing you your own answer so far. ${seen}`,
@@ -235,7 +264,7 @@ export function buildReviewBrief(input: ReviewBriefInput): string {
 export type FixRefusal = 'it wrote nothing that changes the stage' | 'it took something away' | 'it landed worse than the draft' | 'the critic preferred the draft' | 'it could not be tried in time';
 
 /** What a pass after the draft is for. `fix`: repair what did not land. `refine`: make a picture that landed better ("keep making it better"). */
-export type ReviewForm = 'fix' | 'refine';
+export type ReviewForm = 'fix' | 'refine' | 'repair';
 
 export interface FixPolicy {
   /** the share of the draft's free-drawn things a fix must leave on stage */
@@ -319,8 +348,8 @@ export function fixKeeps(draft: ContentCount, candidate: ContentCount, policy: F
 /** Rule two: by the painter's own measure the candidate lands with no more wrong than the draft. A candidate the painter did not report on in time is not shown. */
 export function landsNoWorse(draft: Sight | null, candidate: Sight | null): { readonly ok: boolean; readonly why: string | null } {
   if (candidate === null) return { ok: false, why: 'the painter did not say how the fix would land' };
-  const before = blocking(draft);
-  const after = blocking(candidate);
+  const before = blockingCount(draft);
+  const after = blockingCount(candidate);
   return after > before ? { ok: false, why: `${after} things would not land, against ${before} in the draft` } : { ok: true, why: null };
 }
 
@@ -341,4 +370,59 @@ export function refineGoesOn(finding: Pick<CriticFinding, 'suggestions'> | null,
   if (finding === null) return { on: false, why: 'the critic could not look' };
   if (finding.suggestions.length === 0) return { on: false, why: 'the critic sees nothing more worth a pass' };
   return { on: true, why: 'the critic sees something to add' };
+}
+
+// ---------------------------------------------------------------- v3: critic-driven repair
+//
+// The critic sees the picture an answer left at rest and says what is broken (a finding with gates, tiers, evidence and owners). Until now
+// nothing came of it: the answer stayed broken on the screen. A repair is one pass on the warm brain after that finding: it is shown what
+// the critic found and writes fix lines, which are tried on the server and kept only by the rules below. Pure, like the three rules above:
+// the server, the battery and the loop must decide identically.
+
+/** The tier-1 gates a repair is for: whether the answer can be read at all. */
+export const REPAIR_GATES: readonly string[] = ['on-stage', 'readable', 'no-overlap'];
+/** Who may own a failure that is still the brain's to work around: its own, or the painter's or the kit's (it can move, shorten or drop). */
+export const REPAIR_OWNERS: readonly string[] = ['brain', 'painter', 'kit'];
+
+export interface RepairWorth {
+  readonly wanted: boolean;
+  /** the raised tier-1 problems a repair is asked to mend, in the critic's order */
+  readonly problems: readonly CriticProblem[];
+  /** their gates, once each */
+  readonly gates: readonly string[];
+  readonly why: string;
+}
+
+/** Whether a critic's finding calls for a repair: a raised tier-1 failure (`on-stage`, `readable`, `no-overlap`) the brain, or a painter or kit failure it can work around, owns. */
+export function repairWorth(finding: Pick<CriticFinding, 'problems'>): RepairWorth {
+  const problems = finding.problems.filter((problem) => problem.raised !== false && problem.tier === 1 && REPAIR_GATES.includes(problem.gate ?? '') && REPAIR_OWNERS.includes(problem.owner ?? 'brain'));
+  if (problems.length === 0) return { wanted: false, problems, gates: [], why: 'no raised tier-1 failure the brain can work around' };
+  return { wanted: true, problems, gates: [...new Set(problems.map((problem) => problem.gate ?? ''))], why: `${problems.length} raised problem${problems.length === 1 ? '' : 's'}: ${[...new Set(problems.map((problem) => problem.gate ?? ''))].join(', ')}` };
+}
+
+function blockingIds(sight: Sight | null): Set<string> {
+  return new Set((sight?.items ?? []).filter((item) => item.notes.some((note) => BLOCKING_NOTES.includes(note))).map((item) => item.id));
+}
+
+/**
+ * Whether a repair is kept. The three tests, all of them: it takes nothing away (`fixKeeps`), it lands no worse (`landsNoWorse`), and by the
+ * painter's own measure it is strictly better (fewer things that do not land) with nothing newly blocking (no thing that landed before
+ * now does not). A repair the measure cannot tell from the draft is not kept: the measure is the only judge that is fast enough to be in the loop.
+ */
+export function repairKeeps(
+  draft: { readonly content: ContentCount; readonly sight: Sight | null },
+  candidate: { readonly content: ContentCount | null; readonly sight: Sight | null },
+  policy: FixPolicy = FIX_POLICY,
+): { readonly keeps: boolean; readonly why: string | null } {
+  if (candidate.content === null || candidate.sight === null) return { keeps: false, why: 'it could not be tried' };
+  const kept = fixKeeps(draft.content, candidate.content, policy);
+  if (!kept.keeps) return { keeps: false, why: `it took something away: ${kept.why ?? ''}`.trim() };
+  const lands = landsNoWorse(draft.sight, candidate.sight);
+  if (!lands.ok) return { keeps: false, why: `it landed worse: ${lands.why ?? ''}`.trim() };
+  const before = blockingIds(draft.sight);
+  const after = blockingIds(candidate.sight);
+  const fresh = [...after].filter((id) => !before.has(id));
+  if (fresh.length > 0) return { keeps: false, why: `it left something new that does not land: ${fresh.slice(0, 4).join(', ')}` };
+  if (after.size >= before.size) return { keeps: false, why: before.size === 0 ? 'the stage measures nothing wrong, so it cannot tell that the repair is better' : `no better by the stage's measure: ${after.size} thing${after.size === 1 ? '' : 's'} do not land, as before` };
+  return { keeps: true, why: null };
 }

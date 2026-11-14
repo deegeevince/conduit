@@ -23,7 +23,7 @@ export interface Recording {
    * How the turn was opened (`TurnInput.kind`): it decides whether the choices still on stage when the answer began leave with its first
    * line, so a film must be built with it or it keeps what the live answer retired. Absent: `none`, as before.
    */
-  readonly opened?: 'prompt' | 'tap' | 'act' | 'refine' | 'demo' | 'script' | 'none';
+  readonly opened?: 'prompt' | 'tap' | 'act' | 'refine' | 'repair' | 'demo' | 'script' | 'none';
   /** what the viewer did to open it, in a few words, for a title card: their prompt, `Tapped "60"`, `Played the demo overture`. Absent: not known. */
   readonly asked?: string;
   /** paintings that had arrived when the recording was taken, by element key: same-origin URLs */

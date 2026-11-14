@@ -53,7 +53,7 @@ export interface ConversationTurn {
   /** the conversation was picked up again at this turn: a new session began writing to the same log here */
   readonly continued?: true;
   /** how the turn was opened: `prompt` is the person typing; the others are taps, a played script, a pressed control */
-  readonly kind: 'prompt' | 'tap' | 'act' | 'demo' | 'script' | 'refine';
+  readonly kind: 'prompt' | 'tap' | 'act' | 'demo' | 'script' | 'refine' | 'repair';
   /** the person's words, or a short account of what they did */
   readonly said: string;
   /** photos the person gave with these words, in order */

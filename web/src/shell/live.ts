@@ -55,6 +55,8 @@ function saidOf(input: TurnInput): string {
       return 'Played a script';
     case 'refine':
       return 'Keep making it better';
+    case 'repair':
+      return 'Tidy up the last answer';
   }
 }
 
@@ -179,6 +181,9 @@ export function mountLive(app: StageApp, transcript: Transcript, hooks: LiveHook
     return reason === 'failed' || reason === 'timeout' ? 'failed' : reason === 'interrupted' ? 'stopped' : 'done';
   };
 
+  /** v3. Turns the server opened to tidy an answer: they have no message of their own */
+  const repairing = new Set<string>();
+
   const offTranscript = app.painter.on('transcript', (event) => {
     if (event.kind !== 'turn') {
       soon();
@@ -186,6 +191,12 @@ export function mountLive(app: StageApp, transcript: Transcript, hooks: LiveHook
     }
     if (isPage(event.turn)) {
       pageOpen = true;
+      return;
+    }
+    // v3. A repair is the server tidying the answer on stage: it is not a thing the person said and not a new answer, so no message is made
+    // for it. Once it has come to rest the answer's card is given a fresh still.
+    if (event.input.kind === 'repair') {
+      repairing.add(event.turn);
       return;
     }
     pageOpen = false;
@@ -235,6 +246,20 @@ export function mountLive(app: StageApp, transcript: Transcript, hooks: LiveHook
       if (event.type === 'end' || event.type === 'turn') setTimeout(keepClock, 0);
     }
     if (event.type !== 'end' || isPage(event.turn)) return;
+    if (repairing.has(event.turn)) {
+      // the repaired answer's card shows the picture as it is now
+      setTimeout(() => {
+        if (disposed) return;
+        const target = [...messages].reverse().find((message): message is ReplyMessage => message.role === 'reply' && message.state === 'done');
+        if (target === undefined) return;
+        void app.capture(520).then((still) => {
+          if (disposed || still === null) return;
+          const held = reply(target.id);
+          if (held !== null) replace({ ...held, still });
+        });
+      }, 2500);
+      return;
+    }
     ended.set(event.turn, { reason: event.reason, message: event.message });
     if (current?.turn === event.turn && (event.reason === 'failed' || event.reason === 'timeout')) settle('failed', null);
   });

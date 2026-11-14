@@ -516,6 +516,8 @@ function backEvent(value: unknown, index: number): BackEvent {
       return { type, turn: raw.turn === null || raw.turn === undefined ? null : text(raw.turn, 'turn'), document: nodeId(raw.document, 'document'), change: stateChange(raw.change, 'change') };
     case 'observe':
       return { type, items: decodeObserveItems(raw.items) };
+    case 'presence':
+      return { type, typing: bool(raw.typing, 'typing'), repair: bool(raw.repair, 'repair') };
   }
 }
 

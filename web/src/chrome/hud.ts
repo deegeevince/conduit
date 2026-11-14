@@ -131,6 +131,7 @@ export function mountHud(host: HTMLElement, app: StageApp): Hud {
       else if (event.type === 'permit') detail = `${event.request} ${event.allow ? 'allowed' : 'denied'}`;
       else if (event.type === 'state') detail = event.change.kind;
       else if (event.type === 'observe') detail = event.items.map((one) => one.kind).join(', ');
+      else if (event.type === 'presence') detail = `${event.typing ? 'typing' : 'not typing'}, repair ${event.repair ? 'on' : 'off'}`;
       else detail = `${event.look} ${event.screen.cols}x${event.screen.rows}`;
       children.push(item(`${event.type} ${detail}`));
     }

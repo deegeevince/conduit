@@ -44,7 +44,7 @@
 // any reason other than the user's interruption ends as `skipped`: the draft
 // was already good enough to show, and the turn never fails because of a look.
 
-import { FIX_POLICY, contentOf, criticPrefers, draftFactsOf, fixKeeps, fixLineAllowed, isKeep, landsNoWorse, serializeLine, worthAFix, worthALook } from '@conduit/language';
+import { FIX_POLICY, blockingCount, contentOf, criticPrefers, draftFactsOf, fixKeeps, fixLineAllowed, isKeep, landsNoWorse, repairKeeps, serializeLine, worthAFix, worthALook } from '@conduit/language';
 import type {
   ContentCount,
   CriticFinding,
@@ -262,6 +262,8 @@ export interface ReviewTurnArgs {
   readonly finding?: Pick<CriticFinding, 'problems' | 'suggestions'> | null;
   /** v2.1. The conversation's standing asks, for the look to hold the draft to */
   readonly standing?: readonly string[];
+  /** v3, `repair`: the brain's EYES digest, handed to the brief */
+  readonly eyes?: string | null;
 }
 
 /**
@@ -500,7 +502,7 @@ interface CollectOutcome {
  * `permission` events pass through at once (the log and the bill must show the pass, and an agent's calls must be seen as they happen),
  * and a line a fix may not hold goes back as a `reject`, so the next brief says why it was dropped.
  */
-async function* collectFix(args: ReviewTurnArgs, at: { pass: number; report: DraftReport | null; passStart: number; form: ReviewForm }): AsyncGenerator<ReviewStep, CollectOutcome> {
+export async function* collectFix(args: ReviewTurnArgs, at: { pass: number; report: DraftReport | null; passStart: number; form: ReviewForm }): AsyncGenerator<ReviewStep, CollectOutcome> {
   const { brain, policy, signal, now } = args;
   const state = args.state();
   const controller = new AbortController();
@@ -543,6 +545,7 @@ async function* collectFix(args: ReviewTurnArgs, at: { pass: number; report: Dra
           ...(args.finding === undefined ? {} : { critic: args.finding }),
           ...(args.of === undefined ? {} : { of: args.of }),
           ...(args.standing === undefined || args.standing.length === 0 ? {} : { standing: args.standing }),
+          ...(args.eyes === undefined ? {} : { eyes: args.eyes }),
         },
         controller.signal,
       )
@@ -614,4 +617,60 @@ function startCompare(args: ReviewTurnArgs, at: { policy: FixPolicy; form: Revie
       else args.log?.info('review.compare', { turn, pass, outcome: criticPrefers(compared.draft, compared.candidate, form) === 'draft' ? 'prefers-draft' : 'prefers-fix', draft: compared.draft.coherence, candidate: compared.candidate.coherence, ms });
     })
     .catch((error: unknown) => args.log?.warn('review.compare_failed', { turn, message: error instanceof Error ? error.message : String(error) }));
+}
+
+// ---------------------------------------------------------------- v3: critic-driven repair
+
+/** What one repair pass came to, once the brain has written and the lines have been tried. */
+export interface RepairOutcome {
+  /** `kept`: tried and better, to be shown. `refused`: tried and not kept. `nothing`: the brain wrote nothing to change, or `ok`. `failed`: it threw, was cut off, or could not be tried. */
+  readonly state: 'kept' | 'refused' | 'nothing' | 'failed';
+  readonly why: string | null;
+  /** the lines to show, as the brain's own events, when kept */
+  readonly lines: readonly BrainEvent[];
+  /** every line the brain wrote and a fix may hold, as text */
+  readonly texts: readonly string[];
+  readonly costUsd: number | null;
+  readonly firstLineMs: number | null;
+  /** how many things did not land, by the stage's measure: at rest, and with the fix tried; null when it was not tried */
+  readonly blockingBefore: number;
+  readonly blockingAfter: number | null;
+  readonly tryMs: number | null;
+}
+
+export interface RepairArgs extends ReviewTurnArgs {
+  /** the stage as the answer rests, measured here: the baseline a repair has to beat */
+  readonly rest: Measured;
+  /** the picture of the answer at rest, the one the critic judged */
+  readonly picture: Snapshot | null;
+}
+
+/**
+ * One repair pass. The brain, in the conversation that wrote the answer, is told what the critic found (and the EYES digest) and writes fix
+ * lines; they are tried on a copy of the answer's score, here, and kept only by `repairKeeps`. Its lines are held, not yielded: the caller
+ * shows them if the outcome says `kept`. Yields only the brain's `brief`, `usage`, `activity` events (for the log and the bill). Never throws.
+ */
+export async function* repairTurn(args: RepairArgs): AsyncGenerator<ReviewStep, RepairOutcome> {
+  const { rest } = args;
+  const before = blockingCount(rest.sight);
+  const fail = (why: string, more: Partial<RepairOutcome> = {}): RepairOutcome => ({ state: 'failed', why, lines: [], texts: [], costUsd: null, firstLineMs: null, blockingBefore: before, blockingAfter: null, tryMs: null, ...more });
+  if (args.brain.review === undefined) return fail('this brain cannot look');
+  if (args.tryFix === undefined) return fail('the stage cannot be measured here, so a repair cannot be tried');
+  const report: DraftReport = { turn: args.turn, pass: 2, sight: rest.sight, placed: rest.placed, picture: args.picture, content: rest.content };
+  const collected = yield* collectFix(args, { pass: 2, report, passStart: args.now(), form: 'repair' });
+  const common = { costUsd: collected.cost, firstLineMs: collected.firstLineMs, texts: collected.texts };
+  if (args.signal.aborted) return fail('cancelled', common);
+  if (collected.state === 'failed') return fail(collected.reason ?? 'the look failed', common);
+  if (collected.state === 'abandoned') return fail(collected.reason ?? 'the repair took too long', common);
+  if (collected.wrote === 0) return { state: 'nothing', why: 'the brain saw nothing it could mend with lines', lines: [], blockingBefore: before, blockingAfter: null, tryMs: null, ...common };
+  if (collected.lines.length === 0) return { state: 'refused', why: REFUSALS.nothing, lines: [], blockingBefore: before, blockingAfter: null, tryMs: null, ...common };
+  const started = args.now();
+  const tried = args.tryFix(2, collected.texts);
+  const tryMs = Math.round(args.now() - started);
+  if (tried === null) return fail('it could not be tried', { ...common, tryMs });
+  const verdict = repairKeeps({ content: rest.content, sight: rest.sight }, { content: tried.measured.content, sight: tried.measured.sight });
+  const after = blockingCount(tried.measured.sight);
+  args.log?.info('repair.tried', { turn: args.turn, before, after, rejects: tried.rejects.length, ms: Math.round(tried.measured.ms * 10) / 10, keeps: verdict.keeps });
+  if (!verdict.keeps) return { state: 'refused', why: verdict.why, lines: [], blockingBefore: before, blockingAfter: after, tryMs, ...common };
+  return { state: 'kept', why: null, lines: collected.lines, blockingBefore: before, blockingAfter: after, tryMs, ...common };
 }

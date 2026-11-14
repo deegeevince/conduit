@@ -40,7 +40,7 @@ function scriptFor(request: TurnRequest, defaultScript: string | null): string {
   const { input } = request;
   if (input.kind === 'demo') return input.script;
   if (defaultScript !== null) return defaultScript;
-  const said = input.kind === 'script' || input.kind === 'refine' ? '' : input.text.trim().toLowerCase();
+  const said = input.kind === 'script' || input.kind === 'refine' || input.kind === 'repair' ? '' : input.text.trim().toLowerCase();
   const named = DEMOS.find((demo) => demo.name === said)?.name;
   if (named !== undefined) return named;
   // The battery's prompts have no demo of their own: the demo of the kind of answer they ask for stands in, when the language has one.

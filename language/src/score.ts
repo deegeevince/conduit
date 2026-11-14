@@ -25,7 +25,7 @@ export interface PushResult {
  * How a turn was opened, which is what decides whether the choices an earlier turn offered are still the user's to tap. It is the `kind` of the
  * turn's input (`TurnInput`), or `none` for a score with no turn behind it (a rest, a film, a bench).
  */
-export type TurnOpening = 'prompt' | 'tap' | 'act' | 'refine' | 'demo' | 'script' | 'none';
+export type TurnOpening = 'prompt' | 'tap' | 'act' | 'refine' | 'repair' | 'demo' | 'script' | 'none';
 
 /**
  * D2(c): choices belong to the turn that offered them. When a turn is opened for a prompt, a tap or a control, the choices still on stage

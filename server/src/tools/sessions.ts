@@ -148,6 +148,7 @@ function inputText(input: TurnInput): string {
   if (input.kind === 'demo') return `demo: ${input.script}`;
   if (input.kind === 'act') return `worked control ${input.id}: ${JSON.stringify(input.text)}`;
   if (input.kind === 'refine') return `asked to keep making it better, up to ${input.passes} passes`;
+  if (input.kind === 'repair') return `repair of ${input.of} (the server tidying the answer after the critic)`;
   return `script of ${input.text.split('\n').length} lines (${input.text.length} characters)`;
 }
 

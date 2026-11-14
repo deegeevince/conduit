@@ -38,7 +38,7 @@ export interface TracePass {
 export interface TraceFix {
   readonly at: number;
   readonly pass: number;
-  readonly form: 'fix' | 'refine';
+  readonly form: 'fix' | 'refine' | 'repair';
   readonly lines: readonly string[];
   readonly shown: boolean | null;
   readonly why: string | null;

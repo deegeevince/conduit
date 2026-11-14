@@ -66,6 +66,8 @@ export interface ReviewRequest {
   readonly of?: number;
   /** v2.1. The conversation's standing asks, for the look to hold the draft to */
   readonly standing?: readonly string[];
+  /** v3, `repair`: the brain's EYES digest, built when the repair opens; the brief names it in its own block */
+  readonly eyes?: string | null;
 }
 
 /**

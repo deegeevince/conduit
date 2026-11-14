@@ -696,6 +696,7 @@ function inputText(input: TurnInput, pastedAs?: string): string {
     return `The user worked your control ${input.id}: "${input.text}".${values === '' ? '' : ` Every control now: ${values}.`}`;
   }
   if (input.kind === 'refine') return `The user asked you to keep making what is on stage better, up to ${input.passes} passes. The stage shows you the picture each pass; you add to it.`;
+  if (input.kind === 'repair') return `The server is tidying the answer ${input.of} that is on stage, after a critic looked at it.`;
   return `Play the fixture script "${input.script}".`;
 }
 

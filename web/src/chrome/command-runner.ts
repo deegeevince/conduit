@@ -138,6 +138,11 @@ async function perform(app: StageApp, command: Command, onChoice: (choice: Brain
       return;
     }
     case 'review': {
+      if (command.repair !== undefined) {
+        if (command.repair !== null) app.review.setRepair(command.repair);
+        app.announce(`Tidy up an answer after the critic has looked: ${app.review.repair ? 'on' : 'off'}`);
+        return;
+      }
       if (!app.review.available) {
         app.announce('This server does not check drawings.');
         return;

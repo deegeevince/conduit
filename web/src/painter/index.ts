@@ -94,6 +94,8 @@ function askedOf(input: TurnInput): string {
       return 'Played a pasted script';
     case 'refine':
       return 'Kept making it better';
+    case 'repair':
+      return 'Tidied up the last answer';
   }
 }
 

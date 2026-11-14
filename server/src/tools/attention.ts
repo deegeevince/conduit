@@ -110,6 +110,59 @@ function findingFrom(raw: unknown): Finding | null {
   return { pass: typeof f['pass'] === 'number' ? f['pass'] : 1, coherence: typeof f['coherence'] === 'number' ? f['coherence'] : null, problems, repeats };
 }
 
+/** v3. What became of the repairs the server tried after the critic judged an answer broken (`repair` records), by gate. */
+export interface RepairTally {
+  readonly tried: number;
+  readonly kept: number;
+  readonly refused: number;
+  readonly other: number;
+  readonly byGate: ReadonlyMap<string, { tried: number; kept: number; refused: number }>;
+  /** the critic's own score before and after, for the repairs it judged again */
+  readonly judged: readonly { readonly before: number; readonly after: number }[];
+}
+
+function readRepairs(logsDir: string): RepairTally {
+  const byGate = new Map<string, { tried: number; kept: number; refused: number }>();
+  const judged: { before: number; after: number }[] = [];
+  let tried = 0;
+  let kept = 0;
+  let refused = 0;
+  let other = 0;
+  if (existsSync(logsDir)) {
+    for (const name of readdirSync(logsDir).filter((n) => n.endsWith('.jsonl')).sort()) {
+      for (const line of readFileSync(join(logsDir, name), 'utf8').split('\n')) {
+        if (!line.includes('"repair')) continue;
+        let row: Record<string, unknown>;
+        try {
+          row = obj(JSON.parse(line));
+        } catch {
+          continue;
+        }
+        const type = str(row['type']);
+        if (type === 'repair-judged') {
+          judged.push({ before: Number(row['coherenceBefore']) || 0, after: Number(row['coherenceAfter']) || 0 });
+          continue;
+        }
+        const state = str(row['state']);
+        // a repair is tried once the brain has been asked: a limit that held it back (skipped) or a new turn that cancelled it are not
+        if (type !== 'repair' || state === 'skipped') continue;
+        tried += 1;
+        if (state === 'kept') kept += 1;
+        else if (state === 'refused') refused += 1;
+        else other += 1;
+        for (const gate of strs(row['gates'])) {
+          const slot = byGate.get(gate) ?? { tried: 0, kept: 0, refused: 0 };
+          slot.tried += 1;
+          if (state === 'kept') slot.kept += 1;
+          else if (state === 'refused') slot.refused += 1;
+          byGate.set(gate, slot);
+        }
+      }
+    }
+  }
+  return { tried, kept, refused, other, byGate, judged };
+}
+
 function readLogs(logsDir: string): Turn[] {
   const turns: Turn[] = [];
   if (!existsSync(logsDir)) return turns;
@@ -378,12 +431,16 @@ function propose(turns: readonly Turn[], mattered: readonly Matched[], cards: re
 
 // ---------- the report ----------
 
-function report(turns: readonly Turn[], lessons: readonly Lesson[], matched: readonly Matched[], left: readonly Left[], root: string, file: string | null): string[] {
+function report(turns: readonly Turn[], lessons: readonly Lesson[], matched: readonly Matched[], left: readonly Left[], root: string, file: string | null, repairs: RepairTally): string[] {
   const lines: string[] = [];
   const held = turns.filter((t) => t.held !== null);
   const judged = turns.filter((t) => t.finding !== null);
   const sessions = new Set(turns.map((t) => t.log));
   lines.push(`attention report: ${turns.length} turns in ${sessions.size} logs under ${join(root, 'logs')}; ${held.length} with an attention record, ${judged.length} with a critic finding`);
+
+  const gateText = [...repairs.byGate].sort((a, b) => b[1].tried - a[1].tried).map(([gate, n]) => `${gate} ${n.tried}/${n.kept}/${n.refused}`).join(', ');
+  const rescored = repairs.judged.length === 0 ? '' : `; the critic's second look: ${repairs.judged.map((j) => `${j.before} to ${j.after}`).join(', ')}`;
+  lines.push(`repairs: ${repairs.tried} tried, ${repairs.kept} kept, ${repairs.refused} refused${repairs.other > 0 ? `, ${repairs.other} failed or cancelled` : ''}${gateText === '' ? '' : ` (by gate, tried/kept/refused: ${gateText})`}${rescored}`);
 
   lines.push('\n== what the brain was shown, pulled, ignored and left open ==');
   if (held.length === 0) lines.push('(no attention records: these logs are from before SA3, or from turns without eyes. The critic sections below still count.)');
@@ -572,7 +629,7 @@ async function main(): Promise<void> {
     writeFileSync(file, `${JSON.stringify(doc, null, 2)}\n`);
   }
   if (argv.includes('--json') && file !== null) return out(readFileSync(file, 'utf8'));
-  for (const line of report(turns, lessons, mattered, left, root, file)) out(line);
+  for (const line of report(turns, lessons, mattered, left, root, file, readRepairs(dataPaths(root).logs))) out(line);
 }
 
 main().catch((error: unknown) => fail(error instanceof Error ? error.message : String(error)));

@@ -211,7 +211,13 @@ export type TurnInput =
    * the resting picture, the brain is shown what it found and adds to the picture, and that repeats until the critic sees no gain,
    * `passes` are spent (`REFINE_LIMITS`), or the user stops it. Answered by the configured brain when `Services.refine` is on.
    */
-  | { readonly kind: 'refine'; readonly passes: number };
+  | { readonly kind: 'refine'; readonly passes: number }
+  /**
+   * v3. The server's own repair of the answer at rest (`of`: that turn): the critic found something the brain can mend, and the brain wrote fix
+   * lines that were tried on the server first and kept. Opened by the server and never by a client; it carries no words of the person's. The
+   * lines are an in-place edit of what is on stage: nothing is cleared, no choice leaves.
+   */
+  | { readonly kind: 'repair'; readonly of: string };
 
 /** How many passes "keep making it better" runs when nobody says, and the most it may be asked for. */
 export const REFINE_LIMITS = { passes: 4, max: 8 } as const;
@@ -283,7 +289,11 @@ export type PassState =
   /** v2.1. The fix was tried and thrown away (`reason` says why: it removed something, it landed worse, the critic preferred the draft). The draft stands. */
   | 'refused'
   /** v2.1. "Keep making it better": pass `pass` of `of` is being looked at and added to. The chrome says so and offers Stop. */
-  | 'refining';
+  | 'refining'
+  /** v3. A repair of the answer at rest is going on (shown quietly: "Tidying up the last answer…"); only a kept repair is ever shown */
+  | 'repairing'
+  /** v3. The repair's lines are all on stage ("Tidied") */
+  | 'repaired';
 
 /** What became of a painting. `ready`: fetch `url`. `skipped`: no image model is configured. `failed`: one is, and it did not deliver. */
 export type AssetStatus = 'ready' | 'skipped' | 'failed';
@@ -430,7 +440,16 @@ export type BackEvent =
    */
   | { readonly type: 'state'; readonly turn: string | null; readonly document: string; readonly change: StateChange }
   /** SA3. What only the eyes know, at any moment: at most one a second, `OBSERVE_LIMITS.items` items and `OBSERVE_LIMITS.bytes` bytes. */
-  | { readonly type: 'observe'; readonly items: readonly ObserveItem[] };
+  | { readonly type: 'observe'; readonly items: readonly ObserveItem[] }
+  /**
+   * v3. What the server cannot see of the person: whether they are typing now (the field holds words, or a key went down within the last few
+   * seconds), and whether they allow the server to tidy an answer after the critic has judged it (`/review repair on|off`, default on).
+   * Sent when either changes. A `typing` that is not renewed lapses on the server after `PRESENCE_TYPING_MS`.
+   */
+  | { readonly type: 'presence'; readonly typing: boolean; readonly repair: boolean };
+
+/** How long the server takes a `presence … typing` to hold with no word from the page: a lost "stopped typing" never blocks a repair for long. */
+export const PRESENCE_TYPING_MS = 6000;
 
 /** SA3. What the page may report in an `observe` event. (`present` and `legible` are the raster's, and come with the picture checks.) */
 export const OBSERVE_KINDS = ['viewport', 'scroll', 'fonts', 'surface', 'present', 'legible'] as const;
@@ -471,7 +490,7 @@ export function decodeObserveItems(value: unknown): ObserveItem[] {
 }
 
 export type BackEventType = BackEvent['type'];
-export const BACK_EVENT_TYPES: readonly BackEventType[] = ['ready', 'started', 'progress', 'tap', 'report', 'control', 'draft', 'permit', 'state', 'observe'];
+export const BACK_EVENT_TYPES: readonly BackEventType[] = ['ready', 'started', 'progress', 'tap', 'report', 'control', 'draft', 'permit', 'state', 'observe', 'presence'];
 
 /** A back-channel event as the server keeps it. `cursor` increases over the session. */
 export interface BackEventRecord {
@@ -748,7 +767,7 @@ export const APP_COMMANDS = [
   { name: 'status', args: '', gist: 'what is live, what is being built and what is waiting on you' },
   { name: 'asks', args: '[clear]', gist: 'what you asked to hold for every reply; clear forgets them' },
   { name: 'look', args: '<name>', gist: 'the look of the stage; bare lists them' },
-  { name: 'review', args: '<on|off>', gist: 'whether a drawing is checked and fixed after its first draft' },
+  { name: 'review', args: '<on|off|repair on|repair off>', gist: 'whether a drawing is checked and fixed after its first draft; "repair" whether an answer the critic found broken is tidied after it is shown (on by default)' },
   { name: 'better', args: '[passes]', gist: 'keep making the picture on stage better, pass by pass', needs: 'refine' },
   { name: 'stop', args: '', gist: 'stop what is being written or made better' },
   { name: 'usage', args: '', gist: 'what the model calls have used, per hour and per day, and where the hour stands against the cap you set' },
