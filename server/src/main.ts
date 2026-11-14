@@ -25,6 +25,7 @@ import { createPictures } from './pictures/registry';
 import { createAudit } from './audit';
 import { createKillSwitch } from './kill';
 import { createUsageMeter } from './usage';
+import { checkLessons } from './judge/lesson';
 import { ensureDataDirs, extraRepos, migrateLegacyData } from './data-dir';
 
 const RELAY_IDLE_FALLBACK_MS = 180_000;
@@ -122,6 +123,22 @@ function boot(env: Env): void {
     audit,
     usage,
     documents,
+    ahead: {
+      policy: env.ahead,
+      // The second check of what is written ahead: a cheap model, asked cold, through the judge's own process; its calls are on the meter.
+      check: (session, pages, signal) =>
+        checkLessons(
+          { pages },
+          {
+            bin: env.brain.kind === 'claude-cli' ? env.brain.bin : 'claude',
+            model: env.ahead.verifyModel,
+            effort: env.ahead.verifyEffort,
+            timeoutMs: env.ahead.verifyTimeoutMs,
+            meter: (call) => usage.record({ kind: 'verify', model: call.model, session, turn: null, login: null, inputTokens: call.usage.inputTokens, cacheReadTokens: call.usage.cacheReadTokens, cacheWriteTokens: call.usage.cacheWriteTokens, outputTokens: call.usage.outputTokens, thinkingTokens: call.usage.thinkingTokens, costUsd: call.usage.costUsd, ms: call.usage.ms }),
+          },
+          signal,
+        ),
+    },
     now,
   });
   const withheld = withheldCredentialNames();

@@ -8,7 +8,7 @@
 // conversation has parts, its root is the first part written (a sheet), and what has no other home sits in it.
 
 import { LessonBook, accepts, openAskOf } from './lesson';
-import type { LessonAsk, LessonLine, LessonStep, OpenAsk } from './lesson';
+import type { Crop, LessonAsk, LessonLine, LessonStep, OpenAsk } from './lesson';
 import { LineNormalizer, LineReader } from './normalize';
 import { parseLine } from './parse';
 import { EMPTY_STAGE } from './schedule';
@@ -66,6 +66,8 @@ export interface DocNode {
   readonly title: string;
   /** a technique, for the catalogue */
   readonly tag: string | null;
+  /** a question's box on the photo it was read from, for the lesson page to crop; absent when none was given */
+  readonly crop?: Crop;
   /** a part holds nodes */
   readonly children: readonly NodeId[];
   readonly body: DocBody;
@@ -551,6 +553,8 @@ export interface FoldResult {
   readonly state: boolean;
   /** false: a record that changed nothing, which must not be logged */
   readonly applied: boolean;
+  /** what this record made the fold refuse or warn of (a spoiler ask, a part that sits in nothing): the conductor tells the brain */
+  readonly issues: readonly FoldIssue[];
 }
 
 type Opening = TurnInput['kind'];
@@ -722,6 +726,7 @@ export class DocumentFolder {
   /** Folds one record and says what it changed. Cheaper to call `ingest` when nobody needs to know. */
   apply(record: RecordLike): FoldResult {
     const before = this.previous ?? this.snapshot();
+    const problemsBefore = this.problems.length;
     const landed = this.ingest(record);
     const after = this.snapshot();
     this.previous = after;
@@ -731,7 +736,7 @@ export class DocumentFolder {
       if (was === undefined || !sameValue(was, node)) nodes.push(node);
     }
     const state = !sameValue(before.state, after.state);
-    return { nodes, state, applied: landed || nodes.length > 0 || state };
+    return { nodes, state, applied: landed || nodes.length > 0 || state, issues: this.problems.slice(problemsBefore) };
   }
 
   applyAll(records: Iterable<RecordLike>): void {
@@ -898,11 +903,9 @@ export class DocumentFolder {
         this.replies.set(turn.id, written.text);
         break;
       case 'part':
-        if (!known) {
-          this.statuses.set(this.idOf(written.id), 'outlined');
-          // a child written under a part is something landing in it
-          if (written.in !== undefined) this.touch(turn, written.in);
-        }
+        if (!known) this.statuses.set(this.idOf(written.id), 'outlined');
+        // a child written under a part is something landing in it, whether the child is new or is being written again (a part sent back and refilled)
+        if (written.in !== undefined) this.touch(turn, written.in);
         break;
       case 'step':
       case 'ask':
@@ -1063,6 +1066,7 @@ export class DocumentFolder {
         parent: part.parent === null ? null : this.idOf(part.parent),
         title: part.title,
         tag: part.tag,
+        ...(part.crop === null ? {} : { crop: part.crop }),
         children: part.children.map((child) => this.idOf(child)),
         body: part.steps.length > 0 ? { kind: 'lesson', steps: part.steps } : null,
         status: this.statuses.get(id) ?? 'outlined',

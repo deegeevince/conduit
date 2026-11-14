@@ -111,6 +111,10 @@ export interface ActiveTurn {
   snapshotFile: string | null;
   /** v2.1. The critic has been asked about this turn (or will never be) */
   criticAsked: boolean;
+  /** v3. Lines of the lesson the reader refused this turn, and why: said once to the brain, in this turn, to be written again */
+  readonly refused: { readonly raw: string; readonly why: string }[];
+  /** v3. The reader's refusals were already put to the brain once */
+  amended: boolean;
   /** v2.1 ops. Tool calls begun and not yet ended, by the CLI's call id: what the audit trail records when a call ends, or when the turn does first */
   readonly calls: Map<string, { readonly tool: string; readonly summary: string; asked: boolean }>;
 }

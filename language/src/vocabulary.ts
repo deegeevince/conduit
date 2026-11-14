@@ -1183,8 +1183,8 @@ export const LIMITS = {
 /** The words that build a document and a lesson. Their forms are what the TEACH chapter and `docs/language.md` print. */
 export const LESSON_VERB = {
   part: {
-    form: 'part <id> [in=<part>] [tag=<technique>] | <title>',
-    gist: 'A place in the document: a sheet, a section, a question, a way of doing it. `in=` is where it sits (an open `part … end` says it for you). Only a title is an outline: named now, written later. `tag=` is the technique a way uses.',
+    form: 'part <id> [in=<part>] [tag=<technique>] [crop=x,y,w,h [from=<photo>]] | <title>',
+    gist: 'A place in the document: a sheet, a section, a question, a way of doing it. `in=` is where it sits (an open `part … end` says it for you). Only a title is an outline: named now, written later. `tag=` is the technique a way uses. `crop=` is where a question sits on the photo, in whole percents of its width and height from the top left (`crop=6,31,88,7`); `from=` names the photo when there are several.',
     time: 'instant',
     family: 'lesson',
   },

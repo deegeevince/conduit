@@ -29,6 +29,8 @@ export interface TurnRequest {
    * document to its model attaches the ones the brief says are attached; others ignore this.
    */
   readonly pdfs?: readonly { readonly id: string; readonly bytes: Uint8Array }[];
+  /** v3 (WS5). A quiet turn written in the background (fill ahead): it may use no tool, whatever the process was started with. */
+  readonly quiet?: boolean;
   /** v2.1. The pictures the user gave with these words (`TurnInput.images`), after the stage's snapshot. A brain that cannot take images ignores them. */
   readonly images?: readonly Snapshot[];
 }
@@ -64,6 +66,19 @@ export interface ReviewRequest {
   readonly of?: number;
   /** v2.1. The conversation's standing asks, for the look to hold the draft to */
   readonly standing?: readonly string[];
+}
+
+/**
+ * v3 (WS5). A message to the process that has just written a turn, in the same conversation, for the reader's refusals: lines it could not
+ * take (an ask that gives its answer away), and why. It answers with the lines that mend them, or `ok`. It uses no tool, and it is asked once.
+ */
+export interface AmendRequest {
+  readonly turn: string;
+  readonly session: string;
+  /** the styles the conversation has defined, so that a line is read as it was meant */
+  readonly styles: readonly string[];
+  /** what is said to the brain: the refused lines and the reasons, and what to write */
+  readonly text: string;
 }
 
 /** What a turn cost. Every field a brain cannot measure is null, never a guess. */
@@ -175,6 +190,13 @@ export interface Brain {
    *   usable: an abandoned look must not cost the warm process.
    */
   review?(request: ReviewRequest, signal: AbortSignal): AsyncIterable<BrainEvent>;
+
+  /**
+   * v3 (WS5). Says to the process that has just written `request.turn` what the reader refused, and yields the lines that mend it. Contract
+   * as `review`'s: the same warm process, no tools, a `brief` before any line and a `usage` after the last, `ok` alone is nothing to mend.
+   * A brain that cannot (it holds no conversation) leaves this out, and a refusal is then only reported.
+   */
+  amend?(request: AmendRequest, signal: AbortSignal): AsyncIterable<BrainEvent>;
 
   /** What this conversation's brain is set to. A brain with no model or effort leaves this out. */
   choice?(session: string): BrainChoice;

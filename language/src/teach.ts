@@ -87,7 +87,7 @@ export const ROUTING_CARD =
  */
 export const TEACH_EXAMPLE: readonly string[] = [
   'part w1 | Sheet 1',
-  'part q1 in=w1 | Ben has 3 bags with 4 apples in each. How many apples in all?',
+  'part q1 in=w1 crop=6,20,88,9 | Ben has 3 bags with 4 apples in each. How many apples in all?',
   'part q1a in=q1 tag=draw-it | Draw the bags',
   'step in=q1a show=groups count=3 each=4 label=apples | Here are the 3 bags. Tap the apples in one bag to count them.',
   'step in=q1a | Every bag is the same. Count on by fours as you tap each bag: 4, then 8, then...',
@@ -98,7 +98,7 @@ export const TEACH_EXAMPLE: readonly string[] = [
   'step in=q1b show=numberline 0..16 step=4 | Each hop is one bag: 4 apples. We start at 0.',
   'ask a1 in=q1b is=12 | Hop 3 times. Where do you land?',
   'hint in=a1 | The first hop lands on 4. Where does the next hop land?',
-  'part q2 in=w1 | Ben has 12 apples and eats 5. How many are left?',
+  'part q2 in=w1 crop=6,34,88,9 | Ben has 12 apples and eats 5. How many are left?',
   'reply | Three bags of four, counted by fours and then hopped along a line.',
 ];
 
@@ -118,7 +118,7 @@ export function teachChapter(): string {
     `\`tag=\` ways: ${techniquesText()}.`,
     [
       'HOW:',
-      '1. A sheet or photo: read all of it first. Reply with the OUTLINE: a `part` for the sheet, one for each section heading, one for EVERY question titled with the question as printed (unreadable: say so in the title, with "?"), titles only. Then fill only the FIRST question; the rest are written when she reaches them.',
+      '1. A sheet or photo: read all of it first. Reply with the OUTLINE: a `part` for the sheet, one for each section heading, one for EVERY question titled with the question as printed (unreadable: say so in the title, with "?"), titles only, and for a photo each question\'s box on it, `crop=x,y,w,h` in whole percents of the photo\'s width and height from its top left, around that question only (`from=<photo id>` when there are several photos). Then fill only the FIRST question; the rest are written for you as she nears them.',
       '2. A question gets three to five ways (`part <id> in=<question> tag=<way>`), each a different approach, three to six small steps and at least one `ask`. Start with the one she most likely knows.',
       '3. A step is one small thing, about twelve words she can read alone, and a `show=` when a picture helps. It sets up or does one piece (a group counted, one hop); the ask is the next piece. Say what to do ("Tap each flower"), never the result.',
       `4. NEVER LEAD WITH THE ANSWER. An \`ask\` seals its \`is=\`: nothing on the page before it, nor the ask's own words, may hold an answer it accepts: not a step's words ("5 x 12 = 60" beside the choices 50, 60, 70), not a number a \`show=\` is told (the hop that lands on it, \`parts=\` that add up to it), not a way's title, an earlier ask or hint. A picture is told only what the question says: a group built from pieces gets \`parts=6,2,4\` and never \`each=12\` (the sum is the answer); a line gets its span and the size of a hop, never where it lands. Show partial work ("12 + 12 so far"), never the total. Numbers the question itself holds are no secret. Name a way by its move, never its result ("Pair up the colours", not "Make ten" when an answer is 10), and a step that must say a number an ask is about asks something else there. The reader refuses an ask that gives it away; then write the step again, same id, without it, and the ask.`,

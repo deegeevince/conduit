@@ -5,7 +5,7 @@ import { asksWhatsNew, buildSystemPrompt, buildTurnBrief, VERBS } from '@conduit
 import type { ActionRisk, AppStatus, BrainChange, BrainChoice, BrainEffort, BrainMode, PromptVariant, ToolChoice } from '@conduit/language';
 import type { BriefForm, Capabilities } from '@conduit/language';
 import { buildReviewBrief, isKeep } from '@conduit/language';
-import type { Brain, BrainEvent, BrainSession, ReviewRequest, Snapshot, TurnRequest } from '../../domain/brain';
+import type { AmendRequest, Brain, BrainEvent, BrainSession, ReviewRequest, Snapshot, TurnRequest } from '../../domain/brain';
 import { detailOf, FILE_TOOLS, gateCall, NO_AGENT, splitTool, summaryOf, toolChoices } from '../../domain/agent';
 import { newBrowserState, noteBrowserResult } from '../../domain/browser';
 import type { BrowserState } from '../../domain/browser';
@@ -299,6 +299,7 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
       pdfs: (request.pdfs ?? []).filter((pdf) => given.some((doc) => doc.id === pdf.id && doc.kind === 'pdf')).map((pdf) => pdf.bytes),
       images: request.images ?? [],
       form,
+      ...(request.quiet === true ? { noTools: true } : {}),
       sent: () => {
         entry.lastTurn = request.turn;
         for (const doc of given) entry.heardDocs.add(doc.id);
@@ -578,9 +579,38 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
    * with the conversation and the cache, goes on to the next turn. Only a process that is silent past the interrupt's grace is let go.
    */
   async function* review(request: ReviewRequest, signal: AbortSignal): AsyncGenerator<BrainEvent> {
+    yield* followUp(
+      {
+        turn: request.turn,
+        session: request.session,
+        styles: request.styles,
+        text: buildReviewBrief({
+          asked: askedOf(request.input),
+          sight: request.sight,
+          problems: request.problems,
+          picture: request.picture !== null,
+          pass: request.pass,
+          ...(request.form === undefined ? {} : { form: request.form }),
+          ...(request.placed === undefined ? {} : { placed: request.placed }),
+          ...(request.critic === undefined ? {} : { critic: request.critic }),
+          ...(request.of === undefined ? {} : { of: request.of }),
+          ...(request.standing === undefined ? {} : { standing: request.standing }),
+        }),
+      },
+      request.picture,
+      signal,
+    );
+  }
+
+  /** v3 (WS5). The reader's refusals, said to the process that wrote the turn: the same claim of the process as a look, and no tools. */
+  async function* amend(request: AmendRequest, signal: AbortSignal): AsyncGenerator<BrainEvent> {
+    yield* followUp({ turn: request.turn, session: request.session, styles: request.styles, text: request.text }, null, signal);
+  }
+
+  async function* followUp(message: { readonly turn: string; readonly session: string; readonly styles: readonly string[]; readonly text: string }, image: Snapshot | null, signal: AbortSignal): AsyncGenerator<BrainEvent> {
     if (signal.aborted) return;
-    const entry = pool.get(request.session);
-    if (entry === undefined || !entry.proc.alive || entry.running !== null || entry.lastTurn !== request.turn) {
+    const entry = pool.get(message.session);
+    if (entry === undefined || !entry.proc.alive || entry.running !== null || entry.lastTurn !== message.turn) {
       throw errors.brainFailed('the process that wrote the draft is no longer here to look at it');
     }
     let release!: () => void;
@@ -589,22 +619,11 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
     });
     const startedAt = Date.now();
     const out: Outgoing = {
-      turn: request.turn,
-      session: request.session,
-      styles: request.styles,
-      text: buildReviewBrief({
-        asked: askedOf(request.input),
-        sight: request.sight,
-        problems: request.problems,
-        picture: request.picture !== null,
-        pass: request.pass,
-        ...(request.form === undefined ? {} : { form: request.form }),
-        ...(request.placed === undefined ? {} : { placed: request.placed }),
-        ...(request.critic === undefined ? {} : { critic: request.critic }),
-        ...(request.of === undefined ? {} : { of: request.of }),
-        ...(request.standing === undefined ? {} : { standing: request.standing }),
-      }),
-      image: request.picture,
+      turn: message.turn,
+      session: message.session,
+      styles: message.styles,
+      text: message.text,
+      image,
       pdfs: [],
       images: [],
       form: 'since',
@@ -632,7 +651,7 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
   return {
     id: 'claude-cli',
     respond,
-    ...(deps.warm ? { review } : {}),
+    ...(deps.warm ? { review, amend } : {}),
     open(session) {
       if (!deps.warm) return;
       try {
