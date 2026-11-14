@@ -679,7 +679,7 @@ export class Conductor {
       const pdfs = s.documents.flatMap((doc) => (doc.pdf === null ? [] : [{ id: doc.facts.id, bytes: doc.pdf }]));
       const snapshot = this.deps.sight === 'snapshot' && turn.previous !== null ? (this.deps.assets.snapshot(s.id, turn.previous) ?? null) : null;
       const input: TurnInput = gathered.text !== null && turn.input.kind === 'prompt' ? { kind: 'prompt', text: gathered.text } : turn.input;
-      const request = { turn: turn.id, session: s.id, input, context, snapshot, pdfs };
+      const request = { turn: turn.id, session: s.id, input, context, snapshot, pdfs, look: this.deps.review.enabled && turn.lookAllowed };
       const normalizer = new LineNormalizer(() => {
         s.nextAutoId += 1;
         return `x${s.nextAutoId}`;

@@ -177,7 +177,12 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
       turn: request.turn,
       session: request.session,
       styles: Object.keys(request.context.stage.styles),
-      text: buildTurnBrief({ ...request.context, documents: given }, request.input, form, entry.capabilities),
+      text: buildTurnBrief({ ...request.context, documents: given }, request.input, form, entry.capabilities, {
+        model: entry.model,
+        effort: entry.effort,
+        sees: request.snapshot !== null,
+        look: deps.warm && request.look === true,
+      }),
       image: request.snapshot,
       pdfs: (request.pdfs ?? []).filter((pdf) => given.some((doc) => doc.id === pdf.id && doc.kind === 'pdf')).map((pdf) => pdf.bytes),
       form,

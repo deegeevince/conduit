@@ -22,6 +22,8 @@ export interface TurnRequest {
    * structured report in `context` says the same thing in words.
    */
   readonly snapshot: Snapshot | null;
+  /** whether look-and-fix may run after this turn's draft (the policy and the turn's own choice) */
+  readonly look?: boolean;
   /**
    * Every PDF this conversation holds, by the id the brief names it with. A brain that can hand a
    * document to its model attaches the ones the brief says are attached; others ignore this.
