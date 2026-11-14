@@ -1,0 +1,7 @@
+# The 14 November readout, written as lesson lines. The step before the ask puts "60 flowers" beside the choices 50, 60 and 70: the ask is refused.
+part w1 | Five vases
+part q1 in=w1 | Five vases each hold six roses, two tulips and four daisies. How many flowers altogether?
+part q1a in=q1 tag=draw-it | Draw one vase, then five
+step s1 in=q1a show=groups count=5 each=12 label=flowers | Five vases, twelve flowers in each.
+step s2 in=q1a | 5 x 12 = 60 flowers
+ask a2 in=q1a is=60 pick=50,60,70 | How many flowers altogether?

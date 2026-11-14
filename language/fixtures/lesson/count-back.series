@@ -1,0 +1,18 @@
+# A worksheet question done two ways: the example of PLAN-v3-core section 3, made whole.
+part w1 | Sheet 1
+part s1 in=w1 | Take away tens
+part q1 in=s1 | 64 − 30 =
+part q1a in=q1 tag=count-on-a-line | Hop back along a number line
+step in=q1a show=numberline 0..70 mark=64 | Find 64 on the line.
+step in=q1a show=numberline 0..70 mark=64 hops=-10,-10,-10 | Thirty is three tens. Hop back ten, three times.
+ask a1 in=q1a is=34 | Where did you land?
+hint in=a1 | Say each landing place: 54, 44, …
+hint in=a1 | Start at 64. One hop back is ten less.
+step in=q1a | So 64 − 30 = 34. The tens changed and the ones stayed.
+part q1b in=q1 tag=break-it-apart | Take the tens apart
+step in=q1b show=blocks tens=6 ones=4 | 64 is six tens and four ones.
+step in=q1b show=blocks tens=6 ones=4 take=30 | Take away three of the tens. The ones do not move.
+ask a1 in=q1b is=34 | What is left?
+hint in=a1 | Count what is left: some tens, and the four ones.
+part q2 in=s1 | 58 − 20 =
+reply | Two ways of taking away tens, one on a number line and one with blocks.

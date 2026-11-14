@@ -1,3 +1,4 @@
+import type { LessonLine } from './lesson';
 import type {
   Align,
   AmbientKind,
@@ -622,7 +623,9 @@ export type Line =
   | WaitLine
   | CorrectLine
   | ReviseLine
-  | CancelLine;
+  | CancelLine
+  /** v3. The words of a document and its lessons: `part`, `step`, `ask`, `hint`, `reply`, `end` (lesson.ts). They put nothing on a painted stage. */
+  | LessonLine;
 
 /** The lines that put a new element on stage. */
 export type CreatingLine = SayLine | ShapeLine | PixLine | GroupLine | UseLine | PaintLine | PicLine | AmbientLine | StructureLine | NodeLine | LinkLine | ControlLine | CardLine;
@@ -667,7 +670,13 @@ export type IssueCode =
   /** a `bind` that names something that is not a control, or a change a control cannot drive */
   | 'bad-bind'
   /** a `{…}` in text that does not read as an expression of the controls on stage */
-  | 'bad-expression';
+  | 'bad-expression'
+  /** v3. A step, a hint or a picture that would show the learner an answer an `ask` accepts before it is tried */
+  | 'spoiler'
+  /** v3. A `step` or an `ask` with no `part` to belong to */
+  | 'no-part'
+  /** v3. An `ask` no one could answer: no answer, one choice, or choices that hold no accepted answer */
+  | 'bad-ask';
 
 export interface Issue {
   readonly code: IssueCode;
