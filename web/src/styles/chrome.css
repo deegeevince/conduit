@@ -56,6 +56,7 @@ input {
 .page-stage #app {
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   height: 100%;
 }
 
@@ -97,56 +98,61 @@ input {
 .bar {
   background: var(--chrome-ground);
   border-top: 1px solid var(--chrome-line);
-  padding: var(--space-2) max(var(--space-4), env(safe-area-inset-right)) max(var(--space-2), env(safe-area-inset-bottom)) max(var(--space-4), env(safe-area-inset-left));
+  min-width: 0;
+  padding: var(--space-2) max(var(--space-3), env(safe-area-inset-right)) max(var(--space-2), env(safe-area-inset-bottom)) max(var(--space-3), env(safe-area-inset-left));
 }
 
 .prompt {
+  position: relative;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-1);
   max-width: 60rem;
   margin: 0 auto;
 }
 
+/* The bar, on a phone first. Row one: what is happening, with Show all and Cancel when they apply. Row two: the bar's own
+   controls (the brain picker, the transcript, Save), never wrapping. Row three: the field and Send. From 720px the two top
+   rows share one line. */
+
 .prompt__top {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  min-height: var(--control-height);
+  gap: 0 var(--space-2);
+  min-width: 0;
+  min-height: 2rem;
 }
 
 .prompt__status {
   margin: 0 auto 0 0;
   min-width: 0;
+  flex: 1 1 6rem;
   font-size: var(--chrome-text-size-small);
   color: var(--chrome-text-quiet);
-}
-
-.prompt__brain {
-  margin: 0;
-  font-size: var(--chrome-text-size-small);
-  color: var(--chrome-text-quiet);
-  white-space: nowrap;
-}
-
-.prompt__brain[hidden] {
-  display: none;
+  overflow-wrap: anywhere;
 }
 
 .prompt__extra {
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  min-width: 0;
+}
+
+.prompt__activity:empty {
+  display: none;
 }
 
 .actions {
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  flex: 0 0 auto;
 }
 
 .action-menu {
-  position: relative;
+  position: static;
 }
 
 .prompt__form {
@@ -186,10 +192,11 @@ input {
 .gallery__again {
   min-height: var(--control-height);
   min-width: var(--control-height);
-  padding: 0 var(--space-4);
+  padding: 0 var(--space-3);
   background: var(--chrome-text);
   color: var(--chrome-ground);
   border: 1px solid var(--chrome-text);
+  white-space: nowrap;
   cursor: pointer;
 }
 
@@ -223,14 +230,18 @@ input {
   display: none;
 }
 
-.action-menu__list {
+/* The Save menu and the brain picker open upwards from the bar and are never wider than the screen less its gutters. */
+
+.action-menu__list,
+.picker__panel {
   position: absolute;
   z-index: 15;
   right: 0;
   bottom: calc(100% + var(--space-1));
   display: grid;
-  min-width: 14rem;
-  max-width: calc(100vw - 2 * var(--space-4));
+  width: min(22rem, 100%);
+  max-height: calc(var(--app-height, 100dvh) - 9rem);
+  overflow-y: auto;
   background: var(--chrome-ground);
   border: 1px solid var(--chrome-text);
 }
@@ -241,14 +252,27 @@ input {
 }
 
 .action-menu__item {
+  display: grid;
+  gap: 1px;
   min-height: var(--control-height);
-  padding: 0 var(--space-4);
+  padding: var(--space-2) var(--space-3);
   background: transparent;
   color: var(--chrome-text);
   border: 0;
   border-bottom: 1px solid var(--chrome-line);
   text-align: left;
   cursor: pointer;
+}
+
+.action-menu__gist,
+.picker__gist {
+  font-size: 0.75rem;
+  line-height: 1.3;
+  color: var(--chrome-text-quiet);
+}
+
+.action-menu__item:focus-visible .action-menu__gist {
+  color: inherit;
 }
 
 .action-menu__item:last-child {
@@ -438,30 +462,38 @@ input {
   cursor: default;
 }
 
-@media (max-width: 719px) {
-  .prompt__top {
-    flex-wrap: wrap;
-    gap: var(--space-1) var(--space-2);
+/* From 720px: one line for the status and the controls. */
+
+@media (min-width: 720px) {
+  .prompt {
+    grid-template-columns: minmax(0, 1fr) auto;
   }
 
-  .prompt__status {
-    flex: 1 1 8rem;
+  .prompt__activity {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+
+  .prompt__top {
+    grid-column: 1;
+    grid-row: 2;
+    flex-wrap: nowrap;
   }
 
   .prompt__extra {
-    flex: 1 1 100%;
-    justify-content: flex-end;
+    grid-column: 2;
+    grid-row: 2;
   }
 
-  .actions {
-    margin-right: auto;
+  .prompt__form {
+    grid-column: 1 / -1;
+    grid-row: 3;
   }
+}
 
-  .action-menu__list {
-    right: auto;
-    left: 0;
-  }
+/* The transcript on a phone is a sheet above the bar. */
 
+@media (max-width: 719px) {
   .transcript__panel {
     top: auto;
     left: 0;
@@ -469,6 +501,16 @@ input {
     max-height: 42%;
     border-left: 0;
     border-top: 1px solid var(--chrome-line);
+  }
+
+  .prompt__extra .action--brain {
+    flex: 1 1 auto;
+    min-width: 0;
+    justify-content: flex-start;
+  }
+
+  .action-credit {
+    flex: 1 1 100%;
   }
 }
 
@@ -786,24 +828,219 @@ input {
   cursor: default;
 }
 
-.action--review[aria-pressed='false'] {
+/* The chart credit: the engine's name and link, while a chart is on stage. */
+
+.action-credit {
+  flex: 0 1 auto;
+  min-width: 0;
+  min-height: 1.5rem;
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.75rem;
+  color: var(--chrome-text-quiet);
+  text-decoration: underline;
+  overflow-wrap: anywhere;
+}
+
+.action-credit[hidden] {
+  display: none;
+}
+
+/* The brain picker */
+
+.picker {
+  position: static;
+  display: flex;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
+.action--brain {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: calc(var(--control-height) - 2px);
+}
+
+.action--brain[hidden] {
+  display: none;
+}
+
+.picker__panel {
+  left: 0;
+  right: auto;
+  gap: var(--space-3);
+  padding: var(--space-3);
+}
+
+.picker__panel[hidden] {
+  display: none;
+}
+
+.picker__group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.picker__group legend {
+  width: 100%;
+  margin-bottom: var(--space-1);
+  padding: 0;
+  font-size: var(--chrome-text-size-small);
+  font-weight: 600;
+}
+
+.picker__option {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  column-gap: var(--space-2);
+  min-height: var(--control-height);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--chrome-line);
+  cursor: pointer;
+}
+
+.picker__option:has(input:checked) {
+  border-color: var(--chrome-text);
+  box-shadow: inset 0 0 0 1px var(--chrome-text);
+}
+
+.picker__option:has(input:focus-visible) {
+  outline: var(--focus-ring);
+  outline-offset: 1px;
+}
+
+.picker__option input {
+  width: 1.125rem;
+  height: 1.125rem;
+  margin: 0;
+  accent-color: var(--chrome-text);
+}
+
+.picker__option .picker__gist {
+  grid-column: 2;
+  padding-bottom: var(--space-1);
+}
+
+.picker__option--check {
+  width: 100%;
+  padding-top: var(--space-1);
+}
+
+.picker__note {
+  margin: 0;
+  font-size: 0.75rem;
   color: var(--chrome-text-quiet);
 }
 
-.action-credit {
-  font-size: var(--chrome-text-size-small);
+/* What the agent is doing: one quiet line, a list behind it. */
+
+.activity {
+  position: relative;
+  min-width: 0;
+}
+
+.activity[hidden] {
+  display: none;
+}
+
+.activity__line {
+  display: block;
+  width: 100%;
+  min-height: 1.75rem;
+  padding: 0;
+  background: transparent;
+  border: 0;
   color: var(--chrome-text-quiet);
-  text-decoration: underline;
-  display: inline-flex;
-  align-items: center;
-  min-height: var(--control-height);
-  padding: 0 var(--space-2);
-  max-width: 15rem;
+  font-size: 0.75rem;
+  text-align: left;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  cursor: pointer;
 }
 
-.action--review[hidden] {
+.activity__list {
+  position: absolute;
+  z-index: 14;
+  left: 0;
+  bottom: 100%;
+  width: 28rem;
+  max-width: calc(100vw - 2 * var(--space-3));
+  max-height: 40dvh;
+  margin: 0 0 var(--space-1);
+  padding: var(--space-2) var(--space-3) var(--space-2) var(--space-6);
+  overflow-y: auto;
+  background: var(--chrome-ground);
+  border: 1px solid var(--chrome-line);
+  font-size: var(--chrome-text-size-small);
+}
+
+.activity__list[hidden] {
+  display: none;
+}
+
+.activity__item {
+  margin-bottom: var(--space-1);
+  overflow-wrap: anywhere;
+}
+
+.activity__item--failed,
+.activity__item--denied,
+.activity__item--waiting {
+  font-weight: 600;
+}
+
+/* The confirm control: a modal dialog, so the browser holds the focus in it and the page behind is inert. */
+
+.permit {
+  border-width: 2px;
+}
+
+.permit__body p {
+  margin: 0 0 var(--space-2);
+  overflow-wrap: anywhere;
+}
+
+.permit__what {
+  font-weight: 600;
+}
+
+.permit__hands {
+  font-size: var(--chrome-text-size-small);
+  color: var(--chrome-text-quiet);
+}
+
+.permit__hands[hidden] {
+  display: none;
+}
+
+.permit__count {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  font-size: var(--chrome-text-size-small);
+}
+
+.permit__bar {
+  width: 100%;
+  height: 0.5rem;
+  accent-color: var(--chrome-text);
+}
+
+.permit__deny {
+  font-weight: 600;
+}
+
+.picker[hidden] {
   display: none;
 }

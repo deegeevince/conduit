@@ -1,6 +1,6 @@
 import { DEFAULT_LOOK, FIRST_LOAD_DEMO, LineNormalizer, LineReader, parseLine, parseReplayDirective, serializeLine } from '@conduit/language';
 import overtureScript from '@conduit/language/demos/overture.series?raw';
-import type { BackEvent, ControlValue, ControlValues, DataTable, Issue, PassState, Line, LeadWindow, LookId, ScreenFacts, Services, Sight, StageEvent, TurnEndReason, TurnInput } from '@conduit/language';
+import type { ActivityState, ActionRisk, BackEvent, ControlValue, ControlValues, CriticFinding, DataTable, Issue, PassState, Line, LeadWindow, LookId, ScreenFacts, Services, Sight, StageEvent, TurnEndReason, TurnInput } from '@conduit/language';
 import type { ExportJob, ExportRequest, Exporter } from '../contracts/export';
 import type { ChartHost } from '../contracts/chart';
 import type { StageHook } from '../contracts/hook';
@@ -17,6 +17,7 @@ import { createChartEngine } from '../render/chart';
 import { createFilm } from '../painter/film';
 import { createPlainRenderer } from '../render/plain';
 import { canUseThree, createThreeRenderer } from '../render/three';
+import { asDataTable } from '../link/guards';
 import { createAccessLayer } from './access';
 import { createChartHost } from './chart-host';
 import { createHook } from './hook';
@@ -63,11 +64,20 @@ export interface Diagnostics {
   readonly services: Services | null;
   /** how the last turn landed, as it was reported */
   readonly sight: Sight | null;
+  /** what the critic last made of a finished turn (v2.1); null until it has looked */
+  readonly critic: CriticFinding | null;
 }
+
+/** What the agent is doing, for the chrome: a tool in use, something that needs the owner's yes, or a new turn that clears both. */
+export type AgentNote =
+  | { readonly type: 'activity'; readonly turn: string; readonly id: string; readonly tool: string; readonly summary: string; readonly state: ActivityState; readonly ms: number | null }
+  | { readonly type: 'permission'; readonly turn: string; readonly request: string; readonly tool: string; readonly summary: string; readonly risk: ActionRisk; readonly expiresMs: number }
+  /** the turn these belonged to has ended or been stopped: nothing about it is still waiting for an answer */
+  | { readonly type: 'over'; readonly turn: string | null };
 
 export interface StageApp {
   readonly painter: Painter;
-  readonly link: StageLink;
+  readonly link: HttpLink;
   readonly hook: StageHook;
   /** where this stage's charts live; null when this build has no charting engine */
   readonly charts: ChartHost | null;
@@ -84,6 +94,19 @@ export interface StageApp {
   choose(key: string): void;
   /** Settles the open turn at once. */
   showAll(): void;
+  /** v2.1. The owner's answer to a `permission` event: allow it once, or not. Sent once; a second answer to the same request is ignored. */
+  permit(turn: string, request: string, allow: boolean): void;
+  /** v2.1. Hears what the agent is doing and what it is asking. Returns the way to stop hearing. */
+  onAgent(listener: (note: AgentNote) => void): () => void;
+  /** v2.1. Keep making the picture on stage better, `passes` times at most (`/better`). Rejects when the server cannot. */
+  refine(passes: number): Promise<string>;
+  /**
+   * v2.1. Puts a page of the app's own on the stage (`/help`, `/status`, `/tools`): lines of Series, played at once as a turn that
+   * belongs to the page, never reported to the server. Whatever was playing is stopped first, as Stop does.
+   */
+  showPage(source: string): void;
+  /** v2.1. The id of the turn on stage, or the last that ended; null before the first. */
+  lastTurn(): string | null;
   /** The back-channel events actually handed to the link, oldest first (the last 200); taps the app set aside are not among them. */
   sentEvents(): readonly BackEvent[];
   /** The canonical lines of the last turn that ended, one per line; '' before there is one. */
@@ -115,6 +138,9 @@ const LOCAL_CHARS_PER_SECOND = 240;
 const LOCAL_TURN = 'local-first-load';
 const REVIEW_KEY = 'conduit.lookAndFix';
 const DATA_LIMIT_MS = 20000;
+/** turns the app plays for itself (a help page, a look); the server never hears of them */
+const PAGE_PREFIX = 'local-page-';
+const MAX_SEEN = 400;
 
 function readReviewSetting(): boolean {
   try {
@@ -130,12 +156,6 @@ function writeReviewSetting(on: boolean): void {
   } catch {
     // the setting is for this visit only
   }
-}
-
-function isTable(value: unknown): value is DataTable {
-  if (typeof value !== 'object' || value === null) return false;
-  const table = value as Partial<DataTable>;
-  return typeof table.id === 'string' && Array.isArray(table.columns) && Array.isArray(table.rows);
 }
 
 /** Fixtures that ship inside the page, so the first drawing never waits for the server. */
@@ -297,7 +317,23 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   let reviewOn = readReviewSetting();
   /** the pass the open turn's look-and-fix is at, from the server's `pass` events; null between turns */
   let passState: PassState | null = null;
-  const dataAbort = new AbortController();
+  let passInfo: { readonly pass: number; readonly of: number | null; readonly reason: string | null } | null = null;
+  /** one controller per data call: a slow table does not cancel the others, and leaving the page cancels all */
+  const dataCalls = new Set<AbortController>();
+  /** the rows that came, by id, for an export to draw the charts the same way */
+  const dataTables = new Map<string, DataTable | null>();
+  const agentListeners = new Set<(note: AgentNote) => void>();
+  /** an event the stream may deliver again after a reconnect is acted on once */
+  const seenEvents = new Set<string>();
+  const firstTime = (key: string): boolean => {
+    if (seenEvents.has(key)) return false;
+    seenEvents.add(key);
+    if (seenEvents.size > MAX_SEEN) seenEvents.delete(seenEvents.values().next().value ?? '');
+    return true;
+  };
+  const permitted = new Set<string>();
+  let lastCritic: CriticFinding | null = null;
+  let pageCount = 0;
 
   let lead: LeadWindow | null = null;
   let services: Services | null = null;
@@ -389,7 +425,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     else if (snap.clock === 'paused') text = 'paused';
     else if (playing) text = snap.clock === 'hidden' ? 'playing (this tab is in the background)' : 'playing';
     else text = waiting;
-    if (reviewOn && passState !== null && passState !== 'kept' && passState !== 'skipped' && (text === 'playing' || text === 'thinking')) text = 'checking the drawing';
+    if (passState !== null && (text === 'playing' || text === 'thinking')) text = passText(passState) ?? text;
     if (active && text === 'playing' && readingFailed.length > 0) text = readingFailed.join('; ');
     if (link_ === 'reconnecting') {
       text = `reconnecting; ${text}`;
@@ -399,6 +435,26 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
       return { text: `making ${exporting.label}: ${Math.round(exporting.fraction * 100)}%`, busy: active, announce: false, cancel: exporting.cancel };
     }
     return { text, busy: active, announce, cancel: null };
+  }
+
+  /** What the status line says while a look-and-fix or a better-pass is going on; null for a state it has nothing to say about. */
+  function passText(state: PassState): string | null {
+    const of = passInfo?.of ?? null;
+    switch (state) {
+      case 'refining':
+        return `making it better: pass ${passInfo?.pass ?? 1}${of === null ? '' : ` of ${of}`}`;
+      case 'refused':
+        return passInfo?.reason ? `the fix was not used: ${passInfo.reason}` : 'the fix was not used; the drawing stands';
+      case 'staged':
+        return 'trying a fix out of sight';
+      case 'drafted':
+      case 'looking':
+      case 'fixing':
+        return reviewOn ? 'checking the drawing' : null;
+      case 'kept':
+      case 'skipped':
+        return null;
+    }
   }
 
   function publishStatus(): void {
@@ -482,19 +538,34 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   /** Rows a chart draws by reference: fetched like a painting's news, handed to the painter; a failure is told as null so the chart says so. */
   async function loadData(id: string, url: string | null): Promise<void> {
     if (url === null) {
+      dataTables.set(id, null);
       painter.dataArrived(id, null);
       return;
     }
-    const timer = setTimeout(() => dataAbort.abort(), DATA_LIMIT_MS);
+    const call = new AbortController();
+    dataCalls.add(call);
+    const timer = setTimeout(() => call.abort(), DATA_LIMIT_MS);
     try {
-      const response = await fetch(url, { signal: dataAbort.signal });
+      const response = await fetch(url, { signal: call.signal });
       const body: unknown = response.ok ? await response.json() : null;
-      if (!disposed) painter.dataArrived(id, isTable(body) ? body : null);
+      const table = asDataTable(body);
+      if (!disposed) {
+        dataTables.set(id, table);
+        painter.dataArrived(id, table);
+      }
     } catch {
-      if (!disposed) painter.dataArrived(id, null);
+      if (!disposed) {
+        dataTables.set(id, null);
+        painter.dataArrived(id, null);
+      }
     } finally {
       clearTimeout(timer);
+      dataCalls.delete(call);
     }
+  }
+
+  function tellAgent(note: AgentNote): void {
+    for (const listener of [...agentListeners]) listener(note);
   }
 
   function noteReject(note: RejectNote): void {
@@ -531,6 +602,8 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
         readingNow.clear();
         readingFailed = [];
         passState = null;
+        passInfo = null;
+        tellAgent({ type: 'over', turn: null });
         pending = Math.max(0, pending);
         painter.openTurn(event.turn, event.input);
         if (stopPending) {
@@ -574,14 +647,41 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
         painter.assetArrived(event.key, event.status, event.url);
         return;
       case 'data':
+        // A reconnect may hand the same news again: the rows are fetched once.
+        if (!firstTime(`data:${event.turn}:${event.id}:${event.status}`)) return;
         void loadData(event.id, event.status === 'ready' ? event.url : null);
         return;
       case 'pass':
         // Look and fix: the painter answers `drafted` with a draft report; the other states are for the status line.
-        // With the switch off the painter is not told, so no picture of the draft is made or sent.
-        if (event.turn !== currentTurn || !reviewOn) return;
+        // With the switch off the painter is not told, so no picture of the draft is made or sent. A better-pass is the viewer's
+        // own request and goes on whatever that switch says. A reconnect does not play a pass again.
+        if (event.turn !== currentTurn || (!reviewOn && event.state !== 'refining')) return;
+        if (!firstTime(`pass:${event.turn}:${event.pass}:${event.state}`)) return;
         passState = event.state;
+        passInfo = { pass: event.pass, of: event.of ?? null, reason: event.reason };
         painter.notePass(event.turn, event.pass, event.state);
+        return;
+      case 'candidate': {
+        // A fix tried out of sight: the painter applies it to a copy of the turn and answers with a draft; nothing on stage moves.
+        if (event.turn !== currentTurn || !reviewOn || !firstTime(`candidate:${event.turn}:${event.pass}`)) return;
+        const lines: Line[] = [];
+        for (const text of event.lines) {
+          const parsed = parseLine(text);
+          if (parsed.kind === 'line') lines.push(parsed.line);
+        }
+        painter.tryCandidate(event.turn, event.pass, lines);
+        return;
+      }
+      case 'critic':
+        if (firstTime(`critic:${event.turn}`)) lastCritic = event.finding;
+        return;
+      case 'activity':
+        if (event.turn === currentTurn && firstTime(`activity:${event.turn}:${event.id}:${event.state}`)) tellAgent(event);
+        return;
+      case 'permission':
+        // A request already answered is never asked again, whatever the stream replays.
+        if (event.turn !== currentTurn || permitted.has(event.request) || !firstTime(`permission:${event.request}`)) return;
+        tellAgent(event);
         return;
       case 'end':
         if (event.turn !== currentTurn) return;
@@ -589,7 +689,9 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
         lastEnd = { reason: event.reason, message: event.message };
         readingNow.clear();
         passState = null;
+        passInfo = null;
         currentTurn = null;
+        tellAgent({ type: 'over', turn: event.turn });
         painter.closeTurn(event.turn, event.reason);
         return;
     }
@@ -605,7 +707,11 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   });
   const offNote = link.onNote(noteTurnFailure);
   const offClock = painter.on('clock', publishStatus);
-  const offUpload = painter.on('upload', (upload) => link.upload(upload));
+  const offUpload = painter.on('upload', (upload) => {
+    // A picture of a page the app played for itself is of no use to the server, which never heard of that turn.
+    if (upload.kind !== 'sketch' && upload.turn.startsWith(PAGE_PREFIX)) return;
+    link.upload(upload);
+  });
 
   /**
    * Opens a turn for something the viewer did. The stage shows it was heard before anything is
@@ -669,6 +775,8 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   });
 
   const offBack = painter.on('back', (event) => {
+    // What the painter says about a page the app played for itself stays here.
+    if (('turn' in event && typeof event.turn === 'string' && event.turn.startsWith(PAGE_PREFIX)) || (event.type === 'report' && event.report.turn.startsWith(PAGE_PREFIX))) return;
     if (event.type === 'ready') {
       if (firstReady) {
         firstReady = false;
@@ -891,7 +999,10 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     if (recording === null) throw new Error('There is nothing to take away yet. Ask for something first.');
     const snap = painter.snapshot();
     const size = request.kind === 'script' ? snap.viewport : { width: request.width, height: request.height, dpr: 1 };
-    const film = createFilm(recording, { viewport: size, reducedMotion: snap.reducedMotion, arrival: 'at-once' });
+    // What the viewer's hand held and what the charts were given go into the file: it shows the picture as they left it.
+    const held: Record<string, ControlValue> = {};
+    for (const view of snap.controls) if (view.value !== null) held[view.id] = view.value;
+    const film = createFilm(recording, { viewport: size, reducedMotion: snap.reducedMotion, arrival: 'at-once', controls: held, data: Object.fromEntries(dataTables) });
     // A film is not touched by a second job: the exporter refuses it, and the one still running keeps the status line.
     const refused = exporting !== null && request.kind !== 'script' && !(request.kind === 'still' && request.format === 'svg');
     const job = getExporter().start(film, request.kind === 'still' ? { ...request, at: Math.min(request.at, film.duration) } : request);
@@ -919,6 +1030,22 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     );
     publishStatus();
     return job;
+  }
+
+  /** Lines of Series played at once, as a turn of the app's own. */
+  function showPage(source: string): void {
+    stopLocal();
+    if (painter.snapshot().turn !== null || starting) {
+      // What was being written is stopped exactly as Stop stops it.
+      app.interrupt();
+    }
+    pageCount += 1;
+    const turn = `${PAGE_PREFIX}${pageCount}`;
+    const steps = localSteps(source);
+    painter.openTurn(turn, { kind: 'script', text: source });
+    steps.forEach((step, index) => painter.ingest(turn, index + 1, step.line));
+    painter.closeTurn(turn, 'done');
+    publishStatus();
   }
 
   const app: Omit<StageApp, 'hook'> = {
@@ -958,8 +1085,24 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
       }
       endStarting();
       currentTurn = null;
+      passState = null;
+      passInfo = null;
+      tellAgent({ type: 'over', turn: null });
       publishStatus();
     },
+    permit(turn, request, allow) {
+      if (permitted.has(request)) return;
+      permitted.add(request);
+      if (permitted.size > MAX_SEEN) permitted.delete(permitted.values().next().value ?? '');
+      sendBack({ type: 'permit', turn, request, allow });
+    },
+    onAgent(listener) {
+      agentListeners.add(listener);
+      return () => agentListeners.delete(listener);
+    },
+    refine: (passes) => submit({ kind: 'refine', passes }, null, false),
+    showPage,
+    lastTurn: () => painter.snapshot().turn ?? painter.recording()?.turn ?? null,
     choose(key) {
       painter.tapElement(key);
     },
@@ -990,7 +1133,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
       return () => statusListeners.delete(listener);
     },
     status: computeStatus,
-    diagnostics: () => ({ lead, linkStatus: link.status, rejects: [...rejects], dropped, notes: [...notes], services, sight: lastSight }),
+    diagnostics: () => ({ lead, linkStatus: link.status, rejects: [...rejects], dropped, notes: [...notes], services, sight: lastSight, critic: lastCritic }),
     dispose() {
       disposed = true;
       clearTimeout(resizeTimer);
@@ -1005,7 +1148,8 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
       host.removeEventListener('pointercancel', onPointerEnd);
       host.removeEventListener('pointerleave', onPointerLeave);
       cancelAnimationFrame(hoverFrame);
-      dataAbort.abort();
+      for (const call of dataCalls) call.abort();
+      agentListeners.clear();
       offControls();
       offEvent();
       offLinkStatus();

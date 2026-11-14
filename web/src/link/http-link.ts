@@ -1,15 +1,12 @@
 import { API, STAGE_EVENT_TYPES } from '@conduit/language';
-import type { BackEvent, BrainChange, BrainChoice, CreateSessionRequest, CreateSessionResponse, DemoInfo, StageEvent, StageEventType, StartTurnRequest, TurnInput } from '@conduit/language';
+import type { AppStatus, BackEvent, BrainChange, BrainChoice, CreateSessionRequest, DemoInfo, StageEvent, StageEventType, StartTurnRequest, ToolChoice, TurnInput } from '@conduit/language';
 import type { LinkStatus, StageLink } from '../contracts/link';
 import type { PainterUpload } from '../contracts/painter';
+import { asAsks, asBrainChoice, asDemos, asSessionResponse, asStatus, asTools, asTurnId, isRecord, messageOf } from './guards';
 
 const BACKOFF_MS = [500, 1000, 2000, 4000, 8000] as const;
 const MAX_RETRIES = 3;
 const MAX_BATCH = 50;
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
 
 /**
  * The link over same-origin HTTP: Server-Sent Events down, small POSTs up.
@@ -26,15 +23,33 @@ export interface HttpLink extends StageLink {
    * a draft report or look at one. (Request to the server's package: honour it per turn.)
    */
   setReview(on: boolean): void;
+  /** v2.1. This session's tools and connected services (`/tools`). Rejects with the server's sentence. */
+  tools(): Promise<readonly ToolChoice[]>;
+  /** v2.1. Switches one tool or service for this session; answers the whole list. */
+  setTool(name: string, on: boolean): Promise<readonly ToolChoice[]>;
+  /** v2.1. The steward's account of where the product stands (`/status`). */
+  appStatus(): Promise<AppStatus>;
+  /** v2.1. What the user asked to hold for every reply (`/asks`); `clear` forgets them. Needs the server's `asks` route (see the hand-back). */
+  asks(clear: boolean): Promise<readonly string[]>;
+  /** v2.1. Saves a film of a turn made in the page beside the session's log, for the steward to watch (`/capture`). */
+  saveCapture(turn: string, film: Blob): Promise<void>;
+}
+
+/** Where the standing asks live. Not in `API` (frozen); the server's package is asked to serve it: GET answers `{ asks: string[] }`, DELETE clears and answers the same. */
+function asksPath(session: string): string {
+  return `/api/sessions/${session}/asks`;
+}
+
+async function bodyOf(response: Response): Promise<unknown> {
+  const body: unknown = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(messageOf(body, `the server refused it (${response.status})`));
+  return body;
 }
 
 async function brainAnswer(response: Response): Promise<BrainChoice> {
-  const body: unknown = await response.json().catch(() => null);
-  if (!response.ok) {
-    const message = isRecord(body) && typeof body.message === 'string' ? body.message : `the server refused it (${response.status})`;
-    throw new Error(message);
-  }
-  return body as BrainChoice;
+  const choice = asBrainChoice(await bodyOf(response));
+  if (choice === null) throw new Error('the server answered with something that is not a brain setting');
+  return choice;
 }
 
 export function createHttpLink(): HttpLink {
@@ -240,7 +255,8 @@ export function createHttpLink(): HttpLink {
       if (!response.ok) {
         throw new Error(`The server refused the session (${response.status}).`);
       }
-      const body = (await response.json()) as CreateSessionResponse;
+      const body = asSessionResponse(await response.json().catch(() => null));
+      if (body === null) throw new Error('The server answered with something that is not a session.');
       session = body.session;
       openStream(body.session);
       setStatus('open');
@@ -293,8 +309,9 @@ export function createHttpLink(): HttpLink {
         restore();
         throw new Error(`The turn was refused (${response.status}).`);
       }
-      const body = (await response.json()) as { turn: string };
-      return body.turn;
+      const turn = asTurnId(await response.json().catch(() => null));
+      if (turn === null) throw new Error('The server did not say which turn it opened.');
+      return turn;
     },
 
     send(event: BackEvent): void {
@@ -319,6 +336,42 @@ export function createHttpLink(): HttpLink {
       reviewHeader = on ? {} : { 'x-conduit-review': 'off' };
     },
 
+    async tools(): Promise<readonly ToolChoice[]> {
+      if (session === null) throw new Error('Not connected.');
+      const tools = asTools(await bodyOf(await fetch(API.tools(session))));
+      if (tools === null) throw new Error('the server answered with something that is not a list of tools');
+      return tools;
+    },
+
+    async setTool(name: string, on: boolean): Promise<readonly ToolChoice[]> {
+      if (session === null) throw new Error('Not connected.');
+      const response = await fetch(API.tools(session), { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name, on }) });
+      const tools = asTools(await bodyOf(response));
+      if (tools === null) throw new Error('the server answered with something that is not a list of tools');
+      return tools;
+    },
+
+    async appStatus(): Promise<AppStatus> {
+      const status = asStatus(await bodyOf(await fetch(API.status)));
+      if (status === null) throw new Error('the server answered with something that is not a status');
+      return status;
+    },
+
+    async asks(clear: boolean): Promise<readonly string[]> {
+      if (session === null) throw new Error('Not connected.');
+      const response = await fetch(asksPath(session), { method: clear ? 'DELETE' : 'GET' });
+      if (response.status === 404) throw new Error('this server does not keep standing asks yet');
+      const asks = asAsks(await bodyOf(response));
+      if (asks === null) throw new Error('the server answered with something that is not a list of asks');
+      return asks;
+    },
+
+    async saveCapture(turn: string, film: Blob): Promise<void> {
+      if (session === null) throw new Error('Not connected.');
+      const response = await fetch(API.capture(session, turn), { method: 'POST', headers: { 'content-type': 'video/webm' }, body: film });
+      if (!response.ok) throw new Error(`the server refused the film (${response.status})`);
+    },
+
     onDropped(listener) {
       droppedListeners.add(listener);
       return () => droppedListeners.delete(listener);
@@ -327,7 +380,7 @@ export function createHttpLink(): HttpLink {
     async listDemos(): Promise<readonly DemoInfo[]> {
       const response = await fetch(API.demos);
       if (!response.ok) return [];
-      return (await response.json()) as DemoInfo[];
+      return asDemos(await response.json().catch(() => null));
     },
 
     upload(upload: PainterUpload): void {
