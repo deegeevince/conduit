@@ -62,6 +62,15 @@ export function controlShare(spec: ControlSpec, value: ControlValue | null): num
   return 0;
 }
 
+const squash = (text: string): string => text.trim().toLowerCase().replace(/[\s-]+/g, '');
+
+/** Whether a pick has an option that `wanted` names: its 1-based number, or its words without case or spacing. */
+export function pickHasOption(spec: ControlSpec, wanted: string): boolean {
+  const asked = wanted.trim();
+  if (/^\d+$/.test(asked)) return Number(asked) >= 1 && Number(asked) <= spec.options.length;
+  return spec.options.some((option) => squash(option) === squash(asked));
+}
+
 /** Whether a control holds `wanted`: `on`/`off` for a toggle, an option's number or its words for a pick, a number for a slider, the text for an input. Words are compared without case. */
 export function controlHolds(spec: ControlSpec, value: ControlValue | null, wanted: string): boolean {
   const asked = wanted.trim().toLowerCase();
@@ -69,7 +78,7 @@ export function controlHolds(spec: ControlSpec, value: ControlValue | null, want
   if (spec.control === 'pick') {
     const index = typeof value === 'number' ? value : 1;
     if (/^\d+$/.test(asked)) return Number(asked) === index;
-    return (spec.options[index - 1] ?? '').trim().toLowerCase().replace(/\s+/g, '-') === asked || (spec.options[index - 1] ?? '').trim().toLowerCase() === asked;
+    return squash(spec.options[index - 1] ?? '') === squash(asked);
   }
   if (spec.control === 'slider') return numberOf(value) === Number(asked);
   return String(value ?? '').trim().toLowerCase() === asked;

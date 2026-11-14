@@ -439,7 +439,7 @@ ${[
 
 A control sits in the flow like a line, or takes at=, near=, in=. \`bind\` makes it change the stage at once:
 bind angle | move sun along=arc
-  The change (a \`set\`, \`move\`, \`correct\`${draws ? ', or shape declared again' : ''}) is as far along as the control. \`bind angle 0..45 | …\` runs it over part of the range; \`bind view=night | …\` holds it while a pick or toggle has that value (an option's words or number, on, off).
+  The change (a \`set\`, \`move\`, \`correct\`${draws ? ', or shape declared again' : ''}) is as far along as the control. \`bind angle 0..45 | …\` runs it over part of the range; \`bind view=night | …\` holds it while a pick or toggle has that value (an option's exact words, even with spaces: \`bind chord=C major | …\`, or its number; on, off).
 Braces in text hold a value or arithmetic on values: \`say | At {angle}, a {round(10/tan(rad(angle)))} m shadow\` ({angle} carries the slider's unit; a name that is not a declared control's id is cut)${structures.includes('chart') ? '; a chart cell may too' : ''}. Give every slider something to drive. \`send\` on a control makes its change the user's next message.
 `;
 
