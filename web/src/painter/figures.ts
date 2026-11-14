@@ -1165,6 +1165,15 @@ function developOf(painting: Painting | undefined, ambient: number): number {
   return clamp01((ambient - painting.since) / DEVELOP_SECONDS);
 }
 
+/**
+ * How far a painting the renderer makes itself (a `paint` line with `as=`) has developed: over the same two and a half seconds, counted
+ * on the timeline from the moment its picture has come in, so a seek and a film show what a live run shows.
+ */
+function ownDevelopOf(picture: ElementSpan, time: number): number {
+  const since = picture.enter?.end ?? picture.enter?.start ?? 0;
+  return clamp01((time - since) / DEVELOP_SECONDS);
+}
+
 function pictureFrame(placed: Placed, frm: Frm): PictureFrame | null {
   const figure = placed.el.figure as FigureOf<'picture'>;
   const env = envelope(placed.owner, frm);
@@ -1172,6 +1181,25 @@ function pictureFrame(placed: Placed, frm: Frm): PictureFrame | null {
   const painting = frm.paintings.get(placed.el.key);
   const box = pictureBoxOf(placed.el, frm.sc);
   const url = painting !== undefined && painting.status === 'ready' ? painting.url : null;
+  if (figure.medium !== null && painting?.status !== 'ready') {
+    return {
+      kind: 'picture',
+      key: placed.key,
+      id: placed.owner.id,
+      layer: layerOf(placed),
+      z: placed.z,
+      box: { x: box.x, y: box.y, width: box.w, height: box.h },
+      transform: toStage(placed, frm, env),
+      src: null,
+      develop: ownDevelopOf(placed.el, frm.sc.tq),
+      mask: figure.mask,
+      opacity: clamp01(env.opacity * placed.opacity),
+      waiting: false,
+      tappable: placed.trans.to.tap,
+      medium: figure.medium,
+      sketch: [],
+    };
+  }
   return {
     kind: 'picture',
     key: placed.key,
@@ -1296,7 +1324,8 @@ export function figuresAt(schedule: Schedule, base: StageBase, time: number, amb
   for (const picture of schedule.elements) {
     const figure = picture.figure;
     if (figure === null || figure.kind !== 'picture' || figure.sketch !== 'fade' || !isOnStage(picture, time)) continue;
-    const develop = developOf(context.paintings.get(picture.key), ambient);
+    const own = figure.medium !== null && context.paintings.get(picture.key)?.status !== 'ready';
+    const develop = own ? ownDevelopOf(picture, time) : developOf(context.paintings.get(picture.key), ambient);
     if (develop <= 0) continue;
     for (const key of sketchKeysOf(picture, schedule)) fades.set(key, Math.min(fades.get(key) ?? 1, 1 - develop));
   }
@@ -1318,6 +1347,15 @@ export function figuresAt(schedule: Schedule, base: StageBase, time: number, amb
     const list = byOwner.get(item.owner.key) ?? [];
     list.push(frame);
     byOwner.set(item.owner.key, list);
+  }
+  // the renderer's own paintings stand on the figures that are their sketch: it re-renders those, in the medium, into the picture's box
+  for (let i = 0; i < figures.length; i += 1) {
+    const frame = figures[i];
+    if (frame === undefined || frame.kind !== 'picture' || frame.medium === undefined) continue;
+    const picture = schedule.elements.find((element) => element.key === frame.key.split('/')[0]);
+    if (picture === undefined) continue;
+    const roots = sketchKeysOf(picture, schedule);
+    figures[i] = { ...frame, sketch: figures.filter((other) => other.kind !== 'picture' && roots.has(other.key.split('/')[0] ?? other.key)).map((other) => other.key) };
   }
   figures.sort((a, b) => LAYER_RANK[a.layer] - LAYER_RANK[b.layer] || a.z - b.z);
 

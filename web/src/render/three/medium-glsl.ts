@@ -43,7 +43,7 @@ vec2 flowAt(vec2 uv, vec2 fallbackAt) {
   float gx = texture2D(tSketch, clamp(uv + vec2(e.x, 0.0), 0.0, 1.0)).a - texture2D(tSketch, clamp(uv - vec2(e.x, 0.0), 0.0, 1.0)).a;
   float gy = texture2D(tSketch, clamp(uv + vec2(0.0, e.y), 0.0, 1.0)).a - texture2D(tSketch, clamp(uv - vec2(0.0, e.y), 0.0, 1.0)).a;
   vec2 g = vec2(gx, gy);
-  float a = fbm(fallbackAt * 0.02) * 6.2831853;
+  float a = 0.6 + (fbm(fallbackAt * 0.004) - 0.5) * 1.1;
   vec2 free = vec2(cos(a), sin(a));
   return length(g) > 0.04 ? normalize(vec2(-g.y, g.x)) : free;
 }
@@ -90,9 +90,9 @@ vec4 conduitMedium(vec2 box, vec2 uv) {
     vec2 qy = vec2(dot(px + vec2(0.0, 2.0), dir) / 34.0, dot(px + vec2(0.0, 2.0), across) / 6.0);
     float hx = vnoise(qx) * 0.65 + 0.35 * vnoise(qx * 2.3 + 5.0);
     float hy = vnoise(qy) * 0.65 + 0.35 * vnoise(qy * 2.3 + 5.0);
-    vec2 slope = vec2(hx - h, hy - h) * 3.2;
+    vec2 slope = vec2(hx - h, hy - h) * 1.5;
     float light = dot(slope, normalize(vec2(-1.0, -1.0)));
-    colour *= 1.0 + 0.42 * clamp(light, -0.7, 0.7);
+    colour *= 1.0 + 0.3 * clamp(light, -0.7, 0.7);
     colour *= 0.95 + 0.1 * h;
     float weave = 0.985 + 0.015 * sin(px.x * 1.9) * sin(px.y * 1.9);
     return vec4(colour * weave, cover);
@@ -122,8 +122,9 @@ vec4 conduitMedium(vec2 box, vec2 uv) {
     vec4 near = around(uv, 1.5);
     float body = near.a > 1e-3 ? tonal(near.rgb / near.a) : 0.0;
     float strength = near.a * body;
-    float bands = fract(wide.a * 9.0 + 0.35 * fbm(px * 0.05));
-    float cut = smoothstep(0.34, 0.4, bands) * (1.0 - smoothstep(0.62, 0.68, bands));
+    vec2 run = flowAt(uv, px);
+    float bands = fract(dot(px, vec2(-run.y, run.x)) / 7.0 + 0.6 * fbm(px * 0.03));
+    float cut = smoothstep(0.3, 0.38, bands) * (1.0 - smoothstep(0.6, 0.68, bands));
     float ink = strength > 0.8 ? 1.0 : (strength > 0.36 ? cut : 0.0);
     // a cut line round every shape
     float edge = near.a > 0.12 && near.a < 0.88 ? 1.0 : 0.0;
