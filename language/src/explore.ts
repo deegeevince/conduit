@@ -251,6 +251,8 @@ export interface ExploreDrive {
     readonly silent: boolean;
     /** v2.1. What the stage showed of the chart: type size, ticks, the plot's share of its room */
     readonly stage?: ChartStageCheck;
+    /** v2.1. The ticks as the engine wrote them, bottom then side, so that a reader can see what was judged */
+    readonly ticks?: { readonly x: readonly string[]; readonly y: readonly string[] };
   }[];
   /** one entry per control worked */
   readonly controls: readonly {
@@ -519,7 +521,7 @@ export function verdictsOf(result: ExploreResult): ExploreVerdict[] {
     out.push({ label: 'structure named, nothing placed by hand', ok: named && byHand === 0, detail: `${prompt.structure}: ${named ? 'named' : 'not named'}, ${byHand} placed by coordinates` });
   }
   const geometry = result.geometry;
-  if (geometry !== undefined && Object.keys(checks.structures ?? {}).length > 0) {
+  if (geometry !== undefined) {
     // Counted by the battery from the composed stage (row 4), not by the painter about itself.
     out.push(
       { label: 'stage: no text over other text, a chart, a structure or a control', ok: geometry.textOverlaps === 0, detail: geometry.textOverlaps === 0 ? 'none' : `${geometry.textOverlaps}: ${(geometry.pairs ?? []).slice(0, 4).join('; ')}` },
@@ -967,7 +969,8 @@ function pooled(measures: readonly Measure[]): Measure {
 }
 
 function atLeast(measure: Measure, bar: number, row: number, what: string, family: ExploreFamily | 'all', text: string): BarRow {
-  const met = measure.value === null ? null : measure.value - (measure.se ?? 0) >= bar;
+  // A bar of 100% is a count of faults that must be none: no error can be subtracted from a clean sheet and still clear it. Every other bar is cleared by the mean less one standard error.
+  const met = measure.value === null ? null : bar >= 1 ? measure.value >= 1 : measure.value - (measure.se ?? 0) >= bar;
   return { row, what, family, value: measure.value, se: measure.se, n: measure.n, bar: text, met };
 }
 

@@ -669,7 +669,7 @@ async function main(): Promise<void> {
   const library = createLibrary(env.library, log, () => Date.now());
 
   const promptChars = buildSystemPrompt({ capabilities, services }).length;
-  process.stdout.write(`run ${id}: ${units.length} units through ${brain.id}${model === null ? '' : ` (${model})`}${judging ? `, judged by ${options.judgeModel}` : ''}, samples ${options.samples}, variants ${options.variants.join(',')}, pool ${pool}\n`);
+  process.stdout.write(`run ${id}: ${units.length} units through ${brain.id}${model === null ? '' : ` (${model}${env.brain.kind === 'claude-cli' ? `, effort ${env.brain.effort}` : ''}, the ${options.configuration} configuration)`}, window ${window.width}x${window.height}${judging ? `, judged by ${options.judgeModel}` : ''}, samples ${options.samples}, variants ${options.variants.join(',')}, pool ${pool}\n`);
 
   const judgeSettings: JudgeSettings | null = judging ? { bin: claudeBin, model: options.judgeModel, effort: options.judgeEffort, timeoutMs: 120_000 } : null;
 
@@ -943,9 +943,9 @@ function replayDemo(prompt: ExplorePrompt): string {
     scene: 'overture',
     any: 'overture',
     type: 'titles',
-    structure: 'sketchbook',
-    explorable: 'sketchbook',
-    chart: 'sketchbook',
+    structure: 'diagrams',
+    explorable: 'explorable',
+    chart: 'charts',
   };
   return byExpectation[prompt.expects];
 }

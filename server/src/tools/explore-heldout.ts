@@ -87,11 +87,9 @@ function alike(a: string, b: string): boolean {
   return shared / Math.min(x.size, y.size) > 0.7;
 }
 
-function slug(text: string, taken: ReadonlySet<string>): string {
-  const base = text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').split('-').slice(0, 4).join('-') || 'prompt';
-  let id = `h-${base}`;
-  for (let n = 2; taken.has(id); n += 1) id = `h-${base}-${n}`;
-  return id;
+/** An id that says nothing about the prompt: a run prints ids, and the held-out set is never printed. */
+function opaque(at: number, family: string): string {
+  return `h${String(at + 1).padStart(2, '0')}-${family}`;
 }
 
 async function ask(bin: string, model: string, effort: 'low' | 'medium' | 'high', message: string, signal: AbortSignal): Promise<string> {
@@ -182,11 +180,9 @@ export async function writeHeldout(options: HeldoutOptions, signal: AbortSignal)
   const missing = Object.entries(wanted).filter(([, count]) => (count ?? 0) > 0);
   if (missing.length > 0) throw new Error(`the writer left ${missing.map(([family, count]) => `${count} ${family}`).join(', ')} unwritten after ${rounds} rounds; nothing was saved`);
 
-  const taken = new Set<string>();
-  const prompts: ExplorePrompt[] = kept.map((item) => {
+  const prompts: ExplorePrompt[] = kept.map((item, at) => {
     const family = item.family as ExploreFamily;
-    const id = slug(item.prompt, taken);
-    taken.add(id);
+    const id = opaque(at, family);
     return {
       id,
       useCase: item.useCase,

@@ -154,7 +154,7 @@ export function installHarness(): void {
     const r = await rendererFor(viewport, timeline.frameAt({ time: 0, ambient: 0, wallTime: pinnedWallTime(0), clock: 'paused' }).look);
     const pictures = request.pictures !== false;
     if (pictures && !r.capabilities.capture) throw new Error(`the ${canUseThree() ? 'three' : 'plain'} renderer cannot capture pictures here`);
-    const captioned = schedule.elements.filter((element) => !element.carried && element.kind === 'text' && element.exit !== null).length >= 3;
+    const captioned = schedule.elements.filter((element) => !element.carried && element.kind === 'text' && element.parent === null && element.exit !== null && !element.style.tap).length >= 3;
     let complete = true;
     const onIncomplete = (): void => {
       complete = false;
