@@ -363,6 +363,16 @@ async function runCheck(cx: Cx, spec: Spec): Promise<Res> {
   const words = spec['words'] as string[] | undefined;
   const match = spec['match'] as string | undefined;
   switch (name) {
+    case 'any': {
+      // one of several good answers: `{ "k": "any", "of": [spec, spec] }` passes when any of them passes (a list on stage, or the same list as stops to tap)
+      const tried: Res[] = [];
+      for (const sub of spec['of'] as Spec[]) {
+        const r = await runCheck(cx, sub);
+        if (r.verdict === 'PASS') return { check: (spec['of'] as Spec[]).map((s) => s.k).join('|'), verdict: 'PASS', detail: `${r.check}: ${r.detail}` };
+        tried.push(r);
+      }
+      return { check: tried.map((r) => r.check).join('|'), verdict: 'FAIL', detail: tried.map((r) => `${r.check}: ${r.detail}`).join('; or ') };
+    }
     case 'words-in-grid': {
       const found = wordBoxes(cx, words, match);
       if (found.length === 0) return { check: name, verdict: 'FAIL', detail: 'none of the words are on stage' };
