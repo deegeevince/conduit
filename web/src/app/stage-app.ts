@@ -1330,7 +1330,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   const inChart = (event: Event): boolean => event.target instanceof Element && event.target.closest('.stage__chart') !== null;
   // While Draw is on its layer is over the stage and every pointer is the pen's: a stroke that starts on a control or a mock-up's part draws, it never presses
   const inInk = (event: Event): boolean => event.target instanceof Element && event.target.closest('.ink-stage') !== null;
-  const localPoint = (event: PointerEvent): { readonly x: number; readonly y: number } => {
+  const localPoint = (event: MouseEvent): { readonly x: number; readonly y: number } => {
     const box = host.getBoundingClientRect();
     return { x: event.clientX - box.left, y: event.clientY - box.top };
   };
@@ -1462,6 +1462,21 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   host.addEventListener('pointerup', onPointerEnd);
   host.addEventListener('pointercancel', onPointerEnd);
   host.addEventListener('pointerleave', onPointerLeave);
+  // a wheel over a controls area that scrolls works that area, not the page
+  host.addEventListener(
+    'wheel',
+    (event: WheelEvent) => {
+      const { x, y } = localPoint(event);
+      if (painter.wheel(x, y, event.deltaMode === 1 ? event.deltaY * 32 : event.deltaY)) event.preventDefault();
+    },
+    { passive: false },
+  );
+  // the keyboard arriving at a control that is scrolled out of its area brings it into view
+  document.addEventListener('focusin', (event) => {
+    const holder = event.target instanceof Element ? event.target.closest<HTMLElement>('[data-control]') : null;
+    const id = holder?.dataset['control'];
+    if (id !== undefined) painter.reveal(id);
+  });
 
   function getExporter(): Exporter {
     exporter ??= createExporter({ createRenderer: () => newRenderer(params), appStill: (key) => liveApps.still(key), appsFresh: () => liveApps.refresh(1500), chartStill: (frame, key) => { const chart = frame.charts?.find((candidate) => candidate.key === key); return chart === undefined ? null : (chartHost?.stillOf(chart) ?? null); } });

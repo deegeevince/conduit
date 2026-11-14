@@ -22,12 +22,14 @@ export interface ControlRuntime {
   readonly moods: Map<string, ControlMood>;
   /** a menu is open on this control */
   open: string | null;
+  /** how far each scene's controls area is scrolled, stage units from the top of its content (see `controlSetting` in the timeline) */
+  readonly scroll: Map<string, number>;
   /** bumped whenever a mood, the open menu or an ease changes: with the store's revision it says whether a frame already made is still true */
   version: number;
 }
 
 export function createRuntime(store: ControlRegistry): ControlRuntime {
-  return { store, eases: new Map(), moods: new Map(), open: null, version: 0 };
+  return { store, eases: new Map(), moods: new Map(), open: null, scroll: new Map(), version: 0 };
 }
 
 export function moodOf(runtime: ControlRuntime, key: string): ControlMood {

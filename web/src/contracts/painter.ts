@@ -429,6 +429,10 @@ export interface Painter {
    * `control` back event. `tapAt` stays the way a plain tap is reported.
    */
   pointer(input: PointerInput): boolean;
+  /** A wheel turned over the stage at a point (host CSS pixels), `dy` pixels down. True when a scrolling controls area took it (the app then does not scroll the page). */
+  wheel(x: number, y: number, dy: number): boolean;
+  /** Scrolls the controls area the control with this id stands in so that the control shows whole: the keyboard has come to it. */
+  reveal(id: string): void;
   /** whether a field of a mock-up on stage has the keyboard (the app then keeps a real input focused, for a phone's keyboard) */
   typing(): boolean;
   /** a key (a character, `Backspace`, `Enter`, `Escape`) for the mock-up field that has the keyboard; true when it was taken */

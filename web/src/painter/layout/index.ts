@@ -28,7 +28,12 @@ export interface LayoutItem {
    * A thing that is not words but takes a line's place in the flow (a control): a block `width` wide and as many of the item's own lines
    * as `height` needs, in layer units, with no text. Its placement says where it goes; nothing is drawn for it here.
    */
-  readonly reserve?: { readonly width: number; readonly height: number };
+  readonly reserve?: {
+    readonly width: number;
+    readonly height: number;
+    /** controls measured for a short column: the flow sets them closer together than words */
+    readonly tight?: boolean;
+  };
   /**
    * Every words this line can be given (a bound `correct` changes them as a control moves): the room is made for the tallest and the widest of
    * them at the size chosen, once, so that nothing around the line moves or is covered whichever one is showing. Absent: its own words only.
@@ -77,6 +82,11 @@ export interface LayoutInput {
    * column when the oldest lines of the other one retire.
    */
   readonly sides?: ReadonlyMap<string, 'left' | 'right'>;
+  /**
+   * 2: the controls of a column (an item with a `reserve` that is not a choice) stand two to a row, each in half of the column's width
+   * (`controlRoomOf` says how wide a control may then be). Decided by the painter when one column of them does not fit.
+   */
+  readonly controlColumns?: 1 | 2;
 }
 
 export interface PlacedRun {
@@ -125,6 +135,8 @@ const MIN_SHRINK = 0.04;
 const WITH_CONTROLS_SHRINK = 0.72;
 /** the space between paragraphs of a `page`, in lines of body text */
 const PARAGRAPH_GAP = 0.6;
+/** the share of the usual gap between two controls that are set tight */
+const TIGHT_GAP = 0.2;
 /** lines a stack reserves room for when the brain did not say how many to expect */
 const FALLBACK_LINES = 3;
 const FREE_CANDIDATES: readonly Anchor[] = ['center', 'top', 'bottom', 'left', 'right', 'top-left', 'top-right', 'bottom-left', 'bottom-right'];
@@ -266,21 +278,22 @@ function buildBlock(prep: Prep, k: number, availWidth: number, indent: number, b
   const natural = cellFor(prep.item.style.size, k, layer, ctx);
   const reserve = prep.item.reserve;
   if (reserve !== undefined) {
-    const rows = Math.max(1, Math.ceil(reserve.height / natural.height - 1e-6));
+    // a control is the size it was measured at whatever the words around it are shrunk to: its block is never scaled with them (rows only on a grid)
+    const height = ctx.snap ? Math.max(1, Math.ceil(reserve.height / cellFor(prep.item.style.size, 1, layer, ctx).height - 1e-6)) * cellFor(prep.item.style.size, 1, layer, ctx).height : reserve.height;
     return {
       prep,
       layer,
-      cell: natural,
-      spans: Array.from({ length: rows }, () => ({ start: 0, end: 0 })),
+      cell: { ...natural, height },
+      spans: [{ start: 0, end: 0 }],
       broken: false,
-      lineWidths: Array.from({ length: rows }, () => reserve.width),
+      lineWidths: [reserve.width],
       prefix: null,
       unit: natural.width,
       indent,
       bullet: null,
       bulletWidth: 0,
       width: reserve.width + indent,
-      height: rows * natural.height,
+      height,
     };
   }
   // another face than the look's keeps the look's size ladder but brings its own advance and leading
@@ -484,6 +497,9 @@ interface SlotLayout {
   readonly main: Block;
   readonly top: number;
   readonly mainTop: number;
+  /** a control standing in the second of two columns: how far right of the column's left edge, and the width it is set in */
+  readonly dx?: number;
+  readonly width?: number;
 }
 
 interface ColumnLayout {
@@ -560,6 +576,11 @@ function unitIndent(prep: Prep, list: boolean, ctx: Context): { indent: number; 
   return { indent: 2 * ctx.bodyW, bullet: foldText(ctx.look.type.bullet) };
 }
 
+/** a control that is set in the flow (not a choice, which is words a tap answers) */
+function isControl(unit: Unit): boolean {
+  return unit.main.item.reserve !== undefined && !unit.main.item.style.tap;
+}
+
 function layoutColumn(column: Column, f: number, ctx: Context): ColumnLayout {
   const body = cellFor('m', f, 'mid', ctx);
   const gap = ctx.snap ? (column.list ? 0 : ctx.bodyH) : body.height * (column.list ? 0.25 : column.page ? PARAGRAPH_GAP : 0.5);
@@ -569,17 +590,37 @@ function layoutColumn(column: Column, f: number, ctx: Context): ColumnLayout {
   const slots: SlotLayout[] = [];
   let cursor = 0;
   let end = 0;
+  const twoUp = ctx.input.controlColumns === 2;
+  const gutter = 2 * ctx.bodyW;
+  const half = Math.max(1, (column.width - gutter) / 2);
+  // the first of a pair of controls waits here for the second, which stands beside it
+  let pair: { readonly top: number } | null = null;
   column.units.forEach((unit, index) => {
-    if (index > 0) cursor = snapUp(cursor + (ctx.snap && (boxed(unit) || boxed(column.units[index - 1])) ? ctx.bodyH : gap), ctx);
+    const control = twoUp && isControl(unit);
+    if (control && pair !== null) {
+      const main = makeBlock(unit.main, f, half, 0, null, ctx);
+      slots.push({ unit, ghosts: [], main, top: pair.top, mainTop: pair.top, dx: half + gutter, width: half });
+      cursor = Math.max(cursor, pair.top + main.height);
+      end = cursor;
+      pair = null;
+      return;
+    }
+    pair = null;
+    if (index > 0) {
+      const before = column.units[index - 1];
+      const close = unit.main.item.reserve?.tight === true && before?.main.item.reserve?.tight === true;
+      cursor = snapUp(cursor + (ctx.snap && (boxed(unit) || boxed(before)) ? ctx.bodyH : close ? gap * TIGHT_GAP : gap), ctx);
+    }
     const top = cursor;
     const ghosts = unit.ghosts.map((ghost) => makeBlock(ghost, 0.8 * f, column.width, 0, null, ctx));
     for (const ghost of ghosts) cursor = snapUp(cursor + ghost.height, ctx);
     const { indent, bullet } = unitIndent(unit.main, column.list, ctx);
-    const main = makeBlock(unit.main, f, column.width, indent, bullet, ctx);
+    const main = makeBlock(unit.main, f, control ? half : column.width, indent, bullet, ctx);
     const mainTop = cursor;
     cursor += main.height;
     end = cursor;
-    slots.push({ unit, ghosts, main, top, mainTop });
+    slots.push({ unit, ghosts, main, top, mainTop, ...(control ? { dx: 0, width: half } : {}) });
+    if (control) pair = { top: mainTop };
   });
   return { slots, end, gap, bodyHeight: body.height };
 }
@@ -746,14 +787,16 @@ function arrangeFlow(units: readonly Unit[], ctx: Context): FlowResult {
     if (layout === undefined) return;
     for (const slot of layout.slots) {
       const mainTop = top + slot.mainTop;
-      const lineLeft = firstLineLeft(slot.main, column.left, column.width, column.align);
+      const slotLeft = column.left + (slot.dx ?? 0);
+      const slotWidth = slot.width ?? column.width;
+      const lineLeft = firstLineLeft(slot.main, slotLeft, slotWidth, column.align);
       let ghostTop = top + slot.top;
       for (const ghost of slot.ghosts) {
         const left = Math.max(column.left, Math.min(lineLeft, column.left + column.width - ghost.width));
         placements.push(emit(ghost, left, ghostTop, ghost.width, 'left', ctx));
         ghostTop = snapUp(ghostTop - top + ghost.height, ctx) + top;
       }
-      placements.push(emit(slot.main, column.left, mainTop, column.width, column.align, ctx));
+      placements.push(emit(slot.main, slotLeft, mainTop, slotWidth, column.align, ctx));
     }
   });
 
@@ -1313,6 +1356,26 @@ export function arrange(input: LayoutInput): Arrangement {
   const placements = new Map<string, Placement>();
   for (const placement of [...result.placements, ...footPlacements, ...free]) placements.set(placement.key, placement);
   return { placements, next: result.next, overflow };
+}
+
+/**
+ * The widest a control may be across the flow `flow` (stage units) for this scene's arrangement: the width of the column the controls stand in,
+ * or half of it when they stand two to a row.
+ */
+export function controlRoomOf(input: LayoutInput, flow: Box): number {
+  const ctx = contextOf(input, flow);
+  const columns = makePlan([], ctx);
+  const own = columns[0];
+  const width = own === undefined ? flow.width : own.width;
+  return input.controlColumns === 2 ? Math.max(1, (width - 2 * ctx.bodyW) / 2) : width;
+}
+
+/** The height the controls in `input.items` take, set one after another (or two to a row) in the column they stand in across `flow`: what they ask of the stage, and nothing the words add. */
+export function controlsNeedOf(input: LayoutInput, flow: Box): number {
+  const ctx = contextOf(input, flow);
+  const units = buildUnits(input, input.look).flow.filter(isControl);
+  if (units.length === 0) return 0;
+  return Math.max(0, ...makePlan(units, ctx).map((column) => layoutColumn(column, 1, ctx).end));
 }
 
 /**
