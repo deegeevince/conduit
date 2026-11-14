@@ -1,5 +1,5 @@
-// The improvement loop: what it is made of. STUB: the contracts are here and
-// the loop is not yet run (PLAN-v2.md, package I).
+// The improvement loop: what it is made of. The contracts are here and
+// the loop is run by runner.ts.
 //
 // One command, one budget:
 //
