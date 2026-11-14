@@ -21,6 +21,8 @@ export interface HarnessReply {
   readonly complete: boolean;
   readonly renderer: string;
   readonly geometry: import('@conduit/language').ExploreGeometry;
+  /** v2.1. The answer is told in captions: the first of `judge` are then the strip's stills */
+  readonly captioned: boolean;
   readonly placed: readonly import('@conduit/language').PlacedBox[];
 }
 
@@ -30,6 +32,8 @@ export interface DriveRequest {
   readonly lines: readonly { readonly seq: number; readonly line: import('@conduit/language').Line }[];
   readonly viewport: { readonly width: number; readonly height: number; readonly dpr: number };
   readonly side: number;
+  /** the look to work the answer in; absent or null: the one it chose */
+  readonly look?: import('@conduit/language').LookId | null;
 }
 
 /** What working an answer's controls and charts came to, as web/src/explore/drive.ts reports it. */
@@ -42,13 +46,14 @@ export interface DriveReply {
     readonly bound: boolean;
     readonly send: boolean;
     readonly changed: number | null;
+    readonly ownChanged: number | null;
     readonly reported: boolean;
     readonly description: string;
     readonly ends: readonly [string, string] | null;
   }[];
   readonly values: import('@conduit/language').ControlValues;
   readonly pressed: { readonly id: string; readonly text: string; readonly values: import('@conduit/language').ControlValues } | null;
-  readonly charts: readonly { readonly id: string; readonly kind: string; readonly crosshair: boolean; readonly zoomed: boolean; readonly silent: boolean; readonly frameMs: { readonly median: number; readonly worst: number }; readonly ticks: { readonly x: readonly string[]; readonly y: readonly string[] } }[];
+  readonly charts: readonly { readonly id: string; readonly kind: string; readonly crosshair: boolean; readonly zoomed: boolean; readonly silent: boolean; readonly frameMs: { readonly median: number; readonly worst: number }; readonly ticks: { readonly x: readonly string[]; readonly y: readonly string[] }; readonly stage: import('@conduit/language').ChartStageCheck }[];
   readonly fault: string | null;
 }
 
@@ -60,6 +65,12 @@ export interface HarnessRequest {
   readonly playhead: number | null;
   readonly earlier: readonly number[];
   readonly judgeSide: number;
+  /** v2.1. Lay the answer out in this look, whatever it chose; absent or null: the one it chose */
+  readonly look?: import('@conduit/language').LookId | null;
+  /** v2.1. False: count and take no pictures (the replay pass). Default true */
+  readonly pictures?: boolean;
+  /** v2.1. Shares of the answer at which to picture it first when it is told in captions */
+  readonly strip?: readonly number[];
 }
 
 export interface Eyes {

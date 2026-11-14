@@ -26,7 +26,7 @@ import type { Eyes, HarnessReply } from './explore-browser';
 import { cacheShareOf, playTurn } from './explore-turn';
 import type { TurnPlay } from './explore-turn';
 import type { Rig } from './explore-rig';
-import { techniquesFor } from './explore-rig';
+import { STRIP, techniquesFor } from './explore-rig';
 import { driveOf, inspect } from './explore-inspect';
 import type { DriveReply } from './explore-browser';
 
@@ -65,7 +65,7 @@ export interface CaseDone {
 export async function playCase(rig: Rig, scripted: ExploreCase, variant: ExploreVariant, sample: number, eyes: Eyes): Promise<CaseDone> {
   const session = `explore-${rig.runId}-${scripted.id}-${variant}-${sample}`;
   const services: Services = rig.services;
-  let screen: ScreenFacts = REFERENCE_SCREEN;
+  let screen: ScreenFacts = rig.screen;
   let stage: StageBase = rig.emptyStage;
   const history: TurnMemory[] = [];
   let snapshot: Snapshot | null = null;
@@ -185,6 +185,7 @@ export async function playCase(rig: Rig, scripted: ExploreCase, variant: Explore
           playhead: done.playhead,
           earlier: rig.judgeEarlier,
           judgeSide: rig.judgeSide,
+          strip: STRIP,
         },
         request,
         result,

@@ -19,8 +19,8 @@ export interface Inspected {
 
 export function driveOf(driven: DriveReply, answered: boolean | null = null): ExploreDrive {
   return {
-    controls: driven.controls.map((control) => ({ id: control.id, kind: control.kind, bound: control.bound, changed: control.changed, reported: control.reported, answered: control.kind === 'button' ? answered : null })),
-    charts: driven.charts.map((chart) => ({ id: chart.id, crosshair: chart.crosshair, zoomed: chart.zoomed, silent: chart.silent })),
+    controls: driven.controls.map((control) => ({ id: control.id, kind: control.kind, bound: control.bound, changed: control.changed, ownChanged: control.ownChanged, reported: control.reported, answered: control.kind === 'button' ? answered : null })),
+    charts: driven.charts.map((chart) => ({ id: chart.id, crosshair: chart.crosshair, zoomed: chart.zoomed, silent: chart.silent, stage: chart.stage, ticks: chart.ticks })),
   };
 }
 
@@ -32,7 +32,7 @@ export async function inspect(rig: Rig, eyes: Eyes, request: HarnessRequest, ask
   let driven: DriveReply | null = null;
   if (hasControls || hasChart) {
     try {
-      driven = await eyes.drive({ turn: request.turn, base: request.base, lines: request.lines, viewport: request.viewport, side: 512 });
+      driven = await eyes.drive({ turn: request.turn, base: request.base, lines: request.lines, viewport: request.viewport, side: request.judgeSide });
     } catch (error) {
       process.stderr.write(`explore: could not work the controls of ${request.turn}: ${error instanceof Error ? error.message : String(error)}\n`);
     }
