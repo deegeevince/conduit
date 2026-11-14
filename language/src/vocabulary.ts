@@ -1275,7 +1275,7 @@ export const VISUAL = {
   bar: { gist: 'a bar model: a whole and its parts, one of them a gap', range: false, keys: { total: 'number', parts: 'numbers' } },
   coins: { gist: 'coins to count and add up', range: false, keys: { coins: 'numbers', target: 'number' } },
   clock: { gist: 'a clock face to read or to set', range: false, keys: { time: 'time', mode: 'word' } },
-  grid: { gist: 'a shape on a square grid, transcribed from the page: `cells=` is its rows from the top, `x` a whole square, `h` a half square, `o` empty, rows joined by `/`; she taps squares to count them, a running count beside it', range: false, keys: { cells: 'cells' } },
+  grid: { gist: 'a shape on squares she ticks: cells= rows joined by /, x whole, h half, o empty', range: false, keys: { cells: 'cells' } },
   ruler: { gist: 'a ruler she slides along straight roads between places to read their lengths; `mm=` is each road in millimetres, never shown as numbers', range: false, keys: { mm: 'numbers' } },
 } as const satisfies Record<string, { gist: string; range: boolean; keys: Readonly<Record<string, VisualParam>> }>;
 export type VisualKind = keyof typeof VISUAL;
