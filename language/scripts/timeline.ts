@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { DEMOS, EMPTY_STAGE, LineNormalizer, parseLine, LineReader, PROMPT_EXAMPLE_STRUCTURE, PROMPT_EXAMPLES, PROMPT_EXAMPLES_FLAT, serializeLine, TurnScore } from '../src/index';
 import type { Issue } from '../src/index';
 import { lessonChecks } from './lesson-checks';
+import { teachChecks } from './teach-checks';
 import { eventChecks, reviewChecks } from './review-checks';
 
 function describe(issues: readonly Issue[]): string {
@@ -71,6 +72,7 @@ if (argument === undefined || argument === 'all') {
   ok = reviewChecks() && ok;
   ok = eventChecks() && ok;
   ok = lessonChecks() && ok;
+  ok = teachChecks() && ok;
   for (const demo of DEMOS) ok = run(`demo ${demo.name}`, readFileSync(fileURLToPath(new URL(`../demos/${demo.name}.series`, import.meta.url)), 'utf8')) && ok;
   const seedDir = fileURLToPath(new URL('../../techniques/seed/', import.meta.url));
   for (const file of readdirSync(seedDir).filter((name) => name.endsWith('.md')).sort()) {

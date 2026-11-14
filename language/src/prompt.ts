@@ -22,6 +22,7 @@ import type { BriefForm, DocumentFacts, LineProblem, TechniqueCard, TurnContext,
 
 export type { BriefForm };
 import { INTERFACE_CHAPTER } from './interface';
+import { TEACH_CHAPTER, carriesTeaching, documentBlocks } from './teach';
 import { describeSight } from './sight';
 import { BUILTIN_STYLES } from './style';
 import type { LookDef, StyleDef } from './style';
@@ -941,6 +942,8 @@ export function buildTurnBrief(context: TurnContext, input: TurnInput, form: Bri
   if (context.capabilities.structures.includes('tune') && (asksForMusic(input) || stage.elements.some((element) => element.figure?.kind === 'structure' && element.figure.structure === 'tune'))) parts.push(TUNE_CHAPTER);
   // A mock-up is taught when the words are about one, or when one is on stage to be changed; never in the system prompt, which is full.
   if (context.capabilities.structures.includes('screen') && (asksForInterface(input) || stage.elements.some((element) => element.figure?.kind === 'structure' && element.figure.structure === 'screen'))) parts.push(INTERFACE_CHAPTER);
+  // The TEACH chapter is carried when the words ask for a lesson, or while a lesson goes on; never in the system prompt, which is full.
+  if (carriesTeaching(context, input)) parts.push(TEACH_CHAPTER);
   const standing = standingText(context.standing);
   if (standing !== null) parts.push(standing);
 
@@ -989,6 +992,10 @@ export function buildTurnBrief(context: TurnContext, input: TurnInput, form: Bri
       parts.push(`EARLIER, oldest first:\n${turns.join('\n')}`);
     }
   }
+
+  // v3 (2.11). The document and her place in it, in every brief of a conversation that has one: a fresh process is given its place.
+  const blocks = documentBlocks(context);
+  if (blocks !== null) parts.push(blocks);
 
   const last = history[history.length - 1];
   if (last !== undefined) {

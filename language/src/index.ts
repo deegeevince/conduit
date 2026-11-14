@@ -23,6 +23,7 @@ export * from './review';
 export * from './assemble';
 export * from './lesson';
 export * from './document';
+export * from './teach';
 export * from './prompt';
 export * from './demos';
 export * from './explore';

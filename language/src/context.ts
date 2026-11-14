@@ -1,3 +1,4 @@
+import type { DocState, Document } from './document';
 import type { StageBase } from './schedule';
 import type { Sight } from './sight';
 import type { ShownItem } from './stage';
@@ -163,6 +164,18 @@ export interface TurnContext {
    * look checks the draft against it. Absent or empty: none.
    */
   readonly standing?: readonly string[];
+  /**
+   * v3 (2.11). The conversation's document and where the person is in it, folded from the log. The brief makes its DOCUMENT and HERE
+   * blocks from it (`L/teach.ts`), so a fresh process knows the sheet, which questions are written, and her place and tries. Absent: the
+   * conversation has no document.
+   */
+  readonly document?: DocumentContext;
+}
+
+/** The document a conversation has made, and what the person has done in it. */
+export interface DocumentContext {
+  readonly document: Document;
+  readonly state: DocState;
 }
 
 /** v2.1. The most standing asks a conversation holds, and the most characters of each; the oldest goes when a seventh comes. */
