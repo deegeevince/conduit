@@ -52,7 +52,7 @@ const SAVE_TELL_MS = 2500;
 const PING_MS = 1000;
 const MISSED_LIMIT = 3;
 /** An app whose content is larger than its room is laid out in a bigger frame and scaled down to the room; never below this (past it the frame scrolls). Never scaled up. */
-const FIT_MIN = 0.5;
+const FIT_MIN = 0.6;
 const STORE = 'conduit.surface.';
 const MARK = 'conduit.surface.mark.';
 
@@ -154,6 +154,8 @@ interface Running {
   height: number | null;
   /** FIT. 1 until the document's content is larger than its room; then the factor it is scaled down by, never below `FIT_MIN` */
   fit: number;
+  /** the fit is made once for a room: content that grows with the frame (100vh, innerHeight) would otherwise be chased down */
+  fitted: boolean;
   /** the room (rest size) the fit was made for: a new room starts again at 1 */
   fitRoom: string;
   still: { readonly canvas: HTMLCanvasElement; readonly how: 'own' | 'dom' } | null;
@@ -283,6 +285,7 @@ export function createSurfaceHost(options: SurfaceHostOptions): SurfaceHost {
     if (room !== run.fitRoom) {
       run.fitRoom = room;
       run.fit = 1;
+      run.fitted = false;
     }
     const fit = run.fit;
     const placed = `${room}@${fit.toFixed(3)}`;
@@ -323,7 +326,7 @@ export function createSurfaceHost(options: SurfaceHostOptions): SurfaceHost {
     frame.style.visibility = 'hidden';
     frame.style.opacity = '0';
     const run: Running = {
-      key: spec.key, id: spec.id, channel, frame, source: spec.source, shelf: library, fingerprint: print, spec, loads: 0, loaded: false, shown: false, state, told: state, height: null, fit: 1, fitRoom: '', still: stills.get(spec.key) ?? null,
+      key: spec.key, id: spec.id, channel, frame, source: spec.source, shelf: library, fingerprint: print, spec, loads: 0, loaded: false, shown: false, state, told: state, height: null, fit: 1, fitted: false, fitRoom: '', still: stills.get(spec.key) ?? null,
       refused: 0, emits: 0, faults: 0, window: { start: 0, count: 0 }, minute: { start: 0, count: 0 }, snaps: new Map(), snapSeq: 0, stillTimer: undefined, saveTimer: undefined, pinger: undefined, pings: 0, answered: 0, placed: '',
     };
     // a frame that loads a second time has navigated itself (a script, a link): it is removed, and what it was reaching for was never allowed to answer
@@ -409,11 +412,12 @@ export function createSurfaceHost(options: SurfaceHostOptions): SurfaceHost {
         const layoutW = rest.width / run.fit;
         const layoutH = rest.height / run.fit;
         const w = message.width ?? 0;
-        if (rest.width > 0 && rest.height > 0 && (message.height > layoutH + 1 || w > layoutW + 1)) {
+        if (!run.fitted && rest.width > 0 && rest.height > 0 && (message.height > layoutH + 1 || w > layoutW + 1)) {
           // a hair under the exact fit, so a content that is one pixel over does not leave a scrollbar
           const next = Math.max(FIT_MIN, Math.min(run.fit, rest.height / message.height, w > 0 ? rest.width / w : 1) * 0.99);
           if (next < run.fit - 0.01) {
             run.fit = next;
+            run.fitted = true;
             place(run, run.spec);
             scheduleStill(run, STILL_AFTER_ACT_MS);
           }
