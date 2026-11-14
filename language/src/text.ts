@@ -14,9 +14,9 @@ function isMarker(text: string, i: number, opening: boolean): boolean {
   return before !== '' && !/\s/.test(before) && before !== '*' && !wordy(after);
 }
 
-/** Units typeset as they are written on paper: `cm2` is cm², `m3` is m³. Same length, so every range into the text still holds. */
+/** Units typeset as they are written on paper: `cm2` is cm², `m3` is m³, but only after a number ("6 cm2"): a name like "room m3" is left alone. Same length, so every range into the text still holds. */
 export function typesetUnits(text: string): string {
-  return text.replace(/\b(mm|cm|dm|km|m)([23])\b/g, (_whole, unit: string, power: string) => `${unit}${power === '2' ? '²' : '³'}`);
+  return text.replace(/(?<=\d\s?)(mm|cm|dm|km|m)([23])\b/g, (_whole, unit: string, power: string) => `${unit}${power === '2' ? '²' : '³'}`);
 }
 
 /**

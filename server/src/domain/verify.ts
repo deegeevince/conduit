@@ -91,50 +91,45 @@ export function waysOf(doc: Document, node: DocNode): readonly DocNode[] {
 
 export const WAYS = { least: 3, most: 5 } as const;
 
-/** Said by a writer that could not read the shape from the page: the part goes to the parent to count on the sheet. */
-export const COUNT_ON_THE_SHEET = /check the count on the sheet/i;
-
-/** Whether a question counts squares on a grid for an area ("each small square is 1 cm … what is the area"). */
-export function isGridAreaQuestion(title: string): boolean {
-  return /\barea\b/i.test(title) && /\bsquares?\b/i.test(title);
-}
-
-/** The area a transcribed grid holds, exactly: whole squares and halves (`x`, `h`), in half squares so that nothing is rounded. Null when the cells are not a grid. */
-export function gridArea(cells: string): number | null {
+/** A figure's own reading, exact: what a figure declares it computes (a grid's area, in squares). Null when the figure cannot say, or says it could not be read. */
+export function figureValue(show: { readonly visual: string; readonly args: Readonly<Record<string, string>> }): number | 'unreadable' | null {
+  if (show.visual !== 'grid') return null;
+  const cells = show.args['cells'];
+  if (cells === undefined) return null;
+  if (cells === 'unreadable') return 'unreadable';
   const rows = cells.split('/');
-  if (rows.length === 0 || rows.some((row) => !/^[xoh]+$/.test(row) || row.length !== rows[0]?.length)) return null;
+  if (rows.some((row) => !/^[xoh]+$/.test(row) || row.length !== rows[0]?.length)) return null;
   let halves = 0;
   for (const row of rows) for (const cell of row) halves += cell === 'x' ? 2 : cell === 'h' ? 1 : 0;
   return halves / 2;
 }
 
-/** Whether a part holds the writer's note that the shape could not be read from the page. */
-export function countOnTheSheet(node: DocNode, doc: Document): boolean {
-  return [node, ...waysOf(doc, node)].some((part) => stepsOf(part).some((step) => step.kind === 'step' && COUNT_ON_THE_SHEET.test(step.words)));
+/** Every figure of a part and its helps that declares what it reads. */
+function figuresOf(doc: Document, node: DocNode): readonly (number | 'unreadable')[] {
+  return [node, ...waysOf(doc, node)].flatMap((part) => stepsOf(part).flatMap((step) => (step.kind === 'step' && step.show !== null ? [figureValue(step.show)] : []))).filter((value): value is number | 'unreadable' => value !== null);
 }
 
-/** The grid checks of a part: a shape on a grid is counted from its transcription, exactly, and every answer that is the area must be that count. */
-function gridFindings(doc: Document, node: DocNode, refuse: (source: FindingSource, at: NodeId, ask: string | null, why: string) => void): void {
-  const question = pathOf(doc, node.id).map((part) => part.title).join(' ');
-  if (!isGridAreaQuestion(question) || countOnTheSheet(node, doc)) return;
-  const parts = [node, ...waysOf(doc, node)];
-  const grids = parts.flatMap((part) => stepsOf(part).flatMap((step) => (step.kind === 'step' && step.show !== null && step.show.visual === 'grid' && step.show.args['cells'] !== undefined ? [step.show.args['cells']] : [])));
-  const first = grids[0];
-  if (first === undefined) {
-    refuse('shape', node.id, null, 'this question counts squares on a grid, and the shape is not transcribed: write it as `show=grid cells=…` from the attached crop, or, if it cannot be read exactly, a step saying "check the count on the sheet"');
+/** Whether a figure of the part says it could not be read exactly: the part is for a person to check. */
+export function unreadableFigure(node: DocNode, doc: Document): boolean {
+  return figuresOf(doc, node).includes('unreadable');
+}
+
+/** The figure checks of a part: figures that declare a value agree, and the last ask of every part that shows one is held to it. */
+function figureFindings(doc: Document, node: DocNode, refuse: (source: FindingSource, at: NodeId, ask: string | null, why: string) => void): void {
+  if (unreadableFigure(node, doc)) return;
+  const values = figuresOf(doc, node).filter((value): value is number => typeof value === 'number');
+  const first = values[0];
+  if (first === undefined) return;
+  if (values.some((value) => value !== first)) {
+    refuse('shape', node.id, null, 'two figures of this part declare different values');
     return;
   }
-  const area = gridArea(first);
-  if (area === null || grids.some((cells) => gridArea(cells) !== area)) {
-    refuse('shape', node.id, null, 'the grid transcriptions are not rows of the same length, or two of them disagree');
-    return;
-  }
-  for (const part of parts) {
+  for (const part of [node, ...waysOf(doc, node)]) {
+    const shows = stepsOf(part).some((step) => step.kind === 'step' && step.show !== null && figureValue(step.show) !== null);
     const asks = asksOf(part);
     const last = asks[asks.length - 1];
-    if (last === undefined || (part !== node && part.tag === null)) continue;
-    if (last.accepted.length === 0) refuse('shape', part.id, last.id, `ask ${last.id} accepts no answer; the transcribed grid counts ${area} squares`);
-    else if (!last.accepted.some((answer) => matchAnswer(answer, String(area), last.unit))) refuse('solver', part.id, last.id, `the transcribed shape counts ${area}, and ask ${last.id} accepts ${last.accepted.join(' | ')}`);
+    if (!shows || last === undefined) continue;
+    if (!last.accepted.some((answer) => matchAnswer(answer, String(first), last.unit))) refuse('solver', part.id, last.id, `the figure reads ${first}, and ask ${last.id} accepts ${last.accepted.join(' | ') || 'nothing'}`);
   }
 }
 
@@ -192,7 +187,7 @@ function lessonCheck(doc: Document, node: DocNode): Mechanical {
       } else if (status === 'mismatch') recomputed += 1;
     }
   }
-  gridFindings(doc, node, refuse);
+  figureFindings(doc, node, refuse);
   for (const found of maths.findings) findings.push({ severity: found.severity, source: 'solver', node: found.node, ask: found.ask, why: found.why });
   return { kind: 'lesson', node: node.id, findings, confirmed, recomputed, asks, own: profile === 'steps' ? null : maths.own };
 }

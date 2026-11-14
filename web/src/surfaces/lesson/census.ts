@@ -45,12 +45,12 @@ function rect(el: Element): Rect {
 }
 
 function whereIs(el: Element): string {
-  const hit = el.closest('[data-act],[data-ask],[data-step],.qcard,.finish,.topbar,.tabs,.dock,.run');
+  const hit = el.closest('[data-act],[data-ask],[data-step],.ctx,.finish,.topbar,.tabs,.dock,.run');
   if (hit === null) return 'page';
   return hit.getAttribute('data-act') ?? hit.getAttribute('data-ask') ?? (hit.hasAttribute('data-step') ? `step:${hit.getAttribute('data-step')}` : (hit.classList[0] ?? 'page'));
 }
 
-const SKIP = '.say-n, .qnum, .hint b, .count, script, style';
+const SKIP = '.say-n, .ctx-num, .hint b, .count, script, style';
 
 function textOf(root: HTMLElement, skip: (el: Element) => boolean): { readonly text: string; readonly el: Element }[] {
   const out: { text: string; el: Element }[] = [];
@@ -88,12 +88,12 @@ export function takeCensus(player: Player, root: HTMLElement): LessonCensus {
     if (!isButton && !(el instanceof HTMLInputElement) && !(el instanceof SVGGElement) && act !== 'line') return;
     const r = rect(el);
     if (r.w === 0 || r.h === 0) return;
-    const kind: CensusTarget['kind'] = el instanceof HTMLInputElement ? 'field' : el.classList.contains('choice') ? 'choice' : isButton && (el.classList.contains('btn') || el.classList.contains('nav') || el.classList.contains('tab') || el.classList.contains('segb') || el.classList.contains('way') || el.classList.contains('qrow') || el.classList.contains('resume')) ? 'button' : 'tap';
+    const kind: CensusTarget['kind'] = el instanceof HTMLInputElement ? 'field' : el.classList.contains('choice') ? 'choice' : isButton && (el.classList.contains('btn') || el.classList.contains('nav') || el.classList.contains('tab') || el.classList.contains('segb') || el.classList.contains('way') || el.classList.contains('ctx-row') || el.classList.contains('resume')) ? 'button' : 'tap';
     targets.push({ ...r, act, label: (el.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 60), kind });
   });
-  const card = root.querySelector('.qcard');
-  const qtext = card?.querySelector('.qtext');
-  const question = card instanceof HTMLElement && qtext instanceof HTMLElement ? { text: (qtext.textContent ?? '').slice(0, 200), px: parseFloat(getComputedStyle(qtext).fontSize), box: rect(card), onScreen: card.getBoundingClientRect().top >= -1 && card.getBoundingClientRect().bottom <= window.innerHeight + 1 } : null;
+  const card = root.querySelector('.ctx');
+  const ctxText = card?.querySelector('.ctx-text');
+  const question = card instanceof HTMLElement && ctxText instanceof HTMLElement ? { text: (ctxText.textContent ?? '').slice(0, 200), px: parseFloat(getComputedStyle(ctxText).fontSize), box: rect(card), onScreen: card.getBoundingClientRect().top >= -1 && card.getBoundingClientRect().bottom <= window.innerHeight + 1 } : null;
   const figures = [...root.querySelectorAll('.fig')].flatMap((fig) => {
     const kind = fig.getAttribute('data-kind');
     if (!isVisualKind(kind)) return [];

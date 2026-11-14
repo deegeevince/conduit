@@ -9,7 +9,7 @@
 //                  when a session is opened again (`GET /api/sessions/:id/document`):  docs.load(view);  on a new session:  docs.reset();
 //   http-link.ts   documentLink: DocumentLink = { sendState: (c) => send({ type: 'state', turn, document: id, change: c }), documents, open }
 
-import { accepts, advance, initialState, nodeOf } from '@conduit/language';
+import { accepts, initialState, nodeOf } from '@conduit/language';
 import type { DocNode, DocumentInk as KeptInk, InkDocument, LessonAsk } from '@conduit/language';
 import { DocumentHost, catalogueFromSummaries } from './document-host';
 import type { DocumentLink } from './document-host';
@@ -56,8 +56,6 @@ export interface DocumentView {
   /** show the picture under it, or the document again */
   toggle(show?: boolean): void;
   readonly shown: boolean;
-  /** move her to the next question of the document (false when there is no document on screen or no next question) */
-  next(): boolean;
   /** a picture of the document as she sees it (the surface hands over its own still through the bridge), or null when it is not on screen */
   still(): Promise<Blob | null>;
   host(): DocumentHost | null;
@@ -203,36 +201,6 @@ export function createDocumentView(options: DocumentViewOptions): DocumentView {
     toggle,
     get shown() {
       return shown && host !== null;
-    },
-    next() {
-      if (host === null || doc === null || !shown) return false;
-      const d = doc;
-      const at = nodeOf(d, host.current.cursor.node) ?? nodeOf(d, d.root);
-      if (at === null) return false;
-      // climb out of a way (it has a technique) to its question, then on to what follows it
-      let question = at;
-      for (let guard = 0; question.tag !== null && question.parent !== null && guard < 8; guard += 1) question = nodeOf(d, question.parent) ?? question;
-      let target = question.id === d.root ? (nodeOf(d, d.root)?.children[0] ?? null) : null;
-      if (target === null) {
-        for (let node: DocNode | null = question, guard = 0; node !== null && node.parent !== null && target === null && guard < 16; node = nodeOf(d, node.parent), guard += 1) {
-          const parent = nodeOf(d, node.parent);
-          const sibling = parent?.children[(parent?.children.indexOf(node.id) ?? -2) + 1];
-          if (sibling !== undefined) target = sibling;
-        }
-      }
-      // a section holds questions: go to its first one
-      for (let guard = 0; target !== null && guard < 8; guard += 1) {
-        const held = nodeOf(d, target);
-        const first = held === null ? undefined : held.children.map((id) => nodeOf(d, id)).find((kid) => kid !== null && kid.tag === null);
-        if (held === null || first === undefined || first === null) break;
-        target = first.id;
-      }
-      if (target === null) return false;
-      const state = advance(d, host.current, { kind: 'go', node: target, at: 'resume' });
-      if (state === host.current) return false;
-      options.link.sendState({ kind: 'cursor', cursor: state.cursor });
-      host.setInput(input(d, state), true);
-      return true;
     },
     async still() {
       if (host === null || !shown) return null;

@@ -219,7 +219,7 @@ function paramValue(kind: VisualParam, raw: string): string | null {
     case 'time':
       return CLOCK_TIME.test(raw) ? raw : null;
     case 'cells':
-      return /^[xoh]+(?:\/[xoh]+){0,15}$/.test(raw) && new Set(raw.split('/').map((row) => row.length)).size === 1 ? raw : null;
+      return raw === 'unreadable' || (/^[xoh]+(?:\/[xoh]+){0,15}$/.test(raw) && new Set(raw.split('/').map((row) => row.length)).size === 1) ? raw : null;
   }
 }
 

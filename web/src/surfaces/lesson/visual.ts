@@ -47,7 +47,7 @@ export function visualOf(show: ShowSpec | null): VisualSpec | null {
       return mm.length === 0 ? null : { kind: 'ruler', mm };
     }
     case 'grid': {
-      const rows = (Object.hasOwn(a, 'cells') ? (a['cells'] ?? '') : '').split('/').filter((row) => row !== '');
+      const rows = (Object.hasOwn(a, 'cells') ? (a['cells'] ?? '') : '').split('/').filter((row) => /^[xoh]+$/.test(row));
       return rows.length === 0 ? null : { kind: 'grid', rows };
     }
     case 'clock': {
