@@ -73,11 +73,15 @@ export function lessonContext(doc: Document, way: NodeId): LessonContext {
 
 const shortId = (id: NodeId): string => id.slice(id.lastIndexOf('/') + 1);
 
-/** What a part was written as: a question with ways, or steps of its own. Null when nothing is written. */
-export function profileOf(doc: Document, node: DocNode): 'ways' | 'steps' | null {
-  if (isWay(node)) return 'steps';
+/**
+ * What a part was written as: a question with ways (`ways`), steps of its own (`steps`), or both (`both`: the question's own ask is her try
+ * before any help, and its ways are the help under it, which "Show me how" opens). Null when nothing is written.
+ */
+export function profileOf(doc: Document, node: DocNode): 'ways' | 'steps' | 'both' | null {
   const kids = node.children.map((child) => nodeOf(doc, child)).filter((child): child is DocNode => child !== null && !child.id.startsWith('#'));
-  return kids.some(isWay) ? 'ways' : null;
+  const helped = kids.some(isWay);
+  if (isWay(node)) return helped ? 'both' : 'steps';
+  return helped ? 'ways' : null;
 }
 
 /** The ways of a part, in order, empty ones (a part sent back to be written) included. */
@@ -90,8 +94,11 @@ export const WAYS = { least: 3, most: 5 } as const;
 function lessonCheck(doc: Document, node: DocNode): Mechanical {
   const findings: Finding[] = [];
   const profile = profileOf(doc, node);
+  // `both`: the part's own steps are her try first (no tag, an ask of its own), and the ways under it are the help
+  const helps = profile === 'ways' || profile === 'both';
   const ways = profile === 'steps' ? [node] : waysOf(doc, node);
   const written = ways.filter(isWay);
+  const mine: readonly DocNode[] = profile === 'both' ? [node] : [];
   let confirmed = 0;
   let recomputed = 0;
   let asks = 0;
@@ -103,16 +110,19 @@ function lessonCheck(doc: Document, node: DocNode): Mechanical {
   const note = (source: FindingSource, at: NodeId, ask: string | null, why: string): void => void findings.push({ severity: 'note', source, node: at, ask, why });
 
   if (written.length === 0) refuse('shape', node.id, null, 'nothing is written');
-  if (profile === 'ways') {
+  if (helps) {
     if (written.length < WAYS.least) refuse('shape', node.id, null, `${written.length} way${written.length === 1 ? '' : 's'} written, and a question has three to five`);
     if (written.length > WAYS.most) note('shape', node.id, null, `${written.length} ways written; three to five are asked for`);
     const tags = written.flatMap((way) => (way.tag === null ? [] : [way.tag]));
     if (new Set(tags).size < tags.length) note('shape', node.id, null, 'two ways are tagged with the same technique');
     for (const way of ways) if (!isWay(way)) note('shape', way.id, null, `way ${shortId(way.id)} is empty (left from a rewrite)`);
   }
-  for (const way of written) {
+  for (const way of [...mine, ...written]) {
     const waySteps = stepsOf(way);
-    if (profile === 'ways') {
+    const first = mine.includes(way);
+    if (first) {
+      if (asksOf(way).length === 0) refuse('shape', way.id, null, `the question ${shortId(way.id)} has steps of its own and no ask: her try first is an ask on the question itself`);
+    } else if (helps) {
       if (way.tag === null || !Object.hasOwn(TECHNIQUE, way.tag)) refuse('shape', way.id, null, `way ${shortId(way.id)} has no technique tag`);
       if (asksOf(way).length === 0) refuse('shape', way.id, null, `way ${shortId(way.id)} has no ask`);
     }
@@ -231,9 +241,10 @@ export function lessonText(doc: Document, id: NodeId): string {
   const node = nodeOf(doc, id);
   if (node === null) return '';
   const out: string[] = [`QUESTION ${shortId(id)}: ${node.title}`];
-  const ways = profileOf(doc, node) === 'steps' ? [node] : waysOf(doc, node).filter(isWay);
+  const profile = profileOf(doc, node);
+  const ways = profile === 'steps' ? [node] : profile === 'both' ? [node, ...waysOf(doc, node).filter(isWay)] : waysOf(doc, node).filter(isWay);
   for (const way of ways) {
-    out.push(`  WAY ${shortId(way.id)}${way.tag === null ? '' : ` [${way.tag}]`}: ${way.title}`);
+    out.push(`  ${way.id === id && profile === 'both' ? 'HER FIRST TRY (before any help)' : 'WAY'} ${shortId(way.id)}${way.tag === null ? '' : ` [${way.tag}]`}: ${way.title}`);
     for (const step of stepsOf(way)) {
       if (step.kind === 'step') {
         const show = step.show === null ? '' : ` [picture: ${step.show.visual}${step.show.range === null ? '' : ` ${step.show.range[0]}..${step.show.range[1]}`}${Object.entries(step.show.args).map(([key, value]) => ` ${key}=${value}`).join('')}]`;

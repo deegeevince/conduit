@@ -87,6 +87,9 @@ export const ROUTING_CARD =
 export const TEACH_EXAMPLE: readonly string[] = [
   'part w1 | Sheet 1',
   'part q1 in=w1 crop=6,20,88,9 | Ben has 3 bags with 4 apples in each. How many apples in all?',
+  'ask a0 in=q1 is=12 | How many apples in all?',
+  'hint in=a0 | Think what 3 bags of 4 means.',
+  'hint in=a0 | Count the apples bag by bag.',
   'part q1a in=q1 tag=draw-it | Draw the bags',
   'step in=q1a show=groups count=3 each=4 label=apples | Here are the 3 bags. Tap the apples in one bag to count them.',
   'step in=q1a | Every bag is the same. Count on by fours as you tap each bag: 4, then 8, then...',
@@ -118,10 +121,10 @@ export function teachChapter(): string {
     [
       'HOW:',
       '1. A sheet or photo: read all of it first. Reply with the OUTLINE: a `part` for the sheet, one for each section heading, one for EVERY question titled with the question as printed (unreadable: say so in the title, with "?"), titles only, and for a photo each question\'s box on it, `crop=x,y,w,h` in whole percents of the photo\'s width and height from its top left, around that question only (`from=<photo id>` when there are several photos). Then fill only the FIRST question; the rest are written for you as she nears them. SHE CANNOT SEE THE SHEET: each title is the question IN FULL as printed (numbers, a map\'s names and distances, units, what is asked), never "question 29" alone; its `crop=` is its picture. Both are always shown. Asked for "one of these": still a `part` with both, restated before any step.',
-      '2. A question gets three to five ways (`part <id> in=<question> tag=<way>`), each a different approach, three to six small steps, ending in the `ask` for the question\'s own answer. Start with the one she most likely knows.',
+      '2. A question is written FIRST as her own try: an `ask` straight on the question (`ask <id> in=<question> is=… | <the question, short>`), no steps before it, no `pick=` (she writes it), two hints that point and never tell. THEN three to five ways (`part <id> in=<question> tag=<way>`), the help she asks for with "Show me how": each a different approach, three to six small steps, ending in the `ask` for the question\'s own answer. Start with the one she most likely knows.',
       '3. A step is one small thing, about twelve words she can read alone, and a `show=` when a picture helps. It sets up or does one piece (a group counted, one hop); the ask is the next piece. Say what to do ("Tap each flower"), never the result.',
       `4. NEVER LEAD WITH THE ANSWER. An \`ask\` seals its \`is=\`: nothing before it may hold an answer it accepts: not a step's words ("5 x 12 = 60" beside the choices 50, 60, 70), not a number a \`show=\` is told (the hop that lands on it, \`parts=\` that add up to it), not a title, an earlier ask or hint. A picture is told only what the question says (\`parts=6,2,4\`, never \`each=12\`); a line gets its span and hop size, never where it lands. Show partial work ("12 + 12 so far"), never the total. Name a way by its move, never its result ("Pair up the colours", not "Make ten" when an answer is 10). The reader refuses an ask that gives it away: write the step again, same id, without it.`,
-      '5. An `ask` is the small question a way builds to, one answer in `is=` (numbers and number words are matched for you: `is=12` takes "twelve" and "12 apples"; add other spellings a child may type, `is=ten_pence,10p`). For a young child give `pick=` with three large choices, one right, instead of typing. Only after a step that sets it up.',
+      '5. An `ask` is the small question a way builds to, one answer in `is=` (numbers and number words are matched for you: `is=12` takes "twelve" and "12 apples"; add other spellings a child may type, `is=ten_pence,10p`). In a way, for a young child, give `pick=` with three large choices, one right. Only after a step that sets it up.',
       '6. Two or three `hint in=<ask>`, one per wrong try, each nearer and none holding the answer: the first says where to look, the next the next small move. Never "wrong": say what to try.',
       '7. Finish with `reply | …`, one warm sentence for the thread on what she did and how, never the answer. A correction ("question 7 says 25, not 28") is the `part` written again with the same id.',
     ].join('\n'),

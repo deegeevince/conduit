@@ -154,6 +154,10 @@ export function shapeBefore(doc: Document, node: DocNode): string | null {
       const asks = ways.reduce((sum, way) => sum + asksOf(way).length, 0);
       return `The part before it, ${shortOf(before.id)}, was written as ${ways.length} ways (${ways.map((way) => way.tag ?? 'untagged').join(', ')}), of ${Math.min(...steps)} to ${Math.max(...steps)} steps each and ${asks} asks in all: write this one the same way.`;
     }
+    if (profile === 'both') {
+      const ways = waysOf(doc, before).filter(isWay);
+      return `The part before it, ${shortOf(before.id)}, was written as her own try first (an ask on the question itself) and then ${ways.length} ways (${ways.map((way) => way.tag ?? 'untagged').join(', ')}): write this one the same way.`;
+    }
     if (profile === 'steps') {
       const steps = stepsOf(before);
       return `The part before it, ${shortOf(before.id)}, was written as ${steps.length} steps with ${asksOf(before).length} asks, directly in the part (no ways): write this one the same way.`;
@@ -165,7 +169,7 @@ export function shapeBefore(doc: Document, node: DocNode): string | null {
 /** The words the brain is given for one part. It is the TEACH chapter's own rules that say how; this says which part, and what was learned from the last try. */
 export function fillPrompt(job: FillJob): string {
   return [
-    `AHEAD: write part ${job.short} now, "${job.title}", and nothing else. She is not waiting for it: write it complete, once, in the lines the chapter gives, every line with its own in=. A question gets three to five ways (never fewer than three), each a part in=${job.short} with its own tag, small steps, and an ask whose answer is the question's own answer, reached last; a part of a different kind (a chapter) gets its steps in=${job.short}. Write no outline, no \`reply\`, and no line for any other part.`,
+    `AHEAD: write part ${job.short} now, "${job.title}", and nothing else. She is not waiting for it: write it complete, once, in the lines the chapter gives, every line with its own in=. A question is written FIRST as her own try: an \`ask\` straight on the question (\`ask … in=${job.short}\`, no steps before it, no \`pick=\`, she writes the answer; two or three hints; \`check=working\` when it is a sum she works out in steps), THEN three to five ways (never fewer than three), each a part in=${job.short} with its own tag, small steps, and an ask whose answer is the question's own answer, reached last (the ways are the help she asks for); a part of a different kind (a chapter) gets its steps in=${job.short}. Write no outline, no \`reply\`, and no line for any other part.`,
     job.shape ?? '',
     job.photo ? `The page itself is attached: this question is the part of it at ${job.crop === null ? 'its place in the outline' : `x ${job.crop.x}%, y ${job.crop.y}%, ${job.crop.w}% wide, ${job.crop.h}% high`}. Read the question from there, with whatever the words above leave out (a picture, a table, a pattern, a clock), and write only what can be worked from what is on it.` : '',
     job.note === null ? '' : `The first try of this part was refused by the checker: ${job.note} Write it again so that none of that is true.`,
