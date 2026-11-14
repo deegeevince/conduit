@@ -1,0 +1,503 @@
+// pnpm capture: a logged turn, seen as motion.
+//
+//   pnpm capture <log> <turn> [--screen 1280x720|390x844] [--look <id>] [--out <dir>] [--fps 15] [--no-video]
+//   pnpm capture --all <log> [same flags]       every turn of the log that drew something
+//
+// Replays the turn's logged lines at their logged arrival times (the playhead each arrived at, as the painter was told it), from the
+// stage the previous turn left (its logged report), through the app's own timeline, renderer and exporter, in a headless Chrome. It
+// writes beside the log (or into --out):
+//   <log>-<turn>[-<look>][-<w>x<h>].strip.png   twelve frames in a grid, the last at rest, each labelled with its time
+//   <log>-<turn>[...].rest.png                   the resting picture at full size, as the brain is shown it
+//   <log>-<turn>[...].webm                       the whole turn as a film, from the app's own exporter
+// and prints what it did. It never writes to a log. Nothing here is part of the server: the browser, and the web server it starts
+// when it is not given one (--web http://127.0.0.1:4729), are stopped on exit.
+//
+// The page half is a script this file hands to the page. The page already serves the app's modules over the dev server, so the script
+// imports them (the same instances the app uses) rather than carrying a copy of any of it.
+
+import type { ChildProcess } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { basename, dirname, join, resolve } from 'node:path';
+import type { StageBase } from '@conduit/language';
+import { spawnTracked } from '../brains/claude-cli/process';
+import { processEnvironment } from '../env';
+import type { SessionRecord } from '../domain/session-log';
+
+const WEB_PORT = 4729;
+const CHROME_PORT = 4761;
+const STRIP_FRAMES = 12;
+const SCREENS: Readonly<Record<string, { width: number; height: number }>> = { '1280x720': { width: 1280, height: 720 }, '390x844': { width: 390, height: 844 } };
+const repoRoot = resolve(import.meta.dirname, '..', '..', '..');
+const sleep = (ms: number): Promise<void> => new Promise((done) => setTimeout(done, ms));
+
+function usage(message: string): never {
+  process.stderr.write(`capture: ${message}\n`);
+  process.stderr.write('usage: pnpm capture <log> <turn> [--screen 1280x720|390x844] [--look <id>] [--out <dir>] [--fps n] [--no-video] [--web <url>]\n       pnpm capture --all <log> [flags]\n');
+  process.exit(2);
+}
+
+// ---------------------------------------------------------------------------------------------------------------------------------
+// The log
+
+type Of<T extends SessionRecord['type']> = Extract<SessionRecord, { type: T }>;
+
+interface LoggedTurn {
+  readonly turn: string;
+  readonly asked: string;
+  readonly at: number;
+  /** ms the viewer first saw something (the painter's `started`), else the first line's arrival */
+  readonly shownAt: number;
+  readonly lines: readonly { readonly seq: number; readonly text: string; readonly floor: number }[];
+  /** the resting stage this turn left, as the painter reported it; null when it reported none */
+  readonly left: StageBase | null;
+  readonly snapshot: string | null;
+}
+
+async function readLog(file: string): Promise<LoggedTurn[]> {
+  const records: SessionRecord[] = [];
+  for (const raw of (await readFile(file, 'utf8')).split('\n')) {
+    if (raw.trim() === '') continue;
+    try {
+      const record = JSON.parse(raw) as SessionRecord;
+      if (typeof record.type === 'string') records.push(record);
+    } catch {
+      // a line cut short by a kill
+    }
+  }
+  const opens = records.filter((record): record is Of<'turn'> => record.type === 'turn');
+  return opens.map((open) => {
+    const mine = records.filter((record) => 'turn' in record && record.turn === open.turn);
+    const lines = mine.filter((record): record is Of<'line'> => record.type === 'line' && (record.pass ?? 1) <= 1);
+    const started = mine.find((record): record is Of<'started'> => record.type === 'started');
+    const report = mine.find((record): record is Of<'report'> => record.type === 'report');
+    const snapshot = mine.find((record): record is Of<'snapshot'> => record.type === 'snapshot');
+    const first = lines[0];
+    const shownAt = started?.at ?? first?.at ?? open.at;
+    const input = open.input;
+    const asked = input.kind === 'prompt' || input.kind === 'tap' || input.kind === 'act' ? input.text : input.kind === 'demo' ? `demo ${input.script}` : input.kind;
+    return {
+      turn: open.turn,
+      asked,
+      at: open.at,
+      shownAt,
+      // The playhead a line arrived at is how long the viewer had been watching; it can never be later than where the line started.
+      lines: lines.map((line) => ({ seq: line.seq, text: line.text, floor: Math.max(0, Math.min((line.at - shownAt) / 1000, line.start)) })),
+      left: report === undefined ? null : report.report.stage,
+      snapshot: snapshot?.file ?? null,
+    };
+  });
+}
+
+/** The stage a turn began from: what the nearest earlier turn that reported left behind; null is the empty stage. */
+function baseOf(turns: readonly LoggedTurn[], index: number): StageBase | null {
+  for (let i = index - 1; i >= 0; i -= 1) {
+    const left = turns[i]?.left;
+    if (left !== null && left !== undefined) return left;
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------------------------------------------------------------
+// The browser
+
+interface Pending {
+  readonly resolve: (value: unknown) => void;
+  readonly reject: (error: Error) => void;
+}
+
+class Cdp {
+  private id = 0;
+  private readonly waiting = new Map<number, Pending>();
+  private constructor(private readonly socket: WebSocket) {
+    socket.addEventListener('message', (event) => {
+      const message = JSON.parse(String(event.data)) as { id?: number; result?: unknown; error?: { message: string } };
+      if (message.id === undefined) return;
+      const entry = this.waiting.get(message.id);
+      if (entry === undefined) return;
+      this.waiting.delete(message.id);
+      if (message.error !== undefined) entry.reject(new Error(message.error.message));
+      else entry.resolve(message.result);
+    });
+    socket.addEventListener('close', () => {
+      for (const entry of this.waiting.values()) entry.reject(new Error('Chrome closed the DevTools connection'));
+      this.waiting.clear();
+    });
+  }
+  static open(url: string): Promise<Cdp> {
+    return new Promise((done, fail) => {
+      const socket = new WebSocket(url);
+      socket.addEventListener('open', () => done(new Cdp(socket)));
+      socket.addEventListener('error', () => fail(new Error(`cannot open ${url}`)));
+    });
+  }
+  send<T>(method: string, params: Record<string, unknown> = {}, sessionId?: string): Promise<T> {
+    const id = (this.id += 1);
+    return new Promise<T>((resolvePromise, reject) => {
+      this.waiting.set(id, { resolve: resolvePromise as (value: unknown) => void, reject });
+      this.socket.send(JSON.stringify({ id, method, params, ...(sessionId === undefined ? {} : { sessionId }) }));
+    });
+  }
+  close(): void {
+    this.socket.close();
+  }
+}
+
+async function waitFor<T>(what: string, ms: number, probe: () => Promise<T | null>): Promise<T> {
+  const until = Date.now() + ms;
+  for (;;) {
+    const found = await probe().catch(() => null);
+    if (found !== null) return found;
+    if (Date.now() > until) throw new Error(`timed out waiting for ${what}`);
+    await sleep(200);
+  }
+}
+
+function stop(child: ChildProcess): Promise<void> {
+  return new Promise((done) => {
+    if (child.exitCode !== null || child.signalCode !== null) return done();
+    child.once('close', () => done());
+    child.kill('SIGTERM');
+    setTimeout(() => child.kill('SIGKILL'), 2_000).unref();
+  });
+}
+
+const CHROME_CANDIDATES = [processEnvironment()['CHROME_BIN'], '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '/usr/bin/google-chrome', '/usr/bin/chromium'].filter((path): path is string => typeof path === 'string' && path !== '');
+
+interface Page {
+  evaluate<T>(expression: string): Promise<T>;
+  close(): Promise<void>;
+}
+
+async function openPage(web: string | null): Promise<{ page: Page; web: string }> {
+  const started: ChildProcess[] = [];
+  const cleanups: (() => Promise<void>)[] = [];
+  const close = async (): Promise<void> => {
+    for (const child of started.splice(0)) await stop(child);
+    for (const cleanup of cleanups.splice(0)) await cleanup().catch(() => undefined);
+  };
+  try {
+    let url = web;
+    if (url === null) {
+      url = `http://127.0.0.1:${WEB_PORT}`;
+      const running = await fetch(`${url}/explore.html`).then((reply) => reply.ok).catch(() => false);
+      if (!running) {
+        started.push(spawnTracked('pnpm', ['--filter', '@conduit/web', 'exec', 'vite'], undefined, { cwd: repoRoot, env: { VITE_PORT: String(WEB_PORT), VITE_API: 'http://127.0.0.1:1' }, quiet: true }));
+        await waitFor('the web dev server', 60_000, async () => ((await fetch(`${url}/explore.html`)).ok ? true : null));
+      }
+    }
+    const chrome = CHROME_CANDIDATES.find((path) => existsSync(path));
+    if (chrome === undefined) throw new Error('no Chrome found: set CHROME_BIN to a Chrome or Chromium executable');
+    const profile = await mkdtemp(join(tmpdir(), 'conduit-capture-'));
+    cleanups.push(() => rm(profile, { recursive: true, force: true }));
+    started.push(
+      spawnTracked(chrome, ['--headless=new', '--use-angle=metal', '--ignore-gpu-blocklist', '--no-first-run', '--no-default-browser-check', `--remote-debugging-port=${CHROME_PORT}`, `--user-data-dir=${profile}`, '--window-size=1280,800', 'about:blank'], undefined, { quiet: true }),
+    );
+    const endpoint = await waitFor('Chrome', 20_000, async () => {
+      const reply = await fetch(`http://127.0.0.1:${CHROME_PORT}/json/version`);
+      const body = (await reply.json()) as { webSocketDebuggerUrl?: string };
+      return body.webSocketDebuggerUrl ?? null;
+    });
+    const browser = await Cdp.open(endpoint);
+    cleanups.unshift(async () => browser.close());
+    const { targetId } = await browser.send<{ targetId: string }>('Target.createTarget', { url: 'about:blank' });
+    const { sessionId } = await browser.send<{ sessionId: string }>('Target.attachToTarget', { targetId, flatten: true });
+    await browser.send('Page.enable', {}, sessionId);
+    // Any page of the app will do: it is only the origin the script imports the app's modules from. The review page's is the lightest.
+    await browser.send('Page.navigate', { url: `${url}/explore.html` }, sessionId);
+    const page: Page = {
+      async evaluate<T>(expression: string): Promise<T> {
+        const out = await browser.send<{ result: { value?: T }; exceptionDetails?: { text: string; exception?: { description?: string } } }>('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }, sessionId);
+        if (out.exceptionDetails !== undefined) throw new Error(out.exceptionDetails.exception?.description ?? out.exceptionDetails.text);
+        return out.result.value as T;
+      },
+      close,
+    };
+    await waitFor('the page', 30_000, async () => ((await page.evaluate<string>('document.readyState')) === 'complete' ? true : null));
+    return { page, web: url };
+  } catch (error) {
+    await close();
+    throw error;
+  }
+}
+
+// ---------------------------------------------------------------------------------------------------------------------------------
+// The page's half
+
+/** What the page is told. Everything crosses as JSON. */
+interface Job {
+  readonly language: string;
+  readonly turn: string;
+  readonly asked: string;
+  readonly base: StageBase | null;
+  readonly lines: readonly { readonly seq: number; readonly text: string; readonly floor: number }[];
+  readonly viewport: { readonly width: number; readonly height: number; readonly dpr: number };
+  readonly look: string | null;
+  readonly frames: number;
+  readonly fps: number;
+  readonly video: boolean;
+  /** a film longer than this (seconds) is made of its first part only */
+  readonly maxSeconds: number;
+}
+
+interface Made {
+  readonly duration: number;
+  readonly times: readonly number[];
+  readonly strip: string;
+  readonly rest: string;
+  readonly webm: string | null;
+  readonly videoNote: string | null;
+  readonly notes: readonly string[];
+  readonly rejected: number;
+}
+
+/** Source of an async function of a Job, run in the page. Plain JavaScript: the page has no TypeScript. */
+const PAGE_SCRIPT = String.raw`async (job) => {
+  const L = await import(job.language);
+  const [{ buildTimeline, settledEnd }, { pinnedWallTime }, { REST_POSE }, { CHARTS_READY, createChartEngine }, { createHarnessChartHost }, { loadChartFonts }, { createExporter }, { createPlainRenderer }, { canUseThree, createThreeRenderer }] = await Promise.all([
+    import('/src/painter/timeline.ts'), import('/src/painter/clock.ts'), import('/src/contracts/space.ts'), import('/src/render/chart/index.ts'),
+    import('/src/explore/chart-host.ts'), import('/src/app/chart-host.ts'), import('/src/export/index.ts'), import('/src/render/plain/index.ts'), import('/src/render/three/index.ts'),
+  ]);
+  const notes = [];
+  const base = job.base === null ? L.EMPTY_STAGE : job.base;
+  const viewport = job.viewport;
+
+  // The score, as the painter heard it: each line pushed at the playhead it arrived at; each part's arrival noted for its layout epochs.
+  const normalizer = new L.LineNormalizer(() => 'cx' + (++counter));
+  let counter = 0;
+  const score = new L.TurnScore(base);
+  const arrivals = new Map();
+  let rejected = 0;
+  for (const entry of job.lines) {
+    const parsed = L.parseLine(entry.text);
+    if (parsed.kind !== 'line') { rejected += 1; notes.push('line ' + entry.seq + ' does not read back: ' + entry.text.slice(0, 80)); continue; }
+    const normalized = normalizer.normalize(parsed.line);
+    if (normalized.line === null) { rejected += 1; continue; }
+    const pushed = score.push(normalized.line, entry.seq, entry.floor);
+    for (const element of pushed.schedule.elements) {
+      if (element.kind !== 'structure' && element.kind !== 'node' && element.kind !== 'link') continue;
+      if (!element.carried && !arrivals.has(element.key)) arrivals.set(element.key, entry.floor);
+      if (element.figure && element.figure.kind === 'structure') element.figure.rows.forEach((_, i) => arrivals.has(element.key + '#r' + i) || arrivals.set(element.key + '#r' + i, entry.floor));
+    }
+  }
+  const schedule = score.schedule;
+  const lockLook = job.look;
+  const context = (arrivalMap) => ({ viewport, reducedMotion: false, lockLook, paintings: new Map(), arrivals: arrivalMap, charts: { kinds: CHARTS_READY, data: new Map() } });
+  const timeline = buildTimeline(schedule, base, context(arrivals));
+  const duration = settledEnd(timeline, null, base.scene.mood);
+  const frameAt = (seconds) => { const time = Math.max(0, seconds); return timeline.frameAt({ time, ambient: time, wallTime: pinnedWallTime(time), clock: 'paused' }); };
+  const film = { duration, viewport, frameAt, script: () => job.lines.map((l) => l.text).join('\n') };
+
+  // The resting stage as the painter pictures it for the brain: the settled stage alone on a fresh schedule, camera at rest, ambient 3 s.
+  const stage = L.settle(schedule, base, duration + 1e-6);
+  const restTimeline = buildTimeline(new L.TurnScore(stage).schedule, stage, context(new Map()));
+  const restFrame = { ...restTimeline.frameAt({ time: 0, ambient: 3, wallTime: pinnedWallTime(3), clock: 'paused' }), camera: REST_POSE };
+
+  const makeRenderer = () => (canUseThree() ? createThreeRenderer() : createPlainRenderer());
+  const hold = document.createElement('div');
+  hold.style.cssText = 'position:fixed;left:-30000px;top:0;width:' + viewport.width + 'px;height:' + viewport.height + 'px;overflow:hidden;';
+  document.body.append(hold);
+  const engine = createChartEngine();
+  const charts = engine === null ? null : createHarnessChartHost(engine, hold);
+  await loadChartFonts();
+  const frameCharts = async (frame) => {
+    if (charts === null) return undefined;
+    charts.sync(frame.charts || [], 1);
+    if ((frame.charts || []).length > 0) await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => done())));
+    return (key) => charts.still(key);
+  };
+
+  const times = [];
+  for (let i = 0; i < job.frames - 1; i += 1) times.push((duration * i) / (job.frames - 1));
+  const renderer = makeRenderer();
+  const host = document.createElement('div');
+  host.style.cssText = 'position:fixed;left:-20000px;top:0;width:' + viewport.width + 'px;height:' + viewport.height + 'px;overflow:hidden;';
+  document.body.append(host);
+  await renderer.mount(host, viewport, frameAt(0).look);
+  if (!renderer.capabilities.capture) throw new Error('this renderer cannot capture pictures here');
+  renderer.reset();
+  const picture = async (frame, maxSide) => {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      let incomplete = false;
+      const chartStill = await frameCharts(frame);
+      const blob = await renderer.rasterise(frame, { maxSide, mime: 'image/png', onIncomplete: () => { incomplete = true; }, ...(chartStill === undefined ? {} : { chartStill }) });
+      if (blob === null) throw new Error('the renderer returned no picture');
+      if (!incomplete || attempt === 2) { if (incomplete) notes.push('a picture was taken before all its text could be drawn'); return blob; }
+    }
+    throw new Error('unreachable');
+  };
+  const frames = [];
+  for (const time of times) frames.push(await picture(frameAt(time), 1280));
+  frames.push(await picture(restFrame, 1280));
+  const restBlob = await picture(restFrame, 1600);
+
+  // The contact strip: a grid of the frames, each with its time.
+  const portrait = viewport.height > viewport.width;
+  const columns = portrait ? 6 : 4;
+  const cellWidth = portrait ? 260 : 560;
+  const cellHeight = Math.round((cellWidth * viewport.height) / viewport.width);
+  const label = 22;
+  const gap = 6;
+  const rows = Math.ceil(frames.length / columns);
+  const canvas = document.createElement('canvas');
+  canvas.width = columns * cellWidth + (columns + 1) * gap;
+  canvas.height = rows * (cellHeight + label) + (rows + 1) * gap + 28;
+  const g = canvas.getContext('2d');
+  g.fillStyle = '#16181d'; g.fillRect(0, 0, canvas.width, canvas.height);
+  g.font = '14px ui-monospace, Menlo, monospace'; g.fillStyle = '#d8dbe2'; g.textBaseline = 'middle';
+  const heading = job.turn + '  ' + job.asked.replace(/\s+/g, ' ').slice(0, 110) + '  [' + viewport.width + 'x' + viewport.height + (job.look === null ? '' : ', look ' + job.look) + ', ' + duration.toFixed(1) + ' s]';
+  g.fillText(heading, gap, 14);
+  for (let i = 0; i < frames.length; i += 1) {
+    const x = gap + (i % columns) * (cellWidth + gap);
+    const y = 28 + gap + Math.floor(i / columns) * (cellHeight + label + gap);
+    const bitmap = await createImageBitmap(frames[i]);
+    g.drawImage(bitmap, x, y + label, cellWidth, cellHeight);
+    bitmap.close();
+    g.fillStyle = i === frames.length - 1 ? '#ffd166' : '#d8dbe2';
+    g.fillText(i === frames.length - 1 ? 'at rest' : (times[i]).toFixed(1) + ' s', x + 2, y + label / 2);
+  }
+  const base64Of = (blob) => new Promise((done, fail) => { const r = new FileReader(); r.onload = () => done(String(r.result).split(',')[1] || ''); r.onerror = () => fail(new Error('read failed')); r.readAsDataURL(blob); });
+  const strip = await base64Of(await new Promise((done) => canvas.toBlob(done, 'image/png')));
+  const rest = await base64Of(restBlob);
+  renderer.dispose();
+  host.remove();
+
+  // The film, from the app's own exporter, at the viewport's own size.
+  let webm = null;
+  let videoNote = null;
+  if (job.video) {
+    const exporter = createExporter({ createRenderer: makeRenderer, chartStill: (frame, key) => { const chart = (frame.charts || []).find((c) => c.key === key); return chart === undefined || charts === null ? null : charts.stillOf(chart); } });
+    try {
+      const formats = await exporter.formats();
+      if (!formats.video.includes('webm')) videoNote = 'this browser cannot encode WebM';
+      else {
+        const to = Math.min(duration, job.maxSeconds);
+        if (to < duration) notes.push('the film stops at ' + job.maxSeconds + ' s of ' + duration.toFixed(1));
+        const job2 = exporter.start(film, { kind: 'video', format: 'webm', width: viewport.width, height: viewport.height, fps: job.fps, from: 0, to });
+        const out = await job2.done;
+        webm = await base64Of(out.blob);
+      }
+    } catch (error) {
+      videoNote = 'the film could not be made: ' + (error && error.message ? error.message : String(error));
+    } finally {
+      exporter.dispose();
+    }
+  }
+  charts && charts.dispose();
+  hold.remove();
+  return { duration, times, strip, rest, webm, videoNote, notes, rejected };
+}`;
+
+// ---------------------------------------------------------------------------------------------------------------------------------
+// The command
+
+interface Options {
+  readonly all: boolean;
+  readonly log: string;
+  readonly turn: string | null;
+  readonly screen: { readonly width: number; readonly height: number };
+  readonly screenName: string;
+  readonly look: string | null;
+  readonly out: string | null;
+  readonly fps: number;
+  readonly video: boolean;
+  readonly web: string | null;
+}
+
+function parseArgs(argv: readonly string[]): Options {
+  const positional: string[] = [];
+  let all = false;
+  let screenName = '1280x720';
+  let look: string | null = null;
+  let out: string | null = null;
+  let fps = 15;
+  let video = true;
+  let web: string | null = null;
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i] ?? '';
+    const value = (): string => argv[(i += 1)] ?? usage(`${arg} needs a value`);
+    if (arg === '--all') all = true;
+    else if (arg === '--screen') screenName = value();
+    else if (arg === '--look') look = value();
+    else if (arg === '--out') out = value();
+    else if (arg === '--fps') fps = Math.max(1, Math.min(60, Number(value()) || 15));
+    else if (arg === '--web') web = value();
+    else if (arg === '--no-video') video = false;
+    else if (arg.startsWith('--')) usage(`unknown flag ${arg}`);
+    else positional.push(arg);
+  }
+  const screen = SCREENS[screenName];
+  if (screen === undefined) usage(`--screen is one of ${Object.keys(SCREENS).join(', ')}`);
+  const log = positional[0];
+  if (log === undefined) usage('which log?');
+  if (!all && positional[1] === undefined) usage('which turn? (or --all)');
+  return { all, log: resolve(log), turn: all ? null : (positional[1] ?? null), screen, screenName, look, out, fps, video, web };
+}
+
+interface Captured {
+  readonly turn: string;
+  readonly strip: string;
+  readonly rest: string;
+  readonly webm: string | null;
+  readonly duration: number;
+}
+
+async function captureOne(page: Page, options: Options, turns: readonly LoggedTurn[], index: number, dir: string): Promise<Captured | null> {
+  const turn = turns[index];
+  if (turn === undefined) return null;
+  if (turn.lines.length === 0) {
+    process.stdout.write(`${turn.turn}: no lines were logged for it (a turn that drew nothing): skipped\n`);
+    return null;
+  }
+  const job: Job = {
+    language: `/@fs${repoRoot}/language/src/index.ts`,
+    turn: turn.turn,
+    asked: turn.asked,
+    base: baseOf(turns, index),
+    lines: turn.lines,
+    viewport: { ...options.screen, dpr: 1 },
+    look: options.look,
+    frames: STRIP_FRAMES,
+    fps: options.fps,
+    video: options.video,
+    maxSeconds: 90,
+  };
+  const made = await page.evaluate<Made>(`(${PAGE_SCRIPT})(${JSON.stringify(job)})`);
+  const stem = join(dir, `${basename(options.log, '.jsonl')}-${turn.turn}${options.look === null ? '' : `-${options.look}`}${options.screenName === '1280x720' ? '' : `-${options.screenName}`}`);
+  await mkdir(dirname(stem), { recursive: true });
+  const strip = `${stem}.strip.png`;
+  const rest = `${stem}.rest.png`;
+  await writeFile(strip, Buffer.from(made.strip, 'base64'));
+  await writeFile(rest, Buffer.from(made.rest, 'base64'));
+  let webm: string | null = null;
+  if (made.webm !== null) {
+    webm = `${stem}.webm`;
+    await writeFile(webm, Buffer.from(made.webm, 'base64'));
+  }
+  process.stdout.write(`${turn.turn}: ${JSON.stringify(turn.asked.slice(0, 70))}  ${made.duration.toFixed(1)} s, ${turn.lines.length} lines${made.rejected > 0 ? `, ${made.rejected} would not read back` : ''}${baseOf(turns, index) === null ? '' : ', from the stage the log left'}\n  strip ${strip}\n  rest  ${rest}\n  film  ${webm ?? `none${made.videoNote === null ? ' (--no-video)' : ` (${made.videoNote})`}`}\n`);
+  for (const note of made.notes) process.stdout.write(`  note: ${note}\n`);
+  return { turn: turn.turn, strip, rest, webm, duration: made.duration };
+}
+
+async function main(): Promise<void> {
+  const options = parseArgs(process.argv.slice(2));
+  if (!existsSync(options.log)) usage(`no such log: ${options.log}`);
+  const turns = await readLog(options.log);
+  const dir = options.out === null ? dirname(options.log) : resolve(options.out);
+  const wanted = options.all ? turns.map((_, index) => index) : [turns.findIndex((turn) => turn.turn === options.turn)];
+  if (wanted.some((index) => index < 0)) usage(`the log has no turn ${options.turn ?? ''}: it has ${turns.map((turn) => turn.turn).join(', ')}`);
+  const { page } = await openPage(options.web);
+  try {
+    for (const index of wanted) await captureOne(page, options, turns, index, dir);
+  } finally {
+    await page.close();
+  }
+}
+
+try {
+  await main();
+} catch (error) {
+  process.stderr.write(`capture: ${error instanceof Error ? error.message : String(error)}\n`);
+  process.exitCode = 1;
+}
