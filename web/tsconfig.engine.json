@@ -4,5 +4,5 @@
     "lib": ["ES2023"],
     "types": []
   },
-  "include": ["src/engine/index.ts", "src/engine/dom-types.d.ts"]
+  "include": ["src/engine/index.ts", "src/engine/dom-types.d.ts", "src/painter/blocks/figure/index.ts"]
 }

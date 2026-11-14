@@ -24,6 +24,7 @@ import { chart } from './kinds/chart';
 import { choice } from './kinds/choice';
 import { code } from './kinds/code';
 import { cycle } from './kinds/cycle';
+import { figure } from './kinds/figure';
 import { flow } from './kinds/flow';
 import { input } from './kinds/input';
 import { map } from './kinds/map';
@@ -41,6 +42,7 @@ export const KINDS: Registry = {
   words,
   choice,
   canvas,
+  figure,
   flow,
   tree,
   cycle,
