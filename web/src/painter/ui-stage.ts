@@ -171,14 +171,15 @@ export function layoutUi(args: { readonly structure: ElementSpan; readonly room:
     walk(screen.children);
   }
   const rowOf = new Map<string, number>();
-  const base = structure.order + 0.001;
+  // the renderer draws by whole z levels, so every figure and every line of words has a level of its own, in the kit's own order of drawing
+  const base = structure.order + 1;
   const prefix = `${structure.key}/`;
   const shift = (b: Box | undefined): Box | undefined => (b === undefined ? undefined : { ...b, x: b.x + sx, y: b.y + sy });
   const figures: FigureFrame[] = frame.figures.map((figure) => {
     const key = prefix + figure.key;
     rowOf.set(key, ownerRow.get(figure.id) ?? 0);
     const clip = shift(figure.clip);
-    return { ...figure, key, z: base + figure.z * 1e-5, transform: { ...figure.transform, e: figure.transform.e + sx, f: figure.transform.f + sy }, ...(clip === undefined ? {} : { clip }) } as FigureFrame;
+    return { ...figure, key, z: Math.min(8999, base + figure.z), transform: { ...figure.transform, e: figure.transform.e + sx, f: figure.transform.f + sy }, ...(clip === undefined ? {} : { clip }) } as FigureFrame;
   });
   let fontPx = Number.POSITIVE_INFINITY;
   const elements: ElementFrame[] = frame.elements.map((element) => {
@@ -186,7 +187,7 @@ export function layoutUi(args: { readonly structure: ElementSpan; readonly room:
     rowOf.set(key, ownerRow.get(element.id) ?? 0);
     fontPx = Math.min(fontPx, element.fontSize);
     const clip = shift(element.clip);
-    return { ...element, key, z: base + element.z * 1e-5, x: element.x + sx, y: element.y + sy, ...(clip === undefined ? {} : { clip }) };
+    return { ...element, key, z: Math.min(8999, base + element.z), x: element.x + sx, y: element.y + sy, ...(clip === undefined ? {} : { clip }) };
   });
   // the block's own box on the stage: what the screens and their labels cover
   let x0 = Number.POSITIVE_INFINITY;

@@ -95,7 +95,7 @@ function bestGrid(sizes: readonly { w: number; h: number }[], room: { w: number;
 }
 
 export function arrangeBoard(layouts: readonly UiScreenLayout[], tokens: UiTokens, measure: UiMeasure, room: { readonly w: number; readonly h: number }, options: BoardOptions): Board {
-  const cards: Card[] = layouts.map((layout) => ({ layout, shape: deviceShape(layout.device as Parameters<typeof deviceShape>[0], layout.name, tokens, measure, layout.id) }));
+  const cards: Card[] = layouts.map((layout) => ({ layout, shape: deviceShape(layout.device as Parameters<typeof deviceShape>[0], layout.name, tokens, measure, layout.id, layout.height) }));
   const parts: UiPart[] = [];
   const placements: BoardPlacement[] = [];
   const dark = lum(tokens.colour.ground) < 0.35;

@@ -20,6 +20,17 @@ export interface ServiceOptions {
   readonly missMs?: number;
 }
 
+const STOP = new Set(['a', 'an', 'the', 'at', 'by', 'in', 'on', 'of', 'with', 'and', 'for', 'to', 'from', 'into', 'near', 'over', 'under', 'small', 'large', 'big', 'sunlit', 'warm', 'soft', 'happy', 'smiling', 'beautiful']);
+
+/** The queries tried for these words, widest first: the words that carry the subject (at most four), then the first two of them. */
+export function narrowing(words: string): readonly string[] {
+  const carried = words.split(' ').filter((word) => !STOP.has(word));
+  const base = carried.length > 0 ? carried : words.split(' ');
+  const four = base.slice(0, 4).join(' ');
+  const two = base.slice(0, 2).join(' ');
+  return [...new Set([four, two])].filter((query) => query !== '');
+}
+
 export function createPictureService(options: ServiceOptions): PictureService {
   const now = options.now ?? Date.now;
   const missMs = options.missMs ?? 600_000;
@@ -48,14 +59,18 @@ export function createPictureService(options: ServiceOptions): PictureService {
   };
 
   const make = async (query: PictureQuery, key: string, signal: AbortSignal): Promise<Picture | null> => {
-    const found = await options.source.search(query, signal);
-    for (const candidate of rankCandidates(found, query.aspect).slice(0, PICTURE_LIMITS.maxTries)) {
-      if (signal.aborted) return null;
-      const picture = await fetchOne(candidate, key, query.aspect, signal);
-      if (picture !== null) {
-        await options.store.write(picture);
-        options.log.info('pictures.kept', { key, width: picture.width, height: picture.height, bytes: picture.bytes.length });
-        return picture;
+    // A search for a whole sentence finds nothing ("sunlit harbour at dawn small boats moored by"): the first words that carry the subject are tried,
+    // then the first two. At most two searches, so the rate limit is never spent on one picture.
+    for (const words of narrowing(query.words)) {
+      const found = await options.source.search({ words, aspect: query.aspect }, signal);
+      for (const candidate of rankCandidates(found, query.aspect).slice(0, PICTURE_LIMITS.maxTries)) {
+        if (signal.aborted) return null;
+        const picture = await fetchOne(candidate, key, query.aspect, signal);
+        if (picture !== null) {
+          await options.store.write(picture);
+          options.log.info('pictures.kept', { key, width: picture.width, height: picture.height, bytes: picture.bytes.length });
+          return picture;
+        }
       }
     }
     return null;

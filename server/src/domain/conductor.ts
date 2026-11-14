@@ -1296,6 +1296,8 @@ export class Conductor {
     const words = (found[2] ?? '').trim();
     if (part === undefined || words === '') return;
     const flags = head.toLowerCase().split(/\s+/);
+    // A round picture is an avatar: a photograph of a stranger is never put beside a made-up name
+    if (flags.includes('round')) return;
     const aspect = flags.includes('tall') ? 3 / 4 : flags.includes('square') || flags.includes('round') ? 1 : 16 / 9;
     // The turn's abort stops a search that is still wanted only by it; a turn that ended well does not, so the session's abort is the other way out.
     const signal = AbortSignal.any([turn.abort.signal, s.abort.signal]);

@@ -15,10 +15,22 @@ import type { UiHit, UiPart, UiScreenLayout, UiSlot, UiState } from './types';
 export function layoutScreen(written: UiScreen, tokens: UiTokens, measure: UiMeasure, state: UiState = NO_STATE, lines = 0): UiScreenLayout {
   // `device` is a property that can be set: the same lines laid out on another device
   const screen: UiScreen = state.device[written.id] === undefined ? written : { ...written, device: state.device[written.id] ?? written.device };
-  const size = UI_DEVICE_SIZE[screen.device];
+  let size: { width: number; height: number } = UI_DEVICE_SIZE[screen.device];
   const kit = makeKit(tokens, screen.device, measure, state);
-  const tree = buildScreen(kit, screen, size.width, size.height);
-  const placed: Placed<Item> = solve(tree, size.width, size.height);
+  let placed: Placed<Item> = solve(buildScreen(kit, screen, size.width, size.height), size.width, size.height);
+  // A page is as long as its content (up to half as long again as the fold): a home page cut at the fold in the middle of its cards is not a page.
+  // A phone or a tablet is the glass it is, and a long screen scrolls.
+  if (screen.device === 'browser' || screen.device === 'desktop') {
+    let bottom = 0;
+    walk(placed, (p, _x, y, depth) => {
+      if (depth > 0) bottom = Math.max(bottom, y + p.h);
+    });
+    const longest = Math.round(size.height * 1.5);
+    if (bottom > size.height + 1) {
+      size = { width: size.width, height: Math.min(longest, Math.ceil(bottom / 8) * 8) };
+      placed = solve(buildScreen(kit, screen, size.width, size.height), size.width, size.height);
+    }
+  }
 
   const parts: UiPart[] = [];
   const counts = new Map<string, number>();

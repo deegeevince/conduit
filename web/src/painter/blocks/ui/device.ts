@@ -36,8 +36,9 @@ function rounded(x: number, y: number, w: number, h: number, r: number): { x: nu
   return pts;
 }
 
-export function deviceShape(device: UiDevice, name: string, t: UiTokens, measure: UiMeasure, id: string): DeviceShape {
-  const size = UI_DEVICE_SIZE[device];
+export function deviceShape(device: UiDevice, name: string, t: UiTokens, measure: UiMeasure, id: string, height?: number): DeviceShape {
+  // a page may be longer than its fold (`layoutScreen` grows it): the glass is as tall as the screen laid out in it
+  const size = height === undefined ? UI_DEVICE_SIZE[device] : { width: UI_DEVICE_SIZE[device].width, height };
   const c = t.colour;
   const under: UiPart[] = [];
   const over: UiPart[] = [];
