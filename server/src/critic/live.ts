@@ -4,6 +4,7 @@
 // newer turn's look replaces one that has not started), at most `policy.perHour`, and bounded by `policy.lookMs`. It never throws: a
 // finding it could not make is null and the reason is logged once per kind.
 
+import { SIGHT_NOTE } from '@conduit/language';
 import type { CriticFinding } from '@conduit/language';
 import type { Snapshot } from '../domain/brain';
 import type { Critic, CriticComparison, CriticPolicy, CriticRequest } from '../domain/critic';
@@ -27,8 +28,27 @@ function pictureOf(snapshot: Snapshot): Picture {
   return { data: Buffer.from(snapshot.bytes).toString('base64'), mime: snapshot.mime };
 }
 
+/** One short line per element that landed badly, the painter's own words: evidence for the judge, never the brain's reasoning. */
+function measuredOf(sight: CriticRequest['sight']): readonly string[] {
+  const lines: string[] = [];
+  for (const item of sight?.items ?? []) {
+    if (item.notes.length === 0) continue;
+    lines.push(`${item.id} (${item.kind}${item.resting ? '' : ', gone at rest'}): ${item.notes.map((note) => SIGHT_NOTE[note]).join('; ')}`);
+    if (lines.length >= 12) break;
+  }
+  return lines;
+}
+
 function inputOf(request: Omit<CriticRequest, 'picture'>): FindingInput {
-  return { turn: request.turn, pass: request.pass, asked: request.asked, ids: (request.sight?.items ?? []).map((item) => item.id) };
+  return {
+    turn: request.turn,
+    pass: request.pass,
+    asked: request.asked,
+    ids: (request.sight?.items ?? []).map((item) => item.id),
+    measured: measuredOf(request.sight),
+    mockup: request.mockup === true,
+    previous: request.previous === undefined || request.previous === null ? null : { picture: pictureOf(request.previous.picture), finding: request.previous.finding },
+  };
 }
 
 interface Waiting {

@@ -537,8 +537,8 @@ export interface CriticFinding {
   readonly readable: boolean;
   /** what was drawn is what was asked for */
   readonly asked: boolean;
-  /** what is wrong, worst first, each in one sentence a builder could act on; `id` when it is about one thing on stage */
-  readonly problems: readonly { readonly id: string | null; readonly what: string; readonly weight: 'blocks' | 'hurts' | 'polish' }[];
+  /** what is wrong, worst first (raised ones before held-back ones), each in one sentence a builder could act on; `id` when it is about one thing on stage */
+  readonly problems: readonly CriticProblem[];
   /** what would most improve the picture, at most three, each one thing to add or change; empty: nothing worth a pass */
   readonly suggestions: readonly string[];
   readonly rubric: string;
@@ -555,6 +555,48 @@ export interface CriticFinding {
     readonly costUsd: number | null;
     readonly ms: number;
   };
+  /** critic v2: every gate the judge was asked, each pass or fail with the evidence for it. Absent on findings logged before the gates. */
+  readonly gates?: readonly CriticGate[];
+  /** critic v2: the lowest tier with a failing gate (1 on stage and readable, 2 answers the ask, 3 polish and taste); null when every gate of every tier passed */
+  readonly failedTier?: CriticTier | null;
+  /** critic v2: the answer is a mock-up, so the worst-case gate was asked */
+  readonly mockup?: boolean;
+  /** critic v2: the coherence the judge gave, when the gates moved it (a tier that fails caps it; a failure of polish alone does not take it under 3) */
+  readonly judgedCoherence?: number;
+  /** critic v2: for an in-place follow-up on the answer the critic had already judged: how this picture stands against that verdict */
+  readonly previous?: { readonly turn: string; readonly coherence: number; readonly failedTier: CriticTier | null; readonly failed: readonly string[] } | null;
+  readonly progress?: { readonly trend: 'better' | 'worse' | 'same' | 'mixed'; readonly fixed: readonly string[]; readonly stillFailing: readonly string[]; readonly newFailures: readonly string[]; readonly note: string } | null;
+  /** critic v2: gates that failed here and in earlier turns of the session, counted by the server, never by the judge */
+  readonly repeats?: readonly { readonly gate: string; readonly count: number; readonly turns: readonly string[] }[];
+}
+
+export type CriticTier = 1 | 2 | 3;
+/** who owns the fix: the brain's content, the painter's layout, the kit (shapes, structures, type), the app host (web app, page, device) or the prompt */
+export type CriticOwner = 'brain' | 'painter' | 'kit' | 'host' | 'prompt';
+
+export interface CriticGate {
+  /** a fixed id, never reworded: on-stage, readable, no-overlap (tier 1); answers-ask, hierarchy, composition (tier 2); polish, taste (tier 3); worst-case (a mock-up's note, never an alarm) */
+  readonly gate: string;
+  readonly tier: CriticTier;
+  readonly pass: boolean;
+  /** what and where in the picture (an element id when the stage report gives one) */
+  readonly evidence: string;
+}
+
+export interface CriticProblem {
+  readonly id: string | null;
+  readonly what: string;
+  readonly weight: 'blocks' | 'hurts' | 'polish';
+  /** critic v2: the gate it fails */
+  readonly gate?: string;
+  readonly tier?: CriticTier;
+  /** critic v2: what and where in the picture */
+  readonly evidence?: string;
+  readonly owner?: CriticOwner;
+  /** critic v2: false when a lower tier fails (or it is a worst-case note): logged, never an alarm; its weight is then `polish` */
+  readonly raised?: boolean;
+  /** critic v2: the weight the judge gave it before the gates held it back or lifted it */
+  readonly judgedWeight?: 'blocks' | 'hurts' | 'polish';
 }
 
 /**
