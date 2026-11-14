@@ -8,19 +8,24 @@
 //   critic    the critic's look at a resting picture
 //   compare   the critic's blind comparison of a draft and a fix
 //   lessons   `pnpm lessons`: the critic's findings turned into proposals
+//   ahead     v3: a part of a document written in the background, before the person reaches it (WS5)
+//   verify    v3: the second, cheap check of what was written ahead, before it is offered (WS5)
 //
 // One line each in `<DATA_DIR>/usage.jsonl`. The tools that make a call outside the server (`lessons`) write to the same file, so the
 // hour's total is the machine's, not one process's.
 //
 // THE THROTTLE (`USAGE_HOURLY_CAP`, cost-equivalent dollars in any rolling hour; unset: off). It is about who backs off first:
 //   - under 80% of the cap: nothing changes;
+//   - 60% or more (`AHEAD_NEAR_CAP`): fill ahead stands down first: no part is started in the background; what the person reaches is
+//     still written, on her turn, as it always was;
 //   - 80% or more (`near`) and 100% or more (`over`): the critic and the lessons tool stand down: no looks, no comparisons, no lessons;
+//   - 100% or more (`over`): the verifier's model check stands down too (nothing is offered unchecked: it waits);
 //   - the owner's own turns are never refused, at any level. They are warned: the answer to a turn says how near the cap is.
 
 import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readSync, statSync } from 'node:fs';
 import { dirname } from 'node:path';
 
-export type UsageKind = 'turn' | 'review' | 'critic' | 'compare' | 'lessons';
+export type UsageKind = 'turn' | 'review' | 'critic' | 'compare' | 'lessons' | 'ahead' | 'verify';
 
 export interface UsageRecord {
   readonly time: string;
@@ -43,6 +48,14 @@ export type ThrottleState = 'off' | 'ok' | 'near' | 'over';
 
 /** The fraction of the cap at which the critic and the lessons tool back off. */
 export const NEAR_CAP = 0.8;
+
+/** The fraction of the cap at which fill ahead backs off: before the critic, because nobody is waiting for it yet. */
+export const AHEAD_NEAR_CAP = 0.6;
+
+/** Whether the hour's spending leaves room for work nobody is waiting for. False from `AHEAD_NEAR_CAP` of the cap; always true with no cap. */
+export function roomAhead(throttle: Throttle, now: number): boolean {
+  return throttle.capUsd === null || throttle.spentLastHour(now) < throttle.capUsd * AHEAD_NEAR_CAP;
+}
 
 export interface Throttle {
   readonly capUsd: number | null;

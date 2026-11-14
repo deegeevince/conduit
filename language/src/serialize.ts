@@ -1,4 +1,4 @@
-import { encodeValue, showTokens } from './lesson';
+import { cropTokens, encodeValue, showTokens } from './lesson';
 import { CODE_LANGUAGES } from './vocabulary';
 import type { BindOn, CanvasBox, ColourRef, FillRef, Line, LookProps, Point, ShapeGeometry, SpriteKey, StyleProps, Target, When } from './types';
 
@@ -315,7 +315,7 @@ export function serializeLine(line: Line): string {
     case 'cancel':
       return line.id === undefined ? 'cancel' : `cancel ${line.id}`;
     case 'part':
-      return withText(['part', line.id, ...(line.in === undefined ? [] : [`in=${line.in}`]), ...(line.tag === undefined ? [] : [`tag=${line.tag}`])], line.title);
+      return withText(['part', line.id, ...(line.in === undefined ? [] : [`in=${line.in}`]), ...(line.tag === undefined ? [] : [`tag=${line.tag}`]), ...(line.crop === undefined ? [] : cropTokens(line.crop))], line.title);
     case 'step':
       return withText(['step', line.id, ...(line.in === undefined ? [] : [`in=${line.in}`]), ...(line.show === undefined ? [] : showTokens(line.show))], line.text === '' ? undefined : line.text);
     case 'ask':

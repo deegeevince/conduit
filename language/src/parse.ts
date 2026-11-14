@@ -1,6 +1,6 @@
 import { STANDING_LIMITS } from './context';
 import { parsePathData } from './geometry';
-import { isLessonId, isLessonVerb, isSpan, readShow, splitValues, technique } from './lesson';
+import { isLessonId, isLessonVerb, isSpan, readCrop, readShow, splitValues, technique } from './lesson';
 import type { LessonLine } from './lesson';
 import { BUILTIN_STYLE_NAMES, own } from './style';
 import { splitCells } from './text';
@@ -1507,11 +1507,18 @@ function parsePart(head: Head, text: string | null, issues: Issues): LessonLine 
   warnUnknownWords(head.words.slice(1), issues);
   let parent: string | undefined;
   let tag: ReturnType<typeof technique> = null;
+  let cropped: string | null = null;
+  let photo: string | undefined;
   const rest: Pair[] = [];
   for (const pair of head.pairs) {
     if (pair.key === 'in') {
       if (isLessonId(pair.value)) parent = pair.value;
       else issues.warn('bad-id', `"${pair.value}" is not a part id; in= ignored`, pair.token);
+    } else if (pair.key === 'crop') {
+      cropped = pair.value;
+    } else if (pair.key === 'from') {
+      if (isLessonId(pair.value)) photo = pair.value;
+      else issues.warn('bad-id', `"${pair.value}" is not a photo id; from= ignored`, pair.token);
     } else if (pair.key === 'tag') {
       tag = technique(pair.value);
       if (tag === null) issues.warn('bad-value', `"${pair.value}" is not a technique; tag ignored`, pair.token);
@@ -1522,7 +1529,12 @@ function parsePart(head: Head, text: string | null, issues: Issues): LessonLine 
     issues.error('missing-text', 'part needs its title after " | ": part q1 | 64 - 30 =');
     return null;
   }
-  return { verb: 'part', id, ...(parent === undefined ? {} : { in: parent }), ...(tag === null ? {} : { tag }), title: text };
+  let crop: ReturnType<typeof readCrop> = null;
+  if (cropped !== null) {
+    crop = readCrop(cropped, photo);
+    if (crop === null) issues.warn('bad-value', `crop= is x,y,w,h in whole percents of the photo, inside it (crop=10,20,80,6); "${cropped}" ignored`, `crop=${cropped}`);
+  } else if (photo !== undefined) issues.warn('bad-value', 'from= names the photo a crop= is of; without crop= it is ignored', `from=${photo}`);
+  return { verb: 'part', id, ...(parent === undefined ? {} : { in: parent }), ...(tag === null ? {} : { tag }), ...(crop === null ? {} : { crop }), title: text };
 }
 
 /** v3. `step [id] [in=<part>] [show=<visual> [a..b] [key=value…]] | <words>`: one reveal. */

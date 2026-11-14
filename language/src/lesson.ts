@@ -21,7 +21,33 @@ export interface PartLine {
   readonly id: string;
   readonly in?: string;
   readonly tag?: TechniqueId;
+  /** the question's box on the photo it was read from; the lesson page crops it */
+  readonly crop?: Crop;
   readonly title: string;
+}
+
+/** Where a question sits on a photo: whole percents of the photo's width and height, from its top left. `from` names the photo (`u1`); absent, the conversation's first. */
+export interface Crop {
+  readonly x: number;
+  readonly y: number;
+  readonly w: number;
+  readonly h: number;
+  readonly from?: string;
+}
+
+/** `crop=` as written: `x,y,w,h` in whole percents, inside the photo and with some area; null when it is not that. */
+export function readCrop(value: string, from?: string): Crop | null {
+  const parts = value.split(',').map((part) => Number(part.trim()));
+  if (parts.length !== 4 || parts.some((part) => !Number.isFinite(part))) return null;
+  const [x, y, w, h] = parts as [number, number, number, number];
+  if (x < 0 || y < 0 || w <= 0 || h <= 0 || x + w > 100.5 || y + h > 100.5) return null;
+  const round = (n: number): number => Math.round(n * 10) / 10;
+  return { x: round(x), y: round(y), w: round(Math.min(w, 100 - x)), h: round(Math.min(h, 100 - y)), ...(from === undefined ? {} : { from }) };
+}
+
+/** A crop as the line writes it: `crop=10,20,80,6` (and `from=u1`). */
+export function cropTokens(crop: Crop): string[] {
+  return [`crop=${crop.x},${crop.y},${crop.w},${crop.h}`, ...(crop.from === undefined ? [] : [`from=${crop.from}`])];
 }
 
 /** One picture for a step: which widget, its span if it takes one, and its parameters, each as the canonical text of its value. */
@@ -366,6 +392,7 @@ function numberWords(tokens: readonly string[]): { value: number; used: number }
   let total = 0;
   let any = false;
   let current = 0;
+  let last: 'small' | 'tens' | 'hundred' | 'thousand' | 'and' | null = null;
   const at = (offset: number): string => tokens[index + offset] ?? '';
   const take = (): boolean => {
     const word = at(0);
@@ -376,7 +403,11 @@ function numberWords(tokens: readonly string[]): { value: number; used: number }
       return true;
     }
     const small = Object.hasOwn(SMALL_WORDS, word) ? SMALL_WORDS[word] : undefined;
+    // `one ten` is two numbers (a child counting, "one ten at a time"), not eleven: a number word may only follow a tens word (`forty two`) or a hundred
+    if (small !== undefined && any && (current % 100 === 0 ? false : !(last === 'tens' && small >= 1 && small <= 9)) && last !== 'and' && last !== 'hundred') return false;
+    if (Object.hasOwn(TENS_WORDS, word) && any && last !== 'and' && last !== 'hundred' && last !== 'thousand' && current % 100 !== 0) return false;
     if (small !== undefined) {
+      last = 'small';
       current += small;
       index += 1;
       any = true;
@@ -384,23 +415,27 @@ function numberWords(tokens: readonly string[]): { value: number; used: number }
     }
     const tens = Object.hasOwn(TENS_WORDS, word) ? TENS_WORDS[word] : undefined;
     if (tens !== undefined) {
+      last = 'tens';
       current += tens;
       index += 1;
       any = true;
       return true;
     }
     if (word === 'hundred' && any) {
+      last = 'hundred';
       current = (current === 0 ? 1 : current) * 100;
       index += 1;
       return true;
     }
     if (word === 'thousand' && any) {
+      last = 'thousand';
       total += (current === 0 ? 1 : current) * 1000;
       current = 0;
       index += 1;
       return true;
     }
     if (word === 'and' && any && (Object.hasOwn(SMALL_WORDS, at(1)) || Object.hasOwn(TENS_WORDS, at(1)))) {
+      last = 'and';
       index += 1;
       return true;
     }
@@ -554,7 +589,12 @@ export function matchAnswer(accepted: string, given: string, unit: string | null
       if (asked !== null && asked.dim === g.dim) return sameNumber(g.base / asked.factor, a.written);
       return asked === null && sameNumber(a.written, g.written);
     }
-    if (g.dim === 'none') return sameNumber(g.written, a.written) || sameNumber(g.written, a.base);
+    if (g.dim === 'none') {
+      // a bare number is in the ask's own unit when it has one: `1` is a centimetre, not the `1m` an ask for centimetres also accepts
+      const asked = unit === null ? null : unitOf(unit.toLowerCase());
+      if (asked !== null && asked.dim === a.dim) return sameNumber(g.written * asked.factor, a.base);
+      return sameNumber(g.written, a.written) || sameNumber(g.written, a.base);
+    }
     return false;
   }
   if (a !== null || g !== null) return false;
@@ -753,6 +793,7 @@ interface PartRecord {
   readonly parent: string | null;
   title: string;
   tag: TechniqueId | null;
+  crop: Crop | null;
   readonly children: string[];
   steps: LessonStep[];
 }
@@ -773,6 +814,7 @@ export interface BookPart {
   readonly parent: string | null;
   readonly title: string;
   readonly tag: TechniqueId | null;
+  readonly crop: Crop | null;
   readonly children: readonly string[];
   readonly steps: readonly LessonStep[];
 }
@@ -909,11 +951,12 @@ export class LessonBook {
       if (line.in !== undefined && line.in !== known.parent) issues.push(issue('bad-value', 'warn', `part ${line.id} already sits in ${known.parent ?? 'the document'}; it stays there`, line.in));
       known.title = line.title;
       if (line.tag !== undefined) known.tag = line.tag;
+      if (line.crop !== undefined) known.crop = line.crop;
     } else {
       if (this.records.size >= LESSON_LIMITS.parts) return this.refuse('element-limit', `at most ${LESSON_LIMITS.parts} parts in one document`);
       const depth = parent === null ? 1 : this.path(parent).length + 1;
       if (depth > LESSON_LIMITS.depth) return this.refuse('structure-limit', `parts sit at most ${LESSON_LIMITS.depth} deep; ${line.id} would be ${depth}`);
-      this.records.set(line.id, { id: line.id, parent, title: line.title, tag: line.tag ?? null, children: [], steps: [] });
+      this.records.set(line.id, { id: line.id, parent, title: line.title, tag: line.tag ?? null, crop: line.crop ?? null, children: [], steps: [] });
       this.order.push(line.id);
       if (parent !== null) this.records.get(parent)?.children.push(line.id);
     }
@@ -921,7 +964,8 @@ export class LessonBook {
     this.open = [...(at === null ? [] : this.path(at)), line.id];
     const record = this.records.get(line.id);
     const tag = record?.tag ?? null;
-    return { line: { verb: 'part', id: line.id, ...(at === null ? {} : { in: at }), ...(tag === null ? {} : { tag }), title: line.title }, issues };
+    const crop = record?.crop ?? null;
+    return { line: { verb: 'part', id: line.id, ...(at === null ? {} : { in: at }), ...(tag === null ? {} : { tag }), ...(crop === null ? {} : { crop }), title: line.title }, issues };
   }
 
   /** The part a step or an ask goes in: the one it names, else the one last written. */

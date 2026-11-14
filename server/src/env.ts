@@ -9,6 +9,8 @@ import { CHROME_GIST, NO_AGENT } from './domain/agent';
 import type { AgentSettings } from './domain/agent';
 import { CRITIC_POLICY } from './domain/critic';
 import type { CriticPolicy } from './domain/critic';
+import { AHEAD_POLICY } from './domain/ahead';
+import type { AheadPolicy } from './domain/ahead';
 import type { DatasetSettings } from './domain/datasets';
 import type { LibrarySettings } from './domain/techniques';
 import type { PictureSettings } from './domain/pictures';
@@ -94,6 +96,8 @@ export interface Env {
   readonly webDist: string | null;
   /** v2.1. The live critic (`CRITIC`, `CRITIC_MODEL`, `CRITIC_EFFORT`, `CRITIC_PER_HOUR`): on by default with the claude-cli brain, off with the others */
   readonly critic: CriticPolicy;
+  /** v3 (WS5). Fill ahead and verify (`AHEAD`, `AHEAD_PARALLEL`, `AHEAD_VERIFY_MODEL`, `AHEAD_VERIFY_EFFORT`, `AHEAD_BATCH`, `AHEAD_LIMIT`): on by default with the claude-cli brain, off with the others */
+  readonly ahead: AheadPolicy;
   /** v2.1. What agent mode may use (`AGENT`, `AGENT_TOOLS`, `AGENT_SERVICES`, `AGENT_DIR`, `AGENT_ANSWER_MS`): off, with nothing offered, unless the owner says */
   readonly agent: AgentSettings;
   /** v2.1. The kinds of mind a session may choose (`/brain`): `plain` always; `agent` when `AGENT=on`; `steward` when `STEWARD=on` */
@@ -318,6 +322,18 @@ export function loadEnv(source: Source): Env {
     lookMs: integer('CRITIC_LOOK_MS', CRITIC_POLICY.lookMs, 5_000, 300_000),
     queueBelow: CRITIC_POLICY.queueBelow,
   };
+  // v3, WS5. A part written ahead takes a process of its own beside the conversation's, so at most one fewer than the warm pool holds are written at once.
+  const warmRoom = brain.kind === 'claude-cli' ? Math.max(1, brain.maxWarm - 1) : 1;
+  const ahead: AheadPolicy = {
+    enabled: choice('AHEAD', ['on', 'off'] as const, withModel ? 'on' : 'off') === 'on' && withModel,
+    parallel: Math.min(integer('AHEAD_PARALLEL', AHEAD_POLICY.parallel, 1, 6), warmRoom),
+    verifyModel: text('AHEAD_VERIFY_MODEL') ?? AHEAD_POLICY.verifyModel,
+    verifyEffort: choice('AHEAD_VERIFY_EFFORT', ['low', 'medium', 'high'] as const, AHEAD_POLICY.verifyEffort),
+    batch: integer('AHEAD_BATCH', AHEAD_POLICY.batch, 1, 8),
+    fillsPerPart: AHEAD_POLICY.fillsPerPart,
+    limit: integer('AHEAD_LIMIT', AHEAD_POLICY.limit, 1, 500),
+    verifyTimeoutMs: AHEAD_POLICY.verifyTimeoutMs,
+  };
   // package G. Nothing is offered that is not named here; a service is `name=path/to/mcp.json`, and its file must be outside the repository.
   // On by default for the CLI brain: the brain is always the agent. Reads are free and everything else asks, so `on` costs a prompt nothing.
   const agentOn = choice('AGENT', ['on', 'off'] as const, 'on') === 'on' && withModel;
@@ -380,5 +396,5 @@ export function loadEnv(source: Source): Env {
   }
 
   if (problems.length > 0) throw new EnvError(problems);
-  return { production, host, trustedHosts, ownerLogins, usageCapUsd: usageCapUsd !== null && Number.isFinite(usageCapUsd) && usageCapUsd > 0 ? usageCapUsd : null, port, logLevel, brain, images, pictures, sight, promptVariant: parsePromptVariant(text('PROMPT_VARIANT')), review, library, datasets, logDir, data, readLinks: choice('READ_LINKS', ['on', 'off'] as const, 'on') === 'on', paintingsPerSession: 0, exploreDir, webDist, critic, agent, modes, refine, uploads, statusFile, changelogFile, sealedDir };
+  return { production, host, trustedHosts, ownerLogins, usageCapUsd: usageCapUsd !== null && Number.isFinite(usageCapUsd) && usageCapUsd > 0 ? usageCapUsd : null, port, logLevel, brain, images, pictures, sight, promptVariant: parsePromptVariant(text('PROMPT_VARIANT')), review, library, datasets, logDir, data, readLinks: choice('READ_LINKS', ['on', 'off'] as const, 'on') === 'on', paintingsPerSession: 0, exploreDir, webDist, critic, ahead, agent, modes, refine, uploads, statusFile, changelogFile, sealedDir };
 }

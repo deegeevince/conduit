@@ -78,7 +78,7 @@ export function createDocuments(deps: DocumentsDeps): Documents {
       if (entry.type === 'session' && doc.created === null) doc.created = entry.started;
       const out = doc.fold.apply(entry);
       tell(doc);
-      return { document: doc.id, ...doc.fold.heading(), nodes: out.nodes, state: out.state, applied: out.applied };
+      return { document: doc.id, ...doc.fold.heading(), nodes: out.nodes, state: out.state, applied: out.applied, issues: out.issues };
     },
 
     viewOfSession: (session) => {

@@ -1,4 +1,4 @@
-import { API, CANVAS, DATA_LIMITS, EMPTY_STAGE, PASTE_AS_DOCUMENT_CHARS, FULL_CAPABILITIES, LANGUAGE, LEAD_WINDOW, LineNormalizer, LineReader, TurnScore, buildSystemPrompt, draftFactsOf, serializeLine, settle, splitCells, wearingAt, worthALook } from '@conduit/language';
+import { API, CANVAS, DATA_LIMITS, EMPTY_STAGE, isLessonVerb, PASTE_AS_DOCUMENT_CHARS, FULL_CAPABILITIES, LANGUAGE, LEAD_WINDOW, LineNormalizer, LineReader, TurnScore, buildSystemPrompt, draftFactsOf, serializeLine, settle, splitCells, wearingAt, worthALook } from '@conduit/language';
 import type { ActivityState, BrainChange, BrainChoice, BrainMode, CriticFinding, DocumentSummary, DocumentView, FixPolicy, NodeId, NodeStatus, OpenDocumentResponse, PromptVariant, Seen, ToolChoice } from '@conduit/language';
 import type {
   BackEvent,
@@ -35,7 +35,11 @@ import type { ImageModel } from './images';
 import { creditLine } from './pictures';
 import type { PictureService } from './pictures';
 import type { HeldDocument } from './documents';
-import { NO_DOCUMENTS } from './document';
+import { NO_DOCUMENTS, seedBook } from './document';
+import { NO_AHEAD, createAhead, fillPrompt, refusalBrief } from './ahead';
+import type { Ahead, AheadHost, AheadPolicy, AheadStatus, FillJob, FillOutcome } from './ahead';
+import type { LessonCheckResult } from '../judge/lesson';
+import { NO_THROTTLE } from '../usage';
 import type { DocChange, Documents, LoadedDocument } from './document';
 import { buildContext, holdStanding, parseStanding, rememberTurn } from './memory';
 import type { StandingAsk } from './memory';
@@ -102,6 +106,11 @@ export interface ConductorDeps {
   readonly usage?: UsageMeter;
   /** v3. The document each conversation makes: a fold over its session log (PLAN-v3-core 2.11). Absent: no conversation has one. */
   readonly documents?: Documents;
+  /**
+   * v3 (WS5). Fill ahead and verify: the parts of a document that are named and not written are written in the background, and each is
+   * checked before it is offered. Absent: nothing is written ahead. `check` is the second, cheap model check (`judge/lesson.ts`).
+   */
+  readonly ahead?: { readonly policy: AheadPolicy; readonly check: (session: string, pages: readonly { readonly id: string; readonly text: string }[], signal: AbortSignal) => Promise<LessonCheckResult> };
   /** milliseconds; injected so nothing in the domain reads the wall clock directly */
   readonly now: () => number;
 }
@@ -115,6 +124,18 @@ const REAP_INTERVAL_MS = 60_000;
 
 /** Stage events that describe a moment and are not part of the turn's score: a reconnecting painter is not given the ones it heard. */
 const TRANSIENT: ReadonlySet<StageEvent['type']> = new Set(['pass', 'data', 'candidate', 'permission', 'activity', 'critic']);
+
+/**
+ * A line of the lesson the reader would not take, with why, for the brain to write again; null when the refusal is no lesson line's (a
+ * stage line that did not parse is the look's business) or only a warning.
+ */
+function refusalOf(raw: string, issues: readonly Issue[]): { readonly raw: string; readonly why: string } | null {
+  const verb = raw.trim().split(/\s+/)[0] ?? '';
+  if (!isLessonVerb(verb) || verb === 'reply' || verb === 'end') return null;
+  const errors = issues.filter((issue) => issue.severity === 'error');
+  if (errors.length === 0) return null;
+  return { raw: raw.replace(/\s+/g, ' ').trim().slice(0, 160), why: errors.map((issue) => issue.message).join('; ') };
+}
 
 /** The longest a turn waits on the owner's datasets before it goes on without them: it is a network call on the turn's path. */
 const DATASET_WAIT_MS = 5_000;
@@ -130,6 +151,12 @@ export class Conductor {
   private readonly reaper: NodeJS.Timeout;
   /** the file each draft's picture was saved under, for the `fix` record; forgotten with the turn's session */
   private readonly draftFiles = new Map<string, string>();
+  /** v3 (WS5). Fill ahead and verify; `NO_AHEAD` when off */
+  private readonly ahead: Ahead;
+  /** v3 (WS5). The quiet processes in use, by the id the brain knows them as (`<session>~ahead0`), and the ones already set to the conversation's model */
+  private readonly quietBusy = new Set<string>();
+  private readonly quietSet = new Set<string>();
+  private quietCount = 0;
 
   constructor(deps: ConductorDeps) {
     this.deps = deps;
@@ -138,6 +165,7 @@ export class Conductor {
       for (const session of deps.sessions.reap(deps.now())) this.release(session, 'session.reaped');
     }, REAP_INTERVAL_MS);
     this.reaper.unref();
+    this.ahead = deps.ahead === undefined || !deps.ahead.policy.enabled ? NO_AHEAD : createAhead(this.aheadHost(deps.ahead.check), deps.ahead.policy);
   }
 
   private get audit(): Audit {
@@ -162,6 +190,8 @@ export class Conductor {
       const turn = turnId === null ? null : (s.turns.get(turnId) ?? null);
       this.emit(s, turn, { type: 'doc', turn: turnId, document: change.document, title: change.title, root: change.root, nodes: change.nodes });
     }
+    // Something that decides what is waiting moved: a turn ended, a session began (or opened a document again), the person went somewhere.
+    if (entry.type === 'end' || entry.type === 'session' || (entry.type === 'state' && change?.applied === true)) this.ahead.wake(s.id);
     return change;
   }
 
@@ -342,6 +372,8 @@ export class Conductor {
       missed: [],
       snapshotFile: null,
       criticAsked: false,
+      refused: [],
+      amended: false,
       calls: new Map(),
     };
     s.nextOrdinal += 1;
@@ -625,6 +657,7 @@ export class Conductor {
     for (const s of sessions) {
       permissions += s.permissions.size;
       try {
+        this.ahead.release(s.id);
         this.denyPending(s, null, 'kill');
         const turn = s.turn;
         if (turn !== null && turn.endReason === null) {
@@ -648,6 +681,7 @@ export class Conductor {
   /** Aborts every open turn and drops every session. */
   async close(): Promise<void> {
     clearInterval(this.reaper);
+    this.ahead.close();
     for (const session of this.deps.sessions.clear()) this.release(session, 'session.closed');
   }
 
@@ -666,6 +700,11 @@ export class Conductor {
     this.denyPending(session, null);
     this.deps.brains.configured.release?.(session.id);
     this.deps.assets.drop(session.id);
+    this.ahead.release(session.id);
+    for (const slot of [...this.quietSet].filter((id) => id.startsWith(`${session.id}~ahead`))) {
+      this.deps.brains.configured.release?.(slot);
+      this.quietSet.delete(slot);
+    }
     this.docs.release(session.id);
     this.deps.sessionLog.close(session.id);
     session.closeSink?.();
@@ -1061,6 +1100,8 @@ export class Conductor {
         s.nextAutoId += 1;
         return `x${s.nextAutoId}`;
       }, Object.keys(s.stage.styles));
+      // v3. A turn of a conversation that has a document reads its lines against it: `part q3a in=q3` finds q3, and an ask is read against what is on the page.
+      if (documentNow !== null) seedBook(normalizer.lessons, documentNow.document);
       let stopped = false;
       for await (const event of brain.respond(request, turn.abort.signal)) {
         if (this.ingest(s, turn, event, normalizer, 1) === 'stop') {
@@ -1068,6 +1109,7 @@ export class Conductor {
           break;
         }
       }
+      if (!stopped) await this.amendTurn(s, turn, brain, normalizer);
       if (!stopped && turn.endReason === null && !turn.abort.signal.aborted) await this.lookAndFix(s, turn, brain, request.input, normalizer);
       this.finish(s, turn, turn.abort.signal.aborted ? 'interrupted' : 'done', null);
     } catch (error) {
@@ -1380,6 +1422,8 @@ export class Conductor {
 
   private reject(s: Session, turn: ActiveTurn, raw: string, issues: readonly Issue[]): void {
     turn.rejects += 1;
+    const refusal = refusalOf(raw, issues);
+    if (refusal !== null && turn.refused.length < 8) turn.refused.push(refusal);
     this.noteProblem(turn, raw, 'rejected', issues);
     this.deps.sessionLog.write(s.id, { type: 'reject', turn: turn.id, raw, issues });
     this.emit(s, turn, { type: 'reject', turn: turn.id, raw, issues });
@@ -1390,6 +1434,181 @@ export class Conductor {
     const why = issues.map((issue) => issue.message).join('; ') || 'it was not understood';
     turn.problems.push({ raw: raw.replace(/\s+/g, ' ').trim().slice(0, 120), kind, why });
     if (turn.problems.length > MAX_PROBLEMS) turn.problems.splice(0, turn.problems.length - MAX_PROBLEMS);
+  }
+
+  /**
+   * v3 (WS5). The reader's refusals within a turn: lines of the lesson it would not take (an ask that gives its answer away, a part that sits
+   * in nothing) are said to the brain once, in the conversation that wrote them, and it writes them again before the turn ends. It is never
+   * asked twice, and a brain that cannot be asked leaves the refusals to be found by the verifier.
+   */
+  private async amendTurn(s: Session, turn: ActiveTurn, brain: Brain, normalizer: LineNormalizer): Promise<void> {
+    if (turn.refused.length === 0 || turn.amended || brain.amend === undefined || turn.abort.signal.aborted || turn.endReason !== null) return;
+    turn.amended = true;
+    const refused = turn.refused.splice(0);
+    this.deps.log.info('turn.amend', { session: s.id, turn: turn.id, refused: refused.length });
+    try {
+      for await (const event of brain.amend({ turn: turn.id, session: s.id, styles: Object.keys(turn.score.schedule.styles), text: refusalBrief(refused) }, turn.abort.signal)) {
+        if (this.ingest(s, turn, event, normalizer, 2) === 'stop') break;
+      }
+    } catch (error) {
+      // a refusal that cannot be put to the brain is not a failed turn: the verifier finds what is missing
+      this.deps.log.warn('turn.amend_failed', { session: s.id, turn: turn.id, error });
+    }
+  }
+
+  // ---------------------------------------------------------------- v3 (WS5): fill ahead
+
+  /** What fill ahead and verify need of the conductor. */
+  private aheadHost(check: NonNullable<ConductorDeps['ahead']>['check']): AheadHost {
+    const { sessions, log, now } = this.deps;
+    return {
+      now,
+      view: (session) => this.docs.viewOfSession(session),
+      userTurnOpen: (session) => {
+        const turn = sessions.get(session)?.turn;
+        return turn !== undefined && turn !== null && turn.endReason === null;
+      },
+      fill: (session, job, signal) => this.quietFill(session, job, signal),
+      setStatus: (session, node, status, options) => {
+        const s = sessions.get(session);
+        if (s === undefined) return false;
+        const change = this.journal(s, { type: 'node', turn: null, node, status, ...(options.reset === true ? { reset: true as const } : {}), why: options.why });
+        return change?.applied === true;
+      },
+      check: (session, pages, signal) => check(session, pages, signal),
+      throttle: this.deps.usage ?? NO_THROTTLE,
+      log: log.child({ part: 'ahead' }),
+    };
+  }
+
+  /** v3 (WS5). What is waiting, being written, being checked and done, for a session; null when nothing has been looked at. */
+  aheadStatus(session: string): AheadStatus | null {
+    return this.ahead.status(session);
+  }
+
+  /** v3 (WS5). Resolves when nothing is left to write or check for the session (for the tool that measures it). */
+  aheadSettled(session: string): Promise<AheadStatus | null> {
+    return this.ahead.settled(session);
+  }
+
+  /**
+   * v3 (WS5). One part written by a quiet turn of the brain, off the person's clock: its own process (`<session>~ahead<n>`, so it never
+   * borrows the conversation's), the same TEACH chapter (the brief is the ordinary one for a conversation with a document), its lines
+   * read against the document and journaled into it, none sent to the stage. The reader's refusals are put to it once, as in a turn of her
+   * own. It never throws: what went wrong is its outcome and the `end` record's reason.
+   */
+  private async quietFill(session: string, job: FillJob, signal: AbortSignal): Promise<FillOutcome> {
+    const { sessions, log, sessionLog, now } = this.deps;
+    const s = sessions.get(session);
+    const started = now();
+    const turn = `a${(this.quietCount += 1)}`;
+    const failed = (reason: string): FillOutcome => ({ ok: false, turn, lines: 0, refused: 0, costUsd: null, ms: now() - started, reason });
+    const view = this.docs.viewOfSession(session);
+    if (s === undefined || view === null) return failed('the conversation has no document');
+    const brain = this.deps.brains.configured;
+    let slot = '';
+    for (let n = 0; n < 8 && slot === ''; n += 1) if (!this.quietBusy.has(`${session}~ahead${n}`)) slot = `${session}~ahead${n}`;
+    if (slot === '') return failed('every quiet process is busy');
+    this.quietBusy.add(slot);
+    if (!this.quietSet.has(slot)) {
+      this.quietSet.add(slot);
+      const choice = brain.choice?.(session);
+      if (choice !== undefined && brain.choose !== undefined) {
+        try {
+          brain.choose(slot, { ...(choice.model === null ? {} : { model: choice.model as BrainChange['model'] }), ...(choice.effort === null ? {} : { effort: choice.effort }) });
+        } catch (error) {
+          log.warn('ahead.choose_failed', { session, error });
+        }
+      }
+    }
+    let lines = 0;
+    let cost: number | null = null;
+    let reason: 'done' | 'interrupted' | 'failed' | 'timeout' = 'done';
+    let message: string | null = null;
+    const refused: { raw: string; why: string }[] = [];
+    let amended = false;
+    try {
+      const input: TurnInput = { kind: 'prompt', text: fillPrompt(job) };
+      this.journal(s, { type: 'turn', turn, input, brain: brain.id, login: 'ahead' });
+      const services = this.servicesFor(s.capabilities, s.id);
+      const context = {
+        screen: s.screen,
+        capabilities: s.capabilities,
+        services,
+        lead: LEAD_WINDOW,
+        stage: { ...EMPTY_STAGE, look: s.stage.look, lookName: s.stage.lookName },
+        history: [],
+        heard: [],
+        document: { document: view.document, state: view.state },
+      };
+      // a try that was refused is written from the page itself: the first photo this conversation was given
+      const photoId = job.photo ? (job.crop?.from ?? [...s.turns.values()].flatMap((turnOf) => (turnOf.input.kind === 'prompt' ? (turnOf.input.images ?? []) : []))[0] ?? null) : null;
+      const photo = photoId === null ? null : await (this.deps.uploads ?? NO_UPLOADS).load(s.id, photoId);
+      const asked: TurnInput = photo !== null && photoId !== null ? { kind: 'prompt', text: input.text, images: [photoId] } : input;
+      const normalizer = new LineNormalizer(() => {
+        s.nextAutoId += 1;
+        return `x${s.nextAutoId}`;
+      }, []);
+      seedBook(normalizer.lessons, view.document);
+      let seq = 0;
+      const handle = (event: BrainEvent, pass: number): void => {
+        if (event.type === 'brief') {
+          sessionLog.write(s.id, { type: 'brief', turn, form: event.form, text: event.text, system: event.system, withSnapshot: false, pass });
+        } else if (event.type === 'usage') {
+          cost = (cost ?? 0) + (event.usage.costUsd ?? 0);
+          this.deps.usage?.record({ kind: 'ahead', model: brain.choice?.(slot).model ?? null, session, turn, login: 'ahead', inputTokens: event.usage.inputTokens, cacheReadTokens: event.usage.cacheReadTokens, cacheWriteTokens: event.usage.cacheWriteTokens, outputTokens: event.usage.outputTokens, thinkingTokens: event.usage.thinkingTokens, costUsd: event.usage.costUsd, ms: event.usage.totalMs });
+          sessionLog.write(s.id, { type: 'usage', turn, usage: event.usage, pass });
+        } else if (event.type === 'permission') {
+          // nobody is there to be asked, and nothing a lesson needs wants anything but reading
+          brain.permit?.(slot, event.request, false);
+        } else if (event.type === 'reject') {
+          const refusal = refusalOf(event.raw, event.issues);
+          if (refusal !== null) refused.push(refusal);
+          sessionLog.write(s.id, { type: 'reject', turn, raw: event.raw, issues: event.issues });
+        } else if (event.type === 'line') {
+          const verb = event.line.verb as string;
+          if (!isLessonVerb(verb) || verb === 'reply' || verb === 'end') return;
+          const normalized = normalizer.normalize(event.line);
+          const raw = serializeLine(event.line);
+          if (normalized.line === null) {
+            const refusal = refusalOf(raw, [...event.issues, ...normalized.issues]);
+            if (refusal !== null) refused.push(refusal);
+            sessionLog.write(s.id, { type: 'reject', turn, raw, issues: [...event.issues, ...normalized.issues] });
+            return;
+          }
+          const text = serializeLine(normalized.line);
+          const node = this.docs.place(s.id, text);
+          const inside = node !== null && (node.startsWith(`${job.node}/`) || (node === job.node && verb !== 'part'));
+          if (!inside) {
+            sessionLog.write(s.id, { type: 'reject', turn, raw: text, issues: [{ code: 'bad-value', severity: 'error', message: `this write is for part ${job.short} only; a line for another part was left out` }] });
+            return;
+          }
+          seq += 1;
+          lines += 1;
+          this.journal(s, { type: 'line', turn, seq, text, start: 0, issues: [...event.issues, ...normalized.issues], pass, node });
+        }
+      };
+      for await (const event of brain.respond({ turn, session: slot, input: asked, context, snapshot: null, look: false, quiet: true, ...(photo === null ? {} : { images: [photo] }) }, signal)) handle(event, 1);
+      if (refused.length > 0 && brain.amend !== undefined && !signal.aborted) {
+        amended = true;
+        const mend = refused.splice(0);
+        log.info('ahead.amend', { session, node: job.node, refused: mend.length });
+        try {
+          for await (const event of brain.amend({ turn, session: slot, styles: [], text: refusalBrief(mend) }, signal)) handle(event, 2);
+        } catch (error) {
+          log.warn('ahead.amend_failed', { session, node: job.node, error });
+        }
+      }
+      if (signal.aborted) reason = 'interrupted';
+    } catch (error) {
+      reason = signal.aborted ? 'interrupted' : error instanceof AppError && error.code === 'brain_timeout' ? 'timeout' : 'failed';
+      message = error instanceof AppError ? error.message : 'the brain failed unexpectedly';
+      log.warn('ahead.brain_failed', { session, node: job.node, error });
+    } finally {
+      this.quietBusy.delete(slot);
+    }
+    if (sessions.get(session) !== undefined) this.journal(s, { type: 'end', turn, reason, message, lines });
+    return { ok: reason === 'done', turn, lines, refused: refused.length, costUsd: cost, ms: now() - started, reason: reason === 'done' ? (amended ? 'rewritten once after a refusal' : null) : (message ?? reason) };
   }
 
   /**
