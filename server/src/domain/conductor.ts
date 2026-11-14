@@ -763,6 +763,11 @@ export class Conductor {
       sessionLog.write(s.id, { type: 'brief', turn: turn.id, form: event.form, text: event.text, system: event.system, withSnapshot: event.withSnapshot, pass });
       return undefined;
     }
+    if (event.type === 'tool') {
+      sessionLog.write(s.id, { type: 'tool', turn: turn.id, tool: event.tool, target: event.target, pass });
+      log.info('brain.tool', { session: s.id, turn: turn.id, pass, tool: event.tool, target: event.target });
+      return undefined;
+    }
     if (event.type === 'usage') {
       sessionLog.write(s.id, { type: 'usage', turn: turn.id, usage: event.usage, pass });
       log.info('turn.usage', {

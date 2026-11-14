@@ -21,7 +21,7 @@
 import { errors } from '../../errors';
 import type { Snapshot } from '../../domain/brain';
 import type { Logger } from '../../log';
-import { spawnTracked } from './process';
+import { spawnTracked, toolArguments } from './process';
 import { parseStreamLine, resultFactsOf } from './stream-json';
 import type { ClaudeStreamEvent } from './stream-json';
 
@@ -38,6 +38,8 @@ export interface WarmSettings {
   /** passed to `--effort`; `low` is what keeps hidden planning off the stage's clock */
   readonly effort: 'low' | 'medium' | 'high';
   readonly systemPrompt: string;
+  /** read-only web tools allowed without a prompt; empty is none */
+  readonly tools: readonly string[];
 }
 
 /** Why a process stopped being usable. */
@@ -281,7 +283,7 @@ export function warmArguments(settings: WarmSettings): string[] {
     '--model', settings.model,
     '--effort', settings.effort,
     '--system-prompt', settings.systemPrompt,
-    '--tools', '',
+    ...toolArguments(settings.tools),
     '--strict-mcp-config',
     '--setting-sources', '',
     '--no-session-persistence',

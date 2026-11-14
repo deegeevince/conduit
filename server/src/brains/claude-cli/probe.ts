@@ -65,7 +65,7 @@ for (const sig of ['SIGINT', 'SIGTERM'] as const) {
 
 const histories = new Map<string, TurnMemory[]>();
 const session = { capabilities: FULL_CAPABILITIES, screen: REFERENCE_SCREEN, services: NO_SERVICES };
-const argv = warmArguments({ bin: settings.bin, model: settings.model, effort: settings.effort, systemPrompt: '<system prompt>' });
+const argv = warmArguments({ bin: settings.bin, model: settings.model, effort: settings.effort, tools: settings.tools, systemPrompt: '<system prompt>' });
 out(`${settings.bin} ${argv.map((a) => JSON.stringify(a)).join(' ')}   (warm ${settings.warm ? 'on' : 'off'})`);
 for (let s = 0; s < sessions; s += 1) brain.open?.({ session: `probe${s}`, ...session });
 
@@ -101,7 +101,8 @@ try {
           const read = u.cacheReadTokens ?? 0;
           const total = (u.inputTokens ?? 0) + read + (u.cacheWriteTokens ?? 0);
           out(`${stamp()}  USAGE ${JSON.stringify(u)}   cache read ${total === 0 ? 'n/a' : `${Math.round((100 * read) / total)}%`}`);
-        } else if (event.type === 'activity') out(`${stamp()}  TOOL ${event.tool} ${event.state}: ${event.summary}`);
+        } else if (event.type === 'tool') out(`${stamp()}  TOOL ${event.tool} ${event.target ?? ''}`);
+        else if (event.type === 'activity') out(`${stamp()}  TOOL ${event.tool} ${event.state}: ${event.summary}`);
         else if (event.type === 'permission') out(`${stamp()}  ASKS ${event.tool} (${event.risk}): ${event.summary}`);
         else out(`${stamp()}  BRIEF ${event.form}, ${event.text.length} characters${event.system === null ? '' : `, with system prompt ${event.system.length}`}${event.withSnapshot ? ', with snapshot' : ''}`);
       }

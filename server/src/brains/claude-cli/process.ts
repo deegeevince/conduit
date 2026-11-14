@@ -8,7 +8,17 @@ import { tmpdir } from 'node:os';
 import { childEnvironment } from '../../env';
 import { errors } from '../../errors';
 
+/** The tool flags: exactly the listed read-only web tools, allowed without a prompt, and every other tool denied. */
+export function toolArguments(tools: readonly string[]): string[] {
+  if (tools.length === 0) return ['--tools', ''];
+  return ['--tools', tools.join(','), '--allowedTools', ...tools, '--disallowedTools', ...DENIED_TOOLS];
+}
+
+const DENIED_TOOLS = ['Bash', 'Edit', 'Write', 'Read', 'Glob', 'Grep', 'NotebookEdit', 'Task', 'Agent', 'PowerShell'];
+
 export interface ClaudeRun {
+  /** the read-only web tools to allow; none when empty or unset */
+  readonly tools?: readonly string[];
   readonly bin: string;
   readonly model: string;
   readonly systemPrompt: string;
@@ -170,7 +180,7 @@ export async function* runClaude(run: ClaudeRun, signal: AbortSignal): AsyncGene
 }
 
 /** The exact argument list, exported so the probe can print it. */
-export function claudeArguments(run: Pick<ClaudeRun, 'model' | 'systemPrompt' | 'effort'>): string[] {
+export function claudeArguments(run: Pick<ClaudeRun, 'model' | 'systemPrompt' | 'effort' | 'tools'>): string[] {
   return [
     '-p',
     '--output-format', 'stream-json',
@@ -179,7 +189,7 @@ export function claudeArguments(run: Pick<ClaudeRun, 'model' | 'systemPrompt' | 
     '--model', run.model,
     ...(run.effort === undefined ? [] : ['--effort', run.effort]),
     '--system-prompt', run.systemPrompt,
-    '--tools', '',
+    ...toolArguments(run.tools ?? []),
     '--strict-mcp-config',
     '--setting-sources', '',
     '--no-session-persistence',

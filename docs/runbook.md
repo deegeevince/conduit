@@ -74,7 +74,8 @@ Only the selected brain's settings are read.
 | `CLAUDE_WARM_IDLE_MS` | no | `600000` | a process nobody has asked anything for this long is stopped |
 | `CLAUDE_RECYCLE_TOKENS` | no | `150000` | a conversation whose input has grown past this gets a fresh process (and a full brief, which attaches its documents again). A 15-page PDF is about 47,000 tokens, so the default leaves room for a paper or two beside the talk. |
 | `READ_LINKS` | no | `on` | `off` stops the server fetching the links in a prompt; the brain is told it could not read them. Any brain. |
-| `CLAUDE_FIRST_TOKEN_TIMEOUT_MS` | no | `60000` | give up if the model has written nothing by then |
+| `BRAIN_TOOLS` | no | `WebSearch,WebFetch` | the only tools the brain may hold, read-only web; anything else refuses to boot; empty is none |
+| `CLAUDE_FIRST_TOKEN_TIMEOUT_MS` | no | `120000` (`60000` with no tools) | give up if the model has written nothing by then |
 | `CLAUDE_IDLE_TIMEOUT_MS` | no | `30000` | give up if the model goes quiet for this long mid-answer |
 | `RELAY_IDLE_TIMEOUT_MS` | no | `180000` | a claimed turn that receives no lines for this long fails |
 | `REPLAY_SCRIPT` | no | none | with `BRAIN=replay`, the script every prompt plays. Unset: a prompt that is a demo's name plays that demo, anything else plays `overture`. |

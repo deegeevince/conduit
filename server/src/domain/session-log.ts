@@ -20,6 +20,8 @@ export type SessionRecord =
   | { readonly type: 'line'; readonly at: number; readonly turn: string; readonly seq: number; readonly text: string; readonly start: number; readonly issues: readonly Issue[]; readonly pass?: number }
   | { readonly type: 'reject'; readonly at: number; readonly turn: string; readonly raw: string; readonly issues: readonly Issue[] }
   | { readonly type: 'end'; readonly at: number; readonly turn: string; readonly reason: TurnEndReason; readonly message: string | null; readonly lines: number }
+  /** the brain searched the web or read a page: tool name and query or URL only */
+  | { readonly type: 'tool'; readonly at: number; readonly turn: string; readonly tool: string; readonly target: string | null; readonly pass?: number }
   | { readonly type: 'usage'; readonly at: number; readonly turn: string; readonly usage: BrainUsage; readonly pass?: number }
   /** the painter's first line of this turn began to play: the user saw something */
   | { readonly type: 'started'; readonly at: number; readonly turn: string }
@@ -48,8 +50,8 @@ export type SessionRecord =
   | { readonly type: 'fix'; readonly at: number; readonly turn: string; readonly pass: number; readonly form: ReviewForm; readonly lines: readonly string[]; readonly shown: boolean; readonly why: string | null; readonly draft: ContentCount | null; readonly candidate: ContentCount | null; readonly file: string | null }
   /** v2.1. What the critic made of a turn's resting picture, seconds after the turn ended; `queued` when it was passed to the loop as evidence */
   | { readonly type: 'critic'; readonly at: number; readonly turn: string; readonly finding: CriticFinding; readonly queued: boolean }
-  /** v2.1, a brain with tools. One tool call: what it was in a few safe words (`redactSecrets`), never its input or its result */
-  | { readonly type: 'tool'; readonly at: number; readonly turn: string; readonly id: string; readonly tool: string; readonly summary: string; readonly state: ActivityState; readonly ms: number | null }
+  /** v2.1, a brain with tools. One tool call, at its start and again at its end: what it was in a few safe words (`redactSecrets`), never its input or its result. Takes the place of `tool`, which older logs still hold. */
+  | { readonly type: 'activity'; readonly at: number; readonly turn: string; readonly id: string; readonly tool: string; readonly summary: string; readonly state: ActivityState; readonly ms: number | null }
   /** v2.1. The owner was asked for a yes, and what they said; `allow` null: no answer in time, which is a no */
   | { readonly type: 'permission'; readonly at: number; readonly turn: string; readonly request: string; readonly tool: string; readonly summary: string; readonly risk: ActionRisk; readonly allow: boolean | null; readonly ms: number }
   /** v2.1. A picture the user gave: its id, kind and size, and the file it was saved as beside the log. Never the bytes. */

@@ -739,6 +739,8 @@ export interface AboutYou {
   readonly sees: boolean;
   /** will be shown its draft and may fix it */
   readonly look: boolean;
+  /** holds web search and fetch this turn */
+  readonly web: boolean;
 }
 
 /** A short, true note of the brain's own setup. Per turn, never in the system prompt, so the prompt stays fixed and the cache survives. */
@@ -747,7 +749,9 @@ export function aboutYouText(about: AboutYou): string {
     `ABOUT YOU: model ${about.model}, effort ${about.effort}, on the owner's Claude subscription via the Claude Code CLI; no API key.`,
     `Snapshot of your last drawing this turn: ${about.sees ? 'yes' : 'no'}. Look-and-fix: ${about.look ? 'on' : 'off'}.`,
     'The user can type /model, /effort, /help; a model or effort change starts you fresh.',
-    'No tools here: you cannot act on their accounts or files; say so plainly, then offer what you can do.',
+    about.web
+      ? 'You can search the web and read pages (WebSearch, WebFetch), read-only. Use search for anything current: prices, news, today, recent facts; never guess a live figure. Search before your first line or between lines, then say the answer and briefly cite the sources you used on stage (site name or short URL). You cannot act on their accounts or files, or run commands; say so plainly, then offer what you can do.'
+      : 'No tools here: you cannot act on their accounts or files; say so plainly, then offer what you can do.',
   ].join(' ');
 }
 
