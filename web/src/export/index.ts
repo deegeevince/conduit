@@ -14,6 +14,14 @@ import type { VideoSink } from './video';
 export interface ExporterDeps {
   /** makes a renderer the exporter can mount off screen; the same factory the stage uses */
   readonly createRenderer: () => Renderer;
+  /**
+   * The charting engine's picture of a chart as `frame` has it (`frame.charts`, by the chart's key), for a picture, a
+   * film or a vector drawing of a stage that has charts. A chart is drawn by an engine into a surface over the stage,
+   * so without this an export would have a hole where the chart is. It is asked once per frame that has charts, and
+   * must give the chart as that frame shows it, not as the stage shows it now. Absent: charts are left out, and the
+   * room they had is the look's ground.
+   */
+  readonly chartStill?: (frame: Frame, key: string) => HTMLCanvasElement | null;
 }
 
 type Outcome = { readonly blob: Blob; readonly fileName: string };
@@ -116,7 +124,7 @@ export function createExporter(deps: ExporterDeps): Exporter {
       const probe = deps.createRenderer();
       const fonts = probe.fontFile;
       probe.dispose();
-      const svg = await wait(frameToSvg(frame, { width: request.width, height: request.height }, fonts));
+      const svg = await wait(frameToSvg(frame, { width: request.width, height: request.height }, fonts, deps.chartStill === undefined ? undefined : (key) => deps.chartStill?.(frame, key) ?? null));
       guard();
       report({ done: 1, frame: 1, frames: 1 });
       return { blob: new Blob([svg], { type: 'image/svg+xml' }), fileName: 'conduit-still.svg' };
@@ -148,7 +156,7 @@ export function createExporter(deps: ExporterDeps): Exporter {
       const picture = async (frame: Frame): Promise<Blob> => {
         for (let attempt = 0; attempt < 3; attempt += 1) {
           let incomplete = false;
-          const blob = await wait(renderer.rasterise(frame, { maxSide, mime: 'image/png', onIncomplete: () => (incomplete = true) }));
+          const blob = await wait(renderer.rasterise(frame, { maxSide, mime: 'image/png', onIncomplete: () => (incomplete = true), ...(deps.chartStill === undefined ? {} : { chartStill: (key: string) => deps.chartStill?.(frame, key) ?? null }) }));
           guard();
           if (blob === null) throw new Error('This renderer could not capture the picture.');
           if (!incomplete) return blob;
@@ -195,6 +203,30 @@ export function createExporter(deps: ExporterDeps): Exporter {
       sink = await wait(createVideoSink(request.format, width, height, fps));
       guard();
       const draw = (frame: Frame): Frame => ({ ...frame, viewport });
+      // The charts lie over the canvas, not in it: a frame that has any is put together on a canvas of its own, in the same task as the encode.
+      let overlay: HTMLCanvasElement | null = null;
+      const withCharts = (frame: Frame, canvas: CanvasImageSource, w: number, h: number): CanvasImageSource => {
+        const charts = frame.charts;
+        if (charts === undefined || charts.length === 0 || deps.chartStill === undefined) return canvas;
+        overlay ??= document.createElement('canvas');
+        if (overlay.width !== w || overlay.height !== h) {
+          overlay.width = w;
+          overlay.height = h;
+        }
+        const context = overlay.getContext('2d');
+        if (context === null) return canvas;
+        context.globalAlpha = 1;
+        context.drawImage(canvas, 0, 0, w, h);
+        const scale = Math.min(w / frame.viewport.width, h / frame.viewport.height);
+        for (const chart of [...charts].sort((a, b) => a.z - b.z)) {
+          const still = chart.opacity <= 0.002 ? null : deps.chartStill(frame, chart.key);
+          if (still === null) continue;
+          context.globalAlpha = Math.max(0, Math.min(1, chart.opacity));
+          context.drawImage(still, chart.box.x * scale, chart.box.y * scale, chart.box.width * scale, chart.box.height * scale);
+        }
+        context.globalAlpha = 1;
+        return overlay;
+      };
       for (let index = 0; index < frames; index += 1) {
         guard();
         const frame = draw(film.frameAt(timeOf(index)));
@@ -206,7 +238,7 @@ export function createExporter(deps: ExporterDeps): Exporter {
           renderer.render(frame);
         }
         if (!renderer.isDrawable()) incompleteFrames += 1;
-        await wait(sink.add(canvas, index / fps));
+        await wait(sink.add(withCharts(frame, canvas, width, height), index / fps));
         tick(index + 1);
         if (performance.now() - lastYield > 12) {
           await nextTurn();

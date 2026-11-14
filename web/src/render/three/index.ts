@@ -1,4 +1,4 @@
-import { AMBIENT_KINDS, FX_NAMES, LOOK_IDS } from '@conduit/language';
+import { AMBIENT_KINDS, FX_NAMES, LOOK_IDS, PROCEDURAL_MEDIA, STROKES, TEXTURES } from '@conduit/language';
 import type { Face, LookId } from '@conduit/language';
 import { Color, ColorManagement, LinearSRGBColorSpace, NoToneMapping, Vector3, WebGLRenderTarget, WebGLRenderer } from 'three';
 import type { Frame, PictureFrame, Quality, ShapeFrame, SpriteFrame } from '../../contracts/frame';
@@ -11,6 +11,8 @@ import { fontFile } from '../fonts';
 import { rasteriseFrame } from './capture';
 import { createFieldPool } from './fields';
 import { createFxPipeline } from './fx';
+import { createSketchPass } from './media';
+import type { SketchPass } from './media';
 import { createMarkPool } from './marks';
 import { createPicturePool } from './pictures';
 import { createPostPipeline } from './post';
@@ -74,6 +76,9 @@ interface Kit {
   shapes: ReturnType<typeof createShapePool>;
   sprites: ReturnType<typeof createSpritePool>;
   pictures: ReturnType<typeof createPicturePool>;
+  /** the sketches of the pictures that are painted by the renderer itself */
+  sketches: SketchPass;
+  context: WebGLRenderer;
   fields: ReturnType<typeof createFieldPool>;
   viewport: Viewport;
 }
@@ -104,7 +109,8 @@ function drawKit(kit: Kit, frame: Frame, quality: Quality): void {
   }
   kit.shapes.sync(groups, shapes, frame.spec, frame.viewport, style);
   kit.sprites.sync(groups, sprites, style);
-  kit.pictures.sync(groups, pictures, frame.ambient, frame.spec, style);
+  const sketches = pictures.length === 0 ? undefined : kit.sketches.update(kit.context, pictures, shapes, frame.spec, frame.viewport);
+  kit.pictures.sync(groups, pictures, frame.ambient, frame.spec, style, sketches);
   kit.fields.sync(groups, frame.fields, frame.viewport, quality, frame.reducedMotion, frame.camera, style);
   kit.pipeline.render(kit.stage, frame);
 }
@@ -160,6 +166,8 @@ export function createProbedRenderer(): ThreeRenderer {
       shapes: createShapePool(),
       sprites: createSpritePool(),
       pictures: createPicturePool(),
+      sketches: createSketchPass(),
+      context,
       fields: createFieldPool(),
       viewport: size,
     };
@@ -171,6 +179,7 @@ export function createProbedRenderer(): ThreeRenderer {
     each.shapes.dispose();
     each.sprites.dispose();
     each.pictures.dispose();
+    each.sketches.dispose();
     each.fields.dispose();
     each.pipeline.dispose();
     each.fx.dispose();
@@ -384,7 +393,7 @@ export function createProbedRenderer(): ThreeRenderer {
     id: 'three',
     fontFile,
     // `kinds` is what this renderer draws from a Frame. Structures and controls reach it as shapes and text, so they are not its to advertise.
-    capabilities: { depth: true, post: true, looks: ALL_LOOKS, kinds: ['text', 'shape', 'sprite', 'group', 'copy', 'picture', 'field'], fx: FX_NAMES, ambient: AMBIENT_KINDS, capture: true, media: [], textures: ['flat'], brushes: [] },
+    capabilities: { depth: true, post: true, looks: ALL_LOOKS, kinds: ['text', 'shape', 'sprite', 'group', 'copy', 'picture', 'field'], fx: FX_NAMES, ambient: AMBIENT_KINDS, capture: true, media: PROCEDURAL_MEDIA, textures: TEXTURES, brushes: STROKES },
 
     async mount(target, initial, look, options) {
       if (!canUseThree()) throw new Error('WebGL2 is not available');
@@ -713,12 +722,15 @@ function warmFrame(look: LookId, viewport: Viewport): Frame {
         outline: [{ points: square, closed: true }],
         geometryKey: 'warm',
         transform: identity,
-        fill: { colour: spec.roles.accent, to: spec.roles.alt, opacity: 0.8 },
+        fill: { colour: spec.roles.accent, to: spec.roles.alt, opacity: 0.8, texture: 'wash' },
         stroke: { colour: spec.roles.ink, width: 1, progress: 0.6, character: spec.stroke.character },
         opacity: 1,
         bleed: false,
         tappable: false,
+        soft: 1,
       },
+      // The rest of what a shape can be, so that every branch of the shape shaders is compiled before it is needed.
+      { kind: 'shape', key: 'warm-sketch', id: 'warm-sketch', layer: 'bg', z: 0, outline: [{ points: square, closed: true }], geometryKey: 'warm-sketch', transform: identity, fill: { colour: spec.roles.accent, to: null, opacity: 1, texture: 'hatch' }, stroke: { colour: spec.roles.ink, width: 1, progress: 1, character: 'ink' }, opacity: 1, bleed: false, tappable: false },
       {
         kind: 'sprite',
         key: 'warm-sprite',
@@ -749,6 +761,23 @@ function warmFrame(look: LookId, viewport: Viewport): Frame {
         opacity: 1,
         waiting: true,
         tappable: false,
+      },
+      {
+        kind: 'picture',
+        key: 'warm-painting',
+        id: 'warm-painting',
+        layer: 'bg',
+        z: 0,
+        box: { x: -20, y: -20, width: 40, height: 40 },
+        transform: identity,
+        src: null,
+        develop: 0.5,
+        mask: 'none',
+        opacity: 1,
+        waiting: false,
+        tappable: false,
+        medium: 'watercolor',
+        sketch: ['warm-sketch'],
       },
     ],
     fields: [{ kind: 'field', key: 'warm-field', layer: 'mid', field: 'rain', density: 0.2, colour: spec.roles.dim, opacity: 1, seed: 1, time: 1, flow: { x: -viewport.width / 2, y: -viewport.height / 2, width: viewport.width, height: viewport.height } }],

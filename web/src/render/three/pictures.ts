@@ -5,7 +5,9 @@ import type { Layer } from '@conduit/language';
 import { BufferAttribute, BufferGeometry, Color, DoubleSide, LinearFilter, LinearMipmapLinearFilter, Matrix4, Mesh, ShaderMaterial, Texture, Vector2, Vector4 } from 'three';
 import type { Affine, PictureFrame } from '../../contracts/frame';
 import type { LookSpec } from '../../contracts/look';
-import { HASH, NOISE } from './glsl';
+
+import { MEDIUM_CODE, MEDIUM_GLSL } from './medium-glsl';
+import type { Sketch } from './media';
 import { renderOrderOf } from './stage';
 import { inkColour } from './style';
 import type { SurfaceStyle } from './style';
@@ -23,7 +25,7 @@ export interface PicturePool {
    *
    * `now` is the ambient clock, which paces the breathing and ages the textures; `look` and `style` say which colour is dim and how ink is stored.
    */
-  sync(groups: Readonly<Record<Layer, Group>>, pictures: readonly PictureFrame[], now?: number, look?: LookSpec, style?: SurfaceStyle): void;
+  sync(groups: Readonly<Record<Layer, Group>>, pictures: readonly PictureFrame[], now?: number, look?: LookSpec, style?: SurfaceStyle, sketches?: ReadonlyMap<string, Sketch>): void;
   dispose(): void;
 }
 
@@ -53,8 +55,7 @@ uniform vec3 uDim;
 uniform vec3 uGround;
 uniform float uMultiply;
 varying vec2 vBox;
-${HASH}
-${NOISE}
+${MEDIUM_GLSL}
 
 void main() {
   vec2 local = vBox - uCentre;
@@ -84,16 +85,26 @@ void main() {
 
   float alpha = 0.0;
   vec3 colour = uDim;
+  float medium = 1.0;
   if (uHasPicture > 0.5 && uDevelop > 0.0) {
     // A wash: it appears first where the noise is lowest and spreads, with a soft wet edge. At 1 it is exactly the picture.
     float field = fbm(vBox * 0.012 + uSeed * 7.0) * 0.85 + 0.15 * vnoise(vBox * 0.05);
     float width = 0.22;
     float grown = smoothstep(field, field + width, uDevelop * (1.0 + width));
-    vec3 art = texture2D(tPicture, clamp(uv, 0.0, 1.0)).rgb;
+    vec3 art;
+    if (uMedium > 0.5) {
+      // The sketch, painted: the box's own coordinates, top left to bottom right, into the surface the sketch was drawn on.
+      vec2 boxUv = vec2((vBox.x - (uCentre.x - uHalf.x)) / (uHalf.x * 2.0), 1.0 - (vBox.y - (uCentre.y - uHalf.y)) / (uHalf.y * 2.0));
+      vec4 painted = conduitMedium(vBox, boxUv);
+      art = painted.rgb;
+      medium = painted.a;
+    } else {
+      art = texture2D(tPicture, clamp(uv, 0.0, 1.0)).rgb;
+    }
     float rim = grown * (1.0 - smoothstep(0.0, 0.5, grown)) * 2.0;
     art *= 1.0 - 0.07 * rim * (1.0 - step(0.999, uDevelop));
     colour = art;
-    alpha = grown * shape;
+    alpha = grown * shape * medium;
   } else if (uBreath > 0.0) {
     // Only the edge of the box, breathing, while a painting is on its way.
     float band = 1.0 - smoothstep(0.0, 0.025, edge);
@@ -178,6 +189,11 @@ export function createPicturePool(): PicturePool {
         uDim: { value: new Color() },
         uGround: { value: new Color() },
         uMultiply: { value: 0 },
+        tSketch: { value: null },
+        uTexel: { value: new Vector2(1, 1) },
+        uBoxSize: { value: new Vector2(1, 1) },
+        uInk: { value: new Color() },
+        uMedium: { value: 0 },
       },
       vertexShader: VERTEX,
       fragmentShader: FRAGMENT,
@@ -213,7 +229,7 @@ export function createPicturePool(): PicturePool {
       return pending;
     },
 
-    sync(groups, pictures, now, look, style) {
+    sync(groups, pictures, now, look, style, sketches) {
       if (style === undefined || look === undefined) return;
       if (now !== undefined) clock = now;
       for (const entry of entries.values()) entry.seen = false;
@@ -237,6 +253,7 @@ export function createPicturePool(): PicturePool {
           entry.geometry.setIndex(new BufferAttribute(new Uint16Array([0, 1, 2, 0, 2, 3]), 1));
           entry.box = boxKey;
         }
+        const sketch = sketches?.get(picture.key);
         const have = picture.src === null ? undefined : held.get(picture.src);
         if (have !== undefined) {
           have.lastNamed = clock;
@@ -268,7 +285,15 @@ export function createPicturePool(): PicturePool {
         (u['uHalf']?.value as Vector2).set(box.width / 2, box.height / 2);
         (u['uCentre']?.value as Vector2).set(box.x + box.width / 2, box.y + box.height / 2);
         set('uDevelop', picture.develop);
-        set('uHasPicture', have === undefined ? 0 : 1);
+        set('uHasPicture', have === undefined && sketch === undefined ? 0 : 1);
+        set('uMedium', sketch === undefined || picture.medium === undefined ? 0 : (MEDIUM_CODE as Record<string, number>)[picture.medium] ?? 0);
+        const sketchSlot = u['tSketch'];
+        if (sketchSlot !== undefined) sketchSlot.value = sketch?.texture ?? null;
+        if (sketch !== undefined) {
+          (u['uTexel']?.value as Vector2).set(1 / sketch.width, 1 / sketch.height);
+          (u['uBoxSize']?.value as Vector2).set(box.width, box.height);
+        }
+        (u['uInk']?.value as Color).set(look.roles.ink);
         set('uMask', MASKS[picture.mask]);
         set('uOpacity', picture.opacity);
         set('uSeed', seedOf(picture.key));

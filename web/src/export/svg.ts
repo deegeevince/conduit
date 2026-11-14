@@ -303,7 +303,7 @@ async function pictureSvg(picture: PictureFrame, frame: Frame, defs: string[]): 
  * `<desc>`): an SVG is the drawing, not the screen it was shown on. `size` is the file's own size
  * (its `viewBox`); the drawing is fitted into it, centred, keeping its aspect.
  */
-export async function frameToSvg(frame: Frame, size?: SvgSize, resolve?: FontResolver): Promise<string> {
+export async function frameToSvg(frame: Frame, size?: SvgSize, resolve?: FontResolver, chartStill?: (key: string) => HTMLCanvasElement | null): Promise<string> {
   const width = size?.width ?? frame.viewport.width;
   const height = size?.height ?? frame.viewport.height;
   const fit = Math.min(width / frame.viewport.width, height / frame.viewport.height);
@@ -320,15 +320,35 @@ export async function frameToSvg(frame: Frame, size?: SvgSize, resolve?: FontRes
     pieces.push({ layer: LAYER_ORDER[element.layer], z: element.z, order: order++, svg: textSvg(element, frame, fonts, resolve) });
   }
   const figures: readonly FigureFrame[] = frame.figures;
+  // A painting the renderer makes itself is a shader's work and has no vector form: its sketch is drawn as it is, whole, and the file says so.
+  const sketched = new Map<string, number>();
+  const media = new Set<string>();
   for (const figure of figures) {
-    if (figure.opacity <= 0.001) continue;
+    if (figure.kind !== 'picture' || figure.medium === undefined || figure.src !== null || figure.opacity * figure.develop <= 0.001) continue;
+    media.add(figure.medium);
+    for (const key of figure.sketch ?? []) sketched.set(key, figure.opacity);
+  }
+  for (const figure of figures) {
+    const whole = figure.kind === 'shape' ? sketched.get(figure.key) : undefined;
+    if (figure.opacity <= 0.001 && whole === undefined) continue;
     let svg = '';
-    if (figure.kind === 'shape') svg = shapeSvg(figure, frame, defs);
+    if (figure.kind === 'shape') svg = shapeSvg(whole === undefined ? figure : { ...figure, opacity: Math.max(figure.opacity, whole), stroke: figure.stroke === null ? null : { ...figure.stroke, progress: Math.max(figure.stroke.progress, 1) } }, frame, defs);
     else if (figure.kind === 'sprite') svg = spriteSvg(figure, frame);
     else svg = await pictureSvg(figure, frame, defs);
     if (svg !== '') pieces.push({ layer: LAYER_ORDER[figure.layer], z: figure.z, order: order++, svg });
   }
   pieces.sort((p, q) => p.layer - q.layer || p.z - q.z || p.order - q.order);
+
+  // Charts lie over the stage: each is its engine's own still, as a picture, at the box it has on the screen.
+  const charts: string[] = [];
+  if (chartStill !== undefined) {
+    for (const chart of [...(frame.charts ?? [])].sort((a, b) => a.z - b.z)) {
+      if (chart.opacity <= 0.001) continue;
+      const still = chartStill(chart.key);
+      if (still === null) continue;
+      charts.push(`<image id="${escapeXml(chart.id)}" href="${still.toDataURL('image/png')}" x="${n(chart.box.x)}" y="${n(chart.box.y)}" width="${n(chart.box.width)}" height="${n(chart.box.height)}" preserveAspectRatio="none"${chart.opacity < 0.999 ? ` opacity="${n(chart.opacity)}"` : ''}/>`);
+    }
+  }
 
   const faces: string[] = [];
   for (const font of fonts.values()) {
@@ -341,7 +361,10 @@ export async function frameToSvg(frame: Frame, size?: SvgSize, resolve?: FontRes
   const title = escapeXml(frame.spec.name);
   // Weather is the screen's, not the drawing's: say so in the file rather than leave it out without a word.
   const weather = [...new Set(frame.fields.filter((field) => field.opacity > 0.001).map((field) => field.field))];
-  const note = weather.length === 0 ? '' : `<desc>Not drawn in this file: ${escapeXml(weather.join(', '))} (weather belongs to the moving picture).</desc>`;
+  const left: string[] = [];
+  if (weather.length > 0) left.push(`${escapeXml(weather.join(', '))} (weather belongs to the moving picture)`);
+  if (media.size > 0) left.push(`the ${escapeXml([...media].join(', '))} treatment of the painting (a shader's work: its sketch is drawn instead)`);
+  const note = left.length === 0 ? '' : `<desc>Not drawn in this file: ${left.join('; ')}.</desc>`;
   return [
     `<?xml version="1.0" encoding="UTF-8"?>`,
     `<svg xmlns="http://www.w3.org/2000/svg" width="${n(width)}" height="${n(height)}" viewBox="0 0 ${n(width)} ${n(height)}">`,
@@ -351,7 +374,9 @@ export async function frameToSvg(frame: Frame, size?: SvgSize, resolve?: FontRes
     `<rect width="${n(width)}" height="${n(height)}" fill="${frame.ground}"/>`,
     `<g transform="translate(${n(offsetX)} ${n(offsetY)}) scale(${n(fit)})"><svg width="${n(frame.viewport.width)}" height="${n(frame.viewport.height)}" viewBox="0 0 ${n(frame.viewport.width)} ${n(frame.viewport.height)}" overflow="hidden"><g${rolled}>`,
     ...pieces.map((piece) => piece.svg),
-    `</g></svg></g>`,
+    `</g>`,
+    ...charts,
+    `</svg></g>`,
     `</svg>`,
   ].join('\n');
 }

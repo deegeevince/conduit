@@ -1,16 +1,18 @@
 // Drawn shapes on the stage graph. The only file that tessellates.
 
 import type { Group } from 'three';
-import type { Layer } from '@conduit/language';
-import { BufferAttribute, BufferGeometry, Color, DoubleSide, Matrix4, Mesh, ShaderMaterial, Sphere, Vector2, Vector3 } from 'three';
+import type { Layer, StrokeCharacter, Texture as FillTexture } from '@conduit/language';
+import { BufferAttribute, BufferGeometry, Color, DoubleSide, Matrix4, Mesh, ShaderMaterial, Sphere, Vector2, Vector3, Vector4 } from 'three';
 import type { Affine, ShapeFrame, StrokeFrame } from '../../contracts/frame';
 import type { LookSpec } from '../../contracts/look';
 import { planeBounds } from '../../contracts/space';
 import type { Viewport } from '../../contracts/space';
 import { HASH, NOISE, PIXEL_SCALE } from './glsl';
 import { buildFill, buildStroke } from './shape-geometry';
+import { buildDistanceField } from './sdf';
+import type { DistanceField } from './sdf';
 import { renderOrderOf } from './stage';
-import { VIEW_PX, inkColour } from './style';
+import { VIEW_PX, hash01, inkColour } from './style';
 import type { SurfaceStyle } from './style';
 
 export interface ShapePool {
@@ -39,8 +41,11 @@ export interface ShapePool {
   dispose(): void;
 }
 
-// `ink` and `dry` are drawn as marker and chalk until the brush shaders exist (PLAN-v2.md, package R); the renderer does not advertise them until then.
-const CHARACTER = { clean: 0, pencil: 1, marker: 2, chalk: 3, pixel: 4, ink: 2, dry: 3 } as const;
+/** The shader's number for each character. `pixel` is 4, `ink` 5, `dry` 6; the tests in the shaders are bands around these. */
+const CHARACTER: Readonly<Record<StrokeCharacter, number>> = { clean: 0, pencil: 1, marker: 2, chalk: 3, pixel: 4, ink: 5, dry: 6 };
+
+/** The shader's number for each fill texture. */
+const TEXTURE: Readonly<Record<FillTexture, number>> = { flat: 0, wash: 1, hatch: 2, dots: 3, grain: 4, weave: 5 };
 
 const STROKE_VERTEX = /* glsl */ `
 attribute vec2 aOff;
@@ -51,6 +56,7 @@ uniform float uHalf;
 uniform float uThin;
 uniform float uCharacter;
 uniform float uLength;
+uniform float uSoft;
 ${PIXEL_SCALE}
 ${HASH}
 varying float vEdge;
@@ -60,6 +66,7 @@ varying float vTurn;
 varying float vPpu;
 varying vec2 vShape;
 varying float vLengthPx;
+varying float vSoftPx;
 
 void main() {
   vec4 viewPosition = modelViewMatrix * vec4(position.xy, 0.0, 1.0);
@@ -71,10 +78,14 @@ void main() {
     half_ *= 1.0 + 0.3 * mix(wander, hash11(floor(aDist * uLength * 0.35) + 4.0) - 0.5, fract(aDist * uLength * 0.35));
   }
   if (uCharacter > 2.5 && uCharacter < 3.5) half_ *= 1.0 + 0.25 * aTurn;
+  // Ink is heavier on the inside of a turn; the fragment shader trims it back to the swell and taper.
+  if (uCharacter > 4.5 && uCharacter < 5.5) half_ *= 1.0 + 0.22 * aTurn;
   // A stroke is never thinner than 1.25 device pixels.
   float reach = max(half_, 0.625 / max(ppu, 1e-4));
   // A pixel stroke is cut by its own test, so its geometry reaches a pixel further out than the line does: multisampling then sees whole pixels or none.
-  float spread = uCharacter > 3.5 ? reach + 1.0 / max(ppu, 1e-4) : reach;
+  float spread = (uCharacter > 3.5 && uCharacter < 4.5) ? reach + 1.0 / max(ppu, 1e-4) : reach;
+  // A soft stroke fades out over its own length either side: the ribbon is as much wider as the fade is.
+  spread += uSoft;
   vec2 local = position.xy + aOff * spread;
   gl_Position = projectionMatrix * modelViewMatrix * vec4(local, 0.0, 1.0);
   vEdge = aEdge * spread / reach;
@@ -84,6 +95,7 @@ void main() {
   vPpu = ppu;
   vShape = position.xy;
   vLengthPx = uLength * ppu;
+  vSoftPx = uSoft * ppu;
 }
 `;
 
@@ -94,6 +106,7 @@ uniform float uOpacity;
 uniform float uProgress;
 uniform float uCharacter;
 uniform float uHard;
+uniform float uSeed;
 varying float vEdge;
 varying float vDist;
 varying float vHalfPx;
@@ -101,16 +114,36 @@ varying float vTurn;
 varying float vPpu;
 varying vec2 vShape;
 varying float vLengthPx;
+varying float vSoftPx;
 ${HASH}
 ${NOISE}
 
 void main() {
   if (uProgress <= 0.0) discard;
-  float distance_ = (1.0 - abs(vEdge)) * vHalfPx;
+  float across = abs(vEdge) * vHalfPx;
+  float distance_ = vHalfPx - across;
   vec2 grainAt = vShape * vPpu / 1.3;
+  float isPixel = (uCharacter > 3.5 && uCharacter < 4.5) ? 1.0 : 0.0;
+  float isInk = (uCharacter > 4.5 && uCharacter < 5.5) ? 1.0 : 0.0;
+  float isDry = uCharacter > 5.5 ? 1.0 : 0.0;
+  float along = vDist * vLengthPx;
+
+  if (isInk > 0.5) {
+    // A brush pen: it starts thin, swells to its thickness and tapers; the width is a profile along the line, trimmed here.
+    float swell = clamp(vLengthPx * 0.22, 2.0, 14.0 * vHalfPx);
+    float rise = smoothstep(0.0, swell, along);
+    float fall = smoothstep(0.0, swell * 1.6, vLengthPx - along);
+    float profile = (0.16 + 0.84 * rise) * (0.12 + 0.88 * fall) * (0.94 + 0.12 * vnoise(vec2(along / 26.0, uSeed * 40.0)));
+    float wide = max(vHalfPx * profile, 0.625);
+    distance_ = wide - across;
+  }
+
   float coverage;
-  if (uHard > 0.5 || uCharacter > 3.5) {
+  if (uHard > 0.5 || isPixel > 0.5) {
     coverage = distance_ > 0.0 ? 1.0 : 0.0;
+  } else if (vSoftPx > 0.0) {
+    // soft=: the line fades out over its own length either side of where it would have ended.
+    coverage = smoothstep(-vSoftPx, 0.5 * vSoftPx, distance_);
   } else {
     float ragged = uCharacter > 2.5 && uCharacter < 3.5 ? (hash21(floor(grainAt) + 5.0) - 0.5) * 0.9 : 0.0;
     coverage = clamp(distance_ + 0.5 + ragged, 0.0, 1.0);
@@ -126,6 +159,23 @@ void main() {
     float bank = vnoise(vShape * vPpu / 8.0);
     float skip = smoothstep(0.30 - 0.18 * vTurn, 0.47 - 0.18 * vTurn, bank);
     alpha *= skip * (0.5 + 0.5 * hash21(floor(grainAt) + 11.0));
+  } else if (isInk > 0.5) {
+    alpha *= 0.94;
+  } else if (isDry > 0.5) {
+    // A dry brush: the bristles are parallel streaks across the stroke, and each runs out at a point of its own; the longer the stroke, the sooner.
+    float gate = clamp(vLengthPx / 160.0, 0.0, 1.0);
+    float streaks = clamp(floor(vHalfPx * 1.6) + 4.0, 5.0, 11.0);
+    float u = vEdge * 0.5 + 0.5;
+    float k = floor(u * streaks);
+    float inside = fract(u * streaks);
+    float born = hash11(k + uSeed * 91.0);
+    float runs = 1.0 - gate * (0.1 + 0.5 * born);
+    float jag = (vnoise(vec2(along / 9.0, k * 3.7)) - 0.5) * 0.22;
+    float alive = 1.0 - smoothstep(runs - 0.05, runs + 0.05, vDist + jag);
+    float gap = gate * (0.02 + 0.1 * smoothstep(0.1, 1.0, vDist)) + 0.02;
+    float bar = smoothstep(gap, gap + 0.06, inside) * smoothstep(gap, gap + 0.06, 1.0 - inside);
+    float tooth = 0.72 + 0.28 * hash21(floor(grainAt) + 17.0);
+    alpha *= alive * bar * tooth;
   }
   if (alpha <= 0.002) discard;
   gl_FragColor = vec4(uColour, alpha);
@@ -133,9 +183,14 @@ void main() {
 `;
 
 const FILL_VERTEX = /* glsl */ `
+${PIXEL_SCALE}
 varying float vY;
+varying vec2 vLocal;
+varying float vPpu;
 void main() {
   vY = position.y;
+  vLocal = position.xy;
+  vPpu = conduitPixelsPerUnit(modelViewMatrix * vec4(position.xy, 0.0, 1.0));
   gl_Position = projectionMatrix * modelViewMatrix * vec4(position.xy, 0.0, 1.0);
 }
 `;
@@ -146,10 +201,88 @@ uniform vec3 uFrom;
 uniform vec3 uTo;
 uniform vec2 uSpan;
 uniform float uOpacity;
+uniform float uTexture;
+uniform float uPitch;
+uniform float uSeed;
+uniform float uSoft;
+uniform float uWash;
+uniform sampler2D tField;
+uniform vec4 uFieldBox;
+uniform float uFieldRange;
+uniform float uHasField;
 varying float vY;
+varying vec2 vLocal;
+varying float vPpu;
+${HASH}
+${NOISE}
+
 void main() {
   float t = uSpan.y > 1e-6 ? clamp((vY - uSpan.x) / uSpan.y, 0.0, 1.0) : 0.0;
-  gl_FragColor = vec4(mix(uFrom, uTo, t), uOpacity);
+  vec3 colour = mix(uFrom, uTo, t);
+  float alpha = uOpacity;
+
+  // Distance to the outline, negative inside, in the shape's units.
+  float d = 1e6;
+  if (uHasField > 0.5) {
+    vec2 uv = (vLocal - uFieldBox.xy) / uFieldBox.zw;
+    d = (texture2D(tField, uv).r - 0.5) * 2.0 * uFieldRange;
+  }
+  if (uSoft > 0.0 && uHasField > 0.5) alpha *= 1.0 - smoothstep(-0.5 * uSoft, uSoft, d);
+
+  // Never denser than a pen line a few pixels apart, whatever the camera does.
+  float pitch = max(uPitch, 3.0 / max(vPpu, 1e-3));
+  int kind = int(uTexture + 0.5);
+  if (kind == 1) {
+    // wash: pooled, darker at the edges, with the pigment settling unevenly into the paper
+    float depth = uHasField > 0.5 ? clamp(-d / max(uWash, 1e-3), 0.0, 1.0) : 1.0;
+    float rim = 1.0 - smoothstep(0.0, 1.0, depth);
+    float pool = fbm(vLocal / max(uWash * 1.6, 1e-3) + uSeed * 9.0);
+    float settle = hash21(floor(vLocal / max(0.55, 1.2 / vPpu)) + uSeed * 5.0);
+    colour *= 1.0 - 0.3 * rim - 0.1 * (pool - 0.5);
+    alpha *= clamp(0.7 + 0.3 * rim + 0.28 * (pool - 0.5) + 0.06 * (settle - 0.5), 0.0, 1.0);
+  } else if (kind == 2) {
+    // hatch: pen lines at 45 degrees, a stroke apart, each a little different
+    float p = (vLocal.x + vLocal.y) * 0.70710678 / pitch;
+    float id = floor(p);
+    float f = p - id - 0.5;
+    float half_ = 0.15 * (0.8 + 0.4 * hash11(id + uSeed * 57.0));
+    float aa = max(fwidth(p), 1e-4);
+    alpha *= 1.0 - smoothstep(half_ - aa, half_ + aa, abs(f));
+  } else if (kind == 3) {
+    // dots: a stipple, jittered, some left out
+    vec2 g = vLocal / (pitch * 0.9);
+    vec2 cell = floor(g);
+    float aa = max(fwidth(g.x), 1e-4);
+    float cover = 0.0;
+    for (int j = -1; j <= 1; j++) {
+      for (int i = -1; i <= 1; i++) {
+        vec2 c = cell + vec2(float(i), float(j));
+        float present = step(0.14, hash21(c + uSeed * 31.0 + 1.7));
+        vec2 centre = c + 0.22 + 0.56 * vec2(hash21(c + uSeed * 17.0), hash21(c.yx + 7.3 + uSeed * 13.0));
+        float r = 0.15 + 0.12 * hash21(c + 3.3);
+        cover = max(cover, present * (1.0 - smoothstep(r - aa, r + aa, length(g - centre))));
+      }
+    }
+    alpha *= cover;
+  } else if (kind == 4) {
+    // grain: a dry chalk, broken
+    vec2 q = vLocal / max(0.5, 1.2 / vPpu);
+    float n = 0.55 * hash21(floor(q) + uSeed * 13.0) + 0.45 * vnoise(q * 0.3);
+    alpha *= 0.28 + 0.72 * smoothstep(0.24, 0.72, n);
+  } else if (kind == 5) {
+    // weave: canvas under paint; threads pass over and under
+    float cellSize = max(pitch * 1.3, 3.6 / max(vPpu, 1e-3));
+    vec2 g = vLocal / cellSize;
+    vec2 id = floor(g);
+    vec2 f = fract(g);
+    float over = mod(id.x + id.y, 2.0);
+    float thread = over > 0.5 ? sin(f.x * 3.14159265) : sin(f.y * 3.14159265);
+    float shade = mix(0.35, thread, 0.9);
+    float knot = hash21(id + uSeed * 23.0);
+    colour *= 0.78 + 0.24 * shade + 0.05 * (knot - 0.5);
+  }
+  if (alpha <= 0.002) discard;
+  gl_FragColor = vec4(colour, alpha);
 }
 `;
 
@@ -164,6 +297,8 @@ interface Entry {
   strokeMaterial: ShaderMaterial | null;
   length: number;
   bleed: boolean;
+  /** the outline's distance field, when the fill needs to know where its edge is (a wash, or a soft edge) */
+  field: DistanceField | null;
   seen: boolean;
 }
 
@@ -187,6 +322,8 @@ export function createShapePool(): ShapePool {
         uCharacter: { value: 0 },
         uLength: { value: 1 },
         uHard: { value: 0 },
+        uSoft: { value: 0 },
+        uSeed: { value: 0 },
         uViewPx: VIEW_PX,
       },
       vertexShader: STROKE_VERTEX,
@@ -199,7 +336,22 @@ export function createShapePool(): ShapePool {
 
   const makeFillMaterial = (): ShaderMaterial =>
     new ShaderMaterial({
-      uniforms: { uFrom: { value: new Color() }, uTo: { value: new Color() }, uSpan: { value: new Vector2(0, 1) }, uOpacity: { value: 1 } },
+      uniforms: {
+        uFrom: { value: new Color() },
+        uTo: { value: new Color() },
+        uSpan: { value: new Vector2(0, 1) },
+        uOpacity: { value: 1 },
+        uTexture: { value: 0 },
+        uPitch: { value: 1 },
+        uSeed: { value: 0 },
+        uSoft: { value: 0 },
+        uWash: { value: 1 },
+        tField: { value: null },
+        uFieldBox: { value: new Vector4(0, 0, 1, 1) },
+        uFieldRange: { value: 1 },
+        uHasField: { value: 0 },
+        uViewPx: VIEW_PX,
+      },
       vertexShader: FILL_VERTEX,
       fragmentShader: FILL_FRAGMENT,
       transparent: true,
@@ -216,6 +368,7 @@ export function createShapePool(): ShapePool {
     }
     entry.fillMaterial?.dispose();
     entry.strokeMaterial?.dispose();
+    entry.field?.texture.dispose();
   };
 
   const rebuild = (entry: Entry, shape: ShapeFrame, root: Group, viewport: Viewport | undefined): void => {
@@ -228,6 +381,8 @@ export function createShapePool(): ShapePool {
     entry.stroke = null;
     entry.length = 0;
     entry.bleed = shape.bleed;
+    entry.field?.texture.dispose();
+    entry.field = null;
 
     if (shape.fill !== null) {
       let geometry: BufferGeometry | null = null;
@@ -239,11 +394,26 @@ export function createShapePool(): ShapePool {
         geometry.setAttribute('position', new BufferAttribute(new Float32Array([-reach, -reach, 0, reach, -reach, 0, reach, reach, 0, -reach, reach, 0]), 3));
         geometry.setIndex(new BufferAttribute(new Uint32Array([0, 1, 2, 0, 2, 3]), 1));
       } else {
-        const buffers = buildFill(shape.outline);
-        if (buffers !== null) {
+        // A wash pools against its edge and a soft edge fades along it: both read the outline's distance field.
+        const soft = shape.soft ?? 0;
+        const wash = shape.fill.texture === 'wash';
+        if (soft > 0 || wash) {
+          const width = washWidth(shape);
+          entry.field = buildDistanceField(shape.outline, Math.max(wash ? width : 0, soft * 1.5), 1);
+        }
+        if (entry.field !== null && soft > 0) {
+          // The fill is as much wider as the edge fades: a quad over the field's box, cut by the field.
+          const f = entry.field;
           geometry = new BufferGeometry();
-          geometry.setAttribute('position', new BufferAttribute(buffers.position, 3));
-          geometry.setIndex(new BufferAttribute(buffers.index, 1));
+          geometry.setAttribute('position', new BufferAttribute(new Float32Array([f.x, f.y, 0, f.x + f.width, f.y, 0, f.x + f.width, f.y + f.height, 0, f.x, f.y + f.height, 0]), 3));
+          geometry.setIndex(new BufferAttribute(new Uint32Array([0, 1, 2, 0, 2, 3]), 1));
+        } else {
+          const buffers = buildFill(shape.outline);
+          if (buffers !== null) {
+            geometry = new BufferGeometry();
+            geometry.setAttribute('position', new BufferAttribute(buffers.position, 3));
+            geometry.setIndex(new BufferAttribute(buffers.index, 1));
+          }
         }
       }
       if (geometry !== null) {
@@ -288,6 +458,45 @@ export function createShapePool(): ShapePool {
     return top === Infinity ? { top: 0, height: 0 } : { top, height: bottom - top };
   };
 
+  /** How wide a wash pools at its edge: a fifth of the shape's shorter side, within what reads as a pooled edge. */
+  const washWidth = (shape: ShapeFrame): number => {
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+    for (const line of shape.outline) {
+      for (const point of line.points) {
+        minX = Math.min(minX, point.x);
+        maxX = Math.max(maxX, point.x);
+        minY = Math.min(minY, point.y);
+        maxY = Math.max(maxY, point.y);
+      }
+    }
+    return minX === Infinity ? 1 : Math.max(0.6, Math.min(24, 0.2 * Math.min(maxX - minX, maxY - minY)));
+  };
+
+  const setFill = (material: ShaderMaterial, shape: ShapeFrame, entry: Entry, style: SurfaceStyle): void => {
+    const set = (name: string, value: number): void => {
+      const slot = material.uniforms[name];
+      if (slot !== undefined) slot.value = value;
+    };
+    const texture = shape.fill?.texture ?? 'flat';
+    set('uTexture', TEXTURE[texture]);
+    // Pen lines and canvas threads sit a stroke apart: the shape's own stroke, or the look's when it has none.
+    set('uPitch', Math.max(0.5, (shape.stroke?.width ?? style.spec.stroke.thick) * 2.2));
+    set('uSeed', hash01(shape.key));
+    set('uSoft', entry.field !== null ? (shape.soft ?? 0) : 0);
+    set('uWash', washWidth(shape));
+    const field = entry.field;
+    const slot = material.uniforms['tField'];
+    if (slot !== undefined) slot.value = field?.texture ?? null;
+    set('uHasField', field === null ? 0 : 1);
+    if (field !== null) {
+      (material.uniforms['uFieldBox']?.value as Vector4).set(field.x, field.y, field.width, field.height);
+      set('uFieldRange', field.range);
+    }
+  };
+
   const setStroke = (material: ShaderMaterial, shape: ShapeFrame, stroke: StrokeFrame, length: number, style: SurfaceStyle, layer: Layer): void => {
     (material.uniforms['uColour']?.value as Color).copy(inkColour(style, stroke.colour));
     const set = (name: string, value: number): void => {
@@ -301,6 +510,8 @@ export function createShapePool(): ShapePool {
     set('uCharacter', CHARACTER[stroke.character]);
     set('uLength', Math.max(length, 1e-6));
     set('uHard', style.hard ? 1 : 0);
+    set('uSoft', shape.soft ?? 0);
+    set('uSeed', hash01(shape.key));
   };
 
   return {
@@ -312,11 +523,11 @@ export function createShapePool(): ShapePool {
         let entry = entries.get(shape.key);
         if (entry === undefined || entry.layer !== shape.layer) {
           if (entry !== undefined) release(entry);
-          entry = { layer: shape.layer, geometryKey: '', built: '', fill: null, stroke: null, fillMaterial: null, strokeMaterial: null, length: 0, bleed: false, seen: true };
+          entry = { layer: shape.layer, geometryKey: '', built: '', fill: null, stroke: null, fillMaterial: null, strokeMaterial: null, length: 0, bleed: false, field: null, seen: true };
           entries.set(shape.key, entry);
         }
         entry.seen = true;
-        const built = `${shape.geometryKey}|${shape.fill === null ? 0 : 1}${shape.stroke === null ? 0 : 1}${shape.bleed ? `|${viewport?.width}x${viewport?.height}` : ''}`;
+        const built = `${shape.geometryKey}|${shape.fill === null ? 0 : 1}${shape.stroke === null ? 0 : 1}|${shape.fill?.texture === 'wash' ? 'w' : ''}${shape.soft ?? 0}${shape.bleed ? `|${viewport?.width}x${viewport?.height}` : ''}`;
         if (entry.built !== built) {
           rebuild(entry, shape, root, viewport);
           entry.built = built;
@@ -339,6 +550,7 @@ export function createShapePool(): ShapePool {
           }
           const opacity = material.uniforms['uOpacity'];
           if (opacity !== undefined) opacity.value = shape.fill.opacity * shape.opacity;
+          setFill(material, shape, entry, style);
           entry.fill.renderOrder = fillOrder;
           entry.fill.visible = shape.fill.opacity * shape.opacity > 0.002;
           if (shape.bleed) {

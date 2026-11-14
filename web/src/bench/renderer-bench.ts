@@ -497,7 +497,7 @@ function rebuildPanel(): void {
     state.preset = v;
     layout();
   });
-  select('content', ['text', 'figures', 'both'], state.content, (v) => {
+  select('content', ['text', 'figures', 'both', 'paint'], state.content, (v) => {
     state.content = v as State['content'];
     redo();
   });
