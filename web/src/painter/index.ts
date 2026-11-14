@@ -245,6 +245,21 @@ export function createPainter(options: PainterOptions): Painter {
       store.declare(element.key, element.id, spec);
     }
   };
+  /**
+   * The turn is over and the stage is what it left: keys of controls and structure parts that are no longer on it are forgotten, so a long
+   * conversation does not keep every value the hand ever held. A control the stage still has keeps its value.
+   */
+  const forgetGone = (schedule: Schedule): void => {
+    const live = new Set<string>();
+    for (const element of schedule.elements) live.add(element.key);
+    for (const key of [...declared]) {
+      if (live.has(key)) continue;
+      declared.delete(key);
+      store.drop(key);
+      runtime.moods.delete(key);
+    }
+    for (const key of [...arrivals.keys()]) if (!live.has(key.split('#')[0] ?? key)) arrivals.delete(key);
+  };
   let easedAt = -1;
   let easedFor = -1;
   /** Bound changes ease from where they are to where the controls now send them, when the store's revision (or the set of bindings) moves. */
@@ -297,6 +312,7 @@ export function createPainter(options: PainterOptions): Painter {
   const rebuildRest = (): void => {
     const schedule = restSchedule(base);
     syncPaintings(schedule);
+    forgetGone(schedule);
     declareControls(schedule);
     timeline = buildTimeline(schedule, base, timelineContext());
     refreshEases(true);
