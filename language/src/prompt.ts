@@ -814,9 +814,9 @@ export function asksWhatsNew(input: TurnInput): boolean {
   return NEWS_ASK.test(said);
 }
 
-/** The newest changelog section as the brief gives it: what the brain is to do with it is said here, once, and never in the system prompt. */
+/** The changelog (every version's section, newest first) as the brief gives it: what the brain is to do with it is said here, once, and never in the system prompt. */
 export function newsText(news: string): string {
-  return `WHAT'S NEW IN THIS APP, newest version first. SHOW IT, never tell it: this answer is a tour, not a list. One short \`scene\` for each item that can be seen: draw that very thing (a real slider that moves a drawing, a real flow or cycle, a real chart of numbers you do not invent, a real table, a choice), and one caption naming it. No paragraphs, no bullet text, no scene that is only words. Skip an item you cannot draw. Say what is not live yet in one line at the very end. As many scenes as it takes; this overrides the habit of a short answer.\n${news}`;
+  return `WHAT'S NEW IN THIS APP, newest version first. EVERYTHING under a heading marked "(live" is live now, in every one of those sections, not only the newest: tour all of them, a few scenes from each, never say that one feature is the only live item. Items marked "not live" or "Coming next" are not live. SHOW IT, never tell it: this answer is a tour, not a list. One short \`scene\` for each item that can be seen: draw that very thing (a real slider that moves a drawing, a real flow or cycle, a real chart of numbers you do not invent, a real table, a choice), and one caption naming it. No paragraphs, no bullet text, no scene that is only words. Spread the scenes over different things (a mock-up, music, a chart, a diagram, a control, a lesson table), not one feature again and again. Skip an item you cannot draw. Say what is not live yet in one line at the very end. As many scenes as it takes; this overrides the habit of a short answer.\n${news}`;
 }
 
 /** Whether the user's words are about music, so that this turn is taught `tune`: play, song, melody, tune, sonata, music, chord, compose, MIDI, beat. */

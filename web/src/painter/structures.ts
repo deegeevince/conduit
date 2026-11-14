@@ -621,12 +621,14 @@ export function buildStructures(schedule: Schedule, env: StructureEnv): Structur
         }
         const ink = (emphasised: boolean): string => {
           if (overInk) return look.roles.ground;
-          const base = mix(resolveInk(role as never, look, { minRatio, weight: spec.weight, emphasised, onBar: false, behind: under }));
-          if (under === null || contrastRatio(base, under) >= minRatio) return base;
-          // the role's own colour cannot be made to read on it: the look's ink or its ground, whichever has the better ratio
-          const dark = resolveInk('ink', look, { minRatio, weight: spec.weight, emphasised, onBar: false, behind: under });
-          const light = look.roles.ground;
-          return contrastRatio(dark, under) >= contrastRatio(light, under) ? dark : light;
+          if (under === null) return mix(resolveInk(role as never, look, { minRatio, weight: spec.weight, emphasised, onBar: false, behind: null }));
+          // Words on a filled shape: judged against the fill alone (against the room's ground AND the fill, no one colour reads, and the middle of the two is chosen).
+          // The role's own colour if it reads well on the fill (4.5 and over), otherwise the look's ink or its ground, whichever has the better ratio.
+          const own = mix(resolveInk(role as never, look, { minRatio, weight: spec.weight, emphasised, onBar: false }));
+          if (contrastRatio(own, under) >= 4.5) return own;
+          const ink = resolveInk('ink', look, { minRatio, weight: spec.weight, emphasised, onBar: false });
+          const ground = look.roles.ground;
+          return contrastRatio(ink, under) >= contrastRatio(ground, under) ? ink : ground;
         };
         const place = set.placement;
         const runs: RunFrame[] = place.runs.map((run) => ({ text: run.text, x: run.x, y: run.y, width: run.width, colour: ink(run.emphasised), opacity, dx, dy, scale, reveal: 1 }));

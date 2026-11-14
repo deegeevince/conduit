@@ -987,6 +987,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     if (event.type === 'pointerup') {
       const id = controlAt(point);
       if (id !== null) access.focusControl(id);
+      else if (painter.typing()) keys.focus({ preventScroll: true });
     }
   };
   const onPointerLeave = (event: PointerEvent): void => {
@@ -995,6 +996,29 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     painter.pointer({ phase: 'move', x: -1e5, y: -1e5, pointer: -1 });
     host.style.cursor = '';
   };
+  // The keyboard for a field of a mock-up: a real input, kept focused while a field has the keyboard (a phone raises its keyboard for it; a desktop
+  // reads the keys the same way), and every character it takes is handed to the painter, which draws it in the field.
+  const keys = document.createElement('input');
+  keys.type = 'text';
+  keys.className = 'ui-keys';
+  keys.autocomplete = 'off';
+  keys.setAttribute('aria-hidden', 'true');
+  keys.tabIndex = -1;
+  keys.style.cssText = 'position:absolute;left:0;top:0;width:1px;height:1px;opacity:0;border:0;padding:0;font-size:16px;pointer-events:none';
+  host.append(keys);
+  keys.addEventListener('keydown', (event) => {
+    if (event.key !== 'Backspace' && event.key !== 'Enter' && event.key !== 'Escape') return;
+    if (painter.key(event.key)) event.preventDefault();
+    if (!painter.typing()) keys.blur();
+  });
+  keys.addEventListener('input', () => {
+    for (const character of keys.value) painter.key(character);
+    keys.value = '';
+    if (!painter.typing()) keys.blur();
+  });
+  keys.addEventListener('blur', () => {
+    if (painter.typing()) painter.key('Escape');
+  });
   host.addEventListener('pointerdown', onPointerDown);
   host.addEventListener('pointermove', onPointerMove);
   host.addEventListener('pointerup', onPointerEnd);
@@ -1187,6 +1211,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
       statusListeners.clear();
       exporter?.dispose();
       document.removeEventListener('pointerdown', wake, { capture: true });
+      keys.remove();
       document.removeEventListener('keydown', wake, { capture: true });
       sound.dispose();
       link.close();

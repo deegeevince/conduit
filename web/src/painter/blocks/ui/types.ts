@@ -99,7 +99,7 @@ export type UiAction =
   | { readonly kind: 'toggle'; readonly control: string; readonly on: boolean }
   | { readonly kind: 'field'; readonly control: string; readonly value: string }
   | { readonly kind: 'slider'; readonly control: string; readonly from: number; readonly to: number }
-  | { readonly kind: 'press'; readonly control: string };
+  | { readonly kind: 'press'; readonly control: string; readonly to?: string };
 
 export interface UiHit {
   readonly id: string;

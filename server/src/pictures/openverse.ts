@@ -37,7 +37,9 @@ export function parseOpenverse(json: unknown): PictureCandidate[] {
       source: str(raw['source']) ?? str(raw['provider']),
     });
     if (credit === null) continue;
-    out.push({ id, url, width: num(raw['width']), height: num(raw['height']), credit, mature: raw['mature'] === true });
+    const tagList = Array.isArray(raw['tags']) ? (raw['tags'] as unknown[]) : [];
+    const tags = tagList.map((tag) => str((tag as { name?: unknown } | null)?.name)).filter((name): name is string => name !== null).map((name) => name.toLowerCase());
+    out.push({ id, url, width: num(raw['width']), height: num(raw['height']), credit, mature: raw['mature'] === true, tags });
   }
   return out;
 }

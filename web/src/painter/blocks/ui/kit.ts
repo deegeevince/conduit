@@ -221,7 +221,13 @@ function buttonOf(k: Kit, p: UiPartNode): N {
   };
   const labelNode = text(k, label, k.type.label, { id: p.id, nowrap: true, colour: ink, align: 'center', what: 'label' });
   const style: Style = wide ? { width: 'fill', height } : { width: 'hug', height };
-  return mk(style, flex('row', { align: 'center', justify: 'center', pad: [0, 20, 0, 20] }), null, [labelNode], { id: p.id, part: 'button', hug: !wide, target: true, paint, action: { kind: 'press', control: p.id } });
+  return mk(style, flex('row', { align: 'center', justify: 'center', pad: [0, 20, 0, 20] }), null, [labelNode], { id: p.id, part: 'button', hug: !wide, target: true, paint, action: pressOf(p) });
+}
+
+/** A press: and where it goes (`to=<screen>`), when it goes anywhere. */
+function pressOf(p: UiPartNode): { readonly kind: 'press'; readonly control: string; readonly to?: string } {
+  const to = p.attrs['to'];
+  return to === undefined || to === '' ? { kind: 'press', control: p.id } : { kind: 'press', control: p.id, to };
 }
 
 function fieldOf(k: Kit, p: UiPartNode, labelled: boolean): N {
@@ -232,14 +238,16 @@ function fieldOf(k: Kit, p: UiPartNode, labelled: boolean): N {
   const error = p.flags.includes('error');
   const typed = k.state.text[p.id];
   const focused = k.state.focus === p.id;
-  const shown = typed ?? given;
+  // a password field shows dots for what is typed; what it is given as a hint is shown as written
+  const password = p.flags.includes('password');
+  const shown = typed === undefined ? given : password ? '\u2022'.repeat(typed.length) : typed;
   const isPlaceholder = typed === undefined && /^(e\.g\.|eg |name@|you@|search|enter |type )/i.test(given);
   const valueInk = typed !== undefined ? c.ink : isPlaceholder ? c.faint : c.dim;
   const box = k.t.radius.m;
   const paint = (b: Rect, out: Out): void => {
     rectOf(out, p.id, 'field', b, { radius: box, fill: c.surface, edge: { colour: error ? (k.t.wire ? c.ink : c.danger) : focused ? c.accent : c.edge, width: focused || error ? 2 : 1 } });
     if (focused) {
-      const w = typed === undefined ? 0 : k.measure.width(typed, k.type.body.size, 'normal');
+      const w = typed === undefined ? 0 : k.measure.width(shown, k.type.body.size, 'normal');
       out.parts.push({ kind: 'rect', key: out.key(p.id, 'caret'), owner: p.id, x: b.x + 12 + w + 1, y: b.y + (b.h - 20) / 2, w: 1.5, h: 20, radius: 0, fill: c.accent, edge: null });
     }
   };
@@ -282,7 +290,7 @@ function itemOf(k: Kit, p: UiPartNode): N {
     if (pressed) rectOf(out, p.id, 'pressed', b, { radius: wire ? 0 : radius, fill: c.ink, fillAlpha: 0.07 });
   };
   const pad: [number, number, number, number] = wire ? [12, selected ? 12 : 0, 12, selected ? 12 : 0] : [12, 16, 12, 16];
-  return mk({ width: 'fill', height: 'hug', minH: 64 }, flex('row', { align: 'center', gap: 12, pad }), null, kids, { id: p.id, part: 'item', target: true, paint, action: toggled === null ? { kind: 'press', control: p.id } : { kind: 'toggle', control: p.id, on: toggled } });
+  return mk({ width: 'fill', height: 'hug', minH: 64 }, flex('row', { align: 'center', gap: 12, pad }), null, kids, { id: p.id, part: 'item', target: true, paint, action: toggled === null ? pressOf(p) : { kind: 'toggle', control: p.id, on: toggled } });
 }
 
 function switchOf(k: Kit, id: string, on: boolean): N {
@@ -318,10 +326,11 @@ function pickOf(k: Kit, p: UiPartNode): N {
     const paint = (b: Rect, out: Out): void => {
       if (on) rectOf(out, p.id, `seg:${i}`, b, { radius: k.t.radius.s, fill: wire ? c.ink : c.surface, ...(wire ? {} : { shadow: shadowOf(k, 'low') }) });
     };
-    const word = text(k, o.text, k.type.label, { id: p.id, nowrap: true, squeeze: true, colour: on && wire ? c.onAccent : on ? c.ink : c.dim, align: 'center', what: `option:${i}`, width: 'fill' });
-    return mk({ width: 'fill', height: 'fill' }, flex('row', { align: 'center', justify: 'center', pad: [0, 4, 0, 4] }), null, [word], { id: `${p.id}:seg${i}`, part: 'pick-option', target: true, paint, action: { kind: 'pick', control: p.id, index: i }, owner: p.id });
+    // an option that does not fit on one line takes a second (and a third): the track grows, no word is cut or crosses its neighbour
+    const word = text(k, o.text, k.type.label, { id: p.id, colour: on && wire ? c.onAccent : on ? c.ink : c.dim, align: 'center', what: `option:${i}`, width: 'fill' });
+    return mk({ width: 'fill', height: 'hug', minH: 44 }, flex('row', { align: 'center', justify: 'center', pad: [10, 6, 10, 6] }), null, [word], { id: `${p.id}:seg${i}`, part: 'pick-option', target: true, paint, action: { kind: 'pick', control: p.id, index: i }, owner: p.id });
   });
-  const track = mk({ width: 'fill', height: 52 }, flex('row', { align: 'stretch', gap: 0, pad: 4 }), null, segs, {
+  const track = mk({ width: 'fill', height: 'hug', minH: 52 }, flex('row', { align: 'stretch', gap: 0, pad: 4 }), null, segs, {
     id: `${p.id}:track`,
     part: 'pick-track',
     quiet: true,

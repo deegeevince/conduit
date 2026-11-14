@@ -221,7 +221,7 @@ input {
 }
 
 .action--idle {
-  opacity: 0.55;
+  opacity: 0.72;
   cursor: default;
 }
 

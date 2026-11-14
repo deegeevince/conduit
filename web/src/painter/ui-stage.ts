@@ -25,7 +25,7 @@ import type { UiTokens } from './blocks/ui/lang';
 import { isUiContainer } from './blocks/ui/lang';
 import { paintersMeasure } from './blocks/ui/measure';
 import { layoutScreen } from './blocks/ui/screen';
-import { applyAction, hitAt } from './blocks/ui/state';
+import { applyAction, hitAt, typeInto } from './blocks/ui/state';
 import { NO_STATE } from './blocks/ui/types';
 import type { UiPictureState, UiScreenLayout, UiState } from './blocks/ui/types';
 
@@ -58,8 +58,10 @@ export function hasUiPicture(partId: string): boolean {
 
 interface Runtime {
   state: UiState;
-  /** the screen shown large when the room is too narrow for them all */
+  /** the screen shown large when the room is too narrow for them all, or when a press has gone to it (`button … to=<screen>`) */
   focus: number;
+  /** a press went to a screen: one screen large and the rest as thumbnails, in any room */
+  solo: boolean;
   last: { readonly room: Box; readonly board: Board; readonly layouts: readonly UiScreenLayout[] } | null;
 }
 
@@ -68,7 +70,7 @@ const RUNTIMES = new Map<string, Runtime>();
 function runtimeOf(key: string): Runtime {
   let found = RUNTIMES.get(key);
   if (found === undefined) {
-    found = { state: NO_STATE, focus: 0, last: null };
+    found = { state: NO_STATE, focus: 0, solo: false, last: null };
     RUNTIMES.set(key, found);
     if (RUNTIMES.size > 24) RUNTIMES.delete(RUNTIMES.keys().next().value as string);
   }
@@ -78,7 +80,7 @@ function runtimeOf(key: string): Runtime {
 /** What a layout of this block depends on besides its rows and room: the taps it has had and the photographs it holds. Part of the layout's cache key. */
 export function uiKey(blockKey: string): string {
   const run = RUNTIMES.get(blockKey);
-  return JSON.stringify([run === undefined ? null : [run.state, run.focus], [...PICTURES.keys()].sort()]);
+  return JSON.stringify([run === undefined ? null : [run.state, run.focus, run.solo], [...PICTURES.keys()].sort()]);
 }
 
 /** Forgets what a finger did to a block that has left. */
@@ -107,7 +109,39 @@ export function tapUi(blockKey: string, x: number, y: number): boolean {
   const hit = hitAt(screen.hits, at.x, at.y);
   if (hit === undefined) return false;
   const next = applyAction(run.state, hit.action, hit, at.x);
-  if (next === run.state) return false;
+  // a press that goes somewhere (`to=<screen>`) brings that screen forward: a prototype moves from one screen to the next
+  if (hit.action.kind === 'press' && hit.action.to !== undefined) {
+    const to = hit.action.to;
+    const index = last.layouts.findIndex((layout) => layout.id === to);
+    if (index >= 0) {
+      run.focus = index;
+      run.solo = true;
+    }
+  }
+  if (next === run.state && !(hit.action.kind === 'press' && hit.action.to !== undefined)) return false;
+  run.state = next;
+  return true;
+}
+
+/** The press lets go (a moment after it): the button is not left looking pressed. True when something changed. */
+export function releaseUi(blockKey: string): boolean {
+  const run = RUNTIMES.get(blockKey);
+  if (run === undefined || run.state.pressed === null) return false;
+  run.state = { ...run.state, pressed: null };
+  return true;
+}
+
+/** Whether a field of this mock-up has the keyboard. */
+export function typingUi(blockKey: string): boolean {
+  return RUNTIMES.get(blockKey)?.state.focus != null;
+}
+
+/** A key typed (or a character, or Backspace, Enter, Escape) into the field that has the keyboard. True when it was taken. */
+export function typeUi(blockKey: string, key: string): boolean {
+  const run = RUNTIMES.get(blockKey);
+  if (run === undefined || run.state.focus === null) return false;
+  const next = typeInto(run.state, key);
+  if (next === run.state) return key.length === 1 || key === 'Backspace';
   run.state = next;
   return true;
 }
@@ -148,11 +182,15 @@ export function layoutUi(args: { readonly structure: ElementSpan; readonly room:
   if (doc.screens.length === 0 || room.width < 40 || room.height < 40) return { ...EMPTY_STRUCTURE_LAYOUT, boxes: new Map([[structure.key, room]]) };
   const run = runtimeOf(structure.key);
   const tokens = tokensFor(spec);
-  const state: UiState = { ...run.state, picture: Object.fromEntries(PICTURES) };
+  // A page cannot be read at 1280 points in 390: on a narrow stage a browser or a desk window is shown as the phone it would be (the same parts, laid out for it)
+  const narrow = room.width < NARROW;
+  const device: Record<string, 'phone'> = {};
+  if (narrow) for (const screen of doc.screens) if ((screen.device === 'browser' || screen.device === 'desktop') && run.state.device[screen.id] === undefined) device[screen.id] = 'phone';
+  const state: UiState = { ...run.state, device: { ...run.state.device, ...device }, picture: Object.fromEntries(PICTURES) };
   const counts = linesPerScreen(doc);
   const layouts = doc.screens.map((screen, i) => layoutScreen(screen, tokens, measure, state, counts[i] ?? 0));
   const focus = Math.max(0, Math.min(layouts.length - 1, run.focus));
-  const board = arrangeBoard(layouts, tokens, measure, { w: room.width, h: room.height }, { mode: layouts.length > 1 && room.width < NARROW ? 'focus' : 'overview', focus, margin: MARGIN });
+  const board = arrangeBoard(layouts, tokens, measure, { w: room.width, h: room.height }, { mode: layouts.length > 1 && (room.width < NARROW || run.solo) ? 'focus' : 'overview', focus, margin: MARGIN });
   run.last = { room, board, layouts };
 
   const frame = uiFrame(board.parts, { width: room.width, height: room.height, dpr, spec });
@@ -244,7 +282,9 @@ export function drawUi(call: DrawnCall): { readonly drawn: boolean; readonly pha
   }
   let any = false;
   const appear = (key: string): number => {
-    const at = structure.carried ? 0 : (rows[drawn.rowOf.get(key) ?? 0]?.at ?? 0);
+    // a mock-up carried in from an earlier turn, or a resting stage's own (its clock is at 0), is whole: there is no row still to land
+    if (structure.carried) return 1;
+    const at = rows[drawn.rowOf.get(key) ?? 0]?.at ?? 0;
     const start = Math.max(at, base);
     if (tq < start) return 0;
     const p = Math.max(0, Math.min(1, (tq - start) / UI_ROW_FADE));
