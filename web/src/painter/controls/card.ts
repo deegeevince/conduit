@@ -34,7 +34,17 @@ export function layoutCard(input: CardInput): CardLayout {
   const title = input.title === '' ? null : input.measure(input.title, TITLE, Math.max(rowH, inner.width + 2 * pad - 2 * pad));
   const head = title === null ? 0 : Math.ceil(title.height / 2);
   const outer: Box = { x: inner.x - pad, y: inner.y - pad - head, width: inner.width + 2 * pad, height: inner.height + 2 * pad + head };
-  const parts: BlockPart[] = [shapePart(input.owner, 'frame', input.lit === true ? 'frame' : 'grid', [rectLine(outer, look.radius)])];
+  // the frame is broken where the title sits on it, so no line runs through the words
+  const frame = rectLine(outer, look.radius);
+  let line = frame;
+  if (title !== null) {
+    const width = Math.min(outer.width - 2 * pad, title.width);
+    const left = outer.x + pad - 6;
+    const right = outer.x + pad + width + 6;
+    const ring = frame.points;
+    if (ring.length >= 4 && right < outer.x + outer.width - 2) line = { closed: false, points: [{ x: right, y: outer.y }, ...ring, { x: left, y: outer.y }] };
+  }
+  const parts: BlockPart[] = [shapePart(input.owner, 'frame', input.lit === true ? 'frame' : 'grid', [line])];
   if (title !== null) {
     const width = Math.min(outer.width - 2 * pad, title.width);
     const box: Box = { x: outer.x + pad, y: outer.y - title.height / 2, width, height: title.height };

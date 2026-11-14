@@ -395,7 +395,7 @@ link <a> <b> [c…] [both|plain] [dashed] | <label>
           : `
 A chart row is \`| when | value…\`, values split by bars or spaces: \`when\` a date (2026-03-09), a year, a number or a name; one value a series (a first row of words names them)${charts.includes('candles') ? ', or `open high low close [volume]` for candles' : ''}. Chart words: ${Object.entries(CHART_WORD)
               .map(([word, gist]) => (word === 'indexed' || word === 'spark' ? `${word} (${gist.split(':')[0]?.split(',')[0] ?? gist})` : word))
-              .join(', ')}. Numbers you recall are \`approx\`: never dress a guess as data. \`node x=<when> | label\` marks an event, \`y=<value>\` a level, both a point.`
+              .join(', ')}. Numbers you recall are \`approx\`: never dress a guess as data, and never refuse to chart: chart the nearest period you do recall and say so. \`node x=<when> | label\` marks an event, \`y=<value>\` a level, both a point.`
       }
 
 Words and \`wait\` may come between parts: tell a diagram a step at a time. Nodes and links take \`hit\`, \`set\`, \`drop\` and \`cam focus\` by id. On your own drawing, \`say callout near=<id> | name\` labels a part with a line to it (\`at=x,y\` for a spot).
