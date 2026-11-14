@@ -1212,6 +1212,8 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   let hoverFrame = 0;
   let hoverAt: { readonly x: number; readonly y: number } | null = null;
   const inChart = (event: Event): boolean => event.target instanceof Element && event.target.closest('.stage__chart') !== null;
+  // While Draw is on its layer is over the stage and every pointer is the pen's: a stroke that starts on a control or a mock-up's part draws, it never presses
+  const inInk = (event: Event): boolean => event.target instanceof Element && event.target.closest('.ink-stage') !== null;
   const localPoint = (event: PointerEvent): { readonly x: number; readonly y: number } => {
     const box = host.getBoundingClientRect();
     return { x: event.clientX - box.left, y: event.clientY - box.top };
@@ -1229,7 +1231,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   const tappableAt = (x: number, y: number): boolean =>
     painter.snapshot().elements.some((el) => el.tappable && x >= el.box.x && x <= el.box.x + el.box.width && y >= el.box.y && y <= el.box.y + el.box.height);
   const onPointerDown = (event: PointerEvent): void => {
-    if (event.button !== 0 || inChart(event)) return;
+    if (event.button !== 0 || inChart(event) || inInk(event)) return;
     const { x, y } = localPoint(event);
     if (painter.pointer({ phase: 'down', x, y, pointer: event.pointerId })) {
       taken.add(event.pointerId);
@@ -1246,7 +1248,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     painter.tapAt(x, y);
   };
   const onPointerMove = (event: PointerEvent): void => {
-    if (inChart(event)) return;
+    if (inChart(event) || inInk(event)) return;
     const point = localPoint(event);
     if (taken.has(event.pointerId)) {
       // A drag is not throttled: the picture follows the finger in the same frame.
