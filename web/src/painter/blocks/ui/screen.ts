@@ -131,7 +131,7 @@ export function layoutScreen(written: UiScreen, base: UiTokens, measure: UiMeasu
   const first = layoutWith(written, tokens, measure, state, lines);
   const glass = first.device === 'phone' || first.device === 'tablet';
   const spilled = (layout: UiScreenLayout): number => layout.notes.filter((n) => n.kind === 'outside').length;
-  if (!glass || tokens.pack !== undefined || spilled(first) === 0) return first;
+  if (!glass || tokens.pack === 'compact' || spilled(first) === 0) return first;
   const tighter = layoutWith(written, { ...tokens, pack: 'compact' }, measure, state, lines);
   const best = spilled(tighter) < spilled(first) ? tighter : first;
   if (spilled(best) === 0) return best;
