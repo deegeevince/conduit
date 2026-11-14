@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { asksWhatsNew, buildSystemPrompt, buildTurnBrief } from '@conduit/language';
+import { asksWhatsNew, buildSystemPrompt, buildTurnBrief, VERBS } from '@conduit/language';
 import type { ActionRisk, AppStatus, BrainChange, BrainChoice, BrainEffort, BrainMode, PromptVariant, ToolChoice } from '@conduit/language';
 import type { BriefForm, Capabilities } from '@conduit/language';
 import { buildReviewBrief, isKeep } from '@conduit/language';
@@ -18,6 +18,9 @@ import { Mailbox } from './mailbox';
 import type { AgentRun } from './process';
 import { cancelledAskOf, failureOf, permissionAskOf, resultFactsOf, textDeltaOf, toolResultsOf, toolUsesOf } from './stream-json';
 import type { ClaudeResultFacts } from './stream-json';
+
+/** Names of the language's own lines: the model sometimes calls one as if it were a tool; none is. */
+const NOT_TOOLS: ReadonlySet<string> = new Set(VERBS.map((verb) => String(verb).toLowerCase()));
 
 export interface ClaudeCliDeps {
   readonly log: Logger;
@@ -316,6 +319,7 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
       timer.unref();
     };
     // Which clock is running depends on what the turn is waiting for. A call held for the owner stops it: the owner has `answerMs`.
+    const notTools = new Set<string>();
     const running = new Map<string, { readonly tool: string; readonly summary: string; readonly at: number }>();
     const denied = new Set<string>();
     const rearm = (): void => {
@@ -414,6 +418,12 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
         // its whole input and what it returned never leave this function.
         let toolsChanged = false;
         for (const use of toolUsesOf(event)) {
+          // A line of the language is text, never a tool: when the model names a verb as a tool (`scene`, `say`) the call fails at once and is
+          // not an event of the turn: it would only show on the activity strip as a failed call.
+          if (NOT_TOOLS.has(use.tool.toLowerCase())) {
+            notTools.add(use.id);
+            continue;
+          }
           toolsChanged = true;
           const summary = summaryOf(use);
           running.set(use.id, { tool: use.tool, summary, at: Date.now() });
@@ -421,6 +431,7 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
           box.push({ type: 'activity', id: use.id, tool: use.tool, summary, state: 'running', ms: null });
         }
         for (const result of toolResultsOf(event)) {
+          if (notTools.delete(result.id)) continue;
           const began = running.get(result.id);
           if (began === undefined) continue;
           toolsChanged = true;
