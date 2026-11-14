@@ -290,7 +290,81 @@ async function generic(cx: Cx): Promise<Res[]> {
   out.push(labelsSide(cx));
   out.push(wordsInShapes(cx));
   out.push(await earlierWorks(cx));
+  out.push(await appWorks(cx));
   return out;
+}
+
+/**
+ * "A live app on stage works": a real click on its first button (or, with no button, a real drag of its first draggable) changes the app, and the stage does not log
+ * it as its own tap. The app is in a sandboxed frame the page cannot read, so it is read here through the browser's own debugging door for that frame (its buttons and where
+ * they are), and pressed with real input at the screen point they are at.
+ */
+async function appWorks(cx: Cx): Promise<Res> {
+  const name = 'app-works';
+  const { tab } = cx;
+  const page = await tab.eval<{ app: { id: string; text: string } | null; frame: { x: number; y: number; width: number; height: number; scale: number; pe: string; vis: string } | null; taps: number }>(
+    `(() => { const el = (window.__stage.elements() || []).find((e) => e.kind === 'structure' && e.phase === 'on' && /^live app/.test(String(e.text))); const f = document.querySelector('iframe[data-surface]'); const r = f ? f.getBoundingClientRect() : null; const cs = f ? getComputedStyle(f) : null; return { app: el ? { id: el.id, text: String(el.text) } : null, frame: f ? { x: r.left, y: r.top, width: r.width, height: r.height, scale: f.offsetWidth > 0 ? r.width / f.offsetWidth : 1, pe: cs.pointerEvents, vis: cs.visibility } : null, taps: window.__stage.events().filter((e) => e.type === 'tap').length }; })()`,
+  );
+  if (page.app === null && page.frame === null) return { check: name, verdict: 'PASS', detail: 'no live app on stage' };
+  if (page.frame === null || page.frame.vis !== 'visible' || page.frame.pe === 'none') return { check: name, verdict: 'FAIL', detail: 'a live app is on stage but its frame is not taking presses: they go to the stage' };
+  const { frame } = page;
+  const kids: { sessionId: string; type: string }[] = [];
+  const stopListening = tab.browser.onEvent((event) => {
+    if (event.method !== 'Target.attachedToTarget') return;
+    const info = event.params['targetInfo'] as { type: string };
+    kids.push({ sessionId: String(event.params['sessionId']), type: info.type });
+  });
+  try {
+    await tab.send('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: false, flatten: true });
+    await sleep(600);
+    const kid = kids.find((k) => k.type === 'iframe');
+    if (kid === undefined) return { check: name, verdict: 'FAIL', detail: 'the live app\'s frame could not be reached to be pressed' };
+    type Spot = { label: string; x: number; y: number; width: number; height: number; kind: 'button' | 'drag' };
+    const read = await tab.browser.send<{ result: { value?: string } }>(
+      'Runtime.evaluate',
+      {
+        returnByValue: true,
+        expression: `(() => { const seen = (e) => { const r = e.getBoundingClientRect(); const cs = getComputedStyle(e); return r.width > 4 && r.height > 4 && cs.visibility !== 'hidden' && cs.display !== 'none' && r.right > 0 && r.bottom > 0 ? r : null; }; const pick = (list, kind) => list.map((e) => ({ e, r: seen(e) })).filter((o) => o.r).map((o) => ({ label: (o.e.textContent || o.e.getAttribute('aria-label') || o.e.className || o.e.tagName).toString().trim().slice(0, 24), x: o.r.x, y: o.r.y, width: o.r.width, height: o.r.height, kind })); const buttons = pick([...document.querySelectorAll('button, [role=button], input[type=button], summary')], 'button'); const drags = pick([...document.querySelectorAll('[draggable=true], body *')].filter((e) => e.getAttribute('draggable') === 'true' || (getComputedStyle(e).cursor === 'grab' || getComputedStyle(e).cursor === 'move')), 'drag'); return JSON.stringify({ buttons, drags, inner: [innerWidth, innerHeight] }); })()`,
+      },
+      kid.sessionId,
+    );
+    const found = JSON.parse(read.result.value ?? '{"buttons":[],"drags":[]}') as { buttons: Spot[]; drags: Spot[] };
+    const target = found.buttons[0] ?? found.drags[0];
+    if (target === undefined) return { check: name, verdict: 'PASS', detail: 'the live app has no button or draggable to press' };
+    const at = { x: frame.x + (target.x + target.width / 2) * frame.scale, y: frame.y + (target.y + target.height / 2) * frame.scale };
+    const px = Math.min(target.width, target.height) * frame.scale;
+    const bad: string[] = [];
+    if (at.x < frame.x || at.y < frame.y || at.x > frame.x + frame.width || at.y > frame.y + frame.height) bad.push(`its first ${target.kind} "${target.label}" lies outside the app's own frame (cut off)`);
+    if (at.x < 0 || at.y < 0 || at.x > cx.screen.width || at.y > cx.screen.height) bad.push(`its first ${target.kind} "${target.label}" is off the screen`);
+    if (bad.length > 0) return { check: name, verdict: 'FAIL', detail: bad.join('; ') };
+    const clip = { x: frame.x, y: Math.max(0, frame.y), width: Math.min(frame.width, cx.screen.width - frame.x), height: Math.min(frame.height, cx.screen.height - frame.y) };
+    const before = await tab.shot(clip);
+    const sent = await tab.eval<number>('window.__stage.events().filter((e) => e.type === "control" && e.app === true).length').catch(() => 0);
+    if (target.kind === 'button') await tab.tap(at.x, at.y);
+    else {
+      const to = { x: Math.min(cx.screen.width - 2, Math.max(2, frame.x + frame.width / 2)), y: Math.min(cx.screen.height - 2, Math.max(2, frame.y + frame.height / 2)) };
+      const point = (x: number, y: number) => ({ x, y, id: 1 });
+      if (tab.mobile) {
+        await tab.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point(at.x, at.y)] });
+        for (let i = 1; i <= 8; i += 1) await tab.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [point(at.x + ((to.x - at.x) * i) / 8, at.y + ((to.y - at.y) * i) / 8)] });
+        await tab.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      } else {
+        await tab.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: at.x, y: at.y, pointerType: 'mouse' });
+        await tab.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: at.x, y: at.y, button: 'left', buttons: 1, clickCount: 1, pointerType: 'mouse' });
+        for (let i = 1; i <= 8; i += 1) await tab.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: at.x + ((to.x - at.x) * i) / 8, y: at.y + ((to.y - at.y) * i) / 8, button: 'left', buttons: 1, pointerType: 'mouse' });
+        await tab.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: to.x, y: to.y, button: 'left', buttons: 0, clickCount: 1, pointerType: 'mouse' });
+      }
+    }
+    await sleep(700);
+    const after = await tab.shot(clip);
+    const now = await tab.eval<{ taps: number; sent: number }>('({ taps: window.__stage.events().filter((e) => e.type === "tap").length, sent: window.__stage.events().filter((e) => e.type === "control" && e.app === true).length })');
+    if (now.taps > page.taps) bad.push(`the stage logged the press as its own tap (${now.taps - page.taps}) instead of the app taking it`);
+    if (after === before && now.sent <= sent) bad.push(`a real ${target.kind === 'button' ? 'click' : 'drag'} on its first ${target.kind} "${target.label}" changed nothing in the app`);
+    return res(name, bad, `a real ${target.kind === 'button' ? 'click' : 'drag'} on "${target.label}" (${Math.round(px)} px on screen) changed the app, and the stage logged no tap`);
+  } finally {
+    stopListening();
+    await tab.send('Target.setAutoAttach', { autoAttach: false, waitForDebuggerOnStart: false, flatten: true }).catch(() => undefined);
+  }
 }
 
 /** "‹ earlier": when lines are held back, the control is on the screen, a real tap lays them over the column (inside the screen, not empty), and a second tap puts them away */
