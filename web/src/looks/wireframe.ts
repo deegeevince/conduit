@@ -56,7 +56,8 @@ export function uiLookSpec(name: string, machine: string, t: UiTokens): LookSpec
     id: t.id,
     name,
     machine,
-    roles: { ground: t.colour.ground, ink: t.colour.ink, dim: t.colour.dim, accent: t.colour.accent, alt: t.colour.faint },
+    // the ROOM's roles: the words on the dark ground around the device (the caption, the chrome bar). The ink on the screen itself is the kit's, from the tokens
+    roles: { ground: t.colour.ground, ink: '#eef0f5', dim: '#a3aab8', accent: t.wire ? '#ffffff' : t.colour.accent, alt: t.colour.faint },
     groundAlt: null,
     hot: null,
     fx: [],
