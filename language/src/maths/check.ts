@@ -125,6 +125,9 @@ export function checkWay(node: NodeId, steps: readonly LessonStep[], context: Le
     statements(ask.prompt, 'ask', ask.id, `ask ${ask.id}`);
     ask.hints.forEach((hint, h) => statements(hint, 'hint', ask.id, `hint ${h + 1} of ${ask.id}`));
 
+    // no single right answer (a choice, a tick): there is nothing to recompute
+    if (ask.check === 'any' || ask.check === 'done') return;
+
     if (ask.check === 'order') {
       // the ask's own words say which way; failing that, the question's
       const own = orderProblem(ask.prompt, ask.accepted);

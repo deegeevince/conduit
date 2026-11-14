@@ -146,13 +146,13 @@ export function documentLines(document: Document): readonly LessonLine[] {
     const node = Object.hasOwn(document.nodes, id) ? document.nodes[id] : undefined;
     if (node === undefined || depth > 32 || id.startsWith('#')) return;
     const parent = node.parent === null ? undefined : shortOf(node.parent);
-    const tag = node.tag === null ? undefined : (node.tag as Extract<LessonLine, { verb: 'part' }>['tag']);
-    out.push({ verb: 'part', id: shortOf(id), ...(parent === undefined ? {} : { in: parent }), ...(tag === undefined ? {} : { tag }), ...(node.crop === undefined ? {} : { crop: node.crop }), title: node.title });
+    const tag = node.tag === null ? undefined : node.tag;
+    out.push({ verb: 'part', id: shortOf(id), ...(parent === undefined ? {} : { in: parent }), ...(tag === undefined ? {} : { tag }), ...(node.for === null ? {} : { for: node.for }), ...(node.crop === undefined ? {} : { crop: node.crop }), title: node.title });
     if (node.body !== null && node.body.kind === 'lesson') {
       for (const step of node.body.steps) {
         if (step.kind === 'step') out.push({ verb: 'step', id: step.id, in: shortOf(id), ...(step.show === null ? {} : { show: step.show }), text: step.words });
         else {
-          out.push({ verb: 'ask', id: step.id, in: shortOf(id), is: step.accepted, ...(step.pick === null ? {} : { pick: step.pick }), ...(step.unit === null ? {} : { unit: step.unit }), text: step.prompt });
+          out.push({ verb: 'ask', id: step.id, in: shortOf(id), is: step.accepted, ...(step.check === undefined ? {} : { check: step.check }), ...(step.pick === null ? {} : { pick: step.pick }), ...(step.unit === null ? {} : { unit: step.unit }), text: step.prompt });
           for (const hint of step.hints) out.push({ verb: 'hint', in: step.id, text: hint });
         }
       }

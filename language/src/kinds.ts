@@ -89,6 +89,8 @@ export type Lexicon = { readonly [K in KindId]: KindWords<K> };
 
 // ---------------------------------------------------------------- the entries
 
+/** L2: the shapes the fixed prompt teaches. The rest of `SHAPE_VERBS` and the other verbs of a drawing are chapters. */
+const KERNEL_SHAPES = SHAPE_VERBS.filter((name) => name === 'circle' || name === 'rect' || name === 'line' || name === 'path');
 const form = (verb: keyof typeof VERB): string => VERB[verb].form;
 const gist = (verb: keyof typeof VERB): string => VERB[verb].gist;
 
@@ -150,7 +152,8 @@ export const LEXICON: Lexicon = {
   },
   canvas: {
     id: 'canvas',
-    teach: { where: 'kernel', form: SHAPE_VERBS.map(form).join('\n'), gloss: 'free drawing by coordinates on a canvas: shapes, pixel art, groups, pictures, callouts, the camera' },
+    // L2: the kernel holds the four plain shapes; ellipse, poly, group, use, atmosphere, depth, the camera and paint ride in the brief on a drawing's cue (`drawingKit`), pixels on theirs (`pixelChapter`).
+    teach: { where: 'kernel', form: KERNEL_SHAPES.map(form).join('\n'), gloss: 'free drawing by coordinates on a canvas: shapes, pictures, callouts' },
     describes: 'words',
     describe: (element) => (element.figure === null ? element.text : describeFigure(element.figure)),
   },

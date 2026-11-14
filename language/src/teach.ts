@@ -1,43 +1,24 @@
-// Teaching (PLAN-v3-core WS7): what the brain is told so that it writes a lesson and not an answer.
+// The document chapter (PLAN-v3-core WS7, split by GEN1a): what the brain is told so that it writes a document of parts, and nothing about whom it is for.
 //
-// Nothing here is in the fixed system prompt, which is at its budget. The TEACH chapter rides in the turn's brief on its cues, as `tune` and
-// the interface chapter do; the DOCUMENT and HERE blocks ride in every brief of a conversation that has a document. The chapter is built
-// from the lesson tables (`LESSON_VERB`, `TECHNIQUE`, `VISUAL`, `LESSON_LIMITS`), so a word added to a table is taught without anyone
-// remembering to; and its worked example is parsed by `pnpm timeline`, so it cannot rot.
-//
-// The learner is a young child (early primary). The brain gives approaches, not answers. Nobody here is named or described.
+// Nothing here is in the fixed system prompt. The DOCUMENT chapter rides in the turn's brief whenever a document of parts exists, or a technique
+// card the library chose writes one (`usesParts`). What a particular kind of document teaches (a lesson for a young learner, a recipe, a review,
+// a plan) is a technique card in `techniques/seed/`, chosen by `selectTechniques` like every other: no English is matched here. The chapter is built
+// from the lesson tables (`LESSON_VERB`, `VISUAL`, `LESSON_LIMITS`), so a word added to a table is taught without anyone remembering to; the cards'
+// examples are parsed by `pnpm timeline`, so they cannot rot. Nobody here is named or described.
 
 import type { DocNode, DocState, Document, NodeId } from './document';
 import { askView, findNode, nodeOf, openAsks, pathOf, progressOf, revealed, ROOT, stopOf } from './document';
-import { LESSON_VERB, TECHNIQUE, VISUAL } from './vocabulary';
+import { LESSON_VERB, VISUAL } from './vocabulary';
 import type { VisualKind } from './vocabulary';
 import type { LessonAsk, LessonStep } from './lesson';
 import { accepts, showTokens } from './lesson';
-import type { TurnContext } from './context';
-import type { TurnInput } from './wire';
+import type { TechniqueCard, TurnContext } from './context';
 
 // ---------------------------------------------------------------------------------------------------------------------------------
-// the cues: when the chapter is carried
+// when the chapter is carried
 // ---------------------------------------------------------------------------------------------------------------------------------
 
-/**
- * The user's words ask for a lesson: working out, a lesson, a worksheet, homework, a child to be helped through something. "Teach me how a
- * clock works" is an explanation to watch and stays on the painted stage; the words here are a person who is to try it herself.
- */
-const LESSON_WORDS =
-  /\b(work(?:ing)?[- ]?outs?|working it out|work (?:it|this|that|these|them) out|show (?:the|her|his|their|my|your|me the) (?:working|work)|show (?:the )?working|(?:not|no) (?:the )?(?:solution|answer)|work(?:s|ing)? (?:her|him|them|me|us|my \w+) through|walk (?:her|him|them|me|us) through|work through|worksheets?|work ?sheets?|homework|lessons?|tutor(?:ing)?|practi[cs]e (?:sheet|questions|sums)|times tables?|number bonds?|sums?|(?:a |an |the )?\d{1,2}[- ]?(?:year|yr)s?[- ]?olds?|(?:grade|year|class) ?\d{1,2}|kindergarten|reception|early primary|primary school|first grade|second grade|third grade)\b/i;
-
-/** With a photo attached, the words that make it a sheet to be worked through and not a picture to be looked at. */
-const SHEET_WORDS = /\b(help|helps?|work(?:ing)?|through|page|sheet|homework|worksheets?|questions?|solve|sums?|maths?|math|check|answers?|exercise|practi[cs]e|teach|learn|explain|do(?:ing)?)\b/i;
-
-/** Whether the words of this turn ask for a lesson. Photos with a question about a page count; photos alone, or of other things, do not. */
-export function asksForLesson(input: TurnInput): boolean {
-  if (input.kind !== 'prompt') return false;
-  if (LESSON_WORDS.test(input.text)) return true;
-  return (input.images?.length ?? 0) > 0 && SHEET_WORDS.test(input.text);
-}
-
-/** Whether the conversation has a document of parts: a lesson to go on with. Painted scenes alone are not one. */
+/** Whether the conversation has a document of parts: a document to go on with. Painted scenes alone are not one. */
 export function hasLesson(context: Pick<TurnContext, 'document'>): boolean {
   const held = context.document;
   if (held === undefined) return false;
@@ -46,9 +27,14 @@ export function hasLesson(context: Pick<TurnContext, 'document'>): boolean {
   return Object.values(document.nodes).some((node) => node.body !== null && node.body.kind === 'lesson');
 }
 
-/** Whether this turn carries the TEACH chapter: the words ask for a lesson, or a lesson is under way and the person is going on with it. */
-export function carriesTeaching(context: Pick<TurnContext, 'document'>, input: TurnInput): boolean {
-  return asksForLesson(input) || hasLesson(context);
+/** Whether a technique card writes a document of parts: its example has a `part` line. */
+export function usesParts(cards: readonly TechniqueCard[] | undefined): boolean {
+  return (cards ?? []).some((card) => card.example.some((line) => /^\s*part\s/.test(line)));
+}
+
+/** Whether this turn carries the DOCUMENT chapter: a document of parts exists, or a card the library chose writes one. */
+export function carriesDocument(context: Pick<TurnContext, 'document' | 'techniques'>): boolean {
+  return hasLesson(context) || usesParts(context.techniques);
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------------
@@ -61,80 +47,37 @@ function visualsText(): string {
     .map((name) => {
       const spec = VISUAL[name];
       const keys = Object.keys(spec.keys).map((key) => `${key}=`).join(' ');
-      return `${name}${spec.range ? ' a..b' : ''}${keys === '' ? '' : ` ${keys}`}: ${spec.gist.replace(/^an? /, '')}`;
+      return `${name}${spec.range ? ' a..b' : ''}${keys === '' ? '' : ` ${keys}`}`;
     })
     .join('; ');
 }
 
-/** The ways of going at a question, from the table. */
-function techniquesText(): string {
-  return Object.entries(TECHNIQUE)
-    .map(([id, gist]) => `${id} (${gist})`)
-    .join('; ');
-}
-
 /**
- * The routing card: which form an ask takes. It is the first thing in the chapter, because the fixed prompt teaches a painted answer and
- * the chapter must turn the brain away from it before anything else is read.
+ * The DOCUMENT chapter: short and neutral. It teaches the parts, the asks, sealing, outline then fill and "the person". Who the person is and
+ * what a good document for them looks like is the technique card's to say.
  */
-export const ROUTING_CARD =
-  'WHICH FORM: write it as the DOCUMENT (the lines below), because she is to try each small step herself; never `scene`, `say`, shapes, a mock-up, a painted bar model or choice chips; the page draws it. Something to watch (a diagram, a chart) stays painted. A photo that is not a sheet is answered from what you see, painted.\nASK ALONE FIRST: open with the part as printed (title, crop) and her answer space, nothing else; help only when she taps. If painted anyway: its words as a `say` with `stay=pin`, room to answer, Hint and Show me how.';
-
-/**
- * The worked example the chapter ends on. Every line parses; `pnpm timeline` reads it, refuses nothing in it and holds it to the rules the
- * chapter states. The sums are small and made up: nothing here is from a learner's page.
- */
-export const TEACH_EXAMPLE: readonly string[] = [
-  'part w1 | Sheet 1',
-  'part q1 in=w1 crop=6,20,88,9 | Ben has 3 bags with 4 apples in each. How many apples in all?',
-  'ask a0 in=q1 is=12 | How many apples in all?',
-  'hint in=a0 | Think what 3 bags of 4 means.',
-  'hint in=a0 | Count the apples bag by bag.',
-  'part q1a in=q1 tag=draw-it | Draw the bags',
-  'step in=q1a show=groups count=3 each=4 label=apples | Here are the 3 bags. Tap the apples in one bag to count them.',
-  'step in=q1a | Every bag is the same. Count on by fours as you tap each bag: 4, then 8, then...',
-  'ask a1 in=q1a is=12 pick=10,12,14 | How many apples in all 3 bags?',
-  'hint in=a1 | Tap the bags one at a time and say the fours as you go.',
-  'hint in=a1 | You counted 4, then 8. Add one more four.',
-  'part q1b in=q1 tag=count-on-a-line | Hop along a number line',
-  'step in=q1b show=numberline 0..16 step=4 | Each hop is one bag: 4 apples. We start at 0.',
-  'ask a1 in=q1b is=12 | Hop 3 times. Where do you land?',
-  'hint in=a1 | The first hop lands on 4. Where does the next hop land?',
-  'part q2 in=w1 crop=6,34,88,9 | Ben has 12 apples and eats 5. How many are left?',
-  'reply | Three bags of four, counted by fours and then hopped along a line.',
-];
-
-/**
- * The TEACH chapter, said on a turn that asks for a lesson and while one goes on (never in the system prompt, which is full). It names the
- * form, how to read a sheet, how to build a way, and the rule that is kept by structure and taught here too: never lead with the answer.
- */
-export function teachChapter(): string {
+export function documentChapter(): string {
   const forms = Object.values(LESSON_VERB)
     .map((verb) => `  ${verb.form}`)
     .join('\n');
   return [
-    'TEACH (a lesson, working-out, or help with a sheet or a photo of homework). The learner is a young child in her first years of school: short words, small steps, warm and plain. Give APPROACHES, never answers: the way there, in steps she does herself.',
-    ROUTING_CARD,
+    'DOCUMENT (parts the person works through one at a time: items to do, steps to follow, clauses to review, days to plan). Write it as the lines below, never as a painted scene; the page draws it. Something to watch (a diagram, a chart) stays painted. Say "the person" in anything you write for the page, and take their level, pace and words from the TECHNIQUES chosen for this turn.',
     `LINES (each stands alone):\n${forms}`,
-    `\`show=\` pictures: ${visualsText()}. A \`?\` in a list is a gap she fills. No picture fits: words only.`,
-    `\`tag=\` ways: ${techniquesText()}.`,
+    `\`show=\` pictures: ${visualsText()}. A \`?\` in a list is a gap they fill. No picture fits: words only.`,
     [
       'HOW:',
-      '1. A sheet or photo: read all of it first. Reply with the OUTLINE: a `part` for the sheet, one for each section heading, one for EVERY question titled with the question as printed (unreadable: say so in the title, with "?"), titles only, and for a photo each question\'s box on it, `crop=x,y,w,h` in whole percents of the photo\'s width and height from its top left, around that question AND the map, picture, table or figure it is about (a figure several questions share is in the crop of each, never a part of its own) (`from=<photo id>` when there are several photos). Then fill only the FIRST question; the rest are written for you as she nears them. Each title is the question IN FULL as printed (never "question 29" alone); its `crop=` is its picture; both are always shown.',
-      '2. A question is written FIRST as her own try: an `ask` straight on the question (`ask <id> in=<question> is=… | <the question, short>`), no steps before it, no `pick=` (she writes it), two hints that point and never tell. THEN three to five ways (`part <id> in=<question> tag=<way>`), the help she asks for with "Show me how": each a different approach, three to six small steps, ending in the `ask` for the question\'s own answer. Start with the one she most likely knows.',
-      '2b. Together: each step of a way is followed by an `ask` for what it finds (a jump\'s size, then where it lands); the next step draws it.',
-      '3. A step is one small thing, about twelve words she can read alone, and a `show=` when a picture helps. It sets up or does one piece (a group counted, one hop); the ask is the next piece. Say what to do ("Tap each flower"), never the result.',
-      `4. NEVER LEAD WITH THE ANSWER. An \`ask\` seals its \`is=\`: nothing before it may hold an answer it accepts: not a step's words ("5 x 12 = 60" beside the choices 50, 60, 70), not a number a \`show=\` is told (the hop that lands on it, \`parts=\` that add up to it), not a title, an earlier ask or hint. A picture is told only what the question says (\`parts=6,2,4\`, never \`each=12\`); a line gets its span and hop size, never where it lands. Show partial work ("12 + 12 so far"), never the total. The reader refuses an ask that gives it away: write the step again, same id, without it.`,
-      '5. An `ask` is the small question a way builds to, one answer in `is=` (numbers and number words are matched for you: `is=12` takes "twelve" and "12 apples"; add other spellings a child may type, `is=ten_pence,10p`). In a way, for a young child, give `pick=` with three large choices, one right. Only after a step that sets it up.',
-      '6. Help is a ladder, one rung a tap: the `hint`s are questions back to her (what do we know, the part\'s own facts in [brackets]; what is it asking), then the ways, then a go; a later hint is a last resort, never the answer.',
-      '7. Finish with `reply | …`, one warm sentence for the thread on what she did and how, never the answer.',
+      '1. OUTLINE, THEN FILL. A source (a sheet, a photo, a brief, a document) is read all the way first. Reply with the outline: a `part` for the whole and one for each section and each item, titled as the source words it, titles only (unreadable: say so in the title, with "?"). For a photo, give each item\'s box on it, `crop=x,y,w,h` in whole percents of its width and height from the top left, around the item and what it is about (`from=<photo id>` when there are several). Then write only the FIRST item; the rest are written for you as the person nears them.',
+      '2. A part is one unit of work: an `ask` the person answers, `step`s that reveal as they go, `hint`s they pull. Help for an ask is its own parts, each `for=<ask>`; `tag=` is any one word for what kind of help (a way, a variation, a clause explained). Help is asked for, never shown first.',
+      '3. SEALED. An `ask` seals its `is=`: nothing before it may hold an answer it accepts (not a step\'s words, a `show=` value, a title, an earlier ask or hint). Show partial work, never the total. The reader refuses an ask that gives it away: write the part again, same id, without it. `is=` takes every accepted spelling (numbers and number words are matched for you).',
+      '4. No single right answer: `ask <id> check=any pick=<a>,<b>,<c> | <question>` (one word an option, `_` for a space) is a choice that opens the next part once something is chosen (no `is=`); `ask <id> check=done | <step>` is a tick for "done". Neither is checked.',
+      '5. A step is one small thing the person can read alone, and a `show=` when a picture helps: say what to do, never the result.',
+      '6. Finish with `reply | …`, one sentence for the thread on what they did and how.',
     ].join('\n'),
-    `Example:\n${TEACH_EXAMPLE.map((line) => `  ${line}`).join('\n')}`,
   ].join('\n');
 }
 
 /** The chapter, built once: it is a function of the tables only. */
-export const TEACH_CHAPTER: string = teachChapter();
+export const DOCUMENT_CHAPTER: string = documentChapter();
 
 // ---------------------------------------------------------------------------------------------------------------------------------
 // the DOCUMENT and HERE blocks

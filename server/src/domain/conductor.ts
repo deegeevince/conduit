@@ -1,5 +1,5 @@
-import { API, CANVAS, DATA_LIMITS, EMPTY_STAGE, isLessonVerb, PASTE_AS_DOCUMENT_CHARS, FULL_CAPABILITIES, LANGUAGE, LEAD_WINDOW, LineNormalizer, LineReader, PRESENCE_TYPING_MS, TurnScore, buildSystemPrompt, draftFactsOf, hasLesson, repairWorth, serializeLine, settle, splitCells, wearingAt, withoutUnknownBraces, worthALook } from '@conduit/language';
-import type { RepairWorth } from '@conduit/language';
+import { API, CANVAS, DATA_LIMITS, EMPTY_STAGE, isLessonVerb, PASTE_AS_DOCUMENT_CHARS, FULL_CAPABILITIES, LANGUAGE, LEAD_WINDOW, LineNormalizer, LineReader, PRESENCE_TYPING_MS, TurnScore, buildSystemPrompt, draftFactsOf, hasLesson, usesParts, repairWorth, serializeLine, settle, splitCells, wearingAt, withoutUnknownBraces, worthALook } from '@conduit/language';
+import type { RepairWorth, TechniqueCard } from '@conduit/language';
 import type { ActivityState, BrainChange, BrainChoice, BrainMode, CriticFinding, DocumentSummary, DocumentView, FixPolicy, NodeId, NodeStatus, OpenDocumentResponse, PromptVariant, Seen, ToolChoice } from '@conduit/language';
 import type {
   BackEvent,
@@ -65,7 +65,6 @@ import type { StoredUpload, UploadStore } from './uploads';
 import type { UsageMeter } from '../usage';
 import { currentIdentity, labelOf } from '../identity';
 import { processEnvironment } from '../env';
-import { asksForLesson } from '@conduit/language';
 import { askedOf, refusalProblem, repairTurn, reviewTurn } from './review';
 import type { RepairOutcome } from './review';
 import { quoted } from '@conduit/language';
@@ -171,6 +170,8 @@ const DATASET_WAIT_MS = 5_000;
 export class Conductor {
   private readonly deps: ConductorDeps;
   private readonly waiters = new Map<string, Set<() => void>>();
+  /** The technique cards that wrote a session's document (a lesson for a young learner, a recipe): they ride on every later turn of it, so the part written ahead, and the answer to a tap, are written by the same rules. */
+  private readonly documentCards = new Map<string, readonly TechniqueCard[]>();
   private readonly reaper: NodeJS.Timeout;
   /** the file each draft's picture was saved under, for the `fix` record; forgotten with the turn's session */
   private readonly draftFiles = new Map<string, string>();
@@ -856,6 +857,7 @@ export class Conductor {
       this.quietSet.delete(slot);
     }
     this.docs.release(session.id);
+    this.documentCards.delete(session.id);
     this.deps.sessionLog.close(session.id);
     session.closeSink?.();
     session.sink = null;
@@ -1260,7 +1262,13 @@ export class Conductor {
       fresh = gathered.fresh;
       if (turn.abort.signal.aborted) return;
       // The few techniques that fit what was just said. From memory: no network, file or model is on this path.
-      const techniques = turn.input.kind === 'prompt' || turn.input.kind === 'tap' || turn.input.kind === 'act' ? this.deps.library.cardsFor({ input: turn.input, documents: s.documents.length > 0 }) : [];
+      const chosen = turn.input.kind === 'prompt' || turn.input.kind === 'tap' || turn.input.kind === 'act' ? this.deps.library.cardsFor({ input: turn.input, documents: s.documents.length > 0 }) : [];
+      // the cards that wrote this session's document keep riding while it is open (a part written ahead says nothing the selector could match)
+      const writers = chosen.filter((card) => usesParts([card]));
+      if (writers.length > 0) this.documentCards.set(s.id, writers);
+      const held = this.documentCards.get(s.id) ?? [];
+      const viewNow = this.docs.viewOfSession(s.id);
+      const techniques = held.length > 0 && !usesParts(chosen) && viewNow !== null && hasLesson({ document: { document: viewNow.document, state: viewNow.state } }) ? [...held, ...chosen].slice(0, 3) : chosen;
       if (techniques.length > 0) {
         log.debug('techniques.chosen', { session: s.id, turn: turn.id, techniques: techniques.map((card) => card.id) });
         sessionLog.write(s.id, { type: 'techniques', turn: turn.id, ids: techniques.map((card) => card.id) });
@@ -1531,7 +1539,7 @@ export class Conductor {
     if (this.deps.brains.configured.review === undefined) return 'this brain cannot look at an answer again';
     if (turn.input.kind === 'act') return 'the person is working a control';
     const view = this.docs.viewOfSession(s.id);
-    if (asksForLesson(turn.input) || (view !== null && hasLesson({ document: { document: view.document, state: view.state } }))) return 'a lesson or document turn';
+    if ((view !== null && hasLesson({ document: { document: view.document, state: view.state } }))) return 'a lesson or document turn';
     const structures = turn.score.schedule.elements.filter((element) => element.exit === null && element.figure?.kind === 'structure');
     if (structures.some((element) => element.figure?.kind === 'structure' && element.figure.structure === 'app')) return 'an app';
     if (structures.some((element) => element.figure?.kind === 'structure' && element.figure.structure === 'screen')) return 'a mock-up';

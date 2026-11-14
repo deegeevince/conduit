@@ -419,9 +419,9 @@ A mock-up is described, not drawn. The brain says what is on each screen, in ord
 ### 4.20 The document and its lessons: `part`, `step`, `ask`, `hint`, `reply`, `end`
 
 ```
-part <id> [in=<part>] [tag=<technique>] [crop=x,y,w,h [from=<photo>]] | <title>
+part <id> [in=<part>] [tag=<word>] [for=<ask>] [crop=x,y,w,h [from=<photo>]] | <title>
 step [id] [in=<part>] [show=<visual> [a..b] [key=value…]] | <words>
-ask <id> [in=<part>] is=<a>[,<b>…] [pick=<x>,<y>,<z>] [unit=<unit>] [check=working|order] | <question>
+ask <id> [in=<part>] is=<a>[,<b>…] [pick=<x>,<y>,<z>] [unit=<unit>] [check=working|order|any|done] | <question>
 hint [in=<ask>] | <words>
 reply | <words>
 end
@@ -450,7 +450,7 @@ Every line stands alone on the wire: the normaliser writes `in=` and an id on ev
 | `clock` | `time` (like `3:30`), `mode` (word) | a clock face to read or to set |
 | `ruler` | `mm` (numbers: each straight road in millimetres, in order; drawn, never written) | a ruler she drags along a road, its zero clicking onto a place, to read the length off herself |
 
-**The techniques** (`TECHNIQUE`, a fixed list): `draw-it`, `share-it-out`, `count-on-a-line`, `make-ten`, `break-it-apart`, `find-the-pattern`, `read-the-question`, `work-backwards`.
+**Tags and help.** `tag=` is any one word naming what kind of part it is; it means nothing to the reader. What is help is what says `for=<ask>` (a part with a `tag=` and no `for=` helps the last ask of the part it sits in, so documents written before `for=` read as they did). The ways of a primary-maths question (`TECHNIQUE`: `draw-it`, `share-it-out`, `count-on-a-line`, `make-ten`, `break-it-apart`, `find-the-pattern`, `read-the-question`, `work-backwards`) are content: the lesson page has names for them, and a technique card teaches them. **Two asks with no right answer:** `check=any` (a choice: `pick=` the options, no `is=`) and `check=done` (a tick); the gate opens when a value is held, and nothing is sealed or checked.
 
 **An open ask seals its answer, by structure** (2.6). A rule the brain must remember is not a rule, so in three layers:
 
@@ -462,7 +462,7 @@ Every line stands alone on the wire: the normaliser writes `in=` and an id on ev
 
 **The document's types** (`language/src/document.ts`): `Document`, `DocNode`, `Cursor`, `Play`, `DocState`, and `advance(doc, state, event)`, the only writer of what the person did; `foldDocument(records)` makes a document from a conversation's log, and a flat conversation is one (the root is one part, every `scene` opens a scene node, and a turn with no `scene` line adds a segment to the open scene). A node is `outlined`, `filling` while a turn writes to it, `filled` when the turn finished, `verified` or `refused` when the verifier has said (a refused way is never checked wrong).
 
-**How the brain is taught it** (`language/src/teach.ts`, WS7). Not in the fixed prompt: the TEACH chapter rides in the turn's brief when the words ask for working-out, a lesson, a worksheet or homework, or a photo with a request to help with the page, and stays while a lesson goes on. It opens with the routing card (a lesson is written as these lines and never as a painted scene), gives the forms, pictures and ways from the tables, says how to read a sheet (outline every question first, fill only the first), how to build a way, and teaches "never lead with the answer" beside the seal. Every brief of a conversation with a document also carries `DOCUMENT` (the tree, at most forty lines, far siblings folded, with her progress) and `HERE` (the steps in front of her, her tries and the hints shown), built from `TurnContext.document`.
+**How the brain is taught it** (`language/src/teach.ts`, WS7, split by GEN1a). Not in the fixed prompt. A short neutral DOCUMENT chapter (the lines, outline then fill, what an ask seals, the two asks with no right answer, "the person") rides in the turn's brief whenever a document of parts exists, or when a technique card the library chose writes one. What a kind of document teaches is a technique card in `techniques/seed/`, chosen by `selectTechniques`: `teach-young-learner`, `recipe-steps`, `review-a-document`, `plan-a-trip`.
 
 Limits are `LESSON_LIMITS`: 400 parts, 6 deep, 40 steps and asks to a part, 8 answers, 6 choices and 6 hints to an ask.
 
@@ -1410,8 +1410,8 @@ The painter renders these media by itself: `watercolor`, `oil`, `gouache`, `ink`
 | --- | --- | --- | --- |
 | `paper` | Ink on warm paper. Quiet, bright, good for drawing and for reading. The default. | `ground=#f4efe4 ink=#23201b dim=#6f685c accent=#c13e1e alt=#2a5d8f face=serif fx=paper,grain stroke=pencil` | `enter=fade by=word exit=fade` |
 | `night` | Deep blue dark, soft light. Stories, stillness, anything after sunset. | `ground=#0f1424 ink=#e9e4d6 dim=#8e93a8 accent=#ffb454 alt=#7fb8d8 face=serif fx=glow,grain,vignette stroke=clean` | `enter=fade by=word exit=fade` |
-| `chalk` | A blackboard. Explaining, working something out by hand. | `ground=#22302b ink=#eef0e6 dim=#9aa79c accent=#ffd866 alt=#8fd3e8 face=hand fx=dust,vignette stroke=chalk` | `enter=wipe by=all exit=fade` |
-| `blueprint` | White line on drafting blue. Mechanisms, plans, how a thing is built. | `ground=#18407a ink=#f2f6ff dim=#a9c0e6 accent=#ffd23f alt=#ff8fa3 face=mono fx=grid,grain stroke=clean` | `enter=type by=char exit=cut` |
+| `chalk` | A blackboard: only when asked for, or for working something out by hand. | `ground=#22302b ink=#eef0e6 dim=#9aa79c accent=#ffd866 alt=#8fd3e8 face=hand fx=dust,vignette stroke=chalk` | `enter=wipe by=all exit=fade` |
+| `blueprint` | White line on drafting blue: only when asked for, or for a real plan or schematic. Never the default for a mechanism. | `ground=#18407a ink=#f2f6ff dim=#a9c0e6 accent=#ffd23f alt=#ff8fa3 face=mono fx=grid,grain stroke=clean` | `enter=type by=char exit=cut` |
 | `riso` | A two-colour print: flat shapes, halftone dots. Bold, playful. | `ground=#f6f0e2 ink=#1f2a5c dim=#636b98 accent=#db0013 alt=#007980 face=display fx=paper,halftone,misprint stroke=marker` | `enter=pop by=all exit=cut` |
 | `phosphor` | An amber terminal, 1987: one colour, typed in. Nocturnal, thinking aloud. | `ground=#140d04 ink=#f0a000 dim=#a87400 accent=#ffd070 alt=#cf8a00 face=terminal fx=persistence,glow,scanlines,curve,signal stroke=clean` | `enter=type by=char exit=cut` |
 | `teletext` | Broadcast teletext, 1981: eight hard colours, chunky pixels. Public, declarative. | `ground=#000000 ink=#ffffff dim=#7f7f7f accent=#ffff00 alt=#00ffff face=teletext fx=pixelate,dither,signal,header stroke=pixel` | `enter=cut by=word exit=cut` |
