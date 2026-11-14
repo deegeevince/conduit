@@ -371,8 +371,10 @@ export function sightOf(timeline: Timeline, schedule: Schedule, base: StageBase,
     }
     // A subject that ends outside the picture's region (the final frame, not the first): the stage clips it there, and what is cut off is gone.
     if (entry.resting && element.kind !== 'text' && !notes.includes('clipped') && !notes.includes('off-canvas') && element.figure?.kind !== 'group') {
-      const region = fitOf(element.scene).region;
-      const regionRect: Rect = { x: region.x, y: region.y, w: region.width, h: region.height };
+      const fitted = fitOf(element.scene);
+      // a control is not drawn on the picture: it stands in the flow room under or beside it, which is the stage's own, so the room it may fill is the picture's region and the flow together
+      const room = element.kind === 'control' ? { x: Math.min(fitted.region.x, fitted.flow.x), y: Math.min(fitted.region.y, fitted.flow.y), right: Math.max(fitted.region.x + fitted.region.width, fitted.flow.x + fitted.flow.width), bottom: Math.max(fitted.region.y + fitted.region.height, fitted.flow.y + fitted.flow.height) } : { x: fitted.region.x, y: fitted.region.y, right: fitted.region.x + fitted.region.width, bottom: fitted.region.y + fitted.region.height };
+      const regionRect: Rect = { x: room.x, y: room.y, w: room.right - room.x, h: room.bottom - room.y };
       const inside = overlapArea(probe, regionRect);
       if (area > 0 && 1 - inside / area > CLIPPED_SHARE && !figureFrames.get(element.key)?.some((figure) => figure.kind === 'shape' && figure.bleed)) notes.push('clipped');
     }
