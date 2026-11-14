@@ -75,7 +75,7 @@ import { playCase } from './explore-case';
 import { callsOf, perCallFor, projectUsd } from './explore-cost';
 import type { Plan } from './explore-cost';
 import type { JudgeSettings } from './explore-judge';
-import { EMPTY, slots, techniquesFor } from './explore-rig';
+import { EMPTY, judgeStills, slots, techniquesFor } from './explore-rig';
 import { inspect } from './explore-inspect';
 import { rubricOf } from './explore-judge';
 import { createLibrary } from '../library/registry';
@@ -98,6 +98,8 @@ interface Options {
   readonly cases: boolean;
   readonly judge: boolean;
   readonly judgeModel: string;
+  /** look and fix: the brain is shown its draft and fixes it (on by default with the claude-cli brain) */
+  readonly review: boolean;
   readonly judgeEffort: 'low' | 'medium' | 'high';
   readonly judgeFrames: number;
   readonly dryRun: boolean;
@@ -131,6 +133,7 @@ function parseArguments(argv: readonly string[]): Options {
   let variants: ExploreVariant[] | null = null;
   let cases = true;
   let judgeOn = true;
+  let reviewOn = true;
   let judgeModel = 'sonnet';
   let judgeEffort: 'low' | 'medium' | 'high' = 'medium';
   let judgeFrames = 1;
@@ -160,6 +163,7 @@ function parseArguments(argv: readonly string[]): Options {
       });
     } else if (flag === '--no-cases') cases = false;
     else if (flag === '--no-judge') judgeOn = false;
+    else if (flag === '--no-review') reviewOn = false;
     else if (flag === '--judge-model') judgeModel = value();
     else if (flag === '--judge-effort') {
       const effort = value();
@@ -177,7 +181,7 @@ function parseArguments(argv: readonly string[]): Options {
   if (!Number.isInteger(judgeFrames) || judgeFrames < 1 || judgeFrames > 5) usageError('--judge-frames must be a whole number from 1 to 5');
   if (!Number.isFinite(maxUsd) || maxUsd <= 0) usageError('--max-usd must be a positive number');
   if (pool !== null && batteryFile !== null) usageError('--pool and --battery name the same thing twice');
-  return { only, heldOut, pool, batteryFile, brain, model, baseline, timeoutMs: timeoutS * 1000, samples, variants: variants ?? ['column'], cases, judge: judgeOn, judgeModel, judgeEffort, judgeFrames, dryRun, maxUsd, yes, web };
+  return { only, heldOut, pool, batteryFile, brain, model, baseline, timeoutMs: timeoutS * 1000, samples, variants: variants ?? ['column'], cases, judge: judgeOn, review: reviewOn, judgeModel, judgeEffort, judgeFrames, dryRun, maxUsd, yes, web };
 }
 
 function asNumber(value: unknown): number | null {
@@ -456,7 +460,8 @@ async function main(): Promise<void> {
     return found.brain;
   };
   const brain = brainFor(options.variants[0] ?? 'column');
-  const services: Services = { paint: env.images.kind !== 'none', sight: 'snapshot', review: false };
+  const reviewing = options.review && !replaying && env.review.enabled && brain.review !== undefined;
+  const services: Services = { paint: env.images.kind !== 'none', sight: 'snapshot', review: reviewing };
 
   const started = new Date();
   const baseId = `${stamp(started)}-${brain.id}`;
@@ -613,6 +618,15 @@ async function main(): Promise<void> {
           interruptAfterMs: null,
           signal: running.controller.signal,
           why: () => running.reason,
+          ...(reviewing
+            ? {
+                look: {
+                  policy: env.review,
+                  styles: () => [],
+                  draft: (lines) => eyes.look({ turn: `${session}-t1`, base: EMPTY_STAGE, lines, viewport: { width: REFERENCE_SCREEN.width, height: REFERENCE_SCREEN.height, dpr: 1 }, playhead: null, earlier: [], judgeSide: JUDGE_SIDE }),
+                },
+              }
+            : {}),
         });
         unitBrain.release?.(session);
         if (played.system !== null && !variantChecked.has(unit.variant)) {
@@ -653,10 +667,19 @@ async function main(): Promise<void> {
             process.stderr.write(`explore: no picture for ${label}: ${error instanceof Error ? error.message : String(error)}\n`);
           }
         }
+        // Did looking help? The draft is judged on its own, the answer as it ended is judged as always, and the review keeps both.
+        const looked = played.looked;
+        const draftJudgement: Promise<ExploreResult['judge']> =
+          looked !== undefined && looked.draft !== null && looked.review.result === 'fixed' && judgeSettings !== null ? judgeStills(rig, prompt.prompt, looked.draft, { chart: prompt.expects === 'chart' }) : Promise.resolve(null);
         later(
           (async () => {
             const judge = await judgement;
-            const finished: ExploreResult = { ...base, ...measured2, ...(judge === null ? {} : { judge }) };
+            const draftJudge = await draftJudgement;
+            const review: ExploreResult['review'] =
+              looked === undefined
+                ? undefined
+                : { ...looked.review, before: looked.review.result === 'fixed' ? (draftJudge?.failure === null ? (draftJudge?.coherence ?? null) : null) : (judge?.failure === null ? (judge?.coherence ?? null) : null), after: judge?.failure === null ? (judge?.coherence ?? null) : null };
+            const finished: ExploreResult = { ...base, ...measured2, ...(judge === null ? {} : { judge }), ...(review === undefined ? {} : { review }) };
             const verdicts = verdictsOf(finished);
             const result: ExploreResult = { ...finished, verdicts };
             await record(unit, [result], verdicts, result, result.checks.meetsExpectation);

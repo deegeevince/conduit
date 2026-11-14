@@ -21,6 +21,7 @@ export interface HarnessReply {
   readonly complete: boolean;
   readonly renderer: string;
   readonly geometry: import('@conduit/language').ExploreGeometry;
+  readonly placed: readonly import('@conduit/language').PlacedBox[];
 }
 
 export interface DriveRequest {

@@ -7,7 +7,7 @@
 // `sendSnapshot` in the painter sends), the ones a judge is shown, and thumbnails for the review page.
 
 import { TurnScore, settle, shownAt } from '@conduit/language';
-import type { Capabilities, ExploreGeometry, Line, StageBase, TurnReport } from '@conduit/language';
+import type { Capabilities, ExploreGeometry, Line, PlacedBox, StageBase, TurnReport } from '@conduit/language';
 import type { Frame } from '../contracts/frame';
 import type { Renderer } from '../contracts/renderer';
 import { REST_POSE } from '../contracts/space';
@@ -53,6 +53,8 @@ export interface HarnessReply {
   readonly renderer: string;
   /** what the painter measured about the resting stage */
   readonly geometry: ExploreGeometry;
+  /** where everything this turn showed really rests, as the painter reports it in a draft */
+  readonly placed: readonly PlacedBox[];
 }
 
 const SNAPSHOT_SIDE = 768;
@@ -157,8 +159,9 @@ export function installHarness(): void {
     const lastStill = chartHost === null ? undefined : (key: string): HTMLCanvasElement | null => chartHost.still(key);
     const shot = last === undefined ? null : await r.rasterise(last, { maxSide: SNAPSHOT_SIDE, mime: 'image/jpeg', quality: 0.8, onIncomplete, ...(lastStill === undefined ? {} : { chartStill: lastStill }) });
     const keys = new Set(schedule.elements.filter((element) => !element.carried).map((element) => element.key));
-    const geometry = geometryOf(schedule, placedOf(timeline, schedule, at, keys), report.sight);
-    return { report, duration, judge, thumbs, snapshot: shot === null ? null : await base64Of(shot), complete, renderer: canUseThree() ? 'three' : 'plain', geometry };
+    const placed = placedOf(timeline, schedule, at, keys);
+    const geometry = geometryOf(schedule, placed, report.sight);
+    return { report, duration, judge, thumbs, snapshot: shot === null ? null : await base64Of(shot), complete, renderer: canUseThree() ? 'three' : 'plain', geometry, placed: placed.map(({ key: _key, ...item }) => item) };
   }
 
   const environment = async (viewport: Viewport): Promise<{ renderer: Renderer; viewport: Viewport; charts: ChartHost | null }> => {
