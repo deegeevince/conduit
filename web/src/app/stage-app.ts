@@ -18,6 +18,7 @@ import type { Sound } from '../audio/sound';
 import { createPainter } from '../painter';
 import { createChartEngine } from '../render/chart';
 import { createFilm } from '../painter/film';
+import { createReel, lastAnswer } from '../painter/reel';
 import { createPlainRenderer } from '../render/plain';
 import { canUseThree, createThreeRenderer } from '../render/three';
 import { asDataTable } from '../link/guards';
@@ -1047,7 +1048,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   host.addEventListener('pointerleave', onPointerLeave);
 
   function getExporter(): Exporter {
-    exporter ??= createExporter({ createRenderer: () => newRenderer(params), chartStill: (frame, key) => { const chart = frame.charts?.find((candidate) => candidate.key === key); return chart === undefined ? null : (chartHost?.stillOf(chart) ?? null); } });
+    exporter ??= createExporter({ createRenderer: () => newRenderer(params), appStill: (key) => liveApps.still(key), appsFresh: () => liveApps.refresh(1500), chartStill: (frame, key) => { const chart = frame.charts?.find((candidate) => candidate.key === key); return chart === undefined ? null : (chartHost?.stillOf(chart) ?? null); } });
     return exporter;
   }
 
@@ -1056,7 +1057,9 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     return recording === null ? '' : recording.lines.map(({ line }) => serializeLine(line)).join('\n');
   }
 
-  const LABELS = { video: 'film', frames: 'frames', still: 'picture', script: 'script', pdf: 'pdf' } as const;
+  const LABELS = { video: 'film', still: 'picture', script: 'script', pdf: 'pdf' } as const;
+  /** The longest a film of several turns is made: a conversation longer than this keeps its latest turns, and says so. */
+  const REEL_MAX_SECONDS = 600;
 
   function startExport(request: ExportRequest): ExportJob {
     const recording = painter.recording();
@@ -1066,11 +1069,22 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     // What the viewer's hand held and what the charts were given go into the file: it shows the picture as they left it.
     const held: Record<string, ControlValue> = {};
     for (const view of snap.controls) if (view.value !== null) held[view.id] = view.value;
-    const film = createFilm(recording, { viewport: size, reducedMotion: snap.reducedMotion, arrival: 'at-once', controls: held, data: Object.fromEntries(dataTables) });
+    const filmOptions = { apps: true, viewport: size, reducedMotion: snap.reducedMotion, arrival: 'at-once' as const, controls: held, data: Object.fromEntries(dataTables) };
+    // A film is of the last answer (a prompt and the taps that carried it on) unless `scope` says the last turn alone, or the whole conversation.
+    let film;
+    let reelNote: string | null = null;
+    if (request.kind === 'video' && request.scope !== 'turn') {
+      const everything = painter.recordings();
+      const conversation = request.scope === 'conversation';
+      const turns = conversation ? everything : lastAnswer(everything);
+      const reel = createReel(turns.length > 0 ? turns : [recording], filmOptions, { cards: conversation, maxSeconds: REEL_MAX_SECONDS });
+      film = reel;
+      if (reel.leftOut > 0 || reel.cut) reelNote = `The film holds at most ${REEL_MAX_SECONDS / 60} minutes: ${reel.leftOut > 0 ? `the first ${reel.leftOut} turn${reel.leftOut === 1 ? '' : 's'} ${reel.leftOut === 1 ? 'is' : 'are'} left out` : 'the last turn is cut short'}`;
+    } else film = createFilm(recording, filmOptions);
     // A film is not touched by a second job: the exporter refuses it, and the one still running keeps the status line.
     const refused = exporting !== null && request.kind !== 'script' && !(request.kind === 'still' && request.format === 'svg');
     const job = getExporter().start(film, request.kind === 'still' ? { ...request, at: Math.min(request.at, film.duration) } : request);
-    const run = { label: LABELS[request.kind], fraction: 0, cancel: () => job.cancel() };
+    const run = { label: request.kind === 'video' && request.scope === 'conversation' ? 'conversation film' : LABELS[request.kind], fraction: 0, cancel: () => job.cancel() };
     if (!refused) exporting = run;
     job.onProgress((progress) => {
       run.fraction = progress.done;
@@ -1093,7 +1107,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
         ),
     );
     publishStatus();
-    return job;
+    return reelNote === null ? job : { ...job, done: job.done.then((made) => ({ ...made, note: reelNote })) };
   }
 
   /** Lines of Series played at once, as a turn of the app's own. */

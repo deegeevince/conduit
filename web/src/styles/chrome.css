@@ -488,6 +488,13 @@ input {
   display: none;
 }
 
+.dialog__hint {
+  margin: 0;
+  color: var(--chrome-dim, var(--chrome-text));
+  font-size: 0.875em;
+  line-height: 1.45;
+}
+
 .dialog__buttons {
   display: flex;
   justify-content: flex-end;

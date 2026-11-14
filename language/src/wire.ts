@@ -595,7 +595,7 @@ export const APP_COMMANDS = [
   { name: 'stop-all', args: '[resume]', gist: 'stop everything now, in every conversation: answers, questions waiting for you, helper processes. Agent tools stay off until "/stop-all resume"' },
   { name: 'show-all', args: '', gist: 'show the whole answer at once' },
   { name: 'copy', args: '[script]', gist: 'copy the answer as text, or its Series script' },
-  { name: 'export', args: '<png|svg|film|frames|pdf|script>', gist: 'save the answer as a picture, a film, its slides or its script' },
+  { name: 'export', args: '<png|svg|film|conversation|pdf|script>', gist: 'save the answer as a picture, a film, its slides or its script, or the whole conversation as a film' },
   { name: 'capture', args: '', gist: 'film the last answer for the steward to watch' },
 ] as const satisfies readonly { readonly name: string; readonly args: string; readonly gist: string; readonly needs?: 'refine' }[];
 export type AppCommandName = (typeof APP_COMMANDS)[number]['name'];

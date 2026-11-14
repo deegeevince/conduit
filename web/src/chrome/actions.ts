@@ -21,7 +21,7 @@ export interface ActionSlots {
 
 type Formats = Awaited<ReturnType<StageApp['formats']>>;
 
-const NO_FORMATS: Formats = { video: [], frames: false, svg: false, pdf: false };
+const NO_FORMATS: Formats = { video: [], svg: false, pdf: false };
 
 let counter = 0;
 
@@ -41,9 +41,12 @@ function sceneCount(lines: readonly { readonly text: string }[]): number {
  *   sheet would cover the stage).
  * - **Save**: a menu button with: Copy script, Save script, Play a
  *   script (a textarea in a dialog; sends input kind `script`), Save picture
- *   (PNG, SVG), Save film (the formats `Exporter.formats()` offers, at
- *   1920x1080 or 1080x1920 or 1080x1080, 30 or 60 fps) with a progress bar
- *   and Cancel, Save frames. Each item says in a line what it does. Enabled
+ *   (PNG, SVG), Save film (the latest answer: the prompt it began with and
+ *   the taps and controls that carried it on; the formats `Exporter.formats()`
+ *   offers, at 1920x1080 or 1080x1920 or 1080x1080, 30 or 60 fps) and Save
+ *   whole conversation (a WebM of every turn in order, each after a title card
+ *   of what was asked, at most ten minutes, with the music of any tunes), both
+ *   with progress in the status line and Cancel. Each item says in a line what it does. Enabled
  *   once a turn has ended.
  * - **The chart credit**: the charting engine's name and link, only while a chart is on stage.
  *
@@ -163,8 +166,8 @@ export function mountActions(host: HTMLElement, app: StageApp, transcript: Trans
     { id: 'png', label: 'Save picture (PNG)', gist: 'the picture as it rests, as an image', needsAnswer: true },
     { id: 'svg', label: 'Save picture (SVG)', gist: 'the same picture as a drawing that scales', needsAnswer: true },
     { id: 'midi', label: 'Save MIDI', gist: 'the tune, as a standard MIDI file', needsAnswer: true },
-    { id: 'film', label: 'Save film…', gist: 'the answer playing, as a video', needsAnswer: true },
-    { id: 'frames', label: 'Save frames…', gist: 'every frame, as numbered images in a zip', needsAnswer: true },
+    { id: 'film', label: 'Save film…', gist: 'the latest answer playing, taps and all, as a video', needsAnswer: true },
+    { id: 'conversation', label: 'Save whole conversation…', gist: 'every turn in order, each after a title card, as one WebM', needsAnswer: true },
   ] as const;
   type ItemId = (typeof ITEMS)[number]['id'];
 
@@ -199,7 +202,7 @@ export function mountActions(host: HTMLElement, app: StageApp, transcript: Trans
     };
     hide('svg', formatsKnown && !formats.svg);
     hide('film', formatsKnown && formats.video.length === 0);
-    hide('frames', formatsKnown && !formats.frames);
+    hide('conversation', formatsKnown && !formats.video.includes('webm'));
   };
 
   let menuOpen = false;
@@ -329,7 +332,7 @@ export function mountActions(host: HTMLElement, app: StageApp, transcript: Trans
   });
 
   const sizeOptions = SIZES.map((size) => `<option value="${size.id}">${size.label}</option>`).join('');
-  const makeExportDialog = (title: string, withFormat: boolean): { dialog: HTMLDialogElement; format: HTMLSelectElement | null; size: HTMLSelectElement; fps: HTMLSelectElement; form: HTMLFormElement; cancel: HTMLButtonElement; error: HTMLElement } => {
+  const makeExportDialog = (title: string, withFormat: boolean, hint = ''): { dialog: HTMLDialogElement; format: HTMLSelectElement | null; size: HTMLSelectElement; fps: HTMLSelectElement; form: HTMLFormElement; cancel: HTMLButtonElement; error: HTMLElement } => {
     const base = counter + 1;
     const dialog = makeDialog(
       title,
@@ -338,6 +341,7 @@ export function mountActions(host: HTMLElement, app: StageApp, transcript: Trans
        <select class="dialog__select" id="export-size-${base}" data-field="size">${sizeOptions}</select>
        <label class="dialog__label" for="export-fps-${base}">Frames per second</label>
        <select class="dialog__select" id="export-fps-${base}" data-field="fps"><option value="30">30</option><option value="60">60</option></select>
+       ${hint === '' ? '' : `<p class="dialog__hint">${hint}</p>`}
        <p class="dialog__error" role="alert" hidden></p>
        <div class="dialog__buttons"><button type="button" class="dialog__cancel">Cancel</button><button type="submit" class="dialog__go">Start</button></div>`,
     );
@@ -352,8 +356,8 @@ export function mountActions(host: HTMLElement, app: StageApp, transcript: Trans
     return { dialog, format, size, fps, form, cancel, error };
   };
 
-  const film = makeExportDialog('Save film', true);
-  const frames = makeExportDialog('Save frames', false);
+  const film = makeExportDialog('Save film', true, 'The latest answer as it played: what you asked, and the taps and controls that carried it on. A tune is in the film as sound (WebM).');
+  const conversation = makeExportDialog('Save whole conversation', false, 'Every turn since this page opened, in order, each after a card with what you asked. It is a WebM with the sound of any tunes, drawn faster than it plays; Cancel stops it. A film is at most 10 minutes: a longer conversation keeps its latest turns.');
 
   const sizeOf = (select: HTMLSelectElement): { width: number; height: number } => SIZES.find((size) => size.id === select.value) ?? SIZES[0];
 
@@ -363,9 +367,9 @@ export function mountActions(host: HTMLElement, app: StageApp, transcript: Trans
       const job = app.export(request);
       dialog.close();
       job.done.then(
-        ({ blob, fileName }) => {
+        ({ blob, fileName, hasSound, note }) => {
           saveBlob(blob, fileName);
-          app.announce(`Saved ${fileName}`);
+          app.announce(`Saved ${fileName}${hasSound === true ? ', with its music' : ''}${note === undefined ? '' : `. ${note}`}`);
         },
         () => undefined,
       );
@@ -378,11 +382,11 @@ export function mountActions(host: HTMLElement, app: StageApp, transcript: Trans
   film.form.addEventListener('submit', (event) => {
     event.preventDefault();
     const format = film.format?.value === 'mp4' ? 'mp4' : 'webm';
-    startExport({ kind: 'video', format, ...sizeOf(film.size), fps: Number(film.fps.value) }, film.error, film.dialog);
+    startExport({ kind: 'video', format, ...sizeOf(film.size), fps: Number(film.fps.value), scope: 'answer' }, film.error, film.dialog);
   });
-  frames.form.addEventListener('submit', (event) => {
+  conversation.form.addEventListener('submit', (event) => {
     event.preventDefault();
-    startExport({ kind: 'frames', ...sizeOf(frames.size), fps: Number(frames.fps.value) }, frames.error, frames.dialog);
+    startExport({ kind: 'video', format: 'webm', ...sizeOf(conversation.size), fps: Number(conversation.fps.value), scope: 'conversation' }, conversation.error, conversation.dialog);
   });
 
   const openExport = (parts: ReturnType<typeof makeExportDialog>): void => {
@@ -438,8 +442,8 @@ export function mountActions(host: HTMLElement, app: StageApp, transcript: Trans
       case 'film':
         openExport(film);
         break;
-      case 'frames':
-        openExport(frames);
+      case 'conversation':
+        openExport(conversation);
         break;
       case undefined:
         break;
@@ -461,7 +465,7 @@ export function mountActions(host: HTMLElement, app: StageApp, transcript: Trans
       document.removeEventListener('pointerdown', onDocumentPointer);
       playDialog.remove();
       film.dialog.remove();
-      frames.dialog.remove();
+      conversation.dialog.remove();
       credit?.remove();
       showButton.remove();
       group.remove();
