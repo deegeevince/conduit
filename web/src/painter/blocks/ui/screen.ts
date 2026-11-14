@@ -106,9 +106,21 @@ function outsideRails(root: Placed<Item>, visit: (p: Placed<Item>, x: number, de
   for (const k of root.children) outsideRails(k, visit, x, depth + 1);
 }
 
+/**
+ * One screen, laid out. What the screen's own words (`theme=`, `accent=`, ...) make of the look's tokens is read here. A phone or a tablet is the glass it is: when
+ * what was written does not fit it and the screen did not say how closely to set it, it is set again at `density=compact`, and that one is kept if it fits better.
+ */
 export function layoutScreen(written: UiScreen, base: UiTokens, measure: UiMeasure, state: UiState = NO_STATE, lines = 0): UiScreenLayout {
-  // what the screen's own words (`theme=`, `accent=`, ...) make of the look's tokens
   const tokens = themed(base, written.style);
+  const first = layoutWith(written, tokens, measure, state, lines);
+  const glass = first.device === 'phone' || first.device === 'tablet';
+  const spilled = (layout: UiScreenLayout): number => layout.notes.filter((n) => n.kind === 'outside').length;
+  if (!glass || tokens.pack !== undefined || spilled(first) === 0) return first;
+  const tighter = layoutWith(written, { ...tokens, pack: 'compact' }, measure, state, lines);
+  return spilled(tighter) < spilled(first) ? tighter : first;
+}
+
+function layoutWith(written: UiScreen, tokens: UiTokens, measure: UiMeasure, state: UiState, lines: number): UiScreenLayout {
   // `device` is a property that can be set: the same lines laid out on another device
   const switched: UiScreen = state.device[written.id] === undefined ? written : { ...written, device: state.device[written.id] ?? written.device };
   const adapted = switched.device === 'phone' && (written.device === 'browser' || written.device === 'desktop');
