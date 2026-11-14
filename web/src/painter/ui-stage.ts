@@ -27,6 +27,7 @@ import { paintersMeasure } from './blocks/ui/measure';
 import { layoutScreen } from './blocks/ui/screen';
 import { applyAction, hitAt, sliderAt, typeInto } from './blocks/ui/state';
 import { SWITCH } from './blocks/ui/kit';
+import { lengthOf, playerPosition } from './blocks/ui/rich';
 import { NO_STATE } from './blocks/ui/types';
 import type { UiHit, UiPictureState, UiScreenLayout, UiState } from './blocks/ui/types';
 
@@ -60,20 +61,26 @@ export function hasUiPicture(partId: string): boolean {
 /** What a finger holds on a mock-up: a switch or slider being dragged, or a button that has been pressed and not yet let go. */
 interface Grab {
   readonly pointer: number;
-  readonly kind: 'toggle' | 'slider' | 'press';
+  readonly kind: 'toggle' | 'slider' | 'press' | 'scroll';
   readonly index: number;
   readonly hit: UiHit;
   /** the point (screen points) where the finger came down, and where the knob was then */
   readonly x0: number;
   readonly from: number;
   moved: boolean;
+  /** a row being dragged: where the finger was last and when, and how fast it is going (points a millisecond, signed as the finger goes) */
+  lastX: number;
+  lastAt: number;
+  speed: number;
 }
 
 /** A knob easing to where it will rest (after a finger lets go, or a tap), by the clock of the frame it is asked in. */
 interface Ease {
-  readonly kind: 'toggle' | 'slider';
+  readonly kind: 'toggle' | 'slider' | 'scroll';
   readonly from: number;
   readonly to: number;
+  /** how long it takes, ms; absent: a knob's own */
+  readonly ms?: number;
   /** performance.now() of the first frame that saw it: a tap's ease begins when it is first drawn */
   at: number | null;
 }
@@ -87,6 +94,8 @@ interface Runtime {
   last: Last | null;
   grab: Grab | null;
   eases: Map<string, Ease>;
+  /** performance.now() when a playing bar last moved on: what advances its progress while it plays */
+  tickAt: number | null;
 }
 
 interface Last {
@@ -95,6 +104,8 @@ interface Last {
   readonly layouts: readonly UiScreenLayout[];
   readonly doc: UiDocument;
   readonly state: UiState;
+  /** the player bars of the screens, with how long each track runs: what plays on while a finger has set one going */
+  readonly players: readonly { readonly id: string; readonly seconds: number; readonly start: number }[];
 }
 
 /** The layout each drawn frame set was made from: the one on screen is the one a finger is aimed at, not the last one made. */
@@ -108,7 +119,7 @@ const RUNTIMES = new Map<string, Runtime>();
 function runtimeOf(key: string): Runtime {
   let found = RUNTIMES.get(key);
   if (found === undefined) {
-    found = { state: NO_STATE, focus: 0, solo: false, last: null, grab: null, eases: new Map() };
+    found = { state: NO_STATE, focus: 0, solo: false, last: null, grab: null, eases: new Map(), tickAt: null };
     RUNTIMES.set(key, found);
     if (RUNTIMES.size > 24) RUNTIMES.delete(RUNTIMES.keys().next().value as string);
   }
@@ -180,6 +191,15 @@ function valuesOf(doc: UiDocument, screenIndex: number, state: UiState): Record<
           put(node, label, (options[chosen]?.text ?? '').slice(0, MOST_TEXT));
           break;
         }
+        case 'segment': {
+          const options = node.fields.map(unstar);
+          const starred = options.findIndex((option) => option.starred);
+          put(node, '', (options[state.pick[node.id] ?? (starred >= 0 ? starred : 0)]?.text ?? '').slice(0, MOST_TEXT));
+          break;
+        }
+        case 'player':
+          put(node, (node.fields[0] ?? '').split(/\s+\/\s+/)[0] ?? '', state.toggle[node.id] ?? node.flags.includes('playing'));
+          break;
         case 'slider': {
           const given = node.fields[1];
           const raw = state.slider[node.id] ?? (given !== undefined && given !== '' && Number(given) >= 0 ? Number(given) / (Number(given) > 1 ? 100 : 1) : 0.5);
@@ -227,19 +247,28 @@ export function downUi(blockKey: string, x: number, y: number, pointer: number):
     const eased = run.eases.get(action.control);
     const from = eased === undefined ? thumbOf(run.state, action.control, action.on) : easedValue(eased, performance.now());
     run.eases.delete(action.control);
-    run.grab = { pointer, kind: 'toggle', index: at.index, hit, x0: at.x, from, moved: false };
+    run.grab = { pointer, kind: 'toggle', index: at.index, hit, x0: at.x, from, moved: false, lastX: at.x, lastAt: 0, speed: 0 };
     run.state = { ...run.state, thumb: { ...run.state.thumb, [action.control]: from }, focus: null };
     return { taken: true, changed: true };
   }
   if (action.kind === 'slider') {
     run.eases.delete(action.control);
     const value = sliderAt(hit, at.x);
-    run.grab = { pointer, kind: 'slider', index: at.index, hit, x0: at.x, from: run.state.slider[action.control] ?? value, moved: false };
+    run.grab = { pointer, kind: 'slider', index: at.index, hit, x0: at.x, from: run.state.slider[action.control] ?? value, moved: false, lastX: at.x, lastAt: 0, speed: 0 };
     run.state = { ...run.state, slider: { ...run.state.slider, [action.control]: value }, focus: null };
     return { taken: true, changed: true };
   }
+  if (action.kind === 'scroll') {
+    // a row is taken where it is, even if it was still coasting
+    const coasting = run.eases.get(action.control);
+    const from = coasting === undefined ? (run.state.scroll?.[action.control] ?? 0) : easedValue(coasting, performance.now());
+    run.eases.delete(action.control);
+    run.state = { ...run.state, scroll: { ...run.state.scroll, [action.control]: from }, focus: null };
+    run.grab = { pointer, kind: 'scroll', index: at.index, hit, x0: at.x, from, moved: false, lastX: at.x, lastAt: performance.now(), speed: 0 };
+    return { taken: true, changed: false };
+  }
   if (action.kind === 'press') {
-    run.grab = { pointer, kind: 'press', index: at.index, hit, x0: at.x, from: 0, moved: false };
+    run.grab = { pointer, kind: 'press', index: at.index, hit, x0: at.x, from: 0, moved: false, lastX: at.x, lastAt: 0, speed: 0 };
     run.state = { ...run.state, pressed: action.control, focus: null };
     return { taken: true, changed: true };
   }
@@ -270,6 +299,16 @@ export function moveUi(blockKey: string, x: number, y: number, pointer: number):
   }
   if (action.kind === 'slider') {
     run.state = { ...run.state, slider: { ...run.state.slider, [action.control]: sliderAt(grab.hit, sx) } };
+    return true;
+  }
+  if (action.kind === 'scroll') {
+    // the row goes with the finger, held to its own length; how fast the finger is going is kept, for when it lets go
+    const now = performance.now();
+    const dt = Math.max(1, now - grab.lastAt);
+    grab.speed = grab.speed * 0.6 + (-(sx - grab.lastX) / dt) * 0.4;
+    grab.lastX = sx;
+    grab.lastAt = now;
+    run.state = { ...run.state, scroll: { ...run.state.scroll, [action.control]: Math.max(0, Math.min(action.max, grab.from - (sx - grab.x0))) } };
     return true;
   }
   if (action.kind === 'press') {
@@ -306,6 +345,15 @@ export function upUi(blockKey: string, pointer: number, cancel: boolean, x: numb
     else run.state = { ...run.state, slider: { ...run.state.slider, [action.control]: target } };
     return { changed: true };
   }
+  if (action.kind === 'scroll') {
+    // let go while moving, the row coasts on a little way and stops; let go still, it stays
+    const now = run.state.scroll?.[action.control] ?? grab.from;
+    const idle = performance.now() - grab.lastAt > 90;
+    const coast = cancel || idle ? 0 : grab.speed * 260;
+    const target = Math.max(0, Math.min(action.max, now + coast));
+    if (Math.abs(target - now) > 1) run.eases.set(action.control, { kind: 'scroll', from: now, to: target, ms: 420, at: null });
+    return { changed: true };
+  }
   if (action.kind === 'press') {
     const held = run.state.pressed === action.control;
     run.state = { ...run.state, pressed: null };
@@ -329,27 +377,69 @@ export function upUi(blockKey: string, pointer: number, cancel: boolean, x: numb
 }
 
 function easedValue(ease: Ease, now: number): number {
-  const q = ease.at === null ? 0 : Math.max(0, Math.min(1, (now - ease.at) / (KNOB_EASE * 1000)));
+  const q = ease.at === null ? 0 : Math.max(0, Math.min(1, (now - ease.at) / (ease.ms ?? KNOB_EASE * 1000)));
   const e = 1 - (1 - q) ** 3;
   return ease.from + (ease.to - ease.from) * e;
 }
 
+/** The player bars of a document, with how long each runs and where it starts. */
+function playersOf(doc: UiDocument): { readonly id: string; readonly seconds: number; readonly start: number }[] {
+  const out: { id: string; seconds: number; start: number }[] = [];
+  const walk = (nodes: readonly UiNode[]): void => {
+    for (const node of nodes) {
+      if (isUiContainer(node)) walk(node.children);
+      else if (node.kind === 'player') out.push({ id: node.id, seconds: lengthOf(node.attrs['len']), start: playerPosition({ state: NO_STATE }, node) });
+    }
+  };
+  for (const screen of doc.screens) walk(screen.children);
+  return out;
+}
+
 /** Whether a mock-up has a knob easing home, so that the stage must be made again every frame. */
 export function easingUi(): boolean {
-  for (const run of RUNTIMES.values()) if (run.eases.size > 0) return true;
+  for (const run of RUNTIMES.values()) if (run.eases.size > 0 || playingIn(run).length > 0) return true;
   return false;
 }
+
+/** The players a finger has set going: a bar that says it is playing in its own lines does not move on by itself (a stage at rest is still). */
+function playingIn(run: Runtime): readonly { readonly id: string; readonly seconds: number; readonly start: number }[] {
+  return run.last === null ? [] : run.last.players.filter((player) => run.state.toggle[player.id] === true);
+}
+
+/** How often a playing bar's progress moves on, ms. */
+const TICK = 200;
 
 /** Moves every knob that is easing home on to where it is at `now` (ms of the page clock). True when one moved, and the layout must be made again. */
 export function easeUi(now: number, reduced: boolean): boolean {
   let moved = false;
   for (const run of RUNTIMES.values()) {
+    const playing = reduced ? [] : playingIn(run);
+    if (playing.length === 0) run.tickAt = null;
+    else {
+      // what plays advances along its bar, a track's length being what it is, and starts over at the end
+      run.tickAt ??= now;
+      const dt = now - run.tickAt;
+      if (dt >= TICK) {
+        run.tickAt = now;
+        const slider = { ...run.state.slider };
+        for (const player of playing) {
+          const control = `${player.id}:seek`;
+          if (run.grab?.hit.action.kind === 'slider' && run.grab.hit.action.control === control) continue;
+          const at = slider[control] ?? player.start;
+          const next = at + dt / 1000 / player.seconds;
+          slider[control] = next >= 1 ? 0 : next;
+        }
+        run.state = { ...run.state, slider };
+        moved = true;
+      }
+    }
     if (run.eases.size === 0) continue;
     for (const [control, ease] of [...run.eases]) {
       ease.at ??= now;
-      const done = reduced || now - ease.at >= KNOB_EASE * 1000;
+      const done = reduced || now - ease.at >= (ease.ms ?? KNOB_EASE * 1000);
       const value = done ? ease.to : easedValue(ease, now);
-      if (ease.kind === 'toggle') {
+      if (ease.kind === 'scroll') run.state = { ...run.state, scroll: { ...run.state.scroll, [control]: value } };
+      else if (ease.kind === 'toggle') {
         if (done) {
           const { [control]: _gone, ...rest } = run.state.thumb ?? {};
           run.state = { ...run.state, toggle: { ...run.state.toggle, [control]: ease.to >= 0.5 }, thumb: rest };
@@ -381,7 +471,7 @@ export function typeUi(blockKey: string, key: string): boolean {
 export interface UiMockupView {
   readonly block: string;
   readonly screen: string;
-  readonly hits: readonly { readonly id: string; readonly part: string; readonly action: 'tab' | 'pick' | 'toggle' | 'field' | 'slider' | 'press'; readonly x: number; readonly y: number; readonly width: number; readonly height: number; readonly send?: boolean; readonly to?: string }[];
+  readonly hits: readonly { readonly id: string; readonly part: string; readonly action: 'tab' | 'pick' | 'toggle' | 'field' | 'slider' | 'press' | 'scroll'; readonly x: number; readonly y: number; readonly width: number; readonly height: number; readonly send?: boolean; readonly to?: string }[];
   /** one box per line of words, where its ink is */
   readonly words: readonly { readonly owner: string; readonly text: string; readonly x: number; readonly y: number; readonly width: number; readonly height: number }[];
   readonly notes: readonly { readonly kind: string; readonly id: string; readonly message: string }[];
@@ -401,7 +491,7 @@ export function uiMockupViews(blockKeys: readonly string[]): readonly UiMockupVi
       if (screen === undefined) continue;
       const working = last.board.mode !== 'focus' || p.index === last.board.focus;
       const hits = working
-        ? screen.hits.map((hit) => ({ id: hit.id, part: hit.part, action: hit.action.kind, x: last.room.x + p.contentX + hit.x * p.scale, y: last.room.y + p.contentY + hit.y * p.scale, width: hit.w * p.scale, height: hit.h * p.scale, ...(hit.action.kind === 'press' && hit.action.send === true ? { send: true } : {}), ...(hit.action.kind === 'press' && hit.action.to !== undefined ? { to: hit.action.to } : {}) }))
+        ? screen.hits.map((hit) => ({ id: hit.id, part: hit.part, action: hit.action.kind === 'flip' ? ('toggle' as const) : hit.action.kind, x: last.room.x + p.contentX + hit.x * p.scale, y: last.room.y + p.contentY + hit.y * p.scale, width: hit.w * p.scale, height: hit.h * p.scale, ...(hit.action.kind === 'press' && hit.action.send === true ? { send: true } : {}), ...(hit.action.kind === 'press' && hit.action.to !== undefined ? { to: hit.action.to } : {}) }))
         : [];
       const words: { owner: string; text: string; x: number; y: number; width: number; height: number }[] = [];
       for (const part of last.board.parts) {
@@ -502,7 +592,7 @@ export function layoutUi(args: { readonly structure: ElementSpan; readonly room:
     made = make(tokens, mode);
   }
   const { layouts, board } = made;
-  const last: Last = { room, board, layouts, doc, state };
+  const last: Last = { room, board, layouts, doc, state, players: playersOf(doc) };
   run.last = last;
   const frame = uiFrame(board.parts, { width: room.width, height: room.height, dpr, spec });
   // the frame's origin is its room's centre; on the stage it is the room's centre in stage units

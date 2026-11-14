@@ -334,6 +334,70 @@ export interface Fixture {
   readonly by: 'hand' | 'brain';
 }
 
+/** F1: what a music app is, in the kit's own words: a dark theme, one accent, covers, a carousel, a player bar. Hand-written to be the chapter's example, grown. */
+export const MUSIC: readonly string[] = [
+  'scene caption',
+  'look studio',
+  'screen home phone theme=dark accent=green radius=round type=geometric | Home',
+  'col pad=m gap=m',
+  'heading | Good evening',
+  'segment | *All* | Music | Podcasts',
+  'media cols=2 | Daily Mix 1 / Slow mornings | Late Night Jazz / Marla Quinn',
+  'end',
+  'carousel round title="Artists you follow" more="See all" | Marla Quinn / Artist | The Low Tide / Band | Juno Park / Artist | Kestrel / Band',
+  'space s',
+  'player to=now | Blue Hour / Marla Quinn',
+  'tabbar icons=home,search,queue | *Home* | Search | Library',
+  'screen now phone from=home:Now playing | Now playing',
+  'nav back | Playing from Daily Mix 1',
+  'player large len=3:48 progress=0.32 | Blue Hour / Marla Quinn',
+];
+
+/** F1: a banking app in the dark: a balance, two stats, a segmented header, a list of people. */
+export const BANKING: readonly string[] = [
+  'scene caption',
+  'look studio',
+  'screen home phone theme=dark accent=teal radius=soft type=humanist density=compact | Home',
+  'nav menu action=bell | Harbor',
+  'col pad=m gap=m',
+  'text dim | Total balance',
+  'price | $12,480 | .50',
+  'row gap=s',
+  'button primary small | Send',
+  'button ghost small | Request',
+  'end',
+  'row gap=s',
+  'stat up spark=3,4,3,6,5,8,7,9 | Savings | $4,200 | +2.4% this month',
+  'stat down spark=9,8,9,6,7,5,6,4 | Spending | $1,310 | -6.1% vs last',
+  'end',
+  'segment tabs | *Recent* | Cards | Payees',
+  'people to=home | *Ana Ruiz / Dinner split / +$24* | Studio Rent / Due Friday / -$900 | Kai Tanaka / Coffee / -$4',
+  'end',
+  'tabbar icons=home,card,chart-line,user | *Home* | Cards | Insights | Profile',
+];
+
+/** F1: a chat in the light: a list of people, then the conversation. */
+export const CHAT: readonly string[] = [
+  'scene caption',
+  'look studio',
+  'screen list phone theme=light accent=violet radius=round density=comfortable | Messages',
+  'nav menu action=edit | Messages',
+  'col pad=m gap=m grow',
+  'input | Search',
+  'people to=talk | *Maya Chen / Are we still on for tonight? / 2m* | Weekend crew / Jon: sent a photo / 1h | Dad / Call me when you land / Tue | Priya Nair / Thanks! / Mon',
+  'end',
+  'tabbar icons=chat,users,settings | *Chats* | People | Settings',
+  'screen talk phone from=list:Maya | Maya Chen',
+  'nav back action=phone | Maya Chen',
+  'col pad=m gap=s grow',
+  'chat | ~Today 6:12 PM | Maya: Are we still on for tonight? | me: Yes! 7:30 at the usual place | me: I booked a table | Maya: Perfect, see you there | ...',
+  'end',
+  'row gap=s pad=m',
+  'input grow | Message',
+  'button primary send | Send',
+  'end',
+];
+
 export const FIXTURES: Readonly<Record<string, Fixture>> = {
   journey: { title: 'the six-screen insurance journey (Appendix C)', lines: JOURNEY, by: 'brain' },
   home: { title: "M16's home page, rebuilt as a tree", lines: HOME_PAGE, by: 'hand' },
@@ -341,4 +405,7 @@ export const FIXTURES: Readonly<Record<string, Fixture>> = {
   dashboard: { title: 'a dashboard that holds a real chart', lines: DASHBOARD, by: 'hand' },
   signup: { title: 'a sign-up flow, written cold by the brain', lines: BRAIN_SIGNUP, by: 'brain' },
   landing: { title: 'a landing page, written cold by the brain', lines: BRAIN_LANDING, by: 'brain' },
+  music: { title: 'a music app: dark, one accent, covers, a carousel, a player bar', lines: MUSIC, by: 'hand' },
+  banking: { title: 'a banking app in the dark', lines: BANKING, by: 'hand' },
+  chat: { title: 'a chat app: a list of people, then the talk', lines: CHAT, by: 'hand' },
 };
