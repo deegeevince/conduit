@@ -40,6 +40,7 @@ export default defineConfig({
         ...optional('bench-chart', 'bench-chart.html'),
         ...optional('taste', 'taste.html'),
         ...optional('bench-ink', 'bench-ink.html'),
+        ...optional('bench-wall', 'bench-wall.html'),
       },
     },
   },
