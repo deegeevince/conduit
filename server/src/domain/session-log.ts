@@ -1,4 +1,5 @@
 import type { ActionRisk, ActivityState, BriefForm, Capabilities, ContentCount, ControlValue, CriticFinding, Issue, NodeId, NodeStatus, PassState, ReviewDecision, ReviewForm, ReviewOutcome, ScreenFacts, Services, StateChange, TurnEndReason, TurnInput, TurnReport } from '@conduit/language';
+import type { Observation } from '@conduit/language';
 import type { BrainId, BrainUsage } from './brain';
 import type { FetchOutcome } from './documents';
 
@@ -70,7 +71,26 @@ export type SessionRecord =
   /** SA2. The server measured a pass's draft itself: how long it took, the digest of its boxes and the number of things it noted */
   | { readonly type: 'measure'; readonly at: number; readonly turn: string; readonly pass: number; readonly ms: number; readonly boxes: string; readonly noted: number }
   /** SA2. The page and the server do not measure alike (`where`: `engine` the version, `draft` or `report` a digest). From then on this session's drafts go through the page's gate. */
-  | { readonly type: 'drift'; readonly at: number; readonly turn: string | null; readonly where: 'engine' | 'draft' | 'report'; readonly page: string | null; readonly server: string | null; readonly why: string };
+  | { readonly type: 'drift'; readonly at: number; readonly turn: string | null; readonly where: 'engine' | 'draft' | 'report'; readonly page: string | null; readonly server: string | null; readonly why: string }
+  /** SA3. One observation: the person's input, what only the page's eyes know, a refusal, a drift. Engine lint is derived from the report and not logged. */
+  | { readonly type: 'obs'; readonly at: number; readonly turn: string | null; readonly obs: Observation }
+  /** SA3. What the brain was shown of what was observed before a turn, what it pulled (SA4), and what stood open or cleared. Each list holds fingerprints. */
+  | {
+      readonly type: 'attention';
+      readonly at: number;
+      readonly turn: string;
+      readonly rev: readonly [number, number];
+      readonly digest: { readonly counts: Readonly<Record<string, number>>; readonly urgent: number; readonly lines: number; readonly tokens: number };
+      readonly shown: readonly string[];
+      readonly pulled: readonly { readonly tool: string; readonly kind: string; readonly since: number; readonly n: number; readonly ms: number }[];
+      readonly watch: readonly string[];
+      readonly ignore: readonly string[];
+      readonly refusedIgnore: readonly string[];
+      readonly cleared: readonly string[];
+      readonly open: readonly string[];
+      readonly calls: number;
+      readonly toolMs: number;
+    };
 
 /** Fields of a record without the time, which the log stamps. */
 export type SessionEntry = SessionRecord extends infer R ? (R extends { readonly at: number } ? Omit<R, 'at'> : never) : never;

@@ -423,10 +423,50 @@ export type BackEvent =
    * node finished. The server logs it (a `state` record), applies it to its copy of the document's state, and tells the mind where the
    * person is. Not sent while dragging and never a tick. `turn` is the open turn, or null.
    */
-  | { readonly type: 'state'; readonly turn: string | null; readonly document: string; readonly change: StateChange };
+  | { readonly type: 'state'; readonly turn: string | null; readonly document: string; readonly change: StateChange }
+  /** SA3. What only the eyes know, at any moment: at most one a second, `OBSERVE_LIMITS.items` items and `OBSERVE_LIMITS.bytes` bytes. */
+  | { readonly type: 'observe'; readonly items: readonly ObserveItem[] };
+
+/** SA3. What the page may report in an `observe` event. (`present` and `legible` are the raster's, and come with the picture checks.) */
+export const OBSERVE_KINDS = ['viewport', 'scroll', 'fonts', 'surface', 'present', 'legible'] as const;
+export type ObserveKind = (typeof OBSERVE_KINDS)[number];
+export const OBSERVE_SEVERITIES = ['info', 'note', 'blocking', 'fault'] as const;
+export type ObserveSeverity = (typeof OBSERVE_SEVERITIES)[number];
+
+export interface ObserveItem {
+  readonly kind: ObserveKind;
+  /** an element, a scroll host or a surface; null when it is about the page */
+  readonly on: string | null;
+  /** 160 characters at most; words of the page's own, never instructions */
+  readonly note: string;
+  readonly severity: ObserveSeverity;
+}
+
+export const OBSERVE_LIMITS = { everyMs: 1000, items: 20, bytes: 8192, note: 160, on: 64 } as const;
+
+/**
+ * Reads the items of an `observe` event: unknown kinds and malformed items are dropped, not refused (the page keeps reporting), the list is cut
+ * at `OBSERVE_LIMITS.items` and again until its JSON is within `OBSERVE_LIMITS.bytes`. Never throws.
+ */
+export function decodeObserveItems(value: unknown): ObserveItem[] {
+  if (!Array.isArray(value)) return [];
+  const out: ObserveItem[] = [];
+  for (const raw of value) {
+    if (out.length >= OBSERVE_LIMITS.items) break;
+    if (typeof raw !== 'object' || raw === null) continue;
+    const item = raw as Record<string, unknown>;
+    const kind = OBSERVE_KINDS.find((one) => one === item['kind']);
+    if (kind === undefined || typeof item['note'] !== 'string') continue;
+    const severity = OBSERVE_SEVERITIES.find((one) => one === item['severity']) ?? 'info';
+    const on = typeof item['on'] === 'string' && item['on'] !== '' ? item['on'].slice(0, OBSERVE_LIMITS.on) : null;
+    out.push({ kind, on, note: item['note'].replace(/\s+/g, ' ').trim().slice(0, OBSERVE_LIMITS.note), severity });
+  }
+  while (out.length > 0 && JSON.stringify(out).length > OBSERVE_LIMITS.bytes) out.pop();
+  return out;
+}
 
 export type BackEventType = BackEvent['type'];
-export const BACK_EVENT_TYPES: readonly BackEventType[] = ['ready', 'started', 'progress', 'tap', 'report', 'control', 'draft', 'permit', 'state'];
+export const BACK_EVENT_TYPES: readonly BackEventType[] = ['ready', 'started', 'progress', 'tap', 'report', 'control', 'draft', 'permit', 'state', 'observe'];
 
 /** A back-channel event as the server keeps it. `cursor` increases over the session. */
 export interface BackEventRecord {

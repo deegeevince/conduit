@@ -172,6 +172,11 @@ export interface TurnContext {
   readonly document?: DocumentContext;
   /** v2.1. A returning conversation: a short account of what was said and answered before this page's session began (words only, within a budget). Absent: none. */
   readonly earlier?: string;
+  /**
+   * SA3. The `EYES` block (`digestOf`): what the eyes saw and the person did since the brain last wrote, urgent first, in six lines. When it is
+   * given it takes the place of the sight lines under HOW YOUR LAST ANSWER LANDED. Absent: the older sight lines are printed as before.
+   */
+  readonly eyes?: string | null;
 }
 
 /** The document a conversation has made, and what the person has done in it. */

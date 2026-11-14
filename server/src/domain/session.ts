@@ -1,4 +1,5 @@
 import { STREAM_HEARTBEAT } from '@conduit/language';
+import { Observations } from './observations';
 import type {
   ActionRisk,
   BackEventRecord,
@@ -195,6 +196,8 @@ export interface Session {
   readonly permissions: Map<string, PendingPermission>;
   /** v2.1. A returning conversation: its id, and the short account the brain is given of it. Null for a conversation that began here. */
   continued: { readonly id: string; readonly earlier: string } | null;
+  /** SA3. What the session has seen and been told, as observations */
+  readonly obs: Observations;
 }
 
 /** In-memory sessions. There is no database; a restart forgets everything, by design. */
@@ -252,6 +255,7 @@ export class SessionStore {
       gateFails: new Map(),
       permissions: new Map(),
       continued: null,
+      obs: new Observations(),
     };
     this.sessions.set(session.id, session);
     return session;
