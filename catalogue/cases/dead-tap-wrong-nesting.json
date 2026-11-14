@@ -1,0 +1,89 @@
+{
+ "id": "dead-tap-wrong-nesting",
+ "title": "a document whose parent does not exist, or nested under another document, is never shown",
+ "note": "A second document was written with in= naming a part that does not exist, then nested inside a question of the first document: neither opened and the taps looked dead.",
+ "own": [
+  "document-open",
+  "screen-changed"
+ ],
+ "family": "flow-state",
+ "owner": "server",
+ "kind": "flow",
+ "found": "2026-11-15",
+ "generic": false,
+ "turns": [
+  {
+   "say": "What's new in this app?",
+   "source": {
+    "log": "20261115-094056-c1",
+    "turns": [
+     "t4"
+    ]
+   }
+  },
+  {
+   "say": "Walk me through a recipe",
+   "source": {
+    "log": "20261115-094056-c1",
+    "turns": [
+     "t5"
+    ]
+   },
+   "tap": "Walk me through a recipe",
+   "check": [
+    {
+     "k": "document-open"
+    },
+    {
+     "k": "screen-changed"
+    }
+   ]
+  },
+  {
+   "say": "Show me a worksheet in action",
+   "source": {
+    "log": "20261115-094056-c1",
+    "turns": [
+     "t7"
+    ]
+   },
+   "tap": "Show me a worksheet in action",
+   "check": [
+    {
+     "k": "document-open"
+    },
+    {
+     "k": "screen-changed"
+    }
+   ],
+   "pre": [
+    {
+     "a": "close-document"
+    }
+   ]
+  },
+  {
+   "say": "Show me a worksheet in action",
+   "source": {
+    "log": "20261115-094056-c1",
+    "turns": [
+     "t8"
+    ]
+   },
+   "tap": "Show me a worksheet in action",
+   "check": [
+    {
+     "k": "document-open"
+    },
+    {
+     "k": "screen-changed"
+    }
+   ],
+   "pre": [
+    {
+     "a": "close-document"
+    }
+   ]
+  }
+ ]
+}

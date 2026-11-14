@@ -94,6 +94,11 @@ export interface ActiveTurn {
   /** position in the session's turns; a later turn has a larger ordinal */
   readonly ordinal: number;
   lineCount: number;
+  /** lines of this turn that wrote into the document, and `doc` events it sent: a turn that wrote and sent none still tells the page which document it meant */
+  docLines: number;
+  docEvents: number;
+  /** lines of a part's or ask's own that came before it (an `ask in=q1` before `part q1`): kept until it is written, then read, else refused at the turn's end */
+  held: Map<string, { readonly event: unknown; readonly issues: readonly unknown[] }[]>;
   /** lines of this turn that were dropped outright, over every pass: what look-and-fix counts */
   rejects: number;
   /** the user has switched look and fix off for this turn (`x-conduit-review: off`) */

@@ -36,12 +36,19 @@ interface Source {
   readonly scenario?: string;
   readonly index?: number;
   readonly logs?: 'qa';
+  /** the lines the brain wrote in its first pass as it wrote them, the refused ones too (a turn whose trouble was in what was refused) */
+  readonly asWritten?: boolean;
 }
 type Spec = { readonly k: string } & Record<string, unknown>;
 type Action = { readonly a: string } & Record<string, unknown>;
 interface CaseTurn {
+  /** what is said; with `tap`, only what the turn is called */
   readonly say: string;
+  /** a real tap on the choice (or control) on the stage with this label, instead of typing `say` */
+  readonly tap?: string;
   readonly source: Source;
+  /** actions before the turn begins (put the open document away so the stage can be tapped) */
+  readonly pre?: readonly Action[];
   readonly do?: readonly Action[];
   readonly check?: readonly Spec[];
 }
@@ -202,6 +209,14 @@ async function recordAll(args: Args): Promise<void> {
           const first = readLog(session).find((row) => row['type'] === 'turn' && (row['input'] as { kind?: string } | undefined)?.kind === 'prompt');
           wanted = String(first?.['turn'] ?? '');
         }
+        if (turn.source.asWritten === true) {
+          const rows = readLog(session).filter((row) => row['turn'] === wanted);
+          const end = rows.findIndex((row) => row['type'] === 'usage' && row['pass'] === 1);
+          script = (end < 0 ? rows : rows.slice(0, end))
+            .filter((row) => (row['type'] === 'line' && (row['pass'] === 1 || row['pass'] === undefined)) || row['type'] === 'reject')
+            .map((row) => String(row['type'] === 'reject' ? row['raw'] : row['text']))
+            .join('\n');
+        } else
         script = readLog(session)
           .filter((row) => row['type'] === 'line' && row['turn'] === wanted && (row['pass'] === 1 || row['pass'] === undefined))
           .map((row) => String(row['text']))
@@ -253,6 +268,8 @@ interface Cx {
   before: string;
   words: string;
   early: string[];
+  /** what the screen held when the turn began (`screenSig`) */
+  sig: string;
 }
 type Verdict = 'PASS' | 'FAIL' | 'SKIP';
 interface Res {
@@ -269,6 +286,13 @@ const floorOf = (cx: Cx): number => (cx.mobile ? 9 : 11.75);
 
 async function controls(tab: Tab): Promise<Ctl[]> {
   return tab.eval<Ctl[]>(`window.__stage.controls().map((c) => ({ id: c.id, control: c.control, label: c.label, options: c.options, min: c.min, value: c.value, valueText: c.valueText, box: c.box, form: c.form, parts: c.parts }))`);
+}
+
+/** What a person sees, as one string: the open document's words when the lesson view is up, else the painted stage's words and its choices. */
+async function screenSig(tab: Tab): Promise<string> {
+  return tab.eval<string>(
+    `(() => { const d = document.querySelector('.stage__document'); const r = d ? d.getBoundingClientRect() : null; const up = !!d && getComputedStyle(d).display !== 'none' && r.width > 4 && r.height > 4 && !!d.querySelector('iframe'); if (up) return 'document:open'; const w = (window.__stage.elements() || []).filter((e) => e.phase === 'on' && e.opacity > 0.3).map((e) => String(e.text || '')).join('|'); return 'stage:' + w; })()`,
+  );
 }
 
 /** every general gate: the words are in their shapes, labels on their part's side, nothing over anything, readable, whole */
@@ -590,6 +614,15 @@ async function runCheck(cx: Cx, spec: Spec): Promise<Res> {
       const grew = after.red - before.red;
       return grew > 40 ? { check: name, verdict: 'FAIL', detail: `${grew} more red pixels round the clicked control after the click: a red box` } : { check: name, verdict: 'PASS', detail: 'no red box appeared round the clicked control' };
     }
+    case 'screen-changed': {
+      const now = await screenSig(cx.tab);
+      return now !== cx.sig ? { check: name, verdict: 'PASS', detail: 'the screen is different after the tap' } : { check: name, verdict: 'FAIL', detail: `nothing on the screen changed after the tap (still: ${now.slice(0, 60)})` };
+    }
+    case 'document-open': {
+      // the lesson view is a sandboxed frame, so its words cannot be read from here: it is open when its layer is up with the frame in it
+      const now = await screenSig(cx.tab);
+      return now.startsWith('document:') ? { check: name, verdict: 'PASS', detail: 'the document is open on the screen' } : { check: name, verdict: 'FAIL', detail: `no document is open on the screen (${now.slice(0, 60)})` };
+    }
     case 'refresh-escape': {
       const view = await cx.tab.eval<{ doc: boolean; escape: boolean; prompt: boolean }>(
         `(() => { const d = document.querySelector('.stage__document'); const vis = (e) => { const r = e.getBoundingClientRect(); const cs = getComputedStyle(e); return r.width > 4 && r.height > 4 && cs.display !== 'none' && cs.visibility !== 'hidden'; }; const doc = !!d && vis(d) && (d.innerText || '').trim().length > 0; const escape = [...document.querySelectorAll('button,[role=button],a')].some((b) => vis(b) && /close|new conversation|new chat|back to|leave|exit/i.test((b.getAttribute('aria-label') || '') + ' ' + b.textContent)); return { doc, escape, prompt: true }; })()`,
@@ -735,6 +768,16 @@ async function act(cx: Cx, action: Action): Promise<void> {
       cx.picture = await tab.shot();
       break;
     }
+    case 'close-document': {
+      // the lesson view is a sandboxed frame: its Close button is found by where it sits, at the top right of the frame
+      const frame = await tab.eval<{ x: number; y: number; w: number } | null>(
+        `(() => { const f = document.querySelector('.stage__document iframe'); const d = document.querySelector('.stage__document'); if (!f || !d || getComputedStyle(d).display === 'none') return null; const r = f.getBoundingClientRect(); return r.width > 4 ? { x: r.left, y: r.top, w: r.width } : null; })()`,
+      );
+      if (frame === null) return;
+      await tab.tap(frame.x + frame.w - 46, frame.y + 31);
+      await sleep(900);
+      break;
+    }
     case 'reload': {
       await tab.send('Page.reload');
       await waitFor('the page to be ready again', 60_000, async () => {
@@ -847,7 +890,7 @@ async function runCell(args: Args, c: Case, screen: Args['screens'][number], url
   const tab: Tab = opened;
   const options: Options = { url, screens: [screen], out, turns: new Set(), timeoutMs: args.timeoutMs, parallel: false, demo: false, quiet: true, page: '', say: null, chat: 'off' };
   const conv = new Conversation(tab, options, screen, dir);
-  const cx: Cx = { tab, c: conv, screen, dir, mobile: tab.mobile, answer: null as unknown as Answer, picture: '', watched: { showAllOver: null, pillSeen: 0 }, before: '', words: '', early: [] };
+  const cx: Cx = { tab, c: conv, screen, dir, mobile: tab.mobile, answer: null as unknown as Answer, picture: '', watched: { showAllOver: null, pillSeen: 0 }, before: '', words: '', early: [], sig: '' };
   const details: Res[] = [];
   let cost = 0;
   try {
@@ -860,7 +903,22 @@ async function runCell(args: Args, c: Case, screen: Args['screens'][number], url
       const results: CheckResult[] = [];
       if (n === 1) cx.early = tab.failedRequests.map((f) => f.text);
       tab.drain();
-      const sent = await conv.say(args.mode === 'live' ? turn.say : `${turn.say}${twinMark(c.id, turn.say)}`, results);
+      for (const action of turn.pre ?? []) await act(cx, action);
+      cx.sig = await screenSig(tab);
+      let sent: boolean;
+      if (turn.tap !== undefined) {
+        const label = turn.tap.toLowerCase();
+        const ctl =
+          (await controls(tab)).find((k) => k.label.toLowerCase().includes(label)) ??
+          (await tab.eval<{ box: { x: number; y: number; width: number; height: number }; text: string }[]>(`window.__stage.elements().filter((e) => e.kind === 'text' && e.phase === 'on' && e.opacity > 0.3).map((e) => ({ text: String(e.text || ''), box: e.box }))`)).find((e) => e.text.toLowerCase().includes(label));
+        if (ctl === undefined) {
+          details.push({ check: 'tap-found', verdict: 'FAIL', detail: `no choice "${turn.tap}" on the screen to tap` });
+          sent = false;
+        } else {
+          await tab.tap(ctl.box.x + ctl.box.width / 2, ctl.box.y + ctl.box.height / 2);
+          sent = true;
+        }
+      } else sent = await conv.say(args.mode === 'live' ? turn.say : `${turn.say}${twinMark(c.id, turn.say)}`, results);
       // a poller beside the wait: the Show all pill is only there while an answer plays
       let polling = true;
       const poll = (async (): Promise<void> => {
@@ -1061,7 +1119,7 @@ async function run(args: Args): Promise<void> {
       missing.add(c.id);
       continue;
     }
-    turns.push(...(JSON.parse(readFileSync(file, 'utf8')) as Recorded).turns.map((turn) => ({ ...turn, match: `${turn.match}${twinMark(c.id, turn.match)}` })));
+    turns.push(...(JSON.parse(readFileSync(file, 'utf8')) as Recorded).turns.map((turn) => ({ ...turn, case: c.id, match: `${turn.match}${twinMark(c.id, turn.match)}` })));
   }
   const replayFile = join(out, 'replay-case.json');
   await writeFile(replayFile, JSON.stringify({ turns }));
