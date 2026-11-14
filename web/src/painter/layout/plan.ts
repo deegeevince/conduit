@@ -84,7 +84,7 @@ export function planStage(input: PlanInput): StagePlan {
   const words = input.flowHeight(column.width);
   let flow: Box;
   let area: Box;
-  if (layout === 'figure') {
+  if (layout === 'figure' && words > 0) {
     const gutter = Math.max(16, margin * 0.75);
     if (viewport.width >= viewport.height) {
       const share = column.width * FIGURE_WIDE_SHARE;

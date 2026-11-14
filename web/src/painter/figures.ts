@@ -370,7 +370,69 @@ function centreOf(element: ElementSpan, trans: Trans, natural: Pt, sc: Scn): Pt 
       return { x: here.x + (a.x - anchor.x) * (1 - trans.p), y: here.y + (a.y - anchor.y) * (1 - trans.p) };
     }
   }
-  return { x: lerp(a.x, b.x, trans.p), y: lerp(a.y, b.y, trans.p) };
+  // A move ends inside the picture (PLAN-v2.1, D4): what it carries never leaves the canvas, whatever point was written.
+  // (a stage that carries what a move left has only the point, so a written place is held to the same rule when it puts most of the thing inside)
+  const end = element.parent === null && trans.to.at !== null && (move !== null || mostlyInside(b, element, trans.to, sc)) ? keptInside(b, element, trans.to, sc) : b;
+  return { x: lerp(a.x, end.x, trans.p), y: lerp(a.y, end.y, trans.p) };
+}
+
+/**
+ * The extent of a group about its own origin, canvas units, from the shapes that stand directly in it: what its place keeps inside the
+ * canvas. Null when it holds nothing measurable.
+ */
+function groupExtent(group: ElementSpan, sc: Scn): { minX: number; minY: number; maxX: number; maxY: number } | null {
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  for (const member of sc.idx.children.get(group.key) ?? []) {
+    const figure = member.figure;
+    if (figure === null || figure.kind !== 'shape') continue;
+    const box = boundsOf(figure.geometry);
+    minX = Math.min(minX, box.x);
+    minY = Math.min(minY, box.y);
+    maxX = Math.max(maxX, box.x + box.w);
+    maxY = Math.max(maxY, box.y + box.h);
+  }
+  return Number.isFinite(minX) ? { minX, minY, maxX, maxY } : null;
+}
+
+/** A thing whose written place has its middle on the canvas: it is meant to be seen there, so what hangs over the edge is pulled in. */
+function mostlyInside(at: Pt, element: ElementSpan, style: ElementStyle, sc: Scn): boolean {
+  const canvas = canvasOf(element, sc);
+  const figure = element.figure;
+  if (figure === null || (figure.kind !== 'group' && figure.kind !== 'shape' && figure.kind !== 'sprite')) return false;
+  if (figure.kind === 'shape') {
+    const box = boundsOf(figure.geometry);
+    if (box.w >= canvas.width * 0.9 || box.h >= canvas.height * 0.9) return false;
+  }
+  return at.x >= 0 && at.x <= canvas.width && at.y >= 0 && at.y <= canvas.height && style.at !== null;
+}
+
+/** The point `at` (where a move ends) pulled in just far enough that the thing, whole, stands inside its canvas; a thing larger than the canvas is centred. */
+function keptInside(at: Pt, element: ElementSpan, style: ElementStyle, sc: Scn): Pt {
+  const canvas = canvasOf(element, sc);
+  const figure = element.figure;
+  let left: number;
+  let right: number;
+  let up: number;
+  let down: number;
+  if (figure !== null && figure.kind === 'group') {
+    const extent = groupExtent(element, sc);
+    if (extent === null) return at;
+    const scale = style.scale ?? 1;
+    // the group's origin is where its members' own units begin: its extent hangs off the point
+    left = -extent.minX * scale;
+    right = extent.maxX * scale;
+    up = -extent.minY * scale;
+    down = extent.maxY * scale;
+  } else {
+    const half = halfExtent(element, sc, style.scale);
+    if (half.x === 0 && half.y === 0) return at;
+    [left, right, up, down] = [half.x, half.x, half.y, half.y];
+  }
+  const fit = (value: number, before: number, after: number, size: number): number => (before + after >= size ? (size - after + before) / 2 : Math.min(Math.max(value, before), size - after));
+  return { x: fit(at.x, left, right, canvas.width), y: fit(at.y, up, down, canvas.height) };
 }
 
 function extrasOf(element: ElementSpan, style: ElementStyle, sc: Scn, cell: number): Extras {

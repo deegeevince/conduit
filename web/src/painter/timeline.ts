@@ -552,6 +552,36 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
     }
   }
   if (lockLook === null) for (const span of schedule.looks) boundaries.push((span.start + span.end) / 2);
+  // The stage plan changes when a picture first has something on it, a structure or a chart comes or goes, or the last of them leaves: those moments are epochs too.
+  {
+    const kindOf = (element: ElementSpan): 'picture' | 'block' | null => {
+      if (element.kind === 'shape' || element.kind === 'sprite' || element.kind === 'copy' || element.kind === 'picture') return 'picture';
+      return element.kind === 'structure' ? 'block' : null;
+    };
+    const drawnHere = schedule.elements.filter((element) => kindOf(element) !== null);
+    const moments = new Set<number>();
+    for (const element of drawnHere) {
+      if (element.enter !== null) moments.add(element.enter.start);
+      if (element.exit !== null) moments.add(element.exit.start);
+    }
+    const signature = (time: number): string => {
+      let picture = false;
+      const keys: string[] = [];
+      for (const element of drawnHere) {
+        if (!element.carried && (element.enter === null || element.enter.start > time)) continue;
+        if (element.exit !== null && element.exit.start <= time) continue;
+        if (kindOf(element) === 'picture') picture = true;
+        else keys.push(element.key);
+      }
+      return `${picture ? 'p' : ''}|${keys.join(',')}`;
+    };
+    let last = signature(0);
+    for (const time of [...moments].sort((a, b) => a - b)) {
+      const now = signature(time);
+      if (now !== last) boundaries.push(time);
+      last = now;
+    }
+  }
   boundaries.sort((a, b) => a - b);
   const starts = boundaries.filter((time, i) => time >= 0 && (i === 0 || time - (boundaries[i - 1] ?? 0) > 1e-9));
 
