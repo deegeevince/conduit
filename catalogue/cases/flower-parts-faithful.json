@@ -1,0 +1,29 @@
+{
+ "id": "flower-parts-faithful",
+ "title": "a flower's parts are drawn with the detail the words claim",
+ "family": "completeness",
+ "owner": "prompt",
+ "kind": "draw",
+ "found": "2026-11-15",
+ "note": "When the real form is the point the picture must not contradict the words: a toy figure with a handful of parts under words that claim far more.",
+ "own": [
+  "has-shapes"
+ ],
+ "turns": [
+  {
+   "say": "show me the parts of a flower",
+   "source": {
+    "log": "20261115-094056-c1",
+    "turns": [
+     "t4"
+    ]
+   },
+   "check": [
+    {
+     "k": "has-shapes",
+     "min": 8
+    }
+   ]
+  }
+ ]
+}

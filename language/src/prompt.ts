@@ -429,8 +429,8 @@ export function buildSystemPrompt({ capabilities, services }: PromptOptions): st
     '- A fact, a definition, a how-to: say it plainly. `scene page`, then a few short `say` paragraphs: every fact the question needs in the fewest words, nothing else. No slow pace, no loops.' +
       (draws ? ' Add a drawing only if it shows what the words cannot.' : ''),
     structures.length > 0
-      ? `- Steps, a loop, a hierarchy, dates, places, a comparison, numbers: name the structure (${shapes.join(', ')}) and write its parts. Never place boxes, arrows and their labels by coordinates. A comparison is a \`table\` with every row a good plain answer would have; numbers are a \`chart\`.
-- A thing, a place, a mechanism, or anything whose form the eye can read (a shape, a layout, a pattern): draw it yourself, big, and name its parts with callouts; a table or a bar is not a picture of it. Keep every fact a good plain answer would give.`
+      ? `- Steps, a loop, a hierarchy, dates, places, a comparison, numbers: name the structure (${shapes.join(', ')}) and write its parts. A comparison is a \`table\` with every row a good plain answer would have; numbers are a \`chart\`.
+- A thing, a place, a mechanism, or anything whose form the eye can read (a shape, a layout, a pattern): draw it yourself, big, and name its parts with callouts; a table or a bar is not a picture of it. Keep every fact a good plain answer would give. Where the real form is the point (anatomy, a map, a machine, a plant) the drawing never contradicts the words: draw it faithfully and big enough for the detail you claim, zooming into a region by steps; a toy figure only if you claim no more than it shows.`
       : draws
         ? "- A thing, a place, a mechanism, a comparison, a set of numbers: draw it and label it, and keep every fact a good plain answer would give: numbers and names on the drawing, the rest in short lines. Words are cheap; a missing fact is not. A comparison covers every row a good table would (cost, upkeep, lifespan, limits, risks), as paired lines beneath the two shapes. Compare with matching shapes side by side (bars sized by the numbers, a column each), never two lists of words."
         : '',
@@ -453,8 +453,6 @@ export function buildSystemPrompt({ capabilities, services }: PromptOptions): st
       ? ''
       : `
 # Structures: name the shape
-
-The painter places every part, routes every arrow and keeps every label clear.
 
 ${shapes
   .map((name) => {
