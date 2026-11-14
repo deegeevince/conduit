@@ -550,6 +550,11 @@ export function isInFlow(style: ElementStyle, layout: Layout, kind: ElementKind 
   return layout === 'split' && (style.at === 'left' || style.at === 'right');
 }
 
+/** The line a scene's answer rests on: a bold line at the size of `strong` or above. */
+function isKeyLine(style: ElementStyle): boolean {
+  return style.weight === 'bold' && (style.size === 'l' || style.size === 'xl' || style.size === 'xxl');
+}
+
 /** Layouts that show one in-flow line at a time. */
 function isOneAtATime(layout: Layout): boolean {
   return layout === 'solo' || layout === 'caption';
@@ -878,6 +883,8 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
             // A control, like a choice, stays where it can be worked while the lines above it change.
             if (!isActive(candidate, start) || candidate.span.scene !== scene.id || candidate.style.tap || candidate.span.kind === 'control') continue;
             if (candidate.style.stay === 'pin' || !isInFlow(candidate.style, scene.layout, candidate.span.kind)) continue;
+            // The answer's key line (`strong`) is never the one that leaves: a later aside is set under it, and a later key line is the one that replaces it.
+            if (isKeyLine(candidate.style) && !isKeyLine(style)) continue;
             enterStart = Math.max(enterStart, start + leave(candidate, start, candidate.style.exit, 'solo') * SOLO_OVERLAP);
           }
         }

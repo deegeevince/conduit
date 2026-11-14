@@ -604,6 +604,10 @@ function retirable(column: Column): number {
   const last = column.units.length - 1;
   // a control (it has a reserve) is something the user is using and the drawing is bound to: it never leaves to make room for words
   const free = (unit: Unit, index: number): boolean => index < last && unit.main.item.style.stay !== 'pin' && unit.main.item.reserve === undefined;
+  // the key lines (bold, `strong` and above) are the last of the body to go: the answer stays while the lines that explain it give way
+  const key = (unit: Unit): boolean => unit.main.item.style.weight === 'bold';
+  const aside = column.units.findIndex((unit, index) => free(unit, index) && !isHeading(unit) && !key(unit));
+  if (aside >= 0) return aside;
   const body = column.units.findIndex((unit, index) => free(unit, index) && !isHeading(unit));
   return body >= 0 ? body : column.units.findIndex(free);
 }
