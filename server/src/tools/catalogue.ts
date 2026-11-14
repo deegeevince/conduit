@@ -141,6 +141,19 @@ function parseArgs(argv: readonly string[]): Args {
   };
 }
 
+/**
+ * Two cases may carry the same prompt with different recorded answers, and the replay brain plays the first recording whose words match: the second case would then be shown
+ * the first one's answer. In a replay each such prompt carries one invisible zero-width space more than the case before it, in the prompt sent and in the recording it matches.
+ */
+function twinMark(caseId: string, say: string): string {
+  const all = readdirSync(casesDir)
+    .filter((name) => name.endsWith('.json'))
+    .sort()
+    .map((name) => JSON.parse(readFileSync(join(casesDir, name), 'utf8')) as Case);
+  const earlier = all.slice(0, Math.max(0, all.findIndex((candidate) => candidate.id === caseId))).filter((candidate) => candidate.turns.some((turn) => turn.say === say));
+  return '\u200b'.repeat(earlier.length);
+}
+
 function loadCases(only: readonly string[] | null, chat = true): Case[] {
   const all = readdirSync(casesDir)
     .filter((name) => name.endsWith('.json'))
@@ -223,6 +236,9 @@ interface Ctl {
   readonly value: unknown;
   readonly valueText: string;
   readonly box: { readonly x: number; readonly y: number; readonly width: number; readonly height: number };
+  /** how a pick shows its options, and the painter's own box for each part of the control (`option:<n>`, `back`, `next`) */
+  readonly form?: string | null;
+  readonly parts?: readonly { readonly part: string; readonly box: { readonly x: number; readonly y: number; readonly width: number; readonly height: number } }[];
 }
 interface Cx {
   readonly tab: Tab;
@@ -252,7 +268,7 @@ const res = (check: string, bad: readonly string[], good: string): Res => ({ che
 const floorOf = (cx: Cx): number => (cx.mobile ? 9 : 11.75);
 
 async function controls(tab: Tab): Promise<Ctl[]> {
-  return tab.eval<Ctl[]>(`window.__stage.controls().map((c) => ({ id: c.id, control: c.control, label: c.label, options: c.options, min: c.min, value: c.value, valueText: c.valueText, box: c.box }))`);
+  return tab.eval<Ctl[]>(`window.__stage.controls().map((c) => ({ id: c.id, control: c.control, label: c.label, options: c.options, min: c.min, value: c.value, valueText: c.valueText, box: c.box, form: c.form, parts: c.parts }))`);
 }
 
 /** every general gate: the words are in their shapes, labels on their part's side, nothing over anything, readable, whole */
@@ -286,6 +302,9 @@ function legible(cx: Cx): Res {
   return res('legible', bad, `${words.length} lines, all at 4.5:1 or better and at least ${floorOf(cx)} px`);
 }
 
+/** a leader's end this close to its part's outline (px) touches it */
+const LEADER_TOUCH = 6;
+
 /** a label anchored with `near=part` must lie nearest its own part and not inside another anchored part */
 function labelsSide(cx: Cx): Res {
   const anchors: { label: string; part: string }[] = [];
@@ -303,7 +322,19 @@ function labelsSide(cx: Cx): Res {
     return Math.hypot(dx, dy);
   };
   const bad: string[] = [];
+  // a label with a leader is judged by where its line ends: on its own part (within a few px), and not nearer another labelled part; one without a leader by the nearness of its words
+  const lines = cx.answer.leaders ?? [];
+  const led = new Set<string>();
   for (const { label, part } of anchors) {
+    const line = lines.find((candidate) => candidate.label === label && candidate.part === part);
+    const l = by(label);
+    if (line === undefined || l === undefined) continue;
+    led.add(label);
+    if (line.distance > LEADER_TOUCH) bad.push(`"${l.text.slice(0, 18)}" has a leader that ends ${Math.round(line.distance)} px from ${part}`);
+    else if (line.nearer !== null) bad.push(`"${l.text.slice(0, 18)}" has a leader that reaches ${line.nearer.id} first, not ${part}`);
+  }
+  for (const { label, part } of anchors) {
+    if (led.has(label)) continue;
     const l = by(label);
     const own = by(part);
     if (l === undefined || own === undefined) continue;
@@ -314,7 +345,7 @@ function labelsSide(cx: Cx): Res {
       if (nearest.id !== part && dist(nearest, l) + 4 < dist(own, l)) bad.push(`"${l.text.slice(0, 18)}" is nearer ${nearest.id} than its own ${part}`);
     }
   }
-  return res('labels-side', bad, `${anchors.length} labels, each nearest its own part`);
+  return res('labels-side', bad, `${anchors.length} labels, ${led.size} by their leaders, the rest each nearest its own part`);
 }
 
 /** words that belong to a shape (`in=`) are inside its box at rest */
@@ -363,6 +394,16 @@ async function runCheck(cx: Cx, spec: Spec): Promise<Res> {
   const words = spec['words'] as string[] | undefined;
   const match = spec['match'] as string | undefined;
   switch (name) {
+    case 'any': {
+      // one of several good answers: `{ "k": "any", "of": [spec, spec] }` passes when any of them passes (a list on stage, or the same list as stops to tap)
+      const tried: Res[] = [];
+      for (const sub of spec['of'] as Spec[]) {
+        const r = await runCheck(cx, sub);
+        if (r.verdict === 'PASS') return { check: (spec['of'] as Spec[]).map((s) => s.k).join('|'), verdict: 'PASS', detail: `${r.check}: ${r.detail}` };
+        tried.push(r);
+      }
+      return { check: tried.map((r) => r.check).join('|'), verdict: 'FAIL', detail: tried.map((r) => `${r.check}: ${r.detail}`).join('; or ') };
+    }
     case 'words-in-grid': {
       const found = wordBoxes(cx, words, match);
       if (found.length === 0) return { check: name, verdict: 'FAIL', detail: 'none of the words are on stage' };
@@ -555,10 +596,16 @@ async function runCheck(cx: Cx, spec: Spec): Promise<Res> {
         for (const i of [2, 1]) {
           const now = (await controls(cx.tab)).find((c) => c.id === p.id) ?? p;
           const before = JSON.stringify(now.value);
-          await cx.tab.tap(now.box.x + (now.box.width * (i + 0.5)) / now.options.length, now.box.y + now.box.height / 2);
+          // a pick that shows its options as a row or a list is tapped on the option; one that shows a stepper (back, the value, next) is tapped on its own arrow: its middle is not an option
+          const own = now.parts?.find((part) => part.part === `option:${i + 1}`);
+          const stepper = now.parts?.find((part) => part.part === 'next');
+          const at = own?.box ?? stepper?.box ?? null;
+          const x = at === null ? now.box.x + (now.box.width * (i + 0.5)) / now.options.length : at.x + at.width / 2;
+          const y = at === null ? now.box.y + now.box.height / 2 : at.y + at.height / 2;
+          await cx.tab.tap(x, y);
           await sleep(500);
           const after = JSON.stringify(((await controls(cx.tab)).find((c) => c.id === p.id) ?? p).value);
-          if (after === before) bad.push(`tapping option ${i + 1} of "${p.id}" left the value at ${before}`);
+          if (after === before) bad.push(`tapping ${own === undefined && stepper !== undefined ? 'next' : `option ${i + 1}`} of "${p.id}" left the value at ${before}`);
         }
       }
       return res(name, bad, `taps move ${picks.length} pick(s)`);
@@ -657,8 +704,6 @@ async function act(cx: Cx, action: Action): Promise<void> {
 /** the pen over a live mock-up part: a ring started on the pay button must draw, not press */
 async function penRing(cx: Cx): Promise<Res> {
   const { tab } = cx;
-  const part = (await tab.call<Answer>('answer')).mockups.flatMap((m) => m.hits).find((h) => /pay|order|checkout|place/i.test(h.part)) ?? (await tab.call<Answer>('answer')).mockups.flatMap((m) => m.hits)[0];
-  if (part === undefined) return { check: 'pen-draws', verdict: 'FAIL', detail: 'no live part on the mock-up to ring' };
   const plus = await tab.call<{ x: number; y: number; w: number; h: number } | null>('rect', '.composer__plus');
   if (plus === null) return { check: 'pen-draws', verdict: 'FAIL', detail: 'no + menu' };
   await tab.tap(plus.x + plus.w / 2, plus.y + plus.h / 2);
@@ -667,6 +712,12 @@ async function penRing(cx: Cx): Promise<Res> {
   if (draw === null) return { check: 'pen-draws', verdict: 'FAIL', detail: 'the + menu has no Draw' };
   await tab.tap(draw.x + draw.w / 2, draw.y + draw.h / 2);
   await sleep(700);
+  // the part is chosen with the ink bar up: a stroke can only start on a part the bar does not cover (the bar is the pen's own tool, over the stage's top edge)
+  const bar = await tab.call<{ x: number; y: number; w: number; h: number } | null>('rect', '.ink-stage__bar');
+  const covered = (h: { box: { x: number; y: number; width: number; height: number } }): boolean => bar !== null && h.box.x + h.box.width / 2 >= bar.x - 4 && h.box.x + h.box.width / 2 <= bar.x + bar.w + 4 && h.box.y + h.box.height / 2 >= bar.y - 4 && h.box.y + h.box.height / 2 <= bar.y + bar.h + 4;
+  const hits = (await tab.call<Answer>('answer')).mockups.flatMap((m) => m.hits).filter((h) => !covered(h));
+  const part = hits.find((h) => /pay|order|checkout|place/i.test(h.part)) ?? hits.find((h) => /button/i.test(h.part)) ?? hits[0];
+  if (part === undefined) return { check: 'pen-draws', verdict: 'FAIL', detail: 'no live part on the mock-up to ring' };
   const before = (await tab.call<Answer>('answer')).mockups[0]?.screen;
   const b = part.box;
   const cx0 = b.x + b.width / 2;
@@ -758,7 +809,7 @@ async function runCell(args: Args, c: Case, screen: Args['screens'][number], url
       const results: CheckResult[] = [];
       if (n === 1) cx.early = tab.failedRequests.map((f) => f.text);
       tab.drain();
-      const sent = await conv.say(turn.say, results);
+      const sent = await conv.say(args.mode === 'live' ? turn.say : `${turn.say}${twinMark(c.id, turn.say)}`, results);
       // a poller beside the wait: the Show all pill is only there while an answer plays
       let polling = true;
       const poll = (async (): Promise<void> => {
@@ -959,7 +1010,7 @@ async function run(args: Args): Promise<void> {
       missing.add(c.id);
       continue;
     }
-    turns.push(...(JSON.parse(readFileSync(file, 'utf8')) as Recorded).turns);
+    turns.push(...(JSON.parse(readFileSync(file, 'utf8')) as Recorded).turns.map((turn) => ({ ...turn, match: `${turn.match}${twinMark(c.id, turn.match)}` })));
   }
   const replayFile = join(out, 'replay-case.json');
   await writeFile(replayFile, JSON.stringify({ turns }));

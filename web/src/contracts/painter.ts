@@ -109,6 +109,20 @@ export interface PointerInput {
   readonly pointer: number;
 }
 
+/** Where a label's leader line ends and how that end stands to the parts that have labels, as the catalogue and the test hook read it. */
+export interface LeaderView {
+  /** the label's id */
+  readonly label: string;
+  /** the id of the part the label names (`near=`) */
+  readonly part: string;
+  /** the far end of the leader, host CSS pixels */
+  readonly end: { readonly x: number; readonly y: number };
+  /** how far the end is from the outline of its own part, px (0: it touches) */
+  readonly distance: number;
+  /** the other labelled part the end reaches nearer than its own, or null */
+  readonly nearer: { readonly id: string; readonly distance: number } | null;
+}
+
 /** One screen of a mock-up, where it rests on screen now, host CSS pixels. */
 export interface UiMockup {
   readonly screen: string;
@@ -219,6 +233,8 @@ export interface PainterSnapshot {
 export type TranscriptEvent =
   | { readonly kind: 'turn'; readonly turn: string; readonly input: TurnInput }
   | { readonly kind: 'shown'; readonly key: string; readonly id: string; readonly text: string; readonly tappable: boolean; readonly replaces: string | null }
+  /** a diagram's words changed (its cells follow a control): what the line of `shown` for it now says */
+  | { readonly kind: 'told'; readonly key: string; readonly text: string }
   | { readonly kind: 'struck'; readonly key: string }
   | { readonly kind: 'gone'; readonly key: string };
 
@@ -395,6 +411,9 @@ export interface Painter {
    * Empty when no mock-up is on stage.
    */
   mockups(): readonly UiMockup[];
+
+  /** The leader lines on stage as they rest: where each ends and how that end stands to its own part and to the other labelled parts (what the catalogue's label check reads). */
+  leaders(): readonly LeaderView[];
 
   /** A pointer came down at a point in host CSS pixels. Emits `tap` if it hit an element. */
   tapAt(x: number, y: number): void;

@@ -122,6 +122,23 @@ function dropLast(nodes: readonly UiNode[]): UiNode[] | null {
   return null;
 }
 
+/** What may go, last of all, from a glass screen that is still too long: a strip of cards that moves, then a grid of cards. The bars, buttons and fields never go. */
+const EXTRAS: readonly string[] = ['carousel', 'media'];
+
+/** The same nodes without the last part of `kind` (the one lowest on the screen), or null when there is none. */
+function dropKind(nodes: readonly UiNode[], kind: string): UiNode[] | null {
+  for (let i = nodes.length - 1; i >= 0; i -= 1) {
+    const node = nodes[i] as UiNode;
+    if (!isUiContainer(node)) {
+      if (node.kind === kind) return nodes.filter((_, j) => j !== i);
+      continue;
+    }
+    const inner = dropKind(node.children, kind);
+    if (inner !== null) return nodes.map((n, j) => (j === i ? { ...node, children: inner } : n));
+  }
+  return null;
+}
+
 /**
  * One screen, laid out. What the screen's own words (`theme=`, `accent=`, ...) make of the look's tokens is read here. A phone or a tablet is the glass it is: when
  * what was written does not fit it and the screen did not say how closely to set it, it is set again at `density=compact`, and that one is kept if it fits better.
@@ -146,8 +163,8 @@ export function layoutScreen(written: UiScreen, base: UiTokens, measure: UiMeasu
   let kept = spilled(squeezed) < spilled(best) ? squeezed : best;
   // still too long: the last rows of the last list go, one at a time, rather than a row cut across the glass (never the bars, buttons or fields)
   let screen = written;
-  for (let step = 0; step < 6 && spilled(kept) > 0; step += 1) {
-    const shorter = dropLast(screen.children);
+  for (let step = 0; step < 8 && spilled(kept) > 0; step += 1) {
+    const shorter = dropLast(screen.children) ?? EXTRAS.reduce<UiNode[] | null>((found, kind) => found ?? dropKind(screen.children, kind), null);
     if (shorter === null) break;
     screen = { ...screen, children: shorter };
     squeezed = layoutWith(screen, { ...tokens, pack: 'compact', squeeze: true }, measure, state, Math.max(0, lines - step - 1));

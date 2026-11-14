@@ -29,7 +29,7 @@ import { QualityGovernor } from './governor';
 import { bodySize, marginOf, screenFacts } from './layout/metrics';
 import { Reporter } from './report';
 import { annotated } from './annotate';
-import { placedOf, sightOf } from './sight';
+import { leadersOf, placedOf, sightOf } from './sight';
 import { textSignature, textSpansOf } from './text-out';
 import { downUi, easeUi, easingUi, isScreenBlock, moveUi, setUiPicture, typeUi, typingUi, uiBlockAt, uiMockupViews, upUi } from './ui-stage';
 import type { UiSend } from './ui-stage';
@@ -579,6 +579,16 @@ export function createPainter(options: PainterOptions): Painter {
     emit('clock', state);
   };
 
+  /** a diagram described in the words of what it shows now (a `{cash}` in a cell is the control's value) */
+  const liveDescription = (element: ElementSpan): string => {
+    const plain = element.figure === null ? element.text : describeFigure(element.figure);
+    if (!plain.includes('{')) return plain;
+    const view = timeline.viewsAt(instantOf(clock.read())).find((item) => item.key === element.key);
+    if (view === undefined) return plain;
+    toldAs.set(element.key, view.text);
+    return view.text;
+  };
+
   const emitMilestones = (milestones: ReturnType<Reporter['observe']>): void => {
     for (const item of milestones) {
       const element = item.element;
@@ -586,7 +596,7 @@ export function createPainter(options: PainterOptions): Painter {
       if (element.parent !== null) continue;
       if (item.kind === 'shown') {
         const tappable = element.changes.reduce<boolean>((tap, change) => (change.kind === 'set' && change.start <= item.time ? change.style.tap : tap), element.style.tap);
-        const text = element.figure === null ? timeline.wordsAt(element, item.time) : describeFigure(element.figure);
+        const text = element.figure === null ? timeline.wordsAt(element, item.time) : liveDescription(element);
         emit('transcript', { kind: 'shown', key: element.key, id: element.id, text, tappable, replaces: element.replaces });
       } else if (item.kind === 'struck') emit('transcript', { kind: 'struck', key: element.key });
       else emit('transcript', { kind: 'gone', key: element.key });
@@ -990,6 +1000,7 @@ export function createPainter(options: PainterOptions): Painter {
     }
     reading = advanceTurnState(reading, drawn || glyphStalled);
     announceControls();
+    announceDescriptions(reading);
     announceText();
     observe(reading);
     // The frame just drawn may have met glyphs not yet typeset: say so now, the clock holds from the next frame.
@@ -1313,6 +1324,21 @@ export function createPainter(options: PainterOptions): Painter {
   const controlViews = (): ControlView[] => sitesNow().map(viewOf);
   let lastControlsSignature = '';
   /** Tells the app when controls arrived, left, moved or took a new value: never on every frame of a drag. */
+  /** what the transcript last heard each diagram described as: a diagram whose cells follow a control is told again when the words change, so the page keeps saying what the cells show */
+  const toldAs = new Map<string, string>();
+  const announceDescriptions = (reading: ClockReading): void => {
+    if (!timeline.reactive || listeners.transcript.size === 0) return;
+    for (const view of timeline.viewsAt(instantOf(reading))) {
+      if (view.kind !== 'structure') continue;
+      const before = toldAs.get(view.key);
+      if (before === undefined) toldAs.set(view.key, view.text);
+      else if (before !== view.text) {
+        toldAs.set(view.key, view.text);
+        emit('transcript', { kind: 'told', key: view.key, text: view.text });
+      }
+    }
+  };
+
   const announceControls = (): void => {
     const views = controlViews();
     if (views.length === 0 && lastControlsSignature === '') return;
@@ -1781,6 +1807,8 @@ export function createPainter(options: PainterOptions): Painter {
     },
 
     mockups: mockupViews,
+
+    leaders: () => leadersOf(timeline, timeline.schedule, clock.read().playhead),
 
     snapshot: snapshotNow,
 

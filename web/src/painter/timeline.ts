@@ -13,6 +13,7 @@ import type { StructureEngine } from '../contracts/blocks';
 import type { TuneCue } from '../contracts/tune';
 import { chartFrames } from './charts';
 import type { ChartData } from './charts';
+import { wordsIn } from './blocks/kit';
 import { createControlStore, compileTemplate, renderTemplate, scopeOf } from './controls';
 import type { Template } from './controls';
 import { boundElement, boundSchedule, controlIndexOf, createRuntime, heldBy, moodOf, controlSpecOf } from './bound';
@@ -23,7 +24,7 @@ import type { ControlSite } from './controls-stage';
 import { layoutCard } from './controls';
 import type { ControlLayout } from '../contracts/controls';
 import { lookOf, measurerFor, tuneStartOf } from './structures';
-import { appCues, loneAppScenes } from './apps';
+import { appCues } from './apps';
 import { CALM } from '../contracts/controls';
 import { registerLaidOut, laidOutOf } from './registry';
 import { buildStructures, probeStructure, setTextOnce } from './structures';
@@ -388,9 +389,7 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
     return renderTemplate(template, source.text, source.emphasis, (id) => controlNamed(id, time));
   };
   // Words are laid out here; everything drawn is placed by painter/figures.ts.
-  // the words of a scene whose answer is one live app are not drawn on the stage: they are in the transcript, and the app is the page
-  const aloneScenes = loneAppScenes(schedule);
-  const elements = schedule.elements.filter((element) => element.kind === 'text' && !aloneScenes.has(element.scene));
+  const elements = schedule.elements.filter((element) => element.kind === 'text');
   const byKey = new Map<string, ElementSpan>();
   for (const element of elements) byKey.set(element.key, element);
   const drawn = schedule.elements.filter((element) => element.kind !== 'text');
@@ -665,12 +664,17 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
   const laidStyle = (style: ElementStyle): ElementStyle => (style.near !== null || style.group !== null || (typeof style.at === 'object' && style.at !== null) ? { ...style, at: 'center', near: null } : style);
 
   /** the widest a control may be, in its layer's plane units: the room the flow has across */
-  const controlRoom = (span: ElementSpan, fit: CanvasFit): number => fit.flow.width / planeScale(span.style.layer, viewport);
+  const controlRoom = (span: ElementSpan, fit: CanvasFit): number => {
+    const room = fit.flow.width / planeScale(span.style.layer, viewport);
+    // on a free canvas, where words stand wherever they were told, a text field takes at most two fifths of it (its prompt is cut to fit): a field the width of the stage stands on something
+    return scheduleLayoutOf(span) === 'free' && controlSpecOf(span)?.control === 'input' ? room * 0.4 : room;
+  };
+  const scheduleLayoutOf = (span: ElementSpan): string => sceneAt(schedule, span.enter?.start ?? 0).layout;
   /** how this scene's controls are set at `time`, as the flow reserved room for them: the widest, and how closely (read after the epochs are laid out) */
   const controlSetting = (span: ElementSpan, fit: CanvasFit, time: number): { readonly maxWidth: number; readonly compact: 0 | 1 | 2 } => {
     const found = sceneEpochAt(span.scene, time);
     if (found === null) return { maxWidth: controlRoom(span, fit), compact: 0 };
-    return { maxWidth: found.epoch.controls.room / planeScale(span.style.layer, viewport), compact: found.epoch.controls.compact };
+    return { maxWidth: Math.min(found.epoch.controls.room / planeScale(span.style.layer, viewport), controlRoom(span, fit)), compact: found.epoch.controls.compact };
   };
 
   /** a card with no place of its own stands in the flow */
@@ -811,8 +815,10 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
       const unpinnedBlocks = blocks.list.filter((block) => block.kind !== 'picture' && block.pinned === null);
       const bare = !blocks.list.some((block) => block.kind === 'picture' || block.pinned !== null);
       const sceneHasControls = controlSpans.some((span) => span.scene === scene.id && span.parent === null);
+      // a live app is a tool to be used: on a wide stage it takes the lead room whatever the scene's layout, and the words stand beside it
+      const liveApp = unpinnedBlocks.length === 1 && drawnByKey.get(unpinnedBlocks[0]?.key ?? '')?.figure?.kind === 'structure' && (drawnByKey.get(unpinnedBlocks[0]?.key ?? '')?.figure as { structure?: string } | null | undefined)?.structure === 'app';
       let beside = false;
-      if (viewport.width >= 900 && viewport.width >= 1.5 * viewport.height && bare && unpinnedBlocks.length === 1 && unpinnedBlocks[0]?.kind === 'structure' && scene.layout !== 'figure' && (sceneHasControls || (scene.layout !== 'caption' && scene.layout !== 'solo'))) {
+      if (viewport.width >= 900 && viewport.width >= 1.5 * viewport.height && bare && unpinnedBlocks.length === 1 && unpinnedBlocks[0]?.kind === 'structure' && scene.layout !== 'figure' && (liveApp || sceneHasControls || (scene.layout !== 'caption' && scene.layout !== 'solo'))) {
         const known = besideOf.get(scene.id);
         if (known !== undefined) beside = known;
         else if (sceneHasControls) {
@@ -839,7 +845,7 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
       const cueW = scroll ? targetPx() / planeScale('mid', viewport) : 0;
       const roomRaw = controlRoomOf(roomInput, controlFit.flow);
       const roomWide = scroll ? Math.max(1, roomRaw - (columns === 2 ? cueW / 2 : cueW)) : roomRaw;
-      const roomOf = (span: ElementSpan): number => roomWide / planeScale(span.style.layer, viewport);
+      const roomOf = (span: ElementSpan): number => Math.min(roomWide / planeScale(span.style.layer, viewport), controlRoom(span, controlFit));
       const compact = (level === 1 ? 1 : level >= 2 ? 2 : 0) as 0 | 1 | 2;
       const items: LayoutItem[] = [...baseItems];
       const liveControls: ElementSpan[] = [];
@@ -2898,7 +2904,10 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
       laidViews.push({ key: chart.key, id: chart.id, kind: 'structure', text: span?.figure == null ? '' : describeFigure(span.figure), layer: chart.layer, phase: chart.state.interactive ? 'on' : 'entering', box: chart.box, fontPx: chart.state.theme.fontPx, colour: chart.state.theme.ink, contrast: 21, painting: null, opacity: chart.opacity, tappable: false });
     }
     const drawnViews = laidViews.length === 0 ? figs.views : [...figs.views.filter((view) => !laidViews.some((laidView) => laidView.key === view.key)), ...laidViews];
-    return { frame, views: [...evaluated.map((item) => item.view), ...drawnViews], sites };
+    // the words that describe a diagram carry what its cells show now: a `{cash}` in a cell is the control's value here too, as a reader of the page hears it
+    const scopeNow = scopeOf([...cindex.ids], (id) => controlNamed(id, tq));
+    const told = (view: StageElementView): StageElementView => (view.kind === 'structure' && view.text.includes('{') ? { ...view, text: wordsIn(view.text, [], scopeNow).text } : view);
+    return { frame, views: [...evaluated.map((item) => item.view), ...drawnViews].map(told), sites };
   };
 
   // The same instant asked of twice (a frame, then a pointer, then the snapshot) is made once, while nothing the hand holds has changed.

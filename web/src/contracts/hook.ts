@@ -2,7 +2,7 @@ import type { BackEvent, ControlValue, Sight } from '@conduit/language';
 import type { AppProbe } from './app';
 import type { ExportJob, ExportRequest } from './export';
 import type { ChartProbe, ChartView } from './chart';
-import type { ControlView, LineView, PainterSnapshot, StageElementView, UiMockup } from './painter';
+import type { ControlView, LeaderView, LineView, PainterSnapshot, StageElementView, UiMockup } from './painter';
 
 /**
  * `window.__stage`: how a tester (human or agent) inspects and drives a stage
@@ -53,6 +53,8 @@ export interface StageHook {
   chart(id: string, action: { readonly hover: number } | { readonly zoom: number } | { readonly pan: number } | { readonly reset: true }): Promise<ChartProbe>;
   /** v2.2. The mock-ups on stage as they rest: what a finger works, the words as drawn, the kit's lint notes; host CSS pixels. What the deploy gate (`pnpm smoke`) taps and judges. */
   mockups(): readonly UiMockup[];
+  /** The leader lines of the callouts on stage: where each ends, and the part it reaches. */
+  leaders(): readonly LeaderView[];
   /** The controls on stage, with their values and where they are on screen. */
   controls(): readonly ControlView[];
   /**

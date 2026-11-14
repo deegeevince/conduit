@@ -1346,8 +1346,19 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   };
   const tappableAt = (x: number, y: number): boolean =>
     painter.snapshot().elements.some((el) => el.tappable && x >= el.box.x && x <= el.box.x + el.box.width && y >= el.box.y && y <= el.box.y + el.box.height);
+  // A pen is for drawing: a pen that goes down on the stage presses nothing until it comes up again without having travelled (a tap). A stroke, which travels, is never a press,
+  // wherever it started. A finger or a mouse presses as it goes down, as before.
+  const penDowns = new Map<number, { readonly x: number; readonly y: number }>();
+  const PEN_TAP_TRAVEL = 8;
   const onPointerDown = (event: PointerEvent): void => {
     if (event.button !== 0 || inChart(event) || inInk(event)) return;
+    if (event.pointerType === 'pen') {
+      penDowns.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      return;
+    }
+    pressAt(event);
+  };
+  const pressAt = (event: PointerEvent): void => {
     const { x, y } = localPoint(event);
     if (painter.pointer({ phase: 'down', x, y, pointer: event.pointerId })) {
       taken.add(event.pointerId);
@@ -1365,6 +1376,8 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   };
   const onPointerMove = (event: PointerEvent): void => {
     if (inChart(event) || inInk(event)) return;
+    const down = penDowns.get(event.pointerId);
+    if (down !== undefined && Math.hypot(event.clientX - down.x, event.clientY - down.y) > PEN_TAP_TRAVEL) penDowns.delete(event.pointerId);
     const point = localPoint(event);
     if (taken.has(event.pointerId)) {
       // A drag is not throttled: the picture follows the finger in the same frame.
@@ -1383,6 +1396,9 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     });
   };
   const onPointerEnd = (event: PointerEvent): void => {
+    const down = penDowns.get(event.pointerId);
+    penDowns.delete(event.pointerId);
+    if (down !== undefined && event.type === 'pointerup' && Math.hypot(event.clientX - down.x, event.clientY - down.y) <= PEN_TAP_TRAVEL) pressAt(event);
     if (!taken.has(event.pointerId)) return;
     taken.delete(event.pointerId);
     const point = localPoint(event);

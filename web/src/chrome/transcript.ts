@@ -438,6 +438,12 @@ export function mountTranscript(host: HTMLElement, painter: Painter, handlers: {
         trim();
         return;
       }
+      case 'told': {
+        // a diagram whose cells follow a control: its line keeps saying what the cells show
+        const entry = entries.get(event.key);
+        if (entry !== undefined && entry.paragraph.classList.contains('transcript__thing') && !entry.paragraph.classList.contains('transcript__line--struck')) entry.text.textContent = `Diagram: ${event.text}`;
+        return;
+      }
       case 'struck': {
         const entry = entries.get(event.key);
         if (entry === undefined || entry.paragraph.classList.contains('transcript__line--struck')) return;
