@@ -9,6 +9,7 @@ import { createChangelogReader, createStatusReader } from './domain/app-status';
 import { AssetStore } from './domain/assets';
 import { Conductor } from './domain/conductor';
 import { SessionStore } from './domain/session';
+import { CanvasService } from './canvas/api';
 import { EnvError, loadEnv, processEnvironment, withheldCredentialNames } from './env';
 import type { Env } from './env';
 import { createApp } from './http/app';
@@ -65,7 +66,22 @@ function boot(env: Env): void {
   status();
   const news = createChangelogReader(env.changelogFile, now);
   news();
-  const brains = createBrains({ kill, settings: env.brain, log: log.child({ part: 'brain' }), relayHub, agent: env.agent, modes: env.modes, status, news });
+  // SA4. The canvas tools: the model's own process knocks at /mcp on this server's loopback address with a token minted for it; the relay and the
+  // steward use the same handlers at /api/sessions/:session/canvas/:tool. CANVAS_TOOLS=off (dev) leaves the processes without them.
+  const sessions = new SessionStore();
+  const canvas = new CanvasService({ sessions, log: log.child({ part: 'canvas' }), now, wantPicture: (s, target, deadlineMs) => conductor.wantPicture(s, target, deadlineMs) });
+  const canvasOn = env.brain.kind === 'claude-cli' && processEnvironment()['CANVAS_TOOLS'] !== 'off';
+  const brains = createBrains({
+    kill,
+    settings: env.brain,
+    log: log.child({ part: 'brain' }),
+    relayHub,
+    agent: env.agent,
+    modes: env.modes,
+    status,
+    news,
+    ...(canvasOn ? { canvas: { url: `http://127.0.0.1:${env.port}/mcp`, mint: (session: string) => canvas.tokens.mint(session), revoke: (token: string) => canvas.tokens.revoke(token) } } : {}),
+  });
   const assets = new AssetStore();
   const images = createImageModel(env.images, log.child({ part: 'images' }));
   // v2.2. Photographs for a mock-up's `image` parts: off unless `PICTURES=openverse`. Only the words of the line ever leave the machine.
@@ -109,7 +125,9 @@ function boot(env: Env): void {
   const docAssets = createDocumentAssets({ dir: env.data.documents, log: log.child({ part: 'documents' }) });
   const documents = createDocuments({ catalogue: createCatalogue({ dir: env.data.documents, logs: env.logDir, log: log.child({ part: 'documents' }), now }), log: log.child({ part: 'documents' }), now });
   const conductor = new Conductor({
-    sessions: new SessionStore(),
+    sessions,
+    canvas,
+    canvasTools: canvasOn,
     brains,
     log: log.child({ part: 'conductor' }),
     assets,
@@ -155,7 +173,7 @@ function boot(env: Env): void {
   });
   const withheld = withheldCredentialNames();
   if (withheld.length > 0) log.info('env.credentials_withheld', { names: withheld, note: 'no child process is given these; every model call is on the owner\'s login' });
-  const app = createApp({ env, log: log.child({ part: 'http' }), conductor, relayHub, audit, kill, usage, assets, docAssets, pictures, uploads, voice, status, news });
+  const app = createApp({ env, log: log.child({ part: 'http' }), conductor, canvas, relayHub, audit, kill, usage, assets, docAssets, pictures, uploads, voice, status, news });
 
   const server = serve({ fetch: app.fetch, hostname: env.host, port: env.port }, (info) => {
     setImmediate(() => log.info('engine.warm', { ms: Math.round(warmEngine()), version: ENGINE_VERSION }));

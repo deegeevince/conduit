@@ -10,6 +10,7 @@ import { identify, runAs } from '../identity';
 import { SERVER_LIMITS } from '../domain/session';
 import { AppError, errors, toErrorBody } from '../errors';
 import { UPLOAD_LIMITS, VOICE_LIMITS } from '@conduit/language';
+import { registerCanvasRoutes } from './canvas-routes';
 import { registerAssetRoutes } from './asset-routes';
 import { registerConversationRoutes } from './conversation-routes';
 import { registerUploadRoutes } from './upload-routes';
@@ -81,7 +82,7 @@ export function createApp(deps: HttpDeps): Hono {
   const withVoice = limited(VOICE_LIMITS.bytes);
   // Only the two session POSTs that can carry a report get the larger limit, and only the two uploads a picture's.
   const carriesReport = /^\/api\/(?:sessions\/[^/]+\/(?:events|turns)|engine\/measure)$/;
-  const carriesPicture = /^\/api\/sessions\/[^/]+\/(?:sketches\/[^/]+|turns\/[^/]+\/(?:snapshot|drafts\/\d+))$/;
+  const carriesPicture = /^\/api\/sessions\/[^/]+\/(?:sketches\/[^/]+|looks\/[^/]+|turns\/[^/]+\/(?:snapshot|drafts\/\d+))$/;
   app.use('/api/*', (c, next) => {
     if (c.req.method !== 'POST') return ordinary(c, next);
     if (carriesReport.test(c.req.path)) return withReport(c, next);
@@ -91,6 +92,8 @@ export function createApp(deps: HttpDeps): Hono {
     return carriesPicture.test(c.req.path) ? withPicture(c, next) : ordinary(c, next);
   });
 
+  // The model's own door, outside `/api` and its identity check: it has a token of its own (`canvas-routes.ts`).
+  registerCanvasRoutes(app, deps);
   app.get(API.health, (c) => c.json<HealthResponse>({ ok: true, language: LANGUAGE.version, brain: deps.env.brain.kind }));
   registerSessionRoutes(app, deps);
   registerDocumentRoutes(app, deps);

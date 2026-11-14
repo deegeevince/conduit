@@ -655,12 +655,12 @@ export function createHttpLink(): HttpLink {
 
     upload(upload: PainterUpload): void {
       const id = session;
-      const what = upload.kind === 'sketch' ? `the sketch for ${upload.key}` : upload.kind === 'draft' ? 'the picture of the draft' : 'the snapshot of the stage';
+      const what = upload.kind === 'sketch' ? `the sketch for ${upload.key}` : upload.kind === 'draft' ? 'the picture of the draft' : upload.kind === 'look' ? 'the picture the brain asked for' : 'the snapshot of the stage';
       if (id === null || !canSend()) {
         note(`${what} was not sent: there is no connection`);
         return;
       }
-      const url = upload.kind === 'sketch' ? API.sketch(id, upload.key) : upload.kind === 'draft' ? API.draft(id, upload.turn, upload.pass) : API.snapshot(id, upload.turn);
+      const url = upload.kind === 'sketch' ? API.sketch(id, upload.key) : upload.kind === 'draft' ? API.draft(id, upload.turn, upload.pass) : upload.kind === 'look' ? API.look(id, upload.request) : API.snapshot(id, upload.turn);
       void putPicture(url, upload.blob, upload.kind === 'sketch' ? 'image/png' : 'image/jpeg').then((failure) => {
         if (failure !== null) note(`${what} was not sent: ${failure}`);
       });

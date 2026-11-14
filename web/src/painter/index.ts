@@ -1486,6 +1486,26 @@ export function createPainter(options: PainterOptions): Painter {
       }
       sendDraft(open, pass, copy.schedule);
     },
+    lookNow(id, request) {
+      // SA4 (`canvas_look`). A picture of the open turn as the lines so far will leave it, uploaded for the brain that asked: the same picture a draft
+      // is given, taken on request. Nothing is reported back and nothing on stage moves; with no capture, or a turn that is not the open one, nothing is said.
+      const open = turn;
+      if (open === null || open.id !== id || settling !== null || !wantsSnapshot()) return;
+      try {
+        const at = buildTimeline(timeline.schedule, open.base, { ...timelineContext(), arrivals: new Map() });
+        const when = Math.max(at.schedule.end, settledAfter(at, lockLook, open.base.scene.mood)) + 1e-6;
+        const plain: Frame = { ...at.frameAt({ time: when, ambient: 3, wallTime: pinnedWallTime(3), clock: 'paused' }), camera: REST_POSE };
+        const frame = annotated(plain, at, at.schedule, when, plain.spec);
+        void renderer
+          .rasterise(frame, { maxSide: PICTURE_SIDE, mime: 'image/jpeg', quality: 0.7, ...stills(frame) })
+          .then((blob) => {
+            if (blob !== null && !disposed) emit('upload', { kind: 'look', turn: id, request, blob });
+          })
+          .catch(() => undefined);
+      } catch (error) {
+        noteFault(error, 'look');
+      }
+    },
     // STUB(PLAN-v2.1 package T2): step a deck to a slide.
     slide(_to) {},
     notePass(id, pass, state) {

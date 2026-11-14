@@ -160,6 +160,18 @@ export function registerAssetRoutes(app: Hono, deps: HttpDeps): void {
     return c.body(null, 204);
   });
 
+  // SA4. The picture of the stage the brain asked for (`canvas_look`): answers a `want` event. 204 whether or not anyone was still waiting.
+  app.post('/api/sessions/:session/looks/:request', async (c) => {
+    const session = param(c, 'session');
+    const request = param(c, 'request');
+    conductor.assertSession(session);
+    const bytes = await pictureBody(c, 'image/jpeg');
+    const size = jpegSize(bytes);
+    if (size === null) throw errors.badRequest('the body is not a JPEG');
+    conductor.receiveLook(session, request, { mime: 'image/jpeg', bytes, ...size });
+    return c.body(null, 204);
+  });
+
   app.post('/api/sessions/:session/turns/:turn/drafts/:pass', async (c) => {
     const session = param(c, 'session');
     const turn = param(c, 'turn');

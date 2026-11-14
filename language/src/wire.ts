@@ -344,7 +344,12 @@ export type StageEvent =
    * parent whose children changed, so the page replaces by id and never has to merge; a later event for the same node is newer. `turn` is
    * null for a change made off the turn clock (an answer verified ahead). Not transient: a reconnecting stream is given it again.
    */
-  | { readonly type: 'doc'; readonly turn: string | null; readonly document: string; readonly title: string; readonly root: NodeId; readonly nodes: readonly DocNode[] };
+  | { readonly type: 'doc'; readonly turn: string | null; readonly document: string; readonly title: string; readonly root: NodeId; readonly nodes: readonly DocNode[] }
+  /**
+   * SA4. The brain asked for a picture of the stage as it stands (`canvas_look`). The page answers by uploading a JPEG to `API.look(session, request)`
+   * within `deadlineMs`, or says nothing; the server stops waiting then. Not part of the turn's score: a reconnecting stream is not given it again.
+   */
+  | { readonly type: 'want'; readonly turn: string; readonly request: string; readonly what: 'picture'; readonly target: string | null; readonly deadlineMs: number };
 
 export type StageEventType = StageEvent['type'];
 
@@ -354,7 +359,7 @@ export type StageEventType = StageEvent['type'];
  * the beat is a named event the page reads but does not pass on as a stage event.)
  */
 export const STREAM_HEARTBEAT = { eventName: 'heartbeat', everyMs: 15_000, silentMs: 40_000 } as const;
-export const STAGE_EVENT_TYPES: readonly StageEventType[] = ['hello', 'turn', 'reading', 'line', 'reject', 'end', 'pass', 'asset', 'data', 'picture', 'candidate', 'critic', 'activity', 'permission', 'doc'];
+export const STAGE_EVENT_TYPES: readonly StageEventType[] = ['hello', 'turn', 'reading', 'line', 'reject', 'end', 'pass', 'asset', 'data', 'picture', 'candidate', 'critic', 'activity', 'permission', 'doc', 'want'];
 
 /** Painter to server: the back channel. */
 export type BackEvent =
@@ -867,6 +872,8 @@ export const API = {
   snapshot: (session: string, turn: string): string => `/api/sessions/${session}/turns/${turn}/snapshot`,
   /** POST image/jpeg: the stage as pass `pass` of an open turn will leave it: what the brain is shown when it looks at its draft. */
   draft: (session: string, turn: string, pass: number): string => `/api/sessions/${session}/turns/${turn}/drafts/${pass}`,
+  /** SA4. POST image/jpeg: the picture of the stage the brain asked for with a `want` event (`request` is the event's). 204. */
+  look: (session: string, request: string): string => `/api/sessions/${session}/looks/${request}`,
   /** v2.1. GET `VoiceStatus` (no permission is asked for); POST (`/voice/:session`) a recording (WAV, M4A, CAF or MP3, `VOICE_LIMITS`): 201 `VoiceResponse`, the words as read on this Mac. */
   voiceStatus: '/api/voice',
   voice: (session: string): string => `/api/sessions/${session}/voice`,

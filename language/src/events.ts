@@ -22,6 +22,7 @@ const SHAPES: Record<StageEventType, Record<string, Shape>> = {
   activity: { turn: 'string', id: 'string', tool: 'string', summary: 'string', state: 'string', ms: 'number|null' },
   permission: { turn: 'string', request: 'string', tool: 'string', summary: 'string', risk: 'string', expiresMs: 'number' },
   doc: { turn: 'string|null', document: 'string', title: 'string', root: 'string', nodes: 'array' },
+  want: { turn: 'string', request: 'string', what: 'string', target: 'string|null', deadlineMs: 'number' },
 };
 
 function isShape(value: unknown, shape: Shape): boolean {

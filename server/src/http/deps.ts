@@ -7,6 +7,7 @@ import type { PictureService } from '../domain/pictures';
 import type { UploadStore } from '../domain/uploads';
 import type { VoiceNotes } from '../domain/voice';
 import type { Audit } from '../audit';
+import type { CanvasService } from '../canvas/api';
 import type { Env } from '../env';
 import type { KillSwitch } from '../kill';
 import type { UsageMeter } from '../usage';
@@ -27,6 +28,8 @@ export interface HttpDeps {
   readonly assets: AssetStore;
   /** v3. What a document keeps beside its words: the cut of the photo for each question, and her strokes */
   readonly docAssets: DocumentAssets;
+  /** SA4. The canvas tools: the model's own process reaches them at `/mcp`, the relay and the steward at `/api/sessions/:session/canvas/:tool` */
+  readonly canvas: CanvasService;
   /** v2.2. Photographs found for the `image` parts of a mock-up: what `GET /api/pictures/:key` serves */
   readonly pictures: PictureService;
   /** v2.1. The user's photos: what `POST /api/sessions/:id/uploads` keeps and the painter draws */

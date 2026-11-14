@@ -7,6 +7,7 @@ import { NEVER_ENGAGED } from '../kill';
 import type { KillSwitch } from '../kill';
 import type { Logger } from '../log';
 import { createClaudeCliBrain } from './claude-cli/claude-cli-brain';
+import type { CanvasLink } from './claude-cli/claude-cli-brain';
 import { createRelayBrain } from './relay/relay-brain';
 import type { RelayHub } from './relay/relay-hub';
 import { createReplayBrain } from './replay/replay-brain';
@@ -28,6 +29,8 @@ export interface BrainsDeps {
   readonly news?: () => string | null;
   /** v2.1 ops. The kill switch: while it is engaged no conversation is in agent mode and no tool is run */
   readonly kill?: KillSwitch;
+  /** SA4. How the claude processes reach the canvas tools; absent: they have none */
+  readonly canvas?: CanvasLink;
 }
 
 /**
@@ -64,6 +67,7 @@ export function createBrains(deps: BrainsDeps): BrainRegistry {
         ...(deps.status === undefined ? {} : { status: deps.status }),
         ...(deps.news === undefined ? {} : { news: deps.news }),
         kill: deps.kill ?? NEVER_ENGAGED,
+        ...(deps.canvas === undefined ? {} : { canvas: deps.canvas }),
       });
       break;
   }
