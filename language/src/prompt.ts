@@ -22,6 +22,7 @@ import type { BriefForm, DocumentFacts, LineProblem, TechniqueCard, TurnContext,
 
 export type { BriefForm };
 import { asksForLiveApp } from './app';
+import { FIGURE_CHAPTER, asksForFigure } from './figure';
 import { INTERFACE_CHAPTER } from './interface';
 import { TEACH_CHAPTER, carriesTeaching, documentBlocks } from './teach';
 import { inkBrief } from './ink';
@@ -295,7 +296,7 @@ export function buildSystemPrompt({ capabilities, services }: PromptOptions): st
   const structures = draws ? capabilities.structures.filter((name) => name !== 'chart' || charts.length > 0) : [];
   // `code` is taught where the verbs for what you write are ("More to say with"), in its own words, and not twice in the list of shapes.
   // `tune` is taught only on a turn about music (`tuneChapter`, in the brief), never here: the system prompt is full.
-  const shapes = structures.filter((name) => name !== 'code' && name !== 'tune' && name !== 'screen' && name !== 'app');
+  const shapes = structures.filter((name) => name !== 'code' && name !== 'tune' && name !== 'screen' && name !== 'app' && name !== 'figure');
   const controls = capabilities.controls;
   const textures = draws ? capabilities.textures.filter((name) => name !== 'flat') : [];
   const brushes = draws ? capabilities.brushes : [];
@@ -1025,6 +1026,9 @@ export function buildTurnBrief(context: TurnContext, input: TurnInput, form: Bri
   if (context.capabilities.structures.includes('screen') && (!liveApp || stage.elements.some((element) => element.figure?.kind === 'structure' && element.figure.structure === 'screen')) && (asksForInterface(input) || stage.elements.some((element) => element.figure?.kind === 'structure' && element.figure.structure === 'screen'))) parts.push(INTERFACE_CHAPTER);
   // The TEACH chapter is carried when the words ask for a lesson, or while a lesson goes on; never in the system prompt, which is full.
   if (carriesTeaching(context, input)) parts.push(TEACH_CHAPTER);
+  // FG2: a labelled drawing is taught when the words ask for one, or while one is on stage to be changed; never in the system prompt.
+  const figureOnStage = stage.elements.some((element) => element.figure?.kind === 'structure' && element.figure.structure === 'figure');
+  if (context.capabilities.structures.includes('figure') && !liveApp && ((input.kind === 'prompt' && asksForFigure(input.text)) || figureOnStage)) parts.push(FIGURE_CHAPTER);
   if (drawsNow) parts.push(DRAWING_CHAPTER(`${screen.canvas} (${canvas.width}x${canvas.height})${screen.canvas === 'wide' ? '; a figure scene that names no canvas gets square (100x100)' : ''}`));
   const standing = standingText(context.standing);
   if (standing !== null) parts.push(standing);

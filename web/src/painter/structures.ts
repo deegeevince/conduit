@@ -28,6 +28,7 @@ import { registerLaidOut } from './registry';
 import { STRUCTURES_READY, layoutStructure } from './blocks';
 import { modelOf, playingParts, rollKey } from './blocks/tune';
 import { drawUi, layoutUi, uiKey } from './ui-stage';
+import { figureKey, layoutFigureBlock } from './figure-stage';
 import { loneAppScenes } from './apps';
 
 const SETTLE_SECONDS = 0.4;
@@ -327,13 +328,21 @@ function planOf(structure: ElementSpan, schedule: Schedule, env: StructureEnv): 
           ? { x: origin.x + box.x * unit, y: origin.y + box.y * unit, width: box.w * unit, height: box.h * unit }
           : { x: origin.x, y: origin.y, width: fit.box.width / ps, height: fit.box.height / ps };
     const obstacles = env.obstaclesOf(structure, start).map((o) => ({ x: o.x / ps, y: o.y / ps, width: o.width / ps, height: o.height / ps }));
-    const key = [signature(structure, present, rows, env.scope), look.id, look.name, env.viewport.width, env.viewport.height, room.x.toFixed(2), room.y.toFixed(2), room.width.toFixed(2), room.height.toFixed(2), obstacles.map((o) => `${o.x.toFixed(0)},${o.y.toFixed(0)},${o.width.toFixed(0)},${o.height.toFixed(0)}`).join(';'), env.engine === undefined ? 'e' : 'b', figure.structure === 'screen' ? uiKey(structure.key) : '', env.viewport.dpr].join('|');
+    const key = [signature(structure, present, rows, env.scope), look.id, look.name, env.viewport.width, env.viewport.height, room.x.toFixed(2), room.y.toFixed(2), room.width.toFixed(2), room.height.toFixed(2), obstacles.map((o) => `${o.x.toFixed(0)},${o.y.toFixed(0)},${o.width.toFixed(0)},${o.height.toFixed(0)}`).join(';'), env.engine === undefined ? 'e' : 'b', figure.structure === 'screen' ? uiKey(structure.key) : figure.structure === 'figure' ? figureKey(structure.key) : '', env.viewport.dpr].join('|');
     const layout = remembered(key, () => {
       const shown: ElementSpan = { ...structure, figure: { ...figure, rows: figure.rows.slice(0, rows) } };
       // v2.2: a mock-up is laid out and drawn by the interface kit, as finished frames
       if (figure.structure === 'screen' && env.engine === undefined) {
         try {
           return layoutUi({ structure: shown, room, spec: look, dpr: env.viewport.dpr });
+        } catch {
+          return EMPTY_STRUCTURE_LAYOUT;
+        }
+      }
+      // FG2: a figure is laid out and drawn by the figure kit, as finished frames
+      if (figure.structure === 'figure' && env.engine === undefined) {
+        try {
+          return layoutFigureBlock({ structure: shown, room, spec: look });
         } catch {
           return EMPTY_STRUCTURE_LAYOUT;
         }

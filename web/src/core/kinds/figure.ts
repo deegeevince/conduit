@@ -8,14 +8,13 @@
 //   census   every word (labels, caption, counter), and the stepper's two regions at least 44 points
 //   input    a press on the stepper, or the keys, moves the step; nothing is told to the mind
 //
-// THE SEAM. The language does not yet produce a `FigureInput` (its vocabulary, parser, normaliser and prompt wait for the language round), so
-// `inputOf` is the one place that reads one from an element: today, by the element's id from the fixtures. The language round replaces its body
-// and nothing else changes. `pnpm kinds` draws each fixture from a one-line stand-in (`figure:<name>`), which `conformance.ts` turns into the
-// element `inputOf` reads.
+// THE SEAM. `inputOf` is the one place that reads a `FigureInput` from an element: from the rows of a `figure` structure (the language round's
+// `readFigure`), or, for what `pnpm kinds` draws from a one-line stand-in (`figure:<name>`), by the element's id from the fixtures.
 //
 // Reduced motion: the core gives a leaf `ambient` 0 under reduced motion (and at rest), and dots are drawn only when it is above 0, so the chevrons
 // alone remain. A step's light is instant here: the bench (and the core, when it has `since`) pass an ease to `paintFigure`.
 
+import { readFigure } from '@conduit/language';
 import type { ElementSpan } from '@conduit/language';
 import { foldText } from '../../fonts/fold';
 import { prefixEm } from '../../fonts/measure';
@@ -34,8 +33,15 @@ interface FigureLeaf {
   readonly layout: FigureLayout;
 }
 
-/** The figure an element stands for. The language round reads it from the element's own lines; until then it is looked up by id. */
+/**
+ * The figure an element stands for. FG2: a `figure` structure's rows are its own lines, read by the language's `readFigure`; an element that is
+ * no such structure (what `pnpm kinds` draws from a one-line stand-in) is looked up by id in the fixtures.
+ */
 export function inputOf(element: ElementSpan): FigureInput {
+  const figure = element.figure;
+  if (figure?.kind === 'structure' && figure.structure === 'figure') {
+    return readFigure(element.id, element.text, figure.mode ?? 'plain', figure.rows.map((row) => row.cells[0] ?? '')).input;
+  }
   return FIGURES[element.id] ?? { id: element.id, title: element.text, mode: 'plain', parts: [], routes: [], steps: [] };
 }
 

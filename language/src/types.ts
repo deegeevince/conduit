@@ -350,6 +350,8 @@ export interface StructureLine {
   readonly uses?: readonly AppShelf[];
   /** a table: its numbers are drawn as bars beside the figures */
   readonly bars?: boolean;
+  /** FG2. A figure: `cutaway` hatches the cut faces; `exploded` offsets the parts along one axis */
+  readonly mode?: 'cutaway' | 'exploded';
   /** the room it is laid out in, canvas units; absent means the whole canvas */
   readonly box?: CanvasBox;
   /** a map joins its pins in the order they were written */

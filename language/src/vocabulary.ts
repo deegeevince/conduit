@@ -605,6 +605,7 @@ export const STRUCTURE = {
   code: { gist: 'rows `| line` taken exactly as written, indentation kept: monospaced and highlighted, with a copy action', parts: 'rows', lays: 'engine' },
   tune: { gist: 'rows `| line` of ABC notation, taken exactly: a piano roll that plays, with a playhead and the notes lighting as they sound', parts: 'rows', lays: 'engine' },
   app: { gist: 'rows `| line` of one HTML document (inline style and script), taken exactly: a live app that runs in a locked sandbox on the stage and answers back (taught only when the user asks for something that works)', parts: 'rows', lays: 'engine' },
+  figure: { gist: 'a labelled drawing: each part one line (taught by the FIGURE chapter in the brief); rows are the lines of the figure, taken as written', parts: 'rows', lays: 'engine' },
   screen: { gist: 'a mock-up: devices at true size, each part one line (taught by the INTERFACE chapter in the brief); rows are the lines of the interface, taken as written', parts: 'rows', lays: 'engine' },
 } as const satisfies Record<string, { gist: string; parts: 'nodes' | 'rows'; lays: 'painter' | 'axis' | 'brain' | 'engine' }>;
 export type StructureKind = keyof typeof STRUCTURE;
@@ -900,6 +901,12 @@ export const VERB = {
   app: {
     form: 'app [id] [height=<n>] [x,y WxH] [| title]',
     gist: 'A live app: follow it with one `| line` per line of one HTML document (inline <style> and <script>). It runs in a locked sandbox on the stage, with no network. Taught only when the user asks for something that works.',
+    time: 'starts',
+    family: 'structure',
+  },
+  figure: {
+    form: 'figure <id> [cutaway|exploded] [| title]',
+    gist: 'A labelled drawing: follow it with its parts (path, poly, line, ellipse, rect, each with label="…"), route and step lines, then `end`. Taught by the FIGURE chapter in the brief.',
     time: 'starts',
     family: 'structure',
   },

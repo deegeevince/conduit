@@ -7,6 +7,7 @@
 import { isLessonVerb } from './lesson';
 import { InterfaceReader, UI_WORDS, nodeLine, screenLine } from './interface';
 import { LessonBook } from './lesson';
+import { FIGURE_WORDS, figureRowLine } from './figure';
 import { parseLine } from './parse';
 import type { Approx, Issue, Line, ParseResult, StyleProps } from './types';
 import { LIMITS, STRUCTURE } from './vocabulary';
@@ -58,6 +59,8 @@ export class LineReader {
   private ui = false;
   /** L1. A `when <control>=<value>` block is open: the head every line inside it is given as a `bind` (`stage=2`, `chord="C major"`), until `end` */
   private when: string | null = null;
+  /** FG2. A figure is being written: its own words (parts, `route`, `step`) are its rows, and `end` closes it */
+  private figure = false;
   private readonly styles: Set<string>;
 
   /** `definedStyles`: the names of styles the brain defined in earlier turns */
@@ -93,6 +96,17 @@ export class LineReader {
       const tried = parseLine(raw);
       if (tried.kind === 'reject' && tried.issues.some((issue) => issue.code === 'unknown-verb')) return this.musicRow(trimmed);
     }
+    // FG2. Inside a figure, its own words are its rows exactly as written (`step show=… | …` is the figure's, not a lesson's); `end` closes it.
+    if (this.figure) {
+      const word = (/^([a-z]+)/i.exec(trimmed)?.[1] ?? '').toLowerCase();
+      if (/^end\s*$/i.test(trimmed)) {
+        this.figure = false;
+        return { kind: 'blank' };
+      }
+      if (trimmed === '' || trimmed.startsWith('#')) return parseLine(raw);
+      if (FIGURE_WORDS.includes(word)) return { kind: 'line', line: { verb: 'row', id: '-', cells: trimmed.slice(0, LIMITS.line - 40) }, issues: [] };
+      this.figure = false;
+    }
     const interfaced = this.readInterface(raw, trimmed);
     if (interfaced !== null) return interfaced;
     if (this.open !== null && trimmed.length >= 2 && !trimmed.startsWith('|') && this.isRow(trimmed)) return parseLine(`| ${trimmed}`);
@@ -123,6 +137,7 @@ export class LineReader {
     }
     if (result.kind !== 'line') return result;
     const { line } = result;
+    if (line.verb === 'figure') this.figure = true;
     if (line.verb === 'table' || line.verb === 'chart') this.table = true;
     else if (line.verb === 'scene' || line.verb === 'deck' || line.verb === 'pix' || line.verb in STRUCTURE || isLessonVerb(line.verb)) this.table = false;
     if (line.verb === 'scene' || line.verb === 'deck' || line.verb === 'pix' || line.verb in STRUCTURE || isLessonVerb(line.verb)) this.ui = false;
@@ -221,6 +236,9 @@ export class LineNormalizer {
   private structure: string | null = null;
   /** v2.2. The mock-up being written: the block's id, and the reader that keeps the stack of open rows and cols so that every line says what it sits in */
   private ui: { readonly id: string; readonly reader: InterfaceReader; told: number } | null = null;
+  /** FG2. The figure being written: its rows get an id each, so that a route and a step can name them */
+  private figureRows = 0;
+  private figureId: string | null = null;
   /** v3. The parts, steps and asks of the conversation: what `in=` and an id are written from, and what an `ask` that would give itself away is refused by. */
   private readonly book: LessonBook;
 
@@ -274,6 +292,10 @@ export class LineNormalizer {
         if (line.id !== '-') return { line, issues: [] };
         if (this.sprite !== null) return { line: { ...line, id: this.sprite }, issues: [] };
         if (this.ui !== null) return this.interfaceRow(line);
+        if (this.table !== null && this.figureId === this.table) {
+          this.figureRows += 1;
+          return { line: { ...line, id: this.table, cells: figureRowLine(line.cells, this.figureRows) }, issues: [] };
+        }
         if (this.table !== null) return { line: { ...line, id: this.table }, issues: [] };
         if (line.cells.trim() === '') return { line: null, issues: [{ code: 'no-structure', severity: 'warn', message: 'an empty row with no sprite, table or code block to belong to was dropped' }] };
         // Speech after all: a bar and some words, with no sprite open. Not cut to a sprite's width.
@@ -347,10 +369,13 @@ export class LineNormalizer {
       case 'chart':
       case 'code':
       case 'tune':
+      case 'figure':
       case 'app': {
         const id = line.id === '-' ? this.makeId() : line.id;
         this.sprite = null;
         this.ui = null;
+        this.figureId = line.verb === 'figure' ? id : null;
+        this.figureRows = 0;
         if (STRUCTURE[line.verb].parts === 'rows') this.table = id;
         // A chart takes rows and, as its marks, nodes; a table takes rows only.
         if (STRUCTURE[line.verb].parts === 'nodes' || line.verb === 'chart') this.structure = id;

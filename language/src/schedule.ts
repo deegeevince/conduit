@@ -177,6 +177,8 @@ export type Figure =
       readonly dataset?: DatasetRef | null;
       /** a table: its numbers are drawn as bars too */
       readonly bars: boolean;
+      /** FG2. A figure: `cutaway` or `exploded`; absent or null: plain. Its parts, routes and steps are its rows, one line each. */
+      readonly mode?: 'cutaway' | 'exploded' | null;
       /** v2.1. A code block: its language as the brain wrote it, and the file it is from; absent or null: none */
       readonly lang?: string | null;
       readonly file?: string | null;
@@ -1080,6 +1082,7 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
         ...(line.verb === 'chart' && { dataset: line.dataset ?? null }),
         bars: line.verb === 'table' && line.bars === true,
         ...(line.verb === 'code' && { lang: line.lang ?? null, file: line.file ?? null }),
+        ...(line.verb === 'figure' && { mode: line.mode ?? null }),
         ...(line.verb === 'tune' && { tempo: line.tempo ?? null, voice: line.voice ?? DEFAULT_TUNE_VOICE, sealed: null }),
         ...(line.verb === 'app' && { height: line.height ?? null, sealed: null, ...((line.uses?.length ?? 0) > 0 && { uses: line.uses }) }),
         box: line.box ?? null,
@@ -1593,6 +1596,7 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
       case 'code':
       case 'tune':
       case 'app':
+      case 'figure':
       case 'screen':
       case 'pic':
       case 'node':
@@ -1685,7 +1689,7 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
           const enter = table.span.enter;
           const charted = table.span.figure.structure === 'chart';
           const app = table.span.figure.structure === 'app';
-          const coded = table.span.figure.structure === 'code' || table.span.figure.structure === 'tune' || table.span.figure.structure === 'screen' || app;
+          const coded = table.span.figure.structure === 'code' || table.span.figure.structure === 'tune' || table.span.figure.structure === 'screen' || table.span.figure.structure === 'figure' || app;
           const interfaced = table.span.figure.structure === 'screen';
           // A line of code is one cell, exactly as written: a bar in it is a bar, a space is a space, and an empty line is a row.
           const cells = coded ? [line.cells] : splitCells(line.cells);

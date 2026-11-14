@@ -1003,7 +1003,7 @@ const FIELD_NAME = /^[A-Za-z0-9_.-]{1,24}$/;
 
 function parseStructure(verb: StructureVerb, head: Head, text: string | null, issues: Issues): Line {
   const own: readonly string[] =
-    verb === 'flow' || verb === 'tree' ? GROWTHS : verb === 'chart' ? [...CHART_KINDS, ...CHART_WORDS] : verb === 'map' ? ['route'] : verb === 'table' ? ['bars'] : verb === 'code' ? CODE_LANGUAGES : verb === 'tune' ? TUNE_VOICES : [];
+    verb === 'flow' || verb === 'tree' ? GROWTHS : verb === 'chart' ? [...CHART_KINDS, ...CHART_WORDS] : verb === 'map' ? ['route'] : verb === 'table' ? ['bars'] : verb === 'code' ? CODE_LANGUAGES : verb === 'tune' ? TUNE_VOICES : verb === 'figure' ? ['cutaway', 'exploded'] : [];
   const { id, numbers, names } = splitWords(head.words, true, false, own);
   const { props, rest } = readStyleProps(head.pairs, issues);
   const line: { -readonly [K in keyof StructureLine]: StructureLine[K] } = { verb, id, styles: [], props };
@@ -1018,6 +1018,7 @@ function parseStructure(verb: StructureVerb, head: Head, text: string | null, is
     else if (verb === 'table' && name === 'bars') line.bars = true;
     else if (verb === 'code' && line.lang === undefined && (oneOf(CODE_LANGUAGES, name) || /[+#]/.test(name))) line.lang = name;
     else if (verb === 'tune' && oneOf(TUNE_VOICES, name)) line.voice = name;
+    else if (verb === 'figure' && (name === 'cutaway' || name === 'exploded')) line.mode = name;
     else styleWords.push(name);
   }
   let dataset: { name?: string; instrument?: string; field?: string } = {};
@@ -1755,6 +1756,7 @@ const TEXT_LIMIT: Readonly<Partial<Record<Verb, number>>> = {
   bind: LIMITS.line,
   code: LIMITS.text,
   tune: LIMITS.text,
+  figure: LIMITS.text,
   app: LIMITS.text,
   screen: LIMITS.text,
   deck: LIMITS.text,

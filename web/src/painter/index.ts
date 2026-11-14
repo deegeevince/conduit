@@ -31,6 +31,7 @@ import { placedOf, sightOf } from './sight';
 import { textSignature, textSpansOf } from './text-out';
 import { downUi, easeUi, easingUi, isScreenBlock, moveUi, setUiPicture, typeUi, typingUi, uiBlockAt, uiMockupViews, upUi } from './ui-stage';
 import type { UiSend } from './ui-stage';
+import { isFigureBlock, pressFigure } from './figure-stage';
 import { ENGINE_VERSION, measureStage } from '../engine';
 import type { EngineInputs, EngineView } from '../engine';
 import { buildTimeline, settledAfter, settledEnd as settledEndOf } from './timeline';
@@ -1561,6 +1562,13 @@ export function createPainter(options: PainterOptions): Painter {
         return hit !== null;
       }
       if (phase === 'down') {
+        // FG2: a finger on a figure's stepper moves its step
+        const figures = timeline.schedule.elements.filter(isFigureBlock).map((span) => span.key);
+        if (figures.length > 0 && pressFigure(figures, x - viewport.width / 2, y - viewport.height / 2)) {
+          refreshTimeline();
+          drawNow();
+          return true;
+        }
         // v2.2: a finger on a mock-up: a tab, a pick, a toggle, a slider, or a thumbnail brought forward
         const blocks = timeline.schedule.elements.filter(isScreenBlock).map((span) => span.key);
         if (blocks.length > 0) {
