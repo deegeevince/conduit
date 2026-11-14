@@ -8,8 +8,9 @@
 
 import { mkdir, readdir, readFile, rename, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { DocumentSummary } from '@conduit/language';
-import type { DocumentFold, LoadedDocument } from '../domain/document';
+import type { DocumentFolder, DocumentSummary } from '@conduit/language';
+import { summaryOf as summarise } from '../domain/document';
+import type { LoadedDocument } from '../domain/document';
 import type { Logger } from '../log';
 import { foldFiles, inspectFile } from './reader';
 
@@ -97,7 +98,7 @@ export function createCatalogue(deps: CatalogueDeps): Catalogue {
     }
   };
 
-  const summaryOf = async (fold: DocumentFold, files: readonly string[], previous: DocumentSummary | undefined): Promise<DocumentSummary> => {
+  const summaryOf = async (id: string, fold: DocumentFolder, created: string | null, files: readonly string[], previous: DocumentSummary | undefined): Promise<DocumentSummary> => {
     let newest = 0;
     for (const file of files) {
       try {
@@ -106,7 +107,7 @@ export function createCatalogue(deps: CatalogueDeps): Catalogue {
         // gone
       }
     }
-    return fold.summary({ updated: isoOf(newest > 0 ? newest : now()), files, live: false, thumbnail: previous?.thumbnail ?? null });
+    return summarise(fold, { id, created, updated: isoOf(newest > 0 ? newest : now()), files, live: false, thumbnail: previous?.thumbnail ?? null });
   };
 
   /** Reads what the logs say that the index does not, once, at the start. */
@@ -153,13 +154,13 @@ export function createCatalogue(deps: CatalogueDeps): Catalogue {
     for (const id of stale) {
       const known = documents.get(id);
       const files = [...new Set([...(known?.files ?? []), ...(fresh.get(id) ?? [])])].sort();
-      const { fold, read } = await foldFiles(id, logs, files);
+      const { fold, read, created } = await foldFiles(id, logs, files);
       for (const file of read) scanned[file] = (await sizeOf(file)) ?? scanned[file] ?? 0;
       if (!fold.isDocument()) {
         if (documents.delete(id)) changed = true;
         continue;
       }
-      documents.set(id, await summaryOf(fold, read, known));
+      documents.set(id, await summaryOf(id, fold, created, read, known));
       changed = true;
       log.info('documents.indexed', { document: id, files: read.length, nodes: Object.keys(fold.document().nodes).length });
     }
@@ -176,8 +177,8 @@ export function createCatalogue(deps: CatalogueDeps): Catalogue {
       await ready;
       const summary = documents.get(id);
       if (summary === undefined || logs === null) return null;
-      const { fold, read } = await foldFiles(id, logs, summary.files);
-      return fold.isDocument() ? { fold, files: read } : null;
+      const { fold, read, created } = await foldFiles(id, logs, summary.files);
+      return fold.isDocument() ? { id, fold, files: read, created } : null;
     },
     put: (summary) => {
       documents.set(summary.id, summary);

@@ -35,7 +35,7 @@ import type { ImageModel } from './images';
 import { creditLine } from './pictures';
 import type { PictureService } from './pictures';
 import type { HeldDocument } from './documents';
-import { NO_DOCUMENTS, readDocLine } from './document';
+import { NO_DOCUMENTS } from './document';
 import type { DocChange, Documents, LoadedDocument } from './document';
 import { buildContext, holdStanding, parseStanding, rememberTurn } from './memory';
 import type { StandingAsk } from './memory';
@@ -248,7 +248,7 @@ export class Conductor {
       screen: request.screen,
       capabilities: request.capabilities,
       services: this.servicesFor(session.capabilities, session.id),
-      ...(resume === null ? {} : { resumes: resume.fold.id }),
+      ...(resume === null ? {} : { resumes: resume.id }),
     });
     log.info('session.created', { session: session.id, cols: request.screen.cols, rows: request.screen.rows });
     return { session: session.id, lead: LEAD_WINDOW };
@@ -349,7 +349,7 @@ export class Conductor {
     s.turn = turn;
     sessions.indexTurn(s, turn);
     log.info('turn.opened', { session: s.id, turn: turn.id, brain: brain.id, input: turn.input.kind, login: turn.login });
-    this.deps.sessionLog.write(s.id, { type: 'turn', turn: turn.id, input, brain: brain.id, login: turn.login });
+    this.journal(s, { type: 'turn', turn: turn.id, input, brain: brain.id, login: turn.login });
     this.emit(s, turn, { type: 'turn', turn: turn.id, input });
 
     // `run` ends its own turn and does not throw; this is the net under it, so that nothing can ever be an unhandled rejection from here.
@@ -724,7 +724,7 @@ export class Conductor {
       case 'report': {
         const report = event.report;
         const turn = s.turns.get(report.turn);
-        this.deps.sessionLog.write(s.id, { type: 'report', turn: report.turn, report });
+        this.journal(s, { type: 'report', turn: report.turn, report });
         if (turn === undefined || turn.reported) return;
         turn.reported = true;
         this.upsertMemory(s, rememberTurn(turn, report, s.snapshotTurns.has(turn.id)));
@@ -1273,7 +1273,6 @@ export class Conductor {
         this.keep(s, turn, ask);
         return undefined;
       }
-      if (this.deps.documents !== undefined && this.takeDocumentLine(s, turn, event.raw, pass)) return undefined;
       this.reject(s, turn, event.raw, event.issues);
       return undefined;
     }
@@ -1352,23 +1351,6 @@ export class Conductor {
       decidedBy,
       ...(note === undefined ? {} : { note }),
     });
-  }
-
-  /**
-   * v3. A document line (`part`, `step`, `ask`, `hint`, `reply`: 2.10) that the parser did not know yet comes here as a reject. It is the
-   * document's, not a fault: it is logged as a line and given to the document, and the painter hears of it as a `doc` event. Once the parser
-   * reads these verbs they arrive as lines and are placed in `ingest`; the document is built from the same record either way.
-   */
-  private takeDocumentLine(s: Session, turn: ActiveTurn, raw: string, pass: number): boolean {
-    if (readDocLine(raw) === null || turn.lineCount >= SERVER_LIMITS.linesPerTurn) return false;
-    const seq = s.nextSeq;
-    s.nextSeq += 1;
-    turn.lineCount += 1;
-    const text = raw.replace(/\s+/g, ' ').trim();
-    const node = this.docs.place(s.id, text);
-    this.deps.log.debug('turn.document_line', { turn: turn.id, seq, text });
-    this.journal(s, { type: 'line', turn: turn.id, seq, text, start: turn.score.schedule.pen, issues: [], pass, ...(node === null ? {} : { node }) });
-    return true;
   }
 
   /** `standing | …` or `standing drop n`: kept for the conversation and given back in every later brief. */

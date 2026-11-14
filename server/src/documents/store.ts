@@ -1,16 +1,18 @@
 // The documents that sessions are making now, and the way back to the ones that are not live. The conductor feeds a document the records it
 // writes to the log; the catalogue keeps the index; a document that is not live is folded from its files each time it is asked for.
 
+import { DocumentFolder } from '@conduit/language';
 import type { DocumentSummary, DocumentView } from '@conduit/language';
-import { DocumentFold } from '../domain/document';
-import type { DocChange, Documents, LoadedDocument } from '../domain/document';
+import { summaryOf, viewOf } from '../domain/document';
+import type { DocChange, DocumentMeta, Documents, LoadedDocument } from '../domain/document';
 import type { SessionEntry } from '../domain/session-log';
 import type { Logger } from '../log';
 import type { Catalogue } from './catalogue';
 
 interface Live {
   readonly id: string;
-  readonly fold: DocumentFold;
+  readonly fold: DocumentFolder;
+  created: string | null;
   /** log files this document is folded from, oldest first; a session that opens it again adds its own */
   readonly files: string[];
   readonly sessions: Set<string>;
@@ -33,7 +35,9 @@ export function createDocuments(deps: DocumentsDeps): Documents {
   const live = new Map<string, Live>();
   const bySession = new Map<string, Live>();
 
-  const meta = (doc: Live): { readonly updated: string; readonly files: readonly string[]; readonly live: boolean; readonly thumbnail: string | null } => ({
+  const meta = (doc: Live): DocumentMeta => ({
+    id: doc.id,
+    created: doc.created,
     updated: new Date(now()).toISOString(),
     files: [...doc.files],
     live: doc.sessions.size > 0,
@@ -42,23 +46,23 @@ export function createDocuments(deps: DocumentsDeps): Documents {
 
   /** Tells the catalogue what this document is now, when it is a document and has moved since it was last told. */
   const tell = (doc: Live): void => {
-    if (!doc.fold.isDocument() || doc.fold.version() === doc.told) return;
-    doc.told = doc.fold.version();
-    catalogue.put(doc.fold.summary(meta(doc)));
+    if (!doc.fold.isDocument() || doc.fold.revision() === doc.told) return;
+    doc.told = doc.fold.revision();
+    catalogue.put(summaryOf(doc.fold, meta(doc)));
   };
 
   return {
     load: async (id) => {
       const open = live.get(id);
-      if (open !== undefined) return { fold: open.fold, files: [...open.files] };
+      if (open !== undefined) return { id, fold: open.fold, files: [...open.files], created: open.created };
       return catalogue.load(id);
     },
 
     begin: (session, file, resume) => {
-      let doc: Live | undefined = resume === null ? undefined : live.get(resume.fold.id);
+      let doc: Live | undefined = resume === null ? undefined : live.get(resume.id);
       if (doc === undefined) {
-        const id = resume !== null ? resume.fold.id : file !== '' ? stemOf(file) : `mem-${session}-${now()}`;
-        doc = { id, fold: resume !== null ? resume.fold : new DocumentFold(id), files: resume !== null ? [...resume.files] : [], sessions: new Set(), told: -1 };
+        const id = resume !== null ? resume.id : file !== '' ? stemOf(file) : `mem-${session}-${now()}`;
+        doc = { id, fold: resume !== null ? resume.fold : new DocumentFolder({ id }), created: resume?.created ?? null, files: resume !== null ? [...resume.files] : [], sessions: new Set(), told: -1 };
         live.set(id, doc);
       }
       if (file !== '' && !doc.files.includes(file)) doc.files.push(file);
@@ -71,6 +75,7 @@ export function createDocuments(deps: DocumentsDeps): Documents {
     record: (session, entry: SessionEntry): DocChange | null => {
       const doc = bySession.get(session);
       if (doc === undefined) return null;
+      if (entry.type === 'session' && doc.created === null) doc.created = entry.started;
       const out = doc.fold.apply(entry);
       tell(doc);
       return { document: doc.id, ...doc.fold.heading(), nodes: out.nodes, state: out.state, applied: out.applied };
@@ -78,24 +83,24 @@ export function createDocuments(deps: DocumentsDeps): Documents {
 
     viewOfSession: (session) => {
       const doc = bySession.get(session);
-      return doc === undefined || !doc.fold.isDocument() ? null : doc.fold.view(meta(doc));
+      return doc === undefined || !doc.fold.isDocument() ? null : viewOf(doc.fold, meta(doc));
     },
 
     view: async (id): Promise<DocumentView | null> => {
       await catalogue.ready;
       const open = live.get(id);
-      if (open !== undefined) return open.fold.isDocument() ? open.fold.view(meta(open)) : null;
+      if (open !== undefined) return open.fold.isDocument() ? viewOf(open.fold, meta(open)) : null;
       const loaded: LoadedDocument | null = await catalogue.load(id);
       if (loaded === null) return null;
       const known = catalogue.list().find((entry) => entry.id === id);
-      return loaded.fold.view({ updated: known?.updated ?? new Date(now()).toISOString(), files: loaded.files, live: false, thumbnail: known?.thumbnail ?? null });
+      return viewOf(loaded.fold, { id, created: loaded.created, updated: known?.updated ?? new Date(now()).toISOString(), files: loaded.files, live: false, thumbnail: known?.thumbnail ?? null });
     },
 
     list: async (): Promise<readonly DocumentSummary[]> => {
       await catalogue.ready;
       const out = new Map<string, DocumentSummary>();
       for (const summary of catalogue.list()) out.set(summary.id, summary);
-      for (const doc of live.values()) if (doc.fold.isDocument()) out.set(doc.id, doc.fold.summary(meta(doc)));
+      for (const doc of live.values()) if (doc.fold.isDocument()) out.set(doc.id, summaryOf(doc.fold, meta(doc)));
       return [...out.values()].sort((a, b) => (a.updated < b.updated ? 1 : a.updated > b.updated ? -1 : 0));
     },
 

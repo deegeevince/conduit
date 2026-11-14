@@ -2,7 +2,7 @@
 // server and painter, and the HTTP bodies around them. Both sides import these
 // types, so a field cannot be renamed on one side only.
 
-import type { DocNode, DocState, Document, NodeId, NodeStatus, Seen, StateChange } from './doc-spine';
+import type { DocNode, DocState, Document, NodeId, NodeStatus, Seen, StateChange } from './document';
 import type { StageBase } from './schedule';
 import type { PlacedBox, Sight } from './sight';
 import type { ShownItem } from './stage';

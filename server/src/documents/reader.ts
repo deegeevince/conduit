@@ -4,11 +4,11 @@
 import { createReadStream } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { join } from 'node:path';
-import { DocumentFold } from '../domain/document';
+import { DocumentFolder } from '@conduit/language';
 import type { SessionEntry } from '../domain/session-log';
 
 /** The record types a document is built from: every other line of the log is skipped without being parsed. */
-const READ = /^\{"type":"(session|line|end|node|state)"/;
+const READ = /^\{"type":"(session|turn|line|end|report|node|state)"/;
 
 /**
  * The records of one log file that a document is made of, in the order they were written. A line that is not JSON (the last one, when
@@ -34,18 +34,22 @@ export async function* documentEntries(path: string): AsyncGenerator<SessionEntr
 }
 
 /** The document these files make, folded in order. `files` are names inside `dir`, oldest first. A file that cannot be read is left out. */
-export async function foldFiles(id: string, dir: string, files: readonly string[]): Promise<{ readonly fold: DocumentFold; readonly read: readonly string[] }> {
-  const fold = new DocumentFold(id);
+export async function foldFiles(id: string, dir: string, files: readonly string[]): Promise<{ readonly fold: DocumentFolder; readonly read: readonly string[]; readonly created: string | null }> {
+  const fold = new DocumentFolder({ id });
   const read: string[] = [];
+  let created: string | null = null;
   for (const file of files) {
     try {
-      for await (const entry of documentEntries(join(dir, file))) fold.apply(entry);
+      for await (const entry of documentEntries(join(dir, file))) {
+        if (entry.type === 'session' && created === null) created = entry.started;
+        fold.ingest(entry);
+      }
       read.push(file);
     } catch {
       // gone or unreadable: the document is what the others say
     }
   }
-  return { fold, read };
+  return { fold, read, created };
 }
 
 /** What a log file says about itself: the document it opens again, if any, and whether it ever named a part. Reads the whole file once. */
