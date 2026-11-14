@@ -653,8 +653,10 @@ function arrangeFlow(units: readonly Unit[], ctx: Context): FlowResult {
   const block = Math.max(present, ...reserved);
   const centreShift = ctx.input.layout === 'solo' ? -0.04 * ctx.safe.height : 0;
   const bottom = ctx.safe.y + ctx.safe.height;
-  let top = ctx.safe.y + (ctx.safe.height - Math.max(0, ...reserved)) / 2 + centreShift;
-  top = Math.max(ctx.safe.y, Math.min(top, bottom - block));
+  // beside a column of controls the block stands where the controls' own column puts it: the words' column changes with every line, the controls do not move
+  const anchored = ctx.input.sides !== undefined && plan.length === 2 ? (reserved[0] ?? 0) : Math.max(0, ...reserved);
+  let top = ctx.safe.y + (ctx.safe.height - anchored) / 2 + centreShift;
+  top = Math.max(ctx.safe.y, Math.min(top, bottom - (anchored > 0 && ctx.input.sides !== undefined && plan.length === 2 ? Math.max(anchored, reserved[0] ?? 0) : block)));
   // a reading column begins at the top of its box and never moves until it scrolls
   if (page) top = ctx.safe.y;
   if (ctx.snap) {

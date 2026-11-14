@@ -1,6 +1,6 @@
 import { CANVAS, describeFigure, outlineOf, ENTER_SECONDS, exitSeconds, isInFlow, isStruckAt, lookOfStage, PACE_TIMING, sceneAt, styleAt, valueAt } from '@conduit/language';
 import type { SightNote, ClockState, ElementChange, ElementSpan, ElementStyle, ExitEffect, Layer, LookId, Mood, ResolvedLook, SceneSpan, Schedule, StageBase } from '@conduit/language';
-import type { CameraSpan } from '@conduit/language';
+import type { CameraSpan, Layout } from '@conduit/language';
 import type { Colour, ElementFrame, FigureFrame, Frame, RunFrame, ShapeFrame } from '../contracts/frame';
 import type { LookSpec, MotionRecipe, MoodCharacter } from '../contracts/look';
 import type { ElementPhase, StageElementView } from '../contracts/painter';
@@ -738,13 +738,17 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
       liveControls.push(group);
       items.push({ key: group.key, order: group.order, text: '', emphasis: [], style: { ...laidStyle(style), stay: 'pin' }, struck: false, replaces: null, reserve: { width: room.outer.width, height: room.outer.height } });
     }
-    const sides = scene.layout === 'split' ? splitSides(schedule, scene.id) : undefined;
+    // A wide stage with controls on it sets them in a column of their own, to the left, and the words to the right: the controls keep their
+    // place whatever the words do, and neither covers the other. A narrow stage keeps one column.
+    const withControls = controlSpans.some((span) => span.scene === scene.id && span.parent === null) || drawn.some((group) => group.scene === scene.id && group.figure?.kind === 'group' && group.figure.card !== undefined);
+    const arrLayout: Layout = withControls && viewport.width >= 900 && viewport.width >= 1.5 * viewport.height && (scene.layout === 'stack' || scene.layout === 'caption' || scene.layout === 'solo') ? 'split' : scene.layout;
+    const sides = arrLayout === 'split' ? (scene.layout === 'split' ? splitSides(schedule, scene.id) : new Map<string, 'left' | 'right'>([...controlSpans, ...drawn].filter((span) => span.scene === scene.id).map((span): [string, 'left' | 'right'] => [span.key, 'left']).concat(elements.filter((span) => span.scene === scene.id).map((span): [string, 'left' | 'right'] => [span.key, 'right'])))) : undefined;
     // The words and the choices are measured across the column; the plan divides the stage; the canvas is fitted into the picture's region.
     // what the scene will still say is counted for the plan too, so that the room the blocks and the foot are given is the one they keep
     const comingItems: LayoutItem[] = elements
       .filter((element) => element.scene === scene.id && !element.carried && element.replaces === null && element.enter !== null && element.enter.start > start)
       .map((element) => ({ key: element.key, order: element.order, text: element.text, emphasis: element.emphasis, style: laidStyle(styleAt(element, element.enter?.start ?? start)), struck: false, replaces: null }));
-    const probe: LayoutInput = { viewport, look, layout: scene.layout, align: scene.align, expected: valueAt(scene.expected, start, null), items: [...items, ...comingItems], foot: safe, ...(sides === undefined ? {} : { sides }) };
+    const probe: LayoutInput = { viewport, look, layout: arrLayout, align: scene.align, expected: valueAt(scene.expected, start, null), items: [...items, ...comingItems], foot: safe, ...(sides === undefined ? {} : { sides }) };
     const needs = needsOf(probe, safe.width);
     // a scene's words never ask for less than they did a moment ago, so the picture does not breathe as lines come and go
     const floor = flowFloor.get(scene.id) ?? 0;
@@ -793,7 +797,7 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
     const arrangement = arrange({
       viewport,
       look,
-      layout: scene.layout,
+      layout: arrLayout,
       align: scene.align,
       expected: valueAt(scene.expected, start, null),
       items,
