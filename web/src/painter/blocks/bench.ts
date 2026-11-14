@@ -116,6 +116,10 @@ interface Setup {
   readonly canvas: StructureInput['canvas'];
 }
 
+// `--room=0.55`: the block is given that share of the safe frame's height, as when words and choices share the column with it
+const ROOM_SHARE = Number((process.argv.find((a) => a.startsWith('--room=')) ?? '--room=1').slice(7));
+const shorter = (b: Box): Box => ({ ...b, height: b.height * ROOM_SHARE });
+
 function setupFor(look: LookSpec, screen: Screen): Setup {
   const viewport = { width: screen.width, height: screen.height, dpr: 1 };
   const m = cellOf('m' as Size, viewport, look);
@@ -134,7 +138,7 @@ function setupFor(look: LookSpec, screen: Screen): Setup {
       radius: fixed || look.stroke.character === 'pixel' ? 0 : 4,
       grid: fixed ? { cell: { width: m.width, height: m.height } } : null,
     },
-    room: safeFrame(viewport, look),
+    room: shorter(safeFrame(viewport, look)),
     canvas: { origin: { x: -80 * unit, y: -45 * unit }, unit },
   };
 }
