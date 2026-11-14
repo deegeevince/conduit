@@ -71,8 +71,27 @@ export interface StructureFrames {
   readonly owners: OwnerState[];
 }
 
+/** One owner's parts, to be drawn at one instant. */
+export interface OwnerCall {
+  /** whose room, layer and way out it shares: itself for a control */
+  readonly structure: ElementSpan;
+  readonly owner: ElementSpan;
+  readonly parts: readonly BlockPart[];
+  /** the parts it is easing from, when a layout has just changed */
+  readonly before: readonly BlockPart[] | null;
+  readonly q: number;
+  readonly epochStart: number;
+  readonly ownerBox: Box | null;
+  readonly tq: number;
+  readonly aq: number;
+  readonly look: LookSpec;
+  readonly style: ElementStyle;
+}
+
 export interface StructurePlans {
   readonly any: boolean;
+  /** draws parts the way a structure's are drawn; what controls are made of */
+  renderOwner(call: OwnerCall, out: StructureFrames): void;
   frames(tq: number, aq: number, look: LookSpec): StructureFrames;
   /** what the layout could not keep clear, by element key, as of `time` */
   notesAt(time: number): ReadonlyMap<string, readonly SightNote[]>;
@@ -80,7 +99,6 @@ export interface StructurePlans {
   readonly lastChange: number;
 }
 
-const NONE: StructurePlans = { any: false, frames: () => ({ elements: [], figures: [], owners: [] }), notesAt: () => new Map(), lastChange: 0 };
 
 // Layouts are remembered between rebuilds: a timeline is rebuilt at every line, and an epoch that has not changed is not laid out again.
 const LAYOUTS = new Map<string, StructureLayout>();
@@ -133,6 +151,21 @@ function lookOf(look: LookSpec, viewport: Viewport, fit: CanvasFit, ps: number):
     radius: look.type.snapToCells ? 0 : (body.height * 0.2) / ps,
     grid: look.type.snapToCells ? { cell: { width: body.width / ps, height: body.height / ps } } : null,
   };
+}
+
+const TEXTS = new Map<string, ReturnType<typeof setText>>();
+const KEPT_TEXTS = 900;
+
+/** `setText`, remembered: a structure's words are set once and read every frame, not set again at sixty a second. */
+export function setTextOnce(input: Parameters<typeof setText>[0]): ReturnType<typeof setText> {
+  const s = input.style;
+  const key = [input.look.id, input.look.name, input.viewport.width, input.viewport.height, input.viewport.dpr, input.text, JSON.stringify(input.emphasis), s.size, s.weight, s.face, s.case, s.layer, input.shrink.toFixed(3), input.maxWidth.toFixed(2), input.width?.toFixed(2) ?? '', input.align].join('|');
+  const known = TEXTS.get(key);
+  if (known !== undefined) return known;
+  const made = setText(input);
+  TEXTS.set(key, made);
+  if (TEXTS.size > KEPT_TEXTS) TEXTS.delete(TEXTS.keys().next().value as string);
+  return made;
 }
 
 function signature(structure: ElementSpan, members: readonly ElementSpan[], rows: number, scope: Scope): string {
@@ -274,7 +307,6 @@ export function buildStructures(schedule: Schedule, env: StructureEnv): Structur
     const plan = planOf(element, schedule, env);
     if (plan !== null) plans.push(plan);
   }
-  if (plans.length === 0) return NONE;
   const byKey = new Map<string, Plan>();
   for (const plan of plans) {
     byKey.set(plan.structure.key, plan);
@@ -340,165 +372,177 @@ export function buildStructures(schedule: Schedule, env: StructureEnv): Structur
     return { enter: owner.enter === null ? null : { start: owner.enter.start, end: owner.enter.end, effect: owner.enter.effect }, leave };
   };
 
-  const frames = (tq: number, aq: number, look: LookSpec): StructureFrames => {
-    const elements: ElementFrame[] = [];
-    const figures: ShapeFrame[] = [];
-    const owners: OwnerState[] = [];
+  /** What one owner's parts look like at `tq`: the whole of how a part enters, leaves, is restyled, pointed at and drawn. Structures and controls both go through it. */
+  const renderOwner = (call: OwnerCall, out: StructureFrames): void => {
+    const { structure, owner, parts, before, q, epochStart, tq, aq, look, style } = call;
+    const fit = env.fitOf(structure, look);
+    const ps = planeScale(structure.style.layer, env.viewport);
+    const unit = fit.unit / ps;
+    const body = cellOf('m', env.viewport, look).height;
     const reduced = env.reducedMotion;
+    const isControl = owner.kind === 'control';
+    const hits = owner.changes.filter((change) => change.kind === 'hit' && tq >= change.start && tq < change.end);
+    let pulse = 1;
+    let shake = 0;
+    let flash = 0;
+    for (const change of hits) {
+      if (change.kind !== 'hit') continue;
+      const p = (tq - change.start) / (change.end - change.start);
+      const gesture = change.gesture === 'shake' && reduced ? 'flash' : change.gesture;
+      if (gesture === 'pulse') pulse = 1 + 0.12 * Math.sin(Math.PI * p);
+      else if (gesture === 'flash') flash = Math.sin(Math.PI * p);
+      else shake = 0.15 * body * (1 - p) * Math.sin(2 * Math.PI * 4 * p);
+    }
+    const ownerBox = call.ownerBox ?? boundsOf(parts);
+    const centre = ownerBox === null ? { x: 0, y: 0 } : { x: ownerBox.x + ownerBox.width / 2, y: ownerBox.y + ownerBox.height / 2 };
+    let minOpacity = 0;
+    let phase: OwnerState['phase'] = 'on';
+    let ownerColour: string = look.roles.ink;
+    let ownerContrast = 21;
+    let fontPx = 0;
+    let seen = false;
+    // a control's markers are inked in, and words set over one are set in the ground's colour, so the pair reads inverted
+    const inks: Box[] = [];
+    if (isControl) for (const part of parts) if (part.kind === 'shape' && part.role === 'marker') { const b = boundsOf([part]); if (b !== null) inks.push(b); }
+    for (const part of parts) {
+      // the caret blinks once a second, steady under reduced motion
+      if (isControl && part.part === 'caret' && !reduced && Math.floor(aq / 0.5) % 2 === 1) continue;
+      const win = windowOf(part, owner, structure);
+      const enter = win.enter;
+      if (enter !== null && tq < enter.start) continue;
+      if (win.leave !== null && tq >= win.leave.end) continue;
+      // the envelope of this part: how far it has come in and gone out
+      let opacity = 1;
+      let dx = 0;
+      let dy = 0;
+      let scale = 1;
+      let draw = 1;
+      let fill = 1;
+      if (enter !== null && tq < enter.end) {
+        phase = 'entering';
+        const span = enter.end - enter.start;
+        const p = span <= 0 ? 1 : clamp01((tq - enter.start) / span);
+        if (enter.effect === 'draw' && part.kind === 'shape' && (part.role === 'line' || part.role === 'frame' || part.role === 'grid')) {
+          draw = p;
+          fill = clamp01((p - 2 / 3) * 3);
+        } else if (enter.effect === 'draw' && part.kind === 'shape' && part.role === 'head') opacity = clamp01((p - 0.8) * 5);
+        else {
+          let recipe = own<MotionRecipe>(look.motion.enter as Readonly<Record<string, MotionRecipe>>, enter.effect, FADE);
+          if (reduced && enter.effect === 'slam') recipe = FADE;
+          const e = ease(recipe.ease, p);
+          opacity = recipe.reveal ? ease('out', p) : lerp(recipe.from.opacity ?? 1, 1, e);
+          dx = lerp((recipe.from.dx ?? 0) * body, 0, e);
+          dy = lerp((recipe.from.dy ?? 0) * body, 0, e);
+          scale = lerp(recipe.from.scale ?? 1, 1, e);
+        }
+      }
+      if (win.leave !== null && tq >= win.leave.start) {
+        phase = 'leaving';
+        const recipe = own<MotionRecipe>(look.motion.exit as Readonly<Record<string, MotionRecipe>>, win.leave.effect, FADE);
+        const length = win.leave.end - win.leave.start;
+        const e = ease(recipe.ease === 'hold' ? 'linear' : recipe.ease, length <= 0 ? 1 : clamp01((tq - win.leave.start) / length));
+        opacity *= recipe.reveal ? 1 - e : lerp(1, recipe.from.opacity ?? 1, e);
+        dy += lerp(0, (recipe.from.dy ?? 0) * body, e);
+        scale *= lerp(1, recipe.from.scale ?? 1, e);
+      }
+      opacity *= style.opacity;
+      if (opacity <= 0.001 && draw <= 0.001) continue;
+      seen = true;
+      minOpacity = Math.max(minOpacity, opacity);
+      const earlier = before?.find((candidate) => candidate.part === part.part && candidate.kind === part.kind);
+      const key = part.part === 'words' && part.kind === 'text' ? owner.key : `${owner.key}/${part.part}`;
+      const z = owner.order + 0.001;
+      const mix = (colour: string): string => (flash > 0 ? mixHex(colour, strongest(look), flash) : colour);
+      if (part.kind === 'shape') {
+        let outline = part.outline;
+        if (earlier !== undefined && earlier.kind === 'shape' && earlier.outline.length === part.outline.length) outline = part.outline.map((line, i) => blendLine((earlier.outline[i] as Polyline), line, q));
+        const strokePaint = style.stroke === 'none' ? 'ink' : style.stroke;
+        const ring = isControl && part.role === 'bar' && part.part.startsWith('ring');
+        const width = ring ? 2 / ps : (style.thick ?? look.stroke.thick) * unit * (part.role === 'grid' ? 0.6 : 1);
+        const stroked = part.role === 'frame' || part.role === 'line' || part.role === 'grid' || ring || (part.role === 'marker' && !isControl);
+        const colour = ring ? look.roles.accent : part.role === 'grid' ? look.roles.dim : paintColour(strokePaint, look);
+        const filled = part.role === 'fill' || part.role === 'head' || (part.role === 'bar' && !ring) || part.role === 'marker';
+        const fillColour = part.role === 'fill' ? (style.fill !== 'none' && typeof style.fill === 'string' ? paintColour(style.fill, look) : mixHex(look.roles.ground, look.roles.ink, 0.1)) : part.role === 'head' ? colour : part.role === 'bar' ? (style.fill !== 'none' && typeof style.fill === 'string' ? paintColour(style.fill, look) : look.roles.accent) : isControl && part.role === 'marker' ? look.roles.ink : look.roles.accent;
+        const transform = pulse === 1 && shake === 0 ? IDENTITY : { ...about(centre, 0, pulse), e: about(centre, 0, pulse).e + shake };
+        out.figures.push({
+          kind: 'shape',
+          key,
+          id: owner.id,
+          layer: structure.style.layer,
+          z,
+          outline,
+          geometryKey: `${key}|${epochStart}|${q >= 1 ? 'r' : q.toFixed(2)}|${outline.reduce((n, l) => n + l.points.length, 0)}`,
+          transform,
+          fill: filled ? { colour: mix(fillColour), to: null, opacity: part.role === 'fill' ? fill * 0.9 : part.role === 'head' ? 1 : fill } : null,
+          stroke: stroked ? { colour: mix(colour), width, progress: draw, character: look.stroke.character } : null,
+          opacity,
+          bleed: false,
+          tappable: style.tap,
+        });
+        ownerColour = colour;
+      } else {
+        const box = earlier !== undefined && earlier.kind === 'text' ? ({ x: lerp(earlier.box.x, part.box.x, q), y: lerp(earlier.box.y, part.box.y, q), width: lerp(earlier.box.width, part.box.width, q), height: lerp(earlier.box.height, part.box.height, q) } satisfies Box) : part.box;
+        const spec: TextSpec = earlier !== undefined && earlier.kind === 'text' ? { ...part.spec, shrink: lerp(earlier.spec.shrink, part.spec.shrink, q) } : part.spec;
+        const set = setTextOnce({ look, viewport: env.viewport, text: part.text, emphasis: part.emphasis as readonly Range[], style: { ...textStyleOf(style, spec), layer: structure.style.layer }, shrink: spec.shrink, maxWidth: box.width, width: box.width, align: part.align });
+        const px = set.fontSize * ps;
+        const role = part.role === 'tick' || part.role === 'value' || part.role === 'label' ? 'dim' : style.ink;
+        const minRatio = minContrastFor(px, structure.style.layer);
+        const cx0 = box.x + box.width / 2;
+        const cy0 = box.y + box.height / 2;
+        const overInk = inks.some((b) => cx0 >= b.x && cx0 <= b.x + b.width && cy0 >= b.y && cy0 <= b.y + b.height);
+        const ink = (emphasised: boolean): string => overInk ? look.roles.ground : mix(resolveInk(role as never, look, { minRatio, weight: spec.weight, emphasised, onBar: false }));
+        const place = set.placement;
+        const runs: RunFrame[] = place.runs.map((run) => ({ text: run.text, x: run.x, y: run.y, width: run.width, colour: ink(run.emphasised), opacity, dx, dy, scale, reveal: 1 }));
+        const cx = box.x + box.width / 2 + shake;
+        const cy = box.y + box.height / 2;
+        out.elements.push({
+          key,
+          id: owner.id,
+          layer: structure.style.layer,
+          z,
+          face: spec.face ?? look.type.face,
+          x: cx,
+          y: cy,
+          width: box.width,
+          height: place.height,
+          fontSize: set.fontSize,
+          stretch: place.stretch,
+          weight: spec.weight,
+          opacity,
+          scale: pulse,
+          rotation: 0,
+          runs,
+          lines: place.lines,
+          mark: 'none',
+          markColour: look.roles.ink,
+          strike: 0,
+          ghost: false,
+          tappable: style.tap,
+          plate: part.plate ? 1 : 0,
+        });
+        ownerColour = runs[0]?.colour ?? look.roles.ink;
+        ownerContrast = Math.min(ownerContrast, contrastRatio(ownerColour, look.roles.ground));
+        fontPx = Math.max(fontPx, px);
+      }
+    }
+    if (!seen || ownerBox === null) return;
+    out.owners.push({ key: owner.key, id: owner.id, kind: owner.kind, layer: structure.style.layer, box: ownerBox, opacity: minOpacity, phase, colour: ownerColour, contrast: ownerContrast, tappable: style.tap, fontPx });
+  };
+
+  const frames = (tq: number, aq: number, look: LookSpec): StructureFrames => {
+    const out: StructureFrames = { elements: [], figures: [], owners: [] };
     for (const plan of plans) {
       const structure = plan.structure;
       const everyone = [structure, ...plan.members];
-      const fit = env.fitOf(structure, look);
-      const ps = planeScale(structure.style.layer, env.viewport);
-      const unit = fit.unit / ps;
-      const body = cellOf('m', env.viewport, look).height;
       for (const owner of everyone) {
         const { epoch, previous, q } = placeOf(plan, owner, tq);
         const parts = epoch.byOwner.get(owner.key) ?? [];
         if (parts.length === 0) continue;
         const before = previous === null || q >= 1 ? null : (previous.byOwner.get(owner.key) ?? null);
-        const style = styleAt(owner, tq);
-        const hits = owner.changes.filter((change) => change.kind === 'hit' && tq >= change.start && tq < change.end);
-        let pulse = 1;
-        let shake = 0;
-        let flash = 0;
-        for (const change of hits) {
-          if (change.kind !== 'hit') continue;
-          const p = (tq - change.start) / (change.end - change.start);
-          const gesture = change.gesture === 'shake' && reduced ? 'flash' : change.gesture;
-          if (gesture === 'pulse') pulse = 1 + 0.12 * Math.sin(Math.PI * p);
-          else if (gesture === 'flash') flash = Math.sin(Math.PI * p);
-          else shake = 0.15 * body * (1 - p) * Math.sin(2 * Math.PI * 4 * p);
-        }
-        const ownerBox = boxAtTime(plan, owner, tq) ?? boundsOf(parts);
-        const centre = ownerBox === null ? { x: 0, y: 0 } : { x: ownerBox.x + ownerBox.width / 2, y: ownerBox.y + ownerBox.height / 2 };
-        let minOpacity = 0;
-        let phase: OwnerState['phase'] = 'on';
-        let ownerColour: string = look.roles.ink;
-        let ownerContrast = 21;
-        let fontPx = 0;
-        let seen = false;
-        for (const part of parts) {
-          const win = windowOf(part, owner, structure);
-          const enter = win.enter;
-          if (enter !== null && tq < enter.start) continue;
-          if (win.leave !== null && tq >= win.leave.end) continue;
-          // the envelope of this part: how far it has come in and gone out
-          let opacity = 1;
-          let dx = 0;
-          let dy = 0;
-          let scale = 1;
-          let draw = 1;
-          let fill = 1;
-          if (enter !== null && tq < enter.end) {
-            phase = 'entering';
-            const span = enter.end - enter.start;
-            const p = span <= 0 ? 1 : clamp01((tq - enter.start) / span);
-            if (enter.effect === 'draw' && part.kind === 'shape' && (part.role === 'line' || part.role === 'frame' || part.role === 'grid')) {
-              draw = p;
-              fill = clamp01((p - 2 / 3) * 3);
-            } else if (enter.effect === 'draw' && part.kind === 'shape' && part.role === 'head') opacity = clamp01((p - 0.8) * 5);
-            else {
-              let recipe = own<MotionRecipe>(look.motion.enter as Readonly<Record<string, MotionRecipe>>, enter.effect, FADE);
-              if (reduced && enter.effect === 'slam') recipe = FADE;
-              const e = ease(recipe.ease, p);
-              opacity = recipe.reveal ? ease('out', p) : lerp(recipe.from.opacity ?? 1, 1, e);
-              dx = lerp((recipe.from.dx ?? 0) * body, 0, e);
-              dy = lerp((recipe.from.dy ?? 0) * body, 0, e);
-              scale = lerp(recipe.from.scale ?? 1, 1, e);
-            }
-          }
-          if (win.leave !== null && tq >= win.leave.start) {
-            phase = 'leaving';
-            const recipe = own<MotionRecipe>(look.motion.exit as Readonly<Record<string, MotionRecipe>>, win.leave.effect, FADE);
-            const length = win.leave.end - win.leave.start;
-            const e = ease(recipe.ease === 'hold' ? 'linear' : recipe.ease, length <= 0 ? 1 : clamp01((tq - win.leave.start) / length));
-            opacity *= recipe.reveal ? 1 - e : lerp(1, recipe.from.opacity ?? 1, e);
-            dy += lerp(0, (recipe.from.dy ?? 0) * body, e);
-            scale *= lerp(1, recipe.from.scale ?? 1, e);
-          }
-          opacity *= style.opacity;
-          if (opacity <= 0.001 && draw <= 0.001) continue;
-          seen = true;
-          minOpacity = Math.max(minOpacity, opacity);
-          const earlier = before?.find((candidate) => candidate.part === part.part && candidate.kind === part.kind);
-          const key = part.part === 'words' && part.kind === 'text' ? owner.key : `${owner.key}/${part.part}`;
-          const z = owner.order + 0.001;
-          const mix = (colour: string): string => (flash > 0 ? mixHex(colour, strongest(look), flash) : colour);
-          if (part.kind === 'shape') {
-            let outline = part.outline;
-            if (earlier !== undefined && earlier.kind === 'shape' && earlier.outline.length === part.outline.length) outline = part.outline.map((line, i) => blendLine((earlier.outline[i] as Polyline), line, q));
-            const strokePaint = style.stroke === 'none' ? 'ink' : style.stroke;
-            const width = (style.thick ?? look.stroke.thick) * unit * (part.role === 'grid' ? 0.6 : 1);
-            const stroked = part.role === 'frame' || part.role === 'line' || part.role === 'grid' || part.role === 'marker';
-            const colour = part.role === 'grid' ? look.roles.dim : paintColour(strokePaint, look);
-            const filled = part.role === 'fill' || part.role === 'head' || part.role === 'bar' || part.role === 'marker';
-            const fillColour = part.role === 'fill' ? (style.fill !== 'none' && typeof style.fill === 'string' ? paintColour(style.fill, look) : mixHex(look.roles.ground, look.roles.ink, 0.1)) : part.role === 'head' ? colour : part.role === 'bar' ? (style.fill !== 'none' && typeof style.fill === 'string' ? paintColour(style.fill, look) : look.roles.accent) : look.roles.accent;
-            const transform = pulse === 1 && shake === 0 ? IDENTITY : { ...about(centre, 0, pulse), e: about(centre, 0, pulse).e + shake };
-            figures.push({
-              kind: 'shape',
-              key,
-              id: owner.id,
-              layer: structure.style.layer,
-              z,
-              outline,
-              geometryKey: `${key}|${epoch.start}|${q >= 1 ? 'r' : q.toFixed(2)}|${outline.reduce((n, l) => n + l.points.length, 0)}`,
-              transform,
-              fill: filled ? { colour: mix(fillColour), to: null, opacity: part.role === 'fill' ? fill * 0.9 : part.role === 'head' ? 1 : fill } : null,
-              stroke: stroked ? { colour: mix(colour), width, progress: draw, character: look.stroke.character } : null,
-              opacity,
-              bleed: false,
-              tappable: style.tap,
-            });
-            ownerColour = colour;
-          } else {
-            const box = earlier !== undefined && earlier.kind === 'text' ? ({ x: lerp(earlier.box.x, part.box.x, q), y: lerp(earlier.box.y, part.box.y, q), width: lerp(earlier.box.width, part.box.width, q), height: lerp(earlier.box.height, part.box.height, q) } satisfies Box) : part.box;
-            const spec: TextSpec = earlier !== undefined && earlier.kind === 'text' ? { ...part.spec, shrink: lerp(earlier.spec.shrink, part.spec.shrink, q) } : part.spec;
-            const set = setText({ look, viewport: env.viewport, text: part.text, emphasis: part.emphasis as readonly Range[], style: { ...textStyleOf(style, spec), layer: structure.style.layer }, shrink: spec.shrink, maxWidth: box.width, width: box.width, align: part.align });
-            const px = set.fontSize * ps;
-            const role = part.role === 'tick' || part.role === 'value' || part.role === 'label' ? 'dim' : style.ink;
-            const minRatio = minContrastFor(px, structure.style.layer);
-            const ink = (emphasised: boolean): string => mix(resolveInk(role as never, look, { minRatio, weight: spec.weight, emphasised, onBar: false }));
-            const place = set.placement;
-            const runs: RunFrame[] = place.runs.map((run) => ({ text: run.text, x: run.x, y: run.y, width: run.width, colour: ink(run.emphasised), opacity, dx, dy, scale, reveal: 1 }));
-            const cx = box.x + box.width / 2 + shake;
-            const cy = box.y + box.height / 2;
-            elements.push({
-              key,
-              id: owner.id,
-              layer: structure.style.layer,
-              z,
-              face: spec.face ?? look.type.face,
-              x: cx,
-              y: cy,
-              width: box.width,
-              height: place.height,
-              fontSize: set.fontSize,
-              stretch: place.stretch,
-              weight: spec.weight,
-              opacity,
-              scale: pulse,
-              rotation: 0,
-              runs,
-              lines: place.lines,
-              mark: 'none',
-              markColour: look.roles.ink,
-              strike: 0,
-              ghost: false,
-              tappable: style.tap,
-              plate: part.plate ? 1 : 0,
-            });
-            ownerColour = runs[0]?.colour ?? look.roles.ink;
-            ownerContrast = Math.min(ownerContrast, contrastRatio(ownerColour, look.roles.ground));
-            fontPx = Math.max(fontPx, px);
-          }
-        }
-        if (!seen || ownerBox === null) continue;
-        owners.push({ key: owner.key, id: owner.id, kind: owner.kind, layer: structure.style.layer, box: ownerBox, opacity: minOpacity, phase, colour: ownerColour, contrast: ownerContrast, tappable: style.tap, fontPx });
+        renderOwner({ structure, owner, parts, before, q, epochStart: epoch.start, ownerBox: boxAtTime(plan, owner, tq), tq, aq, look, style: styleAt(owner, tq) }, out);
       }
     }
-    void aq;
-    return { elements, figures, owners };
+    return out;
   };
 
   const notesAt = (time: number): ReadonlyMap<string, readonly SightNote[]> => {
@@ -516,5 +560,5 @@ export function buildStructures(schedule: Schedule, env: StructureEnv): Structur
 
   let lastChange = 0;
   for (const plan of plans) for (const epoch of plan.epochs) lastChange = Math.max(lastChange, epoch.start);
-  return { any: true, frames, notesAt, lastChange };
+  return { any: plans.length > 0, renderOwner, frames, notesAt, lastChange };
 }

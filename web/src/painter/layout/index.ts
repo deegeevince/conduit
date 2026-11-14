@@ -23,6 +23,11 @@ export interface LayoutItem {
   /** struck through by a correction; it is drawn as a ghost beside the item whose `replaces` is its key */
   readonly struck: boolean;
   readonly replaces: string | null;
+  /**
+   * A thing that is not words but takes a line's place in the flow (a control): a block `width` wide and as many of the item's own lines
+   * as `height` needs, in layer units, with no text. Its placement says where it goes; nothing is drawn for it here.
+   */
+  readonly reserve?: { readonly width: number; readonly height: number };
 }
 
 export interface LayoutInput {
@@ -162,6 +167,7 @@ function caseOf(char: string, mode: 'upper' | 'lower' | 'asis'): string {
 }
 
 function prepare(item: LayoutItem, look: LookSpec): Prep {
+  if (item.reserve !== undefined) return { item, face: item.style.face ?? look.type.face, weight: item.style.weight, text: '', orig: [], emph: [] };
   const mode = look.type.upperOnly ? 'upper' : item.style.case;
   const text: string[] = [];
   const orig: number[] = [];
@@ -223,6 +229,25 @@ function buildBlock(prep: Prep, k: number, availWidth: number, indent: number, b
   const layer = prep.item.style.layer;
   const spec = FACES[prep.face];
   const natural = cellFor(prep.item.style.size, k, layer, ctx);
+  const reserve = prep.item.reserve;
+  if (reserve !== undefined) {
+    const rows = Math.max(1, Math.ceil(reserve.height / natural.height - 1e-6));
+    return {
+      prep,
+      layer,
+      cell: natural,
+      spans: Array.from({ length: rows }, () => ({ start: 0, end: 0 })),
+      broken: false,
+      lineWidths: Array.from({ length: rows }, () => reserve.width),
+      prefix: null,
+      unit: natural.width,
+      indent,
+      bullet: null,
+      bulletWidth: 0,
+      width: reserve.width + indent,
+      height: rows * natural.height,
+    };
+  }
   // another face than the look's keeps the look's size ladder but brings its own advance and leading
   const cell: Cell = own ? natural : { ...natural, width: natural.fontSize * natural.stretch * spec.advance, height: natural.fontSize * spec.lineHeight };
   const { measure } = ctx.look.type;
