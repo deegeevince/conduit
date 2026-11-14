@@ -49,6 +49,11 @@ export interface PainterOptions {
   readonly apps?: AppHost | null;
   /** v2.1. Where a picture the user gave is fetched from, by its id (`pic … from=u1`); null when the id is not this conversation's. Absent: the painter draws no uploads. */
   readonly uploadUrl?: (id: string) => string | null;
+  /**
+   * v3 (T1). A picture of a surface that covers the stage (the lesson view, a live app), handed over by the surface itself through its bridge; the painter never reads
+   * into it. When it answers a picture, that is the snapshot (the stage under it is not what the person sees); null: nothing covers the stage.
+   */
+  readonly cover?: () => Promise<Blob | null>;
 }
 
 /** A picture the painter has made for someone else: the app sends it to the server. */

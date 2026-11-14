@@ -56,6 +56,8 @@ export interface DocumentView {
   /** show the picture under it, or the document again */
   toggle(show?: boolean): void;
   readonly shown: boolean;
+  /** a picture of the document as she sees it (the surface hands over its own still through the bridge), or null when it is not on screen */
+  still(): Promise<Blob | null>;
   host(): DocumentHost | null;
   /** the pen laid over the writing slot, when there is one (for the browser checks) */
   readonly pen: DocumentInk | null;
@@ -192,6 +194,28 @@ export function createDocumentView(options: DocumentViewOptions): DocumentView {
     toggle,
     get shown() {
       return shown && host !== null;
+    },
+    async still() {
+      if (host === null || !shown) return null;
+      const url = await host.still();
+      if (url === null) return null;
+      try {
+        const image = new Image();
+        image.src = url;
+        await image.decode();
+        const scale = Math.min(1, 1280 / Math.max(image.naturalWidth, image.naturalHeight, 1));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+        canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+        const context = canvas.getContext('2d');
+        if (context === null) return null;
+        context.fillStyle = options.dark() ? '#111111' : '#ffffff';
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+        return await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.8));
+      } catch {
+        return null;
+      }
     },
     host: () => host,
     pen,

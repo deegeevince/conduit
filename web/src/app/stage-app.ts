@@ -332,6 +332,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
       tunes: sound,
       uploadUrl: (id) => link.photoUrl(id),
       apps: liveApps,
+      cover: () => documents.still(),
       pointer: pointerKind(),
       reducedMotion: params.motion === 'reduced' ? true : params.motion === 'full' ? false : null,
     });
