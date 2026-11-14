@@ -2,6 +2,10 @@
 
 Newest first. Each item is something the brain can show live when asked "showcase what's new": draw it, don't describe it. The server reads this file.
 
+## Step-by-step documents that are not homework (new)
+- Ask to be walked through a recipe, a lease or a trip and Conduit writes a document of parts you work through: each step with a "Done" tick to mark it off, a choice where the call is yours (how thick, fine or question it, which day first), and help on a step when you ask. Homework help is the same pieces with a young learner's rules.
+- Help for a young learner is a ladder of questions back to her, facts first (what do we know, with the facts marked in the question), then what is being asked, then ways to go at it, and then she has a go. Doing a way together is always an ask she answers, never an answer shown.
+
 ## Working through a page, a question at a time (live)
 - Photograph a worksheet and Conduit shows it as a map: each section and its questions as cards, in order, each with a small crop from the photo. Everything is prepared and checked in the background before you reach it.
 - Tap a question and it fills the screen, in the page's own words, with room underneath to write. You try first, with the pen, as on paper; nothing is shown before you do. Tap Check and Conduit reads your writing and drawing: a right answer gets a short celebration and goes on the card, a wrong one gets a kind word about what it saw and one hint.
