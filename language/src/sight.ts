@@ -17,6 +17,8 @@ export const SIGHT_NOTE = {
   recoloured: 'its colour was changed to stay readable',
   collides: 'its words run into other words',
   crossed: 'a drawn line runs through its words',
+  spills: 'it spills out past the edge of a bigger filled shape that mostly holds it: pull it inside, or make it smaller',
+  tangled: 'its leader line crosses another label\'s leader line',
   crowded: 'there were too many parts for the room, so they came out small: give the structure the whole scene, or split it in two',
   faint: 'it is hard to read against what is behind it',
   tiny: 'it came out too small to make out',
@@ -37,6 +39,13 @@ export interface SightItem {
   /** still on stage when the turn came to rest */
   readonly resting: boolean;
   readonly notes: readonly SightNote[];
+  /** with the `spills` note: the id of the shape it spills out of */
+  readonly within?: string;
+}
+
+/** A note in the words the brain reads: `spills` names the shape it spills out of. */
+export function noteText(item: Pick<SightItem, 'within'>, note: SightNote): string {
+  return note === 'spills' && item.within !== undefined ? `spills out of ${item.within}: ${SIGHT_NOTE[note].replace(/^it spills out past the edge of a bigger filled shape that mostly holds it: /, '')}` : SIGHT_NOTE[note];
 }
 
 /**
@@ -84,7 +93,7 @@ const SHOWN_NOTED = 12;
 export function describeSight(sight: Sight): string[] {
   const out: string[] = [];
   const noted = sight.items.filter((item) => item.notes.length > 0);
-  for (const item of noted.slice(0, SHOWN_NOTED)) out.push(`${item.id} (${item.kind}), ${boxText(item.box)}: ${item.notes.map((note) => SIGHT_NOTE[note]).join('; ')}`);
+  for (const item of noted.slice(0, SHOWN_NOTED)) out.push(`${item.id} (${item.kind}), ${boxText(item.box)}: ${item.notes.map((note) => noteText(item, note)).join('; ')}`);
   if (noted.length > SHOWN_NOTED) out.push(`and ${noted.length - SHOWN_NOTED} more things with something to report`);
   const clean = sight.items.length - noted.length;
   if (sight.items.length > 0) out.push(noted.length === 0 ? `all ${sight.items.length} things landed as written` : `${clean} other things landed as written`);

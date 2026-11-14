@@ -4,7 +4,7 @@
 // newer turn's look replaces one that has not started), at most `policy.perHour`, and bounded by `policy.lookMs`. It never throws: a
 // finding it could not make is null and the reason is logged once per kind.
 
-import { SIGHT_NOTE } from '@conduit/language';
+import { noteText } from '@conduit/language';
 import type { CriticFinding } from '@conduit/language';
 import type { Snapshot } from '../domain/brain';
 import type { Critic, CriticComparison, CriticPolicy, CriticRequest } from '../domain/critic';
@@ -33,7 +33,7 @@ function measuredOf(sight: CriticRequest['sight']): readonly string[] {
   const lines: string[] = [];
   for (const item of sight?.items ?? []) {
     if (item.notes.length === 0) continue;
-    lines.push(`${item.id} (${item.kind}${item.resting ? '' : ', gone at rest'}): ${item.notes.map((note) => SIGHT_NOTE[note]).join('; ')}`);
+    lines.push(`${item.id} (${item.kind}${item.resting ? '' : ', gone at rest'}): ${item.notes.map((note) => noteText(item, note)).join('; ')}`);
     if (lines.length >= 12) break;
   }
   return lines;
