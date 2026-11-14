@@ -17,12 +17,22 @@ import { createDocumentReader } from './reading/web-reader';
 import { createJsonlSessionLog } from './logs/jsonl-session-log';
 import { NO_SESSION_LOG } from './domain/session-log';
 import { createLogger } from './log';
+import { ensureDataDirs, extraRepos, migrateLegacyData } from './data-dir';
 
 const RELAY_IDLE_FALLBACK_MS = 180_000;
 
 function boot(env: Env): void {
   const log = createLogger(env.logLevel);
   const now = (): number => Date.now();
+
+  // The owner's data is outside the repository. The first start with a data folder copies what is in the old places (never moves, never
+  // deletes, never overwrites), once; every later start finds the marker and copies nothing.
+  ensureDataDirs(env.data);
+  const source = processEnvironment();
+  for (const report of migrateLegacyData(fileURLToPath(new URL('../../', import.meta.url)), env.data, extraRepos(source), source)) {
+    log.info('data.migrated', { from: report.from, to: report.to, copied: report.copied, skipped: report.skipped, failed: report.failed, note: 'copied, not moved: the originals are untouched' });
+  }
+  log.info('data.dir', { dir: env.data.root, logs: env.logDir });
 
   const relayHub = new RelayHub({
     log: log.child({ part: 'relay' }),
@@ -59,7 +69,7 @@ function boot(env: Env): void {
     setInterval(refreshLibrary, env.library.refreshMs).unref();
   }
   // Read in the background, now and every `refreshMs`; a turn only ever uses the index held in memory.
-  const datasets = createDatasets(env.datasets, log.child({ part: 'datasets' }));
+  const datasets = createDatasets(env.datasets, log.child({ part: 'datasets' }), env.data.datasetsCache);
   if (env.datasets.kind !== 'none') {
     const refreshDatasets = (): void => void datasets.refresh(new AbortController().signal).catch((error: unknown) => log.warn('datasets.refresh_failed', { error }));
     refreshDatasets();
@@ -81,7 +91,7 @@ function boot(env: Env): void {
     review: env.review,
     maxPaintings: env.paintingsPerSession,
     critic: createCritic({ policy: env.critic, bin: env.brain.kind === 'claude-cli' ? env.brain.bin : 'claude', log: log.child({ part: 'critic' }), now }),
-    findings: createFindingQueue(env.critic.enabled && env.logDir !== null ? fileURLToPath(new URL('../../loop/queue/', import.meta.url)) : null, log.child({ part: 'critic' })),
+    findings: createFindingQueue(env.critic.enabled && env.logDir !== null ? env.data.queue : null, log.child({ part: 'critic' })),
     fix: FIX_POLICY,
     criticQueueBelow: env.critic.queueBelow,
     modes: env.modes,

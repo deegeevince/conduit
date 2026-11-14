@@ -16,13 +16,14 @@
 // imports them (the same instances the app uses) rather than carrying a copy of any of it.
 
 import type { ChildProcess } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import type { StageBase } from '@conduit/language';
 import { spawnTracked } from '../brains/claude-cli/process';
-import { processEnvironment } from '../env';
+import { withDataFlag } from '../data-dir';
+import { processEnvironment, resolveLogDir } from '../env';
 import type { SessionRecord } from '../domain/session-log';
 
 const WEB_PORT = Number(process.env.CAPTURE_WEB_PORT ?? 4729);
@@ -34,7 +35,7 @@ const sleep = (ms: number): Promise<void> => new Promise((done) => setTimeout(do
 
 function usage(message: string): never {
   process.stderr.write(`capture: ${message}\n`);
-  process.stderr.write('usage: pnpm capture <log> <turn> [--screen 1280x720|1920x825|390x844] [--look <id>] [--out <dir>] [--fps n] [--no-video] [--web <url>]\n       pnpm capture --all <log> [flags]\n');
+  process.stderr.write('usage: pnpm capture <log> <turn> [--screen 1280x720|1920x825|390x844] [--look <id>] [--out <dir>] [--fps n] [--no-video] [--web <url>] [--data <dir>]\n  <log> is a path, or the log file name or session id as found in the data folder\n       pnpm capture --all <log> [flags]\n');
   process.exit(2);
 }
 
@@ -421,6 +422,16 @@ interface Options {
   readonly debug: boolean;
 }
 
+/** A log named by its path, or by its file name or session id, which is looked for in the data folder's logs (`--data <dir>`, `DATA_DIR`, else the default). */
+function locate(log: string, data: string | null): string {
+  if (existsSync(log) || log.includes('/')) return resolve(log);
+  const dir = resolveLogDir(withDataFlag(data === null ? [] : ['--data', data], processEnvironment()));
+  if (dir === null || !existsSync(dir)) return resolve(log);
+  const names = readdirSync(dir).filter((name) => name.endsWith('.jsonl')).sort().reverse();
+  const found = names.find((name) => name === log || name === `${log}.jsonl` || name.endsWith(`-${log}.jsonl`) || name.startsWith(log));
+  return found === undefined ? resolve(log) : join(dir, found);
+}
+
 function parseArgs(argv: readonly string[]): Options {
   const positional: string[] = [];
   let all = false;
@@ -430,6 +441,7 @@ function parseArgs(argv: readonly string[]): Options {
   let fps = 15;
   let video = true;
   let web: string | null = null;
+  let data: string | null = null;
   let debug = false;
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i] ?? '';
@@ -440,6 +452,7 @@ function parseArgs(argv: readonly string[]): Options {
     else if (arg === '--out') out = value();
     else if (arg === '--fps') fps = Math.max(1, Math.min(60, Number(value()) || 15));
     else if (arg === '--web') web = value();
+    else if (arg === '--data') data = value();
     else if (arg === '--no-video') video = false;
     else if (arg === '--debug') debug = true;
     else if (arg.startsWith('--')) usage(`unknown flag ${arg}`);
@@ -452,7 +465,7 @@ function parseArgs(argv: readonly string[]): Options {
   const log = positional[0];
   if (log === undefined) usage('which log?');
   if (!all && positional[1] === undefined) usage('which turn? (or --all)');
-  return { all, log: resolve(log), turn: all ? null : (positional[1] ?? null), screen, screenName, look, out, fps, video, web, debug };
+  return { all, log: locate(log, data), turn: all ? null : (positional[1] ?? null), screen, screenName, look, out, fps, video, web, debug };
 }
 
 interface Captured {

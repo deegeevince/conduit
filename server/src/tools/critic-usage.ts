@@ -1,14 +1,15 @@
 // What the live critic costs. Not part of the server.
-// Usage: pnpm critic-usage [--from <repo>]   critic looks, tokens and cost, per hour and per session, from `logs/*.jsonl` (the `critic`
-//                                            records' `finding.usage`), plus `pnpm lessons --write` calls from loop/queue/lessons-usage.jsonl.
+// Usage: pnpm critic-usage [--data <dir>]    critic looks, tokens and cost, per hour and per session, from `<DATA_DIR>/logs/*.jsonl` (the `critic`
+//                                            records' `finding.usage`), plus `pnpm lessons --write` calls from <DATA_DIR>/loop/queue/lessons-usage.jsonl.
 //                                            A look logged before usage was recorded counts as a look with no tokens (its cost, if it has one, is kept).
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { dataPaths, resolveDataDir, withDataFlag } from '../data-dir';
 
 const argv = process.argv.slice(2);
-const from = argv.indexOf('--from');
-const root = resolve(from >= 0 ? (argv[from + 1] ?? '') : fileURLToPath(new URL('../../../', import.meta.url)));
+// The data folder (`--data <dir>`, or its older spelling `--from <dir>`, then DATA_DIR, then the default): it holds `logs/` and `loop/queue/`.
+const root = resolve(resolveDataDir(withDataFlag(argv, process.env)));
+const paths = dataPaths(root);
 
 interface Total {
   looks: number;
@@ -59,7 +60,7 @@ const bump = (map: Map<string, Total>, key: string, finding: Counted): void => {
   add(total, finding);
 };
 
-const logs = join(root, 'logs');
+const logs = paths.logs;
 if (existsSync(logs)) {
   for (const name of readdirSync(logs).filter((n) => n.endsWith('.jsonl')).sort()) {
     let started = 0;
@@ -83,7 +84,7 @@ process.stdout.write(`${line('all critic looks', all)}\n\nper hour\n`);
 for (const [k, t] of [...byHour].sort()) process.stdout.write(`  ${line(k, t)}\n`);
 process.stdout.write('\nper session\n');
 for (const [k, t] of [...bySession].sort()) process.stdout.write(`  ${line(k, t)}\n`);
-const lessons = join(root, 'loop', 'queue', 'lessons-usage.jsonl');
+const lessons = join(paths.queue, 'lessons-usage.jsonl');
 if (existsSync(lessons)) {
   const t = blank();
   for (const raw of readFileSync(lessons, 'utf8').split('\n')) {

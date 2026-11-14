@@ -11,6 +11,8 @@ import { CRITIC_POLICY } from './domain/critic';
 import type { CriticPolicy } from './domain/critic';
 import type { DatasetSettings } from './domain/datasets';
 import type { LibrarySettings } from './domain/techniques';
+import { dataPaths, resolveDataDir } from './data-dir';
+import type { DataPaths } from './data-dir';
 import type { LogLevel } from './log';
 
 /** The Conduit root block on the Series account: every technique hangs off it. */
@@ -72,6 +74,8 @@ export interface Env {
   readonly datasets: DatasetSettings;
   /** absolute path of the folder session logs are written to; null when LOG_DIR=off */
   readonly logDir: string | null;
+  /** v2.1 ops. The owner's data, outside the repository (`DATA_DIR`): logs, snapshots, the audit trail, the usage meter, caches, the loop's queue */
+  readonly data: DataPaths;
   /** paintings a conversation may ask the image model for; 0 when there is no image model */
   readonly paintingsPerSession: number;
   /** fetch the web pages and PDFs a prompt links to (`READ_LINKS`); off leaves the brain to say it could not read them */
@@ -152,12 +156,17 @@ export function withheldCredentialNames(): string[] {
   return Object.keys(process.env).filter((name) => process.env[name] !== undefined && isCredentialName(name)).sort();
 }
 
-/** The folder session logs go to, or null when LOG_DIR=off. Shared with the tool that reads them back. */
+/** The folder session logs go to, or null when LOG_DIR=off. Shared with the tool that reads them back. By default it is `<DATA_DIR>/logs`; `LOG_DIR` names another. */
 export function resolveLogDir(source: Source): string | null {
   const root = fileURLToPath(new URL('../../', import.meta.url));
   const setting = source['LOG_DIR']?.trim();
   if (setting === 'off') return null;
-  return resolvePath(root, setting === undefined || setting === '' ? 'logs' : setting);
+  return setting === undefined || setting === '' ? dataPaths(resolveDataDir(source)).logs : resolvePath(root, setting);
+}
+
+/** The data folder's paths for this environment. The tools take this, or a `--data <dir>` flag that sets `DATA_DIR` for the run. */
+export function resolveDataPaths(source: Source): DataPaths {
+  return dataPaths(resolveDataDir(source));
 }
 
 const LOG_LEVELS: readonly LogLevel[] = ['debug', 'info', 'warn', 'error'];
@@ -248,6 +257,7 @@ export function loadEnv(source: Source): Env {
 
   const sight = choice('SIGHT', ['report', 'snapshot'] as const, 'snapshot');
   const root = fileURLToPath(new URL('../../', import.meta.url));
+  const data = resolveDataPaths(source);
 
   const review: ReviewPolicy = {
     enabled: choice('REVIEW', ['on', 'off'] as const, 'on') === 'on',
@@ -272,7 +282,7 @@ export function loadEnv(source: Source): Env {
       env: choice('REMOTE_ENV', ['prod', 'local'] as const, 'prod'),
       root: text('LIBRARY_ROOT') ?? CONDUIT_ROOT_BLOCK,
       seedDir,
-      cacheDir: resolvePath(root, 'techniques/.cache'),
+      cacheDir: data.techniquesCache,
       overlayDir,
       refreshMs: integer('LIBRARY_REFRESH_MS', 600_000, 10_000, 86_400_000),
       timeoutMs: integer('LIBRARY_TIMEOUT_MS', 8_000, 500, 60_000),
@@ -353,5 +363,5 @@ export function loadEnv(source: Source): Env {
   }
 
   if (problems.length > 0) throw new EnvError(problems);
-  return { production, host, trustedHosts, port, logLevel, brain, images, sight, promptVariant: parsePromptVariant(text('PROMPT_VARIANT')), review, library, datasets, logDir, readLinks: choice('READ_LINKS', ['on', 'off'] as const, 'on') === 'on', paintingsPerSession: 0, exploreDir, webDist, critic, agent, modes, refine, uploads, statusFile, changelogFile, sealedDir };
+  return { production, host, trustedHosts, port, logLevel, brain, images, sight, promptVariant: parsePromptVariant(text('PROMPT_VARIANT')), review, library, datasets, logDir, data, readLinks: choice('READ_LINKS', ['on', 'off'] as const, 'on') === 'on', paintingsPerSession: 0, exploreDir, webDist, critic, agent, modes, refine, uploads, statusFile, changelogFile, sealedDir };
 }

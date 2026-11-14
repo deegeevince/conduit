@@ -5,7 +5,7 @@
 //                                 the proposals, the painter-bug list and the exact Remote commands. Writes nothing.
 //   pnpm lessons --write          the steward's: write each proposal to Remote as `Proposed technique: <title>`, read it back, append
 //                                 the painter bugs to loop/queue/painter-bugs.md and move the cursor. REMOTE_AGENT=conduit-steward.
-//   --from <repo>                 where `loop/queue/` and `logs/` are (default: this repository; the queue is not tracked)
+//   --data <dir>                  the data folder, with `loop/queue/` and `logs/` in it (default: DATA_DIR, else ~/Library/Application Support/Conduit); `--from` is its older spelling
 //   --all                         ignore the cursor: every finding again
 //
 // A proposal is a technique in the library's own format that targets what the brain controls: how it writes Series. A problem that is
@@ -22,6 +22,7 @@ import { askObject } from '../judge/ask';
 import { addUsage } from '../judge/ask';
 import type { JudgeSettings, JudgeUsage } from '../judge/ask';
 import { PROPOSED_PREFIX, lintTechnique } from '../domain/techniques';
+import { dataPaths, resolveDataDir, withDataFlag } from '../data-dir';
 import { CONDUIT_ROOT_BLOCK } from '../env';
 import { readTechniqueDir } from '../library/files';
 import { createRemoteWriter, STEWARD, stewardIdentity } from '../library/remote/remote-cli';
@@ -36,15 +37,13 @@ const fail = (text: string): never => {
 };
 
 const argv = process.argv.slice(2);
-const flag = (name: string): string | undefined => {
-  const at = argv.indexOf(`--${name}`);
-  return at < 0 ? undefined : argv[at + 1];
-};
 const write = argv.includes('--write');
 if (write && argv.includes('--dry-run')) fail('--write and --dry-run are opposites');
-const root = resolve(flag('from') ?? repo);
-const queueDir = join(root, 'loop', 'queue');
-const logsDir = join(root, 'logs');
+// The data folder: `--data <dir>` (older spelling `--from <dir>`), else DATA_DIR, else the default. `logs/` and `loop/queue/` are in it.
+const root = resolve(resolveDataDir(withDataFlag(argv, process.env)));
+const dataFolders = dataPaths(root);
+const queueDir = dataFolders.queue;
+const logsDir = dataFolders.logs;
 const cursorPath = join(queueDir, 'lessons-cursor.json');
 const bugsPath = join(queueDir, 'painter-bugs.md');
 
@@ -279,7 +278,7 @@ async function main(): Promise<void> {
     env: 'prod',
     root: CONDUIT_ROOT_BLOCK,
     seedDir: join(repo, 'techniques', 'seed'),
-    cacheDir: join(repo, 'techniques', '.cache'),
+    cacheDir: dataFolders.techniquesCache,
     overlayDir: null,
     refreshMs: 0,
     timeoutMs: 30_000,

@@ -1,5 +1,5 @@
 // Reads session logs back. Not part of the server.
-// Usage: pnpm sessions                 lists the log files, newest first, with turns and total cost
+// Usage: pnpm sessions [--data <dir>]  lists the log files (in <DATA_DIR>/logs, newest first), with turns and total cost
 //        pnpm sessions <file|session>  prints that conversation turn by turn: what the user did, what was shown
 //                                      (struck text marked, drawn things in brackets), rejects, and one line of
 //                                      numbers per turn: first line ms, first shown ms, total ms, output tokens
@@ -11,6 +11,7 @@ import { readFile, readdir, stat } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
 import type { ShownItem, TurnInput } from '@conduit/language';
 import type { SessionRecord } from '../domain/session-log';
+import { withDataFlag } from '../data-dir';
 import { processEnvironment, resolveLogDir } from '../env';
 
 type Of<T extends SessionRecord['type']> = Extract<SessionRecord, { type: T }>;
@@ -58,7 +59,7 @@ function usageError(message: string): never {
 }
 
 function logFolder(): string {
-  const dir = resolveLogDir(processEnvironment());
+  const dir = resolveLogDir(withDataFlag(process.argv.slice(2), processEnvironment()));
   if (dir === null) usageError('LOG_DIR=off: no logs are written');
   return dir;
 }
@@ -281,9 +282,12 @@ function csv(conversation: Conversation): void {
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
-  const flags = new Set(args.filter((arg) => arg.startsWith('--')));
+  // `--data <dir>` names another data folder; its value is not a log to look for
+  const dataAt = args.indexOf('--data');
+  const rest = dataAt < 0 ? args : args.filter((_, index) => index !== dataAt && index !== dataAt + 1);
+  const flags = new Set(rest.filter((arg) => arg.startsWith('--')));
   for (const flag of flags) if (flag !== '--lines' && flag !== '--csv') usageError(`unknown flag ${flag}`);
-  const what = args.find((arg) => !arg.startsWith('--'));
+  const what = rest.find((arg) => !arg.startsWith('--'));
   const dir = logFolder();
   if (what === undefined) return list(dir);
   const conversation = await load(await resolveFile(dir, what));

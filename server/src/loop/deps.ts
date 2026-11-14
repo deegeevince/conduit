@@ -4,6 +4,7 @@ import { cp, readFile, readdir, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { agreementOf } from '@conduit/language';
 import type { ExploreBattery, TasteSheet } from '@conduit/language';
+import { resolveDataPaths } from '../env';
 import { RUNNER_COMMANDS, claudeAgents } from './agents';
 import { phrasesOf } from './guard';
 import { exploreMeasurer } from './measure';
@@ -56,8 +57,8 @@ export function sealedDirOf(repo: string): string | null {
  * The findings the critic of real turns queued (D5), as evidence for the loop's critic: what was asked, how it scored, what was wrong, what
  * would help. The session log's name and the stage snapshot are left out. Returns the line count.
  */
-export async function copyFindings(repo: string, folder: string, keep = 80): Promise<number> {
-  const text = await readFile(join(repo, 'loop', 'queue', 'findings.jsonl'), 'utf8').catch(() => '');
+export async function copyFindings(queueDir: string, folder: string, keep = 80): Promise<number> {
+  const text = await readFile(join(queueDir, 'findings.jsonl'), 'utf8').catch(() => '');
   const rows: string[] = [];
   for (const line of text.split('\n')) {
     if (line.trim() === '') continue;
@@ -108,7 +109,7 @@ export function realDeps(repo: string, log: (line: string) => void): Deps {
       await cp(join(tree, 'docs', 'language.md'), join(folder, 'language.md')).then(() => names.push('language.md')).catch(() => undefined);
       // only the tune run's own folder: the held-out runs live beside it and are never copied
       await cp(join(tree, 'explore', 'runs', baseline.run), join(folder, 'tune-run'), { recursive: true }).then(() => names.push('tune-run/')).catch(() => undefined);
-      if ((await copyFindings(repo, folder)) > 0) names.push('findings.jsonl');
+      if ((await copyFindings(resolveDataPaths(process.env).queue, folder)) > 0) names.push('findings.jsonl');
       return names;
     },
     log,

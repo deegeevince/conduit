@@ -12,8 +12,7 @@
 //        pnpm library datasets ["<message>"]  what the owner's datasets index holds, as the brief says it; with a message, what it finds and the last row (needs DATASETS=remote)
 //        pnpm library datasets raw       the keys and kinds of what `remote get datasets|dataset|rows` print, never a value
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join, resolve } from 'node:path';
 import { estimateTokens, techniquesText } from '@conduit/language';
 import type { ExploreBattery } from '@conduit/language';
 import { datasetsText, factsOf } from '../domain/datasets';
@@ -197,7 +196,7 @@ async function push(env: Env, rest: readonly string[]): Promise<void> {
     process.exit(1);
   }
   if (result.outcome === 'conflict') {
-    const dir = join(dirname(fileURLToPath(import.meta.url)), '../../../techniques/.cache/conflicts');
+    const dir = join(env.data.cache, 'conflicts');
     mkdirSync(dir, { recursive: true });
     const saved = join(dir, `${result.id}.md`);
     writeFileSync(saved, result.current);
@@ -249,7 +248,7 @@ async function datasets(env: Env): Promise<void> {
     out(`get rows ${name}: ${shapeOf(parseJson(await run(['get', 'rows', name, '--limit', '2']), 'rows'))}`);
     return;
   }
-  const library = createDatasets(env.datasets, createLogger('warn'));
+  const library = createDatasets(env.datasets, createLogger('warn'), env.data.datasetsCache);
   await library.refresh(AbortSignal.timeout(60_000)).catch((error: unknown) => out(`could not read Remote: ${error instanceof Error ? error.message : String(error)}\n(what is shown below is what the cache on disk holds)`));
   const facts = library.facts(Date.now());
   out(datasetsText(facts) ?? 'the index holds no dataset');
