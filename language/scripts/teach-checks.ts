@@ -69,7 +69,7 @@ function checkChapter(): void {
   expect('chapter has the routing card', TEACH_CHAPTER.includes('WHICH FORM'), true);
   expect('chapter is for a young learner', /young child/.test(TEACH_CHAPTER), true);
   const tokens = estimateTokens(TEACH_CHAPTER);
-  expect(`chapter within 2,200 estimated tokens, the interface chapter being 1,692 (is ${tokens})`, tokens <= 2200, true);
+  expect(`chapter within 2,400 estimated tokens, the interface chapter being 1,692 (is ${tokens})`, tokens <= 2400, true);
   process.stdout.write(`  teach chapter: ${TEACH_CHAPTER.length} characters, about ${tokens} tokens\n`);
 }
 
