@@ -328,3 +328,11 @@ body { font-size: calc(20px * var(--ts, 1)); }
 }
 
 @media (max-width: 899px) { .topbar { flex-wrap: wrap; } }
+
+@media (max-width: 899px) {
+  /* pinned on a phone the card is words only, full width: the picture is one tap away on the question's own screen */
+  .ctx.pinned, .ctx.pinned.docked { grid-template-columns: minmax(0, 1fr); }
+  .ctx.pinned .ctx-text, .ctx.pinned.docked:not(.expanded) .ctx-text, .ctx.pinned.long:not(.expanded) .ctx-text { grid-column: 1; font-size: calc(17px * var(--ts, 1)); }
+  .ctx.pinned .crop:not(.zoom), .ctx.pinned.docked .crop:not(.zoom) { display: none; }
+}
+@media (max-width: 899px) { .ctx.pinned .more, .ctx.pinned.long .more { display: none; } }
