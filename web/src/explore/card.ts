@@ -301,14 +301,14 @@ export function createCard(label: string, services: Services): Card {
       const exporter = services.exporter();
       void exporter.formats().then((formats) => {
         const format = formats.video[0];
-        if (format === undefined && !formats.frames) {
-          exportState.textContent = 'This browser can encode neither video nor stills.';
+        if (format === undefined) {
+          exportState.textContent = 'This browser cannot encode video.';
           return;
         }
         let job;
         try {
           const hd = filmOf(answer, 1280, 720);
-          job = exporter.start(hd, format === undefined ? { kind: 'frames', width: 1280, height: 720, fps: 15 } : { kind: 'video', format, width: 1280, height: 720, fps: 30 });
+          job = exporter.start(hd, { kind: 'video', format, width: 1280, height: 720, fps: 30 });
         } catch (error) {
           exportState.textContent = error instanceof Error ? error.message : String(error);
           return;

@@ -11,6 +11,7 @@ import { NO_SIGHT } from '@conduit/language';
 import type { DataTable, ControlValue, ControlValues, PassState, Sight } from '@conduit/language';
 import type { BackEvent, Capabilities, ClockState, ElementSpan, Issue, Line, Schedule, ScoreEntry, Services, StageBase, TurnEndReason, TurnInput, TurnReport } from '@conduit/language';
 import type { Recording } from '../contracts/film';
+import { noteArrivals as noteArrivalsInto } from './arrivals';
 import type { ElementFrame, Frame, Quality, ShapeFrame } from '../contracts/frame';
 import type { LookSpec } from '../contracts/look';
 import type { ControlView, LineView, Painter, PainterEvents, PainterOptions, PainterSnapshot } from '../contracts/painter';
@@ -58,8 +59,27 @@ const SKIP_FADE_SECONDS = 0.15;
 const PICTURE_SIDE = 768;
 /** How long a picture of the stage waits for each live app to draw itself first, ms. */
 const APP_PICTURE_MS = 1500;
-/** How many finished turns can still be recorded for export. */
-const KEPT_RECORDINGS = 8;
+/** How many finished turns can still be recorded for export: a conversation of this many turns can be saved whole. */
+const KEPT_RECORDINGS = 64;
+
+/** What the viewer did to open a turn, in a few words: the title of its card in a saved conversation. */
+function askedOf(input: TurnInput): string {
+  const words = (text: string): string => text.replace(/\s+/g, ' ').trim().slice(0, 200);
+  switch (input.kind) {
+    case 'prompt':
+      return words(input.text);
+    case 'tap':
+      return `Tapped "${words(input.text)}"`;
+    case 'act':
+      return `Used "${words(input.text)}"`;
+    case 'demo':
+      return `Played the demo ${words(input.script)}`;
+    case 'script':
+      return 'Played a pasted script';
+    case 'refine':
+      return 'Kept making it better';
+  }
+}
 
 interface Turn {
   readonly id: string;
@@ -246,13 +266,7 @@ export function createPainter(options: PainterOptions): Painter {
 
   /** playhead seconds at which each part of a structure (and each row) was heard: what its layout epochs begin at */
   const arrivals = new Map<string, number>();
-  const noteArrivals = (schedule: Schedule, at: number): void => {
-    for (const element of schedule.elements) {
-      if (element.kind !== 'structure' && element.kind !== 'node' && element.kind !== 'link') continue;
-      if (!element.carried && !arrivals.has(element.key)) arrivals.set(element.key, at);
-      if (element.figure?.kind === 'structure') element.figure.rows.forEach((_, i) => arrivals.has(`${element.key}#r${i}`) || arrivals.set(`${element.key}#r${i}`, at));
-    }
-  };
+  const noteArrivals = (schedule: Schedule, at: number): void => noteArrivalsInto(arrivals, schedule, at);
   // What the user's hand holds: one store, the moods the pointer and keyboard give, and how far each bound change has eased.
   const store = createControlStore();
   const runtime = createRuntime(store);
@@ -788,13 +802,13 @@ export function createPainter(options: PainterOptions): Painter {
     const lines = closing.score.score
       // A bare `cancel` already voided what it cancelled; played again at time zero it would void everything before it.
       .filter((entry) => !entry.void && entry.line.verb !== 'cancel' && (seen.has(entry.seq) || ((entry.line.verb === 'row' || entry.line.verb === 'frame') && spriteIds.has(entry.line.id))))
-      .map((entry) => ({ seq: entry.seq, line: entry.line }));
+      .map((entry) => ({ seq: entry.seq, line: entry.line, floor: entry.floor }));
     const pictures: Record<string, string> = {};
     for (const element of schedule.elements) {
       const painting = paintings.get(element.key);
       if (element.figure?.kind === 'picture' && painting !== undefined && painting.status === 'ready' && painting.url !== null) pictures[element.key] = painting.url;
     }
-    recordings.set(closing.id, { turn: closing.id, base: closing.base, lines, paintings: pictures, aspects: Object.fromEntries(photoAspects) });
+    recordings.set(closing.id, { turn: closing.id, base: closing.base, lines, paintings: pictures, aspects: Object.fromEntries(photoAspects), opened: closing.input.kind, asked: askedOf(closing.input) });
     lastRecorded = closing.id;
     for (const id of [...recordings.keys()]) {
       if (recordings.size <= KEPT_RECORDINGS) break;
@@ -1599,6 +1613,10 @@ export function createPainter(options: PainterOptions): Painter {
       if (lastFrame !== null) fading = { from: lastFrame, startedAt: performance.now() };
       clock.jump(settledEnd());
       observe(clock.read());
+    },
+
+    recordings() {
+      return [...recordings.values()].map((found) => (latePaintings.size === 0 ? found : { ...found, paintings: { ...Object.fromEntries(latePaintings), ...found.paintings } }));
     },
 
     recording(id) {

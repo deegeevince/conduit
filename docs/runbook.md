@@ -106,7 +106,7 @@ Query parameters on `/`:
 | `renderer=plain` | forces the DOM renderer. `renderer=three` forces WebGL. |
 | `motion=reduced` | behaves as if the OS asked for reduced motion. `motion=full` ignores the OS setting. |
 
-The bar under the stage has Show all (also the `.` key while the stage has focus: the stage is a focusable region, so the key never swallows a character typed elsewhere), Take away (video, frames, a picture as PNG or SVG, copy script, play a script) and Transcript.
+The bar under the stage has Show all (also the `.` key while the stage has focus: the stage is a focusable region, so the key never swallows a character typed elsewhere), Save (film of the latest answer, the whole conversation as one WebM, a picture as PNG or SVG, MIDI, copy script, play a script) and Transcript.
 
 ## (v2) The technique library, taste and the improvement loop
 
@@ -327,7 +327,7 @@ __stage.prompt('hello')
 __stage.tap('h2')
 __stage.interrupt()
 __stage.capture(768)   // a data URL of the stage now
-__stage.export({ kind: 'frames', width: 1280, height: 720, fps: 30 })
+__stage.export({ kind: 'video', format: 'webm', width: 1280, height: 720, fps: 30, scope: 'conversation' })   // scope: 'turn' | 'answer' (default) | 'conversation'
 __stage.controls()     // (v2) the controls on stage: id, kind, label, value, box, whether bound or sending
 __stage.control('height', 40)   // (v2) works one as the hand would; the same events, the same frame
 __stage.charts()       // (v2) the charts on stage

@@ -4,7 +4,7 @@
 import { APP_COMMANDS, HIDDEN_COMMANDS, BRAIN_EFFORTS, BRAIN_MODELS, BRAIN_MODES, LOOK_IDS, REFINE_LIMITS } from '@conduit/language';
 import type { AppCommandName, BrainChange, BrainChoice, BrainEffort, BrainMode, BrainModel, LookId } from '@conduit/language';
 
-export type ExportFormat = 'png' | 'svg' | 'film' | 'frames' | 'pdf' | 'script';
+export type ExportFormat = 'png' | 'svg' | 'film' | 'conversation' | 'pdf' | 'script';
 
 /** What a line starting with `/` asks for. */
 export type Command =
@@ -27,7 +27,7 @@ export type Command =
   | { readonly kind: 'capture' }
   | { readonly kind: 'refused'; readonly message: string };
 
-const EXPORT_FORMATS: readonly ExportFormat[] = ['png', 'svg', 'film', 'frames', 'pdf', 'script'];
+const EXPORT_FORMATS: readonly ExportFormat[] = ['png', 'svg', 'film', 'conversation', 'pdf', 'script'];
 
 /** A command's name as the list spells it, or null for a word that is not one. */
 function nameOf(word: string): AppCommandName | null {

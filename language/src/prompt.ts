@@ -977,12 +977,7 @@ export function buildTurnBrief(context: TurnContext, input: TurnInput, form: Bri
   // `tune` is taught when the words are about music, or when a tune is already on stage to be changed; never in the system prompt, which is full.
   if (context.capabilities.structures.includes('tune') && (!liveApp || stage.elements.some((element) => element.figure?.kind === 'structure' && element.figure.structure === 'tune')) && (asksForMusic(input) || stage.elements.some((element) => element.figure?.kind === 'structure' && element.figure.structure === 'tune'))) parts.push(TUNE_CHAPTER);
   // A mock-up is taught when the words are about one, or when one is on stage to be changed; never in the system prompt, which is full.
-  // A mock-up asked for in words is always taught as a mock-up, even with an app on stage; an app is for something that must really compute.
-  const mockupAsked = asksForInterface(input) && !(input.kind === 'prompt' && asksForLiveApp(input.text));
-  if (context.capabilities.structures.includes('screen') && (mockupAsked || ((!liveApp || stage.elements.some((element) => element.figure?.kind === 'structure' && element.figure.structure === 'screen')) && stage.elements.some((element) => element.figure?.kind === 'structure' && element.figure.structure === 'screen')))) {
-    parts.push(INTERFACE_CHAPTER);
-    if (mockupAsked) parts.push('THIS IS A MOCK-UP: answer with `screen` lines (clickable with `to=`, fields that take typing), not an `app`. An `app` is only for something that must really work: calculations, saved lists, games, answers checked.');
-  }
+  if (context.capabilities.structures.includes('screen') && (!liveApp || stage.elements.some((element) => element.figure?.kind === 'structure' && element.figure.structure === 'screen')) && (asksForInterface(input) || stage.elements.some((element) => element.figure?.kind === 'structure' && element.figure.structure === 'screen'))) parts.push(INTERFACE_CHAPTER);
   const standing = standingText(context.standing);
   if (standing !== null) parts.push(standing);
 

@@ -2,6 +2,11 @@
 
 Newest first. Each item is something the brain can show live when asked "showcase what's new": draw it, don't describe it. The server reads this file.
 
+## Saving films (live)
+- Save film now saves the latest answer as you saw it: the prompt it began with and the taps and controls that carried it on, not only the last tap.
+- Save whole conversation: one WebM of every turn in order, each after a card with what you asked, with the sound of any tunes. At most ten minutes; a longer conversation keeps its latest turns.
+- Save frames (the zip of pictures) is gone; Save picture and Save MIDI stay.
+
 ## Photos in (live)
 - Add photos to a message: the photo button (the camera on a phone), paste, or drag and drop; up to 4, shown before sending. Conduit reads them (a worksheet becomes a table of its questions) and can show them on the canvas. Stored privately, upright, with location and other hidden details stripped.
 

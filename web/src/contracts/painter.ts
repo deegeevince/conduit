@@ -301,6 +301,12 @@ export interface Painter {
   recording(turn?: string): Recording | null;
 
   /**
+   * Every turn that can still be performed again, oldest first (the last `KEPT_RECORDINGS`, 64), each with the playhead its lines arrived
+   * at and how it was opened: the conversation as this page has seen it. A turn that is still playing is not among them.
+   */
+  recordings(): readonly Recording[];
+
+  /**
    * Schedules one line of the open turn at the pen and returns any semantic
    * issues with it. The turn clock leaves zero when the first line arrives.
    */

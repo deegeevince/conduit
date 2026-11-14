@@ -7,7 +7,7 @@ import type { Renderer } from '../contracts/renderer';
 import type { Viewport } from '../contracts/space';
 import { chartBoxOf, clipQuad } from '../render/place';
 import type { LookId } from '@conduit/language';
-import { createZipSink } from './frames';
+import { renderSound } from './audio';
 import { createPdfSink } from './pdf';
 import { frameToSvg } from './svg';
 import { createVideoSink, videoFormats } from './video';
@@ -24,9 +24,13 @@ export interface ExporterDeps {
    * room they had is the look's ground.
    */
   readonly chartStill?: (frame: Frame, key: string) => HTMLCanvasElement | null;
+  /** The host's picture of a live app (`Frame.apps`, by the app's key), laid where the app rests in a picture or a film. Absent: an app is its placeholder. */
+  readonly appStill?: (key: string) => CanvasImageSource | null;
+  /** Asked once before a picture or a film is made: each running app draws itself as it stands, so the stills are fresh. */
+  readonly appsFresh?: () => Promise<void>;
 }
 
-type Outcome = { readonly blob: Blob; readonly fileName: string };
+type Outcome = { readonly blob: Blob; readonly fileName: string; readonly hasSound?: boolean };
 
 const MAX_PIXELS = 4096 * 2304;
 /** A deck of this many slides is a book; a PDF held in memory stays well under a browser's limits. */
@@ -36,11 +40,6 @@ const PDF_MAX_PAGES = 200;
 const PRELOAD_MS = 10000;
 /** The longest a frame may wait for its text to be drawable. */
 const TEXT_MS = 2000;
-/** A zip names its entries with 16 bits and its size with 32. */
-const ZIP_MAX_ENTRIES = 0xfffe;
-const ZIP_MAX_BYTES = 0xffffffff;
-/** The first frame stands for the rest; PNG sizes move a little, so the projection keeps a margin. */
-const ZIP_MARGIN = 1.25;
 
 const abortError = (): DOMException => new DOMException('The export was cancelled.', 'AbortError');
 
@@ -71,10 +70,6 @@ function range(film: Film, from: number | undefined, to: number | undefined): { 
   return { from: start, to: end };
 }
 
-function pad(index: number): string {
-  return String(index).padStart(5, '0');
-}
-
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -82,9 +77,11 @@ function sleep(ms: number): Promise<void> {
 function survey(film: Film, from: number, to: number): { urls: string[]; looks: LookId[] } {
   const urls = new Set<string>();
   const looks = new Set<LookId>([film.frameAt(from).look]);
-  const samples = 24;
-  for (let i = 0; i <= samples; i += 1) {
-    const frame = film.frameAt(from + ((to - from) * i) / samples);
+  // A film of several turns is looked at at least once every two seconds, and at each of its landmarks: a look worn for one short turn must be found.
+  const samples = Math.min(600, Math.max(24, Math.ceil((to - from) / 2)));
+  const moments = [...Array.from({ length: samples + 1 }, (_, i) => from + ((to - from) * i) / samples), ...(film.landmarks ?? []).filter((at) => at >= from && at <= to)];
+  for (const at of moments) {
+    const frame = film.frameAt(at);
     looks.add(frame.look);
     if (frame.lookChange !== null) {
       looks.add(frame.lookChange.from);
@@ -99,7 +96,7 @@ function survey(film: Film, from: number, to: number): { urls: string[]; looks: 
 
 export function createExporter(deps: ExporterDeps): Exporter {
   let running: { readonly controller: AbortController; readonly settled: Promise<unknown> } | null = null;
-  let probe: Promise<{ video: readonly ('webm' | 'mp4')[]; frames: boolean; svg: boolean; pdf: boolean }> | null = null;
+  let probe: Promise<{ video: readonly ('webm' | 'mp4')[]; svg: boolean; pdf: boolean }> | null = null;
   let disposed = false;
 
   const findCanvas = (host: HTMLElement): CanvasImageSource => {
@@ -158,6 +155,8 @@ export function createExporter(deps: ExporterDeps): Exporter {
         for (const figure of frame.figures) if (figure.kind === 'picture' && figure.src !== null && !urls.includes(figure.src)) urls.push(figure.src);
       }
       await wait(renderer.mount(host, viewport, looks[0] ?? film.frameAt(span.from).look, { looks }));
+      // Each running app draws itself as it stands, so the stills laid in the picture or the film are fresh.
+      if (deps.appsFresh !== undefined) await wait(deps.appsFresh().catch(() => undefined));
       guard();
       // Paintings load together, each with a limit: one stalled fetch leaves its picture on the waiting frame and nothing else.
       await wait(Promise.all(urls.map((url) => Promise.race([renderer.preload(url).catch(() => undefined), sleep(PRELOAD_MS)]))));
@@ -168,7 +167,7 @@ export function createExporter(deps: ExporterDeps): Exporter {
       const picture = async (frame: Frame): Promise<Blob> => {
         for (let attempt = 0; attempt < 3; attempt += 1) {
           let incomplete = false;
-          const blob = await wait(renderer.rasterise(frame, { maxSide, mime: 'image/png', onIncomplete: () => (incomplete = true), ...(deps.chartStill === undefined ? {} : { chartStill: (key: string) => deps.chartStill?.(frame, key) ?? null }) }));
+          const blob = await wait(renderer.rasterise(frame, { maxSide, mime: 'image/png', onIncomplete: () => (incomplete = true), ...(deps.chartStill === undefined ? {} : { chartStill: (key: string) => deps.chartStill?.(frame, key) ?? null }), ...(deps.appStill === undefined ? {} : { appStill: deps.appStill }) }));
           guard();
           if (blob === null) throw new Error('This renderer could not capture the picture.');
           if (!incomplete) return blob;
@@ -185,7 +184,7 @@ export function createExporter(deps: ExporterDeps): Exporter {
           let jpeg: Blob | null = null;
           for (let attempt = 0; attempt < 3 && jpeg === null; attempt += 1) {
             let incomplete = false;
-            const taken = await wait(renderer.rasterise(frame, { maxSide, mime: 'image/jpeg', quality: 0.92, onIncomplete: () => (incomplete = true), ...(deps.chartStill === undefined ? {} : { chartStill: (key: string) => deps.chartStill?.(frame, key) ?? null }) }));
+            const taken = await wait(renderer.rasterise(frame, { maxSide, mime: 'image/jpeg', quality: 0.92, onIncomplete: () => (incomplete = true), ...(deps.chartStill === undefined ? {} : { chartStill: (key: string) => deps.chartStill?.(frame, key) ?? null }), ...(deps.appStill === undefined ? {} : { appStill: deps.appStill }) }));
             guard();
             if (taken === null) throw new Error('This renderer could not capture the picture.');
             if (!incomplete) jpeg = taken;
@@ -210,37 +209,24 @@ export function createExporter(deps: ExporterDeps): Exporter {
       const tick = (index: number): void => report({ done: index / frames, frame: index, frames, ...(incompleteFrames > 0 ? { incompleteFrames } : {}) });
       let lastYield = performance.now();
 
-      if (request.kind === 'frames') {
-        // A zip is built in memory and has hard limits: say so now, and again once the first frame shows what a frame weighs, not at frame 9,000.
-        if (frames > ZIP_MAX_ENTRIES) throw new Error(`A zip holds at most ${ZIP_MAX_ENTRIES} pictures and this is ${frames}. Export a shorter range, or a lower frame rate.`);
-        const zip = createZipSink();
-        for (let index = 0; index < frames; index += 1) {
-          guard();
-          const blob = await picture(film.frameAt(timeOf(index)));
-          if (index === 0 && blob.size * frames * ZIP_MARGIN > ZIP_MAX_BYTES) {
-            throw new Error(`These pictures are about ${Math.round(blob.size / 1024)} KB each and ${frames} of them will not fit in one zip (4 GB). Export a shorter range, a smaller size or a lower frame rate.`);
-          }
-          zip.add(`frame-${pad(index + 1)}.png`, new Uint8Array(await wait(blob.arrayBuffer())));
-          tick(index + 1);
-          if (performance.now() - lastYield > 12) {
-            await nextTurn();
-            lastYield = performance.now();
-          }
-        }
-        guard();
-        return { blob: zip.finish(), fileName: `conduit-frames-${width}x${height}.zip` };
-      }
-
+      // The music is rendered first, faster than it plays, and then given to the encoder a little ahead of the pictures.
+      const shifted = (film.tunes ?? []).map((tune) => ({ ...tune, at: tune.at - span.from, until: tune.until - span.from }));
+      const sound = await wait(renderSound(shifted, span.to - span.from).catch(() => null));
+      guard();
       renderer.reset();
       const canvas = findCanvas(host);
-      sink = await wait(createVideoSink(request.format, width, height, fps));
+      sink = await wait(createVideoSink(request.format, width, height, fps, sound));
       guard();
       const draw = (frame: Frame): Frame => ({ ...frame, viewport });
       // The charts lie over the canvas, not in it: a frame that has any is put together on a canvas of its own, in the same task as the encode.
       let overlay: HTMLCanvasElement | null = null;
       const withCharts = (frame: Frame, canvas: CanvasImageSource, w: number, h: number): CanvasImageSource => {
-        const charts = frame.charts;
-        if (charts === undefined || charts.length === 0 || deps.chartStill === undefined) return canvas;
+        const charts = frame.charts ?? [];
+        const apps = frame.apps ?? [];
+        const drawsCharts = charts.length > 0 && deps.chartStill !== undefined;
+        const appStill = deps.appStill;
+        const drawsApps = apps.length > 0 && appStill !== undefined;
+        if (!drawsCharts && !drawsApps) return canvas;
         overlay ??= document.createElement('canvas');
         if (overlay.width !== w || overlay.height !== h) {
           overlay.width = w;
@@ -251,8 +237,25 @@ export function createExporter(deps: ExporterDeps): Exporter {
         context.globalAlpha = 1;
         context.drawImage(canvas, 0, 0, w, h);
         const scale = Math.min(w / frame.viewport.width, h / frame.viewport.height);
-        for (const chart of [...charts].sort((a, b) => a.z - b.z)) {
-          const still = chart.opacity <= 0.002 ? null : deps.chartStill(frame, chart.key);
+        // A live app lies over the stage like a chart: the host's last picture of it goes where its room is, at the room's width and never stretched (as `chartsOver` lays it in a still).
+        if (appStill !== undefined) {
+          for (const app of [...apps].sort((a, b) => a.z - b.z)) {
+            if (app.opacity <= 0.002) continue;
+            const picture = appStill(app.key);
+            if (picture === null) continue;
+            const room = chartBoxOf(app, frame);
+            const natural = picture as { width?: number; height?: number };
+            const pw = typeof natural.width === 'number' && natural.width > 0 ? natural.width : room.width;
+            const ph = typeof natural.height === 'number' && natural.height > 0 ? natural.height : room.height;
+            const fitScale = room.width / pw;
+            const shownH = Math.min(ph, room.height / fitScale);
+            context.globalAlpha = Math.max(0, Math.min(1, app.opacity));
+            context.drawImage(picture, 0, 0, pw, shownH, room.x * scale, room.y * scale, room.width * scale, shownH * fitScale * scale);
+          }
+          context.globalAlpha = 1;
+        }
+        for (const chart of drawsCharts ? [...charts].sort((a, b) => a.z - b.z) : []) {
+          const still = chart.opacity <= 0.002 ? null : (deps.chartStill?.(frame, chart.key) ?? null);
           if (still === null) continue;
           const box = chartBoxOf(chart, frame);
           context.save();
@@ -288,9 +291,10 @@ export function createExporter(deps: ExporterDeps): Exporter {
         }
       }
       guard();
+      const hasSound = sink.hasSound;
       const blob = await wait(sink.finish());
       sink = null;
-      return { blob, fileName: `conduit-film-${width}x${height}.${request.format}` };
+      return { blob, hasSound, fileName: `conduit-${request.scope === 'conversation' ? 'conversation' : 'film'}-${width}x${height}.${request.format}` };
     } catch (error) {
       if (signal.aborted && !(error instanceof DOMException && error.name === 'AbortError')) throw abortError();
       throw error;
@@ -307,7 +311,7 @@ export function createExporter(deps: ExporterDeps): Exporter {
         const probeRenderer = deps.createRenderer();
         const capture = probeRenderer.capabilities.capture;
         probeRenderer.dispose();
-        return { video: capture ? await videoFormats() : [], frames: capture, svg: true, pdf: capture };
+        return { video: capture ? await videoFormats() : [], svg: true, pdf: capture };
       })();
       return probe;
     },

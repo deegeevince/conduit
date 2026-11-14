@@ -46,9 +46,9 @@ export function runExport(app: StageApp, request: ExportRequest): ExportJob | nu
   try {
     const job = app.export(request);
     job.done.then(
-      ({ blob, fileName }) => {
+      ({ blob, fileName, hasSound, note }) => {
         saveBlob(blob, fileName);
-        app.announce(`Saved ${fileName}`);
+        app.announce(`Saved ${fileName}${hasSound === true ? ', with its music' : ''}${note === undefined ? '' : `. ${note}`}`);
       },
       () => undefined,
     );

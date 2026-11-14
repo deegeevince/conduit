@@ -206,7 +206,7 @@ async function perform(app: StageApp, command: Command, onChoice: (choice: Brain
         app.announce('This browser cannot make a WebM film, which /capture needs.');
         return;
       }
-      const job = app.export({ kind: 'video', format: 'webm', width: 390, height: 844, fps: 30 });
+      const job = app.export({ kind: 'video', format: 'webm', width: 390, height: 844, fps: 30, scope: 'turn' });
       app.announce('Filming the last answer for the steward…');
       const film = await job.done;
       await app.link.saveCapture(turn, film.blob);
@@ -216,7 +216,7 @@ async function perform(app: StageApp, command: Command, onChoice: (choice: Brain
   }
 }
 
-function exportAs(app: StageApp, format: 'png' | 'svg' | 'film' | 'frames' | 'pdf' | 'script'): void {
+function exportAs(app: StageApp, format: 'png' | 'svg' | 'film' | 'conversation' | 'pdf' | 'script'): void {
   switch (format) {
     case 'png':
     case 'svg':
@@ -227,10 +227,10 @@ function exportAs(app: StageApp, format: 'png' | 'svg' | 'film' | 'frames' | 'pd
       else saveScript(app);
       return;
     case 'film':
-      runExport(app, { kind: 'video', format: 'webm', ...defaultSize(app), fps: 30 });
+      runExport(app, { kind: 'video', format: 'webm', ...defaultSize(app), fps: 30, scope: 'answer' });
       return;
-    case 'frames':
-      runExport(app, { kind: 'frames', ...defaultSize(app), fps: 30 });
+    case 'conversation':
+      runExport(app, { kind: 'video', format: 'webm', ...defaultSize(app), fps: 30, scope: 'conversation' });
       return;
     case 'pdf':
       app.announce('A PDF is made from slides, and slides come with decks. Save a film or the pictures for now.');
