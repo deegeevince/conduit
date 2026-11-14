@@ -5,6 +5,7 @@
 import type { ChartKind } from '@conduit/language';
 import type { ChartEngine, ChartHandle, ChartHost, ChartProbe } from '../contracts/chart';
 import type { ChartFrame } from '../contracts/frame';
+import { createOffscreenStills } from '../app/chart-host';
 
 export function createHarnessChartHost(engine: ChartEngine, parent: HTMLElement): ChartHost {
   const layer = document.createElement('div');
@@ -12,6 +13,7 @@ export function createHarnessChartHost(engine: ChartEngine, parent: HTMLElement)
   parent.append(layer);
   const mounted = new Map<string, ChartHandle>();
   const kinds: readonly ChartKind[] = engine.kinds;
+  const spare = createOffscreenStills(engine, () => true);
   return {
     kinds,
     sync(charts: readonly ChartFrame[], dpr: number): void {
@@ -42,6 +44,7 @@ export function createHarnessChartHost(engine: ChartEngine, parent: HTMLElement)
       }
     },
     still: (key: string): HTMLCanvasElement | null => mounted.get(key)?.still() ?? null,
+    stillOf: (chart) => spare.stillOf(chart),
     probe: (key: string): ChartProbe | null => mounted.get(key)?.probe() ?? null,
     act: (key: string, action) => {
       const handle = mounted.get(key);
@@ -51,6 +54,7 @@ export function createHarnessChartHost(engine: ChartEngine, parent: HTMLElement)
     dispose(): void {
       for (const handle of mounted.values()) handle.dispose();
       mounted.clear();
+      spare.dispose();
       layer.remove();
     },
   };

@@ -32,10 +32,18 @@ function boot(env: Env): void {
   const sessionLog = env.logDir === null ? NO_SESSION_LOG : createJsonlSessionLog({ log: log.child({ part: 'sessionlog' }), dir: env.logDir, now });
   // The seed is in memory from here on. Remote is read in the background, now and every `refreshMs`; no turn waits for it.
   const library = createLibrary(env.library, log.child({ part: 'library' }), now);
+  // Said once per outage: the warning on the first failed refresh, silence while it persists, a line when it recovers.
+  let libraryDown = false;
   const refreshLibrary = (): void => {
     void library.refresh(new AbortController().signal).then((status) => {
-      if (status.failure !== null) log.warn('library.unreachable', { failure: status.failure, serving: status.techniques });
-      else log.info('library.refreshed', { techniques: status.techniques, bySource: status.bySource });
+      if (status.failure !== null) {
+        if (!libraryDown) log.warn('library.unreachable', { failure: status.failure, serving: status.techniques });
+        libraryDown = true;
+      } else {
+        if (libraryDown) log.info('library.recovered', { techniques: status.techniques });
+        libraryDown = false;
+        log.info('library.refreshed', { techniques: status.techniques, bySource: status.bySource });
+      }
     });
   };
   if (env.library.kind === 'remote') {

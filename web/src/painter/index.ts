@@ -464,7 +464,16 @@ export function createPainter(options: PainterOptions): Painter {
   };
 
   /** a chart draws itself in a surface of its own: a picture of the stage takes the engine's still of it */
-  const stills = (): { chartStill?: (key: string) => HTMLCanvasElement | null } => (host === null ? {} : { chartStill: (key) => host.still(key) });
+  const stills = (frame?: Frame): { chartStill?: (key: string) => HTMLCanvasElement | null } =>
+    host === null
+      ? {}
+      : {
+          chartStill: (key) => {
+            // a frame computed ahead of the playhead (a draft, a snapshot) has charts the stage has not mounted yet: draw them off screen
+            const chart = frame?.charts?.find((candidate) => candidate.key === key);
+            return (chart === undefined ? null : host.stillOf(chart)) ?? host.still(key);
+          },
+        };
 
   const wantsSnapshot = (): boolean => renderer.capabilities.capture && services.sight === 'snapshot';
 
@@ -513,7 +522,7 @@ export function createPainter(options: PainterOptions): Painter {
     }
     const frame: Frame = { ...at.frameAt({ time: when, ambient: 3, wallTime: pinnedWallTime(3), clock: 'paused' }), camera: REST_POSE };
     void renderer
-      .rasterise(frame, { maxSide: PICTURE_SIDE, mime: 'image/jpeg', quality: 0.8, ...stills() })
+      .rasterise(frame, { maxSide: PICTURE_SIDE, mime: 'image/jpeg', quality: 0.8, ...stills(frame) })
       .then((blob) => {
         if (blob !== null && !disposed) emit('upload', { kind: 'draft', turn: open.id, pass, blob });
         report(blob !== null);
@@ -527,7 +536,7 @@ export function createPainter(options: PainterOptions): Painter {
     const rest = buildTimeline(restSchedule(stage), stage, timelineContext());
     const frame: Frame = { ...rest.frameAt({ time: 0, ambient: 3, wallTime: pinnedWallTime(3), clock: 'paused' }), camera: REST_POSE };
     void renderer
-      .rasterise(frame, { maxSide: PICTURE_SIDE, mime: 'image/jpeg', quality: 0.8, ...stills() })
+      .rasterise(frame, { maxSide: PICTURE_SIDE, mime: 'image/jpeg', quality: 0.8, ...stills(frame) })
       .then((blob) => {
         if (blob !== null && !disposed) emit('upload', { kind: 'snapshot', turn: turnId, blob });
       })

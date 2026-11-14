@@ -875,7 +875,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   host.addEventListener('pointerleave', onPointerLeave);
 
   function getExporter(): Exporter {
-    exporter ??= createExporter({ createRenderer: () => newRenderer(params) });
+    exporter ??= createExporter({ createRenderer: () => newRenderer(params), chartStill: (frame, key) => { const chart = frame.charts?.find((candidate) => candidate.key === key); return chart === undefined ? null : (chartHost?.stillOf(chart) ?? null); } });
     return exporter;
   }
 

@@ -152,6 +152,11 @@ export interface ChartHost {
   /** Makes, moves, updates and removes surfaces so that exactly these charts are showing. Called once a frame; cheap when nothing changed. */
   sync(charts: readonly import('./frame').ChartFrame[], dpr: number): void;
   still(key: string): HTMLCanvasElement | null;
+  /**
+   * A picture of `chart` exactly as that frame shows it, drawn off screen: for a draft, a snapshot or an export of a
+   * stage whose charts are not (or no longer) on screen. Null while the engine's fonts are still loading.
+   */
+  stillOf(chart: import('./frame').ChartFrame): HTMLCanvasElement | null;
   probe(key: string): ChartProbe | null;
   act(key: string, action: { readonly hover: number } | { readonly zoom: number } | { readonly pan: number } | { readonly reset: true }): Promise<ChartProbe>;
   /** true while a pointer is over a chart or working it: the stage then leaves the pointer to the chart */

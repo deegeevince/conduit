@@ -21,6 +21,7 @@ import { canUseThree, createThreeRenderer } from '../render/three';
 import { createChartEngine } from '../render/chart';
 import type { ChartHost } from '../contracts/chart';
 import { createHarnessChartHost } from './chart-host';
+import { loadChartFonts } from '../app/chart-host';
 import { capabilitiesOf, drive } from './drive';
 import type { DriveReply, DriveRequest } from './drive';
 import { geometryOf } from './geometry';
@@ -97,6 +98,7 @@ export function installHarness(): void {
       mounted = renderer.mount(host, viewport, look);
     }
     await mounted;
+    await loadChartFonts();
     return renderer;
   };
 

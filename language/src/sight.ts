@@ -46,6 +46,8 @@ export interface PlacedBox {
   /** the id of the group it is a part of, or null */
   readonly parent: string | null;
   readonly box: CanvasBox;
+  /** a connector's drawn route, in the same world units, when it is routed by a structure engine (its box is the route's bounds) */
+  readonly route?: readonly { readonly x: number; readonly y: number }[];
 }
 
 /** How one turn landed. Part of the painter's report. */
