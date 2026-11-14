@@ -9,6 +9,7 @@
 
 import { LessonBook, accepts, openAskOf } from './lesson';
 import type { Crop, LessonAsk, LessonLine, LessonStep, OpenAsk } from './lesson';
+import { FIRST_LOAD_DEMO } from './demos';
 import { LineNormalizer, LineReader } from './normalize';
 import { parseLine } from './parse';
 import { EMPTY_STAGE } from './schedule';
@@ -665,6 +666,8 @@ interface Turn {
   settled: boolean;
   /** the parts it has written to */
   readonly touched: Set<string>;
+  /** the page's own welcome (`FIRST_LOAD_DEMO`): painted for whoever opens the page, never a part of what the person is making */
+  readonly welcome: boolean;
 }
 
 interface SceneAcc {
@@ -840,7 +843,7 @@ export class DocumentFolder {
     const input = record['input'];
     const kind = isRecordObject(input) ? input['kind'] : undefined;
     if (this.current !== null) this.settle(this.current);
-    const turn: Turn = { id, opened: isOpening(kind) ? kind : 'none', base: null, groups: [], preamble: [], ended: null, reported: null, settled: false, touched: new Set() };
+    const turn: Turn = { id, opened: isOpening(kind) ? kind : 'none', base: null, groups: [], preamble: [], ended: null, reported: null, settled: false, touched: new Set(), welcome: kind === 'demo' && isRecordObject(input) && input['script'] === FIRST_LOAD_DEMO };
     this.turns.set(id, turn);
     this.turnOrder.push(id);
     this.current = turn;
@@ -866,6 +869,7 @@ export class DocumentFolder {
     const turn = this.turnOf(record);
     const text = record['text'];
     const seq = record['seq'];
+    if (turn?.welcome === true) return false;
     if (turn === null || typeof text !== 'string' || typeof seq !== 'number') return false;
     const floor = typeof record['floor'] === 'number' ? record['floor'] : 0;
     const parsed = parseLine(text);

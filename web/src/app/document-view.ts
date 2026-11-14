@@ -61,8 +61,8 @@ export interface DocumentView {
 
 /** A document is worth showing when it holds something to step through, or has more than a name. */
 function worthShowing(doc: Document): boolean {
-  const nodes = Object.values(doc.nodes);
-  return nodes.some((n) => n.body !== null && n.body.kind === 'lesson') || nodes.length > 1;
+  // a conversation of pictures alone (every scene under the root part `root`) is the painted stage's; the view is for one that has parts or something to step through
+  return doc.root !== 'root' || Object.values(doc.nodes).some((n) => n.body !== null && n.body.kind === 'lesson');
 }
 
 export function createDocumentView(options: DocumentViewOptions): DocumentView {

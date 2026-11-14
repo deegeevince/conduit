@@ -25,7 +25,8 @@ export const SURFACE_CSP = "default-src 'none'; script-src 'unsafe-inline'; styl
 export const PAGE_FRAME_POLICY = "frame-src about: blob:";
 
 /** The most of a document the host will run: the language already cuts at this; this is the host's own check of what it was handed. */
-export const SURFACE_SOURCE_MAX = 64_000;
+/** The most of a surface's document the host will run. The brain's own apps are held to the language's (smaller) limit before they get here; this is the guard for the lesson player, which is our own packed program (the exact maths checker and the matcher are in it). */
+export const SURFACE_SOURCE_MAX = 160_000;
 /** The most saved state a surface may keep, and the most one event may carry, characters. */
 export const SURFACE_LIMITS = { state: 64_000, event: 2_000 } as const;
 
