@@ -264,10 +264,10 @@ export function downUi(blockKey: string, x: number, y: number, pointer: number):
   if (action.kind === 'scroll') {
     // a row is taken where it is, even if it was still coasting
     const coasting = run.eases.get(action.control);
-    const from = coasting === undefined ? (run.state.scroll?.[action.control] ?? 0) : easedValue(coasting, performance.now());
+    const from = coasting === undefined ? (run.state.scroll?.[action.control] ?? 0) : easedValue(coasting, wallNow()());
     run.eases.delete(action.control);
     run.state = { ...run.state, scroll: { ...run.state.scroll, [action.control]: from }, focus: null };
-    run.grab = { pointer, kind: 'scroll', index: at.index, hit, x0: at.x, from, moved: false, lastX: at.x, lastAt: performance.now(), speed: 0 };
+    run.grab = { pointer, kind: 'scroll', index: at.index, hit, x0: at.x, from, moved: false, lastX: at.x, lastAt: wallNow()(), speed: 0 };
     return { taken: true, changed: false };
   }
   if (action.kind === 'press') {
@@ -306,7 +306,7 @@ export function moveUi(blockKey: string, x: number, y: number, pointer: number):
   }
   if (action.kind === 'scroll') {
     // the row goes with the finger, held to its own length; how fast the finger is going is kept, for when it lets go
-    const now = performance.now();
+    const now = wallNow()();
     const dt = Math.max(1, now - grab.lastAt);
     grab.speed = grab.speed * 0.6 + (-(sx - grab.lastX) / dt) * 0.4;
     grab.lastX = sx;
@@ -351,7 +351,7 @@ export function upUi(blockKey: string, pointer: number, cancel: boolean, x: numb
   if (action.kind === 'scroll') {
     // let go while moving, the row coasts on a little way and stops; let go still, it stays
     const now = run.state.scroll?.[action.control] ?? grab.from;
-    const idle = performance.now() - grab.lastAt > 90;
+    const idle = wallNow()() - grab.lastAt > 90;
     const coast = cancel || idle ? 0 : grab.speed * 260;
     const target = Math.max(0, Math.min(action.max, now + coast));
     if (Math.abs(target - now) > 1) run.eases.set(action.control, { kind: 'scroll', from: now, to: target, ms: 420, at: null });
