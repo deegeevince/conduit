@@ -29,3 +29,7 @@ export * from './explore';
 export * from './taste';
 export * from './conversation';
 export * from './trace';
+export * from './anchor';
+export * from './source';
+export * from './action';
+export * from './annotate';
