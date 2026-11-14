@@ -63,6 +63,11 @@ function flowLayout(input: StructureInput, mayFold: boolean): StructureLayout {
     for (const wrap of [1.3, 1.5, 1.7, 1.8, 1.9, 2, 2.1, 2.2, 2.6]) more.push(() => fit(input, input.look.stroke, (env) => buildFlow(env, preferred), undefined, wrap));
     chosen = best(more);
   }
+  // A tall narrow room and a long chain: two columns, read down the first and on down the second (a snake), before anything is shrunk to a crawl
+  if (mayFold && input.nodes.length >= 6 && input.room.height >= input.room.width * 1.15 && (isCrowded(chosen) || (chosen.overflows ?? 0) > 0 || chosen.shrink < 0.85)) {
+    const snake = best([1, 0.8, 1.25].map((wrap) => () => fit(input, input.look.stroke, (env) => buildSnake(env), undefined, wrap)));
+    if ((snake.overflows ?? 0) === 0 && ((chosen.overflows ?? 0) > 0 || (isCrowded(chosen) ? snake.shrink >= chosen.shrink + 0.1 : !isCrowded(snake) && snake.shrink >= chosen.shrink + 0.1))) return snake;
+  }
   if (!mayFold || !isCrowded(chosen)) return chosen;
   // A long chain that fits no way is set like text: in rows, each row left to right, the end of one joined to the start of the next.
   const folded = foldChain(input);
@@ -225,6 +230,270 @@ function foldChain(input: StructureInput): StructureLayout | null {
     }
   }
   return best === null || best.score <= 0 ? null : best.layout;
+}
+
+/**
+ * A snake: the nodes in the order written, the first half stacked down the left column and the rest read up the right, so the eye goes
+ * down one and on up the other and the turn from one to the next is a short step across at the foot. Links between neighbours in a column
+ * are straight. Every other link leaves the side of its node that faces its lane, runs along a lane of its own and enters the side that faces
+ * its target: between the columns for a link from one column to the other, outside the column for a link that skips within one. The
+ * lanes are ordered so that none crosses another where that can be, and the place where the columns turn is the one that crosses least.
+ */
+type Zone = 'gutter' | 'left' | 'right';
+
+/** the order of lanes along a strip (left to right) that crosses least: for each link, the y it leaves and enters, and the x of the side its node stands on (0 left of the lanes, 1 right of them) */
+function laneOrder(ya: readonly number[], yb: readonly number[], sa: readonly (0 | 1)[], sb: readonly (0 | 1)[]): { perm: number[]; cross: number } {
+  const cnt = ya.length;
+  const cross = (perm: readonly number[]): number => {
+    let c = 0;
+    for (let p = 0; p < cnt; p += 1)
+      for (let q = 0; q < cnt; q += 1) {
+        if (p === q) continue;
+        const xp = 1 + (perm[p] as number);
+        const xq = 1 + (perm[q] as number);
+        const y0 = Math.min(ya[q] as number, yb[q] as number);
+        const y1 = Math.max(ya[q] as number, yb[q] as number);
+        for (const [hy, hs] of [[ya[p] as number, sa[p] as 0 | 1], [yb[p] as number, sb[p] as 0 | 1]] as const) {
+          const hx = hs === 0 ? 0 : cnt + 1;
+          if (hy > y0 + 0.5 && hy < y1 - 0.5 && xq > Math.min(hx, xp) && xq < Math.max(hx, xp)) c += 1;
+        }
+      }
+    return c;
+  };
+  let best: number[] = ya.map((_, i) => i);
+  let bestC = cross(best);
+  if (cnt > 1 && cnt <= 6) {
+    const walk = (rest: number[], took: number[]): void => {
+      if (rest.length === 0) {
+        const c = cross(took);
+        if (c < bestC) {
+          bestC = c;
+          best = took;
+        }
+        return;
+      }
+      rest.forEach((v, i) => walk([...rest.slice(0, i), ...rest.slice(i + 1)], [...took, v]));
+    };
+    walk(best, []);
+  }
+  return { perm: best, cross: bestC };
+}
+
+function buildSnake(env: Env): Draft {
+  const input = env.input;
+  const body = env.body;
+  const links = linkSpecs(input);
+  const order = input.nodes.map((el) => el.key);
+  const n = order.length;
+  const index = new Map(order.map((k, i) => [k, i]));
+  const head = env.headLength;
+  const laneStep = Math.max(env.stroke * 2.5, 0.55 * body * env.tight);
+  const margin = (head * 1.6 + 0.2 * body) * Math.min(1, env.tight + 0.4);
+  const gapY = env.up(Math.max(1.5 * body * env.tight, head * 2.4), 'y');
+  const adjacent = (l: LinkSpec, split: number): boolean => {
+    const a = index.get(l.from) as number;
+    const b = index.get(l.to) as number;
+    return b === a + 1 && (a < split) === (b < split);
+  };
+  const zoneOf = (l: LinkSpec, split: number): Zone => {
+    const a = index.get(l.from) as number;
+    const b = index.get(l.to) as number;
+    if ((a < split) !== (b < split)) return 'gutter';
+    return a < split ? 'left' : 'right';
+  };
+  const stripOf = (laned: number): number => (laned === 0 ? 0 : 2 * margin + (laned - 1) * laneStep);
+  const half = Math.ceil(n / 2);
+  const lanesAt = (split: number, zone: Zone): number => links.filter((l) => !adjacent(l, split) && zoneOf(l, split) === zone).length;
+  const textW = Math.max(body * 4, (input.room.width - stripOf(lanesAt(half, 'gutter')) - Math.max(2 * margin, 0) - stripOf(lanesAt(half, 'left')) - stripOf(lanesAt(half, 'right'))) / 2 - body * 1.2);
+  const boxes = input.nodes.map((el) => sizeNode(env, el, Math.min(textW, Math.max(env.wrapWidth, textW * 0.9))));
+  const colHeight = (a: number, b: number): number => {
+    let h = 0;
+    for (let i = a; i < b; i += 1) h += (boxes[i] as NodeBox).height + (i > a ? gapY : 0);
+    return h;
+  };
+  // the second column is read upward: both columns stand on one baseline
+  const centreY = (i: number, k: number): number => {
+    const base = Math.max(colHeight(0, k), colHeight(k, n));
+    const h = (boxes[i] as NodeBox).height;
+    return i < k ? base - colHeight(0, k) + colHeight(0, i) + (i > 0 ? gapY : 0) + h / 2 : base - colHeight(k, i) - (i > k ? gapY : 0) - h / 2;
+  };
+  const crossingsAt = (k: number): number => {
+    let total = 0;
+    for (const zone of ['gutter', 'left', 'right'] as const) {
+      const laned = links.filter((l) => !adjacent(l, k) && zoneOf(l, k) === zone);
+      const sideOf = (i: number): 0 | 1 => (zone === 'gutter' ? ((i < k ? 0 : 1) as 0 | 1) : zone === 'left' ? 1 : 0);
+      total += laneOrder(laned.map((l) => centreY(index.get(l.from) as number, k)), laned.map((l) => centreY(index.get(l.to) as number, k)), laned.map((l) => sideOf(index.get(l.from) as number)), laned.map((l) => sideOf(index.get(l.to) as number))).cross;
+    }
+    return total;
+  };
+  let split = half;
+  let least = Infinity;
+  for (let k = 2; k <= n - 2; k += 1) least = Math.min(least, Math.max(colHeight(0, k), colHeight(k, n)));
+  let leastCross = Infinity;
+  for (let k = 2; k <= n - 2; k += 1) {
+    const h = Math.max(colHeight(0, k), colHeight(k, n));
+    if (h > least * 1.3) continue;
+    const c = crossingsAt(k);
+    if (c < leastCross || (c === leastCross && h < Math.max(colHeight(0, split), colHeight(split, n)) - 1e-9)) {
+      leastCross = c;
+      split = k;
+    }
+  }
+  const col = (i: number): 0 | 1 => (i < split ? 0 : 1);
+  const colW = [0, 0];
+  boxes.forEach((b, i) => (colW[col(i)] = Math.max(colW[col(i)] as number, b.width)));
+  const lanedLinks = links.filter((l) => !adjacent(l, split));
+  // the word on a link that runs along a lane is set narrow (two short lines) and given a clear stretch beside its first run
+  const labelM = new Map(links.map((l) => [l, l.label ? env.measure(l.label, adjacent(l, split) ? env.wrapWidth : body * 3.4, env.label()) : null]));
+  // each strip has, beside the node side a link leaves, a stretch for its word; the stretch is on the side of the lanes the nodes are
+  const stretch = { gutterLeft: 0, gutterRight: 0, left: 0, right: 0 };
+  for (const l of lanedLinks) {
+    const m = labelM.get(l);
+    if (!m) continue;
+    const w = m.width + body * 0.4;
+    const zone = zoneOf(l, split);
+    if (zone === 'gutter') {
+      if (col(index.get(l.from) as number) === 0) stretch.gutterLeft = Math.max(stretch.gutterLeft, w);
+      else stretch.gutterRight = Math.max(stretch.gutterRight, w);
+    } else stretch[zone] = Math.max(stretch[zone], w);
+  }
+  const count = { gutter: lanesAt(split, 'gutter'), left: lanesAt(split, 'left'), right: lanesAt(split, 'right') };
+  const gutter = stripOf(count.gutter) + stretch.gutterLeft + stretch.gutterRight;
+  const outerLeft = count.left === 0 ? 0 : stripOf(count.left) + stretch.left;
+  const outerRight = count.right === 0 ? 0 : stripOf(count.right) + stretch.right;
+  const title = env.title();
+  const width = outerLeft + (colW[0] as number) + gutter + (colW[1] as number) + outerRight;
+  // a word beside the first run of the topmost link may stand above it: a little air under the title for it
+  const headroom = body * 0.9;
+  const total = Math.max(colHeight(0, split), colHeight(split, n));
+
+  const finish = (room: Box): ReturnType<Draft['finish']> => {
+    const ox = env.after(room.x + Math.max(0, (room.width - width) / 2), 'x');
+    const oy = env.after(room.y + title.h + headroom, 'y');
+    const xA = ox + outerLeft;
+    const gx0 = xA + (colW[0] as number);
+    const xB = gx0 + gutter;
+    const xs = [xA, xB];
+    const at: Box[] = [];
+    const base = oy + total;
+    const tops = [base - colHeight(0, split), base];
+    boxes.forEach((b, i) => {
+      const c = col(i);
+      const x = (xs[c] as number) + ((colW[c] as number) - b.width) / 2;
+      if (c === 0) {
+        at.push(box(env.snap(x, 'x'), tops[0] as number, b.width, b.height));
+        tops[0] = (tops[0] as number) + b.height + gapY;
+      } else {
+        tops[1] = (tops[1] as number) - b.height;
+        at.push(box(env.snap(x, 'x'), tops[1] as number, b.width, b.height));
+        tops[1] = (tops[1] as number) - gapY;
+      }
+    });
+    const out = new Map<string, Box>();
+    const routes = new Map<string, Polyline>();
+    const notes: Note[] = [];
+    const fills: BlockPart[] = [];
+    const frames: BlockPart[] = [];
+    const words: BlockPart[] = [];
+    const lines: BlockPart[] = [];
+    const heads: BlockPart[] = [];
+    const labels: BlockPart[] = [];
+    boxes.forEach((b, i) => {
+      const r = at[i] as Box;
+      b.width = r.width;
+      b.height = r.height;
+      out.set(b.el.key, r);
+      nodeParts(env, b, r, fills, frames, words);
+    });
+    // the side of a node a link leaves or enters: the one that faces its lane
+    const sideLeft = (i: number, zone: Zone): boolean => (zone === 'gutter' ? col(i) === 1 : zone === 'left');
+    const sideX = (i: number, zone: Zone): number => ((at[i] as Box).x + (sideLeft(i, zone) ? 0 : (at[i] as Box).width));
+    const isAsk = (i: number): boolean => (boxes[i] as NodeBox).el.figure?.kind === 'node' && ((boxes[i] as NodeBox).el.figure as { shape?: string }).shape === 'ask';
+    const portY = (i: number, k: number, cnt: number): number => {
+      const r = at[i] as Box;
+      const f = isAsk(i) ? 0.5 + ((k + 1) / (cnt + 1) - 0.5) * 0.35 : (k + 1) / (cnt + 1);
+      return r.y + f * r.height;
+    };
+    // ports: the links leaving or entering one side of a node share it, in the order of what they reach
+    const yOut = new Map<LinkSpec, number>();
+    const yIn = new Map<LinkSpec, number>();
+    const sideOut = new Map<string, LinkSpec[]>();
+    const sideIn = new Map<string, LinkSpec[]>();
+    for (const l of lanedLinks) {
+      const z = zoneOf(l, split);
+      const a = index.get(l.from) as number;
+      const b = index.get(l.to) as number;
+      const ka = `${a}:${sideLeft(a, z)}`;
+      const kb = `${b}:${sideLeft(b, z)}`;
+      sideOut.set(ka, [...(sideOut.get(ka) ?? []), l]);
+      sideIn.set(kb, [...(sideIn.get(kb) ?? []), l]);
+    }
+    for (const [key, list] of sideOut) {
+      list.sort((p, q) => (at[index.get(p.to) as number] as Box).y - (at[index.get(q.to) as number] as Box).y);
+      list.forEach((l, k) => yOut.set(l, portY(Number(key.split(':')[0]), k, list.length)));
+    }
+    for (const [key, list] of sideIn) {
+      list.sort((p, q) => (at[index.get(p.from) as number] as Box).y - (at[index.get(q.from) as number] as Box).y);
+      list.forEach((l, k) => yIn.set(l, portY(Number(key.split(':')[0]), k, list.length)));
+    }
+    // lanes of each strip: x of the first lane, and the order along it
+    const laneAt = new Map<LinkSpec, number>();
+    for (const zone of ['gutter', 'left', 'right'] as const) {
+      const group = lanedLinks.filter((l) => zoneOf(l, split) === zone);
+      if (group.length === 0) continue;
+      const sideOf = (i: number): 0 | 1 => (zone === 'gutter' ? ((col(i) === 0 ? 0 : 1) as 0 | 1) : zone === 'left' ? 1 : 0);
+      const { perm } = laneOrder(group.map((l) => yOut.get(l) as number), group.map((l) => yIn.get(l) as number), group.map((l) => sideOf(index.get(l.from) as number)), group.map((l) => sideOf(index.get(l.to) as number)));
+      const first = zone === 'gutter' ? gx0 + margin + stretch.gutterLeft : zone === 'left' ? ox + margin : xB + (colW[1] as number) + margin + stretch.right;
+      group.forEach((l, i) => laneAt.set(l, first + (perm[i] as number) * laneStep));
+    }
+    const taken: Box[] = [];
+    const routed: { link: LinkSpec; pts: Point[] }[] = [];
+    for (const l of links) {
+      const a = index.get(l.from) as number;
+      const b = index.get(l.to) as number;
+      let pts: Point[];
+      if (adjacent(l, split)) {
+        const from = at[a] as Box;
+        const to = at[b] as Box;
+        pts = col(a) === 0 ? [{ x: from.x + from.width / 2, y: from.y + from.height }, { x: to.x + to.width / 2, y: to.y }] : [{ x: from.x + from.width / 2, y: from.y }, { x: to.x + to.width / 2, y: to.y + to.height }];
+      } else {
+        const z = zoneOf(l, split);
+        const lx = laneAt.get(l) as number;
+        const y0 = yOut.get(l) as number;
+        const y1 = yIn.get(l) as number;
+        pts = [{ x: sideX(a, z), y: y0 }, { x: lx, y: y0 }, { x: lx, y: y1 }, { x: sideX(b, z), y: y1 }];
+        if (Math.abs(y0 - y1) < 0.5 && z === 'gutter') pts = [pts[0] as Point, pts[3] as Point];
+      }
+      pts = simplify(pts);
+      routes.set(l.el.key, { points: pts, closed: false });
+      routed.push({ link: l, pts });
+      connectorParts(env, l, pts, lines, heads);
+    }
+    const nodeBoxes = [...at];
+    for (const { link: l, pts } of routed) {
+      const m = labelM.get(l) ?? null;
+      let area = boxOfPoints(pts);
+      if (m !== null) {
+        const runs: (readonly [Point, Point])[] = [];
+        for (let i = 0; i + 1 < pts.length; i += 1) runs.push([pts[i] as Point, pts[i + 1] as Point]);
+        const len = (r: readonly [Point, Point]): number => Math.hypot(r[1].x - r[0].x, r[1].y - r[0].y);
+        const ordered = [...runs.slice(0, 1), ...runs.slice(1).sort((x, y) => len(y) - len(x))];
+        const blockers = { boxes: [...nodeBoxes, ...taken], lines: [...routes.values()] };
+        const pick = placeBeside(ordered, m.width, m.height, env.stroke * 1.5 + 3, blockers, room);
+        if (pick !== null) {
+          if (pick.penalty > 0 && knockOut(lines, pick.box, env.stroke * 1.5, [...nodeBoxes, ...taken])) notes.push({ key: l.el.key, note: 'crossed' });
+          taken.push(pick.box);
+          labels.push(labelPart(env, l.el.key, l.label, pick.box, m, pick.penalty > 0));
+          area = union([area, pick.box]);
+        }
+      }
+      out.set(l.el.key, area);
+    }
+    const tp = title.part(room);
+    return { parts: [...(tp ? [tp] : []), ...fills, ...lines, ...heads, ...frames, ...words, ...labels], boxes: out, routes, notes };
+  };
+
+  return { width, height: total + title.h + headroom, finish };
 }
 
 function buildFlow(env: Env, grow: Grow): Draft {
