@@ -22,6 +22,7 @@ import type { LookSpec } from '../contracts/look';
 import { createSound } from '../audio/sound';
 import type { Sound } from '../audio/sound';
 import { createPainter } from '../painter';
+import { setTarget } from '../painter/target';
 import { createChartEngine } from '../render/chart';
 import { createFilm } from '../painter/film';
 import { createReel, lastAnswer } from '../painter/reel';
@@ -305,12 +306,43 @@ function newRenderer(params: AppParams): Renderer {
  */
 /** A reload reopens a document by itself only if it was the active thing in the last five minutes (an accidental reload mid-question); later it is offered, never forced. */
 const RESUME_WITHIN_MS = 5 * 60_000;
+/** The last painted answer, kept so that a reload of `/` brings it back: { at, prompt, script }. The same offer rule as a document. */
+const ANSWER_KEY = 'conduit.answer';
+interface KeptAnswer {
+  readonly at: number;
+  readonly prompt: string;
+  readonly script: string;
+}
+function keptAnswer(): KeptAnswer | null {
+  try {
+    const raw = window.localStorage.getItem(ANSWER_KEY);
+    if (raw === null) return null;
+    const value = JSON.parse(raw) as Partial<KeptAnswer>;
+    return typeof value.script === 'string' && value.script !== '' && typeof value.at === 'number' ? { at: value.at, prompt: typeof value.prompt === 'string' ? value.prompt : '', script: value.script } : null;
+  } catch {
+    return null;
+  }
+}
+/** the answer a reload should bring back: kept, newer than any kept document, and not to be left behind by `?fresh` */
+function answerToResume(): KeptAnswer | null {
+  try {
+    if (new URLSearchParams(window.location.search).has('fresh')) return null;
+    const answer = keptAnswer();
+    if (answer === null) return null;
+    const document = window.localStorage.getItem('conduit.document') === null ? 0 : Number(window.localStorage.getItem('conduit.document.at') ?? 0);
+    return answer.at > document ? answer : null;
+  } catch {
+    return null;
+  }
+}
 
 export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   const { host, params, lockLook } = options;
   // a reload that will open a document again does not play the welcome demo under it
   const reopening = ((): boolean => {
     try {
+      const answer = answerToResume();
+      if (answer !== null && Date.now() - answer.at < RESUME_WITHIN_MS) return true;
       return !new URLSearchParams(window.location.search).has('fresh') && window.localStorage.getItem('conduit.document') !== null && Date.now() - Number(window.localStorage.getItem('conduit.document.at') ?? 0) < RESUME_WITHIN_MS;
     } catch {
       return false;
@@ -319,7 +351,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   // the intro (the first-load demo) is for a fresh first open: not when a document is kept to come back to, and never twice in one session
   const introSeen = ((): boolean => {
     try {
-      return window.sessionStorage.getItem('conduit.intro') !== null || window.localStorage.getItem('conduit.document') !== null;
+      return window.sessionStorage.getItem('conduit.intro') !== null || window.localStorage.getItem('conduit.document') !== null || answerToResume() !== null;
     } catch {
       return false;
     }
@@ -399,6 +431,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     }
     throw new Error(`The stage could not start: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
   }
+  setTarget(audience, pointerKind());
   const offControls = painter.on('controls', (views) => access.controls(views));
   const offText = painter.on('text', (spans) => text.update(spans, painter.snapshot().turn ?? painter.recording()?.turn ?? null));
   access.controls(painter.snapshot().controls);
@@ -624,18 +657,54 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     publishStatus();
   }
 
+  // The person's own words stay on the stage from Send until the answer's first line replaces them: a quiet line and a gentle indicator, not a thread.
+  let askedLine: HTMLElement | null = null;
+  function showAsked(words: string): void {
+    hideAsked();
+    const line = document.createElement('div');
+    line.setAttribute('data-asked', '');
+    line.setAttribute('aria-hidden', 'true');
+    line.style.cssText = 'position:absolute;left:50%;top:38%;transform:translate(-50%,-50%);z-index:3;max-width:min(36rem,calc(100% - 48px));text-align:center;pointer-events:none;color:var(--stage-ink);opacity:0.62;font:500 18px/1.4 var(--chrome-font, system-ui);overflow-wrap:anywhere';
+    const said = document.createElement('div');
+    said.textContent = `You asked: ${words.length > 240 ? `${words.slice(0, 239)}\u2026` : words}`;
+    const dots = document.createElement('div');
+    dots.textContent = 'thinking';
+    dots.style.cssText = 'margin-top:6px;font-size:14px;opacity:0.7;letter-spacing:0.04em';
+    const calm = painter.snapshot().reducedMotion;
+    if (calm) dots.textContent = 'thinking\u2026';
+    else {
+      const dot = (): HTMLElement => {
+        const span = document.createElement('span');
+        span.textContent = '.';
+        return span;
+      };
+      const marks = [dot(), dot(), dot()];
+      dots.append(...marks);
+      marks.forEach((mark, index) => mark.animate([{ opacity: 0.15 }, { opacity: 1 }, { opacity: 0.15 }], { duration: 1200, iterations: Number.POSITIVE_INFINITY, delay: index * 200 }));
+    }
+    line.append(said, dots);
+    host.append(line);
+    askedLine = line;
+  }
+  function hideAsked(): void {
+    askedLine?.remove();
+    askedLine = null;
+  }
+
   function beginStarting(limit = START_LIMIT_MS): void {
     starting = true;
     clearTimeout(startTimer);
     startTimer = setTimeout(() => {
       if (!starting) return;
       starting = false;
+      hideAsked();
       if (currentTurn === null && painter.snapshot().anticipating) painter.cancelAnticipation();
       publishStatus();
     }, limit);
   }
 
   function endStarting(): void {
+    hideAsked();
     if (!starting) return;
     starting = false;
     clearTimeout(startTimer);
@@ -764,6 +833,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
         tellAgent({ type: 'over', turn: null });
         pending = Math.max(0, pending);
         painter.openTurn(event.turn, event.input);
+        turnInputs.set(event.turn, event.input);
         lang.openTurn(event.turn);
         if (stopPending) {
           stopPending = false;
@@ -791,6 +861,9 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
         if (parsed.kind === 'line') {
           lang.line(event.turn, event.seq, event.text, event.issues, 0);
           painter.ingest(event.turn, event.seq, parsed.line);
+          const written = turnLines.get(event.turn);
+          if (written === undefined) turnLines.set(event.turn, [serializeLine(parsed.line)]);
+          else written.push(serializeLine(parsed.line));
         } else {
           lang.dropped(event.turn, event.text, parsed.kind === 'reject' ? parsed.issues : [{ code: 'not-a-line', severity: 'error', message: `server sent a ${parsed.kind}` }], 0);
           noteReject({
@@ -879,6 +952,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
         currentTurn = null;
         tellAgent({ type: 'over', turn: event.turn });
         painter.closeTurn(event.turn, event.reason);
+        rememberAnswer(event.turn, event.reason);
         return;
     }
   }
@@ -925,6 +999,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     if (anticipate) {
       painter.anticipate(input, tappedKey);
       beginStarting();
+      if (input.kind === 'prompt' && input.text.trim() !== '') showAsked(input.text.trim());
     } else {
       painter.interrupt();
     }
@@ -932,7 +1007,9 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     pending += 1;
     publishStatus();
     try {
-      return await link.startTurn(input);
+      const id = await link.startTurn(input);
+      if (!turnInputs.has(id)) turnInputs.set(id, input);
+      return id;
     } catch (cause) {
       if (mine === submission) {
         if (anticipate) painter.cancelAnticipation();
@@ -1058,20 +1135,14 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     }
   }
 
-  /** A quiet line over the stage: the last document is offered, never forced. Dismiss forgets it; Continue opens it where she was. */
-  function offerResume(id: string): void {
-    let title = 'your last document';
-    try {
-      title = window.localStorage.getItem(`${RESUME_KEY}.title`) ?? title;
-    } catch {
-      // the offer still reads
-    }
+  /** A quiet line over the stage: the last document or answer is offered, never forced. Dismiss forgets it; Continue brings it back where she was. */
+  function offerBar(sentence: string, onContinue: () => void, onDismiss: () => void): void {
     const bar = document.createElement('div');
     bar.setAttribute('data-resume-offer', '');
     bar.setAttribute('role', 'status');
     bar.style.cssText = 'position:absolute;left:50%;transform:translateX(-50%);top:12px;z-index:7;display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:center;max-width:calc(100% - 24px);padding:8px 12px;border-radius:14px;border:1px solid #8886;background:#fffffff2;color:#111;font:600 16px system-ui';
     const text = document.createElement('span');
-    text.textContent = `Continue ${title} where you left off?`;
+    text.textContent = sentence;
     const mk = (label: string, onClick: () => void): HTMLButtonElement => {
       const button = document.createElement('button');
       button.type = 'button';
@@ -1084,6 +1155,26 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
       text,
       mk('Continue', () => {
         bar.remove();
+        onContinue();
+      }),
+      mk('Dismiss', () => {
+        bar.remove();
+        onDismiss();
+      }),
+    );
+    host.append(bar);
+  }
+
+  function offerResume(id: string): void {
+    let title = 'your last document';
+    try {
+      title = window.localStorage.getItem(`${RESUME_KEY}.title`) ?? title;
+    } catch {
+      // the offer still reads
+    }
+    offerBar(
+      `Continue ${title} where you left off?`,
+      () => {
         void link.resumeDocument(id).then(
           (view) => {
             currentDocumentId = view.document.id;
@@ -1091,13 +1182,17 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
           },
           () => rememberDocument(null),
         );
-      }),
-      mk('Dismiss', () => {
-        bar.remove();
-        rememberDocument(null);
-      }),
+      },
+      () => rememberDocument(null),
     );
-    host.append(bar);
+  }
+
+  function offerAnswer(answer: KeptAnswer): void {
+    offerBar(
+      answer.prompt === '' ? 'Continue your last answer where you left off?' : `Continue "${answer.prompt.length > 48 ? `${answer.prompt.slice(0, 47)}…` : answer.prompt}" where you left off?`,
+      () => restoreAnswer(answer),
+      forgetAnswer,
+    );
   }
 
   async function connectWithRetry(ready: Parameters<StageLink['connect']>[0]): Promise<void> {
@@ -1114,7 +1209,10 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
             return false;
           }
         })();
-        const resume = recent ? stored : null;
+        const answer = answerToResume();
+        // the newer of a kept document and a kept answer is the one a reload is about
+        const answerIsNewer = answer !== null && (stored === null || answer.at > Number(window.localStorage.getItem(`${RESUME_KEY}.at`) ?? 0));
+        const resume = recent && !answerIsNewer ? stored : null;
         let resumed = false;
         if (resume !== null) {
           try {
@@ -1128,7 +1226,10 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
           }
         }
         if (!resumed) await link.connect(ready);
-        if (!resumed && stored !== null) offerResume(stored);
+        if (!resumed && answerIsNewer && answer !== null) {
+          if (Date.now() - answer.at < RESUME_WITHIN_MS) restoreAnswer(answer);
+          else offerAnswer(answer);
+        } else if (!resumed && stored !== null) offerResume(stored);
         connecting = false;
         connectSettle?.resolve();
         publishStatus();
@@ -1227,6 +1328,8 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   let hoverFrame = 0;
   let hoverAt: { readonly x: number; readonly y: number } | null = null;
   const inChart = (event: Event): boolean => event.target instanceof Element && event.target.closest('.stage__chart') !== null;
+  // While Draw is on its layer is over the stage and every pointer is the pen's: a stroke that starts on a control or a mock-up's part draws, it never presses
+  const inInk = (event: Event): boolean => event.target instanceof Element && event.target.closest('.ink-stage') !== null;
   const localPoint = (event: PointerEvent): { readonly x: number; readonly y: number } => {
     const box = host.getBoundingClientRect();
     return { x: event.clientX - box.left, y: event.clientY - box.top };
@@ -1244,7 +1347,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   const tappableAt = (x: number, y: number): boolean =>
     painter.snapshot().elements.some((el) => el.tappable && x >= el.box.x && x <= el.box.x + el.box.width && y >= el.box.y && y <= el.box.y + el.box.height);
   const onPointerDown = (event: PointerEvent): void => {
-    if (event.button !== 0 || inChart(event)) return;
+    if (event.button !== 0 || inChart(event) || inInk(event)) return;
     const { x, y } = localPoint(event);
     if (painter.pointer({ phase: 'down', x, y, pointer: event.pointerId })) {
       taken.add(event.pointerId);
@@ -1261,7 +1364,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     painter.tapAt(x, y);
   };
   const onPointerMove = (event: PointerEvent): void => {
-    if (inChart(event)) return;
+    if (inChart(event) || inInk(event)) return;
     const point = localPoint(event);
     if (taken.has(event.pointerId)) {
       // A drag is not throttled: the picture follows the finger in the same frame.
@@ -1410,6 +1513,44 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     return reelNote === null ? job : { ...job, done: job.done.then((made) => ({ ...made, note: reelNote })) };
   }
 
+  /** how each turn was opened, so the answer kept for a reload can say what it answered */
+  const turnInputs = new Map<string, TurnInput>();
+  /** the lines each open turn has been told, as written, for the answer kept for a reload */
+  const turnLines = new Map<string, string[]>();
+  /** A painted answer that came to its end is kept: a reload brings it back at rest. A demo, a page the app played, an answer cut short and an empty one are not. */
+  function rememberAnswer(turn: string, reason: string): void {
+    const input = turnInputs.get(turn);
+    turnInputs.delete(turn);
+    const script = (turnLines.get(turn) ?? []).join('\n');
+    turnLines.delete(turn);
+    if (input === undefined || input.kind === 'demo' || turn.startsWith(PAGE_PREFIX) || reason !== 'done') return;
+    if (script === '') return;
+    const prompt = input.kind === 'prompt' || input.kind === 'tap' || input.kind === 'act' ? input.text : '';
+    try {
+      window.localStorage.setItem(ANSWER_KEY, JSON.stringify({ at: Date.now(), prompt, script } satisfies KeptAnswer));
+    } catch {
+      // storage may be full or blocked: the answer is simply not kept
+    }
+  }
+  const forgetAnswer = (): void => {
+    try {
+      window.localStorage.removeItem(ANSWER_KEY);
+    } catch {
+      // nothing to forget
+    }
+  };
+  /** The kept answer put on stage at rest: its recorded lines played at once, as Replay would play them, and what it said is in the transcript. */
+  function restoreAnswer(answer: KeptAnswer): void {
+    pageCount += 1;
+    const turn = `${PAGE_PREFIX}${pageCount}`;
+    const steps = localSteps(answer.script);
+    painter.openTurn(turn, answer.prompt === '' ? { kind: 'script', text: answer.script } : { kind: 'prompt', text: answer.prompt }, { page: true });
+    steps.forEach((step, index) => painter.ingest(turn, index + 1, step.line));
+    painter.closeTurn(turn, 'done');
+    painter.showAll();
+    publishStatus();
+  }
+
   /** Lines of Series played at once, as a turn of the app's own. */
   function showPage(source: string): void {
     stopLocal();
@@ -1441,6 +1582,8 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
       set(next) {
         audience = next;
         writeAudience(next);
+        setTarget(next, pointerKind());
+        painter.resize(viewportOf(host));
         documents.restyle();
       },
     },

@@ -6,6 +6,7 @@ import { FACES } from '../../fonts/faces';
 import { measureEm, prefixEm } from '../../fonts/measure';
 import { planeBounds, planeScale } from '../../contracts/space';
 import type { Box, Viewport } from '../../contracts/space';
+import { targetPx } from '../target';
 import { cellOf, marginOf, safeFrame, topInset } from './metrics';
 import type { Cell } from './metrics';
 import { wrapMeasured, wrapSpans } from './wrap';
@@ -320,7 +321,8 @@ function buildBlock(prep: Prep, k: number, availWidth: number, indent: number, b
     bullet,
     bulletWidth,
     width: Math.max(0, ...lineWidths) + indent,
-    height: spans.length * cell.height,
+    // a choice is a target for a finger: never less than the screen's least, whatever its words measure
+    height: Math.max(spans.length * cell.height, prep.item.style.tap ? targetPx() / layerScale(layer, ctx) : 0),
   };
 }
 
@@ -331,6 +333,9 @@ function snapUp(value: number, ctx: Context): number {
 function emit(block: Block, left: number, top: number, blockWidth: number, align: 'left' | 'center' | 'right', ctx: Context): Placement {
   const { cell, prep, prefix, unit } = block;
   const height = block.height;
+  // the words are set in the middle of a block that a target made taller than they are
+  const textHeight = block.spans.length * cell.height;
+  const spare = Math.max(0, height - textHeight);
   const lines: Box[] = [];
   const runs: PlacedRun[] = [];
   const text: string[] = [];
@@ -339,8 +344,11 @@ function emit(block: Block, left: number, top: number, blockWidth: number, align
     const lineWidth = block.lineWidths[row] ?? 0;
     const free = blockWidth - block.indent - lineWidth;
     const x = -blockWidth / 2 + block.indent + (align === 'left' ? 0 : align === 'center' ? free / 2 : free);
-    const y = -height / 2 + row * cell.height;
-    lines.push({ x, y, width: lineWidth, height: cell.height });
+    const y = -textHeight / 2 + row * cell.height;
+    // the first and last line carry the spare room, so the frame drawn round a choice and the hit it takes are the target's size
+    const top = row === 0 ? spare / 2 : 0;
+    const foot = row === block.spans.length - 1 ? spare / 2 : 0;
+    lines.push({ x, y: y - top, width: lineWidth, height: cell.height + top + foot });
     text.push(prep.text.slice(span.start, span.end));
     let from = span.start;
     while (from < span.end) {
@@ -363,7 +371,7 @@ function emit(block: Block, left: number, top: number, blockWidth: number, align
     }
   });
   const bullet: PlacedRun | null =
-    block.bullet === null ? null : { text: block.bullet, offset: 0, x: -blockWidth / 2, y: -height / 2, width: block.bulletWidth, emphasised: false };
+    block.bullet === null ? null : { text: block.bullet, offset: 0, x: -blockWidth / 2, y: -textHeight / 2, width: block.bulletWidth, emphasised: false };
   return {
     key: prep.item.key,
     layer: block.layer,

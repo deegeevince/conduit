@@ -1,5 +1,6 @@
 import { controlText, describeFigure, EMPTY_STAGE, holdControl, FULL_CAPABILITIES, NO_SERVICES, sceneAt, serializeLine, TurnScore, valueAt } from '@conduit/language';
 import { CHARTS_READY } from '../render/chart';
+import { setTarget, targetPx } from './target';
 import { STRUCTURES_READY } from './blocks';
 import { CONTROLS_READY, controlEngine, createControlStore, nextEases } from './controls';
 import { controlIndexOf, createRuntime, controlSpecOf, stateReader } from './bound';
@@ -203,6 +204,7 @@ function crossFade(from: Frame, to: Frame, p: number): Frame {
 export function createPainter(options: PainterOptions): Painter {
   const { renderer, lockLook } = options;
   let viewport: Viewport = options.viewport;
+  setTarget('adult', options.pointer);
   const reducedMotion = options.reducedMotion ?? (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches);
 
   const listeners: { [K in keyof PainterEvents]: Set<Listener<K>> } = { back: new Set(), transcript: new Set(), clock: new Set(), upload: new Set(), controls: new Set(), text: new Set() };
@@ -583,7 +585,7 @@ export function createPainter(options: PainterOptions): Painter {
       if (element.parent !== null) continue;
       if (item.kind === 'shown') {
         const tappable = element.changes.reduce<boolean>((tap, change) => (change.kind === 'set' && change.start <= item.time ? change.style.tap : tap), element.style.tap);
-        const text = element.figure === null ? element.text : describeFigure(element.figure);
+        const text = element.figure === null ? timeline.wordsAt(element, item.time) : describeFigure(element.figure);
         emit('transcript', { kind: 'shown', key: element.key, id: element.id, text, tappable, replaces: element.replaces });
       } else if (item.kind === 'struck') emit('transcript', { kind: 'struck', key: element.key });
       else emit('transcript', { kind: 'gone', key: element.key });
@@ -1138,6 +1140,7 @@ export function createPainter(options: PainterOptions): Painter {
     if (key !== null) runtime.moods.set(key, { ...(runtime.moods.get(key) ?? CALM), ...patch });
     touch();
   };
+  const SLOP_PX = 12;
   /** the part of a control under a point, host CSS pixels: the smallest zone that holds it, so a knob wins over its track */
   const hitControl = (x: number, y: number): { readonly site: ControlSite; readonly zone: ControlSite['layout']['zones'][number] } | null => {
     const sites = sitesNow();
@@ -1151,6 +1154,20 @@ export function createPainter(options: PainterOptions): Painter {
         const b = zone.box;
         if (lx < b.x || lx > b.x + b.width || ly < b.y || ly > b.y + b.height) continue;
         if (best === null || b.width * b.height < best.box.width * best.box.height) best = zone;
+      }
+      if (best === null && site.input.spec.control === 'pick') {
+        // A finger that lands in the gap between two options (or a hair outside the row) is meant for the nearest one: the pick answers within a thumb's reach
+        const reach = SLOP_PX / site.screen.scale;
+        let nearest = Number.POSITIVE_INFINITY;
+        for (const zone of site.layout.zones) {
+          if (!zone.part.startsWith('option:') && zone.part !== 'back' && zone.part !== 'next') continue;
+          const b = zone.box;
+          const d = Math.hypot(Math.max(b.x - lx, 0, lx - (b.x + b.width)), Math.max(b.y - ly, 0, ly - (b.y + b.height)));
+          if (d <= reach && d < nearest) {
+            nearest = d;
+            best = zone;
+          }
+        }
       }
       if (best !== null) return { site, zone: best };
     }
@@ -1314,7 +1331,7 @@ export function createPainter(options: PainterOptions): Painter {
 
   /** A fingertip is not a pixel: a choice smaller than 44 px is grown to 44 px around its centre for hit-testing only. */
   const nearTappable = (x: number, y: number): string | null => {
-    const MIN_TARGET = 44;
+    const MIN_TARGET = targetPx();
     let best: string | null = null;
     let bestDistance = Number.POSITIVE_INFINITY;
     for (const view of timeline.viewsAt(instantOf(clock.read()))) {

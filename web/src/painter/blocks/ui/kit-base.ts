@@ -5,6 +5,7 @@
 // look's tokens; the live parts read a `UiState`.
 
 import type { UiDevice, UiTextToken, UiTokens } from './lang';
+import type { UiFace } from './measure';
 import { hasIcon, placeIcon } from './icons';
 import type { UiMeasure } from './measure';
 import type { Align, Box as FlexBox, Node, Style } from './solve';
@@ -138,6 +139,8 @@ export interface TextOpts {
   readonly what?: string;
   readonly self?: Style['self'];
   readonly maxLines?: number;
+  /** set shorter than its words when the room is short, the last that fits ending in an ellipsis (a button's label): lint does not call that lost */
+  readonly ellipsis?: boolean;
 }
 
 /** The lines of `words` set across `width`, kept to `most` of them: when there are more, the last one that is kept ends in an ellipsis that fits. */
@@ -155,6 +158,14 @@ export function clampedLines(m: UiMeasure, words: string, token: UiTextToken, wi
   return [...kept.slice(0, most - 1), { text: shown, width: m.width(shown, token.size, token.weight, face) }];
 }
 
+/** One line of `words` cut to `width`, ending in an ellipsis that fits. */
+function ellipsed(m: UiMeasure, words: string, token: UiTextToken, width: number, face: UiFace): { readonly text: string; readonly width: number } {
+  let cut = words;
+  while (cut.length > 1 && m.width(`${cut.trimEnd()}\u2026`, token.size, token.weight, face) > width) cut = cut.slice(0, -1);
+  const shown = `${cut.trimEnd()}\u2026`;
+  return { text: shown, width: m.width(shown, token.size, token.weight, face) };
+}
+
 /** One block of words. It wraps to the room it is given, and says how narrow and how tall it needs to be. `maxLines` keeps it to that many, the last ending in an ellipsis. */
 export function text(k: Kit, words: string, token: UiTextToken, o: TextOpts): N {
   const m = k.measure;
@@ -168,13 +179,13 @@ export function text(k: Kit, words: string, token: UiTextToken, o: TextOpts): N 
     const r = m.wrap(words, token.size, token.weight, maxW, face);
     return { w: r.widest, h: Math.min(r.lines.length, o.maxLines ?? 99) * token.line };
   };
-  const minW = o.nowrap === true ? (o.squeeze === true ? 0 : single()) : o.maxLines !== undefined ? 0 : m.longestWord(words, token.size, token.weight, face);
+  const minW = o.nowrap === true ? (o.squeeze === true || o.ellipsis === true ? 0 : single()) : o.maxLines !== undefined ? 0 : m.longestWord(words, token.size, token.weight, face);
   const style: Style = { width: o.width ?? 'hug', height: 'hug', ...(o.grow === undefined ? {} : { grow: o.grow }), ...(o.self === undefined ? {} : { self: o.self }) };
   const paint = (b: Rect, out: Out): void => {
-    const lines = o.nowrap === true ? [{ text: words, width: single() }] : o.maxLines !== undefined ? clampedLines(m, words, token, b.w, o.maxLines) : m.wrap(words, token.size, token.weight, b.w, face).lines;
+    const lines = o.ellipsis === true && b.w + 0.01 < single() ? [ellipsed(m, words, token, b.w, face)] : o.nowrap === true ? [{ text: words, width: single() }] : o.maxLines !== undefined ? clampedLines(m, words, token, b.w, o.maxLines) : m.wrap(words, token.size, token.weight, b.w, face).lines;
     out.parts.push({ kind: 'text', key: out.key(o.id, o.what ?? 'words'), owner: o.id, x: b.x, y: b.y, w: b.w, h: b.h, lines, size: token.size, line: token.line, weight: token.weight, colour: o.colour, align: o.align ?? 'left', ...(face === 'sans' ? {} : { face }) });
   };
-  return mk(style, null, { fit, minW }, [], { id: o.id, part: 'text', words: true, quiet: true, paint, owner: o.id, ...(o.nowrap === true ? { need: single() } : {}) });
+  return mk(style, null, { fit, minW }, [], { id: o.id, part: 'text', words: true, quiet: true, paint, owner: o.id, ...(o.nowrap === true && o.ellipsis !== true ? { need: single() } : {}) });
 }
 
 /** An icon as a leaf `size` square. */

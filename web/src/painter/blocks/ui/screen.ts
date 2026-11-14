@@ -128,7 +128,14 @@ function dropLast(nodes: readonly UiNode[]): UiNode[] | null {
  */
 export function layoutScreen(written: UiScreen, base: UiTokens, measure: UiMeasure, state: UiState = NO_STATE, lines = 0): UiScreenLayout {
   const tokens = themed(base, written.style);
-  const first = layoutWith(written, tokens, measure, state, lines);
+  let first = layoutWith(written, tokens, measure, state, lines);
+  // a button or a link never lies outside its row or card: the row's gap is cut, then the row wraps, then the label is cut short
+  const loose = (layout: UiScreenLayout): number => layout.notes.filter((n) => n.kind === 'outside' && /^(button|link)/.test(n.message)).length;
+  for (const rowFit of [1, 2, 3] as const) {
+    if (loose(first) === 0) break;
+    const fitted = layoutWith(written, { ...tokens, rowFit }, measure, state, lines);
+    if (loose(fitted) < loose(first)) first = fitted;
+  }
   const glass = first.device === 'phone' || first.device === 'tablet';
   const spilled = (layout: UiScreenLayout): number => layout.notes.filter((n) => n.kind === 'outside').length;
   if (!glass || tokens.pack === 'compact' || spilled(first) === 0) return first;

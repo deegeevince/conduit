@@ -5,7 +5,7 @@
 import { evalExpr, hasValues, parseTemplate } from '@conduit/language';
 import type { Rule, Severity, Violation } from '../../../language/src/loop';
 import type { Box } from '../contracts/space';
-import { audienceBar } from './contracts';
+import { audienceBar, targetFor } from './contracts';
 import { INKED_KINDS, intersection, takeCensus } from './census';
 import type { Census, CensusInput, Expected, Leaf } from './census';
 
@@ -112,7 +112,7 @@ export function reachable(census: Census): Violation[] {
   for (const leaf of census.leaves) {
     if (!leaf.tappable || leaf.opacity < WHOLE || leaf.phase !== 'on') continue;
     const short = Math.min(leaf.box.width, leaf.box.height);
-    const target = audienceBar(census.screen.audience ?? 'adult', isPhone(census)).minTarget;
+    const target = targetFor(census.screen.audience ?? 'adult', census.screen.pointer);
     if (short < target) found.push(violation(census, 'reachable', 'note', [leaf.key], `${label(leaf)} can be tapped and is ${Math.round(short)} points across (a finger needs ${target})`, leaf.box));
   }
   return found;

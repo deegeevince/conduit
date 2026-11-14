@@ -126,7 +126,31 @@ function reportSlot(moving = false): void {
     if (told === slotTold || told.length > 290) return;
     slotTold = told;
     bridge?.send('slot', told);
+    watchSlot();
   }, 400);
+}
+
+/**
+ * Ink stays locked to the paper. While the pen is laid over a paper, the paper is looked at every frame: when it has moved from where the pen was told
+ * it is (a scroll in this page or in a box inside it, a card growing above it, a picture arriving, an entrance still easing), the pen is put away at once
+ * and comes back where the paper has settled, so no stroke is ever drawn over a paper that is on its way somewhere else.
+ */
+let watching = false;
+function watchSlot(): void {
+  if (watching) return;
+  watching = true;
+  const look = (): void => {
+    if (slotTold === '[]' || slotTold === '') {
+      watching = false;
+      return;
+    }
+    const told = JSON.parse(slotTold) as [string, string, number, number, number, number];
+    const el = root?.querySelector('[data-ink-slot]');
+    const r = el?.getBoundingClientRect();
+    if (r === undefined || Math.abs(r.x - told[2]) > 1.5 || Math.abs(r.y - told[3]) > 1.5 || Math.abs(r.width - told[4]) > 1.5 || Math.abs(r.height - told[5]) > 1.5) reportSlot(true);
+    requestAnimationFrame(look);
+  };
+  requestAnimationFrame(look);
 }
 
 function start(input: LessonInput): void {
@@ -135,7 +159,7 @@ function start(input: LessonInput): void {
   player.render();
   reportSlot();
   new MutationObserver(() => reportSlot()).observe(root, { childList: true, subtree: true });
-  addEventListener('scroll', () => reportSlot(true), { passive: true });
+  addEventListener('scroll', () => reportSlot(true), { passive: true, capture: true });
   // a new width (a scrollbar appearing, the room turned) moves the paper too
   addEventListener('resize', () => reportSlot(true));
   if (typeof ResizeObserver !== 'undefined') new ResizeObserver(() => reportSlot()).observe(root);

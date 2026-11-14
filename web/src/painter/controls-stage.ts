@@ -15,8 +15,7 @@ import { controlEngine } from './controls';
 import { lookOf, measurerFor } from './structures';
 import { controlSpecOf } from './bound';
 
-/** A target is never smaller than a fingertip. */
-export const MIN_TARGET_PX = 44;
+import { targetPx } from './target';
 
 const LAYOUTS = new Map<string, ControlLayout>();
 const KEPT_LAYOUTS = 400;
@@ -38,12 +37,12 @@ export function controlInputOf(args: ControlLayoutArgs): ControlInput | null {
   const spec = controlSpecOf(span);
   if (spec === null) return null;
   const ps = planeScale(span.style.layer, viewport);
-  return { control: span, spec, value, maxWidth, measure: measurerFor(look, viewport, span.style), look: lookOf(look, viewport, fit, ps), minTarget: MIN_TARGET_PX / ps, mood };
+  return { control: span, spec, value, maxWidth, measure: measurerFor(look, viewport, span.style), look: lookOf(look, viewport, fit, ps), minTarget: targetPx() / ps, mood };
 }
 
 export function controlLayoutOf(args: ControlLayoutArgs): ControlLayout | null {
   const { span, value, mood, maxWidth, look, viewport } = args;
-  const key = [span.key, String(value), mood.hover ? 1 : 0, mood.pressed ?? '', mood.focus ? 1 : 0, mood.open ? 1 : 0, maxWidth.toFixed(1), look.id, look.name, viewport.width, viewport.height, span.text, span.style.size, span.style.face ?? ''].join('|');
+  const key = [span.key, String(value), mood.hover ? 1 : 0, mood.pressed ?? '', mood.focus ? 1 : 0, mood.open ? 1 : 0, maxWidth.toFixed(1), targetPx(), look.id, look.name, viewport.width, viewport.height, span.text, span.style.size, span.style.face ?? ''].join('|');
   const known = LAYOUTS.get(key);
   if (known !== undefined) return known;
   const input = controlInputOf(args);

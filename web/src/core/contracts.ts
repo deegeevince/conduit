@@ -44,15 +44,17 @@ export const AUDIENCES: readonly Audience[] = ['adult', 'young', 'large-print'];
 export interface AudienceBar {
   readonly floor: { readonly phone: number; readonly desk: number };
   readonly minTarget: number;
+  /** the least a target may be under a mouse or a trackpad (a pointer that is not coarse) */
+  readonly deskTarget: number;
   /** the lesson view's type scale: 1 is the adult's */
   readonly scale: number;
   /** what the person is told it is */
   readonly name: string;
 }
 export const AUDIENCE_BARS: Readonly<Record<Audience, AudienceBar>> = {
-  adult: { floor: { phone: 11, desk: 12 }, minTarget: 44, scale: 1, name: 'Adult' },
-  young: { floor: { phone: 16, desk: 18 }, minTarget: 56, scale: 1.25, name: 'Young learner' },
-  'large-print': { floor: { phone: 20, desk: 22 }, minTarget: 64, scale: 1.5, name: 'Large print' },
+  adult: { floor: { phone: 11, desk: 12 }, minTarget: 44, deskTarget: 32, scale: 1, name: 'Adult' },
+  young: { floor: { phone: 16, desk: 18 }, minTarget: 56, deskTarget: 44, scale: 1.25, name: 'Young learner' },
+  'large-print': { floor: { phone: 20, desk: 22 }, minTarget: 64, deskTarget: 52, scale: 1.5, name: 'Large print' },
 };
 export function isAudience(value: unknown): value is Audience {
   return typeof value === 'string' && Object.hasOwn(AUDIENCE_BARS, value);
@@ -61,6 +63,11 @@ export function isAudience(value: unknown): value is Audience {
 export function audienceBar(audience: Audience, phone: boolean): { readonly floor: number; readonly minTarget: number; readonly scale: number } {
   const bar = AUDIENCE_BARS[audience];
   return { floor: phone ? bar.floor.phone : bar.floor.desk, minTarget: bar.minTarget, scale: bar.scale };
+}
+/** The least a tappable thing may be, css px: the audience's `minTarget` under a finger (a coarse pointer, or none known), `deskTarget` under a mouse. */
+export function targetFor(audience: Audience, pointer: 'fine' | 'coarse' | 'none'): number {
+  const bar = AUDIENCE_BARS[audience];
+  return pointer === 'fine' ? bar.deskTarget : bar.minTarget;
 }
 /** The one line the brain is told (the turn brief's SCREEN line carries it when the person is not the default). */
 export function audienceLine(audience: Audience): string {
