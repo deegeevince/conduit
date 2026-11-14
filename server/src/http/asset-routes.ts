@@ -3,6 +3,7 @@
 import { API } from '@conduit/language';
 import type { Context, Hono } from 'hono';
 import { ASSET_LIMITS } from '../domain/assets';
+import { creditLine, normaliseWords } from '../domain/pictures';
 import { errors } from '../errors';
 import type { HttpDeps } from './deps';
 import { param } from './json';
@@ -91,6 +92,19 @@ export function registerAssetRoutes(app: Hono, deps: HttpDeps): void {
     c.header('Cache-Control', 'private, max-age=31536000, immutable');
     c.header('X-Content-Type-Options', 'nosniff');
     return c.body(found.bytes as Uint8Array<ArrayBuffer>);
+  });
+
+  // A live app's `conduit.picture(query)`: the page asks here on the app's behalf (the frame itself can reach nothing). The same service, limits and licences as an `image` part; only the words leave the machine.
+  app.get(API.pictureSearch, async (c) => {
+    if (!pictures.available) return c.json({ found: false });
+    const words = normaliseWords(c.req.query('q') ?? '');
+    const asked = Number(c.req.query('aspect') ?? '');
+    const aspect = Number.isFinite(asked) && asked > 0.2 && asked < 5 ? asked : 16 / 9;
+    if (words === '') return c.json({ found: false });
+    const picture = await pictures.find({ words, aspect }, AbortSignal.timeout(12_000)).catch(() => null);
+    deps.audit.record({ kind: 'connector', tool: pictures.id, target: words, decision: picture === null ? 'failed' : 'allowed', decidedBy: 'policy', note: 'a photograph for a live app; only these words left the machine' });
+    if (picture === null) return c.json({ found: false });
+    return c.json({ found: true, url: API.picture(picture.key), credit: creditLine(picture.credit), landing: picture.credit.landingUrl });
   });
 
   app.get(API.asset(':session', ':asset'), (c) => {

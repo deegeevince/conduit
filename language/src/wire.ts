@@ -677,6 +677,8 @@ export const API = {
   capture: (session: string, turn: string): string => `/api/sessions/${session}/turns/${turn}/capture`,
   /** v2.2. GET: the bytes of a photograph the server found for an `image` part (a JPEG, re-encoded, cached). The key is in the `picture` event's url. */
   picture: (key: string): string => `/api/pictures/${key}`,
+  /** v2.2. GET `?q=<words>&aspect=<w over h>`: a photograph for a live app's `conduit.picture`. `{ found: false }` when the picture service is off or found nothing, else `{ found: true, url, credit, landing }` with `url` as `API.picture`. */
+  pictureSearch: '/api/picture-search',
   /** v2.1. GET: `AppStatus`, read from the steward's `STATUS.md`. What `/status` shows and what the brief's "this app" note is made from. */
   status: '/api/status',
   /** v2.1 ops. POST: the kill switch (`/stop-all`): every turn ended, every question waiting for the owner refused, every helper process killed, agent tools off. GET: whether they are off. DELETE: switches them back on. */
