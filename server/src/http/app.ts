@@ -9,9 +9,10 @@ import { ASSET_LIMITS } from '../domain/assets';
 import { identify, runAs } from '../identity';
 import { SERVER_LIMITS } from '../domain/session';
 import { AppError, errors, toErrorBody } from '../errors';
-import { UPLOAD_LIMITS } from '@conduit/language';
+import { UPLOAD_LIMITS, VOICE_LIMITS } from '@conduit/language';
 import { registerAssetRoutes } from './asset-routes';
 import { registerUploadRoutes } from './upload-routes';
+import { registerVoiceRoutes } from './voice-routes';
 import type { HttpDeps } from './deps';
 import { registerExploreRoutes } from './explore-routes';
 import { registerRelayRoutes } from './relay-routes';
@@ -74,6 +75,7 @@ export function createApp(deps: HttpDeps): Hono {
   const withPicture = limited(ASSET_LIMITS.uploadBytes);
   const withFilm = limited(ASSET_LIMITS.filmBytes);
   const withPhoto = limited(UPLOAD_LIMITS.bytes);
+  const withVoice = limited(VOICE_LIMITS.bytes);
   // Only the two session POSTs that can carry a report get the larger limit, and only the two uploads a picture's.
   const carriesReport = /^\/api\/sessions\/[^/]+\/(?:events|turns)$/;
   const carriesPicture = /^\/api\/sessions\/[^/]+\/(?:sketches\/[^/]+|turns\/[^/]+\/(?:snapshot|drafts\/\d+))$/;
@@ -82,6 +84,7 @@ export function createApp(deps: HttpDeps): Hono {
     if (carriesReport.test(c.req.path)) return withReport(c, next);
     if (/^\/api\/sessions\/[^/]+\/turns\/[^/]+\/capture$/.test(c.req.path)) return withFilm(c, next);
     if (/^\/api\/sessions\/[^/]+\/uploads$/.test(c.req.path)) return withPhoto(c, next);
+    if (/^\/api\/sessions\/[^/]+\/voice$/.test(c.req.path)) return withVoice(c, next);
     return carriesPicture.test(c.req.path) ? withPicture(c, next) : ordinary(c, next);
   });
 
@@ -89,6 +92,7 @@ export function createApp(deps: HttpDeps): Hono {
   registerSessionRoutes(app, deps);
   registerAssetRoutes(app, deps);
   registerUploadRoutes(app, deps);
+  registerVoiceRoutes(app, deps);
   registerStatusRoutes(app, deps);
   registerOpsRoutes(app, deps);
   registerExploreRoutes(app, deps);

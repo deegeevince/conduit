@@ -1,6 +1,8 @@
 import { PROMPT_MAX_CHARS } from '@conduit/language';
 import { PHOTO_RULES, mountPhotoTray } from './photos';
 import type { Photo, PhotoPort } from './photos';
+import { mountVoice } from './voice';
+import type { Voice, VoicePort } from './voice';
 
 export interface PromptBar {
   /** shows what the link and the turn are doing, in words: connecting, thinking, playing, stopped. Only a status that asks to be announced reaches a screen reader (routine playing/thinking changes do not; the transcript's log carries the content) */
@@ -34,12 +36,14 @@ export function mountPromptBar(
   host: HTMLElement,
   handlers: {
     /** `photos` are the ids of the photos kept for these words, `held` the same photos as the tray shows them. Answer false when the words were not a turn (a command): the photos stay. */
-    readonly onSubmit: (text: string, photos: readonly string[], held: readonly Photo[]) => boolean;
+    readonly onSubmit: (text: string, photos: readonly string[], held: readonly Photo[], voice: readonly string[]) => boolean;
     readonly onStop: () => void;
     /** something other than words and photos waits to be sent (ink drawn on the stage): an empty field may still send */
     readonly hasExtra?: () => boolean;
     /** how a photo gets to the server and back; absent: the bar has no photo button */
     readonly photos?: PhotoPort;
+    /** how a voice note gets read on the owner's Mac; absent: the bar has no microphone button */
+    readonly voice?: VoicePort;
   },
 ): PromptBar {
   counter += 1;
@@ -64,6 +68,7 @@ export function mountPromptBar(
       <input class="visually-hidden" type="file" accept="image/*" multiple tabindex="-1" aria-hidden="true" data-photos="pick" />
       <input class="visually-hidden" type="file" accept="image/*" capture="environment" tabindex="-1" aria-hidden="true" data-photos="camera" />`
       }
+      ${handlers.voice === undefined ? '' : '<button class="prompt__photo prompt__voice" type="button" aria-label="Record a voice note" aria-pressed="false" title="Record a voice note: tap to start and stop, or hold while you speak. It is read on your Mac and goes nowhere else."></button>'}
       <textarea class="prompt__input" id="${inputId}" name="prompt" rows="1" placeholder="Ask anything" aria-describedby="${inputId}-hint" enterkeyhint="send" maxlength="${PROMPT_MAX_CHARS}" autocomplete="off" autocapitalize="sentences" spellcheck="true"></textarea>
       <span class="visually-hidden" id="${inputId}-hint">You can also paste a link or a long text. Lines starting with a slash are commands: /help lists them.</span>
       <button class="prompt__button" type="button">Send</button>
@@ -80,6 +85,8 @@ export function mountPromptBar(
   const input = root.querySelector<HTMLTextAreaElement>('.prompt__input');
   const button = root.querySelector<HTMLButtonElement>('.prompt__button');
   const tray = handlers.photos === undefined || form === null ? null : mountPhotoTray(form, handlers.photos, () => undefined);
+  const mic = root.querySelector<HTMLButtonElement>('.prompt__voice');
+  let voice: Voice | null = null;
   if (status === null || top === null || activity === null || notice === null || extra === null || cancel === null || form === null || input === null || button === null) {
     throw new Error('The prompt bar could not be built.');
   }
@@ -123,11 +130,28 @@ export function mountPromptBar(
     if (typed === '' && photos.length === 0 && !extra) return;
     const text = typed === '' ? (extra && photos.length === 0 ? '' : photos.length === 1 ? 'Please look at this photo.' : 'Please look at these photos.') : typed;
     const held = tray?.held() ?? [];
+    const spoken = voice?.ids() ?? [];
     input.value = '';
     fit();
-    const accepted = handlers.onSubmit(text, photos, held);
-    if (accepted !== false) tray?.clear();
+    const accepted = handlers.onSubmit(text, photos, held, spoken);
+    if (accepted !== false) {
+      tray?.clear();
+      voice?.clear();
+    }
   };
+
+  // The microphone: what is said comes back as words in the field, to be checked before sending (or sent at once when the owner chose that).
+  if (mic !== null && handlers.voice !== undefined) {
+    voice = mountVoice(mic, form, input, handlers.voice, {
+      onWords: (words, send) => {
+        const there = input.value.trim();
+        input.value = there === '' ? words : `${there} ${words}`;
+        fit();
+        if (send) submit();
+        else input.focus({ preventScroll: true });
+      },
+    });
+  }
 
   const refocus = (): void => {
     if (!window.matchMedia('(pointer: coarse)').matches) input.focus();
@@ -189,6 +213,7 @@ export function mountPromptBar(
       document.removeEventListener('keydown', onKey);
       window.removeEventListener('resize', fit);
       tray?.dispose();
+      voice?.dispose();
       root.remove();
     },
   };

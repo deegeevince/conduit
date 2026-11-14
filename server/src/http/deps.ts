@@ -4,6 +4,7 @@ import type { AssetStore } from '../domain/assets';
 import type { Conductor } from '../domain/conductor';
 import type { PictureService } from '../domain/pictures';
 import type { UploadStore } from '../domain/uploads';
+import type { VoiceNotes } from '../domain/voice';
 import type { Audit } from '../audit';
 import type { Env } from '../env';
 import type { KillSwitch } from '../kill';
@@ -27,6 +28,8 @@ export interface HttpDeps {
   readonly pictures: PictureService;
   /** v2.1. The user's photos: what `POST /api/sessions/:id/uploads` keeps and the painter draws */
   readonly uploads: UploadStore;
+  /** v2.1. The user's voice notes: what `POST /api/sessions/:id/voice` reads on this Mac and gives back as words */
+  readonly voice: VoiceNotes;
   /** the steward's status for the brief's note about the app; read without waiting */
   readonly status: () => AppStatus | null;
   /** the changelog's newest section, for a turn that asks what is new; read without waiting */

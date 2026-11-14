@@ -665,12 +665,24 @@ Lead is pen minus playhead: how far ahead of the audience you are. Keep it betwe
 `;
 }
 
+/** How a prompt that began as a voice note is put to the brain: said aloud, read on the owner's Mac, so a word may be misheard. When the words sent are not the transcript (the owner corrected it), the transcript is given too. */
+function spokenAs(input: TurnInput): string {
+  if (input.kind !== 'prompt') return '';
+  const heard = (input.spoken ?? []).map((words) => words.trim()).filter((words) => words !== '');
+  const same = heard.length === 1 && heard[0]?.toLowerCase() === input.text.trim().toLowerCase();
+  const extra = same ? '' : ` What the speech recogniser first heard, which may differ: "${heard.join(' / ').replace(/\s+/g, ' ')}".`;
+  return ` as a voice note (read on their own device, so a word can be misheard).${extra} Their words`;
+}
+
 function inputText(input: TurnInput, pastedAs?: string): string {
   if (input.kind === 'prompt' && input.text.length >= PASTE_AS_DOCUMENT_CHARS) {
     if (pastedAs !== undefined) return `The user pasted ${input.text.length} characters, given above as DOCUMENT ${pastedAs}. It is the user's own text; answer about it.`;
     return `The user pasted ${input.text.length} characters, beginning: ${input.text.slice(0, 160).replace(/\s+/g, ' ')}`;
   }
-  if (input.kind === 'prompt') return `The user says: ${input.text}${input.marks === undefined ? '' : ` (and wrote or drew on it: ${input.marks.strokes.length} strokes, attached last)`}${(input.images?.length ?? 0) > 0 ? ` (with ${input.images?.length === 1 ? 'a photo' : `${input.images?.length} photos`}: ${(input.images ?? []).join(', ')})` : ''}`;
+  const marksNote = input.kind === 'prompt' && input.marks !== undefined ? ` (and wrote or drew on it: ${input.marks.strokes.length} strokes, attached last)` : '';
+  const photosNote = (input.kind === 'prompt' && (input.images?.length ?? 0) > 0) ? ` (with ${input.images?.length === 1 ? 'a photo' : `${input.images?.length} photos`}: ${(input.images ?? []).join(', ')})` : '';
+  if (input.kind === 'prompt' && (input.spoken?.length ?? 0) > 0) return `The user spoke aloud${spokenAs(input)}: ${input.text}${marksNote}${photosNote}`;
+  if (input.kind === 'prompt') return `The user says: ${input.text}${marksNote}${photosNote}`;
   if (input.kind === 'tap') return `The user tapped your choice: "${input.text}"`;
   if (input.kind === 'script') return 'The user played a script of their own.';
   if (input.kind === 'act') {

@@ -1,6 +1,6 @@
 // The edge between untrusted JSON and the typed domain. Every check names the field it found wrong.
 
-import { AMBIENT_KINDS, CAMERA_MOVES, CHART_KINDS, CONTROL_KINDS, ENTER_EFFECTS, EXIT_EFFECTS, FACES, FX_NAMES, LAYERS, LOOPS, MARKS, PROCEDURAL_MEDIA, STROKES, STRUCTURE_KINDS, TEXTURES, ALIGNS, BACK_EVENT_TYPES, BRAIN_EFFORTS, BRAIN_MODES, BRAIN_MODELS, CANVAS_NAMES, DEMOS, ELEMENT_KINDS, LAYOUTS, LIMITS, LOOK_IDS, MOODS, NO_SIGHT, NO_V21_CAPABILITIES, NO_V4_CAPABILITIES, PACES, SIGHT_ITEMS, SIGHT_NOTE, UPLOAD_LIMITS, checkInkMarks } from '@conduit/language';
+import { AMBIENT_KINDS, CAMERA_MOVES, CHART_KINDS, CONTROL_KINDS, ENTER_EFFECTS, EXIT_EFFECTS, FACES, FX_NAMES, LAYERS, LOOPS, MARKS, PROCEDURAL_MEDIA, STROKES, STRUCTURE_KINDS, TEXTURES, ALIGNS, BACK_EVENT_TYPES, BRAIN_EFFORTS, BRAIN_MODES, BRAIN_MODELS, CANVAS_NAMES, DEMOS, ELEMENT_KINDS, LAYOUTS, LIMITS, LOOK_IDS, MOODS, NO_SIGHT, NO_V21_CAPABILITIES, NO_V4_CAPABILITIES, PACES, SIGHT_ITEMS, SIGHT_NOTE, UPLOAD_LIMITS, VOICE_LIMITS, checkInkMarks } from '@conduit/language';
 import type {
   BackEvent,
   BrainChange,
@@ -173,6 +173,15 @@ function inkMarks(value: unknown): InkMarks | undefined {
   return value as InkMarks;
 }
 
+/** The ids of the voice notes a prompt carries (`n1`, `n2`, ...). Whether the conversation holds them is the conductor's to say. */
+function voiceIds(value: unknown): string[] {
+  if (value === undefined) return [];
+  const ids = list(value, 'input.voice').map((item) => text(item, 'input.voice'));
+  if (ids.length > VOICE_LIMITS.perTurn) throw errors.badRequest(`a prompt may carry at most ${VOICE_LIMITS.perTurn} voice notes`);
+  for (const id of ids) if (!/^n[1-9][0-9]{0,3}$/.test(id)) throw errors.badRequest('input.voice must be the ids the server gave the voice notes (n1, n2, ...)');
+  return [...new Set(ids)];
+}
+
 export function parseTurnInput(body: unknown): TurnInput {
   const input = obj(obj(body, 'body').input, 'input');
   const kind = oneOf(input.kind, ['prompt', 'tap', 'demo', 'script', 'act'] as const, 'input.kind');
@@ -192,7 +201,8 @@ export function parseTurnInput(body: unknown): TurnInput {
     if (value.length > SERVER_LIMITS.promptChars) throw errors.badRequest(`input.text is longer than ${SERVER_LIMITS.promptChars} characters`);
     const images = photoIds(input.images);
     const marks = inkMarks(input.marks);
-    return { kind, text: value, ...(images.length === 0 ? {} : { images }), ...(marks === undefined ? {} : { marks }) };
+    const voice = voiceIds(input.voice);
+    return { kind, text: value, ...(images.length === 0 ? {} : { images }), ...(marks === undefined ? {} : { marks }), ...(voice.length === 0 ? {} : { voice }) };
   }
   if (kind === 'tap') {
     const said = text(input.text, 'input.text');

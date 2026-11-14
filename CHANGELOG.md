@@ -2,6 +2,10 @@
 
 Newest first. Each item is something the brain can show live when asked "showcase what's new": draw it, don't describe it. The server reads this file.
 
+## Voice notes in (new)
+- Tap the microphone (or hold it) beside the photo button and speak, up to two minutes, with a level meter and a timer. The words appear in the message box to check before you send; a setting sends them at once. Works from a phone, an iPad or the desktop.
+- It is read on the Mac that runs Conduit, on the device, and never sent to a third party. The audio is deleted once read, and the audit log records that a note was read, never the words. If the Mac cannot read it (permission not given, a language it cannot do on the device) it says so and offers typing.
+
 ## Saving films (live)
 - Save film now saves the latest answer as you saw it: the prompt it began with and the taps and controls that carried it on, not only the last tap.
 - Save whole conversation: one WebM of every turn in order, each after a card with what you asked, with the sound of any tunes. At most ten minutes; a longer conversation keeps its latest turns.

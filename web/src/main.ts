@@ -57,7 +57,7 @@ let app: StageApp | null = null;
 let picker: Picker | null = null;
 let stageInk: StageInk | null = null;
 const promptBar = mountPromptBar(bar, {
-  onSubmit: (text, photos, held) => {
+  onSubmit: (text, photos, held, voice) => {
     // The field is cleared at once so Enter feels immediate; if the turn is not accepted the words (and photos) come back.
     if (app === null) {
       promptBar.restore(text, held);
@@ -73,7 +73,7 @@ const promptBar = mountPromptBar(bar, {
       const mounted = app;
       void (async () => {
         const marks = await drawn.take();
-        await mounted.prompt(text === '' ? DRAW_WORDS : text, photos, marks ?? undefined);
+        await mounted.prompt(text === '' ? DRAW_WORDS : text, photos, marks ?? undefined, voice);
         drawn.sent();
       })().catch((cause: unknown) => {
         promptBar.restore(text, held);
@@ -81,7 +81,7 @@ const promptBar = mountPromptBar(bar, {
       });
       return true;
     }
-    void app.prompt(text, photos).catch(() => promptBar.restore(text, held));
+    void app.prompt(text, photos, undefined, voice).catch(() => promptBar.restore(text, held));
     return true;
   },
   onStop: () => app?.interrupt(),
@@ -94,6 +94,17 @@ const promptBar = mountPromptBar(bar, {
       return (await app.link.uploadPhoto(photo)).id;
     },
     urlOf: (id) => app?.link.photoUrl(id) ?? null,
+  },
+  // A voice note is recorded in the page and read on the owner's own Mac (Apple's on-device recogniser); only its words come back.
+  voice: {
+    status: async () => {
+      if (app === null) throw new Error('The stage is still starting.');
+      return app.link.voiceStatus();
+    },
+    upload: async (recording) => {
+      if (app === null) throw new Error('The stage is still starting. Try again in a moment.');
+      return app.link.uploadVoice(recording);
+    },
   },
 });
 
