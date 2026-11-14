@@ -1,5 +1,5 @@
 import { API, checkStageEvent, STAGE_EVENT_TYPES, STREAM_HEARTBEAT } from '@conduit/language';
-import type { AppStatus, BackEvent, BrainChange, BrainChoice, CreateSessionRequest, DemoInfo, StageEvent, StageEventType, StartTurnRequest, ToolChoice, TurnInput, UploadCrop, UploadResponse, VoiceResponse, VoiceStatus } from '@conduit/language';
+import type { AppStatus, BackEvent, BrainChange, BrainChoice, CreateSessionRequest, DemoInfo, DocumentSummary, DocumentView, OpenDocumentResponse, StageEvent, StageEventType, StartTurnRequest, ToolChoice, TurnInput, UploadCrop, UploadResponse, VoiceResponse, VoiceStatus } from '@conduit/language';
 import type { LinkStatus, StageLink } from '../contracts/link';
 import type { PainterUpload } from '../contracts/painter';
 import { asAsks, asBrainChoice, asDemos, asSessionResponse, asStatus, asTools, asTurnId, messageOf } from './guards';
@@ -49,6 +49,16 @@ export interface HttpLink extends StageLink {
   cropPhoto(id: string, crop: UploadCrop): Promise<UploadResponse>;
   /** v2.1. Where a photo this conversation holds is, by its id (`u1`); null before there is a conversation. What the prompt bar's thumbnail and `pic u1` draw. */
   photoUrl(id: string): string | null;
+  /** v3. The catalogue: every document there is, newest first (`GET /api/documents`). */
+  documents(): Promise<readonly DocumentSummary[]>;
+  /**
+   * v3. Opens a document again in a NEW session and moves this link onto it (`POST /api/documents/:id/open`): the stream, the back channel and every
+   * later request are the new session's. Resolves with the document and the person's place in it. Used at boot (a reload resumes) and from the catalogue.
+   * Rejects with the server's sentence; the link is left on the session it had.
+   */
+  resumeDocument(id: string, ready?: CreateSessionRequest): Promise<DocumentView>;
+  /** v3. Reads what the person wrote by hand in an ask's answer area, from the picture of the ink (an upload id): the words, as the server's reader sees them. */
+  readInk(request: { readonly image: string; readonly node: string; readonly ask: string }): Promise<{ readonly text: string; readonly lines: readonly string[]; readonly unclear: boolean }>;
 }
 
 /** One hour or one day of model use, as `/api/usage` gives it; only what `/usage` shows. */
@@ -105,6 +115,8 @@ export function createHttpLink(): HttpLink {
   let status: LinkStatus = 'connecting';
   let reviewHeader: Record<string, string> = {};
   let session: string | null = null;
+  /** what the painter said of itself when the session was made: a document opened again is made with the same */
+  let readyRequest: CreateSessionRequest | null = null;
   let source: EventSource | null = null;
   let retryTimer: ReturnType<typeof setTimeout> | undefined;
   let attempt = 0;
@@ -368,6 +380,7 @@ export function createHttpLink(): HttpLink {
     },
 
     async connect(ready: CreateSessionRequest): Promise<void> {
+      readyRequest = ready;
       setStatus('connecting');
       let response: Response;
       try {
@@ -560,6 +573,42 @@ export function createHttpLink(): HttpLink {
 
     photoUrl(id: string): string | null {
       return session === null ? null : API.upload(session, id);
+    },
+
+    async documents(): Promise<readonly DocumentSummary[]> {
+      const body = await bodyOf(await fetch(API.documents, { cache: 'no-store' }));
+      return Array.isArray(body) ? (body as DocumentSummary[]) : [];
+    },
+
+    async resumeDocument(id: string, ready?: CreateSessionRequest): Promise<DocumentView> {
+      const request = ready ?? readyRequest;
+      if (request === null) throw new Error('The stage is not ready yet.');
+      readyRequest = request;
+      let response: Response;
+      try {
+        response = await fetch(API.documentOpen(id), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(request) });
+      } catch (cause) {
+        throw new Error('The server cannot be reached.', { cause });
+      }
+      const body = (await bodyOf(response)) as Partial<OpenDocumentResponse> | null;
+      const made = asSessionResponse(body);
+      if (made === null || body === null || body.view === undefined) throw new Error('The server answered with something that is not a session.');
+      // the old session stays where it was; the stream, the queue and every request are the new one's
+      queue = [];
+      session = made.session;
+      status = 'connecting';
+      openStream(made.session);
+      setStatus('open');
+      void flush();
+      return body.view;
+    },
+
+    async readInk(request): Promise<{ readonly text: string; readonly lines: readonly string[]; readonly unclear: boolean }> {
+      if (session === null || !canSend()) throw new Error('Not connected. Try again in a moment.');
+      const response = await fetch(API.readInk(session), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(request) });
+      const body = (await bodyOf(response)) as { text?: unknown; lines?: unknown; unclear?: unknown } | null;
+      const lines = Array.isArray(body?.lines) ? (body.lines as unknown[]).filter((line): line is string => typeof line === 'string') : [];
+      return { text: typeof body?.text === 'string' ? body.text : lines.join('\n'), lines, unclear: body?.unclear === true };
     },
 
     async saveCapture(turn: string, film: Blob): Promise<void> {

@@ -5,6 +5,8 @@ import type { AppAct, AppHost } from '../contracts/app';
 import type { ExportJob, ExportRequest, Exporter } from '../contracts/export';
 import type { ChartHost } from '../contracts/chart';
 import type { StageHook } from '../contracts/hook';
+import { createDocumentView } from './document-view';
+import type { DocumentView as DocumentLayer } from './document-view';
 import type { LinkStatus, StageLink } from '../contracts/link';
 import type { Painter } from '../contracts/painter';
 import type { Renderer } from '../contracts/renderer';
@@ -273,7 +275,16 @@ function newRenderer(params: AppParams): Renderer {
  * channel goes up the link. This is the only place those three meet.
  */
 export async function mountStage(options: StageAppOptions): Promise<StageApp> {
-  const { host, params, lockLook, autoplay } = options;
+  const { host, params, lockLook } = options;
+  // a reload that will open a document again does not play the welcome demo under it
+  const reopening = ((): boolean => {
+    try {
+      return !new URLSearchParams(window.location.search).has('fresh') && window.localStorage.getItem('conduit.document') !== null;
+    } catch {
+      return false;
+    }
+  })();
+  const autoplay = reopening ? null : options.autoplay;
   const notes: string[] = [];
   const rejects: RejectNote[] = [];
   const statusListeners = new Set<(status: StageStatus) => void>();
@@ -406,6 +417,40 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     link.send(event);
   }
   let heldReport: BackEvent | null = null;
+  // v3. The document on the stage: when the session has one, the lesson view is laid over the stage (PLAN-v3-core WS6), the pen over its writing
+  // slot (the ink module), her state goes up as `state` events, and a reload opens the last document again where she was (`resumeDocument`).
+  const RESUME_KEY = 'conduit.document';
+  const rememberDocument = (id: string | null): void => {
+    try {
+      if (id === null) window.localStorage.removeItem(RESUME_KEY);
+      else window.localStorage.setItem(RESUME_KEY, id);
+    } catch {
+      // storage may be blocked: the document is still kept by the server, and the catalogue still lists it
+    }
+  };
+  const documents: DocumentLayer = createDocumentView({
+    stage: host,
+    dark: () => document.documentElement.style.colorScheme === 'dark',
+    onNote: (text) => announce(text),
+    onShown: (id) => rememberDocument(id),
+    ink: {
+      upload: async (png) => (await link.uploadPhoto(png)).id,
+      read: (request) => link.readInk(request),
+    },
+    link: {
+      sendState: (change) => {
+        if (currentDocumentId !== null) sendBack({ type: 'state', turn: currentTurn, document: currentDocumentId, change });
+      },
+      documents: () => link.documents(),
+      open: async (id) => {
+        const view = await link.resumeDocument(id);
+        currentDocumentId = view.document.id;
+        rememberDocument(view.document.id);
+        return { document: view.document, state: view.state };
+      },
+    },
+  });
+  let currentDocumentId: string | null = null;
 
   /** what the server is fetching for this turn, by name, and what it could not read */
   const readingNow = new Set<string>();
@@ -605,6 +650,10 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
         lead = event.lead;
         services = event.services;
         painter.setServices(event.services);
+        return;
+      case 'doc':
+        currentDocumentId = event.document;
+        documents.onDoc(event);
         return;
       case 'turn':
         if (event.turn === currentTurn || opened.has(event.turn)) return;
@@ -890,13 +939,37 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     publishStatus();
   }
 
+  /** `?fresh` starts a conversation and forgets the document a reload would have opened again */
+  const fresh = new URLSearchParams(window.location.search).has('fresh');
+  if (fresh) rememberDocument(null);
+  function resumeId(): string | null {
+    try {
+      return window.localStorage.getItem(RESUME_KEY);
+    } catch {
+      return null;
+    }
+  }
+
   async function connectWithRetry(ready: Parameters<StageLink['connect']>[0]): Promise<void> {
     let lastError: unknown = null;
     for (const delay of CONNECT_DELAYS_MS) {
       if (disposed) return;
       if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
       try {
-        await link.connect(ready);
+        const resume = fresh ? null : resumeId();
+        let resumed = false;
+        if (resume !== null) {
+          try {
+            const view = await link.resumeDocument(resume, ready);
+            currentDocumentId = view.document.id;
+            documents.load({ document: view.document, state: view.state });
+            resumed = true;
+          } catch {
+            // the document is gone (a different server, a cleared data folder): a fresh conversation is the way on
+            rememberDocument(null);
+          }
+        }
+        if (!resumed) await link.connect(ready);
         connecting = false;
         connectSettle?.resolve();
         publishStatus();

@@ -116,7 +116,7 @@ function reportSlot(): void {
 
 function start(input: LessonInput): void {
   if (root === null) return;
-  player = new Player(root, input, { commit, open: (id) => bridge?.send('open', id), openPart: (id) => bridge?.send('openpart', id), picture: () => bridge?.send('picture', 1) });
+  player = new Player(root, input, { commit, open: (id) => bridge?.send('open', id), openPart: (id) => bridge?.send('openpart', id), picture: () => bridge?.send('picture', 1), inkCheck: (node, ask) => bridge?.send('inkcheck', JSON.stringify([node, ask])), inkClear: (node, ask) => bridge?.send('inkclear', JSON.stringify([node, ask])) });
   player.render();
   reportSlot();
   new MutationObserver(reportSlot).observe(root, { childList: true, subtree: true });
@@ -138,6 +138,7 @@ addEventListener('message', (event) => {
     player = null;
     start(payload.input);
   } else player.update(payload.input);
+  if (payload.write !== undefined) player?.written(payload.write);
   if (payload.census > asked) {
     asked = payload.census;
     const census = window.__lessonCensus?.();

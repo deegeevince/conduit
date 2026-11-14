@@ -4,7 +4,9 @@
 import { API } from '@conduit/language';
 import type { DocumentSummary, DocumentView, OpenDocumentResponse } from '@conduit/language';
 import type { Hono } from 'hono';
+import { nodeOf } from '@conduit/language';
 import { DOCUMENT_ID } from '../domain/document';
+import { readInk } from '../judge/ink';
 import { parseCreateSession } from '../domain/validate';
 import { errors } from '../errors';
 import type { HttpDeps } from './deps';
@@ -17,7 +19,7 @@ function documentId(raw: string): string {
 }
 
 export function registerDocumentRoutes(app: Hono, deps: HttpDeps): void {
-  const { conductor } = deps;
+  const { conductor, uploads, usage, env } = deps;
 
   /** 200 `DocumentSummary[]`: the catalogue, newest first. */
   app.get(API.documents, async (c) => c.json<readonly DocumentSummary[]>(await conductor.listDocuments()));
@@ -42,5 +44,41 @@ export function registerDocumentRoutes(app: Hono, deps: HttpDeps): void {
     const view = conductor.documentOf(param(c, 'session'));
     if (view === null) throw errors.notFound(`a document for session ${param(c, 'session')}`);
     return c.json<DocumentView>(view);
+  });
+
+  /**
+   * Body `{ image, node, ask }`: `image` is the upload id of the picture of the ink (`POST API.uploads`), `node` and `ask` say which ask of the session's
+   * document it answers. Reads the handwriting as words (a cheap model that only transcribes: the document's own matcher says whether it is right).
+   * 200 `{ text, lines, unclear }`.
+   */
+  app.post(API.readInk(':session'), async (c) => {
+    const session = param(c, 'session');
+    conductor.assertSession(session);
+    if (!uploads.available) throw errors.forbidden('photos are switched off on this server');
+    const raw: unknown = await c.req.json().catch(() => null);
+    const body = typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>) : {};
+    const image = typeof body['image'] === 'string' ? body['image'] : '';
+    if (!/^u[1-9][0-9]{0,3}$/.test(image)) throw errors.badRequest('image must be the id the server gave the picture of the ink (u1, u2, ...)');
+    const picture = await uploads.load(session, image);
+    if (picture === null) throw errors.notFound(`photo ${image}`);
+    // What the ask says is read from the document (never from the request), so the reader is told the question and nothing more.
+    const view = conductor.documentOf(session);
+    const node = view === null || typeof body['node'] !== 'string' ? null : nodeOf(view.document, body['node']);
+    const step = node?.body?.kind === 'lesson' ? node.body.steps.find((s) => s.kind === 'ask' && s.id === body['ask']) : undefined;
+    const question = node === null || node === undefined ? '' : node.title;
+    const prompt = step?.kind === 'ask' ? step.prompt : '';
+    const reading = await readInk(
+      { picture: { data: Buffer.from(picture.bytes).toString('base64'), mime: picture.mime }, question, ask: prompt },
+      {
+        bin: env.brain.kind === 'claude-cli' ? env.brain.bin : 'claude',
+        model: env.ahead.verifyModel,
+        effort: 'low',
+        timeoutMs: 60_000,
+        meter: (call) => usage.record({ kind: 'ink', model: call.model, session, turn: null, login: null, inputTokens: call.usage.inputTokens, cacheReadTokens: call.usage.cacheReadTokens, cacheWriteTokens: call.usage.cacheWriteTokens, outputTokens: call.usage.outputTokens, thinkingTokens: call.usage.thinkingTokens, costUsd: call.usage.costUsd, ms: call.usage.ms }),
+      },
+      c.req.raw.signal,
+    );
+    if (reading.failure !== null) throw errors.brainFailed(reading.failure);
+    return c.json({ text: reading.lines.join('\n'), lines: reading.lines, unclear: reading.unclear });
   });
 }

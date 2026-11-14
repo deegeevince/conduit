@@ -224,3 +224,8 @@ button.seg:not(.lit) { opacity: 0.62; }
 @media (max-width: 899px) and (max-height: 640px) {
   .fig { position: static; }
 }
+
+/* the paper: the page lays its ink layer over this box (data-ink-slot); until then it is a blank ruled card */
+.writing { display: grid; gap: 12px; }
+.paper { position: relative; width: 100%; height: clamp(180px, 28vh, 300px); border: 3px solid var(--ink); border-radius: 16px; background: var(--card) repeating-linear-gradient(to bottom, transparent 0, transparent 47px, var(--line) 47px, var(--line) 48px); display: grid; place-items: center; touch-action: none; }
+.paper-hint { color: var(--dim); font-size: 20px; pointer-events: none; }

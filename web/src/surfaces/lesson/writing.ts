@@ -50,3 +50,38 @@ export function typedWriting(options: WritingOptions): Writing {
   );
   return { element, read: () => field.value };
 }
+
+export interface InkWritingOptions {
+  readonly node: string;
+  readonly ask: string;
+  readonly unit: string | null;
+  /** the page is reading what she wrote (Check was pressed) */
+  readonly reading: boolean;
+  /** a sentence under the paper (the last read could not be made out) */
+  readonly note: string | null;
+  readonly onCheck: (stamp: number) => void;
+  readonly onClear: () => void;
+  readonly onType: () => void;
+}
+
+/**
+ * The paper: a blank, ruled area the page lays its ink layer over (`data-ink-slot` is what the page finds it by; it is the whole of the lesson's side
+ * of the pen). Check asks the page to read the hand; start-again clears the page's ink; the typed field is one tap away for a keyboard.
+ */
+export function inkWriting(options: InkWritingOptions): HTMLElement {
+  return h(
+    'div',
+    { class: 'writing' },
+    h('div', { class: 'paper', 'data-ink-slot': options.node, 'data-ask': options.ask, role: 'img', 'aria-label': 'Write your answer here with the pencil' }, h('span', { class: 'paper-hint' }, 'Write here with the pencil')),
+    options.note === null ? null : h('p', { class: 'ask-note', role: 'status' }, options.note),
+    h(
+      'div',
+      { class: 'answer-row' },
+      options.reading
+        ? h('button', { type: 'button', class: 'btn main check', 'data-act': 'check', disabled: true }, 'Reading your writing…')
+        : h('button', { type: 'button', class: 'btn main check', 'data-act': 'check', onclick: (e: Event) => options.onCheck(e.timeStamp) }, 'Check'),
+      h('button', { type: 'button', class: 'btn soft', 'data-act': 'clear', onclick: () => options.onClear() }, 'Start again'),
+      h('button', { type: 'button', class: 'btn soft', 'data-act': 'type', onclick: () => options.onType() }, 'Type it'),
+    ),
+  );
+}

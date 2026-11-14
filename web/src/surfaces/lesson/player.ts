@@ -27,8 +27,8 @@ import { h } from './dom';
 import { afterOf, answerOf, atOf, cardsOf, gateOf, isDone, isLesson, isWaiting, kidsOf, parentOf, pathOf, runsOf, shownOf, shutAsks, splitNumber, stepsOf, tally } from './model';
 import type { Run } from './model';
 import { TECHNIQUE_NAMES, isTechnique } from './types';
-import type { CatalogueEntry, DocState, Held, LessonAsk, LessonInput, OpenAsk, StateChange, Technique } from './types';
-import { typedWriting } from './writing';
+import type { CatalogueEntry, DocState, Held, LessonAsk, LessonInput, OpenAsk, StateChange, Technique, WriteResult } from './types';
+import { inkWriting, typedWriting } from './writing';
 import { drawVisual } from './widgets';
 import type { WidgetCtx } from './widgets/common';
 
@@ -41,6 +41,10 @@ export interface PlayerPort {
   openPart(node: string): void;
   /** she asked to put the document away and see the picture under it */
   picture(): void;
+  /** she pressed Check on an ask she wrote by hand: the page reads the ink and answers with `write` */
+  inkCheck(node: string, ask: string): void;
+  /** she asked for a clean sheet to write on */
+  inkClear(node: string, ask: string): void;
 }
 
 /** What is on screen when it is not the part the cursor rests on. Ephemeral: the cursor is what is kept. */
@@ -87,6 +91,11 @@ export class Player {
   private docked = false;
   private expanded = false;
   private watcher: IntersectionObserver | null = null;
+  /** asks she chose to type, and the ask whose writing the page is reading now, and what it said when it could not */
+  private readonly typing = new Set<string>();
+  private reading: string | null = null;
+  private unread: { readonly ask: string; readonly said: string } | null = null;
+  private wrote = 0;
 
   constructor(
     private readonly root: HTMLElement,
@@ -103,6 +112,22 @@ export class Player {
   update(input: LessonInput): void {
     this.input = { ...input, state: this.state };
     this.render();
+  }
+
+  /** The page read her hand (or could not). Taken once; a reading is her try at the ask it was for. */
+  written(result: WriteResult): void {
+    if (result.seq <= this.wrote) return;
+    this.wrote = result.seq;
+    this.reading = null;
+    const node = nodeOf(this.doc, result.node);
+    const ask = node === null ? undefined : stepsOf(node).find((step): step is LessonAsk => step.kind === 'ask' && step.id === result.ask);
+    if (node === null || ask === undefined) return this.render();
+    if (result.text === null) {
+      this.unread = { ask: result.ask, said: result.said ?? 'I could not read that. Write it bigger, or type it.' };
+      return this.render();
+    }
+    this.unread = null;
+    this.tryAnswer(node, ask, result.text, performance.now());
   }
 
   get current(): DocState {
@@ -477,6 +502,32 @@ export class Player {
     } else {
       const numeric = ask.accepted.every((a) => /^\d+$/.test(a.trim()));
       const decimal = ask.accepted.every((a) => /^[$\d.,\s]+[a-z]*$/i.test(a.trim()));
+      if (this.input.ink === true && !this.typing.has(ask.id)) {
+        card.append(
+          inkWriting({
+            node: node.id,
+            ask: ask.id,
+            unit: ask.unit,
+            reading: this.reading === ask.id,
+            note: this.unread?.ask === ask.id ? this.unread.said : null,
+            onCheck: () => {
+              this.reading = ask.id;
+              this.unread = null;
+              this.render();
+              this.port.inkCheck(node.id, ask.id);
+            },
+            onClear: () => {
+              this.unread = null;
+              this.port.inkClear(node.id, ask.id);
+            },
+            onType: () => {
+              this.typing.add(ask.id);
+              this.render();
+            },
+          }),
+        );
+        return this.hinted(card, view, ask, mask);
+      }
       const writing = typedWriting({
         node: node.id,
         ask: ask.id,
@@ -491,6 +542,10 @@ export class Player {
       writing.element.querySelector('input')?.addEventListener('focus', () => window.setTimeout(() => card.scrollIntoView({ block: 'center', behavior: 'smooth' }), 250));
       card.append(writing.element);
     }
+    return this.hinted(card, view, ask, mask);
+  }
+
+  private hinted(card: HTMLElement, view: NonNullable<ReturnType<typeof askView>>, ask: LessonAsk, mask: (text: string) => string): HTMLElement {
     if (view.wrong > 0) {
       const feedback = h('div', { class: 'nudge', role: 'status' }, h('p', { class: 'verdict' }, 'Not yet. Have another look.'));
       if (view.hint !== null) feedback.append(h('p', { class: 'hint' }, h('b', {}, `Hint ${Math.min(view.wrong, ask.hints.length)}: `), mask(view.hint)));

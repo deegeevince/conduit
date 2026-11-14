@@ -95,6 +95,17 @@ export interface LessonInput {
   readonly catalogue: readonly CatalogueEntry[];
   /** the page has a picture under the document: the view offers a way back to it */
   readonly picture?: boolean;
+  /** the page lays an ink area over the writing slot (`data-ink-slot`) of an open ask: the lesson draws a blank paper there and a Check that asks the page to read it, with the typed field one tap away */
+  readonly ink?: boolean;
+}
+
+/** What the page read from her hand: `text` is her working as lines (a try); null says it could not be read, with a sentence for her. `seq` counts, so it is taken once. */
+export interface WriteResult {
+  readonly seq: number;
+  readonly node: NodeId;
+  readonly ask: string;
+  readonly text: string | null;
+  readonly said?: string;
 }
 
 /**
@@ -108,6 +119,8 @@ export interface LessonPayload {
   readonly input: LessonInput;
   readonly replace: boolean;
   readonly census: number;
+  /** the page has read what she wrote by hand in an ask (or could not): the lesson tries it as her answer */
+  readonly write?: WriteResult;
 }
 
 // ---------------------------------------------------------------- the census (2.8): what is on screen, as data

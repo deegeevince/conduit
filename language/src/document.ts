@@ -116,7 +116,7 @@ export interface Seen {
 }
 
 /** The limits on what a page may send up as state. Past them a value is refused, not cut. */
-export const STATE_LIMITS = { nodeId: 200, key: 64, heldBytes: 4_096, tryChars: 200, triesPerAsk: 50, seenBytes: 16_384 } as const;
+export const STATE_LIMITS = { nodeId: 200, key: 64, heldBytes: 4_096, tryChars: 600, triesPerAsk: 50, seenBytes: 16_384 } as const;
 
 /** The clock moved on: `seconds` on the cursor's leaf. It never leaves the page and is never logged. */
 export interface Tick {

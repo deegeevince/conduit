@@ -13,6 +13,8 @@ import { initialState, nodeOf } from '@conduit/language';
 import type { DocNode } from '@conduit/language';
 import { DocumentHost, bindDocumentLink, catalogueFromSummaries } from './document-host';
 import type { DocumentLink } from './document-host';
+import { createDocumentInk } from './document-ink';
+import type { DocumentInk } from './document-ink';
 import type { CatalogueEntry, DocState, Document, LessonInput, NodeId } from '../surfaces/lesson/types';
 
 /** The `doc` stage event of the wire (WS4): the nodes that changed, whole. */
@@ -31,6 +33,13 @@ export interface DocumentViewOptions {
   readonly link: DocumentLink;
   readonly dark: () => boolean;
   readonly onNote?: (text: string) => void;
+  /** the pen: how a picture of her writing is kept and read; absent, the typed field is the writing area */
+  readonly ink?: {
+    upload(png: Blob): Promise<string>;
+    read(request: { readonly image: string; readonly node: string; readonly ask: string }): Promise<{ readonly lines: readonly string[]; readonly unclear: boolean }>;
+  };
+  /** a document is on screen (or put away) for this id: the page may remember it to resume */
+  readonly onShown?: (document: string) => void;
 }
 
 export interface DocumentView {
@@ -42,6 +51,8 @@ export interface DocumentView {
   toggle(show?: boolean): void;
   readonly shown: boolean;
   host(): DocumentHost | null;
+  /** the pen laid over the writing slot, when there is one (for the browser checks) */
+  readonly pen: DocumentInk | null;
   dispose(): void;
 }
 
@@ -71,7 +82,18 @@ export function createDocumentView(options: DocumentViewOptions): DocumentView {
   pill.style.cssText = 'position:absolute;right:12px;bottom:12px;z-index:6;min-height:48px;padding:0 18px;border-radius:24px;border:2px solid #888;background:#fff;color:#111;font:700 18px system-ui;display:none';
   options.stage.append(layer, pill);
 
-  const input = (next: Document, state: DocState): LessonInput => ({ doc: next, state, crops: {}, stills: {}, catalogue, picture: true });
+  const pen: DocumentInk | null =
+    options.ink === undefined
+      ? null
+      : createDocumentInk({
+          mount: body,
+          document: () => doc,
+          upload: options.ink.upload,
+          read: options.ink.read,
+          answer: (node, ask, text, said) => host?.write(node, ask, text, said),
+          note: (text) => options.onNote?.(text),
+        });
+  const input = (next: Document, state: DocState): LessonInput => ({ doc: next, state, crops: {}, stills: {}, catalogue, picture: true, ink: pen !== null });
 
   const refresh = (): void => {
     void options.link.documents().then((summaries) => {
@@ -86,7 +108,8 @@ export function createDocumentView(options: DocumentViewOptions): DocumentView {
       layer.style.display = shown ? 'flex' : 'none';
       host = new DocumentHost({ mount: body, dark: options.dark(), input: input(next, state), onNote: options.onNote });
       bindDocumentLink(host, options.link, { currentId: () => doc?.id ?? '', crops: () => ({}) });
-      host.listen({ ...host.handlers, onPicture: () => toggle(false) });
+      host.listen({ ...host.handlers, onPicture: () => toggle(false), onSlot: (slot) => pen?.slot(slot), onInkCheck: (node, ask) => void pen?.check(node, ask), onInkClear: (node, ask) => pen?.clear(node, ask) });
+      options.onShown?.(next.id);
       refresh();
     } else host.setInput(input(next, host.current));
   };
@@ -130,7 +153,9 @@ export function createDocumentView(options: DocumentViewOptions): DocumentView {
       return shown && host !== null;
     },
     host: () => host,
+    pen,
     dispose() {
+      pen?.dispose();
       host?.dispose();
       layer.remove();
       pill.remove();

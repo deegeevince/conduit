@@ -804,6 +804,8 @@ export const API = {
   document: (id: string): string => `/api/documents/${id}`,
   /** v3. POST a `CreateSessionRequest`: opens the document again in a new session (after a restart, or from the catalogue). 201 `OpenDocumentResponse`. */
   documentOpen: (id: string): string => `/api/documents/${id}/open`,
+  /** v3. POST `{ image, node, ask }` (the upload id of the picture of the ink): reads what a hand wrote in an ask's answer area. 200 `{ text, lines, unclear }`. */
+  readInk: (session: string): string => `/api/sessions/${session}/read-ink`,
   /** v3. GET: the document this session is making or has reopened, as `DocumentView`; 404 until it has one. */
   sessionDocument: (session: string): string => `/api/sessions/${session}/document`,
   relayNext: '/api/relay/next',
