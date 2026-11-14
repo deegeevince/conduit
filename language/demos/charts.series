@@ -1,0 +1,45 @@
+# Charts: an instrument, not a drawing. Rows in, axes and a crosshair out.
+# Numbers are written as people write them; the chart writes them back.
+
+scene caption
+chart line | Average price of a loaf, dollars
+| 2019 | $2.90
+| 2020 | $3.05
+| 2021 | $3.20
+| 2022 | $3.85
+| 2023 | $4.10
+node x=2022 | The wheat shock
+node y=3.5 | What a loaf used to cost
+say | The price jumped in a year, then stayed.
+wait 2
+
+scene caption
+chart columns | Visitors, millions
+| city | visitors
+| Paris | 30.4
+| London | 29.1
+| Rome | 21.8
+| Madrid | 18.2
+say aside | Hover a column for its figure.
+wait 2
+
+scene caption
+chart candles approx | A coffee company's share price, dollars
+| month | open | high | low | close | volume
+| 2025-01 | 98 104 95 102 1.4M
+| 2025-02 | 102 111 100 109 1.9M
+| 2025-03 | 109 112 96 99 2.6M
+| 2025-04 | 99 108 97 106 1.2M
+node x=2025-03 | The frost warning
+say aside | Recalled figures, not market data.
+wait 2
+
+scene caption
+chart line indexed | Two economies, 2000 = 100
+| year | Japan | Korea
+| 2000 | 100 | 100
+| 2005 | 112 | 144
+| 2010 | 121 | 190
+| 2015 | 130 | 234
+| 2020 | 128 | 262
+say | Indexed, so growth compares.

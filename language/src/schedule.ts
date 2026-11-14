@@ -8,6 +8,8 @@
 // makes `revise` and `cancel` trivial (edit the score, rebuild), and what
 // keeps a schedule reproducible: the same score always gives the same times.
 
+import { chartModelOf } from './chart';
+import { numberOf } from './expr';
 import { lengthOf, outlineOf, pointAlong } from './geometry';
 import { completeStyle, mergeStyles, patchStyle, resolveColours, resolveLook, resolveStyle } from './style';
 import type { ColorSheet, ElementStyle, LookDef, LookSheet, ResolvedLook, ResolvedProps, StyleContext, StyleDef, StyleSheet } from './style';
@@ -246,6 +248,8 @@ export interface DrivenChange {
   readonly effect: DrivenEffect;
   /** when the binding came into being, on the clock of the turn that wrote it; 0 when carried */
   readonly since: number;
+  /** when the control left, and the binding with it, on the clock of the turn; absent while the control stays */
+  readonly until?: number;
 }
 
 /** Everything that persists from one turn to the next. */
@@ -511,6 +515,8 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase): 
   const scenes: MutableScene[] = [scene];
 
   const byKey = new Map<string, Live>();
+  /** the line that wrote each row of a table or chart in this turn */
+  const rowSeq = new WeakMap<StructureRow, number>();
   for (const element of base.elements) {
     const span: MutableElement = {
       key: element.key,
@@ -573,6 +579,14 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase): 
       target.span.exit = { start, end: start + duration, effect, cause };
     }
     if (target.predecessor !== null) leave(target.predecessor, start, effect, cause);
+    // A control takes the changes it drives with it: they stop applying when it goes.
+    if (target.span.kind === 'control' && target.span.exit?.start === start) {
+      for (const other of live) {
+        if (other.span.driven.some((change) => change.control === target.span.key && (change.until === undefined || change.until > start))) {
+          other.span.driven = other.span.driven.map((change) => (change.control === target.span.key && (change.until === undefined || change.until > start) ? { ...change, until: start } : change));
+        }
+      }
+    }
     // A group takes its parts with it, a structure its nodes and links, a node the links that touch it, and a thing its copies.
     const { kind } = target.span;
     if (kind === 'group' || kind === 'shape' || kind === 'sprite' || kind === 'structure' || kind === 'node') {
@@ -790,6 +804,25 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase): 
     }
 
     if (isStructureLine(line)) {
+      // A diagram of nodes written again under its own id, as the same kind, is the same diagram retitled, restyled or given another room: its parts stay.
+      const open = findLive(line.id, start);
+      const openFigure = open?.span.figure;
+      if (open !== null && openFigure?.kind === 'structure' && openFigure.structure === line.verb && STRUCTURE[line.verb].parts === 'nodes') {
+        const merged = mergeStyles(sheet, line.styles, line.props);
+        for (const name of merged.unknown) report(seq, 'unknown-style', `no style called "${name}"; ignored`, name);
+        const change = coloured(seq, merged.props);
+        const end = start + SET_SECONDS * PACE_TIMING[pace].ease;
+        open.style = patchStyle(open.style, change);
+        open.span.changes.push({ kind: 'set', seq, start, end, props: change, style: open.style });
+        if (line.title !== undefined) {
+          const title = splitEmphasis(line.title);
+          open.span.text = title.plain;
+          open.span.emphasis = title.emphasis;
+        }
+        open.span.figure = { ...openFigure, grow: line.grow ?? openFigure.grow, box: line.box ?? openFigure.box, route: line.route ?? openFigure.route };
+        lines.push({ seq, verb: line.verb, start, end });
+        return;
+      }
       const joined = joinGroup(seq, styleFor(seq, 'structure', line.styles, line.props), start);
       const { plain, emphasis } = splitEmphasis(line.title ?? '');
       // The title, when there is one, fades in; the parts that follow carry the rest of the entrance.
@@ -826,8 +859,9 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase): 
         return;
       }
       const siblings = live.filter((candidate) => candidate.span.kind === 'node' && candidate.span.parent === owner.span.key && isActive(candidate, start));
-      if (siblings.length >= (owner.span.figure.structure === 'chart' ? LIMITS.marks : LIMITS.nodes) && findLive(line.id, start) === null) {
-        report(seq, 'structure-limit', `a structure has at most ${LIMITS.nodes} nodes; this one was ignored. Split it into two`);
+      const nodeLimit = owner.span.figure.structure === 'chart' ? LIMITS.marks : LIMITS.nodes;
+      if (siblings.length >= nodeLimit && findLive(line.id, start) === null) {
+        report(seq, 'structure-limit', owner.span.figure.structure === 'chart' ? `a chart has at most ${nodeLimit} marks; this one was ignored` : `a structure has at most ${nodeLimit} nodes; this one was ignored. Split it into two`);
         lines.push({ seq, verb: line.verb, start, end: start });
         return;
       }
@@ -835,6 +869,9 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase): 
       const style: ElementStyle = { ...styleFor(seq, 'node', line.styles, line.props), group: null, layer: owner.style.layer };
       const { plain, emphasis } = splitEmphasis(line.text);
       const duration = figureEnterSeconds(style.enter, pace, style.dur);
+      // A node said again keeps its place in the diagram: the arrows that touch it are re-pointed at the new one instead of leaving with the old.
+      const previous = findLive(line.id, start);
+      const touching = previous === null || previous.span.kind !== 'node' || previous.span.parent !== owner.span.key ? [] : live.filter((other) => isActive(other, start) && other.span.figure?.kind === 'link' && (other.span.figure.from === previous.span.key || other.span.figure.to === previous.span.key));
       const slot = takeSlot(line.id, start);
       const created = create(entry, 'node', line.id, style, start + slot.delay, duration, slot.order, {
         text: plain,
@@ -842,8 +879,16 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase): 
         figure: { kind: 'node', shape: line.shape ?? 'step', values: line.values, ...(line.x !== undefined && { x: line.x }), ...(line.y !== undefined && { y: line.y }) },
         parent: owner.span.key,
       });
+      if (previous !== null) {
+        for (const arrow of touching) {
+          const figure = arrow.span.figure;
+          if (figure?.kind !== 'link') continue;
+          arrow.span.figure = { ...figure, from: figure.from === previous.span.key ? created.span.key : figure.from, to: figure.to === previous.span.key ? created.span.key : figure.to };
+          if (arrow.span.exit?.cause === 'parent' && arrow.span.exit.start === start) arrow.span.exit = null;
+        }
+      }
       if (line.from !== undefined) {
-        const source = findLive(line.from.id, start);
+        const source = line.from.id === line.id ? null : findLive(line.from.id, start);
         if (source === null || source.span.kind !== 'node' || source.span.parent !== owner.span.key) {
           report(seq, 'unknown-id', `no node called "${line.from.id}" is in this structure to link from; the node stands unlinked`, line.from.id);
         } else {
@@ -875,6 +920,14 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase): 
         const from = ends[index];
         const to = ends[index + 1];
         if (from === null || to === null || from === undefined || to === undefined || from.span.kind !== 'node' || to.span.kind !== 'node') continue;
+        if (from === to) {
+          report(seq, 'bad-value', `a link needs two different nodes; "${from.span.id}" cannot lead to itself`, from.span.id);
+          continue;
+        }
+        if (from.span.parent !== to.span.parent) {
+          report(seq, 'no-structure', `"${from.span.id}" and "${to.span.id}" are in different structures; a link joins nodes of one`, to.span.id);
+          continue;
+        }
         const owner = from.span.parent === null ? null : (byKey.get(from.span.parent) ?? null);
         const links = live.filter((candidate) => candidate.span.kind === 'link' && candidate.span.parent === from.span.parent && isActive(candidate, start));
         if (links.length >= LIMITS.links) {
@@ -914,15 +967,32 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase): 
       else if (line.verb === 'toggle') value = line.initial === true;
       else if (line.verb === 'pick') value = typeof line.initial === 'number' ? line.initial : 1;
       else if (line.verb === 'input') value = '';
+      // A control said again with the same kind and the same range is the same control: it keeps what the user set and what it drives.
+      const before = findLive(line.id, start);
+      const was = before?.span.figure?.kind === 'control' ? before.span.figure : null;
+      const same = was !== null && was.control === line.verb && was.min === min && was.max === max && was.options.length === options.length;
+      if (same && line.initial === undefined && was.value !== null && line.verb !== 'input') value = was.value;
+      else if (same && line.verb === 'input' && was.value !== null && was.value !== '') value = was.value;
       const { plain, emphasis } = splitEmphasis(line.text ?? '');
       const duration = figureEnterSeconds(joined.style.enter, pace, joined.style.dur);
       const slot = takeSlot(line.id, start);
-      create(entry, 'control', line.id, joined.style, start + slot.delay, duration, slot.order, {
+      const made = create(entry, 'control', line.id, joined.style, start + slot.delay, duration, slot.order, {
         text: plain,
         emphasis,
         figure: { kind: 'control', control: line.verb, form: line.verb === 'pick' ? (line.form ?? 'row') : null, options, min, max, step: line.range?.step ?? null, unit: line.unit ?? null, value, send: line.verb === 'button' ? true : (line.send ?? false) },
         parent: joined.parent,
       });
+      if (same && before !== null) {
+        for (const other of live) {
+          if (other.span.driven.some((change) => change.control === before.span.key)) {
+            other.span.driven = other.span.driven.map((change) => {
+              if (change.control !== before.span.key) return change;
+              const { until: _until, ...kept } = change;
+              return { ...kept, control: made.span.key };
+            });
+          }
+        }
+      }
       advanceForDrawn(joined.style, start + slot.delay, duration);
       lines.push({ seq, verb: line.verb, start, end: start + slot.delay + duration });
       return;
@@ -1197,7 +1267,9 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase): 
           }
           if (cells.length > LIMITS.cells) report(seq, 'structure-limit', `a row has at most ${LIMITS.cells} cells; the rest were cut`);
           const at = Math.max(enter === null ? 0 : enter.end + table.rows.length * step, pen, entry.floor);
-          table.rows.push({ cells: cells.slice(0, LIMITS.cells), at });
+          const landed: StructureRow = { cells: cells.slice(0, LIMITS.cells), at };
+          rowSeq.set(landed, seq);
+          table.rows.push(landed);
           table.span.figure = { ...table.span.figure, rows: [...table.rows] };
           if (!BACKDROP_LAYERS.includes(table.style.layer)) pen = Math.max(pen, at + step);
           lines.push({ seq, verb: line.verb, start: at, end: at + step });
@@ -1289,7 +1361,7 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase): 
         for (const name of merged.unknown) report(seq, 'unknown-style', `no style called "${name}"; ignored`, name);
         const props = coloured(seq, merged.props);
         const end = start + moveSeconds(line.speed, line.over, SET_SECONDS * PACE_TIMING[pace].ease);
-        // Colour set on a group is colour set on its parts; place, turn, size and opacity belong to the group itself.
+        // Colour set on a group or a structure is colour set on its parts; place, turn, size and opacity belong to the group itself.
         const { ink, fill, stroke, thick } = props;
         const inherited: ResolvedProps = {
           ...(ink !== undefined && { ink }),
@@ -1309,7 +1381,7 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase): 
         const targets = resolveTargets(line.target, start, seq);
         for (const target of targets) {
           apply(target, props);
-          if (target.span.kind !== 'group' || Object.keys(inherited).length === 0) continue;
+          if ((target.span.kind !== 'group' && target.span.kind !== 'structure') || Object.keys(inherited).length === 0) continue;
           for (const part of live) {
             if (part.span.parent === target.span.key && isActive(part, start) && !targets.includes(part)) apply(part, inherited);
           }
@@ -1444,6 +1516,35 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase): 
 
       case 'revise':
         break;
+    }
+  }
+
+  // What is wrong with the rows of a chart is told when the row that made it wrong arrived, so the brain hears it once.
+  const scope: Record<string, number> = {};
+  for (const candidate of live) {
+    const figure = candidate.span.figure;
+    if (figure?.kind === 'control' && isActive(candidate, pen)) scope[candidate.span.id] = numberOf(figure.value);
+  }
+  for (const candidate of live) {
+    const figure = candidate.span.figure;
+    if (candidate.rows === null || figure?.kind !== 'structure' || figure.chart === null || candidate.rows.length === 0 || candidate.rows.every((row) => rowSeq.get(row) === undefined)) continue;
+    const { rows } = candidate;
+    const kind = figure.chart;
+    const model = chartModelOf(kind, rows, scope);
+    // A chart with only its header so far is not wrong yet.
+    if (model.points.length === 0) continue;
+    for (const problem of model.problems) {
+      // The first row that brings the problem in: the problem stays once it is there.
+      let low = 0;
+      let high = rows.length - 1;
+      while (low < high) {
+        const middle = Math.floor((low + high) / 2);
+        if (chartModelOf(kind, rows.slice(0, middle + 1), scope).problems.includes(problem)) high = middle;
+        else low = middle + 1;
+      }
+      const arrived = rows[low];
+      const at = arrived === undefined ? undefined : rowSeq.get(arrived);
+      if (at !== undefined) report(at, 'bad-value', `${kind} chart "${candidate.span.id}": ${problem}`);
     }
   }
 

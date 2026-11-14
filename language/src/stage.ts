@@ -1,7 +1,8 @@
+import { holdControl } from './bind';
 import { boundsOf } from './geometry';
 import { figureAt, isStruckAt, lookAt, sceneAt, styleAt, valueAt, wearingAt } from './schedule';
 import type { CarriedElement, ElementSpan, Figure, Schedule, StageBase } from './schedule';
-import type { CanvasBox } from './types';
+import type { CanvasBox, ControlValues } from './types';
 import type { ElementKind } from './vocabulary';
 
 /** One thing the user actually saw during a turn. */
@@ -51,7 +52,7 @@ export function describeFigure(figure: Figure, box: CanvasBox | null = null): st
       return box === null ? name : `${name} ${round(box.w)}x${round(box.h)} at ${round(box.x + box.w / 2)},${round(box.y + box.h / 2)}`;
     }
     case 'structure': {
-      const name = figure.chart === null ? figure.structure : `${figure.chart} chart`;
+      const name = figure.chart === null ? figure.structure : [...figure.words, `${figure.chart} chart`].join(' ');
       if (figure.data !== null) return `${name} of DATA ${figure.data}`;
       if (figure.rows.length === 0) return name;
       // A chart of many points is named by its first and last, not recited.
@@ -59,6 +60,8 @@ export function describeFigure(figure: Figure, box: CanvasBox | null = null): st
       return `${name}: ${rows.map((row) => row.cells.join(' | ')).join(' / ')}`;
     }
     case 'node':
+      // A mark on a chart says where; a pin on a map, a date on a timeline, a span: their numbers.
+      if (figure.x !== undefined || figure.y !== undefined) return figure.x !== undefined && figure.y !== undefined ? `mark at ${figure.x}, ${figure.y}` : figure.x !== undefined ? `mark at ${figure.x}` : `mark at level ${String(figure.y)}`;
       return figure.values.length === 0 ? `${figure.shape} node` : `node at ${figure.values.map(round).join(figure.values.length === 2 ? ',' : ' ')}`;
     case 'link':
       return `link ${figure.from.split('@')[0] ?? figure.from} to ${figure.to.split('@')[0] ?? figure.to}`;
@@ -76,6 +79,12 @@ export function describeFigure(figure: Figure, box: CanvasBox | null = null): st
     case 'field':
       return `${figure.field}, ${figure.amount}`;
   }
+}
+
+/** A node's words, with its date or span in front when it sits on a timeline, so the transcript says what the picture says. */
+function nodeWords(figure: Figure | null, text: string, on: Figure): string {
+  if (on.kind !== 'structure' || on.structure !== 'timeline' || figure?.kind !== 'node' || figure.values.length === 0 || figure.values.length > 2 || figure.x !== undefined) return text;
+  return `${figure.values.map((value) => String(Number(value.toFixed(2)))).join('-')} ${text}`;
 }
 
 function union(boxes: readonly CanvasBox[]): CanvasBox | null {
@@ -139,7 +148,12 @@ export function describeCarried(element: CarriedElement, all: readonly CarriedEl
   if (figure.kind === 'structure') {
     const nodes = all.filter((other) => other.parent === element.key && other.kind === 'node' && other.text !== '');
     const title = element.text === '' ? '' : ` "${element.text}"`;
-    return nodes.length === 0 ? `${said}${title}` : `${said}${title}: ${nodes.map((node) => `${node.id} ${node.text}`).join(' / ')}`;
+    // The ids of the arrows between nodes, so the brain can add to the diagram and point at what is there.
+    const keyId = (key: string): string => key.split('@')[0] ?? key;
+    const arrows = all.flatMap((other) => (other.parent === element.key && other.figure?.kind === 'link' ? [`${keyId(other.figure.from)}>${keyId(other.figure.to)}${other.text === '' ? '' : ` ${other.text}`}`] : []));
+    const joined = arrows.length > 12 ? `${arrows.slice(0, 12).join(', ')}, … ${arrows.length - 12} more` : arrows.join(', ');
+    const parts = nodes.length === 0 ? '' : `: ${nodes.map((node) => `${node.id} ${nodeWords(node.figure, node.text, figure)}`).join(' / ')}`;
+    return `${said}${title}${parts}${arrows.length === 0 ? '' : ` (links ${joined})`}`;
   }
   if (figure.kind === 'node' || figure.kind === 'link' || figure.kind === 'control') return element.text === '' ? said : `${said}: ${element.text}`;
   return said;
@@ -179,44 +193,55 @@ function wordsOf(element: ElementSpan, figure: Figure, schedule: Schedule, at: n
   if (figure.kind === 'structure') {
     const nodes = schedule.elements.filter((other) => other.parent === element.key && other.kind === 'node' && other.enter !== null && other.enter.start < at && other.text !== '');
     const title = element.text === '' ? '' : ` "${element.text}"`;
-    return nodes.length === 0 ? `${said}${title}` : `${said}${title}: ${nodes.map((node) => node.text).join(' / ')}`;
+    return nodes.length === 0 ? `${said}${title}` : `${said}${title}: ${nodes.map((node) => nodeWords(node.figure, node.text, figure)).join(' / ')}`;
   }
   if (figure.kind === 'node' || figure.kind === 'link' || figure.kind === 'control') return element.text === '' ? said : `${said}: ${element.text}`;
   return said;
 }
 
-/** The stage as it rests at `at`: the base the next turn starts from. Exits in flight are treated as complete, and so are entrances. */
-export function settle(schedule: Schedule, base: StageBase, at: number): StageBase {
+/**
+ * The stage as it rests at `at`: the base the next turn starts from. Exits in
+ * flight are treated as complete, and so are entrances. `controls` is what the
+ * user has set, by control id, as the painter reports it: a control rests at
+ * that value (kept to what it can hold), not at the one it was written with.
+ * Changes a control drives are carried while the control and the thing it
+ * changes both stay.
+ */
+export function settle(schedule: Schedule, base: StageBase, at: number, controls: ControlValues = {}): StageBase {
   const scene = sceneAt(schedule, at);
-  const elements: CarriedElement[] = schedule.elements
-    .filter((element) => hasEntered(element, at) && !hasLeft(element, at))
-    .map((element) => {
-      // A sprite caught half-drawn rests whole: every row that was written is carried.
-      const figure = element.figure?.kind === 'sprite' ? element.figure : figureAt(element, at);
-      // A table or a chart caught half-written rests whole too.
-      const whole = element.figure?.kind === 'structure' ? element.figure : figure;
-      const carried: Figure | null =
-        whole?.kind === 'sprite'
-          ? { kind: 'sprite', sprite: { ...whole.sprite, frames: whole.sprite.frames.map((rows) => rows.map((row) => ({ cells: row.cells, at: 0 }))) } }
-          : whole?.kind === 'structure'
-            ? { ...whole, rows: whole.rows.map((row) => ({ cells: row.cells, at: 0 })) }
+  const staying = schedule.elements.filter((element) => hasEntered(element, at) && !hasLeft(element, at));
+  const stayingKeys = new Set(staying.map((element) => element.key));
+  const elements: CarriedElement[] = staying.map((element) => {
+    // A sprite caught half-drawn rests whole: every row that was written is carried.
+    const figure = element.figure?.kind === 'sprite' ? element.figure : figureAt(element, at);
+    // A table or a chart caught half-written rests whole too.
+    const whole = element.figure?.kind === 'structure' ? element.figure : figure;
+    const held = whole?.kind === 'control' ? holdControl(whole, controls[element.id]) : null;
+    const carried: Figure | null =
+      whole?.kind === 'sprite'
+        ? { kind: 'sprite', sprite: { ...whole.sprite, frames: whole.sprite.frames.map((rows) => rows.map((row) => ({ cells: row.cells, at: 0 }))) } }
+        : whole?.kind === 'structure'
+          ? { ...whole, rows: whole.rows.map((row) => ({ cells: row.cells, at: 0 })) }
+          : whole?.kind === 'control' && held !== null
+            ? { ...whole, value: held }
             : whole;
-      return {
-        key: element.key,
-        id: element.id,
-        kind: element.kind,
-        order: element.order,
-        scene: element.scene,
-        text: element.text,
-        emphasis: element.emphasis,
-        style: styleAt(element, at),
-        figure: carried,
-        parent: element.parent,
-        struck: isStruckAt(element, at),
-        replaces: element.replaces,
-        ...(element.driven.length > 0 && { driven: element.driven.map((change) => ({ ...change, since: 0 })) }),
-      };
-    });
+    const driven = element.driven.filter((change) => stayingKeys.has(change.control) && (change.until === undefined || change.until > at));
+    return {
+      key: element.key,
+      id: element.id,
+      kind: element.kind,
+      order: element.order,
+      scene: element.scene,
+      text: element.text,
+      emphasis: element.emphasis,
+      style: styleAt(element, at),
+      figure: carried,
+      parent: element.parent,
+      struck: isStruckAt(element, at),
+      replaces: element.replaces,
+      ...(driven.length > 0 && { driven: driven.map(({ until: _until, ...change }) => ({ ...change, since: 0 })) }),
+    };
+  });
   return {
     look: lookAt(schedule, base, at),
     lookName: wearingAt(schedule, base, at).name,
