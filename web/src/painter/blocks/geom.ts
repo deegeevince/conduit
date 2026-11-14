@@ -306,3 +306,52 @@ export function packOrdered(desired: readonly number[], min: readonly number[], 
   }
   return out;
 }
+
+/** An open polyline with the stretch inside `r` taken out: what is left is one or more open pieces (the line visibly breaks round a word set in `r`). */
+export function cutOutBox(line: Polyline, r: Box): Polyline[] {
+  if (line.closed || line.points.length < 2) return [line];
+  const pieces: Polyline[] = [];
+  let run: Point[] = [];
+  const flush = (): void => {
+    if (run.length >= 2) pieces.push({ points: run, closed: false });
+    run = [];
+  };
+  const x0 = r.x;
+  const x1 = r.x + r.width;
+  const y0 = r.y;
+  const y1 = r.y + r.height;
+  const pts = line.points;
+  for (let i = 0; i + 1 < pts.length; i += 1) {
+    const a = pts[i] as Point;
+    const b = pts[i + 1] as Point;
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    // the parameter range of the segment inside the box (Liang-Barsky)
+    let t0 = 0;
+    let t1 = 1;
+    let hit = true;
+    for (const [p, q] of [[-dx, a.x - x0], [dx, x1 - a.x], [-dy, a.y - y0], [dy, y1 - a.y]] as const) {
+      if (Math.abs(p) < 1e-9) {
+        if (q < 0) hit = false;
+      } else {
+        const t = q / p;
+        if (p < 0) t0 = Math.max(t0, t);
+        else t1 = Math.min(t1, t);
+      }
+    }
+    if (!hit || t0 >= t1) {
+      if (run.length === 0) run.push(a);
+      run.push(b);
+      continue;
+    }
+    const at = (t: number): Point => ({ x: a.x + dx * t, y: a.y + dy * t });
+    if (t0 > 1e-9) {
+      if (run.length === 0) run.push(a);
+      run.push(at(t0));
+    }
+    flush();
+    if (t1 < 1 - 1e-9) run.push(at(t1), b);
+  }
+  flush();
+  return pieces;
+}

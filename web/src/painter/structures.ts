@@ -159,9 +159,24 @@ export function tuneStartOf(element: ElementSpan): number | null {
   return Math.max(element.enter?.start ?? 0, last, figure.sealed ?? last);
 }
 
+/**
+ * The look as a structure's words are set in it. A structure that cannot fit its room at the least size the look sets type at is set smaller still, to
+ * three quarters of that least (and not under 9 px, the least the kit sets on a phone), rather than stand outside its room, cut off and over the words
+ * beside it: the layout and the drawing both set the words through this, so what was measured is what is drawn. Only a part set below the look's
+ * own floor (a `shrink` under what the floor allows) is touched; the engines say `crowded` when they come to it.
+ */
+const SQUEEZED_SHARE = 0.75;
+const SQUEEZED_LEAST_PX = 9;
+export function squeezedLook(look: LookSpec): LookSpec {
+  const floor = look.type.minFont;
+  const lower = Math.min(floor, Math.max(SQUEEZED_LEAST_PX, floor * SQUEEZED_SHARE));
+  return lower >= floor ? look : { ...look, type: { ...look.type, minFont: lower } };
+}
+
 export function measurerFor(look: LookSpec, viewport: Viewport, ownerStyle: ElementStyle): TextMeasure {
+  const squeezed = squeezedLook(look);
   return (text, spec, maxWidth): MeasuredText => {
-    const set = setText({ look, viewport, text, emphasis: [], style: textStyleOf(ownerStyle, spec), shrink: spec.shrink, maxWidth, align: 'left' });
+    const set = setText({ look: squeezed, viewport, text, emphasis: [], style: textStyleOf(ownerStyle, spec), shrink: spec.shrink, maxWidth, align: 'left' });
     return { width: set.widest, height: set.lines.length * set.lineHeight, lineHeight: set.lineHeight, lines: set.lines };
   };
 }
@@ -589,7 +604,7 @@ export function buildStructures(schedule: Schedule, env: StructureEnv): Structur
       } else {
         const box = earlier !== undefined && earlier.kind === 'text' ? ({ x: lerp(earlier.box.x, part.box.x, q), y: lerp(earlier.box.y, part.box.y, q), width: lerp(earlier.box.width, part.box.width, q), height: lerp(earlier.box.height, part.box.height, q) } satisfies Box) : part.box;
         const spec: TextSpec = earlier !== undefined && earlier.kind === 'text' ? { ...part.spec, shrink: lerp(earlier.spec.shrink, part.spec.shrink, q) } : part.spec;
-        const set = setTextOnce({ look, viewport: env.viewport, text: part.text, emphasis: part.emphasis as readonly Range[], style: { ...textStyleOf(style, spec), layer: structure.style.layer }, shrink: spec.shrink, maxWidth: box.width, width: box.width, align: part.align });
+        const set = setTextOnce({ look: squeezedLook(look), viewport: env.viewport, text: part.text, emphasis: part.emphasis as readonly Range[], style: { ...textStyleOf(style, spec), layer: structure.style.layer }, shrink: spec.shrink, maxWidth: box.width, width: box.width, align: part.align });
         const px = set.fontSize * ps;
         const role = part.role === 'tick' || part.role === 'value' ? 'dim' : style.ink;
         const minRatio = minContrastFor(px, structure.style.layer);

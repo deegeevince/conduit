@@ -5,7 +5,7 @@ import type { ElementSpan, Point, Polyline, Range, SightNote } from '@conduit/la
 import { evalExpr, formatValue, parseTemplate } from '@conduit/language';
 import type { BlockPart, MeasuredText, StructureInput, StructureLayout, TextSpec } from '../../contracts/blocks';
 import type { Box } from '../../contracts/space';
-import { arrowhead, box, boxOfPoints, centreOf, diamond, dashes, inflate, lengthOf, overlaps, polylineHitsBox, polylinesCross, right, roundedRect, bottom, trim, atDistance, union } from './geom';
+import { arrowhead, box, cutOutBox, boxOfPoints, centreOf, diamond, dashes, inflate, lengthOf, overlaps, polylineHitsBox, polylinesCross, right, roundedRect, bottom, trim, atDistance, union } from './geom';
 
 export type Note = { readonly key: string; readonly note: SightNote };
 
@@ -222,6 +222,23 @@ export function labelPart(env: Env, owner: string, text: string, at: Box, m: { w
   return { kind: 'text', owner, part: 'label', text, emphasis: [], box: box(at.x, at.y, m.width, m.height), spec: env.label(), align: 'center', role: 'label', plate };
 }
 
+/**
+ * A label that could find no clear place beside its line gets a knockout instead: every connector line stretch under the word (and a
+ * small margin round it) is taken out, so the line visibly breaks round the word and never runs through it, crossing edges included. True when the
+ * word still stands on a box in `others` (a node, another label), which is for the engine to say as `crossed`.
+ */
+export function knockOut(lines: BlockPart[], at: Box, margin: number, others: readonly Box[]): boolean {
+  const hole = inflate(at, margin);
+  lines.forEach((part, i) => {
+    if (part.kind !== 'shape' || part.role !== 'line') return;
+    if (!part.outline.some((o) => polylineHitsBox(o, hole))) return;
+    lines[i] = { ...part, outline: part.outline.flatMap((o) => (polylineHitsBox(o, hole) ? cutOutBox(o, hole) : [o])) };
+  });
+  // what a knockout cannot mend: the word standing on a node or on another word (true then)
+  const near = inflate(at, 1);
+  return others.some((o) => o !== at && overlaps(near, o));
+}
+
 export interface Blockers {
   readonly boxes: readonly Box[];
   readonly lines: readonly Polyline[];
@@ -292,6 +309,8 @@ export interface Draft {
 
 /** The least a structure is ever set at: below the look's own floor it is still on the page and inside its room, and says `crowded`. */
 export const HARD_SHRINK = 0.3;
+/** The tightest spacing between parts a structure is set at, when it will not fit its room otherwise (`tight` in the Env). */
+const TIGHTEST = 0.35;
 
 export function fit(input: StructureInput, stroke: number, build: (env: Env) => Draft, extra?: (draft: Draft) => boolean, wrap = 1): StructureLayout {
   const room = input.room;
@@ -302,19 +321,52 @@ export function fit(input: StructureInput, stroke: number, build: (env: Env) => 
   let env = new Env(input, 1, 1, stroke, wrap);
   let draft = build(env);
   let shrink = 1;
-  let tight = 1;
   if (!fits(draft)) {
-    tight = 0.6;
-    env = new Env(input, 1, tight, stroke, wrap);
-    draft = build(env);
-    // Down to the look's floor first; then, rather than leave a part outside its room, below it, said as `crowded`.
-    for (let i = 0; i < 14 && !fits(draft) && shrink > HARD_SHRINK + 1e-9; i += 1) {
-      const scale = Math.min(room.width / Math.max(1, draft.width), room.height / Math.max(1, draft.height));
-      const lower = shrink > floor + 1e-9 ? floor : HARD_SHRINK;
-      shrink = Math.max(lower, Math.min(shrink * 0.97, shrink * scale * 0.985));
-      env = new Env(input, shrink, tight, stroke, wrap);
-      draft = build(env);
+    // Spacing first (tighter gaps and ranks), then size. The loop steps down by a share at a time and snaps as it goes, so it can end at the least size
+    // without having tried the sizes between; when the least size fits, the largest that does is found by halving.
+    const settle = (tight: number): { env: Env; draft: Draft; shrink: number } => {
+      let e = new Env(input, 1, tight, stroke, wrap);
+      let d = build(e);
+      let s = 1;
+      // Down to the look's floor first; then, rather than leave a part outside its room, below it, said as `crowded`.
+      for (let i = 0; i < 14 && !fits(d) && s > HARD_SHRINK + 1e-9; i += 1) {
+        const scale = Math.min(room.width / Math.max(1, d.width), room.height / Math.max(1, d.height));
+        const lower = s > floor + 1e-9 ? floor : HARD_SHRINK;
+        s = Math.max(lower, Math.min(s * 0.97, s * scale * 0.985));
+        e = new Env(input, s, tight, stroke, wrap);
+        d = build(e);
+      }
+      if (!fits(d) && s > HARD_SHRINK + 1e-9) {
+        const smallestEnv = new Env(input, HARD_SHRINK, tight, stroke, wrap);
+        const smallest = build(smallestEnv);
+        if (fits(smallest)) {
+          let lo = HARD_SHRINK;
+          let hi = s;
+          let kept = { env: smallestEnv, draft: smallest };
+          for (let i = 0; i < 8 && hi - lo > 0.005; i += 1) {
+            const mid = (lo + hi) / 2;
+            const tryEnv = new Env(input, mid, tight, stroke, wrap);
+            const tryDraft = build(tryEnv);
+            if (fits(tryDraft)) {
+              lo = mid;
+              kept = { env: tryEnv, draft: tryDraft };
+            } else hi = mid;
+          }
+          return { env: kept.env, draft: kept.draft, shrink: lo };
+        }
+      }
+      return { env: e, draft: d, shrink: s };
+    };
+    let got = settle(0.6);
+    // Still not in its room, or only below the look's floor: ranks and gaps as tight as they go.
+    if (!fits(got.draft) || got.shrink < floor - 1e-9) {
+      const tighter = settle(TIGHTEST);
+      const over = (d: Draft): number => Math.max(0, d.width / Math.max(1, room.width) - 1) + Math.max(0, d.height / Math.max(1, room.height) - 1);
+      if (fits(tighter.draft) ? !fits(got.draft) || tighter.shrink > got.shrink * 1.1 : !fits(got.draft) && over(tighter.draft) < over(got.draft)) got = tighter;
     }
+    env = got.env;
+    draft = got.draft;
+    shrink = got.shrink;
   }
   const ok = fits(draft);
   const done = draft.finish(room);
@@ -324,7 +376,7 @@ export function fit(input: StructureInput, stroke: number, build: (env: Env) => 
   const all = [...done.boxes.values()];
   const boxes = done.boxes;
   boxes.set(input.structure.key, union(all));
-  return { boxes, parts: done.parts, routes: done.routes, notes, shrink };
+  return { boxes, parts: done.parts, routes: done.routes, notes, shrink, overflows: ok ? 0 : Math.max(0, draft.width / Math.max(1, room.width) - 1) + Math.max(0, draft.height / Math.max(1, room.height) - 1) + 1e-6 };
 }
 
 export const isCrowded = (l: StructureLayout): boolean => l.notes.some((n) => n.note === 'crowded');
@@ -338,17 +390,21 @@ export const WRAPS: readonly number[] = [1, 0.7, 1.6, 2.4];
  */
 export function best(attempts: readonly (() => StructureLayout)[]): StructureLayout {
   let top: StructureLayout | null = null;
+  // what stands outside its room is the worst there is (it is cut off, and words set beside it land on it): any arrangement that fits beats one that does not
+  const rank = (l: StructureLayout): number => ((l.overflows ?? 0) > 0 ? 2 : isCrowded(l) ? 1 : 0);
   for (const attempt of attempts) {
     const l = attempt();
     if (top === null) {
       top = l;
-      if (!isCrowded(l) && l.shrink >= 1) break;
+      if (rank(l) === 0 && l.shrink >= 1) break;
       continue;
     }
-    const a = isCrowded(top);
-    const b = isCrowded(l);
-    if (a && !b) top = l;
-    else if (a === b && l.shrink > top.shrink * 1.15) top = l;
+    const a = rank(top);
+    const b = rank(l);
+    if (b < a) top = l;
+    else if (a === 2 && b === 2) {
+      if ((l.overflows ?? 0) < (top.overflows ?? 0) - 0.02) top = l;
+    } else if (a === b && l.shrink > top.shrink * 1.15) top = l;
   }
   return top as StructureLayout;
 }

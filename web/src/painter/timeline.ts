@@ -863,6 +863,30 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
       const scale = planeScale(style.layer, viewport);
       pins.set(element.key, { x: (fit.box.x + style.at.x * fit.unit) / scale, y: (fit.box.y + style.at.y * fit.unit) / scale, k: keeps });
     }
+    // A structure whose box was let go is laid out in the room the plan gave it, and words the brain set at a point of the canvas under it were written for
+    // the box it asked for: the room is cut short of them, so the diagram makes room (it is set smaller) rather than stand under their words.
+    {
+      const line = cellOf('m', viewport, look).height;
+      let cut: Map<string, Box> | null = null;
+      for (const element of drawn) {
+        const figure = element.figure;
+        if (element.kind !== 'structure' || figure === null || figure.kind !== 'structure' || figure.box === null || !released.has(element.key)) continue;
+        const room = plan.rooms.get(element.key);
+        if (room === undefined) continue;
+        let top = room.y + room.height;
+        for (const [key, pin] of pins) {
+          const word = byKey.get(key);
+          if (word === undefined || word.kind !== 'text') continue;
+          const above = pin.y - 1.4 * line;
+          if (pin.x >= room.x && pin.x <= room.x + room.width && pin.y > room.y + 0.5 * room.height && above < top) top = Math.max(room.y + 0.35 * room.height, above);
+        }
+        if (top < room.y + room.height - 0.5) {
+          cut ??= new Map(plan.rooms);
+          cut.set(element.key, { ...room, height: top - room.y });
+        }
+      }
+      if (cut !== null) plan = { ...plan, rooms: cut };
+    }
     // drawn things that words given a point keep clear of: the outlines and drawings on the canvas (a filled card, or a shape that fills most of
     // the picture, is a ground the words are meant to stand on) and the boxes the brain gave structures
     const solids: (Box & { ground?: boolean })[] = [];
@@ -874,6 +898,12 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
       const figure = element.figure;
       if (element.kind === 'structure' && figure !== null && figure.kind === 'structure' && figure.box !== null && !released.has(element.key)) {
         solids.push({ x: fit.box.x + figure.box.x * fit.unit, y: fit.box.y + figure.box.y * fit.unit, width: figure.box.w * fit.unit, height: figure.box.h * fit.unit });
+        continue;
+      }
+      // a structure whose box was let go stands in the room the plan gave it: words told a point of the canvas keep out of it all the same
+      if (element.kind === 'structure' && figure !== null && figure.kind === 'structure' && figure.box !== null && released.has(element.key)) {
+        const room = plan.rooms.get(element.key);
+        if (room !== undefined) solids.push({ x: room.x, y: room.y, width: room.width, height: room.height });
         continue;
       }
       if ((element.kind !== 'shape' && element.kind !== 'copy') || element.style.layer !== 'mid') continue;

@@ -157,6 +157,8 @@ export interface StructureLayout {
   readonly notes: readonly { readonly key: string; readonly note: SightNote }[];
   /** 1 when everything is at the look's size; less when the structure was shrunk to fit its room */
   readonly shrink: number;
+  /** how far it stands outside its room, as shares of the room's width and height added, when it does even at the least size it is ever set at (absent or 0: it fits): the engines prefer any arrangement that fits, then the one that overflows least */
+  readonly overflows?: number;
 }
 
 /** Lays out one structure. Every structure kind in `STRUCTURES_READY` must be handled; any other returns an empty layout. */

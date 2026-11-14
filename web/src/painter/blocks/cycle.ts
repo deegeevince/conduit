@@ -10,7 +10,7 @@ import type { BlockPart, StructureInput, StructureLayout } from '../../contracts
 import type { Box } from '../../contracts/space';
 import { box, circle, contains, overlaps, right, bottom, union } from './geom';
 import type { Draft, LinkSpec, NodeBox, Note } from './kit';
-import { best, connectorParts, Env, fit, labelPart, linkSpecs, nodeParts, placeBeside, sizeNode, WRAPS } from './kit';
+import { best, connectorParts, knockOut, Env, fit, labelPart, linkSpecs, nodeParts, placeBeside, sizeNode, WRAPS } from './kit';
 
 interface Placed {
   frame: Box;
@@ -239,7 +239,7 @@ function buildCycle(env: Env): Draft {
         if (pick) {
           taken.push(pick.box);
           labels.push(labelPart(env, owner, t.link.label, pick.box, m, pick.penalty > 0));
-          if (pick.penalty > 0) notes.push({ key: owner, note: 'crossed' });
+          if (pick.penalty > 0 && knockOut(lines, pick.box, env.stroke * 1.5, taken)) notes.push({ key: owner, note: 'crossed' });
           boxes.set(owner, union([boxes.get(owner) as Box, pick.box]));
         }
       }
@@ -337,7 +337,7 @@ function buildLoop(env: Env): Draft {
         if (pick) {
           taken.push(pick.box);
           labels.push(labelPart(env, owner, t.link.label, pick.box, m, pick.penalty > 0));
-          if (pick.penalty > 0) notes.push({ key: owner, note: 'crossed' });
+          if (pick.penalty > 0 && knockOut(lines, pick.box, env.stroke * 1.5, taken)) notes.push({ key: owner, note: 'crossed' });
           boxes.set(owner, union([boxes.get(owner) as Box, pick.box]));
         }
       }
