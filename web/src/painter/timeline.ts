@@ -2108,7 +2108,7 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
     });
 
     const fault = onFault ?? null;
-    const drawnFigures = figuresAt(boundSchedule(schedule, tq, aq, context.controls), base, tq, aq, { viewport, look: drawLook, camera, fit, fitOf: (sceneId) => fitAt(sceneId, tq), reducedMotion, paintings, flashAllowed: allowedFlashes, ...(fault === null ? {} : { onFault: fault }) });
+    const drawnFigures = figuresAt(boundSchedule(schedule, tq, aq, runtime), base, tq, aq, { viewport, look: drawLook, camera, fit, fitOf: (sceneId) => fitAt(sceneId, tq), reducedMotion, paintings, flashAllowed: allowedFlashes, ...(fault === null ? {} : { onFault: fault }) });
     // A sprite whose colours would vanish into the ground stands on a tile.
     const tiles = tilesFor(drawnFigures.figures, drawLook);
     const figs =
