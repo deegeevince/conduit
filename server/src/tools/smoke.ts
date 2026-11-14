@@ -4,7 +4,7 @@
 //   pnpm smoke [--url http://127.0.0.1:<port>] [--screens 1920x825,390x844] [--out <dir>] [--turns 1,2,3,4,5,6,7]
 //              [--timeout <seconds a turn may take>] [--parallel] [--demo] [--quiet]
 //
-// The conversation (PLAN: the deploy gate): 1 a lighthouse at dusk; 2 a flowchart; 3 a stock chart; 4 a sign-in mock-up; 5 type into its
+// The conversation (PLAN: the deploy gate): 1 a lighthouse at dusk; 2 a flowchart; 3 a stock chart; 4 a sign-in mock-up (the kit's screens, not a live app); 5 type into its
 // fields, flip its toggle and press its button with real events; 6 an insurance home page; 7 /new.
 // After each turn it waits for the page's own rest (the status line says `ready`, no turn open, nothing entering or leaving, no request in
 // flight, the stage unchanged for a moment) and then checks:
@@ -57,7 +57,8 @@ const STEPS: readonly Step[] = [
   { n: 1, say: 'draw a lighthouse at dusk', name: 'lighthouse', expects: 'drawing' },
   { n: 2, say: 'explain how a bill becomes a law, as a flowchart', name: 'flowchart', expects: 'structure' },
   { n: 3, say: "show Apple's stock over 2024 as a chart", name: 'chart', expects: 'chart' },
-  { n: 4, say: 'mock up a sign-in screen I can click through', name: 'sign-in', expects: 'screen' },
+  // "mock-up" with its hyphen: the live-app block taught since v2.1-app takes "mock up … I can click through" for a request for something that works, and this turn judges the interface kit
+  { n: 4, say: 'make a mock-up of a sign-in screen I can click through', name: 'sign-in', expects: 'screen' },
   { n: 5, say: null, name: 'interact', expects: 'interact' },
   { n: 6, say: 'mock up the home page for an insurance company', name: 'insurance-home', expects: 'screen' },
   { n: 7, say: '/new', name: 'new', expects: 'any' },
