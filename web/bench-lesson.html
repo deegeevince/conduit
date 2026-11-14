@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Conduit: lesson view bench</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #888; }
+      #lesson { position: fixed; inset: 0; }
+      /* the host's layer, as web/src/styles/chrome.css lays it: the lesson fills the box */
+      .stage__apps { position: absolute; inset: 0; overflow: hidden; }
+      .stage__app { position: absolute; left: 0; top: 0; transform-origin: 0 0; border: 0; background: transparent; }
+    </style>
+  </head>
+  <body>
+    <div id="lesson"></div>
+    <script type="module" src="/src/bench/lesson-bench.ts"></script>
+  </body>
+</html>
