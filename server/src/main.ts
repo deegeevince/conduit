@@ -6,13 +6,12 @@ import { createCritic, createFindingQueue } from './critic/registry';
 import { RelayHub } from './brains/relay/relay-hub';
 import { AssetStore } from './domain/assets';
 import { Conductor } from './domain/conductor';
-import { NO_DATASETS } from './domain/datasets';
 import { SessionStore } from './domain/session';
 import { EnvError, loadEnv, processEnvironment, withheldCredentialNames } from './env';
 import type { Env } from './env';
 import { createApp } from './http/app';
 import { createImageModel } from './images/registry';
-import { createLibrary } from './library/registry';
+import { createDatasets, createLibrary } from './library/registry';
 import { createDocumentReader } from './reading/web-reader';
 import { createJsonlSessionLog } from './logs/jsonl-session-log';
 import { NO_SESSION_LOG } from './domain/session-log';
@@ -53,6 +52,13 @@ function boot(env: Env): void {
     refreshLibrary();
     setInterval(refreshLibrary, env.library.refreshMs).unref();
   }
+  // Read in the background, now and every `refreshMs`; a turn only ever uses the index held in memory.
+  const datasets = createDatasets(env.datasets, log.child({ part: 'datasets' }));
+  if (env.datasets.kind !== 'none') {
+    const refreshDatasets = (): void => void datasets.refresh(new AbortController().signal).catch((error: unknown) => log.warn('datasets.refresh_failed', { error }));
+    refreshDatasets();
+    setInterval(refreshDatasets, env.datasets.refreshMs).unref();
+  }
   const conductor = new Conductor({
     sessions: new SessionStore(),
     brains,
@@ -64,8 +70,8 @@ function boot(env: Env): void {
     sight: env.sight,
     variant: env.promptVariant,
     library,
-    // The owner's datasets are off unless the library port names a reader for them; `env.datasets` says which.
-    datasets: NO_DATASETS,
+    // The owner's datasets are off unless `DATASETS` names a reader for them; `env.datasets` says which.
+    datasets,
     review: env.review,
     maxPaintings: env.paintingsPerSession,
     critic: createCritic({ policy: env.critic, bin: env.brain.kind === 'claude-cli' ? env.brain.bin : 'claude', log: log.child({ part: 'critic' }), now }),

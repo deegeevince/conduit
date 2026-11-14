@@ -38,6 +38,7 @@ import type { StandingAsk } from './memory';
 import { MAX_PROBLEMS, SERVER_LIMITS } from './session';
 import type { SessionLog } from './session-log';
 import type { ActiveTurn, Session, SessionStore, StageSink } from './session';
+import { readPasted } from '../reading/pasted';
 import { factsOf, tableFromText } from './datasets';
 import type { DatasetLibrary } from './datasets';
 import type { Critic, FindingQueue } from './critic';
@@ -213,7 +214,7 @@ export class Conductor {
       brain: brain.id,
       openedAt: now(),
       abort: new AbortController(),
-      score: new TurnScore(s.stage),
+      score: new TurnScore(s.stage, input.kind),
       endReason: null,
       clock: null,
       shownIds: [],
@@ -748,7 +749,8 @@ export class Conductor {
 
     if (input.text.length >= PASTE_AS_DOCUMENT_CHARS) {
       say('your text', 'start', null);
-      hold({ requested: null, pdf: null, facts: { kind: 'pasted', source: 'pasted', url: null, title: null, chars: input.text.length, truncated: false, text: input.text } });
+      const read = readPasted(input.text);
+      hold({ requested: null, pdf: null, facts: { kind: 'pasted', source: 'pasted', url: null, title: null, chars: read.total, truncated: read.truncated, text: read.text } });
       say('your text', 'done', null);
       return { fresh, unread };
     }
