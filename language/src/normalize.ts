@@ -8,7 +8,7 @@ import { isLessonVerb } from './lesson';
 import { InterfaceReader, UI_WORDS, nodeLine, screenLine } from './interface';
 import { LessonBook } from './lesson';
 import { parseLine } from './parse';
-import type { Issue, Line, ParseResult } from './types';
+import type { Issue, Line, ParseResult, StyleProps } from './types';
 import { LIMITS, STRUCTURE } from './vocabulary';
 
 /** Lines that do not end a sprite being written: its next row may follow them. */
@@ -212,10 +212,28 @@ export class LineNormalizer {
   /** v3. The parts, steps and asks of the conversation: what `in=` and an id are written from, and what an `ask` that would give itself away is refused by. */
   private readonly book: LessonBook;
 
-  constructor(makeId: () => string, definedStyles: Iterable<string> = []) {
+  /** SA5. `flow`: a live brain's words and controls are placed by the stage, never by a coordinate. `free`: lines are taken as written (replays, golden, old logs). */
+  private readonly placement: 'flow' | 'free';
+  /** SA5. The layout of the scene being written: a `free` scene keeps honouring `at=x,y` on words */
+  private layout: string | null;
+
+  constructor(makeId: () => string, definedStyles: Iterable<string> = [], options: { readonly placement?: 'flow' | 'free'; readonly layout?: string | null } = {}) {
     this.makeId = makeId;
     this.styles = new Set(definedStyles);
     this.book = new LessonBook(makeId);
+    this.placement = options.placement ?? 'free';
+    this.layout = options.layout ?? null;
+  }
+
+  /**
+   * SA5. A numeric `at=x,y` on words or a control that is not in a group, not near anything and not in a `free` scene is the brain placing by guess: it is
+   * dropped, the line joins the flow, and the brain is told. A callout with a leader keeps its spot: the spot is what the line points to.
+   */
+  private placedByStage<T extends { readonly props: StyleProps }>(line: T): { line: T; issues: Issue[] } {
+    const { at, near, in: group, leader } = line.props;
+    if (this.placement !== 'flow' || at === undefined || typeof at === 'string' || near !== undefined || group !== undefined || leader === true || this.layout === 'free') return { line, issues: [] };
+    const { at: _dropped, ...props } = line.props;
+    return { line: { ...line, props }, issues: [{ code: 'bad-geometry', severity: 'warn', message: 'placed by the stage', token: 'at' }] };
   }
 
   /** v3. The conversation's document as it has been written so far: the parts and what each holds. */
@@ -288,6 +306,10 @@ export class LineNormalizer {
           this.table = null;
           this.ui = null;
         }
+        if (line.verb === 'say') {
+          const placed = this.placedByStage({ ...line, id, styles });
+          return { line: placed.line, issues: placed.issues };
+        }
         return { line: { ...line, id, styles }, issues: [] };
       }
       case 'screen': {
@@ -318,6 +340,11 @@ export class LineNormalizer {
         if (STRUCTURE[line.verb].parts === 'rows') this.table = id;
         // A chart takes rows and, as its marks, nodes; a table takes rows only.
         if (STRUCTURE[line.verb].parts === 'nodes' || line.verb === 'chart') this.structure = id;
+        // SA5. A room on a structure's opening line is the brain placing by guess: the stage gives the room.
+        if (this.placement === 'flow' && line.box !== undefined) {
+          const { box: _room, ...rest } = line;
+          return { line: { ...rest, id } as typeof line, issues: [{ code: 'bad-geometry', severity: 'warn', message: 'placed by the stage', token: 'box' }] };
+        }
         return { line: { ...line, id }, issues: [] };
       }
       case 'node': {
@@ -329,11 +356,15 @@ export class LineNormalizer {
         return { line: { ...line, id: line.id === '-' ? this.makeId() : line.id, props: { ...line.props, in: structure } }, issues: [] };
       }
       case 'link':
+        this.sprite = null;
+        return { line: line.id === '-' ? { ...line, id: this.makeId() } : line, issues: [] };
       case 'button':
       case 'toggle':
       case 'slider':
       case 'pick':
       case 'input':
+        this.sprite = null;
+        return this.placedByStage(line.id === '-' ? { ...line, id: this.makeId() } : line);
       case 'card':
         this.sprite = null;
         return { line: line.id === '-' ? { ...line, id: this.makeId() } : line, issues: [] };
@@ -353,6 +384,7 @@ export class LineNormalizer {
       }
       case 'scene':
       case 'deck':
+        if (line.verb === 'scene') this.layout = line.layout ?? 'stack';
         this.ui = null;
         this.sprite = null;
         this.table = null;

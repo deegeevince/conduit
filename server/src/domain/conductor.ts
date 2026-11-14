@@ -1270,7 +1270,7 @@ export class Conductor {
       const normalizer = new LineNormalizer(() => {
         s.nextAutoId += 1;
         return `x${s.nextAutoId}`;
-      }, Object.keys(s.stage.styles));
+      }, Object.keys(s.stage.styles), { placement: brain.id === 'replay' ? 'free' : 'flow', layout: s.stage.scene.layout });
       // v3. A turn of a conversation that has a document reads its lines against it: `part q3a in=q3` finds q3, and an ask is read against what is on the page.
       if (documentNow !== null) seedBook(normalizer.lessons, documentNow.document);
       let stopped = false;

@@ -341,7 +341,7 @@ export function buildSystemPrompt({ capabilities, services }: PromptOptions): st
     .filter(([name]) => name !== 'tex' && name !== 'soft' && name !== 'brush' && name !== 'leader' && name !== 'dur' && name !== 'bleed')
     .map(([name, spec]) => {
       const values = spec.values === null ? '' : spec.values.filter((value) => allows(capabilities, name, value)).join(' | ');
-      const also = spec.also === null ? '' : `${values === '' ? '' : ' | '}${spec.also}`;
+      const also = name === 'at' ? ' | x,y (drawn things only)' : spec.also === null ? '' : `${values === '' ? '' : ' | '}${spec.also}`;
       return `- ${name}=${values}${also}: ${spec.gist}`;
     })
     .join('\n');
@@ -443,7 +443,7 @@ ${[
   .filter((line) => line !== '')
   .join('\n')}
 
-A control sits in the flow like a line, or takes at=, near=, in=. \`bind\` makes it change the stage at once:
+A control sits in the flow like a line, or takes near=, in=. \`bind\` makes it change the stage at once:
 bind angle | move sun along=arc
   The change (a \`set\`, \`move\`, \`correct\`${draws ? ', or shape declared again' : ''}) is as far along as the control. \`bind angle 0..45 | …\` runs it over part of the range; \`bind view=night | …\` holds it while a pick or toggle has that value (an option's exact words in quotes: \`bind chord="C major" | …\`; or its number; on, off). Several changes for one value: \`when view=night\`, the lines, \`end\`; a bound \`correct\` swaps words quietly.
 Braces in text hold a value or arithmetic: \`say | At {angle}, a {round(10/tan(rad(angle)))} m shadow\` ({angle} carries the slider's unit; a name that is not a declared control's id is cut)${structures.includes('chart') ? '; a chart cell may too' : ''}. A slider must drive something. \`send\` on a control makes its change the user's next message.
@@ -453,19 +453,8 @@ Braces in text hold a value or arithmetic: \`say | At {angle}, a {round(10/tan(r
     ? `
 # The canvas
 
-Drawings live on a canvas with square units; the painter fits it to the screen. Each turn's SCREEN line names the canvas for this screen: use it unless you have a reason not to. 0,0 is the top-left, y runs down. Set another on the scene (\`scene canvas=square\`): ${Object.entries(
-        CANVAS,
-      )
-        .map(([name, spec]) => `${name} ${spec.width}x${spec.height}`)
-        .join(', ')}.
+Drawings live on a canvas of square units that the painter fits to the screen; 0,0 is the top-left, y runs down. Words and controls are never placed by coordinates: they flow, and a row of labelled things is a structure, not \`say at=x,y\` lines. A bare shape is an outline in ink that draws itself; \`fill=\` alone makes it flat. Shapes appear in the order written, later ones on top.
 
-A bare shape is an outline in ink that draws itself. \`fill=\` alone makes it a flat shape. Shapes appear in the order you write them, each one drawing while the next begins, and later ones sit on top.
-
-To draw well in few lines:
-- Work back to front: the ground or sky first (\`rect full\` covers the screen), then the subject as three or four big shapes, then two or three details. Eight to fifteen shapes make a picture, forty a mess.
-- Name your colours once (\`color sky=#1b2a49\`), then use the names: four or five.
-- Anything with parts is a \`group\`: its parts say \`in=<id>\` and measure from the group's \`at=\`, so it can be placed, moved, turned or copied (\`use\`) as one.
-- Curves are \`path\` with SVG path data.
 - Put words on a drawing with \`say label near=<id> | …\`.
 - To change a shape, declare it again under the same id: it morphs into the new one.${
         pixels
@@ -853,6 +842,19 @@ export function asksForInterface(input: TurnInput): boolean {
 }
 
 /**
+ * SA5. The canvas, taught only on a turn that draws (or while a drawing is on stage): its sizes, and how to draw well in few lines. Words and
+ * controls never use these coordinates; they flow, so the system prompt does not teach them.
+ */
+export const DRAWING_CHAPTER = (canvas: string): string => `DRAWING (coordinates are for art only): the canvas for this screen is ${canvas}; set another on the scene ($\`scene canvas=square\`): ${Object.entries(CANVAS)
+  .map(([name, spec]) => `${name} ${spec.width}x${spec.height}`)
+  .join(', ')}. Work back to front: the ground or sky first ($\`rect full\` covers the screen), then the subject as three or four big shapes, then two or three details; eight to fifteen shapes make a picture, forty a mess. Name your colours once ($\`color sky=#1b2a49\`) and use the names. Anything with parts is a $\`group\`: its parts say $\`in=<id>\` and measure from its $\`at=x,y\`, so it can be moved, turned or copied ($\`use\`) as one. Curves are $\`path\` with SVG path data. To change a shape, declare it again under the same id.`;
+
+const DRAWS = /\b(draw|drawing|drew|sketch|paint|painting|picture|illustrat\w*|diagram|pixel|sprite|animat\w*|cartoon|logo|poster|scene|story|memory|mechanism|anatomy|parts? of|labell?ed|how (?:a|an|the|does|do)\b.*\bwork|look like|looks like|shape|landscape|portrait|art)\b/i;
+
+/** Whether the user's words call for a drawing: the cue of the drawing chapter. */
+export const asksToDraw = (text: string): boolean => DRAWS.test(text);
+
+/**
  * What `tune` is, said only on a turn about music (never in the system prompt, which is full): the verb, an eight-bar score in two voices,
  * and how long a requested piece is. The score is real ABC, so the model has seen the notation and needs only the shape of the block.
  */
@@ -998,8 +1000,10 @@ export function buildTurnBrief(context: TurnContext, input: TurnInput, form: Bri
   const scene = stage.scene;
   const fit = (scale: number): number => Math.max(4, Math.floor(screen.cols / scale));
   const canvas = CANVAS[screen.canvas];
+  const onStageDrawn = stage.elements.some((element) => element.kind === 'shape' || element.kind === 'group' || element.kind === 'sprite');
+  const drawsNow = context.capabilities.kinds.includes('shape') && ((input.kind === 'prompt' && asksToDraw(input.text)) || onStageDrawn);
   parts.push(
-    `SCREEN: ${screen.width}x${screen.height}px; about ${screen.cols} characters x ${screen.rows} lines at body size, ${fit(SIZE_SCALE.l)} at size l, ${fit(SIZE_SCALE.xl)} at xl, ${fit(SIZE_SCALE.xxl)} at xxl; canvas ${screen.canvas} suits it (${canvas.width}x${canvas.height})${screen.canvas === 'wide' ? '; a figure scene that names no canvas gets square (100x100)' : ''}; pointer ${screen.pointer}; motion ${
+    `SCREEN: ${screen.width}x${screen.height}px; about ${screen.cols} characters x ${screen.rows} lines at body size, ${fit(SIZE_SCALE.l)} at size l, ${fit(SIZE_SCALE.xl)} at xl, ${fit(SIZE_SCALE.xxl)} at xxl; pointer ${screen.pointer}; motion ${
       screen.reducedMotion ? 'reduced: lean on pacing, size and silence' : 'full'
     }. LOOK: ${stage.lookName}. SCENE: ${scene.id} (${scene.layout}, ${scene.mood}, ${scene.pace}${scene.canvas === screen.canvas ? '' : `, canvas ${scene.canvas}`}).`,
   );
@@ -1021,6 +1025,7 @@ export function buildTurnBrief(context: TurnContext, input: TurnInput, form: Bri
   if (context.capabilities.structures.includes('screen') && (!liveApp || stage.elements.some((element) => element.figure?.kind === 'structure' && element.figure.structure === 'screen')) && (asksForInterface(input) || stage.elements.some((element) => element.figure?.kind === 'structure' && element.figure.structure === 'screen'))) parts.push(INTERFACE_CHAPTER);
   // The TEACH chapter is carried when the words ask for a lesson, or while a lesson goes on; never in the system prompt, which is full.
   if (carriesTeaching(context, input)) parts.push(TEACH_CHAPTER);
+  if (drawsNow) parts.push(DRAWING_CHAPTER(`${screen.canvas} (${canvas.width}x${canvas.height})${screen.canvas === 'wide' ? '; a figure scene that names no canvas gets square (100x100)' : ''}`));
   const standing = standingText(context.standing);
   if (standing !== null) parts.push(standing);
   // A conversation the user has come back to: the stage is empty, but what was said before is not forgotten. Told once, in the first full brief.
