@@ -1,5 +1,5 @@
 import { API, checkStageEvent, STAGE_EVENT_TYPES, STREAM_HEARTBEAT } from '@conduit/language';
-import type { AppStatus, BackEvent, BrainChange, BrainChoice, CreateSessionRequest, DemoInfo, StageEvent, StageEventType, StartTurnRequest, ToolChoice, TurnInput } from '@conduit/language';
+import type { AppStatus, BackEvent, BrainChange, BrainChoice, CreateSessionRequest, DemoInfo, StageEvent, StageEventType, StartTurnRequest, ToolChoice, TurnInput, UploadCrop, UploadResponse } from '@conduit/language';
 import type { LinkStatus, StageLink } from '../contracts/link';
 import type { PainterUpload } from '../contracts/painter';
 import { asAsks, asBrainChoice, asDemos, asSessionResponse, asStatus, asTools, asTurnId, messageOf } from './guards';
@@ -39,6 +39,12 @@ export interface HttpLink extends StageLink {
   resumeAgent(): Promise<void>;
   /** v2.1. Saves a film of a turn made in the page beside the session's log, for the steward to watch (`/capture`). */
   saveCapture(turn: string, film: Blob): Promise<void>;
+  /** v2.1. Gives the server a photo of the user's (picked, taken, pasted or dropped). It checks it by its bytes, converts and shrinks it, drops its metadata and keeps it; rejects with the server's own sentence when it will not. */
+  uploadPhoto(photo: Blob): Promise<UploadResponse>;
+  /** v2.1. Frames one part of a photo this conversation holds (a question from a page) as a new photo; the page stays as it was. Rejects with the server's sentence. */
+  cropPhoto(id: string, crop: UploadCrop): Promise<UploadResponse>;
+  /** v2.1. Where a photo this conversation holds is, by its id (`u1`); null before there is a conversation. What the prompt bar's thumbnail and `pic u1` draw. */
+  photoUrl(id: string): string | null;
 }
 
 /** One hour or one day of model use, as `/api/usage` gives it; only what `/usage` shows. */
@@ -72,6 +78,17 @@ async function bodyOf(response: Response): Promise<unknown> {
   const body: unknown = await response.json().catch(() => null);
   if (!response.ok) throw new Error(messageOf(body, `the server refused it (${response.status})`));
   return body;
+}
+
+/** What the server said of a photo it kept; throws its own sentence when it refused. */
+function keptFrom(response: Response, body: unknown): UploadResponse {
+  if (!response.ok) {
+    const said = messageOf(body, `the server refused it (${response.status})`);
+    throw new Error(`${said.charAt(0).toUpperCase()}${said.slice(1)}${/[.!?]$/.test(said) ? '' : '.'}`);
+  }
+  const kept = body as Partial<UploadResponse> | null;
+  if (kept === null || typeof kept.id !== 'string') throw new Error('The server did not say what it kept.');
+  return { id: kept.id, mime: String(kept.mime ?? 'image/jpeg'), width: Number(kept.width ?? 0), height: Number(kept.height ?? 0), bytes: Number(kept.bytes ?? 0) };
 }
 
 async function brainAnswer(response: Response): Promise<BrainChoice> {
@@ -488,6 +505,27 @@ export function createHttpLink(): HttpLink {
 
     async resumeAgent(): Promise<void> {
       await bodyOf(await fetch(API.kill, { method: 'DELETE' }));
+    },
+
+    async cropPhoto(id: string, crop: UploadCrop): Promise<UploadResponse> {
+      if (session === null || !canSend()) throw new Error('Not connected. Try again in a moment.');
+      const response = await fetch(API.uploadCrop(session, id), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(crop) });
+      return keptFrom(response, await response.json().catch(() => null));
+    },
+
+    async uploadPhoto(photo: Blob): Promise<UploadResponse> {
+      if (session === null || !canSend()) throw new Error('Not connected. Try again in a moment.');
+      let response: Response;
+      try {
+        response = await fetch(API.uploads(session), { method: 'POST', headers: { 'content-type': photo.type !== '' ? photo.type : 'application/octet-stream' }, body: photo });
+      } catch (cause) {
+        throw new Error('The photo could not be sent: the server cannot be reached.', { cause });
+      }
+      return keptFrom(response, await response.json().catch(() => null));
+    },
+
+    photoUrl(id: string): string | null {
+      return session === null ? null : API.upload(session, id);
     },
 
     async saveCapture(turn: string, film: Blob): Promise<void> {

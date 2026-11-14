@@ -143,7 +143,7 @@ function costOf(conversation: Conversation): number {
 }
 
 function inputText(input: TurnInput): string {
-  if (input.kind === 'prompt') return `typed: ${JSON.stringify(input.text)}`;
+  if (input.kind === 'prompt') return `typed: ${JSON.stringify(input.text)}${(input.images?.length ?? 0) > 0 ? ` with photos ${(input.images ?? []).join(', ')}` : ''}`;
   if (input.kind === 'tap') return `tapped: ${JSON.stringify(input.text)} (${input.id})`;
   if (input.kind === 'demo') return `demo: ${input.script}`;
   if (input.kind === 'act') return `worked control ${input.id}: ${JSON.stringify(input.text)}`;

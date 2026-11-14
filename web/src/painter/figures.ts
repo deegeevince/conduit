@@ -32,6 +32,16 @@ export interface Painting {
   readonly url: string | null;
   /** seconds on the ambient clock when the picture could first be drawn; the wash grows from here */
   readonly since: number;
+  /** a photo the user gave: its width over its height, so that it is fitted whole into its box and never stretched; absent for a painting */
+  readonly aspect?: number;
+}
+
+/** The largest box of this width over height that fits whole inside `box`, centred in it. */
+function containIn(box: CanvasRect, aspect: number): CanvasRect {
+  if (!(aspect > 0) || !Number.isFinite(aspect)) return box;
+  const width = Math.min(box.w, box.h * aspect);
+  const height = width / aspect;
+  return { x: box.x + (box.w - width) / 2, y: box.y + (box.h - height) / 2, w: width, h: height };
 }
 
 export interface FigureContext {
@@ -1384,7 +1394,8 @@ function pictureFrame(placed: Placed, frm: Frm): PictureFrame | null {
   const env = envelope(placed.owner, frm);
   if (env === null) return null;
   const painting = frm.paintings.get(placed.el.key);
-  const box = pictureBoxOf(placed.el, frm.sc);
+  const whole = pictureBoxOf(placed.el, frm.sc);
+  const box = figure.from != null && painting?.aspect !== undefined ? containIn(whole, painting.aspect) : whole;
   const url = painting !== undefined && painting.status === 'ready' ? painting.url : null;
   if (figure.medium !== null && painting?.status !== 'ready') {
     return {

@@ -28,7 +28,7 @@ export function createFilm(recording: Recording, options: FilmOptions): Film {
   for (const element of schedule.elements) {
     const url = recording.paintings[element.key];
     if (element.figure?.kind === 'picture') {
-      paintings.set(element.key, url === undefined ? { status: 'unpainted', url: null, since: 0 } : { status: 'ready', url, since: element.enter?.start ?? 0 });
+      paintings.set(element.key, url === undefined ? { status: 'unpainted', url: null, since: 0 } : { status: 'ready', url, since: element.enter?.start ?? 0, ...(recording.aspects?.[element.key] === undefined ? {} : { aspect: recording.aspects[element.key] }) });
     }
   }
   // What the hand held, and the data that came: a film is a pure function of these as of everything else.

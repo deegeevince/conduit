@@ -1,6 +1,6 @@
 // The edge between untrusted JSON and the typed domain. Every check names the field it found wrong.
 
-import { AMBIENT_KINDS, CAMERA_MOVES, CHART_KINDS, CONTROL_KINDS, ENTER_EFFECTS, EXIT_EFFECTS, FACES, FX_NAMES, LAYERS, LOOPS, MARKS, PROCEDURAL_MEDIA, STROKES, STRUCTURE_KINDS, TEXTURES, ALIGNS, BACK_EVENT_TYPES, BRAIN_EFFORTS, BRAIN_MODES, BRAIN_MODELS, CANVAS_NAMES, DEMOS, ELEMENT_KINDS, LAYOUTS, LIMITS, LOOK_IDS, MOODS, NO_SIGHT, NO_V21_CAPABILITIES, NO_V4_CAPABILITIES, PACES, SIGHT_ITEMS, SIGHT_NOTE } from '@conduit/language';
+import { AMBIENT_KINDS, CAMERA_MOVES, CHART_KINDS, CONTROL_KINDS, ENTER_EFFECTS, EXIT_EFFECTS, FACES, FX_NAMES, LAYERS, LOOPS, MARKS, PROCEDURAL_MEDIA, STROKES, STRUCTURE_KINDS, TEXTURES, ALIGNS, BACK_EVENT_TYPES, BRAIN_EFFORTS, BRAIN_MODES, BRAIN_MODELS, CANVAS_NAMES, DEMOS, ELEMENT_KINDS, LAYOUTS, LIMITS, LOOK_IDS, MOODS, NO_SIGHT, NO_V21_CAPABILITIES, NO_V4_CAPABILITIES, PACES, SIGHT_ITEMS, SIGHT_NOTE, UPLOAD_LIMITS } from '@conduit/language';
 import type {
   BackEvent,
   BrainChange,
@@ -155,6 +155,15 @@ export function parseCreateSession(body: unknown): CreateSessionRequest {
   return { screen: screen(raw.screen), capabilities: capabilities(raw.capabilities), look: look(raw.look, 'look') };
 }
 
+/** The ids of the photos a prompt carries (`u1`, `u2`, ...): at most one turn's worth, each once. Whether the conversation holds them is the conductor's to say. */
+function photoIds(value: unknown): string[] {
+  if (value === undefined) return [];
+  const ids = list(value, 'input.images').map((item) => text(item, 'input.images'));
+  if (ids.length > UPLOAD_LIMITS.perTurn) throw errors.badRequest(`a prompt may carry at most ${UPLOAD_LIMITS.perTurn} photos`);
+  for (const id of ids) if (!/^u[1-9][0-9]{0,3}$/.test(id)) throw errors.badRequest('input.images must be the ids the server gave the photos (u1, u2, ...)');
+  return [...new Set(ids)];
+}
+
 export function parseTurnInput(body: unknown): TurnInput {
   const input = obj(obj(body, 'body').input, 'input');
   const kind = oneOf(input.kind, ['prompt', 'tap', 'demo', 'script', 'act'] as const, 'input.kind');
@@ -171,7 +180,8 @@ export function parseTurnInput(body: unknown): TurnInput {
     const value = text(input.text, 'input.text');
     if (value.trim() === '') throw errors.badRequest('input.text must not be empty');
     if (value.length > SERVER_LIMITS.promptChars) throw errors.badRequest(`input.text is longer than ${SERVER_LIMITS.promptChars} characters`);
-    return { kind, text: value };
+    const images = photoIds(input.images);
+    return images.length === 0 ? { kind, text: value } : { kind, text: value, images };
   }
   if (kind === 'tap') {
     const said = text(input.text, 'input.text');

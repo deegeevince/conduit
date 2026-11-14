@@ -89,8 +89,8 @@ export interface StageApp {
   readonly attribution: { readonly text: string; readonly href: string } | null;
   /** whether the server can look at a draft and fix it, and whether the viewer has it switched on */
   readonly review: { readonly available: boolean; readonly on: boolean; set(on: boolean): void };
-  /** Interrupts whatever is playing, reports it, then starts a turn with this prompt. */
-  prompt(text: string): Promise<string>;
+  /** Interrupts whatever is playing, reports it, then starts a turn with this prompt (and the ids of the photos the server kept for it, `link.uploadPhoto`). */
+  prompt(text: string, photos?: readonly string[]): Promise<string>;
   demo(name: string): Promise<string>;
   /** Stops the current turn where it is. */
   interrupt(): void;
@@ -308,6 +308,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
       lockLook,
       charts: chartHost,
       tunes: sound,
+      uploadUrl: (id) => link.photoUrl(id),
       pointer: pointerKind(),
       reducedMotion: params.motion === 'reduced' ? true : params.motion === 'full' ? false : null,
     });
@@ -1113,7 +1114,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
         publishStatus();
       },
     },
-    prompt: (text) => submit({ kind: 'prompt', text }, null, true),
+    prompt: (text, photos) => submit(photos === undefined || photos.length === 0 ? { kind: 'prompt', text } : { kind: 'prompt', text, images: photos }, null, true),
     demo: (name) => submit({ kind: 'demo', script: name }, null, true),
     playScript: (text) => submit({ kind: 'script', text }, null, true),
     interrupt() {
