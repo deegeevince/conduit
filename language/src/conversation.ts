@@ -41,6 +41,10 @@ export interface ConversationTurn {
   readonly said: string;
   /** photos the person gave with these words, in order */
   readonly photos: readonly { readonly id: string; readonly url: string }[];
+  /** the words came from a voice note */
+  readonly voice: boolean;
+  /** the person drew on the canvas and sent the marks with these words */
+  readonly inked: boolean;
   readonly reply: ConversationReply;
   /** the lines of Series the brain wrote, in order: what the canvas plays to show this turn */
   readonly lines: readonly string[];

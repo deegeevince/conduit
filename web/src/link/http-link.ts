@@ -49,6 +49,8 @@ export interface HttpLink extends StageLink {
   cropPhoto(id: string, crop: UploadCrop): Promise<UploadResponse>;
   /** v2.1. Where a photo this conversation holds is, by its id (`u1`); null before there is a conversation. What the prompt bar's thumbnail and `pic u1` draw. */
   photoUrl(id: string): string | null;
+  /** The session this page holds on the server, as the session logs name it; null before there is one. */
+  readonly session: string | null;
 }
 
 /** One hour or one day of model use, as `/api/usage` gives it; only what `/usage` shows. */
@@ -365,6 +367,10 @@ export function createHttpLink(): HttpLink {
   return {
     get status() {
       return status;
+    },
+
+    get session() {
+      return session;
     },
 
     async connect(ready: CreateSessionRequest): Promise<void> {
