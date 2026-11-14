@@ -21,7 +21,7 @@
 
 import { resolve as resolvePath, sep } from 'node:path';
 import type { ActionRisk, AgentPermits, ToolChoice } from '@conduit/language';
-import { browserVerdict, newBrowserState } from './browser';
+import { browserVerdict, newBrowserState, quietAddress, sensitivityOf } from './browser';
 import type { BrowserState } from './browser';
 
 /** What the server's configuration offers a session. Everything else does not exist as far as a brain is concerned. */
@@ -296,6 +296,12 @@ export function gateCall(call: ToolCall, settings: AgentSettings, on: ReadonlySe
   // Anything beyond the web tools on makes an address a way out for what that thing could read: a fetch then runs unasked only when it is quiet.
   const strictFetch = [...on].some((entry) => entry !== 'WebSearch' && entry !== 'WebFetch' && (settings.tools.includes(entry) || settings.services.some((s) => s.name === entry)));
   const risk = riskOf(call, readOnlyHint, settings.dir, strictFetch);
+  // In `auto`, a fetch of a public address that carries nothing out (the very test the browser's `navigate` uses, and no sign-in or
+  // payment page) is the same act as the brain opening that page in its own tab, which `auto` already lets through: it runs, and is flagged.
+  if (permits === 'auto' && call.tool === 'WebFetch' && risk === 'send') {
+    const target = call.input['url'];
+    if (typeof target === 'string' && quietAddress(target.trim()) === 'quiet' && sensitivityOf(target) === null) return { kind: 'allow', risk: 'read', permit: 'auto' };
+  }
   return risk === 'read' ? { kind: 'allow', risk } : { kind: 'ask', risk };
 }
 

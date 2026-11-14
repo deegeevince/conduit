@@ -28,10 +28,12 @@ export interface BrowserState {
   readonly urls: Map<number, string>;
   /** tabs a read of the page showed a password, card or code field on, since the tab last navigated */
   readonly credentialTabs: Set<number>;
+  /** tabs the brain has typed into since they last navigated: the next click or Enter there may be a submit, so it is asked (see `escalated`) */
+  readonly typedTabs: Set<number>;
 }
 
 export function newBrowserState(): BrowserState {
-  return { tabs: new Set(), urls: new Map(), credentialTabs: new Set() };
+  return { tabs: new Set(), urls: new Map(), credentialTabs: new Set(), typedTabs: new Set() };
 }
 
 /** The tools of Claude in Chrome that are removed from the process altogether (`--disallowedTools`): each is an exit, a way to the owner's other browsers or files, or cannot be gated by what it names. */
@@ -79,7 +81,7 @@ const RISK_ORDER: readonly ActionRisk[] = ['read', 'write', 'run', 'send', 'buy'
 const worse = (a: ActionRisk, b: ActionRisk): ActionRisk => (RISK_ORDER.indexOf(b) > RISK_ORDER.indexOf(a) ? b : a);
 
 /** A public address that carries nothing out: http(s), no credential, no private host, no query, no fragment, a short path. */
-function quietAddress(raw: string): 'quiet' | 'loud' | 'refused' {
+export function quietAddress(raw: string): 'quiet' | 'loud' | 'refused' {
   let url: URL;
   try {
     url = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(raw) ? raw : `https://${raw}`);
@@ -128,6 +130,24 @@ export function looksLikeCredential(text: string): boolean {
 const CREDENTIAL_WORDS = /\b(?:password|passcode|passphrase|pwd|cvv|cvc|security code|card number|one-?time|verification code|2fa|otp|ssn|social security)\b/i;
 
 export const CREDENTIALS_NEVER = 'typing a password, card number, code or any other credential is never allowed, with or without a permit: the owner types those themselves. Say so, and ask them to do that step in their own browser';
+
+const SUBMIT_WORDS: readonly { readonly risk: ActionRisk; readonly words: RegExp }[] = [
+  { risk: 'delete', words: /\b(?:delete|remove|erase|destroy|cancel|unsubscribe|deactivate|close account|clear all)\b/i },
+  { risk: 'buy', words: /\b(?:buy|purchase|pay|checkout|check out|place order|order now|subscribe|donate|add to cart|add to basket|confirm order)\b/i },
+  { risk: 'publish', words: /\b(?:post|publish|tweet|share|submit|comment|reply|upload|save and publish|go live)\b/i },
+  { risk: 'send', words: /\b(?:send|email|message|invite|apply|accept|agree|allow|grant|sign|continue|confirm|next|enter|return)\b/i },
+];
+
+/** The words a click or key names itself by: what the call itself carries, never page text. */
+function escalated(risk: ActionRisk, input: Readonly<Record<string, unknown>>, typedHere: boolean): ActionRisk {
+  const act = String(input['action']);
+  const submitting = act === 'key' ? /\b(?:enter|return)\b/i.test(String(input['text'] ?? '')) : /click/.test(act);
+  const said = [input['action_summary'], input['ref'], input['text'], input['description']].filter((v): v is string => typeof v === 'string').join(' ');
+  let next = risk;
+  if (act !== 'key' || submitting) for (const row of SUBMIT_WORDS) if (row.words.test(said)) next = worse(next, row.risk);
+  if (typedHere && submitting) next = worse(next, 'send');
+  return next;
+}
 
 const tabOf = (call: ToolCall): number | null => {
   const id = call.input['tabId'];
@@ -192,6 +212,11 @@ export function browserVerdict(call: ToolCall, state: BrowserState): BrowserVerd
   else if (name === 'computer') risk = typeof input['action'] === 'string' && READ_COMPUTER_ACTIONS.includes(input['action']) ? 'read' : 'run';
   else risk = 'run';
 
+  // A click or a key that may SUBMIT is not a plain `run`: what it names says so (a button called Post, Send, Buy, Delete), and so does having typed
+  // into this page and now pressing something. `auto` lets only write and run through, so lifting these to send, buy, delete or publish keeps
+  // a post, a purchase or a deletion on stage whatever the permit level.
+  if (name === 'computer' && !READ_COMPUTER_ACTIONS.includes(String(input['action']))) risk = escalated(risk, input, state.typedTabs.has(tab));
+
   // Anything on a page that is a sign-in, payment or checkout is asked for, and at the highest risk.
   return ask(onSensitive === null ? risk : worse(risk, onSensitive), onSensitive !== null || targetSensitive);
 }
@@ -245,6 +270,7 @@ export function noteBrowserResult(state: BrowserState, call: ToolCall, texts: re
       state.tabs.delete(id);
       state.urls.delete(id);
       state.credentialTabs.delete(id);
+      state.typedTabs.delete(id);
     }
     return;
   }
@@ -256,14 +282,19 @@ export function noteBrowserResult(state: BrowserState, call: ToolCall, texts: re
     seen.add(id);
     const before = state.urls.get(id);
     const now = match[2] ?? '';
-    if (before !== now) state.credentialTabs.delete(id);
+    if (before !== now) {
+      state.credentialTabs.delete(id);
+      state.typedTabs.delete(id);
+    }
     state.urls.set(id, now);
   }
   const id = tabOf(call);
   if (id !== null && name === 'navigate' && typeof call.input['url'] === 'string' && !seen.has(id)) {
     state.urls.set(id, call.input['url']);
     state.credentialTabs.delete(id);
+    state.typedTabs.delete(id);
   }
+  if (id !== null && (name === 'form_input' || (name === 'computer' && call.input['action'] === 'type'))) state.typedTabs.add(id);
   if (id !== null && (name === 'read_page' || name === 'find') && /\[ref_\d+\]|ref_\d+/.test(joined)) {
     for (const line of joined.split('\n')) {
       if (/ref_\d+/.test(line) && (/\btype="?password"?|\bpassword\b|\bpasscode\b|card number|credit card|\bcvv\b|\bcvc\b|security code|one-time|verification code/i.test(line))) state.credentialTabs.add(id);
