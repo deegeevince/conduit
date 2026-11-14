@@ -1172,3 +1172,107 @@ export const LIMITS = {
   /** bound changes alive on stage at once */
   binds: 48,
 } as const;
+
+// ---------------------------------------------------------------------------------------------------------------------------------
+// v3: the document and the lesson (PLAN-v3-core 2.1, 2.6, 2.10, section 3). The words that make a tree of parts, and a part a lesson.
+//
+// They are a table of their own and not rows of `VERB`: the brain's fixed prompt is built by walking `VERB`, it is at its budget, and a
+// lesson is taught by its own chapter on its own cues (package WS7), which builds its text from `LESSON_VERB`, `TECHNIQUE` and `VISUAL`.
+// ---------------------------------------------------------------------------------------------------------------------------------
+
+/** The words that build a document and a lesson. Their forms are what the TEACH chapter and `docs/language.md` print. */
+export const LESSON_VERB = {
+  part: {
+    form: 'part <id> [in=<part>] [tag=<technique>] | <title>',
+    gist: 'A place in the document: a sheet, a section, a question, a way of doing it. `in=` is where it sits (an open `part … end` says it for you). Only a title is an outline: named now, written later. `tag=` is the technique a way uses.',
+    time: 'instant',
+    family: 'lesson',
+  },
+  step: {
+    form: 'step [id] [in=<part>] [show=<visual> [a..b] [key=value…]] | <words>',
+    gist: 'One reveal of a lesson: the words, and the picture to show with them. Steps stack into a worked page; nothing shown is taken away. Write the same id again to replace a step.',
+    time: 'instant',
+    family: 'lesson',
+  },
+  ask: {
+    form: 'ask <id> [in=<part>] is=<a>[,<b>…] [pick=<x>,<y>,<z>] [unit=<unit>] | <question>',
+    gist: 'A try: the learner types the answer, or taps one of the large choices in `pick=`. It is checked on the page, at once; every answer you will accept is in `is=` and nowhere else. A `_` stands for a space inside a value.',
+    time: 'instant',
+    family: 'lesson',
+  },
+  hint: {
+    form: 'hint [in=<ask>] | <words>',
+    gist: 'What to say after a wrong try, one per wrong try, in the order written. A hint never holds the answer.',
+    time: 'instant',
+    family: 'lesson',
+  },
+  reply: {
+    form: 'reply | <words>',
+    gist: 'The answer as one sentence for the conversation thread. It is never drawn on a stage.',
+    time: 'instant',
+    family: 'lesson',
+  },
+  end: {
+    form: 'end',
+    gist: 'Closes the part last opened without an `in=`; the parts written after it sit beside it, not inside it.',
+    time: 'instant',
+    family: 'lesson',
+  },
+} as const satisfies Record<string, { form: string; gist: string; time: VerbTime; family: 'lesson' }>;
+export type LessonVerb = keyof typeof LESSON_VERB;
+export const LESSON_VERBS = keysOf(LESSON_VERB);
+
+/** The ways of going at a question. A way is a `part` with one of these as its `tag=`; the catalogue lists by them. A fixed list. */
+export const TECHNIQUE = {
+  'draw-it': 'make a picture of it and count what is there',
+  'share-it-out': 'deal it into equal groups, or the same amount to each',
+  'count-on-a-line': 'hop along a number line, forward or back',
+  'make-ten': 'build to a ten first, then add what is left',
+  'break-it-apart': 'split a number into easier pieces (tens and ones, doubles, halves)',
+  'find-the-pattern': 'look for what repeats or changes by the same amount',
+  'read-the-question': 'say what is really being asked before doing any sums',
+  'work-backwards': 'start from the end and undo each step',
+} as const;
+export type TechniqueId = keyof typeof TECHNIQUE;
+export const TECHNIQUES = keysOf(TECHNIQUE);
+
+/** What a value of a visual's parameter looks like. */
+export type VisualParam = 'number' | 'numbers' | 'word' | 'time';
+
+/**
+ * The pictures a step may `show=`: the lesson view's own widgets (WS6), each worked by hand. The first words after `show=<visual>` may be a
+ * span (`0..70`) when the visual has `range`; every other parameter is `key=value`. A value of `numbers` is a comma list in which `?` is a
+ * gap the learner fills; a `word` may use `_` for a space.
+ */
+export const VISUAL = {
+  numberline: { gist: 'a number line: a span, a place marked, hops along it', range: true, keys: { mark: 'number', hops: 'numbers', step: 'number' } },
+  groups: { gist: 'groups of counters to tap and count: how many groups, how many in each, how each splits', range: false, keys: { count: 'number', each: 'number', parts: 'numbers', label: 'word' } },
+  blocks: { gist: 'ten-rods and unit cubes: a number built, or taken away from', range: false, keys: { tens: 'number', ones: 'number', take: 'number' } },
+  bar: { gist: 'a bar model: a whole and its parts, one of them a gap', range: false, keys: { total: 'number', parts: 'numbers' } },
+  coins: { gist: 'coins to count and add up', range: false, keys: { coins: 'numbers', target: 'number' } },
+  clock: { gist: 'a clock face to read or to set', range: false, keys: { time: 'time', mode: 'word' } },
+} as const satisfies Record<string, { gist: string; range: boolean; keys: Readonly<Record<string, VisualParam>> }>;
+export type VisualKind = keyof typeof VISUAL;
+export const VISUAL_KINDS = keysOf(VISUAL);
+
+/** The limits of a lesson. */
+export const LESSON_LIMITS = {
+  /** parts in one document */
+  parts: 400,
+  /** levels of parts, the root's children being the first */
+  depth: 6,
+  /** steps and asks in one part */
+  steps: 40,
+  /** answers one `ask` accepts */
+  accepted: 8,
+  /** choices on one `ask` */
+  pick: 6,
+  /** hints on one `ask` */
+  hints: 6,
+  /** characters in one accepted answer or choice */
+  answer: 40,
+  /** characters in a visual's parameter value */
+  value: 60,
+  /** numbers in a `numbers` value */
+  numbers: 24,
+} as const;

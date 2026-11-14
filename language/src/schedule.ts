@@ -11,6 +11,7 @@
 import { chartModelOf } from './chart';
 import { namesIn, numberOf, parseExpr } from './expr';
 import { lengthOf, outlineOf, pointAlong } from './geometry';
+import { isLessonVerb } from './lesson';
 import { completeStyle, mergeStyles, patchStyle, resolveColours, resolveLook, resolveStyle } from './style';
 import type { ColorSheet, ElementStyle, LookDef, LookSheet, ResolvedLook, ResolvedProps, StyleContext, StyleDef, StyleSheet } from './style';
 import { isRuleRow, splitCells, splitEmphasis } from './text';
@@ -46,10 +47,10 @@ import {
   dwellSeconds,
   waitSeconds,
 } from './timing';
-import type { Anchor, TuneVoice } from './vocabulary';
+import type { Anchor, LessonVerb, TuneVoice } from './vocabulary';
 import type { BindOn, CanvasBox, ControlLine, SceneLine, ControlValue, CreatingLine, DatasetRef, Issue, IssueCode, Line, Paint, Point, Range, ShapeGeometry, StructureLine, StyleProps, Target, When } from './types';
 import { cachedTune, tuneRowsOf } from './tune';
-import { BACKDROP_LAYERS, CANVAS, CONTROL, DEFAULT_CANVAS, DEFAULT_CHART, DEFAULT_LOOK, DEFAULT_TUNE_VOICE, LIMITS, STRUCTURE } from './vocabulary';
+import { BACKDROP_LAYERS, CANVAS, CONTROL, DEFAULT_CANVAS, DEFAULT_CHART, DEFAULT_LOOK, DEFAULT_TUNE_VOICE, LESSON_VERBS, LIMITS, STRUCTURE } from './vocabulary';
 import type {
   Align,
   AmbientKind,
@@ -431,7 +432,7 @@ export interface LookSpan extends Span {
 
 export interface LineTime extends Span {
   readonly seq: number;
-  readonly verb: Verb;
+  readonly verb: Verb | LessonVerb;
 }
 
 export interface ScheduleIssue {
@@ -542,7 +543,7 @@ function sameStyle(a: ElementStyle, b: ElementStyle): boolean {
 }
 
 /** Lines that only define, edit or hand something to the server: the first line that is none of these is the one that begins the answer. */
-const QUIET_VERBS: ReadonlySet<string> = new Set(['style', 'color', 'look', 'plan', 'wait', 'revise', 'cancel', 'bind', 'row', 'frame', 'standing', 'refine']);
+const QUIET_VERBS: ReadonlySet<string> = new Set(['style', 'color', 'look', 'plan', 'wait', 'revise', 'cancel', 'bind', 'row', 'frame', 'standing', 'refine', ...LESSON_VERBS]);
 
 /** Whether the scene's layout, not the element itself, decides where it goes. Text flows, and so does a control: it takes a line of the flow like a choice does. */
 export function isInFlow(style: ElementStyle, layout: Layout, kind: ElementKind = 'text'): boolean {
@@ -1373,7 +1374,7 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
       }
     }
     // A tune is whole when the brain says anything else: then its music can begin, and the picture knows when.
-    if (line.verb !== 'row' && line.verb !== 'revise' && line.verb !== 'cancel' && line.verb !== 'standing' && line.verb !== 'refine') {
+    if (line.verb !== 'row' && line.verb !== 'revise' && line.verb !== 'cancel' && line.verb !== 'standing' && line.verb !== 'refine' && !isLessonVerb(line.verb)) {
       for (const candidate of live) {
         const figure = candidate.span.figure;
         if (figure?.kind === 'structure' && figure.structure === 'tune' && !candidate.span.carried && (figure.sealed ?? null) === null && candidate.span.seq < seq) {
@@ -1432,6 +1433,16 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
       case 'standing':
       case 'refine':
         // For the server alone: it keeps what the user asked to hold, and starts the passes. Nothing here is on the clock.
+        break;
+
+      case 'part':
+      case 'step':
+      case 'ask':
+      case 'hint':
+      case 'reply':
+      case 'end':
+        // The words of the document and its lessons (v3, lesson.ts). They put nothing on a painted stage and take no time: the document keeps them.
+        lines.push({ seq, verb: line.verb, start: pen, end: pen });
         break;
 
       case 'say':

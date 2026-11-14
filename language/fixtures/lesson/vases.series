@@ -1,0 +1,17 @@
+# Acceptance case zero, typed: five vases, three kinds of flower in each. One vase first, then five twelves, then a choice of three.
+part w1 | Five vases
+part q1 in=w1 | Five vases each hold six roses, two tulips and four daisies. How many flowers altogether?
+part q1a in=q1 tag=draw-it | Draw one vase, then five
+step in=q1a show=groups count=1 parts=6,2,4 label=flowers | Here is one vase. Tap each flower to count it.
+ask a1 in=q1a is=12 pick=10,12,14 | How many flowers are in one vase?
+hint in=a1 | Count the roses, then the tulips, then the daisies.
+hint in=a1 | Put the three groups together: six, then two more, then four more.
+step in=q1a show=groups count=5 each=12 label=flowers | Now all five vases. Each one is just the same.
+step in=q1a | Adding twelve five times is long. Add them in pairs: 12 and 12 make 24.
+ask a2 in=q1a is=60 pick=50,60,70 | How many flowers in all five vases?
+hint in=a2 | Keep adding twelves: 24, then 36, then …
+part q1b in=q1 tag=share-it-out | Share the flowers out
+step in=q1b show=bar parts=12,12,12,12,12 | One bar for each vase, and every bar is the same length.
+ask a1 in=q1b is=60 unit=flowers | How long is the whole bar, in flowers?
+hint in=a1 | Add the bars two at a time.
+reply | Each vase holds twelve, and there are five of them.

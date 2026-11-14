@@ -1,5 +1,7 @@
 import { STANDING_LIMITS } from './context';
 import { parsePathData } from './geometry';
+import { isLessonId, isLessonVerb, isSpan, readShow, splitValues, technique } from './lesson';
+import type { LessonLine } from './lesson';
 import { BUILTIN_STYLE_NAMES, own } from './style';
 import { splitCells } from './text';
 import { TUNE_TEMPO_RANGE } from './tune';
@@ -78,6 +80,7 @@ import {
   TEXTURES,
   VERBS,
   WEIGHTS,
+  LESSON_LIMITS,
 } from './vocabulary';
 import { REFINE_LIMITS } from './wire';
 import type { AmbientKind, Amount, Anchor, CameraMove, CameraSpeed, ControlVerb, FxName, ShapeVerb, StructureVerb, Verb } from './vocabulary';
@@ -1487,6 +1490,155 @@ function parseCancel(head: Head, issues: Issues): Line | null {
   return { verb: 'cancel', id: word };
 }
 
+/** v3. `part <id> [in=<part>] [tag=<technique>] | <title>`: a place in the document. */
+function parsePart(head: Head, text: string | null, issues: Issues): LessonLine | null {
+  const id = head.words[0];
+  if (id === undefined) {
+    issues.error('missing-id', 'part needs an id: part q1 | the question');
+    return null;
+  }
+  if (!isLessonId(id)) {
+    issues.error('bad-id', `"${id}" is not a part id (lower case, digits, - and _, up to ${LIMITS.name})`, id);
+    return null;
+  }
+  warnUnknownWords(head.words.slice(1), issues);
+  let parent: string | undefined;
+  let tag: ReturnType<typeof technique> = null;
+  const rest: Pair[] = [];
+  for (const pair of head.pairs) {
+    if (pair.key === 'in') {
+      if (isLessonId(pair.value)) parent = pair.value;
+      else issues.warn('bad-id', `"${pair.value}" is not a part id; in= ignored`, pair.token);
+    } else if (pair.key === 'tag') {
+      tag = technique(pair.value);
+      if (tag === null) issues.warn('bad-value', `"${pair.value}" is not a technique; tag ignored`, pair.token);
+    } else rest.push(pair);
+  }
+  warnUnknownPairs(rest, issues);
+  if (text === null) {
+    issues.error('missing-text', 'part needs its title after " | ": part q1 | 64 - 30 =');
+    return null;
+  }
+  return { verb: 'part', id, ...(parent === undefined ? {} : { in: parent }), ...(tag === null ? {} : { tag }), title: text };
+}
+
+/** v3. `step [id] [in=<part>] [show=<visual> [a..b] [key=value…]] | <words>`: one reveal. */
+function parseStep(head: Head, text: string | null, issues: Issues): LessonLine | null {
+  let id = '-';
+  const spans: string[] = [];
+  head.words.forEach((word, index) => {
+    if (isSpan(word)) spans.push(word);
+    else if (index === 0 && isLessonId(word)) id = word;
+    else issues.warn('unknown-word', `"${word}" means nothing here; ignored`, word);
+  });
+  let parent: string | undefined;
+  let visual: string | undefined;
+  const args: Pair[] = [];
+  for (const pair of head.pairs) {
+    if (pair.key === 'in') {
+      if (isLessonId(pair.value)) parent = pair.value;
+      else issues.warn('bad-id', `"${pair.value}" is not a part id; in= ignored`, pair.token);
+    } else if (pair.key === 'show') visual = pair.value;
+    else args.push(pair);
+  }
+  const report = (code: IssueCode, message: string, token?: string): void => issues.warn(code, message, token);
+  const show = visual === undefined ? null : readShow(visual, spans, args, report);
+  if (visual === undefined) {
+    warnUnknownPairs(args, issues);
+    for (const word of spans) issues.warn('unknown-word', `"${word}" is a span, and a step with no show= has no picture; ignored`, word);
+  }
+  if (text === null && show === null) {
+    issues.error('missing-text', 'step needs its words after " | ", or a picture to show');
+    return null;
+  }
+  return { verb: 'step', id, ...(parent === undefined ? {} : { in: parent }), ...(show === null ? {} : { show }), text: text ?? '' };
+}
+
+/** v3. `ask <id> [in=<part>] is=<a>[,<b>…] [pick=<x>,<y>,<z>] [unit=<unit>] | <question>`: a try. */
+function parseAsk(head: Head, text: string | null, issues: Issues): LessonLine | null {
+  let id = '-';
+  head.words.forEach((word, index) => {
+    if (index === 0 && isLessonId(word)) id = word;
+    else issues.warn('unknown-word', `"${word}" means nothing here; ignored`, word);
+  });
+  let parent: string | undefined;
+  let accepted: string[] = [];
+  let pick: string[] | undefined;
+  let unit: string | undefined;
+  const rest: Pair[] = [];
+  for (const pair of head.pairs) {
+    if (pair.key === 'in') {
+      if (isLessonId(pair.value)) parent = pair.value;
+      else issues.warn('bad-id', `"${pair.value}" is not a part id; in= ignored`, pair.token);
+    } else if (pair.key === 'is' || pair.key === 'answer') accepted = splitValues(pair.raw).filter((value) => value.length <= LESSON_LIMITS.answer);
+    else if (pair.key === 'pick' || pair.key === 'choices') pick = splitValues(pair.raw).filter((value) => value.length <= LESSON_LIMITS.answer).slice(0, LESSON_LIMITS.pick);
+    else if (pair.key === 'unit') {
+      if (/^[a-z£$€%]{1,16}$/.test(pair.value)) unit = pair.value;
+      else issues.warn('bad-value', `"${pair.value}" is not a unit word; ignored`, pair.token);
+    } else rest.push(pair);
+  }
+  warnUnknownPairs(rest, issues);
+  if (accepted.length === 0) {
+    issues.error('missing-argument', 'ask needs the answers it accepts: ask a1 in=q1a is=34 | Where did you land?');
+    return null;
+  }
+  if (text === null) {
+    issues.error('missing-text', 'ask needs its question after " | "');
+    return null;
+  }
+  return { verb: 'ask', id, ...(parent === undefined ? {} : { in: parent }), is: accepted.slice(0, LESSON_LIMITS.accepted), ...(pick === undefined || pick.length === 0 ? {} : { pick }), ...(unit === undefined ? {} : { unit }), text };
+}
+
+/** v3. `hint [in=<ask>] | <words>`. */
+function parseHint(head: Head, text: string | null, issues: Issues): LessonLine | null {
+  let ask: string | undefined;
+  const words = [...head.words];
+  const first = words[0];
+  if (first !== undefined && isLessonId(first)) {
+    ask = first;
+    words.shift();
+  }
+  warnUnknownWords(words, issues);
+  const rest: Pair[] = [];
+  for (const pair of head.pairs) {
+    if (pair.key === 'in' || pair.key === 'for' || pair.key === 'ask') {
+      if (isLessonId(pair.value)) ask = pair.value;
+      else issues.warn('bad-id', `"${pair.value}" is not an ask id; ignored`, pair.token);
+    } else rest.push(pair);
+  }
+  warnUnknownPairs(rest, issues);
+  if (text === null) {
+    issues.error('missing-text', 'hint needs its words after " | "');
+    return null;
+  }
+  return { verb: 'hint', ...(ask === undefined ? {} : { in: ask }), text };
+}
+
+function parseLesson(verb: Extract<LessonLine['verb'], string>, head: Head, text: string | null, issues: Issues): LessonLine | null {
+  switch (verb) {
+    case 'part':
+      return parsePart(head, text, issues);
+    case 'step':
+      return parseStep(head, text, issues);
+    case 'ask':
+      return parseAsk(head, text, issues);
+    case 'hint':
+      return parseHint(head, text, issues);
+    case 'reply':
+      warnUnknownWords(head.words, issues);
+      warnUnknownPairs(head.pairs, issues);
+      if (text === null) {
+        issues.error('missing-text', 'reply needs its words after " | ": reply | Five twelves is sixty.');
+        return null;
+      }
+      return { verb: 'reply', text };
+    case 'end':
+      warnUnknownWords(head.words, issues);
+      warnUnknownPairs(head.pairs, issues);
+      return { verb: 'end' };
+  }
+}
+
 const TRAILING_TIME = /\s(@(?:with|[+-]?\d+(?:\.\d+)?s?))\s*$/i;
 
 /** Verbs whose line carries something after the bar, and how much of it is kept. */
@@ -1532,10 +1684,10 @@ function isControlVerb(verb: Verb): verb is ControlVerb {
 }
 
 /** Properties a model writes as `key: value` or `key:value` where Series writes `key=value`. */
-const COLON_KEYS: ReadonlySet<string> = new Set(['from', 'x', 'y', 'at', 'in', 'near', 'data', 'grow', 'unit', 'step', 'value', 'send', 'form', 'layout', 'canvas', 'mood', 'pace', 'align', 'clear', 'lines', 'fill', 'stroke', 'ink', 'size', 'thick', 'enter', 'exit', 'over', 'speed', 'dur', 'scale', 'rot', 'opacity', 'layer', 'loop', 'mark', 'id', 'min', 'max', 'year', 'kind', 'type']);
+const COLON_KEYS: ReadonlySet<string> = new Set(['is', 'tag', 'pick', 'show', 'from', 'x', 'y', 'at', 'in', 'near', 'data', 'grow', 'unit', 'step', 'value', 'send', 'form', 'layout', 'canvas', 'mood', 'pace', 'align', 'clear', 'lines', 'fill', 'stroke', 'ink', 'size', 'thick', 'enter', 'exit', 'over', 'speed', 'dur', 'scale', 'rot', 'opacity', 'layer', 'loop', 'mark', 'id', 'min', 'max', 'year', 'kind', 'type']);
 
 /** Verbs whose words come after the bar; written without one, the words are found by other signs. */
-const WORDED: ReadonlySet<string> = new Set(['say', 'node', 'button', 'toggle', 'input', 'correct', 'card', 'bind', 'deck', 'standing']);
+const WORDED: ReadonlySet<string> = new Set(['say', 'node', 'button', 'toggle', 'input', 'correct', 'card', 'bind', 'deck', 'standing', 'part', 'step', 'ask', 'hint', 'reply']);
 
 const ARROW = /\s(?:->|-->|=>|→)\s/;
 const RANGE = /^(-?\d+(?:\.\d+)?)[-–—](\d+(?:\.\d+)?)$/;
@@ -1645,7 +1797,7 @@ export function parseLine(raw: string): ParseResult {
     if (arrow !== null) source = `${source.slice(0, arrow.index)} | ${source.slice(arrow.index + arrow[0].length)}`;
     else if (quoted?.[1] !== undefined && quoted[2] !== undefined && firstVerb !== 'say') source = `${quoted[1]} | ${quoted[2]}`;
     else if (colon?.[1] !== undefined && colon[2] !== undefined && !COLON_KEYS.has((colon[1].split(/\s+/).pop() ?? '').toLowerCase())) source = `${colon[1]} | ${colon[2]}`;
-    else if (firstVerb === 'say' || firstVerb === 'button' || firstVerb === 'deck' || (firstVerb === 'standing' && !/^standing\s+(?:drop|forget|clear)\b/i.test(source))) {
+    else if (firstVerb === 'say' || firstVerb === 'button' || firstVerb === 'deck' || firstVerb === 'reply' || (firstVerb === 'standing' && !/^standing\s+(?:drop|forget|clear)\b/i.test(source))) {
       // `say hello there`, `button go`: no bar, so the rest of the line is the words.
       const rest = source.replace(/^\S+\s*/, '').trim();
       if (rest !== '' && !/^\w+=/.test(rest)) {
@@ -1669,6 +1821,15 @@ export function parseLine(raw: string): ParseResult {
     issues.warn('unknown-verb', `"${verbToken}" is a style, not a verb; read as: say ${verbToken} | …`, verbToken);
     tokens.unshift('say');
     verb = 'say';
+  }
+  // v3: the words of a document and a lesson are a table of their own (`LESSON_VERB`), read here and not by the rows of the stage's verbs.
+  if (isLessonVerb(verb)) {
+    if (wordsAsWritten !== null) issues.warn('missing-text', wordsAsWritten);
+    const lessonHead = readHead(tokens.slice(1), issues);
+    const lessonText = verb === 'end' ? null : cleanText(rawText, LIMITS.text, issues);
+    const lesson = parseLesson(verb, lessonHead, lessonText, issues);
+    if (lesson === null || issues.failed) return { kind: 'reject', issues: issues.list };
+    return { kind: 'line', line: lesson, issues: issues.list };
   }
   if (!oneOf(VERBS, verb)) {
     issues.error('unknown-verb', verbToken === '' ? 'line has no verb' : `"${verbToken}" is not a verb`, verbToken);

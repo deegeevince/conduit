@@ -402,13 +402,60 @@ look wireframe | studio
 
 A mock-up is described, not drawn. The brain says what is on each screen, in order; the painter sizes, spaces and aligns every part (an auto-layout subset of flexbox, solved in `web/src/painter/blocks/ui`), sets it in the look's tokens, and stands the screens side by side at true proportions, scaled together to their room. A phone is 390 points across, a tablet 820, a desktop 1280 and a `browser` is a desktop with its chrome. The brain never gives a part a coordinate and never builds a control out of `rect`s.
 
-- **Read only inside a screen.** `screen` opens a mock-up. The words `row`, `col`, `end` and the parts are the interface's only from then until a `scene`, a `deck`, a `pix` or another structure; before it, `row` is a sprite's row and `text`, `image`, `menu` keep their aliases (`say`, `paint`, `pick`). A word inside a screen that is no part is set as `text` and named in the brief's list of repairs. `interface.ts` (`language/src/interface.ts`) is the reader.
+- **Read only inside a screen.** `screen` opens a mock-up. The words `row`, `col`, `end` and the parts are the interface's only from then until a `scene`, a `deck`, a `pix`, another structure or a lesson word (`part`, `step`, `ask`, `hint`, `reply`; section 4.20); before it, `row` is a sprite's row and `text`, `image`, `menu` keep their aliases (`say`, `paint`, `pick`). A word inside a screen that is no part is set as `text` and named in the brief's list of repairs. `interface.ts` (`language/src/interface.ts`) is the reader.
 - **One block.** The first `screen` line opens a structure (verb `screen`, kind `screen`); every later line of the interface, later `screen` lines included, is a row of it, taken as written like a line of code. A journey of six screens is one block.
 - **Every line stands alone.** The normaliser keeps the stack of open `row`s and `col`s and writes `id=` and `in=` on every part, so a line on the wire says what it sits in and `end` means nothing to the painter: `heading id=s1.heading1 in=s1.col1 | Welcome back`. The wire form of the block is `screen x1 | screen s1 phone | Sign in`, then `row x1 | <that line>` for each part, and each lands a step after the one before (0.06 s).
 - **Looks.** `wireframe` (boxes and lines on white) and `studio` (a finished design) are looks like the rest and are taught by the interface chapter, not by the fixed prompt. The same lines serve both; `look studio` after a wireframe is the wireframe becoming the design.
 - **Pictures.** `image … | what it shows` is a placeholder at once. Where the owner has switched a source on (`PICTURES=openverse`), the server looks for a photograph by those words, never on the turn clock; when one is found it arrives as a `picture` event and the painter draws it in the placeholder's place with its credit at its foot. Failing, the placeholder stays.
 - **Taught only when asked.** The system prompt holds one clause ("A mock-up, a page, an app screen: INTERFACE lines, never rects"); the brief carries the chapter (`INTERFACE_CHAPTER`) when the user's words are about an interface (mock-up, wireframe, screen, page, app, site, figma, landing, UI, journey) or a mock-up is on stage.
 - **Not yet.** A part is not an element: `set`, `hit` and `drop` reach the block, not one part by its id. `set <screen> device=desktop` and taps on tabs, picks, toggles and fields are not wired in the product (they work on `bench-ui.html`).
+
+### 4.20 The document and its lessons: `part`, `step`, `ask`, `hint`, `reply`, `end`
+
+```
+part <id> [in=<part>] [tag=<technique>] | <title>
+step [id] [in=<part>] [show=<visual> [a..b] [key=value…]] | <words>
+ask <id> [in=<part>] is=<a>[,<b>…] [pick=<x>,<y>,<z>] [unit=<unit>] | <question>
+hint [in=<ask>] | <words>
+reply | <words>
+end
+```
+
+These words build a **document**: a tree of parts, a mind and a person's shared place to come back to (PLAN-v3-core 2.1). They are a table of their own, `LESSON_VERB`, and not rows of `VERB`: the fixed prompt is built from `VERB`, and a lesson is taught by its own chapter on its own cues. They put nothing on a painted stage and take no time (`QUIET_VERBS`); `L/document.ts` keeps them.
+
+- **`part`** is a place in the document: a sheet, a section, a question, a way of doing it. Its title is its words. **Written with only a title it is an outline**: named now, written later. `in=` says what it sits in; the first part written is the document's root, and one with no `in=` sits in the part last opened (an open `part … end` block) or, with none open, in the root. `tag=` is the technique a way uses, one of the table below; the catalogue lists by it, and a word that is not in it is dropped with a warning.
+- **`step`** is one reveal of a lesson: its words and the picture shown with them. Steps stack into a worked page, and nothing shown is taken away. It sits in the part it names, else the part last written. The normaliser gives an unnamed step an id; **writing the same id again replaces the step**, which is how a step that gave an answer away is mended.
+- **`ask`** is a try. The learner types the answer, or taps one of the large choices in `pick=`; it is checked on the page, at once, with no round trip. **`is=` holds every answer the ask accepts and no other word does**: a comma between answers, a `_` for a space inside one (`is=ten_pence`), so an answer cannot hold a comma. `unit=` is the unit a typed unit is read against. `pick=` needs two or more choices, one of which is an accepted answer. An `ask` is a gate: nothing written after it is drawn until it holds an accepted answer (or its hints are used up).
+- **`hint`** is what is said after a wrong try, one hint a wrong try, in the order written. `in=` is the ask it is for; absent, the last ask of the open part. An id the brain reuses in another way (`a1` in every way) is made its own by the normaliser (`a1-2`), and the hints that follow find their ask by the part they are in.
+- **`reply`** is the answer as one sentence for the conversation's thread. It is never drawn on a stage.
+- **`end`** closes the part last opened without an `in=`.
+
+Every line stands alone on the wire: the normaliser writes `in=` and an id on every line that needs one. A part's id in the document is its parents' ids joined by `/` (`w1/s2/q7/a2`); a painted scene is `#1`, `#2`, and a conversation with no part at all has the root `root`.
+
+**The pictures a step may show** (`VISUAL`): the lesson view's own widgets, each worked by hand. After `show=<visual>` come its span (`0..70`, when it takes one) and `key=value` pairs; a value of kind `numbers` is a comma list in which `?` is a gap the learner fills. A word or value the picture does not know is dropped with a warning and the step stays.
+
+| Picture | Takes | Shows |
+| --- | --- | --- |
+| `numberline` | a span `a..b`; `mark` (number), `hops` (numbers, signed), `step` (number) | a number line: a place marked, hops along it |
+| `groups` | `count`, `each` (numbers); `parts` (numbers); `label` (word) | groups of counters to tap and count |
+| `blocks` | `tens`, `ones`, `take` (numbers) | ten-rods and unit cubes: a number built, or taken away from |
+| `bar` | `total` (number, absent when it is the gap); `parts` (numbers) | a bar model: a whole and its parts |
+| `coins` | `coins` (numbers), `target` (number) | coins to count and add up |
+| `clock` | `time` (like `3:30`), `mode` (word) | a clock face to read or to set |
+
+**The techniques** (`TECHNIQUE`, a fixed list): `draw-it`, `share-it-out`, `count-on-a-line`, `make-ten`, `break-it-apart`, `find-the-pattern`, `read-the-question`, `work-backwards`.
+
+**An open ask seals its answer, by structure** (2.6). A rule the brain must remember is not a rule, so in three layers:
+
+1. *The reader refuses.* When an `ask` or a `hint` arrives and what is already on the page holds an answer it accepts, the line is refused (`spoiler`), with the step to write again named. What is on the page: the way's title, every step before the ask (its words, and the numbers its picture was told, but not the ends of a span), the asks and hints before it, the ask's own words. A number the question itself is made of (the titles of the parts above the first way) is no secret and may be used. Numbers are matched as numbers (`60`, `sixty`, `60 flowers`), a constant `{5*12}` as its value, words as phrases.
+2. *Whatever draws masks.* A drawer asks `sealed(value, openAsks)` of every word, readout, computed `{expression}` and widget label it is about to show, and draws a gap in its place; a readout may show partial work ("2 vases: 12 + 12") and never the total. `maskSealed(text, openAsks)` does it for a string.
+3. *The invariant reads the whole* (`lintLesson`), in the page and for the verifier.
+
+**Answers** are matched as what they are (`matchAnswer`): numbers as numbers (`34`, `thirty four`, `60 flowers`), money and units as what they measure (`£1.50`, `1.5`, `150p`; `30 cm`, `0.3 m`; a unit of another kind is wrong; a bare number is right for an answer with a unit), a time of day as a time (`3:30`, `half past three`), and anything else as the same words once case, punctuation, a leading `a` or `the` and a plural `s` are let go. A sum (`5 x 12`) is not an answer.
+
+**The document's types** (`language/src/document.ts`): `Document`, `DocNode`, `Cursor`, `Play`, `DocState`, and `advance(doc, state, event)`, the only writer of what the person did; `foldDocument(records)` makes a document from a conversation's log, and a flat conversation is one (the root is one part, every `scene` opens a scene node, and a turn with no `scene` line adds a segment to the open scene). A node is `outlined`, `filling` while a turn writes to it, `filled` when the turn finished, `verified` or `refused` when the verifier has said (a refused way is never checked wrong).
+
+Limits are `LESSON_LIMITS`: 400 parts, 6 deep, 40 steps and asks to a part, 8 answers, 6 choices and 6 hints to an ask.
 
 ## 5. Time
 
@@ -704,6 +751,11 @@ Reserved for later, deliberately not in version 4: `sound` (cues on the turn clo
 A new structure, chart kind or control is one entry in its table in `vocabulary.ts` and one engine behind the painter's contract (`web/src/contracts/blocks.ts`, `chart.ts`, `controls.ts`); the grammar does not change.
 
 ## 12. What changed
+
+**v3 (still version 4; additive, and every line written before it is valid unchanged).**
+
+- New: the document words `part`, `step`, `ask`, `hint`, `reply`, `end` (section 4.20) with the tables `LESSON_VERB`, `TECHNIQUE`, `VISUAL` and `LESSON_LIMITS`; the issue codes `spoiler`, `no-part` and `bad-ask`; `language/src/lesson.ts` (the answer matcher, `sealed`, the spoiler lint) and `language/src/document.ts` (the types of the document, `foldDocument`, `advance`).
+- A lesson line ends a sprite, a table or a mock-up being written, as a `scene` does.
 
 **v2.2 (still version 4; additive).**
 
