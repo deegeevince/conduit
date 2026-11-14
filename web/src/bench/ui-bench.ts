@@ -19,11 +19,12 @@ import { arrangeBoard, locate } from '../painter/blocks/ui/board';
 import type { Board } from '../painter/blocks/ui/board';
 import { DASHBOARD_CHART, FIXTURES } from '../painter/blocks/ui/fixtures';
 import { uiFrame } from '../painter/blocks/ui/frame';
-import type { UiTokens } from '../painter/blocks/ui/lang';
-import { linesPerScreen, parseInterface } from '../painter/blocks/ui/lang';
+import type { UiNode, UiScreen, UiTokens } from '../painter/blocks/ui/lang';
+import { isUiContainer, linesPerScreen, parseInterface } from '../painter/blocks/ui/lang';
 import { paintersMeasure } from '../painter/blocks/ui/measure';
-import { runOracle } from '../painter/blocks/ui/oracle';
+import { describeCase, runOracle } from '../painter/blocks/ui/oracle';
 import { layoutScreen } from '../painter/blocks/ui/screen';
+import { applyAction, hitAt, typeInto } from '../painter/blocks/ui/state';
 import { NO_STATE } from '../painter/blocks/ui/types';
 import type { UiScreenLayout, UiState } from '../painter/blocks/ui/types';
 import { createProbedRenderer } from '../render/three';
@@ -191,43 +192,23 @@ function activate(px: number, py: number): void {
   }
   const layout = layouts[at.index];
   if (layout === undefined) return;
-  const hit = [...layout.hits].reverse().find((h) => at.x >= h.x && at.x <= h.x + h.w && at.y >= h.y && at.y <= h.y + h.h);
+  const hit = hitAt(layout.hits, at.x, at.y);
   if (hit === undefined) {
     ui({ focus: null });
     return;
   }
-  const a = hit.action;
-  switch (a.kind) {
-    case 'tab':
-      ui({ tab: { ...state.ui.tab, [a.bar]: a.index }, focus: null });
-      break;
-    case 'pick':
-      ui({ pick: { ...state.ui.pick, [a.control]: a.index }, focus: null });
-      break;
-    case 'toggle':
-      ui({ toggle: { ...state.ui.toggle, [a.control]: !a.on }, focus: null });
-      break;
-    case 'field':
-      ui({ focus: a.control, text: { ...state.ui.text, [a.control]: state.ui.text[a.control] ?? a.value } });
-      break;
-    case 'slider':
-      ui({ slider: { ...state.ui.slider, [a.control]: Math.max(0, Math.min(1, (at.x - hit.x) / Math.max(1, hit.w))) }, focus: null });
-      break;
-    case 'press':
-      ui({ pressed: a.control, focus: null });
-      setTimeout(() => ui({ pressed: null }), 160);
-      break;
+  state.ui = applyAction(state.ui, hit.action, hit, at.x);
+  draw();
+  if (hit.action.kind === 'press') {
+    setTimeout(() => ui({ pressed: null }), 160);
   }
 }
 
 host.addEventListener('pointerdown', (e) => activate(e.clientX, e.clientY));
 addEventListener('keydown', (e) => {
-  const f = state.ui.focus;
-  if (f !== null) {
-    const current = state.ui.text[f] ?? '';
-    if (e.key === 'Backspace') ui({ text: { ...state.ui.text, [f]: current.slice(0, -1) } });
-    else if (e.key === 'Enter' || e.key === 'Escape') ui({ focus: null });
-    else if (e.key.length === 1 && !e.metaKey && !e.ctrlKey) ui({ text: { ...state.ui.text, [f]: current + e.key } });
+  if (state.ui.focus !== null) {
+    state.ui = typeInto(state.ui, e.key);
+    draw();
     e.preventDefault();
     return;
   }
@@ -263,6 +244,13 @@ function rebuildPanel(): void {
     select('fixture', Object.keys(FIXTURES), state.fixture, (v) => setState({ fixture: v, lines: FIXTURES[v]?.lines ?? [], focus: 0, ui: NO_STATE })),
     select('look', ['wireframe', 'studio'], state.look, (v) => setState({ look: v as LookName })),
     select('view', ['overview', 'focus'], state.mode, (v) => setState({ mode: v as State['mode'] })),
+    select('device', ['as written', 'phone', 'tablet', 'desktop', 'browser'], 'as written', (v) => {
+      // `set <screen> device=...`: the screen in focus (or every screen when seen as a whole) is laid out on another device
+      const targets = state.mode === 'focus' ? [layouts[state.focus]?.id] : layouts.map((l) => l.id);
+      const device = { ...state.ui.device };
+      for (const id of targets) if (id !== undefined) (v === 'as written' ? delete device[id] : (device[id] = v as 'phone'));
+      ui({ device });
+    }),
     el('span', (s) => (s.textContent = `${layouts.length} screens  layout ${timing.layoutMs.toFixed(1)} ms  lint ${notes}`)),
   );
 }
@@ -298,9 +286,83 @@ function report(oracle: number): unknown {
       rows.push({ fixture: name, look, screens: screens.length, lines: counts, ms: Number(ms.toFixed(2)), shapes: screens.reduce((n, s) => n + s.parts.length, 0), parseNotes: doc.notes.length, notes: all.map((n) => `${n.kind} ${n.screen}/${n.id}: ${n.message}`) });
     }
   }
-  return { rows, totals, worstLines, oracle: oracle > 0 ? runOracle(oracle) : null };
+  return { rows, totals, worstLines, reflow: reflow(), controls: controls(), oracle: oracle > 0 ? runOracle(oracle) : null };
 }
 
+const signature = (l: UiScreenLayout): string => JSON.stringify(l.parts);
+
+/** The parts the brain wrote that are seen (not a spacer, not a rule): each must still be on the screen after a switch of device. */
+function authored(screen: UiScreen): string[] {
+  const out: string[] = [];
+  const visit = (nodes: readonly UiNode[]): void => {
+    for (const n of nodes) {
+      if (isUiContainer(n)) visit(n.children);
+      else if (n.kind !== 'space' && n.kind !== 'divider') out.push(n.id);
+    }
+  };
+  visit(screen.children);
+  return out;
+}
+
+/** Row 46, second part: a screen switched between phone and desktop keeps every part and puts none on another. */
+function reflow(): unknown {
+  let screens = 0;
+  let lost = 0;
+  let overlaps = 0;
+  let outside = 0;
+  let words = 0;
+  const detail: string[] = [];
+  for (const [name, fixture] of Object.entries(FIXTURES)) {
+    const doc = parseInterface(fixture.lines);
+    for (const look of ['wireframe', 'studio'] as const) {
+      for (const screen of doc.screens) {
+        for (const device of ['phone', 'tablet', 'desktop', 'browser'] as const) {
+          const switched = layoutScreen(screen, LOOKS[look].tokens, measure, { ...NO_STATE, device: { [screen.id]: device } }, 0);
+          screens += 1;
+          for (const id of authored(screen)) if (!switched.boxes.has(id)) lost += 1;
+          for (const n of switched.notes) {
+            if (n.kind === 'overlap') overlaps += 1;
+            if (n.kind === 'outside') outside += 1;
+            if (n.kind === 'lost-words') words += 1;
+            if (n.kind === 'overlap' || n.kind === 'outside' || n.kind === 'lost-words') detail.push(`${name}/${look}/${screen.id} as ${device}: ${n.kind} ${n.id}: ${n.message}`);
+          }
+        }
+      }
+    }
+  }
+  return { switches: screens, partsLost: lost, overlaps, outside, lostWords: words, detail: detail.slice(0, 12) };
+}
+
+/** Row 46, third part: every live control of every fixture, used by its own action, changes what is drawn. */
+function controls(): unknown {
+  let total = 0;
+  let working = 0;
+  const dead: string[] = [];
+  for (const [name, fixture] of Object.entries(FIXTURES)) {
+    const doc = parseInterface(fixture.lines);
+    for (const look of ['wireframe', 'studio'] as const) {
+      for (const screen of doc.screens) {
+        const base = layoutScreen(screen, LOOKS[look].tokens, measure, NO_STATE, 0);
+        const byControl = new Map<string, typeof base.hits>();
+        for (const h of base.hits) byControl.set(h.id, [...(byControl.get(h.id) ?? []), h]);
+        for (const [id, hits] of byControl) {
+          // buttons and list rows only press; a nav action is a button. Every control must show that it was used.
+          total += 1;
+          const before = signature(base);
+          const changed = hits.some((h) => {
+            const next = applyAction(NO_STATE, h.action, h, h.x + h.w * 0.25);
+            return signature(layoutScreen(screen, LOOKS[look].tokens, measure, next, 0)) !== before;
+          });
+          if (changed) working += 1;
+          else dead.push(`${name}/${look}/${screen.id}/${id}`);
+        }
+      }
+    }
+  }
+  return { controls: total, working, dead: dead.slice(0, 10) };
+}
+
+win['__oracleCase'] = describeCase;
 win['__ui'] = {
   report,
   state: (): unknown => ({ ...state, board: board === null ? null : { mode: board.mode, scale: board.scale, placements: board.placements } }),

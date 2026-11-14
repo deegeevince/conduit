@@ -12,7 +12,9 @@ import type { Placed } from './solve';
 import { NO_STATE } from './types';
 import type { UiHit, UiPart, UiScreenLayout, UiSlot, UiState } from './types';
 
-export function layoutScreen(screen: UiScreen, tokens: UiTokens, measure: UiMeasure, state: UiState = NO_STATE, lines = 0): UiScreenLayout {
+export function layoutScreen(written: UiScreen, tokens: UiTokens, measure: UiMeasure, state: UiState = NO_STATE, lines = 0): UiScreenLayout {
+  // `device` is a property that can be set: the same lines laid out on another device
+  const screen: UiScreen = state.device[written.id] === undefined ? written : { ...written, device: state.device[written.id] ?? written.device };
   const size = UI_DEVICE_SIZE[screen.device];
   const kit = makeKit(tokens, screen.device, measure, state);
   const tree = buildScreen(kit, screen, size.width, size.height);

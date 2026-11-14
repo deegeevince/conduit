@@ -85,11 +85,13 @@ export interface UiState {
   readonly toggle: Readonly<Record<string, boolean>>;
   readonly text: Readonly<Record<string, string>>;
   readonly slider: Readonly<Record<string, number>>;
+  /** `set <screen> device=desktop`: a screen's device, switched. The same lines reflow. */
+  readonly device: Readonly<Record<string, 'phone' | 'tablet' | 'desktop' | 'browser'>>;
   readonly focus: string | null;
   readonly pressed: string | null;
 }
 
-export const NO_STATE: UiState = { tab: {}, pick: {}, toggle: {}, text: {}, slider: {}, focus: null, pressed: null };
+export const NO_STATE: UiState = { tab: {}, pick: {}, toggle: {}, text: {}, slider: {}, device: {}, focus: null, pressed: null };
 
 export type UiNoteKind =
   | 'coordinates'

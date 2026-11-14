@@ -289,6 +289,7 @@ export interface OracleResult {
   readonly worst: number;
   /** trees in which any box differs by more than the tolerance */
   readonly failing: number;
+  readonly fittingFailures: readonly number[];
   readonly firstFittingFailure: { readonly seed: number; readonly path: string; readonly ours: Rect; readonly theirs: Rect } | null;
   readonly firstFailure: { readonly seed: number; readonly path: string; readonly ours: Rect; readonly theirs: Rect } | null;
 }
@@ -308,6 +309,7 @@ export function runOracle(count: number, tolerance = 0.5): OracleResult {
   let fittingBoxesWithin = 0;
   let firstFailure: OracleResult['firstFailure'] = null;
   let firstFittingFailure: OracleResult['firstFailure'] = null;
+  const fittingFailures: number[] = [];
   for (let seed = 1; seed <= count; seed++) {
     const c = generate(seed);
     const solved = solve(c.tree, c.width, c.height);
@@ -337,9 +339,30 @@ export function runOracle(count: number, tolerance = 0.5): OracleResult {
     if (bad) failing += 1;
     if (nothingOverflows) {
       fitting += 1;
-      if (bad) fittingFailing += 1;
+      if (bad) {
+        fittingFailing += 1;
+        fittingFailures.push(seed);
+      }
     }
   }
   stage.remove();
-  return { fitting, fittingFailing, worstFitting, fittingBoxes, fittingBoxesWithin, trees: count, boxes, worst, failing, firstFailure, firstFittingFailure };
+  return { fitting, fittingFailing, worstFitting, fittingBoxes, fittingBoxesWithin, trees: count, boxes, worst, failing, firstFailure, fittingFailures, firstFittingFailure };
+}
+
+/** One generated tree, node by node, with our box and the browser's: what to read when a tree fails. Browser only. */
+export function describeCase(seed: number): string {
+  const c = generate(seed);
+  const ours = measureSolved(solve(c.tree, c.width, c.height));
+  const dom = inDom(c.tree, c.width, c.height);
+  document.body.append(dom);
+  const theirs = measureDom(dom);
+  dom.remove();
+  const rows: string[] = [];
+  const visit = (node: Node<OracleLeaf | null>, path: string): void => {
+    const box = node.box === null ? null : { ...node.box, pad: node.box.pad.join(',') };
+    rows.push(`${path} ${JSON.stringify({ style: node.style, box, payload: node.payload })} ours=${JSON.stringify(ours.get(path))} dom=${JSON.stringify(theirs.get(path))}`);
+    node.children.forEach((k, i) => visit(k, `${path}.${i}`));
+  };
+  visit(c.tree, '0');
+  return rows.join('\n');
 }

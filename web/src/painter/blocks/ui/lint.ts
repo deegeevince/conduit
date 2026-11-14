@@ -76,13 +76,13 @@ export function lintScreen(screen: UiScreen, placed: Placed<Item>, lines: number
       else if (p.w > 0 && p.h > 0 && (x < px - EPS || y < py - EPS || x + p.w > px + parent.w + EPS || y + p.h > py + parent.h + EPS)) note('outside', it.id, `${it.part} lies outside its container`);
     }
     if (it.words === true && p.node.leaf !== null) {
-      const needW = p.node.leaf.minW;
+      const needW = it.need ?? p.node.leaf.minW;
       const needH = p.node.leaf.fit(p.w).h;
       const own = it.owner === undefined ? undefined : boxes.get(it.owner);
       if (needW > p.w + EPS || needH > p.h + EPS) note('lost-words', it.owner ?? it.id, `words need ${Math.ceil(needW)} by ${Math.ceil(needH)} and have ${Math.floor(p.w)} by ${Math.floor(p.h)}`);
       else if (own !== undefined && (x < own.x - EPS || y < own.y - EPS || x + p.w > own.x + own.w + EPS || y + p.h > own.y + own.h + EPS)) note('lost-words', it.owner ?? it.id, 'words lie outside their own part');
     }
-    if (it.target === true && (p.w < MIN_TARGET - EPS || p.h < MIN_TARGET - EPS)) note('small-target', it.owner ?? it.id, `${it.part} is ${Math.round(p.w)} by ${Math.round(p.h)} points: a finger needs ${MIN_TARGET}`);
+    if (it.target === true && (p.w < MIN_TARGET - 0.01 || p.h < MIN_TARGET - 0.01)) note('small-target', it.owner ?? it.id, `${it.part} is ${Math.round(p.w)} by ${Math.round(p.h)} points: a finger needs ${MIN_TARGET}`);
     if (parent !== null && it.quiet !== true) {
       if (off(p.y) || off(p.h)) note('off-grid', it.id, `${it.part} edge at y=${p.y.toFixed(1)} (in its container) h=${p.h.toFixed(1)} is off the four-point grid`);
       const pb = parent.node.box;

@@ -42,7 +42,7 @@ export interface BoardOptions {
 }
 
 const LABEL_H = 24;
-const GAP = 64;
+const GAP = 52;
 
 /** Moves and scales one shape from points to pixels. */
 export function scalePart(p: UiPart, s: number, ox: number, oy: number): UiPart {

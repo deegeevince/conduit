@@ -7,7 +7,7 @@
 // look's tokens; the live parts read a `UiState`. The same lines serve both looks.
 
 import type { UiContainer, UiDevice, UiPartNode, UiScreen, UiTextToken, UiTokens } from './lang';
-import { UI_SPACE, isUiContainer, unstar } from './lang';
+import { UI_DEVICE_SIZE, UI_SPACE, isUiContainer, unstar } from './lang';
 import { hasIcon, placeIcon } from './icons';
 import type { UiMeasure } from './measure';
 import type { Align, Box as FlexBox, Node, Style } from './solve';
@@ -35,6 +35,8 @@ export interface Item {
   readonly target?: boolean;
   /** words set in this box: lint checks they fit */
   readonly words?: true;
+  /** the width the words need on one line, when they must not wrap */
+  readonly need?: number;
   /** not a part to lint (a rule, a spacer, a glyph) */
   readonly quiet?: boolean;
   /** this part is a real chart's room */
@@ -131,7 +133,7 @@ function text(k: Kit, words: string, token: UiTextToken, o: TextOpts): N {
     const lines = o.nowrap === true ? [{ text: words, width: single() }] : m.wrap(words, token.size, token.weight, b.w).lines.slice(0, o.maxLines ?? 99);
     out.parts.push({ kind: 'text', key: out.key(o.id, o.what ?? 'words'), owner: o.id, x: b.x, y: b.y, w: b.w, h: b.h, lines, size: token.size, line: token.line, weight: token.weight, colour: o.colour, align: o.align ?? 'left' });
   };
-  return mk(style, null, { fit, minW }, [], { id: o.id, part: 'text', words: true, quiet: true, paint, owner: o.id });
+  return mk(style, null, { fit, minW }, [], { id: o.id, part: 'text', words: true, quiet: true, paint, owner: o.id, ...(o.nowrap === true ? { need: single() } : {}) });
 }
 
 /** An icon as a leaf `size` square. */
@@ -170,7 +172,7 @@ function headingOf(k: Kit, p: UiPartNode, c: Ctx): N {
 }
 
 function textOf(k: Kit, p: UiPartNode, c: Ctx): N {
-  const token = p.flags.includes('small') ? k.type.note : p.flags.includes('large') ? k.type.title : p.flags.includes('bold') ? { ...k.type.body, weight: 'bold' as const } : k.type.body;
+  const token = p.flags.includes('small') ? k.type.note : p.flags.includes('large') ? { ...k.type.title, weight: 'normal' as const } : p.flags.includes('bold') ? { ...k.type.body, weight: 'bold' as const } : k.type.body;
   const align = p.flags.includes('center') || c.align === 'center' ? 'center' : 'left';
   const n = text(k, p.fields[0] ?? '', token, { id: p.id, colour: colourOf(k, p.flags.includes('dim') ? 'dim' : 'ink'), align, what: 'text' });
   return { ...n, payload: { ...n.payload, part: 'text', quiet: false } };
@@ -269,6 +271,7 @@ function itemOf(k: Kit, p: UiPartNode): N {
   if (p.flags.includes('chevron')) kids.push(icon(k, p.id, 'chevron-right', 20, c.faint));
   if (toggled !== null) kids.push(switchOf(k, p.id, toggled));
   const radius = wire ? k.t.radius.s : k.t.radius.m;
+  const pressed = k.state.pressed === p.id;
   const paint = (b: Rect, out: Out): void => {
     if (wire) {
       rectOf(out, p.id, 'item', b, { radius: selected ? radius : 0, fill: null, edge: selected ? { colour: c.edge, width: 2 } : null });
@@ -277,6 +280,7 @@ function itemOf(k: Kit, p: UiPartNode): N {
       const shadow = shadowOf(k, 'low');
       rectOf(out, p.id, 'item', b, { radius, fill: c.surface, edge: { colour: selected ? c.accent : c.line, width: selected ? 2 : 1 }, ...(shadow === undefined ? {} : { shadow }) });
     }
+    if (pressed) rectOf(out, p.id, 'pressed', b, { radius: wire ? 0 : radius, fill: c.ink, fillAlpha: 0.07 });
   };
   const pad: [number, number, number, number] = wire ? [12, selected ? 12 : 0, 12, selected ? 12 : 0] : [12, 16, 12, 16];
   return mk({ width: 'fill', height: 'hug', minH: 64 }, flex('row', { align: 'center', gap: 12, pad }), null, kids, { id: p.id, part: 'item', target: true, paint, action: toggled === null ? { kind: 'press', control: p.id } : { kind: 'toggle', control: p.id, on: toggled } });
@@ -431,12 +435,19 @@ function imageOf(k: Kit, p: UiPartNode): N {
       const room = Math.max(8, b.w - 24);
       const lines = k.measure.wrap(label, k.type.note.size, 'normal', room).lines;
       const height = lines.length * k.type.note.line;
+      // in a wireframe the words sit on a small plate, so the crossed lines never run through them
+      if (wire) {
+        const wide = Math.max(...lines.map((l) => l.width)) + 16;
+        rectOf(out, p.id, 'plate', { x: b.x + (b.w - wide) / 2, y: b.y + (b.h - height) / 2 - 4, w: wide, h: height + 8 }, { radius: k.t.radius.s, fill: c.sunken });
+      }
       out.parts.push({ kind: 'text', key: out.key(p.id, 'caption'), owner: p.id, x: b.x + 12, y: b.y + (b.h - height) / 2, w: room, h: height, lines, size: k.type.note.size, line: k.type.note.line, weight: 'normal', colour: c.dim, align: 'center' });
     }
   };
+  // a picture takes its proportions from its width, and never more than 45% of the screen's height: on a wide screen it is a banner and not a wall
+  const cap = px4(UI_DEVICE_SIZE[k.device].height * 0.45);
   const fit = (w: number): { w: number; h: number } => {
     const width = Number.isFinite(w) ? w : 240;
-    return { w: width, h: round ? 64 : px4(width / ratio) };
+    return { w: width, h: round ? 64 : Math.min(cap, px4(width / ratio)) };
   };
   return mk({ width: round ? 64 : 'fill', height: 'hug' }, null, { fit, minW: 0 }, [], { id: p.id, part: 'image', hug: round, paint });
 }
@@ -472,12 +483,13 @@ function chartOf(k: Kit, p: UiPartNode): N {
   const c = k.t.colour;
   const ratio = p.flags.includes('square') ? 1 : 16 / 10;
   const title = p.fields[0] ?? '';
-  const leaf = { fit: (w: number): { w: number; h: number } => ({ w: Number.isFinite(w) ? w : 280, h: px4((Number.isFinite(w) ? w : 280) / ratio) }), minW: 0 };
+  const cap = px4(UI_DEVICE_SIZE[k.device].height * 0.45);
+  const leaf = { fit: (w: number): { w: number; h: number } => ({ w: Number.isFinite(w) ? w : 280, h: Math.min(cap, px4((Number.isFinite(w) ? w : 280) / ratio)) }), minW: 0 };
   const paint = (b: Rect, out: Out): void => {
     rectOf(out, p.id, 'chart', b, { radius: k.t.radius.m, fill: c.surface, edge: { colour: k.t.wire ? c.edge : c.line, width: 1 } });
     if (title !== '') out.parts.push({ kind: 'text', key: out.key(p.id, 'title'), owner: p.id, x: b.x + 12, y: b.y + 8, w: b.w - 24, h: 20, lines: [{ text: title, width: k.measure.width(title, k.type.note.size, 'bold') }], size: k.type.note.size, line: 20, weight: 'bold', colour: c.ink, align: 'left' });
   };
-  return mk({ width: 'fill', height: 'hug' }, null, leaf, [], { id: p.id, part: 'chart', paint, slot: p.attrs['ref'] ?? p.id });
+  return mk({ width: 'fill', height: 'hug', minH: 160 }, null, leaf, [], { id: p.id, part: 'chart', paint, slot: p.attrs['ref'] ?? p.id });
 }
 
 function tabbarOf(k: Kit, p: UiPartNode): N {
@@ -512,14 +524,23 @@ function navOf(k: Kit, p: UiPartNode): N {
       const b = buttonOf(k, { kind: 'button', id: `${p.id}:action`, line: p.line, flags: ['primary', 'small'], attrs: {}, fields: [action] });
       kids.push(b);
     }
-    return mk({ width: 'fill', height: 72 }, flex('row', { align: 'center', pad: [0, 40, 0, 40] }), null, kids, { id: p.id, part: 'nav', paint: bar });
+    return mk({ width: 'fill', height: 76 }, flex('row', { align: 'center', pad: [0, 40, 0, 40] }), null, kids, { id: p.id, part: 'nav', paint: bar });
   }
   const left = p.flags.includes('close') ? 'close' : p.flags.includes('back') ? 'back' : p.flags.includes('menu') ? 'menu' : null;
   const right = p.attrs['action'];
   const slot = (id: string, name: string | null | undefined, what: string): N =>
     name === null || name === undefined
       ? mk({ width: 48, height: 48, shrink: 0 }, null, { fit: () => ({ w: 48, h: 48 }), minW: 48 }, [], { id: `${p.id}:${what}`, part: 'nav-gap', quiet: true, owner: p.id })
-      : mk({ width: 48, height: 48, shrink: 0 }, flex('row', { align: 'center', justify: 'center' }), null, [icon(k, p.id, name, 24, c.ink)], { id: `${p.id}:${what}`, part: 'nav-action', target: true, action: { kind: 'press', control: `${p.id}:${what}` }, owner: p.id });
+      : mk({ width: 48, height: 48, shrink: 0 }, flex('row', { align: 'center', justify: 'center' }), null, [icon(k, p.id, name, 24, c.ink)], {
+          id: `${p.id}:${what}`,
+          part: 'nav-action',
+          target: true,
+          action: { kind: 'press', control: `${p.id}:${what}` },
+          owner: p.id,
+          paint: (b, out) => {
+            if (k.state.pressed === `${p.id}:${what}`) rectOf(out, p.id, 'pressed', b, { radius: 24, fill: c.ink, fillAlpha: 0.08 });
+          },
+        });
   const middle = text(k, title, k.type.title, { id: p.id, nowrap: true, squeeze: true, colour: c.ink, align: 'center', what: 'title', width: 'fill' });
   return mk({ width: 'fill', height: 56 }, flex('row', { align: 'center', pad: [0, 8, 0, 8] }), null, [slot('l', left, 'left'), middle, slot('r', right, 'right')], { id: p.id, part: 'nav', paint: bar });
 }

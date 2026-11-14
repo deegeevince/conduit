@@ -388,6 +388,14 @@ export function parseInterface(lines: readonly string[]): UiDocument {
     const isPart = (UI_PART_KINDS as readonly string[]).includes(first);
     const isBox = first === 'row' || first === 'col';
     const isEnd = first === 'end';
+    // inside a screen, a word that is not a part is set as text, and said: the mock-up is never missing what the brain wrote
+    if (screen !== null && !isPart && !isBox && !isEnd && !KNOWN_OTHERS.has(first)) {
+      const id = idFor('text', undefined);
+      const target: MutableContainer | MutableScreen = stack[stack.length - 1] ?? screen;
+      notes.push({ line, message: `\`${first}\` is not a part (${UI_PART_KINDS.join(', ')}): set as text` });
+      target.children.push({ kind: 'text', id, line, flags: [], attrs: {}, fields: [bar < 0 ? text : (fields[0] ?? '')] });
+      return;
+    }
     if (!(isPart || isBox || isEnd) || screen === null) {
       if (!(isPart || isBox || isEnd) && !KNOWN_OTHERS.has(first)) {
         notes.push({ line, message: `\`${first}\` is not a line of the interface: kept as it is` });
