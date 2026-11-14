@@ -41,7 +41,8 @@ export function asBrainChoice(value: unknown): BrainChoice | null {
   if (effort !== null && !isEffort(effort)) return null;
   const mode = isMode(value['mode']) ? value['mode'] : undefined;
   const modes = Array.isArray(value['modes']) ? value['modes'].filter(isMode) : undefined;
-  return { configurable: value['configurable'], model, effort, ...(mode === undefined ? {} : { mode }), ...(modes === undefined ? {} : { modes }) };
+  const permits = value['permits'] === 'ask' || value['permits'] === 'auto' ? value['permits'] : undefined;
+  return { configurable: value['configurable'], model, effort, ...(mode === undefined ? {} : { mode }), ...(modes === undefined ? {} : { modes }), ...(permits === undefined ? {} : { permits }) };
 }
 
 export function asDemos(value: unknown): readonly DemoInfo[] {

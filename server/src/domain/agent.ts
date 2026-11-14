@@ -20,8 +20,8 @@
 // The domain owns these types; `server/src/brains/claude-cli/` implements them against the CLI's permission prompts.
 
 import { resolve as resolvePath, sep } from 'node:path';
-import type { ActionRisk, ToolChoice } from '@conduit/language';
-import { browserVerdict, newBrowserState } from './browser';
+import type { ActionRisk, AgentPermits, ToolChoice } from '@conduit/language';
+import { browserVerdict, newBrowserState, quietAddress, sensitivityOf } from './browser';
 import type { BrowserState } from './browser';
 
 /** What the server's configuration offers a session. Everything else does not exist as far as a brain is concerned. */
@@ -36,9 +36,11 @@ export interface AgentSettings {
   readonly dir: string | null;
   /** ms the owner has to answer a confirm control before it is a no */
   readonly answerMs: number;
+  /** the permit level a new conversation starts at (`AGENT_PERMITS`); `/tools auto` and `/tools ask` change one conversation's */
+  readonly permits?: AgentPermits;
 }
 
-export const NO_AGENT: AgentSettings = { enabled: false, tools: [], services: [], dir: null, answerMs: 120_000 };
+export const NO_AGENT: AgentSettings = { enabled: false, tools: [], services: [], dir: null, answerMs: 120_000, permits: 'ask' };
 
 /** One call the model wants to make, as the CLI reported it and before anything has happened. */
 export interface ToolCall {
@@ -242,9 +244,30 @@ export function detailOf(call: ToolCall, context: string | null = null): string 
   return redactSecrets(`${call.tool}${context === null ? '' : `\non the page ${context}`}\n${body}`, DETAIL_MAX, true);
 }
 
+/**
+ * THE PERMIT TABLE, the one place that says whether a browser call that is not forbidden outright runs by itself. Pure: risk, level and
+ * whether the page is a sign-in, payment or checkout page in; allow, ask or deny out.
+ *
+ *   forbidden (a credential, another tab, a download, a removed tool)   deny    in every level
+ *   page is a sign-in, payment or checkout page                          ask     in every level (even for a read)
+ *   read                                                                 allow   in every level
+ *   write, run                                                           ask     when ask;  allow when auto
+ *   send, buy, delete, publish, signin                                   ask     in every level
+ *
+ * `auto` is a decision this layer makes about a `can_use_tool` question; the CLI's own permission flags are not touched.
+ */
+export function permitDecision(input: { readonly risk: ActionRisk; readonly permits: AgentPermits; readonly pageSensitive: boolean; readonly forbidden: boolean }): 'allow' | 'ask' | 'deny' {
+  if (input.forbidden) return 'deny';
+  if (input.pageSensitive) return 'ask';
+  if (input.risk === 'read') return 'allow';
+  if (input.permits === 'auto' && (input.risk === 'write' || input.risk === 'run')) return 'allow';
+  return 'ask';
+}
+
 /** What the gate says about one call the CLI is asking to make. */
 export type CallVerdict =
-  | { readonly kind: 'allow'; readonly risk: 'read' }
+  /** runs without asking: a read, or (`permit: 'auto'`) a write or run the owner's `auto` level lets through; the activity strip and the log say which */
+  | { readonly kind: 'allow'; readonly risk: ActionRisk; readonly permit?: 'auto' }
   /** not on: the owner's configuration did not offer it, or this session has it switched off. The model is told no. */
   | { readonly kind: 'deny'; readonly risk: ActionRisk; readonly why: string }
   /** needs the owner's yes, once, on the stage */
@@ -256,7 +279,7 @@ export type CallVerdict =
  *   1. a tool not in `on` is denied, whatever it is and whoever asks;
  *   2. a `read` runs; 3. everything else is asked for. There is no fourth outcome and no setting that makes one.
  */
-export function gateCall(call: ToolCall, settings: AgentSettings, on: ReadonlySet<string>, readOnlyHint = false, browser: BrowserState | null = null): CallVerdict {
+export function gateCall(call: ToolCall, settings: AgentSettings, on: ReadonlySet<string>, readOnlyHint = false, browser: BrowserState | null = null, permits: AgentPermits = 'ask'): CallVerdict {
   const { service, action } = splitTool(call.tool);
   const name = service ?? call.tool;
   const offered = service === null ? settings.tools.includes(call.tool) : settings.services.some((entry) => entry.name === service);
@@ -265,12 +288,20 @@ export function gateCall(call: ToolCall, settings: AgentSettings, on: ReadonlySe
   if (service === 'chrome') {
     // The owner's browser has its own rules (`browser.ts`): its own tabs only, a credential never typed, a sign-in or payment page always asked.
     const verdict = browserVerdict(call, browser ?? newBrowserState());
-    if (verdict.deny !== null) return { kind: 'deny', risk: verdict.risk, why: verdict.deny };
-    return verdict.risk === 'read' ? { kind: 'allow', risk: 'read' } : { kind: 'ask', risk: verdict.risk };
+    const outcome = permitDecision({ risk: verdict.risk, permits, pageSensitive: verdict.sensitive, forbidden: verdict.deny !== null });
+    if (outcome === 'deny') return { kind: 'deny', risk: verdict.risk, why: verdict.deny ?? 'not allowed' };
+    if (outcome === 'ask') return { kind: 'ask', risk: verdict.risk };
+    return verdict.risk === 'read' ? { kind: 'allow', risk: 'read' } : { kind: 'allow', risk: verdict.risk, permit: 'auto' };
   }
   // Anything beyond the web tools on makes an address a way out for what that thing could read: a fetch then runs unasked only when it is quiet.
   const strictFetch = [...on].some((entry) => entry !== 'WebSearch' && entry !== 'WebFetch' && (settings.tools.includes(entry) || settings.services.some((s) => s.name === entry)));
   const risk = riskOf(call, readOnlyHint, settings.dir, strictFetch);
+  // In `auto`, a fetch of a public address that carries nothing out (the very test the browser's `navigate` uses, and no sign-in or
+  // payment page) is the same act as the brain opening that page in its own tab, which `auto` already lets through: it runs, and is flagged.
+  if (permits === 'auto' && call.tool === 'WebFetch' && risk === 'send') {
+    const target = call.input['url'];
+    if (typeof target === 'string' && quietAddress(target.trim()) === 'quiet' && sensitivityOf(target) === null) return { kind: 'allow', risk: 'read', permit: 'auto' };
+  }
   return risk === 'read' ? { kind: 'allow', risk } : { kind: 'ask', risk };
 }
 

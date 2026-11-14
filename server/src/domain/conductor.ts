@@ -493,7 +493,7 @@ export class Conductor {
       throw errors.badRequest(`this server does not offer the ${change.mode} brain; it offers ${this.deps.modes.join(', ')}`);
     }
     const choice = brain.choose(session, change);
-    this.deps.log.info('session.brain_set', { session, model: choice.model, effort: choice.effort, mode: choice.mode });
+    this.deps.log.info('session.brain_set', { session, model: choice.model, effort: choice.effort, mode: choice.mode, permits: choice.permits });
     const write = (name: string, value: string | undefined): void => {
       if (value === undefined) return;
       this.deps.sessionLog.write(session, { type: 'setting', name, value });
@@ -502,6 +502,7 @@ export class Conductor {
     write('model', change.model);
     write('effort', change.effort);
     write('mode', change.mode);
+    write('permits', change.permits);
     return { ...choice, modes: this.deps.modes.length > 1 ? this.deps.modes : choice.modes };
   }
 
@@ -1195,8 +1196,9 @@ export class Conductor {
       // The adapter has made these safe; a second net costs nothing and a secret that reaches a log or a stage is the one thing this must not do.
       const summary = redactSecrets(event.summary);
       this.noteCall(s, turn, event.id, event.tool, summary, event.state);
-      sessionLog.write(s.id, { type: 'activity', turn: turn.id, id: event.id, tool: event.tool, summary, state: event.state, ms: event.ms });
-      this.emit(s, turn, { type: 'activity', turn: turn.id, id: event.id, tool: event.tool, summary, state: event.state, ms: event.ms });
+      const permit = event.permit === 'auto' ? ({ permit: 'auto' } as const) : {};
+      sessionLog.write(s.id, { type: 'activity', turn: turn.id, id: event.id, tool: event.tool, summary, state: event.state, ms: event.ms, ...permit });
+      this.emit(s, turn, { type: 'activity', turn: turn.id, id: event.id, tool: event.tool, summary, state: event.state, ms: event.ms, ...permit });
       return undefined;
     }
     if (event.type === 'permission') {

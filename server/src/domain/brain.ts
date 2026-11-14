@@ -105,7 +105,7 @@ export type BrainEvent =
    * ends. `summary` is a few plain words made by the brain adapter from the tool and its input, already passed through
    * `redactSecrets`: the conductor logs it and sends it to the chrome's activity strip as it is. A tool's result is never yielded.
    */
-  | { readonly type: 'activity'; readonly id: string; readonly tool: string; readonly summary: string; readonly state: ActivityState; readonly ms: number | null }
+  | { readonly type: 'activity'; readonly id: string; readonly tool: string; readonly summary: string; readonly state: ActivityState; readonly ms: number | null; readonly permit?: 'auto' }
   /**
    * v2.1, a brain with tools. The model wants to do something that needs the owner's yes (`askFirst`). The brain adapter holds the call
    * and yields this; the conductor shows it on stage and calls `Brain.permit` with the answer, or with `false` at `expiresMs`.

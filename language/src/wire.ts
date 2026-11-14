@@ -307,7 +307,7 @@ export type StageEvent =
   /** v2.1. What the critic made of a turn's resting picture. Not on the turn clock: it comes seconds after the turn has ended. For the HUD and the transcript; the stage does nothing with it. */
   | { readonly type: 'critic'; readonly turn: string; readonly finding: CriticFinding }
   /** v2.1, agent mode. A tool the brain is using, as it happens: the chrome's activity strip. `summary` never holds a secret (`redactSecrets`). */
-  | { readonly type: 'activity'; readonly turn: string; readonly id: string; readonly tool: string; readonly summary: string; readonly state: ActivityState; readonly ms: number | null }
+  | { readonly type: 'activity'; readonly turn: string; readonly id: string; readonly tool: string; readonly summary: string; readonly state: ActivityState; readonly ms: number | null; readonly permit?: 'auto' }
   /**
    * v2.1, agent mode. The brain wants to do something that needs the owner's yes. The chrome shows a confirm control on the stage and
    * answers with a `permit` back event; with no answer by `expiresMs` it is denied. Nothing that sends, buys, deletes, publishes or signs
@@ -460,8 +460,14 @@ export type BrainEffort = (typeof BRAIN_EFFORTS)[number];
 export const BRAIN_MODES = ['plain', 'agent', 'steward'] as const;
 export type BrainMode = (typeof BRAIN_MODES)[number];
 
+/** v2.1, agent mode. How a call that needs a yes is answered: `ask` puts every one to the owner on stage; `auto` lets the browser's read, write and run calls (in its own tabs) through, and still asks for the rest. */
+export const AGENT_PERMITS = ['ask', 'auto'] as const;
+export type AgentPermits = (typeof AGENT_PERMITS)[number];
+
 /** A change to one session's brain; what is left out stays as it is. */
 export interface BrainChange {
+  /** v2.1; `/tools auto`, `/tools ask`. Takes effect at once, with no fresh process. */
+  readonly permits?: AgentPermits;
   readonly model?: BrainModel;
   readonly effort?: BrainEffort;
   /** v2.1; refused unless the server offers it (`BrainChoice.modes`) */
@@ -475,6 +481,8 @@ export interface BrainChoice {
   readonly effort: BrainEffort | null;
   /** v2.1; absent from a server that has one mode */
   readonly mode?: BrainMode;
+  /** v2.1. How this session's permit prompts are answered; absent from a server with no agent mode */
+  readonly permits?: AgentPermits;
   /** v2.1. The modes this server offers this session, for the picker; absent or one entry: nothing to choose */
   readonly modes?: readonly BrainMode[];
 }
@@ -627,7 +635,7 @@ export const APP_COMMANDS = [
   { name: 'effort', args: `<${BRAIN_EFFORTS.join('|')}>`, gist: 'how hard it thinks before it writes; bare shows it' },
   // Hidden from /help, the picker and the brain's note: the brain always has its tools and always asks first; `steward` is the developer's own mode (STEWARD=on).
   { name: 'brain', args: `<${BRAIN_MODES.join('|')}>`, gist: 'agent: the brain can act, and asks first (always). steward: the steward answers' },
-  { name: 'tools', args: '[name on|off]', gist: 'what the brain may use in agent mode (web search, connected services); bare lists them' },
+  { name: 'tools', args: '[name on|off | auto | ask]', gist: 'what the brain may use in agent mode (web search, connected services); bare lists them; auto lets its browser reads, writes and runs go without asking (sending, buying, deleting, posting and sign-in pages still ask), ask brings every prompt back' },
   { name: 'new', args: '', gist: "what is new in this app, shown live" },
   { name: 'status', args: '', gist: 'what is live, what is being built and what is waiting on you' },
   { name: 'asks', args: '[clear]', gist: 'what you asked to hold for every reply; clear forgets them' },
