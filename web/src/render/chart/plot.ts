@@ -67,7 +67,7 @@ export function gridStep(xs: readonly number[], coarse: boolean): number {
 /** `fine` is true for a line or an area: they are given enough slots to reveal smoothly. */
 export function axisOf(model: ChartModel, fine: boolean, coarse = false): Axis {
   const n = model.points.length;
-  const sequential = model.candles || model.x === 'name';
+  const sequential = (model.candles && model.draw !== 'line') || model.layout === 'even';
   if (sequential) {
     const keep: number[] = [];
     let last = Number.NEGATIVE_INFINITY;
@@ -77,7 +77,7 @@ export function axisOf(model: ChartModel, fine: boolean, coarse = false): Axis {
       keep.push(i);
       return keep.length - 1;
     });
-    return { mode: model.x === 'time' ? 'time-real' : 'index', x0: 0, step: 1, count: Math.max(1, keep.length), slots, kept: keep.map((_, s) => s), keptPoint: keep };
+    return { mode: model.x === 'time' && model.layout === 'scale' ? 'time-real' : 'index', x0: 0, step: 1, count: Math.max(1, keep.length), slots, kept: keep.map((_, s) => s), keptPoint: keep };
   }
   const xs = model.points.map((p) => p.x);
   const x0 = xs[0] ?? 0;
@@ -125,17 +125,18 @@ export function axisOf(model: ChartModel, fine: boolean, coarse = false): Axis {
 export function xAtSlot(axis: Axis, model: ChartModel, slot: number): number {
   if (axis.mode === 'time-grid' || axis.mode === 'number-grid') return axis.x0 + slot * axis.step;
   const i = Math.max(0, Math.min(axis.keptPoint.length - 1, slot));
+  if (model.x === 'name') return i;
   const lo = Math.floor(i);
   const hi = Math.min(axis.keptPoint.length - 1, lo + 1);
   const a = model.points[axis.keptPoint[lo] ?? 0]?.x ?? 0;
   const b = model.points[axis.keptPoint[hi] ?? 0]?.x ?? a;
-  return axis.mode === 'index' ? i : a + (b - a) * (i - lo);
+  return a + (b - a) * (i - lo);
 }
 
 /** The (fractional) slot at a model x. */
 export function slotAtX(axis: Axis, model: ChartModel, x: number): number {
   if (axis.mode === 'time-grid' || axis.mode === 'number-grid') return (x - axis.x0) / axis.step;
-  if (axis.mode === 'index') return x;
+  if (model.x === 'name') return x;
   const xs = axis.keptPoint.map((p) => model.points[p]?.x ?? 0);
   if (xs.length === 0) return 0;
   if (x <= (xs[0] ?? 0)) return 0;
@@ -202,7 +203,8 @@ function show(series: ChartSeries, indexed: boolean): (number | null)[] {
 }
 
 export function plotOf(state: ChartState): Plot {
-  const { model, words, kind } = state;
+  const { model, words } = state;
+  const kind = model.draw;
   const indexed = words.includes('indexed');
   const pricey = kind === 'candles' || kind === 'ohlc';
   const price = pricey && model.candles;
@@ -221,7 +223,8 @@ export function plotOf(state: ChartState): Plot {
     const volume = roleOf('volume');
     if (volume !== undefined) series.push({ key: 'volume', name: 'volume', draw: 'volume', colour: -1, format: volume.format, values: [...volume.values], ohlc: null, up: ohlc.map((q) => q === null || q[3] >= q[0]) });
   } else {
-    const plain = model.series.filter((s) => s.role !== 'volume');
+    // rows that carry four prices but are drawn as a line (too few for candles) show the close alone
+    const plain = model.series.filter((s) => (model.candles ? s.role === 'close' : s.role !== 'volume'));
     plain.forEach((s, colour) => {
       series.push({ key: `s${colour}`, name: s.name, draw: drawKind === 'candles' || drawKind === 'ohlc' ? 'line' : drawKind, colour, format: indexed ? indexedFormat(show(s, indexed)) : s.format, values: show(s, indexed), ohlc: null, up: null });
     });

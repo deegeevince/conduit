@@ -56,11 +56,47 @@ export interface ChartHostOptions {
  * playhead, an export). One surface per chart key, kept, so that a second picture does not make another.
  */
 export function createOffscreenStills(engine: ChartEngine, ready: () => boolean): { stillOf(chart: ChartFrame): HTMLCanvasElement | null; dispose(): void } {
-  const spares = new Map<string, { readonly wrapper: HTMLElement; readonly handle: ChartHandle; applied: ChartFrame['state'] | null; sized: string }>();
+  interface Spare {
+    readonly wrapper: HTMLElement;
+    readonly handle: ChartHandle;
+    applied: ChartFrame['state'] | null;
+    sized: string;
+    /** the picture (burst) this spare was last asked for in */
+    burst: number;
+  }
+  const spares = new Map<string, Spare>();
+  /** a still is not worked: the state it is drawn from is the frame's with the crosshair, pan and zoom switched off; one per state, so that the same state is the same picture */
+  const quiet = new WeakMap<ChartFrame['state'], ChartFrame['state']>();
+  const quietOf = (state: ChartFrame['state']): ChartFrame['state'] => {
+    let found = quiet.get(state);
+    if (found === undefined) {
+      found = state.interactive ? { ...state, interactive: false } : state;
+      quiet.set(state, found);
+    }
+    return found;
+  };
   let parking: HTMLElement | null = null;
+  // One picture of a stage asks for all of its charts in one go. When the next go begins, spares that were not asked for in the last are freed:
+  // a chart that has left the stage does not keep a canvas and a library instance for the life of the page.
+  let burst = 0;
+  let sweeping = false;
+  const sweep = (): void => {
+    sweeping = false;
+    for (const [key, spare] of [...spares]) {
+      if (spare.burst === burst) continue;
+      spare.handle.dispose();
+      spare.wrapper.remove();
+      spares.delete(key);
+    }
+  };
   return {
     stillOf(chart) {
       if (!ready()) return null;
+      if (!sweeping) {
+        sweeping = true;
+        burst += 1;
+        queueMicrotask(sweep);
+      }
       if (parking === null) {
         parking = document.createElement('div');
         parking.setAttribute('aria-hidden', 'true');
@@ -74,16 +110,18 @@ export function createOffscreenStills(engine: ChartEngine, ready: () => boolean)
         const handle = engine.mount(wrapper);
         wrapper.append(handle.element);
         parking.append(wrapper);
-        spare = { wrapper, handle, applied: null, sized: '' };
+        spare = { wrapper, handle, applied: null, sized: '', burst };
         spares.set(chart.key, spare);
       }
+      spare.burst = burst;
       const { width, height } = chart.rest;
       const sized = `${width}x${height}`;
       spare.wrapper.style.width = `${width}px`;
       spare.wrapper.style.height = `${height}px`;
-      if (spare.applied !== chart.state || spare.sized !== sized) {
-        spare.handle.apply(chart.state, { width, height, dpr: 1 });
-        spare.applied = chart.state;
+      const state = quietOf(chart.state);
+      if (spare.applied !== state || spare.sized !== sized) {
+        spare.handle.apply(state, { width, height, dpr: 1 });
+        spare.applied = state;
         spare.sized = sized;
       }
       return spare.handle.still(false);
