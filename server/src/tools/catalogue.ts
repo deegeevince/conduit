@@ -630,6 +630,38 @@ async function runCheck(cx: Cx, spec: Spec): Promise<Res> {
       const stops = Math.max(...picks.map((c) => c.options.length), picks.length, 0);
       return stops >= Number(spec['min']) ? { check: name, verdict: 'PASS', detail: `${stops} tappable stops` } : { check: name, verdict: 'FAIL', detail: `${stops} tappable stop(s), wanted ${String(spec['min'])}: a step-by-step answer you cannot step through` };
     }
+    case 'ask-first': {
+      // a problem for a learner: the question is a thing to answer (an ask line, or a field), never a stepper that walks the working, and no answer given away in a tap
+      const script = cx.answer.script;
+      const asks = script.split('\n').filter((l) => /^ask\b/.test(l)).length;
+      const fields = (await controls(cx.tab)).filter((c) => c.control === 'input').length;
+      const walks = script.split('\n').filter((l) => /^pick\b[^|]*\bsteps\b/.test(l));
+      const bare = script.split('\n').filter((l) => /^say\b[^|]*\bchoice\b[^|]*\|\s*\W*\d+\W*$/.test(l));
+      const bad: string[] = [];
+      if (asks + fields === 0) bad.push('the question has no way to answer (no ask, no field)');
+      if (walks.length > 0) bad.push(`a stepper walks the working: ${walks[0]?.slice(0, 50)}`);
+      if (bare.length > 0) bad.push(`a choice is a bare number: ${bare[0]?.slice(0, 50)}`);
+      return res(name, bad, `${asks} ask(s), ${fields} field(s), no stepper, no number as a choice`);
+    }
+    case 'one-stepper': {
+      const steppers = (await controls(cx.tab)).filter((c) => c.control === 'pick' && c.form === 'steps');
+      return res(name, steppers.length > Number(spec['max'] ?? 1) ? [`${steppers.length} steppers on stage at rest`] : [], `${steppers.length} stepper(s) on stage`);
+    }
+    case 'starts-new-scene': {
+      const first = cx.answer.script.split('\n').find((l) => l.trim() !== '') ?? '';
+      return res(name, /^scene\b/.test(first) ? [] : [`the answer opens with "${first.slice(0, 40)}", not a scene: it continues the last drawing`], 'a new subject opens a scene');
+    }
+    case 'last-scene-has-drawing': {
+      // a tour ends on a scene that still shows something drawn (or a control), not on words and choices alone
+      const scenes = cx.answer.script.split(/^scene\b/m).slice(1);
+      const last = scenes[scenes.length - 1] ?? '';
+      const drawn = last.split('\n').filter((l) => /^(circle|ellipse|rect|line|poly|path|arc|chart|table|flow|tree|cycle|timeline|map|slider|toggle|pick|app|pix|screen|code|button)\b/.test(l.trim()));
+      return res(name, scenes.length === 0 ? ['no scene'] : drawn.length === 0 ? ['the last scene holds words only, no drawing or control'] : [], `the last scene has ${drawn.length} drawn or control line(s)`);
+    }
+    case 'is-app': {
+      const frames = await cx.tab.eval<number>(`[...document.querySelectorAll('iframe')].filter((f) => f.getBoundingClientRect().height > 50).length`);
+      return res(name, frames === 0 ? ['the first answer is not a live app'] : [], `${frames} live app(s) on stage`);
+    }
     case 'no-failed-requests': {
       const bad = [...new Set([...cx.early, ...cx.tab.failedRequests.map((f) => f.text)])];
       return res(name, bad.map((b) => `failed request ${b.slice(0, 60)}`), 'every request answered');

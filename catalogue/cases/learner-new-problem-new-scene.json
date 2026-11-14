@@ -1,0 +1,45 @@
+{
+ "id": "learner-new-problem-new-scene",
+ "title": "a second problem is a new scene with one stepper at most and no answer as a choice",
+ "family": "teaching",
+ "owner": "prompt",
+ "kind": "flow",
+ "found": "2026-11-15",
+ "note": "After one problem, 'now a different problem' kept the old drawing, added a second stepper and offered the answer as a choice chip.",
+ "own": [
+  "starts-new-scene",
+  "one-stepper"
+ ],
+ "turns": [
+  {
+   "say": "teach my 7-year-old a multiplication problem",
+   "source": {
+    "log": "20261115-094056-c1",
+    "turns": [
+     "t10"
+    ]
+   }
+  },
+  {
+   "say": "now a different problem, a take-away one",
+   "source": {
+    "log": "20261115-094056-c1",
+    "turns": [
+     "t11"
+    ]
+   },
+   "check": [
+    {
+     "k": "starts-new-scene"
+    },
+    {
+     "k": "one-stepper",
+     "max": 0
+    },
+    {
+     "k": "ask-first"
+    }
+   ]
+  }
+ ]
+}

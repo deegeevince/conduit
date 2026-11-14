@@ -1,0 +1,28 @@
+{
+ "id": "game-first-answer-is-app",
+ "title": "asked for a little game, the first answer is a live app",
+ "family": "app",
+ "owner": "prompt",
+ "kind": "flow",
+ "found": "2026-11-15",
+ "note": "A request to replicate something people use got a static sketch with a stepper; the first answer should be the thing to use.",
+ "own": [
+  "is-app"
+ ],
+ "turns": [
+  {
+   "say": "make a little game where you walk through rooms and find hidden objects",
+   "source": {
+    "log": "20261115-094056-c1",
+    "turns": [
+     "t3"
+    ]
+   },
+   "check": [
+    {
+     "k": "is-app"
+    }
+   ]
+  }
+ ]
+}

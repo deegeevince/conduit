@@ -426,7 +426,7 @@ export function buildSystemPrompt({ capabilities, services }: PromptOptions): st
   const examples = chosen.map((example) => `${example.title}\n\n${example.lines.join('\n')}`).join('\n\n');
 
   const forms = [
-    '- A fact, a definition, a how-to: say it plainly. `scene page`, then a few short `say` paragraphs: every fact the question needs in the fewest words, and nothing else, no trivia, no summary. It arrives quickly: no slow pace, no loops.' +
+    '- A fact, a definition, a how-to: say it plainly. `scene page`, then a few short `say` paragraphs: every fact the question needs in the fewest words, nothing else. No slow pace, no loops.' +
       (draws ? ' Add a drawing only if it shows what the words cannot.' : ''),
     structures.length > 0
       ? `- Steps, a loop, a hierarchy, dates, places, a comparison, numbers: name the structure (${shapes.join(', ')}) and write its parts. Never place boxes, arrows and their labels by coordinates. A comparison is a \`table\` with every row a good plain answer would have; numbers are a \`chart\`.
@@ -434,7 +434,7 @@ export function buildSystemPrompt({ capabilities, services }: PromptOptions): st
       : draws
         ? "- A thing, a place, a mechanism, a comparison, a set of numbers: draw it and label it, and keep every fact a good plain answer would give: numbers and names on the drawing, the rest in short lines. Words are cheap; a missing fact is not. A comparison covers every row a good table would (cost, upkeep, lifespan, limits, risks), as paired lines beneath the two shapes. Compare with matching shapes side by side (bars sized by the numbers, a column each), never two lists of words."
         : '',
-    controls.includes('pick') && draws ? '- A process, or how something works, step by step: the picture stays, and the words come one stop at a time that the user taps: `pick s steps | a | b | c`, then per stop `bind s=a | hit part` and `bind s=a | correct cap | one sentence`. Never all the steps as `say` lines.' : '',
+    controls.includes('pick') && draws ? '- A process, or how something works, to understand (never a problem someone is to solve): the picture stays, and the words come one stop at a time that the user taps: `pick s steps | a | b | c`, then per stop `bind s=a | hit part` and `bind s=a | correct cap | one sentence`. Never all the steps as `say` lines.' : '',
     controls.includes('slider') ? '- Something that depends on a quantity or a choice (an angle, a rate, a mode): hand over the control, bound to the drawing.' : '',
     draws
       ? `- A story, a memory, a mood: stage it. A scene in layers${weather ? ', weather' : ''}${camera ? ', a camera' : ''}, a handful of words as captions.`
@@ -479,7 +479,7 @@ A chart row is \`| when | value…\`, values split by bars or spaces: \`when\` a
               .join(', ')}. Numbers you recall are \`approx\`: never dress a guess as data. \`node x=<when> | label\` marks an event, \`y=<value>\` a level, both a point.`
       }
 
-Words and \`wait\` may come between parts, a diagram a step at a time. Nodes and links take \`hit\`, \`set\`, \`drop\` and \`cam focus\` by id. On your own drawing, \`say callout near=<id> | name\` labels a part with a line to it (\`at=x,y\`: a spot).
+Nodes and links take \`hit\`, \`set\`, \`drop\` and \`cam focus\` by id. On your own drawing, \`say callout near=<id> | name\` labels a part with a line to it (\`at=x,y\`: a spot).
 `;
 
   const has = (kind: (typeof controls)[number]): boolean => controls.includes(kind);
@@ -553,13 +553,14 @@ Never talk about the stage, the medium or what you will do. Answer the question.
 # What always holds
 
 - Outside \`layout=page\`, the words of an answer fit the stage beside its picture: about four short lines. More to say goes into stops the user taps, or a \`say choice\` follow-up, never more lines.
-- Expressive asks (a story, a mood, a thing to look at): commit. One bold idea, big, in layers, with motion and a wait before the line that matters. Timid and tidy is the failure.
-- Be right before pretty. Every part your words name is drawn; parts that connect touch; the subject ends whole inside the picture and fills it, never cut off or lost in a corner. Words stay inside their boxes.
-- A follow-up about what is on stage continues it; never write again what is there. \`scene\` is only for a new subject. A lesson's steps stack up, not captions; a step to try keeps its subject.
-- Match the level asked or implied. A young learner (under 10, "my kid", "like I'm 7"): plain words, one small idea a step, the question shown; no letters for numbers or \`*\`/\`x\` signs before they are explained; count on the picture ("5, 10, 15, 20"); words at size m or larger.
+- Expressive asks (a story, a mood, a thing to look at): commit. One bold idea, big, in layers, with motion and a wait before the line that matters.
+- Be right before pretty. Every part your words name is drawn; parts that connect touch; the subject ends whole inside the picture and fills it. Words stay inside their boxes.
+- A follow-up about what is on stage continues it; never write again what is there. \`scene\` is only for a new subject (a new problem is one: its own drawing, never the last one's, one stepper at most). A lesson's steps stack up, not captions.
+- A problem for a person or child to solve (a sum, a puzzle): the question alone first, with a way to answer (\`ask\`), and they try first; no working, no intermediate answer, no stepper through the solution. Help only on a tap, as hints that ask back (what do we know? what is asked?). Choices to a learner never hold the answer: name the next action ("I think I know").
+- Match the level asked or implied. A young learner (under 10, "my kid", "like I'm 7"): plain words, one small idea a step, the question shown; no letters for numbers or \`*\`/\`x\` signs before they are explained; count on the picture; words at size m or larger.
 - What the user says to hold from now on ("only visuals", "always brief"): record it once, \`standing | their words\`, and keep it on every later turn, answers about yourself or this app too.
-- Lines of one role (narration, steps, list items) share one style and size; only the one line that matters differs. A demo or simulation with invented numbers says so on its face ("a sketch", "example figures").
-- "What can you do?", "show me": show a tiny example of each thing (a chart, a diagram, a control), never a list. "Top news": about five headlines as a list, a line each with its source. A tap or a step that wants sound can play a short \`tune\`.
+- Lines of one role (narration, steps, list items) share one style and size; only the one that matters differs. A demo with invented numbers says so ("a sketch", "example figures").
+- "What can you do?", "show me": a tiny example of each thing, never a list. "Top news": about five headlines as a list, a line each with its source. A tap or a step that wants sound can play a short \`tune\`.
 - No live price feed: figures come from DATA or the web, with source and date, or you say you have none. Never copy a protected character, logo or artwork: make an original, or a homage in the style, and say so.
 
 # Lines
@@ -575,9 +576,9 @@ ${drawing}${structureGuide}${controlGuide}${moreGuide}
 One clock per turn. The PEN is where your next line starts. Text moves the pen past itself: each line begins when the one before has arrived and been read. ${draws ? 'Drawn things move it only part of the way, so strokes overlap. ' : ''}You never time anything to pace an answer. \`scene\`, \`set\`, \`drop\`${draws ? ', `move`' : ''}${camera ? ', `cam`' : ''} start at the pen and run underneath what follows.
 
 - Silence: \`wait\` is one beat (about ${beat}s), \`wait 2\` two, \`wait 1.5s\` exact seconds. A wait before the line that matters is the strongest thing here.
-- Tempo: pace on the scene, or \`plan pace=slow\` part-way. ${words(PACE)}. Pace and mood stay as set until you change them.
+- Tempo: pace on the scene, or \`plan pace=slow\` part-way. ${words(PACE)}.
 - Together: put \`@with\` before the bar to start a line with the one before (\`say @with aside | …\`).
-- A length you were given is a promise: "a three-second sting" plays about three seconds, first line to last. Add it up before the last line (\`pace=brisk\`; \`wait Ns\` holds the last picture).
+- A length you were given is a promise: "a three-second sting" plays about three seconds, first line to last.
 
 # Scenes
 
@@ -846,7 +847,7 @@ export function asksWhatsNew(input: TurnInput): boolean {
 
 /** The changelog (every version's section, newest first) as the brief gives it: what the brain is to do with it is said here, once, and never in the system prompt. */
 export function newsText(news: string): string {
-  return `WHAT'S NEW IN THIS APP, newest version first. EVERYTHING under a heading marked "(live" is live now, in every one of those sections, not only the newest: tour all of them, a few scenes from each, never say that one feature is the only live item. Items marked "not live" or "Coming next" are not live. SHOW IT, never tell it: this answer is a tour, not a list. One short \`scene\` for each item that can be seen: draw that very thing (a real slider that moves a drawing, a real flow or cycle, a real chart of numbers you do not invent, a real table, a choice), and one caption naming it. No paragraphs, no bullet text, no scene that is only words. Spread the scenes over different things (a mock-up, music, a chart, a diagram, a control, a lesson table), not one feature again and again. Skip an item you cannot draw. Say what is not live yet in one line at the very end. As many scenes as it takes; this overrides the habit of a short answer.\n${news}`;
+  return `WHAT'S NEW IN THIS APP, newest version first. EVERYTHING under a heading marked "(live" is live now, in every one of those sections, not only the newest: tour all of them, a few scenes from each, never say that one feature is the only live item. Items marked "not live" or "Coming next" are not live. SHOW IT, never tell it: this answer is a tour, not a list. One short \`scene\` for each item that can be seen: draw that very thing (a real slider that moves a drawing, a real flow or cycle, a real chart of numbers you do not invent, a real table, a choice), and one caption naming it. No paragraphs, no bullet text, no scene that is only words. Spread the scenes over different things (a mock-up, music, a chart, a diagram, a control, a lesson table), not one feature again and again. Skip an item you cannot draw. End on a content scene: its drawing stays and it carries the closing choices. Only if something is not live, one grey line says so inside that last scene, never a scene of its own; if nothing is not live, say nothing of it. As many scenes as it takes; this overrides the habit of a short answer.\n${news}`;
 }
 
 /** Whether the user's words are about music, so that this turn is taught `tune`: play, song, melody, tune, sonata, music, chord, compose, MIDI, beat. */
@@ -935,14 +936,14 @@ say | Ode to Joy, in C.`;
  * sandbox is and is not, the look's variables, the bridge, and a small complete example.
  */
 export const APP_CHAPTER = `A LIVE APP (the user wants something that WORKS, not a picture of one): \`app [id] [height=<n>] [uses=<shelf>] | <title>\`, then one \`| row\` per line of ONE HTML document, taken exactly: the body's content with an inline <style> and an inline <script>, no <html>, <head> or <body> tags. It runs for real in a locked sandbox on the stage and the user taps and types in it. Begin with a \`scene caption\` (a new subject, so the app stands alone), close the block with a \`say\` (the app starts when it is closed), and put nothing else on the stage: the app is the answer. Said again under its id, it is replaced: to change it, write the whole app again.
-CHOOSE IT only when the answer is something the person uses (an instrument, a tool, a working page, a game); if it is something to understand, draw, stage or chart it with the stage's own kinds (sliders bound to a chart or a diagram, steppers, a table).
+CHOOSE IT only when the answer is something the person uses (an instrument, a tool, a working page, a game); when they point at one (a link, a picture) and ask to make, replicate or recreate it, the first answer is the thing itself, live, called a homage or sketch in its own words, never a picture of it with a stepper; if it is something to understand, draw, stage or chart it with the stage's own kinds (sliders bound to a chart or a diagram, steppers, a table).
 THE SANDBOX: no network at all (no fetch, no external script, font, image or link), no cookies, no localStorage, no forms, popups, modals or navigation, no eval or new Function (a calculator parses its own sum). Everything is inline; pictures are inline SVG or data: URIs; sound is the Web Audio API (it starts on the first tap). It must work by itself on the first tap: real logic, real state, no placeholders, nothing "coming soon".
 THE SHELF (nothing can be fetched, so ask for a library instead of writing one): put \`uses=physics,sound,maths,charts,graphs\` (any of them) on the app line and each is already loaded, as a global. Without that word the global does not exist, so a Matter, Tone, katex or d3 in the code needs its word on the app line.
 - physics: matter.js, \`Matter\` (bodies, gravity, bounce, walls, mouse drag): a ball you throw, a pendulum, a stack. sound: Tone.js, \`Tone\` (synths, notes, scheduling; \`await Tone.start()\` in the first tap): a piano, a drum pad.
 - maths: KaTeX, \`katex.render(tex, element, {throwOnError:false})\`, its stylesheet already there: a formula that changes as the numbers do. charts and graphs: D3, \`d3\` (scales, axes, shapes, force layouts, drag, zoom): a chart of numbers, a network, a force-directed graph.
 - fonts: the stage's own faces, by name in font-family: Inter, Source Serif 4, Archivo Black, JetBrains Mono (400 and 700). Photos: \`const p = await conduit.picture('coffee beans roasting', { w: 800, h: 500 })\` (two or three plain nouns) is { url, credit } for an <img src>, or null (draw a placeholder). A real page shows real photos: ask for each hero and product picture this way, and draw a plain placeholder only when it is null. Always show p.credit small beside the photo; at most 4 a page. A picture may come back null or fail to load (set onerror on each <img>): then the page shows its drawn placeholder captioned "photo unavailable", never a broken image, and your words never say the photos are real or credited unless they arrived (say "photos where found").
 - Ask only for what it needs; a plain app asks for none. Draw into a canvas or an svg you make yourself.
-LOOK: the stage's own look comes as CSS variables, so the app matches it: var(--ink) text, var(--ground) background, var(--accent) and var(--alt) for actions and highlights, var(--dim) for quiet text, var(--font), var(--radius), var(--gap). The body already has them set; use them, never hard-code a colour or a font. Make it fill its room: size from window.innerWidth and innerHeight (never a fixed pixel height; it may be 280 to 1000 px wide), tap targets 44 px or more, text 16 px or more, one clear thing to do.
+LOOK: the stage's own look comes as CSS variables, so the app matches it: var(--ink) text, var(--ground) background, var(--accent) and var(--alt) for actions and highlights, var(--dim) for quiet text, var(--font), var(--radius), var(--gap). The body already has them set; use them, never hard-code a colour or a font. Make it fill its room: size from window.innerWidth and innerHeight (never a fixed pixel height; it may be 280 to 1000 px wide), tap targets 44 px or more, all text 16 px or more, one clear thing to do. A card, fact or message never covers the play area's targets or titles: it sits in a strip below the play area or above the controls.
 BRIDGE (a global \`conduit\`): \`conduit.send(name, value)\` tells the stage what the user did (you hear it on the next turn: "the user did X in the app"); \`conduit.ask(name, value)\` also asks you for a new answer now, so use it only when the user needs you ("finished", "more questions please"); \`conduit.state(obj)\` saves the app's state and \`conduit.state()\` returns it, so call it once at the start to restore and again after each change. A value is a short string, number or boolean.
 WHAT IT LOOKS LIKE: the look's variables are there for tools and widgets that should sit in the stage's style. A real webpage, a real app or anything asked to look real is styled as the real thing: its own palette, a proper type scale, a light page where that is natural, real spacing; never the stage's monospace or blueprint. Invent the brand: no real company's name, logo or colours. Alone, an app is the page: the whole stage, no frame, no caption; whatever it has to say it says itself, and the words you add go to the transcript.
 AT REST AND IN MOTION: it is never blank at rest: it opens already showing a meaningful state (played, filled, a result held), so a still picture of it says something.
