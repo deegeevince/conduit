@@ -22,6 +22,7 @@ import type { LookSpec } from '../contracts/look';
 import { createSound } from '../audio/sound';
 import type { Sound } from '../audio/sound';
 import { createPainter } from '../painter';
+import { setTarget } from '../painter/target';
 import { createChartEngine } from '../render/chart';
 import { createFilm } from '../painter/film';
 import { createReel, lastAnswer } from '../painter/reel';
@@ -382,6 +383,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     }
     throw new Error(`The stage could not start: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
   }
+  setTarget(audience, pointerKind());
   const offControls = painter.on('controls', (views) => access.controls(views));
   const offText = painter.on('text', (spans) => text.update(spans, painter.snapshot().turn ?? painter.recording()?.turn ?? null));
   access.controls(painter.snapshot().controls);
@@ -1362,6 +1364,8 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
       set(next) {
         audience = next;
         writeAudience(next);
+        setTarget(next, pointerKind());
+        painter.resize(viewportOf(host));
         documents.restyle();
       },
     },

@@ -1,5 +1,6 @@
 import { controlText, describeFigure, EMPTY_STAGE, holdControl, FULL_CAPABILITIES, NO_SERVICES, sceneAt, serializeLine, TurnScore, valueAt } from '@conduit/language';
 import { CHARTS_READY } from '../render/chart';
+import { setTarget, targetPx } from './target';
 import { STRUCTURES_READY } from './blocks';
 import { CONTROLS_READY, controlEngine, createControlStore, nextEases } from './controls';
 import { controlIndexOf, createRuntime, controlSpecOf, stateReader } from './bound';
@@ -201,6 +202,7 @@ function crossFade(from: Frame, to: Frame, p: number): Frame {
 export function createPainter(options: PainterOptions): Painter {
   const { renderer, lockLook } = options;
   let viewport: Viewport = options.viewport;
+  setTarget('adult', options.pointer);
   const reducedMotion = options.reducedMotion ?? (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches);
 
   const listeners: { [K in keyof PainterEvents]: Set<Listener<K>> } = { back: new Set(), transcript: new Set(), clock: new Set(), upload: new Set(), controls: new Set(), text: new Set() };
@@ -1312,7 +1314,7 @@ export function createPainter(options: PainterOptions): Painter {
 
   /** A fingertip is not a pixel: a choice smaller than 44 px is grown to 44 px around its centre for hit-testing only. */
   const nearTappable = (x: number, y: number): string | null => {
-    const MIN_TARGET = 44;
+    const MIN_TARGET = targetPx();
     let best: string | null = null;
     let bestDistance = Number.POSITIVE_INFINITY;
     for (const view of timeline.viewsAt(instantOf(clock.read()))) {
