@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { DEMOS, FIRST_LOAD_DEMO, parseReplayDirective } from '@conduit/language';
 import type { Brain, BrainEvent, TurnRequest } from '../../domain/brain';
 import { brainEventsFromText } from '../../domain/lines';
@@ -35,6 +36,29 @@ const KIND_DEMOS: readonly (readonly [RegExp, string])[] = [
   [/\b(slider|control|explor|interactive|what if|simulat|toggle|button)\w*/, 'explorable'],
   [/\b(flow|diagram|tree|cycle|timeline|pipeline|process|map of|architecture|how does|works)\b/, 'diagrams'],
 ];
+
+/**
+ * `REPLAY_CASE=<file>`: a recorded conversation (`pnpm scenarios --record`): `{ turns: [{ match, script }] }`. A prompt plays the first turn of its session not yet played
+ * whose `match` is the prompt's words (`kind:act` and `kind:tap` for those inputs), else the next unplayed one, else nothing. No model is called.
+ */
+interface RecordedCase {
+  readonly turns: readonly { readonly match: string; readonly script: string }[];
+}
+const played = new Map<string, Set<number>>();
+function recordedScript(request: TurnRequest): string | null {
+  const path = process.env['REPLAY_CASE'];
+  if (path === undefined || path === '') return null;
+  const recorded = JSON.parse(readFileSync(path, 'utf8')) as RecordedCase;
+  const { input } = request;
+  const key = input.kind === 'prompt' ? input.text.trim() : `kind:${input.kind}`;
+  const done = played.get(request.session) ?? new Set<number>();
+  played.set(request.session, done);
+  let index = recorded.turns.findIndex((turn, i) => !done.has(i) && turn.match === key);
+  if (index < 0) index = recorded.turns.findIndex((_, i) => !done.has(i));
+  if (index < 0) return 'scene layout=solo\nsay r1 | (nothing recorded for this turn)\n';
+  done.add(index);
+  return recorded.turns[index]?.script ?? '';
+}
 
 function scriptFor(request: TurnRequest, defaultScript: string | null): string {
   const { input } = request;
@@ -75,6 +99,12 @@ export function createReplayBrain(deps: ReplayDeps): Brain {
       // The user's own lines: played exactly as a fixture is, with nothing read from disk.
       deps.log.debug('replay.start', { turn: request.turn, script: '(pasted)' });
       yield* brainEventsFromText(chunks(request.input.text, signal), Object.keys(request.context.stage.styles));
+      return;
+    }
+    const recorded = recordedScript(request);
+    if (recorded !== null) {
+      yield { type: 'brief', form: 'script', text: 'recorded case', system: null, withSnapshot: false };
+      yield* brainEventsFromText(chunks(recorded, signal), Object.keys(request.context.stage.styles));
       return;
     }
     const name = scriptFor(request, deps.defaultScript);

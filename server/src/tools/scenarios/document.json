@@ -1,0 +1,15 @@
+{
+ "case": "document",
+ "recordedAt": "2026-11-14T12:15:31.657Z",
+ "screen": "1280x720",
+ "turns": [
+  {
+   "match": "highlight the three main claims and comment on the weakest",
+   "script": "scene layout=page\nsay x1 title | Paine, Common Sense: three claims\nsay x2 strong | 1. Society and government are different things, with different origins.\nsay x3 aside | Society is produced by our wants, and government by our wickedness.\nsay x4 strong | 2. Society is always a blessing; government is at best a necessary evil.\nsay x5 aside | At worst it is intolerable, because we pay for the thing that harms us.\nsay x6 strong | 3. Government exists only because conscience fails.\nsay x7 aside | Were the impulses of conscience clear, uniform, and irresistibly obeyed, man would need no other lawgiver.\nwait 1\nsay x8 title | The weakest: claim 1\nsay x9 | Paine says government comes from wickedness alone. That does not hold up. Much of what governments do has nothing to do with vice. Roads, weights and measures, which side of the road to drive on, and defence against outsiders are problems of coordination. A society of saints would still need them.\nsay x10 | So government also grows out of our *wants*, the same root Paine gives society. The clean line between the two blurs. Claim 3 inherits the flaw: perfect conscience tells you to be good, but it does not tell everyone which shared rule to follow.\nsay x11 | Claim 2 is a value judgement, but it follows from claim 1. Weaken claim 1 and \"necessary evil\" starts to look more like \"necessary tool\".\nsay x12 aside | Paine's point was rhetorical, not careful theory. In January 1776 he needed government to look like a burden the colonies could reshape.\nsay x13 choice | Steelman Paine's reply\nsay x14 choice | Compare with Hobbes and Locke"
+  },
+  {
+   "match": "what does this mean?",
+   "script": "scene layout=page\nsay x15 strong | Paine's \"necessary evil\" rests on where government comes from.\nsay x16 | Claim 2 isn't a fact you can check. It's a verdict: government is bad, even if we can't do without it.\nsay x17 | That verdict comes from claim 1. If government is born only from our wickedness, it is a mark of our faults. We put up with it, like a lock on a door.\nsay x18 | But if government also grows out of our *needs*, like roads, shared measures and agreeing which side of the road to drive on, it's no longer just a sign of failure. It's something we build to get things done together.\nsay x19 | Then \"necessary evil\" turns into \"necessary tool\": still needed, but no longer bad in itself.\nsay x20 aside | In short: knock out the origin story and the moral verdict loses its footing.\nsay x21 choice | Steelman Paine's reply\nsay x22 choice | Compare with Hobbes and Locke"
+  }
+ ]
+}

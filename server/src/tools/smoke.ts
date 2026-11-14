@@ -43,15 +43,15 @@ import { Cdp, CHROME_CANDIDATES, sleep, stop, waitFor } from './explore-browser'
 // ---------------------------------------------------------------------------------------------------------------------------------
 // What is asked
 
-type Verdict = 'PASS' | 'FAIL' | 'SKIP';
-interface CheckResult {
+export type Verdict = 'PASS' | 'FAIL' | 'SKIP';
+export interface CheckResult {
   readonly turn: number;
   readonly check: string;
   readonly verdict: Verdict;
   readonly detail: string;
 }
 
-interface Step {
+export interface Step {
   readonly n: number;
   /** what is typed (`/new` is a command: the page turns it into a turn of its own) */
   readonly say: string | null;
@@ -85,7 +85,7 @@ const CDP_TIMEOUT_MS = 60_000;
 // ---------------------------------------------------------------------------------------------------------------------------------
 // Arguments
 
-interface Options {
+export interface Options {
   readonly url: string;
   readonly screens: readonly { readonly name: string; readonly width: number; readonly height: number }[];
   readonly out: string;
@@ -147,7 +147,7 @@ function parseArgs(argv: readonly string[]): Options {
 // The page's half: small, pure measuring functions the gate hands to the page once. They read what the page really is: computed styles,
 // the painter's own hook (`window.__stage`) and the pixels of a screenshot. Written as text so that no compiler helper is in it.
 
-const PAGE_LIB = String.raw`(() => {
+export const PAGE_LIB = String.raw`(() => {
   if (window.__smoke) return;
   const cv = document.createElement('canvas');
   cv.width = 1; cv.height = 1;
@@ -352,7 +352,7 @@ const PAGE_LIB = String.raw`(() => {
 // ---------------------------------------------------------------------------------------------------------------------------------
 // The browser
 
-interface Box {
+export interface Box {
   readonly x: number;
   readonly y: number;
   readonly width: number;
@@ -364,7 +364,7 @@ interface Logged {
   readonly text: string;
 }
 
-interface Posted {
+export interface Posted {
   readonly at: number;
   readonly url: string;
   readonly kind: string | null;
@@ -374,7 +374,7 @@ interface Posted {
 }
 
 /** One headless Chrome with one page, driven over the DevTools protocol, and everything it reported: console errors, failed requests, requests in flight, turns POSTed. */
-class Tab {
+export class Tab {
   readonly consoleErrors: Logged[] = [];
   readonly failedRequests: Logged[] = [];
   readonly posted: Posted[] = [];
@@ -607,7 +607,7 @@ class Tab {
 // ---------------------------------------------------------------------------------------------------------------------------------
 // What the page tells
 
-interface Probe {
+export interface Probe {
   readonly ready: boolean;
   readonly status: string;
   readonly turn: string | null;
@@ -625,7 +625,7 @@ interface Probe {
   readonly mockups: number;
 }
 
-interface PromptInfo {
+export interface PromptInfo {
   readonly rect: { readonly x: number; readonly y: number; readonly w: number; readonly h: number };
   readonly value: string;
   readonly typed: { readonly ratio: number; readonly colour: string; readonly bg: string; readonly image: boolean; readonly css: string };
@@ -643,7 +643,7 @@ interface ButtonInfo {
   readonly status: boolean;
 }
 
-interface LiveElement {
+export interface LiveElement {
   readonly id: string;
   readonly kind: string;
   readonly text: string;
@@ -663,7 +663,7 @@ interface MockupView {
   readonly notes: readonly { readonly kind: string; readonly id: string; readonly message: string }[];
 }
 
-interface Answer {
+export interface Answer {
   readonly report: {
     readonly turn: string;
     readonly outcome: string;
@@ -683,7 +683,7 @@ interface Answer {
 // ---------------------------------------------------------------------------------------------------------------------------------
 // One conversation on one screen
 
-interface TurnRecord {
+export interface TurnRecord {
   readonly step: Step;
   readonly said: string;
   readonly picture: string;
@@ -691,36 +691,36 @@ interface TurnRecord {
   readonly results: CheckResult[];
 }
 
-const fmt = (n: number): string => (Math.round(n * 100) / 100).toFixed(2);
+export const fmt = (n: number): string => (Math.round(n * 100) / 100).toFixed(2);
 const round = (n: number): number => Math.round(n);
 const intersection = (a: Box, b: Box): number => Math.max(0, Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x)) * Math.max(0, Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y));
 const area = (a: Box): number => Math.max(0, a.width) * Math.max(0, a.height);
 const boxText = (b: Box): string => `${round(b.width)}x${round(b.height)} at ${round(b.x)},${round(b.y)}`;
 const centre = (b: Box): { x: number; y: number } => ({ x: b.x + b.width / 2, y: b.y + b.height / 2 });
 
-class Conversation {
-  private readonly records: TurnRecord[] = [];
-  private seenReports = new Set<string>();
+export class Conversation {
+  readonly records: TurnRecord[] = [];
+  seenReports = new Set<string>();
   private lastSig = '';
   private stableSince = 0;
-  private current = 0;
+  current = 0;
   /** what the gate is doing now, for the line it prints when one step takes long (so a stall is never silent) */
   private phase = 'starting';
   private phaseSince = Date.now();
-  private note: (text: string) => void;
+  note: (text: string) => void;
 
-  private constructor(
-    private readonly tab: Tab,
-    private readonly options: Options,
-    private readonly screen: Options['screens'][number],
-    private readonly dir: string,
+  constructor(
+    readonly tab: Tab,
+    readonly options: Options,
+    readonly screen: Options['screens'][number],
+    readonly dir: string,
   ) {
     this.note = (text) => {
       if (!options.quiet) process.stdout.write(`[${screen.name}] ${text}\n`);
     };
   }
 
-  private at(phase: string): void {
+  at(phase: string): void {
     this.phase = phase;
     this.phaseSince = Date.now();
   }
@@ -759,11 +759,11 @@ class Conversation {
     }
   }
 
-  private add(results: CheckResult[], check: string, verdict: Verdict, detail: string): void {
+  add(results: CheckResult[], check: string, verdict: Verdict, detail: string): void {
     results.push({ turn: this.current, check, verdict, detail });
   }
 
-  private async start(): Promise<void> {
+  async start(): Promise<void> {
     const { tab } = this;
     await tab.send('Page.navigate', { url: `${this.options.url}/${this.options.demo ? '' : '?demo=none'}${this.options.page === '' ? '' : `${this.options.demo ? '?' : '&'}${this.options.page}`}` });
     await waitFor('the page to be ready', 60_000, async () => {
@@ -777,7 +777,7 @@ class Conversation {
   }
 
   /** waits for the page's own rest; returns a sentence about how it went (empty when all is well) */
-  private async rest(expectReport: boolean | null, requireNewReport = true): Promise<string> {
+  async rest(expectReport: boolean | null, requireNewReport = true): Promise<string> {
     const { tab } = this;
     const deadline = Date.now() + this.options.timeoutMs;
     this.lastSig = '';
@@ -810,7 +810,7 @@ class Conversation {
   }
 
   /** a real person's way of speaking: a click in the box, keys, Enter. Returns what went wrong, if anything. */
-  private async say(text: string, results: CheckResult[]): Promise<boolean> {
+  async say(text: string, results: CheckResult[]): Promise<boolean> {
     const { tab } = this;
     const info = await tab.call<PromptInfo | null>('promptInfo');
     if (info === null) {
@@ -890,7 +890,7 @@ class Conversation {
 
   // ---- answer on stage
 
-  private async checkAnswer(step: Step, answer: Answer, picture: string, results: CheckResult[]): Promise<void> {
+  async checkAnswer(step: Step, answer: Answer, picture: string, results: CheckResult[]): Promise<void> {
     const problems: string[] = [];
     const facts: string[] = [];
     const report = answer.report;
@@ -993,7 +993,7 @@ class Conversation {
 
   // ---- the prompt box
 
-  private async checkPrompt(results: CheckResult[]): Promise<void> {
+  async checkPrompt(results: CheckResult[]): Promise<void> {
     const { tab } = this;
     const problems: string[] = [];
     const before = await tab.call<PromptInfo | null>('promptInfo');
@@ -1031,7 +1031,7 @@ class Conversation {
 
   // ---- the chrome
 
-  private async checkChrome(picture: string, results: CheckResult[]): Promise<void> {
+  async checkChrome(picture: string, results: CheckResult[]): Promise<void> {
     const buttons = await this.tab.call<ButtonInfo[]>('chromeButtons');
     const marks = await this.tab.call<{ blank: boolean; ratio: number; outside?: boolean; fg?: string; bg?: string }[]>('analyse', picture, buttons.map((button) => button.rect), this.tab.dpr);
     const problems: string[] = [];
@@ -1172,7 +1172,7 @@ class Conversation {
 
   // ---- overlap
 
-  private checkOverlap(step: Step, answer: Answer, results: CheckResult[]): void {
+  checkOverlap(step: Step, answer: Answer, results: CheckResult[]): void {
     const problems: string[] = [];
     // words on stage: the painter's boxes for every line of words that is on, and the controls laid among them
     const words = answer.live.filter((element) => element.kind === 'text' && element.phase === 'on' && area(element.box) > 0 && element.opacity > 0.3);
@@ -1231,7 +1231,7 @@ class Conversation {
 
   // ---- cut off
 
-  private async checkCutOff(answer: Answer, results: CheckResult[], inCanvas = false): Promise<void> {
+  async checkCutOff(answer: Answer, results: CheckResult[], inCanvas = false): Promise<void> {
     const problems: string[] = [];
     const { width, height } = answer.viewport;
     const slack = 2;
@@ -1559,7 +1559,7 @@ class Conversation {
 
   // ---- the contact sheet
 
-  private async contactSheet(): Promise<string | null> {
+  async contactSheet(): Promise<string | null> {
     if (this.records.length === 0) return null;
     const { tab } = this;
     const cells: { readonly label: string; readonly verdict: string; readonly data: string }[] = [];
@@ -1689,18 +1689,21 @@ async function main(): Promise<void> {
   process.exit(failures === 0 ? 0 : 1);
 }
 
+if (process.argv[1] !== undefined && /smoke\.ts$/.test(process.argv[1])) {
 // A gate that is killed from outside must say so: a silent end after some turns is what a stuck run looks like, and it is not one.
-for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) {
-  process.on(signal, () => {
-    process.stderr.write(`smoke: stopped by ${signal} (something outside the gate ended it)\n`);
+  for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) {
+    process.on(signal, () => {
+      process.stderr.write(`smoke: stopped by ${signal} (something outside the gate ended it)\n`);
+      process.exit(2);
+    });
+  }
+  process.on('exit', (code) => {
+    if (code !== 0 && code !== 1) process.stderr.write(`smoke: exit ${code}\n`);
+  });
+  
+  main().catch((error: unknown) => {
+    process.stderr.write(`smoke: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}\n`);
     process.exit(2);
   });
+  
 }
-process.on('exit', (code) => {
-  if (code !== 0 && code !== 1) process.stderr.write(`smoke: exit ${code}\n`);
-});
-
-main().catch((error: unknown) => {
-  process.stderr.write(`smoke: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}\n`);
-  process.exit(2);
-});

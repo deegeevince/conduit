@@ -1,0 +1,15 @@
+{
+ "case": "explainer",
+ "recordedAt": "2026-11-14T12:10:12.994Z",
+ "screen": "1280x720",
+ "turns": [
+  {
+   "match": "explain how a heat pump works, step by step",
+   "script": "look blueprint\nscene layout=figure canvas=wide lines=4\ncolor hot=#ff8a5c cold=#7cc8ff\nrect house 4,10 70x70 stroke=ink thick=0.6\nsay x1 label at=39,14 | inside\nsay x2 label at=118,14 | outside\nrect coil_in 14,30 14x34 fill=hot\nrect coil_out 130,30 14x34 fill=cold\nrect comp 64,64 28x14 r=2 fill=accent\nrect valve 72,22 12x10 fill=dim\nline hotpipe 28,36 64,71 stroke=hot thick=1.5\nline hotpipe2 28,58 72,27 stroke=cold thick=1\nline cp 92,71 130,58 stroke=hot thick=1.5\nline vp 84,27 130,36 stroke=cold thick=1\nsay x3 callout near=coil_out | evaporator\nsay x4 callout near=comp | compressor\nsay x5 callout near=coil_in | condenser\nsay x6 callout near=valve | expansion valve\nsay x7 | 1. Cold refrigerant in the outdoor coil soaks up heat from the air, even at freezing temperatures, and boils into a gas.\nwait 1\nsay x8 | 2. The compressor squeezes that gas, making it much hotter.\nhit comp pulse\nsay x9 | 3. The hot gas releases its heat into your home through the indoor coil and condenses back into a liquid.\nhit coil_in pulse\nsay x10 | 4. The expansion valve drops its pressure, so it turns very cold, and it flows back outside to start again.\nhit valve pulse\nwait 1\nsay x11 strong | It *moves* heat, giving 3 to 4 times the energy it uses.\nsay x12 choice | How does it cool in summer?\nsay x13 choice | Why does it struggle in deep cold?\nline hotpipe 28,58 64,71 stroke=hot thick=1.5\nline hotpipe2 28,36 72,27 stroke=cold thick=1"
+  },
+  {
+   "match": "what happens in winter?",
+   "script": "hit coil_out pulse\ncorrect x10 | Winter is this same loop. The outdoor coil runs colder than the frosty air, so heat still flows into it.\ncorrect x11 | The colder it gets, the harder it works: about 3 times the energy it uses at 7C, closer to 2 times at -15C.\ndrop x12\ndrop x13\nsay x14 aside | Frost builds up on the outdoor coil, so every so often the heat pump briefly runs in reverse to melt it. In very hard cold, a backup heater helps out.\nsay x15 choice | Why does it struggle in deep cold?\nsay x16 choice | How does it cool in summer?"
+  }
+ ]
+}
