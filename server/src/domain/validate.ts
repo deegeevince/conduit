@@ -1,6 +1,6 @@
 // The edge between untrusted JSON and the typed domain. Every check names the field it found wrong.
 
-import { AMBIENT_KINDS, CAMERA_MOVES, CHART_KINDS, CONTROL_KINDS, ENTER_EFFECTS, EXIT_EFFECTS, FACES, FX_NAMES, LAYERS, LOOPS, MARKS, PROCEDURAL_MEDIA, STROKES, STRUCTURE_KINDS, TEXTURES, ALIGNS, BACK_EVENT_TYPES, BRAIN_EFFORTS, BRAIN_MODES, BRAIN_MODELS, CANVAS_NAMES, DEMOS, ELEMENT_KINDS, LAYOUTS, LIMITS, LOOK_IDS, MOODS, NO_SIGHT, NO_V21_CAPABILITIES, NO_V4_CAPABILITIES, PACES, SIGHT_ITEMS, SIGHT_NOTE, UPLOAD_LIMITS } from '@conduit/language';
+import { STATE_LIMITS, AMBIENT_KINDS, CAMERA_MOVES, CHART_KINDS, CONTROL_KINDS, ENTER_EFFECTS, EXIT_EFFECTS, FACES, FX_NAMES, LAYERS, LOOPS, MARKS, PROCEDURAL_MEDIA, STROKES, STRUCTURE_KINDS, TEXTURES, ALIGNS, BACK_EVENT_TYPES, BRAIN_EFFORTS, BRAIN_MODES, BRAIN_MODELS, CANVAS_NAMES, DEMOS, ELEMENT_KINDS, LAYOUTS, LIMITS, LOOK_IDS, MOODS, NO_SIGHT, NO_V21_CAPABILITIES, NO_V4_CAPABILITIES, PACES, SIGHT_ITEMS, SIGHT_NOTE, UPLOAD_LIMITS } from '@conduit/language';
 import type {
   BackEvent,
   BrainChange,
@@ -12,6 +12,10 @@ import type {
   PlacedBox,
   ClockState,
   CreateSessionRequest,
+  Cursor,
+  Held,
+  Seen,
+  StateChange,
   StartTurnRequest,
   LookId,
   ScreenFacts,
@@ -150,6 +154,83 @@ function controlValues(value: unknown, what: string): ControlValues {
   return out;
 }
 
+// ---- v3: the person's state in a document (2.5). Checked as the other back events are: whole, bounded, and named when wrong.
+
+/** A value a control holds: JSON, shallow, and small. A bigger one is refused, never cut. */
+function held(value: unknown, what: string, depth = 0): Held {
+  if (value === null || typeof value === 'boolean') return value;
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) throw errors.badRequest(`${what} must be a finite number`);
+    return value;
+  }
+  if (typeof value === 'string') return value.slice(0, STATE_LIMITS.heldBytes);
+  if (depth >= 4) throw errors.badRequest(`${what} is nested too deeply`);
+  if (Array.isArray(value)) return value.slice(0, 200).map((item, index) => held(item, `${what}[${index}]`, depth + 1));
+  const raw = obj(value, what);
+  const out: Record<string, Held> = {};
+  for (const [key, item] of Object.entries(raw).slice(0, 100)) out[key.slice(0, STATE_LIMITS.key)] = held(item, `${what}.${key}`, depth + 1);
+  return out;
+}
+
+function heldValue(value: unknown, what: string): Held {
+  const checked = held(value, what);
+  if (JSON.stringify(checked).length > STATE_LIMITS.heldBytes) throw errors.badRequest(`${what} is larger than ${STATE_LIMITS.heldBytes} bytes`);
+  return checked;
+}
+
+function nodeId(value: unknown, what: string): string {
+  const id = text(value, what);
+  if (id === '' || id.length > STATE_LIMITS.nodeId) throw errors.badRequest(`${what} must be 1 to ${STATE_LIMITS.nodeId} characters`);
+  return id;
+}
+
+function cursor(value: unknown, what: string): Cursor {
+  const raw = obj(value, what);
+  const play = raw.play;
+  if (typeof play === 'number') return { node: nodeId(raw.node, `${what}.node`), play: Math.max(0, num(play, `${what}.play`)) };
+  return { node: nodeId(raw.node, `${what}.node`), play: { at: Math.max(0, Math.round(num(obj(play, `${what}.play`).at, `${what}.play.at`))) } };
+}
+
+function seenOf(value: unknown, what: string): Seen {
+  if (JSON.stringify(value ?? null).length > STATE_LIMITS.seenBytes) throw errors.badRequest(`${what} is larger than ${STATE_LIMITS.seenBytes} bytes`);
+  const raw = obj(value, what);
+  const heldAll = obj(raw.held ?? {}, `${what}.held`);
+  const out: Record<string, Readonly<Record<string, Held>>> = {};
+  for (const [node, values] of Object.entries(heldAll).slice(0, 200)) out[nodeId(node, `${what}.held`)] = heldValues(values, `${what}.held.${node}`);
+  return { cursor: cursor(raw.cursor, `${what}.cursor`), held: out };
+}
+
+function heldValues(value: unknown, what: string): Readonly<Record<string, Held>> {
+  const raw = obj(value, what);
+  const out: Record<string, Held> = {};
+  for (const [key, item] of Object.entries(raw).slice(0, 100)) out[key.slice(0, STATE_LIMITS.key)] = held(item, `${what}.${key}`);
+  return out;
+}
+
+/** An optional `seen`: a page that does not send one is read as having none; one that sends a malformed one is refused. */
+function optionalSeen(value: unknown, what: string): { readonly seen?: Seen } {
+  return value === undefined || value === null ? {} : { seen: seenOf(value, what) };
+}
+
+function stateChange(value: unknown, what: string): StateChange {
+  const raw = obj(value, what);
+  const kind = oneOf(raw.kind, ['cursor', 'held', 'try', 'seen', 'done', 'sync'] as const, `${what}.kind`);
+  switch (kind) {
+    case 'cursor':
+      return { kind, cursor: cursor(raw.cursor, `${what}.cursor`) };
+    case 'held':
+      return { kind, node: nodeId(raw.node, `${what}.node`), key: text(raw.key, `${what}.key`).slice(0, STATE_LIMITS.key), value: heldValue(raw.value, `${what}.value`) };
+    case 'try':
+      return { kind, node: nodeId(raw.node, `${what}.node`), ask: text(raw.ask, `${what}.ask`).slice(0, STATE_LIMITS.key), value: text(raw.value, `${what}.value`).slice(0, STATE_LIMITS.tryChars), right: bool(raw.right, `${what}.right`) };
+    case 'seen':
+      return { kind, node: nodeId(raw.node, `${what}.node`), seen: Math.max(0, Math.round(num(raw.seen, `${what}.seen`))) };
+    case 'done':
+      return { kind, node: nodeId(raw.node, `${what}.node`), done: bool(raw.done, `${what}.done`) };
+    case 'sync':
+      return { kind, seen: seenOf(raw.seen, `${what}.seen`) };
+  }
+}
+
 export function parseCreateSession(body: unknown): CreateSessionRequest {
   const raw = obj(body, 'body');
   return { screen: screen(raw.screen), capabilities: capabilities(raw.capabilities), look: look(raw.look, 'look') };
@@ -168,7 +249,7 @@ export function parseTurnInput(body: unknown): TurnInput {
   const input = obj(obj(body, 'body').input, 'input');
   const kind = oneOf(input.kind, ['prompt', 'tap', 'demo', 'script', 'act'] as const, 'input.kind');
   if (kind === 'act') {
-    return { kind, id: text(input.id, 'input.id').slice(0, LIMITS.name), text: text(input.text, 'input.text').slice(0, CONTROL_TEXT_CHARS), values: controlValues(input.values ?? {}, 'input.values') };
+    return { kind, id: text(input.id, 'input.id').slice(0, LIMITS.name), text: text(input.text, 'input.text').slice(0, CONTROL_TEXT_CHARS), values: controlValues(input.values ?? {}, 'input.values'), ...optionalSeen(input.seen, 'input.seen') };
   }
   if (kind === 'script') {
     const source = text(input.text, 'input.text');
@@ -186,7 +267,7 @@ export function parseTurnInput(body: unknown): TurnInput {
   if (kind === 'tap') {
     const said = text(input.text, 'input.text');
     if (said.length > SERVER_LIMITS.promptChars) throw errors.badRequest(`input.text is longer than ${SERVER_LIMITS.promptChars} characters`);
-    return { kind, id: text(input.id, 'input.id'), text: said };
+    return { kind, id: text(input.id, 'input.id'), text: said, ...optionalSeen(input.seen, 'input.seen') };
   }
   const script = text(input.script, 'input.script');
   if (!DEMOS.some((demo) => demo.name === script)) {
@@ -375,6 +456,7 @@ function backEvent(value: unknown, index: number): BackEvent {
         text: text(raw.text, 'text'),
         playhead: num(raw.playhead, 'playhead'),
         choice: bool(raw.choice, 'choice'),
+        ...optionalSeen(raw.seen, 'seen'),
       };
     case 'report':
       return { type, report: report(raw.report) };
@@ -387,6 +469,7 @@ function backEvent(value: unknown, index: number): BackEvent {
         text: text(raw.text, 'text').slice(0, CONTROL_TEXT_CHARS),
         playhead: num(raw.playhead, 'playhead'),
         send: bool(raw.send, 'send'),
+        ...optionalSeen(raw.seen, 'seen'),
       };
     case 'draft': {
       const placed = placedBoxes(raw.placed);
@@ -402,6 +485,8 @@ function backEvent(value: unknown, index: number): BackEvent {
     }
     case 'permit':
       return { type, turn: text(raw.turn, 'turn'), request: requestId(raw.request), allow: bool(raw.allow, 'allow') };
+    case 'state':
+      return { type, turn: raw.turn === null || raw.turn === undefined ? null : text(raw.turn, 'turn'), document: nodeId(raw.document, 'document'), change: stateChange(raw.change, 'change') };
   }
 }
 

@@ -1,4 +1,4 @@
-import type { ActionRisk, ActivityState, BriefForm, Capabilities, ContentCount, ControlValue, CriticFinding, Issue, PassState, ReviewDecision, ReviewForm, ReviewOutcome, ScreenFacts, Services, TurnEndReason, TurnInput, TurnReport } from '@conduit/language';
+import type { ActionRisk, ActivityState, BriefForm, Capabilities, ContentCount, ControlValue, CriticFinding, Issue, NodeId, NodeStatus, PassState, ReviewDecision, ReviewForm, ReviewOutcome, ScreenFacts, Services, StateChange, TurnEndReason, TurnInput, TurnReport } from '@conduit/language';
 import type { BrainId, BrainUsage } from './brain';
 import type { FetchOutcome } from './documents';
 
@@ -11,13 +11,13 @@ import type { FetchOutcome } from './documents';
  * `at` is milliseconds since the session's first record.
  */
 export type SessionRecord =
-  | { readonly type: 'session'; readonly at: 0; readonly session: string; readonly started: string; readonly brain: BrainId; readonly language: number; readonly screen: ScreenFacts; readonly capabilities: Capabilities; readonly services: Services }
+  | { readonly type: 'session'; readonly at: 0; readonly session: string; readonly started: string; readonly brain: BrainId; readonly language: number; readonly screen: ScreenFacts; readonly capabilities: Capabilities; readonly services: Services; /** v3. The document this session opens again (`API.documentOpen`): its id is the stem of the file that began it. The document is the fold of that file and every file that says this. */ readonly resumes?: string }
   /** the user typed, tapped a choice, or played a demo or a script */
   | { readonly type: 'turn'; readonly at: number; readonly turn: string; readonly input: TurnInput; readonly brain: BrainId; readonly login?: string }
   /** what the brain was told; `system` only when a process first hears it */
   | { readonly type: 'brief'; readonly at: number; readonly turn: string; readonly form: BriefForm | 'script'; readonly text: string; readonly system: string | null; readonly withSnapshot: boolean; readonly pass?: number }
   /** one accepted line, as it was forwarded; `raw` is what the brain wrote when that differs */
-  | { readonly type: 'line'; readonly at: number; readonly turn: string; readonly seq: number; readonly text: string; readonly start: number; readonly issues: readonly Issue[]; readonly pass?: number }
+  | { readonly type: 'line'; readonly at: number; readonly turn: string; readonly seq: number; readonly text: string; readonly start: number; readonly issues: readonly Issue[]; readonly pass?: number; /** v3. The document node the line landed in: a `part`'s own, a step's, an ask's or a hint's. Absent for every other line. */ readonly node?: NodeId }
   | { readonly type: 'reject'; readonly at: number; readonly turn: string; readonly raw: string; readonly issues: readonly Issue[] }
   | { readonly type: 'end'; readonly at: number; readonly turn: string; readonly reason: TurnEndReason; readonly message: string | null; readonly lines: number }
   /** the brain searched the web or read a page: tool name and query or URL only */
@@ -57,7 +57,14 @@ export type SessionRecord =
   /** v2.1. A picture the user gave: its id, kind and size, and the file it was saved as beside the log. Never the bytes. */
   | { readonly type: 'upload'; readonly at: number; readonly turn: string | null; readonly id: string; readonly mime: string; readonly bytes: number; readonly width: number; readonly height: number; readonly file: string | null }
   /** v2.1. A setting the user changed with a command or the picker (`/model`, `/effort`, `/brain`, `/tools`, `/review`) */
-  | { readonly type: 'setting'; readonly at: number; readonly name: string; readonly value: string };
+  | { readonly type: 'setting'; readonly at: number; readonly name: string; readonly value: string }
+  /**
+   * v3 (2.11). A node's status was set from outside the turn that wrote it: verified or refused by the verifier, or sent back to be
+   * written again (`reset`: the body goes, the children stay). Its filling and filled are not logged: they follow from lines and `end`.
+   */
+  | { readonly type: 'node'; readonly at: number; readonly turn: string | null; readonly node: NodeId; readonly status: NodeStatus; readonly reset?: true; readonly why: string | null }
+  /** v3 (2.5). Something the person did that `advance` committed: where they are, what a control holds, an answer tried, a reveal reached, a node finished. Logged only when it changed something. */
+  | { readonly type: 'state'; readonly at: number; readonly turn: string | null; readonly change: StateChange };
 
 /** Fields of a record without the time, which the log stamps. */
 export type SessionEntry = SessionRecord extends infer R ? (R extends { readonly at: number } ? Omit<R, 'at'> : never) : never;

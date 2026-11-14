@@ -6,6 +6,7 @@
 //
 //   <DATA_DIR>/logs/           session logs and the pictures saved beside them
 //   <DATA_DIR>/uploads/        pictures the user gave, when they are kept
+//   <DATA_DIR>/documents/      the catalogue's index (`index.json`): one entry a document, rebuilt from the session logs when it is missing or stale
 //   <DATA_DIR>/audit.jsonl     every tool call, permission, setting change and connector use (`pnpm audit`)
 //   <DATA_DIR>/usage.jsonl     every model call the server made: model, tokens, cost-equivalent, ms
 //   <DATA_DIR>/cache/          the technique library's last good read, the dataset index, the photographs found for mock-ups (pictures/)
@@ -22,6 +23,7 @@ export interface DataPaths {
   readonly root: string;
   readonly logs: string;
   readonly uploads: string;
+  readonly documents: string;
   readonly audit: string;
   readonly usage: string;
   readonly cache: string;
@@ -52,6 +54,7 @@ export function dataPaths(root: string): DataPaths {
     root,
     logs: join(root, 'logs'),
     uploads: join(root, 'uploads'),
+    documents: join(root, 'documents'),
     audit: join(root, 'audit.jsonl'),
     usage: join(root, 'usage.jsonl'),
     cache: join(root, 'cache'),
@@ -65,7 +68,7 @@ export function dataPaths(root: string): DataPaths {
 
 /** Makes the folders (owner only: the audit trail and the logs are the owner's alone). Never throws; the caller finds out when it writes. */
 export function ensureDataDirs(paths: DataPaths): void {
-  for (const dir of [paths.root, paths.logs, paths.uploads, paths.cache, paths.queue, paths.state]) {
+  for (const dir of [paths.root, paths.logs, paths.uploads, paths.documents, paths.cache, paths.queue, paths.state]) {
     try {
       mkdirSync(dir, { recursive: true, mode: 0o700 });
     } catch {

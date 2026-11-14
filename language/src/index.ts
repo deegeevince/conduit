@@ -16,6 +16,7 @@ export * from './tune';
 export * from './interface';
 export * from './stage';
 export * from './sight';
+export * from './doc-spine';
 export * from './wire';
 export * from './events';
 export * from './context';

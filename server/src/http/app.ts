@@ -12,6 +12,7 @@ import { AppError, errors, toErrorBody } from '../errors';
 import { UPLOAD_LIMITS } from '@conduit/language';
 import { registerAssetRoutes } from './asset-routes';
 import { registerUploadRoutes } from './upload-routes';
+import { registerDocumentRoutes } from './document-routes';
 import type { HttpDeps } from './deps';
 import { registerExploreRoutes } from './explore-routes';
 import { registerRelayRoutes } from './relay-routes';
@@ -87,6 +88,7 @@ export function createApp(deps: HttpDeps): Hono {
 
   app.get(API.health, (c) => c.json<HealthResponse>({ ok: true, language: LANGUAGE.version, brain: deps.env.brain.kind }));
   registerSessionRoutes(app, deps);
+  registerDocumentRoutes(app, deps);
   registerAssetRoutes(app, deps);
   registerUploadRoutes(app, deps);
   registerStatusRoutes(app, deps);
