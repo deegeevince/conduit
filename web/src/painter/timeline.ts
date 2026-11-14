@@ -806,7 +806,7 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
         footHeight: (width) => (width === safe.width ? needs.foot : needsOf(probe, width).foot),
       });
     // Planned twice: the first plan gives a structure the room the stage allows it; the engine is run in that room, and a structure it had to cut or
-    // shrink below reading size is asked again with the room it really needs (the words give way to it, down to their own least).
+    // shrink below reading size is asked again with the room it really needs (the words give way to it, down to their own least: the headings and a line under them).
     let plan = planWith(blocks.list);
     const grown = blocks.list.map((block) => {
       if (block.kind !== 'structure' || block.pinned !== null) return block;
@@ -839,7 +839,7 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
         if (need <= room.height + 1) need = 0;
         needOf.set(id, need);
       }
-      return need > room.height ? { ...block, natural: { ...block.natural, height: Math.max(block.natural.height, need) }, least: { ...block.least, height: need } } : block;
+      return need > room.height ? { ...block, natural: { ...block.natural, height: Math.max(block.natural.height, need) } } : block;
     });
     if (grown.some((block, i) => block !== blocks.list[i])) plan = planWith(grown);
     flowFloor.set(scene.id, wanted);
