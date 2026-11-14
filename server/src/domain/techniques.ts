@@ -113,6 +113,13 @@ export function parseTechniqueBody(markdown: string): TechniqueBody {
   };
 }
 
+/** The title prefix of a technique that has been drafted from evidence and not yet measured. The brain's library never loads one: promotion (a retitle) is the improvement loop's and the steward's. */
+export const PROPOSED_PREFIX = 'Proposed technique:';
+
+export function isProposedTitle(title: string): boolean {
+  return title.trim().toLowerCase().startsWith(PROPOSED_PREFIX.toLowerCase());
+}
+
 /** Why a technique may not be written to the library, one sentence each. Empty means it may. */
 export function lintTechnique(title: string, summary: string, reason: string, markdown: string): string[] {
   const problems: string[] = [];

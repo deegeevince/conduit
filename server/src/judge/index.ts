@@ -4,7 +4,8 @@
 
 import type { CriticFinding, ExploreJudgement } from '@conduit/language';
 import { askObject } from './ask';
-import type { JudgeSettings, Picture } from './ask';
+import { shareOf } from './ask';
+import type { JudgeSettings, JudgeUsage, Picture } from './ask';
 import { CHART_ADDENDUM, COMPARE_SYSTEM, FINDING_ADDENDUM, RESPONDS_SYSTEM, SYSTEM, rubricOf } from './rubric';
 
 export type { JudgeSettings, Picture } from './ask';
@@ -97,7 +98,7 @@ export interface FindingInput {
 const WEIGHTS = ['blocks', 'hurts', 'polish'] as const;
 
 /** One judged picture, read as a `CriticFinding`; null when the object has no coherence (it was not an answer to the rubric). */
-function findingOf(object: Record<string, unknown>, input: FindingInput, settings: JudgeSettings, ms: number, costUsd: number | null): CriticFinding | null {
+function findingOf(object: Record<string, unknown>, input: FindingInput, settings: JudgeSettings, ms: number, costUsd: number | null, usage: JudgeUsage): CriticFinding | null {
   const coherence = scoreOf(object['coherence']);
   if (coherence === null) return null;
   const ids = new Set(input.ids);
@@ -121,7 +122,7 @@ function findingOf(object: Record<string, unknown>, input: FindingInput, setting
   if (mistake !== null && object['correct'] !== true && !problems.some((p) => p.what === mistake)) problems.push({ id: null, what: mistake, weight: 'hurts' });
   problems.sort((a, b) => WEIGHTS.indexOf(a.weight) - WEIGHTS.indexOf(b.weight));
   const suggestions = (Array.isArray(object['suggestions']) ? (object['suggestions'] as unknown[]) : []).map(textOrNull).filter((s): s is string => s !== null).slice(0, 3);
-  return { turn: input.turn, pass: input.pass, coherence, readable: textProblem === null, asked: object['asked'] === true, problems, suggestions, rubric: rubricOf(settings), model: settings.model, ms, costUsd };
+  return { turn: input.turn, pass: input.pass, coherence, readable: textProblem === null, asked: object['asked'] === true, problems, suggestions, rubric: rubricOf(settings), model: settings.model, ms, costUsd, usage };
 }
 
 function requestText(input: FindingInput, pictures: string): string {
@@ -132,7 +133,7 @@ function requestText(input: FindingInput, pictures: string): string {
 export async function judgeFinding(input: FindingInput, picture: Picture, settings: JudgeSettings, signal: AbortSignal): Promise<{ finding: CriticFinding | null; failure: string | null }> {
   const got = await askObject(`${SYSTEM}\n${FINDING_ADDENDUM}`, requestText(input, 'One picture follows: the stage as the answer left it.'), [picture], settings, signal);
   if (got.object === null) return { finding: null, failure: describe(got.failure, got.stderr, got.reply) };
-  const finding = findingOf(got.object, input, settings, got.ms, got.cost);
+  const finding = findingOf(got.object, input, settings, got.ms, got.cost, got.usage);
   return { finding, failure: finding === null ? 'the judge answered without a coherence score' : null };
 }
 
@@ -149,8 +150,8 @@ export async function judgePair(input: FindingInput, a: Picture, b: Picture, fir
   if (typeof first !== 'object' || first === null || typeof second !== 'object' || second === null) return { failure: 'the judge did not give both pictures a verdict' };
   const half = got.ms / 2;
   const cost = got.cost === null ? null : got.cost / 2;
-  const one = findingOf(first as Record<string, unknown>, input, settings, half, cost);
-  const two = findingOf(second as Record<string, unknown>, input, settings, half, cost);
+  const one = findingOf(first as Record<string, unknown>, input, settings, half, cost, shareOf(got.usage, 0.5));
+  const two = findingOf(second as Record<string, unknown>, input, settings, half, cost, shareOf(got.usage, 0.5));
   if (one === null || two === null) return { failure: 'a verdict had no coherence score' };
   return firstIsA ? { a: one, b: two } : { a: two, b: one };
 }

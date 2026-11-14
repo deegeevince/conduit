@@ -213,7 +213,7 @@ function printTurn(turn: Turn, withLines: boolean): void {
   for (const fix of turn.fixes) out(`  fix pass ${fix.pass} (${fix.form}) at ${((fix.at - turn.open.at) / 1000).toFixed(1)}s: ${fix.shown ? 'shown' : `refused${fix.why === null ? '' : ` (${fix.why})`}`}, ${fix.lines.length} line${fix.lines.length === 1 ? '' : 's'}`);
   for (const critic of turn.critics) {
     const f = critic.finding;
-    out(`  critic at ${((critic.at - turn.open.at) / 1000).toFixed(1)}s: coherence ${f.coherence}/5, ${f.readable ? 'readable' : 'NOT readable'}, ${f.asked ? 'as asked' : 'NOT as asked'}${critic.queued ? ', queued for the loop' : ''} (${ms(f.ms)}, ${money(f.costUsd)})`);
+    out(`  critic at ${((critic.at - turn.open.at) / 1000).toFixed(1)}s: coherence ${f.coherence}/5, ${f.readable ? 'readable' : 'NOT readable'}, ${f.asked ? 'as asked' : 'NOT as asked'}${critic.queued ? ', queued for the loop' : ''} (${ms(f.ms)}, ${money(f.costUsd)}${f.usage === undefined ? '' : `, ${f.usage.inputTokens + f.usage.cacheReadTokens + f.usage.cacheWriteTokens} in / ${f.usage.outputTokens} out tokens`})`);
     for (const problem of f.problems) out(`    ${problem.weight}${problem.id === null ? '' : ` [${problem.id}]`}: ${problem.what}`);
     for (const suggestion of f.suggestions) out(`    suggest: ${suggestion}`);
   }

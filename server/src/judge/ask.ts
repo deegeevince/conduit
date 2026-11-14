@@ -17,10 +17,42 @@ export interface Picture {
   readonly mime: 'image/png' | 'image/jpeg';
 }
 
+/** What one judge call used, as the CLI's `result` event reports it. Absent counts are 0; `thinkingTokens` and `costUsd` are null when not reported. */
+export interface JudgeUsage {
+  readonly inputTokens: number;
+  readonly cacheReadTokens: number;
+  readonly cacheWriteTokens: number;
+  readonly outputTokens: number;
+  readonly thinkingTokens: number | null;
+  readonly costUsd: number | null;
+  readonly ms: number;
+}
+
+const addNullable = (a: number | null, b: number | null): number | null => (a === null && b === null ? null : (a ?? 0) + (b ?? 0));
+
+export function addUsage(a: JudgeUsage, b: JudgeUsage): JudgeUsage {
+  return {
+    inputTokens: a.inputTokens + b.inputTokens,
+    cacheReadTokens: a.cacheReadTokens + b.cacheReadTokens,
+    cacheWriteTokens: a.cacheWriteTokens + b.cacheWriteTokens,
+    outputTokens: a.outputTokens + b.outputTokens,
+    thinkingTokens: addNullable(a.thinkingTokens, b.thinkingTokens),
+    costUsd: addNullable(a.costUsd, b.costUsd),
+    ms: a.ms + b.ms,
+  };
+}
+
+/** A share of a usage (a call that judged two pictures is split between them). */
+export function shareOf(u: JudgeUsage, share: number): JudgeUsage {
+  const part = (n: number): number => Math.round(n * share);
+  return { inputTokens: part(u.inputTokens), cacheReadTokens: part(u.cacheReadTokens), cacheWriteTokens: part(u.cacheWriteTokens), outputTokens: part(u.outputTokens), thinkingTokens: u.thinkingTokens === null ? null : part(u.thinkingTokens), costUsd: u.costUsd === null ? null : u.costUsd * share, ms: u.ms * share };
+}
+
 export interface Asked {
   readonly reply: string;
   readonly failure: string | null;
   readonly cost: number | null;
+  readonly usage: JudgeUsage;
   readonly stderr: string;
   readonly ms: number;
 }
@@ -51,12 +83,14 @@ export async function ask(system: string, text: string, pictures: readonly Pictu
   let reply = '';
   let failure: string | null = null;
   let cost: number | null = null;
+  const got: { facts: ReturnType<typeof resultFactsOf> } = { facts: null };
   let pending = '';
   const handle = (raw: string): void => {
     const event = parseStreamLine(raw);
     if (event === null || event.type !== 'result') return;
     failure = failureOf(event);
-    cost = resultFactsOf(event)?.totalCostUsd ?? null;
+    got.facts = resultFactsOf(event);
+    cost = got.facts?.totalCostUsd ?? null;
     const result = (event as { result?: unknown }).result;
     if (typeof result === 'string') reply = result;
   };
@@ -77,7 +111,10 @@ export async function ask(system: string, text: string, pictures: readonly Pictu
   clearTimeout(timer);
   signal.removeEventListener('abort', onAbort);
   if (pending.trim() !== '') handle(pending);
-  return { reply, failure, cost, stderr, ms: Date.now() - started };
+  const ms = Date.now() - started;
+  const facts = got.facts;
+  const usage: JudgeUsage = { inputTokens: facts?.inputTokens ?? 0, cacheReadTokens: facts?.cacheReadTokens ?? 0, cacheWriteTokens: facts?.cacheWriteTokens ?? 0, outputTokens: facts?.outputTokens ?? 0, thinkingTokens: facts?.thinkingTokens ?? null, costUsd: cost, ms };
+  return { reply, failure, cost, usage, stderr, ms };
 }
 
 /** The first balanced JSON object in a model's reply, tolerating a fence or a sentence around it. */
@@ -106,5 +143,5 @@ export async function askObject(system: string, text: string, pictures: readonly
   const object = first.failure === null ? objectIn(first.reply) : null;
   if (object !== null || first.failure !== null || signal.aborted) return { ...first, object, tries: 1 };
   const second = await ask(system, text, pictures, settings, signal);
-  return { ...second, object: second.failure === null ? objectIn(second.reply) : null, cost: first.cost === null && second.cost === null ? null : (first.cost ?? 0) + (second.cost ?? 0), ms: first.ms + second.ms, tries: 2 };
+  return { ...second, object: second.failure === null ? objectIn(second.reply) : null, cost: first.cost === null && second.cost === null ? null : (first.cost ?? 0) + (second.cost ?? 0), usage: addUsage(first.usage, second.usage), ms: first.ms + second.ms, tries: 2 };
 }

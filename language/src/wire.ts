@@ -499,6 +499,16 @@ export interface CriticFinding {
   readonly model: string;
   readonly ms: number;
   readonly costUsd: number | null;
+  /** what the look used, from the CLI's result event; absent on findings logged before it was recorded */
+  readonly usage?: {
+    readonly inputTokens: number;
+    readonly cacheReadTokens: number;
+    readonly cacheWriteTokens: number;
+    readonly outputTokens: number;
+    readonly thinkingTokens: number | null;
+    readonly costUsd: number | null;
+    readonly ms: number;
+  };
 }
 
 /**

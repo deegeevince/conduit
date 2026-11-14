@@ -2,7 +2,7 @@
 // sources there are. `cardsFor` never waits and never fails.
 
 import type { TechniqueCard } from '@conduit/language';
-import { cardOf, selectTechniques, termsOf } from '../domain/techniques';
+import { cardOf, isProposedTitle, selectTechniques, termsOf } from '../domain/techniques';
 import type { LibraryStatus, Technique, TechniqueHit, TechniqueLibrary, TechniqueQuery, TechniqueSource, TechniqueTerms } from '../domain/techniques';
 
 export interface LibrarySources {
@@ -22,7 +22,8 @@ export interface LibrarySources {
  */
 function merge(layers: readonly (readonly Technique[])[]): Technique[] {
   const byTitle = new Map<string, Technique>();
-  for (const layer of layers) for (const technique of layer) byTitle.set(technique.title.trim().toLowerCase(), technique);
+  for (const layer of layers) // A proposed technique is not measured and is never the brain's: whichever source it came from (Remote, the cache, a file), it is left out here.
+    for (const technique of layer) if (!isProposedTitle(technique.title)) byTitle.set(technique.title.trim().toLowerCase(), technique);
   return [...byTitle.values()];
 }
 

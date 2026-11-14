@@ -27,6 +27,8 @@
     "explore": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/explore.ts",
     "library": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/library.ts",
     "improve": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/improve.ts",
+    "critic-usage": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/critic-usage.ts",
+    "lessons": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/lessons.ts",
     "taste": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/taste.ts"
   },
   "devDependencies": {
