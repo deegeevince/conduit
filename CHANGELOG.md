@@ -14,7 +14,7 @@ Newest first. Each item is something the brain can show live when asked "showcas
 - Coming next (v2.1 part two, not live): code blocks, slide decks with PDF export, pasted pictures, selectable text.
 - Agent mode: tools and connected services, with an Allow or Deny on stage for anything that isn't a read.
 - Commands: /brain, /tools, /status, /asks, /look, /review, /export, /capture; "Take away" is now "Save".
-- A critic looks at every answer after it lands; `pnpm capture` films any past turn so motion can be judged.
+- A critic (Fable) looks at every answer after it lands and notes what to improve.
 
 ## v2 hotfixes (live)
 - Text no longer overlaps diagrams or charts.
