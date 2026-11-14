@@ -24,7 +24,7 @@ import type { ControlLayout } from '../contracts/controls';
 import { lookOf, measurerFor, tuneStartOf } from './structures';
 import { CALM } from '../contracts/controls';
 import { registerLaidOut, laidOutOf } from './registry';
-import { buildStructures, setTextOnce } from './structures';
+import { buildStructures, probeStructure, setTextOnce } from './structures';
 import { CALLOUTS_READY, layoutCallouts } from './blocks';
 import type { CalloutInput } from '../contracts/blocks';
 import type { StructureFrames } from './structures';
@@ -123,6 +123,10 @@ const REDUCED_FADE_SECONDS = 0.2;
 const FLICKER_SLOT = 0.36;
 /** The flash governor: nothing lights up or goes dark more than three times a second. */
 const FLASH_FLOOR_SECONDS = 0.34;
+/** A subject block goes beside the words, on a wide stage, when they take more than this share of the stage's height across its full width. */
+const BESIDE_WORDS_SHARE = 0.3;
+/** A structure is set at least this share of the look's size: an engine that would shrink it further is asked for more room first. */
+const READ_SHRINK = 0.8;
 /** An element whose box covers more than this share of the viewport is "large" for the governor. */
 const LARGE_SHARE = 0.05;
 const LAYER_ORDER: Readonly<Record<Layer, number>> = { far: -1, bg: 0, mid: 1, fg: 2 };
@@ -348,6 +352,11 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
   const drawn = schedule.elements.filter((element) => element.kind !== 'text');
   const drawnByKey = new Map<string, ElementSpan>();
   for (const element of drawn) drawnByKey.set(element.key, element);
+  // A structure the brain gave a box of its own (`table t 4,4 70x40`) stands on the scene's canvas, where that box is. A scene that draws nothing
+  // on its canvas has no such place, and the box would only shrink the canvas to a postage stamp round a table the words are about: the box is let
+  // go, and the stage plan gives the structure a room of its own, at the size it can be read at.
+  const pictureScenes = new Set(drawn.filter((element) => element.kind === 'shape' || element.kind === 'sprite' || element.kind === 'copy' || element.kind === 'picture').map((element) => element.scene));
+  const released = new Set(drawn.filter((element) => element.kind === 'structure' && element.figure?.kind === 'structure' && element.figure.box !== null && !pictureScenes.has(element.scene)).map((element) => element.key));
 
   // The looks this timeline can wear, as specs. A look the brain defined is a spec like any other.
   // A line that replaces another in the same slot (caption, solo, a re-said line) does not show until the one it replaces has all but gone,
@@ -683,7 +692,7 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
         natural,
         least,
         aspect: figure.structure === 'cycle' || figure.structure === 'map' ? 16 / 9 : null,
-        pinned: box === null ? null : { x: box.x, y: box.y, width: box.w, height: box.h },
+        pinned: box === null || released.has(element.key) ? null : { x: box.x, y: box.y, width: box.w, height: box.h },
       });
     }
     if (pictureOrder !== null) {
@@ -693,6 +702,8 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
     return { list, kinds };
   };
 
+  const besideOf = new Map<string, boolean>();
+  const needOf = new Map<string, number>();
   for (const start of starts) {
     const look = specAt(start);
     const scene = sceneAt(schedule, start);
@@ -748,31 +759,89 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
       liveControls.push(group);
       items.push({ key: group.key, order: group.order, text: '', emphasis: [], style: { ...laidStyle(style), stay: 'pin' }, struck: false, replaces: null, reserve: { width: room.outer.width, height: room.outer.height } });
     }
-    // A wide stage with controls on it sets them in a column of their own, to the left, and the words to the right: the controls keep their
-    // place whatever the words do, and neither covers the other. A narrow stage keeps one column.
-    const withControls = controlSpans.some((span) => span.scene === scene.id && span.parent === null) || drawn.some((group) => group.scene === scene.id && group.figure?.kind === 'group' && group.figure.card !== undefined);
-    const arrLayout: Layout = withControls && viewport.width >= 900 && viewport.width >= 1.5 * viewport.height && (scene.layout === 'stack' || scene.layout === 'caption' || scene.layout === 'solo') ? 'split' : scene.layout;
-    const sides = arrLayout === 'split' ? (scene.layout === 'split' ? splitSides(schedule, scene.id) : new Map<string, 'left' | 'right'>([...controlSpans, ...drawn].filter((span) => span.scene === scene.id).map((span): [string, 'left' | 'right'] => [span.key, 'left']).concat(elements.filter((span) => span.scene === scene.id).map((span): [string, 'left' | 'right'] => [span.key, 'right'])))) : undefined;
     // The words and the choices are measured across the column; the plan divides the stage; the canvas is fitted into the picture's region.
     // what the scene will still say is counted for the plan too, so that the room the blocks and the foot are given is the one they keep
     const comingItems: LayoutItem[] = elements
       .filter((element) => element.scene === scene.id && !element.carried && element.replaces === null && element.enter !== null && element.enter.start > start)
       .map((element) => ({ key: element.key, order: element.order, text: element.text, emphasis: element.emphasis, style: laidStyle(styleAt(element, element.enter?.start ?? start)), struck: false, replaces: null }));
+    // a subject block with the words that refer to it, on a wide stage: it takes the lead room and the words stand beside it (decided once for the scene,
+    // from everything the scene will say, so that nothing moves from one side to the other as lines arrive)
+    const unpinnedBlocks = blocks.list.filter((block) => block.kind !== 'picture' && block.pinned === null);
+    const bare = !blocks.list.some((block) => block.kind === 'picture' || block.pinned !== null);
+    let beside = false;
+    if (viewport.width >= 900 && viewport.width >= 1.5 * viewport.height && bare && unpinnedBlocks.length === 1 && unpinnedBlocks[0]?.kind === 'structure' && scene.layout !== 'figure' && scene.layout !== 'caption' && scene.layout !== 'solo') {
+      const known = besideOf.get(scene.id);
+      if (known !== undefined) beside = known;
+      else {
+        // everything the scene says, whether or not it is on stage at this moment: the same answer at every moment, and at rest
+        const all: LayoutItem[] = elements.filter((element) => element.scene === scene.id && element.replaces === null).map((element) => ({ key: element.key, order: element.order, text: element.text, emphasis: element.emphasis, style: laidStyle(styleAt(element, element.enter?.start ?? start)), struck: false, replaces: null }));
+        const flat: LayoutInput = { viewport, look, layout: scene.layout, align: scene.align, expected: null, items: all, foot: safe };
+        beside = needsOf(flat, safe.width).flow > safe.height * BESIDE_WORDS_SHARE;
+        besideOf.set(scene.id, beside);
+      }
+    }
+    // A wide stage with controls on it sets them in a column of their own, to the left, and the words to the right: the controls keep their
+    // place whatever the words do, and neither covers the other. A narrow stage keeps one column.
+    const withControls = controlSpans.some((span) => span.scene === scene.id && span.parent === null) || drawn.some((group) => group.scene === scene.id && group.figure?.kind === 'group' && group.figure.card !== undefined);
+    const arrLayout: Layout = withControls && !beside && viewport.width >= 900 && viewport.width >= 1.5 * viewport.height && (scene.layout === 'stack' || scene.layout === 'caption' || scene.layout === 'solo') ? 'split' : scene.layout;
+    const sides = arrLayout === 'split' ? (scene.layout === 'split' ? splitSides(schedule, scene.id) : new Map<string, 'left' | 'right'>([...controlSpans, ...drawn].filter((span) => span.scene === scene.id).map((span): [string, 'left' | 'right'] => [span.key, 'left']).concat(elements.filter((span) => span.scene === scene.id).map((span): [string, 'left' | 'right'] => [span.key, 'right'])))) : undefined;
     const probe: LayoutInput = { viewport, look, layout: arrLayout, align: scene.align, expected: valueAt(scene.expected, start, null), items: [...items, ...comingItems], foot: safe, ...(sides === undefined ? {} : { sides }) };
     const needs = needsOf(probe, safe.width);
     // a scene's words never ask for less than they did a moment ago, so the picture does not breathe as lines come and go
     const floor = flowFloor.get(scene.id) ?? 0;
     const wanted = needs.flow > 0 ? Math.max(needs.flow, floor) : floor;
-    const plan = planStage({
-      viewport,
-      look,
-      layout: scene.layout,
-      blocks: blocks.list,
-      flowHeight: (width) => (wanted <= 0 ? 0 : Math.max(floor, width === safe.width ? wanted : needsOf(probe, width).flow)),
-      flowOrder: needs.order,
-      flowLeast: (width) => (width === safe.width ? needs.least : needsOf(probe, width).least),
-      footHeight: (width) => (width === safe.width ? needs.foot : needsOf(probe, width).foot),
+    // where the scene's words begin, among its blocks, is a fact of the scene, not of the moment: words that have retired still say which side they were on,
+    // so that a table does not hop above and below the words as the first lines leave
+    const firstWord = elements.reduce((least, element) => (element.scene === scene.id && cardIsInFlow(styleAt(element, element.enter?.start ?? start)) ? Math.min(least, element.order) : least), Number.POSITIVE_INFINITY);
+    const planWith = (list: readonly StageBlock[]): StagePlan =>
+      planStage({
+        viewport,
+        look,
+        layout: scene.layout,
+        blocks: list,
+        beside,
+        flowHeight: (width) => (wanted <= 0 ? 0 : Math.max(floor, width === safe.width ? wanted : needsOf(probe, width).flow)),
+        flowOrder: needs.order === null ? null : Math.min(needs.order, firstWord),
+        flowLeast: (width) => (width === safe.width ? needs.least : needsOf(probe, width).least),
+        footHeight: (width) => (width === safe.width ? needs.foot : needsOf(probe, width).foot),
+      });
+    // Planned twice: the first plan gives a structure the room the stage allows it; the engine is run in that room, and a structure it had to cut or
+    // shrink below reading size is asked again with the room it really needs (the words give way to it, down to their own least).
+    let plan = planWith(blocks.list);
+    const grown = blocks.list.map((block) => {
+      if (block.kind !== 'structure' || block.pinned !== null) return block;
+      const room = plan.rooms.get(block.key);
+      const span = drawnByKey.get(block.key);
+      if (room === undefined || span === undefined) return block;
+      const id = `${block.key}|${viewport.width}x${viewport.height}|${Math.round(room.width)}|${look.id}`;
+      let need = needOf.get(id);
+      if (need === undefined) {
+        const args = { viewport, look, fit: sceneFit, scope: scopeOf([...cindex.ids], (name) => controlNamed(name, 1e9)), ...(context.engine === undefined ? {} : { engine: context.engine }) };
+        // the first height at which the engine neither cuts nor shrinks the structure below reading size, within what the stage can give; failing
+        // that, the first at which it does not cut it; failing that, all the stage has
+        let uncut: number | null = null;
+        let readable: number | null = null;
+        const heights = [1, 1.15, 1.3, 1.5, 1.75, 2.1, 2.5].map((more) => Math.min(room.height * more, safe.height)).filter((h, i, all) => i === 0 || h > (all[i - 1] as number) + 1);
+        for (const height of heights) {
+          const probed = probeStructure(span, schedule, { ...args, room: { ...room, height } });
+          if (probed === null) {
+            readable = room.height;
+            break;
+          }
+          if (probed.crowded) continue;
+          uncut ??= height;
+          if (probed.shrink >= READ_SHRINK) {
+            readable = height;
+            break;
+          }
+        }
+        need = Math.max(readable ?? uncut ?? safe.height, room.height);
+        if (need <= room.height + 1) need = 0;
+        needOf.set(id, need);
+      }
+      return need > room.height ? { ...block, natural: { ...block.natural, height: Math.max(block.natural.height, need) }, least: { ...block.least, height: need } } : block;
     });
+    if (grown.some((block, i) => block !== blocks.list[i])) plan = planWith(grown);
     flowFloor.set(scene.id, wanted);
     const fit = fitIn(scene.canvas, plan.picture ?? safe, plan.flow, viewport);
     // text given a point of the canvas is set by the layout, which keeps it off other text; this is where it wants its centre
@@ -795,7 +864,7 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
       if (gone !== null && gone.start <= start) continue;
       if (element.scene !== scene.id && !element.carried) continue;
       const figure = element.figure;
-      if (element.kind === 'structure' && figure !== null && figure.kind === 'structure' && figure.box !== null) {
+      if (element.kind === 'structure' && figure !== null && figure.kind === 'structure' && figure.box !== null && !released.has(element.key)) {
         solids.push({ x: fit.box.x + figure.box.x * fit.unit, y: fit.box.y + figure.box.y * fit.unit, width: figure.box.w * fit.unit, height: figure.box.h * fit.unit });
         continue;
       }
@@ -886,6 +955,46 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
       const exitShift = Number.isFinite(end) ? end - naturalEnd : 0;
       if (enterShift > 0 || exitShift > 0) governed.set(element.key, { enterShift, exitShift });
       litEnd = Math.max(litEnd, end);
+    }
+  }
+
+  // 3. A line never lands on one that is still going: when the words give way to a new line (the oldest retires, as a column does when it is full)
+  //    the new line waits for the old to be gone if it would stand where the old one was. Without this, "Result:" was written over "Always FALSE".
+  {
+    const boxOf = (placement: { readonly x: number; readonly y: number; readonly lines: readonly { readonly x: number; readonly y: number; readonly width: number; readonly height: number }[] }): Box | null => {
+      let x0 = Number.POSITIVE_INFINITY;
+      let y0 = Number.POSITIVE_INFINITY;
+      let x1 = Number.NEGATIVE_INFINITY;
+      let y1 = Number.NEGATIVE_INFINITY;
+      for (const line of placement.lines) {
+        x0 = Math.min(x0, placement.x + line.x);
+        y0 = Math.min(y0, placement.y + line.y);
+        x1 = Math.max(x1, placement.x + line.x + line.width);
+        y1 = Math.max(y1, placement.y + line.y + line.height);
+      }
+      return x1 > x0 && y1 > y0 ? { x: x0, y: y0, width: x1 - x0, height: y1 - y0 } : null;
+    };
+    for (const element of elements) {
+      const enter = element.enter;
+      if (enter === null || element.carried) continue;
+      const mine = epochs[epochIndexAt(enter.start)]?.arrangement.placements.get(element.key);
+      const where = mine === undefined || mine.layer !== 'mid' ? null : boxOf(mine);
+      if (where === null) continue;
+      let wait = 0;
+      for (const other of elements) {
+        if (other === element) continue;
+        const leaving = exitOf(other);
+        if (leaving === null || leaving.start > enter.start + 0.05 || leaving.end <= enter.start + 1e-6) continue;
+        if (other.enter !== null && other.enter.start >= enter.start) continue;
+        const was = epochs[epochIndexAt(Math.max(0, leaving.start - 1e-6))]?.arrangement.placements.get(other.key);
+        const there = was === undefined || was.layer !== 'mid' ? null : boxOf(was);
+        if (there === null) continue;
+        if (where.x < there.x + there.width && where.x + where.width > there.x && where.y < there.y + there.height && where.y + where.height > there.y) wait = Math.max(wait, leaving.end - enter.start);
+      }
+      if (wait <= 0) continue;
+      const known = governed.get(element.key);
+      const enterShift = Math.max(known?.enterShift ?? 0, wait);
+      governed.set(element.key, { enterShift, exitShift: element.exit === null ? 0 : Math.max(known?.exitShift ?? 0, enterShift) });
     }
   }
 
@@ -1607,6 +1716,8 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
         if (chart !== undefined && chart.figure?.kind === 'structure') {
           const fit = fitOfElement(chart, specAt(time), time);
           const room = chart.figure.box;
+          const given = released.has(chart.key) ? roomOfBlock(chart, time) : null;
+          if (given !== null) return { x: (given.x - fit.box.x) / fit.unit, y: (given.y - fit.box.y) / fit.unit, w: given.width / fit.unit, h: given.height / fit.unit };
           return room === null ? { x: (fit.box.x - fit.box.x) / fit.unit, y: 0, w: fit.box.width / fit.unit, h: fit.box.height / fit.unit } : { x: room.x, y: room.y, w: room.w, h: room.h };
         }
         const span = byControl.get(key);

@@ -78,7 +78,7 @@ export function chartFrames(schedule: Schedule, tq: number, aq: number, look: Lo
     if (exit !== null && tq >= exit.end) continue;
     const ps = planeScale(element.style.layer, env.viewport);
     const fit = env.fitOf(element);
-    const given = figure.box === null ? env.roomOf(element) : null;
+    const given = env.roomOf(element);
     const room: Box =
       given !== null
         ? { x: given.x / ps, y: given.y / ps, width: given.width / ps, height: given.height / ps }

@@ -24,6 +24,8 @@ export const FOOT_SHARE_MAX = 0.3;
 /** A landscape `figure` gives the picture this share of the width; a portrait one this share of the height. */
 const FIGURE_WIDE_SHARE = 0.58;
 const FIGURE_TALL_SHARE = 0.55;
+/** Blocks and words side by side: the blocks take this share of the width, the words the rest. */
+const BESIDE_SHARE = 0.5;
 
 export interface PlanInput {
   readonly viewport: Viewport;
@@ -38,6 +40,11 @@ export interface PlanInput {
   readonly flowOrder: number | null;
   /** the height the choices need across `width`, stage units; 0 when there are none */
   readonly footHeight: (width: number) => number;
+  /**
+   * A wide stage with blocks and a good deal of words sets the blocks in the lead room, to the left, and the words beside them, to the
+   * right, rather than the words in a thin band under a block: a subject the words refer to is the first thing read and is never a postage stamp.
+   */
+  readonly beside?: boolean;
 }
 
 /** How much of what a block would like it is given, 0 to 1: the worse of its height and its width. */
@@ -150,6 +157,7 @@ export function planStage(input: PlanInput): StagePlan {
   const words = input.flowHeight(column.width);
   let flow: Box;
   let area: Box;
+  let flowWords = words;
   if (layout === 'figure' && words > 0) {
     const gutter = Math.max(16, margin * 0.75);
     if (viewport.width >= viewport.height) {
@@ -164,6 +172,12 @@ export function planStage(input: PlanInput): StagePlan {
   } else if (words <= 0) {
     flow = { x: column.x, y: column.y + column.height, width: column.width, height: 0 };
     area = column;
+  } else if (input.beside === true && !needsPicture && unpinned.length > 0 && viewport.width >= viewport.height) {
+    const gutter = Math.max(16, margin * 0.75);
+    const share = column.width * BESIDE_SHARE;
+    area = { x: column.x, y: column.y, width: share - gutter / 2, height: column.height };
+    flow = { x: column.x + share + gutter / 2, y: column.y, width: column.width - share - gutter / 2, height: column.height };
+    flowWords = input.flowHeight(flow.width);
   } else {
     const most = Math.min(words, column.height * FLOW_SHARE_MAX);
     // words written before every block stand above it; otherwise they stand below, as a caption does
@@ -174,7 +188,11 @@ export function planStage(input: PlanInput): StagePlan {
     // less and less of it (the oldest lines retire, as they do when a column is full), and the first height that serves every block well wins.
     let height = most;
     if (!needsPicture && unpinned.length > 0) {
-      const least = Math.min(most, Math.max(column.height * 0.18, input.flowLeast === undefined ? 0 : input.flowLeast(column.width), 1));
+      // the words ask for their least (headings and a line under them), but a block is given its own least first: they give way to it
+      const wide = viewport.width >= viewport.height * 1.2;
+      const blocksLeast = wide ? Math.max(...unpinned.map((block) => block.least.height)) : unpinned.reduce((sum, block) => sum + block.least.height, 0) + gap * (unpinned.length - 1);
+      const wordsAsk = Math.max(column.height * 0.18, input.flowLeast === undefined ? 0 : input.flowLeast(column.width));
+      const least = Math.min(most, Math.max(Math.min(wordsAsk, column.height - gap - blocksLeast), column.height * 0.08, 1));
       const levels = [most, most * 0.8, most * 0.62, most * 0.48, least].filter((h, i, all) => h >= least - 1e-6 && (i === 0 || h < (all[i - 1] as number) - 1)).map((h) => Math.max(h, least));
       let chosen = levels[levels.length - 1] as number;
       let bestWorst = -1;
@@ -214,7 +232,7 @@ export function planStage(input: PlanInput): StagePlan {
       place(divide({ x: area.x, y: area.y + share + gap / 2, width: area.width, height: area.height - share - gap / 2 }, unpinned, gap), unpinned, rooms, crowded);
     }
   }
-  if (words > 0 && words > flow.height + 1e-6 && layout !== 'figure') crowded.push('flow');
+  if (flowWords > 0 && flowWords > flow.height + 1e-6 && layout !== 'figure') crowded.push('flow');
   return { picture: pictureRegion, rooms, flow, foot, crowded };
 }
 

@@ -226,6 +226,37 @@ function signature(structure: ElementSpan, members: readonly ElementSpan[], rows
   return JSON.stringify([structure.key, head, parts, JSON.stringify(scope)]);
 }
 
+/**
+ * What an engine makes of a structure in a room, for the stage plan to learn the room it really needs: whether it had to cut or shrink
+ * to fit. The whole structure is laid out (everything the scene will bring), which is the room the plan keeps for it from the first line.
+ * Null when there is no engine for it or it fails.
+ */
+export function probeStructure(structure: ElementSpan, schedule: Schedule, args: { readonly viewport: Viewport; readonly look: LookSpec; readonly fit: CanvasFit; readonly scope: Scope; readonly room: Box; readonly engine?: StructureEngine }): { readonly crowded: boolean; readonly shrink: number } | null {
+  const figure = structure.figure;
+  if (figure === null || figure.kind !== 'structure' || figure.structure === 'chart') return null;
+  const engine = args.engine ?? (STRUCTURES_READY.includes(figure.structure) ? layoutStructure : null);
+  if (engine === null) return null;
+  const members = schedule.elements.filter((element) => element.parent === structure.key && (element.kind === 'node' || element.kind === 'link'));
+  const ps = planeScale(structure.style.layer, args.viewport);
+  const room: Box = { x: args.room.x / ps, y: args.room.y / ps, width: args.room.width / ps, height: args.room.height / ps };
+  try {
+    const made = engine({
+      structure,
+      nodes: members.filter((member) => member.kind === 'node'),
+      links: members.filter((member) => member.kind === 'link'),
+      room,
+      canvas: { origin: { x: args.fit.box.x / ps, y: args.fit.box.y / ps }, unit: args.fit.unit / ps },
+      measure: measurerFor(args.look, args.viewport, structure.style),
+      look: lookOf(args.look, args.viewport, args.fit, ps),
+      scope: args.scope,
+      obstacles: [],
+    });
+    return { crowded: made.notes.some((n) => n.note === 'crowded'), shrink: made.shrink };
+  } catch {
+    return null;
+  }
+}
+
 function planOf(structure: ElementSpan, schedule: Schedule, env: StructureEnv): Plan | null {
   const figure = structure.figure;
   if (figure === null || figure.kind !== 'structure' || figure.structure === 'chart') return null;
@@ -270,12 +301,13 @@ function planOf(structure: ElementSpan, schedule: Schedule, env: StructureEnv): 
     const unit = fit.unit / ps;
     const box = figure.box;
     // a structure with no box of its own takes the room the stage plan gave it; one the brain placed stands where it said, on the canvas
-    const given = box === null ? env.roomOf(structure, start) : null;
+    // (a box on a scene that draws nothing on its canvas is let go by the stage plan, which then gives the structure a room: that room wins)
+    const given = env.roomOf(structure, start);
     const room: Box =
-      box !== null
-        ? { x: origin.x + box.x * unit, y: origin.y + box.y * unit, width: box.w * unit, height: box.h * unit }
-        : given !== null
-          ? { x: given.x / ps, y: given.y / ps, width: given.width / ps, height: given.height / ps }
+      given !== null
+        ? { x: given.x / ps, y: given.y / ps, width: given.width / ps, height: given.height / ps }
+        : box !== null
+          ? { x: origin.x + box.x * unit, y: origin.y + box.y * unit, width: box.w * unit, height: box.h * unit }
           : { x: origin.x, y: origin.y, width: fit.box.width / ps, height: fit.box.height / ps };
     const obstacles = env.obstaclesOf(structure, start).map((o) => ({ x: o.x / ps, y: o.y / ps, width: o.width / ps, height: o.height / ps }));
     const key = [signature(structure, present, rows, env.scope), look.id, look.name, env.viewport.width, env.viewport.height, room.x.toFixed(2), room.y.toFixed(2), room.width.toFixed(2), room.height.toFixed(2), obstacles.map((o) => `${o.x.toFixed(0)},${o.y.toFixed(0)},${o.width.toFixed(0)},${o.height.toFixed(0)}`).join(';'), env.engine === undefined ? 'e' : 'b'].join('|');

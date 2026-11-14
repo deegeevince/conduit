@@ -521,14 +521,29 @@ function tail(input: ControlInput, text: string, room: number): string {
   return `…${text.slice(text.length - lo)}`;
 }
 
+/** The head of `text` that fits `room`, with an ellipsis after it when it was cut: a placeholder is read from its start. */
+function head(input: ControlInput, text: string, room: number): string {
+  if (input.measure(text, LABEL, 1e6).width <= room) return text;
+  let lo = 0;
+  let hi = text.length;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (input.measure(`${text.slice(0, mid)}…`, LABEL, 1e6).width <= room) lo = mid;
+    else hi = mid - 1;
+  }
+  return `${text.slice(0, lo).trimEnd()}…`;
+}
+
 function layoutInput(input: ControlInput, m: Metrics): ControlLayout {
   const held = typeof heldValue(input) === 'string' ? (heldValue(input) as string) : '';
-  const width = Math.min(input.maxWidth, Math.max(input.minTarget * 2, INPUT_WIDTH));
+  // wide enough for its own prompt (it is read before it is typed in), and the same width whatever is typed, so that it never moves under the hand
+  const prompt = input.measure(input.control.text, LABEL, 1e6).width + 2 * m.gap;
+  const width = Math.min(input.maxWidth, Math.max(input.minTarget * 2, INPUT_WIDTH, prompt));
   const height = m.row;
   const sheet = new Sheet(input.control.key, -width / 2, -height / 2);
   plate(sheet, input, m, width, height, input.look.radius);
   const room = Math.max(m.cellW, width - 2 * m.gap);
-  const shown = held === '' ? input.control.text : tail(input, held, room);
+  const shown = held === '' ? head(input, input.control.text, room) : tail(input, held, room);
   const text = input.measure(shown, LABEL, 1e6);
   const line = height - m.stroke;
   sheet.shape('rule', input.mood.focus || input.mood.hover ? 'line' : 'grid', (dx, dy) => [segment(dx, line + dy, width + dx, line + dy)]);
