@@ -28,6 +28,12 @@ export interface HelperDeps {
   /** where each answer file is made, owner-only: `<DATA_DIR>/voice/work` */
   readonly workDir: string;
   readonly log: Logger;
+  /**
+   * `VOICE_COMMAND`: the owner's own recogniser in place of Apple's, speaking the helper's protocol (`status`, and `run <file> [--locale L] [--max S]`,
+   * each printing one JSON line, or writing it to the file after `--out`). This is how `whisper.cpp` is used: a small script the owner writes
+   * round their own install. Conduit never downloads or installs one.
+   */
+  readonly command?: string | null;
 }
 
 function run(file: string, args: readonly string[], timeoutMs: number): Promise<{ readonly code: number | null; readonly stdout: string; readonly stderr: string }> {
@@ -106,6 +112,7 @@ export function createAppleTranscriber(deps: HelperDeps): AppleTranscriber {
 
   /** Starts the helper as its own app and waits for it to write its answer. */
   async function ask(args: readonly string[], timeoutMs: number): Promise<Record<string, unknown>> {
+    if (deps.command !== undefined && deps.command !== null) return asked(deps.command, args, timeoutMs);
     const app = await bundle();
     await mkdir(deps.workDir, { recursive: true, mode: 0o700 });
     await chmod(deps.workDir, 0o700).catch(() => undefined);
@@ -128,6 +135,18 @@ export function createAppleTranscriber(deps: HelperDeps): AppleTranscriber {
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
+  }
+
+  /** The owner's own command: one JSON line on its stdout. */
+  async function asked(command: string, args: readonly string[], timeoutMs: number): Promise<Record<string, unknown>> {
+    const result = await run(command, args, timeoutMs).catch((cause: unknown) => {
+      throw unavailable('The voice command set in VOICE_COMMAND could not be started.', cause);
+    });
+    const line = result.stdout.trim().split('\n').filter((part) => part.startsWith('{')).pop();
+    if (line === undefined) throw unavailable('The voice command set in VOICE_COMMAND gave no answer.');
+    const parsed: unknown = JSON.parse(line);
+    if (typeof parsed !== 'object' || parsed === null) throw unavailable('The voice command gave an answer that could not be read.');
+    return parsed as Record<string, unknown>;
   }
 
   const localeArgs = (locale: string | null): string[] => (locale === null ? [] : ['--locale', locale]);

@@ -69,7 +69,7 @@ function boot(env: Env): void {
   const uploads = env.uploads ? createUploadStore({ dir: env.data.uploads, log: log.child({ part: 'uploads' }), now }) : NO_UPLOADS;
   // v2.1. Voice notes: read on this Mac by Apple's on-device recogniser (a helper built with swiftc on first use), or not taken at all with `VOICE=off`.
   const voice = env.voice.enabled
-    ? createVoiceNotes({ dir: env.data.voice, transcriber: createAppleTranscriber({ cacheDir: env.data.voiceCache, workDir: `${env.data.voice}/work`, log: log.child({ part: 'voice' }) }), locale: env.voice.locale, keep: env.voice.keep, log: log.child({ part: 'voice' }), now })
+    ? createVoiceNotes({ dir: env.data.voice, transcriber: createAppleTranscriber({ cacheDir: env.data.voiceCache, workDir: `${env.data.voice}/work`, command: env.voice.command, log: log.child({ part: 'voice' }) }), locale: env.voice.locale, keep: env.voice.keep, log: log.child({ part: 'voice' }), now })
     : NO_VOICE;
   const sessionLog = env.logDir === null ? NO_SESSION_LOG : createJsonlSessionLog({ log: log.child({ part: 'sessionlog' }), dir: env.logDir, now });
   // The seed is in memory from here on. Remote is read in the background, now and every `refreshMs`; no turn waits for it.
