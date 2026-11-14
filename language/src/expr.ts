@@ -353,3 +353,25 @@ export function parseTemplate(text: string, known: (name: string) => boolean): T
 export function hasValues(parts: readonly TemplatePart[]): boolean {
   return parts.some((part) => part.kind === 'value');
 }
+
+/**
+ * Words the learner must never see with a raw `{…}` in them. A brace that reads as an expression but is not a value on stage (a name that is
+ * no control's id) would show as written; here it is taken out of the words, with the stray spaces it leaves. A brace of numbers alone is
+ * worked out (`{5+3}` becomes 8). Braces that do not read as an expression (code, JSON, sets) are left. `dropped` is what was taken out.
+ */
+export function withoutUnknownBraces(text: string, known: (name: string) => boolean): { readonly text: string; readonly dropped: readonly string[] } {
+  const dropped: string[] = [];
+  const out = text.replace(BRACES, (whole: string, inner: string) => {
+    const colon = /^(.*):\s*(\d)\s*$/.exec(inner);
+    const expr = parseExpr(colon === null ? inner : (colon[1] ?? inner));
+    if (expr === null) return whole;
+    const names = namesIn(expr);
+    if (names.length > 0 && names.every(known)) return whole;
+    dropped.push(whole);
+    if (names.length > 0) return '';
+    const value = evalExpr(expr, {});
+    return Number.isFinite(value) ? formatValue(value, colon === null ? null : Number(colon[2])) : '';
+  });
+  if (dropped.length === 0) return { text, dropped };
+  return { text: out.replace(/[ \t]{2,}/g, ' ').replace(/\s+([.,!?;:])/g, '$1').trim(), dropped };
+}
