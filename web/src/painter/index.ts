@@ -1208,7 +1208,11 @@ export function createPainter(options: PainterOptions): Painter {
     const w = half(site.layout.width);
     const h = half(site.layout.height);
     const index = controlIndexOf(timeline.schedule);
+    const k = site.screen.scale;
+    const scaled = (b: Box): Box => ({ x: site.screen.x + b.x * k, y: site.screen.y + b.y * k, width: b.width * k, height: b.height * k });
+    const whole = scaled({ x: -site.layout.width / 2 - 3, y: -site.layout.height / 2 - 3, width: site.layout.width + 6, height: site.layout.height + 6 });
     return {
+      parts: [{ part: 'whole', box: whole }, ...site.layout.zones.map((zone) => ({ part: zone.part, box: scaled(zone.box) }))],
       key: site.key,
       id: site.id,
       control: spec.control,

@@ -65,6 +65,19 @@ function place(element: HTMLElement, box: { readonly x: number; readonly y: numb
   style.height = `${Math.max(1, Math.round(box.height * 10) / 10)}px`;
 }
 
+type Rect = { readonly x: number; readonly y: number; readonly width: number; readonly height: number };
+
+/** the painter's box for a part of a control, relative to the control's holder; `whole` when it has none */
+function partBox(view: ControlView, part: string): Rect {
+  const found = view.parts.find((candidate) => candidate.part === part) ?? view.parts.find((candidate) => candidate.part === 'whole');
+  const b = found?.box ?? view.box;
+  return { x: b.x - view.box.x, y: b.y - view.box.y, width: b.width, height: b.height };
+}
+
+function relative(box: Rect, origin: Rect): Rect {
+  return { x: box.x - origin.x, y: box.y - origin.y, width: box.width, height: box.height };
+}
+
 function indexOfPick(view: ControlView): number {
   if (typeof view.value === 'number') return Math.min(Math.max(Math.round(view.value) - 1, 0), Math.max(0, view.options.length - 1));
   if (typeof view.value === 'string') return Math.max(0, view.options.indexOf(view.value));
@@ -87,6 +100,15 @@ export function createAccessLayer(stage: HTMLElement, handlers: AccessHandlers):
   const chartsHolder = make('div', 'access__charts');
   root.append(controlsHolder, chartsHolder);
   stage.append(root);
+
+  // Focus is shown only for the keyboard: a pointer or a touch (here, or anywhere) puts the layer in pointer mode, which draws no ring.
+  const mode = (value: 'pointer' | 'keyboard') => (): void => {
+    root.dataset['input'] = value;
+  };
+  const toPointer = mode('pointer');
+  const toKeyboard = mode('keyboard');
+  document.addEventListener('pointerdown', toPointer, true);
+  document.addEventListener('keydown', toKeyboard, true);
 
   const slots = new Map<string, Slot>();
   /** the controls as last handed in, so a chart's keyboard can find nothing stale */
@@ -120,6 +142,7 @@ export function createAccessLayer(stage: HTMLElement, handlers: AccessHandlers):
         focusable = () => button;
         update = (next) => {
           latest = next;
+          place(button, partBox(next, 'whole'));
           button.textContent = next.label;
           button.setAttribute('aria-label', next.label);
         };
@@ -136,6 +159,7 @@ export function createAccessLayer(stage: HTMLElement, handlers: AccessHandlers):
         focusable = () => button;
         update = (next) => {
           latest = next;
+          place(button, partBox(next, 'whole'));
           button.textContent = next.label;
           button.setAttribute('aria-label', next.label);
           button.setAttribute('aria-checked', String(next.value === true));
@@ -180,6 +204,7 @@ export function createAccessLayer(stage: HTMLElement, handlers: AccessHandlers):
         focusable = () => range;
         update = (next) => {
           latest = next;
+          place(range, partBox(next, 'whole'));
           range.setAttribute('aria-label', next.label);
           if (typeof next.value === 'number' && Number(range.value) !== next.value) range.value = String(next.value);
           range.setAttribute('aria-valuetext', next.valueText);
@@ -211,6 +236,7 @@ export function createAccessLayer(stage: HTMLElement, handlers: AccessHandlers):
         focusable = () => field;
         update = (next) => {
           latest = next;
+          place(field, partBox(next, 'whole'));
           field.setAttribute('aria-label', next.label === '' ? 'Text' : next.label);
           field.placeholder = next.label;
           const text = typeof next.value === 'string' ? next.value : next.value === null ? '' : String(next.value);
@@ -236,6 +262,7 @@ export function createAccessLayer(stage: HTMLElement, handlers: AccessHandlers):
           focusable = () => select;
           update = (next) => {
             latest = next;
+            place(select, partBox(next, 'field'));
             select.setAttribute('aria-label', next.label === '' ? 'Choose one' : next.label);
             const wanted = String(indexOfPick(next) + 1);
             if (select.value !== wanted) select.value = wanted;
@@ -258,6 +285,9 @@ export function createAccessLayer(stage: HTMLElement, handlers: AccessHandlers):
           focusable = () => back;
           update = (nextView) => {
             latest = nextView;
+            place(group, partBox(nextView, 'whole'));
+            place(back, relative(partBox(nextView, 'back'), partBox(nextView, 'whole')));
+            place(next, relative(partBox(nextView, 'next'), partBox(nextView, 'whole')));
             const at = indexOfPick(nextView);
             group.setAttribute('aria-label', nextView.label === '' ? 'Steps' : nextView.label);
             where.textContent = `Step ${at + 1} of ${nextView.options.length}: ${nextView.options[at] ?? ''}`;
@@ -293,6 +323,7 @@ export function createAccessLayer(stage: HTMLElement, handlers: AccessHandlers):
             list.setAttribute('aria-label', nextView.label === '' ? 'Choose one' : nextView.label);
             const at = indexOfPick(nextView);
             tabs.forEach((tab, index) => {
+              place(tab, partBox(nextView, `option:${index + 1}`));
               tab.setAttribute('aria-selected', String(index === at));
               tab.tabIndex = index === at ? 0 : -1;
             });
@@ -301,8 +332,10 @@ export function createAccessLayer(stage: HTMLElement, handlers: AccessHandlers):
           const group = make('div', 'access__widget');
           group.setAttribute('role', 'radiogroup');
           const name = `${ident}-pick`;
+          const labels: HTMLElement[] = [];
           const radios = view.options.map((option, index) => {
             const label = make('label', 'access__option');
+            labels.push(label);
             const radio = make('input', 'access__radio');
             radio.type = 'radio';
             radio.name = name;
@@ -320,6 +353,7 @@ export function createAccessLayer(stage: HTMLElement, handlers: AccessHandlers):
             latest = nextView;
             group.setAttribute('aria-label', nextView.label === '' ? 'Choose one' : nextView.label);
             const at = indexOfPick(nextView);
+            labels.forEach((label, index) => place(label, partBox(nextView, `option:${index + 1}`)));
             radios.forEach((radio, index) => {
               if (radio.checked !== (index === at)) radio.checked = index === at;
             });
@@ -558,11 +592,19 @@ export function createAccessLayer(stage: HTMLElement, handlers: AccessHandlers):
     controls: syncControls,
     charts: syncCharts,
     focusControl(id) {
-      const view = live.find((candidate) => candidate.id === id);
-      const slot = view === undefined ? undefined : slots.get(view.key);
-      slot?.focusable()?.focus({ preventScroll: true });
+      toPointer();
+      // after the painter has taken the new value, so the keyboard carries on from the option just chosen
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() => {
+          const view = live.find((candidate) => candidate.id === id);
+          const slot = view === undefined ? undefined : slots.get(view.key);
+          slot?.focusable()?.focus({ preventScroll: true });
+        }),
+      );
     },
     dispose() {
+      document.removeEventListener('pointerdown', toPointer, true);
+      document.removeEventListener('keydown', toKeyboard, true);
       root.remove();
       slots.clear();
       regions.clear();

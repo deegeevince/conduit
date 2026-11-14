@@ -649,9 +649,9 @@ input {
 }
 
 .access__widget {
+  position: absolute;
   display: block;
-  width: 100%;
-  height: 100%;
+  box-sizing: border-box;
 }
 
 .access__widget::selection,
@@ -673,65 +673,42 @@ input {
   border: 0;
 }
 
-.access__steps,
-.access__widget[role='tablist'],
-.access__widget[role='radiogroup'] {
-  display: flex;
-}
-
+/* Each part of a control is set to the painter's own box for it (access.ts), never a share of the row. */
 .access__step,
 .access__tab,
-.access__option {
-  flex: 1 1 0;
-  min-width: 44px;
-  min-height: 44px;
+.access__option,
+.access__radio {
+  position: absolute;
+  box-sizing: border-box;
 }
 
 .access__radio {
-  position: absolute;
   opacity: 0.01;
+  inset: 0;
   width: 100%;
   height: 100%;
 }
 
-.access__option {
-  position: relative;
-}
-
-/* a radio's focus is shown on the option that holds it */
-.access__option:focus-within {
-  outline: var(--focus-ring);
-  outline-offset: -2px;
-}
-
-.access__radio:focus-visible {
-  outline: none;
-}
-
-.access__control :focus-visible,
+/* No native outline on a proxy, ever. Focus is shown by a ring that is a shadow inside the true box, and only for the keyboard. */
+.access__control *:focus,
+.access__control *:focus-visible,
+.access__chart:focus,
 .access__chart:focus-visible {
-  outline: var(--focus-ring);
-  outline-offset: -2px;
-}
-
-.access__control :focus-visible {
-  outline-color: var(--stage-accent);
-}
-
-/* A stepper is one control drawn as one: its focus is a ring round the whole of it, never the rectangle of whichever half-width button holds it. */
-.access__control .access__step:focus-visible {
   outline: none;
 }
 
-.access__steps:has(.access__step:focus-visible) {
-  outline: var(--focus-ring);
-  outline-color: var(--stage-accent);
-  outline-offset: 3px;
+.access:not([data-input='pointer']) .access__widget:focus-visible:not(input[type='text']),
+.access:not([data-input='pointer']) .access__tab:focus-visible,
+.access:not([data-input='pointer']) .access__option:has(.access__radio:focus-visible),
+.access:not([data-input='pointer']) .access__steps:has(.access__step:focus-visible),
+.access:not([data-input='pointer']) .access__chart:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--stage-accent);
   border-radius: 12px;
 }
 
-.access__chart:focus-visible {
-  outline-color: var(--stage-accent);
+.access__widget[role='tablist']:focus-visible,
+.access__widget[role='radiogroup']:focus-visible {
+  box-shadow: none;
 }
 
 [aria-disabled='true'] > .access__widget,
@@ -1399,4 +1376,12 @@ input {
 
 .prompt__photos[hidden] {
   display: none;
+}
+
+.access__widget[role='tablist'],
+.access__widget[role='radiogroup'] {
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
 }
