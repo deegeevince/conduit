@@ -59,7 +59,9 @@ const num = (v, fallback = 0) => (v === undefined ? fallback : Number(v));
 function pathOf(tag, a) {
   switch (tag) {
     case 'path':
-      return a.d;
+      // a path that begins with a lowercase m starts at its own point; once it is joined to the one before it, that m would be relative to where the last one ended
+      // (its further pairs stay relative lines, so they take an explicit l)
+      return String(a.d).replace(/^\s*m\s*(-?(?:\d+\.?\d*|\.\d+))[\s,]*(-?(?:\d+\.?\d*|\.\d+))([^]*)$/, (_all, x, y, rest) => `M${x} ${y}${/^[\s,\-.\d]/.test(rest) ? `l${rest}` : rest}`);
     case 'line':
       return `M${num(a.x1)} ${num(a.y1)}L${num(a.x2)} ${num(a.y2)}`;
     case 'polyline':

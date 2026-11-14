@@ -318,10 +318,11 @@ function pickOf(k: Kit, p: UiPartNode): N {
     const paint = (b: Rect, out: Out): void => {
       if (on) rectOf(out, p.id, `seg:${i}`, b, { radius: k.t.radius.s, fill: wire ? c.ink : c.surface, ...(wire ? {} : { shadow: shadowOf(k, 'low') }) });
     };
-    const word = text(k, o.text, k.type.label, { id: p.id, nowrap: true, squeeze: true, colour: on && wire ? c.onAccent : on ? c.ink : c.dim, align: 'center', what: `option:${i}`, width: 'fill' });
-    return mk({ width: 'fill', height: 'fill' }, flex('row', { align: 'center', justify: 'center', pad: [0, 4, 0, 4] }), null, [word], { id: `${p.id}:seg${i}`, part: 'pick-option', target: true, paint, action: { kind: 'pick', control: p.id, index: i }, owner: p.id });
+    // an option that does not fit on one line takes a second (and a third): the track grows, no word is cut or crosses its neighbour
+    const word = text(k, o.text, k.type.label, { id: p.id, colour: on && wire ? c.onAccent : on ? c.ink : c.dim, align: 'center', what: `option:${i}`, width: 'fill' });
+    return mk({ width: 'fill', height: 'hug', minH: 44 }, flex('row', { align: 'center', justify: 'center', pad: [10, 6, 10, 6] }), null, [word], { id: `${p.id}:seg${i}`, part: 'pick-option', target: true, paint, action: { kind: 'pick', control: p.id, index: i }, owner: p.id });
   });
-  const track = mk({ width: 'fill', height: 52 }, flex('row', { align: 'stretch', gap: 0, pad: 4 }), null, segs, {
+  const track = mk({ width: 'fill', height: 'hug', minH: 52 }, flex('row', { align: 'stretch', gap: 0, pad: 4 }), null, segs, {
     id: `${p.id}:track`,
     part: 'pick-track',
     quiet: true,
