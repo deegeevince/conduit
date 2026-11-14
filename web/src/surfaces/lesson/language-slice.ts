@@ -6,3 +6,5 @@
 export { advance, askView, nodeOf, progressOf, stopOf } from '../../../../language/src/document';
 export { accepts, maskSealed, numbersOf, openAskOf, sealed, textHolds } from '../../../../language/src/lesson';
 export { VISUAL_KINDS } from '../../../../language/src/vocabulary';
+export { resolveText } from '../../../../language/src/anchor';
+export { typesetUnits } from '../../../../language/src/text';
