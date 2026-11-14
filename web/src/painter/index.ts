@@ -1558,7 +1558,7 @@ export function createPainter(options: PainterOptions): Painter {
       const host = (b: { readonly x: number; readonly y: number; readonly width: number; readonly height: number }): Box => ({ x: b.x + dx, y: b.y + dy, width: b.width, height: b.height });
       return uiMockupViews(blocks).map((view) => ({
         screen: view.screen,
-        hits: view.hits.map((hit) => ({ id: hit.id, part: hit.part, action: hit.action, box: host(hit) })),
+        hits: view.hits.map((hit) => ({ id: hit.id, part: hit.part, action: hit.action, box: host(hit), ...(hit.send === true ? { send: true } : {}), ...(hit.to === undefined ? {} : { to: hit.to }) })),
         words: view.words.map((word) => ({ owner: word.owner, text: word.text, box: host(word) })),
         notes: view.notes,
       }));

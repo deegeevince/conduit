@@ -381,7 +381,7 @@ export function typeUi(blockKey: string, key: string): boolean {
 export interface UiMockupView {
   readonly block: string;
   readonly screen: string;
-  readonly hits: readonly { readonly id: string; readonly part: string; readonly action: 'tab' | 'pick' | 'toggle' | 'field' | 'slider' | 'press'; readonly x: number; readonly y: number; readonly width: number; readonly height: number }[];
+  readonly hits: readonly { readonly id: string; readonly part: string; readonly action: 'tab' | 'pick' | 'toggle' | 'field' | 'slider' | 'press'; readonly x: number; readonly y: number; readonly width: number; readonly height: number; readonly send?: boolean; readonly to?: string }[];
   /** one box per line of words, where its ink is */
   readonly words: readonly { readonly owner: string; readonly text: string; readonly x: number; readonly y: number; readonly width: number; readonly height: number }[];
   readonly notes: readonly { readonly kind: string; readonly id: string; readonly message: string }[];
@@ -401,7 +401,7 @@ export function uiMockupViews(blockKeys: readonly string[]): readonly UiMockupVi
       if (screen === undefined) continue;
       const working = last.board.mode !== 'focus' || p.index === last.board.focus;
       const hits = working
-        ? screen.hits.map((hit) => ({ id: hit.id, part: hit.part, action: hit.action.kind, x: last.room.x + p.contentX + hit.x * p.scale, y: last.room.y + p.contentY + hit.y * p.scale, width: hit.w * p.scale, height: hit.h * p.scale }))
+        ? screen.hits.map((hit) => ({ id: hit.id, part: hit.part, action: hit.action.kind, x: last.room.x + p.contentX + hit.x * p.scale, y: last.room.y + p.contentY + hit.y * p.scale, width: hit.w * p.scale, height: hit.h * p.scale, ...(hit.action.kind === 'press' && hit.action.send === true ? { send: true } : {}), ...(hit.action.kind === 'press' && hit.action.to !== undefined ? { to: hit.action.to } : {}) }))
         : [];
       const words: { owner: string; text: string; x: number; y: number; width: number; height: number }[] = [];
       for (const part of last.board.parts) {
