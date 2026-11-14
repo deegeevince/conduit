@@ -43,6 +43,11 @@ export const DEMOS = [
     summary: 'Music as ABC notation in two voices: a piano roll with a playhead, played by the painter\'s own synthesiser once the block is closed.',
   },
   {
+    name: 'app',
+    title: 'App',
+    summary: 'A live app: one HTML document that runs in a locked sandbox on the stage, keeps its state and tells the stage what the user did.',
+  },
+  {
     name: 'deck',
     title: 'Deck',
     summary: 'A talk of three slides: `deck` makes each scene a slide, and the stage stops at the end of each for the viewer to step on.',

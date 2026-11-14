@@ -372,7 +372,7 @@ export type BackEvent =
    * dragging: local bindings need no round trip. `send` is true when the
    * change is also the next turn's input, as a choice's tap is.
    */
-  | { readonly type: 'control'; readonly turn: string | null; readonly id: string; readonly value: ControlValue; readonly text: string; readonly playhead: number; readonly send: boolean }
+  | { readonly type: 'control'; readonly turn: string | null; readonly id: string; readonly value: ControlValue; readonly text: string; readonly playhead: number; readonly send: boolean; readonly app?: boolean }
   /**
    * How pass `pass` of an open turn will land: sight for the stage as the
    * lines so far will leave it, computed without waiting for the playhead.

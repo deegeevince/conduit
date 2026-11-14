@@ -39,6 +39,7 @@ import {
   spriteSeconds,
   CHART_ROW_SECONDS,
   CODE_ROW_SECONDS,
+  APP_ROW_SECONDS,
   UI_ROW_SECONDS,
   STRIKE_SECONDS,
   TABLE_ROW_SECONDS,
@@ -180,8 +181,10 @@ export type Figure =
       /** v2.1. A tune: how fast the brain asked for it to be played (quarter notes a minute; null: the score's own) and on what */
       readonly tempo?: number | null;
       readonly voice?: TuneVoice | null;
-      /** v2.1. A tune: the moment, on this turn's clock, that a later line closed the block, so the music is whole and can begin; null while the brain may still write notes */
+      /** v2.1. A tune or an app: the moment, on this turn's clock, that a later line closed the block, so the music is whole and can begin (an app's document is whole and can run); null while the brain may still write */
       readonly sealed?: number | null;
+      /** An app: the height it asked for, canvas units; null: the default */
+      readonly height?: number | null;
       /** the room it is laid out in, canvas units; null: the whole canvas */
       readonly box: CanvasBox | null;
       /** a map joins its pins in the order written */
@@ -972,6 +975,7 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
         bars: line.verb === 'table' && line.bars === true,
         ...(line.verb === 'code' && { lang: line.lang ?? null, file: line.file ?? null }),
         ...(line.verb === 'tune' && { tempo: line.tempo ?? null, voice: line.voice ?? DEFAULT_TUNE_VOICE, sealed: null }),
+        ...(line.verb === 'app' && { height: line.height ?? null, sealed: null }),
         box: line.box ?? null,
         route: line.route ?? false,
         rows: openFigure?.kind === 'structure' ? openFigure.rows : [],
@@ -1376,10 +1380,10 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
     if (line.verb !== 'row' && line.verb !== 'revise' && line.verb !== 'cancel' && line.verb !== 'standing' && line.verb !== 'refine') {
       for (const candidate of live) {
         const figure = candidate.span.figure;
-        if (figure?.kind === 'structure' && figure.structure === 'tune' && !candidate.span.carried && (figure.sealed ?? null) === null && candidate.span.seq < seq) {
+        if (figure?.kind === 'structure' && (figure.structure === 'tune' || figure.structure === 'app') && !candidate.span.carried && (figure.sealed ?? null) === null && candidate.span.seq < seq) {
           candidate.span.figure = { ...figure, sealed: Math.max(pen, entry.floor) };
           // what of the music could not be played is said once, here, when the score is whole
-          for (const warning of cachedTune(tuneRowsOf(figure.rows), { tempo: figure.tempo ?? null, title: candidate.span.text === '' ? null : candidate.span.text }).warnings) report(seq, 'bad-value', `the tune: ${warning}`);
+          if (figure.structure === 'tune') for (const warning of cachedTune(tuneRowsOf(figure.rows), { tempo: figure.tempo ?? null, title: candidate.span.text === '' ? null : candidate.span.text }).warnings) report(seq, 'bad-value', `the tune: ${warning}`);
         }
       }
     }
@@ -1455,6 +1459,7 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
       case 'chart':
       case 'code':
       case 'tune':
+      case 'app':
       case 'screen':
       case 'pic':
       case 'node':
@@ -1536,12 +1541,13 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
           // A row of a table or a chart: cells between bars. It lands a step after the row before it.
           const enter = table.span.enter;
           const charted = table.span.figure.structure === 'chart';
-          const coded = table.span.figure.structure === 'code' || table.span.figure.structure === 'tune' || table.span.figure.structure === 'screen';
+          const app = table.span.figure.structure === 'app';
+          const coded = table.span.figure.structure === 'code' || table.span.figure.structure === 'tune' || table.span.figure.structure === 'screen' || app;
           const interfaced = table.span.figure.structure === 'screen';
           // A line of code is one cell, exactly as written: a bar in it is a bar, a space is a space, and an empty line is a row.
           const cells = coded ? [line.cells] : splitCells(line.cells);
-          const step = (interfaced ? UI_ROW_SECONDS : coded ? CODE_ROW_SECONDS : charted ? CHART_ROW_SECONDS : TABLE_ROW_SECONDS)[pace];
-          const most = table.span.figure.structure === 'tune' ? LIMITS.tuneRows : coded ? LIMITS.codeRows : charted ? LIMITS.chartPoints : LIMITS.rows;
+          const step = (app ? APP_ROW_SECONDS : interfaced ? UI_ROW_SECONDS : coded ? CODE_ROW_SECONDS : charted ? CHART_ROW_SECONDS : TABLE_ROW_SECONDS)[pace];
+          const most = app ? LIMITS.appRows : table.span.figure.structure === 'tune' ? LIMITS.tuneRows : coded ? LIMITS.codeRows : charted ? LIMITS.chartPoints : LIMITS.rows;
           if (!coded && (isRuleRow(cells) || cells.every((cell) => cell === ''))) {
             lines.push({ seq, verb: line.verb, start: pen, end: pen });
             break;
@@ -1563,6 +1569,11 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
               break;
             }
             echoing.delete(table);
+          }
+          if (app && table.rows.reduce((sum, row) => sum + (row.cells[0]?.length ?? 0) + 1, 0) + (line.cells.length + 1) > LIMITS.appChars) {
+            report(seq, 'structure-limit', `an app is at most ${LIMITS.appChars} characters; this line and the rest were ignored: write less`);
+            lines.push({ seq, verb: line.verb, start: pen, end: pen });
+            break;
           }
           if (table.rows.length >= most) {
             report(seq, 'structure-limit', `a ${table.span.figure.structure} has at most ${most} rows; this one was ignored`);

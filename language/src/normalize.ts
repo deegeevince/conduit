@@ -70,7 +70,7 @@ export class LineReader {
     if (line.verb === 'table' || line.verb === 'chart') this.table = true;
     else if (line.verb === 'scene' || line.verb === 'deck' || line.verb === 'pix' || line.verb in STRUCTURE) this.table = false;
     if (line.verb === 'scene' || line.verb === 'deck' || line.verb === 'pix' || line.verb in STRUCTURE) this.ui = false;
-    if (line.verb === 'code' || line.verb === 'tune') this.code = true;
+    if (line.verb === 'code' || line.verb === 'tune' || line.verb === 'app') this.code = true;
     else if (line.verb === 'scene' || line.verb === 'deck' || line.verb === 'pix' || line.verb in STRUCTURE) this.code = false;
     this.tune = line.verb === 'tune' || (this.tune && line.verb === 'row');
     if (line.verb === 'style') this.styles.add(line.name);
@@ -258,7 +258,8 @@ export class LineNormalizer {
       case 'table':
       case 'chart':
       case 'code':
-      case 'tune': {
+      case 'tune':
+      case 'app': {
         const id = line.id === '-' ? this.makeId() : line.id;
         this.sprite = null;
         this.ui = null;

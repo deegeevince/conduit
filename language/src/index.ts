@@ -13,6 +13,7 @@ export * from './score';
 export * from './bind';
 export * from './chart';
 export * from './tune';
+export * from './app';
 export * from './interface';
 export * from './stage';
 export * from './sight';

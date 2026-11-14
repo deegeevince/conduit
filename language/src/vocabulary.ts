@@ -604,6 +604,7 @@ export const STRUCTURE = {
   chart: { gist: 'rows `| when | value`: an instrument with axes, a crosshair and zoom', parts: 'rows', lays: 'engine' },
   code: { gist: 'rows `| line` taken exactly as written, indentation kept: monospaced and highlighted, with a copy action', parts: 'rows', lays: 'engine' },
   tune: { gist: 'rows `| line` of ABC notation, taken exactly: a piano roll that plays, with a playhead and the notes lighting as they sound', parts: 'rows', lays: 'engine' },
+  app: { gist: 'rows `| line` of one HTML document (inline style and script), taken exactly: a live app that runs in a locked sandbox on the stage and answers back (taught only when the user asks for something that works)', parts: 'rows', lays: 'engine' },
   screen: { gist: 'a mock-up: devices at true size, each part one line (taught by the INTERFACE chapter in the brief); rows are the lines of the interface, taken as written', parts: 'rows', lays: 'engine' },
 } as const satisfies Record<string, { gist: string; parts: 'nodes' | 'rows'; lays: 'painter' | 'axis' | 'brain' | 'engine' }>;
 export type StructureKind = keyof typeof STRUCTURE;
@@ -627,6 +628,9 @@ export type CodeLanguage = (typeof CODE_LANGUAGES)[number];
 export const TUNE_VOICES = ['piano', 'strings', 'chip', 'bell'] as const;
 export type TuneVoice = (typeof TUNE_VOICES)[number];
 export const DEFAULT_TUNE_VOICE: TuneVoice = 'piano';
+
+/** The room a live `app` asks for, as a height in canvas units (a width is what the stage gives it); more or less is clamped. */
+export const APP_HEIGHT = { min: 120, max: 1200, default: 480 } as const;
 
 /** Which way a flow or a tree grows. */
 export const GROWTH = { right: 'left to right', down: 'top to bottom' } as const;
@@ -880,6 +884,12 @@ export const VERB = {
   tune: {
     form: 'tune [id] [tempo=<bpm>] [voice=piano|strings|chip|bell] [x,y WxH] [| title]',
     gist: 'Music, in ABC notation: follow it with one `| line` per line of the score (K: M: L: Q: V:1 V:2, then the notes). It is drawn as a piano roll and played when it is whole.',
+    time: 'starts',
+    family: 'structure',
+  },
+  app: {
+    form: 'app [id] [height=<n>] [x,y WxH] [| title]',
+    gist: 'A live app: follow it with one `| line` per line of one HTML document (inline <style> and <script>). It runs in a locked sandbox on the stage, with no network. Taught only when the user asks for something that works.',
     time: 'starts',
     family: 'structure',
   },
@@ -1161,6 +1171,10 @@ export const LIMITS = {
   tuneNotes: 3000,
   /** seconds of music in one tune; more is cut */
   tuneSeconds: 300,
+  /** lines in one `app` block */
+  appRows: 700,
+  /** characters in one `app` document (the lines joined); a longer one is cut at the last whole line that fits */
+  appChars: 60_000,
   /** characters in the file name of a `code` block */
   file: 48,
   /** characters in a link's address */

@@ -54,6 +54,7 @@ export function describeFigure(figure: Figure, box: CanvasBox | null = null): st
     }
     case 'structure': {
       if (figure.structure === 'code') return describeCode(figure);
+      if (figure.structure === 'app') return describeApp(figure);
       if (figure.structure === 'screen') {
         // a mock-up is named by its screens and what each holds, not recited: the brain changes it by writing it again
         const screens = figure.rows.map((row) => /^screen\s+(\S+)\s+(\S+)[^|]*(?:\|\s*(.*))?$/.exec(row.cells[0] ?? '')).filter((m): m is RegExpExecArray => m !== null);
@@ -101,6 +102,27 @@ function describeCode(figure: Extract<Figure, { kind: 'structure' }>): string {
   const file = figure.file === undefined || figure.file === null ? '' : ` "${figure.file}"`;
   const begins = lines.filter((line) => line.trim() !== '').slice(0, 3).map((line) => (line.trim().length > 60 ? `${line.trim().slice(0, 59)}…` : line.trim()));
   return `code${language}${file}, ${lines.length} line${lines.length === 1 ? '' : 's'}${begins.length === 0 ? '' : `: ${begins.join(' / ')}${lines.filter((line) => line.trim() !== '').length > begins.length ? ' …' : ''}`}`;
+}
+
+/**
+ * A live app is named by what it says on its face (headings, buttons) and how long it is, never recited. The brain changes it by writing the
+ * whole app again under the same id; what the user has done in it comes back by `THE USER DID IN THE APP`.
+ */
+function describeApp(figure: Extract<Figure, { kind: 'structure' }>): string {
+  const source = figure.rows.map((row) => row.cells[0] ?? '').join('\n');
+  const words = (pattern: RegExp): string[] => {
+    const found: string[] = [];
+    for (const match of source.matchAll(pattern)) {
+      const text = (match[1] ?? '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+      if (text !== '' && text.length <= 40 && !found.includes(text)) found.push(text);
+      if (found.length >= 6) break;
+    }
+    return found;
+  };
+  const headings = words(/<h[1-3][^>]*>([\s\S]*?)<\/h[1-3]>/gi);
+  const buttons = words(/<button[^>]*>([\s\S]*?)<\/button>/gi);
+  const say = [headings.length === 0 ? '' : `headings ${headings.map((text) => `"${text}"`).join(', ')}`, buttons.length === 0 ? '' : `buttons ${buttons.map((text) => `"${text}"`).join(', ')}`].filter((part) => part !== '');
+  return `live app (HTML, CSS and JS in a locked sandbox), ${figure.rows.length} line${figure.rows.length === 1 ? '' : 's'}${say.length === 0 ? '' : `: ${say.join('; ')}`}`;
 }
 
 /** A node's words, with its date or span in front when it sits on a timeline, so the transcript says what the picture says. */

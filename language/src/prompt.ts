@@ -21,6 +21,7 @@ import { DOCUMENT_TEXT_CHARS, PASTE_AS_DOCUMENT_CHARS, STANDING_LIMITS, TECHNIQU
 import type { BriefForm, DocumentFacts, LineProblem, TechniqueCard, TurnContext, TurnMemory } from './context';
 
 export type { BriefForm };
+import { asksForLiveApp } from './app';
 import { INTERFACE_CHAPTER } from './interface';
 import { describeSight } from './sight';
 import { BUILTIN_STYLES } from './style';
@@ -289,7 +290,7 @@ export function buildSystemPrompt({ capabilities, services }: PromptOptions): st
   const structures = draws ? capabilities.structures.filter((name) => name !== 'chart' || charts.length > 0) : [];
   // `code` is taught where the verbs for what you write are ("More to say with"), in its own words, and not twice in the list of shapes.
   // `tune` is taught only on a turn about music (`tuneChapter`, in the brief), never here: the system prompt is full.
-  const shapes = structures.filter((name) => name !== 'code' && name !== 'tune' && name !== 'screen');
+  const shapes = structures.filter((name) => name !== 'code' && name !== 'tune' && name !== 'screen' && name !== 'app');
   const controls = capabilities.controls;
   const textures = draws ? capabilities.textures.filter((name) => name !== 'flat') : [];
   const brushes = draws ? capabilities.brushes : [];
@@ -844,6 +845,38 @@ tune ode tempo=104 | Ode to joy
 | [C,E,]2 [G,,B,,]2 | [C,E,]2 [G,,B,,]2 | [C,E,]2 [F,,A,,]2 | [G,,B,,]2 [G,,B,,]2 | [C,E,]2 [G,,B,,]2 | [C,E,]2 [G,,B,,]2 | [F,,A,,]2 [E,,G,,]2 | [G,,B,,]2 [C,E,]2 |]
 say | Ode to Joy, in C.`;
 
+/**
+ * What `app` is, said only on a turn that asks for something that works (never in the system prompt, which is full): the verb, what the
+ * sandbox is and is not, the look's variables, the bridge, and a small complete example.
+ */
+export const APP_CHAPTER = `A LIVE APP (the user wants something that WORKS, not a picture of one): \`app [id] [height=<n>] | <title>\`, then one \`| row\` per line of ONE HTML document, taken exactly: the body's content with an inline <style> and an inline <script>, no <html>, <head> or <body> tags. It runs for real in a locked sandbox on the stage and the user taps and types in it. Begin with a \`scene caption\` (a new subject, so the app stands alone), close the block with a \`say\` (the app starts when it is closed), and put nothing else on the stage: the app is the answer. Said again under its id, it is replaced: to change it, write the whole app again.
+THE SANDBOX: no network at all (no fetch, no external script, font, image or link), no cookies, no localStorage, no forms, popups, modals or navigation, no eval or new Function (a calculator parses its own sum). Everything is inline; pictures are inline SVG or data: URIs; sound is the Web Audio API (it starts on the first tap). It must work by itself on the first tap: real logic, real state, no placeholders, nothing "coming soon".
+LOOK: the stage's own look comes as CSS variables, so the app matches it: var(--ink) text, var(--ground) background, var(--accent) and var(--alt) for actions and highlights, var(--dim) for quiet text, var(--font), var(--radius), var(--gap). The body already has them set; use them, never hard-code a colour or a font. Make it fill its room (width 100%, it may be 280 to 1000 px wide), tap targets 44 px or more, text 16 px or more, one clear thing to do.
+BRIDGE (a global \`conduit\`): \`conduit.send(name, value)\` tells the stage what the user did (you hear it on the next turn: "the user did X in the app"); \`conduit.ask(name, value)\` also asks you for a new answer now, so use it only when the user needs you ("finished", "more questions please"); \`conduit.state(obj)\` saves the app's state and \`conduit.state()\` returns it, so call it once at the start to restore and again after each change. A value is a short string, number or boolean.
+KEEP IT SMALL: under 220 lines, no line over 160 characters, no comments. Example, a counter that keeps its count:
+scene caption
+app tally height=300 | Tally
+| <style>
+| body { margin: 0; padding: 24px; text-align: center; }
+| #n { font-size: 72px; margin: 16px 0; }
+| button { font: inherit; min-height: 48px; padding: 0 28px; border: 0; border-radius: var(--radius); background: var(--accent); color: var(--ground); }
+| </style>
+| <div id="n">0</div>
+| <button id="add">Add one</button>
+| <script>
+| var s = conduit.state() || { n: 0 };
+| var el = document.getElementById('n');
+| function show() { el.textContent = s.n; }
+| document.getElementById('add').onclick = function () { s.n += 1; show(); conduit.state(s); conduit.send('count', s.n); };
+| show();
+| </script>
+say | A counter that keeps its count.
+
+`;
+
+/** How many of the user's latest acts inside one live app the brief carries. */
+const APP_ACTS_KEPT = 8;
+
 /** How much of the steward's status a brief carries: the first lines of each list, each cut short. */
 const STATUS_LINES = { perList: 3, chars: 110 } as const;
 
@@ -937,10 +970,14 @@ export function buildTurnBrief(context: TurnContext, input: TurnInput, form: Bri
     parts.push(appNoteText(form, about.status, context.services));
     if (about.news !== undefined && about.news !== null && about.news !== '') parts.push(newsText(about.news));
   }
+  // A live app is taught when the words ask for something that works, or when one is on stage to be changed; then it is the answer, and a tune or a mock-up is not also taught.
+  const appOnStage = stage.elements.some((element) => element.figure?.kind === 'structure' && element.figure.structure === 'app');
+  const liveApp = context.capabilities.structures.includes('app') && ((input.kind === 'prompt' && asksForLiveApp(input.text)) || appOnStage);
+  if (liveApp) parts.push(APP_CHAPTER.trimEnd());
   // `tune` is taught when the words are about music, or when a tune is already on stage to be changed; never in the system prompt, which is full.
-  if (context.capabilities.structures.includes('tune') && (asksForMusic(input) || stage.elements.some((element) => element.figure?.kind === 'structure' && element.figure.structure === 'tune'))) parts.push(TUNE_CHAPTER);
+  if (context.capabilities.structures.includes('tune') && (!liveApp || stage.elements.some((element) => element.figure?.kind === 'structure' && element.figure.structure === 'tune')) && (asksForMusic(input) || stage.elements.some((element) => element.figure?.kind === 'structure' && element.figure.structure === 'tune'))) parts.push(TUNE_CHAPTER);
   // A mock-up is taught when the words are about one, or when one is on stage to be changed; never in the system prompt, which is full.
-  if (context.capabilities.structures.includes('screen') && (asksForInterface(input) || stage.elements.some((element) => element.figure?.kind === 'structure' && element.figure.structure === 'screen'))) parts.push(INTERFACE_CHAPTER);
+  if (context.capabilities.structures.includes('screen') && (!liveApp || stage.elements.some((element) => element.figure?.kind === 'structure' && element.figure.structure === 'screen')) && (asksForInterface(input) || stage.elements.some((element) => element.figure?.kind === 'structure' && element.figure.structure === 'screen'))) parts.push(INTERFACE_CHAPTER);
   const standing = standingText(context.standing);
   if (standing !== null) parts.push(standing);
 
@@ -1004,8 +1041,22 @@ export function buildTurnBrief(context: TurnContext, input: TurnInput, form: Bri
   if (taps.length > 0) parts.push(`THE USER POINTED AT: ${taps.map((tap) => `${tap.id} ("${tap.text}")`).join(', ')}`);
   // What the user did with the controls since the last turn, newest value of each. Where each now stands is in ON STAGE NOW.
   const sets = new Map<string, string>();
-  for (const record of heard) if (record.event.type === 'control' && !record.event.send) sets.set(record.event.id, record.event.text);
+  const inApp = new Map<string, string[]>();
+  for (const record of heard) {
+    if (record.event.type !== 'control') continue;
+    if (record.event.app === true) {
+      // what the user did inside a live app: every act in order (the last few), and the app's saved state as it stands now
+      const acts = inApp.get(record.event.id) ?? [];
+      if (record.event.text.startsWith('state ')) {
+        const at = acts.findIndex((act) => act.startsWith('state '));
+        if (at >= 0) acts.splice(at, 1);
+      }
+      acts.push(record.event.text);
+      inApp.set(record.event.id, acts.slice(-APP_ACTS_KEPT));
+    } else if (!record.event.send) sets.set(record.event.id, record.event.text);
+  }
   if (sets.size > 0) parts.push(`THE USER SET: ${[...sets].map(([id, text]) => `${id} to ${text}`).join(', ')}`);
+  if (inApp.size > 0) parts.push(`THE USER DID IN THE APP: ${[...inApp].map(([id, acts]) => `${id}: ${acts.join('; ')}`).join(' | ')}`);
 
   const documents = context.documents ?? [];
   const unread = context.unread ?? [];
