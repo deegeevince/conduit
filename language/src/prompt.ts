@@ -77,7 +77,7 @@ export const PROMPT_BUDGET = { tokens: 9400, charsPerToken: 2.36 } as const;
  * (18,643 characters, 7,865 tokens).
  */
 /** SA4. The one line of a brief that says the canvas tools exist. */
-export const CANVAS_LINE = 'CANVAS TOOLS (read-only: canvas_stage, canvas_fits, canvas_where, canvas_observe, canvas_attend, canvas_look): call one only when unsure of a placement or when EYES flags something. Most answers need none; never before you have started writing.';
+export const CANVAS_LINE = 'CANVAS TOOLS (read-only: canvas_stage, canvas_fits, canvas_where, canvas_observe, canvas_attend, canvas_look): call one only when unsure of a placement or when EYES flags something. Most answers need none. Write your first line before any call: a call first keeps the viewer waiting.';
 
 export function estimateTokens(text: string): number {
   return Math.ceil(text.length / PROMPT_BUDGET.charsPerToken);

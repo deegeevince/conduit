@@ -504,10 +504,13 @@ export class Conductor {
     if (s.sink === null || turn === null || turn.reported) return Promise.resolve(null);
     this.lookCounter += 1;
     const request = `l${this.lookCounter}`;
+    const asked = this.deps.now();
     return new Promise<Snapshot | null>((resolve) => {
-      const timer = setTimeout(() => this.settleLook(request, null), deadlineMs);
+      const timer = setTimeout(() => {
+        if (this.settleLook(request, null)) this.deps.log.info('canvas.picture', { session: s.id, turn: turn.id, request, outcome: 'none in time', ms: this.deps.now() - asked });
+      }, deadlineMs);
       timer.unref();
-      this.looks.set(request, { session: s.id, resolve, timer });
+      this.looks.set(request, { session: s.id, resolve: (snapshot) => { if (snapshot !== null) this.deps.log.info('canvas.picture', { session: s.id, turn: turn.id, request, outcome: 'arrived', bytes: snapshot.bytes.byteLength, width: snapshot.width, height: snapshot.height, ms: this.deps.now() - asked }); resolve(snapshot); }, timer });
       this.emit(s, turn, { type: 'want', turn: turn.id, request, what: 'picture', target, deadlineMs });
     });
   }

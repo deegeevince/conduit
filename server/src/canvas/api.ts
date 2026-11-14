@@ -67,6 +67,8 @@ interface State {
   from: number;
   calls: number;
   refused: number;
+  /** calls turned away because the turn had written nothing yet */
+  early: number;
   toolMs: number;
   pulled: { tool: string; kind: string; since: number; n: number; ms: number }[];
   watch: Set<ObsKind>;
@@ -122,7 +124,7 @@ export class CanvasService {
   private stateOf(session: string): State {
     let state = this.states.get(session);
     if (state === undefined) {
-      state = { turn: null, from: 0, calls: 0, refused: 0, toolMs: 0, pulled: [], watch: new Set(), ignore: new Set(), refusedIgnore: [], looked: false, told: new Set(), arrived: 0, marked: 0, waiters: [] };
+      state = { turn: null, from: 0, calls: 0, refused: 0, early: 0, toolMs: 0, pulled: [], watch: new Set(), ignore: new Set(), refusedIgnore: [], looked: false, told: new Set(), arrived: 0, marked: 0, waiters: [] };
       this.states.set(session, state);
     }
     return state;
@@ -138,6 +140,7 @@ export class CanvasService {
     state.from = from;
     state.calls = 0;
     state.refused = 0;
+    state.early = 0;
     state.toolMs = 0;
     state.pulled = [];
     state.watch = new Set();
@@ -154,7 +157,7 @@ export class CanvasService {
     const state = this.states.get(session);
     if (state === undefined || state.turn !== turn) return null;
     state.turn = null;
-    return { pulled: state.pulled, watch: [...state.watch], ignore: [...state.ignore], refusedIgnore: state.refusedIgnore, calls: state.calls + state.refused, toolMs: Math.round(state.toolMs) };
+    return { pulled: state.pulled, watch: [...state.watch], ignore: [...state.ignore], refusedIgnore: state.refusedIgnore, calls: state.calls + state.refused + state.early, toolMs: Math.round(state.toolMs) };
   }
 
   /** The session is gone. */
@@ -213,6 +216,13 @@ export class CanvasService {
       out = { text: `rev ${s.obs.rev}\n${BUDGET_SPENT}` };
       this.host.log.info('canvas.call', { session, tool, ms: 0, refused: 'budget', turn: state.turn });
       return out;
+    }
+    // Nothing is called before the first line is written: the stage and the observations are already in the brief, and a model that checks first
+    // keeps the viewer waiting (a turn that called `canvas_fits` twice before writing took 13 s to its first line, against 2 to 3). Not charged.
+    if (counted && waitForAdapter && (s.turn?.lineCount ?? 0) === 0 && s.turn?.id === state.turn) {
+      state.early += 1;
+      this.host.log.info('canvas.call', { session, tool, ms: 0, refused: 'first-line', turn: state.turn });
+      return { text: `rev ${s.obs.rev}\nwrite your first line before you check anything: the stage and what was seen are in your brief. Then call again if you still need to.` };
     }
     if (counted) state.calls += 1;
     try {

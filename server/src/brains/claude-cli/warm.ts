@@ -89,6 +89,14 @@
 //      So when nothing but the web tools is on, the CLI is told to allow them itself (`AgentRun.freeReads`), exactly what `gateCall` would say.
 //
 
+// CANVAS TOOLS (SA0 and SA4; PLAN-stage section 3). Probed with Claude Code 2.1.325, sonnet and opus, effort low, 2026-11-14. A loopback MCP server the
+// process is given with `--mcp-config <0600 file> --allowedTools mcp__canvas` (and still `--strict-mcp-config`) works in plain mode: the init event lists
+// its tools, the CLI never asks the host about them (no `can_use_tool`, no `permission_denied`), a call is text, tool_use, tool_result, text in one turn,
+// and the model is back with its next text about 1.1 s after the result (0.96 to 1.41 s; 39 replays). `--tools ''` does NOT hide MCP tools. The CLI
+// connects when the process starts, with the file's bearer header on every request: `server/discover` (answered -32601), `initialize` (protocol
+// 2025-11-25, echoed), `notifications/initialized` (202), a GET for a server stream (405, accepted), then `tools/list` and `tools/call`; plain JSON answers
+// suffice. In agent mode the same two flags apply (the config joins the list given to `--mcp-config`, the name to `--allowedTools`).
+//
 import { errors } from '../../errors';
 import type { Snapshot } from '../../domain/brain';
 import type { Logger } from '../../log';

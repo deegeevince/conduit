@@ -247,7 +247,9 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
   const discard = (entry: Entry): void => {
     if (pool.get(entry.session) === entry) pool.delete(entry.session);
     for (const held of [...entry.held.values()]) held.settle(false, 'turn');
-    void entry.proc.stop().catch(() => undefined).finally(entry.forgetCanvas);
+    // The token and the folder go now, not when the process has finished dying: a server that is shutting down does not wait for that.
+    entry.forgetCanvas();
+    void entry.proc.stop().catch(() => undefined);
   };
 
   const makeRoom = (): void => {
@@ -764,7 +766,8 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
             log.warn('claude_kill_settle_failed', { session: entry.session, error });
           }
         }
-        void entry.proc.stop().catch(() => undefined).finally(entry.forgetCanvas);
+        entry.forgetCanvas();
+        void entry.proc.stop().catch(() => undefined);
       }
       log.warn('claude_killed_all', { processes: all.length, browserTabs });
       return { processes: all.length, browserTabs };
@@ -774,7 +777,8 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
       const all = [...pool.values()];
       pool.clear();
       for (const entry of all) for (const held of [...entry.held.values()]) held.settle(false, 'turn');
-      await Promise.all(all.map((entry) => entry.proc.stop().catch(() => undefined).finally(entry.forgetCanvas)));
+      for (const entry of all) entry.forgetCanvas();
+      await Promise.all(all.map((entry) => entry.proc.stop().catch(() => undefined)));
       if (scratch !== null) rmSync(scratch, { recursive: true, force: true });
     },
   };
