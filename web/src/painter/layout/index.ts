@@ -928,6 +928,8 @@ function nearestClear(
   occupied: readonly Rect[],
   pad: number,
   step: { x: number; y: number },
+  /** only places level with `start` or lower: a line that is moved aside goes on below the one it ran into, so that lines stay in the order they were written */
+  downOnly = false,
 ): { x: number; y: number } | null {
   const free = (p: { x: number; y: number }): boolean => overlapWith({ x: p.x, y: p.y, width: size.width, height: size.height }, occupied, pad) === 0;
   if (free(start)) return start;
@@ -936,6 +938,7 @@ function nearestClear(
   const offsets = offsetsOf(maxX, maxY, step);
   for (const { dx, dy } of offsets) {
     const p = { x: start.x + dx, y: start.y + dy };
+    if (downOnly && dy < -EPS) continue;
     if (p.x < frame.x - EPS || p.y < frame.y - EPS || p.x + size.width > frame.x + frame.width + EPS || p.y + size.height > frame.y + frame.height + EPS) continue;
     if (free(p)) return p;
   }
@@ -950,6 +953,88 @@ function projectRect(rect: Rect, to: Layer, ctx: Context): Rect {
 
 /** Where a background or foreground word may start looking: corners and edges away from the reading column first. */
 const BG_CANDIDATES: readonly Anchor[] = ['bottom-right', 'top-right', 'bottom-left', 'top-left', 'right', 'left', 'bottom', 'top', 'center'];
+/**
+ * Narration told a point each: lines of one sequence, set one under another at one x (a story told down the stage). However the screen has made them
+ * (wrapped, set larger than the room between their points) they are one column: written order top to bottom, one size, even gaps. The column begins
+ * where its first line was told to stand. A sequence of fewer than three, one that does not run down the page, or words in a drawn box is not this.
+ */
+function narrationColumn(units: readonly Unit[], ctx: Context): Map<string, { loose: Loose; position: { x: number; y: number } }> {
+  const out = new Map<string, { loose: Loose; position: { x: number; y: number } }>();
+  const frame = frameOf('mid', ctx);
+  const pins = ctx.input.pins;
+  if (pins === undefined) return out;
+  const shapes = (ctx.input.obstacles ?? []).filter((o) => o.shape === true);
+  const members = units
+    .filter((unit) => {
+      const item = unit.main.item;
+      const pin = pins.get(item.key);
+      if (pin === undefined || item.style.layer !== 'mid' || item.style.tap || item.reserve !== undefined || item.style.leader || unit.ghosts.length > 0) return false;
+      if (item.style.size !== 'm' && item.style.size !== 's') return false;
+      return !shapes.some((o) => pin.x >= o.x && pin.x <= o.x + o.width && pin.y >= o.y && pin.y <= o.y + o.height);
+    })
+    .sort((a, b) => a.main.item.order - b.main.item.order);
+  // the longest run of members at one x that runs down the page
+  let best: Unit[] = [];
+  for (const start of members) {
+    const x0 = (pins.get(start.main.item.key) as { x: number }).x;
+    const run: Unit[] = [];
+    let lastY = -Infinity;
+    for (const unit of members) {
+      const pin = pins.get(unit.main.item.key) as { x: number; y: number };
+      if (Math.abs(pin.x - x0) > 0.03 * frame.width || pin.y <= lastY) continue;
+      run.push(unit);
+      lastY = pin.y;
+    }
+    if (run.length > best.length) best = run;
+  }
+  if (best.length < 3) return out;
+  const pin = (unit: Unit): { x: number; y: number; k?: number } => pins.get(unit.main.item.key) as { x: number; y: number; k?: number };
+  const step = ctx.bodyH / layerScale('mid', ctx);
+  const stepX = (2 * ctx.bodyW) / layerScale('mid', ctx);
+  // what the column must stand clear of: drawn things, and every other word that was told a point
+  const inColumn = new Set(best.map((unit) => unit.main.item.key));
+  const others: Rect[] = (ctx.input.obstacles ?? []).filter((o) => o.ground !== true);
+  for (const unit of units) {
+    const q = pins.get(unit.main.item.key);
+    if (q === undefined || inColumn.has(unit.main.item.key) || unit.main.item.style.layer !== 'mid') continue;
+    const l = buildLoose(unit, 'center', frame, ctx, q.k ?? 1);
+    others.push({ x: q.x - l.width / 2, y: q.y - l.height / 2, width: l.width, height: l.height });
+  }
+  for (const shrink of [1, 0.9, 0.8, 0.7, 0.6]) {
+    const looses = best.map((unit) => buildLoose(unit, 'center', frame, ctx, shrink * (pin(unit).k ?? 1)));
+    const natural = looses.slice(1).map((l, i) => pin(best[i + 1] as Unit).y - l.height / 2 - (pin(best[i] as Unit).y + (looses[i] as Loose).height / 2));
+    const sorted = [...natural].sort((a, b) => a - b);
+    const median = sorted[Math.floor(sorted.length / 2)] ?? 0;
+    const gap = Math.max(0.4 * step, Math.min(median, 1.2 * step));
+    const total = looses.reduce((sum, l) => sum + l.height, 0) + gap * (looses.length - 1);
+    if (total > frame.height + EPS) continue;
+    const first = Math.max(frame.y, Math.min(pin(best[0] as Unit).y - (looses[0] as Loose).height / 2, frame.y + frame.height - total));
+    const rects = (dx: number, dy: number): Rect[] => {
+      let top = first + dy;
+      return best.map((unit, i) => {
+        const loose = looses[i] as Loose;
+        const rect = { x: Math.max(frame.x, Math.min(pin(unit).x - loose.width / 2 + dx, frame.x + frame.width - loose.width)), y: top, width: loose.width, height: loose.height };
+        top += loose.height + gap;
+        return rect;
+      });
+    };
+    // the column keeps its shape: where it cannot stand it moves as a whole (sideways, or up or down), to the nearest place it is clear
+    const moves: { dx: number; dy: number; d: number }[] = [];
+    const nx = Math.ceil(frame.width / stepX);
+    const ny = Math.ceil(frame.height / step);
+    for (let i = -nx; i <= nx; i += 1) for (let j = -ny; j <= ny; j += 1) moves.push({ dx: i * stepX, dy: j * step, d: Math.hypot((i * stepX) / 2, j * step) });
+    moves.sort((m, n) => m.d - n.d);
+    for (const move of moves) {
+      if (first + move.dy < frame.y - EPS || first + move.dy + total > frame.y + frame.height + EPS) continue;
+      const laid = rects(move.dx, move.dy);
+      if (laid.some((r) => overlapWith(r, others, 0) > 0)) continue;
+      best.forEach((unit, i) => out.set(unit.main.item.key, { loose: looses[i] as Loose, position: { x: (laid[i] as Rect).x, y: (laid[i] as Rect).y } }));
+      return out;
+    }
+  }
+  return out;
+}
+
 /** Shrink factors tried, in order, when a word cannot be placed clear of the text at full size. */
 const CLEAR_SHRINK: readonly number[] = [1, 0.8, 0.64, 0.5, 0.4];
 
@@ -968,6 +1053,7 @@ function arrangeLoose(
     return layer === 'mid' ? 0 : at !== null ? (layer === 'fg' ? 1 : 2) : 3;
   };
   const order = [...units].sort((a, b) => rank(a) - rank(b));
+  const columnOf = narrationColumn(units, ctx);
   for (const unit of order) {
     const style = unit.main.item.style;
     const layer = style.layer;
@@ -986,7 +1072,7 @@ function arrangeLoose(
       const k = layerScale(other, ctx) / ps;
       for (const rect of occupied[other]) across.push({ x: rect.x * k, y: rect.y * k, width: rect.width * k, height: rect.height * k });
     }
-    const pin = ctx.input.pins?.get(unit.main.item.key) ?? null;
+    const pin = columnOf.has(unit.main.item.key) ? null : (ctx.input.pins?.get(unit.main.item.key) ?? null);
     const candidates: readonly (Anchor | Point)[] =
       explicit !== null ? [explicit] : layer === 'bg' ? BG_CANDIDATES : layer === 'fg' ? FG_CANDIDATES : FREE_CANDIDATES;
     // strictest first: keep clear of where the stack will grow, then of the block, then of the lines on stage
@@ -1000,7 +1086,24 @@ function arrangeLoose(
       const reach = 4 * step.y;
       let best: { loose: Loose; position: { x: number; y: number }; moved: number } | null = null;
       const kept = pin.k ?? 1;
-      for (const shrink of CLEAR_SHRINK) {
+      // A word pinned in a small drawn box (a cell of a strip or a grid of squares) stays in it: it is set smaller, never below the look's floor, until it is
+      // wholly inside, rather than left to spill over the cell next to it
+      const cell = solids
+        .filter((o) => o.shape === true && o.width * o.height <= 0.2 * frame.width * frame.height && pin.x >= o.x && pin.x <= o.x + o.width && pin.y >= o.y && pin.y <= o.y + o.height)
+        .reduce<Box | null>((least, o) => (least === null || o.width * o.height < least.width * least.height ? o : least), null);
+      if (cell !== null) {
+        for (const shrink of [1, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4]) {
+          const loose = buildLoose(unit, 'center', frame, ctx, shrink * kept);
+          if (loose.width > 0.96 * cell.width || loose.height > 0.96 * cell.height) continue;
+          const position = {
+            x: Math.max(cell.x, Math.min(pin.x - loose.width / 2, cell.x + cell.width - loose.width)),
+            y: Math.max(cell.y, Math.min(pin.y - loose.height / 2, cell.y + cell.height - loose.height)),
+          };
+          best = { loose, position, moved: 0 };
+          break;
+        }
+      }
+      for (const shrink of best !== null ? [] : CLEAR_SHRINK) {
         const loose = buildLoose(unit, 'center', frame, ctx, shrink * kept);
         const size = { width: loose.width, height: loose.height };
         const wanted = {
@@ -1015,7 +1118,10 @@ function arrangeLoose(
         const within = (o: Box, c: Box): boolean => o.x >= c.x - EPS && o.y >= c.y - EPS && o.x + o.width <= c.x + c.width + EPS && o.y + o.height <= c.y + c.height + EPS;
         const avoid = [...text, ...taken, ...across, ...solids.filter((o) => !inside(o) && !(Math.min(o.width, o.height) <= step.y && containers.some((c) => c !== o && within(o, c))))];
         // words pinned side by side inside one container (a grid's cells) are as close as their points say; the gap between lines of flowing words is not theirs
-        const found = nearestClear(wanted, size, frame, avoid, containers.length > 0 ? 0 : pad, { x: step.x, y: step.y / 2 });
+        // a line that runs into an earlier line is moved down past it, not above it: the lines stay in the order they were written
+        const gap = { x: step.x, y: step.y / 2 };
+        const intoEarlier = containers.length === 0 && overlapWith({ ...wanted, ...size }, [...taken], pad) > 0;
+        const found = (intoEarlier ? nearestClear(wanted, size, frame, avoid, pad, gap, true) : null) ?? nearestClear(wanted, size, frame, avoid, containers.length > 0 ? 0 : pad, gap);
         if (found === null) continue;
         const position = snapInside(found, size, frame, ctx);
         const moved = Math.hypot(position.x - wanted.x, position.y - wanted.y);
@@ -1040,7 +1146,8 @@ function arrangeLoose(
       }
       chosen = { loose: best.loose, position: best.position };
     }
-    for (const tier of pin !== null ? [] : tiers) {
+    if (columnOf.has(unit.main.item.key)) chosen = columnOf.get(unit.main.item.key) ?? null;
+    for (const tier of pin !== null || chosen !== null ? [] : tiers) {
       const avoid = [...text, ...tier, ...taken, ...across];
       bestOverlap = Infinity;
       chosen = null;

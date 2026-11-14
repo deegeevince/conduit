@@ -17,7 +17,7 @@ const MIN_CELLS = 3;
 /** the most rows a strip is wrapped into */
 const MAX_ROWS = 4;
 /** room a word keeps either side inside its cell, in ems */
-const PAD_EM = 0.3;
+const PAD_EM = 0.15;
 const EPS = 0.02;
 
 interface Rect {
@@ -67,7 +67,7 @@ function rewrite(schedule: Schedule, viewport: Viewport, look: LookSpec): Schedu
     if (shapes.length < MIN_CELLS) continue;
     const words = here.filter((el) => el.kind === 'text' && el.parent === null && still(el) && el.style.group === null && el.style.near === null && pointOf(el) !== null && el.replaces === null);
     const fit = fitCanvas(scene.canvas, scene.layout, viewport, look);
-    const unit = fit.unit * 0.92;
+    const unit = fit.unit * 0.97;
     const canvas = CANVAS[scene.canvas];
     // runs of equal cells on one line at an even stride
     const lines = new Map<string, ElementSpan[]>();
@@ -91,7 +91,13 @@ function rewrite(schedule: Schedule, viewport: Viewport, look: LookSpec): Schedu
             });
             return { el, rect, word: inside.length === 1 ? (inside[0] as ElementSpan) : null, count: inside.length };
           });
-          if (cells.every((c) => c.count <= 1) && cells.filter((c) => c.word !== null).length >= MIN_CELLS) {
+          // a row of a larger arrangement of boxes (a block of unit squares, a grid) is that arrangement, not a strip: it is not reflowed
+          const edge = (a: Rect, b: Rect): boolean => a.x < b.x + b.w - EPS && b.x < a.x + a.w - EPS;
+          const part = shapes.some((o) => {
+            const r = rectOf(o) as Rect;
+            return !run.includes(o) && Math.abs(r.w - (cells[0]?.rect.w ?? 0)) < EPS && Math.abs(r.h - (cells[0]?.rect.h ?? 0)) < EPS && cells.some((c) => edge(c.rect, r));
+          });
+          if (!part && cells.every((c) => c.count <= 1) && cells.filter((c) => c.word !== null).length >= MIN_CELLS) {
             const r0 = cells[0]?.rect as Rect;
             strips.push({ cells: cells.map(({ el: e, rect, word }) => ({ el: e, rect, word })), gap: Math.max(0, stride - r0.w) });
           }
@@ -222,7 +228,11 @@ function wrapOne(strip: Strip, ctx: Ctx): void {
     const s = slot(idx);
     const oldMid = c.rect.x + c.rect.w / 2;
     const dx = s.x + cellW / 2 - oldMid;
-    const dy = s.y - c.rect.y;
+    const row = Math.floor(idx / per);
+    const p0 = pointOf(w) as Point;
+    // words under a cell of a row that has another row below it would stand on that row: they go over the cell instead, the same distance from it
+    const mirrored = p0.y > c.rect.y + c.rect.h && row < rows - 1 && row === 0;
+    const dy = mirrored ? s.y - (p0.y - (c.rect.y + c.rect.h)) - p0.y : s.y - c.rect.y;
     set(w, withAt(w, (p) => ({ x: p.x + dx, y: p.y + dy })));
   }
 
@@ -289,6 +299,11 @@ function mapGeometry(g: ShapeGeometry, f: Mapper): ShapeGeometry | null {
 
 function mapElement(el: ElementSpan, f: Mapper): ElementSpan | null {
   let figure = el.figure;
+  // a control stands where it was told on the canvas like words do: its place moves with the rest, its own parts are the control's
+  if (el.kind === 'control') {
+    const moved: ElementChange[] = el.changes.map((c) => ('style' in c ? { ...c, style: mapStyleAt(c.style, f) } : c));
+    return { ...el, style: mapStyleAt(el.style, f), changes: moved };
+  }
   if (figure !== null && figure.kind === 'shape') {
     const g = mapGeometry(figure.geometry, f);
     if (g === null) return null;

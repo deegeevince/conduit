@@ -435,8 +435,10 @@ async function runCheck(cx: Cx, spec: Spec): Promise<Res> {
       if (ratio > 1.15) bad.push(`sizes ${sizes.map((n) => n.toFixed(0)).join('/')} px in one sequence`);
       const ys = lines.map((e) => e.box.y);
       if (ys.some((y, i) => i > 0 && y <= (ys[i - 1] as number))) bad.push('the lines are not in the order they were written, top to bottom');
-      const gaps = ys.slice(1).map((y, i) => y - (ys[i] as number)).filter((g) => g > 0);
-      if (gaps.length >= 2 && Math.max(...gaps) > 1.6 * Math.min(...gaps)) bad.push(`uneven spacing between lines (${gaps.map((g) => Math.round(g)).join('/')} px)`);
+      // the space between one line's foot and the next line's top, not top to top: a line of two rows and a line of one are evenly spaced when the air between them is
+      const gaps = lines.slice(1).map((e, i) => e.box.y - ((lines[i] as LiveElement).box.y + (lines[i] as LiveElement).box.height));
+      const line = Math.max(...lines.map((e) => e.fontPx)) * 1.3;
+      if (gaps.length >= 2 && Math.max(...gaps) - Math.min(...gaps) > Math.max(0.5 * line, 0.6 * Math.max(...gaps))) bad.push(`uneven spacing between lines (${gaps.map((g) => Math.round(g)).join('/')} px)`);
       if (!aligned) bad.push(`the lines do not share one alignment (left edges spread ${Math.round(spread(lefts))} px, centres ${Math.round(spread(mids))} px)`);
       return res(name, bad, `${lines.length} narration lines at one size and one alignment`);
     }
