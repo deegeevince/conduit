@@ -294,6 +294,11 @@ export class CanvasService {
     return value;
   }
 
+  /** The conductor measured the draft at the end of the pass for its own look: the tools read that, and do not measure the same stage twice. */
+  seed(s: Session, measured: Measured): void {
+    this.remember(this.cacheKey(s, 'reported'), measured);
+  }
+
   /** Only what is already measured: the footer of a call that did no measuring of its own never pays for one. */
   private peeked(s: Session): Measured | null {
     return this.cache.get(this.cacheKey(s, 'reported')) ?? null;

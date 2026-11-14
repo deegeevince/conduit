@@ -1141,6 +1141,7 @@ export class Conductor {
               if (this.measuresHere(s) === false || !measurable(turn.score.schedule)) return null;
               const measured = measureDraft(turn.score, s);
               if (measured === null) return null;
+              this.deps.canvas?.seed(s, measured);
               this.deps.sessionLog.write(s.id, { type: 'measure', turn: turn.id, pass: measurePass, ms: Math.round(measured.ms * 10) / 10, boxes: measured.boxes, noted: measured.sight.items.filter((item) => item.notes.length > 0).length });
               this.noteBoxes(s, `${turn.id}#${measurePass}`, 'server', measured.boxes, 'draft', turn.id);
               return measured;
