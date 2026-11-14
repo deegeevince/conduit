@@ -25,7 +25,7 @@ Domain types are plain interfaces in the middle. Edges translate. Every outside 
 | Interface | Owned by | Adapters |
 | --- | --- | --- |
 | `Brain` (`server/src/domain/brain.ts`) | server domain | relay, claude-cli, replay |
-| `ImageModel` (`server/src/domain/images.ts`) | server domain | none (the default), OpenAI |
+| `ImageModel` (`server/src/domain/images.ts`) | server domain | none (the only one: no image model, so a `paint` line leaves its sketch) |
 | `SessionLog` (`server/src/domain/session-log.ts`) | server domain | JSONL files, none |
 | `Renderer` (`web/src/contracts/renderer.ts`) | painter | three.js, plain DOM |
 | `StageLink` (`web/src/contracts/link.ts`) | web app | HTTP (SSE down, POST up) |
@@ -45,7 +45,6 @@ Each vendor is imported in exactly one place, so replacing one is a change to on
 | `troika-three-text` | `web/src/render/three/text.ts` |
 | WebCodecs and the muxer packages | `web/src/export/video.ts` |
 | `node:child_process` (the `claude` process) | `server/src/brains/claude-cli/process.ts` |
-| the OpenAI Images API (over `fetch`) | `server/src/images/openai/openai-images.ts` |
 | `node:fs` for session logs | `server/src/logs/jsonl-session-log.ts` |
 | `node:dns`, `node:net`, `node:http(s)`, `node:zlib` (reading links) | `server/src/reading/safe-fetch.ts` |
 | `hono`, `@hono/node-server` | files under `server/src/http/`, and `server/src/main.ts` for `serve` |
@@ -225,7 +224,7 @@ The conversation holds up to four documents (30 MB of PDF). A warm process is gi
 
 `ImageModel.generate(request)` takes words, a medium, the look's palette, an aspect, and the painter's rendering of the sketch when it arrived in time. The conductor starts it when a `paint` line is accepted and the conversation has allowance left, waits at most a second and a half for the sketch (the painter renders and sends it as soon as the `paint` line reaches it, from the schedule and not from what the playhead has drawn, because a brain's pen runs seconds ahead of the playhead), and announces the result with an `asset` event. The bytes are held in memory, bounded per session, and served from the same origin, so the browser still talks to nothing but its own server and holds no key.
 
-The OpenAI adapter uses the edits endpoint when there is a sketch and the generations endpoint when there is not. **It has not been run against the real service**: no key has been approved. It is written against a stand-in and marked untested in its file.
+The OpenAI adapter and its stand-in were removed in v2.1: every model call is the `claude` CLI on the owner's login, and no image model is configured anywhere.
 
 ## (v2) The technique library
 
@@ -321,7 +320,7 @@ Verified on the integrated product (Node 22.14.0, pnpm 10.28.2, TypeScript 7.0.2
 - Look and fix inside the battery runs through the same `reviewTurn` the server uses: the draft is pictured by the page, the brain is shown it, a fix is parsed and played, and the judge scores both.
 - Seams found only by putting the parts together, and fixed: a card did not reserve its room in the flow (the say line and button drew over it); a structure carried to rest showed no rows (the resting picture of a table, and so the brain's snapshot of it, was blank); a renderer-made painting never reached the renderer; a chain of twenty steps ran off the right edge (it now folds into rows); the chart engine drew before its fonts were loaded; the battery's pictures had no charts in them.
 
-Not verified: the OpenAI adapter against the real service (no spend approved); QuickTime and VLC playback of an exported film; memory during a 60 s export; weather thinning over text and the 12 field kinds by eye; background-tab rendering.
+Not verified: QuickTime and VLC playback of an exported film; memory during a 60 s export; weather thinning over text and the 12 field kinds by eye; background-tab rendering.
 
 Carried over from v0 and still true: three and troika render together under Vite; the processed font files are exactly fixed pitch; with text limited to `GLYPHS` the page makes no request to another origin.
 
