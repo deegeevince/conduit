@@ -288,9 +288,12 @@ export function sightOf(timeline: Timeline, schedule: Schedule, base: StageBase,
     const probe: Rect = { x: screenBox.x - 0.25, y: screenBox.y - 0.25, w: Math.max(screenBox.w, 0.5), h: Math.max(screenBox.h, 0.5) };
     const area = areaOf(probe);
     const seen = overlapArea(probe, screen);
-    if (seen <= 0) notes.push('off-canvas');
-    else if (1 - seen / area > CLIPPED_SHARE) notes.push('clipped');
-    if (element.kind !== 'text' && Math.max(screenBox.w, screenBox.h) < TINY_PX) notes.push('tiny');
+    // what is not on the stage at rest (it left, or has not come) is not reported as off it, cut, or too small
+    if (entry.resting) {
+      if (seen <= 0) notes.push('off-canvas');
+      else if (1 - seen / area > CLIPPED_SHARE) notes.push('clipped');
+      if (element.kind !== 'text' && Math.max(screenBox.w, screenBox.h) < TINY_PX) notes.push('tiny');
+    }
     // A subject that ends outside the picture's region (the final frame, not the first): the stage clips it there, and what is cut off is gone.
     if (entry.resting && element.kind !== 'text' && !notes.includes('clipped') && !notes.includes('off-canvas') && element.figure?.kind !== 'group') {
       const region = fitOf(element.scene).region;

@@ -25,8 +25,8 @@ import { spawnTracked } from '../brains/claude-cli/process';
 import { processEnvironment } from '../env';
 import type { SessionRecord } from '../domain/session-log';
 
-const WEB_PORT = 4729;
-const CHROME_PORT = 4761;
+const WEB_PORT = Number(process.env.CAPTURE_WEB_PORT ?? 4729);
+const CHROME_PORT = Number(process.env.CAPTURE_CHROME_PORT ?? 4761);
 const STRIP_FRAMES = 12;
 const SCREENS: Readonly<Record<string, { width: number; height: number }>> = { '1280x720': { width: 1280, height: 720 }, '390x844': { width: 390, height: 844 }, '1920x825': { width: 1920, height: 825 } };
 const repoRoot = resolve(import.meta.dirname, '..', '..', '..');
@@ -243,6 +243,8 @@ interface Job {
   readonly video: boolean;
   /** a film longer than this (seconds) is made of its first part only */
   readonly maxSeconds: number;
+  /** also return the plan and every element's box at each strip time and at rest */
+  readonly debug: boolean;
 }
 
 interface Made {
@@ -254,6 +256,7 @@ interface Made {
   readonly videoNote: string | null;
   readonly notes: readonly string[];
   readonly rejected: number;
+  readonly debug: unknown;
 }
 
 /** Source of an async function of a Job, run in the page. Plain JavaScript: the page has no TypeScript. */
@@ -312,6 +315,14 @@ const PAGE_SCRIPT = String.raw`async (job) => {
     return (key) => charts.still(key);
   };
 
+  const instantAt = (seconds) => ({ time: seconds, ambient: seconds, wallTime: pinnedWallTime(seconds), clock: 'paused' });
+  const viewsOf = (tl, seconds) => tl.viewsAt(instantAt(seconds)).filter((v) => v.opacity > 0.02).map((v) => ({ key: v.key, id: v.id, kind: v.kind, text: v.text.slice(0, 40), box: [v.box.x, v.box.y, v.box.width, v.box.height].map((n) => Math.round(n)), px: Math.round(v.fontPx) }));
+  let debug = null;
+  if (job.debug) {
+
+    debug = { viewport, rest: { plan: restTimeline.planAt(0), views: viewsOf(restTimeline, 0), notes: [...restTimeline.layoutNotesAt(0)].map(([k, n]) => k + ': ' + n.join(',')) }, at: [] };
+    for (let i = 0; i <= 12; i += 1) { const t = (duration * i) / 12; debug.at.push({ t: +t.toFixed(2), plan: timeline.planAt(t), views: viewsOf(timeline, t) }); }
+  }
   const times = [];
   for (let i = 0; i < job.frames - 1; i += 1) times.push((duration * i) / (job.frames - 1));
   const renderer = makeRenderer();
@@ -390,7 +401,7 @@ const PAGE_SCRIPT = String.raw`async (job) => {
   }
   charts && charts.dispose();
   hold.remove();
-  return { duration, times, strip, rest, webm, videoNote, notes, rejected };
+  return { duration, times, strip, rest, webm, videoNote, notes, rejected, debug };
 }`;
 
 // ---------------------------------------------------------------------------------------------------------------------------------
@@ -407,6 +418,7 @@ interface Options {
   readonly fps: number;
   readonly video: boolean;
   readonly web: string | null;
+  readonly debug: boolean;
 }
 
 function parseArgs(argv: readonly string[]): Options {
@@ -418,6 +430,7 @@ function parseArgs(argv: readonly string[]): Options {
   let fps = 15;
   let video = true;
   let web: string | null = null;
+  let debug = false;
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i] ?? '';
     const value = (): string => argv[(i += 1)] ?? usage(`${arg} needs a value`);
@@ -428,6 +441,7 @@ function parseArgs(argv: readonly string[]): Options {
     else if (arg === '--fps') fps = Math.max(1, Math.min(60, Number(value()) || 15));
     else if (arg === '--web') web = value();
     else if (arg === '--no-video') video = false;
+    else if (arg === '--debug') debug = true;
     else if (arg.startsWith('--')) usage(`unknown flag ${arg}`);
     else positional.push(arg);
   }
@@ -438,7 +452,7 @@ function parseArgs(argv: readonly string[]): Options {
   const log = positional[0];
   if (log === undefined) usage('which log?');
   if (!all && positional[1] === undefined) usage('which turn? (or --all)');
-  return { all, log: resolve(log), turn: all ? null : (positional[1] ?? null), screen, screenName, look, out, fps, video, web };
+  return { all, log: resolve(log), turn: all ? null : (positional[1] ?? null), screen, screenName, look, out, fps, video, web, debug };
 }
 
 interface Captured {
@@ -469,12 +483,14 @@ async function captureOne(page: Page, options: Options, turns: readonly LoggedTu
     fps: options.fps,
     video: options.video,
     maxSeconds: 90,
+    debug: options.debug,
   };
   const made = await page.evaluate<Made>(`(${PAGE_SCRIPT})(${JSON.stringify(job)})`);
   const stem = join(dir, `${basename(options.log, '.jsonl')}-${turn.turn}${options.look === null ? '' : `-${options.look}`}${options.screenName === '1280x720' ? '' : `-${options.screenName}`}`);
   await mkdir(dirname(stem), { recursive: true });
   const strip = `${stem}.strip.png`;
   const rest = `${stem}.rest.png`;
+  if (made.debug !== null) await writeFile(`${stem}.debug.json`, JSON.stringify(made.debug, null, 1));
   await writeFile(strip, Buffer.from(made.strip, 'base64'));
   await writeFile(rest, Buffer.from(made.rest, 'base64'));
   let webm: string | null = null;

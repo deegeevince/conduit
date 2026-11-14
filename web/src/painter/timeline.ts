@@ -1,6 +1,6 @@
 import { CANVAS, describeFigure, outlineOf, ENTER_SECONDS, exitSeconds, isInFlow, isStruckAt, lookOfStage, PACE_TIMING, sceneAt, styleAt, valueAt } from '@conduit/language';
 import type { SightNote, ClockState, ElementChange, ElementSpan, ElementStyle, ExitEffect, Layer, LookId, Mood, ResolvedLook, SceneSpan, Schedule, StageBase } from '@conduit/language';
-import type { CameraSpan } from '@conduit/language';
+import type { CameraSpan, Layout } from '@conduit/language';
 import type { Colour, ElementFrame, FigureFrame, Frame, RunFrame, ShapeFrame } from '../contracts/frame';
 import type { LookSpec, MotionRecipe, MoodCharacter } from '../contracts/look';
 import type { ElementPhase, StageElementView } from '../contracts/painter';
@@ -639,15 +639,18 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
 
   /** The thing the plan divides the stage for at `start`: a picture when anything is drawn on the canvas, and each structure or chart. */
   const flowFloor = new Map<string, number>();
-  const blocksAt = (start: number): { list: StageBlock[]; kinds: Map<string, StageBlock['kind']> } => {
+  const blocksAt = (start: number, sceneId: string): { list: StageBlock[]; kinds: Map<string, StageBlock['kind']> } => {
     const list: StageBlock[] = [];
     const kinds = new Map<string, StageBlock['kind']>();
     let pictureOrder: number | null = null;
     for (const element of drawn) {
-      if (!element.carried && (element.enter === null || element.enter.start > start)) continue;
+      // what is there at `start`, and what this scene will bring later: a block's room is kept for it before it comes, so it never moves when it does
+      const later = !element.carried && element.scene === sceneId && (element.enter === null || element.enter.start > start);
+      if (!element.carried && (element.enter === null || element.enter.start > start) && !later) continue;
       const gone = exitOf(element);
       if (gone !== null && gone.start <= start) continue;
       if (element.kind === 'shape' || element.kind === 'sprite' || element.kind === 'copy' || element.kind === 'picture') {
+        if (later) continue;
         pictureOrder = pictureOrder === null ? element.order : Math.min(pictureOrder, element.order);
         continue;
       }
@@ -657,13 +660,18 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
       if (chart ? context.charts === undefined || figure.chart === null || !context.charts.kinds.includes(figure.chart) : context.engine === undefined && !STRUCTURES_READY.includes(figure.structure)) continue;
       const parts = chart ? 0 : schedule.elements.filter((member) => member.parent === element.key && (member.kind === 'node' || member.kind === 'link')).length + figure.rows.length;
       const box = figure.box;
+      const table = figure.structure === 'table' || figure.structure === 'code';
+      const columns = table ? Math.max(1, ...figure.rows.map((row) => row.cells.length)) : 1;
       kinds.set(element.key, chart ? 'chart' : 'structure');
+      // what it would like, and the least it can be read at (a chart: its title, a few ticks and a plot; a table: its rows at the look's floor)
+      const natural = chart ? { width: 560, height: 320 } : table ? { width: Math.max(280, 150 * columns), height: 60 + 34 * figure.rows.length } : { width: 640, height: 120 + 40 * parts };
+      const least = chart ? { width: 260, height: 190 } : table ? { width: Math.max(200, 100 * columns), height: 40 + 24 * figure.rows.length } : { width: 160, height: 100 };
       list.push({
         key: element.key,
         kind: chart ? 'chart' : 'structure',
         order: element.order,
-        natural: chart ? { width: 640, height: 360 } : { width: 640, height: 120 + 40 * parts },
-        least: chart ? { width: 200, height: 140 } : { width: 160, height: 100 },
+        natural,
+        least,
         aspect: figure.structure === 'cycle' || figure.structure === 'map' ? 16 / 9 : null,
         pinned: box === null ? null : { x: box.x, y: box.y, width: box.w, height: box.h },
       });
@@ -686,7 +694,7 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
     const replaced = new Set<string>();
     for (const element of present) if (element.replaces !== null) replaced.add(element.replaces);
     // The stage plan's blocks: what is on stage that takes room besides the words (PLAN-v2.1, D1)
-    const blocks = blocksAt(start);
+    const blocks = blocksAt(start, scene.id);
     const safe = safeFrame(viewport, look);
     // what the controls are sized for: the flow's width, which only a side-by-side layout narrows
     const first = planStage({ viewport, look, layout: scene.layout, blocks: blocks.list, flowHeight: () => 0, flowOrder: null, footHeight: () => 0 });
@@ -730,9 +738,17 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
       liveControls.push(group);
       items.push({ key: group.key, order: group.order, text: '', emphasis: [], style: { ...laidStyle(style), stay: 'pin' }, struck: false, replaces: null, reserve: { width: room.outer.width, height: room.outer.height } });
     }
-    const sides = scene.layout === 'split' ? splitSides(schedule, scene.id) : undefined;
+    // A wide stage with controls on it sets them in a column of their own, to the left, and the words to the right: the controls keep their
+    // place whatever the words do, and neither covers the other. A narrow stage keeps one column.
+    const withControls = controlSpans.some((span) => span.scene === scene.id && span.parent === null) || drawn.some((group) => group.scene === scene.id && group.figure?.kind === 'group' && group.figure.card !== undefined);
+    const arrLayout: Layout = withControls && viewport.width >= 900 && viewport.width >= 1.5 * viewport.height && (scene.layout === 'stack' || scene.layout === 'caption' || scene.layout === 'solo') ? 'split' : scene.layout;
+    const sides = arrLayout === 'split' ? (scene.layout === 'split' ? splitSides(schedule, scene.id) : new Map<string, 'left' | 'right'>([...controlSpans, ...drawn].filter((span) => span.scene === scene.id).map((span): [string, 'left' | 'right'] => [span.key, 'left']).concat(elements.filter((span) => span.scene === scene.id).map((span): [string, 'left' | 'right'] => [span.key, 'right'])))) : undefined;
     // The words and the choices are measured across the column; the plan divides the stage; the canvas is fitted into the picture's region.
-    const probe: LayoutInput = { viewport, look, layout: scene.layout, align: scene.align, expected: valueAt(scene.expected, start, null), items, foot: safe, ...(sides === undefined ? {} : { sides }) };
+    // what the scene will still say is counted for the plan too, so that the room the blocks and the foot are given is the one they keep
+    const comingItems: LayoutItem[] = elements
+      .filter((element) => element.scene === scene.id && !element.carried && element.replaces === null && element.enter !== null && element.enter.start > start)
+      .map((element) => ({ key: element.key, order: element.order, text: element.text, emphasis: element.emphasis, style: laidStyle(styleAt(element, element.enter?.start ?? start)), struck: false, replaces: null }));
+    const probe: LayoutInput = { viewport, look, layout: arrLayout, align: scene.align, expected: valueAt(scene.expected, start, null), items: [...items, ...comingItems], foot: safe, ...(sides === undefined ? {} : { sides }) };
     const needs = needsOf(probe, safe.width);
     // a scene's words never ask for less than they did a moment ago, so the picture does not breathe as lines come and go
     const floor = flowFloor.get(scene.id) ?? 0;
@@ -744,6 +760,7 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
       blocks: blocks.list,
       flowHeight: (width) => (wanted <= 0 ? 0 : Math.max(floor, width === safe.width ? wanted : needsOf(probe, width).flow)),
       flowOrder: needs.order,
+      flowLeast: (width) => (width === safe.width ? needs.least : needsOf(probe, width).least),
       footHeight: (width) => (width === safe.width ? needs.foot : needsOf(probe, width).foot),
     });
     flowFloor.set(scene.id, wanted);
@@ -759,13 +776,33 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
       const scale = planeScale(style.layer, viewport);
       pins.set(element.key, { x: (fit.box.x + style.at.x * fit.unit) / scale, y: (fit.box.y + style.at.y * fit.unit) / scale, k: keeps });
     }
+    // drawn things that words given a point keep clear of: the outlines and drawings on the canvas (a filled card, or a shape that fills most of
+    // the picture, is a ground the words are meant to stand on) and the boxes the brain gave structures
+    const solids: (Box & { ground?: boolean })[] = [];
+    for (const element of drawn) {
+      if (!element.carried && (element.enter === null || element.enter.start > start)) continue;
+      const gone = exitOf(element);
+      if (gone !== null && gone.start <= start) continue;
+      if (element.scene !== scene.id && !element.carried) continue;
+      const figure = element.figure;
+      if (element.kind === 'structure' && figure !== null && figure.kind === 'structure' && figure.box !== null) {
+        solids.push({ x: fit.box.x + figure.box.x * fit.unit, y: fit.box.y + figure.box.y * fit.unit, width: figure.box.w * fit.unit, height: figure.box.h * fit.unit });
+        continue;
+      }
+      if ((element.kind !== 'shape' && element.kind !== 'copy') || element.style.layer !== 'mid') continue;
+      const ground = element.style.fill !== undefined && element.style.fill !== 'none';
+      const at = canvasBoxOf(element, schedule, Math.max(start, element.enter?.end ?? 0));
+      if (at === null || at.w * at.h > 0.6 * CANVAS[scene.canvas].width * CANVAS[scene.canvas].height) continue;
+      solids.push({ x: fit.box.x + at.x * fit.unit, y: fit.box.y + at.y * fit.unit, width: Math.max(1, at.w * fit.unit), height: Math.max(1, at.h * fit.unit), ...(ground ? { ground } : {}) });
+    }
     const arrangement = arrange({
       viewport,
       look,
-      layout: scene.layout,
+      layout: arrLayout,
       align: scene.align,
       expected: valueAt(scene.expected, start, null),
       items,
+      obstacles: solids,
       flow: plan.flow,
       ...(plan.foot === null ? {} : { foot: plan.foot }),
       pins,
@@ -1605,7 +1642,7 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
    */
   let calloutLeaders = new Map<string, { points: { x: number; y: number }[]; closed: boolean; layer: Layer }>();
   const calloutMemo = new Map<string, ReturnType<typeof layoutCallouts>>();
-  const placeLoose = (tq: number, look: LookSpec): Map<string, { x: number; y: number }> => {
+  const placeLooseAt = (tq: number, look: LookSpec): Map<string, { x: number; y: number }> => {
     const out = new Map<string, { x: number; y: number }>();
     const cell = cellOf('m', viewport, look);
     const taken: Rect[] = [];
@@ -1793,6 +1830,48 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
       }
     }
     return out;
+  };
+
+  /**
+   * Labels beside the thing they name stand where the scene's whole drawing puts them, from the moment they appear: a label never moves because
+   * a shape or another label arrives after it. The scene is placed once, at the moment everything in it has come; a label whose target moves
+   * keeps following it, and a label that is gone by then is placed as it stands.
+   */
+  const settledLoose = new Map<string, { out: Map<string, { x: number; y: number }>; leaders: typeof calloutLeaders }>();
+  const placeLoose = (tq: number, look: LookSpec): Map<string, { x: number; y: number }> => {
+    const now = placeLooseAt(tq, look);
+    const scene = sceneAt(schedule, tq);
+    let rest = tq;
+    for (const element of schedule.elements) if (element.scene === scene.id && !element.carried && element.enter !== null) rest = Math.max(rest, element.enter.end);
+    if (rest <= tq + 1e-6) return now;
+    const nowLeaders = calloutLeaders;
+    const cacheKey = `${scene.id}|${rest.toFixed(3)}|${look.id}|${look.name}`;
+    let final = settledLoose.get(cacheKey);
+    if (final === undefined) {
+      const out = placeLooseAt(rest, look);
+      final = { out, leaders: calloutLeaders };
+      settledLoose.set(cacheKey, final);
+      if (settledLoose.size > 16) settledLoose.delete(settledLoose.keys().next().value as string);
+    }
+    const merged = new Map(now);
+    const leaders = new Map(nowLeaders);
+    for (const [key, position] of final.out) {
+      const element = byKey.get(key);
+      const near = element === undefined ? null : styleAt(element, tq).near;
+      if (element === undefined || near === null || !isLiveAt(element, tq)) continue;
+      const target = drawnLive(near.id, rest);
+      const was = drawnLive(near.id, tq);
+      if (target === null || was === null || target.key !== was.key) continue;
+      const a = canvasBoxOf(was, schedule, tq);
+      const b = canvasBoxOf(target, schedule, rest);
+      if (a === null || b === null || Math.abs(a.x - b.x) > 0.3 || Math.abs(a.y - b.y) > 0.3 || Math.abs(a.w - b.w) > 0.3 || Math.abs(a.h - b.h) > 0.3) continue;
+      merged.set(key, position);
+      const leader = final.leaders.get(key);
+      if (leader === undefined) leaders.delete(key);
+      else leaders.set(key, leader);
+    }
+    calloutLeaders = leaders;
+    return merged;
   };
 
   interface Poly {

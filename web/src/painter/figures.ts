@@ -1144,6 +1144,8 @@ function openEdgesOf(placed: readonly Placed[], standing: ReadonlyMap<string, El
   for (const item of placed) {
     const figure = item.el.figure;
     if (figure === null || figure.kind !== 'shape' || item.trans.to.bleed === 'none' || inPainting(item.el)) continue;
+    // an outline with nothing in it does not cover an edge: only a filled shape does
+    if (item.el.style.fill === undefined || item.el.style.fill === 'none') continue;
     const { a, b, c, d, e, f } = item.M;
     if (Math.abs(b) > 1e-3 || Math.abs(c) > 1e-3 || Math.abs(a) < 1e-6 || Math.abs(d) < 1e-6) continue;
     const canvas = canvasOf(item.el, sc);

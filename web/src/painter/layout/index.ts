@@ -55,6 +55,9 @@ export interface LayoutInput {
    * other text, otherwise it slides to the nearest clear place and, failing
    * that, shrinks within the look's minimum.
    */
+  /** v2.1: drawn things on the reading plane (stage units) that words given a point must stand clear of: an outline, a drawing, a structure the brain boxed */
+  /** `ground`: a filled card, which words may stand wholly inside (a label on a card) but not across the edge of */
+  readonly obstacles?: readonly (Box & { readonly ground?: boolean })[];
   readonly pins?: ReadonlyMap<string, { readonly x: number; readonly y: number; /** how much of its size the word keeps because the picture it stands on was made smaller (the stage plan gave the picture less room than the whole stage): 0..1, absent is 1 */ readonly k?: number }>;
   /**
    * The column each line without `at=left|right` belongs to in a `split` scene, decided once over every line of the scene, so a line keeps its
@@ -419,7 +422,9 @@ function buildUnits(input: LayoutInput, look: LookSpec): { flow: Unit[]; loose: 
   for (const main of mains) {
     const unit: Unit = { main, ghosts: (ghostsOf.get(main.item.key) ?? []).sort(byOrder) };
     all.set(main.item.key, unit);
-    (isFlow(main.item.style, input.layout) ? flow : loose).push(unit);
+    // the choices belong to the foot wherever the brain said to put them: the foot is reserved for them, and nothing else is
+    const choice = input.foot !== undefined && main.item.style.tap && main.item.reserve === undefined;
+    (choice || isFlow(main.item.style, input.layout) ? flow : loose).push(unit);
   }
   return { flow, loose, all };
 }
@@ -649,8 +654,10 @@ function arrangeFlow(units: readonly Unit[], ctx: Context): FlowResult {
   const block = Math.max(present, ...reserved);
   const centreShift = ctx.input.layout === 'solo' ? -0.04 * ctx.safe.height : 0;
   const bottom = ctx.safe.y + ctx.safe.height;
-  let top = ctx.safe.y + (ctx.safe.height - Math.max(0, ...reserved)) / 2 + centreShift;
-  top = Math.max(ctx.safe.y, Math.min(top, bottom - block));
+  // beside a column of controls the block stands where the controls' own column puts it: the words' column changes with every line, the controls do not move
+  const anchored = ctx.input.sides !== undefined && plan.length === 2 ? (reserved[0] ?? 0) : Math.max(0, ...reserved);
+  let top = ctx.safe.y + (ctx.safe.height - anchored) / 2 + centreShift;
+  top = Math.max(ctx.safe.y, Math.min(top, bottom - (anchored > 0 && ctx.input.sides !== undefined && plan.length === 2 ? Math.max(anchored, reserved[0] ?? 0) : block)));
   // a reading column begins at the top of its box and never moves until it scrolls
   if (page) top = ctx.safe.y;
   if (ctx.snap) {
@@ -902,7 +909,7 @@ function arrangeLoose(
     let bestOverlap = Infinity;
     if (pin !== null) {
       // Told a point: the word is set centred there. If that lands on other text it moves the least it must to a clear place; if that is far, it shrinks first.
-      const avoid = [...text, ...taken, ...across];
+      const solids = layer === 'mid' ? (ctx.input.obstacles ?? []) : [];
       const reach = 4 * step.y;
       let best: { loose: Loose; position: { x: number; y: number }; moved: number } | null = null;
       const kept = pin.k ?? 1;
@@ -913,6 +920,9 @@ function arrangeLoose(
           x: Math.max(frame.x, Math.min(pin.x - size.width / 2, frame.x + frame.width - size.width)),
           y: Math.max(frame.y, Math.min(pin.y - size.height / 2, frame.y + frame.height - size.height)),
         };
+        // a card the word lies wholly inside is its ground, not in its way
+        const inside = (o: Box & { readonly ground?: boolean }): boolean => o.ground === true && wanted.x >= o.x && wanted.y >= o.y && wanted.x + size.width <= o.x + o.width && wanted.y + size.height <= o.y + o.height;
+        const avoid = [...text, ...taken, ...across, ...solids.filter((o) => !inside(o))];
         const found = nearestClear(wanted, size, frame, avoid, pad, { x: step.x, y: step.y / 2 });
         if (found === null) continue;
         const position = snapInside(found, size, frame, ctx);
@@ -921,7 +931,8 @@ function arrangeLoose(
         if (moved <= reach) break;
       }
       if (best === null) {
-        const loose = buildLoose(unit, 'center', frame, ctx, kept);
+        // nowhere is clear: as small as it may be, at the point it was told, rather than full size on top of something
+        const loose = buildLoose(unit, 'center', frame, ctx, (CLEAR_SHRINK[CLEAR_SHRINK.length - 1] ?? 1) * kept);
         const size = { width: loose.width, height: loose.height };
         const wanted = {
           x: Math.max(frame.x, Math.min(pin.x - size.width / 2, frame.x + frame.width - size.width)),
@@ -1012,11 +1023,22 @@ interface FootRow {
 
 /** The choices set in rows across `width`: each row as many as fit, the rest wrap. */
 function footRows(units: readonly Unit[], width: number, ctx: Context): { rows: FootRow[]; height: number; vgap: number; hgap: number } {
+  // the choices are set a little smaller before they wrap onto a second row: the foot is room taken from everything else
+  let laid = footRowsAt(units, width, ctx, 1);
+  for (const k of [0.85, 0.72]) {
+    if (laid.rows.length <= 1) break;
+    const tighter = footRowsAt(units, width, ctx, k);
+    if (tighter.rows.length < laid.rows.length) laid = tighter;
+  }
+  return laid;
+}
+
+function footRowsAt(units: readonly Unit[], width: number, ctx: Context, k: number): { rows: FootRow[]; height: number; vgap: number; hgap: number } {
   const hgap = 2 * ctx.bodyW;
   const vgap = ctx.bodyH * 0.75;
   const rows: { blocks: Block[]; width: number; height: number }[] = [];
   for (const unit of units) {
-    const block = makeBlock(unit.main, 1, width, 0, null, ctx);
+    const block = makeBlock(unit.main, k, width, 0, null, ctx);
     const last = rows[rows.length - 1];
     if (last !== undefined && last.width + hgap + block.width <= width + EPS) {
       last.blocks.push(block);
@@ -1091,7 +1113,7 @@ export function arrange(input: LayoutInput): Arrangement {
  * What the stage plan needs to know of the words before it divides the stage (PLAN-v2.1, D1): how tall the flow is across a column `width`
  * wide with all that is expected come, and how tall the choices are across the same width. Set with the very code `arrange` uses.
  */
-export function needsOf(input: LayoutInput, width: number): { readonly flow: number; readonly foot: number; readonly order: number | null } {
+export function needsOf(input: LayoutInput, width: number): { readonly flow: number; readonly foot: number; readonly order: number | null; readonly least: number } {
   const { look } = input;
   const ctx = contextOf(input, { x: -width / 2, y: -1e6, width, height: 2e6 });
   const built = buildUnits(input, look);
@@ -1099,7 +1121,16 @@ export function needsOf(input: LayoutInput, width: number): { readonly flow: num
   const flow = input.foot === undefined ? built.flow : built.flow.filter((unit) => !isChoice(unit));
   const flowNeed = flow.length === 0 && (input.expected ?? 0) <= 0 ? 0 : arrangeFlow(flow, ctx).need;
   const order = flow.length === 0 ? null : Math.min(...flow.map((unit) => unit.main.item.order));
-  return { flow: flowNeed, foot: choices.length === 0 ? 0 : footRows(choices, width, ctx).height, order };
+  // the least the words can be given and still show what matters: the headings and the tallest single line under them, which is what a full column keeps
+  let least = 0;
+  if (flowNeed > 0) {
+    const headings = flow.filter(isHeading);
+    const bodies = flow.filter((unit) => !isHeading(unit));
+    least = headings.length === 0 ? 0 : arrangeFlow(headings, ctx).need;
+    for (const unit of bodies) least = Math.max(least, arrangeFlow([...headings, unit], ctx).need);
+    least = Math.min(least, flowNeed);
+  }
+  return { flow: flowNeed, foot: choices.length === 0 ? 0 : footRows(choices, width, ctx).height, order, least };
 }
 
 // ---------------------------------------------------------------- one block of words

@@ -836,7 +836,7 @@ export function aboutYouText(about: AboutYou): string {
       : mode === 'steward'
         ? "Steward mode: the owner's own Claude Code session answers this canvas, with its own tools."
         : about.web || tools.length > 0
-          ? 'You can search the web and read pages (WebSearch, WebFetch), read-only. Use search for anything current: prices, news, today, recent facts; never guess a live figure. Search before your first line or between lines, then say the answer and cite each source as a link on stage. You cannot act on their accounts or files, or run commands (/brain agent would let you, with their yes): say so plainly, then offer what you can do.'
+          ? 'You can search the web and read pages (WebSearch, WebFetch), read-only. Use search for anything current: prices, news, today, recent facts; never guess a live figure. Search before your first line or between lines, then say the answer and cite each source as a link on stage. Lines of the language are text you write, never tool calls: there is no tool named scene or say. You cannot act on their accounts or files, or run commands (/brain agent would let you, with their yes): say so plainly, then offer what you can do.'
           : 'No tools here: you cannot act on their accounts or files; say so plainly (/brain agent would let you, with their yes), then offer what you can do.';
   return [
     `ABOUT YOU: model ${about.model}, effort ${about.effort}, on the owner's Claude subscription via the Claude Code CLI; no API key.`,
