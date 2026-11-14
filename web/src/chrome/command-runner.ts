@@ -26,8 +26,11 @@ export function pageSource(title: string, columns: readonly string[], rows: read
 /** The `/usage` page: the last day by the hour as columns, the last week by the day as rows, and where the hour stands against the cap. */
 export function usagePage(usage: UsageView): string {
   const money = (amount: number): string => (amount >= 100 ? `$${Math.round(amount)}` : amount >= 1 ? `$${amount.toFixed(2)}` : `$${amount.toFixed(3)}`);
-  const lines = ['scene stack', 'chart columns | Model use per hour, last 24 hours (cost-equivalent dollars)', '| hour | dollars'];
-  for (const hour of usage.hours) lines.push(`| ${new Date(hour.start).getHours()}h | ${hour.costUsd.toFixed(3)}`);
+  const lines = ['scene stack', 'chart columns | Model use per hour, last 24 hours (cost-equivalent dollars)', '| when | dollars'];
+  for (const [index, hour] of usage.hours.entries()) {
+    const ago = usage.hours.length - 1 - index;
+    lines.push(`| ${ago === 0 ? 'now' : `${ago}h ago`} | ${hour.costUsd.toFixed(3)}`);
+  }
   lines.push('table rows | Per day');
   lines.push('| Day | Calls | Cost-equivalent | Of which the critic');
   const week = [...usage.days].reverse();
