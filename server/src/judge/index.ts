@@ -2,12 +2,12 @@
 // comparison all come here, so one rubric (with one hash) stands behind every score. Moved out of `tools/explore-judge.ts`, whose
 // callers (package H) now import from here.
 
-import type { CriticFinding, CriticProblem, ExploreJudgement } from '@conduit/language';
+import type { CriticFinding, ExploreJudgement } from '@conduit/language';
 import { askObject } from './ask';
 import { shareOf } from './ask';
 import type { JudgeSettings, JudgeUsage, Picture } from './ask';
 import { readGates, readProgress } from './gates';
-import { CHART_ADDENDUM, COMPARE_SYSTEM, FOLLOW_UP_ADDENDUM, GATES_ADDENDUM, RESPONDS_SYSTEM, SYSTEM, WORST_CASE_ADDENDUM, rubricOf } from './rubric';
+import { CHART_ADDENDUM, COMPARE_SYSTEM, FOLLOW_UP_ADDENDUM, LIVE_SYSTEM, RESPONDS_SYSTEM, SYSTEM, WORST_CASE_ADDENDUM, rubricOf } from './rubric';
 
 export type { JudgeSettings, Picture } from './ask';
 export { rubricOf } from './rubric';
@@ -149,37 +149,26 @@ function lookText(input: FindingInput): string {
     ? 'One picture follows: the stage as the answer left it.'
     : `Two pictures follow. The FIRST is the stage as the previous answer left it, and the verdict you gave it is below; it is for reference, do not judge it again. The SECOND is the stage as this answer left it: judge that one, by every gate.\n\nYour earlier verdict on the FIRST:\n${earlierVerdict(input.previous.finding)}`;
   const measured = input.measured === undefined || input.measured.length === 0 ? '' : `\n\nWhat the painter measured on the stage (measurements, not opinions; trust the picture over them): \n${input.measured.map((line) => `- ${line}`).join('\n')}`;
-  return `${requestText(input, pictures)}${measured}`;
-}
-
-/** The battery's own questions, read as problems under the gate each belongs to. */
-function batteryProblems(object: Record<string, unknown>): CriticProblem[] {
-  const out: CriticProblem[] = [];
-  const textProblem = textOrNull(object['textProblem']);
-  const wrongLabel = textOrNull(object['wrongLabel']);
-  const mistake = textOrNull(object['mistake']);
-  if (textProblem !== null) out.push({ id: null, what: textProblem, weight: 'blocks', gate: 'readable', tier: 1, evidence: textProblem });
-  if (wrongLabel !== null) out.push({ id: null, what: wrongLabel, weight: 'blocks', gate: 'no-overlap', tier: 1, evidence: wrongLabel });
-  if (mistake !== null && object['correct'] !== true) out.push({ id: null, what: mistake, weight: 'hurts', gate: 'answers-ask', tier: 2, evidence: mistake });
-  return out;
+  const extra = `${input.mockup === true ? `\n\n${WORST_CASE_ADDENDUM}` : ''}${input.previous === undefined || input.previous === null ? '' : `\n\n${FOLLOW_UP_ADDENDUM}`}`;
+  return `${requestText(input, pictures)}${measured}${extra}`;
 }
 
 /** One resting picture, as the live critic looks at it. Null when the judge could not be read twice or failed. */
 export async function judgeFinding(input: FindingInput, picture: Picture, settings: JudgeSettings, signal: AbortSignal): Promise<{ finding: CriticFinding | null; failure: string | null }> {
   const mockup = input.mockup === true;
   const previous = input.previous ?? null;
-  const system = `${SYSTEM}\n${GATES_ADDENDUM}${mockup ? `\n${WORST_CASE_ADDENDUM}` : ''}${previous === null ? '' : `\n${FOLLOW_UP_ADDENDUM}`}`;
-  const got = await askObject(system, lookText(input), previous === null ? [picture] : [previous.picture, picture], settings, signal);
+  const got = await askObject(LIVE_SYSTEM, lookText(input), previous === null ? [picture] : [previous.picture, picture], settings, signal);
   if (got.object === null) return { finding: null, failure: describe(got.failure, got.stderr, got.reply) };
   const base = findingOf(got.object, input, settings, got.ms, got.cost, got.usage);
   if (base === null) return { finding: null, failure: 'the judge answered without a coherence score' };
-  const read = readGates(got.object, base.coherence, new Set(input.ids), mockup, batteryProblems(got.object));
+  const read = readGates(got.object, base.coherence, new Set(input.ids), mockup);
   // a judge that sent no gates is read as before: its problems stand as it weighed them
   if (read === null) return { finding: base, failure: null };
   const progress = previous === null ? null : readProgress(got.object['progress']);
   const finding: CriticFinding = {
     ...base,
     coherence: read.coherence,
+    readable: read.gates.find((g) => g.gate === 'readable')?.pass !== false,
     problems: read.problems,
     gates: read.gates,
     failedTier: read.failedTier,

@@ -42,54 +42,43 @@ export interface GateReading {
   readonly judgedCoherence: number | undefined;
 }
 
-/** `object` is the judge's reply, `coherence` its score (1..5), `ids` what is on the stage, `mockup` whether the worst-case gate was asked. Null when it gave no gates at all. */
-export function readGates(object: Record<string, unknown>, coherence: number, ids: ReadonlySet<string>, mockup: boolean, extra: readonly CriticProblem[]): GateReading | null {
-  const rawGates = Array.isArray(object['gates']) ? (object['gates'] as unknown[]) : [];
-  const gates: CriticGate[] = [];
-  for (const item of rawGates) {
+const gateIds = (value: unknown): string[] => (Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string').map((v) => v.trim()) : []);
+
+/**
+ * `object` is the judge's reply: `passed` (gate ids) and `failed` (one entry per failure). `coherence` is its score (1..5), `ids` what is on the
+ * stage, `mockup` whether the worst-case gate was asked. Null when it named no gate at all.
+ */
+export function readGates(object: Record<string, unknown>, coherence: number, ids: ReadonlySet<string>, mockup: boolean): GateReading | null {
+  const found: CriticProblem[] = [];
+  for (const item of (Array.isArray(object['failed']) ? (object['failed'] as unknown[]) : []).slice(0, 10)) {
     if (typeof item !== 'object' || item === null) continue;
     const entry = item as Record<string, unknown>;
     const gate = typeof entry['gate'] === 'string' ? entry['gate'].trim() : '';
     const tier = tierOf.get(gate);
-    if (tier === undefined || typeof entry['pass'] !== 'boolean') continue;
-    if (gate === WORST_CASE_GATE.gate && !mockup) continue;
-    if (gates.some((g) => g.gate === gate)) continue;
-    gates.push({ gate, tier, pass: entry['pass'], evidence: text(entry['evidence']) ?? '' });
-  }
-  if (gates.length === 0) return null;
-
-  const rawProblems = Array.isArray(object['problems']) ? (object['problems'] as unknown[]) : [];
-  const found: CriticProblem[] = [];
-  for (const item of rawProblems.slice(0, 10)) {
-    if (typeof item !== 'object' || item === null) continue;
-    const entry = item as Record<string, unknown>;
-    const what = text(entry['what']);
-    if (what === null) continue;
-    const gate = typeof entry['gate'] === 'string' && tierOf.has(entry['gate'].trim()) ? entry['gate'].trim() : null;
-    if (gate === WORST_CASE_GATE.gate && !mockup) continue;
-    const weight: Weight = WEIGHTS.find((w) => w === entry['weight']) ?? 'hurts';
+    if (tier === undefined || (gate === WORST_CASE_GATE.gate && !mockup)) continue;
+    const evidence = text(entry['evidence']);
+    const what = text(entry['what']) ?? evidence ?? `fails the ${gate} gate`;
+    const weight: Weight = WEIGHTS.find((w) => w === entry['weight']) ?? (tier === 1 ? 'blocks' : 'hurts');
     const owner = OWNERS.find((o) => o === entry['owner']);
     const id = typeof entry['id'] === 'string' && ids.has(entry['id']) ? entry['id'] : null;
-    const evidence = text(entry['evidence']);
-    // a problem that names no gate falls under the tier its weight suggests; the gates it could be argued under are not guessed
-    const tier: CriticTier = gate !== null ? (tierOf.get(gate) as CriticTier) : weight === 'polish' ? 3 : 2;
-    found.push({ id, what, weight, ...(gate === null ? {} : { gate }), tier, ...(evidence === null ? {} : { evidence }), ...(owner === undefined ? {} : { owner }) });
+    found.push({ id, what, weight, gate, tier, ...(evidence === null ? {} : { evidence }), ...(owner === undefined ? {} : { owner }) });
   }
-  // a failed gate with no problem written for it still gets one, from the judge's own evidence
-  for (const gate of gates) {
-    if (gate.pass || found.some((p) => p.gate === gate.gate)) continue;
-    found.push({ id: null, what: gate.evidence === '' ? `fails the ${gate.gate} gate` : gate.evidence, weight: gate.tier === 1 ? 'blocks' : gate.tier === 2 ? 'hurts' : 'polish', gate: gate.gate, tier: gate.tier, ...(gate.evidence === '' ? {} : { evidence: gate.evidence }) });
+  const failedIds = new Set(found.map((p) => p.gate ?? ''));
+  const gates: CriticGate[] = [];
+  const seen = new Set<string>();
+  // a gate named in both lists is a fail; a gate named in neither was not judged, which is not a pass
+  for (const gate of [...failedIds, ...gateIds(object['passed'])]) {
+    const tier = tierOf.get(gate);
+    if (tier === undefined || seen.has(gate) || (gate === WORST_CASE_GATE.gate && !mockup)) continue;
+    seen.add(gate);
+    const fail = found.find((p) => p.gate === gate);
+    gates.push({ gate, tier, pass: fail === undefined, evidence: fail?.evidence ?? '' });
   }
-  // what the battery's own questions found (an unreadable word, a wrong label, a mistake) counts, under the gate it belongs to, unless the judge already wrote a problem for that gate; the gate is then a fail
-  for (const problem of extra) {
-    if (found.some((p) => p.what === problem.what || (problem.gate !== undefined && p.gate === problem.gate))) continue;
-    found.push(problem);
-    const at = gates.findIndex((g) => g.gate === problem.gate);
-    if (at >= 0 && gates[at]?.pass === true) gates[at] = { ...(gates[at] as CriticGate), pass: false, evidence: problem.what };
-  }
+  if (gates.length === 0) return null;
+  gates.sort((a, b) => a.tier - b.tier || (GATES.findIndex((g) => g.gate === a.gate) + 1 || 99) - (GATES.findIndex((g) => g.gate === b.gate) + 1 || 99));
 
-  // the lowest tier that fails: from the gates, and from any problem filed under a gate the judge marked as passed (it is not let off)
-  const failing = [...gates.filter((g) => !g.pass && g.gate !== WORST_CASE_GATE.gate).map((g) => g.tier), ...found.filter((p) => p.gate !== WORST_CASE_GATE.gate && p.gate !== undefined && p.weight !== 'polish').map((p) => p.tier as CriticTier)];
+  // the lowest tier that fails; the worst-case note of a mock-up counts toward none
+  const failing = found.filter((p) => p.gate !== WORST_CASE_GATE.gate).map((p) => p.tier as CriticTier);
   const failedTier = failing.length === 0 ? null : (Math.min(...failing) as CriticTier);
 
   const problems: CriticProblem[] = found.map((problem) => {
