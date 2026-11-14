@@ -811,7 +811,7 @@ export function asksWhatsNew(input: TurnInput): boolean {
 
 /** The newest changelog section as the brief gives it: what the brain is to do with it is said here, once, and never in the system prompt. */
 export function newsText(news: string): string {
-  return `WHAT'S NEW IN THIS APP, newest version first. Showcase each item live, drawn on stage, never listed; one picture a thing, as many scenes as it takes.\n${news}`;
+  return `WHAT'S NEW IN THIS APP, newest version first. SHOW IT, never tell it: this answer is a tour, not a list. One short \`scene\` for each item that can be seen: draw that very thing (a real slider that moves a drawing, a real flow or cycle, a real chart of numbers you do not invent, a real table, a choice), and one caption naming it. No paragraphs, no bullet text, no scene that is only words. Skip an item you cannot draw. Say what is not live yet in one line at the very end. As many scenes as it takes; this overrides the habit of a short answer.\n${news}`;
 }
 
 /** How much of the steward's status a brief carries: the first lines of each list, each cut short. */
@@ -916,7 +916,8 @@ export function buildTurnBrief(context: TurnContext, input: TurnInput, form: Bri
     const live = visible.flatMap((element) =>
       element.figure?.kind === 'structure' ? [`${element.id} (${element.figure.structure})`] : element.figure?.kind === 'control' ? [`${element.id} (${element.figure.control})`] : [],
     );
-    if (input.kind === 'prompt') {
+    // (not on a tour of what is new: that is a new subject by nature, and its scenes are asked for)
+    if (input.kind === 'prompt' && !(about?.news !== undefined && about.news !== null && about.news !== '')) {
       parts.push(
         `IF THIS CONTINUES WHAT IS ON STAGE (a follow-up, "now…", "and…", "make it…", a change to it): do not write \`scene\`; write only what changes, by id: \`set\`, \`move\`, \`revise\`, a new line added, or the structure, chart or control's own line again under its id with only what differs. A line said again under an id with nothing new is nothing, so never repeat what is there; the user keeps what they set.${live.length === 0 ? '' : ` Live ids you can change in place: ${live.join(', ')}.`} \`scene\` only for a new subject.`,
       );
