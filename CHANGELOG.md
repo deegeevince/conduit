@@ -2,7 +2,7 @@
 
 Newest first. Each item is something the brain can show live when asked "showcase what's new": draw it, don't describe it. The server reads this file.
 
-## v2.1 (building)
+## v2.1 (live, being polished)
 - Nothing overlaps: one stage plan gives words, pictures, diagrams, charts and choices their own room, on desk and phone.
 - Fixes change only what's wrong: a correction is tried out of sight and thrown away if it removes something or looks worse.
 - Standing asks: say "from now on…" once ("reply only in visuals") and it holds every turn.
