@@ -482,23 +482,31 @@ function buildFlow(env: Env, grow: Grow): Draft {
       const w = m.width;
       const h = m.height;
       const at = (c: Point): Box => box(c.x - w / 2, c.y - h / 2, w, h);
+      // HOTFIX (overlap): a link's words sit BESIDE its connector (offset across it, above or below a level stretch, left or right of an
+      // upright one), never on the line. Only when nowhere beside is clear do they fall back to sitting on it.
+      const gap = env.stroke * 2 + 2;
+      const beside: Box[] = [];
       const on: Box[] = [];
-      if (p.zone) on.push(at(p.zone));
+      const stretches: { c: Point; level: boolean }[] = [];
       const pts = p.pts;
       for (let i = 0; i + 1 < pts.length; i += 1) {
         const a = pts[i] as Point;
         const b = pts[i + 1] as Point;
         const len = Math.hypot(b.x - a.x, b.y - a.y);
-        if (len >= (down ? h : w) + env.headLength) on.push(at({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }));
+        if (len >= (down ? h : w) + env.headLength) stretches.push({ c: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, level: Math.abs(b.x - a.x) >= Math.abs(b.y - a.y) });
+      }
+      if (p.zone) stretches.unshift({ c: p.zone, level: !down });
+      for (const st of stretches) {
+        const dx = st.level ? 0 : w / 2 + gap;
+        const dy = st.level ? h / 2 + gap : 0;
+        beside.push(at({ x: st.c.x - dx, y: st.c.y - dy }), at({ x: st.c.x + dx, y: st.c.y + dy }));
+        on.push(at(st.c));
       }
       const blockers = { boxes: [...nodeBoxes, ...taken], lines: allLines };
-      let pick = firstClear(on, blockers, own, null);
-      if (!pick || pick.penalty > 0) {
+      let pick = firstClear([...beside, ...on], blockers, own, null);
+      if (!pick) {
         const z = p.zone ?? (pts[0] as Point);
-        const off = (down ? w : h) / 2 + env.stroke * 2 + 2;
-        const beside = [at({ x: z.x + (down ? off : 0), y: z.y + (down ? 0 : off) }), at({ x: z.x - (down ? off : 0), y: z.y - (down ? 0 : off) })];
-        const alt = firstClear(beside, blockers, null, null);
-        if (alt && (!pick || alt.penalty < pick.penalty)) pick = { box: alt.box, penalty: alt.penalty };
+        pick = firstClear([at(z)], blockers, own, null);
       }
       if (!pick) continue;
       if (pick.penalty > 0) notes.push({ key: p.edge.spec.el.key, note: 'crossed' });

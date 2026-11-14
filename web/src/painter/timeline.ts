@@ -23,7 +23,7 @@ import type { ControlLayout } from '../contracts/controls';
 import { lookOf, measurerFor } from './structures';
 import { CALM } from '../contracts/controls';
 import { registerLaidOut, laidOutOf } from './registry';
-import { buildStructures, setTextOnce } from './structures';
+import { buildStructures, setTextOnce, structureExtent } from './structures';
 import { CALLOUTS_READY, layoutCallouts } from './blocks';
 import type { CalloutInput } from '../contracts/blocks';
 import type { StructureFrames } from './structures';
@@ -544,6 +544,7 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
   const starts = boundaries.filter((time, i) => time >= 0 && (i === 0 || time - (boundaries[i - 1] ?? 0) > 1e-9));
 
   const forced = new Map<string, Forced>();
+  const wordsOfScene = new Map<string, Box[]>();
   const epochs: Epoch[] = [];
 
   const exitOf = (element: ElementSpan): { start: number; end: number; effect: ExitEffect } | null => {
@@ -645,6 +646,25 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
       liveControls.push(group);
       items.push({ key: group.key, order: group.order, text: '', emphasis: [], style: { ...laidStyle(style), stay: 'pin' }, struck: false, replaces: null, reserve: { width: room.outer.width, height: room.outer.height } });
     }
+    // HOTFIX (overlap): a structure takes the room it will have when whole, as one block of the flow, as a control does, so words
+    // stand above or below it and never over it. Only where words are stacked; elsewhere the scene's own arrangement keeps them apart.
+    if (scene.layout === 'stack' || scene.layout === 'page' || scene.layout === 'list') {
+      for (const span of schedule.elements) {
+        if (span.kind !== 'structure' || span.figure?.kind !== 'structure' || span.scene !== scene.id) continue;
+        if (!span.carried && (span.enter === null || span.enter.start > start)) continue;
+        const gone = exitOf(span);
+        if (gone !== null && gone.start <= start) continue;
+        const ps = planeScale(span.style.layer, viewport);
+        const extent = structureExtent(span, schedule, { viewport, scope: scopeOf([...cindex.ids], (id) => controlNamed(id, 1e9)), ...(context.engine === undefined ? {} : { engine: context.engine }) }, look, sceneFit);
+        if (extent === null) continue;
+        // never more than most of the room: a taller structure is laid out smaller, in the room it is given, rather than pushing words off
+        const width = Math.min(extent.width, sceneFit.flow.width / ps);
+        // a little air above and below, so the words either side do not touch its outermost boxes
+        const air = (cellOf('m', viewport, look).height / ps) * 1.6;
+        const height = Math.min(extent.height + air, (sceneFit.flow.height / ps) * 0.62);
+        items.push({ key: span.key, order: span.order, text: '', emphasis: [], style: { ...laidStyle(styleAt(span, start)), at: null, stay: 'pin' }, struck: false, replaces: null, reserve: { width, height } });
+      }
+    }
     const sides = scene.layout === 'split' ? splitSides(schedule, scene.id) : undefined;
     // text given a point of the canvas is set by the layout, which keeps it off other text; this is where it wants its centre
     const pins = new Map<string, { x: number; y: number }>();
@@ -670,6 +690,17 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
       if (element === undefined || forced.has(key)) continue;
       const effect = styleAt(element, start).exit;
       forced.set(key, { start, end: start + exitSeconds(effect, paceAt(start)), effect });
+    }
+    // HOTFIX (overlap): where the scene's free words stand, for structures the flow holds no room for (a caption under a diagram)
+    if (!(scene.layout === 'stack' || scene.layout === 'page' || scene.layout === 'list')) {
+      const list = wordsOfScene.get(scene.id) ?? [];
+      for (const element of present) {
+        const style = styleAt(element, start);
+        const placement = arrangement.placements.get(element.key);
+        if (placement === undefined || (typeof style.at === 'object' && style.at !== null) || style.near !== null || style.group !== null || style.layer !== 'mid') continue;
+        list.push({ x: placement.x - placement.width / 2, y: placement.y - placement.height / 2, width: placement.width, height: placement.height });
+      }
+      wordsOfScene.set(scene.id, list);
     }
     const mood = moodAt(start, look);
     epochs.push({ start, look, snap: mood.snap, arrangement });
@@ -1290,6 +1321,11 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
     fitOf: (element, spec) => fitOfElement(element, spec),
     flips: lockLook === null ? lookFlips : [],
     snapAt: (time) => moodAt(time, specAt(time)).snap,
+    avoid: (structure) => wordsOfScene.get(structure.scene) ?? [],
+    placed: (structure, time) => {
+      const placement = epochs[epochIndexAt(time)]?.arrangement.placements.get(structure.key);
+      return placement === undefined ? null : { x: placement.x - placement.width / 2, y: placement.y - placement.height / 2, width: placement.width, height: placement.height };
+    },
     ...(context.engine === undefined ? {} : { engine: context.engine }),
   });
 
@@ -2073,7 +2109,7 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
         });
       }
     }
-    const chartFrameList = context.charts === undefined ? undefined : chartFrames(schedule, tq, aq, drawLook, { viewport, reducedMotion, camera, kinds: context.charts.kinds, data: context.charts.data, scope: scopeOf([...cindex.ids], (id) => controlNamed(id, tq)), fitOf: (element) => fitOfElement(element, drawLook) });
+    const chartFrameList = context.charts === undefined ? undefined : chartFrames(schedule, tq, aq, drawLook, { viewport, reducedMotion, camera, kinds: context.charts.kinds, data: context.charts.data, scope: scopeOf([...cindex.ids], (id) => controlNamed(id, tq)), fitOf: (element) => fitOfElement(element, drawLook), avoid: (element) => wordsOfScene.get(element.scene) ?? [] });
     const frame: Frame = {
       ...(chartFrameList === undefined ? {} : { charts: chartFrameList }),
       time: instant.time,

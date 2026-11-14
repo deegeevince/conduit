@@ -47,6 +47,35 @@ export interface StructureEnv {
   readonly snapAt: (time: number) => number;
   /** a bench's own engine; absent: the painter's, for the kinds it has built */
   readonly engine?: StructureEngine;
+  /**
+   * HOTFIX (overlap): the box the text flow reserved for a structure at `time`, on its layer plane, or null when it has none (it then has
+   * the whole canvas, as before). It is what keeps words and a structure out of each other's way.
+   */
+  readonly placed?: (structure: ElementSpan, time: number) => Box | null;
+  /**
+   * HOTFIX (overlap): boxes (plane units) of the free words that stand in the structure's scene at any time (a caption, a paragraph), for a
+   * structure the flow did not reserve room for; the structure keeps clear of them.
+   */
+  readonly avoid?: (structure: ElementSpan) => readonly Box[];
+}
+
+/** The part of `own` clear of `hits`: the band below them if it is roomy, else the taller of below and above; `own` when nothing is hit. */
+export function clearOf(own: Box, all: readonly Box[]): Box {
+  const hits = all.filter((b) => b.x < own.x + own.width && b.x + b.width > own.x && b.y < own.y + own.height && b.y + b.height > own.y);
+  if (hits.length === 0) return own;
+  // the free gaps between the hits, top to bottom; the band below the words is the first choice, then the tallest
+  const air = own.height * 0.03;
+  const spans = hits.map((b) => [b.y - air, b.y + b.height + air] as const).sort((p, q) => p[0] - q[0]);
+  const gaps: { y: number; height: number }[] = [];
+  let cursor = own.y;
+  for (const [top, bottom] of spans) {
+    if (top > cursor) gaps.push({ y: cursor, height: top - cursor });
+    cursor = Math.max(cursor, bottom);
+  }
+  if (own.y + own.height > cursor) gaps.push({ y: cursor, height: own.y + own.height - cursor });
+  const last = gaps[gaps.length - 1];
+  const best = last !== undefined && last.height >= own.height * 0.4 ? last : gaps.reduce((a, g) => (g.height > a.height ? g : a), { y: own.y, height: 0 });
+  return { x: own.x, y: best.y, width: own.width, height: best.height };
 }
 
 /** What one structure part is, as the test hook and sight see its owner. */
@@ -146,7 +175,8 @@ export function lookOf(look: LookSpec, viewport: Viewport, fit: CanvasFit, ps: n
   const body = cellOf('m', viewport, look);
   return {
     body: body.height / ps,
-    minShrink: 0.7,
+    // HOTFIX (overlap): words may shrink further (was 0.7) before a structure gives up and spills out of its room onto other words
+    minShrink: 0.45,
     stroke: (look.stroke.thick * fit.unit) / ps,
     radius: look.type.snapToCells ? 0 : (body.height * 0.2) / ps,
     grid: look.type.snapToCells ? { cell: { width: body.width / ps, height: body.height / ps } } : null,
@@ -203,6 +233,54 @@ function signature(structure: ElementSpan, members: readonly ElementSpan[], rows
   return JSON.stringify([structure.key, head, parts, JSON.stringify(scope)]);
 }
 
+type Env = Pick<StructureEnv, 'viewport' | 'scope' | 'engine'>;
+
+/** One call of the engine for a structure's parts, in `room` (plane units). Never throws. */
+function runEngine(engine: StructureEngine, structure: ElementSpan, present: readonly ElementSpan[], rows: number, room: Box, look: LookSpec, env: Env, fit: CanvasFit, ps: number): StructureLayout {
+  const figure = structure.figure;
+  if (figure === null || figure.kind !== 'structure') return EMPTY_STRUCTURE_LAYOUT;
+  const shown: ElementSpan = { ...structure, figure: { ...figure, rows: figure.rows.slice(0, rows) } };
+  try {
+    return engine({
+      structure: shown,
+      nodes: present.filter((member) => member.kind === 'node'),
+      links: present.filter((member) => member.kind === 'link'),
+      room,
+      canvas: { origin: { x: fit.box.x / ps, y: fit.box.y / ps }, unit: fit.unit / ps },
+      measure: measurerFor(look, env.viewport, structure.style),
+      look: lookOf(look, env.viewport, fit, ps),
+      scope: env.scope,
+      obstacles: [],
+    });
+  } catch {
+    return EMPTY_STRUCTURE_LAYOUT;
+  }
+}
+
+const EXTENTS = new Map<string, { width: number; height: number } | null>();
+
+/**
+ * HOTFIX (overlap): the size a structure will have once it is whole (every node, link and row it will ever have), in plane units, so the
+ * text flow can reserve that much room before the parts arrive and the structure never moves under words. Null for what has no engine.
+ */
+export function structureExtent(structure: ElementSpan, schedule: Schedule, env: Env, look: LookSpec, fit: CanvasFit): { width: number; height: number } | null {
+  const figure = structure.figure;
+  if (figure === null || figure.kind !== 'structure' || figure.structure === 'chart') return null;
+  const engine = env.engine ?? (STRUCTURES_READY.includes(figure.structure) ? layoutStructure : null);
+  if (engine === null) return null;
+  const members = schedule.elements.filter((element) => element.parent === structure.key && (element.kind === 'node' || element.kind === 'link'));
+  const ps = planeScale(structure.style.layer, env.viewport);
+  // measured in the flow's own room (the safe frame), where it will stand, not the whole canvas
+  const room: Box = { x: fit.flow.x / ps, y: fit.flow.y / ps, width: fit.flow.width / ps, height: fit.flow.height * 0.62 / ps };
+  const key = [signature(structure, members, figure.rows.length, env.scope), look.id, look.name, env.viewport.width, env.viewport.height, room.width.toFixed(2), room.height.toFixed(2)].join('|');
+  if (EXTENTS.has(key)) return EXTENTS.get(key) ?? null;
+  const bounds = boundsOf(runEngine(engine, structure, members, figure.rows.length, room, look, env, fit, ps).parts);
+  const made = bounds === null ? null : { width: bounds.width, height: bounds.height };
+  EXTENTS.set(key, made);
+  if (EXTENTS.size > KEPT_LAYOUTS) EXTENTS.delete(EXTENTS.keys().next().value as string);
+  return made;
+}
+
 function planOf(structure: ElementSpan, schedule: Schedule, env: StructureEnv): Plan | null {
   const figure = structure.figure;
   if (figure === null || figure.kind !== 'structure' || figure.structure === 'chart') return null;
@@ -245,26 +323,12 @@ function planOf(structure: ElementSpan, schedule: Schedule, env: StructureEnv): 
     const origin = { x: fit.box.x / ps, y: fit.box.y / ps };
     const unit = fit.unit / ps;
     const box = figure.box;
-    const room: Box = box === null ? { x: origin.x, y: origin.y, width: fit.box.width / ps, height: fit.box.height / ps } : { x: origin.x + box.x * unit, y: origin.y + box.y * unit, width: box.w * unit, height: box.h * unit };
+    const own: Box = box === null ? { x: origin.x, y: origin.y, width: fit.box.width / ps, height: fit.box.height / ps } : { x: origin.x + box.x * unit, y: origin.y + box.y * unit, width: box.w * unit, height: box.h * unit };
+    // the flow's reserved box, when it made one, is the room: the structure is laid out in the band the words left it
+    const reserved = env.placed?.(structure, Math.max(start, structure.enter?.start ?? 0)) ?? null;
+    const room: Box = reserved ?? (env.avoid === undefined ? own : clearOf(own, env.avoid(structure)));
     const key = [signature(structure, present, rows, env.scope), look.id, look.name, env.viewport.width, env.viewport.height, room.x.toFixed(2), room.y.toFixed(2), room.width.toFixed(2), room.height.toFixed(2), env.engine === undefined ? 'e' : 'b'].join('|');
-    const layout = remembered(key, () => {
-      const shown: ElementSpan = { ...structure, figure: { ...figure, rows: figure.rows.slice(0, rows) } };
-      try {
-        return engine({
-          structure: shown,
-          nodes: present.filter((member) => member.kind === 'node'),
-          links: present.filter((member) => member.kind === 'link'),
-          room,
-          canvas: { origin, unit },
-          measure: measurerFor(look, env.viewport, structure.style),
-          look: lookOf(look, env.viewport, fit, ps),
-          scope: env.scope,
-          obstacles: [],
-        });
-      } catch {
-        return EMPTY_STRUCTURE_LAYOUT;
-      }
-    });
+    const layout = remembered(key, () => runEngine(engine, structure, present, rows, room, look, env, fit, ps));
     const byOwner = new Map<string, BlockPart[]>();
     for (const part of layout.parts) {
       const list = byOwner.get(part.owner) ?? [];
