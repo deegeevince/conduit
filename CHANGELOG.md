@@ -3,13 +3,13 @@
 Newest first. Each item is something the brain can show live when asked "showcase what's new": draw it, don't describe it. The server reads this file.
 
 ## v2.1 (live, being polished)
-- Nothing overlaps: one stage plan gives words, pictures, diagrams, charts and choices their own room, on desk and phone.
+- Words, pictures, diagrams, charts and choices each get their own room from one stage plan (still being polished on phones and wide screens) gives words, pictures, diagrams, charts and choices their own room, on desk and phone.
 - Fixes change only what's wrong: a correction is tried out of sight and thrown away if it removes something or looks worse.
 - Standing asks: say "from now on…" once ("reply only in visuals") and it holds every turn.
 - Charts read properly: real type sizes, labels that stay on the chart, the right chart for the data, a framed panel in the machine looks.
 - Diagrams fit their room: labels beside lines, words inside boxes, cycles keep every arrow, wide tables become cards on a phone.
 - Controls: a slider's value sits by its label, toggles name both states, every target is thumb-sized.
-- Code blocks and slide decks (with PDF export) in the language.
+- Coming next (v2.1 part two, not live): code blocks, slide decks with PDF export, pasted pictures, selectable text.
 - Agent mode: tools and connected services, with an Allow or Deny on stage for anything that isn't a read.
 - Commands: /brain, /tools, /status, /asks, /look, /review, /export, /capture; "Take away" is now "Save".
 - A critic looks at every answer after it lands; `pnpm capture` films any past turn so motion can be judged.
