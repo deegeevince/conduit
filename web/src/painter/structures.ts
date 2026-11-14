@@ -26,6 +26,7 @@ import { cellOf } from './layout/metrics';
 import { own } from './own';
 import { registerLaidOut } from './registry';
 import { STRUCTURES_READY, layoutStructure } from './blocks';
+import { modelOf, playingParts, rollKey } from './blocks/tune';
 
 const SETTLE_SECONDS = 0.4;
 /** Arrivals closer together than this are one layout: a burst of lines is not a dozen layouts. */
@@ -99,7 +100,7 @@ export interface StructurePlans {
   readonly any: boolean;
   /** draws parts the way a structure's are drawn; what controls are made of */
   renderOwner(call: OwnerCall, out: StructureFrames): void;
-  frames(tq: number, aq: number, look: LookSpec): StructureFrames;
+  frames(tq: number, aq: number, look: LookSpec, tunes?: ReadonlyMap<string, number | null>): StructureFrames;
   /** what the layout could not keep clear, by element key, as of `time` */
   notesAt(time: number): ReadonlyMap<string, readonly SightNote[]>;
   /** the last moment a layout changed: what the stage is still easing toward after */
@@ -132,6 +133,8 @@ interface Epoch {
   readonly ps: number;
   /** the room the stage plan gave it, plane units; set when the engine said it is crowded: what it draws past it is cut there, never over the words or the choices */
   readonly cut: Box | null;
+  /** how many of the structure's rows had arrived: a tune's playhead and lit notes are read from the same score the roll was laid out from */
+  readonly rows: number;
 }
 
 interface Plan {
@@ -142,6 +145,17 @@ interface Plan {
 
 function textStyleOf(owner: ElementStyle, spec: TextSpec): ElementStyle {
   return { ...owner, size: spec.size, weight: spec.weight, face: spec.face, case: spec.letterCase };
+}
+
+/**
+ * The moment on the turn's clock that a tune's music begins, as the painter reckons it when nothing is playing it (a still, a film, a draft): when
+ * the block is whole, which is when the brain said anything else, and never before its last row has landed. Null for anything that is no tune.
+ */
+export function tuneStartOf(element: ElementSpan): number | null {
+  const figure = element.figure;
+  if (figure === null || figure.kind !== 'structure' || figure.structure !== 'tune') return null;
+  const last = figure.rows[figure.rows.length - 1]?.at ?? 0;
+  return Math.max(element.enter?.start ?? 0, last, figure.sealed ?? last);
 }
 
 export function measurerFor(look: LookSpec, viewport: Viewport, ownerStyle: ElementStyle): TextMeasure {
@@ -291,7 +305,7 @@ function planOf(structure: ElementSpan, schedule: Schedule, env: StructureEnv): 
     }
     const crowded = given !== null && layout.notes.some((n) => n.note === 'crowded');
     const pad = 3;
-    epochs.push({ start, look, layout, byOwner, ps, cut: crowded ? { x: room.x - pad, y: room.y - pad, width: room.width + 2 * pad, height: room.height + 2 * pad } : null });
+    epochs.push({ start, look, layout, byOwner, ps, rows, cut: crowded ? { x: room.x - pad, y: room.y - pad, width: room.width + 2 * pad, height: room.height + 2 * pad } : null });
   }
   return { structure, members, epochs };
 }
@@ -509,10 +523,10 @@ export function buildStructures(schedule: Schedule, env: StructureEnv): Structur
         const strokePaint = style.stroke === 'none' ? 'ink' : style.stroke;
         const ring = isControl && part.role === 'bar' && part.part.startsWith('ring');
         const width = ring ? 2 / ps : (style.thick ?? look.stroke.thick) * unit * (part.role === 'grid' ? 0.6 : 1);
-        const stroked = part.role === 'frame' || part.role === 'line' || part.role === 'grid' || ring || (part.role === 'marker' && !isControl);
+        const stroked = part.role === 'frame' || part.role === 'line' || part.role === 'grid' || part.role === 'lit' || ring || (part.role === 'marker' && !isControl);
         const colour = ring ? look.roles.accent : part.role === 'grid' ? look.roles.dim : paintColour(strokePaint, look);
-        const filled = part.role === 'fill' || part.role === 'head' || (part.role === 'bar' && !ring) || part.role === 'marker';
-        const fillColour = part.role === 'fill' ? (style.fill !== 'none' && typeof style.fill === 'string' ? paintColour(style.fill, look) : mixHex(look.roles.ground, look.roles.ink, 0.1)) : part.role === 'head' ? colour : part.role === 'bar' ? (style.fill !== 'none' && typeof style.fill === 'string' ? paintColour(style.fill, look) : look.roles.accent) : isControl && part.role === 'marker' ? look.roles.ink : look.roles.accent;
+        const filled = part.role === 'fill' || part.role === 'head' || (part.role === 'bar' && !ring) || part.role === 'marker' || part.role === 'note' || part.role === 'note2' || part.role === 'lit';
+        const fillColour = part.role === 'note' ? (style.fill !== 'none' && typeof style.fill === 'string' ? paintColour(style.fill, look) : look.roles.accent) : part.role === 'note2' ? look.roles.alt : part.role === 'lit' ? strongest(look) : part.role === 'fill' ? (style.fill !== 'none' && typeof style.fill === 'string' ? paintColour(style.fill, look) : mixHex(look.roles.ground, look.roles.ink, 0.1)) : part.role === 'head' ? colour : part.role === 'bar' ? (style.fill !== 'none' && typeof style.fill === 'string' ? paintColour(style.fill, look) : look.roles.accent) : isControl && part.role === 'marker' ? look.roles.ink : look.roles.accent;
         const transform = pulse === 1 && shake === 0 ? IDENTITY : { ...about(centre, 0, pulse), e: about(centre, 0, pulse).e + shake };
         out.figures.push({
           kind: 'shape',
@@ -581,14 +595,20 @@ export function buildStructures(schedule: Schedule, env: StructureEnv): Structur
     out.owners.push({ key: owner.key, id: owner.id, kind: owner.kind, layer: structure.style.layer, box: ownerBox, opacity: minOpacity, phase, colour: ownerColour, contrast: ownerContrast, tappable: style.tap, fontPx });
   };
 
-  const frames = (tq: number, aq: number, look: LookSpec): StructureFrames => {
+  const frames = (tq: number, aq: number, look: LookSpec, tunes?: ReadonlyMap<string, number | null>): StructureFrames => {
     const out: StructureFrames = { elements: [], figures: [], owners: [] };
     for (const plan of plans) {
       const structure = plan.structure;
       const everyone = [structure, ...plan.members];
       for (const owner of everyone) {
         const { epoch, previous, q } = placeOf(plan, owner, tq);
-        const parts = epoch.byOwner.get(owner.key) ?? [];
+        let parts = epoch.byOwner.get(owner.key) ?? [];
+        // A tune that sounds has a playhead and lit notes, drawn against the roll this epoch laid out.
+        if (owner === structure && structure.figure?.kind === 'structure' && structure.figure.structure === 'tune') {
+          const position = tunes?.get(structure.key) ?? null;
+          const roll = epoch.layout.boxes.get(rollKey(structure.key));
+          if (position !== null && roll !== undefined) parts = [...parts, ...playingParts(structure.key, modelOf(structure, epoch.rows), roll, position, env.reducedMotion)];
+        }
         if (parts.length === 0) continue;
         const before = previous === null || q >= 1 ? null : (previous.byOwner.get(owner.key) ?? null);
         renderOwner({ structure, owner, parts, before, q, epochStart: epoch.start, cut: epoch.cut, ownerBox: boxAtTime(plan, owner, tq), tq, aq, look, style: styleAt(owner, tq) }, out);

@@ -287,6 +287,8 @@ export function createPainter(options: PainterOptions): Painter {
     runtime.version += 1;
   };
   const host = options.charts ?? null;
+  /** where the music is made, when this stage can make it */
+  const player = options.tunes ?? null;
   /** what has come of the data charts asked for by reference */
   const chartData = new Map<string, ChartData>();
   const chartKinds = host === null ? [] : CHARTS_READY.filter((kind) => host.kinds.includes(kind));
@@ -392,7 +394,14 @@ export function createPainter(options: PainterOptions): Painter {
   const instantOf = (reading: ClockReading): TimelineInstant => {
     const waitingNow = hearing();
     const holdSince = waitingNow && anticipation !== null ? anticipation.since : reading.holdSince;
+    // where each tune is in its music: the player's own answer, so that the picture is at the sound
+    let tunes: Map<string, number | null> | undefined;
+    if (player !== null) {
+      tunes = new Map();
+      for (const element of timeline.schedule.elements) if (element.figure?.kind === 'structure' && element.figure.structure === 'tune') tunes.set(element.key, player.positionOf(element.key));
+    }
     return {
+      ...(tunes === undefined ? {} : { tunes, closed: turn === null || turn.closed }),
       time: reading.playhead,
       ambient: reading.ambient,
       wallTime: reading.wallTime,
@@ -758,6 +767,8 @@ export function createPainter(options: PainterOptions): Painter {
       if (frame.spec !== lastReadySpec && !reset) sendReady(frame.spec);
       if (reset) renderer.reset();
       if (host !== null) host.sync(frame.charts ?? [], viewport.dpr);
+      // the music follows the stage: begun when a tune is whole, held while the stage is paused or hidden, let go when its tune has left
+      if (player !== null && !reset) player.sync(frame.tunes ?? [], { aq: reading.ambient, running: reading.state !== 'paused' && !reading.hidden });
       lastFrame = frame;
       const startedAt = performance.now();
       renderer.render(frame);

@@ -5,6 +5,7 @@
 
 import type { AmbientKind, ClockState, Face, Layer, LookId, Mark, Mask, Medium, Polyline, StrokeCharacter, Texture, Weight } from '@conduit/language';
 import type { ChartState } from './chart';
+import type { TuneCue } from './tune';
 import type { LookSpec } from './look';
 import type { Box, CameraPose, Viewport } from './space';
 
@@ -348,6 +349,8 @@ export interface Frame {
   readonly figures: readonly FigureFrame[];
   /** the charts on stage. Absent means none: a frame from a painter with no charting engine never has any. */
   readonly charts?: readonly ChartFrame[];
+  /** the tunes on stage, and which are whole and may be played: what a player is told. Absent means none. A renderer draws nothing for them; the roll is already in the figures. */
+  readonly tunes?: readonly TuneCue[];
   /** atmosphere, drawn behind everything else on its layer */
   readonly fields: readonly FieldFrame[];
   readonly cursor: CursorFrame | null;

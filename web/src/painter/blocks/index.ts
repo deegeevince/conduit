@@ -8,6 +8,7 @@
 //   timeline.ts   an axis to scale, labels alternating, tiers when crowded
 //   map.ts        pins where the brain put them; eight places round each; a route
 //   table.ts      columns by content, numbers on their decimal point, bars
+//   tune.ts       a piano roll for ABC rows, and the playhead and lit notes added while it sounds
 //   callouts.ts   boundary labelling: labels in clear room, leaders that never cross
 //   audit.ts      counts collisions in a layout (the bench's judge, and the painter's check)
 //   kit.ts, geom.ts  shared parts
@@ -26,10 +27,11 @@ import { layoutFlow } from './flow';
 import { layoutMap } from './map';
 import { layoutTable } from './table';
 import { layoutTimeline } from './timeline';
+import { layoutTune } from './tune';
 import { layoutTree } from './tree';
 
 /** The structures this painter can lay out today. */
-export const STRUCTURES_READY: readonly StructureKind[] = ['flow', 'tree', 'cycle', 'timeline', 'map', 'table'];
+export const STRUCTURES_READY: readonly StructureKind[] = ['flow', 'tree', 'cycle', 'timeline', 'map', 'table', 'tune'];
 
 /** True once `layoutCallouts` places labels with leaders; until then a `callout` is placed as a plain `near=` label. */
 export const CALLOUTS_READY = true;
@@ -50,6 +52,8 @@ export const layoutStructure: StructureEngine = (input) => {
       return layoutMap(input);
     case 'table':
       return layoutTable(input);
+    case 'tune':
+      return layoutTune(input);
     default:
       return EMPTY_STRUCTURE_LAYOUT;
   }
