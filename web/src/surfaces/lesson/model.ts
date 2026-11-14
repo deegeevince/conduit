@@ -86,6 +86,8 @@ export function isWaiting(node: DocNode): boolean {
 export function tally(doc: Document, state: DocState, node: DocNode): { readonly done: number; readonly total: number } {
   const kids = kidsOf(doc, node);
   if (kids.length === 0 || isLesson(node)) return { done: isDone(doc, state, node) ? 1 : 0, total: 1 };
+  // a question written as its ways alone is one question (it is done when a way is), never one for each way it can be seen in
+  if (node.body === null && kids.every((k) => k.tag !== null)) return { done: kids.some((k) => isDone(doc, state, k)) ? 1 : 0, total: 1 };
   return kids.reduce((sum, k) => {
     const t = tally(doc, state, k);
     return { done: sum.done + t.done, total: sum.total + t.total };
