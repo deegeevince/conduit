@@ -24,7 +24,7 @@ import type { Box } from '../contracts/space';
 import type { Census } from './census';
 import type { Held, HeldBy, KindId } from '../../../language/src/kinds';
 
-export type { ChartHeld, Held, HeldBy, KindId, ScreenHeld } from '../../../language/src/kinds';
+export type { ChartHeld, FigureHeld, Held, HeldBy, KindId, ScreenHeld } from '../../../language/src/kinds';
 export type { Box };
 
 // ---------------------------------------------------------------- the kind contract

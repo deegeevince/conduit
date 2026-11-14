@@ -18,7 +18,7 @@ import { describeFigure } from './stage';
 import { asksForLiveApp } from './app';
 import type { Capabilities } from './wire';
 
-export type KindId = 'words' | 'choice' | 'canvas' | StructureKind | ControlKind;
+export type KindId = 'words' | 'choice' | 'canvas' | 'figure' | StructureKind | ControlKind;
 
 /** The kinds that are structures or controls: the ones a capability list names. */
 export const isStructureKind = (id: KindId): id is StructureKind => (STRUCTURE_KINDS as readonly string[]).includes(id);
@@ -42,6 +42,11 @@ export interface ChartHeld {
   readonly to: number;
 }
 
+/** What a hand has done to a figure: the step it is at. 0 is rest (every part lit, the title in the caption band); 1..n is that step. */
+export interface FigureHeld {
+  readonly step: number;
+}
+
 /**
  * What a hand has done to a leaf, by kind. A kind with no entry holds nothing (`null`). Typed per kind, so a toggle cannot be filed
  * under `slider` and a slider cannot hold a string. A pick holds its 1-based option, as `ControlSpec.value` does.
@@ -53,6 +58,7 @@ export interface HeldBy {
   input: string;
   screen: ScreenHeld;
   chart: ChartHeld;
+  figure: FigureHeld;
   /** whatever the app saved with `save(state)`: opaque here, checked by the host */
   app: unknown;
 }
@@ -146,6 +152,14 @@ export const LEXICON: Lexicon = {
     teach: { where: 'kernel', form: SHAPE_VERBS.map(form).join('\n'), gloss: 'free drawing by coordinates on a canvas: shapes, pixel art, groups, pictures, callouts, the camera' },
     describes: 'words',
     describe: (element) => (element.figure === null ? element.text : describeFigure(element.figure)),
+  },
+  figure: {
+    id: 'figure',
+    // The language round (vocabulary, parse, normalize, prompt) wires the word and its chapter; until then nothing is taught, and the painter
+    // draws it from the typed `FigureInput` (`web/src/painter/blocks/figure/types.ts`).
+    teach: { where: 'chapter', form: 'figure <id> [cutaway|exploded] | title', gloss: 'a labelled drawing: parts that label themselves, routes along them, and steps that light them in turn', cue: () => false },
+    describes: 'summary',
+    describe: (element) => `figure "${element.text.trim()}"`,
   },
   flow: structure('flow', 'kernel', 'words'),
   tree: structure('tree', 'kernel', 'words'),

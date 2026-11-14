@@ -36,6 +36,7 @@ import type { Drawn, Env, LeafCensus, LeafEvent, Phase, Sealed } from './contrac
 import { LEGIBLE, TARGET } from './invariants';
 import { KINDS, advertisedControls, advertisedStructures, isReady, kindOf, notYetKinds, readyKinds } from './registry';
 import type { Hosts } from './registry';
+import { fixtureElement } from './kinds/figure';
 
 // The web package's types carry no Node; the run takes what it needs from the runtime.
 declare const process: { argv: string[]; stdout: { write(s: string): void }; exitCode?: number };
@@ -73,7 +74,9 @@ function elementsOf(lines: readonly string[]): readonly ElementSpan[] {
 }
 
 /** The element a fixture is for, and its parts, in the order written. Null when the lines did not make a leaf of that kind. */
-function leafOf(id: KindId, elements: readonly ElementSpan[]): { readonly element: ElementSpan; readonly parts: readonly ElementSpan[] } | null {
+function leafOf(id: KindId, elements: readonly ElementSpan[], lines: readonly string[] = []): { readonly element: ElementSpan; readonly parts: readonly ElementSpan[] } | null {
+  // `figure` has no line the language reads yet: its fixtures are one-line stand-ins (`figure:<name>`) for the typed input (kinds/figure.ts)
+  if (id === 'figure') return fixtureElement(lines);
   const element = elements.find((candidate) => {
     const figure = candidate.figure;
     if (isStructureKind(id)) return figure?.kind === 'structure' && figure.structure === id;
@@ -183,7 +186,7 @@ interface Drew {
 }
 
 function draw(kind: Sealed<KindId>, id: KindId, lines: readonly string[], setup: Setup, phase: Phase): Drew | null {
-  const found = leafOf(id, elementsOf(lines));
+  const found = leafOf(id, elementsOf(lines), lines);
   if (found === null) return null;
   const { env, room } = setup;
   const model = kind.model(found.element, found.parts, null as never, env);
@@ -285,7 +288,7 @@ function checkInput(id: KindId, kind: Sealed<KindId>, setup: Setup, tag: string)
     count(id, 'input', false, tag, 'a control with no input');
     return;
   }
-  const found = leafOf(id, elementsOf(lines));
+  const found = leafOf(id, elementsOf(lines), lines);
   if (found === null) return;
   const { env, room } = setup;
   const model = kind.model(found.element, found.parts, null as never, env);
@@ -354,7 +357,7 @@ function drawKinds(): void {
     const kind = kindOf(id) as Sealed<KindId>;
     // the fixtures of any kind must make a leaf of that kind, ready or not
     kind.fixtures.forEach((lines, index) => {
-      const made = leafOf(id, elementsOf(lines));
+      const made = leafOf(id, elementsOf(lines), lines);
       if (!isReady(kind.status, HOSTS_BOTH)) count(id, 'fixture', made !== null, `fixture ${index}`, `${JSON.stringify(lines[0])} did not make a leaf of kind ${id}`);
     });
     if (!isReady(kind.status, HOSTS_BOTH)) continue;
@@ -451,6 +454,7 @@ function report(): void {
     words: 'old timeline (PC6)',
     choice: 'old timeline (PC6)',
     canvas: 'old timeline, figures, camera (PC13)',
+    figure: 'painter/blocks/figure (FG2): pure engine',
     flow: 'blocks/flow.ts layoutFlow',
     tree: 'blocks/tree.ts layoutTree',
     cycle: 'blocks/cycle.ts layoutCycle',
