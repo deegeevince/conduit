@@ -1010,7 +1010,15 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
       // A diagram of nodes written again under its own id, as the same kind, is the same diagram retitled, restyled or given another room: its parts stay.
       const open = findLive(line.id, start);
       const openFigure = open?.span.figure;
-      if (open !== null && openFigure?.kind === 'structure' && openFigure.structure === line.verb && STRUCTURE[line.verb].parts === 'nodes') {
+      // L1. A table or a chart opened again under its id as the same kind, with the same reading of its rows (what a chart draws, its words and its data), only restyled,
+      // retitled or given another room, is a `set`: it keeps its rows, never a redraw with none. Rows written after it are read against the ones it has.
+      const sameRows =
+        open !== null &&
+        openFigure?.kind === 'structure' &&
+        openFigure.structure === line.verb &&
+        (line.verb === 'table' || line.verb === 'chart') &&
+        (line.verb === 'table' ? (line.bars === true) === openFigure.bars : alike(line.chart ?? DEFAULT_CHART, openFigure.chart) && alike(line.words ?? [], openFigure.words) && alike(line.data ?? null, openFigure.data) && alike(line.dataset ?? null, openFigure.dataset ?? null));
+      if (open !== null && openFigure?.kind === 'structure' && openFigure.structure === line.verb && (STRUCTURE[line.verb].parts === 'nodes' || sameRows)) {
         const merged = mergeStyles(sheet, line.styles, line.props);
         for (const name of merged.unknown) report(seq, 'unknown-style', `no style called "${name}"; ignored`, name);
         const change = coloured(seq, merged.props);
@@ -1019,6 +1027,7 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
         const figure = { ...openFigure, grow: line.grow ?? openFigure.grow, box: line.box ?? openFigure.box, route: line.route ?? openFigure.route };
         // D2(b): the diagram said again exactly as it stands is nothing, not even a pass of its layout.
         if (sameStyle(patched, open.style) && alike(figure, openFigure) && (title === null || (title.plain === open.span.text && alike(title.emphasis, open.span.emphasis)))) {
+          if (sameRows) echoing.set(open, 0);
           previousStart = priorStart;
           lines.push({ seq, verb: line.verb, start, end: start });
           return;
@@ -1031,6 +1040,7 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
           open.span.emphasis = title.emphasis;
         }
         open.span.figure = figure;
+        if (sameRows) echoing.set(open, 0);
         lines.push({ seq, verb: line.verb, start, end });
         return;
       }

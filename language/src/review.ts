@@ -203,7 +203,7 @@ export function buildReviewBrief(input: ReviewBriefInput): string {
     [
       `If it reads right, answers what was asked and keeps to what was asked for every reply, write the one line \`${REVIEW_KEEP}\` and nothing else.`,
       'If not, change only what is wrong, in as few lines as it takes. What you write now is tried out of sight and shown only if it is better:',
-      '- change a thing by its id: `set`, `move`, `revise <id> | new words`, `cancel <id>`, or its own line again with what differs;',
+      '- change a thing by its id: `set` (`set <id> | new words` too), `move`, `cancel <id>`, or its own line again with what differs;',
       '- a label made with `say callout near=<id>` is placed by the stage and cannot be moved by coordinates: if it is beside the wrong thing, name the right part in `near=` or move the part itself; other words crossed or crowded can be `move`d;',
       '- never `scene`, never the lines that were right, never fewer parts than before: a fix that takes something away is thrown out and the draft stays;',
       '- add nothing the user did not ask for, and say nothing about the fix.',
@@ -219,7 +219,7 @@ export function buildReviewBrief(input: ReviewBriefInput): string {
 // In v2 a fix was a second performance: in most fixes the brain opened a new scene and wrote the whole answer again, the viewer
 // watched the same diagram drawn twice, and nothing checked that the second was better (PLAN-v2.1.md, "True revision"). From v2.1:
 //
-//   1. A fix is a diff. It changes what is there (`set`, `move`, `revise`, `cancel`, `drop`, a thing declared again under its id with
+//   1. A fix is a diff. It changes what is there (`set`, `move`, `cancel`, `drop`, a thing declared again under its id with
 //      something different) and may add to it. It never opens a scene and never says again what has not changed (`fixLineAllowed`,
 //      and the schedule's own rule that a line declared again unchanged is nothing).
 //   2. A fix is tried before it is shown. Its lines go to the painter as a `candidate`; the painter applies them to a copy of the

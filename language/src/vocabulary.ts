@@ -982,8 +982,8 @@ export const VERB = {
     family: 'atmosphere',
   },
   set: {
-    form: 'set <id|scene|all> [style…] [prop=value…] [speed] [over=Ns]',
-    gist: 'Change something on stage: colour, size, place, turn, opacity, layer, pin.',
+    form: 'set <id|scene|all> [style…] [prop=value…] [speed] [over=Ns] [| <new text>]',
+    gist: 'Change something on stage: colour, size, place, turn, opacity, layer, pin, its words; a structure or chart with its own line again and a new room.',
     time: 'starts',
     family: 'change',
   },
@@ -1019,7 +1019,7 @@ export const VERB = {
   },
   revise: {
     form: 'revise <id> [style…] [prop=value…] [| <new text>]',
-    gist: 'Quietly change a line that has not played yet.',
+    gist: 'Quietly change a line that has not played yet. Read, never taught: `set` does it now.',
     time: 'edit',
     family: 'mind',
   },

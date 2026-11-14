@@ -17,6 +17,18 @@ const KEEPS_SPRITE_OPEN: ReadonlySet<string> = new Set(['wait', 'plan', 'color',
 const ROW_ALPHABET = '.#0123456789abcdefABCDEF';
 
 /**
+ * L1. Whether a line no verb owns is a sentence the brain wrote as speech: three words or more, mostly letters, no `key=value` and no bar (a line with
+ * either is a command that went wrong, and is told so), and not made of numbers and coordinates (a shape that was misnamed).
+ */
+export function readsAsProse(text: string): boolean {
+  const words = text.split(/\s+/).filter((word) => word !== '');
+  if (words.length < 3 || /[|=]/.test(text) || !/^["'\u201c(*]?[A-Za-z]/.test(text)) return false;
+  const lettered = words.filter((word) => /[A-Za-z]{2}/.test(word)).length;
+  const numeric = words.filter((word) => /^[-\d.,x@]+$/.test(word)).length;
+  return lettered >= 3 && lettered >= words.length / 2 && numeric <= words.length / 4;
+}
+
+/**
  * Reads raw lines in order. It is `parseLine` plus one piece of memory: while
  * a sprite is being written, a line made only of cell characters is a row of
  * it even if the brain forgot the leading bar. Without that, a row of `#`
@@ -32,6 +44,8 @@ export class LineReader {
   private tune = false;
   /** v2.2. A mock-up is being written: after a `screen` line, the words of the interface (parts, `row`, `col`, `end`) are its lines and nothing else's */
   private ui = false;
+  /** L1. A `when <control>=<value>` block is open: the head every line inside it is given as a `bind` (`stage=2`, `chord="C major"`), until `end` */
+  private when: string | null = null;
   private readonly styles: Set<string>;
 
   /** `definedStyles`: the names of styles the brain defined in earlier turns */
@@ -40,7 +54,27 @@ export class LineReader {
   }
 
   read(raw: string): ParseResult {
-    const trimmed = raw.trim();
+    let trimmed = raw.trim();
+    // L1. `when stage=2` … `end`: each line inside is written as `bind stage=2 | <line>`, which is all the rest of the system knows.
+    if (!this.code && !this.tune) {
+      const opened = /^when\s+(\S.*?)\s*:?$/i.exec(trimmed);
+      if (opened?.[1] !== undefined && !/^[=|]/.test(opened[1])) {
+        this.when = opened[1].replace(/\s+then$/i, '');
+        return { kind: 'blank' };
+      }
+      if (this.when !== null) {
+        if (/^end(?:\s+when)?$/i.test(trimmed)) {
+          this.when = null;
+          return { kind: 'blank' };
+        }
+        const verb = (/^([a-z]+)/i.exec(trimmed)?.[1] ?? '').toLowerCase();
+        if (verb === 'scene' || verb === 'deck') this.when = null;
+        else if (trimmed !== '' && !trimmed.startsWith('#') && !trimmed.startsWith('|') && verb !== 'bind') {
+          raw = `bind ${this.when} | ${trimmed}`;
+          trimmed = raw;
+        }
+      }
+    }
     if (this.code && trimmed.startsWith('|')) return this.tune && !/^\|(?:\s|$)/.test(trimmed) ? this.musicRow(trimmed) : this.codeRow(raw);
     // ABC as a model writes it: `K:G`, `V:1`, `|: c d e f |`, `A2 B2 c2 d2`. Before any other line has been said, whatever is no verb is music.
     if (this.tune && trimmed !== '' && !trimmed.startsWith('#')) {
@@ -66,6 +100,14 @@ export class LineReader {
     if (result.kind === 'reject' && this.table && trimmed.includes('|') && result.issues.some((issue) => issue.code === 'unknown-verb')) {
       const retried = parseLine(`| ${trimmed}`);
       if (retried.kind === 'line') result = retried;
+    }
+    // L1. A line rejected as an unknown verb that reads as a sentence is said: losing a sentence is worse than losing a flourish.
+    if (result.kind === 'reject' && result.issues.some((issue) => issue.code === 'unknown-verb') && readsAsProse(trimmed)) {
+      const said = parseLine(`say | ${trimmed}`);
+      if (said.kind === 'line') {
+        const note: Issue = { code: 'unknown-verb', severity: 'warn', message: `"${trimmed.split(/\s+/)[0] ?? ''}" is not a verb; the line was said as text. Write \`say | …\` for words`, token: trimmed.split(/\s+/)[0] ?? '' };
+        result = { ...said, issues: [note, ...said.issues] };
+      }
     }
     if (result.kind !== 'line') return result;
     const { line } = result;

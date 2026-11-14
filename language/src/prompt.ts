@@ -311,6 +311,8 @@ export function buildSystemPrompt({ capabilities, services }: PromptOptions): st
     // Taught with the rest of paint, in its own section.
     if (name === 'paint') return false;
     if (TAUGHT_HERE.includes(name)) return false;
+    // L1: `set` does what `revise` did; the word still reads, so old logs replay, but it is no longer taught.
+    if (name === 'revise') return false;
     if (name === 'ambient') return weather;
     if (name === 'pix' || name === 'row' || name === 'frame') return pixels;
     if (name === 'move' || name === 'color') return draws;
@@ -443,7 +445,7 @@ ${[
 
 A control sits in the flow like a line, or takes at=, near=, in=. \`bind\` makes it change the stage at once:
 bind angle | move sun along=arc
-  The change (a \`set\`, \`move\`, \`correct\`${draws ? ', or shape declared again' : ''}) is as far along as the control. \`bind angle 0..45 | …\` runs it over part of the range; \`bind view=night | …\` holds it while a pick or toggle has that value (an option's exact words, spaces too: \`bind chord=C major | …\`; or its number; on, off).
+  The change (a \`set\`, \`move\`, \`correct\`${draws ? ', or shape declared again' : ''}) is as far along as the control. \`bind angle 0..45 | …\` runs it over part of the range; \`bind view=night | …\` holds it while a pick or toggle has that value (an option's exact words in quotes: \`bind chord="C major" | …\`; or its number; on, off). Several changes for one value: \`when view=night\`, the lines, \`end\`; a bound \`correct\` swaps words quietly.
 Braces in text hold a value or arithmetic: \`say | At {angle}, a {round(10/tan(rad(angle)))} m shadow\` ({angle} carries the slider's unit; a name that is not a declared control's id is cut)${structures.includes('chart') ? '; a chart cell may too' : ''}. A slider must drive something. \`send\` on a control makes its change the user's next message.
 `;
 
@@ -557,14 +559,14 @@ Whatever the form: never talk about the stage, the medium, what you will do or y
 
 - Expressive asks (a story, a mood, a thing to look at): commit. One bold idea, big, in layers, with motion and a wait before the line that matters. Timid and tidy is the failure.
 - Be right before pretty. Every part your words name is drawn; parts that connect touch; the subject ends whole inside the picture and fills it, never cut off or lost in a corner. Words stay inside their boxes.
-- A follow-up about what is on stage continues it: \`set\`, \`hit\`, \`move\`, \`revise\`, add. \`scene\` is only for a new subject; never write again what is there. A lesson's steps stack up, not captions; a step to try keeps its subject.
+- A follow-up about what is on stage continues it: \`set\`, \`hit\`, \`move\`, add. \`scene\` is only for a new subject; never write again what is there. A lesson's steps stack up, not captions; a step to try keeps its subject.
 - Match the level asked or implied. A young learner (under 10, "my kid", "like I'm 7"): plain words, one small idea a step, the question shown; no letters for numbers or \`*\`/\`x\` signs before they are explained; count on the picture ("5, 10, 15, 20").
 - What the user says to hold from now on ("only visuals", "always brief"): record it once, \`standing | their words\`, and keep it on every later turn, answers about yourself or this app too.
 - No live price feed: figures come from DATA or the web, with source and date, or you say you have none. Never copy a protected character, logo or artwork: make an original, or a homage in the style, and say so.
 
 # Lines
 
-A verb, then words and key=value pairs, then (for some verbs) \` | \` and text to the end of the line. No quotes. In text, *asterisks* mark a few words for emphasis.
+A verb, then words and key=value pairs, then (for some verbs) \` | \` and text to the end of the line. A value of several words goes in quotes (\`label="two words"\`); the text after the bar never does. In text, *asterisks* mark a few words for emphasis.
 
 ${verbs}
 
@@ -619,7 +621,7 @@ ${depth}
 
 The stage persists across turns. \`set <id>\` restyles or changes something (\`set a2 ink=dim\`, \`set scene opacity=0.3\`, \`set a1 stay=pin\`)${draws ? '; `move <id> x,y slow` sends it somewhere, `along=<path id>` along a curve' : ''}; \`hit <id>\` points at it (${words(HIT)}); \`drop <id>\` removes it.
 
-\`revise\` changes a line nobody has seen yet; \`correct\` is thinking aloud where everyone can see, on purpose, never for typos.
+\`set <id> | new words\` changes words (quietly if they have not played); \`correct\` is thinking aloud where everyone can see, on purpose, never for typos.
 
 # Conversation
 
@@ -666,7 +668,7 @@ You are the brain for one turn at a time, over HTTP. Unlike a model writing in o
 
 Lead is pen minus playhead: how far ahead of the audience you are. Keep it between about ${lead.low} and ${lead.high} seconds. Under ${lead.low}s the stage is about to run dry and will hold, breathing, until you write. Over ${lead.high}s you are committing to a future the user may interrupt, so stop and listen instead. Writing scene by scene keeps you inside that window without any arithmetic.
 
-\`revise\` and \`cancel\` exist for exactly this position: you have heard something, and what you already wrote but nobody has seen yet is no longer right.
+\`set <id> | new words\` and \`cancel\` exist for exactly this position: you have heard something, and what you already wrote but nobody has seen yet is no longer right.
 `;
 }
 
@@ -1047,7 +1049,7 @@ export function buildTurnBrief(context: TurnContext, input: TurnInput, form: Bri
     // (not on a tour of what is new: that is a new subject by nature, and its scenes are asked for)
     if (input.kind === 'prompt' && !(about?.news !== undefined && about.news !== null && about.news !== '')) {
       parts.push(
-        `IF THIS CONTINUES WHAT IS ON STAGE (a follow-up, "now…", "and…", "make it…", a change to it): do not write \`scene\`; write only what changes, by id: \`set\`, \`move\`, \`revise\`, a new line added, or the structure, chart or control's own line again under its id with only what differs. A line said again under an id with nothing new is nothing, so never repeat what is there; the user keeps what they set.${live.length === 0 ? '' : ` Live ids you can change in place: ${live.join(', ')}.`} \`scene\` only for a new subject.`,
+        `IF THIS CONTINUES WHAT IS ON STAGE (a follow-up, "now…", "and…", "make it…", a change to it): do not write \`scene\`; write only what changes, by id: \`set\`, \`move\`, a new line added, or the structure, chart or control's own line again under its id with only what differs. A line said again under an id with nothing new is nothing, so never repeat what is there; the user keeps what they set.${live.length === 0 ? '' : ` Live ids you can change in place: ${live.join(', ')}.`} \`scene\` only for a new subject.`,
       );
     }
   }

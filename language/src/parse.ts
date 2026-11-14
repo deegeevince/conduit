@@ -237,8 +237,31 @@ function parseWhen(token: string): When | null {
   return seconds === null ? null : { kind: 'at', seconds };
 }
 
-function readHead(tokens: readonly string[], issues: Issues): Head {
+/** L1. A value written in quotes (`label="right atrium"`, `chord="C major"`) is one token: its spaces are held as this mark until the head is read. */
+const SPACE_MARK = '\u0001';
+const QUOTED_VALUE = /([=:])["\u201c]([^"\u201d]*)["\u201d]/g;
+
+/** A head with its quoted values made single tokens. Only a quote that follows `=` or `:` opens one, so a word in quotes elsewhere is left alone. */
+function holdQuoted(head: string): string {
+  return head.replace(QUOTED_VALUE, (_all, mark: string, inner: string) => `${mark}${inner.trim().replace(/\s+/g, SPACE_MARK)}`);
+}
+
+/** Where the bar that starts the words is: the first one that is not inside a quoted value. */
+function barOf(source: string): number {
+  let quoted = false;
+  for (let index = 0; index < source.length; index += 1) {
+    const char = source[index];
+    if (quoted) {
+      if (char === '"' || char === '\u201d') quoted = false;
+    } else if ((char === '"' || char === '\u201c') && (source[index - 1] === '=' || source[index - 1] === ':') && /["\u201d]/.test(source.slice(index + 1))) quoted = true;
+    else if (char === '|') return index;
+  }
+  return -1;
+}
+
+function readHead(rawTokens: readonly string[], issues: Issues): Head {
   const head: Head = { words: [], pairs: [], when: undefined };
+  const tokens = rawTokens.map((token) => token.replaceAll(SPACE_MARK, ' '));
   for (const token of tokens) {
     if (token.startsWith('@')) {
       const when = parseWhen(token.toLowerCase());
@@ -1274,7 +1297,12 @@ function parseBind(head: Head, rawText: string | null, issues: Issues): Line | n
     issues.error('bad-bind', 'bind needs the change after " | ": a set, move, correct or shape line');
     return null;
   }
-  const change = inner.line;
+  let change = inner.line;
+  // L1. `set <id> | words` reads as a `revise`; under a control it changes the words in plain sight, which is what `correct` does.
+  if (change.verb === 'revise') {
+    const bare = change.styles.length === 0 && Object.keys(change.props).length === 0 && change.text !== undefined;
+    change = bare ? { verb: 'correct', id: change.id, text: change.text ?? '' } : { verb: 'set', target: { kind: 'id', id: change.id }, styles: change.styles, props: change.props };
+  }
   const drawn = isShapeVerb(change.verb as Verb);
   if (change.verb !== 'set' && change.verb !== 'move' && change.verb !== 'correct' && !drawn) {
     issues.error('bad-bind', `a control cannot drive "${change.verb}"; it drives set, move, correct, or a shape declared again`);
@@ -1302,9 +1330,14 @@ function readSpeedAndOver(pairs: readonly Pair[], issues: Issues): { speed?: Cam
   return out;
 }
 
-function parseSet(head: Head, issues: Issues): Line | null {
+function parseSet(head: Head, text: string | null, issues: Issues): Line | null {
   const target = readTarget(head.words[0], issues);
   if (target === null) return null;
+  // L1. `set <id> [style…] [prop=value…] | <new text>` is what `revise` was: the engine makes it quiet when the line has not played and visible when it has.
+  if (text !== null && text.trim() !== '' && target.kind === 'id') {
+    const revised = parseRevise({ ...head, words: [target.id, ...head.words.slice(1)] }, text, issues);
+    if (revised !== null) return revised;
+  }
   const timing = readSpeedAndOver(head.pairs, issues);
   const { props: given, rest } = readStyleProps(timing.rest, issues);
   warnUnknownPairs(rest, issues);
@@ -1680,6 +1713,7 @@ const TEXT_LIMIT: Readonly<Partial<Record<Verb, number>>> = {
   say: LIMITS.text,
   correct: LIMITS.text,
   revise: LIMITS.text,
+  set: LIMITS.text,
   path: LIMITS.line,
   paint: LIMITS.prompt,
   flow: LIMITS.text,
@@ -1808,12 +1842,12 @@ export function parseLine(raw: string): ParseResult {
   }
   source = unwrap(source.replace(/^(?:[-*•]|\d+[.)])\s+(?=[a-zA-Z])/, ''));
 
-  let pipe = source.indexOf('|');
+  let pipe = barOf(source);
   // `a -> b | then`: an arrow between two ids is a link.
   const shorthand = /^([a-z][a-z0-9_-]*)\s*(?:->|-->|=>|→)\s*([a-z][a-z0-9_-]*)(.*)$/i.exec(source);
   if (shorthand?.[1] !== undefined && shorthand[2] !== undefined && !oneOf(VERBS, shorthand[1].toLowerCase()) && isValidElementId(shorthand[1].toLowerCase())) {
     source = `link ${shorthand[1]} ${shorthand[2]}${shorthand[3] ?? ''}`;
-    pipe = source.indexOf('|');
+    pipe = barOf(source);
   }
   const firstWord = (/^([a-z]+):?(?=\s|$)/i.exec(source)?.[1] ?? '').toLowerCase();
   const firstVerb = own(VERB_ALIASES, firstWord) ?? firstWord;
@@ -1821,7 +1855,7 @@ export function parseLine(raw: string): ParseResult {
   const picked = pipe >= 0 && firstVerb === 'pick' ? /^(\S+\s+[a-z][a-z0-9_-]*):\s+([^|=]+?)\s*\|(.*)$/i.exec(source) : null;
   if (picked?.[1] !== undefined && picked[2] !== undefined) {
     source = `${picked[1]} | ${picked[2]} |${picked[3] ?? ''}`;
-    pipe = source.indexOf('|');
+    pipe = barOf(source);
   }
   let wordsAsWritten: string | null = null;
   if (pipe < 0 && WORDED.has(firstVerb)) {
@@ -1840,9 +1874,9 @@ export function parseLine(raw: string): ParseResult {
         wordsAsWritten = `${firstVerb} had no " | "; the words after it were taken as its text`;
       }
     }
-    pipe = source.indexOf('|');
+    pipe = barOf(source);
   }
-  const headSource = pipe < 0 ? source : source.slice(0, pipe);
+  const headSource = holdQuoted(pipe < 0 ? source : source.slice(0, pipe));
   const rawText = pipe < 0 ? null : source.slice(pipe + 1);
   // `circle 80, 45 12`: a space after the comma of a coordinate pair is still the pair.
   const verbWord = (headSource.trim().split(/\s+/)[0] ?? '').toLowerCase().replace(/:$/, '');
@@ -1960,7 +1994,7 @@ export function parseLine(raw: string): ParseResult {
         line = parseAmbient(head, issues);
         break;
       case 'set':
-        line = parseSet(head, issues);
+        line = parseSet(head, text, issues);
         break;
       case 'move':
         line = parseMove(head, issues);
