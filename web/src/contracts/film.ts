@@ -6,7 +6,7 @@
 
 import type { ControlValues, DataTable, Line, StageBase, TuneModel, TuneVoice } from '@conduit/language';
 import type { Frame } from './frame';
-import type { Viewport } from './space';
+import type { Box, Viewport } from './space';
 
 /** Everything a turn was, as data. Safe to keep, to save, to send. */
 export interface Recording {
@@ -67,6 +67,12 @@ export interface Film {
   /** The music of the film, as the tunes the film's pictures keep time with, for the sound track. Absent: none. */
   readonly tunes?: readonly FilmTune[];
   readonly viewport: Viewport;
+  /**
+   * The picture is more than the stage (the language pane beside or above it): the whole picture's size, where the stage goes in it, and a
+   * way to draw everything but the stage at `seconds`, a pure function of time like `frameAt`. `viewport` is then the stage's size, and the
+   * exporter makes the whole picture at the size of its request. Absent: the stage is the whole picture.
+   */
+  readonly surround?: Surround;
   frameAt(seconds: number): Frame;
   /** the canonical text of the recording's lines, one per line: the source of this film */
   script(): string;
@@ -81,3 +87,28 @@ export interface FilmTune {
   /** film seconds after which it is faded out: the film's end or the moment its picture left the stage */
   readonly until: number;
 }
+
+/** What a film is laid in besides its stage. Sizes are in the picture's own pixels (the size asked of the exporter); `draw` is given a context already scaled to them. */
+export interface Surround {
+  readonly width: number;
+  readonly height: number;
+  readonly stage: Box;
+  draw(context: SurroundPen, seconds: number): void;
+}
+
+/** The part of a 2D canvas context a surround is drawn with (the contracts see no DOM; a `CanvasRenderingContext2D` is one). */
+export interface SurroundPen {
+  fillStyle: string | CanvasGradientLike;
+  font: string;
+  globalAlpha: number;
+  textBaseline: 'alphabetic' | 'top' | 'middle' | 'bottom' | 'hanging' | 'ideographic';
+  save(): void;
+  restore(): void;
+  beginPath(): void;
+  rect(x: number, y: number, width: number, height: number): void;
+  clip(): void;
+  fillRect(x: number, y: number, width: number, height: number): void;
+  fillText(text: string, x: number, y: number): void;
+}
+
+type CanvasGradientLike = object;

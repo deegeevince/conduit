@@ -195,6 +195,12 @@ async function perform(app: StageApp, command: Command, onChoice: (choice: Brain
     case 'export':
       exportAs(app, command.format);
       return;
+    case 'lines': {
+      const on = command.on ?? !app.lang.on;
+      app.lang.set(on);
+      app.announce(on ? 'Showing the language: the lines as they arrive. A film has them too.' : 'The language is hidden.');
+      return;
+    }
     case 'capture': {
       const turn = app.lastTurn();
       if (turn === null || app.painter.recording() === null) {

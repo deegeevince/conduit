@@ -37,6 +37,9 @@ import { observeRenderer } from './observe';
 import { startObserver } from './observer';
 import type { AppParams } from './params';
 import { applyLook } from './theme';
+import { createLangLog } from './lang-log';
+import type { LangLog } from './lang-log';
+import { langLayout, withPane } from './lang-film';
 
 export interface StageAppOptions {
   /** the element the stage fills; its size is the painter's viewport */
@@ -92,6 +95,8 @@ export interface StageApp {
   readonly painter: Painter;
   readonly link: HttpLink;
   readonly hook: StageHook;
+  /** "Show the language": the lines the page was told, as they came, and whether the pane that shows them (and a film's copy of it) is on */
+  readonly lang: LangLog;
   /** where this stage's charts live; null when this build has no charting engine */
   readonly charts: ChartHost | null;
   /** v2.3. Where live apps run: the sandboxed frames over the stage. `/stop-all` ends them. */
@@ -297,6 +302,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   const autoplay = reopening ? null : options.autoplay;
   const notes: string[] = [];
   const rejects: RejectNote[] = [];
+  const lang = createLangLog(false);
   const statusListeners = new Set<(status: StageStatus) => void>();
 
   if (lockLook !== null) applyLook(host, LOOKS[lockLook]);
@@ -611,6 +617,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     const steps = localSteps(source);
     localOpen = true;
     painter.openTurn(LOCAL_TURN, { kind: 'demo', script: name });
+    lang.openTurn(LOCAL_TURN);
     let index = 0;
     let seq = 0;
     const next = (): void => {
@@ -627,6 +634,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
         if (disposed || !localOpen) return;
         index += 1;
         seq += 1;
+        lang.line(LOCAL_TURN, seq, serializeLine(step.line), [], 0);
         painter.ingest(LOCAL_TURN, seq, step.line);
         publishStatus();
         next();
@@ -711,6 +719,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
         tellAgent({ type: 'over', turn: null });
         pending = Math.max(0, pending);
         painter.openTurn(event.turn, event.input);
+        lang.openTurn(event.turn);
         if (stopPending) {
           stopPending = false;
           stoppedByUser = true;
@@ -735,8 +744,10 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
         endStarting();
         const parsed = parseLine(event.text);
         if (parsed.kind === 'line') {
+          lang.line(event.turn, event.seq, event.text, event.issues, 0);
           painter.ingest(event.turn, event.seq, parsed.line);
         } else {
+          lang.dropped(event.turn, event.text, parsed.kind === 'reject' ? parsed.issues : [{ code: 'not-a-line', severity: 'error', message: `server sent a ${parsed.kind}` }], 0);
           noteReject({
             turn: event.turn,
             raw: event.text,
@@ -746,6 +757,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
         return;
       }
       case 'reject':
+        lang.dropped(event.turn, event.raw, event.issues, 0);
         noteReject({ turn: event.turn, raw: event.raw, issues: event.issues });
         return;
       case 'asset':
@@ -1253,7 +1265,9 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     const recording = painter.recording();
     if (recording === null) throw new Error('There is nothing to take away yet. Ask for something first.');
     const snap = painter.snapshot();
-    const size = request.kind === 'script' ? snap.viewport : { width: request.width, height: request.height, dpr: 1 };
+    // With the language pane on, a film is the pane and the stage together: the stage is laid out in the room the pane leaves.
+    const split = lang.on && request.kind === 'video' ? langLayout(request.width, request.height) : null;
+    const size = request.kind === 'script' ? snap.viewport : split !== null ? { width: split.stage.width, height: split.stage.height, dpr: 1 } : { width: request.width, height: request.height, dpr: 1 };
     // What the viewer's hand held and what the charts were given go into the file: it shows the picture as they left it.
     const held: Record<string, ControlValue> = {};
     for (const view of snap.controls) if (view.value !== null) held[view.id] = view.value;
@@ -1269,6 +1283,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
       film = reel;
       if (reel.leftOut > 0 || reel.cut) reelNote = `The film holds at most ${REEL_MAX_SECONDS / 60} minutes: ${reel.leftOut > 0 ? `the first ${reel.leftOut} turn${reel.leftOut === 1 ? '' : 's'} ${reel.leftOut === 1 ? 'is' : 'are'} left out` : 'the last turn is cut short'}`;
     } else film = createFilm(recording, filmOptions);
+    if (split !== null) film = withPane(film, painter.recordings().length > 0 ? painter.recordings() : [recording], lang, split);
     // A film is not touched by a second job: the exporter refuses it, and the one still running keeps the status line.
     const refused = exporting !== null && request.kind !== 'script' && !(request.kind === 'still' && request.format === 'svg');
     const job = getExporter().start(film, request.kind === 'still' ? { ...request, at: Math.min(request.at, film.duration) } : request);
@@ -1317,6 +1332,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   const app: Omit<StageApp, 'hook'> = {
     painter,
     link,
+    lang,
     charts: chartHost,
     apps: liveApps,
     sound,
