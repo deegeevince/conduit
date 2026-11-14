@@ -832,6 +832,7 @@ A new structure, chart kind or control is one entry in its table in `vocabulary.
 | `code [id] [lang] [file=<name>] [x,y WxH] [\| title]` | starts at the pen and leaves the pen where it is | Code, taken exactly: follow it with one `| line` per line of the source, indentation kept, a bare `|` for an empty line. |
 | `tune [id] [tempo=<bpm>] [voice=piano\|strings\|chip\|bell] [x,y WxH] [\| title]` | starts at the pen and leaves the pen where it is | Music, in ABC notation: follow it with one `| line` per line of the score (K: M: L: Q: V:1 V:2, then the notes). It is drawn as a piano roll and played when it is whole. |
 | `app [id] [height=<n>] [x,y WxH] [\| title]` | starts at the pen and leaves the pen where it is | A live app: follow it with one `| line` per line of one HTML document (inline <style> and <script>). It runs in a locked sandbox on the stage, with no network. Taught only when the user asks for something that works. |
+| `figure <id> [cutaway\|exploded] [\| title]` | starts at the pen and leaves the pen where it is | A labelled drawing: follow it with its parts (path, poly, line, ellipse, rect, each with label="…"), route and step lines, then `end`. Taught by the FIGURE chapter in the brief. |
 | `screen <id> phone\|tablet\|desktop\|browser [from=<screen>[:label]] [\| name]` | starts at the pen and leaves the pen where it is | A mock-up: a device at its true size. The parts of the screen follow, one a line (nav, heading, button, field, item, image, row, col, end…); the painter lays them out. Taught by the INTERFACE chapter in the brief; on the wire its first line is the title and each later line a row, taken as written. |
 | `node [id] [number \| x,y] [ask\|end\|note] [from=<id>[:label]] [x=<when>] [y=<value>] [prop=value…] \| <text>` | starts at the pen and moves the pen part of the way through its own drawing | One part of the structure above. from= also draws the link from that node. On a chart it is a mark: x= an event, y= a level, both a point. |
 | `link <a> <b> [c…] [both\|plain] [dashed] [\| label]` | starts at the pen and moves the pen part of the way through its own drawing | Join nodes with a routed connector, in a chain when more than two are named. |
@@ -845,13 +846,13 @@ A new structure, chart kind or control is one entry in its table in `vocabulary.
 | `pic [id] from=<picture id> [x,y WxH] [prop=value…]` | starts at the pen and moves the pen part of the way through its own drawing | Put a picture the user gave on stage, to draw over, point at or trace. Its id is in the brief. |
 | `paint [id] [x,y WxH] [over=<group>] [as=<medium>] [sketch=fade\|keep] [mask=…] [\| what it is]` | starts at the pen and leaves the pen where it is | Paint over what you drew: the painter re-renders your sketch in a medium. |
 | `ambient [id] <kind> [amount] [ink=…] [layer=…]` | starts at the pen and leaves the pen where it is | Atmosphere for the scene: weather, light, particles. `ambient none` clears it. |
-| `set <id\|scene\|all> [style…] [prop=value…] [speed] [over=Ns]` | starts at the pen and leaves the pen where it is | Change something on stage: colour, size, place, turn, opacity, layer, pin. |
+| `set <id\|scene\|all> [style…] [prop=value…] [speed] [over=Ns] [\| <new text>]` | starts at the pen and leaves the pen where it is | Change something on stage: colour, size, place, turn, opacity, layer, pin, its words; a structure or chart with its own line again and a new room. |
 | `move <id> <x,y\|anchor> [speed] [over=Ns] [along=<path id>]` | starts at the pen and leaves the pen where it is | Travel to a place, straight or along a drawn path. |
 | `drop <id\|scene\|all> [exit=…]` | starts at the pen and leaves the pen where it is | Make something leave now. |
 | `hit <id> [gesture]` | starts at the pen and moves the pen past itself | Point back at something with one gesture. |
 | `cam <move> [id\|direction] [speed] [over=Ns] [amount=0..1]` | starts at the pen and leaves the pen where it is | Move the camera. It runs underneath the lines that follow. |
 | `wait [N \| Ns]` | starts at the pen and moves the pen past itself | Silence. N beats (default 1), or exact seconds with an s. |
-| `revise <id> [style…] [prop=value…] [\| <new text>]` | edits lines that have not played yet | Quietly change a line that has not played yet. |
+| `revise <id> [style…] [prop=value…] [\| <new text>]` | edits lines that have not played yet | Quietly change a line that has not played yet. Read, never taught: `set` does it now. |
 | `deck \| <title>` | starts at the pen and moves the pen past most of the outgoing exits | Make this answer a deck: each scene after it is a slide, and the viewer steps through them. |
 | `standing \| <their words>  or  standing drop <n>` | takes no time | Hold what the user asked for from now on ("add a visual to every reply"), in their words; every later brief gives it back. |
 | `refine [passes]` | takes no time | Keep making the picture better, pass by pass, because the user asked for iteration. |
@@ -1236,6 +1237,7 @@ Nominal scale against body: `xs` 0.64, `s` 0.8, `m` 1, `l` 1.5, `xl` 2.25, `xxl`
 | `code` | rows | the painter's charting engine | rows `\| line` taken exactly as written, indentation kept: monospaced and highlighted, with a copy action |
 | `tune` | rows | the painter's charting engine | rows `\| line` of ABC notation, taken exactly: a piano roll that plays, with a playhead and the notes lighting as they sound |
 | `app` | rows | the painter's charting engine | rows `\| line` of one HTML document (inline style and script), taken exactly: a live app that runs in a locked sandbox on the stage and answers back (taught only when the user asks for something that works) |
+| `figure` | rows | the painter's charting engine | a labelled drawing: each part one line (taught by the FIGURE chapter in the brief); rows are the lines of the figure, taken as written |
 | `screen` | rows | the painter's charting engine | a mock-up: devices at true size, each part one line (taught by the INTERFACE chapter in the brief); rows are the lines of the interface, taken as written |
 
 ### `node` shapes (flow, tree, cycle)
@@ -1388,6 +1390,10 @@ The painter renders these media by itself: `watercolor`, `oil`, `gouache`, `ink`
 | `recoloured` | its colour was changed to stay readable |
 | `collides` | its words run into other words |
 | `crossed` | a drawn line runs through its words |
+| `spills` | it spills out past the edge of a bigger filled shape that mostly holds it: pull it inside, or make it smaller |
+| `refit` | it was written inside a shape but did not fit, so it was shrunk toward its centre until it did |
+| `wrong-part` | its leader line ends on, or nearer to, a different part than the one it names |
+| `tangled` | its leader line crosses another label's leader line |
 | `crowded` | there were too many parts for the room, so they came out small: give the structure the whole scene, or split it in two |
 | `faint` | it is hard to read against what is behind it |
 | `tiny` | it came out too small to make out |
@@ -1467,7 +1473,7 @@ Everything below is in seconds.
 | a chart point landing | 0.09 (slow), 0.06 (steady), 0.04 (brisk) |
 | a chart of DATA revealing itself, once the data is there | 1.2, on the ambient clock |
 | a bound change that is on or off (a toggle, `bind mode=night`) | 0.25, on the ambient clock |
-| look and fix: waiting for the painter's draft report | at most 1.5 |
+| look and fix: waiting for the painter's draft report | at most 8 |
 | look and fix: the first line of a fix | at most 12, then the draft is kept |
 | look and fix: a whole pass | at most 30 |
 | strike-through of a `correct` | 0.3 |
@@ -1501,3 +1507,15 @@ Everything below is in seconds.
 | lead window, seconds | 2 to 12 |
 
 <!-- reference:end -->
+
+
+## Language round A (L1, SA5, L3, FG2)
+
+- **Quoted values.** `label="right atrium"`, `bind chord="C major" | …`: a value of several words goes in quotes after `=` or `:`.
+- **`when <control>=<value>` … `end`.** Each inner line is read as `bind <control>=<value> | <line>`.
+- **Prose fallback.** A line rejected as an unknown verb that reads as a sentence (three words or more, no `=` or `|`) is said, with a repair note.
+- **Re-opening.** A table or chart opened again under its id as the same kind (same reading of its rows) is a `set`: it keeps its rows.
+- **`set <id> | new words`** is what `revise` was (quiet if the line has not played, visible if it has). `revise` still parses; it is no longer taught.
+- **Flow by default** (`LineNormalizer` `placement: 'flow'`, a live brain only): a numeric `at=x,y` on words or a control that is not `in=`, `near=`, a leader or in a `layout=free` scene, and a room on a structure's opening line, are dropped and told as "placed by the stage". The canvas is taught only by the cued DRAWING chapter.
+- **Doubt and alternatives.** `approx [from=recalled|computed|given|guessed]` on `say` and `node` (drawn as a note after the words); `say | long || short` (the flow takes the first form that fits at the legible floor; timed on the longest); `optional` on a `say` or a figure part (let go first).
+- **`figure <id> [cutaway|exploded] | title` … `end`** with part lines (`path|poly|line|ellipse|rect|circle`, `label="…"`, `smooth`, `in=<part>`, `optional`, `fill=`/`stroke=`), `route <id> via=a,b,c [ink=]` and `step show=a,b | words`. Its rows are the figure's own lines (`language/src/figure.ts` reads them into the engine's input). Taught by the FIGURE chapter, cued by anatomy, machines, "parts of", "how … works", labelled.
