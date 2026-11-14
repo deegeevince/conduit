@@ -53,8 +53,9 @@ function boot(env: Env): void {
     sight: env.sight,
     variant: env.promptVariant,
     library,
-    // The Remote adapter for datasets is not built (PLAN-v2.md, package S2); `env.datasets` is read and waits for it.
+    // The owner's datasets are off unless the library port names a reader for them; `env.datasets` says which.
     datasets: NO_DATASETS,
+    review: env.review,
     maxPaintings: env.paintingsPerSession,
     now,
   });

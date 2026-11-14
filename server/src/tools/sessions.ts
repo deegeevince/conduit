@@ -23,6 +23,13 @@ interface Turn {
   readonly paints: Of<'paint'>[];
   readonly fetches: Of<'fetch'>[];
   readonly taps: Of<'tap'>[];
+  readonly usages: Of<'usage'>[];
+  readonly passes: Of<'pass'>[];
+  readonly techniques: Of<'techniques'>[];
+  readonly drafts: Of<'draft'>[];
+  readonly data: Of<'data'>[];
+  readonly controls: Of<'control'>[];
+  review: Of<'review'> | null;
   end: Of<'end'> | null;
   usage: Of<'usage'> | null;
   started: Of<'started'> | null;
@@ -72,11 +79,13 @@ async function load(file: string): Promise<Conversation> {
     if (record.type === 'session') {
       session = record;
     } else if (record.type === 'turn') {
-      turns.set(record.turn, { open: record, briefs: [], lines: [], rejects: [], paints: [], fetches: [], taps: [], end: null, usage: null, started: null, report: null, snapshot: null });
+      turns.set(record.turn, { open: record, briefs: [], lines: [], rejects: [], paints: [], fetches: [], taps: [], usages: [], passes: [], techniques: [], drafts: [], data: [], controls: [], review: null, end: null, usage: null, started: null, report: null, snapshot: null });
     } else if (record.type === 'tap') {
       const turn = record.turn === null ? undefined : turns.get(record.turn);
       if (turn === undefined) looseTaps.push(record);
       else turn.taps.push(record);
+    } else if (record.turn === null) {
+      continue;
     } else {
       const turn = turns.get(record.turn);
       if (turn === undefined) continue;
@@ -86,7 +95,15 @@ async function load(file: string): Promise<Conversation> {
       else if (record.type === 'paint') turn.paints.push(record);
       else if (record.type === 'fetch') turn.fetches.push(record);
       else if (record.type === 'end') turn.end = record;
-      else if (record.type === 'usage') turn.usage = record;
+      else if (record.type === 'usage') {
+        turn.usage ??= record;
+        turn.usages.push(record);
+      } else if (record.type === 'pass') turn.passes.push(record);
+      else if (record.type === 'techniques') turn.techniques.push(record);
+      else if (record.type === 'draft') turn.drafts.push(record);
+      else if (record.type === 'data') turn.data.push(record);
+      else if (record.type === 'control') turn.controls.push(record);
+      else if (record.type === 'review') turn.review = record;
       else if (record.type === 'started') turn.started = record;
       else if (record.type === 'report') turn.report = record;
       else if (record.type === 'snapshot') turn.snapshot = record;
@@ -102,7 +119,7 @@ function money(value: number | null | undefined): string {
 function costOf(conversation: Conversation): number {
   let total = 0;
   for (const turn of conversation.turns) {
-    total += turn.usage?.usage.costUsd ?? 0;
+    for (const usage of turn.usages) total += usage.usage.costUsd ?? 0;
     for (const paint of turn.paints) total += paint.costUsd ?? 0;
   }
   return total;
@@ -112,6 +129,7 @@ function inputText(input: TurnInput): string {
   if (input.kind === 'prompt') return `typed: ${JSON.stringify(input.text)}`;
   if (input.kind === 'tap') return `tapped: ${JSON.stringify(input.text)} (${input.id})`;
   if (input.kind === 'demo') return `demo: ${input.script}`;
+  if (input.kind === 'act') return `worked control ${input.id}: ${JSON.stringify(input.text)}`;
   return `script of ${input.text.split('\n').length} lines (${input.text.length} characters)`;
 }
 
@@ -166,13 +184,22 @@ function printTurn(turn: Turn, withLines: boolean): void {
   const warned = turn.lines.filter((line) => line.issues.some((issue) => issue.severity === 'warn'));
   for (const line of warned) out(`  warned: ${line.text}  -- ${line.issues.map((issue) => issue.message).join('; ')}`);
   for (const fetch of turn.fetches) out(`  fetch ${fetch.url}${fetch.finalUrl === null || fetch.finalUrl === fetch.url ? '' : ` -> ${fetch.finalUrl}`}: ${fetch.outcome}${fetch.status === null ? '' : ` ${fetch.status}`}, ${fetch.contentType ?? 'no type'}, ${fetch.bytes} bytes, ${fetch.ms}ms${fetch.reason === null ? '' : ` (${fetch.reason})`}`);
+  for (const record of turn.techniques) out(`  techniques handed over: ${record.ids.join(', ')}`);
+  for (const control of turn.controls) out(`  control at ${((control.at - turn.open.at) / 1000).toFixed(1)}s: ${control.id} = ${JSON.stringify(control.value)}${control.send ? ' (sent)' : ''}`);
+  for (const data of turn.data) out(`  data ${data.id} (${data.source}, ${data.rows} rows): ${data.status}${data.reason === null ? '' : ` (${data.reason})`}`);
+  for (const pass of turn.passes) out(`  pass ${pass.pass} ${pass.state} at ${((pass.at - turn.open.at) / 1000).toFixed(1)}s${pass.reason === null ? '' : `: ${pass.reason}`}`);
+  for (const draft of turn.drafts) if (draft.file !== null || draft.noted > 0) out(`  draft ${draft.pass}: ${draft.noted} noted${draft.file === null ? '' : `, picture ${draft.file}`}`);
+  if (turn.review !== null) {
+    const r = turn.review;
+    out(`  look and fix: ${r.outcome.result}, ${r.outcome.passes} pass${r.outcome.passes === 1 ? '' : 'es'}${r.outcome.why === null ? '' : ` (${r.outcome.why})`}; first line of fix ${ms(r.firstLineMs)}, total ${ms(r.totalMs)}, cost ${money(r.costUsd)}`);
+  }
   for (const paint of turn.paints) out(`  painting ${paint.key}: ${paint.status} in ${paint.ms}ms${paint.costUsd === null ? '' : `, ${money(paint.costUsd)}`}${paint.reason === null ? '' : ` (${paint.reason})`}`);
   if (turn.snapshot !== null) out(`  snapshot: ${turn.snapshot.file}`);
-  if (withLines) for (const line of turn.lines) out(`  line ${line.seq} @${line.start.toFixed(2)}s  ${line.text}`);
+  if (withLines) for (const line of turn.lines) out(`  line ${line.seq}${line.pass !== undefined && line.pass > 1 ? ` (pass ${line.pass})` : ''} @${line.start.toFixed(2)}s  ${line.text}`);
   const n = numbersOf(turn);
   const share = cacheShare(turn);
   out(
-    `  first line ${ms(n.firstLine)}, first shown ${ms(n.firstShown)}, total ${ms(n.total)}, output tokens ${tokensText(turn)}, cache read ${share === null ? '-' : `${Math.round(share * 100)}%`}, cost ${money(turn.usage?.usage.costUsd)}`,
+    `  first line ${ms(n.firstLine)}, first shown ${ms(n.firstShown)}, total ${ms(n.total)}, output tokens ${tokensText(turn)}, cache read ${share === null ? '-' : `${Math.round(share * 100)}%`}, cost ${money(turn.usages.length === 0 ? null : turn.usages.reduce((sum, u) => sum + (u.usage.costUsd ?? 0), 0))}`,
   );
   out('');
 }

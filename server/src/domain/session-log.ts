@@ -1,4 +1,4 @@
-import type { BriefForm, Capabilities, Issue, ScreenFacts, Services, TurnEndReason, TurnInput, TurnReport } from '@conduit/language';
+import type { BriefForm, Capabilities, ControlValue, Issue, PassState, ReviewDecision, ReviewOutcome, ScreenFacts, Services, TurnEndReason, TurnInput, TurnReport } from '@conduit/language';
 import type { BrainId, BrainUsage } from './brain';
 import type { FetchOutcome } from './documents';
 
@@ -15,12 +15,12 @@ export type SessionRecord =
   /** the user typed, tapped a choice, or played a demo or a script */
   | { readonly type: 'turn'; readonly at: number; readonly turn: string; readonly input: TurnInput; readonly brain: BrainId }
   /** what the brain was told; `system` only when a process first hears it */
-  | { readonly type: 'brief'; readonly at: number; readonly turn: string; readonly form: BriefForm | 'script'; readonly text: string; readonly system: string | null; readonly withSnapshot: boolean }
+  | { readonly type: 'brief'; readonly at: number; readonly turn: string; readonly form: BriefForm | 'script'; readonly text: string; readonly system: string | null; readonly withSnapshot: boolean; readonly pass?: number }
   /** one accepted line, as it was forwarded; `raw` is what the brain wrote when that differs */
-  | { readonly type: 'line'; readonly at: number; readonly turn: string; readonly seq: number; readonly text: string; readonly start: number; readonly issues: readonly Issue[] }
+  | { readonly type: 'line'; readonly at: number; readonly turn: string; readonly seq: number; readonly text: string; readonly start: number; readonly issues: readonly Issue[]; readonly pass?: number }
   | { readonly type: 'reject'; readonly at: number; readonly turn: string; readonly raw: string; readonly issues: readonly Issue[] }
   | { readonly type: 'end'; readonly at: number; readonly turn: string; readonly reason: TurnEndReason; readonly message: string | null; readonly lines: number }
-  | { readonly type: 'usage'; readonly at: number; readonly turn: string; readonly usage: BrainUsage }
+  | { readonly type: 'usage'; readonly at: number; readonly turn: string; readonly usage: BrainUsage; readonly pass?: number }
   /** the painter's first line of this turn began to play: the user saw something */
   | { readonly type: 'started'; readonly at: number; readonly turn: string }
   /** what was shown, and how it landed. The stage it left behind is in the report. */
@@ -31,6 +31,18 @@ export type SessionRecord =
   | { readonly type: 'paint'; readonly at: number; readonly turn: string; readonly key: string; readonly prompt: string; readonly status: 'ready' | 'skipped' | 'failed'; readonly ms: number; readonly costUsd: number | null; readonly reason: string | null }
   /** a link the user gave was fetched, or refused, or failed */
   | { readonly type: 'fetch'; readonly at: number; readonly turn: string; readonly url: string; readonly finalUrl: string | null; readonly status: number | null; readonly contentType: string | null; readonly bytes: number; readonly ms: number; readonly outcome: FetchOutcome; readonly reason: string | null }
+  /** the techniques the turn's brief carried, best first (library ids), so that a technique's use can be counted from the logs */
+  | { readonly type: 'techniques'; readonly at: number; readonly turn: string; readonly ids: readonly string[] }
+  /** look and fix: where a turn's passes stood, in order */
+  | { readonly type: 'pass'; readonly at: number; readonly turn: string; readonly pass: number; readonly state: PassState; readonly reason: string | null }
+  /** the painter's report on a draft: how many things did not land, and whether a picture came with it */
+  | { readonly type: 'draft'; readonly at: number; readonly turn: string; readonly pass: number; readonly noted: number; readonly picture: boolean; readonly file: string | null }
+  /** what look and fix came to for a turn: the decisions, the times and the cost */
+  | { readonly type: 'review'; readonly at: number; readonly turn: string; readonly outcome: ReviewOutcome; readonly decisions: readonly ReviewDecision[]; readonly firstLineMs: number | null; readonly totalMs: number; readonly costUsd: number | null }
+  /** a table the conversation holds, and what became of sending it to the painter (`ready` when a chart asked for it) */
+  | { readonly type: 'data'; readonly at: number; readonly turn: string; readonly id: string; readonly source: string; readonly rows: number; readonly status: 'held' | 'ready' | 'failed'; readonly reason: string | null }
+  /** a control the user worked */
+  | { readonly type: 'control'; readonly at: number; readonly turn: string | null; readonly id: string; readonly value: ControlValue; readonly text: string; readonly send: boolean }
   | { readonly type: 'tap'; readonly at: number; readonly turn: string | null; readonly id: string; readonly text: string; readonly choice: boolean };
 
 /** Fields of a record without the time, which the log stamps. */

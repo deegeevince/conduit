@@ -75,7 +75,7 @@ export function registerSessionRoutes(app: Hono, deps: HttpDeps): void {
     // Validated whole before anything is applied, then applied ahead of the turn: one request, one order.
     conductor.assertSession(session);
     if (request.events !== undefined) conductor.receive(session, request.events);
-    return c.json<StartTurnResponse>(conductor.startTurn(session, request.input), 202);
+    return c.json<StartTurnResponse>(conductor.startTurn(session, request.input, { look: c.req.header('x-conduit-review')?.trim().toLowerCase() !== 'off' }), 202);
   });
 
   /** Body: PostEventsRequest. 204. The back channel. */

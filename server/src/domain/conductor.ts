@@ -1,9 +1,12 @@
-import { API, CANVAS, EMPTY_STAGE, PASTE_AS_DOCUMENT_CHARS, FULL_CAPABILITIES, LANGUAGE, LEAD_WINDOW, LineNormalizer, LineReader, TurnScore, buildSystemPrompt, serializeLine, settle, wearingAt } from '@conduit/language';
+import { API, CANVAS, DATA_LIMITS, EMPTY_STAGE, PASTE_AS_DOCUMENT_CHARS, FULL_CAPABILITIES, LANGUAGE, LEAD_WINDOW, LineNormalizer, LineReader, TurnScore, buildSystemPrompt, serializeLine, settle, wearingAt } from '@conduit/language';
 import type { PromptVariant } from '@conduit/language';
 import type {
   BackEvent,
   BackEventRecord,
+  Capabilities,
   CreateSessionRequest,
+  DataFacts,
+  DataTable,
   CreateSessionResponse,
   DocumentFacts,
   Figure,
@@ -11,6 +14,7 @@ import type {
   Issue,
   LineProblem,
   PaintLine,
+  ReviewPolicy,
   Schedule,
   Services,
   RelayClock,
@@ -24,7 +28,7 @@ import { AppError, errors } from '../errors';
 import type { Logger } from '../log';
 import { ASSET_LIMITS } from './assets';
 import type { AssetStore } from './assets';
-import type { Brain, BrainRegistry, Snapshot } from './brain';
+import type { Brain, BrainEvent, BrainRegistry, Snapshot } from './brain';
 import { DOCUMENT_LIMITS, findUrls, hostOf } from './documents';
 import type { DocumentReader } from './documents';
 import type { ImageModel } from './images';
@@ -33,7 +37,9 @@ import { buildContext, rememberTurn } from './memory';
 import { MAX_PROBLEMS, SERVER_LIMITS } from './session';
 import type { SessionLog } from './session-log';
 import type { ActiveTurn, Session, SessionStore, StageSink } from './session';
+import { factsOf, tableFromText } from './datasets';
 import type { DatasetLibrary } from './datasets';
+import { reviewTurn } from './review';
 import type { TechniqueLibrary } from './techniques';
 
 export interface ConductorDeps {
@@ -51,8 +57,10 @@ export interface ConductorDeps {
   readonly variant: PromptVariant;
   /** the techniques a turn's brief may carry; answers from memory and never waits */
   readonly library: TechniqueLibrary;
-  /** the owner's own datasets, for a chart drawn by reference; `NO_DATASETS` unless switched on. Not yet read by a turn (PLAN-v2.md, package S1). */
+  /** the owner's own datasets, for a chart drawn by reference; `NO_DATASETS` unless switched on */
   readonly datasets: DatasetLibrary;
+  /** look and fix: whether the brain is shown its draft, and every deadline of it */
+  readonly review: ReviewPolicy;
   /** paintings a conversation may ask the image model for */
   readonly maxPaintings: number;
   /** milliseconds; injected so nothing in the domain reads the wall clock directly */
@@ -66,6 +74,9 @@ export interface EventsPage {
 
 const REAP_INTERVAL_MS = 60_000;
 
+/** The longest a turn waits on the owner's datasets before it goes on without them: it is a network call on the turn's path. */
+const DATASET_WAIT_MS = 5_000;
+
 /**
  * Runs conversations. It owns the two one-way streams: lines flow from a
  * brain to the painter, and the painter's back channel flows in. HTTP routes
@@ -75,17 +86,23 @@ export class Conductor {
   private readonly deps: ConductorDeps;
   private readonly waiters = new Map<string, Set<() => void>>();
   private readonly reaper: NodeJS.Timeout;
-  private readonly services: Services;
 
   constructor(deps: ConductorDeps) {
     this.deps = deps;
-    // `review` stays off until the conductor can run the pass (PLAN-v2.md, package S1): a painter told to expect a look that never comes would only wait.
-    this.services = { paint: deps.images.available, sight: deps.sight, review: false };
     deps.sessions.onDrop = (session) => this.release(session, 'session.evicted');
     this.reaper = setInterval(() => {
       for (const session of deps.sessions.reap(deps.now())) this.release(session, 'session.reaped');
     }, REAP_INTERVAL_MS);
     this.reaper.unref();
+  }
+
+  /**
+   * What the server offers a conversation. A look is promised only when the policy is on, the painter says it can report on a
+   * draft, and the configured brain can look: a painter told to expect one that never comes would only wait.
+   */
+  private servicesFor(capabilities: Capabilities): Services {
+    const { review, brains, images, sight } = this.deps;
+    return { paint: images.available, sight, review: review.enabled && review.passes >= 1 && capabilities.drafts && brains.configured.review !== undefined };
   }
 
   createSession(request: CreateSessionRequest): CreateSessionResponse {
@@ -100,7 +117,7 @@ export class Conductor {
       language: LANGUAGE.version,
       screen: request.screen,
       capabilities: request.capabilities,
-      services: this.services,
+      services: this.servicesFor(session.capabilities),
     });
     log.info('session.created', { session: session.id, cols: request.screen.cols, rows: request.screen.rows });
     return { session: session.id, lead: LEAD_WINDOW };
@@ -120,7 +137,7 @@ export class Conductor {
     s.closeSink?.();
     s.sink = sink;
     s.closeSink = close ?? null;
-    sink({ type: 'hello', session: s.id, lead: LEAD_WINDOW, services: this.services });
+    sink({ type: 'hello', session: s.id, lead: LEAD_WINDOW, services: this.servicesFor(s.capabilities) });
     const turn = s.turn;
     if (turn !== null && !turn.reported) for (const event of turn.sent) sink(event);
     // A painting that settled after its turn was reported, with nobody listening, would otherwise never arrive.
@@ -139,7 +156,7 @@ export class Conductor {
    * the painter has reported it shown. Returns at once; lines arrive on the
    * session's stream.
    */
-  startTurn(session: string, input: TurnInput): StartTurnResponse {
+  startTurn(session: string, input: TurnInput, options: { readonly look?: boolean } = {}): StartTurnResponse {
     const { sessions, brains, log, now } = this.deps;
     const s = sessions.require(session, now());
 
@@ -149,13 +166,14 @@ export class Conductor {
         log.info('turn.interrupted', { session: s.id, turn: previous.id, by: 'next-turn' });
         this.finish(s, previous, 'interrupted', null);
       }
+      s.draft.close(previous.id);
       this.closeMemoryWithoutReport(s, previous);
     }
 
     const brain = brains.forInput(input);
     // A process is started for the first thing the user says, not for a page that only looks (the gallery, the explorer).
-    if (brain === brains.configured && (input.kind === 'prompt' || input.kind === 'tap')) this.prepareBrain(s);
-    const context = buildContext(s, this.services);
+    if (brain === brains.configured && (input.kind === 'prompt' || input.kind === 'tap' || input.kind === 'act')) this.prepareBrain(s);
+    const context = buildContext(s, this.servicesFor(s.capabilities));
     const turn: ActiveTurn = {
       id: sessions.nextTurnId(),
       session: s.id,
@@ -173,6 +191,9 @@ export class Conductor {
       relayCursor: s.nextCursor - 1,
       ordinal: s.nextOrdinal,
       lineCount: 0,
+      rejects: 0,
+      lookAllowed: options.look !== false,
+      review: undefined,
       reported: false,
       sent: [],
     };
@@ -272,7 +293,7 @@ export class Conductor {
   /** The brain system prompt for a session's capabilities, or for the full set when no session is given. It never depends on the screen. */
   guideFor(session: string | null): string {
     const capabilities = session === null ? FULL_CAPABILITIES : this.deps.sessions.require(session, this.deps.now()).capabilities;
-    return buildSystemPrompt({ capabilities, services: this.services, variant: this.deps.variant });
+    return buildSystemPrompt({ capabilities, services: this.servicesFor(capabilities), variant: this.deps.variant });
   }
 
   /** The turn's line reader, which lives as long as the turn does. */
@@ -309,6 +330,23 @@ export class Conductor {
     const index = s.history.findIndex((memory) => memory.turn === turn);
     const memory = s.history[index];
     if (memory !== undefined) s.history[index] = { ...memory, snapshot: true };
+  }
+
+  /**
+   * The painter's picture of the stage as pass `pass` of an open turn will leave it. It is what the brain is shown when it looks at its
+   * draft; it is kept beside the session log, and nowhere else: a draft's picture is never the next turn's snapshot.
+   */
+  receiveDraftPicture(session: string, turn: string, pass: number, snapshot: Snapshot): void {
+    const s = this.deps.sessions.require(session, this.deps.now());
+    if (!s.turns.has(turn)) throw errors.notFound(`turn ${turn}`);
+    s.draft.receivePicture(turn, pass, snapshot);
+    const file = this.deps.sessionLog.saveSnapshot(s.id, `${turn}-draft${pass}`, snapshot.mime, snapshot.bytes);
+    if (file !== '') this.deps.sessionLog.write(s.id, { type: 'draft', turn, pass, noted: 0, picture: true, file });
+  }
+
+  /** The rows of a table this conversation holds, for the painter's `data` fetch; undefined when there is none under that id. */
+  dataFor(session: string, id: string): DataTable | undefined {
+    return this.deps.sessions.require(session, this.deps.now()).tables.find((table) => table.id === id);
   }
 
   /** Throws `not_found` unless the session exists. */
@@ -407,6 +445,14 @@ export class Conductor {
       case 'tap':
         this.deps.sessionLog.write(s.id, { type: 'tap', turn: event.turn, id: event.id, text: event.text, choice: event.choice });
         return;
+      case 'control':
+        this.deps.sessionLog.write(s.id, { type: 'control', turn: event.turn, id: event.id, value: event.value, text: event.text, send: event.send });
+        return;
+      case 'draft':
+        // How the draft will land: what look and fix is waiting on. The picture, when there is one, arrives by upload.
+        s.draft.receive(event.turn, event.pass, event.sight, event.placed ?? [], event.snapshot);
+        this.deps.sessionLog.write(s.id, { type: 'draft', turn: event.turn, pass: event.pass, noted: event.sight.items.filter((item) => item.notes.length > 0).length, picture: event.snapshot, file: null });
+        return;
     }
   }
 
@@ -418,7 +464,7 @@ export class Conductor {
     if (s.preparedFor !== '') return;
     s.preparedFor = 'opened';
     try {
-      this.deps.brains.configured.open?.({ session: s.id, capabilities: s.capabilities, screen: s.screen, services: this.services });
+      this.deps.brains.configured.open?.({ session: s.id, capabilities: s.capabilities, screen: s.screen, services: this.servicesFor(s.capabilities) });
     } catch (error) {
       this.deps.log.warn('brain.open_failed', { session: s.id, error });
     }
@@ -449,6 +495,7 @@ export class Conductor {
     if (turn.endReason !== null) return;
     turn.endReason = reason;
     if (reason !== 'done') turn.abort.abort();
+    s.draft.close(turn.id);
     this.deps.sessionLog.write(s.id, { type: 'end', turn: turn.id, reason, message, lines: turn.lineCount });
     this.emit(s, turn, { type: 'end', turn: turn.id, reason, message });
     this.deps.log.info('turn.ended', { session: s.id, turn: turn.id, reason, lines: turn.lineCount, durationMs: this.deps.now() - turn.openedAt });
@@ -460,7 +507,86 @@ export class Conductor {
    * fetched (in parallel, each announced to the stage the moment it starts). Failures are kept, not thrown:
    * the brain is told what could not be read and answers honestly.
    */
-  private async gather(s: Session, turn: ActiveTurn, brain: Brain): Promise<{ fresh: Set<string>; unread: UnreadFacts[] }> {
+  /**
+   * Everything a prompt brings for the brain to read or draw from. A pasted table is data and costs nothing to read; the links and
+   * the owner's dataset are fetched at the same time, each announced to the stage and each with its own deadline.
+   * `text` is the prompt the brain is shown when it is not the one the user typed (a table too long to retype is taken out of it).
+   */
+  private async gather(s: Session, turn: ActiveTurn, brain: Brain): Promise<{ fresh: Set<string>; unread: UnreadFacts[]; data: Set<string>; text: string | null }> {
+    const data = new Set<string>();
+    const input = turn.input;
+    if (input.kind !== 'prompt' || brain.id === 'replay') return { fresh: new Set(), unread: [], data, text: null };
+    const say = (label: string, state: 'start' | 'done' | 'failed', message: string | null): void => this.emit(s, turn, { type: 'reading', turn: turn.id, label, state, message });
+
+    const pasted = tableFromText(input.text, 'd0', 'pasted by the user');
+    if (pasted !== null) {
+      say('your table', 'start', null);
+      data.add(this.holdTable(s, turn, pasted).id);
+      say('your table', 'done', null);
+      // A short table is also in the words; a long one is only data, and the words that came with it are what is left.
+      if (input.text.length >= PASTE_AS_DOCUMENT_CHARS) {
+        const rest = input.text.split('\n').filter((line) => !/[\t|,]/.test(line)).join('\n').trim();
+        return { fresh: new Set(), unread: [], data, text: `${rest === '' ? '' : `${rest}\n`}(a table of ${pasted.rows.length} rows follows as DATA)` };
+      }
+    }
+
+    const [documents, dataset] = await Promise.all([this.gatherDocuments(s, turn, brain), pasted === null ? this.gatherDataset(s, turn, input.text, say) : Promise.resolve(null)]);
+    if (dataset !== null) {
+      if (dataset.table !== null) data.add(dataset.table.id);
+      else documents.unread.push({ url: dataset.label, why: dataset.why });
+    }
+    return { ...documents, data, text: null };
+  }
+
+  /** The owner's own rows, when the prompt names a dataset the index knows. A network call with one short deadline: a failure is told to the brain, never thrown. */
+  private async gatherDataset(
+    s: Session,
+    turn: ActiveTurn,
+    prompt: string,
+    say: (label: string, state: 'start' | 'done' | 'failed', message: string | null) => void,
+  ): Promise<{ label: string; table: DataTable | null; why: string } | null> {
+    const entry = this.deps.datasets.find(prompt)[0];
+    if (entry === undefined) return null;
+    const label = `your dataset ${entry.dataset}`;
+    say(label, 'start', null);
+    const started = this.deps.now();
+    try {
+      const signal = AbortSignal.any([turn.abort.signal, AbortSignal.timeout(DATASET_WAIT_MS)]);
+      const rows = await Promise.race([
+        this.deps.datasets.rows(entry, signal),
+        new Promise<never>((_, reject) => signal.addEventListener('abort', () => reject(new Error(turn.abort.signal.aborted ? 'the turn was interrupted' : `no answer within ${DATASET_WAIT_MS} ms`)), { once: true })),
+      ]);
+      const table = this.holdTable(s, turn, { ...rows, source: rows.source === '' ? `your dataset ${entry.dataset}` : rows.source });
+      if (!turn.abort.signal.aborted) say(label, 'done', null);
+      this.deps.log.info('turn.dataset', { session: s.id, turn: turn.id, dataset: entry.dataset, rows: table.rows.length, ms: this.deps.now() - started });
+      return { label, table, why: '' };
+    } catch (error) {
+      const why = error instanceof Error ? error.message : 'it could not be read';
+      this.deps.log.warn('turn.dataset_failed', { session: s.id, turn: turn.id, dataset: entry.dataset, why });
+      if (!turn.abort.signal.aborted) say(label, 'failed', why);
+      return { label, table: null, why };
+    }
+  }
+
+  /** Keeps a table under the next id; the oldest goes when the conversation holds more than `DATA_LIMITS.tables`. */
+  private holdTable(s: Session, turn: ActiveTurn, table: DataTable): DataTable {
+    const held: DataTable = { ...table, id: `d${s.nextTable}`, rows: table.rows.slice(0, DATA_LIMITS.rows) };
+    s.nextTable += 1;
+    s.tables.push(held);
+    while (s.tables.length > DATA_LIMITS.tables) s.tables.shift();
+    this.deps.sessionLog.write(s.id, { type: 'data', turn: turn.id, id: held.id, source: held.source, rows: held.rows.length, status: 'held', reason: null });
+    return held;
+  }
+
+  /** A chart said `data=<id>`: tell the painter where its rows are, or that there are none. Not on the turn clock, like a painting. */
+  private announceData(s: Session, turn: ActiveTurn, id: string): void {
+    const table = s.tables.find((held) => held.id === id);
+    const reason = table === undefined ? `the conversation holds no data called ${id}` : null;
+    this.deps.sessionLog.write(s.id, { type: 'data', turn: turn.id, id, source: table?.source ?? '', rows: table?.rows.length ?? 0, status: table === undefined ? 'failed' : 'ready', reason });
+    this.emit(s, turn, { type: 'data', turn: turn.id, id, status: table === undefined ? 'failed' : 'ready', url: table === undefined ? null : API.data(s.id, id), reason });
+  }
+
+  private async gatherDocuments(s: Session, turn: ActiveTurn, brain: Brain): Promise<{ fresh: Set<string>; unread: UnreadFacts[] }> {
     const fresh = new Set<string>();
     const unread: UnreadFacts[] = [];
     const input = turn.input;
@@ -521,67 +647,34 @@ export class Conductor {
       if (turn.abort.signal.aborted) return;
       // The few techniques that fit what was just said. From memory: no network, file or model is on this path.
       const techniques = turn.input.kind === 'prompt' || turn.input.kind === 'tap' || turn.input.kind === 'act' ? this.deps.library.cardsFor({ input: turn.input, documents: s.documents.length > 0 }) : [];
-      if (techniques.length > 0) log.debug('techniques.chosen', { session: s.id, turn: turn.id, techniques: techniques.map((card) => card.id) });
+      if (techniques.length > 0) {
+        log.debug('techniques.chosen', { session: s.id, turn: turn.id, techniques: techniques.map((card) => card.id) });
+        sessionLog.write(s.id, { type: 'techniques', turn: turn.id, ids: techniques.map((card) => card.id) });
+      }
+      const data: DataFacts[] = s.tables.map((table) => factsOf(table, gathered.data.has(table.id)));
       const context = {
         ...base,
         documents: s.documents.map((doc): DocumentFacts => ({ ...doc.facts, fresh: fresh.has(doc.facts.id) })),
         unread: gathered.unread,
         techniques,
+        ...(data.length > 0 ? { data } : {}),
       };
       const pdfs = s.documents.flatMap((doc) => (doc.pdf === null ? [] : [{ id: doc.facts.id, bytes: doc.pdf }]));
       const snapshot = this.deps.sight === 'snapshot' && turn.previous !== null ? (this.deps.assets.snapshot(s.id, turn.previous) ?? null) : null;
-      const request = { turn: turn.id, session: s.id, input: turn.input, context, snapshot, pdfs };
+      const input: TurnInput = gathered.text !== null && turn.input.kind === 'prompt' ? { kind: 'prompt', text: gathered.text } : turn.input;
+      const request = { turn: turn.id, session: s.id, input, context, snapshot, pdfs };
       const normalizer = new LineNormalizer(() => {
         s.nextAutoId += 1;
         return `x${s.nextAutoId}`;
       }, Object.keys(s.stage.styles));
+      let stopped = false;
       for await (const event of brain.respond(request, turn.abort.signal)) {
-        // What the brain was told and what the turn cost are recorded even when the turn was cut short; its lines no longer matter.
-        if (event.type === 'brief') {
-          sessionLog.write(s.id, { type: 'brief', turn: turn.id, form: event.form, text: event.text, system: event.system, withSnapshot: event.withSnapshot });
-          continue;
-        }
-        if (event.type === 'usage') {
-          sessionLog.write(s.id, { type: 'usage', turn: turn.id, usage: event.usage });
-          log.info('turn.usage', {
-            session: s.id,
-            turn: turn.id,
-            firstTextMs: event.usage.firstTextMs,
-            outputTokens: event.usage.outputTokens,
-            thinkingTokens: event.usage.thinkingTokens,
-            costUsd: event.usage.costUsd,
-          });
-          continue;
-        }
-        if (turn.endReason !== null) continue;
-        if (event.type === 'reject') {
-          this.reject(s, turn, event.raw, event.issues);
-          continue;
-        }
-        if (turn.lineCount >= SERVER_LIMITS.linesPerTurn) {
-          this.finish(s, turn, 'failed', `the brain wrote more than ${SERVER_LIMITS.linesPerTurn} lines`);
+        if (this.ingest(s, turn, event, normalizer, 1) === 'stop') {
+          stopped = true;
           break;
         }
-        const normalized = normalizer.normalize(event.line);
-        if (normalized.line === null) {
-          this.reject(s, turn, serializeLine(event.line), [...event.issues, ...normalized.issues]);
-          continue;
-        }
-        const line = normalized.line;
-        const seq = s.nextSeq;
-        s.nextSeq += 1;
-        turn.lineCount += 1;
-        const penBefore = turn.score.schedule.pen;
-        const pushed = turn.score.push(line, seq, this.estimatePlayhead(turn));
-        const issues: Issue[] = [...event.issues, ...normalized.issues, ...pushed.issues];
-        const text = serializeLine(line);
-        log.debug('turn.line', { turn: turn.id, seq, text });
-        if (issues.some((issue) => issue.severity === 'warn')) this.noteProblem(turn, text, 'repaired', issues.filter((issue) => issue.severity === 'warn'));
-        const start = pushed.schedule.lines.find((timed) => timed.seq === seq)?.start ?? penBefore;
-        sessionLog.write(s.id, { type: 'line', turn: turn.id, seq, text, start, issues });
-        this.emit(s, turn, { type: 'line', turn: turn.id, seq, text, issues });
-        if (line.verb === 'paint') this.paint(s, turn, seq, line, pushed.schedule);
       }
+      if (!stopped && turn.endReason === null && !turn.abort.signal.aborted) await this.lookAndFix(s, turn, brain, request.input, normalizer);
       this.finish(s, turn, turn.abort.signal.aborted ? 'interrupted' : 'done', null);
     } catch (error) {
       if (turn.endReason !== null) {
@@ -598,7 +691,108 @@ export class Conductor {
     }
   }
 
+  /**
+   * Look and fix: the draft is written; decide, through `reviewTurn`, whether the brain is shown it, and carry the fix's events exactly as the
+   * draft's were carried. A look that goes wrong never fails the turn: `reviewTurn` does not throw, and what it gave up on is logged and shown.
+   */
+  private async lookAndFix(s: Session, turn: ActiveTurn, brain: Brain, input: TurnInput, normalizer: LineNormalizer): Promise<void> {
+    const { sessionLog } = this.deps;
+    let pass = 1;
+    const steps = reviewTurn({
+      brain,
+      policy: { ...this.deps.review, enabled: this.deps.review.enabled && turn.lookAllowed },
+      gate: s.draft,
+      turn: turn.id,
+      session: s.id,
+      input,
+      styles: () => Object.keys(turn.score.schedule.styles),
+      drafts: s.capabilities.drafts,
+      state: () => ({ schedule: turn.score.schedule, rejects: turn.rejects, lastSeq: s.nextSeq - 1, problems: turn.problems }),
+      signal: turn.abort.signal,
+      now: this.deps.now,
+      log: this.deps.log,
+    });
+    for await (const step of steps) {
+      if (turn.endReason !== null) break;
+      if (step.type === 'pass') {
+        pass = step.pass;
+        sessionLog.write(s.id, { type: 'pass', turn: turn.id, pass: step.pass, state: step.state, reason: step.reason });
+        this.emit(s, turn, { type: 'pass', turn: turn.id, pass: step.pass, state: step.state, reason: step.reason });
+      } else if (step.type === 'record') {
+        const { record } = step;
+        // Remembered only when a look was actually considered: a plain answer was never a candidate.
+        const considered = record.decisions.length > 1 || record.decisions[0]?.look === true;
+        if (considered) turn.review = { result: record.result, passes: record.passes, why: record.why };
+        sessionLog.write(s.id, {
+          type: 'review',
+          turn: turn.id,
+          outcome: { result: record.result, passes: record.passes, why: record.why },
+          decisions: record.decisions,
+          firstLineMs: record.firstLineMs,
+          totalMs: record.totalMs,
+          costUsd: record.costUsd,
+        });
+      } else if (this.ingest(s, turn, step, normalizer, pass) === 'stop') {
+        break;
+      }
+    }
+  }
+
+  /** One event of a brain's pass, carried to the log, the score and the painter. Returns `stop` when the turn can take no more. */
+  private ingest(s: Session, turn: ActiveTurn, event: BrainEvent, normalizer: LineNormalizer, pass: number): 'stop' | undefined {
+    const { log, sessionLog } = this.deps;
+    // What the brain was told and what the turn cost are recorded even when the turn was cut short; its lines no longer matter.
+    if (event.type === 'brief') {
+      sessionLog.write(s.id, { type: 'brief', turn: turn.id, form: event.form, text: event.text, system: event.system, withSnapshot: event.withSnapshot, pass });
+      return undefined;
+    }
+    if (event.type === 'usage') {
+      sessionLog.write(s.id, { type: 'usage', turn: turn.id, usage: event.usage, pass });
+      log.info('turn.usage', {
+        session: s.id,
+        turn: turn.id,
+        pass,
+        firstTextMs: event.usage.firstTextMs,
+        outputTokens: event.usage.outputTokens,
+        thinkingTokens: event.usage.thinkingTokens,
+        costUsd: event.usage.costUsd,
+      });
+      return undefined;
+    }
+    if (turn.endReason !== null) return undefined;
+    if (event.type === 'reject') {
+      this.reject(s, turn, event.raw, event.issues);
+      return undefined;
+    }
+    if (turn.lineCount >= SERVER_LIMITS.linesPerTurn) {
+      this.finish(s, turn, 'failed', `the brain wrote more than ${SERVER_LIMITS.linesPerTurn} lines`);
+      return 'stop';
+    }
+    const normalized = normalizer.normalize(event.line);
+    if (normalized.line === null) {
+      this.reject(s, turn, serializeLine(event.line), [...event.issues, ...normalized.issues]);
+      return undefined;
+    }
+    const line = normalized.line;
+    const seq = s.nextSeq;
+    s.nextSeq += 1;
+    turn.lineCount += 1;
+    const penBefore = turn.score.schedule.pen;
+    const pushed = turn.score.push(line, seq, this.estimatePlayhead(turn));
+    const issues: Issue[] = [...event.issues, ...normalized.issues, ...pushed.issues];
+    const text = serializeLine(line);
+    log.debug('turn.line', { turn: turn.id, seq, text });
+    if (issues.some((issue) => issue.severity === 'warn')) this.noteProblem(turn, text, 'repaired', issues.filter((issue) => issue.severity === 'warn'));
+    const start = pushed.schedule.lines.find((timed) => timed.seq === seq)?.start ?? penBefore;
+    sessionLog.write(s.id, { type: 'line', turn: turn.id, seq, text, start, issues, pass });
+    this.emit(s, turn, { type: 'line', turn: turn.id, seq, text, issues });
+    if (line.verb === 'paint') this.paint(s, turn, seq, line, pushed.schedule);
+    if (line.verb === 'chart' && line.data !== undefined) this.announceData(s, turn, line.data);
+    return undefined;
+  }
+
   private reject(s: Session, turn: ActiveTurn, raw: string, issues: readonly Issue[]): void {
+    turn.rejects += 1;
     this.noteProblem(turn, raw, 'rejected', issues);
     this.deps.sessionLog.write(s.id, { type: 'reject', turn: turn.id, raw, issues });
     this.emit(s, turn, { type: 'reject', turn: turn.id, raw, issues });

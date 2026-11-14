@@ -1,5 +1,5 @@
 import { LEAD_WINDOW, describeFigure } from '@conduit/language';
-import type { BackEventRecord, Services, ShownItem, TurnContext, TurnMemory, TurnReport } from '@conduit/language';
+import type { BackEventRecord, ReviewOutcome, Services, ShownItem, TurnContext, TurnMemory, TurnReport } from '@conduit/language';
 import type { ActiveTurn, Session } from './session';
 import { SERVER_LIMITS } from './session';
 
@@ -34,9 +34,10 @@ export function rememberTurn(turn: ActiveTurn, report: TurnReport | null, snapsh
       skippedAt: report.skippedAt,
       problems: [...turn.problems],
       snapshot,
+      ...reviewOf(turn),
     };
   }
-  const unreported = { sight: null, skippedAt: null, problems: [...turn.problems], snapshot } as const;
+  const unreported = { sight: null, skippedAt: null, problems: [...turn.problems], snapshot, ...reviewOf(turn) } as const;
   const shown: ShownItem[] = [];
   for (const id of turn.shownIds) {
     const span = turn.score.schedule.elements.find((element) => element.id === id && !element.carried);
@@ -49,7 +50,11 @@ export function rememberTurn(turn: ActiveTurn, report: TurnReport | null, snapsh
   return { turn: turn.id, input: turn.input, outcome: 'interrupted', playhead: turn.clock?.playhead ?? null, shown, ...unreported };
 }
 
-/** Taps the painter reported since the previous turn opened; they go into the next turn's context. */
+function reviewOf(turn: ActiveTurn): { review?: ReviewOutcome } {
+  return turn.review === undefined ? {} : { review: turn.review };
+}
+
+/** What the painter reported since the previous turn opened: taps, and the controls the user worked; they go into the next turn's context. */
 export function heardSince(session: Session, cursor: number): BackEventRecord[] {
-  return session.events.filter((record) => record.cursor > cursor && record.event.type === 'tap');
+  return session.events.filter((record) => record.cursor > cursor && (record.event.type === 'tap' || record.event.type === 'control'));
 }
