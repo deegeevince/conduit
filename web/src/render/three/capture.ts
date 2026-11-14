@@ -44,7 +44,13 @@ export function chartsOver(frame: Frame, options: RasteriseOptions): ((context: 
         const room = chartBoxOf(app, frame);
         context.save();
         context.globalAlpha = Math.max(0, Math.min(1, app.opacity));
-        context.drawImage(picture, room.x * appScale, room.y * appScale, room.width * appScale, room.height * appScale);
+        // the picture is laid at the room's width, never stretched: one taken at another height (the room was resized since) shows its top, cut where the room ends
+        const natural = picture as { width?: number; height?: number };
+        const pw = typeof natural.width === 'number' && natural.width > 0 ? natural.width : room.width;
+        const ph = typeof natural.height === 'number' && natural.height > 0 ? natural.height : room.height;
+        const fitScale = room.width / pw;
+        const shownH = Math.min(ph, room.height / fitScale);
+        context.drawImage(picture, 0, 0, pw, shownH, room.x * appScale, room.y * appScale, room.width * appScale, shownH * fitScale * appScale);
         context.restore();
       }
     }

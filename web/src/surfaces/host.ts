@@ -272,6 +272,8 @@ export function createSurfaceHost(options: SurfaceHostOptions): SurfaceHost {
     if (placed !== run.placed) {
       style.width = `${rest.width}px`;
       style.height = `${rest.height}px`;
+      // a surface that was drawn at another size has a picture of the wrong shape: it draws itself again once it has settled in the new room
+      if (run.placed !== '' && run.loaded) scheduleStill(run, STILL_AFTER_ACT_MS);
       run.placed = placed;
     }
     style.transform = `translate(${spec.box.x}px, ${spec.box.y}px) scale(${scaleX}, ${scaleY})`;
