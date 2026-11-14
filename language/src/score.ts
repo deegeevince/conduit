@@ -1,6 +1,8 @@
 import { buildSchedule } from './schedule';
 import type { ElementSpan, Schedule, ScoreEntry, StageBase } from './schedule';
-import type { Issue, Line, ReviseLine, SayLine } from './types';
+import { splitCells } from './text';
+import type { Issue, Line, ReviseLine } from './types';
+import { CONTROL, LIMITS, STRUCTURE } from './vocabulary';
 
 export type PushOutcome =
   /** placed on the timeline at the pen */
@@ -86,23 +88,8 @@ export class TurnScore {
     const index = this.entries.findIndex((entry) => entry.seq === element.seq && !entry.void);
     const origin = index < 0 ? undefined : this.entries[index];
     if (unplayed && origin !== undefined) {
-      if (origin.line.verb === 'say') {
-        const edited: SayLine = {
-          ...origin.line,
-          styles: line.styles.length > 0 ? line.styles : origin.line.styles,
-          props: { ...origin.line.props, ...line.props },
-          text: line.text ?? origin.line.text,
-        };
-        this.entries[index] = { ...origin, line: edited };
-      } else if (origin.line.verb === 'correct' && line.text !== undefined) {
-        this.entries[index] = { ...origin, line: { ...origin.line, text: line.text } };
-      } else if ('styles' in origin.line && 'props' in origin.line && origin.line.verb !== 'set' && origin.line.verb !== 'revise') {
-        // Anything drawn can be restyled before it is seen; its geometry is changed by declaring it again.
-        this.entries[index] = {
-          ...origin,
-          line: { ...origin.line, styles: line.styles.length > 0 ? line.styles : origin.line.styles, props: { ...origin.line.props, ...line.props } },
-        };
-      }
+      const edited = revised(origin.line, line);
+      if (edited !== null) this.entries[index] = { ...origin, line: edited };
       this.entries.push({ seq, line, floor, void: true });
       return 'edited';
     }
@@ -114,7 +101,11 @@ export class TurnScore {
       message: `"${line.id}" had already played; the revision is shown as a visible change`,
       token: line.id,
     });
-    if (line.text !== undefined) this.entries.push({ seq, line: { verb: 'correct', id: line.id, text: line.text }, floor, void: false });
+    if (line.text !== undefined && element.kind === 'text') this.entries.push({ seq, line: { verb: 'correct', id: line.id, text: line.text }, floor, void: false });
+    else if (line.text !== undefined) {
+      // Only words are struck through and replaced; the words of a node, a control or a diagram that is already on stage are changed by dropping it and drawing it again.
+      issues.push({ code: 'too-late', severity: 'warn', message: `the words of "${line.id}" cannot change once it is shown; drop it and draw it again`, token: line.id });
+    }
     if (line.styles.length > 0 || Object.keys(line.props).length > 0) {
       this.entries.push({
         seq,
@@ -124,6 +115,51 @@ export class TurnScore {
       });
     }
     return 'converted';
+  }
+
+  /** When the line with this `seq` starts in the schedule so far; null when it put nothing on the clock. */
+  private startOf(seq: number): number | null {
+    let found: number | null = null;
+    for (const time of this.current.lines) {
+      if (time.seq === seq) found = found === null ? time.start : Math.min(found, time.start);
+    }
+    return found;
+  }
+
+  /**
+   * Takes a line out of the score, and with it what cannot stand without it and
+   * has not played yet: a structure takes its nodes, rows and their links; a
+   * node takes the links that touch it (a chain loses that node and keeps the
+   * rest) and lets go of nodes that followed it; a control takes the changes it
+   * drives; a group or card takes its parts.
+   */
+  private retract(index: number, floor: number): void {
+    const origin = this.entries[index];
+    if (origin === undefined || origin.void) return;
+    this.entries[index] = { ...origin, void: true };
+    const { line } = origin;
+    const id = 'id' in line && typeof line.id === 'string' ? line.id : null;
+    if (id === null || id === '-') return;
+    const isStructure = Object.hasOwn(STRUCTURE, line.verb);
+    const isControl = Object.hasOwn(CONTROL, line.verb);
+    this.entries.forEach((entry, at) => {
+      if (entry.void || entry.seq <= origin.seq) return;
+      const other = entry.line;
+      // A part that has been shown stays, and says so when its owner is missing.
+      const begins = this.startOf(entry.seq);
+      if (begins !== null && begins <= floor) return;
+      const inside = other.verb === 'look' || other.verb === 'set' || other.verb === 'bind' || !('props' in other) ? undefined : other.props.in;
+      if ((isStructure || line.verb === 'group' || line.verb === 'card') && inside === id) this.retract(at, floor);
+      else if (isStructure && other.verb === 'row' && other.id === id) this.retract(at, floor);
+      else if (line.verb === 'node' && other.verb === 'link' && other.nodes.includes(id)) {
+        const rest = other.nodes.filter((name) => name !== id);
+        if (rest.length < 2) this.retract(at, floor);
+        else this.entries[at] = { ...entry, line: { ...other, nodes: rest } };
+      } else if (line.verb === 'node' && other.verb === 'node' && other.from?.id === id) {
+        const { from: _from, ...free } = other;
+        this.entries[at] = { ...entry, line: free };
+      } else if (isControl && other.verb === 'bind' && other.control === id) this.retract(at, floor);
+    });
   }
 
   private cancel(id: string | undefined, seq: number, floor: number, issues: Issue[]): PushOutcome {
@@ -140,7 +176,7 @@ export class TurnScore {
         issues.push({ code: 'too-late', severity: 'warn', message: `"${id}" had already played; use drop or correct`, token: id });
         return 'ignored';
       }
-      this.entries[index] = { ...origin, void: true };
+      this.retract(index, floor);
       return 'edited';
     }
 
@@ -161,5 +197,59 @@ export class TurnScore {
     });
     this.entries.push({ seq, line: { verb: 'cancel' }, floor, void: false });
     return removed > 0 ? 'edited' : 'ignored';
+  }
+}
+
+/** What a line says once `revise` has had its way with it; null when `revise` has nothing to change in it. Only what has not been shown is edited. */
+function revised(origin: Line, change: ReviseLine): Line | null {
+  const styles = change.styles.length > 0 ? change.styles : undefined;
+  switch (origin.verb) {
+    case 'say':
+      return { ...origin, styles: styles ?? origin.styles, props: { ...origin.props, ...change.props }, text: change.text ?? origin.text };
+    case 'correct':
+      return change.text === undefined ? null : { ...origin, text: change.text };
+    case 'node':
+      return { ...origin, styles: styles ?? origin.styles, props: { ...origin.props, ...change.props }, text: change.text ?? origin.text };
+    case 'link':
+      return { ...origin, props: { ...origin.props, ...change.props }, ...(change.text !== undefined && { text: change.text }) };
+    case 'pick': {
+      const options = change.text === undefined ? [] : splitCells(change.text).filter((option) => option !== '');
+      return { ...origin, styles: styles ?? origin.styles, props: { ...origin.props, ...change.props }, ...(options.length >= 2 && { options: options.slice(0, LIMITS.options) }) };
+    }
+    case 'button':
+    case 'toggle':
+    case 'slider':
+    case 'input':
+      return { ...origin, styles: styles ?? origin.styles, props: { ...origin.props, ...change.props }, ...(change.text !== undefined && { text: change.text }) };
+    case 'card':
+    case 'flow':
+    case 'tree':
+    case 'cycle':
+    case 'timeline':
+    case 'map':
+    case 'table':
+    case 'chart':
+      // The words of a structure or a card are its title.
+      return { ...origin, styles: styles ?? origin.styles, props: { ...origin.props, ...change.props }, ...(change.text !== undefined && { title: change.text }) };
+    case 'set':
+    case 'revise':
+    case 'cancel':
+    case 'bind':
+    case 'row':
+    case 'frame':
+    case 'wait':
+    case 'plan':
+    case 'scene':
+    case 'style':
+    case 'color':
+    case 'look':
+    case 'move':
+    case 'drop':
+    case 'hit':
+    case 'cam':
+      return null;
+    default:
+      // Anything drawn can be restyled before it is seen; its geometry is changed by declaring it again.
+      return { ...origin, styles: styles ?? origin.styles, props: { ...origin.props, ...change.props } };
   }
 }

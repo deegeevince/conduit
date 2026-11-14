@@ -57,3 +57,18 @@ export function controlText(spec: ControlSpec, value: ControlValue | null): stri
   if (spec.control === 'slider') return `${String(typeof value === 'number' ? Number(value.toFixed(4)) : spec.min)}${spec.unit ?? ''}`;
   return String(value ?? '');
 }
+
+/**
+ * What a control can hold of a value it was handed (the user's, as the painter
+ * reported it): a slider's number kept within its ends, a toggle's state, a
+ * pick's option number kept within the options, an input's text. Null when the
+ * value is not the kind this control holds, or the control holds none.
+ */
+export function holdControl(spec: ControlSpec, value: ControlValue | undefined): ControlValue | null {
+  if (value === undefined) return null;
+  if (spec.control === 'slider' && typeof value === 'number' && Number.isFinite(value)) return Math.min(spec.max, Math.max(spec.min, value));
+  if (spec.control === 'toggle' && typeof value === 'boolean') return value;
+  if (spec.control === 'pick' && typeof value === 'number' && Number.isFinite(value) && spec.options.length > 0) return Math.min(spec.options.length, Math.max(1, Math.round(value)));
+  if (spec.control === 'input' && typeof value === 'string') return value;
+  return null;
+}
