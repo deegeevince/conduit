@@ -788,14 +788,30 @@ export interface AboutYou {
   readonly news?: string | null;
 }
 
-/** Whether the user's words ask what is new in the app: "what's new", "what changed", "showcase", the `/new` command's own words. */
+/** What the `/new` command sends as the user's words: the one prompt that is always about this app. */
+export const NEW_COMMAND_TEXT = "What's new in this app?";
+
+const NEWS_ASK = /^(?:(?:so|ok|okay|hey|and|tell me)[, ]+)?(?:what(?:'s| is| has) (?:new|changed)|what(?:'s| has) been (?:added|built|changed)|what changed|whats new)(?: (?:here|lately|recently|today|since (?:last time|i was last here)|in (?:this|the) app|in conduit|with (?:you|this app|the app|conduit)))?$/;
+
+/**
+ * Whether the user's words ask what is new in THIS app: the `/new` command's own words, "what's new" with no other subject, or
+ * "what's new here / in this app / in Conduit / with you". "What's new in Python 3.13?" and "showcase the water cycle" are about
+ * something else and never match (the v2.1 review: a changelog in the brief of a question about Python).
+ */
 export function asksWhatsNew(input: TurnInput): boolean {
-  return input.kind === 'prompt' && /\b(what(?:'|’)?s|what is|anything|something)\s+new\b|\bwhat(?:'|’)?s changed\b|\bwhat changed\b|\bshowcase\b|\bwhat(?:'|’)?s been (?:added|built)\b/i.test(input.text);
+  if (input.kind !== 'prompt') return false;
+  const said = input.text
+    .toLowerCase()
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\s?!.]+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return NEWS_ASK.test(said);
 }
 
 /** The newest changelog section as the brief gives it: what the brain is to do with it is said here, once, and never in the system prompt. */
 export function newsText(news: string): string {
-  return `WHAT'S NEW IN THIS APP, newest version first. The user asked for it: showcase each item live, drawn on stage, never listed; one picture a thing, as many scenes as it takes.\n${news}`;
+  return `WHAT'S NEW IN THIS APP, newest version first. Showcase each item live, drawn on stage, never listed; one picture a thing, as many scenes as it takes.\n${news}`;
 }
 
 /** How much of the steward's status a brief carries: the first lines of each list, each cut short. */

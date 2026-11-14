@@ -1,7 +1,7 @@
 // Checks of the server's own rules that need no model and no network (the v2.1 review's server, conductor and brief items).
 //   pnpm server-check
 // Each line is PASS or FAIL with what was seen. Exits 1 if any failed.
-import { FIX_POLICY, NO_SIGHT } from '@conduit/language';
+import { asksWhatsNew, FIX_POLICY, NEW_COMMAND_TEXT, newsText, NO_SIGHT } from '@conduit/language';
 import type { ContentCount, TurnInput } from '@conduit/language';
 import type { Snapshot } from '../domain/brain';
 import type { Critic } from '../domain/critic';
@@ -39,6 +39,15 @@ async function criticChecks(): Promise<void> {
   check(calls.length === 1, 'the comparison is still started, in the background', `${calls.length} call(s), deadline ${calls[0]} ms`);
 }
 
+function newsChecks(): void {
+  const asks = (text: string): boolean => asksWhatsNew({ kind: 'prompt', text });
+  // P1-5: the changelog reached the brief of "what's new in Python 3.13?".
+  for (const yes of [NEW_COMMAND_TEXT, "what's new", "What's new?", "whats new", "what is new here", "what's new with you?", "What's new in Conduit", "what changed", "so, what's new in this app?", "what\u2019s new in the app"]) check(asks(yes), `asks what is new: "${yes}"`, 'matched');
+  for (const no of ["what's new in Python 3.13?", 'is there anything new in fusion research?', 'showcase the water cycle', "what's new in the world", 'what changed in the 1990s', 'what is new york like']) check(!asks(no), `is not about the app: "${no}"`, 'not matched');
+  check(!newsText('x').includes('The user asked for it'), 'the brief no longer says the user asked for the changelog', 'checked');
+}
+
 await criticChecks();
+newsChecks();
 process.stdout.write(failed === 0 ? '\nall passed\n' : `\n${failed} failed\n`);
 process.exitCode = failed === 0 ? 0 : 1;
