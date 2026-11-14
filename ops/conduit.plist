@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Conduit as a launchd LaunchAgent: it starts at login (RunAtLoad), comes back whenever it stops (KeepAlive), and logs to the data folder.
+
+  This is a TEMPLATE. ops/install.sh fills in the @TOKENS@ and writes the result to ~/Library/LaunchAgents/com.conduit.server.plist;
+  nothing in the repository holds the owner's login. The login arrives as OWNER_LOGINS, which install.sh adds from its own environment.
+
+  The server is TypeScript run by tsx (there is no compile step for it); "built" means the web app is built (`pnpm build`) and the whole
+  thing sits in a stable folder that is not a git worktree, so removing or switching a worktree cannot take the service down.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>@LABEL@</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>@NODE@</string>
+    <string>@INSTALL_DIR@/server/node_modules/tsx/dist/cli.mjs</string>
+    <string>src/main.ts</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>@INSTALL_DIR@/server</string>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <!-- Restart whenever it exits, whatever the reason. ThrottleInterval keeps a crash loop from spinning: at most one start in 10 s. -->
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+
+  <!-- A SIGTERM gets this long to close its sessions and children before launchd sends SIGKILL (the server exits by itself within 6 s). -->
+  <key>ExitTimeOut</key>
+  <integer>15</integer>
+
+  <key>ProcessType</key>
+  <string>Interactive</string>
+
+  <key>StandardOutPath</key>
+  <string>@DATA_DIR@/service.log</string>
+  <key>StandardErrorPath</key>
+  <string>@DATA_DIR@/service.log</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>NODE_ENV</key>
+    <string>production</string>
+    <key>PORT</key>
+    <string>4600</string>
+    <key>BRAIN</key>
+    <string>claude-cli</string>
+    <key>CLAUDE_MODEL</key>
+    <string>opus</string>
+    <key>BRAIN_EFFORT</key>
+    <string>low</string>
+    <key>CRITIC_MODEL</key>
+    <string>fable</string>
+    <key>CRITIC_EFFORT</key>
+    <string>high</string>
+    <key>CRITIC_LOOK_MS</key>
+    <string>150000</string>
+    <key>IMAGE_MODEL</key>
+    <string>none</string>
+    <key>TRUSTED_HOSTS</key>
+    <string>@TRUSTED_HOSTS@</string>
+    <key>BATTERY_SEALED_DIR</key>
+    <string>@BATTERY_SEALED_DIR@</string>
+    <key>DATA_DIR</key>
+    <string>@DATA_DIR@</string>
+    <key>CLAUDE_BIN</key>
+    <string>@CLAUDE_BIN@</string>
+    <!-- launchd starts with a bare PATH; the server needs node, claude (and remote) on it. -->
+    <key>PATH</key>
+    <string>@PATH@</string>
+    <key>HOME</key>
+    <string>@HOME@</string>
+    <!-- Added by install.sh, from its environment, only when set: OWNER_LOGINS, USAGE_HOURLY_CAP, MIGRATE_FROM, AGENT, AGENT_SERVICES, STATUS_FILE, CHANGELOG_FILE. -->
+  </dict>
+</dict>
+</plist>
