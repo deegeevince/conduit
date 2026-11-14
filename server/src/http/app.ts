@@ -11,6 +11,7 @@ import { registerAssetRoutes } from './asset-routes';
 import type { HttpDeps } from './deps';
 import { registerExploreRoutes } from './explore-routes';
 import { registerRelayRoutes } from './relay-routes';
+import { registerTasteRoutes } from './taste-routes';
 import { registerSessionRoutes } from './session-routes';
 import { registerStatic } from './static';
 
@@ -67,6 +68,7 @@ export function createApp(deps: HttpDeps): Hono {
   registerSessionRoutes(app, deps);
   registerAssetRoutes(app, deps);
   registerExploreRoutes(app, deps);
+  registerTasteRoutes(app, deps);
   registerRelayRoutes(app, deps);
   app.all('/api/*', (c) => {
     throw errors.notFound(`${c.req.method} ${c.req.path}`);

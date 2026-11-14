@@ -15,3 +15,6 @@ loop/runs/
 .DS_Store
 .idea/
 .vscode/
+explore/runs
+explore/taste/
+techniques/.cache
