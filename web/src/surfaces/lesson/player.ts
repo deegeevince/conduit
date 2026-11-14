@@ -426,7 +426,10 @@ export class Player {
     const waiting = isWaiting(node);
     const over = shown >= steps.length && gate === null;
     if (gate !== null && kids.length > 0) main.append(this.help(kids));
-    else if (over && !waiting) main.append(kids.length > 0 ? this.inside(node, kids) : this.finish(node));
+    else if (over && !waiting && steps.length === 0 && kids.length === 0) {
+      // nothing is written here (a lesson cut off mid-write keeps what it had): never "done", never a destination of its own
+      if (node.body === null) main.append(h('p', { class: 'wait-note', 'data-act': 'cut-off' }, 'This part was cut off before it was written. Say “continue” and it will be written.'));
+    } else if (over && !waiting) main.append(kids.length > 0 ? this.inside(node, kids) : this.finish(node));
     else if (over && waiting && steps.length === 0) main.append(h('p', { class: 'wait-note' }, 'This part is being written. It will be here in a moment.'));
     page.append(main, this.dock(node, shown, steps.length, gate !== null, waiting, over));
   }

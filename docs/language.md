@@ -1467,7 +1467,7 @@ Everything below is in seconds.
 | a chart point landing | 0.09 (slow), 0.06 (steady), 0.04 (brisk) |
 | a chart of DATA revealing itself, once the data is there | 1.2, on the ambient clock |
 | a bound change that is on or off (a toggle, `bind mode=night`) | 0.25, on the ambient clock |
-| look and fix: waiting for the painter's draft report | at most 1.5 |
+| look and fix: waiting for the painter's draft report | at most 8 |
 | look and fix: the first line of a fix | at most 12, then the draft is kept |
 | look and fix: a whole pass | at most 30 |
 | strike-through of a `correct` | 0.3 |

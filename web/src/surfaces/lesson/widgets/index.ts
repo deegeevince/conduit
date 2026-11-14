@@ -5,12 +5,13 @@ import { blocks } from './blocks';
 import { clock } from './clock';
 import { coins } from './coins';
 import type { WidgetCtx, Widgets } from './common';
+import { grid } from './grid';
 import { groups } from './groups';
 import { numberline } from './numberline';
 import { ruler } from './ruler';
 import type { VisualSpec } from '../types';
 
-export const WIDGETS: Widgets = { numberline, groups, blocks, bar, coins, clock, ruler };
+export const WIDGETS: Widgets = { numberline, groups, blocks, bar, coins, clock, ruler, grid };
 
 export function drawVisual(spec: VisualSpec, ctx: WidgetCtx): HTMLElement {
   switch (spec.kind) {
@@ -28,6 +29,8 @@ export function drawVisual(spec: VisualSpec, ctx: WidgetCtx): HTMLElement {
       return clock.draw(spec, ctx);
     case 'ruler':
       return ruler.draw(spec, ctx);
+    case 'grid':
+      return grid.draw(spec, ctx);
   }
 }
 

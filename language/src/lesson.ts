@@ -218,6 +218,8 @@ function paramValue(kind: VisualParam, raw: string): string | null {
       return /^[a-z][a-z0-9_-]{0,23}$/.test(raw) ? raw : null;
     case 'time':
       return CLOCK_TIME.test(raw) ? raw : null;
+    case 'cells':
+      return /^[xoh]+(?:\/[xoh]+){0,15}$/.test(raw) && new Set(raw.split('/').map((row) => row.length)).size === 1 ? raw : null;
   }
 }
 
@@ -257,7 +259,7 @@ export function readShow(visual: string, spans: readonly string[], pairs: readon
       continue;
     }
     const value = paramValue(want, pair.value);
-    if (value === null || value.length > LESSON_LIMITS.value) report('bad-value', `${pair.key}=${pair.value}: a ${want === 'numbers' ? 'comma list of numbers (? for a gap)' : want === 'time' ? 'time like 3:30' : want === 'word' ? 'single word' : 'number'} is wanted; ignored`, pair.token);
+    if (value === null || value.length > LESSON_LIMITS.value) report('bad-value', `${pair.key}=${pair.value}: a ${want === 'numbers' ? 'comma list of numbers (? for a gap)' : want === 'time' ? 'time like 3:30' : want === 'cells' ? 'rows of x (whole), h (half) and o (empty) joined by /, all the same length' : want === 'word' ? 'single word' : 'number'} is wanted; ignored`, pair.token);
     else args[pair.key] = value;
   }
   return { visual: kind, range, args };

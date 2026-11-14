@@ -20,7 +20,7 @@ import type { Logger } from '../log';
 import { roomAhead } from '../usage';
 import type { Throttle } from '../usage';
 import type { LessonCheckResult } from '../judge/lesson';
-import { asksOf, isWay, kindOfPart, lessonText, mechanicalCheck, profileOf, settle, solverOpinion, stepsOf, waysOf } from './verify';
+import { asksOf, countOnTheSheet, isGridAreaQuestion, isWay, kindOfPart, lessonText, mechanicalCheck, profileOf, settle, solverOpinion, stepsOf, waysOf } from './verify';
 import type { Finding, ModelVerdict, Verdict } from './verify';
 
 // ---------------------------------------------------------------------------------------------------------------------------------
@@ -172,6 +172,7 @@ export function fillPrompt(job: FillJob): string {
     `AHEAD: write part ${job.short} now, "${job.title}", and nothing else. She is not waiting for it: write it complete, once, in the lines the chapter gives, every line with its own in=. A question is written FIRST as her own try: an \`ask\` straight on the question (\`ask … in=${job.short}\`, no steps before it, no \`pick=\`, she writes the answer; two or three hints; \`check=working\` when it is a sum she works out in steps), THEN three to five ways (never fewer than three), each a part in=${job.short} with its own tag, small steps, and an ask whose answer is the question's own answer, reached last (the ways are the help she asks for); a part of a different kind (a chapter) gets its steps in=${job.short}. Write no outline, no \`reply\`, and no line for any other part.`,
     job.shape ?? '',
     job.photo ? `The page itself is attached: this question is the part of it at ${job.crop === null ? 'its place in the outline' : `x ${job.crop.x}%, y ${job.crop.y}%, ${job.crop.w}% wide, ${job.crop.h}% high`}. Read the question from there, with whatever the words above leave out (a picture, a table, a pattern, a clock), and write only what can be worked from what is on it.` : '',
+    isGridAreaQuestion(job.title) ? 'THIS QUESTION COUNTS SQUARES ON A GRID. First transcribe the shape from the attached crop: in the first step of each way, `show=grid cells=<rows from the top, joined by />` with x a whole square, h a half square, o empty (the same rows in every way). The answer is then the count of x plus half the count of h, exactly; never guess a count the picture does not give. If the shape cannot be read exactly, write no asks, only one step: "Check the count on the sheet" with the question\'s own words; the part then goes to the parent.' : '',
     job.note === null ? '' : `The first try of this part was refused by the checker: ${job.note} Write it again so that none of that is true.`,
   ]
     .filter((line) => line !== '')
@@ -361,7 +362,11 @@ export function createAhead(host: AheadHost, policy: AheadPolicy): Ahead {
 
     // 2. what is written and not yet checked
     const over = host.throttle.state(now) === 'over';
-    const filled = order.filter((unit) => unit.status === 'filled' && !run.verifying.has(unit.id) && (kindOfPart(doc, unit) !== null || !isBlank(doc, unit)));
+    // a writer that could not read a shape exactly says so in the part: it goes to the parent at once, with nothing more asked of the brain
+    for (const unit of order) {
+      if (unit.status === 'filled' && !run.verifying.has(unit.id) && countOnTheSheet(unit, doc)) forParent(run, unit, 'check the count on the sheet: the shape could not be read exactly from the photo');
+    }
+    const filled = order.filter((unit) => unit.status === 'filled' && !run.forParent.has(unit.id) && !run.verifying.has(unit.id) && (kindOfPart(doc, unit) !== null || !isBlank(doc, unit)));
     for (const unit of filled) triesOf(run, unit.id).filledAt ??= now;
     if (filled.length > 0 && !over && run.verifying.size < 2) {
       const first = filled[0];
@@ -417,7 +422,7 @@ export function createAhead(host: AheadHost, policy: AheadPolicy): Ahead {
       note: tries.note,
       shape: view === null ? null : shapeBefore(view.document, unit),
       crop: unit.crop ?? null,
-      photo: tries.fills > 1,
+      photo: tries.fills > 1 || isGridAreaQuestion(unit.title),
     };
     log.info('ahead.fill', { session: run.session, node: unit.id, attempt: tries.fills });
     try {
@@ -495,7 +500,7 @@ export function createAhead(host: AheadHost, policy: AheadPolicy): Ahead {
     if (tries.refusals >= 2 || tries.fills >= policy.fillsPerPart) {
       // the ways that passed are still checked ways: said, so that a page can offer them beside "let's work this one out together"
       for (const way of ways) if (way.body !== null && !verdict.refused.some((finding) => finding.node === way.id)) host.setStatus(run.session, way.id, 'verified', { why: 'this way passed every check; the part has others that did not' });
-      forParent(run, unit, why);
+      forParent(run, unit, `${why} (stopped after ${Math.max(tries.refusals, tries.fills)} tries; check the count on the sheet)`);
       return;
     }
     host.setStatus(run.session, unit.id, 'refused', { why });

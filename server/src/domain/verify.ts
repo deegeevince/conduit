@@ -91,6 +91,53 @@ export function waysOf(doc: Document, node: DocNode): readonly DocNode[] {
 
 export const WAYS = { least: 3, most: 5 } as const;
 
+/** Said by a writer that could not read the shape from the page: the part goes to the parent to count on the sheet. */
+export const COUNT_ON_THE_SHEET = /check the count on the sheet/i;
+
+/** Whether a question counts squares on a grid for an area ("each small square is 1 cm … what is the area"). */
+export function isGridAreaQuestion(title: string): boolean {
+  return /\barea\b/i.test(title) && /\bsquares?\b/i.test(title);
+}
+
+/** The area a transcribed grid holds, exactly: whole squares and halves (`x`, `h`), in half squares so that nothing is rounded. Null when the cells are not a grid. */
+export function gridArea(cells: string): number | null {
+  const rows = cells.split('/');
+  if (rows.length === 0 || rows.some((row) => !/^[xoh]+$/.test(row) || row.length !== rows[0]?.length)) return null;
+  let halves = 0;
+  for (const row of rows) for (const cell of row) halves += cell === 'x' ? 2 : cell === 'h' ? 1 : 0;
+  return halves / 2;
+}
+
+/** Whether a part holds the writer's note that the shape could not be read from the page. */
+export function countOnTheSheet(node: DocNode, doc: Document): boolean {
+  return [node, ...waysOf(doc, node)].some((part) => stepsOf(part).some((step) => step.kind === 'step' && COUNT_ON_THE_SHEET.test(step.words)));
+}
+
+/** The grid checks of a part: a shape on a grid is counted from its transcription, exactly, and every answer that is the area must be that count. */
+function gridFindings(doc: Document, node: DocNode, refuse: (source: FindingSource, at: NodeId, ask: string | null, why: string) => void): void {
+  const question = pathOf(doc, node.id).map((part) => part.title).join(' ');
+  if (!isGridAreaQuestion(question) || countOnTheSheet(node, doc)) return;
+  const parts = [node, ...waysOf(doc, node)];
+  const grids = parts.flatMap((part) => stepsOf(part).flatMap((step) => (step.kind === 'step' && step.show !== null && step.show.visual === 'grid' && step.show.args['cells'] !== undefined ? [step.show.args['cells']] : [])));
+  const first = grids[0];
+  if (first === undefined) {
+    refuse('shape', node.id, null, 'this question counts squares on a grid, and the shape is not transcribed: write it as `show=grid cells=…` from the attached crop, or, if it cannot be read exactly, a step saying "check the count on the sheet"');
+    return;
+  }
+  const area = gridArea(first);
+  if (area === null || grids.some((cells) => gridArea(cells) !== area)) {
+    refuse('shape', node.id, null, 'the grid transcriptions are not rows of the same length, or two of them disagree');
+    return;
+  }
+  for (const part of parts) {
+    const asks = asksOf(part);
+    const last = asks[asks.length - 1];
+    if (last === undefined || (part !== node && part.tag === null)) continue;
+    if (last.accepted.length === 0) refuse('shape', part.id, last.id, `ask ${last.id} accepts no answer; the transcribed grid counts ${area} squares`);
+    else if (!last.accepted.some((answer) => matchAnswer(answer, String(area), last.unit))) refuse('solver', part.id, last.id, `the transcribed shape counts ${area}, and ask ${last.id} accepts ${last.accepted.join(' | ')}`);
+  }
+}
+
 function lessonCheck(doc: Document, node: DocNode): Mechanical {
   const findings: Finding[] = [];
   const profile = profileOf(doc, node);
@@ -145,6 +192,7 @@ function lessonCheck(doc: Document, node: DocNode): Mechanical {
       } else if (status === 'mismatch') recomputed += 1;
     }
   }
+  gridFindings(doc, node, refuse);
   for (const found of maths.findings) findings.push({ severity: found.severity, source: 'solver', node: found.node, ask: found.ask, why: found.why });
   return { kind: 'lesson', node: node.id, findings, confirmed, recomputed, asks, own: profile === 'steps' ? null : maths.own };
 }

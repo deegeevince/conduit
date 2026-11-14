@@ -156,6 +156,9 @@ const DATASET_WAIT_MS = 5_000;
  * brain to the painter, and the painter's back channel flows in. HTTP routes
  * translate requests into calls on this class and never touch a brain.
  */
+/** Words that ask how the work is going, not for something new: they never interrupt a lesson that is being written. */
+const PROGRESS_QUESTION = /^\s*(?:hello\??|hi\??|what(?:'s| is| has)? (?:happened|happening|going on|the matter)|what happened|is it (?:working|done|stuck|ready)|are you (?:still )?(?:there|working|stuck)|any (?:luck|progress)|how long|still (?:there|working)\??|hmm+\??)[\s?.!]*$/i;
+
 export class Conductor {
   private readonly deps: ConductorDeps;
   private readonly waiters = new Map<string, Set<() => void>>();
@@ -388,6 +391,11 @@ export class Conductor {
     const s = sessions.require(session, now());
 
     const previous = s.turn;
+    // T1 (b). A question about progress ("what happened", "is it working") sent while a lesson is being written does not kill the writing: the turn is
+    // kept, and the words are refused with a plain note so they stay in the box. Anything else still replaces the open turn, as before.
+    if (previous !== null && previous.endReason === null && !previous.reported && input.kind === 'prompt' && PROGRESS_QUESTION.test(input.text) && this.docs.viewOfSession(s.id) !== null) {
+      if (previous.input.kind === 'prompt') throw errors.conflict('Still writing the question for you; it will be there in a moment. Ask again when it is.');
+    }
     if (previous !== null && !previous.reported) {
       if (previous.endReason === null) {
         log.info('turn.interrupted', { session: s.id, turn: previous.id, by: 'next-turn' });
