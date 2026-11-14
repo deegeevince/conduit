@@ -209,7 +209,11 @@ function planOf(structure: ElementSpan, schedule: Schedule, env: StructureEnv): 
   const engine = env.engine ?? (STRUCTURES_READY.includes(figure.structure) ? layoutStructure : null);
   if (engine === null) return null;
   const members = schedule.elements.filter((element) => element.parent === structure.key && (element.kind === 'node' || element.kind === 'link'));
-  const arrival = (key: string): number => env.arrivals.get(key) ?? 0;
+  // What an earlier turn left on stage was heard then and is whole now: it is not waited for again. (Read from the map, a part carried
+  // from a turn whose lines came seconds apart left the resting picture, and came back, re-laid, when the next turn began.)
+  const carried = new Set<string>(structure.carried ? [structure.key] : []);
+  for (const member of members) if (member.carried) carried.add(member.key);
+  const arrival = (key: string): number => (carried.has(key) ? 0 : (env.arrivals.get(key) ?? 0));
   const times = new Set<number>([0]);
   for (const member of members) {
     times.add(arrival(member.key));

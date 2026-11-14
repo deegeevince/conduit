@@ -258,7 +258,11 @@ export function createPainter(options: PainterOptions): Painter {
       store.drop(key);
       runtime.moods.delete(key);
     }
-    for (const key of [...arrivals.keys()]) if (!live.has(key.split('#')[0] ?? key)) arrivals.delete(key);
+    // What rests on the stage has arrived, rows included: the next turn's layout begins with all of it in place.
+    for (const key of [...arrivals.keys()]) {
+      if (live.has(key.split('#')[0] ?? key)) arrivals.set(key, 0);
+      else arrivals.delete(key);
+    }
   };
   let easedAt = -1;
   let easedFor = -1;
@@ -549,7 +553,8 @@ export function createPainter(options: PainterOptions): Painter {
   /** A picture of the stage a turn left, for the brain's next brief. */
   const sendSnapshot = (turnId: string, stage: StageBase): void => {
     if (!wantsSnapshot()) return;
-    const rest = buildTimeline(restSchedule(stage), stage, timelineContext());
+    // A resting stage has no arrivals: everything on it is there. The turn's own (an interrupted turn is still settling) must not be read.
+    const rest = buildTimeline(restSchedule(stage), stage, { ...timelineContext(), arrivals: new Map() });
     const frame: Frame = { ...rest.frameAt({ time: 0, ambient: 3, wallTime: pinnedWallTime(3), clock: 'paused' }), camera: REST_POSE };
     void renderer
       .rasterise(frame, { maxSide: PICTURE_SIDE, mime: 'image/jpeg', quality: 0.8, ...stills(frame) })
