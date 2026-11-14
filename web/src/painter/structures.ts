@@ -387,7 +387,8 @@ export function buildStructures(schedule: Schedule, env: StructureEnv): Structur
 
   const windowOf = (part: BlockPart, owner: ElementSpan, structure: ElementSpan): { enter: Window | null; leave: ElementSpan['exit'] } => {
     const leave = owner.exit ?? structure.exit;
-    if (part.row !== undefined && structure.figure?.kind === 'structure') {
+    // a structure carried from an earlier turn is already whole: its rows landed then
+    if (part.row !== undefined && structure.figure?.kind === 'structure' && !structure.carried) {
       const at = structure.figure.rows[part.row]?.at ?? 0;
       const base = structure.enter === null ? 0 : structure.enter.end;
       const start = Math.max(at, base);
