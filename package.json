@@ -33,6 +33,7 @@
     "lessons": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/lessons.ts",
     "taste": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/taste.ts",
     "smoke": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/smoke.ts",
+    "voice-check": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/voice-check.ts",
     "audit": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/audit.ts",
     "audit-log": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/audit.ts"
   },

@@ -182,8 +182,12 @@ export const REFERENCE_SCREEN: ScreenFacts = { width: 1280, height: 720, dpr: 2,
 export const PROMPT_MAX_CHARS = 20_000;
 
 export type TurnInput =
-  /** `images` (v2.1): ids of pictures the user gave with these words (`API.uploads`), in the order they were added; absent means none */
-  | { readonly kind: 'prompt'; readonly text: string; readonly images?: readonly string[]; readonly marks?: InkMarks }
+  /**
+   * `images` (v2.1): ids of pictures the user gave with these words (`API.uploads`), in the order they were added; absent means none.
+   * `voice` (v2.1): ids of voice notes (`API.voice`) these words came from or go with (`n1`, `n2`, ...). `spoken` is what the server heard in
+   * them, filled by the server for the brain and never read from a request.
+   */
+  | { readonly kind: 'prompt'; readonly text: string; readonly images?: readonly string[]; readonly voice?: readonly string[]; readonly spoken?: readonly string[]; readonly marks?: InkMarks }
   /** the user tapped a choice; `text` is what the choice said */
   /** v3. `seen`: where the person stood in the document when they tapped (2.5) */
   | { readonly kind: 'tap'; readonly id: string; readonly text: string; readonly seen?: Seen }
@@ -584,6 +588,29 @@ export interface ContentCount {
  */
 export const UPLOAD_LIMITS = { bytes: 12_000_000, perTurn: 4, perSession: 60, maxSide: 8192, storedSide: 2048, types: ['image/jpeg', 'image/png', 'image/webp', 'image/heic'] } as const;
 
+/** v2.1. Voice notes: recorded in the page (at most `seconds` long), read on the owner's Mac, on the device, and never sent anywhere. */
+export const VOICE_LIMITS = { bytes: 8_000_000, seconds: 120, perTurn: 4, perSession: 40, types: ['audio/wav', 'audio/mp4', 'audio/x-caf', 'audio/mpeg'] } as const;
+
+/** v2.1. What the server says of a voice note it has read. `id` (`n1`, `n2`, ...) is what `TurnInput.voice` names. The audio is deleted unless `kept`. */
+export interface VoiceResponse {
+  readonly id: string;
+  readonly text: string;
+  readonly seconds: number;
+  /** which recogniser read it: only ever `on-device` */
+  readonly recogniser: 'on-device';
+  readonly locale: string;
+  readonly kept: boolean;
+}
+
+/** v2.1. Whether voice notes can be read here, without asking for anything. `problem` is a sentence a person can act on. */
+export interface VoiceStatus {
+  readonly available: boolean;
+  /** `ready`; or why not: `off` (VOICE=off), `unsupported` (no Swift or no Speech here), `permission_not_determined`, `permission_denied`, `permission_restricted`, `on_device_unsupported`, `recogniser_unavailable` */
+  readonly state: string;
+  readonly problem: string | null;
+  readonly locale: string | null;
+}
+
 /** v2.1. What the server says of a picture it has taken. `id` (`u1`, `u2`, …) is what `TurnInput.images` and `pic … from=` name. */
 export interface UploadResponse {
   readonly id: string;
@@ -736,6 +763,9 @@ export const API = {
   snapshot: (session: string, turn: string): string => `/api/sessions/${session}/turns/${turn}/snapshot`,
   /** POST image/jpeg: the stage as pass `pass` of an open turn will leave it: what the brain is shown when it looks at its draft. */
   draft: (session: string, turn: string, pass: number): string => `/api/sessions/${session}/turns/${turn}/drafts/${pass}`,
+  /** v2.1. GET `VoiceStatus` (no permission is asked for); POST (`/voice/:session`) a recording (WAV, M4A, CAF or MP3, `VOICE_LIMITS`): 201 `VoiceResponse`, the words as read on this Mac. */
+  voiceStatus: '/api/voice',
+  voice: (session: string): string => `/api/sessions/${session}/voice`,
   /** v2.1. POST an image (`UPLOAD_LIMITS`): 201 `UploadResponse`. The picture is the session's and goes nowhere else. */
   uploads: (session: string): string => `/api/sessions/${session}/uploads`,
   /** v2.1. GET: the bytes of a picture the user gave, by its id. Same origin; what `pic … from=` draws. */

@@ -94,8 +94,8 @@ export interface StageApp {
   readonly attribution: { readonly text: string; readonly href: string } | null;
   /** whether the server can look at a draft and fix it, and whether the viewer has it switched on */
   readonly review: { readonly available: boolean; readonly on: boolean; set(on: boolean): void };
-  /** Interrupts whatever is playing, reports it, then starts a turn with this prompt (and the ids of the photos the server kept for it, `link.uploadPhoto`). */
-  prompt(text: string, photos?: readonly string[], marks?: InkMarks): Promise<string>;
+  /** Interrupts whatever is playing, reports it, then starts a turn with this prompt (the photos the server kept for it, `link.uploadPhoto`; the ink drawn on the stage; the voice notes whose words it holds, `link.uploadVoice`). */
+  prompt(text: string, photos?: readonly string[], marks?: InkMarks, voice?: readonly string[]): Promise<string>;
   demo(name: string): Promise<string>;
   /** Stops the current turn where it is. */
   interrupt(): void;
@@ -1165,7 +1165,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
         publishStatus();
       },
     },
-    prompt: (text, photos, marks) => submit({ kind: 'prompt', text, ...(photos === undefined || photos.length === 0 ? {} : { images: photos }), ...(marks === undefined ? {} : { marks }) }, null, true),
+    prompt: (text, photos, marks, voice) => submit({ kind: 'prompt', text, ...(photos === undefined || photos.length === 0 ? {} : { images: photos }), ...(marks === undefined ? {} : { marks }), ...(voice === undefined || voice.length === 0 ? {} : { voice }) }, null, true),
     demo: (name) => submit({ kind: 'demo', script: name }, null, true),
     playScript: (text) => submit({ kind: 'script', text }, null, true),
     interrupt() {

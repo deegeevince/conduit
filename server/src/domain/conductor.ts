@@ -55,6 +55,8 @@ import { DETAIL_MAX, redactSecrets, splitTool } from './agent';
 import { NO_AUDIT } from '../audit';
 import type { Audit, AuditDecider } from '../audit';
 import { NO_UPLOADS } from './uploads';
+import { NO_VOICE } from './voice';
+import type { VoiceNotes } from './voice';
 import type { StoredUpload, UploadStore } from './uploads';
 import type { UsageMeter } from '../usage';
 import { currentIdentity, labelOf } from '../identity';
@@ -102,6 +104,8 @@ export interface ConductorDeps {
   readonly audit?: Audit;
   /** v2.1. The user's photos, kept in the data folder. Absent: no photo can be given. */
   readonly uploads?: UploadStore;
+  /** v2.1. The user's voice notes, read on this Mac. Absent: no voice note can be given. */
+  readonly voice?: VoiceNotes;
   /** v2.1 ops. The usage meter: every brain turn and review pass is written to it; its throttle only ever warns the owner, never refuses a turn. */
   readonly usage?: UsageMeter;
   /** v3. The document each conversation makes: a fold over its session log (PLAN-v3-core 2.11). Absent: no conversation has one. */
@@ -344,6 +348,14 @@ export class Conductor {
     }
 
     if (input.kind === 'tap' || input.kind === 'act') this.adoptSeen(s, previous?.id ?? null, input.seen);
+    // Likewise the voice notes: this conversation's own, or the turn does not open.
+    if (input.kind === 'prompt' && (input.voice?.length ?? 0) > 0) {
+      const notes = this.deps.voice ?? NO_VOICE;
+      if (!notes.available) throw errors.badRequest('voice notes are switched off on this server');
+      const missing = (input.voice ?? []).find((id) => !notes.has(s.id, id));
+      if (missing !== undefined) throw errors.badRequest(`this conversation has no voice note ${missing}`);
+    }
+
     const brain = brains.forInput(input);
     // A process is started for the first thing the user says, not for a page that only looks (the gallery, the explorer).
     if (brain === brains.configured && (input.kind === 'prompt' || input.kind === 'tap' || input.kind === 'act')) this.prepareBrain(s);
@@ -1086,7 +1098,10 @@ export class Conductor {
       };
       const pdfs = s.documents.flatMap((doc) => (doc.pdf === null ? [] : [{ id: doc.facts.id, bytes: doc.pdf }]));
       const snapshot = this.deps.sight === 'snapshot' && turn.previous !== null ? (this.deps.assets.snapshot(s.id, turn.previous) ?? null) : null;
+      const spoken = turn.input.kind === 'prompt' ? (turn.input.voice ?? []).flatMap((id) => this.deps.voice?.transcript(s.id, id) ?? []) : [];
       const input: TurnInput = gathered.text !== null && turn.input.kind === 'prompt' ? { ...turn.input, text: gathered.text } : turn.input;
+      // What was said in a voice note goes to the brain as words too (the transcript, beside the text the user sent); never into the log or the audit trail.
+      const withVoice: TurnInput = input.kind === 'prompt' && spoken.length > 0 ? { ...input, spoken } : input;
       // The photos this prompt names, as they were kept, after the stage's snapshot. A photo that cannot be read back is left out and said in the log.
       const images: Snapshot[] = [];
       if (input.kind === 'prompt') {
@@ -1098,7 +1113,7 @@ export class Conductor {
         }
       }
       if (turn.abort.signal.aborted) return;
-      const request = { turn: turn.id, session: s.id, input, context, snapshot, pdfs, look: this.deps.review.enabled && turn.lookAllowed, ...(images.length > 0 ? { images } : {}) };
+      const request = { turn: turn.id, session: s.id, input: withVoice, context, snapshot, pdfs, look: this.deps.review.enabled && turn.lookAllowed, ...(images.length > 0 ? { images } : {}) };
       const normalizer = new LineNormalizer(() => {
         s.nextAutoId += 1;
         return `x${s.nextAutoId}`;
