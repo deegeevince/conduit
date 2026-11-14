@@ -21,6 +21,8 @@ export const SIGHT_NOTE = {
   faint: 'it is hard to read against what is behind it',
   tiny: 'it came out too small to make out',
   sparse: 'the drawing ended in a corner: most of the picture is empty. Centre it, make it larger, or end the move inside the frame',
+  retired: 'the layout let it go to make room: it is not on the stage at rest',
+  lost: 'the line the answer rests on is not on the stage at rest: say less above it, or say it last',
   partial: 'the answer stopped while it was still arriving',
   painted: 'the painting arrived and replaced the sketch',
   unpainted: 'no painting arrived; the sketch is what was seen',

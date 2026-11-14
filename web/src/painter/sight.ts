@@ -182,7 +182,11 @@ export function sightOf(timeline: Timeline, schedule: Schedule, base: StageBase,
   const entries: Entry[] = [];
   for (const element of shown) {
     const fit = fitOf(element.scene);
-    const resting = element.exit === null || element.exit.start > playhead;
+    // Resting is being on the stage at rest, not only being scheduled to: the layout lets the oldest words go when a column is full, and words
+    // that went are not there for the viewer however the schedule has them.
+    const scheduled = element.exit === null || element.exit.start > playhead;
+    const resting = scheduled && (element.kind !== 'text' || textFrames.get(element.key) !== undefined);
+    const gone = scheduled && !resting;
     const at = resting ? restAt : Math.max(element.enter?.end ?? 0, Math.min(playhead, (element.exit?.start ?? playhead) - 1e-3));
     let box: Rect | null = null;
     if (element.kind === 'text') {
@@ -199,7 +203,16 @@ export function sightOf(timeline: Timeline, schedule: Schedule, base: StageBase,
     }
     box ??= { x: 0, y: 0, w: 0, h: 0 };
     const topLeft = canvasToStage({ x: box.x, y: box.y }, fit, 'mid', viewport);
-    entries.push({ element, box, screenBox: { x: topLeft.x, y: topLeft.y, w: box.w * fit.unit, h: box.h * fit.unit }, resting, notes: [...(layoutNotes.get(element.key) ?? [])] });
+    const own: SightNote[] = [...(layoutNotes.get(element.key) ?? [])];
+    if (gone) {
+      // the line the answer rests on (a `strong` line, or the first line said when nothing is `strong`) is told as lost; any other as retired
+      const style = element.style;
+      const key = style.weight === 'bold' && style.size === 'l';
+      const heading = (size: ElementSpan['style']['size']): boolean => size === 'xl' || size === 'xxl';
+      const first = !style.tap && !heading(style.size) && !shown.some((other) => other.kind === 'text' && other.scene === element.scene && other.order < element.order && !other.style.tap && !heading(other.style.size));
+      own.push(key || first ? 'lost' : 'retired');
+    }
+    entries.push({ element, box, screenBox: { x: topLeft.x, y: topLeft.y, w: box.w * fit.unit, h: box.h * fit.unit }, resting, notes: own });
   }
 
   const filled = (entry: Entry): ShapeFrame | null => {
@@ -412,7 +425,9 @@ export function sightOf(timeline: Timeline, schedule: Schedule, base: StageBase,
     const subjects = entries.filter((entry) => {
       if (!entry.resting || entry.element.scene !== scene.id || entry.element.parent !== null) return false;
       const kind = entry.element.kind;
-      if (kind !== 'shape' && kind !== 'sprite' && kind !== 'copy' && kind !== 'group') return false;
+      // words and structures the brain placed on the canvas are part of the drawing: a row of numbers with a box round one is not "in a corner"
+      const placedWords = kind === 'text' && (entry.element.style.near !== null || entry.element.style.group !== null || (typeof entry.element.style.at === 'object' && entry.element.style.at !== null));
+      if (kind !== 'shape' && kind !== 'sprite' && kind !== 'copy' && kind !== 'group' && kind !== 'structure' && !placedWords) return false;
       // a backdrop (a sheet that bleeds, or most of the canvas) is not the subject
       if (figureFrames.get(entry.element.key)?.some((figure) => figure.kind === 'shape' && figure.bleed)) return false;
       return entry.screenBox.w * entry.screenBox.h > 0 && entry.screenBox.w * entry.screenBox.h < SUBJECT_MAX_SHARE * canvas.w * canvas.h;
@@ -431,11 +446,12 @@ export function sightOf(timeline: Timeline, schedule: Schedule, base: StageBase,
       const covered = ((Math.min(x1, canvas.x + canvas.w) - Math.max(x0, canvas.x)) * (Math.min(y1, canvas.y + canvas.h) - Math.max(y0, canvas.y))) / (canvas.w * canvas.h);
       const cx = (x0 + x1) / 2 - canvas.x;
       const cy = (y0 + y1) / 2 - canvas.y;
-      const inCorner = x1 - x0 <= canvas.w * CORNER_SHARE && y1 - y0 <= canvas.h * CORNER_SHARE && (cx < canvas.w * 0.4 || cx > canvas.w * 0.6) && (cy < canvas.h * 0.4 || cy > canvas.h * 0.6);
       const biggest = subjects.reduce((best, entry) => (entry.screenBox.w * entry.screenBox.h > best.screenBox.w * best.screenBox.h ? entry : best));
-      // a lone small subject standing in the middle is minimal on purpose; one pushed to a side, or a spread of small parts, is not composed
+      // Sparse is a drawing that is small in BOTH directions (a thin line that runs most of the width is not) and stands off the middle of its
+      // picture. A lone small subject in the middle is minimal on purpose, and a cluster of small parts in the middle is composed.
+      const small = x1 - x0 <= canvas.w * CORNER_SHARE && y1 - y0 <= canvas.h * CORNER_SHARE && covered < SPARSE_COVER;
       const offCentre = Math.abs(cx - canvas.w / 2) > canvas.w * 0.15 || Math.abs(cy - canvas.h / 2) > canvas.h * 0.15;
-      if (((covered < SPARSE_COVER && (subjects.length > 1 || offCentre)) || inCorner) && !biggest.notes.includes('sparse')) biggest.notes.push('sparse');
+      if (small && offCentre && !biggest.notes.includes('sparse')) biggest.notes.push('sparse');
     }
   }
 
