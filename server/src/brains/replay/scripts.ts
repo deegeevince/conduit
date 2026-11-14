@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { DEMOS } from '@conduit/language';
+import { DEMOS, DEMOS_NOT_PAINTED } from '@conduit/language';
 import type { DemoInfo } from '@conduit/language';
 import { errors } from '../../errors';
 
@@ -8,7 +8,7 @@ const cache = new Map<string, string>();
 
 /** The fixture scripts the replay brain can play, from `@conduit/language/demos`. */
 export function listScripts(): readonly DemoInfo[] {
-  return DEMOS;
+  return DEMOS.filter((demo) => !DEMOS_NOT_PAINTED.includes(demo.name));
 }
 
 /** The raw text of a fixture script. Throws `not_found` for an unknown name; never reads outside the demos folder. */

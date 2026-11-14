@@ -19,6 +19,7 @@ export const errors = {
   methodNotAllowed: (message: string): AppError => new AppError('method_not_allowed', 405, message),
   unsupportedMedia: (expected: string): AppError => new AppError('unsupported_media_type', 415, `the Content-Type must be ${expected}`),
   notFound: (what: string): AppError => new AppError('not_found', 404, `${what} not found`),
+  conflict: (message: string): AppError => new AppError('conflict', 409, message),
   turnClosed: (turn: string, why: string): AppError => new AppError('turn_closed', 409, `turn ${turn} is closed: ${why}`),
   tooLarge: (limit: number): AppError => new AppError('payload_too_large', 413, `request body is larger than ${limit} bytes`),
   brainFailed: (message: string, cause?: unknown): AppError => new AppError('brain_failed', 502, message, { cause }),

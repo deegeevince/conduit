@@ -74,7 +74,7 @@ export type SessionEntry = SessionRecord extends infer R ? (R extends { readonly
  */
 export interface SessionLog {
   write(session: string, entry: SessionEntry): void;
-  /** Saves a snapshot beside the session's log and returns the file name to record. */
+  /** Saves a snapshot (or, for `/capture`, a `video/webm` film) beside the session's log and returns the file name to record; empty when nothing is written. */
   saveSnapshot(session: string, turn: string, mime: string, bytes: Uint8Array): string;
   /** v2.1. The name of the session's log file, as the critic's queue records it; empty when nothing is written. */
   fileOf(session: string): string;

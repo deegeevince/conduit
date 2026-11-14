@@ -5,6 +5,8 @@ export const ASSET_LIMITS = {
   bytesPerSession: 48 * 1024 * 1024,
   /** bytes in one uploaded sketch or snapshot */
   uploadBytes: 1024 * 1024,
+  /** bytes in one film made in the page for the steward (`/capture`) */
+  filmBytes: 32 * 1024 * 1024,
   /** how long the server waits for the painter's sketch before it paints from the words alone */
   sketchWaitMs: 1500,
 } as const;

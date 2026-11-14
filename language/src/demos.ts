@@ -54,6 +54,13 @@ export const DEMOS = [
   },
 ] as const satisfies readonly DemoInfo[];
 
+/**
+ * Demos of what the painter does not paint yet (part two of v2.1): parsed and checked by `pnpm timeline`, still playable by name, but not
+ * offered in the gallery or the demo list until `code` and `deck` put something on stage (the v2.1 review: the `code` demo showed captions
+ * about code on an empty stage).
+ */
+export const DEMOS_NOT_PAINTED: readonly string[] = ['code', 'deck'];
+
 export type DemoName = (typeof DEMOS)[number]['name'];
 export const FIRST_LOAD_DEMO: DemoName = 'overture';
 export const GALLERY_DEMO: DemoName = 'styles';

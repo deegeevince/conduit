@@ -558,14 +558,23 @@ export const APP_COMMANDS = [
   { name: 'asks', args: '[clear]', gist: 'what you asked to hold for every reply; clear forgets them' },
   { name: 'look', args: '<name>', gist: 'the look of the stage; bare lists them' },
   { name: 'review', args: '<on|off>', gist: 'whether a drawing is checked and fixed after its first draft' },
-  { name: 'better', args: '[passes]', gist: 'keep making the picture on stage better, pass by pass' },
+  { name: 'better', args: '[passes]', gist: 'keep making the picture on stage better, pass by pass', needs: 'refine' },
   { name: 'stop', args: '', gist: 'stop what is being written or made better' },
   { name: 'show-all', args: '', gist: 'show the whole answer at once' },
   { name: 'copy', args: '[script]', gist: 'copy the answer as text, or its Series script' },
   { name: 'export', args: '<png|svg|film|frames|pdf|script>', gist: 'save the answer as a picture, a film, its slides or its script' },
   { name: 'capture', args: '', gist: 'film the last answer for the steward to watch' },
-] as const satisfies readonly { readonly name: string; readonly args: string; readonly gist: string }[];
+] as const satisfies readonly { readonly name: string; readonly args: string; readonly gist: string; readonly needs?: 'refine' }[];
 export type AppCommandName = (typeof APP_COMMANDS)[number]['name'];
+
+/**
+ * The commands this app can really do right now: a command that needs a service (`/better` needs the server's refine) is left out of
+ * what the brief and the help page advertise until the server says it has it. An app that advertises what it cannot do sends the user
+ * into an error (the v2.1 review: `/better` answered "cannot yet", and every brief told the brain to offer it).
+ */
+export function commandsFor(services: Pick<Services, 'refine'> | undefined): readonly (typeof APP_COMMANDS)[number][] {
+  return APP_COMMANDS.filter((command) => !('needs' in command) || services?.[command.needs] === true);
+}
 
 export interface StartTurnResponse {
   readonly turn: string;

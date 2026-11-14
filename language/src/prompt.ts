@@ -56,7 +56,7 @@ import {
   VERB,
 } from './vocabulary';
 import type { LookId, Verb } from './vocabulary';
-import { API, APP_COMMANDS } from './wire';
+import { API, commandsFor } from './wire';
 import type { AppStatus, BrainMode, Capabilities, ScreenFacts, Services, TurnInput } from './wire';
 
 /**
@@ -833,11 +833,12 @@ function statusText(status: AppStatus): string {
  * steward's own account of where things stand, so "what's in the backlog?" has an answer. The commands are given in full when the brain
  * remembers nothing (`full`) and by name once it does; the status goes with both, because it changes.
  */
-export function appNoteText(form: BriefForm, status: AppStatus | null | undefined): string {
+export function appNoteText(form: BriefForm, status: AppStatus | null | undefined, services?: Services): string {
+  const commandList = commandsFor(services);
   const commands =
     form === 'full'
-      ? APP_COMMANDS.map((command) => `/${command.name}${command.args === '' ? '' : ` ${command.args}`}: ${command.gist}`).join('; ')
-      : APP_COMMANDS.map((command) => `/${command.name}`).join(' ');
+      ? commandList.map((command) => `/${command.name}${command.args === '' ? '' : ` ${command.args}`}: ${command.gist}`).join('; ')
+      : commandList.map((command) => `/${command.name}`).join(' ');
   return `THIS APP: the user types commands the app handles itself, and you never see them: ${commands}. Point at one when it helps; never invent another. The menu's "Save" holds the copy and export commands.${
     status === null || status === undefined ? ' You are not told where the product stands: say so rather than guess.' : statusText(status)
   }`;
@@ -891,7 +892,7 @@ export function buildTurnBrief(context: TurnContext, input: TurnInput, form: Bri
 
   if (about !== undefined) {
     parts.push(aboutYouText(about, context.capabilities.links));
-    parts.push(appNoteText(form, about.status));
+    parts.push(appNoteText(form, about.status, context.services));
     if (about.news !== undefined && about.news !== null && about.news !== '') parts.push(newsText(about.news));
   }
   const standing = standingText(context.standing);

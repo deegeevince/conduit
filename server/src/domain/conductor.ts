@@ -356,6 +356,16 @@ export class Conductor {
    * brief and saved beside the session log. Dropped without complaint when
    * SIGHT=report, since the painter cannot know that setting.
    */
+  /** `/capture`: a film of a turn, made in the page, saved beside the session's log for the steward. Returns the file name. */
+  receiveFilm(session: string, turn: string, bytes: Uint8Array): string {
+    const s = this.deps.sessions.require(session, this.deps.now());
+    if (!s.turns.has(turn)) throw errors.notFound(`turn ${turn}`);
+    const file = this.deps.sessionLog.saveSnapshot(s.id, turn, 'video/webm', bytes);
+    if (file === '') throw errors.conflict('this server keeps no log folder (LOG_DIR=off), so there is nowhere to put a film');
+    this.deps.log.info('capture.saved', { session: s.id, turn, file, bytes: bytes.byteLength });
+    return file;
+  }
+
   receiveSnapshot(session: string, turn: string, snapshot: Snapshot): void {
     const s = this.deps.sessions.require(session, this.deps.now());
     if (!s.turns.has(turn)) throw errors.notFound(`turn ${turn}`);
