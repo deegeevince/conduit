@@ -19,7 +19,8 @@ export interface StoredAsset {
 }
 
 const SKETCHES_KEPT = 8;
-const SNAPSHOTS_KEPT = 2;
+/** The wall (PLAN-wall WL3) draws every frame of the conversation from its snapshot, so the route keeps the last 48 turns' pictures (about 100 KB each), not only the last two. */
+const SNAPSHOTS_KEPT = 48;
 
 interface Held {
   /** insertion order is age */

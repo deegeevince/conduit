@@ -46,7 +46,7 @@ function wordsOf(rest: string): SceneWords {
 
 export function wallNodesOfTurns(turns: readonly WallTurn[]): readonly WallNode[] {
   const nodes: WallNode[] = [];
-  /** a scene's own name, or a node id, to the node */
+  /** a node id to the node (a layout word such as `page` or `caption` is not a name: only an id that exists reopens a frame) */
   const byName = new Map<string, WallNode>();
   for (const turn of turns) {
     let inTurn = 0;
@@ -77,7 +77,6 @@ export function wallNodesOfTurns(turns: readonly WallTurn[]): readonly WallNode[
       const node: WallNode = { id, lane, from, seq: nodes.length + 1, title: titleOf(turn.said, id) };
       nodes.push(node);
       byName.set(id, node);
-      if (words.id !== null && !byName.has(words.id)) byName.set(words.id, node);
       inTurn += 1;
     }
   }

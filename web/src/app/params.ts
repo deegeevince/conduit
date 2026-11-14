@@ -12,6 +12,8 @@ export interface AppParams {
   readonly demo: string | null;
   /** ?motion=reduced|full overrides prefers-reduced-motion, so it can be tested without changing the OS */
   readonly motion: 'auto' | 'reduced' | 'full';
+  /** ?wall=1 turns the endless canvas on at `/`: every answer that draws is a frame on one wall, and the camera travels it (PLAN-wall WL3) */
+  readonly wall: boolean;
 }
 
 /** Reads the page's query string. Unknown values fall back to the default; nothing here throws. */
@@ -27,11 +29,13 @@ export function readParams(search: string): AppParams {
   const look = query.get('look');
   const demo = query.get('demo');
   const motion = query.get('motion');
+  const wall = query.get('wall');
   return {
     debug: debug === '1' || debug === 'true',
     renderer: renderer === 'plain' || renderer === 'three' ? renderer : 'auto',
     look: LOOK_IDS.find((id) => id === look) ?? null,
     demo: demo !== null && /^[\w-]{1,40}$/.test(demo) ? demo : null,
     motion: motion === 'reduced' || motion === 'full' ? motion : 'auto',
+    wall: wall === '1' || wall === 'true',
   };
 }

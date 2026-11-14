@@ -21,6 +21,8 @@ export interface GestureOptions {
   readonly onTap?: (tile: Tile) => void;
   /** Something changed that the page should draw. */
   readonly onChange?: () => void;
+  /** Listen in the capture phase: the wall hears a pointer before the page's own handlers, which a layer above the stage can then keep from it (WL3). */
+  readonly capture?: boolean;
 }
 
 export interface Hands {
@@ -306,23 +308,24 @@ export function attachGestures(el: HTMLElement, rig: LensRig, options: GestureOp
     }
   };
 
+  const cap = options.capture === true;
   const bind = (): void => {
-    el.addEventListener('pointerdown', onDown);
-    el.addEventListener('pointermove', onMove);
-    el.addEventListener('pointerup', onUp);
-    el.addEventListener('pointercancel', onUp);
-    el.addEventListener('wheel', onWheel, { passive: false });
+    el.addEventListener('pointerdown', onDown, cap);
+    el.addEventListener('pointermove', onMove, cap);
+    el.addEventListener('pointerup', onUp, cap);
+    el.addEventListener('pointercancel', onUp, cap);
+    el.addEventListener('wheel', onWheel, { passive: false, capture: cap });
     el.addEventListener('gesturestart', onGestureStart as EventListener, { passive: false });
     el.addEventListener('gesturechange', onGestureChange as EventListener, { passive: false });
     el.addEventListener('gestureend', onGestureEnd as EventListener, { passive: false });
     window.addEventListener('keydown', onKey);
   };
   const unbind = (): void => {
-    el.removeEventListener('pointerdown', onDown);
-    el.removeEventListener('pointermove', onMove);
-    el.removeEventListener('pointerup', onUp);
-    el.removeEventListener('pointercancel', onUp);
-    el.removeEventListener('wheel', onWheel);
+    el.removeEventListener('pointerdown', onDown, cap);
+    el.removeEventListener('pointermove', onMove, cap);
+    el.removeEventListener('pointerup', onUp, cap);
+    el.removeEventListener('pointercancel', onUp, cap);
+    el.removeEventListener('wheel', onWheel, { capture: cap });
     el.removeEventListener('gesturestart', onGestureStart as EventListener);
     el.removeEventListener('gesturechange', onGestureChange as EventListener);
     el.removeEventListener('gestureend', onGestureEnd as EventListener);

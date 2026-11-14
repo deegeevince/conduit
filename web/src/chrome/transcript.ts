@@ -7,6 +7,8 @@ export interface Transcript {
   setOpen(open: boolean): void;
   /** opens the panel with the given turn's heading at the top; focus does not move */
   revealTurn(turn: string): void;
+  /** The wall (WL3): marks the turn whose frame the camera has settled on, and brings its heading into view if the panel is open. null clears the mark. */
+  markTurn(turn: string | null): void;
   /** What a turn has said so far, read from the transcript's own lines: the words still standing, the choices it offers (with the key that taps one), and what it drew. The chat shell's reply text. */
   replyOf(turn: string): TranscriptReply;
   dispose(): void;
@@ -64,7 +66,7 @@ let counter = 0;
  * panel anyone can open. Struck text stays, marked as struck. Choices are
  * real buttons, so the stage can be driven from the keyboard.
  */
-export function mountTranscript(host: HTMLElement, painter: Painter, handlers: { /** the composer's [+] menu: the Transcript is one of its entries */ readonly menu: ComposerMenu; readonly onChoice: (key: string) => void; /** copies the words of a turn's answer as Markdown; absent: no button */ readonly onCopyAnswer?: (turn: string) => void }): Transcript {
+export function mountTranscript(host: HTMLElement, painter: Painter, handlers: { /** the composer's [+] menu: the Transcript is one of its entries */ readonly menu: ComposerMenu; readonly onChoice: (key: string) => void; /** copies the words of a turn's answer as Markdown; absent: no button */ readonly onCopyAnswer?: (turn: string) => void; /** the wall: a turn's heading was tapped (not its Copy button) and the camera should fly to its frame; absent: headings are only text */ readonly onTurnTap?: (turn: string) => void; /** the wall restages an older frame as a page of the app's own: that page is not said again in the transcript */ readonly skipPages?: boolean }): Transcript {
   counter += 1;
   const panelId = `transcript-panel-${counter}`;
 
@@ -139,6 +141,25 @@ export function mountTranscript(host: HTMLElement, painter: Painter, handlers: {
     setOpen(true);
     const heading = headings.get(turn);
     if (heading !== undefined) body.scrollTop = Math.max(0, heading.offsetTop - body.offsetTop);
+  };
+
+  let marked: string | null = null;
+  const markTurn = (turn: string | null): void => {
+    if (marked !== null) {
+      const old = headings.get(marked);
+      old?.classList.remove('transcript__turn--here');
+      old?.removeAttribute('aria-current');
+    }
+    marked = turn;
+    if (turn === null) return;
+    const heading = headings.get(turn);
+    if (heading === undefined) return;
+    heading.classList.add('transcript__turn--here');
+    heading.setAttribute('aria-current', 'true');
+    if (open) {
+      const top = heading.offsetTop - body.offsetTop;
+      if (top < body.scrollTop || top > body.scrollTop + body.clientHeight - heading.offsetHeight) body.scrollTop = Math.max(0, top - 8);
+    }
   };
 
   const setOpen = (next: boolean): void => {
@@ -226,7 +247,13 @@ export function mountTranscript(host: HTMLElement, painter: Painter, handlers: {
     }
   };
 
+  /** inside a page the wall put up to show an older frame: nothing it says is said again */
+  let inPage = false;
   const onEvent = (event: TranscriptEvent): void => {
+    if (handlers.skipPages === true) {
+      if (event.kind === 'turn') inPage = event.turn.startsWith('local-page-');
+      if (inPage) return;
+    }
     switch (event.kind) {
       case 'turn': {
         empty.remove();
@@ -248,6 +275,22 @@ export function mountTranscript(host: HTMLElement, painter: Painter, handlers: {
           const turn = event.turn;
           copy.addEventListener('click', () => handlers.onCopyAnswer?.(turn));
           heading.append(' ', copy);
+        }
+        if (handlers.onTurnTap !== undefined) {
+          const turn = event.turn;
+          heading.classList.add('transcript__turn--tappable');
+          heading.tabIndex = 0;
+          heading.setAttribute('role', 'button');
+          heading.setAttribute('aria-label', `Go to the frame for: ${text}`);
+          heading.addEventListener('click', (click) => {
+            if (click.target instanceof Element && click.target.closest('.transcript__copy') !== null) return;
+            handlers.onTurnTap?.(turn);
+          });
+          heading.addEventListener('keydown', (key) => {
+            if ((key.key !== 'Enter' && key.key !== ' ') || key.target !== heading) return;
+            key.preventDefault();
+            handlers.onTurnTap?.(turn);
+          });
         }
         headings.set(event.turn, heading);
         stickToEnd(() => body.append(heading));
@@ -462,6 +505,7 @@ export function mountTranscript(host: HTMLElement, painter: Painter, handlers: {
   return {
     setOpen,
     revealTurn,
+    markTurn,
     replyOf,
     dispose() {
       off();

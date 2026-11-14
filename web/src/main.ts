@@ -19,6 +19,7 @@ import type { Picker } from './chrome/picker';
 import { mountPromptBar } from './chrome/prompt';
 import { mountSound } from './chrome/sound';
 import { mountTranscript } from './chrome/transcript';
+import type { WallRoom } from './wall/wall-room';
 import { FONTS, fontFor } from './fonts';
 import { LOOKS } from './looks';
 
@@ -142,7 +143,14 @@ async function start(): Promise<void> {
   }
   const mounted = app;
   window.__stage = mounted.hook;
-  const transcript = mountTranscript(promptBar.extra, mounted.painter, { menu: promptBar.menu, onChoice: (key) => mounted.choose(key), onCopyAnswer: (turn) => void copyAnswer(mounted, turn) });
+  // ?wall=1 (PLAN-wall WL3): a tap on a turn in the transcript flies the camera to its frame
+  let wall: WallRoom | null = null;
+  const transcript = mountTranscript(promptBar.extra, mounted.painter, {
+    menu: promptBar.menu,
+    onChoice: (key) => mounted.choose(key),
+    onCopyAnswer: (turn) => void copyAnswer(mounted, turn),
+    ...(params.wall ? { onTurnTap: (turn: string) => wall?.goTurn(turn), skipPages: true } : {}),
+  });
   stageInk = mountStageInk(stageHost, promptBar.menu, {
     upload: async (png) => (await mounted.link.uploadPhoto(png)).id,
     lastTurn: () => mounted.lastTurn(),
@@ -155,7 +163,11 @@ async function start(): Promise<void> {
   mountActions(promptBar.extra, mounted, transcript, stageHost, { top: promptBar.top, menu: promptBar.menu });
   mountSound(promptBar.top, mounted);
   picker = mountPicker(promptBar.menu, mounted);
-  mountAbout(promptBar.menu, mounted);
+  mountAbout(promptBar.menu, mounted, params.wall ? (body) => mountMotionSetting(body, () => wall) : undefined);
+  if (params.wall) {
+    const { mountWall } = await import('./wall/wall-room');
+    wall = await mountWall({ host: stageHost, app: mounted, transcript, motionParam: params.motion });
+  }
   mountActivity(promptBar.activity, mounted);
   mountPermission(mounted);
   const show = (status: StageStatus): void => {
@@ -169,6 +181,32 @@ async function start(): Promise<void> {
   show(mounted.status());
   if (params.debug) mountHud(document.body, mounted);
   promptBar.focus();
+}
+
+/** "Motion: glide or fade", beside the system's reduced-motion setting: how the camera travels the wall. */
+function mountMotionSetting(body: HTMLElement, wall: () => WallRoom | null): void {
+  const row = document.createElement('label');
+  row.className = 'about__line wall-setting';
+  const text = document.createElement('span');
+  text.textContent = 'Motion';
+  const select = document.createElement('select');
+  select.setAttribute('aria-label', 'Motion: glide or fade');
+  for (const [value, label] of [['glide', 'Glide'], ['fade', 'Fade']] as const) {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = label;
+    select.append(option);
+  }
+  try {
+    select.value = window.localStorage.getItem('conduit.wallMotion') === 'fade' ? 'fade' : 'glide';
+  } catch {
+    select.value = 'glide';
+  }
+  select.addEventListener('change', () => wall()?.setMotionSetting(select.value === 'fade' ? 'fade' : 'glide'));
+  const note = document.createElement('small');
+  note.textContent = "Fade cross-fades between frames instead of travelling. The system's reduced-motion setting does the same.";
+  row.append(text, select);
+  body.append(row, note);
 }
 
 void start();

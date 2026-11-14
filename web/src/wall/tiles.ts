@@ -82,6 +82,16 @@ export class TileCache implements StillIndex {
     this.stopListening();
   }
 
+  /** a tile's picture is there now (or a better one): the page adds sources as the turns' snapshots arrive */
+  setSource(source: TileSource): void {
+    this.sources.set(source.id, source);
+    this.boxes.delete(source.id);
+  }
+
+  hasSource(id: string): boolean {
+    return this.sources.has(id);
+  }
+
   setPlan(plan: WallPlan): void {
     this.plan = plan;
     this.boxes.clear();
