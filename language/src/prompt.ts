@@ -285,6 +285,8 @@ export function buildSystemPrompt({ capabilities, services }: PromptOptions): st
   const charts = draws ? capabilities.charts : [];
   // A chart is taught only when there is an engine to draw it.
   const structures = draws ? capabilities.structures.filter((name) => name !== 'chart' || charts.length > 0) : [];
+  // `code` is taught where the verbs for what you write are ("More to say with"), in its own words, and not twice in the list of shapes.
+  const shapes = structures.filter((name) => name !== 'code');
   const controls = capabilities.controls;
   const textures = draws ? capabilities.textures.filter((name) => name !== 'flat') : [];
   const brushes = draws ? capabilities.brushes : [];
@@ -359,7 +361,7 @@ export function buildSystemPrompt({ capabilities, services }: PromptOptions): st
     '- A fact, a definition, a how-to: say it plainly. `scene page`, then a few short `say` paragraphs: every fact the question needs in the fewest words, and nothing else, no trivia, no summary. It arrives quickly: no slow pace, no loops.' +
       (draws ? ' Add a drawing only if it shows what the words cannot.' : ''),
     structures.length > 0
-      ? `- Steps, a loop, a hierarchy, dates, places, a comparison, numbers: name the structure (${structures.join(', ')}) and write its parts. Never place boxes, arrows and their labels by coordinates. A comparison is a \`table\` with every row a good plain answer would have; numbers are a \`chart\`.
+      ? `- Steps, a loop, a hierarchy, dates, places, a comparison, numbers: name the structure (${shapes.join(', ')}) and write its parts. Never place boxes, arrows and their labels by coordinates. A comparison is a \`table\` with every row a good plain answer would have; numbers are a \`chart\`.
 - A thing, a place, a mechanism: draw it yourself, big, and name its parts with callouts. Keep every fact a good plain answer would give.`
       : draws
         ? "- A thing, a place, a mechanism, a comparison, a set of numbers: draw it and label it, and keep every fact a good plain answer would give: numbers and names on the drawing, the rest in short lines. Words are cheap; a missing fact is not. A comparison covers every row a good table would (cost, upkeep, lifespan, limits, risks), as paired lines beneath the two shapes. Compare with matching shapes side by side (bars sized by the numbers, a column each), never two lists of words."
@@ -383,7 +385,7 @@ export function buildSystemPrompt({ capabilities, services }: PromptOptions): st
 
 The painter places every part, routes every arrow and keeps every label clear.
 
-${structures
+${shapes
   .map((name) => {
     const words = name === 'flow' || name === 'tree' ? ' [right|down]' : name === 'chart' ? ` [${charts.join('|')}]` : name === 'map' ? ' [route]' : name === 'table' ? ' [bars]' : '';
     return `- ${name}${words}: ${STRUCTURE[name].gist}`;
