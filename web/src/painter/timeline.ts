@@ -1375,7 +1375,8 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
     // A struck line rests at full opacity in `dim`: the strike line carries "withdrawn", not a fade that would take it under the contrast bar.
     const gateUntil = replacedUntil.get(element.key);
     const gate = gateUntil === undefined ? 1 : clamp01((tq - (gateUntil - GATE_SECONDS)) / GATE_SECONDS);
-    const opacity = exitOpacity * loopOpacity * gate;
+    // `opacity=` on words is how solid they are: 0 is not drawn until a `set` brings it up (a lesson's step text waits this way)
+    const opacity = exitOpacity * loopOpacity * gate * clamp01(style.opacity);
     const scale = pose.comp * loopScale * hitScale * exitScale;
     const frame: ElementFrame = {
       key: element.key,
