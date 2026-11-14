@@ -168,6 +168,8 @@ export interface TurnContext {
    * given it takes the place of the sight lines under HOW YOUR LAST ANSWER LANDED. Absent: the older sight lines are printed as before.
    */
   readonly eyes?: string | null;
+  /** SA4. The canvas tools are on for this conversation: the brief says so in one line */
+  readonly canvas?: boolean;
 }
 
 /** v2.1. The most standing asks a conversation holds, and the most characters of each; the oldest goes when a seventh comes. */

@@ -9,10 +9,14 @@ import { childEnvironment } from '../../env';
 import { errors } from '../../errors';
 import { CHROME_REMOVED, CHROME_SERVER } from '../../domain/browser';
 
-/** The tool flags: exactly the listed read-only web tools, allowed without a prompt, and every other tool denied. */
-export function toolArguments(tools: readonly string[]): string[] {
-  if (tools.length === 0) return ['--tools', ''];
-  return ['--tools', tools.join(','), '--allowedTools', ...tools, '--disallowedTools', ...DENIED_TOOLS];
+/** SA4. The canvas tools' server name: `--allowedTools mcp__canvas` allows every tool of it, with no question put to the host. */
+export const CANVAS_ALLOWED = 'mcp__canvas';
+
+/** The tool flags: exactly the listed read-only web tools, allowed without a prompt, and every other tool denied. `canvas` is the 0600 file that configures the canvas server (SA4). */
+export function toolArguments(tools: readonly string[], canvas?: string): string[] {
+  const mcp = canvas === undefined ? [] : ['--mcp-config', canvas];
+  if (tools.length === 0) return ['--tools', '', ...(canvas === undefined ? [] : ['--allowedTools', CANVAS_ALLOWED]), ...mcp];
+  return ['--tools', tools.join(','), '--allowedTools', ...tools, ...(canvas === undefined ? [] : [CANVAS_ALLOWED]), '--disallowedTools', ...DENIED_TOOLS, ...mcp];
 }
 
 /**
@@ -40,10 +44,12 @@ export interface AgentRun {
   readonly cwd: string;
 }
 
-export function agentArguments(run: AgentRun): string[] {
+export function agentArguments(run: AgentRun, canvas?: string): string[] {
+  const allowed = [...(run.freeReads === true ? run.builtIns.filter((name) => name === 'WebSearch' || name === 'WebFetch') : []), ...(canvas === undefined ? [] : [CANVAS_ALLOWED])];
+  const configs = [...run.mcpConfigs, ...(canvas === undefined ? [] : [canvas])];
   return [
     '--tools', run.builtIns.join(','),
-    ...(run.freeReads === true ? ['--allowedTools', ...run.builtIns.filter((name) => name === 'WebSearch' || name === 'WebFetch')] : []),
+    ...(allowed.length > 0 ? ['--allowedTools', ...allowed] : []),
     '--permission-mode', 'manual',
     '--permission-prompts', 'host',
     '--permission-prompt-tool', 'stdio',
@@ -51,7 +57,7 @@ export function agentArguments(run: AgentRun): string[] {
     // `--chrome` brings its own MCP server whatever `--strict-mcp-config` says, and `--tools` does not govern it (see warm.ts); what is not
     // offered is removed here, and every call that is left is gated in `domain/browser.ts`. Off, it is off by name.
     ...(run.chrome === true ? ['--chrome', '--disallowedTools', ...CHROME_REMOVED.map((name) => `mcp__${CHROME_SERVER}__${name}`)] : ['--no-chrome']),
-    ...(run.mcpConfigs.length === 0 ? [] : ['--mcp-config', ...run.mcpConfigs]),
+    ...(configs.length === 0 ? [] : ['--mcp-config', ...configs]),
   ];
 }
 

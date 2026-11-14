@@ -62,6 +62,8 @@ import { briefEyes, itemObservation, observeInput } from './observations';
 import type { NewObservation } from './observations';
 import { ENGINE_VERSION, engineMismatch, measurable, measureDraft, tryFix } from './stage-facts';
 import type { FixAttempt } from './review';
+import type { CanvasService } from '../canvas/api';
+import type { Briefed } from './observations';
 import type { TechniqueLibrary } from './techniques';
 
 export interface ConductorDeps {
@@ -108,6 +110,10 @@ export interface ConductorDeps {
   readonly voice?: VoiceNotes;
   /** v2.1 ops. The usage meter: every brain turn and review pass is written to it; its throttle only ever warns the owner, never refuses a turn. */
   readonly usage?: UsageMeter;
+  /** SA4. The canvas tools: told when a turn opens and ends, and when the model's call has been seen on its stream. Absent: the brain has none. */
+  readonly canvas?: CanvasService;
+  /** SA4. True when the brain's own process is given the canvas tools (the digest then points at them, and the brief says they exist) */
+  readonly canvasTools?: boolean;
   /** milliseconds; injected so nothing in the domain reads the wall clock directly */
   readonly now: () => number;
 }
@@ -120,7 +126,7 @@ export interface EventsPage {
 const REAP_INTERVAL_MS = 60_000;
 
 /** Stage events that describe a moment and are not part of the turn's score: a reconnecting painter is not given the ones it heard. */
-const TRANSIENT: ReadonlySet<StageEvent['type']> = new Set(['pass', 'data', 'candidate', 'permission', 'activity', 'critic']);
+const TRANSIENT: ReadonlySet<StageEvent['type']> = new Set(['pass', 'data', 'candidate', 'permission', 'activity', 'critic', 'want']);
 
 /** The longest a turn waits on the owner's datasets before it goes on without them: it is a network call on the turn's path. */
 const DATASET_WAIT_MS = 5_000;
@@ -136,6 +142,11 @@ export class Conductor {
   private readonly reaper: NodeJS.Timeout;
   /** the file each draft's picture was saved under, for the `fix` record; forgotten with the turn's session */
   private readonly draftFiles = new Map<string, string>();
+  /** SA4. The attention record of each open turn, written when the turn ends with what the canvas tools were used for */
+  private readonly attention = new Map<string, Briefed['record']>();
+  /** SA4. Pictures asked of the page (`want`) and not yet answered, by request id */
+  private readonly looks = new Map<string, { readonly session: string; readonly resolve: (snapshot: Snapshot | null) => void; readonly timer: NodeJS.Timeout }>();
+  private lookCounter = 0;
 
   constructor(deps: ConductorDeps) {
     this.deps = deps;
@@ -265,8 +276,9 @@ export class Conductor {
     const before = s.obs.all().length === 0 ? 0 : (s.obs.all()[s.obs.all().length - 1]?.seq ?? 0);
     observeInput(s, input, now());
     for (const made of s.obs.all().filter((one) => one.seq > before)) this.deps.sessionLog.write(s.id, { type: 'obs', turn: null, obs: made });
-    const briefed = briefEyes(s);
-    const context = { ...buildContext(s, this.servicesFor(s.capabilities, s.id)), ...(briefed.eyes === null ? {} : { eyes: briefed.eyes }) };
+    const tools = this.deps.canvasTools === true && brain === brains.configured;
+    const briefed = briefEyes(s, tools);
+    const context = { ...buildContext(s, this.servicesFor(s.capabilities, s.id)), ...(briefed.eyes === null ? {} : { eyes: briefed.eyes }), ...(tools ? { canvas: true } : {}) };
     const turn: ActiveTurn = {
       id: sessions.nextTurnId(),
       session: s.id,
@@ -301,7 +313,9 @@ export class Conductor {
     sessions.indexTurn(s, turn);
     log.info('turn.opened', { session: s.id, turn: turn.id, brain: brain.id, input: turn.input.kind, login: turn.login });
     this.deps.sessionLog.write(s.id, { type: 'turn', turn: turn.id, input, brain: brain.id, login: turn.login });
-    this.deps.sessionLog.write(s.id, { type: 'attention', turn: turn.id, ...briefed.record });
+    // The attention record is written when the turn ends, with what the canvas tools were used for (`finish`).
+    this.attention.set(turn.id, briefed.record);
+    this.deps.canvas?.beginTurn(s.id, turn.id, briefed.record.rev[0]);
     this.emit(s, turn, { type: 'turn', turn: turn.id, input });
 
     // `run` ends its own turn and does not throw; this is the net under it, so that nothing can ever be an unhandled rejection from here.
@@ -481,6 +495,39 @@ export class Conductor {
     }
   }
 
+  /**
+   * SA4. The brain asked for a picture of the stage as it stands (`canvas_look`): the page is asked with a `want` event and answers by uploading
+   * to `API.look`. Null when nobody is listening, or nothing came within `deadlineMs`.
+   */
+  wantPicture(s: Session, target: string | null, deadlineMs: number): Promise<Snapshot | null> {
+    const turn = s.turn;
+    if (s.sink === null || turn === null || turn.reported) return Promise.resolve(null);
+    this.lookCounter += 1;
+    const request = `l${this.lookCounter}`;
+    return new Promise<Snapshot | null>((resolve) => {
+      const timer = setTimeout(() => this.settleLook(request, null), deadlineMs);
+      timer.unref();
+      this.looks.set(request, { session: s.id, resolve, timer });
+      this.emit(s, turn, { type: 'want', turn: turn.id, request, what: 'picture', target, deadlineMs });
+    });
+  }
+
+  private settleLook(request: string, snapshot: Snapshot | null): boolean {
+    const held = this.looks.get(request);
+    if (held === undefined) return false;
+    this.looks.delete(request);
+    clearTimeout(held.timer);
+    held.resolve(snapshot);
+    return true;
+  }
+
+  /** SA4. The page's answer to a `want`. A request that is unknown, answered or another conversation's is ignored. */
+  receiveLook(session: string, request: string, snapshot: Snapshot): void {
+    this.deps.sessions.require(session, this.deps.now());
+    if (this.looks.get(request)?.session !== session) return;
+    this.settleLook(request, snapshot);
+  }
+
   /** The rows of a table this conversation holds, for the painter's `data` fetch; undefined when there is none under that id. */
   dataFor(session: string, id: string): DataTable | undefined {
     return this.deps.sessions.require(session, this.deps.now()).tables.find((table) => table.id === id);
@@ -617,6 +664,8 @@ export class Conductor {
     session.abort.abort();
     this.denyPending(session, null);
     this.deps.brains.configured.release?.(session.id);
+    this.deps.canvas?.forget(session.id);
+    for (const [request, held] of [...this.looks]) if (held.session === session.id) this.settleLook(request, null);
     this.deps.assets.drop(session.id);
     this.deps.sessionLog.close(session.id);
     session.closeSink?.();
@@ -794,6 +843,13 @@ export class Conductor {
     step('audit', () => {
       for (const call of turn.calls.values()) if (!call.asked) this.recordCall(s, turn, call.tool, call.summary, 'allowed', 'policy', `still running when the turn ended (${reason})`);
       turn.calls.clear();
+    });
+    step('attention', () => {
+      const held = this.attention.get(turn.id);
+      this.attention.delete(turn.id);
+      if (held === undefined) return;
+      const used = this.deps.canvas?.endTurn(s.id, turn.id) ?? null;
+      this.deps.sessionLog.write(s.id, { type: 'attention', turn: turn.id, ...held, ...(used === null ? {} : { pulled: used.pulled, watch: used.watch, ignore: used.ignore, refusedIgnore: used.refusedIgnore, calls: used.calls, toolMs: used.toolMs }) });
     });
     step('log', () => this.deps.sessionLog.write(s.id, { type: 'end', turn: turn.id, reason, message, lines: turn.lineCount }));
     step('emit', () => this.emit(s, turn, { type: 'end', turn: turn.id, reason, message }));
@@ -1275,6 +1331,12 @@ export class Conductor {
         thinkingTokens: event.usage.thinkingTokens,
         costUsd: event.usage.costUsd,
       });
+      return undefined;
+    }
+    // SA4. A call of the canvas tools seen on the model's stream, after every line written before it was taken: the handler waiting for it may go.
+    // It is not a tool of the owner's to be shown or audited: it reads the stage and writes nothing.
+    if (event.type === 'activity' && event.tool.startsWith('mcp__canvas__')) {
+      if (event.state === 'running') this.deps.canvas?.marked(s.id);
       return undefined;
     }
     if (turn.endReason !== null) return undefined;

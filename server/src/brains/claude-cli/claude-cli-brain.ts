@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { asksWhatsNew, buildSystemPrompt, buildTurnBrief, VERBS } from '@conduit/language';
@@ -26,6 +26,20 @@ import type { ClaudeResultFacts } from './stream-json';
 /** Names of the language's own lines: the model sometimes calls one as if it were a tool; none is. */
 const NOT_TOOLS: ReadonlySet<string> = new Set(VERBS.map((verb) => String(verb).toLowerCase()));
 
+/**
+ * SA4. How the brain's processes reach the canvas tools: the address of the server's MCP door, and a token for each process, bound to the
+ * conversation it serves and revoked when the process is let go. The token is written, with the address, to a 0600 file in a folder of the
+ * process's own (`--mcp-config`); it is never logged.
+ */
+export interface CanvasLink {
+  readonly url: string;
+  mint(session: string): string;
+  revoke(token: string): void;
+}
+
+/** The name the CLI gives a canvas tool: `mcp__canvas__canvas_fits`. */
+const isCanvasTool = (name: string): boolean => name.startsWith('mcp__canvas__');
+
 export interface ClaudeCliDeps {
   readonly log: Logger;
   readonly bin: string;
@@ -50,6 +64,8 @@ export interface ClaudeCliDeps {
   readonly news?: () => string | null;
   /** v2.1 ops. The kill switch: engaged, every conversation is `plain`, every call the CLI asks about is refused, and `agent` cannot be chosen */
   readonly kill?: KillSwitch;
+  /** SA4. The canvas tools: every process is started with them, in plain mode and agent mode alike. Absent: none. */
+  readonly canvas?: CanvasLink;
 }
 
 /** A call the CLI is holding for the owner's answer. */
@@ -91,6 +107,8 @@ interface Entry {
   running: Promise<void> | null;
   /** the browser's tabs this process has opened and where they are (`domain/browser.ts`); empty and unused unless `chrome` is on */
   readonly browser: BrowserState;
+  /** SA4. Lets go of the process's canvas token and its folder; once */
+  readonly forgetCanvas: () => void;
 }
 
 /** How long a new turn waits for the previous one to finish unwinding before it abandons that process. */
@@ -176,27 +194,60 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
     return buildSystemPrompt({ capabilities: s.capabilities, services: s.services, variant: deps.variant });
   };
 
-  const makeEntry = (session: string, system: string, capabilities: Capabilities): Entry => ({
-    session,
-    system,
-    ...settingsOf(session),
-    proc: startWarmProcess({ bin: deps.bin, tools: deps.tools, ...settingsOf(session), systemPrompt: system, agent: agentRunOf(session) }, log),
-    agentKey: agentKeyOf(session),
-    held: new Map(),
-    systemSent: false,
-    capabilities,
-    lastTurn: null,
-    heardDocs: new Set(),
-    lastUsed: Date.now(),
-    costBase: 0,
-    running: null,
-    browser: newBrowserState(),
-  });
+  /** SA4. A token for this process and the 0600 file that tells the CLI where the canvas server is and how to knock. */
+  const canvasFor = (session: string): { readonly file: string | undefined; readonly forget: () => void } => {
+    const link = deps.canvas;
+    if (link === undefined) return { file: undefined, forget: () => undefined };
+    const token = link.mint(session);
+    let dir: string | null = null;
+    try {
+      dir = mkdtempSync(join(tmpdir(), 'conduit-canvas-'));
+      const file = join(dir, 'mcp.json');
+      writeFileSync(file, JSON.stringify({ mcpServers: { canvas: { type: 'http', url: link.url, headers: { Authorization: `Bearer ${token}` } } } }), { mode: 0o600 });
+      const made = dir;
+      let done = false;
+      return {
+        file,
+        forget: () => {
+          if (done) return;
+          done = true;
+          link.revoke(token);
+          rmSync(made, { recursive: true, force: true });
+        },
+      };
+    } catch (error) {
+      link.revoke(token);
+      if (dir !== null) rmSync(dir, { recursive: true, force: true });
+      log.warn('canvas_config_failed', { session, message: error instanceof Error ? error.message : String(error) });
+      return { file: undefined, forget: () => undefined };
+    }
+  };
+
+  const makeEntry = (session: string, system: string, capabilities: Capabilities): Entry => {
+    const canvas = canvasFor(session);
+    return {
+      session,
+      system,
+      ...settingsOf(session),
+      proc: startWarmProcess({ bin: deps.bin, tools: deps.tools, ...settingsOf(session), systemPrompt: system, agent: agentRunOf(session), ...(canvas.file === undefined ? {} : { canvas: canvas.file }) }, log),
+      agentKey: agentKeyOf(session),
+      held: new Map(),
+      systemSent: false,
+      capabilities,
+      lastTurn: null,
+      heardDocs: new Set(),
+      lastUsed: Date.now(),
+      costBase: 0,
+      running: null,
+      browser: newBrowserState(),
+      forgetCanvas: canvas.forget,
+    };
+  };
 
   const discard = (entry: Entry): void => {
     if (pool.get(entry.session) === entry) pool.delete(entry.session);
     for (const held of [...entry.held.values()]) held.settle(false, 'turn');
-    void entry.proc.stop().catch(() => undefined);
+    void entry.proc.stop().catch(() => undefined).finally(entry.forgetCanvas);
   };
 
   const makeRoom = (): void => {
@@ -363,6 +414,11 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
     /** The CLI asks before a call. Whatever the answer, it is made here, by `gateCall`, and by the owner for what that says to ask. */
     const handleAsk = (ask: { requestId: string; toolUseId: string; tool: string; input: Readonly<Record<string, unknown>> }): void => {
       const call = { id: ask.toolUseId, tool: ask.tool, input: ask.input };
+      // SA4. The canvas tools read the stage and write nothing; the CLI is told to allow them itself, and this is only the net under that.
+      if (isCanvasTool(ask.tool) && !inner.signal.aborted) {
+        entry.proc.answer(ask.requestId, true, ask.input, '');
+        return;
+      }
       const verdict = out.noTools === true ? ({ kind: 'deny', risk: 'run', why: 'a look at the draft uses no tools' } as const) : modeOf(out.session) === 'agent' ? gateCall(call, agent, on, false, entry.browser) : ({ kind: 'deny', risk: 'run', why: kill.engaged() ? 'agent tools have been switched off by the kill switch' : 'this conversation has no tools' } as const);
       const summary = summaryOf(call);
       if (inner.signal.aborted) {
@@ -420,7 +476,7 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
           const tools = init.tools?.length ?? 0;
           const mcp = init.mcp_servers?.length ?? 0;
           turnLog.info('claude_init', { model: init.model, effort: entry.effort, requested: entry.model, mode: modeOf(out.session) });
-          if (entry.agentKey === 'plain' && (tools > deps.tools.length || mcp > 0)) turnLog.warn('claude_not_isolated', { model: init.model, tools, mcp_servers: mcp });
+          if (entry.agentKey === 'plain' && (tools > deps.tools.length + (deps.canvas === undefined ? 0 : 6) || mcp > (deps.canvas === undefined ? 0 : 1))) turnLog.warn('claude_not_isolated', { model: init.model, tools, mcp_servers: mcp });
           continue;
         }
         const ask = permissionAskOf(event);
@@ -449,7 +505,7 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
             notTools.add(use.id);
             continue;
           }
-          if (out.noTools === true) {
+          if (out.noTools === true && !isCanvasTool(use.tool)) {
             // A look at the draft uses no tool, whatever the process was started with (a web tool the CLI allows itself is never asked about): it is stopped.
             turnLog.warn('review_used_tool', { tool: use.tool });
             timedOut = 'a look at the draft tried to use a tool';
@@ -457,6 +513,10 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
             break;
           }
           toolsChanged = true;
+          // SA4. The ordering barrier. The model's call reaches the canvas server over HTTP while the text before it is still on its way through
+          // here, so a line it has written and not ended is ended now, and the call is announced after every line before it has been taken:
+          // the handler waits for that announcement (250 ms at most) before it reads the stage.
+          if (isCanvasTool(use.tool)) yield '\n';
           if (splitTool(use.tool).service === 'chrome') chromeUses.set(use.id, use);
           const summary = summaryOf(use);
           running.set(use.id, { tool: use.tool, summary, at: Date.now() });
@@ -597,6 +657,7 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
         sight: request.sight,
         problems: request.problems,
         picture: request.picture !== null,
+        ...(deps.canvas === undefined ? {} : { canvas: true }),
         pass: request.pass,
         ...(request.form === undefined ? {} : { form: request.form }),
         ...(request.placed === undefined ? {} : { placed: request.placed }),
@@ -703,7 +764,7 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
             log.warn('claude_kill_settle_failed', { session: entry.session, error });
           }
         }
-        void entry.proc.stop().catch(() => undefined);
+        void entry.proc.stop().catch(() => undefined).finally(entry.forgetCanvas);
       }
       log.warn('claude_killed_all', { processes: all.length, browserTabs });
       return { processes: all.length, browserTabs };
@@ -713,7 +774,7 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
       const all = [...pool.values()];
       pool.clear();
       for (const entry of all) for (const held of [...entry.held.values()]) held.settle(false, 'turn');
-      await Promise.all(all.map((entry) => entry.proc.stop().catch(() => undefined)));
+      await Promise.all(all.map((entry) => entry.proc.stop().catch(() => undefined).finally(entry.forgetCanvas)));
       if (scratch !== null) rmSync(scratch, { recursive: true, force: true });
     },
   };

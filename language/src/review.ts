@@ -122,6 +122,8 @@ export interface ReviewBriefInput {
   readonly problems: readonly LineProblem[];
   /** a picture of the draft is attached to the message */
   readonly picture: boolean;
+  /** SA4. The canvas tools are on: with no picture attached, `canvas_look` can ask the page for one, and they are the only tools there are */
+  readonly canvas?: boolean;
   /** the pass about to be written: 2 for the first look */
   readonly pass: number;
   /** v2.1. `fix` (the default) repairs what did not land; `refine` adds to a picture that did ("keep making it better") */
@@ -139,11 +141,16 @@ export interface ReviewBriefInput {
 /** The most boxes a brief lists: the largest things first. Past this a brain reads the picture. */
 const PLACED_IN_BRIEF = 24;
 
+/** One placed thing as the brief prints it, and as `canvas_stage` prints it: the one printer for a box. */
+export function placedLine(item: PlacedBox): string {
+  return `${item.id} (${item.kind}${item.parent === null ? '' : ` in ${item.parent}`}): ${Math.round(item.box.w)}x${Math.round(item.box.h)} at ${Math.round(item.box.x)},${Math.round(item.box.y)}`;
+}
+
 function placedRows(placed: readonly PlacedBox[]): string[] {
   return [...placed]
     .sort((a, b) => b.box.w * b.box.h - a.box.w * a.box.h)
     .slice(0, PLACED_IN_BRIEF)
-    .map((item) => `  ${item.id} (${item.kind}${item.parent === null ? '' : ` in ${item.parent}`}): ${Math.round(item.box.w)}x${Math.round(item.box.h)} at ${Math.round(item.box.x)},${Math.round(item.box.y)}`);
+    .map((item) => `  ${placedLine(item)}`);
 }
 
 /**
@@ -162,7 +169,7 @@ export function buildReviewBrief(input: ReviewBriefInput): string {
   const rows: string[] = [];
   if (input.sight !== null) for (const line of describeSight(input.sight)) rows.push(`  ${line}`);
   for (const problem of input.problems) rows.push(`  ${problem.kind === 'rejected' ? 'REJECTED' : 'REPAIRED'} \`${problem.raw}\`: ${problem.why}`);
-  const seen = input.picture ? 'The picture attached is the stage as the lines you have written will leave it.' : 'No picture is attached and none can be fetched: use no tool, go by the measurements.';
+  const seen = input.picture ? 'The picture attached is the stage as the lines you have written will leave it.' : (input.canvas === true ? 'No picture is attached. The canvas tools are the only tools you have, and only canvas_look fetches a picture; otherwise go by the measurements.' : 'No picture is attached and none can be fetched: use no tool, go by the measurements.');
   const where = input.placed === undefined || input.placed.length === 0 ? null : `WHERE THINGS ARE (id: size at top-left corner, canvas units):\n${placedRows(input.placed).join('\n')}`;
   const critic = input.critic ?? null;
   if (form === 'refine') {

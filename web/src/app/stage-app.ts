@@ -704,6 +704,11 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
         painter.tryCandidate(event.turn, event.pass, lines);
         return;
       }
+      case 'want':
+        // SA4. The brain asked for a picture of the stage as it stands: answered once, for the turn that is open, by an upload.
+        if (event.turn !== currentTurn || event.what !== 'picture' || !firstTime(`want:${event.request}`)) return;
+        painter.lookNow(event.turn, event.request);
+        return;
       case 'critic':
         if (firstTime(`critic:${event.turn}`)) lastCritic = event.finding;
         return;

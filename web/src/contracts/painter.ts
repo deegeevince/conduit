@@ -58,7 +58,9 @@ export type PainterUpload =
   /** the sketch a picture element stands on, for the image model */
   | { readonly kind: 'sketch'; readonly key: string; readonly blob: Blob }
   /** the stage as pass `pass` of an open turn will leave it, for the brain to look at before the turn ends */
-  | { readonly kind: 'draft'; readonly turn: string; readonly pass: number; readonly blob: Blob };
+  | { readonly kind: 'draft'; readonly turn: string; readonly pass: number; readonly blob: Blob }
+  /** SA4. The stage as it stands, for the brain that asked for a picture with `canvas_look` (a `want` event) */
+  | { readonly kind: 'look'; readonly turn: string; readonly request: string; readonly blob: Blob };
 
 /**
  * A control as the app sees it: enough to lay a real, invisible form control
@@ -343,6 +345,12 @@ export interface Painter {
    * report's sight as they would be live. A candidate for a turn that is not open is dropped.
    */
   tryCandidate(turn: string, pass: number, lines: readonly Line[]): void;
+
+  /**
+   * SA4 (a `want` event). Takes a picture of the open turn as the lines so far will leave it and emits it as an `upload` of kind `look` for
+   * `request`. Does nothing, and says nothing, when the turn is not the open one, is settling, or the renderer cannot capture.
+   */
+  lookNow(turn: string, request: string): void;
 
   /**
    * v2.1, decks. Steps a deck to a slide: a number from 1, or the one after or before the slide on stage. The stage plays that slide

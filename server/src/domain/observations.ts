@@ -120,7 +120,7 @@ export interface Briefed {
 }
 
 /** Builds the digest for the turn about to open, and moves the session's marks on: the brain has now been told. */
-export function briefEyes(s: Session): Briefed {
+export function briefEyes(s: Session, tools = false): Briefed {
   const obs = s.obs;
   const last: TurnMemory | undefined = s.history[s.history.length - 1];
   const facts = last?.sight == null ? null : { sight: last.sight };
@@ -134,8 +134,7 @@ export function briefEyes(s: Session): Briefed {
     clean,
     watch: [],
     ignore: [],
-    // The canvas tools come with SA4; until then there is nothing to point at.
-    tools: false,
+    tools,
   };
   const digest = digestFull(feed, attention);
   const open = openOf(feed);
@@ -144,7 +143,7 @@ export function briefEyes(s: Session): Briefed {
     rev: [obs.wrote, obs.rev],
     digest: { counts: digest.counts, urgent: digest.urgent, lines: digest.lines, tokens: digest.tokens },
     shown: digest.shown,
-    // Nothing can be pulled until the canvas tools exist (SA4).
+    // What the brain pulled with the canvas tools is added when the turn ends (`Conductor.finish`).
     pulled: [],
     watch: [],
     ignore: [],

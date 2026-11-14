@@ -76,6 +76,9 @@ export const PROMPT_BUDGET = { tokens: 9400, charsPerToken: 2.36 } as const;
  * words: this prompt measured 2.36 characters a token through the API
  * (18,643 characters, 7,865 tokens).
  */
+/** SA4. The one line of a brief that says the canvas tools exist. */
+export const CANVAS_LINE = 'CANVAS TOOLS (read-only: canvas_stage, canvas_fits, canvas_where, canvas_observe, canvas_attend, canvas_look): call one only when unsure of a placement or when EYES flags something. Most answers need none; never before you have started writing.';
+
 export function estimateTokens(text: string): number {
   return Math.ceil(text.length / PROMPT_BUDGET.charsPerToken);
 }
@@ -1061,6 +1064,8 @@ export function buildTurnBrief(context: TurnContext, input: TurnInput, form: Bri
     if (landed !== null) parts.push(landed);
   }
   if (context.eyes !== undefined && context.eyes !== null) parts.push(context.eyes);
+  // SA4. One line, and only where it may be wanted: a cold start, or an EYES block that flags something.
+  if (context.canvas === true && (form === 'full' || /urgent|blocking/.test(context.eyes ?? ''))) parts.push(CANVAS_LINE);
 
   const taps = heard.flatMap((record) => (record.event.type === 'tap' && !record.event.choice ? [record.event] : []));
   if (taps.length > 0) parts.push(`THE USER POINTED AT: ${taps.map((tap) => `${tap.id} ("${tap.text}")`).join(', ')}`);

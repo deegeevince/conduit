@@ -116,6 +116,8 @@ export interface WarmSettings {
   readonly tools: readonly string[];
   /** v2.1. Agent mode: the process has the session's tools and asks this process before every call that matters; null is the plain brain */
   readonly agent?: AgentRun | null;
+  /** SA4. The 0600 file that configures the canvas MCP server for this process; absent: the process has no canvas tools */
+  readonly canvas?: string;
 }
 
 /** Why a process stopped being usable. */
@@ -380,7 +382,7 @@ export function warmArguments(settings: WarmSettings): string[] {
     '--model', settings.model,
     '--effort', settings.effort,
     '--system-prompt', settings.systemPrompt,
-    ...(settings.agent == null ? toolArguments(settings.tools) : agentArguments(settings.agent)),
+    ...(settings.agent == null ? toolArguments(settings.tools, settings.canvas) : agentArguments(settings.agent, settings.canvas)),
     '--strict-mcp-config',
     ...(settings.agent == null ? ['--no-chrome'] : []),
     '--setting-sources', '',
