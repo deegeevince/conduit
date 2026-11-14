@@ -5,6 +5,7 @@
 import { isInFlow, outlineOf, SIGHT_ITEMS } from '@conduit/language';
 import type { CanvasBox, ElementSpan, PlacedBox, Schedule, Sight, SightItem, SightNote, StageBase } from '@conduit/language';
 import type { ElementFrame, FigureFrame, ShapeFrame } from '../contracts/frame';
+import type { LeaderView } from '../contracts/painter';
 import type { LookSpec } from '../contracts/look';
 import { planeScale } from '../contracts/space';
 import { canvasToStage, stageToCanvas } from './canvas';
@@ -713,6 +714,77 @@ export function placedOf(timeline: Timeline, schedule: Schedule, playhead: numbe
       const routed = { ...entry, route: route.points.map((p) => ({ x: Math.round(p.x * 10) / 10, y: Math.round(p.y * 10) / 10 })) };
       out.push(routed);
     }
+  }
+  return out;
+}
+
+
+/** The distance from a point to the nearest of some polylines. */
+function nearestOn(p: Pt, lines: readonly (readonly Pt[])[]): number {
+  let best = Number.POSITIVE_INFINITY;
+  for (const line of lines) {
+    for (let i = 0; i + 1 < line.length; i += 1) {
+      const a = line[i] as Pt;
+      const b = line[i + 1] as Pt;
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const len2 = dx * dx + dy * dy;
+      const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2));
+      best = Math.min(best, Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy)));
+    }
+  }
+  return best;
+}
+
+/** Every leader on stage as it rests at `playhead`, with its end measured against the outlines of the parts that have labels. */
+export function leadersOf(timeline: Timeline, schedule: Schedule, playhead: number): LeaderView[] {
+  const viewport = timeline.viewport;
+  const restAt = Math.max(playhead, schedule.end) + 0.5;
+  const frame = timeline.frameAt({ time: restAt, ambient: restAt, wallTime: 0, clock: 'idle' });
+  const byKey = new Map(schedule.elements.map((element) => [element.key, element]));
+  const outlines = new Map<string, Pt[][]>();
+  const outlineOfId = (id: string): Pt[][] => {
+    const have = outlines.get(id);
+    if (have !== undefined) return have;
+    const out: Pt[][] = [];
+    for (const figure of frame.figures) {
+      if (figure.kind !== 'shape' || figure.key.endsWith('/leader') || figure.opacity < 0.05) continue;
+      const owner = byKey.get(figure.key.split('/')[0] ?? figure.key);
+      if (owner === undefined || owner.id !== id || owner.kind !== 'shape') continue;
+      const ps = planeScale(figure.layer, viewport);
+      const t = figure.transform;
+      for (const line of figure.outline) {
+        const points = line.points.map((p) => ({ x: (t.a * p.x + t.c * p.y + t.e) * ps, y: (t.b * p.x + t.d * p.y + t.f) * ps }));
+        out.push(line.closed ? [...points, ...points.slice(0, 1)] : points);
+      }
+    }
+    outlines.set(id, out);
+    return out;
+  };
+  const labelled = new Set<string>();
+  for (const element of schedule.elements) if (element.kind === 'text' && element.style.near !== null && frame.elements.some((item) => item.key === element.key)) labelled.add(element.style.near.id);
+  const out: LeaderView[] = [];
+  for (const figure of frame.figures) {
+    if (figure.kind !== 'shape' || !figure.key.endsWith('/leader') || figure.opacity < 0.3) continue;
+    const label = byKey.get(figure.key.slice(0, -'/leader'.length));
+    const target = label?.style.near;
+    const pts = figure.outline[0]?.points;
+    if (label === undefined || target === null || target === undefined || pts === undefined || pts.length < 2) continue;
+    const ps = planeScale(figure.layer, viewport);
+    const last = pts[pts.length - 1] as Pt;
+    const end = { x: last.x * ps, y: last.y * ps };
+    const own = outlineOfId(target.id);
+    if (own.length === 0) continue;
+    const mine = nearestOn(end, own);
+    let nearer: LeaderView['nearer'] = null;
+    for (const id of labelled) {
+      if (id === target.id) continue;
+      const lines = outlineOfId(id);
+      if (lines.length === 0) continue;
+      const d = nearestOn(end, lines);
+      if (d < mine - 0.5 && (nearer === null || d < nearer.distance)) nearer = { id, distance: Math.round(d * 10) / 10 };
+    }
+    out.push({ label: label.id, part: target.id, end: { x: Math.round((end.x + viewport.width / 2) * 10) / 10, y: Math.round((end.y + viewport.height / 2) * 10) / 10 }, distance: Math.round(mine * 10) / 10, nearer });
   }
   return out;
 }
