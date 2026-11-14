@@ -19,6 +19,7 @@ export const SIGHT_NOTE = {
   crossed: 'a drawn line runs through its words',
   spills: 'it spills out past the edge of a bigger filled shape that mostly holds it: pull it inside, or make it smaller',
   refit: 'it was written inside a shape but did not fit, so it was shrunk toward its centre until it did',
+  'wrong-part': 'its leader line ends on, or nearer to, a different part than the one it names',
   tangled: 'its leader line crosses another label\'s leader line',
   crowded: 'there were too many parts for the room, so they came out small: give the structure the whole scene, or split it in two',
   faint: 'it is hard to read against what is behind it',

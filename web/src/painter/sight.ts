@@ -33,6 +33,8 @@ const SPILL_CLEAN = 0.97;
 /** the container is at least this many times the area of what spills out of it, or the two are just overlapping shapes */
 const SPILL_CONTAINER = 1.5;
 const SPILL_GRID = 28;
+/** `wrong-part`: a leader's end is this far (screen units) from the part it names, or farther, and it is not on it */
+const WRONG_PART_TOLERANCE = 6;
 /** Text below this share of the size its size word asks for has been "shrunk". */
 const SHRUNK_BELOW = 0.85;
 /** More lines than this outside `layout=page` is "wrapped". */
@@ -570,6 +572,61 @@ export function sightOf(timeline: Timeline, schedule: Schedule, base: StageBase,
           if (entry !== undefined && entry.resting && !entry.notes.includes('tangled')) entry.notes.push('tangled');
         }
       }
+    }
+  }
+
+  // A leader must end on the part its label names, and nearer to it than to any other part that has a label: else the label points at the wrong thing.
+  {
+    const outlineOfId = (id: string): Pt[][] => {
+      const out: Pt[][] = [];
+      for (const entry of entries) {
+        if (!entry.resting || entry.element.id !== id || entry.element.kind !== 'shape') continue;
+        for (const figure of figureFrames.get(entry.element.key) ?? []) {
+          if (figure.kind !== 'shape') continue;
+          const ps = planeScale(figure.layer, viewport);
+          const t = figure.transform;
+          for (const line of figure.outline) {
+            const points = line.points.map((p) => ({ x: (t.a * p.x + t.c * p.y + t.e) * ps, y: (t.b * p.x + t.d * p.y + t.f) * ps }));
+            out.push(line.closed ? [...points, ...points.slice(0, 1)] : points);
+          }
+        }
+      }
+      return out;
+    };
+    const near = (p: Pt, lines: readonly (readonly Pt[])[]): number => {
+      let best = Number.POSITIVE_INFINITY;
+      for (const line of lines) {
+        for (let i = 0; i + 1 < line.length; i += 1) {
+          const a = line[i] as Pt;
+          const b = line[i + 1] as Pt;
+          const dx = b.x - a.x;
+          const dy = b.y - a.y;
+          const len2 = dx * dx + dy * dy;
+          const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2));
+          best = Math.min(best, Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy)));
+        }
+      }
+      return best;
+    };
+    const called = new Map<string, Pt[][]>();
+    for (const entry of entries) {
+      const target = entry.element.kind === 'text' && entry.resting ? entry.element.style.near : null;
+      if (target !== null && !called.has(target.id)) called.set(target.id, outlineOfId(target.id));
+    }
+    for (const figure of frame.figures) {
+      if (figure.kind !== 'shape' || !figure.key.endsWith('/leader') || figure.opacity < 0.3) continue;
+      const entry = entries.find((candidate) => candidate.element.key === figure.key.slice(0, -'/leader'.length));
+      const wanted = entry?.element.style.near;
+      const own = wanted === null || wanted === undefined ? undefined : called.get(wanted.id);
+      const pts = figure.outline[0]?.points;
+      if (entry === undefined || own === undefined || own.length === 0 || pts === undefined || pts.length < 2) continue;
+      const ps = planeScale(figure.layer, viewport);
+      const last = pts[pts.length - 1] as Pt;
+      const end = { x: last.x * ps, y: last.y * ps };
+      const mine = near(end, own);
+      let wrong = mine > WRONG_PART_TOLERANCE;
+      for (const [id, lines] of called) if (id !== wanted?.id && lines.length > 0 && near(end, lines) < mine - 0.5) wrong = true;
+      if (wrong && !entry.notes.includes('wrong-part')) entry.notes.push('wrong-part');
     }
   }
 
