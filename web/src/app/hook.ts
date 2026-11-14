@@ -28,8 +28,11 @@ export function createHook(app: Omit<StageApp, 'hook'>, ready: Promise<void>): S
       painter.tapElement(element.key);
     },
     charts: () => painter.snapshot().charts,
-    // STUB (PLAN-v2.md, package K): the app owns the chart surfaces and asks their handles.
-    chart: (id) => Promise.reject(new Error(`No chart with the id "${id}" can be worked yet.`)),
+    chart(id, action) {
+      const view = painter.snapshot().charts.find((candidate) => candidate.id === id);
+      if (view === undefined || app.charts === null) return Promise.reject(new Error(`No chart with the id "${id}" is on stage.`));
+      return app.charts.act(view.key, action);
+    },
     controls: () => painter.snapshot().controls,
     control(id, value) {
       if (!painter.snapshot().controls.some((candidate) => candidate.id === id)) throw new Error(`No control with the id "${id}" is on stage.`);

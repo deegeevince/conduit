@@ -21,10 +21,16 @@ export interface HttpLink extends StageLink {
   onDropped(listener: (count: number) => void): () => void;
   /** a sentence for the HUD when something best-effort, like an upload, was given up on */
   onNote(listener: (note: string) => void): () => void;
+  /**
+   * Whether the viewer wants look and fix. Off, every request carries `x-conduit-review: off` so the server does not wait for
+   * a draft report or look at one. (Request to the server's package: honour it per turn.)
+   */
+  setReview(on: boolean): void;
 }
 
 export function createHttpLink(): HttpLink {
   let status: LinkStatus = 'connecting';
+  let reviewHeader: Record<string, string> = {};
   let session: string | null = null;
   let source: EventSource | null = null;
   let retryTimer: ReturnType<typeof setTimeout> | undefined;
@@ -266,7 +272,7 @@ export function createHttpLink(): HttpLink {
       try {
         response = await fetch(API.turns(session), {
           method: 'POST',
-          headers: { 'content-type': 'application/json' },
+          headers: { 'content-type': 'application/json', ...reviewHeader },
           body: JSON.stringify((events.length > 0 ? { input, events } : { input }) satisfies StartTurnRequest),
         });
       } catch (cause) {
@@ -289,6 +295,10 @@ export function createHttpLink(): HttpLink {
     },
 
     flush,
+
+    setReview(on) {
+      reviewHeader = on ? {} : { 'x-conduit-review': 'off' };
+    },
 
     onDropped(listener) {
       droppedListeners.add(listener);

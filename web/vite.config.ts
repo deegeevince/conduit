@@ -1,7 +1,10 @@
+import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 
 const page = (name: string): string => fileURLToPath(new URL(name, import.meta.url));
+/** pages other packages add (the chart bench, the taste page) join the build once they exist */
+const optional = (key: string, name: string): Record<string, string> => (existsSync(page(name)) ? { [key]: page(name) } : {});
 
 // Lets parallel work run its own dev server and API without touching 4300/4301.
 const devPort = Number(process.env['VITE_PORT'] ?? '4301');
@@ -31,6 +34,8 @@ export default defineConfig({
         explore: page('explore.html'),
         'bench-painter': page('bench-painter.html'),
         'bench-renderer': page('bench-renderer.html'),
+        ...optional('bench-chart', 'bench-chart.html'),
+        ...optional('taste', 'taste.html'),
       },
     },
   },

@@ -173,13 +173,18 @@ export function createAccessLayer(stage: HTMLElement, handlers: AccessHandlers):
         field.addEventListener('input', () => {
           if (guard()) handlers.setControl(latest.id, field.value, false);
         });
-        field.addEventListener('change', () => {
-          if (guard()) handlers.setControl(latest.id, field.value, true);
-        });
-        field.addEventListener('keydown', (event) => {
-          if (event.key !== 'Enter' || event.isComposing || !guard()) return;
-          event.preventDefault();
+        // Enter and leaving the field both commit; the same words are never committed twice running.
+        let committed = typeof view.value === 'string' ? view.value : '';
+        const commit = (): void => {
+          if (!guard() || field.value === committed) return;
+          committed = field.value;
           handlers.setControl(latest.id, field.value, true);
+        };
+        field.addEventListener('change', commit);
+        field.addEventListener('keydown', (event) => {
+          if (event.key !== 'Enter' || event.isComposing) return;
+          event.preventDefault();
+          commit();
         });
         holder.append(field);
         focusable = () => field;
@@ -505,6 +510,7 @@ export function createAccessLayer(stage: HTMLElement, handlers: AccessHandlers):
         summary.id = `${base}-chart-${counter}-${regions.size}-${frame.key.replace(/[^\w-]/g, '_')}`;
         holder.setAttribute('aria-describedby', summary.id);
         const table = make('table', 'visually-hidden');
+        table.setAttribute('aria-label', 'Data');
         const caption = document.createElement('caption');
         const reading = make('p', 'visually-hidden');
         reading.setAttribute('role', 'status');

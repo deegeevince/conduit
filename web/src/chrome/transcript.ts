@@ -170,6 +170,18 @@ export function mountTranscript(host: HTMLElement, painter: Painter, handlers: {
     if (atEnd && open) body.scrollTop = body.scrollHeight;
   };
 
+  let partsFresh: string[] = [];
+  let partsTimer: ReturnType<typeof setTimeout> | undefined;
+  const flushParts = (): void => {
+    clearTimeout(partsTimer);
+    partsTimer = undefined;
+    if (partsFresh.length === 0) return;
+    const shown = partsFresh.slice(0, NAMES_SHOWN);
+    const more = partsFresh.length - shown.length;
+    partsFresh = [];
+    announce(`Parts: ${say(shown, 0)}${more > 0 ? ` and ${more} more` : ''}.`);
+  };
+
   /** Speaks what has been drawn since the last time, as one sentence, once the drawing pauses. */
   const flushDrawn = (): void => {
     clearTimeout(drawnTimer);
@@ -249,6 +261,41 @@ export function mountTranscript(host: HTMLElement, painter: Painter, handlers: {
           entries.set(event.key, { paragraph, text, button: null });
           stickToEnd(() => body.append(paragraph));
           announce(`Weather: ${weather}`);
+          trim();
+          return;
+        }
+        // A structure, its parts and a control are told in the painter's own words (`flow, 5 nodes`, `node: Pump`, `slider 0 to 10`), not as
+        // unnamed marks: what a diagram or an instrument holds is what a reader needs.
+        if (!event.tappable && (kind === 'structure' || kind === 'node' || kind === 'link' || kind === 'control')) {
+          const word = kind === 'structure' ? 'Diagram' : kind === 'control' ? 'Control' : kind === 'node' ? 'Part' : 'Link';
+          const cleaned = event.text.replace(/^(node|link|control): /, '');
+          flushDrawn();
+          drawing = null;
+          const item = document.createElement('li');
+          item.className = 'transcript__thing';
+          item.dataset['key'] = event.key;
+          const text = document.createElement('span');
+          text.textContent = `${word}: ${cleaned}`;
+          item.append(text);
+          entries.set(event.key, { paragraph: item, text, button: null });
+          let list = body.lastElementChild;
+          stickToEnd(() => {
+            if (!(list instanceof HTMLUListElement) || !list.classList.contains('transcript__things')) {
+              list = document.createElement('ul');
+              list.className = 'transcript__things';
+              list.setAttribute('aria-label', 'Drawn');
+              body.append(list);
+            }
+            list.append(item);
+          });
+          // parts are spoken together, once the diagram pauses; a structure or a control is told when it appears
+          if (kind === 'node' || kind === 'link') {
+            partsFresh.push(cleaned);
+            clearTimeout(partsTimer);
+            partsTimer = setTimeout(flushParts, DRAWN_QUIET_MS);
+          } else {
+            announce(`${word}: ${cleaned}`);
+          }
           trim();
           return;
         }
@@ -361,12 +408,29 @@ export function mountTranscript(host: HTMLElement, painter: Painter, handlers: {
   };
 
   const off = painter.on('transcript', onEvent);
+  // What the viewer set a control to is part of the record, as a line and to a screen reader. A press is the turn it opens.
+  const offBack = painter.on('back', (event) => {
+    if (event.type !== 'control' || event.send) return;
+    const view = painter.snapshot().controls.find((candidate) => candidate.id === event.id);
+    if (view?.control === 'button') return;
+    const paragraph = document.createElement('p');
+    paragraph.className = 'transcript__line';
+    const text = document.createElement('span');
+    const label = view === undefined || view.label === '' ? event.id : view.label;
+    text.textContent = `Set ${label} to ${event.text}.`;
+    paragraph.append(text);
+    stickToEnd(() => body.append(paragraph));
+    announce(text.textContent);
+    trim();
+  });
 
   return {
     setOpen,
     revealTurn,
     dispose() {
       off();
+      offBack();
+      clearTimeout(partsTimer);
       clearTimeout(drawnTimer);
       clearInterval(watcher);
       observer?.disconnect();

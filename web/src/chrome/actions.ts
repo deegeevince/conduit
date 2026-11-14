@@ -74,6 +74,7 @@ export function mountActions(host: HTMLElement, app: StageApp, transcript: Trans
   group.className = 'actions';
   group.innerHTML = `
     <button class="action action--show" type="button" title="Show all (or press . while the stage has focus)" hidden>Show all</button>
+    <button class="action action--review" type="button" aria-pressed="true" title="After the first draft, the drawing is checked and fixed" hidden>Check the drawing: on</button>
     <div class="action-menu">
       <button class="action action--take" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="${menuId}">Take away</button>
       <div class="action-menu__list" id="${menuId}" role="menu" aria-label="Take away" hidden></div>
@@ -83,7 +84,31 @@ export function mountActions(host: HTMLElement, app: StageApp, transcript: Trans
   const showButton = group.querySelector<HTMLButtonElement>('.action--show');
   const takeButton = group.querySelector<HTMLButtonElement>('.action--take');
   const menu = group.querySelector<HTMLElement>('.action-menu__list');
-  if (showButton === null || takeButton === null || menu === null) throw new Error('The actions could not be built.');
+  const reviewButton = group.querySelector<HTMLButtonElement>('.action--review');
+  if (showButton === null || takeButton === null || menu === null || reviewButton === null) throw new Error('The actions could not be built.');
+
+  // Look and fix: offered only when the server can do it; the choice is remembered for the browser.
+  const showReview = (): void => {
+    reviewButton.hidden = !app.review.available;
+    reviewButton.setAttribute('aria-pressed', String(app.review.on));
+    reviewButton.textContent = `Check the drawing: ${app.review.on ? 'on' : 'off'}`;
+  };
+  reviewButton.addEventListener('click', () => {
+    app.review.set(!app.review.on);
+    showReview();
+  });
+
+  // The charting engine's licence asks for its name and a link on the page.
+  let credit: HTMLAnchorElement | null = null;
+  if (app.attribution !== null) {
+    credit = document.createElement('a');
+    credit.className = 'action-credit';
+    credit.href = app.attribution.href;
+    credit.target = '_blank';
+    credit.rel = 'noopener noreferrer';
+    credit.textContent = app.attribution.text;
+    group.append(credit);
+  }
 
   let formats: Formats = NO_FORMATS;
   let formatsKnown = false;
@@ -99,6 +124,7 @@ export function mountActions(host: HTMLElement, app: StageApp, transcript: Trans
   };
 
   const refresh = (): void => {
+    showReview();
     const status = app.status();
     const snap = app.painter.snapshot();
     showable = status.busy;
@@ -474,6 +500,7 @@ export function mountActions(host: HTMLElement, app: StageApp, transcript: Trans
       playDialog.remove();
       film.dialog.remove();
       frames.dialog.remove();
+      credit?.remove();
       group.remove();
     },
   };
