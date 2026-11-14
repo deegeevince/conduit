@@ -697,6 +697,7 @@ export class Player {
           h('button', { type: 'button', class: 'btn soft hint-btn', 'data-act': 'hint', onclick: () => {
             this.apply({ kind: 'held', node: node.id, key, value: asked + 1 });
             this.render();
+            requestAnimationFrame(() => this.root.querySelector('.nudge.hints')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
           } }, asked === 0 ? 'Help' : 'More'),
         );
       } else if (asked > 0) {

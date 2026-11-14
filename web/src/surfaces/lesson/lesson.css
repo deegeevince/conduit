@@ -336,3 +336,23 @@ body { font-size: calc(20px * var(--ts, 1)); }
   .ctx.pinned .crop:not(.zoom), .ctx.pinned.docked .crop:not(.zoom) { display: none; }
 }
 @media (max-width: 899px) { .ctx.pinned .more, .ctx.pinned.long .more { display: none; } }
+
+/* feedback is never left under the dock or below the fold: when it is scrolled into view it stops clear of the sticky Map bar */
+.nudge { scroll-margin: 88px 0 140px; }
+
+/* a desk (a mouse, a wide screen; not a tablet, which keeps its own layout): the question card and the answer space side by side. The question and its crop
+   stand on the left and stay in view; the paper, Check and what the check says are on the right, so none of it needs a scroll to be reached. */
+@media (min-width: 1200px) and (hover: hover) and (pointer: fine) {
+  .page:has(> .qwrap):has(> main.work) { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); grid-template-rows: auto minmax(0, 1fr) auto; column-gap: 32px; align-items: start; }
+  .page:has(> .qwrap):has(> main.work) > .topbar { grid-column: 1 / -1; grid-row: 1; }
+  .page:has(> .qwrap):has(> main.work) > .qwrap { display: block; grid-column: 1; grid-row: 2; position: sticky; top: 0; z-index: 4; }
+  .page:has(> .qwrap):has(> main.work) > main.work { grid-column: 2; grid-row: 2; padding-bottom: 24px; }
+  .page:has(> .qwrap):has(> main.work) > .dock { grid-column: 1 / -1; grid-row: 3; }
+  /* the question's crop stands under its words in the narrower column, as large as the column allows */
+  .qwrap .ctx.with-crop:not(.pinned) { grid-template-columns: minmax(0, 1fr); }
+  .qwrap .ctx.with-crop:not(.pinned) > * { grid-column: 1; }
+  .qwrap .ctx.with-crop:not(.pinned) .crop { grid-column: 1; grid-row: auto; justify-self: stretch; width: 100%; max-height: min(34vh, 320px); object-position: top left; }
+  /* a figure and its steps share the one column now: stacked, not side by side */
+  .page:has(> .qwrap):has(> main.work) .run.has-fig, .page:has(> .qwrap):has(> main.work) .run.has-fig:has(.grid-widget) { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .paper { height: clamp(140px, 26vh, 280px); }
+}
