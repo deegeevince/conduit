@@ -12,9 +12,9 @@
 // - `look` never runs on the turn's path. The conductor calls it after `end` has been sent and the resting snapshot has arrived, and
 //   does not wait for it. A critic that is slow, fails or is switched off changes nothing a viewer sees.
 // - One look at a time per session; a newer turn's look replaces an older one that has not started. At most `CriticPolicy.perHour`.
-// - `compare` is the only call on a turn's path, and only inside look-and-fix or a refine pass, under `FixPolicy.compareMs`: it is
-//   shown two pictures in one message, in an order it is not told, and says which is better. Past the deadline it resolves null and
-//   the pure rules decide alone.
+// - `compare` is never waited for. Look-and-fix shows a fix on the two pure rules and starts the comparison in the background, under
+//   `FixPolicy.compareMs`: it is shown two pictures in one message, in an order it is not told, and says which is better; the answer
+//   is logged (`review.compare`). Past the deadline it resolves null and the timeout is logged. It counts against `perHour`.
 // - Never throws. A finding it could not make is null, and the reason is logged once.
 // - What it is shown is the picture and the user's words. Never a document, a pasted table, an upload, or anything a tool returned.
 
@@ -32,6 +32,17 @@ export interface CriticPolicy {
   readonly lookMs: number;
   /** below this coherence a finding is queued for the loop as evidence (`loop/queue/`) */
   readonly queueBelow: number;
+}
+
+/**
+ * Whether a finding is evidence worth keeping for the loop: a low score AND a problem that blocks, or at least two that hurt. A critic that
+ * queued five turns of six, one of them on a fact it had wrong about itself, taught the loop noise (v2.1 review, P1-9).
+ */
+export function worthQueuing(finding: Pick<CriticFinding, 'coherence' | 'problems'>, queueBelow: number): boolean {
+  if (finding.coherence >= queueBelow) return false;
+  const blocks = finding.problems.filter((problem) => problem.weight === 'blocks').length;
+  const hurts = finding.problems.filter((problem) => problem.weight === 'hurts').length;
+  return blocks >= 1 || hurts >= 2;
 }
 
 export const CRITIC_POLICY: CriticPolicy = { enabled: true, model: 'sonnet', effort: 'low', perHour: 60, lookMs: 45_000, queueBelow: 4 };

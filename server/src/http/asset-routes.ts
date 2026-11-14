@@ -62,6 +62,8 @@ function jpegSize(bytes: Uint8Array): { width: number; height: number } | null {
  *   ASSET_LIMITS.uploadBytes. 204. The painter's rendering of the sketch a
  *   picture element stands on; handed to the image model if it arrives within
  *   ASSET_LIMITS.sketchWaitMs of the `paint` line, otherwise dropped.
+ * - `POST API.capture(session, turn)`: body `video/webm`, at most ASSET_LIMITS.filmBytes. 204. A film of a turn made in the page
+ *   (`/capture`), saved beside the session log for the steward; 409 when the server keeps no log folder.
  * - `POST API.snapshot(session, turn)`: body `image/jpeg`, same limit. 204.
  *   Kept for the next brief and saved beside the session log.
  * - `GET  API.snapshot(session, turn)`: that picture back; 404 if there is none.
@@ -109,6 +111,19 @@ export function registerAssetRoutes(app: Hono, deps: HttpDeps): void {
     const size = jpegSize(bytes);
     if (size === null) throw errors.badRequest('the body is not a JPEG');
     conductor.receiveSnapshot(session, turn, { mime: 'image/jpeg', bytes, ...size });
+    return c.body(null, 204);
+  });
+
+  app.post(API.capture(':session', ':turn'), async (c) => {
+    const session = param(c, 'session');
+    const turn = param(c, 'turn');
+    conductor.assertSession(session);
+    if (mediaType(c) !== 'video/webm') throw errors.unsupportedMedia('video/webm');
+    const bytes = new Uint8Array(await c.req.arrayBuffer());
+    if (bytes.byteLength > ASSET_LIMITS.filmBytes) throw errors.tooLarge(ASSET_LIMITS.filmBytes);
+    // A WebM (Matroska) file begins with the EBML header.
+    if (bytes.byteLength < 4 || bytes[0] !== 0x1a || bytes[1] !== 0x45 || bytes[2] !== 0xdf || bytes[3] !== 0xa3) throw errors.badRequest('the body is not a WebM film');
+    conductor.receiveFilm(session, turn, bytes);
     return c.body(null, 204);
   });
 

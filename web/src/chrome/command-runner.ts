@@ -1,8 +1,8 @@
 // What each slash command does. A command is the app's, never the brain's: it never becomes a turn, and a page it prints on
 // the stage (`/help`, `/status`, `/tools`) is a turn the app plays for itself and the server never hears of.
 
-import { APP_COMMANDS, LOOK_IDS, REFINE_LIMITS } from '@conduit/language';
-import type { BrainChoice } from '@conduit/language';
+import { commandsFor, LOOK_IDS, NEW_COMMAND_TEXT, REFINE_LIMITS } from '@conduit/language';
+import type { BrainChoice, Services } from '@conduit/language';
 import type { StageApp } from '../app/stage-app';
 import { confirmation, parseCommand, usageOf } from './commands';
 import type { Command } from './commands';
@@ -22,11 +22,11 @@ export function pageSource(title: string, columns: readonly string[], rows: read
   return lines.join('\n');
 }
 
-export function helpPage(): string {
+export function helpPage(services?: Pick<Services, 'refine'>): string {
   return pageSource(
     'What you can type',
     ['Command', 'What it does'],
-    APP_COMMANDS.map((command) => [usageOf(command), command.gist]),
+    commandsFor(services).map((command) => [usageOf(command), command.gist]),
     'Anything that does not start with a slash is a question for the brain.',
   );
 }
@@ -47,7 +47,7 @@ async function perform(app: StageApp, command: Command, onChoice: (choice: Brain
       app.announce(command.message);
       return;
     case 'help':
-      app.showPage(helpPage());
+      app.showPage(helpPage(app.diagnostics().services ?? undefined));
       return;
     case 'show':
     case 'set': {
@@ -75,7 +75,7 @@ async function perform(app: StageApp, command: Command, onChoice: (choice: Brain
     }
     case 'new':
       // Not a page of the app's own: a turn like any other, whose brief carries the changelog, so the brain draws what changed.
-      await app.prompt("What's new in this app? Showcase it.");
+      await app.prompt(NEW_COMMAND_TEXT);
       return;
     case 'status': {
       const status = await app.link.appStatus();

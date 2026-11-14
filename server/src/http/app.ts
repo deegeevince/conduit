@@ -56,12 +56,14 @@ export function createApp(deps: HttpDeps): Hono {
   const ordinary = limited(SERVER_LIMITS.bodyBytes);
   const withReport = limited(SERVER_LIMITS.reportBytes);
   const withPicture = limited(ASSET_LIMITS.uploadBytes);
+  const withFilm = limited(ASSET_LIMITS.filmBytes);
   // Only the two session POSTs that can carry a report get the larger limit, and only the two uploads a picture's.
   const carriesReport = /^\/api\/sessions\/[^/]+\/(?:events|turns)$/;
   const carriesPicture = /^\/api\/sessions\/[^/]+\/(?:sketches\/[^/]+|turns\/[^/]+\/(?:snapshot|drafts\/\d+))$/;
   app.use('/api/*', (c, next) => {
     if (c.req.method !== 'POST') return ordinary(c, next);
     if (carriesReport.test(c.req.path)) return withReport(c, next);
+    if (/^\/api\/sessions\/[^/]+\/turns\/[^/]+\/capture$/.test(c.req.path)) return withFilm(c, next);
     return carriesPicture.test(c.req.path) ? withPicture(c, next) : ordinary(c, next);
   });
 

@@ -56,7 +56,7 @@ import {
   VERB,
 } from './vocabulary';
 import type { LookId, Verb } from './vocabulary';
-import { API, APP_COMMANDS } from './wire';
+import { API, commandsFor } from './wire';
 import type { AppStatus, BrainMode, Capabilities, ScreenFacts, Services, TurnInput } from './wire';
 
 /**
@@ -371,7 +371,8 @@ export function buildSystemPrompt({ capabilities, services }: PromptOptions): st
       ? `- A story, a memory, a mood: stage it. A scene in layers${weather ? ', weather' : ''}${camera ? ', a camera' : ''}, a handful of words as captions.`
       : '- A story or a mood: few lines, one at a time, with silence between them.',
     '- A feeling, a hard truth, a decision: few words, timed. Size, silence' + (camera ? ', one camera move.' : '.'),
-    structures.length > 0 ? '- Code, a command, a config: a `code` block, never `say` lines. Slides, a deck: see "More to say with".' : '',
+    // Taught only what the painter paints: a `code` block that nothing draws loses the code, which `say` lines would have kept.
+    structures.includes('code') ? '- Code, a command, a config: a `code` block, never `say` lines. Slides, a deck: see "More to say with".' : '- Code, a command, a config: one `say` line per line of source, exactly as written.',
     pixels ? `- Asked for pixel art, a drawing${paints ? ', a painting' : ''}, an animation: make exactly that. Never build a picture out of letters; never describe what you could show.` : '',
   ]
     .filter((line) => line !== '')
@@ -493,13 +494,13 @@ ${[
 
   // v2.1: the kinds of answer the painter owns. Each is taught only to a painter that can do it, and in the fewest words.
   const more = [
-    structures.length > 0
+    structures.includes('code')
       ? '`code [id] [lang] [file=name]`, then one `| ` line per source line, exactly as written, indentation kept (a bare `|` is an empty line). The painter frames and highlights it.'
       : '',
     capabilities.decks ? '`deck | title` opens a turn of slides: each `scene` after it is one, four to eight, a heading and three lines or one picture at most.' : '',
     capabilities.uploads ? '`pic <id> from=u1` puts a picture the user gave on stage (the brief names them); label or trace it.' : '',
     services.refine ? 'Asked to iterate or improve it: end with `refine 3`; you are shown the picture and add to it.' : '',
-    '`say href=<url> | site` is a link; cite every web source as one.',
+    capabilities.links ? '`say href=<url> | site` is a link; cite every web source as one.' : '',
     draws ? 'A heart, a leaf, a bird, a person: one smooth closed `path` of curves, never circles and rectangles stuck together.' : '',
     structures.includes('chart') && controls.includes('slider')
       ? 'Numbers a control changes: a `chart` whose cells hold braces (`| 4 | {rate*4}`) beside the slider, never hand-drawn axes.'
@@ -787,14 +788,30 @@ export interface AboutYou {
   readonly news?: string | null;
 }
 
-/** Whether the user's words ask what is new in the app: "what's new", "what changed", "showcase", the `/new` command's own words. */
+/** What the `/new` command sends as the user's words: the one prompt that is always about this app. */
+export const NEW_COMMAND_TEXT = "What's new in this app?";
+
+const NEWS_ASK = /^(?:(?:so|ok|okay|hey|and|tell me)[, ]+)?(?:what(?:'s| is| has) (?:new|changed)|what(?:'s| has) been (?:added|built|changed)|what changed|whats new)(?: (?:here|lately|recently|today|since (?:last time|i was last here)|in (?:this|the) app|in conduit|with (?:you|this app|the app|conduit)))?$/;
+
+/**
+ * Whether the user's words ask what is new in THIS app: the `/new` command's own words, "what's new" with no other subject, or
+ * "what's new here / in this app / in Conduit / with you". "What's new in Python 3.13?" and "showcase the water cycle" are about
+ * something else and never match (the v2.1 review: a changelog in the brief of a question about Python).
+ */
 export function asksWhatsNew(input: TurnInput): boolean {
-  return input.kind === 'prompt' && /\b(what(?:'|’)?s|what is|anything|something)\s+new\b|\bwhat(?:'|’)?s changed\b|\bwhat changed\b|\bshowcase\b|\bwhat(?:'|’)?s been (?:added|built)\b/i.test(input.text);
+  if (input.kind !== 'prompt') return false;
+  const said = input.text
+    .toLowerCase()
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\s?!.]+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return NEWS_ASK.test(said);
 }
 
 /** The newest changelog section as the brief gives it: what the brain is to do with it is said here, once, and never in the system prompt. */
 export function newsText(news: string): string {
-  return `WHAT'S NEW IN THIS APP, newest version first. The user asked for it: showcase each item live, drawn on stage, never listed; one picture a thing, as many scenes as it takes.\n${news}`;
+  return `WHAT'S NEW IN THIS APP, newest version first. SHOW IT, never tell it: this answer is a tour, not a list. One short \`scene\` for each item that can be seen: draw that very thing (a real slider that moves a drawing, a real flow or cycle, a real chart of numbers you do not invent, a real table, a choice), and one caption naming it. No paragraphs, no bullet text, no scene that is only words. Skip an item you cannot draw. Say what is not live yet in one line at the very end. As many scenes as it takes; this overrides the habit of a short answer.\n${news}`;
 }
 
 /** How much of the steward's status a brief carries: the first lines of each list, each cut short. */
@@ -816,18 +833,19 @@ function statusText(status: AppStatus): string {
  * steward's own account of where things stand, so "what's in the backlog?" has an answer. The commands are given in full when the brain
  * remembers nothing (`full`) and by name once it does; the status goes with both, because it changes.
  */
-export function appNoteText(form: BriefForm, status: AppStatus | null | undefined): string {
+export function appNoteText(form: BriefForm, status: AppStatus | null | undefined, services?: Services): string {
+  const commandList = commandsFor(services);
   const commands =
     form === 'full'
-      ? APP_COMMANDS.map((command) => `/${command.name}${command.args === '' ? '' : ` ${command.args}`}: ${command.gist}`).join('; ')
-      : APP_COMMANDS.map((command) => `/${command.name}`).join(' ');
+      ? commandList.map((command) => `/${command.name}${command.args === '' ? '' : ` ${command.args}`}: ${command.gist}`).join('; ')
+      : commandList.map((command) => `/${command.name}`).join(' ');
   return `THIS APP: the user types commands the app handles itself, and you never see them: ${commands}. Point at one when it helps; never invent another. The menu's "Save" holds the copy and export commands.${
     status === null || status === undefined ? ' You are not told where the product stands: say so rather than guess.' : statusText(status)
   }`;
 }
 
 /** A short, true note of the brain's own setup. Per turn, never in the system prompt, so the prompt stays fixed and the cache survives. */
-export function aboutYouText(about: AboutYou): string {
+export function aboutYouText(about: AboutYou, links = false): string {
   const mode = about.mode ?? 'plain';
   const tools = about.tools ?? [];
   const acts =
@@ -836,7 +854,7 @@ export function aboutYouText(about: AboutYou): string {
       : mode === 'steward'
         ? "Steward mode: the owner's own Claude Code session answers this canvas, with its own tools."
         : about.web || tools.length > 0
-          ? 'You can search the web and read pages (WebSearch, WebFetch), read-only. Use search for anything current: prices, news, today, recent facts; never guess a live figure. Search before your first line or between lines, then say the answer and cite each source as a link on stage. Lines of the language are text you write, never tool calls: there is no tool named scene or say. You cannot act on their accounts or files, or run commands (/brain agent would let you, with their yes): say so plainly, then offer what you can do.'
+          ? `You can search the web and read pages (WebSearch, WebFetch), read-only. Use search for anything current: prices, news, today, recent facts; never guess a live figure. Search before your first line or between lines, then say the answer and ${links ? 'cite each source as a link on stage' : 'name each source in a short line'}. Lines of the language are text you write, never tool calls: there is no tool named scene or say. You cannot act on their accounts or files, or run commands (/brain agent would let you, with their yes): say so plainly, then offer what you can do.`
           : 'No tools here: you cannot act on their accounts or files; say so plainly (/brain agent would let you, with their yes), then offer what you can do.';
   return [
     `ABOUT YOU: model ${about.model}, effort ${about.effort}, on the owner's Claude subscription via the Claude Code CLI; no API key.`,
@@ -873,8 +891,8 @@ export function buildTurnBrief(context: TurnContext, input: TurnInput, form: Bri
   if (changed !== null) parts.push(`THE PAINTER CHANGED: ${changed}`);
 
   if (about !== undefined) {
-    parts.push(aboutYouText(about));
-    parts.push(appNoteText(form, about.status));
+    parts.push(aboutYouText(about, context.capabilities.links));
+    parts.push(appNoteText(form, about.status, context.services));
     if (about.news !== undefined && about.news !== null && about.news !== '') parts.push(newsText(about.news));
   }
   const standing = standingText(context.standing);
@@ -893,6 +911,17 @@ export function buildTurnBrief(context: TurnContext, input: TurnInput, form: Bri
       .map((element) => `  ${element.id}${note(element) === '' ? '' : ` (${note(element)})`}: ${element.figure === null ? element.text : `[${describeCarried(element, stage.elements, reported(element))}]`}`);
     const more = visible.length > 24 ? `\n  and ${visible.length - 24} older things` : '';
     parts.push(`ON STAGE NOW (a new \`scene\` clears all but the pinned):\n${rows.join('\n')}${more}`);
+    // A follow-up about what is on stage changes it in place. The ids it can be changed by are named here, at the point of use, because
+    // the system prompt's rule was not enough: "now make it 40 years" opened a scene and drew the whole answer again (v2.1 review, P1-11).
+    const live = visible.flatMap((element) =>
+      element.figure?.kind === 'structure' ? [`${element.id} (${element.figure.structure})`] : element.figure?.kind === 'control' ? [`${element.id} (${element.figure.control})`] : [],
+    );
+    // (not on a tour of what is new: that is a new subject by nature, and its scenes are asked for)
+    if (input.kind === 'prompt' && !(about?.news !== undefined && about.news !== null && about.news !== '')) {
+      parts.push(
+        `IF THIS CONTINUES WHAT IS ON STAGE (a follow-up, "now…", "and…", "make it…", a change to it): do not write \`scene\`; write only what changes, by id: \`set\`, \`move\`, \`revise\`, a new line added, or the structure, chart or control's own line again under its id with only what differs. A line said again under an id with nothing new is nothing, so never repeat what is there; the user keeps what they set.${live.length === 0 ? '' : ` Live ids you can change in place: ${live.join(', ')}.`} \`scene\` only for a new subject.`,
+      );
+    }
   }
 
   if (form === 'full') {

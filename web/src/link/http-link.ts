@@ -1,8 +1,8 @@
-import { API, STAGE_EVENT_TYPES } from '@conduit/language';
+import { API, checkStageEvent, STAGE_EVENT_TYPES, STREAM_HEARTBEAT } from '@conduit/language';
 import type { AppStatus, BackEvent, BrainChange, BrainChoice, CreateSessionRequest, DemoInfo, StageEvent, StageEventType, StartTurnRequest, ToolChoice, TurnInput } from '@conduit/language';
 import type { LinkStatus, StageLink } from '../contracts/link';
 import type { PainterUpload } from '../contracts/painter';
-import { asAsks, asBrainChoice, asDemos, asSessionResponse, asStatus, asTools, asTurnId, isRecord, messageOf } from './guards';
+import { asAsks, asBrainChoice, asDemos, asSessionResponse, asStatus, asTools, asTurnId, messageOf } from './guards';
 
 const BACKOFF_MS = [500, 1000, 2000, 4000, 8000] as const;
 const MAX_RETRIES = 3;
@@ -68,12 +68,22 @@ export function createHttpLink(): HttpLink {
     for (const listener of [...statusListeners]) listener(next);
   }
 
+  /** what has gone wrong with the stream, said once per kind to the HUD and every time to the console: a faulty event is never silent */
+  const toldKinds = new Set<string>();
+  function trouble(kind: string, detail: string): void {
+    console.error(`[conduit link] ${kind}: ${detail}`);
+    if (toldKinds.has(kind)) return;
+    toldKinds.add(kind);
+    note(`${kind}: ${detail}`);
+  }
+
   function emit(event: StageEvent): void {
     for (const listener of [...eventListeners]) {
       try {
         listener(event);
-      } catch {
-        // a faulty listener must not stop the stream
+      } catch (error) {
+        // a faulty listener must not stop the stream, and must not hide itself
+        trouble(`a listener failed on a ${event.type} event`, error instanceof Error ? error.message : String(error));
       }
     }
   }
@@ -83,10 +93,30 @@ export function createHttpLink(): HttpLink {
     try {
       body = JSON.parse(data);
     } catch {
+      trouble(`a ${type} event was not JSON`, data.slice(0, 80));
       return null;
     }
-    if (!isRecord(body)) return null;
-    return { ...body, type } as StageEvent;
+    const checked = checkStageEvent(type, body);
+    if ('why' in checked) {
+      trouble('the server sent a malformed event, ignored', checked.why);
+      return null;
+    }
+    return checked.event;
+  }
+
+  /** when the stream last said anything at all, a heartbeat included; a stream that says nothing for `silentMs` is taken for half-open */
+  let lastHeard = Date.now();
+  let watchdog: ReturnType<typeof setInterval> | undefined;
+  function watch(id: string): void {
+    clearInterval(watchdog);
+    lastHeard = Date.now();
+    watchdog = setInterval(() => {
+      if (disposed || status !== 'open') return;
+      const quiet = Date.now() - lastHeard;
+      if (quiet < STREAM_HEARTBEAT.silentMs) return;
+      trouble('the event stream went quiet, reconnecting', `${Math.round(quiet / 1000)} s with no word, not even a heartbeat`);
+      scheduleReconnect(id);
+    }, Math.max(1000, Math.floor(STREAM_HEARTBEAT.everyMs / 3)));
   }
 
   function closeSource(): void {
@@ -137,10 +167,15 @@ export function createHttpLink(): HttpLink {
     source = stream;
     stream.onopen = () => {
       attempt = 0;
+      watch(id);
       setStatus('open');
     };
+    stream.addEventListener(STREAM_HEARTBEAT.eventName, () => {
+      lastHeard = Date.now();
+    });
     for (const type of STAGE_EVENT_TYPES) {
       stream.addEventListener(type, (message) => {
+        lastHeard = Date.now();
         if (!(message instanceof MessageEvent) || typeof message.data !== 'string') return;
         const event = parseEvent(type, message.data);
         if (event !== null) emit(event);
@@ -399,6 +434,7 @@ export function createHttpLink(): HttpLink {
     close(): void {
       disposed = true;
       clearTimeout(retryTimer);
+      clearInterval(watchdog);
       closeSource();
       setStatus('closed');
     },

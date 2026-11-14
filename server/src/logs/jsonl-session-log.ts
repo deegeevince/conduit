@@ -112,7 +112,7 @@ export function createJsonlSessionLog(deps: JsonlSessionLogDeps): SessionLog {
     saveSnapshot: (session, turn, mime, bytes) => {
       const state = stateFor(session);
       if (state === null || state.gaveUp) return '';
-      const name = `${state.stem}-${turn}.${mime === 'image/png' ? 'png' : 'jpg'}`;
+      const name = `${state.stem}-${turn}.${mime === 'image/png' ? 'png' : mime === 'video/webm' ? 'webm' : 'jpg'}`;
       flush(session, state);
       state.chain = state.chain.then(async () => {
         if (state.gaveUp) return;

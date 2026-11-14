@@ -111,6 +111,8 @@ export interface Capabilities {
   readonly decks: boolean;
   /** v2.1. True when it can put a picture the user gave on stage (`pic … from=u1`). */
   readonly uploads: boolean;
+  /** v2.1. True when `say href=` is drawn as a link the viewer can follow. False: the brain is not taught it and names a source in words. */
+  readonly links: boolean;
 }
 
 /** What the server can do for a turn that the painter cannot. The brain's prompt is filtered by these too. */
@@ -160,16 +162,17 @@ export const FULL_CAPABILITIES: Capabilities = {
   candidates: true,
   decks: true,
   uploads: true,
+  links: true,
 };
 
 /** What a painter that speaks Series 3 can do of Series 4: nothing. A `ready` that leaves the new lists out is read as this. */
-export const NO_V4_CAPABILITIES = { structures: [], charts: [], controls: [], media: [], textures: ['flat'], brushes: [], drafts: false, candidates: false, decks: false, uploads: false } as const satisfies Pick<
+export const NO_V4_CAPABILITIES = { structures: [], charts: [], controls: [], media: [], textures: ['flat'], brushes: [], drafts: false, candidates: false, decks: false, uploads: false, links: false } as const satisfies Pick<
   Capabilities,
-  'structures' | 'charts' | 'controls' | 'media' | 'textures' | 'brushes' | 'drafts' | 'candidates' | 'decks' | 'uploads'
+  'structures' | 'charts' | 'controls' | 'media' | 'textures' | 'brushes' | 'drafts' | 'candidates' | 'decks' | 'uploads' | 'links'
 >;
 
-/** What a painter of v2 could do of v2.1: nothing. A `ready` that leaves the three out is read as this. */
-export const NO_V21_CAPABILITIES = { candidates: false, decks: false, uploads: false } as const satisfies Pick<Capabilities, 'candidates' | 'decks' | 'uploads'>;
+/** What a painter of v2 could do of v2.1: nothing. A `ready` that leaves these out is read as this. */
+export const NO_V21_CAPABILITIES = { candidates: false, decks: false, uploads: false, links: false } as const satisfies Pick<Capabilities, 'candidates' | 'decks' | 'uploads' | 'links'>;
 
 export const REFERENCE_SCREEN: ScreenFacts = { width: 1280, height: 720, dpr: 2, cols: 58, rows: 11, canvas: 'wide', reducedMotion: false, pointer: 'fine' };
 
@@ -318,6 +321,13 @@ export type StageEvent =
   | { readonly type: 'data'; readonly turn: string; readonly id: string; readonly status: 'ready' | 'failed'; readonly url: string | null; readonly reason: string | null };
 
 export type StageEventType = StageEvent['type'];
+
+/**
+ * The stream's liveness. The server writes a `heartbeat` event (and a comment) every `everyMs` while a stream is open; a page that has
+ * heard nothing at all for `silentMs` takes the stream for half-open, says so, and reconnects. (An EventSource never shows comments, so
+ * the beat is a named event the page reads but does not pass on as a stage event.)
+ */
+export const STREAM_HEARTBEAT = { eventName: 'heartbeat', everyMs: 15_000, silentMs: 40_000 } as const;
 export const STAGE_EVENT_TYPES: readonly StageEventType[] = ['hello', 'turn', 'reading', 'line', 'reject', 'end', 'pass', 'asset', 'data', 'candidate', 'critic', 'activity', 'permission'];
 
 /** Painter to server: the back channel. */
@@ -523,6 +533,8 @@ export interface ContentCount {
   readonly controls: number;
   /** characters of text a viewer can read, choices left out */
   readonly words: number;
+  /** the words of every choice (a tap element) on stage, in the order they were written: a fix may not drop or reword one. Absent from a painter of v2.1 before this; read as none. */
+  readonly choices?: readonly string[];
 }
 
 /** v2.1. Pictures the user gives with a prompt: what is taken, and how much. */
@@ -553,14 +565,23 @@ export const APP_COMMANDS = [
   { name: 'asks', args: '[clear]', gist: 'what you asked to hold for every reply; clear forgets them' },
   { name: 'look', args: '<name>', gist: 'the look of the stage; bare lists them' },
   { name: 'review', args: '<on|off>', gist: 'whether a drawing is checked and fixed after its first draft' },
-  { name: 'better', args: '[passes]', gist: 'keep making the picture on stage better, pass by pass' },
+  { name: 'better', args: '[passes]', gist: 'keep making the picture on stage better, pass by pass', needs: 'refine' },
   { name: 'stop', args: '', gist: 'stop what is being written or made better' },
   { name: 'show-all', args: '', gist: 'show the whole answer at once' },
   { name: 'copy', args: '[script]', gist: 'copy the answer as text, or its Series script' },
   { name: 'export', args: '<png|svg|film|frames|pdf|script>', gist: 'save the answer as a picture, a film, its slides or its script' },
   { name: 'capture', args: '', gist: 'film the last answer for the steward to watch' },
-] as const satisfies readonly { readonly name: string; readonly args: string; readonly gist: string }[];
+] as const satisfies readonly { readonly name: string; readonly args: string; readonly gist: string; readonly needs?: 'refine' }[];
 export type AppCommandName = (typeof APP_COMMANDS)[number]['name'];
+
+/**
+ * The commands this app can really do right now: a command that needs a service (`/better` needs the server's refine) is left out of
+ * what the brief and the help page advertise until the server says it has it. An app that advertises what it cannot do sends the user
+ * into an error (the v2.1 review: `/better` answered "cannot yet", and every brief told the brain to offer it).
+ */
+export function commandsFor(services: Pick<Services, 'refine'> | undefined): readonly (typeof APP_COMMANDS)[number][] {
+  return APP_COMMANDS.filter((command) => !('needs' in command) || services?.[command.needs] === true);
+}
 
 export interface StartTurnResponse {
   readonly turn: string;

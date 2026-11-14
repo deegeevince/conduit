@@ -20,7 +20,7 @@
 //      staged`); the painter tries them on a copy of the turn's score and
 //      reports how the copy lands, and `reviewTurn` waits on the gate for that
 //      report, at most `fix.candidateWaitMs`. Three pure rules decide
-//      (`fixKeeps`, `landsNoWorse`, and `criticPrefers` when a critic compared
+//      (`fixKeeps`, `landsNoWorse`; `criticPrefers` is measured in the background and logged, off the turn's clock) when a critic compared
 //      both pictures in time). Shown: `pass … fixing`, then the lines, as
 //      ordinary lines (same turn, same `seq` numbering, same normaliser, same
 //      score). Refused: `pass … refused` with the reason; nothing was pushed
@@ -234,7 +234,7 @@ export interface ReviewTurnArgs {
   readonly candidate?: (pass: number, lines: readonly string[]) => void;
   /** v2.1. What a fix is held to; `FIX_POLICY` when left out */
   readonly fix?: FixPolicy;
-  /** v2.1. A critic that can compare the draft's picture with the candidate's; absent or slow, the first two rules decide alone */
+  /** v2.1. A critic that compares the draft's picture with the candidate's in the background, after the fix is shown; only logged, never waited for */
   readonly critic?: Pick<Critic, 'compare'>;
   /** v2.1. `fix` (the default) or `refine` */
   readonly form?: ReviewForm;
@@ -367,7 +367,7 @@ export async function* reviewTurn(args: ReviewTurnArgs): AsyncGenerator<ReviewSt
     args.candidate(next, outcome.texts);
     const tried = await gate.wait(args.turn, next, fixPolicy.candidateWaitMs, signal);
     if (signal.aborted) return;
-    const verdict = await judge(args, { policy: fixPolicy, form, pass: next, draft: report, draftContent, tried });
+    const verdict = await judgeFix(args, { policy: fixPolicy, form, pass: next, draft: report, draftContent, tried });
     decisions.push({ look: verdict.refusal === null, why: verdict.refusal ?? 'the fix keeps what was there and lands no worse' });
     fixes.push({ pass: next, form, lines: outcome.texts, shown: verdict.refusal === null, why: verdict.refusal, draft: draftContent, candidate: tried?.content ?? null });
     if (signal.aborted) return;
@@ -389,7 +389,7 @@ export async function* reviewTurn(args: ReviewTurnArgs): AsyncGenerator<ReviewSt
   yield record();
 }
 
-/** What a refusal says, in the words the log, the battery's card and `pass … refused` carry. The first four are `FixRefusal`'s. */
+/** What a refusal says, in the words the log, the battery's card and `pass … refused` carry. The first four are `FixRefusal`'s (`critic` is no longer given: the comparison runs after the fix is shown). */
 const REFUSALS = {
   nothing: 'it wrote nothing that changes the stage',
   took: 'it took something away',
@@ -399,7 +399,7 @@ const REFUSALS = {
 } as const;
 
 /** The three rules, in order. Pure apart from the critic's call, which has its own deadline. A refusal is the words to give; null is a yes. */
-async function judge(
+export async function judgeFix(
   args: ReviewTurnArgs,
   at: { policy: FixPolicy; form: ReviewForm; pass: number; draft: DraftReport | null; draftContent: ContentCount; tried: DraftReport | null },
 ): Promise<{ readonly refusal: string | null }> {
@@ -409,23 +409,22 @@ async function judge(
   if (!keeps.keeps) return { refusal: `${REFUSALS.took}: ${keeps.why ?? ''}`.trim() };
   const lands = landsNoWorse(at.draft?.sight ?? null, tried.sight);
   if (!lands.ok) return { refusal: `${REFUSALS.worse}: ${lands.why ?? ''}`.trim() };
+  // Rule three is off the turn's clock. A comparison is one cold process with two pictures, and on the owner's critic (Fable, high effort)
+  // it takes far longer than a viewer will wait: held to 8 s it never finished, and held every fix 8 s for nothing (v2.1 review, P1-2).
+  // So the two rules above decide, the fix is shown at once, and the critic compares in the background; what it says is logged as
+  // `review.compare` (outcome, both scores, ms) so the share of fixes it would have refused is measured, not guessed.
   const draftPicture = at.draft?.picture ?? null;
   if (args.critic !== undefined && draftPicture !== null && tried.picture !== null) {
-    try {
-      const compared = await args.critic.compare(
-        { session: args.session, turn: args.turn, pass: at.pass, asked: askedOf(args.input), input: args.input.kind, sight: tried.sight },
-        draftPicture,
-        tried.picture,
-        at.policy.compareMs,
-        args.signal,
-      );
-      if (compared !== null && criticPrefers(compared.draft, compared.candidate, at.form) === 'draft') {
-        return { refusal: `${REFUSALS.critic}: ${compared.draft.coherence} against ${compared.candidate.coherence}` };
-      }
-    } catch (error) {
-      // A critic that fails decides nothing: the first two rules already said yes.
-      args.log?.warn('review.compare_failed', { turn: args.turn, message: error instanceof Error ? error.message : String(error) });
-    }
+    const started = args.now();
+    const { turn, pass, form } = { turn: args.turn, pass: at.pass, form: at.form };
+    void args.critic
+      .compare({ session: args.session, turn, pass, asked: askedOf(args.input), input: args.input.kind, sight: tried.sight }, draftPicture, tried.picture, at.policy.compareMs, new AbortController().signal)
+      .then((compared) => {
+        const ms = args.now() - started;
+        if (compared === null) args.log?.warn('review.compare', { turn, pass, outcome: 'unfinished', ms, deadlineMs: at.policy.compareMs });
+        else args.log?.info('review.compare', { turn, pass, outcome: criticPrefers(compared.draft, compared.candidate, form) === 'draft' ? 'prefers-draft' : 'prefers-fix', draft: compared.draft.coherence, candidate: compared.candidate.coherence, ms });
+      })
+      .catch((error: unknown) => args.log?.warn('review.compare_failed', { turn, message: error instanceof Error ? error.message : String(error) }));
   }
   return { refusal: null };
 }

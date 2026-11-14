@@ -223,8 +223,11 @@ export interface Painter {
    * A turn is open; lines will follow. A turn still playing is interrupted
    * first. Opening an id already opened (the one playing, settling or played)
    * does nothing: a replayed `turn` event must not cut an answer off.
+   * `page`: a page of the app's own (`/help`, `/status`) that the server never hears of. It is shown over the stage, not instead of it:
+   * the stage under it is kept, and the next turn that is not a page opens on that stage again, so the painter and the server agree on
+   * what the brain is told is there (v2.1 review, W-5).
    */
-  openTurn(turn: string, input: TurnInput): void;
+  openTurn(turn: string, input: TurnInput, options?: { readonly page?: boolean }): void;
 
   /**
    * The user has just spoken or tapped; a turn will open. The stage shows it

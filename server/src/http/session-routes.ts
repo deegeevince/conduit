@@ -1,7 +1,7 @@
 // The browser's side of the API. Each handler translates HTTP to one call on
 // the Conductor and back; no handler holds state or touches a brain.
 
-import { API } from '@conduit/language';
+import { API, checkStageEvent, STREAM_HEARTBEAT } from '@conduit/language';
 import type { BrainChoice, CreateSessionResponse, CriticFinding, StageEvent, StartTurnResponse, ToolChoice } from '@conduit/language';
 import type { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
@@ -26,8 +26,8 @@ export function registerSessionRoutes(app: Hono, deps: HttpDeps): void {
 
   /**
    * Server-Sent Events of StageEvent: the event name is the `type`, the data
-   * is the JSON of the whole event. First event is `hello`. A comment line is
-   * written every SERVER_LIMITS.heartbeatMs. Closing the connection detaches the sink.
+   * is the JSON of the whole event. First event is `hello`. A `heartbeat` event is
+   * written every SERVER_LIMITS.heartbeatMs, so the page can tell a quiet stream from a dead one. Closing the connection detaches the sink.
    */
   app.get(API.stream(':session'), (c) => {
     const session = param(c, 'session');
@@ -57,12 +57,18 @@ export function registerSessionRoutes(app: Hono, deps: HttpDeps): void {
           });
       };
       let replaying = true;
-      const sink = (event: StageEvent): void => enqueue(() => stream.writeSSE({ event: event.type, data: JSON.stringify(event) }), !replaying);
+      // What the server writes is held to the same shape the page checks: a malformed event is a server bug, and is logged where it is made.
+      const sink = (event: StageEvent): void => {
+        const checked = checkStageEvent(event.type, event);
+        if ('why' in checked) deps.log.warn('stream.malformed_event', { session, why: checked.why });
+        write(event);
+      };
+      const write = (event: StageEvent): void => enqueue(() => stream.writeSSE({ event: event.type, data: JSON.stringify(event) }), !replaying);
 
       const detach = conductor.subscribe(session, sink, close);
       replaying = false;
       stream.onAbort(close);
-      const beat = setInterval(() => enqueue(() => stream.write(': heartbeat\n\n').then(() => undefined)), SERVER_LIMITS.heartbeatMs);
+      const beat = setInterval(() => enqueue(() => stream.writeSSE({ event: STREAM_HEARTBEAT.eventName, data: String(Date.now()) })), SERVER_LIMITS.heartbeatMs);
       await closed;
       clearInterval(beat);
       detach();
