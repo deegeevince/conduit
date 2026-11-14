@@ -31,7 +31,7 @@ export interface ControlLayoutArgs {
   readonly viewport: Viewport;
   readonly fit: CanvasFit;
   /** how closely the scene's controls are set (see `ControlInput.compact`) */
-  readonly compact?: 0 | 1 | 2;
+  readonly compact?: 0 | 1 | 2 | 3;
 }
 
 /** What the engine is handed for one control: also what it is asked to turn a pointer into a value with. */

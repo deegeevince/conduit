@@ -312,22 +312,25 @@ export function snapSlider(spec: ControlSpec, raw: number): number {
 
 function layoutSlider(input: ControlInput, m: Metrics): ControlLayout {
   const spec = input.spec;
+  const compact = input.compact ?? 0;
+  // the tightest row sets its words a size down
+  const LABEL_S: TextSpec = compact >= 3 ? { ...LABEL, size: 's' } : LABEL;
+  const VALUE_S: TextSpec = compact >= 3 ? { ...VALUE, size: 's' } : VALUE;
   const value = heldValue(input);
   const number = typeof value === 'number' ? value : spec.min;
   const shown = sliderWords(spec, number);
   // wide enough for the label and its value on one line when the room allows, and never wider than the room
-  const oneLine = input.measure(input.control.text, LABEL, 1e6).width + 2 * m.gap + Math.max(input.measure(sliderWords(spec, spec.min), VALUE, 1e6).width, input.measure(sliderWords(spec, spec.max), VALUE, 1e6).width, input.measure(shown, VALUE, 1e6).width);
+  const oneLine = input.measure(input.control.text, LABEL_S, 1e6).width + 2 * m.gap + Math.max(input.measure(sliderWords(spec, spec.min), VALUE_S, 1e6).width, input.measure(sliderWords(spec, spec.max), VALUE_S, 1e6).width, input.measure(shown, VALUE_S, 1e6).width);
   const width = Math.min(input.maxWidth, Math.max(SLIDER_MIN_WIDTH, 12 * m.body, oneLine));
   // the value sits by the label, on its last line, and is placed for the widest number the slider can hold
-  const widest = [sliderWords(spec, spec.min), sliderWords(spec, spec.max), shown].reduce((a, b) => (input.measure(b, VALUE, width).width > input.measure(a, VALUE, width).width ? b : a));
-  const compact = input.compact ?? 0;
+  const widest = [sliderWords(spec, spec.min), sliderWords(spec, spec.max), shown].reduce((a, b) => (input.measure(b, VALUE_S, width).width > input.measure(a, VALUE_S, width).width ? b : a));
   let head: Beside;
   if (compact >= 2) {
     // one line: the value keeps its place at the right of the label, the label gives up its end
-    const tailBox = input.measure(widest, VALUE, width);
+    const tailBox = input.measure(widest, VALUE_S, width);
     const room = Math.max(m.cellW, width - 2 * m.gap - tailBox.width);
-    const label = fitHead(input, input.control.text, room);
-    const text = input.measure(label, LABEL, 1e6);
+    const label = fitHead(input, input.control.text, room, LABEL_S);
+    const text = input.measure(label, LABEL_S, 1e6);
     const high = Math.max(text.height, tailBox.height);
     head = {
       label: { x: 0, y: (high - text.height) / 2, width: Math.min(text.width, room), height: text.height },
@@ -337,7 +340,7 @@ function layoutSlider(input: ControlInput, m: Metrics): ControlLayout {
       labelText: { ...text, lines: [] },
       shown: label,
     };
-  } else head = beside(input, m, input.control.text, LABEL, widest, VALUE, width);
+  } else head = beside(input, m, input.control.text, LABEL_S, widest, VALUE_S, width);
   const headHeight = Math.max(head.height, m.body);
   // tight: the track sits close under the label and the target reaches up behind it, so a column of them takes less height; the target stays whole inside the box
   const tight = compact >= 1;
@@ -370,8 +373,8 @@ function layoutSlider(input: ControlInput, m: Metrics): ControlLayout {
   sheet.shape('track', hot ? 'frame' : 'grid', (dx, dy) => [segment(x0 + dx, trackY + dy, geo.x1 + width / 2 + dx, trackY + dy)]);
   if (fx > x0) fillBox(sheet, 'filled', 'bar', { x: x0, y: trackY - m.stroke, width: fx - x0, height: 2 * m.stroke }, m.stroke);
   sheet.shape('knob', 'marker', (dx, dy) => [circleLine(fx + dx, trackY + dy, r)]);
-  sheet.text('label', 'words', head.shown ?? input.control.text, { x: head.label.x, y: head.label.y, width: Math.min(head.label.width, width), height: head.label.height }, LABEL, 'left');
-  sheet.text('value', 'words', shown, { x: head.tail.x, y: head.tail.y, width: Math.min(head.tail.width, Math.max(0, width - head.tail.x)), height: head.tail.height }, VALUE, compact >= 2 ? 'right' : 'left');
+  sheet.text('label', 'words', head.shown ?? input.control.text, { x: head.label.x, y: head.label.y, width: Math.min(head.label.width, width), height: head.label.height }, LABEL_S, 'left');
+  sheet.text('value', 'words', shown, { x: head.tail.x, y: head.tail.y, width: Math.min(head.tail.width, Math.max(0, width - head.tail.x)), height: head.tail.height }, VALUE_S, compact >= 2 ? 'right' : 'left');
   ring(sheet, width, height, 0, input.mood);
   const target = Math.max(input.minTarget, m.knob);
   sheet.zone('knob', { x: fx - target / 2, y: trackY - target / 2, width: target, height: target }, true);
@@ -530,18 +533,18 @@ function tail(input: ControlInput, text: string, room: number): string {
 }
 
 /** A label cut to `room` on one line: its start, then an ellipsis. */
-function fitHead(input: ControlInput, text: string, room: number): string {
-  return head(input, text, room);
+function fitHead(input: ControlInput, text: string, room: number, spec: TextSpec = LABEL): string {
+  return head(input, text, room, spec);
 }
 
 /** The head of `text` that fits `room`, with an ellipsis after it when it was cut: a placeholder is read from its start. */
-function head(input: ControlInput, text: string, room: number): string {
-  if (input.measure(text, LABEL, 1e6).width <= room) return text;
+function head(input: ControlInput, text: string, room: number, spec: TextSpec = LABEL): string {
+  if (input.measure(text, spec, 1e6).width <= room) return text;
   let lo = 0;
   let hi = text.length;
   while (lo < hi) {
     const mid = Math.ceil((lo + hi) / 2);
-    if (input.measure(`${text.slice(0, mid)}…`, LABEL, 1e6).width <= room) lo = mid;
+    if (input.measure(`${text.slice(0, mid)}…`, spec, 1e6).width <= room) lo = mid;
     else hi = mid - 1;
   }
   return `${text.slice(0, lo).trimEnd()}…`;

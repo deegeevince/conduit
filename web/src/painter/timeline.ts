@@ -286,7 +286,7 @@ interface Epoch {
   readonly fit: CanvasFit;
   readonly kinds: ReadonlyMap<string, StageBlock['kind']>;
   /** how this epoch's controls were set (see `ControlInput.compact`) and the widest each may be, stage units */
-  readonly controls: { readonly compact: 0 | 1 | 2; readonly room: number; readonly scroll: ScrollArea | null };
+  readonly controls: { readonly compact: 0 | 1 | 2 | 3; readonly room: number; readonly scroll: ScrollArea | null };
 }
 
 interface Forced {
@@ -671,7 +671,7 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
   };
   const scheduleLayoutOf = (span: ElementSpan): string => sceneAt(schedule, span.enter?.start ?? 0).layout;
   /** how this scene's controls are set at `time`, as the flow reserved room for them: the widest, and how closely (read after the epochs are laid out) */
-  const controlSetting = (span: ElementSpan, fit: CanvasFit, time: number): { readonly maxWidth: number; readonly compact: 0 | 1 | 2 } => {
+  const controlSetting = (span: ElementSpan, fit: CanvasFit, time: number): { readonly maxWidth: number; readonly compact: 0 | 1 | 2 | 3 } => {
     const found = sceneEpochAt(span.scene, time);
     if (found === null) return { maxWidth: controlRoom(span, fit), compact: 0 };
     return { maxWidth: Math.min(found.epoch.controls.room / planeScale(span.style.layer, viewport), controlRoom(span, fit)), compact: found.epoch.controls.compact };
@@ -846,7 +846,7 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
       const roomRaw = controlRoomOf(roomInput, controlFit.flow);
       const roomWide = scroll ? Math.max(1, roomRaw - (columns === 2 ? cueW / 2 : cueW)) : roomRaw;
       const roomOf = (span: ElementSpan): number => Math.min(roomWide / planeScale(span.style.layer, viewport), controlRoom(span, controlFit));
-      const compact = (level === 1 ? 1 : level >= 2 ? 2 : 0) as 0 | 1 | 2;
+      const compact = Math.min(3, Math.max(0, level)) as 0 | 1 | 2 | 3;
       const items: LayoutItem[] = [...baseItems];
       const liveControls: ElementSpan[] = [];
       // the scene's controls that have not come yet: their room is kept for them, so that nothing moves or changes size when they do
@@ -937,6 +937,7 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
           layout: scene.layout,
           blocks: list,
           beside,
+          ...(columns === 2 && !scroll ? { flowWidth: 2 * 22 * cellOf('m', viewport, look).width + 2 * cellOf('m', viewport, look).width } : {}),
           flowHeight: (width) => (wanted <= 0 ? 0 : Math.max(floor, width === safe.width ? wanted : needsOf(probe, width).flow)),
           flowOrder: needs.order === null ? null : Math.min(needs.order, firstWord),
           flowLeast: (width) => (width === safe.width ? needs.least : needsOf(probe, width).least),
@@ -992,7 +993,7 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
       const spills = trial !== null && [...trial.placements.values()].some((placed) => flowing.has(placed.key) && placed.y + placed.height / 2 > bottom);
       const fits = controlNeed <= plan.flow.height + 1 && !spills;
       // two to a row only where a control still has room for its words
-      const viable = columns === 1 || roomWide >= 24 * cellOf('m', viewport, look).width;
+      const viable = columns === 1 || roomWide >= 22 * cellOf('m', viewport, look).width;
 
       return { items, liveControls, plan, fit, arrLayout, sides, fits: (fits && viable) || scroll, viable, compact, columns: scroll ? (1 as const) : columns, room: roomWide, scrollInfo };
     };
@@ -1003,7 +1004,7 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
     controlFit = solve(sceneFit, 0, 1).fit;
     let solved!: ReturnType<typeof solve>;
     let ran = false;
-    const tries: readonly (readonly [number, 1 | 2])[] = [[0, 1], [1, 1], [2, 1], [2, 2]];
+    const tries: readonly (readonly [number, 1 | 2])[] = [[0, 1], [1, 1], [2, 1], [3, 1], [2, 2], [3, 2]];
     const roomy = viewport.width >= 560;
     for (const [level, columns] of tries) {
       if (columns === 2 && !roomy) continue;
@@ -1018,9 +1019,9 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
     }
     // none fits: the controls stand in an area of their own that scrolls, in two columns where there is width for them
     if (!ran || !solved.fits) {
-      const wide = roomy && solve(controlFit, 2, 2).viable;
+      const wide = roomy && solve(controlFit, 3, 2).viable;
       for (let pass = 0; pass < 3; pass += 1) {
-        solved = solve(controlFit, 2, wide ? 2 : 1, true);
+        solved = solve(controlFit, 3, wide ? 2 : 1, true);
         const settled = Math.abs(solved.fit.flow.width - controlFit.flow.width) < 0.5 && Math.abs(solved.fit.flow.height - controlFit.flow.height) < 0.5;
         controlFit = solved.fit;
         if (settled) break;
