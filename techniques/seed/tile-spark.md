@@ -12,10 +12,10 @@ Makes a tile: a label, one big number, how it changed, and a small chart with no
 **Example**
 ```series
 scene free
-card tile 40,22 80x46 | Active users
-say in=tile at=42,16 title | 48,210
-say in=tile at=64,17 aside ink=accent | up 6.2% this week
-chart area spark live in=tile 44,30 72x30
+card tile 40,18 80x54 | Active users
+say in=tile at=44,29 title | 48,210
+say in=tile at=44,36 aside ink=accent | up 9.3% this week
+chart area spark live in=tile 44,42 72x26
 | Mon | 44100
 | Tue | 44900
 | Wed | 45600

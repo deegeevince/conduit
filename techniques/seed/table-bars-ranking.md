@@ -13,6 +13,7 @@ Ranks named things in a table whose numbers are drawn as bars beside the figures
 ```series
 scene caption
 table bars | Deepest lakes, metres
+| Lake | Depth (m)
 | *Baikal* | 1642
 | Tanganyika | 1470
 | Caspian Sea | 1025
