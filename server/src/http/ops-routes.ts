@@ -42,7 +42,7 @@ export function registerOpsRoutes(app: Hono, deps: HttpDeps): void {
    *   2. ends every open turn (`interrupted`) and answers no to every confirm control waiting for the owner;
    *   3. lets go of every brain process and abandons the critic's looks in flight;
    *   4. SIGKILLs every child process this server started and everything below them, without waiting for any of them to agree.
-   * 200 `{ engaged, at, sessions, turns, permissionsDenied, children, descendants, survivors, ms }`; `survivors` are pids that were
+   * 200 `{ engaged, at, sessions, turns, permissionsDenied, children, descendants, survivors, browserTabsLeftOpen, answeredInMs }`; `survivors` are pids that were
    * still there after the wait (a process stuck in the kernel), and is empty when everything is gone.
    */
   app.post('/api/kill', async (c) => {
@@ -58,10 +58,10 @@ export function registerOpsRoutes(app: Hono, deps: HttpDeps): void {
     })();
     // Never longer than this, whatever a child is doing: the answer is the owner's proof the switch worked.
     const outcome = await Promise.race([done, new Promise<null>((resolve) => setTimeout(() => resolve(null), 4_000).unref())]);
-    const stopped = outcome?.stopped ?? { sessions: 0, turns: 0, permissions: 0 };
+    const stopped = outcome?.stopped ?? { sessions: 0, turns: 0, permissions: 0, browserTabs: 0 };
     const killed = outcome?.killed ?? { children: 0, descendants: 0, survivors: [] as number[], ms: Date.now() - started };
-    deps.audit.record({ kind: 'kill', tool: 'kill-switch', target: `${stopped.turns} turns ended, ${stopped.permissions} permissions denied, ${killed.children + killed.descendants} processes killed`, decision: killed.survivors.length === 0 ? 'done' : 'failed', decidedBy: 'system', note: killed.survivors.length === 0 ? undefined : `${killed.survivors.length} process(es) survived SIGKILL` });
-    return c.json({ engaged: true, at: state.at, sessions: stopped.sessions, turns: stopped.turns, permissionsDenied: stopped.permissions, children: killed.children, descendants: killed.descendants, survivors: killed.survivors, answeredInMs: Date.now() - started, timedOut: outcome === null });
+    deps.audit.record({ kind: 'kill', tool: 'kill-switch', target: `${stopped.turns} turns ended, ${stopped.permissions} permissions denied, ${killed.children + killed.descendants} processes killed`, decision: killed.survivors.length === 0 ? 'done' : 'failed', decidedBy: 'system', note: [killed.survivors.length === 0 ? '' : `${killed.survivors.length} process(es) survived SIGKILL`, stopped.browserTabs === 0 ? '' : `${stopped.browserTabs} browser tab(s) the brain opened are still open in Chrome`].filter((part) => part !== '').join('; ') || undefined });
+    return c.json({ engaged: true, at: state.at, sessions: stopped.sessions, turns: stopped.turns, permissionsDenied: stopped.permissions, children: killed.children, descendants: killed.descendants, survivors: killed.survivors, browserTabsLeftOpen: stopped.browserTabs, answeredInMs: Date.now() - started, timedOut: outcome === null });
   });
 
   /** GET `{ engaged, at, by, reason }`: whether agent tools are off. */

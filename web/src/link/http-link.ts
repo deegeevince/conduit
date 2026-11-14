@@ -64,6 +64,8 @@ export interface KillAnswer {
   readonly permissionsDenied: number;
   readonly children: number;
   readonly survivors: number;
+  /** tabs the brain opened in Chrome that the server cannot close once the brain is gone */
+  readonly browserTabs: number;
 }
 
 async function bodyOf(response: Response): Promise<unknown> {
@@ -481,7 +483,7 @@ export function createHttpLink(): HttpLink {
       const answer = body as (Partial<KillAnswer> & { descendants?: unknown }) | null;
       if (answer === null || typeof answer !== 'object' || answer.engaged !== true) throw new Error('the server did not say it had stopped');
       const count = (value: unknown): number => (typeof value === 'number' && Number.isFinite(value) ? value : 0);
-      return { engaged: true, turns: count(answer.turns), permissionsDenied: count(answer.permissionsDenied), children: count(answer.children) + count(answer.descendants), survivors: Array.isArray(answer.survivors) ? answer.survivors.length : 0 };
+      return { engaged: true, turns: count(answer.turns), permissionsDenied: count(answer.permissionsDenied), children: count(answer.children) + count(answer.descendants), survivors: Array.isArray(answer.survivors) ? answer.survivors.length : 0, browserTabs: count((answer as { browserTabsLeftOpen?: unknown }).browserTabsLeftOpen) };
     },
 
     async resumeAgent(): Promise<void> {

@@ -199,9 +199,10 @@ export interface Brain {
 
   /**
    * v2.1 ops, the kill switch. Lets go of every process and every held call of every conversation, at once and without waiting for any of
-   * them to say it has stopped. The conversations' settings stay; the next turn starts a process afresh. Never throws.
+   * them to say it has stopped. The conversations' settings stay; the next turn starts a process afresh. Never throws. Answers how many
+   * processes it let go of, and how many browser tabs the brain had opened that it has no way to close from here (the extension owns them).
    */
-  killAll?(): void;
+  killAll?(): { readonly processes: number; readonly browserTabs: number };
 
   /** Releases long-lived resources at shutdown. */
   close?(): Promise<void>;
@@ -212,6 +213,6 @@ export interface BrainRegistry {
   readonly configured: Brain;
   forInput(input: TurnInput): Brain;
   /** v2.1 ops. The kill switch: `Brain.killAll` of every brain. */
-  killAll(): void;
+  killAll(): { readonly processes: number; readonly browserTabs: number };
   close(): Promise<void>;
 }

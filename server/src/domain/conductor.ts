@@ -43,7 +43,7 @@ import { factsOf, tableFromText } from './datasets';
 import type { DatasetLibrary } from './datasets';
 import { worthQueuing } from './critic';
 import type { Critic, FindingQueue } from './critic';
-import { DETAIL_MAX, redactSecrets } from './agent';
+import { DETAIL_MAX, redactSecrets, splitTool } from './agent';
 import { NO_AUDIT } from '../audit';
 import type { Audit, AuditDecider } from '../audit';
 import type { UsageMeter } from '../usage';
@@ -520,8 +520,9 @@ export class Conductor {
    * process is let go, and the critic's looks in flight are abandoned. Synchronous and bounded: nothing here waits for a child to say it
    * has stopped, because a stuck one never will; `killAllChildren` is the hand that makes sure it is gone. Sessions and their settings stay.
    */
-  killAll(by: string): { readonly sessions: number; readonly turns: number; readonly permissions: number } {
+  killAll(by: string): { readonly sessions: number; readonly turns: number; readonly permissions: number; readonly browserTabs: number } {
     let turns = 0;
+    let browserTabs = 0;
     let permissions = 0;
     const sessions = this.deps.sessions.all();
     for (const s of sessions) {
@@ -538,13 +539,13 @@ export class Conductor {
       }
     }
     try {
-      this.deps.brains.killAll();
+      browserTabs = this.deps.brains.killAll().browserTabs;
       this.deps.critic.cancel?.();
     } catch (error) {
       this.deps.log.error('kill.brains_failed', { error });
     }
-    this.deps.log.warn('kill.all', { by, sessions: sessions.length, turns, permissions });
-    return { sessions: sessions.length, turns, permissions };
+    this.deps.log.warn('kill.all', { by, sessions: sessions.length, turns, permissions, browserTabs });
+    return { sessions: sessions.length, turns, permissions, browserTabs };
   }
 
   /** Aborts every open turn and drops every session. */
@@ -740,7 +741,12 @@ export class Conductor {
     const pending = s.permissions.get(request);
     if (pending === undefined || (turn !== null && pending.turn !== turn)) {
       // An answer from the owner (it names a turn) that matches nothing is said, not dropped: it is either late, doubled, or for a request that is not here.
-      if (turn !== null) this.deps.log.info('permit.unmatched', { session: s.id, request, turn, open: [...s.permissions.keys()].length, reason: pending === undefined ? 'no such request' : 'another turn' });
+      if (turn !== null) {
+        const reason = pending === undefined ? 'no such request' : 'another turn';
+        this.deps.log.info('permit.unmatched', { session: s.id, request, turn, open: [...s.permissions.keys()].length, reason });
+        // A yes or a no for a question that is not open is on the trail too: late, doubled, or someone guessing at request ids.
+        this.audit.record({ kind: 'permission_answered', session: s.id, turn, tool: pending?.tool ?? null, target: pending?.summary ?? request, decision: 'denied', decidedBy: 'policy', note: `a ${allow === true ? 'yes' : 'no'} that matched nothing (${reason}); nothing was allowed by it` });
+      }
       return;
     }
     s.permissions.delete(request);
@@ -1216,11 +1222,12 @@ export class Conductor {
 
   /** One tool call in the audit trail: a connected service's call (`mcp__<service>__<action>`) is filed as the service being used. */
   private recordCall(s: Session, turn: ActiveTurn, tool: string, summary: string, decision: 'allowed' | 'denied', decidedBy: AuditDecider, note?: string): void {
-    const service = /^mcp__([^_]+(?:_[^_]+)*?)__(.+)$/.exec(tool);
+    // Claude in Chrome's own name for itself is `claude-in-chrome`; the trail calls it what the owner offered it as: `chrome`.
+    const { service, action } = splitTool(tool);
     this.auditTurn(s, turn, {
       kind: service === null ? 'tool' : 'connector',
-      tool: service === null ? tool : (service[1] ?? tool),
-      target: service === null ? summary : `${service[2] ?? ''}: ${summary}`,
+      tool: service === null ? tool : service,
+      target: service === null ? summary : `${action}: ${summary}`,
       decision,
       decidedBy,
       ...(note === undefined ? {} : { note }),

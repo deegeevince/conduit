@@ -74,13 +74,18 @@ export function createBrains(deps: BrainsDeps): BrainRegistry {
     configured,
     forInput: (input) => (input.kind === 'demo' || input.kind === 'script' ? replay : configured),
     killAll: () => {
+      let processes = 0;
+      let browserTabs = 0;
       for (const brain of all) {
         try {
-          brain.killAll?.();
+          const done = brain.killAll?.();
+          processes += done?.processes ?? 0;
+          browserTabs += done?.browserTabs ?? 0;
         } catch {
           // the kill goes on to the next brain; the process kill after it does not depend on any of them
         }
       }
+      return { processes, browserTabs };
     },
     close: async () => {
       await Promise.all(all.map((brain) => brain.close?.()));

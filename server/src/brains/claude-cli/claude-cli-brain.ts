@@ -690,7 +690,10 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
     },
     killAll() {
       // Every held call is told no (so the CLI is not left waiting on a question), and every process is let go without waiting for its `close`.
+      // The tabs the brain opened in the owner's Chrome belong to the extension's tab group, which only a call through the CLI could close:
+      // with the CLI gone there is none, so they are counted and said, and the owner closes the group.
       const all = [...pool.values()];
+      const browserTabs = all.reduce((sum, entry) => sum + entry.browser.tabs.size, 0);
       pool.clear();
       for (const entry of all) {
         for (const held of [...entry.held.values()]) {
@@ -702,7 +705,8 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
         }
         void entry.proc.stop().catch(() => undefined);
       }
-      log.warn('claude_killed_all', { processes: all.length });
+      log.warn('claude_killed_all', { processes: all.length, browserTabs });
+      return { processes: all.length, browserTabs };
     },
     async close() {
       if (sweep) clearInterval(sweep);

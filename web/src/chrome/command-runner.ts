@@ -175,7 +175,7 @@ async function perform(app: StageApp, command: Command, onChoice: (choice: Brain
         `${stopped.permissionsDenied} question${stopped.permissionsDenied === 1 ? '' : 's'} refused`,
         `${stopped.children} helper process${stopped.children === 1 ? '' : 'es'} killed`,
       ];
-      app.announce(`Stopped everything: ${parts.join(', ')}. Agent tools are off until "/stop-all resume".${stopped.survivors > 0 ? ` ${stopped.survivors} process${stopped.survivors === 1 ? '' : 'es'} would not die; see the audit.` : ''}`);
+      app.announce(`Stopped everything: ${parts.join(', ')}. Agent tools are off until "/stop-all resume".${stopped.browserTabs > 0 ? ` ${stopped.browserTabs} tab${stopped.browserTabs === 1 ? '' : 's'} it opened in Chrome ${stopped.browserTabs === 1 ? 'is' : 'are'} still open: close its tab group.` : ''}${stopped.survivors > 0 ? ` ${stopped.survivors} process${stopped.survivors === 1 ? '' : 'es'} would not die; see the audit.` : ''}`);
       return;
     }
     case 'show-all':
