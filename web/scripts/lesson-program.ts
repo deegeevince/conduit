@@ -1,8 +1,11 @@
-// Vite plugin: `import program from 'virtual:lesson-program'` is the lesson view as ONE self-contained script (an IIFE), as text.
+// Vite plugin: `import program from 'virtual:lesson-program'` is the lesson view as ONE self-contained script (an IIFE), minified, gzipped and
+// written in base64 (the surface host runs a source of at most 64,000 characters, and the lesson with the language it uses is more than that
+// as text; the frame's own boot line unpacks it with the browser's DecompressionStream).
 // A sandboxed surface can load nothing (its policy allows inline script only), so the lesson's TypeScript is bundled once here and the
 // host writes the text into the frame's document. The same call serves the dev server and the build; a change to any file the program
 // imports reloads the page that holds it.
 
+import { gzipSync } from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { build } from 'vite';
 import type { Plugin } from 'vite';
@@ -26,7 +29,7 @@ export function lessonProgram(): Plugin {
         resolve: { alias: { '@conduit/language': slice } },
         build: {
           write: false,
-          minify: false,
+          minify: true,
           target: 'es2020',
           lib: { entry, formats: ['iife'], name: 'ConduitLesson', fileName: 'lesson' },
         },
@@ -41,7 +44,7 @@ export function lessonProgram(): Plugin {
           for (const module of Object.keys(chunk.modules)) if (!module.startsWith('\0')) this.addWatchFile(module);
         }
       }
-      return `export default ${JSON.stringify(code)};`;
+      return `export default ${JSON.stringify(gzipSync(code, { level: 9 }).toString('base64'))};`;
     },
   };
 }

@@ -2,7 +2,7 @@
 // surface protocol (PLAN-v3-core 2.6) the page and the lesson speak. Nothing here imports the DOM.
 
 import { VISUAL_KINDS } from '@conduit/language';
-import type { DocState, Document, Held, NodeId, NodeStatus, TechniqueId, VisualKind } from '@conduit/language';
+import type { DocState, Document, NodeId, NodeStatus, TechniqueId, VisualKind } from '@conduit/language';
 
 export type { DocState, Document, Held, NodeId, StateChange, VisualKind, LessonStep, LessonAsk, LessonReveal, ShowSpec, OpenAsk } from '@conduit/language';
 export type Technique = TechniqueId;
@@ -93,31 +93,18 @@ export interface LessonInput {
   readonly catalogue: readonly CatalogueEntry[];
 }
 
-/** What the lesson tells the page happened: each becomes a back event with `seen` (2.5). */
-export type LessonEvent =
-  | { readonly kind: 'open'; readonly node: NodeId }
-  | { readonly kind: 'step'; readonly node: NodeId; readonly at: number }
-  | { readonly kind: 'try'; readonly node: NodeId; readonly ask: string; readonly text: string; readonly right: boolean; readonly hint: number }
-  | { readonly kind: 'done'; readonly node: NodeId }
-  | { readonly kind: 'hold'; readonly node: NodeId; readonly key: string; readonly value: Held }
-  | { readonly kind: 'document'; readonly id: string };
-
-export type LessonDown =
-  | { readonly type: 'init'; readonly tokens: LessonTokens; readonly input: LessonInput }
-  | { readonly type: 'data'; readonly input: LessonInput }
-  | { readonly type: 'theme'; readonly tokens: LessonTokens }
-  | { readonly type: 'ping' }
-  | { readonly type: 'shoot'; readonly id: number };
-
-export type LessonUp =
-  | { readonly type: 'ready' }
-  | { readonly type: 'pong' }
-  | { readonly type: 'save'; readonly state: DocState }
-  | { readonly type: 'emit'; readonly event: LessonEvent }
-  | { readonly type: 'size'; readonly height: number }
-  | { readonly type: 'fault'; readonly message: string }
-  | { readonly type: 'census'; readonly census: LessonCensus }
-  | { readonly type: 'still'; readonly id: number; readonly width: number; readonly height: number; readonly data: string | null };
+/**
+ * What the page gives the lesson, riding the host's `data` message (the look's tokens object carries it: the host forwards the whole object).
+ * `rev` counts: the lesson takes only a payload newer than the last. `replace` says the state in `input` is the truth (a document opened again);
+ * otherwise the lesson keeps its own. `census` counts the page's requests for the summary of what is on screen.
+ */
+export interface LessonPayload {
+  readonly rev: number;
+  readonly tokens: LessonTokens;
+  readonly input: LessonInput;
+  readonly replace: boolean;
+  readonly census: number;
+}
 
 // ---------------------------------------------------------------- the census (2.8): what is on screen, as data
 

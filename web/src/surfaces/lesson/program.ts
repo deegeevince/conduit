@@ -1,104 +1,124 @@
-// The lesson program: the one script that runs inside the sandboxed surface. It is bundled to a single IIFE (scripts/lesson-program.ts) and the
-// host writes it into the frame's document, with its channel secret, the kit's CSS and the lesson's. It speaks only the surface protocol of
-// PLAN-v3-core 2.6: `ready`, `pong`, `save`, `emit`, `size`, `fault`, `census` and `still` up; `init`, `data`, `theme`, `ping` and `shoot` down.
-// It reads nothing but the page's messages, and it has no way out but `postMessage`.
+// The lesson program: the one script that runs inside the sandboxed surface, on the host of `web/src/surfaces/host.ts`. It is bundled to a single
+// minified script (scripts/lesson-program.ts) and written into the frame's document with the kit's CSS and the lesson's. It has no way out but
+// the host's bridge: `conduit.send` for what a hand changed, `conduit.state` for a copy of her state, and the page's `data` messages in.
+//
+//   in   the page's payload rides the look's tokens (`tokens.lesson`): the document, her state, the palette; and a count that asks for the census
+//   out  `cursor`, `try`, `held` (what advance committed, written small: a value is at most 300 characters), `open` (another sheet), `hello`
+//        (once, so the page sends the payload), `census` (the summary the page asked for)
+//
+// The page's copy of her state is made by the same `advance` from the same changes, so the two cannot disagree; the lesson keeps its own state
+// and the page's payload only replaces it when it says so (a document opened again).
 
-import { takeCensus } from './census';
+import { takeCensus, summarise } from './census';
+import { encode } from './changes';
 import { Player } from './player';
-import { still } from './still';
-import type { LessonDown, LessonEvent, LessonInput, LessonTokens, LessonUp } from './types';
+import type { DocState, LessonCensus, LessonInput, LessonPayload, LessonTokens, StateChange } from './types';
+
+interface Bridge {
+  send(name: string, value: string | number | boolean): void;
+  state(next?: unknown): unknown;
+}
 
 declare global {
   interface Window {
-    /** written by the host before this script runs */
-    conduitBoot?: { readonly ch: string };
+    /** the host's bridge, written into the frame before this script runs */
+    readonly conduit?: Bridge;
+    /** what the bench's driver reads: the census whole, with every region and word (the host has no message for it yet; see the hand-back) */
+    __lessonCensus?: () => LessonCensus | null;
   }
 }
 
-const channel = window.conduitBoot?.ch ?? '';
+const bridge = window.conduit;
 const root = document.getElementById('root');
-
-function post(message: LessonUp): void {
-  try {
-    parent.postMessage({ conduit: 1, ch: channel, ...message }, '*');
-  } catch {
-    // a frame with no parent has nobody to tell
-  }
-}
 
 function wear(tokens: LessonTokens): void {
   const style = document.documentElement.style;
-  style.setProperty('--ground', tokens.ground);
-  style.setProperty('--card', tokens.card);
-  style.setProperty('--ink', tokens.ink);
-  style.setProperty('--dim', tokens.dim);
-  style.setProperty('--accent', tokens.accent);
-  style.setProperty('--on-accent', tokens.onAccent);
-  style.setProperty('--soft', tokens.soft);
-  style.setProperty('--line', tokens.line);
-  style.setProperty('--good', tokens.good);
-  style.setProperty('--good-soft', tokens.goodSoft);
-  style.setProperty('--nudge', tokens.nudge);
-  style.setProperty('--nudge-soft', tokens.nudgeSoft);
-  style.setProperty('--font', tokens.font);
+  const set = (name: string, value: string): void => style.setProperty(name, value);
+  set('--ground', tokens.ground);
+  set('--card', tokens.card);
+  set('--ink', tokens.ink);
+  set('--dim', tokens.dim);
+  set('--accent', tokens.accent);
+  set('--on-accent', tokens.onAccent);
+  set('--soft', tokens.soft);
+  set('--line', tokens.line);
+  set('--good', tokens.good);
+  set('--good-soft', tokens.goodSoft);
+  set('--nudge', tokens.nudge);
+  set('--nudge-soft', tokens.nudgeSoft);
+  set('--font', tokens.font);
   if (tokens.dark) document.documentElement.setAttribute('data-dark', '');
   else document.documentElement.removeAttribute('data-dark');
 }
 
-function isDown(data: unknown): data is LessonDown & { readonly conduit: 1; readonly ch: string } {
-  if (typeof data !== 'object' || data === null) return false;
-  const record = data as Record<string, unknown>;
-  if (record['conduit'] !== 1 || record['ch'] !== channel || typeof record['type'] !== 'string') return false;
-  if (record['type'] === 'init' || record['type'] === 'data') {
-    const input = record['input'];
-    return typeof input === 'object' && input !== null && 'doc' in input && 'state' in input;
-  }
-  return true;
+function isPayload(value: unknown): value is LessonPayload {
+  if (typeof value !== 'object' || value === null) return false;
+  const v = value as Record<string, unknown>;
+  const input = v['input'];
+  return typeof v['rev'] === 'number' && typeof v['tokens'] === 'object' && typeof input === 'object' && input !== null && 'doc' in input && 'state' in input;
 }
 
 let player: Player | null = null;
-let wait = 0;
+let rev = -1;
+let asked = 0;
+let flush = 0;
+const waiting = new Map<string, StateChange>();
 
-function report(): void {
-  window.clearTimeout(wait);
-  wait = window.setTimeout(() => {
-    if (player === null || root === null) return;
-    post({ type: 'census', census: takeCensus(player, root) });
-    post({ type: 'size', height: document.documentElement.scrollHeight });
-  }, 90);
+function tell(change: StateChange): void {
+  const wire = encode(change);
+  if (wire !== null) bridge?.send(wire.name, wire.value);
+}
+
+/** A control held is told once it has settled: the latest value of each, at most twice a second, so a child tapping fast stays inside the host's rate. */
+function settle(): void {
+  window.clearTimeout(flush);
+  flush = window.setTimeout(() => {
+    for (const change of waiting.values()) tell(change);
+    waiting.clear();
+  }, 500);
+}
+
+function commit(changes: readonly StateChange[], state: DocState): void {
+  for (const change of changes) {
+    if (change.kind === 'held') {
+      waiting.set(`${change.node}\u0000${change.key}`, change);
+      settle();
+    } else {
+      // an ordered change goes after the held values that came before it
+      for (const held of waiting.values()) tell(held);
+      waiting.clear();
+      tell(change);
+    }
+  }
+  // a copy of her state for the host to keep (it is told to the page a moment after it stops changing, and when the frame leaves)
+  bridge?.state(state);
 }
 
 function start(input: LessonInput): void {
   if (root === null) return;
-  player = new Player(root, input, {
-    save: (state) => post({ type: 'save', state }),
-    emit: (event: LessonEvent) => post({ type: 'emit', event }),
-    changed: report,
-  });
+  player = new Player(root, input, { commit, open: (id) => bridge?.send('open', id) });
   player.render();
+  window.__lessonCensus = () => (player === null ? null : takeCensus(player, root));
 }
 
 addEventListener('message', (event) => {
   if (event.source !== parent) return;
   const data: unknown = event.data;
-  if (!isDown(data)) return;
-  if (data.type === 'init') {
-    wear(data.tokens);
-    start(data.input);
-  } else if (data.type === 'data') player?.update(data.input);
-  else if (data.type === 'theme') {
-    wear(data.tokens);
-    player?.render();
-  } else if (data.type === 'ping') post({ type: 'pong' });
-  else if (data.type === 'shoot') {
-    const id = data.id;
-    const width = window.innerWidth;
-    const height = Math.min(document.documentElement.scrollHeight, 2400);
-    void still(width, height).then((picture) => post({ type: 'still', id, width, height, data: picture }));
+  if (typeof data !== 'object' || data === null) return;
+  const tokens = (data as { readonly tokens?: unknown }).tokens;
+  const payload = typeof tokens === 'object' && tokens !== null ? (tokens as { readonly lesson?: unknown }).lesson : undefined;
+  if (!isPayload(payload) || payload.rev <= rev) return;
+  rev = payload.rev;
+  wear(payload.tokens);
+  if (player === null) start(payload.input);
+  else if (payload.replace) {
+    player = null;
+    start(payload.input);
+  } else player.update(payload.input);
+  if (payload.census > asked) {
+    asked = payload.census;
+    const census = window.__lessonCensus?.();
+    if (census !== null && census !== undefined) bridge?.send('census', summarise(census));
   }
 });
-addEventListener('resize', report);
-addEventListener('scroll', report, { passive: true });
-addEventListener('error', (event) => post({ type: 'fault', message: String(event.message).slice(0, 200) }));
-addEventListener('unhandledrejection', (event) => post({ type: 'fault', message: String(event.reason instanceof Error ? event.reason.message : event.reason).slice(0, 200) }));
-post({ type: 'ready' });
+bridge?.send('hello', 1);

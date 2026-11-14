@@ -13,19 +13,20 @@
 
 import { accepts, advance, maskSealed, sealed } from '@conduit/language';
 import type { DocEvent } from '@conduit/language';
+import { changesBetween } from './changes';
 import { h } from './dom';
 import { atOf, gateOf, questionDone, runsOf, shownOf, shutAsks, sheetOf, viewOf, wayDone, wayOf } from './model';
 import type { Question, Run, Sheet, Way } from './model';
 import { TECHNIQUE_NAMES } from './types';
-import type { CatalogueEntry, DocState, Held, LessonAsk, LessonEvent, LessonInput, OpenAsk, Technique } from './types';
+import type { CatalogueEntry, DocState, Held, LessonAsk, LessonInput, OpenAsk, StateChange, Technique } from './types';
 import { drawVisual } from './widgets';
 import type { WidgetCtx } from './widgets/common';
 
 export interface PlayerPort {
-  save(state: DocState): void;
-  emit(event: LessonEvent): void;
-  /** the screen changed: a fresh census may be taken */
-  changed(): void;
+  /** what advance committed: the changes the page applies to its copy (a cursor moved, an answer tried, a control held) */
+  commit(changes: readonly StateChange[], state: DocState): void;
+  /** she opened another sheet in the catalogue */
+  open(document: string): void;
 }
 
 /** What is on screen when it is not the way the cursor rests on. Ephemeral: the cursor is what is kept. */
@@ -105,8 +106,9 @@ export class Player {
   private apply(event: DocEvent): void {
     const next = advance(this.input.doc, this.state, event);
     if (next === this.state) return;
+    const changes = changesBetween(this.input.doc, this.state, next);
     this.state = next;
-    this.port.save(next);
+    this.port.commit(changes, next);
   }
 
   private show(screen: Screen): void {
@@ -120,7 +122,6 @@ export class Player {
     this.screen = null;
     this.justShown = null;
     this.apply({ kind: 'go', node: way.node.id, at: finished ? { at: 0 } : 'resume' });
-    this.port.emit({ kind: 'open', node: way.node.id });
     this.render();
     window.scrollTo(0, 0);
   }
@@ -128,16 +129,11 @@ export class Player {
   private tryAnswer(way: Way, ask: LessonAsk, text: string, stamp: number): void {
     const clean = text.trim();
     if (clean === '') return;
-    const was = wayDone(this.state, way);
     this.apply({ kind: 'try', node: way.node.id, ask: ask.id, value: clean });
-    const view = viewOf(this.input.doc, this.state, way, ask);
-    this.port.emit({ kind: 'try', node: way.node.id, ask: ask.id, text: clean.slice(0, 80), right: accepts(ask, clean), hint: view === null || accepts(ask, clean) ? 0 : Math.min(view.wrong, ask.hints.length) });
     delete this.draft[ask.id];
-    if (!was && wayDone(this.state, way)) this.port.emit({ kind: 'done', node: way.node.id });
     this.render();
     this.tryMs = Math.round(performance.now() - stamp);
     requestAnimationFrame(() => this.root.querySelector('.nudge, .ask.closed:last-of-type')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
-    this.port.changed();
   }
 
   private next(way: Way): void {
@@ -145,7 +141,6 @@ export class Player {
     if (at >= way.steps.length - 1) return;
     this.justShown = at + 1;
     this.apply({ kind: 'next' });
-    this.port.emit({ kind: 'step', node: way.node.id, at: at + 2 });
     this.render();
     this.scrollToLatest();
   }
@@ -197,7 +192,6 @@ export class Player {
         if (keep.at !== null) field.setSelectionRange(keep.at, keep.at);
       }
     }
-    this.port.changed();
   }
 
   /** A question that has scrolled to the top of the screen is "docked": on a phone it shows fewer lines and opens to the whole on a tap. */
@@ -213,7 +207,6 @@ export class Player {
       const card = this.root.querySelector('.qcard');
       if (card instanceof HTMLElement) card.classList.toggle('docked', gone);
       this.fit();
-      this.port.changed();
     });
     this.watcher.observe(mark);
   }
@@ -269,7 +262,7 @@ export class Player {
             {},
             h(
               'button',
-              { type: 'button', class: `qrow${isDone ? ' done' : ''}${ready === 0 ? ' wait' : ''}`, 'data-act': `q:${q.node.id}`, onclick: () => { this.port.emit({ kind: 'open', node: q.node.id }); this.show({ kind: 'ways', question: q.node.id }); } },
+              { type: 'button', class: `qrow${isDone ? ' done' : ''}${ready === 0 ? ' wait' : ''}`, 'data-act': `q:${q.node.id}`, onclick: () => this.show({ kind: 'ways', question: q.node.id }) },
               h('span', { class: 'qnum' }, isDone ? '✓' : String(q.number)),
               h('span', { class: 'qtext' }, q.node.title),
               h('span', { class: 'qnote' }, note),
@@ -301,7 +294,6 @@ export class Player {
       more.textContent = this.expanded ? 'Show less' : 'Read it all';
       more.setAttribute('aria-expanded', String(this.expanded));
       this.fit();
-      this.port.changed();
     });
     return h('div', { class: 'qwrap' }, h('div', { class: 'sentinel', 'aria-hidden': 'true' }), card);
   }
@@ -372,7 +364,6 @@ export class Player {
         set: (name, value) => {
           this.fresh = name;
           this.apply({ kind: 'held', node: way.node.id, key: `${key}.${name}`, value });
-          this.port.emit({ kind: 'hold', node: way.node.id, key: `${key}.${name}`, value });
           this.render();
         },
         seal: seal.seal,
@@ -521,7 +512,7 @@ export class Player {
 
   private openEntry(entry: CatalogueEntry, question: string): void {
     if (entry.current) this.show({ kind: 'ways', question });
-    else this.port.emit({ kind: 'document', id: entry.id });
+    else this.port.open(entry.id);
   }
 
   // ------------------------------------------------------------ for the brain and the census

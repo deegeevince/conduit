@@ -130,3 +130,26 @@ export function takeCensus(player: Player, root: HTMLElement): LessonCensus {
     here: player.here(),
   };
 }
+
+/**
+ * The census in the three hundred characters the bridge allows an event: the numbers the rules of the plan are held to (the whole census is
+ * read in the page of the bench, and goes up whole when the host has a `census` message). `v` view, `q` [card on screen, its type px],
+ * `s` [steps shown, drawn], `f` [smallest picture share, smallest piece px], `w` [smallest type px, lowest contrast], `t` [smallest target px,
+ * smallest choice px], `l` answers found on screen, `x` pixels past the edge, `m` ms a try took.
+ */
+export function summarise(c: LessonCensus): string {
+  const min = (values: readonly number[]): number => (values.length === 0 ? 0 : Math.min(...values));
+  const targets = c.targets.filter((t) => t.kind !== 'field');
+  const summary = {
+    v: c.view,
+    q: [c.question?.onScreen === true ? 1 : 0, c.question?.px ?? 0],
+    s: [c.steps.shown, c.steps.drawn],
+    f: [min(c.figures.map((f) => f.share)), min(c.figures.flatMap((f) => (f.least === null ? [] : [f.least])))],
+    w: [min(c.words.map((w) => w.px)), min(c.words.map((w) => w.contrast))],
+    t: [Math.round(min(targets.map((t) => Math.min(t.w, t.h)))), Math.round(min(c.targets.filter((t) => t.kind === 'choice').map((t) => t.h)))],
+    l: c.sealed.leaks.length,
+    x: Math.max(0, c.viewport.scrollW - c.viewport.w),
+    m: c.tryMs ?? 0,
+  };
+  return JSON.stringify(summary).slice(0, 290);
+}

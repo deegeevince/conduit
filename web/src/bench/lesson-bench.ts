@@ -13,7 +13,7 @@ import { DocumentHost } from '../app/document-host';
 import { advance, findNode, initialState } from '@conduit/language';
 import type { DocNode, LessonStep, NodeStatus } from '@conduit/language';
 import { FIXTURES, catalogueFrom, standInCrop } from '../surfaces/lesson/fixtures';
-import type { DocState, Document, LessonEvent, LessonInput, StateChange } from '../surfaces/lesson/types';
+import type { DocState, Document, LessonInput, StateChange } from '../surfaces/lesson/types';
 
 const params = new URLSearchParams(location.search);
 const DOCS = FIXTURES;
@@ -67,30 +67,28 @@ function input(): LessonInput {
   return { doc, state, crops: crops(doc), catalogue };
 }
 
-const events: LessonEvent[] = [];
 const changes: StateChange[] = [];
+const notes: string[] = [];
 const mount = document.getElementById('lesson');
 if (mount === null) throw new Error('no mount');
 const host = new DocumentHost({
   mount,
   dark,
   input: input(),
-  onState: (next) => {
+  onChange: (change, next) => {
+    changes.push(change);
     state = next;
     save(doc.id, next);
   },
-  onChange: (change) => changes.push(change),
-  onEvent: (event) => {
-    events.push(event);
-    if (event.kind === 'document') {
-      const next = DOCS[event.id];
-      if (next !== undefined) {
-        const u = new URL(location.href);
-        u.searchParams.set('fixture', next.id);
-        u.searchParams.delete('open');
-        u.searchParams.delete('reset');
-        location.href = u.toString();
-      }
+  onNote: (text) => notes.push(text),
+  onOpen: (open) => {
+    const next = DOCS[open];
+    if (next !== undefined) {
+      const u = new URL(location.href);
+      u.searchParams.set('fixture', next.id);
+      u.searchParams.delete('open');
+      u.searchParams.delete('reset');
+      location.href = u.toString();
     }
   },
 });
@@ -118,11 +116,10 @@ if (params.get('stream') === '1') {
 
 win.__lesson = {
   host,
-  census: () => host.lastCensus(),
-  state: () => state,
-  events,
+  state: () => host.current,
   changes,
+  notes,
+  census: () => host.census(),
   probe: () => host.probe(),
-  frame: () => host.element.getBoundingClientRect().toJSON(),
-  shoot: () => host.shoot(),
+  still: () => host.still(),
 };
