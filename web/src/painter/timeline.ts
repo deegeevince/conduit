@@ -649,7 +649,12 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
   const laidStyle = (style: ElementStyle): ElementStyle => (style.near !== null || style.group !== null || (typeof style.at === 'object' && style.at !== null) ? { ...style, at: 'center', near: null } : style);
 
   /** the widest a control may be, in its layer's plane units: the room the flow has across */
-  const controlRoom = (span: ElementSpan, fit: CanvasFit): number => fit.flow.width / planeScale(span.style.layer, viewport);
+  const controlRoom = (span: ElementSpan, fit: CanvasFit): number => {
+    const room = fit.flow.width / planeScale(span.style.layer, viewport);
+    // on a free canvas, where words stand wherever they were told, a text field takes at most two fifths of it (its prompt is cut to fit): a field the width of the stage stands on something
+    return scheduleLayoutOf(span) === 'free' && controlSpecOf(span)?.control === 'input' ? room * 0.4 : room;
+  };
+  const scheduleLayoutOf = (span: ElementSpan): string => sceneAt(schedule, span.enter?.start ?? 0).layout;
 
   /** a card with no place of its own stands in the flow */
   function cardIsInFlow(style: ElementStyle): boolean {
