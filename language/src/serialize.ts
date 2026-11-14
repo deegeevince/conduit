@@ -1,3 +1,4 @@
+import { CODE_LANGUAGES } from './vocabulary';
 import type { BindOn, CanvasBox, ColourRef, FillRef, Line, LookProps, Point, ShapeGeometry, SpriteKey, StyleProps, Target, When } from './types';
 
 function seconds(value: number): string {
@@ -161,7 +162,7 @@ export function serializeLine(line: Line): string {
       return [...head, ...lookTokens(line.props), ...whenToken(line.when)].join(' ');
     }
     case 'say':
-      return withText(['say', line.id, ...line.styles, ...propTokens(line.props), ...whenToken(line.when)], line.text);
+      return withText(['say', line.id, ...line.styles, ...propTokens(line.props), ...(line.href === undefined ? [] : [`href=${line.href}`]), ...whenToken(line.when)], line.text);
     case 'circle':
     case 'ellipse':
     case 'rect':
@@ -194,21 +195,39 @@ export function serializeLine(line: Line): string {
       if (line.mask !== undefined) head.push(`mask=${line.mask}`);
       return withText([...head, ...propTokens(line.props), ...whenToken(line.when)], line.prompt === '' ? undefined : line.prompt);
     }
+    case 'pic': {
+      const head: string[] = ['pic', line.id, ...boxTokens(line.box), ...line.styles, `from=${line.from}`];
+      return [...head, ...propTokens(line.props), ...whenToken(line.when)].join(' ');
+    }
+    case 'deck':
+      return withText(['deck', ...whenToken(line.when)], line.title === '' ? undefined : line.title);
+    case 'standing':
+      return 'drop' in line ? `standing drop ${line.drop}` : `standing | ${line.text}`;
+    case 'refine':
+      return line.passes === undefined ? 'refine' : `refine ${line.passes}`;
     case 'flow':
     case 'tree':
     case 'cycle':
     case 'timeline':
     case 'map':
     case 'table':
-    case 'chart': {
+    case 'chart':
+    case 'code': {
       const head: string[] = [line.verb, line.id];
       if (line.grow !== undefined) head.push(line.grow);
       if (line.chart !== undefined) head.push(line.chart);
       head.push(...(line.words ?? []));
       if (line.route === true) head.push('route');
       if (line.bars === true) head.push('bars');
+      if (line.lang !== undefined) head.push((CODE_LANGUAGES as readonly string[]).includes(line.lang) ? line.lang : `lang=${line.lang}`);
       head.push(...boxTokens(line.box), ...line.styles);
+      if (line.file !== undefined) head.push(`file=${line.file}`);
       if (line.data !== undefined) head.push(`data=${line.data}`);
+      if (line.dataset !== undefined) {
+        head.push(`data=dataset:${line.dataset.name}`);
+        if (line.dataset.instrument !== undefined) head.push(`instrument=${line.dataset.instrument}`);
+        if (line.dataset.field !== undefined) head.push(`field=${line.dataset.field}`);
+      }
       return withText([...head, ...propTokens(line.props), ...whenToken(line.when)], line.title);
     }
     case 'node': {

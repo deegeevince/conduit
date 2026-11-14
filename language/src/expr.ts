@@ -279,8 +279,33 @@ export function numberOf(value: ControlValue | null): number {
  */
 export function formatValue(value: number, digits: number | null = null): string {
   if (!Number.isFinite(value)) return '-';
-  if (digits !== null) return value.toFixed(Math.min(6, Math.max(0, digits)));
-  return String(Number(value.toFixed(2)));
+  const places = digits === null ? null : Math.min(6, Math.max(0, digits));
+  const fixed = places === null ? String(Number(value.toFixed(2))) : value.toFixed(places);
+  return groupThousands(fixed);
+}
+
+/**
+ * Groups the thousands of a computed number (`1234567.5` is `1,234,567.5`), because a figure with seven digits and no commas cannot be read.
+ * A whole number from 1900 to 2100 is left alone: it is far more often a year than an amount.
+ */
+export function groupThousands(plain: string): string {
+  const match = /^(-?)(\d{4,})(\.\d+)?$/.exec(plain);
+  if (match === null) return plain;
+  const [, sign = '', whole = '', fraction = ''] = match;
+  if (fraction === '' && whole.length === 4 && Number(whole) >= 1900 && Number(whole) <= 2100) return plain;
+  return `${sign}${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}${fraction}`;
+}
+
+/**
+ * A unit written twice prints once. A slider's own words already carry its unit (`5%`), so `{rate}%` would show `5%%`: when the text that
+ * follows a value begins with the unit the value ends in, the value gives its unit up. `shown` is the value as it will be written;
+ * `following` is the text right after the braces.
+ */
+export function unitOnce(shown: string, following: string): string {
+  const unit = /\d(\s?(?:%|°[CF]?|[a-zA-Z$€£/]{1,6}))$/.exec(shown)?.[1];
+  if (unit === undefined || following === '') return shown;
+  const bare = unit.trim();
+  return following.startsWith(bare) || following.startsWith(unit) ? shown.slice(0, shown.length - unit.length) : shown;
 }
 
 export type TemplatePart =

@@ -572,9 +572,21 @@ export const STRUCTURE = {
   map: { gist: 'pins at your x,y, labelled clear of each other', parts: 'nodes', lays: 'brain' },
   table: { gist: 'rows `| a | b | c`, the first the header; `bars` draws its numbers as bars too', parts: 'rows', lays: 'painter' },
   chart: { gist: 'rows `| when | value`: an instrument with axes, a crosshair and zoom', parts: 'rows', lays: 'engine' },
+  code: { gist: 'rows `| line` taken exactly as written, indentation kept: monospaced and highlighted, with a copy action', parts: 'rows', lays: 'engine' },
 } as const satisfies Record<string, { gist: string; parts: 'nodes' | 'rows'; lays: 'painter' | 'axis' | 'brain' | 'engine' }>;
 export type StructureKind = keyof typeof STRUCTURE;
 export const STRUCTURE_KINDS = keysOf(STRUCTURE);
+
+/**
+ * The names a `code` block knows a language by, as the brain writes them. A word here is never taken for an id: `code python` is a block of
+ * Python. Any other name is kept as written (`lang=elvish`), and the painter's tokenizer shows what it does not know as plain text.
+ */
+export const CODE_LANGUAGES = [
+  'text', 'plain', 'txt', 'ts', 'typescript', 'js', 'javascript', 'jsx', 'tsx', 'json', 'python', 'py', 'bash', 'sh', 'shell', 'zsh', 'css', 'scss', 'html', 'xml', 'svg', 'sql',
+  'c', 'cpp', 'c++', 'csharp', 'c#', 'cs', 'java', 'kotlin', 'swift', 'go', 'golang', 'rust', 'rs', 'ruby', 'rb', 'php', 'yaml', 'yml', 'toml', 'ini', 'md', 'markdown', 'diff',
+  'lua', 'r', 'haskell', 'scala', 'perl', 'dart', 'elixir', 'ocaml', 'regex', 'dockerfile', 'makefile', 'graphql',
+] as const;
+export type CodeLanguage = (typeof CODE_LANGUAGES)[number];
 
 /** Which way a flow or a tree grows. */
 export const GROWTH = { right: 'left to right', down: 'top to bottom' } as const;
@@ -819,6 +831,12 @@ export const VERB = {
     time: 'starts',
     family: 'structure',
   },
+  code: {
+    form: 'code [id] [lang] [file=<name>] [x,y WxH] [| title]',
+    gist: 'Code, taken exactly: follow it with one `| line` per line of the source, indentation kept, a bare `|` for an empty line.',
+    time: 'starts',
+    family: 'structure',
+  },
   node: {
     form: 'node [id] [number | x,y] [ask|end|note] [from=<id>[:label]] [x=<when>] [y=<value>] [prop=value…] | <text>',
     gist: 'One part of the structure above. from= also draws the link from that node. On a chart it is a mark: x= an event, y= a level, both a point.',
@@ -873,6 +891,12 @@ export const VERB = {
     time: 'instant',
     family: 'control',
   },
+  pic: {
+    form: 'pic [id] from=<picture id> [x,y WxH] [prop=value…]',
+    gist: 'Put a picture the user gave on stage, to draw over, point at or trace. Its id is in the brief.',
+    time: 'draws',
+    family: 'picture',
+  },
   paint: {
     form: 'paint [id] [x,y WxH] [over=<group>] [as=<medium>] [sketch=fade|keep] [mask=…] [| what it is]',
     gist: 'Paint over what you drew: the painter re-renders your sketch in a medium.',
@@ -925,6 +949,24 @@ export const VERB = {
     form: 'revise <id> [style…] [prop=value…] [| <new text>]',
     gist: 'Quietly change a line that has not played yet.',
     time: 'edit',
+    family: 'mind',
+  },
+  deck: {
+    form: 'deck | <title>',
+    gist: 'Make this answer a deck: each scene after it is a slide, and the viewer steps through them.',
+    time: 'opens',
+    family: 'plan',
+  },
+  standing: {
+    form: 'standing | <their words>  or  standing drop <n>',
+    gist: 'Hold what the user asked for from now on ("add a visual to every reply"), in their words; every later brief gives it back.',
+    time: 'instant',
+    family: 'mind',
+  },
+  refine: {
+    form: 'refine [passes]',
+    gist: 'Keep making the picture better, pass by pass, because the user asked for iteration.',
+    time: 'instant',
     family: 'mind',
   },
   cancel: {
@@ -1059,6 +1101,12 @@ export const LIMITS = {
   marks: 24,
   /** cells in one row of a table or chart */
   cells: 8,
+  /** lines in one `code` block; more is scrolled, not cut, up to this */
+  codeRows: 400,
+  /** characters in the file name of a `code` block */
+  file: 48,
+  /** characters in a link's address */
+  href: 400,
   /** options in one pick */
   options: 12,
   /** controls alive on stage at once */

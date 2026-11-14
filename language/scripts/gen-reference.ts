@@ -67,6 +67,9 @@ import {
   CHART_REVEAL_SECONDS,
   CHART_ROW_SECONDS,
   CHART_WORD,
+  CODE_LANGUAGES,
+  CODE_ROW_SECONDS,
+  QUICK_ENTER_SECONDS,
   CONTROL,
   EXPR_FUNCTION,
   LINK_END,
@@ -204,6 +207,7 @@ sections.push(words('`node` shapes (flow, tree, cycle)', 'Shape', NODE));
 sections.push(words('`link` ends', 'End', LINK_END));
 sections.push(words('`chart` kinds', 'Kind', CHART));
 sections.push(words('`chart` words', 'Word', CHART_WORD));
+sections.push(`### \`code\` languages\n\nWords that name a language and are never taken for an id: ${CODE_LANGUAGES.map((name) => `\`${name}\``).join(', ')}. Any other name is kept as written (\`lang=…\`) and shown plain.\n`);
 sections.push(words('Controls', 'Control', CONTROL));
 sections.push(words('`pick` forms', 'Form', PICK));
 sections.push(words('Functions in `{…}`', 'Function', EXPR_FUNCTION));
@@ -271,6 +275,8 @@ sections.push(
     `| reading speed in \`layout=page\` | ${PAGE_READ_FACTOR} x the pace's words per second |`,
     `| a link drawing itself | ${LINK_SECONDS} x ease (a fixed length: where a link runs is the painter's decision) |`,
     `| a table row landing | ${Object.entries(TABLE_ROW_SECONDS).map(([name, value]) => `${value} (${name})`).join(', ')} |`,
+    `| a line of code landing | ${Object.entries(CODE_ROW_SECONDS).map(([name, value]) => `${value} (${name})`).join(', ')} |`,
+    `| plain content fading in (a page's paragraph, the frame of a table, chart or code block) | at most ${QUICK_ENTER_SECONDS} x ease |`,
     `| a chart point landing | ${Object.entries(CHART_ROW_SECONDS).map(([name, value]) => `${value} (${name})`).join(', ')} |`,
     `| a chart of DATA revealing itself, once the data is there | ${CHART_REVEAL_SECONDS}, on the ambient clock |`,
     `| a bound change that is on or off (a toggle, \`bind mode=night\`) | ${BOUND_SECONDS}, on the ambient clock |`,

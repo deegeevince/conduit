@@ -30,7 +30,17 @@ export const DEMOS = [
   {
     name: 'diagrams',
     title: 'Diagrams',
-    summary: 'A flow, a tree, a cycle, a timeline and a table: the brain names the parts, the painter lays them out.',
+    summary: 'A flow, a tree, a cycle, a timeline and a table: the brain names the parts, the painter lays them out. A follow-up said again costs nothing; only the new step lands.',
+  },
+  {
+    name: 'code',
+    title: 'Code',
+    summary: 'Source taken exactly: indentation kept, a bar inside a line only a character, a bare bar an empty line. Three listings in three languages.',
+  },
+  {
+    name: 'deck',
+    title: 'Deck',
+    summary: 'A talk of three slides: `deck` makes each scene a slide, and the stage stops at the end of each for the viewer to step on.',
   },
   {
     name: 'explorable',

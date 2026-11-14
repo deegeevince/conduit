@@ -52,8 +52,13 @@ export function describeFigure(figure: Figure, box: CanvasBox | null = null): st
       return box === null ? name : `${name} ${round(box.w)}x${round(box.h)} at ${round(box.x + box.w / 2)},${round(box.y + box.h / 2)}`;
     }
     case 'structure': {
+      if (figure.structure === 'code') return describeCode(figure);
       const name = figure.chart === null ? figure.structure : [...figure.words, `${figure.chart} chart`].join(' ');
       if (figure.data !== null) return `${name} of DATA ${figure.data}`;
+      if (figure.dataset !== undefined && figure.dataset !== null) {
+        const { dataset } = figure;
+        return `${name} of the stored dataset ${dataset.name}${dataset.instrument === undefined ? '' : `, ${dataset.instrument}`}${dataset.field === undefined ? '' : `, ${dataset.field}`}`;
+      }
       if (figure.rows.length === 0) return name;
       // A chart of many points is named by its first and last, not recited.
       const rows = figure.rows.length > 8 ? [...figure.rows.slice(0, 2), { cells: [`… ${figure.rows.length - 3} more …`] }, ...figure.rows.slice(-1)] : figure.rows;
@@ -75,10 +80,19 @@ export function describeFigure(figure: Figure, box: CanvasBox | null = null): st
     case 'copy':
       return `copy of ${figure.source.split('@')[0] ?? figure.source}`;
     case 'picture':
-      return `painting: ${figure.prompt}`;
+      return figure.from === undefined || figure.from === null ? `painting: ${figure.prompt}` : `the user's picture ${figure.from}`;
     case 'field':
       return `${figure.field}, ${figure.amount}`;
   }
+}
+
+/** A block of code in a few words: what it is, how long, and how it begins. The source itself is in the conversation, not in the stage's memory. */
+function describeCode(figure: Extract<Figure, { kind: 'structure' }>): string {
+  const lines = figure.rows.map((row) => row.cells[0] ?? '');
+  const language = figure.lang === undefined || figure.lang === null ? '' : ` ${figure.lang}`;
+  const file = figure.file === undefined || figure.file === null ? '' : ` "${figure.file}"`;
+  const begins = lines.filter((line) => line.trim() !== '').slice(0, 3).map((line) => (line.trim().length > 60 ? `${line.trim().slice(0, 59)}…` : line.trim()));
+  return `code${language}${file}, ${lines.length} line${lines.length === 1 ? '' : 's'}${begins.length === 0 ? '' : `: ${begins.join(' / ')}${lines.filter((line) => line.trim() !== '').length > begins.length ? ' …' : ''}`}`;
 }
 
 /** A node's words, with its date or span in front when it sits on a timeline, so the transcript says what the picture says. */
@@ -239,6 +253,7 @@ export function settle(schedule: Schedule, base: StageBase, at: number, controls
       parent: element.parent,
       struck: isStruckAt(element, at),
       replaces: element.replaces,
+      ...(element.href !== undefined && { href: element.href }),
       ...(driven.length > 0 && { driven: driven.map(({ until: _until, ...change }) => ({ ...change, since: 0 })) }),
     };
   });

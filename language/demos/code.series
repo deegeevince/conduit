@@ -1,0 +1,35 @@
+# Code: a structure whose rows are taken exactly. Indentation is kept, a bare bar is an empty line,
+# and a bar inside a line is only a character. The painter sets it monospaced and highlighted, inside its frame.
+
+scene caption
+code fizz python file=fizzbuzz.py | Fizz, then buzz
+| def fizzbuzz(n):
+|     for i in range(1, n + 1):
+|         if i % 15 == 0:
+|             print("FizzBuzz")
+|         elif i % 3 == 0:
+|             print("Fizz")
+|         elif i % 5 == 0:
+|             print("Buzz")
+|         else:
+|             print(i)
+say | Four branches, one loop. The order of the tests is the whole trick.
+wait 2
+
+scene caption
+code pipe bash | A pipeline, taken exactly
+| # count the words in the three longest files
+| wc -w *.md | sort -rn | head -3
+|
+| echo "done | $(date +%H:%M)"
+say aside | The bar in the last line is code, not a table.
+wait 2
+
+scene caption
+code cfg ts file=config.ts
+| export const config = {
+|   retries: 3,
+|   timeoutMs: 2_500,
+| } as const;
+say | The same lines, in another language.
+wait 2
