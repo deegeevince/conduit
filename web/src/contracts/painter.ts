@@ -256,6 +256,11 @@ export interface Painter {
    * left, or of a turn that is not on stage, is dropped.
    */
   assetArrived(key: string, status: AssetStatus, url: string | null): void;
+  /**
+   * v2.2. A photograph the server found for an `image` part of a mock-up, by the part's id. Not on the turn clock: it may arrive after the
+   * turn has ended. It is drawn in the placeholder's place once the renderer has it, with `credit` at its foot; failing, the placeholder stays.
+   */
+  pictureArrived(partId: string, picture: { readonly url: string; readonly credit: string; readonly landing: string } | null): void;
 
   /**
    * News of DATA a chart draws by reference (`chart … data=d1`). `rows` is the table when it is ready, null when it could

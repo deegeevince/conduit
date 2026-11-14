@@ -97,6 +97,9 @@ importers:
       '@types/three':
         specifier: ^0.187.0
         version: 0.187.0
+      lucide-static:
+        specifier: ^1.72.0
+        version: 1.72.0
       typescript:
         specifier: ^7.0.2
         version: 7.0.2
@@ -708,6 +711,9 @@ packages:
   lightweight-charts@5.3.0:
     resolution: {integrity: sha512-w16fu2/FteUkIJdgc9G2tOCKs1fwFSqnqF8+kMgHGv0uGIfcfpEJhziSaQbML1yrkbeg4nQXV3msjmhBzhLNhw==}
 
+  lucide-static@1.72.0:
+    resolution: {integrity: sha512-QhdZ60O7Zcs/e8gw40uMfEn055xZTHBZoNi0xb+/1R2dTd0v4FXS46VL6rKSwC+V92tLBiqsAbCcijy7Wy4j4w==}
+
   meshoptimizer@1.1.1:
     resolution: {integrity: sha512-oRFNWJRDA/WTrVj7NWvqa5HqE1t9MYDj2VaWirQCzCCrAd2GHrqR/sQezCxiWATPNlKTcRaPRHPJwIRoPBAp5g==}
 
@@ -1265,6 +1271,8 @@ snapshots:
   lightweight-charts@5.3.0:
     dependencies:
       fancy-canvas: 2.1.0
+
+  lucide-static@1.72.0: {}
 
   meshoptimizer@1.1.1: {}
 

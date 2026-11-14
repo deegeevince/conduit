@@ -58,6 +58,8 @@ function jpegSize(bytes: Uint8Array): { width: number; height: number } | null {
  * - `GET  API.asset(session, id)`: the bytes of a painting with its own
  *   Content-Type, `Cache-Control: private, max-age=31536000, immutable`.
  *   404 `not_found` once the session has dropped it.
+ * - `GET  API.picture(key)`: a photograph found for an `image` part of a mock-up, a JPEG with `Cache-Control: private, immutable`; 404 when the key is
+ *   not on disk. Its credit travels in the `picture` event.
  * - `POST API.sketch(session, key)`: body `image/png`, at most
  *   ASSET_LIMITS.uploadBytes. 204. The painter's rendering of the sketch a
  *   picture element stands on; handed to the image model if it arrives within
@@ -79,7 +81,17 @@ function jpegSize(bytes: Uint8Array): { width: number; height: number } | null {
  * the usual `{ code, message, statusCode }` shape.
  */
 export function registerAssetRoutes(app: Hono, deps: HttpDeps): void {
-  const { conductor, assets } = deps;
+  const { conductor, assets, pictures } = deps;
+
+  // v2.2. A photograph the server found for an `image` part: a re-encoded JPEG from the disk cache, by the key in the `picture` event's url.
+  app.get(API.picture(':key'), async (c) => {
+    const found = await pictures.get(param(c, 'key'));
+    if (found === null) throw errors.notFound('picture');
+    c.header('Content-Type', found.mime);
+    c.header('Cache-Control', 'private, max-age=31536000, immutable');
+    c.header('X-Content-Type-Options', 'nosniff');
+    return c.body(found.bytes as Uint8Array<ArrayBuffer>);
+  });
 
   app.get(API.asset(':session', ':asset'), (c) => {
     const session = param(c, 'session');

@@ -319,7 +319,13 @@ export type StageEvent =
    * rows (same origin, JSON: a `DataTable`), and the chart reveals itself
    * when they are there. `failed`: the chart shows that it has no data.
    */
-  | { readonly type: 'data'; readonly turn: string; readonly id: string; readonly status: 'ready' | 'failed'; readonly url: string | null; readonly reason: string | null };
+  | { readonly type: 'data'; readonly turn: string; readonly id: string; readonly status: 'ready' | 'failed'; readonly url: string | null; readonly reason: string | null }
+  /**
+   * v2.2. A photograph the server found, off the turn clock, for an `image … | words` part of a mock-up (`id` is the part's id, as the
+   * normaliser wrote it). Only a picture that was found is announced: with none, nothing is said and the placeholder stays. `url` is same
+   * origin (`API.picture`); `credit` is the line drawn at its foot and `landing` the page it is credited to.
+   */
+  | { readonly type: 'picture'; readonly turn: string; readonly id: string; readonly url: string; readonly credit: string; readonly landing: string };
 
 export type StageEventType = StageEvent['type'];
 
@@ -329,7 +335,7 @@ export type StageEventType = StageEvent['type'];
  * the beat is a named event the page reads but does not pass on as a stage event.)
  */
 export const STREAM_HEARTBEAT = { eventName: 'heartbeat', everyMs: 15_000, silentMs: 40_000 } as const;
-export const STAGE_EVENT_TYPES: readonly StageEventType[] = ['hello', 'turn', 'reading', 'line', 'reject', 'end', 'pass', 'asset', 'data', 'candidate', 'critic', 'activity', 'permission'];
+export const STAGE_EVENT_TYPES: readonly StageEventType[] = ['hello', 'turn', 'reading', 'line', 'reject', 'end', 'pass', 'asset', 'data', 'picture', 'candidate', 'critic', 'activity', 'permission'];
 
 /** Painter to server: the back channel. */
 export type BackEvent =
@@ -636,6 +642,8 @@ export const API = {
   upload: (session: string, id: string): string => `/api/sessions/${session}/uploads/${encodeURIComponent(id)}`,
   /** v2.1. POST video/webm: a film of a turn made in the page (`/capture`), saved beside the session's log for the steward to watch. 204. */
   capture: (session: string, turn: string): string => `/api/sessions/${session}/turns/${turn}/capture`,
+  /** v2.2. GET: the bytes of a photograph the server found for an `image` part (a JPEG, re-encoded, cached). The key is in the `picture` event's url. */
+  picture: (key: string): string => `/api/pictures/${key}`,
   /** v2.1. GET: `AppStatus`, read from the steward's `STATUS.md`. What `/status` shows and what the brief's "this app" note is made from. */
   status: '/api/status',
   /** v2.1 ops. POST: the kill switch (`/stop-all`): every turn ended, every question waiting for the owner refused, every helper process killed, agent tools off. GET: whether they are off. DELETE: switches them back on. */

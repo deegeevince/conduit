@@ -11,6 +11,8 @@ import { CRITIC_POLICY } from './domain/critic';
 import type { CriticPolicy } from './domain/critic';
 import type { DatasetSettings } from './domain/datasets';
 import type { LibrarySettings } from './domain/techniques';
+import type { PictureSettings } from './domain/pictures';
+import { readPictureSettings } from './pictures/registry';
 import { dataPaths, resolveDataDir } from './data-dir';
 import type { DataPaths } from './data-dir';
 import type { LogLevel } from './log';
@@ -66,6 +68,8 @@ export interface Env {
   readonly logLevel: LogLevel;
   readonly brain: BrainSettings;
   readonly images: ImageSettings;
+  /** v2.2. Photographs for the `image` parts of a mock-up (`PICTURES=openverse`, `PICTURES_DIR`): off unless the owner switches it on; the placeholder is what there is until then */
+  readonly pictures: PictureSettings;
   /** what a brain is told about how its last answer landed: the structured report, or that and a picture */
   readonly sight: 'report' | 'snapshot';
   /** which teaching of the system prompt (`PROMPT_VARIANT`); one exists */
@@ -268,6 +272,9 @@ export function loadEnv(source: Source): Env {
   const sight = choice('SIGHT', ['report', 'snapshot'] as const, 'snapshot');
   const root = fileURLToPath(new URL('../../', import.meta.url));
   const data = resolveDataPaths(source);
+  const pictured = readPictureSettings(text, data.picturesCache);
+  problems.push(...pictured.problems);
+  const pictures = pictured.settings;
 
   const review: ReviewPolicy = {
     enabled: choice('REVIEW', ['on', 'off'] as const, 'on') === 'on',
@@ -373,5 +380,5 @@ export function loadEnv(source: Source): Env {
   }
 
   if (problems.length > 0) throw new EnvError(problems);
-  return { production, host, trustedHosts, ownerLogins, usageCapUsd: usageCapUsd !== null && Number.isFinite(usageCapUsd) && usageCapUsd > 0 ? usageCapUsd : null, port, logLevel, brain, images, sight, promptVariant: parsePromptVariant(text('PROMPT_VARIANT')), review, library, datasets, logDir, data, readLinks: choice('READ_LINKS', ['on', 'off'] as const, 'on') === 'on', paintingsPerSession: 0, exploreDir, webDist, critic, agent, modes, refine, uploads, statusFile, changelogFile, sealedDir };
+  return { production, host, trustedHosts, ownerLogins, usageCapUsd: usageCapUsd !== null && Number.isFinite(usageCapUsd) && usageCapUsd > 0 ? usageCapUsd : null, port, logLevel, brain, images, pictures, sight, promptVariant: parsePromptVariant(text('PROMPT_VARIANT')), review, library, datasets, logDir, data, readLinks: choice('READ_LINKS', ['on', 'off'] as const, 'on') === 'on', paintingsPerSession: 0, exploreDir, webDist, critic, agent, modes, refine, uploads, statusFile, changelogFile, sealedDir };
 }

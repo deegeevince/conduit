@@ -27,6 +27,7 @@ import { own } from './own';
 import { registerLaidOut } from './registry';
 import { STRUCTURES_READY, layoutStructure } from './blocks';
 import { modelOf, playingParts, rollKey } from './blocks/tune';
+import { drawUi, layoutUi, uiKey } from './ui-stage';
 
 const SETTLE_SECONDS = 0.4;
 /** Arrivals closer together than this are one layout: a burst of lines is not a dozen layouts. */
@@ -310,9 +311,17 @@ function planOf(structure: ElementSpan, schedule: Schedule, env: StructureEnv): 
           ? { x: origin.x + box.x * unit, y: origin.y + box.y * unit, width: box.w * unit, height: box.h * unit }
           : { x: origin.x, y: origin.y, width: fit.box.width / ps, height: fit.box.height / ps };
     const obstacles = env.obstaclesOf(structure, start).map((o) => ({ x: o.x / ps, y: o.y / ps, width: o.width / ps, height: o.height / ps }));
-    const key = [signature(structure, present, rows, env.scope), look.id, look.name, env.viewport.width, env.viewport.height, room.x.toFixed(2), room.y.toFixed(2), room.width.toFixed(2), room.height.toFixed(2), obstacles.map((o) => `${o.x.toFixed(0)},${o.y.toFixed(0)},${o.width.toFixed(0)},${o.height.toFixed(0)}`).join(';'), env.engine === undefined ? 'e' : 'b'].join('|');
+    const key = [signature(structure, present, rows, env.scope), look.id, look.name, env.viewport.width, env.viewport.height, room.x.toFixed(2), room.y.toFixed(2), room.width.toFixed(2), room.height.toFixed(2), obstacles.map((o) => `${o.x.toFixed(0)},${o.y.toFixed(0)},${o.width.toFixed(0)},${o.height.toFixed(0)}`).join(';'), env.engine === undefined ? 'e' : 'b', figure.structure === 'screen' ? uiKey(structure.key) : '', env.viewport.dpr].join('|');
     const layout = remembered(key, () => {
       const shown: ElementSpan = { ...structure, figure: { ...figure, rows: figure.rows.slice(0, rows) } };
+      // v2.2: a mock-up is laid out and drawn by the interface kit, as finished frames
+      if (figure.structure === 'screen' && env.engine === undefined) {
+        try {
+          return layoutUi({ structure: shown, room, spec: look, dpr: env.viewport.dpr });
+        } catch {
+          return EMPTY_STRUCTURE_LAYOUT;
+        }
+      }
       try {
         return engine({
           structure: shown,
@@ -665,6 +674,13 @@ export function buildStructures(schedule: Schedule, env: StructureEnv): Structur
       const everyone = [structure, ...plan.members];
       for (const owner of everyone) {
         const { epoch, previous, q } = placeOf(plan, owner, tq);
+        // v2.2: a mock-up draws itself, a row at a time
+        if (owner === structure && epoch.layout.drawn !== undefined) {
+          const drawn = drawUi({ structure, drawn: epoch.layout.drawn, before: previous?.layout.drawn ?? null, q, tq, out });
+          const box = epoch.layout.boxes.get(structure.key);
+          if (drawn.drawn && box !== undefined) out.owners.push({ key: structure.key, id: structure.id, kind: structure.kind, layer: structure.style.layer, box, opacity: 1, phase: drawn.phase, colour: look.roles.ink, contrast: 21, tappable: false, fontPx: epoch.layout.drawn.fontPx * planeScale(structure.style.layer, env.viewport) });
+          continue;
+        }
         let parts = epoch.byOwner.get(owner.key) ?? [];
         // A tune that sounds has a playhead and lit notes, drawn against the roll this epoch laid out.
         if (owner === structure && structure.figure?.kind === 'structure' && structure.figure.structure === 'tune') {

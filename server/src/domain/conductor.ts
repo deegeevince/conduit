@@ -32,6 +32,8 @@ import type { Brain, BrainEvent, BrainRegistry, Snapshot } from './brain';
 import { DOCUMENT_LIMITS, findUrls, hostOf } from './documents';
 import type { DocumentReader } from './documents';
 import type { ImageModel } from './images';
+import { creditLine } from './pictures';
+import type { PictureService } from './pictures';
 import type { HeldDocument } from './documents';
 import { buildContext, holdStanding, parseStanding, rememberTurn } from './memory';
 import type { StandingAsk } from './memory';
@@ -59,6 +61,8 @@ export interface ConductorDeps {
   readonly assets: AssetStore;
   readonly sessionLog: SessionLog;
   readonly images: ImageModel;
+  /** v2.2. Photographs for the `image` parts of a mock-up; absent or unavailable: the placeholder stands */
+  readonly pictures?: PictureService;
   /** fetches the links a prompt contains */
   readonly reader: DocumentReader;
   /** what a brain is told about how its last answer landed */
@@ -591,7 +595,7 @@ export class Conductor {
         if (session.sink === null) turn.missed.push(event);
       }
     }
-    if (session.sink === null && event.type === 'asset' && turn?.reported === true && session.lateAssets.length < 64) session.lateAssets.push(event);
+    if (session.sink === null && (event.type === 'asset' || event.type === 'picture') && turn?.reported === true && session.lateAssets.length < 64) session.lateAssets.push(event);
     try {
       session.sink?.(event);
     } catch (error) {
@@ -1190,6 +1194,7 @@ export class Conductor {
     sessionLog.write(s.id, { type: 'line', turn: turn.id, seq, text, start, issues, pass });
     this.emit(s, turn, { type: 'line', turn: turn.id, seq, text, issues });
     if (line.verb === 'paint') this.paint(s, turn, seq, line, pushed.schedule);
+    if (line.verb === 'row') this.findPicture(s, turn, line.id, line.cells, pushed.schedule);
     if (line.verb === 'chart' && line.data !== undefined) this.announceData(s, turn, line.data);
     return undefined;
   }
@@ -1271,6 +1276,41 @@ export class Conductor {
     const why = issues.map((issue) => issue.message).join('; ') || 'it was not understood';
     turn.problems.push({ raw: raw.replace(/\s+/g, ' ').trim().slice(0, 120), kind, why });
     if (turn.problems.length > MAX_PROBLEMS) turn.problems.splice(0, turn.problems.length - MAX_PROBLEMS);
+  }
+
+  /**
+   * v2.2. An `image … | what it shows` part of a mock-up: a photograph is looked for by those words, off the turn clock. The line has been
+   * forwarded and the turn goes on; a picture that is found arrives as a `picture` event whenever it does, and nothing is said when it is not
+   * (the placeholder stays). Only the words leave the machine, and the trail records that they did.
+   */
+  private findPicture(s: Session, turn: ActiveTurn, block: string, cells: string, schedule: Schedule): void {
+    const { pictures, log } = this.deps;
+    if (pictures === undefined || !pictures.available) return;
+    const found = /^image\b([^|]*)\|\s*(.+)$/i.exec(cells);
+    if (found === null) return;
+    // only a row of a mock-up: a line of code or a table's cell that begins with the word is not a picture
+    const owner = schedule.elements.find((element) => element.id === block && element.kind === 'structure');
+    if (owner?.figure?.kind !== 'structure' || owner.figure.structure !== 'screen') return;
+    const head = found[1] ?? '';
+    const part = /\bid=(\S+)/.exec(head)?.[1];
+    const words = (found[2] ?? '').trim();
+    if (part === undefined || words === '') return;
+    const flags = head.toLowerCase().split(/\s+/);
+    // A round picture is an avatar: a photograph of a stranger is never put beside a made-up name
+    if (flags.includes('round')) return;
+    const aspect = flags.includes('tall') ? 3 / 4 : flags.includes('square') || flags.includes('round') ? 1 : 16 / 9;
+    // The turn's abort stops a search that is still wanted only by it; a turn that ended well does not, so the session's abort is the other way out.
+    const signal = AbortSignal.any([turn.abort.signal, s.abort.signal]);
+    void pictures
+      .find({ words, aspect }, signal)
+      .then((picture) => {
+        if (signal.aborted) return;
+        this.auditTurn(s, turn, { kind: 'connector', tool: pictures.id, target: words, decision: picture === null ? 'failed' : 'allowed', decidedBy: 'policy', note: picture === null ? 'a photograph for an image part: none found, the placeholder stays' : 'a photograph for an image part; only these words left the machine' });
+        if (picture === null) return;
+        log.info('picture.ready', { session: s.id, turn: turn.id, part, key: picture.key });
+        this.emit(s, turn, { type: 'picture', turn: turn.id, id: part, url: API.picture(picture.key), credit: creditLine(picture.credit), landing: picture.credit.landingUrl });
+      })
+      .catch((error: unknown) => log.warn('picture.failed', { session: s.id, turn: turn.id, error }));
   }
 
   /**

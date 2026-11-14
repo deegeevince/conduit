@@ -94,6 +94,8 @@ export const LINK_SECONDS = 0.35;
 export const TABLE_ROW_SECONDS: Readonly<Record<Pace, number>> = { slow: 0.16, steady: 0.1, brisk: 0.07 };
 /** A line of code landing. A listing is read, not watched, and a long one must not hold the stage. */
 export const CODE_ROW_SECONDS: Readonly<Record<Pace, number>> = { slow: 0.06, steady: 0.04, brisk: 0.025 };
+/** v2.2. A part of a mock-up lands a step after the one before it: quickly, in the order written, as a table's rows do. */
+export const UI_ROW_SECONDS: Readonly<Record<Pace, number>> = { slow: 0.09, steady: 0.06, brisk: 0.04 };
 /**
  * How long plain content takes to fade or rise in: a paragraph of a page, the frame of a table, a chart or a block of code. The owner's
  * "dont need to fade slowly". Anything the brain gave an exact length (`dur=`), or an entrance that is a performance (`slam`, `draw`), is as asked.
