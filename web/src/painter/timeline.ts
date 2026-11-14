@@ -39,6 +39,7 @@ import { canvasBoxOf, figuresAt, groupMatrixAt, spriteColours } from './figures'
 import type { Painting } from './figures';
 import { revealShare } from '../fonts/measure';
 import { arrange, needsOf } from './layout';
+import { wrapStrips } from './strips';
 import { planStage, viewOfPlan } from './layout/plan';
 import type { StageBlock, StagePlan, StagePlanView } from '../contracts/stage-plan';
 import { STRUCTURES_READY } from './blocks';
@@ -325,8 +326,10 @@ function splitSides(schedule: Schedule, sceneId: string): ReadonlyMap<string, 'l
   return sides;
 }
 
-export function buildTimeline(schedule: Schedule, base: StageBase, context: TimelineContext): Timeline {
+export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context: TimelineContext): Timeline {
   const { viewport, reducedMotion, lockLook, paintings, onFault } = context;
+  // a strip of cells too narrow for its words wraps into rows before anything is set
+  const schedule = wrapStrips(drawnSchedule, viewport, lockLook === null ? specFor(lookOfStage(base)) : LOOKS[lockLook]);
   const runtime: ControlRuntime = context.controls ?? createRuntime(createControlStore());
   const cindex = controlIndexOf(schedule);
   const controlSpans = schedule.elements.filter((element) => element.kind === 'control');
