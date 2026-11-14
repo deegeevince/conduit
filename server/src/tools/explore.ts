@@ -3,6 +3,8 @@
 //   pnpm explore                          every prompt and every scripted conversation, 3 samples each
 //   pnpm explore --dry-run                only print the plan: calls, estimated dollars
 //   pnpm explore --only id,id             just these prompts or cases
+//   pnpm explore --pool tune|heldout      the tune set (explore/battery.json, the default) or the sealed held-out set
+//   pnpm explore --battery <file>         any battery file (the vault); its own `pool` field says which set it is
 //   pnpm explore --held-out               just the prompts and cases that no worked example mirrors
 //   pnpm explore --samples 5              samples per prompt (default 3); each check gets a pass rate
 //   pnpm explore --variant column,hero    teach the diagram two ways (PROMPT_VARIANT) on the information prompts
@@ -29,7 +31,7 @@
 // abandons it too.
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, relative, resolve } from 'node:path';
 import {
   EMPTY_STAGE,
   LANGUAGE,
@@ -38,14 +40,19 @@ import {
   EXPLORE_VARIANTS,
   buildSystemPrompt,
   passRates,
+  summaryOf,
   verdictsOf,
 } from '@conduit/language';
 import type {
+  TurnInput,
   ExploreBaseline,
   ExploreBattery,
   ExploreCase,
   ExploreCaseResult,
   ExploreIndexEntry,
+  ExplorePool,
+  ExploreSummary,
+  Measure,
   ExplorePrompt,
   ExploreResult,
   ExploreRun,
@@ -68,13 +75,20 @@ import { playCase } from './explore-case';
 import { callsOf, perCallFor, projectUsd } from './explore-cost';
 import type { Plan } from './explore-cost';
 import type { JudgeSettings } from './explore-judge';
-import { EMPTY, judgeStills, slots, HARNESS_CAPABILITIES } from './explore-rig';
+import { EMPTY, slots, techniquesFor } from './explore-rig';
+import { inspect } from './explore-inspect';
+import { rubricOf } from './explore-judge';
+import { createLibrary } from '../library/registry';
 import type { Rig, Running } from './explore-rig';
 import { playTurn, unreadable } from './explore-turn';
 
 interface Options {
   readonly only: readonly string[] | null;
   readonly heldOut: boolean;
+  /** which set to play: `tune` (explore/battery.json) or `heldout` (explore/sealed/heldout.json) */
+  readonly pool: ExplorePool | null;
+  /** a battery file instead (the vault, a loop candidate's set) */
+  readonly batteryFile: string | null;
   readonly brain: string | null;
   readonly model: string | null;
   readonly baseline: boolean;
@@ -107,6 +121,8 @@ function usageError(message: string): never {
 function parseArguments(argv: readonly string[]): Options {
   let only: string[] | null = null;
   let heldOut = false;
+  let pool: ExplorePool | null = null;
+  let batteryFile: string | null = null;
   let brain: string | null = null;
   let model: string | null = null;
   let baseline = true;
@@ -127,6 +143,11 @@ function parseArguments(argv: readonly string[]): Options {
     const value = (): string => argv[++i] ?? usageError(`${String(flag)} needs a value`);
     if (flag === '--only') only = value().split(',').map((id) => id.trim()).filter((id) => id !== '');
     else if (flag === '--held-out') heldOut = true;
+    else if (flag === '--pool') {
+      const name = value();
+      if (name !== 'tune' && name !== 'heldout') usageError('--pool must be tune or heldout (the vault is played with --battery <file>)');
+      pool = name;
+    } else if (flag === '--battery') batteryFile = value();
     else if (flag === '--brain') brain = value();
     else if (flag === '--model') model = value();
     else if (flag === '--no-baseline') baseline = false;
@@ -155,7 +176,8 @@ function parseArguments(argv: readonly string[]): Options {
   if (!Number.isInteger(samples) || samples < 1 || samples > 20) usageError('--samples must be a whole number from 1 to 20');
   if (!Number.isInteger(judgeFrames) || judgeFrames < 1 || judgeFrames > 5) usageError('--judge-frames must be a whole number from 1 to 5');
   if (!Number.isFinite(maxUsd) || maxUsd <= 0) usageError('--max-usd must be a positive number');
-  return { only, heldOut, brain, model, baseline, timeoutMs: timeoutS * 1000, samples, variants: variants ?? ['column'], cases, judge: judgeOn, judgeModel, judgeEffort, judgeFrames, dryRun, maxUsd, yes, web };
+  if (pool !== null && batteryFile !== null) usageError('--pool and --battery name the same thing twice');
+  return { only, heldOut, pool, batteryFile, brain, model, baseline, timeoutMs: timeoutS * 1000, samples, variants: variants ?? ['column'], cases, judge: judgeOn, judgeModel, judgeEffort, judgeFrames, dryRun, maxUsd, yes, web };
 }
 
 function asNumber(value: unknown): number | null {
@@ -362,6 +384,13 @@ function summary(recorded: readonly Recorded[], planned: number): string {
   ].join('\n');
 }
 
+function familyTable(scored: ExploreSummary): string {
+  const pct = (m: Measure): string => (m.value === null ? '-' : `${Math.round(m.value * 100)}%`);
+  const num = (m: Measure): string => (m.value === null ? '-' : m.value.toFixed(2));
+  const rows = Object.values(scored.families).map((f) => [f.family, String(f.answers), num(f.coherence), pct(f.coherenceFour), pct(f.textReadable), pct(f.labelsRight), pct(f.drawingCorrect), pct(f.structureNamed), num(f.chartQuality), pct(f.responds), `${f.overlaps}/${f.throughNodes}/${f.crossed}`]);
+  return `families (pool ${scored.pool}, judge rubric ${scored.rubric ?? 'none'}):\n${tabulate(['family', 'n', 'coher.', '>=4', 'text ok', 'labels', 'correct', 'named', 'chart q', 'responds', 'overlap/thru/cross'], rows, new Set([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]))}`;
+}
+
 async function main(): Promise<void> {
   const options = parseArguments(process.argv.slice(2));
   const source: Record<string, string | undefined> = { ...processEnvironment() };
@@ -374,7 +403,9 @@ async function main(): Promise<void> {
   const replaying = env.brain.kind === 'replay';
   const claudeBin = env.brain.kind === 'claude-cli' ? env.brain.bin : (source['CLAUDE_BIN'] ?? 'claude');
 
-  const battery = JSON.parse(await readFile(join(env.exploreDir, 'battery.json'), 'utf8')) as ExploreBattery;
+  const batteryPath = options.batteryFile !== null ? resolve(options.batteryFile) : options.pool === 'heldout' ? join(env.exploreDir, 'sealed', 'heldout.json') : join(env.exploreDir, 'battery.json');
+  const battery = JSON.parse(await readFile(batteryPath, 'utf8')) as ExploreBattery;
+  const pool: ExplorePool = battery.pool ?? options.pool ?? 'tune';
   const known = new Set([...battery.prompts.map((p) => p.id), ...(battery.cases ?? []).map((c) => c.id)]);
   if (options.only !== null) {
     const missing = options.only.filter((id) => !known.has(id));
@@ -434,20 +465,23 @@ async function main(): Promise<void> {
   const dir = join(runsDir, id);
   await mkdir(dir, { recursive: true });
 
-  const promptChars = buildSystemPrompt({ capabilities: HARNESS_CAPABILITIES, services }).length;
-  process.stdout.write(`run ${id}: ${units.length} units through ${brain.id}${model === null ? '' : ` (${model})`}${judging ? `, judged by ${options.judgeModel}` : ''}, samples ${options.samples}, variants ${options.variants.join(',')}\n`);
-
-  let eyes: Eyes | null = null;
-  if (judging || casesOn) {
-    process.stdout.write('  starting the headless browser for the pictures ...');
-    try {
-      eyes = await openEyes({ web: options.web, port: WEB_PORT, repo: repoRoot() });
-      process.stdout.write(' ready\n');
-    } catch (error) {
-      process.stdout.write(`\n  no pictures: ${error instanceof Error ? error.message : String(error)}\n`);
-    }
+  // The page is always opened: what the painter can do (the brain is taught exactly that), what it measures about every answer,
+  // and the pictures all come from it. A run with no page measures nothing worth keeping, so it does not start.
+  process.stdout.write('  starting the headless browser ...');
+  const eyes: Eyes = await openEyes({ web: options.web, port: WEB_PORT, repo: repoRoot() }).catch((error: unknown) => usageError(`no browser: ${error instanceof Error ? error.message : String(error)}`));
+  const capabilities = await eyes.capabilities({ width: REFERENCE_SCREEN.width, height: REFERENCE_SCREEN.height, dpr: 1 }).catch(() => null);
+  if (capabilities === null) {
+    await eyes.close().catch(() => undefined);
+    usageError('the page did not say what its painter can do');
   }
-  const judgeSettings: JudgeSettings | null = judging && eyes !== null ? { bin: claudeBin, model: options.judgeModel, effort: options.judgeEffort, timeoutMs: 120_000 } : null;
+  process.stdout.write(` ready (structures: ${capabilities.structures.join(',') || 'none'}; charts: ${capabilities.charts.join(',') || 'none'}; controls: ${capabilities.controls.join(',') || 'none'})\n`);
+  // Techniques are chosen as the server chooses them: from memory (the seed, the cache, an overlay), never over the network.
+  const library = createLibrary(env.library, log, () => Date.now());
+
+  const promptChars = buildSystemPrompt({ capabilities, services }).length;
+  process.stdout.write(`run ${id}: ${units.length} units through ${brain.id}${model === null ? '' : ` (${model})`}${judging ? `, judged by ${options.judgeModel}` : ''}, samples ${options.samples}, variants ${options.variants.join(',')}, pool ${pool}\n`);
+
+  const judgeSettings: JudgeSettings | null = judging ? { bin: claudeBin, model: options.judgeModel, effort: options.judgeEffort, timeoutMs: 120_000 } : null;
 
   const index: { entries: ExploreIndexEntry[] } = { entries: [] };
   const recorded: Recorded[] = [];
@@ -470,6 +504,9 @@ async function main(): Promise<void> {
       samples: options.samples,
       variants: options.variants,
       judgeModel: judging ? options.judgeModel : null,
+      pool,
+      battery: relative(repoRoot(), batteryPath),
+      rubric: judging ? rubricOf({ model: options.judgeModel, effort: options.judgeEffort }) : null,
       projection: { calls: callsOf(plan), usd: replaying ? null : Number(projected.toFixed(4)) },
       spentUsd: recorded.reduce((sum, item) => sum + item.results.reduce((s, r) => s + (r.usage?.costUsd ?? 0) + (r.judge?.costUsd ?? 0), 0), 0),
       measured: { firstTurnUsd: mean(measured.first), laterTurnUsd: mean(measured.later), judgeUsd: mean(measured.judge), baselineUsd: mean(measured.baseline) },
@@ -532,6 +569,8 @@ async function main(): Promise<void> {
         runId: id,
         brain: unitBrain,
         services,
+        capabilities,
+        library,
         emptyStage: EMPTY,
         timeoutMs: options.timeoutMs,
         running,
@@ -558,14 +597,16 @@ async function main(): Promise<void> {
           }
         }
         const session = `explore-${id}-${label}`;
-        unitBrain.open?.({ session, capabilities: HARNESS_CAPABILITIES, screen: REFERENCE_SCREEN, services });
+        unitBrain.open?.({ session, capabilities, screen: REFERENCE_SCREEN, services });
+        const input: TurnInput = unitBrain.id === 'replay' ? { kind: 'demo', script: replayDemo(prompt) } : { kind: 'prompt', text: prompt.prompt };
+        const chosen = techniquesFor(rig, input);
         const played = await playTurn({
           prompt,
           session,
           turn: `${session}-t1`,
           idPrefix: 'x',
-          input: unitBrain.id === 'replay' ? { kind: 'demo', script: replayDemo(prompt) } : { kind: 'prompt', text: prompt.prompt },
-          context: { screen: REFERENCE_SCREEN, capabilities: HARNESS_CAPABILITIES, services, lead: LEAD_WINDOW, stage: EMPTY_STAGE, history: [], heard: [] },
+          input,
+          context: { screen: REFERENCE_SCREEN, capabilities, services, lead: LEAD_WINDOW, stage: EMPTY_STAGE, history: [], heard: [], techniques: chosen.cards },
           snapshot: null,
           brain: unitBrain,
           timeoutMs: options.timeoutMs,
@@ -576,46 +617,53 @@ async function main(): Promise<void> {
         unitBrain.release?.(session);
         if (played.system !== null && !variantChecked.has(unit.variant)) {
           variantChecked.add(unit.variant);
-          if (played.system !== buildSystemPrompt({ capabilities: HARNESS_CAPABILITIES, services, variant: unit.variant })) {
+          if (played.system !== buildSystemPrompt({ capabilities, services, variant: unit.variant })) {
             process.stderr.write(`explore: WARNING the brain's system prompt is not the "${unit.variant}" prompt: PROMPT_VARIANT did not reach it, so the variants are not being compared\n`);
           }
         }
         if (played.result.usage?.costUsd != null) measured.first.push(played.result.usage.costUsd);
         const bad = unreadable(played.result);
         if (bad > 0) process.stderr.write(`explore: ${bad} lines of ${label} do not re-parse\n`);
-        const base: ExploreResult = { ...played.result, variant: unit.variant, sample: unit.sample, baseline: baselineCache.get(prompt.id) ?? null };
+        const base: ExploreResult = { ...played.result, variant: unit.variant, sample: unit.sample, baseline: baselineCache.get(prompt.id) ?? null, ...(chosen.ids.length > 0 ? { techniques: chosen.ids } : {}) };
 
-        // The final still and the judge, while the next prompt is being written.
+        // The final still, what the painter measured, the controls and charts worked, and the judge, while the next prompt is being written.
         let judgement: Promise<ExploreResult['judge']> = Promise.resolve(null);
-        let note: string | null = null;
-        if (eyes !== null && judgeSettings !== null && base.end === 'done' && base.lines.length > 0) {
+        let measured2: Pick<ExploreResult, 'geometry' | 'drive'> = {};
+        if (base.end === 'done' && base.lines.length > 0) {
           try {
-            const reply = await eyes.look({
-              turn: `${session}-t1`,
-              base: EMPTY_STAGE,
-              lines: base.lines.map((line, at) => ({ seq: line.seq, line: played.accepted[at] as Line })),
-              viewport: { width: REFERENCE_SCREEN.width, height: REFERENCE_SCREEN.height, dpr: 1 },
-              playhead: null,
-              earlier: rig.judgeEarlier,
-              judgeSide: JUDGE_SIDE,
-            });
-            judgement = judgeStills(rig, `${prompt.prompt}`, reply);
+            const seen = await inspect(
+              rig,
+              eyes,
+              {
+                turn: `${session}-t1`,
+                base: EMPTY_STAGE,
+                lines: base.lines.map((line, at) => ({ seq: line.seq, line: played.accepted[at] as Line })),
+                viewport: { width: REFERENCE_SCREEN.width, height: REFERENCE_SCREEN.height, dpr: 1 },
+                playhead: null,
+                earlier: rig.judgeEarlier,
+                judgeSide: JUDGE_SIDE,
+              },
+              prompt.prompt,
+              base,
+              judgeSettings !== null,
+            );
+            judgement = seen.judgement;
+            measured2 = { geometry: seen.geometry, ...(seen.drive === null ? {} : { drive: seen.drive }) };
           } catch (error) {
-            note = error instanceof Error ? error.message : String(error);
-            process.stderr.write(`explore: no picture for ${label}: ${note}\n`);
+            process.stderr.write(`explore: no picture for ${label}: ${error instanceof Error ? error.message : String(error)}\n`);
           }
         }
         later(
           (async () => {
             const judge = await judgement;
-            const finished: ExploreResult = { ...base, ...(judge === null ? {} : { judge }) };
+            const finished: ExploreResult = { ...base, ...measured2, ...(judge === null ? {} : { judge }) };
             const verdicts = verdictsOf(finished);
             const result: ExploreResult = { ...finished, verdicts };
             await record(unit, [result], verdicts, result, result.checks.meetsExpectation);
           })(),
         );
         process.stdout.write(` ${base.end}${base.message === null ? '' : ` (${base.message})`}, ${base.totalMs} ms\n`);
-      } else if (eyes !== null) {
+      } else {
         const done = await playCase(rig, unit.case, unit.variant, unit.sample, eyes);
         const first = done.result.turns[0];
         if (first?.usage?.costUsd != null) measured.first.push(first.usage.costUsd);
@@ -626,8 +674,6 @@ async function main(): Promise<void> {
           }),
         );
         process.stdout.write(` ${done.result.turns.length} turns, ${Math.round(performance.now() - t0)} ms\n`);
-      } else {
-        process.stdout.write(' skipped (no browser)\n');
       }
       current = null;
       while (pending.size > 3) await Promise.race(pending);
@@ -636,11 +682,18 @@ async function main(): Promise<void> {
   } finally {
     await Promise.all(pending).catch(() => undefined);
     await writeIndex();
-    await eyes?.close().catch(() => undefined);
+    await eyes.close().catch(() => undefined);
     for (const found of made.values()) await found.brains.close();
   }
 
-  process.stdout.write(`\n${summary(recorded, units.length)}\n\nwritten to ${dir}\n`);
+  // The summary the loop reads: scores by family in the terms of the quality bar, never an answer.
+  const answers = recorded.flatMap((item) => (item.unit.kind === 'prompt' ? item.results : item.results.slice(0, 1)));
+  const scored = summaryOf(
+    { run: id, pool, battery: relative(repoRoot(), batteryPath), rubric: judging ? rubricOf({ model: options.judgeModel, effort: options.judgeEffort }) : null, brain: brain.id, model, samples: options.samples, spentUsd: recorded.reduce((sum, item) => sum + item.results.reduce((s2, r) => s2 + (r.usage?.costUsd ?? 0) + (r.judge?.costUsd ?? 0), 0), 0) },
+    answers,
+  );
+  await writeFile(join(dir, 'summary.json'), `${JSON.stringify(scored, null, 2)}\n`);
+  process.stdout.write(`\n${summary(recorded, units.length)}\n\n${familyTable(scored)}\n\nwritten to ${dir}\n`);
   if (stopping) process.stdout.write(`stopped early: ${recorded.length} of ${units.length} units ran\n`);
 }
 

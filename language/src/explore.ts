@@ -281,7 +281,7 @@ export interface ExploreTurnMeta {
   readonly case: string;
   /** 1-based */
   readonly index: number;
-  readonly kind: 'prompt' | 'tap' | 'fix';
+  readonly kind: 'prompt' | 'tap' | 'fix' | 'act';
   readonly said: string;
   /** `since`: the process still held the conversation. `full`: it was told everything. null when the brain does not say. */
   readonly form: BriefForm | 'script' | null;
