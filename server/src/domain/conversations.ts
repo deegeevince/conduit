@@ -64,9 +64,11 @@ function replyOf(lines: readonly string[], shown: readonly ShownItem[] | null): 
 
 export function summaryOf(id: string, records: readonly SessionRecord[], updated: string): ConversationSummary {
   const opened = records.find((record): record is Of<'session'> => record.type === 'session');
+  // A conversation taken up again is written by a later session: that is the one a page holding it is asked about.
+  const resumed = records.findLast((record): record is Of<'continued'> => record.type === 'continued');
   return {
     id,
-    session: opened?.session ?? id.slice(16),
+    session: resumed?.session ?? opened?.session ?? id.slice(16),
     started: opened?.started ?? updated,
     updated,
     title: titleOf(firstWords(records)),
@@ -166,10 +168,16 @@ function safeHost(url: string): string {
 }
 
 export function foldConversation(id: string, records: readonly SessionRecord[], updated: string): ConversationView {
-  const turns = new Map<string, { open: Of<'turn'>; lines: string[]; report: Of<'report'> | null; snapshot: Of<'snapshot'> | null; end: Of<'end'> | null }>();
+  const turns = new Map<string, { open: Of<'turn'>; lines: string[]; report: Of<'report'> | null; snapshot: Of<'snapshot'> | null; end: Of<'end'> | null; continued: boolean }>();
+  let resumed = false;
   for (const record of records) {
+    if (record.type === 'continued') {
+      resumed = true;
+      continue;
+    }
     if (record.type === 'turn') {
-      turns.set(record.turn, { open: record, lines: [], report: null, snapshot: null, end: null });
+      turns.set(record.turn, { open: record, lines: [], report: null, snapshot: null, end: null, continued: resumed });
+      resumed = false;
       continue;
     }
     if (!('turn' in record) || record.turn === null) continue;
@@ -180,8 +188,9 @@ export function foldConversation(id: string, records: readonly SessionRecord[], 
     else if (record.type === 'snapshot') held.snapshot = record;
     else if (record.type === 'end') held.end = record;
   }
-  const folded: ConversationTurn[] = [...turns.values()].map(({ open, lines, report, snapshot, end }) => ({
+  const folded: ConversationTurn[] = [...turns.values()].map(({ open, lines, report, snapshot, end, continued }) => ({
     turn: open.turn,
+    ...(continued ? { continued: true as const } : {}),
     kind: open.input.kind,
     said: saidOf(open.input),
     photos: open.input.kind === 'prompt' ? (open.input.images ?? []).map((photo) => ({ id: photo, url: CONVERSATION_API.photo(id, photo) })) : [],
@@ -195,4 +204,52 @@ export function foldConversation(id: string, records: readonly SessionRecord[], 
     trace: traceOf(open, records),
   }));
   return { summary: summaryOf(id, records, updated), turns: folded };
+}
+
+/** The most the brain is told of an older conversation: about 3,000 tokens, counted at four characters to the token. */
+export const EARLIER_BUDGET_CHARS = 12_000;
+const SAID_CHARS = 600;
+const REPLY_CHARS = 900;
+
+const clip = (text: string, max: number): string => {
+  const one = text.replace(/\s+/g, ' ').trim();
+  return one.length > max ? `${one.slice(0, max - 1).trimEnd()}…` : one;
+};
+
+/**
+ * What the brain is told of a conversation it did not have: each turn's words and the reply's words, oldest first, newest kept when
+ * the budget is short. Only what the person and the reply said: never the system prompt, a brief, a line of Series or a trace.
+ */
+export function earlierText(view: ConversationView, budget = EARLIER_BUDGET_CHARS): string {
+  const entries = view.turns.flatMap((turn) => {
+    if (turn.kind === 'demo' || turn.kind === 'script') return [];
+    const said = clip(turn.said, SAID_CHARS);
+    const words = clip(turn.reply.words.join(' '), REPLY_CHARS);
+    const drew = turn.reply.drew.length === 0 ? '' : ` [it also drew: ${turn.reply.drew.join(', ')}]`;
+    return [`The user: ${said}\nYou: ${words === '' ? '(a picture, no words)' : words}${drew}`];
+  });
+  const kept: string[] = [];
+  let used = 0;
+  for (let at = entries.length - 1; at >= 0; at -= 1) {
+    const entry = entries[at] as string;
+    if (used + entry.length + 2 > budget) break;
+    kept.unshift(entry);
+    used += entry.length + 2;
+  }
+  const left = entries.length - kept.length;
+  return `${left > 0 ? `(${left} earlier ${left === 1 ? 'turn' : 'turns'} left out)\n\n` : ''}${kept.join('\n\n')}`;
+}
+
+/** The highest photo number a log holds (`u4` is 4): the photos of a conversation taken up again are named above it, so no id is two photos. */
+export function highestPhoto(records: readonly SessionRecord[]): number {
+  let top = 0;
+  for (const record of records) if (record.type === 'upload') top = Math.max(top, Number(/^u(\d+)$/.exec(record.id)?.[1] ?? 0));
+  return top;
+}
+
+/** The highest turn number a log holds (`t12` is 12), so that a session writing on keeps its ids above it. */
+export function highestTurn(records: readonly SessionRecord[]): number {
+  let top = 0;
+  for (const record of records) if (record.type === 'turn') top = Math.max(top, Number(/^t(\d+)$/.exec(record.turn)?.[1] ?? 0));
+  return top;
 }

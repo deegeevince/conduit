@@ -2,7 +2,11 @@
 // does it (real key events into the real prompt box, real pointer or touch events on the page), and judged AT REST after every turn.
 //
 //   pnpm smoke [--url http://127.0.0.1:<port>] [--screens 1920x825,390x844] [--out <dir>] [--turns 1,2,3,4,5,6,7]
-//              [--timeout <seconds a turn may take>] [--parallel] [--demo] [--quiet]
+//              [--timeout <seconds a turn may take>] [--parallel] [--demo] [--quiet] [--chat | --no-chat]
+//
+// A second pass drives the chat shell at /chat (`--chat` runs only it, `--no-chat` leaves it out; by default it runs after the conversation, one tab per screen, all at once):
+// send a prompt; the reply arrives; the trace under it opens; the canvas opens and the answer is ON IT (the same on-stage, no-overlap and nothing-cut-off checks, scoped to the
+// canvas's stage); and the composer is reachable with the canvas open (the pill is on screen, nothing covers it, a real tap and real keys put words in it).
 //
 // The conversation (PLAN: the deploy gate): 1 a lighthouse at dusk; 2 a flowchart; 3 a stock chart; 4 a sign-in mock-up (the kit's screens, not a live app); 5 type into its
 // fields, flip its toggle and press its button with real events; 6 an insurance home page; 7 /new.
@@ -94,10 +98,12 @@ interface Options {
   readonly page: string;
   /** SA2. One prompt in place of the scripted conversation */
   readonly say: string | null;
+  /** `only`: the /chat pass alone; `with`: after the conversation; `off` */
+  readonly chat: 'only' | 'with' | 'off';
 }
 
 function usage(message: string): never {
-  process.stderr.write(`smoke: ${message}\nusage: pnpm smoke [--url http://127.0.0.1:<port>] [--screens 1920x825,390x844] [--out <dir>] [--turns 1,2,3,4,5,6,7] [--timeout <seconds>] [--parallel] [--demo] [--quiet] [--page <query>] [--say <prompt>]\n`);
+  process.stderr.write(`smoke: ${message}\nusage: pnpm smoke [--url http://127.0.0.1:<port>] [--screens 1920x825,390x844] [--out <dir>] [--turns 1,2,3,4,5,6,7] [--timeout <seconds>] [--parallel] [--demo] [--quiet] [--page <query>] [--say <prompt>] [--chat | --no-chat]\n`);
   process.exit(2);
 }
 
@@ -107,7 +113,7 @@ function parseArgs(argv: readonly string[]): Options {
     const arg = argv[i] as string;
     if (!arg.startsWith('--')) usage(`unexpected argument ${arg}`);
     const name = arg.slice(2);
-    if (['parallel', 'demo', 'quiet'].includes(name)) flags.set(name, 'true');
+    if (['parallel', 'demo', 'quiet', 'chat', 'no-chat'].includes(name)) flags.set(name, 'true');
     else {
       const value = argv[i + 1];
       if (value === undefined || value.startsWith('--')) usage(`--${name} needs a value`);
@@ -133,6 +139,7 @@ function parseArgs(argv: readonly string[]): Options {
     quiet: flags.has('quiet'),
     page: flags.get('page') ?? '',
     say: flags.get('say') ?? null,
+    chat: flags.has('chat') ? 'only' : flags.has('no-chat') ? 'off' : 'with',
   };
 }
 
@@ -1224,7 +1231,7 @@ class Conversation {
 
   // ---- cut off
 
-  private async checkCutOff(answer: Answer, results: CheckResult[]): Promise<void> {
+  private async checkCutOff(answer: Answer, results: CheckResult[], inCanvas = false): Promise<void> {
     const problems: string[] = [];
     const { width, height } = answer.viewport;
     const slack = 2;
@@ -1242,10 +1249,199 @@ class Conversation {
     const page = await this.tab.call<{ sw: number; sh: number; iw: number; ih: number; bw: number; bh: number }>('page');
     if (page.sw > page.iw + 1 || page.bw > page.iw + 1) problems.push(`the page scrolls sideways (${page.sw} wide in ${page.iw})`);
     if (page.sh > page.ih + 1 || page.bh > page.ih + 1) problems.push(`the page scrolls down (${page.sh} tall in ${page.ih})`);
-    const buttons = await this.tab.call<ButtonInfo[]>('chromeButtons');
+    const all = await this.tab.call<ButtonInfo[]>('chromeButtons');
+    // in the chat shell the judged chrome is the canvas's own and the composer's; the thread behind a phone's canvas is inert and not the question here
+    const zones = inCanvas ? (await Promise.all(['.shell-canvas', '.shell-composer'].map((selector) => this.tab.call<{ x: number; y: number; w: number; h: number; hidden: boolean } | null>('rect', selector)))).flatMap((zone) => (zone === null ? [] : [zone])) : [];
+    const buttons = inCanvas ? all.filter((button) => zones.some((zone) => button.rect.x + button.rect.w / 2 >= zone.x && button.rect.x + button.rect.w / 2 <= zone.x + zone.w && button.rect.y + button.rect.h / 2 >= zone.y && button.rect.y + button.rect.h / 2 <= zone.y + zone.h)) : all;
     const off = buttons.filter((button) => button.rect.x < -1 || button.rect.y < -1 || button.rect.x + button.rect.w > page.iw + 1 || button.rect.y + button.rect.h > page.ih + 1);
     if (off.length > 0) problems.push(`chrome partly off the screen: ${off.slice(0, 3).map((button) => `"${button.label.slice(0, 20)}"`).join(', ')}`);
     this.add(results, 'nothing-cut-off', problems.length === 0 ? 'PASS' : 'FAIL', problems.length === 0 ? `${answer.live.length} elements inside ${width}x${height}, no scrolling` : problems.join('; '));
+  }
+
+  // ---- the chat shell at /chat
+
+  /** waits until the shell's reply has been made and the stage has stood still for a moment */
+  private async chatRest(): Promise<string> {
+    const { tab } = this;
+    const deadline = Date.now() + this.options.timeoutMs;
+    let last = '';
+    let since = Date.now();
+    for (;;) {
+      await sleep(300);
+      const now = await tab.eval<{ ready: boolean; busy: boolean; sig: string; fault: string | null; replies: number; thinking: boolean; stopShown: boolean }>(`(() => {
+        const s = window.__stage;
+        if (!s) return { ready: false, busy: true, sig: '', fault: null, replies: 0, thinking: false, stopShown: false };
+        const st = s.state();
+        const els = st.elements.map((e) => [e.id, e.kind, e.phase]);
+        const reply = [...document.querySelectorAll('.msg--reply')].pop();
+        return { ready: true, busy: st.turn !== null || st.anticipating || els.some((e) => e[2] === 'entering' || e[2] === 'leaving'), sig: JSON.stringify(els), fault: st.fault, replies: document.querySelectorAll('.msg--reply').length, thinking: !!(reply && reply.querySelector('.reply__thinking')), stopShown: (document.querySelector('.pill__send') || {}).getAttribute('aria-label') !== 'Send' };
+      })()`);
+      if (!now.ready) continue;
+      if (now.fault !== null) return `the stage reports a fault: ${now.fault}`;
+      const quiet = !now.busy && !now.thinking && !now.stopShown && now.replies > 0 && tab.pending() === 0;
+      if (!quiet || now.sig !== last) {
+        last = now.sig;
+        since = Date.now();
+      } else if (Date.now() - since >= STABLE_MS) return '';
+      if (Date.now() > deadline) return `the reply did not come to rest in ${Math.round(this.options.timeoutMs / 1000)} s`;
+    }
+  }
+
+  /** the /chat pass on this screen: one prompt, its reply, the trace, the canvas, and the composer with the canvas open */
+  private async chat(): Promise<readonly CheckResult[]> {
+    const { tab } = this;
+    const results: CheckResult[] = [];
+    this.current = 101;
+    const step: Step = { n: 101, say: 'draw a lighthouse at dusk', name: 'chat', expects: 'drawing' };
+    this.at('opening /chat');
+    await tab.send('Page.navigate', { url: `${this.options.url}/chat` });
+    await waitFor('the chat shell to be ready', 60_000, async () => ((await tab.eval<boolean>('!!window.__stage && !!window.__shell').catch(() => false)) ? true : null));
+    await tab.eval('window.__stage.ready');
+    await sleep(500);
+    tab.drain();
+
+    // send
+    this.at('typing the prompt');
+    const field = await tab.eval<{ x: number; y: number } | null>(`(() => { const r = (document.querySelector('.pill__field') || {}).getBoundingClientRect?.(); return r ? { x: r.left + r.width / 2, y: r.top + r.height / 2 } : null; })()`);
+    if (field === null) {
+      this.add(results, 'chat-send', 'FAIL', 'the shell has no composer field');
+      return results;
+    }
+    const sent = tab.posted.length;
+    await tab.tap(field.x, field.y);
+    await tab.type(step.say ?? '');
+    const typed = await tab.eval<string>(`document.querySelector('.pill__field').value`);
+    await tab.key('Enter');
+    await sleep(600);
+    const posted = tab.posted.slice(sent).find((turn) => turn.kind === 'prompt');
+    this.add(results, 'chat-send', typed === step.say && posted?.text === step.say ? 'PASS' : 'FAIL', typed !== step.say ? `typing left "${typed}" in the field` : posted === undefined ? 'Enter posted no turn' : `a turn was posted with "${posted.text}"`);
+
+    // the reply arrives
+    this.at('waiting for the reply');
+    const trouble = await this.chatRest();
+    const made = await tab.eval<{ replies: number; users: number; words: number; card: boolean; open: boolean; note: string; state: string | null }>(`(() => {
+      const reply = [...document.querySelectorAll('.msg--reply')].pop();
+      return { replies: document.querySelectorAll('.msg--reply').length, users: document.querySelectorAll('.msg--user').length, words: reply ? (reply.querySelector('.reply__words, .reply')?.innerText || '').trim().length : 0, card: !!(reply && reply.querySelector('[data-focus=card], [data-focus=open]')), open: window.__shell.state().canvasOpen, note: reply ? (reply.querySelector('.reply__note')?.innerText || '') : '', state: reply ? (reply.querySelector('.reply__thinking') ? 'working' : 'done') : null };
+    })()`);
+    const replyProblems = [trouble, made.replies !== 1 ? `${made.replies} replies in the thread` : '', made.users !== 1 ? `${made.users} messages from the person` : '', made.note !== '' ? `the reply says: ${made.note}` : '', made.words === 0 && !made.card ? 'the reply has no words and no canvas to open' : ''].filter((text) => text !== '');
+    this.add(results, 'chat-reply', replyProblems.length === 0 ? 'PASS' : 'FAIL', replyProblems.length === 0 ? `reply in the thread (${made.words} characters of words${made.card ? ', a card for the canvas' : ''})` : replyProblems.join('; '));
+    await this.chatShot('reply');
+
+    // the trace under it
+    this.at('opening the trace');
+    const toggle = await tab.eval<{ x: number; y: number } | null>(`(() => { const b = document.querySelector('.msg--reply .trace__toggle'); if (!b) return null; b.scrollIntoView({ block: 'center' }); const r = b.getBoundingClientRect(); return { x: r.left + Math.min(r.width / 2, 120), y: r.top + r.height / 2 }; })()`);
+    if (toggle === null) this.add(results, 'chat-trace', 'FAIL', 'the reply has no trace line under it');
+    else {
+      await tab.tap(toggle.x, toggle.y);
+      await sleep(500);
+      const trace = await tab.eval<{ expanded: boolean; shown: boolean; items: number; text: string; inside: boolean }>(`(() => {
+        const b = document.querySelector('.msg--reply .trace__toggle'); const p = document.querySelector('.msg--reply .trace__panel');
+        const r = p ? p.getBoundingClientRect() : null;
+        return { expanded: b.getAttribute('aria-expanded') === 'true', shown: !!p && !p.hidden && !!r && r.height > 0, items: p ? p.querySelectorAll('.trace__list > li').length : 0, text: p ? p.innerText.slice(0, 80).replace(/\s+/g, ' ') : '', inside: !!r && r.left >= -1 && r.right <= innerWidth + 1 };
+      })()`);
+      const problems = [trace.expanded ? '' : 'the toggle did not open', trace.shown ? '' : 'the panel is not shown', trace.items === 0 ? 'the timeline has no entries' : '', trace.inside ? '' : 'the timeline runs off the side of the screen'].filter((text) => text !== '');
+      this.add(results, 'chat-trace', problems.length === 0 ? 'PASS' : 'FAIL', problems.length === 0 ? `opens, ${trace.items} entries ("${trace.text.slice(0, 40)}")` : problems.join('; '));
+      await this.chatShot('trace');
+      await tab.tap(toggle.x, toggle.y);
+      await sleep(250);
+    }
+
+    // the canvas
+    this.at('opening the canvas');
+    const wasOpen = await tab.eval<boolean>('window.__shell.state().canvasOpen');
+    if (!wasOpen) {
+      const card = await tab.eval<{ x: number; y: number } | null>(`(() => { const b = document.querySelector('.msg--reply [data-focus=card], .msg--reply [data-focus=open]'); if (!b) return null; b.scrollIntoView({ block: 'center' }); const r = b.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+      if (card !== null) await tab.tap(card.x, card.y);
+      await sleep(900);
+    }
+    const open = await tab.eval<boolean>('window.__shell.state().canvasOpen');
+    if (!open) {
+      for (const check of ['answer-on-stage', 'no-overlap', 'nothing-cut-off']) this.add(results, check, 'FAIL', 'the canvas would not open from the reply');
+    } else {
+      // the stage is at rest and the answer is the reply's
+      await this.chatRest();
+      await sleep(600);
+      const stage = await tab.call<{ x: number; y: number; w: number; h: number; hidden: boolean } | null>('rect', '.shell-canvas__room .stage');
+      const answer = await tab.call<Answer>('answer');
+      const picture = stage === null ? '' : await tab.shot({ x: stage.x, y: stage.y, width: stage.w, height: stage.h });
+      const scratch: CheckResult[] = [];
+      if (stage === null || stage.hidden) scratch.push({ turn: 101, check: 'answer-on-stage', verdict: 'FAIL', detail: 'the canvas has no visible stage' });
+      else await this.checkAnswer(step, answer, picture, scratch);
+      // the answer on the canvas is the reply's own: the canvas names this turn
+      const shown = await tab.eval<{ turn: string | null; key: string | null }>(`({ turn: window.__shell.state().canvasTurn, key: window.__shell.state().stageKey })`);
+      const last = answer.report?.turn ?? null;
+      for (const found of scratch) results.push(found.check === 'answer-on-stage' && shown.turn !== last && last !== null ? { ...found, verdict: 'FAIL', detail: `the canvas is on turn ${shown.turn} but the answer is turn ${last}` } : found);
+      this.checkOverlap(step, answer, results);
+      await this.checkCutOff(answer, results, true);
+      // what the person sees of the stage is the room the shell left it, not the whole screen
+      await this.chatShot('canvas');
+    }
+
+    // the composer, with the canvas open
+    this.at('the composer with the canvas open');
+    if (open) {
+      const pill = await tab.eval<{ x: number; y: number; w: number; h: number; hit: boolean; hitEl: string; inView: boolean; inert: boolean } | null>(`(() => {
+        const p = document.querySelector('.pill'); if (!p) return null;
+        const r = p.getBoundingClientRect();
+        const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        return { x: r.left, y: r.top, w: r.width, h: r.height, hit: !!top && p.contains(top), hitEl: top ? (top.className || top.tagName).toString().slice(0, 40) : 'nothing', inView: r.top >= 0 && r.bottom <= innerHeight + 1 && r.left >= 0 && r.right <= innerWidth + 1, inert: !!p.closest('[inert]') };
+      })()`);
+      const problems: string[] = [];
+      if (pill === null) problems.push('the composer is not on the page');
+      else {
+        if (!pill.inView) problems.push(`the pill is not on screen (${boxText({ x: pill.x, y: pill.y, width: pill.w, height: pill.h })} in ${this.screen.width}x${this.screen.height})`);
+        if (!pill.hit) problems.push(`something covers the pill: ${pill.hitEl}`);
+        if (pill.inert) problems.push('the pill is inert while the canvas is open');
+        await tab.tap(pill.x + pill.w / 2, pill.y + pill.h / 2);
+        await tab.type('ok');
+        const after = await tab.eval<{ value: string; canSend: boolean; canvas: boolean }>(`({ value: document.querySelector('.pill__field').value, canSend: !document.querySelector('.pill__send').disabled && document.querySelector('.pill__send').getAttribute('aria-disabled') !== 'true', canvas: window.__shell.state().canvasOpen })`);
+        if (after.value !== 'ok') problems.push(`real keys put "${after.value}" in the field, not "ok"`);
+        if (!after.canSend) problems.push('Send stays disabled with words in the field');
+        if (!after.canvas) problems.push('the canvas closed when the field was used');
+        await this.chatShot('composer');
+        for (let i = 0; i < after.value.length; i += 1) await tab.key('Backspace');
+      }
+      this.add(results, 'chat-composer', problems.length === 0 ? 'PASS' : 'FAIL', problems.length === 0 ? 'the pill is on screen, nothing covers it, a tap and keys put words in it, the canvas stays open' : problems.join('; '));
+    } else this.add(results, 'chat-composer', 'FAIL', 'no canvas to check the composer against');
+
+    const drained = tab.drain();
+    this.add(results, 'no-console-errors', drained.consoleErrors.length === 0 ? 'PASS' : 'FAIL', drained.consoleErrors.length === 0 ? 'none' : drained.consoleErrors.slice(0, 3).map((entry) => entry.text).join('; '));
+    // the page's icon is not the build's: a request for it that fails is not a failure of the shell
+    const failed = drained.failedRequests.filter((entry) => !/\/favicon\.ico/.test(entry.text));
+    this.add(results, 'no-failed-requests', failed.length === 0 ? 'PASS' : 'FAIL', failed.length === 0 ? 'none' : failed.slice(0, 3).map((entry) => entry.text).join('; '));
+    return results;
+  }
+
+  private async chatShot(name: string): Promise<void> {
+    const data = (await this.tab.shot()).split(',')[1] ?? '';
+    await writeFile(join(this.dir, `chat-${name}.png`), Buffer.from(data, 'base64'));
+  }
+
+  static async runChat(options: Options, screen: Options['screens'][number]): Promise<{ readonly results: readonly CheckResult[]; readonly seconds: number; readonly dir: string; readonly aborted: string | null }> {
+    const dir = join(options.out, screen.name);
+    await mkdir(dir, { recursive: true });
+    const started = Date.now();
+    const tab = await Tab.open(screen.width, screen.height);
+    try {
+      const talk = new Conversation(tab, options, screen, dir);
+      let results: readonly CheckResult[] = [];
+      let aborted: string | null = null;
+      const beat = setInterval(() => {
+        const idle = Math.round((Date.now() - talk.phaseSince) / 1000);
+        if (idle >= 45) process.stdout.write(`[${screen.name}] still in the /chat pass: ${talk.phase} (${idle} s)\n`);
+      }, 15_000);
+      try {
+        results = await talk.chat();
+      } catch (error) {
+        aborted = `${talk.phase}: ${error instanceof Error ? error.message : String(error)}`;
+        process.stdout.write(`[${screen.name}] ABORTED in the /chat pass, ${aborted}\n`);
+      } finally {
+        clearInterval(beat);
+      }
+      return { results, seconds: (Date.now() - started) / 1000, dir, aborted };
+    } finally {
+      await tab.close();
+    }
   }
 
   // ---- turn 5: work the mock-up like a person
@@ -1448,7 +1644,9 @@ async function main(): Promise<void> {
   if (!health) usage(`nothing answers at ${options.url}/api/health: start the candidate build (on a spare port, with its own DATA_DIR) and pass --url`);
   await mkdir(options.out, { recursive: true });
   process.stdout.write(`smoke: ${options.url}, screens ${options.screens.map((screen) => screen.name).join(', ')}, pictures in ${options.out}\n`);
-  const runs = options.parallel
+  // the /chat pass starts with the conversation, in tabs of its own: it adds no time of its own when the conversation takes longer
+  const chatRuns = options.chat === 'off' ? Promise.resolve([]) : Promise.all(options.screens.map((screen) => Conversation.runChat(options, screen).then((run) => ({ screen, run }))));
+  const runs = options.chat === 'only' ? [] : options.parallel
     ? await Promise.all(options.screens.map((screen) => Conversation.run(options, screen).then((run) => ({ screen, run }))))
     : await (async () => {
         const done: { screen: Options['screens'][number]; run: Awaited<ReturnType<typeof Conversation.run>> }[] = [];
@@ -1474,7 +1672,19 @@ async function main(): Promise<void> {
     process.stdout.write(`  ${screen.name}: ${run.seconds.toFixed(0)} s, contact sheet ${run.sheet ?? 'none'}\n`);
     summary.push({ screen: screen.name, aborted: run.aborted, seconds: run.seconds, sheet: run.sheet, turns: run.records.map((record) => ({ turn: record.step.n, said: record.said, picture: record.picture, seconds: record.seconds, results: record.results })) });
   }
-  await writeFile(join(options.out, 'smoke.json'), JSON.stringify({ url: options.url, at: new Date().toISOString(), failures, screens: summary }, null, 2));
+  const chat: unknown[] = [];
+  for (const { screen, run } of await chatRuns) {
+    process.stdout.write(`\n/chat on ${screen.name}\n`);
+    for (const result of run.results) process.stdout.write(`${result.check.padEnd(20)}${result.verdict}${result.verdict === 'FAIL' ? `  ${result.detail}` : ''}\n`);
+    for (const result of run.results) if (result.verdict === 'FAIL') failures += 1;
+    if (run.aborted !== null) {
+      failures += 1;
+      process.stdout.write(`  FAIL /chat on ${screen.name} stopped: ${run.aborted}\n`);
+    }
+    process.stdout.write(`  ${screen.name}: ${run.seconds.toFixed(0)} s, pictures in ${run.dir}\n`);
+    chat.push({ screen: screen.name, aborted: run.aborted, seconds: run.seconds, results: run.results });
+  }
+  await writeFile(join(options.out, 'smoke.json'), JSON.stringify({ url: options.url, at: new Date().toISOString(), failures, screens: summary, chat }, null, 2));
   process.stdout.write(`\n${failures === 0 ? 'PASS: the build may go live.' : `FAIL: ${failures} check${failures === 1 ? '' : 's'} failed. The build must not go live.`}\n`);
   process.exit(failures === 0 ? 0 : 1);
 }

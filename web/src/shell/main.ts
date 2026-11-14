@@ -25,10 +25,11 @@ import { FONTS, fontFor } from '../fonts';
 import { DRAW_WORDS, mountStageInk } from '../ink/stage';
 import type { StageInk } from '../ink/stage';
 import { LOOKS } from '../looks';
-import { listConversations, readConversation } from './api';
+import { continueConversation, listConversations, readConversation } from './api';
 import { mountCanvas } from './canvas';
 import { mountComposer } from './composer';
 import { mountList } from './list';
+import { mountOverflow, mountUsage } from './ops';
 import type { ListItem } from './list';
 import { mountLive } from './live';
 import type { Live } from './live';
@@ -38,7 +39,8 @@ import { stageScheme, systemScheme, watchStage, watchSystem, wear } from './them
 import { mountThread } from './thread';
 
 const UNTITLED = 'New conversation';
-const PAST_NOTE = 'This conversation has ended. Your next message starts a new one.';
+const PAST_NOTE = 'An earlier conversation. Send a message to pick it up where it left off.';
+const DRAFT_KEY = 'conduit-continue';
 /** From this width the canvas is a panel beside the thread; below it, the whole screen */
 const SIDE_PANEL = '(min-width: 1100px)';
 const DRAWER = '(max-width: 719px)';
@@ -122,6 +124,8 @@ let summaries: readonly ConversationSummary[] = [];
 let brainNow: BrainChoice | null = null;
 /** the turn of the active conversation whose canvas is open */
 let canvasTurn: string | null = null;
+/** the id of an older conversation this page took up: it is this page's conversation now */
+let continuedId: string | null = null;
 /** what the stage holds now: `<conversation>:<turn>` */
 let stageKey: string | null = null;
 let opener: HTMLElement | null = null;
@@ -179,25 +183,42 @@ const composer = mountComposer(part('.shell-composer'), {
       });
       return false;
     }
-    showLive();
     const drawn = stageInk;
     const inked = drawn !== null && drawn.pending();
-    live?.addPending(text === '' ? DRAW_WORDS : text, photos, voice.length > 0, inked);
     const failed = (cause: unknown): void => {
       live?.dropPending();
       composer.restore(text, held);
       say(cause instanceof Error ? cause.message : 'That could not be sent.');
     };
-    if (drawn !== null && inked) {
-      // what was drawn on the canvas goes up with these words: its picture is kept first, then one turn carries words, photos and marks
-      void (async () => {
-        const marks = await drawn.take();
-        await mounted.prompt(text === '' ? DRAW_WORDS : text, photos, marks ?? undefined, voice);
-        drawn.sent();
-      })().catch(failed);
+    const send = (): void => {
+      live?.addPending(text === '' ? DRAW_WORDS : text, photos, voice.length > 0, inked);
+      if (drawn !== null && inked) {
+        // what was drawn on the canvas goes up with these words: its picture is kept first, then one turn carries words, photos and marks
+        void (async () => {
+          const marks = await drawn.take();
+          await mounted.prompt(text === '' ? DRAW_WORDS : text, photos, marks ?? undefined, voice);
+          drawn.sent();
+        })().catch(failed);
+        return;
+      }
+      void mounted.prompt(text, photos, undefined, voice).catch(failed);
+    };
+    if (active.kind === 'past') {
+      // a message in an earlier conversation picks that conversation up
+      const id = active.id;
+      if (!canTakeUp(id)) {
+        composer.restore(text, held);
+        continueOnFreshPage(id, text);
+        return false;
+      }
+      void takeUp(id).then(() => {
+        showLive();
+        send();
+      }, failed);
       return true;
     }
-    void mounted.prompt(text, photos, undefined, voice).catch(failed);
+    showLive();
+    send();
     return true;
   },
   onStop: () => app?.interrupt(),
@@ -205,6 +226,8 @@ const composer = mountComposer(part('.shell-composer'), {
   photos: {
     upload: async (photo) => {
       if (app === null) throw new Error('The stage is still starting. Try again in a moment.');
+      // a photo given while an earlier conversation is on view belongs to it: the conversation is taken up first, so the photo is named above that log's own
+      if (active.kind === 'past' && canTakeUp(active.id)) await takeUp(active.id);
       return (await app.link.uploadPhoto(photo)).id;
     },
     urlOf: (id) => app?.link.photoUrl(id) ?? null,
@@ -277,7 +300,7 @@ async function showPast(id: string): Promise<void> {
 
 async function pick(id: string): Promise<void> {
   closeDrawer();
-  if (id === 'live') showLive();
+  if (id === 'live' || id === continuedId) showLive();
   else await showPast(id);
   // a conversation chosen on a phone is read from its end
   thread.scrollToEnd();
@@ -297,6 +320,7 @@ function startNew(): void {
 function liveId(): string | null {
   const session = app?.link.session ?? null;
   if (session === null || (live?.messages().length ?? 0) === 0) return null;
+  if (continuedId !== null) return continuedId;
   return summaries.find((entry) => entry.session === session)?.id ?? null;
 }
 
@@ -336,13 +360,58 @@ function chooseReply(choice: ReplyChoice, reply: ReplyMessage): void {
     app.choose(choice.key);
     return;
   }
-  // a choice from an earlier reply, or from a conversation that has ended, is a new message with those words
-  showLive();
-  live?.addPending(choice.text, [], false, false);
-  void app.prompt(choice.text).catch((cause: unknown) => {
-    live?.dropPending();
-    say(cause instanceof Error ? cause.message : 'That could not be sent.');
-  });
+  // a choice from an earlier reply, or from an earlier conversation (which it picks up), is a new message with those words
+  const mounted = app;
+  const send = (): void => {
+    showLive();
+    live?.addPending(choice.text, [], false, false);
+    void mounted.prompt(choice.text).catch((cause: unknown) => {
+      live?.dropPending();
+      say(cause instanceof Error ? cause.message : 'That could not be sent.');
+    });
+  };
+  if (active.kind !== 'past') {
+    send();
+    return;
+  }
+  const id = active.id;
+  if (!canTakeUp(id)) {
+    continueOnFreshPage(id, choice.text);
+    return;
+  }
+  void takeUp(id).then(send, (cause: unknown) => say(cause instanceof Error ? cause.message : 'That could not be sent.'));
+}
+
+/** The server lets this page's session take up the conversation on view, and the page shows it as its own: earlier turns, then what comes next. */
+function canTakeUp(id: string): boolean {
+  return continuedId === id || (live?.messages().length ?? 0) === 0;
+}
+
+async function takeUp(id: string): Promise<void> {
+  if (continuedId === id) return;
+  const session = app?.link.session ?? null;
+  const view = pastView;
+  if (session === null || view === null || live === null) throw new Error('The stage is still starting. Try again in a moment.');
+  await continueConversation(id, session);
+  live.seed(
+    view.turns.flatMap((turn) => messagesOfTurn(turn)),
+    view.turns.map((turn) => ({ turn: turn.turn, kind: turn.kind, lines: turn.lines })),
+  );
+  continuedId = id;
+  if (stageKey?.startsWith(`${id}:`) === true) stageKey = `live:${stageKey.slice(id.length + 1)}`;
+}
+
+/** This page's session has a conversation of its own already, and one conversation holds one session: the older one is opened on a fresh page, with the words kept. */
+function continueOnFreshPage(id: string, text: string): void {
+  try {
+    sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ id, text }));
+  } catch {
+    // the words are not kept; the page still opens on the conversation
+  }
+  say('Opening that conversation on a fresh page. Send your message again there.', 6000);
+  const url = new URL(window.location.href);
+  url.searchParams.set('c', id);
+  window.location.assign(url);
 }
 
 // ---- opening the canvas
@@ -372,11 +441,14 @@ function syncNav(): void {
 function setOpen(open: boolean): void {
   shell.dataset['canvas'] = open ? 'open' : 'closed';
   // On a screen with no room for a panel the canvas covers everything: nothing behind it is reachable, by keyboard or by a screen reader.
+  // The composer is the one thing left reachable: its pill floats over the canvas's foot, so the owner can type while looking at the answer.
   const covered = open && overlay();
-  for (const element of [part('#shell-list'), main]) {
+  const behind = [part('#shell-list'), ...[...main.children].filter((element) => !element.classList.contains('shell-composer'))];
+  for (const element of behind) {
     if (covered) element.setAttribute('inert', '');
     else element.removeAttribute('inert');
   }
+  if (covered) main.removeAttribute('inert');
   applyTheme();
 }
 
@@ -483,6 +555,12 @@ window.matchMedia(DRAWER).addEventListener('change', (event) => {
 });
 window.matchMedia(SIDE_PANEL).addEventListener('change', () => setOpen(canvasOpen()));
 
+// The canvas leaves room for the pill under it: the pill's height (it grows with a status line or a photo) is the canvas's bottom margin on a phone.
+const pillBox = part('.shell-composer');
+const measurePill = (): void => shell.style.setProperty('--sh-pill-h', `${Math.ceil(pillBox.getBoundingClientRect().height)}px`);
+if (typeof ResizeObserver !== 'undefined') new ResizeObserver(measurePill).observe(pillBox);
+measurePill();
+
 const keepAboveKeyboard = (): void => {
   const viewport = window.visualViewport;
   if (viewport === null) return;
@@ -543,7 +621,8 @@ async function start(): Promise<void> {
   mountActions(canvas.tools, mounted, transcript, canvas.stageHost, { top: canvas.navTop, menu });
   mountSound(canvas.navTop, mounted);
   picker = mountPicker(menu, mounted);
-  mountAbout(menu, mounted);
+  mountAbout(menu, mounted, (body) => mountUsage(body, mounted, menu.button));
+  mountOverflow(part('.shell-bar'), mounted);
   mountActivity(part('.shell-activity'), mounted);
   mountPermission(mounted);
   live = mountLive(mounted, transcript, {
@@ -615,6 +694,18 @@ void (async () => {
   renderList();
   if (wanted !== null && CONVERSATION_ID.test(wanted)) await showPast(wanted);
   await first;
+  // words kept across the fresh page that opened a conversation to continue it
+  try {
+    const kept = sessionStorage.getItem(DRAFT_KEY);
+    sessionStorage.removeItem(DRAFT_KEY);
+    const draft = kept === null ? null : (JSON.parse(kept) as { id?: unknown; text?: unknown });
+    if (draft !== null && draft.id === wanted && typeof draft.text === 'string') {
+      composer.restore(draft.text);
+      composer.focus();
+    }
+  } catch {
+    // nothing kept
+  }
 })();
 
 declare global {

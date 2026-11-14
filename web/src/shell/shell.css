@@ -1131,3 +1131,120 @@ button {
     gap: 0.45rem;
   }
 }
+
+/* On a phone the canvas covers the thread but not the composer: the pill sits at the foot of the screen, the canvas ends above it, and
+   a message sent from there leaves the canvas open on the new answer. */
+@media (max-width: 1099px) {
+  .shell[data-canvas='open'] .shell-composer {
+    position: fixed;
+    z-index: 31;
+    top: calc(var(--app-height, 100dvh) - var(--sh-pill-h, 4rem));
+    right: 0;
+    left: 0;
+    background: var(--sh-ground);
+    border-top: 1px solid var(--sh-rule);
+  }
+
+  .shell[data-canvas='open'] .shell-canvas {
+    inset: 0 0 auto 0;
+    height: calc(var(--app-height, 100dvh) - var(--sh-pill-h, 4rem));
+  }
+
+  .shell[data-canvas='open'] .shell-canvas__nav {
+    padding-bottom: 0;
+  }
+}
+
+/* "continued": where an older conversation was picked up again. Quiet: a hairline and one small word. */
+.msg--continued {
+  position: relative;
+}
+
+.thread__divider {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  align-self: stretch;
+  margin: 0.5rem 0 1rem;
+  color: var(--sh-quiet);
+  font-size: 0.8125rem;
+  letter-spacing: 0.02em;
+}
+
+.thread__divider::before,
+.thread__divider::after {
+  content: '';
+  flex: 1 1 auto;
+  height: 1px;
+  background: var(--sh-rule);
+}
+
+/* Usage in the About view, and the header's overflow (the kill switch lives there, behind a confirm) */
+.about__usage {
+  margin-top: 0.75rem;
+}
+
+.about__heading {
+  margin: 0 0 0.25rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--sh-quiet);
+}
+
+.shell-bar {
+  position: relative;
+}
+
+.shell-bar__more {
+  flex: 0 0 auto;
+}
+
+.shell-more {
+  position: absolute;
+  z-index: 25;
+  top: calc(100% - 0.25rem);
+  right: max(0.5rem, env(safe-area-inset-right));
+  min-width: 16rem;
+  max-width: calc(100vw - 1rem);
+  padding: 0.25rem;
+  border: 1px solid var(--sh-line);
+  border-radius: 0.875rem;
+  background: var(--sh-ground);
+  box-shadow: var(--sh-shadow);
+}
+
+.shell-more[hidden] {
+  display: none;
+}
+
+.shell-more__item {
+  display: block;
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0.5rem 0.75rem;
+  border: 0;
+  border-radius: 0.625rem;
+  background: transparent;
+  color: var(--sh-danger);
+  font: inherit;
+  font-size: 0.9375rem;
+  text-align: left;
+}
+
+.shell-more__item:hover {
+  background: var(--sh-hover);
+}
+
+.shell-more__gist {
+  display: block;
+  margin-top: 0.125rem;
+  color: var(--sh-quiet);
+  font-size: 0.8125rem;
+}
+
+.shell-confirm__go {
+  background: var(--sh-danger);
+  color: var(--sh-ground);
+}

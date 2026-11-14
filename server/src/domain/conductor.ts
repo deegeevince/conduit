@@ -331,6 +331,24 @@ export class Conductor {
   }
 
   /**
+   * The page's own session, still empty, takes up an older conversation: its log goes on in that conversation's file, its turn ids start
+   * above that log's, and the brain's first brief carries `earlier` (a short account of the words, never the system prompt or a brief).
+   * A session that has begun a conversation of its own cannot: that one would be torn in two. Asking again for the same one is a no-op.
+   */
+  continueConversation(session: string, id: string, earlier: string, highestTurn: number, highestPhoto: number, firstSession: string): void {
+    const { sessions, now, sessionLog } = this.deps;
+    const s = sessions.require(session, now());
+    if (s.continued?.id === id) return;
+    if (s.continued !== null || s.turn !== null || s.history.length > 0) throw errors.conflict('this page already has a conversation going; open the older one on a fresh page to continue it');
+    sessionLog.adopt(s.id, id);
+    sessions.reserveTurns(highestTurn);
+    this.deps.uploads?.reserve(s.id, highestPhoto);
+    s.continued = { id, earlier };
+    sessionLog.write(s.id, { type: 'continued', session: s.id, from: firstSession, started: new Date(now()).toISOString() });
+    this.deps.log.info('session.continued', { session: s.id, conversation: id });
+  }
+
+  /**
    * Attaches the painter's stream and sends `hello`. If the latest turn has not been reported yet (open or
    * ended), its `turn` event and every event so far are sent again, so a stream that
    * dropped and reconnected misses nothing; the painter ignores a `seq` it

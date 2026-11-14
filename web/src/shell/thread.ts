@@ -67,7 +67,12 @@ export function mountThread(host: HTMLElement, handlers: ThreadHandlers): Thread
   };
 
   const userRow = (message: Extract<Message, { role: 'user' }>): HTMLLIElement => {
-    const row = el('li', `msg msg--user${message.quiet ? ' msg--quiet' : ''}`);
+    const row = el('li', `msg msg--user${message.quiet ? ' msg--quiet' : ''}${message.continued === true ? ' msg--continued' : ''}`);
+    if (message.continued === true) {
+      const divider = el('p', 'thread__divider', 'continued');
+      divider.setAttribute('role', 'separator');
+      row.append(divider);
+    }
     row.append(el('h3', 'vh', message.quiet ? 'You did this' : 'You said'));
     const bubble = el('div', 'bubble');
     if (message.photos.length > 0) {

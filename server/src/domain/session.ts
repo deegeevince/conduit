@@ -193,6 +193,8 @@ export interface Session {
   readonly gateFails: Map<string, string[]>;
   /** v2.1. Confirm controls waiting for the owner, by request id */
   readonly permissions: Map<string, PendingPermission>;
+  /** v2.1. A returning conversation: its id, and the short account the brain is given of it. Null for a conversation that began here. */
+  continued: { readonly id: string; readonly earlier: string } | null;
 }
 
 /** In-memory sessions. There is no database; a restart forgets everything, by design. */
@@ -249,6 +251,7 @@ export class SessionStore {
       findings: new Map(),
       gateFails: new Map(),
       permissions: new Map(),
+      continued: null,
     };
     this.sessions.set(session.id, session);
     return session;
@@ -269,6 +272,11 @@ export class SessionStore {
   findByTurn(turn: string): Session | undefined {
     const id = this.turnIndex.get(turn);
     return id === undefined ? undefined : this.sessions.get(id);
+  }
+
+  /** Turn ids are handed out from here; after a restart they begin again, so a log taken up again keeps its own ids by starting above them. */
+  reserveTurns(upTo: number): void {
+    if (upTo > this.turnCounter) this.turnCounter = upTo;
   }
 
   nextTurnId(): string {

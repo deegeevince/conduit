@@ -7,13 +7,13 @@ import { readFile, readdir, stat } from 'node:fs/promises';
 import { join, resolve, sep } from 'node:path';
 import { createInterface } from 'node:readline';
 import { CONVERSATION_API } from '@conduit/language';
-import type { ConversationSummary, ConversationView } from '@conduit/language';
+import type { ContinueResponse, ConversationSummary, ConversationView } from '@conduit/language';
 import type { Hono } from 'hono';
-import { CONVERSATION_ID, foldConversation, summaryOf } from '../domain/conversations';
+import { CONVERSATION_ID, earlierText, foldConversation, highestPhoto, highestTurn, summaryOf } from '../domain/conversations';
 import type { SessionRecord } from '../domain/session-log';
 import { errors } from '../errors';
 import type { HttpDeps } from './deps';
-import { param } from './json';
+import { jsonBody, param } from './json';
 
 /** The most conversations the list holds, newest first. */
 const LIST_LIMIT = 100;
@@ -36,7 +36,7 @@ async function skim(path: string): Promise<SessionRecord[]> {
   const out: SessionRecord[] = [];
   const lines = createInterface({ input: createReadStream(path, { encoding: 'utf8' }), crlfDelay: Infinity });
   for await (const line of lines) {
-    if (!line.startsWith('{"type":"session"') && !line.startsWith('{"type":"turn"')) continue;
+    if (!line.startsWith('{"type":"session"') && !line.startsWith('{"type":"turn"') && !line.startsWith('{"type":"continued"')) continue;
     const record = parse(line);
     if (record !== null) out.push(record);
   }
@@ -97,6 +97,26 @@ export function registerConversationRoutes(app: Hono, deps: HttpDeps): void {
     const { records, updated } = await load(id);
     c.header('Cache-Control', 'no-store');
     return c.json<ConversationView>(foldConversation(id, records, updated));
+  });
+
+  /**
+   * POST `{ session }`: 200 `ContinueResponse`. The page's own session, which has said nothing yet, takes up this conversation: the
+   * server keeps writing to its log, and the brain's first brief carries a short account of it. 404 for an id that is not a log here
+   * (the id is checked by `CONVERSATION_ID` before a path is built), 409 for a session that already has a conversation of its own.
+   * Like every `/api` route, it answers only the owner.
+   */
+  app.post('/api/conversations/:id/continue', async (c) => {
+    const id = param(c, 'id');
+    const body = (await jsonBody(c)) as { session?: unknown } | null;
+    const session = typeof body?.session === 'string' ? body.session : '';
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(session)) throw errors.badRequest('session must be the id of this page\'s session');
+    const { records, updated } = await load(id);
+    const view = foldConversation(id, records, updated);
+    if (view.turns.length === 0) throw errors.notFound(`conversation ${id}`);
+    const first = records.find((record) => record.type === 'session');
+    deps.conductor.continueConversation(session, id, earlierText(view), highestTurn(records), highestPhoto(records), first?.type === 'session' ? first.session : id.slice(16));
+    c.header('Cache-Control', 'no-store');
+    return c.json<ContinueResponse>({ id, session });
   });
 
   app.get('/api/conversations/:id/turns/:turn/still', async (c) => {

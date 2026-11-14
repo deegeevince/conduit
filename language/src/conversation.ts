@@ -12,7 +12,21 @@ export const CONVERSATION_API = {
   still: (id: string, turn: string): string => `/api/conversations/${id}/turns/${turn}/still`,
   /** GET: a photo the person gave in this conversation (a JPEG, as the server kept it); 404 when it is not this conversation's */
   photo: (id: string, photo: string): string => `/api/conversations/${id}/photos/${photo}`,
+  /** POST `{ session }`: this page's (still empty) session takes up the conversation: its next turns are appended to the same log and the brain is given a short account of it */
+  continue: (id: string): string => `/api/conversations/${id}/continue`,
 } as const;
+
+/** The body of the continue request: the page's own session, which must have no turn yet. */
+export interface ContinueRequest {
+  readonly session: string;
+}
+
+export interface ContinueResponse {
+  /** the conversation's id, unchanged: the same log goes on */
+  readonly id: string;
+  /** the session that now writes to it */
+  readonly session: string;
+}
 
 export interface ConversationSummary {
   readonly id: string;
@@ -36,6 +50,8 @@ export interface ConversationReply {
 
 export interface ConversationTurn {
   readonly turn: string;
+  /** the conversation was picked up again at this turn: a new session began writing to the same log here */
+  readonly continued?: true;
   /** how the turn was opened: `prompt` is the person typing; the others are taps, a played script, a pressed control */
   readonly kind: 'prompt' | 'tap' | 'act' | 'demo' | 'script' | 'refine';
   /** the person's words, or a short account of what they did */

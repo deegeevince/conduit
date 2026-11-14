@@ -33,6 +33,8 @@ export interface UploadStore {
   load(session: string, id: string): Promise<Snapshot | null>;
   /** Whether this session holds a photo with this id (the one it was given by `put`). */
   has(session: string, id: string): boolean;
+  /** A conversation taken up again keeps its log's photo names: this session's next photo is named above `upTo` (`u3` held: `reserve(s, 3)` makes the next one `u4`). */
+  reserve(session: string, upTo: number): void;
 }
 
 export const NO_UPLOADS: UploadStore = {
@@ -41,4 +43,5 @@ export const NO_UPLOADS: UploadStore = {
   recrop: () => Promise.reject(new Error('uploads are off')),
   load: () => Promise.resolve(null),
   has: () => false,
+  reserve: () => undefined,
 };

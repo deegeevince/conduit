@@ -1,7 +1,7 @@
 // The shell's reading of the server's conversations (server/src/http/conversation-routes.ts). Reads only; a failure is a sentence.
 
 import { CONVERSATION_API } from '@conduit/language';
-import type { ConversationSummary, ConversationView } from '@conduit/language';
+import type { ContinueRequest, ConversationSummary, ConversationView } from '@conduit/language';
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -36,4 +36,17 @@ export async function readConversation(id: string): Promise<ConversationView> {
   const body = await get(CONVERSATION_API.one(id));
   if (!isView(body)) throw new Error('The server answered with something that is not a conversation.');
   return body;
+}
+
+/** Asks the server to let this page's (empty) session take up an older conversation: it goes on in the same log. Rejects with a sentence. */
+export async function continueConversation(id: string, session: string): Promise<void> {
+  const body: ContinueRequest = { session };
+  let response: Response;
+  try {
+    response = await fetch(CONVERSATION_API.continue(id), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  } catch (cause) {
+    throw new Error('The server cannot be reached.', { cause });
+  }
+  if (response.status === 409) throw new Error('This page already has a conversation going.');
+  if (!response.ok) throw new Error(response.status === 404 ? 'That conversation is not there any more.' : `The server could not continue the conversation (${response.status}).`);
 }

@@ -2,6 +2,7 @@
 
 import { appendFile, mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { CONVERSATION_ID } from '../domain/conversations';
 import type { SessionEntry, SessionLog } from '../domain/session-log';
 import type { Logger } from '../log';
 
@@ -128,6 +129,19 @@ export function createJsonlSessionLog(deps: JsonlSessionLogDeps): SessionLog {
     fileOf: (session) => {
       const state = stateFor(session);
       return state === null || state.gaveUp ? '' : `${state.stem}.jsonl`;
+    },
+    adopt: (session, stem) => {
+      // The id is the one shape of file name the routes take; nothing else is ever joined to the folder.
+      if (!CONVERSATION_ID.test(stem) || closed.has(session)) return;
+      const held = open.get(session);
+      if (held !== undefined) {
+        flush(session, held);
+        // the file this session began (a `session` record and nothing else) is left as it is
+        const last = held.chain;
+        finishing.add(last);
+        void last.finally(() => finishing.delete(last));
+      }
+      open.set(session, { stem, startedAt: deps.now(), pending: [], chain: held?.chain ?? Promise.resolve(), scheduled: false, gaveUp: false });
     },
     close: (session) => {
       const state = open.get(session);

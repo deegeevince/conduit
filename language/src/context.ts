@@ -170,6 +170,8 @@ export interface TurnContext {
    * conversation has no document.
    */
   readonly document?: DocumentContext;
+  /** v2.1. A returning conversation: a short account of what was said and answered before this page's session began (words only, within a budget). Absent: none. */
+  readonly earlier?: string;
 }
 
 /** The document a conversation has made, and what the person has done in it. */
