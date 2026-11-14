@@ -15,6 +15,8 @@ export interface InkBarOptions {
   /** the words the field starts with, and read back when the host is the one holding the field (the prompt bar) */
   readonly readWords?: () => string;
   readonly allowEmptyWords?: boolean;
+  /** the finger-draws toggle on touch screens (default true) */
+  readonly fingerToggle?: boolean;
 }
 
 export interface InkBar {
@@ -32,6 +34,7 @@ const ICON = {
   eraser: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M8 20h11"/><path d="M5 15l8-9a2 2 0 013 0l3 3a2 2 0 010 3l-6 6H9z"/><path d="M9 11l6 6"/></svg>',
   undo: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M9 7L4 12l5 5"/><path d="M4 12h9a6 6 0 010 12" transform="translate(0 -4)"/></svg>',
   redo: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M15 7l5 5-5 5"/><path d="M20 12h-9a6 6 0 000 12" transform="translate(0 -4)"/></svg>',
+  finger: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M9 11V5a1.5 1.5 0 013 0v5l4 1a2 2 0 011.5 2.3L16.5 19a2 2 0 01-2 1.5H11a3 3 0 01-2.4-1.2L5.5 15.5a1.5 1.5 0 012.2-2L9 14.5"/></svg>',
   clear: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12"/></svg>',
 } as const;
 
@@ -97,6 +100,17 @@ export function mountInkBar(host: HTMLElement, ink: Ink, options: InkBarOptions)
   clear.addEventListener('click', () => ink.clear());
   history.append(undo, redo, clear);
 
+  // On a touch screen: whether a finger draws or scrolls. With a pen about it scrolls; this is the way to say otherwise (a phone, a finger-only drawing).
+  let finger: HTMLButtonElement | null = null;
+  if (navigator.maxTouchPoints > 0 && options.fingerToggle !== false) {
+    finger = button('Finger draws', ICON.finger, 'ink-btn--finger');
+    finger.addEventListener('click', () => {
+      ink.setFingerDraws(!ink.fingerDraws());
+      sync();
+    });
+    history.append(finger);
+  }
+
   const send = document.createElement('div');
   send.className = 'ink-bar__group';
   send.style.flex = '1 1 auto';
@@ -130,6 +144,11 @@ export function mountInkBar(host: HTMLElement, ink: Ink, options: InkBarOptions)
     undo.disabled = !ink.model.canUndo;
     redo.disabled = !ink.model.canRedo;
     clear.disabled = ink.model.strokes.length === 0;
+    if (finger !== null) {
+      finger.setAttribute('aria-pressed', String(ink.fingerDraws()));
+      finger.title = ink.fingerDraws() ? 'A finger draws. Tap to let a finger scroll instead.' : 'A finger scrolls. Tap to let a finger draw.';
+      finger.setAttribute('aria-label', 'Finger draws');
+    }
     go.disabled = sending || ink.model.strokes.length === 0;
   }
   const off = ink.onChange(sync);

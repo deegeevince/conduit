@@ -4,7 +4,8 @@
 // so it can be replayed at any size. `serialize` rounds the numbers (a tenth of a unit, a hundredth of pressure) which is below what an eye or a
 // pen can tell, and refuses ink larger than `INK_LIMITS`.
 
-import { INK_LIMITS, checkInkDocument } from '@conduit/language';
+// the contract's own file, not the package's index: a surface's bundle takes only these checks and limits, not the whole language
+import { INK_LIMITS, checkInkDocument } from '../../../language/src/ink';
 import type { InkDocument, InkSpace, InkStroke } from '@conduit/language';
 
 export class InkTooLarge extends Error {}

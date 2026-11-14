@@ -6,7 +6,7 @@
 // Two canvases: `base` holds every finished stroke and is redrawn when the strokes or the size change; `live` (created `desynchronized` so the browser
 // can put it on screen without waiting for the page's frame) holds only the stroke being drawn, with the pen's predicted next points on the end.
 
-import { INK_LIMITS } from '@conduit/language';
+import { INK_LIMITS } from '../../../language/src/ink';
 import type { InkBox, InkDocument, InkMarks, InkOn, InkPoint, InkRegionDef, InkRegionHit, InkSpace, InkStroke, InkVoice } from '@conduit/language';
 import { exportPng, exportSvg } from './export';
 import type { ExportOptions, InkBackdrop } from './export';
@@ -78,6 +78,8 @@ export interface Ink {
   setContext(box: InkBox | undefined): void;
   setBackground(background: InkBackground | null, space?: InkSpace): void;
   setFingerDraws(value: 'auto' | boolean): void;
+  /** whether a finger draws now (with `auto`: until a pen has been seen) */
+  fingerDraws(): boolean;
   undo(): void;
   redo(): void;
   clear(): void;
@@ -629,7 +631,11 @@ export function createInk(host: HTMLElement, options: InkOptions = {}): Ink {
       }
       layout();
     },
-    setFingerDraws: (value) => guard.setFingerDraws(value),
+    setFingerDraws: (value) => {
+      guard.setFingerDraws(value);
+      emitChange();
+    },
+    fingerDraws: () => guard.fingerDrawing,
     undo,
     redo,
     clear: () => model.clear(),

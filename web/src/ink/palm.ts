@@ -47,6 +47,10 @@ export class PalmGuard {
   setFingerDraws(value: 'auto' | boolean): void {
     this.fingerDraws = value;
   }
+  /** whether a finger draws right now */
+  get fingerDrawing(): boolean {
+    return this.fingerDraws === 'auto' ? !this.penEverSeen : this.fingerDraws;
+  }
   get seenPen(): boolean {
     return this.penEverSeen;
   }
@@ -78,8 +82,7 @@ export class PalmGuard {
     }
     if (this.penDown.size > 0 || f.time - this.penLastSeen < GRACE_MS) return { verdict: { act: 'ignore', why: 'pen-busy' }, cancel: [] };
     if (Math.max(f.width, f.height) > PALM_SIZE) return { verdict: { act: 'ignore', why: 'palm' }, cancel: [] };
-    const draws = this.fingerDraws === 'auto' ? !this.penEverSeen : this.fingerDraws;
-    if (draws) {
+    if (this.fingerDrawing) {
       this.drawingTouches.add(f.id);
       return { verdict: { act: 'draw', erase: false }, cancel: [] };
     }

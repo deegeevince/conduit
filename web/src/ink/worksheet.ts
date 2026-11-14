@@ -39,6 +39,10 @@ export function mountWorksheet(host: HTMLElement, options: WorksheetOptions): Wo
   wrap.className = 'ink-sheet';
   wrap.style.cssText = 'display:flex;flex-direction:column;gap:8px';
   host.append(wrap);
+  // the tools stay at the top of the screen while the sheet scrolls under them
+  const tools = host.ownerDocument.createElement('div');
+  tools.style.cssText = 'position:sticky;top:0;z-index:5';
+  wrap.append(tools);
   const sheet = host.ownerDocument.createElement('div');
   sheet.style.cssText = 'position:relative;width:100%';
   wrap.append(sheet);
@@ -50,7 +54,7 @@ export function mountWorksheet(host: HTMLElement, options: WorksheetOptions): Wo
   let bar: InkBar | null = null;
   if (options.bar !== false) {
     const given = options.bar ?? {};
-    bar = mountInkBar(wrap, ink, { sendLabel: 'Check my working', words: true, ...given, onSend: given.onSend ?? send });
+    bar = mountInkBar(tools, ink, { sendLabel: 'Check my working', words: true, ...given, onSend: given.onSend ?? send });
   }
   return {
     ink,

@@ -137,6 +137,8 @@ async function start(): Promise<void> {
     prompt: (words, marks) => mounted.prompt(words, [], marks),
     announce: (text) => mounted.announce(text),
   });
+  // for the browser checks (web/scripts/ink-check.mjs): the ink layer's own latency numbers
+  (window as unknown as { __inkStats?: () => unknown }).__inkStats = () => stageInk?.ink.stats();
   mountActions(promptBar.extra, mounted, transcript, stageHost, { top: promptBar.top });
   mountSound(promptBar.top, mounted);
   picker = mountPicker(promptBar.extra, mounted);
