@@ -71,6 +71,8 @@ function boot(env: Env): void {
     critic: createCritic({ policy: env.critic, bin: env.brain.kind === 'claude-cli' ? env.brain.bin : 'claude', log: log.child({ part: 'critic' }), now }),
     findings: createFindingQueue(env.critic.enabled && env.logDir !== null ? fileURLToPath(new URL('../../loop/queue/', import.meta.url)) : null, log.child({ part: 'critic' })),
     fix: FIX_POLICY,
+    criticQueueBelow: env.critic.queueBelow,
+    modes: env.modes,
     now,
   });
   const withheld = withheldCredentialNames();

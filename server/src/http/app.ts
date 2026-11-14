@@ -14,6 +14,7 @@ import { registerRelayRoutes } from './relay-routes';
 import { registerTasteRoutes } from './taste-routes';
 import { registerSessionRoutes } from './session-routes';
 import { registerStatic } from './static';
+import { registerStatusRoutes } from './status-routes';
 
 const LOCAL_HOSTS: ReadonlySet<string> = new Set(['localhost', '127.0.0.1', '[::1]']);
 
@@ -67,6 +68,7 @@ export function createApp(deps: HttpDeps): Hono {
   app.get(API.health, (c) => c.json<HealthResponse>({ ok: true, language: LANGUAGE.version, brain: deps.env.brain.kind }));
   registerSessionRoutes(app, deps);
   registerAssetRoutes(app, deps);
+  registerStatusRoutes(app, deps);
   registerExploreRoutes(app, deps);
   registerTasteRoutes(app, deps);
   registerRelayRoutes(app, deps);

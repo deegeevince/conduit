@@ -45,20 +45,8 @@ export type BrainSettings =
     }
   | { readonly kind: 'replay'; readonly script: string | null };
 
-export type ImageSettings =
-  | { readonly kind: 'none' }
-  | {
-      readonly kind: 'openai';
-      readonly apiKey: string;
-      readonly model: string;
-      readonly quality: 'low' | 'medium' | 'high';
-      readonly timeoutMs: number;
-      readonly baseUrl: string;
-      /** paintings a conversation may ask for; the rest are skipped */
-      readonly maxPerSession: number;
-    };
-
-export const IMAGE_KINDS: readonly ImageSettings['kind'][] = ['none', 'openai'];
+/** There is no image model: nothing here costs money, so a `paint` line leaves its sketch. The type stays so that what reads `Env.images` has one place to look. */
+export type ImageSettings = { readonly kind: 'none' };
 
 export type BrainKind = BrainSettings['kind'];
 export const BRAIN_KINDS: readonly BrainKind[] = ['relay', 'claude-cli', 'replay'];
@@ -251,19 +239,10 @@ export function loadEnv(source: Source): Env {
     problems.push(`BRAIN must be one of ${BRAIN_KINDS.join(' | ')}, got "${kind}"`);
   }
 
-  // Only the selected image model's settings are required or read, exactly as with brains.
-  let images: ImageSettings = { kind: 'none' };
-  if (choice('IMAGE_MODEL', IMAGE_KINDS, 'none') === 'openai') {
-    images = {
-      kind: 'openai',
-      apiKey: required('OPENAI_API_KEY', 'when IMAGE_MODEL=openai'),
-      model: text('OPENAI_IMAGE_MODEL') ?? 'gpt-image-1',
-      quality: choice('IMAGE_QUALITY', ['low', 'medium', 'high'] as const, 'low'),
-      timeoutMs: integer('IMAGE_TIMEOUT_MS', 90_000, 5_000, 600_000),
-      baseUrl: text('OPENAI_BASE_URL') ?? 'https://api.openai.com',
-      maxPerSession: integer('IMAGE_MAX_PER_SESSION', 12, 1, 500),
-    };
-  }
+  // Paid image models were removed with the OpenAI path: every model call is the `claude` CLI on the owner's login. A leftover setting is said, not ignored.
+  const images: ImageSettings = { kind: 'none' };
+  const imageModel = text('IMAGE_MODEL');
+  if (imageModel !== undefined && imageModel !== 'none') problems.push(`IMAGE_MODEL=${imageModel} is no longer offered: there is no image model, and a \`paint\` line leaves its sketch. Remove it from .env`);
 
   const sight = choice('SIGHT', ['report', 'snapshot'] as const, 'snapshot');
   const root = fileURLToPath(new URL('../../', import.meta.url));
@@ -364,5 +343,5 @@ export function loadEnv(source: Source): Env {
   }
 
   if (problems.length > 0) throw new EnvError(problems);
-  return { production, host, trustedHosts, port, logLevel, brain, images, sight, promptVariant: parsePromptVariant(text('PROMPT_VARIANT')), review, library, datasets, logDir, readLinks: choice('READ_LINKS', ['on', 'off'] as const, 'on') === 'on', paintingsPerSession: images.kind === 'none' ? 0 : images.maxPerSession, exploreDir, webDist, critic, agent, modes, refine, uploads, statusFile, sealedDir };
+  return { production, host, trustedHosts, port, logLevel, brain, images, sight, promptVariant: parsePromptVariant(text('PROMPT_VARIANT')), review, library, datasets, logDir, readLinks: choice('READ_LINKS', ['on', 'off'] as const, 'on') === 'on', paintingsPerSession: 0, exploreDir, webDist, critic, agent, modes, refine, uploads, statusFile, sealedDir };
 }

@@ -1,5 +1,5 @@
-import { API, CANVAS, DATA_LIMITS, EMPTY_STAGE, PASTE_AS_DOCUMENT_CHARS, FULL_CAPABILITIES, LANGUAGE, LEAD_WINDOW, LineNormalizer, LineReader, TurnScore, buildSystemPrompt, serializeLine, settle, wearingAt } from '@conduit/language';
-import type { BrainChange, BrainChoice, FixPolicy, PromptVariant } from '@conduit/language';
+import { API, CANVAS, DATA_LIMITS, EMPTY_STAGE, PASTE_AS_DOCUMENT_CHARS, FULL_CAPABILITIES, LANGUAGE, LEAD_WINDOW, LineNormalizer, LineReader, TurnScore, buildSystemPrompt, draftFactsOf, serializeLine, settle, splitCells, wearingAt, worthALook } from '@conduit/language';
+import type { BrainChange, BrainChoice, BrainMode, CriticFinding, FixPolicy, PromptVariant, ToolChoice } from '@conduit/language';
 import type {
   BackEvent,
   BackEventRecord,
@@ -33,14 +33,17 @@ import { DOCUMENT_LIMITS, findUrls, hostOf } from './documents';
 import type { DocumentReader } from './documents';
 import type { ImageModel } from './images';
 import type { HeldDocument } from './documents';
-import { buildContext, rememberTurn } from './memory';
+import { buildContext, holdStanding, parseStanding, rememberTurn } from './memory';
+import type { StandingAsk } from './memory';
 import { MAX_PROBLEMS, SERVER_LIMITS } from './session';
 import type { SessionLog } from './session-log';
 import type { ActiveTurn, Session, SessionStore, StageSink } from './session';
 import { factsOf, tableFromText } from './datasets';
 import type { DatasetLibrary } from './datasets';
 import type { Critic, FindingQueue } from './critic';
-import { reviewTurn } from './review';
+import { redactSecrets } from './agent';
+import { askedOf, refusalProblem, reviewTurn } from './review';
+import type { FixAttempt } from './review';
 import type { TechniqueLibrary } from './techniques';
 
 export interface ConductorDeps {
@@ -66,14 +69,17 @@ export interface ConductorDeps {
   readonly maxPaintings: number;
   /**
    * v2.1. The critic that looks at a real turn's resting picture after the turn has ended, and compares a draft with a candidate inside
-   * look-and-fix; `NO_CRITIC` when off. STUB(PLAN-v2.1 package S1): call `look` once the snapshot of a turn that drew something has
-   * arrived, log the finding, send it as a `critic` event and queue it when it is below `CriticPolicy.queueBelow`.
+   * look-and-fix; `NO_CRITIC` when off. Its finding is logged, sent as a `critic` event and queued when it is below `criticQueueBelow`.
    */
   readonly critic: Critic;
   /** v2.1. Where findings wait for the improvement loop */
   readonly findings: FindingQueue;
   /** v2.1. True revision: what a fix must keep, and how long trying one may take (`FIX_POLICY`). Not read from the environment: the loop may not change it. */
   readonly fix: FixPolicy;
+  /** v2.1. A finding with a coherence below this is queued for the loop as evidence (`CriticPolicy.queueBelow`) */
+  readonly criticQueueBelow: number;
+  /** v2.1. The kinds of mind a session may choose (`Env.modes`); `plain` is always there */
+  readonly modes: readonly BrainMode[];
   /** milliseconds; injected so nothing in the domain reads the wall clock directly */
   readonly now: () => number;
 }
@@ -84,6 +90,9 @@ export interface EventsPage {
 }
 
 const REAP_INTERVAL_MS = 60_000;
+
+/** Stage events that describe a moment and are not part of the turn's score: a reconnecting painter is not given the ones it heard. */
+const TRANSIENT: ReadonlySet<StageEvent['type']> = new Set(['pass', 'data', 'candidate', 'permission', 'activity', 'critic']);
 
 /** The longest a turn waits on the owner's datasets before it goes on without them: it is a network call on the turn's path. */
 const DATASET_WAIT_MS = 5_000;
@@ -97,6 +106,8 @@ export class Conductor {
   private readonly deps: ConductorDeps;
   private readonly waiters = new Map<string, Set<() => void>>();
   private readonly reaper: NodeJS.Timeout;
+  /** the file each draft's picture was saved under, for the `fix` record; forgotten with the turn's session */
+  private readonly draftFiles = new Map<string, string>();
 
   constructor(deps: ConductorDeps) {
     this.deps = deps;
@@ -111,9 +122,17 @@ export class Conductor {
    * What the server offers a conversation. A look is promised only when the policy is on, the painter says it can report on a
    * draft, and the configured brain can look: a painter told to expect one that never comes would only wait.
    */
-  private servicesFor(capabilities: Capabilities): Services {
-    const { review, brains, images, sight } = this.deps;
-    return { paint: images.available, sight, review: review.enabled && review.passes >= 1 && capabilities.drafts && brains.configured.review !== undefined };
+  private servicesFor(capabilities: Capabilities, session?: string): Services {
+    const { review, brains, images, sight, critic } = this.deps;
+    const mode = session === undefined ? undefined : brains.configured.choice?.(session).mode;
+    return {
+      paint: images.available,
+      sight,
+      // A look is promised only when a fix can be tried first: a painter that cannot gets no fix at all, never a redraw.
+      review: review.enabled && review.passes >= 1 && capabilities.drafts && capabilities.candidates && brains.configured.review !== undefined,
+      ...(critic.available ? { critic: true } : {}),
+      ...(mode === undefined || mode === 'plain' ? {} : { mode }),
+    };
   }
 
   createSession(request: CreateSessionRequest): CreateSessionResponse {
@@ -128,7 +147,7 @@ export class Conductor {
       language: LANGUAGE.version,
       screen: request.screen,
       capabilities: request.capabilities,
-      services: this.servicesFor(session.capabilities),
+      services: this.servicesFor(session.capabilities, session.id),
     });
     log.info('session.created', { session: session.id, cols: request.screen.cols, rows: request.screen.rows });
     return { session: session.id, lead: LEAD_WINDOW };
@@ -148,9 +167,11 @@ export class Conductor {
     s.closeSink?.();
     s.sink = sink;
     s.closeSink = close ?? null;
-    sink({ type: 'hello', session: s.id, lead: LEAD_WINDOW, services: this.servicesFor(s.capabilities) });
+    sink({ type: 'hello', session: s.id, lead: LEAD_WINDOW, services: this.servicesFor(s.capabilities, s.id) });
     const turn = s.turn;
-    if (turn !== null && !turn.reported) for (const event of turn.sent) sink(event);
+    // A stream that dropped and came back is given the turn again, but not the passes and the data it already had (P2-34): replayed, a
+    // `pass` would ask the painter for a draft it has reported, and `data` would fetch the rows again. What it missed it is given.
+    if (turn !== null && !turn.reported) for (const event of turn.sent) if (!TRANSIENT.has(event.type) || turn.missed.includes(event)) sink(event);
     // A painting that settled after its turn was reported, with nobody listening, would otherwise never arrive.
     for (const event of s.lateAssets.splice(0)) sink(event);
     return () => {
@@ -184,7 +205,7 @@ export class Conductor {
     const brain = brains.forInput(input);
     // A process is started for the first thing the user says, not for a page that only looks (the gallery, the explorer).
     if (brain === brains.configured && (input.kind === 'prompt' || input.kind === 'tap' || input.kind === 'act')) this.prepareBrain(s);
-    const context = buildContext(s, this.servicesFor(s.capabilities));
+    const context = buildContext(s, this.servicesFor(s.capabilities, s.id));
     const turn: ActiveTurn = {
       id: sessions.nextTurnId(),
       session: s.id,
@@ -207,6 +228,9 @@ export class Conductor {
       review: undefined,
       reported: false,
       sent: [],
+      missed: [],
+      snapshotFile: null,
+      criticAsked: false,
     };
     s.nextOrdinal += 1;
     s.heardFrom = s.nextCursor - 1;
@@ -304,7 +328,7 @@ export class Conductor {
   /** The brain system prompt for a session's capabilities, or for the full set when no session is given. It never depends on the screen. */
   guideFor(session: string | null): string {
     const capabilities = session === null ? FULL_CAPABILITIES : this.deps.sessions.require(session, this.deps.now()).capabilities;
-    return buildSystemPrompt({ capabilities, services: this.servicesFor(capabilities), variant: this.deps.variant });
+    return buildSystemPrompt({ capabilities, services: this.servicesFor(capabilities, session ?? undefined), variant: this.deps.variant });
   }
 
   /** The turn's line reader, which lives as long as the turn does. */
@@ -341,6 +365,11 @@ export class Conductor {
     const index = s.history.findIndex((memory) => memory.turn === turn);
     const memory = s.history[index];
     if (memory !== undefined) s.history[index] = { ...memory, snapshot: true };
+    const active = s.turns.get(turn);
+    if (active !== undefined) {
+      active.snapshotFile = file === '' ? null : file;
+      this.lookAtResult(s, active);
+    }
   }
 
   /**
@@ -352,7 +381,10 @@ export class Conductor {
     if (!s.turns.has(turn)) throw errors.notFound(`turn ${turn}`);
     s.draft.receivePicture(turn, pass, snapshot);
     const file = this.deps.sessionLog.saveSnapshot(s.id, `${turn}-draft${pass}`, snapshot.mime, snapshot.bytes);
-    if (file !== '') this.deps.sessionLog.write(s.id, { type: 'draft', turn, pass, noted: 0, picture: true, file });
+    if (file !== '') {
+      this.draftFiles.set(`${s.id}/${turn}#${pass}`, file);
+      this.deps.sessionLog.write(s.id, { type: 'draft', turn, pass, noted: 0, picture: true, file });
+    }
   }
 
   /** The rows of a table this conversation holds, for the painter's `data` fetch; undefined when there is none under that id. */
@@ -368,14 +400,59 @@ export class Conductor {
     return brain.choice?.(session) ?? { configurable: false, model: null, effort: null };
   }
 
-  /** Sets the model and/or effort of this session's brain; the next turn starts fresh with them. */
+  /** Sets the model, effort and/or mode of this session's brain; the next turn starts fresh with them. A mode the server does not offer is refused by name. */
   setBrain(session: string, change: BrainChange): BrainChoice {
     this.assertSession(session);
     const brain = this.deps.brains.configured;
     if (brain.choose === undefined) throw errors.badRequest(`the ${brain.id} brain has no model or effort to set`);
+    if (change.mode !== undefined && !this.deps.modes.includes(change.mode)) {
+      throw errors.badRequest(`this server does not offer the ${change.mode} brain; it offers ${this.deps.modes.join(', ')}`);
+    }
     const choice = brain.choose(session, change);
-    this.deps.log.info('session.brain_set', { session, model: choice.model, effort: choice.effort });
-    return choice;
+    this.deps.log.info('session.brain_set', { session, model: choice.model, effort: choice.effort, mode: choice.mode });
+    const write = (name: string, value: string | undefined): void => {
+      if (value !== undefined) this.deps.sessionLog.write(session, { type: 'setting', name, value });
+    };
+    write('model', change.model);
+    write('effort', change.effort);
+    write('mode', change.mode);
+    return { ...choice, modes: this.deps.modes.length > 1 ? this.deps.modes : choice.modes };
+  }
+
+  /** What this session's brain may use in agent mode, and what is on (`/tools`); empty for a brain with none. */
+  toolsOf(session: string): readonly ToolChoice[] {
+    this.assertSession(session);
+    return this.deps.brains.configured.tools?.(session) ?? [];
+  }
+
+  /** Switches one tool or connected service on or off for this session. Only what the server offers can be switched on: the brain checks its own allowlist, and an unknown name is refused here. */
+  setTool(session: string, name: string, on: boolean): readonly ToolChoice[] {
+    this.assertSession(session);
+    const brain = this.deps.brains.configured;
+    if (brain.setTool === undefined) throw errors.badRequest(`the ${brain.id} brain has no tools to switch`);
+    if (!(brain.tools?.(session) ?? []).some((tool) => tool.name === name)) throw errors.badRequest(`there is no tool or service called ${name} on offer`);
+    const tools = brain.setTool(session, name, on);
+    this.deps.sessionLog.write(session, { type: 'setting', name: `tool ${name}`, value: on ? 'on' : 'off' });
+    return tools;
+  }
+
+  /** What the user asked to hold on every reply, oldest first (`/asks`). */
+  asksOf(session: string): readonly string[] {
+    return [...this.deps.sessions.require(session, this.deps.now()).standing];
+  }
+
+  /** Forgets one standing ask by its number from 1, or all of them when `n` is null; answers what is left. */
+  forgetAsks(session: string, n: number | null): readonly string[] {
+    const s = this.deps.sessions.require(session, this.deps.now());
+    if (n === null) s.standing = [];
+    else holdStanding(s, { kind: 'drop', n });
+    this.deps.sessionLog.write(s.id, { type: 'setting', name: 'asks', value: n === null ? 'clear' : `drop ${n}` });
+    return [...s.standing];
+  }
+
+  /** What the critic made of a turn, or undefined until it has looked. */
+  criticOf(session: string, turn: string): CriticFinding | undefined {
+    return this.deps.sessions.require(session, this.deps.now()).findings.get(turn);
   }
 
   assertSession(session: string): void {
@@ -400,6 +477,7 @@ export class Conductor {
     const turn = session.turn;
     if (turn !== null && turn.endReason === null) this.finish(session, turn, 'interrupted', null);
     session.abort.abort();
+    this.denyPending(session, null);
     this.deps.brains.configured.release?.(session.id);
     this.deps.assets.drop(session.id);
     this.deps.sessionLog.close(session.id);
@@ -418,7 +496,11 @@ export class Conductor {
   private emit(session: Session, turn: ActiveTurn | null, event: StageEvent): void {
     if (turn !== null) {
       if (event.type === 'reject' && turn.sent.length >= SERVER_LIMITS.linesPerTurn * 2) return;
-      turn.sent.push(event);
+      // A candidate and a confirm control are answered or gone within seconds: a painter that was not there to hear them cannot use them.
+      if (event.type !== 'candidate' && event.type !== 'permission') {
+        turn.sent.push(event);
+        if (session.sink === null) turn.missed.push(event);
+      }
     }
     if (session.sink === null && event.type === 'asset' && turn?.reported === true && session.lateAssets.length < 64) session.lateAssets.push(event);
     try {
@@ -478,8 +560,12 @@ export class Conductor {
         return;
       case 'draft':
         // How the draft will land: what look and fix is waiting on. The picture, when there is one, arrives by upload.
-        s.draft.receive(event.turn, event.pass, event.sight, event.placed ?? [], event.snapshot);
+        s.draft.receive(event.turn, event.pass, event.sight, event.placed ?? [], event.snapshot, event.content);
         this.deps.sessionLog.write(s.id, { type: 'draft', turn: event.turn, pass: event.pass, noted: event.sight.items.filter((item) => item.notes.length > 0).length, picture: event.snapshot, file: null });
+        return;
+      case 'permit':
+        // The only road to a yes. The request must be one this session raised for this turn.
+        this.answer(s, event.request, event.turn, event.allow);
         return;
     }
   }
@@ -492,7 +578,7 @@ export class Conductor {
     if (s.preparedFor !== '') return;
     s.preparedFor = 'opened';
     try {
-      this.deps.brains.configured.open?.({ session: s.id, capabilities: s.capabilities, screen: s.screen, services: this.servicesFor(s.capabilities) });
+      this.deps.brains.configured.open?.({ session: s.id, capabilities: s.capabilities, screen: s.screen, services: this.servicesFor(s.capabilities, s.id) });
     } catch (error) {
       this.deps.log.warn('brain.open_failed', { session: s.id, error });
     }
@@ -524,10 +610,36 @@ export class Conductor {
     turn.endReason = reason;
     if (reason !== 'done') turn.abort.abort();
     s.draft.close(turn.id);
+    // Nothing the owner was asked and did not answer outlives the turn: it is a no.
+    this.denyPending(s, turn.id);
     this.deps.sessionLog.write(s.id, { type: 'end', turn: turn.id, reason, message, lines: turn.lineCount });
     this.emit(s, turn, { type: 'end', turn: turn.id, reason, message });
     this.deps.log.info('turn.ended', { session: s.id, turn: turn.id, reason, lines: turn.lineCount, durationMs: this.deps.now() - turn.openedAt });
     this.wake(s.id);
+    // After `end` has gone, and never waited for.
+    this.lookAtResult(s, turn);
+  }
+
+  /**
+   * Agent mode: the owner's answer to a confirm control, or the deadline's. Only a `permit` event of this session, for a request this
+   * session raised and has not had answered, can say yes; a request answered once is gone, so a second `permit` is nothing.
+   */
+  private answer(s: Session, request: string, turn: string | null, allow: boolean | null): void {
+    const pending = s.permissions.get(request);
+    if (pending === undefined || (turn !== null && pending.turn !== turn)) return;
+    s.permissions.delete(request);
+    clearTimeout(pending.timer);
+    this.deps.sessionLog.write(s.id, { type: 'permission', turn: pending.turn, request, tool: pending.tool, summary: pending.summary, risk: pending.risk, allow, ms: this.deps.now() - pending.askedAt });
+    try {
+      pending.brain.permit?.(s.id, request, allow === true);
+    } catch (error) {
+      this.deps.log.warn('brain.permit_failed', { session: s.id, request, error });
+    }
+  }
+
+  /** Every confirm control still open, of one turn or of the whole session, is a no. */
+  private denyPending(s: Session, turn: string | null): void {
+    for (const [request, pending] of [...s.permissions]) if (turn === null || pending.turn === turn) this.answer(s, request, null, null);
   }
 
   /**
@@ -553,7 +665,7 @@ export class Conductor {
       say('your table', 'done', null);
       // A short table is also in the words; a long one is only data, and the words that came with it are what is left.
       if (input.text.length >= PASTE_AS_DOCUMENT_CHARS) {
-        const rest = input.text.split('\n').filter((line) => !/[\t|,]/.test(line)).join('\n').trim();
+        const rest = wordsWithoutRows(input.text, pasted.columns.length);
         return { fresh: new Set(), unread: [], data, text: `${rest === '' ? '' : `${rest}\n`}(a table of ${pasted.rows.length} rows follows as DATA)` };
       }
     }
@@ -720,11 +832,12 @@ export class Conductor {
   }
 
   /**
-   * Look and fix: the draft is written; decide, through `reviewTurn`, whether the brain is shown it, and carry the fix's events exactly as the
-   * draft's were carried. A look that goes wrong never fails the turn: `reviewTurn` does not throw, and what it gave up on is logged and shown.
+   * Look and fix, as true revision: the draft is written; decide, through `reviewTurn`, whether the brain is shown it, and whether what it
+   * writes in reply is shown. Its lines reach the stage only as a diff that was tried first and found no worse; a refused one leaves the
+   * draft as it was. A look that goes wrong never fails the turn: `reviewTurn` does not throw, and what it gave up on is logged and shown.
    */
   private async lookAndFix(s: Session, turn: ActiveTurn, brain: Brain, input: TurnInput, normalizer: LineNormalizer): Promise<void> {
-    const { sessionLog } = this.deps;
+    const { sessionLog, critic } = this.deps;
     let pass = 1;
     const steps = reviewTurn({
       brain,
@@ -739,6 +852,11 @@ export class Conductor {
       signal: turn.abort.signal,
       now: this.deps.now,
       log: this.deps.log,
+      // Only a painter that said it can try a fix first is offered one: otherwise a draft that needs mending is left as it is.
+      ...(s.capabilities.candidates ? { candidate: (candidatePass: number, lines: readonly string[]) => this.emit(s, turn, { type: 'candidate', turn: turn.id, pass: candidatePass, lines }) } : {}),
+      fix: this.deps.fix,
+      ...(critic.available ? { critic } : {}),
+      standing: s.standing,
     });
     for await (const step of steps) {
       if (turn.endReason !== null) break;
@@ -746,11 +864,14 @@ export class Conductor {
         pass = step.pass;
         sessionLog.write(s.id, { type: 'pass', turn: turn.id, pass: step.pass, state: step.state, reason: step.reason });
         this.emit(s, turn, { type: 'pass', turn: turn.id, pass: step.pass, state: step.state, reason: step.reason });
+        // What was thrown away is told to the brain at its next turn, so that it does not write the same fix again.
+        if (step.state === 'refused' && step.reason !== null) this.noteRefused(turn, step.reason);
       } else if (step.type === 'record') {
         const { record } = step;
         // Remembered only when a look was actually considered: a plain answer was never a candidate.
         const considered = record.decisions.length > 1 || record.decisions[0]?.look === true;
         if (considered) turn.review = { result: record.result, passes: record.passes, why: record.why };
+        for (const attempt of record.fixes) this.logFix(s, turn, attempt);
         sessionLog.write(s.id, {
           type: 'review',
           turn: turn.id,
@@ -764,6 +885,77 @@ export class Conductor {
         break;
       }
     }
+  }
+
+  private noteRefused(turn: ActiveTurn, reason: string): void {
+    const problem = refusalProblem(reason);
+    turn.problems.push(problem);
+    if (turn.problems.length > MAX_PROBLEMS) turn.problems.splice(0, turn.problems.length - MAX_PROBLEMS);
+  }
+
+  private logFix(s: Session, turn: ActiveTurn, attempt: FixAttempt): void {
+    this.deps.sessionLog.write(s.id, {
+      type: 'fix',
+      turn: turn.id,
+      pass: attempt.pass,
+      form: attempt.form,
+      lines: attempt.lines,
+      shown: attempt.shown,
+      why: attempt.why,
+      draft: attempt.draft,
+      candidate: attempt.candidate,
+      file: this.draftFiles.get(`${s.id}/${turn.id}#${attempt.pass}`) ?? null,
+    });
+  }
+
+  /**
+   * The critic, after the turn: once `end` has gone and the resting picture has come, a turn that drew something is looked at in the
+   * background. Never awaited, never on the turn's path; what it finds is logged, sent as an event for the HUD, and queued when it is low.
+   */
+  private lookAtResult(s: Session, turn: ActiveTurn): void {
+    const { critic, sessionLog, findings, now, log } = this.deps;
+    if (!critic.available || turn.criticAsked || turn.endReason !== 'done' || turn.snapshotFile === null || turn.brain === 'replay') return;
+    if (turn.input.kind === 'demo' || turn.input.kind === 'script') return;
+    const snapshot = this.deps.assets.snapshot(s.id, turn.id);
+    if (snapshot === undefined) return;
+    const facts = draftFactsOf(turn.score.schedule, 0);
+    if (!worthALook(facts, { ...this.deps.review, enabled: true, passes: 1 }).look) return;
+    turn.criticAsked = true;
+    const picture = snapshot;
+    const file = turn.snapshotFile;
+    const request = {
+      session: s.id,
+      turn: turn.id,
+      pass: 1,
+      asked: this.askedForCritic(turn.input),
+      input: turn.input.kind,
+      picture,
+      sight: s.history.find((memory) => memory.turn === turn.id)?.sight ?? null,
+    };
+    void (async () => {
+      try {
+        const finding = await critic.look(request, s.abort.signal);
+        if (finding === null || s.abort.signal.aborted) return;
+        const queued = finding.coherence < this.deps.criticQueueBelow;
+        s.findings.set(turn.id, finding);
+        while (s.findings.size > SERVER_LIMITS.turnsKept) {
+          const oldest = s.findings.keys().next();
+          if (oldest.done === true) break;
+          s.findings.delete(oldest.value);
+        }
+        sessionLog.write(s.id, { type: 'critic', turn: turn.id, finding, queued });
+        this.emit(s, turn, { type: 'critic', turn: turn.id, finding });
+        if (queued) findings.add({ at: new Date(now()).toISOString(), log: sessionLog.fileOf(s.id), turn: turn.id, asked: request.asked, finding, snapshot: file });
+      } catch (error) {
+        log.warn('critic.failed', { session: s.id, turn: turn.id, error });
+      }
+    })();
+  }
+
+  /** What the critic is told was asked: the user's words, never a document or a table they pasted. */
+  private askedForCritic(input: TurnInput): string {
+    if (input.kind === 'prompt' && (input.text.length >= PASTE_AS_DOCUMENT_CHARS || tableFromText(input.text, 'd0', '') !== null)) return '(the user pasted a long text or a table)';
+    return askedOf(input);
   }
 
   /** One event of a brain's pass, carried to the log, the score and the painter. Returns `stop` when the turn can take no more. */
@@ -793,11 +985,34 @@ export class Conductor {
       return undefined;
     }
     if (turn.endReason !== null) return undefined;
-    // STUB(PLAN-v2.1 package S1): log a tool call (`activity`), send it to the stage, and hold a `permission` for the owner's answer.
-    if (event.type === 'activity' || event.type === 'permission') return undefined;
+    if (event.type === 'activity') {
+      // A few safe words about a call (the brain adapter has redacted them), logged and shown as it happens. Never its input or its result.
+      // The adapter has made these safe; a second net costs nothing and a secret that reaches a log or a stage is the one thing this must not do.
+      const summary = redactSecrets(event.summary);
+      sessionLog.write(s.id, { type: 'activity', turn: turn.id, id: event.id, tool: event.tool, summary, state: event.state, ms: event.ms });
+      this.emit(s, turn, { type: 'activity', turn: turn.id, id: event.id, tool: event.tool, summary, state: event.state, ms: event.ms });
+      return undefined;
+    }
+    if (event.type === 'permission') {
+      this.hold(s, turn, event);
+      return undefined;
+    }
     if (event.type === 'reject') {
+      const ask = parseStanding(event.raw);
+      if (ask !== null) {
+        this.keep(s, turn, ask);
+        return undefined;
+      }
       this.reject(s, turn, event.raw, event.issues);
       return undefined;
+    }
+    // A standing ask is the conversation's, not the picture's: kept, and neither scheduled nor shown.
+    if ((event.line.verb as string) === 'standing') {
+      const ask = parseStanding(serializeLine(event.line));
+      if (ask !== null) {
+        this.keep(s, turn, ask);
+        return undefined;
+      }
     }
     if (turn.lineCount >= SERVER_LIMITS.linesPerTurn) {
       this.finish(s, turn, 'failed', `the brain wrote more than ${SERVER_LIMITS.linesPerTurn} lines`);
@@ -824,6 +1039,27 @@ export class Conductor {
     if (line.verb === 'paint') this.paint(s, turn, seq, line, pushed.schedule);
     if (line.verb === 'chart' && line.data !== undefined) this.announceData(s, turn, line.data);
     return undefined;
+  }
+
+  /** `standing | …` or `standing drop n`: kept for the conversation and given back in every later brief. */
+  private keep(s: Session, turn: ActiveTurn, ask: StandingAsk): void {
+    const held = holdStanding(s, ask);
+    this.deps.sessionLog.write(s.id, { type: 'setting', name: 'standing', value: ask.kind === 'add' ? `add: ${ask.words}` : `drop ${ask.n}` });
+    this.deps.log.info('turn.standing', { session: s.id, turn: turn.id, held: held.length });
+  }
+
+  /** The brain wants to do something that needs the owner's yes: shown on the stage, held until a `permit` or the deadline. */
+  private hold(s: Session, turn: ActiveTurn, event: Extract<BrainEvent, { type: 'permission' }>): void {
+    const { now } = this.deps;
+    // A duration from now; a brain that sends a time on the wall clock is read as one.
+    const left = Math.max(0, Math.min(event.expiresMs > 1e11 ? event.expiresMs - now() : event.expiresMs, 3_600_000));
+    if (s.permissions.has(event.request)) return;
+    const brain = this.deps.brains.configured;
+    const timer = setTimeout(() => this.answer(s, event.request, null, null), left);
+    timer.unref();
+    const summary = redactSecrets(event.summary);
+    s.permissions.set(event.request, { request: event.request, turn: turn.id, brain, tool: event.tool, summary, risk: event.risk, askedAt: now(), timer });
+    this.emit(s, turn, { type: 'permission', turn: turn.id, request: event.request, tool: event.tool, summary, risk: event.risk, expiresMs: left });
   }
 
   private reject(s: Session, turn: ActiveTurn, raw: string, issues: readonly Issue[]): void {
@@ -890,6 +1126,19 @@ export class Conductor {
       }
     })();
   }
+}
+
+/**
+ * The user's words with the rows of the table taken out of them, and nothing else: a line goes only when it reads as a row of that table
+ * (the same cells, split the way `tableFromText` splits them). A sentence that happens to hold a comma stays (P1-14).
+ */
+function wordsWithoutRows(text: string, width: number): string {
+  const cellsOf = (line: string): number => (line.includes('\t') ? line.split('\t') : line.includes('|') ? splitCells(line.replace(/^\|/, '')) : line.split(',')).length;
+  return text
+    .split('\n')
+    .filter((line) => line.trim() === '' || cellsOf(line.trim()) !== width)
+    .join('\n')
+    .trim();
 }
 
 function concerns(event: BackEvent, turn: string): boolean {

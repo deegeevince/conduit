@@ -76,6 +76,8 @@ export interface SessionLog {
   write(session: string, entry: SessionEntry): void;
   /** Saves a snapshot beside the session's log and returns the file name to record. */
   saveSnapshot(session: string, turn: string, mime: string, bytes: Uint8Array): string;
+  /** v2.1. The name of the session's log file, as the critic's queue records it; empty when nothing is written. */
+  fileOf(session: string): string;
   /** The session is over: flush and close its file. */
   close(session: string): void;
   /** Flushes and closes everything, at shutdown. */
@@ -86,6 +88,7 @@ export interface SessionLog {
 export const NO_SESSION_LOG: SessionLog = {
   write: () => undefined,
   saveSnapshot: () => '',
+  fileOf: () => '',
   close: () => undefined,
   closeAll: async () => undefined,
 };
