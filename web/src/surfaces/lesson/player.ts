@@ -20,7 +20,7 @@
 //
 // The document, the cursor, her tries and the gates are WS3's `advance` and `askView`; this file never writes state any other way.
 
-import { accepts, advance, askView, maskSealed, nodeOf, sealed } from '@conduit/language';
+import { accepts, advance, askView, maskSealed, nodeOf, resolveText, sealed } from '@conduit/language';
 import type { DocEvent, DocNode } from '@conduit/language';
 import { changesBetween } from './changes';
 import { h } from './dom';
@@ -260,7 +260,7 @@ export class Player {
       const gone = entries.some((entry) => !entry.isIntersecting && entry.boundingClientRect.top < 0);
       if (gone === this.docked) return;
       this.docked = gone;
-      const card = this.root.querySelector('.qcard');
+      const card = this.root.querySelector('.ctx');
       if (card instanceof HTMLElement) card.classList.toggle('docked', gone);
       this.fit();
     });
@@ -269,7 +269,7 @@ export class Player {
 
   /** The height of the title card is the top the picture sticks under. */
   private fit(): void {
-    const card = this.root.querySelector('.qcard');
+    const card = this.root.querySelector('.ctx');
     const top = card instanceof HTMLElement ? card.getBoundingClientRect().height + 8 : 0;
     document.documentElement.style.setProperty('--qh', `${Math.round(top)}px`);
   }
@@ -285,7 +285,7 @@ export class Player {
       up !== null && up.id !== this.doc.root ? h('button', { type: 'button', class: 'nav', 'data-act': 'up', onclick: () => this.go(up) }, '‹ Up') : null,
       h('span', { class: 'crumb' }, crumb),
       this.input.catalogue.length > 0 ? h('button', { type: 'button', class: 'nav', 'data-act': 'catalogue', onclick: () => this.show({ kind: 'catalogue' }) }, 'My documents') : null,
-      this.input.picture === true ? h('button', { type: 'button', class: 'nav', 'data-act': 'picture', onclick: () => this.port.picture() }, 'Picture') : null,
+      this.input.picture === true ? h('button', { type: 'button', class: 'nav', 'data-act': 'picture', onclick: () => this.port.picture(), 'aria-label': 'Close and go back to the picture' }, 'Close') : null,
     );
   }
 
@@ -344,6 +344,42 @@ export class Player {
 
   // ------------------------------------------------------------ a part
 
+  /** The facts she has been asked to look at: the `[bracketed]` words of the thinking rungs of the asks of `node` that she has opened. */
+  private factsOf(node: DocNode): readonly string[] {
+    const out: string[] = [];
+    for (const step of stepsOf(node)) {
+      if (step.kind !== 'ask') continue;
+      const heldNow = this.state.held[node.id]?.[`hint.${step.id}`];
+      const asked = typeof heldNow === 'number' ? heldNow : 0;
+      for (const text of step.hints.slice(0, asked)) for (const m of text.matchAll(/\[([^\]]+)\]/g)) if (m[1] !== undefined) out.push(m[1]);
+    }
+    return out;
+  }
+
+  private factsOpen(node: DocNode): boolean {
+    return stepsOf(node).some((step) => step.kind === 'ask' && Number(this.state.held[node.id]?.[`hint.${step.id}`] ?? 0) > 0);
+  }
+
+  /** The question's words with each fact marked (underlined and highlighted), where the words hold it. */
+  private marked(text: string, facts: readonly string[]): (string | HTMLElement)[] {
+    // each fact is a text selector on the context, resolved against its words now (an exact or moved match; a fact found twice or not at all is not marked)
+    const found = facts
+      .flatMap((fact) => {
+        const found = resolveText({ kind: 'text', scope: '', quote: fact, prefix: '', suffix: '', start: -1, end: -1 }, text);
+        return found.state === 'orphan' || found.sel.kind !== 'text' ? [] : [{ at: found.sel.start, fact }];
+      })
+      .sort((a, b) => a.at - b.at);
+    const out: (string | HTMLElement)[] = [];
+    let from = 0;
+    for (const { at, fact } of found) {
+      if (at < from) continue;
+      out.push(text.slice(from, at), h('mark', { class: 'fact' }, fact));
+      from = at + fact.length;
+    }
+    out.push(text.slice(from));
+    return out.filter((part) => part !== '');
+  }
+
   /** The title card: the part's, or (when it is help for an ask above it) the part with the ask, so what she is working on never leaves the screen. */
   private titleCard(node: DocNode, open: readonly OpenAsk[]): HTMLElement {
     let context: DocNode = node;
@@ -359,13 +395,15 @@ export class Player {
     const kicker = context.id === node.id ? (parentOf(this.doc, node)?.title ?? '') : nameOf(node);
     const crop = this.input.crops[context.id];
     const long = text.length > 70;
+    // Once she has left the question's own screen (a way, the thinking help, her working) the whole question stays pinned at the top left, smaller, never shortened.
+    const pinned = context.id !== node.id || this.factsOpen(context) || stepsOf(context).some((step) => step.kind === 'ask' && (askView(this.doc, this.state, context.id, step.id)?.tries.length ?? 0) > 0);
     const more = long ? h('button', { type: 'button', class: 'more', 'data-act': 'more', 'aria-expanded': String(this.expanded) }, this.expanded ? 'Show less' : 'Read it all') : null;
     const card = h(
       'section',
-      { class: `qcard${crop === undefined ? '' : ' with-crop'}${long ? ' long' : ''}${this.docked ? ' docked' : ''}${this.expanded ? ' expanded' : ''}`, 'data-act': 'question', 'aria-label': 'What this is about' },
-      h('span', { class: 'qkicker' }, `${printed === null || context.id !== node.id ? '' : `${printed}.  `}${splitNumber(kicker).text}`),
+      { class: `ctx${pinned ? ' pinned' : ''}${crop === undefined ? '' : ' with-crop'}${long ? ' long' : ''}${this.docked ? ' docked' : ''}${this.expanded ? ' expanded' : ''}`, 'data-act': 'context', 'aria-label': 'What this is about' },
+      h('span', { class: 'ctx-kicker' }, `${printed === null || context.id !== node.id ? '' : `${printed}.  `}${splitNumber(kicker).text}`),
       more,
-      h('p', { class: 'qtext' }, text),
+      h('p', { class: 'ctx-text' }, ...this.marked(text, this.factsOf(context))),
       crop === undefined ? null : h('img', { class: 'crop', src: crop, alt: 'The question as it is written on the page. Tap to see it bigger.', role: 'button', tabindex: 0, onclick: (e: Event) => (e.currentTarget as HTMLElement).classList.toggle('zoom') }),
     );
     more?.addEventListener('click', () => {
@@ -394,7 +432,10 @@ export class Player {
     const waiting = isWaiting(node);
     const over = shown >= steps.length && gate === null;
     if (gate !== null && kids.length > 0) main.append(this.help(kids));
-    else if (over && !waiting) main.append(kids.length > 0 ? this.inside(node, kids) : this.finish(node));
+    else if (over && !waiting && steps.length === 0 && kids.length === 0) {
+      // nothing is written here (a lesson cut off mid-write keeps what it had): never "done", never a destination of its own
+      if (node.body === null) main.append(h('p', { class: 'wait-note', 'data-act': 'cut-off' }, 'This part was cut off before it was written. Say “continue” and it will be written.'));
+    } else if (over && !waiting) main.append(kids.length > 0 ? this.inside(node, kids) : this.finish(node));
     else if (over && waiting && steps.length === 0) main.append(h('p', { class: 'wait-note' }, 'This part is being written. It will be here in a moment.'));
     page.append(main, this.dock(node, shown, steps.length, gate !== null, waiting, over));
   }
@@ -577,9 +618,37 @@ export class Player {
     if (tried !== null) card.append(tried);
     if (view.wrong > 0) {
       const seen = node === undefined ? undefined : this.sees.get(`${node.id}\u0000${ask.id}`);
-      const feedback = h('div', { class: 'nudge', role: 'status' }, h('p', { class: 'verdict' }, seen === undefined ? 'Not yet. Have another look.' : 'Not yet.'), seen === undefined ? null : h('p', { class: 'sees' }, seen));
-      if (view.hint !== null) feedback.append(h('p', { class: 'hint' }, h('b', {}, `Hint ${Math.min(view.wrong, ask.hints.length)}: `), mask(view.hint)));
-      card.append(feedback);
+      card.append(h('div', { class: 'nudge', role: 'status' }, h('p', { class: 'verdict' }, seen === undefined ? 'Not yet. Have another look.' : 'Not yet.'), seen === undefined ? null : h('p', { class: 'sees' }, seen)));
+    }
+    // Help is the person's to pull: nothing shows until they tap Help, and one rung more each tap (labels are neutral defaults; the words of each rung are the brain's).
+    // The rungs are the ask's hints, written as questions back to her (what do we know, what is it asking); a `[bracketed]` fact in one is marked in the question itself. The last
+    // rung offers the question's ways to think it through, and then she has a go.
+    if (node !== undefined && (ask.hints.length > 0 || kidsOf(this.doc, node).some((kid) => kid.tag !== null))) {
+      const key = `hint.${ask.id}`;
+      const ways = kidsOf(this.doc, node).filter((kid) => kid.tag !== null);
+      const rungs = ask.hints.length + (ways.length > 0 ? 1 : 0);
+      const heldNow = this.state.held[node.id]?.[key];
+      const asked = Math.min(typeof heldNow === 'number' ? heldNow : 0, rungs);
+      if (asked > 0) {
+        const box = h('div', { class: 'nudge hints', role: 'status' });
+        ask.hints.slice(0, asked).forEach((text, at) => box.append(h('p', { class: 'hint', 'data-hint': at + 1 }, mask(text).replace(/\[([^\]]+)\]/g, '$1'))));
+        if (asked > ask.hints.length) {
+          const row = h('div', { class: 'ways-row' }, h('p', { class: 'hint' }, 'Pick one to help.'));
+          for (const way of ways) row.append(h('button', { type: 'button', class: 'btn soft', 'data-act': `think:${way.tag ?? ''}`, onclick: () => this.go(way) }, isTechnique(way.tag) ? TECHNIQUE_NAMES[way.tag] : way.title));
+          box.append(row);
+        }
+        card.append(box);
+      }
+      if (asked < rungs) {
+        card.append(
+          h('button', { type: 'button', class: 'btn soft hint-btn', 'data-act': 'hint', onclick: () => {
+            this.apply({ kind: 'held', node: node.id, key, value: asked + 1 });
+            this.render();
+          } }, asked === 0 ? 'Help' : 'More'),
+        );
+      } else if (asked > 0) {
+        card.append(h('button', { type: 'button', class: 'btn main hint-btn', 'data-act': 'have-a-go', onclick: () => this.root.querySelector<HTMLElement>('.field, [data-slot]')?.focus() }, 'Try it'));
+      }
     }
     return card;
   }
@@ -589,7 +658,7 @@ export class Player {
     const back = h('button', { type: 'button', class: 'btn soft', 'data-act': 'back', onclick: () => this.back(node) }, shown <= 1 ? (up !== null && up.id !== this.doc.root ? 'Up' : 'Map') : 'Back');
     let primary: HTMLElement | null = null;
     if (gated) primary = null;
-    else if (shown < count) primary = h('button', { type: 'button', class: 'btn main grow', 'data-act': 'next', onclick: () => this.next(node) }, 'Next');
+    else if (shown < count) primary = h('button', { type: 'button', class: 'btn main', 'data-act': 'next', onclick: () => this.next(node) }, 'Next');
     else if (count > 0 && waiting) primary = h('button', { type: 'button', class: 'btn main grow', 'data-act': 'next', disabled: true }, 'Getting the next step ready…');
     else if (!over) primary = null;
     return h('footer', { class: 'dock' }, back, primary);
@@ -612,7 +681,7 @@ export class Player {
       for (const entry of entries) for (const q of entry.questions) for (const t of q.techniques) groups.set(t, [...(groups.get(t) ?? []), { entry, id: q.id, title: q.title, done: q.done }]);
       for (const [technique, rows] of [...groups.entries()].sort((a, b) => b[1].length - a[1].length)) {
         const block = h('section', { class: 'tgroup' }, h('h2', {}, glyph(technique), ` ${TECHNIQUE_NAMES[technique]}`, h('span', { class: 'count' }, `${rows.length}`)));
-        for (const row of rows) block.append(h('button', { type: 'button', class: `qrow${row.done ? ' done' : ''}`, 'data-act': `open:${row.entry.id}:${row.id}`, onclick: () => this.openEntry(row.entry, row.id) }, h('span', { class: 'qnum' }, row.done ? '✓' : '•'), h('span', { class: 'qtext' }, splitNumber(row.title).text), h('span', { class: 'qnote' }, row.entry.title)));
+        for (const row of rows) block.append(h('button', { type: 'button', class: `ctx-row${row.done ? ' done' : ''}`, 'data-act': `open:${row.entry.id}:${row.id}`, onclick: () => this.openEntry(row.entry, row.id) }, h('span', { class: 'ctx-num' }, row.done ? '✓' : '•'), h('span', { class: 'ctx-text' }, splitNumber(row.title).text), h('span', { class: 'ctx-note' }, row.entry.title)));
         view.append(block);
       }
     }
@@ -624,7 +693,7 @@ export class Player {
     const done = entry.questions.filter((q) => q.done).length;
     const card = h('section', { class: `sheetcard${entry.current ? ' current' : ''}` }, h('h2', {}, entry.title), h('p', { class: 'sub' }, `${done} of ${entry.questions.length} done`));
     const list = h('ul', { class: 'qlist' });
-    for (const q of entry.questions) list.append(h('li', {}, h('button', { type: 'button', class: `qrow${q.done ? ' done' : ''}`, 'data-act': `open:${entry.id}:${q.id}`, onclick: () => this.openEntry(entry, q.id) }, h('span', { class: 'qnum' }, q.done ? '✓' : '•'), h('span', { class: 'qtext' }, splitNumber(q.title).text), h('span', { class: 'qnote' }, q.techniques.map((t) => TECHNIQUE_NAMES[t]).join(', ')))));
+    for (const q of entry.questions) list.append(h('li', {}, h('button', { type: 'button', class: `ctx-row${q.done ? ' done' : ''}`, 'data-act': `open:${entry.id}:${q.id}`, onclick: () => this.openEntry(entry, q.id) }, h('span', { class: 'ctx-num' }, q.done ? '✓' : '•'), h('span', { class: 'ctx-text' }, splitNumber(q.title).text), h('span', { class: 'ctx-note' }, q.techniques.map((t) => TECHNIQUE_NAMES[t]).join(', ')))));
     card.append(list);
     return card;
   }

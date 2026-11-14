@@ -45,7 +45,7 @@ export interface DocumentViewOptions {
   /** where a photo of this conversation is, by its id: a question's crop is cut from it */
   readonly photoUrl?: (id: string) => string | null;
   /** a document is on screen (or put away) for this id: the page may remember it to resume */
-  readonly onShown?: (document: string) => void;
+  readonly onShown?: (document: string, title: string) => void;
 }
 
 export interface DocumentView {
@@ -56,6 +56,8 @@ export interface DocumentView {
   /** show the picture under it, or the document again */
   toggle(show?: boolean): void;
   readonly shown: boolean;
+  /** a picture of the document as she sees it (the surface hands over its own still through the bridge), or null when it is not on screen */
+  still(): Promise<Blob | null>;
   host(): DocumentHost | null;
   /** the pen laid over the writing slot, when there is one (for the browser checks) */
   readonly pen: DocumentInk | null;
@@ -125,6 +127,13 @@ export function createDocumentView(options: DocumentViewOptions): DocumentView {
     doc = next;
     if (host === null) {
       layer.style.display = shown ? 'flex' : 'none';
+      // a lesson that takes over the stage fades in, calmly (not under reduced motion), and says so
+      if (shown && !(typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches)) {
+        layer.style.opacity = '0';
+        layer.style.transition = 'opacity 450ms ease';
+        requestAnimationFrame(() => requestAnimationFrame(() => (layer.style.opacity = '1')));
+      }
+      if (shown) options.onNote?.('Opened as a worksheet. Close returns to the picture.');
       host = new DocumentHost({ mount: body, dark: options.dark(), input: input(next, state), onNote: options.onNote });
       host.listen({
         onChange: (change) => {
@@ -142,14 +151,14 @@ export function createDocumentView(options: DocumentViewOptions): DocumentView {
           void options.link.open(id).then((view) => {
             doc = view.document;
             host?.setInput(input(view.document, view.state), true);
-            options.onShown?.(view.document.id);
+            options.onShown?.(view.document.id, view.document.title);
             refresh();
             keptInk(view.document.id);
           }, (cause: unknown) => options.onNote?.(cause instanceof Error ? cause.message : 'That document could not be opened.'));
         },
         onNote: options.onNote,
         onPicture: () => toggle(false), onSlot: (slot) => pen?.slot(slot), onInkCheck: (node, ask) => void pen?.check(node, ask), onInkClear: (node, ask) => pen?.clear(node, ask) });
-      options.onShown?.(next.id);
+      options.onShown?.(next.id, next.title);
       refresh();
       keptInk(next.id);
     } else host.setInput(input(next, host.current));
@@ -192,6 +201,28 @@ export function createDocumentView(options: DocumentViewOptions): DocumentView {
     toggle,
     get shown() {
       return shown && host !== null;
+    },
+    async still() {
+      if (host === null || !shown) return null;
+      const url = await host.still();
+      if (url === null) return null;
+      try {
+        const image = new Image();
+        image.src = url;
+        await image.decode();
+        const scale = Math.min(1, 1280 / Math.max(image.naturalWidth, image.naturalHeight, 1));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+        canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+        const context = canvas.getContext('2d');
+        if (context === null) return null;
+        context.fillStyle = options.dark() ? '#111111' : '#ffffff';
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+        return await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.8));
+      } catch {
+        return null;
+      }
     },
     host: () => host,
     pen,

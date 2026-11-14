@@ -1144,3 +1144,46 @@ export function foldSource(source: string, opened: Opening = 'demo', options: Fo
   records.push({ type: 'end', turn: 't1', reason: 'done' });
   return foldDocument(records, options);
 }
+
+// --- going on (T1) ---------------------------------------------------------------------------------------------------------------------
+
+/** A unit is a part that is worked on its own: it holds a body, or everything under it is a leaf (a part with only its helps below it). */
+function isUnit(doc: Document, node: DocNode): boolean {
+  return node.body !== null || node.children.every((child) => (nodeOf(doc, child)?.children.length ?? 0) === 0);
+}
+
+/**
+ * The unit after the one the cursor is in, in document order: the part "Next" goes to. Pure, and it reads structure only (no tags, no words):
+ * the cursor's unit is the first part on its path from the root that is a unit; the next is the first unit that follows that part and everything under it.
+ * Null at the end of the document.
+ */
+export function nextUnit(doc: Document, state: DocState): NodeId | null {
+  const path = pathOf(doc, state.cursor.node).filter((node) => node.id !== doc.root);
+  const here = path.find((node) => isUnit(doc, node)) ?? path[path.length - 1];
+  let after: NodeId | null = null;
+  const order: NodeId[] = [];
+  const walk = (id: NodeId, depth: number): void => {
+    const node = nodeOf(doc, id);
+    if (node === null || depth > 32) return;
+    order.push(id);
+    for (const child of node.children) walk(child, depth + 1);
+  };
+  walk(doc.root, 0);
+  if (here === undefined) after = order.find((id) => id !== doc.root && isUnitId(doc, id)) ?? null;
+  else {
+    const subtree = new Set<NodeId>();
+    const collect = (id: NodeId): void => {
+      subtree.add(id);
+      for (const child of nodeOf(doc, id)?.children ?? []) collect(child);
+    };
+    collect(here.id);
+    const from = order.indexOf(here.id);
+    after = order.slice(from + 1).find((id) => !subtree.has(id) && isUnitId(doc, id)) ?? null;
+  }
+  return after;
+}
+
+function isUnitId(doc: Document, id: NodeId): boolean {
+  const node = nodeOf(doc, id);
+  return node !== null && node.id !== doc.root && isUnit(doc, node);
+}

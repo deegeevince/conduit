@@ -1261,7 +1261,7 @@ export type TechniqueId = keyof typeof TECHNIQUE;
 export const TECHNIQUES = keysOf(TECHNIQUE);
 
 /** What a value of a visual's parameter looks like. */
-export type VisualParam = 'number' | 'numbers' | 'word' | 'time';
+export type VisualParam = 'number' | 'numbers' | 'word' | 'time' | 'cells';
 
 /**
  * The pictures a step may `show=`: the lesson view's own widgets (WS6), each worked by hand. The first words after `show=<visual>` may be a
@@ -1275,6 +1275,7 @@ export const VISUAL = {
   bar: { gist: 'a bar model: a whole and its parts, one of them a gap', range: false, keys: { total: 'number', parts: 'numbers' } },
   coins: { gist: 'coins to count and add up', range: false, keys: { coins: 'numbers', target: 'number' } },
   clock: { gist: 'a clock face to read or to set', range: false, keys: { time: 'time', mode: 'word' } },
+  grid: { gist: 'a shape on squares she ticks: cells= rows joined by /, x whole, h half, o empty', range: false, keys: { cells: 'cells' } },
   ruler: { gist: 'a ruler she slides along straight roads between places to read their lengths; `mm=` is each road in millimetres, never shown as numbers', range: false, keys: { mm: 'numbers' } },
 } as const satisfies Record<string, { gist: string; range: boolean; keys: Readonly<Record<string, VisualParam>> }>;
 export type VisualKind = keyof typeof VISUAL;
@@ -1297,7 +1298,7 @@ export const LESSON_LIMITS = {
   /** characters in one accepted answer or choice */
   answer: 40,
   /** characters in a visual's parameter value */
-  value: 60,
+  value: 120,
   /** numbers in a `numbers` value */
   numbers: 24,
 } as const;

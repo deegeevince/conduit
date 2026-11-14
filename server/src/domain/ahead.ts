@@ -8,7 +8,7 @@
 //
 //   outlined ──fill──▶ filling ──turn ends──▶ filled ──verify──▶ verified
 //                         │ no turn is open on it                    └──▶ refused ──(once)──▶ outlined (reset, written again with why)
-//                         └─ stale: reset to outlined, and filled again           └─ the second time: refused, and marked for the parent
+//                         └─ stale: reset to outlined, and filled again           └─ the second time: refused, and marked needs a person to check
 //
 // What it does not do: it does not touch a part while a turn of the person's is open (the turn is writing the document), it does not start a
 // fill once the hour's spending has reached `AHEAD_NEAR_CAP` of the cap (fill ahead stands down first; what she reaches is still written on
@@ -20,7 +20,7 @@ import type { Logger } from '../log';
 import { roomAhead } from '../usage';
 import type { Throttle } from '../usage';
 import type { LessonCheckResult } from '../judge/lesson';
-import { asksOf, isWay, kindOfPart, lessonText, mechanicalCheck, profileOf, settle, solverOpinion, stepsOf, waysOf } from './verify';
+import { unreadableFigure, asksOf, isWay, kindOfPart, lessonText, mechanicalCheck, profileOf, settle, solverOpinion, stepsOf, waysOf } from './verify';
 import type { Finding, ModelVerdict, Verdict } from './verify';
 
 // ---------------------------------------------------------------------------------------------------------------------------------
@@ -36,7 +36,7 @@ export interface AheadPolicy {
   readonly verifyEffort: 'low' | 'medium' | 'high';
   /** `AHEAD_BATCH`: parts checked by one call of the second check, most */
   readonly batch: number;
-  /** a part is written at most this many times (the second is after a refusal or a stale fill) before it is marked for the parent */
+  /** a part is written at most this many times (the second is after a refusal or a stale fill) before it is marked needs a person to check */
   readonly fillsPerPart: number;
   /** `AHEAD_LIMIT`: parts a conversation may have written ahead; a document that is longer is written as it is reached */
   readonly limit: number;
@@ -172,6 +172,7 @@ export function fillPrompt(job: FillJob): string {
     `AHEAD: write part ${job.short} now, "${job.title}", and nothing else. She is not waiting for it: write it complete, once, in the lines the chapter gives, every line with its own in=. A question is written FIRST as her own try: an \`ask\` straight on the question (\`ask … in=${job.short}\`, no steps before it, no \`pick=\`, she writes the answer; two or three hints; \`check=working\` when it is a sum she works out in steps), THEN three to five ways (never fewer than three), each a part in=${job.short} with its own tag, small steps, and an ask whose answer is the question's own answer, reached last (the ways are the help she asks for); a part of a different kind (a chapter) gets its steps in=${job.short}. Write no outline, no \`reply\`, and no line for any other part.`,
     job.shape ?? '',
     job.photo ? `The page itself is attached: this question is the part of it at ${job.crop === null ? 'its place in the outline' : `x ${job.crop.x}%, y ${job.crop.y}%, ${job.crop.w}% wide, ${job.crop.h}% high`}. Read the question from there, with whatever the words above leave out (a picture, a table, a pattern, a clock), and write only what can be worked from what is on it.` : '',
+    'A figure with squares to count is first transcribed from the attached crop: `show=grid cells=<rows from the top joined by />` (x whole square, h half, o empty), the same in every way, and the last ask of each way is the count it gives, exactly. If it cannot be read exactly, write `show=grid cells=unreadable` and no asks: the part then goes to a person to check.',
     job.note === null ? '' : `The first try of this part was refused by the checker: ${job.note} Write it again so that none of that is true.`,
   ]
     .filter((line) => line !== '')
@@ -189,7 +190,7 @@ export interface AheadStatus {
   readonly verified: number;
   readonly refused: number;
   /** the parts a person must look at: refused twice, or never written */
-  readonly forParent: readonly { readonly node: NodeId; readonly why: string }[];
+  readonly needsPerson: readonly { readonly node: NodeId; readonly why: string }[];
   readonly standingDown: boolean;
   readonly fills: number;
   readonly checks: number;
@@ -213,7 +214,7 @@ interface Run {
   readonly filling: Map<NodeId, number>;
   readonly verifying: Set<NodeId>;
   readonly tries: Map<NodeId, Tries>;
-  readonly forParent: Map<NodeId, string>;
+  readonly needsPerson: Map<NodeId, string>;
   readonly settledWaiters: (() => void)[];
   timer: NodeJS.Timeout | null;
   ticking: boolean;
@@ -254,7 +255,7 @@ export function createAhead(host: AheadHost, policy: AheadPolicy): Ahead {
   const runOf = (session: string): Run => {
     let run = runs.get(session);
     if (run === undefined) {
-      run = { session, abort: new AbortController(), filling: new Map(), verifying: new Set(), tries: new Map(), forParent: new Map(), settledWaiters: [], timer: null, ticking: false, again: false, started: 0, fills: 0, checks: 0, fillCostUsd: 0, verifyCostUsd: 0, standingDown: false };
+      run = { session, abort: new AbortController(), filling: new Map(), verifying: new Set(), tries: new Map(), needsPerson: new Map(), settledWaiters: [], timer: null, ticking: false, again: false, started: 0, fills: 0, checks: 0, fillCostUsd: 0, verifyCostUsd: 0, standingDown: false };
       runs.set(session, run);
     }
     return run;
@@ -286,11 +287,11 @@ export function createAhead(host: AheadHost, policy: AheadPolicy): Ahead {
     host.setStatus(run.session, unit.id, 'outlined', { reset: true, why });
   };
 
-  const forParent = (run: Run, unit: DocNode, why: string): void => {
-    const text = `for the parent: ${why}`;
-    run.forParent.set(unit.id, text);
+  const needsPerson = (run: Run, unit: DocNode, why: string): void => {
+    const text = `needs a person to check: ${why}`;
+    run.needsPerson.set(unit.id, text);
     host.setStatus(run.session, unit.id, 'refused', { why: text });
-    log.warn('ahead.for_parent', { session: run.session, node: unit.id, why });
+    log.warn('ahead.needs_person', { session: run.session, node: unit.id, why });
   };
 
   const statusOf = (run: Run): AheadStatus | null => {
@@ -299,13 +300,13 @@ export function createAhead(host: AheadHost, policy: AheadPolicy): Ahead {
     const units = unitsOf(view.document);
     const count = (status: NodeStatus): number => units.filter((unit) => unit.status === status).length;
     return {
-      waiting: units.filter((unit) => unit.status === 'outlined' && isBlank(view.document, unit) && !run.forParent.has(unit.id)).length,
+      waiting: units.filter((unit) => unit.status === 'outlined' && isBlank(view.document, unit) && !run.needsPerson.has(unit.id)).length,
       filling: units.filter((unit) => unit.status === 'filling').length,
       filled: count('filled'),
       verifying: run.verifying.size,
       verified: count('verified'),
       refused: count('refused'),
-      forParent: [...run.forParent].map(([node, why]) => ({ node, why })),
+      needsPerson: [...run.needsPerson].map(([node, why]) => ({ node, why })),
       standingDown: run.standingDown,
       fills: run.fills,
       checks: run.checks,
@@ -349,7 +350,7 @@ export function createAhead(host: AheadHost, policy: AheadPolicy): Ahead {
         if (unit.status !== 'filling' || run.filling.has(unit.id) || run.verifying.has(unit.id)) continue;
         const tries = triesOf(run, unit.id);
         if (tries.fills >= policy.fillsPerPart) {
-          forParent(run, unit, 'it was started twice and never finished');
+          needsPerson(run, unit, 'it was started twice and never finished');
           continue;
         }
         log.info('ahead.stale', { session: run.session, node: unit.id });
@@ -361,7 +362,11 @@ export function createAhead(host: AheadHost, policy: AheadPolicy): Ahead {
 
     // 2. what is written and not yet checked
     const over = host.throttle.state(now) === 'over';
-    const filled = order.filter((unit) => unit.status === 'filled' && !run.verifying.has(unit.id) && (kindOfPart(doc, unit) !== null || !isBlank(doc, unit)));
+    // a writer that could not read a shape exactly says so in the part: it goes to the parent at once, with nothing more asked of the brain
+    for (const unit of order) {
+      if (unit.status === 'filled' && !run.verifying.has(unit.id) && unreadableFigure(unit, doc)) needsPerson(run, unit, 'a figure in it could not be read exactly from the photo');
+    }
+    const filled = order.filter((unit) => unit.status === 'filled' && !run.needsPerson.has(unit.id) && !run.verifying.has(unit.id) && (kindOfPart(doc, unit) !== null || !isBlank(doc, unit)));
     for (const unit of filled) triesOf(run, unit.id).filledAt ??= now;
     if (filled.length > 0 && !over && run.verifying.size < 2) {
       const first = filled[0];
@@ -377,7 +382,7 @@ export function createAhead(host: AheadHost, policy: AheadPolicy): Ahead {
 
     // 3. what is only named
     if (!open) {
-      const waiting = order.filter((unit) => unit.status === 'outlined' && isBlank(doc, unit) && !run.filling.has(unit.id) && !run.forParent.has(unit.id));
+      const waiting = order.filter((unit) => unit.status === 'outlined' && isBlank(doc, unit) && !run.filling.has(unit.id) && !run.needsPerson.has(unit.id));
       const room = roomAhead(host.throttle, now);
       run.standingDown = !room && waiting.length > 0;
       if (run.standingDown) later(run, STAND_DOWN_RETRY_MS);
@@ -385,7 +390,7 @@ export function createAhead(host: AheadHost, policy: AheadPolicy): Ahead {
         if (!room || run.filling.size >= policy.parallel || run.started >= policy.limit) break;
         const tries = triesOf(run, unit.id);
         if (tries.fills >= policy.fillsPerPart) {
-          forParent(run, unit, tries.note ?? 'nothing could be written for it');
+          needsPerson(run, unit, tries.note ?? 'nothing could be written for it');
           continue;
         }
         void fillOne(run, unit, tries);
@@ -417,7 +422,7 @@ export function createAhead(host: AheadHost, policy: AheadPolicy): Ahead {
       note: tries.note,
       shape: view === null ? null : shapeBefore(view.document, unit),
       crop: unit.crop ?? null,
-      photo: tries.fills > 1,
+      photo: tries.fills > 1 || (unit.crop ?? null) !== null,
     };
     log.info('ahead.fill', { session: run.session, node: unit.id, attempt: tries.fills });
     try {
@@ -462,7 +467,7 @@ export function createAhead(host: AheadHost, policy: AheadPolicy): Ahead {
           tries.checkFailures += 1;
           log.warn('ahead.check_unanswered', { session: run.session, node: unit.id, failure, failures: tries.checkFailures });
           if (tries.checkFailures < 3) later(run, CHECK_RETRY_MS);
-          else forParent(run, unit, `it could not be checked: ${failure ?? 'the check did not answer for it'}`);
+          else needsPerson(run, unit, `it could not be checked: ${failure ?? 'the check did not answer for it'}`);
           continue;
         }
         applyVerdict(run, doc, unit, settle(mechanical, model, solverOpinion(doc, unit.id)));
@@ -495,7 +500,7 @@ export function createAhead(host: AheadHost, policy: AheadPolicy): Ahead {
     if (tries.refusals >= 2 || tries.fills >= policy.fillsPerPart) {
       // the ways that passed are still checked ways: said, so that a page can offer them beside "let's work this one out together"
       for (const way of ways) if (way.body !== null && !verdict.refused.some((finding) => finding.node === way.id)) host.setStatus(run.session, way.id, 'verified', { why: 'this way passed every check; the part has others that did not' });
-      forParent(run, unit, why);
+      needsPerson(run, unit, `${why} (stopped after ${Math.max(tries.refusals, tries.fills)} tries; needs a person to check)`);
       return;
     }
     host.setStatus(run.session, unit.id, 'refused', { why });

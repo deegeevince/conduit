@@ -402,6 +402,11 @@ export class Conductor {
     const s = sessions.require(session, now());
 
     const previous = s.turn;
+    // T1 (b). A bare prompt (words only: no photo, ink or voice) sent while a turn is writing a document does not cancel the write: it is refused with a plain note and
+    // stays in the box. A person who means to stop it presses Stop; a prompt that carries something (a photo, ink, a voice note) or a tap still replaces the open turn.
+    if (previous !== null && previous.endReason === null && !previous.reported && previous.input.kind === 'prompt' && input.kind === 'prompt' && (input.images?.length ?? 0) === 0 && input.marks === undefined && (input.voice?.length ?? 0) === 0 && this.docs.viewOfSession(s.id) !== null) {
+      throw errors.conflict('Still writing this. It will be there in a moment (or press Stop).');
+    }
     if (previous !== null && !previous.reported) {
       if (previous.endReason === null) {
         log.info('turn.interrupted', { session: s.id, turn: previous.id, by: 'next-turn' });

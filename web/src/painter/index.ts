@@ -708,8 +708,13 @@ export function createPainter(options: PainterOptions): Painter {
     // A resting stage has no arrivals: everything on it is there. The turn's own (an interrupted turn is still settling) must not be read.
     const rest = buildTimeline(restSchedule(stage), stage, { ...timelineContext(), arrivals: new Map() });
     const frame: Frame = { ...rest.frameAt({ time: 0, ambient: 3, wallTime: pinnedWallTime(3), clock: 'paused' }), camera: REST_POSE };
-    void appsFresh()
-      .then(() => renderer.rasterise(frame, { maxSide: PICTURE_SIDE, mime: 'image/jpeg', quality: 0.8, ...stills(frame) }))
+    // A surface that covers the stage (the lesson view) is what the person sees: its own still, handed over by the surface, is the snapshot.
+    const covering = (options.cover?.() ?? Promise.resolve(null)).catch(() => null);
+    void covering
+      .then((cover) => {
+        if (cover !== null) return cover;
+        return appsFresh().then(() => renderer.rasterise(frame, { maxSide: PICTURE_SIDE, mime: 'image/jpeg', quality: 0.8, ...stills(frame) }));
+      })
       .then((blob) => {
         if (blob !== null && !disposed) emit('upload', { kind: 'snapshot', turn: turnId, blob });
       })

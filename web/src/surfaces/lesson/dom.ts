@@ -1,5 +1,7 @@
 // Small DOM helpers for the lesson: elements from a tag and its attributes, SVG the same way, and a way to draw at the width a thing has.
 
+import { typesetUnits } from '@conduit/language';
+
 type Child = Node | string | null | false | undefined;
 export type Attrs = Readonly<Record<string, string | number | boolean | null | undefined | ((event: Event) => void)>>;
 
@@ -14,7 +16,7 @@ function apply(el: Element, attrs: Attrs): void {
 function fill(el: Element, children: readonly Child[]): void {
   for (const child of children) {
     if (child === null || child === false || child === undefined) continue;
-    el.append(typeof child === 'string' ? document.createTextNode(child) : child);
+    el.append(typeof child === 'string' ? document.createTextNode(typesetUnits(child)) : child);
   }
 }
 

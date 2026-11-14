@@ -34,7 +34,8 @@ export type VisualSpec =
   | { readonly kind: 'bar'; readonly parts: readonly (number | null)[]; readonly total: number | null }
   | { readonly kind: 'coins'; readonly coins: readonly number[]; readonly target: number | null }
   | { readonly kind: 'clock'; readonly minutes: number }
-  | { readonly kind: 'ruler'; readonly mm: readonly number[] };
+  | { readonly kind: 'ruler'; readonly mm: readonly number[] }
+  | { readonly kind: 'grid'; readonly rows: readonly string[] };
 
 export type Status = NodeStatus;
 
