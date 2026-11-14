@@ -387,6 +387,7 @@ function backEvent(value: unknown, index: number): BackEvent {
         text: text(raw.text, 'text').slice(0, CONTROL_TEXT_CHARS),
         playhead: num(raw.playhead, 'playhead'),
         send: bool(raw.send, 'send'),
+        ...(raw.app === true && { app: true as const }),
       };
     case 'draft': {
       const placed = placedBoxes(raw.placed);

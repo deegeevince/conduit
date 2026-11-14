@@ -668,7 +668,7 @@ export class Conductor {
         this.deps.sessionLog.write(s.id, { type: 'tap', turn: event.turn, id: event.id, text: event.text, choice: event.choice });
         return;
       case 'control':
-        this.deps.sessionLog.write(s.id, { type: 'control', turn: event.turn, id: event.id, value: event.value, text: event.text, send: event.send });
+        this.deps.sessionLog.write(s.id, { type: 'control', turn: event.turn, id: event.id, value: event.value, text: event.text, send: event.send, ...(event.app === true && { app: true }) });
         return;
       case 'draft':
         // How the draft will land: what look and fix is waiting on. The picture, when there is one, arrives by upload.
