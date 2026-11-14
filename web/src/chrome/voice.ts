@@ -252,6 +252,8 @@ export function mountVoice(button: HTMLButtonElement, before: HTMLElement, field
       audio = new Context();
       const analyser = audio.createAnalyser();
       analyser.fftSize = 512;
+      // a context made after an await may start suspended (autoplay rules): the tap that began the note allows it to run
+      void audio.resume().catch(() => undefined);
       audio.createMediaStreamSource(stream).connect(analyser);
       const samples = new Uint8Array(analyser.fftSize);
       const tick = (): void => {
