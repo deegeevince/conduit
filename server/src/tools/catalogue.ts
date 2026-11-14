@@ -660,7 +660,7 @@ async function runCheck(cx: Cx, spec: Spec): Promise<Res> {
     }
     case 'app-learner': {
       // a learner's problem as a small live app: on stage, answers to pointers and touch, shows no answer at rest, and fits the screen
-      const rows = cx.answer.script.split('\n').filter((l) => l.startsWith('|')).map((l) => l.slice(1)).join('\n');
+      const rows = (await cx.tab.eval<string[]>(`[...document.querySelectorAll('iframe')].map((f) => f.srcdoc || '')`)).join('\n');
       const frames = await cx.tab.eval<{ x: number; right: number; height: number }[]>(`[...document.querySelectorAll('iframe')].map((f) => { const r = f.getBoundingClientRect(); return { x: r.left, right: r.right, height: r.height }; }).filter((r) => r.height > 50)`);
       const bad: string[] = [];
       if (frames.length === 0 || rows.trim() === '') return { check: name, verdict: 'FAIL', detail: 'no live app on stage' };
