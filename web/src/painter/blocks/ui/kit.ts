@@ -137,11 +137,10 @@ function text(k: Kit, words: string, token: UiTextToken, o: TextOpts): N {
 }
 
 /** An icon as a leaf `size` square. */
-function icon(k: Kit, id: string, name: string, size: number, colour: string, width = 2): N {
+function icon(id: string, name: string, size: number, colour: string, width = 2): N {
   const paint = (b: Rect, out: Out): void => {
     out.parts.push({ kind: 'path', key: out.key(id, `icon:${name}`), owner: id, outline: placeIcon(hasIcon(name) ? name : 'info', b.x + (b.w - size) / 2, b.y + (b.h - size) / 2, size), fill: null, stroke: { colour, width: width * (size / 24) } });
   };
-  void k;
   return mk({ width: size, height: size, shrink: 0 }, null, { fit: () => ({ w: size, h: size }), minW: size }, [], { id, part: 'icon', quiet: true, paint, owner: id });
 }
 
@@ -263,12 +262,12 @@ function itemOf(k: Kit, p: UiPartNode): N {
   const value = p.attrs['value'];
   const toggled = p.flags.includes('toggle') ? (k.state.toggle[p.id] ?? p.flags.includes('on')) : null;
   const kids: N[] = [];
-  if (iconName !== undefined) kids.push(icon(k, p.id, iconName, 24, selected || !wire ? c.accent : c.ink));
+  if (iconName !== undefined) kids.push(icon(p.id, iconName, 24, selected || !wire ? c.accent : c.ink));
   const words: N[] = [text(k, title, k.type.label, { id: p.id, colour: c.ink, what: 'title' })];
   if (sub !== undefined && sub !== '') words.push(text(k, sub, k.type.note, { id: p.id, colour: c.dim, what: 'subtitle' }));
   kids.push(mk({ width: 'hug', height: 'hug', grow: 1, minW: 0 }, flex('col', { gap: 0 }), null, words, { id: `${p.id}:words`, part: 'item-words', quiet: true, owner: p.id }));
   if (value !== undefined) kids.push(text(k, value, k.type.body, { id: p.id, nowrap: true, colour: c.dim, what: 'value' }));
-  if (p.flags.includes('chevron')) kids.push(icon(k, p.id, 'chevron-right', 20, c.faint));
+  if (p.flags.includes('chevron')) kids.push(icon(p.id, 'chevron-right', 20, c.faint));
   if (toggled !== null) kids.push(switchOf(k, p.id, toggled));
   const radius = wire ? k.t.radius.s : k.t.radius.m;
   const pressed = k.state.pressed === p.id;
@@ -406,17 +405,18 @@ function imageOf(k: Kit, p: UiPartNode): N {
     const r = round ? Math.min(b.w, b.h) / 2 : k.t.radius.m;
     if (wire) {
       rectOf(out, p.id, 'image', b, { radius: r, fill: c.sunken, edge: { colour: c.edge, width: 1 } });
-      const x0 = b.x + 0.5;
-      const y0 = b.y + 0.5;
-      const x1 = b.x + b.w - 0.5;
-      const y1 = b.y + b.h - 0.5;
+      // the diagonals stop short of the corners, so a rounded corner is never poked through
+      const x0 = b.x + 6;
+      const y0 = b.y + 6;
+      const x1 = b.x + b.w - 6;
+      const y1 = b.y + b.h - 6;
       out.parts.push({ kind: 'path', key: out.key(p.id, 'cross'), owner: p.id, outline: [{ closed: false, points: [{ x: x0, y: y0 }, { x: x1, y: y1 }] }, { closed: false, points: [{ x: x1, y: y0 }, { x: x0, y: y1 }] }], fill: null, stroke: { colour: c.line, width: 1 } });
     } else {
       rectOf(out, p.id, 'image', b, { radius: r, fill: { from: c.accentWash, to: '#f4e6da' } });
       // two quiet hills under the caption, so a placeholder reads as a picture and not as an empty box; they stay inside the picture's rounded corners
       if (!round) {
         const hill = (peak: number, spread: number, rise: number, a: number): void => {
-          const bottom = b.y + b.h;
+          const bottom = b.y + b.h + 0.5;
           const r = Math.min(k.t.radius.m, b.h / 2, b.w / 2);
           const top = Array.from({ length: 41 }, (_, i) => {
             const t = i / 40;
@@ -475,7 +475,7 @@ function iconOf(k: Kit, p: UiPartNode): N {
   const c = k.t.colour;
   const done = name === 'check' || name === 'check-circle';
   const colour = p.flags.includes('success') || done ? (k.t.wire ? c.ink : c.success) : p.flags.includes('accent') ? c.accent : p.flags.includes('dim') ? c.dim : c.ink;
-  const n = icon(k, p.id, name, size, colour, size > 32 ? 1.75 : 2);
+  const n = icon(p.id, name, size, colour, size > 32 ? 1.75 : 2);
   return { ...n, payload: { ...n.payload, part: 'icon', hug: true, quiet: false } };
 }
 
@@ -502,7 +502,7 @@ function tabbarOf(k: Kit, p: UiPartNode): N {
   const kids: N[] = tabs.map((t, i) => {
     const on = i === chosen;
     const ink = on ? (k.t.wire ? c.ink : c.accent) : c.dim;
-    const glyph = icon(k, p.id, icons[i] ?? fallback[i] ?? 'circle', 24, ink, on ? 2.25 : 2);
+    const glyph = icon(p.id, icons[i] ?? fallback[i] ?? 'circle', 24, ink, on ? 2.25 : 2);
     const word = text(k, t.text, { ...k.type.caption, weight: on ? 'bold' : 'normal' }, { id: p.id, nowrap: true, squeeze: true, colour: ink, align: 'center', what: `tab:${i}`, width: 'fill' });
     return mk({ width: 'fill', height: 'fill', minW: 44 }, flex('col', { align: 'center', justify: 'center', gap: 2 }), null, [glyph, word], { id: `${p.id}:tab${i}`, part: 'tab', target: true, action: { kind: 'tab', bar: p.id, index: i }, owner: p.id });
   });
@@ -531,7 +531,7 @@ function navOf(k: Kit, p: UiPartNode): N {
   const slot = (id: string, name: string | null | undefined, what: string): N =>
     name === null || name === undefined
       ? mk({ width: 48, height: 48, shrink: 0 }, null, { fit: () => ({ w: 48, h: 48 }), minW: 48 }, [], { id: `${p.id}:${what}`, part: 'nav-gap', quiet: true, owner: p.id })
-      : mk({ width: 48, height: 48, shrink: 0 }, flex('row', { align: 'center', justify: 'center' }), null, [icon(k, p.id, name, 24, c.ink)], {
+      : mk({ width: 48, height: 48, shrink: 0 }, flex('row', { align: 'center', justify: 'center' }), null, [icon(p.id, name, 24, c.ink)], {
           id: `${p.id}:${what}`,
           part: 'nav-action',
           target: true,
@@ -554,7 +554,9 @@ function boxOf(k: Kit, c: UiContainer, kids: N[], ctx: Ctx): N {
   const card = p.card;
   const pad = p.pad ?? (card ? 16 : 0);
   const gap = gapOf(p.gap, 8);
-  const align: Align = p.align ?? (dir === 'row' ? 'center' : 'stretch');
+  // a row of cards stands them at one height; any other row centres what is in it
+  const cards = dir === 'row' && c.children.filter((n) => isUiContainer(n) && n.props.card).length > 1;
+  const align: Align = p.align ?? (dir === 'row' ? (cards ? 'stretch' : 'center') : 'stretch');
   const wide = p.spread || p.center || p.max !== null;
   // `grow` takes the room that is left along the line the container stands in, shared equally as `flex: 1` does
   const style: Style = {
@@ -664,7 +666,7 @@ const BLEED: ReadonlySet<string> = new Set(['nav', 'tabbar', 'progress']);
 function statusBar(k: Kit, id: string): N {
   const c = k.t.colour;
   const time = text(k, '9:41', { size: 15, line: 20, weight: 'bold' }, { id, nowrap: true, colour: c.ink, what: 'time' });
-  const right = mk({ width: 'hug', height: 'hug' }, flex('row', { gap: 6, align: 'center' }), null, [icon(k, id, 'wifi', 16, c.ink, 2.25), icon(k, id, 'battery', 20, c.ink, 2.25)], { id: `${id}:status-icons`, part: 'status', quiet: true });
+  const right = mk({ width: 'hug', height: 'hug' }, flex('row', { gap: 6, align: 'center' }), null, [icon(id, 'wifi', 16, c.ink, 2.25), icon(id, 'battery', 20, c.ink, 2.25)], { id: `${id}:status-icons`, part: 'status', quiet: true });
   return mk({ width: 'fill', height: 44 }, flex('row', { align: 'center', justify: 'between', pad: [12, 28, 0, 28] }), null, [time, right], { id: `${id}:status`, part: 'status', quiet: true });
 }
 

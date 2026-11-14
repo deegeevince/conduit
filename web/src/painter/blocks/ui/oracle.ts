@@ -264,12 +264,11 @@ export function fits(placed: Placed<OracleLeaf | null>): boolean {
 
 export function measureSolved(placed: Placed<OracleLeaf | null>): Map<string, Rect> {
   const out = new Map<string, Rect>();
-  const visit = (p: Placed<OracleLeaf | null>, path: string, parent: Placed<OracleLeaf | null> | null): void => {
+  const visit = (p: Placed<OracleLeaf | null>, path: string): void => {
     out.set(path, { x: p.x, y: p.y, w: p.w, h: p.h });
-    p.children.forEach((k, i) => visit(k, `${path}.${i}`, p));
-    void parent;
+    p.children.forEach((k, i) => visit(k, `${path}.${i}`));
   };
-  visit(placed, '0', null);
+  visit(placed, '0');
   return out;
 }
 

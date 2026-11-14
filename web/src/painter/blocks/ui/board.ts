@@ -103,7 +103,9 @@ export function arrangeBoard(layouts: readonly UiScreenLayout[], tokens: UiToken
     const cx = x + card.shape.inset.x * s;
     const cy = y + card.shape.inset.y * s;
     for (const p of card.shape.under) parts.push(scalePart(p, s, x, y));
-    for (const p of card.layout.parts) parts.push(scalePart(p, s, cx, cy));
+    // a screen is glass: what a long page has below the fold is not drawn outside it
+    const clip = { x: cx, y: cy, w: card.layout.width * s, h: card.layout.height * s };
+    for (const p of card.layout.parts) parts.push({ ...scalePart(p, s, cx, cy), clip });
     for (const p of card.shape.over) parts.push(scalePart(p, s, x, y));
     placements.push({ id: card.layout.id, index, x, y, scale: s, contentX: cx, contentY: cy, width: card.shape.width * s, height: card.shape.height * s });
   };

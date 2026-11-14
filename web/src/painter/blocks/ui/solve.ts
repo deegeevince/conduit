@@ -140,7 +140,7 @@ function minContentRaw<P>(n: Node<P>, c: Caches): number {
   else if (n.box !== null) {
     // along a single row an item that cannot shrink asks for all of its width
     const alongRow = n.box.dir === 'row' && !n.box.wrap;
-    const kids = n.children.map((k) => (alongRow && k.style.shrink === 0 ? Math.max(minContent(k, c), cw(k, flexBase(k, c))) : minContent(k, c)));
+    const kids = n.children.map((k) => (alongRow && k.style.shrink === 0 && k.box?.wrap !== true ? Math.max(minContent(k, c), cw(k, flexBase(k, c))) : minContent(k, c)));
     w = alongRow ? kids.reduce((s, v) => s + v, 0) + Math.max(0, kids.length - 1) * n.box.gap + padW(n.box) : Math.max(0, ...kids) + padW(n.box);
   } else w = 0;
   // a specified width caps the automatic minimum

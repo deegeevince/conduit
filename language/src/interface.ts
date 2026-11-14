@@ -379,7 +379,10 @@ export function parseInterface(lines: readonly string[]): UiDocument {
       const fromRaw = w.attrs['from'];
       const [fromId, ...labelParts] = (fromRaw ?? '').split(':');
       const id = idWord !== undefined && !(UI_DEVICES as readonly string[]).includes(idWord) && !byId.has(idWord) ? idWord : `s${screens.length + 1}`;
-      screen = { id, device, from: fromId === undefined || fromId === '' ? null : fromId, fromLabel: labelParts.length > 0 ? labelParts.join(':') : null, name: fields[0] ?? '', line, children: [] };
+      // a label of several words, written without quotes, runs on over the bare words after it
+      const spill = w.flags.filter((f, i) => i > 0 && f !== idWord && !(UI_DEVICES as readonly string[]).includes(f));
+      const label = labelParts.length > 0 ? [labelParts.join(':'), ...spill].join(' ') : null;
+      screen = { id, device, from: fromId === undefined || fromId === '' ? null : fromId, fromLabel: label, name: fields[0] ?? '', line, children: [] };
       screens.push(screen);
       byId.set(id, screen);
       return;
@@ -514,3 +517,48 @@ export function unstar(field: string): { readonly text: string; readonly starred
   const m = /^\*(.+)\*$/.exec(field.trim());
   return m === null ? { text: field.trim(), starred: false } : { text: m[1] ?? '', starred: true };
 }
+
+// ------------------------------------------------------------------ the chapter
+
+/**
+ * What the brain is told (PLAN-v2.2 E11, Appendix C): the interface chapter, as the prompt package rides it in the brief
+ * when a message has its cues (mock-up, wireframe, screen, page, app, site, figma). It is written here, beside the words it
+ * teaches, so that the two cannot drift: the parts and the variants below are read from the tables above.
+ */
+export const INTERFACE_CHAPTER: string = [
+  'INTERFACE (more of the language; this painter performs it)',
+  '',
+  'A mock-up is described, not drawn. You say what is on each screen, in order; the painter sizes, spaces and aligns every part, in the look, on a designer\'s grid. Never place a part by coordinates (no at=, x=, y=), and never build a control out of rects.',
+  '- `screen <id> phone|tablet|desktop|browser [from=<screen>[:label]] [| name]` is a device at its true proportions (a phone is 390 across; a browser is a page). Screens stand side by side in the order written. Its parts follow, one a line, top to bottom, until the next screen. `from=` draws the arrow of a journey.',
+  '- `row` and `col` hold the lines after them, side by side or stacked, until `end`. They nest. Words: gap=none|xs|s|m|l|xl, pad=(same), align=start|center|end, spread (first and last pushed apart), grow (takes the room that is left), wrap, card (a surface with an edge), lift (a shadow), max=<points> center (a page no wider than that, in the middle).',
+  '- Parts, one a line (a word before the bar is a variant; the words after each bar are what it says):',
+  '  nav [back|close|menu] [action=<icon>] | Title        a top bar; on a browser: nav links="Car,Home,Help" action="Get a quote" | Brand',
+  '  tabbar icons=a,b,c | One | Two | Three               the first tab is chosen, or mark one with *stars*',
+  '  heading [large|small|center] | words   text [dim|large|bold] | words   note | small dim words',
+  '  button [primary|ghost|danger] [wide|small] | Label   field [error] | Label | value | message   pick | Label | A | B | C',
+  '  toggle [on] | Label     slider | Label | 40     item [icon=<name>] [chevron|toggle|on] [value=<words>] | Title | subtitle',
+  '  badge [success|danger] | words   price | 34 | /mo   progress 2 of 4   image [wide|square|tall|round|grow] | what it shows',
+  '  icon <name> [small|large|xl]   divider   space [s|m|l|grow]   chart ref=<id> | Title',
+  '- `*Words*` on an item, a tab or a pick option is the one chosen. Any part may say `grow`.',
+  '- Icons are plain words: home search user bell cart heart star check close back menu plus shield car house umbrella phone mail lock card calendar camera map pin clock info warning document profile bank wallet chart-line.',
+  '- `look wireframe` is boxes and lines; `look studio` is a finished design. The same lines serve both.',
+  'Write the words a real product would: real labels and copy. At most twelve parts a phone screen. A button that matters most is `primary`; one a screen.',
+  '',
+  'Example ("a sign-in screen"):',
+  'look wireframe',
+  'scene board',
+  'screen s1 phone | Sign in',
+  'nav close | Sign in',
+  'col pad=l gap=m grow',
+  'heading | Welcome back',
+  'field | Email | you@example.com',
+  'field | Password | ••••••••',
+  'row spread',
+  'toggle | Remember me',
+  'note | Forgot password?',
+  'end',
+  'space grow',
+  'button primary wide | Sign in',
+  'button ghost wide | Create an account',
+  'end',
+].join('\n');

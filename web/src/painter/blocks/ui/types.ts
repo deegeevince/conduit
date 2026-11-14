@@ -12,8 +12,17 @@ export interface UiShadow {
   readonly alpha: number;
 }
 
+/** A box a part is kept inside, in the pixels of the room it is drawn in: a screen's own glass. Nothing of the part is drawn outside it. */
+export interface UiClip {
+  readonly x: number;
+  readonly y: number;
+  readonly w: number;
+  readonly h: number;
+}
+
 export interface UiRect {
   readonly kind: 'rect';
+  readonly clip?: UiClip;
   readonly key: string;
   /** the id of the part (or container, or screen) it belongs to: what a tap, a `set` and a lint note name */
   readonly owner: string;
@@ -32,6 +41,7 @@ export interface UiRect {
 
 export interface UiPath {
   readonly kind: 'path';
+  readonly clip?: UiClip;
   readonly key: string;
   readonly owner: string;
   readonly outline: readonly Polyline[];
@@ -42,6 +52,7 @@ export interface UiPath {
 
 export interface UiText {
   readonly kind: 'text';
+  readonly clip?: UiClip;
   readonly key: string;
   readonly owner: string;
   readonly x: number;

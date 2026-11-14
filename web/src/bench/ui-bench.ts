@@ -34,7 +34,15 @@ import type { ChartHandle } from '../contracts/chart';
 type LookName = 'wireframe' | 'studio';
 
 const params = new URLSearchParams(location.search);
-const win = window as unknown as Record<string, unknown>;
+/** What a driver reads off the page. */
+interface BenchWindow extends Window {
+  __ui?: unknown;
+  __oracle?: unknown;
+  __oracleCase?: (seed: number) => string;
+  __ready?: boolean;
+  __error?: string;
+}
+const win: BenchWindow = window;
 const measure = paintersMeasure();
 
 const LOOKS: Readonly<Record<LookName, { readonly tokens: UiTokens; readonly spec: LookSpec }>> = {
@@ -56,7 +64,7 @@ const state: State = {
   fixture: fixtureName,
   look: (params.get('look') as LookName | null) === 'wireframe' ? 'wireframe' : 'studio',
   mode: params.get('mode') === 'focus' || (params.get('mode') === null && innerWidth < 700) ? 'focus' : 'overview',
-  focus: Number(params.get('focus') ?? 0),
+  focus: params.get('focus') === null ? -1 : Number(params.get('focus')),
   ui: NO_STATE,
   lines: params.get('lines') !== null ? (params.get('lines') ?? '').split('~') : (FIXTURES[fixtureName]?.lines ?? FIXTURES['journey']?.lines ?? []),
 };
@@ -65,13 +73,33 @@ document.body.style.cssText = 'margin:0;background:#14161d;color:#cfd4df;font:12
 const app = document.getElementById('app');
 if (app === null) throw new Error('missing #app');
 const host = document.createElement('div');
-host.style.cssText = 'position:fixed;inset:0;overflow:hidden';
+host.style.cssText = 'position:fixed;inset:0;overflow:hidden;touch-action:manipulation;-webkit-user-select:none;user-select:none';
 const overlay = document.createElement('div');
 overlay.style.cssText = 'position:fixed;inset:0;pointer-events:none;overflow:hidden';
 const panel = document.createElement('div');
 panel.style.cssText = 'position:fixed;left:8px;bottom:8px;z-index:5;background:#000c;padding:6px 8px;border-radius:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;max-width:calc(100vw - 16px)';
 app.append(host, overlay);
-if (params.get('panel') !== '0') app.append(panel);
+// the panel is a row of controls: open on a desk, behind a small chip on a phone, and absent for a picture (`?panel=0`)
+const chip = document.createElement('button');
+chip.textContent = 'kit';
+chip.style.cssText = 'position:fixed;top:8px;right:8px;z-index:6;font:12px ui-monospace,monospace;padding:6px 10px;border-radius:14px;border:0;background:#000a;color:#cfd4df';
+let panelOpen = innerWidth >= 700;
+function showPanel(): void {
+  panel.style.display = panelOpen ? 'flex' : 'none';
+  if (panelOpen) {
+    panel.style.top = innerWidth < 700 ? '44px' : '';
+    panel.style.bottom = innerWidth < 700 ? '' : '8px';
+  }
+}
+chip.addEventListener('click', () => {
+  panelOpen = !panelOpen;
+  showPanel();
+});
+if (params.get('panel') !== '0') {
+  app.append(panel);
+  if (innerWidth < 700) app.append(chip);
+  showPanel();
+}
 
 const renderer = createProbedRenderer();
 const engine = createChartEngine();
@@ -88,6 +116,8 @@ function relayout(): void {
   const look = LOOKS[state.look];
   const t0 = performance.now();
   const doc = parseInterface(state.lines);
+  // a narrow room shows a phone screen first, if the lines have one
+  if (state.focus < 0) state.focus = Math.max(0, viewport.width < 700 ? doc.screens.findIndex((s) => s.device === 'phone') : 0);
   const counts = linesPerScreen(doc);
   layouts = doc.screens.map((s, i) => layoutScreen(s, look.tokens, measure, state.ui, counts[i] ?? 0));
   const t1 = performance.now();
@@ -257,12 +287,13 @@ function rebuildPanel(): void {
 
 // ------------------------------------------------------------------ what a driver reads
 
-/** Every fixture in both looks: the numbers of PLAN-v2.2 row 44, and the time the layout took. */
+/** Every fixture in both looks: the numbers of PLAN-v2.2 row 44, kept apart for what F0 wrote and what the brain wrote cold. */
 function report(oracle: number): unknown {
   const rows: unknown[] = [];
-  const totals = { coordinates: 0, lostWords: 0, outside: 0, overlap: 0, offGrid: 0, smallTarget: 0, dense: 0, twoPrimary: 0, screens: 0, parts: 0 };
-  let worstLines = 0;
+  const blank = () => ({ coordinates: 0, lostWords: 0, outside: 0, overlap: 0, offGrid: 0, smallTarget: 0, dense: 0, twoPrimary: 0, screens: 0, parts: 0, worstLines: 0 });
+  const totals = { hand: blank(), brain: blank() };
   for (const [name, fixture] of Object.entries(FIXTURES)) {
+    const t = totals[fixture.by];
     for (const look of ['wireframe', 'studio'] as const) {
       const tokens = LOOKS[look].tokens;
       const doc = parseInterface(fixture.lines);
@@ -272,21 +303,21 @@ function report(oracle: number): unknown {
       const ms = performance.now() - t0;
       const all = screens.flatMap((s) => s.notes);
       const count = (kind: string): number => all.filter((n) => n.kind === kind).length;
-      totals.coordinates += count('coordinates');
-      totals.lostWords += count('lost-words');
-      totals.outside += count('outside');
-      totals.overlap += count('overlap');
-      totals.offGrid += count('off-grid');
-      totals.smallTarget += count('small-target');
-      totals.dense += count('dense');
-      totals.twoPrimary += count('two-primary');
-      totals.screens += screens.length;
-      totals.parts += screens.reduce((n, s) => n + s.boxes.size, 0);
-      worstLines = Math.max(worstLines, ...counts);
-      rows.push({ fixture: name, look, screens: screens.length, lines: counts, ms: Number(ms.toFixed(2)), shapes: screens.reduce((n, s) => n + s.parts.length, 0), parseNotes: doc.notes.length, notes: all.map((n) => `${n.kind} ${n.screen}/${n.id}: ${n.message}`) });
+      t.coordinates += count('coordinates');
+      t.lostWords += count('lost-words');
+      t.outside += count('outside');
+      t.overlap += count('overlap');
+      t.offGrid += count('off-grid');
+      t.smallTarget += count('small-target');
+      t.dense += count('dense');
+      t.twoPrimary += count('two-primary');
+      t.screens += screens.length;
+      t.parts += screens.reduce((n, s) => n + s.boxes.size, 0);
+      t.worstLines = Math.max(t.worstLines, ...counts);
+      rows.push({ fixture: name, by: fixture.by, look, screens: screens.length, lines: counts, ms: Number(ms.toFixed(2)), shapes: screens.reduce((n, s) => n + s.parts.length, 0), parseNotes: doc.notes.map((n) => n.message), notes: all.map((n) => `${n.kind} ${n.screen}/${n.id}: ${n.message}`) });
     }
   }
-  return { rows, totals, worstLines, reflow: reflow(), controls: controls(), oracle: oracle > 0 ? runOracle(oracle) : null };
+  return { rows, totals, reflow: reflow(), controls: controls(), oracle: oracle > 0 ? runOracle(oracle) : null };
 }
 
 const signature = (l: UiScreenLayout): string => JSON.stringify(l.parts);
@@ -362,8 +393,37 @@ function controls(): unknown {
   return { controls: total, working, dead: dead.slice(0, 10) };
 }
 
-win['__oracleCase'] = describeCase;
-win['__ui'] = {
+win.__oracleCase = describeCase;
+const quantile = (xs: readonly number[], q: number): number => {
+  const sorted = [...xs].sort((a, b) => a - b);
+  return Number((sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))] ?? 0).toFixed(2));
+};
+
+/** What one change costs, stage by stage, over `n` rounds on the fixture on show: the layout of every screen, the board, the frame, the draw and the wait for the GPU. */
+function perf(n: number): unknown {
+  const stages: Record<string, number[]> = { layout: [], board: [], frame: [], draw: [], tap: [] };
+  for (let i = 0; i < n; i++) {
+    const t0 = performance.now();
+    relayout();
+    stages['layout']?.push(timing.layoutMs);
+    stages['board']?.push(timing.boardMs);
+    stages['frame']?.push(timing.frameMs);
+    const t1 = performance.now();
+    if (mounted && lastFrame !== null) {
+      renderer.render(lastFrame);
+      renderer.probe().read(0, 0, 1, 1);
+    }
+    const t2 = performance.now();
+    stages['draw']?.push(t2 - t1);
+    stages['tap']?.push(t2 - t0);
+  }
+  const out: Record<string, { p50: number; p95: number; max: number }> = {};
+  for (const [name, xs] of Object.entries(stages)) out[name] = { p50: quantile(xs, 0.5), p95: quantile(xs, 0.95), max: quantile(xs, 1) };
+  return { fixture: state.fixture, look: state.look, screens: layouts.length, shapes: lastFrame === null ? 0 : lastFrame.figures.length, words: lastFrame === null ? 0 : lastFrame.elements.length, viewport: `${viewport.width}x${viewport.height}@${viewport.dpr}`, rounds: n, ms: out };
+}
+
+win.__ui = {
+  perf,
   report,
   state: (): unknown => ({ ...state, board: board === null ? null : { mode: board.mode, scale: board.scale, placements: board.placements } }),
   layouts: (): readonly UiScreenLayout[] => layouts,
@@ -379,7 +439,7 @@ async function start(): Promise<void> {
   if (params.get('oracle') !== null) {
     const t0 = performance.now();
     const result = runOracle(Number(params.get('oracle')));
-    win['__oracle'] = { ...result, ms: performance.now() - t0 };
+    win.__oracle = { ...result, ms: performance.now() - t0 };
   }
   relayout();
   try {
@@ -387,7 +447,7 @@ async function start(): Promise<void> {
     await renderer.mount(host, viewport, 'paper', { looks: ['paper'] });
     mounted = true;
   } catch (error) {
-    win['__error'] = String(error);
+    win.__error = String(error);
   }
   draw();
   for (let i = 0; i < 120 && mounted && !renderer.isDrawable(); i++) {
@@ -396,7 +456,7 @@ async function start(): Promise<void> {
   }
   await new Promise((r) => setTimeout(r, 250));
   if (lastFrame !== null && mounted) renderer.render(lastFrame);
-  win['__ready'] = true;
+  win.__ready = true;
 }
 
 void start();

@@ -84,7 +84,9 @@ export function lintScreen(screen: UiScreen, placed: Placed<Item>, lines: number
     }
     if (it.target === true && (p.w < MIN_TARGET - 0.01 || p.h < MIN_TARGET - 0.01)) note('small-target', it.owner ?? it.id, `${it.part} is ${Math.round(p.w)} by ${Math.round(p.h)} points: a finger needs ${MIN_TARGET}`);
     if (parent !== null && it.quiet !== true) {
-      if (off(p.y) || off(p.h)) note('off-grid', it.id, `${it.part} edge at y=${p.y.toFixed(1)} (in its container) h=${p.h.toFixed(1)} is off the four-point grid`);
+      // what a spring has pushed is placed by the room that is left, which is not on the grid and need not be
+      const sprung = parent.children.some((sib) => sib !== p && sib.y < p.y && (sib.node.style.grow ?? 0) > 0 && sib.node.payload.part === 'space') || (p.node.payload.part === 'space');
+      if (!sprung && (off(p.y) || off(p.h))) note('off-grid', it.id, `${it.part} edge at y=${p.y.toFixed(1)} (in its container) h=${p.h.toFixed(1)} is off the four-point grid`);
       const pb = parent.node.box;
       const self = p.node.style.self;
       const startAligned = pb !== null && pb.dir === 'col' && (self === undefined || self === 'auto' || self === 'start' || self === 'stretch') && (pb.align === 'stretch' || pb.align === 'start') && p.node.style.maxW === undefined;
@@ -108,7 +110,6 @@ export function lintScreen(screen: UiScreen, placed: Placed<Item>, lines: number
     for (const k of kids) visit(k, x, y, p, x, y);
   };
   visit(placed, 0, 0, null, 0, 0);
-  void lines;
   return notes;
 }
 

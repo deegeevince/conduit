@@ -14,7 +14,7 @@ import type { LookSpec } from '../../../contracts/look';
 import { REST_POSE } from '../../../contracts/space';
 import { foldText } from '../../../fonts';
 import { prefixEm } from '../../../fonts/measure';
-import type { UiPart, UiRect } from './types';
+import type { UiClip, UiPart, UiRect } from './types';
 
 export interface FrameOptions {
   readonly width: number;
@@ -86,7 +86,10 @@ export function uiFrame(parts: readonly UiPart[], o: FrameOptions): Frame {
   const elements: ElementFrame[] = [];
   let z = 0;
 
+  let clip: UiClip | undefined;
+  const boxOf = (c: UiClip | undefined): { x: number; y: number; width: number; height: number } | undefined => (c === undefined ? undefined : { x: c.x - cx, y: c.y - cy, width: c.w, height: c.h });
   const shape = (key: string, owner: string, local: Polyline[], at: { x: number; y: number }, fill: ShapeFrame['fill'], stroke: ShapeFrame['stroke'], geometry: string, soft?: number, opacity = 1): void => {
+    const kept = boxOf(clip);
     figures.push({
       kind: 'shape',
       key,
@@ -102,6 +105,7 @@ export function uiFrame(parts: readonly UiPart[], o: FrameOptions): Frame {
       bleed: false,
       tappable: false,
       ...(soft === undefined ? {} : { soft }),
+      ...(kept === undefined ? {} : { clip: kept }),
     });
   };
 
@@ -145,6 +149,7 @@ export function uiFrame(parts: readonly UiPart[], o: FrameOptions): Frame {
   };
 
   for (const p of parts) {
+    clip = p.clip;
     if (p.kind === 'rect') {
       drawRect(p);
     } else if (p.kind === 'path') {
@@ -207,6 +212,7 @@ export function uiFrame(parts: readonly UiPart[], o: FrameOptions): Frame {
           ghost: false,
           tappable: false,
           plate: 0,
+          ...(boxOf(p.clip) === undefined ? {} : { clip: boxOf(p.clip) }),
         });
       });
     }
