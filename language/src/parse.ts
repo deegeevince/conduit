@@ -1234,16 +1234,21 @@ function parseCard(head: Head, text: string | null, issues: Issues): Line {
 function parseBind(head: Head, rawText: string | null, issues: Issues): Line | null {
   let control: string | undefined;
   let on: BindOn = { kind: 'whole' };
+  // `bind chord=C major | …`: the words after a `name=value` are the rest of an option written with spaces.
+  const lead = head.pairs[0];
+  const spoken = lead !== undefined && lead.key !== 'is' && lead.key !== 'when' && isValidElementId(lead.key);
+  const rest: string[] = [];
   for (const word of head.words) {
     const span = SPAN_PATTERN.exec(word);
     if (span !== null) on = { kind: 'range', from: Number(span[1]), to: Number(span[2]) };
+    else if (spoken) rest.push(word);
     else if (control === undefined && isValidElementId(word)) control = word;
     else issues.warn('unknown-word', `"${word}" means nothing in a bind; ignored`, word);
   }
   for (const pair of head.pairs) {
     if (control === undefined && isValidElementId(pair.key)) {
       control = pair.key;
-      on = { kind: 'is', value: pair.value };
+      on = { kind: 'is', value: [pair.value, ...rest.map((w) => w.toLowerCase())].join(' ') };
     } else if (pair.key === 'is' || pair.key === 'when') on = { kind: 'is', value: pair.value };
     else issues.warn('unknown-key', `"${pair.key}" is not part of a bind; ignored`, pair.token);
   }

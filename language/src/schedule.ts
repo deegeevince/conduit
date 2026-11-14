@@ -8,6 +8,7 @@
 // makes `revise` and `cancel` trivial (edit the score, rebuild), and what
 // keeps a schedule reproducible: the same score always gives the same times.
 
+import { pickHasOption } from './bind';
 import { chartModelOf } from './chart';
 import { namesIn, numberOf, parseExpr } from './expr';
 import { lengthOf, outlineOf, pointAlong } from './geometry';
@@ -1562,6 +1563,11 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
         if (control === null || control.span.figure?.kind !== 'control') {
           const other = control === null ? null : control.span.kind;
           report(seq, 'bad-bind', other === null ? `no control called "${line.control}" is on stage to bind; write the slider, toggle or pick first` : `"${line.control}" is a ${other}, not a control; only a button, toggle, slider, pick or input can drive a change`, line.control);
+          break;
+        }
+        const spec = control.span.figure;
+        if (line.on.kind === 'is' && spec.control === 'pick' && !pickHasOption(spec, line.on.value)) {
+          report(seq, 'bad-bind', `"${line.on.value}" is not an option of "${line.control}"; its options are ${spec.options.map((option, i) => `${i + 1} ${option}`).join(', ')}; bind one by its exact words or its number`, line.control);
           break;
         }
         const { change } = line;
