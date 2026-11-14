@@ -254,3 +254,5 @@ button.seg:not(.lit) { opacity: 0.62; }
 .try { margin: 0; display: grid; gap: 4px; justify-items: start; }
 .try img { height: 84px; max-width: 220px; background: #fffdf6; border: 2px solid var(--line); border-radius: 10px; padding: 4px; }
 .try figcaption { color: var(--dim); font-size: 18px; }
+
+.sees { font-size: 24px; font-weight: 600; }

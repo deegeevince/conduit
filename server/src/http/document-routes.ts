@@ -6,7 +6,7 @@ import type { DocumentSummary, DocumentView, OpenDocumentResponse } from '@condu
 import type { Hono } from 'hono';
 import { INK_LIMITS, checkInkDocument, nodeOf } from '@conduit/language';
 import { DOCUMENT_ID } from '../domain/document';
-import { readInk } from '../judge/ink';
+import { holdsAnswer, readInk } from '../judge/ink';
 import { parseCreateSession } from '../domain/validate';
 import { errors } from '../errors';
 import type { HttpDeps } from './deps';
@@ -68,7 +68,7 @@ export function registerDocumentRoutes(app: Hono, deps: HttpDeps): void {
     const question = node === null || node === undefined ? '' : node.title;
     const prompt = step?.kind === 'ask' ? step.prompt : '';
     const reading = await readInk(
-      { picture: { data: Buffer.from(picture.bytes).toString('base64'), mime: picture.mime }, question, ask: prompt },
+      { picture: { data: Buffer.from(picture.bytes).toString('base64'), mime: picture.mime }, question, ask: prompt, accepted: step?.kind === 'ask' ? step.accepted : [] },
       {
         bin: env.brain.kind === 'claude-cli' ? env.brain.bin : 'claude',
         model: env.ahead.verifyModel,
@@ -79,7 +79,10 @@ export function registerDocumentRoutes(app: Hono, deps: HttpDeps): void {
       c.req.raw.signal,
     );
     if (reading.failure !== null) throw errors.brainFailed(reading.failure);
-    return c.json({ text: reading.lines.join('\n'), lines: reading.lines, unclear: reading.unclear });
+    // what it sees is shown only when it holds no answer the ask accepts (the reader is told not to say it, and this does not trust it)
+    const accepted = step?.kind === 'ask' ? step.accepted : [];
+    const sees = reading.sees !== null && !holdsAnswer(reading.sees, accepted, step?.kind === 'ask' ? step.unit : null) ? reading.sees : null;
+    return c.json({ text: reading.lines.join('\n'), lines: reading.lines, unclear: reading.unclear, sees });
   });
 
   /**

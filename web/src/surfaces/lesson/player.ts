@@ -97,6 +97,8 @@ export class Player {
   private reading: string | null = null;
   private unread: { readonly ask: string; readonly said: string } | null = null;
   private wrote = 0;
+  /** what the reader saw in her last working at an ask, by ask: said before the hint when it was not right */
+  private readonly sees = new Map<string, string>();
 
   constructor(
     private readonly root: HTMLElement,
@@ -128,6 +130,8 @@ export class Player {
       return this.render();
     }
     this.unread = null;
+    if (result.sees !== undefined) this.sees.set(`${result.node}\u0000${result.ask}`, result.sees);
+    else this.sees.delete(`${result.node}\u0000${result.ask}`);
     this.tryAnswer(node, ask, result.text, performance.now());
   }
 
@@ -572,7 +576,8 @@ export class Player {
     const tried = node === undefined ? null : this.tries(node, ask);
     if (tried !== null) card.append(tried);
     if (view.wrong > 0) {
-      const feedback = h('div', { class: 'nudge', role: 'status' }, h('p', { class: 'verdict' }, 'Not yet. Have another look.'));
+      const seen = node === undefined ? undefined : this.sees.get(`${node.id}\u0000${ask.id}`);
+      const feedback = h('div', { class: 'nudge', role: 'status' }, h('p', { class: 'verdict' }, seen === undefined ? 'Not yet. Have another look.' : 'Not yet.'), seen === undefined ? null : h('p', { class: 'sees' }, seen));
       if (view.hint !== null) feedback.append(h('p', { class: 'hint' }, h('b', {}, `Hint ${Math.min(view.wrong, ask.hints.length)}: `), mask(view.hint)));
       card.append(feedback);
     }

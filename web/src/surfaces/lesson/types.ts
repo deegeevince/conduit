@@ -109,6 +109,8 @@ export interface WriteResult {
   readonly ask: string;
   readonly text: string | null;
   readonly said?: string;
+  /** one kind sentence about what she did, read from her working (it holds no answer): said before the hint when the try is not right */
+  readonly sees?: string;
 }
 
 /**

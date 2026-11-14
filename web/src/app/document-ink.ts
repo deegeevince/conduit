@@ -23,9 +23,9 @@ export interface DocumentInkOptions {
   /** keeps the picture of the ink; resolves with its upload id */
   readonly upload: (png: Blob) => Promise<string>;
   /** reads what was written: lines as she wrote them */
-  readonly read: (request: { readonly image: string; readonly node: string; readonly ask: string }) => Promise<{ readonly lines: readonly string[]; readonly unclear: boolean }>;
+  readonly read: (request: { readonly image: string; readonly node: string; readonly ask: string }) => Promise<{ readonly lines: readonly string[]; readonly unclear: boolean; readonly sees?: string | null }>;
   /** what came of Check: her working as text for the ask, or null (and a sentence for her) */
-  readonly answer: (node: NodeId, ask: string, text: string | null, said?: string) => void;
+  readonly answer: (node: NodeId, ask: string, text: string | null, said?: string, sees?: string | null) => void;
   readonly note: (text: string) => void;
   /** her writing is kept with the document: the paper as it stands (`n` 0) and each try's strokes (`n` 1…) with what was read from them */
   readonly keep: (record: { readonly node: string; readonly ask: string; readonly n: number; readonly text: string; readonly doc: InkDocument }) => void;
@@ -167,7 +167,7 @@ export function createDocumentInk(options: DocumentInkOptions): DocumentInk {
         ink.reset();
         kept.delete(kind);
         options.onWorking();
-        options.answer(node, ask, tryText(read.lines, found?.step.check === 'working'));
+        options.answer(node, ask, tryText(read.lines, found?.step.check === 'working'), undefined, read.sees ?? null);
       } catch (cause) {
         options.answer(node, ask, null, cause instanceof Error && cause.message !== '' ? `I could not read that (${cause.message}). Press Type it to type your answer.` : 'I could not read that. Press Type it to type your answer.');
       }

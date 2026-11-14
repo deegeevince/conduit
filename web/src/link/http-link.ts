@@ -62,7 +62,7 @@ export interface HttpLink extends StageLink {
   /** v3. Every stroke kept with a document: the papers as they stand and every try's working, latest of each. */
   documentInk(id: string): Promise<readonly DocumentInk[]>;
   /** v3. Reads what the person wrote by hand in an ask's answer area, from the picture of the ink (an upload id): the words, as the server's reader sees them. */
-  readInk(request: { readonly image: string; readonly node: string; readonly ask: string }): Promise<{ readonly text: string; readonly lines: readonly string[]; readonly unclear: boolean }>;
+  readInk(request: { readonly image: string; readonly node: string; readonly ask: string }): Promise<{ readonly text: string; readonly lines: readonly string[]; readonly unclear: boolean; readonly sees: string | null }>;
 }
 
 /** One hour or one day of model use, as `/api/usage` gives it; only what `/usage` shows. */
@@ -622,12 +622,12 @@ export function createHttpLink(): HttpLink {
       return Array.isArray(body) ? (body as DocumentInk[]) : [];
     },
 
-    async readInk(request): Promise<{ readonly text: string; readonly lines: readonly string[]; readonly unclear: boolean }> {
+    async readInk(request): Promise<{ readonly text: string; readonly lines: readonly string[]; readonly unclear: boolean; readonly sees: string | null }> {
       if (session === null || !canSend()) throw new Error('Not connected. Try again in a moment.');
       const response = await fetch(API.readInk(session), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(request) });
-      const body = (await bodyOf(response)) as { text?: unknown; lines?: unknown; unclear?: unknown } | null;
+      const body = (await bodyOf(response)) as { text?: unknown; lines?: unknown; unclear?: unknown; sees?: unknown } | null;
       const lines = Array.isArray(body?.lines) ? (body.lines as unknown[]).filter((line): line is string => typeof line === 'string') : [];
-      return { text: typeof body?.text === 'string' ? body.text : lines.join('\n'), lines, unclear: body?.unclear === true };
+      return { text: typeof body?.text === 'string' ? body.text : lines.join('\n'), lines, unclear: body?.unclear === true, sees: typeof body?.sees === 'string' && body.sees !== '' ? body.sees : null };
     },
 
     async saveCapture(turn: string, film: Blob): Promise<void> {

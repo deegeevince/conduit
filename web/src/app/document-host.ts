@@ -221,9 +221,9 @@ export class DocumentHost {
     this.push();
   }
   /** What the page read from her hand for an ask (`text`: her working as lines; null: it could not be read, and `said` tells her). The lesson tries it as her answer. */
-  write(node: NodeId, ask: string, text: string | null, said?: string): void {
+  write(node: NodeId, ask: string, text: string | null, said?: string, sees?: string | null): void {
     this.writeSeq += 1;
-    this.written = { seq: this.writeSeq, node, ask, text, ...(said === undefined ? {} : { said }) };
+    this.written = { seq: this.writeSeq, node, ask, text, ...(said === undefined ? {} : { said }), ...(sees === undefined || sees === null ? {} : { sees }) };
     this.push();
   }
   setDark(dark: boolean): void {

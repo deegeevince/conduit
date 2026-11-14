@@ -37,7 +37,7 @@ export interface DocumentViewOptions {
   /** the pen: how a picture of her writing is kept and read; absent, the typed field is the writing area */
   readonly ink?: {
     upload(png: Blob): Promise<string>;
-    read(request: { readonly image: string; readonly node: string; readonly ask: string }): Promise<{ readonly lines: readonly string[]; readonly unclear: boolean }>;
+    read(request: { readonly image: string; readonly node: string; readonly ask: string }): Promise<{ readonly lines: readonly string[]; readonly unclear: boolean; readonly sees?: string | null }>;
     /** her writing kept with the document, and fetched again when it is opened */
     keep(record: { readonly node: string; readonly ask: string; readonly n: number; readonly text: string; readonly doc: InkDocument }): void;
     fetch(document: string): Promise<readonly KeptInk[]>;
@@ -96,7 +96,7 @@ export function createDocumentView(options: DocumentViewOptions): DocumentView {
           document: () => doc,
           upload: options.ink.upload,
           read: options.ink.read,
-          answer: (node, ask, text, said) => host?.write(node, ask, text, said),
+          answer: (node, ask, text, said, sees) => host?.write(node, ask, text, said, sees),
           note: (text) => options.onNote?.(text),
           keep: options.ink.keep,
           tryNumber: (node, ask) => (host?.current.progress[node]?.tries[ask]?.length ?? 0) + 1,
