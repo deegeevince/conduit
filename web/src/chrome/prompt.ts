@@ -142,7 +142,9 @@ export function mountPromptBar(
   watcher?.observe(top, { attributes: true, attributeFilter: ['hidden'], childList: true, subtree: true });
 
   // The menu's photo entries open the camera or the library (a phone) or the file picker (a desktop); what they pick goes where a paste or a drop goes.
-  const coarse = window.matchMedia('(pointer: coarse)');
+  // Any touch screen counts (an iPad with a keyboard and trackpad reports a fine primary pointer, and still has a camera).
+  const coarse = window.matchMedia('(any-pointer: coarse)');
+  const touch = (): boolean => coarse.matches || (navigator.maxTouchPoints ?? 0) > 0;
   const photoEntries: { readonly kind: 'pick' | 'camera'; readonly set: (hidden: boolean) => void }[] = [];
   if (tray !== null) {
     for (const [kind, label, gist, order] of [
@@ -151,7 +153,7 @@ export function mountPromptBar(
     ] as const) {
       const file = root.querySelector<HTMLInputElement>(`input[data-photos="${kind}"]`);
       if (file === null) continue;
-      const entry = menu.add({ id: kind === 'pick' ? 'photo' : 'camera', label, gist, order, hidden: kind === 'camera' && !coarse.matches, run: () => file.click() });
+      const entry = menu.add({ id: kind === 'pick' ? 'photo' : 'camera', label, gist, order, hidden: kind === 'camera' && !touch(), run: () => file.click() });
       photoEntries.push({ kind, set: (hidden) => entry.set({ hidden }) });
       file.addEventListener('change', () => {
         tray.add([...(file.files ?? [])]);
@@ -160,7 +162,7 @@ export function mountPromptBar(
       });
     }
   }
-  const onCoarse = (): void => photoEntries.find((entry) => entry.kind === 'camera')?.set(!coarse.matches);
+  const onCoarse = (): void => photoEntries.find((entry) => entry.kind === 'camera')?.set(!touch());
   coarse.addEventListener?.('change', onCoarse);
 
   const submit = (): void => {
