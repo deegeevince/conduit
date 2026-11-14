@@ -19,6 +19,7 @@
 //
 // The domain owns these types; `server/src/brains/claude-cli/` implements them against the CLI's permission prompts.
 
+import { resolve as resolvePath, sep } from 'node:path';
 import type { ActionRisk, ToolChoice } from '@conduit/language';
 
 /** What the server's configuration offers a session. Everything else does not exist as far as a brain is concerned. */
@@ -49,16 +50,180 @@ export interface ToolCall {
 /** Tools of the CLI's own that only read. Anything not here, and every tool of a connected service not marked read-only by its own annotations, is asked for. */
 export const READ_ONLY_TOOLS: readonly string[] = ['WebSearch', 'WebFetch', 'Read', 'Glob', 'Grep'];
 
+/** The CLI's tools that touch files: they are offered only when the owner named a folder (`AGENT_DIR`), and only inside it. */
+export const FILE_TOOLS: readonly string[] = ['Read', 'Glob', 'Grep', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit'];
+
 /**
- * What a call would do in the world. Conservative by construction: it only ever answers `read` for a tool in `READ_ONLY_TOOLS`, or
- * for a connected service's tool that `readOnlyHint` (the service's own annotation, passed in by the adapter) says only reads.
- * STUB(PLAN-v2.1 package G): tell `send`, `buy`, `delete`, `publish` and `signin` apart from the tool's name and input, so the confirm
- * control can say what is being asked in the owner's words. Until then everything that is not a read is `run`, which is asked for.
+ * Words in a tool's name that say what it does in the world. A name is split into words (`post_message`, `postMessage`, `post-message`)
+ * and a word counts when it begins with a stem, so `sendEmail` and `send_mail` both say `send`. The worst risk any word names is the
+ * call's risk. `signin` outranks `publish` outranks `delete` outranks `buy` outranks `send` outranks `run` outranks `write`
+ * (`ACTION_RISKS`' own order, worst last). Nouns are left out on purpose (`message`, `post` as a noun cannot be told from the verb, so
+ * `post` is in: a tool that only reads a post is asked for too, which is the cost of erring upward).
  */
-export function riskOf(call: ToolCall, readOnlyHint = false): ActionRisk {
-  if (READ_ONLY_TOOLS.includes(call.tool)) return 'read';
-  if (readOnlyHint && call.tool.startsWith('mcp__')) return 'read';
-  return 'run';
+const RISK_STEMS: readonly { readonly risk: ActionRisk; readonly stems: readonly string[]; readonly exact?: readonly string[] }[] = [
+  { risk: 'signin', stems: ['login', 'signin', 'sign', 'authenticat', 'authoriz', 'oauth', 'password', 'passwd', 'credential', 'logout', 'signout', 'connect', 'pair', 'verify', 'otp'], exact: ['auth', 'sso', 'mfa', '2fa', 'pin'] },
+  { risk: 'publish', stems: ['publish', 'post', 'tweet', 'deploy', 'release', 'share', 'push', 'upload', 'announce', 'broadcast', 'submit', 'merge', 'unpublish'], exact: ['pr'] },
+  { risk: 'delete', stems: ['delete', 'remove', 'destroy', 'drop', 'erase', 'purge', 'wipe', 'trash', 'cancel', 'revoke', 'unlink', 'truncate', 'clear', 'reset', 'kill', 'terminate', 'unsubscribe', 'archive'], exact: ['rm'] },
+  { risk: 'buy', stems: ['buy', 'purchas', 'order', 'checkout', 'pay', 'subscri', 'book', 'reserv', 'charge', 'donat', 'bid', 'refund', 'transfer', 'withdraw', 'deposit', 'invoice'] },
+  { risk: 'send', stems: ['send', 'email', 'mail', 'reply', 'forward', 'notify', 'sms', 'invite', 'comment', 'dm', 'whisper', 'dispatch', 'dial'] },
+  { risk: 'run', stems: ['run', 'exec', 'bash', 'shell', 'eval', 'spawn', 'launch', 'start', 'stop', 'restart', 'install', 'invoke', 'trigger', 'schedule', 'automate', 'script', 'command', 'cmd', 'click', 'type', 'navigate'] },
+  { risk: 'write', stems: ['write', 'create', 'update', 'edit', 'add', 'set', 'put', 'patch', 'modif', 'renam', 'move', 'save', 'insert', 'append', 'mkdir', 'commit', 'change', 'replace', 'import', 'sync', 'assign', 'tag', 'label', 'star', 'follow', 'like', 'mark', 'rate', 'vote'] },
+];
+
+/** What the shape of a call's input says, whatever the tool is called. */
+const INPUT_SIGNALS: readonly { readonly risk: ActionRisk; readonly keys: readonly string[] }[] = [
+  { risk: 'signin', keys: ['password', 'passwd', 'otp', 'passcode', 'verification_code', 'credentials', 'client_secret', 'refresh_token', 'api_key', 'apikey'] },
+  { risk: 'buy', keys: ['card', 'card_number', 'cvv', 'cvc', 'iban', 'amount', 'price', 'payment', 'payment_method', 'billing'] },
+  { risk: 'send', keys: ['to', 'cc', 'bcc', 'recipient', 'recipients', 'subject', 'phone', 'sender'] },
+];
+
+const RISK_ORDER: readonly ActionRisk[] = ['read', 'write', 'run', 'send', 'buy', 'delete', 'publish', 'signin'];
+const worse = (a: ActionRisk, b: ActionRisk): ActionRisk => (RISK_ORDER.indexOf(b) > RISK_ORDER.indexOf(a) ? b : a);
+
+/** `mcp__remote__get_block` -> `{ service: 'remote', action: 'get_block' }`; a tool of the CLI's own has no service. */
+export function splitTool(tool: string): { readonly service: string | null; readonly action: string } {
+  const match = /^mcp__([^_](?:[^_]|_(?!_))*)__(.+)$/.exec(tool);
+  return match === null ? { service: null, action: tool } : { service: match[1] ?? null, action: match[2] ?? tool };
+}
+
+function wordsOf(name: string): string[] {
+  return name
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((word) => word !== '');
+}
+
+function riskOfName(name: string): ActionRisk | null {
+  let found: ActionRisk | null = null;
+  const words = wordsOf(name);
+  for (const word of words) {
+    for (const row of RISK_STEMS) {
+      const hit = (row.exact ?? []).includes(word) || row.stems.some((stem) => word.startsWith(stem.replace(/_/g, '')));
+      if (hit) found = found === null ? row.risk : worse(found, row.risk);
+    }
+  }
+  return found;
+}
+
+function hostIsPrivate(host: string): boolean {
+  const h = host.toLowerCase();
+  return h === 'localhost' || h.endsWith('.localhost') || h.endsWith('.local') || h.endsWith('.internal') || /^(?:127\.|10\.|192\.168\.|169\.254\.|0\.)/.test(h) || /^172\.(?:1[6-9]|2\d|3[01])\./.test(h) || h === '::1' || h.startsWith('[') || /^\d+$/.test(h);
+}
+
+/** A page the model may read freely is a public one, by plain `http(s)`, with no credential in it and a query that is not a carrier of something else. */
+function fetchIsPlain(raw: unknown): boolean {
+  if (typeof raw !== 'string' || raw.length > 600) return false;
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') return false;
+  if (url.username !== '' || url.password !== '') return false;
+  return !hostIsPrivate(url.hostname);
+}
+
+/** Whether a path the model gave names something inside `dir`. Symlinks are the CLI's own business (`--restricted` confines it); this is the net under that. */
+function insideDir(raw: unknown, dir: string | null): boolean {
+  if (dir === null) return false;
+  if (typeof raw !== 'string' || raw === '' || raw.includes('\0')) return false;
+  const root = resolvePath(dir);
+  const target = resolvePath(root, raw);
+  return target === root || target.startsWith(root.endsWith(sep) ? root : `${root}${sep}`);
+}
+
+/**
+ * What a call would do in the world. Conservative by construction, and erring upward: it answers `read` only for a tool in
+ * `READ_ONLY_TOOLS` that is doing a plain read (a page that is public and plain, a path inside `dir`), or for a connected service's tool
+ * that `readOnlyHint` (the service's own annotation, passed in by the adapter) says only reads. Everything else is the worst thing its
+ * name or the shape of its input says, and `run` when it says nothing: a call that cannot be classified is asked for.
+ */
+export function riskOf(call: ToolCall, readOnlyHint = false, dir: string | null = null): ActionRisk {
+  const { service, action } = splitTool(call.tool);
+  let risk: ActionRisk | null = null;
+  for (const signal of INPUT_SIGNALS) {
+    if (Object.keys(call.input).some((key) => signal.keys.includes(key.toLowerCase()))) risk = risk === null ? signal.risk : worse(risk, signal.risk);
+  }
+  const method = call.input['method'];
+  if (typeof method === 'string' && /^(?:post|put|patch|delete)$/i.test(method)) risk = worse(risk ?? 'write', /^delete$/i.test(method) ? 'delete' : 'send');
+  const named = riskOfName(action);
+  if (named !== null) risk = risk === null ? named : worse(risk, named);
+
+  if (service === null && READ_ONLY_TOOLS.includes(call.tool)) {
+    if (risk === null || risk === 'write') {
+      if (call.tool === 'WebFetch') return fetchIsPlain(call.input['url']) ? 'read' : 'run';
+      if (call.tool === 'WebSearch') return typeof call.input['query'] === 'string' ? 'read' : 'run';
+      const where = call.input['file_path'] ?? call.input['path'] ?? (call.tool === 'Read' ? undefined : '.');
+      return insideDir(where, dir) ? 'read' : 'run';
+    }
+  }
+  if (service !== null && readOnlyHint && (risk === null || risk === 'write')) return 'read';
+  return risk ?? 'run';
+}
+
+/** `?` and what follows is cut from a URL: a query is the commonest place for a token. */
+function bareUrl(raw: string): string {
+  try {
+    const url = new URL(raw);
+    return `${url.host}${url.pathname === '/' ? '' : url.pathname}${url.search === '' ? '' : '?…'}`;
+  } catch {
+    return raw.split('?')[0] ?? raw;
+  }
+}
+
+const PLAIN_VERBS: Readonly<Record<string, string>> = { WebSearch: 'search the web for', WebFetch: 'read the page', Read: 'read', Glob: 'list files matching', Grep: 'search files for', Write: 'write', Edit: 'edit' };
+
+/** The keys that name what a call is aimed at, best first. Never `body`, `content`, `text` or anything that could hold what the owner would not want shown. */
+const TARGET_KEYS: readonly string[] = ['query', 'url', 'file_path', 'path', 'pattern', 'to', 'channel', 'recipient', 'name', 'title', 'subject', 'id', 'key', 'repo', 'issue', 'query_string'];
+
+/**
+ * A few plain words about a call, for the activity strip, the log and the confirm control: the tool's name and the one field that
+ * names its target. Built from the tool and that field, never from the whole input, and passed through `redactSecrets`.
+ */
+export function summaryOf(call: ToolCall): string {
+  const { service, action } = splitTool(call.tool);
+  const verb = action.replace(/[_-]+/g, ' ').replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase();
+  const what = service === null ? (PLAIN_VERBS[call.tool] ?? verb) : `${service}: ${verb}`;
+  let target = '';
+  for (const key of TARGET_KEYS) {
+    const value = call.input[key];
+    if (typeof value === 'string' && value.trim() !== '') {
+      target = key === 'url' ? bareUrl(value) : value;
+      break;
+    }
+    if (typeof value === 'number') {
+      target = String(value);
+      break;
+    }
+  }
+  if (target.includes('/') && (call.tool === 'Read' || call.tool === 'Write' || call.tool === 'Edit' || call.tool === 'Glob' || call.tool === 'Grep')) target = target.split('/').slice(-2).join('/');
+  return redactSecrets(target === '' ? what : `${what} ${call.tool === 'WebSearch' ? `"${target}"` : target}`);
+}
+
+/** What the gate says about one call the CLI is asking to make. */
+export type CallVerdict =
+  | { readonly kind: 'allow'; readonly risk: 'read' }
+  /** not on: the owner's configuration did not offer it, or this session has it switched off. The model is told no. */
+  | { readonly kind: 'deny'; readonly risk: ActionRisk; readonly why: string }
+  /** needs the owner's yes, once, on the stage */
+  | { readonly kind: 'ask'; readonly risk: ActionRisk };
+
+/**
+ * The whole of agent mode's policy for one call, as a pure function so it can be tested with no model. `on` is what this session has
+ * switched on, by name: a tool of the CLI's own, or a service (a call to `mcp__<service>__…` is on when `<service>` is).
+ *   1. a tool not in `on` is denied, whatever it is and whoever asks;
+ *   2. a `read` runs; 3. everything else is asked for. There is no fourth outcome and no setting that makes one.
+ */
+export function gateCall(call: ToolCall, settings: AgentSettings, on: ReadonlySet<string>, readOnlyHint = false): CallVerdict {
+  const { service, action } = splitTool(call.tool);
+  const name = service ?? call.tool;
+  const offered = service === null ? settings.tools.includes(call.tool) : settings.services.some((entry) => entry.name === service);
+  if (!settings.enabled || !offered || !on.has(name)) return { kind: 'deny', risk: riskOf(call, false, settings.dir), why: `${service === null ? call.tool : `${service}: ${action}`} is not switched on` };
+  if (service === null && FILE_TOOLS.includes(call.tool) && settings.dir === null) return { kind: 'deny', risk: 'run', why: 'no folder has been named for file tools' };
+  const risk = riskOf(call, readOnlyHint, settings.dir);
+  return risk === 'read' ? { kind: 'allow', risk } : { kind: 'ask', risk };
 }
 
 const SECRET_SHAPES: readonly RegExp[] = [

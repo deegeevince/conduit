@@ -75,3 +75,66 @@ export function resultFactsOf(event: ClaudeStreamEvent): ClaudeResultFacts | nul
     ttftMs: typeof r.ttft_ms === 'number' ? r.ttft_ms : null,
   };
 }
+
+/** One tool the model has asked to use, from the assistant message that holds it. Only the name, the id and the input; never anything a tool returned. */
+export interface ToolUseFacts {
+  readonly id: string;
+  readonly tool: string;
+  readonly input: Readonly<Record<string, unknown>>;
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
+
+/** The `tool_use` blocks of an assistant message; empty for any other event. */
+export function toolUsesOf(event: ClaudeStreamEvent): ToolUseFacts[] {
+  if (event.type !== 'assistant') return [];
+  const message = (event as { message?: unknown }).message;
+  const content = isRecord(message) ? message['content'] : undefined;
+  if (!Array.isArray(content)) return [];
+  const uses: ToolUseFacts[] = [];
+  for (const block of content as unknown[]) {
+    if (!isRecord(block) || block['type'] !== 'tool_use') continue;
+    const { id, name, input } = block;
+    if (typeof id === 'string' && typeof name === 'string') uses.push({ id, tool: name, input: isRecord(input) ? input : {} });
+  }
+  return uses;
+}
+
+/** The ids of tool calls that ended, and whether each failed, from the user message the CLI prints after a tool ran or was refused. The result's text is never read. */
+export function toolResultsOf(event: ClaudeStreamEvent): { readonly id: string; readonly failed: boolean }[] {
+  if (event.type !== 'user') return [];
+  const message = (event as { message?: unknown }).message;
+  const content = isRecord(message) ? message['content'] : undefined;
+  if (!Array.isArray(content)) return [];
+  const results: { id: string; failed: boolean }[] = [];
+  for (const block of content as unknown[]) {
+    if (!isRecord(block) || block['type'] !== 'tool_result') continue;
+    const id = block['tool_use_id'];
+    if (typeof id === 'string') results.push({ id, failed: block['is_error'] === true });
+  }
+  return results;
+}
+
+/** What the CLI asks its host before a call: the `can_use_tool` control request. See the notes at the top of warm.ts. */
+export interface PermissionAsk {
+  readonly requestId: string;
+  readonly toolUseId: string;
+  readonly tool: string;
+  readonly input: Readonly<Record<string, unknown>>;
+}
+
+export function permissionAskOf(event: ClaudeStreamEvent): PermissionAsk | null {
+  if (event.type !== 'control_request') return null;
+  const raw = event as { request_id?: unknown; request?: unknown };
+  if (typeof raw.request_id !== 'string' || !isRecord(raw.request) || raw.request['subtype'] !== 'can_use_tool') return null;
+  const { tool_name: tool, input, tool_use_id: toolUseId } = raw.request;
+  if (typeof tool !== 'string') return null;
+  return { requestId: raw.request_id, toolUseId: typeof toolUseId === 'string' ? toolUseId : raw.request_id, tool, input: isRecord(input) ? input : {} };
+}
+
+/** The CLI withdrew a question it had put to the host (the call was abandoned). Its request id, or null. */
+export function cancelledAskOf(event: ClaudeStreamEvent): string | null {
+  if (event.type !== 'control_cancel_request') return null;
+  const id = (event as { request_id?: unknown }).request_id;
+  return typeof id === 'string' ? id : null;
+}

@@ -182,6 +182,46 @@ curl -s -X POST 'localhost:4300/api/relay/turns/t1/lines?end=1' -H 'content-type
 
 If the viewer interrupts, the events carry a `report` with `"outcome":"interrupted"` and what was shown, and the next claim's `brief` says "The user interrupted at 3.4s … Everything you wrote after that never happened." A rejected line never fails the whole request: the answer says which lines were dropped and why. `curl -s localhost:4300/api/relay/status` shows what is waiting and what is claimed.
 
+## (v2.1) Modes: plain, agent, steward
+
+One brain, three settings, chosen per conversation with `/brain` or the picker, from what the server offers (`Env.modes`). It is always the canvas's brain; none of them is a second chat.
+
+| Mode | What it is | Turned on by |
+| --- | --- | --- |
+| `plain` | the model with no tools beyond the read-only web tools in `BRAIN_TOOLS` | always |
+| `agent` | the same `claude` process with the tools and connected services the owner offered; reading is free, everything else is asked for on the stage, one call at a time | `AGENT=on` |
+| `steward` | the turn is held for another Claude Code session to claim over the relay and answer | `STEWARD=on` |
+
+### Agent mode
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `AGENT` | `off` | `on` offers the mode |
+| `AGENT_TOOLS` | `WebSearch,WebFetch` | the CLI's own tools offered (`Read`, `Glob`, `Grep`, `Write`, `Edit` too); a file tool exists only when `AGENT_DIR` is set |
+| `AGENT_SERVICES` | none | connected services, `name=/path/outside/the/repo.json,...`: each is an MCP configuration file (it may hold a credential, so it is never inside the repository). Calls to a service always ask, unless the service's own annotation says a tool only reads |
+| `AGENT_DIR` | none | the one folder file tools may touch; the process is started in it with `--restricted` |
+| `AGENT_ANSWER_MS` | `120000` | how long the owner has to answer a confirm control; no answer is a no |
+
+Until the owner names services and a folder, agent mode has the two web tools and nothing else. The rules are code (`server/src/domain/agent.ts`, `server/src/brains/claude-cli/`), not prompt:
+
+- The process is started with `--tools <exactly the offered ones>`, `--permission-mode manual`, `--permission-prompts host`, `--permission-prompt-tool stdio` and `--restricted`, and each service's `--mcp-config` with `--strict-mcp-config`. Never `--dangerously-skip-permissions`, `bypassPermissions`, `acceptEdits` or `--bare`. The CLI asks this process before every call that is not a plain read inside the folder (the probe is at the top of `warm.ts`); `gateCall` answers: a tool not switched on is denied, a `read` runs, anything else is put to the owner as a `permission` event (`write`, `run`, `send`, `buy`, `delete`, `publish`, `signin`) and held until a `permit` arrives or the deadline passes. There is no "always allow".
+- A call is classified by `riskOf` from the tool's name and the shape of its input, erring upward: a page on a private address, a path outside the folder, an unknown tool are asked for. A service's tools are `read` only on the service's own read-only annotation, which the CLI does not pass on today, so for now every call to a service asks.
+- A tool's input and result stay in the CLI's own conversation. The activity strip, the log and the confirm control get a few words (`summaryOf`: the tool and the one field that names its target, through `redactSecrets`).
+- Something that needs the owner's own hands (a sign-in, a code, a payment) is a `signin` or `buy`: it is asked for and then left to the owner.
+- `pnpm --filter @conduit/server exec tsx src/tools/agent-check.ts` checks all of this against a scripted stand-in for `claude` (no model, no network); add `--real` for one tiny live turn.
+
+### Steward mode
+
+`STEWARD=on`, then `/brain steward` in a conversation. Its turns, and its looks at drafts, wait in the relay for a Claude Code session to claim them. From that session (run `listen` in the background so it is told when a turn arrives):
+
+```sh
+PORT=<the server's port> pnpm --filter @conduit/server exec tsx src/tools/relay.ts listen      # one JSON line per claimed turn: brief, links, the snapshot's file
+printf 'scene layout=solo\nsay a1 | Hello.\n' | PORT=<port> pnpm --filter @conduit/server exec tsx src/tools/relay.ts say t3 --end
+PORT=<port> pnpm --filter @conduit/server exec tsx src/tools/relay.ts end t3 | status
+```
+
+(`pnpm relay …` once the root `package.json` has the script.) There is no default port, so the tool can never claim a turn from a server that is not yours. A turn claimed a second time is the look at its draft: the brief says so and names the file the picture is in; answer with fix lines or `ok`.
+
 ## Links and long text
 
 A prompt with an `http(s)` link (two at most) has it fetched by the server, not by the brain, which has no tools. Public addresses only: loopback, private, link-local, CGNAT (100.64/10, which includes the tailnet) and multicast are refused, by name or by number, on every redirect (three at most). Fifteen seconds in all, 20 MB after decompression. A PDF goes to the model whole as a `document` content block; a web page becomes its headings and paragraphs, text and markdown go as they are, each cut at 40,000 characters with a note in the brief when it was cut. A prompt of 1,500 characters or more is treated as a document too (up to 20,000 characters), and its links are left alone. The material is marked in the brief as material, not instructions, and stays with the conversation: a later turn still has it, and a recycled process is given it again.

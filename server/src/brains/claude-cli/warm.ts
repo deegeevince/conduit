@@ -17,11 +17,42 @@
 //   stdout {"type":"result","subtype":"success","usage":{...},"total_cost_usd":...}   ends every turn
 //
 // `system init` is printed after each user message, not at start-up.
+//
+// PERMISSION PROMPTS (v2.1, package G). Probed on this machine with Claude Code 2.1.325, sonnet, effort low, `--tools Read,Write` (and
+// `WebSearch,WebFetch`), in an empty temporary folder, stream-json both ways, `--permission-mode manual`, 2026-11-14. What was observed:
+//
+//   1. `--permission-mode manual --permission-prompts host` ALONE sends nothing to the host. The model's Write was refused by the CLI at
+//      once, on stdout as a system event, and the model was told it had not been granted:
+//        {"type":"system","subtype":"permission_denied","tool_name":"Write","tool_use_id":"toolu_...","message":"Claude requested
+//         permissions to write to /private/tmp/probe-g/empty/hello.txt, but you haven't granted it yet."}
+//      (the tool_result carried `permission_decision: {"decision":"reject","source":"config"}`). So `host` names a host that has to
+//      declare itself: that is `--permission-prompt-tool stdio`. Same with `--restricted`.
+//   2. `--permission-prompt-tool stdio` WORKS. Before each call that is not already settled the CLI prints, on stdout, after the
+//      assistant message that holds the tool_use and before anything runs:
+//        {"type":"control_request","request_id":"271ec108-...","request":{"subtype":"can_use_tool","tool_name":"Write",
+//         "display_name":"Write","input":{"file_path":"/private/tmp/probe-g/empty/hello.txt","content":"hi\n"},"description":"hello.txt",
+//         "permission_suggestions":[{"type":"setMode","mode":"acceptEdits","destination":"session"}],"server_policy_ask_only":true,
+//         "tool_use_id":"toolu_01V3..."}}
+//      and waits. It is answered on stdin, one line, by the same request_id:
+//        deny  {"type":"control_response","response":{"subtype":"success","request_id":"271ec108-...","response":{"behavior":"deny","message":"The owner said no."}}}
+//        allow {"type":"control_response","response":{"subtype":"success","request_id":"c5cfbdf6-...","response":{"behavior":"allow","updatedInput":{<the input, as given>}}}}
+//      A deny reaches the model as an error tool_result whose text is `message` (`permission_decision` `{"decision":"reject","source":"user_reject"}`),
+//      the model says so and the turn goes on to its `result`. An allow runs the tool ("File created successfully at: ...").
+//      `permission_suggestions` offers "always allow" rules and a switch to `acceptEdits`; this adapter never takes one.
+//   3. What is NOT asked: with `manual`, a `Read` of a file inside the working folder was not put to the host; a `Read` of /etc/hosts
+//      (outside it) was, with `"decision_reason":"Path is o..."` (outside the working directory). WebSearch and WebFetch are asked
+//      every time (`{"tool_name":"WebSearch","input":{"query":"claude code cli","mode":"standard"},...}`), so the policy for reads is ours,
+//      in `gateCall` (domain/agent.ts), and every `can_use_tool` is answered by it.
+//   4. A tool that is not in `--tools` does not exist for the model: the init event lists `"tools":["Read","Write"]`.
+//   5. `--restricted` with `--strict-mcp-config` and `--setting-sources ''` starts and behaves as above.
+//   6. If prompts did not arrive (an older CLI), the fallback is read-only: `--permission-prompts none` and an allowlist of
+//      READ_ONLY_TOOLS. It is not needed on 2.1.325 and is not built.
 
 import { errors } from '../../errors';
 import type { Snapshot } from '../../domain/brain';
 import type { Logger } from '../../log';
-import { spawnTracked, toolArguments } from './process';
+import { agentArguments, spawnTracked, toolArguments } from './process';
+import type { AgentRun } from './process';
 import { parseStreamLine, resultFactsOf } from './stream-json';
 import type { ClaudeStreamEvent } from './stream-json';
 
@@ -30,6 +61,8 @@ export interface WarmMessage {
   readonly text: string;
   readonly image: Snapshot | null;
   readonly pdfs: readonly Uint8Array[];
+  /** v2.1. The user's own pictures, after the stage's snapshot */
+  readonly images?: readonly Snapshot[];
 }
 
 export interface WarmSettings {
@@ -40,6 +73,8 @@ export interface WarmSettings {
   readonly systemPrompt: string;
   /** read-only web tools allowed without a prompt; empty is none */
   readonly tools: readonly string[];
+  /** v2.1. Agent mode: the process has the session's tools and asks this process before every call that matters; null is the plain brain */
+  readonly agent?: AgentRun | null;
 }
 
 /** Why a process stopped being usable. */
@@ -68,6 +103,8 @@ export interface WarmProcess {
   readonly turns: number;
   readonly contextTokens: number;
   ask(message: WarmMessage, signal: AbortSignal): AsyncIterable<ClaudeStreamEvent>;
+  /** v2.1, agent mode. Answers a `can_use_tool` request the process put on stdout, by its `request_id`. Nothing is written once the process is gone. */
+  answer(requestId: string, allow: boolean, input: Readonly<Record<string, unknown>>, message: string): void;
   stop(): Promise<void>;
 }
 
@@ -76,7 +113,7 @@ const STDERR_KEEP = 4_096;
 const STOP_POLITE_MS = 500;
 
 export function startWarmProcess(settings: WarmSettings, log: Logger, graceMs = 1000): WarmProcess {
-  const child = spawnTracked(settings.bin, warmArguments(settings), settings.effort);
+  const child = spawnTracked(settings.bin, warmArguments(settings), settings.effort, settings.agent == null ? undefined : { cwd: settings.agent.cwd });
 
   let alive = true;
   let busy = false;
@@ -197,6 +234,9 @@ export function startWarmProcess(settings: WarmSettings, log: Logger, graceMs = 
       if (message.image !== null) {
         content.push({ type: 'image', source: { type: 'base64', media_type: message.image.mime, data: Buffer.from(message.image.bytes).toString('base64') } });
       }
+      for (const picture of message.images ?? []) {
+        content.push({ type: 'image', source: { type: 'base64', media_type: picture.mime, data: Buffer.from(picture.bytes).toString('base64') } });
+      }
       content.push({ type: 'text', text: message.text });
       send({ type: 'user', message: { role: 'user', content } });
       if (signal.aborted) interrupt();
@@ -260,6 +300,11 @@ export function startWarmProcess(settings: WarmSettings, log: Logger, graceMs = 
       return contextTokens;
     },
     ask,
+    answer(requestId, allow, input, message) {
+      if (!alive || exited) return;
+      const response = allow ? { behavior: 'allow', updatedInput: input } : { behavior: 'deny', message };
+      send({ type: 'control_response', response: { subtype: 'success', request_id: requestId, response } });
+    },
     async stop() {
       alive = false;
       if (exited) return;
@@ -283,7 +328,7 @@ export function warmArguments(settings: WarmSettings): string[] {
     '--model', settings.model,
     '--effort', settings.effort,
     '--system-prompt', settings.systemPrompt,
-    ...toolArguments(settings.tools),
+    ...(settings.agent == null ? toolArguments(settings.tools) : agentArguments(settings.agent)),
     '--strict-mcp-config',
     '--setting-sources', '',
     '--no-session-persistence',
