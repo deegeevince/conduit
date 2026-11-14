@@ -289,7 +289,40 @@ async function generic(cx: Cx): Promise<Res[]> {
   out.push(legible(cx));
   out.push(labelsSide(cx));
   out.push(wordsInShapes(cx));
+  out.push(await earlierWorks(cx));
   return out;
+}
+
+/** "‹ earlier": when lines are held back, the control is on the screen, a real tap lays them over the column (inside the screen, not empty), and a second tap puts them away */
+async function earlierWorks(cx: Cx): Promise<Res> {
+  const name = 'earlier-works';
+  const box = await cx.tab.eval<{ x: number; y: number; width: number; height: number } | null>(
+    `(() => { const b = document.querySelector('[data-earlier]'); if (!b || b.hidden) return null; const r = b.getBoundingClientRect(); return r.width > 0 && r.height > 0 ? { x: r.left, y: r.top, width: r.width, height: r.height } : null; })()`,
+  );
+  if (box === null) return { check: name, verdict: 'PASS', detail: 'no lines held back' };
+  const bad: string[] = [];
+  if (box.x < -1 || box.y < -1 || box.x + box.width > cx.screen.width + 1 || box.y + box.height > cx.screen.height + 1) bad.push('the control stands off the screen');
+  const tap = async (): Promise<void> => {
+    const x = box.x + box.width / 2;
+    const y = box.y + box.height / 2;
+    await cx.tab.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y, pointerType: 'mouse' });
+    await cx.tab.send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', buttons: 1, clickCount: 1, pointerType: 'mouse' });
+    await cx.tab.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', buttons: 0, clickCount: 1, pointerType: 'mouse' });
+    await sleep(350);
+  };
+  await tap();
+  const open = await cx.tab.eval<{ shown: boolean; lines: number; inside: boolean }>(
+    `(() => { const s = document.querySelector('[data-earlier-sheet]'); if (!s || s.hidden) return { shown: false, lines: 0, inside: false }; const r = s.getBoundingClientRect(); return { shown: true, lines: s.querySelectorAll('p').length, inside: r.left >= -1 && r.top >= -1 && r.right <= innerWidth + 1 && r.bottom <= innerHeight + 1 }; })()`,
+  );
+  if (!open.shown) bad.push('a tap on it showed nothing');
+  else {
+    if (open.lines === 0) bad.push('the sheet it opens is empty');
+    if (!open.inside) bad.push('the sheet runs off the screen');
+  }
+  await tap();
+  const closed = await cx.tab.eval<boolean>(`(() => { const s = document.querySelector('[data-earlier-sheet]'); return !s || s.hidden; })()`);
+  if (!closed) bad.push('a second tap did not put the lines away');
+  return res(name, bad, `${open.lines} held-back line(s): a tap shows them, another puts them away`);
 }
 
 function legible(cx: Cx): Res {
