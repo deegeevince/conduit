@@ -38,7 +38,7 @@ export interface ReviewPolicy {
 export const REVIEW_POLICY: ReviewPolicy = { enabled: true, passes: 1, minDrawn: 3, draftWaitMs: 1500, firstLineMs: 12_000, passMs: 30_000 };
 
 /** The notes that mean a viewer cannot read or find something. Any one of them is reason enough to look. */
-export const BLOCKING_NOTES: readonly SightNote[] = ['clipped', 'off-canvas', 'covered', 'overlaps', 'collides', 'crossed', 'faint', 'tiny', 'crowded'];
+export const BLOCKING_NOTES: readonly SightNote[] = ['clipped', 'off-canvas', 'covered', 'overlaps', 'collides', 'crossed', 'faint', 'tiny', 'crowded', 'sparse'];
 
 /** What can be told about a draft from its lines alone, before the painter has said anything. */
 export interface DraftFacts {

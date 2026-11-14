@@ -20,6 +20,7 @@ export const SIGHT_NOTE = {
   crowded: 'there were too many parts for the room, so they came out small: give the structure the whole scene, or split it in two',
   faint: 'it is hard to read against what is behind it',
   tiny: 'it came out too small to make out',
+  sparse: 'the drawing ended in a corner: most of the picture is empty. Centre it, make it larger, or end the move inside the frame',
   partial: 'the answer stopped while it was still arriving',
   painted: 'the painting arrived and replaced the sketch',
   unpainted: 'no painting arrived; the sketch is what was seen',
