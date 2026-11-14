@@ -1,4 +1,4 @@
-import { describeFigure, ENTER_SECONDS, exitSeconds, isInFlow, isStruckAt, lookOfStage, PACE_TIMING, sceneAt, styleAt, valueAt } from '@conduit/language';
+import { describeFigure, outlineOf, ENTER_SECONDS, exitSeconds, isInFlow, isStruckAt, lookOfStage, PACE_TIMING, sceneAt, styleAt, valueAt } from '@conduit/language';
 import type { SightNote, ClockState, ElementChange, ElementSpan, ElementStyle, ExitEffect, Layer, LookId, Mood, ResolvedLook, SceneSpan, Schedule, StageBase } from '@conduit/language';
 import type { CameraSpan } from '@conduit/language';
 import type { Colour, ElementFrame, FigureFrame, Frame, RunFrame, ShapeFrame } from '../contracts/frame';
@@ -1227,7 +1227,28 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
         const big = box.w * box.h > 0.2 * (fit.box.width * fit.box.height) / (fit.unit * fit.unit);
         const shape = element.figure?.kind === 'shape' ? element.figure.geometry.shape : null;
         // a large closed shape is an outline a label must not cross; a large line or path has no edge to keep clear of
-        if (big && shape !== 'rect' && shape !== 'circle' && shape !== 'ellipse') continue;
+        if (big && shape !== 'rect' && shape !== 'circle' && shape !== 'ellipse') {
+          // A long stroke has no edge to keep inside, but every piece of it is still something a word must not sit on: it is an obstacle in short lengths.
+          const geometry = element.figure?.kind === 'shape' ? element.figure.geometry : null;
+          if (geometry !== null) {
+            const piece = Math.max(2, 1.5 * cell.width / fit.unit);
+            for (const line of outlineOf(geometry)) {
+              const pts = line.closed ? [...line.points, ...line.points.slice(0, 1)] : line.points;
+              for (let i = 0; i + 1 < pts.length && obstacles.length < 900; i += 1) {
+                const a = pts[i];
+                const b = pts[i + 1];
+                if (a === undefined || b === undefined) continue;
+                const n = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / piece));
+                for (let k = 0; k < n; k += 1) {
+                  const p = { x: a.x + ((b.x - a.x) * k) / n, y: a.y + ((b.y - a.y) * k) / n };
+                  const q = { x: a.x + ((b.x - a.x) * (k + 1)) / n, y: a.y + ((b.y - a.y) * (k + 1)) / n };
+                  obstacles.push({ rect: toScreenRect({ x: Math.min(p.x, q.x), y: Math.min(p.y, q.y), w: Math.abs(q.x - p.x), h: Math.abs(q.y - p.y) }, fit), owner: element, outline: false });
+                }
+              }
+            }
+          }
+          continue;
+        }
         obstacles.push({ rect: toScreenRect(box, fit), owner: element, outline: big });
       }
     };
