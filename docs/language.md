@@ -52,7 +52,7 @@ verb  word…  key=value…  @time  | text
 - **A line that starts with `|` is a row**: one row of cells of the sprite being written (section 4.6).
 - A blank line is ignored. A line starting with `#` is a comment and is ignored.
 - A line starting with `#!` is a comment to every reader except the replay brain, for which it is a directive (section 10).
-- A line starting with `|` is also a row of the table or chart being written (section 4.13): its cells are separated by bars.
+- A line starting with `|` is also a row of the table or chart being written (section 4.13): its cells are separated by bars. In a `code` block it is one line of the source, taken exactly (section 4.13): the one space after the bar is the bar's, every other space is the code's, and a bare `|` is an empty line.
 - Inside text, `{…}` is a value when it reads as arithmetic on the controls on stage (section 4.14), and is ordinary text otherwise.
 
 ### Ids are optional
@@ -75,6 +75,8 @@ A brain is a model writing fast. The parser is forgiving about everything except
 | a path command that cannot be read | skipped; what was understood is drawn |
 | a row of a table or chart written without its leading `\|` | read as a row |
 | a Markdown table's rule row (`\|---\|---\|`), a closing bar | skipped; ignored |
+| a link (`href=`) that is not an `http:` or `https:` address | the words are kept, the link is not; a warning is recorded |
+| `data=dataset:` with a name that cannot be one, a bare `instrument=` or `field=` | the chart is drawn from its rows, if it has any; a warning is recorded |
 | a `node` with no structure open; a `bind` that names no control, or a change a control cannot drive | the line is rejected, and the brain is told why |
 | unknown verb; `say`, `correct`, `node` or `path` without text; a shape without its geometry; a missing required id or argument; a line with nothing to do | the line is rejected |
 
@@ -276,7 +278,8 @@ cycle    [id] [x,y WxH] [| title]
 timeline [id] [x,y WxH] [| title]
 map      [id] [route] [x,y WxH] [| title]
 table    [id] [bars] [x,y WxH] [| title]
-chart    [id] [line|area|columns|candles|ohlc] [indexed] [log] [spark] [live] [approx] [x,y WxH] [data=<id>] [| title]
+chart    [id] [line|area|columns|candles|ohlc] [indexed] [log] [spark] [live] [approx] [x,y WxH] [data=<id> | data=dataset:<name> [instrument=<symbol>] [field=<name>]] [| title]
+code     [id] [lang] [file=<name>] [x,y WxH] [| title]
 
 node [id] [number | x,y] [ask|end|note] [from=<id>[:label]] [x=<when>] [y=<value>] [prop=value…] | <words>
 link <a> <b> [c…] [both|plain] [dashed] [| label]
@@ -296,6 +299,7 @@ A structure is a diagram the brain names and the painter lays out. The line that
 - **`map`**: each node is a pin at the brain's own `x,y` on the canvas; the painter draws the pin and finds its label a place clear of every other pin, label and stroke, with a short leader when it has to move away. `route` joins the pins in the order written. A map has no map data: the brain draws the land and water with ordinary shapes first.
 - **`table`**: rows of cells between bars, as Markdown writes a table; the first row is the header, and a first column of names is set as row headers. Columns are sized by their content, numbers are aligned on the right, and rules are the look's hairlines. `*Stars*` mark a cell. `table bars` also draws its numbers as bars beside the figures: a ranking.
 - **`chart`**: see below.
+- **`code`**: source taken exactly. Each `| line` after it is one line of the source, **never split into cells and never trimmed at the front**: indentation is kept, a `|` inside the line is only a character, and a bare `|` is an empty line (it is a row of a code block and nowhere else; in a table or a sprite it says nothing). A line is cut at 1,160 characters and a block holds 400 lines. `lang` is a word of the reference (`python`, `ts`, `bash`, `c++`, `json`, …) or `lang=<anything>`; the painter highlights what it knows and sets the rest plain. `file=<name>` is the file the code is from, shown as its header, and `| title` is a heading above it. The painter sets it in the look's monospaced face inside its frame, scrolls it when it is long, and offers a copy action; the lines land one after another, quickly (a listing is read, not watched). The brain is taught to use `code` for any code, and never a `say` or a list line.
 
 **Rows.** A line that starts with `|` is a row of the table or chart being written. A row may be written before or after other lines (a table can be revealed with words between its rows). Each row lands a step after the last.
 
@@ -306,7 +310,8 @@ A structure is a diagram the brain names and the painter lays out. The line that
 - **Time and numbers are drawn to scale**: equal steps are equal distances however unevenly the points are spaced. Names take one slot each. Candles and OHLC bars sit side by side with the gaps between sessions closed, as on every trading chart.
 - Chart words: `indexed` (every series starts from 100, so growth can be compared), `log`, `spark` (no axes or grid: a small chart for a tile), `live` (the last point pulses), `approx` (the numbers are recalled, not data: the chart says so by its title).
 - **Marks.** A `node` after a chart is a mark on it: `node x=<when> | label` is an event (a labelled line at that time), `node y=<value> | label` a level (a labelled line at that value), both together a point.
-- A cell may be `{…}` (section 4.14): the chart then follows the controls.
+- A cell may be `{…}` (section 4.14): the chart then follows the controls. **So may a chart's title and the words of its marks**: `{rate}` in either is the control's value, set again whenever it changes. A cell may name a control that is written *after* the chart; until the control arrives the cell stands for a number and nothing is said about it.
+- **Stored data by reference.** `data=dataset:<name>` draws one of the owner's own stored datasets, read-only (the brief names each with its instruments and date range); `instrument=ZEC` picks the series in it and `field=close` the column. Names keep their case. The chart takes no rows, reveals itself when the data arrives like any `data=`, and says plainly that it has no figures when the dataset cannot be read. When nothing stored fits, the brain does not make a dataset up: it says it has no live figure.
 - **Data by reference.** A chart of a few dozen points is written as rows (at most 400). Anything larger, or anything that must be true to the last digit, is never retyped by a model: when the brief names DATA (`DATA d1: …`, section 8), `chart … data=d1` draws it. The server sends the rows to the painter itself. Like a painting, data is not on the turn clock: the chart shows its axes at once and reveals itself when the rows arrive.
 - **There is no market data.** A brain asked for a stock's year either has DATA (the user pasted it, or the owner's own datasets hold it) or draws what it recalls, coarsely, and marks the chart `approx`. A guess is never dressed as data.
 
@@ -335,13 +340,45 @@ A control is declared in one line, drawn by the painter in the look, and worked 
 - `bind angle 0..45 | …`: the change runs from start to end as the control goes from 0 to 45, in the control's own units. Several binds over parts of a range make a change that is not a straight line.
 - `bind view=night | …`: the change has landed while the control holds that value (an option's words or its number, `on`, `off`), and is undone otherwise, eased.
 
-The change is any line that changes something on the clock: `set`, `move` (with `along=`), `correct` (the words are swapped, never struck through), or a shape declared again (it morphs). A bound change is not on the turn clock: it takes no time, holds nothing, and the schedule is the same whatever the user does. Several on one element apply in the order written, each from where the one before leaves it. What `bind` means is defined once, in `language/src/bind.ts`.
+The change is any line that changes something on the clock: `set`, `move` (with `along=`), `correct` (the words are swapped, never struck through), or a shape declared again (it morphs).
 
-**Values in text.** `{angle}` in any text shows that control's value as words (an option's text, `on`, a slider's number with its unit). `{round(10/tan(rad(angle)), 1)}` is arithmetic on values: numbers, control ids, `+ - * / % ^`, comparisons, brackets and the functions in the reference; `{expr:2}` asks for two decimals. Braces that do not read as arithmetic on a live control are left exactly as written, so code and set notation are safe. A name in arithmetic is one word: a control that is computed with is called `rate`, not `interest-rate`. It is parsed by hand (`language/src/expr.ts`) and never evaluated as code.
+**What a control may drive.** A bound `set` or `move` works on anything on stage by id: text, a drawn thing, a group, a card, a diagram, a chart, a block of code, a picture. That is how a chart or a diagram is **shown and hidden** by a control, the same bound changes as any element: `bind view=chart | set sales opacity=1` and `bind view=table | set sales opacity=0`. Colour set on a diagram reaches its parts. What cannot be bound is rejected by name, as a `bad-bind` issue that says which control, which thing, and what to write instead: `correct` and a shape's morph only fit text and shapes, a node or a link cannot be `move`d (the painter places them), and a control that is not there, or a target that is not there, is named. What changes *inside* a chart or a diagram (the numbers, the words) follows a control through `{…}` in a cell, a title or a mark, never through `bind`. A bound change is not on the turn clock: it takes no time, holds nothing, and the schedule is the same whatever the user does. Several on one element apply in the order written, each from where the one before leaves it. What `bind` means is defined once, in `language/src/bind.ts`.
+
+**Values in text.** `{angle}` in any text shows that control's value as words (an option's text, `on`, a slider's number with its unit). `{round(10/tan(rad(angle)), 1)}` is arithmetic on values: numbers, control ids, `+ - * / % ^`, comparisons, brackets and the functions in the reference; `{expr:2}` asks for two decimals. Braces that do not read as arithmetic on a live control are left exactly as written, so code and set notation are safe. Computed numbers group their thousands (`12,345.68`; a whole number from 1900 to 2100 is left alone, being far more often a year than an amount), and **a unit written twice prints once**: a slider with `unit=%` shows `5%`, and `{rate}%` after it still reads `5%` (`unitOnce`, `language/src/expr.ts`). A name in arithmetic is one word: a control that is computed with is called `rate`, not `interest-rate`. It is parsed by hand (`language/src/expr.ts`) and never evaluated as code.
 
 **What goes up to the brain.** Pressing a `button` opens a turn, as a choice's tap does: the input is `act`, with the button's label and the value of every control on stage, so a few controls and a button are a form. A control marked `send` does the same when the user commits a change to it. Every other change is heard, not sent: the brain is told at its next turn what the user set and where every control stands. Nothing is sent while a slider is being dragged.
 
 **Later, not now:** a sandboxed component the brain writes itself (a custom control with its own drawing and logic). The catalogue above is closed; the door is the `control` family in the vocabulary, which a new kind joins without touching the grammar.
+
+### 4.15 `pic`: a picture the user gave
+
+```
+pic [id] from=<picture id> [x,y WxH] [prop=value…]
+```
+
+The user can paste, drop or pick a picture into the prompt bar. The server stores it with the session and gives it an id (`u1`, `u2`, …), tells the brain which ids this turn holds, and passes the pictures themselves to the brain. `pic photo from=u1` puts it on stage as an element called `photo`: whole inside the canvas when no box is given, or in the box `x,y WxH`. It is then like any picture: the brain can label parts of it (`say near=photo`), draw over it, trace it with shapes and point at it. It is never sent anywhere but the brain. Whether `from` names a picture the session holds is for the server and the painter to say, not the language. Said again exactly as it is, it is nothing (section 7.3).
+
+### 4.16 `deck`: a turn of slides
+
+```
+deck | <title>
+```
+
+`deck | title` makes the turn a deck: **each scene after it is a slide**. The line itself opens the first slide (a scene written straight after it, before anything is on the slide, is that slide's own header). `Schedule.deck` says where each slide begins and where its own content is done (`SlideSpan.start`, `end`): the painter stops the clock at each `end` and the viewer steps on with the arrow keys, a swipe or the counter. The title is the deck's name for the counter, the transcript and the saved film. The brain writes it when slides are asked for ("a PowerPoint", "a deck", "slides"): several scenes, each with a headline and one idea, never one scene of loose text.
+
+### 4.17 `standing` and `refine`: for the server
+
+```
+standing | <what the user asked to hold, in their words>
+standing drop <n> | standing drop all
+refine [passes]
+```
+
+Neither is ever scheduled and neither reaches the painter; `TurnScore.push` answers `ignored` and the conductor reads them from the lines. **`standing | …`** records what the user said is to hold from now on ("add a visual to every reply"): the conductor keeps up to six for the conversation, 140 characters each (`STANDING_LIMITS`), gives them back in every later brief, and the look holds the draft to them. `standing drop 2` lets go of the second one in the list the brief gave; `drop all` of every one. **`refine [passes]`** is the brain's way of saying the user asked for iteration: the server then runs the refinement passes (`REFINE_LIMITS`; `passes` is clamped to 1..8, and absent means as many as are worth it).
+
+### 4.18 Links: `href=`
+
+`say … href=https://… | words` makes the words a link: it opens in a new tab, and is set apart from other words by the look. Only an `http:` or `https:` address is a link; anything else (`javascript:`, `data:`, a bare path) is dropped with a warning, and the words stay. The address is as written, at most 400 characters. A link is a property of the element, carried with it, and the transcript and the copied answer keep the words and the address. Sources the brain cites are links.
 
 ## 5. Time
 
@@ -396,6 +433,7 @@ Durations depend only on the text, the geometry and words of the language, never
 - **Reading time.** `words / reading-speed`, at least one beat, at most 6 seconds.
 - **Tail**: the quiet after a text entrance before the pen moves on. For `by=all` it is the reading time. For a progressive entrance it is `max(half a beat, reading time - 0.6 x entrance)`, because the line was partly read as it arrived. For a `near=` label it is at most half a beat.
 - **Prose.** In `layout=page` the reader is reading, not listening: a paragraph's tail is `words / (reading-speed x page factor)`, at least 0.3 s, and its default entrance is a short fade of the whole paragraph.
+- **Plain content arrives quickly** ("dont need to fade slowly"). A paragraph of a `page`, and the frame (title) of a table, a chart or a block of code, come in with a fade, a rise or a wipe no longer than `QUICK_ENTER_SECONDS` (0.18 s, times the pace's ease). A row of a table lands in a tenth of a second (steady), a line of code in 0.04 s. An entrance the brain chose to perform (`slam`, `draw`, `type`) or gave a length (`dur=`) is as asked.
 - **`stay=beat`**: the element starts leaving one reading time after its entrance ends. **`stay=Ns`**: N seconds after its entrance ends.
 - **Exit**: the effect's length times `ease`. Exits are shorter than the entrance of the same name, always.
 - **Scene change**: outgoing elements start leaving at the scene's start; the pen moves to `start + 0.8 x the longest of those exits`.
@@ -463,6 +501,28 @@ Both are defined against the playhead **at the moment the line arrives**, which 
 A performance, scheduled at the pen like any other line and always visible: the old text is struck through and stays, dimmed, as a ghost; the new text arrives beside it and takes over the id, the place in the layout and the style. The ghost leaves when its replacement leaves, or at the next scene.
 
 This is not an error path. Saying a thing and visibly taking it back is something this medium can do and plain text cannot. `correct` is for text; a drawn thing is changed by declaring it again.
+
+### 7.3 Saying it again: nothing
+
+**What stays is not redrawn.** A line that declares, under an id that is live, exactly what is there is nothing: no new element, no entrance, no change on the clock, no issue, and the pen does not move. It is what lets a follow-up that carries the scene on say its diagram again without drawing it again, and what makes a fix that repeats half the answer cost only the other half. "Exactly what is there" means:
+
+| Line | It is nothing when |
+| --- | --- |
+| `say`, `correct`'s replacement excepted | the same plain words and emphasis, the same link, the same resolved style (every property alike) |
+| a shape (`circle`, `rect`, `path`, …) | the same geometry as it has now (after any morph) and every property it names already holds |
+| `group`, `card` | every property it names already holds; a card's title and box are as it has them |
+| a structure of nodes (`flow`, `tree`, `cycle`, `timeline`, `map`) | the same title, direction, room and route, and every property it names already holds |
+| `node` | the same words, shape, numbers and mark, the same style, and the arrow into it it already has (`from=`, with its label) |
+| `link` | every connector it names is already there, between the same nodes, the same way, with the same words (whatever id it was given) |
+| a control | the same kind, range, options, label and style; it keeps what the user set and what it drives |
+| `table`, `chart`, `code` | the same kind, title, words, room, data and style: the rows that follow are then **read against the rows it has**. A row that is the same is nothing; one that differs is put right where it stands, with no new entrance; one past the end is the block growing, and lands as a row does |
+| `ambient`, `pic` | the same kind, amount, picture and box |
+
+A line that differs in anything is the change it always was: a shape morphs, a node is said anew in place, a table is drawn afresh. An id that was not written (the normaliser gave it one) is never the same id as before, so a structure the brain wants to say again must be named. `pix` is not covered: a sprite said again is a new sprite.
+
+**Choices belong to the turn that offered them.** When a turn opens for a prompt, a tap or a control, every choice (`tap=yes`) still on stage from an earlier turn leaves as the answer's first line arrives, **the tapped one too**: they were that turn's, and the user has answered them. The first line that begins an answer is any line that is not a definition or an edit (`style`, `color`, `look`, `plan`, `wait`, `revise`, `cancel`, `bind`, `row`, `frame`, `standing`, `refine`). They leave with the exit effect they carry; the element's `exit.cause` says `answered`. A demo, a script and a refinement do not retire anything. `TurnScore` takes how the turn was opened as its second argument (`new TurnScore(base, input.kind)`, `retiresChoices`), and the server and the painter must both pass it, or their schedules disagree about when the choices went.
+
+**A follow-up continues the scene.** A question about what is on stage is answered with `set`, `hit`, `revise` and new lines, not a new `scene`: `scene` is for a new subject, because it takes everything on stage away.
 
 ## 8. Turns, interruption, memory and sight
 
@@ -615,6 +675,16 @@ A new structure, chart kind or control is one entry in its table in `vocabulary.
 
 ## 12. What changed
 
+**v2.1 (still version 4; everything below is additive and every painter and server advertises what it can do).**
+
+- New lines: `code` (a structure of verbatim rows; `lang`, `file=`), `deck`, `pic … from=`, `standing`, `refine`. New properties: `href=` on `say`; `data=dataset:<name>` with `instrument=` and `field=` on `chart`.
+- A line that declares again, under a live id, exactly what is there is nothing (section 7.3); a table, chart or code block said again is read against its rows. An unnamed line has no live id to repeat.
+- `TurnScore` takes how the turn was opened; choices an earlier turn offered leave as the answer begins (`exit.cause` `answered`).
+- Plain content arrives quickly (a page's paragraphs, the frame of a table, a chart or a code block); table rows land in 0.1 s steady, not 0.18.
+- `bind` to a chart or a structure is documented and its failures are named (`bad-bind` says the control, the thing and what to write); a `{…}` in a chart's title and marks follows a control; a chart cell may name a control written after it; computed numbers group their thousands and a unit written twice prints once.
+- `Schedule.deck`; `ElementSpan.href`; the `structure` figure's `lang`, `file`, `dataset`; the `picture` figure's `from`.
+- A bare `|` is an empty row inside an open `code` block; `row <id> |` is an empty row.
+
 **From version 3 to version 4.** Everything version 3 said is still accepted, with these differences:
 
 - `paint` no longer needs text and no longer means an image model: it is the painter's own rendering of the sketch in a medium. With an image model configured it still asks one.
@@ -662,6 +732,7 @@ A new structure, chart kind or control is one entry in its table in `vocabulary.
 | `map [id] [route] [x,y WxH] [\| title]` | starts at the pen and leaves the pen where it is | Pins on a drawing. Each `node x,y` is a labelled pin; `route` joins them in order. |
 | `table [id] [bars] [x,y WxH] [\| title]` | starts at the pen and leaves the pen where it is | A table. Follow it with one `| cell | cell` line per row; the first is the header. |
 | `chart [id] [line\|area\|columns\|candles\|ohlc] [indexed] [log] [spark] [live] [approx] [x,y WxH] [data=<id>] [\| title]` | starts at the pen and leaves the pen where it is | A chart: an instrument with axes, a crosshair and zoom. Follow it with one `| when | value…` line per point, or name DATA from the brief. |
+| `code [id] [lang] [file=<name>] [x,y WxH] [\| title]` | starts at the pen and leaves the pen where it is | Code, taken exactly: follow it with one `| line` per line of the source, indentation kept, a bare `|` for an empty line. |
 | `node [id] [number \| x,y] [ask\|end\|note] [from=<id>[:label]] [x=<when>] [y=<value>] [prop=value…] \| <text>` | starts at the pen and moves the pen part of the way through its own drawing | One part of the structure above. from= also draws the link from that node. On a chart it is a mark: x= an event, y= a level, both a point. |
 | `link <a> <b> [c…] [both\|plain] [dashed] [\| label]` | starts at the pen and moves the pen part of the way through its own drawing | Join nodes with a routed connector, in a chain when more than two are named. |
 | `button [id] [prop=value…] \| <label>` | starts at the pen and moves the pen part of the way through its own drawing | A button. Pressing it is sent to you, with the value of every control on stage. |
@@ -671,6 +742,7 @@ A new structure, chart kind or control is one entry in its table in `vocabulary.
 | `input [id] [send] \| <placeholder>` | starts at the pen and moves the pen part of the way through its own drawing | A line the user types. |
 | `card <id> [x,y WxH] [\| title]` | takes no time | A framed group, for controls and what they change. Its parts say in=<id>. |
 | `bind <control>[=<value>] [<from>..<to>] \| <set, move, correct or shape line>` | takes no time | Let a control drive a change on stage, at once, with no round trip: the change is as far along as the control is. |
+| `pic [id] from=<picture id> [x,y WxH] [prop=value…]` | starts at the pen and moves the pen part of the way through its own drawing | Put a picture the user gave on stage, to draw over, point at or trace. Its id is in the brief. |
 | `paint [id] [x,y WxH] [over=<group>] [as=<medium>] [sketch=fade\|keep] [mask=…] [\| what it is]` | starts at the pen and leaves the pen where it is | Paint over what you drew: the painter re-renders your sketch in a medium. |
 | `ambient [id] <kind> [amount] [ink=…] [layer=…]` | starts at the pen and leaves the pen where it is | Atmosphere for the scene: weather, light, particles. `ambient none` clears it. |
 | `set <id\|scene\|all> [style…] [prop=value…] [speed] [over=Ns]` | starts at the pen and leaves the pen where it is | Change something on stage: colour, size, place, turn, opacity, layer, pin. |
@@ -680,6 +752,9 @@ A new structure, chart kind or control is one entry in its table in `vocabulary.
 | `cam <move> [id\|direction] [speed] [over=Ns] [amount=0..1]` | starts at the pen and leaves the pen where it is | Move the camera. It runs underneath the lines that follow. |
 | `wait [N \| Ns]` | starts at the pen and moves the pen past itself | Silence. N beats (default 1), or exact seconds with an s. |
 | `revise <id> [style…] [prop=value…] [\| <new text>]` | edits lines that have not played yet | Quietly change a line that has not played yet. |
+| `deck \| <title>` | starts at the pen and moves the pen past most of the outgoing exits | Make this answer a deck: each scene after it is a slide, and the viewer steps through them. |
+| `standing \| <their words>  or  standing drop <n>` | takes no time | Hold what the user asked for from now on ("add a visual to every reply"), in their words; every later brief gives it back. |
+| `refine [passes]` | takes no time | Keep making the picture better, pass by pass, because the user asked for iteration. |
 | `cancel [id]` | edits lines that have not played yet | Throw away what has not played yet: one line, or everything ahead of the playhead. |
 
 ### Properties
@@ -1058,6 +1133,7 @@ Nominal scale against body: `xs` 0.64, `s` 0.8, `m` 1, `l` 1.5, `xl` 2.25, `xxl`
 | `map` | nodes and links | the brain (x,y); the painter labels and routes | pins at your x,y, labelled clear of each other |
 | `table` | rows | the painter | rows `\| a \| b \| c`, the first the header; `bars` draws its numbers as bars too |
 | `chart` | rows, and nodes as marks | the painter's charting engine | rows `\| when \| value`: an instrument with axes, a crosshair and zoom |
+| `code` | rows | the painter's charting engine | rows `\| line` taken exactly as written, indentation kept: monospaced and highlighted, with a copy action |
 
 ### `node` shapes (flow, tree, cycle)
 
@@ -1095,6 +1171,10 @@ Nominal scale against body: `xs` 0.64, `s` 0.8, `m` 1, `l` 1.5, `xl` 2.25, `xxl`
 | `spark` | no axes or grid: a small chart for a tile |
 | `live` | the last point pulses, as on a feed |
 | `approx` | the numbers are recalled, not data: the chart says so |
+
+### `code` languages
+
+Words that name a language and are never taken for an id: `text`, `plain`, `txt`, `ts`, `typescript`, `js`, `javascript`, `jsx`, `tsx`, `json`, `python`, `py`, `bash`, `sh`, `shell`, `zsh`, `css`, `scss`, `html`, `xml`, `svg`, `sql`, `c`, `cpp`, `c++`, `csharp`, `c#`, `cs`, `java`, `kotlin`, `swift`, `go`, `golang`, `rust`, `rs`, `ruby`, `rb`, `php`, `yaml`, `yml`, `toml`, `ini`, `md`, `markdown`, `diff`, `lua`, `r`, `haskell`, `scala`, `perl`, `dart`, `elixir`, `ocaml`, `regex`, `dockerfile`, `makefile`, `graphql`. Any other name is kept as written (`lang=…`) and shown plain.
 
 ### Controls
 
@@ -1204,6 +1284,7 @@ The painter renders these media by itself: `watercolor`, `oil`, `gouache`, `ink`
 | `crowded` | there were too many parts for the room, so they came out small: give the structure the whole scene, or split it in two |
 | `faint` | it is hard to read against what is behind it |
 | `tiny` | it came out too small to make out |
+| `sparse` | the drawing ended in a corner: most of the picture is empty. Centre it, make it larger, or end the move inside the frame |
 | `partial` | the answer stopped while it was still arriving |
 | `painted` | the painting arrived and replaced the sketch |
 | `unpainted` | no painting arrived; the sketch is what was seen |
@@ -1269,7 +1350,9 @@ Everything below is in seconds.
 | atmosphere fading out (a new scene, or `drop`) | 0.35 x the pace's ease |
 | reading speed in `layout=page` | 1.6 x the pace's words per second |
 | a link drawing itself | 0.35 x ease (a fixed length: where a link runs is the painter's decision) |
-| a table row landing | 0.28 (slow), 0.18 (steady), 0.12 (brisk) |
+| a table row landing | 0.16 (slow), 0.1 (steady), 0.07 (brisk) |
+| a line of code landing | 0.06 (slow), 0.04 (steady), 0.025 (brisk) |
+| plain content fading in (a page's paragraph, the frame of a table, chart or code block) | at most 0.18 x ease |
 | a chart point landing | 0.09 (slow), 0.06 (steady), 0.04 (brisk) |
 | a chart of DATA revealing itself, once the data is there | 1.2, on the ambient clock |
 | a bound change that is on or off (a toggle, `bind mode=night`) | 0.25, on the ambient clock |

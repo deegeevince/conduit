@@ -9,7 +9,7 @@ import type { Issue, Line, ParseResult } from './types';
 import { LIMITS, STRUCTURE } from './vocabulary';
 
 /** Lines that do not end a sprite being written: its next row may follow them. */
-const KEEPS_SPRITE_OPEN: ReadonlySet<string> = new Set(['wait', 'plan', 'color', 'style', 'look', 'cam', 'hit']);
+const KEEPS_SPRITE_OPEN: ReadonlySet<string> = new Set(['wait', 'plan', 'color', 'style', 'look', 'cam', 'hit', 'standing', 'refine']);
 
 const ROW_ALPHABET = '.#0123456789abcdefABCDEF';
 
@@ -23,6 +23,8 @@ export class LineReader {
   private open: string | null = null;
   /** a table or a chart is being written: a line of cells without its leading bar is still a row of it */
   private table = false;
+  /** a block of code is being written: every line that starts with a bar is a line of it, exactly as written, and a bare bar is an empty one */
+  private code = false;
   private readonly styles: Set<string>;
 
   /** `definedStyles`: the names of styles the brain defined in earlier turns */
@@ -32,6 +34,7 @@ export class LineReader {
 
   read(raw: string): ParseResult {
     const trimmed = raw.trim();
+    if (this.code && trimmed.startsWith('|')) return this.codeRow(raw);
     if (this.open !== null && trimmed.length >= 2 && !trimmed.startsWith('|') && this.isRow(trimmed)) return parseLine(`| ${trimmed}`);
     let result = parseLine(raw);
     // `fear | What if I can't?`: the name of a style the brain defined, where the verb goes, is speech in that style.
@@ -53,11 +56,23 @@ export class LineReader {
     if (result.kind !== 'line') return result;
     const { line } = result;
     if (line.verb === 'table' || line.verb === 'chart') this.table = true;
-    else if (line.verb === 'scene' || line.verb === 'pix' || line.verb in STRUCTURE) this.table = false;
+    else if (line.verb === 'scene' || line.verb === 'deck' || line.verb === 'pix' || line.verb in STRUCTURE) this.table = false;
+    if (line.verb === 'code') this.code = true;
+    else if (line.verb === 'scene' || line.verb === 'deck' || line.verb === 'pix' || line.verb in STRUCTURE) this.code = false;
     if (line.verb === 'style') this.styles.add(line.name);
     if (line.verb === 'pix') this.open = ROW_ALPHABET + Object.keys(line.key).join('');
     else if (line.verb !== 'row' && line.verb !== 'frame' && !KEEPS_SPRITE_OPEN.has(line.verb)) this.open = null;
     return result;
+  }
+
+  /** A line of code is taken as it stands: one space after the bar is the bar's own, every other is the code's. Trailing space is dropped (it cannot be seen and would not survive the wire). */
+  private codeRow(raw: string): ParseResult {
+    const after = raw.replace(/\r$/, '').replace(/^\s*\|/, '');
+    const cells = (after.startsWith(' ') ? after.slice(1) : after).replace(/\s+$/, '');
+    const cap = LIMITS.line - 40;
+    const cut = cells.length > cap;
+    const issues: Issue[] = cut ? [{ code: 'text-too-long', severity: 'warn', message: `a line of code is cut to ${cap} characters` }] : [];
+    return { kind: 'line', line: { verb: 'row', id: '-', cells: cut ? cells.slice(0, cap) : cells }, issues };
   }
 
   private isRow(text: string): boolean {
@@ -116,6 +131,7 @@ export class LineNormalizer {
         if (line.id !== '-') return { line, issues: [] };
         if (this.sprite !== null) return { line: { ...line, id: this.sprite }, issues: [] };
         if (this.table !== null) return { line: { ...line, id: this.table }, issues: [] };
+        if (line.cells.trim() === '') return { line: null, issues: [{ code: 'no-structure', severity: 'warn', message: 'an empty row with no sprite, table or code block to belong to was dropped' }] };
         // Speech after all: a bar and some words, with no sprite open. Not cut to a sprite's width.
         const text = line.cells.trim();
         const cut = text.length > LIMITS.text;
@@ -142,6 +158,7 @@ export class LineNormalizer {
       case 'pix':
       case 'use':
       case 'paint':
+      case 'pic':
       case 'ambient': {
         let { id } = line;
         let { styles } = line;
@@ -162,7 +179,8 @@ export class LineNormalizer {
       case 'timeline':
       case 'map':
       case 'table':
-      case 'chart': {
+      case 'chart':
+      case 'code': {
         const id = line.id === '-' ? this.makeId() : line.id;
         this.sprite = null;
         if (STRUCTURE[line.verb].parts === 'rows') this.table = id;
@@ -188,6 +206,7 @@ export class LineNormalizer {
         this.sprite = null;
         return { line: line.id === '-' ? { ...line, id: this.makeId() } : line, issues: [] };
       case 'scene':
+      case 'deck':
         this.sprite = null;
         this.table = null;
         this.structure = null;

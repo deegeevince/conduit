@@ -1,5 +1,5 @@
 import { buildSchedule } from './schedule';
-import type { ElementSpan, Schedule, ScoreEntry, StageBase } from './schedule';
+import type { ElementSpan, Schedule, ScheduleOptions, ScoreEntry, StageBase } from './schedule';
 import { splitCells } from './text';
 import type { Issue, Line, ReviseLine } from './types';
 import { CONTROL, LIMITS, STRUCTURE } from './vocabulary';
@@ -22,6 +22,20 @@ export interface PushResult {
 }
 
 /**
+ * How a turn was opened, which is what decides whether the choices an earlier turn offered are still the user's to tap. It is the `kind` of the
+ * turn's input (`TurnInput`), or `none` for a score with no turn behind it (a rest, a film, a bench).
+ */
+export type TurnOpening = 'prompt' | 'tap' | 'act' | 'refine' | 'demo' | 'script' | 'none';
+
+/**
+ * D2(c): choices belong to the turn that offered them. When a turn is opened for a prompt, a tap or a control, the choices still on stage
+ * leave as the answer's first line arrives (the one that was tapped too). A demo, a script and a refinement are not answers to anyone.
+ */
+export function retiresChoices(opened: TurnOpening): boolean {
+  return opened === 'prompt' || opened === 'tap' || opened === 'act';
+}
+
+/**
  * The lines of one turn and the schedule they add up to.
  *
  * `playhead` is passed with every line because the revision family is defined
@@ -33,11 +47,17 @@ export interface PushResult {
 export class TurnScore {
   readonly base: StageBase;
   private readonly entries: ScoreEntry[] = [];
+  private readonly options: ScheduleOptions;
   private current: Schedule;
 
-  constructor(base: StageBase) {
+  /**
+   * `opened` is how the turn began (`input.kind`). The server and the painter both pass it, and must pass the same, or their schedules
+   * would disagree about when the choices went.
+   */
+  constructor(base: StageBase, opened: TurnOpening = 'none') {
     this.base = base;
-    this.current = buildSchedule([], base);
+    this.options = { retireChoices: retiresChoices(opened) };
+    this.current = buildSchedule([], base, this.options);
   }
 
   get schedule(): Schedule {
@@ -53,6 +73,9 @@ export class TurnScore {
     let outcome: PushOutcome = 'scheduled';
     const issues: Issue[] = [];
 
+    // What is for the server alone (`standing`, `refine`) is not on the score: it is not scheduled and the painter never hears it.
+    if (line.verb === 'standing' || line.verb === 'refine') return { outcome: 'ignored', schedule: this.current, issues };
+
     if (line.verb === 'revise') {
       outcome = this.revise(line, seq, floor, issues);
     } else if (line.verb === 'cancel') {
@@ -61,7 +84,7 @@ export class TurnScore {
       this.entries.push({ seq, line, floor, void: false });
     }
 
-    this.current = buildSchedule(this.entries, this.base);
+    this.current = buildSchedule(this.entries, this.base, this.options);
     for (const item of this.current.issues) {
       if (item.seq === seq) issues.push(item.issue);
     }
@@ -229,6 +252,7 @@ function revised(origin: Line, change: ReviseLine): Line | null {
     case 'map':
     case 'table':
     case 'chart':
+    case 'code':
       // The words of a structure or a card are its title.
       return { ...origin, styles: styles ?? origin.styles, props: { ...origin.props, ...change.props }, ...(change.text !== undefined && { title: change.text }) };
     case 'set':
@@ -247,6 +271,9 @@ function revised(origin: Line, change: ReviseLine): Line | null {
     case 'drop':
     case 'hit':
     case 'cam':
+    case 'deck':
+    case 'standing':
+    case 'refine':
       return null;
     default:
       // Anything drawn can be restyled before it is seen; its geometry is changed by declaring it again.

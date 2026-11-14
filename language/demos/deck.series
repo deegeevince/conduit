@@ -1,0 +1,22 @@
+# A deck: `deck` makes every scene after it a slide. The stage stops at the end of each slide and the viewer steps on.
+
+deck | Why a chart beats a table
+scene layout=solo mood=calm
+say title | Why a chart beats a table
+wait 1
+
+scene layout=figure canvas=square
+say strong | A table is read. A chart is seen.
+table bars | Cups of tea a year
+| Country | Cups
+| Turkey | 1,300
+| Ireland | 1,200
+| Japan | 560
+say aside | The same four numbers, and you saw the winner first.
+wait 1
+
+scene layout=page
+say strong | What to take away
+say | Use a table when the reader looks up one value. Use a chart when the reader compares many, or watches a thing change.
+say aside | Slides end where their content does; the viewer decides when to go on.
+wait 1

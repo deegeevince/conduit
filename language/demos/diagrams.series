@@ -2,13 +2,21 @@
 # writes the parts; nothing here has a coordinate except the map's pins.
 
 scene caption
-flow right | Should I water this plant?
+flow plant right | Should I water this plant?
 node start end | A drooping leaf
 node dry ask from=start | Is the top inch of soil dry?
 node water from=dry:yes fill=accent | Water it, slowly
 node wait from=dry:no | Wait two days
 node light from=wait | Check the light instead
 say | Check the soil, not the calendar.
+wait 1
+
+# A follow-up continues the scene. Said again exactly as it stands, the flow and its steps cost nothing: no new element, no entrance.
+# Only what is new lands, where it belongs.
+flow plant right | Should I water this plant?
+node dry ask from=start | Is the top inch of soil dry?
+node pot from=light | Roots at the holes? Repot
+say aside | One more step, and the rest has not moved.
 wait 2
 
 scene caption

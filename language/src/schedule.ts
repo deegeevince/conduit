@@ -9,7 +9,7 @@
 // keeps a schedule reproducible: the same score always gives the same times.
 
 import { chartModelOf } from './chart';
-import { numberOf } from './expr';
+import { namesIn, numberOf, parseExpr } from './expr';
 import { lengthOf, outlineOf, pointAlong } from './geometry';
 import { completeStyle, mergeStyles, patchStyle, resolveColours, resolveLook, resolveStyle } from './style';
 import type { ColorSheet, ElementStyle, LookDef, LookSheet, ResolvedLook, ResolvedProps, StyleContext, StyleDef, StyleSheet } from './style';
@@ -38,13 +38,14 @@ import {
   SOLO_OVERLAP,
   spriteSeconds,
   CHART_ROW_SECONDS,
+  CODE_ROW_SECONDS,
   STRIKE_SECONDS,
   TABLE_ROW_SECONDS,
   tailSeconds,
   waitSeconds,
 } from './timing';
 import type { Anchor } from './vocabulary';
-import type { BindOn, CanvasBox, ControlLine, ControlValue, CreatingLine, Issue, IssueCode, Line, Paint, Point, Range, ShapeGeometry, StructureLine, StyleProps, Target, When } from './types';
+import type { BindOn, CanvasBox, ControlLine, SceneLine, ControlValue, CreatingLine, DatasetRef, Issue, IssueCode, Line, Paint, Point, Range, ShapeGeometry, StructureLine, StyleProps, Target, When } from './types';
 import { BACKDROP_LAYERS, CANVAS, CONTROL, DEFAULT_CANVAS, DEFAULT_CHART, DEFAULT_LOOK, LIMITS, STRUCTURE } from './vocabulary';
 import type {
   Align,
@@ -166,8 +167,13 @@ export type Figure =
       readonly words: readonly ChartWord[];
       /** a chart: the id of the DATA it draws, when its points come by reference; null when they are its rows */
       readonly data: string | null;
+      /** v2.1. A chart: one of the owner's stored datasets it draws by reference; absent or null: none */
+      readonly dataset?: DatasetRef | null;
       /** a table: its numbers are drawn as bars too */
       readonly bars: boolean;
+      /** v2.1. A code block: its language as the brain wrote it, and the file it is from; absent or null: none */
+      readonly lang?: string | null;
+      readonly file?: string | null;
       /** the room it is laid out in, canvas units; null: the whole canvas */
       readonly box: CanvasBox | null;
       /** a map joins its pins in the order written */
@@ -191,6 +197,8 @@ export type Figure =
       readonly medium: Medium | null;
       readonly sketch: 'fade' | 'keep';
       readonly mask: Mask;
+      /** v2.1. The id of a picture the user gave (`pic … from=u1`); this is then that picture, not a painting. Absent or null: a painting. */
+      readonly from?: string | null;
     }
   | { readonly kind: 'field'; readonly field: AmbientKind; readonly amount: Amount };
 
@@ -223,6 +231,8 @@ export interface CarriedElement {
   readonly replaces: string | null;
   /** changes a control drives on it; they persist with the stage. Absent means none. */
   readonly driven?: readonly DrivenChange[];
+  /** v2.1. The address its words link to (`say … href=`); absent: not a link */
+  readonly href?: string;
 }
 
 /** What a control-driven change does to its element: what the same line would do on the clock. */
@@ -286,8 +296,8 @@ export interface ScoreEntry {
   readonly void: boolean;
 }
 
-/** `limit`: the stage held more than its limit, so the oldest was retired. `parent`: its group, or the thing it copies, left. */
-export type ExitCause = 'scene' | 'drop' | 'stay' | 'solo' | 'resay' | 'limit' | 'parent';
+/** `limit`: the stage held more than its limit, so the oldest was retired. `answered` (v2.1): a choice offered by an earlier turn leaves as this turn's answer begins. `parent`: its group, or the thing it copies, left. */
+export type ExitCause = 'scene' | 'drop' | 'stay' | 'solo' | 'resay' | 'limit' | 'parent' | 'answered';
 
 export type ElementChange =
   | {
@@ -352,6 +362,27 @@ export interface ElementSpan {
   readonly driven: readonly DrivenChange[];
   /** carried in already struck through */
   readonly struck: boolean;
+  /** v2.1. The address its words link to; absent: not a link */
+  readonly href?: string;
+}
+
+/** v2.1. One slide of a deck: the scene that is it, and when it begins and when its own content is done (the clock stops there until the viewer steps on). */
+export interface SlideSpan {
+  /** 0-based */
+  readonly index: number;
+  readonly scene: string;
+  /** the score entry that opened it */
+  readonly seq: number;
+  readonly start: number;
+  readonly end: number;
+}
+
+/** v2.1. `deck | title`: the turn is a deck and each scene after it is a slide. */
+export interface DeckSpan {
+  readonly title: string;
+  readonly seq: number;
+  readonly start: number;
+  readonly slides: readonly SlideSpan[];
 }
 
 export interface SceneSpan {
@@ -418,6 +449,14 @@ export interface Schedule {
   readonly looks: readonly LookSpan[];
   readonly lines: readonly LineTime[];
   readonly issues: readonly ScheduleIssue[];
+  /** v2.1. Set when the turn is a deck; null otherwise */
+  readonly deck: DeckSpan | null;
+}
+
+/** v2.1. What the turn's opening asks of the schedule. */
+export interface ScheduleOptions {
+  /** the turn was opened for a prompt, a tap or a control: choices an earlier turn offered leave as the answer's first line begins (D2c) */
+  readonly retireChoices?: boolean;
 }
 
 type Mutable<T> = { -readonly [K in keyof T]: T[K] };
@@ -462,6 +501,41 @@ function isActive(live: Live, at: number): boolean {
   return live.span.exit === null || live.span.exit.start > at;
 }
 
+/**
+ * Why a control cannot drive a change on a thing, in words that name the control, the thing and what to do instead. A chart or a diagram is
+ * shown, hidden, moved and recoloured like anything else (`set`, `move`); what is in it follows a control through `{…}` in a cell, a title or a mark.
+ */
+function unbindable(control: string, id: string, kind: ElementKind, figure: Figure | null, effect: DrivenEffect['kind']): string {
+  const what = figure?.kind === 'structure' ? (figure.chart === null ? figure.structure : `${figure.chart} chart`) : kind;
+  const head = `"${control}" cannot ${effect === 'text' ? 'swap the words of' : effect === 'morph' ? 'reshape' : 'move'} "${id}", a ${what}`;
+  if (figure?.kind === 'structure') {
+    return `${head}: bind a set (opacity=0 hides it, opacity=1 shows it, ink= recolours it) or a move; for its numbers write {${control}} in a cell, a title or a mark`;
+  }
+  if (effect === 'text') return `${head}: only text has words to swap; bind a set instead`;
+  if (effect === 'morph') return `${head}: only a drawn shape can change into another; bind a set or a move instead`;
+  return `${head}: it cannot travel; bind a set instead`;
+}
+
+/** Whether two values are the same all the way down: what "declares again exactly what is there" is measured with. */
+function alike(a: unknown, b: unknown): boolean {
+  if (a === b || (a == null && b == null)) return true;
+  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;
+  if (Array.isArray(a) || Array.isArray(b)) return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((item, index) => alike(item, b[index]));
+  // A property that is absent and one that is null or undefined say the same thing: there is nothing there.
+  const present = (value: unknown): boolean => value !== undefined && value !== null;
+  const left = Object.entries(a).filter(([, value]) => present(value));
+  const right = Object.entries(b).filter(([, value]) => present(value));
+  return left.length === right.length && left.every(([key, value]) => alike(value, Object.getOwnPropertyDescriptor(b, key)?.value));
+}
+
+/** Two resolved styles that mean the same: every property alike. */
+function sameStyle(a: ElementStyle, b: ElementStyle): boolean {
+  return alike(a, b);
+}
+
+/** Lines that only define, edit or hand something to the server: the first line that is none of these is the one that begins the answer. */
+const QUIET_VERBS: ReadonlySet<string> = new Set(['style', 'color', 'look', 'plan', 'wait', 'revise', 'cancel', 'bind', 'row', 'frame', 'standing', 'refine']);
+
 /** Whether the scene's layout, not the element itself, decides where it goes. Text flows, and so does a control: it takes a line of the flow like a choice does. */
 export function isInFlow(style: ElementStyle, layout: Layout, kind: ElementKind = 'text'): boolean {
   if ((kind !== 'text' && kind !== 'control') || style.layer !== 'mid' || style.near !== null || style.group !== null) return false;
@@ -480,7 +554,7 @@ export function lookOfStage(base: StageBase): ResolvedLook {
   return found;
 }
 
-export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase): Schedule {
+export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, options: ScheduleOptions = {}): Schedule {
   const issues: ScheduleIssue[] = [];
   const sheet: Record<string, StyleDef> = { ...base.styles };
   const colors: Record<string, `#${string}`> = { ...base.colors };
@@ -514,6 +588,16 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase): 
   };
   const scenes: MutableScene[] = [scene];
 
+  /** v2.1. The deck the turn is, once `deck` has been said; a slide is a scene, and a fresh slide has had nothing written on it yet */
+  let deckOpen: { title: string; seq: number; start: number; slides: { scene: string; seq: number; start: number }[]; fresh: boolean } | null = null;
+  /** v2.1. Whether the answer's first line has come (carried choices leave with it) */
+  let answered = false;
+  /**
+   * v2.1. A table, a chart or a block of code said again exactly as it stands is not drawn again; the rows that follow are read against the ones
+   * it has, and only a row that differs or goes beyond them does anything. The number is how many of its rows have been matched so far.
+   */
+  const echoing = new Map<Live, number>();
+
   const byKey = new Map<string, Live>();
   /** the line that wrote each row of a table or chart in this turn */
   const rowSeq = new WeakMap<StructureRow, number>();
@@ -537,6 +621,7 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase): 
       changes: [],
       driven: [...(element.driven ?? [])],
       struck: element.struck,
+      ...(element.href !== undefined && { href: element.href }),
     };
     const entry: Live = {
       span,
@@ -680,7 +765,7 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase): 
     start: number,
     duration: number,
     order: number,
-    extra: { text?: string; emphasis?: readonly Range[]; figure?: Figure; parent?: string | null; predecessor?: Live | null },
+    extra: { text?: string; emphasis?: readonly Range[]; figure?: Figure; parent?: string | null; predecessor?: Live | null; href?: string },
   ): Live => {
     const span: MutableElement = {
       key: `${id}@${entry.seq}`,
@@ -701,6 +786,7 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase): 
       changes: [],
       driven: [],
       struck: false,
+      ...(extra.href !== undefined && { href: extra.href }),
     };
     const created: Live = { span, style, ghost: false, predecessor: extra.predecessor ?? null, frames: null, rows: null };
     elements.push(span);
@@ -721,10 +807,12 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase): 
     order: number,
     predecessor: Live | null,
     parent: string | null = null,
+    href?: string,
   ): number => {
     const { plain, emphasis } = splitEmphasis(rawText);
-    const duration = enterSeconds(style.enter, style.by, plain, pace, style.dur);
-    create(entry, 'text', id, style, start, duration, order, { text: plain, emphasis, predecessor, parent });
+    // Prose on a page is for reading: it comes in quickly.
+    const duration = enterSeconds(style.enter, style.by, plain, pace, style.dur, scene.layout === 'page');
+    create(entry, 'text', id, style, start, duration, order, { text: plain, emphasis, predecessor, parent, ...(href !== undefined && { href }) });
     let tail = scene.layout === 'page' && isInFlow(style, scene.layout) ? pageTailSeconds(plain, pace) : tailSeconds(duration, style.by, plain, pace);
     // A label is read with the thing it is on, not after it.
     if (style.near !== null || style.leader) tail = Math.min(tail, beatSeconds(pace) * 0.5);
@@ -750,7 +838,9 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase): 
   const scheduleCreating = (entry: ScoreEntry, line: CreatingLine): void => {
     const { seq } = entry;
     const start = startOf(entry, line.when);
+    const priorStart = previousStart;
     previousStart = start;
+    if (deckOpen !== null) deckOpen.fresh = false;
 
     if (line.verb === 'say') {
       // Text may be a part of a group (`say in=boat | …`): it lives on the group's layer and leaves with it.
@@ -759,6 +849,15 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase): 
       let enterStart = start;
       let order = nextOrder;
       const same = findLive(line.id, start);
+      // D2(b): the same words, in the same style, under the id they already have, are not said again.
+      if (same !== null && same.span.kind === 'text' && same.span.parent === joined.parent) {
+        const words = splitEmphasis(line.text);
+        if (same.span.text === words.plain && same.span.emphasis.length === words.emphasis.length && same.span.emphasis.every((range, index) => range.start === words.emphasis[index]?.start && range.end === words.emphasis[index]?.end) && (same.span.href ?? null) === (line.href ?? null) && sameStyle(same.style, style)) {
+          previousStart = priorStart;
+          lines.push({ seq, verb: line.verb, start, end: start });
+          return;
+        }
+      }
       if (same !== null) {
         order = same.span.order;
         enterStart = start + leave(same, start, same.style.exit, 'resay') * SOLO_OVERLAP;
@@ -774,7 +873,7 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase): 
           }
         }
       }
-      const done = enterText(entry, line.id, line.text, style, enterStart, order, null, joined.parent);
+      const done = enterText(entry, line.id, line.text, style, enterStart, order, null, joined.parent, line.href);
       if (!BACKDROP_LAYERS.includes(style.layer)) pen = Math.max(pen, done);
       lines.push({ seq, verb: line.verb, start, end: done });
       return;
@@ -787,8 +886,18 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase): 
         const merged = mergeStyles(sheet, line.styles, line.props);
         for (const name of merged.unknown) report(seq, 'unknown-style', `no style called "${name}"; ignored`, name);
         const change = coloured(seq, merged.props);
+        const patched = patchStyle(same.style, change);
+        const card = line.verb === 'card' ? { title: splitEmphasis(line.title ?? '').plain, box: line.box ?? null } : null;
+        const framed = card !== null && !alike(same.span.figure, { kind: 'group', card });
+        // D2(b): said again exactly as it is, it is nothing.
+        if (sameStyle(patched, same.style) && !framed) {
+          previousStart = priorStart;
+          lines.push({ seq, verb: line.verb, start, end: start });
+          return;
+        }
         const end = start + SET_SECONDS * PACE_TIMING[pace].ease;
-        same.style = patchStyle(same.style, change);
+        same.style = patched;
+        if (framed) same.span.figure = { kind: 'group', card };
         same.span.changes.push({ kind: 'set', seq, start, end, props: change, style: same.style });
         lines.push({ seq, verb: line.verb, start, end });
         return;
@@ -811,38 +920,56 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase): 
         const merged = mergeStyles(sheet, line.styles, line.props);
         for (const name of merged.unknown) report(seq, 'unknown-style', `no style called "${name}"; ignored`, name);
         const change = coloured(seq, merged.props);
+        const patched = patchStyle(open.style, change);
+        const title = line.title === undefined ? null : splitEmphasis(line.title);
+        const figure = { ...openFigure, grow: line.grow ?? openFigure.grow, box: line.box ?? openFigure.box, route: line.route ?? openFigure.route };
+        // D2(b): the diagram said again exactly as it stands is nothing, not even a pass of its layout.
+        if (sameStyle(patched, open.style) && alike(figure, openFigure) && (title === null || (title.plain === open.span.text && alike(title.emphasis, open.span.emphasis)))) {
+          previousStart = priorStart;
+          lines.push({ seq, verb: line.verb, start, end: start });
+          return;
+        }
         const end = start + SET_SECONDS * PACE_TIMING[pace].ease;
-        open.style = patchStyle(open.style, change);
+        open.style = patched;
         open.span.changes.push({ kind: 'set', seq, start, end, props: change, style: open.style });
-        if (line.title !== undefined) {
-          const title = splitEmphasis(line.title);
+        if (title !== null) {
           open.span.text = title.plain;
           open.span.emphasis = title.emphasis;
         }
-        open.span.figure = { ...openFigure, grow: line.grow ?? openFigure.grow, box: line.box ?? openFigure.box, route: line.route ?? openFigure.route };
+        open.span.figure = figure;
         lines.push({ seq, verb: line.verb, start, end });
         return;
       }
       const joined = joinGroup(seq, styleFor(seq, 'structure', line.styles, line.props), start);
       const { plain, emphasis } = splitEmphasis(line.title ?? '');
-      // The title, when there is one, fades in; the parts that follow carry the rest of the entrance.
-      const duration = plain === '' ? 0 : figureEnterSeconds(joined.style.enter, pace, joined.style.dur);
+      const wanted: Figure = {
+        kind: 'structure',
+        structure: line.verb,
+        grow: line.grow ?? null,
+        chart: line.verb === 'chart' ? (line.chart ?? DEFAULT_CHART) : null,
+        words: line.verb === 'chart' ? (line.words ?? []) : [],
+        data: line.verb === 'chart' ? (line.data ?? null) : null,
+        ...(line.verb === 'chart' && { dataset: line.dataset ?? null }),
+        bars: line.verb === 'table' && line.bars === true,
+        ...(line.verb === 'code' && { lang: line.lang ?? null, file: line.file ?? null }),
+        box: line.box ?? null,
+        route: line.route ?? false,
+        rows: openFigure?.kind === 'structure' ? openFigure.rows : [],
+      };
+      // D2(b): a table, chart or block of code said again exactly as it stands is not drawn again. Its rows are read against the ones it has.
+      if (open !== null && openFigure?.kind === 'structure' && STRUCTURE[line.verb].parts === 'rows' && alike(wanted, openFigure) && sameStyle(open.style, joined.style) && open.span.parent === joined.parent && open.span.text === plain && alike(open.span.emphasis, emphasis)) {
+        echoing.set(open, 0);
+        previousStart = priorStart;
+        lines.push({ seq, verb: line.verb, start, end: start });
+        return;
+      }
+      // The title, when there is one, fades in; the parts that follow carry the rest of the entrance. A frame is plain content: it comes in quickly.
+      const duration = plain === '' ? 0 : figureEnterSeconds(joined.style.enter, pace, joined.style.dur, STRUCTURE[line.verb].parts === 'rows');
       const slot = takeSlot(line.id, start);
       const created = create(entry, 'structure', line.id, joined.style, start + slot.delay, duration, slot.order, {
         text: plain,
         emphasis,
-        figure: {
-          kind: 'structure',
-          structure: line.verb,
-          grow: line.grow ?? null,
-          chart: line.verb === 'chart' ? (line.chart ?? DEFAULT_CHART) : null,
-          words: line.verb === 'chart' ? (line.words ?? []) : [],
-          data: line.verb === 'chart' ? (line.data ?? null) : null,
-          bars: line.verb === 'table' && line.bars === true,
-          box: line.box ?? null,
-          route: line.route ?? false,
-          rows: [],
-        },
+        figure: { ...wanted, rows: [] },
         parent: joined.parent,
       });
       if (STRUCTURE[line.verb].parts === 'rows') created.rows = [];
@@ -869,6 +996,20 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase): 
       const style: ElementStyle = { ...styleFor(seq, 'node', line.styles, line.props), group: null, layer: owner.style.layer };
       const { plain, emphasis } = splitEmphasis(line.text);
       const duration = figureEnterSeconds(style.enter, pace, style.dur);
+      // D2(b): a node said again exactly as it stands, with the arrow into it that it already has, is nothing.
+      const there = findLive(line.id, start);
+      const wanted: Figure = { kind: 'node', shape: line.shape ?? 'step', values: line.values, ...(line.x !== undefined && { x: line.x }), ...(line.y !== undefined && { y: line.y }) };
+      if (there !== null && there.span.kind === 'node' && there.span.parent === owner.span.key && there.span.text === plain && alike(there.span.emphasis, emphasis) && alike(there.span.figure, wanted) && sameStyle(there.style, style)) {
+        const source = line.from === undefined || line.from.id === line.id ? null : findLive(line.from.id, start);
+        const arrow = findLive(`${line.id}-in`, start);
+        const arrowFigure = arrow?.span.figure;
+        const arrives = line.from === undefined || (source !== null && arrowFigure?.kind === 'link' && arrowFigure.from === source.span.key && arrowFigure.to === there.span.key && arrow?.span.text === (line.from.label ?? ''));
+        if (arrives) {
+          previousStart = priorStart;
+          lines.push({ seq, verb: line.verb, start, end: start });
+          return;
+        }
+      }
       // A node said again keeps its place in the diagram: the arrows that touch it are re-pointed at the new one instead of leaving with the old.
       const previous = findLive(line.id, start);
       const touching = previous === null || previous.span.kind !== 'node' || previous.span.parent !== owner.span.key ? [] : live.filter((other) => isActive(other, start) && other.span.figure?.kind === 'link' && (other.span.figure.from === previous.span.key || other.span.figure.to === previous.span.key));
@@ -914,6 +1055,33 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase): 
       const style = styleFor(seq, 'link', [], line.props);
       const duration = style.dur ?? LINK_SECONDS * PACE_TIMING[pace].ease;
       const label = splitEmphasis(line.text ?? '');
+      // D2(b): every connector of the line is already there, joining the same nodes the same way: nothing to draw.
+      if (missing.length === 0 && line.nodes.length >= 2 && ends.every((end, index) => end !== null && (index === 0 || end.span.parent === ends[0]?.span.parent))) {
+        // It is the same connector when it joins the same two nodes, the same way, with the same words: whatever id it was given.
+        const already = line.nodes.slice(0, -1).every((_, index) => {
+          const [from, to] = [ends[index], ends[index + 1]];
+          if (from === null || from === undefined || to === null || to === undefined) return false;
+          return live.some((found) => {
+            const figure = found.span.figure;
+            return (
+              isActive(found, start) &&
+              !found.ghost &&
+              figure?.kind === 'link' &&
+              figure.from === from.span.key &&
+              figure.to === to.span.key &&
+              figure.ends === (line.ends ?? 'arrow') &&
+              figure.dashed === (line.dashed ?? false) &&
+              found.span.text === (index === 0 ? label.plain : '') &&
+              sameStyle({ ...found.style, layer: style.layer }, style)
+            );
+          });
+        });
+        if (already) {
+          previousStart = priorStart;
+          lines.push({ seq, verb: line.verb, start, end: start });
+          return;
+        }
+      }
       let at = start;
       let made = 0;
       for (let index = 0; index + 1 < ends.length; index += 1) {
@@ -974,6 +1142,12 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase): 
       if (same && line.initial === undefined && was.value !== null && line.verb !== 'input') value = was.value;
       else if (same && line.verb === 'input' && was.value !== null && was.value !== '') value = was.value;
       const { plain, emphasis } = splitEmphasis(line.text ?? '');
+      // D2(b): a control said again exactly as it stands is nothing: it keeps what the user set and what it drives.
+      if (before !== null && was !== null && same && was.form === (line.verb === 'pick' ? (line.form ?? 'row') : null) && was.step === (line.range?.step ?? null) && was.unit === (line.unit ?? null) && was.send === (line.verb === 'button' ? true : (line.send ?? false)) && alike(was.options, options) && before.span.text === plain && alike(before.span.emphasis, emphasis) && sameStyle(before.style, joined.style) && before.span.parent === joined.parent && (line.initial === undefined || line.initial === was.value)) {
+        previousStart = priorStart;
+        lines.push({ seq, verb: line.verb, start, end: start });
+        return;
+      }
       const duration = figureEnterSeconds(joined.style.enter, pace, joined.style.dur);
       const slot = takeSlot(line.id, start);
       const made = create(entry, 'control', line.id, joined.style, start + slot.delay, duration, slot.order, {
@@ -1056,9 +1230,37 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase): 
       // Weather belongs behind the subject unless the brain puts it in front; a sky of stars belongs furthest back.
       const layer = line.props.layer ?? (line.kind === 'stars' || line.kind === 'rays' ? 'far' : 'bg');
       const style = styleFor(seq, 'field', line.styles, { ...line.props, layer });
+      const there = findLive(line.id, start);
+      const figure = there?.span.figure;
+      if (there !== null && figure?.kind === 'field' && figure.field === line.kind && figure.amount === (line.amount ?? 'some') && sameStyle(there.style, { ...style, enter: 'fade' })) {
+        previousStart = priorStart;
+        lines.push({ seq, verb: line.verb, start, end: start });
+        return;
+      }
       const slot = takeSlot(line.id, start);
       create(entry, 'field', line.id, { ...style, enter: 'fade' }, start, AMBIENT_SECONDS, slot.order, { figure: { kind: 'field', field: line.kind, amount: line.amount ?? 'some' } });
       lines.push({ seq, verb: line.verb, start, end: start + AMBIENT_SECONDS });
+      return;
+    }
+
+    if (line.verb === 'pic') {
+      const style = styleFor(seq, 'picture', line.styles, line.props);
+      const there = findLive(line.id, start);
+      const figure = there?.span.figure;
+      if (there !== null && figure?.kind === 'picture' && figure.from === line.from && alike(figure.box, line.box ?? null) && sameStyle(there.style, style)) {
+        previousStart = priorStart;
+        lines.push({ seq, verb: line.verb, start, end: start });
+        return;
+      }
+      const joined = joinGroup(seq, style, start);
+      const duration = figureEnterSeconds(joined.style.enter, pace, joined.style.dur);
+      const slot = takeSlot(line.id, start);
+      create(entry, 'picture', line.id, joined.style, start + slot.delay, duration, slot.order, {
+        figure: { kind: 'picture', prompt: '', box: line.box ?? null, over: null, medium: null, sketch: 'keep', mask: 'none', from: line.from },
+        parent: joined.parent,
+      });
+      advanceForDrawn(joined.style, start + slot.delay, duration);
+      lines.push({ seq, verb: line.verb, start, end: start + slot.delay + duration });
       return;
     }
 
@@ -1070,7 +1272,15 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase): 
       // Said again, a shape changes into what it now is: only what the line names is restyled.
       const merged = mergeStyles(sheet, line.styles, line.props);
       for (const name of merged.unknown) report(seq, 'unknown-style', `no style called "${name}"; ignored`, name);
-      same.style = patchStyle(same.style, coloured(seq, merged.props));
+      const patched = patchStyle(same.style, coloured(seq, merged.props));
+      const now = figureAt(same.span, Number.POSITIVE_INFINITY);
+      // D2(b): the same shape, in the same place, in the same dress, is nothing: no morph, no entrance.
+      if (now?.kind === 'shape' && alike(now.geometry, geometry) && sameStyle(patched, same.style)) {
+        previousStart = priorStart;
+        lines.push({ seq, verb: line.verb, start, end: start });
+        return;
+      }
+      same.style = patched;
       const duration = same.style.dur ?? MORPH_SECONDS * PACE_TIMING[pace].ease;
       same.span.changes.push({ kind: 'morph', seq, start, end: start + duration, geometry, style: same.style });
       advanceForDrawn(same.style, start, duration);
@@ -1086,9 +1296,57 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase): 
     lines.push({ seq, verb: line.verb, start, end: start + slot.delay + duration });
   };
 
+  /** Opens a scene: what was on stage leaves, and the new one is planned. A `deck` opens its first slide the same way. */
+  const openScene = (entry: ScoreEntry, header: SceneLine, verb: Verb): void => {
+    const { seq } = entry;
+    const start = startOf(entry, header.when);
+    const clear = header.clear ?? 'scene';
+    let longest = 0;
+    if (clear !== 'none') {
+      for (const candidate of live) {
+        if (!isActive(candidate, start)) continue;
+        if (clear === 'scene' && candidate.style.stay === 'pin' && !candidate.ghost) continue;
+        longest = Math.max(longest, leave(candidate, start, candidate.style.exit, 'scene'));
+      }
+    }
+    pace = header.pace ?? pace;
+    mood = header.mood ?? mood;
+    const index = scene.index + 1;
+    // A picture-first scene that names no canvas gets the square one (about 41% of a landscape screen instead of 23%); the next scene goes back.
+    const inherited: CanvasName = figureCanvasFrom ?? scene.canvas;
+    const defaulted: boolean = header.canvas === undefined && header.layout === 'figure' && inherited === 'wide';
+    const canvas: CanvasName = header.canvas ?? (defaulted ? 'square' : inherited);
+    figureCanvasFrom = defaulted ? inherited : null;
+    scene = {
+      id: header.id ?? `s${index}`,
+      seq,
+      index,
+      start,
+      layout: header.layout ?? 'stack',
+      canvas,
+      align: header.align ?? 'auto',
+      clear,
+      mood: [{ at: start, value: mood }],
+      pace: [{ at: start, value: pace }],
+      expected: [{ at: start, value: header.lines ?? null }],
+    };
+    scenes.push(scene);
+    pen = Math.max(pen, start + longest * SCENE_OVERLAP);
+    previousStart = start;
+    lines.push({ seq, verb, start, end: start + longest });
+  };
+
   for (const entry of entries) {
     if (entry.void) continue;
     const { line, seq } = entry;
+    // D2(c): the answer's first line is when the choices an earlier turn offered are taken away, the tapped one too.
+    if (options.retireChoices === true && !answered && !QUIET_VERBS.has(line.verb)) {
+      answered = true;
+      const at = Math.max(pen, entry.floor);
+      for (const candidate of live) {
+        if (candidate.span.carried && candidate.style.tap && !candidate.ghost && isActive(candidate, at)) leave(candidate, at, candidate.style.exit, 'answered');
+      }
+    }
     switch (line.verb) {
       case 'style': {
         sheet[line.name] = line.like === undefined ? { props: line.props } : { like: line.like, props: line.props };
@@ -1118,43 +1376,27 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase): 
       }
 
       case 'scene': {
-        const start = startOf(entry, line.when);
-        const clear = line.clear ?? 'scene';
-        let longest = 0;
-        if (clear !== 'none') {
-          for (const candidate of live) {
-            if (!isActive(candidate, start)) continue;
-            if (clear === 'scene' && candidate.style.stay === 'pin' && !candidate.ghost) continue;
-            longest = Math.max(longest, leave(candidate, start, candidate.style.exit, 'scene'));
-          }
+        openScene(entry, line, 'scene');
+        if (deckOpen !== null) {
+          const slide = { scene: scene.id, seq, start: scene.start };
+          // A scene written straight after `deck`, before anything was put on the first slide, is that slide's own header.
+          if (deckOpen.fresh && deckOpen.slides.length === 1) deckOpen.slides[0] = slide;
+          else deckOpen.slides.push(slide);
+          deckOpen.fresh = false;
         }
-        pace = line.pace ?? pace;
-        mood = line.mood ?? mood;
-        const index = scene.index + 1;
-        // A picture-first scene that names no canvas gets the square one (about 41% of a landscape screen instead of 23%); the next scene goes back.
-        const inherited: CanvasName = figureCanvasFrom ?? scene.canvas;
-        const defaulted: boolean = line.canvas === undefined && line.layout === 'figure' && inherited === 'wide';
-        const canvas: CanvasName = line.canvas ?? (defaulted ? 'square' : inherited);
-        figureCanvasFrom = defaulted ? inherited : null;
-        scene = {
-          id: line.id ?? `s${index}`,
-          seq,
-          index,
-          start,
-          layout: line.layout ?? 'stack',
-          canvas,
-          align: line.align ?? 'auto',
-          clear,
-          mood: [{ at: start, value: mood }],
-          pace: [{ at: start, value: pace }],
-          expected: [{ at: start, value: line.lines ?? null }],
-        };
-        scenes.push(scene);
-        pen = Math.max(pen, start + longest * SCENE_OVERLAP);
-        previousStart = start;
-        lines.push({ seq, verb: line.verb, start, end: start + longest });
         break;
       }
+
+      case 'deck': {
+        openScene(entry, { verb: 'scene', ...(line.when !== undefined && { when: line.when }) }, 'deck');
+        deckOpen = { title: line.title, seq, start: scene.start, slides: [{ scene: scene.id, seq, start: scene.start }], fresh: true };
+        break;
+      }
+
+      case 'standing':
+      case 'refine':
+        // For the server alone: it keeps what the user asked to hold, and starts the passes. Nothing here is on the clock.
+        break;
 
       case 'say':
       case 'circle':
@@ -1175,6 +1417,8 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase): 
       case 'map':
       case 'table':
       case 'chart':
+      case 'code':
+      case 'pic':
       case 'node':
       case 'link':
       case 'button':
@@ -1192,13 +1436,14 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase): 
         lines.push({ seq, verb: line.verb, start: at, end: at });
         const control = findLive(line.control, at);
         if (control === null || control.span.figure?.kind !== 'control') {
-          report(seq, 'bad-bind', `no control called "${line.control}" is on stage to bind; write the slider, toggle or pick first`, line.control);
+          const other = control === null ? null : control.span.kind;
+          report(seq, 'bad-bind', other === null ? `no control called "${line.control}" is on stage to bind; write the slider, toggle or pick first` : `"${line.control}" is a ${other}, not a control; only a button, toggle, slider, pick or input can drive a change`, line.control);
           break;
         }
         const { change } = line;
         const targets: Live[] = change.verb === 'set' ? resolveTargets(change.target, at, seq) : [findLive(change.id, at)].filter((found): found is Live => found !== null);
         if (targets.length === 0) {
-          if (change.verb !== 'set') report(seq, 'unknown-id', `nothing called "${change.id}" is on stage for the control to change; draw it first`, change.id);
+          if (change.verb !== 'set') report(seq, 'bad-bind', `"${line.control}" is bound to "${change.id}", and nothing called that is on stage; draw it first (a chart, a flow, a code block and any of their parts can be changed too)`, change.id);
           break;
         }
         let effect: DrivenEffect;
@@ -1237,9 +1482,9 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase): 
         }
         for (const target of targets) {
           const fits =
-            effect.kind === 'set' || (effect.kind === 'move' && target.span.kind !== 'field') || (effect.kind === 'morph' && target.span.kind === 'shape') || (effect.kind === 'text' && target.span.kind === 'text');
+            effect.kind === 'set' || (effect.kind === 'move' && target.span.kind !== 'field' && target.span.kind !== 'node' && target.span.kind !== 'link') || (effect.kind === 'morph' && target.span.kind === 'shape') || (effect.kind === 'text' && target.span.kind === 'text');
           if (!fits) {
-            report(seq, 'bad-bind', `"${target.span.id}" is a ${target.span.kind}; a control cannot drive that change on it`, target.span.id);
+            report(seq, 'bad-bind', unbindable(line.control, target.span.id, target.span.kind, target.span.figure, effect.kind), target.span.id);
             continue;
           }
           target.span.driven.push({ seq, control: control.span.key, on: line.on, effect, since: at });
@@ -1251,14 +1496,34 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase): 
         const table = findLive(line.id, Math.max(pen, entry.floor));
         if (table !== null && table.span.figure?.kind === 'structure' && table.rows !== null) {
           // A row of a table or a chart: cells between bars. It lands a step after the row before it.
-          const cells = splitCells(line.cells);
           const enter = table.span.enter;
           const charted = table.span.figure.structure === 'chart';
-          const step = (charted ? CHART_ROW_SECONDS : TABLE_ROW_SECONDS)[pace];
-          const most = charted ? LIMITS.chartPoints : LIMITS.rows;
-          if (isRuleRow(cells) || cells.every((cell) => cell === '')) {
+          const coded = table.span.figure.structure === 'code';
+          // A line of code is one cell, exactly as written: a bar in it is a bar, a space is a space, and an empty line is a row.
+          const cells = coded ? [line.cells] : splitCells(line.cells);
+          const step = (coded ? CODE_ROW_SECONDS : charted ? CHART_ROW_SECONDS : TABLE_ROW_SECONDS)[pace];
+          const most = coded ? LIMITS.codeRows : charted ? LIMITS.chartPoints : LIMITS.rows;
+          if (!coded && (isRuleRow(cells) || cells.every((cell) => cell === ''))) {
             lines.push({ seq, verb: line.verb, start: pen, end: pen });
             break;
+          }
+          // D2(b): the block said again is read row by row against what it has. A row that is the same is nothing; one that differs is put right where it
+          // stands, with no new entrance; one past the end is the block growing, and lands as any row does.
+          const matched = echoing.get(table);
+          if (matched !== undefined) {
+            const have = table.rows[matched];
+            if (have !== undefined) {
+              const wanted = cells.slice(0, LIMITS.cells);
+              if (!alike(have.cells, wanted)) {
+                const fixed: StructureRow = { cells: wanted, at: have.at };
+                table.rows[matched] = fixed;
+                table.span.figure = { ...table.span.figure, rows: [...table.rows] };
+              }
+              echoing.set(table, matched + 1);
+              lines.push({ seq, verb: line.verb, start: pen, end: pen });
+              break;
+            }
+            echoing.delete(table);
           }
           if (table.rows.length >= most) {
             report(seq, 'structure-limit', `a ${table.span.figure.structure} has at most ${most} rows; this one was ignored`);
@@ -1530,7 +1795,17 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase): 
     if (candidate.rows === null || figure?.kind !== 'structure' || figure.chart === null || candidate.rows.length === 0 || candidate.rows.every((row) => rowSeq.get(row) === undefined)) continue;
     const { rows } = candidate;
     const kind = figure.chart;
-    const model = chartModelOf(kind, rows, scope);
+    // A cell may name a control that is written after it (P2-2): until it is, it stands for a number, and nothing is said about it. A name that
+    // never turns up is a control the brain forgot, and the dash on the chart says so.
+    const pending: Record<string, number> = { ...scope };
+    for (const row of rows) {
+      for (const cell of row.cells) {
+        const braces = /^\{(.+)\}$/.exec(cell.trim());
+        const expr = braces === null ? null : parseExpr(braces[1] ?? '');
+        if (expr !== null) for (const name of namesIn(expr)) if (!Object.hasOwn(pending, name)) pending[name] = 1;
+      }
+    }
+    const model = chartModelOf(kind, rows, pending);
     // A chart with only its header so far is not wrong yet.
     if (model.points.length === 0) continue;
     for (const problem of model.problems) {
@@ -1539,7 +1814,7 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase): 
       let high = rows.length - 1;
       while (low < high) {
         const middle = Math.floor((low + high) / 2);
-        if (chartModelOf(kind, rows.slice(0, middle + 1), scope).problems.includes(problem)) high = middle;
+        if (chartModelOf(kind, rows.slice(0, middle + 1), pending).problems.includes(problem)) high = middle;
         else low = middle + 1;
       }
       const arrived = rows[low];
@@ -1557,7 +1832,22 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase): 
   for (const move of camera) end = Math.max(end, move.end);
   for (const change of looks) end = Math.max(end, change.end);
 
-  return { pen, end, look: wearing.preset, wearing, styles: sheet, colors, lookDefs, scenes, elements, camera, looks, lines, issues };
+  // A deck says where each slide begins and where its own content is done: the stage stops there until the viewer steps on.
+  const deck: DeckSpan | null =
+    deckOpen === null
+      ? null
+      : {
+          title: deckOpen.title,
+          seq: deckOpen.seq,
+          start: deckOpen.start,
+          slides: deckOpen.slides.map((slide, index) => {
+            const next = deckOpen?.slides[index + 1];
+            const own = lines.filter((time) => time.seq > slide.seq && (next === undefined || time.seq < next.seq));
+            return { index, scene: slide.scene, seq: slide.seq, start: slide.start, end: own.reduce((latest, time) => Math.max(latest, time.end), slide.start) };
+          }),
+        };
+
+  return { pen, end, look: wearing.preset, wearing, styles: sheet, colors, lookDefs, scenes, elements, camera, looks, lines, issues, deck };
 }
 
 /** The last value of a timed list that has taken effect by `at`. */

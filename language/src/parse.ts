@@ -1,3 +1,4 @@
+import { STANDING_LIMITS } from './context';
 import { parsePathData } from './geometry';
 import { BUILTIN_STYLE_NAMES, own } from './style';
 import { splitCells } from './text';
@@ -7,6 +8,7 @@ import type {
   CamLine,
   CardLine,
   ColourRef,
+  DatasetRef,
   ControlLine,
   FillRef,
   HexColor,
@@ -41,6 +43,7 @@ import {
   CHART_KINDS,
   CHART_WORDS,
   CLEARS,
+  CODE_LANGUAGES,
   CONTROL_VERBS,
   DIRECTIONS,
   ENTER_EFFECTS,
@@ -74,6 +77,7 @@ import {
   VERBS,
   WEIGHTS,
 } from './vocabulary';
+import { REFINE_LIMITS } from './wire';
 import type { AmbientKind, Amount, Anchor, CameraMove, CameraSpeed, ControlVerb, FxName, ShapeVerb, StructureVerb, Verb } from './vocabulary';
 
 const NAME_PATTERN = /^[a-z][a-z0-9_-]*$/;
@@ -690,8 +694,24 @@ function parseSay(head: Head, text: string | null, issues: Issues): Line | null 
   const { id, numbers, names } = splitWords(head.words, true, true);
   if (numbers.length > 0) issues.warn('unknown-word', 'numbers mean nothing on a say line; use at=x,y');
   const { props, rest } = readStyleProps(head.pairs, issues);
-  warnUnknownPairs(rest, issues);
-  return withWhen({ verb: 'say' as const, id, styles: readStyleNames(names, issues), props, text }, head.when);
+  let href: string | undefined;
+  const unknown: Pair[] = [];
+  for (const pair of rest) {
+    if (pair.key === 'href' || pair.key === 'link' || pair.key === 'url') {
+      const address = readAddress(pair.raw);
+      if (address === null) issues.warn('bad-value', `${pair.key}=… ignored; a link is an http or https address`, pair.token);
+      else href = address;
+    } else unknown.push(pair);
+  }
+  warnUnknownPairs(unknown, issues);
+  const line = { verb: 'say' as const, id, styles: readStyleNames(names, issues), props, text };
+  return withWhen(href === undefined ? line : { ...line, href }, head.when);
+}
+
+/** An address a link may open: `http:` or `https:` and nothing else, so a link can never run script or leave the browser's own tab. */
+export function readAddress(raw: string): string | null {
+  const address = raw.replace(/^<|>$/g, '').trim();
+  return address.length > LIMITS.href || !/^https?:\/\/[^\s"'<>]+\.[^\s"'<>]+$|^https?:\/\/localhost\b[^\s"'<>]*$/i.test(address) ? null : address;
 }
 
 /** Geometry may also arrive as SVG attributes, which is how a model first reaches for it. */
@@ -829,7 +849,8 @@ function rowCells(afterBar: string): string {
 function parseRowVerb(head: Head, rawText: string | null, issues: Issues): Line | null {
   // The written-out form: `row cat | ..0..0..`. The short form `| ..0..0..` never reaches here.
   const cells = rawText === null ? '' : rowCells(rawText);
-  if (cells.trim() === '') {
+  // `row x1 |` with nothing after the bar is an empty row: a blank line inside a block of code. Without a bar there is nothing to say.
+  if (rawText === null) {
     issues.error('missing-text', 'row needs its cells after " | "');
     return null;
   }
@@ -927,8 +948,13 @@ function boxOf(numbers: readonly number[], issues: Issues, what: string): Canvas
   return undefined;
 }
 
+const DATASET_NAME = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,47}$/;
+const INSTRUMENT_NAME = /^[A-Za-z0-9^][A-Za-z0-9_.:^=-]{0,23}$/;
+const FIELD_NAME = /^[A-Za-z0-9_.-]{1,24}$/;
+
 function parseStructure(verb: StructureVerb, head: Head, text: string | null, issues: Issues): Line {
-  const own: readonly string[] = verb === 'flow' || verb === 'tree' ? GROWTHS : verb === 'chart' ? [...CHART_KINDS, ...CHART_WORDS] : verb === 'map' ? ['route'] : verb === 'table' ? ['bars'] : [];
+  const own: readonly string[] =
+    verb === 'flow' || verb === 'tree' ? GROWTHS : verb === 'chart' ? [...CHART_KINDS, ...CHART_WORDS] : verb === 'map' ? ['route'] : verb === 'table' ? ['bars'] : verb === 'code' ? CODE_LANGUAGES : [];
   const { id, numbers, names } = splitWords(head.words, true, false, own);
   const { props, rest } = readStyleProps(head.pairs, issues);
   const line: { -readonly [K in keyof StructureLine]: StructureLine[K] } = { verb, id, styles: [], props };
@@ -941,20 +967,98 @@ function parseStructure(verb: StructureVerb, head: Head, text: string | null, is
     else if (verb === 'chart' && (name === 'bars' || name === 'bar' || name === 'histogram')) line.chart = 'columns';
     else if (verb === 'map' && name === 'route') line.route = true;
     else if (verb === 'table' && name === 'bars') line.bars = true;
+    else if (verb === 'code' && line.lang === undefined && (oneOf(CODE_LANGUAGES, name) || /[+#]/.test(name))) line.lang = name;
     else styleWords.push(name);
   }
+  let dataset: { name?: string; instrument?: string; field?: string } = {};
   for (const pair of rest) {
     const { key, value } = pair;
     if ((key === 'grow' || key === 'dir') && (verb === 'flow' || verb === 'tree') && oneOf(GROWTHS, value)) line.grow = value;
     else if ((key === 'kind' || key === 'type') && verb === 'chart' && oneOf(CHART_KINDS, value)) line.chart = value;
+    else if (key === 'data' && verb === 'chart' && value.startsWith('dataset:')) dataset = { ...dataset, name: pair.raw.slice('dataset:'.length) };
+    else if (key === 'dataset' && verb === 'chart') dataset = { ...dataset, name: pair.raw.replace(/^dataset:/i, '') };
     else if (key === 'data' && verb === 'chart' && isValidElementId(value)) line.data = value;
+    else if (key === 'instrument' && verb === 'chart') dataset = { ...dataset, instrument: pair.raw };
+    else if (key === 'field' && verb === 'chart') dataset = { ...dataset, field: pair.raw };
+    else if ((key === 'lang' || key === 'language') && verb === 'code' && /^[a-z][a-z0-9+#_.-]{0,15}$/.test(value)) line.lang = value;
+    else if (key === 'file' && verb === 'code' && pair.raw !== '') line.file = pair.raw.slice(0, LIMITS.file);
     else issues.warn('unknown-key', `"${key}" is not a property here; ignored`, pair.token);
+  }
+  if (dataset.name !== undefined || dataset.instrument !== undefined || dataset.field !== undefined) {
+    const named = dataset.name;
+    if (named === undefined || !DATASET_NAME.test(named)) issues.warn('bad-value', 'a dataset is named: data=dataset:<name> [instrument=…] [field=…]; ignored');
+    else {
+      const ref: { -readonly [K in keyof DatasetRef]: DatasetRef[K] } = { name: named };
+      if (dataset.instrument !== undefined && INSTRUMENT_NAME.test(dataset.instrument)) ref.instrument = dataset.instrument;
+      else if (dataset.instrument !== undefined) issues.warn('bad-value', `instrument=${dataset.instrument} ignored; it is a symbol such as ZEC`);
+      if (dataset.field !== undefined && FIELD_NAME.test(dataset.field)) ref.field = dataset.field;
+      else if (dataset.field !== undefined) issues.warn('bad-value', `field=${dataset.field} ignored; it is a column's name such as close`);
+      line.dataset = ref;
+    }
   }
   line.styles = readStyleNames(styleWords, issues);
   const box = boxOf(numbers, issues, verb);
   if (box !== undefined) line.box = box;
   if (text !== null) line.title = text;
   return withWhen(line, head.when);
+}
+
+/** `pic [id] from=u1 [x,y WxH]`: a picture the user gave, put on stage. */
+function parsePic(head: Head, issues: Issues): Line | null {
+  const { id, numbers, names } = splitWords(head.words, true);
+  const { props, rest } = readStyleProps(head.pairs, issues);
+  let from: string | undefined;
+  for (const pair of rest) {
+    if ((pair.key === 'from' || pair.key === 'upload' || pair.key === 'src') && isValidElementId(pair.value)) from = pair.value;
+    else issues.warn('unknown-key', `"${pair.key}" is not a property here; ignored`, pair.token);
+  }
+  // `pic u1`: the one word that names the upload, when nothing else does.
+  const bare = from === undefined && id !== '-' && /^u\d+$/.test(id);
+  if (bare) from = id;
+  if (from === undefined) {
+    issues.error('missing-argument', 'pic needs the id of the picture the user gave: pic photo from=u1');
+    return null;
+  }
+  const box = boxOf(numbers, issues, 'pic');
+  const line = { verb: 'pic' as const, id: bare ? '-' : id, styles: readStyleNames(names, issues), props, from };
+  return withWhen(box === undefined ? line : { ...line, box }, head.when);
+}
+
+function parseDeck(head: Head, text: string | null, issues: Issues): Line {
+  warnUnknownWords(head.words, issues);
+  warnUnknownPairs(head.pairs, issues);
+  return withWhen({ verb: 'deck' as const, title: text ?? '' }, head.when);
+}
+
+/** `standing | <words>` holds an ask; `standing drop 2` and `standing drop all` let go of one or every ask. */
+function parseStanding(head: Head, text: string | null, issues: Issues): Line | null {
+  warnUnknownPairs(head.pairs, issues);
+  if (head.words[0] === 'drop' || head.words[0] === 'forget' || head.words[0] === 'clear') {
+    const which = head.words[1];
+    if (which === undefined || which === 'all') return { verb: 'standing', drop: 'all' };
+    if (/^\d+$/.test(which) && Number(which) >= 1) return { verb: 'standing', drop: Number(which) };
+    issues.error('bad-value', 'standing drop takes the number of the ask in the brief, or all', which);
+    return null;
+  }
+  warnUnknownWords(head.words, issues);
+  if (text === null) {
+    issues.error('missing-text', 'standing needs the user\'s words after " | ": standing | a visual with every reply');
+    return null;
+  }
+  return { verb: 'standing', text };
+}
+
+function parseRefine(head: Head, issues: Issues): Line {
+  warnUnknownPairs(head.pairs.filter((pair) => pair.key !== 'passes'), issues);
+  const given = head.words[0] ?? head.pairs.find((pair) => pair.key === 'passes')?.value;
+  warnUnknownWords(head.words.slice(1), issues);
+  if (given === undefined) return { verb: 'refine' };
+  const passes = /^\d+$/.test(given) ? Number(given) : null;
+  if (passes === null || passes < 1) {
+    issues.warn('bad-value', `"${given}" is not a number of passes; refined as asked, as often as is worth it`, given);
+    return { verb: 'refine' };
+  }
+  return { verb: 'refine', passes: Math.min(REFINE_LIMITS.max, passes) };
 }
 
 function parseNode(head: Head, text: string | null, issues: Issues): Line | null {
@@ -1401,6 +1505,9 @@ const TEXT_LIMIT: Readonly<Partial<Record<Verb, number>>> = {
   input: LIMITS.text,
   card: LIMITS.text,
   bind: LIMITS.line,
+  code: LIMITS.text,
+  deck: LIMITS.text,
+  standing: STANDING_LIMITS.chars,
 };
 
 function isShapeVerb(verb: Verb): verb is ShapeVerb {
@@ -1419,7 +1526,7 @@ function isControlVerb(verb: Verb): verb is ControlVerb {
 const COLON_KEYS: ReadonlySet<string> = new Set(['from', 'x', 'y', 'at', 'in', 'near', 'data', 'grow', 'unit', 'step', 'value', 'send', 'form', 'layout', 'canvas', 'mood', 'pace', 'align', 'clear', 'lines', 'fill', 'stroke', 'ink', 'size', 'thick', 'enter', 'exit', 'over', 'speed', 'dur', 'scale', 'rot', 'opacity', 'layer', 'loop', 'mark', 'id', 'min', 'max', 'year', 'kind', 'type']);
 
 /** Verbs whose words come after the bar; written without one, the words are found by other signs. */
-const WORDED: ReadonlySet<string> = new Set(['say', 'node', 'button', 'toggle', 'input', 'correct', 'card', 'bind']);
+const WORDED: ReadonlySet<string> = new Set(['say', 'node', 'button', 'toggle', 'input', 'correct', 'card', 'bind', 'deck', 'standing']);
 
 const ARROW = /\s(?:->|-->|=>|→)\s/;
 const RANGE = /^(-?\d+(?:\.\d+)?)[-–—](\d+(?:\.\d+)?)$/;
@@ -1529,7 +1636,7 @@ export function parseLine(raw: string): ParseResult {
     if (arrow !== null) source = `${source.slice(0, arrow.index)} | ${source.slice(arrow.index + arrow[0].length)}`;
     else if (quoted?.[1] !== undefined && quoted[2] !== undefined && firstVerb !== 'say') source = `${quoted[1]} | ${quoted[2]}`;
     else if (colon?.[1] !== undefined && colon[2] !== undefined && !COLON_KEYS.has((colon[1].split(/\s+/).pop() ?? '').toLowerCase())) source = `${colon[1]} | ${colon[2]}`;
-    else if (firstVerb === 'say' || firstVerb === 'button') {
+    else if (firstVerb === 'say' || firstVerb === 'button' || firstVerb === 'deck' || (firstVerb === 'standing' && !/^standing\s+(?:drop|forget|clear)\b/i.test(source))) {
       // `say hello there`, `button go`: no bar, so the rest of the line is the words.
       const rest = source.replace(/^\S+\s*/, '').trim();
       if (rest !== '' && !/^\w+=/.test(rest)) {
@@ -1631,6 +1738,18 @@ export function parseLine(raw: string): ParseResult {
         break;
       case 'paint':
         line = parsePaint(head, text, issues);
+        break;
+      case 'pic':
+        line = parsePic(head, issues);
+        break;
+      case 'deck':
+        line = parseDeck(head, text, issues);
+        break;
+      case 'standing':
+        line = parseStanding(head, text, issues);
+        break;
+      case 'refine':
+        line = parseRefine(head, issues);
         break;
       case 'ambient':
         line = parseAmbient(head, issues);

@@ -231,6 +231,8 @@ export interface SayLine {
   readonly props: StyleProps;
   /** may contain *emphasis* markers */
   readonly text: string;
+  /** v2.1. Makes the words a link that opens in a new tab: an `http:` or `https:` address, as written. Absent: not a link. */
+  readonly href?: string;
   readonly when?: When;
 }
 
@@ -320,6 +322,12 @@ export interface StructureLine {
   readonly words?: readonly ChartWord[];
   /** a chart: the id of DATA the brief named, drawn instead of rows the brain would have to retype */
   readonly data?: string;
+  /** v2.1. A chart: one of the owner's stored datasets, drawn by reference (`data=dataset:<name> instrument=ZEC field=close`) */
+  readonly dataset?: DatasetRef;
+  /** v2.1. A code block: the language, as the brain wrote it (`python`, `c++`) */
+  readonly lang?: string;
+  /** v2.1. A code block: the file it is from, shown as its header */
+  readonly file?: string;
   /** a table: its numbers are drawn as bars beside the figures */
   readonly bars?: boolean;
   /** the room it is laid out in, canvas units; absent means the whole canvas */
@@ -329,6 +337,13 @@ export interface StructureLine {
   /** a title the painter sets with the structure */
   readonly title?: string;
   readonly when?: When;
+}
+
+/** v2.1. A stored dataset a chart draws by reference: which table, which series in it, and which of its fields. The names are the server's and keep their case. */
+export interface DatasetRef {
+  readonly name: string;
+  readonly instrument?: string;
+  readonly field?: string;
 }
 
 /** Where a node's incoming link comes from, written `from=<id>` or `from=<id>:<label>`. */
@@ -444,6 +459,39 @@ export interface BindLine {
   readonly change: BoundChange;
 }
 
+/**
+ * v2.1. Puts a picture the user gave on stage. `from` is the id the server gave the upload (`u1`); `box` is where it goes, in canvas units
+ * (absent: fitted whole into the canvas). It is an element like any other: it can be pointed at, labelled, drawn over and traced.
+ */
+export interface PicLine {
+  readonly verb: 'pic';
+  readonly id: string;
+  readonly styles: readonly string[];
+  readonly props: StyleProps;
+  readonly from: string;
+  readonly box?: CanvasBox;
+  readonly when?: When;
+}
+
+/** v2.1. Makes the turn a deck: every scene after this line is a slide. */
+export interface DeckLine {
+  readonly verb: 'deck';
+  readonly title: string;
+  readonly when?: When;
+}
+
+/**
+ * v2.1. What the user asked to hold from now on, or the end of one such ask. Consumed by the server; it is never scheduled and never
+ * reaches the painter. `drop` is the 1-based place of the ask in the list the brief gave, or `all`.
+ */
+export type StandingLine = { readonly verb: 'standing'; readonly text: string } | { readonly verb: 'standing'; readonly drop: number | 'all' };
+
+/** v2.1. Keep making the picture better, `passes` times at most. Consumed by the server; never scheduled. */
+export interface RefineLine {
+  readonly verb: 'refine';
+  readonly passes?: number;
+}
+
 export interface AmbientLine {
   readonly verb: 'ambient';
   readonly id: string;
@@ -551,6 +599,10 @@ export type Line =
   | GroupLine
   | UseLine
   | PaintLine
+  | PicLine
+  | DeckLine
+  | StandingLine
+  | RefineLine
   | StructureLine
   | NodeLine
   | LinkLine
@@ -569,7 +621,7 @@ export type Line =
   | CancelLine;
 
 /** The lines that put a new element on stage. */
-export type CreatingLine = SayLine | ShapeLine | PixLine | GroupLine | UseLine | PaintLine | AmbientLine | StructureLine | NodeLine | LinkLine | ControlLine | CardLine;
+export type CreatingLine = SayLine | ShapeLine | PixLine | GroupLine | UseLine | PaintLine | PicLine | AmbientLine | StructureLine | NodeLine | LinkLine | ControlLine | CardLine;
 
 export type IssueSeverity =
   /** the line was dropped */

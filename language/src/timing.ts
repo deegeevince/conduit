@@ -90,8 +90,15 @@ export const SET_SECONDS = 0.5;
  * type measurements, and the schedule may not depend on it.
  */
 export const LINK_SECONDS = 0.35;
-/** A row of a table landing. */
-export const TABLE_ROW_SECONDS: Readonly<Record<Pace, number>> = { slow: 0.28, steady: 0.18, brisk: 0.12 };
+/** A row of a table landing. Plain content arrives quickly: nobody watches a table fade in. */
+export const TABLE_ROW_SECONDS: Readonly<Record<Pace, number>> = { slow: 0.16, steady: 0.1, brisk: 0.07 };
+/** A line of code landing. A listing is read, not watched, and a long one must not hold the stage. */
+export const CODE_ROW_SECONDS: Readonly<Record<Pace, number>> = { slow: 0.06, steady: 0.04, brisk: 0.025 };
+/**
+ * How long plain content takes to fade or rise in: a paragraph of a page, the frame of a table, a chart or a block of code. The owner's
+ * "dont need to fade slowly". Anything the brain gave an exact length (`dur=`), or an entrance that is a performance (`slam`, `draw`), is as asked.
+ */
+export const QUICK_ENTER_SECONDS = 0.18;
 /** A point of a chart landing: quick, because a chart may have hundreds and the line should run, not tick. */
 export const CHART_ROW_SECONDS: Readonly<Record<Pace, number>> = { slow: 0.09, steady: 0.06, brisk: 0.04 };
 /** A chart drawn from DATA reveals itself over this long once the data is there, on the ambient clock: like a painting, data is not on the turn clock. */
@@ -115,11 +122,16 @@ export function beatSeconds(pace: Pace): number {
   return PACE_TIMING[pace].beat;
 }
 
-export function enterSeconds(effect: EnterEffect, by: By, text: string, pace: Pace, exact: number | null): number {
+/** Whether an entrance is the kind that only brings the thing into view, so that plain content may have it quick. */
+function isQuietEntrance(effect: EnterEffect): boolean {
+  return effect === 'fade' || effect === 'rise' || effect === 'wipe';
+}
+
+export function enterSeconds(effect: EnterEffect, by: By, text: string, pace: Pace, exact: number | null, quick = false): number {
   if (exact !== null) return Math.min(exact, LIMITS.enter);
   const timing = PACE_TIMING[pace];
   if (effect === 'cut' && by === 'all') return 0;
-  const base = ENTER_SECONDS[effect] * timing.ease;
+  const base = quick && isQuietEntrance(effect) ? Math.min(ENTER_SECONDS[effect], QUICK_ENTER_SECONDS) * timing.ease : ENTER_SECONDS[effect] * timing.ease;
   if (effect === 'type' || by === 'char') {
     const typed = Math.max(MIN_TYPED_SECONDS, plainLength(text) * timing.char);
     return Math.min(LIMITS.enter, base * 0.5 + typed);
@@ -141,10 +153,12 @@ export function spriteSeconds(rows: number, pace: Pace, exact: number | null): n
 }
 
 /** The entrance of anything that is not text and does not draw itself: a fade, a pop, a cut. */
-export function figureEnterSeconds(effect: EnterEffect, pace: Pace, exact: number | null): number {
+export function figureEnterSeconds(effect: EnterEffect, pace: Pace, exact: number | null, quick = false): number {
   if (exact !== null) return Math.min(exact, LIMITS.enter);
   if (effect === 'cut') return 0;
-  return ENTER_SECONDS[effect === 'type' ? 'wipe' : effect] * PACE_TIMING[pace].ease;
+  const named = effect === 'type' ? 'wipe' : effect;
+  const base = quick && isQuietEntrance(named) ? Math.min(ENTER_SECONDS[named], QUICK_ENTER_SECONDS) : ENTER_SECONDS[named];
+  return base * PACE_TIMING[pace].ease;
 }
 
 export function moveSeconds(speed: CameraSpeed | undefined, exact: number | undefined, fallback: number): number {
