@@ -369,11 +369,14 @@ async function runCheck(cx: Cx, spec: Spec): Promise<Res> {
       const box = gridBox(cx, spec['of'] as string | undefined, found);
       if (box === null) return { check: name, verdict: 'FAIL', detail: 'no grid or cell shape on stage to hold the words' };
       const pad = 3;
-      const out = found.filter((e) => {
+      const inside = (e: LiveElement): boolean => {
         const c = centre(e.box);
-        return c.x < box.x - pad || c.x > box.x + box.width + pad || c.y < box.y - pad || c.y > box.y + box.height + pad;
-      });
-      return res(name, out.map((e) => `"${e.text.slice(0, 14)}" is outside the grid`), `${found.length} words all inside the grid`);
+        return !(c.x < box.x - pad || c.x > box.x + box.width + pad || c.y < box.y - pad || c.y > box.y + box.height + pad);
+      };
+      // a word may also stand elsewhere (a result echoing a cell): it is out only when none of its copies is in the grid
+      const texts = [...new Set(found.map((e) => e.text.trim()))];
+      const out = texts.filter((t) => !found.some((e) => e.text.trim() === t && inside(e)));
+      return res(name, out.map((t) => `"${t.slice(0, 14)}" is outside the grid`), `${texts.length} words all inside the grid`);
     }
     case 'row-aligned': {
       const order = spec['order'] as string[];
