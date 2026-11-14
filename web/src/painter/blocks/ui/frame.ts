@@ -12,7 +12,7 @@ import type { ElementFrame, FigureFrame, Frame, PictureFrame, RunFrame, ShapeFra
 import { IDENTITY } from '../../../contracts/frame';
 import type { LookSpec } from '../../../contracts/look';
 import { REST_POSE } from '../../../contracts/space';
-import { foldText } from '../../../fonts';
+import { foldText } from '../../../fonts/fold';
 import { prefixEm } from '../../../fonts/measure';
 import type { UiClip, UiPart, UiRect } from './types';
 

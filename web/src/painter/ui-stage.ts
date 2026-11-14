@@ -31,6 +31,9 @@ import { NO_STATE } from './blocks/ui/types';
 import type { UiHit, UiPictureState, UiScreenLayout, UiState } from './blocks/ui/types';
 
 /** How long a part takes to come in once its row has landed. */
+/** The clock read of a pointer-down, only: nothing on the measuring path reads it. */
+const wallNow = (): number => (globalThis as { performance?: { now(): number } }).performance?.now() ?? 0;
+
 export const UI_ROW_FADE = 0.18;
 
 const measure = paintersMeasure();
@@ -225,7 +228,7 @@ export function downUi(blockKey: string, x: number, y: number, pointer: number):
   if (action.kind === 'toggle') {
     // a switch is held: its knob follows the finger from where it was; a tap that does not move flips it
     const eased = run.eases.get(action.control);
-    const from = eased === undefined ? thumbOf(run.state, action.control, action.on) : easedValue(eased, performance.now());
+    const from = eased === undefined ? thumbOf(run.state, action.control, action.on) : easedValue(eased, wallNow());
     run.eases.delete(action.control);
     run.grab = { pointer, kind: 'toggle', index: at.index, hit, x0: at.x, from, moved: false };
     run.state = { ...run.state, thumb: { ...run.state.thumb, [action.control]: from }, focus: null };

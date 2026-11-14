@@ -8,7 +8,7 @@ import type { AppCue, AppTokens } from '../contracts/app';
 import type { LookSpec } from '../contracts/look';
 import { layerZ, planeScale, projectToScreen, REST_POSE } from '../contracts/space';
 import type { Box, CameraPose, Viewport } from '../contracts/space';
-import { chartThemeOf } from '../render/chart';
+import { chartThemeOf } from '../render/chart/theme';
 import { contrastRatio, enforceInGamut, luminance, mix } from '../looks/colour-math';
 import { clamp01 } from './affine';
 import type { CanvasFit } from './canvas';

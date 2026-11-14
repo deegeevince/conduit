@@ -3,5 +3,5 @@
   "compilerOptions": {
     "types": ["node"]
   },
-  "include": ["src"]
+  "include": ["src", "../web/src/engine/dom-types.d.ts"]
 }

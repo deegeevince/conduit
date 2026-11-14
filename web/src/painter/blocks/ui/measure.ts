@@ -3,7 +3,7 @@
 // (`fonts/measure.ts`, generated from the font files), so a box here is as wide as the glyphs the renderer sets in it.
 // The solver imports no fonts: it is handed this.
 
-import { foldText } from '../../../fonts';
+import { foldText } from '../../../fonts/fold';
 import { measureEm, prefixEm } from '../../../fonts/measure';
 import { wrapMeasured } from '../../layout/wrap';
 
