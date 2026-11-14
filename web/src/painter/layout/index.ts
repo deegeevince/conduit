@@ -55,6 +55,8 @@ export interface LayoutInput {
    * other text, otherwise it slides to the nearest clear place and, failing
    * that, shrinks within the look's minimum.
    */
+  /** v2.1: drawn things on the reading plane (stage units) that words given a point must stand clear of: an outline, a drawing, a structure the brain boxed */
+  readonly obstacles?: readonly Box[];
   readonly pins?: ReadonlyMap<string, { readonly x: number; readonly y: number; /** how much of its size the word keeps because the picture it stands on was made smaller (the stage plan gave the picture less room than the whole stage): 0..1, absent is 1 */ readonly k?: number }>;
   /**
    * The column each line without `at=left|right` belongs to in a `split` scene, decided once over every line of the scene, so a line keeps its
@@ -419,7 +421,9 @@ function buildUnits(input: LayoutInput, look: LookSpec): { flow: Unit[]; loose: 
   for (const main of mains) {
     const unit: Unit = { main, ghosts: (ghostsOf.get(main.item.key) ?? []).sort(byOrder) };
     all.set(main.item.key, unit);
-    (isFlow(main.item.style, input.layout) ? flow : loose).push(unit);
+    // the choices belong to the foot wherever the brain said to put them: the foot is reserved for them, and nothing else is
+    const choice = input.foot !== undefined && main.item.style.tap && main.item.reserve === undefined;
+    (choice || isFlow(main.item.style, input.layout) ? flow : loose).push(unit);
   }
   return { flow, loose, all };
 }
@@ -902,7 +906,7 @@ function arrangeLoose(
     let bestOverlap = Infinity;
     if (pin !== null) {
       // Told a point: the word is set centred there. If that lands on other text it moves the least it must to a clear place; if that is far, it shrinks first.
-      const avoid = [...text, ...taken, ...across];
+      const avoid = [...text, ...taken, ...across, ...(layer === 'mid' ? (ctx.input.obstacles ?? []) : [])];
       const reach = 4 * step.y;
       let best: { loose: Loose; position: { x: number; y: number }; moved: number } | null = null;
       const kept = pin.k ?? 1;
@@ -921,7 +925,8 @@ function arrangeLoose(
         if (moved <= reach) break;
       }
       if (best === null) {
-        const loose = buildLoose(unit, 'center', frame, ctx, kept);
+        // nowhere is clear: as small as it may be, at the point it was told, rather than full size on top of something
+        const loose = buildLoose(unit, 'center', frame, ctx, (CLEAR_SHRINK[CLEAR_SHRINK.length - 1] ?? 1) * kept);
         const size = { width: loose.width, height: loose.height };
         const wanted = {
           x: Math.max(frame.x, Math.min(pin.x - size.width / 2, frame.x + frame.width - size.width)),

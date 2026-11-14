@@ -772,6 +772,24 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
       const scale = planeScale(style.layer, viewport);
       pins.set(element.key, { x: (fit.box.x + style.at.x * fit.unit) / scale, y: (fit.box.y + style.at.y * fit.unit) / scale, k: keeps });
     }
+    // drawn things that words given a point keep clear of: the outlines and drawings on the canvas (a filled card, or a shape that fills most of
+    // the picture, is a ground the words are meant to stand on) and the boxes the brain gave structures
+    const solids: Box[] = [];
+    for (const element of drawn) {
+      if (!element.carried && (element.enter === null || element.enter.start > start)) continue;
+      const gone = exitOf(element);
+      if (gone !== null && gone.start <= start) continue;
+      if (element.scene !== scene.id && !element.carried) continue;
+      const figure = element.figure;
+      if (element.kind === 'structure' && figure !== null && figure.kind === 'structure' && figure.box !== null) {
+        solids.push({ x: fit.box.x + figure.box.x * fit.unit, y: fit.box.y + figure.box.y * fit.unit, width: figure.box.w * fit.unit, height: figure.box.h * fit.unit });
+        continue;
+      }
+      if ((element.kind !== 'shape' && element.kind !== 'copy') || element.style.layer !== 'mid' || element.style.fill !== undefined) continue;
+      const at = canvasBoxOf(element, schedule, Math.max(start, element.enter?.end ?? 0));
+      if (at === null || at.w * at.h > 0.25 * CANVAS[scene.canvas].width * CANVAS[scene.canvas].height) continue;
+      solids.push({ x: fit.box.x + at.x * fit.unit, y: fit.box.y + at.y * fit.unit, width: Math.max(1, at.w * fit.unit), height: Math.max(1, at.h * fit.unit) });
+    }
     const arrangement = arrange({
       viewport,
       look,
@@ -779,6 +797,7 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
       align: scene.align,
       expected: valueAt(scene.expected, start, null),
       items,
+      obstacles: solids,
       flow: plan.flow,
       ...(plan.foot === null ? {} : { foot: plan.foot }),
       pins,
