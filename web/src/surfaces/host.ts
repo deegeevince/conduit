@@ -410,7 +410,8 @@ export function createSurfaceHost(options: SurfaceHostOptions): SurfaceHost {
         const layoutH = rest.height / run.fit;
         const w = message.width ?? 0;
         if (rest.width > 0 && rest.height > 0 && (message.height > layoutH + 1 || w > layoutW + 1)) {
-          const next = Math.max(FIT_MIN, Math.min(run.fit, rest.height / message.height, w > 0 ? rest.width / w : 1));
+          // a hair under the exact fit, so a content that is one pixel over does not leave a scrollbar
+          const next = Math.max(FIT_MIN, Math.min(run.fit, rest.height / message.height, w > 0 ? rest.width / w : 1) * 0.99);
           if (next < run.fit - 0.01) {
             run.fit = next;
             place(run, run.spec);
