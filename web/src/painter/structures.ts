@@ -529,7 +529,7 @@ export function buildStructures(schedule: Schedule, env: StructureEnv): Structur
         const spec: TextSpec = earlier !== undefined && earlier.kind === 'text' ? { ...part.spec, shrink: lerp(earlier.spec.shrink, part.spec.shrink, q) } : part.spec;
         const set = setTextOnce({ look, viewport: env.viewport, text: part.text, emphasis: part.emphasis as readonly Range[], style: { ...textStyleOf(style, spec), layer: structure.style.layer }, shrink: spec.shrink, maxWidth: box.width, width: box.width, align: part.align });
         const px = set.fontSize * ps;
-        const role = part.role === 'tick' || part.role === 'value' || part.role === 'label' ? 'dim' : style.ink;
+        const role = part.role === 'tick' || part.role === 'value' ? 'dim' : style.ink;
         const minRatio = minContrastFor(px, structure.style.layer);
         const cx0 = box.x + box.width / 2;
         const cy0 = box.y + box.height / 2;

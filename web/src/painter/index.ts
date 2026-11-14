@@ -1147,7 +1147,7 @@ export function createPainter(options: PainterOptions): Painter {
         rest(stage ?? base, null, clock.read().ambient);
         settledStage = null;
       }
-      const opened: Turn = { id, input, base, score: new TurnScore(base), seqs: new Set(), issues: new Map(), ack: 0, closed: false, started: false, showingAll: false, skippedAt: null };
+      const opened: Turn = { id, input, base, score: new TurnScore(base, input.kind), seqs: new Set(), issues: new Map(), ack: 0, closed: false, started: false, showingAll: false, skippedAt: null };
       turn = opened;
       memory = null;
       clock.openTurn();
@@ -1244,8 +1244,7 @@ export function createPainter(options: PainterOptions): Painter {
       const open = turn;
       if (!CANDIDATES_READY || open === null || open.id !== id || settling !== null) return;
       // a copy of the turn's score, the fix's lines pushed on it, and how that would land: the turn's own score and the stage are not touched
-      const copy = new TurnScore(open.base);
-      for (const entry of open.score.score) copy.push(entry.line, entry.seq, entry.floor);
+      const copy = open.score.fork();
       const floor = Math.max(0, clock.read().playhead);
       lines.forEach((line, index) => copy.push(line, CANDIDATE_SEQ + index, floor));
       sendDraft(open, pass, copy.schedule);

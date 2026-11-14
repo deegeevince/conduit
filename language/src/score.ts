@@ -48,6 +48,7 @@ export class TurnScore {
   readonly base: StageBase;
   private readonly entries: ScoreEntry[] = [];
   private readonly options: ScheduleOptions;
+  private readonly opened: TurnOpening;
   private current: Schedule;
 
   /**
@@ -56,12 +57,21 @@ export class TurnScore {
    */
   constructor(base: StageBase, opened: TurnOpening = 'none') {
     this.base = base;
+    this.opened = opened;
     this.options = { retireChoices: retiresChoices(opened) };
     this.current = buildSchedule([], base, this.options);
   }
 
   get schedule(): Schedule {
     return this.current;
+  }
+
+  /** A copy with the same base, the same opening and the same entries, to push a candidate on without touching this score. */
+  fork(): TurnScore {
+    const copy = new TurnScore(this.base, this.opened);
+    // every entry in order, the voided ones too: pushing them again voids them again, as it did the first time
+    for (const entry of this.entries) copy.push(entry.line, entry.seq, entry.floor);
+    return copy;
   }
 
   get score(): readonly ScoreEntry[] {

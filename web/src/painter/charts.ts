@@ -2,7 +2,7 @@
 // from the look, and handed to the charting engine's surface as a `ChartFrame`, which says where the surface goes and what to show. This
 // file is the pure half: (schedule, time, data) in, frames out. The engine, and the DOM it lives in, belong to the app.
 
-import { CHART_REVEAL_SECONDS, chartModelOf, readNumber, readWhen, styleAt } from '@conduit/language';
+import { CHART_REVEAL_SECONDS, cachedChartModel, readNumber, readWhen, styleAt } from '@conduit/language';
 import type { ChartModel, DataTable, ElementSpan, Scope, Schedule, StructureRow } from '@conduit/language';
 import type { ChartMark, ChartState, ChartTheme } from '../contracts/chart';
 import type { ChartFrame } from '../contracts/frame';
@@ -32,37 +32,27 @@ export interface ChartEnv {
   readonly roomOf: (element: ElementSpan) => Box | null;
 }
 
-const models = new WeakMap<object, Map<string, ChartModel>>();
-const themes = new WeakMap<LookSpec, ChartTheme>();
+const themes = new WeakMap<LookSpec, Map<string, ChartTheme>>();
 const states = new Map<string, { readonly signature: string; readonly state: ChartState }>();
 
-function themeOf(look: LookSpec): ChartTheme {
-  let found = themes.get(look);
+/** The theme of a look at this viewport: the label size is the stage's own, so a phone's chart is not a desk's. */
+function themeOf(look: LookSpec, viewport: Viewport): ChartTheme {
+  let bySize = themes.get(look);
+  if (bySize === undefined) {
+    bySize = new Map();
+    themes.set(look, bySize);
+  }
+  const key = `${viewport.width}x${viewport.height}`;
+  let found = bySize.get(key);
   if (found === undefined) {
-    found = chartThemeOf(look);
-    themes.set(look, found);
+    found = chartThemeOf(look, viewport);
+    bySize.set(key, found);
   }
   return found;
 }
 
 function rowsOfTable(table: DataTable): StructureRow[] {
   return [{ cells: table.columns, at: 0 }, ...table.rows.map((cells) => ({ cells, at: 0 }))];
-}
-
-/** The rows read once per (rows, controls): a slider that moves a cell reads them again, a frame that only moves the camera does not. */
-function modelOf(owner: object, kind: ChartState['kind'], rows: readonly StructureRow[], scope: Scope): ChartModel {
-  const scoped = JSON.stringify(scope);
-  let byScope = models.get(owner);
-  if (byScope === undefined) {
-    byScope = new Map();
-    models.set(owner, byScope);
-  }
-  const key = `${kind}|${rows.length}|${scoped}`;
-  const known = byScope.get(key);
-  if (known !== undefined) return known;
-  const made = chartModelOf(kind, rows, scope);
-  byScope.set(key, made);
-  return made;
 }
 
 /** The place on the model's own x axis that a mark's `x=` names: a row's label as written, else a time or a number. */
@@ -111,7 +101,7 @@ export function chartFrames(schedule: Schedule, tq: number, aq: number, look: Lo
     const failed = byReference && arrived !== undefined && arrived.table === null;
     const rows = byReference ? (arrived?.table == null ? [] : rowsOfTable(arrived.table)) : figure.rows;
     const owner: object = byReference ? (arrived?.table ?? figure) : figure;
-    const model = modelOf(owner, figure.chart, rows, env.scope);
+    const model = cachedChartModel(owner, figure.chart, rows, env.scope);
 
     // how far it is in, and out
     let opacity = 1;
@@ -147,9 +137,9 @@ export function chartFrames(schedule: Schedule, tq: number, aq: number, look: Lo
       marks.push({ key: node.key, x, y, label: node.text, arrived: node.enter === null || span <= 0 ? (tq >= from ? 1 : 0) : clamp01((tq - from) / span) });
     }
 
-    const theme = themeOf(look);
+    const theme = themeOf(look, env.viewport);
     const interactive = !coming && !going && !waiting && !failed && reveal >= 1 && opacity >= 0.99;
-    const signature = [figure.chart, figure.words.join(','), element.text, look.id, look.name, reveal.toFixed(3), landed, interactive ? 1 : 0, waiting ? 1 : 0, failed ? 1 : 0, env.reducedMotion ? 1 : 0, marks.map((mark) => `${mark.key}:${mark.x}:${mark.y}:${mark.arrived.toFixed(2)}`).join(';'), model.points.length, model.series.length].join('|');
+    const signature = [figure.chart, figure.words.join(','), element.text, look.id, look.name, `${env.viewport.width}x${env.viewport.height}`, reveal.toFixed(3), landed, interactive ? 1 : 0, waiting ? 1 : 0, failed ? 1 : 0, env.reducedMotion ? 1 : 0, marks.map((mark) => `${mark.key}:${mark.x}:${mark.y}:${mark.label}:${mark.arrived.toFixed(2)}`).join(';'), model.points.length, model.series.length].join('|');
     live.add(element.key);
     const kept = states.get(element.key);
     let state: ChartState;
