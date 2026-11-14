@@ -2193,7 +2193,9 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
     const worstOf = (colour: Colour): number => Math.min(...behind.map((under) => contrastRatio(colour, under)));
     const better = (colour: Colour): Colour => {
       if (worstOf(colour) >= minimum) return colour;
-      const best = [look.roles.ink, look.roles.ground].reduce((a, b) => (worstOf(b) > worstOf(a) ? b : a));
+      // the look's own ink or ground first; where neither reads on a mid-tone fill (light words on a light tile), plain black or white
+      const own = [look.roles.ink, look.roles.ground].reduce((a, b) => (worstOf(b) > worstOf(a) ? b : a));
+      const best = worstOf(own) >= minimum ? own : ['#000000' as Colour, '#ffffff' as Colour].reduce((a, b) => (worstOf(b) > worstOf(a) ? b : a), own);
       return worstOf(best) > worstOf(colour) ? best : colour;
     };
     const runs = frame.runs.map((run) => (run.opacity > 0.5 && run.reveal > 0 ? { ...run, colour: better(run.colour) } : run));
