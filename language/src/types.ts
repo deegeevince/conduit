@@ -333,6 +333,8 @@ export interface StructureLine {
   /** v2.1. A tune: how fast it is played (quarter notes a minute) and on what; absent: the score's own `Q:`, and a piano */
   readonly tempo?: number;
   readonly voice?: TuneVoice;
+  /** an app: the height it asks for, canvas units (the stage gives it the width); absent: the default */
+  readonly height?: number;
   /** a table: its numbers are drawn as bars beside the figures */
   readonly bars?: boolean;
   /** the room it is laid out in, canvas units; absent means the whole canvas */

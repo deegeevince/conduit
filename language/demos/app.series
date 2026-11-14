@@ -1,0 +1,21 @@
+# App: a live app, one HTML document taken exactly. It runs in a locked sandbox on the stage (no network, no cookies), keeps its
+# count with conduit.state, and tells the stage what the user did with conduit.send. It starts when the block is closed (the say).
+
+scene caption
+app tally height=320 | Tally
+| <style>
+| body { margin: 0; padding: 24px; text-align: center; }
+| #n { font-size: 72px; margin: 16px 0; }
+| button { font: inherit; min-height: 48px; padding: 0 28px; border: 0; border-radius: var(--radius); background: var(--accent); color: var(--ground); }
+| </style>
+| <div id="n">0</div>
+| <button id="add">Add one</button>
+| <script>
+| var s = conduit.state() || { n: 0 };
+| var el = document.getElementById('n');
+| function show() { el.textContent = s.n; }
+| document.getElementById('add').onclick = function () { s.n += 1; show(); conduit.state(s); conduit.send('count', s.n); };
+| show();
+| </script>
+say | A counter that keeps its count.
+wait 20

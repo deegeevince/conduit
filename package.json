@@ -32,6 +32,7 @@
     "critic-usage": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/critic-usage.ts",
     "lessons": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/lessons.ts",
     "taste": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/taste.ts",
+    "smoke": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/smoke.ts",
     "audit": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/audit.ts",
     "audit-log": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/audit.ts"
   },

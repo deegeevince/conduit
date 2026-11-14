@@ -94,6 +94,8 @@ export const LINK_SECONDS = 0.35;
 export const TABLE_ROW_SECONDS: Readonly<Record<Pace, number>> = { slow: 0.16, steady: 0.1, brisk: 0.07 };
 /** A line of code landing. A listing is read, not watched, and a long one must not hold the stage. */
 export const CODE_ROW_SECONDS: Readonly<Record<Pace, number>> = { slow: 0.06, steady: 0.04, brisk: 0.025 };
+/** A line of an app's document landing: a browser reads it, not a person, so it lands almost at once. */
+export const APP_ROW_SECONDS: Readonly<Record<Pace, number>> = { slow: 0.008, steady: 0.005, brisk: 0.003 };
 /** v2.2. A part of a mock-up lands a step after the one before it: quickly, in the order written, as a table's rows do. */
 export const UI_ROW_SECONDS: Readonly<Record<Pace, number>> = { slow: 0.09, steady: 0.06, brisk: 0.04 };
 /**

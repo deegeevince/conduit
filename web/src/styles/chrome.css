@@ -161,6 +161,146 @@ input {
   gap: var(--space-2);
 }
 
+/* Photos (v2.1): the buttons beside the field, the strip of thumbnails above it, and the page-wide drop target. */
+
+.prompt__photo {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: var(--control-height);
+  height: var(--control-height);
+  padding: 0;
+  background: transparent;
+  color: var(--chrome-text);
+  border: 1px solid var(--chrome-line);
+  cursor: pointer;
+}
+
+/* the camera button only where there is a camera to point: a touch screen */
+.prompt__photo--camera {
+  display: none;
+}
+
+@media (pointer: coarse) {
+  .prompt__photo--camera {
+    display: grid;
+  }
+}
+
+.prompt__photos {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.photos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin: 0;
+  padding: var(--space-2) var(--space-2) 0 0;
+  list-style: none;
+}
+
+.photos:empty {
+  display: none;
+}
+
+.photo {
+  position: relative;
+  width: 4.5rem;
+  height: 4.5rem;
+  display: grid;
+  place-items: center;
+  background: var(--chrome-ground);
+  border: 1px solid var(--chrome-line);
+}
+
+.photo__image {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.photo--sending .photo__image {
+  opacity: 0.45;
+}
+
+.photo__label {
+  position: absolute;
+  inset: auto 0 0 0;
+  padding: 1px 0;
+  background: var(--chrome-ground);
+  color: var(--chrome-text);
+  font-size: 0.6875rem;
+  text-align: center;
+}
+
+.photo__label:empty {
+  display: none;
+}
+
+.photo__remove {
+  position: absolute;
+  top: -0.6rem;
+  right: -0.6rem;
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  background: var(--chrome-text);
+  color: var(--chrome-ground);
+  border: 1px solid var(--chrome-ground);
+  border-radius: 50%;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.photos__note {
+  margin: 0;
+  font-size: var(--chrome-text-size-small);
+  color: var(--chrome-text-quiet);
+  overflow-wrap: anywhere;
+}
+
+.photos__note:empty {
+  display: none;
+}
+
+.photos__note--problem {
+  color: var(--chrome-text);
+  border-left: 3px solid var(--chrome-focus);
+  padding-left: var(--space-2);
+}
+
+.photos__drop {
+  position: fixed;
+  inset: var(--space-3);
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--chrome-ground) 88%, transparent);
+  border: 2px dashed var(--chrome-text);
+  color: var(--chrome-text);
+  font-size: 1.25rem;
+  pointer-events: none;
+}
+
+.photos__drop[hidden] {
+  display: none;
+}
+
+.prompt__photo:focus-visible,
+.photo__remove:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+
 .prompt__input {
   flex: 1 1 auto;
   min-width: 0;
@@ -489,6 +629,15 @@ input {
     grid-column: 1 / -1;
     grid-row: 3;
   }
+
+  .prompt__photos {
+    grid-column: 1 / -1;
+    grid-row: 3;
+  }
+
+  .prompt__photos:not([hidden]) + .prompt__form {
+    grid-row: 4;
+  }
 }
 
 /* The transcript on a phone is a sheet above the bar. */
@@ -696,15 +845,29 @@ input {
 /* Controls and charts on the stage (v2). The painter draws them; these are the real elements laid over them. */
 
 .access,
-.stage__charts {
+.stage__charts,
+.stage__apps {
   position: absolute;
   inset: 0;
   overflow: hidden;
   pointer-events: none;
 }
 
-.stage__charts {
+.stage__charts,
+.stage__apps {
   z-index: 1;
+}
+
+/* A live app: a sandboxed frame laid over the room the stage gave it (web/src/app/live-app.ts). It is laid out at its rest size and moved by a transform. */
+.stage__app {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+  border: 0;
+  background: transparent;
+  color-scheme: normal;
+  transition: opacity 0.18s ease-out;
 }
 
 .access {

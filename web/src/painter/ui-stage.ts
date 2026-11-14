@@ -146,6 +146,59 @@ export function typeUi(blockKey: string, key: string): boolean {
   return true;
 }
 
+/** A mock-up as a tester finds it, in stage units (the stage's own origin in the middle): what a finger can work, where its words are, and what the kit's own lint says. */
+export interface UiMockupView {
+  readonly block: string;
+  readonly screen: string;
+  readonly hits: readonly { readonly id: string; readonly part: string; readonly action: 'tab' | 'pick' | 'toggle' | 'field' | 'slider' | 'press'; readonly x: number; readonly y: number; readonly width: number; readonly height: number }[];
+  /** one box per line of words, where its ink is */
+  readonly words: readonly { readonly owner: string; readonly text: string; readonly x: number; readonly y: number; readonly width: number; readonly height: number }[];
+  readonly notes: readonly { readonly kind: string; readonly id: string; readonly message: string }[];
+}
+
+/**
+ * The mock-ups on stage as they rest, for the test hook: the live parts a finger can work now (a screen shown small beside the large one cannot be
+ * worked: a tap brings it forward), the words as they are drawn, and the kit's lint notes.
+ */
+export function uiMockupViews(blockKeys: readonly string[]): readonly UiMockupView[] {
+  const out: UiMockupView[] = [];
+  for (const block of blockKeys) {
+    const last = RUNTIMES.get(block)?.last;
+    if (last === null || last === undefined) continue;
+    for (const p of last.board.placements) {
+      const screen = last.layouts[p.index];
+      if (screen === undefined) continue;
+      const working = last.board.mode !== 'focus' || p.index === last.board.focus;
+      const hits = working
+        ? screen.hits.map((hit) => ({ id: hit.id, part: hit.part, action: hit.action.kind, x: last.room.x + p.contentX + hit.x * p.scale, y: last.room.y + p.contentY + hit.y * p.scale, width: hit.w * p.scale, height: hit.h * p.scale }))
+        : [];
+      const words: { owner: string; text: string; x: number; y: number; width: number; height: number }[] = [];
+      for (const part of last.board.parts) {
+        if (part.kind !== 'text' || !part.owner.startsWith(`${screen.id}`) && part.owner !== screen.id) continue;
+        const clip = part.clip;
+        part.lines.forEach((line, index) => {
+          const width = Math.min(line.width, part.w);
+          const x = part.align === 'center' ? part.x + (part.w - width) / 2 : part.align === 'right' ? part.x + part.w - width : part.x;
+          const y = part.y + index * part.line + (part.line - part.size) / 2;
+          let x0 = x;
+          let y0 = y;
+          let x1 = x + width;
+          let y1 = y + part.size;
+          if (clip !== undefined) {
+            x0 = Math.max(x0, clip.x);
+            y0 = Math.max(y0, clip.y);
+            x1 = Math.min(x1, clip.x + clip.w);
+            y1 = Math.min(y1, clip.y + clip.h);
+          }
+          if (x1 > x0 && y1 > y0) words.push({ owner: part.owner, text: line.text, x: last.room.x + x0, y: last.room.y + y0, width: x1 - x0, height: y1 - y0 });
+        });
+      }
+      out.push({ block, screen: screen.id, hits, words, notes: screen.notes.map((note) => ({ kind: note.kind, id: note.id, message: note.message })) });
+    }
+  }
+  return out;
+}
+
 /** Whether a point of the stage is over a mock-up's block that is on stage: the block's key. */
 export function uiBlockAt(blockKeys: readonly string[], x: number, y: number): string | null {
   for (const key of blockKeys) {

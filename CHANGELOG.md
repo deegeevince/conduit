@@ -2,6 +2,9 @@
 
 Newest first. Each item is something the brain can show live when asked "showcase what's new": draw it, don't describe it. The server reads this file.
 
+## Photos in (live)
+- Add photos to a message: the photo button (the camera on a phone), paste, or drag and drop; up to 4, shown before sending. Conduit reads them (a worksheet becomes a table of its questions) and can show them on the canvas. Stored privately, upright, with location and other hidden details stripped.
+
 ## v2.2 first slice (live)
 - Mock-ups stay on screen, can be clicked through (type into fields, passwords as dots, buttons go to the next screen), get relevant photos, and the bottom bar stays readable in every look.
 - Mock-ups described, not drawn: ask for a page, an app screen or a user journey and get a laid-out browser page or phones (nav, buttons, cards, forms) in a clean studio look or a wireframe, with a real credited Creative Commons photo where a picture belongs.

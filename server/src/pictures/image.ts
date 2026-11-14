@@ -150,42 +150,91 @@ export interface Reencoder {
 
 const ROTATE: Readonly<Record<number, number>> = { 3: 180, 6: 90, 8: 270 };
 
+/** True for a HEIC or HEIF file (what an iPhone's camera makes): an ISO base media `ftyp` box whose brand is one of the HEIF family. */
+export function isHeic(b: Uint8Array): boolean {
+  if (b.length < 32 || ascii(b, 4, 4) !== 'ftyp') return false;
+  const brands = new Set(['heic', 'heix', 'heim', 'heis', 'hevc', 'hevx', 'mif1', 'msf1']);
+  const end = Math.min(b.length, 8 + u32(b, 0), 64);
+  for (let at = 8; at + 4 <= end; at += 4) if (brands.has(ascii(b, at, 4))) return true;
+  return false;
+}
+
+/** HEIC to a JPEG, by the machine's own decoder (`sips`). The result may still carry metadata; `Reencoder.reencode` strips it. */
+export async function heicToJpeg(bytes: Uint8Array): Promise<Uint8Array> {
+  const dir = await mkdtemp(join(tmpdir(), 'conduit-heic-'));
+  try {
+    await writeFile(join(dir, 'in.heic'), bytes);
+    await run('/usr/bin/sips', ['-s', 'format', 'jpeg', join(dir, 'in.heic'), '--out', join(dir, 'out.jpg')], 30_000);
+    return new Uint8Array(await readFile(join(dir, 'out.jpg')));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
 /** macOS's `sips`: decode, rotate upright, shrink, re-encode as JPEG, crop to the box. Files live in a fresh temp directory and are removed. */
-export const sipsReencoder: Reencoder = {
-  id: 'sips',
-  async reencode(bytes, sniffed, aspect) {
-    const dir = await mkdtemp(join(tmpdir(), 'conduit-picture-'));
-    try {
-      const input = join(dir, `in.${sniffed.format === 'jpeg' ? 'jpg' : sniffed.format}`);
-      const mid = join(dir, 'mid.jpg');
-      const out = join(dir, 'out.jpg');
-      await writeFile(input, bytes);
-      const args = ['-s', 'format', 'jpeg', '-s', 'formatOptions', String(PICTURE_LIMITS.jpegQuality)];
-      const turn = ROTATE[sniffed.orientation];
-      if (turn !== undefined) args.push('-r', String(turn));
-      if (Math.max(sniffed.width, sniffed.height) > PICTURE_LIMITS.maxSide) args.push('-Z', String(PICTURE_LIMITS.maxSide));
-      await run('/usr/bin/sips', [...args, input, '--out', mid], 30_000);
-      const shrunk = sniff(new Uint8Array(await readFile(mid)));
-      if (shrunk === null || shrunk.format !== 'jpeg') throw new Error('sips made no jpeg');
-      let final = mid;
-      if (aspect !== null && Number.isFinite(aspect) && aspect > 0) {
-        const have = shrunk.width / shrunk.height;
-        if (Math.abs(Math.log(have / aspect)) > 0.05) {
-          const width = have > aspect ? Math.round(shrunk.height * aspect) : shrunk.width;
-          const height = have > aspect ? shrunk.height : Math.round(shrunk.width / aspect);
-          await run('/usr/bin/sips', ['-c', String(Math.max(1, height)), String(Math.max(1, width)), mid, '--out', out], 30_000);
-          final = out;
+export function sipsReencoderFor(settings: { readonly maxSide: number; readonly quality: number }): Reencoder {
+  return {
+    id: 'sips',
+    async reencode(bytes, sniffed, aspect) {
+      const dir = await mkdtemp(join(tmpdir(), 'conduit-picture-'));
+      try {
+        const input = join(dir, `in.${sniffed.format === 'jpeg' ? 'jpg' : sniffed.format}`);
+        const mid = join(dir, 'mid.jpg');
+        const out = join(dir, 'out.jpg');
+        await writeFile(input, bytes);
+        const args = ['-s', 'format', 'jpeg', '-s', 'formatOptions', String(settings.quality)];
+        const turn = ROTATE[sniffed.orientation];
+        if (turn !== undefined) args.push('-r', String(turn));
+        if (Math.max(sniffed.width, sniffed.height) > settings.maxSide) args.push('-Z', String(settings.maxSide));
+        await run('/usr/bin/sips', [...args, input, '--out', mid], 30_000);
+        const shrunk = sniff(new Uint8Array(await readFile(mid)));
+        if (shrunk === null || shrunk.format !== 'jpeg') throw new Error('sips made no jpeg');
+        let final = mid;
+        if (aspect !== null && Number.isFinite(aspect) && aspect > 0) {
+          const have = shrunk.width / shrunk.height;
+          if (Math.abs(Math.log(have / aspect)) > 0.05) {
+            const width = have > aspect ? Math.round(shrunk.height * aspect) : shrunk.width;
+            const height = have > aspect ? shrunk.height : Math.round(shrunk.width / aspect);
+            await run('/usr/bin/sips', ['-c', String(Math.max(1, height)), String(Math.max(1, width)), mid, '--out', out], 30_000);
+            final = out;
+          }
         }
+        const done = new Uint8Array(await readFile(final));
+        const check = sniff(done);
+        if (check === null || check.format !== 'jpeg') throw new Error('output is not a jpeg');
+        return stripJpeg(done);
+      } finally {
+        await rm(dir, { recursive: true, force: true });
       }
-      const done = new Uint8Array(await readFile(final));
-      const check = sniff(done);
-      if (check === null || check.format !== 'jpeg') throw new Error('output is not a jpeg');
-      return stripJpeg(done);
-    } finally {
-      await rm(dir, { recursive: true, force: true });
-    }
-  },
-};
+    },
+  };
+}
+
+export const sipsReencoder: Reencoder = sipsReencoderFor({ maxSide: PICTURE_LIMITS.maxSide, quality: PICTURE_LIMITS.jpegQuality });
+
+/**
+ * Crops an upright JPEG to a rectangle given as fractions of its width and height (`x`, `y` from the top left), by `sips`, and strips
+ * the result again. The caller has checked the rectangle.
+ */
+export async function cropJpeg(bytes: Uint8Array, crop: { readonly x: number; readonly y: number; readonly w: number; readonly h: number }): Promise<Uint8Array> {
+  const seen = sniff(bytes);
+  if (seen === null || seen.format !== 'jpeg') throw new Error('crop: not a jpeg');
+  const left = Math.min(seen.width - 1, Math.max(0, Math.round(crop.x * seen.width)));
+  const top = Math.min(seen.height - 1, Math.max(0, Math.round(crop.y * seen.height)));
+  const width = Math.max(1, Math.min(seen.width - left, Math.round(crop.w * seen.width)));
+  const height = Math.max(1, Math.min(seen.height - top, Math.round(crop.h * seen.height)));
+  const dir = await mkdtemp(join(tmpdir(), 'conduit-crop-'));
+  try {
+    await writeFile(join(dir, 'in.jpg'), bytes);
+    await run('/usr/bin/sips', ['-c', String(height), String(width), '--cropOffset', String(top), String(left), join(dir, 'in.jpg'), '--out', join(dir, 'out.jpg')], 30_000);
+    const done = new Uint8Array(await readFile(join(dir, 'out.jpg')));
+    const check = sniff(done);
+    if (check === null || check.format !== 'jpeg') throw new Error('crop: output is not a jpeg');
+    return stripJpeg(done);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
 
 /** For machines with no decoder: nothing is stored, because a file that was not re-encoded is not safe to keep. */
 export const NO_REENCODER: Reencoder = { id: 'none', reencode: () => Promise.reject(new Error('no image re-encoder on this machine')) };

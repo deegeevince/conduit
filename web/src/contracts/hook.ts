@@ -1,7 +1,8 @@
 import type { BackEvent, ControlValue, Sight } from '@conduit/language';
+import type { AppProbe } from './app';
 import type { ExportJob, ExportRequest } from './export';
 import type { ChartProbe, ChartView } from './chart';
-import type { ControlView, LineView, PainterSnapshot, StageElementView } from './painter';
+import type { ControlView, LineView, PainterSnapshot, StageElementView, UiMockup } from './painter';
 
 /**
  * `window.__stage`: how a tester (human or agent) inspects and drives a stage
@@ -40,6 +41,8 @@ export interface StageHook {
   demo(name: string): Promise<string>;
   /** The same as tapping the element with this id. */
   tap(id: string): void;
+  /** v2.3. The live apps: whether each runs, is shown, what it has saved and what the host refused from it. */
+  apps(): readonly AppProbe[];
   /** The charts on stage: what each draws, its visible range, and what its crosshair is on. */
   charts(): readonly ChartView[];
   /**
@@ -48,6 +51,8 @@ export interface StageHook {
    * shows after the engine has drawn it. Throws when no chart has the id.
    */
   chart(id: string, action: { readonly hover: number } | { readonly zoom: number } | { readonly pan: number } | { readonly reset: true }): Promise<ChartProbe>;
+  /** v2.2. The mock-ups on stage as they rest: what a finger works, the words as drawn, the kit's lint notes; host CSS pixels. What the deploy gate (`pnpm smoke`) taps and judges. */
+  mockups(): readonly UiMockup[];
   /** The controls on stage, with their values and where they are on screen. */
   controls(): readonly ControlView[];
   /**

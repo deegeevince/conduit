@@ -172,11 +172,14 @@ async function perform(app: StageApp, command: Command, onChoice: (choice: Brain
       }
       // The page stops first, so the owner sees it stop before the server has answered; then the server stops everything else.
       app.interrupt();
+      // a live app is code the brain wrote: it is ended with everything else, at once, before the server has answered
+      const apps = app.apps.killAll();
       const stopped = await app.link.killAll();
       const parts = [
         `${stopped.turns} answer${stopped.turns === 1 ? '' : 's'} ended`,
         `${stopped.permissionsDenied} question${stopped.permissionsDenied === 1 ? '' : 's'} refused`,
         `${stopped.children} helper process${stopped.children === 1 ? '' : 'es'} killed`,
+        ...(apps > 0 ? [`${apps} live app${apps === 1 ? '' : 's'} ended`] : []),
       ];
       app.announce(`Stopped everything: ${parts.join(', ')}. Agent tools are off until "/stop-all resume".${stopped.browserTabs > 0 ? ` ${stopped.browserTabs} tab${stopped.browserTabs === 1 ? '' : 's'} it opened in Chrome ${stopped.browserTabs === 1 ? 'is' : 'are'} still open: close its tab group.` : ''}${stopped.survivors > 0 ? ` ${stopped.survivors} process${stopped.survivors === 1 ? '' : 'es'} would not die; see the audit.` : ''}`);
       return;

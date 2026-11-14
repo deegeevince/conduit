@@ -17,6 +17,8 @@ export interface Recording {
   readonly lines: readonly { readonly seq: number; readonly line: Line }[];
   /** paintings that had arrived when the recording was taken, by element key: same-origin URLs */
   readonly paintings: Readonly<Record<string, string>>;
+  /** the width over the height of each photo the user gave that is among `paintings`, by element key, so that a film fits it whole as the screen did; absent: none */
+  readonly aspects?: Readonly<Record<string, number>>;
 }
 
 export interface FilmOptions {

@@ -27,12 +27,14 @@ export function createHook(app: Omit<StageApp, 'hook'>, ready: Promise<void>): S
       if (element === undefined) throw new Error(`Nothing with the id "${id}" is on stage.`);
       painter.tapElement(element.key);
     },
+    apps: () => app.apps.probe(),
     charts: () => painter.snapshot().charts,
     chart(id, action) {
       const view = painter.snapshot().charts.find((candidate) => candidate.id === id);
       if (view === undefined || app.charts === null) return Promise.reject(new Error(`No chart with the id "${id}" is on stage.`));
       return app.charts.act(view.key, action);
     },
+    mockups: () => painter.mockups(),
     controls: () => painter.snapshot().controls,
     control(id, value) {
       if (!painter.snapshot().controls.some((candidate) => candidate.id === id)) throw new Error(`No control with the id "${id}" is on stage.`);

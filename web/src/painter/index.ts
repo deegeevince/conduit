@@ -15,7 +15,7 @@ import type { ElementFrame, Frame, Quality, ShapeFrame } from '../contracts/fram
 import type { LookSpec } from '../contracts/look';
 import type { ControlView, LineView, Painter, PainterEvents, PainterOptions, PainterSnapshot } from '../contracts/painter';
 import { REST_POSE } from '../contracts/space';
-import type { CameraPose, Viewport } from '../contracts/space';
+import type { Box, CameraPose, Viewport } from '../contracts/space';
 import { PlayClock, pinnedWallTime } from './clock';
 import type { ClockReading, Horizon } from './clock';
 import { resolveInk } from './colour';
@@ -27,7 +27,7 @@ import { bodySize, marginOf, screenFacts } from './layout/metrics';
 import { Reporter } from './report';
 import { annotated } from './annotate';
 import { placedOf, sightOf } from './sight';
-import { isScreenBlock, releaseUi, setUiPicture, tapUi, typeUi, typingUi, uiBlockAt } from './ui-stage';
+import { isScreenBlock, releaseUi, setUiPicture, tapUi, typeUi, typingUi, uiBlockAt, uiMockupViews } from './ui-stage';
 import { buildTimeline, settledAfter, settledEnd as settledEndOf } from './timeline';
 import type { Timeline, TimelineContext, TimelineInstant } from './timeline';
 
@@ -39,8 +39,8 @@ const CANDIDATES_READY = true;
 const CANDIDATE_SEQ = 1_000_000;
 /** STUB(PLAN-v2.1 package T2): true once a `deck` turn stops at each slide and `Painter.slide` steps through them. */
 const DECKS_READY = false;
-/** STUB(PLAN-v2.1 package T2): true once `pic … from=<upload id>` draws the user's picture. */
-const UPLOADS_READY = false;
+/** True: `pic … from=<upload id>` draws the user's photo, fetched from `options.uploadUrl` (the session's own `/api/sessions/<id>/uploads/<upload id>`). */
+const UPLOADS_READY = true;
 /** STUB(PLAN-v2.1 part two): true once `say href=` is drawn as a link the viewer can follow. The brain is taught `href` only when it is. */
 const LINKS_READY = false;
 /** ms a chart waits for the rows it draws by reference before it is shown without them */
@@ -56,6 +56,8 @@ const GLYPH_HOLD_MS = 4000;
 const SKIP_FADE_SECONDS = 0.15;
 /** The longer side of a sketch or a snapshot sent to the server, in pixels. */
 const PICTURE_SIDE = 768;
+/** How long a picture of the stage waits for each live app to draw itself first, ms. */
+const APP_PICTURE_MS = 1500;
 /** How many finished turns can still be recorded for export. */
 const KEPT_RECORDINGS = 8;
 
@@ -298,15 +300,55 @@ export function createPainter(options: PainterOptions): Painter {
   const host = options.charts ?? null;
   /** where the music is made, when this stage can make it */
   const player = options.tunes ?? null;
+  /** where live apps run, when this stage can run them */
+  const appHost = options.apps ?? null;
   /** what has come of the data charts asked for by reference */
   const chartData = new Map<string, ChartData>();
   const chartKinds = host === null ? [] : CHARTS_READY.filter((kind) => host.kinds.includes(kind));
-  const timelineContext = (): TimelineContext => ({ viewport, reducedMotion, lockLook, paintings, onFault: noteFault, arrivals, controls: runtime, ...(host === null || chartKinds.length === 0 ? {} : { charts: { kinds: chartKinds, data: chartData } }) });
+  const timelineContext = (): TimelineContext => ({ viewport, reducedMotion, lockLook, paintings, onFault: noteFault, arrivals, controls: runtime, ...(host === null || chartKinds.length === 0 ? {} : { charts: { kinds: chartKinds, data: chartData } }), ...(appHost === null ? {} : { apps: true }) });
+
+  const photoAspects = new Map<string, number>();
+  /** The width over the height of the picture at `url`, once the browser has read it. */
+  const shapeOf = (url: string): Promise<number> =>
+    new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve(image.naturalHeight > 0 ? image.naturalWidth / image.naturalHeight : 1);
+      image.onerror = () => reject(new Error('the photo could not be read'));
+      image.src = url;
+    });
+
+  /** The user's photo `from` for the picture with this key: loaded once, then handed to the same arrival path a painting uses. A photo this conversation does not hold is drawn as nothing. */
+  const fetchPhoto = (key: string, from: string): void => {
+    const url = options.uploadUrl?.(from) ?? null;
+    if (url === null) {
+      paintings.set(key, { status: 'unpainted', url: null, since: 0 });
+      return;
+    }
+    paintings.set(key, { status: 'waiting', url: null, since: 0 });
+    // Loaded twice over: the renderer takes it into its own cache, and the page reads its shape, so that it is fitted whole and never stretched.
+    Promise.all([renderer.preload(url), shapeOf(url)]).then(
+      ([, aspect]) => {
+        if (disposed) return;
+        photoAspects.set(key, aspect);
+        arrived.set(key, url);
+        promoteArrivals(clock.read());
+        drawNow();
+      },
+      () => {
+        if (!disposed) paintings.set(key, { status: 'unpainted', url: null, since: 0 });
+      },
+    );
+  };
 
   /** Every picture the stage has is accounted for: waiting for its painting if the server can paint, unpainted if not. */
   const syncPaintings = (schedule: Schedule): void => {
     for (const element of schedule.elements) {
       if (element.figure?.kind !== 'picture' || paintings.has(element.key)) continue;
+      // A photo the user gave is fetched, not painted: it is on its way from the moment the line is read, and grows once it is on stage.
+      if (element.figure.from !== undefined && element.figure.from !== null) {
+        fetchPhoto(element.key, element.figure.from);
+        continue;
+      }
       paintings.set(element.key, { status: services.paint && !element.carried ? 'waiting' : 'unpainted', url: null, since: 0 });
     }
   };
@@ -320,7 +362,7 @@ export function createPainter(options: PainterOptions): Painter {
   const queueSketches = (schedule: Schedule): void => {
     if (!canSketch()) return;
     for (const element of schedule.elements) {
-      if (element.figure?.kind !== 'picture' || element.carried || sketched.has(element.key) || sketchQueue.has(element.key)) continue;
+      if (element.figure?.kind !== 'picture' || element.figure.from != null || element.carried || sketched.has(element.key) || sketchQueue.has(element.key)) continue;
       sketchQueue.set(element.key, 0);
     }
   };
@@ -359,7 +401,7 @@ export function createPainter(options: PainterOptions): Painter {
       sight: caps.capture ? 'snapshot' : 'report',
       // Series 4. Each list is what is really built: the structure and control engines say what they lay out, the renderer what it
       // paints. The brain is taught exactly these, so nothing here may be switched on ahead of the code that performs it.
-      structures: FULL_CAPABILITIES.structures.filter((kind) => (kind === 'chart' ? chartKinds.length > 0 : STRUCTURES_READY.includes(kind))),
+      structures: FULL_CAPABILITIES.structures.filter((kind) => (kind === 'chart' ? chartKinds.length > 0 : kind === 'app' ? appHost !== null : STRUCTURES_READY.includes(kind))),
       charts: FULL_CAPABILITIES.charts.filter((kind) => chartKinds.includes(kind)),
       controls: FULL_CAPABILITIES.controls.filter((kind) => CONTROLS_READY.includes(kind)),
       media: FULL_CAPABILITIES.media.filter((medium) => caps.media.includes(medium)),
@@ -515,16 +557,22 @@ export function createPainter(options: PainterOptions): Painter {
   };
 
   /** a chart draws itself in a surface of its own: a picture of the stage takes the engine's still of it */
-  const stills = (frame?: Frame): { chartStill?: (key: string) => HTMLCanvasElement | null } =>
-    host === null
+  const stills = (frame?: Frame): { chartStill?: (key: string) => HTMLCanvasElement | null; appStill?: (key: string) => CanvasImageSource | null } => ({
+    ...(host === null
       ? {}
       : {
-          chartStill: (key) => {
+          chartStill: (key: string) => {
             // a frame computed ahead of the playhead (a draft, a snapshot) has charts the stage has not mounted yet: draw them off screen
             const chart = frame?.charts?.find((candidate) => candidate.key === key);
             return (chart === undefined ? null : host.stillOf(chart)) ?? host.still(key);
           },
-        };
+        }),
+    // a live app runs in a frame over the stage: a picture of the stage takes the app's own picture of itself
+    ...(appHost === null ? {} : { appStill: (key: string) => appHost.still(key) }),
+  });
+
+  /** what a picture of the stage waits for first: each running app drawing itself as it stands (a moment, no more) */
+  const appsFresh = (): Promise<void> => (appHost === null ? Promise.resolve() : appHost.refresh(APP_PICTURE_MS).catch(() => undefined));
 
   const wantsSnapshot = (): boolean => renderer.capabilities.capture && services.sight === 'snapshot';
 
@@ -617,8 +665,8 @@ export function createPainter(options: PainterOptions): Painter {
     // A resting stage has no arrivals: everything on it is there. The turn's own (an interrupted turn is still settling) must not be read.
     const rest = buildTimeline(restSchedule(stage), stage, { ...timelineContext(), arrivals: new Map() });
     const frame: Frame = { ...rest.frameAt({ time: 0, ambient: 3, wallTime: pinnedWallTime(3), clock: 'paused' }), camera: REST_POSE };
-    void renderer
-      .rasterise(frame, { maxSide: PICTURE_SIDE, mime: 'image/jpeg', quality: 0.8, ...stills(frame) })
+    void appsFresh()
+      .then(() => renderer.rasterise(frame, { maxSide: PICTURE_SIDE, mime: 'image/jpeg', quality: 0.8, ...stills(frame) }))
       .then((blob) => {
         if (blob !== null && !disposed) emit('upload', { kind: 'snapshot', turn: turnId, blob });
       })
@@ -703,7 +751,8 @@ export function createPainter(options: PainterOptions): Painter {
       }
       if (picture.carried || picture.enter === null || picture.enter.start <= reading.playhead) {
         arrived.delete(key);
-        paintings.set(key, { status: 'ready', url, since: reading.ambient });
+        const aspect = photoAspects.get(key);
+        paintings.set(key, { status: 'ready', url, since: reading.ambient, ...(aspect === undefined ? {} : { aspect }) });
         latePaintings.set(key, url);
         if (latePaintings.size > 64) latePaintings.delete(latePaintings.keys().next().value as string);
       }
@@ -745,7 +794,7 @@ export function createPainter(options: PainterOptions): Painter {
       const painting = paintings.get(element.key);
       if (element.figure?.kind === 'picture' && painting !== undefined && painting.status === 'ready' && painting.url !== null) pictures[element.key] = painting.url;
     }
-    recordings.set(closing.id, { turn: closing.id, base: closing.base, lines, paintings: pictures });
+    recordings.set(closing.id, { turn: closing.id, base: closing.base, lines, paintings: pictures, aspects: Object.fromEntries(photoAspects) });
     lastRecorded = closing.id;
     for (const id of [...recordings.keys()]) {
       if (recordings.size <= KEPT_RECORDINGS) break;
@@ -802,6 +851,7 @@ export function createPainter(options: PainterOptions): Painter {
       if (frame.spec !== lastReadySpec && !reset) sendReady(frame.spec);
       if (reset) renderer.reset();
       if (host !== null) host.sync(frame.charts ?? [], viewport.dpr);
+      if (appHost !== null && !reset) appHost.sync(frame.apps ?? [], viewport.dpr);
       // the music follows the stage: begun when a tune is whole, held while the stage is paused or hidden, let go when its tune has left
       if (player !== null && !reset) player.sync(frame.tunes ?? [], { aq: reading.ambient, running: reading.state !== 'paused' && !reading.hidden });
       lastFrame = frame;
@@ -1457,6 +1507,19 @@ export function createPainter(options: PainterOptions): Painter {
       if (settling !== null) timeline = buildTimeline(timeline.schedule, turn?.base ?? base, timelineContext());
       sendReady(lastReadySpec ?? timeline.specAt(0));
       drawNow();
+    },
+
+    mockups() {
+      const blocks = timeline.schedule.elements.filter(isScreenBlock).map((span) => span.key);
+      const dx = viewport.width / 2;
+      const dy = viewport.height / 2;
+      const host = (b: { readonly x: number; readonly y: number; readonly width: number; readonly height: number }): Box => ({ x: b.x + dx, y: b.y + dy, width: b.width, height: b.height });
+      return uiMockupViews(blocks).map((view) => ({
+        screen: view.screen,
+        hits: view.hits.map((hit) => ({ id: hit.id, part: hit.part, action: hit.action, box: host(hit) })),
+        words: view.words.map((word) => ({ owner: word.owner, text: word.text, box: host(word) })),
+        notes: view.notes,
+      }));
     },
 
     snapshot: snapshotNow,

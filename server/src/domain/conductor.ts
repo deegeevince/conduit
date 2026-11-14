@@ -48,6 +48,8 @@ import type { Critic, FindingQueue } from './critic';
 import { DETAIL_MAX, redactSecrets, splitTool } from './agent';
 import { NO_AUDIT } from '../audit';
 import type { Audit, AuditDecider } from '../audit';
+import { NO_UPLOADS } from './uploads';
+import type { StoredUpload, UploadStore } from './uploads';
 import type { UsageMeter } from '../usage';
 import { currentIdentity, labelOf } from '../identity';
 import { askedOf, refusalProblem, reviewTurn } from './review';
@@ -92,6 +94,8 @@ export interface ConductorDeps {
   readonly modes: readonly BrainMode[];
   /** v2.1 ops. The audit trail: every tool call, permission asked and answered, setting changed and connector used. Absent: nothing is written. */
   readonly audit?: Audit;
+  /** v2.1. The user's photos, kept in the data folder. Absent: no photo can be given. */
+  readonly uploads?: UploadStore;
   /** v2.1 ops. The usage meter: every brain turn and review pass is written to it; its throttle only ever warns the owner, never refuses a turn. */
   readonly usage?: UsageMeter;
   /** milliseconds; injected so nothing in the domain reads the wall clock directly */
@@ -154,6 +158,7 @@ export class Conductor {
       // A look is promised only when a fix can be tried first: a painter that cannot gets no fix at all, never a redraw.
       review: review.enabled && review.passes >= 1 && capabilities.drafts && capabilities.candidates && brains.configured.review !== undefined,
       ...(critic.available ? { critic: true } : {}),
+      ...(this.deps.uploads?.available === true ? { uploads: true } : {}),
       ...(mode === undefined || mode === 'plain' ? {} : { mode }),
     };
   }
@@ -223,6 +228,14 @@ export class Conductor {
       }
       s.draft.close(previous.id);
       this.closeMemoryWithoutReport(s, previous);
+    }
+
+    // The photos a prompt names are this conversation's own, or the turn does not open.
+    if (input.kind === 'prompt' && (input.images?.length ?? 0) > 0) {
+      const held = this.deps.uploads ?? NO_UPLOADS;
+      if (!held.available) throw errors.badRequest('photos are switched off on this server');
+      const missing = (input.images ?? []).find((id) => !held.has(s.id, id));
+      if (missing !== undefined) throw errors.badRequest(`this conversation has no photo ${missing}`);
     }
 
     const brain = brains.forInput(input);
@@ -514,6 +527,12 @@ export class Conductor {
     return this.deps.sessions.require(session, this.deps.now()).findings.get(turn);
   }
 
+  /** A photo the user gave has been kept: said in the session's log by its id and size, never its bytes. */
+  noteUpload(session: string, stored: StoredUpload): void {
+    const s = this.deps.sessions.require(session, this.deps.now());
+    this.deps.sessionLog.write(s.id, { type: 'upload', turn: null, id: stored.id, mime: stored.mime, bytes: stored.bytes, width: stored.width, height: stored.height, file: stored.file });
+  }
+
   assertSession(session: string): void {
     this.deps.sessions.require(session, this.deps.now());
   }
@@ -649,7 +668,7 @@ export class Conductor {
         this.deps.sessionLog.write(s.id, { type: 'tap', turn: event.turn, id: event.id, text: event.text, choice: event.choice });
         return;
       case 'control':
-        this.deps.sessionLog.write(s.id, { type: 'control', turn: event.turn, id: event.id, value: event.value, text: event.text, send: event.send });
+        this.deps.sessionLog.write(s.id, { type: 'control', turn: event.turn, id: event.id, value: event.value, text: event.text, send: event.send, ...(event.app === true && { app: true }) });
         return;
       case 'draft':
         // How the draft will land: what look and fix is waiting on. The picture, when there is one, arrives by upload.
@@ -942,8 +961,18 @@ export class Conductor {
       };
       const pdfs = s.documents.flatMap((doc) => (doc.pdf === null ? [] : [{ id: doc.facts.id, bytes: doc.pdf }]));
       const snapshot = this.deps.sight === 'snapshot' && turn.previous !== null ? (this.deps.assets.snapshot(s.id, turn.previous) ?? null) : null;
-      const input: TurnInput = gathered.text !== null && turn.input.kind === 'prompt' ? { kind: 'prompt', text: gathered.text } : turn.input;
-      const request = { turn: turn.id, session: s.id, input, context, snapshot, pdfs, look: this.deps.review.enabled && turn.lookAllowed };
+      const input: TurnInput = gathered.text !== null && turn.input.kind === 'prompt' ? { ...turn.input, text: gathered.text } : turn.input;
+      // The photos this prompt names, as they were kept, after the stage's snapshot. A photo that cannot be read back is left out and said in the log.
+      const images: Snapshot[] = [];
+      if (input.kind === 'prompt') {
+        for (const id of input.images ?? []) {
+          const loaded = await (this.deps.uploads ?? NO_UPLOADS).load(s.id, id);
+          if (loaded === null) log.warn('turn.photo_missing', { session: s.id, turn: turn.id, photo: id });
+          else images.push(loaded);
+        }
+      }
+      if (turn.abort.signal.aborted) return;
+      const request = { turn: turn.id, session: s.id, input, context, snapshot, pdfs, look: this.deps.review.enabled && turn.lookAllowed, ...(images.length > 0 ? { images } : {}) };
       const normalizer = new LineNormalizer(() => {
         s.nextAutoId += 1;
         return `x${s.nextAutoId}`;

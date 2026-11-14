@@ -47,7 +47,7 @@ function boundsOf(points: readonly Point[]): Box {
  * always taken at rest; a film frame has its own) then has the chart where the stage under it has its room, not where the
  * scheduled camera had put it.
  */
-export function chartBoxOf(chart: ChartFrame, frame: Frame): Box {
+export function chartBoxOf(chart: Pick<ChartFrame, 'layer' | 'rest'>, frame: Frame): Box {
   const { viewport } = frame;
   const scale = planeScale(chart.layer, viewport);
   const rest = chart.rest;

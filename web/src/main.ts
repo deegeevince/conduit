@@ -54,19 +54,28 @@ if (stageHost === null || bar === null) throw new Error('The page could not be b
 let app: StageApp | null = null;
 let picker: Picker | null = null;
 const promptBar = mountPromptBar(bar, {
-  onSubmit: (text) => {
-    // The field is cleared at once so Enter feels immediate; if the turn is not accepted the words come back.
+  onSubmit: (text, photos, held) => {
+    // The field is cleared at once so Enter feels immediate; if the turn is not accepted the words (and photos) come back.
     if (app === null) {
-      promptBar.restore(text);
-      return;
+      promptBar.restore(text, held);
+      return false;
     }
     if (isCommand(text)) {
       void runCommand(app, text, (choice) => picker?.show(choice));
-      return;
+      return false;
     }
-    void app.prompt(text).catch(() => promptBar.restore(text));
+    void app.prompt(text, photos).catch(() => promptBar.restore(text, held));
+    return true;
   },
   onStop: () => app?.interrupt(),
+  // A photo (picked, taken, pasted or dropped) goes to the server as soon as it is added, and is shown back as the server kept it.
+  photos: {
+    upload: async (photo) => {
+      if (app === null) throw new Error('The stage is still starting. Try again in a moment.');
+      return (await app.link.uploadPhoto(photo)).id;
+    },
+    urlOf: (id) => app?.link.photoUrl(id) ?? null,
+  },
 });
 
 promptBar.setStatus('connecting');
