@@ -632,18 +632,54 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     publishStatus();
   }
 
+  // The person's own words stay on the stage from Send until the answer's first line replaces them: a quiet line and a gentle indicator, not a thread.
+  let askedLine: HTMLElement | null = null;
+  function showAsked(words: string): void {
+    hideAsked();
+    const line = document.createElement('div');
+    line.setAttribute('data-asked', '');
+    line.setAttribute('aria-hidden', 'true');
+    line.style.cssText = 'position:absolute;left:50%;top:38%;transform:translate(-50%,-50%);z-index:3;max-width:min(36rem,calc(100% - 48px));text-align:center;pointer-events:none;color:var(--stage-ink);opacity:0.62;font:500 18px/1.4 var(--chrome-font, system-ui);overflow-wrap:anywhere';
+    const said = document.createElement('div');
+    said.textContent = `You asked: ${words.length > 240 ? `${words.slice(0, 239)}\u2026` : words}`;
+    const dots = document.createElement('div');
+    dots.textContent = 'thinking';
+    dots.style.cssText = 'margin-top:6px;font-size:14px;opacity:0.7;letter-spacing:0.04em';
+    const calm = painter.snapshot().reducedMotion;
+    if (calm) dots.textContent = 'thinking\u2026';
+    else {
+      const dot = (): HTMLElement => {
+        const span = document.createElement('span');
+        span.textContent = '.';
+        return span;
+      };
+      const marks = [dot(), dot(), dot()];
+      dots.append(...marks);
+      marks.forEach((mark, index) => mark.animate([{ opacity: 0.15 }, { opacity: 1 }, { opacity: 0.15 }], { duration: 1200, iterations: Number.POSITIVE_INFINITY, delay: index * 200 }));
+    }
+    line.append(said, dots);
+    host.append(line);
+    askedLine = line;
+  }
+  function hideAsked(): void {
+    askedLine?.remove();
+    askedLine = null;
+  }
+
   function beginStarting(limit = START_LIMIT_MS): void {
     starting = true;
     clearTimeout(startTimer);
     startTimer = setTimeout(() => {
       if (!starting) return;
       starting = false;
+      hideAsked();
       if (currentTurn === null && painter.snapshot().anticipating) painter.cancelAnticipation();
       publishStatus();
     }, limit);
   }
 
   function endStarting(): void {
+    hideAsked();
     if (!starting) return;
     starting = false;
     clearTimeout(startTimer);
@@ -922,6 +958,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     if (anticipate) {
       painter.anticipate(input, tappedKey);
       beginStarting();
+      if (input.kind === 'prompt' && input.text.trim() !== '') showAsked(input.text.trim());
     } else {
       painter.interrupt();
     }
