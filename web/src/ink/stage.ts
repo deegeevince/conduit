@@ -1,10 +1,11 @@
-// The stage's Draw toggle: a button in the chrome bar that lays the ink layer over the stage. What is drawn goes up with the next prompt (the prompt bar's
+// The stage's Draw toggle: an entry in the composer's [+] menu that lays the ink layer over the stage. What is drawn goes up with the next prompt (the prompt bar's
 // Send, or the ink bar's own), cropped to the inked part, over a picture of the stage as it was, with the turn it was drawn on named.
 
 import type { InkMarks } from '@conduit/language';
 import type { InkBackdrop } from './export';
 import { createInk } from './layer';
 import type { Ink } from './layer';
+import type { ComposerMenu } from '../chrome/menu';
 import { prepareMarks } from './send';
 import { injectInkStyles } from './styles';
 import { mountInkBar } from './toolbar';
@@ -36,8 +37,6 @@ export interface StageInk {
 
 export const DRAW_WORDS = 'Please look at what I drew.';
 
-const PENCIL = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M4 20l1-4L16.5 4.5a2.1 2.1 0 013 3L8 19z"/></svg>';
-
 function loadImage(url: string): Promise<HTMLImageElement | null> {
   return new Promise((resolve) => {
     const image = new Image();
@@ -47,16 +46,9 @@ function loadImage(url: string): Promise<HTMLImageElement | null> {
   });
 }
 
-export function mountStageInk(stage: HTMLElement, slot: HTMLElement, app: StageInkApp): StageInk {
+export function mountStageInk(stage: HTMLElement, menu: ComposerMenu, app: StageInkApp): StageInk {
   injectInkStyles(document);
-  const toggle = document.createElement('button');
-  toggle.type = 'button';
-  toggle.className = 'action action--draw';
-  toggle.setAttribute('aria-pressed', 'false');
-  toggle.title = 'Draw on the stage with a pen, a finger or a mouse. What you draw goes up with your next message.';
-  toggle.innerHTML = `${PENCIL}<span class="action__label">Draw</span><span class="action__count" hidden></span>`;
-  slot.append(toggle);
-  const count = toggle.querySelector<HTMLElement>('.action__count')!;
+  const toggle = menu.add({ id: 'draw', label: 'Draw', gist: 'on the stage; it goes up with your next message', order: 30, check: true, checked: false, run: () => set(layer.hidden !== false) });
 
   const layer = document.createElement('div');
   layer.className = 'ink-stage';
@@ -80,7 +72,7 @@ export function mountStageInk(stage: HTMLElement, slot: HTMLElement, app: StageI
   };
   const set = (open: boolean): void => {
     layer.hidden = !open;
-    toggle.setAttribute('aria-pressed', String(open));
+    toggle.set({ checked: open });
     if (!open) return;
     // the ink's space is the stage as it is now, unless there is ink already (then it keeps its own)
     if (ink.model.strokes.length === 0) ink.setBackground(null, { w: Math.max(1, stage.clientWidth), h: Math.max(1, stage.clientHeight) });
@@ -110,11 +102,9 @@ export function mountStageInk(stage: HTMLElement, slot: HTMLElement, app: StageI
 
   ink.onChange(() => {
     const n = ink.model.strokes.length;
-    count.hidden = n === 0;
-    count.textContent = String(n);
-    toggle.setAttribute('aria-label', n === 0 ? 'Draw' : `Draw, ${n} stroke${n === 1 ? '' : 's'} waiting to be sent`);
+    menu.badge(n === 0 ? null : String(n));
+    toggle.set({ label: n === 0 ? 'Draw' : `Draw (${n} stroke${n === 1 ? '' : 's'} waiting)` });
   });
-  toggle.addEventListener('click', () => set(layer.hidden !== false));
 
   return {
     pending: () => ink.model.strokes.length > 0,

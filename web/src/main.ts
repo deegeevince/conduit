@@ -10,6 +10,7 @@ import { runCommand } from './chrome/command-runner';
 import { copyAnswer } from './chrome/files';
 import { isCommand } from './chrome/commands';
 import { mountActivity } from './chrome/activity';
+import { mountAbout } from './chrome/about';
 import { DRAW_WORDS, mountStageInk } from './ink/stage';
 import type { StageInk } from './ink/stage';
 import { mountPermission } from './chrome/permission';
@@ -141,8 +142,8 @@ async function start(): Promise<void> {
   }
   const mounted = app;
   window.__stage = mounted.hook;
-  const transcript = mountTranscript(promptBar.extra, mounted.painter, { onChoice: (key) => mounted.choose(key), onCopyAnswer: (turn) => void copyAnswer(mounted, turn) });
-  stageInk = mountStageInk(stageHost, promptBar.extra, {
+  const transcript = mountTranscript(promptBar.extra, mounted.painter, { menu: promptBar.menu, onChoice: (key) => mounted.choose(key), onCopyAnswer: (turn) => void copyAnswer(mounted, turn) });
+  stageInk = mountStageInk(stageHost, promptBar.menu, {
     upload: async (png) => (await mounted.link.uploadPhoto(png)).id,
     lastTurn: () => mounted.lastTurn(),
     capture: (maxSide) => mounted.capture(maxSide),
@@ -151,9 +152,10 @@ async function start(): Promise<void> {
   });
   // for the browser checks (web/scripts/ink-check.mjs): the ink layer's own latency numbers
   (window as unknown as { __inkStats?: () => unknown }).__inkStats = () => stageInk?.ink.stats();
-  mountActions(promptBar.extra, mounted, transcript, stageHost, { top: promptBar.top });
+  mountActions(promptBar.extra, mounted, transcript, stageHost, { top: promptBar.top, menu: promptBar.menu });
   mountSound(promptBar.top, mounted);
-  picker = mountPicker(promptBar.extra, mounted);
+  picker = mountPicker(promptBar.menu, mounted);
+  mountAbout(promptBar.menu, mounted);
   mountActivity(promptBar.activity, mounted);
   mountPermission(mounted);
   const show = (status: StageStatus): void => {

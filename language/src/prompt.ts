@@ -906,6 +906,14 @@ function statusText(status: AppStatus): string {
 }
 
 /**
+ * v2.1. The bar at the bottom of the page, in one line, so "how do I add a photo?" is answered with where the button is. It is ONE line, a pill:
+ * a [+] menu, the text field, a mic, Send (Stop while a turn runs). Keep it in step with web/src/chrome/composer.ts. A how-to answer's key line is
+ * to stay at rest (a page layout retires lines as it pages: a 2026-11-14 answer told how to add a photo and only its aside was left standing).
+ */
+export const COMPOSER_NOTE =
+  ' THE BAR at the bottom is one line: [+] menu (Add a photo, Take a photo on a phone, Draw, Save (the copy and export commands), Transcript, Model and effort, Copy answer, About), the text field, the mic, Send (Stop while you answer). A photo can also be pasted or dropped. When asked how to do something in the app, name the control and where it is, keep that line at rest (`set <id> stay=pin`), and draw the bar if it helps.';
+
+/**
  * v2.1. What the app itself offers, made from `APP_COMMANDS`, so the brain can point at a command and can never invent one, and the
  * steward's own account of where things stand, so "what's in the backlog?" has an answer. The commands are given in full when the brain
  * remembers nothing (`full`) and by name once it does; the status goes with both, because it changes.
@@ -916,7 +924,7 @@ export function appNoteText(form: BriefForm, status: AppStatus | null | undefine
     form === 'full'
       ? commandList.map((command) => `/${command.name}${command.args === '' ? '' : ` ${command.args}`}: ${command.gist}`).join('; ')
       : commandList.map((command) => `/${command.name}`).join(' ');
-  return `THIS APP: the user types commands the app handles itself, and you never see them: ${commands}. Point at one when it helps; never invent another. The menu's "Save" holds the copy and export commands.${
+  return `THIS APP: the user types commands the app handles itself, and you never see them: ${commands}. Point at one when it helps; never invent another. ${COMPOSER_NOTE}${
     status === null || status === undefined ? ' You are not told where the product stands: say so rather than guess.' : statusText(status)
   }`;
 }

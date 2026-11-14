@@ -208,9 +208,11 @@ try {
     await open('/?demo=none');
     await evaluate(`window.__stage.ready.then(() => true)`);
     // a way for the page to say how many strokes the stage ink holds (the page's own state, read back)
-    await evaluate(`window.__inkProbe = { count: () => document.querySelectorAll('.ink-stage canvas.ink__base').length ? Number(document.querySelector('.action__count')?.textContent || 0) : 0 }`);
-    const drawButton = await rectOf('.action--draw');
-    await mouse.click(...Object.values(centre(drawButton)));
+    await evaluate(`window.__inkProbe = { count: () => document.querySelectorAll('.ink-stage canvas.ink__base').length ? Number(document.querySelector('.composer__badge')?.textContent || 0) : 0 }`);
+    // Draw is an entry of the composer's [+] menu
+    await mouse.click(...Object.values(centre(await rectOf('.composer__plus'))));
+    await sleep(250);
+    await mouse.click(...Object.values(centre(await rectOf('[data-item="draw"]'))));
     await sleep(500);
     const stage = await rectOf('.ink-stage');
     check('Draw opens the ink layer over the stage', stage.w > 500 && stage.h > 300, `${Math.round(stage.w)}x${Math.round(stage.h)}`);
