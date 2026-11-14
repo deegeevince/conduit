@@ -24,7 +24,7 @@ export type { BriefForm };
 import { asksForLiveApp } from './app';
 import { FIGURE_CHAPTER, asksForFigure } from './figure';
 import { INTERFACE_CHAPTER } from './interface';
-import { DOCUMENT_CHAPTER, carriesDocument, documentBlocks } from './teach';
+import { DOCUMENT_CHAPTER, carriesDocument, documentBlocks, usesParts } from './teach';
 import { inkBrief } from './ink';
 import { describeSight } from './sight';
 import { BUILTIN_STYLES } from './style';
@@ -1081,7 +1081,8 @@ export function buildTurnBrief(context: TurnContext, input: TurnInput, form: Bri
   }
   // A live app is taught when the words ask for something that works, or when one is on stage to be changed; then it is the answer, and a tune or a mock-up is not also taught.
   const appOnStage = stage.elements.some((element) => element.figure?.kind === 'structure' && element.figure.structure === 'app');
-  const liveApp = context.capabilities.structures.includes('app') && ((input.kind === 'prompt' && asksForLiveApp(input.text)) || appOnStage);
+  // (a technique that writes a document of parts, a recipe with a time on each step, is the answer to "walk me through it with a timer": the words of an app do not take over from it)
+  const liveApp = context.capabilities.structures.includes('app') && ((input.kind === 'prompt' && asksForLiveApp(input.text) && !usesParts(context.techniques)) || appOnStage);
   if (liveApp) parts.push(APP_CHAPTER.trimEnd());
   // `tune` is taught when the words are about music, or when a tune is already on stage to be changed; never in the system prompt, which is full.
   if (context.capabilities.structures.includes('tune') && (!liveApp || stage.elements.some((element) => element.figure?.kind === 'structure' && element.figure.structure === 'tune')) && (asksForMusic(input) || stage.elements.some((element) => element.figure?.kind === 'structure' && element.figure.structure === 'tune'))) parts.push(TUNE_CHAPTER);
