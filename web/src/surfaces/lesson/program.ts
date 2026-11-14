@@ -98,6 +98,7 @@ addEventListener('message', (event) => {
   }
 });
 addEventListener('resize', report);
+addEventListener('scroll', report, { passive: true });
 addEventListener('error', (event) => post({ type: 'fault', message: String(event.message).slice(0, 200) }));
 addEventListener('unhandledrejection', (event) => post({ type: 'fault', message: String(event.reason instanceof Error ? event.reason.message : event.reason).slice(0, 200) }));
 post({ type: 'ready' });

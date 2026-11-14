@@ -55,6 +55,7 @@
 /* a way's page */
 .work { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; padding-bottom: 12px; align-content: start; }
 .run { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+.fig.tall { position: static; }
 .fig { position: sticky; top: var(--qh, 120px); z-index: 4; background: var(--ground); padding-bottom: 6px; }
 .says { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; align-content: start; }
 .say { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 12px; align-items: start; padding: 12px 14px; background: var(--card); border: 2px solid var(--line); border-radius: 18px; scroll-margin-bottom: 140px; }
@@ -155,6 +156,7 @@
 button.seg:not(.lit) { opacity: 0.62; }
 .seg.lit { border-color: var(--ink); opacity: 1; }
 
+.whole { margin: 8px 0 0; font-size: 20px; font-weight: 700; color: var(--dim); }
 .purse, .tray { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
 .tray { margin-top: 10px; min-height: 84px; padding: 8px; border: 3px dashed var(--line); border-radius: 16px; }
 .tray-note { color: var(--dim); font-size: 20px; padding: 0 8px; }
@@ -207,6 +209,7 @@ button.seg:not(.lit) { opacity: 0.62; }
   .qcard.docked:not(.expanded) .qtext { font-size: 22px; -webkit-line-clamp: 2; }
   .qcard.docked .crop { display: none; }
   .qcard .crop { grid-column: 1 / -1; }
+  .tile { flex: 1 1 calc(50% - 6px); min-width: 0; padding: 8px 6px; }
   .tabs { flex-wrap: nowrap; overflow-x: auto; margin-inline: -16px; padding-inline: 16px; scrollbar-width: none; }
   .tab { flex: none; }
 }

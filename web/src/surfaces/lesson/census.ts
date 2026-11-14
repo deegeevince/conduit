@@ -2,7 +2,7 @@
 // Words with their size and contrast, every region a hand can work with its size, the question card, the steps drawn against the steps
 // shown, the pictures and their share of the view, and the no-spoiler test: any answer of an open ask found in a word on screen.
 
-import { saysAnswer } from './answer';
+import { maskSealed } from '@conduit/language';
 import type { Player } from './player';
 import { isVisualKind } from './types';
 import type { CensusTarget, CensusWord, LessonCensus, Rect } from './types';
@@ -102,11 +102,11 @@ export function takeCensus(player: Player, root: HTMLElement): LessonCensus {
     const least = counters.length === 0 ? null : Math.min(...counters.map((c) => Math.min(c.getBoundingClientRect().width, c.getBoundingClientRect().height)));
     return [{ kind, box: r, share: Math.round((r.w / window.innerWidth) * 100) / 100, least: least === null ? null : Math.round(least) }];
   });
-  const { open, question: qwords } = player.sealedNow();
+  const { open } = player.sealedNow();
   const leaks: string[] = [];
   const work = root.querySelector('.work');
   if (work instanceof HTMLElement && open.length > 0) {
-    for (const { text, el } of textOf(work, (e) => e.closest(`${SKIP}, .choice, .field`) !== null)) if (saysAnswer(text, open, qwords)) leaks.push(`${text.slice(0, 60)} (${whereIs(el)})`);
+    for (const { text, el } of textOf(work, (e) => e.closest(`${SKIP}, .choice, .field`) !== null)) if (maskSealed(text, open) !== text) leaks.push(`${text.slice(0, 60)} (${whereIs(el)})`);
   }
   const wide: string[] = [];
   root.querySelectorAll('*').forEach((el) => {

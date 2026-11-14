@@ -12,6 +12,7 @@ const RESOLVED = `\0${VIRTUAL}`;
 
 export function lessonProgram(): Plugin {
   const entry = fileURLToPath(new URL('../src/surfaces/lesson/program.ts', import.meta.url));
+  const slice = fileURLToPath(new URL('../src/surfaces/lesson/language-slice.ts', import.meta.url));
   return {
     name: 'conduit-lesson-program',
     resolveId(id) {
@@ -22,12 +23,12 @@ export function lessonProgram(): Plugin {
       const result = await build({
         configFile: false,
         logLevel: 'silent',
+        resolve: { alias: { '@conduit/language': slice } },
         build: {
           write: false,
           minify: false,
           target: 'es2020',
           lib: { entry, formats: ['iife'], name: 'ConduitLesson', fileName: 'lesson' },
-          rollupOptions: { output: { inlineDynamicImports: true } },
         },
       });
       const outputs = Array.isArray(result) ? result : [result];

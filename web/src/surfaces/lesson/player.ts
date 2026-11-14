@@ -3,19 +3,21 @@
 // section 3's six rules in code it owns:
 //
 //   1. the question is a card at the top of every step (sticky, headline type, its crop of the photo beside it);
-//   2. the picture has the lead room (about half the width on a desk, the whole width on a phone, counters at least 34 pixels);
+//   2. the picture has the lead room (about half the width on a desk, the whole width on a phone, counters at least 36 pixels);
 //   3. steps stack into a worked page, nothing shown is taken away (a picture of the same kind is carried and grown, not redrawn);
 //   4. a picture is worked by hand (widgets/*), its state kept in `held`;
 //   5. a choice is a target of 72 pixels or more, a typed answer is a real field with the number keys;
-//   6. an open ask seals its answer: whatever draws goes through `sealed`/`sealText`, and nothing past the gate is drawn.
+//   6. an open ask seals its answer: whatever draws goes through `sealed`/`maskSealed`, and nothing past the gate is drawn.
+//
+// The document, the cursor, her tries and the gates are WS3's `advance` and `askView`; this file never writes state any other way.
 
-import { matches, sealText, sealed } from './answer';
+import { accepts, advance, maskSealed, sealed } from '@conduit/language';
+import type { DocEvent } from '@conduit/language';
 import { h } from './dom';
-import { advance, gateOf, passed, progressOf, questionDone, questionOf, reach, rightOf, runsOf, sealedAsks, sheetOf, stopOf, whereOf, wayFinished, wrongTries } from './model';
+import { atOf, gateOf, questionDone, runsOf, shownOf, shutAsks, sheetOf, viewOf, wayDone, wayOf } from './model';
 import type { Question, Run, Sheet, Way } from './model';
-import { WORKED } from './types';
-import type { Ask, CatalogueEntry, DocState, Held, LessonChange, LessonEvent, LessonInput, Technique } from './types';
 import { TECHNIQUE_NAMES } from './types';
+import type { CatalogueEntry, DocState, Held, LessonAsk, LessonEvent, LessonInput, OpenAsk, Technique } from './types';
 import { drawVisual } from './widgets';
 import type { WidgetCtx } from './widgets/common';
 
@@ -26,7 +28,8 @@ export interface PlayerPort {
   changed(): void;
 }
 
-type Screen = 'outline' | 'catalogue' | null;
+/** What is on screen when it is not the way the cursor rests on. Ephemeral: the cursor is what is kept. */
+type Screen = { readonly kind: 'outline' } | { readonly kind: 'catalogue' } | { readonly kind: 'ways'; readonly question: string } | null;
 
 const TECHNIQUE_GLYPH: Readonly<Record<Technique, string>> = {
   'draw-it': 'M4 20 L20 4 M14 4 H20 V10',
@@ -55,7 +58,7 @@ function glyph(technique: Technique | null): SVGSVGElement {
 export class Player {
   private input: LessonInput;
   private state: DocState;
-  private screen: Screen = null;
+  private screen: Screen;
   private fresh: string | null = null;
   private justShown: number | null = null;
   private draft: Record<string, string> = {};
@@ -72,7 +75,9 @@ export class Player {
   ) {
     this.input = input;
     this.state = input.state;
-    this.screen = whereOf(sheetOf(input.doc), input.state).view === 'outline' ? 'outline' : null;
+    const here = wayOf(sheetOf(input.doc), input.state.cursor.node);
+    // a sheet she has not begun opens on its list; one she has begun opens where she was
+    this.screen = here === null || (input.state.progress[here.way.node.id]?.seen ?? 0) === 0 ? { kind: 'outline' } : null;
   }
 
   /** The document grew (a way was written, a step arrived): draw again, keep the place. */
@@ -81,9 +86,6 @@ export class Player {
     this.render();
   }
 
-  get doc(): LessonInput['doc'] {
-    return this.input.doc;
-  }
   get current(): DocState {
     return this.state;
   }
@@ -94,68 +96,65 @@ export class Player {
     return sheetOf(this.input.doc);
   }
   get shownScreen(): 'outline' | 'question' | 'play' | 'catalogue' {
-    return this.screen === 'catalogue' ? 'catalogue' : this.screen === 'outline' ? 'outline' : whereOf(this.sheet, this.state).view;
+    if (this.screen === null) return wayOf(this.sheet, this.state.cursor.node) === null ? 'outline' : 'play';
+    return this.screen.kind === 'ways' ? 'question' : this.screen.kind;
   }
 
   // ------------------------------------------------------------ changes
 
-  private change(change: LessonChange): void {
-    this.state = advance(this.input.doc, this.state, change);
-    this.port.save(this.state);
+  private apply(event: DocEvent): void {
+    const next = advance(this.input.doc, this.state, event);
+    if (next === this.state) return;
+    this.state = next;
+    this.port.save(next);
   }
-  private go(node: string, at: number): void {
-    this.screen = null;
-    this.change({ kind: 'goto', node, at });
+
+  private show(screen: Screen): void {
+    this.screen = screen;
+    this.render();
+    window.scrollTo(0, 0);
   }
+
   private openWay(way: Way): void {
-    const p = progressOf(this.state, way.node.id);
-    const resume = wayFinished(way, this.state) ? 1 : Math.max(1, p.seen);
+    const finished = wayDone(this.state, way);
+    this.screen = null;
     this.justShown = null;
-    this.go(way.node.id, Math.min(resume, Math.max(1, way.steps.length)));
+    this.apply({ kind: 'go', node: way.node.id, at: finished ? { at: 0 } : 'resume' });
     this.port.emit({ kind: 'open', node: way.node.id });
     this.render();
     window.scrollTo(0, 0);
   }
 
-  private tryAnswer(way: Way, ask: Ask, text: string, at: number): void {
+  private tryAnswer(way: Way, ask: LessonAsk, text: string, stamp: number): void {
     const clean = text.trim();
     if (clean === '') return;
-    const before = wrongTries(ask, progressOf(this.state, way.node.id).tries[ask.id] ?? []);
-    const right = matches(clean, ask.accepted, ask.unit);
-    const hint = right ? 0 : Math.min(before + 1, ask.hints.length);
-    this.change({ kind: 'try', node: way.node.id, ask: ask.id, text: clean });
-    this.port.emit({ kind: 'try', node: way.node.id, ask: ask.id, text: clean.slice(0, 80), right, hint });
+    const was = wayDone(this.state, way);
+    this.apply({ kind: 'try', node: way.node.id, ask: ask.id, value: clean });
+    const view = viewOf(this.input.doc, this.state, way, ask);
+    this.port.emit({ kind: 'try', node: way.node.id, ask: ask.id, text: clean.slice(0, 80), right: accepts(ask, clean), hint: view === null || accepts(ask, clean) ? 0 : Math.min(view.wrong, ask.hints.length) });
     delete this.draft[ask.id];
-    const finished = right && wayFinished(way, this.state);
-    if (finished) this.port.emit({ kind: 'done', node: way.node.id });
+    if (!was && wayDone(this.state, way)) this.port.emit({ kind: 'done', node: way.node.id });
     this.render();
-    this.tryMs = Math.round(performance.now() - at);
+    this.tryMs = Math.round(performance.now() - stamp);
+    requestAnimationFrame(() => this.root.querySelector('.nudge, .ask.closed:last-of-type')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
     this.port.changed();
   }
 
-  private work(way: Way, ask: Ask): void {
-    this.change({ kind: 'try', node: way.node.id, ask: ask.id, text: WORKED });
-    this.port.emit({ kind: 'worked', node: way.node.id, ask: ask.id });
-    this.render();
-  }
-
-  private next(way: Way, shown: number): void {
-    const at = shown + 1;
-    this.justShown = shown;
-    this.change({ kind: 'goto', node: way.node.id, at });
-    this.port.emit({ kind: 'step', node: way.node.id, at });
+  private next(way: Way): void {
+    const at = atOf(this.state);
+    if (at >= way.steps.length - 1) return;
+    this.justShown = at + 1;
+    this.apply({ kind: 'next' });
+    this.port.emit({ kind: 'step', node: way.node.id, at: at + 2 });
     this.render();
     this.scrollToLatest();
   }
-  private back(way: Way, shown: number): void {
+  private back(question: Question): void {
     this.justShown = null;
-    if (shown <= 1) {
-      this.screen = null;
-      this.change({ kind: 'goto', node: whereOf(this.sheet, this.state).view === 'play' ? (questionOf(this.sheet, way.node.id)?.node.id ?? way.node.id) : way.node.id, at: 0 });
-    } else {
-      this.change({ kind: 'goto', node: way.node.id, at: shown - 1 });
-    }
-    this.render();
+    if (atOf(this.state) > 0) {
+      this.apply({ kind: 'back' });
+      this.render();
+    } else this.show({ kind: 'ways', question: question.node.id });
   }
 
   private scrollToLatest(): void {
@@ -174,18 +173,23 @@ export class Player {
     const where = this.shownScreen;
     const page = h('div', { class: `page view-${where}` });
     page.append(this.header());
+    const sheet = this.sheet;
     if (where === 'catalogue') page.append(this.catalogue());
     else if (where === 'outline') page.append(this.outline());
-    else {
-      const here = whereOf(this.sheet, this.state);
-      if (here.view === 'question') page.append(this.questionCard(here.question), this.ways(here.question));
-      else if (here.view === 'play') this.play(page, here.question, here.way);
+    else if (this.screen !== null && this.screen.kind === 'ways') {
+      const id = this.screen.question;
+      const q = sheet.questions.find((n) => n.node.id === id);
+      if (q !== undefined) page.append(this.questionCard(q), this.ways(q));
+    } else {
+      const here = wayOf(sheet, this.state.cursor.node);
+      if (here !== null) this.play(page, here.question, here.way);
     }
     this.root.replaceChildren(page);
     window.scrollTo(x, y);
     this.watch();
     this.fit();
     this.root.querySelector('.tab.on')?.scrollIntoView({ block: 'nearest', inline: 'center' });
+    this.root.querySelectorAll('.fig').forEach((fig) => fig.classList.toggle('tall', fig.getBoundingClientRect().height > window.innerHeight * 0.46));
     if (keep?.act === 'answer') {
       const field = this.root.querySelector('[data-act="answer"]');
       if (field instanceof HTMLInputElement) {
@@ -196,7 +200,7 @@ export class Player {
     this.port.changed();
   }
 
-  /** A question that has scrolled to the top of the screen is "docked": on a phone it shows two lines and opens to the whole on a tap. */
+  /** A question that has scrolled to the top of the screen is "docked": on a phone it shows fewer lines and opens to the whole on a tap. */
   private watch(): void {
     this.watcher?.disconnect();
     this.watcher = null;
@@ -207,9 +211,7 @@ export class Player {
       if (gone === this.docked) return;
       this.docked = gone;
       const card = this.root.querySelector('.qcard');
-      if (card instanceof HTMLElement) {
-        card.classList.toggle('docked', gone);
-      }
+      if (card instanceof HTMLElement) card.classList.toggle('docked', gone);
       this.fit();
       this.port.changed();
     });
@@ -225,14 +227,14 @@ export class Player {
 
   private header(): HTMLElement {
     const sheet = this.sheet;
-    const here = whereOf(sheet, this.state);
-    const q = here.view === 'outline' ? null : here.question;
+    const here = wayOf(sheet, this.state.cursor.node);
+    const q = this.screen === null && here !== null ? here.question : null;
     return h(
       'header',
       { class: 'topbar' },
-      h('button', { type: 'button', class: 'nav', 'data-act': 'outline', onclick: () => { this.screen = 'outline'; this.render(); window.scrollTo(0, 0); } }, 'All questions'),
+      h('button', { type: 'button', class: 'nav', 'data-act': 'outline', onclick: () => this.show({ kind: 'outline' }) }, 'All questions'),
       h('span', { class: 'crumb' }, q === null ? sheet.title : `${sheet.title}  ·  question ${q.number} of ${sheet.questions.length}`),
-      this.input.catalogue.length > 0 ? h('button', { type: 'button', class: 'nav', 'data-act': 'catalogue', onclick: () => { this.screen = 'catalogue'; this.render(); window.scrollTo(0, 0); } }, 'My sheets') : null,
+      this.input.catalogue.length > 0 ? h('button', { type: 'button', class: 'nav', 'data-act': 'catalogue', onclick: () => this.show({ kind: 'catalogue' }) }, 'My sheets') : null,
     );
   }
 
@@ -240,16 +242,16 @@ export class Player {
     const sheet = this.sheet;
     const done = sheet.questions.filter((q) => questionDone(q, this.state)).length;
     const view = h('main', { class: 'outline' }, h('h1', { class: 'title' }, sheet.title), h('p', { class: 'sub' }, `${done} of ${sheet.questions.length} questions done`));
-    const resume = whereOf(sheet, this.state);
-    if (resume.view === 'play' && !wayFinished(resume.way, this.state)) {
-      const way = resume.way;
+    const resume = wayOf(sheet, this.state.cursor.node);
+    if (resume !== null && !wayDone(this.state, resume.way) && (this.state.progress[resume.way.node.id]?.seen ?? 0) > 0) {
+      const { way, question } = resume;
       view.append(
         h(
           'button',
           { type: 'button', class: 'resume', 'data-act': 'resume', onclick: () => this.openWay(way) },
           h('span', { class: 'resume-kicker' }, 'Carry on where you were'),
-          h('span', { class: 'resume-text' }, `Question ${resume.question.number}: ${way.node.title}`),
-          h('span', { class: 'resume-step' }, `step ${Math.min(progressOf(this.state, way.node.id).seen, way.steps.length)} of ${way.steps.length}`),
+          h('span', { class: 'resume-text' }, `Question ${question.number}: ${way.node.title}`),
+          h('span', { class: 'resume-step' }, `step ${Math.min(this.state.progress[way.node.id]?.seen ?? 0, way.steps.length)} of ${way.steps.length}`),
         ),
       );
     }
@@ -267,7 +269,7 @@ export class Player {
             {},
             h(
               'button',
-              { type: 'button', class: `qrow${isDone ? ' done' : ''}${ready === 0 ? ' wait' : ''}`, 'data-act': `q:${q.node.id}`, onclick: () => { this.screen = null; this.change({ kind: 'goto', node: q.node.id, at: 0 }); this.port.emit({ kind: 'open', node: q.node.id }); this.render(); window.scrollTo(0, 0); } },
+              { type: 'button', class: `qrow${isDone ? ' done' : ''}${ready === 0 ? ' wait' : ''}`, 'data-act': `q:${q.node.id}`, onclick: () => { this.port.emit({ kind: 'open', node: q.node.id }); this.show({ kind: 'ways', question: q.node.id }); } },
               h('span', { class: 'qnum' }, isDone ? '✓' : String(q.number)),
               h('span', { class: 'qtext' }, q.node.title),
               h('span', { class: 'qnote' }, note),
@@ -284,7 +286,7 @@ export class Player {
   private questionCard(q: Question): HTMLElement {
     const crop = this.input.crops[q.node.id];
     const long = q.node.title.length > 70;
-    const more = long ? h('button', { type: 'button', class: 'more', 'data-act': 'more', 'aria-expanded': 'false' }, 'Read it all') : null;
+    const more = long ? h('button', { type: 'button', class: 'more', 'data-act': 'more', 'aria-expanded': String(this.expanded) }, this.expanded ? 'Show less' : 'Read it all') : null;
     const card = h(
       'section',
       { class: `qcard${crop === undefined ? '' : ' with-crop'}${long ? ' long' : ''}${this.docked ? ' docked' : ''}${this.expanded ? ' expanded' : ''}`, 'data-act': 'question', 'aria-label': 'The question' },
@@ -293,18 +295,14 @@ export class Player {
       h('p', { class: 'qtext' }, q.node.title),
       crop === undefined ? null : h('img', { class: 'crop', src: crop, alt: 'The question as it is written on the page' }),
     );
-    if (more !== null) {
+    more?.addEventListener('click', () => {
+      this.expanded = !this.expanded;
+      card.classList.toggle('expanded', this.expanded);
       more.textContent = this.expanded ? 'Show less' : 'Read it all';
       more.setAttribute('aria-expanded', String(this.expanded));
-      more.addEventListener('click', () => {
-        this.expanded = !this.expanded;
-        card.classList.toggle('expanded', this.expanded);
-        more.textContent = this.expanded ? 'Show less' : 'Read it all';
-        more.setAttribute('aria-expanded', String(this.expanded));
-        this.fit();
-        this.port.changed();
-      });
-    }
+      this.fit();
+      this.port.changed();
+    });
     return h('div', { class: 'qwrap' }, h('div', { class: 'sentinel', 'aria-hidden': 'true' }), card);
   }
 
@@ -312,9 +310,10 @@ export class Player {
     const view = h('main', { class: 'ways' }, h('h2', {}, q.ways.length === 0 ? 'Getting some ways ready for you…' : 'Pick a way to work it out'));
     if (q.ways.length === 0) view.append(h('p', { class: 'wait-note' }, 'This takes a moment. You can look at another question while you wait.'));
     for (const way of q.ways) {
-      const p = progressOf(this.state, way.node.id);
-      const finished = wayFinished(way, this.state);
-      const note = !way.ready ? 'Getting ready…' : finished ? 'You did this one' : p.seen > 0 ? `Step ${Math.min(p.seen, way.steps.length)} of ${way.steps.length}` : `${way.steps.length} ${way.steps.length === 1 ? 'step' : 'steps'}`;
+      const seen = this.state.progress[way.node.id]?.seen ?? 0;
+      const finished = wayDone(this.state, way);
+      const steps = way.steps.length;
+      const note = !way.ready ? 'Getting ready…' : finished ? 'You did this one' : seen > 0 ? `Step ${Math.min(seen, steps)} of ${steps}` : `${steps} ${steps === 1 ? 'step' : 'steps'}`;
       const card = h(
         'button',
         { type: 'button', class: `way${finished ? ' done' : ''}`, 'data-act': `way:${way.node.id}`, onclick: () => this.openWay(way) },
@@ -330,34 +329,38 @@ export class Player {
 
   // ------------------------------------------------------------ playing a way
 
+  /** What may not be on screen now, and how a drawer says a word or a number through it. */
+  private sealing(q: Question, way: Way): { readonly open: readonly OpenAsk[]; readonly words: (text: string) => string; readonly seal: (value: string | number) => string } {
+    const open = shutAsks(this.input.doc, this.state, way, q.node.title);
+    return { open, words: (text) => maskSealed(text, open), seal: (value) => (sealed(value, open) ? '?' : String(value)) };
+  }
+
   private play(page: HTMLElement, q: Question, way: Way): void {
-    const at = Math.max(1, stopOf(this.state));
-    const shown = Math.min(reach(way, this.state, at), way.steps.length);
-    const open = sealedAsks(way, this.state);
-    const words = (text: string): string => sealText(text, open, q.node.title);
+    const shown = shownOf(way, this.state);
+    const seal = this.sealing(q, way);
     page.append(this.questionCard(q), this.tabs(q, way));
     const main = h('main', { class: 'work' });
-    const runs = runsOf(way, shown);
-    runs.forEach((run) => main.append(this.run(run, way, open, words, shown)));
-    const gate = gateOf(way, this.state, shown);
+    for (const run of runsOf(way, shown)) main.append(this.run(run, way, seal, shown));
+    const gate = gateOf(this.input.doc, this.state, way);
     const filling = way.node.status === 'filling' || way.node.status === 'outlined';
     const finished = shown >= way.steps.length && gate === null && !filling;
     if (finished) main.append(this.finish(q, way));
     page.append(main);
-    page.append(this.dock(way, shown, gate, filling, finished));
+    page.append(this.dock(q, way, shown, gate !== null, filling, finished));
   }
 
   private tabs(q: Question, way: Way): HTMLElement {
     const bar = h('nav', { class: 'tabs', 'aria-label': 'Ways to work it out' });
     for (const w of q.ways) {
-      const tab = h('button', { type: 'button', class: `tab${w === way || w.node.id === way.node.id ? ' on' : ''}`, 'data-act': `tab:${w.node.id}`, 'aria-current': w.node.id === way.node.id ? 'true' : null, onclick: () => { if (w.node.id !== way.node.id) this.openWay(w); } }, w.technique === null ? w.node.title : TECHNIQUE_NAMES[w.technique]);
+      const on = w.node.id === way.node.id;
+      const tab = h('button', { type: 'button', class: `tab${on ? ' on' : ''}`, 'data-act': `tab:${w.node.id}`, 'aria-current': on ? 'true' : null, onclick: () => { if (!on) this.openWay(w); } }, w.technique === null ? w.node.title : TECHNIQUE_NAMES[w.technique]);
       if (!w.ready) tab.disabled = true;
       bar.append(tab);
     }
     return bar;
   }
 
-  private run(run: Run, way: Way, open: readonly Ask[], words: (text: string) => string, shown: number): HTMLElement {
+  private run(run: Run, way: Way, seal: ReturnType<Player['sealing']>, shown: number): HTMLElement {
     const section = h('section', { class: `run${run.figure === null ? '' : ' has-fig'}` });
     if (run.figure !== null) {
       const figure = run.figure;
@@ -368,11 +371,11 @@ export class Player {
         get: (name): Held | undefined => held[`${key}.${name}`],
         set: (name, value) => {
           this.fresh = name;
-          this.change({ kind: 'hold', node: way.node.id, key: `${key}.${name}`, value });
+          this.apply({ kind: 'held', node: way.node.id, key: `${key}.${name}`, value });
           this.port.emit({ kind: 'hold', node: way.node.id, key: `${key}.${name}`, value });
           this.render();
         },
-        seal: (value) => sealed(value, open),
+        seal: seal.seal,
         fresh: this.fresh,
       };
       section.append(h('div', { class: 'fig', 'data-kind': figure.spec.kind, 'data-act': `fig:${figure.spec.kind}` }, drawVisual(figure.spec, ctx)));
@@ -380,44 +383,41 @@ export class Player {
     const says = h('div', { class: 'says' });
     for (const { step, index } of run.steps) {
       if (step.kind === 'step') {
-        const latest = index === shown - 1;
         says.append(
           h(
             'article',
-            { class: `say${latest ? ' latest' : ''}${this.justShown === index ? ' arrive' : ''}`, 'data-step': index },
+            { class: `say${index === shown - 1 ? ' latest' : ''}${this.justShown === index ? ' arrive' : ''}`, 'data-step': index },
             h('span', { class: 'say-n' }, String(index + 1)),
-            h('p', { class: 'words' }, words(step.words)),
+            h('p', { class: 'words' }, seal.words(step.words)),
           ),
         );
-      } else says.append(this.ask(way, step, words));
+      } else says.append(this.ask(way, step, seal.words));
     }
     section.append(says);
     return section;
   }
 
-  private ask(way: Way, ask: Ask, words: (text: string) => string): HTMLElement {
-    const tries = progressOf(this.state, way.node.id).tries[ask.id] ?? [];
-    const right = rightOf(ask, tries);
-    const gotPast = passed(ask, tries);
-    const wrong = wrongTries(ask, tries);
-    if (gotPast) {
-      const worked = right === null;
+  private ask(way: Way, ask: LessonAsk, words: (text: string) => string): HTMLElement {
+    const view = viewOf(this.input.doc, this.state, way, ask);
+    if (view === null) return h('article', { class: 'ask closed' });
+    const right = view.accepted ? view.tries.find((t) => accepts(ask, t)) : undefined;
+    if (view.open && !view.refused) {
       return h(
         'article',
-        { class: `ask closed${worked ? ' worked' : ' right'}`, 'data-ask': ask.id },
+        { class: `ask closed${right === undefined ? ' worked' : ' right'}`, 'data-ask': ask.id },
         h('p', { class: 'ask-prompt' }, ask.prompt),
-        h('p', { class: 'verdict good' }, worked ? 'Let’s see how it works.' : `Yes! ${right} is right.`),
+        h('p', { class: 'verdict good' }, right === undefined ? 'Let’s see how it works.' : `Yes! ${right} is right.`),
       );
     }
     const card = h('article', { class: 'ask open', 'data-ask': ask.id, 'aria-label': 'Your turn' }, h('p', { class: 'ask-prompt' }, words(ask.prompt)));
-    if (ask.refused) {
-      card.append(h('p', { class: 'ask-note' }, 'Let’s work this one out together.'), h('button', { type: 'button', class: 'btn main wide', 'data-act': 'work', onclick: () => this.work(way, ask) }, 'Show me'));
+    if (view.refused) {
+      card.append(h('p', { class: 'ask-note' }, 'Let’s work this one out together. Have a think, then press Next.'));
       return card;
     }
     if (ask.pick !== null) {
       const choices = h('div', { class: 'choices', role: 'group', 'aria-label': 'Choose your answer' });
       for (const label of ask.pick) {
-        const tried = tries.includes(label);
+        const tried = view.tries.includes(label);
         const btn = h('button', { type: 'button', class: `choice${tried ? ' tried' : ''}`, 'data-act': `pick:${label}`, onclick: (e: Event) => this.tryAnswer(way, ask, label, e.timeStamp) }, label, ask.unit === null ? null : h('span', { class: 'unit' }, ` ${ask.unit}`));
         if (tried) btn.disabled = true;
         choices.append(btn);
@@ -449,11 +449,9 @@ export class Player {
       field.addEventListener('focus', () => window.setTimeout(() => card.scrollIntoView({ block: 'center', behavior: 'smooth' }), 250));
       card.append(h('div', { class: 'answer-row' }, field, ask.unit === null ? null : h('span', { class: 'unit' }, ask.unit), h('button', { type: 'button', class: 'btn main check', 'data-act': 'check', onclick: submit }, 'Check')));
     }
-    if (wrong > 0) {
-      const hint = ask.hints.length === 0 ? null : ask.hints[Math.min(wrong, ask.hints.length) - 1];
+    if (view.wrong > 0) {
       const feedback = h('div', { class: 'nudge', role: 'status' }, h('p', { class: 'verdict' }, 'Not yet. Have another look.'));
-      if (hint !== undefined && hint !== null) feedback.append(h('p', { class: 'hint' }, h('b', {}, `Hint ${Math.min(wrong, ask.hints.length)}: `), words(hint)));
-      if (wrong > ask.hints.length && wrong >= 2) feedback.append(h('button', { type: 'button', class: 'btn soft wide', 'data-act': 'work', onclick: () => this.work(way, ask) }, 'Show me how to work it out'));
+      if (view.hint !== null) feedback.append(h('p', { class: 'hint' }, h('b', {}, `Hint ${Math.min(view.wrong, ask.hints.length)}: `), words(view.hint)));
       card.append(feedback);
     }
     return card;
@@ -470,19 +468,19 @@ export class Player {
       h(
         'div',
         { class: 'finish-row' },
-        others.length > 0 ? h('button', { type: 'button', class: 'btn main', 'data-act': 'another', onclick: () => { this.screen = null; this.change({ kind: 'goto', node: q.node.id, at: 0 }); this.render(); window.scrollTo(0, 0); } }, 'Try another way') : null,
-        next === undefined ? null : h('button', { type: 'button', class: `btn ${others.length > 0 ? 'soft' : 'main'}`, 'data-act': 'next-question', onclick: () => { this.screen = null; this.change({ kind: 'goto', node: next.node.id, at: 0 }); this.render(); window.scrollTo(0, 0); } }, 'Next question'),
-        h('button', { type: 'button', class: 'btn soft', 'data-act': 'outline-2', onclick: () => { this.screen = 'outline'; this.render(); window.scrollTo(0, 0); } }, 'All questions'),
+        others.length > 0 ? h('button', { type: 'button', class: 'btn main', 'data-act': 'another', onclick: () => this.show({ kind: 'ways', question: q.node.id }) }, 'Try another way') : null,
+        next === undefined ? null : h('button', { type: 'button', class: `btn ${others.length > 0 ? 'soft' : 'main'}`, 'data-act': 'next-question', onclick: () => this.show({ kind: 'ways', question: next.node.id }) }, 'Next question'),
+        h('button', { type: 'button', class: 'btn soft', 'data-act': 'outline-2', onclick: () => this.show({ kind: 'outline' }) }, 'All questions'),
       ),
     );
   }
 
-  private dock(way: Way, shown: number, gate: Ask | null, filling: boolean, finished: boolean): HTMLElement {
-    const back = h('button', { type: 'button', class: 'btn soft', 'data-act': 'back', onclick: () => this.back(way, shown) }, shown <= 1 ? 'Ways' : 'Back');
+  private dock(q: Question, way: Way, shown: number, gated: boolean, filling: boolean, finished: boolean): HTMLElement {
+    const back = h('button', { type: 'button', class: 'btn soft', 'data-act': 'back', onclick: () => this.back(q) }, shown <= 1 ? 'Ways' : 'Back');
     let primary: HTMLElement | null;
     if (finished) primary = null;
-    else if (gate !== null) primary = h('button', { type: 'button', class: 'btn main grow', 'data-act': 'next', disabled: true }, 'Answer to go on');
-    else if (shown < way.steps.length) primary = h('button', { type: 'button', class: 'btn main grow', 'data-act': 'next', onclick: () => this.next(way, shown) }, 'Next');
+    else if (gated) primary = h('button', { type: 'button', class: 'btn main grow', 'data-act': 'next', disabled: true }, 'Answer to go on');
+    else if (shown < way.steps.length) primary = h('button', { type: 'button', class: 'btn main grow', 'data-act': 'next', onclick: () => this.next(way) }, 'Next');
     else primary = h('button', { type: 'button', class: 'btn main grow', 'data-act': 'next', disabled: true }, filling ? 'Getting the next step ready…' : 'Next');
     return h('footer', { class: 'dock' }, back, primary);
   }
@@ -522,47 +520,44 @@ export class Player {
   }
 
   private openEntry(entry: CatalogueEntry, question: string): void {
-    if (entry.current) {
-      this.screen = null;
-      this.change({ kind: 'goto', node: question, at: 0 });
-      this.render();
-      window.scrollTo(0, 0);
-    } else this.port.emit({ kind: 'document', id: entry.id });
+    if (entry.current) this.show({ kind: 'ways', question });
+    else this.port.emit({ kind: 'document', id: entry.id });
   }
 
-  // ------------------------------------------------------------ for the brain
+  // ------------------------------------------------------------ for the brain and the census
 
-  /** The page as the brain is told of it (`HERE`): where she is, what is on stage, what she holds. Answers are the brain's own; nothing is left out. */
+  /** The page as the brain is told of it (`HERE`): where she is, what is on stage, what she holds. */
   here(): string {
-    const where = whereOf(this.sheet, this.state);
-    if (where.view === 'outline') return `HERE the sheet "${this.sheet.title}", the list of questions.`;
-    if (where.view === 'question') return `HERE question ${where.question.number} "${where.question.node.title}", choosing a way (${where.question.ways.length} offered).`;
-    const at = Math.min(reach(where.way, this.state, Math.max(1, stopOf(this.state))), where.way.steps.length);
-    const tries = progressOf(this.state, where.way.node.id).tries;
-    const asks = where.way.steps.slice(0, at).filter((s): s is Ask => s.kind === 'ask');
-    const tried = asks.map((a) => `${a.id}: ${(tries[a.id] ?? []).map((t) => `"${t}"`).join(', ') || 'not tried'}`).join('; ');
-    const stage = runsOf(where.way, at)
-      .map((r) => (r.figure === null ? null : r.figure.spec.kind))
-      .filter((k) => k !== null)
-      .join(', ');
-    const held = Object.entries(this.state.held[where.way.node.id] ?? {}).map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(' ');
-    return `HERE ${where.way.node.id} step ${at} of ${where.way.steps.length}. On stage: question card "${where.question.node.title}"${stage === '' ? '' : `; ${stage}`}. Tried: ${tried === '' ? 'nothing yet' : tried}. Held: ${held === '' ? 'nothing' : held}`;
+    const sheet = this.sheet;
+    if (this.screen !== null) {
+      if (this.screen.kind === 'ways') {
+        const id = this.screen.question;
+        const q = sheet.questions.find((n) => n.node.id === id);
+        return q === undefined ? `HERE the sheet "${sheet.title}".` : `HERE question ${q.number} "${q.node.title}", choosing a way (${q.ways.length} offered).`;
+      }
+      return this.screen.kind === 'catalogue' ? 'HERE the list of her sheets.' : `HERE the sheet "${sheet.title}", the list of questions.`;
+    }
+    const here = wayOf(sheet, this.state.cursor.node);
+    if (here === null) return `HERE the sheet "${sheet.title}", the list of questions.`;
+    const shown = shownOf(here.way, this.state);
+    const asks = here.way.steps.slice(0, shown).filter((s): s is LessonAsk => s.kind === 'ask');
+    const tried = asks.map((a) => `${a.id}: ${(this.state.progress[here.way.node.id]?.tries[a.id] ?? []).map((t) => `"${t}"`).join(', ') || 'not tried'}`).join('; ');
+    const stage = runsOf(here.way, shown).flatMap((r) => (r.figure === null ? [] : [r.figure.spec.kind])).join(', ');
+    const held = Object.entries(this.state.held[here.way.node.id] ?? {}).map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(' ');
+    return `HERE ${here.way.node.id} step ${shown} of ${here.way.steps.length}. On stage: question card "${here.question.node.title}"${stage === '' ? '' : `; ${stage}`}. Tried: ${tried === '' ? 'nothing yet' : tried}. Held: ${held === '' ? 'nothing' : held}`;
   }
 
   /** How many steps she has been shown on the way she is on (0 off a way). */
   shownSteps(): number {
-    const where = whereOf(this.sheet, this.state);
-    return where.view === 'play' ? Math.min(reach(where.way, this.state, Math.max(1, stopOf(this.state))), where.way.steps.length) : 0;
+    if (this.screen !== null) return 0;
+    const here = wayOf(this.sheet, this.state.cursor.node);
+    return here === null ? 0 : shownOf(here.way, this.state);
   }
 
-  /** The asks of the way that are not yet got past, and the question's own words: what the census looks for on screen. */
-  sealedNow(): { readonly open: readonly Ask[]; readonly question: string } {
-    const where = whereOf(this.sheet, this.state);
-    return where.view === 'play' ? { open: sealedAsks(where.way, this.state), question: where.question.node.title } : { open: [], question: '' };
-  }
-
-  progress(): { readonly done: number; readonly total: number } {
-    const sheet = this.sheet;
-    return { done: sheet.questions.filter((q) => questionDone(q, this.state)).length, total: sheet.questions.length };
+  /** What is sealed on the page now, and the question's own words: what the census looks for on screen. */
+  sealedNow(): { readonly open: readonly OpenAsk[]; readonly question: string } {
+    if (this.screen !== null) return { open: [], question: '' };
+    const here = wayOf(this.sheet, this.state.cursor.node);
+    return here === null ? { open: [], question: '' } : { open: shutAsks(this.input.doc, this.state, here.way, here.question.node.title), question: here.question.node.title };
   }
 }

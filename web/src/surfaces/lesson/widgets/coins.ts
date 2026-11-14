@@ -30,6 +30,6 @@ export const coins: Widget<Spec> = {
     const values = tray.map((i) => spec.coins[i] ?? 0);
     const total = values.reduce((a, b) => a + b, 0);
     const said = values.length === 0 ? 'Tap the coins you want in the tray' : values.length === 1 ? `In the tray: ${money(values[0] ?? 0)}` : `${values.map(money).join(' + ')} = ${ctx.seal(money(total))}`;
-    return h('div', { class: 'vis vis-coins' }, purse, dish, readout(said), h('div', { class: 'controls' }, tray.length > 0 ? press('Empty the tray', 'again', () => ctx.set('tray', [])) : null));
+    return h('div', { class: 'vis vis-coins' }, spec.target === null ? null : h('p', { class: 'whole' }, `Can you make ${ctx.seal(money(spec.target))}?`), purse, dish, readout(said), h('div', { class: 'controls' }, tray.length > 0 ? press('Empty the tray', 'again', () => ctx.set('tray', [])) : null));
   },
 };

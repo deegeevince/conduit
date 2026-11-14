@@ -2,7 +2,7 @@
 // what she did and turns it into the state changes and back events of the wire (WS4), and keeps the last census and still for the page's
 // witnesses. It knows nothing of the stage or the shell; `attachDocumentLink` is the whole of what stage-app.ts and http-link.ts add.
 
-import { matches } from '../surfaces/lesson/answer';
+import { accepts } from '@conduit/language';
 import { mountLessonFrame } from '../surfaces/lesson/frame';
 import type { LessonFrame } from '../surfaces/lesson/frame';
 import { tokensFor } from '../surfaces/lesson/tokens';
@@ -58,8 +58,9 @@ export function changesBetween(doc: Document, before: DocState, after: DocState)
     if (progress.seen > (was?.seen ?? 0)) out.push({ kind: 'seen', node, seen: progress.seen });
     for (const [ask, tries] of Object.entries(progress.tries)) {
       const known = was?.tries[ask]?.length ?? 0;
-      const step = doc.nodes[node]?.body?.kind === 'lesson' ? doc.nodes[node].body.steps.find((s) => s.kind === 'ask' && s.id === ask) : undefined;
-      for (const value of tries.slice(known)) out.push({ kind: 'try', node, ask, value, right: step?.kind === 'ask' && value !== '~worked' && matches(value, step.accepted, step.unit) });
+      const body = doc.nodes[node]?.body;
+      const step = body?.kind === 'lesson' ? body.steps.find((s) => s.kind === 'ask' && s.id === ask) : undefined;
+      for (const value of tries.slice(known)) out.push({ kind: 'try', node, ask, value, right: step?.kind === 'ask' && accepts(step, value) });
     }
     if (progress.done !== (was?.done ?? false)) out.push({ kind: 'done', node, done: progress.done });
   }

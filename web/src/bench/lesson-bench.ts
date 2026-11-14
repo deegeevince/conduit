@@ -10,20 +10,24 @@
 //   ?nocatalogue=1                no "My sheets"
 
 import { DocumentHost } from '../app/document-host';
-import { CASE_ZERO, SHEET_MONEY, SHEET_TENS, catalogueFrom, standInCrop } from '../surfaces/lesson/fixtures';
-import { advance, freshState } from '../surfaces/lesson/model';
+import { advance, findNode, initialState } from '@conduit/language';
+import type { DocNode, LessonStep, NodeStatus } from '@conduit/language';
+import { FIXTURES, catalogueFrom, standInCrop } from '../surfaces/lesson/fixtures';
 import type { DocState, Document, LessonEvent, LessonInput, StateChange } from '../surfaces/lesson/types';
 
 const params = new URLSearchParams(location.search);
-const DOCS: Readonly<Record<string, Document>> = { case0: CASE_ZERO, tens: SHEET_TENS, money: SHEET_MONEY };
+const DOCS = FIXTURES;
 const id = params.get('fixture') ?? 'case0';
 const dark = params.get('dark') === '1';
-let doc: Document = DOCS[id] ?? CASE_ZERO;
+let doc: Document = DOCS[id] ?? DOCS['case0'] ?? Object.values(DOCS)[0] ?? fail();
 
 interface BenchWindow extends Window {
   __lesson?: unknown;
 }
 const win: BenchWindow = window;
+function fail(): never {
+  throw new Error('no fixture');
+}
 
 function keyOf(name: string): string {
   return `lesson-bench:${name}`;
@@ -35,7 +39,7 @@ function load(d: Document): DocState {
   } catch {
     // no storage: start fresh
   }
-  return freshState(d);
+  return initialState(d);
 }
 function save(name: string, state: DocState): void {
   try {
@@ -49,10 +53,12 @@ if (params.get('reset') === '1') for (const key of Object.keys(DOCS)) localStora
 
 let state = load(doc);
 const openNode = params.get('open');
-if (openNode !== null) state = advance(doc, state, { kind: 'goto', node: openNode, at: Number(params.get('at') ?? '0') });
+const opened = openNode === null ? null : findNode(doc, openNode);
+if (opened !== null) state = advance(doc, state, { kind: 'go', node: opened.id, at: { at: Number(params.get('at') ?? '0') } });
 
 function crops(d: Document): LessonInput['crops'] {
-  return d.id === 'money' ? { q3: standInCrop(dark) } : {};
+  const q = findNode(d, 'q3');
+  return d.id === 'money' && q !== null ? { [q.id]: standInCrop(dark) } : {};
 }
 function input(): LessonInput {
   const states: Record<string, DocState> = {};
@@ -91,17 +97,16 @@ const host = new DocumentHost({
 
 if (params.get('stream') === '1') {
   // the brain writes ahead while she is on the sheet: a way named, then its first step, then the rest, then verified
-  const target = doc.id === 'tens' ? { q: 'q3', way: 'q3b' } : { q: 'q1', way: 'q1d' };
-  const original = doc.nodes[target.way];
-  if (original !== undefined) {
-    const steps = [
-      { kind: 'step', id: 's1', show: 'groups n=5 of=12 parts=6,2,4 start=5 noun=vase thing=flower', words: 'Pretend you pour all the flowers out and share them back between the vases.' },
-      { kind: 'step', id: 's2', show: null, words: 'Each vase gets the same.' },
-      { kind: 'ask', id: 'a1', accepted: ['12'], pick: null, unit: null, prompt: 'How many does each vase get?', hints: ['Share 60 between 5.'] },
-    ] as const;
-    const put = (n: number, status: 'outlined' | 'filling' | 'verified'): void => {
-      const node = { ...original, status, body: { kind: 'lesson' as const, steps: steps.slice(0, n) } };
-      doc = { ...doc, nodes: { ...doc.nodes, [target.way]: node } };
+  const target = findNode(doc, doc.id === 'tens' ? 'q3b' : 'q1d');
+  if (target !== null) {
+    const steps: readonly LessonStep[] = [
+      { kind: 'step', id: 'x1', show: { visual: 'groups', range: null, args: { count: '5', each: '12', label: 'flowers' } }, words: 'Pretend you pour all the flowers out and share them back between the vases.' },
+      { kind: 'step', id: 'x2', show: null, words: 'Each vase gets the same.' },
+      { kind: 'ask', id: 'a9', prompt: 'How many does each vase get?', accepted: ['12'], pick: null, unit: null, hints: ['Share the flowers between the five vases.'] },
+    ];
+    const put = (n: number, status: NodeStatus): void => {
+      const node: DocNode = { ...target, status, body: n === 0 ? null : { kind: 'lesson', steps: steps.slice(0, n) } };
+      doc = { ...doc, nodes: { ...doc.nodes, [target.id]: node } };
       host.setInput(input());
     };
     put(0, 'outlined');
