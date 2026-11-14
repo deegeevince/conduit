@@ -3,10 +3,12 @@
 // pill for as long as it is true, and the photos being sent and the voice strip appear there only while they are in use.
 // Photos and voice notes are the chrome's own pieces (chrome/photos.ts, chrome/voice.ts); this file only gives them a place.
 
-import { PROMPT_MAX_CHARS } from '@conduit/language';
+import { PROMPT_MAX_CHARS, UPLOAD_LIMITS } from '@conduit/language';
 import { mountPhotoTray } from '../chrome/photos';
 import type { Photo, PhotoPort, PhotoTray } from '../chrome/photos';
 import { mountVoice } from '../chrome/voice';
+import { mountComposerMenu } from '../chrome/menu';
+import type { ComposerMenu } from '../chrome/menu';
 import type { Voice, VoicePort } from '../chrome/voice';
 
 export interface ComposerHandlers {
@@ -17,8 +19,6 @@ export interface ComposerHandlers {
   readonly hasExtra: () => boolean;
   readonly photos: PhotoPort;
   readonly voice: VoicePort;
-  readonly onDraw: () => void;
-  readonly onSave: () => void;
 }
 
 export interface Composer {
@@ -33,6 +33,8 @@ export interface Composer {
   refresh(): void;
   focus(): void;
   readonly tray: PhotoTray;
+  /** the [+] menu: a photo is its own; Draw, Save, the Transcript, the model, Copy answer and About are added by the shell's mounts */
+  readonly menu: ComposerMenu;
   dispose(): void;
 }
 
@@ -41,27 +43,18 @@ let counter = 0;
 const PLUS = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';
 const SEND = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6"/></svg>';
 const STOP = '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>';
-const PHOTO = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M4 17l5-5 4 4 3-3 4 4"/></svg>';
-const CAMERA = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l1.5-2h7L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>';
-const PENCIL = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M4 20l1-4L16.5 4.5a2.1 2.1 0 013 3L8 19z"/></svg>';
-const SAVE = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7 11l5 5 5-5M5 20h14"/></svg>';
 
 export function mountComposer(host: HTMLElement, handlers: ComposerHandlers): Composer {
   counter += 1;
   const id = `composer-${counter}`;
   const coarse = window.matchMedia('(pointer: coarse)').matches;
-  host.classList.add('composer');
+  host.classList.add('shcomposer');
   host.innerHTML = `
     <div class="composer__status" hidden><span class="composer__text"></span><button type="button" class="composer__cancel" hidden>Cancel</button></div>
     <p class="vh composer__announce" role="status"></p>
+    <div class="shcomposer__float"></div>
     <form class="pill" autocomplete="off">
-      <button type="button" class="pill__btn pill__plus" aria-label="Add photos and more" aria-haspopup="menu" aria-expanded="false" aria-controls="${id}-menu">${PLUS}</button>
-      <div class="menu" id="${id}-menu" role="menu" aria-label="Add" hidden>
-        <button type="button" class="menu__item" role="menuitem" data-do="photo">${PHOTO}<span>Add a photo</span></button>
-        <button type="button" class="menu__item" role="menuitem" data-do="camera"${coarse ? '' : ' hidden'}>${CAMERA}<span>Take a photo</span></button>
-        <button type="button" class="menu__item" role="menuitem" data-do="draw">${PENCIL}<span>Draw on the canvas</span></button>
-        <button type="button" class="menu__item" role="menuitem" data-do="save">${SAVE}<span>Save this answer</span></button>
-      </div>
+      <button type="button" class="pill__btn pill__plus composer__plus" aria-label="More: photo, draw, save, transcript, model" title="More">${PLUS}</button>
       <input class="vh" type="file" accept="image/*" multiple tabindex="-1" aria-hidden="true" data-photos="pick" />
       <input class="vh" type="file" accept="image/*" capture="environment" tabindex="-1" aria-hidden="true" data-photos="camera" />
       <label class="vh" for="${id}-field">Ask anything</label>
@@ -81,7 +74,7 @@ export function mountComposer(host: HTMLElement, handlers: ComposerHandlers): Co
   const announcer = part('.composer__announce');
   const form = part<HTMLFormElement>('.pill');
   const plus = part<HTMLButtonElement>('.pill__plus');
-  const menu = part('.menu');
+  const float = part('.shcomposer__float');
   const field = part<HTMLTextAreaElement>('.pill__field');
   const mic = part<HTMLButtonElement>('.pill__voice');
   const send = part<HTMLButtonElement>('.pill__send');
@@ -109,37 +102,8 @@ export function mountComposer(host: HTMLElement, handlers: ComposerHandlers): Co
   });
   window.addEventListener('resize', fit);
 
-  // The menu: arrows move, Escape and Tab leave, a choice closes it and does its one thing.
-  const items = (): HTMLButtonElement[] => [...menu.querySelectorAll<HTMLButtonElement>('.menu__item')].filter((item) => !item.hidden);
-  const setMenu = (open: boolean, focus = false): void => {
-    menu.hidden = !open;
-    plus.setAttribute('aria-expanded', String(open));
-    if (open) items()[0]?.focus();
-    else if (focus) plus.focus();
-  };
-  plus.addEventListener('click', () => setMenu(menu.hidden === true));
-  plus.addEventListener('keydown', (event) => {
-    if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
-      event.preventDefault();
-      setMenu(true);
-    }
-  });
-  menu.addEventListener('keydown', (event) => {
-    const all = items();
-    const at = all.indexOf(document.activeElement as HTMLButtonElement);
-    if (event.key === 'ArrowDown') all[(at + 1) % all.length]?.focus();
-    else if (event.key === 'ArrowUp') all[(at - 1 + all.length) % all.length]?.focus();
-    else if (event.key === 'Home') all[0]?.focus();
-    else if (event.key === 'End') all[all.length - 1]?.focus();
-    else if (event.key === 'Escape') setMenu(false, true);
-    else if (event.key === 'Tab') setMenu(false);
-    else return;
-    if (event.key !== 'Tab') event.preventDefault();
-  });
-  const onOutside = (event: Event): void => {
-    if (!menu.hidden && event.target instanceof Node && !form.contains(event.target)) setMenu(false);
-  };
-  document.addEventListener('pointerdown', onOutside);
+  // The [+] menu is the chrome's own (chrome/menu.ts); the photo entries are this composer's, the rest are added by whatever else mounts.
+  const menu = mountComposerMenu(plus, form);
 
   const pick = part<HTMLInputElement>('input[data-photos="pick"]');
   const camera = part<HTMLInputElement>('input[data-photos="camera"]');
@@ -149,16 +113,11 @@ export function mountComposer(host: HTMLElement, handlers: ComposerHandlers): Co
       file.value = '';
     });
   }
-  menu.addEventListener('click', (event) => {
-    const item = event.target instanceof Element ? event.target.closest<HTMLButtonElement>('.menu__item') : null;
-    if (item === null) return;
-    setMenu(false);
-    const what = item.dataset['do'];
-    if (what === 'photo') pick.click();
-    else if (what === 'camera') camera.click();
-    else if (what === 'draw') handlers.onDraw();
-    else if (what === 'save') handlers.onSave();
-  });
+  const entries = [
+    menu.add({ id: 'photo', label: 'Add a photo', gist: `up to ${UPLOAD_LIMITS.perTurn}, JPEG, PNG, WebP or HEIC`, order: 10, run: () => pick.click() }),
+    menu.add({ id: 'camera', label: 'Take a photo', gist: "with this phone's camera", order: 20, hidden: !coarse, run: () => camera.click() }),
+  ];
+  void entries;
 
   const submit = (): void => {
     const typed = field.value.trim();
@@ -198,13 +157,13 @@ export function mountComposer(host: HTMLElement, handlers: ComposerHandlers): Co
     refocus();
   });
   const onKey = (event: KeyboardEvent): void => {
-    if (event.key !== 'Escape' || event.defaultPrevented || !busy || document.querySelector('dialog[open]') !== null || !menu.hidden) return;
+    if (event.key !== 'Escape' || event.defaultPrevented || !busy || document.querySelector('dialog[open]') !== null || menu.isOpen) return;
     event.preventDefault();
     handlers.onStop();
   };
   document.addEventListener('keydown', onKey);
 
-  voice = mountVoice(mic, form, field, handlers.voice, {
+  voice = mountVoice(mic, float, field, handlers.voice, {
     onWords: (words, now) => {
       const there = field.value.trim();
       field.value = there === '' ? words : `${there} ${words}`;
@@ -220,6 +179,7 @@ export function mountComposer(host: HTMLElement, handlers: ComposerHandlers): Co
 
   return {
     tray,
+    menu,
     setBusy(next) {
       if (next === busy) return;
       busy = next;
@@ -248,7 +208,7 @@ export function mountComposer(host: HTMLElement, handlers: ComposerHandlers): Co
     },
     dispose() {
       document.removeEventListener('keydown', onKey);
-      document.removeEventListener('pointerdown', onOutside);
+      menu.dispose();
       window.removeEventListener('resize', fit);
       tray.dispose();
       voice?.dispose();

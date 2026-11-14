@@ -557,7 +557,7 @@ button {
 
 /* The composer: one pill. [+], the field, the mic, Send. Anything else (a status, the photos, the voice strip) sits above it and only when there is something to say. */
 
-.composer {
+.shcomposer {
   position: relative;
   flex: 0 0 auto;
   width: 100%;
@@ -678,66 +678,25 @@ button {
   color: var(--sh-quiet);
 }
 
-.menu {
-  position: absolute;
-  z-index: 20;
-  left: 0;
-  bottom: calc(100% + 0.5rem);
-  min-width: 14rem;
-  padding: 0.375rem;
-  border: 1px solid var(--sh-rule);
-  border-radius: 1rem;
-  background: var(--sh-ground);
-  box-shadow: var(--sh-shadow);
-}
-
-.menu[hidden] {
-  display: none;
-}
-
-.menu__item {
-  display: flex;
-  gap: 0.75rem;
-  align-items: center;
-  width: 100%;
-  min-height: 2.75rem;
-  padding: 0 0.75rem;
-  border: 0;
-  border-radius: 0.625rem;
-  background: transparent;
-  color: var(--sh-text);
-  font: inherit;
-  text-align: left;
-}
-
-.menu__item:hover,
-.menu__item:focus-visible {
-  background: var(--sh-hover);
-}
-
-.menu__item[hidden] {
-  display: none;
-}
-
 /* the chrome pieces that sit above the pill read as part of it */
-.composer .prompt__photos,
-.composer .voice {
+.shcomposer .prompt__photos,
+.shcomposer .voice {
   margin: 0 0 0.375rem;
 }
 
-.composer .photos__note:empty {
+.shcomposer .photos__note:empty {
   display: none;
 }
 
-.composer .activity {
+.shcomposer .activity {
   margin: 0 0 0.375rem;
 }
 
-.composer .photo__remove,
-.composer .photos__note,
-.composer .voice__note,
-.composer .voice__time,
-.composer .voice__auto {
+.shcomposer .photo__remove,
+.shcomposer .photos__note,
+.shcomposer .voice__note,
+.shcomposer .voice__time,
+.shcomposer .voice__auto {
   color: var(--sh-quiet);
 }
 
@@ -982,7 +941,7 @@ button {
 }
 
 /* the photo rules are said only when something is wrong; the thumbnails say the rest */
-.composer .photos__note:not(.photos__note--problem) {
+.shcomposer .photos__note:not(.photos__note--problem) {
   display: none;
 }
 

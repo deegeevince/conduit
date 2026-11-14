@@ -124,7 +124,7 @@ const results = {};
 await shot('empty');
 results.emptyContrast = await contrast('empty');
 results.pillHeight = await ev(`document.querySelector('.pill').getBoundingClientRect().height`);
-results.composerRowsAboveAndBelow = await ev(`(() => { const c = document.querySelector('.composer').getBoundingClientRect(); return { composerH: c.height, statusHidden: document.querySelector('.composer__status').hidden }; })()`);
+results.composerRowsAboveAndBelow = await ev(`(() => { const c = document.querySelector('.shcomposer').getBoundingClientRect(); return { composerH: c.height, statusHidden: document.querySelector('.composer__status').hidden }; })()`);
 
 // 2. message one
 await type('draw a lighthouse at dusk');
@@ -201,7 +201,7 @@ await shot('canvas-closed');
 await click('.pill__plus');
 await sleep(300);
 await shot('plus-menu');
-results.menu = await ev(`({ open: !document.querySelector('.menu').hidden, items: [...document.querySelectorAll('.menu__item')].filter((i) => !i.hidden).map((i) => i.textContent.trim()), focus: document.activeElement.textContent.trim() })`);
+results.menu = await ev(`({ open: !document.querySelector('.composer__menu').hidden, items: [...document.querySelectorAll('.composer__item')].filter((i) => !i.hidden).map((i) => i.textContent.trim()), focus: document.activeElement.textContent.trim() })`);
 console.log(JSON.stringify(results.menu));
 await contrast('plus-menu');
 await key('Escape');

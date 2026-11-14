@@ -8,6 +8,8 @@ import type { BrainChoice, ConversationSummary, ConversationView } from '@condui
 import { readParams } from '../app/params';
 import { mountStage } from '../app/stage-app';
 import type { StageApp, StageStatus } from '../app/stage-app';
+import { copyAnswer } from '../chrome/files';
+import { mountAbout } from '../chrome/about';
 import { mountActions } from '../chrome/actions';
 import { runCommand } from '../chrome/command-runner';
 import { isCommand } from '../chrome/commands';
@@ -67,7 +69,6 @@ root.innerHTML = `
           <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
         </button>
         <h1 class="shell-bar__title">${UNTITLED}</h1>
-        <div class="shell-bar__slot"></div>
       </header>
       <div class="shell-scroll" tabindex="0" role="region" aria-label="Conversation"></div>
       <div class="shell-activity"></div>
@@ -88,6 +89,25 @@ const scrim = part('.shell-scrim');
 
 let app: StageApp | null = null;
 let picker: Picker | null = null;
+
+// These [+] entries work on the stage, which sits in the canvas: the canvas is opened first and then the press goes on.
+const NEEDS_CANVAS = new Set(['draw', 'png', 'svg', 'film', 'conversation', 'play']);
+let replaying = false;
+part('.shell-composer').addEventListener(
+  'click',
+  (event) => {
+    if (replaying || !(event.target instanceof Element)) return;
+    const item = event.target.closest<HTMLButtonElement>('.composer__item');
+    if (item === null || !NEEDS_CANVAS.has(item.dataset['item'] ?? '') || item.getAttribute('aria-disabled') === 'true' || canvasOpen()) return;
+    event.stopPropagation();
+    void openCanvas(canvasTurn, null).then(() => {
+      replaying = true;
+      item.click();
+      replaying = false;
+    });
+  },
+  true,
+);
 let stageInk: StageInk | null = null;
 let transcript: Transcript | null = null;
 let live: Live | null = null;
@@ -198,19 +218,6 @@ const composer = mountComposer(part('.shell-composer'), {
       if (app === null) throw new Error('The stage is still starting. Try again in a moment.');
       return app.link.uploadVoice(recording);
     },
-  },
-  onDraw: () => {
-    void openCanvas(canvasTurn, null).then(() => {
-      const toggle = canvas.tools.querySelector<HTMLButtonElement>('.action--draw');
-      if (toggle !== null && toggle.getAttribute('aria-pressed') !== 'true') toggle.click();
-      toggle?.focus();
-    });
-  },
-  onSave: () => {
-    void openCanvas(canvasTurn, null).then(() => {
-      const save = canvas.tools.querySelector<HTMLButtonElement>('.action--take');
-      save?.click();
-    });
   },
 });
 
@@ -523,10 +530,9 @@ async function start(): Promise<void> {
   const mounted = app;
   window.__stage = mounted.hook;
   // The words panel opens over the room (the stage's box), so it is made there; its button goes up to the header with the rest of the tools.
-  transcript = mountTranscript(canvas.room, mounted.painter, { onChoice: (key) => mounted.choose(key) });
-  const wordsButton = canvas.room.querySelector<HTMLElement>('.transcript__toggle');
-  if (wordsButton !== null) canvas.tools.prepend(wordsButton);
-  stageInk = mountStageInk(canvas.stageHost, canvas.tools, {
+  const menu = composer.menu;
+  transcript = mountTranscript(canvas.room, mounted.painter, { menu, onChoice: (key) => mounted.choose(key), onCopyAnswer: (turn) => void copyAnswer(mounted, turn) });
+  stageInk = mountStageInk(canvas.stageHost, menu, {
     upload: async (png) => (await mounted.link.uploadPhoto(png)).id,
     lastTurn: () => mounted.lastTurn(),
     capture: (maxSide) => mounted.capture(maxSide),
@@ -534,9 +540,10 @@ async function start(): Promise<void> {
     announce: (text) => mounted.announce(text),
   });
   stageInk.ink.onChange(() => composer.refresh());
-  mountActions(canvas.tools, mounted, transcript, canvas.stageHost, { top: canvas.navTop });
+  mountActions(canvas.tools, mounted, transcript, canvas.stageHost, { top: canvas.navTop, menu });
   mountSound(canvas.navTop, mounted);
-  picker = mountPicker(part('.shell-bar__slot'), mounted);
+  picker = mountPicker(menu, mounted);
+  mountAbout(menu, mounted);
   mountActivity(part('.shell-activity'), mounted);
   mountPermission(mounted);
   live = mountLive(mounted, transcript, {
