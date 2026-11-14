@@ -789,9 +789,9 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
         solids.push({ x: fit.box.x + figure.box.x * fit.unit, y: fit.box.y + figure.box.y * fit.unit, width: figure.box.w * fit.unit, height: figure.box.h * fit.unit });
         continue;
       }
-      if ((element.kind !== 'shape' && element.kind !== 'copy') || element.style.layer !== 'mid' || element.style.fill !== undefined) continue;
+      if ((element.kind !== 'shape' && element.kind !== 'copy') || element.style.layer !== 'mid' || (element.style.fill !== undefined && element.style.fill !== 'none')) continue;
       const at = canvasBoxOf(element, schedule, Math.max(start, element.enter?.end ?? 0));
-      if (at === null || at.w * at.h > 0.25 * CANVAS[scene.canvas].width * CANVAS[scene.canvas].height) continue;
+      if (at === null || at.w * at.h > 0.6 * CANVAS[scene.canvas].width * CANVAS[scene.canvas].height) continue;
       solids.push({ x: fit.box.x + at.x * fit.unit, y: fit.box.y + at.y * fit.unit, width: Math.max(1, at.w * fit.unit), height: Math.max(1, at.h * fit.unit) });
     }
     const arrangement = arrange({
