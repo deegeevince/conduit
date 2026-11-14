@@ -24,17 +24,20 @@ It is not a chat replacement. A fact is plain prose at reading speed; a drawing 
 
 Every answer can be taken away: a video, a strip of stills, an SVG, or the script itself.
 
+For the ChatGPT subscription brain, see [Codex setup](docs/codex.md).
+
 ## Run it
 
 Needs Node 22.14 or any later 22.x, and pnpm 10.28 (`corepack enable`).
 
 ```sh
 pnpm install
-cp .env.example .env        # set BRAIN=replay, claude-cli or relay
+cp .env.example .env        # set BRAIN=replay, claude-cli, codex-cli or relay
 pnpm dev                    # open http://127.0.0.1:4301
 ```
 
 - `BRAIN=replay` performs fixture scripts. No model, no key.
+- `BRAIN=codex-cli` with `CODEX_MODEL` uses your ChatGPT subscription through Codex, with web search and canvas tools. See [setup and limitations](docs/codex.md).
 - `BRAIN=claude-cli` with `CLAUDE_MODEL=sonnet` uses Claude Code as a real streaming brain. No API key.
 - `BRAIN=relay` holds each prompt until an outside agent claims it over HTTP and writes the answer.
 
@@ -46,7 +49,7 @@ Paintings from an image model cost money and are off; nothing uses one. Everythi
 
 ```
 language/   Series: vocabulary, parser, timing, geometry, the schedule, wire types, the brain's prompt, the demo scripts
-server/     sessions, turns, the back channel, the brains (relay, claude-cli, replay), the image model port, the session log, the tools
+server/     sessions, turns, the back channel, the brains (relay, claude-cli, codex-cli, replay), the image model port, the session log, the tools
 web/        the painter, its renderers (three.js and plain DOM), looks and fonts, the stage page, export, the exploration page
 explore/    the exploration battery (battery.json), the held-out set (sealed/), the owner's scores (taste/); runs are written to explore/runs/ and are not tracked
 techniques/ the seed of the technique library; the library itself lives in Remote

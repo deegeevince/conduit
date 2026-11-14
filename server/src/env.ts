@@ -29,6 +29,15 @@ export const BRAIN_TOOL_NAMES = ['WebSearch', 'WebFetch'] as const;
 export type BrainTool = (typeof BRAIN_TOOL_NAMES)[number];
 
 export type BrainSettings =
+  | {
+      readonly kind: 'codex-cli';
+      readonly bin: string;
+      readonly model: string;
+      readonly effort: 'low' | 'medium' | 'high';
+      readonly timeoutMs: number;
+      readonly web: boolean;
+      readonly variant: PromptVariant;
+    }
   | { readonly kind: 'relay'; readonly idleTimeoutMs: number }
   | {
       readonly kind: 'claude-cli';
@@ -57,7 +66,7 @@ export type BrainSettings =
 export type ImageSettings = { readonly kind: 'none' };
 
 export type BrainKind = BrainSettings['kind'];
-export const BRAIN_KINDS: readonly BrainKind[] = ['relay', 'claude-cli', 'replay'];
+export const BRAIN_KINDS: readonly BrainKind[] = ['relay', 'claude-cli', 'codex-cli', 'replay'];
 
 export interface Env {
   readonly production: boolean;
@@ -246,6 +255,16 @@ export function loadEnv(source: Source): Env {
     problems.push(`BRAIN is required: one of ${BRAIN_KINDS.join(' | ')}`);
   } else if (kind === 'relay') {
     brain = { kind, idleTimeoutMs: integer('RELAY_IDLE_TIMEOUT_MS', 180_000, 1_000, 3_600_000) };
+  } else if (kind === 'codex-cli') {
+    brain = {
+      kind,
+      bin: text('CODEX_BIN') ?? 'codex',
+      model: required('CODEX_MODEL', 'when BRAIN=codex-cli'),
+      effort: choice('BRAIN_EFFORT', ['low', 'medium', 'high'] as const, 'low'),
+      timeoutMs: integer('CODEX_TIMEOUT_MS', 180_000, 1_000, 600_000),
+      web: choice('CODEX_WEB', ['on', 'off'] as const, 'on') === 'on',
+      variant: parsePromptVariant(text('PROMPT_VARIANT')),
+    };
   } else if (kind === 'claude-cli') {
     const rawTools = (text('BRAIN_TOOLS') ?? 'WebSearch,WebFetch').split(',').map((name) => name.trim()).filter((name) => name !== '');
     const unknown = rawTools.filter((name) => !(BRAIN_TOOL_NAMES as readonly string[]).includes(name));

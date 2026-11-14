@@ -1,6 +1,6 @@
 import type { ActionRisk, ActivityState, BrainChange, BrainChoice, BriefForm, Capabilities, CriticFinding, Issue, Line, LineProblem, PlacedBox, ReviewForm, ScreenFacts, Services, Sight, ToolChoice, TurnContext, TurnInput } from '@conduit/language';
 
-export type BrainId = 'relay' | 'claude-cli' | 'replay';
+export type BrainId = 'relay' | 'claude-cli' | 'codex-cli' | 'replay';
 
 /** A picture of the stage as an answer left it, as the painter captured it. */
 export interface Snapshot {
