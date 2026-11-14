@@ -1388,3 +1388,17 @@ input {
 .prompt__photos[hidden] {
   display: none;
 }
+
+/* who the screen is for (About) */
+.about__audience { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.about__choice {
+  min-height: 44px;
+  padding: 0 var(--space-3);
+  border: 2px solid var(--chrome-text-quiet);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--chrome-text);
+  font: inherit;
+  font-size: var(--chrome-text-size-small);
+}
+.about__choice[aria-checked='true'] { border-color: var(--chrome-text); font-weight: 700; background: color-mix(in srgb, var(--chrome-text) 10%, transparent); }

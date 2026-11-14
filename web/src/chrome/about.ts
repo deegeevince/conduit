@@ -1,6 +1,7 @@
 // About, in the composer's [+] menu: what this is, the keys, and the credit the charting engine's licence asks for (it is on every chart as well).
 
 import type { StageApp } from '../app/stage-app';
+import { AUDIENCES, AUDIENCE_BARS } from '../core/contracts';
 import type { ComposerMenu } from './menu';
 
 export function mountAbout(menu: ComposerMenu, app: StageApp, extra?: (body: HTMLElement) => void): { dispose(): void } {
@@ -16,6 +17,34 @@ export function mountAbout(menu: ComposerMenu, app: StageApp, extra?: (body: HTM
     item.textContent = text;
     body.append(item);
   }
+  // who the screen is for: raises the type and the targets in the lesson view and the floor the stage is held to
+  const who = document.createElement('div');
+  who.className = 'about__audience';
+  who.setAttribute('role', 'radiogroup');
+  who.setAttribute('aria-label', 'Who is this for');
+  const heading = document.createElement('p');
+  heading.className = 'about__heading';
+  heading.textContent = 'Who is this for';
+  const options: HTMLButtonElement[] = [];
+  for (const audience of AUDIENCES) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'about__choice';
+    button.setAttribute('role', 'radio');
+    button.setAttribute('data-audience', audience);
+    button.textContent = AUDIENCE_BARS[audience].name;
+    button.addEventListener('click', () => {
+      app.audience.set(audience);
+      mark();
+    });
+    options.push(button);
+    who.append(button);
+  }
+  const mark = (): void => {
+    for (const button of options) button.setAttribute('aria-checked', String(button.getAttribute('data-audience') === app.audience.value));
+  };
+  mark();
+  body.append(heading, who);
   if (app.attribution !== null) {
     const credit = document.createElement('a');
     credit.className = 'about__credit';

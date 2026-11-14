@@ -306,7 +306,9 @@ body { font-size: calc(20px * var(--ts, 1)); }
 .ctx .crop { order: 3; }
 .ctx-kicker { order: 0; }
 @media (min-width: 900px) {
-  .ctx .ctx-text { font-size: calc(27px * var(--ts, 1)); }
+  /* the question's own words grow with the audience by half as much, so a larger type never pushes the answer off the screen */
+  .ctx .ctx-text { font-size: calc(27px * (1 + (var(--ts, 1) - 1) * 0.5)); }
+  .paper { height: clamp(140px, 20vh, 240px); }
   .ctx-kicker { font-size: calc(17px * var(--ts, 1)); }
 }
 @media (max-width: 899px) {
