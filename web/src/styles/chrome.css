@@ -1235,3 +1235,25 @@ input {
 .picker[hidden] {
   display: none;
 }
+
+/* Ink (v2.1): the Draw toggle in the bar. The layer it opens is styled by web/src/ink/styles.ts. */
+.action--draw {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.action--draw[aria-pressed="true"] {
+  background: var(--chrome-text);
+  color: var(--chrome-ground);
+}
+.action__count {
+  min-width: 1.4em;
+  padding: 0 0.3em;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  font-size: 0.8em;
+  text-align: center;
+}
+.action__count[hidden] {
+  display: none;
+}
