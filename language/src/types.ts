@@ -226,6 +226,10 @@ export interface LookLine {
   readonly when?: When;
 }
 
+/** L3. Doubt on words: where the figure came from. `yes` is doubt with no source named. */
+export type Approx = 'yes' | 'recalled' | 'computed' | 'given' | 'guessed';
+export const APPROX_FROM: readonly Approx[] = ['recalled', 'computed', 'given', 'guessed'];
+
 export interface SayLine {
   readonly verb: 'say';
   /** `-` until the normaliser assigns one */
@@ -236,6 +240,12 @@ export interface SayLine {
   readonly text: string;
   /** v2.1. Makes the words a link that opens in a new tab: an `http:` or `https:` address, as written. Absent: not a link. */
   readonly href?: string;
+  /** L3. The words are not sure (`say approx from=recalled | …`); drawn honestly, and what a verifier looks at first */
+  readonly approx?: Approx;
+  /** L3. Shorter forms of the words (`say | long || short`), longest first after `text`: the stage takes the first that fits at the legible floor */
+  readonly alts?: readonly string[];
+  /** L3. Dropped first when room is short */
+  readonly optional?: boolean;
   readonly when?: When;
 }
 
@@ -340,6 +350,8 @@ export interface StructureLine {
   readonly uses?: readonly AppShelf[];
   /** a table: its numbers are drawn as bars beside the figures */
   readonly bars?: boolean;
+  /** FG2. A figure: `cutaway` hatches the cut faces; `exploded` offsets the parts along one axis */
+  readonly mode?: 'cutaway' | 'exploded';
   /** the room it is laid out in, canvas units; absent means the whole canvas */
   readonly box?: CanvasBox;
   /** a map joins its pins in the order they were written */
@@ -383,6 +395,8 @@ export interface NodeLine {
    */
   readonly x?: string;
   readonly y?: number;
+  /** L3. As on `say`: the words are not sure */
+  readonly approx?: Approx;
   /** may contain *emphasis* markers and `{…}` expressions */
   readonly text: string;
   readonly when?: When;
@@ -513,9 +527,14 @@ export interface AmbientLine {
   readonly when?: When;
 }
 
+/** A row or a cell of a table, by its place from 1: what `set t1.row2 mark=box` and `set t1.cell2,3 mark=box` name. */
+export type TablePart = { readonly row: number } | { readonly cell: readonly [number, number] };
+
 export interface SetLine {
   readonly verb: 'set';
   readonly target: Target;
+  /** L-VLOOKUP. A row or a cell of the table the target names: the change is a mark on it (`mark=none` clears it) */
+  readonly part?: TablePart;
   readonly styles: readonly string[];
   readonly props: StyleProps;
   readonly speed?: CameraSpeed;

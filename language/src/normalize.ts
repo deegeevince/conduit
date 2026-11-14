@@ -7,14 +7,39 @@
 import { isLessonVerb } from './lesson';
 import { InterfaceReader, UI_WORDS, nodeLine, screenLine } from './interface';
 import { LessonBook } from './lesson';
+import { FIGURE_WORDS, figureRowLine } from './figure';
 import { parseLine } from './parse';
-import type { Issue, Line, ParseResult } from './types';
+import type { Approx, Issue, Line, ParseResult, StyleProps } from './types';
 import { LIMITS, STRUCTURE } from './vocabulary';
 
 /** Lines that do not end a sprite being written: its next row may follow them. */
 const KEEPS_SPRITE_OPEN: ReadonlySet<string> = new Set(['wait', 'plan', 'color', 'style', 'look', 'cam', 'hit', 'standing', 'refine']);
 
 const ROW_ALPHABET = '.#0123456789abcdefABCDEF';
+
+const HEDGE = /\b(about|around|roughly|approximately|approx|nearly|almost|circa|maybe|perhaps)\b|[~\u2248]/i;
+const DOUBT_NOTE: Readonly<Record<Approx, string>> = { yes: 'approx.', computed: 'approx.', given: 'approx.', recalled: 'from memory', guessed: 'a guess' };
+
+/**
+ * L3. Words marked `approx` are drawn honestly: they say so, in a few words after them, unless they already hedge in their own. The mark is
+ * idempotent, so a line the painter reads again (a replay, a fix pass) is not marked twice. The doubt itself stays on the line, for whoever checks.
+ */
+export function doubted(text: string, approx: Approx): string {
+  if (HEDGE.test(text) || /\((?:approx\.|from memory|a guess)\)$/.test(text)) return text;
+  return `${text} (${DOUBT_NOTE[approx]})`.slice(0, LIMITS.text);
+}
+
+/**
+ * L1. Whether a line no verb owns is a sentence the brain wrote as speech: three words or more, mostly letters, no `key=value` and no bar (a line with
+ * either is a command that went wrong, and is told so), and not made of numbers and coordinates (a shape that was misnamed).
+ */
+export function readsAsProse(text: string): boolean {
+  const words = text.split(/\s+/).filter((word) => word !== '');
+  if (words.length < 3 || /[|=]/.test(text) || !/^["'\u201c(*]?[A-Za-z]/.test(text)) return false;
+  const lettered = words.filter((word) => /[A-Za-z]{2}/.test(word)).length;
+  const numeric = words.filter((word) => /^[-\d.,x@]+$/.test(word)).length;
+  return lettered >= 3 && lettered >= words.length / 2 && numeric <= words.length / 4;
+}
 
 /**
  * Reads raw lines in order. It is `parseLine` plus one piece of memory: while
@@ -32,6 +57,10 @@ export class LineReader {
   private tune = false;
   /** v2.2. A mock-up is being written: after a `screen` line, the words of the interface (parts, `row`, `col`, `end`) are its lines and nothing else's */
   private ui = false;
+  /** L1. A `when <control>=<value>` block is open: the head every line inside it is given as a `bind` (`stage=2`, `chord="C major"`), until `end` */
+  private when: string | null = null;
+  /** FG2. A figure is being written: its own words (parts, `route`, `step`) are its rows, and `end` closes it */
+  private figure = false;
   private readonly styles: Set<string>;
 
   /** `definedStyles`: the names of styles the brain defined in earlier turns */
@@ -40,12 +69,43 @@ export class LineReader {
   }
 
   read(raw: string): ParseResult {
-    const trimmed = raw.trim();
+    let trimmed = raw.trim();
+    // L1. `when stage=2` … `end`: each line inside is written as `bind stage=2 | <line>`, which is all the rest of the system knows.
+    if (!this.code && !this.tune) {
+      const opened = /^when\s+(\S.*?)\s*:?$/i.exec(trimmed);
+      if (opened?.[1] !== undefined && !/^[=|]/.test(opened[1])) {
+        this.when = opened[1].replace(/\s+then$/i, '');
+        return { kind: 'blank' };
+      }
+      if (this.when !== null) {
+        if (/^end(?:\s+when)?$/i.test(trimmed)) {
+          this.when = null;
+          return { kind: 'blank' };
+        }
+        const verb = (/^([a-z]+)/i.exec(trimmed)?.[1] ?? '').toLowerCase();
+        if (verb === 'scene' || verb === 'deck') this.when = null;
+        else if (trimmed !== '' && !trimmed.startsWith('#') && !trimmed.startsWith('|') && verb !== 'bind') {
+          raw = `bind ${this.when} | ${trimmed}`;
+          trimmed = raw;
+        }
+      }
+    }
     if (this.code && trimmed.startsWith('|')) return this.tune && !/^\|(?:\s|$)/.test(trimmed) ? this.musicRow(trimmed) : this.codeRow(raw);
     // ABC as a model writes it: `K:G`, `V:1`, `|: c d e f |`, `A2 B2 c2 d2`. Before any other line has been said, whatever is no verb is music.
     if (this.tune && trimmed !== '' && !trimmed.startsWith('#')) {
       const tried = parseLine(raw);
       if (tried.kind === 'reject' && tried.issues.some((issue) => issue.code === 'unknown-verb')) return this.musicRow(trimmed);
+    }
+    // FG2. Inside a figure, its own words are its rows exactly as written (`step show=… | …` is the figure's, not a lesson's); `end` closes it.
+    if (this.figure) {
+      const word = (/^([a-z]+)/i.exec(trimmed)?.[1] ?? '').toLowerCase();
+      if (/^end\s*$/i.test(trimmed)) {
+        this.figure = false;
+        return { kind: 'blank' };
+      }
+      if (trimmed === '' || trimmed.startsWith('#')) return parseLine(raw);
+      if (FIGURE_WORDS.includes(word)) return { kind: 'line', line: { verb: 'row', id: '-', cells: trimmed.slice(0, LIMITS.line - 40) }, issues: [] };
+      this.figure = false;
     }
     const interfaced = this.readInterface(raw, trimmed);
     if (interfaced !== null) return interfaced;
@@ -67,8 +127,17 @@ export class LineReader {
       const retried = parseLine(`| ${trimmed}`);
       if (retried.kind === 'line') result = retried;
     }
+    // L1. A line rejected as an unknown verb that reads as a sentence is said: losing a sentence is worse than losing a flourish.
+    if (result.kind === 'reject' && result.issues.some((issue) => issue.code === 'unknown-verb') && readsAsProse(trimmed)) {
+      const said = parseLine(`say | ${trimmed}`);
+      if (said.kind === 'line') {
+        const note: Issue = { code: 'unknown-verb', severity: 'warn', message: `"${trimmed.split(/\s+/)[0] ?? ''}" is not a verb; the line was said as text. Write \`say | …\` for words`, token: trimmed.split(/\s+/)[0] ?? '' };
+        result = { ...said, issues: [note, ...said.issues] };
+      }
+    }
     if (result.kind !== 'line') return result;
     const { line } = result;
+    if (line.verb === 'figure') this.figure = true;
     if (line.verb === 'table' || line.verb === 'chart') this.table = true;
     else if (line.verb === 'scene' || line.verb === 'deck' || line.verb === 'pix' || line.verb in STRUCTURE || isLessonVerb(line.verb)) this.table = false;
     if (line.verb === 'scene' || line.verb === 'deck' || line.verb === 'pix' || line.verb in STRUCTURE || isLessonVerb(line.verb)) this.ui = false;
@@ -167,13 +236,34 @@ export class LineNormalizer {
   private structure: string | null = null;
   /** v2.2. The mock-up being written: the block's id, and the reader that keeps the stack of open rows and cols so that every line says what it sits in */
   private ui: { readonly id: string; readonly reader: InterfaceReader; told: number } | null = null;
+  /** FG2. The figure being written: its rows get an id each, so that a route and a step can name them */
+  private figureRows = 0;
+  private figureId: string | null = null;
   /** v3. The parts, steps and asks of the conversation: what `in=` and an id are written from, and what an `ask` that would give itself away is refused by. */
   private readonly book: LessonBook;
 
-  constructor(makeId: () => string, definedStyles: Iterable<string> = []) {
+  /** SA5. `flow`: a live brain's words and controls are placed by the stage, never by a coordinate. `free`: lines are taken as written (replays, golden, old logs). */
+  private readonly placement: 'flow' | 'free';
+  /** SA5. The layout of the scene being written: a `free` scene keeps honouring `at=x,y` on words */
+  private layout: string | null;
+
+  constructor(makeId: () => string, definedStyles: Iterable<string> = [], options: { readonly placement?: 'flow' | 'free'; readonly layout?: string | null } = {}) {
     this.makeId = makeId;
     this.styles = new Set(definedStyles);
     this.book = new LessonBook(makeId);
+    this.placement = options.placement ?? 'free';
+    this.layout = options.layout ?? null;
+  }
+
+  /**
+   * SA5. A numeric `at=x,y` on words or a control that is not in a group, not near anything and not in a `free` scene is the brain placing by guess: it is
+   * dropped, the line joins the flow, and the brain is told. A callout with a leader keeps its spot: the spot is what the line points to.
+   */
+  private placedByStage<T extends { readonly props: StyleProps }>(line: T): { line: T; issues: Issue[] } {
+    const { at, near, in: group, leader } = line.props;
+    if (this.placement !== 'flow' || at === undefined || typeof at === 'string' || near !== undefined || group !== undefined || leader === true || this.layout === 'free') return { line, issues: [] };
+    const { at: _dropped, ...props } = line.props;
+    return { line: { ...line, props }, issues: [{ code: 'bad-geometry', severity: 'warn', message: 'placed by the stage', token: 'at' }] };
   }
 
   /** v3. The conversation's document as it has been written so far: the parts and what each holds. */
@@ -202,6 +292,10 @@ export class LineNormalizer {
         if (line.id !== '-') return { line, issues: [] };
         if (this.sprite !== null) return { line: { ...line, id: this.sprite }, issues: [] };
         if (this.ui !== null) return this.interfaceRow(line);
+        if (this.table !== null && this.figureId === this.table) {
+          this.figureRows += 1;
+          return { line: { ...line, id: this.table, cells: figureRowLine(line.cells, this.figureRows) }, issues: [] };
+        }
         if (this.table !== null) return { line: { ...line, id: this.table }, issues: [] };
         if (line.cells.trim() === '') return { line: null, issues: [{ code: 'no-structure', severity: 'warn', message: 'an empty row with no sprite, table or code block to belong to was dropped' }] };
         // Speech after all: a bar and some words, with no sprite open. Not cut to a sprite's width.
@@ -246,6 +340,12 @@ export class LineNormalizer {
           this.table = null;
           this.ui = null;
         }
+        if (line.verb === 'say') {
+          const placed = this.placedByStage({ ...line, id, styles });
+          const said = placed.line;
+          const marked = said.approx === undefined ? said : { ...said, text: doubted(said.text, said.approx), ...(said.alts === undefined ? {} : { alts: said.alts.map((alt) => doubted(alt, said.approx ?? 'yes')) }) };
+          return { line: marked, issues: placed.issues };
+        }
         return { line: { ...line, id, styles }, issues: [] };
       }
       case 'screen': {
@@ -269,13 +369,21 @@ export class LineNormalizer {
       case 'chart':
       case 'code':
       case 'tune':
+      case 'figure':
       case 'app': {
         const id = line.id === '-' ? this.makeId() : line.id;
         this.sprite = null;
         this.ui = null;
+        this.figureId = line.verb === 'figure' ? id : null;
+        this.figureRows = 0;
         if (STRUCTURE[line.verb].parts === 'rows') this.table = id;
         // A chart takes rows and, as its marks, nodes; a table takes rows only.
         if (STRUCTURE[line.verb].parts === 'nodes' || line.verb === 'chart') this.structure = id;
+        // SA5. A room on a structure's opening line is the brain placing by guess: the stage gives the room.
+        if (this.placement === 'flow' && line.box !== undefined) {
+          const { box: _room, ...rest } = line;
+          return { line: { ...rest, id } as typeof line, issues: [{ code: 'bad-geometry', severity: 'warn', message: 'placed by the stage', token: 'box' }] };
+        }
         return { line: { ...line, id }, issues: [] };
       }
       case 'node': {
@@ -284,14 +392,18 @@ export class LineNormalizer {
         if (structure === null) {
           return { line: null, issues: [{ code: 'no-structure', severity: 'error', message: 'node has no structure to belong to; write flow, tree, cycle, timeline or map first' }] };
         }
-        return { line: { ...line, id: line.id === '-' ? this.makeId() : line.id, props: { ...line.props, in: structure } }, issues: [] };
+        return { line: { ...line, id: line.id === '-' ? this.makeId() : line.id, props: { ...line.props, in: structure }, ...(line.approx === undefined ? {} : { text: doubted(line.text, line.approx) }) }, issues: [] };
       }
       case 'link':
+        this.sprite = null;
+        return { line: line.id === '-' ? { ...line, id: this.makeId() } : line, issues: [] };
       case 'button':
       case 'toggle':
       case 'slider':
       case 'pick':
       case 'input':
+        this.sprite = null;
+        return this.placedByStage(line.id === '-' ? { ...line, id: this.makeId() } : line);
       case 'card':
         this.sprite = null;
         return { line: line.id === '-' ? { ...line, id: this.makeId() } : line, issues: [] };
@@ -311,6 +423,7 @@ export class LineNormalizer {
       }
       case 'scene':
       case 'deck':
+        if (line.verb === 'scene') this.layout = line.layout ?? 'stack';
         this.ui = null;
         this.sprite = null;
         this.table = null;

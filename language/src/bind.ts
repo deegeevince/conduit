@@ -67,7 +67,8 @@ const squash = (text: string): string => text.trim().toLowerCase().replace(/[\s-
 /** Whether a pick has an option that `wanted` names: its 1-based number, or its words without case or spacing. */
 export function pickHasOption(spec: ControlSpec, wanted: string): boolean {
   const asked = wanted.trim();
-  if (/^\d+$/.test(asked)) return Number(asked) >= 1 && Number(asked) <= spec.options.length;
+  // an option whose own words are the number (`101 | 102`) is named by its words before it is named by its place
+  if (/^\d+$/.test(asked) && !spec.options.some((option) => squash(option) === squash(asked))) return Number(asked) >= 1 && Number(asked) <= spec.options.length;
   return spec.options.some((option) => squash(option) === squash(asked));
 }
 
@@ -77,7 +78,7 @@ export function controlHolds(spec: ControlSpec, value: ControlValue | null, want
   if (spec.control === 'toggle') return (value === true) === (asked === 'on' || asked === 'yes' || asked === 'true' || asked === '1');
   if (spec.control === 'pick') {
     const index = typeof value === 'number' ? value : 1;
-    if (/^\d+$/.test(asked)) return Number(asked) === index;
+    if (/^\d+$/.test(asked) && !spec.options.some((option) => squash(option) === squash(asked))) return Number(asked) === index;
     return squash(spec.options[index - 1] ?? '') === squash(asked);
   }
   if (spec.control === 'slider') return numberOf(value) === Number(asked);

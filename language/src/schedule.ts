@@ -50,7 +50,7 @@ import {
   waitSeconds,
 } from './timing';
 import type { Anchor, AppShelf, LessonVerb, TuneVoice } from './vocabulary';
-import type { BindOn, CanvasBox, ControlLine, SceneLine, ControlValue, CreatingLine, DatasetRef, Issue, IssueCode, Line, Paint, Point, Range, ShapeGeometry, StructureLine, StyleProps, Target, When } from './types';
+import type { BindOn, CanvasBox, ControlLine, SceneLine, ControlValue, CreatingLine, DatasetRef, Issue, IssueCode, Line, Paint, Point, Range, ShapeGeometry, StructureLine, StyleProps, TablePart, Target, When } from './types';
 import { cachedTune, tuneRowsOf } from './tune';
 import { BACKDROP_LAYERS, CANVAS, CONTROL, DEFAULT_CANVAS, DEFAULT_CHART, DEFAULT_LOOK, DEFAULT_TUNE_VOICE, LESSON_VERBS, LIMITS, STRUCTURE } from './vocabulary';
 import type {
@@ -177,6 +177,10 @@ export type Figure =
       readonly dataset?: DatasetRef | null;
       /** a table: its numbers are drawn as bars too */
       readonly bars: boolean;
+      /** A table: the rows and cells marked (`set t1.row2 mark=box`), in the order written */
+      readonly marks?: readonly TableMark[];
+      /** FG2. A figure: `cutaway` or `exploded`; absent or null: plain. Its parts, routes and steps are its rows, one line each. */
+      readonly mode?: 'cutaway' | 'exploded' | null;
       /** v2.1. A code block: its language as the brain wrote it, and the file it is from; absent or null: none */
       readonly lang?: string | null;
       readonly file?: string | null;
@@ -250,13 +254,24 @@ export interface CarriedElement {
   readonly href?: string;
 }
 
+/** A mark on a row or a cell of a table. */
+export interface TableMark {
+  readonly part: TablePart;
+  readonly mark: string;
+  /** driven by a control: the value (a pick's 1-based option, a toggle's 1 or 0, a number) at which the mark is on; absent: always on */
+  readonly equals?: number;
+  readonly control?: string;
+}
+
 /** What a control-driven change does to its element: what the same line would do on the clock. */
 export type DrivenEffect =
   | { readonly kind: 'set'; readonly props: ResolvedProps }
   | { readonly kind: 'move'; readonly to: Anchor | Point; readonly along: string | null }
   | { readonly kind: 'morph'; readonly geometry: ShapeGeometry; readonly props: ResolvedProps }
   /** the words are these while the binding holds: a swap, never a strike-through */
-  | { readonly kind: 'text'; readonly text: string; readonly emphasis: readonly Range[] };
+  | { readonly kind: 'text'; readonly text: string; readonly emphasis: readonly Range[] }
+  /** a row or a cell of a table is marked while the control holds `equals` */
+  | { readonly kind: 'mark'; readonly part: TablePart; readonly mark: string; readonly equals: number };
 
 /**
  * A change whose progress is a control's value instead of the turn clock
@@ -381,6 +396,10 @@ export interface ElementSpan {
   readonly struck: boolean;
   /** v2.1. The address its words link to; absent: not a link */
   readonly href?: string;
+  /** L3. Shorter forms of its words (`say | long || short`); `text` is the longest, and times the line. The stage shows the first that fits at the legible floor. */
+  readonly alts?: readonly { readonly text: string; readonly emphasis: readonly Range[] }[];
+  /** L3. Dropped first when room is short */
+  readonly optional?: boolean;
 }
 
 /** v2.1. One slide of a deck: the scene that is it, and when it begins and when its own content is done (the clock stops there until the viewer steps on). */
@@ -968,6 +987,12 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
         }
       }
       const done = enterText(entry, line.id, line.text, style, enterStart, order, null, joined.parent, line.href);
+      // L3. The shorter forms and the word `optional` ride on the element; the duration above was timed on the longest form, so it is the same whichever is shown.
+      const made = elements[elements.length - 1];
+      if (made !== undefined && made.id === line.id) {
+        if (line.alts !== undefined && line.alts.length > 0) made.alts = line.alts.map((alt) => splitEmphasis(alt)).map((words) => ({ text: words.plain, emphasis: words.emphasis }));
+        if (line.optional === true) made.optional = true;
+      }
       if (!BACKDROP_LAYERS.includes(style.layer)) pen = Math.max(pen, done);
       lines.push({ seq, verb: line.verb, start, end: done });
       return;
@@ -1010,7 +1035,15 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
       // A diagram of nodes written again under its own id, as the same kind, is the same diagram retitled, restyled or given another room: its parts stay.
       const open = findLive(line.id, start);
       const openFigure = open?.span.figure;
-      if (open !== null && openFigure?.kind === 'structure' && openFigure.structure === line.verb && STRUCTURE[line.verb].parts === 'nodes') {
+      // L1. A table or a chart opened again under its id as the same kind, with the same reading of its rows (what a chart draws, its words and its data), only restyled,
+      // retitled or given another room, is a `set`: it keeps its rows, never a redraw with none. Rows written after it are read against the ones it has.
+      const sameRows =
+        open !== null &&
+        openFigure?.kind === 'structure' &&
+        openFigure.structure === line.verb &&
+        (line.verb === 'table' || line.verb === 'chart') &&
+        (line.verb === 'table' ? (line.bars === true) === openFigure.bars : alike(line.chart ?? DEFAULT_CHART, openFigure.chart) && alike(line.words ?? [], openFigure.words) && alike(line.data ?? null, openFigure.data) && alike(line.dataset ?? null, openFigure.dataset ?? null));
+      if (open !== null && openFigure?.kind === 'structure' && openFigure.structure === line.verb && (STRUCTURE[line.verb].parts === 'nodes' || sameRows)) {
         const merged = mergeStyles(sheet, line.styles, line.props);
         for (const name of merged.unknown) report(seq, 'unknown-style', `no style called "${name}"; ignored`, name);
         const change = coloured(seq, merged.props);
@@ -1019,6 +1052,7 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
         const figure = { ...openFigure, grow: line.grow ?? openFigure.grow, box: line.box ?? openFigure.box, route: line.route ?? openFigure.route };
         // D2(b): the diagram said again exactly as it stands is nothing, not even a pass of its layout.
         if (sameStyle(patched, open.style) && alike(figure, openFigure) && (title === null || (title.plain === open.span.text && alike(title.emphasis, open.span.emphasis)))) {
+          if (sameRows) echoing.set(open, 0);
           previousStart = priorStart;
           lines.push({ seq, verb: line.verb, start, end: start });
           return;
@@ -1031,6 +1065,7 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
           open.span.emphasis = title.emphasis;
         }
         open.span.figure = figure;
+        if (sameRows) echoing.set(open, 0);
         lines.push({ seq, verb: line.verb, start, end });
         return;
       }
@@ -1060,6 +1095,7 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
         ...(line.verb === 'chart' && { dataset: line.dataset ?? null }),
         bars: line.verb === 'table' && line.bars === true,
         ...(line.verb === 'code' && { lang: line.lang ?? null, file: line.file ?? null }),
+        ...(line.verb === 'figure' && { mode: line.mode ?? null }),
         ...(line.verb === 'tune' && { tempo: line.tempo ?? null, voice: line.voice ?? DEFAULT_TUNE_VOICE, sealed: null }),
         ...(line.verb === 'app' && { height: line.height ?? null, sealed: null, ...((line.uses?.length ?? 0) > 0 && { uses: line.uses }) }),
         box: line.box ?? null,
@@ -1573,6 +1609,7 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
       case 'code':
       case 'tune':
       case 'app':
+      case 'figure':
       case 'screen':
       case 'pic':
       case 'node':
@@ -1608,7 +1645,21 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
           break;
         }
         let effect: DrivenEffect;
-        if (change.verb === 'set') {
+        if (change.verb === 'set' && change.part !== undefined) {
+          const asked = line.on.kind === 'is' ? line.on.value : null;
+          let equals: number | null = null;
+          if (asked !== null) {
+            const squashed = (text: string): string => text.trim().toLowerCase().replace(/[\s-]+/g, '');
+            if (spec.control === 'pick') equals = spec.options.findIndex((option) => squashed(option) === squashed(asked)) + 1 || (/^\d+$/.test(asked.trim()) ? Number(asked) : 0);
+            else if (spec.control === 'toggle') equals = ['on', 'yes', 'true', '1'].includes(asked.trim().toLowerCase()) ? 1 : 0;
+            else if (Number.isFinite(Number(asked))) equals = Number(asked);
+          }
+          if (equals === null || equals < 0 || (spec.control === 'pick' && equals === 0)) {
+            report(seq, 'bad-bind', `a row or a cell is marked while a control holds a value: bind ${line.control}=<option> | set <table>.row<n> mark=box`, line.control);
+            break;
+          }
+          effect = { kind: 'mark', part: change.part, mark: change.props.mark ?? 'box', equals };
+        } else if (change.verb === 'set') {
           const merged = mergeStyles(sheet, change.styles, change.props);
           for (const name of merged.unknown) report(seq, 'unknown-style', `no style called "${name}"; ignored`, name);
           effect = { kind: 'set', props: coloured(seq, merged.props) };
@@ -1643,7 +1694,7 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
         }
         for (const target of targets) {
           const fits =
-            effect.kind === 'set' || (effect.kind === 'move' && target.span.kind !== 'field' && target.span.kind !== 'node' && target.span.kind !== 'link') || (effect.kind === 'morph' && target.span.kind === 'shape') || (effect.kind === 'text' && target.span.kind === 'text');
+            effect.kind === 'set' || (effect.kind === 'move' && target.span.kind !== 'field' && target.span.kind !== 'node' && target.span.kind !== 'link') || (effect.kind === 'morph' && target.span.kind === 'shape') || (effect.kind === 'text' && target.span.kind === 'text') || (effect.kind === 'mark' && target.span.figure?.kind === 'structure' && target.span.figure.structure === 'table');
           if (!fits) {
             report(seq, 'bad-bind', unbindable(line.control, target.span.id, target.span.kind, target.span.figure, effect.kind), target.span.id);
             continue;
@@ -1665,7 +1716,7 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
           const enter = table.span.enter;
           const charted = table.span.figure.structure === 'chart';
           const app = table.span.figure.structure === 'app';
-          const coded = table.span.figure.structure === 'code' || table.span.figure.structure === 'tune' || table.span.figure.structure === 'screen' || app;
+          const coded = table.span.figure.structure === 'code' || table.span.figure.structure === 'tune' || table.span.figure.structure === 'screen' || table.span.figure.structure === 'figure' || app;
           const interfaced = table.span.figure.structure === 'screen';
           // A line of code is one cell, exactly as written: a bar in it is a bar, a space is a space, and an empty line is a row.
           const cells = coded ? [line.cells] : splitCells(line.cells);
@@ -1797,6 +1848,20 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
 
       case 'set': {
         const start = startOf(entry, line.when);
+        if (line.part !== undefined) {
+          const owner = line.target.kind === 'id' ? findLive(line.target.id, start) : null;
+          const held = owner?.span.figure;
+          if (owner === null || held?.kind !== 'structure' || held.structure !== 'table') report(seq, 'unknown-id', `no table called "${line.target.kind === 'id' ? line.target.id : ''}" is on stage to mark a row or a cell of`);
+          else {
+            const same = (a: TablePart, b: TablePart): boolean => alike(a, b);
+            const rest = (held.marks ?? []).filter((mark) => mark.equals !== undefined || !same(mark.part, line.part as TablePart));
+            const mark = line.props.mark ?? 'box';
+            owner.span.figure = { ...held, marks: mark === 'none' ? rest : [...rest, { part: line.part, mark }] };
+          }
+          previousStart = start;
+          lines.push({ seq, verb: line.verb, start, end: start });
+          break;
+        }
         const merged = mergeStyles(sheet, line.styles, line.props);
         for (const name of merged.unknown) report(seq, 'unknown-style', `no style called "${name}"; ignored`, name);
         const props = coloured(seq, merged.props);

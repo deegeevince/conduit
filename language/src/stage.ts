@@ -1,3 +1,4 @@
+import { readFigure } from './figure';
 import { holdControl } from './bind';
 import { boundsOf } from './geometry';
 import { figureAt, isStruckAt, lookAt, sceneAt, styleAt, valueAt, wearingAt } from './schedule';
@@ -60,6 +61,11 @@ export function describeFigure(figure: Figure, box: CanvasBox | null = null): st
         const screens = figure.rows.map((row) => /^screen\s+(\S+)\s+(\S+)[^|]*(?:\|\s*(.*))?$/.exec(row.cells[0] ?? '')).filter((m): m is RegExpExecArray => m !== null);
         const parts = figure.rows.filter((row) => !/^(screen|end)\b/.test(row.cells[0] ?? '')).length;
         return `mock-up of ${screens.length} screen${screens.length === 1 ? '' : 's'} (${screens.map((m) => `${m[1] ?? ''} ${m[2] ?? ''}${m[3] === undefined || m[3] === '' ? '' : ` "${m[3]}"`}`).join(', ')}), ${parts} parts`;
+      }
+      if (figure.structure === 'figure') {
+        const read = readFigure('', '', figure.mode ?? 'plain', figure.rows.map((row) => row.cells[0] ?? ''));
+        const named = read.input.parts.flatMap((part) => (part.label === undefined ? [] : [part.label]));
+        return `figure of ${read.input.parts.length} parts${named.length === 0 ? '' : ` (labelled ${named.join(', ')})`}${read.input.steps.length === 0 ? '' : `, ${read.input.steps.length} steps`}`;
       }
       if (figure.structure === 'tune') return describeTune(cachedTune(tuneRowsOf(figure.rows), { tempo: figure.tempo ?? null }), figure.rows.length);
       const name = figure.chart === null ? figure.structure : [...figure.words, `${figure.chart} chart`].join(' ');

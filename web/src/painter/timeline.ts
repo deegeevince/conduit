@@ -714,8 +714,9 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
       const live = figure.structure === 'app';
       // a mock-up takes what the stage can give it: its screens are scaled together to the room
       const mockup = figure.structure === 'screen';
-      const natural = mockup ? { width: 1600, height: 900 } : live ? { width: 960, height: figure.height ?? 480 } : tune ? { width: 760, height: 260 } : chart ? { width: 560, height: 320 } : table ? { width: Math.max(280, 150 * columns), height: 60 + 34 * figure.rows.length } : { width: 640, height: 120 + 40 * parts };
-      const least = mockup ? { width: 300, height: 300 } : live ? { width: 280, height: 220 } : tune ? { width: 260, height: 150 } : chart ? { width: 260, height: 190 } : table ? { width: Math.max(200, 100 * columns), height: 40 + 24 * figure.rows.length } : { width: 160, height: 100 };
+      const drawing = figure.structure === 'figure';
+      const natural = mockup ? { width: 1600, height: 900 } : drawing ? { width: 900, height: 700 } : live ? { width: 960, height: figure.height ?? 480 } : tune ? { width: 760, height: 260 } : chart ? { width: 560, height: 320 } : table ? { width: Math.max(280, 150 * columns), height: 60 + 34 * figure.rows.length } : { width: 640, height: 120 + 40 * parts };
+      const least = mockup ? { width: 300, height: 300 } : drawing ? { width: 280, height: 300 } : live ? { width: 280, height: 220 } : tune ? { width: 260, height: 150 } : chart ? { width: 260, height: 190 } : table ? { width: Math.max(200, 100 * columns), height: 40 + 24 * figure.rows.length } : { width: 160, height: 100 };
       list.push({
         key: element.key,
         kind: chart ? 'chart' : 'structure',
@@ -770,6 +771,8 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
         text: words.text,
         emphasis: words.emphasis,
         ...(others.length > 0 && { variants: [words, ...others] }),
+        ...(element.alts !== undefined && element.alts.length > 0 && { alternatives: element.alts }),
+        ...(element.optional === true && { optional: true }),
         style: laidStyle(styleAt(element, start)),
         struck: isStruckAt(element, start) && replaced.has(element.key),
         replaces: element.replaces,
@@ -923,7 +926,7 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
     }
     // drawn things that words given a point keep clear of: the outlines and drawings on the canvas (a filled card, or a shape that fills most of
     // the picture, is a ground the words are meant to stand on) and the boxes the brain gave structures
-    const solids: (Box & { ground?: boolean })[] = [];
+    const solids: (Box & { ground?: boolean; shape?: boolean })[] = [];
     for (const element of drawn) {
       if (!element.carried && (element.enter === null || element.enter.start > start)) continue;
       const gone = exitOf(element);
@@ -944,7 +947,7 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
       const ground = element.style.fill !== undefined && element.style.fill !== 'none';
       const at = canvasBoxOf(element, schedule, Math.max(start, element.enter?.end ?? 0));
       if (at === null || at.w * at.h > 0.6 * CANVAS[scene.canvas].width * CANVAS[scene.canvas].height) continue;
-      solids.push({ x: fit.box.x + at.x * fit.unit, y: fit.box.y + at.y * fit.unit, width: Math.max(1, at.w * fit.unit), height: Math.max(1, at.h * fit.unit), ...(ground ? { ground } : {}) });
+      solids.push({ x: fit.box.x + at.x * fit.unit, y: fit.box.y + at.y * fit.unit, width: Math.max(1, at.w * fit.unit), height: Math.max(1, at.h * fit.unit), shape: true, ...(ground ? { ground } : {}) });
     }
     const arrangement = arrange({
       viewport,
@@ -2743,6 +2746,8 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
   };
   const reactive = schedule.elements.some((element) => {
     const figure = element.figure;
+    // a table whose rows or cells a control marks is laid out again when the control moves
+    if (element.kind === 'structure' && (element.driven ?? []).some((change) => change.effect.kind === 'mark')) return true;
     if (element.kind === 'node' || element.kind === 'structure') return element.text.includes('{') || (figure?.kind === 'structure' && figure.rows.some((row) => row.cells.some((cell) => cell.includes('{'))));
     return false;
   });

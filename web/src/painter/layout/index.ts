@@ -33,6 +33,13 @@ export interface LayoutItem {
    * them at the size chosen, once, so that nothing around the line moves or is covered whichever one is showing. Absent: its own words only.
    */
   readonly variants?: readonly { readonly text: string; readonly emphasis: readonly Range[] }[];
+  /**
+   * L3. Shorter forms of the same words (`say | long || short`), after `text`, which is the longest. The flow takes the first that fits at the legible
+   * floor, and the last when none does. Chosen here, from the room, so that the server and the page choose alike.
+   */
+  readonly alternatives?: readonly { readonly text: string; readonly emphasis: readonly Range[] }[];
+  /** L3. Let go first when the room is short */
+  readonly optional?: boolean;
 }
 
 export interface LayoutInput {
@@ -62,7 +69,7 @@ export interface LayoutInput {
    */
   /** v2.1: drawn things on the reading plane (stage units) that words given a point must stand clear of: an outline, a drawing, a structure the brain boxed */
   /** `ground`: a filled card, which words may stand wholly inside (a label on a card) but not across the edge of */
-  readonly obstacles?: readonly (Box & { readonly ground?: boolean })[];
+  readonly obstacles?: readonly (Box & { readonly ground?: boolean; /** a drawn shape: words pinned wholly inside it are in it, not in its way */ readonly shape?: boolean })[];
   readonly pins?: ReadonlyMap<string, { readonly x: number; readonly y: number; /** how much of its size the word keeps because the picture it stands on was made smaller (the stage plan gave the picture less room than the whole stage): 0..1, absent is 1 */ readonly k?: number }>;
   /**
    * The column each line without `at=left|right` belongs to in a `split` scene, decided once over every line of the scene, so a line keeps its
@@ -633,16 +640,44 @@ function retirable(column: Column): number {
     const bodyBelow = after((unit) => !isHeading(unit));
     if (bodyBelow >= 0) return bodyBelow;
   }
+  // L3. What the brain marked `optional` goes before anything else does.
+  const optional = column.units.findIndex((unit, index) => free(unit, index) && unit.main.item.optional === true);
+  if (optional >= 0) return optional;
   const aside = column.units.findIndex((unit, index) => free(unit, index) && !isHeading(unit) && !key(unit));
   if (aside >= 0) return aside;
   const body = column.units.findIndex((unit, index) => free(unit, index) && !isHeading(unit));
   return body >= 0 ? body : column.units.findIndex(free);
 }
 
+/**
+ * L3. A line with shorter forms takes the first form that lets everything present fit at the legible floor: the size at which the look's smallest
+ * type is reached, or the least a column with controls is shrunk to. Longest first, so words are never shortened when the room is there.
+ */
+function resolveAlternatives(plan: readonly Column[], ctx: Context): void {
+  const room = ctx.safe.height + EPS;
+  const base = cellOf('m', ctx.viewport, ctx.look).fontSize;
+  const withControls = plan.some((column) => column.units.some((unit) => unit.main.item.reserve !== undefined));
+  const floor = Math.max(MIN_SHRINK, Math.min(1, ctx.look.type.minFont / Math.max(1, base)), withControls ? WITH_CONTROLS_SHRINK : 0);
+  for (const column of plan) {
+    column.units.forEach((unit, index) => {
+      const forms = unit.main.item.alternatives;
+      if (forms === undefined || forms.length === 0) return;
+      const all = [{ text: unit.main.item.text, emphasis: unit.main.item.emphasis }, ...forms];
+      for (let form = 0; form < all.length; form += 1) {
+        const chosen = all[form];
+        if (chosen === undefined) continue;
+        column.units[index] = { ...unit, main: prepare({ ...unit.main.item, text: chosen.text, emphasis: chosen.emphasis, alternatives: undefined }, ctx.look) };
+        if (presentHeight(plan, floor, ctx) <= room) return;
+      }
+    });
+  }
+}
+
 function arrangeFlow(units: readonly Unit[], ctx: Context): FlowResult {
   const overflow: string[] = [];
   const page = ctx.input.layout === 'page';
   const plan = makePlan([...units], ctx);
+  resolveAlternatives(plan, ctx);
   // A column never shrinks once it is placed. When what is present would pass the bottom of its box, the oldest lines leave at the top (they are
   // retired and the rest move up, eased like a `page`); lines that stay `pin` and the newest line are kept. Each column scrolls on its own.
   for (let guard = 0; guard < 4096; guard += 1) {
@@ -965,13 +1000,24 @@ function arrangeLoose(
           y: Math.max(frame.y, Math.min(pin.y - size.height / 2, frame.y + frame.height - size.height)),
         };
         // a card the word lies wholly inside is its ground, not in its way
-        const inside = (o: Box & { readonly ground?: boolean }): boolean => o.ground === true && wanted.x >= o.x && wanted.y >= o.y && wanted.x + size.width <= o.x + o.width && wanted.y + size.height <= o.y + o.height;
-        const avoid = [...text, ...taken, ...across, ...solids.filter((o) => !inside(o))];
-        const found = nearestClear(wanted, size, frame, avoid, pad, { x: step.x, y: step.y / 2 });
+        // (a drawn box the word lies wholly inside is its container too, filled or not: a cell of a hand-drawn grid, a label in an outline. It is never what the word leaves.)
+        const inside = (o: Box & { readonly ground?: boolean; readonly shape?: boolean }): boolean => (o.ground === true || o.shape === true) && wanted.x >= o.x && wanted.y >= o.y && wanted.x + size.width <= o.x + o.width && wanted.y + size.height <= o.y + o.height;
+        // the rules drawn inside that container (a grid's lines) are part of it, not in the word's way; a button or a card inside it still is
+        const containers = solids.filter(inside);
+        const within = (o: Box, c: Box): boolean => o.x >= c.x - EPS && o.y >= c.y - EPS && o.x + o.width <= c.x + c.width + EPS && o.y + o.height <= c.y + c.height + EPS;
+        const avoid = [...text, ...taken, ...across, ...solids.filter((o) => !inside(o) && !(Math.min(o.width, o.height) <= step.y && containers.some((c) => c !== o && within(o, c))))];
+        // words pinned side by side inside one container (a grid's cells) are as close as their points say; the gap between lines of flowing words is not theirs
+        const found = nearestClear(wanted, size, frame, avoid, containers.length > 0 ? 0 : pad, { x: step.x, y: step.y / 2 });
         if (found === null) continue;
         const position = snapInside(found, size, frame, ctx);
         const moved = Math.hypot(position.x - wanted.x, position.y - wanted.y);
-        if (best === null || moved < best.moved - EPS) best = { loose, position, moved };
+        // never moved further than its own width: a word that would have to leave its place stays where it was told, at this size, and sight reports the overlap
+        // (and a word that has a container is never moved out of it; a word with none moves as it always did)
+        const smallest = containers.reduce<Box | null>((least, c) => (least === null || c.width * c.height < least.width * least.height ? c : least), null);
+        const leaves = smallest !== null && !within({ x: position.x, y: position.y, width: size.width, height: size.height }, smallest);
+        const stays = smallest !== null && (leaves || moved > size.width);
+        const kept_ = stays ? snapInside(wanted, size, frame, ctx) : position;
+        if (best === null || moved < best.moved - EPS) best = { loose, position: kept_, moved: stays ? 0 : moved };
         if (moved <= reach) break;
       }
       if (best === null) {

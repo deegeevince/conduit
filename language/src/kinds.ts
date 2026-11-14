@@ -16,6 +16,7 @@ import { CONTROL_KINDS, SHAPE_VERBS, STRUCTURE_KINDS, VERB } from './vocabulary'
 import type { ElementSpan } from './schedule';
 import { describeFigure } from './stage';
 import { asksForLiveApp } from './app';
+import { asksForFigure } from './figure';
 import type { Capabilities } from './wire';
 
 export type KindId = 'words' | 'choice' | 'canvas' | 'figure' | StructureKind | ControlKind;
@@ -155,9 +156,8 @@ export const LEXICON: Lexicon = {
   },
   figure: {
     id: 'figure',
-    // The language round (vocabulary, parse, normalize, prompt) wires the word and its chapter; until then nothing is taught, and the painter
-    // draws it from the typed `FigureInput` (`web/src/painter/blocks/figure/types.ts`).
-    teach: { where: 'chapter', form: 'figure <id> [cutaway|exploded] | title', gloss: 'a labelled drawing: parts that label themselves, routes along them, and steps that light them in turn', cue: () => false },
+    // FG2: taught per turn only, by its cue (anatomy, a machine, "parts of", "how … works", labelled); the worked example is the heart (`FIGURE_CHAPTER`).
+    teach: { where: 'chapter', form: 'figure <id> [cutaway|exploded] | title', gloss: 'a labelled drawing: parts that label themselves, routes along them, and steps that light them in turn', cue: asksForFigure },
     describes: 'summary',
     describe: (element) => `figure "${element.text.trim()}"`,
   },

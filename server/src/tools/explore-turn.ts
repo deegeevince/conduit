@@ -103,7 +103,7 @@ export async function playTurn(play: TurnPlay): Promise<TurnPlayed> {
   const { brain, context } = play;
   const base: StageBase = context.stage;
   let nextId = 0;
-  const normalizer = new LineNormalizer(() => `${play.idPrefix}x${++nextId}`);
+  const normalizer = new LineNormalizer(() => `${play.idPrefix}x${++nextId}`, [], { placement: brain.id === 'replay' ? 'free' : 'flow', layout: base.scene.layout });
   const score = new TurnScore(base, 'prompt');
   const lines: { seq: number; text: string; ms: number; issues: readonly Issue[] }[] = [];
   const accepted: Line[] = [];

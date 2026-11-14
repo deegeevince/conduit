@@ -605,6 +605,7 @@ export const STRUCTURE = {
   code: { gist: 'rows `| line` taken exactly as written, indentation kept: monospaced and highlighted, with a copy action', parts: 'rows', lays: 'engine' },
   tune: { gist: 'rows `| line` of ABC notation, taken exactly: a piano roll that plays, with a playhead and the notes lighting as they sound', parts: 'rows', lays: 'engine' },
   app: { gist: 'rows `| line` of one HTML document (inline style and script), taken exactly: a live app that runs in a locked sandbox on the stage and answers back (taught only when the user asks for something that works)', parts: 'rows', lays: 'engine' },
+  figure: { gist: 'a labelled drawing: each part one line (taught by the FIGURE chapter in the brief); rows are the lines of the figure, taken as written', parts: 'rows', lays: 'engine' },
   screen: { gist: 'a mock-up: devices at true size, each part one line (taught by the INTERFACE chapter in the brief); rows are the lines of the interface, taken as written', parts: 'rows', lays: 'engine' },
 } as const satisfies Record<string, { gist: string; parts: 'nodes' | 'rows'; lays: 'painter' | 'axis' | 'brain' | 'engine' }>;
 export type StructureKind = keyof typeof STRUCTURE;
@@ -903,6 +904,12 @@ export const VERB = {
     time: 'starts',
     family: 'structure',
   },
+  figure: {
+    form: 'figure <id> [cutaway|exploded] [| title]',
+    gist: 'A labelled drawing: follow it with its parts (path, poly, line, ellipse, rect, each with label="…"), route and step lines, then `end`. Taught by the FIGURE chapter in the brief.',
+    time: 'starts',
+    family: 'structure',
+  },
   screen: {
     form: 'screen <id> phone|tablet|desktop|browser [from=<screen>[:label]] [| name]',
     gist: 'A mock-up: a device at its true size. The parts of the screen follow, one a line (nav, heading, button, field, item, image, row, col, end…); the painter lays them out. Taught by the INTERFACE chapter in the brief; on the wire its first line is the title and each later line a row, taken as written.',
@@ -982,8 +989,8 @@ export const VERB = {
     family: 'atmosphere',
   },
   set: {
-    form: 'set <id|scene|all> [style…] [prop=value…] [speed] [over=Ns]',
-    gist: 'Change something on stage: colour, size, place, turn, opacity, layer, pin.',
+    form: 'set <id|scene|all> [style…] [prop=value…] [speed] [over=Ns] [| <new text>]',
+    gist: 'Change something on stage: colour, size, place, turn, opacity, layer, pin, its words; a structure or chart with its own line again and a new room.',
     time: 'starts',
     family: 'change',
   },
@@ -1019,7 +1026,7 @@ export const VERB = {
   },
   revise: {
     form: 'revise <id> [style…] [prop=value…] [| <new text>]',
-    gist: 'Quietly change a line that has not played yet.',
+    gist: 'Quietly change a line that has not played yet. Read, never taught: `set` does it now.',
     time: 'edit',
     family: 'mind',
   },

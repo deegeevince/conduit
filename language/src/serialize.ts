@@ -163,7 +163,10 @@ export function serializeLine(line: Line): string {
       return [...head, ...lookTokens(line.props), ...whenToken(line.when)].join(' ');
     }
     case 'say':
-      return withText(['say', line.id, ...line.styles, ...propTokens(line.props), ...(line.href === undefined ? [] : [`href=${line.href}`]), ...whenToken(line.when)], line.text);
+      return withText(
+        ['say', line.id, ...line.styles, ...(line.approx === undefined ? [] : [line.approx === 'yes' ? 'approx' : `approx=${line.approx}`]), ...(line.optional === true ? ['optional'] : []), ...propTokens(line.props), ...(line.href === undefined ? [] : [`href=${line.href}`]), ...whenToken(line.when)],
+        [line.text, ...(line.alts ?? [])].join(' || '),
+      );
     case 'circle':
     case 'ellipse':
     case 'rect':
@@ -216,8 +219,10 @@ export function serializeLine(line: Line): string {
     case 'code':
     case 'tune':
     case 'app':
+    case 'figure':
     case 'screen': {
       const head: string[] = [line.verb, line.id];
+      if (line.mode !== undefined) head.push(line.mode);
       if (line.grow !== undefined) head.push(line.grow);
       if (line.chart !== undefined) head.push(line.chart);
       head.push(...(line.words ?? []));
@@ -243,6 +248,7 @@ export function serializeLine(line: Line): string {
       if (line.from !== undefined) head.push(line.from.label === undefined ? `from=${line.from.id}` : `from=${line.from.id}:${line.from.label}`);
       if (line.x !== undefined) head.push(`x=${line.x}`);
       if (line.y !== undefined) head.push(`y=${number(line.y)}`);
+      if (line.approx !== undefined) head.push(line.approx === 'yes' ? 'approx' : `approx=${line.approx}`);
       return withText([...head, ...line.styles, ...propTokens(line.props), ...whenToken(line.when)], line.text);
     }
     case 'link': {
@@ -276,7 +282,7 @@ export function serializeLine(line: Line): string {
       return [...head, ...line.styles, ...propTokens(line.props), ...whenToken(line.when)].join(' ');
     }
     case 'set': {
-      const head: string[] = ['set', targetToken(line.target), ...line.styles, ...propTokens(line.props)];
+      const head: string[] = ['set', line.part === undefined ? targetToken(line.target) : `${targetToken(line.target)}.${'row' in line.part ? `row${line.part.row}` : `cell${line.part.cell[0]},${line.part.cell[1]}`}`, ...line.styles, ...propTokens(line.props)];
       if (line.speed !== undefined) head.push(line.speed);
       if (line.over !== undefined) head.push(`over=${seconds(line.over)}`);
       return [...head, ...whenToken(line.when)].join(' ');

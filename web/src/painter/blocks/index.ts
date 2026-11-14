@@ -34,7 +34,7 @@ import { layoutTree } from './tree';
 
 /** The structures this painter can lay out today. */
 /** `screen` (v2.2) is laid out and drawn by the interface kit (`painter/ui-stage.ts`), which hands the stage finished frames: this engine only says it is known. */
-export const STRUCTURES_READY: readonly StructureKind[] = ['flow', 'tree', 'cycle', 'timeline', 'map', 'table', 'tune', 'app', 'screen'];
+export const STRUCTURES_READY: readonly StructureKind[] = ['flow', 'tree', 'cycle', 'timeline', 'map', 'table', 'tune', 'app', 'screen', 'figure'];
 
 /** True once `layoutCallouts` places labels with leaders; until then a `callout` is placed as a plain `near=` label. */
 export const CALLOUTS_READY = true;
