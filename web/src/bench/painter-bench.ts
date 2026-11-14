@@ -18,6 +18,8 @@ import type { Painter, PainterUpload, TranscriptEvent } from '../contracts/paint
 import { LOOKS } from '../looks';
 import { createPainter } from '../painter';
 import { fitCanvas } from '../painter/canvas';
+import { createChartHost } from '../app/chart-host';
+import { createChartEngine } from '../render/chart';
 import { createPlainRenderer } from '../render/plain';
 import { createThreeRenderer } from '../render/three';
 
@@ -75,6 +77,8 @@ style.textContent = `
   #panel select, #panel button, #panel input[type=range] { font: inherit; }
   #panel button, #panel select { min-height: 28px; }
   #panel input[type=range] { width: 100%; }
+  .stage__charts { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 1; }
+  .stage__chart { position: absolute; left: 0; top: 0; transform-origin: 0 0; touch-action: none; }
   #host { position: relative; border: 1px solid #444; overflow: hidden; background: #000; cursor: default; }
   #outline { position: absolute; border: 1px dashed #f0f; pointer-events: none; z-index: 50; display: none; }
   #sketches { display: flex; gap: 6px; flex-wrap: wrap; }
@@ -211,12 +215,16 @@ function build(): Painter {
   painter?.dispose();
   transcript.length = 0;
   const v = viewport();
+  const engine = createChartEngine();
+chartHost?.dispose();
+const charts = engine === null ? null : (chartHost = createChartHost({ engine, stage: host, access: { root: host, controls: () => undefined, charts: () => undefined, focusControl: () => undefined, dispose: () => undefined } }));
   const next = createPainter({
     renderer,
     viewport: v,
     lockLook: lookSelect.value === 'none' ? null : (lookSelect.value as LookId),
     reducedMotion: reducedBox.checked,
     pointer: 'fine',
+    charts,
   });
   unsubscribe.push(
     next.on('back', (event) => {
@@ -348,10 +356,20 @@ rendererSelect.addEventListener('change', () => {
 });
 reducedBox.addEventListener('change', build);
 
+let chartHost: ReturnType<typeof createChartHost> | null = null;
+const pointerAt = (phase: 'down' | 'move' | 'up' | 'cancel', event: PointerEvent): boolean => {
+  const rect = host.getBoundingClientRect();
+  return painter?.pointer({ phase, x: event.clientX - rect.left, y: event.clientY - rect.top, pointer: event.pointerId }) ?? false;
+};
 host.addEventListener('pointerdown', (event) => {
+  if (pointerAt('down', event)) return;
   const rect = host.getBoundingClientRect();
   painter?.tapAt(event.clientX - rect.left, event.clientY - rect.top);
 });
+host.addEventListener('pointermove', (event) => void pointerAt('move', event));
+host.addEventListener('pointerup', (event) => void pointerAt('up', event));
+host.addEventListener('pointercancel', (event) => void pointerAt('cancel', event));
+host.addEventListener('pointerleave', () => void painter?.pointer({ phase: 'move', x: -1e5, y: -1e5, pointer: 0 }));
 
 let manual: string | null = null;
 function open(): void {

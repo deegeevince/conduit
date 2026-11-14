@@ -4,9 +4,11 @@ import { STRUCTURES_READY } from './blocks';
 import { CONTROLS_READY, controlEngine, createControlStore, nextEases } from './controls';
 import { controlIndexOf, createRuntime, controlSpecOf, stateReader } from './bound';
 import type { ControlSite } from './controls-stage';
+import type { ChartData } from './charts';
+import type { ChartView } from '../contracts/chart';
 import { CALM } from '../contracts/controls';
 import { NO_SIGHT } from '@conduit/language';
-import type { ControlValue, ControlValues, PassState, Sight } from '@conduit/language';
+import type { DataTable, ControlValue, ControlValues, PassState, Sight } from '@conduit/language';
 import type { BackEvent, Capabilities, ClockState, ElementSpan, Issue, Line, Schedule, ScoreEntry, Services, StageBase, TurnEndReason, TurnInput, TurnReport } from '@conduit/language';
 import type { Recording } from '../contracts/film';
 import type { ElementFrame, Frame, Quality, ShapeFrame } from '../contracts/frame';
@@ -256,7 +258,11 @@ export function createPainter(options: PainterOptions): Painter {
     runtime.eases = nextEases(index.driven, stateReader(index, runtime, reading.playhead), runtime.eases, reading.ambient);
     runtime.version += 1;
   };
-  const timelineContext = (): TimelineContext => ({ viewport, reducedMotion, lockLook, paintings, onFault: noteFault, arrivals, controls: runtime });
+  const host = options.charts ?? null;
+  /** what has come of the data charts asked for by reference */
+  const chartData = new Map<string, ChartData>();
+  const chartKinds = host === null ? [] : CHARTS_READY.filter((kind) => host.kinds.includes(kind));
+  const timelineContext = (): TimelineContext => ({ viewport, reducedMotion, lockLook, paintings, onFault: noteFault, arrivals, controls: runtime, ...(host === null || chartKinds.length === 0 ? {} : { charts: { kinds: chartKinds, data: chartData } }) });
 
   /** Every picture the stage has is accounted for: waiting for its painting if the server can paint, unpainted if not. */
   const syncPaintings = (schedule: Schedule): void => {
@@ -313,8 +319,8 @@ export function createPainter(options: PainterOptions): Painter {
       sight: caps.capture ? 'snapshot' : 'report',
       // Series 4. Each list is what is really built: the structure and control engines say what they lay out, the renderer what it
       // paints. The brain is taught exactly these, so nothing here may be switched on ahead of the code that performs it.
-      structures: FULL_CAPABILITIES.structures.filter((kind) => (kind === 'chart' ? CHARTS_READY.length > 0 : STRUCTURES_READY.includes(kind))),
-      charts: FULL_CAPABILITIES.charts.filter((kind) => CHARTS_READY.includes(kind)),
+      structures: FULL_CAPABILITIES.structures.filter((kind) => (kind === 'chart' ? chartKinds.length > 0 : STRUCTURES_READY.includes(kind))),
+      charts: FULL_CAPABILITIES.charts.filter((kind) => chartKinds.includes(kind)),
       controls: FULL_CAPABILITIES.controls.filter((kind) => CONTROLS_READY.includes(kind)),
       media: FULL_CAPABILITIES.media.filter((medium) => caps.media.includes(medium)),
       textures: FULL_CAPABILITIES.textures.filter((texture) => texture === 'flat' || caps.textures.includes(texture)),
@@ -457,6 +463,9 @@ export function createPainter(options: PainterOptions): Painter {
     }
   };
 
+  /** a chart draws itself in a surface of its own: a picture of the stage takes the engine's still of it */
+  const stills = (): { chartStill?: (key: string) => HTMLCanvasElement | null } => (host === null ? {} : { chartStill: (key) => host.still(key) });
+
   const wantsSnapshot = (): boolean => renderer.capabilities.capture && services.sight === 'snapshot';
 
   /** What every control on the stage holds, by element id: the report's `controls`, and what the stage carries on. */
@@ -504,7 +513,7 @@ export function createPainter(options: PainterOptions): Painter {
     }
     const frame: Frame = { ...at.frameAt({ time: when, ambient: 3, wallTime: pinnedWallTime(3), clock: 'paused' }), camera: REST_POSE };
     void renderer
-      .rasterise(frame, { maxSide: PICTURE_SIDE, mime: 'image/jpeg', quality: 0.8 })
+      .rasterise(frame, { maxSide: PICTURE_SIDE, mime: 'image/jpeg', quality: 0.8, ...stills() })
       .then((blob) => {
         if (blob !== null && !disposed) emit('upload', { kind: 'draft', turn: open.id, pass, blob });
         report(blob !== null);
@@ -518,7 +527,7 @@ export function createPainter(options: PainterOptions): Painter {
     const rest = buildTimeline(restSchedule(stage), stage, timelineContext());
     const frame: Frame = { ...rest.frameAt({ time: 0, ambient: 3, wallTime: pinnedWallTime(3), clock: 'paused' }), camera: REST_POSE };
     void renderer
-      .rasterise(frame, { maxSide: PICTURE_SIDE, mime: 'image/jpeg', quality: 0.8 })
+      .rasterise(frame, { maxSide: PICTURE_SIDE, mime: 'image/jpeg', quality: 0.8, ...stills() })
       .then((blob) => {
         if (blob !== null && !disposed) emit('upload', { kind: 'snapshot', turn: turnId, blob });
       })
@@ -700,6 +709,7 @@ export function createPainter(options: PainterOptions): Painter {
     try {
       if (frame.spec !== lastReadySpec && !reset) sendReady(frame.spec);
       if (reset) renderer.reset();
+      if (host !== null) host.sync(frame.charts ?? [], viewport.dpr);
       lastFrame = frame;
       const startedAt = performance.now();
       renderer.render(frame);
@@ -908,7 +918,7 @@ export function createPainter(options: PainterOptions): Painter {
       showingAll,
       fault: faultText(),
       controls: controlViews(),
-      charts: [],
+      charts: chartViews(frame),
       pass: passState === null || turn === null || passState.turn !== turn.id ? null : { pass: passState.pass, state: passState.state },
     };
   };
@@ -1019,6 +1029,8 @@ export function createPainter(options: PainterOptions): Painter {
       bound: index.driven.some((change) => change.control === site.key),
     };
   };
+  const chartViews = (frame: Frame): ChartView[] =>
+    (frame.charts ?? []).map((chart) => ({ key: chart.key, id: chart.id, kind: chart.state.kind, box: chart.box, series: chart.state.model.series.map((series) => series.name), points: chart.state.landed, waiting: chart.state.waiting }));
   const controlViews = (): ControlView[] => sitesNow().map(viewOf);
   let lastControlsSignature = '';
   /** Tells the app when controls arrived, left, moved or took a new value: never on every frame of a drag. */
@@ -1177,7 +1189,9 @@ export function createPainter(options: PainterOptions): Painter {
       tapOn(key);
     },
 
-    dataArrived() {},
+    dataArrived(id: string, rows: DataTable | null) {
+      chartData.set(id, { table: rows, since: clock.read().ambient });
+    },
     notePass(id, pass, state) {
       const open = turn;
       if (open === null || open.id !== id || settling !== null) return;

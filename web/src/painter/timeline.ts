@@ -10,6 +10,8 @@ import type { ControlMood } from '../contracts/controls';
 import type { ControlValue } from '@conduit/language';
 import { LOOKS, specFor } from '../looks';
 import type { StructureEngine } from '../contracts/blocks';
+import { chartFrames } from './charts';
+import type { ChartData } from './charts';
 import { createControlStore, compileTemplate, renderTemplate, scopeOf } from './controls';
 import type { Template } from './controls';
 import { boundElement, boundSchedule, controlIndexOf, createRuntime, heldBy, moodOf, controlSpecOf } from './bound';
@@ -51,6 +53,8 @@ export interface TimelineContext {
   readonly engine?: StructureEngine;
   /** what the user's hand holds: control values, moods, how far bound changes have eased. Read at every frame. Absent: nothing is held and every control shows what was written. */
   readonly controls?: ControlRuntime;
+  /** the charting engine this stage has, and the DATA that has come for it (live); absent: the stage has no charts and draws none */
+  readonly charts?: { readonly kinds: readonly string[]; readonly data: ReadonlyMap<string, ChartData> };
 }
 
 export interface TimelineInstant {
@@ -1298,12 +1302,19 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
     const left = pose.x + (pose.lines[0]?.x ?? -pose.width / 2);
     return { pose, layout, fit, centre: { x: left + layout.width / 2, y: pose.y } };
   };
-  if (controlSpans.length > 0) {
+  const chartSpans = context.charts === undefined ? [] : schedule.elements.filter((element) => element.kind === 'structure' && element.figure?.kind === 'structure' && element.figure.structure === 'chart');
+  if (controlSpans.length > 0 || chartSpans.length > 0) {
     // a control is a thing the painter placed: `near=`, `cam focus` and the sight report find it where it is
     const before = laidOutOf(schedule);
     const byControl = new Map(controlSpans.map((span) => [span.key, span]));
     registerLaidOut(schedule, {
       boxOf(key, time) {
+        const chart = chartSpans.find((candidate) => candidate.key === key);
+        if (chart !== undefined && chart.figure?.kind === 'structure') {
+          const fit = fitOfElement(chart, specAt(time));
+          const room = chart.figure.box;
+          return room === null ? { x: (fit.box.x - fit.box.x) / fit.unit, y: 0, w: fit.box.width / fit.unit, h: fit.box.height / fit.unit } : { x: room.x, y: room.y, w: room.w, h: room.h };
+        }
         const span = byControl.get(key);
         const spec = span === undefined ? null : controlSpecOf(span);
         if (span === undefined || spec === null) return before?.boxOf(key, time) ?? null;
@@ -1918,7 +1929,9 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
         });
       }
     }
+    const chartFrameList = context.charts === undefined ? undefined : chartFrames(schedule, tq, aq, drawLook, { viewport, reducedMotion, camera, kinds: context.charts.kinds, data: context.charts.data, scope: scopeOf([...cindex.ids], (id) => controlNamed(id, tq)), fitOf: (element) => fitOfElement(element, drawLook) });
     const frame: Frame = {
+      ...(chartFrameList === undefined ? {} : { charts: chartFrameList }),
       time: instant.time,
       ambient: instant.ambient,
       wallTime: instant.wallTime,
@@ -1941,6 +1954,10 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
       fields: figs.fields,
       cursor,
     };
+    for (const chart of chartFrameList ?? []) {
+      const span = schedule.elements.find((element) => element.key === chart.key);
+      laidViews.push({ key: chart.key, id: chart.id, kind: 'structure', text: span?.figure == null ? '' : describeFigure(span.figure), layer: chart.layer, phase: chart.state.interactive ? 'on' : 'entering', box: chart.box, fontPx: chart.state.theme.fontPx, colour: chart.state.theme.ink, contrast: 21, painting: null, opacity: chart.opacity, tappable: false });
+    }
     const drawnViews = laidViews.length === 0 ? figs.views : [...figs.views.filter((view) => !laidViews.some((laidView) => laidView.key === view.key)), ...laidViews];
     return { frame, views: [...evaluated.map((item) => item.view), ...drawnViews], sites };
   };
