@@ -192,6 +192,8 @@ export interface Plot {
 }
 
 const INDEXED: NumberFormat = { prefix: '', suffix: '', decimals: 1, short: false };
+/** an index written as whole numbers (the base year 100, the others as the data gave them) stays whole; anything else gets a decimal */
+const indexedFormat = (values: readonly (number | null)[]): NumberFormat => (values.every((v) => v === null || Math.abs(v - Math.round(v)) < 1e-9) ? { ...INDEXED, decimals: 0 } : INDEXED);
 
 function show(series: ChartSeries, indexed: boolean): (number | null)[] {
   if (!indexed) return [...series.values];
@@ -215,13 +217,13 @@ export function plotOf(state: ChartState): Plot {
       const four = [o?.values[i], h?.values[i], l?.values[i], c?.values[i]];
       return four.every((v) => typeof v === 'number') ? (four.map((v) => (v as number) / scale) as [number, number, number, number]) : null;
     });
-    series.push({ key: 'price', name: '', draw: drawKind, colour: 0, format: indexed ? INDEXED : (c?.format ?? INDEXED), values: ohlc.map((q) => q?.[3] ?? null), ohlc, up: null });
+    series.push({ key: 'price', name: '', draw: drawKind, colour: 0, format: indexed ? indexedFormat(ohlc.map((q) => q?.[3] ?? null)) : (c?.format ?? INDEXED), values: ohlc.map((q) => q?.[3] ?? null), ohlc, up: null });
     const volume = roleOf('volume');
     if (volume !== undefined) series.push({ key: 'volume', name: 'volume', draw: 'volume', colour: -1, format: volume.format, values: [...volume.values], ohlc: null, up: ohlc.map((q) => q === null || q[3] >= q[0]) });
   } else {
     const plain = model.series.filter((s) => s.role !== 'volume');
     plain.forEach((s, colour) => {
-      series.push({ key: `s${colour}`, name: s.name, draw: drawKind === 'candles' || drawKind === 'ohlc' ? 'line' : drawKind, colour, format: indexed ? INDEXED : s.format, values: show(s, indexed), ohlc: null, up: null });
+      series.push({ key: `s${colour}`, name: s.name, draw: drawKind === 'candles' || drawKind === 'ohlc' ? 'line' : drawKind, colour, format: indexed ? indexedFormat(show(s, indexed)) : s.format, values: show(s, indexed), ohlc: null, up: null });
     });
     const volume = roleOf('volume');
     if (volume !== undefined && plain.length > 0) series.push({ key: 'volume', name: 'volume', draw: 'volume', colour: -1, format: volume.format, values: [...volume.values], ohlc: null, up: null });
