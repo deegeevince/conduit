@@ -22,7 +22,7 @@ export function appSourceOf(rows: readonly StructureRow[]): string {
 const ASKS_FOR_WORKING =
   /\b(working|fully interactive|interactive|usable|actually\s+(?:work|works|working|use|usable|do|does)|really\s+(?:work|works|working)|that\s+(?:work|works)|i\s+can\s+(?:use|play|try|add|tick|type|click|tap|drag|change)|live\s+app|real\s+app|web\s*app|(?:an?\s+|the\s+|my\s+)?(?:calculator|stop-?watch|timer|countdown|tracker|converter|planner|to-?do(?:\s+list)?|checklist|quiz|game|flash-?cards?|simulator|playground|sandbox|generator|counter|budget\s+(?:tool|app)|tip\s+calculator|worksheet|practice\s+(?:sheet|page)|sudoku|tic-?tac-?toe|memory\s+game|drum\s+machine|metronome|piano|soundboard|paint\s+app|drawing\s+app|notes?\s+app|kanban|habit\s+tracker)|check(?:s|ing)?\s+(?:her|his|their|my|your|the)\s+answers?|cheers?\s+when)\b/i;
 /** Words that say the user wants a picture of an interface, not an interface: a mock-up, a wireframe, a storyboard. */
-const ASKS_FOR_PICTURE = /\b(mock-?ups?|wire-?frames?|storyboards?|figma|user journey|design (?:of|for)|screens? (?:for|of))\b/i;
+const ASKS_FOR_PICTURE = /\b(mock[- ]?ups?|wire[- ]?frames?|storyboards?|figma|user journey|design (?:of|for)|screens? (?:for|of))\b/i;
 
 /** Whether the user's words are about something that works, so that this turn is taught `app`. A mock-up is not that, unless they say it must work. */
 export function asksForLiveApp(text: string): boolean {

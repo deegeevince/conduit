@@ -827,7 +827,7 @@ export function asksForMusic(input: TurnInput): boolean {
 
 /** Whether the user's words are about an interface, so that this turn is taught `screen`: mock-up, wireframe, screen, page, app, site, figma, landing, UI, journey. */
 export function asksForInterface(input: TurnInput): boolean {
-  return input.kind === 'prompt' && /\b(mock-?ups?|wire-?frames?|screens?|pages?|apps?|sites?|web-?sites?|figma|landing|ui|ux|user journey|journey|interfaces?|prototypes?|storyboards?)\b/i.test(input.text);
+  return input.kind === 'prompt' && /\b(mock[- ]?ups?|wire[- ]?frames?|screens?|pages?|apps?|sites?|web-?sites?|figma|landing|ui|ux|user journey|journey|interfaces?|prototypes?|storyboards?)\b/i.test(input.text);
 }
 
 /**
