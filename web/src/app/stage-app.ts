@@ -855,8 +855,11 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
       const view = views.find((candidate) => candidate.id === event.id);
       const values: Record<string, ControlValue> = {};
       for (const candidate of views) if (candidate.value !== null) values[candidate.id] = candidate.value;
-      const text = view === undefined ? event.text : view.control === 'pick' ? view.valueText : view.label !== '' ? view.label : event.text;
-      void submit({ kind: 'act', id: event.id, text, values: values satisfies ControlValues }, null, true).catch(noteTurnFailure);
+      // a button of a mock-up brings what its own screen holds (a field's words, a switch), and no other control's
+      const mockup = event.screen !== undefined;
+      const text = mockup || view === undefined ? event.text : view.control === 'pick' ? view.valueText : view.label !== '' ? view.label : event.text;
+      const held: ControlValues = mockup ? (event.values ?? {}) : values;
+      void submit({ kind: 'act', id: event.id, text, values: held, ...(mockup ? { screen: event.screen } : {}) }, null, true).catch(noteTurnFailure);
       return;
     }
     sendBack(event);
@@ -1026,6 +1029,12 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   keys.autocomplete = 'off';
   keys.setAttribute('aria-hidden', 'true');
   keys.tabIndex = -1;
+  // a phone's keyboard must hand over exactly what is typed: no capital for the first letter of an email, no correction, no suggestion
+  keys.setAttribute('autocapitalize', 'off');
+  keys.setAttribute('autocorrect', 'off');
+  keys.setAttribute('spellcheck', 'false');
+  keys.setAttribute('enterkeyhint', 'done');
+  keys.setAttribute('inputmode', 'text');
   keys.style.cssText = 'position:absolute;left:0;top:0;width:1px;height:1px;opacity:0;border:0;padding:0;font-size:16px;pointer-events:none';
   host.append(keys);
   keys.addEventListener('keydown', (event) => {
@@ -1041,6 +1050,13 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   keys.addEventListener('blur', () => {
     if (painter.typing()) painter.key('Escape');
   });
+  // A phone raises its keyboard only for a focus that comes in the gesture itself, and a gesture that began on a field may end in a click or a touchend
+  // that the pointer's own `up` did not see (a touch can end on a thumbnail brought forward, or after the stage was made again under the finger).
+  const raiseKeyboard = (): void => {
+    if (painter.typing() && document.activeElement !== keys) keys.focus({ preventScroll: true });
+  };
+  host.addEventListener('click', raiseKeyboard);
+  host.addEventListener('touchend', raiseKeyboard);
   host.addEventListener('pointerdown', onPointerDown);
   host.addEventListener('pointermove', onPointerMove);
   host.addEventListener('pointerup', onPointerEnd);

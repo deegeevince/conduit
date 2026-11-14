@@ -192,8 +192,10 @@ export type TurnInput =
    * The user worked a control whose change is meant for the brain: a button
    * pressed, or a control marked `send` committed. `text` is the control's
    * label (a pick: the option chosen); `values` is every live control's value.
+   * A button of a mock-up (`screen`) says which screen it is on, and `values` is what that screen's parts hold, by their labels (a password only as
+   * `filled`).
    */
-  | { readonly kind: 'act'; readonly id: string; readonly text: string; readonly values: ControlValues }
+  | { readonly kind: 'act'; readonly id: string; readonly text: string; readonly values: ControlValues; readonly screen?: string }
   /**
    * v2.1. Keep making what is on stage better (`/better`, or a tapped "keep going"). No new answer is asked for: the critic looks at
    * the resting picture, the brain is shown what it found and adds to the picture, and that repeats until the critic sees no gain,
@@ -372,7 +374,20 @@ export type BackEvent =
    * dragging: local bindings need no round trip. `send` is true when the
    * change is also the next turn's input, as a choice's tap is.
    */
-  | { readonly type: 'control'; readonly turn: string | null; readonly id: string; readonly value: ControlValue; readonly text: string; readonly playhead: number; readonly send: boolean; readonly app?: boolean }
+  | {
+      readonly type: 'control';
+      readonly turn: string | null;
+      readonly id: string;
+      readonly value: ControlValue;
+      readonly text: string;
+      readonly playhead: number;
+      readonly send: boolean;
+      /** a button of a mock-up: the screen it is on, and what the screen's live parts hold (the turn it opens carries them) */
+      readonly screen?: string;
+      readonly values?: ControlValues;
+      /** an app's own press (the app block), not a control of the stage */
+      readonly app?: boolean;
+    }
   /**
    * How pass `pass` of an open turn will land: sight for the stage as the
    * lines so far will leave it, computed without waiting for the playhead.

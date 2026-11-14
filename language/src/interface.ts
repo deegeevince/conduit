@@ -71,7 +71,7 @@ export const UI_VARIANTS: Readonly<Record<UiPartKind, readonly string[]>> = {
   heading: ['display', 'large', 'small', 'center'],
   text: ['dim', 'small', 'large', 'bold', 'center'],
   note: ['center'],
-  button: ['primary', 'ghost', 'danger', 'small', 'wide', 'disabled'],
+  button: ['primary', 'ghost', 'danger', 'small', 'wide', 'disabled', 'send'],
   field: ['error', 'multi', 'password'],
   item: ['chevron', 'toggle', 'on', 'selected'],
   badge: ['success', 'danger'],
@@ -198,6 +198,11 @@ export interface UiTokens {
   readonly id: UiLookId;
   /** boxes and lines: surfaces are bare, a control is an outline, a picture is a crossed box */
   readonly wire: boolean;
+  /**
+   * The smallest type the screens may be set in, points. A board drawn small (several phones in a room that is not tall) sets it so that the smallest
+   * type still reads when it is scaled to the room: every role below it, and every hard-set size, is taken up to it. Absent: the scale as it is.
+   */
+  readonly minText?: number;
   readonly radius: { readonly s: number; readonly m: number; readonly l: number; readonly device: number };
   readonly type: Readonly<Record<UiTextRole, UiTextToken>>;
   readonly elevation: { readonly none: UiElevation; readonly low: UiElevation; readonly high: UiElevation };
@@ -573,13 +578,14 @@ export const INTERFACE_CHAPTER: string = [
   '  nav [back|close|menu] [action=<icon>] | Title        a top bar; on a browser: nav links="Car,Home,Help" action="Get a quote" | Brand',
   '  tabbar icons=a,b,c | One | Two | Three               the first tab is chosen, or mark one with *stars*',
   '  heading [large|small|center] | words   text [dim|large|bold] | words   note | small dim words',
-  '  button [primary|ghost|danger] [wide|small] [to=<screen>] | Label   field [error|password] | Label | hint | message   pick | Label | A | B | C',
+  '  button [primary|ghost|danger] [wide|small] [to=<screen>] [send] | Label   field [error|password] | Label | hint | message   pick | Label | A | B | C',
   '  toggle [on] | Label     slider | Label | 40     item [icon=<name>] [chevron|toggle|on] [value=<words>] | Title | subtitle',
   '  badge [success|danger] | words   price | 34 | /mo   progress 2 of 4   image [wide|square|tall|round|grow] [q="nouns"] | what it shows',
   '  icon <name> [small|large|xl]   divider   space [s|m|l|grow]   chart ref=<id> | Title',
   '- A photograph is looked up for an image by its `q="…"`: three to five concrete things that are IN the picture, the subject first (q="sailing boats harbour water"), never a mood, a brand or a name. A hero is `wide` (a landscape). Only those words leave the machine. Without q the words after the bar are used.',
   '- `*Words*` on an item, a tab or a pick option is the one chosen. Any part may say `grow`.',
-  '- A clickable mock-up is the same `screen`: its tabs, picks, toggles, sliders, fields (typing shows in them; `password` shows dots) and buttons answer taps, and a button with `to=<screen>` goes to that screen (write the next screen after it). Never build a mock-up from `card`, `input`, `toggle` or `button` lines outside a `screen`.',
+  '- A clickable mock-up is the same `screen`: its tabs, picks, toggles, sliders, fields (typing shows in them; `password` shows dots) and buttons answer taps, and a button with `to=<screen>` goes to that screen (write the next screen after it). A button with no `to=` is sent to you when it is pressed ("the user pressed Sign in", with what every field holds; a password is only said to be filled), so you can answer it; add `send` to a button that has a `to=` when you must hear it too (a sign-in that opens the next screen). Never build a mock-up from `card`, `input`, `toggle` or `button` lines outside a `screen`.',
+  '- To change a mock-up that is on stage, reuse its screen ids: write `screen s1 …` again with the lines it should now have and that screen is replaced where it stands (the screens you do not write stay as they are); a new id is a new screen. Never draw a mock-up a second time under new ids to change it.',
   '- Icons are plain words: home search user bell cart heart star check close back menu plus shield car house umbrella phone mail lock card calendar camera map pin clock info warning document profile bank wallet chart-line.',
   '- `look wireframe` is boxes and lines; `look studio` is a finished design. The same lines serve both.',
   'Open with `scene caption` (the mock-up takes the stage; your one `say` is its caption), then the look, then the screens. Write the words a real product would: real labels and copy. At most twelve parts a phone screen. A button that matters most is `primary`; one a screen. A website is a `browser` screen (nav links=… first, then a hero, one row of cards, a footer; no more than one and a half screens of it); an app is `phone`. Start with `look studio` for a finished design, or `look wireframe` when asked for a wireframe. End with one short sentence (`say | …`, under twelve words) and no choices, never a list of the parts: the mock-up is the answer and needs the room.',

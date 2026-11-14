@@ -28,7 +28,8 @@ import { bodySize, marginOf, screenFacts } from './layout/metrics';
 import { Reporter } from './report';
 import { annotated } from './annotate';
 import { placedOf, sightOf } from './sight';
-import { isScreenBlock, releaseUi, setUiPicture, tapUi, typeUi, typingUi, uiBlockAt, uiMockupViews } from './ui-stage';
+import { downUi, easeUi, easingUi, isScreenBlock, moveUi, setUiPicture, typeUi, typingUi, uiBlockAt, uiMockupViews, upUi } from './ui-stage';
+import type { UiSend } from './ui-stage';
 import { buildTimeline, settledAfter, settledEnd as settledEndOf } from './timeline';
 import type { Timeline, TimelineContext, TimelineInstant } from './timeline';
 
@@ -937,6 +938,8 @@ export function createPainter(options: PainterOptions): Painter {
     lastFrameAt = now;
     let reading = clock.advance(elapsed, horizon());
     promoteArrivals(reading);
+    // a knob of a mock-up easing home: the stage is made again with it a little nearer, every frame, until it rests
+    if (easingUi() && easeUi(now, reducedMotion)) refreshTimeline();
     const renderMs = draw(reading, false);
     const drawn = renderer.isDrawable();
     if (drawn || turn === null) {
@@ -1128,6 +1131,13 @@ export function createPainter(options: PainterOptions): Painter {
     store.set(site.key, value);
     refreshEases(false);
     if (timeline.reactive) refreshTimeline();
+  };
+  /** the finger that is on a mock-up, and the block it came down on */
+  let uiGrab: { readonly pointer: number; readonly block: string } | null = null;
+  /** A button of a mock-up was pressed and it is for the brain: said as a control is, with what every live part of its screen holds. */
+  const sayPress = (press: UiSend): void => {
+    const reading = clock.read();
+    emitBack({ type: 'control', turn: turn === null ? null : turn.id, id: press.id, value: true, text: press.text, playhead: reading.playhead, send: true, screen: press.screen, values: press.values });
   };
   let grab: { readonly pointer: number; readonly key: string; readonly zone: string; readonly from: ControlValue | null } | null = null;
   let pressedZone: { readonly pointer: number; readonly key: string; readonly zone: string } | null = null;
@@ -1422,6 +1432,14 @@ export function createPainter(options: PainterOptions): Painter {
         return false;
       }
       if (phase === 'move') {
+        if (uiGrab !== null && uiGrab.pointer === input.pointer) {
+          // a switch or slider of a mock-up follows the finger in the same frame
+          if (moveUi(uiGrab.block, x - viewport.width / 2, y - viewport.height / 2, input.pointer)) {
+            refreshTimeline();
+            drawNow();
+          }
+          return true;
+        }
         if (grab !== null && grab.pointer === input.pointer) {
           const site = sitesNow().find((candidate) => candidate.key === grab?.key);
           const zone = site?.layout.zones.find((candidate) => candidate.part === grab?.zone);
@@ -1441,15 +1459,14 @@ export function createPainter(options: PainterOptions): Painter {
           const sx = x - viewport.width / 2;
           const sy = y - viewport.height / 2;
           const block = uiBlockAt(blocks, sx, sy);
-          if (block !== null && tapUi(block, sx, sy)) {
-            refreshTimeline();
-            drawNow();
-            // a press lets go a moment after it
-            setTimeout(() => {
-              if (disposed || !releaseUi(block)) return;
+          const touched = block === null ? null : downUi(block, sx, sy, input.pointer);
+          if (block !== null && touched !== null && touched.taken) {
+            // the rest of this gesture is the mock-up's: a held switch or slider, a button that acts when the finger lets go
+            uiGrab = { pointer: input.pointer, block };
+            if (touched.changed) {
               refreshTimeline();
               drawNow();
-            }, 160);
+            }
             return true;
           }
         }
@@ -1473,6 +1490,17 @@ export function createPainter(options: PainterOptions): Painter {
         return true;
       }
       // up, cancel
+      if (uiGrab !== null && uiGrab.pointer === input.pointer) {
+        const held = uiGrab;
+        uiGrab = null;
+        const done = upUi(held.block, input.pointer, phase === 'cancel', x - viewport.width / 2, y - viewport.height / 2);
+        if (done.changed) {
+          refreshTimeline();
+          drawNow();
+        }
+        if (done.send !== undefined) sayPress(done.send);
+        return true;
+      }
       if (grab !== null && grab.pointer === input.pointer) {
         const done = grab;
         grab = null;
@@ -1530,7 +1558,7 @@ export function createPainter(options: PainterOptions): Painter {
       const host = (b: { readonly x: number; readonly y: number; readonly width: number; readonly height: number }): Box => ({ x: b.x + dx, y: b.y + dy, width: b.width, height: b.height });
       return uiMockupViews(blocks).map((view) => ({
         screen: view.screen,
-        hits: view.hits.map((hit) => ({ id: hit.id, part: hit.part, action: hit.action, box: host(hit) })),
+        hits: view.hits.map((hit) => ({ id: hit.id, part: hit.part, action: hit.action, box: host(hit), ...(hit.send === true ? { send: true } : {}), ...(hit.to === undefined ? {} : { to: hit.to }) })),
         words: view.words.map((word) => ({ owner: word.owner, text: word.text, box: host(word) })),
         notes: view.notes,
       }));

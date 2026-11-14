@@ -104,7 +104,10 @@ export interface PointerInput {
 export interface UiMockup {
   readonly screen: string;
   /** what a finger works: `part` is what it is drawn as (`field`, `toggle`, `button`...), `action` what working it does */
-  readonly hits: readonly { readonly id: string; readonly part: string; readonly action: 'tab' | 'pick' | 'toggle' | 'field' | 'slider' | 'press'; readonly box: Box }[];
+  readonly hits: readonly { readonly id: string; readonly part: string; readonly action: 'tab' | 'pick' | 'toggle' | 'field' | 'slider' | 'press'; readonly box: Box;
+    /** a press: whether the brain hears it, and the screen it goes to */
+    readonly send?: boolean;
+    readonly to?: string }[];
   /** one box per line of words, where its ink is; `owner` is the part they belong to */
   readonly words: readonly { readonly owner: string; readonly text: string; readonly box: Box }[];
   /** what the kit's own lint says of the screen (overlap, lost words, words outside...) */

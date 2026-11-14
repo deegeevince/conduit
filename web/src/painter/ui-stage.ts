@@ -9,8 +9,8 @@
 // registries a stage needs (what a finger has done to the live parts, and the photographs that have arrived), which are the interface's
 // own state, the way a control's value is the control's.
 
-import { INTERFACE_LOOKS, linesPerScreen, parseInterface } from '@conduit/language';
-import type { ElementSpan, UiNode } from '@conduit/language';
+import { INTERFACE_LOOKS, linesPerScreen, parseInterface, unstar } from '@conduit/language';
+import type { ControlValue, ElementSpan, UiDocument, UiNode, UiPartNode } from '@conduit/language';
 import type { DrawnFrames, StructureLayout } from '../contracts/blocks';
 import { EMPTY_STRUCTURE_LAYOUT } from '../contracts/blocks';
 import type { ElementFrame, FigureFrame } from '../contracts/frame';
@@ -25,9 +25,10 @@ import type { UiTokens } from './blocks/ui/lang';
 import { isUiContainer } from './blocks/ui/lang';
 import { paintersMeasure } from './blocks/ui/measure';
 import { layoutScreen } from './blocks/ui/screen';
-import { applyAction, hitAt, typeInto } from './blocks/ui/state';
+import { applyAction, hitAt, sliderAt, typeInto } from './blocks/ui/state';
+import { SWITCH } from './blocks/ui/kit';
 import { NO_STATE } from './blocks/ui/types';
-import type { UiPictureState, UiScreenLayout, UiState } from './blocks/ui/types';
+import type { UiHit, UiPictureState, UiScreenLayout, UiState } from './blocks/ui/types';
 
 /** How long a part takes to come in once its row has landed. */
 export const UI_ROW_FADE = 0.18;
@@ -56,21 +57,58 @@ export function hasUiPicture(partId: string): boolean {
   return PICTURES.has(partId);
 }
 
+/** What a finger holds on a mock-up: a switch or slider being dragged, or a button that has been pressed and not yet let go. */
+interface Grab {
+  readonly pointer: number;
+  readonly kind: 'toggle' | 'slider' | 'press';
+  readonly index: number;
+  readonly hit: UiHit;
+  /** the point (screen points) where the finger came down, and where the knob was then */
+  readonly x0: number;
+  readonly from: number;
+  moved: boolean;
+}
+
+/** A knob easing to where it will rest (after a finger lets go, or a tap), by the clock of the frame it is asked in. */
+interface Ease {
+  readonly kind: 'toggle' | 'slider';
+  readonly from: number;
+  readonly to: number;
+  /** performance.now() of the first frame that saw it: a tap's ease begins when it is first drawn */
+  at: number | null;
+}
+
 interface Runtime {
   state: UiState;
   /** the screen shown large when the room is too narrow for them all, or when a press has gone to it (`button … to=<screen>`) */
   focus: number;
   /** a press went to a screen: one screen large and the rest as thumbnails, in any room */
   solo: boolean;
-  last: { readonly room: Box; readonly board: Board; readonly layouts: readonly UiScreenLayout[] } | null;
+  last: Last | null;
+  grab: Grab | null;
+  eases: Map<string, Ease>;
 }
+
+interface Last {
+  readonly room: Box;
+  readonly board: Board;
+  readonly layouts: readonly UiScreenLayout[];
+  readonly doc: UiDocument;
+  readonly state: UiState;
+}
+
+/** The layout each drawn frame set was made from: the one on screen is the one a finger is aimed at, not the last one made. */
+const LASTS = new WeakMap<DrawnFrames, Last>();
+
+/** How long a knob takes to go home, seconds. */
+export const KNOB_EASE = 0.16;
 
 const RUNTIMES = new Map<string, Runtime>();
 
 function runtimeOf(key: string): Runtime {
   let found = RUNTIMES.get(key);
   if (found === undefined) {
-    found = { state: NO_STATE, focus: 0, solo: false, last: null };
+    found = { state: NO_STATE, focus: 0, solo: false, last: null, grab: null, eases: new Map() };
     RUNTIMES.set(key, found);
     if (RUNTIMES.size > 24) RUNTIMES.delete(RUNTIMES.keys().next().value as string);
   }
@@ -88,47 +126,240 @@ export function forgetUi(blockKey: string): void {
   RUNTIMES.delete(blockKey);
 }
 
-/**
- * A tap at a point of the stage (stage units, camera at rest). True when it hit a live part of a mock-up or brought a screen forward, and the
- * layout must be made again.
- */
-export function tapUi(blockKey: string, x: number, y: number): boolean {
-  const run = RUNTIMES.get(blockKey);
-  const last = run?.last;
-  if (run === undefined || last === null || last === undefined) return false;
-  const px = x - last.room.x;
-  const py = y - last.room.y;
-  const at = locate(last.board, px, py);
-  if (at === null) return false;
-  if (last.board.mode === 'focus' && at.index !== last.board.focus) {
-    run.focus = at.index;
-    return true;
-  }
-  const screen = last.layouts[at.index];
-  if (screen === undefined) return false;
-  const hit = hitAt(screen.hits, at.x, at.y);
-  if (hit === undefined) return false;
-  const next = applyAction(run.state, hit.action, hit, at.x);
-  // a press that goes somewhere (`to=<screen>`) brings that screen forward: a prototype moves from one screen to the next
-  if (hit.action.kind === 'press' && hit.action.to !== undefined) {
-    const to = hit.action.to;
-    const index = last.layouts.findIndex((layout) => layout.id === to);
-    if (index >= 0) {
-      run.focus = index;
-      run.solo = true;
-    }
-  }
-  if (next === run.state && !(hit.action.kind === 'press' && hit.action.to !== undefined)) return false;
-  run.state = next;
-  return true;
+/** What a press of a button says to the brain: the screen and the button, and what every live part of the screen holds (a password only as filled). */
+export interface UiSend {
+  readonly screen: string;
+  readonly id: string;
+  readonly text: string;
+  readonly values: Readonly<Record<string, ControlValue>>;
 }
 
-/** The press lets go (a moment after it): the button is not left looking pressed. True when something changed. */
-export function releaseUi(blockKey: string): boolean {
+/** What a finger did to a mock-up: whether the layout must be made again, and whether the press it let go on is for the brain. */
+export interface UiTouch {
+  readonly changed: boolean;
+  readonly send?: UiSend;
+}
+
+const MOST_VALUES = 24;
+const MOST_TEXT = 80;
+
+/** What every live part of a screen holds, by what it says (its label), for the turn a press opens. A password is never given: only that it is filled. */
+function valuesOf(doc: UiDocument, screenIndex: number, state: UiState): Record<string, ControlValue> {
+  const out: Record<string, ControlValue> = {};
+  const screen = doc.screens[screenIndex];
+  if (screen === undefined) return out;
+  const put = (node: UiPartNode, label: string, value: ControlValue): void => {
+    if (Object.keys(out).length >= MOST_VALUES) return;
+    const name = label.trim() === '' || label.trim() in out ? node.id : label.trim().slice(0, 40);
+    out[name] = value;
+  };
+  const walk = (nodes: readonly UiNode[]): void => {
+    for (const node of nodes) {
+      if (isUiContainer(node)) {
+        walk(node.children);
+        continue;
+      }
+      const label = node.fields[0] ?? '';
+      switch (node.kind) {
+        case 'field':
+        case 'input': {
+          const typed = state.text[node.id] ?? '';
+          put(node, node.kind === 'field' ? label : '', node.flags.includes('password') ? (typed === '' ? 'empty' : 'filled') : typed.slice(0, MOST_TEXT));
+          break;
+        }
+        case 'toggle':
+          put(node, label, state.toggle[node.id] ?? node.flags.includes('on'));
+          break;
+        case 'item':
+          if (node.flags.includes('toggle')) put(node, unstar(label).text, state.toggle[node.id] ?? node.flags.includes('on'));
+          break;
+        case 'pick': {
+          const options = node.fields.slice(1).map(unstar);
+          const starred = options.findIndex((option) => option.starred);
+          const chosen = state.pick[node.id] ?? (starred >= 0 ? starred : Math.floor((options.length - 1) / 2));
+          put(node, label, (options[chosen]?.text ?? '').slice(0, MOST_TEXT));
+          break;
+        }
+        case 'slider': {
+          const given = node.fields[1];
+          const raw = state.slider[node.id] ?? (given !== undefined && given !== '' && Number(given) >= 0 ? Number(given) / (Number(given) > 1 ? 100 : 1) : 0.5);
+          put(node, label, Math.round(Math.max(0, Math.min(1, raw)) * 100));
+          break;
+        }
+        default:
+          break;
+      }
+    }
+  };
+  walk(screen.children);
+  return out;
+}
+
+/** Where a switch's knob is now (0 off, 1 on), by the state: what a drag starts from. */
+function thumbOf(state: UiState, control: string, on: boolean): number {
+  return state.thumb?.[control] ?? (on ? 1 : 0);
+}
+
+const MOVED = 3;
+
+/**
+ * A finger comes down at a point of the stage (stage units, camera at rest). `taken` when it landed on a live part of a mock-up or on a thumbnail
+ * that comes forward: the rest of its gesture is the mock-up's. A tab, a pick and a field answer at once; a switch and a slider are held and follow the
+ * finger; a button looks pressed and acts when the finger lets go on it.
+ */
+export function downUi(blockKey: string, x: number, y: number, pointer: number): { readonly taken: boolean; readonly changed: boolean } {
   const run = RUNTIMES.get(blockKey);
-  if (run === undefined || run.state.pressed === null) return false;
-  run.state = { ...run.state, pressed: null };
-  return true;
+  const last = run?.last;
+  if (run === undefined || last === null || last === undefined) return { taken: false, changed: false };
+  const at = locate(last.board, x - last.room.x, y - last.room.y);
+  if (at === null) return { taken: false, changed: false };
+  if (last.board.mode === 'focus' && at.index !== last.board.focus) {
+    run.focus = at.index;
+    return { taken: true, changed: true };
+  }
+  const screen = last.layouts[at.index];
+  if (screen === undefined) return { taken: false, changed: false };
+  const hit = hitAt(screen.hits, at.x, at.y);
+  if (hit === undefined) return { taken: false, changed: false };
+  const action = hit.action;
+  if (action.kind === 'toggle') {
+    // a switch is held: its knob follows the finger from where it was; a tap that does not move flips it
+    const eased = run.eases.get(action.control);
+    const from = eased === undefined ? thumbOf(run.state, action.control, action.on) : easedValue(eased, performance.now());
+    run.eases.delete(action.control);
+    run.grab = { pointer, kind: 'toggle', index: at.index, hit, x0: at.x, from, moved: false };
+    run.state = { ...run.state, thumb: { ...run.state.thumb, [action.control]: from }, focus: null };
+    return { taken: true, changed: true };
+  }
+  if (action.kind === 'slider') {
+    run.eases.delete(action.control);
+    const value = sliderAt(hit, at.x);
+    run.grab = { pointer, kind: 'slider', index: at.index, hit, x0: at.x, from: run.state.slider[action.control] ?? value, moved: false };
+    run.state = { ...run.state, slider: { ...run.state.slider, [action.control]: value }, focus: null };
+    return { taken: true, changed: true };
+  }
+  if (action.kind === 'press') {
+    run.grab = { pointer, kind: 'press', index: at.index, hit, x0: at.x, from: 0, moved: false };
+    run.state = { ...run.state, pressed: action.control, focus: null };
+    return { taken: true, changed: true };
+  }
+  const next = applyAction(run.state, action, hit, at.x);
+  if (next === run.state) return { taken: true, changed: false };
+  run.state = next;
+  return { taken: true, changed: true };
+}
+
+/** The finger that came down on a mock-up has moved. True when something it holds followed it. */
+export function moveUi(blockKey: string, x: number, y: number, pointer: number): boolean {
+  const run = RUNTIMES.get(blockKey);
+  const last = run?.last;
+  const grab = run?.grab;
+  if (run === undefined || last === null || last === undefined || grab === null || grab === undefined || grab.pointer !== pointer) return false;
+  const p = last.board.placements.find((candidate) => candidate.index === grab.index);
+  if (p === undefined) return false;
+  // the finger in the screen's own points, even when it has left the screen
+  const sx = (x - last.room.x - p.contentX) / p.scale;
+  const sy = (y - last.room.y - p.contentY) / p.scale;
+  const action = grab.hit.action;
+  if (Math.abs(sx - grab.x0) > MOVED) grab.moved = true;
+  if (action.kind === 'toggle') {
+    const travel = SWITCH.on - SWITCH.off;
+    const t = Math.max(0, Math.min(1, grab.from + (sx - grab.x0) / travel));
+    run.state = { ...run.state, thumb: { ...run.state.thumb, [action.control]: t } };
+    return true;
+  }
+  if (action.kind === 'slider') {
+    run.state = { ...run.state, slider: { ...run.state.slider, [action.control]: sliderAt(grab.hit, sx) } };
+    return true;
+  }
+  if (action.kind === 'press') {
+    // a finger that has slid off the button no longer presses it
+    const inside = sx >= grab.hit.x - 8 && sx <= grab.hit.x + grab.hit.w + 8 && sy >= grab.hit.y - 8 && sy <= grab.hit.y + grab.hit.h + 8;
+    const want = inside ? action.control : null;
+    if (run.state.pressed === want) return false;
+    run.state = { ...run.state, pressed: want };
+    return true;
+  }
+  return false;
+}
+
+/** The finger lets go (or the gesture is taken away: `cancel`). A knob goes home by an ease; a button that is still under the finger acts. */
+export function upUi(blockKey: string, pointer: number, cancel: boolean, x: number, y: number): UiTouch {
+  const run = RUNTIMES.get(blockKey);
+  const last = run?.last;
+  const grab = run?.grab;
+  if (run === undefined || last === null || last === undefined || grab === null || grab === undefined || grab.pointer !== pointer) return { changed: false };
+  run.grab = null;
+  const action = grab.hit.action;
+  if (action.kind === 'toggle') {
+    const now = run.state.thumb?.[action.control] ?? grab.from;
+    // a tap flips it; a drag leaves it on the side its knob is on; a gesture taken away puts it back
+    const target = cancel ? Math.round(grab.from) : grab.moved ? (now >= 0.5 ? 1 : 0) : 1 - Math.round(grab.from);
+    run.eases.set(action.control, { kind: 'toggle', from: now, to: target, at: null });
+    return { changed: true };
+  }
+  if (action.kind === 'slider') {
+    const now = run.state.slider[action.control] ?? grab.from;
+    // let go, the knob settles on a whole percent: what its readout says
+    const target = cancel ? grab.from : Math.round(now * 100) / 100;
+    if (Math.abs(target - now) > 1e-6) run.eases.set(action.control, { kind: 'slider', from: now, to: target, at: null });
+    else run.state = { ...run.state, slider: { ...run.state.slider, [action.control]: target } };
+    return { changed: true };
+  }
+  if (action.kind === 'press') {
+    const held = run.state.pressed === action.control;
+    run.state = { ...run.state, pressed: null };
+    if (cancel || !held) return { changed: true };
+    // a press that goes somewhere (`to=<screen>`) brings that screen forward: a prototype moves from one screen to the next
+    if (action.to !== undefined) {
+      const to = action.to;
+      const index = last.layouts.findIndex((layout) => layout.id === to);
+      if (index >= 0) {
+        run.focus = index;
+        run.solo = true;
+      }
+    }
+    if (action.send === true) {
+      const screen = last.layouts[grab.index];
+      return { changed: true, send: { screen: screen?.id ?? '', id: action.control, text: action.label ?? 'Button', values: valuesOf(last.doc, grab.index, run.state) } };
+    }
+    return { changed: true };
+  }
+  return { changed: false };
+}
+
+function easedValue(ease: Ease, now: number): number {
+  const q = ease.at === null ? 0 : Math.max(0, Math.min(1, (now - ease.at) / (KNOB_EASE * 1000)));
+  const e = 1 - (1 - q) ** 3;
+  return ease.from + (ease.to - ease.from) * e;
+}
+
+/** Whether a mock-up has a knob easing home, so that the stage must be made again every frame. */
+export function easingUi(): boolean {
+  for (const run of RUNTIMES.values()) if (run.eases.size > 0) return true;
+  return false;
+}
+
+/** Moves every knob that is easing home on to where it is at `now` (ms of the page clock). True when one moved, and the layout must be made again. */
+export function easeUi(now: number, reduced: boolean): boolean {
+  let moved = false;
+  for (const run of RUNTIMES.values()) {
+    if (run.eases.size === 0) continue;
+    for (const [control, ease] of [...run.eases]) {
+      ease.at ??= now;
+      const done = reduced || now - ease.at >= KNOB_EASE * 1000;
+      const value = done ? ease.to : easedValue(ease, now);
+      if (ease.kind === 'toggle') {
+        if (done) {
+          const { [control]: _gone, ...rest } = run.state.thumb ?? {};
+          run.state = { ...run.state, toggle: { ...run.state.toggle, [control]: ease.to >= 0.5 }, thumb: rest };
+        } else run.state = { ...run.state, thumb: { ...run.state.thumb, [control]: value } };
+      } else run.state = { ...run.state, slider: { ...run.state.slider, [control]: value } };
+      if (done) run.eases.delete(control);
+      moved = true;
+    }
+  }
+  return moved;
 }
 
 /** Whether a field of this mock-up has the keyboard. */
@@ -150,7 +381,7 @@ export function typeUi(blockKey: string, key: string): boolean {
 export interface UiMockupView {
   readonly block: string;
   readonly screen: string;
-  readonly hits: readonly { readonly id: string; readonly part: string; readonly action: 'tab' | 'pick' | 'toggle' | 'field' | 'slider' | 'press'; readonly x: number; readonly y: number; readonly width: number; readonly height: number }[];
+  readonly hits: readonly { readonly id: string; readonly part: string; readonly action: 'tab' | 'pick' | 'toggle' | 'field' | 'slider' | 'press'; readonly x: number; readonly y: number; readonly width: number; readonly height: number; readonly send?: boolean; readonly to?: string }[];
   /** one box per line of words, where its ink is */
   readonly words: readonly { readonly owner: string; readonly text: string; readonly x: number; readonly y: number; readonly width: number; readonly height: number }[];
   readonly notes: readonly { readonly kind: string; readonly id: string; readonly message: string }[];
@@ -170,7 +401,7 @@ export function uiMockupViews(blockKeys: readonly string[]): readonly UiMockupVi
       if (screen === undefined) continue;
       const working = last.board.mode !== 'focus' || p.index === last.board.focus;
       const hits = working
-        ? screen.hits.map((hit) => ({ id: hit.id, part: hit.part, action: hit.action.kind, x: last.room.x + p.contentX + hit.x * p.scale, y: last.room.y + p.contentY + hit.y * p.scale, width: hit.w * p.scale, height: hit.h * p.scale }))
+        ? screen.hits.map((hit) => ({ id: hit.id, part: hit.part, action: hit.action.kind, x: last.room.x + p.contentX + hit.x * p.scale, y: last.room.y + p.contentY + hit.y * p.scale, width: hit.w * p.scale, height: hit.h * p.scale, ...(hit.action.kind === 'press' && hit.action.send === true ? { send: true } : {}), ...(hit.action.kind === 'press' && hit.action.to !== undefined ? { to: hit.action.to } : {}) }))
         : [];
       const words: { owner: string; text: string; x: number; y: number; width: number; height: number }[] = [];
       for (const part of last.board.parts) {
@@ -214,6 +445,10 @@ export function uiBlockAt(blockKeys: readonly string[], x: number, y: number): s
 const MARGIN = 20;
 /** below this a journey is shown as one screen large and the rest small: six phones side by side cannot be read in 390 points */
 const NARROW = 700;
+/** The smallest type, in pixels as drawn, of a screen that is being worked (a thumbnail in a strip is not read, it is pointed at). Wide stages: the desk floor of the census; narrow: the phone's. */
+const MIN_TEXT_PX = { wide: 12, narrow: 11 } as const;
+/** The largest the smallest type may be set, in points, before one screen is shown large instead of all of them small. */
+const MOST_TYPE = 19;
 
 function rowsOf(structure: ElementSpan): string[] {
   const figure = structure.figure;
@@ -234,18 +469,41 @@ export function layoutUi(args: { readonly structure: ElementSpan; readonly room:
   const doc = parseInterface(lines);
   if (doc.screens.length === 0 || room.width < 40 || room.height < 40) return { ...EMPTY_STRUCTURE_LAYOUT, boxes: new Map([[structure.key, room]]) };
   const run = runtimeOf(structure.key);
-  const tokens = tokensFor(spec);
+  const looks = tokensFor(spec);
   // A page cannot be read at 1280 points in 390: on a narrow stage a browser or a desk window is shown as the phone it would be (the same parts, laid out for it)
   const narrow = room.width < NARROW;
   const device: Record<string, 'phone'> = {};
   if (narrow) for (const screen of doc.screens) if ((screen.device === 'browser' || screen.device === 'desktop') && run.state.device[screen.id] === undefined) device[screen.id] = 'phone';
   const state: UiState = { ...run.state, device: { ...run.state.device, ...device }, picture: Object.fromEntries(PICTURES) };
   const counts = linesPerScreen(doc);
-  const layouts = doc.screens.map((screen, i) => layoutScreen(screen, tokens, measure, state, counts[i] ?? 0));
-  const focus = Math.max(0, Math.min(layouts.length - 1, run.focus));
-  const board = arrangeBoard(layouts, tokens, measure, { w: room.width, h: room.height }, { mode: layouts.length > 1 && (room.width < NARROW || run.solo) ? 'focus' : 'overview', focus, margin: MARGIN });
-  run.last = { room, board, layouts };
-
+  const focus = Math.max(0, Math.min(doc.screens.length - 1, run.focus));
+  const make = (tokens: UiTokens, mode: 'overview' | 'focus'): { readonly layouts: readonly UiScreenLayout[]; readonly board: Board } => {
+    const layouts = doc.screens.map((screen, i) => layoutScreen(screen, tokens, measure, state, counts[i] ?? 0));
+    return { layouts, board: arrangeBoard(layouts, tokens, measure, { w: room.width, h: room.height }, { mode, focus, margin: MARGIN }) };
+  };
+  // The smallest type on screen must read: what the board is scaled by, and the type's own size, are two halves of one number. Where the room is not tall
+  // enough for the screens at a scale that lets the smallest type be MIN_TEXT_PX, the type is set larger in points (the screens' proportions are the same
+  // and their parts keep their order); and where that would be more than a screen can hold, one screen is shown large and the rest as a strip.
+  const floor = narrow ? MIN_TEXT_PX.narrow : MIN_TEXT_PX.wide;
+  let mode: 'overview' | 'focus' = doc.screens.length > 1 && (narrow || run.solo) ? 'focus' : 'overview';
+  let tokens = looks;
+  let made = make(tokens, mode);
+  for (let pass = 0; pass < 4; pass += 1) {
+    const want = floor / Math.max(0.1, made.board.scale);
+    if (want <= looks.type.caption.size + 0.01) break;
+    if (want > MOST_TYPE && mode === 'overview' && doc.screens.length > 1) {
+      mode = 'focus';
+      made = make(tokens, mode);
+      continue;
+    }
+    const next = { ...looks, minText: Math.min(MOST_TYPE, Math.ceil(want * 4) / 4) };
+    if (tokens.minText !== undefined && next.minText <= tokens.minText + 0.01) break;
+    tokens = next;
+    made = make(tokens, mode);
+  }
+  const { layouts, board } = made;
+  const last: Last = { room, board, layouts, doc, state };
+  run.last = last;
   const frame = uiFrame(board.parts, { width: room.width, height: room.height, dpr, spec });
   // the frame's origin is its room's centre; on the stage it is the room's centre in stage units
   const sx = room.x + room.width / 2;
@@ -273,10 +531,12 @@ export function layoutUi(args: { readonly structure: ElementSpan; readonly room:
     return { ...figure, key, z: Math.min(8999, base + figure.z), transform: { ...figure.transform, e: figure.transform.e + sx, f: figure.transform.f + sy }, ...(clip === undefined ? {} : { clip }) } as FigureFrame;
   });
   let fontPx = Number.POSITIVE_INFINITY;
+  // the type of a thumbnail in a strip is not read, it is pointed at: the smallest type is the smallest of the screens that are worked
+  const thumbnail = new Set(board.mode === 'focus' ? layouts.filter((_, i) => i !== board.focus).map((layout) => layout.id) : []);
   const elements: ElementFrame[] = frame.elements.map((element) => {
     const key = prefix + element.key;
     rowOf.set(key, ownerRow.get(element.id) ?? 0);
-    fontPx = Math.min(fontPx, element.fontSize);
+    if (!thumbnail.has(element.id.split(':')[0]?.split('.')[0] ?? '')) fontPx = Math.min(fontPx, element.fontSize);
     const clip = shift(element.clip);
     return { ...element, key, z: Math.min(8999, base + element.z), x: element.x + sx, y: element.y + sy, ...(clip === undefined ? {} : { clip }) };
   });
@@ -293,6 +553,7 @@ export function layoutUi(args: { readonly structure: ElementSpan; readonly room:
   }
   const bounds: Box = Number.isFinite(x0) ? { x: room.x + x0, y: room.y + y0, width: x1 - x0, height: y1 - y0 } : room;
   const drawn: DrawnFrames = { figures, elements, rowOf, fontPx: Number.isFinite(fontPx) ? fontPx : 0 };
+  LASTS.set(drawn, last);
   return { boxes: new Map([[structure.key, bounds]]), parts: [], routes: new Map(), notes: [], shrink: 1, drawn };
 }
 
@@ -314,6 +575,10 @@ export interface DrawnCall {
  */
 export function drawUi(call: DrawnCall): { readonly drawn: boolean; readonly phase: 'entering' | 'on' | 'leaving' } {
   const { structure, drawn, before, q, tq, out } = call;
+  // a finger is aimed at the layout that is on screen: while rows land the board is made again and again, and the last one made is not the one being shown
+  const shown = LASTS.get(drawn);
+  const held = RUNTIMES.get(structure.key);
+  if (shown !== undefined && held !== undefined) held.last = shown;
   const figure = structure.figure;
   const rows = figure?.kind === 'structure' ? figure.rows : [];
   const base = structure.carried ? 0 : (structure.enter?.end ?? 0);
