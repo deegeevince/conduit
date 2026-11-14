@@ -9,12 +9,14 @@
 //                                        lint, an edit pass and a reader pass by cold sessions (--skip-passes), the block read again, its
 //                                        fingerprint sent, the exact commands printed; with --apply, read back and compared
 //        pnpm library usage              how often each technique was handed over and how its answers judged, from the session logs and the runs
-//        pnpm library datasets           what the owner's datasets adapter reads (needs DATASETS=remote)
+//        pnpm library datasets ["<message>"]  what the owner's datasets index holds, as the brief says it; with a message, what it finds and the last row (needs DATASETS=remote)
+//        pnpm library datasets raw       the keys and kinds of what `remote get datasets|dataset|rows` print, never a value
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { estimateTokens, techniquesText } from '@conduit/language';
 import type { ExploreBattery } from '@conduit/language';
+import { datasetsText, factsOf } from '../domain/datasets';
 import { cardOf, lintTechnique } from '../domain/techniques';
 import type { Technique, TechniqueLibrary } from '../domain/techniques';
 import { loadEnv, processEnvironment } from '../env';
@@ -222,11 +224,44 @@ function usage(env: Env, seedDir: string, exploreDir: string, library: Technique
   out('\nscore is the judge\'s coherence, 1 to 5; "graduate" means handed over often, across runs, and scoring 4 or more: a candidate to become part of the language');
 }
 
+/** The keys and kinds of a JSON value, never its values: what the shape is, safe to paste. */
+function shapeOf(value: unknown, depth = 0): string {
+  if (Array.isArray(value)) return `[${value.length > 0 && depth < 4 ? shapeOf(value[0], depth + 1) : ''}] x${value.length}`;
+  if (typeof value === 'object' && value !== null) return depth >= 4 ? '{...}' : `{ ${Object.entries(value).map(([key, inner]) => `${key}: ${shapeOf(inner, depth + 1)}`).join(', ')} }`;
+  return value === null ? 'null' : typeof value;
+}
+
 async function datasets(env: Env): Promise<void> {
+  if (env.datasets.kind === 'none') fail('DATASETS is off; set DATASETS=remote (and DATASETS_ACTOR to the owner\'s account) to read them');
+  const { runRemote, parseJson } = await import('../library/remote/run');
+  const settings = env.datasets;
+  const rest = process.argv.slice(4);
+  if (rest[0] === 'raw') {
+    // The shape of each command's output, keys and kinds only: what to read before changing the adapter.
+    const identity = { session: `conduit-datasets-raw-${process.pid}`, agent: 'conduit-s2' };
+    const run = (args: readonly string[]): Promise<string> => runRemote({ bin: settings.bin, args: [...args, ...(settings.actor === null ? [] : ['--as', settings.actor]), '--env', settings.env], identity, timeoutMs: settings.timeoutMs * 3, signal: AbortSignal.timeout(60_000) });
+    const list = parseJson(await run(['get', 'datasets']), 'datasets');
+    out(`get datasets: ${shapeOf(list)}`);
+    const first = Array.isArray(list) ? list[0] : (Object.values((list ?? {}) as Record<string, unknown>).find(Array.isArray) as unknown[] | undefined)?.[0];
+    const name = typeof first === 'string' ? first : typeof first === 'object' && first !== null ? String((first as Record<string, unknown>)['name'] ?? '') : '';
+    if (name === '') return;
+    out(`get dataset ${name}: ${shapeOf(parseJson(await run(['get', 'dataset', name]), 'dataset'))}`);
+    out(`get rows ${name}: ${shapeOf(parseJson(await run(['get', 'rows', name, '--limit', '2']), 'rows'))}`);
+    return;
+  }
   const library = createDatasets(env.datasets, createLogger('warn'));
-  await library.refresh(AbortSignal.timeout(20_000));
-  const found = library.find(process.argv.slice(4).join(' '));
-  out(found.length === 0 ? 'no dataset named in that message (or DATASETS is off)' : found.map((entry) => `${entry.dataset}: ${entry.fields.join(', ')}`).join('\n'));
+  await library.refresh(AbortSignal.timeout(60_000)).catch((error: unknown) => out(`could not read Remote: ${error instanceof Error ? error.message : String(error)}\n(what is shown below is what the cache on disk holds)`));
+  const facts = library.facts(Date.now());
+  out(datasetsText(facts) ?? 'the index holds no dataset');
+  const message = rest.join(' ');
+  if (message === '') return;
+  const found = library.find(message);
+  out(found.length === 0 ? '\nno dataset named in that message' : `\n${found.map((entry) => `${entry.dataset}${entry.instrument === null ? '' : ` / ${entry.instrument}`}: ${entry.fields.join(', ')}; last ${entry.last ?? 'unknown'}`).join('\n')}`);
+  const entry = found[0];
+  if (entry === undefined) return;
+  const table = await library.rows(entry, AbortSignal.timeout(settings.timeoutMs * 3));
+  const shown = factsOf(table, true);
+  out(`\nrows: ${shown.count} of ${table.source}; columns ${table.columns.join(', ')}; last row ${shown.sample.at(-1)?.join(' | ') ?? 'none'}`);
 }
 
 const [command = 'status', ...rest] = process.argv.slice(2);
