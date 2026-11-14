@@ -111,7 +111,10 @@ function lessonCheck(doc: Document, node: DocNode): Mechanical {
 
   if (written.length === 0) refuse('shape', node.id, null, 'nothing is written');
   if (helps) {
-    if (written.length < WAYS.least) refuse('shape', node.id, null, `${written.length} way${written.length === 1 ? '' : 's'} written, and a question has three to five`);
+    // her own try comes first and is the question; a question that has it and two ways is offered at once (a third is written for the next time) rather than held back
+    const least = profile === 'both' ? 2 : WAYS.least;
+    if (written.length < least) refuse('shape', node.id, null, `${written.length} way${written.length === 1 ? '' : 's'} written, and a question has three to five`);
+    else if (written.length < WAYS.least) note('shape', node.id, null, `${written.length} ways written; three to five are asked for`);
     if (written.length > WAYS.most) note('shape', node.id, null, `${written.length} ways written; three to five are asked for`);
     const tags = written.flatMap((way) => (way.tag === null ? [] : [way.tag]));
     if (new Set(tags).size < tags.length) note('shape', node.id, null, 'two ways are tagged with the same technique');

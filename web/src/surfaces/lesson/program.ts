@@ -102,7 +102,12 @@ function commit(changes: readonly StateChange[], state: DocState): void {
  */
 let slotTold = '';
 let slotWait = 0;
-function reportSlot(): void {
+function reportSlot(moving = false): void {
+  // while the page scrolls the pen's box is wrong: put it away at once (it comes back where the paper has settled), so it never sits over a button
+  if (moving && slotTold !== '[]' && slotTold !== '') {
+    slotTold = '[]';
+    bridge?.send('slot', '[]');
+  }
   window.clearTimeout(slotWait);
   slotWait = window.setTimeout(() => {
     const el = root?.querySelector('[data-ink-slot]');
@@ -119,8 +124,8 @@ function start(input: LessonInput): void {
   player = new Player(root, input, { commit, open: (id) => bridge?.send('open', id), openPart: (id) => bridge?.send('openpart', id), picture: () => bridge?.send('picture', 1), inkCheck: (node, ask) => bridge?.send('inkcheck', JSON.stringify([node, ask])), inkClear: (node, ask) => bridge?.send('inkclear', JSON.stringify([node, ask])) });
   player.render();
   reportSlot();
-  new MutationObserver(reportSlot).observe(root, { childList: true, subtree: true });
-  addEventListener('scroll', reportSlot, { passive: true });
+  new MutationObserver(() => reportSlot()).observe(root, { childList: true, subtree: true });
+  addEventListener('scroll', () => reportSlot(true), { passive: true });
   window.__lessonCensus = () => (player === null ? null : takeCensus(player, root));
 }
 

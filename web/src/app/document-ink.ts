@@ -65,8 +65,12 @@ export function createDocumentInk(options: DocumentInkOptions): DocumentInk {
   box.style.cssText = 'position:absolute;display:none;z-index:6;';
   mount.append(box);
   let current: { readonly key: string; readonly slot: InkSlot; overlay: Overlay } | null = null;
+  /** what is written on a paper that has gone out of sight (scrolled away, the lesson drawn again), by ask, for when it is back */
+  const kept = new Map<string, ReturnType<Overlay['ink']['document']>>();
 
   const drop = (): void => {
+    if (current !== null && current.overlay.ink.model.strokes.length > 0) kept.set(current.key, current.overlay.ink.document());
+    else if (current !== null) kept.delete(current.key);
     current?.overlay.dispose();
     current = null;
     box.style.display = 'none';
@@ -75,18 +79,23 @@ export function createDocumentInk(options: DocumentInkOptions): DocumentInk {
   return {
     slot(slot) {
       if (slot === null || slot.w < 40 || slot.h < 40) {
-        // off screen (scrolled away, or no ask is open): the pen is put away; what was written was read when she pressed Check
-        if (current !== null) drop();
+        // off screen, or moving (the lesson scrolls, or is drawn again): the pen is put away, not thrown away, so Check still reads what is on it
+        if (current !== null) {
+          current.overlay.setActive(false);
+          box.style.display = 'none';
+        }
         return;
       }
       const key = `${slot.node}\u0000${slot.ask}`;
-      Object.assign(box.style, { display: 'block', left: `${slot.x}px`, top: `${slot.y}px`, width: `${slot.w}px`, height: `${slot.h}px` });
       if (current !== null && current.key === key && Math.abs(current.slot.w - slot.w) < 2 && Math.abs(current.slot.h - slot.h) < 2) {
+        Object.assign(box.style, { display: 'block', left: `${slot.x}px`, top: `${slot.y}px`, width: `${slot.w}px`, height: `${slot.h}px` });
         current = { ...current, slot };
+        current.overlay.setActive(true);
         return;
       }
-      const document_ = current?.key === key ? current.overlay.ink.document() : null;
+      Object.assign(box.style, { display: 'block', left: `${slot.x}px`, top: `${slot.y}px`, width: `${slot.w}px`, height: `${slot.h}px` });
       drop();
+      const document_ = kept.get(key) ?? null;
       Object.assign(box.style, { display: 'block', left: `${slot.x}px`, top: `${slot.y}px`, width: `${slot.w}px`, height: `${slot.h}px` });
       const found = askOf(options.document(), slot.node, slot.ask);
       const overlay = overlayOn(box, {
