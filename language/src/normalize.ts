@@ -4,7 +4,9 @@
 // schedule be a pure function of the lines and lets the wire carry them one
 // at a time.
 
+import { isLessonVerb } from './lesson';
 import { InterfaceReader, UI_WORDS, nodeLine, screenLine } from './interface';
+import { LessonBook } from './lesson';
 import { parseLine } from './parse';
 import type { Issue, Line, ParseResult } from './types';
 import { LIMITS, STRUCTURE } from './vocabulary';
@@ -68,10 +70,10 @@ export class LineReader {
     if (result.kind !== 'line') return result;
     const { line } = result;
     if (line.verb === 'table' || line.verb === 'chart') this.table = true;
-    else if (line.verb === 'scene' || line.verb === 'deck' || line.verb === 'pix' || line.verb in STRUCTURE) this.table = false;
-    if (line.verb === 'scene' || line.verb === 'deck' || line.verb === 'pix' || line.verb in STRUCTURE) this.ui = false;
+    else if (line.verb === 'scene' || line.verb === 'deck' || line.verb === 'pix' || line.verb in STRUCTURE || isLessonVerb(line.verb)) this.table = false;
+    if (line.verb === 'scene' || line.verb === 'deck' || line.verb === 'pix' || line.verb in STRUCTURE || isLessonVerb(line.verb)) this.ui = false;
     if (line.verb === 'code' || line.verb === 'tune') this.code = true;
-    else if (line.verb === 'scene' || line.verb === 'deck' || line.verb === 'pix' || line.verb in STRUCTURE) this.code = false;
+    else if (line.verb === 'scene' || line.verb === 'deck' || line.verb === 'pix' || line.verb in STRUCTURE || isLessonVerb(line.verb)) this.code = false;
     this.tune = line.verb === 'tune' || (this.tune && line.verb === 'row');
     if (line.verb === 'style') this.styles.add(line.name);
     if (line.verb === 'pix') this.open = ROW_ALPHABET + Object.keys(line.key).join('');
@@ -165,10 +167,18 @@ export class LineNormalizer {
   private structure: string | null = null;
   /** v2.2. The mock-up being written: the block's id, and the reader that keeps the stack of open rows and cols so that every line says what it sits in */
   private ui: { readonly id: string; readonly reader: InterfaceReader; told: number } | null = null;
+  /** v3. The parts, steps and asks of the conversation: what `in=` and an id are written from, and what an `ask` that would give itself away is refused by. */
+  private readonly book: LessonBook;
 
   constructor(makeId: () => string, definedStyles: Iterable<string> = []) {
     this.makeId = makeId;
     this.styles = new Set(definedStyles);
+    this.book = new LessonBook(makeId);
+  }
+
+  /** v3. The conversation's document as it has been written so far: the parts and what each holds. */
+  get lessons(): LessonBook {
+    return this.book;
   }
 
   /** A line of the interface, as the line that stands alone: what it is and what it sits in. */
@@ -284,6 +294,20 @@ export class LineNormalizer {
       case 'card':
         this.sprite = null;
         return { line: line.id === '-' ? { ...line, id: this.makeId() } : line, issues: [] };
+      case 'part':
+      case 'step':
+      case 'ask':
+      case 'hint':
+      case 'reply':
+      case 'end': {
+        // A lesson ends whatever was being written (a sprite, a table, a mock-up): its words are the document's, not the stage's.
+        this.sprite = null;
+        this.table = null;
+        this.structure = null;
+        this.ui = null;
+        const read = this.book.read(line);
+        return { line: read.line, issues: read.issues };
+      }
       case 'scene':
       case 'deck':
         this.ui = null;

@@ -1,3 +1,4 @@
+import { encodeValue, showTokens } from './lesson';
 import { CODE_LANGUAGES } from './vocabulary';
 import type { BindOn, CanvasBox, ColourRef, FillRef, Line, LookProps, Point, ShapeGeometry, SpriteKey, StyleProps, Target, When } from './types';
 
@@ -311,5 +312,20 @@ export function serializeLine(line: Line): string {
       return withText(['revise', line.id, ...line.styles, ...propTokens(line.props)], line.text);
     case 'cancel':
       return line.id === undefined ? 'cancel' : `cancel ${line.id}`;
+    case 'part':
+      return withText(['part', line.id, ...(line.in === undefined ? [] : [`in=${line.in}`]), ...(line.tag === undefined ? [] : [`tag=${line.tag}`])], line.title);
+    case 'step':
+      return withText(['step', line.id, ...(line.in === undefined ? [] : [`in=${line.in}`]), ...(line.show === undefined ? [] : showTokens(line.show))], line.text === '' ? undefined : line.text);
+    case 'ask':
+      return withText(
+        ['ask', line.id, ...(line.in === undefined ? [] : [`in=${line.in}`]), `is=${line.is.map(encodeValue).join(',')}`, ...(line.pick === undefined ? [] : [`pick=${line.pick.map(encodeValue).join(',')}`]), ...(line.unit === undefined ? [] : [`unit=${line.unit}`])],
+        line.text,
+      );
+    case 'hint':
+      return withText(['hint', ...(line.in === undefined ? [] : [`in=${line.in}`])], line.text);
+    case 'reply':
+      return `reply | ${line.text}`;
+    case 'end':
+      return 'end';
   }
 }

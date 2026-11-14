@@ -21,6 +21,8 @@ export * from './events';
 export * from './context';
 export * from './review';
 export * from './assemble';
+export * from './lesson';
+export * from './document';
 export * from './prompt';
 export * from './demos';
 export * from './explore';

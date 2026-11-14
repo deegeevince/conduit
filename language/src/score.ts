@@ -286,6 +286,13 @@ function revised(origin: Line, change: ReviseLine): Line | null {
     case 'deck':
     case 'standing':
     case 'refine':
+    // v3: a lesson's words are the document's and are not on the stage; they are changed by writing them again
+    case 'part':
+    case 'step':
+    case 'ask':
+    case 'hint':
+    case 'reply':
+    case 'end':
       return null;
     default:
       // Anything drawn can be restyled before it is seen; its geometry is changed by declaring it again.
