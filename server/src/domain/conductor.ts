@@ -1,5 +1,5 @@
 import { API, CANVAS, DATA_LIMITS, EMPTY_STAGE, PASTE_AS_DOCUMENT_CHARS, FULL_CAPABILITIES, LANGUAGE, LEAD_WINDOW, LineNormalizer, LineReader, TurnScore, buildSystemPrompt, draftFactsOf, serializeLine, settle, splitCells, wearingAt, worthALook } from '@conduit/language';
-import type { BrainChange, BrainChoice, BrainMode, CriticFinding, FixPolicy, PromptVariant, ToolChoice } from '@conduit/language';
+import type { ActivityState, BrainChange, BrainChoice, BrainMode, CriticFinding, FixPolicy, PromptVariant, ToolChoice } from '@conduit/language';
 import type {
   BackEvent,
   BackEventRecord,
@@ -44,6 +44,8 @@ import type { DatasetLibrary } from './datasets';
 import { worthQueuing } from './critic';
 import type { Critic, FindingQueue } from './critic';
 import { DETAIL_MAX, redactSecrets } from './agent';
+import { NO_AUDIT } from '../audit';
+import type { Audit, AuditDecider } from '../audit';
 import { currentIdentity, labelOf } from '../identity';
 import { askedOf, refusalProblem, reviewTurn } from './review';
 import type { FixAttempt } from './review';
@@ -83,6 +85,8 @@ export interface ConductorDeps {
   readonly criticQueueBelow: number;
   /** v2.1. The kinds of mind a session may choose (`Env.modes`); `plain` is always there */
   readonly modes: readonly BrainMode[];
+  /** v2.1 ops. The audit trail: every tool call, permission asked and answered, setting changed and connector used. Absent: nothing is written. */
+  readonly audit?: Audit;
   /** milliseconds; injected so nothing in the domain reads the wall clock directly */
   readonly now: () => number;
 }
@@ -119,6 +123,15 @@ export class Conductor {
       for (const session of deps.sessions.reap(deps.now())) this.release(session, 'session.reaped');
     }, REAP_INTERVAL_MS);
     this.reaper.unref();
+  }
+
+  private get audit(): Audit {
+    return this.deps.audit ?? NO_AUDIT;
+  }
+
+  /** One line of the audit trail about this turn, in the name of whoever started it. */
+  private auditTurn(s: Session, turn: ActiveTurn, entry: Omit<Parameters<Audit['record']>[0], 'session' | 'turn'>): void {
+    this.audit.record({ login: turn.login, ...entry, session: s.id, turn: turn.id });
   }
 
   /**
@@ -235,6 +248,7 @@ export class Conductor {
       missed: [],
       snapshotFile: null,
       criticAsked: false,
+      calls: new Map(),
     };
     s.nextOrdinal += 1;
     s.heardFrom = s.nextCursor - 1;
@@ -425,7 +439,9 @@ export class Conductor {
     const choice = brain.choose(session, change);
     this.deps.log.info('session.brain_set', { session, model: choice.model, effort: choice.effort, mode: choice.mode });
     const write = (name: string, value: string | undefined): void => {
-      if (value !== undefined) this.deps.sessionLog.write(session, { type: 'setting', name, value });
+      if (value === undefined) return;
+      this.deps.sessionLog.write(session, { type: 'setting', name, value });
+      this.audit.record({ kind: 'setting', session, tool: name, target: value, decision: 'allowed', decidedBy: 'owner' });
     };
     write('model', change.model);
     write('effort', change.effort);
@@ -447,6 +463,7 @@ export class Conductor {
     if (!(brain.tools?.(session) ?? []).some((tool) => tool.name === name)) throw errors.badRequest(`there is no tool or service called ${name} on offer`);
     const tools = brain.setTool(session, name, on);
     this.deps.sessionLog.write(session, { type: 'setting', name: `tool ${name}`, value: on ? 'on' : 'off' });
+    this.audit.record({ kind: 'setting', session, tool: `tool ${name}`, target: on ? 'on' : 'off', decision: 'allowed', decidedBy: 'owner' });
     return tools;
   }
 
@@ -461,6 +478,7 @@ export class Conductor {
     if (n === null) s.standing = [];
     else holdStanding(s, { kind: 'drop', n });
     this.deps.sessionLog.write(s.id, { type: 'setting', name: 'asks', value: n === null ? 'clear' : `drop ${n}` });
+    this.audit.record({ kind: 'setting', session: s.id, tool: 'asks', target: n === null ? 'clear' : `drop ${n}`, decision: 'allowed', decidedBy: 'owner' });
     return [...s.standing];
   }
 
@@ -579,7 +597,7 @@ export class Conductor {
         return;
       case 'permit':
         // The only road to a yes. The request must be one this session raised for this turn.
-        this.answer(s, event.request, event.turn, event.allow);
+        this.answer(s, event.request, event.turn, event.allow, 'owner');
         return;
     }
   }
@@ -625,7 +643,10 @@ export class Conductor {
     if (reason !== 'done') turn.abort.abort();
     s.draft.close(turn.id);
     // Nothing the owner was asked and did not answer outlives the turn: it is a no.
-    this.denyPending(s, turn.id);
+    this.denyPending(s, turn.id, 'turn');
+    // A call that began under the gate's own yes and had not ended when the turn did is still a call that was made.
+    for (const call of turn.calls.values()) if (!call.asked) this.recordCall(s, turn, call.tool, call.summary, 'allowed', 'policy', `still running when the turn ended (${reason})`);
+    turn.calls.clear();
     this.deps.sessionLog.write(s.id, { type: 'end', turn: turn.id, reason, message, lines: turn.lineCount });
     this.emit(s, turn, { type: 'end', turn: turn.id, reason, message });
     this.deps.log.info('turn.ended', { session: s.id, turn: turn.id, reason, lines: turn.lineCount, durationMs: this.deps.now() - turn.openedAt });
@@ -638,7 +659,7 @@ export class Conductor {
    * Agent mode: the owner's answer to a confirm control, or the deadline's. Only a `permit` event of this session, for a request this
    * session raised and has not had answered, can say yes; a request answered once is gone, so a second `permit` is nothing.
    */
-  private answer(s: Session, request: string, turn: string | null, allow: boolean | null): void {
+  private answer(s: Session, request: string, turn: string | null, allow: boolean | null, by: AuditDecider): void {
     const pending = s.permissions.get(request);
     if (pending === undefined || (turn !== null && pending.turn !== turn)) {
       // An answer from the owner (it names a turn) that matches nothing is said, not dropped: it is either late, doubled, or for a request that is not here.
@@ -647,6 +668,18 @@ export class Conductor {
     }
     s.permissions.delete(request);
     clearTimeout(pending.timer);
+    // The trail is written before the brain is told: a call that runs on this yes has already said who gave it.
+    this.audit.record({
+      kind: 'permission_answered',
+      session: s.id,
+      turn: pending.turn,
+      login: by === 'owner' ? labelOf(currentIdentity()) : (s.turns.get(pending.turn)?.login ?? labelOf(currentIdentity())),
+      tool: pending.tool,
+      target: pending.summary,
+      decision: allow === true ? 'allowed' : 'denied',
+      decidedBy: by,
+      note: `risk ${pending.risk}; answered after ${this.deps.now() - pending.askedAt} ms`,
+    });
     this.deps.sessionLog.write(s.id, { type: 'permission', turn: pending.turn, request, tool: pending.tool, summary: pending.summary, risk: pending.risk, allow, ms: this.deps.now() - pending.askedAt });
     try {
       pending.brain.permit?.(s.id, request, allow === true);
@@ -656,8 +689,8 @@ export class Conductor {
   }
 
   /** Every confirm control still open, of one turn or of the whole session, is a no. */
-  private denyPending(s: Session, turn: string | null): void {
-    for (const [request, pending] of [...s.permissions]) if (turn === null || pending.turn === turn) this.answer(s, request, null, null);
+  private denyPending(s: Session, turn: string | null, by: AuditDecider = 'turn'): void {
+    for (const [request, pending] of [...s.permissions]) if (turn === null || pending.turn === turn) this.answer(s, request, null, null, by);
   }
 
   /**
@@ -714,6 +747,7 @@ export class Conductor {
         this.deps.datasets.rows(entry, signal),
         new Promise<never>((_, reject) => signal.addEventListener('abort', () => reject(new Error(turn.abort.signal.aborted ? 'the turn was interrupted' : `no answer within ${DATASET_WAIT_MS} ms`)), { once: true })),
       ]);
+      this.auditTurn(s, turn, { kind: 'connector', tool: 'remote', target: `dataset ${entry.dataset}`, decision: 'allowed', decidedBy: 'policy', note: 'the owner\'s own data, read for a chart the prompt named' });
       const table = this.holdTable(s, turn, { ...rows, source: rows.source === '' ? `your dataset ${entry.dataset}` : rows.source });
       if (!turn.abort.signal.aborted) say(label, 'done', null);
       this.deps.log.info('turn.dataset', { session: s.id, turn: turn.id, dataset: entry.dataset, rows: table.rows.length, ms: this.deps.now() - started });
@@ -780,6 +814,7 @@ export class Conductor {
         say(label, 'start', null);
         const result = await this.deps.reader.read(url, turn.abort.signal);
         sessionLog.write(s.id, { type: 'fetch', turn: turn.id, ...result.trace, reason: result.ok ? null : result.why });
+        this.auditTurn(s, turn, { kind: 'tool', tool: 'read-link', target: url, decision: result.ok ? 'allowed' : 'failed', decidedBy: 'policy', note: `${result.trace.outcome}${result.trace.status === null ? '' : ` ${result.trace.status}`}` });
         log.info('turn.fetched', { session: s.id, turn: turn.id, url, outcome: result.trace.outcome, status: result.trace.status, bytes: result.trace.bytes, ms: result.trace.ms });
         if (turn.abort.signal.aborted) return { url, result };
         say(label, result.ok ? 'done' : 'failed', result.ok ? null : result.why);
@@ -986,6 +1021,7 @@ export class Conductor {
       return undefined;
     }
     if (event.type === 'tool') {
+      this.recordCall(s, turn, event.tool, event.target ?? '', 'allowed', 'policy');
       sessionLog.write(s.id, { type: 'tool', turn: turn.id, tool: event.tool, target: event.target, pass });
       log.info('brain.tool', { session: s.id, turn: turn.id, pass, tool: event.tool, target: event.target });
       return undefined;
@@ -1008,6 +1044,7 @@ export class Conductor {
       // A few safe words about a call (the brain adapter has redacted them), logged and shown as it happens. Never its input or its result.
       // The adapter has made these safe; a second net costs nothing and a secret that reaches a log or a stage is the one thing this must not do.
       const summary = redactSecrets(event.summary);
+      this.noteCall(s, turn, event.id, event.tool, summary, event.state);
       sessionLog.write(s.id, { type: 'activity', turn: turn.id, id: event.id, tool: event.tool, summary, state: event.state, ms: event.ms });
       this.emit(s, turn, { type: 'activity', turn: turn.id, id: event.id, tool: event.tool, summary, state: event.state, ms: event.ms });
       return undefined;
@@ -1060,10 +1097,50 @@ export class Conductor {
     return undefined;
   }
 
+  /**
+   * The audit trail's view of a tool call, from the brain's activity stream. `running` comes first (before the CLI asks, for a call that
+   * needs the owner), then `waiting` when it was put to the owner; the trail takes a call at its end, because only then is it known what
+   * was decided: `denied` by the gate, or `done`/`failed` after a yes or a read that needed none. A call put to the owner is decided by
+   * `permission_answered`, which has its own line; here it is only said to have been theirs.
+   */
+  private noteCall(s: Session, turn: ActiveTurn, id: string, tool: string, summary: string, state: ActivityState): void {
+    const known = turn.calls.get(id);
+    if (state === 'running') {
+      if (known === undefined) turn.calls.set(id, { tool, summary, asked: false });
+      return;
+    }
+    if (state === 'waiting') {
+      if (known === undefined) turn.calls.set(id, { tool, summary, asked: true });
+      else known.asked = true;
+      return;
+    }
+    const call = known ?? { tool, summary, asked: false };
+    turn.calls.delete(id);
+    if (state === 'denied') {
+      if (!call.asked) this.recordCall(s, turn, call.tool, call.summary, 'denied', 'policy');
+      return;
+    }
+    this.recordCall(s, turn, call.tool, call.summary, 'allowed', call.asked ? 'owner' : 'policy', state === 'failed' ? 'the call failed' : undefined);
+  }
+
+  /** One tool call in the audit trail: a connected service's call (`mcp__<service>__<action>`) is filed as the service being used. */
+  private recordCall(s: Session, turn: ActiveTurn, tool: string, summary: string, decision: 'allowed' | 'denied', decidedBy: AuditDecider, note?: string): void {
+    const service = /^mcp__([^_]+(?:_[^_]+)*?)__(.+)$/.exec(tool);
+    this.auditTurn(s, turn, {
+      kind: service === null ? 'tool' : 'connector',
+      tool: service === null ? tool : (service[1] ?? tool),
+      target: service === null ? summary : `${service[2] ?? ''}: ${summary}`,
+      decision,
+      decidedBy,
+      ...(note === undefined ? {} : { note }),
+    });
+  }
+
   /** `standing | …` or `standing drop n`: kept for the conversation and given back in every later brief. */
   private keep(s: Session, turn: ActiveTurn, ask: StandingAsk): void {
     const held = holdStanding(s, ask);
     this.deps.sessionLog.write(s.id, { type: 'setting', name: 'standing', value: ask.kind === 'add' ? `add: ${ask.words}` : `drop ${ask.n}` });
+    this.auditTurn(s, turn, { kind: 'setting', tool: 'standing', target: ask.kind === 'add' ? `add: ${ask.words}` : `drop ${ask.n}`, decision: 'allowed', decidedBy: 'owner' });
     this.deps.log.info('turn.standing', { session: s.id, turn: turn.id, held: held.length });
   }
 
@@ -1074,10 +1151,11 @@ export class Conductor {
     const left = Math.max(0, Math.min(event.expiresMs > 1e11 ? event.expiresMs - now() : event.expiresMs, 3_600_000));
     if (s.permissions.has(event.request)) return;
     const brain = this.deps.brains.configured;
-    const timer = setTimeout(() => this.answer(s, event.request, null, null), left);
+    const timer = setTimeout(() => this.answer(s, event.request, null, null, 'timeout'), left);
     timer.unref();
     const summary = redactSecrets(event.summary);
     s.permissions.set(event.request, { request: event.request, turn: turn.id, brain, tool: event.tool, summary, risk: event.risk, askedAt: now(), timer });
+    this.auditTurn(s, turn, { kind: 'permission_asked', tool: event.tool, target: summary, decision: 'asked', decidedBy: null, note: `risk ${event.risk}; ${Math.round(left / 1000)} s to answer` });
     // `detail` goes to the confirm control only: not to the session log, not to the activity strip. A second net of redaction, keeping its lines.
     const detail = event.detail === undefined ? undefined : redactSecrets(event.detail, DETAIL_MAX, true);
     this.emit(s, turn, { type: 'permission', turn: turn.id, request: event.request, tool: event.tool, summary, risk: event.risk, expiresMs: left, ...(detail === undefined ? {} : { detail }) });

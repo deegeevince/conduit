@@ -111,6 +111,8 @@ export interface ActiveTurn {
   snapshotFile: string | null;
   /** v2.1. The critic has been asked about this turn (or will never be) */
   criticAsked: boolean;
+  /** v2.1 ops. Tool calls begun and not yet ended, by the CLI's call id: what the audit trail records when a call ends, or when the turn does first */
+  readonly calls: Map<string, { readonly tool: string; readonly summary: string; asked: boolean }>;
 }
 
 /** v2.1. A confirm control on the stage that the owner has not answered: the brain holds the call until `permit`, or the deadline says no. */

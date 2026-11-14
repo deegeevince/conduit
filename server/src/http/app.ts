@@ -6,7 +6,7 @@ import type { MiddlewareHandler } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { getConnInfo } from '@hono/node-server/conninfo';
 import { ASSET_LIMITS } from '../domain/assets';
-import { currentIdentity, identify, labelOf, runAs } from '../identity';
+import { identify, runAs } from '../identity';
 import { SERVER_LIMITS } from '../domain/session';
 import { AppError, errors, toErrorBody } from '../errors';
 import { registerAssetRoutes } from './asset-routes';
@@ -16,6 +16,7 @@ import { registerRelayRoutes } from './relay-routes';
 import { registerTasteRoutes } from './taste-routes';
 import { registerSessionRoutes } from './session-routes';
 import { registerStatic } from './static';
+import { registerOpsRoutes } from './ops-routes';
 import { registerStatusRoutes } from './status-routes';
 
 const LOCAL_HOSTS: ReadonlySet<string> = new Set(['localhost', '127.0.0.1', '[::1]']);
@@ -53,6 +54,7 @@ export function createApp(deps: HttpDeps): Hono {
     const verdict = identify((name) => c.req.header(name), getConnInfo(c).remote.address, owners);
     if (!verdict.ok) {
       deps.log.warn('http.refused_identity', { path: c.req.path, method: c.req.method, why: verdict.why, refusal: verdict.refusal, login: verdict.identity.login });
+      deps.audit.record({ kind: 'refused', login: verdict.identity.login ?? 'unknown', tool: `${c.req.method} ${c.req.path}`, decision: 'denied', decidedBy: 'policy', note: verdict.why });
       throw errors.forbidden('this server answers only its owner');
     }
     return runAs(verdict.identity, next);
@@ -79,15 +81,11 @@ export function createApp(deps: HttpDeps): Hono {
     return carriesPicture.test(c.req.path) ? withPicture(c, next) : ordinary(c, next);
   });
 
-  /** 200 `{ login, name, via, enforced }`: who this server takes the caller to be. How the owner reads their own login, to set `OWNER_LOGINS` without guessing. */
-  app.get('/api/whoami', (c) => {
-    const who = currentIdentity();
-    return c.json({ login: who.login, name: who.name, via: who.via, label: labelOf(who), enforced: owners.size > 0 });
-  });
   app.get(API.health, (c) => c.json<HealthResponse>({ ok: true, language: LANGUAGE.version, brain: deps.env.brain.kind }));
   registerSessionRoutes(app, deps);
   registerAssetRoutes(app, deps);
   registerStatusRoutes(app, deps);
+  registerOpsRoutes(app, deps);
   registerExploreRoutes(app, deps);
   registerTasteRoutes(app, deps);
   registerRelayRoutes(app, deps);

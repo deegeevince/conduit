@@ -17,6 +17,7 @@ import { createDocumentReader } from './reading/web-reader';
 import { createJsonlSessionLog } from './logs/jsonl-session-log';
 import { NO_SESSION_LOG } from './domain/session-log';
 import { createLogger } from './log';
+import { createAudit } from './audit';
 import { ensureDataDirs, extraRepos, migrateLegacyData } from './data-dir';
 
 const RELAY_IDLE_FALLBACK_MS = 180_000;
@@ -33,6 +34,9 @@ function boot(env: Env): void {
     log.info('data.migrated', { from: report.from, to: report.to, copied: report.copied, skipped: report.skipped, failed: report.failed, note: 'copied, not moved: the originals are untouched' });
   }
   log.info('data.dir', { dir: env.data.root, logs: env.logDir });
+
+  const audit = createAudit(env.data.audit, now, log.child({ part: 'audit' }));
+  audit.record({ kind: 'server', login: 'system', tool: 'start', target: `port ${env.port}`, decision: 'done', decidedBy: 'system', note: `brain ${env.brain.kind}; agent ${env.agent.enabled ? 'on' : 'off'}; owners ${env.ownerLogins.length}` });
 
   const relayHub = new RelayHub({
     log: log.child({ part: 'relay' }),
@@ -54,6 +58,7 @@ function boot(env: Env): void {
   let libraryDown = false;
   const refreshLibrary = (): void => {
     void library.refresh(new AbortController().signal).then((status) => {
+      audit.record({ kind: 'connector', login: 'system', tool: 'remote', target: 'technique library', decision: status.failure === null ? 'allowed' : 'failed', decidedBy: 'system', note: status.failure === null ? `${status.techniques} techniques` : 'unreachable' });
       if (status.failure !== null) {
         if (!libraryDown) log.warn('library.unreachable', { failure: status.failure, serving: status.techniques });
         libraryDown = true;
@@ -95,11 +100,12 @@ function boot(env: Env): void {
     fix: FIX_POLICY,
     criticQueueBelow: env.critic.queueBelow,
     modes: env.modes,
+    audit,
     now,
   });
   const withheld = withheldCredentialNames();
   if (withheld.length > 0) log.info('env.credentials_withheld', { names: withheld, note: 'no child process is given these; every model call is on the owner\'s login' });
-  const app = createApp({ env, log: log.child({ part: 'http' }), conductor, relayHub, assets, status, news });
+  const app = createApp({ env, log: log.child({ part: 'http' }), conductor, relayHub, audit, assets, status, news });
 
   const server = serve({ fetch: app.fetch, hostname: env.host, port: env.port }, (info) => {
     log.info('server.listening', { host: env.host, port: info.port, brain: env.brain.kind, production: env.production, owners: env.ownerLogins.length });
