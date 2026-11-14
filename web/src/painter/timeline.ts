@@ -1898,8 +1898,13 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
     calloutLeaders = new Map();
     calloutScales = new Map();
     for (const element of elements) {
-      if (element.exit !== null && tq >= element.exit.end) continue;
-      if (!element.carried && (element.enter === null || tq < element.enter.start)) continue;
+      // as `evaluate` has it: what the stage governs (a line it holds longer, or brings in later) moves the element's own times
+      const govern = governed.get(element.key);
+      const ownExit = exitOf(element);
+      const exitEnd = ownExit === null ? null : ownExit === element.exit && govern !== undefined ? ownExit.end + govern.exitShift : ownExit.end;
+      const enterStart = element.enter === null ? null : govern === undefined ? element.enter.start : element.enter.start + govern.enterShift;
+      if (exitEnd !== null && tq >= exitEnd) continue;
+      if (!element.carried && (enterStart === null || tq < enterStart)) continue;
       const style = styleAt(element, tq);
       if (style.near === null && element.parent === null) continue;
       const exit = exitOf(element);
@@ -1981,7 +1986,16 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
       let fy0 = Number.POSITIVE_INFINITY;
       let fx1 = Number.NEGATIVE_INFINITY;
       let fy1 = Number.NEGATIVE_INFINITY;
-      for (const rect of [...obstacles.map((o) => o.rect), ...callouts.map((c) => c.target)]) {
+      // a backdrop (a rectangle that is the whole canvas, or most of it) is the ground the drawing stands on, not a part of it
+      const backdrop = (element: ElementSpan): boolean => {
+        const geometry = element.figure?.kind === 'shape' ? element.figure.geometry : null;
+        if (geometry === null || geometry.shape !== 'rect') return false;
+        if (geometry.full) return true;
+        const at = canvasBoxOf(element, schedule, tq);
+        const fit = fitOfElement(element, look, tq);
+        return at !== null && at.w * at.h > (0.6 * (fit.box.width * fit.box.height)) / (fit.unit * fit.unit);
+      };
+      for (const rect of [...obstacles.filter((o) => !backdrop(o.owner)).map((o) => o.rect), ...callouts.map((c) => c.target)]) {
         fx0 = Math.min(fx0, rect.x);
         fy0 = Math.min(fy0, rect.y);
         fx1 = Math.max(fx1, rect.x + rect.w);
@@ -1995,7 +2009,7 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
       const fills: Line[] = [];
       const outlines = new Map<string, Line & { filled: boolean }>();
       for (const element of drawn) {
-        if (element.kind !== 'shape' || element.figure?.kind !== 'shape' || !isLiveAt(element, tq)) continue;
+        if (element.kind !== 'shape' || element.figure?.kind !== 'shape' || !isLiveAt(element, tq) || backdrop(element)) continue;
         const fit = fitOfElement(element, look, tq);
         const lines = outlineOf(element.figure.geometry);
         if (lines.length === 0) continue;
