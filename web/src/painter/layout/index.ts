@@ -1017,11 +1017,22 @@ interface FootRow {
 
 /** The choices set in rows across `width`: each row as many as fit, the rest wrap. */
 function footRows(units: readonly Unit[], width: number, ctx: Context): { rows: FootRow[]; height: number; vgap: number; hgap: number } {
+  // the choices are set a little smaller before they wrap onto a second row: the foot is room taken from everything else
+  let laid = footRowsAt(units, width, ctx, 1);
+  for (const k of [0.85, 0.72]) {
+    if (laid.rows.length <= 1) break;
+    const tighter = footRowsAt(units, width, ctx, k);
+    if (tighter.rows.length < laid.rows.length) laid = tighter;
+  }
+  return laid;
+}
+
+function footRowsAt(units: readonly Unit[], width: number, ctx: Context, k: number): { rows: FootRow[]; height: number; vgap: number; hgap: number } {
   const hgap = 2 * ctx.bodyW;
   const vgap = ctx.bodyH * 0.75;
   const rows: { blocks: Block[]; width: number; height: number }[] = [];
   for (const unit of units) {
-    const block = makeBlock(unit.main, 1, width, 0, null, ctx);
+    const block = makeBlock(unit.main, k, width, 0, null, ctx);
     const last = rows[rows.length - 1];
     if (last !== undefined && last.width + hgap + block.width <= width + EPS) {
       last.blocks.push(block);

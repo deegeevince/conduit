@@ -87,6 +87,7 @@ export interface OwnerCall {
   readonly before: readonly BlockPart[] | null;
   readonly q: number;
   readonly epochStart: number;
+  readonly cut?: Box | null;
   readonly ownerBox: Box | null;
   readonly tq: number;
   readonly aq: number;
@@ -129,6 +130,8 @@ interface Epoch {
   readonly layout: StructureLayout;
   readonly byOwner: ReadonlyMap<string, readonly BlockPart[]>;
   readonly ps: number;
+  /** the room the stage plan gave it, plane units; set when the engine said it is crowded: what it draws past it is cut there, never over the words or the choices */
+  readonly cut: Box | null;
 }
 
 interface Plan {
@@ -286,7 +289,9 @@ function planOf(structure: ElementSpan, schedule: Schedule, env: StructureEnv): 
       list.push(part);
       byOwner.set(part.owner, list);
     }
-    epochs.push({ start, look, layout, byOwner, ps });
+    const crowded = given !== null && layout.notes.some((n) => n.note === 'crowded');
+    const pad = 3;
+    epochs.push({ start, look, layout, byOwner, ps, cut: crowded ? { x: room.x - pad, y: room.y - pad, width: room.width + 2 * pad, height: room.height + 2 * pad } : null });
   }
   return { structure, members, epochs };
 }
@@ -418,7 +423,8 @@ export function buildStructures(schedule: Schedule, env: StructureEnv): Structur
 
   /** What one owner's parts look like at `tq`: the whole of how a part enters, leaves, is restyled, pointed at and drawn. Structures and controls both go through it. */
   const renderOwner = (call: OwnerCall, out: StructureFrames): void => {
-    const { structure, owner, parts, before, q, epochStart, tq, aq, look, style } = call;
+    const { structure, owner, parts, before, q, epochStart, cut, tq, aq, look, style } = call;
+    const clipOf = cut === null || cut === undefined ? {} : { clip: cut };
     const fit = env.fitOf(structure, look, tq);
     const ps = planeScale(structure.style.layer, env.viewport);
     const unit = fit.unit / ps;
@@ -522,6 +528,7 @@ export function buildStructures(schedule: Schedule, env: StructureEnv): Structur
           opacity,
           bleed: false,
           tappable: style.tap,
+          ...clipOf,
         });
         ownerColour = colour;
       } else {
@@ -563,6 +570,7 @@ export function buildStructures(schedule: Schedule, env: StructureEnv): Structur
           ghost: false,
           tappable: style.tap,
           plate: part.plate ? 1 : 0,
+          ...clipOf,
         });
         ownerColour = runs[0]?.colour ?? look.roles.ink;
         ownerContrast = Math.min(ownerContrast, contrastRatio(ownerColour, look.roles.ground));
@@ -583,7 +591,7 @@ export function buildStructures(schedule: Schedule, env: StructureEnv): Structur
         const parts = epoch.byOwner.get(owner.key) ?? [];
         if (parts.length === 0) continue;
         const before = previous === null || q >= 1 ? null : (previous.byOwner.get(owner.key) ?? null);
-        renderOwner({ structure, owner, parts, before, q, epochStart: epoch.start, ownerBox: boxAtTime(plan, owner, tq), tq, aq, look, style: styleAt(owner, tq) }, out);
+        renderOwner({ structure, owner, parts, before, q, epochStart: epoch.start, cut: epoch.cut, ownerBox: boxAtTime(plan, owner, tq), tq, aq, look, style: styleAt(owner, tq) }, out);
       }
     }
     return out;

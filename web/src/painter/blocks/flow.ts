@@ -99,7 +99,8 @@ function foldChain(input: StructureInput): StructureLayout | null {
   const f = input.structure.figure;
   if (f?.kind !== 'structure') return null;
   const links = linkSpecs(input);
-  const order = chainOrder(input, links);
+  // a chain is folded in the order of its path; any other graph in the order written (what is written first is read first), its crossing links routed through the gutters
+  const order = chainOrder(input, links) ?? (input.nodes.length >= 4 && links.length > 0 ? input.nodes.map((el) => el.key) : null);
   if (order === null) return null;
   const byKey = new Map(input.nodes.map((el) => [el.key, el]));
   const base = new Env(input, 1, 1, input.look.stroke);
@@ -112,12 +113,18 @@ function foldChain(input: StructureInput): StructureLayout | null {
     for (let i = 0; i < order.length; i += per) groups.push(order.slice(i, i + per));
     if (groups.length < rows) continue;
     const bandH = (input.room.height - title.h - (groups.length - 1) * gap) / groups.length;
+    const bandOf = new Map<string, number>();
+    groups.forEach((group, i) => group.forEach((k) => bandOf.set(k, i)));
+    const crossing = links.filter((l) => bandOf.get(l.from) !== bandOf.get(l.to));
+    // a link that skips a band, or goes back up, runs down a lane at the room's right edge
+    const laned = crossing.filter((l) => (bandOf.get(l.to) ?? 0) !== (bandOf.get(l.from) ?? 0) + 1);
+    const laneW = laned.length === 0 ? 0 : 10 + 7 * laned.length;
     if (bandH < base.body * 0.7) break;
     const bands: StructureLayout[] = [];
     groups.forEach((group, i) => {
       const keys = new Set(group);
       const inside = links.filter((l) => keys.has(l.from) && keys.has(l.to)).map((l) => l.el);
-      const room: Box = { x: input.room.x, y: input.room.y + title.h + i * (bandH + gap), width: input.room.width, height: bandH };
+      const room: Box = { x: input.room.x, y: input.room.y + title.h + i * (bandH + gap), width: input.room.width - laneW, height: bandH };
       const structure = { ...input.structure, text: '', figure: { ...f, grow: 'right' as const } };
       bands.push(flowLayout({ ...input, look: { ...input.look, minShrink: Math.min(input.look.minShrink, FOLD_MIN_SHRINK) }, structure, nodes: group.map((k) => byKey.get(k) as (typeof input.nodes)[number]), links: inside, room }, false));
     });
@@ -140,28 +147,35 @@ function foldChain(input: StructureInput): StructureLayout | null {
         for (const [k, v] of band.routes) routes.set(k, v);
         notes.push(...band.notes.filter((n) => n.note !== 'crowded'));
       }
-      // the bridge from the last node of a row to the first of the next: down through the gap, along it, down again
-      for (let i = 0; i + 1 < groups.length; i += 1) {
-        const from = boxes.get((groups[i] as string[])[(groups[i] as string[]).length - 1] as string);
-        const to = boxes.get((groups[i + 1] as string[])[0] as string);
+      // links between bands: down through the gutter below the source's band, along it, then down into the target; a link that skips a band or
+      // goes back up runs along a lane at the room's right edge
+      const bandBox = bands.map((band) => union([...band.boxes].filter(([k]) => k !== input.structure.key).map(([, v]) => v)));
+      const gutter = (k: number): number => (k < 0 ? (bandBox[0] as Box).y - gap / 2 : Math.min(input.room.y + input.room.height - 2, (bandBox[k] as Box).y + (bandBox[k] as Box).height + gap / 2));
+      let lane = 0;
+      for (const link of crossing) {
+        const from = boxes.get(link.from);
+        const to = boxes.get(link.to);
+        const i = bandOf.get(link.from) ?? 0;
+        const j = bandOf.get(link.to) ?? 0;
         if (from === undefined || to === undefined) continue;
-        const lastKey = (groups[i] as string[])[(groups[i] as string[]).length - 1] as string;
-        const firstKey = (groups[i + 1] as string[])[0] as string;
-        const link = links.find((l) => l.from === lastKey && l.to === firstKey);
-        if (link === undefined) continue;
-        const mid = (from.y + from.height + to.y) / 2;
-        const pts = [
-          { x: from.x + from.width / 2, y: from.y + from.height },
-          { x: from.x + from.width / 2, y: mid },
-          { x: to.x + to.width / 2, y: mid },
-          { x: to.x + to.width / 2, y: to.y },
-        ];
+        const pts: Point[] = [{ x: from.x + from.width / 2, y: from.y + from.height }, { x: from.x + from.width / 2, y: gutter(i) }];
+        let along = gutter(i);
+        if (j === i + 1) pts.push({ x: to.x + to.width / 2, y: gutter(i) });
+        else {
+          const x = input.room.x + input.room.width - 4 - 7 * lane;
+          lane += 1;
+          const above = gutter(j - 1);
+          pts.push({ x, y: gutter(i) }, { x, y: above }, { x: to.x + to.width / 2, y: above });
+          along = above;
+        }
+        pts.push({ x: to.x + to.width / 2, y: to.y });
         connectorParts(env, link, pts, lines, heads);
         routes.set(link.el.key, { points: pts, closed: false });
         let area = boxOfPoints(pts);
         if (link.label !== '') {
           const m = env.measure(link.label, env.wrapWidth, env.label());
-          const at = box((pts[1] as Point).x / 2 + (pts[2] as Point).x / 2 - m.width / 2, mid - m.height / 2, m.width, m.height);
+          const mid = pts.length === 4 ? ((pts[1] as Point).x + (pts[2] as Point).x) / 2 : ((pts[pts.length - 3] as Point).x + (pts[pts.length - 2] as Point).x) / 2;
+          const at = box(mid - m.width / 2, along - m.height / 2, m.width, m.height);
           labels.push(labelPart(env, link.el.key, link.label, at, m, true));
           area = union([area, at]);
         }

@@ -319,7 +319,8 @@ const PAGE_SCRIPT = String.raw`async (job) => {
   const viewsOf = (tl, seconds) => tl.viewsAt(instantAt(seconds)).filter((v) => v.opacity > 0.02).map((v) => ({ key: v.key, id: v.id, kind: v.kind, text: v.text.slice(0, 40), box: [v.box.x, v.box.y, v.box.width, v.box.height].map((n) => Math.round(n)), px: Math.round(v.fontPx) }));
   let debug = null;
   if (job.debug) {
-    debug = { viewport, rest: { plan: restTimeline.planAt(0), views: viewsOf(restTimeline, 0) }, at: [] };
+
+    debug = { viewport, rest: { plan: restTimeline.planAt(0), views: viewsOf(restTimeline, 0), notes: [...restTimeline.layoutNotesAt(0)].map(([k, n]) => k + ': ' + n.join(',')) }, at: [] };
     for (let i = 0; i <= 12; i += 1) { const t = (duration * i) / 12; debug.at.push({ t: +t.toFixed(2), plan: timeline.planAt(t), views: viewsOf(timeline, t) }); }
   }
   const times = [];
