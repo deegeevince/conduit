@@ -172,7 +172,7 @@ export const NO_V4_CAPABILITIES = { structures: [], charts: [], controls: [], me
 >;
 
 /** What a painter of v2 could do of v2.1: nothing. A `ready` that leaves these out is read as this. */
-export const NO_V21_CAPABILITIES = { candidates: false, decks: false, uploads: false, links: false } as const satisfies Pick<Capabilities, 'candidates' | 'decks' | 'uploads'>;
+export const NO_V21_CAPABILITIES = { candidates: false, decks: false, uploads: false, links: false } as const satisfies Pick<Capabilities, 'candidates' | 'decks' | 'uploads' | 'links'>;
 
 export const REFERENCE_SCREEN: ScreenFacts = { width: 1280, height: 720, dpr: 2, cols: 58, rows: 11, canvas: 'wide', reducedMotion: false, pointer: 'fine' };
 
