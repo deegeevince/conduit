@@ -252,6 +252,16 @@ export interface PainterEvents {
    * to rest in a new place, and when the camera comes to rest; never on every frame of a move (the layer is hidden while things move).
    */
   readonly text: readonly TextSpanView[];
+  /**
+   * The lines the layout let go of to make room, which are not on the stage at rest: oldest first, with the box of the words' column (host CSS pixels)
+   * the chrome stands a control on, so that what the answer said is never only gone. Empty `lines` when nothing is held back or the stage is moving.
+   */
+  readonly retired: RetiredView;
+}
+
+export interface RetiredView {
+  readonly lines: readonly { readonly key: string; readonly text: string }[];
+  readonly column: Box | null;
 }
 
 /**
