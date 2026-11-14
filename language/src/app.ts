@@ -47,7 +47,7 @@ export function shelfOf(asked: readonly AppShelf[] | undefined, source: string):
 
 /** A young learner and a problem to solve: the answer is a small app they do with their hands (move, tap, count), not a lesson page or a stepper. */
 const YOUNG_LEARNER = /\b(\d{1,2}[- ]?(?:year|yr)s?[- ]?old|my\s+(?:kid|child|son|daughter|little\s+one)|(?:young|little)\s+(?:learner|child|kid)|(?:don'?t|doesn'?t)\s+know\s+\w+\s+yet|like\s+i'?m\s+\d)/i;
-const A_PROBLEM = /\b(question|problem|sum|puzzle|exercise|riddle|share|divide|division|multiplication|subtract\w*)s?\b/i;
+const A_PROBLEM = /\b(question|problem|sum|puzzle|exercise|riddle|quiz|challenge|spell\w*|predict\w*)s?\b/i;
 export function asksForLearnerProblem(text: string): boolean {
   return YOUNG_LEARNER.test(text) && A_PROBLEM.test(text) && !/\b(photo|worksheet|homework|pdf|page of)\b/i.test(text);
 }

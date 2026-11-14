@@ -1,0 +1,40 @@
+{
+ "id": "learner-logic-puzzle",
+ "title": "a logic puzzle for a child is something they solve, not a walk-through",
+ "family": "teaching",
+ "owner": "prompt",
+ "kind": "flow",
+ "found": "2026-11-15",
+ "note": "A problem posed to a learner is something they do (an ask or a small app they act in), never a stepper that walks the answer.",
+ "own": [
+  "ask-first"
+ ],
+ "turns": [
+  {
+   "say": "a logic puzzle for my 10-year-old",
+   "source": {
+    "log": "20261115-094056-c1",
+    "turns": [
+     "t10"
+    ]
+   },
+   "check": [
+    {
+     "k": "any",
+     "of": [
+      {
+       "k": "ask-first"
+      },
+      {
+       "k": "app-learner"
+      }
+     ]
+    },
+    {
+     "k": "one-stepper",
+     "max": 0
+    }
+   ]
+  }
+ ]
+}
