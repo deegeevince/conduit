@@ -90,6 +90,8 @@ export interface ControlView {
   readonly valueText: string;
   /** where it is on screen now, host CSS pixels; never smaller than 44 px on its shorter side */
   readonly box: Box;
+  /** the painter's own boxes for the control and each part of it, host CSS pixels: `whole` (the control, as the painter's ring runs round it, 3 px out), `press`, `switch`, `track`, `knob`, `field`, `back`, `next`, `option:<n>` */
+  readonly parts: readonly { readonly part: string; readonly box: Box }[];
   /** false while it is entering, leaving or covered: it is then drawn but cannot be worked */
   readonly enabled: boolean;
   /** a change the user commits becomes their next message */
