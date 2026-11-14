@@ -72,6 +72,8 @@ export interface Critic {
   look(request: CriticRequest, signal: AbortSignal): Promise<CriticFinding | null>;
   /** Looks at a draft and a candidate together, blind to which is which. Resolves null at `deadlineMs`. */
   compare(request: Omit<CriticRequest, 'picture'>, draft: Snapshot, candidate: Snapshot, deadlineMs: number, signal: AbortSignal): Promise<CriticComparison | null>;
+  /** v2.1 ops, the kill switch: abandons every look and comparison in flight and every one waiting; the critic goes on to serve the next. */
+  cancel?(): void;
   close(): Promise<void>;
 }
 

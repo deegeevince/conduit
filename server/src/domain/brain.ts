@@ -197,6 +197,12 @@ export interface Brain {
   /** The conversation is over: let go of whatever was kept for it. */
   release?(session: string): void;
 
+  /**
+   * v2.1 ops, the kill switch. Lets go of every process and every held call of every conversation, at once and without waiting for any of
+   * them to say it has stopped. The conversations' settings stay; the next turn starts a process afresh. Never throws.
+   */
+  killAll?(): void;
+
   /** Releases long-lived resources at shutdown. */
   close?(): Promise<void>;
 }
@@ -205,5 +211,7 @@ export interface Brain {
 export interface BrainRegistry {
   readonly configured: Brain;
   forInput(input: TurnInput): Brain;
+  /** v2.1 ops. The kill switch: `Brain.killAll` of every brain. */
+  killAll(): void;
   close(): Promise<void>;
 }

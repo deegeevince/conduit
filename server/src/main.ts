@@ -18,6 +18,7 @@ import { createJsonlSessionLog } from './logs/jsonl-session-log';
 import { NO_SESSION_LOG } from './domain/session-log';
 import { createLogger } from './log';
 import { createAudit } from './audit';
+import { createKillSwitch } from './kill';
 import { ensureDataDirs, extraRepos, migrateLegacyData } from './data-dir';
 
 const RELAY_IDLE_FALLBACK_MS = 180_000;
@@ -38,6 +39,9 @@ function boot(env: Env): void {
   const audit = createAudit(env.data.audit, now, log.child({ part: 'audit' }));
   audit.record({ kind: 'server', login: 'system', tool: 'start', target: `port ${env.port}`, decision: 'done', decidedBy: 'system', note: `brain ${env.brain.kind}; agent ${env.agent.enabled ? 'on' : 'off'}; owners ${env.ownerLogins.length}` });
 
+  const kill = createKillSwitch(`${env.data.state}/agent-off.json`, now);
+  if (kill.engaged()) log.warn('kill.still_engaged', { state: kill.state(), note: 'agent tools stay off until the owner switches them back on (/stop-all resume, or DELETE /api/kill)' });
+
   const relayHub = new RelayHub({
     log: log.child({ part: 'relay' }),
     now,
@@ -48,7 +52,7 @@ function boot(env: Env): void {
   status();
   const news = createChangelogReader(env.changelogFile, now);
   news();
-  const brains = createBrains({ settings: env.brain, log: log.child({ part: 'brain' }), relayHub, agent: env.agent, modes: env.modes, status, news });
+  const brains = createBrains({ kill, settings: env.brain, log: log.child({ part: 'brain' }), relayHub, agent: env.agent, modes: env.modes, status, news });
   const assets = new AssetStore();
   const images = createImageModel(env.images, log.child({ part: 'images' }));
   const sessionLog = env.logDir === null ? NO_SESSION_LOG : createJsonlSessionLog({ log: log.child({ part: 'sessionlog' }), dir: env.logDir, now });
@@ -105,7 +109,7 @@ function boot(env: Env): void {
   });
   const withheld = withheldCredentialNames();
   if (withheld.length > 0) log.info('env.credentials_withheld', { names: withheld, note: 'no child process is given these; every model call is on the owner\'s login' });
-  const app = createApp({ env, log: log.child({ part: 'http' }), conductor, relayHub, audit, assets, status, news });
+  const app = createApp({ env, log: log.child({ part: 'http' }), conductor, relayHub, audit, kill, assets, status, news });
 
   const server = serve({ fetch: app.fetch, hostname: env.host, port: env.port }, (info) => {
     log.info('server.listening', { host: env.host, port: info.port, brain: env.brain.kind, production: env.production, owners: env.ownerLogins.length });

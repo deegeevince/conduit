@@ -46,6 +46,8 @@ export function createLiveCritic(deps: LiveCriticDeps): Critic {
   const lanes = new Map<string, Lane>();
   const told = new Set<string>();
   const closing = new AbortController();
+  // What the kill switch aborts: everything in flight now. A new one is made at once, so the critic is not left dead.
+  let epoch = new AbortController();
   const tell = (kind: string, fields: Record<string, string | number>): void => {
     if (told.has(kind)) return;
     told.add(kind);
@@ -67,7 +69,7 @@ export function createLiveCritic(deps: LiveCriticDeps): Critic {
       return null;
     }
     try {
-      const bounded = AbortSignal.any([signal, closing.signal, AbortSignal.timeout(policy.lookMs)]);
+      const bounded = AbortSignal.any([signal, closing.signal, epoch.signal, AbortSignal.timeout(policy.lookMs)]);
       const got = await judgeFinding(inputOf(request), pictureOf(request.picture), settings(policy.lookMs), bounded);
       if (got.finding === null) tell('failed', { turn: request.turn, why: got.failure ?? 'no finding' });
       return got.finding;
@@ -115,7 +117,7 @@ export function createLiveCritic(deps: LiveCriticDeps): Critic {
         return null;
       }
       try {
-        const bounded = AbortSignal.any([signal, closing.signal, AbortSignal.timeout(Math.max(1, deadlineMs))]);
+        const bounded = AbortSignal.any([signal, closing.signal, epoch.signal, AbortSignal.timeout(Math.max(1, deadlineMs))]);
         // Which picture is shown first is decided here and never said.
         const draftFirst = Math.random() < 0.5;
         const got = await judgePair(inputOf(request), pictureOf(draft), pictureOf(candidate), draftFirst, settings(Math.max(1, deadlineMs)), bounded);
@@ -129,6 +131,15 @@ export function createLiveCritic(deps: LiveCriticDeps): Critic {
       } catch (error) {
         tell('threw', { turn: request.turn, why: error instanceof Error ? error.message : String(error) });
         return null;
+      }
+    },
+
+    cancel() {
+      epoch.abort();
+      epoch = new AbortController();
+      for (const lane of lanes.values()) {
+        lane.waiting?.resolve(null);
+        lane.waiting = null;
       }
     },
 

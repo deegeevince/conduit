@@ -2,7 +2,7 @@
 // `runClaude` is the one-shot form (one message in, stdout lines out), exported for callers
 // that want a plain answer from the model without a conversation, such as the exploration runner.
 
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { childEnvironment } from '../../env';
@@ -97,6 +97,86 @@ export function spawnTracked(bin: string, args: readonly string[], effort?: 'low
   child.once('close', forget);
   child.once('error', forget);
   return child;
+}
+
+/** Every process below `pid` (children, their children), by one look at the process table. Empty when the table cannot be read. */
+function descendantsOf(roots: readonly number[]): number[] {
+  let table = '';
+  try {
+    table = execFileSync('ps', ['-A', '-o', 'pid=,ppid='], { encoding: 'utf8', timeout: 1_500, stdio: ['ignore', 'pipe', 'ignore'] });
+  } catch {
+    return [];
+  }
+  const children = new Map<number, number[]>();
+  for (const row of table.split('\n')) {
+    const [pid, ppid] = row.trim().split(/\s+/).map(Number);
+    if (pid === undefined || ppid === undefined || !Number.isInteger(pid) || !Number.isInteger(ppid)) continue;
+    children.set(ppid, [...(children.get(ppid) ?? []), pid]);
+  }
+  const found: number[] = [];
+  const queue = [...roots];
+  while (queue.length > 0) {
+    const next = queue.shift();
+    if (next === undefined) break;
+    for (const child of children.get(next) ?? []) {
+      if (child === process.pid || found.includes(child)) continue;
+      found.push(child);
+      queue.push(child);
+    }
+  }
+  return found;
+}
+
+const alive = (pid: number): boolean => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+export interface KillReport {
+  /** processes this server started that were running */
+  readonly children: number;
+  /** processes below them (a connected service's server, a browser helper) */
+  readonly descendants: number;
+  /** pids still there after the wait: a process stuck in the kernel, which nothing from here can end */
+  readonly survivors: readonly number[];
+  readonly ms: number;
+}
+
+/**
+ * The kill switch's hand: SIGKILL, at once, to every process this server started and to everything below them, with no polite
+ * request first. It does not wait for a process's `close`, which a stuck child, or a grandchild holding its pipes, would never give; it
+ * looks, for up to `waitMs`, at whether the pids are gone, and says which are not. A child that ignores SIGTERM, an interrupt and
+ * its own stdin is the case this exists for. Nothing here throws.
+ */
+export async function killAllChildren(waitMs = 1_500): Promise<KillReport> {
+  const started = Date.now();
+  const direct = [...live].flatMap((child) => (child.pid === undefined ? [] : [child.pid]));
+  const below = descendantsOf(direct);
+  for (const pid of [...below, ...direct]) {
+    try {
+      process.kill(pid, 'SIGKILL');
+    } catch {
+      // already gone
+    }
+  }
+  for (const child of live) {
+    try {
+      child.kill('SIGKILL');
+    } catch {
+      // already gone
+    }
+  }
+  const all = [...direct, ...below];
+  let left = all.filter(alive);
+  while (left.length > 0 && Date.now() - started < waitMs) {
+    await new Promise<void>((resolve) => setTimeout(resolve, 50));
+    left = left.filter(alive);
+  }
+  return { children: direct.length, descendants: below.length, survivors: left, ms: Date.now() - started };
 }
 
 function installExitHook(): void {

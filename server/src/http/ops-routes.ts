@@ -2,6 +2,7 @@
 
 import type { Hono } from 'hono';
 import { readAudit } from '../audit';
+import { killAllChildren } from '../brains/claude-cli/process';
 import { currentIdentity, labelOf } from '../identity';
 import type { HttpDeps } from './deps';
 import { errors } from '../errors';
@@ -11,6 +12,48 @@ export function registerOpsRoutes(app: Hono, deps: HttpDeps): void {
   app.get('/api/whoami', (c) => {
     const who = currentIdentity();
     return c.json({ login: who.login, name: who.name, via: who.via, label: labelOf(who), enforced: deps.env.ownerLogins.length > 0 });
+  });
+
+  /**
+   * POST: the kill switch. Answers within a few seconds whatever state any child is in. It
+   *   1. switches agent tools off, and remembers it across a restart (`DELETE` below switches them back on);
+   *   2. ends every open turn (`interrupted`) and answers no to every confirm control waiting for the owner;
+   *   3. lets go of every brain process and abandons the critic's looks in flight;
+   *   4. SIGKILLs every child process this server started and everything below them, without waiting for any of them to agree.
+   * 200 `{ engaged, at, sessions, turns, permissionsDenied, children, descendants, survivors, ms }`; `survivors` are pids that were
+   * still there after the wait (a process stuck in the kernel), and is empty when everything is gone.
+   */
+  app.post('/api/kill', async (c) => {
+    const started = Date.now();
+    const by = labelOf(currentIdentity());
+    const state = deps.kill.engage(by, 'the owner pulled the kill switch');
+    deps.audit.record({ kind: 'kill', tool: 'kill-switch', target: 'stop everything; agent tools off', decision: 'allowed', decidedBy: 'owner' });
+    deps.log.warn('kill.requested', { by });
+    const done = (async () => {
+      const stopped = deps.conductor.killAll(by);
+      const killed = await killAllChildren();
+      return { stopped, killed };
+    })();
+    // Never longer than this, whatever a child is doing: the answer is the owner's proof the switch worked.
+    const outcome = await Promise.race([done, new Promise<null>((resolve) => setTimeout(() => resolve(null), 4_000).unref())]);
+    const stopped = outcome?.stopped ?? { sessions: 0, turns: 0, permissions: 0 };
+    const killed = outcome?.killed ?? { children: 0, descendants: 0, survivors: [] as number[], ms: Date.now() - started };
+    deps.audit.record({ kind: 'kill', tool: 'kill-switch', target: `${stopped.turns} turns ended, ${stopped.permissions} permissions denied, ${killed.children + killed.descendants} processes killed`, decision: killed.survivors.length === 0 ? 'done' : 'failed', decidedBy: 'system', note: killed.survivors.length === 0 ? undefined : `${killed.survivors.length} process(es) survived SIGKILL` });
+    return c.json({ engaged: true, at: state.at, sessions: stopped.sessions, turns: stopped.turns, permissionsDenied: stopped.permissions, children: killed.children, descendants: killed.descendants, survivors: killed.survivors, answeredInMs: Date.now() - started, timedOut: outcome === null });
+  });
+
+  /** GET `{ engaged, at, by, reason }`: whether agent tools are off. */
+  app.get('/api/kill', (c) => {
+    const state = deps.kill.state();
+    return c.json({ engaged: state !== null, ...(state ?? {}) });
+  });
+
+  /** DELETE: switches agent tools back on (what `AGENT=on` configured), and nothing else: what was stopped stays stopped. 200 `{ engaged: false, was }`. */
+  app.delete('/api/kill', (c) => {
+    const was = deps.kill.release();
+    deps.audit.record({ kind: 'kill', tool: 'kill-switch', target: 'agent tools switched back on', decision: 'allowed', decidedBy: 'owner' });
+    deps.log.warn('kill.released', { by: labelOf(currentIdentity()), was });
+    return c.json({ engaged: false, was });
   });
 
   /**

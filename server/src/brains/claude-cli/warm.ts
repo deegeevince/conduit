@@ -183,6 +183,14 @@ export function startWarmProcess(settings: WarmSettings, log: Logger, graceMs = 
       wake();
       resolve();
     });
+    // `close` waits for the pipes, and a grandchild holding one open would keep it from ever coming; `exit` is the process itself ending.
+    child.once('exit', () => {
+      // A moment is allowed for what the process wrote last to be read before it is called dead.
+      setTimeout(() => {
+        alive = false;
+        wake();
+      }, 300).unref();
+    });
     child.once('error', (error: NodeJS.ErrnoException) => {
       spawnError = error;
       exited = true;
@@ -352,8 +360,11 @@ export function startWarmProcess(settings: WarmSettings, log: Logger, graceMs = 
       child.stdin?.end();
       const polite = setTimeout(kill, STOP_POLITE_MS);
       polite.unref();
-      await closed;
+      // Bounded: a process that will not die for SIGTERM or SIGKILL must not keep a shutdown, or a kill, waiting for it.
+      let deadline: NodeJS.Timeout | undefined;
+      await Promise.race([closed, new Promise<void>((resolve) => { deadline = setTimeout(resolve, STOP_POLITE_MS + KILL_GRACE_MS + 1_000); deadline.unref(); })]);
       clearTimeout(polite);
+      clearTimeout(deadline);
     },
   };
 }

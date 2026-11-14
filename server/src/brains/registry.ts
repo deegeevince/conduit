@@ -3,6 +3,8 @@ import type { AgentSettings } from '../domain/agent';
 import type { Brain, BrainRegistry, ReviewRequest } from '../domain/brain';
 import { errors } from '../errors';
 import type { BrainSettings } from '../env';
+import { NEVER_ENGAGED } from '../kill';
+import type { KillSwitch } from '../kill';
 import type { Logger } from '../log';
 import { createClaudeCliBrain } from './claude-cli/claude-cli-brain';
 import { createRelayBrain } from './relay/relay-brain';
@@ -24,6 +26,8 @@ export interface BrainsDeps {
   readonly status?: () => AppStatus | null;
   /** v2.1. The changelog's newest section, for a turn that asks what is new; read without waiting */
   readonly news?: () => string | null;
+  /** v2.1 ops. The kill switch: while it is engaged no conversation is in agent mode and no tool is run */
+  readonly kill?: KillSwitch;
 }
 
 /**
@@ -59,6 +63,7 @@ export function createBrains(deps: BrainsDeps): BrainRegistry {
         ...(deps.modes === undefined ? {} : { modes: deps.modes }),
         ...(deps.status === undefined ? {} : { status: deps.status }),
         ...(deps.news === undefined ? {} : { news: deps.news }),
+        kill: deps.kill ?? NEVER_ENGAGED,
       });
       break;
   }
@@ -68,6 +73,15 @@ export function createBrains(deps: BrainsDeps): BrainRegistry {
   return {
     configured,
     forInput: (input) => (input.kind === 'demo' || input.kind === 'script' ? replay : configured),
+    killAll: () => {
+      for (const brain of all) {
+        try {
+          brain.killAll?.();
+        } catch {
+          // the kill goes on to the next brain; the process kill after it does not depend on any of them
+        }
+      }
+    },
     close: async () => {
       await Promise.all(all.map((brain) => brain.close?.()));
     },

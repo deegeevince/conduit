@@ -14,6 +14,8 @@ import { askedOf } from '../../domain/review';
 import { brainEventsFromText } from '../../domain/lines';
 import { AppError, errors } from '../../errors';
 import type { Logger } from '../../log';
+import { NEVER_ENGAGED } from '../../kill';
+import type { KillSwitch } from '../../kill';
 import { startWarmProcess } from './warm';
 import type { WarmProcess } from './warm';
 import { Mailbox } from './mailbox';
@@ -46,6 +48,8 @@ export interface ClaudeCliDeps {
   readonly status?: () => AppStatus | null;
   /** v2.1. The changelog's newest section, given to a turn that asks what is new; read without waiting */
   readonly news?: () => string | null;
+  /** v2.1 ops. The kill switch: engaged, every conversation is `plain`, every call the CLI asks about is refused, and `agent` cannot be chosen */
+  readonly kill?: KillSwitch;
 }
 
 /** A call the CLI is holding for the owner's answer. */
@@ -117,8 +121,10 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
   // v2.1, agent mode. What the owner's configuration offers, what each conversation has switched on, and the mode it is in.
   const agent = deps.agent ?? NO_AGENT;
   const switchedOn = new Map<string, Set<string>>();
-  // The brain is the agent whenever the server has one; there is no plain beside it.
-  const modeOf = (_session: string): 'plain' | 'agent' => (agent.enabled ? 'agent' : 'plain');
+  // The brain is the agent whenever the server has one; there is no plain beside it. The one exception is the kill switch: while it is
+  // engaged the brain has no tools at all (`plain`), until the owner switches them back on.
+  const kill = deps.kill ?? NEVER_ENGAGED;
+  const modeOf = (_session: string): 'plain' | 'agent' => (agent.enabled && !kill.engaged() ? 'agent' : 'plain');
   /** Everything offered is on until the owner switches it off (`/tools`): it was the owner who offered it. Nothing else can ever be on. */
   const onOf = (session: string): Set<string> => {
     let on = switchedOn.get(session);
@@ -357,7 +363,7 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
     /** The CLI asks before a call. Whatever the answer, it is made here, by `gateCall`, and by the owner for what that says to ask. */
     const handleAsk = (ask: { requestId: string; toolUseId: string; tool: string; input: Readonly<Record<string, unknown>> }): void => {
       const call = { id: ask.toolUseId, tool: ask.tool, input: ask.input };
-      const verdict = out.noTools === true ? ({ kind: 'deny', risk: 'run', why: 'a look at the draft uses no tools' } as const) : modeOf(out.session) === 'agent' ? gateCall(call, agent, on, false, entry.browser) : ({ kind: 'deny', risk: 'run', why: 'this conversation has no tools' } as const);
+      const verdict = out.noTools === true ? ({ kind: 'deny', risk: 'run', why: 'a look at the draft uses no tools' } as const) : modeOf(out.session) === 'agent' ? gateCall(call, agent, on, false, entry.browser) : ({ kind: 'deny', risk: 'run', why: kill.engaged() ? 'agent tools have been switched off by the kill switch' : 'this conversation has no tools' } as const);
       const summary = summaryOf(call);
       if (inner.signal.aborted) {
         // The turn was stopped (or timed out) and the model has not heard yet: nothing more is asked of the owner, nothing runs.
@@ -646,6 +652,7 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
         if (mode === 'agent' && !agent.enabled) throw errors.badRequest('agent mode is not offered by this server (AGENT=on)');
         // The brain is the agent; there is no plain beside it. A request for it is refused in words, not obeyed or ignored.
         if (mode === 'plain' && agent.enabled) throw errors.badRequest('there is no plain mode: the brain can always use its tools, and asks you first before anything but reading');
+        if (mode === 'agent' && kill.engaged()) throw errors.conflict('agent tools were switched off by the kill switch and stay off until the owner switches them back on (/stop-all resume)');
       }
       const next = { ...settingsOf(session), ...rest };
       chosen.set(session, next);
@@ -663,7 +670,7 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
             // Only the owner's `permit` reaches here; a request that is unknown, answered or from another conversation is ignored.
             pool.get(session)?.held.get(request)?.settle(allow, 'owner');
           },
-          tools: (session: string): readonly ToolChoice[] => toolChoices(agent, onOf(session)),
+          tools: (session: string): readonly ToolChoice[] => (kill.engaged() ? [] : toolChoices(agent, onOf(session))),
           setTool(session: string, name: string, on: boolean): readonly ToolChoice[] {
             const offered = agent.tools.includes(name) || agent.services.some((service) => service.name === name);
             if (offered) {
@@ -680,6 +687,22 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
       switchedOn.delete(session);
       const entry = pool.get(session);
       if (entry !== undefined) discard(entry);
+    },
+    killAll() {
+      // Every held call is told no (so the CLI is not left waiting on a question), and every process is let go without waiting for its `close`.
+      const all = [...pool.values()];
+      pool.clear();
+      for (const entry of all) {
+        for (const held of [...entry.held.values()]) {
+          try {
+            held.settle(false, 'turn');
+          } catch (error) {
+            log.warn('claude_kill_settle_failed', { session: entry.session, error });
+          }
+        }
+        void entry.proc.stop().catch(() => undefined);
+      }
+      log.warn('claude_killed_all', { processes: all.length });
     },
     async close() {
       if (sweep) clearInterval(sweep);

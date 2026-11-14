@@ -491,6 +491,39 @@ export class Conductor {
     this.deps.sessions.require(session, this.deps.now());
   }
 
+  /**
+   * The kill switch (v2.1 ops). Everything that is running stops now: every open turn is ended `interrupted` (which aborts its brain, its
+   * fetches, its paintings and its looks), every confirm control still waiting for the owner is answered no, every conversation's
+   * process is let go, and the critic's looks in flight are abandoned. Synchronous and bounded: nothing here waits for a child to say it
+   * has stopped, because a stuck one never will; `killAllChildren` is the hand that makes sure it is gone. Sessions and their settings stay.
+   */
+  killAll(by: string): { readonly sessions: number; readonly turns: number; readonly permissions: number } {
+    let turns = 0;
+    let permissions = 0;
+    const sessions = this.deps.sessions.all();
+    for (const s of sessions) {
+      permissions += s.permissions.size;
+      try {
+        this.denyPending(s, null, 'kill');
+        const turn = s.turn;
+        if (turn !== null && turn.endReason === null) {
+          turns += 1;
+          this.finish(s, turn, 'interrupted', 'stopped by /stop-all');
+        }
+      } catch (error) {
+        this.deps.log.error('kill.session_failed', { session: s.id, error });
+      }
+    }
+    try {
+      this.deps.brains.killAll();
+      this.deps.critic.cancel?.();
+    } catch (error) {
+      this.deps.log.error('kill.brains_failed', { error });
+    }
+    this.deps.log.warn('kill.all', { by, sessions: sessions.length, turns, permissions });
+    return { sessions: sessions.length, turns, permissions };
+  }
+
   /** Aborts every open turn and drops every session. */
   async close(): Promise<void> {
     clearInterval(this.reaper);
