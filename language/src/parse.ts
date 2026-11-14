@@ -5,10 +5,12 @@ import type { LessonLine } from './lesson';
 import { BUILTIN_STYLE_NAMES, own } from './style';
 import { splitCells } from './text';
 import { TUNE_TEMPO_RANGE } from './tune';
+import { APPROX_FROM } from './types';
 import type {
   BindOn,
   CanvasBox,
   CamLine,
+  Approx,
   CardLine,
   ColourRef,
   DatasetRef,
@@ -722,20 +724,36 @@ function parseSay(head: Head, text: string | null, issues: Issues): Line | null 
     issues.error('missing-text', 'say needs text after " | "');
     return null;
   }
-  const { id, numbers, names } = splitWords(head.words, true, true);
+  const { id, numbers, names } = splitWords(head.words, true, true, ['approx', 'optional']);
   if (numbers.length > 0) issues.warn('unknown-word', 'numbers mean nothing on a say line; use at=x,y');
   const { props, rest } = readStyleProps(head.pairs, issues);
   let href: string | undefined;
   const unknown: Pair[] = [];
+  let approx: Approx | undefined;
   for (const pair of rest) {
     if (pair.key === 'href' || pair.key === 'link' || pair.key === 'url') {
       const address = readAddress(pair.raw);
       if (address === null) issues.warn('bad-value', `${pair.key}=… ignored; a link is an http or https address`, pair.token);
       else href = address;
-    } else unknown.push(pair);
+    } else if ((pair.key === 'from' || pair.key === 'approx') && oneOf(APPROX_FROM, pair.value)) approx = pair.value;
+    else unknown.push(pair);
   }
   warnUnknownPairs(unknown, issues);
-  const line = { verb: 'say' as const, id, styles: readStyleNames(names, issues), props, text };
+  // L3. `approx` and `optional` are words of the head; `long || short` is the same words said shorter.
+  const flags = names.filter((name) => name === 'approx' || name === 'optional');
+  if (flags.includes('approx')) approx ??= 'yes';
+  const [long = text, ...shorter] = text.split(/\s+\|\|\s+/).map((form) => form.trim()).filter((form) => form !== '');
+  const alts = shorter.slice(0, 2);
+  const line = {
+    verb: 'say' as const,
+    id,
+    styles: readStyleNames(names.filter((name) => name !== 'approx' && name !== 'optional'), issues),
+    props,
+    text: long,
+    ...(approx !== undefined && { approx }),
+    ...(alts.length > 0 && { alts }),
+    ...(flags.includes('optional') && { optional: true }),
+  };
   return withWhen(href === undefined ? line : { ...line, href }, head.when);
 }
 
@@ -1112,17 +1130,20 @@ function parseNode(head: Head, text: string | null, issues: Issues): Line | null
     issues.error('missing-text', 'node needs its words after " | "');
     return null;
   }
-  const { id, numbers, names } = splitWords(head.words, true, false, NODE_SHAPES, VALUE_LIMIT);
+  const { id, numbers, names } = splitWords(head.words, true, false, [...NODE_SHAPES, 'approx'], VALUE_LIMIT);
   const { props, rest } = readStyleProps(head.pairs, issues);
   const line: { -readonly [K in keyof NodeLine]: NodeLine[K] } = { verb: 'node', id, styles: [], props, values: numbers.slice(0, 2), text };
   const styleWords: string[] = [];
   let arrowLabel = '';
   for (const name of names) {
     if (oneOf(NODE_SHAPES, name)) line.shape = name;
+    else if (name === 'approx') line.approx ??= 'yes';
     else styleWords.push(name);
   }
   for (const pair of rest) {
-    if (pair.key === 'from' || pair.key === 'after' || pair.key === 'parent') {
+    // L3. `from=recalled` is where the words came from, not a node called that, unless one is.
+    if ((pair.key === 'from' || pair.key === 'approx') && oneOf(APPROX_FROM, pair.value)) line.approx = pair.value;
+    else if (pair.key === 'from' || pair.key === 'after' || pair.key === 'parent') {
       // The id is a word of the language; the label is the brain's own and keeps its case.
       const colon = pair.raw.indexOf(':');
       const from = (colon < 0 ? pair.raw : pair.raw.slice(0, colon)).toLowerCase();

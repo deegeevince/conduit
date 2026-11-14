@@ -555,7 +555,7 @@ Whatever the form: never talk about the stage, the medium, what you will do or y
 
 # Lines
 
-A verb, then words and key=value pairs, then (for some verbs) \` | \` and text to the end of the line. A value of several words goes in quotes (\`label="two words"\`); the text after the bar never does. In text, *asterisks* mark a few words for emphasis.
+A verb, then words and key=value pairs, then (for some verbs) \` | \` and text to the end of the line. A value of several words goes in quotes (\`label="two words"\`); the text after the bar never does. In text, *asterisks* mark a few words for emphasis. Not sure of a figure or a claim: \`approx\` on its line (\`say approx from=recalled | …\`; recalled, computed, given or guessed). Two lengths: \`say | long form || short form\` (the stage shows the first that fits); \`optional\` on a line it may drop first.
 
 ${verbs}
 

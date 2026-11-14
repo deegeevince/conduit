@@ -770,6 +770,8 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
         text: words.text,
         emphasis: words.emphasis,
         ...(others.length > 0 && { variants: [words, ...others] }),
+        ...(element.alts !== undefined && element.alts.length > 0 && { alternatives: element.alts }),
+        ...(element.optional === true && { optional: true }),
         style: laidStyle(styleAt(element, start)),
         struck: isStruckAt(element, start) && replaced.has(element.key),
         replaces: element.replaces,

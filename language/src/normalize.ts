@@ -8,13 +8,25 @@ import { isLessonVerb } from './lesson';
 import { InterfaceReader, UI_WORDS, nodeLine, screenLine } from './interface';
 import { LessonBook } from './lesson';
 import { parseLine } from './parse';
-import type { Issue, Line, ParseResult, StyleProps } from './types';
+import type { Approx, Issue, Line, ParseResult, StyleProps } from './types';
 import { LIMITS, STRUCTURE } from './vocabulary';
 
 /** Lines that do not end a sprite being written: its next row may follow them. */
 const KEEPS_SPRITE_OPEN: ReadonlySet<string> = new Set(['wait', 'plan', 'color', 'style', 'look', 'cam', 'hit', 'standing', 'refine']);
 
 const ROW_ALPHABET = '.#0123456789abcdefABCDEF';
+
+const HEDGE = /\b(about|around|roughly|approximately|approx|nearly|almost|circa|maybe|perhaps)\b|[~\u2248]/i;
+const DOUBT_NOTE: Readonly<Record<Approx, string>> = { yes: 'approx.', computed: 'approx.', given: 'approx.', recalled: 'from memory', guessed: 'a guess' };
+
+/**
+ * L3. Words marked `approx` are drawn honestly: they say so, in a few words after them, unless they already hedge in their own. The mark is
+ * idempotent, so a line the painter reads again (a replay, a fix pass) is not marked twice. The doubt itself stays on the line, for whoever checks.
+ */
+export function doubted(text: string, approx: Approx): string {
+  if (HEDGE.test(text) || /\((?:approx\.|from memory|a guess)\)$/.test(text)) return text;
+  return `${text} (${DOUBT_NOTE[approx]})`.slice(0, LIMITS.text);
+}
 
 /**
  * L1. Whether a line no verb owns is a sentence the brain wrote as speech: three words or more, mostly letters, no `key=value` and no bar (a line with
@@ -308,7 +320,9 @@ export class LineNormalizer {
         }
         if (line.verb === 'say') {
           const placed = this.placedByStage({ ...line, id, styles });
-          return { line: placed.line, issues: placed.issues };
+          const said = placed.line;
+          const marked = said.approx === undefined ? said : { ...said, text: doubted(said.text, said.approx), ...(said.alts === undefined ? {} : { alts: said.alts.map((alt) => doubted(alt, said.approx ?? 'yes')) }) };
+          return { line: marked, issues: placed.issues };
         }
         return { line: { ...line, id, styles }, issues: [] };
       }
@@ -353,7 +367,7 @@ export class LineNormalizer {
         if (structure === null) {
           return { line: null, issues: [{ code: 'no-structure', severity: 'error', message: 'node has no structure to belong to; write flow, tree, cycle, timeline or map first' }] };
         }
-        return { line: { ...line, id: line.id === '-' ? this.makeId() : line.id, props: { ...line.props, in: structure } }, issues: [] };
+        return { line: { ...line, id: line.id === '-' ? this.makeId() : line.id, props: { ...line.props, in: structure }, ...(line.approx === undefined ? {} : { text: doubted(line.text, line.approx) }) }, issues: [] };
       }
       case 'link':
         this.sprite = null;

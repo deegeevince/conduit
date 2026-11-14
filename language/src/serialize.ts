@@ -163,7 +163,10 @@ export function serializeLine(line: Line): string {
       return [...head, ...lookTokens(line.props), ...whenToken(line.when)].join(' ');
     }
     case 'say':
-      return withText(['say', line.id, ...line.styles, ...propTokens(line.props), ...(line.href === undefined ? [] : [`href=${line.href}`]), ...whenToken(line.when)], line.text);
+      return withText(
+        ['say', line.id, ...line.styles, ...(line.approx === undefined ? [] : [line.approx === 'yes' ? 'approx' : `approx=${line.approx}`]), ...(line.optional === true ? ['optional'] : []), ...propTokens(line.props), ...(line.href === undefined ? [] : [`href=${line.href}`]), ...whenToken(line.when)],
+        [line.text, ...(line.alts ?? [])].join(' || '),
+      );
     case 'circle':
     case 'ellipse':
     case 'rect':
@@ -243,6 +246,7 @@ export function serializeLine(line: Line): string {
       if (line.from !== undefined) head.push(line.from.label === undefined ? `from=${line.from.id}` : `from=${line.from.id}:${line.from.label}`);
       if (line.x !== undefined) head.push(`x=${line.x}`);
       if (line.y !== undefined) head.push(`y=${number(line.y)}`);
+      if (line.approx !== undefined) head.push(line.approx === 'yes' ? 'approx' : `approx=${line.approx}`);
       return withText([...head, ...line.styles, ...propTokens(line.props), ...whenToken(line.when)], line.text);
     }
     case 'link': {

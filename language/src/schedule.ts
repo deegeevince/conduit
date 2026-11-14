@@ -381,6 +381,10 @@ export interface ElementSpan {
   readonly struck: boolean;
   /** v2.1. The address its words link to; absent: not a link */
   readonly href?: string;
+  /** L3. Shorter forms of its words (`say | long || short`); `text` is the longest, and times the line. The stage shows the first that fits at the legible floor. */
+  readonly alts?: readonly { readonly text: string; readonly emphasis: readonly Range[] }[];
+  /** L3. Dropped first when room is short */
+  readonly optional?: boolean;
 }
 
 /** v2.1. One slide of a deck: the scene that is it, and when it begins and when its own content is done (the clock stops there until the viewer steps on). */
@@ -968,6 +972,12 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
         }
       }
       const done = enterText(entry, line.id, line.text, style, enterStart, order, null, joined.parent, line.href);
+      // L3. The shorter forms and the word `optional` ride on the element; the duration above was timed on the longest form, so it is the same whichever is shown.
+      const made = elements[elements.length - 1];
+      if (made !== undefined && made.id === line.id) {
+        if (line.alts !== undefined && line.alts.length > 0) made.alts = line.alts.map((alt) => splitEmphasis(alt)).map((words) => ({ text: words.plain, emphasis: words.emphasis }));
+        if (line.optional === true) made.optional = true;
+      }
       if (!BACKDROP_LAYERS.includes(style.layer)) pen = Math.max(pen, done);
       lines.push({ seq, verb: line.verb, start, end: done });
       return;

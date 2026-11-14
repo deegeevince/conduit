@@ -226,6 +226,10 @@ export interface LookLine {
   readonly when?: When;
 }
 
+/** L3. Doubt on words: where the figure came from. `yes` is doubt with no source named. */
+export type Approx = 'yes' | 'recalled' | 'computed' | 'given' | 'guessed';
+export const APPROX_FROM: readonly Approx[] = ['recalled', 'computed', 'given', 'guessed'];
+
 export interface SayLine {
   readonly verb: 'say';
   /** `-` until the normaliser assigns one */
@@ -236,6 +240,12 @@ export interface SayLine {
   readonly text: string;
   /** v2.1. Makes the words a link that opens in a new tab: an `http:` or `https:` address, as written. Absent: not a link. */
   readonly href?: string;
+  /** L3. The words are not sure (`say approx from=recalled | …`); drawn honestly, and what a verifier looks at first */
+  readonly approx?: Approx;
+  /** L3. Shorter forms of the words (`say | long || short`), longest first after `text`: the stage takes the first that fits at the legible floor */
+  readonly alts?: readonly string[];
+  /** L3. Dropped first when room is short */
+  readonly optional?: boolean;
   readonly when?: When;
 }
 
@@ -383,6 +393,8 @@ export interface NodeLine {
    */
   readonly x?: string;
   readonly y?: number;
+  /** L3. As on `say`: the words are not sure */
+  readonly approx?: Approx;
   /** may contain *emphasis* markers and `{…}` expressions */
   readonly text: string;
   readonly when?: When;

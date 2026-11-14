@@ -33,6 +33,13 @@ export interface LayoutItem {
    * them at the size chosen, once, so that nothing around the line moves or is covered whichever one is showing. Absent: its own words only.
    */
   readonly variants?: readonly { readonly text: string; readonly emphasis: readonly Range[] }[];
+  /**
+   * L3. Shorter forms of the same words (`say | long || short`), after `text`, which is the longest. The flow takes the first that fits at the legible
+   * floor, and the last when none does. Chosen here, from the room, so that the server and the page choose alike.
+   */
+  readonly alternatives?: readonly { readonly text: string; readonly emphasis: readonly Range[] }[];
+  /** L3. Let go first when the room is short */
+  readonly optional?: boolean;
 }
 
 export interface LayoutInput {
@@ -633,16 +640,44 @@ function retirable(column: Column): number {
     const bodyBelow = after((unit) => !isHeading(unit));
     if (bodyBelow >= 0) return bodyBelow;
   }
+  // L3. What the brain marked `optional` goes before anything else does.
+  const optional = column.units.findIndex((unit, index) => free(unit, index) && unit.main.item.optional === true);
+  if (optional >= 0) return optional;
   const aside = column.units.findIndex((unit, index) => free(unit, index) && !isHeading(unit) && !key(unit));
   if (aside >= 0) return aside;
   const body = column.units.findIndex((unit, index) => free(unit, index) && !isHeading(unit));
   return body >= 0 ? body : column.units.findIndex(free);
 }
 
+/**
+ * L3. A line with shorter forms takes the first form that lets everything present fit at the legible floor: the size at which the look's smallest
+ * type is reached, or the least a column with controls is shrunk to. Longest first, so words are never shortened when the room is there.
+ */
+function resolveAlternatives(plan: readonly Column[], ctx: Context): void {
+  const room = ctx.safe.height + EPS;
+  const base = cellOf('m', ctx.viewport, ctx.look).fontSize;
+  const withControls = plan.some((column) => column.units.some((unit) => unit.main.item.reserve !== undefined));
+  const floor = Math.max(MIN_SHRINK, Math.min(1, ctx.look.type.minFont / Math.max(1, base)), withControls ? WITH_CONTROLS_SHRINK : 0);
+  for (const column of plan) {
+    column.units.forEach((unit, index) => {
+      const forms = unit.main.item.alternatives;
+      if (forms === undefined || forms.length === 0) return;
+      const all = [{ text: unit.main.item.text, emphasis: unit.main.item.emphasis }, ...forms];
+      for (let form = 0; form < all.length; form += 1) {
+        const chosen = all[form];
+        if (chosen === undefined) continue;
+        column.units[index] = { ...unit, main: prepare({ ...unit.main.item, text: chosen.text, emphasis: chosen.emphasis, alternatives: undefined }, ctx.look) };
+        if (presentHeight(plan, floor, ctx) <= room) return;
+      }
+    });
+  }
+}
+
 function arrangeFlow(units: readonly Unit[], ctx: Context): FlowResult {
   const overflow: string[] = [];
   const page = ctx.input.layout === 'page';
   const plan = makePlan([...units], ctx);
+  resolveAlternatives(plan, ctx);
   // A column never shrinks once it is placed. When what is present would pass the bottom of its box, the oldest lines leave at the top (they are
   // retired and the rest move up, eased like a `page`); lines that stay `pin` and the newest line are kept. Each column scrolls on its own.
   for (let guard = 0; guard < 4096; guard += 1) {
