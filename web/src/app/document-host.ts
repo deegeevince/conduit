@@ -116,7 +116,7 @@ export class DocumentHost {
     if (this.problem !== null) return;
     const rect = this.options.mount.getBoundingClientRect();
     const box = { x: 0, y: 0, width: Math.max(1, rect.width), height: Math.max(1, rect.height) };
-    this.host.sync([{ key: KEY, id: KEY, title: 'Your lesson', source: lessonSource().source, ready: true, box, rest: box, opacity: 1, z: 1, tokens: this.tokens }]);
+    this.host.sync([{ key: KEY, id: KEY, title: 'Your lesson', source: lessonSource().source, page: true, ready: true, box, rest: box, opacity: 1, z: 1, tokens: this.tokens }]);
   }
 
   private push(): void {
