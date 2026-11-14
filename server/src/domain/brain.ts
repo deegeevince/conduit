@@ -60,6 +60,8 @@ export interface ReviewRequest {
   readonly critic?: Pick<CriticFinding, 'problems' | 'suggestions'> | null;
   /** v2.1, `refine`: the passes asked for */
   readonly of?: number;
+  /** v2.1. The conversation's standing asks, for the look to hold the draft to */
+  readonly standing?: readonly string[];
 }
 
 /** What a turn cost. Every field a brain cannot measure is null, never a guess. */

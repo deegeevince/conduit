@@ -3,8 +3,12 @@
 import { existsSync } from 'node:fs';
 import { resolve as resolvePath } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parsePromptVariant, REVIEW_POLICY } from '@conduit/language';
-import type { PromptVariant, ReviewPolicy } from '@conduit/language';
+import { parsePromptVariant, REFINE_LIMITS, REVIEW_POLICY } from '@conduit/language';
+import type { BrainMode, PromptVariant, ReviewPolicy } from '@conduit/language';
+import { NO_AGENT } from './domain/agent';
+import type { AgentSettings } from './domain/agent';
+import { CRITIC_POLICY } from './domain/critic';
+import type { CriticPolicy } from './domain/critic';
 import type { DatasetSettings } from './domain/datasets';
 import type { LibrarySettings } from './domain/techniques';
 import type { LogLevel } from './log';
@@ -88,6 +92,20 @@ export interface Env {
   readonly exploreDir: string;
   /** absolute path of the built web app; set only in production */
   readonly webDist: string | null;
+  /** v2.1. The live critic (`CRITIC`, `CRITIC_MODEL`, `CRITIC_EFFORT`, `CRITIC_PER_HOUR`): on by default with the claude-cli brain, off with the others */
+  readonly critic: CriticPolicy;
+  /** v2.1. What agent mode may use (`AGENT`, `AGENT_TOOLS`, `AGENT_SERVICES`, `AGENT_DIR`, `AGENT_ANSWER_MS`): off, with nothing offered, unless the owner says */
+  readonly agent: AgentSettings;
+  /** v2.1. The kinds of mind a session may choose (`/brain`): `plain` always; `agent` when `AGENT=on`; `steward` when `STEWARD=on` */
+  readonly modes: readonly BrainMode[];
+  /** v2.1. "Keep making it better" (`REFINE`, `REFINE_PASSES`): on by default with the claude-cli brain when the critic is on */
+  readonly refine: { readonly enabled: boolean; readonly passes: number };
+  /** v2.1. Pictures with a prompt (`UPLOADS`): on by default */
+  readonly uploads: boolean;
+  /** v2.1. Absolute path of the steward's status file (`STATUS_FILE`, default `STATUS.md` at the repository's root): what `/status` shows */
+  readonly statusFile: string;
+  /** v2.1. Absolute path of the folder, outside the repository, that holds the held-out battery (`BATTERY_SEALED_DIR`); null: there is none and nothing may be called held out */
+  readonly sealedDir: string | null;
 }
 
 export class EnvError extends Error {
@@ -118,7 +136,7 @@ const CREDENTIAL_NAMES: readonly RegExp[] = [
   /^CLAUDE_CODE_(?:API_KEY|SKIP_.*_AUTH)/i,
   /^(?:AWS|GOOGLE|GCLOUD|GCP|AZURE|VERTEX|BEDROCK|OPENAI|OPENROUTER|GEMINI|MISTRAL|COHERE|GROQ|XAI|HF|HUGGINGFACE)_/i,
   /^CLOUD_ML_REGION$/i,
-  /(?:^|_)(?:API_?KEY|AUTH_TOKEN|ACCESS_KEY(?:_ID)?|SECRET(?:_KEY|_ACCESS_KEY)?|PASSWORD|BEARER_TOKEN)$/i,
+  /(?:^|_)(?:API_?KEY|TOKEN|ACCESS_KEY(?:_ID)?|SECRET(?:_KEY|_ACCESS_KEY)?|PASSWORD|PASSWD|CREDENTIALS?)$/i,
 ];
 const CREDENTIAL_EXCEPTIONS: readonly string[] = ['CLAUDE_CODE_OAUTH_TOKEN'];
 
@@ -280,6 +298,50 @@ export function loadEnv(source: Source): Env {
     };
   }
   const logDir = resolveLogDir(source);
+
+  // v2.1. Read here so that no package needs this file; each is used by the package the comment names (PLAN-v2.1.md).
+  const withModel = brain.kind === 'claude-cli';
+  // package S3
+  const critic: CriticPolicy = {
+    enabled: choice('CRITIC', ['on', 'off'] as const, withModel ? 'on' : 'off') === 'on' && withModel,
+    model: text('CRITIC_MODEL') ?? CRITIC_POLICY.model,
+    effort: choice('CRITIC_EFFORT', ['low', 'medium', 'high'] as const, CRITIC_POLICY.effort),
+    perHour: integer('CRITIC_PER_HOUR', CRITIC_POLICY.perHour, 0, 10_000),
+    lookMs: integer('CRITIC_LOOK_MS', CRITIC_POLICY.lookMs, 5_000, 300_000),
+    queueBelow: CRITIC_POLICY.queueBelow,
+  };
+  // package G. Nothing is offered that is not named here; a service is `name=path/to/mcp.json`, and its file must be outside the repository.
+  const agentOn = choice('AGENT', ['on', 'off'] as const, 'off') === 'on' && withModel;
+  const agentDir = text('AGENT_DIR') === undefined ? null : resolvePath(root, text('AGENT_DIR') ?? '');
+  const services: AgentSettings['services'][number][] = [];
+  for (const item of (text('AGENT_SERVICES') ?? '').split(',').map((entry) => entry.trim()).filter((entry) => entry !== '')) {
+    const at = item.indexOf('=');
+    const name = at < 0 ? '' : item.slice(0, at).trim();
+    const config = at < 0 ? '' : resolvePath(root, item.slice(at + 1).trim());
+    if (!/^[a-z][a-z0-9-]{0,31}$/.test(name) || config === '' || !existsSync(config)) problems.push(`AGENT_SERVICES entries are name=path to an MCP configuration file that exists, got "${item}"`);
+    else if (config.startsWith(root)) problems.push(`AGENT_SERVICES: "${name}" is configured from inside the repository; keep ${config} outside it, it may hold a credential`);
+    else services.push({ name, config, gist: 'a connected service; asks before it acts' });
+  }
+  const agent: AgentSettings = agentOn
+    ? {
+        enabled: true,
+        tools: (text('AGENT_TOOLS') ?? 'WebSearch,WebFetch').split(',').map((name) => name.trim()).filter((name) => /^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(name)),
+        services,
+        dir: agentDir,
+        answerMs: integer('AGENT_ANSWER_MS', NO_AGENT.answerMs, 5_000, 3_600_000),
+      }
+    : NO_AGENT;
+  const modes: BrainMode[] = ['plain', ...(agent.enabled ? (['agent'] as const) : []), ...(choice('STEWARD', ['on', 'off'] as const, 'off') === 'on' ? (['steward'] as const) : [])];
+  // package S4
+  const refine = {
+    enabled: choice('REFINE', ['on', 'off'] as const, critic.enabled ? 'on' : 'off') === 'on' && critic.enabled,
+    passes: integer('REFINE_PASSES', REFINE_LIMITS.passes, 1, REFINE_LIMITS.max),
+  };
+  const uploads = choice('UPLOADS', ['on', 'off'] as const, 'on') === 'on';
+  const statusFile = resolvePath(root, text('STATUS_FILE') ?? 'STATUS.md');
+  // package H. The held-out set does not live in the repository: a builder, a seed or a prompt edit cannot have read what is not there.
+  const sealedDir = text('BATTERY_SEALED_DIR') === undefined ? null : resolvePath(root, text('BATTERY_SEALED_DIR') ?? '');
+  if (sealedDir !== null && sealedDir.startsWith(root)) problems.push(`BATTERY_SEALED_DIR must be outside the repository, got ${sealedDir}`);
   const exploreDir = resolvePath(root, 'explore');
 
   // The owner's own data: read only when switched on, and never from the account the techniques live on.
@@ -302,5 +364,5 @@ export function loadEnv(source: Source): Env {
   }
 
   if (problems.length > 0) throw new EnvError(problems);
-  return { production, host, trustedHosts, port, logLevel, brain, images, sight, promptVariant: parsePromptVariant(text('PROMPT_VARIANT')), review, library, datasets, logDir, readLinks: choice('READ_LINKS', ['on', 'off'] as const, 'on') === 'on', paintingsPerSession: images.kind === 'none' ? 0 : images.maxPerSession, exploreDir, webDist };
+  return { production, host, trustedHosts, port, logLevel, brain, images, sight, promptVariant: parsePromptVariant(text('PROMPT_VARIANT')), review, library, datasets, logDir, readLinks: choice('READ_LINKS', ['on', 'off'] as const, 'on') === 'on', paintingsPerSession: images.kind === 'none' ? 0 : images.maxPerSession, exploreDir, webDist, critic, agent, modes, refine, uploads, statusFile, sealedDir };
 }

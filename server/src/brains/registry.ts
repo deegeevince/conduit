@@ -1,3 +1,5 @@
+import type { BrainMode } from '@conduit/language';
+import type { AgentSettings } from '../domain/agent';
 import type { Brain, BrainRegistry } from '../domain/brain';
 import type { BrainSettings } from '../env';
 import type { Logger } from '../log';
@@ -11,6 +13,12 @@ export interface BrainsDeps {
   readonly log: Logger;
   /** shared with the relay routes; only used when the relay brain is selected */
   readonly relayHub: RelayHub;
+  /**
+   * v2.1. What agent mode may use, and the kinds of mind a session may choose. STUB(PLAN-v2.1 package G): the configured brain answers
+   * `choice`, `choose`, `tools`, `setTool` and `permit` from these; `steward` hands a session's turns to `relayHub`.
+   */
+  readonly agent?: AgentSettings;
+  readonly modes?: readonly BrainMode[];
 }
 
 /**

@@ -132,6 +132,8 @@ export interface ReviewBriefInput {
   readonly critic?: Pick<CriticFinding, 'problems' | 'suggestions'> | null;
   /** v2.1, `refine` only: the passes asked for, for "pass 2 of 4" */
   readonly of?: number;
+  /** v2.1. What the user asked to hold on every reply (`TurnContext.standing`): a draft that breaks one is not right, however well it landed */
+  readonly standing?: readonly string[];
 }
 
 /** The most boxes a brief lists: the largest things first. Past this a brain reads the picture. */
@@ -190,8 +192,9 @@ export function buildReviewBrief(input: ReviewBriefInput): string {
     found,
     where,
     `THE USER ASKED: ${input.asked}`,
+    input.standing === undefined || input.standing.length === 0 ? null : `AND ASKED EARLIER, FOR EVERY REPLY:\n${input.standing.map((ask) => `  - ${ask}`).join('\n')}`,
     [
-      `If it reads right and answers what was asked, write the one line \`${REVIEW_KEEP}\` and nothing else.`,
+      `If it reads right, answers what was asked and keeps to what was asked for every reply, write the one line \`${REVIEW_KEEP}\` and nothing else.`,
       'If not, change only what is wrong, in as few lines as it takes. What you write now is tried out of sight and shown only if it is better:',
       '- change a thing by its id: `set`, `move`, `revise <id> | new words`, `cancel <id>`, or its own line again with what differs;',
       '- a diagram or a chart in the wrong place or too small: its opening line again with a room (`flow x1 4,6 152x62`); its parts stay as they are;',

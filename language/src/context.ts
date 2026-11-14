@@ -157,7 +157,16 @@ export interface TurnContext {
   readonly techniques?: readonly TechniqueCard[];
   /** tables a chart can draw by reference; absent means none */
   readonly data?: readonly DataFacts[];
+  /**
+   * v2.1. What the user asked to hold from now on ("add a visual to every reply"), in their words, oldest first. The brain records
+   * one with a `standing | …` line; the conductor keeps it for the conversation and gives it back in every later brief, and the
+   * look checks the draft against it. Absent or empty: none.
+   */
+  readonly standing?: readonly string[];
 }
+
+/** v2.1. The most standing asks a conversation holds, and the most characters of each; the oldest goes when a seventh comes. */
+export const STANDING_LIMITS = { asks: 6, chars: 140 } as const;
 
 /** What a relay agent can know about the two clocks between its calls. */
 export interface RelayClock {

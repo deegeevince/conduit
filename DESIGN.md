@@ -2,7 +2,7 @@
 
 This document answers one question: **what must things on the stage look and move like, and what must they never be?** The values themselves (hex codes, amounts, recipes) live in `language/src/vocabulary.ts` (what a look is, in the brain's words) and `web/src/looks/*.ts` (what the painter adds); this file says why they are what they are and specifies the part that cannot be data.
 
-> Sections marked **(v2)** specify what the quality and expression round builds. They are the design the builders work to; `PLAN-v2.md` says who builds what. Everything unmarked is v1 as it runs.
+> Sections marked **(v2)** specify what the quality and expression round built; they are as it runs, except where `PLAN-v2.1.md` says a rule was broken in the building (text laid over structures and charts, chart type at a fixed size, shapes that run out of a picture). v2.1's own rules (one layout, frames, the foot for choices, code blocks, decks, the text layer) are specified in `PLAN-v2.1.md`, section 2, until the round ships and they move here.
 
 ## What a look is
 

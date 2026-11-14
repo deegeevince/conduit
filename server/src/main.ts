@@ -1,11 +1,14 @@
+import { fileURLToPath } from 'node:url';
 import { serve } from '@hono/node-server';
+import { FIX_POLICY } from '@conduit/language';
 import { createBrains } from './brains/registry';
+import { createCritic, createFindingQueue } from './critic/registry';
 import { RelayHub } from './brains/relay/relay-hub';
 import { AssetStore } from './domain/assets';
 import { Conductor } from './domain/conductor';
 import { NO_DATASETS } from './domain/datasets';
 import { SessionStore } from './domain/session';
-import { EnvError, loadEnv, processEnvironment } from './env';
+import { EnvError, loadEnv, processEnvironment, withheldCredentialNames } from './env';
 import type { Env } from './env';
 import { createApp } from './http/app';
 import { createImageModel } from './images/registry';
@@ -26,7 +29,7 @@ function boot(env: Env): void {
     now,
     idleTimeoutMs: env.brain.kind === 'relay' ? env.brain.idleTimeoutMs : RELAY_IDLE_FALLBACK_MS,
   });
-  const brains = createBrains({ settings: env.brain, log: log.child({ part: 'brain' }), relayHub });
+  const brains = createBrains({ settings: env.brain, log: log.child({ part: 'brain' }), relayHub, agent: env.agent, modes: env.modes });
   const assets = new AssetStore();
   const images = createImageModel(env.images, log.child({ part: 'images' }));
   const sessionLog = env.logDir === null ? NO_SESSION_LOG : createJsonlSessionLog({ log: log.child({ part: 'sessionlog' }), dir: env.logDir, now });
@@ -65,8 +68,13 @@ function boot(env: Env): void {
     datasets: NO_DATASETS,
     review: env.review,
     maxPaintings: env.paintingsPerSession,
+    critic: createCritic({ policy: env.critic, bin: env.brain.kind === 'claude-cli' ? env.brain.bin : 'claude', log: log.child({ part: 'critic' }), now }),
+    findings: createFindingQueue(env.critic.enabled && env.logDir !== null ? fileURLToPath(new URL('../../loop/queue/', import.meta.url)) : null, log.child({ part: 'critic' })),
+    fix: FIX_POLICY,
     now,
   });
+  const withheld = withheldCredentialNames();
+  if (withheld.length > 0) log.info('env.credentials_withheld', { names: withheld, note: 'no child process is given these; every model call is on the owner\'s login' });
   const app = createApp({ env, log: log.child({ part: 'http' }), conductor, relayHub, assets });
 
   const server = serve({ fetch: app.fetch, hostname: env.host, port: env.port }, (info) => {

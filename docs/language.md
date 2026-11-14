@@ -4,7 +4,7 @@ This document is the specification. The code in `language/` implements it, and w
 
 Series is version 4. Version 2 could only set type; version 3 can draw; version 4 can name a structure and have the painter lay it out, chart data on an instrument, put controls on stage that drive the drawing with no round trip, and be shown its own draft and fix it. Everything version 3 said still means what it meant, with the exceptions listed in section 12.
 
-> **State of the build.** Version 4 is specified here and parsed, scheduled and carried by `language/` today. The painter does not yet perform structures, charts, controls or its own paint, and says so in what it advertises, so no brain is taught them yet. `PLAN-v2.md` is the build.
+> **State of the build.** Version 4 is specified here, parsed, scheduled and carried by `language/`, and performed: the painter lays out every structure, draws charts through its charting engine, works every control and renders its own paint, and advertises exactly that, so a brain is taught all of it (`web/src/painter/blocks/index.ts`, `controls/index.ts`, `web/src/render/chart/index.ts`). What v2.1 adds to the language (`standing`, `code`, `deck`, `pic … from=`, `refine`, `href=`, `data=dataset:`, and composition by relation, repetition and dive) is not here yet: each is written into this document by the package that builds it, before it is parsed (`PLAN-v2.1.md`).
 
 ## 1. What Series is for
 

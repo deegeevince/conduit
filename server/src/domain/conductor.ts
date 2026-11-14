@@ -1,5 +1,5 @@
 import { API, CANVAS, DATA_LIMITS, EMPTY_STAGE, PASTE_AS_DOCUMENT_CHARS, FULL_CAPABILITIES, LANGUAGE, LEAD_WINDOW, LineNormalizer, LineReader, TurnScore, buildSystemPrompt, serializeLine, settle, wearingAt } from '@conduit/language';
-import type { BrainChange, BrainChoice, PromptVariant } from '@conduit/language';
+import type { BrainChange, BrainChoice, FixPolicy, PromptVariant } from '@conduit/language';
 import type {
   BackEvent,
   BackEventRecord,
@@ -39,6 +39,7 @@ import type { SessionLog } from './session-log';
 import type { ActiveTurn, Session, SessionStore, StageSink } from './session';
 import { factsOf, tableFromText } from './datasets';
 import type { DatasetLibrary } from './datasets';
+import type { Critic, FindingQueue } from './critic';
 import { reviewTurn } from './review';
 import type { TechniqueLibrary } from './techniques';
 
@@ -63,6 +64,16 @@ export interface ConductorDeps {
   readonly review: ReviewPolicy;
   /** paintings a conversation may ask the image model for */
   readonly maxPaintings: number;
+  /**
+   * v2.1. The critic that looks at a real turn's resting picture after the turn has ended, and compares a draft with a candidate inside
+   * look-and-fix; `NO_CRITIC` when off. STUB(PLAN-v2.1 package S1): call `look` once the snapshot of a turn that drew something has
+   * arrived, log the finding, send it as a `critic` event and queue it when it is below `CriticPolicy.queueBelow`.
+   */
+  readonly critic: Critic;
+  /** v2.1. Where findings wait for the improvement loop */
+  readonly findings: FindingQueue;
+  /** v2.1. True revision: what a fix must keep, and how long trying one may take (`FIX_POLICY`). Not read from the environment: the loop may not change it. */
+  readonly fix: FixPolicy;
   /** milliseconds; injected so nothing in the domain reads the wall clock directly */
   readonly now: () => number;
 }

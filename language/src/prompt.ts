@@ -59,8 +59,13 @@ import type { LookId, Verb } from './vocabulary';
 import { API } from './wire';
 import type { Capabilities, ScreenFacts, Services, TurnInput } from './wire';
 
-/** The most the system prompt may cost, in tokens, for a painter and server that can do everything. */
-export const PROMPT_BUDGET = { tokens: 8850, charsPerToken: 2.36 } as const;
+/**
+ * The most the system prompt may cost, in tokens, for a painter and server that can do everything. v2.1 raises it from 8,850 to 9,400:
+ * code blocks, decks, the user's pictures and links are new things to teach, and v2 ended at 8,848. The 550 are to be spent on those
+ * and nothing else; what teaches one kind of answer belongs in a technique, which costs a turn only when it fits. What a mode adds
+ * (an agent's tools) rides in the brief's own note and is not counted here, because a plain conversation never pays for it.
+ */
+export const PROMPT_BUDGET = { tokens: 9400, charsPerToken: 2.36 } as const;
 
 /**
  * A fair estimate of what a prompt costs. Series is dense in symbols and short

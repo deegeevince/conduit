@@ -54,7 +54,7 @@ Each vendor is imported in exactly one place, so replacing one is a change to on
 | (v2) `node:fs` for the technique seed, overlay and cache | `server/src/library/files.ts` |
 | (v2) `git` (worktrees, branches, diffs) | `server/src/loop/git.ts` |
 | (v2) `claude -p` as an agent with tools (the critic, the builder, the reviewer, the edit and reader passes) | `server/src/loop/agents.ts` |
-| `process.env` | `server/src/env.ts` reads it through `loadEnv`; handed over only by `main.ts` and the tools under `server/src/tools/` and `brains/claude-cli/probe.ts` |
+| `process.env` | `server/src/env.ts` reads it through `loadEnv` and makes every child's environment (`childEnvironment`, which leaves out credentials); handed over only by `main.ts` and the tools under `server/src/tools/` and `brains/claude-cli/probe.ts`. Three places still read it directly and are to be brought in by v2.1: `tools/improve.ts`, `library/remote/remote-cli.ts`, `loop/deps.ts` |
 | the console | `server/src/log.ts` (and one line in `main.ts` for a failed boot) |
 
 ## Six ideas the rest depends on
@@ -237,7 +237,7 @@ The OpenAI adapter uses the edits endpoint when there is a sketch and the genera
 
 **Reading Remote.** One call lists every technique: `remote get memory <root> --links 1` returns the root's links, each with the linked block's id, title, summary, reason and fingerprint (checked on this machine: about one second). A technique's body is fetched (`--content 1`) only when its fingerprint differs from the cache's. The refresh runs at boot and every ten minutes and is awaited by nothing.
 
-**Writing** is not on the server's path at all: it is `pnpm library push`, used by a person, a review or the loop's steward. It refuses what `lintTechnique` refuses (no example, an example that does not parse, a date, a change number, history, a possible secret, a reason that does not begin "only if"), reads the block again, sends that read's fingerprint, re-applies on a conflict, and sets `REMOTE_SESSION_ID` and `REMOTE_AGENT`. An edit pass and a reader pass by cold `claude -p` sessions come before the write.
+**Writing** is not on the server's path at all: it is `pnpm library push`, used by a person, a review or the loop's steward. It refuses what `lintTechnique` refuses (no example, an example that does not parse, a date, a change number, history, a possible secret, a reason that does not begin "only if"), reads the block again, sends that read's fingerprint, re-applies on a conflict, and sets `REMOTE_SESSION_ID` and `REMOTE_AGENT` (to the steward when the shell sets neither: the write is not refused for want of a role). An edit pass and a reader pass by cold `claude -p` sessions come before the write.
 
 **Datasets** (`DatasetLibrary`) are the same idea with one difference that is stated rather than hidden: finding whether a prompt names a stored series is instant and from memory, but reading its rows is a network call on the turn's path. It is treated exactly as reading a link is: a `reading` event, one short deadline, and a brief that says it could not be read when it could not.
 
@@ -250,7 +250,7 @@ The OpenAI adapter uses the edits endpoint when there is a sketch and the genera
 - `leaksBattery`: battery text in source.
 - `decide(proposal, before, after)`: the rule for keeping an experiment, with every reason in words for the changelog.
 
-A builder is a `claude -p` process with tools, confined to its worktree by the CLI's own permission flags; the critic and the reviewer have no tools that write. All of them are on the owner's login. The budget is counted in the dollars the CLI reports for each call: on a subscription that is a measure of use, not a bill, and it is the one number every call returns.
+A builder is a `claude -p` process with tools. In v2 it is **not** confined: it has blanket read, edit and write with deny rules for the protected paths only, its worktree sits beside a tree that holds the sealed set, and it may run scripts it can edit. v2.1 moves it to an exported tree outside the repository under the CLI's restricted mode (`PLAN-v2.1.md`, package I); the critic and the reviewer have no tools that write. All of them are on the owner's login. The budget is counted in the dollars the CLI reports for each call: on a subscription that is a measure of use, not a bill, and it is the one number every call returns.
 
 ## (v2) Taste
 
@@ -266,7 +266,7 @@ A `Recording` is a turn as data: the stage it started from and its lines. `creat
 
 ## The exploration harness
 
-`pnpm explore` hands each prompt of `explore/battery.json` (thirty-five prompts, thirteen of them held out from the prompt's worked examples, and five scripted conversations) to a brain exactly as the conductor would, `--samples` times each and, on the information prompts, once per prompt variant, and writes the lines with their arrival times, the usage, and checks computed from the schedule to `explore/runs/<run>/`, with a pass rate per check. The painter's own layout engine, run in a headless Chrome the tool starts (and stops) behind a Vite dev server, makes the final still of every answer and carries a conversation's stage, report and picture to its next turn; a vision judge (`claude -p`, sonnet) is shown the still and scores whether it is what was asked, whether any text is unreadable, whether a label points at the wrong thing, whether it is correct, and its coherence from 1 to 5. For prompts that ask for it, the same question goes to a plain-English model for comparison. Everything the tool starts goes through `spawnTracked`, so nothing outlives it. `/explore.html` reads a run and replays every answer locally as a film: a strip of stills per card through one shared off-screen renderer, a live stage for the card being played. The page calls no brain, so a run can be reviewed any number of times, and re-running the battery after a change gives a second run to set beside the first.
+`pnpm explore` hands each prompt of `explore/battery.json` (fifty-eight prompts and ten scripted conversations; v1 had thirty-five and five) to a brain exactly as the conductor would, `--samples` times each and, on the information prompts, once per prompt variant, and writes the lines with their arrival times, the usage, and checks computed from the schedule to `explore/runs/<run>/`, with a pass rate per check. The painter's own layout engine, run in a headless Chrome the tool starts (and stops) behind a Vite dev server, makes the final still of every answer and carries a conversation's stage, report and picture to its next turn; a vision judge (`claude -p`, sonnet) is shown the still and scores whether it is what was asked, whether any text is unreadable, whether a label points at the wrong thing, whether it is correct, and its coherence from 1 to 5. For prompts that ask for it, the same question goes to a plain-English model for comparison. Everything the tool starts goes through `spawnTracked`, so nothing outlives it. `/explore.html` reads a run and replays every answer locally as a film: a strip of stills per card through one shared off-screen renderer, a live stage for the card being played. The page calls no brain, so a run can be reviewed any number of times, and re-running the battery after a change gives a second run to set beside the first.
 
 ## The server
 
@@ -309,7 +309,7 @@ Verified on the integrated product (Node 22.14.0, pnpm 10.28.2, TypeScript 7.0.2
 - A tap changes the stage in one frame (16 ms from pointer-down to the pressed state, others receded, waiting dots), five taps open one turn; Stop settles in 34 ms with no half-drawn thing left; "Show all" settles in under 20 ms.
 - Export of `overture` at 1920x1080 and 30 fps: 664 frames for a 22.14 s film (`round(22.14 x 30) = 664`), 22.1 s long, made in 3 s; frame 31 of a strip that starts at 9 s is byte-identical to the still at 10 s; the visible stage held 60 fps (95th percentile 16.7 ms) with one 200 ms hitch when the exporter's renderer was created; an SVG still embeds its font and requests nothing.
 - A stroked or filled shape's box matches `canvasToStage` projected through the camera to 0.00 px in `blueprint` with reduced motion; with the hand look's wobble and the camera's sway it is within 3 px.
-- Resting text keeps 4.5:1 or better in all eight looks (worst measured 4.52:1, `riso`), and no text of ten battery answers leaves the 16 px safe frame at any sampled instant, in full and reduced motion.
+- Resting text keeps 4.5:1 or better in the eight looks v1 had (worst measured 4.52:1, `riso`), and no text of ten battery answers leaves the 16 px safe frame at any sampled instant, in full and reduced motion.
 
 **(v2) Checked on the integrated product** (the same machine; headless Chrome with `--use-angle=metal`, the three renderer unless said, a replay brain for the demos and sonnet at `--effort low` for the rest):
 

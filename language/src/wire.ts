@@ -539,6 +539,7 @@ export const APP_COMMANDS = [
   { name: 'brain', args: `<${BRAIN_MODES.join('|')}>`, gist: 'plain: no tools. agent: it can act, and asks first. steward: the steward answers' },
   { name: 'tools', args: '[name on|off]', gist: 'what the brain may use in agent mode (web search, connected services); bare lists them' },
   { name: 'status', args: '', gist: 'what is live, what is being built and what is waiting on you' },
+  { name: 'asks', args: '[clear]', gist: 'what you asked to hold for every reply; clear forgets them' },
   { name: 'look', args: '<name>', gist: 'the look of the stage; bare lists them' },
   { name: 'review', args: '<on|off>', gist: 'whether a drawing is checked and fixed after its first draft' },
   { name: 'better', args: '[passes]', gist: 'keep making the picture on stage better, pass by pass' },
@@ -592,6 +593,8 @@ export const API = {
   uploads: (session: string): string => `/api/sessions/${session}/uploads`,
   /** v2.1. GET: the bytes of a picture the user gave, by its id. Same origin; what `pic … from=` draws. */
   upload: (session: string, id: string): string => `/api/sessions/${session}/uploads/${encodeURIComponent(id)}`,
+  /** v2.1. POST video/webm: a film of a turn made in the page (`/capture`), saved beside the session's log for the steward to watch. 204. */
+  capture: (session: string, turn: string): string => `/api/sessions/${session}/turns/${turn}/capture`,
   /** v2.1. GET: `AppStatus`, read from the steward's `STATUS.md`. What `/status` shows and what the brief's "this app" note is made from. */
   status: '/api/status',
   /** v2.1. GET: this session's `ToolChoice[]`. PUT `{ name, on }`: switches one tool or connected service for this session; answers the list. */
