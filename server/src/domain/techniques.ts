@@ -148,6 +148,32 @@ const CUES: readonly (readonly [RegExp, readonly string[]])[] = [
   [/\bdraw (?:me )?how\b|\bhow does (?:a|an|the)\b[^?.]*\b(?:work|happen)s?\b|\bcross[- ]section\b|\banatomy\b/i, ['mechanism', 'machine', 'part']],
 ];
 
+/**
+ * A word used in another sense is not a subject: "the map function" is code,
+ * "the word chart" is a word. The noun that follows (or the "word"/"term" that
+ * precedes) says so, and the word is taken out of what the message is matched on.
+ */
+const OTHER_SENSE_AFTER = /\b([a-z][a-z-]+)\s+(?:function|functions|method|methods|operator|operators|keyword|keywords|statement|statements|command|syntax|data type|object|class|variable|parameter|argument|prop|hook|pattern)\b/gi;
+const OTHER_SENSE_BEFORE = /\b(?:the |a )?((?:word|term|phrase|name|verb|noun|keyword|function|method|operator)s?) ["'`]?([a-z][a-z-]+)["'`]?/gi;
+
+/** Words the message uses in a sense that is not a thing to draw. */
+export function wordsInOtherSense(said: string): ReadonlySet<string> {
+  const out = new Set<string>();
+  for (const pattern of [OTHER_SENSE_AFTER, OTHER_SENSE_BEFORE]) {
+    pattern.lastIndex = 0;
+    for (const found of said.matchAll(pattern)) {
+      if (pattern === OTHER_SENSE_BEFORE && found[1] !== undefined) out.add(stem(found[1]));
+      const word = pattern === OTHER_SENSE_BEFORE ? found[2] : found[1];
+      if (word !== undefined && !['the', 'a', 'an', 'this', 'that', 'each', 'every', 'one', 'my', 'your'].includes(word.toLowerCase())) out.add(stem(word));
+    }
+  }
+  return out;
+}
+
+/** A question about a meaning or a usage, with nothing in it that asks to see something: what a plain answer is. */
+const CONCEPT_ASK = /^\s*(?:please\s+)?(?:explain|what(?:'s| is| are| does)|define|describe|tell me (?:about|what)|meaning of|how (?:do|does|can|should) (?:i|you|we) (?:use|write|call|read|pronounce))\b/i;
+const ASKS_TO_SEE = /\b(?:draw|diagram|picture|illustrate|visuali[sz]e|sketch|paint|animate|chart|graph|plot|show me|cross[- ]section|map of|timeline of|flowchart|flow chart|step by step|walk me through|how does (?:a|an|the)\b[^?.]*\bwork)\b/i;
+
 /** What a message is matched on. */
 export interface TechniqueQuery {
   readonly input: TurnInput;
@@ -234,8 +260,12 @@ export const MATCH_NEAR = 0.6;
  */
 export function selectTechniques(index: readonly TechniqueTerms[], query: TechniqueQuery, limit: number = TECHNIQUE_LIMITS.cards): TechniqueHit[] {
   const said = query.input.kind === 'prompt' || query.input.kind === 'tap' || query.input.kind === 'act' ? query.input.text : '';
-  const words = new Set(wordsOf(said));
-  for (const [cue, anchors] of CUES) if (cue.test(said)) for (const anchor of anchors) words.add(anchor);
+  const other = wordsInOtherSense(said);
+  const words = new Set(wordsOf(said).filter((word) => !other.has(word)));
+  // An ask for a meaning or a usage, with nothing that asks to see: one word of a recipe's name is not enough to hand it over.
+  const seeable = said.split(/\s+/).filter((word) => !other.has(stem(word))).join(' ');
+  const conceptual = CONCEPT_ASK.test(said) && !ASKS_TO_SEE.test(seeable);
+  for (const [cue, anchors] of CUES) if (!conceptual && cue.test(said)) for (const anchor of anchors) words.add(anchor);
   if (query.documents) for (const word of ['document', 'paper', 'report', 'article']) words.add(word);
   if (words.size === 0 || index.length === 0) return [];
   const spread = new Map<string, number>();
@@ -255,7 +285,7 @@ export function selectTechniques(index: readonly TechniqueTerms[], query: Techni
       }
       if (entry.against.has(word)) score -= 1;
     }
-    if (score >= MATCH_FLOOR && (matched.length >= 2 || named)) hits.push({ technique: entry.technique, score, matched });
+    if (score >= MATCH_FLOOR && (matched.length >= 2 || (named && !conceptual))) hits.push({ technique: entry.technique, score, matched });
   }
   hits.sort((a, b) => b.score - a.score || a.technique.title.localeCompare(b.technique.title));
   const best = hits[0]?.score ?? 0;

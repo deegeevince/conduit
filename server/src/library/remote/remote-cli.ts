@@ -142,6 +142,13 @@ export async function readRemoteTechniques(settings: RemoteSettings, known: Read
         skip.set(entry.id, entry.fingerprint);
         return;
       }
+      // What is read passes the rules that what is written passes: a block edited by hand in Remote that no longer parses, carries a secret or tells history is not handed to a brain.
+      const problems = lintTechnique(entry.title, entry.summary, entry.reason, asText(node.content));
+      if (problems.length > 0) {
+        skip.set(entry.id, entry.fingerprint);
+        log.warn('library.technique_refused_on_read', { id: entry.id, title: entry.title, problems });
+        return;
+      }
       const fingerprint = typeof node.fingerprint === 'string' ? node.fingerprint : entry.fingerprint;
       result.set(entry.id, { id: entry.id, title: entry.title, summary: entry.summary, reason: entry.reason, fingerprint, source: 'remote', body });
     } catch (error) {
