@@ -2,6 +2,7 @@
 // lesson view will be another. The host (web/src/surfaces/host.ts) owns the frame, the policy, the protocol and the watchdog; what it runs is
 // a document (HTML with inline style and script) and what it keeps is a saved state. Nothing here acts: the protocol carries data only.
 
+import type { AppShelf } from '@conduit/language';
 import type { AppTokens } from './app';
 import type { Box } from './space';
 
@@ -12,6 +13,8 @@ export interface SurfaceSpec {
   readonly title: string;
   /** the document: the brain's (or the lesson view's) markup with its inline <style> and <script>; the host builds the page from it */
   readonly source: string;
+  /** the library shelf the document asked for; the host puts each one in the page before the document's own script runs */
+  readonly uses?: readonly AppShelf[];
   /** it may run now. False: nothing is made. */
   readonly ready: boolean;
   /** where it is on screen now, host CSS pixels, through the camera */

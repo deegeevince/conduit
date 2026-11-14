@@ -16,6 +16,7 @@
 import type { AppTokens } from '../contracts/app';
 import type { SurfaceEmit, SurfaceHold, SurfaceHost, SurfaceProbe, SurfaceSpec } from '../contracts/surface';
 import { SURFACE_LIMITS, SURFACE_SOURCE_MAX, buildSurfaceDocument } from './document';
+import { loadShelf, shelfKey, shelfText } from './shelf';
 
 export interface SurfaceHostOptions {
   /** the element the surfaces' layer goes in (the stage) */
@@ -137,6 +138,8 @@ interface Running {
   readonly channel: string;
   readonly frame: HTMLIFrameElement;
   readonly source: string;
+  /** the libraries it was built with (`shelfKey`) */
+  readonly shelf: string;
   readonly fingerprint: string;
   spec: SurfaceSpec;
   loads: number;
@@ -287,10 +290,11 @@ export function createSurfaceHost(options: SurfaceHostOptions): SurfaceHost {
     style.pointerEvents = show && spec.opacity > 0.9 ? 'auto' : 'none';
   };
 
-  const create = (spec: SurfaceSpec): Running => {
+  const create = (spec: SurfaceSpec, shelf: string): Running => {
     const channel = randomToken();
     const source = spec.source.slice(0, SURFACE_SOURCE_MAX);
-    const print = fingerprint(source);
+    const library = shelfKey(spec.uses);
+    const print = fingerprint(library === '' ? source : `${library}\u0000${source}`);
     const state = stored(print);
     const frame = document.createElement('iframe');
     // The sandbox: scripts, and nothing else. It is set before the document is, and never widened.
@@ -304,7 +308,7 @@ export function createSurfaceHost(options: SurfaceHostOptions): SurfaceHost {
     frame.style.visibility = 'hidden';
     frame.style.opacity = '0';
     const run: Running = {
-      key: spec.key, id: spec.id, channel, frame, source: spec.source, fingerprint: print, spec, loads: 0, loaded: false, shown: false, state, told: state, height: null, still: stills.get(spec.key) ?? null,
+      key: spec.key, id: spec.id, channel, frame, source: spec.source, shelf: library, fingerprint: print, spec, loads: 0, loaded: false, shown: false, state, told: state, height: null, still: stills.get(spec.key) ?? null,
       refused: 0, emits: 0, faults: 0, window: { start: 0, count: 0 }, minute: { start: 0, count: 0 }, snaps: new Map(), snapSeq: 0, stillTimer: undefined, saveTimer: undefined, pinger: undefined, pings: 0, answered: 0, placed: '',
     };
     // a frame that loads a second time has navigated itself (a script, a link): it is removed, and what it was reaching for was never allowed to answer
@@ -316,8 +320,10 @@ export function createSurfaceHost(options: SurfaceHostOptions): SurfaceHost {
       }
     });
     mark(print, true);
-    frame.srcdoc = buildSurfaceDocument({ source, tokens: spec.tokens, channel, state, ...(options.withoutDepth === true ? { depth: false } : {}) });
+    frame.srcdoc = buildSurfaceDocument({ source, tokens: spec.tokens, channel, state, ...(shelf === '' ? {} : { shelf }), ...(options.withoutDepth === true ? { depth: false } : {}) });
     running.set(spec.key, run);
+    // it has its room before its script runs (still hidden): an app that measures itself at the start sees its real size, not a frame of no size
+    place(run, spec);
     layer.append(frame);
     return run;
   };
@@ -432,9 +438,15 @@ export function createSurfaceHost(options: SurfaceHostOptions): SurfaceHost {
   };
   window.addEventListener('message', onMessage);
 
-  return {
+  /** the libraries being fetched from the build (one chunk each), and the ones that could not be */
+  const loadingShelf = new Set<string>();
+  const missingShelf = new Set<string>();
+  let lastSpecs: readonly SurfaceSpec[] = [];
+
+  const api: SurfaceHost = {
     sync(specs) {
       if (disposed) return;
+      lastSpecs = specs;
       const wanted = new Set(specs.map((spec) => spec.key));
       named = specs.map((spec) => spec.key);
       for (const run of [...running.values()]) if (!wanted.has(run.key)) destroy(run, null);
@@ -443,18 +455,39 @@ export function createSurfaceHost(options: SurfaceHostOptions): SurfaceHost {
         if (held.has(spec.key) || !spec.ready || spec.source === '') continue;
         let run = running.get(spec.key);
         // a surface written again in place is a new document: it starts afresh (its saved state is kept under the old text)
-        if (run !== undefined && run.source !== spec.source) {
+        if (run !== undefined && (run.source !== spec.source || run.shelf !== shelfKey(spec.uses))) {
           destroy(run, null);
           run = undefined;
         }
         if (run === undefined) {
-          const print = fingerprint(spec.source.slice(0, SURFACE_SOURCE_MAX));
+          // the libraries it asked for come from the build as lazy chunks: it starts when they are in hand, and this is told again then
+          const library = shelfKey(spec.uses);
+          let shelf = '';
+          if (library !== '') {
+            const text = shelfText(spec.uses);
+            if (text === null && !missingShelf.has(library)) {
+              if (!loadingShelf.has(library)) {
+                loadingShelf.add(library);
+                void loadShelf(spec.uses).then((ok) => {
+                  loadingShelf.delete(library);
+                  if (!ok) {
+                    missingShelf.add(library);
+                    options.onNote?.(`The app "${spec.title === '' ? spec.id : spec.title}" asked for a library (${library}) that this build does not have.`);
+                  }
+                  if (!disposed) api.sync(lastSpecs);
+                });
+              }
+              continue;
+            }
+            shelf = text ?? '';
+          }
+          const print = fingerprint(library === '' ? spec.source.slice(0, SURFACE_SOURCE_MAX) : `${library}\u0000${spec.source.slice(0, SURFACE_SOURCE_MAX)}`);
           if (marked(print)) {
             held.set(spec.key, { id: spec.id, why: 'marked', print });
             options.onNote?.(`The app "${spec.title === '' ? spec.id : spec.title}" froze this page last time, so it does not run by itself.`);
             continue;
           }
-          run = create(spec);
+          run = create(spec, shelf);
         }
         if (run.spec.tokens !== spec.tokens) {
           post(run, { type: 'data', tokens: spec.tokens satisfies AppTokens });
@@ -513,4 +546,5 @@ export function createSurfaceHost(options: SurfaceHostOptions): SurfaceHost {
       layer.remove();
     },
   };
+  return api;
 }

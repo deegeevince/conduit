@@ -4,6 +4,7 @@
 
 import type { StructureRow } from './schedule';
 import { LIMITS } from './vocabulary';
+import type { AppShelf } from './vocabulary';
 
 /** The document a block's rows make: one line a row, as written, cut at the last whole line that fits `LIMITS.appChars`. */
 export function appSourceOf(rows: readonly StructureRow[]): string {
@@ -20,7 +21,7 @@ export function appSourceOf(rows: readonly StructureRow[]): string {
 
 /** The user's words ask for something that WORKS, not a picture of one: an app, a game, a calculator, a tool, a tracker, a quiz, a worksheet that checks answers. */
 const ASKS_FOR_WORKING =
-  /\b(working|fully interactive|interactive|usable|actually\s+(?:work|works|working|use|usable|do|does)|really\s+(?:work|works|working)|that\s+(?:work|works)|i\s+can\s+(?:use|play|try|add|tick|type|click|tap|drag|change)|live\s+app|real\s+app|web\s*app|(?:an?\s+|the\s+|my\s+)?(?:calculator|stop-?watch|timer|countdown|tracker|converter|planner|to-?do(?:\s+list)?|checklist|quiz|game|flash-?cards?|simulator|playground|sandbox|generator|counter|budget\s+(?:tool|app)|tip\s+calculator|worksheet|practice\s+(?:sheet|page)|sudoku|tic-?tac-?toe|memory\s+game|drum\s+machine|metronome|piano|soundboard|paint\s+app|drawing\s+app|notes?\s+app|kanban|habit\s+tracker)|check(?:s|ing)?\s+(?:her|his|their|my|your|the)\s+answers?|cheers?\s+when)\b/i;
+  /\b(working|fully interactive|interactive|usable|actually\s+(?:work|works|working|use|usable|do|does)|really\s+(?:work|works|working)|that\s+(?:work|works)|i\s+can\s+(?:use|play(?:\s+with)?|try|add|tick|type|click|tap|drag|change|bounce|throw|toss|drop|roll|push|kick|spin|swing|launch|fling|flick|stack|pour|shake|tilt|move|fire|shoot)|(?:let\s+me|lets?\s+me|so\s+i\s+can)\s+(?:play\s+with|bounce|throw|drop|roll|push|kick|spin|swing|launch|fling|stack|pour)|let\s+me\s+(?:change|adjust|tweak|vary|set|edit|enter|type|try|explore|drag|move|play)|force[- ]directed|draggable|physics\s+(?:sim|toy|demo)|(?:make|let)\s+(?:it|them)\s+(?:bounce|roll|fall|swing)|play(?:ing)?\s+with\s+(?:a|an|the)\s+(?:ball|pendulum|spring|marble|block|domino)|live\s+app|real\s+app|web\s*app|(?:an?\s+|the\s+|my\s+)?(?:calculator|stop-?watch|timer|countdown|tracker|converter|planner|to-?do(?:\s+list)?|checklist|quiz|game|flash-?cards?|simulator|playground|sandbox|generator|counter|budget\s+(?:tool|app)|tip\s+calculator|worksheet|practice\s+(?:sheet|page)|sudoku|tic-?tac-?toe|memory\s+game|drum\s+machine|metronome|piano|soundboard|paint\s+app|drawing\s+app|notes?\s+app|kanban|habit\s+tracker)|check(?:s|ing)?\s+(?:her|his|their|my|your|the)\s+answers?|cheers?\s+when)\b/i;
 /** Words that say the user wants a picture of an interface, not an interface: a mock-up, a wireframe, a storyboard. */
 const ASKS_FOR_PICTURE = /\b(mock[- ]?ups?|wire[- ]?frames?|storyboards?|figma|user journey|design (?:of|for)|screens? (?:for|of))\b/i;
 
@@ -28,4 +29,17 @@ const ASKS_FOR_PICTURE = /\b(mock[- ]?ups?|wire[- ]?frames?|storyboards?|figma|u
 export function asksForLiveApp(text: string): boolean {
   if (!ASKS_FOR_WORKING.test(text)) return false;
   return !ASKS_FOR_PICTURE.test(text) || /\b(working|fully interactive|actually|really|interactive|usable)\b/i.test(text);
+}
+
+/** What a document reaches for by name, whichever shelf word it said: the library's own global in its code is as good as asking, so an app that forgets `uses=` still runs. */
+const SHELF_GLOBALS: readonly (readonly [RegExp, AppShelf])[] = [
+  [/\bMatter\b/, 'physics'],
+  [/(?:\bTone\s*\.|=\s*Tone\b)/, 'sound'],
+  [/\bkatex\b/, 'maths'],
+  [/(?:\bd3\s*\.[a-z]|=\s*d3\b)/, 'charts'],
+];
+export function shelfOf(asked: readonly AppShelf[] | undefined, source: string): readonly AppShelf[] {
+  const out = [...(asked ?? [])];
+  for (const [pattern, shelf] of SHELF_GLOBALS) if (!out.includes(shelf) && pattern.test(source)) out.push(shelf);
+  return out;
 }

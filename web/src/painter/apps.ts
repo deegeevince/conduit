@@ -2,7 +2,7 @@
 // is through the camera, whether its document is whole and may run, how far it is in or out, and the look as CSS variables, and hands the
 // app host an `AppCue` for each (the way `chartFrames` hands the chart host a `ChartFrame`). Pure: (schedule, time, look) in, cues out.
 
-import { appSourceOf, styleAt } from '@conduit/language';
+import { appSourceOf, shelfOf, styleAt } from '@conduit/language';
 import type { ElementSpan, Face, Schedule } from '@conduit/language';
 import type { AppCue, AppTokens } from '../contracts/app';
 import type { LookSpec } from '../contracts/look';
@@ -129,15 +129,16 @@ export function appCues(schedule: Schedule, tq: number, look: LookSpec, env: App
     // whole when a later line closed it (or the turn ended) and its last line has landed; what an earlier turn left was whole then
     const ready = element.carried || (tq >= last && (sealed === null ? env.closed : tq >= sealed));
     const source = ready ? sourceOf(figure) : '';
+    const uses = ready ? shelfOf(figure.uses, source) : (figure.uses ?? []);
     const tokenSet = appTokensOf(look, env.viewport);
-    const signature = [source.length, ready ? 1 : 0, element.carried ? 1 : 0, element.text, element.id, opacity.toFixed(3), element.order, box.x.toFixed(1), box.y.toFixed(1), box.width.toFixed(1), box.height.toFixed(1), rest.x.toFixed(1), rest.y.toFixed(1), rest.width.toFixed(1), rest.height.toFixed(1)].join('|');
+    const signature = [uses.join('+'), source.length, ready ? 1 : 0, element.carried ? 1 : 0, element.text, element.id, opacity.toFixed(3), element.order, box.x.toFixed(1), box.y.toFixed(1), box.width.toFixed(1), box.height.toFixed(1), rest.x.toFixed(1), rest.y.toFixed(1), rest.width.toFixed(1), rest.height.toFixed(1)].join('|');
     live.add(element.key);
     const known = kept.get(element.key);
     if (known !== undefined && known.signature === signature && known.cue.tokens === tokenSet && known.cue.source === source) {
       out.push(known.cue);
       continue;
     }
-    const cue: AppCue = { key: element.key, id: element.id, title: element.text, source, ready, carried: element.carried, box, rest, opacity, layer: element.style.layer, z: element.order, tokens: tokenSet };
+    const cue: AppCue = { key: element.key, id: element.id, title: element.text, source, ...(uses.length > 0 && { uses }), ready, carried: element.carried, box, rest, opacity, layer: element.style.layer, z: element.order, tokens: tokenSet };
     kept.set(element.key, { signature, cue });
     out.push(cue);
   }

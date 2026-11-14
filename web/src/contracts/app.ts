@@ -7,7 +7,7 @@
 //
 // With no host a stage has no live apps: the painter draws the placeholder and says so, and the brain is not taught the verb.
 
-import type { Layer } from '@conduit/language';
+import type { AppShelf, Layer } from '@conduit/language';
 import type { Colour } from './frame';
 import type { Box } from './space';
 
@@ -45,6 +45,8 @@ export interface AppCue {
   readonly title: string;
   /** the one HTML document the brain wrote, exactly (the rows joined); the host builds the sandboxed page from it */
   readonly source: string;
+  /** the library shelf the app asked for (`uses=`): the host puts each one in the app's document; absent: none */
+  readonly uses?: readonly AppShelf[];
   /** the block is whole (a later line closed it, or the turn ended) and every line has landed: it may run now */
   readonly ready: boolean;
   /** it came from an earlier turn: it was whole then */

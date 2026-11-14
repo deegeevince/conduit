@@ -66,6 +66,8 @@ export function cleanMarkup(source: string): string {
     .replace(/<base\b[^>]*>/gi, '')
     .replace(/<link\b[^>]*>/gi, '')
     .replace(/<(iframe|object|embed|frame|frameset|applet)\b[\s\S]*?(?:<\/\1\s*>|$)/gi, '')
+    // an inline script is written inert and set going by the bridge once the frame has a layout (see `release` in the bridge)
+    .replace(/<script\b([^>]*)>/gi, (tag: string, attrs: string) => (/\b(?:src|type)\s*=/i.test(attrs) ? tag : `<script${attrs} type="application/x-conduit-app">`))
     .replace(/<form\b/gi, '<div data-was-form')
     .replace(/<\/form\s*>/gi, '</div>');
 }
@@ -211,13 +213,39 @@ const BRIDGE = String.raw`(function () {
   var lastHeight = 0;
   function ready() { if (started) return; started = true; post('ready', {}); report(); setInterval(report, 700); }
   function report() { var h = Math.ceil(document.documentElement.scrollHeight); if (h !== lastHeight) { lastHeight = h; post('size', { height: h }); } }
-  addEventListener('load', ready);
-  if (document.readyState === 'complete') ready();
+  // The app's own scripts were written inert (cleanMarkup) and run here, once the frame has a layout: a script that measures its room as it starts
+  // (a canvas sized from its box) reads zero in a frame that has only just been made. Order is kept; the events it may have missed are told again.
+  var sawDom = false;
+  var sawLoad = false;
+  var released = false;
+  addEventListener('DOMContentLoaded', function () { sawDom = true; });
+  addEventListener('load', function () { sawLoad = true; });
+  function release() {
+    if (released) return;
+    released = true;
+    var held = document.querySelectorAll('script[type="application/x-conduit-app"]');
+    for (var i = 0; i < held.length; i++) {
+      var live = document.createElement('script');
+      live.textContent = held[i].textContent;
+      held[i].parentNode.replaceChild(live, held[i]);
+    }
+    if (sawDom) { try { document.dispatchEvent(new Event('DOMContentLoaded', { bubbles: true })); } catch (e) {} }
+    if (sawLoad) { try { window.dispatchEvent(new Event('load')); } catch (e) {} }
+    ready();
+  }
+  function laidOut(tries) {
+    var box = document.body && document.body.getBoundingClientRect();
+    if ((box && box.width > 0) || tries > 60) release();
+    else setTimeout(function () { laidOut(tries + 1); }, 8);
+  }
+  function begin() { laidOut(0); }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', begin);
+  else begin();
 })();`;
 
 /** The page, whole. `channel` is the secret the host and this page share for the life of the frame; `state` is the app's saved state as JSON text, or null. */
 /** `depth` false leaves the boot script's own removals out, so a check can see the policy hold alone (the hostile bench only; a host never sets it). */
-export function buildSurfaceDocument(input: { readonly source: string; readonly tokens: SurfaceTokens; readonly channel: string; readonly state: string | null; readonly depth?: boolean }): string {
+export function buildSurfaceDocument(input: { readonly source: string; readonly tokens: SurfaceTokens; readonly channel: string; readonly state: string | null; readonly depth?: boolean; readonly shelf?: string }): string {
   const { tokens } = input;
   let restored: unknown = null;
   if (input.state !== null) {
@@ -250,6 +278,8 @@ export function buildSurfaceDocument(input: { readonly source: string; readonly 
     '<meta name="viewport" content="width=device-width, initial-scale=1">',
     `<style>${tokenCss(tokens)}${base}</style>`,
     `<script>${BRIDGE.replace('__BOOT__', () => boot).replace('__STATE_MAX__', String(SURFACE_LIMITS.state))}</script>`,
+    // the vetted libraries the app asked for (web/src/surfaces/shelf): after the bridge (so its removals have run) and before the app's own script
+    ...(input.shelf === undefined || input.shelf === '' ? [] : [input.shelf]),
     '</head><body>',
     cleanMarkup(input.source.slice(0, SURFACE_SOURCE_MAX)),
     '</body></html>',
