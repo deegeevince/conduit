@@ -50,6 +50,6 @@ export function createLibrary(settings: LibrarySettings, log: Logger, now: () =>
 }
 
 /** The owner's datasets, or none (the default). Reads only. */
-export function createDatasets(settings: DatasetSettings, log: Logger): DatasetLibrary {
-  return settings.kind === 'none' ? NO_DATASETS : createRemoteDatasets(settings, log);
+export function createDatasets(settings: DatasetSettings, log: Logger, cacheDir?: string): DatasetLibrary {
+  return settings.kind === 'none' ? NO_DATASETS : createRemoteDatasets(settings, log, cacheDir);
 }

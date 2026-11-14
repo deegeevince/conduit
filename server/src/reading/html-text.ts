@@ -31,6 +31,34 @@ function mainPart(html: string): string {
   return html;
 }
 
+const MAX_TABLE_ROWS = 200;
+const MAX_TABLE_COLUMNS = 12;
+
+/** The text of one cell: tags off, spaces collapsed, a bar escaped so it cannot split the cell. Entities are left for the page's one decoding pass. */
+function cellText(html: string): string {
+  return html.replace(/<(br|\/p|\/div|\/li)[^>]*>/gi, ' ').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().replace(/\|/g, '/');
+}
+
+/**
+ * A data table as a Markdown table, header first, so that the figures in it
+ * stay in their rows and columns and can be charted. A table that is page
+ * layout (one column, a table inside it, or nothing but empty cells) is
+ * flattened into its words instead.
+ */
+function markdownTable(inner: string): string | null {
+  if (/<table[\s>]/i.test(inner)) return null;
+  const rows: string[][] = [];
+  for (const row of inner.split(/<tr[\s>]/i).slice(1)) {
+    const cells = [...row.matchAll(/<t[dh][^>]*>([\s\S]*?)(?=<\/t[dh]>|<t[dh][\s>]|<\/tr>|$)/gi)].map((cell) => cellText(cell[1] ?? ''));
+    if (cells.some((cell) => cell !== '')) rows.push(cells);
+    if (rows.length >= MAX_TABLE_ROWS) break;
+  }
+  const width = Math.min(MAX_TABLE_COLUMNS, Math.max(0, ...rows.map((row) => row.length)));
+  if (rows.length < 2 || width < 2) return null;
+  const line = (row: readonly string[]): string => `| ${Array.from({ length: width }, (_, at) => row[at] ?? '').join(' | ')} |`;
+  return `\n\n${[line(rows[0] ?? []), `|${' --- |'.repeat(width)}`, ...rows.slice(1).map(line)].join('\n')}\n\n`;
+}
+
 const isItem = (line: string): boolean => line.startsWith('- ') && line.length < 45;
 
 /** Long runs of short bullets with no sentences in them are menus, language lists and tag clouds, not the page. */
@@ -57,6 +85,7 @@ export function textOfHtml(html: string): { readonly title: string | null; reado
   body = body.replace(/<head[\s>][\s\S]*?<\/head>/i, ' ');
   for (const tag of DROPPED) body = body.replace(new RegExp(`<${tag}[\\s>][\\s\\S]*?</${tag}>`, 'gi'), ' ');
   body = mainPart(body);
+  body = body.replace(/<table[^>]*>([\s\S]*?)<\/table>/gi, (whole, inner: string) => markdownTable(inner) ?? whole);
   body = body
     .replace(/<h([1-6])[^>]*>/gi, (_, level: string) => `\n\n${'#'.repeat(Number(level))} `)
     .replace(/<\/h[1-6]>/gi, '\n\n')
@@ -77,9 +106,18 @@ export function textOfHtml(html: string): { readonly title: string | null; reado
   return { title, text: kept.join('\n').trim() };
 }
 
-/** Cuts at a line end near `max` so the text does not stop mid-sentence. */
-export function clampText(text: string, max: number): { readonly text: string; readonly truncated: boolean } {
-  if (text.length <= max) return { text, truncated: false };
-  const cut = text.lastIndexOf('\n', max);
-  return { text: text.slice(0, cut > max * 0.8 ? cut : max).trimEnd(), truncated: true };
+/**
+ * Cuts at the end of a paragraph (or, failing that, a line) near `max`, so
+ * the text does not stop mid-sentence or in the middle of a table, and says
+ * where it stopped, in the text itself, so a reader of it cannot take it for
+ * the whole.
+ */
+export function clampText(text: string, max: number): { readonly text: string; readonly truncated: boolean; readonly kept: number; readonly total: number } {
+  if (text.length <= max) return { text, truncated: false, kept: text.length, total: text.length };
+  const paragraph = text.lastIndexOf('\n\n', max);
+  const line = text.lastIndexOf('\n', max);
+  const cut = paragraph > max * 0.8 ? paragraph : line > max * 0.8 ? line : max;
+  const kept = text.slice(0, cut).trimEnd();
+  const missing = text.length - kept.length;
+  return { text: `${kept}\n\n[The text is cut here: ${missing} more characters follow and are not shown, of ${text.length} in all.]`, truncated: true, kept: kept.length, total: text.length };
 }
