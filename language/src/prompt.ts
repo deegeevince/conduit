@@ -430,10 +430,11 @@ export function buildSystemPrompt({ capabilities, services }: PromptOptions): st
       (draws ? ' Add a drawing only if it shows what the words cannot.' : ''),
     structures.length > 0
       ? `- Steps, a loop, a hierarchy, dates, places, a comparison, numbers: name the structure (${shapes.join(', ')}) and write its parts. Never place boxes, arrows and their labels by coordinates. A comparison is a \`table\` with every row a good plain answer would have; numbers are a \`chart\`.
-- A thing, a place, a mechanism: draw it yourself, big, and name its parts with callouts. Keep every fact a good plain answer would give.`
+- A thing, a place, a mechanism, or anything whose form the eye can read (a shape, a layout, a pattern): draw it yourself, big, and name its parts with callouts; a table or a bar is not a picture of it. Keep every fact a good plain answer would give.`
       : draws
         ? "- A thing, a place, a mechanism, a comparison, a set of numbers: draw it and label it, and keep every fact a good plain answer would give: numbers and names on the drawing, the rest in short lines. Words are cheap; a missing fact is not. A comparison covers every row a good table would (cost, upkeep, lifespan, limits, risks), as paired lines beneath the two shapes. Compare with matching shapes side by side (bars sized by the numbers, a column each), never two lists of words."
         : '',
+    controls.includes('pick') && draws ? '- A process, or how something works, step by step: the picture stays, and the words come one stop at a time that the user taps: `pick s steps | a | b | c`, then per stop `bind s=a | hit part` and `bind s=a | correct cap | one sentence`. Never all the steps as `say` lines.' : '',
     controls.includes('slider') ? '- Something that depends on a quantity or a choice (an angle, a rate, a mode): hand over the control, bound to the drawing.' : '',
     draws
       ? `- A story, a memory, a mood: stage it. A scene in layers${weather ? ', weather' : ''}${camera ? ', a camera' : ''}, a handful of words as captions.`
@@ -551,9 +552,10 @@ Never talk about the stage, the medium or what you will do. Answer the question.
 
 # What always holds
 
+- The words of an answer fit the stage beside its picture: about four short lines. More to say goes into stops the user taps, or a \`say choice\` follow-up, never more lines.
 - Expressive asks (a story, a mood, a thing to look at): commit. One bold idea, big, in layers, with motion and a wait before the line that matters. Timid and tidy is the failure.
 - Be right before pretty. Every part your words name is drawn; parts that connect touch; the subject ends whole inside the picture and fills it, never cut off or lost in a corner. Words stay inside their boxes.
-- A follow-up about what is on stage continues it: \`set\`, \`hit\`, \`move\`, add. \`scene\` is only for a new subject; never write again what is there. A lesson's steps stack up, not captions; a step to try keeps its subject.
+- A follow-up about what is on stage continues it. \`scene\` is only for a new subject. A lesson's steps stack up, not captions; a step to try keeps its subject.
 - Match the level asked or implied. A young learner (under 10, "my kid", "like I'm 7"): plain words, one small idea a step, the question shown; no letters for numbers or \`*\`/\`x\` signs before they are explained; count on the picture ("5, 10, 15, 20"); words at size m or larger.
 - What the user says to hold from now on ("only visuals", "always brief"): record it once, \`standing | their words\`, and keep it on every later turn, answers about yourself or this app too.
 - Lines of one role (narration, steps, list items) share one style and size; only the one line that matters differs. A demo or simulation with invented numbers says so on its face ("a sketch", "example figures").
@@ -596,7 +598,6 @@ Define the voices this conversation needs, then speak in them: \`style fear size
 Properties, on a line or in a style:
 ${props}
 
-A loop is a constant demand for attention; use one where something is alive.
 
 # Looks
 
@@ -628,10 +629,6 @@ A brief may carry TECHNIQUES (recipes that worked): use what fits, never copy th
 # This screen
 
 Each turn's brief begins with SCREEN: what fits on a line and on the stage at each size, the canvas that suits the screen, the look, the scene. Outside \`layout=page\`: one idea a line, a handful of words. At most ${LIMITS.text} characters a line.
-
-# Exact values
-
-Rarely, for one exact effect: \`@+N\` (start N seconds after the pen), \`@-N\` (overlap the line before), \`dur=Ns\`, \`stay=Ns\`, \`over=Ns\` on set${draws ? ', move' : ''}${camera ? ' and cam' : ''}.
 
 # Output
 
