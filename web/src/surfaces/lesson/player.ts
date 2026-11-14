@@ -467,7 +467,7 @@ export class Player {
   /** A part's children once its own steps are done: cards to open. */
   private inside(node: DocNode, kids: readonly DocNode[]): HTMLElement {
     const next = afterOf(this.doc, node);
-    const view = h('section', { class: 'inside' }, h('h2', {}, kids.some((k) => isTechnique(k.tag)) ? 'Other ways to see it' : 'Inside this part'));
+    const view = h('section', { class: 'inside' }, h('h2', {}, kids.some((k) => k.for !== null) ? 'Other ways to see it' : 'Inside this part'));
     const grid = h('ul', { class: 'cards' });
     for (const kid of kids) grid.append(h('li', {}, this.card(kid)));
     view.append(grid);
@@ -581,7 +581,7 @@ export class Player {
         'article',
         { class: `ask closed${right === undefined ? ' worked' : ' right'}`, 'data-ask': ask.id },
         h('p', { class: 'ask-prompt' }, ask.prompt),
-        right === undefined ? h('p', { class: 'verdict good' }, 'Let’s see how it works.') : h('p', { class: 'verdict good' }, h('span', { class: 'tick' }, '✓'), ` Yes! ${right} is right.`),
+        right === undefined ? h('p', { class: 'verdict good' }, 'Let’s see how it works.') : h('p', { class: 'verdict good' }, h('span', { class: 'tick' }, '✓'), ask.check === 'done' ? ' Done.' : ask.check === 'any' ? ` ${right}` : ` Yes! ${right} is right.`),
         this.tries(node, ask),
       );
     }
@@ -590,8 +590,13 @@ export class Player {
       card.append(h('p', { class: 'ask-note' }, 'Let’s work this one out together. Have a think, then press Next.'));
       return card;
     }
+    if (ask.check === 'done') {
+      // a tick: nothing to get right; the gate opens when it is pressed
+      card.append(h('button', { type: 'button', class: 'btn main wide', 'data-act': 'done-tick', onclick: (e: Event) => this.tryAnswer(node, ask, 'done', e.timeStamp) }, 'Done'));
+      return card;
+    }
     if (ask.pick !== null) {
-      const choices = h('div', { class: 'choices', role: 'group', 'aria-label': 'Choose your answer' });
+      const choices = h('div', { class: 'choices', role: 'group', 'aria-label': ask.check === 'any' ? 'Choose one' : 'Choose your answer' });
       for (const label of ask.pick) {
         const tried = view.tries.includes(label);
         const btn = h('button', { type: 'button', class: `choice${tried ? ' tried' : ''}`, 'data-act': `pick:${label}`, onclick: (e: Event) => this.tryAnswer(node, ask, label, e.timeStamp) }, label, ask.unit === null ? null : h('span', { class: 'unit' }, ` ${ask.unit}`));
@@ -676,9 +681,9 @@ export class Player {
     // Help is the person's to pull: nothing shows until they tap Help, and one rung more each tap (labels are neutral defaults; the words of each rung are the brain's).
     // The rungs are the ask's hints, written as questions back to her (what do we know, what is it asking); a `[bracketed]` fact in one is marked in the question itself. The last
     // rung offers the question's ways to think it through, and then she has a go.
-    if (node !== undefined && (ask.hints.length > 0 || kidsOf(this.doc, node).some((kid) => kid.tag !== null))) {
+    if (node !== undefined && (ask.hints.length > 0 || kidsOf(this.doc, node).some((kid) => kid.for !== null))) {
       const key = `hint.${ask.id}`;
-      const ways = kidsOf(this.doc, node).filter((kid) => kid.tag !== null);
+      const ways = kidsOf(this.doc, node).filter((kid) => kid.for !== null);
       const rungs = ask.hints.length + (ways.length > 0 ? 1 : 0);
       const heldNow = this.state.held[node.id]?.[key];
       const asked = Math.min(typeof heldNow === 'number' ? heldNow : 0, rungs);

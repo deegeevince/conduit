@@ -1,6 +1,6 @@
 import { STANDING_LIMITS } from './context';
 import { parsePathData } from './geometry';
-import { isLessonId, isLessonVerb, isSpan, readCrop, readShow, splitValues, technique } from './lesson';
+import { isLessonId, isLessonVerb, isSpan, readCrop, readShow, splitValues, tagWord } from './lesson';
 import type { LessonLine } from './lesson';
 import { BUILTIN_STYLE_NAMES, own } from './style';
 import { splitCells } from './text';
@@ -1573,7 +1573,7 @@ function parseCancel(head: Head, issues: Issues): Line | null {
   return { verb: 'cancel', id: word };
 }
 
-/** v3. `part <id> [in=<part>] [tag=<technique>] | <title>`: a place in the document. */
+/** v3. `part <id> [in=<part>] [tag=<word>] [for=<ask>] | <title>`: a place in the document. */
 function parsePart(head: Head, text: string | null, issues: Issues): LessonLine | null {
   const id = head.words[0];
   if (id === undefined) {
@@ -1586,7 +1586,8 @@ function parsePart(head: Head, text: string | null, issues: Issues): LessonLine 
   }
   warnUnknownWords(head.words.slice(1), issues);
   let parent: string | undefined;
-  let tag: ReturnType<typeof technique> = null;
+  let tag: string | null = null;
+  let helps: string | undefined;
   let cropped: string | null = null;
   let photo: string | undefined;
   const rest: Pair[] = [];
@@ -1600,8 +1601,11 @@ function parsePart(head: Head, text: string | null, issues: Issues): LessonLine 
       if (isLessonId(pair.value)) photo = pair.value;
       else issues.warn('bad-id', `"${pair.value}" is not a photo id; from= ignored`, pair.token);
     } else if (pair.key === 'tag') {
-      tag = technique(pair.value);
-      if (tag === null) issues.warn('bad-value', `"${pair.value}" is not a technique; tag ignored`, pair.token);
+      tag = tagWord(pair.value);
+      if (tag === null) issues.warn('bad-value', `"${pair.value}" is not a tag (one lower-case word); tag ignored`, pair.token);
+    } else if (pair.key === 'for') {
+      if (isLessonId(pair.value)) helps = pair.value;
+      else issues.warn('bad-id', `"${pair.value}" is not an ask or part id; for= ignored`, pair.token);
     } else rest.push(pair);
   }
   warnUnknownPairs(rest, issues);
@@ -1614,7 +1618,7 @@ function parsePart(head: Head, text: string | null, issues: Issues): LessonLine 
     crop = readCrop(cropped, photo);
     if (crop === null) issues.warn('bad-value', `crop= is x,y,w,h in whole percents of the photo, inside it (crop=10,20,80,6); "${cropped}" ignored`, `crop=${cropped}`);
   } else if (photo !== undefined) issues.warn('bad-value', 'from= names the photo a crop= is of; without crop= it is ignored', `from=${photo}`);
-  return { verb: 'part', id, ...(parent === undefined ? {} : { in: parent }), ...(tag === null ? {} : { tag }), ...(crop === null ? {} : { crop }), title: text };
+  return { verb: 'part', id, ...(parent === undefined ? {} : { in: parent }), ...(tag === null ? {} : { tag }), ...(helps === undefined ? {} : { for: helps }), ...(crop === null ? {} : { crop }), title: text };
 }
 
 /** v3. `step [id] [in=<part>] [show=<visual> [a..b] [key=value…]] | <words>`: one reveal. */
@@ -1660,15 +1664,15 @@ function parseAsk(head: Head, text: string | null, issues: Issues): LessonLine |
   let accepted: string[] = [];
   let pick: string[] | undefined;
   let unit: string | undefined;
-  let check: 'working' | 'order' | undefined;
+  let check: 'working' | 'order' | 'any' | 'done' | undefined;
   const rest: Pair[] = [];
   for (const pair of head.pairs) {
     if (pair.key === 'in') {
       if (isLessonId(pair.value)) parent = pair.value;
       else issues.warn('bad-id', `"${pair.value}" is not a part id; in= ignored`, pair.token);
     } else if (pair.key === 'check') {
-      if (pair.value === 'working' || pair.value === 'order') check = pair.value;
-      else issues.warn('bad-value', `check= is check=working or check=order; "${pair.value}" ignored`, pair.token);
+      if (pair.value === 'working' || pair.value === 'order' || pair.value === 'any' || pair.value === 'done') check = pair.value;
+      else issues.warn('bad-value', `check= is working, order, any or done; "${pair.value}" ignored`, pair.token);
     } else if (pair.key === 'is' || pair.key === 'answer') accepted = splitValues(pair.raw).filter((value) => value.length <= LESSON_LIMITS.answer);
     else if (pair.key === 'pick' || pair.key === 'choices') pick = splitValues(pair.raw).filter((value) => value.length <= LESSON_LIMITS.answer).slice(0, LESSON_LIMITS.pick);
     else if (pair.key === 'unit') {
@@ -1677,7 +1681,7 @@ function parseAsk(head: Head, text: string | null, issues: Issues): LessonLine |
     } else rest.push(pair);
   }
   warnUnknownPairs(rest, issues);
-  if (accepted.length === 0) {
+  if (accepted.length === 0 && check !== 'any' && check !== 'done') {
     issues.error('missing-argument', 'ask needs the answers it accepts: ask a1 in=q1a is=34 | Where did you land?');
     return null;
   }

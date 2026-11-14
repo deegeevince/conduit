@@ -12,7 +12,7 @@
 // A check of this file is `mechanical`: it is free and it is exact where it knows. What it cannot know (a word problem, a picture) goes to the
 // second check, a cheap model asked cold (`judge/lesson.ts`), whose verdict is joined to this one by `settle`.
 
-import { TECHNIQUE, lintLesson, matchAnswer, nodeOf, parseInterface, pathOf, serializeLine, spoilerMessage } from '@conduit/language';
+import { isLegacyTag, lintLesson, matchAnswer, nodeOf, parseInterface, pathOf, serializeLine, spoilerMessage } from '@conduit/language';
 import type { DocNode, Document, LessonAsk, LessonContext, LessonStep, NodeId } from '@conduit/language';
 import type { AskCheck } from '@conduit/language/maths';
 import { checkLesson } from './maths';
@@ -66,7 +66,7 @@ export const asksOf = (node: DocNode): readonly LessonAsk[] => stepsOf(node).fil
 /** The words a way is read against: the question's printed words (and the sheet's), and the way's own title. */
 export function lessonContext(doc: Document, way: NodeId): LessonContext {
   const chain = pathOf(doc, way);
-  const first = chain.findIndex((node) => node.tag !== null);
+  const first = chain.findIndex((node) => node.for !== null);
   if (first < 0) return { question: chain.map((node) => node.title), way: null };
   return { question: chain.slice(0, first).map((node) => node.title), way: chain.slice(first).map((node) => node.title).join(' · ') };
 }
@@ -141,6 +141,7 @@ function lessonCheck(doc: Document, node: DocNode): Mechanical {
   const ways = profile === 'steps' ? [node] : waysOf(doc, node);
   const written = ways.filter(isWay);
   const mine: readonly DocNode[] = profile === 'both' ? [node] : [];
+  const mathsWays = helps && written.length > 0 && written.every((way) => way.tag !== null && isLegacyTag(way.tag));
   let confirmed = 0;
   let recomputed = 0;
   let asks = 0;
@@ -154,12 +155,15 @@ function lessonCheck(doc: Document, node: DocNode): Mechanical {
   if (written.length === 0) refuse('shape', node.id, null, 'nothing is written');
   if (helps) {
     // her own try comes first and is the question; a question that has it and two ways is offered at once (a third is written for the next time) rather than held back
+    // three to five ways is the rule of a maths question written in the ways of the maths card (`isLegacyTag`); the helps of any other document (a clause explained, a rainy-day variation) are as many as it needs
     const least = profile === 'both' ? 2 : WAYS.least;
-    if (written.length < least) refuse('shape', node.id, null, `${written.length} way${written.length === 1 ? '' : 's'} written, and a question has three to five`);
-    else if (written.length < WAYS.least) note('shape', node.id, null, `${written.length} ways written; three to five are asked for`);
-    if (written.length > WAYS.most) note('shape', node.id, null, `${written.length} ways written; three to five are asked for`);
+    if (mathsWays) {
+      if (written.length < least) refuse('shape', node.id, null, `${written.length} way${written.length === 1 ? '' : 's'} written, and a question has three to five`);
+      else if (written.length < WAYS.least) note('shape', node.id, null, `${written.length} ways written; three to five are asked for`);
+      if (written.length > WAYS.most) note('shape', node.id, null, `${written.length} ways written; three to five are asked for`);
+    }
     const tags = written.flatMap((way) => (way.tag === null ? [] : [way.tag]));
-    if (new Set(tags).size < tags.length) note('shape', node.id, null, 'two ways are tagged with the same technique');
+    if (new Set(tags).size < tags.length) note('shape', node.id, null, 'two helps are tagged the same');
     for (const way of ways) if (!isWay(way)) note('shape', way.id, null, `way ${shortId(way.id)} is empty (left from a rewrite)`);
   }
   for (const way of [...mine, ...written]) {
@@ -168,8 +172,8 @@ function lessonCheck(doc: Document, node: DocNode): Mechanical {
     if (first) {
       if (asksOf(way).length === 0) refuse('shape', way.id, null, `the question ${shortId(way.id)} has steps of its own and no ask: her try first is an ask on the question itself`);
     } else if (helps) {
-      if (way.tag === null || !Object.hasOwn(TECHNIQUE, way.tag)) refuse('shape', way.id, null, `way ${shortId(way.id)} has no technique tag`);
-      if (asksOf(way).length === 0) refuse('shape', way.id, null, `way ${shortId(way.id)} has no ask`);
+      if (way.for === null) refuse('shape', way.id, null, `way ${shortId(way.id)} does not say what it helps (for=<ask>)`);
+      if (mathsWays && asksOf(way).length === 0) refuse('shape', way.id, null, `way ${shortId(way.id)} has no ask`);
     }
     if (waySteps.length === 0) refuse('shape', way.id, null, `${shortId(way.id)} has no steps`);
     // no accepted answer on the page before it is tried
@@ -296,6 +300,10 @@ export function lessonText(doc: Document, id: NodeId): string {
         const show = step.show === null ? '' : ` [picture: ${step.show.visual}${step.show.range === null ? '' : ` ${step.show.range[0]}..${step.show.range[1]}`}${Object.entries(step.show.args).map(([key, value]) => ` ${key}=${value}`).join('')}]`;
         out.push(`    step${show}: ${step.words}`);
       } else {
+        if (step.check === 'any' || step.check === 'done') {
+          out.push(`    ASK ${step.id}: ${step.prompt} (${step.check === 'done' ? 'she ticks it off' : `she chooses${step.pick === null ? '' : ` one of: ${step.pick.join(', ')}`}`}; no right answer, nothing to check)`);
+          continue;
+        }
         out.push(`    ASK ${step.id}: ${step.prompt}${step.check === 'order' ? ' (she drags tiles of these items into order)' : step.pick === null ? ' (she types it)' : ` (she taps one of: ${step.pick.join(', ')})`}  ${step.check === 'order' ? 'THE RIGHT ORDER' : 'ACCEPTED'}: ${step.accepted.join(step.check === 'order' ? ' , ' : ' | ')}${step.unit === null ? '' : ` (${step.unit})`}`);
         for (const hint of step.hints) out.push(`      hint: ${hint}`);
       }

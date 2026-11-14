@@ -65,8 +65,10 @@ export interface DocNode {
   readonly id: NodeId;
   readonly parent: NodeId | null;
   readonly title: string;
-  /** a technique, for the catalogue */
+  /** any word: what kind of part this is, for the catalogue. Means nothing to the reader */
   readonly tag: string | null;
+  /** the ask (or part) this part is help for; null when it is no help. The one test of "is this help": never the tag */
+  readonly for: string | null;
   /** a question's box on the photo it was read from, for the lesson page to crop; absent when none was given */
   readonly crop?: Crop;
   /** a part holds nodes */
@@ -169,7 +171,7 @@ export type NodeBody = DocBody;
 // --- reading a document ----------------------------------------------------------------------------------------------------------------
 
 export function emptyDocument(id = 'document', title = 'Untitled'): Document {
-  return { id, title, root: ROOT, nodes: { [ROOT]: { id: ROOT, parent: null, title, tag: null, children: [], body: null, status: 'outlined' } }, defs: {} };
+  return { id, title, root: ROOT, nodes: { [ROOT]: { id: ROOT, parent: null, title, tag: null, for: null, children: [], body: null, status: 'outlined' } }, defs: {} };
 }
 
 export function nodeOf(doc: Document, id: NodeId): DocNode | null {
@@ -316,7 +318,7 @@ function samePlay(a: Play, b: Play): boolean {
   return a.at === b.at;
 }
 
-const EMPTY_NODE: DocNode = { id: '', parent: null, title: '', tag: null, children: [], body: null, status: 'outlined' };
+const EMPTY_NODE: DocNode = { id: '', parent: null, title: '', tag: null, for: null, children: [], body: null, status: 'outlined' };
 
 /** Her progress through `node` once she has reached stop `stop`: what she has seen, and whether the leaf is done. */
 function reached(doc: Document, state: DocState, node: NodeId, stop: number): NodeProgress {
@@ -1070,6 +1072,7 @@ export class DocumentFolder {
         parent: part.parent === null ? null : this.idOf(part.parent),
         title: part.title,
         tag: part.tag,
+        for: part.help,
         ...(part.crop === null ? {} : { crop: part.crop }),
         children: part.children.map((child) => this.idOf(child)),
         body: part.steps.length > 0 ? { kind: 'lesson', steps: part.steps } : null,
@@ -1094,6 +1097,7 @@ export class DocumentFolder {
         parent: rootId,
         title: scene.title === '' ? `Scene ${scene.node.slice(1)}` : scene.title,
         tag: null,
+        for: null,
         children: [],
         body: { kind: 'scene', segments },
         status: this.statuses.get(scene.node) ?? (open ? 'filling' : 'filled'),
@@ -1104,7 +1108,7 @@ export class DocumentFolder {
     const title = this.options.title ?? (root !== undefined ? root.title : (this.firstPrompt ?? 'Untitled'));
     nodes[rootId] =
       root === undefined
-        ? { id: rootId, parent: null, title, tag: null, children: sceneIds, body: null, status: sceneIds.length === 0 ? 'outlined' : 'filled' }
+        ? { id: rootId, parent: null, title, tag: null, for: null, children: sceneIds, body: null, status: sceneIds.length === 0 ? 'outlined' : 'filled' }
         : { ...root, children: [...root.children, ...sceneIds] };
     const document: Document = { id: this.options.id ?? 'document', title, root: rootId, nodes, defs: {} };
 

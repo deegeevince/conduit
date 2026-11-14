@@ -87,7 +87,7 @@ export function tally(doc: Document, state: DocState, node: DocNode): { readonly
   const kids = kidsOf(doc, node);
   if (kids.length === 0 || isLesson(node)) return { done: isDone(doc, state, node) ? 1 : 0, total: 1 };
   // a question written as its ways alone is one question (it is done when a way is), never one for each way it can be seen in
-  if (node.body === null && kids.every((k) => k.tag !== null)) return { done: kids.some((k) => isDone(doc, state, k)) ? 1 : 0, total: 1 };
+  if (node.body === null && kids.every((k) => k.for !== null)) return { done: kids.some((k) => isDone(doc, state, k)) ? 1 : 0, total: 1 };
   return kids.reduce((sum, k) => {
     const t = tally(doc, state, k);
     return { done: sum.done + t.done, total: sum.total + t.total };
@@ -112,7 +112,7 @@ export function cardsOf(doc: Document, node: DocNode): readonly CardGroup[] {
   };
   for (const kid of kidsOf(doc, node)) {
     const inner = kidsOf(doc, kid);
-    if (!isLesson(kid) && inner.length > 0 && inner.some((g) => !isLesson(g) || kidsOf(doc, g).length > 0 || g.tag === null)) {
+    if (!isLesson(kid) && inner.length > 0 && inner.some((g) => !isLesson(g) || kidsOf(doc, g).length > 0 || g.for === null)) {
       flush();
       groups.push({ head: kid, items: inner });
     } else loose.push(kid);

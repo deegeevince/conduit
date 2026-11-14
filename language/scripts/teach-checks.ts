@@ -1,19 +1,18 @@
-// Checks of what the brain is taught about lessons (PLAN-v3-core WS7): the cues of the TEACH chapter, its worked example (it reads, and
-// nothing in it is refused), the chapter's size and what it names, and the DOCUMENT and HERE blocks at the start, mid-lesson and on a
-// sheet of thirty questions. Run by `pnpm timeline`.
+// Checks of what the brain is taught about documents (PLAN-v3-core WS7, split by GEN1a): the DOCUMENT chapter is neutral and short and names every
+// line; the technique cards that write documents (a young learner, a recipe, a review, a plan) fold with nothing refused or repaired; a card with
+// parts brings the chapter; and the DOCUMENT and HERE blocks at the start, mid-document and on a sheet of thirty questions. Run by `pnpm timeline`.
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import {
+  DOCUMENT_CHAPTER,
   EMPTY_STAGE,
   FULL_CAPABILITIES,
   LEAD_WINDOW,
   LESSON_VERB,
   LESSON_VERBS,
   REFERENCE_SCREEN,
-  TEACH_CHAPTER,
-  TEACH_EXAMPLE,
-  TECHNIQUES,
   VISUAL_KINDS,
   advance,
-  asksForLesson,
   buildTurnBrief,
   documentText,
   estimateTokens,
@@ -22,8 +21,9 @@ import {
   initialState,
   lintLesson,
   nodeOf,
+  techniquesText,
 } from '../src/index';
-import type { DocState, Document, TurnContext, TurnInput } from '../src/index';
+import type { DocState, Document, TechniqueCard, TurnContext, TurnInput } from '../src/index';
 
 let passed = 0;
 let ok = true;
@@ -41,52 +41,52 @@ function expect(what: string, got: unknown, want: unknown): void {
 
 const prompt = (text: string, images?: readonly string[]): TurnInput => ({ kind: 'prompt', text, ...(images === undefined ? {} : { images }) });
 
-/** [the words, whether a photo is attached, whether they ask for a lesson] */
-const CUES: readonly (readonly [string, boolean, boolean])[] = [
-  ['a florist had 3 kinds of flowers for 5 vases, 6 yellow, 2 blue and 4 green in each vase, how many altogether? show the working out not the solution, for a 7 year old', false, true],
-  ['help her work through this page', true, true],
-  ['help her work through this page', false, true],
-  ['can you check her homework', false, true],
-  ['do question 3 now', true, true],
-  ['make me a lesson on adding tens', false, true],
-  ['what is the capital of France', false, false],
-  ['teach me how a clock works', false, false],
-  ['draw a cat on a wall', false, false],
-  ['what breed is this dog', true, false],
-  ['', true, false],
-  ['show the price of copper this year', false, false],
-];
-
-function checkCues(): void {
-  for (const [text, photo, want] of CUES) expect(`cue: ${text === '' ? '(no words)' : text.slice(0, 50)}${photo ? ' + photo' : ''}`, asksForLesson(prompt(text, photo ? ['u1'] : undefined)), want);
-  expect('cue: a tap is not a request for a lesson', asksForLesson({ kind: 'tap', id: 'x', text: 'help' }), false);
-}
-
 function checkChapter(): void {
-  for (const verb of LESSON_VERBS) expect(`chapter has the form of ${verb}`, TEACH_CHAPTER.includes(LESSON_VERB[verb].form), true);
-  for (const id of [...TECHNIQUES, ...VISUAL_KINDS]) expect(`chapter names ${id}`, TEACH_CHAPTER.includes(id), true);
-  expect('chapter says never to lead with the answer', /NEVER LEAD WITH THE ANSWER/.test(TEACH_CHAPTER), true);
-  expect('chapter has the routing card', TEACH_CHAPTER.includes('WHICH FORM'), true);
-  expect('chapter is for a young learner', /young child/.test(TEACH_CHAPTER), true);
-  const tokens = estimateTokens(TEACH_CHAPTER);
-  expect(`chapter within 2,750 estimated tokens, the interface chapter being 1,692 (is ${tokens})`, tokens <= 2750, true);
-  process.stdout.write(`  teach chapter: ${TEACH_CHAPTER.length} characters, about ${tokens} tokens\n`);
+  for (const verb of LESSON_VERBS) expect(`chapter has the form of ${verb}`, DOCUMENT_CHAPTER.includes(LESSON_VERB[verb].form), true);
+  for (const id of VISUAL_KINDS) expect(`chapter names ${id}`, DOCUMENT_CHAPTER.includes(id), true);
+  expect('chapter says what an ask seals', /SEALED/.test(DOCUMENT_CHAPTER), true);
+  expect('chapter teaches outline then fill', /OUTLINE, THEN FILL/.test(DOCUMENT_CHAPTER), true);
+  expect('chapter teaches for=, check=any and check=done', [DOCUMENT_CHAPTER.includes('for=<ask>'), DOCUMENT_CHAPTER.includes('check=any'), DOCUMENT_CHAPTER.includes('check=done')], [true, true, true]);
+  expect('chapter is neutral: no child, no she, no maths ways', /\b(child|young|learner|she|her|homework|worksheet)\b|draw-it|count-on/i.test(DOCUMENT_CHAPTER), false);
+  const tokens = estimateTokens(DOCUMENT_CHAPTER);
+  expect(`chapter within 1,300 estimated tokens (is ${tokens})`, tokens <= 1300, true);
+  process.stdout.write(`  document chapter: ${DOCUMENT_CHAPTER.length} characters, about ${tokens} tokens\n`);
 }
 
-function checkExample(): void {
-  const folded = foldSource(TEACH_EXAMPLE.join('\n'), 'prompt');
-  expect('example: nothing refused or repaired', folded.issues.map((found) => `${found.text}: ${found.issue.message}`), []);
-  const { document } = folded;
-  expect('example: the sheet, a question, two ways and an outlined question', Object.keys(document.nodes).sort(), ['w1', 'w1/q1', 'w1/q1/q1a', 'w1/q1/q1b', 'w1/q2']);
-  expect('example: the second question is an outline', nodeOf(document, 'w1/q2')?.body, null);
-  const ways = (['w1/q1/q1a', 'w1/q1/q1b'] as const).map((id) => nodeOf(document, id));
-  expect('example: both ways are lessons with an ask', ways.map((way) => way?.body?.kind === 'lesson' && way.body.steps.some((step) => step.kind === 'ask')), [true, true]);
-  expect('example: both ways are tagged', ways.map((way) => way?.tag), ['draw-it', 'count-on-a-line']);
-  for (const way of ways) {
-    if (way?.body?.kind !== 'lesson') continue;
-    expect(`example: no spoiler in ${way.id}`, lintLesson(way.body.steps, { question: [nodeOf(document, 'w1/q1')?.title ?? ''], way: way.title }), []);
+/** The cards that write a document: every fenced example of a seed file with a `part` line. */
+function cards(): { readonly file: string; readonly lines: readonly string[] }[] {
+  const dir = fileURLToPath(new URL('../../techniques/seed/', import.meta.url));
+  const out: { file: string; lines: string[] }[] = [];
+  for (const file of ['teach-young-learner.md', 'recipe-steps.md', 'review-a-document.md', 'plan-a-trip.md']) {
+    const block = /```series\n([\s\S]*?)```/.exec(readFileSync(`${dir}${file}`, 'utf8'));
+    out.push({ file, lines: (block?.[1] ?? '').split('\n').filter((line) => line.trim() !== '') });
   }
-  expect('example: the thread sentence is kept', Object.values(folded.replies), ['Three bags of four, counted by fours and then hopped along a line.']);
+  return out;
+}
+
+function checkCards(): void {
+  for (const { file, lines } of cards()) {
+    const folded = foldSource(lines.join('\n'), 'prompt');
+    expect(`${file}: nothing refused or repaired`, folded.issues.map((found) => `${found.text}: ${found.issue.message}`), []);
+    expect(`${file}: at most 24 lines`, lines.length <= 24, true);
+    for (const id of Object.keys(folded.document.nodes)) {
+      const node = nodeOf(folded.document, id);
+      if (node?.body?.kind !== 'lesson') continue;
+      const question = node.parent === null ? [] : [nodeOf(folded.document, node.parent)?.title ?? ''];
+      expect(`${file}: no spoiler in ${node.id}`, lintLesson(node.body.steps, { question, way: node.for === null ? null : node.title }), []);
+    }
+    expect(`${file}: its example says no name`, /\bTammy\b/.test(lines.join(' ')), false);
+  }
+  const young = cards().find((card) => card.file === 'teach-young-learner.md');
+  const folded = foldSource((young?.lines ?? []).join('\n'), 'prompt').document;
+  const helps = Object.values(folded.nodes).filter((node) => node.for !== null);
+  expect('young learner: two ways, each for the ask on the question', helps.map((node) => node.for), ['a0', 'a0']);
+  const q1 = nodeOf(folded, 'w1/q1');
+  const ask = q1?.body?.kind === 'lesson' ? q1.body.steps.find((step) => step.kind === 'ask') : undefined;
+  expect('young learner: the ladder is facts first, with the facts marked', [ask?.kind === 'ask' ? /\[[^\]]+\]/.test(ask.hints[0] ?? '') : null, ask?.kind === 'ask' ? ask.hints.length : 0], [true, 3]);
+  const recipe = foldSource((cards().find((card) => card.file === 'recipe-steps.md')?.lines ?? []).join('\n'), 'prompt').document;
+  const kinds = Object.values(recipe.nodes).flatMap((node) => (node.body?.kind === 'lesson' ? node.body.steps.flatMap((step) => (step.kind === 'ask' ? [step.check ?? 'answer'] : [])) : []));
+  expect('recipe: a done tick and a choice, neither sealed', [kinds.includes('done'), kinds.includes('any')], [true, true]);
 }
 
 function context(document: Document | null, state: DocState | null): TurnContext {
@@ -148,20 +148,25 @@ function checkBlocks(): void {
 function checkBrief(): void {
   const { document } = foldSource(sheetOf(3), 'prompt');
   const state = initialState(document);
-  const lesson = buildTurnBrief(context(null, null), prompt('show the working out for 5 x 12, for a 7 year old'));
-  expect('brief: a lesson ask carries the chapter', lesson.includes('TEACH (a lesson'), true);
   const plain = buildTurnBrief(context(null, null), prompt('draw a cat on a wall'));
-  expect('brief: an ordinary ask does not', plain.includes('TEACH (') || plain.includes('DOCUMENT  '), false);
+  expect('brief: an ordinary ask carries no chapter', plain.includes('DOCUMENT (parts') || plain.includes('DOCUMENT  '), false);
   const going = buildTurnBrief(context(document, state), prompt('next question please'));
-  expect('brief: a lesson under way carries the chapter and both blocks', [going.includes('TEACH ('), going.includes('DOCUMENT  '), going.includes('\nHERE  ')], [true, true, true]);
+  expect('brief: a document under way carries the chapter and both blocks', [going.includes('DOCUMENT (parts'), going.includes('DOCUMENT  '), going.includes('\nHERE  ')], [true, true, true]);
   expect('brief: the blocks come before NOW', going.indexOf('\nHERE  ') < going.indexOf('\nNOW: '), true);
+  // a card that writes parts brings the chapter, on any words; a card that does not does not
+  const card = (id: string, example: readonly string[]): TechniqueCard => ({ id, title: id, when: 'when', example });
+  const withParts = buildTurnBrief({ ...context(null, null), techniques: [card('recipe', ['part r1 | Pancakes', 'ask d1 in=r1 check=done | Done'])] }, prompt('walk me through pancakes'));
+  expect('brief: a card with parts carries the chapter', withParts.includes('DOCUMENT (parts'), true);
+  const without = buildTurnBrief({ ...context(null, null), techniques: [card('table', ['scene caption', 'say | hi'])] }, prompt('compare two things'));
+  expect('brief: a card without parts does not', without.includes('DOCUMENT (parts'), false);
+  const big = techniquesText([card('long', ['part r1 | ' + 'x'.repeat(2400), 'ask d1 in=r1 check=done | Done'])]) ?? '';
+  expect('brief: a card that writes a document is allowed its room', big.includes('part r1'), true);
 }
 
 /** Run by `pnpm timeline`. */
 export function teachChecks(): boolean {
-  checkCues();
   checkChapter();
-  checkExample();
+  checkCards();
   checkBlocks();
   checkBrief();
   process.stdout.write(`\nteach checks: ${passed} held${ok ? '' : ', some failed'}\n`);

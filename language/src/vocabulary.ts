@@ -1214,8 +1214,8 @@ export const LIMITS = {
 /** The words that build a document and a lesson. Their forms are what the TEACH chapter and `docs/language.md` print. */
 export const LESSON_VERB = {
   part: {
-    form: 'part <id> [in=<part>] [tag=<technique>] [crop=x,y,w,h [from=<photo>]] | <title>',
-    gist: 'A place in the document: a sheet, a section, a question, a way of doing it. `in=` is where it sits (an open `part … end` says it for you). Only a title is an outline: named now, written later. `tag=` is the technique a way uses. `crop=` is where a question sits on the photo, in whole percents of its width and height from the top left (`crop=6,31,88,7`); `from=` names the photo when there are several.',
+    form: 'part <id> [in=<part>] [tag=<word>] [for=<ask>] [crop=x,y,w,h [from=<photo>]] | <title>',
+    gist: 'A place in the document: a sheet, a section, a question, a way of doing it. `in=` is where it sits (an open `part … end` says it for you). Only a title is an outline: named now, written later. `for=<ask>` says this part helps that ask (a way, a variation, a clause explained): help the person pulls, never shown first. `tag=` is any one word naming what kind of part it is (a way of thinking, a variation, a day); with `tag=` and no `for=`, it helps the last ask of the part it sits in. `crop=` is where a question sits on the photo, in whole percents of its width and height from the top left (`crop=6,31,88,7`); `from=` names the photo when there are several.',
     time: 'instant',
     family: 'lesson',
   },
@@ -1226,8 +1226,8 @@ export const LESSON_VERB = {
     family: 'lesson',
   },
   ask: {
-    form: 'ask <id> [in=<part>] is=<a>[,<b>…] [pick=<x>,<y>,<z>] [unit=<unit>] [check=working|order] | <question>',
-    gist: 'A try: the learner types the answer, or taps one of the large choices in `pick=`. It is checked on the page, at once; every answer you will accept is in `is=` and nowhere else. A `_` stands for a space inside a value. `check=working` is for a question she works out on paper: her ink is read into lines of working, each step is checked with real arithmetic, and she is right when every step is and it ends on an answer in `is=`. `check=order` is for putting things in order: `is=` lists the items IN THE RIGHT ORDER (the question\'s own numbers or words; no `pick=`), she drags tiles into order, and the sequence is compared exactly.',
+    form: 'ask <id> [in=<part>] is=<a>[,<b>…] [pick=<x>,<y>,<z>] [unit=<unit>] [check=working|order|any|done] | <question>',
+    gist: 'A try: the learner types the answer, or taps one of the large choices in `pick=`. It is checked on the page, at once; every answer you will accept is in `is=` and nowhere else. A `_` stands for a space inside a value. `check=working` is for a question she works out on paper: her ink is read into lines of working, each step is checked with real arithmetic, and she is right when every step is and it ends on an answer in `is=`. `check=order` is for putting things in order: `is=` lists the items IN THE RIGHT ORDER (the question\'s own numbers or words; no `pick=`), she drags tiles into order, and the sequence is compared exactly. `check=any` is a choice with no single right answer (`pick=` the options, no `is=`): the gate opens when she holds a value. `check=done` is a tick (no `is=`, no `pick=`): the gate opens when she ticks it. Neither is sealed or checked.',
     time: 'instant',
     family: 'lesson',
   },
@@ -1253,7 +1253,7 @@ export const LESSON_VERB = {
 export type LessonVerb = keyof typeof LESSON_VERB;
 export const LESSON_VERBS = keysOf(LESSON_VERB);
 
-/** The ways of going at a question. A way is a `part` with one of these as its `tag=`; the catalogue lists by them. A fixed list. */
+/** The ways of going at a primary-maths question: what the maths card teaches and the lesson page has names and glyphs for. Content, not structure: a `tag=` is any word, and what is help is what says `for=`. */
 export const TECHNIQUE = {
   'draw-it': 'make a picture of it and count what is there',
   'share-it-out': 'deal it into equal groups, or the same amount to each',

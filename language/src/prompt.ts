@@ -24,7 +24,7 @@ export type { BriefForm };
 import { asksForLiveApp } from './app';
 import { FIGURE_CHAPTER, asksForFigure } from './figure';
 import { INTERFACE_CHAPTER } from './interface';
-import { TEACH_CHAPTER, carriesTeaching, documentBlocks } from './teach';
+import { DOCUMENT_CHAPTER, carriesDocument, documentBlocks } from './teach';
 import { inkBrief } from './ink';
 import { describeSight } from './sight';
 import { BUILTIN_STYLES } from './style';
@@ -725,7 +725,8 @@ export function techniquesText(cards: readonly TechniqueCard[]): string | null {
   let used = 0;
   for (const card of cards.slice(0, TECHNIQUE_LIMITS.cards)) {
     const block = `- ${card.title}. ${card.when}\n${card.example.map((line) => `    ${line}`).join('\n')}`;
-    if (used + block.length > TECHNIQUE_LIMITS.chars) continue;
+    const document = card.example.some((line) => /^\s*part\s/.test(line));
+    if (used + block.length > (document || blocks.some((held) => /\n    part /.test(held)) ? TECHNIQUE_LIMITS.documentChars : TECHNIQUE_LIMITS.chars)) continue;
     used += block.length;
     blocks.push(block);
   }
@@ -1086,8 +1087,8 @@ export function buildTurnBrief(context: TurnContext, input: TurnInput, form: Bri
   if (context.capabilities.structures.includes('tune') && (!liveApp || stage.elements.some((element) => element.figure?.kind === 'structure' && element.figure.structure === 'tune')) && (asksForMusic(input) || stage.elements.some((element) => element.figure?.kind === 'structure' && element.figure.structure === 'tune'))) parts.push(TUNE_CHAPTER);
   // A mock-up is taught when the words are about one, or when one is on stage to be changed; never in the system prompt, which is full.
   if (context.capabilities.structures.includes('screen') && (!liveApp || stage.elements.some((element) => element.figure?.kind === 'structure' && element.figure.structure === 'screen')) && (asksForInterface(input) || stage.elements.some((element) => element.figure?.kind === 'structure' && element.figure.structure === 'screen'))) parts.push(INTERFACE_CHAPTER);
-  // The TEACH chapter is carried when the words ask for a lesson, or while a lesson goes on; never in the system prompt, which is full.
-  if (carriesTeaching(context, input)) parts.push(TEACH_CHAPTER);
+  // The DOCUMENT chapter is carried while a document of parts exists, or when a technique the library chose writes one; never in the system prompt, which is full.
+  if (carriesDocument(context)) parts.push(DOCUMENT_CHAPTER);
   // FG2: a labelled drawing is taught when the words ask for one, or while one is on stage to be changed; never in the system prompt.
   const figureOnStage = stage.elements.some((element) => element.figure?.kind === 'structure' && element.figure.structure === 'figure');
   if (context.capabilities.structures.includes('figure') && !liveApp && ((input.kind === 'prompt' && asksForFigure(input.text)) || figureOnStage)) parts.push(FIGURE_CHAPTER);

@@ -97,8 +97,7 @@ export interface AheadHost {
 const shortOf = (id: NodeId): string => id.slice(id.lastIndexOf('/') + 1);
 
 /**
- * The parts that are written one at a time, in the document's order: not the root, not a painted scene, not a way (a way carries a
- * technique), and none whose children are anything but ways. A worksheet's question is one; so is a chapter.
+ * The parts that are written one at a time, in the document's order: not the root, not a painted scene, not a help (a help says what it is `for`), and none whose children are anything but ways. A worksheet's question is one; so is a chapter.
  */
 export function unitsOf(doc: Document): readonly DocNode[] {
   const out: DocNode[] = [];
@@ -106,7 +105,7 @@ export function unitsOf(doc: Document): readonly DocNode[] {
     const node = nodeOf(doc, id);
     if (node === null || depth > 32 || id.startsWith('#')) return;
     const kids = node.children.map((child) => nodeOf(doc, child)).filter((child): child is DocNode => child !== null);
-    if (node.parent !== null && node.tag === null && kids.every((child) => child.tag !== null)) {
+    if (node.parent !== null && node.for === null && kids.every((child) => child.for !== null)) {
       out.push(node);
       return;
     }
@@ -166,10 +165,10 @@ export function shapeBefore(doc: Document, node: DocNode): string | null {
   return null;
 }
 
-/** The words the brain is given for one part. It is the TEACH chapter's own rules that say how; this says which part, and what was learned from the last try. */
+/** The words the brain is given for one part. It is the DOCUMENT chapter and the technique card that wrote the document that say how; this says which part, and what was learned from the last try. */
 export function fillPrompt(job: FillJob): string {
   return [
-    `AHEAD: write part ${job.short} now, "${job.title}", and nothing else. She is not waiting for it: write it complete, once, in the lines the chapter gives, every line with its own in=. A question is written FIRST as her own try: an \`ask\` straight on the question (\`ask … in=${job.short}\`, no steps before it, no \`pick=\`, she writes the answer; two or three hints; \`check=working\` when it is a sum she works out in steps), THEN three to five ways (never fewer than three), each a part in=${job.short} with its own tag, small steps, and an ask whose answer is the question's own answer, reached last (the ways are the help she asks for); a part of a different kind (a chapter) gets its steps in=${job.short}. Write no outline, no \`reply\`, and no line for any other part.`,
+    `AHEAD: write part ${job.short} now, "${job.title}", and nothing else. The person is not waiting for it: write it complete, once, in the lines the DOCUMENT chapter gives, every line with its own in=, and the way the technique card on this turn and the part before it (below) were written: an ask first where they have one, then its helps (each part in=${job.short} with for=<the ask>), \`check=working\` when it is a sum worked in steps. A part of a different kind (a chapter, a day, a clause) gets its steps in=${job.short}. Write no outline, no \`reply\`, and no line for any other part.`,
     job.shape ?? '',
     job.photo ? `The page itself is attached: this question is the part of it at ${job.crop === null ? 'its place in the outline' : `x ${job.crop.x}%, y ${job.crop.y}%, ${job.crop.w}% wide, ${job.crop.h}% high`}. Read the question from there, with whatever the words above leave out (a picture, a table, a pattern, a clock), and write only what can be worked from what is on it.` : '',
     'A figure with squares to count is first transcribed from the attached crop: `show=grid cells=<rows from the top joined by />` (x whole square, h half, o empty), the same in every way, and the last ask of each way is the count it gives, exactly. If it cannot be read exactly, write `show=grid cells=unreadable` and no asks: the part then goes to a person to check.',
