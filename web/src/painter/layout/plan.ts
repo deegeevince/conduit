@@ -19,8 +19,10 @@ import { cellOf, marginOf, safeFrame } from './metrics';
 
 /** The share of the column the flow's words may take when blocks or a picture are on the stage: they are offered at least the rest. */
 export const FLOW_SHARE_MAX = 0.55;
-/** The share of the column the choices may take at most. */
-export const FOOT_SHARE_MAX = 0.45;
+/** The share of the column the choices may take at most when a diagram, picture or other block is on the stage: the drawing keeps the room. */
+export const FOOT_SHARE_MAX = 0.3;
+/** With only words and choices on the stage (an intro, a menu of starters) the choices may take more, so a stacked list on a phone is not cut. */
+export const FOOT_SHARE_MAX_WORDS = 0.45;
 /** A landscape `figure` gives the picture this share of the width; a portrait one this share of the height. */
 const FIGURE_WIDE_SHARE = 0.58;
 const FIGURE_TALL_SHARE = 0.55;
@@ -142,7 +144,7 @@ export function planStage(input: PlanInput): StagePlan {
 
   // 1. the foot
   const wanted = input.footHeight(safe.width);
-  const footHeight = Math.min(wanted, safe.height * FOOT_SHARE_MAX);
+  const footHeight = Math.min(wanted, safe.height * (blocks.length > 0 ? FOOT_SHARE_MAX : FOOT_SHARE_MAX_WORDS));
   const foot: Box | null = wanted > 0 ? { x: safe.x, y: safe.y + safe.height - footHeight, width: safe.width, height: footHeight } : null;
   const column: Box = foot === null ? safe : { x: safe.x, y: safe.y, width: safe.width, height: Math.max(1, safe.height - footHeight - gap) };
 
