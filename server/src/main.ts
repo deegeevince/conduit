@@ -1,6 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { serve } from '@hono/node-server';
 import { FIX_POLICY } from '@conduit/language';
+import { ENGINE_VERSION, warmEngine } from './domain/stage-facts';
 import { createBrains } from './brains/registry';
 import { createCritic, createFindingQueue } from './critic/registry';
 import { RelayHub } from './brains/relay/relay-hub';
@@ -132,6 +133,7 @@ function boot(env: Env): void {
   const app = createApp({ env, log: log.child({ part: 'http' }), conductor, relayHub, audit, kill, usage, assets, pictures, uploads, voice, status, news });
 
   const server = serve({ fetch: app.fetch, hostname: env.host, port: env.port }, (info) => {
+    setImmediate(() => log.info('engine.warm', { ms: Math.round(warmEngine()), version: ENGINE_VERSION }));
     log.info('server.listening', { host: env.host, port: info.port, brain: env.brain.kind, production: env.production, owners: env.ownerLogins.length, usageCapUsd: env.usageCapUsd });
     if (env.ownerLogins.length === 0 && env.trustedHosts.length > 0) {
       log.warn('identity.not_enforced', { note: 'OWNER_LOGINS is not set: anyone on the tailnet who can reach this server may use it. Set it to the owner\'s Tailscale login (GET /api/whoami shows what the server sees).' });

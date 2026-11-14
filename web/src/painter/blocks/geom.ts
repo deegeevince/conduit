@@ -41,31 +41,38 @@ export function contains(outer: Box, inner: Box, slack = 0): boolean {
   return inner.x >= outer.x - slack && inner.y >= outer.y - slack && right(inner) <= right(outer) + slack && bottom(inner) <= bottom(outer) + slack;
 }
 
+// The clipping state of one `segmentHitsBox` call. Module-level and the clip a plain function, not a closure made per call: this is the
+// hot loop of every routed diagram, and a closure per call cost most of a phone-width flowchart's measuring under tsx's `keepNames`.
+let clipT0 = 0;
+let clipT1 = 1;
+const CLIP_EPS = 1e-6;
+
+function clip(p: number, q: number): boolean {
+  if (Math.abs(p) < CLIP_EPS) return q > CLIP_EPS;
+  const t = q / p;
+  if (p < 0) {
+    if (t > clipT1) return false;
+    if (t > clipT0) clipT0 = t;
+  } else {
+    if (t < clipT0) return false;
+    if (t < clipT1) clipT1 = t;
+  }
+  return true;
+}
+
 /** Whether the segment ab passes through the interior of the box (touching an edge does not count). */
 export function segmentHitsBox(a: Point, b: Point, r: Box): boolean {
-  const eps = 1e-6;
-  let t0 = 0;
-  let t1 = 1;
+  const eps = CLIP_EPS;
+  clipT0 = 0;
+  clipT1 = 1;
   const dx = b.x - a.x;
   const dy = b.y - a.y;
-  const clip = (p: number, q: number): boolean => {
-    if (Math.abs(p) < eps) return q > eps;
-    const t = q / p;
-    if (p < 0) {
-      if (t > t1) return false;
-      if (t > t0) t0 = t;
-    } else {
-      if (t < t0) return false;
-      if (t < t1) t1 = t;
-    }
-    return true;
-  };
   return (
     clip(-dx, a.x - r.x - eps) &&
     clip(dx, right(r) - a.x - eps) &&
     clip(-dy, a.y - r.y - eps) &&
     clip(dy, bottom(r) - a.y - eps) &&
-    t1 - t0 > eps / Math.max(1, Math.hypot(dx, dy))
+    clipT1 - clipT0 > eps / Math.max(1, Math.hypot(dx, dy))
   );
 }
 

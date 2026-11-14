@@ -129,6 +129,7 @@ function capabilities(value: unknown): Capabilities {
     decks: raw.decks === undefined ? NO_V21_CAPABILITIES.decks : bool(raw.decks, 'capabilities.decks'),
     uploads: raw.uploads === undefined ? NO_V21_CAPABILITIES.uploads : bool(raw.uploads, 'capabilities.uploads'),
     links: raw.links === undefined ? NO_V21_CAPABILITIES.links : bool(raw.links, 'capabilities.links'),
+    ...(typeof raw.engine === 'string' ? { engine: raw.engine.slice(0, 64) } : {}),
   };
 }
 
@@ -398,7 +399,7 @@ function backEvent(value: unknown, index: number): BackEvent {
         choice: bool(raw.choice, 'choice'),
       };
     case 'report':
-      return { type, report: report(raw.report) };
+      return { type, report: report(raw.report), ...(typeof raw.boxes === 'string' ? { boxes: raw.boxes.slice(0, 64) } : {}) };
     case 'control':
       return {
         type,
@@ -422,6 +423,7 @@ function backEvent(value: unknown, index: number): BackEvent {
         ...(placed === undefined ? {} : { placed }),
         snapshot: bool(raw.snapshot, 'snapshot'),
         ...(raw.content === undefined || raw.content === null ? {} : { content: contentCount(raw.content) }),
+        ...(typeof raw.boxes === 'string' ? { boxes: raw.boxes.slice(0, 64) } : {}),
       };
     }
     case 'permit':

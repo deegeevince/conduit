@@ -242,7 +242,7 @@ async function main(): Promise<number> {
           if (result.versionEqual) row.versions += 1;
           row.delta = Math.max(row.delta, result.maxDelta);
           row.faults += result.faults.length;
-          if (!result.withinTolerance || !result.digestEqual || result.faults.length > 0) trouble.push(`${item.id} ${screen.name} ${look}: boxes ${result.boxes}/${result.serverBoxes}, max delta ${result.maxDelta}, digest ${result.digestEqual ? 'equal' : 'DIFFERENT'}${result.faults.length > 0 ? `, faults: ${result.faults.join(' | ')}` : ''}`);
+          if (!result.withinTolerance || !result.digestEqual || !result.sightEqual || result.faults.length > 0) trouble.push(`${item.id} ${screen.name} ${look}: boxes ${result.boxes}/${result.serverBoxes}, max delta ${result.maxDelta}, digest ${result.digestEqual ? 'equal' : 'DIFFERENT'}${result.faults.length > 0 ? `, faults: ${result.faults.join(' | ')}` : ''}`);
         }
         table.set(`${item.id}|${screen.name}`, row);
         if (!quiet) say(`  ${item.id.padEnd(28)} ${screen.name.padEnd(9)} looks ${row.within}/${row.runs} within 0.01, digests ${row.digests}/${row.runs}, sight ${row.sights}/${row.runs}, content ${row.contents}/${row.runs}, max delta ${row.delta.toExponential(1)}, ${row.boxes} boxes${row.faults > 0 ? `, ${row.faults} faults` : ''}`);
@@ -252,7 +252,7 @@ async function main(): Promise<number> {
     const total = (pick: (row: (typeof rows)[number]) => number): number => rows.reduce((sum, row) => sum + pick(row), 0);
     const runs = total((row) => row.runs);
     say(`boxes: ${total((row) => row.within)}/${runs} within 0.01; digests ${total((row) => row.digests)}/${runs} equal; sight ${total((row) => row.sights)}/${runs}; content ${total((row) => row.contents)}/${runs}; version ${total((row) => row.versions)}/${runs}; faults ${total((row) => row.faults)}`);
-    if (total((row) => row.within) !== runs || total((row) => row.digests) !== runs || total((row) => row.faults) > 0) {
+    if (total((row) => row.within) !== runs || total((row) => row.digests) !== runs || total((row) => row.sights) !== runs || total((row) => row.contents) !== runs || total((row) => row.faults) > 0) {
       failed += 1;
       for (const line of trouble.slice(0, 30)) say(`  FAIL ${line}`);
     }
