@@ -1,7 +1,9 @@
 import type {
+  ActionRisk,
   BackEventRecord,
   Capabilities,
   ClockState,
+  CriticFinding,
   DataTable,
   LineProblem,
   LineReader,
@@ -16,7 +18,7 @@ import type {
 } from '@conduit/language';
 import { PROMPT_MAX_CHARS } from '@conduit/language';
 import { errors } from '../errors';
-import type { BrainId } from './brain';
+import type { Brain, BrainId } from './brain';
 import type { HeldDocument } from './documents';
 import { createDraftGate } from './review';
 import type { DraftGate } from './review';
@@ -97,6 +99,27 @@ export interface ActiveTurn {
   reported: boolean;
   /** everything sent to the painter for this turn, so a reconnecting stream can be brought up to date */
   readonly sent: StageEvent[];
+  /**
+   * v2.1. What was sent while no painter was listening. A reconnecting stream is given the turn again, but not the passes and the data
+   * it already had (P2-34); these it had not.
+   */
+  readonly missed: StageEvent[];
+  /** v2.1. The file the resting snapshot was saved under beside the log, once it has arrived; what the critic looks at */
+  snapshotFile: string | null;
+  /** v2.1. The critic has been asked about this turn (or will never be) */
+  criticAsked: boolean;
+}
+
+/** v2.1. A confirm control on the stage that the owner has not answered: the brain holds the call until `permit`, or the deadline says no. */
+export interface PendingPermission {
+  readonly request: string;
+  readonly turn: string;
+  readonly brain: Brain;
+  readonly tool: string;
+  readonly summary: string;
+  readonly risk: ActionRisk;
+  readonly askedAt: number;
+  readonly timer: NodeJS.Timeout;
 }
 
 export type StageSink = (event: StageEvent) => void;
@@ -146,6 +169,12 @@ export interface Session {
   snapshotTurns: Set<string>;
   /** aborted when the session is dropped: stops paintings that outlive their turns */
   readonly abort: AbortController;
+  /** v2.1. What the user asked to hold on every reply, oldest first, at most `STANDING_LIMITS.asks` */
+  standing: string[];
+  /** v2.1. What the critic made of each turn, by turn id; bounded like the turns themselves */
+  readonly findings: Map<string, CriticFinding>;
+  /** v2.1. Confirm controls waiting for the owner, by request id */
+  readonly permissions: Map<string, PendingPermission>;
 }
 
 /** In-memory sessions. There is no database; a restart forgets everything, by design. */
@@ -195,6 +224,9 @@ export class SessionStore {
       paintings: 0,
       snapshotTurns: new Set(),
       abort: new AbortController(),
+      standing: [],
+      findings: new Map(),
+      permissions: new Map(),
     };
     this.sessions.set(session.id, session);
     return session;

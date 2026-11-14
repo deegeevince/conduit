@@ -125,6 +125,10 @@ export function createJsonlSessionLog(deps: JsonlSessionLogDeps): SessionLog {
       });
       return name;
     },
+    fileOf: (session) => {
+      const state = stateFor(session);
+      return state === null || state.gaveUp ? '' : `${state.stem}.jsonl`;
+    },
     close: (session) => {
       const state = open.get(session);
       closed.add(session);

@@ -1,6 +1,6 @@
 // The edge between untrusted JSON and the typed domain. Every check names the field it found wrong.
 
-import { ALIGNS, BACK_EVENT_TYPES, BRAIN_EFFORTS, BRAIN_MODELS, CANVAS_NAMES, DEMOS, ELEMENT_KINDS, LAYOUTS, LIMITS, LOOK_IDS, MOODS, NO_SIGHT, NO_V21_CAPABILITIES, NO_V4_CAPABILITIES, PACES, SIGHT_ITEMS, SIGHT_NOTE } from '@conduit/language';
+import { AMBIENT_KINDS, CAMERA_MOVES, CHART_KINDS, CONTROL_KINDS, ENTER_EFFECTS, EXIT_EFFECTS, FACES, FX_NAMES, LAYERS, LOOPS, MARKS, PROCEDURAL_MEDIA, STROKES, STRUCTURE_KINDS, TEXTURES, ALIGNS, BACK_EVENT_TYPES, BRAIN_EFFORTS, BRAIN_MODES, BRAIN_MODELS, CANVAS_NAMES, DEMOS, ELEMENT_KINDS, LAYOUTS, LIMITS, LOOK_IDS, MOODS, NO_SIGHT, NO_V21_CAPABILITIES, NO_V4_CAPABILITIES, PACES, SIGHT_ITEMS, SIGHT_NOTE } from '@conduit/language';
 import type {
   BackEvent,
   BrainChange,
@@ -56,6 +56,11 @@ function strings(value: unknown, what: string): string[] {
   return list(value, what).map((item, index) => text(item, `${what}[${index}]`));
 }
 
+/** A list from the browser, kept only for what the vocabulary knows: a word it does not know is not a capability, and is not cast into one. */
+function members<T extends string>(value: unknown, allowed: readonly T[], what: string): T[] {
+  return strings(value, what).filter((word): word is T => allowed.some((known) => known === word));
+}
+
 function oneOf<T extends string>(value: unknown, allowed: readonly T[], what: string): T {
   const found = allowed.find((item) => item === value);
   if (found === undefined) throw errors.badRequest(`${what} must be one of ${allowed.join(' | ')}`);
@@ -86,26 +91,26 @@ function capabilities(value: unknown): Capabilities {
     language: num(raw.language, 'capabilities.language'),
     renderer: text(raw.renderer, 'capabilities.renderer'),
     depth: bool(raw.depth, 'capabilities.depth'),
-    looks: strings(raw.looks, 'capabilities.looks') as unknown as Capabilities['looks'],
-    layers: strings(raw.layers, 'capabilities.layers') as unknown as Capabilities['layers'],
-    layouts: strings(raw.layouts, 'capabilities.layouts') as unknown as Capabilities['layouts'],
-    camera: strings(raw.camera, 'capabilities.camera') as unknown as Capabilities['camera'],
-    enters: strings(raw.enters, 'capabilities.enters') as unknown as Capabilities['enters'],
-    exits: strings(raw.exits, 'capabilities.exits') as unknown as Capabilities['exits'],
-    loops: strings(raw.loops, 'capabilities.loops') as unknown as Capabilities['loops'],
-    marks: strings(raw.marks, 'capabilities.marks') as unknown as Capabilities['marks'],
-    kinds: strings(raw.kinds, 'capabilities.kinds') as unknown as Capabilities['kinds'],
-    faces: strings(raw.faces, 'capabilities.faces') as unknown as Capabilities['faces'],
-    fx: strings(raw.fx, 'capabilities.fx') as unknown as Capabilities['fx'],
-    ambient: strings(raw.ambient, 'capabilities.ambient') as unknown as Capabilities['ambient'],
+    looks: members(raw.looks, LOOK_IDS, 'capabilities.looks'),
+    layers: members(raw.layers, LAYERS, 'capabilities.layers'),
+    layouts: members(raw.layouts, LAYOUTS, 'capabilities.layouts'),
+    camera: members(raw.camera, CAMERA_MOVES, 'capabilities.camera'),
+    enters: members(raw.enters, ENTER_EFFECTS, 'capabilities.enters'),
+    exits: members(raw.exits, EXIT_EFFECTS, 'capabilities.exits'),
+    loops: members(raw.loops, LOOPS, 'capabilities.loops'),
+    marks: members(raw.marks, MARKS, 'capabilities.marks'),
+    kinds: members(raw.kinds, ELEMENT_KINDS, 'capabilities.kinds'),
+    faces: members(raw.faces, FACES, 'capabilities.faces'),
+    fx: members(raw.fx, FX_NAMES, 'capabilities.fx'),
+    ambient: members(raw.ambient, AMBIENT_KINDS, 'capabilities.ambient'),
     sight: oneOf(raw.sight, ['none', 'report', 'snapshot'] as const, 'capabilities.sight'),
     // A painter that speaks Series 3 leaves these out: it is then taught none of what they gate.
-    structures: raw.structures === undefined ? NO_V4_CAPABILITIES.structures : (strings(raw.structures, 'capabilities.structures') as unknown as Capabilities['structures']),
-    charts: raw.charts === undefined ? NO_V4_CAPABILITIES.charts : (strings(raw.charts, 'capabilities.charts') as unknown as Capabilities['charts']),
-    controls: raw.controls === undefined ? NO_V4_CAPABILITIES.controls : (strings(raw.controls, 'capabilities.controls') as unknown as Capabilities['controls']),
-    media: raw.media === undefined ? NO_V4_CAPABILITIES.media : (strings(raw.media, 'capabilities.media') as unknown as Capabilities['media']),
-    textures: raw.textures === undefined ? NO_V4_CAPABILITIES.textures : (strings(raw.textures, 'capabilities.textures') as unknown as Capabilities['textures']),
-    brushes: raw.brushes === undefined ? NO_V4_CAPABILITIES.brushes : (strings(raw.brushes, 'capabilities.brushes') as unknown as Capabilities['brushes']),
+    structures: raw.structures === undefined ? NO_V4_CAPABILITIES.structures : (members(raw.structures, STRUCTURE_KINDS, 'capabilities.structures')),
+    charts: raw.charts === undefined ? NO_V4_CAPABILITIES.charts : (members(raw.charts, CHART_KINDS, 'capabilities.charts')),
+    controls: raw.controls === undefined ? NO_V4_CAPABILITIES.controls : (members(raw.controls, CONTROL_KINDS, 'capabilities.controls')),
+    media: raw.media === undefined ? NO_V4_CAPABILITIES.media : (members(raw.media, PROCEDURAL_MEDIA, 'capabilities.media')),
+    textures: raw.textures === undefined ? NO_V4_CAPABILITIES.textures : (members(raw.textures, TEXTURES, 'capabilities.textures')),
+    brushes: raw.brushes === undefined ? NO_V4_CAPABILITIES.brushes : (members(raw.brushes, STROKES, 'capabilities.brushes')),
     drafts: raw.drafts === undefined ? NO_V4_CAPABILITIES.drafts : bool(raw.drafts, 'capabilities.drafts'),
     // A painter of v2 leaves these out: no fix is tried on it, and it is taught neither decks nor the user's pictures.
     candidates: raw.candidates === undefined ? NO_V21_CAPABILITIES.candidates : bool(raw.candidates, 'capabilities.candidates'),
@@ -401,11 +406,31 @@ export function parseStartTurn(body: unknown): StartTurnRequest {
 /** Body of `PUT …/brain`: a model and/or an effort, each from the allowlist. Anything else is refused by name. */
 export function parseBrainChange(body: unknown): BrainChange {
   const o = obj(body, 'body');
-  const unknown = Object.keys(o).filter((key) => key !== 'model' && key !== 'effort');
-  if (unknown.length > 0) throw errors.badRequest(`unknown setting ${unknown.join(', ')}: only model and effort can be set`);
-  if (o.model === undefined && o.effort === undefined) throw errors.badRequest(`say a model (${BRAIN_MODELS.join(' | ')}) or an effort (${BRAIN_EFFORTS.join(' | ')})`);
+  const unknown = Object.keys(o).filter((key) => key !== 'model' && key !== 'effort' && key !== 'mode');
+  if (unknown.length > 0) throw errors.badRequest(`unknown setting ${unknown.join(', ')}: only model, effort and mode can be set`);
+  if (o.model === undefined && o.effort === undefined && o.mode === undefined) {
+    throw errors.badRequest(`say a model (${BRAIN_MODELS.join(' | ')}), an effort (${BRAIN_EFFORTS.join(' | ')}) or a mode (${BRAIN_MODES.join(' | ')})`);
+  }
   return {
     ...(o.model === undefined ? {} : { model: oneOf(o.model, BRAIN_MODELS, 'model') }),
     ...(o.effort === undefined ? {} : { effort: oneOf(o.effort, BRAIN_EFFORTS, 'effort') }),
+    ...(o.mode === undefined ? {} : { mode: oneOf(o.mode, BRAIN_MODES, 'mode') }),
   };
+}
+
+/** Body of `PUT …/tools`: the name of a tool or service and whether it is on. The server checks the name against what it offers. */
+export function parseToolSwitch(body: unknown): { readonly name: string; readonly on: boolean } {
+  const o = obj(body, 'body');
+  const name = text(o.name, 'name').trim();
+  if (!/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(name)) throw errors.badRequest('name must be the name of a tool or service, as /tools lists it');
+  return { name, on: bool(o.on, 'on') };
+}
+
+/** Body of `DELETE …/asks`: nothing or `{}` forgets every standing ask; `{ drop: n }` forgets the nth. Answers the number to drop, or null for all. */
+export function parseAsksClear(body: unknown): number | null {
+  const o = obj(body, 'body');
+  if (o.drop === undefined) return null;
+  const n = Math.round(num(o.drop, 'drop'));
+  if (n < 1) throw errors.badRequest('drop must be a number from 1');
+  return n;
 }
