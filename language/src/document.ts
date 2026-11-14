@@ -710,6 +710,8 @@ export class DocumentFolder {
   private readonly turns = new Map<string, Turn>();
   private readonly turnOrder: string[] = [];
   private readonly scenes: SceneAcc[] = [];
+  /** the turn that wrote the first part: the pictures painted before it are an earlier answer, not this document's */
+  private rootTurn: string | null = null;
   private readonly replies = new Map<string, string>();
   /** the status of every part and scene that has had one set: by what the turns did, or by `node` records */
   private readonly statuses = new Map<NodeId, NodeStatus>();
@@ -911,6 +913,7 @@ export class DocumentFolder {
         break;
       case 'part':
         if (!known) this.statuses.set(this.idOf(written.id), 'outlined');
+        if (this.rootTurn === null) this.rootTurn = turn.id;
         // a child written under a part is something landing in it, whether the child is new or is being written again (a part sent back and refilled)
         if (written.in !== undefined) this.touch(turn, written.in);
         break;
@@ -1082,7 +1085,13 @@ export class DocumentFolder {
     }
 
     const sceneIds: NodeId[] = [];
+    // A document of parts holds its own parts and the pictures painted with them. What an earlier answer painted (the "what's new" scene a recipe was
+    // asked from) is not a part of it: it would be listed as a card and could be where the lesson opens.
+    const turnOrder = [...this.turns.keys()];
+    const rootAt = rootPart === null || this.rootTurn === null ? -1 : turnOrder.indexOf(this.rootTurn);
     for (const scene of this.scenes) {
+      const first = scene.groups[0];
+      if (rootAt >= 0 && first !== undefined && turnOrder.indexOf(first.turn) < rootAt) continue;
       const segments: Script[] = [];
       let open = false;
       for (const group of scene.groups) {

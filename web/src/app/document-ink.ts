@@ -165,6 +165,8 @@ export function createDocumentInk(options: DocumentInkOptions): DocumentInk {
         if (src !== null) history.set(kind, [...(history.get(kind) ?? []).filter((w) => w.n !== n), { n, text: read.lines.join('  '), src }]);
         options.keep({ node, ask, n, text: read.lines.join('\n'), doc });
         ink.reset();
+        // the paper may have been laid over again while it was read (the page moved): the one on it now is wiped too, or her old strokes come back
+        if (current !== null && current.key === kind && current.overlay.ink !== ink) current.overlay.ink.reset();
         kept.delete(kind);
         options.onWorking();
         options.answer(node, ask, tryText(read.lines, found?.step.check === 'working'), undefined, read.sees ?? null);

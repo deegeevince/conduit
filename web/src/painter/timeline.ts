@@ -24,7 +24,7 @@ import type { ControlSite } from './controls-stage';
 import { layoutCard } from './controls';
 import type { ControlLayout } from '../contracts/controls';
 import { lookOf, measurerFor, tuneStartOf } from './structures';
-import { appCues } from './apps';
+import { appCues, loneAppScenes } from './apps';
 import { CALM } from '../contracts/controls';
 import { registerLaidOut, laidOutOf } from './registry';
 import { buildStructures, probeStructure, setTextOnce } from './structures';
@@ -135,6 +135,8 @@ const FLASH_FLOOR_SECONDS = 0.34;
 /** How long a new scene's words take to settle from the place of the old scene's. */
 const CARRY_SECONDS = 0.55;
 const BESIDE_WORDS_SHARE = 0.3;
+/** a live app is made for a frame about as wide as its natural width: beside the words it takes at most this share of a wide stage, else the words stand below it */
+const LIVE_APP_BESIDE_MAX = 0.6;
 /** A structure is set at least this share of the look's size: an engine that would shrink it further is asked for more room first. */
 const READ_SHRINK = 0.8;
 /** An element whose box covers more than this share of the viewport is "large" for the governor. */
@@ -754,6 +756,7 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
         least,
         aspect: figure.structure === 'cycle' || figure.structure === 'map' ? 16 / 9 : null,
         pinned: box === null || released.has(element.key) ? null : { x: box.x, y: box.y, width: box.w, height: box.h },
+        ...(live ? { live: true } : {}),
       });
     }
     // A live app that is the whole answer (nothing else drawn or placed beside it) is given the whole stage, edge to edge inside the chrome, however short a height it asked for:
@@ -761,7 +764,7 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
     if (pictureOrder === null && list.length === 1) {
       const only = list[0];
       const lone = only === undefined ? null : drawn.find((element) => element.key === only.key);
-      if (only !== undefined && lone?.figure?.kind === 'structure' && lone.figure.structure === 'app' && only.pinned === null) list[0] = { ...only, natural: { width: 2400, height: 2400 } };
+      if (only !== undefined && lone?.figure?.kind === 'structure' && lone.figure.structure === 'app' && only.pinned === null && loneAppScenes(schedule).has(lone.scene)) list[0] = { ...only, natural: { width: 2400, height: 2400 } };
     }
     if (pictureOrder !== null) {
       kinds.set('canvas', 'picture');
@@ -821,7 +824,7 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
       // a live app is a tool to be used: on a wide stage it takes the lead room whatever the scene's layout, and the words stand beside it
       const liveApp = unpinnedBlocks.length === 1 && drawnByKey.get(unpinnedBlocks[0]?.key ?? '')?.figure?.kind === 'structure' && (drawnByKey.get(unpinnedBlocks[0]?.key ?? '')?.figure as { structure?: string } | null | undefined)?.structure === 'app';
       let beside = false;
-      if (viewport.width >= 900 && viewport.width >= 1.5 * viewport.height && bare && unpinnedBlocks.length === 1 && unpinnedBlocks[0]?.kind === 'structure' && scene.layout !== 'figure' && (liveApp || sceneHasControls || (scene.layout !== 'caption' && scene.layout !== 'solo'))) {
+      if (viewport.width >= 900 && viewport.width >= 1.5 * viewport.height && bare && unpinnedBlocks.length === 1 && unpinnedBlocks[0]?.kind === 'structure' && scene.layout !== 'figure' && ((liveApp ? (unpinnedBlocks[0]?.natural.width ?? 0) <= safe.width * LIVE_APP_BESIDE_MAX : false) || (!liveApp && sceneHasControls) || (scene.layout !== 'caption' && scene.layout !== 'solo'))) {
         const known = besideOf.get(scene.id);
         if (known !== undefined) beside = known;
         else if (sceneHasControls) {
@@ -833,7 +836,8 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
           // everything the scene says, whether or not it is on stage at this moment: the same answer at every moment, and at rest
           const all: LayoutItem[] = elements.filter((element) => element.scene === scene.id && element.replaces === null).map((element) => ({ key: element.key, order: element.order, text: element.text, emphasis: element.emphasis, style: laidStyle(styleAt(element, element.enter?.start ?? start)), struck: false, replaces: null }));
           const flat: LayoutInput = { viewport, look, layout: scene.layout, align: scene.align, expected: null, items: all, foot: safe };
-          beside = needsOf(flat, safe.width).flow > safe.height * BESIDE_WORDS_SHARE;
+          // a live app whose frame fits unscaled beside the words stands to the left; one that does not fit has the words below it
+          beside = liveApp || needsOf(flat, safe.width).flow > safe.height * BESIDE_WORDS_SHARE;
           besideOf.set(scene.id, beside);
         }
       }
