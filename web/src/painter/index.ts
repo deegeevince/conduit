@@ -538,7 +538,8 @@ export function createPainter(options: PainterOptions): Painter {
     let placed: ReturnType<typeof placedOf>;
     try {
       sight = sightOf(at, schedule, open.base, when, false);
-      const keys = new Set(schedule.elements.map((element) => element.key));
+      // only what is on the stage when it rests: what left in an earlier scene or turn is not there to be reported
+      const keys = new Set(schedule.elements.filter((element) => element.exit === null || element.exit.start > when).map((element) => element.key));
       placed = placedOf(at, schedule, when, keys);
     } catch (error) {
       noteFault(error, 'draft');
