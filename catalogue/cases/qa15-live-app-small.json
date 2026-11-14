@@ -5,7 +5,7 @@
  "owner": "painter",
  "kind": "draw",
  "found": "2026-11-14",
- "note": "The piano is a short strip at the top, most of the stage is empty.",
+ "note": "The piano is a short strip at the top, most of the stage is empty. The frame fits the app's own height (the brain's height=) and the words stand below or beside it; the share of the window is no longer asked to be half.",
  "own": [
   "app-fills-stage"
  ],
@@ -24,7 +24,7 @@
    "check": [
     {
      "k": "app-fills-stage",
-     "min": 0.5
+     "min": 0.4
     }
    ]
   }

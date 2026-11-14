@@ -26,6 +26,8 @@ export interface StageBlock {
   readonly aspect: number | null;
   /** the brain gave it a box of its own (`4,4 152x54`): it keeps that box inside the picture region and takes no room from the flow */
   readonly pinned: Box | null;
+  /** a live app: it is given the width its content was made for before the words share the stage, and is never taller than it asked to be */
+  readonly live?: boolean;
 }
 
 /** Where everything goes for one layout epoch. Regions are disjoint; every box is on the reading plane, stage units. */
