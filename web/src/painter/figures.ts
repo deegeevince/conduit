@@ -17,7 +17,7 @@ import { layerZ, planeScale, projectToScreen } from '../contracts/space';
 import type { Box, CameraPose, Viewport } from '../contracts/space';
 import { about, apply, clamp01, hash, lerp, mixHex, mul, rotation, scaling, translation } from './affine';
 import type { Pt } from './affine';
-import { canvasToStage, fitCanvas } from './canvas';
+import { canvasToStage } from './canvas';
 import type { CanvasFit } from './canvas';
 import { contrastRatio, mapToGamut } from './colour';
 import { ease } from './ease';
@@ -40,6 +40,8 @@ export interface FigureContext {
   readonly camera: CameraPose;
   /** the fit of the scene the frame belongs to; each element is fitted to the scene it was made in */
   readonly fit: CanvasFit;
+  /** v2.1: the fit of a scene at this instant (the stage plan's, eased); absent: every scene is fitted as `fit` */
+  readonly fitOf?: (sceneId: string) => CanvasFit;
   readonly reducedMotion: boolean;
   /** by element key */
   readonly paintings: ReadonlyMap<string, Painting>;
@@ -735,6 +737,7 @@ interface Frm {
   readonly fades: ReadonlyMap<string, number>;
   readonly defaultFit: CanvasFit;
   readonly fixedFit: CanvasFit | null;
+  readonly fitOf: ((sceneId: string) => CanvasFit) | null;
 }
 
 const paintCache = new WeakMap<LookSpec, Map<string, Colour>>();
@@ -772,10 +775,10 @@ function strongest(look: LookSpec): Colour {
 function fitFor(frm: Frm, element: ElementSpan): CanvasFit {
   if (frm.fixedFit !== null) return frm.fixedFit;
   const scene = frm.sc.idx.scenes.get(element.scene) ?? frm.sc.schedule.scenes[0];
-  if (scene === undefined) return frm.defaultFit;
+  if (scene === undefined || frm.fitOf === null) return frm.defaultFit;
   const known = frm.fits.get(scene.id);
   if (known !== undefined) return known;
-  const made = fitCanvas(scene.canvas, scene.layout, frm.viewport, frm.look);
+  const made = frm.fitOf(scene.id);
   frm.fits.set(scene.id, made);
   return made;
 }
@@ -1329,7 +1332,7 @@ export function figuresAt(schedule: Schedule, base: StageBase, time: number, amb
     if (develop <= 0) continue;
     for (const key of sketchKeysOf(picture, schedule)) fades.set(key, Math.min(fades.get(key) ?? 1, 1 - develop));
   }
-  const frm: Frm = { sc, viewport, look, paintings: context.paintings, body: bodySize(viewport, look), fits: new Map(), envs: new Map(), fades, defaultFit: context.fit, fixedFit: context.fixedFit ?? null };
+  const frm: Frm = { sc, viewport, look, paintings: context.paintings, body: bodySize(viewport, look), fits: new Map(), envs: new Map(), fades, defaultFit: context.fit, fixedFit: context.fixedFit ?? null, fitOf: context.fitOf ?? null };
 
   const figures: FigureFrame[] = [];
   const byOwner = new Map<string, FigureFrame[]>();

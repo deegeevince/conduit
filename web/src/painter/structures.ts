@@ -41,7 +41,13 @@ export interface StructureEnv {
   /** what the controls hold, for `{…}` in a node's words or a chart's cells */
   readonly scope: Scope;
   readonly specAt: (time: number) => LookSpec;
-  readonly fitOf: (element: ElementSpan, spec: LookSpec) => CanvasFit;
+  readonly fitOf: (element: ElementSpan, spec: LookSpec, time: number) => CanvasFit;
+  /** v2.1: the room the stage plan gave this structure, reading-plane stage units, as of `time`; null when it has none (a bench's own stage) */
+  readonly roomOf: (element: ElementSpan, time: number) => Box | null;
+  /** the times at which that room changes: the structure is laid out again from each */
+  readonly roomTimes: (element: ElementSpan) => readonly number[];
+  /** words that stand in that room, reading-plane stage units: the engines keep clear of them */
+  readonly obstaclesOf: (element: ElementSpan, time: number) => readonly Box[];
   /** the times at which the look changes over */
   readonly flips: readonly number[];
   readonly snapAt: (time: number) => number;
@@ -222,6 +228,7 @@ function planOf(structure: ElementSpan, schedule: Schedule, env: StructureEnv): 
   figure.rows.forEach((_, index) => times.add(arrival(`${structure.key}#r${index}`)));
   times.add(arrival(structure.key));
   for (const flip of env.flips) times.add(flip);
+  for (const change of env.roomTimes(structure)) times.add(change);
   // a burst of arrivals is one layout, made when the first of them came
   const sorted = [...times].sort((a, b) => a - b);
   const starts: number[] = [];
@@ -241,12 +248,20 @@ function planOf(structure: ElementSpan, schedule: Schedule, env: StructureEnv): 
     });
     let rows = 0;
     while (rows < figure.rows.length && arrival(`${structure.key}#r${rows}`) < next) rows += 1;
-    const fit = env.fitOf(structure, look);
+    const fit = env.fitOf(structure, look, start);
     const origin = { x: fit.box.x / ps, y: fit.box.y / ps };
     const unit = fit.unit / ps;
     const box = figure.box;
-    const room: Box = box === null ? { x: origin.x, y: origin.y, width: fit.box.width / ps, height: fit.box.height / ps } : { x: origin.x + box.x * unit, y: origin.y + box.y * unit, width: box.w * unit, height: box.h * unit };
-    const key = [signature(structure, present, rows, env.scope), look.id, look.name, env.viewport.width, env.viewport.height, room.x.toFixed(2), room.y.toFixed(2), room.width.toFixed(2), room.height.toFixed(2), env.engine === undefined ? 'e' : 'b'].join('|');
+    // a structure with no box of its own takes the room the stage plan gave it; one the brain placed stands where it said, on the canvas
+    const given = box === null ? env.roomOf(structure, start) : null;
+    const room: Box =
+      box !== null
+        ? { x: origin.x + box.x * unit, y: origin.y + box.y * unit, width: box.w * unit, height: box.h * unit }
+        : given !== null
+          ? { x: given.x / ps, y: given.y / ps, width: given.width / ps, height: given.height / ps }
+          : { x: origin.x, y: origin.y, width: fit.box.width / ps, height: fit.box.height / ps };
+    const obstacles = env.obstaclesOf(structure, start).map((o) => ({ x: o.x / ps, y: o.y / ps, width: o.width / ps, height: o.height / ps }));
+    const key = [signature(structure, present, rows, env.scope), look.id, look.name, env.viewport.width, env.viewport.height, room.x.toFixed(2), room.y.toFixed(2), room.width.toFixed(2), room.height.toFixed(2), obstacles.map((o) => `${o.x.toFixed(0)},${o.y.toFixed(0)},${o.width.toFixed(0)},${o.height.toFixed(0)}`).join(';'), env.engine === undefined ? 'e' : 'b'].join('|');
     const layout = remembered(key, () => {
       const shown: ElementSpan = { ...structure, figure: { ...figure, rows: figure.rows.slice(0, rows) } };
       try {
@@ -259,7 +274,7 @@ function planOf(structure: ElementSpan, schedule: Schedule, env: StructureEnv): 
           measure: measurerFor(look, env.viewport, structure.style),
           look: lookOf(look, env.viewport, fit, ps),
           scope: env.scope,
-          obstacles: [],
+          obstacles,
         });
       } catch {
         return EMPTY_STRUCTURE_LAYOUT;
@@ -373,7 +388,7 @@ export function buildStructures(schedule: Schedule, env: StructureEnv): Structur
       if (plan === undefined || owner === undefined) return null;
       const box = boxAtTime(plan, owner, time);
       if (box === null) return null;
-      const fit = env.fitOf(owner, env.specAt(time));
+      const fit = env.fitOf(owner, env.specAt(time), time);
       const ps = planeScale(owner.style.layer, env.viewport);
       return { x: (box.x * ps - fit.box.x) / fit.unit, y: (box.y * ps - fit.box.y) / fit.unit, w: (box.width * ps) / fit.unit, h: (box.height * ps) / fit.unit };
     },
@@ -383,7 +398,7 @@ export function buildStructures(schedule: Schedule, env: StructureEnv): Structur
       if (plan === undefined || owner === undefined) return null;
       const route = placeOf(plan, owner, time).epoch.layout.routes.get(key);
       if (route === undefined) return null;
-      const fit = env.fitOf(owner, env.specAt(time));
+      const fit = env.fitOf(owner, env.specAt(time), time);
       const ps = planeScale(owner.style.layer, env.viewport);
       return { closed: route.closed, points: route.points.map((p) => ({ x: (p.x * ps - fit.box.x) / fit.unit, y: (p.y * ps - fit.box.y) / fit.unit })) };
     },
@@ -404,7 +419,7 @@ export function buildStructures(schedule: Schedule, env: StructureEnv): Structur
   /** What one owner's parts look like at `tq`: the whole of how a part enters, leaves, is restyled, pointed at and drawn. Structures and controls both go through it. */
   const renderOwner = (call: OwnerCall, out: StructureFrames): void => {
     const { structure, owner, parts, before, q, epochStart, tq, aq, look, style } = call;
-    const fit = env.fitOf(structure, look);
+    const fit = env.fitOf(structure, look, tq);
     const ps = planeScale(structure.style.layer, env.viewport);
     const unit = fit.unit / ps;
     const body = cellOf('m', env.viewport, look).height;

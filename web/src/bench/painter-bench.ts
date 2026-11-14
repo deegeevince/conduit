@@ -2,6 +2,7 @@
 // server. Plays a fixture script from @conduit/language/demos locally.
 
 import { LineNormalizer, LineReader, LOOK_IDS, parseReplayDirective } from '@conduit/language';
+import { fitIn } from '../painter/canvas';
 import type { BackEvent, CanvasName, LookId } from '@conduit/language';
 import charts from '@conduit/language/demos/charts.series?raw';
 import diagrams from '@conduit/language/demos/diagrams.series?raw';
@@ -15,9 +16,7 @@ import type { Frame } from '../contracts/frame';
 import type { RasteriseOptions, Renderer } from '../contracts/renderer';
 import { planeScale } from '../contracts/space';
 import type { Painter, PainterUpload, TranscriptEvent } from '../contracts/painter';
-import { LOOKS } from '../looks';
 import { createPainter } from '../painter';
-import { fitCanvas } from '../painter/canvas';
 import { createChartHost } from '../app/chart-host';
 import { createChartEngine } from '../render/chart';
 import { createPlainRenderer } from '../render/plain';
@@ -413,7 +412,10 @@ function drawOutline(): void {
   }
   const s = painter.snapshot();
   const v = viewport();
-  const fit = fitCanvas(canvasSelect.value as CanvasName, s.scene.layout, v, LOOKS[s.look]);
+  // the outline is where the selected canvas would stand in the picture's region of the stage plan (the whole stage when nothing is drawn)
+  const region = s.plan?.picture ?? null;
+  const picture = region === null ? { x: -v.width / 2, y: -v.height / 2, width: v.width, height: v.height } : { x: region.x - v.width / 2, y: region.y - v.height / 2, width: region.width, height: region.height };
+  const fit = fitIn(canvasSelect.value as CanvasName, picture, picture, v);
   outline.style.display = 'block';
   outline.style.left = `${v.width / 2 + fit.box.x}px`;
   outline.style.top = `${v.height / 2 + fit.box.y}px`;

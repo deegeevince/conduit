@@ -45,6 +45,11 @@ export interface LayoutInput {
    */
   readonly flow?: Box;
   /**
+   * v2.1: the foot of the stage plan. When it is given, the choices (in-flow words a tap answers) leave the flow and stand in it, in rows
+   * that wrap, centred; when the foot cannot hold them the oldest let go. Omitted, they stay in the flow as any words do.
+   */
+  readonly foot?: Box;
+  /**
    * Where text given a point of the canvas wants its centre, on its own layer's
    * plane (stage units), by key. Such text is set there when that is clear of
    * other text, otherwise it slides to the nearest clear place and, failing
@@ -579,6 +584,8 @@ interface FlowResult {
    * reserved. Empty when nothing flows.
    */
   readonly regions: Rect[];
+  /** the height the words need in their box when what is expected has come, before any shrink: what the stage plan offers them */
+  readonly need: number;
 }
 
 /** A scene's title: the large lines. It outlives the body lines under it. */
@@ -697,7 +704,7 @@ function arrangeFlow(units: readonly Unit[], ctx: Context): FlowResult {
     if (!isSingle(ctx.input.layout)) regions.push({ x: left, y: top, width: right - left, height: bottom - top });
     regions.push({ x: left, y: top, width: right - left, height: block });
   }
-  return { placements, next, overflow, regions };
+  return { placements, next, overflow, regions, need: block };
 }
 
 // ---------------------------------------------------------------- loose
@@ -990,40 +997,107 @@ function arrangeLoose(
  * knows nothing about time. The engine calls it whenever the set of things on
  * stage, the plan, or the viewport changes, and tweens between the answers.
  */
-/** The caption band holds two lines; when the scene has (or has said it will have) more, it grows upward from its bottom edge over the picture's ground, never past the safe frame's upper third. */
-function captionRoom(band: Rect, flow: readonly Unit[], ctx: Context): Rect {
-  const plan = makePlan([...flow], ctx)[0];
-  const gap = ctx.snap ? ctx.bodyH : ctx.bodyH * 0.5;
-  const laid = plan === undefined ? 0 : layoutColumn(plan, 1, ctx).end;
-  const owed = Math.max(0, (ctx.input.expected ?? 0) - flow.length) * (ctx.bodyH + gap);
-  const need = Math.max(laid + owed, 2 * ctx.bodyH + gap);
-  const safe = safeFrame(ctx.viewport, ctx.look);
-  const top = Math.max(band.y + band.height - need, safe.y + safe.height * 0.35);
-  return top >= band.y ? band : { x: band.x, y: top, width: band.width, height: band.y + band.height - top };
+/** A choice: words a tap answers, in the flow, that are not a control standing in a line's place. */
+function isChoice(unit: Unit): boolean {
+  return unit.main.item.style.tap && unit.main.item.reserve === undefined;
 }
 
-export function arrange(input: LayoutInput): Arrangement {
+interface FootRow {
+  readonly blocks: Block[];
+  readonly width: number;
+  readonly height: number;
+}
+
+/** The choices set in rows across `width`: each row as many as fit, the rest wrap. */
+function footRows(units: readonly Unit[], width: number, ctx: Context): { rows: FootRow[]; height: number; vgap: number; hgap: number } {
+  const hgap = 2 * ctx.bodyW;
+  const vgap = ctx.bodyH * 0.75;
+  const rows: { blocks: Block[]; width: number; height: number }[] = [];
+  for (const unit of units) {
+    const block = makeBlock(unit.main, 1, width, 0, null, ctx);
+    const last = rows[rows.length - 1];
+    if (last !== undefined && last.width + hgap + block.width <= width + EPS) {
+      last.blocks.push(block);
+      last.width += hgap + block.width;
+      last.height = Math.max(last.height, block.height);
+    } else rows.push({ blocks: [block], width: block.width, height: block.height });
+  }
+  const height = rows.reduce((sum, row) => sum + row.height, 0) + Math.max(0, rows.length - 1) * vgap;
+  return { rows, height, vgap, hgap };
+}
+
+function contextOf(input: LayoutInput, safe: Box): Context {
   const { look, viewport } = input;
   const body = cellOf('m', viewport, look);
-  const ctx: Context = {
-    input,
-    look,
-    viewport,
-    snap: look.type.snapToCells,
-    bodyW: body.width,
-    bodyH: body.height,
-    safe: input.flow ?? safeFrame(viewport, look),
-  };
-  const { flow, loose } = buildUnits(input, look);
-  if (input.layout === 'caption') ctx.safe = captionRoom(ctx.safe, flow, ctx);
+  return { input, look, viewport, snap: look.type.snapToCells, bodyW: body.width, bodyH: body.height, safe };
+}
+
+/**
+ * Decides where everything on stage sits for one layout epoch. Pure and
+ * deterministic: the same input always gives the same arrangement, and it
+ * knows nothing about time. The engine calls it whenever the set of things on
+ * stage, the plan, or the viewport changes, and tweens between the answers.
+ */
+export function arrange(input: LayoutInput): Arrangement {
+  const { look, viewport } = input;
+  const ctx = contextOf(input, input.flow ?? safeFrame(viewport, look));
+  const built = buildUnits(input, look);
+  const { loose } = built;
+  const overflow: string[] = [];
+  const footed: Unit[] = [];
+  let flow = built.flow;
+  if (input.foot !== undefined) {
+    footed.push(...flow.filter(isChoice));
+    flow = flow.filter((unit) => !isChoice(unit));
+  }
   const result = arrangeFlow(flow, ctx);
+  overflow.push(...result.overflow);
   const occupied: Record<Layer, Rect[]> = { far: [], bg: [], mid: [], fg: [] };
   for (const placement of result.placements) occupy(placement, occupied.mid);
+  const foot = input.foot;
+  const footPlacements: Placement[] = [];
+  if (foot !== undefined) {
+    // the oldest choices let go when the foot cannot hold all of them
+    let shown = footed;
+    let laid = footRows(shown, foot.width, ctx);
+    while (laid.height > foot.height + EPS && shown.length > 1) {
+      const [gone, ...kept] = shown;
+      if (gone !== undefined) overflow.push(gone.main.item.key);
+      shown = kept;
+      laid = footRows(shown, foot.width, ctx);
+    }
+    let top = foot.y;
+    for (const row of laid.rows) {
+      let left = foot.x + (foot.width - row.width) / 2;
+      for (const block of row.blocks) {
+        const placement = emit(block, left, top + (row.height - block.height) / 2, block.width, 'center', ctx);
+        footPlacements.push(placement);
+        occupy(placement, occupied.mid);
+        left += block.width + laid.hgap;
+      }
+      top += row.height + laid.vgap;
+    }
+  }
   const flowOccupied = [...occupied.mid];
   const free = arrangeLoose(loose, ctx, flowOccupied, occupied, result.regions);
   const placements = new Map<string, Placement>();
-  for (const placement of [...result.placements, ...free]) placements.set(placement.key, placement);
-  return { placements, next: result.next, overflow: result.overflow };
+  for (const placement of [...result.placements, ...footPlacements, ...free]) placements.set(placement.key, placement);
+  return { placements, next: result.next, overflow };
+}
+
+/**
+ * What the stage plan needs to know of the words before it divides the stage (PLAN-v2.1, D1): how tall the flow is across a column `width`
+ * wide with all that is expected come, and how tall the choices are across the same width. Set with the very code `arrange` uses.
+ */
+export function needsOf(input: LayoutInput, width: number): { readonly flow: number; readonly foot: number; readonly order: number | null } {
+  const { look } = input;
+  const ctx = contextOf(input, { x: -width / 2, y: -1e6, width, height: 2e6 });
+  const built = buildUnits(input, look);
+  const choices = input.foot === undefined ? [] : built.flow.filter(isChoice);
+  const flow = input.foot === undefined ? built.flow : built.flow.filter((unit) => !isChoice(unit));
+  const flowNeed = flow.length === 0 && (input.expected ?? 0) <= 0 ? 0 : arrangeFlow(flow, ctx).need;
+  const order = flow.length === 0 ? null : Math.min(...flow.map((unit) => unit.main.item.order));
+  return { flow: flowNeed, foot: choices.length === 0 ? 0 : footRows(choices, width, ctx).height, order };
 }
 
 // ---------------------------------------------------------------- one block of words

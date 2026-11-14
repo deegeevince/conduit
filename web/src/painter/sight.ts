@@ -7,7 +7,7 @@ import type { CanvasBox, ElementSpan, PlacedBox, Schedule, Sight, SightItem, Sig
 import type { ElementFrame, FigureFrame, ShapeFrame } from '../contracts/frame';
 import type { LookSpec } from '../contracts/look';
 import { planeScale } from '../contracts/space';
-import { canvasToStage, fitCanvas, stageToCanvas } from './canvas';
+import { canvasToStage, stageToCanvas } from './canvas';
 import type { CanvasFit } from './canvas';
 import { mapToGamut } from './colour';
 import { canvasBoxOf } from './figures';
@@ -147,7 +147,7 @@ export function sightOf(timeline: Timeline, schedule: Schedule, base: StageBase,
   const spec: LookSpec = timeline.specAt(restAt);
   const fitOf = (sceneId: string): CanvasFit => {
     const owner = schedule.scenes.find((candidate) => candidate.id === sceneId) ?? scene;
-    return fitCanvas(owner.canvas, owner.layout, viewport, spec);
+    return timeline.fitAt(owner.id, restAt);
   };
   const shown = schedule.elements
     .filter((element) => !element.carried && element.enter !== null && element.enter.start < playhead && element.kind !== 'group' && element.kind !== 'field')
@@ -395,7 +395,7 @@ export function sightOf(timeline: Timeline, schedule: Schedule, base: StageBase,
   const items: SightItem[] = entries
     .filter((entry) => keep.has(entry))
     .map((entry) => ({ id: entry.element.id, kind: entry.element.kind, box: round(entry.box), resting: entry.resting, notes: entry.notes }));
-  const fit = fitCanvas(scene.canvas, scene.layout, viewport, spec);
+  const fit = timeline.fitAt(scene.id, restAt);
   return { canvas: scene.canvas, coverage: fit.coverage, items, snapshot };
 }
 
@@ -411,7 +411,6 @@ export function placedOf(timeline: Timeline, schedule: Schedule, playhead: numbe
   const scene = schedule.scenes.reduce((found, candidate) => (candidate.start <= playhead ? candidate : found), schedule.scenes[0]);
   if (scene === undefined) return [];
   const restAt = Math.max(playhead, schedule.end) + 0.5;
-  const spec: LookSpec = timeline.specAt(restAt);
   const frame = timeline.frameAt({ time: restAt, ambient: restAt, wallTime: 0, clock: 'idle' });
   const textFrames = new Map<string, ElementFrame>();
   for (const element of frame.elements) textFrames.set(element.key, element);
@@ -421,7 +420,7 @@ export function placedOf(timeline: Timeline, schedule: Schedule, playhead: numbe
   for (const element of schedule.elements) {
     if (!keys.has(element.key) || element.kind === 'field') continue;
     const owner = schedule.scenes.find((candidate) => candidate.id === element.scene) ?? scene;
-    const fit = fitCanvas(owner.canvas, owner.layout, viewport, spec);
+    const fit = timeline.fitAt(owner.id, restAt);
     let box: Rect | null = null;
     if (element.kind === 'text') {
       const placed = textFrames.get(element.key);

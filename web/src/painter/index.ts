@@ -592,6 +592,7 @@ export function createPainter(options: PainterOptions): Painter {
       box: { x: -crop.width / 2 - box.x * unit, y: -crop.height / 2 - box.y * unit, width: box.w * unit, height: box.h * unit },
       unit,
       flow: { x: -crop.width / 2, y: -crop.height / 2, width: crop.width, height: crop.height },
+      region: { x: -crop.width / 2, y: -crop.height / 2, width: crop.width, height: crop.height },
       coverage: 1,
     };
     const drawn = figuresAt(schedule, timelineBase(), when, when + 5, { viewport: crop, look: spec, camera: REST_POSE, fit, fixedFit: fit, reducedMotion: true, paintings: new Map() });
@@ -962,6 +963,7 @@ export function createPainter(options: PainterOptions): Painter {
       controls: controlViews(),
       charts: chartViews(frame),
       pass: passState === null || turn === null || passState.turn !== turn.id ? null : { pass: passState.pass, state: passState.state },
+      plan: timeline.planAt(reading.playhead),
     };
   };
 
