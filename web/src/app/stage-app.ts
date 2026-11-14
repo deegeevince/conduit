@@ -1029,6 +1029,12 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   keys.autocomplete = 'off';
   keys.setAttribute('aria-hidden', 'true');
   keys.tabIndex = -1;
+  // a phone's keyboard must hand over exactly what is typed: no capital for the first letter of an email, no correction, no suggestion
+  keys.setAttribute('autocapitalize', 'off');
+  keys.setAttribute('autocorrect', 'off');
+  keys.setAttribute('spellcheck', 'false');
+  keys.setAttribute('enterkeyhint', 'done');
+  keys.setAttribute('inputmode', 'text');
   keys.style.cssText = 'position:absolute;left:0;top:0;width:1px;height:1px;opacity:0;border:0;padding:0;font-size:16px;pointer-events:none';
   host.append(keys);
   keys.addEventListener('keydown', (event) => {
@@ -1044,6 +1050,13 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   keys.addEventListener('blur', () => {
     if (painter.typing()) painter.key('Escape');
   });
+  // A phone raises its keyboard only for a focus that comes in the gesture itself, and a gesture that began on a field may end in a click or a touchend
+  // that the pointer's own `up` did not see (a touch can end on a thumbnail brought forward, or after the stage was made again under the finger).
+  const raiseKeyboard = (): void => {
+    if (painter.typing() && document.activeElement !== keys) keys.focus({ preventScroll: true });
+  };
+  host.addEventListener('click', raiseKeyboard);
+  host.addEventListener('touchend', raiseKeyboard);
   host.addEventListener('pointerdown', onPointerDown);
   host.addEventListener('pointermove', onPointerMove);
   host.addEventListener('pointerup', onPointerEnd);
