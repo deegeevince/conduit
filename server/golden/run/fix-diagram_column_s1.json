@@ -1,0 +1,2699 @@
+{
+  "case": {
+    "id": "fix-diagram",
+    "useCase": "look at what you drew; fix it",
+    "why": "Can the model repair its own diagram from the sight report and the picture of the stage? Judge score before and after.",
+    "heldOut": true,
+    "judged": true,
+    "turns": [
+      {
+        "do": "prompt",
+        "text": "Draw a diagram of how a bill becomes a law, with every step labelled."
+      },
+      {
+        "do": "fix"
+      }
+    ]
+  },
+  "variant": "column",
+  "sample": 1,
+  "turns": [
+    {
+      "prompt": {
+        "id": "fix-diagram-t1",
+        "useCase": "look at what you drew; fix it",
+        "prompt": "Draw a diagram of how a bill becomes a law, with every step labelled.",
+        "expects": "any",
+        "baseline": false
+      },
+      "lines": [
+        {
+          "seq": 1,
+          "text": "scene layout=free mood=calm",
+          "ms": 2284,
+          "issues": []
+        },
+        {
+          "seq": 2,
+          "text": "color box=#e8dcc0",
+          "ms": 2284,
+          "issues": []
+        },
+        {
+          "seq": 3,
+          "text": "color veto=#c13e1e",
+          "ms": 2284,
+          "issues": []
+        },
+        {
+          "seq": 4,
+          "text": "say t1x1 title at=80,6 | How a bill becomes a law (US)",
+          "ms": 2679,
+          "issues": []
+        },
+        {
+          "seq": 5,
+          "text": "rect s1 6,16 40x16 r=2 fill=box",
+          "ms": 2680,
+          "issues": []
+        },
+        {
+          "seq": 6,
+          "text": "say t1x2 label near=s1 | 1 idea",
+          "ms": 3029,
+          "issues": []
+        },
+        {
+          "seq": 7,
+          "text": "say t1x3 at=26,24 size=xs | Member introduces bill",
+          "ms": 3126,
+          "issues": []
+        },
+        {
+          "seq": 8,
+          "text": "rect s2 60,16 40x16 r=2 fill=box",
+          "ms": 3380,
+          "issues": []
+        },
+        {
+          "seq": 9,
+          "text": "say t1x4 at=80,22 size=xs | 2 Committee",
+          "ms": 3391,
+          "issues": []
+        },
+        {
+          "seq": 10,
+          "text": "say t1x5 at=80,27 size=xs ink=dim | hearings, edits, vote",
+          "ms": 3779,
+          "issues": []
+        },
+        {
+          "seq": 11,
+          "text": "rect s3 114,16 40x16 r=2 fill=box",
+          "ms": 3780,
+          "issues": []
+        },
+        {
+          "seq": 12,
+          "text": "say t1x6 at=134,22 size=xs | 3 Floor vote",
+          "ms": 3827,
+          "issues": []
+        },
+        {
+          "seq": 13,
+          "text": "say t1x7 at=134,27 size=xs ink=dim | first chamber",
+          "ms": 3956,
+          "issues": []
+        },
+        {
+          "seq": 14,
+          "text": "line a1 46,24 60,24 stroke=accent thick=1",
+          "ms": 4133,
+          "issues": []
+        },
+        {
+          "seq": 15,
+          "text": "line a2 100,24 114,24 stroke=accent thick=1",
+          "ms": 4190,
+          "issues": []
+        },
+        {
+          "seq": 16,
+          "text": "line a3 134,32 134,42 stroke=accent thick=1",
+          "ms": 4329,
+          "issues": []
+        },
+        {
+          "seq": 17,
+          "text": "rect s4 114,42 40x16 r=2 fill=box",
+          "ms": 4504,
+          "issues": []
+        },
+        {
+          "seq": 18,
+          "text": "say t1x8 at=134,48 size=xs | 4 Other chamber",
+          "ms": 4527,
+          "issues": []
+        },
+        {
+          "seq": 19,
+          "text": "say t1x9 at=134,53 size=xs ink=dim | committee, floor vote",
+          "ms": 4659,
+          "issues": []
+        },
+        {
+          "seq": 20,
+          "text": "line a4 114,50 100,50 stroke=accent thick=1",
+          "ms": 4887,
+          "issues": []
+        },
+        {
+          "seq": 21,
+          "text": "rect s5 60,42 40x16 r=2 fill=box",
+          "ms": 4894,
+          "issues": []
+        },
+        {
+          "seq": 22,
+          "text": "say t1x10 at=80,48 size=xs | 5 Conference",
+          "ms": 4960,
+          "issues": []
+        },
+        {
+          "seq": 23,
+          "text": "say t1x11 at=80,53 size=xs ink=dim | reconcile versions",
+          "ms": 5058,
+          "issues": []
+        },
+        {
+          "seq": 24,
+          "text": "line a5 60,50 46,50 stroke=accent thick=1",
+          "ms": 5192,
+          "issues": []
+        },
+        {
+          "seq": 25,
+          "text": "rect s6 6,42 40x16 r=2 fill=box",
+          "ms": 5294,
+          "issues": []
+        },
+        {
+          "seq": 26,
+          "text": "say t1x12 at=26,48 size=xs | 6 Both pass",
+          "ms": 5393,
+          "issues": []
+        },
+        {
+          "seq": 27,
+          "text": "say t1x13 at=26,53 size=xs ink=dim | identical text",
+          "ms": 5459,
+          "issues": []
+        },
+        {
+          "seq": 28,
+          "text": "line a6 26,58 26,68 stroke=accent thick=1",
+          "ms": 5560,
+          "issues": []
+        },
+        {
+          "seq": 29,
+          "text": "rect s7 6,68 40x16 r=2 fill=box",
+          "ms": 5658,
+          "issues": []
+        },
+        {
+          "seq": 30,
+          "text": "say t1x14 at=26,74 size=xs | 7 President",
+          "ms": 5725,
+          "issues": []
+        },
+        {
+          "seq": 31,
+          "text": "say t1x15 at=26,79 size=xs ink=dim | sign or veto",
+          "ms": 5825,
+          "issues": []
+        },
+        {
+          "seq": 32,
+          "text": "line a7 46,76 62,76 stroke=accent thick=1",
+          "ms": 5963,
+          "issues": []
+        },
+        {
+          "seq": 33,
+          "text": "rect s8 62,68 44x16 r=2 fill=accent",
+          "ms": 6059,
+          "issues": []
+        },
+        {
+          "seq": 34,
+          "text": "say t1x16 at=84,74 size=xs ink=ground | 8 LAW",
+          "ms": 6194,
+          "issues": []
+        },
+        {
+          "seq": 35,
+          "text": "say t1x17 at=84,79 size=xs ink=ground | signed, or no action in 10 days",
+          "ms": 6392,
+          "issues": []
+        },
+        {
+          "seq": 36,
+          "text": "rect s9 112,64 44x22 r=2 fill=none stroke=veto",
+          "ms": 6626,
+          "issues": []
+        },
+        {
+          "seq": 37,
+          "text": "say t1x18 at=134,70 size=xs ink=veto | Veto",
+          "ms": 6693,
+          "issues": []
+        },
+        {
+          "seq": 38,
+          "text": "say t1x19 at=134,75 size=xs ink=dim | returns to Congress",
+          "ms": 6793,
+          "issues": []
+        },
+        {
+          "seq": 39,
+          "text": "say t1x20 at=134,80 size=xs ink=dim | 2/3 of both overrides",
+          "ms": 6992,
+          "issues": []
+        },
+        {
+          "seq": 40,
+          "text": "line a8 46,80 112,80 stroke=veto thick=0.6",
+          "ms": 7460,
+          "issues": []
+        }
+      ],
+      "rejects": [],
+      "end": "done",
+      "message": null,
+      "firstVisibleMs": 2679,
+      "totalMs": 7460,
+      "usage": {
+        "outputTokens": 861,
+        "thinkingTokens": 0,
+        "cacheReadTokens": 7496,
+        "cacheWriteTokens": 658,
+        "inputTokens": 2,
+        "costUsd": 0.011995599999999999
+      },
+      "checks": {
+        "lines": 40,
+        "rejects": 0,
+        "warnings": 0,
+        "kinds": {
+          "text": 20,
+          "shape": 17
+        },
+        "words": 59,
+        "scenes": 1,
+        "cameraMoves": 0,
+        "depthLayers": 0,
+        "handLevel": 0,
+        "aboutTheMedium": [],
+        "playSeconds": 30.898400953078504,
+        "meetsExpectation": true,
+        "opening": "scene",
+        "shapes": 17,
+        "labels": 1,
+        "inFlowMedian": 0,
+        "spriteFrames": 0
+      },
+      "baseline": null,
+      "firstTextMs": 1939,
+      "viewerWaitMs": 33182,
+      "turn": {
+        "case": "fix-diagram",
+        "index": 1,
+        "kind": "prompt",
+        "said": "Draw a diagram of how a bill becomes a law, with every step labelled.",
+        "form": "full",
+        "cacheReadShare": 0.9190779794016675,
+        "withSnapshot": false,
+        "interruptedAtMs": null,
+        "changed": null,
+        "problem": null
+      },
+      "judge": {
+        "model": "sonnet",
+        "asked": true,
+        "textProblem": "The '1 IDEA' label between the first two boxes is overlapped by the connector line and partly hidden behind the box, so it reads as '1 IDE'; the 'Member introduces bill' box has no clear step number. The 'reconcile versions' caption also floats far below the Conference box.",
+        "wrongLabel": "The Conference box's caption 'reconcile versions' sits well below the box and nearer to nothing, and the '2/3 of both overrides' caption spills outside the Veto box. The arrow from President to LAW and to Veto is ambiguous with no arrowheads.",
+        "correct": false,
+        "mistake": "Step order is garbled: the flow snakes without arrowheads, and 'Both pass' (6) comes after Conference (5) while the flow also implies both chambers pass identical text, and the veto loop does not clearly connect back to Congress or the President; the LAW box also connects by a line to the Veto box as if equal outcomes.",
+        "coherence": 3,
+        "why": "The grid of boxes and title read reasonably, but the missing arrowheads, the clipped '1 IDEA' label, and captions detached from their boxes make the flow ambiguous.",
+        "costUsd": 0.0094133,
+        "ms": 6299,
+        "stills": [
+          "data:image/jpeg;base64,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"
+        ],
+        "failure": null
+      },
+      "verdicts": [
+        {
+          "label": "judge: text readable",
+          "ok": false,
+          "detail": "The '1 IDEA' label between the first two boxes is overlapped by the connector line and partly hidden behind the box, so it reads as '1 IDE'; the 'Member introduces bill' box has no clear step number. The 'reconcile versions' caption also floats far below the Conference box."
+        },
+        {
+          "label": "judge: labels point right",
+          "ok": false,
+          "detail": "The Conference box's caption 'reconcile versions' sits well below the box and nearer to nothing, and the '2/3 of both overrides' caption spills outside the Veto box. The arrow from President to LAW and to Veto is ambiguous with no arrowheads."
+        },
+        {
+          "label": "judge: drawing correct",
+          "ok": false,
+          "detail": "Step order is garbled: the flow snakes without arrowheads, and 'Both pass' (6) comes after Conference (5) while the flow also implies both chambers pass identical text, and the veto loop does not clearly connect back to Congress or the President; the LAW box also connects by a line to the Veto box as if equal outcomes."
+        },
+        {
+          "label": "judge: coherence 4 or more",
+          "ok": false,
+          "detail": "3 of 5: The grid of boxes and title read reasonably, but the missing arrowheads, the clipped '1 IDEA' label, and captions detached from their boxes make the flow ambiguous."
+        },
+        {
+          "label": "meets expectation",
+          "ok": true,
+          "detail": "the prompt expects: any"
+        },
+        {
+          "label": "finished",
+          "ok": true,
+          "detail": "done"
+        },
+        {
+          "label": "no rejected line",
+          "ok": true,
+          "detail": "0 rejected, 0 warnings"
+        },
+        {
+          "label": "silent about the medium",
+          "ok": true,
+          "detail": "nothing"
+        },
+        {
+          "label": "few exact times",
+          "ok": true,
+          "detail": "0% of lines"
+        },
+        {
+          "label": "starts with look or scene",
+          "ok": true,
+          "detail": "starts with scene"
+        },
+        {
+          "label": "first line within 4 s",
+          "ok": true,
+          "detail": "2.7 s"
+        },
+        {
+          "label": "four in-flow lines or fewer",
+          "ok": true,
+          "detail": "median 0 in a scene"
+        },
+        {
+          "label": "under 1500 tokens",
+          "ok": true,
+          "detail": "861 output tokens"
+        },
+        {
+          "label": "judge: shows what was asked",
+          "ok": true,
+          "detail": "The grid of boxes and title read reasonably, but the missing arrowheads, the clipped '1 IDEA' label, and captions detached from their boxes make the flow ambiguous."
+        }
+      ]
+    },
+    {
+      "prompt": {
+        "id": "fix-diagram-t2",
+        "useCase": "look at what you drew; fix it",
+        "prompt": "Look at what you drew. Fix whatever is wrong with it.",
+        "expects": "any",
+        "baseline": false
+      },
+      "lines": [
+        {
+          "seq": 1,
+          "text": "scene layout=free mood=calm",
+          "ms": 9541,
+          "issues": []
+        },
+        {
+          "seq": 2,
+          "text": "say t2x1 title at=80,7 size=l | How a bill becomes a law (US)",
+          "ms": 9709,
+          "issues": []
+        },
+        {
+          "seq": 3,
+          "text": "color box=#e8dcc0",
+          "ms": 9773,
+          "issues": []
+        },
+        {
+          "seq": 4,
+          "text": "color veto=#c13e1e",
+          "ms": 9806,
+          "issues": []
+        },
+        {
+          "seq": 5,
+          "text": "rect s1 6,18 40x15 r=2 fill=box stroke=none",
+          "ms": 9940,
+          "issues": []
+        },
+        {
+          "seq": 6,
+          "text": "rect s2 60,18 40x15 r=2 fill=box stroke=none",
+          "ms": 10052,
+          "issues": []
+        },
+        {
+          "seq": 7,
+          "text": "rect s3 114,18 40x15 r=2 fill=box stroke=none",
+          "ms": 10141,
+          "issues": []
+        },
+        {
+          "seq": 8,
+          "text": "rect s4 114,44 40x15 r=2 fill=box stroke=none",
+          "ms": 10274,
+          "issues": []
+        },
+        {
+          "seq": 9,
+          "text": "rect s5 60,44 40x15 r=2 fill=box stroke=none",
+          "ms": 10375,
+          "issues": []
+        },
+        {
+          "seq": 10,
+          "text": "rect s6 6,44 40x15 r=2 fill=box stroke=none",
+          "ms": 10517,
+          "issues": []
+        },
+        {
+          "seq": 11,
+          "text": "rect s7 6,70 40x15 r=2 fill=box stroke=none",
+          "ms": 10623,
+          "issues": []
+        },
+        {
+          "seq": 12,
+          "text": "rect s8 60,70 40x15 r=2 fill=accent stroke=none",
+          "ms": 10721,
+          "issues": []
+        },
+        {
+          "seq": 13,
+          "text": "rect s9 114,70 40x15 r=2 fill=none stroke=veto thick=0.6",
+          "ms": 10988,
+          "issues": []
+        },
+        {
+          "seq": 14,
+          "text": "line a1 46,25 59,25 stroke=accent thick=0.8",
+          "ms": 11102,
+          "issues": []
+        },
+        {
+          "seq": 15,
+          "text": "poly h1 59,25 56,23.5 56,26.5 fill=accent stroke=none",
+          "ms": 11379,
+          "issues": []
+        },
+        {
+          "seq": 16,
+          "text": "line a2 100,25 113,25 stroke=accent thick=0.8",
+          "ms": 11479,
+          "issues": []
+        },
+        {
+          "seq": 17,
+          "text": "poly h2 113,25 110,23.5 110,26.5 fill=accent stroke=none",
+          "ms": 11610,
+          "issues": []
+        },
+        {
+          "seq": 18,
+          "text": "line a3 134,33 134,43 stroke=accent thick=0.8",
+          "ms": 11711,
+          "issues": []
+        },
+        {
+          "seq": 19,
+          "text": "poly h3 134,43 132.5,40 135.5,40 fill=accent stroke=none",
+          "ms": 11925,
+          "issues": []
+        },
+        {
+          "seq": 20,
+          "text": "line a4 114,51 101,51 stroke=accent thick=0.8",
+          "ms": 12051,
+          "issues": []
+        },
+        {
+          "seq": 21,
+          "text": "poly h4 101,51 104,49.5 104,52.5 fill=accent stroke=none",
+          "ms": 12212,
+          "issues": []
+        },
+        {
+          "seq": 22,
+          "text": "line a5 60,51 47,51 stroke=accent thick=0.8",
+          "ms": 12348,
+          "issues": []
+        },
+        {
+          "seq": 23,
+          "text": "poly h5 47,51 50,49.5 50,52.5 fill=accent stroke=none",
+          "ms": 12482,
+          "issues": []
+        },
+        {
+          "seq": 24,
+          "text": "line a6 26,59 26,69 stroke=accent thick=0.8",
+          "ms": 12580,
+          "issues": []
+        },
+        {
+          "seq": 25,
+          "text": "poly h6 26,69 24.5,66 27.5,66 fill=accent stroke=none",
+          "ms": 12745,
+          "issues": []
+        },
+        {
+          "seq": 26,
+          "text": "line a7 46,77 59,77 stroke=accent thick=0.8",
+          "ms": 12853,
+          "issues": []
+        },
+        {
+          "seq": 27,
+          "text": "poly h7 59,77 56,75.5 56,78.5 fill=accent stroke=none",
+          "ms": 12980,
+          "issues": []
+        },
+        {
+          "seq": 28,
+          "text": "line a8 26,85 26,88 134,88 134,85 stroke=veto thick=0.6",
+          "ms": 13113,
+          "issues": []
+        },
+        {
+          "seq": 29,
+          "text": "poly h8 134,85 132.5,87.5 135.5,87.5 fill=veto stroke=none",
+          "ms": 13279,
+          "issues": []
+        },
+        {
+          "seq": 30,
+          "text": "say t2x2 at=26,22 size=xs weight=bold | 1 Introduced",
+          "ms": 13446,
+          "issues": []
+        },
+        {
+          "seq": 31,
+          "text": "say t2x3 at=26,28 size=xs ink=dim | member files bill",
+          "ms": 13582,
+          "issues": []
+        },
+        {
+          "seq": 32,
+          "text": "say t2x4 at=80,22 size=xs weight=bold | 2 Committee",
+          "ms": 13681,
+          "issues": []
+        },
+        {
+          "seq": 33,
+          "text": "say t2x5 at=80,28 size=xs ink=dim | hearings, edits, vote",
+          "ms": 13782,
+          "issues": []
+        },
+        {
+          "seq": 34,
+          "text": "say t2x6 at=134,22 size=xs weight=bold | 3 Floor vote",
+          "ms": 13913,
+          "issues": []
+        },
+        {
+          "seq": 35,
+          "text": "say t2x7 at=134,28 size=xs ink=dim | first chamber",
+          "ms": 13980,
+          "issues": []
+        },
+        {
+          "seq": 36,
+          "text": "say t2x8 at=134,48 size=xs weight=bold | 4 Other chamber",
+          "ms": 14114,
+          "issues": []
+        },
+        {
+          "seq": 37,
+          "text": "say t2x9 at=134,54 size=xs ink=dim | committee, floor vote",
+          "ms": 14213,
+          "issues": []
+        },
+        {
+          "seq": 38,
+          "text": "say t2x10 at=80,48 size=xs weight=bold | 5 Conference",
+          "ms": 14314,
+          "issues": []
+        },
+        {
+          "seq": 39,
+          "text": "say t2x11 at=80,54 size=xs ink=dim | reconcile versions",
+          "ms": 14415,
+          "issues": []
+        },
+        {
+          "seq": 40,
+          "text": "say t2x12 at=26,48 size=xs weight=bold | 6 Both pass",
+          "ms": 14515,
+          "issues": []
+        },
+        {
+          "seq": 41,
+          "text": "say t2x13 at=26,54 size=xs ink=dim | identical text",
+          "ms": 14616,
+          "issues": []
+        },
+        {
+          "seq": 42,
+          "text": "say t2x14 at=26,74 size=xs weight=bold | 7 President",
+          "ms": 14683,
+          "issues": []
+        },
+        {
+          "seq": 43,
+          "text": "say t2x15 at=26,80 size=xs ink=dim | sign or veto",
+          "ms": 14781,
+          "issues": []
+        },
+        {
+          "seq": 44,
+          "text": "say t2x16 at=80,74 size=xs ink=ground weight=bold | 8 LAW",
+          "ms": 14915,
+          "issues": []
+        },
+        {
+          "seq": 45,
+          "text": "say t2x17 at=80,80 size=xs ink=ground | signed, or 10 days pass",
+          "ms": 15048,
+          "issues": []
+        },
+        {
+          "seq": 46,
+          "text": "say t2x18 at=134,74 size=xs ink=veto weight=bold | Veto",
+          "ms": 15182,
+          "issues": []
+        },
+        {
+          "seq": 47,
+          "text": "say t2x19 at=134,80 size=xs ink=dim | override: 2/3 of both",
+          "ms": 15348,
+          "issues": []
+        },
+        {
+          "seq": 48,
+          "text": "say t2x20 at=80,92 size=xs ink=veto | veto path",
+          "ms": 15759,
+          "issues": []
+        }
+      ],
+      "rejects": [],
+      "end": "done",
+      "message": null,
+      "firstVisibleMs": 9709,
+      "totalMs": 15759,
+      "usage": {
+        "outputTokens": 2053,
+        "thinkingTokens": 813,
+        "cacheReadTokens": 7824,
+        "cacheWriteTokens": 2397,
+        "inputTokens": 4,
+        "costUsd": 0.0309084
+      },
+      "checks": {
+        "lines": 48,
+        "rejects": 0,
+        "warnings": 0,
+        "kinds": {
+          "text": 20,
+          "shape": 25
+        },
+        "words": 56,
+        "scenes": 1,
+        "cameraMoves": 0,
+        "depthLayers": 0,
+        "handLevel": 0,
+        "aboutTheMedium": [],
+        "playSeconds": 32.68030571498325,
+        "meetsExpectation": true,
+        "opening": "scene",
+        "shapes": 25,
+        "labels": 0,
+        "inFlowMedian": 0,
+        "spriteFrames": 0
+      },
+      "baseline": null,
+      "firstTextMs": 9511,
+      "viewerWaitMs": 42221,
+      "base": {
+        "look": "paper",
+        "lookName": "paper",
+        "scene": {
+          "id": "s1",
+          "index": 1,
+          "layout": "free",
+          "canvas": "wide",
+          "align": "auto",
+          "mood": "calm",
+          "pace": "steady",
+          "expected": null
+        },
+        "styles": {},
+        "colors": {
+          "box": "#e8dcc0",
+          "veto": "#c13e1e"
+        },
+        "looks": {},
+        "elements": [
+          {
+            "key": "t1x1@4",
+            "id": "t1x1",
+            "kind": "text",
+            "order": 0,
+            "scene": "s1",
+            "text": "How a bill becomes a law (US)",
+            "emphasis": [],
+            "style": {
+              "size": "xl",
+              "ink": "ink",
+              "weight": "bold",
+              "face": null,
+              "enter": "fade",
+              "by": "word",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": {
+                "x": 80,
+                "y": 6
+              },
+              "near": null,
+              "group": null,
+              "fill": "none",
+              "stroke": "ink",
+              "bleed": "auto",
+              "thick": null,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": null,
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "s1@5",
+            "id": "s1",
+            "kind": "shape",
+            "order": 1,
+            "scene": "s1",
+            "text": "",
+            "emphasis": [],
+            "style": {
+              "size": "m",
+              "ink": "ink",
+              "weight": "normal",
+              "face": null,
+              "enter": "fade",
+              "by": "all",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": null,
+              "near": null,
+              "group": null,
+              "fill": "#e8dcc0",
+              "stroke": "none",
+              "bleed": "auto",
+              "thick": null,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": {
+              "kind": "shape",
+              "geometry": {
+                "shape": "rect",
+                "x": 6,
+                "y": 16,
+                "w": 40,
+                "h": 16,
+                "r": 2,
+                "full": false
+              }
+            },
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "t1x2@6",
+            "id": "t1x2",
+            "kind": "text",
+            "order": 2,
+            "scene": "s1",
+            "text": "1 idea",
+            "emphasis": [],
+            "style": {
+              "size": "xs",
+              "ink": "dim",
+              "weight": "normal",
+              "face": null,
+              "enter": "fade",
+              "by": "all",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "upper",
+              "stay": "scene",
+              "layer": "mid",
+              "at": null,
+              "near": {
+                "id": "s1",
+                "side": "auto"
+              },
+              "group": null,
+              "fill": "none",
+              "stroke": "ink",
+              "bleed": "auto",
+              "thick": null,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": null,
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "t1x3@7",
+            "id": "t1x3",
+            "kind": "text",
+            "order": 3,
+            "scene": "s1",
+            "text": "Member introduces bill",
+            "emphasis": [],
+            "style": {
+              "size": "xs",
+              "ink": "ink",
+              "weight": "normal",
+              "face": null,
+              "enter": "fade",
+              "by": "word",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": {
+                "x": 26,
+                "y": 24
+              },
+              "near": null,
+              "group": null,
+              "fill": "none",
+              "stroke": "ink",
+              "bleed": "auto",
+              "thick": null,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": null,
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "s2@8",
+            "id": "s2",
+            "kind": "shape",
+            "order": 4,
+            "scene": "s1",
+            "text": "",
+            "emphasis": [],
+            "style": {
+              "size": "m",
+              "ink": "ink",
+              "weight": "normal",
+              "face": null,
+              "enter": "fade",
+              "by": "all",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": null,
+              "near": null,
+              "group": null,
+              "fill": "#e8dcc0",
+              "stroke": "none",
+              "bleed": "auto",
+              "thick": null,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": {
+              "kind": "shape",
+              "geometry": {
+                "shape": "rect",
+                "x": 60,
+                "y": 16,
+                "w": 40,
+                "h": 16,
+                "r": 2,
+                "full": false
+              }
+            },
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "t1x4@9",
+            "id": "t1x4",
+            "kind": "text",
+            "order": 5,
+            "scene": "s1",
+            "text": "2 Committee",
+            "emphasis": [],
+            "style": {
+              "size": "xs",
+              "ink": "ink",
+              "weight": "normal",
+              "face": null,
+              "enter": "fade",
+              "by": "word",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": {
+                "x": 80,
+                "y": 22
+              },
+              "near": null,
+              "group": null,
+              "fill": "none",
+              "stroke": "ink",
+              "bleed": "auto",
+              "thick": null,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": null,
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "t1x5@10",
+            "id": "t1x5",
+            "kind": "text",
+            "order": 6,
+            "scene": "s1",
+            "text": "hearings, edits, vote",
+            "emphasis": [],
+            "style": {
+              "size": "xs",
+              "ink": "dim",
+              "weight": "normal",
+              "face": null,
+              "enter": "fade",
+              "by": "word",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": {
+                "x": 80,
+                "y": 27
+              },
+              "near": null,
+              "group": null,
+              "fill": "none",
+              "stroke": "ink",
+              "bleed": "auto",
+              "thick": null,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": null,
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "s3@11",
+            "id": "s3",
+            "kind": "shape",
+            "order": 7,
+            "scene": "s1",
+            "text": "",
+            "emphasis": [],
+            "style": {
+              "size": "m",
+              "ink": "ink",
+              "weight": "normal",
+              "face": null,
+              "enter": "fade",
+              "by": "all",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": null,
+              "near": null,
+              "group": null,
+              "fill": "#e8dcc0",
+              "stroke": "none",
+              "bleed": "auto",
+              "thick": null,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": {
+              "kind": "shape",
+              "geometry": {
+                "shape": "rect",
+                "x": 114,
+                "y": 16,
+                "w": 40,
+                "h": 16,
+                "r": 2,
+                "full": false
+              }
+            },
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "t1x6@12",
+            "id": "t1x6",
+            "kind": "text",
+            "order": 8,
+            "scene": "s1",
+            "text": "3 Floor vote",
+            "emphasis": [],
+            "style": {
+              "size": "xs",
+              "ink": "ink",
+              "weight": "normal",
+              "face": null,
+              "enter": "fade",
+              "by": "word",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": {
+                "x": 134,
+                "y": 22
+              },
+              "near": null,
+              "group": null,
+              "fill": "none",
+              "stroke": "ink",
+              "bleed": "auto",
+              "thick": null,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": null,
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "t1x7@13",
+            "id": "t1x7",
+            "kind": "text",
+            "order": 9,
+            "scene": "s1",
+            "text": "first chamber",
+            "emphasis": [],
+            "style": {
+              "size": "xs",
+              "ink": "dim",
+              "weight": "normal",
+              "face": null,
+              "enter": "fade",
+              "by": "word",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": {
+                "x": 134,
+                "y": 27
+              },
+              "near": null,
+              "group": null,
+              "fill": "none",
+              "stroke": "ink",
+              "bleed": "auto",
+              "thick": null,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": null,
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "a1@14",
+            "id": "a1",
+            "kind": "shape",
+            "order": 10,
+            "scene": "s1",
+            "text": "",
+            "emphasis": [],
+            "style": {
+              "size": "m",
+              "ink": "ink",
+              "weight": "normal",
+              "face": null,
+              "enter": "draw",
+              "by": "all",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": null,
+              "near": null,
+              "group": null,
+              "fill": "none",
+              "stroke": "accent",
+              "bleed": "auto",
+              "thick": 1,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": {
+              "kind": "shape",
+              "geometry": {
+                "shape": "line",
+                "points": [
+                  {
+                    "x": 46,
+                    "y": 24
+                  },
+                  {
+                    "x": 60,
+                    "y": 24
+                  }
+                ]
+              }
+            },
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "a2@15",
+            "id": "a2",
+            "kind": "shape",
+            "order": 11,
+            "scene": "s1",
+            "text": "",
+            "emphasis": [],
+            "style": {
+              "size": "m",
+              "ink": "ink",
+              "weight": "normal",
+              "face": null,
+              "enter": "draw",
+              "by": "all",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": null,
+              "near": null,
+              "group": null,
+              "fill": "none",
+              "stroke": "accent",
+              "bleed": "auto",
+              "thick": 1,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": {
+              "kind": "shape",
+              "geometry": {
+                "shape": "line",
+                "points": [
+                  {
+                    "x": 100,
+                    "y": 24
+                  },
+                  {
+                    "x": 114,
+                    "y": 24
+                  }
+                ]
+              }
+            },
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "a3@16",
+            "id": "a3",
+            "kind": "shape",
+            "order": 12,
+            "scene": "s1",
+            "text": "",
+            "emphasis": [],
+            "style": {
+              "size": "m",
+              "ink": "ink",
+              "weight": "normal",
+              "face": null,
+              "enter": "draw",
+              "by": "all",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": null,
+              "near": null,
+              "group": null,
+              "fill": "none",
+              "stroke": "accent",
+              "bleed": "auto",
+              "thick": 1,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": {
+              "kind": "shape",
+              "geometry": {
+                "shape": "line",
+                "points": [
+                  {
+                    "x": 134,
+                    "y": 32
+                  },
+                  {
+                    "x": 134,
+                    "y": 42
+                  }
+                ]
+              }
+            },
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "s4@17",
+            "id": "s4",
+            "kind": "shape",
+            "order": 13,
+            "scene": "s1",
+            "text": "",
+            "emphasis": [],
+            "style": {
+              "size": "m",
+              "ink": "ink",
+              "weight": "normal",
+              "face": null,
+              "enter": "fade",
+              "by": "all",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": null,
+              "near": null,
+              "group": null,
+              "fill": "#e8dcc0",
+              "stroke": "none",
+              "bleed": "auto",
+              "thick": null,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": {
+              "kind": "shape",
+              "geometry": {
+                "shape": "rect",
+                "x": 114,
+                "y": 42,
+                "w": 40,
+                "h": 16,
+                "r": 2,
+                "full": false
+              }
+            },
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "t1x8@18",
+            "id": "t1x8",
+            "kind": "text",
+            "order": 14,
+            "scene": "s1",
+            "text": "4 Other chamber",
+            "emphasis": [],
+            "style": {
+              "size": "xs",
+              "ink": "ink",
+              "weight": "normal",
+              "face": null,
+              "enter": "fade",
+              "by": "word",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": {
+                "x": 134,
+                "y": 48
+              },
+              "near": null,
+              "group": null,
+              "fill": "none",
+              "stroke": "ink",
+              "bleed": "auto",
+              "thick": null,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": null,
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "t1x9@19",
+            "id": "t1x9",
+            "kind": "text",
+            "order": 15,
+            "scene": "s1",
+            "text": "committee, floor vote",
+            "emphasis": [],
+            "style": {
+              "size": "xs",
+              "ink": "dim",
+              "weight": "normal",
+              "face": null,
+              "enter": "fade",
+              "by": "word",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": {
+                "x": 134,
+                "y": 53
+              },
+              "near": null,
+              "group": null,
+              "fill": "none",
+              "stroke": "ink",
+              "bleed": "auto",
+              "thick": null,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": null,
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "a4@20",
+            "id": "a4",
+            "kind": "shape",
+            "order": 16,
+            "scene": "s1",
+            "text": "",
+            "emphasis": [],
+            "style": {
+              "size": "m",
+              "ink": "ink",
+              "weight": "normal",
+              "face": null,
+              "enter": "draw",
+              "by": "all",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": null,
+              "near": null,
+              "group": null,
+              "fill": "none",
+              "stroke": "accent",
+              "bleed": "auto",
+              "thick": 1,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": {
+              "kind": "shape",
+              "geometry": {
+                "shape": "line",
+                "points": [
+                  {
+                    "x": 114,
+                    "y": 50
+                  },
+                  {
+                    "x": 100,
+                    "y": 50
+                  }
+                ]
+              }
+            },
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "s5@21",
+            "id": "s5",
+            "kind": "shape",
+            "order": 17,
+            "scene": "s1",
+            "text": "",
+            "emphasis": [],
+            "style": {
+              "size": "m",
+              "ink": "ink",
+              "weight": "normal",
+              "face": null,
+              "enter": "fade",
+              "by": "all",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": null,
+              "near": null,
+              "group": null,
+              "fill": "#e8dcc0",
+              "stroke": "none",
+              "bleed": "auto",
+              "thick": null,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": {
+              "kind": "shape",
+              "geometry": {
+                "shape": "rect",
+                "x": 60,
+                "y": 42,
+                "w": 40,
+                "h": 16,
+                "r": 2,
+                "full": false
+              }
+            },
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "t1x10@22",
+            "id": "t1x10",
+            "kind": "text",
+            "order": 18,
+            "scene": "s1",
+            "text": "5 Conference",
+            "emphasis": [],
+            "style": {
+              "size": "xs",
+              "ink": "ink",
+              "weight": "normal",
+              "face": null,
+              "enter": "fade",
+              "by": "word",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": {
+                "x": 80,
+                "y": 48
+              },
+              "near": null,
+              "group": null,
+              "fill": "none",
+              "stroke": "ink",
+              "bleed": "auto",
+              "thick": null,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": null,
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "t1x11@23",
+            "id": "t1x11",
+            "kind": "text",
+            "order": 19,
+            "scene": "s1",
+            "text": "reconcile versions",
+            "emphasis": [],
+            "style": {
+              "size": "xs",
+              "ink": "dim",
+              "weight": "normal",
+              "face": null,
+              "enter": "fade",
+              "by": "word",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": {
+                "x": 80,
+                "y": 53
+              },
+              "near": null,
+              "group": null,
+              "fill": "none",
+              "stroke": "ink",
+              "bleed": "auto",
+              "thick": null,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": null,
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "a5@24",
+            "id": "a5",
+            "kind": "shape",
+            "order": 20,
+            "scene": "s1",
+            "text": "",
+            "emphasis": [],
+            "style": {
+              "size": "m",
+              "ink": "ink",
+              "weight": "normal",
+              "face": null,
+              "enter": "draw",
+              "by": "all",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": null,
+              "near": null,
+              "group": null,
+              "fill": "none",
+              "stroke": "accent",
+              "bleed": "auto",
+              "thick": 1,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": {
+              "kind": "shape",
+              "geometry": {
+                "shape": "line",
+                "points": [
+                  {
+                    "x": 60,
+                    "y": 50
+                  },
+                  {
+                    "x": 46,
+                    "y": 50
+                  }
+                ]
+              }
+            },
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "s6@25",
+            "id": "s6",
+            "kind": "shape",
+            "order": 21,
+            "scene": "s1",
+            "text": "",
+            "emphasis": [],
+            "style": {
+              "size": "m",
+              "ink": "ink",
+              "weight": "normal",
+              "face": null,
+              "enter": "fade",
+              "by": "all",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": null,
+              "near": null,
+              "group": null,
+              "fill": "#e8dcc0",
+              "stroke": "none",
+              "bleed": "auto",
+              "thick": null,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": {
+              "kind": "shape",
+              "geometry": {
+                "shape": "rect",
+                "x": 6,
+                "y": 42,
+                "w": 40,
+                "h": 16,
+                "r": 2,
+                "full": false
+              }
+            },
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "t1x12@26",
+            "id": "t1x12",
+            "kind": "text",
+            "order": 22,
+            "scene": "s1",
+            "text": "6 Both pass",
+            "emphasis": [],
+            "style": {
+              "size": "xs",
+              "ink": "ink",
+              "weight": "normal",
+              "face": null,
+              "enter": "fade",
+              "by": "word",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": {
+                "x": 26,
+                "y": 48
+              },
+              "near": null,
+              "group": null,
+              "fill": "none",
+              "stroke": "ink",
+              "bleed": "auto",
+              "thick": null,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": null,
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "t1x13@27",
+            "id": "t1x13",
+            "kind": "text",
+            "order": 23,
+            "scene": "s1",
+            "text": "identical text",
+            "emphasis": [],
+            "style": {
+              "size": "xs",
+              "ink": "dim",
+              "weight": "normal",
+              "face": null,
+              "enter": "fade",
+              "by": "word",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": {
+                "x": 26,
+                "y": 53
+              },
+              "near": null,
+              "group": null,
+              "fill": "none",
+              "stroke": "ink",
+              "bleed": "auto",
+              "thick": null,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": null,
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "a6@28",
+            "id": "a6",
+            "kind": "shape",
+            "order": 24,
+            "scene": "s1",
+            "text": "",
+            "emphasis": [],
+            "style": {
+              "size": "m",
+              "ink": "ink",
+              "weight": "normal",
+              "face": null,
+              "enter": "draw",
+              "by": "all",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": null,
+              "near": null,
+              "group": null,
+              "fill": "none",
+              "stroke": "accent",
+              "bleed": "auto",
+              "thick": 1,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": {
+              "kind": "shape",
+              "geometry": {
+                "shape": "line",
+                "points": [
+                  {
+                    "x": 26,
+                    "y": 58
+                  },
+                  {
+                    "x": 26,
+                    "y": 68
+                  }
+                ]
+              }
+            },
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "s7@29",
+            "id": "s7",
+            "kind": "shape",
+            "order": 25,
+            "scene": "s1",
+            "text": "",
+            "emphasis": [],
+            "style": {
+              "size": "m",
+              "ink": "ink",
+              "weight": "normal",
+              "face": null,
+              "enter": "fade",
+              "by": "all",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": null,
+              "near": null,
+              "group": null,
+              "fill": "#e8dcc0",
+              "stroke": "none",
+              "bleed": "auto",
+              "thick": null,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": {
+              "kind": "shape",
+              "geometry": {
+                "shape": "rect",
+                "x": 6,
+                "y": 68,
+                "w": 40,
+                "h": 16,
+                "r": 2,
+                "full": false
+              }
+            },
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "t1x14@30",
+            "id": "t1x14",
+            "kind": "text",
+            "order": 26,
+            "scene": "s1",
+            "text": "7 President",
+            "emphasis": [],
+            "style": {
+              "size": "xs",
+              "ink": "ink",
+              "weight": "normal",
+              "face": null,
+              "enter": "fade",
+              "by": "word",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": {
+                "x": 26,
+                "y": 74
+              },
+              "near": null,
+              "group": null,
+              "fill": "none",
+              "stroke": "ink",
+              "bleed": "auto",
+              "thick": null,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": null,
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "t1x15@31",
+            "id": "t1x15",
+            "kind": "text",
+            "order": 27,
+            "scene": "s1",
+            "text": "sign or veto",
+            "emphasis": [],
+            "style": {
+              "size": "xs",
+              "ink": "dim",
+              "weight": "normal",
+              "face": null,
+              "enter": "fade",
+              "by": "word",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": {
+                "x": 26,
+                "y": 79
+              },
+              "near": null,
+              "group": null,
+              "fill": "none",
+              "stroke": "ink",
+              "bleed": "auto",
+              "thick": null,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": null,
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "a7@32",
+            "id": "a7",
+            "kind": "shape",
+            "order": 28,
+            "scene": "s1",
+            "text": "",
+            "emphasis": [],
+            "style": {
+              "size": "m",
+              "ink": "ink",
+              "weight": "normal",
+              "face": null,
+              "enter": "draw",
+              "by": "all",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": null,
+              "near": null,
+              "group": null,
+              "fill": "none",
+              "stroke": "accent",
+              "bleed": "auto",
+              "thick": 1,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": {
+              "kind": "shape",
+              "geometry": {
+                "shape": "line",
+                "points": [
+                  {
+                    "x": 46,
+                    "y": 76
+                  },
+                  {
+                    "x": 62,
+                    "y": 76
+                  }
+                ]
+              }
+            },
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "s8@33",
+            "id": "s8",
+            "kind": "shape",
+            "order": 29,
+            "scene": "s1",
+            "text": "",
+            "emphasis": [],
+            "style": {
+              "size": "m",
+              "ink": "ink",
+              "weight": "normal",
+              "face": null,
+              "enter": "fade",
+              "by": "all",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": null,
+              "near": null,
+              "group": null,
+              "fill": "accent",
+              "stroke": "none",
+              "bleed": "auto",
+              "thick": null,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": {
+              "kind": "shape",
+              "geometry": {
+                "shape": "rect",
+                "x": 62,
+                "y": 68,
+                "w": 44,
+                "h": 16,
+                "r": 2,
+                "full": false
+              }
+            },
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "t1x16@34",
+            "id": "t1x16",
+            "kind": "text",
+            "order": 30,
+            "scene": "s1",
+            "text": "8 LAW",
+            "emphasis": [],
+            "style": {
+              "size": "xs",
+              "ink": "ground",
+              "weight": "normal",
+              "face": null,
+              "enter": "fade",
+              "by": "word",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": {
+                "x": 84,
+                "y": 74
+              },
+              "near": null,
+              "group": null,
+              "fill": "none",
+              "stroke": "ink",
+              "bleed": "auto",
+              "thick": null,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": null,
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "t1x17@35",
+            "id": "t1x17",
+            "kind": "text",
+            "order": 31,
+            "scene": "s1",
+            "text": "signed, or no action in 10 days",
+            "emphasis": [],
+            "style": {
+              "size": "xs",
+              "ink": "ground",
+              "weight": "normal",
+              "face": null,
+              "enter": "fade",
+              "by": "word",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": {
+                "x": 84,
+                "y": 79
+              },
+              "near": null,
+              "group": null,
+              "fill": "none",
+              "stroke": "ink",
+              "bleed": "auto",
+              "thick": null,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": null,
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "s9@36",
+            "id": "s9",
+            "kind": "shape",
+            "order": 32,
+            "scene": "s1",
+            "text": "",
+            "emphasis": [],
+            "style": {
+              "size": "m",
+              "ink": "ink",
+              "weight": "normal",
+              "face": null,
+              "enter": "draw",
+              "by": "all",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": null,
+              "near": null,
+              "group": null,
+              "fill": "none",
+              "stroke": "#c13e1e",
+              "bleed": "auto",
+              "thick": null,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": {
+              "kind": "shape",
+              "geometry": {
+                "shape": "rect",
+                "x": 112,
+                "y": 64,
+                "w": 44,
+                "h": 22,
+                "r": 2,
+                "full": false
+              }
+            },
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "t1x18@37",
+            "id": "t1x18",
+            "kind": "text",
+            "order": 33,
+            "scene": "s1",
+            "text": "Veto",
+            "emphasis": [],
+            "style": {
+              "size": "xs",
+              "ink": "#c13e1e",
+              "weight": "normal",
+              "face": null,
+              "enter": "fade",
+              "by": "word",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": {
+                "x": 134,
+                "y": 70
+              },
+              "near": null,
+              "group": null,
+              "fill": "none",
+              "stroke": "ink",
+              "bleed": "auto",
+              "thick": null,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": null,
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "t1x19@38",
+            "id": "t1x19",
+            "kind": "text",
+            "order": 34,
+            "scene": "s1",
+            "text": "returns to Congress",
+            "emphasis": [],
+            "style": {
+              "size": "xs",
+              "ink": "dim",
+              "weight": "normal",
+              "face": null,
+              "enter": "fade",
+              "by": "word",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": {
+                "x": 134,
+                "y": 75
+              },
+              "near": null,
+              "group": null,
+              "fill": "none",
+              "stroke": "ink",
+              "bleed": "auto",
+              "thick": null,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": null,
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "t1x20@39",
+            "id": "t1x20",
+            "kind": "text",
+            "order": 35,
+            "scene": "s1",
+            "text": "2/3 of both overrides",
+            "emphasis": [],
+            "style": {
+              "size": "xs",
+              "ink": "dim",
+              "weight": "normal",
+              "face": null,
+              "enter": "fade",
+              "by": "word",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": {
+                "x": 134,
+                "y": 80
+              },
+              "near": null,
+              "group": null,
+              "fill": "none",
+              "stroke": "ink",
+              "bleed": "auto",
+              "thick": null,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": null,
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          },
+          {
+            "key": "a8@40",
+            "id": "a8",
+            "kind": "shape",
+            "order": 36,
+            "scene": "s1",
+            "text": "",
+            "emphasis": [],
+            "style": {
+              "size": "m",
+              "ink": "ink",
+              "weight": "normal",
+              "face": null,
+              "enter": "draw",
+              "by": "all",
+              "exit": "fade",
+              "loop": "none",
+              "mark": "none",
+              "case": "asis",
+              "stay": "scene",
+              "layer": "mid",
+              "at": null,
+              "near": null,
+              "group": null,
+              "fill": "none",
+              "stroke": "#c13e1e",
+              "bleed": "auto",
+              "thick": 0.6,
+              "scale": null,
+              "rot": 0,
+              "opacity": 1,
+              "tap": false,
+              "dur": null
+            },
+            "figure": {
+              "kind": "shape",
+              "geometry": {
+                "shape": "line",
+                "points": [
+                  {
+                    "x": 46,
+                    "y": 80
+                  },
+                  {
+                    "x": 112,
+                    "y": 80
+                  }
+                ]
+              }
+            },
+            "parent": null,
+            "struck": false,
+            "replaces": null
+          }
+        ]
+      },
+      "turn": {
+        "case": "fix-diagram",
+        "index": 2,
+        "kind": "fix",
+        "said": "Look at what you drew. Fix whatever is wrong with it.",
+        "form": "since",
+        "cacheReadShare": 0.7651833740831295,
+        "withSnapshot": true,
+        "interruptedAtMs": null,
+        "changed": null,
+        "problem": null
+      },
+      "verdicts": [
+        {
+          "label": "first line within 4 s",
+          "ok": false,
+          "detail": "9.7 s"
+        },
+        {
+          "label": "under 1500 tokens",
+          "ok": false,
+          "detail": "2053 output tokens"
+        },
+        {
+          "label": "cache reads over 80%",
+          "ok": false,
+          "detail": "77%"
+        },
+        {
+          "label": "judge: text readable",
+          "ok": false,
+          "detail": "The sub-captions sit at the bottom edge of their boxes and some (e.g. 'member filed bill', 'sign or veto', 'signed, or 10 days pass') overlap or touch the box borders, and the small grey text is faint against the beige; 'veto path' is small and floats unattached."
+        },
+        {
+          "label": "judge: labels point right",
+          "ok": false,
+          "detail": "The 'veto path' label sits above the LAW box, so it appears to name box 8 rather than the red arrow running from President to Veto."
+        },
+        {
+          "label": "judge: drawing correct",
+          "ok": false,
+          "detail": "The veto branch is drawn wrongly: the arrow from President goes under the LAW box to the Veto box, and the Veto box has no arrow back to Congress for the override. Also the LAW box is highlighted as if it were the end of the path, and the conference step is shown as always happening, although it is only needed when versions differ."
+        },
+        {
+          "label": "judge: coherence 4 or more",
+          "ok": false,
+          "detail": "3 of 5: The grid reads in a clear snaking order with numbered steps, but the veto branch is confusing, the 'veto path' label is misplaced, and the faint captions crowd the box edges."
+        },
+        {
+          "label": "meets expectation",
+          "ok": true,
+          "detail": "the prompt expects: any"
+        },
+        {
+          "label": "finished",
+          "ok": true,
+          "detail": "done"
+        },
+        {
+          "label": "no rejected line",
+          "ok": true,
+          "detail": "0 rejected, 0 warnings"
+        },
+        {
+          "label": "silent about the medium",
+          "ok": true,
+          "detail": "nothing"
+        },
+        {
+          "label": "few exact times",
+          "ok": true,
+          "detail": "0% of lines"
+        },
+        {
+          "label": "four in-flow lines or fewer",
+          "ok": true,
+          "detail": "median 0 in a scene"
+        },
+        {
+          "label": "warm (brief was since)",
+          "ok": true,
+          "detail": "form since"
+        },
+        {
+          "label": "judge: shows what was asked",
+          "ok": true,
+          "detail": "The grid reads in a clear snaking order with numbered steps, but the veto branch is confusing, the 'veto path' label is misplaced, and the faint captions crowd the box edges."
+        },
+        {
+          "label": "fix turn was given the picture and the sight report",
+          "ok": true,
+          "detail": "picture attached"
+        }
+      ],
+      "judge": {
+        "model": "sonnet",
+        "asked": true,
+        "textProblem": "The sub-captions sit at the bottom edge of their boxes and some (e.g. 'member filed bill', 'sign or veto', 'signed, or 10 days pass') overlap or touch the box borders, and the small grey text is faint against the beige; 'veto path' is small and floats unattached.",
+        "wrongLabel": "The 'veto path' label sits above the LAW box, so it appears to name box 8 rather than the red arrow running from President to Veto.",
+        "correct": false,
+        "mistake": "The veto branch is drawn wrongly: the arrow from President goes under the LAW box to the Veto box, and the Veto box has no arrow back to Congress for the override. Also the LAW box is highlighted as if it were the end of the path, and the conference step is shown as always happening, although it is only needed when versions differ.",
+        "coherence": 3,
+        "why": "The grid reads in a clear snaking order with numbered steps, but the veto branch is confusing, the 'veto path' label is misplaced, and the faint captions crowd the box edges.",
+        "costUsd": 0.0091253,
+        "ms": 9603,
+        "stills": [
+          "data:image/jpeg;base64,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"
+        ],
+        "failure": null
+      }
+    }
+  ],
+  "fix": {
+    "before": 3,
+    "after": 3,
+    "improved": false
+  },
+  "verdicts": [
+    {
+      "label": "turn 1: judge: text readable",
+      "ok": false,
+      "detail": "The '1 IDEA' label between the first two boxes is overlapped by the connector line and partly hidden behind the box, so it reads as '1 IDE'; the 'Member introduces bill' box has no clear step number. The 'reconcile versions' caption also floats far below the Conference box."
+    },
+    {
+      "label": "turn 1: judge: drawing correct",
+      "ok": false,
+      "detail": "Step order is garbled: the flow snakes without arrowheads, and 'Both pass' (6) comes after Conference (5) while the flow also implies both chambers pass identical text, and the veto loop does not clearly connect back to Congress or the President; the LAW box also connects by a line to the Veto box as if equal outcomes."
+    },
+    {
+      "label": "turn 1: judge: coherence 4 or more",
+      "ok": false,
+      "detail": "3 of 5: The grid of boxes and title read reasonably, but the missing arrowheads, the clipped '1 IDEA' label, and captions detached from their boxes make the flow ambiguous."
+    },
+    {
+      "label": "turn 2: first line within 4 s",
+      "ok": false,
+      "detail": "9.7 s"
+    },
+    {
+      "label": "turn 2: cache reads over 80%",
+      "ok": false,
+      "detail": "77%"
+    },
+    {
+      "label": "turn 2: judge: text readable",
+      "ok": false,
+      "detail": "The sub-captions sit at the bottom edge of their boxes and some (e.g. 'member filed bill', 'sign or veto', 'signed, or 10 days pass') overlap or touch the box borders, and the small grey text is faint against the beige; 'veto path' is small and floats unattached."
+    },
+    {
+      "label": "turn 2: judge: drawing correct",
+      "ok": false,
+      "detail": "The veto branch is drawn wrongly: the arrow from President goes under the LAW box to the Veto box, and the Veto box has no arrow back to Congress for the override. Also the LAW box is highlighted as if it were the end of the path, and the conference step is shown as always happening, although it is only needed when versions differ."
+    },
+    {
+      "label": "turn 2: judge: coherence 4 or more",
+      "ok": false,
+      "detail": "3 of 5: The grid reads in a clear snaking order with numbered steps, but the veto branch is confusing, the 'veto path' label is misplaced, and the faint captions crowd the box edges."
+    },
+    {
+      "label": "fixing it raised the judge’s score",
+      "ok": false,
+      "detail": "coherence 3 before, 3 after"
+    },
+    {
+      "label": "turn 1: finished",
+      "ok": true,
+      "detail": "done"
+    },
+    {
+      "label": "turn 1: no rejected line",
+      "ok": true,
+      "detail": "0 rejected, 0 warnings"
+    },
+    {
+      "label": "turn 1: first line within 4 s",
+      "ok": true,
+      "detail": "2.7 s"
+    },
+    {
+      "label": "turn 1: judge: shows what was asked",
+      "ok": true,
+      "detail": "The grid of boxes and title read reasonably, but the missing arrowheads, the clipped '1 IDEA' label, and captions detached from their boxes make the flow ambiguous."
+    },
+    {
+      "label": "turn 2: finished",
+      "ok": true,
+      "detail": "done"
+    },
+    {
+      "label": "turn 2: no rejected line",
+      "ok": true,
+      "detail": "0 rejected, 0 warnings"
+    },
+    {
+      "label": "turn 2: warm (brief was since)",
+      "ok": true,
+      "detail": "form since"
+    },
+    {
+      "label": "turn 2: judge: shows what was asked",
+      "ok": true,
+      "detail": "The grid reads in a clear snaking order with numbered steps, but the veto branch is confusing, the 'veto path' label is misplaced, and the faint captions crowd the box edges."
+    },
+    {
+      "label": "turn 2: fix turn was given the picture and the sight report",
+      "ok": true,
+      "detail": "picture attached"
+    }
+  ]
+}
