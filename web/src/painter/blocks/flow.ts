@@ -49,13 +49,136 @@ export function layoutFlow(input: StructureInput): StructureLayout {
   const forced = f?.kind === 'structure' ? f.grow : null;
   const preferred: Grow = forced ?? (input.room.width >= input.room.height ? 'right' : 'down');
   const first = fit(input, input.look.stroke, (env) => buildFlow(env, preferred));
-  if (forced || (first.shrink === 1 && !first.notes.some((n) => n.note === 'crowded'))) return first;
+  if (forced) {
+    if (!first.notes.some((n) => n.note === 'crowded')) return first;
+    const folded = foldChain(input);
+    return folded !== null && !folded.notes.some((n) => n.note === 'crowded') ? folded : first;
+  }
+  if (first.shrink === 1 && !first.notes.some((n) => n.note === 'crowded')) return first;
   const other: Grow = preferred === 'right' ? 'down' : 'right';
   const second = fit(input, input.look.stroke, (env) => buildFlow(env, other));
   const crowded = (l: StructureLayout): boolean => l.notes.some((n) => n.note === 'crowded');
   if (crowded(first) && !crowded(second)) return second;
   if (!crowded(first) && !crowded(second) && second.shrink > first.shrink * 1.15) return second;
-  return first;
+  const best = crowded(first) && crowded(second) ? (second.shrink > first.shrink ? second : first) : first;
+  // A long chain that fits neither way is set like text: in rows, each row left to right, the end of one joined to the start of the next.
+  if (crowded(best)) {
+    const folded = foldChain(input);
+    if (folded !== null && !crowded(folded)) return folded;
+  }
+  return best;
+}
+
+/** The nodes in the order of a single path through every one of them, when the links are exactly that. */
+function chainOrder(input: StructureInput, links: readonly LinkSpec[]): string[] | null {
+  const n = input.nodes.length;
+  if (n < 4 || links.length !== n - 1) return null;
+  const next = new Map<string, LinkSpec>();
+  const hasIn = new Set<string>();
+  for (const l of links) {
+    if (next.has(l.from) || hasIn.has(l.to)) return null;
+    next.set(l.from, l);
+    hasIn.add(l.to);
+  }
+  const head = input.nodes.find((el) => !hasIn.has(el.key));
+  if (head === undefined) return null;
+  const order: string[] = [head.key];
+  for (let at = next.get(head.key); at !== undefined; at = next.get(at.to)) {
+    if (order.includes(at.to)) return null;
+    order.push(at.to);
+  }
+  return order.length === n ? order : null;
+}
+
+/** Rows of a chain: the fewest, then the largest type, in which every row fits. Null when the structure is not a chain. */
+/** a folded chain may be set smaller than a single row may: more of it is on the page, and rows keep it readable */
+const FOLD_MIN_SHRINK = 0.5;
+let folding = false;
+function foldChain(input: StructureInput): StructureLayout | null {
+  if (folding) return null;
+  const f = input.structure.figure;
+  if (f?.kind !== 'structure') return null;
+  const links = linkSpecs(input);
+  const order = chainOrder(input, links);
+  if (order === null) return null;
+  const byKey = new Map(input.nodes.map((el) => [el.key, el]));
+  const linkBetween = (a: string): LinkSpec => links.find((l) => l.from === a) as LinkSpec;
+  const base = new Env(input, 1, 1, input.look.stroke);
+  const title = base.title();
+  const gap = Math.max(base.body * 0.9, 16);
+  let best: { layout: StructureLayout; score: number } | null = null;
+  for (let rows = 2; rows <= Math.min(order.length, 8); rows += 1) {
+    const per = Math.ceil(order.length / rows);
+    const groups: string[][] = [];
+    for (let i = 0; i < order.length; i += per) groups.push(order.slice(i, i + per));
+    if (groups.length < rows) continue;
+    const bandH = (input.room.height - title.h - (groups.length - 1) * gap) / groups.length;
+    if (bandH < base.body * 0.7) break;
+    const bands: StructureLayout[] = [];
+    folding = true;
+    try {
+    groups.forEach((group, i) => {
+      const keys = new Set(group);
+      const inside = links.filter((l) => keys.has(l.from) && keys.has(l.to)).map((l) => l.el);
+      const room: Box = { x: input.room.x, y: input.room.y + title.h + i * (bandH + gap), width: input.room.width, height: bandH };
+      const structure = { ...input.structure, text: '', figure: { ...f, grow: 'right' as const } };
+      bands.push(layoutFlow({ ...input, look: { ...input.look, minShrink: Math.min(input.look.minShrink, FOLD_MIN_SHRINK) }, structure, nodes: group.map((k) => byKey.get(k) as (typeof input.nodes)[number]), links: inside, room }));
+    });
+    } finally {
+      folding = false;
+    }
+    const worst = Math.min(...bands.map((b) => (b.notes.some((n) => n.note === 'crowded') ? 0 : b.shrink)));
+    if (best === null || worst > best.score + 1e-9) {
+      const shrink = Math.max(0.3, worst);
+      const env = new Env(input, shrink, 1, input.look.stroke);
+      const boxes = new Map<string, Box>();
+      const routes = new Map<string, Polyline>();
+      const notes: Note[] = [];
+      const parts: BlockPart[] = [];
+      const lines: BlockPart[] = [];
+      const heads: BlockPart[] = [];
+      const labels: BlockPart[] = [];
+      const tp = title.part(input.room);
+      if (tp !== null) parts.push(tp);
+      for (const band of bands) {
+        parts.push(...band.parts);
+        for (const [k, v] of band.boxes) if (k !== input.structure.key) boxes.set(k, v);
+        for (const [k, v] of band.routes) routes.set(k, v);
+        notes.push(...band.notes.filter((n) => n.note !== 'crowded'));
+      }
+      // the bridge from the last node of a row to the first of the next: down through the gap, along it, down again
+      for (let i = 0; i + 1 < groups.length; i += 1) {
+        const from = boxes.get((groups[i] as string[])[(groups[i] as string[]).length - 1] as string);
+        const to = boxes.get((groups[i + 1] as string[])[0] as string);
+        if (from === undefined || to === undefined) continue;
+        const link = linkBetween((groups[i] as string[])[(groups[i] as string[]).length - 1] as string);
+        const mid = (from.y + from.height + to.y) / 2;
+        const pts = [
+          { x: from.x + from.width / 2, y: from.y + from.height },
+          { x: from.x + from.width / 2, y: mid },
+          { x: to.x + to.width / 2, y: mid },
+          { x: to.x + to.width / 2, y: to.y },
+        ];
+        connectorParts(env, link, pts, lines, heads);
+        routes.set(link.el.key, { points: pts, closed: false });
+        let area = boxOfPoints(pts);
+        if (link.label !== '') {
+          const m = env.measure(link.label, env.wrapWidth, env.small());
+          const at = box((pts[1] as Point).x / 2 + (pts[2] as Point).x / 2 - m.width / 2, mid - m.height / 2, m.width, m.height);
+          labels.push(labelPart(env, link.el.key, link.label, at, m, true));
+          area = union([area, at]);
+        }
+        boxes.set(link.el.key, area);
+      }
+      parts.push(...lines, ...heads, ...labels);
+      boxes.set(input.structure.key, union([...boxes.values()]));
+      notes.push({ key: input.structure.key, note: worst >= 1 ? 'crowded' : 'shrunk' });
+      if (worst >= 1) notes.pop();
+      best = { layout: { boxes, parts, routes, notes: worst > 0 ? notes : [...notes, { key: input.structure.key, note: 'crowded' }], shrink }, score: worst };
+      if (worst >= 1) break;
+    }
+  }
+  return best === null || best.score <= 0 ? null : best.layout;
 }
 
 function buildFlow(env: Env, grow: Grow): Draft {
