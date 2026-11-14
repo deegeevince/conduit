@@ -57,7 +57,7 @@ export function entryFor(record: ExperimentRecord): string {
   const lines = [
     `## ${record.started.slice(0, 10)} ${record.id}: ${p.title} (${record.outcome})`,
     '',
-    `Kind: ${p.kind}. Aimed at: ${p.aims.join(', ')}. Branch: \`${record.branch}\`.`,
+    `Kind: ${p.kind}. Aimed at: ${p.aims.join(', ')}. Branch: ${record.branch === '' ? 'none' : `\`${record.branch}\``}.`,
     '',
     `Why: ${p.hypothesis}`,
     '',

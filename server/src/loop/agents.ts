@@ -1,8 +1,10 @@
-// The only place `claude -p` is run with tools. Three roles, each confined by the CLI's own permission flags
-// rather than by a request in a prompt:
-//   critic    reads a briefing folder (never the held-out set) and answers in words: no tool can write or run
-//   builder   edits files in its own worktree, with the sealed paths absent and the protected paths denied
-//             to the edit tools, and may run only the checks it is allowed to (typecheck, timeline, lint, prompt count)
+// The only place `claude -p` is run with tools. Three roles, each confined by the CLI's own flags rather than by a request in a prompt,
+// and all of them under `--restricted`: the CLI removes every tool that runs a command or code, ignores user, project and local
+// settings, and confines the file tools to the working directory.
+//   critic    reads a briefing folder (never the held-out set) and answers in words: it can only read
+//   builder   edits files in a folder that is an EXPORT of the base commit, outside the repository, with no `.git` and no sealed path in it,
+//             and has no shell at all: the three commands it used to be allowed (typecheck, timeline, prompt count) are run for it by the
+//             runner, from the base commit's scripts, on a copy (deps.ts). Code a builder wrote is never run by a builder.
 //   reviewer  reads a folder holding a diff and numbers, and answers in words
 // Every call is on the owner's login through the `claude` CLI: ANTHROPIC_API_KEY is blanked in the child so that
 // no key can be used, and the call is given its own dollar cap by the meter.
@@ -18,7 +20,7 @@ export interface AgentCall {
   readonly kind: AgentKind;
   readonly role: AgentRole;
   readonly prompt: string;
-  /** the folder the agent works in and may read: a briefing folder, a review folder, or the builder's worktree */
+  /** the folder the agent works in and may read: a briefing folder, a review folder, or the builder's export of the base commit */
   readonly cwd: string;
   readonly reservation: Reservation;
   readonly signal: AbortSignal;
@@ -37,8 +39,8 @@ export interface Agents {
   run(call: AgentCall): Promise<AgentReply>;
 }
 
-/** Checks a builder may run. Anything else the shell could do is not allowed. */
-export const BUILDER_COMMANDS: readonly string[] = ['pnpm typecheck', 'pnpm timeline', 'pnpm prompt count', 'pnpm library lint', 'pnpm library match', 'pnpm library check'];
+/** The three commands a build is checked by. A builder cannot run them: the runner does, from the base commit's scripts, on a copy of what the builder wrote. */
+export const RUNNER_COMMANDS: readonly (readonly string[])[] = [['typecheck'], ['timeline'], ['prompt', 'count']];
 
 /** The argument list for a role. Exported so that `pnpm improve --dry-run` can print exactly what each is confined by. */
 export function agentArguments(call: Pick<AgentCall, 'kind' | 'role' | 'reservation'>): string[] {
@@ -54,8 +56,7 @@ export function agentArguments(call: Pick<AgentCall, 'kind' | 'role' | 'reservat
     call.reservation.cap.toFixed(4),
     '--no-session-persistence',
     '--strict-mcp-config',
-    '--setting-sources',
-    'user',
+    '--restricted',
     '--permission-mode',
     'dontAsk',
   ];
@@ -66,20 +67,7 @@ export function agentArguments(call: Pick<AgentCall, 'kind' | 'role' | 'reservat
     const glob = path.endsWith('/') ? `${path}**` : `${path}*`;
     return [`Edit(${glob})`, `Write(${glob})`, `Edit(/${glob})`, `Write(/${glob})`];
   });
-  return [
-    ...base,
-    '--tools',
-    'Read,Grep,Glob,Edit,Write,Bash',
-    '--allowedTools',
-    'Read',
-    'Grep',
-    'Glob',
-    'Edit',
-    'Write',
-    ...BUILDER_COMMANDS.map((command) => `Bash(${command}:*)`),
-    '--disallowedTools',
-    ...edits,
-  ];
+  return [...base, '--tools', 'Read,Grep,Glob,Edit,Write', '--allowedTools', 'Read', 'Grep', 'Glob', 'Edit', 'Write', '--disallowedTools', 'Bash', 'PowerShell', 'WebFetch', 'WebSearch', 'Task', ...edits];
 }
 
 function interpret(stdout: string): AgentReply {
@@ -103,7 +91,7 @@ export function claudeAgents(bin = 'claude'): Agents {
         cwd: call.cwd,
         stdin: call.prompt,
         // the subscription's own login is used: a key in the environment must not be, and the loop's write identity is not lent to a model
-        env: { ANTHROPIC_API_KEY: '', ANTHROPIC_AUTH_TOKEN: '', REMOTE_AGENT: '', REMOTE_SESSION_ID: '' },
+        env: { ANTHROPIC_API_KEY: '', ANTHROPIC_AUTH_TOKEN: '', REMOTE_AGENT: '', REMOTE_SESSION_ID: '', BATTERY_SEALED_DIR: '' },
         signal: call.signal,
         timeoutMs: call.timeoutMs,
       });

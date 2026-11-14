@@ -9,7 +9,7 @@ const FAMILIES: readonly ExploreFamily[] = ['diagram', 'chart', 'explorable', 'm
 
 export function criticPrompt(experiments: number, files: readonly string[]): string {
   return `You are the critic of an improvement loop for Conduit, a product that lets a language model answer by drawing on an animated stage.
-Your working folder holds the briefing: ${files.join(', ')}. Read them. They hold the TUNE set's judgements (scores, the judge's complaints, the painter's geometry counts), the technique index, and the language reference. You are never shown the held-out set; do not ask for it or guess at it.
+Your working folder holds the briefing: ${files.join(', ')}. Read them. They hold the TUNE set's judgements (scores, the judge's complaints, the painter's geometry counts), the technique index, and the language reference. When it is listed, findings.jsonl holds what a second judge found in real turns the owner had (one JSON line each: what was asked, the score, the problems, the suggestions): evidence from real use, to weigh beside the tune set, never to be quoted back. You are never shown the held-out set; do not ask for it or guess at it.
 
 Find what is missing, not what is wrong in one answer: a kind of answer that is drawn badly because the model was never taught how, a building block the painter lacks, a look that cannot say what is asked, a wording of the prompt that misleads. Propose at most ${experiments} experiments, cheapest to build and to undo first, in this order of kinds: ${EXPERIMENT_ORDER.join(', ')}.
 
@@ -22,13 +22,13 @@ Answer with one JSON array in a \`\`\`json block and nothing after it. Each item
 export function builderPrompt(proposal: Proposal, refusal: readonly string[]): string {
   const where =
     proposal.kind === 'technique'
-      ? 'A technique is a markdown file in techniques/overlay/ (read one in techniques/seed/ for the form; run `pnpm library lint <file>`). It is not written to Remote; the steward does that if it is kept.'
+      ? 'A technique is a markdown file in techniques/overlay/ (read one in techniques/seed/ for the form). It is not written to Remote; the steward does that if it is kept.'
       : proposal.kind === 'prompt'
         ? 'Change only language/src/prompt.ts, and keep `pnpm prompt count` within its budget.'
         : proposal.kind === 'style'
           ? 'Change only what a look or the styles decide (web/src/looks, web/src/styles, web/src/render).'
           : 'Add or change a building block in the painter or the language.';
-  return `You are the builder of one experiment of an improvement loop. Your working folder is a git worktree of the repository, on a branch of its own. Do exactly this and nothing else.
+  return `You are the builder of one experiment of an improvement loop. Your working folder is a plain export of the repository (no git, no node_modules); nothing outside it can be read. Do exactly this and nothing else.
 
 Experiment: ${proposal.title} (${proposal.kind})
 Why: ${proposal.hypothesis}
@@ -40,8 +40,8 @@ Hard rules, enforced by code after you finish (a diff that breaks one is thrown 
 - Do not touch explore/, loop/, server/src/loop/, the battery or taste tools, language/src/{explore,taste,review}.ts, package.json, lockfiles, .env or .claude/. You cannot edit them, and trying wastes your turn.
 - Do not copy any prompt from a battery into source. Teach the kind of answer, not the question.
 - Stay inside what a ${proposal.kind} experiment changes.
-- Strict TypeScript, no new dependency. Run \`pnpm typecheck\` before you stop; it must pass.
-- Do not run git. Do not commit. Leave the files changed in the worktree.
+- Strict TypeScript, no new dependency. You have no shell and cannot run anything: the runner runs \`pnpm typecheck\`, \`pnpm timeline\` and \`pnpm prompt count\` on what you wrote and tells you if one fails, so write carefully and read what you wrote back.
+- Your folder is a plain export of the repository: there is no git in it. Leave the files changed there.
 ${refusal.length === 0 ? '' : `\nYour last attempt was refused for this, so do not repeat it:\n${refusal.map((reason) => `- ${reason}`).join('\n')}\n`}
 When done, reply with two sentences: what you changed and what you did not.`;
 }
