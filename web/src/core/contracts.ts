@@ -34,6 +34,39 @@ export interface Size2 {
   readonly height: number;
 }
 
+/**
+ * Who the screen is for (PLAN REVIEW-generality section 4): a person preference, `adult` by default. It raises the two numbers the legibility
+ * invariant enforces, for the stage and for the lesson view alike: the least a word may be set at (`floor`, em height) and the least a target
+ * may be (`minTarget`), and the lesson view's type scale. Nothing else about the screen changes.
+ */
+export type Audience = 'adult' | 'young' | 'large-print';
+export const AUDIENCES: readonly Audience[] = ['adult', 'young', 'large-print'];
+export interface AudienceBar {
+  readonly floor: { readonly phone: number; readonly desk: number };
+  readonly minTarget: number;
+  /** the lesson view's type scale: 1 is the adult's */
+  readonly scale: number;
+  /** what the person is told it is */
+  readonly name: string;
+}
+export const AUDIENCE_BARS: Readonly<Record<Audience, AudienceBar>> = {
+  adult: { floor: { phone: 11, desk: 12 }, minTarget: 44, scale: 1, name: 'Adult' },
+  young: { floor: { phone: 16, desk: 18 }, minTarget: 56, scale: 1.25, name: 'Young learner' },
+  'large-print': { floor: { phone: 20, desk: 22 }, minTarget: 64, scale: 1.5, name: 'Large print' },
+};
+export function isAudience(value: unknown): value is Audience {
+  return typeof value === 'string' && Object.hasOwn(AUDIENCE_BARS, value);
+}
+/** The floor, target and scale for an audience on this screen. */
+export function audienceBar(audience: Audience, phone: boolean): { readonly floor: number; readonly minTarget: number; readonly scale: number } {
+  const bar = AUDIENCE_BARS[audience];
+  return { floor: phone ? bar.floor.phone : bar.floor.desk, minTarget: bar.minTarget, scale: bar.scale };
+}
+/** The one line the brain is told (the turn brief's SCREEN line carries it when the person is not the default). */
+export function audienceLine(audience: Audience): string {
+  return `AUDIENCE: ${audience}${audience === 'adult' ? '' : ` (type and targets are raised for it)`}. If the person says the learner is under 10, you may suggest switching the audience to young (the + menu, About); never switch it yourself.`;
+}
+
 /** What a look gives a kind, resolved for this screen, in the units of the box it is given (CSS points). */
 export interface Tokens extends BlockLook {
   /** the smallest side a target may have for a finger: 44 */

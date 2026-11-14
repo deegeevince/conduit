@@ -31,6 +31,8 @@ export interface Screen {
   readonly width: number;
   readonly height: number;
   readonly pointer: 'fine' | 'coarse';
+  /** who it is for: raises the legibility floor and the target (`audienceBar`); absent is the adult's */
+  readonly audience?: import('./contracts').Audience;
 }
 
 export interface CensusInput {

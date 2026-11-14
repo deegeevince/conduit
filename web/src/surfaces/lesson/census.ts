@@ -113,6 +113,12 @@ export function takeCensus(player: Player, root: HTMLElement): LessonCensus {
     const r = el.getBoundingClientRect();
     if (r.right > window.innerWidth + 1 && r.width > 0 && el.closest('.tabs') === null) wide.push(`${el.tagName.toLowerCase()}.${String(el.getAttribute('class') ?? '').split(' ')[0]} ${Math.round(r.left)}..${Math.round(r.right)}`);
   });
+  // a step that refers to the figure (tick, circle, count, measure, shade, mark) needs the figure big on screen: the witness, not a router
+  const spoken = [...root.querySelectorAll('.say .words, .ask-prompt')].map((el) => el.textContent ?? '').join(' ');
+  const referred = /\b(tick|circle|count|measure|shade|colou?r in|mark|trace)/i.test(spoken);
+  const surface = [...root.querySelectorAll('.fig')].map((fig) => rect(fig)).filter((r) => r.w > 0 && r.h > 0);
+  const narrow = window.innerWidth < 900;
+  const big = surface.some((r) => r.h >= 120 && r.w >= window.innerWidth * (narrow ? 0.8 : 0.35));
   const drawn = root.querySelectorAll('.say[data-step], .ask[data-ask]').length;
   const where = player.current.cursor.node;
   return {
@@ -128,6 +134,7 @@ export function takeCensus(player: Player, root: HTMLElement): LessonCensus {
     tryMs: player.lastTryMs,
     wide: wide.slice(0, 12),
     here: player.describe(),
+    surface: { referred, shown: surface.length > 0, big },
   };
 }
 
@@ -135,7 +142,7 @@ export function takeCensus(player: Player, root: HTMLElement): LessonCensus {
  * The census in the three hundred characters the bridge allows an event: the numbers the rules of the plan are held to (the whole census is
  * read in the page of the bench, and goes up whole when the host has a `census` message). `v` view, `q` [card on screen, its type px],
  * `s` [steps shown, drawn], `f` [smallest picture share, smallest piece px], `w` [smallest type px, lowest contrast], `t` [smallest target px,
- * smallest choice px], `l` answers found on screen, `x` pixels past the edge, `m` ms a try took.
+ * smallest choice px], `l` answers found on screen, `x` pixels past the edge, `m` ms a try took, `g` [steps refer to the figure, the figure is big on screen].
  */
 export function summarise(c: LessonCensus): string {
   const min = (values: readonly number[]): number => (values.length === 0 ? 0 : Math.min(...values));
@@ -150,6 +157,7 @@ export function summarise(c: LessonCensus): string {
     l: c.sealed.leaks.length,
     x: Math.max(0, c.viewport.scrollW - c.viewport.w),
     m: c.tryMs ?? 0,
+    g: [c.surface.referred ? 1 : 0, c.surface.big ? 1 : 0],
   };
   return JSON.stringify(summary).slice(0, 290);
 }

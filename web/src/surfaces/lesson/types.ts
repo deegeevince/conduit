@@ -75,6 +75,11 @@ export interface LessonTokens {
   readonly nudgeSoft: string;
   readonly font: string;
   readonly dark: boolean;
+  /** the look's corner radius, CSS pixels (0 in a look whose machine had none) */
+  readonly radius?: number;
+  /** the audience's type scale (1 for an adult) and the least a target may be, CSS pixels */
+  readonly scale?: number;
+  readonly target?: number;
 }
 
 /** One sheet, as the catalogue lists it (the server's index, WS4, read into this). */
@@ -166,4 +171,6 @@ export interface LessonCensus {
   /** elements that reach past the right edge of the screen (the page must never scroll sideways) */
   readonly wide: readonly string[];
   readonly here: string;
+  /** the figure the steps shown refer to (to tick, circle, count, measure, shade, mark): referred to, on screen, and big enough to work */
+  readonly surface: { readonly referred: boolean; readonly shown: boolean; readonly big: boolean };
 }

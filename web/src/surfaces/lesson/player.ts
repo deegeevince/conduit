@@ -270,7 +270,8 @@ export class Player {
   /** The height of the title card is the top the picture sticks under. */
   private fit(): void {
     const card = this.root.querySelector('.ctx');
-    const top = card instanceof HTMLElement ? card.getBoundingClientRect().height + 8 : 0;
+    // only the pinned card sticks; the question's own screen is part of the page, so a picture sticks to the very top
+    const top = card instanceof HTMLElement && card.classList.contains('pinned') ? card.getBoundingClientRect().height + 8 : 0;
     document.documentElement.style.setProperty('--qh', `${Math.round(top)}px`);
   }
 
@@ -393,10 +394,13 @@ export class Player {
     }
     const { printed, text } = splitNumber(context.title);
     const kicker = context.id === node.id ? (parentOf(this.doc, node)?.title ?? '') : nameOf(node);
-    const crop = this.input.crops[context.id];
+    const onSurface = stepsOf(node).some((step) => step.kind === 'ask' && (step as LessonAsk & { readonly on?: string }).on !== undefined);
+    const crop = onSurface ? undefined : this.input.crops[context.id];
     const long = text.length > 70;
     // Once she has left the question's own screen (a way, the thinking help, her working) the whole question stays pinned at the top left, smaller, never shortened.
-    const pinned = context.id !== node.id || this.factsOpen(context) || stepsOf(context).some((step) => step.kind === 'ask' && (askView(this.doc, this.state, context.id, step.id)?.tries.length ?? 0) > 0);
+    // a figure to work on takes the room: the card is the compact header over it
+    const figured = runsOf(stepsOf(node), shownOf(this.doc, this.state, node)).some((run) => run.figure !== null);
+    const pinned = figured || context.id !== node.id || this.factsOpen(context) || stepsOf(context).some((step) => step.kind === 'ask' && (askView(this.doc, this.state, context.id, step.id)?.tries.length ?? 0) > 0);
     const more = long ? h('button', { type: 'button', class: 'more', 'data-act': 'more', 'aria-expanded': String(this.expanded) }, this.expanded ? 'Show less' : 'Read it all') : null;
     const card = h(
       'section',
@@ -483,6 +487,50 @@ export class Player {
     return h('section', { class: 'finish', 'data-act': 'finish' }, h('h2', {}, helping ? 'Now you try' : 'That is this part'), h('p', {}, helping ? 'Go back and write your answer.' : 'You have been all the way through it.'), row);
   }
 
+  /**
+   * The figure an ask is about, when the ask names one that is not a step's picture: `on=` a part (or the part's own crop). It is shown big, as the work surface,
+   * with a ring where a hand taps (held on the part, so a reload finds it as she left it). Null when no ask in the run names a crop.
+   */
+  private surface(run: Run, node: DocNode): { readonly src: string; readonly ask: string } | null {
+    for (const { step } of run.steps) {
+      if (step.kind !== 'ask') continue;
+      const on = (step as LessonAsk & { readonly on?: string }).on;
+      if (on === undefined) continue;
+      const src = this.input.crops[on] ?? this.input.crops[node.id];
+      if (src !== undefined) return { src, ask: step.id };
+    }
+    return null;
+  }
+
+  private surfaceFigure(node: DocNode, surface: { readonly src: string; readonly ask: string }): HTMLElement {
+    const key = `fig.${surface.ask}.marks`;
+    const held = this.state.held[node.id]?.[key];
+    const marks = Array.isArray(held) ? held.filter((x): x is number => typeof x === 'number') : [];
+    const frame = h('div', { class: 'surface-frame' });
+    const image = h('img', { class: 'surface-img', src: surface.src, alt: 'The figure the question is about. Tap it to mark a place.' });
+    const put = (next: readonly number[]): void => {
+      this.apply({ kind: 'held', node: node.id, key, value: [...next] });
+      this.render();
+    };
+    frame.append(image);
+    for (let i = 0; i + 1 < marks.length; i += 2) frame.append(h('span', { class: 'surface-ring', style: `left:${(marks[i] ?? 0) / 10}%;top:${(marks[i + 1] ?? 0) / 10}%` }));
+    frame.addEventListener('click', (event) => {
+      const box = image.getBoundingClientRect();
+      if (box.width === 0 || box.height === 0) return;
+      const x = Math.round(((event as MouseEvent).clientX - box.left) / box.width * 1000);
+      const y = Math.round(((event as MouseEvent).clientY - box.top) / box.height * 1000);
+      if (x < 0 || y < 0 || x > 1000 || y > 1000 || marks.length >= 60) return;
+      put([...marks, x, y]);
+    });
+    const row = h('div', { class: 'controls' });
+    row.append(h('span', { class: 'readout' }, marks.length === 0 ? 'Tap the picture to mark a place.' : `Marked: ${marks.length / 2}`));
+    if (marks.length > 0) {
+      row.append(h('button', { type: 'button', class: 'btn soft', 'data-act': 'surface-undo', onclick: () => put(marks.slice(0, -2)) }, 'Undo'));
+      row.append(h('button', { type: 'button', class: 'btn soft', 'data-act': 'surface-clear', onclick: () => put([]) }, 'Start again'));
+    }
+    return h('div', { class: 'fig surface', 'data-kind': 'surface', 'data-act': 'fig:surface' }, frame, row);
+  }
+
   private run(run: Run, node: DocNode, mask: (text: string) => string, seal: (value: string | number) => string, shown: number): HTMLElement {
     const section = h('section', { class: `run${run.figure === null ? '' : ' has-fig'}` });
     if (run.figure !== null) {
@@ -501,6 +549,11 @@ export class Player {
         fresh: this.fresh,
       };
       section.append(h('div', { class: 'fig', 'data-kind': figure.spec.kind, 'data-act': `fig:${figure.spec.kind}` }, drawVisual(figure.spec, ctx)));
+    }
+    const surface = run.figure === null ? this.surface(run, node) : null;
+    if (surface !== null) {
+      section.classList.add('has-fig');
+      section.append(this.surfaceFigure(node, surface));
     }
     const says = h('div', { class: 'says' });
     for (const { step, index } of run.steps) {

@@ -14,7 +14,7 @@ export const grid: Widget<Spec> = {
   draw(spec, ctx) {
     const ticked = numbersOf(ctx.get('ticks'));
     const width = Math.max(...spec.rows.map((row) => row.length));
-    const board = h('div', { class: 'gridfig', style: `--cols:${width}` });
+    const board = h('div', { class: 'gridfig', style: `--cols:${width};--rows:${spec.rows.length}` });
     let count = 0;
     spec.rows.forEach((row, y) => {
       for (let x = 0; x < width; x += 1) {
@@ -30,6 +30,6 @@ export const grid: Widget<Spec> = {
       }
     });
     const says = `Squares ticked: ${ctx.seal(count)}`;
-    return h('div', { class: 'grid-widget' }, board, readout(says), ticked.length > 0 ? press('Start again', 'again', () => ctx.set('ticks', [])) : null);
+    return h('div', { class: 'grid-widget' }, h('div', { class: 'gridwrap' }, board), readout(says), ticked.length > 0 ? press('Start again', 'again', () => ctx.set('ticks', [])) : null);
   },
 };
