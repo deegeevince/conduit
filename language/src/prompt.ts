@@ -23,6 +23,7 @@ import type { BriefForm, DocumentFacts, LineProblem, TechniqueCard, TurnContext,
 export type { BriefForm };
 import { asksForLiveApp } from './app';
 import { INTERFACE_CHAPTER } from './interface';
+import { inkBrief } from './ink';
 import { describeSight } from './sight';
 import { BUILTIN_STYLES } from './style';
 import type { LookDef, StyleDef } from './style';
@@ -669,7 +670,7 @@ function inputText(input: TurnInput, pastedAs?: string): string {
     if (pastedAs !== undefined) return `The user pasted ${input.text.length} characters, given above as DOCUMENT ${pastedAs}. It is the user's own text; answer about it.`;
     return `The user pasted ${input.text.length} characters, beginning: ${input.text.slice(0, 160).replace(/\s+/g, ' ')}`;
   }
-  if (input.kind === 'prompt') return `The user says: ${input.text}${(input.images?.length ?? 0) > 0 ? ` (with ${input.images?.length === 1 ? 'a photo' : `${input.images?.length} photos`}: ${(input.images ?? []).join(', ')})` : ''}`;
+  if (input.kind === 'prompt') return `The user says: ${input.text}${input.marks === undefined ? '' : ` (and wrote or drew on it: ${input.marks.strokes.length} strokes, attached last)`}${(input.images?.length ?? 0) > 0 ? ` (with ${input.images?.length === 1 ? 'a photo' : `${input.images?.length} photos`}: ${(input.images ?? []).join(', ')})` : ''}`;
   if (input.kind === 'tap') return `The user tapped your choice: "${input.text}"`;
   if (input.kind === 'script') return 'The user played a script of their own.';
   if (input.kind === 'act') {
@@ -1081,6 +1082,8 @@ export function buildTurnBrief(context: TurnContext, input: TurnInput, form: Bri
         : `The user attached photos (${ids}) that this stage cannot show; answer from what you see in them.`,
     );
   }
+
+  if (input.kind === 'prompt' && input.marks !== undefined) parts.push(inkBrief(input.marks));
 
   parts.push(`NOW: ${inputText(input, documents.find((doc) => doc.kind === 'pasted' && doc.fresh)?.id)}`);
   return parts.join('\n\n');

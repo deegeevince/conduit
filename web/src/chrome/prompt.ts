@@ -36,6 +36,8 @@ export function mountPromptBar(
     /** `photos` are the ids of the photos kept for these words, `held` the same photos as the tray shows them. Answer false when the words were not a turn (a command): the photos stay. */
     readonly onSubmit: (text: string, photos: readonly string[], held: readonly Photo[]) => boolean;
     readonly onStop: () => void;
+    /** something other than words and photos waits to be sent (ink drawn on the stage): an empty field may still send */
+    readonly hasExtra?: () => boolean;
     /** how a photo gets to the server and back; absent: the bar has no photo button */
     readonly photos?: PhotoPort;
   },
@@ -117,8 +119,9 @@ export function mountPromptBar(
       tray.say('A photo is still being sent. One moment.');
       return;
     }
-    if (typed === '' && photos.length === 0) return;
-    const text = typed === '' ? (photos.length === 1 ? 'Please look at this photo.' : 'Please look at these photos.') : typed;
+    const extra = handlers.hasExtra?.() === true;
+    if (typed === '' && photos.length === 0 && !extra) return;
+    const text = typed === '' ? (extra && photos.length === 0 ? '' : photos.length === 1 ? 'Please look at this photo.' : 'Please look at these photos.') : typed;
     const held = tray?.held() ?? [];
     input.value = '';
     fit();
