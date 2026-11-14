@@ -181,6 +181,20 @@ export function readSeconds(text: string, pace: Pace): number {
   return Math.min(MAX_READ_SECONDS, Math.max(timing.beat, countWords(text) / timing.wordsPerSecond));
 }
 
+/** A line that the next one replaces stays this long at least: a second and a half, and this much a word (steady pace). */
+const DWELL_BASE_SECONDS = 1.5;
+const DWELL_WORD_SECONDS = 0.25;
+const DWELL_MAX_SECONDS = 9;
+const DWELL_PACE: Record<Pace, number> = { slow: 1.4, steady: 1, brisk: 0.85 };
+
+/**
+ * How long a line that the next one will replace (a `caption` or `solo` scene shows one at a time) stays on stage, from the moment it
+ * starts to come in: its reading time. The entrance stays as quick as it was; it is the dwell that is longer.
+ */
+export function dwellSeconds(text: string, pace: Pace): number {
+  return Math.min(DWELL_MAX_SECONDS, (DWELL_BASE_SECONDS + countWords(text) * DWELL_WORD_SECONDS) * DWELL_PACE[pace]);
+}
+
 /**
  * The quiet after an entrance before the pen moves on. A line that arrived
  * progressively was partly read while it arrived, so it needs less.

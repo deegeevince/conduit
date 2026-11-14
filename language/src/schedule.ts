@@ -42,6 +42,7 @@ import {
   STRIKE_SECONDS,
   TABLE_ROW_SECONDS,
   tailSeconds,
+  dwellSeconds,
   waitSeconds,
 } from './timing';
 import type { Anchor } from './vocabulary';
@@ -816,6 +817,8 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
     let tail = scene.layout === 'page' && isInFlow(style, scene.layout) ? pageTailSeconds(plain, pace) : tailSeconds(duration, style.by, plain, pace);
     // A label is read with the thing it is on, not after it.
     if (style.near !== null || style.leader) tail = Math.min(tail, beatSeconds(pace) * 0.5);
+    // A line the next one replaces (a caption, a solo line) is on stage for its reading time at least; choices stay and need none.
+    else if (isOneAtATime(scene.layout) && isInFlow(style, scene.layout) && !style.tap) tail = Math.max(tail, dwellSeconds(plain, pace) - duration);
     return start + duration + tail;
   };
 
