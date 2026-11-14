@@ -97,6 +97,17 @@ export interface PointerInput {
   readonly pointer: number;
 }
 
+/** One screen of a mock-up, where it rests on screen now, host CSS pixels. */
+export interface UiMockup {
+  readonly screen: string;
+  /** what a finger works: `part` is what it is drawn as (`field`, `toggle`, `button`...), `action` what working it does */
+  readonly hits: readonly { readonly id: string; readonly part: string; readonly action: 'tab' | 'pick' | 'toggle' | 'field' | 'slider' | 'press'; readonly box: Box }[];
+  /** one box per line of words, where its ink is; `owner` is the part they belong to */
+  readonly words: readonly { readonly owner: string; readonly text: string; readonly box: Box }[];
+  /** what the kit's own lint says of the screen (overlap, lost words, words outside...) */
+  readonly notes: readonly { readonly kind: string; readonly id: string; readonly message: string }[];
+}
+
 export type ElementPhase = 'entering' | 'on' | 'leaving' | 'struck';
 
 /** One element as the test hook and the HUD see it. */
@@ -350,6 +361,13 @@ export interface Painter {
 
   /** Pauses and advances the playhead by `seconds`, drawing one frame. */
   step(seconds: number): void;
+
+  /**
+   * v2.2. The mock-ups on stage as they rest: the live parts a finger works (a field, a toggle, a button, a tab), the words as drawn and the
+   * kit's own lint notes, in host CSS pixels. For the test hook: a tester taps where a person would and judges the words as they stand.
+   * Empty when no mock-up is on stage.
+   */
+  mockups(): readonly UiMockup[];
 
   /** A pointer came down at a point in host CSS pixels. Emits `tap` if it hit an element. */
   tapAt(x: number, y: number): void;
