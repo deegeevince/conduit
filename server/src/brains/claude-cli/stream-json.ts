@@ -115,6 +115,27 @@ export function toolResultsOf(event: ClaudeStreamEvent): { readonly id: string; 
   return results;
 }
 
+/**
+ * The text blocks of a tool's result, by the id of the call. Used for the browser's calls only, and only to learn tab ids, addresses and
+ * credential fields (`noteBrowserResult`); the text goes nowhere else. Images and anything that is not text are left out.
+ */
+export function toolResultTextsOf(event: ClaudeStreamEvent): { readonly id: string; readonly failed: boolean; readonly texts: readonly string[] }[] {
+  if (event.type !== 'user') return [];
+  const message = (event as { message?: unknown }).message;
+  const content = isRecord(message) ? message['content'] : undefined;
+  if (!Array.isArray(content)) return [];
+  const out: { id: string; failed: boolean; texts: string[] }[] = [];
+  for (const block of content as unknown[]) {
+    if (!isRecord(block) || block['type'] !== 'tool_result' || typeof block['tool_use_id'] !== 'string') continue;
+    const body = block['content'];
+    const texts: string[] = [];
+    if (typeof body === 'string') texts.push(body);
+    else if (Array.isArray(body)) for (const part of body as unknown[]) if (isRecord(part) && part['type'] === 'text' && typeof part['text'] === 'string') texts.push(part['text']);
+    out.push({ id: block['tool_use_id'], failed: block['is_error'] === true, texts });
+  }
+  return out;
+}
+
 /** What the CLI asks its host before a call: the `can_use_tool` control request. See the notes at the top of warm.ts. */
 export interface PermissionAsk {
   readonly requestId: string;

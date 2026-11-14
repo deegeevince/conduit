@@ -21,6 +21,8 @@
 
 import { resolve as resolvePath, sep } from 'node:path';
 import type { ActionRisk, ToolChoice } from '@conduit/language';
+import { browserVerdict, newBrowserState } from './browser';
+import type { BrowserState } from './browser';
 
 /** What the server's configuration offers a session. Everything else does not exist as far as a brain is concerned. */
 export interface AgentSettings {
@@ -83,7 +85,10 @@ const worse = (a: ActionRisk, b: ActionRisk): ActionRisk => (RISK_ORDER.indexOf(
 /** `mcp__remote__get_block` -> `{ service: 'remote', action: 'get_block' }`; a tool of the CLI's own has no service. */
 export function splitTool(tool: string): { readonly service: string | null; readonly action: string } {
   const match = /^mcp__([^_](?:[^_]|_(?!_))*)__(.+)$/.exec(tool);
-  return match === null ? { service: null, action: tool } : { service: match[1] ?? null, action: match[2] ?? tool };
+  if (match === null) return { service: null, action: tool };
+  // Claude in Chrome's server is called `claude-in-chrome` by the CLI; the owner offers it as `chrome`.
+  const service = match[1] === 'claude-in-chrome' ? 'chrome' : (match[1] ?? null);
+  return { service, action: match[2] ?? tool };
 }
 
 function wordsOf(name: string): string[] {
@@ -156,8 +161,9 @@ function insideDir(raw: unknown, dir: string | null): boolean {
  * that `readOnlyHint` (the service's own annotation, passed in by the adapter) says only reads. Everything else is the worst thing its
  * name or the shape of its input says, and `run` when it says nothing: a call that cannot be classified is asked for.
  */
-export function riskOf(call: ToolCall, readOnlyHint = false, dir: string | null = null, strictFetch = false): ActionRisk {
+export function riskOf(call: ToolCall, readOnlyHint = false, dir: string | null = null, strictFetch = false, browser: BrowserState | null = null): ActionRisk {
   const { service, action } = splitTool(call.tool);
+  if (service === 'chrome') return browserVerdict(call, browser ?? newBrowserState()).risk;
   let risk: ActionRisk | null = null;
   for (const signal of INPUT_SIGNALS) {
     if (Object.keys(call.input).some((key) => signal.keys.includes(key.toLowerCase()))) risk = risk === null ? signal.risk : worse(risk, signal.risk);
@@ -192,7 +198,7 @@ function bareUrl(raw: string): string {
 const PLAIN_VERBS: Readonly<Record<string, string>> = { WebSearch: 'search the web for', WebFetch: 'read the page', Read: 'read', Glob: 'list files matching', Grep: 'search files for', Write: 'write', Edit: 'edit' };
 
 /** The keys that name what a call is aimed at, best first. Never `body`, `content`, `text` or anything that could hold what the owner would not want shown. */
-const TARGET_KEYS: readonly string[] = ['query', 'url', 'file_path', 'path', 'pattern', 'to', 'channel', 'recipient', 'name', 'title', 'subject', 'id', 'key', 'repo', 'issue', 'query_string'];
+const TARGET_KEYS: readonly string[] = ['query', 'url', 'action_summary', 'file_path', 'path', 'pattern', 'to', 'channel', 'recipient', 'name', 'title', 'subject', 'id', 'key', 'repo', 'issue', 'query_string'];
 
 /**
  * A few plain words about a call, for the activity strip, the log and the confirm control: the tool's name and the one field that
@@ -200,7 +206,7 @@ const TARGET_KEYS: readonly string[] = ['query', 'url', 'file_path', 'path', 'pa
  */
 export function summaryOf(call: ToolCall): string {
   const { service, action } = splitTool(call.tool);
-  const verb = action.replace(/[_-]+/g, ' ').replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase();
+  const verb = (service === 'chrome' && action === 'computer' && typeof call.input['action'] === 'string' ? call.input['action'] : action).replace(/[_-]+/g, ' ').replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase();
   const what = service === null ? (PLAIN_VERBS[call.tool] ?? verb) : `${service}: ${verb}`;
   let target = '';
   for (const key of TARGET_KEYS) {
@@ -226,14 +232,14 @@ export const DETAIL_MAX = 4_000;
  * and every field of its input, pretty-printed, each string whole (a full address, a full path, a whole message), passed through
  * `redactSecrets`. Goes to that one event and nowhere else; the log and the strip keep `summaryOf`.
  */
-export function detailOf(call: ToolCall): string {
+export function detailOf(call: ToolCall, context: string | null = null): string {
   let body: string;
   try {
     body = JSON.stringify(call.input, (_key, value: unknown) => (typeof value === 'string' && value.length > 1_500 ? `${value.slice(0, 1_500)}… (${String(value.length - 1_500)} more characters)` : value), 2);
   } catch {
     body = '(the input could not be shown)';
   }
-  return redactSecrets(`${call.tool}\n${body}`, DETAIL_MAX, true);
+  return redactSecrets(`${call.tool}${context === null ? '' : `\non the page ${context}`}\n${body}`, DETAIL_MAX, true);
 }
 
 /** What the gate says about one call the CLI is asking to make. */
@@ -250,12 +256,18 @@ export type CallVerdict =
  *   1. a tool not in `on` is denied, whatever it is and whoever asks;
  *   2. a `read` runs; 3. everything else is asked for. There is no fourth outcome and no setting that makes one.
  */
-export function gateCall(call: ToolCall, settings: AgentSettings, on: ReadonlySet<string>, readOnlyHint = false): CallVerdict {
+export function gateCall(call: ToolCall, settings: AgentSettings, on: ReadonlySet<string>, readOnlyHint = false, browser: BrowserState | null = null): CallVerdict {
   const { service, action } = splitTool(call.tool);
   const name = service ?? call.tool;
   const offered = service === null ? settings.tools.includes(call.tool) : settings.services.some((entry) => entry.name === service);
   if (!settings.enabled || !offered || !on.has(name)) return { kind: 'deny', risk: riskOf(call, false, settings.dir), why: `${service === null ? call.tool : `${service}: ${action}`} is not switched on` };
   if (service === null && FILE_TOOLS.includes(call.tool) && settings.dir === null) return { kind: 'deny', risk: 'run', why: 'no folder has been named for file tools' };
+  if (service === 'chrome') {
+    // The owner's browser has its own rules (`browser.ts`): its own tabs only, a credential never typed, a sign-in or payment page always asked.
+    const verdict = browserVerdict(call, browser ?? newBrowserState());
+    if (verdict.deny !== null) return { kind: 'deny', risk: verdict.risk, why: verdict.deny };
+    return verdict.risk === 'read' ? { kind: 'allow', risk: 'read' } : { kind: 'ask', risk: verdict.risk };
+  }
   // Anything beyond the web tools on makes an address a way out for what that thing could read: a fetch then runs unasked only when it is quiet.
   const strictFetch = [...on].some((entry) => entry !== 'WebSearch' && entry !== 'WebFetch' && (settings.tools.includes(entry) || settings.services.some((s) => s.name === entry)));
   const risk = riskOf(call, readOnlyHint, settings.dir, strictFetch);
@@ -283,10 +295,13 @@ export function redactSecrets(text: string, max = 160, keepLines = false): strin
   return out.length > max ? `${out.slice(0, max - 1)}…` : out;
 }
 
+/** What `/tools` says of the browser. */
+export const CHROME_GIST = "your Chrome, in a tab of its own; reads free, every action asked; you sign in yourself";
+
 /** What `/tools` lists for a session: everything offered, and whether this session has it on. */
 export function toolChoices(settings: AgentSettings, on: ReadonlySet<string>): ToolChoice[] {
   return [
     ...settings.tools.map((name): ToolChoice => ({ name, kind: 'tool', gist: READ_ONLY_TOOLS.includes(name) ? 'reads only' : 'asks before it acts', on: on.has(name), reads: READ_ONLY_TOOLS.includes(name) })),
-    ...settings.services.map((service): ToolChoice => ({ name: service.name, kind: 'service', gist: service.gist, on: on.has(service.name), reads: false })),
+    ...settings.services.map((service): ToolChoice => ({ name: service.name, kind: 'service', gist: service.name === 'chrome' ? CHROME_GIST : service.gist, on: on.has(service.name), reads: false })),
   ];
 }

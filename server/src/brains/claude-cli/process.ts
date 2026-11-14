@@ -7,6 +7,7 @@ import type { ChildProcess } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { childEnvironment } from '../../env';
 import { errors } from '../../errors';
+import { CHROME_REMOVED, CHROME_SERVER } from '../../domain/browser';
 
 /** The tool flags: exactly the listed read-only web tools, allowed without a prompt, and every other tool denied. */
 export function toolArguments(tools: readonly string[]): string[] {
@@ -25,6 +26,8 @@ export function toolArguments(tools: readonly string[]): string[] {
 export interface AgentRun {
   readonly builtIns: readonly string[];
   readonly mcpConfigs: readonly string[];
+  /** the owner's Chrome, through Claude in Chrome (`--chrome`), with the tools that cannot be gated removed */
+  readonly chrome?: boolean;
   /** the folder the process starts in and that file tools are confined to; an empty temporary one when the owner named none */
   readonly cwd: string;
 }
@@ -36,6 +39,9 @@ export function agentArguments(run: AgentRun): string[] {
     '--permission-prompts', 'host',
     '--permission-prompt-tool', 'stdio',
     '--restricted',
+    // `--chrome` brings its own MCP server whatever `--strict-mcp-config` says, and `--tools` does not govern it (see warm.ts); what is not
+    // offered is removed here, and every call that is left is gated in `domain/browser.ts`. Off, it is off by name.
+    ...(run.chrome === true ? ['--chrome', '--disallowedTools', ...CHROME_REMOVED.map((name) => `mcp__${CHROME_SERVER}__${name}`)] : ['--no-chrome']),
     ...(run.mcpConfigs.length === 0 ? [] : ['--mcp-config', ...run.mcpConfigs]),
   ];
 }
@@ -217,6 +223,7 @@ export function claudeArguments(run: Pick<ClaudeRun, 'model' | 'systemPrompt' | 
     '--system-prompt', run.systemPrompt,
     ...toolArguments(run.tools ?? []),
     '--strict-mcp-config',
+    '--no-chrome',
     '--setting-sources', '',
     '--no-session-persistence',
   ];

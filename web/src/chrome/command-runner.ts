@@ -61,7 +61,7 @@ async function perform(app: StageApp, command: Command, onChoice: (choice: Brain
       if (command.change !== null) app.announce(`${command.change.name}: ${command.change.on ? 'on' : 'off'} for this conversation`);
       if (command.change === null || tools.length > 0) {
         const brain = await app.link.brain();
-        const where = brain.mode !== undefined && brain.mode !== 'agent' ? ' They are used only in agent mode (/brain agent).' : '';
+        const where = brain.mode !== undefined && brain.mode !== 'agent' ? ' This server has them switched off (AGENT=off).' : '';
         app.showPage(
           pageSource(
             'What the brain may use',

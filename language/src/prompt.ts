@@ -865,18 +865,26 @@ export function appNoteText(form: BriefForm, status: AppStatus | null | undefine
   }`;
 }
 
+/**
+ * What the brain is told when the owner's Chrome is among its tools: where it may work, what is asked, who signs in, and the one
+ * errand the owner named (an image from their ChatGPT). The last words are as true as the build: a picture in the browser cannot yet be
+ * put on the stage (no upload store, no `pic from=` route in this build), so the brain is told to say where it is.
+ */
+export const CHROME_NOTE =
+  " Chrome: you can use the owner's browser, only in a tab you open yourself (tabs_context_mcp with createIfEmpty, then that tab's id; never another tab), one call at a time; each action but reading is approved on stage, a sign-in or payment page always. The owner signs in themselves; never type a password, card or code. For an image from their ChatGPT: open chatgpt.com in your tab, type the prompt (asked), wait, then screenshot the result. The stage cannot take a picture from the browser yet: say it is made and waiting in their tab, and leave that tab open.";
+
 /** A short, true note of the brain's own setup. Per turn, never in the system prompt, so the prompt stays fixed and the cache survives. */
 export function aboutYouText(about: AboutYou, links = false): string {
   const mode = about.mode ?? 'plain';
   const tools = about.tools ?? [];
   const acts =
     mode === 'agent'
-      ? `Agent mode. Tools on: ${tools.length === 0 ? 'none' : tools.join(', ')}. Reading is free; anything else (writing, running, sending, buying, deleting, publishing, signing in) the owner is asked first, on the stage, each time, and no answer means no. What needs their own hands (a sign-in, a code, a payment) say plainly and leave to them. Never put a secret on the stage or in a line.`
+      ? `You have tools and use them rather than only describing what could be done. Tools on: ${tools.length === 0 ? 'none' : tools.join(', ')}. Search before you answer anything current (prices, news, today); reading is free; anything else (writing, running, sending, buying, deleting, publishing, signing in) the owner is asked first, on the stage, each time, and no answer means no. Lines of the language are text you write, never tool calls. What needs their own hands (a sign-in, a code, a payment) say plainly and leave to them. Never put a secret on the stage or in a line.${tools.includes('chrome') ? CHROME_NOTE : ''}`
       : mode === 'steward'
         ? "Steward mode: the owner's own Claude Code session answers this canvas, with its own tools."
         : about.web || tools.length > 0
           ? `You can search the web and read pages (WebSearch, WebFetch), read-only. Use search for anything current: prices, news, today, recent facts; never guess a live figure. Search before your first line or between lines, then say the answer and ${links ? 'cite each source as a link on stage' : 'name each source in a short line'}. Lines of the language are text you write, never tool calls: there is no tool named scene or say. You cannot act on their accounts or files, or run commands (/brain agent would let you, with their yes): say so plainly, then offer what you can do.`
-          : 'No tools here: you cannot act on their accounts or files; say so plainly (/brain agent would let you, with their yes), then offer what you can do.';
+          : 'No tools here: you cannot act on their accounts or files; say so plainly, then offer what you can do.';
   return [
     `ABOUT YOU: model ${about.model}, effort ${about.effort}, on the owner's Claude subscription via the Claude Code CLI; no API key.`,
     `Snapshot of your last drawing this turn: ${about.sees ? 'yes' : 'no'}. Look-and-fix: ${about.look ? 'on' : 'off'}.`,

@@ -330,6 +330,7 @@ export function warmArguments(settings: WarmSettings): string[] {
     '--system-prompt', settings.systemPrompt,
     ...(settings.agent == null ? toolArguments(settings.tools) : agentArguments(settings.agent)),
     '--strict-mcp-config',
+    ...(settings.agent == null ? ['--no-chrome'] : []),
     '--setting-sources', '',
     '--no-session-persistence',
   ];

@@ -6,7 +6,9 @@ import type { ActionRisk, AppStatus, BrainChange, BrainChoice, BrainEffort, Brai
 import type { BriefForm, Capabilities } from '@conduit/language';
 import { buildReviewBrief, isKeep } from '@conduit/language';
 import type { Brain, BrainEvent, BrainSession, ReviewRequest, Snapshot, TurnRequest } from '../../domain/brain';
-import { detailOf, FILE_TOOLS, gateCall, NO_AGENT, summaryOf, toolChoices } from '../../domain/agent';
+import { detailOf, FILE_TOOLS, gateCall, NO_AGENT, splitTool, summaryOf, toolChoices } from '../../domain/agent';
+import { newBrowserState, noteBrowserResult } from '../../domain/browser';
+import type { BrowserState } from '../../domain/browser';
 import type { AgentSettings } from '../../domain/agent';
 import { askedOf } from '../../domain/review';
 import { brainEventsFromText } from '../../domain/lines';
@@ -16,7 +18,7 @@ import { startWarmProcess } from './warm';
 import type { WarmProcess } from './warm';
 import { Mailbox } from './mailbox';
 import type { AgentRun } from './process';
-import { cancelledAskOf, failureOf, permissionAskOf, resultFactsOf, textDeltaOf, toolResultsOf, toolUsesOf } from './stream-json';
+import { cancelledAskOf, failureOf, permissionAskOf, resultFactsOf, textDeltaOf, toolResultsOf, toolResultTextsOf, toolUsesOf } from './stream-json';
 import type { ClaudeResultFacts } from './stream-json';
 
 /** Names of the language's own lines: the model sometimes calls one as if it were a tool; none is. */
@@ -83,6 +85,8 @@ interface Entry {
   costBase: number;
   /** settles when the turn using this process has fully let go of it */
   running: Promise<void> | null;
+  /** the browser's tabs this process has opened and where they are (`domain/browser.ts`); empty and unused unless `chrome` is on */
+  readonly browser: BrowserState;
 }
 
 /** How long a new turn waits for the previous one to finish unwinding before it abandons that process. */
@@ -112,9 +116,9 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
 
   // v2.1, agent mode. What the owner's configuration offers, what each conversation has switched on, and the mode it is in.
   const agent = deps.agent ?? NO_AGENT;
-  const modeChosen = new Map<string, 'plain' | 'agent'>();
   const switchedOn = new Map<string, Set<string>>();
-  const modeOf = (session: string): 'plain' | 'agent' => (agent.enabled && modeChosen.get(session) === 'agent' ? 'agent' : 'plain');
+  // The brain is the agent whenever the server has one; there is no plain beside it.
+  const modeOf = (_session: string): 'plain' | 'agent' => (agent.enabled ? 'agent' : 'plain');
   /** Everything offered is on until the owner switches it off (`/tools`): it was the owner who offered it. Nothing else can ever be on. */
   const onOf = (session: string): Set<string> => {
     let on = switchedOn.get(session);
@@ -136,7 +140,8 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
     const on = onOf(session);
     return {
       builtIns: agent.tools.filter((name) => on.has(name) && (agent.dir !== null || !FILE_TOOLS.includes(name))),
-      mcpConfigs: agent.services.filter((service) => on.has(service.name)).map((service) => service.config),
+      mcpConfigs: agent.services.filter((service) => on.has(service.name) && service.config !== '').map((service) => service.config),
+      chrome: agent.services.some((service) => service.name === 'chrome') && on.has('chrome'),
       cwd: folder(),
     };
   };
@@ -149,7 +154,7 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
   };
   const agentKeyOf = (session: string): string => {
     const run = agentRunOf(session);
-    return run === null ? 'plain' : `agent|${run.builtIns.join(',')}|${run.mcpConfigs.join(',')}`;
+    return run === null ? 'plain' : `agent|${run.builtIns.join(',')}|${run.mcpConfigs.join(',')}|${run.chrome === true ? 'chrome' : ''}`;
   };
   const webOn = (session: string): boolean => {
     const run = agentRunOf(session);
@@ -176,6 +181,7 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
     lastUsed: Date.now(),
     costBase: 0,
     running: null,
+    browser: newBrowserState(),
   });
 
   const discard = (entry: Entry): void => {
@@ -324,6 +330,8 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
     const notTools = new Set<string>();
     const running = new Map<string, { readonly tool: string; readonly summary: string; readonly at: number }>();
     const denied = new Set<string>();
+    /** browser calls in flight, so that their results can teach the gate where its tabs are */
+    const chromeUses = new Map<string, { readonly id: string; readonly tool: string; readonly input: Readonly<Record<string, unknown>> }>();
     const rearm = (): void => {
       if (entry.held.size > 0) clearTimeout(timer);
       else if (running.size > 0) arm(Math.max(deps.idleTimeoutMs, TOOL_IDLE_MS), 'a tool call took longer than the brain waits for one');
@@ -337,10 +345,16 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
     const box = new Mailbox<BrainEvent>();
     const on = onOf(out.session);
 
+    /** The address of the page a browser call is aimed at, for the confirm control; the gate's own record of it. */
+    const pageOf = (call: { readonly tool: string; readonly input: Readonly<Record<string, unknown>> }): string | null => {
+      const tab = call.input['tabId'];
+      return splitTool(call.tool).service === 'chrome' && typeof tab === 'number' ? (entry.browser.urls.get(tab) ?? null) : null;
+    };
+
     /** The CLI asks before a call. Whatever the answer, it is made here, by `gateCall`, and by the owner for what that says to ask. */
     const handleAsk = (ask: { requestId: string; toolUseId: string; tool: string; input: Readonly<Record<string, unknown>> }): void => {
       const call = { id: ask.toolUseId, tool: ask.tool, input: ask.input };
-      const verdict = out.noTools === true ? ({ kind: 'deny', risk: 'run', why: 'a look at the draft uses no tools' } as const) : modeOf(out.session) === 'agent' ? gateCall(call, agent, on) : ({ kind: 'deny', risk: 'run', why: 'this conversation has no tools' } as const);
+      const verdict = out.noTools === true ? ({ kind: 'deny', risk: 'run', why: 'a look at the draft uses no tools' } as const) : modeOf(out.session) === 'agent' ? gateCall(call, agent, on, false, entry.browser) : ({ kind: 'deny', risk: 'run', why: 'this conversation has no tools' } as const);
       const summary = summaryOf(call);
       if (inner.signal.aborted) {
         // The turn was stopped (or timed out) and the model has not heard yet: nothing more is asked of the owner, nothing runs.
@@ -381,7 +395,7 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
       entry.held.set(ask.requestId, { requestId: ask.requestId, toolUseId: ask.toolUseId, tool: ask.tool, summary, risk: verdict.risk, input: ask.input, timer: deadline, settle });
       turnLog.info('agent_permission_asked', { tool: ask.tool, risk: verdict.risk });
       box.push({ type: 'activity', id: ask.toolUseId, tool: ask.tool, summary, state: 'waiting', ms: null });
-      box.push({ type: 'permission', request: ask.requestId, tool: ask.tool, summary, risk: verdict.risk, expiresMs, detail: detailOf(call) });
+      box.push({ type: 'permission', request: ask.requestId, tool: ask.tool, summary, risk: verdict.risk, expiresMs, detail: detailOf(call, pageOf(call)) });
       rearm();
     };
 
@@ -427,10 +441,18 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
             continue;
           }
           toolsChanged = true;
+          if (splitTool(use.tool).service === 'chrome') chromeUses.set(use.id, use);
           const summary = summaryOf(use);
           running.set(use.id, { tool: use.tool, summary, at: Date.now() });
           turnLog.info('brain_tool', { tool: use.tool, summary });
           box.push({ type: 'activity', id: use.id, tool: use.tool, summary, state: 'running', ms: null });
+        }
+        // What a browser tool returned is read for tab ids, each tab's address and credential fields, and nothing else (`noteBrowserResult`).
+        for (const found of toolResultTextsOf(event)) {
+          const use = chromeUses.get(found.id);
+          if (use === undefined) continue;
+          chromeUses.delete(found.id);
+          if (!found.failed && !denied.has(found.id)) noteBrowserResult(entry.browser, use, found.texts);
         }
         for (const result of toolResultsOf(event)) {
           if (notTools.delete(result.id)) continue;
@@ -607,12 +629,13 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
         log.warn('claude_open_failed', { session: session.session, message: error instanceof Error ? error.message : String(error) });
       }
     },
-    choice: (session) => ({ configurable: true, ...settingsOf(session), ...(agent.enabled ? { mode: modeOf(session), modes: deps.modes ?? (['plain', 'agent'] as const) } : {}) }) satisfies BrainChoice,
+    choice: (session) => ({ configurable: true, ...settingsOf(session), ...(agent.enabled ? { mode: modeOf(session), modes: deps.modes ?? (['agent'] as const) } : {}) }) satisfies BrainChoice,
     choose(session, change: BrainChange) {
       const { mode, ...rest } = change;
       if (mode !== undefined && mode !== 'steward') {
         if (mode === 'agent' && !agent.enabled) throw errors.badRequest('agent mode is not offered by this server (AGENT=on)');
-        modeChosen.set(session, mode);
+        // The brain is the agent; there is no plain beside it. A request for it is refused in words, not obeyed or ignored.
+        if (mode === 'plain' && agent.enabled) throw errors.badRequest('there is no plain mode: the brain can always use its tools, and asks you first before anything but reading');
       }
       const next = { ...settingsOf(session), ...rest };
       chosen.set(session, next);
@@ -622,7 +645,7 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
         log.info('claude_warm_replaced', { session, why: 'settings_changed' });
         discard(entry);
       }
-      return { configurable: true, ...next, ...(agent.enabled ? { mode: modeOf(session), modes: deps.modes ?? (['plain', 'agent'] as const) } : {}) };
+      return { configurable: true, ...next, ...(agent.enabled ? { mode: modeOf(session), modes: deps.modes ?? (['agent'] as const) } : {}) };
     },
     ...(agent.enabled
       ? {
@@ -644,7 +667,6 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
       : {}),
     release(session) {
       chosen.delete(session);
-      modeChosen.delete(session);
       switchedOn.delete(session);
       const entry = pool.get(session);
       if (entry !== undefined) discard(entry);

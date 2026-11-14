@@ -5,7 +5,7 @@ import { resolve as resolvePath } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parsePromptVariant, REFINE_LIMITS, REVIEW_POLICY } from '@conduit/language';
 import type { BrainMode, PromptVariant, ReviewPolicy } from '@conduit/language';
-import { NO_AGENT } from './domain/agent';
+import { CHROME_GIST, NO_AGENT } from './domain/agent';
 import type { AgentSettings } from './domain/agent';
 import { CRITIC_POLICY } from './domain/critic';
 import type { CriticPolicy } from './domain/critic';
@@ -292,10 +292,16 @@ export function loadEnv(source: Source): Env {
     queueBelow: CRITIC_POLICY.queueBelow,
   };
   // package G. Nothing is offered that is not named here; a service is `name=path/to/mcp.json`, and its file must be outside the repository.
-  const agentOn = choice('AGENT', ['on', 'off'] as const, 'off') === 'on' && withModel;
+  // On by default for the CLI brain: the brain is always the agent. Reads are free and everything else asks, so `on` costs a prompt nothing.
+  const agentOn = choice('AGENT', ['on', 'off'] as const, 'on') === 'on' && withModel;
   const agentDir = text('AGENT_DIR') === undefined ? null : resolvePath(root, text('AGENT_DIR') ?? '');
   const services: AgentSettings['services'][number][] = [];
   for (const item of (text('AGENT_SERVICES') ?? '').split(',').map((entry) => entry.trim()).filter((entry) => entry !== '')) {
+    // `chrome` alone: the owner's Chrome through Claude in Chrome. It has no configuration file; the CLI brings it with `--chrome`.
+    if (item === 'chrome') {
+      services.push({ name: 'chrome', config: '', gist: CHROME_GIST });
+      continue;
+    }
     const at = item.indexOf('=');
     const name = at < 0 ? '' : item.slice(0, at).trim();
     const config = at < 0 ? '' : resolvePath(root, item.slice(at + 1).trim());
@@ -312,7 +318,8 @@ export function loadEnv(source: Source): Env {
         answerMs: integer('AGENT_ANSWER_MS', NO_AGENT.answerMs, 5_000, 3_600_000),
       }
     : NO_AGENT;
-  const modes: BrainMode[] = ['plain', ...(agent.enabled ? (['agent'] as const) : []), ...(choice('STEWARD', ['on', 'off'] as const, 'off') === 'on' ? (['steward'] as const) : [])];
+  // `plain` is only what a server without the agent has (AGENT=off, or a brain with no tools to give); it is never a choice beside `agent`.
+  const modes: BrainMode[] = [agent.enabled ? 'agent' : 'plain', ...(choice('STEWARD', ['on', 'off'] as const, 'off') === 'on' ? (['steward'] as const) : [])];
   // package S4
   const refine = {
     enabled: choice('REFINE', ['on', 'off'] as const, critic.enabled ? 'on' : 'off') === 'on' && critic.enabled,

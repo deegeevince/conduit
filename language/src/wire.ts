@@ -559,7 +559,8 @@ export const APP_COMMANDS = [
   { name: 'help', args: '', gist: 'what you can type here' },
   { name: 'model', args: `<${BRAIN_MODELS.join('|')}>`, gist: 'the model that answers, for this conversation; bare shows it' },
   { name: 'effort', args: `<${BRAIN_EFFORTS.join('|')}>`, gist: 'how hard it thinks before it writes; bare shows it' },
-  { name: 'brain', args: `<${BRAIN_MODES.join('|')}>`, gist: 'plain: no tools. agent: it can act, and asks first. steward: the steward answers' },
+  // Hidden from /help, the picker and the brain's note: the brain always has its tools and always asks first; `steward` is the developer's own mode (STEWARD=on).
+  { name: 'brain', args: `<${BRAIN_MODES.join('|')}>`, gist: 'agent: the brain can act, and asks first (always). steward: the steward answers' },
   { name: 'tools', args: '[name on|off]', gist: 'what the brain may use in agent mode (web search, connected services); bare lists them' },
   { name: 'new', args: '', gist: "what is new in this app, shown live" },
   { name: 'status', args: '', gist: 'what is live, what is being built and what is waiting on you' },
@@ -581,8 +582,11 @@ export type AppCommandName = (typeof APP_COMMANDS)[number]['name'];
  * into an error (the v2.1 review: `/better` answered "cannot yet", and every brief told the brain to offer it).
  */
 export function commandsFor(services: Pick<Services, 'refine'> | undefined): readonly (typeof APP_COMMANDS)[number][] {
-  return APP_COMMANDS.filter((command) => !('needs' in command) || services?.[command.needs] === true);
+  return APP_COMMANDS.filter((command) => !HIDDEN_COMMANDS.includes(command.name) && (!('needs' in command) || services?.[command.needs] === true));
 }
+
+/** Commands that work but are not listed: not in `/help`, not in the brain's note of the app. `/brain` is the developer's (`/brain steward`). */
+export const HIDDEN_COMMANDS: readonly AppCommandName[] = ['brain'];
 
 export interface StartTurnResponse {
   readonly turn: string;

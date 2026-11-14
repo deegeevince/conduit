@@ -1,7 +1,7 @@
 // The slash commands: one line starting with `/` is for the app, never for the brain. `APP_COMMANDS` (language/src/wire.ts)
 // is the list: `/help` prints it, the brain's brief is made from it, and this file parses exactly those names.
 
-import { APP_COMMANDS, BRAIN_EFFORTS, BRAIN_MODELS, BRAIN_MODES, LOOK_IDS, REFINE_LIMITS } from '@conduit/language';
+import { APP_COMMANDS, HIDDEN_COMMANDS, BRAIN_EFFORTS, BRAIN_MODELS, BRAIN_MODES, LOOK_IDS, REFINE_LIMITS } from '@conduit/language';
 import type { AppCommandName, BrainChange, BrainChoice, BrainEffort, BrainMode, BrainModel, LookId } from '@conduit/language';
 
 export type ExportFormat = 'png' | 'svg' | 'film' | 'frames' | 'pdf' | 'script';
@@ -34,7 +34,7 @@ function nameOf(word: string): AppCommandName | null {
 }
 
 /** The list as one line, for a status line or a refusal. */
-export const HELP = `/${APP_COMMANDS.map((command) => command.name).join(' /')}`;
+export const HELP = `/${APP_COMMANDS.filter((command) => !HIDDEN_COMMANDS.includes(command.name)).map((command) => command.name).join(' /')}`;
 
 /** What a command's arguments look like, written so they can sit in a table cell (a bar would end the cell). */
 export function usageOf(command: (typeof APP_COMMANDS)[number]): string {
@@ -75,7 +75,7 @@ export function parseCommand(text: string): Command {
     case 'brain': {
       if (rest.length === 0) return { kind: 'show', setting: 'brain' };
       const mode: BrainMode | null = oneOf(first, BRAIN_MODES);
-      return rest.length === 1 && mode !== null ? { kind: 'set', change: { mode } } : refuse(`/brain: "${rest.join(' ')}" is not one of ${BRAIN_MODES.join(' | ')}`);
+      return rest.length === 1 && mode !== null && mode !== 'plain' ? { kind: 'set', change: { mode } } : refuse(`/brain: "${rest.join(' ')}" is not a mode this app has${first === 'plain' ? ' (the brain always has its tools, and asks before it acts)' : ''}`);
     }
     case 'tools': {
       if (rest.length === 0) return { kind: 'tools', change: null };
@@ -124,13 +124,14 @@ export function parseCommand(text: string): Command {
 /** The small label on the picker's button: "opus · medium", with the mode when there is more than one. */
 export function brainLabel(choice: BrainChoice): string | null {
   if (!choice.configurable || choice.model === null || choice.effort === null) return null;
-  const mode = choice.modes !== undefined && choice.modes.length > 1 && choice.mode !== undefined ? ` · ${choice.mode}` : '';
+  // The brain is always the agent: only the developer's own mode is worth a word on the button.
+  const mode = choice.mode === 'steward' ? ' · steward' : '';
   return `${choice.model} · ${choice.effort}${mode}`;
 }
 
 /** The words that confirm a change or answer a bare command. */
 export function confirmation(command: Command, choice: BrainChoice): string {
-  if (command.kind === 'show' && command.setting === 'brain') return choice.mode === undefined ? 'This server has one mode of brain.' : `Brain: ${choice.mode}${choice.modes !== undefined ? ` (this server offers ${choice.modes.join(', ')})` : ''}`;
+  if (command.kind === 'show' && command.setting === 'brain') return choice.mode === undefined ? 'This server has one mode of brain.' : choice.mode === 'agent' ? 'The brain can use its tools and asks you first, every time.' : `Brain: ${choice.mode}`;
   if (command.kind === 'set' && command.change.mode !== undefined) return `Brain: ${choice.mode ?? command.change.mode} (next answer starts fresh)`;
   if (!choice.configurable) return 'This brain has no model or effort to set.';
   if (command.kind === 'show') return command.setting === 'model' ? `Model: ${choice.model}` : `Effort: ${choice.effort}`;

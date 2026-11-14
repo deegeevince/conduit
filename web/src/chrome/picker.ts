@@ -3,7 +3,7 @@
 // checkbox, so every part of it works from the keyboard with a name, a role and a value; nothing is announced but the
 // change the viewer makes.
 
-import { BRAIN_EFFORTS, BRAIN_MODELS, BRAIN_MODES } from '@conduit/language';
+import { BRAIN_EFFORTS, BRAIN_MODELS } from '@conduit/language';
 import type { BrainChange, BrainChoice } from '@conduit/language';
 import type { StageApp } from '../app/stage-app';
 import { brainLabel } from './commands';
@@ -13,12 +13,6 @@ export interface Picker {
   show(choice: BrainChoice): void;
   dispose(): void;
 }
-
-const MODE_GISTS: Readonly<Record<string, string>> = {
-  plain: 'no tools: it only draws and writes',
-  agent: 'it can act, and asks you first',
-  steward: 'the steward answers',
-};
 
 let counter = 0;
 
@@ -80,10 +74,6 @@ export function mountPicker(host: HTMLElement, app: StageApp): Picker {
     if (choice !== null && choice.configurable) {
       parts.push(radios('model', 'Model', BRAIN_MODELS, choice.model), radios('effort', 'Effort (how hard it thinks)', BRAIN_EFFORTS, choice.effort));
     }
-    const modes = choice?.modes ?? [];
-    if (choice !== null && modes.length > 1) {
-      parts.push(radios('mode', 'Mode', BRAIN_MODES.filter((mode) => modes.includes(mode)), choice.mode ?? null, MODE_GISTS));
-    }
     if (review.available) {
       const row = document.createElement('label');
       row.className = 'picker__option picker__option--check';
@@ -103,12 +93,12 @@ export function mountPicker(host: HTMLElement, app: StageApp): Picker {
     }
     const note = document.createElement('p');
     note.className = 'picker__note';
-    note.textContent = 'A change starts the next answer fresh. Also: /model, /effort, /brain, /review.';
+    note.textContent = 'A change starts the next answer fresh. Also: /model, /effort, /review.';
     parts.push(note);
     panel.replaceChildren(...parts);
     const label = choice === null ? null : brainLabel(choice);
     button.textContent = label ?? 'Settings';
-    button.hidden = choice === null || (label === null && !review.available && modes.length < 2);
+    button.hidden = choice === null || (label === null && !review.available);
     group.hidden = button.hidden;
   };
 
@@ -138,9 +128,7 @@ export function mountPicker(host: HTMLElement, app: StageApp): Picker {
         ? { model: BRAIN_MODELS.find((model) => model === target.value) }
         : field === 'effort' && BRAIN_EFFORTS.some((effort) => effort === target.value)
           ? { effort: BRAIN_EFFORTS.find((effort) => effort === target.value) }
-          : field === 'mode' && BRAIN_MODES.some((mode) => mode === target.value)
-            ? { mode: BRAIN_MODES.find((mode) => mode === target.value) }
-            : null;
+          : null;
     if (change === null) return;
     busy = true;
     app.link.setBrain(change).then(
