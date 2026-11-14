@@ -67,6 +67,9 @@ import type { Brain, BrainEvent, Snapshot } from './brain';
 import type { Critic } from './critic';
 import type { Measured } from './stage-facts';
 
+/** SA2. How long a measured draft with free drawing waits for the page's picture before the look goes text-only. */
+export const PICTURE_GRACE_MS = 1500;
+
 /** What the painter said about a draft, as the conductor holds it while a look is decided. */
 export interface DraftReport {
   readonly turn: string;
@@ -323,9 +326,27 @@ export async function* reviewTurn(args: ReviewTurnArgs): AsyncGenerator<ReviewSt
     yield { type: 'pass', pass, state: 'drafted', reason: null };
     // SA2: the facts are measured here, at once; only a session that cannot be measured waits on the page.
     const measured = args.measure === undefined ? null : args.measure(pass);
+    // The picture gets a short grace, only when something free is drawn to judge: it is attached if it comes within PICTURE_GRACE_MS and the look goes text-only if not.
+    let picture: Snapshot | null = null;
+    if (measured !== null && facts.drawn >= policy.minDrawn) {
+      const until = now() + PICTURE_GRACE_MS;
+      picture = gate.peek(args.turn, pass);
+      while (picture === null && now() < until && !signal.aborted) {
+        await new Promise<void>((resolve) => setTimeout(resolve, 25));
+        picture = gate.peek(args.turn, pass);
+      }
+      const waitedMs = Math.round(now() - draftedAt);
+      if (picture !== null) args.log?.info('review.picture', { turn: args.turn, pass, picture: 'attached', waitedMs });
+      else {
+        // Text-only; whether it came at all afterwards is logged too, so the rate of late pictures is seen.
+        void gate.wait(args.turn, pass, 6000, signal).then((later) => args.log?.info('review.picture', { turn: args.turn, pass, picture: later?.picture != null ? 'late' : 'none', waitedMs }));
+      }
+    } else if (measured !== null) {
+      args.log?.info('review.picture', { turn: args.turn, pass, picture: 'none', waitedMs: 0, why: 'nothing free drawn' });
+    }
     const report: DraftReport | null =
       measured !== null
-        ? { turn: args.turn, pass, sight: measured.sight, placed: measured.placed, picture: facts.drawn >= policy.minDrawn ? gate.peek(args.turn, pass) : null, content: measured.content }
+        ? { turn: args.turn, pass, sight: measured.sight, placed: measured.placed, picture, content: measured.content }
         : await gate.wait(args.turn, pass, policy.draftWaitMs, signal);
     if (signal.aborted) return;
     // A measured draft that has free drawing is worth a look whether or not its picture has come: the picture is a bonus, never waited for.
@@ -401,6 +422,15 @@ export async function* reviewTurn(args: ReviewTurnArgs): AsyncGenerator<ReviewSt
     }
     if (signal.aborted) return;
     const verdict = await judgeFix(args, { policy: fixPolicy, form, pass: next, draft: report, draftContent, tried });
+    // A fix tried here has no picture of its own. When the draft has one and the critic is on, the page is asked for the candidate's picture
+    // alone, after the fix is shown and off the turn's clock, and the critic compares the two in the background.
+    if (here !== null && verdict.refusal === null && args.critic !== undefined && args.candidate !== undefined && report?.picture != null) {
+      const draftPicture = report.picture;
+      args.candidate(next, outcome.texts);
+      void gate.wait(args.turn, next, fixPolicy.compareMs, signal).then((late) => {
+        if (late?.picture != null) startCompare(args, { policy: fixPolicy, form, pass: next, draftPicture, candidatePicture: late.picture, sight: here.measured.sight });
+      });
+    }
     decisions.push({ look: verdict.refusal === null, why: verdict.refusal ?? 'the fix keeps what was there and lands no worse' });
     fixes.push({ pass: next, form, lines: outcome.texts, shown: verdict.refusal === null, why: verdict.refusal, draft: draftContent, candidate: tried?.content ?? null });
     if (signal.aborted) return;
@@ -447,18 +477,7 @@ export async function judgeFix(
   // So the two rules above decide, the fix is shown at once, and the critic compares in the background; what it says is logged as
   // `review.compare` (outcome, both scores, ms) so the share of fixes it would have refused is measured, not guessed.
   const draftPicture = at.draft?.picture ?? null;
-  if (args.critic !== undefined && draftPicture !== null && tried.picture !== null) {
-    const started = args.now();
-    const { turn, pass, form } = { turn: args.turn, pass: at.pass, form: at.form };
-    void args.critic
-      .compare({ session: args.session, turn, pass, asked: askedOf(args.input), input: args.input.kind, sight: tried.sight }, draftPicture, tried.picture, at.policy.compareMs, new AbortController().signal)
-      .then((compared) => {
-        const ms = args.now() - started;
-        if (compared === null) args.log?.warn('review.compare', { turn, pass, outcome: 'unfinished', ms, deadlineMs: at.policy.compareMs });
-        else args.log?.info('review.compare', { turn, pass, outcome: criticPrefers(compared.draft, compared.candidate, form) === 'draft' ? 'prefers-draft' : 'prefers-fix', draft: compared.draft.coherence, candidate: compared.candidate.coherence, ms });
-      })
-      .catch((error: unknown) => args.log?.warn('review.compare_failed', { turn, message: error instanceof Error ? error.message : String(error) }));
-  }
+  if (draftPicture !== null && tried.picture !== null) startCompare(args, { policy: at.policy, form: at.form, pass: at.pass, draftPicture, candidatePicture: tried.picture, sight: tried.sight });
   return { refusal: null };
 }
 
@@ -580,4 +599,19 @@ function rejectedFixLine(line: Line, why: string): BrainEvent {
 /** For callers that want to say a problem about a refused fix in the next brief. */
 export function refusalProblem(reason: string): LineProblem {
   return { raw: 'the fix you wrote after looking', kind: 'rejected', why: `it was not shown: ${reason}` };
+}
+
+/** The critic compares the draft's picture with the candidate's, in the background; what it says is logged as `review.compare`. */
+function startCompare(args: ReviewTurnArgs, at: { policy: FixPolicy; form: ReviewForm; pass: number; draftPicture: Snapshot; candidatePicture: Snapshot; sight: Sight }): void {
+  if (args.critic === undefined) return;
+  const started = args.now();
+  const { turn, pass, form } = { turn: args.turn, pass: at.pass, form: at.form };
+  void args.critic
+    .compare({ session: args.session, turn, pass, asked: askedOf(args.input), input: args.input.kind, sight: at.sight }, at.draftPicture, at.candidatePicture, at.policy.compareMs, new AbortController().signal)
+    .then((compared) => {
+      const ms = args.now() - started;
+      if (compared === null) args.log?.warn('review.compare', { turn, pass, outcome: 'unfinished', ms, deadlineMs: at.policy.compareMs });
+      else args.log?.info('review.compare', { turn, pass, outcome: criticPrefers(compared.draft, compared.candidate, form) === 'draft' ? 'prefers-draft' : 'prefers-fix', draft: compared.draft.coherence, candidate: compared.candidate.coherence, ms });
+    })
+    .catch((error: unknown) => args.log?.warn('review.compare_failed', { turn, message: error instanceof Error ? error.message : String(error) }));
 }
