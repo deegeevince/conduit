@@ -297,12 +297,16 @@ export function sightOf(timeline: Timeline, schedule: Schedule, base: StageBase,
 
   // free words standing on a diagram (the structure engines keep to their room, so this is a diagram that did not fit it, or words set where it is):
   // said on both, the words as `collides` and the diagram as `overlaps`, so the look pass moves one of them
+  const DIAGRAMS: ReadonlySet<string> = new Set(['flow', 'tree', 'cycle']);
   const ownedBy = (element: ElementSpan, structure: ElementSpan): boolean => element.parent === structure.key || element.key === structure.key;
   const diagramUnder = (entry: Entry): Entry | null => {
     const lines = lineBoxes.get(entry.element.key);
     if (lines === undefined) return null;
     for (const other of entries) {
       if (!other.resting || other.element.kind !== 'structure' || ownedBy(entry.element, other.element) || areaOf(other.screenBox) <= 0) continue;
+      // a diagram of nodes and links (a chart, a screen, a table carry words on themselves on purpose), and not words that were told to stand near it
+      const figure = other.element.figure;
+      if (figure === null || figure.kind !== 'structure' || !DIAGRAMS.has(figure.structure) || entry.element.style.near !== null) continue;
       if (lines.some((line) => overlapArea(line, other.screenBox) > 0.25 * Math.max(1, areaOf(line)))) return other;
     }
     return null;
