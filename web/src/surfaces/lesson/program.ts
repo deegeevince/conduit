@@ -121,7 +121,9 @@ function reportSlot(moving = false): void {
     // the pen is only laid over a paper that is wholly in the clear: under the pinned question or the dock it is put away, so it never sits over a card or a button
     const card = root?.querySelector('.ctx.pinned')?.getBoundingClientRect();
     const dock = root?.querySelector('.dock')?.getBoundingClientRect();
-    const hidden = r !== undefined && ((card !== undefined && r.top < card.bottom - 2) || (dock !== undefined && r.bottom > dock.top + 2));
+    // only where they truly overlap: in the two-column layout the card is in the left column and the paper in the right, so a card that ends below the paper's top is no reason to hide it
+    const across = (o: DOMRect): boolean => r !== undefined && r.left < o.right - 2 && r.right > o.left + 2;
+    const hidden = r !== undefined && ((card !== undefined && across(card) && r.top < card.bottom - 2) || (dock !== undefined && across(dock) && r.bottom > dock.top + 2));
     const told = el === null || el === undefined || r === undefined || hidden ? '[]' : JSON.stringify([el.getAttribute('data-ink-slot'), el.getAttribute('data-ask'), Math.round(r.x), Math.round(r.y), Math.round(r.width), Math.round(r.height)]);
     if (told === slotTold || told.length > 290) return;
     slotTold = told;

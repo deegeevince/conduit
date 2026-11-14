@@ -190,7 +190,7 @@ export class Player {
     delete this.draft[ask.id];
     this.render();
     this.tryMs = Math.round(performance.now() - stamp);
-    requestAnimationFrame(() => this.root.querySelector('.nudge, .ask.closed:last-of-type')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
+    requestAnimationFrame(() => this.revealBelowPaper('.nudge, .ask.closed:last-of-type'));
   }
 
   private next(node: DocNode): void {
@@ -212,6 +212,19 @@ export class Player {
     const up = parentOf(this.doc, node);
     if (up !== null && up.id !== this.doc.root) this.go(up);
     else this.show({ kind: 'map', node: this.doc.root });
+  }
+
+  /**
+   * Bring what was just said (the verdict, a hint) into view, but never at the cost of the paper: she tries again with the pencil, so the paper stays
+   * on screen, just under the pinned question. On a phone the words below may then need a scroll; the pencil is never the thing that goes.
+   */
+  private revealBelowPaper(selector: string): void {
+    this.root.querySelector(selector)?.scrollIntoView({ block: 'nearest' });
+    const paper = this.root.querySelector('[data-ink-slot]');
+    if (paper === null) return;
+    const card = this.root.querySelector('.ctx.pinned')?.getBoundingClientRect();
+    const gap = paper.getBoundingClientRect().top - (card === undefined ? 0 : card.bottom) - 6;
+    if (gap < 0) window.scrollBy(0, gap);
   }
 
   private scrollToLatest(): void {
@@ -702,7 +715,7 @@ export class Player {
           h('button', { type: 'button', class: 'btn soft hint-btn', 'data-act': 'hint', onclick: () => {
             this.apply({ kind: 'held', node: node.id, key, value: asked + 1 });
             this.render();
-            requestAnimationFrame(() => this.root.querySelector('.nudge.hints')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
+            requestAnimationFrame(() => this.revealBelowPaper('.nudge.hints'));
           } }, asked === 0 ? 'Help' : 'More'),
         );
       } else if (asked > 0) {
