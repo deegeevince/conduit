@@ -10,10 +10,13 @@
 
 import type { ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import { copyFile, mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { DEMOS, LOOK_IDS } from '@conduit/language';
+import { WALL_SHAPES, generatedNodes, movedTiles, planWall, wallNodesOfTurns } from '@conduit/web/engine';
+import type { WallNode, WallShape, WallTurn } from '@conduit/web/engine';
+import { foldConversation } from '../domain/conversations';
 import type { StageBase } from '@conduit/language';
 import { spawnTracked } from '../brains/claude-cli/process';
 import type { SessionRecord } from '../domain/session-log';
@@ -90,6 +93,110 @@ async function demoCases(): Promise<EngineCase[]> {
     cases.push({ id: `demo:${demo.name}`, base: null, opened: 'demo', lines: text.split('\n').map((line, i) => ({ seq: i + 1, text: line, floor: 0 })) });
   }
   return cases;
+}
+
+// ---------------------------------------------------------------------------------------------------------------------------------
+// The wall (WL1): sessions as turns, a copy of the logs in a tmp folder (read from the owner's folder, never written there)
+
+interface WallSession {
+  readonly id: string;
+  readonly turns: readonly WallTurn[];
+}
+
+/** Every golden log and every log of --logs (default: the owner's folder, whose *.jsonl are copied to a tmp folder first and read from the copy). */
+async function wallSessions(copyTo: string, logs: string): Promise<WallSession[]> {
+  const sources = [join(repoRoot, 'server', 'golden', 'logs'), logs];
+  const seen = new Set<string>();
+  const sessions: WallSession[] = [];
+  for (const dir of sources) {
+    let names: string[];
+    try {
+      names = (await readdir(dir)).filter((name) => name.endsWith('.jsonl')).sort();
+    } catch {
+      continue;
+    }
+    for (const name of names) {
+      if (seen.has(name)) continue;
+      seen.add(name);
+      const copy = join(copyTo, name);
+      await copyFile(join(dir, name), copy);
+      const records: SessionRecord[] = [];
+      for (const raw of (await readFile(copy, 'utf8')).split('\n')) {
+        try {
+          const record = JSON.parse(raw) as SessionRecord;
+          if (typeof record.type === 'string') records.push(record);
+        } catch {
+          // a blank line or one cut short
+        }
+      }
+      const view = foldConversation(name.replace(/\.jsonl$/, ''), records, '');
+      sessions.push({ id: name.replace(/\.jsonl$/, ''), turns: view.turns.map((turn) => ({ turn: turn.turn, kind: turn.kind, said: turn.said, lines: turn.lines.filter((line) => /^\s*scene\b/.test(line)) })) });
+    }
+  }
+  return sessions;
+}
+
+/** A plan that packs the longest topic first (the tidy thing to do): a later node can reorder the lanes. Planted to prove the append check finds a moved tile. */
+function wrappingPlan(nodes: readonly WallNode[], shape: WallShape): ReturnType<typeof planWall> {
+  const plain = planWall(nodes, shape);
+  const counts = new Map<number, number>();
+  for (const tile of plain.tiles) counts.set(tile.lane, (counts.get(tile.lane) ?? 0) + 1);
+  const order = [...counts.keys()].sort((x, y) => (counts.get(y) ?? 0) - (counts.get(x) ?? 0) || x - y);
+  const stepX = shape.cell.width + shape.gap;
+  const stepY = shape.cell.height + shape.gap;
+  const tiles = plain.tiles.map((tile) => {
+    const lane = order.indexOf(tile.lane);
+    const across = shape.axis === 'row' ? tile.slot : lane;
+    const down = shape.axis === 'row' ? lane : tile.slot;
+    return { ...tile, lane, box: { ...tile.box, x: across * stepX, y: down * stepY } };
+  });
+  return { ...plain, tiles };
+}
+
+const prefixOfSeq = (nodes: readonly WallNode[], upTo: number): WallNode[] => nodes.filter((node) => node.seq <= upTo);
+
+/** The append law: a node that comes later never changes an earlier tile. Returns how many tile-prefix steps were checked and how many tiles moved. */
+function appendLaw(sessions: readonly WallSession[], plan: (nodes: readonly WallNode[], shape: WallShape) => ReturnType<typeof planWall>): { steps: number; moved: number; sessions: number; prefixes: number; example: string } {
+  let steps = 0;
+  let moved = 0;
+  let prefixes = 0;
+  let example = '';
+  for (const session of sessions) {
+    for (const shape of WALL_SHAPES) {
+      let last = plan([], shape);
+      for (let k = 1; k <= session.turns.length; k += 1) {
+        const next = plan(wallNodesOfTurns(session.turns.slice(0, k)), shape);
+        const gone = movedTiles(last, next);
+        steps += 1;
+        moved += gone.length;
+        if (gone.length > 0 && example === '') example = `${session.id} turn ${k}: ${gone.slice(0, 3).join(',')}`;
+        last = next;
+      }
+    }
+    prefixes += session.turns.length;
+  }
+  return { steps, moved, sessions: sessions.length, prefixes, example };
+}
+
+function appendLawGenerated(count: number, plan: (nodes: readonly WallNode[], shape: WallShape) => ReturnType<typeof planWall>): { steps: number; moved: number; example: string } {
+  let steps = 0;
+  let moved = 0;
+  let example = '';
+  for (let seed = 1; seed <= count; seed += 1) {
+    const nodes = generatedNodes(seed);
+    const shape = WALL_SHAPES[seed % WALL_SHAPES.length] as WallShape;
+    const seqs = nodes.map((node) => node.seq).sort((a, b) => a - b);
+    let last = plan([], shape);
+    for (const upTo of seqs) {
+      const next = plan(prefixOfSeq(nodes, upTo), shape);
+      const gone = movedTiles(last, next);
+      steps += 1;
+      moved += gone.length;
+      if (gone.length > 0 && example === '') example = `seed ${seed} at seq ${upTo}: ${gone.slice(0, 3).join(',')}`;
+      last = next;
+    }
+  }
+  return { steps, moved, example };
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------------
@@ -286,6 +393,70 @@ async function main(): Promise<number> {
       const p95 = percentile(times, 0.95);
       say(`timing: measureStage on ${largest.id} (${largest.lines.length} lines), ${times.length} runs after a warm-up: median ${percentile(times, 0.5).toFixed(1)} ms, p95 ${p95.toFixed(1)} ms, max ${Math.max(...times).toFixed(1)} ms (limit ${TIMING_P95_MS} ms) ${p95 < TIMING_P95_MS ? 'ok' : 'FAIL'}`);
       if (p95 >= TIMING_P95_MS) failed += 1;
+    }
+
+    // The wall: page and server plans equal
+    const wallDir = await mkdtemp(join(tmpdir(), 'conduit-parity-logs-'));
+    try {
+      const logsFolder = option('logs') ?? join(process.env['HOME'] ?? '', 'Library', 'Application Support', 'Conduit', 'logs');
+      const sessions = await wallSessions(wallDir, logsFolder);
+      const goldenNames = new Set(GOLDEN_TURNS.map((g) => g.log.replace(/\.jsonl$/, '')));
+      const wallCases: { id: string; shape: WallShape; turns?: readonly WallTurn[]; nodes?: readonly WallNode[] }[] = [];
+      for (const session of sessions) {
+        for (const [s, shape] of WALL_SHAPES.entries()) {
+          // the whole session, and every prefix of a golden one
+          wallCases.push({ id: `${session.id}|all|${s}`, shape, turns: session.turns });
+          if (goldenNames.has(session.id)) for (let k = 1; k < session.turns.length; k += 1) wallCases.push({ id: `${session.id}|${k}|${s}`, shape, turns: session.turns.slice(0, k) });
+        }
+      }
+      const generated = 2000;
+      for (let seed = 1; seed <= generated; seed += 1) wallCases.push({ id: `tree-${seed}`, shape: WALL_SHAPES[seed % WALL_SHAPES.length] as WallShape, nodes: generatedNodes(seed) });
+      let equal = 0;
+      let digests = 0;
+      const different: string[] = [];
+      // the route's body limit is 64 KB: batches by size (only the scene lines of a turn cross; they are all the plan reads)
+      const batches: (typeof wallCases)[] = [];
+      for (let size = 0, batch: typeof wallCases = []; ; ) {
+        const item = wallCases[batches.reduce((n, b) => n + b.length, 0) + batch.length];
+        const bytes = item === undefined ? 0 : JSON.stringify(item).length;
+        if (item === undefined || size + bytes > 40_000) {
+          if (batch.length > 0) batches.push(batch);
+          if (item === undefined) break;
+          batch = [];
+          size = 0;
+        }
+        if (item !== undefined) {
+          batch.push(item);
+          size += bytes;
+        }
+      }
+      for (const batch of batches) {
+        const part = await page.call<{ of: number; equal: number; different: string[]; digests: number }>('wall', batch, false);
+        equal += part.equal;
+        digests += part.digests;
+        different.push(...part.different);
+      }
+      say(`wall plans: ${equal}/${wallCases.length} equal on the page and on the server (${sessions.length} sessions: ${sessions.filter((x) => goldenNames.has(x.id)).length} golden, all prefixes of those; ${generated} generated trees); digests ${digests}/${wallCases.length}`);
+      if (equal !== wallCases.length || digests !== wallCases.length) {
+        failed += 1;
+        for (const id of different.slice(0, 10)) say(`  FAIL wall ${id}`);
+      }
+      const plantedWall = await page.call<{ of: number; equal: number; different: string[] }>('wall', wallCases.filter((item) => item.id.startsWith('tree-')).slice(0, 20), true);
+      say(`planted fault (a wrong lane for one node, one side): ${plantedWall.of - plantedWall.equal > 0 ? `found (${plantedWall.of - plantedWall.equal}/${plantedWall.of} plans differ)` : 'NOT FOUND'}`);
+      if (plantedWall.of - plantedWall.equal === 0) failed += 1;
+
+      // The append law
+      const law = appendLaw(sessions, planWall);
+      const lawGenerated = appendLawGenerated(generated, planWall);
+      const nodesAll = sessions.reduce((sum, x) => sum + wallNodesOfTurns(x.turns).length, 0);
+      say(`append law, logged sessions: ${law.sessions} sessions, ${law.prefixes} prefixes (turns), ${nodesAll} frames, 3 shapes, ${law.steps} steps: ${law.moved} tiles moved ${law.moved === 0 ? 'ok' : `FAIL (${law.example})`}`);
+      say(`append law, ${generated} generated trees, every prefix by arrival: ${lawGenerated.steps} steps: ${lawGenerated.moved} tiles moved ${lawGenerated.moved === 0 ? 'ok' : `FAIL (${lawGenerated.example})`}`);
+      if (law.moved > 0 || lawGenerated.moved > 0) failed += 1;
+      const lawPlanted = appendLawGenerated(300, wrappingPlan);
+      say(`planted fault (a plan that packs the longest topic first): ${lawPlanted.moved > 0 ? `found (${lawPlanted.moved} tiles moved, first at ${lawPlanted.example})` : 'NOT FOUND'}`);
+      if (lawPlanted.moved === 0) failed += 1;
+    } finally {
+      await rm(wallDir, { recursive: true, force: true });
     }
   } finally {
     await page.close();
