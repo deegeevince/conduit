@@ -46,6 +46,44 @@ Also give, so that someone could fix the picture:
 - suggestions: at most three, each one thing to add or change that would most improve the picture. Empty when it is not worth another pass.
 Reply with those two keys as well as the others.`;
 
+/**
+ * The live critic's gates (critic v2). Fixed: the judge is never told to reword one, and a gate it does not answer is not a pass.
+ * Tiers are checked coarse first; the server holds back every note of a higher tier while a lower one fails (`judge/gates.ts`).
+ */
+export const GATES = [
+  { gate: 'on-stage', tier: 1, test: 'everything the answer drew is on the stage and whole: nothing cut off by an edge, nothing off to a corner, nothing missing that the picture plainly needs to be understood' },
+  { gate: 'readable', tier: 1, test: 'every word can be read: big enough, enough contrast with what is behind it, not squeezed or truncated' },
+  { gate: 'no-overlap', tier: 1, test: 'nothing lies on top of anything else it should not: no text over text, a caption over a drawing, a tappable phrase over the picture, a label on the wrong part' },
+  { gate: 'answers-ask', tier: 2, test: 'it shows what the person asked for, and what it shows is true on its face' },
+  { gate: 'hierarchy', tier: 2, test: 'what matters most is seen first and biggest; the order to read it in is clear' },
+  { gate: 'composition', tier: 2, test: 'the parts are grouped, spaced and aligned as one composed picture that uses the room it has' },
+  { gate: 'polish', tier: 3, test: 'finish: even spacing, consistent type and colour, small details that are clean' },
+  { gate: 'taste', tier: 3, test: 'it is a considered picture with a point of view, not the generic first thing that came to mind' },
+] as const;
+
+export const WORST_CASE_GATE = { gate: 'worst-case', tier: 3, test: 'a mock-up only: the design would still hold with realistic worst-case content: very long names, an empty state, big numbers, a missing picture' } as const;
+
+/** What the live critic is asked beyond the questions above (critic v2): gates by tier, evidence, an owner, and a verdict on a follow-up. */
+export const GATES_ADDENDUM = `
+You are a reviewer of the picture, not its author, and not the assistant in the conversation. You are given only the person's words, the picture and a few measurements of the stage; you are never given what the author was thinking, and you must not guess it. Do not police facts about the app, the model, the assistant or the world: what the answer says about itself (which model it is, what the app can do, today's date, a price it gives) is given, and you cannot know it better than the answer; a fact is a fault only when the picture contradicts itself or is plainly false on its face. Never judge by who or what you are.
+
+Judge the LAST picture by fixed pass/fail gates, coarse first. A gate is passed or failed; there is no half. Never soften, reword or skip a gate to let a picture through, and never fail one for something its test does not say.
+${GATES.map((g) => `- tier ${g.tier}, "${g.gate}": ${g.test}`).join('\n')}
+Tier 1 is checked before tier 2, and tier 2 before tier 3. If any tier-1 gate fails, the higher tiers still get their pass or fail, but the person is only told about the lowest tier that fails: polish never outranks a layout failure. Work out the tier-1 gates first, looking at the edges and at every piece of text one by one.
+
+Reply with ONE JSON object and nothing else, with the keys asked, textProblem, wrongLabel, correct, mistake, coherence, why (as above) and also:
+- gates: one entry for EVERY gate listed, in order, each { "gate": the id, "pass": true or false, "evidence": what in the picture and where, in a few words (the element id from the list when the measurements give one, otherwise the place on screen such as "the third box, lower left"); for a pass, what you checked }.
+- problems: worst first, one for each failed gate at least, each { "gate": the id of the gate it fails, "what": one sentence a builder could act on, "evidence": what and where in the picture, "id": the stage element id it is about, from the list you are given, or null, "owner": who owns the fix, one of "brain" (what the answer says or chooses to show: its content, wording, how much it puts in), "painter" (how the stage lays the parts out, sizes and places them), "kit" (the shapes, structures and type styles the answer is built from, a missing or limited building block), "host" (the app around the stage: the page, the device, the composer, the choices), "prompt" (the standing instructions the author follows: a habit that would repeat on other requests), "weight": "blocks" (the picture fails at its job), "hurts" (a person would notice and mind) or "polish" }. Only what a person looking at the picture would mark down; empty when every gate passes.
+- suggestions: at most three, each one thing to change that would most improve the picture; empty when it is not worth another pass.
+Give coherence from the gates: a failed tier-1 gate means 1 or 2, a failed tier-2 gate at most 3, and a picture that passes all of tiers 1 and 2 is at least 3.`;
+
+export const WORST_CASE_ADDENDUM = `
+This answer is a MOCK-UP of an interface. Add one more entry to gates and one to problems if it fails: "${WORST_CASE_GATE.gate}": ${WORST_CASE_GATE.test}. Imagine the same design with the nastiest realistic content (a 40-letter name, a two-line title, an empty list, 7-digit numbers, no picture) and say what would break and where. It is a note for the builder; it is never a reason to lower coherence.`;
+
+/** Added when the same answer is being revised in place and the judge was given the picture and the verdict from before. */
+export const FOLLOW_UP_ADDENDUM = `
+This answer is a follow-up that changed the stage in place. Before the last picture you are shown the previous picture and the verdict you gave it. Judge the last picture afresh by every gate; the earlier verdict is a record, not a credit. A gate that failed before still fails unless the picture visibly fixes it, and a change that only moves a problem is not a fix. Do not become kinder because you watched the earlier draft being worked on, and do not become harsher for something you let pass. Add the key progress: { "trend": "better" | "worse" | "same" | "mixed", "fixed": gate ids that failed before and pass now, "stillFailing": gate ids that fail in both, "newFailures": gate ids that pass before and fail now, "note": one sentence that refers to the previous verdict by what it said }.`;
+
 /** Two pictures of the same stage, judged by the questions above, each on its own, in one call. */
 export const COMPARE_SYSTEM = `${SYSTEM.replace('You are shown the user\'s request and one or more still pictures of the stage. The LAST picture is the stage as the answer left it; earlier pictures, if any, are the same answer part-way through.', 'You are shown the user\'s request and TWO pictures, FIRST and SECOND, of the stage as two answers to it left it.')}
 
@@ -57,5 +95,5 @@ ${FINDING_ADDENDUM}`;
  * every judgement and on the run; a comparison across two values of it is refused by the loop.
  */
 export function rubricOf(settings: { readonly model: string; readonly effort: 'low' | 'medium' | 'high' }): string {
-  return createHash('sha256').update([SYSTEM, CHART_ADDENDUM, RESPONDS_SYSTEM, FINDING_ADDENDUM, COMPARE_SYSTEM, settings.model, settings.effort].join('\u0000')).digest('hex').slice(0, 12);
+  return createHash('sha256').update([SYSTEM, CHART_ADDENDUM, RESPONDS_SYSTEM, FINDING_ADDENDUM, COMPARE_SYSTEM, GATES_ADDENDUM, WORST_CASE_ADDENDUM, FOLLOW_UP_ADDENDUM, settings.model, settings.effort].join('\u0000')).digest('hex').slice(0, 12);
 }

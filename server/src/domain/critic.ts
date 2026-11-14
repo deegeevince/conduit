@@ -17,6 +17,10 @@
 //   is logged (`review.compare`). Past the deadline it resolves null and the timeout is logged. It counts against `perHour`.
 // - Never throws. A finding it could not make is null, and the reason is logged once.
 // - What it is shown is the picture and the user's words. Never a document, a pasted table, an upload, or anything a tool returned.
+// - Critic v2: every verdict is made in a fresh process with clean context: the person's words, the fixed gates, the picture, the
+//   painter's measurements; never the brain's reasoning, brief or prompt. A turn that revised the same answer in place is also shown the
+//   previous picture and the critic's own verdict on it. Gates are tiered (on stage and readable; answers the ask; polish): a note of a
+//   higher tier is logged but not raised while a lower tier fails. Each problem names its gate, its evidence and who owns the fix.
 
 import type { CriticFinding, Sight, TurnInput } from '@conduit/language';
 import type { Snapshot } from './brain';
@@ -58,6 +62,10 @@ export interface CriticRequest {
   readonly picture: Snapshot;
   /** what the painter measured, so that the critic's problems can name ids */
   readonly sight: Sight | null;
+  /** critic v2: the answer is a mock-up (a `screen` on stage at rest): the worst-case gate is asked, as a note */
+  readonly mockup?: boolean;
+  /** critic v2: this turn revised the same answer in place; the picture the critic saw before, and what it said of it. Never what the brain was told or thought. */
+  readonly previous?: { readonly picture: Snapshot; readonly finding: CriticFinding } | null;
 }
 
 export interface CriticComparison {

@@ -178,6 +178,8 @@ export interface Session {
   standing: string[];
   /** v2.1. What the critic made of each turn, by turn id; bounded like the turns themselves */
   readonly findings: Map<string, CriticFinding>;
+  /** critic v2. Turns in which each gate failed, by gate id: counted by the server so a gate that keeps failing is seen to (never by the judge) */
+  readonly gateFails: Map<string, string[]>;
   /** v2.1. Confirm controls waiting for the owner, by request id */
   readonly permissions: Map<string, PendingPermission>;
 }
@@ -231,6 +233,7 @@ export class SessionStore {
       abort: new AbortController(),
       standing: [],
       findings: new Map(),
+      gateFails: new Map(),
       permissions: new Map(),
     };
     this.sessions.set(session.id, session);

@@ -1120,11 +1120,16 @@ export class Conductor {
       input: turn.input.kind,
       picture,
       sight: s.history.find((memory) => memory.turn === turn.id)?.sight ?? null,
+      mockup: turn.score.schedule.elements.some((element) => element.exit === null && element.figure?.kind === 'structure' && element.figure.structure === 'screen'),
+      previous: this.previousForCritic(s, turn),
     };
     void (async () => {
       try {
-        const finding = await critic.look(request, s.abort.signal);
-        if (finding === null || s.abort.signal.aborted) return;
+        const judged = await critic.look(request, s.abort.signal);
+        if (judged === null || s.abort.signal.aborted) return;
+        const finding = this.withRepeats(s, turn.id, judged);
+        const raised = finding.problems.filter((problem) => problem.raised !== false).length;
+        log.info('critic.verdict', { session: s.id, turn: turn.id, coherence: finding.coherence, failedTier: finding.failedTier ?? null, failed: (finding.gates ?? []).filter((gate) => !gate.pass).map((gate) => gate.gate).join(','), raised, held: finding.problems.length - raised, followUp: request.previous !== null && request.previous !== undefined, trend: finding.progress?.trend ?? null });
         const queued = worthQueuing(finding, this.deps.criticQueueBelow);
         s.findings.set(turn.id, finding);
         while (s.findings.size > SERVER_LIMITS.turnsKept) {
@@ -1139,6 +1144,34 @@ export class Conductor {
         log.warn('critic.failed', { session: s.id, turn: turn.id, error });
       }
     })();
+  }
+
+  /**
+   * Critic v2. A turn that changed the same answer in place (something from the turn before is still on the stage at rest) is shown the
+   * picture and the verdict from before: the critic's own record, never what the brain was told or thought. Null when this is a new
+   * picture, when the turn before was not judged, or when its picture is gone.
+   */
+  private previousForCritic(s: Session, turn: ActiveTurn): { readonly picture: Snapshot; readonly finding: CriticFinding } | null {
+    if (turn.previous === null || turn.input.kind === 'tap') return null;
+    const finding = s.findings.get(turn.previous);
+    const picture = this.deps.assets.snapshot(s.id, turn.previous);
+    if (finding === undefined || picture === undefined) return null;
+    const inPlace = turn.score.schedule.elements.some((element) => element.carried && element.exit === null && element.kind !== 'field');
+    return inPlace ? { picture, finding } : null;
+  }
+
+  /** Critic v2. Counts each gate that failed here against the session's earlier turns; the judge is not asked, and cannot talk a count down. */
+  private withRepeats(s: Session, turn: string, finding: CriticFinding): CriticFinding {
+    const failed = (finding.gates ?? []).filter((gate) => !gate.pass).map((gate) => gate.gate);
+    if (failed.length === 0) return finding;
+    const repeats: { gate: string; count: number; turns: string[] }[] = [];
+    for (const gate of failed) {
+      const turns = s.gateFails.get(gate) ?? [];
+      if (!turns.includes(turn)) turns.push(turn);
+      s.gateFails.set(gate, turns);
+      if (turns.length >= 2) repeats.push({ gate, count: turns.length, turns: [...turns] });
+    }
+    return repeats.length === 0 ? finding : { ...finding, repeats };
   }
 
   /** What the critic is told was asked: the user's words, never a document or a table they pasted. */
