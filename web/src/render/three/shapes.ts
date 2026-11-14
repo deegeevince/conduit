@@ -7,6 +7,7 @@ import type { Affine, ShapeFrame, StrokeFrame } from '../../contracts/frame';
 import type { LookSpec } from '../../contracts/look';
 import { planeBounds } from '../../contracts/space';
 import type { Viewport } from '../../contracts/space';
+import { CLIP_FRAGMENT_DECL, CLIP_TEST, CLIP_VERTEX_DECL, clipVertex, makeClipUniform, setClip } from './clip';
 import { HASH, NOISE, PIXEL_SCALE } from './glsl';
 import { buildFill, buildStroke } from './shape-geometry';
 import { buildDistanceField } from './sdf';
@@ -59,6 +60,7 @@ uniform float uLength;
 uniform float uSoft;
 ${PIXEL_SCALE}
 ${HASH}
+${CLIP_VERTEX_DECL}
 varying float vEdge;
 varying float vDist;
 varying float vHalfPx;
@@ -88,6 +90,7 @@ void main() {
   spread += uSoft;
   vec2 local = position.xy + aOff * spread;
   gl_Position = projectionMatrix * modelViewMatrix * vec4(local, 0.0, 1.0);
+  ${clipVertex('modelMatrix * vec4(local, 0.0, 1.0)')}
   vEdge = aEdge * spread / reach;
   vDist = aDist;
   vHalfPx = reach * ppu;
@@ -115,10 +118,12 @@ varying float vPpu;
 varying vec2 vShape;
 varying float vLengthPx;
 varying float vSoftPx;
+${CLIP_FRAGMENT_DECL}
 ${HASH}
 ${NOISE}
 
 void main() {
+  ${CLIP_TEST}
   if (uProgress <= 0.0) discard;
   float across = abs(vEdge) * vHalfPx;
   float distance_ = vHalfPx - across;
@@ -184,6 +189,7 @@ void main() {
 
 const FILL_VERTEX = /* glsl */ `
 ${PIXEL_SCALE}
+${CLIP_VERTEX_DECL}
 varying float vY;
 varying vec2 vLocal;
 varying float vPpu;
@@ -192,6 +198,7 @@ void main() {
   vLocal = position.xy;
   vPpu = conduitPixelsPerUnit(modelViewMatrix * vec4(position.xy, 0.0, 1.0));
   gl_Position = projectionMatrix * modelViewMatrix * vec4(position.xy, 0.0, 1.0);
+  ${clipVertex('modelMatrix * vec4(position.xy, 0.0, 1.0)')}
 }
 `;
 
@@ -213,10 +220,12 @@ uniform float uHasField;
 varying float vY;
 varying vec2 vLocal;
 varying float vPpu;
+${CLIP_FRAGMENT_DECL}
 ${HASH}
 ${NOISE}
 
 void main() {
+  ${CLIP_TEST}
   float t = uSpan.y > 1e-6 ? clamp((vY - uSpan.x) / uSpan.y, 0.0, 1.0) : 0.0;
   vec3 colour = mix(uFrom, uTo, t);
   float alpha = uOpacity;
@@ -325,6 +334,7 @@ export function createShapePool(): ShapePool {
         uSoft: { value: 0 },
         uSeed: { value: 0 },
         uViewPx: VIEW_PX,
+        uConduitClip: makeClipUniform(),
       },
       vertexShader: STROKE_VERTEX,
       fragmentShader: STROKE_FRAGMENT,
@@ -351,6 +361,7 @@ export function createShapePool(): ShapePool {
         uFieldRange: { value: 1 },
         uHasField: { value: 0 },
         uViewPx: VIEW_PX,
+        uConduitClip: makeClipUniform(),
       },
       vertexShader: FILL_VERTEX,
       fragmentShader: FILL_FRAGMENT,
@@ -551,6 +562,7 @@ export function createShapePool(): ShapePool {
           const opacity = material.uniforms['uOpacity'];
           if (opacity !== undefined) opacity.value = shape.fill.opacity * shape.opacity;
           setFill(material, shape, entry, style);
+          setClip(material.uniforms['uConduitClip'], shape.bleed ? undefined : shape.clip);
           entry.fill.renderOrder = fillOrder;
           entry.fill.visible = shape.fill.opacity * shape.opacity > 0.002;
           if (shape.bleed) {
@@ -563,6 +575,7 @@ export function createShapePool(): ShapePool {
         }
         if (entry.stroke !== null && entry.strokeMaterial !== null && shape.stroke !== null) {
           setStroke(entry.strokeMaterial, shape, shape.stroke, entry.length, style, shape.layer);
+          setClip(entry.strokeMaterial.uniforms['uConduitClip'], shape.clip);
           entry.stroke.renderOrder = strokeOrder;
           entry.stroke.visible = shape.opacity > 0.002 && shape.stroke.progress > 0;
           matrixOf(shape.transform, scratch);

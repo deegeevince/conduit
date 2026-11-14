@@ -140,7 +140,8 @@ export function createSketchPass(): SketchPass {
           }
           if (entry.signature !== signature) {
             const inverse = invert(picture.transform);
-            const frozen: ShapeFrame[] = shapes.map((shape) => ({
+            // The sketch is drawn in the picture's own box units, where a plane-space frame means nothing: the picture's own `clip` frames the painting.
+            const frozen: ShapeFrame[] = shapes.map(({ clip: _plane, ...shape }) => ({
               ...shape,
               transform: compose(inverse, shape.transform),
               opacity: 1,

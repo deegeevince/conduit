@@ -3,6 +3,7 @@ import type { Layer, LookId } from '@conduit/language';
 import type { ElementFrame, Frame, Quality } from '../../contracts/frame';
 import type { Renderer, RendererCapabilities } from '../../contracts/renderer';
 import { layerZ, projectToScreen } from '../../contracts/space';
+import { clipQuad } from '../place';
 import type { Viewport } from '../../contracts/space';
 import { FONTS } from '../../fonts';
 import { FACES } from '../../fonts/faces';
@@ -12,6 +13,8 @@ import { createPlainFigures } from './figures';
 import type { PlainFigures } from './figures';
 
 interface Node {
+  /** what sits in the stage: it holds `root` and carries the frame's clip, which a turned `root` would turn with it */
+  readonly outer: HTMLDivElement;
   readonly root: HTMLDivElement;
   readonly runs: HTMLSpanElement[];
   readonly marks: HTMLDivElement[];
@@ -42,7 +45,7 @@ function px(value: number): string {
  * depth with scale and parallax; it simulates no screen.
  */
 export function createPlainRenderer(): Renderer {
-  const capabilities: RendererCapabilities = { depth: false, post: false, looks: LOOK_IDS, kinds: ['text', 'shape', 'sprite', 'group', 'copy', 'picture'], fx: [], ambient: [], capture: false, media: [], textures: ['flat', 'hatch', 'dots'], brushes: [] };
+  const capabilities: RendererCapabilities = { depth: false, post: false, looks: LOOK_IDS, kinds: ['text', 'shape', 'sprite', 'group', 'copy', 'picture'], fx: [], ambient: [], capture: false, media: [], textures: ['flat', 'hatch', 'dots'], brushes: [], clip: true };
   let root: HTMLDivElement | null = null;
   let cursor: HTMLDivElement | null = null;
   const nodes = new Map<string, Node>();
@@ -51,10 +54,13 @@ export function createPlainRenderer(): Renderer {
   let figures: PlainFigures | null = null;
 
   const makeNode = (parent: HTMLElement): Node => {
+    const outer = document.createElement('div');
+    outer.style.cssText = 'position:absolute;left:0;top:0;width:0;height:0;pointer-events:none;';
     const element = document.createElement('div');
     element.style.cssText = 'position:absolute;left:0;top:0;width:0;height:0;pointer-events:none;';
-    parent.appendChild(element);
-    return { root: element, runs: [], marks: [], plates: [] };
+    outer.appendChild(element);
+    parent.appendChild(outer);
+    return { outer, root: element, runs: [], marks: [], plates: [] };
   };
 
   // The element names its own face (a line can be set in another than its look's); the box was measured for that one.
@@ -76,6 +82,14 @@ export function createPlainRenderer(): Renderer {
 
     node.root.style.opacity = String(element.opacity);
     node.root.style.zIndex = String(LAYER_RANK[element.layer] * 2 + 1);
+    // The frame the element is kept inside, through this frame's camera. A clip path makes a stacking context, so the layer's rank goes on the outer box too.
+    node.outer.style.zIndex = element.clip === undefined ? '' : String(LAYER_RANK[element.layer] * 2 + 1);
+    node.outer.style.clipPath =
+      element.clip === undefined
+        ? ''
+        : `polygon(${clipQuad(element.clip, element.layer, camera, viewport)
+            .map((p) => `${px(p.x)} ${px(p.y)}`)
+            .join(',')})`;
     node.root.style.transform = element.rotation === 0 ? '' : `translate(${px(centreX)},${px(centreY)}) rotate(${element.rotation}rad) translate(${px(-centreX)},${px(-centreY)})`;
 
     while (node.runs.length < element.runs.length) {
@@ -189,12 +203,22 @@ export function createPlainRenderer(): Renderer {
       plate.style.height = px(line.height * s);
     });
 
-    const box = {
+    let box = {
       left: centreX - (element.width * s) / 2,
       top: centreY - (element.height * s) / 2,
       right: centreX + (element.width * s) / 2,
       bottom: centreY + (element.height * s) / 2,
     };
+    if (element.clip !== undefined) {
+      // A point outside the frame does not hit the element: the box is cut to the frame's bounds on the screen.
+      const quad = clipQuad(element.clip, element.layer, camera, viewport);
+      box = {
+        left: Math.max(box.left, Math.min(...quad.map((p) => p.x))),
+        top: Math.max(box.top, Math.min(...quad.map((p) => p.y))),
+        right: Math.min(box.right, Math.max(...quad.map((p) => p.x))),
+        bottom: Math.min(box.bottom, Math.max(...quad.map((p) => p.y))),
+      };
+    }
     picked.push({ key: element.key, layer: element.layer, ...box, visible: element.opacity * Math.max(0, ...element.runs.map((run) => (run.reveal > 0 ? run.opacity : 0))) > 0.05 });
   };
 
@@ -246,7 +270,7 @@ export function createPlainRenderer(): Renderer {
       }
       for (const [key, node] of nodes) {
         if (seen.has(key)) continue;
-        node.root.remove();
+        node.outer.remove();
         nodes.delete(key);
       }
       if (cursor !== null) {

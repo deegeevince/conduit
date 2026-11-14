@@ -9,6 +9,7 @@ import { FACES } from '../../fonts/faces';
 import { LOOKS } from '../../looks';
 import { fontFile } from '../fonts';
 import { rasteriseFrame } from './capture';
+import { insideClip } from './clip';
 import { createFieldPool } from './fields';
 import { createFxPipeline } from './fx';
 import { createSketchPass } from './media';
@@ -109,7 +110,8 @@ function drawKit(kit: Kit, frame: Frame, quality: Quality): void {
   }
   kit.shapes.sync(groups, shapes, frame.spec, frame.viewport, style);
   kit.sprites.sync(groups, sprites, style);
-  const sketches = pictures.length === 0 ? undefined : kit.sketches.update(kit.context, pictures, shapes, frame.spec, frame.viewport);
+  // Always asked, even with no picture on stage: the pass lets go of the surfaces of sketches that have left.
+  const sketches = kit.sketches.update(kit.context, pictures, shapes, frame.spec, frame.viewport);
   kit.pictures.sync(groups, pictures, frame.ambient, frame.spec, style, sketches);
   kit.fields.sync(groups, frame.fields, frame.viewport, quality, frame.reducedMotion, frame.camera, style);
   kit.pipeline.render(kit.stage, frame);
@@ -393,7 +395,7 @@ export function createProbedRenderer(): ThreeRenderer {
     id: 'three',
     fontFile,
     // `kinds` is what this renderer draws from a Frame. Structures and controls reach it as shapes and text, so they are not its to advertise.
-    capabilities: { depth: true, post: true, looks: ALL_LOOKS, kinds: ['text', 'shape', 'sprite', 'group', 'copy', 'picture', 'field'], fx: FX_NAMES, ambient: AMBIENT_KINDS, capture: true, media: PROCEDURAL_MEDIA, textures: TEXTURES, brushes: STROKES },
+    capabilities: { depth: true, post: true, looks: ALL_LOOKS, kinds: ['text', 'shape', 'sprite', 'group', 'copy', 'picture', 'field'], fx: FX_NAMES, ambient: AMBIENT_KINDS, capture: true, media: PROCEDURAL_MEDIA, textures: TEXTURES, brushes: STROKES, clip: true },
 
     async mount(target, initial, look, options) {
       if (!canUseThree()) throw new Error('WebGL2 is not available');
@@ -536,6 +538,7 @@ export function createProbedRenderer(): ThreeRenderer {
       frame.elements.forEach((element, index) => {
         if (element.opacity <= 0.05) return;
         const p = planePoint(element.layer);
+        if (!insideClip(element.clip, p.x, p.y)) return;
         const cos = Math.cos(-element.rotation);
         const sin = Math.sin(-element.rotation);
         const dx = p.x - element.x;
@@ -552,6 +555,7 @@ export function createProbedRenderer(): ThreeRenderer {
         const det = t.a * t.d - t.b * t.c;
         if (Math.abs(det) < 1e-12) return;
         const p = planePoint(figure.layer);
+        if (!insideClip(figure.kind === 'shape' && figure.bleed ? undefined : figure.clip, p.x, p.y)) return;
         const dx = p.x - t.e;
         const dy = p.y - t.f;
         const local = { x: (t.d * dx - t.c * dy) / det, y: (-t.b * dx + t.a * dy) / det };

@@ -2,6 +2,7 @@
 
 import type { Frame } from '../../contracts/frame';
 import type { RasteriseOptions } from '../../contracts/renderer';
+import { chartBoxOf, clipQuad } from '../place';
 
 let tail: Promise<unknown> = Promise.resolve();
 
@@ -35,10 +36,20 @@ export function chartsOver(frame: Frame, options: RasteriseOptions): ((context: 
       if (chart.opacity <= 0.002) continue;
       const picture = still(chart.key);
       if (picture === null) continue;
+      const box = chartBoxOf(chart, frame);
+      context.save();
+      if (chart.clip !== undefined) {
+        // Kept inside its frame, as the stage's own things are: the frame as it lies through this picture's camera.
+        const quad = clipQuad(chart.clip, chart.layer, frame.camera, frame.viewport);
+        context.beginPath();
+        quad.forEach((p, i) => (i === 0 ? context.moveTo(p.x * scale, p.y * scale) : context.lineTo(p.x * scale, p.y * scale)));
+        context.closePath();
+        context.clip();
+      }
       context.globalAlpha = Math.max(0, Math.min(1, chart.opacity));
-      context.drawImage(picture, chart.box.x * scale, chart.box.y * scale, chart.box.width * scale, chart.box.height * scale);
+      context.drawImage(picture, box.x * scale, box.y * scale, box.width * scale, box.height * scale);
+      context.restore();
     }
-    context.globalAlpha = 1;
   };
 }
 

@@ -5,6 +5,7 @@ import type { Film } from '../contracts/film';
 import type { Frame } from '../contracts/frame';
 import type { Renderer } from '../contracts/renderer';
 import type { Viewport } from '../contracts/space';
+import { chartBoxOf, clipQuad } from '../render/place';
 import type { LookId } from '@conduit/language';
 import { createZipSink } from './frames';
 import { frameToSvg } from './svg';
@@ -221,8 +222,17 @@ export function createExporter(deps: ExporterDeps): Exporter {
         for (const chart of [...charts].sort((a, b) => a.z - b.z)) {
           const still = chart.opacity <= 0.002 ? null : deps.chartStill(frame, chart.key);
           if (still === null) continue;
+          const box = chartBoxOf(chart, frame);
+          context.save();
+          if (chart.clip !== undefined) {
+            context.beginPath();
+            clipQuad(chart.clip, chart.layer, frame.camera, frame.viewport).forEach((p, i) => (i === 0 ? context.moveTo(p.x * scale, p.y * scale) : context.lineTo(p.x * scale, p.y * scale)));
+            context.closePath();
+            context.clip();
+          }
           context.globalAlpha = Math.max(0, Math.min(1, chart.opacity));
-          context.drawImage(still, chart.box.x * scale, chart.box.y * scale, chart.box.width * scale, chart.box.height * scale);
+          context.drawImage(still, box.x * scale, box.y * scale, box.width * scale, box.height * scale);
+          context.restore();
         }
         context.globalAlpha = 1;
         return overlay;

@@ -2,11 +2,13 @@
 
 import type { Face, Layer } from '@conduit/language';
 import { Group, MeshBasicMaterial } from 'three';
+import type { IUniform, Vector4 } from 'three';
 import type { Object3D, WebGLProgramParametersWithUniforms } from 'three';
 import { Text, configureTextBuilder, preloadFont } from 'troika-three-text';
 import type { ElementFrame, RunFrame } from '../../contracts/frame';
 import { GLYPHS, fontFor, foldText } from '../../fonts';
 import { FACES } from '../../fonts/faces';
+import { CLIP_FRAGMENT_DECL, CLIP_TEST, CLIP_VERTEX_DECL, clipVertex, makeClipUniform, setClip } from './clip';
 import { BAYER4, HASH } from './glsl';
 import { ORDER, placeElement, renderOrderOf } from './stage';
 import { hash01, inkColour } from './style';
@@ -52,6 +54,8 @@ interface RunEntry {
   readonly group: Group;
   /** this run's own base material: troika derives a material from it and disposes that one only when the base goes, so the run disposes it with itself */
   readonly base: MeshBasicMaterial;
+  /** the frame (`ElementFrame.clip`) this run is kept inside, in the derived material's own uniforms */
+  readonly clip: IUniform<Vector4>;
   content: string;
   fontKey: string;
   token: number;
@@ -239,6 +243,18 @@ function patchRibbon(shader: WebGLProgramParametersWithUniforms): void {
   shader.fragmentShader = (ribbonFragmentDefs + shader.fragmentShader).replace('gl_FragColor.a *= edgeAlpha;', 'gl_FragColor.a *= edgeAlpha * conduitDensity();');
 }
 
+/** The frame: the glyph's world position is carried to the fragment, which discards what lies outside `ElementFrame.clip`. */
+function patchClip(shader: WebGLProgramParametersWithUniforms): void {
+  const assign = clipVertex('inverse(viewMatrix) * mvPosition');
+  shader.vertexShader = `${CLIP_VERTEX_DECL}\n${shader.vertexShader}`;
+  if (shader.vertexShader.includes('gl_Position = projectionMatrix * mvPosition;')) {
+    shader.vertexShader = shader.vertexShader.replace('gl_Position = projectionMatrix * mvPosition;', `gl_Position = projectionMatrix * mvPosition;\n  ${assign}`);
+  } else {
+    shader.vertexShader = shader.vertexShader.replace('#include <project_vertex>', `#include <project_vertex>\n  ${assign}`);
+  }
+  shader.fragmentShader = `${CLIP_FRAGMENT_DECL}\n${shader.fragmentShader}`.replace('void main() {', `void main() {\n${CLIP_TEST}`);
+}
+
 function variantOf(style: SurfaceStyle): string {
   return `${style.hard ? 'h' : 'n'}${style.ribbon > 0 ? 'r' : 'n'}`;
 }
@@ -262,6 +278,7 @@ export function createTextPool(): TextPool {
 
   const makeRun = (style: SurfaceStyle, seed: number): RunEntry => {
     const text = new Text();
+    const clip = makeClipUniform();
     const base = makeMaterial(activeVariant ?? variantOf(style));
     text.material = base;
     text.fontSize = TYPESET_SIZE;
@@ -273,9 +290,14 @@ export function createTextPool(): TextPool {
     text.visible = false;
     const derived = text.material;
     if (!Array.isArray(derived)) {
-      derived.onBeforeCompile = style.hard ? patchHard : style.ribbon > 0 ? patchRibbon : () => undefined;
+      const look = style.hard ? patchHard : style.ribbon > 0 ? patchRibbon : (): void => undefined;
+      derived.onBeforeCompile = (shader) => {
+        patchClip(shader);
+        look(shader);
+      };
+      const uniforms = (derived as unknown as { uniforms: Record<string, { value: unknown }> }).uniforms;
+      uniforms['uConduitClip'] = clip;
       if (style.ribbon > 0 && !style.hard) {
-        const uniforms = (derived as unknown as { uniforms: Record<string, { value: unknown }> }).uniforms;
         uniforms['uConduitAgitation'] = agitation;
         uniforms['uConduitDots'] = dots;
         uniforms['uConduitAmount'] = amount;
@@ -284,7 +306,7 @@ export function createTextPool(): TextPool {
     }
     const group = new Group();
     group.add(text);
-    return { text, group, base, content: '', fontKey: '', token: 0, ready: false, typeset: false };
+    return { text, group, base, clip, content: '', fontKey: '', token: 0, ready: false, typeset: false };
   };
 
   const disposeEntry = (entry: ElementEntry): void => {
@@ -354,6 +376,7 @@ export function createTextPool(): TextPool {
     run.text.renderOrder = order;
     run.text.color = inkColour(style, runFrame.colour).getHex();
     run.text.fillOpacity = opacity;
+    setClip(run.clip, element.clip);
     // The reveal is a share of the run's drawn width, whatever the face: the painter has already turned characters into a width.
     run.text.clipRect = runFrame.reveal >= 1 ? null : [-TYPESET_SIZE * 2, -TYPESET_SIZE * 6, (runFrame.reveal * runFrame.width) / across, TYPESET_SIZE * 2];
     return honest;

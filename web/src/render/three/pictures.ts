@@ -6,6 +6,7 @@ import { BufferAttribute, BufferGeometry, Color, DoubleSide, LinearFilter, Linea
 import type { Affine, PictureFrame } from '../../contracts/frame';
 import type { LookSpec } from '../../contracts/look';
 
+import { CLIP_FRAGMENT_DECL, CLIP_TEST, CLIP_VERTEX_DECL, clipVertex, makeClipUniform, setClip } from './clip';
 import { MEDIUM_CODE, MEDIUM_GLSL } from './medium-glsl';
 import type { Sketch } from './media';
 import { renderOrderOf } from './stage';
@@ -33,8 +34,10 @@ const MASKS = { none: 0, round: 1, circle: 2, soft: 3, torn: 4 } as const;
 
 const VERTEX = /* glsl */ `
 varying vec2 vBox;
+${CLIP_VERTEX_DECL}
 void main() {
   vBox = position.xy;
+  ${clipVertex('modelMatrix * vec4(position.xy, 0.0, 1.0)')}
   gl_Position = projectionMatrix * modelViewMatrix * vec4(position.xy, 0.0, 1.0);
 }
 `;
@@ -55,9 +58,11 @@ uniform vec3 uDim;
 uniform vec3 uGround;
 uniform float uMultiply;
 varying vec2 vBox;
+${CLIP_FRAGMENT_DECL}
 ${MEDIUM_GLSL}
 
 void main() {
+  ${CLIP_TEST}
   vec2 local = vBox - uCentre;
   vec2 uv = vec2(0.5 + local.x * uFit.x + uFit.z, 0.5 + local.y * uFit.y + uFit.w);
   // Distance inward from the edge of the box, in units of the box's shorter side.
@@ -194,6 +199,7 @@ export function createPicturePool(): PicturePool {
         uBoxSize: { value: new Vector2(1, 1) },
         uInk: { value: new Color() },
         uMedium: { value: 0 },
+        uConduitClip: makeClipUniform(),
       },
       vertexShader: VERTEX,
       fragmentShader: FRAGMENT,
@@ -295,6 +301,7 @@ export function createPicturePool(): PicturePool {
         }
         (u['uInk']?.value as Color).set(look.roles.ink);
         set('uMask', MASKS[picture.mask]);
+        setClip(u['uConduitClip'], picture.clip);
         set('uOpacity', picture.opacity);
         set('uSeed', seedOf(picture.key));
         // The edge breathes about once every five seconds, at a tenth to a fifth of the dim ink.
