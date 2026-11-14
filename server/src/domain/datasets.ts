@@ -1,5 +1,5 @@
-// Data a chart draws by reference. STUB: the port and the pure parts are
-// here; nothing is read yet (PLAN-v2.md, packages S1 and S2).
+// Data a chart draws by reference. The port and the pure parts are here;
+// the adapter that reads Remote is `library/remote/datasets-cli.ts`.
 //
 // A chart of a few dozen points is written by the brain as rows. Anything
 // larger, or anything that must be true to the last digit, is not retyped by

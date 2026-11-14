@@ -11,7 +11,7 @@
 //
 //   <the body, laid out as `TechniqueBody` describes>
 
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseTechniqueBody } from '../domain/techniques';
 import type { Technique, TechniqueSource } from '../domain/techniques';
@@ -45,14 +45,83 @@ export function readTechniqueDir(dir: string | null, source: TechniqueSource): T
   return out;
 }
 
-/** STUB (PLAN-v2.md, package S2): the last good read of Remote, kept as one JSON file per technique so that a restart with Remote unreachable serves what it last knew. */
+const CACHE_VERSION = 1;
+const safeName = (id: string): string => id.replace(/[^A-Za-z0-9-]/g, '_');
+
+/**
+ * The last good read of Remote, one JSON file per technique, so that a
+ * restart with Remote unreachable serves what it last knew. Reading is
+ * forgiving to the last file: a missing folder, a half-written file, a file
+ * of another version or one that is not a technique is skipped, never an
+ * error, because the seed is always under it.
+ */
 export function readCache(dir: string): Technique[] {
-  void dir;
-  return [];
+  if (!existsSync(dir)) return [];
+  const out: Technique[] = [];
+  for (const name of readdirSync(dir).sort()) {
+    if (!name.endsWith('.json')) continue;
+    try {
+      const parsed: unknown = JSON.parse(readFileSync(join(dir, name), 'utf8'));
+      const technique = isCacheEntry(parsed) ? parsed.technique : null;
+      if (technique !== null) out.push({ ...technique, source: 'cache' });
+    } catch {
+      // a torn or foreign file: the next refresh rewrites it
+    }
+  }
+  return out;
 }
 
-/** STUB (package S2): writes what a refresh read. Never awaited by a turn; a failure is logged and forgotten. */
+function isCacheEntry(value: unknown): value is { v: number; technique: Technique } {
+  if (typeof value !== 'object' || value === null) return false;
+  const entry = value as { v?: unknown; technique?: unknown };
+  if (entry.v !== CACHE_VERSION || typeof entry.technique !== 'object' || entry.technique === null) return false;
+  const t = entry.technique as Partial<Technique>;
+  const body = t.body as Partial<Technique['body']> | undefined;
+  return typeof t.id === 'string' && typeof t.title === 'string' && typeof t.summary === 'string' && typeof t.reason === 'string' && body !== undefined && Array.isArray(body.example) && typeof body.purpose === 'string';
+}
+
+/**
+ * Keeps what a refresh read. Never awaited by a turn; the caller logs a
+ * failure and forgets it. A file is written to a temporary name and renamed,
+ * so a reader (this process after a crash, or another one on the same folder)
+ * never sees half a file, and only files whose content changed are touched.
+ * A read of nothing prunes nothing: an empty index is more likely a fault
+ * than a library that was emptied, and the cache is the thing that outlives
+ * faults.
+ */
 export function writeCache(dir: string, techniques: readonly Technique[]): void {
-  void dir;
-  void techniques;
+  if (techniques.length === 0) return;
+  mkdirSync(dir, { recursive: true });
+  const keep = new Set<string>();
+  for (const technique of techniques) {
+    if (technique.source === 'seed' || technique.source === 'overlay') continue;
+    const name = `${safeName(technique.id)}.json`;
+    keep.add(name);
+    const text = `${JSON.stringify({ v: CACHE_VERSION, technique: { ...technique, source: 'cache' } })}\n`;
+    const path = join(dir, name);
+    if (existsSync(path) && readFileSync(path, 'utf8') === text) continue;
+    const temporary = `${path}.${process.pid}.tmp`;
+    writeFileSync(temporary, text);
+    renameSync(temporary, path);
+  }
+  for (const name of readdirSync(dir)) {
+    if (name.endsWith('.json') && !keep.has(name)) rmSync(join(dir, name), { force: true });
+    else if (name.endsWith('.tmp') && Date.now() - statSync(join(dir, name)).mtimeMs > 60_000) rmSync(join(dir, name), { force: true });
+  }
+}
+
+/** A technique file as the writer needs it: the three header fields and the body, as markdown to store. Null when the file has no title. */
+export function splitTechniqueFile(text: string): { title: string; summary: string; reason: string; markdown: string } | null {
+  const lines = text.split('\n');
+  const titleAt = lines.findIndex((line) => line.startsWith('# '));
+  if (titleAt < 0) return null;
+  let summary = '';
+  let reason = '';
+  const body: string[] = [];
+  for (const line of lines.slice(titleAt + 1)) {
+    if (body.length === 0 && /^summary:/i.test(line)) summary = line.replace(/^summary:/i, '').trim();
+    else if (body.length === 0 && /^reason:/i.test(line)) reason = line.replace(/^reason:/i, '').trim();
+    else if (body.length > 0 || line.trim() !== '') body.push(line);
+  }
+  return { title: (lines[titleAt] ?? '').slice(2).trim(), summary, reason, markdown: body.join('\n').trim() };
 }
