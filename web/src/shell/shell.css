@@ -1178,3 +1178,73 @@ button {
   height: 1px;
   background: var(--sh-rule);
 }
+
+/* Usage in the About view, and the header's overflow (the kill switch lives there, behind a confirm) */
+.about__usage {
+  margin-top: 0.75rem;
+}
+
+.about__heading {
+  margin: 0 0 0.25rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--sh-quiet);
+}
+
+.shell-bar {
+  position: relative;
+}
+
+.shell-bar__more {
+  flex: 0 0 auto;
+}
+
+.shell-more {
+  position: absolute;
+  z-index: 25;
+  top: calc(100% - 0.25rem);
+  right: max(0.5rem, env(safe-area-inset-right));
+  min-width: 16rem;
+  max-width: calc(100vw - 1rem);
+  padding: 0.25rem;
+  border: 1px solid var(--sh-line);
+  border-radius: 0.875rem;
+  background: var(--sh-ground);
+  box-shadow: var(--sh-shadow);
+}
+
+.shell-more[hidden] {
+  display: none;
+}
+
+.shell-more__item {
+  display: block;
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0.5rem 0.75rem;
+  border: 0;
+  border-radius: 0.625rem;
+  background: transparent;
+  color: var(--sh-danger);
+  font: inherit;
+  font-size: 0.9375rem;
+  text-align: left;
+}
+
+.shell-more__item:hover {
+  background: var(--sh-hover);
+}
+
+.shell-more__gist {
+  display: block;
+  margin-top: 0.125rem;
+  color: var(--sh-quiet);
+  font-size: 0.8125rem;
+}
+
+.shell-confirm__go {
+  background: var(--sh-danger);
+  color: var(--sh-ground);
+}

@@ -3,7 +3,7 @@
 import type { StageApp } from '../app/stage-app';
 import type { ComposerMenu } from './menu';
 
-export function mountAbout(menu: ComposerMenu, app: StageApp): { dispose(): void } {
+export function mountAbout(menu: ComposerMenu, app: StageApp, extra?: (body: HTMLElement) => void): { dispose(): void } {
   const body = menu.addView('about', 'About');
   body.classList.add('about');
   const lines: [string, string][] = [
@@ -25,6 +25,7 @@ export function mountAbout(menu: ComposerMenu, app: StageApp): { dispose(): void
     credit.textContent = app.attribution.text;
     body.append(credit);
   }
+  extra?.(body);
   const entry = menu.add({ id: 'about', label: 'About', gist: 'keys, commands, credits', order: 80, view: 'about' });
   return {
     dispose() {

@@ -29,6 +29,7 @@ import { continueConversation, listConversations, readConversation } from './api
 import { mountCanvas } from './canvas';
 import { mountComposer } from './composer';
 import { mountList } from './list';
+import { mountOverflow, mountUsage } from './ops';
 import type { ListItem } from './list';
 import { mountLive } from './live';
 import type { Live } from './live';
@@ -613,7 +614,8 @@ async function start(): Promise<void> {
   mountActions(canvas.tools, mounted, transcript, canvas.stageHost, { top: canvas.navTop, menu });
   mountSound(canvas.navTop, mounted);
   picker = mountPicker(menu, mounted);
-  mountAbout(menu, mounted);
+  mountAbout(menu, mounted, (body) => mountUsage(body, mounted, menu.button));
+  mountOverflow(part('.shell-bar'), mounted);
   mountActivity(part('.shell-activity'), mounted);
   mountPermission(mounted);
   live = mountLive(mounted, transcript, {
