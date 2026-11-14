@@ -190,11 +190,17 @@ try {
     check(w.ranLog().join(',') === 'WebSearch,Write', 'only the read and the permitted write ran; the refused send did not', w.ranLog().join(','));
     check(!ranAtAsk.some((seen) => seen.includes('Write') && ranAtAsk.indexOf(seen) === 0), 'the write had not run when it was asked about', `ran at first ask: [${(ranAtAsk[0] ?? []).join(',')}]`);
     check(existsSync(join(w.folder, 'note.txt')), 'the permitted write really wrote its file, in the named folder', join(w.folder, 'note.txt'));
-    // A look at the draft runs in the same process, with the same tools, and may use none of them (review P1-6).
+    // A look at the draft runs in the same process, with the same tools, and may use none of them (review P1-6): a call is refused, or when
+    // the CLI would have run it by itself the pass is stopped.
     const before = w.ranLog().length;
     const looked: BrainEvent[] = [];
-    for await (const event of w.brain.review?.({ turn: 't1', session: 's', pass: 1, input: request().input, sight: null, picture: null, problems: [], styles: [], form: 'fix' }, new AbortController().signal) ?? []) looked.push(event);
-    check(looked.length > 0 && permissions(looked).length === 0 && w.ranLog().length === before, 'a look-and-fix pass asks nothing and runs nothing, though the process has tools', `${permissions(looked).length} asked, ${w.ranLog().length - before} ran`);
+    let stopped = '';
+    try {
+      for await (const event of w.brain.review?.({ turn: 't1', session: 's', pass: 1, input: request().input, sight: null, picture: null, problems: [], styles: [], form: 'fix' }, new AbortController().signal) ?? []) looked.push(event);
+    } catch (error) {
+      stopped = error instanceof Error ? error.message : String(error);
+    }
+    check(permissions(looked).length === 0 && w.ranLog().length === before && stopped.includes('tried to use a tool'), 'a look-and-fix pass asks nothing, runs nothing and is stopped at its first tool call', `${permissions(looked).length} asked, ${w.ranLog().length - before} ran, "${stopped.slice(0, 60)}"`);
     check(states(events, 'mcp__mail__send_email').includes('denied') && !states(events, 'mcp__mail__send_email').includes('done'), 'the send shows as denied, never as done', states(events, 'mcp__mail__send_email').join(','));
     check(states(events, 'WebSearch').join(',') === 'running,done', 'the read shows as running then done', states(events, 'WebSearch').join(','));
     const everything = JSON.stringify(events);
