@@ -435,12 +435,6 @@ export function layoutCallouts(input: CalloutInput): CalloutLayout {
       const ax = (parts[i] as Part).anchor.x;
       const lx = centreOf(bi).x;
       if ((ax - midX) * (lx - midX) < 0 && Math.abs(ax - midX) > fig.width * 0.1) cost += 300;
-      // a label stays level with its part (or above or below it, in line): the farther it is slid along its side, the less it reads as naming that part
-      if (assign[i] !== 'free') {
-        const part = (parts[i] as Part).anchor;
-        const along = assign[i] === 'left' || assign[i] === 'right' ? Math.abs(centreOf(bi).y - part.y) - bi.height : Math.abs(centreOf(bi).x - part.x) - bi.width / 2;
-        cost += 1.2 * Math.max(0, along);
-      }
       const landed = (landedCost[i] as number) - (li.length > 2 ? 15 : 0);
       if (landed >= 250) {
         crossed[i] = true;
