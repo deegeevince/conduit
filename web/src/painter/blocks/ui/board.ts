@@ -191,9 +191,24 @@ function arrows(layouts: readonly UiScreenLayout[], where: ReadonlyMap<string, {
     const head = Math.max(6, 9 * Math.min(1, s * 1.6));
     const pts: { x: number; y: number }[] = [];
     let dir = { x: 1, y: 0 };
-    if (Math.abs(a.y - b.y) < 2) {
+    let below = false;
+    const lo = Math.min(a.x + a.w, b.x + b.w);
+    const hi = Math.max(a.x, b.x);
+    const between = [...where].some(([id, o]) => id !== meta.from && id !== layout.id && Math.abs(o.y - a.y) < 2 && o.x >= lo - 1 && o.x + o.w <= hi + 1);
+    if (Math.abs(a.y - b.y) < 2 && between) {
+      // a screen stands between them: the arrow goes round under the row, never across the screen in the way
+      const drop = Math.max(10, 18 * s);
+      const y = a.y + a.h + drop;
+      pts.push({ x: a.x + a.w / 2, y: a.y + a.h + 6 }, { x: a.x + a.w / 2, y }, { x: b.x + b.w / 2, y }, { x: b.x + b.w / 2, y: b.y + b.h + 6 });
+      dir = { x: 0, y: -1 };
+      below = true;
+    } else if (Math.abs(a.y - b.y) < 2) {
       const y = a.y + a.h / 2;
-      pts.push({ x: a.x + a.w + 6, y }, { x: b.x - 6, y });
+      if (b.x > a.x) pts.push({ x: a.x + a.w + 6, y }, { x: b.x - 6, y });
+      else {
+        pts.push({ x: a.x - 6, y }, { x: b.x + b.w + 6, y });
+        dir = { x: -1, y: 0 };
+      }
     } else if (b.y > a.y) {
       const mx = a.x + a.w / 2;
       const midY = a.y + a.h + (b.y - a.y - a.h) / 2;
@@ -214,7 +229,7 @@ function arrows(layouts: readonly UiScreenLayout[], where: ReadonlyMap<string, {
       const next = pts[Math.floor(pts.length / 2)] ?? end;
       const text = meta.label;
       const w = measure.width(text, 12, 'normal');
-      out.push({ kind: 'text', key: `${layout.id}/arrow-label`, owner: layout.id, x: (mid.x + next.x) / 2 - w / 2, y: (mid.y + next.y) / 2 - 24, w, h: 20, lines: [{ text, width: w }], size: 12, line: 20, weight: 'normal', colour: labelInk, align: 'left' });
+      out.push({ kind: 'text', key: `${layout.id}/arrow-label`, owner: layout.id, x: (mid.x + next.x) / 2 - w / 2, y: (mid.y + next.y) / 2 + (below ? 4 : -24), w, h: 20, lines: [{ text, width: w }], size: 12, line: 20, weight: 'normal', colour: labelInk, align: 'left' });
     }
   }
   return out;
