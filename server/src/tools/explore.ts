@@ -387,8 +387,8 @@ function summary(recorded: readonly Recorded[], planned: number): string {
 function familyTable(scored: ExploreSummary): string {
   const pct = (m: Measure): string => (m.value === null ? '-' : `${Math.round(m.value * 100)}%`);
   const num = (m: Measure): string => (m.value === null ? '-' : m.value.toFixed(2));
-  const rows = Object.values(scored.families).map((f) => [f.family, String(f.answers), num(f.coherence), pct(f.coherenceFour), pct(f.textReadable), pct(f.labelsRight), pct(f.drawingCorrect), pct(f.structureNamed), num(f.chartQuality), pct(f.responds), `${f.overlaps}/${f.throughNodes}/${f.crossed}`]);
-  return `families (pool ${scored.pool}, judge rubric ${scored.rubric ?? 'none'}):\n${tabulate(['family', 'n', 'coher.', '>=4', 'text ok', 'labels', 'correct', 'named', 'chart q', 'responds', 'overlap/thru/cross'], rows, new Set([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]))}`;
+  const rows = Object.values(scored.families).map((line) => line.bar).map((f) => [f.family, String(f.answers), num(f.coherence), pct(f.coherenceFour), pct(f.textReadable), pct(f.labelsRight), pct(f.drawingCorrect), pct(f.structureNamed), num(f.chartQuality), pct(f.responds), `${f.overlaps}/${f.throughNodes}/${f.crossed}`]);
+  return `families (pool ${scored.pool}, judge rubric ${scored.rubric === '' ? 'none' : scored.rubric}):\n${tabulate(['family', 'n', 'coher.', '>=4', 'text ok', 'labels', 'correct', 'named', 'chart q', 'responds', 'overlap/thru/cross'], rows, new Set([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]))}`;
 }
 
 async function main(): Promise<void> {
@@ -689,7 +689,7 @@ async function main(): Promise<void> {
   // The summary the loop reads: scores by family in the terms of the quality bar, never an answer.
   const answers = recorded.flatMap((item) => (item.unit.kind === 'prompt' ? item.results : item.results.slice(0, 1)));
   const scored = summaryOf(
-    { run: id, pool, battery: relative(repoRoot(), batteryPath), rubric: judging ? rubricOf({ model: options.judgeModel, effort: options.judgeEffort }) : null, brain: brain.id, model, samples: options.samples, spentUsd: recorded.reduce((sum, item) => sum + item.results.reduce((s2, r) => s2 + (r.usage?.costUsd ?? 0) + (r.judge?.costUsd ?? 0), 0), 0) },
+    { run: id, pool, battery: relative(repoRoot(), batteryPath), rubric: judging ? rubricOf({ model: options.judgeModel, effort: options.judgeEffort }) : '', brain: brain.id, model, samples: options.samples, spentUsd: recorded.reduce((sum, item) => sum + item.results.reduce((s2, r) => s2 + (r.usage?.costUsd ?? 0) + (r.judge?.costUsd ?? 0), 0), 0) },
     answers,
   );
   await writeFile(join(dir, 'summary.json'), `${JSON.stringify(scored, null, 2)}\n`);

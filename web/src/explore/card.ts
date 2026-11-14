@@ -58,6 +58,40 @@ function fact(label: string, value: string): HTMLElement {
 }
 
 /** What the judge saw and said: the last picture it was shown, its score and its reasons. */
+/** What the painter measured, and what working the answer's controls and charts came to: counts, not opinions. */
+function measuresBlockOf(answer: ExploreResult): HTMLElement | null {
+  const { geometry, drive, checks } = answer;
+  const rows: HTMLElement[] = [];
+  if (geometry !== undefined) {
+    rows.push(fact('overlapping text', String(geometry.textOverlaps)), fact('connectors through nodes', String(geometry.linksThroughNodes)), fact('labels crossed', String(geometry.crossedLabels)), fact('clipped', String(geometry.clipped)));
+  }
+  if (checks.structures !== undefined && Object.keys(checks.structures).length > 0) {
+    rows.push(fact('structures', Object.entries(checks.structures).map(([kind, n]) => `${n} ${kind}`).join(', ')), fact('placed by hand', String(checks.placedByHand ?? 0)));
+  }
+  for (const control of drive?.controls ?? []) {
+    const changed = control.changed === null ? '' : `, picture changes ${(control.changed * 100).toFixed(1)}%`;
+    rows.push(fact(`${control.kind} ${control.id}`, `${control.bound ? 'bound' : 'not bound'}, ${control.reported ? 'event heard' : 'no event'}${changed}${control.answered === null ? '' : control.answered ? ', answered' : ', not answered'}`));
+  }
+  for (const chart of drive?.charts ?? []) rows.push(fact(`chart ${chart.id}`, `crosshair ${chart.crosshair ? 'ok' : 'FAILED'}, zoom ${chart.zoomed ? 'ok' : 'FAILED'}, ${chart.silent ? 'silent' : 'OPENED A TURN'}`));
+  return rows.length === 0 ? null : h('div', { class: 'facts measures' }, ...rows);
+}
+
+/** Look and fix: the draft's picture beside the answer as it ended, with the judge's two scores. */
+function reviewBlockOf(answer: ExploreResult): HTMLElement | null {
+  const review = answer.review;
+  if (review === undefined) return null;
+  const finalStill = answer.judge?.stills[answer.judge.stills.length - 1];
+  const picture = (src: string | undefined, caption: string): HTMLElement =>
+    h('figure', { class: 'review-pic' }, src === undefined ? h('p', { class: 'note', text: 'no picture' }) : h('img', { attrs: { src, alt: caption } }), h('figcaption', { text: caption }));
+  const draft = review.draftStills?.[review.draftStills.length - 1];
+  return h(
+    'div',
+    { class: 'review' },
+    h('p', { class: 'note', text: `Look and fix: ${review.result}${review.why === null ? '' : ` (${review.why})`}; first line of the fix ${review.firstLineMs === null ? 'none' : seconds(review.firstLineMs)}, added wait ${seconds(review.addedWaitMs)}` }),
+    h('div', { class: 'review-pair' }, picture(draft, `Draft${review.before === null ? '' : `: coherence ${review.before}`}`), picture(finalStill, `After the look${review.after === null ? '' : `: coherence ${review.after}`}`)),
+  );
+}
+
 function judgeBlockOf(judge: ExploreJudgement | null): HTMLElement | null {
   if (judge === null) return null;
   if (judge.failure !== null) return h('p', { class: 'note bad', text: `No judge's verdict: ${judge.failure}` });
@@ -320,6 +354,8 @@ export function createCard(label: string, services: Services): Card {
     );
 
     const judgeBlock = judgeBlockOf(answer.judge ?? null);
+    const measuresBlock = measuresBlockOf(answer);
+    const reviewBlock = reviewBlockOf(answer);
     const turnBlock = turnBlockOf(answer);
     const words = wordsOf(answer);
     const wordsBlock = h('div', { class: 'words' }, ...(words.length === 0 ? [h('p', { class: 'note', text: 'No words were shown.' })] : words.map((text) => h('p', { text }))));
@@ -364,6 +400,8 @@ export function createCard(label: string, services: Services): Card {
       h('div', { class: 'actions' }, play, save, exportState),
       facts,
       ...(judgeBlock === null ? [] : [judgeBlock]),
+      ...(reviewBlock === null ? [] : [reviewBlock]),
+      ...(measuresBlock === null ? [] : [measuresBlock]),
       verdicts,
       wordsBlock,
       script,

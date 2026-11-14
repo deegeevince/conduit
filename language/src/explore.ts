@@ -191,6 +191,8 @@ export interface ExploreReview extends ReviewOutcome {
   readonly before: number | null;
   readonly after: number | null;
   readonly costUsd: number | null;
+  /** small JPEG data URLs of the draft as the painter pictured it before the fix, for the review page to set beside the final picture; the judge's first score is `before` */
+  readonly draftStills?: readonly string[];
 }
 
 /** What happened when the run worked an answer's controls. */
@@ -590,17 +592,38 @@ export interface FamilyScore {
   readonly cost: { readonly usd: number | null };
 }
 
+/** The numbers the improvement loop compares, with the bar's rows beside them. */
+export interface FamilyLine {
+  readonly n: number;
+  /** mean judge coherence, 1 to 5 (0 when nothing was judged) */
+  readonly coherence: number;
+  /** shares of judged answers: the drawing is right, the text is readable, it shows what was asked */
+  readonly correct: number;
+  readonly readable: number;
+  readonly asked: number;
+  /** painter-measured collisions per answer: text overlaps, crossed labels, links through nodes */
+  readonly collisions: number;
+  /** medians: output tokens, ms to the first visible line */
+  readonly tokens: number;
+  readonly firstLineMs: number;
+  readonly bar: FamilyScore;
+}
+
 /** What `pnpm explore` writes beside the run's index, and the loop reads: scores, never answers. */
 export interface ExploreSummary {
   readonly run: string;
   readonly pool: ExplorePool;
   readonly battery: string;
-  readonly rubric: string | null;
+  /** the judge's rubric hash; empty when the run had no judge */
+  readonly rubric: string;
   readonly brain: string;
   readonly model: string | null;
   readonly samples: number;
   readonly spentUsd: number | null;
-  readonly families: Readonly<Partial<Record<ExploreFamily, FamilyScore>>>;
+  /** dollars the run spent, brain and judge */
+  readonly usd: number;
+  /** per family: the loop's own numbers (shape of `FamilyScore` in server/src/loop/types.ts) and, under `bar`, every row of the quality bar */
+  readonly families: Readonly<Partial<Record<ExploreFamily, FamilyLine>>>;
   /** per prompt id, the mean coherence over its samples and how many checks failed: enough to say which prompts moved, and nothing the critic could learn an answer from */
   readonly prompts: readonly { readonly id: string; readonly family: ExploreFamily; readonly coherence: number | null; readonly failed: number; readonly checked: number }[];
 }
@@ -648,7 +671,7 @@ export function scoreFamily(family: ExploreFamily, answers: readonly ExploreResu
 
 /** The summary of a run, from its answers by prompt id. */
 export function summaryOf(
-  meta: Omit<ExploreSummary, 'families' | 'prompts'>,
+  meta: Omit<ExploreSummary, 'families' | 'prompts' | 'usd'>,
   answers: readonly ExploreResult[],
 ): ExploreSummary {
   const byFamily = new Map<ExploreFamily, ExploreResult[]>();
@@ -656,8 +679,28 @@ export function summaryOf(
     const family = familyOf(answer.prompt);
     byFamily.set(family, [...(byFamily.get(family) ?? []), answer]);
   }
-  const families: Partial<Record<ExploreFamily, FamilyScore>> = {};
-  for (const [family, group] of byFamily) families[family] = scoreFamily(family, group);
+  const middle = (values: readonly number[]): number => {
+    if (values.length === 0) return 0;
+    const sorted = [...values].sort((a, b) => a - b);
+    const at = Math.floor(sorted.length / 2);
+    return sorted.length % 2 === 1 ? (sorted[at] ?? 0) : ((sorted[at - 1] ?? 0) + (sorted[at] ?? 0)) / 2;
+  };
+  const families: Partial<Record<ExploreFamily, FamilyLine>> = {};
+  for (const [family, group] of byFamily) {
+    const bar = scoreFamily(family, group);
+    const judges = group.flatMap((answer) => (answer.judge != null && answer.judge.failure === null ? [answer.judge] : []));
+    families[family] = {
+      n: group.length,
+      coherence: bar.coherence.value ?? 0,
+      correct: bar.drawingCorrect.value ?? 0,
+      readable: bar.textReadable.value ?? 0,
+      asked: judges.length === 0 ? 0 : judges.filter((j) => j.asked).length / judges.length,
+      collisions: group.length === 0 ? 0 : (bar.overlaps + bar.throughNodes + bar.crossed) / group.length,
+      tokens: middle(group.flatMap((answer) => (answer.usage?.outputTokens == null ? [] : [answer.usage.outputTokens]))),
+      firstLineMs: middle(group.flatMap((answer) => (answer.firstVisibleMs === null ? [] : [answer.firstVisibleMs]))),
+      bar,
+    };
+  }
   const byPrompt = new Map<string, ExploreResult[]>();
   for (const answer of answers) byPrompt.set(answer.prompt.id, [...(byPrompt.get(answer.prompt.id) ?? []), answer]);
   const prompts = [...byPrompt].map(([id, group]) => {
@@ -665,5 +708,5 @@ export function summaryOf(
     const verdicts = group.flatMap((answer) => answer.verdicts ?? []);
     return { id, family: familyOf((group[0] as ExploreResult).prompt), coherence: scores.length === 0 ? null : scores.reduce((a, b) => a + b, 0) / scores.length, failed: verdicts.filter((v) => !v.ok).length, checked: verdicts.length };
   });
-  return { ...meta, families, prompts };
+  return { ...meta, usd: meta.spentUsd ?? 0, families, prompts };
 }
