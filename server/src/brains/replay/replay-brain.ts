@@ -30,12 +30,22 @@ function pause(ms: number, signal: AbortSignal): Promise<boolean> {
   });
 }
 
+const KIND_DEMOS: readonly (readonly [RegExp, string])[] = [
+  [/\b(chart|graph|plot|candles?|stock|price|prices|revenue|trend)\b/, 'charts'],
+  [/\b(slider|control|explor|interactive|what if|simulat|toggle|button)\w*/, 'explorable'],
+  [/\b(flow|diagram|tree|cycle|timeline|pipeline|process|map of|architecture|how does|works)\b/, 'diagrams'],
+];
+
 function scriptFor(request: TurnRequest, defaultScript: string | null): string {
   const { input } = request;
   if (input.kind === 'demo') return input.script;
   if (defaultScript !== null) return defaultScript;
   const said = input.kind === 'script' ? '' : input.text.trim().toLowerCase();
-  return DEMOS.find((demo) => demo.name === said)?.name ?? FIRST_LOAD_DEMO;
+  const named = DEMOS.find((demo) => demo.name === said)?.name;
+  if (named !== undefined) return named;
+  // The battery's prompts have no demo of their own: the demo of the kind of answer they ask for stands in, when the language has one.
+  const standIn = KIND_DEMOS.find(([pattern, demo]) => pattern.test(said) && DEMOS.some((candidate) => candidate.name === demo));
+  return standIn?.[1] ?? FIRST_LOAD_DEMO;
 }
 
 /**

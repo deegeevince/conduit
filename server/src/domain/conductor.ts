@@ -14,7 +14,6 @@ import type {
   Issue,
   LineProblem,
   PaintLine,
-  PassState,
   ReviewPolicy,
   Schedule,
   Services,
@@ -157,7 +156,7 @@ export class Conductor {
    * the painter has reported it shown. Returns at once; lines arrive on the
    * session's stream.
    */
-  startTurn(session: string, input: TurnInput): StartTurnResponse {
+  startTurn(session: string, input: TurnInput, options: { readonly look?: boolean } = {}): StartTurnResponse {
     const { sessions, brains, log, now } = this.deps;
     const s = sessions.require(session, now());
 
@@ -193,6 +192,7 @@ export class Conductor {
       ordinal: s.nextOrdinal,
       lineCount: 0,
       rejects: 0,
+      lookAllowed: options.look !== false,
       review: undefined,
       reported: false,
       sent: [],
@@ -647,67 +647,34 @@ export class Conductor {
       if (turn.abort.signal.aborted) return;
       // The few techniques that fit what was just said. From memory: no network, file or model is on this path.
       const techniques = turn.input.kind === 'prompt' || turn.input.kind === 'tap' || turn.input.kind === 'act' ? this.deps.library.cardsFor({ input: turn.input, documents: s.documents.length > 0 }) : [];
-      if (techniques.length > 0) log.debug('techniques.chosen', { session: s.id, turn: turn.id, techniques: techniques.map((card) => card.id) });
+      if (techniques.length > 0) {
+        log.debug('techniques.chosen', { session: s.id, turn: turn.id, techniques: techniques.map((card) => card.id) });
+        sessionLog.write(s.id, { type: 'techniques', turn: turn.id, ids: techniques.map((card) => card.id) });
+      }
+      const data: DataFacts[] = s.tables.map((table) => factsOf(table, gathered.data.has(table.id)));
       const context = {
         ...base,
         documents: s.documents.map((doc): DocumentFacts => ({ ...doc.facts, fresh: fresh.has(doc.facts.id) })),
         unread: gathered.unread,
         techniques,
+        ...(data.length > 0 ? { data } : {}),
       };
       const pdfs = s.documents.flatMap((doc) => (doc.pdf === null ? [] : [{ id: doc.facts.id, bytes: doc.pdf }]));
       const snapshot = this.deps.sight === 'snapshot' && turn.previous !== null ? (this.deps.assets.snapshot(s.id, turn.previous) ?? null) : null;
-      const request = { turn: turn.id, session: s.id, input: turn.input, context, snapshot, pdfs };
+      const input: TurnInput = gathered.text !== null && turn.input.kind === 'prompt' ? { kind: 'prompt', text: gathered.text } : turn.input;
+      const request = { turn: turn.id, session: s.id, input, context, snapshot, pdfs };
       const normalizer = new LineNormalizer(() => {
         s.nextAutoId += 1;
         return `x${s.nextAutoId}`;
       }, Object.keys(s.stage.styles));
+      let stopped = false;
       for await (const event of brain.respond(request, turn.abort.signal)) {
-        // What the brain was told and what the turn cost are recorded even when the turn was cut short; its lines no longer matter.
-        if (event.type === 'brief') {
-          sessionLog.write(s.id, { type: 'brief', turn: turn.id, form: event.form, text: event.text, system: event.system, withSnapshot: event.withSnapshot });
-          continue;
-        }
-        if (event.type === 'usage') {
-          sessionLog.write(s.id, { type: 'usage', turn: turn.id, usage: event.usage });
-          log.info('turn.usage', {
-            session: s.id,
-            turn: turn.id,
-            firstTextMs: event.usage.firstTextMs,
-            outputTokens: event.usage.outputTokens,
-            thinkingTokens: event.usage.thinkingTokens,
-            costUsd: event.usage.costUsd,
-          });
-          continue;
-        }
-        if (turn.endReason !== null) continue;
-        if (event.type === 'reject') {
-          this.reject(s, turn, event.raw, event.issues);
-          continue;
-        }
-        if (turn.lineCount >= SERVER_LIMITS.linesPerTurn) {
-          this.finish(s, turn, 'failed', `the brain wrote more than ${SERVER_LIMITS.linesPerTurn} lines`);
+        if (this.ingest(s, turn, event, normalizer, 1) === 'stop') {
+          stopped = true;
           break;
         }
-        const normalized = normalizer.normalize(event.line);
-        if (normalized.line === null) {
-          this.reject(s, turn, serializeLine(event.line), [...event.issues, ...normalized.issues]);
-          continue;
-        }
-        const line = normalized.line;
-        const seq = s.nextSeq;
-        s.nextSeq += 1;
-        turn.lineCount += 1;
-        const penBefore = turn.score.schedule.pen;
-        const pushed = turn.score.push(line, seq, this.estimatePlayhead(turn));
-        const issues: Issue[] = [...event.issues, ...normalized.issues, ...pushed.issues];
-        const text = serializeLine(line);
-        log.debug('turn.line', { turn: turn.id, seq, text });
-        if (issues.some((issue) => issue.severity === 'warn')) this.noteProblem(turn, text, 'repaired', issues.filter((issue) => issue.severity === 'warn'));
-        const start = pushed.schedule.lines.find((timed) => timed.seq === seq)?.start ?? penBefore;
-        sessionLog.write(s.id, { type: 'line', turn: turn.id, seq, text, start, issues });
-        this.emit(s, turn, { type: 'line', turn: turn.id, seq, text, issues });
-        if (line.verb === 'paint') this.paint(s, turn, seq, line, pushed.schedule);
       }
+      if (!stopped && turn.endReason === null && !turn.abort.signal.aborted) await this.lookAndFix(s, turn, brain, request.input, normalizer);
       this.finish(s, turn, turn.abort.signal.aborted ? 'interrupted' : 'done', null);
     } catch (error) {
       if (turn.endReason !== null) {
@@ -724,7 +691,108 @@ export class Conductor {
     }
   }
 
+  /**
+   * Look and fix: the draft is written; decide, through `reviewTurn`, whether the brain is shown it, and carry the fix's events exactly as the
+   * draft's were carried. A look that goes wrong never fails the turn: `reviewTurn` does not throw, and what it gave up on is logged and shown.
+   */
+  private async lookAndFix(s: Session, turn: ActiveTurn, brain: Brain, input: TurnInput, normalizer: LineNormalizer): Promise<void> {
+    const { sessionLog } = this.deps;
+    let pass = 1;
+    const steps = reviewTurn({
+      brain,
+      policy: { ...this.deps.review, enabled: this.deps.review.enabled && turn.lookAllowed },
+      gate: s.draft,
+      turn: turn.id,
+      session: s.id,
+      input,
+      styles: () => Object.keys(turn.score.schedule.styles),
+      drafts: s.capabilities.drafts,
+      state: () => ({ schedule: turn.score.schedule, rejects: turn.rejects, lastSeq: s.nextSeq - 1, problems: turn.problems }),
+      signal: turn.abort.signal,
+      now: this.deps.now,
+      log: this.deps.log,
+    });
+    for await (const step of steps) {
+      if (turn.endReason !== null) break;
+      if (step.type === 'pass') {
+        pass = step.pass;
+        sessionLog.write(s.id, { type: 'pass', turn: turn.id, pass: step.pass, state: step.state, reason: step.reason });
+        this.emit(s, turn, { type: 'pass', turn: turn.id, pass: step.pass, state: step.state, reason: step.reason });
+      } else if (step.type === 'record') {
+        const { record } = step;
+        // Remembered only when a look was actually considered: a plain answer was never a candidate.
+        const considered = record.decisions.length > 1 || record.decisions[0]?.look === true;
+        if (considered) turn.review = { result: record.result, passes: record.passes, why: record.why };
+        sessionLog.write(s.id, {
+          type: 'review',
+          turn: turn.id,
+          outcome: { result: record.result, passes: record.passes, why: record.why },
+          decisions: record.decisions,
+          firstLineMs: record.firstLineMs,
+          totalMs: record.totalMs,
+          costUsd: record.costUsd,
+        });
+      } else if (this.ingest(s, turn, step, normalizer, pass) === 'stop') {
+        break;
+      }
+    }
+  }
+
+  /** One event of a brain's pass, carried to the log, the score and the painter. Returns `stop` when the turn can take no more. */
+  private ingest(s: Session, turn: ActiveTurn, event: BrainEvent, normalizer: LineNormalizer, pass: number): 'stop' | undefined {
+    const { log, sessionLog } = this.deps;
+    // What the brain was told and what the turn cost are recorded even when the turn was cut short; its lines no longer matter.
+    if (event.type === 'brief') {
+      sessionLog.write(s.id, { type: 'brief', turn: turn.id, form: event.form, text: event.text, system: event.system, withSnapshot: event.withSnapshot, pass });
+      return undefined;
+    }
+    if (event.type === 'usage') {
+      sessionLog.write(s.id, { type: 'usage', turn: turn.id, usage: event.usage, pass });
+      log.info('turn.usage', {
+        session: s.id,
+        turn: turn.id,
+        pass,
+        firstTextMs: event.usage.firstTextMs,
+        outputTokens: event.usage.outputTokens,
+        thinkingTokens: event.usage.thinkingTokens,
+        costUsd: event.usage.costUsd,
+      });
+      return undefined;
+    }
+    if (turn.endReason !== null) return undefined;
+    if (event.type === 'reject') {
+      this.reject(s, turn, event.raw, event.issues);
+      return undefined;
+    }
+    if (turn.lineCount >= SERVER_LIMITS.linesPerTurn) {
+      this.finish(s, turn, 'failed', `the brain wrote more than ${SERVER_LIMITS.linesPerTurn} lines`);
+      return 'stop';
+    }
+    const normalized = normalizer.normalize(event.line);
+    if (normalized.line === null) {
+      this.reject(s, turn, serializeLine(event.line), [...event.issues, ...normalized.issues]);
+      return undefined;
+    }
+    const line = normalized.line;
+    const seq = s.nextSeq;
+    s.nextSeq += 1;
+    turn.lineCount += 1;
+    const penBefore = turn.score.schedule.pen;
+    const pushed = turn.score.push(line, seq, this.estimatePlayhead(turn));
+    const issues: Issue[] = [...event.issues, ...normalized.issues, ...pushed.issues];
+    const text = serializeLine(line);
+    log.debug('turn.line', { turn: turn.id, seq, text });
+    if (issues.some((issue) => issue.severity === 'warn')) this.noteProblem(turn, text, 'repaired', issues.filter((issue) => issue.severity === 'warn'));
+    const start = pushed.schedule.lines.find((timed) => timed.seq === seq)?.start ?? penBefore;
+    sessionLog.write(s.id, { type: 'line', turn: turn.id, seq, text, start, issues, pass });
+    this.emit(s, turn, { type: 'line', turn: turn.id, seq, text, issues });
+    if (line.verb === 'paint') this.paint(s, turn, seq, line, pushed.schedule);
+    if (line.verb === 'chart' && line.data !== undefined) this.announceData(s, turn, line.data);
+    return undefined;
+  }
+
   private reject(s: Session, turn: ActiveTurn, raw: string, issues: readonly Issue[]): void {
+    turn.rejects += 1;
     this.noteProblem(turn, raw, 'rejected', issues);
     this.deps.sessionLog.write(s.id, { type: 'reject', turn: turn.id, raw, issues });
     this.emit(s, turn, { type: 'reject', turn: turn.id, raw, issues });

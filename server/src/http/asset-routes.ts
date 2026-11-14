@@ -66,6 +66,13 @@ function jpegSize(bytes: Uint8Array): { width: number; height: number } | null {
  *   Kept for the next brief and saved beside the session log.
  * - `GET  API.snapshot(session, turn)`: that picture back; 404 if there is none.
  *
+ * - `POST API.draft(session, turn, pass)`: body `image/jpeg`, same limit. 204.
+ *   The stage as that pass of an open turn will leave it: what the brain is
+ *   shown when it looks at its draft. Held for the look and the log, not for
+ *   the next brief.
+ * - `GET  API.data(session, id)`: the rows of a table the conversation holds,
+ *   as a `DataTable`; 404 when there is none.
+ *
  * Any other Content-Type on the POSTs is 415. Every route answers errors in
  * the usual `{ code, message, statusCode }` shape.
  */
@@ -103,6 +110,27 @@ export function registerAssetRoutes(app: Hono, deps: HttpDeps): void {
     if (size === null) throw errors.badRequest('the body is not a JPEG');
     conductor.receiveSnapshot(session, turn, { mime: 'image/jpeg', bytes, ...size });
     return c.body(null, 204);
+  });
+
+  app.post('/api/sessions/:session/turns/:turn/drafts/:pass', async (c) => {
+    const session = param(c, 'session');
+    const turn = param(c, 'turn');
+    const pass = Number(param(c, 'pass'));
+    if (!Number.isInteger(pass) || pass < 1 || pass > 8) throw errors.badRequest('the pass is not a number from 1 to 8');
+    conductor.assertSession(session);
+    const bytes = await pictureBody(c, 'image/jpeg');
+    const size = jpegSize(bytes);
+    if (size === null) throw errors.badRequest('the body is not a JPEG');
+    conductor.receiveDraftPicture(session, turn, pass, { mime: 'image/jpeg', bytes, ...size });
+    return c.body(null, 204);
+  });
+
+  app.get(API.data(':session', ':id'), (c) => {
+    const session = param(c, 'session');
+    const table = conductor.dataFor(session, param(c, 'id'));
+    if (table === undefined) throw errors.notFound('data');
+    c.header('Cache-Control', 'no-store');
+    return c.json(table);
   });
 
   app.get(API.snapshot(':session', ':turn'), (c) => {

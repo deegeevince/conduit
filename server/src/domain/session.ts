@@ -89,6 +89,8 @@ export interface ActiveTurn {
   lineCount: number;
   /** lines of this turn that were dropped outright, over every pass: what look-and-fix counts */
   rejects: number;
+  /** the user has switched look and fix off for this turn (`x-conduit-review: off`) */
+  readonly lookAllowed: boolean;
   /** how look-and-fix went, once it has been considered; it goes into the turn's memory */
   review: ReviewOutcome | undefined;
   /** the memory of this turn is closed: a report arrived, or the next turn replaced it */

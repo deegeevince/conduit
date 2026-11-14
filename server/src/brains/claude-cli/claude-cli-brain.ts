@@ -1,7 +1,9 @@
 import { buildSystemPrompt, buildTurnBrief } from '@conduit/language';
 import type { PromptVariant } from '@conduit/language';
 import type { BriefForm, Capabilities } from '@conduit/language';
-import type { Brain, BrainEvent, BrainSession, TurnRequest } from '../../domain/brain';
+import { buildReviewBrief, isKeep } from '@conduit/language';
+import type { Brain, BrainEvent, BrainSession, ReviewRequest, Snapshot, TurnRequest } from '../../domain/brain';
+import { askedOf } from '../../domain/review';
 import { brainEventsFromText } from '../../domain/lines';
 import { AppError, errors } from '../../errors';
 import type { Logger } from '../../log';
@@ -146,24 +148,50 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
     return { entry, form: 'full', reused: false, release: claim(entry) };
   }
 
+  /** One message to the process, with what the log should say of it. */
+  interface Outgoing {
+    readonly turn: string;
+    readonly session: string;
+    readonly styles: readonly string[];
+    readonly text: string;
+    readonly image: Snapshot | null;
+    readonly pdfs: readonly Uint8Array[];
+    readonly form: BriefForm;
+    /** run once the message is on its way: what the process now knows */
+    readonly sent: () => void;
+  }
+
+  function outgoingFor(request: TurnRequest, entry: Entry, form: BriefForm): Outgoing {
+    const held = request.context.documents ?? [];
+    const given = form === 'full' ? held : held.filter((doc) => !entry.heardDocs.has(doc.id));
+    return {
+      turn: request.turn,
+      session: request.session,
+      styles: Object.keys(request.context.stage.styles),
+      text: buildTurnBrief({ ...request.context, documents: given }, request.input, form, entry.capabilities),
+      image: request.snapshot,
+      pdfs: (request.pdfs ?? []).filter((pdf) => given.some((doc) => doc.id === pdf.id && doc.kind === 'pdf')).map((pdf) => pdf.bytes),
+      form,
+      sent: () => {
+        entry.lastTurn = request.turn;
+        for (const doc of given) entry.heardDocs.add(doc.id);
+      },
+    };
+  }
+
   async function* turnOnce(
-    request: TurnRequest,
+    out: Outgoing,
     signal: AbortSignal,
     entry: Entry,
-    form: BriefForm,
     reused: boolean,
     startedAt: number,
     state: { sawText: boolean },
   ): AsyncGenerator<BrainEvent> {
-    const turnLog = log.child({ turn: request.turn, session: request.session });
-    const held = request.context.documents ?? [];
-    const given = form === 'full' ? held : held.filter((doc) => !entry.heardDocs.has(doc.id));
-    const text = buildTurnBrief({ ...request.context, documents: given }, request.input, form, entry.capabilities);
-    const pdfs = (request.pdfs ?? []).filter((pdf) => given.some((doc) => doc.id === pdf.id && doc.kind === 'pdf')).map((pdf) => pdf.bytes);
-    yield { type: 'brief', form, text, system: entry.systemSent ? null : entry.system, withSnapshot: request.snapshot !== null };
+    const turnLog = log.child({ turn: out.turn, session: out.session });
+    const { text, pdfs } = out;
+    yield { type: 'brief', form: out.form, text, system: entry.systemSent ? null : entry.system, withSnapshot: out.image !== null };
     entry.systemSent = true;
-    entry.lastTurn = request.turn;
-    for (const doc of given) entry.heardDocs.add(doc.id);
+    out.sent();
 
     const inner = new AbortController();
     const onOuterAbort = (): void => inner.abort();
@@ -187,7 +215,7 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
 
     async function* chunks(): AsyncGenerator<string> {
       arm(deps.firstTokenTimeoutMs, 'no first token from claude within CLAUDE_FIRST_TOKEN_TIMEOUT_MS');
-      for await (const event of entry.proc.ask({ text, image: request.snapshot, pdfs }, inner.signal)) {
+      for await (const event of entry.proc.ask({ text, image: out.image, pdfs }, inner.signal)) {
         if (state.sawText) arm(deps.idleTimeoutMs, 'claude went quiet, longer than CLAUDE_IDLE_TIMEOUT_MS');
         if (event.type === 'system' && (event as { subtype?: unknown }).subtype === 'init') {
           const init = event as { tools?: readonly unknown[]; mcp_servers?: readonly unknown[]; model?: string };
@@ -216,7 +244,7 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
     }
 
     try {
-      yield* brainEventsFromText(chunks(), Object.keys(request.context.stage.styles));
+      yield* brainEventsFromText(chunks(), out.styles);
     } finally {
       clearTimeout(timer);
       signal.removeEventListener('abort', onOuterAbort);
@@ -258,7 +286,7 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
       const { entry, form, reused, release } = await acquire(request);
       const state = { sawText: false };
       try {
-        yield* turnOnce(request, signal, entry, form, reused, startedAt, state);
+        yield* turnOnce(outgoingFor(request, entry, form), signal, entry, reused, startedAt, state);
         entry.lastUsed = Date.now();
         return;
       } catch (error) {
@@ -277,9 +305,54 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
     }
   }
 
+  /**
+   * The second message of a turn, to the process that wrote the draft. It is claimed for the length of the look, so that nothing else is
+   * asked of it, and given back whatever happens: an abandoned look interrupts the model, reads it to its result, and the process,
+   * with the conversation and the cache, goes on to the next turn. Only a process that is silent past the interrupt's grace is let go.
+   */
+  async function* review(request: ReviewRequest, signal: AbortSignal): AsyncGenerator<BrainEvent> {
+    if (signal.aborted) return;
+    const entry = pool.get(request.session);
+    if (entry === undefined || !entry.proc.alive || entry.running !== null || entry.lastTurn !== request.turn) {
+      throw errors.brainFailed('the process that wrote the draft is no longer here to look at it');
+    }
+    let release!: () => void;
+    entry.running = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const startedAt = Date.now();
+    const out: Outgoing = {
+      turn: request.turn,
+      session: request.session,
+      styles: request.styles,
+      text: buildReviewBrief({ asked: askedOf(request.input), sight: request.sight, problems: request.problems, picture: request.picture !== null, pass: request.pass }),
+      image: request.picture,
+      pdfs: [],
+      form: 'since',
+      sent: () => undefined,
+    };
+    try {
+      for await (const event of turnOnce(out, signal, entry, true, startedAt, { sawText: false })) {
+        // `ok`, alone on a line, is the draft kept: it is not a line and not a rejection.
+        if (event.type === 'reject' && isKeep(event.raw)) continue;
+        yield event;
+      }
+      entry.lastUsed = Date.now();
+    } catch (error) {
+      // A look that timed out or failed is not trusted with the conversation again, unless the interrupt was answered and it is still here.
+      if (!entry.proc.alive) discard(entry);
+      throw error;
+    } finally {
+      entry.running = null;
+      release();
+      if (!entry.proc.alive) discard(entry);
+    }
+  }
+
   return {
     id: 'claude-cli',
     respond,
+    ...(deps.warm ? { review } : {}),
     open(session) {
       if (!deps.warm) return;
       try {
