@@ -66,17 +66,39 @@ export function createStatusReader(file: string, now: () => number): () => AppSt
   }, now);
 }
 
-/** The most characters of the changelog's newest section a brief carries. */
-const NEWS_CHARS = 2400;
+/** The most characters of the changelog a brief carries (the whole file is about 5,500). */
+const NEWS_CHARS = 7000;
 
-/** The newest version's section of the changelog: the first `## ` heading and the lines under it, up to the next one. Null when there is none. */
+/**
+ * What the tour is built from: EVERY version's section, newest first, each with its heading (a heading marked "(live…)" is what the brain is told is
+ * live). The newest one alone told the owner "mock-ups are the only live item", which left v2.1 out. Sections are kept whole, from the top, while they fit;
+ * a section that would not fit is cut at its last whole item. Null when there is no section.
+ */
 export function newestSection(markdown: string): string | null {
   const lines = markdown.replace(/\r\n/g, '\n').split('\n');
-  const start = lines.findIndex((line) => line.startsWith('## '));
-  if (start < 0) return null;
-  const end = lines.findIndex((line, index) => index > start && line.startsWith('## '));
-  const section = lines.slice(start, end < 0 ? undefined : end).join('\n').trim();
-  return section.length > NEWS_CHARS ? `${section.slice(0, NEWS_CHARS - 1).trimEnd()}…` : section;
+  const sections: string[][] = [];
+  for (const line of lines) {
+    if (line.startsWith('## ')) sections.push([line]);
+    else sections.at(-1)?.push(line);
+  }
+  if (sections.length === 0) return null;
+  const out: string[] = [];
+  let used = 0;
+  for (const section of sections) {
+    const text = section.join('\n').trim();
+    if (used + text.length + 2 <= NEWS_CHARS) {
+      out.push(text);
+      used += text.length + 2;
+      continue;
+    }
+    const room = NEWS_CHARS - used - 2;
+    if (room > 200) {
+      const cut = text.slice(0, room);
+      out.push(cut.slice(0, Math.max(cut.lastIndexOf('\n'), 0)).trimEnd());
+    }
+    break;
+  }
+  return out.join('\n\n');
 }
 
 /** The changelog's newest section, for the brief when the user asks what is new. Same rules as the status reader. */
