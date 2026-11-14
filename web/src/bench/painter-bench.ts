@@ -3,7 +3,7 @@
 
 import { LineNormalizer, LineReader, LOOK_IDS, parseReplayDirective } from '@conduit/language';
 import { fitIn } from '../painter/canvas';
-import type { BackEvent, CanvasName, LookId } from '@conduit/language';
+import type { BackEvent, CanvasName, Line, LookId } from '@conduit/language';
 import charts from '@conduit/language/demos/charts.series?raw';
 import diagrams from '@conduit/language/demos/diagrams.series?raw';
 import explorable from '@conduit/language/demos/explorable.series?raw';
@@ -38,6 +38,10 @@ declare global {
       end: () => void;
       /** the pictures the painter sent for the server, newest last */
       uploads: () => { kind: string; key: string; bytes: number }[];
+      /** tries raw Series lines as a fix on the open hand-made turn (`tryCandidate`); the answer is a `draft` in `__backLog` and a picture in `draftPicture` */
+      candidate: (pass: number, raws: readonly string[]) => void;
+      /** the newest draft picture sent, base64 JPEG, or null */
+      draftPicture: () => Promise<string | null>;
     };
     __uploads?: PainterUpload[];
     /** the frame the renderer was last given */
@@ -393,7 +397,31 @@ function end(): void {
   manual = null;
 }
 
+function candidate(pass: number, raws: readonly string[]): void {
+  if (painter === null || manual === null) return;
+  const lines: Line[] = [];
+  for (const raw of raws) {
+    const parsed = reader.read(raw);
+    if (parsed.kind !== 'line') continue;
+    const line = normalizer.normalize(parsed.line).line;
+    if (line !== null) lines.push(line);
+  }
+  painter.tryCandidate(manual, pass, lines);
+}
+async function draftPicture(): Promise<string | null> {
+  const drafts = (window.__uploads ?? []).filter((upload) => upload.kind === 'draft');
+  const last = drafts[drafts.length - 1];
+  if (last === undefined) return null;
+  const reader2 = new FileReader();
+  return new Promise((resolve) => {
+    reader2.onload = () => resolve(String(reader2.result).split(',')[1] ?? null);
+    reader2.readAsDataURL(last.blob);
+  });
+}
+
 window.__bench = {
+  candidate,
+  draftPicture,
   play,
   settings,
   open,
