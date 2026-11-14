@@ -27,6 +27,7 @@ import { bodySize, marginOf, screenFacts } from './layout/metrics';
 import { Reporter } from './report';
 import { annotated } from './annotate';
 import { placedOf, sightOf } from './sight';
+import { isScreenBlock, setUiPicture, tapUi, uiBlockAt } from './ui-stage';
 import { buildTimeline, settledAfter, settledEnd as settledEndOf } from './timeline';
 import type { Timeline, TimelineContext, TimelineInstant } from './timeline';
 
@@ -1357,6 +1358,18 @@ export function createPainter(options: PainterOptions): Painter {
         return hit !== null;
       }
       if (phase === 'down') {
+        // v2.2: a finger on a mock-up: a tab, a pick, a toggle, a slider, or a thumbnail brought forward
+        const blocks = timeline.schedule.elements.filter(isScreenBlock).map((span) => span.key);
+        if (blocks.length > 0) {
+          const sx = x - viewport.width / 2;
+          const sy = y - viewport.height / 2;
+          const block = uiBlockAt(blocks, sx, sy);
+          if (block !== null && tapUi(block, sx, sy)) {
+            refreshTimeline();
+            drawNow();
+            return true;
+          }
+        }
         const hit = hitControl(x, y);
         if (hit === null) {
           if (runtime.open !== null) {
@@ -1480,6 +1493,19 @@ export function createPainter(options: PainterOptions): Painter {
         () => {
           if (!disposed && pictureOnStage(key)) paintings.set(key, { status: 'unpainted', url: null, since: 0 });
         },
+      );
+    },
+
+    pictureArrived(partId, picture) {
+      if (picture === null) return;
+      renderer.preload(picture.url).then(
+        () => {
+          if (disposed) return;
+          setUiPicture(partId, picture);
+          refreshTimeline();
+          drawNow();
+        },
+        () => undefined,
       );
     },
 

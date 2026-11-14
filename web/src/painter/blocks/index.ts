@@ -31,7 +31,8 @@ import { layoutTune } from './tune';
 import { layoutTree } from './tree';
 
 /** The structures this painter can lay out today. */
-export const STRUCTURES_READY: readonly StructureKind[] = ['flow', 'tree', 'cycle', 'timeline', 'map', 'table', 'tune'];
+/** `screen` (v2.2) is laid out and drawn by the interface kit (`painter/ui-stage.ts`), which hands the stage finished frames: this engine only says it is known. */
+export const STRUCTURES_READY: readonly StructureKind[] = ['flow', 'tree', 'cycle', 'timeline', 'map', 'table', 'tune', 'screen'];
 
 /** True once `layoutCallouts` places labels with leaders; until then a `callout` is placed as a plain `near=` label. */
 export const CALLOUTS_READY = true;
@@ -54,6 +55,8 @@ export const layoutStructure: StructureEngine = (input) => {
       return layoutTable(input);
     case 'tune':
       return layoutTune(input);
+    case 'screen':
+      return EMPTY_STRUCTURE_LAYOUT;
     default:
       return EMPTY_STRUCTURE_LAYOUT;
   }

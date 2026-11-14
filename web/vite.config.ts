@@ -34,6 +34,7 @@ export default defineConfig({
         explore: page('explore.html'),
         'bench-painter': page('bench-painter.html'),
         'bench-renderer': page('bench-renderer.html'),
+        'bench-ui': page('bench-ui.html'),
         ...optional('bench-chart', 'bench-chart.html'),
         ...optional('taste', 'taste.html'),
       },

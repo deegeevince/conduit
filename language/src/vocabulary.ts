@@ -527,6 +527,34 @@ export const LOOK = {
     by: 'char',
     exit: 'fade',
   },
+  wireframe: {
+    gist: 'Boxes and lines on white: an interface before anyone has chosen a colour. For mock-ups (INTERFACE).',
+    ground: '#171a21',
+    ink: '#1d2129',
+    dim: '#5d6573',
+    accent: '#1d2129',
+    alt: '#8a93a3',
+    face: 'sans',
+    fx: [],
+    stroke: 'clean',
+    enter: 'fade',
+    by: 'all',
+    exit: 'fade',
+  },
+  studio: {
+    gist: 'A finished interface design: surfaces, soft shadows, one accent. For mock-ups (INTERFACE).',
+    ground: '#14161d',
+    ink: '#12151c',
+    dim: '#5b6479',
+    accent: '#1f5eff',
+    alt: '#97a0b3',
+    face: 'sans',
+    fx: [],
+    stroke: 'clean',
+    enter: 'fade',
+    by: 'all',
+    exit: 'fade',
+  },
 } as const satisfies Record<string, LookSpecLanguage>;
 /** The id of a preset. A look the brain defines has a name of its own and stands on one of these. */
 export type LookId = keyof typeof LOOK;
@@ -534,6 +562,8 @@ export const LOOK_IDS = keysOf(LOOK);
 export const DEFAULT_LOOK: LookId = 'paper';
 /** The presets pinned to one old machine. They are offered, never assumed. */
 export const RETRO_LOOKS: readonly LookId[] = ['phosphor', 'teletext', 'printout'];
+/** The looks of a mock-up. They are taught by the interface chapter in the brief, never by the fixed prompt (which is full). */
+export const INTERFACE_LOOKS: readonly LookId[] = ['wireframe', 'studio'];
 
 /**
  * The sixteen colours a sprite cell can name with one hex digit. The order
@@ -574,6 +604,7 @@ export const STRUCTURE = {
   chart: { gist: 'rows `| when | value`: an instrument with axes, a crosshair and zoom', parts: 'rows', lays: 'engine' },
   code: { gist: 'rows `| line` taken exactly as written, indentation kept: monospaced and highlighted, with a copy action', parts: 'rows', lays: 'engine' },
   tune: { gist: 'rows `| line` of ABC notation, taken exactly: a piano roll that plays, with a playhead and the notes lighting as they sound', parts: 'rows', lays: 'engine' },
+  screen: { gist: 'a mock-up: devices at true size, each part one line (taught by the INTERFACE chapter in the brief); rows are the lines of the interface, taken as written', parts: 'rows', lays: 'engine' },
 } as const satisfies Record<string, { gist: string; parts: 'nodes' | 'rows'; lays: 'painter' | 'axis' | 'brain' | 'engine' }>;
 export type StructureKind = keyof typeof STRUCTURE;
 export const STRUCTURE_KINDS = keysOf(STRUCTURE);
@@ -849,6 +880,12 @@ export const VERB = {
   tune: {
     form: 'tune [id] [tempo=<bpm>] [voice=piano|strings|chip|bell] [x,y WxH] [| title]',
     gist: 'Music, in ABC notation: follow it with one `| line` per line of the score (K: M: L: Q: V:1 V:2, then the notes). It is drawn as a piano roll and played when it is whole.',
+    time: 'starts',
+    family: 'structure',
+  },
+  screen: {
+    form: 'screen <id> phone|tablet|desktop|browser [from=<screen>[:label]] [| name]',
+    gist: 'A mock-up: a device at its true size. The parts of the screen follow, one a line (nav, heading, button, field, item, image, row, col, end…); the painter lays them out. Taught by the INTERFACE chapter in the brief; on the wire its first line is the title and each later line a row, taken as written.',
     time: 'starts',
     family: 'structure',
   },

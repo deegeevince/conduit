@@ -5,7 +5,7 @@ import { creditLine } from '../domain/pictures';
 import { createLogger } from '../log';
 import { createPictures, readPictureSettings } from './registry';
 
-const { settings } = readPictureSettings((name) => (name === 'PICTURES' ? 'openverse' : process.env[name]));
+const { settings } = readPictureSettings((name) => (name === 'PICTURES' ? 'openverse' : process.env[name]), `${process.env['TMPDIR'] ?? '/tmp'}/conduit-pictures`);
 const service = createPictures(settings, createLogger('debug'));
 for (const arg of process.argv.slice(2)) {
   const [words = '', aspect] = arg.split(':');

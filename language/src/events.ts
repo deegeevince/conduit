@@ -16,6 +16,7 @@ const SHAPES: Record<StageEventType, Record<string, Shape>> = {
   pass: { turn: 'string', pass: 'number', state: 'string', reason: 'string|null' },
   asset: { turn: 'string', key: 'string', status: 'string', url: 'string|null', reason: 'string|null' },
   data: { turn: 'string', id: 'string', status: 'string', url: 'string|null', reason: 'string|null' },
+  picture: { turn: 'string', id: 'string', url: 'string', credit: 'string', landing: 'string' },
   candidate: { turn: 'string', pass: 'number', lines: 'array' },
   critic: { turn: 'string', finding: 'object' },
   activity: { turn: 'string', id: 'string', tool: 'string', summary: 'string', state: 'string', ms: 'number|null' },

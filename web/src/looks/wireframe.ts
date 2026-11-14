@@ -4,8 +4,7 @@
 //
 // Two things in this file. The TOKENS the kit reads (colours, radii, a type scale on a four-point line height, elevation),
 // and a LookSpec so that a renderer can be mounted in it: no paper, no grain, no sway, a ruled stroke, Inter. The preset
-// table in `looks/index.ts` and the `LookId` union are R3's and the architect's; until `wireframe` is a member of `LookId`
-// the spec carries paper's id, and the bench says so.
+// table in `looks/index.ts` and the `LookId` union list both looks (v2.2 integration).
 
 import type { UiTokens } from '../painter/blocks/ui/lang';
 import type { LookSpec } from '../contracts/look';
@@ -49,11 +48,12 @@ export const WIREFRAME_TOKENS: UiTokens = {
   },
 };
 
-/** A LookSpec for a flat, crisp surface set in Inter: what a renderer is mounted in to draw a mock-up. `id` is paper's until `LookId` has the new looks. */
+/** A LookSpec for a flat, crisp surface set in Inter: what a renderer is mounted in to draw a mock-up. */
 export function uiLookSpec(name: string, machine: string, t: UiTokens): LookSpec {
   const calm = { agitation: 0, dim: 0, sway: 0, swayPeriod: 12, lean: 0, snap: 1 };
   return {
     ...PAPER,
+    id: t.id,
     name,
     machine,
     roles: { ground: t.colour.ground, ink: t.colour.ink, dim: t.colour.dim, accent: t.colour.accent, alt: t.colour.faint },

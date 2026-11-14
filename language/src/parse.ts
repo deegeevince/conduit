@@ -1514,6 +1514,7 @@ const TEXT_LIMIT: Readonly<Partial<Record<Verb, number>>> = {
   bind: LIMITS.line,
   code: LIMITS.text,
   tune: LIMITS.text,
+  screen: LIMITS.text,
   deck: LIMITS.text,
   standing: STANDING_LIMITS.chars,
 };

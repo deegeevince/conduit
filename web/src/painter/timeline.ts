@@ -685,8 +685,10 @@ export function buildTimeline(schedule: Schedule, base: StageBase, context: Time
       kinds.set(element.key, chart ? 'chart' : 'structure');
       // what it would like, and the least it can be read at (a chart: its title, a few ticks and a plot; a table: its rows at the look's floor)
       const tune = figure.structure === 'tune';
-      const natural = tune ? { width: 760, height: 260 } : chart ? { width: 560, height: 320 } : table ? { width: Math.max(280, 150 * columns), height: 60 + 34 * figure.rows.length } : { width: 640, height: 120 + 40 * parts };
-      const least = tune ? { width: 260, height: 150 } : chart ? { width: 260, height: 190 } : table ? { width: Math.max(200, 100 * columns), height: 40 + 24 * figure.rows.length } : { width: 160, height: 100 };
+      // a mock-up takes what the stage can give it: its screens are scaled together to the room
+      const mockup = figure.structure === 'screen';
+      const natural = mockup ? { width: 1600, height: 900 } : tune ? { width: 760, height: 260 } : chart ? { width: 560, height: 320 } : table ? { width: Math.max(280, 150 * columns), height: 60 + 34 * figure.rows.length } : { width: 640, height: 120 + 40 * parts };
+      const least = mockup ? { width: 300, height: 300 } : tune ? { width: 260, height: 150 } : chart ? { width: 260, height: 190 } : table ? { width: Math.max(200, 100 * columns), height: 40 + 24 * figure.rows.length } : { width: 160, height: 100 };
       list.push({
         key: element.key,
         kind: chart ? 'chart' : 'structure',

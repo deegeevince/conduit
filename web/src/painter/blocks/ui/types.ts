@@ -68,7 +68,29 @@ export interface UiText {
   readonly align: 'left' | 'center' | 'right';
 }
 
-export type UiPart = UiRect | UiPath | UiText;
+/** A photograph from the server, drawn where an `image` placeholder was: the picture itself, cover-fitted into its box. Its corners and its credit are rects and text beside it. */
+export interface UiPicture {
+  readonly kind: 'picture';
+  readonly clip?: UiClip;
+  readonly key: string;
+  readonly owner: string;
+  readonly x: number;
+  readonly y: number;
+  readonly w: number;
+  readonly h: number;
+  readonly url: string;
+  readonly circle?: boolean;
+}
+
+export type UiPart = UiRect | UiPath | UiText | UiPicture;
+
+/** A photograph that has arrived for an `image` part, by the part's id: where it is, and the credit that is drawn at its foot. */
+export interface UiPictureState {
+  readonly url: string;
+  /** the credit line, drawn at the picture's foot */
+  readonly credit: string;
+  readonly landing: string;
+}
 
 /** A thing a finger can use: what the bench turns a tap into. */
 export type UiAction =
@@ -100,6 +122,8 @@ export interface UiState {
   readonly device: Readonly<Record<string, 'phone' | 'tablet' | 'desktop' | 'browser'>>;
   readonly focus: string | null;
   readonly pressed: string | null;
+  /** v2.2 integration: photographs that have arrived for `image` parts, by part id */
+  readonly picture?: Readonly<Record<string, UiPictureState>>;
 }
 
 export const NO_STATE: UiState = { tab: {}, pick: {}, toggle: {}, text: {}, slider: {}, device: {}, focus: null, pressed: null };

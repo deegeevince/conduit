@@ -8,7 +8,7 @@
 //   <DATA_DIR>/uploads/        pictures the user gave, when they are kept
 //   <DATA_DIR>/audit.jsonl     every tool call, permission, setting change and connector use (`pnpm audit`)
 //   <DATA_DIR>/usage.jsonl     every model call the server made: model, tokens, cost-equivalent, ms
-//   <DATA_DIR>/cache/          the technique library's last good read, the dataset index
+//   <DATA_DIR>/cache/          the technique library's last good read, the dataset index, the photographs found for mock-ups (pictures/)
 //   <DATA_DIR>/loop/queue/     findings waiting for the improvement loop, lessons usage, the steward's painter-bugs file
 //   <DATA_DIR>/state/          small switches that must outlive a restart (the kill switch)
 
@@ -27,6 +27,7 @@ export interface DataPaths {
   readonly cache: string;
   readonly techniquesCache: string;
   readonly datasetsCache: string;
+  readonly picturesCache: string;
   readonly queue: string;
   readonly state: string;
 }
@@ -56,6 +57,7 @@ export function dataPaths(root: string): DataPaths {
     cache: join(root, 'cache'),
     techniquesCache: join(root, 'cache', 'techniques'),
     datasetsCache: join(root, 'cache', 'datasets'),
+    picturesCache: join(root, 'cache', 'pictures'),
     queue: join(root, 'loop', 'queue'),
     state: join(root, 'state'),
   };

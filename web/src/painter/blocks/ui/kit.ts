@@ -401,8 +401,38 @@ function imageOf(k: Kit, p: UiPartNode): N {
   const round = p.flags.includes('round');
   const ratio = p.flags.includes('square') || round ? 1 : p.flags.includes('tall') ? 3 / 4 : 16 / 9;
   const label = p.fields[0] ?? '';
+  const photo = k.state.picture?.[p.id];
   const paint = (b: Rect, out: Out): void => {
     const r = round ? Math.min(b.w, b.h) / 2 : k.t.radius.m;
+    if (photo !== undefined) {
+      // a photograph the server found: the picture, its corners given back to the screen, and its credit at its foot, always
+      out.parts.push({ kind: 'picture', key: out.key(p.id, 'photo'), owner: p.id, x: b.x, y: b.y, w: b.w, h: b.h, url: photo.url, ...(round ? { circle: true } : {}) });
+      if (!round) {
+        const credit = `Photo: ${photo.credit}`;
+        const room = Math.max(8, b.w - 20);
+        let text = credit;
+        while (text.length > 8 && k.measure.width(text, 11, 'normal') > room) text = `${text.slice(0, Math.max(4, Math.floor(text.length * Math.min(0.95, room / k.measure.width(text, 11, 'normal')))) - 1).trimEnd()}...`;
+        const strip = { x: b.x, y: b.y + b.h - 22, w: b.w, h: 22 };
+        rectOf(out, p.id, 'credit-scrim', strip, { fill: '#000000', fillAlpha: 0.5 });
+        out.parts.push({ kind: 'text', key: out.key(p.id, 'credit'), owner: p.id, x: b.x + 10, y: strip.y + 3, w: room, h: 16, lines: [{ text, width: k.measure.width(text, 11, 'normal') }], size: 11, line: 16, weight: 'normal', colour: '#f4f6fa', align: 'left' });
+        // the four corners, in the ground the picture stands on
+        const rr = Math.min(r, b.h / 2, b.w / 2);
+        const corner = (cx: number, cy: number, sx: number, sy: number): void => {
+          const arc = Array.from({ length: 9 }, (_, i) => {
+            const t = (i / 8) * (Math.PI / 2);
+            return { x: cx + sx * rr * Math.sin(t), y: cy + sy * rr * Math.cos(t) };
+          });
+          // from the square corner along the edge to where the curve begins, round the curve, and back to the corner
+          const o = { x: cx + sx * rr, y: cy + sy * rr };
+          out.parts.push({ kind: 'path', key: out.key(p.id, `corner:${sx}:${sy}`), owner: p.id, outline: [{ closed: true, points: [o, ...arc] }], fill: c.screen, stroke: null });
+        };
+        corner(b.x + rr, b.y + rr, -1, -1);
+        corner(b.x + b.w - rr, b.y + rr, 1, -1);
+        corner(b.x + rr, b.y + b.h - rr, -1, 1);
+        corner(b.x + b.w - rr, b.y + b.h - rr, 1, 1);
+      }
+      return;
+    }
     if (wire) {
       rectOf(out, p.id, 'image', b, { radius: r, fill: c.sunken, edge: { colour: c.edge, width: 1 } });
       // the diagonals stop short of the corners, so a rounded corner is never poked through

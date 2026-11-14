@@ -54,6 +54,12 @@ export function describeFigure(figure: Figure, box: CanvasBox | null = null): st
     }
     case 'structure': {
       if (figure.structure === 'code') return describeCode(figure);
+      if (figure.structure === 'screen') {
+        // a mock-up is named by its screens and what each holds, not recited: the brain changes it by writing it again
+        const screens = figure.rows.map((row) => /^screen\s+(\S+)\s+(\S+)[^|]*(?:\|\s*(.*))?$/.exec(row.cells[0] ?? '')).filter((m): m is RegExpExecArray => m !== null);
+        const parts = figure.rows.filter((row) => !/^(screen|end)\b/.test(row.cells[0] ?? '')).length;
+        return `mock-up of ${screens.length} screen${screens.length === 1 ? '' : 's'} (${screens.map((m) => `${m[1] ?? ''} ${m[2] ?? ''}${m[3] === undefined || m[3] === '' ? '' : ` "${m[3]}"`}`).join(', ')}), ${parts} parts`;
+      }
       if (figure.structure === 'tune') return describeTune(cachedTune(tuneRowsOf(figure.rows), { tempo: figure.tempo ?? null }), figure.rows.length);
       const name = figure.chart === null ? figure.structure : [...figure.words, `${figure.chart} chart`].join(' ');
       if (figure.data !== null) return `${name} of DATA ${figure.data}`;

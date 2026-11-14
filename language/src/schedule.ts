@@ -39,6 +39,7 @@ import {
   spriteSeconds,
   CHART_ROW_SECONDS,
   CODE_ROW_SECONDS,
+  UI_ROW_SECONDS,
   STRIKE_SECONDS,
   TABLE_ROW_SECONDS,
   tailSeconds,
@@ -957,7 +958,9 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
         return;
       }
       const joined = joinGroup(seq, styleFor(seq, 'structure', line.styles, line.props), start);
-      const { plain, emphasis } = splitEmphasis(line.title ?? '');
+      // A mock-up's title is its first line, taken as written: it is the first row of the block, and the block has no heading of its own.
+      const ui = line.verb === 'screen';
+      const { plain, emphasis } = ui ? { plain: '', emphasis: [] } : splitEmphasis(line.title ?? '');
       const wanted: Figure = {
         kind: 'structure',
         structure: line.verb,
@@ -974,8 +977,8 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
         rows: openFigure?.kind === 'structure' ? openFigure.rows : [],
       };
       // D2(b): a table, chart or block of code said again exactly as it stands is not drawn again. Its rows are read against the ones it has.
-      if (open !== null && openFigure?.kind === 'structure' && STRUCTURE[line.verb].parts === 'rows' && alike(wanted, openFigure) && sameStyle(open.style, joined.style) && open.span.parent === joined.parent && open.span.text === plain && alike(open.span.emphasis, emphasis)) {
-        echoing.set(open, 0);
+      if (open !== null && openFigure?.kind === 'structure' && STRUCTURE[line.verb].parts === 'rows' && alike(wanted, openFigure) && sameStyle(open.style, joined.style) && open.span.parent === joined.parent && open.span.text === plain && alike(open.span.emphasis, emphasis) && (!ui || alike(openFigure.rows[0]?.cells, [line.title ?? '']))) {
+        echoing.set(open, ui ? 1 : 0);
         previousStart = priorStart;
         lines.push({ seq, verb: line.verb, start, end: start });
         return;
@@ -990,6 +993,11 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
         parent: joined.parent,
       });
       if (STRUCTURE[line.verb].parts === 'rows') created.rows = [];
+      if (ui) {
+        const first: StructureRow = { cells: [line.title ?? ''], at: start + slot.delay };
+        created.rows = [first];
+        created.span.figure = { ...wanted, rows: [first] };
+      }
       lines.push({ seq, verb: line.verb, start, end: start + slot.delay + duration });
       return;
     }
@@ -1447,6 +1455,7 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
       case 'chart':
       case 'code':
       case 'tune':
+      case 'screen':
       case 'pic':
       case 'node':
       case 'link':
@@ -1527,10 +1536,11 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
           // A row of a table or a chart: cells between bars. It lands a step after the row before it.
           const enter = table.span.enter;
           const charted = table.span.figure.structure === 'chart';
-          const coded = table.span.figure.structure === 'code' || table.span.figure.structure === 'tune';
+          const coded = table.span.figure.structure === 'code' || table.span.figure.structure === 'tune' || table.span.figure.structure === 'screen';
+          const interfaced = table.span.figure.structure === 'screen';
           // A line of code is one cell, exactly as written: a bar in it is a bar, a space is a space, and an empty line is a row.
           const cells = coded ? [line.cells] : splitCells(line.cells);
-          const step = (coded ? CODE_ROW_SECONDS : charted ? CHART_ROW_SECONDS : TABLE_ROW_SECONDS)[pace];
+          const step = (interfaced ? UI_ROW_SECONDS : coded ? CODE_ROW_SECONDS : charted ? CHART_ROW_SECONDS : TABLE_ROW_SECONDS)[pace];
           const most = table.span.figure.structure === 'tune' ? LIMITS.tuneRows : coded ? LIMITS.codeRows : charted ? LIMITS.chartPoints : LIMITS.rows;
           if (!coded && (isRuleRow(cells) || cells.every((cell) => cell === ''))) {
             lines.push({ seq, verb: line.verb, start: pen, end: pen });

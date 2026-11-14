@@ -52,6 +52,9 @@ const DEPTH: Readonly<Record<LookId, { far: LayerDepth; bg: LayerDepth; thin: nu
   printout: { far: { fade: 0.35, soft: false }, bg: { fade: 0.2, soft: false }, thin: 1 },
   // A flat mid-grey screen with no fx: depth is said by size alone, so nothing fades.
   pixel: { far: NO_FADE, bg: NO_FADE, thin: 1 },
+  // A mock-up is flat and crisp: nothing recedes.
+  wireframe: { far: NO_FADE, bg: NO_FADE, thin: 1 },
+  studio: { far: NO_FADE, bg: NO_FADE, thin: 1 },
 };
 
 const cache = new WeakMap<LookSpec, Map<Quality, SurfaceStyle>>();

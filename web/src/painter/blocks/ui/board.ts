@@ -60,6 +60,8 @@ export function scalePart(p: UiPart, s: number, ox: number, oy: number): UiPart 
       };
     case 'path':
       return { ...p, outline: p.outline.map((l) => ({ closed: l.closed, points: l.points.map((q) => ({ x: ox + q.x * s, y: oy + q.y * s })) })), stroke: p.stroke === null ? null : { ...p.stroke, width: p.stroke.width * s } };
+    case 'picture':
+      return { ...p, x: ox + p.x * s, y: oy + p.y * s, w: p.w * s, h: p.h * s };
     case 'text':
       return { ...p, x: ox + p.x * s, y: oy + p.y * s, w: p.w * s, h: p.h * s, size: p.size * s, line: p.line * s, lines: p.lines.map((l) => ({ text: l.text, width: l.width * s })) };
   }

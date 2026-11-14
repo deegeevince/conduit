@@ -386,6 +386,30 @@ Neither is ever scheduled and neither reaches the painter; `TurnScore.push` answ
 
 `say … href=https://… | words` makes the words a link: it opens in a new tab, and is set apart from other words by the look. Only an `http:` or `https:` address is a link; anything else (`javascript:`, `data:`, a bare path) is dropped with a warning, and the words stay. The address is as written, at most 400 characters. A link is a property of the element, carried with it, and the transcript and the copied answer keep the words and the address. Sources the brain cites are links.
 
+### 4.19 Interfaces: `screen`, `row`, `col`, `end` and the parts
+
+```
+screen <id> phone|tablet|desktop|browser [from=<screen>[:label]] [| name]
+row | col  [gap=none|xs|s|m|l|xl|N] [pad=…] [align=start|center|end] [spread] [grow] [wrap] [card] [lift] [max=N] [center]
+end
+nav [back|close|menu] [action=<icon>] [links="a,b,c"] | Title        tabbar icons=a,b,c | One | Two
+heading | words    text | words    note | words    button [primary|ghost|danger] [wide|small] | Label
+field [error] | Label | value | message    item [icon=<name>] [chevron|toggle] [value=…] | Title | subtitle
+badge | words    price | 34 | /mo    progress 2 of 4    image [wide|square|tall|round] | what it shows
+icon <name>    divider    space [s|m|l|grow]    pick | Label | A | B    toggle | Label    slider | Label | N    chart ref=<id> | Title
+look wireframe | studio
+```
+
+A mock-up is described, not drawn. The brain says what is on each screen, in order; the painter sizes, spaces and aligns every part (an auto-layout subset of flexbox, solved in `web/src/painter/blocks/ui`), sets it in the look's tokens, and stands the screens side by side at true proportions, scaled together to their room. A phone is 390 points across, a tablet 820, a desktop 1280 and a `browser` is a desktop with its chrome. The brain never gives a part a coordinate and never builds a control out of `rect`s.
+
+- **Read only inside a screen.** `screen` opens a mock-up. The words `row`, `col`, `end` and the parts are the interface's only from then until a `scene`, a `deck`, a `pix` or another structure; before it, `row` is a sprite's row and `text`, `image`, `menu` keep their aliases (`say`, `paint`, `pick`). A word inside a screen that is no part is set as `text` and named in the brief's list of repairs. `interface.ts` (`language/src/interface.ts`) is the reader.
+- **One block.** The first `screen` line opens a structure (verb `screen`, kind `screen`); every later line of the interface, later `screen` lines included, is a row of it, taken as written like a line of code. A journey of six screens is one block.
+- **Every line stands alone.** The normaliser keeps the stack of open `row`s and `col`s and writes `id=` and `in=` on every part, so a line on the wire says what it sits in and `end` means nothing to the painter: `heading id=s1.heading1 in=s1.col1 | Welcome back`. The wire form of the block is `screen x1 | screen s1 phone | Sign in`, then `row x1 | <that line>` for each part, and each lands a step after the one before (0.06 s).
+- **Looks.** `wireframe` (boxes and lines on white) and `studio` (a finished design) are looks like the rest and are taught by the interface chapter, not by the fixed prompt. The same lines serve both; `look studio` after a wireframe is the wireframe becoming the design.
+- **Pictures.** `image … | what it shows` is a placeholder at once. Where the owner has switched a source on (`PICTURES=openverse`), the server looks for a photograph by those words, never on the turn clock; when one is found it arrives as a `picture` event and the painter draws it in the placeholder's place with its credit at its foot. Failing, the placeholder stays.
+- **Taught only when asked.** The system prompt holds one clause ("A mock-up, a page, an app screen: INTERFACE lines, never rects"); the brief carries the chapter (`INTERFACE_CHAPTER`) when the user's words are about an interface (mock-up, wireframe, screen, page, app, site, figma, landing, UI, journey) or a mock-up is on stage.
+- **Not yet.** A part is not an element: `set`, `hit` and `drop` reach the block, not one part by its id. `set <screen> device=desktop` and taps on tabs, picks, toggles and fields are not wired in the product (they work on `bench-ui.html`).
+
 ## 5. Time
 
 ### 5.1 The two clocks, the pen and the playhead
@@ -681,6 +705,10 @@ A new structure, chart kind or control is one entry in its table in `vocabulary.
 
 ## 12. What changed
 
+**v2.2 (still version 4; additive).**
+
+- New: the structure `screen` with its rows, the interface words (`row`, `col`, `end`, the parts; section 4.19), the looks `wireframe` and `studio`, the `picture` event, `UI_ROW_SECONDS`.
+
 **v2.1 (still version 4; everything below is additive and every painter and server advertises what it can do).**
 
 - New lines: `code` (a structure of verbatim rows; `lang`, `file=`), `deck`, `pic … from=`, `standing`, `refine`. New properties: `href=` on `say`; `data=dataset:<name>` with `instrument=` and `field=` on `chart`.
@@ -740,6 +768,7 @@ A new structure, chart kind or control is one entry in its table in `vocabulary.
 | `chart [id] [line\|area\|columns\|candles\|ohlc] [indexed] [log] [spark] [live] [approx] [x,y WxH] [data=<id>] [\| title]` | starts at the pen and leaves the pen where it is | A chart: an instrument with axes, a crosshair and zoom. Follow it with one `| when | value…` line per point, or name DATA from the brief. |
 | `code [id] [lang] [file=<name>] [x,y WxH] [\| title]` | starts at the pen and leaves the pen where it is | Code, taken exactly: follow it with one `| line` per line of the source, indentation kept, a bare `|` for an empty line. |
 | `tune [id] [tempo=<bpm>] [voice=piano\|strings\|chip\|bell] [x,y WxH] [\| title]` | starts at the pen and leaves the pen where it is | Music, in ABC notation: follow it with one `| line` per line of the score (K: M: L: Q: V:1 V:2, then the notes). It is drawn as a piano roll and played when it is whole. |
+| `screen <id> phone\|tablet\|desktop\|browser [from=<screen>[:label]] [\| name]` | starts at the pen and leaves the pen where it is | A mock-up: a device at its true size. The parts of the screen follow, one a line (nav, heading, button, field, item, image, row, col, end…); the painter lays them out. Taught by the INTERFACE chapter in the brief; on the wire its first line is the title and each later line a row, taken as written. |
 | `node [id] [number \| x,y] [ask\|end\|note] [from=<id>[:label]] [x=<when>] [y=<value>] [prop=value…] \| <text>` | starts at the pen and moves the pen part of the way through its own drawing | One part of the structure above. from= also draws the link from that node. On a chart it is a mark: x= an event, y= a level, both a point. |
 | `link <a> <b> [c…] [both\|plain] [dashed] [\| label]` | starts at the pen and moves the pen part of the way through its own drawing | Join nodes with a routed connector, in a chain when more than two are named. |
 | `button [id] [prop=value…] \| <label>` | starts at the pen and moves the pen part of the way through its own drawing | A button. Pressing it is sent to you, with the value of every control on stage. |
@@ -1142,6 +1171,7 @@ Nominal scale against body: `xs` 0.64, `s` 0.8, `m` 1, `l` 1.5, `xl` 2.25, `xxl`
 | `chart` | rows, and nodes as marks | the painter's charting engine | rows `\| when \| value`: an instrument with axes, a crosshair and zoom |
 | `code` | rows | the painter's charting engine | rows `\| line` taken exactly as written, indentation kept: monospaced and highlighted, with a copy action |
 | `tune` | rows | the painter's charting engine | rows `\| line` of ABC notation, taken exactly: a piano roll that plays, with a playhead and the notes lighting as they sound |
+| `screen` | rows | the painter's charting engine | a mock-up: devices at true size, each part one line (taught by the INTERFACE chapter in the brief); rows are the lines of the interface, taken as written |
 
 ### `node` shapes (flow, tree, cycle)
 
@@ -1297,6 +1327,8 @@ The painter renders these media by itself: `watercolor`, `oil`, `gouache`, `ink`
 | `faint` | it is hard to read against what is behind it |
 | `tiny` | it came out too small to make out |
 | `sparse` | the drawing ended in a corner: most of the picture is empty. Centre it, make it larger, or end the move inside the frame |
+| `retired` | the layout let it go to make room: it is not on the stage at rest |
+| `lost` | the line the answer rests on is not on the stage at rest: say less above it, or say it last |
 | `partial` | the answer stopped while it was still arriving |
 | `painted` | the painting arrived and replaced the sketch |
 | `unpainted` | no painting arrived; the sketch is what was seen |
@@ -1314,6 +1346,8 @@ The painter renders these media by itself: `watercolor`, `oil`, `gouache`, `ink`
 | `teletext` | Broadcast teletext, 1981: eight hard colours, chunky pixels. Public, declarative. | `ground=#000000 ink=#ffffff dim=#7f7f7f accent=#ffff00 alt=#00ffff face=teletext fx=pixelate,dither,signal,header stroke=pixel` | `enter=cut by=word exit=cut` |
 | `pixel` | Flat mid-grey, hard edges. For pixel art: no sprite colour vanishes. | `ground=#8a8f98 ink=#141414 dim=#262a33 accent=#7a0f22 alt=#123a6b face=mono fx= stroke=pixel` | `enter=cut by=all exit=cut` |
 | `printout` | A dot-matrix printout on green-bar paper, 1980: on the record. | `ground=#f1ede0 ink=#1d1a18 dim=#625d57 accent=#b3261e alt=#1f3f8f face=dot fx=bars,ribbon,shadow,paper stroke=pencil` | `enter=type by=char exit=fade` |
+| `wireframe` | Boxes and lines on white: an interface before anyone has chosen a colour. For mock-ups (INTERFACE). | `ground=#171a21 ink=#1d2129 dim=#5d6573 accent=#1d2129 alt=#8a93a3 face=sans fx= stroke=clean` | `enter=fade by=all exit=fade` |
+| `studio` | A finished interface design: surfaces, soft shadows, one accent. For mock-ups (INTERFACE). | `ground=#14161d ink=#12151c dim=#5b6479 accent=#1f5eff alt=#97a0b3 face=sans fx= stroke=clean` | `enter=fade by=all exit=fade` |
 
 ### Sprite palette
 

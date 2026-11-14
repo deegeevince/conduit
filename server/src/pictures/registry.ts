@@ -1,5 +1,3 @@
-import { homedir } from 'node:os';
-import { join } from 'node:path';
 import type { PictureService, PictureSettings } from '../domain/pictures';
 import type { Logger } from '../log';
 import { createDiskStore } from './cache';
@@ -9,17 +7,17 @@ import { createOpenverse } from './openverse';
 import { createPictureService } from './service';
 
 /**
- * Settings from the environment (`env.ts` hands in `process.env`'s values). Off unless `PICTURES=openverse`:
+ * Settings from the environment (`env.ts` hands in `process.env`'s values; `defaultDir` is the data folder's own `cache/pictures`). Off unless `PICTURES=openverse`:
  * the owner switches it on, and the placeholder is what there is until then.
  */
-export function readPictureSettings(read: (name: string) => string | undefined): { settings: PictureSettings; problems: string[] } {
+export function readPictureSettings(read: (name: string) => string | undefined, defaultDir: string): { settings: PictureSettings; problems: string[] } {
   const problems: string[] = [];
   const kind = read('PICTURES') ?? 'none';
   if (kind !== 'none' && kind !== 'openverse') problems.push(`PICTURES must be none | openverse, got "${kind}"`);
   return {
     settings: {
       kind: kind === 'openverse' ? 'openverse' : 'none',
-      cacheDir: read('PICTURES_DIR') ?? join(homedir(), '.cache', 'conduit', 'pictures'),
+      cacheDir: read('PICTURES_DIR') ?? defaultDir,
       minIntervalMs: 3_200,
       timeoutMs: 20_000,
     },

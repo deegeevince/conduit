@@ -656,6 +656,11 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
       case 'asset':
         painter.assetArrived(event.key, event.status, event.url);
         return;
+      case 'picture':
+        // A reconnect may hand the same news again: the painter takes a part's photograph once.
+        if (!firstTime(`picture:${event.turn}:${event.id}`)) return;
+        painter.pictureArrived(event.id, { url: event.url, credit: event.credit, landing: event.landing });
+        return;
       case 'data':
         // A reconnect may hand the same news again: the rows are fetched once.
         if (!firstTime(`data:${event.turn}:${event.id}:${event.status}`)) return;

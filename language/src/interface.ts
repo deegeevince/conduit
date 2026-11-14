@@ -312,39 +312,62 @@ interface MutableScreen {
   children: UiNode[];
 }
 
+/** What one line did to the tree: the node it made (with the id of what it sits in), or that it was an `end`, or not the interface's. */
+export type InterfaceRead =
+  | { readonly kind: 'screen'; readonly screen: UiScreen }
+  | { readonly kind: 'node'; readonly node: UiNode; readonly parent: string }
+  | { readonly kind: 'end' }
+  | { readonly kind: 'other' };
+
 /**
- * Reads the brain's lines into a tree. Nesting comes from `row`, `col` and `end`; a line that carries `in=<id>` (what
- * `interfaceLines` writes, so that each line on the wire stands alone) is put into that container or screen instead of
- * the one that is open. Lines that are not the interface's are returned in `others`.
+ * Reads the brain's lines into a tree, one at a time (`read`), so that the normaliser can say what each line made as the line
+ * arrives. Nesting comes from `row`, `col` and `end`; a line that carries `in=<id>` (what `interfaceLines` writes, so that each
+ * line on the wire stands alone) is put into that container or screen instead of the one that is open. Lines that are not the
+ * interface's are returned in `others`.
  */
-export function parseInterface(lines: readonly string[]): UiDocument {
-  const notes: UiNote[] = [];
-  const others: { line: number; text: string }[] = [];
-  const screens: MutableScreen[] = [];
-  const byId = new Map<string, MutableContainer | MutableScreen>();
-  let look: UiLookId | null = null;
-  let board = false;
-  let screen: MutableScreen | null = null;
-  let stack: MutableContainer[] = [];
-  const counts = new Map<string, number>();
+export class InterfaceReader {
+  private readonly notes: UiNote[] = [];
+  private readonly others: { line: number; text: string }[] = [];
+  private readonly screens: MutableScreen[] = [];
+  private readonly byId = new Map<string, MutableContainer | MutableScreen>();
+  private look: UiLookId | null = null;
+  private board = false;
+  private screen: MutableScreen | null = null;
+  private stack: MutableContainer[] = [];
+  private readonly counts = new Map<string, number>();
+  private count = 0;
 
-  const idFor = (kind: string, given: string | undefined): string => {
-    if (given !== undefined && given !== '' && !byId.has(given)) return given;
-    const scope = screen?.id ?? 'ui';
+  private idFor(kind: string, given: string | undefined): string {
+    if (given !== undefined && given !== '' && !this.byId.has(given)) return given;
+    const scope = this.screen?.id ?? 'ui';
     const key = `${scope}.${kind}`;
-    const n = (counts.get(key) ?? 0) + 1;
-    counts.set(key, n);
+    const n = (this.counts.get(key) ?? 0) + 1;
+    this.counts.set(key, n);
     return `${key}${n}`;
-  };
+  }
 
-  const closeAll = (line: number): void => {
-    if (stack.length > 0) notes.push({ line, message: `${stack.length} ${stack.length === 1 ? 'row or col was' : 'rows or cols were'} left open and closed here: write \`end\` for each` });
-    stack = [];
-  };
+  private closeAll(line: number): void {
+    if (this.stack.length > 0) this.notes.push({ line, message: `${this.stack.length} ${this.stack.length === 1 ? 'row or col was' : 'rows or cols were'} left open and closed here: write \`end\` for each` });
+    this.stack = [];
+  }
 
-  lines.forEach((raw, line) => {
+  /** What has been read so far. */
+  document(): UiDocument {
+    return { look: this.look, board: this.board, screens: this.screens, others: this.others, notes: this.notes };
+  }
+
+  /** Closes what is still open (a container left without its `end`) and returns the document. */
+  finish(): UiDocument {
+    if (this.stack.length > 0) this.closeAll(this.count);
+    return this.document();
+  }
+
+  read(raw: string): InterfaceRead {
+    const line = this.count;
+    this.count += 1;
+    const { notes, others, screens, byId } = this;
     const text = raw.trim();
-    if (text === '') return;
+    if (text === '') return { kind: 'other' };
     const bar = text.indexOf('|');
     const head = bar < 0 ? text : text.slice(0, bar).trim();
     const first = (head.split(/\s+/)[0] ?? '').toLowerCase();
@@ -354,23 +377,23 @@ export function parseInterface(lines: readonly string[]): UiDocument {
     if (first === 'look') {
       const word = rest.split(/\s+/)[0]?.toLowerCase() ?? '';
       if (word === 'wireframe' || word === 'studio') {
-        look = word;
-        return;
+        this.look = word;
+        return { kind: 'other' };
       }
       others.push({ line, text });
-      return;
+      return { kind: 'other' };
     }
     if (first === 'scene') {
       if (rest.split(/\s+/)[0]?.toLowerCase() === 'board') {
-        board = true;
-        return;
+        this.board = true;
+        return { kind: 'other' };
       }
       others.push({ line, text });
-      return;
+      return { kind: 'other' };
     }
 
     if (first === 'screen') {
-      closeAll(line);
+      this.closeAll(line);
       const w = words(rest);
       const idWord = w.flags[0];
       const deviceWord = w.flags.find((f): f is UiDevice => (UI_DEVICES as readonly string[]).includes(f));
@@ -382,22 +405,25 @@ export function parseInterface(lines: readonly string[]): UiDocument {
       // a label of several words, written without quotes, runs on over the bare words after it
       const spill = w.flags.filter((f, i) => i > 0 && f !== idWord && !(UI_DEVICES as readonly string[]).includes(f));
       const label = labelParts.length > 0 ? [labelParts.join(':'), ...spill].join(' ') : null;
-      screen = { id, device, from: fromId === undefined || fromId === '' ? null : fromId, fromLabel: label, name: fields[0] ?? '', line, children: [] };
-      screens.push(screen);
-      byId.set(id, screen);
-      return;
+      const made: MutableScreen = { id, device, from: fromId === undefined || fromId === '' ? null : fromId, fromLabel: label, name: fields[0] ?? '', line, children: [] };
+      this.screen = made;
+      screens.push(made);
+      byId.set(id, made);
+      return { kind: 'screen', screen: made };
     }
 
     const isPart = (UI_PART_KINDS as readonly string[]).includes(first);
     const isBox = first === 'row' || first === 'col';
     const isEnd = first === 'end';
+    const screen = this.screen;
     // inside a screen, a word that is not a part is set as text, and said: the mock-up is never missing what the brain wrote
     if (screen !== null && !isPart && !isBox && !isEnd && !KNOWN_OTHERS.has(first)) {
-      const id = idFor('text', undefined);
-      const target: MutableContainer | MutableScreen = stack[stack.length - 1] ?? screen;
+      const id = this.idFor('text', undefined);
+      const target: MutableContainer | MutableScreen = this.stack[this.stack.length - 1] ?? screen;
       notes.push({ line, message: `\`${first}\` is not a part (${UI_PART_KINDS.join(', ')}): set as text` });
-      target.children.push({ kind: 'text', id, line, flags: [], attrs: {}, fields: [bar < 0 ? text : (fields[0] ?? '')] });
-      return;
+      const node: UiPartNode = { kind: 'text', id, line, flags: [], attrs: {}, fields: [bar < 0 ? text : (fields[0] ?? '')] };
+      target.children.push(node);
+      return { kind: 'node', node, parent: target.id };
     }
     if (!(isPart || isBox || isEnd) || screen === null) {
       if (!(isPart || isBox || isEnd) && !KNOWN_OTHERS.has(first)) {
@@ -406,29 +432,29 @@ export function parseInterface(lines: readonly string[]): UiDocument {
         notes.push({ line, message: `\`${first}\` is read only inside a screen: write \`screen <id> phone\` first` });
       }
       others.push({ line, text });
-      return;
+      return { kind: 'other' };
     }
 
     if (isEnd) {
-      if (stack.length === 0) notes.push({ line, message: '`end` with nothing open' });
-      else stack.pop();
-      return;
+      if (this.stack.length === 0) notes.push({ line, message: '`end` with nothing open' });
+      else this.stack.pop();
+      return { kind: 'end' };
     }
 
     const w = words(rest);
     const parentId = w.attrs['in'];
     const parentFound = parentId === undefined ? undefined : byId.get(parentId);
-    const target: MutableContainer | MutableScreen = parentFound ?? stack[stack.length - 1] ?? screen;
+    const target: MutableContainer | MutableScreen = parentFound ?? this.stack[this.stack.length - 1] ?? screen;
     if (parentId !== undefined && parentFound === undefined) notes.push({ line, message: `in=${parentId}: no such container; put on the open one` });
 
     if (isBox) {
       const props = boxProps(w, notes, line);
-      const id = idFor(first, w.attrs['id']);
+      const id = this.idFor(first, w.attrs['id']);
       const container: MutableContainer = { kind: first === 'row' ? 'row' : 'col', id, line, props, children: [] };
       target.children.push(container);
       byId.set(id, container);
-      if (parentId === undefined) stack.push(container);
-      return;
+      if (parentId === undefined) this.stack.push(container);
+      return { kind: 'node', node: container, parent: target.id };
     }
 
     const kind = first as UiPartKind;
@@ -439,15 +465,20 @@ export function parseInterface(lines: readonly string[]): UiDocument {
       notes.push({ line, message: `${kind}: \`${f}\` is not a variant of ${kind} (${known.join(', ') || 'none'}); ignored` });
       return false;
     });
-    const id = idFor(kind, w.attrs['id']);
+    const id = this.idFor(kind, w.attrs['id']);
     const attrs: Record<string, string> = { ...w.attrs };
     delete attrs['in'];
     delete attrs['id'];
-    target.children.push({ kind, id, line, flags, attrs, fields });
-  });
-  if (stack.length > 0) closeAll(lines.length);
+    const node: UiPartNode = { kind, id, line, flags, attrs, fields };
+    target.children.push(node);
+    return { kind: 'node', node, parent: target.id };
+  }
+}
 
-  return { look, board, screens, others, notes };
+export function parseInterface(lines: readonly string[]): UiDocument {
+  const reader = new InterfaceReader();
+  for (const raw of lines) reader.read(raw);
+  return reader.finish();
 }
 
 // ------------------------------------------------------------------ writing, so that every line stands alone
@@ -467,6 +498,20 @@ function propWords(p: UiBoxProps): string[] {
   return out;
 }
 
+/** One node as a line that stands alone: its `id=` and the `in=` of what it sits in. */
+export function nodeLine(node: UiNode, parent: string): string {
+  if (isUiContainer(node)) return [node.kind, `id=${node.id}`, `in=${parent}`, ...propWords(node.props)].join(' ');
+  const attrs = Object.entries(node.attrs).map(([k, v]) => `${k}=${quoteIfNeeded(v)}`);
+  const head = [node.kind, ...node.flags, `id=${node.id}`, `in=${parent}`, ...attrs].join(' ');
+  return node.fields.length === 0 ? head : `${head} | ${node.fields.join(' | ')}`;
+}
+
+/** A screen as a line that stands alone. */
+export function screenLine(screen: UiScreen): string {
+  const from = screen.from === null ? '' : ` from=${screen.from}${screen.fromLabel === null ? '' : `:${screen.fromLabel}`}`;
+  return `screen ${screen.id} ${screen.device}${from}${screen.name === '' ? '' : ` | ${screen.name}`}`;
+}
+
 /**
  * The tree as lines that each stand alone: every container and part carries its `id=` and its `in=` (the screen or
  * container it is in), and there is no `end`. This is what the normaliser puts on the wire; `parseInterface` reads it
@@ -478,19 +523,12 @@ export function interfaceLines(doc: UiDocument): string[] {
   if (doc.board) out.push('scene board');
   const walk = (nodes: readonly UiNode[], parent: string): void => {
     for (const node of nodes) {
-      if (isUiContainer(node)) {
-        out.push([node.kind, `id=${node.id}`, `in=${parent}`, ...propWords(node.props)].join(' '));
-        walk(node.children, node.id);
-      } else {
-        const attrs = Object.entries(node.attrs).map(([k, v]) => `${k}=${quoteIfNeeded(v)}`);
-        const head = [node.kind, ...node.flags, `id=${node.id}`, `in=${parent}`, ...attrs].join(' ');
-        out.push(node.fields.length === 0 ? head : `${head} | ${node.fields.join(' | ')}`);
-      }
+      out.push(nodeLine(node, parent));
+      if (isUiContainer(node)) walk(node.children, node.id);
     }
   };
   for (const screen of doc.screens) {
-    const from = screen.from === null ? '' : ` from=${screen.from}${screen.fromLabel === null ? '' : `:${screen.fromLabel}`}`;
-    out.push(`screen ${screen.id} ${screen.device}${from}${screen.name === '' ? '' : ` | ${screen.name}`}`);
+    out.push(screenLine(screen));
     walk(screen.children, screen.id);
   }
   for (const other of doc.others) out.push(other.text);
@@ -542,11 +580,10 @@ export const INTERFACE_CHAPTER: string = [
   '- `*Words*` on an item, a tab or a pick option is the one chosen. Any part may say `grow`.',
   '- Icons are plain words: home search user bell cart heart star check close back menu plus shield car house umbrella phone mail lock card calendar camera map pin clock info warning document profile bank wallet chart-line.',
   '- `look wireframe` is boxes and lines; `look studio` is a finished design. The same lines serve both.',
-  'Write the words a real product would: real labels and copy. At most twelve parts a phone screen. A button that matters most is `primary`; one a screen.',
+  'Write the words a real product would: real labels and copy. At most twelve parts a phone screen. A button that matters most is `primary`; one a screen. A website is a `browser` screen (nav links=… first, then a hero, cards, a footer); an app is `phone`. Start with `look studio` for a finished design, or `look wireframe` when asked for a wireframe. Say one line about it at the end (`say | …`), never a list of the parts.',
   '',
   'Example ("a sign-in screen"):',
   'look wireframe',
-  'scene board',
   'screen s1 phone | Sign in',
   'nav close | Sign in',
   'col pad=l gap=m grow',

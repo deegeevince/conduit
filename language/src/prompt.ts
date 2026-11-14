@@ -21,6 +21,7 @@ import { DOCUMENT_TEXT_CHARS, PASTE_AS_DOCUMENT_CHARS, STANDING_LIMITS, TECHNIQU
 import type { BriefForm, DocumentFacts, LineProblem, TechniqueCard, TurnContext, TurnMemory } from './context';
 
 export type { BriefForm };
+import { INTERFACE_CHAPTER } from './interface';
 import { describeSight } from './sight';
 import { BUILTIN_STYLES } from './style';
 import type { LookDef, StyleDef } from './style';
@@ -49,6 +50,7 @@ import {
   PACE,
   PICK,
   RETRO_LOOKS,
+  INTERFACE_LOOKS,
   SIZE_SCALE,
   STROKE,
   STRUCTURE,
@@ -287,7 +289,7 @@ export function buildSystemPrompt({ capabilities, services }: PromptOptions): st
   const structures = draws ? capabilities.structures.filter((name) => name !== 'chart' || charts.length > 0) : [];
   // `code` is taught where the verbs for what you write are ("More to say with"), in its own words, and not twice in the list of shapes.
   // `tune` is taught only on a turn about music (`tuneChapter`, in the brief), never here: the system prompt is full.
-  const shapes = structures.filter((name) => name !== 'code' && name !== 'tune');
+  const shapes = structures.filter((name) => name !== 'code' && name !== 'tune' && name !== 'screen');
   const controls = capabilities.controls;
   const textures = draws ? capabilities.textures.filter((name) => name !== 'flat') : [];
   const brushes = draws ? capabilities.brushes : [];
@@ -336,7 +338,8 @@ export function buildSystemPrompt({ capabilities, services }: PromptOptions): st
     })
     .join('\n');
 
-  const offered = (Object.keys(LOOK) as LookId[]).filter((id) => capabilities.looks.includes(id));
+  // `wireframe` and `studio` are the looks of a mock-up: taught by the interface chapter in the brief, not here (the fixed prompt is full).
+  const offered = (Object.keys(LOOK) as LookId[]).filter((id) => capabilities.looks.includes(id) && !INTERFACE_LOOKS.includes(id));
   const lookLines = offered
     .map((id) => {
       const spec = LOOK[id];
@@ -374,6 +377,7 @@ export function buildSystemPrompt({ capabilities, services }: PromptOptions): st
     '- A feeling, a hard truth, a decision: few words, timed. Size, silence' + (camera ? ', one camera move.' : '.'),
     // Taught only what the painter paints: a `code` block that nothing draws loses the code, which `say` lines would have kept.
     structures.includes('code') ? '- Code, a command, a config: a `code` block, never `say` lines. Slides, a deck: see "More to say with".' : '- Code, a command, a config: one `say` line per line of source, exactly as written.',
+    structures.includes('screen') ? '- A mock-up, a page, an app screen: INTERFACE lines, never rects.' : '',
     pixels ? `- Asked for pixel art, a drawing${paints ? ', a painting' : ''}, an animation: make exactly that. Never build a picture out of letters; never describe what you could show.` : '',
   ]
     .filter((line) => line !== '')
@@ -441,7 +445,7 @@ Braces in text hold a value or arithmetic on values: \`say | At {angle}, a {roun
     ? `
 # The canvas
 
-Drawings live on a canvas with square units; the painter fits it to the screen. Each turn's SCREEN line names the canvas that suits this screen: draw on it unless you have a reason not to. 0,0 is the top-left, y runs down. Set another on the scene (\`scene canvas=square\`): ${Object.entries(
+Drawings live on a canvas with square units; the painter fits it to the screen. Each turn's SCREEN line names the canvas for this screen: use it unless you have a reason not to. 0,0 is the top-left, y runs down. Set another on the scene (\`scene canvas=square\`): ${Object.entries(
         CANVAS,
       )
         .map(([name, spec]) => `${name} ${spec.width}x${spec.height}`)
@@ -451,7 +455,7 @@ A shape with nothing else said is an outline in ink that draws itself. \`fill=\`
 
 To draw well in few lines:
 - Work back to front: the ground or sky first (\`rect full\` covers the screen), then the subject as three or four big simple shapes, then two or three details. Eight to fifteen shapes make a picture; forty make a mess.
-- Name your colours once (\`color sky=#1b2a49\`), then use the names. Four or five colours are plenty.
+- Name your colours once (\`color sky=#1b2a49\`), then use the names. Four or five are plenty.
 - Anything with parts is a \`group\`: its parts say \`in=<id>\` and measure from the group's \`at=\`, so it can be placed, moved, turned or copied (\`use\`) as one.
 - Curves are \`path\` with SVG path data.
 - Put words on a drawing with \`say label near=<id> | …\`; the painter finds the room.
@@ -502,7 +506,7 @@ ${[
     capabilities.uploads ? '`pic <id> from=u1` puts a picture the user gave on stage (the brief names them); label or trace it.' : '',
     services.refine ? 'Asked to iterate or improve it: end with `refine 3`; you are shown the picture and add to it.' : '',
     capabilities.links ? '`say href=<url> | site` is a link; cite every web source as one.' : '',
-    draws ? 'A heart, a leaf, a bird, a person: one smooth closed `path` of curves, never circles and rectangles stuck together.' : '',
+    draws ? 'A heart, a leaf, a bird, a person: one smooth closed `path`, never circles and rectangles stuck together.' : '',
     structures.includes('chart') && controls.includes('slider')
       ? 'Numbers a control changes: a `chart` whose cells hold braces (`| 4 | {rate*4}`) beside the slider, never hand-drawn axes.'
       : '',
@@ -564,13 +568,13 @@ ${drawing}${structureGuide}${controlGuide}${moreGuide}
 One clock per turn. The PEN is where your next line starts. Text moves the pen past itself: each line begins when the one before has arrived and been read. ${draws ? 'Drawn things move it only part of the way, so strokes overlap. ' : ''}You never time anything to pace an answer. \`scene\`, \`set\`, \`drop\`${draws ? ', `move`' : ''}${camera ? ', `cam`' : ''} start at the pen and run underneath what follows.
 
 - Silence: \`wait\` is one beat (about ${beat}s), \`wait 2\` two, \`wait 1.5s\` exact seconds. A wait before the line that matters is the strongest thing here.
-- Tempo: pace on the scene, or \`plan pace=slow\` part-way. ${words(PACE)}. Pace and mood stay as set across scenes and turns until you set them again.
+- Tempo: pace on the scene, or \`plan pace=slow\` part-way. ${words(PACE)}. Pace and mood stay as set until you change them.
 - Together: put \`@with\` before the bar to start a line with the one before (\`say @with aside | …\`).
 - A length you were given is a promise: "a three-second sting" plays about three seconds, first line to last. Add it up before the last line (\`pace=brisk\`; \`wait Ns\` holds the last picture).
 
 # Scenes
 
-Open every screenful with \`scene\`: the painter composes the space once. A new scene clears the stage of everything not pinned. Keep a scene to what the eye takes in at once; open another for the next thought. \`lines=N\`: how many text lines to leave room for.
+Open every screenful with \`scene\`: the painter composes the space once. A new scene clears the stage of everything not pinned. A scene is what the eye takes in at once; open another for the next thought. \`lines=N\`: how many text lines to leave room for.
 
 Layouts:
 ${table(LAYOUT, capabilities.layouts)}
@@ -820,6 +824,11 @@ export function asksForMusic(input: TurnInput): boolean {
   return input.kind === 'prompt' && /\b(play(?:s|ing|ed)?|songs?|melod(?:y|ies)|tunes?|sonatas?|sonatinas?|music(?:al)?|chords?|compos(?:e|es|ing|ition)|midi|beats?|lullab(?:y|ies)|waltz(?:es)?|jingles?|riffs?|minuets?|nocturnes?|etudes?|fugues?|symphon(?:y|ies)|harmon(?:y|ies)|piano|violin)\b/i.test(input.text);
 }
 
+/** Whether the user's words are about an interface, so that this turn is taught `screen`: mock-up, wireframe, screen, page, app, site, figma, landing, UI, journey. */
+export function asksForInterface(input: TurnInput): boolean {
+  return input.kind === 'prompt' && /\b(mock-?ups?|wire-?frames?|screens?|pages?|apps?|sites?|web-?sites?|figma|landing|ui|ux|user journey|journey|interfaces?|prototypes?|storyboards?)\b/i.test(input.text);
+}
+
 /**
  * What `tune` is, said only on a turn about music (never in the system prompt, which is full): the verb, an eight-bar score in two voices,
  * and how long a requested piece is. The score is real ABC, so the model has seen the notation and needs only the shape of the block.
@@ -930,6 +939,8 @@ export function buildTurnBrief(context: TurnContext, input: TurnInput, form: Bri
   }
   // `tune` is taught when the words are about music, or when a tune is already on stage to be changed; never in the system prompt, which is full.
   if (context.capabilities.structures.includes('tune') && (asksForMusic(input) || stage.elements.some((element) => element.figure?.kind === 'structure' && element.figure.structure === 'tune'))) parts.push(TUNE_CHAPTER);
+  // A mock-up is taught when the words are about one, or when one is on stage to be changed; never in the system prompt, which is full.
+  if (context.capabilities.structures.includes('screen') && (asksForInterface(input) || stage.elements.some((element) => element.figure?.kind === 'structure' && element.figure.structure === 'screen'))) parts.push(INTERFACE_CHAPTER);
   const standing = standingText(context.standing);
   if (standing !== null) parts.push(standing);
 

@@ -8,7 +8,7 @@
 // every Frame is. Pure.
 
 import type { Polyline } from '@conduit/language';
-import type { ElementFrame, FigureFrame, Frame, RunFrame, ShapeFrame } from '../../../contracts/frame';
+import type { ElementFrame, FigureFrame, Frame, PictureFrame, RunFrame, ShapeFrame } from '../../../contracts/frame';
 import { IDENTITY } from '../../../contracts/frame';
 import type { LookSpec } from '../../../contracts/look';
 import { REST_POSE } from '../../../contracts/space';
@@ -152,6 +152,30 @@ export function uiFrame(parts: readonly UiPart[], o: FrameOptions): Frame {
     clip = p.clip;
     if (p.kind === 'rect') {
       drawRect(p);
+    } else if (p.kind === 'picture') {
+      const x0 = snap(p.x);
+      const y0 = snap(p.y);
+      const w = snap(p.x + p.w) - x0;
+      const h = snap(p.y + p.h) - y0;
+      if (w <= 0 || h <= 0) continue;
+      const kept = boxOf(clip);
+      const picture: PictureFrame = {
+        kind: 'picture',
+        key: p.key,
+        id: p.owner,
+        layer: 'mid',
+        z: z++,
+        box: { x: -w / 2, y: -h / 2, width: w, height: h },
+        transform: { ...IDENTITY, e: x0 + w / 2 - cx, f: y0 + h / 2 - cy },
+        src: p.url,
+        develop: 1,
+        mask: p.circle === true ? 'circle' : 'none',
+        opacity: 1,
+        waiting: false,
+        tappable: false,
+        ...(kept === undefined ? {} : { clip: kept }),
+      };
+      figures.push(picture);
     } else if (p.kind === 'path') {
       // the points are in pixels: the shape is centred on its own box so a move changes the transform and not the outline
       let x0 = Infinity;

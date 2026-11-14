@@ -21,6 +21,7 @@
 // reshuffle what the viewer has read.
 
 import type { ElementSpan, Face, LetterCase, Polyline, Range, Scope, SightNote, Size, Weight } from '@conduit/language';
+import type { ElementFrame, FigureFrame } from './frame';
 import type { Box } from './space';
 
 /** How a piece of text is to be set. `shrink` is the engine's own request on top of the look's size (1: the look's size). */
@@ -130,7 +131,22 @@ export type BlockPart =
       readonly plate: boolean;
     };
 
+/**
+ * v2.2. A structure that is drawn as finished frames in stage units, not as `BlockPart`s: the interface kit's screens have fills, edges,
+ * shadows, clips and photographs that a part has no words for. The painter hands these to the renderer as they are, a row at a time as the
+ * rows land (`rowOf` says which row of the structure each figure and element belongs to, by key).
+ */
+export interface DrawnFrames {
+  readonly figures: readonly FigureFrame[];
+  readonly elements: readonly ElementFrame[];
+  readonly rowOf: ReadonlyMap<string, number>;
+  /** the smallest type on it, in stage units: what sight judges legibility by */
+  readonly fontPx: number;
+}
+
 export interface StructureLayout {
+  /** v2.2: set by a structure that draws itself (see `DrawnFrames`); `parts` is then empty */
+  readonly drawn?: DrawnFrames;
   /** every node's and link's box by element key, and the structure's own under its key: what sight reports, what `cam focus` frames, what a tap hits */
   readonly boxes: ReadonlyMap<string, Box>;
   /** what to draw, back to front */

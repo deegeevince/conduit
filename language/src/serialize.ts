@@ -213,7 +213,8 @@ export function serializeLine(line: Line): string {
     case 'table':
     case 'chart':
     case 'code':
-    case 'tune': {
+    case 'tune':
+    case 'screen': {
       const head: string[] = [line.verb, line.id];
       if (line.grow !== undefined) head.push(line.grow);
       if (line.chart !== undefined) head.push(line.chart);

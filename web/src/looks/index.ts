@@ -12,7 +12,9 @@ import { PHOSPHOR } from './phosphor';
 import { PIXEL } from './pixel';
 import { PRINTOUT } from './printout';
 import { RISO } from './riso';
+import { STUDIO } from './studio';
 import { TELETEXT } from './teletext';
+import { WIREFRAME } from './wireframe';
 
 /** Every preset the painter can perform, as shipped. A look that is not in this table does not exist. */
 export const LOOKS: Readonly<Record<LookId, LookSpec>> = {
@@ -25,6 +27,8 @@ export const LOOKS: Readonly<Record<LookId, LookSpec>> = {
   pixel: PIXEL,
   teletext: TELETEXT,
   printout: PRINTOUT,
+  wireframe: WIREFRAME,
+  studio: STUDIO,
 };
 
 /**

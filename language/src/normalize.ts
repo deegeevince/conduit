@@ -4,6 +4,7 @@
 // schedule be a pure function of the lines and lets the wire carry them one
 // at a time.
 
+import { InterfaceReader, UI_WORDS, nodeLine, screenLine } from './interface';
 import { parseLine } from './parse';
 import type { Issue, Line, ParseResult } from './types';
 import { LIMITS, STRUCTURE } from './vocabulary';
@@ -27,6 +28,8 @@ export class LineReader {
   private code = false;
   /** a tune is being written and nothing else has been said since: a line that is no verb at all is a line of its music, bar or no bar */
   private tune = false;
+  /** v2.2. A mock-up is being written: after a `screen` line, the words of the interface (parts, `row`, `col`, `end`) are its lines and nothing else's */
+  private ui = false;
   private readonly styles: Set<string>;
 
   /** `definedStyles`: the names of styles the brain defined in earlier turns */
@@ -42,6 +45,8 @@ export class LineReader {
       const tried = parseLine(raw);
       if (tried.kind === 'reject' && tried.issues.some((issue) => issue.code === 'unknown-verb')) return this.musicRow(trimmed);
     }
+    const interfaced = this.readInterface(raw, trimmed);
+    if (interfaced !== null) return interfaced;
     if (this.open !== null && trimmed.length >= 2 && !trimmed.startsWith('|') && this.isRow(trimmed)) return parseLine(`| ${trimmed}`);
     let result = parseLine(raw);
     // `fear | What if I can't?`: the name of a style the brain defined, where the verb goes, is speech in that style.
@@ -64,6 +69,7 @@ export class LineReader {
     const { line } = result;
     if (line.verb === 'table' || line.verb === 'chart') this.table = true;
     else if (line.verb === 'scene' || line.verb === 'deck' || line.verb === 'pix' || line.verb in STRUCTURE) this.table = false;
+    if (line.verb === 'scene' || line.verb === 'deck' || line.verb === 'pix' || line.verb in STRUCTURE) this.ui = false;
     if (line.verb === 'code' || line.verb === 'tune') this.code = true;
     else if (line.verb === 'scene' || line.verb === 'deck' || line.verb === 'pix' || line.verb in STRUCTURE) this.code = false;
     this.tune = line.verb === 'tune' || (this.tune && line.verb === 'row');
@@ -71,6 +77,31 @@ export class LineReader {
     if (line.verb === 'pix') this.open = ROW_ALPHABET + Object.keys(line.key).join('');
     else if (line.verb !== 'row' && line.verb !== 'frame' && !KEEPS_SPRITE_OPEN.has(line.verb)) this.open = null;
     return result;
+  }
+
+  /**
+   * v2.2. The words of an interface are read only inside a screen. The first `screen` line opens the block (a `screen` structure whose title is
+   * that line, which the schedule takes as the block's first row); every line after it that is the interface's is a row of it, as written. A
+   * `screen` line that already names a block (`screen x3 | screen s1 phone`) is the wire form, and is read as any structure line is.
+   */
+  private readInterface(raw: string, trimmed: string): ParseResult | null {
+    const first = (/^([a-z]+)/i.exec(trimmed)?.[1] ?? '').toLowerCase();
+    if (first === 'screen') {
+      if (/^screen\s+\S+\s*\|\s*screen\s/i.test(trimmed)) return null;
+      const cut = trimmed.slice(0, LIMITS.line - 40);
+      if (!this.ui) {
+        this.ui = true;
+        this.open = null;
+        return { kind: 'line', line: { verb: 'screen', id: '-', styles: [], props: {}, title: cut }, issues: [] };
+      }
+      return { kind: 'line', line: { verb: 'row', id: '-', cells: cut }, issues: [] };
+    }
+    if (!this.ui || trimmed.startsWith('#') || trimmed.startsWith('|')) return null;
+    if (UI_WORDS.includes(first)) return { kind: 'line', line: { verb: 'row', id: '-', cells: trimmed.slice(0, LIMITS.line - 40) }, issues: [] };
+    // a word that is no verb at all, inside a screen, is a part the kit does not know: it is set as text, and the brain is told
+    const tried = parseLine(raw);
+    if (tried.kind === 'reject' && tried.issues.some((issue) => issue.code === 'unknown-verb')) return { kind: 'line', line: { verb: 'row', id: '-', cells: trimmed.slice(0, LIMITS.line - 40) }, issues: [] };
+    return null;
   }
 
   /** A line of code is taken as it stands: one space after the bar is the bar's own, every other is the code's. Trailing space is dropped (it cannot be seen and would not survive the wire). */
@@ -132,10 +163,24 @@ export class LineNormalizer {
   private table: string | null = null;
   /** the flow, tree, cycle, timeline or map whose nodes are being written */
   private structure: string | null = null;
+  /** v2.2. The mock-up being written: the block's id, and the reader that keeps the stack of open rows and cols so that every line says what it sits in */
+  private ui: { readonly id: string; readonly reader: InterfaceReader; told: number } | null = null;
 
   constructor(makeId: () => string, definedStyles: Iterable<string> = []) {
     this.makeId = makeId;
     this.styles = new Set(definedStyles);
+  }
+
+  /** A line of the interface, as the line that stands alone: what it is and what it sits in. */
+  private interfaceRow(line: Extract<Line, { verb: 'row' }>): Normalized {
+    const open = this.ui;
+    if (open === null) return { line, issues: [] };
+    const read = open.reader.read(line.cells);
+    const text = read.kind === 'node' ? nodeLine(read.node, read.parent) : read.kind === 'screen' ? screenLine(read.screen) : 'end';
+    const notes = open.reader.document().notes;
+    const issues: Issue[] = notes.slice(open.told).map((note) => ({ code: 'unknown-verb', severity: 'warn', message: note.message }));
+    open.told = notes.length;
+    return { line: { ...line, id: open.id, cells: text }, issues };
   }
 
   normalize(line: Line): Normalized {
@@ -146,6 +191,7 @@ export class LineNormalizer {
       case 'row': {
         if (line.id !== '-') return { line, issues: [] };
         if (this.sprite !== null) return { line: { ...line, id: this.sprite }, issues: [] };
+        if (this.ui !== null) return this.interfaceRow(line);
         if (this.table !== null) return { line: { ...line, id: this.table }, issues: [] };
         if (line.cells.trim() === '') return { line: null, issues: [{ code: 'no-structure', severity: 'warn', message: 'an empty row with no sprite, table or code block to belong to was dropped' }] };
         // Speech after all: a bar and some words, with no sprite open. Not cut to a sprite's width.
@@ -186,8 +232,23 @@ export class LineNormalizer {
         if (id === '-') id = this.makeId();
         this.sprite = line.verb === 'pix' ? id : null;
         // A sprite begun after a table takes the rows from here on.
-        if (line.verb === 'pix') this.table = null;
+        if (line.verb === 'pix') {
+          this.table = null;
+          this.ui = null;
+        }
         return { line: { ...line, id, styles }, issues: [] };
+      }
+      case 'screen': {
+        // Wire form (`screen x3 | screen s1 phone`): it already says everything and stands alone.
+        if (line.id !== '-') return { line, issues: [] };
+        const reader = new InterfaceReader();
+        const read = reader.read(line.title ?? '');
+        const id = this.makeId();
+        this.sprite = null;
+        this.table = null;
+        this.structure = null;
+        this.ui = { id, reader, told: 0 };
+        return { line: { ...line, id, title: read.kind === 'screen' ? screenLine(read.screen) : (line.title ?? '') }, issues: [] };
       }
       case 'flow':
       case 'tree':
@@ -200,6 +261,7 @@ export class LineNormalizer {
       case 'tune': {
         const id = line.id === '-' ? this.makeId() : line.id;
         this.sprite = null;
+        this.ui = null;
         if (STRUCTURE[line.verb].parts === 'rows') this.table = id;
         // A chart takes rows and, as its marks, nodes; a table takes rows only.
         if (STRUCTURE[line.verb].parts === 'nodes' || line.verb === 'chart') this.structure = id;
@@ -224,6 +286,7 @@ export class LineNormalizer {
         return { line: line.id === '-' ? { ...line, id: this.makeId() } : line, issues: [] };
       case 'scene':
       case 'deck':
+        this.ui = null;
         this.sprite = null;
         this.table = null;
         this.structure = null;
