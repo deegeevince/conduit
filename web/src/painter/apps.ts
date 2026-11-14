@@ -133,8 +133,11 @@ export function appCues(schedule: Schedule, tq: number, look: LookSpec, env: App
     const b = corner(env.camera, room.x + room.width, room.y + room.height);
     const ra = corner(REST_POSE, room.x, room.y);
     const rb = corner(REST_POSE, room.x + room.width, room.y + room.height);
-    const box: Box = { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), width: Math.abs(b.x - a.x), height: Math.abs(b.y - a.y) };
-    const rest: Box = { x: Math.min(ra.x, rb.x), y: Math.min(ra.y, rb.y), width: Math.abs(rb.x - ra.x), height: Math.abs(rb.y - ra.y) };
+    // The page is the stage, edge to edge down to the composer, whatever the camera is doing: it is never moved or sized by it.
+    const page = alone.has(element.scene);
+    const whole: Box = { x: 0, y: 0, width: env.viewport.width, height: env.viewport.height };
+    const box: Box = page ? whole : { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), width: Math.abs(b.x - a.x), height: Math.abs(b.y - a.y) };
+    const rest: Box = page ? whole : { x: Math.min(ra.x, rb.x), y: Math.min(ra.y, rb.y), width: Math.abs(rb.x - ra.x), height: Math.abs(rb.y - ra.y) };
 
     let opacity = 1;
     if (enter !== null && tq < enter.end) opacity = enter.end > enter.start ? clamp01((tq - enter.start) / (enter.end - enter.start)) : 1;

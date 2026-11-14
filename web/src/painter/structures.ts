@@ -28,6 +28,7 @@ import { registerLaidOut } from './registry';
 import { STRUCTURES_READY, layoutStructure } from './blocks';
 import { modelOf, playingParts, rollKey } from './blocks/tune';
 import { drawUi, layoutUi, uiKey } from './ui-stage';
+import { loneAppScenes } from './apps';
 
 const SETTLE_SECONDS = 0.4;
 /** Arrivals closer together than this are one layout: a burst of lines is not a dozen layouts. */
@@ -338,7 +339,7 @@ function planOf(structure: ElementSpan, schedule: Schedule, env: StructureEnv): 
         }
       }
       try {
-        return engine({
+        const laid = engine({
           structure: shown,
           nodes: present.filter((member) => member.kind === 'node'),
           links: present.filter((member) => member.kind === 'link'),
@@ -349,6 +350,9 @@ function planOf(structure: ElementSpan, schedule: Schedule, env: StructureEnv): 
           scope: env.scope,
           obstacles,
         });
+        // A live app that is the whole answer is the page: the room is kept, but no outline, rule or skeleton is drawn in it (the app covers the stage; a sketch
+        // under it would show wherever the page is short or not yet there).
+        return figure.structure === 'app' && loneAppScenes(schedule).has(structure.scene) ? { ...laid, parts: [] } : laid;
       } catch {
         return EMPTY_STRUCTURE_LAYOUT;
       }
