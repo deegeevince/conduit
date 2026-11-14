@@ -50,6 +50,8 @@ export interface SurfaceProbe {
   readonly box: Box | null;
   readonly state: string | null;
   readonly height: number | null;
+  /** 1, or the factor the app is scaled down by because its content is larger than its room */
+  readonly fit: number;
   readonly still: { readonly how: 'own' | 'dom'; readonly width: number; readonly height: number } | null;
   /** messages the host refused: wrong source, wrong origin, wrong shape, too big, too fast */
   readonly refused: number;

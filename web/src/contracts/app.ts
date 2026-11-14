@@ -101,6 +101,8 @@ export interface AppProbe {
   /** the iframe is shown (it is whole, at rest and in its room) */
   readonly shown: boolean;
   readonly box: Box | null;
+  /** 1, or the factor the app is scaled down by because its content is larger than its room */
+  readonly fit?: number;
   /** the saved state, as the app last kept it */
   readonly state: string | null;
   /** the app has given a picture of itself, and how (`own`: it drew itself; `dom`: the document was captured); null: none */

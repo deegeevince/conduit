@@ -28,7 +28,7 @@ export function createLiveApps(options: LiveAppsOptions): AppHost {
     refresh: (ms) => surfaces.refresh(ms),
     killAll: () => surfaces.killAll(),
     probe: (): readonly AppProbe[] =>
-      surfaces.probe().map((probe) => ({ key: probe.key, id: probe.id, running: probe.running, loaded: probe.loaded, killed: probe.held === 'killed', shown: probe.shown, box: probe.box, state: probe.state, still: probe.still, refused: probe.refused, acts: probe.emits })),
+      surfaces.probe().map((probe) => ({ key: probe.key, id: probe.id, running: probe.running, loaded: probe.loaded, killed: probe.held === 'killed', shown: probe.shown, box: probe.box, fit: probe.fit, state: probe.state, still: probe.still, refused: probe.refused, acts: probe.emits })),
     dispose: () => surfaces.dispose(),
   };
 }

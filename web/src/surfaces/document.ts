@@ -211,8 +211,10 @@ const BRIDGE = String.raw`(function () {
   addEventListener('unhandledrejection', function (event) { post('fault', { message: String((event.reason && event.reason.message) || event.reason || 'rejected').slice(0, 200) }); });
   var started = false;
   var lastHeight = 0;
+  var lastWidth = 0;
   function ready() { if (started) return; started = true; post('ready', {}); report(); setInterval(report, 700); }
-  function report() { var h = Math.ceil(document.documentElement.scrollHeight); if (h !== lastHeight) { lastHeight = h; post('size', { height: h }); } }
+  function report() { var h = Math.ceil(document.documentElement.scrollHeight); var w = Math.ceil(document.documentElement.scrollWidth); if (h !== lastHeight || w !== lastWidth) { lastHeight = h; lastWidth = w; post('size', { height: h, width: w }); } }
+  addEventListener('resize', function () { if (started) report(); });
   // The app's own scripts were written inert (cleanMarkup) and run here, once the frame has a layout: a script that measures its room as it starts
   // (a canvas sized from its box) reads zero in a frame that has only just been made. Order is kept; the events it may have missed are told again.
   var sawDom = false;

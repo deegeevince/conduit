@@ -20,7 +20,7 @@ export interface BenchResult {
   readonly href: string;
 }
 
-async function run(name: string, depth: boolean, settleMs: number, program?: string, uses?: readonly AppShelf[]): Promise<BenchResult> {
+async function run(name: string, depth: boolean, settleMs: number, program?: string, uses?: readonly AppShelf[], room?: { readonly width: number; readonly height: number }): Promise<BenchResult> {
   const stage = document.getElementById('stage') as HTMLElement;
   const fixture = HOSTILE.find((candidate) => candidate.name === name);
   const source = program ?? fixture?.source;
@@ -28,7 +28,7 @@ async function run(name: string, depth: boolean, settleMs: number, program?: str
   const events: SurfaceEmit[] = [];
   const notes: string[] = [];
   const host = createSurfaceHost({ stage, onEmit: (emit) => events.push(emit), onNote: (text) => notes.push(text), ...(depth ? {} : { withoutDepth: true }) });
-  const box = { x: 20, y: 20, width: 640, height: 400 };
+  const box = { x: 20, y: 20, width: room?.width ?? 640, height: room?.height ?? 400 };
   const spec = { key: `${name}@1`, id: name, title: name, source, ...(uses === undefined ? {} : { uses }), ready: true, box, rest: box, opacity: 1, z: 1, tokens: TOKENS };
   host.sync([spec]);
   // the page's own frame loop: a host is told every frame

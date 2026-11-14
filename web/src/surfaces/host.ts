@@ -37,7 +37,7 @@ export type FromSurface =
   | { readonly type: 'pong'; readonly n: number }
   | { readonly type: 'emit'; readonly name: string; readonly value: string | number | boolean; readonly ask: boolean }
   | { readonly type: 'save'; readonly json: string }
-  | { readonly type: 'size'; readonly height: number }
+  | { readonly type: 'size'; readonly height: number; readonly width: number | null }
   | { readonly type: 'fault'; readonly message: string }
   | { readonly type: 'still'; readonly id: number; readonly failed: string | null; readonly how: 'own' | 'dom' | null; readonly w: number; readonly h: number; readonly data: string | null };
 
@@ -51,6 +51,8 @@ const SAVE_TELL_MS = 2500;
 /** A ping a second; three missed in a row and the surface is replaced by its still. */
 const PING_MS = 1000;
 const MISSED_LIMIT = 3;
+/** An app whose content is larger than its room is laid out in a bigger frame and scaled down to the room; never below this (past it the frame scrolls). Never scaled up. */
+const FIT_MIN = 0.5;
 const STORE = 'conduit.surface.';
 const MARK = 'conduit.surface.mark.';
 
@@ -110,7 +112,9 @@ export function readFromSurface(raw: unknown, channel: string): FromSurface | nu
   }
   if (type === 'size') {
     const height = data['height'];
-    return typeof height === 'number' && Number.isFinite(height) && height >= 0 && height <= 20_000 ? { type, height: Math.round(height) } : null;
+    const width = data['width'];
+    const wide = typeof width === 'number' && Number.isFinite(width) && width >= 0 && width <= 20_000 ? Math.round(width) : null;
+    return typeof height === 'number' && Number.isFinite(height) && height >= 0 && height <= 20_000 ? { type, height: Math.round(height), width: wide } : null;
   }
   if (type === 'fault') {
     const message = data['message'];
@@ -148,6 +152,10 @@ interface Running {
   state: string | null;
   told: string | null;
   height: number | null;
+  /** FIT. 1 until the document's content is larger than its room; then the factor it is scaled down by, never below `FIT_MIN` */
+  fit: number;
+  /** the room (rest size) the fit was made for: a new room starts again at 1 */
+  fitRoom: string;
   still: { readonly canvas: HTMLCanvasElement; readonly how: 'own' | 'dom' } | null;
   refused: number;
   emits: number;
@@ -271,15 +279,22 @@ export function createSurfaceHost(options: SurfaceHostOptions): SurfaceHost {
     const scaleX = rest.width > 0 ? spec.box.width / rest.width : 1;
     const scaleY = rest.height > 0 ? spec.box.height / rest.height : 1;
     // The frame is laid out at the size it has at rest and moved by the camera: a transform, never a new layout.
-    const placed = `${rest.width.toFixed(1)}x${rest.height.toFixed(1)}`;
+    const room = `${rest.width.toFixed(1)}x${rest.height.toFixed(1)}`;
+    if (room !== run.fitRoom) {
+      run.fitRoom = room;
+      run.fit = 1;
+    }
+    const fit = run.fit;
+    const placed = `${room}@${fit.toFixed(3)}`;
     if (placed !== run.placed) {
-      style.width = `${rest.width}px`;
-      style.height = `${rest.height}px`;
+      // FIT: at a fit below 1 the frame is laid out larger by 1/fit and scaled by fit, so the room is filled and nothing is clipped
+      style.width = `${rest.width / fit}px`;
+      style.height = `${rest.height / fit}px`;
       // a surface that was drawn at another size has a picture of the wrong shape: it draws itself again once it has settled in the new room
       if (run.placed !== '' && run.loaded) scheduleStill(run, STILL_AFTER_ACT_MS);
       run.placed = placed;
     }
-    style.transform = `translate(${spec.box.x}px, ${spec.box.y}px) scale(${scaleX}, ${scaleY})`;
+    style.transform = `translate(${spec.box.x}px, ${spec.box.y}px) scale(${scaleX * fit}, ${scaleY * fit})`;
     style.zIndex = String(Math.round(spec.z));
     // It is shown only when the camera is at rest and it has fully arrived: otherwise the stage's own picture of it is what is seen, which moves with the camera.
     const atRest = Math.abs(spec.box.x - rest.x) < 2 && Math.abs(spec.box.y - rest.y) < 2 && Math.abs(spec.box.width - rest.width) < 2 && Math.abs(spec.box.height - rest.height) < 2;
@@ -308,7 +323,7 @@ export function createSurfaceHost(options: SurfaceHostOptions): SurfaceHost {
     frame.style.visibility = 'hidden';
     frame.style.opacity = '0';
     const run: Running = {
-      key: spec.key, id: spec.id, channel, frame, source: spec.source, shelf: library, fingerprint: print, spec, loads: 0, loaded: false, shown: false, state, told: state, height: null, still: stills.get(spec.key) ?? null,
+      key: spec.key, id: spec.id, channel, frame, source: spec.source, shelf: library, fingerprint: print, spec, loads: 0, loaded: false, shown: false, state, told: state, height: null, fit: 1, fitRoom: '', still: stills.get(spec.key) ?? null,
       refused: 0, emits: 0, faults: 0, window: { start: 0, count: 0 }, minute: { start: 0, count: 0 }, snaps: new Map(), snapSeq: 0, stillTimer: undefined, saveTimer: undefined, pinger: undefined, pings: 0, answered: 0, placed: '',
     };
     // a frame that loads a second time has navigated itself (a script, a link): it is removed, and what it was reaching for was never allowed to answer
@@ -387,9 +402,23 @@ export function createSurfaceHost(options: SurfaceHostOptions): SurfaceHost {
       case 'pong':
         run.answered = Math.max(run.answered, message.n);
         return;
-      case 'size':
+      case 'size': {
         run.height = message.height;
+        // FIT: what the document measures is in the frame's own pixels, laid out `rest / fit` large. Content past that is scaled down to the room (the parent sets the frame's size and transform; nothing reaches into the frame).
+        const rest = run.spec.rest;
+        const layoutW = rest.width / run.fit;
+        const layoutH = rest.height / run.fit;
+        const w = message.width ?? 0;
+        if (rest.width > 0 && rest.height > 0 && (message.height > layoutH + 1 || w > layoutW + 1)) {
+          const next = Math.max(FIT_MIN, Math.min(run.fit, rest.height / message.height, w > 0 ? rest.width / w : 1));
+          if (next < run.fit - 0.01) {
+            run.fit = next;
+            place(run, run.spec);
+            scheduleStill(run, STILL_AFTER_ACT_MS);
+          }
+        }
         return;
+      }
       case 'emit': {
         if (now - run.minute.start > 60_000) run.minute = { start: now, count: 0 };
         run.minute.count += 1;
@@ -530,13 +559,14 @@ export function createSurfaceHost(options: SurfaceHostOptions): SurfaceHost {
         box: run.spec.rest,
         state: run.state,
         height: run.height,
+        fit: run.fit,
         still: run.still === null ? null : { how: run.still.how, width: run.still.canvas.width, height: run.still.canvas.height },
         refused: run.refused,
         emits: run.emits,
         faults: run.faults,
         sandbox: run.frame.getAttribute('sandbox'),
       }));
-      const off = [...held].map(([key, entry]) => ({ key, id: entry.id, running: false, loaded: false, shown: false, held: entry.why, box: null, state: null, height: null, still: null, refused: 0, emits: 0, faults: 0, sandbox: null }));
+      const off = [...held].map(([key, entry]) => ({ key, id: entry.id, running: false, loaded: false, shown: false, held: entry.why, box: null, state: null, height: null, fit: 1, still: null, refused: 0, emits: 0, faults: 0, sandbox: null }));
       return [...live, ...off];
     },
     dispose() {
