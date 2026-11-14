@@ -56,6 +56,8 @@ const GLYPH_HOLD_MS = 4000;
 const SKIP_FADE_SECONDS = 0.15;
 /** The longer side of a sketch or a snapshot sent to the server, in pixels. */
 const PICTURE_SIDE = 768;
+/** How long a picture of the stage waits for each live app to draw itself first, ms. */
+const APP_PICTURE_MS = 1500;
 /** How many finished turns can still be recorded for export. */
 const KEPT_RECORDINGS = 8;
 
@@ -298,10 +300,12 @@ export function createPainter(options: PainterOptions): Painter {
   const host = options.charts ?? null;
   /** where the music is made, when this stage can make it */
   const player = options.tunes ?? null;
+  /** where live apps run, when this stage can run them */
+  const appHost = options.apps ?? null;
   /** what has come of the data charts asked for by reference */
   const chartData = new Map<string, ChartData>();
   const chartKinds = host === null ? [] : CHARTS_READY.filter((kind) => host.kinds.includes(kind));
-  const timelineContext = (): TimelineContext => ({ viewport, reducedMotion, lockLook, paintings, onFault: noteFault, arrivals, controls: runtime, ...(host === null || chartKinds.length === 0 ? {} : { charts: { kinds: chartKinds, data: chartData } }) });
+  const timelineContext = (): TimelineContext => ({ viewport, reducedMotion, lockLook, paintings, onFault: noteFault, arrivals, controls: runtime, ...(host === null || chartKinds.length === 0 ? {} : { charts: { kinds: chartKinds, data: chartData } }), ...(appHost === null ? {} : { apps: true }) });
 
   const photoAspects = new Map<string, number>();
   /** The width over the height of the picture at `url`, once the browser has read it. */
@@ -397,7 +401,7 @@ export function createPainter(options: PainterOptions): Painter {
       sight: caps.capture ? 'snapshot' : 'report',
       // Series 4. Each list is what is really built: the structure and control engines say what they lay out, the renderer what it
       // paints. The brain is taught exactly these, so nothing here may be switched on ahead of the code that performs it.
-      structures: FULL_CAPABILITIES.structures.filter((kind) => (kind === 'chart' ? chartKinds.length > 0 : STRUCTURES_READY.includes(kind))),
+      structures: FULL_CAPABILITIES.structures.filter((kind) => (kind === 'chart' ? chartKinds.length > 0 : kind === 'app' ? appHost !== null : STRUCTURES_READY.includes(kind))),
       charts: FULL_CAPABILITIES.charts.filter((kind) => chartKinds.includes(kind)),
       controls: FULL_CAPABILITIES.controls.filter((kind) => CONTROLS_READY.includes(kind)),
       media: FULL_CAPABILITIES.media.filter((medium) => caps.media.includes(medium)),
@@ -553,16 +557,22 @@ export function createPainter(options: PainterOptions): Painter {
   };
 
   /** a chart draws itself in a surface of its own: a picture of the stage takes the engine's still of it */
-  const stills = (frame?: Frame): { chartStill?: (key: string) => HTMLCanvasElement | null } =>
-    host === null
+  const stills = (frame?: Frame): { chartStill?: (key: string) => HTMLCanvasElement | null; appStill?: (key: string) => CanvasImageSource | null } => ({
+    ...(host === null
       ? {}
       : {
-          chartStill: (key) => {
+          chartStill: (key: string) => {
             // a frame computed ahead of the playhead (a draft, a snapshot) has charts the stage has not mounted yet: draw them off screen
             const chart = frame?.charts?.find((candidate) => candidate.key === key);
             return (chart === undefined ? null : host.stillOf(chart)) ?? host.still(key);
           },
-        };
+        }),
+    // a live app runs in a frame over the stage: a picture of the stage takes the app's own picture of itself
+    ...(appHost === null ? {} : { appStill: (key: string) => appHost.still(key) }),
+  });
+
+  /** what a picture of the stage waits for first: each running app drawing itself as it stands (a moment, no more) */
+  const appsFresh = (): Promise<void> => (appHost === null ? Promise.resolve() : appHost.refresh(APP_PICTURE_MS).catch(() => undefined));
 
   const wantsSnapshot = (): boolean => renderer.capabilities.capture && services.sight === 'snapshot';
 
@@ -655,8 +665,8 @@ export function createPainter(options: PainterOptions): Painter {
     // A resting stage has no arrivals: everything on it is there. The turn's own (an interrupted turn is still settling) must not be read.
     const rest = buildTimeline(restSchedule(stage), stage, { ...timelineContext(), arrivals: new Map() });
     const frame: Frame = { ...rest.frameAt({ time: 0, ambient: 3, wallTime: pinnedWallTime(3), clock: 'paused' }), camera: REST_POSE };
-    void renderer
-      .rasterise(frame, { maxSide: PICTURE_SIDE, mime: 'image/jpeg', quality: 0.8, ...stills(frame) })
+    void appsFresh()
+      .then(() => renderer.rasterise(frame, { maxSide: PICTURE_SIDE, mime: 'image/jpeg', quality: 0.8, ...stills(frame) }))
       .then((blob) => {
         if (blob !== null && !disposed) emit('upload', { kind: 'snapshot', turn: turnId, blob });
       })
@@ -841,6 +851,7 @@ export function createPainter(options: PainterOptions): Painter {
       if (frame.spec !== lastReadySpec && !reset) sendReady(frame.spec);
       if (reset) renderer.reset();
       if (host !== null) host.sync(frame.charts ?? [], viewport.dpr);
+      if (appHost !== null && !reset) appHost.sync(frame.apps ?? [], viewport.dpr);
       // the music follows the stage: begun when a tune is whole, held while the stage is paused or hidden, let go when its tune has left
       if (player !== null && !reset) player.sync(frame.tunes ?? [], { aq: reading.ambient, running: reading.state !== 'paused' && !reading.hidden });
       lastFrame = frame;

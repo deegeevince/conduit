@@ -21,6 +21,7 @@ import type {
   TurnInput,
   TurnReport,
 } from '@conduit/language';
+import type { AppHost } from './app';
 import type { ChartHost, ChartView } from './chart';
 import type { Recording } from './film';
 import type { Quality } from './frame';
@@ -44,6 +45,8 @@ export interface PainterOptions {
   readonly charts?: ChartHost | null;
   /** v2.1. Where this stage's music is made; absent or null: the stage is silent, and a tune on it is drawn and its playhead kept by the painter's own clock */
   readonly tunes?: TunePlayer | null;
+  /** v2.3. Where this stage's live apps run; absent or null: the stage has none, and the painter does not offer `app` */
+  readonly apps?: AppHost | null;
   /** v2.1. Where a picture the user gave is fetched from, by its id (`pic … from=u1`); null when the id is not this conversation's. Absent: the painter draws no uploads. */
   readonly uploadUrl?: (id: string) => string | null;
 }

@@ -845,15 +845,29 @@ input {
 /* Controls and charts on the stage (v2). The painter draws them; these are the real elements laid over them. */
 
 .access,
-.stage__charts {
+.stage__charts,
+.stage__apps {
   position: absolute;
   inset: 0;
   overflow: hidden;
   pointer-events: none;
 }
 
-.stage__charts {
+.stage__charts,
+.stage__apps {
   z-index: 1;
+}
+
+/* A live app: a sandboxed frame laid over the room the stage gave it (web/src/app/live-app.ts). It is laid out at its rest size and moved by a transform. */
+.stage__app {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+  border: 0;
+  background: transparent;
+  color-scheme: normal;
+  transition: opacity 0.18s ease-out;
 }
 
 .access {

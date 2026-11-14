@@ -4,6 +4,7 @@
 // time and inspecting it possible.
 
 import type { AmbientKind, ClockState, Face, Layer, LookId, Mark, Mask, Medium, Polyline, StrokeCharacter, Texture, Weight } from '@conduit/language';
+import type { AppCue } from './app';
 import type { ChartState } from './chart';
 import type { TuneCue } from './tune';
 import type { LookSpec } from './look';
@@ -351,6 +352,8 @@ export interface Frame {
   readonly charts?: readonly ChartFrame[];
   /** the tunes on stage, and which are whole and may be played: what a player is told. Absent means none. A renderer draws nothing for them; the roll is already in the figures. */
   readonly tunes?: readonly TuneCue[];
+  /** the live apps on stage: what the app host is told. Absent means none. A renderer draws nothing for them but their placeholder, which is already in the figures; a picture of the stage takes the host's still of each. */
+  readonly apps?: readonly AppCue[];
   /** atmosphere, drawn behind everything else on its layer */
   readonly fields: readonly FieldFrame[];
   readonly cursor: CursorFrame | null;

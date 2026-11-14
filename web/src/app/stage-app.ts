@@ -1,6 +1,7 @@
 import { DEFAULT_LOOK, FIRST_LOAD_DEMO, LineNormalizer, LineReader, parseLine, parseReplayDirective, serializeLine } from '@conduit/language';
 import overtureScript from '@conduit/language/demos/overture.series?raw';
 import type { ActivityState, ActionRisk, BackEvent, ControlValue, ControlValues, CriticFinding, DataTable, Issue, PassState, Line, LeadWindow, LookId, ScreenFacts, Services, Sight, StageEvent, TurnEndReason, TurnInput } from '@conduit/language';
+import type { AppAct, AppHost } from '../contracts/app';
 import type { ExportJob, ExportRequest, Exporter } from '../contracts/export';
 import type { ChartHost } from '../contracts/chart';
 import type { StageHook } from '../contracts/hook';
@@ -22,6 +23,7 @@ import { canUseThree, createThreeRenderer } from '../render/three';
 import { asDataTable } from '../link/guards';
 import { createAccessLayer } from './access';
 import { createChartHost } from './chart-host';
+import { createLiveApps } from './live-app';
 import { createHook } from './hook';
 import { observeRenderer } from './observe';
 import type { AppParams } from './params';
@@ -83,6 +85,8 @@ export interface StageApp {
   readonly hook: StageHook;
   /** where this stage's charts live; null when this build has no charting engine */
   readonly charts: ChartHost | null;
+  /** v2.3. Where live apps run: the sandboxed frames over the stage. `/stop-all` ends them. */
+  readonly apps: AppHost;
   /** v2.1. The stage's sound: a tune on it is played here. Muted, stopped and heard by the chrome. */
   readonly sound: Sound;
   /** the line the charting engine's licence asks for, to show in the page; null when there is none */
@@ -297,6 +301,8 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   });
   const chartHost: ChartHost | null = engine === null ? null : createChartHost({ engine, stage: host, access });
   const sound = createSound();
+  // Live apps run here, in sandboxed frames over the stage; what the user does in one goes up the back channel (`appAct`, below).
+  const liveApps: AppHost = createLiveApps({ stage: host, onAct: (act) => appAct(act), onNote: (text) => announce(text) });
   // A browser lets a page make sound once the person has done something on it: the Send that asks for music is that, and so is any first click or key.
   const wake = (): void => sound.unlock();
   document.addEventListener('pointerdown', wake, { capture: true });
@@ -309,10 +315,12 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
       charts: chartHost,
       tunes: sound,
       uploadUrl: (id) => link.photoUrl(id),
+      apps: liveApps,
       pointer: pointerKind(),
       reducedMotion: params.motion === 'reduced' ? true : params.motion === 'full' ? false : null,
     });
   } catch (cause) {
+    liveApps.dispose();
     chartHost?.dispose();
     access.dispose();
     try {
@@ -854,6 +862,18 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     publishStatus();
   }
 
+  /**
+   * What the user did in a live app. It goes up the back channel as a control event marked as the app's: the brain is told of it on its next
+   * turn ("the user did X in the app"), or, when the app asked (`conduit.ask`), it is also the next turn's input, as a press is.
+   */
+  function appAct(act: AppAct): void {
+    if (disposed) return;
+    const at = painter.snapshot();
+    const said = typeof act.value === 'string' ? (act.name === 'state' ? act.value : JSON.stringify(act.value)) : String(act.value);
+    const text = (act.name === 'state' ? `state ${said}` : `${act.name} ${said}`).slice(0, 380);
+    publishBack({ type: 'control', turn: at.turn, id: act.id.slice(0, 24), value: act.value, text, playhead: at.playhead, send: act.ask, app: true });
+  }
+
   function noteTurnFailure(cause: unknown): void {
     notes.push(typeof cause === 'string' ? cause : `turn failed to start: ${cause instanceof Error ? cause.message : String(cause)}`);
     if (notes.length > MAX_NOTES) notes.shift();
@@ -1096,6 +1116,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     painter,
     link,
     charts: chartHost,
+    apps: liveApps,
     sound,
     attribution: engine?.attribution ?? null,
     review: {
@@ -1217,6 +1238,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
       sound.dispose();
       link.close();
       painter.dispose();
+      liveApps.dispose();
       chartHost?.dispose();
       access.dispose();
       renderer.dispose();
