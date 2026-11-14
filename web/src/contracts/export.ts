@@ -14,7 +14,9 @@ export type ExportRequest =
   /** one still */
   | { readonly kind: 'still'; readonly format: 'png' | 'svg'; readonly width: number; readonly height: number; readonly at: number }
   /** the Series lines, as a .series text file */
-  | { readonly kind: 'script' };
+  | { readonly kind: 'script' }
+  /** a PDF with one page for each of `at` (film times, in order): a deck's slides, or any set of stills. Each page is a JPEG of the stage at `width` x `height`. */
+  | { readonly kind: 'pdf'; readonly width: number; readonly height: number; readonly at: readonly number[] };
 
 export interface ExportProgress {
   /** 0..1 */
@@ -56,7 +58,7 @@ export interface ExportJob {
  */
 export interface Exporter {
   /** what this browser can make, so the menu offers nothing that will fail */
-  formats(): Promise<{ readonly video: readonly ('webm' | 'mp4')[]; readonly frames: boolean; readonly svg: boolean }>;
+  formats(): Promise<{ readonly video: readonly ('webm' | 'mp4')[]; readonly frames: boolean; readonly svg: boolean; readonly pdf: boolean }>;
   start(film: Film, request: ExportRequest): ExportJob;
   dispose(): void;
 }

@@ -28,19 +28,6 @@ export interface ExporterDeps {
 
 type Outcome = { readonly blob: Blob; readonly fileName: string };
 
-/**
- * v2.1. A PDF with one page for each of these moments of the film, in order: a deck's slides, or any set of stills. Each page
- * is a JPEG of the stage at that time, at `width` x `height`. It is the exporter's own request until `contracts/export.ts`
- * carries it (a request to the integrator, with the exact line, is in the hand-back); `Exporter.start` already accepts it.
- */
-export interface PdfRequest {
-  readonly kind: 'pdf';
-  readonly width: number;
-  readonly height: number;
-  /** film times, one page each */
-  readonly at: readonly number[];
-}
-
 const MAX_PIXELS = 4096 * 2304;
 /** A deck of this many slides is a book; a PDF held in memory stays well under a browser's limits. */
 const PDF_MAX_PAGES = 200;
@@ -110,14 +97,9 @@ function survey(film: Film, from: number, to: number): { urls: string[]; looks: 
   return { urls: [...urls], looks: [...looks] };
 }
 
-/** The exporter, with the PDF request it already accepts beyond `Exporter`'s own. Assignable to `Exporter`. */
-export interface PdfExporter extends Exporter {
-  start(film: Film, request: ExportRequest | PdfRequest): ExportJob;
-}
-
-export function createExporter(deps: ExporterDeps): PdfExporter {
+export function createExporter(deps: ExporterDeps): Exporter {
   let running: { readonly controller: AbortController; readonly settled: Promise<unknown> } | null = null;
-  let probe: Promise<{ video: readonly ('webm' | 'mp4')[]; frames: boolean; svg: boolean }> | null = null;
+  let probe: Promise<{ video: readonly ('webm' | 'mp4')[]; frames: boolean; svg: boolean; pdf: boolean }> | null = null;
   let disposed = false;
 
   const findCanvas = (host: HTMLElement): CanvasImageSource => {
@@ -126,7 +108,7 @@ export function createExporter(deps: ExporterDeps): PdfExporter {
     return canvas;
   };
 
-  const run = async (film: Film, request: ExportRequest | PdfRequest, signal: AbortSignal, report: (progress: ExportProgress) => void): Promise<Outcome> => {
+  const run = async (film: Film, request: ExportRequest, signal: AbortSignal, report: (progress: ExportProgress) => void): Promise<Outcome> => {
     const guard = (): void => {
       if (signal.aborted) throw abortError();
     };
@@ -325,12 +307,12 @@ export function createExporter(deps: ExporterDeps): PdfExporter {
         const probeRenderer = deps.createRenderer();
         const capture = probeRenderer.capabilities.capture;
         probeRenderer.dispose();
-        return { video: capture ? await videoFormats() : [], frames: capture, svg: true };
+        return { video: capture ? await videoFormats() : [], frames: capture, svg: true, pdf: capture };
       })();
       return probe;
     },
 
-    start(film, request: ExportRequest | PdfRequest) {
+    start(film, request: ExportRequest) {
       if (disposed) throw new Error('The exporter has been disposed.');
       const controller = new AbortController();
       const listeners = new Set<(progress: ExportProgress) => void>();
