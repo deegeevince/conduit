@@ -31,7 +31,7 @@ export const SURFACE_SOURCE_MAX = 160_000;
 export const SURFACE_LIMITS = { state: 64_000, event: 2_000 } as const;
 
 /** The names of the CSS variables the look arrives as, for the brain's chapter and for the test. */
-export const SURFACE_VARIABLES = ['--ink', '--ground', '--accent', '--on-accent', '--alt', '--dim', '--line', '--good', '--bad', '--font', '--font-px', '--radius', '--gap'] as const;
+export const SURFACE_VARIABLES = ['--ink', '--ground', '--accent', '--on-accent', '--alt', '--dim', '--line', '--good', '--bad', '--font', '--font-px', '--font-body', '--font-small', '--font-title', '--tap-min', '--radius', '--gap'] as const;
 
 /** The look's tokens as one CSS rule on :root. Values come from the painter's own look (never from the brain), and are still escaped. */
 export function tokenCss(tokens: SurfaceTokens): string {
@@ -48,6 +48,11 @@ export function tokenCss(tokens: SurfaceTokens): string {
     '--bad': tokens.bad,
     '--font': tokens.font,
     '--font-px': `${tokens.fontPx}px`,
+    // the stage's own type scale (a surface that has none gets the look's body for all three)
+    '--font-body': `${tokens.bodyPx ?? tokens.fontPx}px`,
+    '--font-small': `${tokens.smallPx ?? tokens.fontPx}px`,
+    '--font-title': `${tokens.titlePx ?? Math.round(tokens.fontPx * 1.5)}px`,
+    '--tap-min': `${tokens.tapMin ?? 44}px`,
     '--radius': `${tokens.radius}px`,
     '--gap': `${tokens.gap}px`,
   };
@@ -147,6 +152,9 @@ const BRIDGE = String.raw`(function () {
     var names = { ink: '--ink', ground: '--ground', accent: '--accent', onAccent: '--on-accent', alt: '--alt', dim: '--dim', line: '--line', good: '--good', bad: '--bad', font: '--font' };
     for (var key in names) if (typeof tokens[key] === 'string') { root.setProperty(names[key], tokens[key]); api.tokens[key] = tokens[key]; }
     if (typeof tokens.fontPx === 'number') { root.setProperty('--font-px', tokens.fontPx + 'px'); api.tokens.fontPx = tokens.fontPx; }
+    var sizes = { bodyPx: '--font-body', smallPx: '--font-small', titlePx: '--font-title', tapMin: '--tap-min' };
+    for (var size in sizes) if (typeof tokens[size] === 'number') { root.setProperty(sizes[size], tokens[size] + 'px'); api.tokens[size] = tokens[size]; }
+    if (typeof tokens.smallPx === 'number' && started) typeSoon();
     if (typeof tokens.radius === 'number') { root.setProperty('--radius', tokens.radius + 'px'); api.tokens.radius = tokens.radius; }
     if (typeof tokens.gap === 'number') { root.setProperty('--gap', tokens.gap + 'px'); api.tokens.gap = tokens.gap; }
     if (typeof tokens.dark === 'boolean') root.colorScheme = tokens.dark ? 'dark' : 'light';
@@ -225,12 +233,77 @@ const BRIDGE = String.raw`(function () {
   });
   addEventListener('error', function (event) { post('fault', { message: String(event.message || 'error').slice(0, 200) }); });
   addEventListener('unhandledrejection', function (event) { post('fault', { message: String((event.reason && event.reason.message) || event.reason || 'rejected').slice(0, 200) }); });
+  // TYPE. The words beside an app are set in the stage's body size, and an app that wrote bare pixel sizes (most do) would sit at half that. So, once it has a
+  // layout and again whenever its document changes, text set below the stage's small size is marked and made that size (a rule on the mark, in the page's own
+  // <style>: the app's styles and its inline styles are never touched), and what can be tapped is marked to be at least the tap size across. Nothing is made
+  // smaller, nothing above the floor is changed, and an app of the stage's own sizes (var(--font-body)) is not touched at all.
+  var typeOn = typeof boot.tokens.smallPx === 'number' && boot.tokens.smallPx > 0;
+  var typeTimer = 0;
+  var typeBusy = false;
+  var typeWatch = null;
+  var SKIP = { SCRIPT: 1, STYLE: 1, NOSCRIPT: 1, TEMPLATE: 1, CANVAS: 1, HEAD: 1, TITLE: 1 };
+  var TAP = 'button,[role=button],a[href],input:not([type=hidden]),select,textarea,summary,[onclick]';
+  var FORM = 'input:not([type=hidden]):not([type=range]):not([type=checkbox]):not([type=radio]),select,textarea,button';
+  function inSvg(node) { for (var n = node; n && n !== document.body; n = n.parentNode) if (n.namespaceURI === 'http://www.w3.org/2000/svg') return true; return false; }
+  function typeNow() {
+    typeTimer = 0;
+    if (!typeOn || !document.body) return;
+    var small = api.tokens.smallPx;
+    var tap = api.tokens.tapMin;
+    typeBusy = true;
+    if (typeWatch) typeWatch.takeRecords();
+    var old = document.querySelectorAll('[data-cd-fs],[data-cd-tap]');
+    for (var o = 0; o < old.length; o++) { old[o].removeAttribute('data-cd-fs'); old[o].removeAttribute('data-cd-tap'); }
+    var text = [];
+    var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    var node;
+    var seen = 0;
+    while ((node = walker.nextNode()) && seen < 4000) {
+      seen++;
+      var el = node.parentElement;
+      if (!el || SKIP[el.tagName] || !/\S/.test(node.nodeValue)) continue;
+      if (text.indexOf(el) < 0 && !inSvg(el)) text.push(el);
+    }
+    var forms = document.querySelectorAll(FORM);
+    for (var f = 0; f < forms.length; f++) if (text.indexOf(forms[f]) < 0) text.push(forms[f]);
+    var marks = [];
+    for (var t = 0; t < text.length; t++) {
+      var style = getComputedStyle(text[t]);
+      if (style.display === 'none' || style.visibility === 'hidden') continue;
+      if (parseFloat(style.fontSize) < small - 0.5) marks.push(text[t]);
+    }
+    var taps = [];
+    var cands = document.querySelectorAll(TAP);
+    for (var c = 0; c < cands.length && c < 600; c++) {
+      var box = cands[c];
+      var cs = getComputedStyle(box);
+      if (cs.display === 'none' || cs.visibility === 'hidden' || cs.display === 'inline' || cs.pointerEvents === 'none') continue;
+      var r = box.getBoundingClientRect();
+      if (r.width > 0 && r.height > 0 && (r.width < tap - 0.5 || r.height < tap - 0.5)) taps.push(box);
+    }
+    for (var m = 0; m < marks.length; m++) marks[m].setAttribute('data-cd-fs', '');
+    for (var k = 0; k < taps.length; k++) taps[k].setAttribute('data-cd-tap', '');
+    typeBusy = false;
+  }
+  function typeSoon() {
+    if (!typeOn || typeTimer) return;
+    typeTimer = setTimeout(typeNow, 150);
+  }
+  function typeStart() {
+    if (!typeOn) return;
+    typeNow();
+    try {
+      typeWatch = new MutationObserver(function () { if (!typeBusy) typeSoon(); });
+      typeWatch.observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['class', 'style', 'hidden', 'src'] });
+    } catch (e) {}
+    addEventListener('resize', typeSoon);
+  }
   var started = false;
   var lastHeight = 0;
   var lastWidth = 0;
-  function ready() { if (started) return; started = true; post('ready', {}); report(); setInterval(report, 700); }
-  function report() { var h = Math.ceil(document.documentElement.scrollHeight); var w = Math.ceil(document.documentElement.scrollWidth); if (h !== lastHeight || w !== lastWidth) { lastHeight = h; lastWidth = w; post('size', { height: h, width: w }); } }
-  addEventListener('resize', function () { if (started) report(); });
+  function ready() { if (started) return; started = true; post('ready', {}); typeStart(); report(); setInterval(report, 700); }
+  function report() { var h = Math.ceil(document.documentElement.scrollHeight); var w = Math.ceil(document.documentElement.scrollWidth); if (h !== lastHeight || w !== lastWidth) { lastHeight = h; lastWidth = w; post('size', { height: h, width: w, frame: Math.round(window.innerWidth) }); } }
+  addEventListener('resize', function () { if (started) { lastHeight = 0; report(); } });
   // The app's own scripts were written inert (cleanMarkup) and run here, once the frame has a layout: a script that measures its room as it starts
   // (a canvas sized from its box) reads zero in a frame that has only just been made. Order is kept; the events it may have missed are told again.
   var sawDom = false;
@@ -265,12 +338,21 @@ const BRIDGE = String.raw`(function () {
 const BASE_CSS = [
   '*,*::before,*::after{box-sizing:border-box}',
   'html,body{margin:0;min-height:100%}',
-  'body{background:var(--ground);color:var(--ink);font:var(--font-px)/1.45 var(--font);-webkit-text-size-adjust:100%}',
+  'body{background:var(--ground);color:var(--ink);font:var(--font-body)/1.45 var(--font);-webkit-text-size-adjust:100%}',
   ':where(button,input,select,textarea){font:inherit;color:inherit}',
-  ':where(button){min-height:44px;padding:0 calc(var(--gap)*1.4);border:0;border-radius:var(--radius);background:var(--accent);color:var(--on-accent);cursor:pointer}',
-  ':where(input,select,textarea){min-height:44px;padding:0 var(--gap);border:1px solid var(--line);border-radius:var(--radius);background:transparent}',
+  ':where(button){min-height:var(--tap-min);padding:0 calc(var(--gap)*1.4);border:0;border-radius:var(--radius);background:var(--accent);color:var(--on-accent);cursor:pointer}',
+  ':where(input,select,textarea){min-height:var(--tap-min);padding:0 var(--gap);border:1px solid var(--line);border-radius:var(--radius);background:transparent}',
   ':where(a){color:var(--accent)}',
 ].join('');
+
+/** The tokens without the stage's own type scale: a published page's text is the look's own body size. */
+function plainTokens(tokens: SurfaceTokens): SurfaceTokens {
+  const { bodyPx: _body, smallPx: _small, titlePx: _title, tapMin: _tap, ...rest } = tokens;
+  return rest;
+}
+
+/** The marks the bridge's type pass puts on text below the stage's small size and on targets below the tap size (the rule is the page's, never the app's). */
+const TYPE_CSS = '[data-cd-fs]{font-size:var(--font-small)!important}[data-cd-tap]{min-width:var(--tap-min)!important;min-height:var(--tap-min)!important}';
 
 /** The page, whole. `channel` is the secret the host and this page share for the life of the frame; `state` is the app's saved state as JSON text, or null. */
 /** `depth` false leaves the boot script's own removals out, so a check can see the policy hold alone (the hostile bench only; a host never sets it). */
@@ -288,7 +370,7 @@ export function buildSurfaceDocument(input: { readonly source: string; readonly 
     ch: input.channel,
     depth: input.depth !== false,
     state: restored,
-    tokens: { ink: tokens.ink, ground: tokens.ground, accent: tokens.accent, onAccent: tokens.onAccent, alt: tokens.alt, dim: tokens.dim, line: tokens.line, good: tokens.good, bad: tokens.bad, font: tokens.font, fontPx: tokens.fontPx, radius: tokens.radius, gap: tokens.gap, dark: tokens.dark },
+    tokens: { ink: tokens.ink, ground: tokens.ground, accent: tokens.accent, onAccent: tokens.onAccent, alt: tokens.alt, dim: tokens.dim, line: tokens.line, good: tokens.good, bad: tokens.bad, font: tokens.font, fontPx: tokens.fontPx, bodyPx: tokens.bodyPx, smallPx: tokens.smallPx, titlePx: tokens.titlePx, tapMin: tokens.tapMin, radius: tokens.radius, gap: tokens.gap, dark: tokens.dark },
   });
   const base = BASE_CSS;
   return [
@@ -297,7 +379,7 @@ export function buildSurfaceDocument(input: { readonly source: string; readonly 
     `<meta http-equiv="Content-Security-Policy" content="${SURFACE_CSP}">`,
     '<meta charset="utf-8">',
     '<meta name="viewport" content="width=device-width, initial-scale=1">',
-    `<style>${tokenCss(tokens)}${base}</style>`,
+    `<style>${tokenCss(tokens)}${base}${typeof tokens.smallPx === 'number' ? TYPE_CSS : ''}</style>`,
     `<script>${BRIDGE.replace('__BOOT__', () => boot).replace('__STATE_MAX__', String(SURFACE_LIMITS.state))}</script>`,
     // the vetted libraries the app asked for (web/src/surfaces/shelf): after the bridge (so its removals have run) and before the app's own script
     ...(input.shelf === undefined || input.shelf === '' ? [] : [input.shelf]),
@@ -342,7 +424,8 @@ export function buildStandalonePage(input: { readonly source: string; readonly t
     '<meta name="viewport" content="width=device-width, initial-scale=1">',
     `<title>${safeTitle}</title>`,
     ...(credits.length === 0 ? [] : [`<!-- Picture credits:\n${credits.map((c) => c.replace(/--+/g, '-')).join('\n')}\n-->`]),
-    `<style>${tokenCss(input.tokens)}${BASE_CSS}</style>`,
+    // a published page is read on its own, not beside the stage's words: it keeps the look's own body size, not the stage's
+    `<style>${tokenCss(plainTokens(input.tokens))}${BASE_CSS}</style>`,
     `<script>${stub.replace('__PICTURES__', () => scriptJson(input.pictures)).replace('__KEY__', () => scriptJson(title)).replace('__TOKENS__', () => tokens)}</script>`,
     ...(input.shelf === '' ? [] : [input.shelf]),
     '</head><body>',
