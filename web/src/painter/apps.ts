@@ -58,6 +58,10 @@ export function appTokensOf(look: LookSpec, viewport: Viewport): AppTokens {
   // the words on an action read against the action: the ground or the ink, whichever is clearer, else plain black or white
   const onAccent = [ground, ink, '#ffffff', '#000000'].reduce((best, candidate) => (contrastRatio(candidate, strong) > contrastRatio(best, strong) ? candidate : best), ground);
   const fontPx = Math.max(15, Math.min(18, Math.round(cellOf('m', viewport, look).fontSize)));
+  // the stage's own sizes: the words beside an app are body, small and title of THIS stage (34 px body on a wide screen), and the app is set in the same
+  const bodyPx = Math.round(cellOf('m', viewport, look).fontSize);
+  const smallPx = Math.round(cellOf('s', viewport, look).fontSize);
+  const titlePx = Math.round(cellOf('l', viewport, look).fontSize);
   const made: AppTokens = {
     ground,
     ink,
@@ -70,6 +74,10 @@ export function appTokensOf(look: LookSpec, viewport: Viewport): AppTokens {
     bad: theme.down,
     font: STACK[look.type.face],
     fontPx,
+    bodyPx,
+    smallPx,
+    titlePx,
+    tapMin: 44,
     radius: look.type.snapToCells ? 0 : Math.round(fontPx * 0.6),
     gap: Math.round(fontPx * 0.75),
     dark: luminance(ground) < 0.3,

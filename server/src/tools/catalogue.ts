@@ -298,6 +298,8 @@ async function screenSig(tab: Tab): Promise<string> {
 /** every general gate: the words are in their shapes, labels on their part's side, nothing over anything, readable, whole */
 async function generic(cx: Cx): Promise<Res[]> {
   const out: Res[] = [];
+  // first, while the page is as the answer left it: the other checks measure and tap, and an app is judged as a person would meet it
+  out.push(await appWorks(cx));
   const rows: CheckResult[] = [];
   const step = { n: 1, say: null, name: 'case', expects: 'any' } as const;
   await cx.c.checkAnswer(step, cx.answer, cx.picture, rows);
@@ -399,6 +401,109 @@ async function pickConsistent(cx: Cx): Promise<Res | null> {
   }
   if (tapped === 0) return { check: name, verdict: 'PASS', detail: `no option was in reach to tap (${unreachable}); nothing judged` };
   return res(name, bad, `${tapped} real taps over ${picks.length} pick(s), ${judged} bound effects held${unreachable > 0 ? ` (${unreachable} options out of reach)` : ''}`);
+}
+
+/**
+ * "A live app on stage works": a real click on its first button (or, with no button, a real drag of its first draggable) changes the app, and the stage does not log
+ * it as its own tap. The app is in a sandboxed frame the page cannot read, so it is read here through the browser's own debugging door for that frame (its buttons and where
+ * they are), and pressed with real input at the screen point they are at.
+ */
+async function appWorks(cx: Cx): Promise<Res> {
+  const name = 'app-works';
+  const { tab } = cx;
+  const page = await tab.eval<{ app: { id: string; text: string } | null; frame: { x: number; y: number; width: number; height: number; scale: number; pe: string; vis: string } | null; taps: number }>(
+    `(() => { const el = (window.__stage.elements() || []).find((e) => e.kind === 'structure' && e.phase === 'on' && /^live app/.test(String(e.text))); const f = document.querySelector('iframe[data-surface]'); const r = f ? f.getBoundingClientRect() : null; const cs = f ? getComputedStyle(f) : null; return { app: el ? { id: el.id, text: String(el.text) } : null, frame: f ? { x: r.left, y: r.top, width: r.width, height: r.height, scale: f.offsetWidth > 0 ? r.width / f.offsetWidth : 1, pe: cs.pointerEvents, vis: cs.visibility } : null, taps: window.__stage.events().filter((e) => e.type === 'tap').length }; })()`,
+  );
+  if (page.app === null && page.frame === null) return { check: name, verdict: 'PASS', detail: 'no live app on stage' };
+  // the frame may still be settling into its room (it re-lays-out when the words arrive beside it): it is read again until two readings agree
+  const frameRect = (): Promise<string> => tab.eval<string>(`(() => { const f = document.querySelector('iframe[data-surface]'); if (!f) return ''; const r = f.getBoundingClientRect(); return [r.left, r.top, r.width, r.height, f.style.transform].join('|'); })()`);
+  for (let i = 0, last = await frameRect(); i < 10; i += 1) {
+    await sleep(300);
+    const now = await frameRect();
+    if (now === last) break;
+    last = now;
+  }
+  const settled = await tab.eval<{ x: number; y: number; width: number; height: number; scale: number; pe: string; vis: string } | null>(
+    `(() => { const f = document.querySelector('iframe[data-surface]'); if (!f) return null; const r = f.getBoundingClientRect(); const cs = getComputedStyle(f); return { x: r.left, y: r.top, width: r.width, height: r.height, scale: f.offsetWidth > 0 ? r.width / f.offsetWidth : 1, pe: cs.pointerEvents, vis: cs.visibility }; })()`,
+  );
+  if (settled !== null) page.frame = settled;
+  if (page.frame === null || page.frame.vis !== 'visible' || page.frame.pe === 'none') return { check: name, verdict: 'FAIL', detail: `the page is at rest but the live app is still its picture, not the running frame (${page.frame === null ? 'no frame' : `pointer-events ${page.frame.pe}, ${page.frame.vis}`}): presses go to the stage as its own taps` };
+  const { frame } = page;
+  const kids: { sessionId: string; type: string }[] = [];
+  const stopListening = tab.browser.onEvent((event) => {
+    if (event.method !== 'Target.attachedToTarget') return;
+    const info = event.params['targetInfo'] as { type: string };
+    kids.push({ sessionId: String(event.params['sessionId']), type: info.type });
+  });
+  try {
+    await tab.send('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: false, flatten: true });
+    await sleep(600);
+    const kid = kids.find((k) => k.type === 'iframe');
+    if (kid === undefined) return { check: name, verdict: 'FAIL', detail: 'the live app\'s frame could not be reached to be pressed' };
+    type Spot = { label: string; x: number; y: number; width: number; height: number; kind: 'button' | 'drag' };
+    const read = await tab.browser.send<{ result: { value?: string } }>(
+      'Runtime.evaluate',
+      {
+        returnByValue: true,
+        expression: `(() => { const seen = (e) => { const r = e.getBoundingClientRect(); const cs = getComputedStyle(e); return r.width > 4 && r.height > 4 && cs.visibility !== 'hidden' && cs.display !== 'none' && r.right > 0 && r.bottom > 0 ? r : null; }; const pick = (list, kind) => list.map((e) => ({ e, r: seen(e) })).filter((o) => o.r).map((o) => ({ label: (o.e.textContent || o.e.getAttribute('aria-label') || o.e.className || o.e.tagName).toString().trim().slice(0, 24), x: o.r.x, y: o.r.y, width: o.r.width, height: o.r.height, kind })); const buttons = pick([...document.querySelectorAll('button, [role=button], input[type=button], summary')], 'button'); const drags = pick([...document.querySelectorAll('[draggable=true], body *')].filter((e) => e.getAttribute('draggable') === 'true' || (getComputedStyle(e).cursor === 'grab' || getComputedStyle(e).cursor === 'move')), 'drag'); return JSON.stringify({ buttons, drags, inner: [innerWidth, innerHeight] }); })()`,
+      },
+      kid.sessionId,
+    );
+    const found = JSON.parse(read.result.value ?? '{"buttons":[],"drags":[]}') as { buttons: Spot[]; drags: Spot[] };
+    const target = found.buttons[0] ?? found.drags[0];
+    if (target === undefined) return { check: name, verdict: 'PASS', detail: 'the live app has no button or draggable to press' };
+    const at = { x: frame.x + (target.x + target.width / 2) * frame.scale, y: frame.y + (target.y + target.height / 2) * frame.scale };
+    const px = Math.min(target.width, target.height) * frame.scale;
+    const bad: string[] = [];
+    if (at.x < frame.x || at.y < frame.y || at.x > frame.x + frame.width || at.y > frame.y + frame.height) bad.push(`its first ${target.kind} "${target.label}" lies outside the app's own frame (cut off)`);
+    if (at.x < 0 || at.y < 0 || at.x > cx.screen.width || at.y > cx.screen.height) bad.push(`its first ${target.kind} "${target.label}" is off the screen`);
+    if (bad.length > 0) return { check: name, verdict: 'FAIL', detail: bad.join('; ') };
+    const clip = { x: frame.x, y: Math.max(0, frame.y), width: Math.min(frame.width, cx.screen.width - frame.x), height: Math.min(frame.height, cx.screen.height - frame.y) };
+    const before = await tab.shot(clip);
+    const sent = await tab.eval<number>('window.__stage.events().filter((e) => e.type === "control" && e.app === true).length').catch(() => 0);
+    await tab.browser.send('Runtime.evaluate', { expression: "window.__got = []; ['pointerdown','pointerup','click','mousedown'].forEach((t) => document.addEventListener(t, (e) => window.__got.push(t + '@' + Math.round(e.clientX) + ',' + Math.round(e.clientY) + ' on ' + (e.target.textContent || e.target.tagName).slice(0, 12)), true)); window.__got.push('hidden=' + document.hidden + ' focus=' + document.hasFocus());" }, kid.sessionId);
+    const under = await tab.eval<string>(`(() => { const f = document.querySelector('iframe[data-surface]'); const e = document.elementFromPoint(${at.x}, ${at.y}); const cs = f ? getComputedStyle(f) : null; return (e ? e.tagName + '.' + String(e.className).slice(0, 30) : 'nothing') + ' pe=' + (cs ? cs.pointerEvents : '?') + ' vis=' + (cs ? cs.visibility : '?') + ' op=' + (cs ? cs.opacity : '?'); })()`);
+    if (target.kind === 'button') {
+      await tab.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: at.x, y: at.y, pointerType: 'mouse' });
+      // a person's pointer is over a button a moment before it presses (a press in the same instant as the move into a sandboxed frame is lost by the browser itself)
+      await sleep(250);
+      await tab.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: at.x, y: at.y, button: 'left', buttons: 1, clickCount: 1, pointerType: 'mouse' });
+      await sleep(40);
+      await tab.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: at.x, y: at.y, button: 'left', buttons: 0, clickCount: 1, pointerType: 'mouse' });
+    }
+    else {
+      const to = { x: Math.min(cx.screen.width - 2, Math.max(2, frame.x + frame.width / 2)), y: Math.min(cx.screen.height - 2, Math.max(2, frame.y + frame.height / 2)) };
+      const point = (x: number, y: number) => ({ x, y, id: 1 });
+      if (tab.mobile) {
+        await tab.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point(at.x, at.y)] });
+        for (let i = 1; i <= 8; i += 1) await tab.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [point(at.x + ((to.x - at.x) * i) / 8, at.y + ((to.y - at.y) * i) / 8)] });
+        await tab.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      } else {
+        await tab.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: at.x, y: at.y, pointerType: 'mouse' });
+        await tab.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: at.x, y: at.y, button: 'left', buttons: 1, clickCount: 1, pointerType: 'mouse' });
+        for (let i = 1; i <= 8; i += 1) await tab.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: at.x + ((to.x - at.x) * i) / 8, y: at.y + ((to.y - at.y) * i) / 8, button: 'left', buttons: 1, pointerType: 'mouse' });
+        await tab.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: to.x, y: to.y, button: 'left', buttons: 0, clickCount: 1, pointerType: 'mouse' });
+      }
+    }
+    // an app may answer on its next tick (a timer starts counting a second later): it is looked at again for up to two seconds before it is called unchanged
+    let after = before;
+    for (let waited = 0; waited < 2400 && after === before; waited += 400) {
+      await sleep(400);
+      after = await tab.shot(clip);
+    }
+    const now = await tab.eval<{ taps: number; sent: number }>('({ taps: window.__stage.events().filter((e) => e.type === "tap").length, sent: window.__stage.events().filter((e) => e.type === "control" && e.app === true).length })');
+    const got = await tab.browser.send<{ result: { value?: string } }>('Runtime.evaluate', { returnByValue: true, expression: 'JSON.stringify(window.__got)' }, kid.sessionId).then((r) => r.result.value ?? '?').catch(() => 'unreadable');
+    if (after === before) {
+      await writeFile(join(cx.dir, `${cx.screen.name}-app-works-before.png`), Buffer.from(before.split(',')[1] ?? '', 'base64'));
+      await writeFile(join(cx.dir, `${cx.screen.name}-app-works-after.png`), Buffer.from(after.split(',')[1] ?? '', 'base64'));
+    }
+    if (now.taps > page.taps) bad.push(`the stage logged the press as its own tap (${now.taps - page.taps}) instead of the app taking it`);
+    if (after === before && now.sent <= sent) bad.push(`a real ${target.kind === 'button' ? 'click' : 'drag'} on its first ${target.kind} "${target.label}" changed nothing in the app (the frame heard ${got}; under the press: ${under}; pressed at ${Math.round(at.x)},${Math.round(at.y)}; the frame is ${Math.round(frame.width)}x${Math.round(frame.height)} at ${Math.round(frame.x)},${Math.round(frame.y)}, scale ${frame.scale.toFixed(2)})`);
+    return res(name, bad, `a real ${target.kind === 'button' ? 'click' : 'drag'} on "${target.label}" (${Math.round(px)} px on screen) changed the app, and the stage logged no tap`);
+  } finally {
+    stopListening();
+    await tab.send('Target.setAutoAttach', { autoAttach: false, waitForDebuggerOnStart: false, flatten: true }).catch(() => undefined);
+  }
 }
 
 /** "‹ earlier": when lines are held back, the control is on the screen, a real tap lays them over the column (inside the screen, not empty), and a second tap puts them away */
@@ -528,6 +633,63 @@ function gridBox(cx: Cx, of: string | undefined, matched: readonly LiveElement[]
   const holds = (b: LiveElement['box']): number => matched.filter((m) => { const c = centre(m.box); return c.x >= b.x - 3 && c.x <= b.x + b.width + 3 && c.y >= b.y - 3 && c.y <= b.y + b.height + 3; }).length;
   const best = shapes.sort((a, b) => holds(b.box) - holds(a.box) || area(b.box) - area(a.box))[0];
   return best === undefined ? null : best.box;
+}
+
+
+// ---------------------------------------------------------------------------------------------------------------------------------
+// Type that follows the stage: an app's text and a figure's labels are read against the words the stage sets beside them
+
+/** read inside an app's frame (a sandboxed frame is a process of its own, so this runs there, over the DevTools protocol): every visible piece of text with its size, and every target with its size, in the frame's own pixels */
+const FRAME_READ = String.raw`(() => {
+  const px = (el) => parseFloat(getComputedStyle(el).fontSize);
+  const texts = []; const seen = new Set();
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  let n; while ((n = walker.nextNode())) { const t = n.textContent.trim(); const el = n.parentElement; if (!t || !el || seen.has(el) || ['SCRIPT','STYLE','NOSCRIPT','TEMPLATE'].includes(el.tagName)) continue; const cs = getComputedStyle(el); const r = el.getBoundingClientRect(); if (r.width <= 0 || r.height <= 0 || cs.visibility === 'hidden') continue; seen.add(el); const svg = !!el.closest('svg'); let size = px(el); if (svg) { const m = el.getScreenCTM && el.getScreenCTM(); if (m) size = size * Math.hypot(m.a, m.b); } texts.push({ t: t.slice(0, 18), px: size, svg }); }
+  for (const el of document.querySelectorAll('input:not([type=hidden]),select,textarea,button')) { if (seen.has(el)) continue; const r = el.getBoundingClientRect(); if (r.width > 0 && r.height > 0 && !/^(range|checkbox|radio)$/.test(el.type || '')) texts.push({ t: (el.value || el.tagName).slice(0, 18), px: px(el), svg: false }); }
+  const taps = [];
+  const cands = [...document.querySelectorAll('button,[role=button],a[href],input:not([type=hidden]),select,textarea,summary,[onclick]')];
+  for (const el of document.body.querySelectorAll('*')) { const cur = getComputedStyle(el).cursor; if ((cur === 'pointer' || cur === 'grab' || cur === 'move') && el.parentElement && getComputedStyle(el.parentElement).cursor !== cur && !cands.includes(el)) cands.push(el); }
+  for (const el of cands) { const cs = getComputedStyle(el); const r = el.getBoundingClientRect(); if (r.width <= 0 || r.height <= 0 || cs.display === 'inline' || cs.visibility === 'hidden' || cs.pointerEvents === 'none') continue; taps.push({ t: (el.textContent || el.tagName).trim().slice(0, 14), w: r.width, h: r.height }); }
+  const root = getComputedStyle(document.documentElement);
+  return { innerW: innerWidth, texts, taps, body: parseFloat(root.getPropertyValue('--font-body')) || null };
+})()`;
+
+interface FrameRead {
+  readonly innerW: number;
+  readonly texts: readonly { readonly t: string; readonly px: number; readonly svg: boolean }[];
+  readonly taps: readonly { readonly t: string; readonly w: number; readonly h: number }[];
+  readonly body: number | null;
+  /** on screen px per frame px: the frame is laid out larger and scaled down to its room when its content is large (FIT) */
+  readonly scale: number;
+}
+
+/** the live apps' frames, read from inside, each with the scale it is shown at */
+async function frameReads(cx: Cx): Promise<FrameRead[]> {
+  const shownFrames = await cx.tab.eval<{ offsetWidth: number; width: number }[]>(`[...document.querySelectorAll('iframe')].map((f) => ({ offsetWidth: f.offsetWidth, width: f.getBoundingClientRect().width })).filter((f) => f.width > 50)`);
+  const targets = await cx.tab.browser.send<{ targetInfos: { type: string; targetId: string }[] }>('Target.getTargets');
+  const out: FrameRead[] = [];
+  for (const target of targets.targetInfos.filter((t) => t.type === 'iframe')) {
+    const attached = await cx.tab.browser.send<{ sessionId: string }>('Target.attachToTarget', { targetId: target.targetId, flatten: true });
+    const got = await cx.tab.browser.send<{ result?: { value?: Omit<FrameRead, 'scale'> } }>('Runtime.evaluate', { expression: FRAME_READ, returnByValue: true }, attached.sessionId);
+    const value = got.result?.value;
+    if (value === undefined) continue;
+    const mine = shownFrames.find((f) => Math.abs(f.offsetWidth - value.innerW) <= 1);
+    if (mine === undefined) continue;
+    out.push({ ...value, scale: mine.width / Math.max(1, mine.offsetWidth) });
+  }
+  return out;
+}
+
+/** the stage's body size, measured off the stage's own words: the plain narration on stage (a `say` with no role word), else the choices (set at body size), else null */
+function stageBody(cx: Cx): number | null {
+  const lines = [...cx.answer.script.matchAll(/^say (\S+)((?: [^|\s=]+(?:=\S+)?)*) \|/gm)];
+  const sizeOf = (ids: readonly string[]): number | null => {
+    const sizes = ids.map((id) => shown(cx.answer).find((e) => e.id === id)?.fontPx ?? 0).filter((v) => v > 0).sort((a, b) => a - b);
+    return sizes.length === 0 ? null : (sizes[Math.floor(sizes.length / 2)] as number);
+  };
+  const plain = lines.filter((m) => !/\b(title|strong|aside|choice|label|caption|small)\b/.test(m[2] as string) && !/size=/.test(m[2] as string)).map((m) => m[1] as string);
+  const choices = lines.filter((m) => /\bchoice\b/.test(m[2] as string) && !/size=/.test(m[2] as string)).map((m) => m[1] as string);
+  return sizeOf(plain) ?? sizeOf(choices);
 }
 
 async function runCheck(cx: Cx, spec: Spec): Promise<Res> {
@@ -887,6 +1049,46 @@ async function runCheck(cx: Cx, spec: Spec): Promise<Res> {
     case 'kit-lint-clean': {
       const notes = cx.answer.mockups.flatMap((m) => m.notes).filter((n) => ['outside', 'overlap', 'lost-words'].includes(n.kind));
       return res(name, notes.map((n) => `${n.kind} ${n.id}`), `${cx.answer.mockups.length} mock-up(s), no lint notes`);
+    }
+    case 'app-type': {
+      // an app's text is the stage's own size, and every target is a finger wide, on the screen as shown (frame size times the scale the frame is shown at)
+      const reads = await frameReads(cx);
+      if (reads.length === 0) return { check: name, verdict: 'FAIL', detail: 'no live app on stage' };
+      const bodies = reads.map((r) => r.body).filter((b): b is number => b !== null);
+      const body = stageBody(cx) ?? (bodies.length === 0 ? null : (bodies[0] as number));
+      if (body === null) return { check: name, verdict: 'FAIL', detail: 'the stage body size is not known' };
+      const floor = Number(spec['min'] ?? 0.8) * body;
+      const tap = Number(spec['tap'] ?? 44);
+      const bad: string[] = [];
+      for (const r of reads) {
+        for (const t of r.texts) if (t.px * r.scale < floor - 0.5) bad.push(`"${t.t}" ${(t.px * r.scale).toFixed(1)} px (< ${floor.toFixed(1)}, a stage body of ${body.toFixed(0)})`);
+        for (const t of r.taps) if (Math.min(t.w, t.h) * r.scale < tap - 0.5) bad.push(`target "${t.t}" ${(t.w * r.scale).toFixed(0)}x${(t.h * r.scale).toFixed(0)} px (< ${tap})`);
+      }
+      const texts = reads.flatMap((r) => r.texts.map((t) => t.px * r.scale));
+      const taps = reads.flatMap((r) => r.taps.map((t) => Math.min(t.w, t.h) * r.scale));
+      return res(name, bad, `${texts.length} pieces of text, the smallest ${Math.min(...texts).toFixed(1)} px on a stage body of ${body.toFixed(0)} (${((Math.min(...texts) / body) * 100).toFixed(0)}%); ${taps.length} targets, the smallest ${taps.length === 0 ? 'none' : Math.min(...taps).toFixed(0)} px; shown at ${reads.map((r) => r.scale.toFixed(2)).join('/')}`);
+    }
+    case 'figure-type': {
+      // a figure's labels and its strip are set from the stage's body size (not from the figure's own scale), and the figure fills the room it is given
+      const figs = await cx.tab.eval<{ labelPx: number; captionPx: number; labels: number; scale: number; subject: { width: number; height: number }; stage: { width: number; height: number }; room: { width: number; height: number }; stepper: { prev: { width: number; height: number }; next: { width: number; height: number } } | null }[]>(
+        `(() => { const out = []; for (const [, v] of (window.__figures || new Map())) { const l = v.layout; out.push({ labelPx: l.labelPx, captionPx: l.chrome.px, labels: l.labels.length, scale: l.scale, subject: l.subject, stage: l.stage, room: v.room, stepper: l.chrome.stepper ? { prev: l.chrome.stepper.prev, next: l.chrome.stepper.next } : null }); } return out; })()`,
+      );
+      if (figs.length === 0) return { check: name, verdict: 'FAIL', detail: 'no figure on stage' };
+      const body = stageBody(cx);
+      if (body === null) return { check: name, verdict: 'FAIL', detail: 'the stage body size is not known' };
+      const bad: string[] = [];
+      const notes: string[] = [];
+      for (const f of figs) {
+        const labelMin = Number(spec['label'] ?? 0.7) * body;
+        const stripMin = Number(spec['strip'] ?? 0.75) * body;
+        const fill = Math.max(f.subject.width / Math.max(1, f.stage.width), f.subject.height / Math.max(1, f.stage.height));
+        if (f.labels > 0 && f.labelPx < labelMin - 0.5) bad.push(`labels ${f.labelPx} px (< ${labelMin.toFixed(1)}, a stage body of ${body.toFixed(0)})`);
+        if (f.captionPx < stripMin - 0.5) bad.push(`the strip's words ${f.captionPx} px (< ${stripMin.toFixed(1)})`);
+        if (fill < Number(spec['fill'] ?? 0.5)) bad.push(`the figure fills ${(fill * 100).toFixed(0)}% of the room it is given (the longer side of it)`);
+        if (f.stepper !== null) for (const b of [f.stepper.prev, f.stepper.next]) if (Math.min(b.width, b.height) < 44) bad.push(`a step arrow ${b.width}x${b.height} px`);
+        notes.push(`labels ${f.labelPx} px, strip ${f.captionPx} px of a ${body.toFixed(0)} px body, fills ${(fill * 100).toFixed(0)}% of its room (${Math.round(f.room.width)}x${Math.round(f.room.height)})`);
+      }
+      return res(name, bad, notes.join('; '));
     }
     case 'app-fills-stage': {
       const frames = await cx.tab.eval<{ height: number }[]>(`[...document.querySelectorAll('iframe')].map((f) => ({ height: f.getBoundingClientRect().height })).filter((r) => r.height > 50)`);

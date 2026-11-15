@@ -39,7 +39,7 @@ export type FromSurface =
   | { readonly type: 'pong'; readonly n: number }
   | { readonly type: 'emit'; readonly name: string; readonly value: string | number | boolean; readonly ask: boolean }
   | { readonly type: 'save'; readonly json: string }
-  | { readonly type: 'size'; readonly height: number; readonly width: number | null }
+  | { readonly type: 'size'; readonly height: number; readonly width: number | null; /** the width of the frame's own layout when it measured: a size measured at another width is stale (the room has changed since) */ readonly frame: number | null }
   | { readonly type: 'fault'; readonly message: string }
   | { readonly type: 'picture'; readonly id: number; readonly query: string; readonly aspect: number }
   | { readonly type: 'still'; readonly id: number; readonly failed: string | null; readonly how: 'own' | 'dom' | null; readonly w: number; readonly h: number; readonly data: string | null };
@@ -56,6 +56,12 @@ const PING_MS = 1000;
 const MISSED_LIMIT = 3;
 /** An app whose content is larger than its room is laid out in a bigger frame and scaled down to the room; never below this (past it the frame scrolls). Never scaled up. */
 const FIT_MIN = 0.6;
+/** how long a size reading must stand unchanged before the fit acts on it */
+const FIT_SETTLE_MS = 250;
+/** how long a box must stand still, away from its rest place, before the live frame is shown in it */
+const BOX_STILL_MS = 300;
+/** A stage app is set in the stage's own type sizes, so what it shows is what the words beside it are: it is scaled down no further than this (its type is raised to match, and past it the frame scrolls). */
+const FIT_MIN_STAGE = 0.8;
 /** The most pictures one app may ask for, and the most characters of a `data:` address handed back (about 300 kB of picture). */
 const PICTURE_ASKS = 4;
 const PICTURE_URL_MAX = 420_000;
@@ -120,7 +126,9 @@ export function readFromSurface(raw: unknown, channel: string): FromSurface | nu
     const height = data['height'];
     const width = data['width'];
     const wide = typeof width === 'number' && Number.isFinite(width) && width >= 0 && width <= 20_000 ? Math.round(width) : null;
-    return typeof height === 'number' && Number.isFinite(height) && height >= 0 && height <= 20_000 ? { type, height: Math.round(height), width: wide } : null;
+    const frame = data['frame'];
+    const laid = typeof frame === 'number' && Number.isFinite(frame) && frame >= 0 && frame <= 20_000 ? Math.round(frame) : null;
+    return typeof height === 'number' && Number.isFinite(height) && height >= 0 && height <= 20_000 ? { type, height: Math.round(height), width: wide, frame: laid } : null;
   }
   if (type === 'picture') {
     const id = data['id'];
@@ -178,6 +186,12 @@ interface Running {
   fitted: boolean;
   /** the room (rest size) the fit was made for: a new room starts again at 1 */
   fitRoom: string;
+  /** the last measurement the document sent, and the timer that acts on it once it has stopped changing */
+  measured: { readonly height: number; readonly width: number } | null;
+  fitTimer: ReturnType<typeof setTimeout> | undefined;
+  /** the box the stage last placed it in, and since when it has not moved */
+  boxAt: string;
+  boxSince: number;
   still: { readonly canvas: HTMLCanvasElement; readonly how: 'own' | 'dom' } | null;
   refused: number;
   emits: number;
@@ -192,6 +206,8 @@ interface Running {
   pings: number;
   answered: number;
   placed: string;
+  /** the fit the frame's type sizes were last told for (see `tokensOf`) */
+  typeFit: number;
 }
 
 export function createSurfaceHost(options: SurfaceHostOptions): SurfaceHost {
@@ -286,6 +302,7 @@ export function createSurfaceHost(options: SurfaceHostOptions): SurfaceHost {
   const destroy = (run: Running, why: SurfaceHold | null): void => {
     tellSave(run);
     clearTimeout(run.stillTimer);
+    clearTimeout(run.fitTimer);
     clearInterval(run.pinger);
     for (const done of [...run.snaps.values()]) done(false);
     if (run.still !== null) stills.set(run.key, run.still);
@@ -293,6 +310,17 @@ export function createSurfaceHost(options: SurfaceHostOptions): SurfaceHost {
     running.delete(run.key);
     mark(run.fingerprint, false);
     if (why !== null) held.set(run.key, { id: run.id, why, print: run.fingerprint });
+  };
+
+  /**
+   * The look as the frame is told it. The stage's sizes are sizes ON THE SCREEN (body 34 px, a target 44 px): a frame that FIT laid out larger and scaled down is told them
+   * in its own pixels, divided by the fit, so that what it sets in `var(--font-body)` or the type pass raises to the small size is the size the words beside it are.
+   */
+  const tokensOf = (run: Running, tokens: AppTokens): AppTokens => {
+    run.typeFit = run.fit;
+    if (tokens.smallPx === undefined || run.fit >= 1) return tokens;
+    const up = (px: number | undefined): number | undefined => (px === undefined ? undefined : Math.ceil(px / run.fit));
+    return { ...tokens, bodyPx: up(tokens.bodyPx) as number, smallPx: up(tokens.smallPx) as number, titlePx: up(tokens.titlePx) as number, tapMin: up(tokens.tapMin) as number };
   };
 
   const place = (run: Running, spec: SurfaceSpec): void => {
@@ -306,6 +334,11 @@ export function createSurfaceHost(options: SurfaceHostOptions): SurfaceHost {
       run.fitRoom = room;
       run.fit = 1;
       run.fitted = false;
+      // the last reading may be of the old room: it is looked at again after the frame has been resized and has reported
+      if (run.measured !== null) {
+        clearTimeout(run.fitTimer);
+        run.fitTimer = setTimeout(() => settleFit(run), FIT_SETTLE_MS);
+      }
     }
     const fit = run.fit;
     const placed = `${room}@${fit.toFixed(3)}`;
@@ -318,10 +351,20 @@ export function createSurfaceHost(options: SurfaceHostOptions): SurfaceHost {
       run.placed = placed;
     }
     style.transform = `translate(${spec.box.x}px, ${spec.box.y}px) scale(${scaleX * fit}, ${scaleY * fit})`;
+    if (run.loaded && spec.tokens.smallPx !== undefined && fit !== run.typeFit) post(run, { type: 'data', tokens: tokensOf(run, spec.tokens) });
     style.zIndex = String(Math.round(spec.z));
     // It is shown only when the camera is at rest and it has fully arrived: otherwise the stage's own picture of it is what is seen, which moves with the camera.
     const atRest = Math.abs(spec.box.x - rest.x) < 2 && Math.abs(spec.box.y - rest.y) < 2 && Math.abs(spec.box.width - rest.width) < 2 && Math.abs(spec.box.height - rest.height) < 2;
-    const show = run.loaded && atRest && spec.opacity > 0.02 && rest.width >= 120 && rest.height >= 80;
+    // A box that has stood still for a moment is as good as at rest: if the stage and its plan ever settle a hair apart (`rest` is where the camera at home would put it),
+    // the app must not stay a picture for good, with its presses going to the stage as taps.
+    const here = `${spec.box.x.toFixed(1)}|${spec.box.y.toFixed(1)}|${spec.box.width.toFixed(1)}|${spec.box.height.toFixed(1)}`;
+    const now = performance.now();
+    if (here !== run.boxAt) {
+      run.boxAt = here;
+      run.boxSince = now;
+    }
+    const still = now - run.boxSince >= BOX_STILL_MS;
+    const show = run.loaded && (atRest || still) && spec.opacity > 0.02 && rest.width >= 120 && rest.height >= 80;
     run.shown = show;
     style.visibility = show ? 'visible' : 'hidden';
     style.opacity = show ? String(Math.min(1, spec.opacity)) : '0';
@@ -346,8 +389,8 @@ export function createSurfaceHost(options: SurfaceHostOptions): SurfaceHost {
     frame.style.visibility = 'hidden';
     frame.style.opacity = '0';
     const run: Running = {
-      key: spec.key, id: spec.id, channel, frame, source: spec.source, shelf: library, shelfText: shelf, gotPictures: new Map(), fingerprint: print, spec, loads: 0, loaded: false, shown: false, state, told: state, height: null, fit: 1, pictures: 0, fitted: false, fitRoom: '', still: stills.get(spec.key) ?? null,
-      refused: 0, emits: 0, faults: 0, window: { start: 0, count: 0 }, minute: { start: 0, count: 0 }, snaps: new Map(), snapSeq: 0, stillTimer: undefined, saveTimer: undefined, pinger: undefined, pings: 0, answered: 0, placed: '',
+      key: spec.key, id: spec.id, channel, frame, source: spec.source, shelf: library, shelfText: shelf, gotPictures: new Map(), fingerprint: print, spec, loads: 0, loaded: false, shown: false, state, told: state, height: null, fit: 1, pictures: 0, fitted: false, fitRoom: '', measured: null, fitTimer: undefined, boxAt: '', boxSince: 0, still: stills.get(spec.key) ?? null,
+      refused: 0, emits: 0, faults: 0, window: { start: 0, count: 0 }, minute: { start: 0, count: 0 }, snaps: new Map(), snapSeq: 0, stillTimer: undefined, saveTimer: undefined, pinger: undefined, pings: 0, answered: 0, placed: '', typeFit: 1,
     };
     // a frame that loads a second time has navigated itself (a script, a link): it is removed, and what it was reaching for was never allowed to answer
     frame.addEventListener('load', () => {
@@ -382,6 +425,25 @@ export function createSurfaceHost(options: SurfaceHostOptions): SurfaceHost {
       run.pings += 1;
       post(run, { type: 'ping', n: run.pings });
     }, PING_MS);
+  };
+
+  /** FIT. What the document measures is in the frame's own pixels, laid out `rest / fit` large. Content past that is scaled down to the room (the parent sets the frame's size and transform; nothing reaches into the frame). */
+  const settleFit = (run: Running): void => {
+    if (disposed || running.get(run.key) !== run || run.measured === null) return;
+    const rest = run.spec.rest;
+    const layoutW = rest.width / run.fit;
+    const layoutH = rest.height / run.fit;
+    const { height, width } = run.measured;
+    if (!run.fitted && run.spec.page !== true && rest.width > 0 && rest.height > 0 && (height > layoutH + 1 || width > layoutW + 1)) {
+      // a hair under the exact fit, so a content that is one pixel over does not leave a scrollbar
+      const next = Math.max(run.spec.tokens.smallPx === undefined ? FIT_MIN : FIT_MIN_STAGE, Math.min(run.fit, rest.height / height, width > 0 ? rest.width / width : 1) * 0.99);
+      if (next < run.fit - 0.01) {
+        run.fit = next;
+        run.fitted = true;
+        place(run, run.spec);
+        scheduleStill(run, STILL_AFTER_ACT_MS);
+      }
+    }
   };
 
   const onMessage = (event: MessageEvent): void => {
@@ -427,21 +489,13 @@ export function createSurfaceHost(options: SurfaceHostOptions): SurfaceHost {
         return;
       case 'size': {
         run.height = message.height;
-        // FIT: what the document measures is in the frame's own pixels, laid out `rest / fit` large. Content past that is scaled down to the room (the parent sets the frame's size and transform; nothing reaches into the frame).
-        const rest = run.spec.rest;
-        const layoutW = rest.width / run.fit;
-        const layoutH = rest.height / run.fit;
-        const w = message.width ?? 0;
-        if (!run.fitted && run.spec.page !== true && rest.width > 0 && rest.height > 0 && (message.height > layoutH + 1 || w > layoutW + 1)) {
-          // a hair under the exact fit, so a content that is one pixel over does not leave a scrollbar
-          const next = Math.max(FIT_MIN, Math.min(run.fit, rest.height / message.height, w > 0 ? rest.width / w : 1) * 0.99);
-          if (next < run.fit - 0.01) {
-            run.fit = next;
-            run.fitted = true;
-            place(run, run.spec);
-            scheduleStill(run, STILL_AFTER_ACT_MS);
-          }
-        }
+        // a measure taken while the frame was another width is stale (the room moved since): the resize that follows brings a fresh one
+        if (message.frame !== null && message.frame !== undefined && Math.abs(message.frame - run.spec.rest.width / run.fit) > 2) return;
+        // FIT: a measurement is acted on once it has stopped changing. A reading sent from the old frame size can arrive after the frame was moved to a new room; acted on at once it
+        // looks like content far wider than the room and scales the app to the floor, to half size for nothing. The frame reports again when it is resized, so the last word is the true one.
+        run.measured = { height: message.height, width: message.width ?? 0 };
+        clearTimeout(run.fitTimer);
+        run.fitTimer = setTimeout(() => settleFit(run), FIT_SETTLE_MS);
         return;
       }
       case 'emit': {
@@ -563,7 +617,7 @@ const good = found !== null && found.url.startsWith('data:image/') && found.url.
           run = create(spec, shelf);
         }
         if (run.spec.tokens !== spec.tokens) {
-          post(run, { type: 'data', tokens: spec.tokens satisfies AppTokens });
+          post(run, { type: 'data', tokens: tokensOf(run, spec.tokens) });
           scheduleStill(run, STILL_AFTER_ACT_MS);
         }
         run.spec = spec;

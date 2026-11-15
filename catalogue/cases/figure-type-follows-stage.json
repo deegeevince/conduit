@@ -1,0 +1,33 @@
+{
+ "id": "figure-type-follows-stage",
+ "title": "a labelled figure with steps: its labels and strip are set from the stage's body size and it fills its room",
+ "family": "type-scale",
+ "owner": "painter",
+ "kind": "draw",
+ "found": "2026-11-15",
+ "note": "A figure's labels (12 px) and the words of its step strip (15 px) were set from the figure's own scale, beside stage words of 34 px. They are now set from the stage's body and small sizes, as far as the room can hold them, and the step arrows stay 44 px.",
+ "own": [
+  "figure-type"
+ ],
+ "surface": "main",
+ "priority": "core",
+ "turns": [
+  {
+   "say": "show me a labelled picture of the organs in the body, one step at a time",
+   "source": {
+    "log": "owner",
+    "turns": [
+     "t29"
+    ]
+   },
+   "check": [
+    {
+     "k": "figure-type",
+     "label": 0.7,
+     "strip": 0.75,
+     "fill": 0.5
+    }
+   ]
+  }
+ ]
+}
