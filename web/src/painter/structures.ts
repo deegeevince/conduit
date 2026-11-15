@@ -350,7 +350,7 @@ function planOf(structure: ElementSpan, schedule: Schedule, env: StructureEnv): 
       // FG2: a figure is laid out and drawn by the figure kit, as finished frames
       if (figure.structure === 'figure' && env.engine === undefined) {
         try {
-          return layoutFigureBlock({ structure: shown, room, spec: look });
+          return layoutFigureBlock({ structure: shown, room, spec: look, viewport: env.viewport });
         } catch {
           return EMPTY_STRUCTURE_LAYOUT;
         }

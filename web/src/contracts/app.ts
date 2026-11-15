@@ -31,6 +31,15 @@ export interface AppTokens {
   readonly font: string;
   /** the look's own body size, CSS pixels */
   readonly fontPx: number;
+  /**
+   * The stage's own type sizes, CSS pixels, measured from the stage's body size (the look's `m`, `s` and `l`): the words beside the app are set in these, so the app's
+   * are: `--font-body`, `--font-small`, `--font-title`. Absent (a surface that is not a stage app): the variables fall back to `fontPx`, and no type pass runs.
+   */
+  readonly bodyPx?: number;
+  readonly smallPx?: number;
+  readonly titlePx?: number;
+  /** the least a tap target is, in the frame's own pixels (`--tap-min`): 44 on screen, so more when the frame is scaled down to fit its room */
+  readonly tapMin?: number;
   /** corner radius, CSS pixels: 0 in the looks whose machine had none */
   readonly radius: number;
   /** the look's rhythm, CSS pixels: one gap between things */

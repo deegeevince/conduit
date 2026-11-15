@@ -635,6 +635,63 @@ function gridBox(cx: Cx, of: string | undefined, matched: readonly LiveElement[]
   return best === undefined ? null : best.box;
 }
 
+
+// ---------------------------------------------------------------------------------------------------------------------------------
+// Type that follows the stage: an app's text and a figure's labels are read against the words the stage sets beside them
+
+/** read inside an app's frame (a sandboxed frame is a process of its own, so this runs there, over the DevTools protocol): every visible piece of text with its size, and every target with its size, in the frame's own pixels */
+const FRAME_READ = String.raw`(() => {
+  const px = (el) => parseFloat(getComputedStyle(el).fontSize);
+  const texts = []; const seen = new Set();
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  let n; while ((n = walker.nextNode())) { const t = n.textContent.trim(); const el = n.parentElement; if (!t || !el || seen.has(el) || ['SCRIPT','STYLE','NOSCRIPT','TEMPLATE'].includes(el.tagName)) continue; const cs = getComputedStyle(el); const r = el.getBoundingClientRect(); if (r.width <= 0 || r.height <= 0 || cs.visibility === 'hidden') continue; seen.add(el); const svg = !!el.closest('svg'); let size = px(el); if (svg) { const m = el.getScreenCTM && el.getScreenCTM(); if (m) size = size * Math.hypot(m.a, m.b); } texts.push({ t: t.slice(0, 18), px: size, svg }); }
+  for (const el of document.querySelectorAll('input:not([type=hidden]),select,textarea,button')) { if (seen.has(el)) continue; const r = el.getBoundingClientRect(); if (r.width > 0 && r.height > 0 && !/^(range|checkbox|radio)$/.test(el.type || '')) texts.push({ t: (el.value || el.tagName).slice(0, 18), px: px(el), svg: false }); }
+  const taps = [];
+  const cands = [...document.querySelectorAll('button,[role=button],a[href],input:not([type=hidden]),select,textarea,summary,[onclick]')];
+  for (const el of document.body.querySelectorAll('*')) { const cur = getComputedStyle(el).cursor; if ((cur === 'pointer' || cur === 'grab' || cur === 'move') && el.parentElement && getComputedStyle(el.parentElement).cursor !== cur && !cands.includes(el)) cands.push(el); }
+  for (const el of cands) { const cs = getComputedStyle(el); const r = el.getBoundingClientRect(); if (r.width <= 0 || r.height <= 0 || cs.display === 'inline' || cs.visibility === 'hidden' || cs.pointerEvents === 'none') continue; taps.push({ t: (el.textContent || el.tagName).trim().slice(0, 14), w: r.width, h: r.height }); }
+  const root = getComputedStyle(document.documentElement);
+  return { innerW: innerWidth, texts, taps, body: parseFloat(root.getPropertyValue('--font-body')) || null };
+})()`;
+
+interface FrameRead {
+  readonly innerW: number;
+  readonly texts: readonly { readonly t: string; readonly px: number; readonly svg: boolean }[];
+  readonly taps: readonly { readonly t: string; readonly w: number; readonly h: number }[];
+  readonly body: number | null;
+  /** on screen px per frame px: the frame is laid out larger and scaled down to its room when its content is large (FIT) */
+  readonly scale: number;
+}
+
+/** the live apps' frames, read from inside, each with the scale it is shown at */
+async function frameReads(cx: Cx): Promise<FrameRead[]> {
+  const shownFrames = await cx.tab.eval<{ offsetWidth: number; width: number }[]>(`[...document.querySelectorAll('iframe')].map((f) => ({ offsetWidth: f.offsetWidth, width: f.getBoundingClientRect().width })).filter((f) => f.width > 50)`);
+  const targets = await cx.tab.browser.send<{ targetInfos: { type: string; targetId: string }[] }>('Target.getTargets');
+  const out: FrameRead[] = [];
+  for (const target of targets.targetInfos.filter((t) => t.type === 'iframe')) {
+    const attached = await cx.tab.browser.send<{ sessionId: string }>('Target.attachToTarget', { targetId: target.targetId, flatten: true });
+    const got = await cx.tab.browser.send<{ result?: { value?: Omit<FrameRead, 'scale'> } }>('Runtime.evaluate', { expression: FRAME_READ, returnByValue: true }, attached.sessionId);
+    const value = got.result?.value;
+    if (value === undefined) continue;
+    const mine = shownFrames.find((f) => Math.abs(f.offsetWidth - value.innerW) <= 1);
+    if (mine === undefined) continue;
+    out.push({ ...value, scale: mine.width / Math.max(1, mine.offsetWidth) });
+  }
+  return out;
+}
+
+/** the stage's body size, measured off the stage's own words: the plain narration on stage (a `say` with no role word), else the choices (set at body size), else null */
+function stageBody(cx: Cx): number | null {
+  const lines = [...cx.answer.script.matchAll(/^say (\S+)((?: [^|\s=]+(?:=\S+)?)*) \|/gm)];
+  const sizeOf = (ids: readonly string[]): number | null => {
+    const sizes = ids.map((id) => shown(cx.answer).find((e) => e.id === id)?.fontPx ?? 0).filter((v) => v > 0).sort((a, b) => a - b);
+    return sizes.length === 0 ? null : (sizes[Math.floor(sizes.length / 2)] as number);
+  };
+  const plain = lines.filter((m) => !/\b(title|strong|aside|choice|label|caption|small)\b/.test(m[2] as string) && !/size=/.test(m[2] as string)).map((m) => m[1] as string);
+  const choices = lines.filter((m) => /\bchoice\b/.test(m[2] as string) && !/size=/.test(m[2] as string)).map((m) => m[1] as string);
+  return sizeOf(plain) ?? sizeOf(choices);
+}
+
 async function runCheck(cx: Cx, spec: Spec): Promise<Res> {
   const name = spec.k;
   const words = spec['words'] as string[] | undefined;
@@ -907,6 +964,46 @@ async function runCheck(cx: Cx, spec: Spec): Promise<Res> {
     case 'kit-lint-clean': {
       const notes = cx.answer.mockups.flatMap((m) => m.notes).filter((n) => ['outside', 'overlap', 'lost-words'].includes(n.kind));
       return res(name, notes.map((n) => `${n.kind} ${n.id}`), `${cx.answer.mockups.length} mock-up(s), no lint notes`);
+    }
+    case 'app-type': {
+      // an app's text is the stage's own size, and every target is a finger wide, on the screen as shown (frame size times the scale the frame is shown at)
+      const reads = await frameReads(cx);
+      if (reads.length === 0) return { check: name, verdict: 'FAIL', detail: 'no live app on stage' };
+      const bodies = reads.map((r) => r.body).filter((b): b is number => b !== null);
+      const body = stageBody(cx) ?? (bodies.length === 0 ? null : (bodies[0] as number));
+      if (body === null) return { check: name, verdict: 'FAIL', detail: 'the stage body size is not known' };
+      const floor = Number(spec['min'] ?? 0.8) * body;
+      const tap = Number(spec['tap'] ?? 44);
+      const bad: string[] = [];
+      for (const r of reads) {
+        for (const t of r.texts) if (t.px * r.scale < floor - 0.5) bad.push(`"${t.t}" ${(t.px * r.scale).toFixed(1)} px (< ${floor.toFixed(1)}, a stage body of ${body.toFixed(0)})`);
+        for (const t of r.taps) if (Math.min(t.w, t.h) * r.scale < tap - 0.5) bad.push(`target "${t.t}" ${(t.w * r.scale).toFixed(0)}x${(t.h * r.scale).toFixed(0)} px (< ${tap})`);
+      }
+      const texts = reads.flatMap((r) => r.texts.map((t) => t.px * r.scale));
+      const taps = reads.flatMap((r) => r.taps.map((t) => Math.min(t.w, t.h) * r.scale));
+      return res(name, bad, `${texts.length} pieces of text, the smallest ${Math.min(...texts).toFixed(1)} px on a stage body of ${body.toFixed(0)} (${((Math.min(...texts) / body) * 100).toFixed(0)}%); ${taps.length} targets, the smallest ${taps.length === 0 ? 'none' : Math.min(...taps).toFixed(0)} px; shown at ${reads.map((r) => r.scale.toFixed(2)).join('/')}`);
+    }
+    case 'figure-type': {
+      // a figure's labels and its strip are set from the stage's body size (not from the figure's own scale), and the figure fills the room it is given
+      const figs = await cx.tab.eval<{ labelPx: number; captionPx: number; labels: number; scale: number; subject: { width: number; height: number }; stage: { width: number; height: number }; room: { width: number; height: number }; stepper: { prev: { width: number; height: number }; next: { width: number; height: number } } | null }[]>(
+        `(() => { const out = []; for (const [, v] of (window.__figures || new Map())) { const l = v.layout; out.push({ labelPx: l.labelPx, captionPx: l.chrome.px, labels: l.labels.length, scale: l.scale, subject: l.subject, stage: l.stage, room: v.room, stepper: l.chrome.stepper ? { prev: l.chrome.stepper.prev, next: l.chrome.stepper.next } : null }); } return out; })()`,
+      );
+      if (figs.length === 0) return { check: name, verdict: 'FAIL', detail: 'no figure on stage' };
+      const body = stageBody(cx);
+      if (body === null) return { check: name, verdict: 'FAIL', detail: 'the stage body size is not known' };
+      const bad: string[] = [];
+      const notes: string[] = [];
+      for (const f of figs) {
+        const labelMin = Number(spec['label'] ?? 0.7) * body;
+        const stripMin = Number(spec['strip'] ?? 0.75) * body;
+        const fill = Math.max(f.subject.width / Math.max(1, f.stage.width), f.subject.height / Math.max(1, f.stage.height));
+        if (f.labels > 0 && f.labelPx < labelMin - 0.5) bad.push(`labels ${f.labelPx} px (< ${labelMin.toFixed(1)}, a stage body of ${body.toFixed(0)})`);
+        if (f.captionPx < stripMin - 0.5) bad.push(`the strip's words ${f.captionPx} px (< ${stripMin.toFixed(1)})`);
+        if (fill < Number(spec['fill'] ?? 0.5)) bad.push(`the figure fills ${(fill * 100).toFixed(0)}% of the room it is given (the longer side of it)`);
+        if (f.stepper !== null) for (const b of [f.stepper.prev, f.stepper.next]) if (Math.min(b.width, b.height) < 44) bad.push(`a step arrow ${b.width}x${b.height} px`);
+        notes.push(`labels ${f.labelPx} px, strip ${f.captionPx} px of a ${body.toFixed(0)} px body, fills ${(fill * 100).toFixed(0)}% of its room (${Math.round(f.room.width)}x${Math.round(f.room.height)})`);
+      }
+      return res(name, bad, notes.join('; '));
     }
     case 'app-fills-stage': {
       const frames = await cx.tab.eval<{ height: number }[]>(`[...document.querySelectorAll('iframe')].map((f) => ({ height: f.getBoundingClientRect().height })).filter((r) => r.height > 50)`);
