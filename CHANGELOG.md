@@ -2,6 +2,11 @@
 
 Newest first. Each item is something the brain can show live when asked "showcase what's new": draw it, don't describe it. The server reads this file.
 
+## Dashboards, questions on the stage, readable mock-ups (live)
+- Ask for a dashboard or a report and get one: headline numbers with their changes, panels and lists, fetched where it can and marked approximate where it can't. On a phone the headline cards sit two to a row.
+- A question can be asked right on the stage: a blank inside the sentence or a few choices, Check when you press it, hints behind a tap, "Show me" after a wrong try, and the brain hears how you got on.
+- Mock-ups never set their smallest text below a readable size, every text keeps strong contrast, and a set of screens shown together keeps one size.
+
 ## Charts you can read, pages that look like pages (live)
 - Every bar in a chart has its label under it (Q1, Q2...), bars have gaps, and a chart's title, ticks and legend are set at the stage's own text size.
 - A real web page you ask for keeps its own type and layout, like a real site; little apps keep the stage-size text.
