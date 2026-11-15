@@ -10,22 +10,22 @@ The result is a shared, evolving, interactive canvas rather than a linear prompt
 
 ## What you can do with it
 
-Each of these is something you type, or tap on the welcome screen:
+Some things to try. The welcome screen offers several of them to tap:
 
 | Try asking | What you get |
 | --- | --- |
 | *show me a division question for my 7-year-old who doesn't know division yet* | A hands-on problem a child can work through, with a bar model, room to write with the pen, a hint behind a tap and a celebration when they get it. It asks before it tells. |
 | *explain how a heat pump works, step by step* | A labelled diagram that builds itself, with a "1 of 4" stepper that lights up each part as you tap through. |
 | *mock up a dashboard of Apple's fiscal 2025 results* | Headline numbers, charts and tables, looked up on the web where it can and marked approximate where it can't. |
-| *mock up a sign-up screen for a fitness app* | A clickable app mock-up with real labels and copy, phone-shaped. |
+| *mock up an app screen* | A clickable, phone-shaped app mock-up with real labels and copy. |
 | *render me a real webpage for a small coffee roaster* | A real, working web page in a sandbox on the stage, with its own type and layout. |
 | *make a little piano I can play* | A tiny app with sound that you can play right away. |
 | *let me explore how compound interest grows with the rate* | A drawing with a slider bound to it: move the rate and watch the curve change, with no round trip to the model. |
-| *walk me through making pancakes* | A document of steps you tick off as you go, with choices where the call is yours. |
+| *show me how to fold a paper plane, step by step* | The thing drawn on the canvas with a "1 of 8" stepper: tap through and watch each step add its piece. |
 
 You can also:
 
-- **Bring your own material.** Paste a link to a PDF or a web page, or attach a photo of a worksheet, and it answers about it on the stage.
+- **Bring your own material.** Paste a link to a PDF or a web page, or attach a photo (a page of instructions, a chart, a child's worksheet), and it answers about it on the stage.
 - **Keep going.** Say "make the mobile version", "go more technical" or "zoom into the last 14 days", and the answer changes what is already drawn.
 - **Use your Claude skills.** Pick one from **+ Skills**, or type `/skill name`, and the next answer uses it.
 - **Take it with you.** Every answer can be saved as a video, a strip of stills, an SVG or the script itself.
