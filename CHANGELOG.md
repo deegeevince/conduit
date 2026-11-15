@@ -2,6 +2,12 @@
 
 Newest first. Each item is something the brain can show live when asked "showcase what's new": draw it, don't describe it. The server reads this file.
 
+## Apps get their room; lessons hold steady (live)
+- A live app keeps the width it was made for (up to most of a wide screen), with the words beside it or below, and its frame is never taller than it needs: a sharing game shows every plate.
+- A long flowchart on a phone folds into two columns so every box is on screen, and choices at the foot are set a little smaller rather than dropped.
+- A recipe or plan opens on its own parts, never on an earlier answer's words.
+- In a lesson, an update never resets the question you are on, your try or your ink. On a phone the question, the paper and Check fit on the first screen, with a short "Not yet" right by Check.
+
 ## Everything where it belongs, nothing lost (live)
 - Sliders and other controls stand in a column of their own beside a chart or a table, measured at the room they really have: all six sliders of a budget show at once on a computer, a tablet or a phone, and none sits on the drawing. On a very short screen they scroll inside their own window.
 - Nothing an answer says is silently lost. When the words do not fit, they are set a little smaller together; whatever still does not fit waits behind a small "earlier" button at the top of the words, which shows those lines in order and closes again.
