@@ -838,13 +838,13 @@ export function spoilerMessage(ask: string, found: readonly Spoiler[]): string {
 
 interface PartRecord {
   readonly id: string;
-  readonly parent: string | null;
+  parent: string | null;
   title: string;
   tag: string | null;
   /** the ask or part it helps */
   help: string | null;
   crop: Crop | null;
-  readonly children: string[];
+  children: string[];
   steps: LessonStep[];
 }
 
@@ -923,6 +923,17 @@ export class LessonBook {
     }
   }
 
+  /** A new turn begins: no part is open any more. A line with no `in=` that follows sits in nothing the last turn left open (a new part goes to the top). */
+  closeAll(): void {
+    this.open = [];
+  }
+
+  /** The part a part line would sit in, as `read` would place it; null for the first part. */
+  parentOf(line: PartLine): string | null {
+    const known = this.records.get(line.id);
+    return known !== undefined ? known.parent : this.homeOf(line).parent;
+  }
+
   /** Sends a part back to be written again: its steps and asks go, its children stay. */
   reset(id: string): void {
     const part = this.records.get(id);
@@ -991,16 +1002,49 @@ export class LessonBook {
     return this.open[this.open.length - 1] ?? null;
   }
 
+  /**
+   * Where a part not yet written really sits. A part written `in=` something that is no part (a made-up id), or in a way (a way helps one
+   * question; nothing but another way sits in it), is not lost and not refused: it sits at the top of the document, and the issue says so.
+   */
+  private homeOf(line: PartLine): { readonly parent: string | null; readonly issues: readonly Issue[] } {
+    const top = this.order[0] ?? null;
+    if (line.in === undefined) return { parent: this.current() ?? top, issues: [] };
+    const holder = this.records.get(line.in);
+    if (holder === undefined) return { parent: top, issues: [issue('bad-value', 'warn', `part ${line.id} sits in "${line.in}", and no part is called that; it is written at the top of the document instead`, line.in)] };
+    if (holder.help !== null && line.tag === undefined && line.for === undefined) return { parent: top, issues: [issue('bad-value', 'warn', `part ${line.id} sits in "${line.in}", a way that helps one question; it is written at the top of the document instead`, line.in)] };
+    return { parent: line.in, issues: [] };
+  }
+
   private readPart(line: PartLine): LessonRead {
     const issues: Issue[] = [];
     const known = this.records.get(line.id);
     // The first part written is the document's root; a part that sits in nothing else is a child of it.
-    const parent = line.in ?? (known === undefined ? (this.current() ?? this.order[0] ?? null) : known.parent);
-    if (line.in !== undefined && !this.records.has(line.in)) {
-      return this.refuse('unknown-id', `part ${line.id} sits in "${line.in}", and no part is called that; write the part it sits in first`, line.in);
+    let parent: string | null;
+    if (known !== undefined) parent = known.parent;
+    else {
+      const home = this.homeOf(line);
+      parent = home.parent;
+      issues.push(...home.issues);
+      // too deep is not a reason to lose a part: it moves to the top
+      if (parent !== null && this.path(parent).length + 1 > LESSON_LIMITS.depth && parent !== this.order[0]) {
+        issues.push(issue('bad-value', 'warn', `parts sit at most ${LESSON_LIMITS.depth} deep; ${line.id} is written at the top of the document instead`));
+        parent = this.order[0] ?? null;
+      }
     }
     if (known !== undefined) {
-      if (line.in !== undefined && line.in !== known.parent) issues.push(issue('bad-value', 'warn', `part ${line.id} already sits in ${known.parent ?? 'the document'}; it stays there`, line.in));
+      if (line.in !== undefined && line.in !== known.parent) {
+        // The id is one an older document used (a quiz written with `q1` after a sheet that had one): the part is written again where it is now said to sit, and what it held goes.
+        const to = this.homeOf(line).parent;
+        const loops = to !== null && this.path(to).includes(line.id);
+        if (to !== null && to !== known.parent && !loops && known.parent !== null) {
+          const from = this.records.get(known.parent);
+          if (from !== undefined) from.children = from.children.filter((child) => child !== line.id);
+          known.parent = to;
+          this.records.get(to)?.children.push(line.id);
+          this.reset(line.id);
+          issues.push(issue('bad-value', 'warn', `part ${line.id} was in ${from?.id ?? 'another part'}; it is written again in ${to}`, line.in));
+        } else issues.push(issue('bad-value', 'warn', `part ${line.id} already sits in ${known.parent ?? 'the document'}; it stays there`, line.in));
+      }
       known.title = line.title;
       if (line.tag !== undefined) known.tag = line.tag;
       if (line.for !== undefined || line.tag !== undefined) known.help = this.helpOf(line, known.parent) ?? known.help;
@@ -1067,6 +1111,7 @@ export class LessonBook {
     const accepted = line.is.slice(0, LESSON_LIMITS.accepted);
     const open = line.check === 'any' || line.check === 'done';
     if (accepted.length === 0 && !open) return this.refuse('bad-ask', 'an ask needs is=<answer>');
+    if (!open && accepted.every((answer) => answer === '?' || answer === '')) return this.refuse('bad-ask', 'an ask needs the answer it accepts; `?` is a gap, not an answer (write it again once the answer is known)');
     const pick = line.pick ?? null;
     if (open && line.check === 'done' && pick !== null) return this.refuse('bad-ask', 'a done tick has no choices; use check=any pick=… for a choice');
     if (pick !== null && !open) {
