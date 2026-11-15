@@ -402,7 +402,7 @@ export interface LookSpecLanguage {
 // change durations and the schedule must be the same on both sides.
 export const LOOK = {
   paper: {
-    gist: 'Ink on warm paper. Quiet, bright, good for drawing and for reading. The default.',
+    gist: 'Ink on warm paper. Quiet and bright.',
     ground: '#f4efe4',
     ink: '#23201b',
     dim: '#6f685c',
@@ -472,7 +472,7 @@ export const LOOK = {
     exit: 'cut',
   },
   phosphor: {
-    gist: 'An amber terminal, 1987: one colour, typed in. Nocturnal, thinking aloud.',
+    gist: 'An amber terminal, 1987: one colour, typed in.',
     ground: '#140d04',
     ink: '#f0a000',
     dim: '#a87400',
@@ -486,7 +486,7 @@ export const LOOK = {
     exit: 'cut',
   },
   teletext: {
-    gist: 'Broadcast teletext, 1981: eight hard colours, chunky pixels. Public, declarative.',
+    gist: 'Broadcast teletext, 1981: eight hard colours, chunky pixels.',
     ground: '#000000',
     ink: '#ffffff',
     dim: '#7f7f7f',
@@ -514,7 +514,7 @@ export const LOOK = {
     exit: 'cut',
   },
   printout: {
-    gist: 'A dot-matrix printout on green-bar paper, 1980: on the record.',
+    gist: 'A dot-matrix printout on green-bar paper, 1980.',
     ground: '#f1ede0',
     ink: '#1d1a18',
     dim: '#625d57',

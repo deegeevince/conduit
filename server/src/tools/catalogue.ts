@@ -1102,6 +1102,15 @@ async function runCheck(cx: Cx, spec: Spec): Promise<Res> {
       const notes = cx.answer.mockups.flatMap((m) => m.notes).filter((n) => ['outside', 'overlap', 'lost-words'].includes(n.kind));
       return res(name, notes.map((n) => `${n.kind} ${n.id}`), `${cx.answer.mockups.length} mock-up(s), no lint notes`);
     }
+    case 'dashboard-shape': {
+      // a dashboard is one kit page: a row of headline numbers (`stat`) and panels (`card`), the kit's lint clean (no overlap, nothing outside)
+      const lines = cx.answer.script.split('\n').map((l) => l.replace(/^\w+ \w+ \| (?=\s*(?:row|col|stat)\b)/, ''));
+      const stats = lines.filter((l) => /^\s*stat\b/.test(l)).length;
+      const panels = lines.filter((l) => /^\s*(?:col|row)\b[^|]*\bcard\b/.test(l)).length;
+      const notes = cx.answer.mockups.flatMap((m) => m.notes).filter((n) => ['outside', 'overlap', 'lost-words'].includes(n.kind));
+      const min = (k: string, d: number): number => Number(spec[k] ?? d);
+      return res(name, [...(cx.answer.mockups.length === 0 ? ['no kit page on stage'] : []), ...(stats < min('stats', 3) ? [`${stats} stat card(s), want ${min('stats', 3)}`] : []), ...(panels < min('panels', 2) ? [`${panels} panel(s), want ${min('panels', 2)}`] : []), ...notes.map((n) => `${n.kind} ${n.id}`)], `${stats} stat cards, ${panels} panels, no lint notes`);
+    }
     case 'app-type': {
       // an app's text is the stage's own size, and every target is a finger wide, on the screen as shown (frame size times the scale the frame is shown at)
       const reads = await frameReads(cx);

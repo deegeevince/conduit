@@ -121,7 +121,7 @@ function describeControl(element: ElementSpan, held: boolean | number | string |
 }
 
 const MUSIC = /\b(play(?:s|ing|ed)?|songs?|melod(?:y|ies)|tunes?|sonatas?|sonatinas?|music(?:al)?|chords?|compos(?:e|es|ing|ition)|midi|beats?|lullab(?:y|ies)|waltz(?:es)?|jingles?|riffs?|minuets?|nocturnes?|etudes?|fugues?|symphon(?:y|ies)|harmon(?:y|ies)|piano|violin)\b/i;
-const INTERFACE = /\b(mock[- ]?ups?|wire[- ]?frames?|screens?|pages?|apps?|sites?|web-?sites?|figma|landing|ui|ux|user journey|journey|interfaces?|prototypes?|storyboards?)\b/i;
+const INTERFACE = /\b(mock[- ]?ups?|wire[- ]?frames?|screens?|pages?|apps?|sites?|web-?sites?|figma|landing|ui|ux|user journey|journey|interfaces?|prototypes?|storyboards?|dashboards?|scorecards?|kpis?|metrics|(?:report|summary|overview|breakdown) of)\b/i;
 
 const structure = <K extends StructureKind>(id: K, where: 'kernel' | 'chapter', describes: 'words' | 'summary', cue?: (userText: string) => boolean): KindWords<K> => ({
   id,
