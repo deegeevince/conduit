@@ -28,12 +28,13 @@
 // Hover and focus never move or resize anything. The size of every zone, and
 // so of every target, is at least `minTarget` on its shorter side.
 
-import { controlShare, sliderStep, snapSliderValue } from '@conduit/language';
+import { controlShare, sliderStep, snapSliderValue, splitAtBlank } from '@conduit/language';
 import type { ControlSpec, ControlValue } from '@conduit/language';
 import type { BlockLook, BlockPart, MeasuredText, TextSpec } from '../../contracts/blocks';
 import type { ControlEngine, ControlInput, ControlKey, ControlLayout, ControlZone } from '../../contracts/controls';
 import type { Box } from '../../contracts/space';
 import { atLeast, chevron, circleLine, inflate, rectLine, segment, shapePart, textPart } from './shapes';
+import { askOf, hasNext, lockedOf, runOf, shownAnswer } from './ask-state';
 
 const LABEL: TextSpec = { size: 'm', weight: 'normal', face: null, letterCase: 'asis', shrink: 1 };
 const FINE: TextSpec = { size: 's', weight: 'normal', face: null, letterCase: 'asis', shrink: 1 };
@@ -576,6 +577,235 @@ function layoutInput(input: ControlInput, m: Metrics): ControlLayout {
   return { width, height, parts: sheet.parts, zones: sheet.zones };
 }
 
+// ---------------------------------------------------------------- ask (HI1)
+
+/** The words an ask says of itself. Neutral and plain; one table, so that the audience's register has one place to be set. */
+const ASK_WORDS = { check: 'Check', done: 'Done', hint: 'Hint', show: 'Show me', wrong: 'Not yet.', right: 'Right.', tick: 'Done.', shown: 'Shown. On to the next.' } as const;
+/** The widest an ask sets its words: a line of prose is read at about this, however wide the stage is. */
+const ASK_MAX = 760;
+
+interface AskPiece {
+  readonly kind: 'run' | 'blank';
+  readonly text: string;
+  readonly x: number;
+  readonly width: number;
+}
+
+/**
+ * An ask: its words with the blank set in the line (a field a finger can find), or the field under them; choices when it has them; then Check, a Hint
+ * behind a tap and, after a try that was not right, Show me. Later asks are numbered empty rows until the one before is right or given up. Every part a
+ * hand works is a zone at least a finger across. What it accepts is compared by the page, never drawn here.
+ */
+function layoutAsk(input: ControlInput, m: Metrics): ControlLayout {
+  const span = input.control;
+  const ask = askOf(span);
+  if (ask === null) return layoutInput(input, m);
+  const run = runOf(span);
+  const locked = lockedOf(span);
+  const mt = Math.max(input.minTarget, m.row);
+  const room = Math.max(m.cellW * 8, Math.min(input.maxWidth, ASK_MAX));
+  const wide = (text: string, spec: TextSpec = LABEL): number => input.measure(text, spec, 1e6).width;
+  const space = Math.max(2, wide('a a') - wide('aa'));
+  const th = input.measure('Ag', LABEL, 1e6).height;
+  const gapY = Math.round(m.gap * 1.2);
+  const numbered = ask.n > 1 || hasNext(span);
+  const lead = numbered ? wide(`${ask.n}.`) + space * 1.5 : 0;
+  const held = typeof heldValue(input) === 'string' ? (heldValue(input) as string) : '';
+  const picks = span.figure?.kind === 'control' ? span.figure.options : [];
+  const settled = run.verdict === 'right' || run.verdict === 'shown';
+  const typed = picks.length === 0 && ask.check !== 'done';
+
+  // what the blank (or the field) holds
+  const answer = run.verdict === 'shown' ? shownAnswer(ask) : picks.length > 0 ? (picks[run.chosen - 1] ?? '') : held;
+  const widest = Math.max(wide('0000'), ...ask.accepted.map((a) => wide(a.replaceAll('_', ' '))), ...picks.map((p) => wide(p)));
+  const blankW = Math.min(room - lead, Math.max(mt * 1.6, widest + 3 * space + 2 * m.pad));
+  const parts = ask.blank ? splitAtBlank(span.text) : null;
+
+  const compose = (sheet: Sheet | null): { height: number } => {
+    let y = 0;
+    const text = (part: string, role: Parameters<typeof textPart>[2], words: string, box: Box, spec: TextSpec, align: 'left' | 'center' | 'right' = 'left'): void => {
+      if (sheet !== null) sheet.text(part, role, words, box, spec, align);
+    };
+    const zone = (part: string, box: Box): void => {
+      if (sheet !== null) sheet.zone(part, box, false);
+    };
+    const gutter = (top: number, height: number): void => {
+      if (numbered) text('number', 'value', `${ask.n}.`, centre({ x: 0, y: top, width: lead, height }, th), LABEL, 'left');
+    };
+    if (locked) {
+      gutter(0, mt);
+      if (sheet !== null) {
+        const w = Math.min(room - lead, mt * 6);
+        sheet.shape('rule', 'grid', (dx, dy) => [segment(lead + dx, mt - m.stroke + dy, lead + w + dx, mt - m.stroke + dy)]);
+      }
+      return { height: mt };
+    }
+    const box = { x: lead, width: room - lead };
+    // --- the words, with the blank in the line
+    const field = (x: number, top: number, width: number): Box => ({ x, y: top, width, height: mt });
+    const drawField = (at: Box): void => {
+      if (sheet === null) return;
+      const lit = input.mood.hover || input.mood.focus || input.mood.pressed === 'field';
+      sheet.shape('field', settled || run.verdict === 'wrong' || lit ? 'frame' : 'grid', (dx, dy) => [rectLine({ x: at.x + dx, y: at.y + dy, width: at.width, height: at.height }, input.look.radius)]);
+      if (run.verdict === 'right') {
+        const out = inflate(at, 3);
+        sheet.shape('ring-right', 'bar', (dx, dy) => [rectLine({ x: out.x + dx, y: out.y + dy, width: out.width, height: out.height }, input.look.radius + 3)]);
+      } else if (input.mood.focus && typed) {
+        const out = inflate(at, 3);
+        sheet.shape('ring', 'bar', (dx, dy) => [rectLine({ x: out.x + dx, y: out.y + dy, width: out.width, height: out.height }, input.look.radius + 3)]);
+      }
+      const inner = Math.max(m.cellW, at.width - 2 * m.pad);
+      const shown = answer === '' ? '' : tail(input, answer, inner);
+      const t = input.measure(shown === '' ? 'Ag' : shown, LABEL, 1e6);
+      sheet.text('answer', run.verdict === 'shown' ? 'value' : 'words', shown, centre({ x: at.x + m.pad, y: at.y, width: inner, height: at.height }, t.height), LABEL, 'left');
+      if (input.mood.focus && typed && !settled) {
+        const caretH = Math.round(m.body * 1.1);
+        const caretX = at.x + m.pad + (shown === '' ? 0 : Math.min(inner, wide(shown))) + m.stroke;
+        fillBox(sheet, 'caret', 'marker', { x: caretX, y: at.y + (at.height - caretH) / 2, width: Math.max(1.5, m.stroke * 1.25), height: caretH }, 0);
+      }
+    };
+    gutter(y, Math.max(mt, th * 1.35));
+    const fieldBoxes: Box[] = [];
+    if (parts !== null) {
+      // greedy breaks: words and the blank, as tokens
+      type Token = { readonly blank: boolean; readonly text: string; readonly width: number };
+      const words = (s: string): Token[] => s.split(/\s+/).filter((w) => w !== '').map((w) => ({ blank: false, text: w, width: wide(w) }));
+      const tokens: Token[] = [...words(parts[0]), { blank: true, text: '', width: blankW }, ...words(parts[1])];
+      const lines: Token[][] = [[]];
+      let used = 0;
+      for (const token of tokens) {
+        const line = lines[lines.length - 1] as Token[];
+        const next = used === 0 ? token.width : used + space + token.width;
+        if (line.length > 0 && next > box.width) {
+          lines.push([token]);
+          used = token.width;
+        } else {
+          line.push(token);
+          used = next;
+        }
+      }
+      for (const line of lines) {
+        const hasBlank = line.some((token) => token.blank);
+        const lineH = hasBlank ? Math.max(mt, th * 1.35) : th * 1.35;
+        let x = box.x;
+        const pieces: AskPiece[] = [];
+        let runText = '';
+        let runX = x;
+        const flush = (): void => {
+          if (runText !== '') pieces.push({ kind: 'run', text: runText, x: runX, width: wide(runText) });
+          runText = '';
+        };
+        for (const token of line) {
+          if (token.blank) {
+            flush();
+            pieces.push({ kind: 'blank', text: '', x, width: token.width });
+          } else {
+            if (runText === '') runX = x;
+            runText = runText === '' ? token.text : `${runText} ${token.text}`;
+          }
+          x += token.width + space;
+        }
+        flush();
+        // runs stand where the words put them: each begins where the one before it ended
+        let at = box.x;
+        for (const piece of pieces) {
+          if (piece.kind === 'run') {
+            text('words', 'words', piece.text, centre({ x: at, y, width: piece.width + 2, height: lineH }, th), LABEL, 'left');
+            at += piece.width + space;
+          } else {
+            const f = field(at, y + (lineH - mt) / 2, piece.width);
+            fieldBoxes.push(f);
+            at += piece.width + space;
+          }
+        }
+        y += lineH;
+      }
+      for (const f of fieldBoxes) {
+        drawField(f);
+        zone('field', f);
+      }
+    } else {
+      const measured = input.measure(span.text, LABEL, box.width);
+      text('words', 'words', span.text, { x: box.x, y, width: box.width, height: measured.height }, LABEL, 'left');
+      y += measured.height + gapY;
+      if (typed) {
+        const f = field(box.x, y, Math.min(box.width, Math.max(blankW * 1.4, mt * 5)));
+        drawField(f);
+        zone('field', f);
+        y += mt;
+      }
+    }
+    // --- the choices
+    if (picks.length > 0 && !settled) {
+      y += parts !== null ? gapY : 0;
+      let x = box.x;
+      let rowTop = y;
+      picks.forEach((option, i) => {
+        const n = i + 1;
+        const w = Math.max(mt * 1.4, wide(option) + 2 * m.pad);
+        if (x > box.x && x + w > box.x + box.width) {
+          x = box.x;
+          rowTop += mt + m.gap;
+        }
+        const cell = { x, y: rowTop, width: w, height: mt };
+        if (sheet !== null) {
+          if (run.chosen === n) fillBox(sheet, 'chosen', 'marker', cell, input.look.radius);
+          else outline(sheet, `option:${n}`, cell, input.look.radius, input.mood.hover && input.mood.pressed === `option:${n}`);
+          sheet.text(`words:${n}`, 'words', option, centre({ x: cell.x + m.pad, y: cell.y, width: cell.width - 2 * m.pad, height: cell.height }, th), LABEL, 'center');
+        }
+        zone(`option:${n}`, cell);
+        x += w + m.gap;
+      });
+      y = rowTop + mt;
+    }
+    // --- Check, Hint, Show me. The room is the same whatever has been done, so that nothing below moves when a verdict or a hint arrives.
+    const say = run.verdict === 'wrong' ? ASK_WORDS.wrong : run.verdict === 'right' ? (ask.check === 'done' ? ASK_WORDS.tick : ASK_WORDS.right) : run.verdict === 'shown' ? ASK_WORDS.shown : '';
+    y += gapY;
+    if (!settled) {
+      let x = box.x;
+      const chip = (part: string, label: string, kind: 'primary' | 'plain', on: boolean, ringed: boolean): void => {
+        const w = Math.max(mt * 1.6, wide(label) + 2 * m.pad);
+        const cell = { x, y, width: w, height: mt };
+        if (sheet !== null) {
+          const pressed = input.mood.pressed === part;
+          if (kind === 'primary' && on) fillBox(sheet, part, 'marker', cell, input.look.radius);
+          else outline(sheet, part, cell, input.look.radius, on && (input.mood.hover || pressed));
+          sheet.text(`words:${part}`, on ? 'words' : 'value', label, centre({ x: cell.x + m.pad, y: cell.y, width: cell.width - 2 * m.pad, height: cell.height }, th), LABEL, 'center');
+          if (ringed) {
+            const out = inflate(cell, 3);
+            sheet.shape(`ring-${part}`, 'bar', (dx, dy) => [rectLine({ x: out.x + dx, y: out.y + dy, width: out.width, height: out.height }, input.look.radius + 3)]);
+          }
+        }
+        if (on) zone(part, cell);
+        x += w + m.gap * 1.5;
+      };
+      const ready = ask.check === 'done' || (picks.length > 0 ? run.chosen > 0 : held.trim() !== '');
+      chip('check', ask.check === null ? ASK_WORDS.check : ASK_WORDS.done, 'primary', ready, false);
+      if (run.hints < ask.hints.length) chip('hint', ask.hints.length > 1 ? `${ASK_WORDS.hint} ${run.hints + 1} of ${ask.hints.length}` : ASK_WORDS.hint, 'plain', true, run.ringed);
+      if (ask.check === null && ask.accepted.length > 0 && (run.verdict === 'wrong' || run.hints > 0)) chip('show', ASK_WORDS.show, 'plain', true, false);
+    }
+    y += mt;
+    // --- what it says: the verdict, then the hint open now. Room for both is kept (the tallest hint, at its own width).
+    const verdictH = input.measure('Ag', VALUE, 1e6).height;
+    const hintRoom = ask.hints.reduce((tall, line, at) => Math.max(tall, input.measure(`${ASK_WORDS.hint} ${at + 1}: ${line}`, LABEL, box.width).height), 0);
+    y += gapY;
+    if (say !== '') text('say', 'words', say, { x: box.x, y, width: box.width, height: verdictH }, VALUE, 'left');
+    y += verdictH;
+    if (hintRoom > 0) {
+      y += gapY;
+      if (run.hints > 0 && !settled) text('hint-words', 'words', `${ASK_WORDS.hint} ${run.hints}: ${ask.hints[run.hints - 1] ?? ''}`, { x: box.x, y, width: box.width, height: hintRoom }, LABEL, 'left');
+      y += hintRoom;
+    }
+    return { height: Math.max(y, mt) };
+  };
+
+  const { height } = compose(null);
+  const sheet = new Sheet(span.key, -room / 2, -height / 2);
+  plate(sheet, input, m, room, height, input.look.radius);
+  compose(sheet);
+  return { width: room, height, parts: sheet.parts, zones: sheet.zones };
+}
+
 // ---------------------------------------------------------------- the engine
 
 function layout(input: ControlInput): ControlLayout {
@@ -588,9 +818,9 @@ function layout(input: ControlInput): ControlLayout {
     case 'slider':
       return layoutSlider(input, m);
     case 'pick':
-      return layoutPick(input, m);
+      return input.spec.ask === undefined ? layoutPick(input, m) : layoutAsk(input, m);
     case 'input':
-      return layoutInput(input, m);
+      return input.spec.ask === undefined ? layoutInput(input, m) : layoutAsk(input, m);
   }
 }
 

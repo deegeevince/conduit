@@ -45,7 +45,7 @@ export type SessionRecord =
   /** a table the conversation holds, and what became of sending it to the painter (`ready` when a chart asked for it) */
   | { readonly type: 'data'; readonly at: number; readonly turn: string; readonly id: string; readonly source: string; readonly rows: number; readonly status: 'held' | 'ready' | 'failed'; readonly reason: string | null }
   /** a control the user worked */
-  | { readonly type: 'control'; readonly at: number; readonly turn: string | null; readonly id: string; readonly value: ControlValue; readonly text: string; readonly send: boolean; readonly app?: boolean }
+  | { readonly type: 'control'; readonly at: number; readonly turn: string | null; readonly id: string; readonly value: ControlValue; readonly text: string; readonly send: boolean; readonly app?: boolean; readonly ask?: boolean }
   | { readonly type: 'tap'; readonly at: number; readonly turn: string | null; readonly id: string; readonly text: string; readonly choice: boolean }
   /** v2.1. A fix or a refine pass that was tried out of sight, and what became of it: shown, or refused and why. `lines` are what the brain wrote, shown or not. */
   | { readonly type: 'fix'; readonly at: number; readonly turn: string; readonly pass: number; readonly form: ReviewForm; readonly lines: readonly string[]; readonly shown: boolean; readonly why: string | null; readonly draft: ContentCount | null; readonly candidate: ContentCount | null; readonly file: string | null }

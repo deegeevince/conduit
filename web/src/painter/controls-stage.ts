@@ -14,6 +14,7 @@ import type { CanvasFit } from './canvas';
 import { controlEngine } from './controls';
 import { lookOf, measurerFor } from './structures';
 import { controlSpecOf } from './bound';
+import { askSignature } from './controls/ask-state';
 import { chevron, rectLine, segment, shapePart } from './controls/shapes';
 
 import { targetPx } from './target';
@@ -45,7 +46,7 @@ export function controlInputOf(args: ControlLayoutArgs): ControlInput | null {
 
 export function controlLayoutOf(args: ControlLayoutArgs): ControlLayout | null {
   const { span, value, mood, maxWidth, look, viewport } = args;
-  const key = [span.key, String(value), mood.hover ? 1 : 0, mood.pressed ?? '', mood.focus ? 1 : 0, mood.open ? 1 : 0, maxWidth.toFixed(1), targetPx(), look.id, look.name, viewport.width, viewport.height, span.text, span.style.size, span.style.face ?? '', args.compact ?? 0].join('|');
+  const key = [span.key, String(value), mood.hover ? 1 : 0, mood.pressed ?? '', mood.focus ? 1 : 0, mood.open ? 1 : 0, maxWidth.toFixed(1), targetPx(), look.id, look.name, viewport.width, viewport.height, span.text, span.style.size, span.style.face ?? '', args.compact ?? 0, askSignature(span)].join('|');
   const known = LAYOUTS.get(key);
   if (known !== undefined) return known;
   const input = controlInputOf(args);

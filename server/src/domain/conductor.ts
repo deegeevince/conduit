@@ -1005,6 +1005,16 @@ export class Conductor {
         return;
       }
       case 'control':
+        if (event.ask === true) {
+          // HI1. A try, a hint or a giving up on an ask of the stage: one `did` line for the ask, grown by each act, so the digest holds a line and not a stream.
+          const more = event.text.replace(/\s+/g, ' ').trim();
+          const grown = s.obs.extend('did', event.id, more, this.deps.now());
+          if (grown !== null) this.deps.sessionLog.write(s.id, { type: 'obs', turn: event.turn, obs: grown });
+          else this.observe(s, event.turn, { source: 'person', kind: 'did', on: event.id, note: `ask ${event.id}: ${more}` });
+          this.deps.sessionLog.write(s.id, { type: 'control', turn: event.turn, id: event.id, value: event.value, text: event.text, send: event.send, ask: true });
+          this.adoptSeen(s, event.turn, event.seen);
+          return;
+        }
         s.held = { ...s.held, [event.id]: event.value };
         this.observe(s, event.turn, { source: 'person', kind: 'state', on: event.id, note: `you ${event.app === true ? 'did in the app' : 'set'} ${event.id}: ${quoted(event.text, 60)}` });
         this.deps.sessionLog.write(s.id, { type: 'control', turn: event.turn, id: event.id, value: event.value, text: event.text, send: event.send, ...(event.app === true && { app: true }) });

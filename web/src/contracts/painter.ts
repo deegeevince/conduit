@@ -98,6 +98,10 @@ export interface ControlView {
   readonly send: boolean;
   /** true when at least one change on stage follows it: the battery checks that a slider drives something */
   readonly bound: boolean;
+  /** HI1. It is an ask of the stage: its field is the part named `field`, Enter checks it, and leaving it checks nothing */
+  readonly ask?: boolean;
+  /** HI1. Every answer an ask accepts is a number: the keyboard that comes up has numbers */
+  readonly numeric?: boolean;
 }
 
 /** A pointer, as the app hands it to the painter. `x`, `y` are host CSS pixels. */

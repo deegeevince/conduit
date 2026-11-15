@@ -60,6 +60,24 @@ export class Observations {
     return o;
   }
 
+  /**
+   * HI1. The person went on with something the brain has not yet been told of: one line says what they did there, however many acts made it.
+   * `more` is added to the note of the last unbriefed observation of this kind on this id; null when there is none to go on with.
+   */
+  extend(kind: ObsKind, on: string, more: string, now: number): Observation | null {
+    for (let at = this.held.length - 1; at >= 0; at -= 1) {
+      const entry = this.held[at];
+      if (entry === undefined || entry.o.kind !== kind || entry.o.on !== on || entry.o.seq <= this.briefedThrough) continue;
+      this.rev += 1;
+      const first = /(\(right[^)]*\)|shown)$/.test(more) && entry.o.note.includes(',') ? ', then ' : ', ';
+      const note = `${entry.o.note}${first}${more}`.replace(/\s+/g, ' ').trim().slice(0, 160);
+      const next: Observation = { ...entry.o, rev: this.rev, note };
+      this.held[at] = { o: next, at: now };
+      return next;
+    }
+    return null;
+  }
+
   /** Was something of this kind on this id added within `ms`, after seq `after`? */
   recent(kinds: readonly ObsKind[], on: string | null, ms: number, now: number, after = 0): boolean {
     return this.held.some(({ o, at }) => o.seq > after && now - at <= ms && kinds.includes(o.kind) && o.on === on);
@@ -95,7 +113,7 @@ export function observeInput(s: Session, input: TurnInput, now: number): void {
     for (const id of input.voice ?? []) add('voice', `you sent a voice note (${id})`, id);
   } else if (input.kind === 'tap' || input.kind === 'act') {
     // the page already told us of the tap or the control as it happened; this is the same act arriving as the turn's input
-    if (!s.obs.recent(['tap', 'state'], input.id, 5000, now, s.obs.briefedThrough)) add('tap', `you ${input.kind === 'act' ? 'pressed' : 'tapped'} ${quoted(input.text, 60)}`, input.id);
+    if (!s.obs.recent(['tap', 'state', 'did'], input.id, 5000, now, s.obs.briefedThrough)) add('tap', `you ${input.kind === 'act' ? 'pressed' : 'tapped'} ${quoted(input.text, 60)}`, input.id);
   } else if (input.kind === 'refine') {
     add('said', 'you asked to keep making it better');
   }

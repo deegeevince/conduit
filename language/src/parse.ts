@@ -1665,11 +1665,16 @@ function parseAsk(head: Head, text: string | null, issues: Issues): LessonLine |
   let pick: string[] | undefined;
   let unit: string | undefined;
   let check: 'working' | 'order' | 'any' | 'done' | undefined;
+  let send: boolean | undefined;
   const rest: Pair[] = [];
   for (const pair of head.pairs) {
     if (pair.key === 'in') {
       if (isLessonId(pair.value)) parent = pair.value;
       else issues.warn('bad-id', `"${pair.value}" is not a part id; in= ignored`, pair.token);
+    } else if (pair.key === 'send') {
+      if (pair.value === 'yes' || pair.value === 'true') send = true;
+      else if (pair.value === 'no' || pair.value === 'false') send = false;
+      else issues.warn('bad-value', `send= is yes or no; "${pair.value}" ignored`, pair.token);
     } else if (pair.key === 'check') {
       if (pair.value === 'working' || pair.value === 'order' || pair.value === 'any' || pair.value === 'done') check = pair.value;
       else issues.warn('bad-value', `check= is working, order, any or done; "${pair.value}" ignored`, pair.token);
@@ -1689,7 +1694,7 @@ function parseAsk(head: Head, text: string | null, issues: Issues): LessonLine |
     issues.error('missing-text', 'ask needs its question after " | "');
     return null;
   }
-  return { verb: 'ask', id, ...(parent === undefined ? {} : { in: parent }), is: accepted.slice(0, LESSON_LIMITS.accepted), ...(pick === undefined || pick.length === 0 ? {} : { pick }), ...(unit === undefined ? {} : { unit }), ...(check === undefined ? {} : { check }), text };
+  return { verb: 'ask', id, ...(parent === undefined ? {} : { in: parent }), is: accepted.slice(0, LESSON_LIMITS.accepted), ...(pick === undefined || pick.length === 0 ? {} : { pick }), ...(unit === undefined ? {} : { unit }), ...(check === undefined ? {} : { check }), ...(send === undefined ? {} : { send }), text };
 }
 
 /** v3. `hint [in=<ask>] | <words>`. */

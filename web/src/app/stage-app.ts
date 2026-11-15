@@ -1110,7 +1110,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
       for (const candidate of views) if (candidate.value !== null) values[candidate.id] = candidate.value;
       // a button of a mock-up brings what its own screen holds (a field's words, a switch), and no other control's
       const mockup = event.screen !== undefined;
-      const text = mockup || view === undefined ? event.text : view.control === 'pick' ? view.valueText : view.label !== '' ? view.label : event.text;
+      const text = mockup || view === undefined || event.ask === true ? event.text : view.control === 'pick' ? view.valueText : view.label !== '' ? view.label : event.text;
       const held: ControlValues = mockup ? (event.values ?? {}) : values;
       void submit({ kind: 'act', id: event.id, text, values: held, ...(mockup ? { screen: event.screen } : {}) }, null, true).catch(noteTurnFailure);
       return;
@@ -1424,7 +1424,10 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     // The keyboard carries on from the control that was worked; a text field gets its keyboard now, while the gesture is still the user's.
     if (event.type === 'pointerup') {
       const id = controlAt(point);
-      if (id !== null) access.focusControl(id);
+      // an ask takes the keyboard when its field is touched, not its Check or its Hint (the keyboard would come up over them)
+      const asked = id === null ? undefined : painter.snapshot().controls.find((view) => view.id === id && view.ask === true);
+      const onField = asked?.parts.some((part) => part.part === 'field' && point.x >= part.box.x && point.x <= part.box.x + part.box.width && point.y >= part.box.y && point.y <= part.box.y + part.box.height) === true;
+      if (id !== null && (asked === undefined || onField)) access.focusControl(id);
       else if (painter.typing()) keys.focus({ preventScroll: true });
     }
   };
