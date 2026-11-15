@@ -1161,7 +1161,7 @@ export class Conversation {
     await tapOn('[data-item="save"]');
     now = await info();
     if (now.view !== 'save' || now.items.length < 4) problems.push(`Save in the menu did not open its list (view ${now.view}, ${now.items.length} entries)`);
-    await tapOn('.composer__back');
+    await tapOn('.composer__view:not([hidden]) .composer__back');
     now = await info();
     if (now.view !== 'root') problems.push(`Back from Save did not return to the menu (view ${now.view})`);
     await tab.key('Escape');
