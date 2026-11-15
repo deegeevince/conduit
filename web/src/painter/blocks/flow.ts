@@ -7,7 +7,8 @@
 import type { Point, Polyline } from '@conduit/language';
 import type { BlockPart, StructureInput, StructureLayout } from '../../contracts/blocks';
 import type { Box } from '../../contracts/space';
-import { box, boxOfPoints, packOrdered, polylinesCross, simplify, union } from './geom';
+import { box, boxOfPoints, inflate, packOrdered, polylineHitsBox, polylinesCross, simplify, union } from './geom';
+import { routeAround } from './flowroute';
 import type { Draft, LinkSpec, NodeBox, Note } from './kit';
 import { best, connectorParts, knockOut, Env, fit, isCrowded, labelPart, linkSpecs, nodeParts, placeBeside, sizeNode, WRAPS } from './kit';
 
@@ -87,7 +88,71 @@ function flowLayout(input: StructureInput, mayFold: boolean): StructureLayout {
       }
     return n;
   };
-  return (chosen.overflows ?? 0) > 0 || crossings(folded) <= crossings(chosen) ? folded : chosen;
+  // (a layout that does not fit at all may be given one crossing for the rows that make it readable)
+  return (chosen.overflows ?? 0) > 0 || crossings(folded) <= crossings(chosen) + (isCrowded(chosen) && folded.shrink >= chosen.shrink + 0.1 ? 1 : 0) ? folded : chosen;
+}
+
+interface Placed {
+  readonly link: LinkSpec;
+  readonly pts: readonly Point[];
+}
+
+/** Two links that meet at a node: where one crosses the other is no fault, only untidy. */
+const sharesEnd = (a: LinkSpec, b: LinkSpec): boolean => a.from === b.from || a.to === b.to || a.from === b.to || a.to === b.from;
+
+/**
+ * What is wrong with a route, in weights: through a node or through words stands at 100 (never allowed), across another link at 10, along another
+ * link's line at 1 (untidy only). 0 is clean.
+ */
+function faultsOf(link: LinkSpec, pts: readonly Point[], others: readonly Placed[], nodes: ReadonlyMap<string, Box>, words: readonly Box[]): number {
+  const line: Polyline = { points: pts, closed: false };
+  let n = 0;
+  for (const [key, b] of nodes) {
+    if (key === link.from || key === link.to) continue;
+    if (polylineHitsBox(line, inflate(b, -1))) n += 100;
+  }
+  for (const t of words) if (polylineHitsBox(line, t)) n += 100;
+  for (const o of others) {
+    if (sharesEnd(link, o.link)) continue;
+    if (polylinesCross(line, { points: o.pts, closed: false }) > 0) n += 10;
+    else if (lieAlong(pts, o.pts)) n += 1;
+  }
+  return n;
+}
+
+/**
+ * The routes of a laid-out flow, mended: a link that runs through a node or across other links is found a way round (flowroute.ts) when that
+ * has fewer faults. Links are tried worst first, and the others stay where they are.
+ */
+function mendRoutes(env: Env, links: readonly LinkSpec[], routes: Point[][], nodes: ReadonlyMap<string, Box>, words: readonly Box[], room: Box): void {
+  const all = (): Placed[] => links.map((link, i) => ({ link, pts: routes[i] as Point[] }));
+  const worst = links.map((link, i) => ({ i, f: faultsOf(link, routes[i] as Point[], all().filter((_, j) => j !== i), nodes, words) })).filter((x) => x.f >= 10).sort((x, y) => y.f - x.f || x.i - y.i);
+  // a layout set smaller than its room could be (nothing fits) stands outside it: the way round may be there too
+  const world = union([room, ...nodes.values()]);
+  for (const { i } of worst) {
+    const link = links[i] as LinkSpec;
+    const from = nodes.get(link.from);
+    const to = nodes.get(link.to);
+    if (from === undefined || to === undefined) continue;
+    const others = all().filter((_, j) => j !== i);
+    const was = faultsOf(link, routes[i] as Point[], others, nodes, words);
+    const around = routeAround({ from, to, obstacles: [...nodes.values(), ...words], lines: others.map((o) => ({ points: o.pts, kin: sharesEnd(link, o.link) })), room: world, pad: env.headLength * 1.6, clear: Math.max(3, env.stroke * 2), bend: Math.max(env.body, 10) });
+    if (around !== null && faultsOf(link, around, others, nodes, words) < was) routes[i] = around;
+  }
+}
+
+/** Two routes that lie along one another for any stretch (so that they read as one line). */
+function lieAlong(a: readonly Point[], b: readonly Point[]): boolean {
+  for (let i = 0; i + 1 < a.length; i += 1)
+    for (let j = 0; j + 1 < b.length; j += 1) {
+      const p = a[i] as Point;
+      const q = a[i + 1] as Point;
+      const r = b[j] as Point;
+      const t = b[j + 1] as Point;
+      if (Math.abs(p.y - q.y) < 0.5 && Math.abs(r.y - t.y) < 0.5 && Math.abs(p.y - r.y) < 1.5 && Math.min(Math.max(p.x, q.x), Math.max(r.x, t.x)) - Math.max(Math.min(p.x, q.x), Math.min(r.x, t.x)) > 2) return true;
+      if (Math.abs(p.x - q.x) < 0.5 && Math.abs(r.x - t.x) < 0.5 && Math.abs(p.x - r.x) < 1.5 && Math.min(Math.max(p.y, q.y), Math.max(r.y, t.y)) - Math.max(Math.min(p.y, q.y), Math.min(r.y, t.y)) > 2) return true;
+    }
+  return false;
 }
 
 /** The nodes in the order of a single path through every one of them, when the links are exactly that. */
@@ -132,17 +197,18 @@ function foldChain(input: StructureInput): StructureLayout | null {
   const byKey = new Map(input.nodes.map((el) => [el.key, el]));
   const base = new Env(input, 1, 1, input.look.stroke);
   const title = base.title();
-  const gap = Math.max(base.body * 0.9, 16);
+  const baseGap = Math.max(base.body * 0.9, 16);
   let best: { layout: StructureLayout; score: number } | null = null;
   for (let rows = 2; rows <= Math.min(order.length, 8); rows += 1) {
     const per = Math.ceil(order.length / rows);
     const groups: string[][] = [];
     for (let i = 0; i < order.length; i += per) groups.push(order.slice(i, i + per));
     if (groups.length < rows) continue;
-    const bandH = (input.room.height - title.h - (groups.length - 1) * gap) / groups.length;
     const bandOf = new Map<string, number>();
     groups.forEach((group, i) => group.forEach((k) => bandOf.set(k, i)));
     const crossing = links.filter((l) => bandOf.get(l.from) !== bandOf.get(l.to));
+    const gap = baseGap;
+    const bandH = (input.room.height - title.h - (groups.length - 1) * gap) / groups.length;
     // a link that skips a band, or goes back up, runs down a lane at the room's right edge
     const laned = crossing.filter((l) => (bandOf.get(l.to) ?? 0) !== (bandOf.get(l.from) ?? 0) + 1);
     const laneW = laned.length === 0 ? 0 : 10 + 7 * laned.length;
@@ -181,43 +247,88 @@ function foldChain(input: StructureInput): StructureLayout | null {
       let lane = 0;
       // the words already set in the bands stay clear of the words set in the gutters
       const taken: Box[] = parts.flatMap((p) => (p.kind === 'text' && p.role === 'label' ? [p.box] : []));
+      const nodeBoxes = input.nodes.flatMap((el) => boxes.get(el.key) ?? []);
+      const tbox = tp !== null && tp.kind === 'text' ? [tp.box] : [];
+      // The usual way: down out of the foot of the source into the gutter below its band, along it, down into the head of the target; a link that skips a band
+      // or goes back up runs along a lane at the room's right edge. That way is kept while nothing is in it; where a node stands in it (a stacked pair in a
+      // band, the target under another node) the link is found a way round (see flowroute.ts).
+      const usual: Point[][] = [];
       for (const link of crossing) {
         const from = boxes.get(link.from);
         const to = boxes.get(link.to);
         const i = bandOf.get(link.from) ?? 0;
         const j = bandOf.get(link.to) ?? 0;
-        if (from === undefined || to === undefined) continue;
+        if (from === undefined || to === undefined) {
+          usual.push([]);
+          continue;
+        }
         const pts: Point[] = [{ x: from.x + from.width / 2, y: from.y + from.height }, { x: from.x + from.width / 2, y: gutter(i) }];
-        let along = gutter(i);
         if (j === i + 1) pts.push({ x: to.x + to.width / 2, y: gutter(i) });
         else {
           const x = input.room.x + input.room.width - 4 - 7 * lane;
           lane += 1;
           const above = gutter(j - 1);
           pts.push({ x, y: gutter(i) }, { x, y: above }, { x: to.x + to.width / 2, y: above });
-          along = above;
         }
         pts.push({ x: to.x + to.width / 2, y: to.y });
+        usual.push(simplify(pts));
+      }
+      const nodeMap = new Map(input.nodes.flatMap((el) => (boxes.get(el.key) !== undefined ? [[el.key, boxes.get(el.key) as Box] as const] : [])));
+      const faults = (link: LinkSpec, pts: readonly Point[], others: readonly Placed[]): number => faultsOf(link, pts, others, nodeMap, taken);
+      // the routes already drawn inside the bands count among the lines to cross
+      const inBand: Placed[] = linkSpecs(input).filter((l) => !crossing.includes(l) && routes.has(l.el.key)).map((l) => ({ link: l, pts: (routes.get(l.el.key) as Polyline).points }));
+      const placed: Placed[] = [];
+      const final: (Point[] | null)[] = crossing.map(() => null);
+      // a link that no way round was found for runs through a node or words: such a fold is no answer
+      let through = false;
+      crossing.forEach((link, k) => {
+        const pts = usual[k] as Point[];
+        if (pts.length >= 2 && faults(link, pts, [...inBand, ...placed]) === 0) {
+          final[k] = pts;
+          placed.push({ link, pts });
+        }
+      });
+      crossing.forEach((link, k) => {
+        if (final[k] !== null) return;
+        const from = boxes.get(link.from);
+        const to = boxes.get(link.to);
+        const fallback = usual[k] as Point[];
+        if (from === undefined || to === undefined) return;
+        const lines = [...inBand, ...placed].map((o) => ({ points: o.pts, kin: sharesEnd(link, o.link) }));
+        const around = routeAround({ from, to, obstacles: [...nodeBoxes, ...taken, ...tbox], lines, room: input.room, pad: env.headLength * 1.6, clear: Math.max(3, env.stroke * 2), bend: Math.max(env.body, 10) });
+        const pick = around !== null && (fallback.length < 2 || faults(link, around, [...inBand, ...placed]) < faults(link, fallback, [...inBand, ...placed])) ? around : fallback;
+        final[k] = pick;
+        if (faults(link, pick, [...inBand, ...placed]) >= 100) through = true;
+        placed.push({ link, pts: pick });
+      });
+      if (through) continue;
+      crossing.forEach((link, k) => {
+        const pts = final[k];
+        if (pts === null || pts === undefined || pts.length < 2) return;
         connectorParts(env, link, pts, lines, heads);
         routes.set(link.el.key, { points: pts, closed: false });
+      });
+      crossing.forEach((link, k) => {
+        const pts = final[k];
+        if (pts === null || pts === undefined || pts.length < 2) return;
         let area = boxOfPoints(pts);
         if (link.label !== '') {
           const m = env.measure(link.label, env.wrapWidth, env.label());
           // beside the line, longest run first, never on it; with no clear place the lines break round the word
           const runs: (readonly [Point, Point])[] = [];
-          for (let i = 0; i + 1 < pts.length; i += 1) runs.push([pts[i] as Point, pts[i + 1] as Point]);
+          for (let q = 0; q + 1 < pts.length; q += 1) runs.push([pts[q] as Point, pts[q + 1] as Point]);
           const len = (r: readonly [Point, Point]): number => Math.hypot(r[1].x - r[0].x, r[1].y - r[0].y);
           runs.sort((x, y) => len(y) - len(x));
-          const nodeBoxes = input.nodes.flatMap((el) => boxes.get(el.key) ?? []);
           const pick = placeBeside(runs, m.width, m.height, env.stroke * 1.5 + 3, { boxes: [...nodeBoxes, ...taken], lines: [...routes.values()] }, input.room);
-          const at = pick?.box ?? box(((pts[1] as Point).x + (pts[2] as Point).x) / 2 - m.width / 2, along - m.height / 2, m.width, m.height);
+          const longest = runs[0] as readonly [Point, Point];
+          const at = pick?.box ?? box((longest[0].x + longest[1].x) / 2 - m.width / 2, (longest[0].y + longest[1].y) / 2 - m.height / 2, m.width, m.height);
           if ((pick === null || pick.penalty > 0) && knockOut(lines, at, env.stroke * 1.5, [...nodeBoxes, ...taken])) notes.push({ key: link.el.key, note: 'crossed' });
           taken.push(at);
           labels.push(labelPart(env, link.el.key, link.label, at, m, pick === null || pick.penalty > 0));
           area = union([area, at]);
         }
         boxes.set(link.el.key, area);
-      }
+      });
       parts.push(...lines, ...heads, ...labels);
       const whole = union([...boxes.values()]);
       boxes.set(input.structure.key, whole);
@@ -464,9 +575,18 @@ function buildSnake(env: Env): Draft {
         pts = [{ x: sideX(a, z), y: y0 }, { x: lx, y: y0 }, { x: lx, y: y1 }, { x: sideX(b, z), y: y1 }];
         if (Math.abs(y0 - y1) < 0.5 && z === 'gutter') pts = [pts[0] as Point, pts[3] as Point];
       }
-      pts = simplify(pts);
+      routed.push({ link: l, pts: simplify(pts) });
+    }
+    // a link the lanes could not keep clear of a node or of other links is found a way round
+    {
+      const mended = routed.map((r) => r.pts);
+      const nodeMap = new Map(order.map((k, i) => [k, at[i] as Box] as const));
+      const tt = title.part(room);
+      mendRoutes(env, routed.map((r) => r.link), mended, nodeMap, tt !== null && tt.kind === 'text' ? [tt.box] : [], room);
+      routed.forEach((r, i) => (r.pts = mended[i] as Point[]));
+    }
+    for (const { link: l, pts } of routed) {
       routes.set(l.el.key, { points: pts, closed: false });
-      routed.push({ link: l, pts });
       connectorParts(env, l, pts, lines, heads);
     }
     const nodeBoxes = [...at];
@@ -799,6 +919,19 @@ function buildFlow(env: Env, grow: Grow): Draft {
       routes.set(e.spec.el.key, { points: line, closed: false });
       placed.push({ edge: e, pts: line, zone, stemEnd });
     });
+    // A link the layers could not keep clear of a node or of other links is found a way round
+    {
+      const specs = placed.map((p) => p.edge.spec);
+      const mended = placed.map((p) => [...p.pts]);
+      const words2: Box[] = [...(title.part(room)?.kind === 'text' ? [(title.part(room) as { box: Box }).box] : [])];
+      mendRoutes(env, specs, mended, boxes, words2, room);
+      placed.forEach((p, i) => {
+        if (mended[i] !== undefined && mended[i] !== p.pts && (mended[i] as Point[]).length >= 2 && (mended[i] as Point[]).some((q, k) => q !== p.pts[k])) {
+          p.pts = mended[i] as Point[];
+          routes.set(p.edge.spec.el.key, { points: p.pts, closed: false });
+        }
+      });
+    }
     for (const p of placed) connectorParts(env, p.edge.spec, p.pts, lines, heads);
 
     // Labels: on the first stretch of the connector, on a plate; else the first clear place along it.
