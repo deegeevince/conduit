@@ -159,6 +159,7 @@ function start(input: LessonInput): void {
   if (root === null) return;
   player = new Player(root, input, { commit, open: (id) => bridge?.send('open', id), openPart: (id) => bridge?.send('openpart', id), picture: () => bridge?.send('picture', 1), inkCheck: (node, ask) => bridge?.send('inkcheck', JSON.stringify([node, ask])), inkClear: (node, ask) => bridge?.send('inkclear', JSON.stringify([node, ask])) });
   player.render();
+  player.landOnPaper();
   reportSlot();
   new MutationObserver(() => reportSlot()).observe(root, { childList: true, subtree: true });
   addEventListener('scroll', () => reportSlot(true), { passive: true, capture: true });

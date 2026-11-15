@@ -137,6 +137,17 @@ export interface UiMockup {
   readonly notes: readonly { readonly kind: string; readonly id: string; readonly message: string }[];
 }
 
+/** What the hand has bound to one element, as it stands now: the words a bound `correct` gives it, the table marks and the `set` values that hold. For the test hook. */
+export interface BindingView {
+  readonly id: string;
+  /** the words a bound `correct` gives it now, with the emphasis marks taken out; null: its own */
+  readonly words: string | null;
+  /** the rows and cells of a table that a control's value has marked, as `row2:box` */
+  readonly marks: readonly string[];
+  /** the `set` values that hold, as `fill=gg` */
+  readonly sets: readonly string[];
+}
+
 export type ElementPhase = 'entering' | 'on' | 'leaving' | 'struck';
 
 /** One element as the test hook and the HUD see it. */
@@ -424,6 +435,9 @@ export interface Painter {
 
   /** The leader lines on stage as they rest: where each ends and how that end stands to its own part and to the other labelled parts (what the catalogue's label check reads). */
   leaders(): readonly LeaderView[];
+
+  /** Everything the controls bind on the elements on stage, as it holds now (settled: the way a picture of the stage at rest has it). */
+  bindings(): readonly BindingView[];
 
   /** A pointer came down at a point in host CSS pixels. Emits `tap` if it hit an element. */
   tapAt(x: number, y: number): void;

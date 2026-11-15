@@ -1,0 +1,23 @@
+{
+ "id": "bind-steps-drawn-cube",
+ "title": "steps on a drawn cube: the caption showed another step's words",
+ "family": "bind",
+ "owner": "painter",
+ "kind": "draw",
+ "found": "2026-11-15",
+ "note": "The step on the control and the caption disagreed in the picture of the stage at rest.",
+ "own": [
+  "pick-consistent"
+ ],
+ "turns": [
+  {
+   "say": "show the 2x2 cube as a drawing and walk through the steps",
+   "source": {
+    "log": "20261115-105351-c2",
+    "turns": [
+     "t35"
+    ]
+   }
+  }
+ ]
+}

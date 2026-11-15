@@ -42,9 +42,11 @@ const KIND_DEMOS: readonly (readonly [RegExp, string])[] = [
  * whose `match` is the prompt's words (`kind:act` and `kind:tap` for those inputs), else the next unplayed one, else nothing. No model is called.
  */
 interface RecordedCase {
-  readonly turns: readonly { readonly match: string; readonly script: string }[];
+  readonly turns: readonly { readonly match: string; readonly script: string; readonly case?: string }[];
 }
 const played = new Map<string, Set<number>>();
+/** the case a session is playing, once its first turn has picked one: its later turns (taps too) are drawn from that case only */
+const lockedCase = new Map<string, string>();
 function recordedScript(request: TurnRequest): string | null {
   const path = process.env['REPLAY_CASE'];
   if (path === undefined || path === '') return null;
@@ -53,10 +55,14 @@ function recordedScript(request: TurnRequest): string | null {
   const key = input.kind === 'prompt' ? input.text.trim() : `kind:${input.kind}`;
   const done = played.get(request.session) ?? new Set<number>();
   played.set(request.session, done);
-  let index = recorded.turns.findIndex((turn, i) => !done.has(i) && turn.match === key);
-  if (index < 0) index = recorded.turns.findIndex((_, i) => !done.has(i));
+  const locked = lockedCase.get(request.session);
+  const open = (turn: RecordedCase['turns'][number], i: number): boolean => !done.has(i) && (locked === undefined || turn.case === undefined || turn.case === locked);
+  let index = recorded.turns.findIndex((turn, i) => open(turn, i) && turn.match === key);
+  if (index < 0) index = recorded.turns.findIndex((turn, i) => open(turn, i));
   if (index < 0) return 'scene layout=solo\nsay r1 | (nothing recorded for this turn)\n';
   done.add(index);
+  const picked = recorded.turns[index]?.case;
+  if (picked !== undefined) lockedCase.set(request.session, picked);
   return recorded.turns[index]?.script ?? '';
 }
 

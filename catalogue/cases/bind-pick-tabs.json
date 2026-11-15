@@ -1,0 +1,21 @@
+{
+ "id": "bind-pick-tabs",
+ "title": "tabs comparing three functions: each tab's marks, text and style hold",
+ "family": "bind",
+ "owner": "painter",
+ "kind": "draw",
+ "found": "2026-11-15",
+ "note": "Every option's bound words, row marks and set values hold after a real tap on it, and again on the way back to the first.",
+ "own": [
+  "pick-consistent"
+ ],
+ "turns": [
+  {
+   "say": "compare mean median and mode of daily visitors, with a tab for each",
+   "source": {
+    "scenario": "bind-pick-tabs",
+    "index": 0
+   }
+  }
+ ]
+}

@@ -1,0 +1,66 @@
+{
+ "id": "dead-tap-document-resent",
+ "title": "a tap that makes the brain write the same document again does nothing",
+ "note": "The person opened a document from a choice, put it away, tapped the choice again: the brain wrote the same document, and nothing on the screen changed.",
+ "own": [
+  "document-open",
+  "screen-changed"
+ ],
+ "family": "flow-state",
+ "owner": "server",
+ "kind": "flow",
+ "found": "2026-11-15",
+ "generic": false,
+ "turns": [
+  {
+   "say": "What's new in this app?",
+   "source": {
+    "log": "20261115-094056-c1",
+    "turns": [
+     "t4"
+    ]
+   }
+  },
+  {
+   "say": "Walk me through a recipe",
+   "source": {
+    "log": "20261115-094056-c1",
+    "turns": [
+     "t5"
+    ]
+   },
+   "tap": "Walk me through a recipe",
+   "check": [
+    {
+     "k": "document-open"
+    },
+    {
+     "k": "screen-changed"
+    }
+   ]
+  },
+  {
+   "say": "Walk me through a recipe",
+   "source": {
+    "log": "20261115-094056-c1",
+    "turns": [
+     "t6"
+    ]
+   },
+   "tap": "Walk me through a recipe",
+   "check": [
+    {
+     "k": "document-open"
+    },
+    {
+     "k": "screen-changed"
+    }
+   ],
+   "pre": [
+    {
+     "a": "close-document"
+    }
+   ]
+  }
+ ]
+}

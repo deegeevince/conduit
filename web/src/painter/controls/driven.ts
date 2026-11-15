@@ -83,7 +83,9 @@ export function drivenLayers(driven: readonly DrivenChange[], stateOf: (controlK
     let amount: number;
     if (change.on.kind === 'is') {
       const ease = eases.get(easeKey(change));
-      amount = ease === undefined ? bindProgress(change.on, state.spec, state.value) : boundAmount(ease, now);
+      // An ease is believed only while it is under way on the clock the frame is drawn on. A picture of the stage at rest (the brain's, a draft's, a film's)
+      // is drawn on a clock of its own, which may stand before the moment the hand set off: that picture shows what the controls hold, not a step on the way.
+      amount = ease !== undefined && ease.from !== ease.to && now >= ease.since && now - ease.since < BOUND_SECONDS ? boundAmount(ease, now) : bindProgress(change.on, state.spec, state.value);
     } else amount = bindProgress(change.on, state.spec, state.value);
     layers.push({ change, amount: Math.min(1, Math.max(0, amount)) });
   }
@@ -92,7 +94,7 @@ export function drivenLayers(driven: readonly DrivenChange[], stateOf: (controlK
 
 /** Whether any change is still moving: the painter keeps drawing frames while this is true even if nothing else is. */
 export function easing(eases: ReadonlyMap<string, BoundEase>, now: number): boolean {
-  for (const ease of eases.values()) if (ease.from !== ease.to && now - ease.since < BOUND_SECONDS) return true;
+  for (const ease of eases.values()) if (ease.from !== ease.to && now >= ease.since && now - ease.since < BOUND_SECONDS) return true;
   return false;
 }
 

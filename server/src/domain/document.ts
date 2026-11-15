@@ -175,4 +175,5 @@ export function seedBook(book: LessonBook, document: Document): void {
       // the document is the truth; a line the book cannot read again is not a reason to stop a turn
     }
   }
+  book.closeAll();
 }
