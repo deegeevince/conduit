@@ -132,6 +132,16 @@ export function arrangeBoard(layouts: readonly UiScreenLayout[], tokens: UiToken
     parts.push({ kind: 'text', key: `${card.layout.id}/label`, owner: card.layout.id, x, y: y - LABEL_H + 2, w: card.shape.width * s, h: 20, lines: [{ text, width: measure.width(text, 12, 'bold') * 1.06 }], size: 12, line: 20, weight: 'bold', colour: labelInk, align: 'left' });
   };
 
+  // a thumbnail is a picture to point at, not to read: it is named under it at the label's own size, which is the floor
+  const thumbLabel = (card: Card, x: number, y: number, s: number, limit = 100): void => {
+    const name = (card.layout.name === '' ? card.layout.id : card.layout.name).toUpperCase();
+    const room = Math.max(card.shape.width * s, limit);
+    let cut = name;
+    while (cut.length > 1 && measure.width(cut, 12, 'bold') * 1.06 > room) cut = `${cut.slice(0, -2).trimEnd()}\u2026`;
+    const w = measure.width(cut, 12, 'bold') * 1.06;
+    parts.push({ kind: 'text', key: `${card.layout.id}/label`, owner: card.layout.id, x: x + (card.shape.width * s - w) / 2, y: y + card.shape.height * s + 2, w, h: 20, lines: [{ text: cut, width: w }], size: 12, line: 20, weight: 'bold', colour: labelInk, align: 'left' });
+  };
+
   if (options.mode === 'overview' || layouts.length <= 1) {
     const sizes = cards.map((c) => ({ w: c.shape.width, h: c.shape.height }));
     const { cols, scale: s } = bestGrid(sizes, room, options.margin);
@@ -176,13 +186,15 @@ export function arrangeBoard(layouts: readonly UiScreenLayout[], tokens: UiToken
     const ly = (room.h - lead.shape.height * sLead + LABEL_H) / 2;
     label(lead, lx, ly, sLead);
     emit(lead, at, lx, ly, sLead);
-    const gap = 12;
+    const gap = 28;
     const sThumb = Math.min(column / Math.max(...others.map(({ c }) => c.shape.width)), ((room.h - 2 * options.margin - (others.length - 1) * gap) / others.length) / Math.max(...others.map(({ c }) => c.shape.height)), 0.2);
     const heights = others.reduce((a, { c }) => a + c.shape.height * sThumb, 0) + (others.length - 1) * gap;
     let ty = (room.h - heights) / 2;
     const tx = lx + lead.shape.width * sLead + options.margin;
     for (const { c, i } of others) {
-      emit(c, i, tx + (column - c.shape.width * sThumb) / 2, ty, sThumb);
+      const thumbX = tx + (column - c.shape.width * sThumb) / 2;
+      emit(c, i, thumbX, ty, sThumb);
+      thumbLabel(c, thumbX, ty, sThumb);
       ty += c.shape.height * sThumb + gap;
     }
     return { parts, placements, mode: 'focus', focus: at, scale: sLead };
@@ -200,12 +212,15 @@ export function arrangeBoard(layouts: readonly UiScreenLayout[], tokens: UiToken
   const maxH = Math.max(...cards.map((c) => c.shape.height));
   const maxW = Math.max(...cards.map((c) => c.shape.width));
   const sThumb = Math.min(th / maxH, (room.w - 2 * options.margin - (n - 2) * 10) / ((n - 1) * maxW));
-  const rowW = thumbs.reduce((a, { c }) => a + c.shape.width * sThumb, 0) + (thumbs.length - 1) * 10;
-  let tx = (room.w - rowW) / 2;
+  // each thumbnail has a slot as wide as its name needs, up to 120, so the names stand apart
+  const slot = Math.min(120, (room.w - 2 * options.margin) / Math.max(1, thumbs.length));
+  let tx = (room.w - slot * thumbs.length) / 2;
   const ty = room.h - stripH + 8;
   for (const { c, i } of thumbs) {
-    emit(c, i, tx, ty, sThumb);
-    tx += c.shape.width * sThumb + 10;
+    const x = tx + (slot - c.shape.width * sThumb) / 2;
+    emit(c, i, x, ty, sThumb);
+    thumbLabel(c, x, ty, sThumb, slot - 6);
+    tx += slot;
   }
   return { parts, placements, mode: 'focus', focus: Math.max(0, Math.min(n - 1, options.focus)), scale: sMain };
 }

@@ -609,10 +609,13 @@ export function layoutUi(args: { readonly structure: ElementSpan; readonly room:
   };
   const first: 'overview' | 'focus' = doc.screens.length > 1 && (narrow || run.solo) ? 'focus' : 'overview';
   let asPhone = narrow;
-  let settled = settle(asPhone, first, MOST_TYPE);
+  // a set of screens shown together (a gallery) stays at one scale, in a row or wrapped (the board takes the grid that makes them largest), and its type is raised
+  // as far as the floor takes before one screen is shown large and the others as thumbnails
+  const together = doc.screens.length > 1;
+  let settled = settle(asPhone, first, together ? MOST_TYPE_EVER : MOST_TYPE);
   if (!settled.met && !narrow && doc.screens.some(isPage)) {
     asPhone = true;
-    settled = settle(true, doc.screens.length > 1 ? 'focus' : 'overview', MOST_TYPE);
+    settled = settle(true, doc.screens.length > 1 ? 'focus' : 'overview', together ? MOST_TYPE_EVER : MOST_TYPE);
   }
   if (!settled.met) settled = settle(asPhone, settled.mode, MOST_TYPE_EVER);
   const { state, made } = settled;
