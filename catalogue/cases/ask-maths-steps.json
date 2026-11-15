@@ -1,0 +1,62 @@
+{
+ "id": "ask-maths-steps",
+ "title": "a worked problem is laid out as asks the person fills in, one opening after the other",
+ "family": "ask",
+ "owner": "painter",
+ "kind": "flow",
+ "found": "2026-11-15",
+ "note": "A maths problem the person is to do: each step is an ask with a blank in its line; the next opens when this one is right or given up; no app, nothing the person is to find on screen before a try.",
+ "own": [
+  "no-app"
+ ],
+ "turns": [
+  {
+   "say": "walk me through 3x + 5 = 20, but make me do each step",
+   "source": {
+    "scenario": "ask-maths-steps",
+    "index": 0
+   },
+   "do": [
+    {
+     "a": "ask-flow",
+     "id": "s1",
+     "tries": [
+      "12",
+      "15"
+     ],
+     "hint": true,
+     "sealed": [
+      "15"
+     ]
+    },
+    {
+     "a": "ask-flow",
+     "id": "s2",
+     "tries": [
+      "4",
+      "6"
+     ],
+     "show": true,
+     "end": "wrong"
+    },
+    {
+     "a": "ask-flow",
+     "id": "s3",
+     "tries": [
+      "20"
+     ],
+     "wrongFirst": false
+    }
+   ],
+   "check": [
+    {
+     "k": "no-app"
+    },
+    {
+     "k": "asks-stand",
+     "min": 3
+    }
+   ]
+  }
+ ]
+}

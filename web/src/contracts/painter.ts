@@ -100,6 +100,8 @@ export interface ControlView {
   readonly bound: boolean;
   /** HI1. It is an ask of the stage: its field is the part named `field`, Enter checks it, and leaving it checks nothing */
   readonly ask?: boolean;
+  /** HI1. Where an ask stands: how it came out, what was tried, the hints open, and whether it still waits for the ask before it (what a test reads; the answers it accepts are not here) */
+  readonly askState?: { readonly verdict: 'open' | 'wrong' | 'right' | 'shown'; readonly tries: number; readonly hints: number; readonly chosen: number; readonly locked: boolean };
   /** HI1. Every answer an ask accepts is a number: the keyboard that comes up has numbers */
   readonly numeric?: boolean;
 }

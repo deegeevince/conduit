@@ -4,7 +4,7 @@ import { setTarget, targetPx } from './target';
 import { STRUCTURES_READY } from './blocks';
 import { CONTROLS_READY, controlEngine, createControlStore, nextEases } from './controls';
 import { controlIndexOf, createRuntime, controlSpecOf, heldBy, stateReader } from './bound';
-import { check as askCheck, choose as askChoose, hint as askHint, lockedOf as askLocked, show as askShow } from './controls/ask-state';
+import { runOf as askRun, check as askCheck, choose as askChoose, hint as askHint, lockedOf as askLocked, show as askShow } from './controls/ask-state';
 import type { AskAct } from './controls/ask-state';
 import { drivenLayers } from './controls';
 import { scrollCueBoxes } from './controls-stage';
@@ -1363,7 +1363,7 @@ export function createPainter(options: PainterOptions): Painter {
       enabled: site.enabled,
       send: spec.control === 'button' ? true : spec.send,
       bound: index.driven.some((change) => change.control === site.key),
-      ...(spec.ask === undefined ? {} : { ask: true }),
+      ...(spec.ask === undefined ? {} : { ask: true, askState: ((run) => ({ verdict: run.verdict, tries: run.tries.length, hints: run.hints, chosen: run.chosen, locked: askLocked(site.span) }))(askRun(site.span)) }),
       ...(spec.ask !== undefined && spec.ask.accepted.length > 0 && spec.ask.accepted.every((answer) => /^[£$€]?-?[\d.,]+\s?[%a-z]{0,4}$/i.test(answer.trim())) ? { numeric: true } : {}),
     };
   };

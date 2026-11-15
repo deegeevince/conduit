@@ -1,0 +1,37 @@
+{
+ "id": "ask-flights-choice",
+ "title": "a choice with no right answer is a pick whose press is told to the brain",
+ "family": "ask",
+ "owner": "painter",
+ "kind": "flow",
+ "found": "2026-11-15",
+ "note": "Not a lesson: which flight suits me is the person's own choice; it is held on a press and sent to the brain so it can follow up.",
+ "own": [
+  "no-app"
+ ],
+ "turns": [
+  {
+   "say": "which of these flights suits me, the morning one or the evening one?",
+   "source": {
+    "scenario": "ask-flights-choice",
+    "index": 0
+   },
+   "do": [
+    {
+     "a": "ask-flow",
+     "id": "f1",
+     "tries": [
+      "#2"
+     ],
+     "wrongFirst": false
+    }
+   ],
+   "check": [
+    {
+     "k": "no-app"
+    }
+   ]
+  }
+ ],
+ "generic": false
+}

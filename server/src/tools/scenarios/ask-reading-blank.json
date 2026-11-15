@@ -1,0 +1,11 @@
+{
+ "case": "ask-reading-blank",
+ "recordedAt": "2026-11-15T00:00:00.000Z",
+ "screen": "1280x720",
+ "turns": [
+  {
+   "match": "help me with their, there and they're",
+   "script": "scene stack\nsay title | Their, there or they're\nsay | Fill each gap with the word that fits.\nask r1 is=their pick=their,there,they're | The children left __ coats by the door.\nhint | Whose coats are they? The word that shows who owns something.\nask r2 is=there | Put the book over __.\nhint | It points to a place. Start with the, then add a letter that is not a t.\nask r3 send=no is=they're,they_are | Hurry up, __ going to be late.\nhint | Which two words does the short form stand for? Put them in its place.\n"
+  }
+ ]
+}

@@ -1,0 +1,57 @@
+{
+ "id": "ask-reading-blank",
+ "title": "a spelling choice and two blanks are set in their own lines",
+ "family": "ask",
+ "owner": "painter",
+ "kind": "flow",
+ "found": "2026-11-15",
+ "note": "A word to choose or type sits in its sentence; the hint asks back and never gives the word.",
+ "own": [
+  "no-app"
+ ],
+ "turns": [
+  {
+   "say": "help me with their, there and they're",
+   "source": {
+    "scenario": "ask-reading-blank",
+    "index": 0
+   },
+   "do": [
+    {
+     "a": "ask-flow",
+     "id": "r1",
+     "tries": [
+      "#2",
+      "#1"
+     ]
+    },
+    {
+     "a": "ask-flow",
+     "id": "r2",
+     "tries": [
+      "here",
+      "there"
+     ],
+     "hint": true
+    },
+    {
+     "a": "ask-flow",
+     "id": "r3",
+     "tries": [
+      "there",
+      "they're"
+     ]
+    }
+   ],
+   "check": [
+    {
+     "k": "no-app"
+    },
+    {
+     "k": "asks-stand",
+     "min": 3
+    }
+   ]
+  }
+ ]
+}

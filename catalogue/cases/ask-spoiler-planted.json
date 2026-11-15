@@ -1,0 +1,37 @@
+{
+ "id": "ask-spoiler-planted",
+ "title": "words that would show an ask's answer are refused by the reader",
+ "family": "ask",
+ "owner": "painter",
+ "kind": "flow",
+ "found": "2026-11-15",
+ "note": "A script that says the answer after asking for it: the line is refused, so the answer is never on the screen.",
+ "own": [
+  "no-app"
+ ],
+ "turns": [
+  {
+   "say": "work out 3x + 5 = 20 with me, one step at a time",
+   "source": {
+    "scenario": "ask-spoiler-planted",
+    "index": 0
+   },
+   "do": [],
+   "check": [
+    {
+     "k": "no-app"
+    },
+    {
+     "k": "sealed-at-rest",
+     "values": [
+      "15"
+     ]
+    },
+    {
+     "k": "asks-stand",
+     "min": 2
+    }
+   ]
+  }
+ ]
+}

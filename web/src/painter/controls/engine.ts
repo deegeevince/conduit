@@ -602,12 +602,15 @@ function layoutAsk(input: ControlInput, m: Metrics): ControlLayout {
   if (ask === null) return layoutInput(input, m);
   const run = runOf(span);
   const locked = lockedOf(span);
-  const mt = Math.max(input.minTarget, m.row);
   const room = Math.max(m.cellW * 8, Math.min(input.maxWidth, ASK_MAX));
   const wide = (text: string, spec: TextSpec = LABEL): number => input.measure(text, spec, 1e6).width;
   const space = Math.max(2, wide('a a') - wide('aa'));
   const th = input.measure('Ag', LABEL, 1e6).height;
-  const gapY = Math.round(m.gap * 1.2);
+  // a finger across, and room for the words in it: the row a field or a chip stands in
+  const mt = Math.max(input.minTarget, Math.ceil(th * 1.3));
+  // a column that did not fit is set closer: the gaps
+  const level = input.compact ?? 0;
+  const gapY = Math.round(m.gap * (level >= 2 ? 0.6 : level >= 1 ? 0.9 : 1.2));
   const numbered = ask.n > 1 || hasNext(span);
   const lead = numbered ? wide(`${ask.n}.`) + space * 1.5 : 0;
   const held = typeof heldValue(input) === 'string' ? (heldValue(input) as string) : '';
@@ -684,7 +687,9 @@ function layoutAsk(input: ControlInput, m: Metrics): ControlLayout {
           used = next;
         }
       }
+      let lineNo = 0;
       for (const line of lines) {
+        lineNo += 1;
         const hasBlank = line.some((token) => token.blank);
         const lineH = hasBlank ? Math.max(mt, th * 1.35) : th * 1.35;
         let x = box.x;
@@ -708,9 +713,11 @@ function layoutAsk(input: ControlInput, m: Metrics): ControlLayout {
         flush();
         // runs stand where the words put them: each begins where the one before it ended
         let at = box.x;
+        let pieceNo = 0;
         for (const piece of pieces) {
+          pieceNo += 1;
           if (piece.kind === 'run') {
-            text('words', 'words', piece.text, centre({ x: at, y, width: piece.width + 2, height: lineH }, th), LABEL, 'left');
+            text(`words:${lineNo}.${pieceNo}`, 'words', piece.text, centre({ x: at, y, width: piece.width + 2, height: lineH }, th), LABEL, 'left');
             at += piece.width + space;
           } else {
             const f = field(at, y + (lineH - mt) / 2, piece.width);
@@ -758,14 +765,25 @@ function layoutAsk(input: ControlInput, m: Metrics): ControlLayout {
       });
       y = rowTop + mt;
     }
-    // --- Check, Hint, Show me. The room is the same whatever has been done, so that nothing below moves when a verdict or a hint arrives.
+    // --- Check, Hint, Show me. While it is open the room is the same whatever has been done, so that nothing below moves when a verdict or a hint arrives;
+    // once it is settled the room it kept for them is given back (what waits below is a numbered empty row).
     const say = run.verdict === 'wrong' ? ASK_WORDS.wrong : run.verdict === 'right' ? (ask.check === 'done' ? ASK_WORDS.tick : ASK_WORDS.right) : run.verdict === 'shown' ? ASK_WORDS.shown : '';
     y += gapY;
+    if (settled) {
+      const verdictH = input.measure('Ag', VALUE, 1e6).height;
+      text('say', 'words', say, { x: box.x, y, width: box.width, height: verdictH }, VALUE, 'left');
+      return { height: Math.max(y + verdictH, mt) };
+    }
     if (!settled) {
       let x = box.x;
+      let top = y;
       const chip = (part: string, label: string, kind: 'primary' | 'plain', on: boolean, ringed: boolean): void => {
         const w = Math.max(mt * 1.6, wide(label) + 2 * m.pad);
-        const cell = { x, y, width: w, height: mt };
+        if (x > box.x && x + w > box.x + box.width) {
+          x = box.x;
+          top += mt + m.gap;
+        }
+        const cell = { x, y: top, width: w, height: mt };
         if (sheet !== null) {
           const pressed = input.mood.pressed === part;
           if (kind === 'primary' && on) fillBox(sheet, part, 'marker', cell, input.look.radius);
@@ -784,17 +802,42 @@ function layoutAsk(input: ControlInput, m: Metrics): ControlLayout {
       if (run.hints < ask.hints.length) chip('hint', ask.hints.length > 1 ? `${ASK_WORDS.hint} ${run.hints + 1} of ${ask.hints.length}` : ASK_WORDS.hint, 'plain', true, run.ringed);
       if (ask.check === null && ask.accepted.length > 0 && (run.verdict === 'wrong' || run.hints > 0)) chip('show', ASK_WORDS.show, 'plain', true, false);
     }
-    y += mt;
-    // --- what it says: the verdict, then the hint open now. Room for both is kept (the tallest hint, at its own width).
+    // the rows the chips may fill, counted for every chip at once: the room is the same before, between and after
+    const chipWidths = [ask.check === null ? ASK_WORDS.check : ASK_WORDS.done, ...(ask.hints.length > 0 ? [ask.hints.length > 1 ? `${ASK_WORDS.hint} ${ask.hints.length} of ${ask.hints.length}` : ASK_WORDS.hint] : []), ...(ask.check === null && ask.accepted.length > 0 ? [ASK_WORDS.show] : [])].map((label) => Math.max(mt * 1.6, wide(label) + 2 * m.pad));
+    let rows = 1;
+    let across = 0;
+    for (const w of chipWidths) {
+      if (across > 0 && across + w > box.width) {
+        rows += 1;
+        across = 0;
+      }
+      across += w + m.gap * 1.5;
+    }
+    y += rows * mt + (rows - 1) * m.gap;
+    // --- what it says: the verdict beside the chips when it fits there (else under them), then the hint open now. Room for both is kept (the tallest hint, at its own width).
     const verdictH = input.measure('Ag', VALUE, 1e6).height;
-    const hintRoom = ask.hints.reduce((tall, line, at) => Math.max(tall, input.measure(`${ASK_WORDS.hint} ${at + 1}: ${line}`, LABEL, box.width).height), 0);
-    y += gapY;
-    if (say !== '') text('say', 'words', say, { x: box.x, y, width: box.width, height: verdictH }, VALUE, 'left');
-    y += verdictH;
+    const verdictW = Math.max(wide(ASK_WORDS.wrong, VALUE), wide(ASK_WORDS.right, VALUE));
+    const chipsEnd = chipWidths.reduce((sum, w) => sum + w + m.gap * 1.5, 0);
+    const beside = rows === 1 && chipsEnd + verdictW <= box.width;
+    if (beside) {
+      if (say !== '') text('say', 'words', say, centre({ x: box.x + chipsEnd, y: y - mt, width: box.width - chipsEnd, height: mt }, verdictH), VALUE, 'left');
+    } else {
+      y += gapY;
+      if (say !== '') text('say', 'words', say, { x: box.x, y, width: box.width, height: verdictH }, VALUE, 'left');
+      y += verdictH;
+    }
+    const tallest = ask.hints.reduce((tall, line, at) => Math.max(tall, input.measure(`${ASK_WORDS.hint} ${at + 1}: ${line}`, LABEL, box.width).height), 0);
+    // a column that is still too tall gives up the room it kept for a hint: the rows below move when one opens
+    const hintRoom = level >= 2 ? 0 : tallest;
     if (hintRoom > 0) {
       y += gapY;
       if (run.hints > 0 && !settled) text('hint-words', 'words', `${ASK_WORDS.hint} ${run.hints}: ${ask.hints[run.hints - 1] ?? ''}`, { x: box.x, y, width: box.width, height: hintRoom }, LABEL, 'left');
       y += hintRoom;
+    } else if (run.hints > 0 && !settled) {
+      y += gapY;
+      const open = input.measure(`${ASK_WORDS.hint} ${run.hints}: ${ask.hints[run.hints - 1] ?? ''}`, LABEL, box.width);
+      text('hint-words', 'words', `${ASK_WORDS.hint} ${run.hints}: ${ask.hints[run.hints - 1] ?? ''}`, { x: box.x, y, width: box.width, height: open.height }, LABEL, 'left');
+      y += open.height;
     }
     return { height: Math.max(y, mt) };
   };

@@ -326,11 +326,11 @@ export function serializeLine(line: Line): string {
       return withText(['step', line.id, ...(line.in === undefined ? [] : [`in=${line.in}`]), ...(line.show === undefined ? [] : showTokens(line.show))], line.text === '' ? undefined : line.text);
     case 'ask':
       return withText(
-        ['ask', line.id, ...(line.in === undefined ? [] : [`in=${line.in}`]), ...(line.is.length === 0 ? [] : [`is=${line.is.map(encodeValue).join(',')}`]), ...(line.pick === undefined ? [] : [`pick=${line.pick.map(encodeValue).join(',')}`]), ...(line.unit === undefined ? [] : [`unit=${line.unit}`]), ...(line.check === undefined ? [] : [`check=${line.check}`]), ...(line.send === undefined ? [] : [`send=${line.send ? 'yes' : 'no'}`])],
+        ['ask', line.id, ...(line.in === undefined ? [] : [`in=${line.in}`]), ...(line.is.length === 0 ? [] : [`is=${line.is.map(encodeValue).join(',')}`]), ...(line.pick === undefined ? [] : [`pick=${line.pick.map(encodeValue).join(',')}`]), ...(line.unit === undefined ? [] : [`unit=${line.unit}`]), ...(line.check === undefined ? [] : [`check=${line.check}`]), ...(line.send === undefined ? [] : [`send=${line.send ? 'yes' : 'no'}`]), ...(line.stage === undefined ? [] : [`stage=${line.stage.n}${line.stage.after === null ? '' : `:${line.stage.after}`}`])],
         line.text,
       );
     case 'hint':
-      return withText(['hint', ...(line.in === undefined ? [] : [`in=${line.in}`])], line.text);
+      return withText(['hint', ...(line.in === undefined ? [] : [`in=${line.in}`]), ...(line.stage === true ? ['stage=yes'] : [])], line.text);
     case 'reply':
       return `reply | ${line.text}`;
     case 'end':

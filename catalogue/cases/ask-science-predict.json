@@ -1,0 +1,49 @@
+{
+ "id": "ask-science-predict",
+ "title": "a science prediction is a pick the person makes first, then a second ask",
+ "family": "ask",
+ "owner": "painter",
+ "kind": "flow",
+ "found": "2026-11-15",
+ "note": "'Let me guess first': the guess is a choice on the stage, checked on a press, with a hint behind a tap and a second question that follows.",
+ "own": [
+  "no-app"
+ ],
+ "turns": [
+  {
+   "say": "why does ice float? let me guess first",
+   "source": {
+    "scenario": "ask-science-predict",
+    "index": 0
+   },
+   "do": [
+    {
+     "a": "ask-flow",
+     "id": "p1",
+     "tries": [
+      "#2",
+      "#1"
+     ],
+     "hint": true
+    },
+    {
+     "a": "ask-flow",
+     "id": "p2",
+     "tries": [
+      "#2",
+      "#1"
+     ]
+    }
+   ],
+   "check": [
+    {
+     "k": "no-app"
+    },
+    {
+     "k": "asks-stand",
+     "min": 2
+    }
+   ]
+  }
+ ]
+}

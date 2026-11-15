@@ -678,13 +678,16 @@ const TIME_G = /\b\d{1,2}[:.]\d{2}\b|\b(?:half|quarter) (?:past|to) \w+\b|\b\w+ 
 function numericCandidates(text: string): string[] {
   const out: string[] = [];
   for (const match of text.matchAll(NUMERIC_G)) {
-    const found = match[0].trim();
-    out.push(found);
-    // `10-20` reads as 10 and -20; either way the 20 is there
-    if (found.startsWith('-')) out.push(found.slice(1));
-    // the number alone, without the word after it
-    const bare = /^([£$€]?-?\d[\d,]*(?:\.\d+)?)/.exec(found);
-    if (bare?.[1] !== undefined && bare[1] !== found) out.push(bare[1]);
+    // `15, and` is a 15 followed by a comma, not a number with a thousands place: the stretch is read as written and without the comma it ends on
+    const written = match[0].trim();
+    for (const found of new Set([written, written.replace(/,+(?=\D|$)/g, '')])) {
+      out.push(found);
+      // `10-20` reads as 10 and -20; either way the 20 is there
+      if (found.startsWith('-')) out.push(found.slice(1));
+      // the number alone, without the word after it
+      const bare = /^([£$€]?-?\d[\d,]*(?:\.\d+)?)/.exec(found);
+      if (bare?.[1] !== undefined && bare[1] !== found) out.push(bare[1]);
+    }
   }
   const tokens = text.toLowerCase().split(/[^a-z']+/).filter((token) => token !== '');
   for (let index = 0; index < tokens.length; index += 1) {
