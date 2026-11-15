@@ -429,7 +429,7 @@ export function buildSystemPrompt({ capabilities, services }: PromptOptions): st
     '- A fact, a definition, a how-to: say it plainly. `scene page`, then a few short `say` paragraphs: every fact the question needs in the fewest words, nothing else. No slow pace, no loops.' +
       (draws ? ' Add a drawing only if it shows what the words cannot.' : ''),
     structures.length > 0
-      ? `- Steps, a loop, a hierarchy, dates, places, a comparison, numbers: name the structure (${shapes.join(', ')}) and write its parts. A comparison is a \`table\` with every row a good plain answer would have; numbers are a \`chart\`.
+      ? `- Steps, a loop, a hierarchy, dates, places, a comparison, numbers: name the structure (${shapes.join(', ')}) and write its parts. A comparison is a \`table\` with every row a good plain answer would have; one series is a \`chart\`; several measures at once are a dashboard (below).
 - A thing, a place, a mechanism, or anything whose form the eye can read (a shape, a layout, a pattern): draw it yourself, big, and name its parts with callouts; a table or a bar is not a picture of it. Keep every fact a good plain answer would give. Doing something to a physical thing (turning, tying, folding, assembling): every step shows the move, the thing drawn with an arrow, words only a caption, never notation alone. Where the real form is the point (anatomy, a map, a machine, a plant) words never claim more than the drawing shows (no "206 bones" over three blobs): draw every part you name, whole and big, a region at a time by steps, or name only the few parts drawn and offer the rest as a choice.`
       : draws
         ? "- A thing, a place, a mechanism, a comparison, a set of numbers: draw it and label it, and keep every fact a good plain answer would give: numbers and names on the drawing, the rest in short lines. Words are cheap; a missing fact is not. A comparison covers every row a good table would (cost, upkeep, lifespan, limits, risks), as paired lines beneath the two shapes. Compare with matching shapes side by side (bars sized by the numbers, a column each), never two lists of words."
@@ -442,7 +442,8 @@ export function buildSystemPrompt({ capabilities, services }: PromptOptions): st
     '- A feeling, a hard truth, a decision: few words, timed. Size, silence' + (camera ? ', one camera move.' : '.'),
     // Taught only what the painter paints: a `code` block that nothing draws loses the code, which `say` lines would have kept.
     structures.includes('code') ? '- Code, a command, a config: a `code` block, never `say` lines. Slides, a deck: see "More to say with".' : '- Code, a command, a config: one `say` line per line of source, exactly as written.',
-    structures.includes('screen') ? '- A mock-up, a page, an app screen: INTERFACE lines, never rects.' : '',
+    structures.includes('screen') ? // PP0 stopgap, removed by PP1 (the stage grid): a dashboard of real numbers goes through the mock-up kit.
+    '- A mock-up, a page, an app screen; a dashboard, a report of numbers or a summary of figures: INTERFACE lines, never rects. A dashboard is one `screen d1 browser` (a `phone` on a narrow stage, where a `row` holds at most two `stat`s): headline `stat`s, then `col card` panels of `item value=` rows, no dead links.' : '',
     draws ? `- Asked for pixel art, a drawing${paints ? ', a painting' : ''}, an animation: make exactly that. Never build a picture out of letters; never describe what you could show.` : '',
   ]
     .filter((line) => line !== '')
@@ -540,7 +541,7 @@ You write ${LANGUAGE.name}: one command per line. A painter in the user's browse
 
 # Start at once
 
-The audience watches an empty stage while you deliberate. Write the first line now; the painter handles layout and timing.
+The audience watches an empty stage while you deliberate. Write the first line now.
 
 # Choose the form the answer needs
 
@@ -550,7 +551,7 @@ Never talk about the stage, the medium or what you will do. Answer the question.
 
 # What always holds
 
-- Outside \`layout=page\`, the words of an answer fit the stage beside its picture: about four short lines. More to say goes into stops the user taps, or a \`say choice\` follow-up, never more lines.
+- Outside \`layout=page\`, the words of an answer fit the stage beside its picture: about four short lines. This limits words, never what is shown: a dashboard, a report or "more detail" shows more (headline numbers, several panels), never smaller type. Fetch the primary source first; mark recalled figures \`approx\`. More to say goes into stops the user taps, or a \`say choice\` follow-up.
 - Expressive asks (a story, a mood, a thing to look at): commit. One bold idea, big, in layers, with motion and a wait before the line that matters.
 - Be right before pretty. Every part your words name is drawn; parts that connect touch; the subject ends whole inside the picture and fills it.
 - A follow-up about what is on stage continues it; never write again what is there. \`scene\` is only for a new subject (a new problem is one: its own drawing, never the last one's, one stepper at most). A lesson's steps stack up, not captions.
@@ -573,7 +574,7 @@ ${drawing}${structureGuide}${controlGuide}${moreGuide}
 
 One clock per turn. The PEN is where your next line starts. Text moves the pen past itself: each line begins when the one before has arrived and been read. ${draws ? 'Drawn things move it only part of the way, so strokes overlap. ' : ''}You never time anything to pace an answer. \`scene\`, \`set\`, \`drop\`${draws ? ', `move`' : ''}${camera ? ', `cam`' : ''} start at the pen and run underneath what follows.
 
-- Silence: \`wait\` is one beat (about ${beat}s), \`wait 2\` two, \`wait 1.5s\` exact seconds. A wait before the line that matters is the strongest thing here.
+- Silence: \`wait\` is one beat (about ${beat}s), \`wait 2\` two, \`wait 1.5s\` exact seconds.
 - Tempo: pace on the scene, or \`plan pace=slow\` part-way. ${words(PACE)}.
 - Together: put \`@with\` before the bar to start a line with the one before (\`say @with aside | …\`).
 - A length you were given is a promise: "a three-second sting" plays about three seconds, first line to last.
@@ -592,7 +593,7 @@ Moods, how the stage itself behaves: ${words(MOOD)}.
 \`say\` takes style names, then properties. Built in:
 ${builtins}
 
-Define the voices this conversation needs, then speak in them: \`style fear size=l ink=accent enter=flicker loop=shake\`, then \`say fear | What if I can't?\`. A style lasts for the conversation.
+Define your own: \`style fear size=l ink=accent loop=shake\`, then \`say fear | What if I can't?\`.
 
 Properties, on a line or in a style:
 ${props}
@@ -606,7 +607,7 @@ A look is the whole visual world: ground, inks, typeface, the texture of the sur
 
 ${lookLines}
 
-Your own: \`look dusk like=night ground=#2b1d3a accent=#ff9e7d face=hand fx=grain,vignette\`. fx, any mix: ${fxLines}.${draws ? ` stroke: ${words(STROKE)}.` : ''} Every colour you choose is kept readable on its ground.`
+Your own: \`look dusk like=night ground=#2b1d3a accent=#ff9e7d face=hand fx=grain,vignette\`. fx, any mix: ${fxLines}.${draws ? ` stroke: ${words(STROKE)}.` : ''}`
       : `This painter performs in one look (${offered[0] ?? capabilities.looks[0] ?? 'its own'}); you do not choose it.`
   }
 # What is already there
@@ -855,7 +856,7 @@ export function asksForMusic(input: TurnInput): boolean {
 
 /** Whether the user's words are about an interface, so that this turn is taught `screen`: mock-up, wireframe, screen, page, app, site, figma, landing, UI, journey. */
 export function asksForInterface(input: TurnInput): boolean {
-  return input.kind === 'prompt' && /\b(mock[- ]?ups?|wire[- ]?frames?|screens?|pages?|apps?|sites?|web-?sites?|figma|landing|ui|ux|user journey|journey|interfaces?|prototypes?|storyboards?)\b/i.test(input.text);
+  return input.kind === 'prompt' && /\b(mock[- ]?ups?|wire[- ]?frames?|screens?|pages?|apps?|sites?|web-?sites?|figma|landing|ui|ux|user journey|journey|interfaces?|prototypes?|storyboards?|dashboards?|scorecards?|kpis?|metrics|(?:report|summary|overview|breakdown) of)\b/i.test(input.text);
 }
 
 /**
