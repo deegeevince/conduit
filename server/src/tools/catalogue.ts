@@ -779,6 +779,22 @@ async function runCheck(cx: Cx, spec: Spec): Promise<Res> {
       const lines = cx.answer.script.split('\n').filter((l) => /^(app|code)\b/.test(l));
       return res(name, lines.map((l) => `a standing "no code" was broken: ${l.slice(0, 40)}`), 'no app or code block');
     }
+    case 'steps-laid-out': {
+      // a breakdown is on stage whole: at least `min` numbered steps shown at rest, none hidden behind a stepper
+      const numbered = shown(cx.answer).filter((e) => /^\s*(?:step\s*)?\d+\s*[.):-]/i.test(e.text.trim()) || /^\s*step\s*\d+/i.test(e.text.trim()));
+      return numbered.length >= Number(spec['min'] ?? 3) ? { check: name, verdict: 'PASS', detail: `${numbered.length} numbered steps on stage at rest` } : { check: name, verdict: 'FAIL', detail: `${numbered.length} numbered step(s) on stage at rest, wanted ${String(spec['min'] ?? 3)}` };
+    }
+    case 'blank-working': {
+      // nothing the learner should work out is on stage at rest (`values`: regex of the answer and the in-between values), and one ask or field waits for the answer
+      const texts = [...shown(cx.answer).map((e) => e.text), ...(await cx.tab.eval<string[]>(`[window.__stage.elements().map((e) => String(e.text || '')).join('\\n'), document.body.innerText].join('\\n').split('\\n')`))];
+      const leaked = texts.filter((t) => new RegExp(String(spec['values'])).test(t));
+      const asks = cx.answer.script.split('\n').filter((l) => /^ask\b/.test(l)).length;
+      const fields = (await controls(cx.tab)).filter((c) => c.control === 'input' || (c.control === 'pick' && c.form !== 'steps')).length;
+      const bad = leaked.slice(0, 2).map((t) => `a worked value is on stage at rest: "${t.slice(0, 40)}"`);
+      if (asks + fields === 0) bad.push('no ask or field for the answer');
+      if (asks > 1) bad.push(`${asks} asks, wanted one`);
+      return res(name, bad, `no worked value at rest, ${asks} ask(s), ${fields} field(s)`);
+    }
     case 'learner-native': {
       // a problem posed to a learner is done through the language's own pieces: something to answer or move (ask, pick, slider, field), no stepper walking the answer, no live app, no number given as a choice
       const script = cx.answer.script;

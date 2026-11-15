@@ -1,0 +1,43 @@
+{
+ "id": "heat-pump-steps-laid-out",
+ "title": "a step-by-step explainer comes laid out, not behind arrows",
+ "family": "steps",
+ "owner": "prompt",
+ "kind": "draw",
+ "found": "2026-11-15",
+ "note": "Owner: explain without controls, break it down; then do not give the answer away, make it require working out.",
+ "own": [
+  "any",
+  "one-stepper"
+ ],
+ "turns": [
+  {
+   "say": "explain how a heat pump works, step by step",
+   "source": {
+    "log": "20261115-094056-c1",
+    "turns": [
+     "t4"
+    ]
+   },
+   "check": [
+    {
+     "k": "any",
+     "of": [
+      {
+       "k": "steps-laid-out",
+       "min": 3
+      },
+      {
+       "k": "tappable-stops",
+       "min": 3
+      }
+     ]
+    },
+    {
+     "k": "one-stepper",
+     "max": 0
+    }
+   ]
+  }
+ ]
+}
