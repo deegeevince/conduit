@@ -467,11 +467,16 @@ async function frameReads(cx: Cx): Promise<FrameRead[]> {
   return out;
 }
 
-/** the stage's body size, measured off the plain narration on stage (a `say` with no role word), else null */
+/** the stage's body size, measured off the stage's own words: the plain narration on stage (a `say` with no role word), else the choices (set at body size), else null */
 function stageBody(cx: Cx): number | null {
-  const ids = [...cx.answer.script.matchAll(/^say (\S+)((?: [^|\s=]+(?:=\S+)?)*) \|/gm)].filter((m) => !/\b(title|strong|aside|choice|label|caption|small)\b/.test(m[2] as string) && !/size=/.test(m[2] as string)).map((m) => m[1] as string);
-  const sizes = ids.map((id) => shown(cx.answer).find((e) => e.id === id)?.fontPx ?? 0).filter((v) => v > 0).sort((a, b) => a - b);
-  return sizes.length === 0 ? null : (sizes[Math.floor(sizes.length / 2)] as number);
+  const lines = [...cx.answer.script.matchAll(/^say (\S+)((?: [^|\s=]+(?:=\S+)?)*) \|/gm)];
+  const sizeOf = (ids: readonly string[]): number | null => {
+    const sizes = ids.map((id) => shown(cx.answer).find((e) => e.id === id)?.fontPx ?? 0).filter((v) => v > 0).sort((a, b) => a - b);
+    return sizes.length === 0 ? null : (sizes[Math.floor(sizes.length / 2)] as number);
+  };
+  const plain = lines.filter((m) => !/\b(title|strong|aside|choice|label|caption|small)\b/.test(m[2] as string) && !/size=/.test(m[2] as string)).map((m) => m[1] as string);
+  const choices = lines.filter((m) => /\bchoice\b/.test(m[2] as string) && !/size=/.test(m[2] as string)).map((m) => m[1] as string);
+  return sizeOf(plain) ?? sizeOf(choices);
 }
 
 async function runCheck(cx: Cx, spec: Spec): Promise<Res> {
