@@ -1,0 +1,32 @@
+{
+ "id": "app-text-follows-stage",
+ "title": "an app with answer buttons: its text is the size of the stage's own words and its buttons are a finger wide",
+ "family": "type-scale",
+ "owner": "painter",
+ "kind": "draw",
+ "found": "2026-11-15",
+ "note": "A live app's text was set in the pixel sizes the brain wrote (16 to 24 px) beside stage words of 34 px, about half their size; and a frame scaled down to fit its room made targets smaller than a finger. The host now gives an app the stage's sizes (--font-body, --font-small, --font-title, --tap-min), and raises text set below the stage's small size and targets below the tap size, as shown on screen.",
+ "own": [
+  "app-type"
+ ],
+ "surface": "main",
+ "priority": "core",
+ "turns": [
+  {
+   "say": "make me a quick interactive maths question with answer buttons",
+   "source": {
+    "log": "owner",
+    "turns": [
+     "t15"
+    ]
+   },
+   "check": [
+    {
+     "k": "app-type",
+     "min": 0.8,
+     "tap": 44
+    }
+   ]
+  }
+ ]
+}

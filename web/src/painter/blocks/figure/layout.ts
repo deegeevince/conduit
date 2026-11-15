@@ -35,6 +35,9 @@ export interface FigureEnv {
   readonly measure: (text: string, px: number, bold: boolean) => number;
   /** the least a word may be set at on this screen */
   readonly floor: number;
+  /** the stage's own body size and small size on this screen, px: the strip's words are set in the body size and the labels in the small one (as far as the room can hold them), whatever the figure's own scale */
+  readonly body?: number;
+  readonly small?: number;
   readonly look: FigureLook;
 }
 
@@ -217,14 +220,21 @@ export function layoutFigure(input: FigureInput, held: { readonly step: number }
   // the chrome: type sizes, then the band
   const unit = Math.min(W, H);
   const phone = W < 520;
-  const captionPx = Math.round(clamp(unit / (phone ? 24 : 36), env.floor + 2, 20));
+  // The strip's words are the stage's body size, the same as the words beside the figure; the figure's own scale (a 36th of its short side, at most 20 px)
+  // only ever adds to that, and a room too small for the body size (a seventh of its short side) holds less of it.
+  const captionPx = Math.round(Math.max(clamp(unit / (phone ? 24 : 36), env.floor + 2, 20), Math.min(env.body ?? 0, unit / 14)));
   const pad = phone ? 12 : 16;
   const hasSteps = input.steps.length > 0;
   const texts = [input.title, ...input.steps.map((s) => s.words)].filter((t) => t.trim() !== '');
-  const textW = Math.max(8, hasSteps && !phone ? W - 3 * pad - (2 * BUTTON + COUNTER) : W - 2 * pad);
+  // the counter ("6 steps", "3 / 6") is in the strip's own type, so its box is as wide as that type needs
+  const counterW = Math.max(COUNTER, Math.ceil(Math.max(env.measure(`${input.steps.length} steps`, captionPx, false), env.measure(`${input.steps.length} / ${input.steps.length}`, captionPx, false))) + 16);
+  const textW = Math.max(8, hasSteps && !phone ? W - 3 * pad - (2 * BUTTON + counterW) : W - 2 * pad);
   const linesFor = (at: number): number => Math.max(1, ...texts.map((t) => wrapWords(t, at, textW, false, env.measure).length));
   let px = captionPx;
-  while (linesFor(px) > 3 && px > env.floor) px -= 1;
+  // a long step is set in up to three lines, smaller as it must be but never below three quarters of the stage's body size; past that it takes more lines (up to five) before it goes smaller
+  const stripFloor = env.body === undefined ? env.floor : Math.max(env.floor, Math.round(captionPx * 0.75));
+  while (linesFor(px) > 3 && px > stripFloor) px -= 1;
+  while (env.body !== undefined && linesFor(px) > 5 && px > env.floor) px -= 1;
   const lineHeight = Math.round(px * 1.3);
   const textH = texts.length === 0 ? 0 : linesFor(px) * lineHeight;
   const padV = phone ? 8 : 10;
@@ -248,8 +258,8 @@ export function layoutFigure(input: FigureInput, held: { readonly step: number }
       const right = W - pad;
       stepper = {
         next: { x: right - BUTTON, y, width: BUTTON, height: BUTTON },
-        counter: { text: counterText, box: { x: right - BUTTON - COUNTER, y, width: COUNTER, height: BUTTON } },
-        prev: { x: right - 2 * BUTTON - COUNTER, y, width: BUTTON, height: BUTTON },
+        counter: { text: counterText, box: { x: right - BUTTON - counterW, y, width: counterW, height: BUTTON } },
+        prev: { x: right - 2 * BUTTON - counterW, y, width: BUTTON, height: BUTTON },
       };
       captionBox = { x: pad, y: band.y + (bandH - textH) / 2, width: textW, height: textH };
     }
@@ -285,9 +295,11 @@ export function layoutFigure(input: FigureInput, held: { readonly step: number }
     return out;
   };
 
-  const labelPx0 = Math.max(env.floor, Math.round(captionPx * 0.82));
+  // The labels start at the stage's small size (what the words beside call small), bounded the same way; they go down a step at a time only as far as they must to stand clear
+  const labelPx0 = Math.max(env.floor, Math.round(Math.max(captionPx * 0.82, Math.min(env.small ?? 0, unit / 16))));
   const ladder: number[] = [];
-  for (let s = labelPx0; s >= env.floor; s -= 1) ladder.push(s);
+  for (let s = labelPx0; s >= env.floor; s -= s > 18 ? 2 : 1) ladder.push(s);
+  if (ladder[ladder.length - 1] !== env.floor) ladder.push(env.floor);
 
   let fit: Fit | null = null;
   for (let guard = 0; guard < 16 && fit === null; guard += 1) {

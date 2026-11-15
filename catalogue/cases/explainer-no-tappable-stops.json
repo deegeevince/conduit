@@ -5,9 +5,9 @@
  "owner": "prompt",
  "kind": "draw",
  "found": "2026-11-14",
- "note": "Asked to explain step by step the answer is a picture with no stops to tap.",
+ "note": "Asked to explain step by step the answer is a picture with no stops to tap. The owner prefers the breakdown laid out whole (numbered steps on stage); tappable stops still pass.",
  "own": [
-  "tappable-stops"
+  "any"
  ],
  "turns": [
   {
@@ -18,8 +18,17 @@
    },
    "check": [
     {
-     "k": "tappable-stops",
-     "min": 3
+     "k": "any",
+     "of": [
+      {
+       "k": "steps-laid-out",
+       "min": 3
+      },
+      {
+       "k": "tappable-stops",
+       "min": 3
+      }
+     ]
     }
    ]
   }

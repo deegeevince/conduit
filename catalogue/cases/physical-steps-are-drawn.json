@@ -1,0 +1,29 @@
+{
+ "id": "physical-steps-are-drawn",
+ "title": "steps for doing something to a physical thing are shown, not notation",
+ "family": "completeness",
+ "owner": "prompt",
+ "kind": "draw",
+ "found": "2026-11-15",
+ "note": "A puzzle-cube answer was a photo and a stepper of move notation; nothing was drawn. Each step should show the move.",
+ "own": [
+  "has-shapes"
+ ],
+ "turns": [
+  {
+   "say": "how do I solve a 2x2 puzzle cube",
+   "source": {
+    "log": "20261115-094056-c1",
+    "turns": [
+     "t4"
+    ]
+   },
+   "check": [
+    {
+     "k": "has-shapes",
+     "min": 12
+    }
+   ]
+  }
+ ]
+}

@@ -7,7 +7,7 @@ import type { BriefForm, Capabilities } from '@conduit/language';
 import { buildReviewBrief, isKeep } from '@conduit/language';
 import type { AmendRequest, Brain, BrainEvent, BrainSession, ReviewRequest, Snapshot, TurnRequest } from '../../domain/brain';
 import { detailOf, FILE_TOOLS, gateCall, NO_AGENT, splitTool, summaryOf, toolChoices } from '../../domain/agent';
-import { addressesIn, deniedAfterResolving } from '../../domain/destinations';
+import { addressesIn, deniedAfterResolving, deniedDestination } from '../../domain/destinations';
 import { newBrowserState, noteBrowserResult } from '../../domain/browser';
 import type { BrowserState } from '../../domain/browser';
 import type { AgentSettings } from '../../domain/agent';
@@ -101,6 +101,8 @@ interface Entry {
   lastTurn: string | null;
   /** documents this process has been given; a warm turn gives it only the rest */
   readonly heardDocs: Set<string>;
+  /** SK1. The skills this process has been given, by id and the hash of their files: a skill is sent once a conversation, again after a cold start or a change */
+  readonly heardSkills: Set<string>;
   lastUsed: number;
   /** `total_cost_usd` is cumulative for a process; this is where the last turn left it */
   costBase: number;
@@ -240,6 +242,7 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
       capabilities,
       lastTurn: null,
       heardDocs: new Set(),
+      heardSkills: new Set(),
       lastUsed: Date.now(),
       costBase: 0,
       running: null,
@@ -337,11 +340,13 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
   function outgoingFor(request: TurnRequest, entry: Entry, form: BriefForm): Outgoing {
     const held = request.context.documents ?? [];
     const given = form === 'full' ? held : held.filter((doc) => !entry.heardDocs.has(doc.id));
+    const skillsHeld = request.context.skills ?? [];
+    const skillsGiven = form === 'full' ? skillsHeld : skillsHeld.filter((skill) => !entry.heardSkills.has(`${skill.id}:${skill.hash}`));
     return {
       turn: request.turn,
       session: request.session,
       styles: Object.keys(request.context.stage.styles),
-      text: buildTurnBrief({ ...request.context, documents: given }, request.input, form, entry.capabilities, {
+      text: buildTurnBrief({ ...request.context, documents: given, skills: skillsGiven }, request.input, form, entry.capabilities, {
         model: entry.model,
         effort: entry.effort,
         sees: request.snapshot !== null,
@@ -360,6 +365,7 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
       sent: () => {
         entry.lastTurn = request.turn;
         for (const doc of given) entry.heardDocs.add(doc.id);
+        for (const skill of skillsGiven) entry.heardSkills.add(`${skill.id}:${skill.hash}`);
       },
     };
   }
@@ -424,12 +430,14 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
     /** The CLI asks before a call. Whatever the answer, it is made here, by `gateCall`, and by the owner for what that says to ask. */
     const handleAsk = (ask: { requestId: string; toolUseId: string; tool: string; input: Readonly<Record<string, unknown>> }): void => {
       // A public name that points at a private number is refused too, which needs the name resolved: the answer waits for that, and for nothing else.
-      if (out.noTools !== true && modeOf(out.session) === 'agent' && addressesIn(ask.input).length > 0 && !isCanvasTool(ask.tool)) {
+      if (out.noTools !== true && addressesIn(ask.input).length > 0 && !isCanvasTool(ask.tool)) {
         void deniedAfterResolving(ask.input, agent.allowPrivate).then((why) => {
           if (why === null) return handleAskNow(ask);
           if (inner.signal.aborted) return entry.proc.answer(ask.requestId, false, {}, 'The turn was stopped.');
           denied.add(ask.toolUseId);
           turnLog.info('agent_private_destination', { tool: ask.tool });
+          // Said on the strip and so in the audit as a refusal, not left "running"
+          box.push({ type: 'activity', id: ask.toolUseId, tool: ask.tool, summary: summaryOf({ id: ask.toolUseId, tool: ask.tool, input: ask.input }), state: 'denied', ms: null });
           entry.proc.answer(ask.requestId, false, {}, `Not allowed: ${why}. Say so plainly and offer what you can do without it.`);
         });
         return;
@@ -443,7 +451,10 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
         entry.proc.answer(ask.requestId, true, ask.input, '');
         return;
       }
-      const verdict = out.noTools === true ? ({ kind: 'deny', risk: 'run', why: 'no tools in a look; write lines' } as const) : modeOf(out.session) === 'agent' ? gateCall(call, agent, on, false, entry.browser, permitsOf(out.session)) : ({ kind: 'deny', risk: 'run', why: kill.engaged() ? 'agent tools have been switched off by the kill switch' : 'this conversation has no tools' } as const);
+      // The plain brain (no agent) may read a page when the owner offered WebFetch, and only where `deniedDestination` lets it go (SK0).
+      const plainFetch = modeOf(out.session) !== 'agent' && out.noTools !== true && !kill.engaged() && ask.tool === 'WebFetch' && deps.tools.includes('WebFetch');
+      const plainWhy = plainFetch ? deniedDestination(ask.input, agent.allowPrivate) : null;
+      const verdict = out.noTools === true ? ({ kind: 'deny', risk: 'run', why: 'no tools in a look; write lines' } as const) : modeOf(out.session) === 'agent' ? gateCall(call, agent, on, false, entry.browser, permitsOf(out.session)) : plainFetch ? (plainWhy === null ? ({ kind: 'allow', risk: 'read' } as const) : ({ kind: 'deny', risk: 'run', why: plainWhy } as const)) : ({ kind: 'deny', risk: 'run', why: kill.engaged() ? 'agent tools have been switched off by the kill switch' : 'this conversation has no tools' } as const);
       const summary = summaryOf(call);
       if (inner.signal.aborted) {
         // The turn was stopped (or timed out) and the model has not heard yet: nothing more is asked of the owner, nothing runs.

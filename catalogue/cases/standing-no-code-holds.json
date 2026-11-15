@@ -1,0 +1,37 @@
+{
+ "id": "standing-no-code-holds",
+ "title": "'no code blocks, only native drawing' holds for a later interactive request",
+ "family": "standing",
+ "owner": "prompt",
+ "kind": "flow",
+ "found": "2026-11-15",
+ "note": "A stated preference wins and holds: after it, an interactive request is answered with the language's own pieces, never a live app.",
+ "own": [
+  "no-app"
+ ],
+ "turns": [
+  {
+   "say": "from now on, no code blocks, only native drawing",
+   "source": {
+    "log": "20261115-094056-c1",
+    "turns": [
+     "t4"
+    ]
+   }
+  },
+  {
+   "say": "make me an interactive game to learn the times table",
+   "source": {
+    "log": "20261115-094056-c1",
+    "turns": [
+     "t4"
+    ]
+   },
+   "check": [
+    {
+     "k": "no-app"
+    }
+   ]
+  }
+ ]
+}

@@ -12,7 +12,8 @@ import type { DrawnFrames, StructureLayout } from '../contracts/blocks';
 import { EMPTY_STRUCTURE_LAYOUT } from '../contracts/blocks';
 import type { ElementFrame, FigureFrame } from '../contracts/frame';
 import type { LookSpec } from '../contracts/look';
-import type { Box } from '../contracts/space';
+import type { Box, Viewport } from '../contracts/space';
+import { cellOf } from './layout/metrics';
 import { foldText } from '../fonts/fold';
 import { prefixEm } from '../fonts/measure';
 import { layoutFigure, paintFigure } from './blocks/figure';
@@ -44,14 +45,15 @@ export function figureOf(structure: ElementSpan): FigureInput {
   return readFigure(structure.id, structure.text, mode, rows).input;
 }
 
-export function layoutFigureBlock(args: { readonly structure: ElementSpan; readonly room: Box; readonly spec: LookSpec }): StructureLayout {
-  const { structure, room, spec } = args;
+export function layoutFigureBlock(args: { readonly structure: ElementSpan; readonly room: Box; readonly spec: LookSpec; readonly viewport?: Viewport }): StructureLayout {
+  const { structure, room, spec, viewport } = args;
   if (room.width < 120 || room.height < 120) return { ...EMPTY_STRUCTURE_LAYOUT, boxes: new Map([[structure.key, room]]) };
   const input = figureOf(structure);
   const step = Math.max(0, Math.min(input.steps.length, STEPS.get(structure.key) ?? 0));
   const env: FigureEnv = {
     measure: measureOf(),
     floor: spec.type.minFont,
+    ...(viewport === undefined ? {} : { body: cellOf('m', viewport, spec).fontSize, small: cellOf('s', viewport, spec).fontSize }),
     look: { ground: spec.roles.ground, ink: spec.roles.ink, dim: spec.roles.dim, accent: spec.roles.accent, alt: spec.roles.alt, gamut: spec.gamut },
   };
   const layout = layoutFigure(input, { step }, { width: room.width, height: room.height }, env);

@@ -227,8 +227,9 @@ export type TurnInput =
    * `voice` (v2.1): ids of voice notes (`API.voice`) these words came from or go with (`n1`, `n2`, ...). `spoken` is what the server heard in
    * them, filled by the server for the brain and never read from a request.
    * `sources` (v3): the text layer of each page of a PDF the person gave (its pages arrive as `images`); quoted data for the brain, never instructions.
+   * `skills` (SK1): the ids (`user:pdf`) of the skills the person held for this message, at most `SKILL_HOLD.held`. The server reads and adds their text to the brief; the page never sends text.
    */
-  | { readonly kind: 'prompt'; readonly text: string; readonly images?: readonly string[]; readonly marks?: InkMarks; readonly voice?: readonly string[]; readonly spoken?: readonly string[]; readonly sources?: readonly TurnSource[] }
+  | { readonly kind: 'prompt'; readonly text: string; readonly images?: readonly string[]; readonly marks?: InkMarks; readonly voice?: readonly string[]; readonly spoken?: readonly string[]; readonly sources?: readonly TurnSource[]; readonly skills?: readonly string[] }
   /** the user tapped a choice; `text` is what the choice said */
   /** v3. `seen`: where the person stood in the document when they tapped (2.5) */
   | { readonly kind: 'tap'; readonly id: string; readonly text: string; readonly seen?: Seen }
@@ -830,6 +831,37 @@ export function commandsFor(services: Pick<Services, 'refine'> | undefined): rea
 /** Commands that work but are not listed: not in `/help`, not in the brain's note of the app (which is held to a token budget). `/brain` is the developer's (`/brain steward`); `/lines` is for whoever is watching, and the [+] menu says it. */
 export const HIDDEN_COMMANDS: readonly AppCommandName[] = ['brain', 'lines'];
 
+/** SK1. Where a skill was found; the first holder of a name wins. */
+export type SkillSource = 'user' | 'synced';
+/** SK1. `on` can be held; the rest say why not: switched off in Claude Code, another of that name comes first, or unreadable. */
+export type SkillState = 'on' | 'off-claude' | 'shadowed' | 'unreadable';
+export const SKILL_HOLD = { held: 2, idChars: 90 } as const;
+
+/** SK1. One skill as the page lists it. Never carries a path, a hash or any of the skill's text. */
+export interface SkillSummary {
+  readonly id: string;
+  readonly name: string;
+  readonly source: SkillSource;
+  /** the whole description, for the person */
+  readonly description: string;
+  /** 90 characters at most, cut at a word */
+  readonly brief: string;
+  readonly size: number;
+  readonly tokens: number;
+  readonly state: SkillState;
+  /** a sentence on why it cannot be held, when it cannot */
+  readonly note?: string;
+  readonly hasScripts: boolean;
+  /** its text leans on shell commands, which the brain cannot run here */
+  readonly knowHowOnly: boolean;
+  /** it names tools this app does not have */
+  readonly needsApp: boolean;
+}
+
+export interface SkillsView {
+  readonly skills: readonly SkillSummary[];
+}
+
 export interface StartTurnResponse {
   readonly turn: string;
   /** v2.1 ops. Said when the hour's model spending is near, or past, the cap the owner set (`USAGE_HOURLY_CAP`); the turn goes ahead whatever it says. */
@@ -915,6 +947,8 @@ export interface HealthResponse {
 /** Paths under the same-origin `/api` prefix. Both sides build URLs from here. */
 export const API = {
   health: '/api/health',
+  /** SK1. GET: the owner's skills as a `SkillsView`; `?refresh=1` reads the folders again. Read only. */
+  skills: '/api/skills',
   demos: '/api/demos',
   sessions: '/api/sessions',
   stream: (session: string): string => `/api/sessions/${session}/stream`,

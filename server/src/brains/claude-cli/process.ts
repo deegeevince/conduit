@@ -13,10 +13,22 @@ import { CHROME_REMOVED, CHROME_SERVER } from '../../domain/browser';
 export const CANVAS_ALLOWED = 'mcp__canvas';
 
 /** The tool flags: exactly the listed read-only web tools, allowed without a prompt, and every other tool denied. `canvas` is the 0600 file that configures the canvas server (SA4). */
-export function toolArguments(tools: readonly string[], canvas?: string): string[] {
+export function toolArguments(tools: readonly string[], canvas?: string, gated = false): string[] {
   const mcp = canvas === undefined ? [] : ['--mcp-config', canvas];
   if (tools.length === 0) return ['--tools', '', ...(canvas === undefined ? [] : ['--allowedTools', CANVAS_ALLOWED]), ...mcp];
-  return ['--tools', tools.join(','), '--allowedTools', ...tools, ...(canvas === undefined ? [] : [CANVAS_ALLOWED]), '--disallowedTools', ...DENIED_TOOLS, ...mcp];
+  // A page read is never allowed by the CLI itself: the CLI does not look at where it goes, so it would reach this machine and the owner's
+  // network. With `gated`, the CLI asks this process (stdio) before every fetch, and the answer is `deniedDestination`'s; without it
+  // (a one-shot process with no channel to ask on), the tool is not offered at all.
+  const fetches = tools.includes('WebFetch');
+  const offered = gated ? tools : tools.filter((name) => name !== 'WebFetch');
+  const allowed = offered.filter((name) => name !== 'WebFetch');
+  return [
+    '--tools', offered.join(','),
+    '--allowedTools', ...allowed, ...(canvas === undefined ? [] : [CANVAS_ALLOWED]),
+    '--disallowedTools', ...DENIED_TOOLS,
+    ...(gated && fetches ? ['--permission-mode', 'manual', '--permission-prompt-tool', 'stdio'] : []),
+    ...mcp,
+  ];
 }
 
 /**
@@ -31,9 +43,10 @@ export interface AgentRun {
   readonly builtIns: readonly string[];
   readonly mcpConfigs: readonly string[];
   /**
-   * The web tools are allowed by the CLI itself, with no round trip to this process. Set only when nothing else is on (no folder, no service,
-   * no browser): then a search and a page read are free in every case, which is all `gateCall` would say, and the brain behaves as it did
-   * without an agent. Measured: when WebSearch was asked about instead, the same model searched for a plain drawing in about one turn in four
+   * A web SEARCH is allowed by the CLI itself, with no round trip to this process. Set only when nothing else is on (no folder, no service,
+   * no browser): then a search is free in every case, which is all `gateCall` would say, and the brain behaves as it did without an agent.
+   * A page read (WebFetch) is NOT allowed this way: the CLI does not check where it goes (SK0 probe: a fetch of a loopback address connected),
+   * so it is always asked about and `deniedDestination` sees its address. Measured: when WebSearch was asked about instead, the same model searched for a plain drawing in about one turn in four
    * (15 to 45 s to the first line, against 2). With anything else on, the web tools are asked about so that a fetch cannot carry out what the
    * other tools read (`gateCall`'s strict fetch).
    */
@@ -45,7 +58,8 @@ export interface AgentRun {
 }
 
 export function agentArguments(run: AgentRun, canvas?: string): string[] {
-  const allowed = [...(run.freeReads === true ? run.builtIns.filter((name) => name === 'WebSearch' || name === 'WebFetch') : []), ...(canvas === undefined ? [] : [CANVAS_ALLOWED])];
+  // Only a search is allowed by the CLI itself. A page read always comes to this process, so that its address meets `deniedDestination`.
+  const allowed = [...(run.freeReads === true ? run.builtIns.filter((name) => name === 'WebSearch') : []), ...(canvas === undefined ? [] : [CANVAS_ALLOWED])];
   const configs = [...run.mcpConfigs, ...(canvas === undefined ? [] : [canvas])];
   return [
     '--tools', run.builtIns.join(','),

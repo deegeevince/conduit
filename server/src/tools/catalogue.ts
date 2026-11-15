@@ -47,7 +47,7 @@ interface CaseTurn {
   /** a real tap on the choice (or control) on the stage with this label, instead of typing `say` */
   readonly tap?: string;
   readonly source: Source;
-  /** actions before the turn begins (put the open document away so the stage can be tapped) */
+  /** actions before the turn begins (put the open document away so the stage can be tapped; SK1: hold a skill from the [+] menu) */
   readonly pre?: readonly Action[];
   readonly do?: readonly Action[];
   readonly check?: readonly Spec[];
@@ -67,6 +67,8 @@ interface Case {
   /** `chat`: the frozen /chat surface; not run unless --chat */
   readonly surface?: 'main' | 'chat';
   readonly priority?: 'core' | 'low';
+  /** SK1. `only`: the case reads what a real brain was sent (the brief), so a replay cannot run it; it is left out of replays and run with `--live` */
+  readonly live?: 'only';
   readonly turns: readonly CaseTurn[];
 }
 
@@ -161,14 +163,14 @@ function twinMark(caseId: string, say: string): string {
   return '\u200b'.repeat(earlier.length);
 }
 
-function loadCases(only: readonly string[] | null, chat = true): Case[] {
+function loadCases(only: readonly string[] | null, chat = true, liveRun = false): Case[] {
   const all = readdirSync(casesDir)
     .filter((name) => name.endsWith('.json'))
     .sort()
     .map((name) => JSON.parse(readFileSync(join(casesDir, name), 'utf8')) as Case);
   const unknown = (only ?? []).filter((id) => !all.some((c) => c.id === id));
   if (unknown.length > 0) usage(`no case ${unknown.join(', ')}`);
-  return all.filter((c) => (only === null || only.includes(c.id)) && (chat || c.surface !== 'chat' || (only?.includes(c.id) ?? false)));
+  return all.filter((c) => (only === null || only.includes(c.id)) && (chat || c.surface !== 'chat' || (only?.includes(c.id) ?? false)) && (liveRun || c.live !== 'only'));
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------------
@@ -193,7 +195,7 @@ async function recordAll(args: Args): Promise<void> {
     return rows;
   };
   let wrote = 0;
-  for (const c of loadCases(args.only)) {
+  for (const c of loadCases(args.only, true, true)) {
     const turns: { match: string; script: string }[] = [];
     let missing = '';
     for (const turn of c.turns) {
@@ -298,6 +300,8 @@ async function screenSig(tab: Tab): Promise<string> {
 /** every general gate: the words are in their shapes, labels on their part's side, nothing over anything, readable, whole */
 async function generic(cx: Cx): Promise<Res[]> {
   const out: Res[] = [];
+  // first, while the page is as the answer left it: the other checks measure and tap, and an app is judged as a person would meet it
+  out.push(await appWorks(cx));
   const rows: CheckResult[] = [];
   const step = { n: 1, say: null, name: 'case', expects: 'any' } as const;
   await cx.c.checkAnswer(step, cx.answer, cx.picture, rows);
@@ -401,6 +405,109 @@ async function pickConsistent(cx: Cx): Promise<Res | null> {
   return res(name, bad, `${tapped} real taps over ${picks.length} pick(s), ${judged} bound effects held${unreachable > 0 ? ` (${unreachable} options out of reach)` : ''}`);
 }
 
+/**
+ * "A live app on stage works": a real click on its first button (or, with no button, a real drag of its first draggable) changes the app, and the stage does not log
+ * it as its own tap. The app is in a sandboxed frame the page cannot read, so it is read here through the browser's own debugging door for that frame (its buttons and where
+ * they are), and pressed with real input at the screen point they are at.
+ */
+async function appWorks(cx: Cx): Promise<Res> {
+  const name = 'app-works';
+  const { tab } = cx;
+  const page = await tab.eval<{ app: { id: string; text: string } | null; frame: { x: number; y: number; width: number; height: number; scale: number; pe: string; vis: string } | null; taps: number }>(
+    `(() => { const el = (window.__stage.elements() || []).find((e) => e.kind === 'structure' && e.phase === 'on' && /^live app/.test(String(e.text))); const f = document.querySelector('iframe[data-surface]'); const r = f ? f.getBoundingClientRect() : null; const cs = f ? getComputedStyle(f) : null; return { app: el ? { id: el.id, text: String(el.text) } : null, frame: f ? { x: r.left, y: r.top, width: r.width, height: r.height, scale: f.offsetWidth > 0 ? r.width / f.offsetWidth : 1, pe: cs.pointerEvents, vis: cs.visibility } : null, taps: window.__stage.events().filter((e) => e.type === 'tap').length }; })()`,
+  );
+  if (page.app === null && page.frame === null) return { check: name, verdict: 'PASS', detail: 'no live app on stage' };
+  // the frame may still be settling into its room (it re-lays-out when the words arrive beside it): it is read again until two readings agree
+  const frameRect = (): Promise<string> => tab.eval<string>(`(() => { const f = document.querySelector('iframe[data-surface]'); if (!f) return ''; const r = f.getBoundingClientRect(); return [r.left, r.top, r.width, r.height, f.style.transform].join('|'); })()`);
+  for (let i = 0, last = await frameRect(); i < 10; i += 1) {
+    await sleep(300);
+    const now = await frameRect();
+    if (now === last) break;
+    last = now;
+  }
+  const settled = await tab.eval<{ x: number; y: number; width: number; height: number; scale: number; pe: string; vis: string } | null>(
+    `(() => { const f = document.querySelector('iframe[data-surface]'); if (!f) return null; const r = f.getBoundingClientRect(); const cs = getComputedStyle(f); return { x: r.left, y: r.top, width: r.width, height: r.height, scale: f.offsetWidth > 0 ? r.width / f.offsetWidth : 1, pe: cs.pointerEvents, vis: cs.visibility }; })()`,
+  );
+  if (settled !== null) page.frame = settled;
+  if (page.frame === null || page.frame.vis !== 'visible' || page.frame.pe === 'none') return { check: name, verdict: 'FAIL', detail: `the page is at rest but the live app is still its picture, not the running frame (${page.frame === null ? 'no frame' : `pointer-events ${page.frame.pe}, ${page.frame.vis}`}): presses go to the stage as its own taps` };
+  const { frame } = page;
+  const kids: { sessionId: string; type: string }[] = [];
+  const stopListening = tab.browser.onEvent((event) => {
+    if (event.method !== 'Target.attachedToTarget') return;
+    const info = event.params['targetInfo'] as { type: string };
+    kids.push({ sessionId: String(event.params['sessionId']), type: info.type });
+  });
+  try {
+    await tab.send('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: false, flatten: true });
+    await sleep(600);
+    const kid = kids.find((k) => k.type === 'iframe');
+    if (kid === undefined) return { check: name, verdict: 'FAIL', detail: 'the live app\'s frame could not be reached to be pressed' };
+    type Spot = { label: string; x: number; y: number; width: number; height: number; kind: 'button' | 'drag' };
+    const read = await tab.browser.send<{ result: { value?: string } }>(
+      'Runtime.evaluate',
+      {
+        returnByValue: true,
+        expression: `(() => { const seen = (e) => { const r = e.getBoundingClientRect(); const cs = getComputedStyle(e); return r.width > 4 && r.height > 4 && cs.visibility !== 'hidden' && cs.display !== 'none' && r.right > 0 && r.bottom > 0 ? r : null; }; const pick = (list, kind) => list.map((e) => ({ e, r: seen(e) })).filter((o) => o.r).map((o) => ({ label: (o.e.textContent || o.e.getAttribute('aria-label') || o.e.className || o.e.tagName).toString().trim().slice(0, 24), x: o.r.x, y: o.r.y, width: o.r.width, height: o.r.height, kind })); const buttons = pick([...document.querySelectorAll('button, [role=button], input[type=button], summary')], 'button'); const drags = pick([...document.querySelectorAll('[draggable=true], body *')].filter((e) => e.getAttribute('draggable') === 'true' || (getComputedStyle(e).cursor === 'grab' || getComputedStyle(e).cursor === 'move')), 'drag'); return JSON.stringify({ buttons, drags, inner: [innerWidth, innerHeight] }); })()`,
+      },
+      kid.sessionId,
+    );
+    const found = JSON.parse(read.result.value ?? '{"buttons":[],"drags":[]}') as { buttons: Spot[]; drags: Spot[] };
+    const target = found.buttons[0] ?? found.drags[0];
+    if (target === undefined) return { check: name, verdict: 'PASS', detail: 'the live app has no button or draggable to press' };
+    const at = { x: frame.x + (target.x + target.width / 2) * frame.scale, y: frame.y + (target.y + target.height / 2) * frame.scale };
+    const px = Math.min(target.width, target.height) * frame.scale;
+    const bad: string[] = [];
+    if (at.x < frame.x || at.y < frame.y || at.x > frame.x + frame.width || at.y > frame.y + frame.height) bad.push(`its first ${target.kind} "${target.label}" lies outside the app's own frame (cut off)`);
+    if (at.x < 0 || at.y < 0 || at.x > cx.screen.width || at.y > cx.screen.height) bad.push(`its first ${target.kind} "${target.label}" is off the screen`);
+    if (bad.length > 0) return { check: name, verdict: 'FAIL', detail: bad.join('; ') };
+    const clip = { x: frame.x, y: Math.max(0, frame.y), width: Math.min(frame.width, cx.screen.width - frame.x), height: Math.min(frame.height, cx.screen.height - frame.y) };
+    const before = await tab.shot(clip);
+    const sent = await tab.eval<number>('window.__stage.events().filter((e) => e.type === "control" && e.app === true).length').catch(() => 0);
+    await tab.browser.send('Runtime.evaluate', { expression: "window.__got = []; ['pointerdown','pointerup','click','mousedown'].forEach((t) => document.addEventListener(t, (e) => window.__got.push(t + '@' + Math.round(e.clientX) + ',' + Math.round(e.clientY) + ' on ' + (e.target.textContent || e.target.tagName).slice(0, 12)), true)); window.__got.push('hidden=' + document.hidden + ' focus=' + document.hasFocus());" }, kid.sessionId);
+    const under = await tab.eval<string>(`(() => { const f = document.querySelector('iframe[data-surface]'); const e = document.elementFromPoint(${at.x}, ${at.y}); const cs = f ? getComputedStyle(f) : null; return (e ? e.tagName + '.' + String(e.className).slice(0, 30) : 'nothing') + ' pe=' + (cs ? cs.pointerEvents : '?') + ' vis=' + (cs ? cs.visibility : '?') + ' op=' + (cs ? cs.opacity : '?'); })()`);
+    if (target.kind === 'button') {
+      await tab.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: at.x, y: at.y, pointerType: 'mouse' });
+      // a person's pointer is over a button a moment before it presses (a press in the same instant as the move into a sandboxed frame is lost by the browser itself)
+      await sleep(250);
+      await tab.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: at.x, y: at.y, button: 'left', buttons: 1, clickCount: 1, pointerType: 'mouse' });
+      await sleep(40);
+      await tab.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: at.x, y: at.y, button: 'left', buttons: 0, clickCount: 1, pointerType: 'mouse' });
+    }
+    else {
+      const to = { x: Math.min(cx.screen.width - 2, Math.max(2, frame.x + frame.width / 2)), y: Math.min(cx.screen.height - 2, Math.max(2, frame.y + frame.height / 2)) };
+      const point = (x: number, y: number) => ({ x, y, id: 1 });
+      if (tab.mobile) {
+        await tab.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point(at.x, at.y)] });
+        for (let i = 1; i <= 8; i += 1) await tab.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [point(at.x + ((to.x - at.x) * i) / 8, at.y + ((to.y - at.y) * i) / 8)] });
+        await tab.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      } else {
+        await tab.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: at.x, y: at.y, pointerType: 'mouse' });
+        await tab.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: at.x, y: at.y, button: 'left', buttons: 1, clickCount: 1, pointerType: 'mouse' });
+        for (let i = 1; i <= 8; i += 1) await tab.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: at.x + ((to.x - at.x) * i) / 8, y: at.y + ((to.y - at.y) * i) / 8, button: 'left', buttons: 1, pointerType: 'mouse' });
+        await tab.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: to.x, y: to.y, button: 'left', buttons: 0, clickCount: 1, pointerType: 'mouse' });
+      }
+    }
+    // an app may answer on its next tick (a timer starts counting a second later): it is looked at again for up to two seconds before it is called unchanged
+    let after = before;
+    for (let waited = 0; waited < 2400 && after === before; waited += 400) {
+      await sleep(400);
+      after = await tab.shot(clip);
+    }
+    const now = await tab.eval<{ taps: number; sent: number }>('({ taps: window.__stage.events().filter((e) => e.type === "tap").length, sent: window.__stage.events().filter((e) => e.type === "control" && e.app === true).length })');
+    const got = await tab.browser.send<{ result: { value?: string } }>('Runtime.evaluate', { returnByValue: true, expression: 'JSON.stringify(window.__got)' }, kid.sessionId).then((r) => r.result.value ?? '?').catch(() => 'unreadable');
+    if (after === before) {
+      await writeFile(join(cx.dir, `${cx.screen.name}-app-works-before.png`), Buffer.from(before.split(',')[1] ?? '', 'base64'));
+      await writeFile(join(cx.dir, `${cx.screen.name}-app-works-after.png`), Buffer.from(after.split(',')[1] ?? '', 'base64'));
+    }
+    if (now.taps > page.taps) bad.push(`the stage logged the press as its own tap (${now.taps - page.taps}) instead of the app taking it`);
+    if (after === before && now.sent <= sent) bad.push(`a real ${target.kind === 'button' ? 'click' : 'drag'} on its first ${target.kind} "${target.label}" changed nothing in the app (the frame heard ${got}; under the press: ${under}; pressed at ${Math.round(at.x)},${Math.round(at.y)}; the frame is ${Math.round(frame.width)}x${Math.round(frame.height)} at ${Math.round(frame.x)},${Math.round(frame.y)}, scale ${frame.scale.toFixed(2)})`);
+    return res(name, bad, `a real ${target.kind === 'button' ? 'click' : 'drag'} on "${target.label}" (${Math.round(px)} px on screen) changed the app, and the stage logged no tap`);
+  } finally {
+    stopListening();
+    await tab.send('Target.setAutoAttach', { autoAttach: false, waitForDebuggerOnStart: false, flatten: true }).catch(() => undefined);
+  }
+}
+
 /** "‹ earlier": when lines are held back, the control is on the screen, a real tap lays them over the column (inside the screen, not empty), and a second tap puts them away */
 async function earlierWorks(cx: Cx): Promise<Res> {
   const name = 'earlier-works';
@@ -486,6 +593,33 @@ function labelsSide(cx: Cx): Res {
       if (nearest.id !== part && dist(nearest, l) + 4 < dist(own, l)) bad.push(`"${l.text.slice(0, 18)}" is nearer ${nearest.id} than its own ${part}`);
     }
   }
+  // a label reads as naming the part it is level with: never level with another labelled part (and not with its own) while a place level with its own part was free
+  const boxes = cx.answer.live.filter((e) => e.phase === 'on' && area(e.box) > 0 && area(e.box) < 0.4 * cx.screen.width * cx.screen.height);
+  const overlapLen = (a0: number, a1: number, b0: number, b1: number): number => Math.max(0, Math.min(a1, b1) - Math.max(a0, b0));
+  const levelWith = (l: LiveElement['box'], p: LiveElement['box']): boolean => {
+    const row = overlapLen(l.y, l.y + l.height, p.y, p.y + p.height) >= 0.5 * l.height && overlapLen(l.x, l.x + l.width, p.x, p.x + p.width) === 0;
+    const col = overlapLen(l.x, l.x + l.width, p.x, p.x + p.width) >= 0.5 * Math.min(l.width, p.width) && overlapLen(l.y, l.y + l.height, p.y, p.y + p.height) === 0;
+    return row || col;
+  };
+  for (const { label, part } of anchors) {
+    const l = by(label);
+    const own = by(part);
+    if (l === undefined || own === undefined || levelWith(l.box, own.box) || inter(l.box, own.box) > 0) continue;
+    const other = parts.find((p) => p.id !== part && levelWith(l.box, p.box) && dist(p, l) <= dist(own, l));
+    if (other === undefined) continue;
+    const w = l.box.width;
+    const h = l.box.height;
+    const gap = 4;
+    const o = own.box;
+    const places = [
+      { x: o.x + o.width + gap, y: o.y + o.height / 2 - h / 2 },
+      { x: o.x - gap - w, y: o.y + o.height / 2 - h / 2 },
+      { x: o.x + o.width / 2 - w / 2, y: o.y - gap - h },
+      { x: o.x + o.width / 2 - w / 2, y: o.y + o.height + gap },
+    ].map((q) => ({ ...q, width: w, height: h }));
+    const free = places.find((q) => q.x >= 0 && q.y >= 0 && q.x + w <= cx.screen.width && q.y + h <= cx.screen.height && !boxes.some((e) => e.id !== label && e.id !== part && inter(q, e.box) > 0));
+    if (free !== undefined) bad.push(`"${l.text.slice(0, 18)}" is level with ${other.id} while its own row at ${part} was free`);
+  }
   return res('labels-side', bad, `${anchors.length} labels, ${led.size} by their leaders, the rest each nearest its own part`);
 }
 
@@ -528,6 +662,63 @@ function gridBox(cx: Cx, of: string | undefined, matched: readonly LiveElement[]
   const holds = (b: LiveElement['box']): number => matched.filter((m) => { const c = centre(m.box); return c.x >= b.x - 3 && c.x <= b.x + b.width + 3 && c.y >= b.y - 3 && c.y <= b.y + b.height + 3; }).length;
   const best = shapes.sort((a, b) => holds(b.box) - holds(a.box) || area(b.box) - area(a.box))[0];
   return best === undefined ? null : best.box;
+}
+
+
+// ---------------------------------------------------------------------------------------------------------------------------------
+// Type that follows the stage: an app's text and a figure's labels are read against the words the stage sets beside them
+
+/** read inside an app's frame (a sandboxed frame is a process of its own, so this runs there, over the DevTools protocol): every visible piece of text with its size, and every target with its size, in the frame's own pixels */
+const FRAME_READ = String.raw`(() => {
+  const px = (el) => parseFloat(getComputedStyle(el).fontSize);
+  const texts = []; const seen = new Set();
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  let n; while ((n = walker.nextNode())) { const t = n.textContent.trim(); const el = n.parentElement; if (!t || !el || seen.has(el) || ['SCRIPT','STYLE','NOSCRIPT','TEMPLATE'].includes(el.tagName)) continue; const cs = getComputedStyle(el); const r = el.getBoundingClientRect(); if (r.width <= 0 || r.height <= 0 || cs.visibility === 'hidden') continue; seen.add(el); const svg = !!el.closest('svg'); let size = px(el); if (svg) { const m = el.getScreenCTM && el.getScreenCTM(); if (m) size = size * Math.hypot(m.a, m.b); } texts.push({ t: t.slice(0, 18), px: size, svg }); }
+  for (const el of document.querySelectorAll('input:not([type=hidden]),select,textarea,button')) { if (seen.has(el)) continue; const r = el.getBoundingClientRect(); if (r.width > 0 && r.height > 0 && !/^(range|checkbox|radio)$/.test(el.type || '')) texts.push({ t: (el.value || el.tagName).slice(0, 18), px: px(el), svg: false }); }
+  const taps = [];
+  const cands = [...document.querySelectorAll('button,[role=button],a[href],input:not([type=hidden]),select,textarea,summary,[onclick]')];
+  for (const el of document.body.querySelectorAll('*')) { const cur = getComputedStyle(el).cursor; if ((cur === 'pointer' || cur === 'grab' || cur === 'move') && el.parentElement && getComputedStyle(el.parentElement).cursor !== cur && !cands.includes(el)) cands.push(el); }
+  for (const el of cands) { const cs = getComputedStyle(el); const r = el.getBoundingClientRect(); if (r.width <= 0 || r.height <= 0 || cs.display === 'inline' || cs.visibility === 'hidden' || cs.pointerEvents === 'none') continue; taps.push({ t: (el.textContent || el.tagName).trim().slice(0, 14), w: r.width, h: r.height }); }
+  const root = getComputedStyle(document.documentElement);
+  return { innerW: innerWidth, texts, taps, body: parseFloat(root.getPropertyValue('--font-body')) || null };
+})()`;
+
+interface FrameRead {
+  readonly innerW: number;
+  readonly texts: readonly { readonly t: string; readonly px: number; readonly svg: boolean }[];
+  readonly taps: readonly { readonly t: string; readonly w: number; readonly h: number }[];
+  readonly body: number | null;
+  /** on screen px per frame px: the frame is laid out larger and scaled down to its room when its content is large (FIT) */
+  readonly scale: number;
+}
+
+/** the live apps' frames, read from inside, each with the scale it is shown at */
+async function frameReads(cx: Cx): Promise<FrameRead[]> {
+  const shownFrames = await cx.tab.eval<{ offsetWidth: number; width: number }[]>(`[...document.querySelectorAll('iframe')].map((f) => ({ offsetWidth: f.offsetWidth, width: f.getBoundingClientRect().width })).filter((f) => f.width > 50)`);
+  const targets = await cx.tab.browser.send<{ targetInfos: { type: string; targetId: string }[] }>('Target.getTargets');
+  const out: FrameRead[] = [];
+  for (const target of targets.targetInfos.filter((t) => t.type === 'iframe')) {
+    const attached = await cx.tab.browser.send<{ sessionId: string }>('Target.attachToTarget', { targetId: target.targetId, flatten: true });
+    const got = await cx.tab.browser.send<{ result?: { value?: Omit<FrameRead, 'scale'> } }>('Runtime.evaluate', { expression: FRAME_READ, returnByValue: true }, attached.sessionId);
+    const value = got.result?.value;
+    if (value === undefined) continue;
+    const mine = shownFrames.find((f) => Math.abs(f.offsetWidth - value.innerW) <= 1);
+    if (mine === undefined) continue;
+    out.push({ ...value, scale: mine.width / Math.max(1, mine.offsetWidth) });
+  }
+  return out;
+}
+
+/** the stage's body size, measured off the stage's own words: the plain narration on stage (a `say` with no role word), else the choices (set at body size), else null */
+function stageBody(cx: Cx): number | null {
+  const lines = [...cx.answer.script.matchAll(/^say (\S+)((?: [^|\s=]+(?:=\S+)?)*) \|/gm)];
+  const sizeOf = (ids: readonly string[]): number | null => {
+    const sizes = ids.map((id) => shown(cx.answer).find((e) => e.id === id)?.fontPx ?? 0).filter((v) => v > 0).sort((a, b) => a - b);
+    return sizes.length === 0 ? null : (sizes[Math.floor(sizes.length / 2)] as number);
+  };
+  const plain = lines.filter((m) => !/\b(title|strong|aside|choice|label|caption|small)\b/.test(m[2] as string) && !/size=/.test(m[2] as string)).map((m) => m[1] as string);
+  const choices = lines.filter((m) => /\bchoice\b/.test(m[2] as string) && !/size=/.test(m[2] as string)).map((m) => m[1] as string);
+  return sizeOf(plain) ?? sizeOf(choices);
 }
 
 async function runCheck(cx: Cx, spec: Spec): Promise<Res> {
@@ -673,6 +864,29 @@ async function runCheck(cx: Cx, spec: Spec): Promise<Res> {
       for (const f of boxes) for (const w of shown(cx.answer)) if (inter(f, w.box) > 0.15 * Math.min(area(f), area(w.box))) bad.push(`the field "${f.label.slice(0, 20)}" is over "${w.text.slice(0, 24)}"`);
       return res(name, bad, `${boxes.length} field(s), clear of every caption`);
     }
+    case 'skills-list':
+      return skillsListed(cx, spec);
+    case 'skills-chip':
+      return skillsChip(cx, spec);
+    case 'no-file-offered': {
+      // a result is drawn, not handed back: no line names a file or a download
+      const bad = shown(cx.answer).map((e) => e.text.trim()).filter((t) => /\.(?:xlsx|docx|pptx|pdf|csv)\b|\bdownload|\battached\b|\bsaved (?:it )?(?:as|to)\b/i.test(t));
+      return res(name, bad.map((t) => `a line names a file: "${t.slice(0, 50)}"`), 'no line names a file or a download');
+    }
+    case 'brief-skill': {
+      // live only: the block of a held skill in the brief is at most `max` characters and names what was left out; or, with `none`, there is no skill text at all
+      const brief = await lastBrief(briefDataDir);
+      if (brief === null) return { check: name, verdict: 'FAIL', detail: 'no brief was found in the session log' };
+      const at = brief.indexOf('SKILL ');
+      if (spec['none'] === true) return res(name, at >= 0 ? ['the brief carries skill text with nothing held'] : [], 'no skill text in the brief');
+      if (at < 0) return { check: name, verdict: 'FAIL', detail: 'the brief has no skill block' };
+      const end = brief.indexOf('--- end of the skill ---', at);
+      const block = brief.slice(at, end < 0 ? undefined : end + 24);
+      const bad: string[] = [];
+      if (block.length > Number(spec['max'])) bad.push(`the skill block is ${block.length} characters, more than ${String(spec['max'])}`);
+      if (spec['leftOut'] === true && !/Headings left out:/.test(block)) bad.push('the cut does not name the headings left out');
+      return res(name, bad, `the skill block is ${block.length} characters${spec['leftOut'] === true ? ' and names the headings left out' : ''}`);
+    }
     case 'all-present': {
       const texts = shown(cx.answer).map((e) => e.text.trim());
       const missing = (spec['items'] as string[]).filter((re) => !texts.some((t) => new RegExp(re).test(t)));
@@ -747,6 +961,91 @@ async function runCheck(cx: Cx, spec: Spec): Promise<Res> {
       const stops = Math.max(...picks.map((c) => c.options.length), picks.length, 0);
       return stops >= Number(spec['min']) ? { check: name, verdict: 'PASS', detail: `${stops} tappable stops` } : { check: name, verdict: 'FAIL', detail: `${stops} tappable stop(s), wanted ${String(spec['min'])}: a step-by-step answer you cannot step through` };
     }
+    case 'ask-first': {
+      // a problem for a learner: the question is a thing to answer (an ask line, or a field), never a stepper that walks the working, and no answer given away in a tap
+      const script = cx.answer.script;
+      const asks = script.split('\n').filter((l) => /^ask\b/.test(l)).length;
+      const fields = (await controls(cx.tab)).filter((c) => c.control === 'input').length;
+      const walks = script.split('\n').filter((l) => /^pick\b[^|]*\bsteps\b/.test(l));
+      const bare = script.split('\n').filter((l) => /^say\b[^|]*\bchoice\b[^|]*\|\s*\W*\d+\W*$/.test(l));
+      const bad: string[] = [];
+      if (asks + fields === 0) bad.push('the question has no way to answer (no ask, no field)');
+      if (walks.length > 0) bad.push(`a stepper walks the working: ${walks[0]?.slice(0, 50)}`);
+      if (bare.length > 0) bad.push(`a choice is a bare number: ${bare[0]?.slice(0, 50)}`);
+      return res(name, bad, `${asks} ask(s), ${fields} field(s), no stepper, no number as a choice`);
+    }
+    case 'one-stepper': {
+      const steppers = (await controls(cx.tab)).filter((c) => c.control === 'pick' && c.form === 'steps');
+      return res(name, steppers.length > Number(spec['max'] ?? 1) ? [`${steppers.length} steppers on stage at rest`] : [], `${steppers.length} stepper(s) on stage`);
+    }
+    case 'starts-new-scene': {
+      const first = cx.answer.script.split('\n').find((l) => l.trim() !== '') ?? '';
+      return res(name, /^(scene|look|part|deck)\b/.test(first) ? [] : [`the answer opens with "${first.slice(0, 40)}", not a scene: it continues the last drawing`], 'a new subject opens a scene (or a top-level part)');
+    }
+    case 'last-scene-has-drawing': {
+      // a tour ends on a scene that still shows something drawn (or a control), not on words and choices alone
+      const scenes = cx.answer.script.split(/^scene\b/m).slice(1);
+      const last = scenes[scenes.length - 1] ?? '';
+      const drawn = last.split('\n').filter((l) => /^(circle|ellipse|rect|line|poly|path|arc|chart|table|flow|tree|cycle|timeline|map|slider|toggle|pick|app|pix|screen|code|button)\b/.test(l.trim()));
+      return res(name, scenes.length === 0 ? ['no scene'] : drawn.length === 0 ? ['the last scene holds words only, no drawing or control'] : [], `the last scene has ${drawn.length} drawn or control line(s)`);
+    }
+    case 'no-app': {
+      const lines = cx.answer.script.split('\n').filter((l) => /^(app|code)\b/.test(l));
+      return res(name, lines.map((l) => `a standing "no code" was broken: ${l.slice(0, 40)}`), 'no app or code block');
+    }
+    case 'steps-laid-out': {
+      // a breakdown is on stage whole: at least `min` numbered steps shown at rest, none hidden behind a stepper
+      const numbered = shown(cx.answer).filter((e) => /^\s*(?:step\s*)?\d+\s*[.):-]/i.test(e.text.trim()) || /^\s*step\s*\d+/i.test(e.text.trim()));
+      return numbered.length >= Number(spec['min'] ?? 3) ? { check: name, verdict: 'PASS', detail: `${numbered.length} numbered steps on stage at rest` } : { check: name, verdict: 'FAIL', detail: `${numbered.length} numbered step(s) on stage at rest, wanted ${String(spec['min'] ?? 3)}` };
+    }
+    case 'blank-working': {
+      // nothing the learner should work out is on stage at rest (`values`: regex of the answer and the in-between values), and one ask or field waits for the answer
+      const texts = [...shown(cx.answer).map((e) => e.text), ...(await cx.tab.eval<string[]>(`[window.__stage.elements().map((e) => String(e.text || '')).join('\\n'), document.body.innerText].join('\\n').split('\\n')`))];
+      const leaked = texts.filter((t) => new RegExp(String(spec['values'])).test(t));
+      const asks = cx.answer.script.split('\n').filter((l) => /^ask\b/.test(l)).length;
+      const fields = (await controls(cx.tab)).filter((c) => c.control === 'input' || (c.control === 'pick' && c.form !== 'steps')).length;
+      const bad = leaked.slice(0, 2).map((t) => `a worked value is on stage at rest: "${t.slice(0, 40)}"`);
+      if (asks + fields === 0) bad.push('no ask or field for the answer');
+      if (asks > 1) bad.push(`${asks} asks, wanted one`);
+      return res(name, bad, `no worked value at rest, ${asks} ask(s), ${fields} field(s)`);
+    }
+    case 'learner-native': {
+      // a problem posed to a learner is done through the language's own pieces: something to answer or move (ask, pick, slider, field), no stepper walking the answer, no live app, no number given as a choice
+      const script = cx.answer.script;
+      const asks = script.split('\n').filter((l) => /^ask\b/.test(l)).length;
+      const ctl = (await controls(cx.tab)).filter((c) => c.control === 'input' || c.control === 'slider' || c.control === 'toggle' || (c.control === 'pick' && c.form !== 'steps'));
+      const apps = script.split('\n').filter((l) => /^app\b/.test(l)).length;
+      const bad: string[] = [];
+      // a lesson page of parts ("0 of 3 done") is the language's own home for asks: the asks are written as each part is opened
+      const lessonPage = /\b\d+ of \d+ done\b/.test(await cx.tab.eval<string>(`document.body.innerText`));
+      if (asks + ctl.length === 0 && !lessonPage) bad.push('nothing to answer or move (no ask, pick, slider or field, no lesson page)');
+      if (apps > 0) bad.push('the answer is a live app');
+      const walks = script.split('\n').filter((l) => /^pick\b[^|]*\bsteps\b/.test(l));
+      if (walks.length > 0) bad.push(`a stepper walks the working: ${walks[0]?.slice(0, 50)}`);
+      const bare = script.split('\n').filter((l) => /^say\b[^|]*\bchoice\b[^|]*\|\s*\W*\d+\W*$/.test(l));
+      if (bare.length > 0) bad.push(`a choice is a bare number: ${bare[0]?.slice(0, 50)}`);
+      return res(name, bad, `${asks} ask(s), ${ctl.length} control(s), no app, no stepper`);
+    }
+    case 'app-learner': {
+      // a learner's problem as a small live app: on stage, answers to pointers and touch, shows no answer at rest, and fits the screen
+      const rows = (await cx.tab.eval<string[]>(`[...document.querySelectorAll('iframe')].map((f) => f.srcdoc || '')`)).join('\n');
+      const frames = await cx.tab.eval<{ x: number; right: number; height: number }[]>(`[...document.querySelectorAll('iframe')].map((f) => { const r = f.getBoundingClientRect(); return { x: r.left, right: r.right, height: r.height }; }).filter((r) => r.height > 50)`);
+      const bad: string[] = [];
+      if (frames.length === 0 || rows.trim() === '') return { check: name, verdict: 'FAIL', detail: 'no live app on stage' };
+      if (!/(pointerdown|touchstart|mousedown|onclick|onpointer|addEventListener\(\s*['"](?:click|pointer|touch|mouse))/.test(rows)) bad.push('the app has no pointer or touch handlers');
+      if (/(pointermove|mousemove)/.test(rows) && !/(touch-action|touchmove)/.test(rows)) bad.push('the app drags with the pointer but is not set up for touch (touch-action)');
+      const visible = rows.replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]*>/g, ' ');
+      const said = cx.answer.script.split('\n').filter((l) => /^say\b/.test(l)).map((l) => l.split('|').slice(1).join('|')).join('\n');
+      const leak = /=\s*\d|\b(?:each|every)\b[^.\n]{0,25}\bgets?\s+\d|\bthe answer is\b/i.exec(`${visible}\n${said}`);
+      if (leak !== null) bad.push(`an answer or a working shows at rest: "${leak[0]}"`);
+      if (frames.some((f) => f.x < -1 || f.right > cx.screen.width + 1)) bad.push('the app does not fit the screen width');
+      if (cx.answer.script.split('\n').some((l) => /^pick\b[^|]*\bsteps\b/.test(l))) bad.push('a stepper is on stage beside the app');
+      return res(name, bad, 'a live app with pointer or touch handlers, fitting, no answer at rest');
+    }
+    case 'is-app': {
+      const frames = await cx.tab.eval<number>(`[...document.querySelectorAll('iframe')].filter((f) => f.getBoundingClientRect().height > 50).length`);
+      return res(name, frames === 0 ? ['the first answer is not a live app'] : [], `${frames} live app(s) on stage`);
+    }
     case 'no-failed-requests': {
       const bad = [...new Set([...cx.early, ...cx.tab.failedRequests.map((f) => f.text)])];
       return res(name, bad.map((b) => `failed request ${b.slice(0, 60)}`), 'every request answered');
@@ -802,6 +1101,46 @@ async function runCheck(cx: Cx, spec: Spec): Promise<Res> {
     case 'kit-lint-clean': {
       const notes = cx.answer.mockups.flatMap((m) => m.notes).filter((n) => ['outside', 'overlap', 'lost-words'].includes(n.kind));
       return res(name, notes.map((n) => `${n.kind} ${n.id}`), `${cx.answer.mockups.length} mock-up(s), no lint notes`);
+    }
+    case 'app-type': {
+      // an app's text is the stage's own size, and every target is a finger wide, on the screen as shown (frame size times the scale the frame is shown at)
+      const reads = await frameReads(cx);
+      if (reads.length === 0) return { check: name, verdict: 'FAIL', detail: 'no live app on stage' };
+      const bodies = reads.map((r) => r.body).filter((b): b is number => b !== null);
+      const body = stageBody(cx) ?? (bodies.length === 0 ? null : (bodies[0] as number));
+      if (body === null) return { check: name, verdict: 'FAIL', detail: 'the stage body size is not known' };
+      const floor = Number(spec['min'] ?? 0.8) * body;
+      const tap = Number(spec['tap'] ?? 44);
+      const bad: string[] = [];
+      for (const r of reads) {
+        for (const t of r.texts) if (t.px * r.scale < floor - 0.5) bad.push(`"${t.t}" ${(t.px * r.scale).toFixed(1)} px (< ${floor.toFixed(1)}, a stage body of ${body.toFixed(0)})`);
+        for (const t of r.taps) if (Math.min(t.w, t.h) * r.scale < tap - 0.5) bad.push(`target "${t.t}" ${(t.w * r.scale).toFixed(0)}x${(t.h * r.scale).toFixed(0)} px (< ${tap})`);
+      }
+      const texts = reads.flatMap((r) => r.texts.map((t) => t.px * r.scale));
+      const taps = reads.flatMap((r) => r.taps.map((t) => Math.min(t.w, t.h) * r.scale));
+      return res(name, bad, `${texts.length} pieces of text, the smallest ${Math.min(...texts).toFixed(1)} px on a stage body of ${body.toFixed(0)} (${((Math.min(...texts) / body) * 100).toFixed(0)}%); ${taps.length} targets, the smallest ${taps.length === 0 ? 'none' : Math.min(...taps).toFixed(0)} px; shown at ${reads.map((r) => r.scale.toFixed(2)).join('/')}`);
+    }
+    case 'figure-type': {
+      // a figure's labels and its strip are set from the stage's body size (not from the figure's own scale), and the figure fills the room it is given
+      const figs = await cx.tab.eval<{ labelPx: number; captionPx: number; labels: number; scale: number; subject: { width: number; height: number }; stage: { width: number; height: number }; room: { width: number; height: number }; stepper: { prev: { width: number; height: number }; next: { width: number; height: number } } | null }[]>(
+        `(() => { const out = []; for (const [, v] of (window.__figures || new Map())) { const l = v.layout; out.push({ labelPx: l.labelPx, captionPx: l.chrome.px, labels: l.labels.length, scale: l.scale, subject: l.subject, stage: l.stage, room: v.room, stepper: l.chrome.stepper ? { prev: l.chrome.stepper.prev, next: l.chrome.stepper.next } : null }); } return out; })()`,
+      );
+      if (figs.length === 0) return { check: name, verdict: 'FAIL', detail: 'no figure on stage' };
+      const body = stageBody(cx);
+      if (body === null) return { check: name, verdict: 'FAIL', detail: 'the stage body size is not known' };
+      const bad: string[] = [];
+      const notes: string[] = [];
+      for (const f of figs) {
+        const labelMin = Number(spec['label'] ?? 0.7) * body;
+        const stripMin = Number(spec['strip'] ?? 0.75) * body;
+        const fill = Math.max(f.subject.width / Math.max(1, f.stage.width), f.subject.height / Math.max(1, f.stage.height));
+        if (f.labels > 0 && f.labelPx < labelMin - 0.5) bad.push(`labels ${f.labelPx} px (< ${labelMin.toFixed(1)}, a stage body of ${body.toFixed(0)})`);
+        if (f.captionPx < stripMin - 0.5) bad.push(`the strip's words ${f.captionPx} px (< ${stripMin.toFixed(1)})`);
+        if (fill < Number(spec['fill'] ?? 0.5)) bad.push(`the figure fills ${(fill * 100).toFixed(0)}% of the room it is given (the longer side of it)`);
+        if (f.stepper !== null) for (const b of [f.stepper.prev, f.stepper.next]) if (Math.min(b.width, b.height) < 44) bad.push(`a step arrow ${b.width}x${b.height} px`);
+        notes.push(`labels ${f.labelPx} px, strip ${f.captionPx} px of a ${body.toFixed(0)} px body, fills ${(fill * 100).toFixed(0)}% of its room (${Math.round(f.room.width)}x${Math.round(f.room.height)})`);
+      }
+      return res(name, bad, notes.join('; '));
     }
     case 'app-fills-stage': {
       const frames = await cx.tab.eval<{ height: number }[]>(`[...document.querySelectorAll('iframe')].map((f) => ({ height: f.getBoundingClientRect().height })).filter((r) => r.height > 50)`);
@@ -873,11 +1212,120 @@ async function act(cx: Cx, action: Action): Promise<void> {
       await sleep(1500);
       break;
     }
+    case 'skills-hold': {
+      // SK1: the way a person does it: [+], Skills, a tap on the row. The menu closes and the chip waits by the field.
+      if (!(await openSkills(tab))) return;
+      const row = await tab.call<{ x: number; y: number; w: number; h: number } | null>('rect', `.skill[data-skill="${String(action['id'])}"]`);
+      if (row === null) return;
+      await tab.tap(row.x + row.w / 2, row.y + row.h / 2);
+      await sleep(500);
+      break;
+    }
     case 'pen-ring':
       break;
     default:
   }
 }
+
+/** [+] then Skills: the view is open and its rows are loaded; false when the page has no such entry */
+async function openSkills(tab: Tab): Promise<boolean> {
+  const plus = await tab.call<{ x: number; y: number; w: number; h: number } | null>('rect', '.composer__plus');
+  if (plus === null) return false;
+  await tab.tap(plus.x + plus.w / 2, plus.y + plus.h / 2);
+  await sleep(300);
+  const entry = await tab.call<{ x: number; y: number; w: number; h: number } | null>('rect', '.composer__item[data-item="skills"]');
+  if (entry === null) return false;
+  await tab.tap(entry.x + entry.w / 2, entry.y + entry.h / 2);
+  await waitFor('the skills to be listed', 10_000, async () => ((await tab.eval<number>(`document.querySelectorAll('.skill').length`)) > 0 ? true : null)).catch(() => undefined);
+  await sleep(200);
+  return true;
+}
+
+interface SkillRow {
+  readonly id: string;
+  readonly name: string;
+  readonly hidden: boolean;
+  readonly off: boolean;
+  readonly tags: string;
+}
+const skillRows = (tab: Tab): Promise<SkillRow[]> =>
+  tab.eval<SkillRow[]>(`[...document.querySelectorAll('.skill')].map((e) => ({ id: e.dataset.skill, name: e.querySelector('.composer__label').textContent, hidden: e.hidden, off: e.classList.contains('skill--off'), tags: e.querySelector('.skill__tags').textContent }))`);
+
+/** the Skills view: each made-up skill once (the double once, a twin once), the switched-off one grey, a search narrows, the phone's list scrolls inside its view and leaves the bar clear */
+async function skillsListed(cx: Cx, spec: Spec): Promise<Res> {
+  const name = 'skills-list';
+  const bad: string[] = [];
+  if (!(await openSkills(cx.tab))) return { check: name, verdict: 'FAIL', detail: 'the [+] menu has no Skills entry' };
+  const rows = await skillRows(cx.tab);
+  const shown = rows.filter((row) => !row.hidden);
+  for (const want of (spec['names'] as string[]) ?? []) {
+    const n = shown.filter((row) => row.name === want).length;
+    if (n !== 1) bad.push(`${want} is listed ${n} times`);
+  }
+  for (const want of (spec['grey'] as string[]) ?? []) if (!shown.some((row) => row.name === want && row.off)) bad.push(`${want} is not shown grey`);
+  const noise = shown.filter((row) => !row.off && /off in Claude Code/.test(row.tags));
+  if (noise.length > 0) bad.push('a skill that is on says it is off');
+  await cx.tab.eval(`(() => { const i = document.querySelector('.skills__search'); i.focus(); i.value = ${JSON.stringify(spec['search'] ?? 'led')}; i.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+  await sleep(300);
+  const found = (await skillRows(cx.tab)).filter((row) => !row.hidden).map((row) => row.name);
+  const only = (spec['only'] as string[]) ?? [];
+  if (found.join(',') !== only.join(',')) bad.push(`searching "${String(spec['search'] ?? 'led')}" leaves ${found.join(', ') || 'nothing'}, wanted ${only.join(', ')}`);
+  await cx.tab.eval(`(() => { const i = document.querySelector('.skills__search'); i.value = ''; i.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+  await sleep(200);
+  const geo = await cx.tab.eval<{ top: number; bottom: number; barTop: number; scrolls: boolean; inside: boolean; page: boolean; vw: number; left: number; right: number }>(
+    `(() => { const m = document.querySelector('.composer__menu'); const b = m.getBoundingClientRect(); const bar = document.querySelector('.prompt__form').getBoundingClientRect(); return { top: b.top, bottom: b.bottom, barTop: bar.top, scrolls: m.scrollHeight > m.clientHeight + 1 && getComputedStyle(m).overflowY !== 'visible', inside: b.top >= 0, page: document.documentElement.scrollHeight > innerHeight + 1, vw: innerWidth, left: b.left, right: b.right }; })()`,
+  );
+  if (!geo.inside) bad.push('the list starts above the screen');
+  if (geo.bottom > geo.barTop + 1) bad.push('the list covers the bar');
+  if (geo.page) bad.push('the page scrolls');
+  if (geo.left < -1 || geo.right > geo.vw + 1) bad.push('the list runs off the side');
+  if (cx.mobile && !geo.scrolls) bad.push('the list does not scroll inside its view');
+  await cx.tab.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+  await cx.tab.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+  await sleep(200);
+  return res(name, bad, `${shown.length} skills, each once; ${((spec['grey'] as string[]) ?? []).join(', ')} grey; "${String(spec['search'] ?? 'led')}" leaves ${found.join(', ')}${cx.mobile ? '; the list scrolls inside its view and the bar is clear' : ''}`);
+}
+
+/** a tap on a row puts a chip by the field, closes the menu and leaves the field empty; the chip's x takes it away again */
+async function skillsChip(cx: Cx, spec: Spec): Promise<Res> {
+  const name = 'skills-chip';
+  const id = String(spec['id']);
+  if (!(await openSkills(cx.tab))) return { check: name, verdict: 'FAIL', detail: 'the [+] menu has no Skills entry' };
+  const row = await cx.tab.call<{ x: number; y: number; w: number; h: number } | null>('rect', `.skill[data-skill="${id}"]`);
+  if (row === null) return { check: name, verdict: 'FAIL', detail: `no row for ${id}` };
+  await cx.tab.tap(row.x + row.w / 2, row.y + row.h / 2);
+  await sleep(500);
+  const state = await cx.tab.eval<{ chips: string[]; open: boolean; focus: string; field: string; bar: boolean }>(
+    `(() => { const m = document.querySelector('.composer__menu'); const chip = document.querySelector('.skill-chip'); const bar = document.querySelector('.prompt__form').getBoundingClientRect(); const c = chip ? chip.getBoundingClientRect() : null; return { chips: [...document.querySelectorAll('.skill-chip')].map((e) => e.dataset.skill), open: !m.hidden, focus: document.activeElement?.className || '', field: document.querySelector('.prompt__input').value, bar: c !== null && c.bottom <= bar.top + 1 && c.left >= 0 && c.right <= innerWidth } })()`,
+  );
+  const bad: string[] = [];
+  if (state.chips.join(',') !== id) bad.push(`chips held: ${state.chips.join(', ') || 'none'}, wanted ${id}`);
+  if (state.open) bad.push('the menu stayed open');
+  if (state.field !== '') bad.push('the field was not left empty');
+  if (!state.bar) bad.push('the chip is not above the field inside the screen');
+  const remove = await cx.tab.call<{ x: number; y: number; w: number; h: number } | null>('rect', '.skill-chip__remove');
+  if (remove === null) bad.push('the chip has no remove button');
+  else {
+    if (remove.w < 40 || remove.h < 32) bad.push(`the chip's remove button is ${Math.round(remove.w)}x${Math.round(remove.h)} px, too small to tap`);
+    await cx.tab.tap(remove.x + remove.w / 2, remove.y + remove.h / 2);
+    await sleep(300);
+    if ((await cx.tab.eval<number>(`document.querySelectorAll('.skill-chip').length`)) !== 0) bad.push('the chip stayed after its x was tapped');
+  }
+  return res(name, bad, `a tap on ${id} holds it as a chip above the field, the menu closes, and the chip's x takes it away`);
+}
+
+/** what the session log says the brain was sent (the newest brief of the newest session); only a live run keeps one in the data dir given */
+async function lastBrief(dataDir: string): Promise<string | null> {
+  const dir = join(dataDir, 'logs');
+  if (!existsSync(dir)) return null;
+  const files = readdirSync(dir).filter((f) => f.endsWith('.jsonl')).sort();
+  const file = files[files.length - 1];
+  if (file === undefined) return null;
+  const rows = (await readFile(join(dir, file), 'utf8')).split('\n').filter((l) => l.trim() !== '').map((l) => JSON.parse(l) as Record<string, unknown>);
+  const brief = rows.filter((r) => r['type'] === 'brief' && r['form'] !== 'script' && (r['pass'] === undefined || r['pass'] === 1)).at(-1);
+  return typeof brief?.['text'] === 'string' ? brief['text'] : null;
+}
+let briefDataDir = '';
 
 /** the pen over a live mock-up part: a ring started on the pay button must draw, not press */
 async function penRing(cx: Cx): Promise<Res> {
@@ -1059,13 +1507,19 @@ async function runCell(args: Args, c: Case, screen: Args['screens'][number], url
 // ---------------------------------------------------------------------------------------------------------------------------------
 // A server of the build under test
 
+/** SK1. A test server reads the made-up skills of this repository and nothing of the owner's (`catalogue/skills`) */
+function skillEnv(): Record<string, string> {
+  const base = join(root, 'catalogue', 'skills');
+  return { SKILL_ROOTS: `user=${join(base, 'user')},synced=${join(base, 'synced')}`, SKILL_SETTINGS: join(base, 'settings.json') };
+}
+
 async function startServer(args: Args, replayFile: string, out: string): Promise<{ url: string; stop: () => Promise<void> }> {
   const data = join(out, 'server-data');
   await mkdir(data, { recursive: true });
   const live = args.mode === 'live';
   const child: ChildProcess = spawn('pnpm', ['--filter', '@conduit/server', 'start'], {
     cwd: args.build,
-    env: { ...process.env, PORT: String(args.port), DATA_DIR: live ? args.data : data, BRAIN: live ? 'claude-cli' : 'replay', ...(live ? { CLAUDE_MODEL: process.env['CLAUDE_MODEL'] ?? 'sonnet' } : {}), ...(live ? {} : { REPLAY_CASE: replayFile, REPLAY_CPS: '6000' }), IMAGE_MODEL: 'none', PICTURES: 'openverse', AGENT_PERMITS: 'auto', NODE_ENV: 'production' },
+    env: { ...process.env, PORT: String(args.port), DATA_DIR: live ? args.data : data, BRAIN: live ? 'claude-cli' : 'replay', ...(live ? { CLAUDE_MODEL: process.env['CLAUDE_MODEL'] ?? 'sonnet' } : {}), ...(live ? {} : { REPLAY_CASE: replayFile, REPLAY_CPS: '6000' }), IMAGE_MODEL: 'none', PICTURES: 'openverse', AGENT_PERMITS: 'auto', NODE_ENV: 'production', ...skillEnv() },
     stdio: 'ignore',
   });
   const url = `http://127.0.0.1:${args.port}`;
@@ -1190,7 +1644,7 @@ async function matrix(args: Args): Promise<void> {
 }
 
 async function run(args: Args): Promise<void> {
-  const cases = loadCases(args.only, args.chat);
+  const cases = loadCases(args.only, args.chat, args.mode === 'live');
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   const out = join(args.data, 'catalogue', 'runs', `${args.label}-${stamp}`);
   await mkdir(out, { recursive: true });
@@ -1207,6 +1661,7 @@ async function run(args: Args): Promise<void> {
   }
   const replayFile = join(out, 'replay-case.json');
   await writeFile(replayFile, JSON.stringify({ turns }));
+  briefDataDir = args.data;
   const server = args.mode === 'live' && args.url !== null ? { url: args.url, stop: async (): Promise<void> => undefined } : await startServer(args, replayFile, out);
   const prev = readResults(args.label);
   const outFile: ResultFile = { label: args.label, commit: gitHead(args.build), at: new Date().toISOString(), mode: args.mode, cases: {} };

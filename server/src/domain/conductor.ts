@@ -1,5 +1,5 @@
-import { API, CANVAS, DATA_LIMITS, EMPTY_STAGE, isLessonVerb, PASTE_AS_DOCUMENT_CHARS, FULL_CAPABILITIES, LANGUAGE, LEAD_WINDOW, LineNormalizer, LineReader, PRESENCE_TYPING_MS, TurnScore, buildSystemPrompt, draftFactsOf, hasLesson, usesParts, repairWorth, serializeLine, settle, splitCells, wearingAt, withoutUnknownBraces, worthALook } from '@conduit/language';
-import type { RepairWorth, TechniqueCard } from '@conduit/language';
+import { API, SKILL_HOLD, CANVAS, DATA_LIMITS, EMPTY_STAGE, isLessonVerb, PASTE_AS_DOCUMENT_CHARS, FULL_CAPABILITIES, LANGUAGE, LEAD_WINDOW, LineNormalizer, LineReader, PRESENCE_TYPING_MS, TurnScore, buildSystemPrompt, draftFactsOf, hasLesson, usesParts, repairWorth, serializeLine, settle, splitCells, wearingAt, withoutUnknownBraces, worthALook } from '@conduit/language';
+import type { RepairWorth, SkillBlockFacts, TechniqueCard } from '@conduit/language';
 import type { ActivityState, BrainChange, BrainChoice, BrainMode, CriticFinding, DocumentSummary, DocumentView, FixPolicy, NodeId, NodeStatus, OpenDocumentResponse, PromptVariant, Seen, ToolChoice } from '@conduit/language';
 import type {
   BackEvent,
@@ -75,6 +75,8 @@ import type { FixAttempt } from './review';
 import type { CanvasService } from '../canvas/api';
 import type { Briefed } from './observations';
 import type { TechniqueLibrary } from './techniques';
+import type { SkillCatalogue } from '../skills/catalogue';
+import { readSkillBlock, SKILL_CUTS } from '../skills/text';
 
 export interface ConductorDeps {
   readonly sessions: SessionStore;
@@ -93,6 +95,8 @@ export interface ConductorDeps {
   readonly variant: PromptVariant;
   /** the techniques a turn's brief may carry; answers from memory and never waits */
   readonly library: TechniqueLibrary;
+  /** SK1. The owner's skills, read only: a turn that holds one has its text read fresh and put in the brief. Absent: no skill can be held. */
+  readonly skills?: SkillCatalogue;
   /** the owner's own datasets, for a chart drawn by reference; `NO_DATASETS` unless switched on */
   readonly datasets: DatasetLibrary;
   /** look and fix: whether the brain is shown its draft, and every deadline of it */
@@ -307,6 +311,45 @@ export class Conductor {
   }
 
   /** One line of the audit trail about this turn, in the name of whoever started it. */
+  /**
+   * SK1. The skills the person held for this message, read fresh from disk and made into blocks for the brief. Reading only: nothing in a
+   * skill is run. A skill that cannot be given (off, moved, shaped like a key) is left out and the person is told in a line on the stage's
+   * status, once. The audit says that a skill was read, which, who picked it and how big; never its text.
+   */
+  private async skillsFor(s: Session, turn: ActiveTurn): Promise<SkillBlockFacts[]> {
+    const catalogue = this.deps.skills;
+    if (catalogue === undefined || turn.input.kind !== 'prompt' || (turn.input.skills?.length ?? 0) === 0) return [];
+    const { log } = this.deps;
+    await catalogue.list();
+    const wanted = [...new Set(turn.input.skills ?? [])].slice(0, SKILL_HOLD.held);
+    const limit = wanted.length > 1 ? Math.floor(SKILL_CUTS.two / wanted.length) : SKILL_CUTS.one;
+    const blocks: SkillBlockFacts[] = [];
+    for (const ref of wanted) {
+      const entry = catalogue.find(ref);
+      if (entry === null || entry.state !== 'on') {
+        const why = entry === null ? 'it is not in the list' : (entry.note ?? 'it cannot be used');
+        log.info('skill.refused', { session: s.id, turn: turn.id, why: entry === null ? 'unknown' : entry.state });
+        this.auditTurn(s, turn, { kind: 'connector', tool: 'skill', target: entry === null ? 'unknown skill' : `${entry.source}:${entry.name}`, decision: 'denied', decidedBy: 'policy', note: why });
+        this.emit(s, turn, { type: 'reading', turn: turn.id, label: `your ${entry?.name ?? 'skill'} skill`, state: 'failed', message: `not used: ${why}` });
+        continue;
+      }
+      const label = `your ${entry.name} skill (reading only)`;
+      this.emit(s, turn, { type: 'reading', turn: turn.id, label, state: 'start', message: null });
+      const read = await readSkillBlock(entry, turn.input.text, limit);
+      if (!read.ok) {
+        log.info('skill.refused', { session: s.id, turn: turn.id, why: 'unreadable' });
+        this.auditTurn(s, turn, { kind: 'connector', tool: 'skill', target: `${entry.source}:${entry.name}`, decision: 'failed', decidedBy: 'policy', note: read.why });
+        this.emit(s, turn, { type: 'reading', turn: turn.id, label: `your ${entry.name} skill`, state: 'failed', message: `not used: ${read.why}` });
+        continue;
+      }
+      this.auditTurn(s, turn, { kind: 'connector', tool: 'skill', target: `${entry.source}:${entry.name}`, decision: 'allowed', decidedBy: 'owner', note: `read for this message (reading only); ${read.block.chars} characters${read.block.left.length > 0 ? ', cut at a heading' : ''}; files ${entry.hash}; picked by the person` });
+      log.info('skill.used', { session: s.id, turn: turn.id, skill: `${entry.source}:${entry.name}`, chars: read.block.chars, cut: read.block.left.length > 0 });
+      this.emit(s, turn, { type: 'reading', turn: turn.id, label, state: 'done', message: null });
+      blocks.push({ id: read.block.id, name: read.block.name, hash: read.block.hash, text: read.block.text });
+    }
+    return blocks;
+  }
+
   private auditTurn(s: Session, turn: ActiveTurn, entry: Omit<Parameters<Audit['record']>[0], 'session' | 'turn'>): void {
     this.audit.record({ login: turn.login, ...entry, session: s.id, turn: turn.id });
   }
@@ -1290,6 +1333,8 @@ export class Conductor {
         log.debug('techniques.chosen', { session: s.id, turn: turn.id, techniques: techniques.map((card) => card.id) });
         sessionLog.write(s.id, { type: 'techniques', turn: turn.id, ids: techniques.map((card) => card.id) });
       }
+      const skillBlocks = await this.skillsFor(s, turn);
+      if (turn.abort.signal.aborted) return;
       const data: DataFacts[] = s.tables.map((table) => factsOf(table, gathered.data.has(table.id)));
       const documentNow = this.docs.viewOfSession(s.id);
       const context = {
@@ -1297,6 +1342,7 @@ export class Conductor {
         documents: s.documents.map((doc): DocumentFacts => ({ ...doc.facts, fresh: fresh.has(doc.facts.id) })),
         unread: gathered.unread,
         techniques,
+        ...(skillBlocks.length > 0 ? { skills: skillBlocks } : {}),
         ...(data.length > 0 ? { data } : {}),
         // v3. The document and where the person is in it: WS7's DOCUMENT and HERE blocks are made from these.
         ...(documentNow === null ? {} : { document: { document: documentNow.document, state: documentNow.state } }),

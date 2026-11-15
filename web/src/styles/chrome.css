@@ -1550,3 +1550,142 @@ input {
   font-size: var(--chrome-text-size-small);
 }
 .about__choice[aria-checked='true'] { border-color: var(--chrome-text); font-weight: 700; background: color-mix(in srgb, var(--chrome-text) 10%, transparent); }
+
+/* SK1. The owner's skills: a chip in the tray above the field for each one held for the next message, and the Skills view in the [+] menu. */
+.composer .prompt__skills {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3) 0 var(--space-3);
+  min-width: 0;
+}
+
+.prompt__skills[hidden] {
+  display: none;
+}
+
+.skill-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.skill-chips:empty {
+  display: none;
+}
+
+.skill-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  max-width: 100%;
+  min-height: 2.25rem;
+  padding: 0 0 0 var(--space-3);
+  background: var(--chrome-ground);
+  color: var(--chrome-text);
+  border: 1px solid var(--chrome-text);
+  border-radius: 1.125rem;
+  font-size: var(--chrome-text-size-small);
+}
+
+.skill-chip__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.skill-chip__remove {
+  display: grid;
+  place-items: center;
+  width: var(--control-height);
+  height: 2.25rem;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  border: 0;
+  border-radius: 0 1.125rem 1.125rem 0;
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.skill-chip__remove:focus-visible {
+  outline-offset: -3px;
+  background: var(--chrome-text);
+  color: var(--chrome-ground);
+}
+
+.skills__find {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: var(--space-2) var(--space-2) var(--space-1);
+  background: var(--chrome-ground);
+}
+
+.skills__search {
+  width: 100%;
+  min-height: var(--control-height);
+  padding: 0 var(--space-3);
+  box-sizing: border-box;
+  background: var(--chrome-ground);
+  color: var(--chrome-text);
+  border: 1px solid var(--chrome-line);
+  border-radius: 0.625rem;
+  font: inherit;
+  font-size: 1rem;
+}
+
+.skills__note {
+  margin: 0;
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--chrome-text-size-small);
+  color: var(--chrome-text-quiet);
+  overflow-wrap: anywhere;
+}
+
+.skills__note:empty {
+  display: none;
+}
+
+.skills__note--tray {
+  padding: 0;
+}
+
+.skills__list {
+  display: grid;
+  padding: var(--space-1);
+}
+
+.skill {
+  gap: 2px;
+}
+
+.skill__brief {
+  overflow-wrap: anywhere;
+}
+
+.skill__tags {
+  font-style: normal;
+  opacity: 0.85;
+}
+
+.skill--off .composer__label,
+.skill--off .skill__brief {
+  color: var(--chrome-text-quiet);
+}
+
+.skill--apart {
+  padding-left: var(--space-4, 1.5rem);
+}
+
+.skills__apart[aria-expanded='true'] .composer__label::after {
+  content: ' \2304';
+}
+
+.skills__apart[aria-expanded='false'] .composer__label::after {
+  content: ' \203A';
+}

@@ -1,0 +1,39 @@
+{
+ "id": "skills-table-not-file",
+ "title": "a held ledger skill answers with a table on stage, and no line names a file or a download",
+ "family": "skills",
+ "owner": "skills",
+ "kind": "ui",
+ "found": "2026-11-15",
+ "note": "The skill was written for a terminal that saves files; the stage draws the rows and says nothing of a file.",
+ "own": [
+  "answer-on-stage",
+  "no-file-offered"
+ ],
+ "turns": [
+  {
+   "say": "a budget for a weekend away, four rows",
+   "source": {
+    "scenario": "skills",
+    "index": 2
+   },
+   "pre": [
+    {
+     "a": "skills-hold",
+     "id": "user:ledger"
+    }
+   ],
+   "check": [
+    {
+     "k": "all-present",
+     "items": [
+      "LEDGER-APPLIED-9M1"
+     ]
+    },
+    {
+     "k": "no-file-offered"
+    }
+   ]
+  }
+ ]
+}
