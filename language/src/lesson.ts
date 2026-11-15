@@ -1111,6 +1111,7 @@ export class LessonBook {
     const accepted = line.is.slice(0, LESSON_LIMITS.accepted);
     const open = line.check === 'any' || line.check === 'done';
     if (accepted.length === 0 && !open) return this.refuse('bad-ask', 'an ask needs is=<answer>');
+    if (!open && accepted.every((answer) => answer === '?' || answer === '')) return this.refuse('bad-ask', 'an ask needs the answer it accepts; `?` is a gap, not an answer (write it again once the answer is known)');
     const pick = line.pick ?? null;
     if (open && line.check === 'done' && pick !== null) return this.refuse('bad-ask', 'a done tick has no choices; use check=any pick=… for a choice');
     if (pick !== null && !open) {
