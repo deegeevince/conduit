@@ -1,0 +1,30 @@
+{
+ "id": "dashboard-team-season",
+ "title": "a dashboard is a kit page: three or more headline stat cards, two or more panels, no overlap",
+ "family": "dashboard-density",
+ "owner": "prompt",
+ "kind": "draw",
+ "found": "2026-11-15",
+ "note": "Asked for a dashboard, the brain drew one or two stage charts and little else; the mock-up kit gives a readable page with headline numbers and panels (PP0).",
+ "own": [
+  "dashboard-shape"
+ ],
+ "turns": [
+  {
+   "say": "a season dashboard for a football team",
+   "source": {
+    "log": "20261115-154907-c3",
+    "turns": [
+     "t12"
+    ]
+   },
+   "check": [
+    {
+     "k": "dashboard-shape",
+     "stats": 3,
+     "panels": 2
+    }
+   ]
+  }
+ ]
+}

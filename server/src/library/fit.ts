@@ -20,7 +20,7 @@ export type Expectation =
   /** no claim either way: the prompt is not counted */
   | { readonly kind: 'open' };
 
-const CHARTS = ['chart-candles', 'chart-growth-indexed', 'chart-numbers', 'tile-spark'] as const;
+const CHARTS = ['chart-candles', 'chart-growth-indexed', 'chart-numbers', 'screen-dashboard'] as const;
 
 const BY_STRUCTURE: Readonly<Record<string, readonly string[]>> = {
   flow: ['flow-decision', 'flow-process'],

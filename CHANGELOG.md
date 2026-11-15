@@ -2,6 +2,10 @@
 
 Newest first. Each item is something the brain can show live when asked "showcase what's new": draw it, don't describe it. The server reads this file.
 
+## Charts you can read, pages that look like pages (live)
+- Every bar in a chart has its label under it (Q1, Q2...), bars have gaps, and a chart's title, ticks and legend are set at the stage's own text size.
+- A real web page you ask for keeps its own type and layout, like a real site; little apps keep the stage-size text.
+
 ## Readable apps, laid-out answers, skills (live)
 - Live apps set their text and buttons at the stage's own size, never shrink to half for nothing, and their frame grows to fit what they hold, so no button is cut off.
 - Figure labels and step captions are set from the stage's text size; a label sits on its own part's row; a flowchart's lines never run through another box's words.
