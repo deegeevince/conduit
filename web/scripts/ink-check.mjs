@@ -21,7 +21,7 @@ const opt = (name, fallback) => {
   return at >= 0 ? args[at + 1] : fallback;
 };
 const URL_BASE = opt('url', 'http://127.0.0.1:4911');
-const OUT = opt('out', '/tmp/conduit/ink');
+const OUT = opt('out', join(tmpdir(), 'conduit-ink'));
 const VIEW = opt('viewport', 'ipad');
 const SHEET = opt('sheet', '');
 const WAIT = Number(opt('wait', '150'));
