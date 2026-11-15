@@ -486,6 +486,33 @@ function labelsSide(cx: Cx): Res {
       if (nearest.id !== part && dist(nearest, l) + 4 < dist(own, l)) bad.push(`"${l.text.slice(0, 18)}" is nearer ${nearest.id} than its own ${part}`);
     }
   }
+  // a label reads as naming the part it is level with: never level with another labelled part (and not with its own) while a place level with its own part was free
+  const boxes = cx.answer.live.filter((e) => e.phase === 'on' && area(e.box) > 0 && area(e.box) < 0.4 * cx.screen.width * cx.screen.height);
+  const overlapLen = (a0: number, a1: number, b0: number, b1: number): number => Math.max(0, Math.min(a1, b1) - Math.max(a0, b0));
+  const levelWith = (l: LiveElement['box'], p: LiveElement['box']): boolean => {
+    const row = overlapLen(l.y, l.y + l.height, p.y, p.y + p.height) >= 0.5 * l.height && overlapLen(l.x, l.x + l.width, p.x, p.x + p.width) === 0;
+    const col = overlapLen(l.x, l.x + l.width, p.x, p.x + p.width) >= 0.5 * Math.min(l.width, p.width) && overlapLen(l.y, l.y + l.height, p.y, p.y + p.height) === 0;
+    return row || col;
+  };
+  for (const { label, part } of anchors) {
+    const l = by(label);
+    const own = by(part);
+    if (l === undefined || own === undefined || levelWith(l.box, own.box) || inter(l.box, own.box) > 0) continue;
+    const other = parts.find((p) => p.id !== part && levelWith(l.box, p.box) && dist(p, l) <= dist(own, l));
+    if (other === undefined) continue;
+    const w = l.box.width;
+    const h = l.box.height;
+    const gap = 4;
+    const o = own.box;
+    const places = [
+      { x: o.x + o.width + gap, y: o.y + o.height / 2 - h / 2 },
+      { x: o.x - gap - w, y: o.y + o.height / 2 - h / 2 },
+      { x: o.x + o.width / 2 - w / 2, y: o.y - gap - h },
+      { x: o.x + o.width / 2 - w / 2, y: o.y + o.height + gap },
+    ].map((q) => ({ ...q, width: w, height: h }));
+    const free = places.find((q) => q.x >= 0 && q.y >= 0 && q.x + w <= cx.screen.width && q.y + h <= cx.screen.height && !boxes.some((e) => e.id !== label && e.id !== part && inter(q, e.box) > 0));
+    if (free !== undefined) bad.push(`"${l.text.slice(0, 18)}" is level with ${other.id} while its own row at ${part} was free`);
+  }
   return res('labels-side', bad, `${anchors.length} labels, ${led.size} by their leaders, the rest each nearest its own part`);
 }
 

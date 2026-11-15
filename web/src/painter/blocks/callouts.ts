@@ -6,6 +6,13 @@
 // of the label to a point on the part's own shape (never another part), chosen
 // so it runs through as little of the drawing as it can.
 //
+// A label reads as naming the part it is level with, along its reading
+// direction (across a row for a label beside the drawing, down a column for one
+// above or below it). A placement whose nearest labelled part along that line
+// is another part than its own costs as much as a leader crossing, so a label
+// goes to its own part's row (a short leader, beside the bar's end) before it
+// goes to a column where it would sit level with a neighbour.
+//
 // When the room beside the drawing is too narrow for the words, the type is
 // made smaller, down to a floor, and then the labels stack on the two sides
 // close to the drawing's outline (clear of every stroke and fill, though inside
@@ -31,6 +38,10 @@ interface Part {
   readonly samples: readonly Point[];
   /** the point the side is chosen by: the middle of a closed shape, the middle along an open one */
   readonly anchor: Point;
+  /** the box of its shape */
+  readonly bounds: Box;
+  /** the edges a line of sight meets (a point is a small square) */
+  readonly edges: readonly [Point, Point][];
 }
 
 interface Solved {
@@ -41,6 +52,8 @@ interface Solved {
   fatal: number;
   /** leaders that cross one another or another labelled part */
   crossings: number;
+  /** labels level with another labelled part rather than their own */
+  misreads: number;
   overlap: boolean[];
   crossed: boolean[];
 }
@@ -131,7 +144,9 @@ export function layoutCallouts(input: CalloutInput): CalloutLayout {
       pts = [{ x: t.x, y: t.y }, { x: t.x + t.width, y: t.y }, { x: t.x + t.width, y: t.y + t.height }, { x: t.x, y: t.y + t.height }];
       closed = true;
     } else {
-      return { pts: [t], closed: false, filled: false, samples: [t], anchor: t };
+      const r = Math.max(2, Math.max(1, input.look.stroke) * 2);
+      const sq: Point[] = [{ x: t.x - r, y: t.y - r }, { x: t.x + r, y: t.y - r }, { x: t.x + r, y: t.y + r }, { x: t.x - r, y: t.y + r }];
+      return { pts: [t], closed: false, filled: false, samples: [t], anchor: t, bounds: boundsOf(sq), edges: edgesOf(sq, true) };
     }
     const total = lengthAlong(pts, closed);
     const count = Math.max(8, SAMPLES);
@@ -141,7 +156,7 @@ export function layoutCallouts(input: CalloutInput): CalloutLayout {
     if (pts.length <= 8) samples.push(...pts);
     const b = boundsOf(pts);
     const anchor = closed ? centreOf(b) : pointAt(pts, false, total / 2);
-    return { pts, closed, filled, samples, anchor };
+    return { pts, closed, filled, samples, anchor, bounds: b, edges: edgesOf(pts, closed) };
   });
 
   // Ink: what a label must not sit on ----------------------------------------
@@ -278,7 +293,62 @@ export function layoutCallouts(input: CalloutInput): CalloutLayout {
   const nearEdge = (b: Box, side: Side): Point =>
     side === 'left' ? { x: right(b), y: b.y + b.height / 2 } : side === 'right' ? { x: b.x, y: b.y + b.height / 2 } : side === 'above' ? { x: b.x + b.width / 2, y: bottom(b) } : { x: b.x + b.width / 2, y: b.y };
 
+  // Reading ------------------------------------------------------------------------
+  /** how far along a horizontal or vertical line of sight from `from`, in one direction, a part's edges are first met (Infinity: never) */
+  const sightTo = (j: number, from: Point, horizontal: boolean, dir: number): number => {
+    let best = Infinity;
+    for (const [a, e] of (parts[j] as Part).edges) {
+      const u0 = horizontal ? a.y : a.x;
+      const u1 = horizontal ? e.y : e.x;
+      const u = horizontal ? from.y : from.x;
+      if ((u0 - u) * (u1 - u) > 0) continue;
+      const v0 = horizontal ? a.x : a.y;
+      const v1 = horizontal ? e.x : e.y;
+      const hits = u0 === u1 ? [v0, v1] : [v0 + ((v1 - v0) * (u - u0)) / (u1 - u0)];
+      for (const v of hits) {
+        const t = (v - (horizontal ? from.x : from.y)) * dir;
+        if (t >= 0 && t < best) best = t;
+      }
+    }
+    return best;
+  };
+  const nestedIn = (inner: number, outer: number): boolean => {
+    const a = (parts[inner] as Part).bounds;
+    const b = (parts[outer] as Part).bounds;
+    const c = centreOf(a);
+    return (b.x <= a.x + 1 && b.y <= a.y + 1 && right(b) >= right(a) - 1 && bottom(b) >= bottom(a) - 1) || (c.x >= b.x && c.x <= right(b) && c.y >= b.y && c.y <= bottom(b));
+  };
+  /** whether a label at `b` reads as naming another labelled part: along its reading line (across for a label beside the drawing, down for one above or below), the nearest labelled part, either way, is not its own */
+  const misreads = (i: number, b: Box, side: Side | 'free'): boolean => {
+    const c = centreOf(b);
+    let horizontal: boolean;
+    if (side === 'left' || side === 'right') horizontal = true;
+    else if (side === 'above' || side === 'below') horizontal = false;
+    else {
+      const pb = (parts[i] as Part).bounds;
+      horizontal = Math.max(0, pb.x - right(b), b.x - right(pb)) >= Math.max(0, pb.y - bottom(b), b.y - bottom(pb));
+    }
+    let own = Infinity;
+    let other = Infinity;
+    // the whole of the label looks along the line, not only its middle: a label under a short bar's end is under it
+    const span = horizontal ? b.height : b.width;
+    for (const f of [-0.45, -0.225, 0, 0.225, 0.45]) {
+      const from = horizontal ? { x: c.x, y: c.y + f * span } : { x: c.x + f * span, y: c.y };
+      for (const dir of [-1, 1]) {
+        for (let j = 0; j < n; j += 1) {
+          if (j !== i && nestedIn(i, j)) continue;
+          const t = sightTo(j, from, horizontal, dir);
+          if (j === i) own = Math.min(own, t);
+          else other = Math.min(other, t);
+        }
+      }
+    }
+    return other < Infinity && other < own + 0.25 * body;
+  };
+
   // One placement ----------------------------------------------------------------
+  /** whether a label that reads as another part's costs (the second look, once the first has placed the labels); off, the placement is as it was before this */
+  let reading = false;
   const solve = (s: number, mode: Mode, g: number, assign: (Side | 'free')[], orders: Map<Side, number[]>): Solved => {
     const boxes: Box[] = new Array<Box>(n);
     const dims = labels.map((l) => ({ w: l.size.width * s, h: l.size.height * s }));
@@ -356,23 +426,50 @@ export function layoutCallouts(input: CalloutInput): CalloutLayout {
       let bestB: Box | null = null;
       let bestC = Infinity;
       const midX = fig.x + fig.width / 2;
-      for (let k = 1; k <= 10 && bestC > 0; k += 1) {
-        const d = k * 0.9 * body;
-        const cands = [box(t.x + d, t.y - h / 2, w, h), box(t.x - d - w, t.y - h / 2, w, h), box(t.x - w / 2, t.y - d - h, w, h), box(t.x - w / 2, t.y + d, w, h), box(t.x + d, t.y - d - h, w, h), box(t.x - d - w, t.y - d - h, w, h), box(t.x + d, t.y + d, w, h), box(t.x - d - w, t.y + d, w, h)];
-        for (const b of cands) {
-          let c = 0;
-          const g2 = inflate(b, 2);
-          if (!contains(room, b, 0.5)) c += 5;
-          for (const o of input.obstacles) if (overlaps(g2, o)) c += 2;
-          if (inkHits(b)) c += 2;
-          boxes.forEach((p, j) => {
-            if (j !== i && p && overlaps(g2, p)) c += 2;
-          });
-          // on the side of the drawing its part is on
-          if ((t.x - midX) * (centreOf(b).x - midX) < 0 && Math.abs(t.x - midX) > fig.width * 0.1) c += 1;
-          if (c < bestC) {
-            bestC = c;
-            bestB = b;
+      const pb = (parts[i] as Part).bounds;
+      const pc = centreOf(pb);
+      if (reading) {
+        for (let k = 1; k <= 20 && bestC > 0; k += 1) {
+          const d = Math.max(0.25 * body, stroke * 2 + 3) + (k - 1) * 0.3 * body;
+          // on the part's own row first (beside its end), then its own column (above or below it), then the corners
+          const cands = [box(right(pb) + d, pc.y - h / 2, w, h), box(pb.x - d - w, pc.y - h / 2, w, h), box(pc.x - w / 2, pb.y - d - h, w, h), box(pc.x - w / 2, bottom(pb) + d, w, h), box(right(pb) + d, pb.y - d - h, w, h), box(pb.x - d - w, pb.y - d - h, w, h), box(right(pb) + d, bottom(pb) + d, w, h), box(pb.x - d - w, bottom(pb) + d, w, h)];
+          for (const [ci, b] of cands.entries()) {
+            let c = 0;
+            const g2 = inflate(b, 2);
+            if (!contains(room, b, 0.5)) c += 5;
+            for (const o of input.obstacles) if (overlaps(g2, o)) c += 2;
+            if (inkHits(b)) c += 2;
+            boxes.forEach((p, j) => {
+              if (j !== i && p && overlaps(g2, p)) c += 2;
+            });
+            if (misreads(i, b, 'free')) c += 3;
+            // a corner is on the side of the drawing its part is on
+            if (ci >= 4 && (t.x - midX) * (centreOf(b).x - midX) < 0 && Math.abs(t.x - midX) > fig.width * 0.1) c += 1;
+            if (c < bestC) {
+              bestC = c;
+              bestB = b;
+            }
+          }
+        }
+      } else {
+        for (let k = 1; k <= 10 && bestC > 0; k += 1) {
+          const d = k * 0.9 * body;
+          const cands = [box(t.x + d, t.y - h / 2, w, h), box(t.x - d - w, t.y - h / 2, w, h), box(t.x - w / 2, t.y - d - h, w, h), box(t.x - w / 2, t.y + d, w, h), box(t.x + d, t.y - d - h, w, h), box(t.x - d - w, t.y - d - h, w, h), box(t.x + d, t.y + d, w, h), box(t.x - d - w, t.y + d, w, h)];
+          for (const b of cands) {
+            let c = 0;
+            const g2 = inflate(b, 2);
+            if (!contains(room, b, 0.5)) c += 5;
+            for (const o of input.obstacles) if (overlaps(g2, o)) c += 2;
+            if (inkHits(b)) c += 2;
+            boxes.forEach((p, j) => {
+              if (j !== i && p && overlaps(g2, p)) c += 2;
+            });
+            // on the side of the drawing its part is on
+            if ((t.x - midX) * (centreOf(b).x - midX) < 0 && Math.abs(t.x - midX) > fig.width * 0.1) c += 1;
+            if (c < bestC) {
+              bestC = c;
+              bestB = b;
+            }
           }
         }
       }
@@ -399,6 +496,7 @@ export function layoutCallouts(input: CalloutInput): CalloutLayout {
     let cost = 0;
     let fatal = 0;
     let crossings = 0;
+    let misread = 0;
     const overlap = new Array<boolean>(n).fill(false);
     const crossed = new Array<boolean>(n).fill(false);
     const bad = (i: number, amount = 1000): void => {
@@ -435,6 +533,10 @@ export function layoutCallouts(input: CalloutInput): CalloutLayout {
       const ax = (parts[i] as Part).anchor.x;
       const lx = centreOf(bi).x;
       if ((ax - midX) * (lx - midX) < 0 && Math.abs(ax - midX) > fig.width * 0.1) cost += 300;
+      if (misreads(i, bi, assign[i] as Side | 'free')) {
+        if (reading) cost += 500;
+        misread += 1;
+      }
       const landed = (landedCost[i] as number) - (li.length > 2 ? 15 : 0);
       if (landed >= 250) {
         crossed[i] = true;
@@ -442,7 +544,7 @@ export function layoutCallouts(input: CalloutInput): CalloutLayout {
       }
       cost += landed;
     }
-    return { boxes, leaders, cost, fatal, crossings, overlap, crossed };
+    return { boxes, leaders, cost, fatal, crossings, misreads: misread, overlap, crossed };
   };
 
   const worseSolved = (a: Solved, b: Solved): boolean => a.fatal > b.fatal || (a.fatal === b.fatal && (a.crossings > b.crossings || (a.crossings === b.crossings && a.cost > b.cost)));
@@ -584,6 +686,7 @@ export function layoutCallouts(input: CalloutInput): CalloutLayout {
   for (const step of [0.9, 0.8, 0.7, 0.6, 0.5]) if (step > floor + 1e-6) scales.push(step);
   if (floor < 1 - 1e-6) scales.push(floor);
   let chosen: Plan | null = null;
+  let chosenTier: { mode: Mode; g: number } | null = null;
   const tiers: { mode: Mode; g: number }[] = [
     { mode: 'outer', g: gap },
     { mode: 'outer', g: 0.45 * body },
@@ -592,9 +695,20 @@ export function layoutCallouts(input: CalloutInput): CalloutLayout {
   outerLoop: for (const tier of tiers) {
     for (const s of scales) {
       const plan = optimise(s, tier.mode, tier.g);
-      if (chosen === null || worseSolved(chosen.solved, plan.solved)) chosen = plan;
+      if (chosen === null || worseSolved(chosen.solved, plan.solved)) {
+        chosen = plan;
+        chosenTier = tier;
+      }
       if (plan.solved.fatal === 0 && plan.solved.crossings === 0) break outerLoop;
     }
+  }
+  // A second look at the plan: where a label sits level with a part that is not its own, place it again with that costing, and keep that only if nothing else is worse (the same type size, no more collisions or crossings)
+  if ((chosen as Plan).solved.misreads > 0 && chosenTier !== null) {
+    const first = chosen as Plan;
+    reading = true;
+    const again = optimise(first.scale, (chosenTier as { mode: Mode; g: number }).mode, (chosenTier as { mode: Mode; g: number }).g);
+    reading = false;
+    if (again.solved.fatal <= first.solved.fatal && again.solved.crossings <= first.solved.crossings && again.solved.misreads < first.solved.misreads) chosen = again;
   }
   const best = (chosen as Plan).solved;
   const scale = (chosen as Plan).scale;
