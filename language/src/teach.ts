@@ -77,8 +77,42 @@ export function documentChapter(): string {
   ].join('\n');
 }
 
+// ---------------------------------------------------------------------------------------------------------------------------------
+// the ask on the stage (HI1)
+// ---------------------------------------------------------------------------------------------------------------------------------
+
+/** Whether a technique card writes an ask that stands on the stage: its example has an `ask` line and no `part`. */
+export function usesStageAsk(cards: readonly TechniqueCard[] | undefined): boolean {
+  return (cards ?? []).some((card) => card.example.some((line) => /^\s*ask\s/.test(line)) && !card.example.some((line) => /^\s*part\s/.test(line)));
+}
+
+/** Whether this turn carries the ASK chapter: an ask stands on the stage, or a card the library chose writes one. Never matched on the user's words. */
+export function carriesAsk(context: Pick<TurnContext, 'techniques'>, onStage: boolean): boolean {
+  return onStage || usesStageAsk(context.techniques);
+}
+
+/**
+ * The ASK chapter: something the person works out or chooses, set on the stage, checked on a press. Neutral: it says what the lines mean and what
+ * holds, and nothing about a subject, a level or whom it is for (the technique card says that). The forms of `ask` and `hint` are the DOCUMENT
+ * chapter's when it is carried too, and are printed once.
+ */
+export function askChapter(withDocument: boolean): string {
+  return [
+    'ASK ON THE STAGE (for the person to work out or choose, set in the picture and checked on their press; never an app): an `ask` with no `part` open, then its `hint`s.',
+    withDocument ? '' : 'FORMS: `ask <id> is=<a>,<b> | words with one __ where the answer goes` (typed); `… pick=<x>,<y> | …` (large choices); `ask <id> check=any pick=<x>,<y> | …` (their own choice); `send=yes|no`; `hint | words` (behind a tap).',
+    '- Asks open in order, each when the one before is right or given up: write the whole breakdown at once, after a `scene stack` and the words that set the question.',
+    '- The key is `is=` (every accepted spelling) and nowhere else: not in a `say`, a hint, a title or another ask\'s words. A line that shows it is refused.',
+    '- A hint asks back or says what to try, never the step that gives the answer.',
+    '- You hear of their tries on your next turn, and at once when the last ask is done (`send=no` waits, `send=yes` tells you now).',
+  ]
+    .filter((line) => line !== '')
+    .join('\n');
+}
+
 /** The chapter, built once: it is a function of the tables only. */
 export const DOCUMENT_CHAPTER: string = documentChapter();
+export const ASK_CHAPTER: string = askChapter(false);
+export const ASK_CHAPTER_WITH_DOCUMENT: string = askChapter(true);
 
 // ---------------------------------------------------------------------------------------------------------------------------------
 // the DOCUMENT and HERE blocks

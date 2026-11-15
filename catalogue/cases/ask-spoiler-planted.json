@@ -31,6 +31,12 @@
      "k": "asks-stand",
      "min": 2
     }
+   ],
+   "liveDo": [
+    {
+     "a": "ask-flow",
+     "id": "auto"
+    }
    ]
   }
  ]

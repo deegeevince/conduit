@@ -51,6 +51,21 @@
      "k": "asks-stand",
      "min": 3
     }
+   ],
+   "liveDo": [
+    {
+     "a": "ask-flow",
+     "id": "auto"
+    }
+   ],
+   "liveCheck": [
+    {
+     "k": "no-app"
+    },
+    {
+     "k": "asks-stand",
+     "min": 1
+    }
    ]
   }
  ]

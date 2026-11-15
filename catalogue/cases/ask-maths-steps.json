@@ -20,6 +20,12 @@
     {
      "a": "ask-flow",
      "id": "s1",
+     "tries": [],
+     "keyboard": 320
+    },
+    {
+     "a": "ask-flow",
+     "id": "s1",
      "tries": [
       "12",
       "15"
@@ -55,6 +61,21 @@
     {
      "k": "asks-stand",
      "min": 3
+    }
+   ],
+   "liveDo": [
+    {
+     "a": "ask-flow",
+     "id": "auto"
+    }
+   ],
+   "liveCheck": [
+    {
+     "k": "no-app"
+    },
+    {
+     "k": "asks-stand",
+     "min": 1
     }
    ]
   }
