@@ -13,6 +13,7 @@ import { CanvasService } from './canvas/api';
 import { EnvError, loadEnv, processEnvironment, withheldCredentialNames } from './env';
 import type { Env } from './env';
 import { createApp } from './http/app';
+import { createSkillCatalogue } from './skills/catalogue';
 import { createImageModel } from './images/registry';
 import { NO_UPLOADS } from './domain/uploads';
 import { createUploadStore } from './uploads/store';
@@ -124,7 +125,11 @@ function boot(env: Env): void {
   // v3. The documents conversations make, and the catalogue of them in the data folder (an index over the session logs, rebuilt from them when it is behind).
   const docAssets = createDocumentAssets({ dir: env.data.documents, log: log.child({ part: 'documents' }) });
   const documents = createDocuments({ catalogue: createCatalogue({ dir: env.data.documents, logs: env.logDir, log: log.child({ part: 'documents' }), now }), log: log.child({ part: 'documents' }), now });
+  // SK1. The owner's skills, read only; the list is built in the background and a turn never waits for it unless it holds a skill.
+  const skills = createSkillCatalogue(env.skills, log.child({ part: 'skills' }), now);
+  skills.warm();
   const conductor = new Conductor({
+    skills,
     sessions,
     canvas,
     canvasTools: canvasOn,
@@ -173,7 +178,7 @@ function boot(env: Env): void {
   });
   const withheld = withheldCredentialNames();
   if (withheld.length > 0) log.info('env.credentials_withheld', { names: withheld, note: 'no child process is given these; every model call is on the owner\'s login' });
-  const app = createApp({ env, log: log.child({ part: 'http' }), conductor, canvas, relayHub, audit, kill, usage, assets, docAssets, pictures, uploads, voice, status, news });
+  const app = createApp({ env, log: log.child({ part: 'http' }), conductor, canvas, relayHub, audit, kill, usage, assets, docAssets, pictures, uploads, voice, status, news, skills });
 
   const server = serve({ fetch: app.fetch, hostname: env.host, port: env.port }, (info) => {
     setImmediate(() => log.info('engine.warm', { ms: Math.round(warmEngine()), version: ENGINE_VERSION }));

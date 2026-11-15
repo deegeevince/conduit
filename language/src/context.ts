@@ -140,6 +140,15 @@ export interface UnreadFacts {
 }
 
 /** Everything a brain is told at the start of a turn. */
+/** SK1. A skill the person picked, already read, cut and put under its lines by the server; the brief carries `text` as it is. */
+export interface SkillBlockFacts {
+  readonly id: string;
+  readonly name: string;
+  /** changes when the skill's files do: a skill the process has already read is not sent again until it changes */
+  readonly hash: string;
+  readonly text: string;
+}
+
 export interface TurnContext {
   readonly screen: ScreenFacts;
   readonly capabilities: Capabilities;
@@ -157,6 +166,8 @@ export interface TurnContext {
   readonly unread?: readonly UnreadFacts[];
   /** the few techniques that fit this turn's message, best first; absent or empty means none fitted, or the library had nothing */
   readonly techniques?: readonly TechniqueCard[];
+  /** SK1. The skills the person held for this message, as blocks the server made (the lines that say draw it, and the text); absent or empty: none */
+  readonly skills?: readonly SkillBlockFacts[];
   /** tables a chart can draw by reference; absent means none */
   readonly data?: readonly DataFacts[];
   /**

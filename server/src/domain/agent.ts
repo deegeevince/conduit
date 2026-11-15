@@ -320,6 +320,11 @@ const SECRET_SHAPES: readonly RegExp[] = [
   /\b[A-Fa-f0-9]{40,}\b/g,
 ];
 
+/** Whether the text holds anything shaped like a credential (a key, a token, a signed header): a file that does is not handed to the brain. */
+export function hasSecretShape(text: string): boolean {
+  return SECRET_SHAPES.some((shape) => new RegExp(shape.source, shape.flags.replace('g', '')).test(text));
+}
+
 /**
  * A few words about a tool call that are safe to show, log and send: anything shaped like a credential is replaced by `[hidden]`, and
  * the whole is cut to `max` characters. Used on every summary before it leaves the brain adapter. It is a net under the rule, not

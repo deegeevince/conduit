@@ -63,31 +63,46 @@ let app: StageApp | null = null;
 let picker: Picker | null = null;
 let stageInk: StageInk | null = null;
 const promptBar = mountPromptBar(bar, {
-  onSubmit: (text, photos, held, voice) => {
+  onSubmit: (text, photos, held, voice, skills) => {
     // The field is cleared at once so Enter feels immediate; if the turn is not accepted the words (and photos) come back.
     if (app === null) {
-      promptBar.restore(text, held);
+      promptBar.restore(text, held, skills);
       return false;
     }
     if (isCommand(text)) {
-      void runCommand(app, text, (choice) => picker?.show(choice));
+      const mounted = app;
+      // SK1. `/skill <name> words` holds the skill as a chip and sends the words with it, as the chip and Send would
+      void runCommand(app, text, (choice) => picker?.show(choice), {
+        hold: (skill) => (promptBar.skills === null ? 'Skills are not available here.' : promptBar.skills.hold(skill)),
+        send: async (words) => {
+          const going = [...(promptBar.skills?.held() ?? [])];
+          promptBar.skills?.clear();
+          try {
+            await mounted.prompt(words, undefined, undefined, undefined, undefined, going.map((skill) => skill.id));
+          } catch (cause) {
+            promptBar.restore(words, undefined, going);
+            throw cause;
+          }
+        },
+      });
       return false;
     }
+    const going = skills.map((skill) => skill.id);
     const drawn = stageInk;
     if (drawn !== null && drawn.pending()) {
       // what was drawn on the stage goes up with these words: its picture is kept first, then one turn carries words, photos and marks
       const mounted = app;
       void (async () => {
         const marks = await drawn.take();
-        await mounted.prompt(text === '' ? DRAW_WORDS : text, photos, marks ?? undefined, voice, sourcesOf(held));
+        await mounted.prompt(text === '' ? DRAW_WORDS : text, photos, marks ?? undefined, voice, sourcesOf(held), going);
         drawn.sent();
       })().catch((cause: unknown) => {
-        promptBar.restore(text, held);
+        promptBar.restore(text, held, skills);
         mounted.announce(cause instanceof Error ? cause.message : 'The drawing could not be sent.');
       });
       return true;
     }
-    void app.prompt(text, photos, undefined, voice, sourcesOf(held)).catch(() => promptBar.restore(text, held));
+    void app.prompt(text, photos, undefined, voice, sourcesOf(held), going).catch(() => promptBar.restore(text, held, skills));
     return true;
   },
   onStop: () => app?.interrupt(),
@@ -100,6 +115,13 @@ const promptBar = mountPromptBar(bar, {
       return (await app.link.uploadPhoto(photo)).id;
     },
     urlOf: (id) => app?.link.photoUrl(id) ?? null,
+  },
+  // SK1. The owner's skills, listed read only by the server; the page holds names and ids, never a skill's text.
+  skills: {
+    list: async (refresh) => {
+      if (app === null) throw new Error('The stage is still starting. Try again in a moment.');
+      return (await app.link.skills(refresh)).skills;
+    },
   },
   // A voice note is recorded in the page and read on the owner's own Mac (Apple's on-device recogniser); only its words come back.
   voice: {

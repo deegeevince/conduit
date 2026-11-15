@@ -1,5 +1,7 @@
 // The only module that reads process.env. Everything else is handed an `Env`.
 
+import { skillSettingsFrom } from './skills/catalogue';
+import type { SkillSettings } from './skills/catalogue';
 import { existsSync } from 'node:fs';
 import { resolve as resolvePath } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -116,6 +118,8 @@ export interface Env {
   readonly changelogFile: string;
   /** v2.1. Absolute path of the folder, outside the repository, that holds the held-out battery (`BATTERY_SEALED_DIR`); null: there is none and nothing may be called held out */
   readonly sealedDir: string | null;
+  /** SK1. Where the owner's skills are read from, read only (`SKILL_ROOTS`, `SKILL_SETTINGS`): the owner's own folders unless named; tests name made-up ones */
+  readonly skills: SkillSettings;
 }
 
 export class EnvError extends Error {
@@ -405,5 +409,5 @@ export function loadEnv(source: Source): Env {
   }
 
   if (problems.length > 0) throw new EnvError(problems);
-  return { production, host, trustedHosts, ownerLogins, usageCapUsd: usageCapUsd !== null && Number.isFinite(usageCapUsd) && usageCapUsd > 0 ? usageCapUsd : null, port, logLevel, brain, images, pictures, sight, promptVariant: parsePromptVariant(text('PROMPT_VARIANT')), review, library, datasets, logDir, data, readLinks: choice('READ_LINKS', ['on', 'off'] as const, 'on') === 'on', paintingsPerSession: 0, exploreDir, webDist, critic, ahead, agent, modes, refine, uploads, voice, statusFile, changelogFile, sealedDir };
+  return { production, host, trustedHosts, ownerLogins, usageCapUsd: usageCapUsd !== null && Number.isFinite(usageCapUsd) && usageCapUsd > 0 ? usageCapUsd : null, port, logLevel, brain, images, pictures, sight, promptVariant: parsePromptVariant(text('PROMPT_VARIANT')), review, library, datasets, logDir, data, readLinks: choice('READ_LINKS', ['on', 'off'] as const, 'on') === 'on', paintingsPerSession: 0, exploreDir, webDist, critic, ahead, agent, modes, refine, uploads, voice, statusFile, changelogFile, sealedDir, skills: skillSettingsFrom(text('SKILL_ROOTS'), text('SKILL_SETTINGS') === undefined ? undefined : resolvePath(root, text('SKILL_SETTINGS') ?? '')) };
 }

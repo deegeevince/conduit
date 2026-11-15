@@ -1,5 +1,5 @@
 import { API, checkStageEvent, STAGE_EVENT_TYPES, STREAM_HEARTBEAT } from '@conduit/language';
-import type { AppStatus, BackEvent, InkDocument, BrainChange, BrainChoice, CreateSessionRequest, DemoInfo, DocumentInk, DocumentSummary, DocumentView, OpenDocumentResponse, StageEvent, StageEventType, StartTurnRequest, ToolChoice, TurnInput, UploadCrop, UploadResponse, VoiceResponse, VoiceStatus } from '@conduit/language';
+import type { AppStatus, BackEvent, InkDocument, BrainChange, BrainChoice, CreateSessionRequest, DemoInfo, DocumentInk, DocumentSummary, DocumentView, OpenDocumentResponse, StageEvent, StageEventType, SkillsView, StartTurnRequest, ToolChoice, TurnInput, UploadCrop, UploadResponse, VoiceResponse, VoiceStatus } from '@conduit/language';
 import type { LinkStatus, StageLink } from '../contracts/link';
 import type { PainterUpload } from '../contracts/painter';
 import { asAsks, asBrainChoice, asDemos, asSessionResponse, asStatus, asTools, asTurnId, messageOf } from './guards';
@@ -27,6 +27,8 @@ export interface HttpLink extends StageLink {
   tools(): Promise<readonly ToolChoice[]>;
   /** v2.1. Switches one tool or service for this session; answers the whole list. */
   setTool(name: string, on: boolean): Promise<readonly ToolChoice[]>;
+  /** SK1. The owner's skills, read only (`GET /api/skills`); `refresh` has the server read its folders again first. */
+  skills(refresh?: boolean): Promise<SkillsView>;
   /** v2.1. The steward's account of where the product stands (`/status`). */
   appStatus(): Promise<AppStatus>;
   /** v2.1. What the user asked to hold for every reply (`/asks`); `clear` forgets them. Needs the server's `asks` route (see the hand-back). */
@@ -499,6 +501,13 @@ export function createHttpLink(): HttpLink {
       const tools = asTools(await bodyOf(response));
       if (tools === null) throw new Error('the server answered with something that is not a list of tools');
       return tools;
+    },
+
+    async skills(refresh = false): Promise<SkillsView> {
+      const body = await bodyOf(await fetch(refresh ? `${API.skills}?refresh=1` : API.skills));
+      const list = typeof body === 'object' && body !== null ? (body as { skills?: unknown }).skills : undefined;
+      if (!Array.isArray(list)) throw new Error('the server answered with something that is not a list of skills');
+      return { skills: list as SkillsView['skills'] };
     },
 
     async appStatus(): Promise<AppStatus> {

@@ -23,6 +23,7 @@ import { registerRelayRoutes } from './relay-routes';
 import { registerTasteRoutes } from './taste-routes';
 import { registerSessionRoutes } from './session-routes';
 import { registerStatic } from './static';
+import { registerSkillRoutes } from './skill-routes';
 import { registerOpsRoutes } from './ops-routes';
 import { registerStatusRoutes } from './status-routes';
 
@@ -103,6 +104,7 @@ export function createApp(deps: HttpDeps): Hono {
   registerVoiceRoutes(app, deps);
   registerStatusRoutes(app, deps);
   registerOpsRoutes(app, deps);
+  registerSkillRoutes(app, deps);
   registerExploreRoutes(app, deps);
   registerEngineRoutes(app, deps);
   registerTasteRoutes(app, deps);

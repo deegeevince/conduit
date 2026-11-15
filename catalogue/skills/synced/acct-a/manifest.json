@@ -1,0 +1,26 @@
+{
+ "lastUpdated": 1,
+ "skills": [
+  {
+   "skillId": "shared-name",
+   "name": "shared-name",
+   "description": "shared-name",
+   "source": "made-up",
+   "updatedAt": "2026-01-01T00:00:00Z"
+  },
+  {
+   "skillId": "twin",
+   "name": "twin",
+   "description": "twin",
+   "source": "made-up",
+   "updatedAt": "2026-01-02T00:00:00Z"
+  },
+  {
+   "skillId": "screen-driver",
+   "name": "screen-driver",
+   "description": "screen-driver",
+   "source": "made-up",
+   "updatedAt": "2026-01-03T00:00:00Z"
+  }
+ ]
+}

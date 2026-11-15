@@ -26,6 +26,10 @@ export type Command =
   | { readonly kind: 'export'; readonly format: ExportFormat }
   | { readonly kind: 'lines'; readonly on: boolean | null }
   | { readonly kind: 'capture' }
+  /** SK1. `/skills [words]` lists the owner's skills as a page (filtered by the words); `/skills refresh` reads the folders again */
+  | { readonly kind: 'skills'; readonly query: string; readonly refresh: boolean }
+  /** SK1. `/skill <name> [words]` holds that skill for the next message and sends the words with it (none: the skill stays held) */
+  | { readonly kind: 'skill'; readonly name: string; readonly words: string }
   | { readonly kind: 'refused'; readonly message: string };
 
 const EXPORT_FORMATS: readonly ExportFormat[] = ['png', 'svg', 'film', 'conversation', 'pdf', 'script'];
@@ -39,8 +43,17 @@ function nameOf(word: string): AppCommandName | null {
 /** The list as one line, for a status line or a refusal. */
 export const HELP = `/${APP_COMMANDS.filter((command) => !HIDDEN_COMMANDS.includes(command.name)).map((command) => command.name).join(' /')}`;
 
+/**
+ * SK1. The two commands of the owner's skills. They are the app's, like the others, but they are not in `APP_COMMANDS`: that list is made into the
+ * brain's note of the app, which is held to a budget, and the brain has nothing to say about a skill the person holds. `/help` shows them.
+ */
+export const SKILL_COMMANDS = [
+  { name: 'skills', args: '[words|refresh]', gist: 'your own skills, read only; words narrow the list' },
+  { name: 'skill', args: '<name> [words]', gist: 'hold a skill for the next message, and send the words with it' },
+] as const;
+
 /** What a command's arguments look like, written so they can sit in a table cell (a bar would end the cell). */
-export function usageOf(command: (typeof APP_COMMANDS)[number]): string {
+export function usageOf(command: { readonly name: string; readonly args: string }): string {
   const args = command.args.replaceAll('|', ' or ');
   return args === '' ? `/${command.name}` : `/${command.name} ${args}`;
 }
@@ -58,6 +71,16 @@ export function parseCommand(text: string): Command {
   const [name = '', ...rest] = text.trim().split(/\s+/);
   const word = name.slice(1).toLowerCase();
   const first = (rest[0] ?? '').toLowerCase();
+  // SK1. `/skill` takes the words after the name as typed, not split and lower-cased
+  if (word === 'skills') {
+    const query = rest.join(' ').trim();
+    return { kind: 'skills', query: query.toLowerCase() === 'refresh' ? '' : query, refresh: query.toLowerCase() === 'refresh' };
+  }
+  if (word === 'skill') {
+    const typed = text.trim().replace(/^\/skill\s*/i, '');
+    if (typed === '') return { kind: 'refused', message: '/skill: say which, like "/skill pdf" or "/skill pdf summarise this". /skills lists them' };
+    return { kind: 'skill', name: rest[0] ?? '', words: typed.slice((rest[0] ?? '').length).trim() };
+  }
   const known = word === '?' ? 'help' : nameOf(word);
   const refuse = (message: string): Command => ({ kind: 'refused', message });
   switch (known) {

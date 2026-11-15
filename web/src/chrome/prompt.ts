@@ -5,6 +5,8 @@ import { mountVoice } from './voice';
 import type { Voice, VoicePort } from './voice';
 import { mountComposerMenu } from './menu';
 import type { ComposerMenu } from './menu';
+import { mountSkills } from './skills';
+import type { HeldSkill, SkillPort, SkillShelf } from './skills';
 
 export interface PromptBar {
   /**
@@ -18,7 +20,9 @@ export interface PromptBar {
   /** while an export runs the line above the bar offers Cancel; null removes it */
   setCancel(cancel: (() => void) | null): void;
   /** puts words (and the photos that went with them) back in the field after they could not be sent, unless the user has typed something new */
-  restore(text: string, photos?: readonly Photo[]): void;
+  restore(text: string, photos?: readonly Photo[], skills?: readonly HeldSkill[]): void;
+  /** SK1. The skills held for the next message (a chip each); null when this server lists none to the bar */
+  readonly skills: SkillShelf | null;
   /** the [+] menu: a photo, Draw, Save, the Transcript, the model, Copy answer, About. Other parts of the chrome add their entries to it. */
   readonly menu: ComposerMenu;
   /** the small line above the bar: the status when it has something to say, and the buttons that come and go with a turn (Show all, Cancel, Mute) */
@@ -53,7 +57,7 @@ export function mountPromptBar(
   host: HTMLElement,
   handlers: {
     /** `photos` are the ids of the photos kept for these words, `held` the same photos as the tray shows them. Answer false when the words were not a turn (a command): the photos stay. */
-    readonly onSubmit: (text: string, photos: readonly string[], held: readonly Photo[], voice: readonly string[]) => boolean;
+    readonly onSubmit: (text: string, photos: readonly string[], held: readonly Photo[], voice: readonly string[], skills: readonly HeldSkill[]) => boolean;
     readonly onStop: () => void;
     /** something other than words and photos waits to be sent (ink drawn on the stage): an empty field may still send */
     readonly hasExtra?: () => boolean;
@@ -61,6 +65,8 @@ export function mountPromptBar(
     readonly photos?: PhotoPort;
     /** how a voice note gets read on the owner's Mac; absent: the bar has no microphone button */
     readonly voice?: VoicePort;
+    /** SK1. How the owner's skills are listed; absent: the bar has no Skills view */
+    readonly skills?: SkillPort;
   },
 ): PromptBar {
   counter += 1;
@@ -114,6 +120,7 @@ export function mountPromptBar(
   }
   const menu = mountComposerMenu(plus, root);
   const tray = handlers.photos === undefined ? null : mountPhotoTray(form, handlers.photos, () => undefined);
+  const shelf: SkillShelf | null = handlers.skills === undefined ? null : mountSkills(menu, form, handlers.skills, () => input.focus({ preventScroll: true }));
   let voice: Voice | null = null;
 
   const fit = (): void => {
@@ -173,14 +180,17 @@ export function mountPromptBar(
       return;
     }
     const extra = handlers.hasExtra?.() === true;
-    if (typed === '' && photos.length === 0 && !extra) return;
-    const text = typed === '' ? (extra && photos.length === 0 ? '' : photos.length === 1 ? 'Please look at this photo.' : 'Please look at these photos.') : typed;
+    const skills = shelf?.held() ?? [];
+    if (typed === '' && photos.length === 0 && !extra && skills.length === 0) return;
+    const text = typed === '' ? (skills.length > 0 && photos.length === 0 && !extra ? (shelf?.bareWords(skills) ?? '') : extra && photos.length === 0 ? '' : photos.length === 1 ? 'Please look at this photo.' : 'Please look at these photos.') : typed;
     const held = tray?.held() ?? [];
     const spoken = voice?.ids() ?? [];
     input.value = '';
     fit();
-    const accepted = handlers.onSubmit(text, photos, held, spoken);
+    const sending = [...skills];
+    const accepted = handlers.onSubmit(text, photos, held, spoken, sending);
     if (accepted !== false) {
+      shelf?.clear();
       tray?.clear();
       voice?.clear();
     }
@@ -233,6 +243,7 @@ export function mountPromptBar(
 
   return {
     menu,
+    skills: shelf,
     top,
     extra,
     activity,
@@ -262,11 +273,12 @@ export function mountPromptBar(
       button.classList.toggle('prompt__button--stop', next);
       button.setAttribute('aria-keyshortcuts', next ? 'Escape' : '');
     },
-    restore(text, photos) {
+    restore(text, photos, skills) {
       if (input.value === '') {
         input.value = text;
         fit();
       }
+      if (skills !== undefined && skills.length > 0) shelf?.restore(skills);
       if (photos !== undefined && photos.length > 0 && tray !== null && tray.held().length === 0) tray.putBack(photos);
     },
     focus() {
@@ -279,6 +291,7 @@ export function mountPromptBar(
       watcher?.disconnect();
       menu.dispose();
       tray?.dispose();
+      shelf?.dispose();
       voice?.dispose();
       root.remove();
     },

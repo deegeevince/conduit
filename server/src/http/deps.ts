@@ -7,6 +7,7 @@ import type { PictureService } from '../domain/pictures';
 import type { UploadStore } from '../domain/uploads';
 import type { VoiceNotes } from '../domain/voice';
 import type { Audit } from '../audit';
+import type { SkillCatalogue } from '../skills/catalogue';
 import type { CanvasService } from '../canvas/api';
 import type { Env } from '../env';
 import type { KillSwitch } from '../kill';
@@ -38,6 +39,8 @@ export interface HttpDeps {
   readonly voice: VoiceNotes;
   /** the steward's status for the brief's note about the app; read without waiting */
   readonly status: () => AppStatus | null;
+  /** SK1. The owner's skills, read only: what `GET /api/skills` lists */
+  readonly skills: SkillCatalogue;
   /** the changelog's newest section, for a turn that asks what is new; read without waiting */
   readonly news: () => string | null;
 }
