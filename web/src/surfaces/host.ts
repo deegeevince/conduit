@@ -58,6 +58,8 @@ const MISSED_LIMIT = 3;
 const FIT_MIN = 0.6;
 /** how long a size reading must stand unchanged before the fit acts on it */
 const FIT_SETTLE_MS = 250;
+/** how long a box must stand still, away from its rest place, before the live frame is shown in it */
+const BOX_STILL_MS = 300;
 /** The most pictures one app may ask for, and the most characters of a `data:` address handed back (about 300 kB of picture). */
 const PICTURE_ASKS = 4;
 const PICTURE_URL_MAX = 420_000;
@@ -183,6 +185,9 @@ interface Running {
   /** the last measurement the document sent, and the timer that acts on it once it has stopped changing */
   measured: { readonly height: number; readonly width: number } | null;
   fitTimer: ReturnType<typeof setTimeout> | undefined;
+  /** the box the stage last placed it in, and since when it has not moved */
+  boxAt: string;
+  boxSince: number;
   still: { readonly canvas: HTMLCanvasElement; readonly how: 'own' | 'dom' } | null;
   refused: number;
   emits: number;
@@ -332,7 +337,16 @@ export function createSurfaceHost(options: SurfaceHostOptions): SurfaceHost {
     style.zIndex = String(Math.round(spec.z));
     // It is shown only when the camera is at rest and it has fully arrived: otherwise the stage's own picture of it is what is seen, which moves with the camera.
     const atRest = Math.abs(spec.box.x - rest.x) < 2 && Math.abs(spec.box.y - rest.y) < 2 && Math.abs(spec.box.width - rest.width) < 2 && Math.abs(spec.box.height - rest.height) < 2;
-    const show = run.loaded && atRest && spec.opacity > 0.02 && rest.width >= 120 && rest.height >= 80;
+    // A box that has stood still for a moment is as good as at rest: if the stage and its plan ever settle a hair apart (`rest` is where the camera at home would put it),
+    // the app must not stay a picture for good, with its presses going to the stage as taps.
+    const here = `${spec.box.x.toFixed(1)}|${spec.box.y.toFixed(1)}|${spec.box.width.toFixed(1)}|${spec.box.height.toFixed(1)}`;
+    const now = performance.now();
+    if (here !== run.boxAt) {
+      run.boxAt = here;
+      run.boxSince = now;
+    }
+    const still = now - run.boxSince >= BOX_STILL_MS;
+    const show = run.loaded && (atRest || still) && spec.opacity > 0.02 && rest.width >= 120 && rest.height >= 80;
     run.shown = show;
     style.visibility = show ? 'visible' : 'hidden';
     style.opacity = show ? String(Math.min(1, spec.opacity)) : '0';
@@ -357,7 +371,7 @@ export function createSurfaceHost(options: SurfaceHostOptions): SurfaceHost {
     frame.style.visibility = 'hidden';
     frame.style.opacity = '0';
     const run: Running = {
-      key: spec.key, id: spec.id, channel, frame, source: spec.source, shelf: library, shelfText: shelf, gotPictures: new Map(), fingerprint: print, spec, loads: 0, loaded: false, shown: false, state, told: state, height: null, fit: 1, pictures: 0, fitted: false, fitRoom: '', measured: null, fitTimer: undefined, still: stills.get(spec.key) ?? null,
+      key: spec.key, id: spec.id, channel, frame, source: spec.source, shelf: library, shelfText: shelf, gotPictures: new Map(), fingerprint: print, spec, loads: 0, loaded: false, shown: false, state, told: state, height: null, fit: 1, pictures: 0, fitted: false, fitRoom: '', measured: null, fitTimer: undefined, boxAt: '', boxSince: 0, still: stills.get(spec.key) ?? null,
       refused: 0, emits: 0, faults: 0, window: { start: 0, count: 0 }, minute: { start: 0, count: 0 }, snaps: new Map(), snapSeq: 0, stillTimer: undefined, saveTimer: undefined, pinger: undefined, pings: 0, answered: 0, placed: '',
     };
     // a frame that loads a second time has navigated itself (a script, a link): it is removed, and what it was reaching for was never allowed to answer

@@ -319,7 +319,7 @@ async function appWorks(cx: Cx): Promise<Res> {
     `(() => { const f = document.querySelector('iframe[data-surface]'); if (!f) return null; const r = f.getBoundingClientRect(); const cs = getComputedStyle(f); return { x: r.left, y: r.top, width: r.width, height: r.height, scale: f.offsetWidth > 0 ? r.width / f.offsetWidth : 1, pe: cs.pointerEvents, vis: cs.visibility }; })()`,
   );
   if (settled !== null) page.frame = settled;
-  if (page.frame === null || page.frame.vis !== 'visible' || page.frame.pe === 'none') return { check: name, verdict: 'FAIL', detail: 'a live app is on stage but its frame is not taking presses: they go to the stage' };
+  if (page.frame === null || page.frame.vis !== 'visible' || page.frame.pe === 'none') return { check: name, verdict: 'FAIL', detail: `the page is at rest but the live app is still its picture, not the running frame (${page.frame === null ? 'no frame' : `pointer-events ${page.frame.pe}, ${page.frame.vis}`}): presses go to the stage as its own taps` };
   const { frame } = page;
   const kids: { sessionId: string; type: string }[] = [];
   const stopListening = tab.browser.onEvent((event) => {
