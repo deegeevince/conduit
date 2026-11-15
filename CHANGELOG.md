@@ -2,6 +2,13 @@
 
 Newest first. Each item is something the brain can show live when asked "showcase what's new": draw it, don't describe it. The server reads this file.
 
+## Readable apps, laid-out answers, skills (live)
+- Live apps set their text and buttons at the stage's own size, never shrink to half for nothing, and their frame grows to fit what they hold, so no button is cut off.
+- Figure labels and step captions are set from the stage's text size; a label sits on its own part's row; a flowchart's lines never run through another box's words.
+- A learner's problem is laid out with blanks to work out and one place to answer, with a hint behind a tap; explanations are laid out whole, not paged by arrows; a new problem starts fresh.
+- A game you ask for is something you can play on the first answer; "from now on, no code" is kept.
+- Skills: [+] Skills lists your Claude skills; pick one (or type /skill name) and the next answer uses it, drawn on the stage.
+
 ## Taps that always answer (live)
 - A tab or a step shows its own words and highlights, at rest and in every picture: the formula, the caption and the marked rows always belong to the option you picked.
 - A recipe, worksheet or quiz you ask for by tapping a choice always opens, even if it was closed, asked for again, or written in the wrong place; a tap that changes nothing says so.
