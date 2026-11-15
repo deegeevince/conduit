@@ -636,12 +636,14 @@ function layoutAsk(input: ControlInput, m: Metrics): ControlLayout {
       if (numbered) text('number', 'value', `${ask.n}.`, centre({ x: 0, y: top, width: lead, height }, th), LABEL, 'left');
     };
     if (locked) {
-      gutter(0, mt);
+      // a numbered empty row: as little as a number and a hairline, so that the whole breakdown stays on the screen with its question
+      const thin = Math.ceil(th * 1.25);
+      gutter(0, thin);
       if (sheet !== null) {
         const w = Math.min(room - lead, mt * 6);
-        sheet.shape('rule', 'grid', (dx, dy) => [segment(lead + dx, mt - m.stroke + dy, lead + w + dx, mt - m.stroke + dy)]);
+        sheet.shape('rule', 'grid', (dx, dy) => [segment(lead + dx, thin - m.stroke + dy, lead + w + dx, thin - m.stroke + dy)]);
       }
-      return { height: mt };
+      return { height: thin };
     }
     const box = { x: lead, width: room - lead };
     // --- the words, with the blank in the line
@@ -669,6 +671,8 @@ function layoutAsk(input: ControlInput, m: Metrics): ControlLayout {
     };
     gutter(y, Math.max(mt, th * 1.35));
     const fieldBoxes: Box[] = [];
+    // where the last row of the words ends: a verdict that fits there stands beside it, and a settled ask is that much shorter
+    let tailEnd: { x: number; top: number; height: number } | null = null;
     if (parts !== null) {
       // greedy breaks: words and the blank, as tokens
       type Token = { readonly blank: boolean; readonly text: string; readonly width: number };
@@ -725,6 +729,7 @@ function layoutAsk(input: ControlInput, m: Metrics): ControlLayout {
             at += piece.width + space;
           }
         }
+        tailEnd = { x: at, top: y, height: lineH };
         y += lineH;
       }
       for (const f of fieldBoxes) {
@@ -739,6 +744,7 @@ function layoutAsk(input: ControlInput, m: Metrics): ControlLayout {
         const f = field(box.x, y, Math.min(box.width, Math.max(blankW * 1.4, mt * 5)));
         drawField(f);
         zone('field', f);
+        tailEnd = { x: f.x + f.width + space, top: y, height: mt };
         y += mt;
       }
     }
@@ -771,6 +777,11 @@ function layoutAsk(input: ControlInput, m: Metrics): ControlLayout {
     y += gapY;
     if (settled) {
       const verdictH = input.measure('Ag', VALUE, 1e6).height;
+      const verdictW = wide(say, VALUE) + 2;
+      if (tailEnd !== null && tailEnd.x + space + verdictW <= box.x + box.width) {
+        text('say', 'words', say, centre({ x: tailEnd.x + space, y: tailEnd.top, width: verdictW, height: tailEnd.height }, verdictH), VALUE, 'left');
+        return { height: Math.max(y - gapY, mt) };
+      }
       text('say', 'words', say, { x: box.x, y, width: box.width, height: verdictH }, VALUE, 'left');
       return { height: Math.max(y + verdictH, mt) };
     }
@@ -826,17 +837,12 @@ function layoutAsk(input: ControlInput, m: Metrics): ControlLayout {
       if (say !== '') text('say', 'words', say, { x: box.x, y, width: box.width, height: verdictH }, VALUE, 'left');
       y += verdictH;
     }
-    const tallest = ask.hints.reduce((tall, line, at) => Math.max(tall, input.measure(`${ASK_WORDS.hint} ${at + 1}: ${line}`, LABEL, box.width).height), 0);
-    // a column that is still too tall gives up the room it kept for a hint: the rows below move when one opens
-    const hintRoom = level >= 2 ? 0 : tallest;
-    if (hintRoom > 0) {
+    // the hint opens under the chips; what is below an open ask is only numbered empty rows, so no room is kept for it
+    if (run.hints > 0 && !settled) {
       y += gapY;
-      if (run.hints > 0 && !settled) text('hint-words', 'words', `${ASK_WORDS.hint} ${run.hints}: ${ask.hints[run.hints - 1] ?? ''}`, { x: box.x, y, width: box.width, height: hintRoom }, LABEL, 'left');
-      y += hintRoom;
-    } else if (run.hints > 0 && !settled) {
-      y += gapY;
-      const open = input.measure(`${ASK_WORDS.hint} ${run.hints}: ${ask.hints[run.hints - 1] ?? ''}`, LABEL, box.width);
-      text('hint-words', 'words', `${ASK_WORDS.hint} ${run.hints}: ${ask.hints[run.hints - 1] ?? ''}`, { x: box.x, y, width: box.width, height: open.height }, LABEL, 'left');
+      const words = `${ASK_WORDS.hint} ${run.hints}: ${ask.hints[run.hints - 1] ?? ''}`;
+      const open = input.measure(words, LABEL, box.width);
+      text('hint-words', 'words', words, { x: box.x, y, width: box.width, height: open.height }, LABEL, 'left');
       y += open.height;
     }
     return { height: Math.max(y, mt) };

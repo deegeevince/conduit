@@ -1329,9 +1329,21 @@ async function askFlowOne(cx: Cx, action: Action): Promise<Res[]> {
     const found = ctl.parts?.find((p) => p.part === name);
     return found === undefined ? null : { x: found.box.x + found.box.width / 2, y: found.box.y + found.box.height / 2 };
   };
+  /** the page is read as a frame draws it, so a part that has only just arrived (Check, once the blank holds words) is waited for a little */
+  const until = async <T,>(read: () => Promise<T | null | undefined | false>, ms = 2500): Promise<T | null> => {
+    const end = Date.now() + ms;
+    for (;;) {
+      const got = await read();
+      if (got !== null && got !== undefined && got !== false) return got;
+      if (Date.now() > end) return null;
+      await sleep(80);
+    }
+  };
   const press = async (name: string, settle = 350): Promise<boolean> => {
-    const ctl = await find();
-    const at = ctl === undefined ? null : part(ctl, name);
+    const at = await until(async () => {
+      const ctl = await find();
+      return ctl === undefined ? null : part(ctl, name);
+    });
     if (at === null) return false;
     await tab.tap(at.x, at.y);
     await sleep(settle);
@@ -1361,10 +1373,12 @@ async function askFlowOne(cx: Cx, action: Action): Promise<Res[]> {
       const had = typeof ctl.value === 'string' ? ctl.value.length : 0;
       for (let i = 0; i < had; i += 1) await tab.key('Backspace');
       await tab.type(entry);
-      await sleep(200);
+      await until(async () => (await find())?.value === entry);
       if (index === 0) await shot('typed');
     }
+    const triesBefore = (await state())?.tries ?? 0;
     const checked = await press('check', 60);
+    await until(async () => ((await state())?.tries ?? 0) > triesBefore || (await find()) === undefined, 3000);
     if (!checked) out.push({ check: 'check-pressable', verdict: 'FAIL', detail: `no Check to press with "${entry}" held` });
     asked += 1;
     const now = await state();
@@ -1375,6 +1389,7 @@ async function askFlowOne(cx: Cx, action: Action): Promise<Res[]> {
       if (action['hint'] === true && !hinted) {
         const before = now?.hints ?? 0;
         const did = await press('hint');
+        await until(async () => ((await state())?.hints ?? 0) > before, 2500);
         const after = await state();
         hinted = true;
         out.push({ check: 'hint-on-tap', verdict: did && (after?.hints ?? 0) === before + 1 && after?.verdict === 'wrong' ? 'PASS' : 'FAIL', detail: `hints ${before} -> ${after?.hints}, ask is ${after?.verdict}` });
@@ -1382,6 +1397,7 @@ async function askFlowOne(cx: Cx, action: Action): Promise<Res[]> {
       }
       if (action['show'] === true && index === tries.length - 2) {
         const did = await press('show');
+        await until(async () => (await state())?.verdict === 'shown', 2500);
         const after = await state();
         out.push({ check: 'show-me', verdict: did && after?.verdict === 'shown' ? 'PASS' : 'FAIL', detail: `after Show me the ask is ${after?.verdict}` });
         await shot('shown');
