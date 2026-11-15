@@ -226,19 +226,26 @@ export function createAccessLayer(stage: HTMLElement, handlers: AccessHandlers):
           committed = field.value;
           handlers.setControl(latest.id, field.value, true);
         };
-        field.addEventListener('change', commit);
+        // An ask checks on Enter and on its Check button, never on leaving the field: a touch on Hint or Check must not count as a try.
+        if (view.ask !== true) field.addEventListener('change', commit);
         field.addEventListener('keydown', (event) => {
           if (event.key !== 'Enter' || event.isComposing) return;
           event.preventDefault();
+          if (view.ask === true) {
+            if (guard()) handlers.setControl(latest.id, field.value, true);
+            return;
+          }
           commit();
         });
         holder.append(field);
         focusable = () => field;
         update = (next) => {
           latest = next;
-          place(field, partBox(next, 'whole'));
+          place(field, partBox(next, next.ask === true ? 'field' : 'whole'));
           field.setAttribute('aria-label', next.label === '' ? 'Text' : next.label);
           field.placeholder = next.label;
+          field.inputMode = next.numeric === true ? 'decimal' : 'text';
+          field.enterKeyHint = next.ask === true ? 'done' : 'enter';
           const text = typeof next.value === 'string' ? next.value : next.value === null ? '' : String(next.value);
           if (!typing(field) && field.value !== text) field.value = text;
         };

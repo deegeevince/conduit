@@ -462,6 +462,8 @@ export type BackEvent =
       readonly values?: ControlValues;
       /** an app's own press (the app block), not a control of the stage */
       readonly app?: boolean;
+      /** HI1. An act on an ask of the stage (a try, a hint, giving up): `text` is what the person did in a few words, for the one line the brain is told */
+      readonly ask?: boolean;
     }
   /**
    * How pass `pass` of an open turn will land: sight for the stage as the

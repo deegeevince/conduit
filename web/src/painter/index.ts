@@ -4,6 +4,8 @@ import { setTarget, targetPx } from './target';
 import { STRUCTURES_READY } from './blocks';
 import { CONTROLS_READY, controlEngine, createControlStore, nextEases } from './controls';
 import { controlIndexOf, createRuntime, controlSpecOf, heldBy, stateReader } from './bound';
+import { runOf as askRun, check as askCheck, choose as askChoose, hint as askHint, lockedOf as askLocked, show as askShow } from './controls/ask-state';
+import type { AskAct } from './controls/ask-state';
 import { drivenLayers } from './controls';
 import { scrollCueBoxes } from './controls-stage';
 import type { ControlSite } from './controls-stage';
@@ -1262,9 +1264,47 @@ export function createPainter(options: PainterOptions): Painter {
   let grab: { readonly pointer: number; readonly key: string; readonly zone: string; readonly from: ControlValue | null } | null = null;
   let pressedZone: { readonly pointer: number; readonly key: string; readonly zone: string } | null = null;
 
+  /** HI1. What a hand did to an ask is told to the brain as one short act; the one that finishes the ask is also the next turn's input when the ask says so. */
+  const sayAsk = (site: ControlSite, act: AskAct): void => {
+    const reading = clock.read();
+    emitBack({ type: 'control', turn: turn === null ? null : turn.id, id: site.id, value: act.value, text: act.text, playhead: reading.playhead, send: act.send, ask: true });
+  };
+  /** HI1. When asks stand in a scrolling area, the one that is open is brought to its top: the next step comes to the person, not the person to it. */
+  const revealOpenAsk = (): void => {
+    const open = sitesNow().find((site) => site.window !== undefined && site.input.spec.ask !== undefined && !askLocked(site.span) && ['open', 'wrong'].includes(askRun(site.span).verdict));
+    if (open === undefined || open.window === undefined) return;
+    const top = open.centre.y - open.layout.height / 2;
+    scrollArea(open.window.scene, top - open.window.box.y);
+  };
+  /** HI1. A press on a part of an ask. Nothing is checked until Check (or Enter): a hand cannot wiggle a field until it turns green. */
+  const askOn = (site: ControlSite, zone: ControlSite['layout']['zones'][number]): void => {
+    const span = site.span;
+    const typed = typeof site.value === 'string' ? site.value : '';
+    let act: AskAct | null = null;
+    if (zone.part === 'field') {
+      setMood(site.key, { focus: true });
+      return;
+    }
+    if (zone.part.startsWith('option:')) askChoose(span, Number(zone.part.slice(7)));
+    else if (zone.part === 'check') act = askCheck(span, typed);
+    else if (zone.part === 'hint') act = askHint(span);
+    else if (zone.part === 'show') {
+      act = askShow(span);
+      // the answer is put in the field: what the person sees is what was given up on
+    }
+    refreshTimeline();
+    revealOpenAsk();
+    drawNow();
+    if (act !== null) sayAsk(site, act);
+  };
+
   /** A pointer released on a part that acts on release: a press, a switch, an option, a field. */
   const actOn = (site: ControlSite, zone: ControlSite['layout']['zones'][number], x: number, y: number): void => {
     const spec = site.input.spec;
+    if (spec.ask !== undefined) {
+      askOn(site, zone);
+      return;
+    }
     if (spec.control === 'button') {
       sayControl(site, true);
       return;
@@ -1331,6 +1371,8 @@ export function createPainter(options: PainterOptions): Painter {
       enabled: site.enabled,
       send: spec.control === 'button' ? true : spec.send,
       bound: index.driven.some((change) => change.control === site.key),
+      ...(spec.ask === undefined ? {} : { ask: true, askState: ((run) => ({ verdict: run.verdict, tries: run.tries.length, hints: run.hints, chosen: run.chosen, locked: askLocked(site.span) }))(askRun(site.span)) }),
+      ...(spec.ask !== undefined && spec.ask.accepted.length > 0 && spec.ask.accepted.every((answer) => /^[£$€]?-?[\d.,]+\s?[%a-z]{0,4}$/i.test(answer.trim())) ? { numeric: true } : {}),
     };
   };
   const chartViews = (frame: Frame): ChartView[] =>
@@ -1833,6 +1875,24 @@ export function createPainter(options: PainterOptions): Painter {
       }
       const held = holdControl(spec, value ?? undefined);
       if (held === null) return;
+      if (spec.ask !== undefined && spec.control === 'pick') {
+        if (typeof value === 'number') askChoose(site.span, value);
+        refreshTimeline();
+        drawNow();
+        return;
+      }
+      if (spec.ask !== undefined) {
+        // an ask holds what is typed; Enter checks it (leaving the field does not)
+        holdValue(site, held);
+        if (commit && !askLocked(site.span)) {
+          const act = askCheck(site.span, typeof held === 'string' ? held : '');
+          refreshTimeline();
+          revealOpenAsk();
+          drawNow();
+          if (act !== null) sayAsk(siteById(id) ?? site, act);
+        }
+        return;
+      }
       holdValue(site, held);
       if (commit) {
         const now = siteById(id) ?? site;

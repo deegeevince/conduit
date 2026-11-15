@@ -1,0 +1,52 @@
+{
+ "id": "ask-flights-choice",
+ "title": "a choice with no right answer is a pick whose press is told to the brain",
+ "family": "ask",
+ "owner": "painter",
+ "kind": "flow",
+ "found": "2026-11-15",
+ "note": "Not a lesson: which flight suits me is the person's own choice; it is held on a press and sent to the brain so it can follow up.",
+ "own": [
+  "no-app"
+ ],
+ "turns": [
+  {
+   "say": "which flight suits me: the 07:10 for 142 pounds or the 18:30 for 98 pounds?",
+   "source": {
+    "scenario": "ask-flights-choice",
+    "index": 0
+   },
+   "do": [
+    {
+     "a": "ask-flow",
+     "id": "f1",
+     "tries": [
+      "#2"
+     ],
+     "wrongFirst": false
+    }
+   ],
+   "check": [
+    {
+     "k": "no-app"
+    }
+   ],
+   "liveDo": [
+    {
+     "a": "ask-flow",
+     "id": "auto"
+    }
+   ],
+   "liveCheck": [
+    {
+     "k": "no-app"
+    },
+    {
+     "k": "asks-stand",
+     "min": 1
+    }
+   ]
+  }
+ ],
+ "generic": false
+}

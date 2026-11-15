@@ -707,6 +707,8 @@ function isLessonLine(line: Line): line is LessonLine {
 export class DocumentFolder {
   private readonly options: FoldOptions;
   private readonly book: LessonBook;
+  /** HI1. The ids of the asks the stage holds (no part holds them) */
+  private readonly stageAsks: Set<string>;
   private readonly turns = new Map<string, Turn>();
   private readonly turnOrder: string[] = [];
   private readonly scenes: SceneAcc[] = [];
@@ -728,6 +730,7 @@ export class DocumentFolder {
   constructor(options: FoldOptions = {}) {
     this.options = options;
     this.book = new LessonBook(() => `f${(this.auto += 1)}`);
+    this.stageAsks = new Set();
   }
 
   /** Folds one record and says what it changed. Cheaper to call `ingest` when nobody needs to know. */
@@ -884,7 +887,9 @@ export class DocumentFolder {
     }
     this.note(turn, seq, text, parsed.issues);
     const { line } = parsed;
-    if (isLessonLine(line)) return this.onLesson(turn, seq, text, line);
+    // HI1. An ask that no part holds stands on the stage, and so do its hints: the document knows nothing of them, the scene keeps them.
+    const onStage = isLessonLine(line) && this.holdsOnStage(line);
+    if (isLessonLine(line) && !onStage) return this.onLesson(turn, seq, text, line);
     if (line.verb === 'standing' || line.verb === 'refine') return false;
     const entry: Entry = { seq, line, floor };
     if (line.verb === 'scene' || line.verb === 'deck') {
@@ -899,6 +904,17 @@ export class DocumentFolder {
     if (turn.groups.length === 0) this.continueScene(turn);
     this.pushEntry(turn, entry);
     return true;
+  }
+
+  /** Whether this lesson line is the stage's: an ask no part holds, or a hint for one. Remembers the ids of the asks. */
+  private holdsOnStage(line: LessonLine): boolean {
+    if (line.verb === 'ask') {
+      const stage = line.stage !== undefined || (line.in === undefined && this.book.openPart() === null);
+      if (stage) this.stageAsks.add(line.id);
+      return stage;
+    }
+    if (line.verb === 'hint') return line.stage !== undefined || (line.in === undefined ? this.book.openPart() === null && this.stageAsks.size > 0 : this.stageAsks.has(line.in) && this.book.partOfAsk(line.in) === null);
+    return false;
   }
 
   private onLesson(turn: Turn, seq: number, text: string, line: LessonLine): boolean {

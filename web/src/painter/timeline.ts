@@ -20,6 +20,7 @@ import { boundElement, boundSchedule, controlIndexOf, createRuntime, heldBy, moo
 import type { BoundWords, ControlRuntime } from './bound';
 import { targetPx } from './target';
 import { controlInputOf, controlLayoutOf, placeParts, scrollCues } from './controls-stage';
+import { askOf } from './controls/ask-state';
 import type { ControlSite } from './controls-stage';
 import { layoutCard } from './controls';
 import type { ControlLayout } from '../contracts/controls';
@@ -824,7 +825,8 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
       // from everything the scene will say, so that nothing moves from one side to the other as lines arrive)
       const unpinnedBlocks = blocks.list.filter((block) => block.kind !== 'picture' && block.pinned === null);
       const bare = !blocks.list.some((block) => block.kind === 'picture' || block.pinned !== null);
-      const sceneHasControls = controlSpans.some((span) => span.scene === scene.id && span.parent === null);
+      // (an ask is prose with a field in it, not a knob beside a picture: it stays in the flow with the words, whole width, and never stands in a column of controls)
+      const sceneHasControls = controlSpans.some((span) => span.scene === scene.id && span.parent === null && askOf(span) === null);
       // a live app is a tool to be used: on a wide stage it takes the lead room whatever the scene's layout, and the words stand beside it
       const liveApp = unpinnedBlocks.length === 1 && drawnByKey.get(unpinnedBlocks[0]?.key ?? '')?.figure?.kind === 'structure' && (drawnByKey.get(unpinnedBlocks[0]?.key ?? '')?.figure as { structure?: string } | null | undefined)?.structure === 'app';
       let beside = false;
@@ -847,7 +849,7 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
       }
       // A wide stage with controls on it sets them in a column of their own, to the left, and the words to the right: the controls keep their
       // place whatever the words do, and neither covers the other. A narrow stage keeps one column.
-      const withControls = controlSpans.some((span) => span.scene === scene.id && span.parent === null) || drawn.some((group) => group.scene === scene.id && group.figure?.kind === 'group' && group.figure.card !== undefined);
+      const withControls = controlSpans.some((span) => span.scene === scene.id && span.parent === null && askOf(span) === null) || drawn.some((group) => group.scene === scene.id && group.figure?.kind === 'group' && group.figure.card !== undefined);
       const arrLayout: Layout = withControls && !beside && viewport.width >= 900 && viewport.width >= 1.5 * viewport.height && (scene.layout === 'stack' || scene.layout === 'caption' || scene.layout === 'solo') ? 'split' : scene.layout;
       const sides = arrLayout === 'split' ? (scene.layout === 'split' ? splitSides(schedule, scene.id) : new Map<string, 'left' | 'right'>([...controlSpans, ...drawn].filter((span) => span.scene === scene.id).map((span): [string, 'left' | 'right'] => [span.key, 'left']).concat(elements.filter((span) => span.scene === scene.id).map((span): [string, 'left' | 'right'] => [span.key, 'right'])))) : undefined;
       // what the controls may be wide: the column they stand in (half of it when they stand two to a row), at the width the flow really has

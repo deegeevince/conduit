@@ -1,0 +1,11 @@
+{
+ "case": "ask-logic-next",
+ "recordedAt": "2026-11-15T00:00:00.000Z",
+ "screen": "1280x720",
+ "turns": [
+  {
+   "match": "what comes next: 2, 6, 18, 54?",
+   "script": "scene stack\nsay title | What comes next?\nsay | 2, 6, 18, 54, then?\nask n1 send=no is=162 | The next number is __\nhint | Look at how you get from 2 to 6, then from 6 to 18.\nhint | Each number is the one before it times the same amount.\n"
+  }
+ ]
+}

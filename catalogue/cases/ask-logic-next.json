@@ -1,0 +1,59 @@
+{
+ "id": "ask-logic-next",
+ "title": "a sequence question holds one blank and two hints that ask back",
+ "family": "ask",
+ "owner": "painter",
+ "kind": "flow",
+ "found": "2026-11-15",
+ "note": "'What comes next' is a thing to answer, not to be told: one blank in its line, hints behind a tap.",
+ "own": [
+  "no-app"
+ ],
+ "turns": [
+  {
+   "say": "what comes next: 2, 6, 18, 54?",
+   "source": {
+    "scenario": "ask-logic-next",
+    "index": 0
+   },
+   "do": [
+    {
+     "a": "ask-flow",
+     "id": "n1",
+     "tries": [
+      "81",
+      "162"
+     ],
+     "hint": true,
+     "sealed": [
+      "162"
+     ]
+    }
+   ],
+   "check": [
+    {
+     "k": "no-app"
+    },
+    {
+     "k": "asks-stand",
+     "min": 1
+    }
+   ],
+   "liveDo": [
+    {
+     "a": "ask-flow",
+     "id": "auto"
+    }
+   ],
+   "liveCheck": [
+    {
+     "k": "no-app"
+    },
+    {
+     "k": "asks-stand",
+     "min": 1
+    }
+   ]
+  }
+ ]
+}
