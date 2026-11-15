@@ -1,0 +1,7 @@
+{
+ "turns": [
+  {
+   "script": "scene layout=figure mood=calm pace=steady\nrect big 10,10 80x14 fill=accent\nsay b1 callout near=big | Ada: $64\nrect mid 10,40 40x14 fill=alt\nsay b2 callout near=mid | Ben: $32\nrect low 10,70 20x14 fill=dim\nsay b3 callout near=low | Cy: $16\nsay b4 | 1. Ada has *$64*.\nwait 1\nsay b5 | 2. Ben has half of 64: *$32*.\nwait 1\nsay b6 | 3. Cy has half of 32: *$16*.\nwait 1\nsay b7 strong | Cy has $16.\n"
+  }
+ ]
+}

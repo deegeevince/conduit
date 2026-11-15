@@ -1,0 +1,27 @@
+{
+ "id": "bars-labels-own-row",
+ "title": "three labelled bars: each label on its own bar's row",
+ "family": "callout-side",
+ "owner": "painter",
+ "kind": "draw",
+ "found": "2026-11-15",
+ "note": "A label sits level with, or under, a neighbouring bar and reads as naming it.",
+ "own": [
+  "labels-side",
+  "no-overlap"
+ ],
+ "turns": [
+  {
+   "say": "show the three shares as bars",
+   "source": {
+    "scenario": "bars",
+    "index": 0
+   },
+   "check": [
+    {
+     "k": "labels-side"
+    }
+   ]
+  }
+ ]
+}
