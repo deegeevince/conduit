@@ -55,7 +55,7 @@ import type {
 import { formatNumber, readNumber } from '@conduit/language';
 import type { ChartKind, NumberFormat } from '@conduit/language';
 import type { ChartEngine, ChartHandle, ChartProbe, ChartState, ChartTheme } from '../../contracts/chart';
-import { familyOf, headerOf, NO_HEADER } from './header';
+import { familyOf, fontOf, headerOf, measure, NO_HEADER } from './header';
 import { LEAST_LABEL_PX } from './theme';
 import type { Header, LegendItem, Readout } from './header';
 import { paintOverlay } from './overlay';
@@ -92,11 +92,14 @@ interface SlotLabels {
   cross(slot: number): string;
 }
 
-/** The library keeps a time as an object; which key holds the number differs between its builds, so both are read. */
+/**
+ * The library keeps a time as an object whose one key holds the seconds. The key's name differs between its builds (the production
+ * build renames it), so the number is read by what it is: the object's one numeric value.
+ */
 function slotOf(item: InternalHorzScaleItem): number {
   if (typeof item !== 'object' || item === null) return 0;
-  const found = '_internal_timestamp' in item ? item._internal_timestamp : 'timestamp' in item ? item.timestamp : 0;
-  return typeof found === 'number' ? found : 0;
+  for (const value of Object.values(item as Record<string, unknown>)) if (typeof value === 'number') return value;
+  return 0;
 }
 
 const TimeBehaviour = defaultHorzScaleBehavior();
@@ -131,6 +134,8 @@ class SlotScale extends TimeBehaviour {
 
 interface GroupedData extends CustomData<Time> {
   readonly values: readonly number[];
+  /** one series, one row marked with stars: that bar in this colour */
+  readonly colour?: string;
 }
 interface GroupedOptions extends CustomSeriesOptions {
   colours: readonly string[];
@@ -152,12 +157,12 @@ class GroupedView implements ICustomSeriesPaneView<Time, GroupedData, GroupedOpt
             const bar = data.bars[i];
             if (bar === undefined) continue;
             const values = bar.originalData.values;
-            const group = Math.max(2, data.barSpacing * 0.78);
+            const group = Math.max(2, data.barSpacing * 0.7);
             const each = group / Math.max(1, values.length);
             values.forEach((value, index) => {
               const y = converter(value);
               if (y === null) return;
-              context.fillStyle = opts.colours[index % opts.colours.length] ?? '#888';
+              context.fillStyle = (values.length === 1 ? bar.originalData.colour : undefined) ?? opts.colours[index % opts.colours.length] ?? '#888';
               const left = bar.x - group / 2 + index * each;
               const top = Math.min(y, zero);
               context.fillRect(Math.round(left * hr), Math.round(top * vr), Math.max(1, Math.round((each - Math.min(1.5, each * 0.12)) * hr)), Math.max(1, Math.round(Math.abs(zero - y) * vr)));
@@ -217,7 +222,7 @@ interface Slotter {
 
 const PAD_BARS = 1;
 /** The label size is at most the chart's height over this. */
-export const LABELS_PER_HEIGHT = 16;
+export const LABELS_PER_HEIGHT = 8;
 
 /** What a test (and the battery) can ask of a mounted chart beyond its probe: the numbers behind the rules of PLAN-v2.1 row 9. */
 export interface ChartMeasure {
@@ -280,6 +285,8 @@ class LightweightHandle implements ChartHandle {
   private paneWidth = 0;
   private relaying = false;
   private maxTickChars = 8;
+  /** what is written under each kept point on a name axis */
+  private tickWords: readonly string[] = [];
   private pulse = 0;
   private disposed = false;
   /** the picture last taken and what it was a picture of: the same state is not drawn twice (P2-39) */
@@ -470,7 +477,7 @@ class LightweightHandle implements ChartHandle {
             const api = chart.addCustomSeries(new GroupedView(), { colours: columns.map((c) => theme.series[c.colour % theme.series.length] ?? theme.accent), ...QUIET, ...fixed }, 0);
             layer = {
               ps,
-              put: (cells) => api.setData(cells.map((c) => (c.blank || c.values === undefined ? { time: at(c.time) } : { time: at(c.time), values: c.values }))),
+              put: (cells) => api.setData(cells.map((c) => (c.blank || c.values === undefined ? { time: at(c.time) } : { time: at(c.time), values: c.values, ...(c.colour === undefined ? {} : { colour: c.colour }) }))),
               toY: (price) => numberOrNull(api.priceToCoordinate(price)),
               hover: (price, time) => chart.setCrosshairPosition(price, at(time), api),
               scale: () => api.priceScale(),
@@ -547,7 +554,19 @@ class LightweightHandle implements ChartHandle {
     const model = state.model;
     const scale = this.slotScale;
     const axis = plot.axis;
-    this.maxTickChars = axis.mode === 'index' ? Math.max(2, ...axis.keptPoint.map((p) => model.points[p]?.label.length ?? 0)) : 8;
+    // The words under the bars: as written; where they do not fit side by side, their first word if that tells the bars apart ("Q1" for "Q1 Dec"); else every nth.
+    const tickFont = fontOf(state.theme, state.theme.fontPx);
+    const written0 = axis.keptPoint.map((p) => model.points[p]?.label ?? '');
+    // the pane is the chart's width less the price scale's, which is not yet known here; its room is split over the bars and the pad on either side
+    const pane = this.size.width - measure(tickFont, '000.0') - 24;
+    const pitch = Math.max(1, pane / Math.max(1, written0.length + 2 * this.pad));
+    const widest = (words: readonly string[]): number => Math.max(1, ...words.map((word) => measure(tickFont, word))) + 10;
+    const heads = written0.map((word) => word.trim().split(/\s+/)[0] ?? word);
+    const useFirst = axis.mode === 'index' && widest(written0) > pitch * 0.9 && new Set(heads).size === heads.length && widest(heads) < widest(written0);
+    this.tickWords = useFirst ? heads : written0;
+    const perChar = ((state.theme.fontPx + 4) * 5) / 8;
+    // The library keeps tick words apart by assuming a width per character; the words are measured here, so the room it keeps is the room they take.
+    this.maxTickChars = axis.mode === 'index' ? Math.max(2, Math.ceil((widest(this.tickWords) - 10) / perChar)) : 8;
     if (scale === null) return;
     const first = model.points[0]?.label ?? '';
     const read = readNumber(first);
@@ -594,8 +613,11 @@ class LightweightHandle implements ChartHandle {
     }
     // Names (and columns on uneven times): a tick under every bar while the words fit, else every nth, never one that is not a bar.
     const labels = axis.keptPoint.map((p) => model.points[p]?.label ?? '');
-    const room = Math.max(60, this.size.width - 70);
-    const each = Math.max(1, Math.ceil(labels.length / Math.max(1, Math.floor(room / (this.maxTickChars * state.theme.fontPx * 0.62 + 14)))));
+    const said = axis.mode === 'index' ? this.tickWords : labels;
+    // a word under every bar while the longest of them, as set, fits in a bar's width; else under every nth
+    const room = Math.max(60, pane - 2 * pitch);
+    const wide = Math.max(1, ...said.map((label) => measure(fontOf(state.theme, state.theme.fontPx), label))) + 10;
+    const each = Math.max(1, Math.ceil(labels.length / Math.max(1, Math.floor(room / wide))));
     scale.labels = {
       weight: (item) => {
         if (!inside(item)) return 0;
@@ -604,7 +626,7 @@ class LightweightHandle implements ChartHandle {
       },
       tick: (item) => {
         if (!inside(item)) return '';
-        if (axis.mode === 'index') return (item - this.pad) % each === 0 ? (labels[item - this.pad] ?? '') : '';
+        if (axis.mode === 'index') return (item - this.pad) % each === 0 ? (said[item - this.pad] ?? '') : '';
         return written(timeOf(item));
       },
       cross: (item) => {
@@ -761,7 +783,7 @@ class LightweightHandle implements ChartHandle {
           const p = axis.keptPoint[j] ?? 0;
           const time = this.time.time(slot);
           if (ps.draw === 'columns' && plot.grouped) {
-            cells.push({ time, blank: false, values: groupedSeries.map((g) => (g.values[p] ?? 0) * grow) });
+            cells.push({ time, blank: false, values: groupedSeries.map((g) => (g.values[p] ?? 0) * grow), ...(groupedSeries.length === 1 && model.points[p]?.starred === true ? { colour: theme.accent } : {}) });
           } else if (ps.draw === 'columns') {
             const v = ps.values[p];
             cells.push(v === null || v === undefined ? blank(slot) : { time, blank: false, value: v * grow, ...(model.points[p]?.starred === true ? { colour: theme.accent } : {}) });
@@ -927,7 +949,7 @@ class LightweightHandle implements ChartHandle {
     const state = this.state;
     const chart = this.chart;
     if (plot === null || state === null || chart === null) {
-      return { from: 0, to: 0, crosshair: null, points: 0, ticks: { x: [], y: [] }, frameMs: { median: 0, worst: 0 } };
+      return { from: 0, to: 0, crosshair: null, points: 0, ticks: { x: [], y: [] }, type: { label: 0, title: 0, credit: 0, small: 0 }, frameMs: { median: 0, worst: 0 } };
     }
     const range = chart.timeScale().getVisibleLogicalRange();
     const slotFrom = range === null ? 0 : Math.max(0, range.from - this.pad);
@@ -952,6 +974,7 @@ class LightweightHandle implements ChartHandle {
       crosshair: r === null ? null : { label: r.label, values: r.items.map((i) => i.text) },
       points: Math.min(drawn.landed, plot.axis.kept.length),
       ticks: { x: xs, y: this.yTicks.map((t) => t.label) },
+      type: { label: state.theme.fontPx, title: this.header.titlePx, credit: this.header.creditPx, small: (this.source ?? state).theme.fontPx },
       frameMs: frame,
     };
   }

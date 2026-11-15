@@ -1,0 +1,28 @@
+{
+ "id": "chart-quarterly-bars",
+ "title": "a quarterly bar chart: each quarter is named under its bar, there is a gap between bars, and the chart's text is the stage's own small size",
+ "family": "chart-type",
+ "owner": "painter",
+ "kind": "draw",
+ "found": "2026-11-15",
+ "note": "The bars of a one-series chart had no words under them (the chart library's production build hides the slot number its tick labels hang on), touched each other, and the ticks, legend and credit were set far under the stage's words. Every bar has its row's own words under it (the first word where whole words do not fit side by side), a gap between bars, ticks and legend at the stage's small size and the title at its body size.",
+ "own": [
+  "chart-labels"
+ ],
+ "surface": "main",
+ "priority": "core",
+ "turns": [
+  {
+   "say": "Chart the bakery's sales by quarter",
+   "source": {
+    "scenario": "charts",
+    "index": 0
+   },
+   "check": [
+    {
+     "k": "chart-labels"
+    }
+   ]
+  }
+ ]
+}
