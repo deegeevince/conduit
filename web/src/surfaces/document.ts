@@ -237,7 +237,7 @@ const BRIDGE = String.raw`(function () {
   // layout and again whenever its document changes, text set below the stage's small size is marked and made that size (a rule on the mark, in the page's own
   // <style>: the app's styles and its inline styles are never touched), and what can be tapped is marked to be at least the tap size across. Nothing is made
   // smaller, nothing above the floor is changed, and an app of the stage's own sizes (var(--font-body)) is not touched at all.
-  var typeOn = typeof boot.tokens.smallPx === 'number' && boot.tokens.smallPx > 0;
+  var typeOn = boot.tokens.webPage !== true && typeof boot.tokens.smallPx === 'number' && boot.tokens.smallPx > 0;
   var typeTimer = 0;
   var typeBusy = false;
   var typeWatch = null;
@@ -469,7 +469,7 @@ export function buildSurfaceDocument(input: { readonly source: string; readonly 
     ch: input.channel,
     depth: input.depth !== false,
     state: restored,
-    tokens: { ink: tokens.ink, ground: tokens.ground, accent: tokens.accent, onAccent: tokens.onAccent, alt: tokens.alt, dim: tokens.dim, line: tokens.line, good: tokens.good, bad: tokens.bad, font: tokens.font, fontPx: tokens.fontPx, bodyPx: tokens.bodyPx, smallPx: tokens.smallPx, titlePx: tokens.titlePx, tapMin: tokens.tapMin, radius: tokens.radius, gap: tokens.gap, dark: tokens.dark },
+    tokens: { ink: tokens.ink, ground: tokens.ground, accent: tokens.accent, onAccent: tokens.onAccent, alt: tokens.alt, dim: tokens.dim, line: tokens.line, good: tokens.good, bad: tokens.bad, font: tokens.font, fontPx: tokens.fontPx, bodyPx: tokens.bodyPx, smallPx: tokens.smallPx, titlePx: tokens.titlePx, tapMin: tokens.tapMin, webPage: tokens.webPage === true, radius: tokens.radius, gap: tokens.gap, dark: tokens.dark },
   });
   const base = BASE_CSS;
   return [
@@ -478,7 +478,7 @@ export function buildSurfaceDocument(input: { readonly source: string; readonly 
     `<meta http-equiv="Content-Security-Policy" content="${SURFACE_CSP}">`,
     '<meta charset="utf-8">',
     '<meta name="viewport" content="width=device-width, initial-scale=1">',
-    `<style>${tokenCss(tokens)}${base}${typeof tokens.smallPx === 'number' ? TYPE_CSS : ''}</style>`,
+    `<style>${tokenCss(tokens)}${base}${typeof tokens.smallPx === 'number' && tokens.webPage !== true ? TYPE_CSS : ''}</style>`,
     `<script>${BRIDGE.replace('__BOOT__', () => boot).replace('__STATE_MAX__', String(SURFACE_LIMITS.state))}</script>`,
     // the vetted libraries the app asked for (web/src/surfaces/shelf): after the bridge (so its removals have run) and before the app's own script
     ...(input.shelf === undefined || input.shelf === '' ? [] : [input.shelf]),

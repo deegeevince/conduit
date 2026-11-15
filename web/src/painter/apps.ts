@@ -115,6 +115,35 @@ export function loneAppScenes(schedule: Schedule): ReadonlySet<string> {
   return lone;
 }
 
+/**
+ * A real web page, as opposed to a little app: a document with its own designed typography and layout. The system has no flag for it (an app alone on the stage
+ * is a page of the stage, whatever it is), so the document says so itself: it brings enough of what a site has (its own body face, a nav, a header or footer,
+ * sections, a centred max-width column). Three of those and it is set at web scale, never type-raised.
+ */
+export function webPageOf(source: string): boolean {
+  if (source === '') return false;
+  let marks = 0;
+  if (/(?:body|html|\*)\s*\{[^}]*font(?:-family)?\s*:[^;}]*(?:serif|sans-serif|system-ui|Inter|Georgia|Helvetica|Arial)/i.test(source) && !/font(?:-family)?\s*:\s*var\(--font\)\s*[;}]/i.test(source)) marks += 1;
+  if (/<nav[\s>]/i.test(source)) marks += 1;
+  if (/<footer[\s>]/i.test(source)) marks += 1;
+  if (/<header[\s>]/i.test(source)) marks += 1;
+  if (/<section[\s>]/i.test(source)) marks += 1;
+  if (/max-width\s*:\s*\d{3,4}px/i.test(source)) marks += 1;
+  if (/<h1[\s>]/i.test(source) && /grid-template-columns|display\s*:\s*grid/i.test(source)) marks += 1;
+  return marks >= 3;
+}
+
+const webTokens = new WeakMap<AppTokens, AppTokens>();
+/** The stage's tokens at web scale: a body of 17 px, small 14, title 28, and the type pass left off. */
+function webTokensOf(tokens: AppTokens): AppTokens {
+  let made = webTokens.get(tokens);
+  if (made === undefined) {
+    made = { ...tokens, fontPx: 17, bodyPx: 17, smallPx: 14, titlePx: 28, tapMin: 40, webPage: true, radius: 6, gap: 12 };
+    webTokens.set(tokens, made);
+  }
+  return made;
+}
+
 export function appCues(schedule: Schedule, tq: number, look: LookSpec, env: AppEnv): AppCue[] {
   const out: AppCue[] = [];
   const live = new Set<string>();
@@ -160,7 +189,7 @@ export function appCues(schedule: Schedule, tq: number, look: LookSpec, env: App
     const ready = element.carried || (tq >= last && (sealed === null ? env.closed : tq >= sealed));
     const source = ready ? sourceOf(figure) : '';
     const uses = ready ? shelfOf(figure.uses, source) : (figure.uses ?? []);
-    const tokenSet = appTokensOf(look, env.viewport);
+    const tokenSet = webPageOf(source) ? webTokensOf(appTokensOf(look, env.viewport)) : appTokensOf(look, env.viewport);
     const signature = [alone.has(element.scene) ? 'page' : '', uses.join('+'), source.length, ready ? 1 : 0, element.carried ? 1 : 0, element.text, element.id, opacity.toFixed(3), element.order, box.x.toFixed(1), box.y.toFixed(1), box.width.toFixed(1), box.height.toFixed(1), rest.x.toFixed(1), rest.y.toFixed(1), rest.width.toFixed(1), rest.height.toFixed(1)].join('|');
     live.add(element.key);
     const known = kept.get(element.key);

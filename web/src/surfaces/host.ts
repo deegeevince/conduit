@@ -332,7 +332,7 @@ export function createSurfaceHost(options: SurfaceHostOptions): SurfaceHost {
    */
   const tokensOf = (run: Running, tokens: AppTokens): AppTokens => {
     run.typeFit = run.fit;
-    if (tokens.smallPx === undefined || run.fit >= 1) return tokens;
+    if (tokens.smallPx === undefined || tokens.webPage === true || run.fit >= 1) return tokens;
     const up = (px: number | undefined): number | undefined => (px === undefined ? undefined : Math.ceil(px / run.fit));
     return { ...tokens, bodyPx: up(tokens.bodyPx) as number, smallPx: up(tokens.smallPx) as number, titlePx: up(tokens.titlePx) as number, tapMin: up(tokens.tapMin) as number };
   };
@@ -366,7 +366,7 @@ export function createSurfaceHost(options: SurfaceHostOptions): SurfaceHost {
       run.placed = placed;
     }
     style.transform = `translate(${spec.box.x}px, ${spec.box.y}px) scale(${scaleX * fit}, ${scaleY * fit})`;
-    if (run.loaded && spec.tokens.smallPx !== undefined && fit !== run.typeFit) post(run, { type: 'data', tokens: tokensOf(run, spec.tokens) });
+    if (run.loaded && spec.tokens.smallPx !== undefined && spec.tokens.webPage !== true && fit !== run.typeFit) post(run, { type: 'data', tokens: tokensOf(run, spec.tokens) });
     style.zIndex = String(Math.round(spec.z));
     // It is shown only when the camera is at rest and it has fully arrived: otherwise the stage's own picture of it is what is seen, which moves with the camera.
     const atRest = Math.abs(spec.box.x - rest.x) < 2 && Math.abs(spec.box.y - rest.y) < 2 && Math.abs(spec.box.width - rest.width) < 2 && Math.abs(spec.box.height - rest.height) < 2;
@@ -492,7 +492,7 @@ export function createSurfaceHost(options: SurfaceHostOptions): SurfaceHost {
         }
       }
       // a hair under the exact fit, so a content that is one pixel over does not leave a scrollbar
-      const next = Math.max(run.spec.tokens.smallPx === undefined ? FIT_MIN : FIT_MIN_STAGE, Math.min(run.fit, rest.height / height, width > 0 ? rest.width / width : 1) * 0.99);
+      const next = Math.max(run.spec.tokens.smallPx === undefined || run.spec.tokens.webPage === true ? FIT_MIN : FIT_MIN_STAGE, Math.min(run.fit, rest.height / height, width > 0 ? rest.width / width : 1) * 0.99);
       if (next < run.fit - 0.01) {
         run.fit = next;
         run.fitted = true;
