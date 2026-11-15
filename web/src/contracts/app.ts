@@ -40,6 +40,8 @@ export interface AppTokens {
   readonly titlePx?: number;
   /** the least a tap target is, in the frame's own pixels (`--tap-min`): 44 on screen, so more when the frame is scaled down to fit its room */
   readonly tapMin?: number;
+  /** a real web page (its own CSS and type): its variables are web scale, and the type pass never touches it and the frame is not scaled by the stage's sizes */
+  readonly webPage?: boolean;
   /** corner radius, CSS pixels: 0 in the looks whose machine had none */
   readonly radius: number;
   /** the look's rhythm, CSS pixels: one gap between things */
