@@ -151,7 +151,8 @@ export function lintTechnique(title: string, summary: string, reason: string, ma
  */
 const CUES: readonly (readonly [RegExp, readonly string[]])[] = [
   [/\b(?:charts?|graphs?|plot|histogram|distributions?|trend|curve|over time|since \d{4})\b/i, ['chart', 'number']],
-  [/\b(?:homework|work ?sheets?|my (?:kid|child|son|daughter|boy|girl)|\d{1,2}[- ]?(?:year|yr)s?[- ]?olds?|sums?|times tables?|number bonds?|working[- ]?outs?|(?:show|work) (?:the |it |this |that )?(?:working|out)|lessons?|tutor\w*|practi[cs]e (?:sheet|questions))\b/i, ['homework', 'worksheet', 'child']],
+  [/\b(?:homework|work ?sheets?|practi[cs]e (?:sheet|questions))\b/i, ['homework', 'worksheet']],
+  [/\b(?:my (?:kid|child|son|daughter|boy|girl)|\d{1,2}[- ]?(?:year|yr)s?[- ]?olds?|sums?|times tables?|number bonds?|working[- ]?outs?|(?:show|work) (?:the |it |this |that )?(?:working|out)|lessons?|tutor\w*)\b/i, ['child']],
   // the person wants to do the work or make the choice themselves: something to work out on the stage, checked on a press
   [/\b(?:make me|let me (?:guess|try|work|have a go|place|predict|think)|i(?:'ll| will) (?:have a go|try|guess)|quiz me|test me|fill in|what comes next|which (?:of these )?(?:one )?(?:suits|is better for) me|each step)\b/i, ['blank', 'quiz', 'guess']],
   // asked to be taken through it a stage at a time: the stepper over one picture
@@ -283,6 +284,7 @@ export function selectTechniques(index: readonly TechniqueTerms[], query: Techni
   const seeable = said.split(/\s+/).filter((word) => !other.has(stem(word))).join(' ');
   const conceptual = CONCEPT_ASK.test(said) && !ASKS_TO_SEE.test(seeable);
   for (const [cue, anchors] of CUES) if (!conceptual && cue.test(said)) for (const anchor of anchors) words.add(anchor);
+  if (query.input.kind === 'prompt' && (query.input.images ?? []).length > 0 && words.has('child')) for (const word of ['homework', 'worksheet']) words.add(word);
   if (query.documents) for (const word of ['document', 'paper', 'report', 'article']) words.add(word);
   if (words.size === 0 || index.length === 0) return [];
   const spread = new Map<string, number>();
