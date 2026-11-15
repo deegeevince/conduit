@@ -24,7 +24,7 @@ export type { BriefForm };
 import { asksForLiveApp, asksToMakeGame } from './app';
 import { FIGURE_CHAPTER, asksForFigure } from './figure';
 import { INTERFACE_CHAPTER } from './interface';
-import { DOCUMENT_CHAPTER, carriesDocument, documentBlocks, hasLesson, usesParts } from './teach';
+import { ASK_CHAPTER, ASK_CHAPTER_WITH_DOCUMENT, DOCUMENT_CHAPTER, carriesAsk, carriesDocument, documentBlocks, hasLesson, usesParts } from './teach';
 import { inkBrief } from './ink';
 import { describeSight } from './sight';
 import { BUILTIN_STYLES } from './style';
@@ -1088,7 +1088,11 @@ export function buildTurnBrief(context: TurnContext, input: TurnInput, form: Bri
   // A mock-up is taught when the words are about one, or when one is on stage to be changed; never in the system prompt, which is full.
   if (context.capabilities.structures.includes('screen') && (!liveApp || stage.elements.some((element) => element.figure?.kind === 'structure' && element.figure.structure === 'screen')) && (asksForInterface(input) || stage.elements.some((element) => element.figure?.kind === 'structure' && element.figure.structure === 'screen'))) parts.push(INTERFACE_CHAPTER);
   // The DOCUMENT chapter is carried while a document of parts exists, or when a technique the library chose writes one; never in the system prompt, which is full.
-  if (carriesDocument(context) && !(makeApp && !hasLesson(context))) parts.push(DOCUMENT_CHAPTER);
+  const documentCarried = carriesDocument(context) && !(makeApp && !hasLesson(context));
+  if (documentCarried) parts.push(DOCUMENT_CHAPTER);
+  // HI1. An ask on the stage is taught when one stands on it or a technique the library chose writes one; never in the system prompt, and never on the user's words.
+  const asksOnStage = stage.elements.some((element) => element.figure?.kind === 'control' && element.figure.ask !== undefined);
+  if (!liveApp && carriesAsk(context, asksOnStage)) parts.push(documentCarried ? ASK_CHAPTER_WITH_DOCUMENT : ASK_CHAPTER);
   // FG2: a labelled drawing is taught when the words ask for one, or while one is on stage to be changed; never in the system prompt.
   const figureOnStage = stage.elements.some((element) => element.figure?.kind === 'structure' && element.figure.structure === 'figure');
   if (context.capabilities.structures.includes('figure') && !liveApp && ((input.kind === 'prompt' && asksForFigure(input.text)) || figureOnStage)) parts.push(FIGURE_CHAPTER);

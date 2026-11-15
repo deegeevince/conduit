@@ -12,7 +12,8 @@ import { pickHasOption } from './bind';
 import { chartModelOf } from './chart';
 import { namesIn, numberOf, parseExpr } from './expr';
 import { lengthOf, outlineOf, pointAlong, refitInside } from './geometry';
-import { isLessonVerb } from './lesson';
+import { isLessonVerb, stageAskOf } from './lesson';
+import type { AskLine, HintLine, StageAsk, StageSlot } from './lesson';
 import { completeStyle, mergeStyles, patchStyle, resolveColours, resolveLook, resolveStyle } from './style';
 import type { ColorSheet, ElementStyle, LookDef, LookSheet, ResolvedLook, ResolvedProps, StyleContext, StyleDef, StyleSheet } from './style';
 import { isRuleRow, splitCells, splitEmphasis } from './text';
@@ -151,6 +152,8 @@ export interface ControlSpec {
   readonly value: ControlValue | null;
   /** a change the user commits becomes their next message; a button always sends */
   readonly send: boolean;
+  /** HI1. A control that is an ask of the stage: the typed field, or the choices, with the answers the painter compares with. Absent: an ordinary control. */
+  readonly ask?: StageAsk;
 }
 
 /** What an element is, when it is not words. A node, a link and a control carry words as well: they are in the element's `text`. */
@@ -1069,6 +1072,57 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
     span.driven.sort((a, b) => a.seq - b.seq);
   };
 
+  /**
+   * HI1. An ask on the stage: a typed field or a row of choices wearing the ask's words (a blank in them is where the answer is set). It is a control, so
+   * it is placed in the flow, held in the store, bound, carried, filmed and read by the proxies as one. What is right is in `ask`, which the painter only compares with.
+   */
+  const scheduleAsk = (entry: ScoreEntry, line: AskLine & { readonly stage: StageSlot }, hints: readonly string[]): void => {
+    const { seq } = entry;
+    const start = startOf(entry, undefined);
+    const priorStart = previousStart;
+    previousStart = start;
+    if (deckOpen !== null) deckOpen.fresh = false;
+    const alive = live.filter((candidate) => candidate.span.kind === 'control' && isActive(candidate, start) && candidate.span.id !== line.id);
+    if (alive.length >= LIMITS.controls) {
+      report(seq, 'structure-limit', `at most ${LIMITS.controls} controls can be on stage at once; this ask was ignored`);
+      lines.push({ seq, verb: 'ask', start, end: start });
+      return;
+    }
+    const ask = stageAskOf(line, hints);
+    const picks = line.check === 'done' ? null : line.pick ?? null;
+    const joined = joinGroup(seq, styleFor(seq, 'control', [], {}), start);
+    const { plain, emphasis } = splitEmphasis(line.text);
+    const figure: Figure = { kind: 'control', control: picks === null ? 'input' : 'pick', form: picks === null ? null : 'row', options: picks ?? [], min: 0, max: 1, step: null, unit: line.unit ?? null, value: picks === null ? '' : 0, send: false, ask };
+    const before = findLive(line.id, start);
+    if (before !== null && before.span.figure?.kind === 'control' && before.span.figure.ask !== undefined && before.span.text === plain && JSON.stringify(before.span.figure.ask) === JSON.stringify(ask) && alike(before.span.figure.options, picks ?? [])) {
+      previousStart = priorStart;
+      lines.push({ seq, verb: 'ask', start, end: start });
+      return;
+    }
+    const duration = figureEnterSeconds(joined.style.enter, pace, joined.style.dur);
+    const slot = takeSlot(line.id, start);
+    create(entry, 'control', line.id, joined.style, start + slot.delay, duration, slot.order, { text: plain, emphasis, figure, parent: joined.parent });
+    // the ask before this one now has a next: it is no longer the last, and so does not tell the brain on its own
+    const earlier = ask.after === null ? null : findLive(ask.after, start);
+    if (earlier !== null && earlier.span.figure?.kind === 'control' && earlier.span.figure.ask !== undefined && earlier.span.figure.ask.next !== line.id) {
+      earlier.span.figure = { ...earlier.span.figure, ask: { ...earlier.span.figure.ask, next: line.id } };
+    }
+    advanceForDrawn(joined.style, start + slot.delay, duration);
+    lines.push({ seq, verb: 'ask', start, end: start + slot.delay + duration });
+  };
+
+  /** HI1. A hint of a stage ask: it joins the ask's own hints, in the order written. */
+  const addHint = (entry: ScoreEntry, line: HintLine): void => {
+    const { seq } = entry;
+    const start = Math.max(pen, entry.floor);
+    lines.push({ seq, verb: 'hint', start, end: start });
+    const target = line.in === undefined ? [...live].reverse().find((candidate) => candidate.span.figure?.kind === 'control' && candidate.span.figure.ask !== undefined && isActive(candidate, start)) : findLive(line.in, start);
+    const held = target?.span.figure;
+    if (target === null || target === undefined || held?.kind !== 'control' || held.ask === undefined) return;
+    if (held.ask.hints.includes(line.text)) return;
+    target.span.figure = { ...held, ask: { ...held.ask, hints: [...held.ask.hints, line.text] } };
+  };
+
   const scheduleCreating = (entry: ScoreEntry, line: CreatingLine): void => {
     const { seq } = entry;
     const start = startOf(entry, line.when);
@@ -1700,10 +1754,25 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
         // For the server alone: it keeps what the user asked to hold, and starts the passes. Nothing here is on the clock.
         break;
 
+      case 'ask':
+        // HI1. An ask no part holds is on the stage; one a part holds is the document's
+        if (line.stage !== undefined) {
+          scheduleAsk(entry, { ...line, stage: line.stage }, []);
+          break;
+        }
+        lines.push({ seq, verb: line.verb, start: pen, end: pen });
+        break;
+
+      case 'hint':
+        if (line.stage === true) {
+          addHint(entry, line);
+          break;
+        }
+        lines.push({ seq, verb: line.verb, start: pen, end: pen });
+        break;
+
       case 'part':
       case 'step':
-      case 'ask':
-      case 'hint':
       case 'reply':
       case 'end':
         // The words of the document and its lessons (v3, lesson.ts). They put nothing on a painted stage and take no time: the document keeps them.

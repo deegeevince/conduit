@@ -6,7 +6,7 @@
 
 import { isLessonVerb } from './lesson';
 import { InterfaceReader, UI_WORDS, nodeLine, screenLine } from './interface';
-import { LessonBook } from './lesson';
+import { LessonBook, StageBook } from './lesson';
 import { FIGURE_WORDS, figureRowLine } from './figure';
 import { parseLine } from './parse';
 import type { Approx, Issue, Line, ParseResult, StyleProps } from './types';
@@ -241,6 +241,8 @@ export class LineNormalizer {
   private figureId: string | null = null;
   /** v3. The parts, steps and asks of the conversation: what `in=` and an id are written from, and what an `ask` that would give itself away is refused by. */
   private readonly book: LessonBook;
+  /** HI1. The asks of the scene being written, when no part holds them: they stand on the stage. */
+  private readonly asks: StageBook;
 
   /** SA5. `flow`: a live brain's words and controls are placed by the stage, never by a coordinate. `free`: lines are taken as written (replays, golden, old logs). */
   private readonly placement: 'flow' | 'free';
@@ -251,6 +253,7 @@ export class LineNormalizer {
     this.makeId = makeId;
     this.styles = new Set(definedStyles);
     this.book = new LessonBook(makeId);
+    this.asks = new StageBook(makeId);
     this.placement = options.placement ?? 'free';
     this.layout = options.layout ?? null;
   }
@@ -341,6 +344,12 @@ export class LineNormalizer {
           this.ui = null;
         }
         if (line.verb === 'say') {
+          // HI1. Words that would show what an open ask accepts are refused; the rest are on the page for the asks written after them.
+          const showing = this.asks.asked ? this.asks.showing(line.text) : null;
+          if (showing !== null) {
+            return { line: null, issues: [{ code: 'spoiler', severity: 'error', message: `these words show ${showing.answer}, which ask ${showing.ask} accepts; the person would see the answer before trying. Say them without it (a bound change can show it once the ask is right)` }] };
+          }
+          this.asks.said(line.text);
           const placed = this.placedByStage({ ...line, id, styles });
           const said = placed.line;
           const marked = said.approx === undefined ? said : { ...said, text: doubted(said.text, said.approx), ...(said.alts === undefined ? {} : { alts: said.alts.map((alt) => doubted(alt, said.approx ?? 'yes')) }) };
@@ -418,12 +427,22 @@ export class LineNormalizer {
         this.table = null;
         this.structure = null;
         this.ui = null;
+        // HI1. An ask that no part holds stands on the stage, with its hints; the reader, the matcher and the seal are the document's.
+        if (line.verb === 'ask' && line.in === undefined && this.book.openPart() === null) {
+          const read = this.asks.ask(line);
+          return { line: read.line, issues: read.issues };
+        }
+        if (line.verb === 'hint' && this.asks.asked && (line.in === undefined ? this.book.openPart() === null : this.asks.has(line.in))) {
+          const read = this.asks.hint(line);
+          return { line: read.line, issues: read.issues };
+        }
         const read = this.book.read(line);
         return { line: read.line, issues: read.issues };
       }
       case 'scene':
       case 'deck':
         if (line.verb === 'scene') this.layout = line.layout ?? 'stack';
+        this.asks.reset();
         this.ui = null;
         this.sprite = null;
         this.table = null;

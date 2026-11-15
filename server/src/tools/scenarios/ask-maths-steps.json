@@ -1,0 +1,11 @@
+{
+ "case": "ask-maths-steps",
+ "recordedAt": "2026-11-15T00:00:00.000Z",
+ "screen": "1280x720",
+ "turns": [
+  {
+   "match": "walk me through 3x + 5 = 20, but make me do each step",
+   "script": "scene stack\nsay title | Solve 3x + 5 = 20\nsay | Do each step yourself. The next one opens when this one is right.\nask s1 is=15 | Take 5 from both sides, so 3x = __\nhint | What is 20 minus 5?\nhint | Whatever you do to one side, do to the other: subtract 5.\nask s2 is=5 | Now divide both sides by 3, so x = __\nhint | Share the 15 into 3 equal parts.\nask s3 send=no is=20 | Check it: 3 x 5 + 5 = __\nhint | Do the multiplying first, then the adding.\n"
+  }
+ ]
+}

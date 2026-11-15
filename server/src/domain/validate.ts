@@ -506,6 +506,7 @@ function backEvent(value: unknown, index: number): BackEvent {
         send: bool(raw.send, 'send'),
         ...optionalSeen(raw.seen, 'seen'),
         ...(raw.app === true && { app: true as const }),
+        ...(raw.ask === true && { ask: true as const }),
         ...(raw.screen === undefined || raw.screen === null ? {} : { screen: text(raw.screen, 'screen').slice(0, LIMITS.name) }),
         ...(raw.values === undefined || raw.values === null ? {} : { values: controlValues(raw.values, 'values') }),
       };

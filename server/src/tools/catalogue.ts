@@ -50,6 +50,10 @@ interface CaseTurn {
   /** actions before the turn begins (put the open document away so the stage can be tapped; SK1: hold a skill from the [+] menu) */
   readonly pre?: readonly Action[];
   readonly do?: readonly Action[];
+  /** HI1. What is done in a live run instead of `do`: a live brain's ids and answers are its own */
+  readonly liveDo?: readonly Action[];
+  /** HI1. The checks of a live run, when they differ from the replay's (the brain's own breakdown has its own number of steps) */
+  readonly liveCheck?: readonly Spec[];
   readonly check?: readonly Spec[];
 }
 interface Case {
@@ -256,6 +260,8 @@ interface Ctl {
   /** how a pick shows its options, and the painter's own box for each part of the control (`option:<n>`, `back`, `next`) */
   readonly form?: string | null;
   readonly parts?: readonly { readonly part: string; readonly box: { readonly x: number; readonly y: number; readonly width: number; readonly height: number } }[];
+  /** HI1. An ask of the stage: how it stands (what a test reads; never what it accepts) */
+  readonly askState?: { readonly verdict: 'open' | 'wrong' | 'right' | 'shown'; readonly tries: number; readonly hints: number; readonly chosen: number; readonly locked: boolean };
 }
 interface Cx {
   readonly tab: Tab;
@@ -287,7 +293,7 @@ const res = (check: string, bad: readonly string[], good: string): Res => ({ che
 const floorOf = (cx: Cx): number => (cx.mobile ? 9 : 11.75);
 
 async function controls(tab: Tab): Promise<Ctl[]> {
-  return tab.eval<Ctl[]>(`window.__stage.controls().map((c) => ({ id: c.id, control: c.control, label: c.label, options: c.options, min: c.min, value: c.value, valueText: c.valueText, box: c.box, form: c.form, parts: c.parts }))`);
+  return tab.eval<Ctl[]>(`window.__stage.controls().map((c) => ({ id: c.id, control: c.control, label: c.label, options: c.options, min: c.min, value: c.value, valueText: c.valueText, box: c.box, form: c.form, parts: c.parts, askState: c.askState }))`);
 }
 
 /** What a person sees, as one string: the open document's words when the lesson view is up, else the painted stage's words and its choices. */
@@ -989,6 +995,18 @@ async function runCheck(cx: Cx, spec: Spec): Promise<Res> {
       const drawn = last.split('\n').filter((l) => /^(circle|ellipse|rect|line|poly|path|arc|chart|table|flow|tree|cycle|timeline|map|slider|toggle|pick|app|pix|screen|code|button)\b/.test(l.trim()));
       return res(name, scenes.length === 0 ? ['no scene'] : drawn.length === 0 ? ['the last scene holds words only, no drawing or control'] : [], `the last scene has ${drawn.length} drawn or control line(s)`);
     }
+    case 'sealed-at-rest':
+      return sealedScan(cx, (spec['values'] as string[] | undefined) ?? []);
+    case 'asks-stand': {
+      // HI1. The asks are controls of the stage (no app, no document), and the first is open while the later ones wait as numbered rows
+      const all = (await controls(cx.tab)).filter((c) => c.askState !== undefined);
+      const want = Number(spec['min'] ?? 1);
+      const bad: string[] = [];
+      if (all.length < want) bad.push(`${all.length} ask(s) on the stage, wanted ${want}`);
+      if (all.length > 1 && all[0]?.askState?.locked === true) bad.push('the first ask is locked');
+      if (all.length > 1 && all.slice(1).some((c) => c.askState?.locked !== true && c.askState?.verdict === 'open' && all[0]?.askState?.verdict === 'open')) bad.push('a later ask is open before the first is settled');
+      return res(name, bad, `${all.length} ask(s) stand on the stage`);
+    }
     case 'no-app': {
       const lines = cx.answer.script.split('\n').filter((l) => /^(app|code)\b/.test(l));
       return res(name, lines.map((l) => `a standing "no code" was broken: ${l.slice(0, 40)}`), 'no app or code block');
@@ -1276,10 +1294,186 @@ async function act(cx: Cx, action: Action): Promise<void> {
       await sleep(500);
       break;
     }
+    case 'dump': {
+      // a developer's lens: what the stage holds now, written beside the pictures
+      const seen = await tab.eval<unknown>(`({ elements: window.__stage.elements().map((e) => ({ id: e.id, kind: e.kind, text: String(e.text || '').slice(0, 50), box: e.box, phase: e.phase, opacity: e.opacity })), controls: window.__stage.controls().map((c) => ({ id: c.id, box: c.box, enabled: c.enabled, askState: c.askState })), state: window.__stage.state() })`);
+      await writeFile(join(cx.dir, `${cx.screen.name}-dump-${String(action['name'] ?? 'now')}.json`), JSON.stringify(seen, null, 1));
+      break;
+    }
     case 'pen-ring':
       break;
     default:
   }
+}
+
+/** HI1. Nothing an ask accepts is on the screen before a try: not in the words, not in a control's label, not in the page. `values`: what the asks accept. */
+async function sealedScan(cx: Cx, values: readonly string[]): Promise<Res> {
+  const seen = await cx.tab.eval<string>(`[window.__stage.elements().map((e) => String(e.text || '')).join('\\n'), window.__stage.controls().map((c) => String(c.label || '') + ' ' + String(c.valueText || '')).join('\\n'), document.body.innerText].join('\\n')`);
+  const bad = values.filter((v) => new RegExp(`(^|[^\\w.])${v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^\\w.])`, 'i').test(seen)).map((v) => `"${v}" is on the screen before a try`);
+  return res('sealed-at-rest', bad, `${values.length} accepted answer(s), none on the screen before a try`);
+}
+
+
+/**
+ * HI1. A person works an ask of the stage with real input: types into the blank (or taps a choice), presses Check, opens a hint, gives up with Show me.
+ * `tries` are typed, or `#n` is the nth choice; each is checked on a press and the state read back. Every picture is kept beside the run's own.
+ */
+async function askFlowOne(cx: Cx, action: Action): Promise<Res[]> {
+  const id = String(action['id']);
+  const tries = (action['tries'] as string[] | undefined) ?? [];
+  const wrongFirst = action['wrongFirst'] !== false;
+  const out: Res[] = [];
+  const { tab } = cx;
+  const find = async (): Promise<Ctl | undefined> => (await controls(tab)).find((c) => c.id === id);
+  const part = (ctl: Ctl, name: string): { x: number; y: number } | null => {
+    const found = ctl.parts?.find((p) => p.part === name);
+    return found === undefined ? null : { x: found.box.x + found.box.width / 2, y: found.box.y + found.box.height / 2 };
+  };
+  /** the page is read as a frame draws it, so a part that has only just arrived (Check, once the blank holds words) is waited for a little */
+  const until = async <T,>(read: () => Promise<T | null | undefined | false>, ms = 2500): Promise<T | null> => {
+    const end = Date.now() + ms;
+    for (;;) {
+      const got = await read();
+      if (got !== null && got !== undefined && got !== false) return got;
+      if (Date.now() > end) return null;
+      await sleep(80);
+    }
+  };
+  const press = async (name: string, settle = 350): Promise<boolean> => {
+    const at = await until(async () => {
+      const ctl = await find();
+      return ctl === undefined ? null : part(ctl, name);
+    });
+    if (at === null) return false;
+    await tab.tap(at.x, at.y);
+    await sleep(settle);
+    return true;
+  };
+  const shot = async (name: string): Promise<void> => {
+    await writeFile(join(cx.dir, `${cx.screen.name}-ask-${id}-${name}.png`), Buffer.from((await tab.shot()).split(',')[1] ?? '', 'base64'));
+  };
+  const state = async (): Promise<Ctl['askState']> => (await find())?.askState;
+  const first = await find();
+  if (first === undefined || first.askState === undefined) return [{ check: 'ask-on-stage', verdict: 'FAIL', detail: `no ask "${id}" is on the stage` }];
+  out.push({ check: 'ask-on-stage', verdict: 'PASS', detail: `ask ${id} is a control on the stage` });
+  if (Array.isArray(action['sealed'])) out.push(await sealedScan(cx, action['sealed'] as string[]));
+  // every part a hand works is a finger across
+  const small = (first.parts ?? []).filter((p) => p.part !== 'whole' && (p.box.width < 43.5 || p.box.height < 43.5)).map((p) => `${p.part} is ${Math.round(p.box.width)}x${Math.round(p.box.height)}`);
+  out.push({ check: 'hands-44', verdict: small.length === 0 ? 'PASS' : 'FAIL', detail: small.length === 0 ? 'every part is at least 44 px' : small.join('; ') });
+  await shot('open');
+  let hinted = false;
+  let asked = 0;
+  for (const [index, entry] of tries.entries()) {
+    const ctl = await find();
+    if (ctl === undefined) break;
+    if (entry.startsWith('#')) await press(`option:${entry.slice(1)}`);
+    else {
+      // the blank: touch it, clear what is there, type
+      await press('field');
+      const had = typeof ctl.value === 'string' ? ctl.value.length : 0;
+      for (let i = 0; i < had; i += 1) await tab.key('Backspace');
+      await tab.type(entry);
+      await until(async () => (await find())?.value === entry);
+      if (index === 0) await shot('typed');
+    }
+    const triesBefore = (await state())?.tries ?? 0;
+    const checked = await press('check', 60);
+    await until(async () => ((await state())?.tries ?? 0) > triesBefore || (await find()) === undefined, 3000);
+    if (!checked) out.push({ check: 'check-pressable', verdict: 'FAIL', detail: `no Check to press with "${entry}" held` });
+    asked += 1;
+    const now = await state();
+    const last = index === tries.length - 1;
+    if (!last || action['end'] === 'wrong') {
+      out.push({ check: `wrong-${index + 1}`, verdict: now?.verdict === 'wrong' ? 'PASS' : 'FAIL', detail: `after "${entry}" the ask is ${now?.verdict}` });
+      await shot(`wrong-${index + 1}`);
+      if (action['hint'] === true && !hinted) {
+        const before = now?.hints ?? 0;
+        const did = await press('hint');
+        await until(async () => ((await state())?.hints ?? 0) > before, 2500);
+        const after = await state();
+        hinted = true;
+        out.push({ check: 'hint-on-tap', verdict: did && (after?.hints ?? 0) === before + 1 && after?.verdict === 'wrong' ? 'PASS' : 'FAIL', detail: `hints ${before} -> ${after?.hints}, ask is ${after?.verdict}` });
+        await shot('hint');
+      }
+      if (action['show'] === true && index === tries.length - 2) {
+        const did = await press('show');
+        await until(async () => (await state())?.verdict === 'shown', 2500);
+        const after = await state();
+        out.push({ check: 'show-me', verdict: did && after?.verdict === 'shown' ? 'PASS' : 'FAIL', detail: `after Show me the ask is ${after?.verdict}` });
+        await shot('shown');
+        break;
+      }
+    } else {
+      // an ask that tells the brain starts the next turn at once, and the stage it leaves is the next answer's: then the page's own act is what says it was right
+      const told = now === undefined ? (await tab.eval<{ id?: string; text?: string; send?: boolean }[]>(`window.__stage.events().filter((e) => e.type === 'control' && e.ask === true)`)).some((e) => e.id === id && e.send === true && /\(right/.test(e.text ?? '')) : false;
+      out.push({ check: 'wrong-then-right', verdict: (now?.verdict === 'right' || told) && asked >= (wrongFirst ? 2 : 1) ? 'PASS' : 'FAIL', detail: `after ${asked} tr${asked === 1 ? 'y' : 'ies'} the ask is ${now?.verdict ?? (told ? 'right, and told to the brain at once' : 'gone')}` });
+      await shot('right');
+    }
+  }
+  // the keyboard up (a phone): the room is what is left above it, and the blank and its line must both still be on the screen
+  const keyboard = Number(action['keyboard'] ?? 0);
+  if (keyboard > 0 && cx.mobile) {
+    const ctl = await find();
+    const open = ctl?.parts?.some((p) => p.part === 'field') === true;
+    if (open) {
+      await press('field');
+      const dpr = await tab.eval<number>('window.devicePixelRatio');
+      await tab.send('Emulation.setDeviceMetricsOverride', { width: cx.screen.width, height: cx.screen.height - keyboard, deviceScaleFactor: dpr, mobile: true });
+      await sleep(900);
+      const now = await find();
+      const field = now?.parts?.find((p) => p.part === 'field')?.box;
+      const whole = now?.box;
+      const room = cx.screen.height - keyboard;
+      const inside = field !== undefined && field.y >= 0 && field.y + field.height <= room;
+      const line = whole !== undefined && field !== undefined && whole.y >= -1 && whole.y + Math.min(whole.height, field.y - whole.y + field.height) <= room;
+      out.push({ check: 'keyboard-field-reachable', verdict: inside && line ? 'PASS' : 'FAIL', detail: field === undefined ? 'no field' : `with ${keyboard} px of keyboard the field is at y ${Math.round(field.y)}..${Math.round(field.y + field.height)} of ${room}; its line starts at y ${Math.round(whole?.y ?? 0)}` });
+      await shot('keyboard');
+      await tab.send('Emulation.setDeviceMetricsOverride', { width: cx.screen.width, height: cx.screen.height, deviceScaleFactor: dpr, mobile: true });
+      await sleep(500);
+    }
+  }
+  // the next ask opens when this one is settled, and the field stays on the screen
+  const after = await find();
+  if (after?.parts?.some((p) => p.part === 'field') === true) {
+    const f = after.parts.find((p) => p.part === 'field')?.box;
+    const view = await tab.eval<{ h: number; w: number }>(`({ h: window.visualViewport ? window.visualViewport.height : innerHeight, w: innerWidth })`);
+    out.push({ check: 'field-reachable', verdict: f !== undefined && f.y >= -1 && f.y + f.height <= view.h + 1 && f.x >= -1 && f.x + f.width <= view.w + 1 ? 'PASS' : 'FAIL', detail: f === undefined ? 'no field' : `field at y ${Math.round(f.y)}..${Math.round(f.y + f.height)} of ${Math.round(view.h)}` });
+  }
+  // the brain is told: the page's own events say what was tried, one act each, and the finishing one says it is for the brain when the ask is the last
+  const events = await tab.eval<{ type: string; id?: string; text?: string; send?: boolean; ask?: boolean }[]>(`window.__stage.events().filter((e) => e.type === 'control' && e.ask === true).map((e) => ({ type: e.type, id: e.id, text: e.text, send: e.send, ask: e.ask }))`);
+  const mine = events.filter((e) => e.id === id);
+  const told = mine.length >= asked && mine.some((e) => /\((right|no)/.test(e.text ?? '') || /gave up/.test(e.text ?? ''));
+  if (tries.length > 0) out.push({ check: 'eyes-told', verdict: told ? 'PASS' : 'FAIL', detail: `${mine.length} act(s) sent: ${mine.map((e) => `${e.text}${e.send === true ? ' [send]' : ''}`).join(' / ').slice(0, 200)}` });
+  return out;
+}
+
+/** HI1. `id: "auto"` is for a live brain, whose ids and answers are its own: each ask the script wrote is worked in order from the script's own key (the page never has it), wrong first, a hint, then right; the second is given up on instead. */
+async function askFlow(cx: Cx, action: Action): Promise<Res[]> {
+  if (action['id'] !== 'auto') return askFlowOne(cx, action);
+  const answer = await cx.tab.call<Answer>('answer');
+  const decode = (raw: string): string[] => raw.split(',').map((v) => v.replaceAll('_', ' ').trim()).filter((v) => v !== '');
+  const asks = [...answer.script.matchAll(/^ask (\S+)([^|\n]*)\|/gm)].map((m) => {
+    const head = m[2] ?? '';
+    const is = decode(/\bis=(\S+)/.exec(head)?.[1] ?? '');
+    const pick = decode(/\bpick=(\S+)/.exec(head)?.[1] ?? '');
+    const open = /\bcheck=(any|done)\b/.test(head);
+    return { id: m[1] as string, is, pick, open };
+  });
+  if (asks.length === 0) return [{ check: 'ask-on-stage', verdict: 'FAIL', detail: 'the brain wrote no ask: nothing for the person to work' }];
+  const out: Res[] = [];
+  let at = 0;
+  for (const ask of asks.slice(0, 4)) {
+    at += 1;
+    const right = ask.pick.length > 0 ? `#${Math.max(1, ask.pick.findIndex((p) => ask.is.some((a) => a.toLowerCase() === p.toLowerCase())) + 1)}` : (ask.is[0] ?? 'x');
+    const wrong = ask.pick.length > 0 ? `#${Math.max(1, ask.pick.findIndex((p) => !ask.is.some((a) => a.toLowerCase() === p.toLowerCase())) + 1)}` : 'zq';
+    const tries = ask.open ? [right] : [wrong, right];
+    const giveUp = at === 2 && !ask.open;
+    const rows = await askFlowOne(cx, { a: 'ask-flow', id: ask.id, tries: giveUp ? [wrong, wrong] : tries, hint: !ask.open, wrongFirst: !ask.open, ...(giveUp ? { show: true } : {}), ...(ask.open ? {} : {}), sealed: ask.open || ask.pick.length > 0 ? [] : [] });
+    out.push(...rows.map((r) => ({ ...r, check: `${r.check}` })));
+  }
+  // an ask that tells the brain starts its next turn: it is waited for, so the picture that follows is the stage at rest
+  await cx.c.rest(null, false).catch(() => undefined);
+  return out;
 }
 
 /** [+] then Skills: the view is open and its rows are loaded; false when the page has no such entry */
@@ -1525,16 +1719,18 @@ async function runCell(args: Args, c: Case, screen: Args['screens'][number], url
       await poll;
       details.push({ check: `rest${c.turns.length > 1 ? `-${n}` : ''}`, verdict: note === '' ? 'PASS' : 'FAIL', detail: note === '' ? 'at rest' : note });
       cx.words = shown(await tab.call<Answer>('answer')).map((e) => e.text.trim()).join(' ');
-      for (const action of turn.do ?? []) {
+      for (const action of (args.mode === 'live' ? (turn.liveDo ?? turn.do) : turn.do) ?? []) {
         if (action.a === 'pen-ring') details.push(await penRing(cx));
+        else if (action.a === 'ask-flow') details.push(...(await askFlow(cx, action)));
         else await act(cx, action);
       }
-      if (n === c.turns.length || (turn.check ?? []).length > 0) {
+      const checks = (args.mode === 'live' ? (turn.liveCheck ?? turn.check) : turn.check) ?? [];
+      if (n === c.turns.length || checks.length > 0) {
         await sleep(400);
         if (cx.picture === '' || (turn.do ?? []).every((a) => a.a !== 'click-control')) cx.picture = await tab.shot();
         cx.answer = await tab.call<Answer>('answer');
         await writeFile(join(dir, `${screen.name}-t${n}.png`), Buffer.from(cx.picture.split(',')[1] ?? '', 'base64'));
-        for (const spec of turn.check ?? []) if (!(spec.k === 'pen-draws')) details.push(await runCheck(cx, spec));
+        for (const spec of checks) if (!(spec.k === 'pen-draws')) details.push(await runCheck(cx, spec));
         if (n === c.turns.length && c.generic !== false) for (const r of await generic(cx)) if (!details.some((d) => d.check === r.check)) details.push(r);
         cx.picture = '';
       }

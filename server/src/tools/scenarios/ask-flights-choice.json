@@ -1,0 +1,11 @@
+{
+ "case": "ask-flights-choice",
+ "recordedAt": "2026-11-15T00:00:00.000Z",
+ "screen": "1280x720",
+ "turns": [
+  {
+   "match": "which of these flights suits me, the morning one or the evening one?",
+   "script": "scene stack\nsay title | Two flights to Lisbon\nsay | Morning: leaves 07:10, arrives 09:40, 142 pounds.\nsay | Evening: leaves 18:30, arrives 21:00, 98 pounds.\nask f1 check=any pick=Morning,Evening send=yes | Which one suits you better?\n"
+  }
+ ]
+}

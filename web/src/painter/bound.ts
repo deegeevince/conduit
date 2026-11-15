@@ -5,6 +5,7 @@
 // bound change is drawn from a COPY of its span that carries the change as if it were a line on the clock, pinned at the share the control
 // says. So every renderer and every exporter sees the same picture the screen showed, with no second code path for it.
 
+import { runOf } from './controls/ask-state';
 import { styleAt } from '@conduit/language';
 import type { ControlSpec, ControlValue, ElementChange, ElementSpan, Range, Schedule } from '@conduit/language';
 import { applyDriven, drivenLayers } from './controls';
@@ -66,6 +67,8 @@ export function controlIndexOf(schedule: Schedule): ControlIndex {
   const driven: ElementSpan['driven'][number][] = [];
   for (const element of schedule.elements) {
     if (element.kind === 'control') {
+      // HI1. An ask is known by its id to the asks after it: they open in the order written
+      if (element.figure?.kind === 'control' && element.figure.ask !== undefined) runOf(element);
       byKey.set(element.key, element);
       ids.add(element.id);
     }

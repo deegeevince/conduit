@@ -86,13 +86,28 @@ export interface AskLine {
    * Neither takes `is`: nothing is sealed.
    */
   readonly check?: 'working' | 'order' | 'any' | 'done';
+  /**
+   * HI1. On the stage only: when a finished ask is told to the brain. Absent: the last ask of the scene tells it, so a walk of several steps arrives
+   * whole; `yes`: this one does; `no`: none does (the brain hears of it on its next turn).
+   */
+  readonly send?: boolean;
+  /** HI1. Written by the normaliser: this ask is a stage element (no part holds it), the ask before it in the scene, and its place among them */
+  readonly stage?: StageSlot;
   readonly text: string;
+}
+
+/** HI1. Where a stage ask stands among the scene's asks: they open in order, so each says which one it waits for. */
+export interface StageSlot {
+  readonly n: number;
+  readonly after: string | null;
 }
 
 /** What to say after a wrong try. `in` is the id of the ask it belongs to. */
 export interface HintLine {
   readonly verb: 'hint';
   readonly in?: string;
+  /** HI1. Written by the normaliser: the ask it belongs to is a stage element */
+  readonly stage?: true;
   readonly text: string;
 }
 
@@ -663,13 +678,16 @@ const TIME_G = /\b\d{1,2}[:.]\d{2}\b|\b(?:half|quarter) (?:past|to) \w+\b|\b\w+ 
 function numericCandidates(text: string): string[] {
   const out: string[] = [];
   for (const match of text.matchAll(NUMERIC_G)) {
-    const found = match[0].trim();
-    out.push(found);
-    // `10-20` reads as 10 and -20; either way the 20 is there
-    if (found.startsWith('-')) out.push(found.slice(1));
-    // the number alone, without the word after it
-    const bare = /^([£$€]?-?\d[\d,]*(?:\.\d+)?)/.exec(found);
-    if (bare?.[1] !== undefined && bare[1] !== found) out.push(bare[1]);
+    // `15, and` is a 15 followed by a comma, not a number with a thousands place: the stretch is read as written and without the comma it ends on
+    const written = match[0].trim();
+    for (const found of new Set([written, written.replace(/,+(?=\D|$)/g, '')])) {
+      out.push(found);
+      // `10-20` reads as 10 and -20; either way the 20 is there
+      if (found.startsWith('-')) out.push(found.slice(1));
+      // the number alone, without the word after it
+      const bare = /^([£$€]?-?\d[\d,]*(?:\.\d+)?)/.exec(found);
+      if (bare?.[1] !== undefined && bare[1] !== found) out.push(bare[1]);
+    }
   }
   const tokens = text.toLowerCase().split(/[^a-z']+/).filter((token) => token !== '');
   for (let index = 0; index < tokens.length; index += 1) {
@@ -906,6 +924,11 @@ export class LessonBook {
   /** The first part written: the root of the document. */
   root(): string | null {
     return this.order[0] ?? null;
+  }
+
+  /** The part last written and still open, or null when none is: an ask written with none open stands on the stage. */
+  openPart(): string | null {
+    return this.current();
   }
 
   /** The part a lesson line would land in, without reading it: null for a line that lands in no part. */
@@ -1193,5 +1216,142 @@ export class LessonBook {
     if (ask.hints.length >= LESSON_LIMITS.hints) return this.refuse('element-limit', `at most ${LESSON_LIMITS.hints} hints on one ask`);
     part.steps[index] = { ...ask, hints: [...ask.hints, line.text] };
     return { line: { verb: 'hint', in: ask.id, text: line.text }, issues: [] };
+  }
+}
+
+// --- the stage's asks (HI1) ----------------------------------------------------------------------------------------------------------------
+
+/** What marks a blank inside the words of an ask: the person's answer is set there, in the line. */
+export const BLANK = '__';
+
+/** How many blanks the words hold. A blank is two or more underscores standing alone, not part of a word. */
+export function blanksIn(text: string): number {
+  return (text.match(/(?<![\w])_{2,}(?![\w])/g) ?? []).length;
+}
+
+/** The words with their blank cut out: what comes before it and what after, or null when there is none. */
+export function splitAtBlank(text: string): readonly [string, string] | null {
+  const found = /(?<![\w])_{2,}(?![\w])/.exec(text);
+  if (found === null) return null;
+  return [text.slice(0, found.index), text.slice(found.index + found[0].length)];
+}
+
+/**
+ * What the painter is given of an ask that stands on the stage: the answers it accepts (never drawn; the painter only compares), the hints behind
+ * their tap, and where it stands among the scene's asks. It is the `LessonAsk` the document holds, in the form a control carries.
+ */
+export interface StageAsk {
+  readonly accepted: readonly string[];
+  readonly unit: string | null;
+  readonly check: 'any' | 'done' | null;
+  readonly pick: readonly string[] | null;
+  readonly hints: readonly string[];
+  /** its place among the scene's asks, from 1, and the one before it: it stays a numbered empty row until that one is right or given up */
+  readonly n: number;
+  readonly after: string | null;
+  /** the ask that waits for this one, set when it is written: an ask with none is the last */
+  readonly next?: string;
+  /** `last`: told to the brain when it is the last ask of the scene and is finished; `yes`: always; `no`: never */
+  readonly send: 'last' | 'yes' | 'no';
+  /** the words hold a blank */
+  readonly blank: boolean;
+}
+
+/** The stage ask a line and its hints make. */
+export function stageAskOf(line: Pick<AskLine, 'is' | 'unit' | 'check' | 'pick' | 'send' | 'text'> & { readonly stage: StageSlot }, hints: readonly string[]): StageAsk {
+  return {
+    accepted: line.check === 'any' || line.check === 'done' ? [] : line.is,
+    unit: line.unit ?? null,
+    check: line.check === 'any' || line.check === 'done' ? line.check : null,
+    pick: line.pick ?? null,
+    hints,
+    n: line.stage.n,
+    after: line.stage.after,
+    send: line.send === undefined ? 'last' : line.send ? 'yes' : 'no',
+    blank: blanksIn(line.text) > 0,
+  };
+}
+
+/**
+ * The asks of one scene as they are written. It is a `LessonBook` of one part nobody sees: the same reader, the same matcher and the same seal as the
+ * document's, so an ask refuses to open on the stage under the words it would give itself away in. What is said on the stage (`say`) is a step of that part.
+ */
+export class StageBook {
+  private book: LessonBook;
+  private readonly makeId: () => string;
+  private ids: string[] = [];
+  private words = 0;
+  /** what was said before the first ask: the question as it was set, in which an answer is no secret (as a document's own title is) */
+  private question: string[] = [];
+
+  constructor(makeId: () => string) {
+    this.makeId = makeId;
+    this.book = new LessonBook(makeId);
+    this.open();
+  }
+
+  private open(): void {
+    this.book.read({ verb: 'part', id: 'stage', title: 'stage' });
+  }
+
+  /** A new scene: its asks begin again, and what was said before is no longer on the page. */
+  reset(): void {
+    this.book = new LessonBook(this.makeId);
+    this.ids = [];
+    this.words = 0;
+    this.question = [];
+    this.open();
+  }
+
+  /** Whether any ask has been written in this scene. */
+  get asked(): boolean {
+    return this.ids.length > 0;
+  }
+
+  /** Words said on the stage: they are on the page, so an ask written after them may not accept what they show. */
+  said(text: string): void {
+    const plain = plainText(text).trim();
+    if (plain === '' || this.words >= LESSON_LIMITS.steps - 8) return;
+    this.words += 1;
+    if (this.ids.length === 0) {
+      this.question.push(plain);
+      this.book.read({ verb: 'part', id: 'stage', title: this.question.join(' ').slice(0, 600) });
+    }
+    this.book.read({ verb: 'step', id: '-', in: 'stage', text: plain });
+  }
+
+  /** An answer that words said after an ask would show while it is open; null when they show none. */
+  showing(text: string): { readonly ask: string; readonly answer: string } | null {
+    const steps = this.book.part('stage')?.steps ?? [];
+    for (const step of steps) {
+      if (step.kind !== 'ask' || step.check === 'any' || step.check === 'done') continue;
+      for (const answer of step.accepted) if (!this.question.some((words) => textHolds(words, answer, step.unit)) && textHolds(text, answer, step.unit)) return { ask: step.id, answer };
+    }
+    return null;
+  }
+
+  ask(line: AskLine): LessonRead {
+    const issue = (message: string): LessonRead => ({ line: null, issues: [{ code: 'bad-ask', severity: 'error', message }] });
+    if (line.check === 'working' || line.check === 'order') return issue(`ask ${line.id} is typed or picked on the stage; check=${line.check} belongs to a document of parts`);
+    if (blanksIn(line.text) > 1) return issue(`ask ${line.id} holds more than one blank; write one ask for each (the next opens when this one is right)`);
+    const read = this.book.read({ ...line, in: 'stage' });
+    const written = read.line;
+    if (written === null || written.verb !== 'ask') return read;
+    const before = this.ids.indexOf(written.id);
+    const after = before > 0 ? (this.ids[before - 1] ?? null) : before === 0 ? null : (this.ids[this.ids.length - 1] ?? null);
+    if (before < 0) this.ids.push(written.id);
+    const { in: _in, ...rest } = written;
+    return { line: { ...rest, ...(line.send === undefined ? {} : { send: line.send }), stage: { n: before < 0 ? this.ids.length : before + 1, after } }, issues: read.issues };
+  }
+
+  hint(line: HintLine): LessonRead {
+    const named = line.in;
+    const read = this.book.read({ verb: 'hint', ...(named === undefined ? {} : { in: named }), text: line.text });
+    return read.line === null || read.line.verb !== 'hint' ? read : { line: { ...read.line, stage: true }, issues: read.issues };
+  }
+
+  /** Whether an ask of this scene was written with this id. */
+  has(id: string): boolean {
+    return this.ids.includes(id);
   }
 }

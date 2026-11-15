@@ -1,0 +1,11 @@
+{
+ "case": "ask-science-predict",
+ "recordedAt": "2026-11-15T00:00:00.000Z",
+ "screen": "1280x720",
+ "turns": [
+  {
+   "match": "why does ice float? let me guess first",
+   "script": "scene stack\nsay title | Does ice float?\nsay | A cube of ice goes into a glass of water. Make a guess first.\nask p1 is=floats pick=floats,sinks,melts_at_once | I think the ice __.\nhint | Think about whether ice takes up more room than the water it came from.\nask p2 send=no is=lighter pick=lighter,heavier,the_same | So, for the same size, ice is __ than water.\nhint | If it floats, which of the two pulls down harder?\n"
+  }
+ ]
+}

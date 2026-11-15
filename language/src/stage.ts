@@ -86,6 +86,11 @@ export function describeFigure(figure: Figure, box: CanvasBox | null = null): st
     case 'link':
       return `link ${figure.from.split('@')[0] ?? figure.from} to ${figure.to.split('@')[0] ?? figure.to}`;
     case 'control': {
+      // HI1. An ask of the stage: what it is and what the person holds in it; never what it accepts (the page compares, the brain's own `is=` is in its lines)
+      if (figure.ask !== undefined) {
+        const kind = figure.ask.check === 'any' ? 'a choice with no single answer' : figure.ask.check === 'done' ? 'a tick' : figure.options.length > 0 ? `picks ${figure.options.join(' | ')}` : figure.ask.blank ? 'typed in a blank' : 'typed';
+        return `ask ${figure.ask.n} (${kind}${figure.ask.hints.length > 0 ? `, ${figure.ask.hints.length} hint${figure.ask.hints.length === 1 ? '' : 's'}` : ''})${typeof figure.value === 'string' && figure.value !== '' ? `, holding "${figure.value}"` : ''}`;
+      }
       if (figure.control === 'slider') return `slider ${figure.min} to ${figure.max}, at ${String(figure.value ?? figure.min)}${figure.unit ?? ''}`;
       if (figure.control === 'toggle') return `toggle, ${figure.value === true ? 'on' : 'off'}`;
       if (figure.control === 'pick') return `pick of ${figure.options.join(' | ')}, on ${figure.options[Number(figure.value ?? 1) - 1] ?? ''}`;

@@ -1,5 +1,6 @@
 import { STANDING_LIMITS } from './context';
 import { parsePathData } from './geometry';
+import type { StageSlot } from './lesson';
 import { isLessonId, isLessonVerb, isSpan, readCrop, readShow, splitValues, tagWord } from './lesson';
 import type { LessonLine } from './lesson';
 import { BUILTIN_STYLE_NAMES, own } from './style';
@@ -1665,11 +1666,21 @@ function parseAsk(head: Head, text: string | null, issues: Issues): LessonLine |
   let pick: string[] | undefined;
   let unit: string | undefined;
   let check: 'working' | 'order' | 'any' | 'done' | undefined;
+  let send: boolean | undefined;
+  let stage: StageSlot | undefined;
   const rest: Pair[] = [];
   for (const pair of head.pairs) {
     if (pair.key === 'in') {
       if (isLessonId(pair.value)) parent = pair.value;
       else issues.warn('bad-id', `"${pair.value}" is not a part id; in= ignored`, pair.token);
+    } else if (pair.key === 'stage') {
+      // written by the normaliser, so that the page knows the ask stands on the stage: `stage=2:s1` is the second ask, after s1
+      const found = /^(\d{1,2})(?::(\S+))?$/.exec(pair.value);
+      if (found !== null) stage = { n: Number(found[1]), after: found[2] ?? null };
+    } else if (pair.key === 'send') {
+      if (pair.value === 'yes' || pair.value === 'true') send = true;
+      else if (pair.value === 'no' || pair.value === 'false') send = false;
+      else issues.warn('bad-value', `send= is yes or no; "${pair.value}" ignored`, pair.token);
     } else if (pair.key === 'check') {
       if (pair.value === 'working' || pair.value === 'order' || pair.value === 'any' || pair.value === 'done') check = pair.value;
       else issues.warn('bad-value', `check= is working, order, any or done; "${pair.value}" ignored`, pair.token);
@@ -1689,12 +1700,13 @@ function parseAsk(head: Head, text: string | null, issues: Issues): LessonLine |
     issues.error('missing-text', 'ask needs its question after " | "');
     return null;
   }
-  return { verb: 'ask', id, ...(parent === undefined ? {} : { in: parent }), is: accepted.slice(0, LESSON_LIMITS.accepted), ...(pick === undefined || pick.length === 0 ? {} : { pick }), ...(unit === undefined ? {} : { unit }), ...(check === undefined ? {} : { check }), text };
+  return { verb: 'ask', id, ...(parent === undefined ? {} : { in: parent }), is: accepted.slice(0, LESSON_LIMITS.accepted), ...(pick === undefined || pick.length === 0 ? {} : { pick }), ...(unit === undefined ? {} : { unit }), ...(check === undefined ? {} : { check }), ...(send === undefined ? {} : { send }), ...(stage === undefined ? {} : { stage }), text };
 }
 
 /** v3. `hint [in=<ask>] | <words>`. */
 function parseHint(head: Head, text: string | null, issues: Issues): LessonLine | null {
   let ask: string | undefined;
+  let stage = false;
   const words = [...head.words];
   const first = words[0];
   if (first !== undefined && isLessonId(first)) {
@@ -1707,14 +1719,15 @@ function parseHint(head: Head, text: string | null, issues: Issues): LessonLine 
     if (pair.key === 'in' || pair.key === 'for' || pair.key === 'ask') {
       if (isLessonId(pair.value)) ask = pair.value;
       else issues.warn('bad-id', `"${pair.value}" is not an ask id; ignored`, pair.token);
-    } else rest.push(pair);
+    } else if (pair.key === 'stage') stage = true;
+    else rest.push(pair);
   }
   warnUnknownPairs(rest, issues);
   if (text === null) {
     issues.error('missing-text', 'hint needs its words after " | "');
     return null;
   }
-  return { verb: 'hint', ...(ask === undefined ? {} : { in: ask }), text };
+  return { verb: 'hint', ...(ask === undefined ? {} : { in: ask }), ...(stage ? { stage: true as const } : {}), text };
 }
 
 function parseLesson(verb: Extract<LessonLine['verb'], string>, head: Head, text: string | null, issues: Issues): LessonLine | null {
