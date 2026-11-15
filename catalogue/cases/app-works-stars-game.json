@@ -1,0 +1,24 @@
+{
+ "id": "app-works-stars-game",
+ "title": "A little game: drag the stars into the box and count them",
+ "family": "live-app",
+ "owner": "app",
+ "kind": "flow",
+ "found": "2026-11-15",
+ "note": "The owner could not click the answer in a live app beside its words: the stage took the presses. A real click and a real drag on the app change the app and are not the stage's taps.",
+ "own": [
+  "app-works"
+ ],
+ "surface": "main",
+ "priority": "core",
+ "turns": [
+  {
+   "say": "a little game: drag the stars into the box and count them",
+   "source": {
+    "scenario": "stars-game",
+    "index": 0
+   },
+   "check": []
+  }
+ ]
+}
