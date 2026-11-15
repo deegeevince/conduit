@@ -92,6 +92,55 @@ function flowLayout(input: StructureInput, mayFold: boolean): StructureLayout {
   return (chosen.overflows ?? 0) > 0 || crossings(folded) <= crossings(chosen) + (isCrowded(chosen) && folded.shrink >= chosen.shrink + 0.1 ? 1 : 0) ? folded : chosen;
 }
 
+interface Placed {
+  readonly link: LinkSpec;
+  readonly pts: readonly Point[];
+}
+
+/** Two links that meet at a node: where one crosses the other is no fault, only untidy. */
+const sharesEnd = (a: LinkSpec, b: LinkSpec): boolean => a.from === b.from || a.to === b.to || a.from === b.to || a.to === b.from;
+
+/**
+ * What is wrong with a route, in weights: through a node or through words stands at 100 (never allowed), across another link at 10, along another
+ * link's line at 1 (untidy only). 0 is clean.
+ */
+function faultsOf(link: LinkSpec, pts: readonly Point[], others: readonly Placed[], nodes: ReadonlyMap<string, Box>, words: readonly Box[]): number {
+  const line: Polyline = { points: pts, closed: false };
+  let n = 0;
+  for (const [key, b] of nodes) {
+    if (key === link.from || key === link.to) continue;
+    if (polylineHitsBox(line, inflate(b, -1))) n += 100;
+  }
+  for (const t of words) if (polylineHitsBox(line, t)) n += 100;
+  for (const o of others) {
+    if (sharesEnd(link, o.link)) continue;
+    if (polylinesCross(line, { points: o.pts, closed: false }) > 0) n += 10;
+    else if (lieAlong(pts, o.pts)) n += 1;
+  }
+  return n;
+}
+
+/**
+ * The routes of a laid-out flow, mended: a link that runs through a node or across other links is found a way round (flowroute.ts) when that
+ * has fewer faults. Links are tried worst first, and the others stay where they are.
+ */
+function mendRoutes(env: Env, links: readonly LinkSpec[], routes: Point[][], nodes: ReadonlyMap<string, Box>, words: readonly Box[], room: Box): void {
+  const all = (): Placed[] => links.map((link, i) => ({ link, pts: routes[i] as Point[] }));
+  const worst = links.map((link, i) => ({ i, f: faultsOf(link, routes[i] as Point[], all().filter((_, j) => j !== i), nodes, words) })).filter((x) => x.f >= 10).sort((x, y) => y.f - x.f || x.i - y.i);
+  // a layout set smaller than its room could be (nothing fits) stands outside it: the way round may be there too
+  const world = union([room, ...nodes.values()]);
+  for (const { i } of worst) {
+    const link = links[i] as LinkSpec;
+    const from = nodes.get(link.from);
+    const to = nodes.get(link.to);
+    if (from === undefined || to === undefined) continue;
+    const others = all().filter((_, j) => j !== i);
+    const was = faultsOf(link, routes[i] as Point[], others, nodes, words);
+    const around = routeAround({ from, to, obstacles: [...nodes.values(), ...words], lines: others.map((o) => ({ points: o.pts, kin: sharesEnd(link, o.link) })), room: world, pad: env.headLength * 1.6, clear: Math.max(3, env.stroke * 2), bend: Math.max(env.body, 10) });
+    if (around !== null && faultsOf(link, around, others, nodes, words) < was) routes[i] = around;
+  }
+}
+
 /** Two routes that lie along one another for any stretch (so that they read as one line). */
 function lieAlong(a: readonly Point[], b: readonly Point[]): boolean {
   for (let i = 0; i + 1 < a.length; i += 1)
@@ -224,28 +273,11 @@ function foldChain(input: StructureInput): StructureLayout | null {
         pts.push({ x: to.x + to.width / 2, y: to.y });
         usual.push(simplify(pts));
       }
-      // faults of a route: nodes it runs through, words it runs through, links it crosses (a link that shares an end is no fault)
-      const kin = (a: LinkSpec, b: LinkSpec): boolean => a.from === b.from || a.to === b.to || a.from === b.to || a.to === b.from;
-      const faults = (link: LinkSpec, pts: readonly Point[], others: readonly { link: LinkSpec; pts: readonly Point[] }[]): number => {
-        const line: Polyline = { points: pts, closed: false };
-        let n = 0;
-        for (const el of input.nodes) {
-          if (el.key === link.from || el.key === link.to) continue;
-          const b = boxes.get(el.key);
-          if (b !== undefined && polylineHitsBox(line, inflate(b, -1))) n += 100;
-        }
-        for (const t of taken) if (polylineHitsBox(line, t)) n += 100;
-        for (const o of others) {
-          if (kin(link, o.link)) continue;
-          if (polylinesCross(line, { points: o.pts, closed: false }) > 0) n += 10;
-          // lying along another link's line is only untidy, so it counts for one
-          else if (lieAlong(pts, o.pts)) n += 1;
-        }
-        return n;
-      };
+      const nodeMap = new Map(input.nodes.flatMap((el) => (boxes.get(el.key) !== undefined ? [[el.key, boxes.get(el.key) as Box] as const] : [])));
+      const faults = (link: LinkSpec, pts: readonly Point[], others: readonly Placed[]): number => faultsOf(link, pts, others, nodeMap, taken);
       // the routes already drawn inside the bands count among the lines to cross
-      const inBand = linkSpecs(input).filter((l) => !crossing.includes(l) && routes.has(l.el.key)).map((l) => ({ link: l, pts: (routes.get(l.el.key) as Polyline).points }));
-      const placed: { link: LinkSpec; pts: readonly Point[] }[] = [];
+      const inBand: Placed[] = linkSpecs(input).filter((l) => !crossing.includes(l) && routes.has(l.el.key)).map((l) => ({ link: l, pts: (routes.get(l.el.key) as Polyline).points }));
+      const placed: Placed[] = [];
       const final: (Point[] | null)[] = crossing.map(() => null);
       // a link that no way round was found for runs through a node or words: such a fold is no answer
       let through = false;
@@ -262,7 +294,7 @@ function foldChain(input: StructureInput): StructureLayout | null {
         const to = boxes.get(link.to);
         const fallback = usual[k] as Point[];
         if (from === undefined || to === undefined) return;
-        const lines = [...inBand, ...placed].map((o) => ({ points: o.pts, kin: kin(link, o.link) }));
+        const lines = [...inBand, ...placed].map((o) => ({ points: o.pts, kin: sharesEnd(link, o.link) }));
         const around = routeAround({ from, to, obstacles: [...nodeBoxes, ...taken, ...tbox], lines, room: input.room, pad: env.headLength * 1.6, clear: Math.max(3, env.stroke * 2), bend: Math.max(env.body, 10) });
         const pick = around !== null && (fallback.length < 2 || faults(link, around, [...inBand, ...placed]) < faults(link, fallback, [...inBand, ...placed])) ? around : fallback;
         final[k] = pick;
@@ -543,9 +575,18 @@ function buildSnake(env: Env): Draft {
         pts = [{ x: sideX(a, z), y: y0 }, { x: lx, y: y0 }, { x: lx, y: y1 }, { x: sideX(b, z), y: y1 }];
         if (Math.abs(y0 - y1) < 0.5 && z === 'gutter') pts = [pts[0] as Point, pts[3] as Point];
       }
-      pts = simplify(pts);
+      routed.push({ link: l, pts: simplify(pts) });
+    }
+    // a link the lanes could not keep clear of a node or of other links is found a way round
+    {
+      const mended = routed.map((r) => r.pts);
+      const nodeMap = new Map(order.map((k, i) => [k, at[i] as Box] as const));
+      const tt = title.part(room);
+      mendRoutes(env, routed.map((r) => r.link), mended, nodeMap, tt !== null && tt.kind === 'text' ? [tt.box] : [], room);
+      routed.forEach((r, i) => (r.pts = mended[i] as Point[]));
+    }
+    for (const { link: l, pts } of routed) {
       routes.set(l.el.key, { points: pts, closed: false });
-      routed.push({ link: l, pts });
       connectorParts(env, l, pts, lines, heads);
     }
     const nodeBoxes = [...at];
@@ -878,6 +919,19 @@ function buildFlow(env: Env, grow: Grow): Draft {
       routes.set(e.spec.el.key, { points: line, closed: false });
       placed.push({ edge: e, pts: line, zone, stemEnd });
     });
+    // A link the layers could not keep clear of a node or of other links is found a way round
+    {
+      const specs = placed.map((p) => p.edge.spec);
+      const mended = placed.map((p) => [...p.pts]);
+      const words2: Box[] = [...(title.part(room)?.kind === 'text' ? [(title.part(room) as { box: Box }).box] : [])];
+      mendRoutes(env, specs, mended, boxes, words2, room);
+      placed.forEach((p, i) => {
+        if (mended[i] !== undefined && mended[i] !== p.pts && (mended[i] as Point[]).length >= 2 && (mended[i] as Point[]).some((q, k) => q !== p.pts[k])) {
+          p.pts = mended[i] as Point[];
+          routes.set(p.edge.spec.el.key, { points: p.pts, closed: false });
+        }
+      });
+    }
     for (const p of placed) connectorParts(env, p.edge.spec, p.pts, lines, heads);
 
     // Labels: on the first stretch of the connector, on a plate; else the first clear place along it.
