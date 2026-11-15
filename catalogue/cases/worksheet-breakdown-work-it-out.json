@@ -1,0 +1,39 @@
+{
+ "id": "worksheet-breakdown-work-it-out",
+ "title": "a word problem from a learner's page is laid out whole with the working left blank and one ask",
+ "family": "teaching",
+ "owner": "prompt",
+ "kind": "draw",
+ "found": "2026-11-15",
+ "note": "Owner: explain without controls, break it down; then do not give the answer away, make it require working out.",
+ "own": [
+  "steps-laid-out",
+  "blank-working",
+  "one-stepper"
+ ],
+ "turns": [
+  {
+   "say": "explain this one: a girl has 64 dollars, her brother has half as much, her sister has half as much as him; how much does the sister have?",
+   "source": {
+    "log": "20261115-094056-c1",
+    "turns": [
+     "t4"
+    ]
+   },
+   "check": [
+    {
+     "k": "steps-laid-out",
+     "min": 2
+    },
+    {
+     "k": "blank-working",
+     "values": "\\b(16|32)\\b"
+    },
+    {
+     "k": "one-stepper",
+     "max": 0
+    }
+   ]
+  }
+ ]
+}

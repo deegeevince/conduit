@@ -1,0 +1,28 @@
+{
+ "id": "learner-spelling-challenge",
+ "title": "a spelling challenge for a child is something they do, not a walk-through",
+ "family": "teaching",
+ "owner": "prompt",
+ "kind": "flow",
+ "found": "2026-11-15",
+ "note": "A problem posed to a learner is something they do (an ask or a small app they act in), never a stepper that walks the answer.",
+ "own": [
+  "learner-native"
+ ],
+ "turns": [
+  {
+   "say": "a spelling challenge for my 6-year-old",
+   "source": {
+    "log": "20261115-094056-c1",
+    "turns": [
+     "t10"
+    ]
+   },
+   "check": [
+    {
+     "k": "learner-native"
+    }
+   ]
+  }
+ ]
+}

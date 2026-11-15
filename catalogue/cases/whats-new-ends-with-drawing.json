@@ -1,0 +1,28 @@
+{
+ "id": "whats-new-ends-with-drawing",
+ "title": "the what's-new tour ends on a scene that still shows something",
+ "family": "tour",
+ "owner": "prompt",
+ "kind": "flow",
+ "found": "2026-11-15",
+ "note": "The last scene held one grey aside and two choices, so the screen at rest was nearly empty.",
+ "own": [
+  "last-scene-has-drawing"
+ ],
+ "turns": [
+  {
+   "say": "what's new in this app?",
+   "source": {
+    "log": "20261115-094056-c1",
+    "turns": [
+     "t4"
+    ]
+   },
+   "check": [
+    {
+     "k": "last-scene-has-drawing"
+    }
+   ]
+  }
+ ]
+}

@@ -1,0 +1,28 @@
+{
+ "id": "learner-problem-ask-first",
+ "title": "a problem for a young learner is shown as a question to answer, not walked through",
+ "family": "teaching",
+ "owner": "prompt",
+ "kind": "flow",
+ "found": "2026-11-15",
+ "note": "Asked to teach a child a problem, the brain drew the working and a stepper that gives the intermediate answers. The question should be alone first, with a way to answer; help only on a tap.",
+ "own": [
+  "learner-native"
+ ],
+ "turns": [
+  {
+   "say": "teach my 7-year-old a multiplication problem",
+   "source": {
+    "log": "20261115-094056-c1",
+    "turns": [
+     "t10"
+    ]
+   },
+   "check": [
+    {
+     "k": "learner-native"
+    }
+   ]
+  }
+ ]
+}
