@@ -1,0 +1,35 @@
+{
+ "id": "skills-pick",
+ "title": "a held skill's marker line is on stage at rest",
+ "family": "skills",
+ "owner": "skills",
+ "kind": "ui",
+ "found": "2026-11-15",
+ "note": "Hold plain-words, say a plain question: the marker line the skill asks for is on stage at rest. A replay shows the recorded answer; a live run proves the skill's text reached the brain.",
+ "own": [
+  "answer-on-stage"
+ ],
+ "turns": [
+  {
+   "say": "explain how a kettle works",
+   "source": {
+    "scenario": "skills",
+    "index": 1
+   },
+   "pre": [
+    {
+     "a": "skills-hold",
+     "id": "user:plain-words"
+    }
+   ],
+   "check": [
+    {
+     "k": "all-present",
+     "items": [
+      "PLAIN-WORDS-APPLIED-4K2"
+     ]
+    }
+   ]
+  }
+ ]
+}

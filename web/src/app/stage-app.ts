@@ -112,7 +112,7 @@ export interface StageApp {
   /** who the screen is for: raises the type and targets in the lesson view and the legibility floor the stage is held to */
   readonly audience: { readonly value: Audience; set(audience: Audience): void };
   /** Interrupts whatever is playing, reports it, then starts a turn with this prompt (the photos the server kept for it, `link.uploadPhoto`; the ink drawn on the stage; the voice notes whose words it holds, `link.uploadVoice`). */
-  prompt(text: string, photos?: readonly string[], marks?: InkMarks, voice?: readonly string[], sources?: readonly TurnSource[]): Promise<string>;
+  prompt(text: string, photos?: readonly string[], marks?: InkMarks, voice?: readonly string[], sources?: readonly TurnSource[], skills?: readonly string[]): Promise<string>;
   demo(name: string): Promise<string>;
   /** Stops the current turn where it is. */
   interrupt(): void;
@@ -1645,7 +1645,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
         sendPresence();
       },
     },
-    prompt: (text, photos, marks, voice, sources) => submit({ kind: 'prompt', text, ...(photos === undefined || photos.length === 0 ? {} : { images: photos }), ...(marks === undefined ? {} : { marks }), ...(voice === undefined || voice.length === 0 ? {} : { voice }), ...(sources === undefined || sources.length === 0 ? {} : { sources }) }, null, true),
+    prompt: (text, photos, marks, voice, sources, skills) => submit({ kind: 'prompt', text, ...(photos === undefined || photos.length === 0 ? {} : { images: photos }), ...(marks === undefined ? {} : { marks }), ...(voice === undefined || voice.length === 0 ? {} : { voice }), ...(sources === undefined || sources.length === 0 ? {} : { sources }), ...(skills === undefined || skills.length === 0 ? {} : { skills }) }, null, true),
     demo: (name) => submit({ kind: 'demo', script: name }, null, true),
     playScript: (text) => submit({ kind: 'script', text }, null, true),
     interrupt() {

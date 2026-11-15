@@ -1,6 +1,6 @@
 // The edge between untrusted JSON and the typed domain. Every check names the field it found wrong.
 
-import { STATE_LIMITS, AMBIENT_KINDS, CAMERA_MOVES, CHART_KINDS, CONTROL_KINDS, ENTER_EFFECTS, EXIT_EFFECTS, FACES, FX_NAMES, LAYERS, LOOPS, MARKS, PROCEDURAL_MEDIA, STROKES, STRUCTURE_KINDS, TEXTURES, ALIGNS, BACK_EVENT_TYPES, BRAIN_EFFORTS, BRAIN_MODES, BRAIN_MODELS, CANVAS_NAMES, DEMOS, ELEMENT_KINDS, LAYOUTS, LIMITS, LOOK_IDS, MOODS, NO_SIGHT, NO_V21_CAPABILITIES, NO_V4_CAPABILITIES, PACES, SIGHT_ITEMS, SIGHT_NOTE, UPLOAD_LIMITS, checkInkMarks, decodeObserveItems, decodeSources, VOICE_LIMITS, AGENT_PERMITS } from '@conduit/language';
+import { STATE_LIMITS, AMBIENT_KINDS, CAMERA_MOVES, CHART_KINDS, CONTROL_KINDS, ENTER_EFFECTS, EXIT_EFFECTS, FACES, FX_NAMES, LAYERS, LOOPS, MARKS, PROCEDURAL_MEDIA, STROKES, STRUCTURE_KINDS, TEXTURES, ALIGNS, BACK_EVENT_TYPES, BRAIN_EFFORTS, BRAIN_MODES, BRAIN_MODELS, CANVAS_NAMES, DEMOS, ELEMENT_KINDS, LAYOUTS, LIMITS, LOOK_IDS, MOODS, NO_SIGHT, NO_V21_CAPABILITIES, NO_V4_CAPABILITIES, PACES, SIGHT_ITEMS, SIGHT_NOTE, UPLOAD_LIMITS, checkInkMarks, decodeObserveItems, decodeSources, VOICE_LIMITS, AGENT_PERMITS, SKILL_HOLD } from '@conduit/language';
 import type {
   BackEvent,
   BrainChange,
@@ -264,6 +264,15 @@ function voiceIds(value: unknown): string[] {
   return [...new Set(ids)];
 }
 
+/** SK1. The ids of the skills held for a message: `user:name` or `synced:name`, at most `SKILL_HOLD.held`, once each. Only ids: the text is read by the server. */
+function skillIds(value: unknown): string[] {
+  if (value === undefined) return [];
+  const ids = list(value, 'input.skills').map((item) => text(item, 'input.skills'));
+  if (ids.length > SKILL_HOLD.held) throw errors.badRequest(`a message may hold at most ${SKILL_HOLD.held} skills`);
+  for (const id of ids) if (!/^(?:user|synced):[A-Za-z0-9][A-Za-z0-9._ -]{0,63}$/.test(id) || id.length > SKILL_HOLD.idChars) throw errors.badRequest('input.skills must be skill ids from the list, like user:name');
+  return [...new Set(ids)];
+}
+
 export function parseTurnInput(body: unknown): TurnInput {
   const input = obj(obj(body, 'body').input, 'input');
   const kind = oneOf(input.kind, ['prompt', 'tap', 'demo', 'script', 'act'] as const, 'input.kind');
@@ -285,8 +294,9 @@ export function parseTurnInput(body: unknown): TurnInput {
     const marks = inkMarks(input.marks);
     const voice = voiceIds(input.voice);
     const sources = input.sources === undefined ? [] : decodeSources(input.sources);
+    const skills = skillIds(input.skills);
     if (sources === null) throw errors.badRequest('input.sources must be a short list of { name, pages: [{ n, text }] }');
-    return { kind, text: value, ...(images.length === 0 ? {} : { images }), ...(voice.length === 0 ? {} : { voice }), ...(marks === undefined ? {} : { marks }), ...(sources.length === 0 ? {} : { sources }) };
+    return { kind, text: value, ...(images.length === 0 ? {} : { images }), ...(voice.length === 0 ? {} : { voice }), ...(marks === undefined ? {} : { marks }), ...(sources.length === 0 ? {} : { sources }), ...(skills.length === 0 ? {} : { skills }) };
   }
   if (kind === 'tap') {
     const said = text(input.text, 'input.text');

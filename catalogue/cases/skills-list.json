@@ -1,0 +1,48 @@
+{
+ "id": "skills-list",
+ "title": "the Skills view lists each made-up skill once, greys the switched-off one, and a search narrows it; a tap holds a chip",
+ "family": "skills",
+ "owner": "skills",
+ "kind": "ui",
+ "found": "2026-11-15",
+ "note": "[+] then Skills: every skill once (the name in two sources once, the twin in two accounts once), the switched-off one grey; typing led leaves one; on the phone the list scrolls inside its view and the bar stays clear. A tap puts a chip above the field.",
+ "own": [
+  "skills-list",
+  "skills-chip"
+ ],
+ "turns": [
+  {
+   "say": "what can you help me with today",
+   "source": {
+    "scenario": "skills",
+    "index": 0
+   },
+   "check": [
+    {
+     "k": "skills-list",
+     "names": [
+      "plain-words",
+      "ledger",
+      "slides",
+      "big",
+      "hostile",
+      "secretive",
+      "shared-name",
+      "twin"
+     ],
+     "grey": [
+      "retired"
+     ],
+     "search": "led",
+     "only": [
+      "ledger"
+     ]
+    },
+    {
+     "k": "skills-chip",
+     "id": "user:plain-words"
+    }
+   ]
+  }
+ ]
+}

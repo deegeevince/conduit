@@ -19,7 +19,7 @@ import type { AgentSettings } from '../domain/agent';
 import type { BrainEvent, TurnRequest } from '../domain/brain';
 import { newBrowserState, noteBrowserResult } from '../domain/browser';
 import { deniedAfterResolving } from '../domain/destinations';
-import { agentArguments } from '../brains/claude-cli/process';
+import { agentArguments, claudeArguments, toolArguments } from '../brains/claude-cli/process';
 import { createLogger } from '../log';
 import { RelayHub } from '../brains/relay/relay-hub';
 import { createRelayBrain } from '../brains/relay/relay-brain';
@@ -193,6 +193,20 @@ const states = (events: BrainEvent[], tool: string): string[] => events.flatMap(
   const withChrome = agentArguments({ builtIns: ['WebSearch'], mcpConfigs: [], chrome: true, cwd: '/x' }).join(' ');
   check(withChrome.includes('--chrome') && withChrome.includes('--disallowedTools mcp__claude-in-chrome__browser_batch') && !/dangerously|bypassPermissions|acceptEdits|--bare/.test(withChrome), 'chrome on: the process gets --chrome and the ungated tools removed, and no forbidden flag', withChrome.slice(0, 120));
   check(agentArguments({ builtIns: [], mcpConfigs: [], cwd: '/x' }).includes('--no-chrome'), 'chrome off: the process is started with --no-chrome', 'off');
+  // SK0: the CLI never allows a page read by itself, because it does not look where the page is: a fetch always comes to this process, where deniedDestination sees it.
+  const free = agentArguments({ builtIns: ['WebSearch', 'WebFetch'], freeReads: true, mcpConfigs: [], cwd: '/x' });
+  const allowedAfter = (args: readonly string[], flag: string): string[] => {
+    const at = args.indexOf(flag);
+    const out: string[] = [];
+    for (let i = at + 1; at >= 0 && i < args.length && !(args[i] as string).startsWith('--'); i += 1) out.push(args[i] as string);
+    return out;
+  };
+  check(allowedAfter(free, '--allowedTools').join(',') === 'WebSearch', 'SK0: with only the web tools on, the CLI is told to allow a search by itself and never a page read', allowedAfter(free, '--allowedTools').join(','));
+  check(free.includes('--permission-prompt-tool'), 'SK0: and a page read is asked of this process', 'stdio');
+  const plain = toolArguments(['WebSearch', 'WebFetch'], undefined, true);
+  check(allowedAfter(plain, '--allowedTools').join(',') === 'WebSearch' && plain.join(' ').includes('--permission-prompt-tool stdio'), 'SK0: the plain brain asks this process before a page read too', allowedAfter(plain, '--allowedTools').join(','));
+  const oneShot = claudeArguments({ model: 'm', systemPrompt: 's', tools: ['WebSearch', 'WebFetch'] });
+  check(oneShot.join(' ').includes('--tools WebSearch ') && !oneShot.join(' ').includes('WebFetch'), 'SK0: a one-shot process, with no one to ask, is not given the page read at all', oneShot.join(' ').slice(0, 120));
 }
 
 try {

@@ -1,0 +1,32 @@
+{
+ "case": "skills",
+ "recordedAt": "2026-11-15T00:00:00Z",
+ "screen": "1280x720",
+ "note": "Hand-written answers for the skills cases (SK1): neutral, made up. A replay shows them; the live run is what proves a held skill was used.",
+ "turns": [
+  {
+   "match": "what can you help me with today",
+   "script": "scene layout=caption\nsay x1 strong | Ask me anything.\nsay x2 aside | Or hold one of your skills from the plus menu."
+  },
+  {
+   "match": "explain how a kettle works",
+   "script": "scene layout=caption mood=calm\nsay x1 strong | A kettle heats water with a coil.\nsay x2 | Current runs through the coil under the water. The coil resists it and gets hot, and the heat passes into the water.\nsay x3 | When the water boils, steam bends a small metal strip that switches the power off.\nsay x4 aside | PLAIN-WORDS-APPLIED-4K2"
+  },
+  {
+   "match": "a budget for a weekend away, four rows",
+   "script": "scene layout=stack\ntable rows | Weekend away, example figures\n| Item | Amount | Note\n| Stay | 240 | two nights\n| Travel | 120 | return trip\n| Food | 150 | three meals a day\n| Activities | 80 | tickets\nsay x1 | Total: 590. Swap in your own figures.\nsay x2 aside | LEDGER-APPLIED-9M1"
+  },
+  {
+   "match": "five slides on tides",
+   "script": "scene s1 layout=stack\nsay x1 strong | Tides\nsay x2 aside | Why the sea rises and falls\nwait 1\nscene s2 layout=stack\nsay x3 strong | The Moon pulls\nsay x4 | Its gravity tugs the near side of Earth harder.\nwait 1\nscene s3 layout=stack\nsay x5 strong | Two bulges\nsay x6 | Most coasts get two highs and two lows a day.\nwait 1\nscene s4 layout=stack\nsay x7 strong | The Sun helps\nsay x8 | In line: big spring tides. At right angles: small neap tides.\nwait 1\nscene s5 layout=stack\nsay x9 strong | Remember\nsay x10 | Moon first, Sun second.\nsay x11 aside | SLIDES-APPLIED-2R8"
+  },
+  {
+   "match": "give me the gist of this guide in three lines",
+   "script": "scene layout=caption\nsay x1 strong | I read only part of this guide.\nsay x2 | Keep each heading with its rule.\nsay x3 | Everything after part 32 was left out."
+  },
+  {
+   "match": "draw the water cycle",
+   "script": "scene layout=figure canvas=square\ncircle sun 80,20 8 fill=hot\npath cloud fill=dim | M20,30 Q30,20 40,30 Q50,25 55,35 L20,35 Z\nsay x1 callout near=cloud | clouds"
+  }
+ ]
+}

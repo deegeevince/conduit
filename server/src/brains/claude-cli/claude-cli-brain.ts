@@ -101,6 +101,8 @@ interface Entry {
   lastTurn: string | null;
   /** documents this process has been given; a warm turn gives it only the rest */
   readonly heardDocs: Set<string>;
+  /** SK1. The skills this process has been given, by id and the hash of their files: a skill is sent once a conversation, again after a cold start or a change */
+  readonly heardSkills: Set<string>;
   lastUsed: number;
   /** `total_cost_usd` is cumulative for a process; this is where the last turn left it */
   costBase: number;
@@ -240,6 +242,7 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
       capabilities,
       lastTurn: null,
       heardDocs: new Set(),
+      heardSkills: new Set(),
       lastUsed: Date.now(),
       costBase: 0,
       running: null,
@@ -337,11 +340,13 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
   function outgoingFor(request: TurnRequest, entry: Entry, form: BriefForm): Outgoing {
     const held = request.context.documents ?? [];
     const given = form === 'full' ? held : held.filter((doc) => !entry.heardDocs.has(doc.id));
+    const skillsHeld = request.context.skills ?? [];
+    const skillsGiven = form === 'full' ? skillsHeld : skillsHeld.filter((skill) => !entry.heardSkills.has(`${skill.id}:${skill.hash}`));
     return {
       turn: request.turn,
       session: request.session,
       styles: Object.keys(request.context.stage.styles),
-      text: buildTurnBrief({ ...request.context, documents: given }, request.input, form, entry.capabilities, {
+      text: buildTurnBrief({ ...request.context, documents: given, skills: skillsGiven }, request.input, form, entry.capabilities, {
         model: entry.model,
         effort: entry.effort,
         sees: request.snapshot !== null,
@@ -360,6 +365,7 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
       sent: () => {
         entry.lastTurn = request.turn;
         for (const doc of given) entry.heardDocs.add(doc.id);
+        for (const skill of skillsGiven) entry.heardSkills.add(`${skill.id}:${skill.hash}`);
       },
     };
   }

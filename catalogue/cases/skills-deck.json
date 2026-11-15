@@ -1,0 +1,44 @@
+{
+ "id": "skills-deck",
+ "title": "a held slides skill answers with five slides, each a scene",
+ "family": "skills",
+ "owner": "skills",
+ "kind": "ui",
+ "found": "2026-11-15",
+ "note": "Five slides on a made-up skill's say-so, each reachable on the stage; no .pptx is offered.",
+ "own": [
+  "answer-on-stage",
+  "no-file-offered"
+ ],
+ "turns": [
+  {
+   "say": "five slides on tides",
+   "source": {
+    "scenario": "skills",
+    "index": 3
+   },
+   "pre": [
+    {
+     "a": "skills-hold",
+     "id": "user:slides"
+    }
+   ],
+   "check": [
+    {
+     "k": "script-count",
+     "re": "^scene",
+     "min": 5
+    },
+    {
+     "k": "all-present",
+     "items": [
+      "SLIDES-APPLIED-2R8"
+     ]
+    },
+    {
+     "k": "no-file-offered"
+    }
+   ]
+  }
+ ]
+}

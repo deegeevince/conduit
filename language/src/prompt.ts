@@ -1207,6 +1207,8 @@ export function buildTurnBrief(context: TurnContext, input: TurnInput, form: Bri
 
   const techniques = techniquesText(context.techniques ?? []);
   if (techniques !== null) parts.push(techniques);
+  // SK1. A skill the person picked: the server made the block (its four lines and its text); it rides in this brief only, never in the system prompt.
+  for (const skill of context.skills ?? []) parts.push(skill.text);
 
   if (input.kind === 'prompt' && (input.images?.length ?? 0) > 0) {
     const ids = (input.images ?? []).join(', ');

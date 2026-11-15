@@ -42,6 +42,8 @@ type Action = { readonly a: string } & Record<string, unknown>;
 interface CaseTurn {
   readonly say: string;
   readonly source: Source;
+  /** done on the page before the words are sent (SK1: hold a skill from the [+] menu) */
+  readonly pre?: readonly Action[];
   readonly do?: readonly Action[];
   readonly check?: readonly Spec[];
 }
@@ -60,6 +62,8 @@ interface Case {
   /** `chat`: the frozen /chat surface; not run unless --chat */
   readonly surface?: 'main' | 'chat';
   readonly priority?: 'core' | 'low';
+  /** SK1. `only`: the case reads what a real brain was sent (the brief), so a replay cannot run it; it is left out of replays and run with `--live` */
+  readonly live?: 'only';
   readonly turns: readonly CaseTurn[];
 }
 
@@ -154,14 +158,14 @@ function twinMark(caseId: string, say: string): string {
   return '\u200b'.repeat(earlier.length);
 }
 
-function loadCases(only: readonly string[] | null, chat = true): Case[] {
+function loadCases(only: readonly string[] | null, chat = true, liveRun = false): Case[] {
   const all = readdirSync(casesDir)
     .filter((name) => name.endsWith('.json'))
     .sort()
     .map((name) => JSON.parse(readFileSync(join(casesDir, name), 'utf8')) as Case);
   const unknown = (only ?? []).filter((id) => !all.some((c) => c.id === id));
   if (unknown.length > 0) usage(`no case ${unknown.join(', ')}`);
-  return all.filter((c) => (only === null || only.includes(c.id)) && (chat || c.surface !== 'chat' || (only?.includes(c.id) ?? false)));
+  return all.filter((c) => (only === null || only.includes(c.id)) && (chat || c.surface !== 'chat' || (only?.includes(c.id) ?? false)) && (liveRun || c.live !== 'only'));
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------------
@@ -186,7 +190,7 @@ async function recordAll(args: Args): Promise<void> {
     return rows;
   };
   let wrote = 0;
-  for (const c of loadCases(args.only)) {
+  for (const c of loadCases(args.only, true, true)) {
     const turns: { match: string; script: string }[] = [];
     let missing = '';
     for (const turn of c.turns) {
@@ -565,6 +569,29 @@ async function runCheck(cx: Cx, spec: Spec): Promise<Res> {
       for (const f of boxes) for (const w of shown(cx.answer)) if (inter(f, w.box) > 0.15 * Math.min(area(f), area(w.box))) bad.push(`the field "${f.label.slice(0, 20)}" is over "${w.text.slice(0, 24)}"`);
       return res(name, bad, `${boxes.length} field(s), clear of every caption`);
     }
+    case 'skills-list':
+      return skillsListed(cx, spec);
+    case 'skills-chip':
+      return skillsChip(cx, spec);
+    case 'no-file-offered': {
+      // a result is drawn, not handed back: no line names a file or a download
+      const bad = shown(cx.answer).map((e) => e.text.trim()).filter((t) => /\.(?:xlsx|docx|pptx|pdf|csv)\b|\bdownload|\battached\b|\bsaved (?:it )?(?:as|to)\b/i.test(t));
+      return res(name, bad.map((t) => `a line names a file: "${t.slice(0, 50)}"`), 'no line names a file or a download');
+    }
+    case 'brief-skill': {
+      // live only: the block of a held skill in the brief is at most `max` characters and names what was left out; or, with `none`, there is no skill text at all
+      const brief = await lastBrief(briefDataDir);
+      if (brief === null) return { check: name, verdict: 'FAIL', detail: 'no brief was found in the session log' };
+      const at = brief.indexOf('SKILL ');
+      if (spec['none'] === true) return res(name, at >= 0 ? ['the brief carries skill text with nothing held'] : [], 'no skill text in the brief');
+      if (at < 0) return { check: name, verdict: 'FAIL', detail: 'the brief has no skill block' };
+      const end = brief.indexOf('--- end of the skill ---', at);
+      const block = brief.slice(at, end < 0 ? undefined : end + 24);
+      const bad: string[] = [];
+      if (block.length > Number(spec['max'])) bad.push(`the skill block is ${block.length} characters, more than ${String(spec['max'])}`);
+      if (spec['leftOut'] === true && !/Headings left out:/.test(block)) bad.push('the cut does not name the headings left out');
+      return res(name, bad, `the skill block is ${block.length} characters${spec['leftOut'] === true ? ' and names the headings left out' : ''}`);
+    }
     case 'all-present': {
       const texts = shown(cx.answer).map((e) => e.text.trim());
       const missing = (spec['items'] as string[]).filter((re) => !texts.some((t) => new RegExp(re).test(t)));
@@ -746,11 +773,120 @@ async function act(cx: Cx, action: Action): Promise<void> {
       await sleep(1500);
       break;
     }
+    case 'skills-hold': {
+      // SK1: the way a person does it: [+], Skills, a tap on the row. The menu closes and the chip waits by the field.
+      if (!(await openSkills(tab))) return;
+      const row = await tab.call<{ x: number; y: number; w: number; h: number } | null>('rect', `.skill[data-skill="${String(action['id'])}"]`);
+      if (row === null) return;
+      await tab.tap(row.x + row.w / 2, row.y + row.h / 2);
+      await sleep(500);
+      break;
+    }
     case 'pen-ring':
       break;
     default:
   }
 }
+
+/** [+] then Skills: the view is open and its rows are loaded; false when the page has no such entry */
+async function openSkills(tab: Tab): Promise<boolean> {
+  const plus = await tab.call<{ x: number; y: number; w: number; h: number } | null>('rect', '.composer__plus');
+  if (plus === null) return false;
+  await tab.tap(plus.x + plus.w / 2, plus.y + plus.h / 2);
+  await sleep(300);
+  const entry = await tab.call<{ x: number; y: number; w: number; h: number } | null>('rect', '.composer__item[data-item="skills"]');
+  if (entry === null) return false;
+  await tab.tap(entry.x + entry.w / 2, entry.y + entry.h / 2);
+  await waitFor('the skills to be listed', 10_000, async () => ((await tab.eval<number>(`document.querySelectorAll('.skill').length`)) > 0 ? true : null)).catch(() => undefined);
+  await sleep(200);
+  return true;
+}
+
+interface SkillRow {
+  readonly id: string;
+  readonly name: string;
+  readonly hidden: boolean;
+  readonly off: boolean;
+  readonly tags: string;
+}
+const skillRows = (tab: Tab): Promise<SkillRow[]> =>
+  tab.eval<SkillRow[]>(`[...document.querySelectorAll('.skill')].map((e) => ({ id: e.dataset.skill, name: e.querySelector('.composer__label').textContent, hidden: e.hidden, off: e.classList.contains('skill--off'), tags: e.querySelector('.skill__tags').textContent }))`);
+
+/** the Skills view: each made-up skill once (the double once, a twin once), the switched-off one grey, a search narrows, the phone's list scrolls inside its view and leaves the bar clear */
+async function skillsListed(cx: Cx, spec: Spec): Promise<Res> {
+  const name = 'skills-list';
+  const bad: string[] = [];
+  if (!(await openSkills(cx.tab))) return { check: name, verdict: 'FAIL', detail: 'the [+] menu has no Skills entry' };
+  const rows = await skillRows(cx.tab);
+  const shown = rows.filter((row) => !row.hidden);
+  for (const want of (spec['names'] as string[]) ?? []) {
+    const n = shown.filter((row) => row.name === want).length;
+    if (n !== 1) bad.push(`${want} is listed ${n} times`);
+  }
+  for (const want of (spec['grey'] as string[]) ?? []) if (!shown.some((row) => row.name === want && row.off)) bad.push(`${want} is not shown grey`);
+  const noise = shown.filter((row) => !row.off && /off in Claude Code/.test(row.tags));
+  if (noise.length > 0) bad.push('a skill that is on says it is off');
+  await cx.tab.eval(`(() => { const i = document.querySelector('.skills__search'); i.focus(); i.value = ${JSON.stringify(spec['search'] ?? 'led')}; i.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+  await sleep(300);
+  const found = (await skillRows(cx.tab)).filter((row) => !row.hidden).map((row) => row.name);
+  const only = (spec['only'] as string[]) ?? [];
+  if (found.join(',') !== only.join(',')) bad.push(`searching "${String(spec['search'] ?? 'led')}" leaves ${found.join(', ') || 'nothing'}, wanted ${only.join(', ')}`);
+  await cx.tab.eval(`(() => { const i = document.querySelector('.skills__search'); i.value = ''; i.dispatchEvent(new Event('input', { bubbles: true })); })()`);
+  await sleep(200);
+  const geo = await cx.tab.eval<{ top: number; bottom: number; barTop: number; scrolls: boolean; inside: boolean; page: boolean; vw: number; left: number; right: number }>(
+    `(() => { const m = document.querySelector('.composer__menu'); const b = m.getBoundingClientRect(); const bar = document.querySelector('.prompt__form').getBoundingClientRect(); return { top: b.top, bottom: b.bottom, barTop: bar.top, scrolls: m.scrollHeight > m.clientHeight + 1 && getComputedStyle(m).overflowY !== 'visible', inside: b.top >= 0, page: document.documentElement.scrollHeight > innerHeight + 1, vw: innerWidth, left: b.left, right: b.right }; })()`,
+  );
+  if (!geo.inside) bad.push('the list starts above the screen');
+  if (geo.bottom > geo.barTop + 1) bad.push('the list covers the bar');
+  if (geo.page) bad.push('the page scrolls');
+  if (geo.left < -1 || geo.right > geo.vw + 1) bad.push('the list runs off the side');
+  if (cx.mobile && !geo.scrolls) bad.push('the list does not scroll inside its view');
+  await cx.tab.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+  await cx.tab.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+  await sleep(200);
+  return res(name, bad, `${shown.length} skills, each once; ${((spec['grey'] as string[]) ?? []).join(', ')} grey; "${String(spec['search'] ?? 'led')}" leaves ${found.join(', ')}${cx.mobile ? '; the list scrolls inside its view and the bar is clear' : ''}`);
+}
+
+/** a tap on a row puts a chip by the field, closes the menu and leaves the field empty; the chip's x takes it away again */
+async function skillsChip(cx: Cx, spec: Spec): Promise<Res> {
+  const name = 'skills-chip';
+  const id = String(spec['id']);
+  if (!(await openSkills(cx.tab))) return { check: name, verdict: 'FAIL', detail: 'the [+] menu has no Skills entry' };
+  const row = await cx.tab.call<{ x: number; y: number; w: number; h: number } | null>('rect', `.skill[data-skill="${id}"]`);
+  if (row === null) return { check: name, verdict: 'FAIL', detail: `no row for ${id}` };
+  await cx.tab.tap(row.x + row.w / 2, row.y + row.h / 2);
+  await sleep(500);
+  const state = await cx.tab.eval<{ chips: string[]; open: boolean; focus: string; field: string; bar: boolean }>(
+    `(() => { const m = document.querySelector('.composer__menu'); const chip = document.querySelector('.skill-chip'); const bar = document.querySelector('.prompt__form').getBoundingClientRect(); const c = chip ? chip.getBoundingClientRect() : null; return { chips: [...document.querySelectorAll('.skill-chip')].map((e) => e.dataset.skill), open: !m.hidden, focus: document.activeElement?.className || '', field: document.querySelector('.prompt__input').value, bar: c !== null && c.bottom <= bar.top + 1 && c.left >= 0 && c.right <= innerWidth } })()`,
+  );
+  const bad: string[] = [];
+  if (state.chips.join(',') !== id) bad.push(`chips held: ${state.chips.join(', ') || 'none'}, wanted ${id}`);
+  if (state.open) bad.push('the menu stayed open');
+  if (state.field !== '') bad.push('the field was not left empty');
+  if (!state.bar) bad.push('the chip is not above the field inside the screen');
+  const remove = await cx.tab.call<{ x: number; y: number; w: number; h: number } | null>('rect', '.skill-chip__remove');
+  if (remove === null) bad.push('the chip has no remove button');
+  else {
+    if (remove.w < 40 || remove.h < 32) bad.push(`the chip's remove button is ${Math.round(remove.w)}x${Math.round(remove.h)} px, too small to tap`);
+    await cx.tab.tap(remove.x + remove.w / 2, remove.y + remove.h / 2);
+    await sleep(300);
+    if ((await cx.tab.eval<number>(`document.querySelectorAll('.skill-chip').length`)) !== 0) bad.push('the chip stayed after its x was tapped');
+  }
+  return res(name, bad, `a tap on ${id} holds it as a chip above the field, the menu closes, and the chip's x takes it away`);
+}
+
+/** what the session log says the brain was sent (the newest brief of the newest session); only a live run keeps one in the data dir given */
+async function lastBrief(dataDir: string): Promise<string | null> {
+  const dir = join(dataDir, 'logs');
+  if (!existsSync(dir)) return null;
+  const files = readdirSync(dir).filter((f) => f.endsWith('.jsonl')).sort();
+  const file = files[files.length - 1];
+  if (file === undefined) return null;
+  const rows = (await readFile(join(dir, file), 'utf8')).split('\n').filter((l) => l.trim() !== '').map((l) => JSON.parse(l) as Record<string, unknown>);
+  const brief = rows.filter((r) => r['type'] === 'brief' && r['form'] !== 'script' && (r['pass'] === undefined || r['pass'] === 1)).at(-1);
+  return typeof brief?.['text'] === 'string' ? brief['text'] : null;
+}
+let briefDataDir = '';
 
 /** the pen over a live mock-up part: a ring started on the pay button must draw, not press */
 async function penRing(cx: Cx): Promise<Res> {
@@ -860,6 +996,7 @@ async function runCell(args: Args, c: Case, screen: Args['screens'][number], url
       const results: CheckResult[] = [];
       if (n === 1) cx.early = tab.failedRequests.map((f) => f.text);
       tab.drain();
+      for (const action of turn.pre ?? []) await act(cx, action);
       const sent = await conv.say(args.mode === 'live' ? turn.say : `${turn.say}${twinMark(c.id, turn.say)}`, results);
       // a poller beside the wait: the Show all pill is only there while an answer plays
       let polling = true;
@@ -917,13 +1054,19 @@ async function runCell(args: Args, c: Case, screen: Args['screens'][number], url
 // ---------------------------------------------------------------------------------------------------------------------------------
 // A server of the build under test
 
+/** SK1. A test server reads the made-up skills of this repository and nothing of the owner's (`catalogue/skills`) */
+function skillEnv(): Record<string, string> {
+  const base = join(root, 'catalogue', 'skills');
+  return { SKILL_ROOTS: `user=${join(base, 'user')},synced=${join(base, 'synced')}`, SKILL_SETTINGS: join(base, 'settings.json') };
+}
+
 async function startServer(args: Args, replayFile: string, out: string): Promise<{ url: string; stop: () => Promise<void> }> {
   const data = join(out, 'server-data');
   await mkdir(data, { recursive: true });
   const live = args.mode === 'live';
   const child: ChildProcess = spawn('pnpm', ['--filter', '@conduit/server', 'start'], {
     cwd: args.build,
-    env: { ...process.env, PORT: String(args.port), DATA_DIR: live ? args.data : data, BRAIN: live ? 'claude-cli' : 'replay', ...(live ? { CLAUDE_MODEL: process.env['CLAUDE_MODEL'] ?? 'sonnet' } : {}), ...(live ? {} : { REPLAY_CASE: replayFile, REPLAY_CPS: '6000' }), IMAGE_MODEL: 'none', PICTURES: 'openverse', AGENT_PERMITS: 'auto', NODE_ENV: 'production' },
+    env: { ...process.env, PORT: String(args.port), DATA_DIR: live ? args.data : data, BRAIN: live ? 'claude-cli' : 'replay', ...(live ? { CLAUDE_MODEL: process.env['CLAUDE_MODEL'] ?? 'sonnet' } : {}), ...(live ? {} : { REPLAY_CASE: replayFile, REPLAY_CPS: '6000' }), IMAGE_MODEL: 'none', PICTURES: 'openverse', AGENT_PERMITS: 'auto', NODE_ENV: 'production', ...skillEnv() },
     stdio: 'ignore',
   });
   const url = `http://127.0.0.1:${args.port}`;
@@ -1048,7 +1191,7 @@ async function matrix(args: Args): Promise<void> {
 }
 
 async function run(args: Args): Promise<void> {
-  const cases = loadCases(args.only, args.chat);
+  const cases = loadCases(args.only, args.chat, args.mode === 'live');
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   const out = join(args.data, 'catalogue', 'runs', `${args.label}-${stamp}`);
   await mkdir(out, { recursive: true });
@@ -1065,6 +1208,7 @@ async function run(args: Args): Promise<void> {
   }
   const replayFile = join(out, 'replay-case.json');
   await writeFile(replayFile, JSON.stringify({ turns }));
+  briefDataDir = args.data;
   const server = args.mode === 'live' && args.url !== null ? { url: args.url, stop: async (): Promise<void> => undefined } : await startServer(args, replayFile, out);
   const prev = readResults(args.label);
   const outFile: ResultFile = { label: args.label, commit: gitHead(args.build), at: new Date().toISOString(), mode: args.mode, cases: {} };

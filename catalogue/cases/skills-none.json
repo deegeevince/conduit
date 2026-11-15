@@ -1,0 +1,28 @@
+{
+ "id": "skills-none",
+ "title": "with nothing held, a plain drawing is asked as before and the brief has no skill text",
+ "family": "skills",
+ "owner": "skills",
+ "kind": "ui",
+ "found": "2026-11-15",
+ "note": "Live only: it reads the brief the brain was sent.",
+ "own": [
+  "answer-on-stage"
+ ],
+ "turns": [
+  {
+   "say": "draw the water cycle",
+   "source": {
+    "scenario": "skills",
+    "index": 5
+   },
+   "check": [
+    {
+     "k": "brief-skill",
+     "none": true
+    }
+   ]
+  }
+ ],
+ "live": "only"
+}

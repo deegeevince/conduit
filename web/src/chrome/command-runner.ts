@@ -2,10 +2,12 @@
 // the stage (`/help`, `/status`, `/tools`) is a turn the app plays for itself and the server never hears of.
 
 import { commandsFor, LOOK_IDS, NEW_COMMAND_TEXT, REFINE_LIMITS } from '@conduit/language';
-import type { BrainChoice, Services } from '@conduit/language';
+import type { BrainChoice, Services, SkillSummary } from '@conduit/language';
 import type { UsageView } from '../link/http-link';
 import type { StageApp } from '../app/stage-app';
-import { confirmation, parseCommand, usageOf } from './commands';
+import { confirmation, parseCommand, SKILL_COMMANDS, usageOf } from './commands';
+import { skillMatches, tagsOf } from './skills';
+import type { HeldSkill } from './skills';
 import type { Command } from './commands';
 import { copyAnswer, copyScript, defaultSize, runExport, saveScript, saveStill } from './files';
 
@@ -52,23 +54,85 @@ export function helpPage(services?: Pick<Services, 'refine'>): string {
   return pageSource(
     'What you can type',
     ['Command', 'What it does'],
-    commandsFor(services).map((command) => [usageOf(command), command.gist]),
+    [...commandsFor(services), ...SKILL_COMMANDS].map((command) => [usageOf(command), command.gist]),
     'Anything that does not start with a slash is a question for the brain.',
   );
 }
 
+/** SK1. What `/skill` needs of the bar it was typed in: to hold a skill as a chip, and to send words with it. Absent (another surface): the commands say so. */
+export interface SkillHooks {
+  hold(skill: HeldSkill): string | null;
+  send(words: string, skills: readonly HeldSkill[]): Promise<void>;
+}
+
+/** The page `/skills` shows: each skill once, where it is from, what it is for, and what to know before relying on it. */
+export function skillsPage(skills: readonly SkillSummary[], query: string): string {
+  const shown = skills.filter((skill) => skillMatches(skill, query));
+  const rows = shown.map((skill) => {
+    const also = skill.state === 'shadowed' ? '' : (skills.find((other) => other.state === 'shadowed' && other.name.toLowerCase() === skill.name.toLowerCase())?.source ?? null);
+    return [skill.name, skill.state === 'shadowed' ? `${skill.note ?? 'not used'}` : skill.brief, skill.state === 'shadowed' ? 'shadowed' : tagsOf(skill, also === '' ? null : also)];
+  });
+  return pageSource(query === '' ? 'Your skills' : `Your skills matching "${query}"`, ['Skill', 'What it is for', 'Where'], rows, rows.length === 0 ? (skills.length === 0 ? 'No skills were found in the folders this server reads.' : 'No skill matches that.') : '/skill <name> holds one for your next message. Reading only: a skill\'s scripts are never run here.');
+}
+
+/** What a typed name means: an exact id or name, else the one skill it begins or is inside; otherwise a sentence that names the near ones. */
+export function resolveSkill(skills: readonly SkillSummary[], typed: string): { readonly skill: SkillSummary } | { readonly why: string } {
+  const wanted = typed.trim().toLowerCase();
+  const active = skills.filter((skill) => skill.state !== 'shadowed');
+  const exact = active.find((skill) => skill.id.toLowerCase() === wanted) ?? active.find((skill) => skill.name.toLowerCase() === wanted);
+  if (exact !== undefined) return { skill: exact };
+  const starts = active.filter((skill) => skill.name.toLowerCase().startsWith(wanted));
+  const near = starts.length > 0 ? starts : active.filter((skill) => skill.name.toLowerCase().includes(wanted));
+  if (near.length === 1) return { skill: near[0] as SkillSummary };
+  if (near.length === 0) return { why: `/skill: there is no skill called "${typed}". /skills lists them` };
+  return { why: `/skill: "${typed}" could be ${near.slice(0, 5).map((skill) => skill.name).join(', ')}${near.length > 5 ? ' or more' : ''}. Say which` };
+}
+
 /** Runs one command line. Resolves when it has said what it did; never rejects. */
-export async function runCommand(app: StageApp, text: string, onChoice: (choice: BrainChoice) => void): Promise<void> {
+export async function runCommand(app: StageApp, text: string, onChoice: (choice: BrainChoice) => void, skills?: SkillHooks): Promise<void> {
   const command = parseCommand(text);
   try {
-    await perform(app, command, onChoice);
+    await perform(app, command, onChoice, skills);
   } catch (cause) {
     app.announce(cause instanceof Error ? cause.message : String(cause));
   }
 }
 
-async function perform(app: StageApp, command: Command, onChoice: (choice: BrainChoice) => void): Promise<void> {
+async function perform(app: StageApp, command: Command, onChoice: (choice: BrainChoice) => void, skills?: SkillHooks): Promise<void> {
   switch (command.kind) {
+    case 'skills': {
+      const view = await app.link.skills(command.refresh);
+      if (command.refresh) app.announce(`Read your skill folders again: ${view.skills.filter((skill) => skill.state !== 'shadowed').length} skills.`);
+      else app.showPage(skillsPage(view.skills, command.query));
+      return;
+    }
+    case 'skill': {
+      if (skills === undefined) {
+        app.announce('Skills are held from the main page of the app.');
+        return;
+      }
+      const found = resolveSkill((await app.link.skills()).skills, command.name);
+      if ('why' in found) {
+        app.announce(found.why);
+        return;
+      }
+      if (found.skill.state !== 'on') {
+        app.announce(`The ${found.skill.name} skill is ${found.skill.note ?? 'not usable'}.`);
+        return;
+      }
+      const held: HeldSkill = { id: found.skill.id, name: found.skill.name };
+      const refused = skills.hold(held);
+      if (refused !== null) {
+        app.announce(refused);
+        return;
+      }
+      if (command.words === '') {
+        app.announce(`${held.name} will go with your next message. Reading only.`);
+        return;
+      }
+      await skills.send(command.words, [held]);
+      return;
+    }
     case 'refused':
       app.announce(command.message);
       return;
