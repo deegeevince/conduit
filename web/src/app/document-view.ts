@@ -9,7 +9,7 @@
 //                  when a session is opened again (`GET /api/sessions/:id/document`):  docs.load(view);  on a new session:  docs.reset();
 //   http-link.ts   documentLink: DocumentLink = { sendState: (c) => send({ type: 'state', turn, document: id, change: c }), documents, open }
 
-import { accepts, initialState, nodeOf } from '@conduit/language';
+import { accepts, advance, initialState, nodeOf } from '@conduit/language';
 import type { DocNode, DocumentInk as KeptInk, InkDocument, LessonAsk } from '@conduit/language';
 import { DocumentHost, catalogueFromSummaries } from './document-host';
 import type { DocumentLink } from './document-host';
@@ -52,7 +52,8 @@ export interface DocumentViewOptions {
 }
 
 export interface DocumentView {
-  onDoc(event: DocStageEvent): void;
+  /** `asked`: this turn is one the person began (a prompt or a tap), so the document it writes comes to the front, and a new section opens */
+  onDoc(event: DocStageEvent, asked?: boolean): void;
   /** a document and her place in it, as the server keeps them (a session opened again) */
   load(view: { readonly document: Document; readonly state: DocState }): void;
   reset(): void;
@@ -80,6 +81,8 @@ export function createDocumentView(options: DocumentViewOptions): DocumentView {
   let host: DocumentHost | null = null;
   let catalogue: readonly CatalogueEntry[] = [];
   let shown = true;
+  /** the turns of the person's whose document has been brought to the front once: it is not pulled forward again by every later node */
+  const fronted = new Set<string>();
   const layer = document.createElement('div');
   layer.className = 'stage__document';
   layer.setAttribute('data-document-view', '');
@@ -177,7 +180,8 @@ export function createDocumentView(options: DocumentViewOptions): DocumentView {
   pill.addEventListener('click', () => toggle(true));
 
   return {
-    onDoc(event) {
+    onDoc(event, asked = false) {
+      const before = doc;
       const nodes: Record<NodeId, DocNode> = { ...(doc?.nodes ?? {}) };
       for (const node of event.nodes) nodes[node.id] = node;
       const next: Document = { id: event.document, title: event.title, root: event.root, nodes, defs: {} };
@@ -185,8 +189,25 @@ export function createDocumentView(options: DocumentViewOptions): DocumentView {
         doc = next;
         return;
       }
+      // a document the person asked for is never written behind her back: it comes to the front, even when she had put the document away
+      const bring = asked && event.turn !== null && !fronted.has(event.turn);
+      if (bring && event.turn !== null) {
+        fronted.add(event.turn);
+        shown = true;
+      }
+      const hadHost = host !== null;
       mount(next, host?.current ?? initialState(next));
       toggle(shown);
+      // a new section at the top of the document is what she asked to see: open it
+      const fresh = bring && hadHost && host !== null ? event.nodes.find((node) => node.parent === next.root && before?.nodes[node.id] === undefined && node.tag === null) : undefined;
+      if (fresh !== undefined && host !== null) {
+        const change = { kind: 'cursor' as const, cursor: { node: fresh.id, play: { at: 0 } } };
+        const moved = advance(next, host.current, change);
+        if (moved !== host.current) {
+          host.setInput(input(next, moved), true);
+          options.link.sendState(change);
+        }
+      }
     },
     load(view) {
       if (host !== null) {

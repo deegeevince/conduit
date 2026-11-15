@@ -1,0 +1,88 @@
+{
+ "id": "dead-tap-quiz-under-stale-id",
+ "title": "a quiz asked for after other documents is written under an old id and nothing opens",
+ "family": "flow-state",
+ "owner": "server",
+ "kind": "flow",
+ "found": "2026-11-15",
+ "generic": false,
+ "note": "After a recipe and a sample sheet, then a figure tour, the person tapped a choice to be quizzed. The brain wrote asks before their parts and put the questions in a part of the sheet that never opened; nothing on the screen changed.",
+ "own": [
+  "document-open",
+  "screen-changed"
+ ],
+ "turns": [
+  {
+   "say": "What's new in this app?",
+   "source": {
+    "log": "20261115-094056-c1",
+    "turns": [
+     "t4"
+    ]
+   }
+  },
+  {
+   "say": "Walk me through a recipe",
+   "source": {
+    "log": "20261115-094056-c1",
+    "turns": [
+     "t5"
+    ]
+   },
+   "tap": "Walk me through a recipe"
+  },
+  {
+   "say": "Show me a worksheet in action",
+   "source": {
+    "log": "20261115-094056-c1",
+    "turns": [
+     "t7"
+    ]
+   },
+   "tap": "Show me a worksheet in action",
+   "pre": [
+    {
+     "a": "close-document"
+    }
+   ]
+  },
+  {
+   "say": "Teach me visually parts of human anatomy",
+   "source": {
+    "log": "20261115-094056-c1",
+    "turns": [
+     "t30"
+    ]
+   },
+   "pre": [
+    {
+     "a": "close-document"
+    }
+   ]
+  },
+  {
+   "say": "Quiz me on the organs",
+   "source": {
+    "log": "20261115-094056-c1",
+    "turns": [
+     "t31"
+    ],
+    "asWritten": true
+   },
+   "tap": "Quiz me on the organs",
+   "check": [
+    {
+     "k": "document-open"
+    },
+    {
+     "k": "screen-changed"
+    }
+   ],
+   "pre": [
+    {
+     "a": "close-document"
+    }
+   ]
+  }
+ ]
+}

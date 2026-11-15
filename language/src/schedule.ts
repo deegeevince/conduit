@@ -50,7 +50,7 @@ import {
   waitSeconds,
 } from './timing';
 import type { Anchor, AppShelf, LessonVerb, TuneVoice } from './vocabulary';
-import type { BindOn, CanvasBox, ControlLine, SceneLine, ControlValue, CreatingLine, DatasetRef, Issue, IssueCode, Line, Paint, Point, Range, ShapeGeometry, StructureLine, StyleProps, TablePart, Target, When } from './types';
+import type { BindLine, BindOn, CanvasBox, ControlLine, SceneLine, ControlValue, CreatingLine, DatasetRef, Issue, IssueCode, Line, Paint, Point, Range, ShapeGeometry, StructureLine, StyleProps, TablePart, Target, When } from './types';
 import { cachedTune, tuneRowsOf } from './tune';
 import { BACKDROP_LAYERS, CANVAS, CONTROL, DEFAULT_CANVAS, DEFAULT_CHART, DEFAULT_LOOK, DEFAULT_TUNE_VOICE, LESSON_VERBS, LIMITS, STRUCTURE } from './vocabulary';
 import type {
@@ -848,9 +848,9 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
     return resolved.style;
   };
 
-  const coloured = (seq: number, props: StyleProps): ResolvedProps => {
+  const coloured = (seq: number, props: StyleProps, quiet = false): ResolvedProps => {
     const resolved = resolveColours(props, colors);
-    for (const name of resolved.unknown) report(seq, 'unknown-colour', `no colour called "${name}"; used ink. Define it first: color ${name}=#rrggbb`, name);
+    if (!quiet) for (const name of resolved.unknown) report(seq, 'unknown-colour', `no colour called "${name}"; used ink. Define it first: color ${name}=#rrggbb`, name);
     return resolved.props;
   };
 
@@ -898,9 +898,12 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
       ...(extra.refit === true && { refit: true }),
     };
     const created: Live = { span, style, ghost: false, predecessor: extra.predecessor ?? null, frames: null, rows: null };
+    let before: Live | null = null;
+    for (let i = live.length - 1; i >= 0 && before === null; i -= 1) if (live[i]?.span.id === id) before = live[i] ?? null;
     elements.push(span);
     live.push(created);
     byKey.set(span.key, created);
+    bindToNewcomer(created, start, before);
     applyStay(created, start + duration);
     retireOverflow(entry.seq, created, start);
     return created;
@@ -944,6 +947,126 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
       return { order: nextOrder - 1, delay: 0 };
     }
     return { order: same.span.order, delay: leave(same, start, same.style.exit, 'resay') * SOLO_OVERLAP };
+  };
+
+  /** The bound changes that found nothing to change yet: tried again each time something comes on stage, and reported at the end if still unplaced. */
+  const waiting: { readonly seq: number; readonly line: BindLine; readonly at: number }[] = [];
+
+  /** Whether a bound change of this kind can change this element. */
+  const bindFits = (effect: DrivenEffect, span: MutableElement): boolean =>
+    effect.kind === 'set' || (effect.kind === 'move' && span.kind !== 'field' && span.kind !== 'node' && span.kind !== 'link') || (effect.kind === 'morph' && span.kind === 'shape') || (effect.kind === 'text' && span.kind === 'text') || (effect.kind === 'mark' && span.figure?.kind === 'structure' && span.figure.structure === 'table');
+
+  /**
+   * Binds a change to its control. `only` is an element it must go to (a bind that waited, an element written again); null: wherever its words say.
+   * 'wait' means the control or the thing to change is not on stage yet (nothing is reported then: `waiting` keeps it); 'done' that it is placed or was refused with a report.
+   */
+  const applyBind = (seq: number, line: BindLine, at: number, only: Live | null): 'done' | 'wait' => {
+    const quiet = only !== null;
+    const control = findLive(line.control, at);
+    if (control === null || control.span.figure?.kind !== 'control') {
+      if (control === null) return 'wait';
+      if (!quiet) report(seq, 'bad-bind', `"${line.control}" is a ${control.span.kind}, not a control; only a button, toggle, slider, pick or input can drive a change`, line.control);
+      return 'done';
+    }
+    const spec = control.span.figure;
+    if (line.on.kind === 'is' && spec.control === 'pick' && !pickHasOption(spec, line.on.value)) {
+      if (!quiet) report(seq, 'bad-bind', `"${line.on.value}" is not an option of "${line.control}"; its options are ${spec.options.map((option, i) => `${i + 1} ${option}`).join(', ')}; bind one by its exact words or its number`, line.control);
+      return 'done';
+    }
+    const { change } = line;
+    const asked: Live[] = only !== null ? [only] : change.verb === 'set' ? (change.target.kind === 'id' ? [findLive(change.target.id, at)].filter((found): found is Live => found !== null) : resolveTargets(change.target, at, seq)) : [findLive(change.id, at)].filter((found): found is Live => found !== null);
+    const targets = asked;
+    if (targets.length === 0) return change.verb === 'set' && change.target.kind !== 'id' ? 'done' : 'wait';
+    let effect: DrivenEffect;
+    if (change.verb === 'set' && change.part !== undefined) {
+      const wanted = line.on.kind === 'is' ? line.on.value : null;
+      let equals: number | null = null;
+      if (wanted !== null) {
+        const squashed = (text: string): string => text.trim().toLowerCase().replace(/[\s-]+/g, '');
+        if (spec.control === 'pick') equals = spec.options.findIndex((option) => squashed(option) === squashed(wanted)) + 1 || (/^\d+$/.test(wanted.trim()) ? Number(wanted) : 0);
+        else if (spec.control === 'toggle') equals = ['on', 'yes', 'true', '1'].includes(wanted.trim().toLowerCase()) ? 1 : 0;
+        else if (Number.isFinite(Number(wanted))) equals = Number(wanted);
+      }
+      if (equals === null || equals < 0 || (spec.control === 'pick' && equals === 0)) {
+        if (!quiet) report(seq, 'bad-bind', `a row or a cell is marked while a control holds a value: bind ${line.control}=<option> | set <table>.row<n> mark=box`, line.control);
+        return 'done';
+      }
+      effect = { kind: 'mark', part: change.part, mark: change.props.mark ?? 'box', equals };
+    } else if (change.verb === 'set') {
+      const merged = mergeStyles(sheet, change.styles, change.props);
+      if (!quiet) for (const name of merged.unknown) report(seq, 'unknown-style', `no style called "${name}"; ignored`, name);
+      effect = { kind: 'set', props: coloured(seq, merged.props, quiet) };
+    } else if (change.verb === 'move') {
+      let along: string | null = null;
+      let to = change.to;
+      if (change.along !== undefined) {
+        const track = findLive(change.along, at);
+        const figure = track?.span.figure;
+        const outline = figure?.kind === 'shape' ? outlineOf(figure.geometry)[0] : undefined;
+        // A link may be travelled too; where it runs is the painter's to say, so the end is left to it.
+        if (track !== null && figure?.kind === 'link') along = track.span.key;
+        else if (track === null || outline === undefined) {
+          if (!quiet) report(seq, 'unknown-id', `no drawn shape called "${change.along}" is on stage to travel along; moved straight`, change.along);
+        } else {
+          along = track.span.key;
+          to ??= pointAlong(outline, 1);
+        }
+      }
+      if (to === undefined && along === null) return 'done';
+      effect = { kind: 'move', to: to ?? 'center', along };
+    } else if (change.verb === 'correct') {
+      const { plain, emphasis } = splitEmphasis(change.text);
+      effect = { kind: 'text', text: plain, emphasis };
+    } else {
+      const merged = mergeStyles(sheet, change.styles, change.props);
+      effect = { kind: 'morph', geometry: change.geometry, props: coloured(seq, merged.props, quiet) };
+    }
+    const bound = live.reduce((count, candidate) => (isActive(candidate, at) ? count + candidate.span.driven.length : count), 0);
+    if (bound + targets.length > LIMITS.binds) {
+      if (!quiet) report(seq, 'structure-limit', `at most ${LIMITS.binds} bound changes can be on stage at once; this one was ignored`);
+      return 'done';
+    }
+    for (const target of targets) {
+      if (!bindFits(effect, target.span)) {
+        if (!quiet) report(seq, 'bad-bind', unbindable(line.control, target.span.id, target.span.kind, target.span.figure, effect.kind), target.span.id);
+        continue;
+      }
+      if (target.span.driven.some((have) => have.seq === seq)) continue;
+      target.span.driven.push({ seq, control: control.span.key, on: line.on, effect, since: at });
+    }
+    return 'done';
+  };
+
+  /**
+   * A binding belongs to the id it changes, not to the one element that wore it when the line came: the words or the shape written again under that id wear
+   * it too (a later plain line never undoes what a control holds), and a bind that came before its element is placed the moment the element is.
+   */
+  const bindToNewcomer = (made: Live, start: number, replaced: Live | null): void => {
+    const span = made.span;
+    if (replaced !== null) {
+      const carried = replaced.span.driven.filter((change) => bindFits(change.effect, span) && !span.driven.some((have) => have.seq === change.seq));
+      span.driven.push(...carried);
+      // a struck-out earlier version keeps its own words
+      if (replaced.ghost || made.predecessor === replaced) replaced.span.driven = [];
+    }
+    for (let i = 0; i < waiting.length; i += 1) {
+      const held = waiting[i];
+      if (held === undefined) continue;
+      const change = held.line.change;
+      const id = change.verb === 'set' ? (change.target.kind === 'id' ? change.target.id : null) : change.id;
+      const control = findLive(held.line.control, Math.max(start, held.at));
+      if (control === null) continue;
+      if (id === span.id) {
+        if (applyBind(held.seq, held.line, Math.max(start, held.at), made) === 'done') {
+          waiting.splice(i, 1);
+          i -= 1;
+        }
+      } else if (id !== null && findLive(id, Math.max(start, held.at)) !== null && applyBind(held.seq, held.line, Math.max(start, held.at), null) === 'done') {
+        waiting.splice(i, 1);
+        i -= 1;
+      }
+    }
+    span.driven.sort((a, b) => a.seq - b.seq);
   };
 
   const scheduleCreating = (entry: ScoreEntry, line: CreatingLine): void => {
@@ -1627,80 +1750,9 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
         // Not on the clock: a binding takes no time and holds nothing. It lasts as long as the element it changes.
         const at = Math.max(pen, entry.floor);
         lines.push({ seq, verb: line.verb, start: at, end: at });
-        const control = findLive(line.control, at);
-        if (control === null || control.span.figure?.kind !== 'control') {
-          const other = control === null ? null : control.span.kind;
-          report(seq, 'bad-bind', other === null ? `no control called "${line.control}" is on stage to bind; write the slider, toggle or pick first` : `"${line.control}" is a ${other}, not a control; only a button, toggle, slider, pick or input can drive a change`, line.control);
-          break;
-        }
-        const spec = control.span.figure;
-        if (line.on.kind === 'is' && spec.control === 'pick' && !pickHasOption(spec, line.on.value)) {
-          report(seq, 'bad-bind', `"${line.on.value}" is not an option of "${line.control}"; its options are ${spec.options.map((option, i) => `${i + 1} ${option}`).join(', ')}; bind one by its exact words or its number`, line.control);
-          break;
-        }
-        const { change } = line;
-        const targets: Live[] = change.verb === 'set' ? resolveTargets(change.target, at, seq) : [findLive(change.id, at)].filter((found): found is Live => found !== null);
-        if (targets.length === 0) {
-          if (change.verb !== 'set') report(seq, 'bad-bind', `"${line.control}" is bound to "${change.id}", and nothing called that is on stage; draw it first (a chart, a flow, a code block and any of their parts can be changed too)`, change.id);
-          break;
-        }
-        let effect: DrivenEffect;
-        if (change.verb === 'set' && change.part !== undefined) {
-          const asked = line.on.kind === 'is' ? line.on.value : null;
-          let equals: number | null = null;
-          if (asked !== null) {
-            const squashed = (text: string): string => text.trim().toLowerCase().replace(/[\s-]+/g, '');
-            if (spec.control === 'pick') equals = spec.options.findIndex((option) => squashed(option) === squashed(asked)) + 1 || (/^\d+$/.test(asked.trim()) ? Number(asked) : 0);
-            else if (spec.control === 'toggle') equals = ['on', 'yes', 'true', '1'].includes(asked.trim().toLowerCase()) ? 1 : 0;
-            else if (Number.isFinite(Number(asked))) equals = Number(asked);
-          }
-          if (equals === null || equals < 0 || (spec.control === 'pick' && equals === 0)) {
-            report(seq, 'bad-bind', `a row or a cell is marked while a control holds a value: bind ${line.control}=<option> | set <table>.row<n> mark=box`, line.control);
-            break;
-          }
-          effect = { kind: 'mark', part: change.part, mark: change.props.mark ?? 'box', equals };
-        } else if (change.verb === 'set') {
-          const merged = mergeStyles(sheet, change.styles, change.props);
-          for (const name of merged.unknown) report(seq, 'unknown-style', `no style called "${name}"; ignored`, name);
-          effect = { kind: 'set', props: coloured(seq, merged.props) };
-        } else if (change.verb === 'move') {
-          let along: string | null = null;
-          let to = change.to;
-          if (change.along !== undefined) {
-            const track = findLive(change.along, at);
-            const figure = track?.span.figure;
-            const outline = figure?.kind === 'shape' ? outlineOf(figure.geometry)[0] : undefined;
-            // A link may be travelled too; where it runs is the painter's to say, so the end is left to it.
-            if (track !== null && figure?.kind === 'link') along = track.span.key;
-            else if (track === null || outline === undefined) report(seq, 'unknown-id', `no drawn shape called "${change.along}" is on stage to travel along; moved straight`, change.along);
-            else {
-              along = track.span.key;
-              to ??= pointAlong(outline, 1);
-            }
-          }
-          if (to === undefined && along === null) break;
-          effect = { kind: 'move', to: to ?? 'center', along };
-        } else if (change.verb === 'correct') {
-          const { plain, emphasis } = splitEmphasis(change.text);
-          effect = { kind: 'text', text: plain, emphasis };
-        } else {
-          const merged = mergeStyles(sheet, change.styles, change.props);
-          effect = { kind: 'morph', geometry: change.geometry, props: coloured(seq, merged.props) };
-        }
-        const bound = live.reduce((count, candidate) => (isActive(candidate, at) ? count + candidate.span.driven.length : count), 0);
-        if (bound + targets.length > LIMITS.binds) {
-          report(seq, 'structure-limit', `at most ${LIMITS.binds} bound changes can be on stage at once; this one was ignored`);
-          break;
-        }
-        for (const target of targets) {
-          const fits =
-            effect.kind === 'set' || (effect.kind === 'move' && target.span.kind !== 'field' && target.span.kind !== 'node' && target.span.kind !== 'link') || (effect.kind === 'morph' && target.span.kind === 'shape') || (effect.kind === 'text' && target.span.kind === 'text') || (effect.kind === 'mark' && target.span.figure?.kind === 'structure' && target.span.figure.structure === 'table');
-          if (!fits) {
-            report(seq, 'bad-bind', unbindable(line.control, target.span.id, target.span.kind, target.span.figure, effect.kind), target.span.id);
-            continue;
-          }
-          target.span.driven.push({ seq, control: control.span.key, on: line.on, effect, since: at });
-        }
+        const made = applyBind(seq, line, at, null);
+        // What is not on stage yet (the words it changes come a line later, the control after it) is kept: it holds from the moment it is.
+        if (made === 'wait') waiting.push({ seq, line, at });
         break;
       }
 
@@ -2087,6 +2139,14 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
           }),
         };
 
+  for (const held of waiting) {
+    const change = held.line.change;
+    const control = findLive(held.line.control, held.at);
+    const id = change.verb === 'set' ? (change.target.kind === 'id' ? change.target.id : held.line.control) : change.id;
+    if (control === null) report(held.seq, 'bad-bind', `no control called "${held.line.control}" is on stage to bind; write the slider, toggle or pick first`, held.line.control);
+    else if (change.verb === 'set') report(held.seq, 'unknown-id', `nothing called "${id}" is on stage at that moment`, id);
+    else report(held.seq, 'bad-bind', `"${held.line.control}" is bound to "${id}", and nothing called that is on stage; draw it first (a chart, a flow, a code block and any of their parts can be changed too)`, id);
+  }
   return { pen, end, look: wearing.preset, wearing, styles: sheet, colors, lookDefs, scenes, elements, camera, looks, lines, issues, deck };
 }
 

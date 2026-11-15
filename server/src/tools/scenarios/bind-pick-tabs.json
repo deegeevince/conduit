@@ -1,0 +1,11 @@
+{
+ "case": "bind-pick-tabs",
+ "recordedAt": "2026-11-15T00:00:00.000Z",
+ "screen": "1280x720",
+ "turns": [
+  {
+   "match": "compare mean median and mode of daily visitors, with a tab for each",
+   "script": "scene layout=figure\ntable m1 | Visitors by day\nrow m1 | | A Day | B Visitors\nrow m1 | 2 | Mon | 12\nrow m1 | 3 | Tue | 30\nrow m1 | 4 | Wed | 18\nrow m1 | 5 | Thu | 12\nrow m1 | 6 | Fri | 8\ncolor hot=#c0392b\nsay fx strong face=mono | =AVERAGE(B2:B6)\nsay res | Add all five and divide by five: 80 / 5 = *16*.\npick f tabs | MEAN | MEDIAN | MODE\nbind f=mean | set m1.row2 mark=box\nbind f=mean | set m1.row3 mark=box\nbind f=mean | set m1.row4 mark=box\nbind f=mean | set m1.row5 mark=box\nbind f=mean | set m1.row6 mark=box\nbind f=mean | correct fx | =AVERAGE(B2:B6)\nbind f=mean | correct res | Add all five and divide by five: 80 / 5 = *16*.\nbind f=median | set m1.row2 mark=box\nbind f=median | set m1.row5 mark=box\nbind f=median | correct fx | =MEDIAN(B2:B6)\nbind f=median | correct res | Sorted it reads 8, 12, 12, 18, 30, so the middle one is *12*.\nbind f=median | set res scale=1.1\nbind f=mode | set m1.row2 mark=underline\nbind f=mode | set m1.row5 mark=underline\nbind f=mode | correct fx | =MODE(B2:B6)\nbind f=mode | correct res | The value that turns up most often is 12, twice: *12*.\nbind f=mode | set fx ink=hot\nsay x1 choice | Compare them on skewed data\n"
+  }
+ ]
+}
