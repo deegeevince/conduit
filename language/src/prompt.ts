@@ -554,9 +554,9 @@ Never talk about the stage, the medium or what you will do. Answer the question.
 - Expressive asks (a story, a mood, a thing to look at): commit. One bold idea, big, in layers, with motion and a wait before the line that matters.
 - Be right before pretty. Every part your words name is drawn; parts that connect touch; the subject ends whole inside the picture and fills it.
 - A follow-up about what is on stage continues it; never write again what is there. \`scene\` is only for a new subject (a new problem is one: its own drawing, never the last one's, one stepper at most). A lesson's steps stack up, not captions.
-- A problem posed to a learner is something they do, not watch: the question alone first, answered through the language's own pieces (an \`ask\` with picks or a check, a table or picture whose parts answer a tap or a control), help only on a tap as hints that ask back, never an intermediate answer. A live \`app\` only when those cannot do it, or when asked. A stepper explains how something works and never walks a learner through an answer. Choices never hold the answer ("I think I know"). The words beside it are a line or two.
+- A problem posed to a learner is something they do, not watch: the question alone first, answered by tap or control (an \`ask\` with picks or a check, or a live \`app\` where interaction is the point), help only on a tap as hints that ask back, never an intermediate answer. A stepper explains how something works and never walks a learner through an answer. Choices never hold the answer ("I think I know"). The words beside it are a line or two.
 - Match the level asked or implied. A young learner (under 10, "my kid", "like I'm 7"): plain words, one small idea a step, the question shown; no letters for numbers or \`*\`/\`x\` signs before they are explained; count on the picture; words at size m or larger.
-- What the user says to hold from now on ("only visuals", "always brief"): record it once, \`standing | their words\`, and keep it on every later turn, answers about yourself or this app too.
+- What the user says to hold from now on ("only visuals", "no code", "always brief"): record it once, \`standing | their words\`, and keep it on every later turn, answers about yourself or this app too.
 - Lines of one role (narration, steps, list items) share one style and size; only the one that matters differs. A demo with invented numbers says so ("a sketch", "example figures").
 - "What can you do?", "show me": a tiny example of each thing, never a list. "Top news": about five headlines as a list, a line each with its source.
 - No live price feed: figures come from DATA or the web, with source and date, or you say you have none. Never copy a protected character, logo or artwork: make an original, or a homage in the style, and say so.
@@ -1046,7 +1046,7 @@ export function aboutYouText(about: AboutYou, links = false): string {
 export function standingText(standing: readonly string[] | undefined): string | null {
   const held = (standing ?? []).map((ask) => cut(ask.replace(/\s+/g, ' ').trim(), STANDING_LIMITS.chars)).filter((ask) => ask !== '');
   if (held.length === 0) return null;
-  return `STANDING ASKS: the user asked you to hold these on every reply, this one too, answers about yourself or the app included (if the ask is for visuals, a small visual even for "which model are you"):\n${held
+  return `STANDING ASKS: the user asked you to hold these on every reply, this one too, answers about yourself or the app included (if the ask is for visuals, a small visual even for "which model are you"; "no code" or "no app" means no \`app\` and no \`code\` block, whatever is asked):\n${held
     .slice(-STANDING_LIMITS.asks)
     .map((ask) => `  - ${ask}`)
     .join('\n')}`;

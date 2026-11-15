@@ -658,6 +658,10 @@ async function runCheck(cx: Cx, spec: Spec): Promise<Res> {
       const drawn = last.split('\n').filter((l) => /^(circle|ellipse|rect|line|poly|path|arc|chart|table|flow|tree|cycle|timeline|map|slider|toggle|pick|app|pix|screen|code|button)\b/.test(l.trim()));
       return res(name, scenes.length === 0 ? ['no scene'] : drawn.length === 0 ? ['the last scene holds words only, no drawing or control'] : [], `the last scene has ${drawn.length} drawn or control line(s)`);
     }
+    case 'no-app': {
+      const lines = cx.answer.script.split('\n').filter((l) => /^(app|code)\b/.test(l));
+      return res(name, lines.map((l) => `a standing "no code" was broken: ${l.slice(0, 40)}`), 'no app or code block');
+    }
     case 'learner-native': {
       // a problem posed to a learner is done through the language's own pieces: something to answer or move (ask, pick, slider, field), no stepper walking the answer, no live app, no number given as a choice
       const script = cx.answer.script;
