@@ -2,6 +2,10 @@
 
 Newest first. Each item is something the brain can show live when asked "showcase what's new": draw it, don't describe it. The server reads this file.
 
+## Taps that always answer (live)
+- A tab or a step shows its own words and highlights, at rest and in every picture: the formula, the caption and the marked rows always belong to the option you picked.
+- A recipe, worksheet or quiz you ask for by tapping a choice always opens, even if it was closed, asked for again, or written in the wrong place; a tap that changes nothing says so.
+
 ## Apps get their room; lessons hold steady (live)
 - A live app keeps the width it was made for (up to most of a wide screen), with the words beside it or below, and its frame is never taller than it needs: a sharing game shows every plate.
 - A long flowchart on a phone folds into two columns so every box is on screen, and choices at the foot are set a little smaller rather than dropped.
