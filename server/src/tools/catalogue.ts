@@ -663,7 +663,7 @@ async function runCheck(cx: Cx, spec: Spec): Promise<Res> {
       const script = cx.answer.script;
       const asks = script.split('\n').filter((l) => /^ask\b/.test(l)).length;
       const ctl = (await controls(cx.tab)).filter((c) => c.control === 'input' || c.control === 'slider' || c.control === 'toggle' || (c.control === 'pick' && c.form !== 'steps'));
-      const apps = await cx.tab.eval<number>(`[...document.querySelectorAll('iframe')].filter((f) => f.getBoundingClientRect().height > 50).length`);
+      const apps = script.split('\n').filter((l) => /^app\b/.test(l)).length;
       const bad: string[] = [];
       // a lesson page of parts ("0 of 3 done") is the language's own home for asks: the asks are written as each part is opened
       const lessonPage = /\b\d+ of \d+ done\b/.test(await cx.tab.eval<string>(`document.body.innerText`));
