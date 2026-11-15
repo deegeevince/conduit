@@ -27,6 +27,7 @@ import type {
   UnreadFacts,
 } from '@conduit/language';
 import { AppError, errors } from '../errors';
+import { asksForPicture } from './techniques';
 import type { Logger } from '../log';
 import { ASSET_LIMITS } from './assets';
 import type { AssetStore } from './assets';
@@ -1338,7 +1339,9 @@ export class Conductor {
       if (writers.length > 0) this.documentCards.set(s.id, writers);
       const held = this.documentCards.get(s.id) ?? [];
       const viewNow = this.docs.viewOfSession(s.id);
-      const techniques = held.length > 0 && !usesParts(chosen) && viewNow !== null && hasLesson({ document: { document: viewNow.document, state: viewNow.state } }) ? [...held, ...chosen].slice(0, 3) : chosen;
+      // a prompt that asks for a picture, the canvas or one step at a time is a new answer, not another turn of the open document
+      const pictured = turn.input.kind === 'prompt' && asksForPicture(turn.input.text);
+      const techniques = held.length > 0 && !pictured && !usesParts(chosen) && viewNow !== null && hasLesson({ document: { document: viewNow.document, state: viewNow.state } }) ? [...held, ...chosen].slice(0, 3) : chosen;
       if (techniques.length > 0) {
         log.debug('techniques.chosen', { session: s.id, turn: turn.id, techniques: techniques.map((card) => card.id) });
         sessionLog.write(s.id, { type: 'techniques', turn: turn.id, ids: techniques.map((card) => card.id) });

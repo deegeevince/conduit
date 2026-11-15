@@ -927,6 +927,13 @@ async function runCheck(cx: Cx, spec: Spec): Promise<Res> {
       const now = await screenSig(cx.tab);
       return now.startsWith('document:') ? { check: name, verdict: 'PASS', detail: 'the document is open on the screen' } : { check: name, verdict: 'FAIL', detail: `no document is open on the screen (${now.slice(0, 60)})` };
     }
+    case 'document-yields': {
+      // a picture answer is seen: the document layer is put away (a pill brings it back) and the stage shows the drawing
+      const now = await screenSig(cx.tab);
+      const pill = await cx.tab.eval<boolean>(`(() => { const p = document.querySelector('[data-act="document"]'); return !!p && getComputedStyle(p).display !== 'none'; })()`);
+      if (now.startsWith('document:')) return { check: name, verdict: 'FAIL', detail: 'the document is still over the picture answer' };
+      return now.length > 'stage:'.length ? { check: name, verdict: 'PASS', detail: `the picture is on stage${pill ? ', the document one tap away' : ''}` } : { check: name, verdict: 'FAIL', detail: 'no document, but nothing on the stage either' };
+    }
     case 'refresh-escape': {
       const view = await cx.tab.eval<{ doc: boolean; escape: boolean; prompt: boolean }>(
         `(() => { const d = document.querySelector('.stage__document'); const vis = (e) => { const r = e.getBoundingClientRect(); const cs = getComputedStyle(e); return r.width > 4 && r.height > 4 && cs.display !== 'none' && cs.visibility !== 'hidden'; }; const doc = !!d && vis(d) && (d.innerText || '').trim().length > 0; const escape = [...document.querySelectorAll('button,[role=button],a')].some((b) => vis(b) && /close|new conversation|new chat|back to|leave|exit/i.test((b.getAttribute('aria-label') || '') + ' ' + b.textContent)); return { doc, escape, prompt: true }; })()`,

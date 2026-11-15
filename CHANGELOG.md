@@ -2,6 +2,11 @@
 
 Newest first. Each item is something the brain can show live when asked "showcase what's new": draw it, don't describe it. The server reads this file.
 
+## Step by step on the canvas (live)
+- Ask for instructions, a recipe, a build or a how-to step by step, or give it a photo of them, and the answer is a picture with Back and Next: each step adds its part. A document of steps to work through comes only when you ask for a checklist or a document, or for a learner's worksheet.
+- When you ask for a drawing while a document is open ("Build it on canvas", "Interactive step by step"), the drawing is what you see. The document is put away, one tap on "Show the document" brings it back.
+- The small picture under the field after you attach a photo is the photo you attached, even after the server was restarted.
+
 ## Dashboards, questions on the stage, readable mock-ups (live)
 - Ask for a dashboard or a report and get one: headline numbers with their changes, panels and lists, fetched where it can and marked approximate where it can't. On a phone the headline cards sit two to a row.
 - A question can be asked right on the stage: a blank inside the sentence or a few choices, Check when you press it, hints behind a tap, "Show me" after a wrong try, and the brain hears how you got on.

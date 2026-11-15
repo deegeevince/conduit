@@ -1,6 +1,6 @@
 # Help a young learner work a question out
 
-summary: Teach a child, help my kid with homework, a worksheet or a photo of a page of sums, a lesson on adding, times tables or number bonds, show the working and not the answer, a young learner who is to try each question herself.
+summary: Teach a child, help my kid with homework, a worksheet of sums, a lesson on adding, times tables or number bonds, show the working and not the answer, a young learner who is to try each question herself.
 reason: only if the person is a young child in the first years of school who is to try each question herself, with help she pulls
 
 Writes the work as a document of parts: her own try first, then help she asks for as a thinking ladder, then ways to go at it that she does together with you.

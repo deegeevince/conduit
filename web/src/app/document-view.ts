@@ -189,8 +189,13 @@ export function createDocumentView(options: DocumentViewOptions): DocumentView {
         doc = next;
         return;
       }
+      // a turn she asked that paints a scene and writes no part is a picture answer: the document yields to it (it stays one tap away) and the
+      // picture is seen. The scene is kept in the document as a card, but it is never the answer the document view is for.
+      const isScene = (node: DocNode): boolean => node.body !== null && node.body.kind === 'scene';
+      const picture = event.nodes.some(isScene) && event.nodes.every((node) => isScene(node) || node.id === event.root);
+      if (asked && event.turn !== null && picture && !fronted.has(event.turn)) shown = false;
       // a document the person asked for is never written behind her back: it comes to the front, even when she had put the document away
-      const bring = asked && event.turn !== null && !fronted.has(event.turn);
+      const bring = asked && event.turn !== null && !fronted.has(event.turn) && !picture;
       if (bring && event.turn !== null) {
         fronted.add(event.turn);
         shown = true;
