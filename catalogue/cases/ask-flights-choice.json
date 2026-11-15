@@ -11,7 +11,7 @@
  ],
  "turns": [
   {
-   "say": "which of these flights suits me, the morning one or the evening one?",
+   "say": "which flight suits me: the 07:10 for 142 pounds or the 18:30 for 98 pounds?",
    "source": {
     "scenario": "ask-flights-choice",
     "index": 0

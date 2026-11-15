@@ -1269,6 +1269,13 @@ export function createPainter(options: PainterOptions): Painter {
     const reading = clock.read();
     emitBack({ type: 'control', turn: turn === null ? null : turn.id, id: site.id, value: act.value, text: act.text, playhead: reading.playhead, send: act.send, ask: true });
   };
+  /** HI1. When asks stand in a scrolling area, the one that is open is brought to its top: the next step comes to the person, not the person to it. */
+  const revealOpenAsk = (): void => {
+    const open = sitesNow().find((site) => site.window !== undefined && site.input.spec.ask !== undefined && !askLocked(site.span) && ['open', 'wrong'].includes(askRun(site.span).verdict));
+    if (open === undefined || open.window === undefined) return;
+    const top = open.centre.y - open.layout.height / 2;
+    scrollArea(open.window.scene, top - open.window.box.y);
+  };
   /** HI1. A press on a part of an ask. Nothing is checked until Check (or Enter): a hand cannot wiggle a field until it turns green. */
   const askOn = (site: ControlSite, zone: ControlSite['layout']['zones'][number]): void => {
     const span = site.span;
@@ -1286,6 +1293,7 @@ export function createPainter(options: PainterOptions): Painter {
       // the answer is put in the field: what the person sees is what was given up on
     }
     refreshTimeline();
+    revealOpenAsk();
     drawNow();
     if (act !== null) sayAsk(site, act);
   };
@@ -1879,6 +1887,7 @@ export function createPainter(options: PainterOptions): Painter {
         if (commit && !askLocked(site.span)) {
           const act = askCheck(site.span, typeof held === 'string' ? held : '');
           refreshTimeline();
+          revealOpenAsk();
           drawNow();
           if (act !== null) sayAsk(siteById(id) ?? site, act);
         }
