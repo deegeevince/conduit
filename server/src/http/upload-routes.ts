@@ -2,6 +2,7 @@
 
 import { API } from '@conduit/language';
 import type { UploadResponse } from '@conduit/language';
+import { createHash } from 'node:crypto';
 import type { Hono } from 'hono';
 import type { StoredUpload, UploadCrop } from '../domain/uploads';
 import { AppError, errors } from '../errors';
@@ -84,8 +85,12 @@ export function registerUploadRoutes(app: Hono, deps: HttpDeps): void {
     const photo = await uploads.load(session, param(c, 'id'));
     if (photo === null) throw errors.notFound('photo');
     c.header('Content-Type', photo.mime);
-    c.header('Cache-Control', 'private, max-age=31536000, immutable');
+    // Session ids start again at c1 on every run, so a session's `u1` is not one picture for ever: the browser asks again each time, and the tag says whether it still holds this one.
+    const tag = `"${createHash('sha1').update(photo.bytes).digest('hex').slice(0, 20)}"`;
+    c.header('ETag', tag);
+    c.header('Cache-Control', 'private, no-cache');
     c.header('X-Content-Type-Options', 'nosniff');
+    if (c.req.header('if-none-match') === tag) return c.body(null, 304);
     return c.body(photo.bytes as Uint8Array<ArrayBuffer>);
   });
 }

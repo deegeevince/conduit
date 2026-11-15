@@ -1,13 +1,13 @@
 # A walk-through the user steps through, one stage at a time
 
-summary: Step by step, one stage at a time, take me through it, stages of a process the user wants to move through at their own pace, strokes of an engine, phases.
+summary: Step by step, one stage at a time, take me through it, walk me through it, instructions, a recipe, a build or a how-to shown as a picture, stages of a process the user wants to move through at their own pace, strokes of an engine, phases.
 reason: only if the user wants to go through stages one at a time
 
 Lets the user step through stages with back and next, each stage changing the same drawing.
 
-**Use it when** the same drawing has a few distinct states: strokes, phases, before and after. Draw it once, add `pick steps`, and bind each stage's changes to its option.
+**Use it when** the same drawing has a few distinct states: strokes, phases, before and after. Draw it once, add `pick steps`, and bind each stage's changes to its option. A build or a recipe: the finished picture with each part at `opacity=0`, and each stage sets its part to `opacity=1`.
 
-**Not when** there is no single drawing that changes (use a flow), or there are more than six stages.
+**Not when** there is no single drawing that changes (use a flow), or there are more than ten stages.
 
 **Example**
 ```series

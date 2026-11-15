@@ -1,13 +1,13 @@
 # A task done with your hands, ticked off as you go
 
-summary: Walk me through cooking or making something while I do it with my hands, a timer for each step, tick each one off when it is done, keep my place while I cook, guide me through an assembly or a setup as I do it.
-reason: only if the person will do each task themselves, in order, and needs to mark each one done
+summary: A checklist to tick off, a document to work through, tick each step off when it is done, keep my place with a tick for each step, a timer for each step.
+reason: only if the person asks for a checklist or a document to tick off
 
 Writes the recipe as a document of parts: one part a step, a tick to mark it done, a choice where there is one, and help for a step they pull.
 
 **Use it when** the person does the steps with their hands (cooking, assembling, setting something up) and goes at their own pace. One `part` for the recipe, one part a step, in order. A step part has a `step` that says what to do in one short line (quantities and the time written in the words: "about 2 minutes, until bubbles show") and an `ask <id> check=done | <the step, short>` that they tick when it is done; the next step opens when it is ticked. A decision the person owns is an `ask check=any pick=<a>,<b>,<c>` with no right answer. Help for a step is a `hint` on its tick (what it should look like, what to do if it goes wrong), and a variation is a part with `for=<the tick>` and a `tag=`. A drawing of the finished dish or a timeline of the times is painted, not part of the document. Write the first steps now and the rest as they near. Finish with a `reply` of one sentence.
 
-**Not when** the person wants to read about a method, or to see how something works (a plain answer, a flow or a drawing); or the steps are for a young child to learn from.
+**Not when** the person asks for a recipe, a build, instructions or a how-to step by step without asking for a checklist or a document (draw it on the canvas with a stepper); or wants to read about a method, or to see how something works; or the steps are for a young child to learn from.
 
 **Example**
 ```series

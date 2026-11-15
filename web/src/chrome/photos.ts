@@ -115,14 +115,19 @@ export function mountPhotoTray(before: HTMLElement, port: PhotoPort, onChange: (
     held.forEach((photo, at) => {
       const item = document.createElement('li');
       item.className = `photo photo--${photo.state}${photo.page === undefined ? '' : ' photo--page'}`;
-      const shown = photo.id === null ? photo.preview : (port.urlOf(photo.id) ?? photo.preview);
+      // the file the person chose is what the thumbnail shows; the server's copy stands in only when this browser cannot draw it (a HEIC)
+      const kept = photo.id === null ? null : port.urlOf(photo.id);
+      const shown = photo.preview ?? kept;
       if (shown !== null) {
         const image = document.createElement('img');
         image.className = 'photo__image';
         image.alt = `${photo.page === undefined ? `Photo ${at + 1}` : `Page ${photo.page.n} of ${photo.page.file}`}${photo.state === 'sending' ? ', sending' : photo.state === 'failed' ? ', not sent' : ''}`;
         image.src = shown;
         // a format this browser cannot draw (a HEIC): the box says what it is until the server's JPEG replaces it
-        image.addEventListener('error', () => image.remove());
+        image.addEventListener('error', () => {
+          if (kept !== null && image.src !== new URL(kept, location.href).href) image.src = kept;
+          else image.remove();
+        });
         item.append(image);
       }
       const label = document.createElement('span');

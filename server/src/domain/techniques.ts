@@ -154,6 +154,8 @@ const CUES: readonly (readonly [RegExp, readonly string[]])[] = [
   [/\b(?:homework|work ?sheets?|my (?:kid|child|son|daughter|boy|girl)|\d{1,2}[- ]?(?:year|yr)s?[- ]?olds?|sums?|times tables?|number bonds?|working[- ]?outs?|(?:show|work) (?:the |it |this |that )?(?:working|out)|lessons?|tutor\w*|practi[cs]e (?:sheet|questions))\b/i, ['homework', 'worksheet', 'child']],
   // the person wants to do the work or make the choice themselves: something to work out on the stage, checked on a press
   [/\b(?:make me|let me (?:guess|try|work|have a go|place|predict|think)|i(?:'ll| will) (?:have a go|try|guess)|quiz me|test me|fill in|what comes next|which (?:of these )?(?:one )?(?:suits|is better for) me|each step)\b/i, ['blank', 'quiz', 'guess']],
+  // asked to be taken through it a stage at a time: the stepper over one picture
+  [/\bstep[- ]by[- ]step\b|\bone (?:step|stage) at a time\b/i, ['walk']],
   [/\b(?:let me|slider|calculator|converter|play with|interactive|switch between|toggle|drag)\b/i, ['drag', 'interactive', 'explore']],
   [/\bdraw (?:me )?how\b|\bhow (?:does )?(?:a|an|the)\b[^?.]*\b(?:work|happen|pump|beat|move|flow|circulate|digest|breathe|turn|spin|rise|fall)s?\b|\bcross[- ]section\b|\banatomy\b/i, ['mechanism', 'machine', 'part']],
 ];
@@ -183,6 +185,11 @@ export function wordsInOtherSense(said: string): ReadonlySet<string> {
 /** A question about a meaning or a usage, with nothing in it that asks to see something: what a plain answer is. */
 const CONCEPT_ASK = /^\s*(?:please\s+)?(?:explain|what(?:'s| is| are| does)|define|describe|tell me (?:about|what)|meaning of|how (?:do|does|can|should) (?:i|you|we) (?:use|write|call|read|pronounce))\b/i;
 const ASKS_TO_SEE = /\b(?:draw|diagram|picture|illustrate|visuali[sz]e|sketch|paint|animate|chart|graph|plot|show me|cross[- ]section|map of|timeline of|flowchart|flow chart|step by step|walk me through|how does (?:a|an|the)\b[^?.]*\bwork)\b/i;
+
+/** A message that asks for the answer as a picture, on the canvas, or one step at a time: it is not a turn of the document that happens to be open. */
+export function asksForPicture(said: string): boolean {
+  return /\b(?:canvas|draw|drawn|picture|visual(?:ly)?|interactive(?:ly)?|diagram|sketch|illustrate|animate|step[- ]by[- ]step)\b/i.test(said);
+}
 
 /** What a message is matched on. */
 export interface TechniqueQuery {
