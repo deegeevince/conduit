@@ -1,0 +1,22 @@
+{
+ "id": "gate-bill-flow-override-dashed",
+ "title": "gate turn 2: a link runs through a node or another link",
+ "family": "flowchart",
+ "owner": "painter",
+ "kind": "draw",
+ "found": "2026-11-15",
+ "note": "The dashed 'no' link from the override vote back to 'The bill dies' ran through other nodes and across other links at the gate's size. Still red at 1280 and 390: ten nodes with long words do not fit those rooms at all (the diagram runs out of its room), which is a fit fault of its own, not a link route.",
+ "own": [
+  "no-overlap"
+ ],
+ "turns": [
+  {
+   "say": "how does a bill become law, with a conference committee and a veto override, as a flowchart (gate turn 2, run four)",
+   "source": {
+    "scenario": "gate",
+    "index": 0
+   },
+   "check": []
+  }
+ ]
+}

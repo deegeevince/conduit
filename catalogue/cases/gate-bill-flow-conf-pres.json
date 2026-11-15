@@ -1,0 +1,22 @@
+{
+ "id": "gate-bill-flow-conf-pres",
+ "title": "gate turn 2: a link runs through a node or another link",
+ "family": "flowchart",
+ "owner": "painter",
+ "kind": "draw",
+ "found": "2026-11-15",
+ "note": "Links from the Senate to 'both chambers settle' and to 'President signs?' run through 'The bill dies' and across one another.",
+ "own": [
+  "no-overlap"
+ ],
+ "turns": [
+  {
+   "say": "how does a bill become a law, with a presidential veto, as a flowchart (gate turn 2, run two)",
+   "source": {
+    "scenario": "gate",
+    "index": 0
+   },
+   "check": []
+  }
+ ]
+}
