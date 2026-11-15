@@ -49,6 +49,8 @@ export interface Box {
   readonly align: Align;
   readonly justify: Justify;
   readonly wrap: boolean;
+  /** a wrapping row whose lines are kept even: the items that fit across are shared over as few lines as that takes, not packed greedily with one left over */
+  readonly balance?: boolean;
 }
 
 export interface Node<P> {
@@ -303,6 +305,11 @@ function planUncached<P>(n: Node<P>, W: number, H: number | null, c: Caches): Pl
         }
       }
       if (line.length > 0) lines.push(line);
+      if (box.balance === true && lines.length > 1) {
+        const each = Math.ceil(items.length / lines.length);
+        lines.length = 0;
+        for (let i = 0; i < items.length; i += each) lines.push(items.slice(i, i + each));
+      }
     } else if (items.length > 0) lines.push(items);
     for (const line of lines) resolveLine(line, innerW, box.gap);
 

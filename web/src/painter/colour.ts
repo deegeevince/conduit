@@ -14,9 +14,12 @@ function enforce(colour: Colour, against: readonly Colour[], minimum: number, lo
   return enforceInGamut(colour, against, minimum, look.gamut);
 }
 
-/** Large type (24 px and up on screen) and anything on the far plane are held to 3:1; everything else to 4.5:1. */
-export function minContrastFor(screenPx: number, layer: Layer): number {
-  return layer === 'bg' || screenPx >= LARGE_TEXT_PX ? MIN_CONTRAST.large : MIN_CONTRAST.normal;
+/**
+ * Every text a person reads is held to 4.5:1, large type too (a big word in a pale accent is still a pale word). Only the far plane, which is the look's
+ * scenery and is faded on purpose, is held to 3:1.
+ */
+export function minContrastFor(_screenPx: number, layer: Layer): number {
+  return layer === 'bg' ? MIN_CONTRAST.large : MIN_CONTRAST.normal;
 }
 
 export interface InkContext {
@@ -103,8 +106,8 @@ function resolveUncached(ink: InkRole | HexColor, look: LookSpec, context: InkCo
  * 1 when even a solid plate does not do it: the text colour itself is wrong
  * for this ground, and `resolveInk` is what fixes that.
  */
-export function plateFor(text: Colour, behind: Colour, ground: Colour, screenPx: number): number {
-  const minimum = screenPx >= LARGE_TEXT_PX ? MIN_CONTRAST.large : MIN_CONTRAST.normal;
+export function plateFor(text: Colour, behind: Colour, ground: Colour, _screenPx: number): number {
+  const minimum = MIN_CONTRAST.normal;
   if (contrastRatio(text, behind) >= minimum) return 0;
   for (let step = 1; step <= 100; step += 1) {
     const opacity = step / 100;

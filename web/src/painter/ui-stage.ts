@@ -21,7 +21,7 @@ import { WIREFRAME_TOKENS } from '../looks/wireframe';
 import { arrangeBoard, locate } from './blocks/ui/board';
 import type { Board } from './blocks/ui/board';
 import { uiFrame } from './blocks/ui/frame';
-import type { UiTokens } from './blocks/ui/lang';
+import type { UiScreen, UiTokens } from './blocks/ui/lang';
 import { isUiContainer } from './blocks/ui/lang';
 import { paintersMeasure } from './blocks/ui/measure';
 import { layoutScreen } from './blocks/ui/screen';
@@ -542,6 +542,8 @@ const NARROW = 700;
 const MIN_TEXT_PX = { wide: 12, narrow: 11 } as const;
 /** The largest the smallest type may be set, in points, before one screen is shown large instead of all of them small. */
 const MOST_TYPE = 19;
+/** The most the smallest type is ever set, in points, to hold the floor on a board scaled down to fit a small room. */
+const MOST_TYPE_EVER = 36;
 
 function rowsOf(structure: ElementSpan): string[] {
   const figure = structure.figure;
@@ -556,7 +558,7 @@ export function isScreenBlock(span: ElementSpan): boolean {
  * The engine of the `screen` structure: every row that has arrived, laid out, stood on a board in the room it was given, and drawn.
  * `room` is the stage plan's, stage units on the structure's own plane; `dpr` snaps every edge to a device pixel.
  */
-export function layoutUi(args: { readonly structure: ElementSpan; readonly room: Box; readonly spec: LookSpec; readonly dpr: number }): StructureLayout {
+export function layoutUi(args: { readonly structure: ElementSpan; readonly room: Box; readonly spec: LookSpec; readonly dpr: number; readonly viewportWidth?: number }): StructureLayout {
   const { structure, room, spec, dpr } = args;
   const lines = rowsOf(structure);
   const doc = parseInterface(lines);
@@ -565,35 +567,58 @@ export function layoutUi(args: { readonly structure: ElementSpan; readonly room:
   const looks = tokensFor(spec);
   // A page cannot be read at 1280 points in 390: on a narrow stage a browser or a desk window is shown as the phone it would be (the same parts, laid out for it)
   const narrow = room.width < NARROW;
-  const device: Record<string, 'phone'> = {};
-  if (narrow) for (const screen of doc.screens) if ((screen.device === 'browser' || screen.device === 'desktop') && run.state.device[screen.id] === undefined) device[screen.id] = 'phone';
-  const state: UiState = { ...run.state, device: { ...run.state.device, ...device }, picture: Object.fromEntries(PICTURES) };
   const counts = linesPerScreen(doc);
   const focus = Math.max(0, Math.min(doc.screens.length - 1, run.focus));
-  const make = (tokens: UiTokens, mode: 'overview' | 'focus'): { readonly layouts: readonly UiScreenLayout[]; readonly board: Board } => {
-    const layouts = doc.screens.map((screen, i) => layoutScreen(screen, tokens, measure, state, counts[i] ?? 0));
-    return { layouts, board: arrangeBoard(layouts, tokens, measure, { w: room.width, h: room.height }, { mode, focus, margin: MARGIN }) };
-  };
-  // The smallest type on screen must read: what the board is scaled by, and the type's own size, are two halves of one number. Where the room is not tall
-  // enough for the screens at a scale that lets the smallest type be MIN_TEXT_PX, the type is set larger in points (the screens' proportions are the same
-  // and their parts keep their order); and where that would be more than a screen can hold, one screen is shown large and the rest as a strip.
-  const floor = narrow ? MIN_TEXT_PX.narrow : MIN_TEXT_PX.wide;
-  let mode: 'overview' | 'focus' = doc.screens.length > 1 && (narrow || run.solo) ? 'focus' : 'overview';
-  let tokens = looks;
-  let made = make(tokens, mode);
-  for (let pass = 0; pass < 4; pass += 1) {
-    const want = floor / Math.max(0.1, made.board.scale);
-    if (want <= looks.type.caption.size + 0.01) break;
-    if (want > MOST_TYPE && mode === 'overview' && doc.screens.length > 1) {
-      mode = 'focus';
+  // the floor is the screen's (a phone's 11, a desk's 12), not the room's: a phone-sized screen in a desk stage is read at the desk's size
+  const floor = (args.viewportWidth ?? room.width) < 600 ? MIN_TEXT_PX.narrow : MIN_TEXT_PX.wide;
+  const isPage = (screen: UiScreen): boolean => (screen.device === 'browser' || screen.device === 'desktop') && run.state.device[screen.id] === undefined;
+  // The smallest type on screen must read, and never fall under the floor: what the board is scaled by and the type's own size are two halves of one number.
+  // Where the room is too small for the screens at a scale that lets the smallest type be the floor, the smallest roles are set larger in points (the others
+  // follow in proportion: see `atLeast`); where that would be more than a screen can hold, one screen is shown large and the rest as a strip; and a page
+  // (a browser or a desk window) that would still need more is shown as the phone it would be (the same parts, laid out for it). Only then is the type
+  // raised as far as it takes, up to `MOST_TYPE_EVER`: the type is never left under the floor.
+  const settle = (asPhone: boolean, startMode: 'overview' | 'focus', mostType: number): { readonly state: UiState; readonly made: { readonly layouts: readonly UiScreenLayout[]; readonly board: Board }; readonly met: boolean; readonly mode: 'overview' | 'focus' } => {
+    const device: Record<string, 'phone'> = {};
+    if (asPhone) for (const screen of doc.screens) if (isPage(screen)) device[screen.id] = 'phone';
+    const state: UiState = { ...run.state, device: { ...run.state.device, ...device }, picture: Object.fromEntries(PICTURES) };
+    const make = (tokens: UiTokens, mode: 'overview' | 'focus'): { readonly layouts: readonly UiScreenLayout[]; readonly board: Board } => {
+      const layouts = doc.screens.map((screen, i) => layoutScreen(screen, tokens, measure, state, counts[i] ?? 0));
+      return { layouts, board: arrangeBoard(layouts, tokens, measure, { w: room.width, h: room.height }, { mode, focus, margin: MARGIN }) };
+    };
+    let mode = startMode;
+    let tokens = looks;
+    let made = make(tokens, mode);
+    const smallest = looks.type.caption.size;
+    // each raise of the type makes the screen taller and so smaller on the board: the raise is made again from the new scale until the type, as drawn, is at the floor
+    for (let pass = 0; pass < 14; pass += 1) {
+      const px = (tokens.minText ?? smallest) * made.board.scale;
+      if (px >= floor - 0.005 || (tokens.minText === undefined && smallest * made.board.scale >= floor - 0.005)) return { state, made, met: true, mode };
+      const want = floor / Math.max(0.05, made.board.scale);
+      if (want > mostType && mode === 'overview' && doc.screens.length > 1) {
+        mode = 'focus';
+        made = make(tokens, mode);
+        continue;
+      }
+      if (want > mostType) break;
+      const next = Math.max(Math.ceil(want * 4) / 4, (tokens.minText ?? smallest) + 0.25);
+      tokens = { ...looks, minText: Math.min(mostType, next) };
       made = make(tokens, mode);
-      continue;
     }
-    const next = { ...looks, minText: Math.min(MOST_TYPE, Math.ceil(want * 4) / 4) };
-    if (tokens.minText !== undefined && next.minText <= tokens.minText + 0.01) break;
-    tokens = next;
-    made = make(tokens, mode);
+    const px = (tokens.minText ?? smallest) * made.board.scale;
+    return { state, made, met: px >= floor - 0.005, mode };
+  };
+  const first: 'overview' | 'focus' = doc.screens.length > 1 && (narrow || run.solo) ? 'focus' : 'overview';
+  let asPhone = narrow;
+  // a set of screens shown together (a gallery) stays at one scale, in a row or wrapped (the board takes the grid that makes them largest), and its type is raised
+  // as far as the floor takes before one screen is shown large and the others as thumbnails
+  const together = doc.screens.length > 1;
+  let settled = settle(asPhone, first, together ? MOST_TYPE_EVER : MOST_TYPE);
+  if (!settled.met && !narrow && doc.screens.some(isPage)) {
+    asPhone = true;
+    settled = settle(true, doc.screens.length > 1 ? 'focus' : 'overview', together ? MOST_TYPE_EVER : MOST_TYPE);
   }
+  if (!settled.met) settled = settle(asPhone, settled.mode, MOST_TYPE_EVER);
+  const { state, made } = settled;
   const { layouts, board } = made;
   const last: Last = { room, board, layouts, doc, state, players: playersOf(doc) };
   run.last = last;

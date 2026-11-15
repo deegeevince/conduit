@@ -54,7 +54,8 @@ function aboveFold(nodes: readonly UiNode[], boxes: ReadonlyMap<string, { readon
     // a column that crosses the fold keeps what fits of it; anything else that crosses it goes
     if (isUiContainer(node) && node.kind === 'col' && b.y < limit) {
       const inner = aboveFold(node.children, boxes, limit);
-      if (inner.length > 0) out.push({ ...node, children: inner });
+      // a panel left with only its heading is not kept
+      if (inner.some((child) => isUiContainer(child) || child.kind !== 'heading')) out.push({ ...node, children: inner });
     }
     break;
   }
@@ -144,14 +145,20 @@ function dropKind(nodes: readonly UiNode[], kind: string): UiNode[] | null {
  * what was written does not fit it and the screen did not say how closely to set it, it is set again at `density=compact`, and that one is kept if it fits better.
  */
 export function layoutScreen(written: UiScreen, base: UiTokens, measure: UiMeasure, state: UiState = NO_STATE, lines = 0): UiScreenLayout {
-  const tokens = themed(base, written.style);
+  const themedTokens = themed(base, written.style);
+  let tokens = themedTokens;
   let first = layoutWith(written, tokens, measure, state, lines);
   // a button or a link never lies outside its row or card: the row's gap is cut, then the row wraps, then the label is cut short
-  const loose = (layout: UiScreenLayout): number => layout.notes.filter((n) => n.kind === 'outside' && /^(button|link)/.test(n.message)).length;
+  // (one that lies outside its own row or card, across: a part below the glass is the screen being long, which the steps after this deal with)
+  const loose = (layout: UiScreenLayout): number => layout.notes.filter((n) => n.kind === 'outside' && /^(button|link).*container/.test(n.message)).length;
   for (const rowFit of [1, 2, 3] as const) {
     if (loose(first) === 0) break;
-    const fitted = layoutWith(written, { ...tokens, rowFit }, measure, state, lines);
-    if (loose(fitted) < loose(first)) first = fitted;
+    const fitted = layoutWith(written, { ...themedTokens, rowFit }, measure, state, lines);
+    if (loose(fitted) < loose(first)) {
+      first = fitted;
+      // the tighter settings below keep the row fit that mended the buttons
+      tokens = { ...themedTokens, rowFit };
+    }
   }
   const glass = first.device === 'phone' || first.device === 'tablet';
   const spilled = (layout: UiScreenLayout): number => layout.notes.filter((n) => n.kind === 'outside').length;
@@ -170,10 +177,14 @@ export function layoutScreen(written: UiScreen, base: UiTokens, measure: UiMeasu
     squeezed = layoutWith(screen, { ...tokens, pack: 'compact', squeeze: true }, measure, state, Math.max(0, lines - step - 1));
     if (spilled(squeezed) <= spilled(kept)) kept = squeezed;
   }
+  if (spilled(kept) > 0) {
+    const folded = layoutWith(screen, { ...tokens, pack: 'compact', squeeze: true }, measure, state, lines, true);
+    if (spilled(folded) < spilled(kept)) kept = folded;
+  }
   return kept;
 }
 
-function layoutWith(written: UiScreen, tokens: UiTokens, measure: UiMeasure, state: UiState, lines: number): UiScreenLayout {
+function layoutWith(written: UiScreen, tokens: UiTokens, measure: UiMeasure, state: UiState, lines: number, fold = false): UiScreenLayout {
   // `device` is a property that can be set: the same lines laid out on another device
   const switched: UiScreen = state.device[written.id] === undefined ? written : { ...written, device: state.device[written.id] ?? written.device };
   const adapted = switched.device === 'phone' && (written.device === 'browser' || written.device === 'desktop');
@@ -194,7 +205,10 @@ function layoutWith(written: UiScreen, tokens: UiTokens, measure: UiMeasure, sta
       screen = { ...switched, children: responsive(switched.children, false) };
       placed = solve(buildScreen(kit, screen, size.width, size.height), size.width, size.height);
     }
-    // the page, as a phone shows it: its first screenful, whole (two passes: a part left off can let the ones above it settle)
+  }
+  // the page, as a phone shows it: its first screenful, whole (two passes: a part left off can let the ones above it settle). A phone or a tablet screen that
+  // is longer than its glass at the type the floor asks for is shown the same way, rather than a part of it standing half outside the glass.
+  if (adapted || fold) {
     for (let pass = 0; pass < 3; pass += 1) {
       const boxes = new Map<string, { y: number; h: number }>();
       walk(placed, (p, _x, y) => {
