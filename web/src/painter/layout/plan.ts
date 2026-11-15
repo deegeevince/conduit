@@ -22,7 +22,7 @@ export const FLOW_SHARE_MAX = 0.55;
 /** The share of the column the choices may take at most when a diagram, picture or other block is on the stage: the drawing keeps the room. */
 export const FOOT_SHARE_MAX = 0.3;
 /** With only words and choices on the stage (an intro, a menu of starters) the choices may take more, so a stacked list on a phone is not cut. */
-export const FOOT_SHARE_MAX_WORDS = 0.45;
+export const FOOT_SHARE_MAX_WORDS = 0.6;
 /** A landscape `figure` gives the picture this share of the width; a portrait one this share of the height. */
 const FIGURE_WIDE_SHARE = 0.58;
 const FIGURE_TALL_SHARE = 0.55;

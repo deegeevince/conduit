@@ -1,36 +1,40 @@
-# Overture: what a first visit performs, about fifteen seconds, no model call.
-# One short exchange played as it would stream (a question typed, a bar model
-# drawn, a try written with the pen, a verdict), then the point in two lines
-# and four things to tap. It sets no look of its own: it is drawn in whichever
-# look the person has, with colour roles only, so paper and night both hold.
-# The drawing is one group on a square canvas, so it fills a phone's width and
-# a desktop's height alike, and every word sits in the group's own coordinates.
+# Overture: what a first visit performs, about fourteen seconds, no model call.
+# A calm welcome in the language itself. First a small drawing made as Claude
+# would make it (a question typed, 64 split in two, the half written with the
+# pen) while the first words play; then it gives way to one line that says what
+# Conduit is and seven starters that reach across lessons, diagrams, dashboards,
+# mock-ups, pages, music and explorables. The settled state is that line and the
+# starters together. A starter's text is what is sent to the model when it is
+# tapped, so each is a prompt that has been run live. It sets no look of its
+# own: it is drawn in whichever look the person has, with colour roles only, so
+# paper and night both hold.
 
-scene ask free calm align=center canvas=square
+scene draw free calm align=center canvas=square
 group g
-rect in=g composer 4,12 92x14 r=7 stroke=dim thick=0.8 dur=0.6s
-say in=g prompt at=50,19 enter=type | Help my 7-year-old with 64 ÷ 2
-wait 0.4
-
+rect in=g composer 4,12 92x14 r=7 stroke=dim thick=0.8 dur=0.5s
+say in=g prompt at=50,19 enter=type | Show me half of 64
+wait 0.3
 say in=g total at=50,36 size=xl | 64
-rect in=g whole 6,42 88x28 stroke=ink thick=1.2 dur=1.2s
+rect in=g whole 6,42 88x28 stroke=ink thick=1.2 dur=0.8s
 line in=g cut 50,42 50,70 stroke=ink thick=1.2
 say in=g q at=28,56 size=xxl ink=accent | ?
-say in=g half at=72,56 size=xl | half
-wait 0.8
-
+wait 0.4
 drop q
-path in=g three stroke=accent thick=3 dur=1s | M12 48 C23 43 29 51 20 55 C30 56 28 66 12 63
-path in=g two stroke=accent thick=3 dur=0.9s | M31 50 C32 44 44 44 43 51 C42 56 37 59 31 64 H46
-wait 0.3
-say in=g yes at=50,85 size=xl enter=slam | Yes!
-wait 0.8
+path in=g three stroke=accent thick=3 dur=0.7s | M12 48 C23 43 29 51 20 55 C30 56 28 66 12 63
+path in=g two stroke=accent thick=3 dur=0.6s | M31 50 C32 44 44 44 43 51 C42 56 37 59 31 64 H46
+wait 0.2
+say in=g yes at=50,85 size=xl enter=slam | 32!
+wait 0.9
 
-scene point stack brisk lines=2 align=center
-say size=l enter=fade dur=0.4s | Claude answers by drawing.
-say size=l enter=fade dur=0.4s | You draw, tap or talk back.
-wait 0.5
-say choice size=l @13 enter=fade dur=0.3s | Teach my kid a maths problem
-say choice size=l @13 enter=fade dur=0.3s | Explain how the heart pumps
-say choice size=l @13 enter=fade dur=0.3s | Mock up an app screen
-say choice size=l @13 enter=fade dur=0.3s | Build me a real webpage
+scene hello stack brisk lines=3 align=center
+say size=l enter=fade dur=0.5s | Ask anything. The answer arrives as a drawing you can tap, drag and talk back to.
+wait 0.4
+say size=m enter=fade dur=0.4s | Try one:
+wait 0.2
+say choice size=m @13 enter=fade dur=0.3s | Teach my 7-year-old division
+say choice size=m @13 enter=fade dur=0.3s | Explain how a heat pump works
+say choice size=m @13 enter=fade dur=0.3s | Mock up a dashboard of Apple's fiscal 2025 results
+say choice size=m @13 enter=fade dur=0.3s | Mock up an app screen
+say choice size=m @13 enter=fade dur=0.3s | Render me a real webpage for a small coffee roaster
+say choice size=m @13 enter=fade dur=0.3s | Make a little piano I can play
+say choice size=m @13 enter=fade dur=0.3s | Let me explore how compound interest grows with the rate
