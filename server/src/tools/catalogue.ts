@@ -649,7 +649,7 @@ async function runCheck(cx: Cx, spec: Spec): Promise<Res> {
     }
     case 'starts-new-scene': {
       const first = cx.answer.script.split('\n').find((l) => l.trim() !== '') ?? '';
-      return res(name, /^scene\b/.test(first) || (/^part\b/.test(first) && !/\bin=/.test(first)) ? [] : [`the answer opens with "${first.slice(0, 40)}", not a scene: it continues the last drawing`], 'a new subject opens a scene (or a top-level part)');
+      return res(name, /^(scene|look|part|deck)\b/.test(first) ? [] : [`the answer opens with "${first.slice(0, 40)}", not a scene: it continues the last drawing`], 'a new subject opens a scene (or a top-level part)');
     }
     case 'last-scene-has-drawing': {
       // a tour ends on a scene that still shows something drawn (or a control), not on words and choices alone
