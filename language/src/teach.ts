@@ -72,6 +72,7 @@ export function documentChapter(): string {
       '4. No single right answer: `ask <id> check=any pick=<a>,<b>,<c> | <question>` (one word an option, `_` for a space) is a choice that opens the next part once something is chosen (no `is=`); `ask <id> check=done | <step>` is a tick for "done". Neither is checked.',
       '5. A step is one small thing the person can read alone, and a `show=` when a picture helps: say what to do, never the result.',
       '6. Finish with `reply | …`, one sentence for the thread on what they did and how.',
+      '7. WHERE A PART GOES. A new document (another sheet, recipe or plan) is a top-level `part` with no `in=`, under new ids: never `in=` a part of another document. `in=` names only a part of the same document, already written. A document asked for again is written again under the SAME ids (it opens again). To go on with a document, refer to its parts by their ids (`part q3a in=q3`, `ask in=q3`).',
     ].join('\n'),
   ].join('\n');
 }

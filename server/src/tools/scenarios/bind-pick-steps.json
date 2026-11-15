@@ -1,0 +1,11 @@
+{
+ "case": "bind-pick-steps",
+ "recordedAt": "2026-11-15T00:00:00.000Z",
+ "screen": "1280x720",
+ "turns": [
+  {
+   "match": "how do I mend a flat bike tyre, one step at a time",
+   "script": "scene layout=figure\ncolor tyre=#3a3a3a\ncolor tube=#e8a33d\ncolor metal=#9aa5b1\ncircle rim 50,40 20 fill=metal thick=1\ncircle tire 50,40 30 fill=tyre thick=1\ncircle tub 50,40 24 fill=tube thick=1\npick s steps | 1 Take the wheel off | 2 Lever the tyre | 3 Swap the tube | 4 Pump it up\nbind s=1 | correct cap | Flip the bike, open the brake and release the quick-release lever. Slide the wheel out.\nbind s=1 | set tub opacity=0.2\nbind s=1 | set tire fill=tyre\nsay cap | Four steps to mend a flat: tap through them.\nbind s=2 | correct cap | Slip two levers under one side of the tyre and walk them round the rim.\nbind s=2 | set tire fill=metal\nbind s=2 | set tub opacity=0.6\nbind s=3 | correct cap | Pull the old tube out, run a finger round the tyre for thorns, and fit the new tube.\nbind s=3 | set tub fill=tube\nbind s=3 | set tub opacity=1\nbind s=4 | correct cap | Seat the tyre back on the rim and pump to the pressure printed on its side.\nbind s=4 | set tire fill=tyre\nbind s=4 | set tub opacity=1\nsay x2 choice | What size levers do I need\n"
+  }
+ ]
+}

@@ -222,6 +222,7 @@ export class Conductor {
     if (change !== null && change.nodes.length > 0) {
       const turnId = 'turn' in entry ? entry.turn : null;
       const turn = turnId === null ? null : (s.turns.get(turnId) ?? null);
+      if (turn !== null) turn.docEvents += 1;
       this.emit(s, turn, { type: 'doc', turn: turnId, document: change.document, title: change.title, root: change.root, nodes: change.nodes });
     }
     // Something that decides what is waiting moved: a turn ended, a session began (or opened a document again), the person went somewhere.
@@ -512,6 +513,9 @@ export class Conductor {
       relayCursor: s.nextCursor - 1,
       ordinal: s.nextOrdinal,
       lineCount: 0,
+      docLines: 0,
+      docEvents: 0,
+      held: new Map(),
       rejects: 0,
       lookAllowed: options.look !== false,
       review: undefined,
@@ -1092,6 +1096,10 @@ export class Conductor {
       if (reason !== 'done') turn.abort.abort();
     });
     step('braces', () => this.noteUndeclaredBraces(turn));
+    step('held', () => {
+      for (const waiting of turn.held.values()) for (const held of waiting) this.reject(s, turn, serializeLine((held.event as { line: Line }).line), held.issues as Issue[]);
+      turn.held.clear();
+    });
     step('draft', () => s.draft.close(turn.id));
     // Nothing the owner was asked and did not answer outlives the turn: it is a no.
     step('permissions', () => this.denyPending(s, turn.id, 'turn'));
@@ -1108,6 +1116,15 @@ export class Conductor {
       this.deps.sessionLog.write(s.id, { type: 'attention', turn: turn.id, ...held, ...(used === null ? {} : { pulled: used.pulled, watch: used.watch, ignore: used.ignore, refusedIgnore: used.refusedIgnore, calls: used.calls, toolMs: used.toolMs }) });
     });
     step('log', () => void this.journal(s, { type: 'end', turn: turn.id, reason, message, lines: turn.lineCount }));
+    // A turn that wrote the document again exactly as it was changed no node, so no `doc` event went: the page would show nothing. It is told which document, and the root, so it brings it forward.
+    step('reopen', () => {
+      if (turn.docLines === 0 || turn.docEvents > 0) return;
+      const view = this.docs.viewOfSession(s.id);
+      const root = view === null ? undefined : view.document.nodes[view.document.root];
+      if (view === null || root === undefined) return;
+      turn.docEvents += 1;
+      this.emit(s, turn, { type: 'doc', turn: turn.id, document: view.document.id, title: view.document.title, root: view.document.root, nodes: [root] });
+    });
     step('emit', () => this.emit(s, turn, { type: 'end', turn: turn.id, reason, message }));
     step('say', () => this.deps.log.info('turn.ended', { session: s.id, turn: turn.id, reason, lines: turn.lineCount, durationMs: this.deps.now() - turn.openedAt }));
     step('wake', () => this.wake(s.id));
@@ -1714,6 +1731,9 @@ export class Conductor {
       relayCursor: s.nextCursor - 1,
       ordinal: s.nextOrdinal,
       lineCount: 0,
+      docLines: 0,
+      docEvents: 0,
+      held: new Map(),
       rejects: 0,
       lookAllowed: false,
       review: undefined,
@@ -1882,6 +1902,14 @@ export class Conductor {
     }
     const normalized = normalizer.normalize(event.line);
     if (normalized.line === null) {
+      // A step, ask or hint that came before the part or ask it belongs to is held, and read when that one is written; refused only if it never comes
+      const missing = ['step', 'ask', 'hint'].includes(event.line.verb) ? normalized.issues.find((issue) => issue.code === 'unknown-id' && issue.token !== undefined)?.token : undefined;
+      if (missing !== undefined && !repairing) {
+        const waiting = turn.held.get(missing) ?? [];
+        waiting.push({ event, issues: [...event.issues, ...normalized.issues] });
+        turn.held.set(missing, waiting);
+        return undefined;
+      }
       this.reject(s, turn, serializeLine(event.line), [...event.issues, ...normalized.issues]);
       return undefined;
     }
@@ -1899,11 +1927,19 @@ export class Conductor {
     if (issues.some((issue) => issue.severity === 'warn')) this.noteProblem(turn, text, 'repaired', issues.filter((issue) => issue.severity === 'warn'));
     const start = pushed.schedule.lines.find((timed) => timed.seq === seq)?.start ?? penBefore;
     const node = this.docs.place(s.id, text);
+    if (node !== null) turn.docLines += 1;
     this.journal(s, { type: 'line', turn: turn.id, seq, text, start, issues, pass, ...(node === null ? {} : { node }) });
     this.emit(s, turn, { type: 'line', turn: turn.id, seq, text, issues });
     if (line.verb === 'paint') this.paint(s, turn, seq, line, pushed.schedule);
     if (line.verb === 'row') this.findPicture(s, turn, line.id, line.cells, pushed.schedule);
     if (line.verb === 'chart' && line.data !== undefined) this.announceData(s, turn, line.data);
+    // what was waiting for this part or ask is read now
+    const id = (line as { id?: string }).id;
+    const waiting = line.verb === 'part' || line.verb === 'ask' ? (id === undefined ? undefined : turn.held.get(id)) : undefined;
+    if (id !== undefined && waiting !== undefined) {
+      turn.held.delete(id);
+      for (const held of waiting) if (this.ingest(s, turn, held.event as BrainEvent, normalizer, pass, repairing) === 'stop') return 'stop';
+    }
     return undefined;
   }
 

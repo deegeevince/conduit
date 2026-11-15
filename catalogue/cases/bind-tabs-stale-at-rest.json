@@ -1,0 +1,23 @@
+{
+ "id": "bind-tabs-stale-at-rest",
+ "title": "tabs: the words of the last option streamed showed under another selected option",
+ "family": "bind",
+ "owner": "painter",
+ "kind": "draw",
+ "found": "2026-11-15",
+ "note": "Rapid taps left the picture of the stage at rest on the step before: the words of an option no longer selected, with the marks of the selected one.",
+ "own": [
+  "pick-consistent"
+ ],
+ "turns": [
+  {
+   "say": "explain SUMIF, COUNTIF and AVERAGEIF on a sales sheet, a tab for each",
+   "source": {
+    "log": "20261115-094056-c1",
+    "turns": [
+     "t28"
+    ]
+   }
+  }
+ ]
+}

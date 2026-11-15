@@ -470,6 +470,9 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   let disposed = false;
   let currentTurn: string | null = null;
   let lastSeq = -1;
+  /** turns of the person's that put something on the screen (a drawing, a document), and what each said in its `reply`: a turn that did neither still says so, never leaves a dead tap */
+  const showedSomething = new Set<string>();
+  const repliedWith = new Map<string, string>();
   /** every turn id this stage has opened; a stream replay of one of them is ignored even after it ended */
   const opened = new Set<string>();
   let sendFailure: string | null = null;
@@ -806,7 +809,8 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
         return;
       case 'doc':
         currentDocumentId = event.document;
-        documents.onDoc(event);
+        if (event.turn !== null) showedSomething.add(event.turn);
+        documents.onDoc(event, event.turn !== null && ['prompt', 'tap'].includes(turnInputs.get(event.turn)?.kind ?? ''));
         return;
       case 'turn':
         if (event.turn === currentTurn || opened.has(event.turn)) return;
@@ -864,6 +868,8 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
         if (parsed.kind === 'line') {
           lang.line(event.turn, event.seq, event.text, event.issues, 0);
           painter.ingest(event.turn, event.seq, parsed.line);
+          if (parsed.line.verb === 'reply') repliedWith.set(event.turn, parsed.line.text);
+          else if (!['wait', 'end', 'plan', 'part', 'step', 'ask', 'hint'].includes(parsed.line.verb)) showedSomething.add(event.turn);
           const written = turnLines.get(event.turn);
           if (written === undefined) turnLines.set(event.turn, [serializeLine(parsed.line)]);
           else written.push(serializeLine(parsed.line));
@@ -948,6 +954,10 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
       case 'end':
         if (event.turn !== currentTurn) return;
         endStarting();
+        // a tap or a question that ended with nothing drawn and no document opened is not left looking dead: what the brain said, or that nothing came, is shown
+        if (event.reason === 'done' && ['tap', 'prompt'].includes(turnInputs.get(event.turn)?.kind ?? '') && !showedSomething.has(event.turn)) announce(repliedWith.get(event.turn) ?? 'Nothing new came back for that.');
+        showedSomething.delete(event.turn);
+        repliedWith.delete(event.turn);
         lastEnd = { reason: event.reason, message: event.message };
         readingNow.clear();
         passState = null;

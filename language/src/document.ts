@@ -822,7 +822,7 @@ export class DocumentFolder {
     const part = this.book.where(line);
     if (part === null) return null;
     if (line.verb === 'part' && this.book.part(part) === null) {
-      const parent = line.in ?? this.book.root();
+      const parent = this.book.parentOf(line);
       return parent === null ? part : `${this.book.path(parent).join('/')}/${part}`;
     }
     return this.book.path(part).join('/');
@@ -847,6 +847,7 @@ export class DocumentFolder {
     const input = record['input'];
     const kind = isRecordObject(input) ? input['kind'] : undefined;
     if (this.current !== null) this.settle(this.current);
+    this.book.closeAll();
     const turn: Turn = { id, opened: isOpening(kind) ? kind : 'none', base: null, groups: [], preamble: [], ended: null, reported: null, settled: false, touched: new Set(), welcome: kind === 'demo' && isRecordObject(input) && input['script'] === FIRST_LOAD_DEMO };
     this.turns.set(id, turn);
     this.turnOrder.push(id);
