@@ -21,7 +21,7 @@ Some things to try. The welcome screen offers several of them to tap:
 | *render me a real webpage for a small coffee roaster* | A real, working web page in a sandbox on the stage, with its own type and layout. |
 | *make a little piano I can play* | A tiny app with sound that you can play right away. |
 | *let me explore how compound interest grows with the rate* | A drawing with a slider bound to it: move the rate and watch the curve change, with no round trip to the model. |
-| *show me how to fold a paper plane, step by step* | The thing drawn on the canvas with a "1 of 8" stepper: tap through and watch each step add its piece. |
+| *show me how to fold a paper plane, step by step* | The paper drawn on the canvas with a "1 of 5" stepper beside it: tap through the folds one at a time. |
 
 You can also:
 
