@@ -660,7 +660,8 @@ function layoutAsk(input: ControlInput, m: Metrics): ControlLayout {
         sheet.shape('ring', 'bar', (dx, dy) => [rectLine({ x: out.x + dx, y: out.y + dy, width: out.width, height: out.height }, input.look.radius + 3)]);
       }
       const inner = Math.max(m.cellW, at.width - 2 * m.pad);
-      const shown = answer === '' ? '' : tail(input, answer, inner);
+      // what was typed shows its end (where the caret is); a choice or a given answer is read from its start
+      const shown = answer === '' ? '' : typed && !settled ? tail(input, answer, inner) : head(input, answer, inner);
       const t = input.measure(shown === '' ? 'Ag' : shown, LABEL, 1e6);
       sheet.text('answer', run.verdict === 'shown' ? 'value' : 'words', shown, centre({ x: at.x + m.pad, y: at.y, width: inner, height: at.height }, t.height), LABEL, 'left');
       if (input.mood.focus && typed && !settled) {
