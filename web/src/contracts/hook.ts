@@ -2,7 +2,7 @@ import type { BackEvent, ControlValue, Sight } from '@conduit/language';
 import type { AppProbe } from './app';
 import type { ExportJob, ExportRequest } from './export';
 import type { ChartProbe, ChartView } from './chart';
-import type { ControlView, LeaderView, LineView, PainterSnapshot, StageElementView, UiMockup } from './painter';
+import type { BindingView, ControlView, LeaderView, LineView, PainterSnapshot, StageElementView, UiMockup } from './painter';
 
 /**
  * `window.__stage`: how a tester (human or agent) inspects and drives a stage
@@ -55,6 +55,8 @@ export interface StageHook {
   mockups(): readonly UiMockup[];
   /** The leader lines of the callouts on stage: where each ends, and the part it reaches. */
   leaders(): readonly LeaderView[];
+  /** What the controls bind on the stage's elements, as it holds now: bound words, table marks, `set` values. What the catalogue's pick check reads. */
+  bindings(): readonly BindingView[];
   /** The controls on stage, with their values and where they are on screen. */
   controls(): readonly ControlView[];
   /**

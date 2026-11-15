@@ -290,7 +290,91 @@ async function generic(cx: Cx): Promise<Res[]> {
   out.push(labelsSide(cx));
   out.push(wordsInShapes(cx));
   out.push(await earlierWorks(cx));
+  const picks = await pickConsistent(cx);
+  if (picks !== null) out.push(picks);
   return out;
+}
+
+const squashed = (text: string): string => text.trim().toLowerCase().replace(/[\s-]+/g, '');
+const plainWords = (text: string): string => text.replace(/\*/g, '').replace(/\s+/g, ' ').trim();
+
+/**
+ * `pick-consistent`, for every case with a pick: each option is tapped with a real tap, and everything the answer binds to it holds on the stage after it: the words of a bound
+ * `correct` are what is drawn, the rows a `set <table>.row<n> mark=...` marks are marked, a bound `set` has its values. It ends back on the first option, which must hold too.
+ * What is bound is read from the answer's own lines, so a bind that came before the thing it changes, or a plain line written after it, is judged the same.
+ */
+async function pickConsistent(cx: Cx): Promise<Res | null> {
+  const name = 'pick-consistent';
+  const picks = (await controls(cx.tab)).filter((c) => c.control === 'pick' && c.options.length > 1);
+  if (picks.length === 0) return null;
+  const binds = cx.answer.script
+    .split('\n')
+    .map((line) => /^bind\s+(\S+?)=(?:"([^"]*)"|(.+?))\s*\|\s*(.*)$/.exec(line.trim()))
+    .filter((m): m is RegExpExecArray => m !== null)
+    .map((m) => ({ control: m[1] as string, option: (m[2] ?? m[3] ?? '').trim(), change: (m[4] ?? '').trim() }));
+  const bad: string[] = [];
+  let tapped = 0;
+  let judged = 0;
+  let unreachable = 0;
+  const view = cx.screen;
+  for (const pick of picks) {
+    const form = pick.form ?? null;
+    const reach = async (want: number): Promise<boolean> => {
+      for (let guard = 0; guard < pick.options.length + 2; guard += 1) {
+        const now = (await controls(cx.tab)).find((c) => c.id === pick.id);
+        if (now === undefined) return false;
+        const at = typeof now.value === 'number' ? now.value : 1;
+        if (at === want) return true;
+        const part = form === 'steps' ? (at < want ? 'next' : 'back') : `option:${want}`;
+        const box = (now.parts ?? []).find((p) => p.part === part)?.box;
+        if (box === undefined || box.x < 0 || box.y < 0 || box.x + box.width > view.width || box.y + box.height > view.height) return false;
+        await cx.tab.tap(box.x + box.width / 2, box.y + box.height / 2);
+        await sleep(700);
+        if (form !== 'steps') return ((await controls(cx.tab)).find((c) => c.id === pick.id)?.value ?? 0) === want;
+      }
+      return false;
+    };
+    for (const index of [...pick.options.keys(), 0]) {
+      const want = index + 1;
+      if (!(await reach(want))) {
+        unreachable += 1;
+        continue;
+      }
+      tapped += 1;
+      await sleep(500);
+      const named = pick.options[index] ?? '';
+      const mine = binds.filter((b) => b.control === pick.id && (squashed(b.option) === squashed(named) || b.option.trim() === String(want)));
+      const bound = await cx.tab.eval<{ id: string; words: string | null; marks: string[]; sets: string[] }[]>(`window.__stage.bindings()`);
+      const live = await cx.tab.eval<{ id: string; text: string; phase: string }[]>(`window.__stage.elements().map((e) => ({ id: e.id, text: e.text, phase: e.phase }))`);
+      for (const b of mine) {
+        const corrected = /^correct\s+(\S+)\s*\|\s*(.*)$/.exec(b.change);
+        const marked = /^set\s+(\S+?)\.(row\d+|cell\S*)\s+(.*)$/.exec(b.change);
+        const set = /^set\s+(\S+)\s+(.*)$/.exec(b.change);
+        if (corrected !== null) {
+          const drawn = live.filter((e) => e.id === corrected[1] && e.phase === 'on').map((e) => plainWords(e.text));
+          if (drawn.length === 0) continue;
+          judged += 1;
+          const expected = plainWords(corrected[2] ?? '');
+          if (!drawn.some((d) => d === expected || d.includes(expected) || expected.includes(d))) bad.push(`option "${named}": ${corrected[1]} shows "${(drawn[0] ?? '').slice(0, 40)}" not "${expected.slice(0, 40)}"`);
+        } else if (marked !== null) {
+          const mark = /mark=(\w+)/.exec(marked[3] ?? '')?.[1] ?? 'box';
+          if (mark === 'none') continue;
+          judged += 1;
+          const held = bound.find((e) => e.id === marked[1]);
+          if (held === undefined || !held.marks.some((m) => m === `${marked[2]}:${mark}`)) bad.push(`option "${named}": ${marked[1]}.${marked[2]} is not marked ${mark}`);
+        } else if (set !== null) {
+          const keys = [...(set[2] ?? '').matchAll(/(\w+)=/g)].map((m) => m[1] as string);
+          const held = bound.find((e) => e.id === set[1]);
+          if (held === undefined) continue;
+          judged += 1;
+          const missing = keys.filter((k) => !held.sets.some((v) => v.startsWith(`${k}=`)));
+          if (missing.length > 0) bad.push(`option "${named}": ${set[1]} lacks ${missing.join(', ')}`);
+        }
+      }
+    }
+  }
+  if (tapped === 0) return { check: name, verdict: 'PASS', detail: `no option was in reach to tap (${unreachable}); nothing judged` };
+  return res(name, bad, `${tapped} real taps over ${picks.length} pick(s), ${judged} bound effects held${unreachable > 0 ? ` (${unreachable} options out of reach)` : ''}`);
 }
 
 /** "‹ earlier": when lines are held back, the control is on the screen, a real tap lays them over the column (inside the screen, not empty), and a second tap puts them away */
