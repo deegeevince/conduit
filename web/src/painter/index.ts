@@ -3,7 +3,8 @@ import { CHARTS_READY } from '../render/chart';
 import { setTarget, targetPx } from './target';
 import { STRUCTURES_READY } from './blocks';
 import { CONTROLS_READY, controlEngine, createControlStore, nextEases } from './controls';
-import { controlIndexOf, createRuntime, controlSpecOf, stateReader } from './bound';
+import { controlIndexOf, createRuntime, controlSpecOf, heldBy, stateReader } from './bound';
+import { drivenLayers } from './controls';
 import { scrollCueBoxes } from './controls-stage';
 import type { ControlSite } from './controls-stage';
 import type { ChartData } from './charts';
@@ -16,7 +17,7 @@ import type { Recording } from '../contracts/film';
 import { noteArrivals as noteArrivalsInto } from './arrivals';
 import type { ElementFrame, Frame, Quality, ShapeFrame } from '../contracts/frame';
 import type { LookSpec } from '../contracts/look';
-import type { ControlView, LineView, Painter, PainterEvents, PainterOptions, PainterSnapshot, UiMockup } from '../contracts/painter';
+import type { BindingView, ControlView, LineView, Painter, PainterEvents, PainterOptions, PainterSnapshot, UiMockup } from '../contracts/painter';
 import { REST_POSE } from '../contracts/space';
 import type { Box, CameraPose, Viewport } from '../contracts/space';
 import { PlayClock, pinnedWallTime } from './clock';
@@ -1840,6 +1841,32 @@ export function createPainter(options: PainterOptions): Painter {
     mockups: mockupViews,
 
     leaders: () => leadersOf(timeline, timeline.schedule, clock.read().playhead),
+
+    bindings: (): readonly BindingView[] => {
+      const schedule = timeline.schedule;
+      const index = controlIndexOf(schedule);
+      const reading = clock.read();
+      const out: BindingView[] = [];
+      for (const element of schedule.elements) {
+        if (element.driven.length === 0 || element.struck || (element.exit !== null && element.exit.start <= reading.playhead)) continue;
+        // settled: an ease that is still on its way counts as arrived
+        const layers = drivenLayers(element.driven, stateReader(index, runtime, reading.playhead), new Map(), reading.ambient);
+        let words: string | null = null;
+        const marks: string[] = [];
+        const sets: string[] = [];
+        for (const { change, amount } of layers) {
+          const effect = change.effect;
+          if (effect.kind === 'mark') {
+            const control = index.byKey.get(change.control);
+            const held = control === undefined ? null : heldBy(runtime, control);
+            if (held === effect.equals) marks.push(`${JSON.stringify(effect.part).replace(/[{}"]/g, '').replace(/:/g, '')}:${effect.mark}`);
+          } else if (amount >= 0.5 && effect.kind === 'text') words = effect.text;
+          else if (amount >= 0.5 && effect.kind === 'set') for (const [key, value] of Object.entries(effect.props)) sets.push(`${key}=${typeof value === 'object' ? JSON.stringify(value) : String(value)}`);
+        }
+        out.push({ id: element.id, words, marks, sets });
+      }
+      return out;
+    },
 
     snapshot: snapshotNow,
 

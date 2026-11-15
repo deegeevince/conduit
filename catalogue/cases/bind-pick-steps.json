@@ -1,0 +1,21 @@
+{
+ "id": "bind-pick-steps",
+ "title": "steps for a physical procedure: a bind written before its caption still holds",
+ "family": "bind",
+ "owner": "painter",
+ "kind": "draw",
+ "found": "2026-11-15",
+ "note": "A bound caption written before the plain line that creates the caption, and a plain line written after, must not undo what the selected step binds.",
+ "own": [
+  "pick-consistent"
+ ],
+ "turns": [
+  {
+   "say": "how do I mend a flat bike tyre, one step at a time",
+   "source": {
+    "scenario": "bind-pick-steps",
+    "index": 0
+   }
+  }
+ ]
+}
