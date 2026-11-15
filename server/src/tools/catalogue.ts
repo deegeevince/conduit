@@ -774,7 +774,7 @@ async function act(cx: Cx, action: Action): Promise<void> {
         `(() => { const f = document.querySelector('.stage__document iframe'); const d = document.querySelector('.stage__document'); if (!f || !d || getComputedStyle(d).display === 'none') return null; const r = f.getBoundingClientRect(); return r.width > 4 ? { x: r.left, y: r.top, w: r.width } : null; })()`,
       );
       if (frame === null) return;
-      await tab.tap(frame.x + frame.w - 46, frame.y + 31);
+      await tab.tap(frame.x + frame.w - 84, frame.y + 31);
       await sleep(900);
       break;
     }
