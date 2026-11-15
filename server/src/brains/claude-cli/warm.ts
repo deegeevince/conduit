@@ -423,7 +423,7 @@ export function warmArguments(settings: WarmSettings): string[] {
     '--model', settings.model,
     '--effort', settings.effort,
     '--system-prompt', settings.systemPrompt,
-    ...(settings.agent == null ? toolArguments(settings.tools, settings.canvas) : agentArguments(settings.agent, settings.canvas)),
+    ...(settings.agent == null ? toolArguments(settings.tools, settings.canvas, true) : agentArguments(settings.agent, settings.canvas)),
     '--strict-mcp-config',
     ...(settings.agent == null ? ['--no-chrome'] : []),
     '--setting-sources', '',
