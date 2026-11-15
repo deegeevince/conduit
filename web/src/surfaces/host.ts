@@ -39,7 +39,7 @@ export type FromSurface =
   | { readonly type: 'pong'; readonly n: number }
   | { readonly type: 'emit'; readonly name: string; readonly value: string | number | boolean; readonly ask: boolean }
   | { readonly type: 'save'; readonly json: string }
-  | { readonly type: 'size'; readonly height: number; readonly width: number | null; /** the width of the frame's own layout when it measured: a size measured at another width is stale (the room has changed since) */ readonly frame: number | null }
+  | { readonly type: 'size'; readonly height: number; readonly width: number | null; /** the height the content reaches down to, whatever the frame's own height is (null: not told) */ readonly content: number | null; /** the height of the frame's own layout when it measured */ readonly room: number | null; /** the width of the frame's own layout when it measured: a size measured at another width is stale (the room has changed since) */ readonly frame: number | null }
   | { readonly type: 'fault'; readonly message: string }
   | { readonly type: 'picture'; readonly id: number; readonly query: string; readonly aspect: number }
   | { readonly type: 'still'; readonly id: number; readonly failed: string | null; readonly how: 'own' | 'dom' | null; readonly w: number; readonly h: number; readonly data: string | null };
@@ -58,6 +58,8 @@ const MISSED_LIMIT = 3;
 const FIT_MIN = 0.6;
 /** how long a size reading must stand unchanged before the fit acts on it */
 const FIT_SETTLE_MS = 250;
+/** how long taller content waits for the stage to give its frame the room before it is scaled down */
+const GROW_WAIT_MS = 900;
 /** how long a box must stand still, away from its rest place, before the live frame is shown in it */
 const BOX_STILL_MS = 300;
 /** A stage app is set in the stage's own type sizes, so what it shows is what the words beside it are: it is scaled down no further than this (its type is raised to match, and past it the frame scrolls). */
@@ -128,7 +130,11 @@ export function readFromSurface(raw: unknown, channel: string): FromSurface | nu
     const wide = typeof width === 'number' && Number.isFinite(width) && width >= 0 && width <= 20_000 ? Math.round(width) : null;
     const frame = data['frame'];
     const laid = typeof frame === 'number' && Number.isFinite(frame) && frame >= 0 && frame <= 20_000 ? Math.round(frame) : null;
-    return typeof height === 'number' && Number.isFinite(height) && height >= 0 && height <= 20_000 ? { type, height: Math.round(height), width: wide, frame: laid } : null;
+    const content = data['content'];
+    const room = data['room'];
+    const reach = typeof content === 'number' && Number.isFinite(content) && content >= 0 && content <= 20_000 ? Math.round(content) : null;
+    const tall = typeof room === 'number' && Number.isFinite(room) && room >= 0 && room <= 20_000 ? Math.round(room) : null;
+    return typeof height === 'number' && Number.isFinite(height) && height >= 0 && height <= 20_000 ? { type, height: Math.round(height), width: wide, content: reach, room: tall, frame: laid } : null;
   }
   if (type === 'picture') {
     const id = data['id'];
@@ -188,6 +194,14 @@ interface Running {
   fitRoom: string;
   /** the last measurement the document sent, and the timer that acts on it once it has stopped changing */
   measured: { readonly height: number; readonly width: number } | null;
+  /** GROW. What the content would like of the stage, in screen pixels at rest (null: it asks nothing: it fits, or it follows its frame), and the bookkeeping that keeps a document that grows with its frame from being chased */
+  want: { readonly height: number; readonly since: number } | null;
+  wanted: number | null;
+  reach: number | null;
+  followsFrame: boolean;
+  chain: number;
+  chainAt: number;
+  growSince: number;
   fitTimer: ReturnType<typeof setTimeout> | undefined;
   /** the box the stage last placed it in, and since when it has not moved */
   boxAt: string;
@@ -334,6 +348,7 @@ export function createSurfaceHost(options: SurfaceHostOptions): SurfaceHost {
       run.fitRoom = room;
       run.fit = 1;
       run.fitted = false;
+      run.growSince = 0;
       // the last reading may be of the old room: it is looked at again after the frame has been resized and has reported
       if (run.measured !== null) {
         clearTimeout(run.fitTimer);
@@ -389,7 +404,7 @@ export function createSurfaceHost(options: SurfaceHostOptions): SurfaceHost {
     frame.style.visibility = 'hidden';
     frame.style.opacity = '0';
     const run: Running = {
-      key: spec.key, id: spec.id, channel, frame, source: spec.source, shelf: library, shelfText: shelf, gotPictures: new Map(), fingerprint: print, spec, loads: 0, loaded: false, shown: false, state, told: state, height: null, fit: 1, pictures: 0, fitted: false, fitRoom: '', measured: null, fitTimer: undefined, boxAt: '', boxSince: 0, still: stills.get(spec.key) ?? null,
+      key: spec.key, id: spec.id, channel, frame, source: spec.source, shelf: library, shelfText: shelf, gotPictures: new Map(), fingerprint: print, spec, loads: 0, loaded: false, shown: false, state, told: state, height: null, fit: 1, pictures: 0, fitted: false, fitRoom: '', measured: null, want: null, wanted: null, reach: null, followsFrame: false, chain: 0, chainAt: 0, growSince: 0, fitTimer: undefined, boxAt: '', boxSince: 0, still: stills.get(spec.key) ?? null,
       refused: 0, emits: 0, faults: 0, window: { start: 0, count: 0 }, minute: { start: 0, count: 0 }, snaps: new Map(), snapSeq: 0, stillTimer: undefined, saveTimer: undefined, pinger: undefined, pings: 0, answered: 0, placed: '', typeFit: 1,
     };
     // a frame that loads a second time has navigated itself (a script, a link): it is removed, and what it was reaching for was never allowed to answer
@@ -427,6 +442,37 @@ export function createSurfaceHost(options: SurfaceHostOptions): SurfaceHost {
     }, PING_MS);
   };
 
+  /**
+   * GROW. The frame follows what the content reaches down to (the height it would need to show it all), up to the room the stage can give it, and no taller: the stage
+   * is told this height (`contents`) and plans the app's room again, the words giving way. It is told nothing for a document that fills its frame (a canvas, 100vh),
+   * whose content is only ever as tall as the frame it is given, and a document that grows each time the frame does is let alone after a few steps.
+   */
+  const wantOf = (run: Running, laid: number | null): void => {
+    if (run.spec.page === true || run.reach === null || laid === null || laid <= 0) return;
+    const asked = Math.round(run.reach * run.fit);
+    const frame = Math.round(laid * run.fit);
+    const fills = run.reach >= laid - 6 && run.reach <= laid + 1;
+    if (fills) {
+      // the frame we asked for is as tall as the content: that is the content's want still, not a document that fills its frame
+      if (run.wanted !== null && Math.abs(frame - run.wanted) <= 8) return;
+      run.wanted = null;
+      return;
+    }
+    if (run.followsFrame) return;
+    if (run.wanted !== null && Math.abs(asked - run.wanted) <= 6) return;
+    const now = performance.now();
+    if (run.wanted !== null && asked > run.wanted) {
+      run.chain = now - run.chainAt < 1500 ? run.chain + 1 : 1;
+      run.chainAt = now;
+      if (run.chain > 3) {
+        run.followsFrame = true;
+        run.wanted = null;
+        return;
+      }
+    }
+    run.wanted = asked;
+  };
+
   /** FIT. What the document measures is in the frame's own pixels, laid out `rest / fit` large. Content past that is scaled down to the room (the parent sets the frame's size and transform; nothing reaches into the frame). */
   const settleFit = (run: Running): void => {
     if (disposed || running.get(run.key) !== run || run.measured === null) return;
@@ -435,6 +481,16 @@ export function createSurfaceHost(options: SurfaceHostOptions): SurfaceHost {
     const layoutH = rest.height / run.fit;
     const { height, width } = run.measured;
     if (!run.fitted && run.spec.page !== true && rest.width > 0 && rest.height > 0 && (height > layoutH + 1 || width > layoutW + 1)) {
+      // Taller content is first asked of the stage (the words give way, the frame grows); only when the room has not grown to it, after a wait, is it scaled down.
+      if (height > layoutH + 1 && !run.followsFrame) {
+        const now = performance.now();
+        if (run.growSince === 0) run.growSince = now;
+        if (now - run.growSince < GROW_WAIT_MS) {
+          clearTimeout(run.fitTimer);
+          run.fitTimer = setTimeout(() => settleFit(run), GROW_WAIT_MS - (now - run.growSince) + 20);
+          return;
+        }
+      }
       // a hair under the exact fit, so a content that is one pixel over does not leave a scrollbar
       const next = Math.max(run.spec.tokens.smallPx === undefined ? FIT_MIN : FIT_MIN_STAGE, Math.min(run.fit, rest.height / height, width > 0 ? rest.width / width : 1) * 0.99);
       if (next < run.fit - 0.01) {
@@ -494,6 +550,8 @@ export function createSurfaceHost(options: SurfaceHostOptions): SurfaceHost {
         // FIT: a measurement is acted on once it has stopped changing. A reading sent from the old frame size can arrive after the frame was moved to a new room; acted on at once it
         // looks like content far wider than the room and scales the app to the floor, to half size for nothing. The frame reports again when it is resized, so the last word is the true one.
         run.measured = { height: message.height, width: message.width ?? 0 };
+        run.reach = message.content;
+        wantOf(run, message.room);
         clearTimeout(run.fitTimer);
         run.fitTimer = setTimeout(() => settleFit(run), FIT_SETTLE_MS);
         return;
@@ -652,6 +710,11 @@ const good = found !== null && found.url.startsWith('data:image/') && found.url.
       if (was === undefined || was.why === 'killed') return;
       held.delete(key);
       if (was.print !== null) mark(was.print, false);
+    },
+    contents(): ReadonlyMap<string, number> {
+      const wants = new Map<string, number>();
+      for (const run of running.values()) if (run.wanted !== null && !run.followsFrame) wants.set(run.key, run.wanted);
+      return wants;
     },
     probe(): readonly SurfaceProbe[] {
       const live = [...running.values()].map((run) => ({

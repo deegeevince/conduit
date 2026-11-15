@@ -74,6 +74,8 @@ export interface SurfaceHost {
   refresh(ms: number): Promise<void>;
   /** Ends every surface and keeps them from starting again while they stay on stage. Returns how many were running. */
   killAll(): number;
+  /** The height each running surface asks of the stage for its frame, screen pixels (what its content reaches down to); a surface that asks nothing is not in it. */
+  contents(): ReadonlyMap<string, number>;
   /** Lets a held surface run once more (click-to-run). */
   run(key: string): void;
   probe(): readonly SurfaceProbe[];

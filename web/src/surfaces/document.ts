@@ -326,7 +326,82 @@ const BRIDGE = String.raw`(function () {
   var lastHeight = 0;
   var lastWidth = 0;
   function ready() { if (started) return; started = true; post('ready', {}); typeStart(); report(); setInterval(report, 700); }
-  function report() { var h = Math.ceil(document.documentElement.scrollHeight); var w = Math.ceil(document.documentElement.scrollWidth); if (h !== lastHeight || w !== lastWidth) { lastHeight = h; lastWidth = w; post('size', { height: h, width: w, frame: Math.round(window.innerWidth) }); } }
+  var lastContent = 0;
+  // CONTENT. The height the document's things reach down to, not the height of the frame (the scroll height is never less than the frame's): what the frame
+  // would have to be to show it all with nothing left below. A document that fills its frame (a canvas, 100vh) reads as the frame, so it is never chased.
+  function contentHeight() {
+    var all = document.body ? document.body.getElementsByTagName('*') : [];
+    var low = 0;
+    var top = window.pageYOffset || 0;
+    for (var i = 0; i < all.length && i < 4000; i++) {
+      var el = all[i];
+      var tag = el.tagName;
+      if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'LINK' || tag === 'META' || tag === 'TITLE' || el.id === 'cd-more') continue;
+      var cs = getComputedStyle(el);
+      if (cs.display === 'none' || cs.position === 'fixed') continue;
+      var r = el.getBoundingClientRect();
+      if (r.height <= 0 && r.width <= 0) continue;
+      var b = r.bottom + top + (parseFloat(cs.marginBottom) || 0);
+      if (b > low) low = b;
+    }
+    var bs = document.body ? getComputedStyle(document.body) : null;
+    var pad = bs ? (parseFloat(bs.paddingBottom) || 0) + (parseFloat(bs.borderBottomWidth) || 0) + (parseFloat(bs.marginBottom) || 0) : 0;
+    return Math.ceil(low + pad);
+  }
+  // PRIMARY. What an app is for is its buttons in the last row (the lowest line of buttons: "Start timer / Back / Next step"), and its first button. When the
+  // frame has to scroll, it is kept scrolled so those are in view, until the person scrolls it themselves.
+  var userScrolled = false;
+  function primaryBottom() {
+    var list = document.querySelectorAll('button, [role=button], input[type=button], input[type=submit], summary');
+    var rects = [];
+    for (var i = 0; i < list.length; i++) {
+      var cs = getComputedStyle(list[i]);
+      if (cs.display === 'none' || cs.visibility === 'hidden') continue;
+      var r = list[i].getBoundingClientRect();
+      if (r.width > 4 && r.height > 4) rects.push(r);
+    }
+    if (!rects.length) return 0;
+    var last = 0;
+    for (var j = 0; j < rects.length; j++) if (rects[j].top > last) last = rects[j].top;
+    var low = rects[0].bottom;
+    for (var k = 0; k < rects.length; k++) if (rects[k].top >= last - 8 && rects[k].bottom > low) low = rects[k].bottom;
+    return Math.ceil(low + (window.pageYOffset || 0));
+  }
+  var more = null;
+  function cue() {
+    var root = document.documentElement;
+    var over = root.scrollHeight - root.clientHeight > 2;
+    if (!over) { if (more) more.style.display = 'none'; return; }
+    if (!more) {
+      more = document.createElement('div');
+      more.id = 'cd-more';
+      more.setAttribute('aria-hidden', 'true');
+      more.style.cssText = 'position:fixed;right:18px;bottom:6px;width:30px;height:30px;border-radius:15px;pointer-events:none;z-index:2147483647;display:flex;align-items:center;justify-content:center;font:700 16px/1 system-ui,sans-serif;background:var(--ink,#222);color:var(--ground,#fff);opacity:.82;box-shadow:0 1px 4px rgba(0,0,0,.35)';
+      more.textContent = '\u25BE';
+      (document.body || root).appendChild(more);
+    }
+    var below = (window.pageYOffset || 0) + root.clientHeight < root.scrollHeight - 2;
+    more.style.display = below ? 'flex' : 'none';
+  }
+  function keepPrimary() {
+    var root = document.documentElement;
+    if (userScrolled || root.scrollHeight - root.clientHeight <= 2) return;
+    var need = primaryBottom() + 8;
+    var seen = (window.pageYOffset || 0) + root.clientHeight;
+    if (need > seen) window.scrollTo(0, Math.min(root.scrollHeight - root.clientHeight, need - root.clientHeight));
+  }
+  addEventListener('wheel', function () { userScrolled = true; }, { passive: true });
+  addEventListener('touchmove', function () { userScrolled = true; }, { passive: true });
+  addEventListener('keydown', function (e) { if (e.key === 'PageDown' || e.key === 'PageUp' || e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === ' ') userScrolled = true; });
+  addEventListener('scroll', function () { cue(); }, { passive: true });
+  function report() {
+    var h = Math.ceil(document.documentElement.scrollHeight);
+    var w = Math.ceil(document.documentElement.scrollWidth);
+    var c = contentHeight();
+    keepPrimary();
+    cue();
+    if (h !== lastHeight || w !== lastWidth || c !== lastContent) { lastHeight = h; lastWidth = w; lastContent = c; post('size', { height: h, width: w, content: c, frame: Math.round(window.innerWidth), room: Math.round(window.innerHeight) }); }
+  }
   addEventListener('resize', function () { if (started) { lastHeight = 0; report(); } });
   // The app's own scripts were written inert (cleanMarkup) and run here, once the frame has a layout: a script that measures its room as it starts
   // (a canvas sized from its box) reads zero in a frame that has only just been made. Order is kept; the events it may have missed are told again.
