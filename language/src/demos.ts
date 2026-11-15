@@ -5,7 +5,7 @@ export const DEMOS = [
   {
     name: 'overture',
     title: 'Overture',
-    summary: 'The first-load intro, about fifteen seconds: a question typed, a bar model drawn, a try written with the pen, then the point and four things to tap.',
+    summary: 'The first-load welcome, about fifteen seconds: what Conduit is in three short lines (the answer arrives as a drawing you can tap, drag and talk back to, and it stays on the stage), then seven starters to tap across a lesson in maths, a how-it-works diagram, a dashboard, an app mock-up, a real web page, an instrument and an explorable.',
   },
   {
     name: 'sketchbook',

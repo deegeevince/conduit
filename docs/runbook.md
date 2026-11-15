@@ -89,7 +89,7 @@ Only the selected brain's settings are read.
 
 | Page | What it is |
 | --- | --- |
-| `/` | the stage and the prompt. With no prompt yet, it performs `overture`. |
+| `/` | the stage and the prompt. With no prompt yet, it performs `overture`: a short welcome and seven starters to tap. |
 | `/gallery.html` | one script, `styles`, as eight stills (one per look) and one live stage in the look you choose |
 | `/explore.html` | the exploration page: one card per prompt of a battery run (see below) |
 | (v2) `/taste.html` | the taste page: twenty answers from a run, one at a time, a thumb and a word each, saved to `explore/taste/`; the judge's score is hidden until you have scored. On a phone it is the page to use. |
