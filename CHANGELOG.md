@@ -100,7 +100,7 @@ Newest first. Each item is something the brain can show live when asked "showcas
 - Charts read properly: real type sizes, labels that stay on the chart, the right chart for the data, a framed panel in the machine looks.
 - Diagrams fit their room: labels beside lines, words inside boxes, cycles keep every arrow, wide tables become cards on a phone.
 - Controls: a slider's value sits by its label, toggles name both states, every target is thumb-sized.
-- Since added and live: code blocks, slide decks, pasted pictures.
+- Pasted pictures are live. Coming next (not live yet): code blocks and slide decks.
 - Agent is the only mode: reading and searching the web just happen; anything else waits for your Allow (or Deny) on stage, with the full details shown. Browser control is on: your Chrome, in Conduit's own tab group, every action asked first.
 - Commands: /brain, /tools, /status, /asks, /look, /review, /export, /capture; "Take away" is now "Save".
 - A critic (Fable) looks at every answer after it lands and notes what to improve.
