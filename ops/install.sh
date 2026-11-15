@@ -14,7 +14,8 @@
 # Settings come from the environment of this command; all optional but OWNER_LOGINS:
 #   OWNER_LOGINS      comma list of Tailscale logins allowed through `tailscale serve`. Required (see --no-owner-check). Read it from the
 #                     running app: curl -s http://127.0.0.1:4600/api/whoami (through the tailnet address, not localhost) shows `login`.
-#   TRUSTED_HOSTS     default your-mac.your-tailnet.ts.net
+#   TRUSTED_HOSTS     comma list of host names the server answers to; default this Mac's Tailscale name (from `tailscale status`),
+#                     or none (localhost only) without Tailscale
 #   BATTERY_SEALED_DIR default ~/.conduit-sealed
 #   DATA_DIR          default ~/Library/Application Support/Conduit
 #   INSTALL_DIR       default ~/.conduit/app
@@ -51,7 +52,10 @@ fi
 
 INSTALL_DIR="${INSTALL_DIR:-$HOME/.conduit/app}"
 DATA_DIR="${DATA_DIR:-$HOME/Library/Application Support/Conduit}"
-TRUSTED_HOSTS="${TRUSTED_HOSTS:-your-mac.your-tailnet.ts.net}"
+if [ -z "${TRUSTED_HOSTS:-}" ] && command -v tailscale >/dev/null 2>&1; then
+  TRUSTED_HOSTS="$(tailscale status --json 2>/dev/null | "$NODE" -e 'let s="";process.stdin.on("data",(d)=>{s+=d}).on("end",()=>{try{process.stdout.write(String(JSON.parse(s).Self.DNSName||"").replace(/\.$/,""))}catch{}})' || true)"
+fi
+TRUSTED_HOSTS="${TRUSTED_HOSTS:-}"
 BATTERY_SEALED_DIR="${BATTERY_SEALED_DIR:-$HOME/.conduit-sealed}"
 case "$INSTALL_DIR" in */worktrees/*|*/.claude/*) die "INSTALL_DIR must not be inside a worktree: $INSTALL_DIR" ;; esac
 git -C "$REPO" rev-parse --git-dir >/dev/null 2>&1 || die "$REPO is not a git checkout"

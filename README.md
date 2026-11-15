@@ -1,8 +1,59 @@
 # Conduit
 
-A language model that answers on a canvas instead of in a text box.
+**A different way to interact with the AI you already use.**
 
-The brain writes a compact line language called Series. A painter in the browser performs each line the moment it arrives. An answer can be words, a drawing that draws itself, pixel art, a staged scene with depth and a camera, a painting grown over its sketch, or plain prose when that is what the question needs. The brain chooses the form; the painter decides every pixel and keeps everything readable.
+Most AI chats are a column of text: you ask, it answers, you scroll. Conduit turns the answer into a canvas.
+
+When Claude replies, the reply streams as a small drawing language that the browser performs live: what to draw, how to arrange it, what to animate, what you can tap. The canvas keeps its own state, so the next answer builds on what is already there instead of starting over. You can tap a choice, drag a slider, write with a pen, or just keep talking.
+
+The result is a shared, evolving, interactive canvas rather than a linear prompt and response. It is an experiment in a different way to interact with AI itself.
+
+## What you can do with it
+
+Each of these is something you type, or tap on the welcome screen:
+
+| Try asking | What you get |
+| --- | --- |
+| *show me a division question for my 7-year-old who doesn't know division yet* | A hands-on problem a child can work through, with a bar model, room to write with the pen, a hint behind a tap and a celebration when they get it. It asks before it tells. |
+| *explain how a heat pump works, step by step* | A labelled diagram that builds itself, with a "1 of 4" stepper that lights up each part as you tap through. |
+| *mock up a dashboard of Apple's fiscal 2025 results* | Headline numbers, charts and tables, looked up on the web where it can and marked approximate where it can't. |
+| *mock up a sign-up screen for a fitness app* | A clickable app mock-up with real labels and copy, phone-shaped. |
+| *render me a real webpage for a small coffee roaster* | A real, working web page in a sandbox on the stage, with its own type and layout. |
+| *make a little piano I can play* | A tiny app with sound that you can play right away. |
+| *let me explore how compound interest grows with the rate* | A drawing with a slider bound to it: move the rate and watch the curve change, with no round trip to the model. |
+| *walk me through making pancakes* | A document of steps you tick off as you go, with choices where the call is yours. |
+
+You can also:
+
+- **Bring your own material.** Paste a link to a PDF or a web page, or attach a photo of a worksheet, and it answers about it on the stage.
+- **Keep going.** Say "make the mobile version", "go more technical" or "zoom into the last 14 days", and the answer changes what is already drawn.
+- **Use your Claude skills.** Pick one from **+ Skills**, or type `/skill name`, and the next answer uses it.
+- **Take it with you.** Every answer can be saved as a video, a strip of stills, an SVG or the script itself.
+
+It is not a chat replacement. A plain question of fact gets plain prose; a drawing is used where a drawing shows more than words.
+
+## How it works
+
+```
+ you: type, tap, drag, write with the pen
+   │
+   ▼
+ server ──── your message + what is on the stage now ────▶ Claude (via the Claude Code CLI)
+   ▲                                                          │
+   │                      Series, streamed line by line       │
+   └──────────────────────────────────────────────────────────┘
+   │
+   ▼
+ browser painter (three.js and the DOM) performs each line as it arrives
+```
+
+- **The brain** is Claude, run through the [Claude Code](https://claude.com/claude-code) CLI on your own subscription. No API key is needed.
+- **Series** is the line language it writes: one short line per thing to draw, arrange, animate or make tappable. The brain says what it means, and the painter decides every pixel and keeps it readable.
+- **The painter** in the browser performs each line the moment it arrives, so you watch the answer draw itself.
+- **The stage keeps state.** The next turn is told what is on the canvas, so the brain edits it rather than redrawing from scratch.
+- **It checks its own work.** After drawing, Conduit takes a look at the picture and fixes what is wrong, such as a label on the wrong part or text on top of a diagram.
+
+A taste of Series:
 
 ```
 look night
@@ -16,52 +67,80 @@ wait 2
 say | The tide does the counting.
 ```
 
-Paste a link to a PDF or a web page, or a long passage, and it reads it and answers about it on the stage. The server fetches public addresses only.
+## Quick start
 
-**v2, the quality and expression round, is built**: diagrams the brain names and the painter lays out, charts drawn by a charting engine, controls that drive a drawing with no round trip, the brain looking at its own draft and fixing it, a library of techniques, and a loop that improves all of it. The decisions are in [docs/product.md](docs/product.md); what it measured is in [PLAN-v2.md](PLAN-v2.md). **v2.1, the iteration round, is planned**: what v2 got wrong as its owner met it, what changes, the bar and who builds what are in [PLAN-v2.1.md](PLAN-v2.1.md); where it stands today is in [STATUS.md](STATUS.md).
+You need:
 
-It is not a chat replacement. A fact is plain prose at reading speed; a drawing is used where a drawing shows more than words.
+- macOS (Linux should work too; the optional service installer is macOS only)
+- [Node](https://nodejs.org) 22.14 or any later 22.x (see `.nvmrc`)
+- pnpm 10 (run `corepack enable`)
+- the [Claude Code](https://claude.com/claude-code) CLI, installed and signed in (`claude` on your `PATH`), with a Claude subscription
 
-Every answer can be taken away: a video, a strip of stills, an SVG, or the script itself.
-
-## Run it
-
-Needs Node 22.14 or any later 22.x, and pnpm 10.28 (`corepack enable`).
+Then:
 
 ```sh
+git clone <this repository> conduit
+cd conduit
 pnpm install
-cp .env.example .env        # set BRAIN=replay, claude-cli or relay
-pnpm dev                    # open http://127.0.0.1:4301
+pnpm build
+BRAIN=claude-cli CLAUDE_MODEL=sonnet LIBRARY=seed pnpm start
 ```
 
-- `BRAIN=replay` performs fixture scripts. No model, no key.
-- `BRAIN=claude-cli` with `CLAUDE_MODEL=sonnet` uses Claude Code as a real streaming brain. No API key.
-- `BRAIN=relay` holds each prompt until an outside agent claims it over HTTP and writes the answer.
+Open **http://127.0.0.1:4300**. The welcome screen offers a few things to try; tap one, or type your own.
 
-Production mode: `pnpm build && pnpm start`, then http://127.0.0.1:4300.
+Some variations:
 
-Paintings from an image model cost money and are off; nothing uses one. Everything else, including how to be the brain with `curl`, read a session log, run the exploration battery (`pnpm explore --dry-run` shows what a run would cost; `--samples`, `--only`, `--held-out`, `--max-usd`) and inspect a frame, is in [docs/runbook.md](docs/runbook.md).
+- **No account, no model:** `BRAIN=replay pnpm start` plays the bundled demo scripts, so you can see the painter at work.
+- **A stronger model:** use `CLAUDE_MODEL=opus BRAIN_EFFORT=low` (slower to start, richer drawings).
+- **Settings in a file:** `cp .env.example .env` and fill in what you need. Every setting is described in [docs/runbook.md](docs/runbook.md).
+- **Developing:** `pnpm dev`, then open http://127.0.0.1:4301 (the server and the web app both reload as you edit).
 
-## Layout
+Your conversations, logs and caches live outside the repository, in `~/Library/Application Support/Conduit` on a Mac or `$XDG_DATA_HOME/conduit` elsewhere. Set `DATA_DIR` to put them somewhere else.
+
+### On your phone or tablet (optional)
+
+Conduit works well on a phone or an iPad, and the pen works with a finger or an Apple Pencil. The simplest way to reach it is [Tailscale](https://tailscale.com):
+
+1. Run `tailscale serve` to publish the server to your tailnet.
+2. Set `TRUSTED_HOSTS` to your machine's tailnet name.
+3. Set `OWNER_LOGINS` to your Tailscale login, so nobody else on the tailnet can use it.
+
+`ops/install.sh` sets this up as a macOS service that survives restarts. The details are in [docs/runbook.md](docs/runbook.md).
+
+## Safety and privacy
+
+- **It runs on your machine.** The model runs through your own Claude Code sign-in, and no keys live in this repository.
+- **Reading is free; everything else asks.** By default the brain may search and read the web. Anything that writes, sends, signs in or spends is shown to you on the stage and waits for your yes, every time. Sign-ins, codes and payments are always left to your own hands.
+- **Public addresses only.** Links are fetched from the public internet only; private and local addresses are refused.
+- **Apps are sandboxed.** A page or app it builds runs in a locked sandbox on the stage.
+- **More tools are opt-in.** Your own browser (through Claude in Chrome), folders and other services are off unless you list them in `AGENT_SERVICES` or `AGENT_DIR`.
+- **Only you over the network.** Served over Tailscale, only the logins in `OWNER_LOGINS` get in; any other request that is not from your own machine is refused.
+
+## Project layout
 
 ```
-language/   Series: vocabulary, parser, timing, geometry, the schedule, wire types, the brain's prompt, the demo scripts
-server/     sessions, turns, the back channel, the brains (relay, claude-cli, replay), the image model port, the session log, the tools
-web/        the painter, its renderers (three.js and plain DOM), looks and fonts, the stage page, export, the exploration page
-explore/    the exploration battery (battery.json), the held-out set (sealed/), the owner's scores (taste/); runs are written to explore/runs/ and are not tracked
-techniques/ the seed of the technique library; the library itself lives in Remote
-loop/       the improvement loop's changelog
-docs/       see below
+language/   Series: the vocabulary, parser, timing and layout, the brain's prompt, the demo scripts
+server/     sessions and turns, the brains (claude-cli, replay, relay), reading links and photos, the session log, tools
+web/        the painter and its renderers (three.js and DOM), looks and fonts, the stage page, export
+catalogue/  real-browser test cases: each is a past failure, replayed at desk and phone sizes
+explore/    the exploration battery used to measure answers
+techniques/ the seed library of drawing techniques handed to the brain
+docs/       the specification, the product notes, the runbook
 ```
 
-## Documents
+## Read more
 
 | Document | The question it answers |
 | --- | --- |
 | [docs/product.md](docs/product.md) | What is this, what was decided, and what is still open? |
 | [docs/language.md](docs/language.md) | What exactly is Series? The specification. |
-| [DESIGN.md](DESIGN.md) | What must the looks, drawings, pixels, weather and paintings be, and never be? |
+| [DESIGN.md](DESIGN.md) | What must the looks, drawings and pictures be, and never be? |
 | [docs/technology.md](docs/technology.md) | Why is it built this way, and what was measured? |
-| [docs/runbook.md](docs/runbook.md) | How do I run it and poke at it? |
+| [docs/runbook.md](docs/runbook.md) | How do I run it, configure it and poke at it? |
+| [CHANGELOG.md](CHANGELOG.md) | What's new? |
 
-MIT licensed. The fonts in `web/src/fonts` carry their own licences beside them.
+The `PLAN-*.md`, `STATUS.md` and `BACKLOG.md` files are the working notes the project was built with, left in for anyone curious about how it got here.
+
+## License
+
+[MIT](LICENSE). The fonts in `web/src/fonts` carry their own licences beside them.
