@@ -67,6 +67,8 @@ export interface TimelineContext {
   readonly charts?: { readonly kinds: readonly string[]; readonly data: ReadonlyMap<string, ChartData> };
   /** this stage has a host that runs live apps: the frame names each app for it. Absent or false: an app is only its placeholder. */
   readonly apps?: boolean;
+  /** the height each live app's content asks of its frame, by key, screen pixels: the frame follows it (taller than asked: it grows; shorter: no empty band). Read when the stage is planned. */
+  readonly appHeights?: ReadonlyMap<string, number>;
 }
 
 export interface TimelineInstant {
@@ -137,6 +139,8 @@ const CARRY_SECONDS = 0.55;
 const BESIDE_WORDS_SHARE = 0.3;
 /** a live app is made for a frame about as wide as its natural width: beside the words it takes at most this share of a wide stage, else the words stand below it */
 const LIVE_APP_BESIDE_MAX = 0.6;
+/** a live app whose content asks for more of the stage's height than this stands to the left with the words beside it, so that the words are not what takes its height from it */
+const LIVE_APP_STACK_MAX = 0.55;
 /** A structure is set at least this share of the look's size: an engine that would shrink it further is asked for more room first. */
 const READ_SHRINK = 0.8;
 /** An element whose box covers more than this share of the viewport is "large" for the governor. */
@@ -746,7 +750,7 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
       // a mock-up takes what the stage can give it: its screens are scaled together to the room
       const mockup = figure.structure === 'screen';
       const drawing = figure.structure === 'figure';
-      const natural = mockup ? { width: 1600, height: 900 } : drawing ? { width: 900, height: 700 } : live ? { width: 960, height: figure.height ?? 480 } : tune ? { width: 760, height: 260 } : chart ? { width: 560, height: 320 } : table ? { width: Math.max(280, 150 * columns), height: 60 + 34 * figure.rows.length } : { width: 640, height: 120 + 40 * parts };
+      const natural = mockup ? { width: 1600, height: 900 } : drawing ? { width: 900, height: 700 } : live ? { width: 960, height: Math.max(120, context.appHeights?.get(element.key) ?? figure.height ?? 480) } : tune ? { width: 760, height: 260 } : chart ? { width: 560, height: 320 } : table ? { width: Math.max(280, 150 * columns), height: 60 + 34 * figure.rows.length } : { width: 640, height: 120 + 40 * parts };
       const least = mockup ? { width: 300, height: 300 } : drawing ? { width: 280, height: 300 } : live ? { width: 280, height: 220 } : tune ? { width: 260, height: 150 } : chart ? { width: 260, height: 190 } : table ? { width: Math.max(200, 100 * columns), height: 40 + 24 * figure.rows.length } : { width: 160, height: 100 };
       list.push({
         key: element.key,
@@ -824,7 +828,7 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
       // a live app is a tool to be used: on a wide stage it takes the lead room whatever the scene's layout, and the words stand beside it
       const liveApp = unpinnedBlocks.length === 1 && drawnByKey.get(unpinnedBlocks[0]?.key ?? '')?.figure?.kind === 'structure' && (drawnByKey.get(unpinnedBlocks[0]?.key ?? '')?.figure as { structure?: string } | null | undefined)?.structure === 'app';
       let beside = false;
-      if (viewport.width >= 900 && viewport.width >= 1.5 * viewport.height && bare && unpinnedBlocks.length === 1 && unpinnedBlocks[0]?.kind === 'structure' && scene.layout !== 'figure' && ((liveApp ? (unpinnedBlocks[0]?.natural.width ?? 0) <= safe.width * LIVE_APP_BESIDE_MAX : false) || (!liveApp && sceneHasControls) || (scene.layout !== 'caption' && scene.layout !== 'solo'))) {
+      if (viewport.width >= 900 && viewport.width >= 1.5 * viewport.height && bare && unpinnedBlocks.length === 1 && unpinnedBlocks[0]?.kind === 'structure' && scene.layout !== 'figure' && ((liveApp ? (unpinnedBlocks[0]?.natural.width ?? 0) <= safe.width * LIVE_APP_BESIDE_MAX || (context.appHeights?.has(unpinnedBlocks[0]?.key ?? '') === true && (unpinnedBlocks[0]?.natural.height ?? 0) > safe.height * LIVE_APP_STACK_MAX) : false) || (!liveApp && sceneHasControls) || (scene.layout !== 'caption' && scene.layout !== 'solo'))) {
         const known = besideOf.get(scene.id);
         if (known !== undefined) beside = known;
         else if (sceneHasControls) {

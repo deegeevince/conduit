@@ -342,7 +342,9 @@ export function createPainter(options: PainterOptions): Painter {
   /** what has come of the data charts asked for by reference */
   const chartData = new Map<string, ChartData>();
   const chartKinds = host === null ? [] : CHARTS_READY.filter((kind) => host.kinds.includes(kind));
-  const timelineContext = (): TimelineContext => ({ viewport, reducedMotion, lockLook, paintings, onFault: noteFault, arrivals, controls: runtime, ...(host === null || chartKinds.length === 0 ? {} : { charts: { kinds: chartKinds, data: chartData } }), ...(appHost === null ? {} : { apps: true }) });
+  // what each live app's content asks of its frame (the app host measures it): the stage plans the app's room again when it changes
+  let appHeights: ReadonlyMap<string, number> = new Map();
+  const timelineContext = (): TimelineContext => ({ viewport, reducedMotion, lockLook, paintings, onFault: noteFault, arrivals, controls: runtime, appHeights, ...(host === null || chartKinds.length === 0 ? {} : { charts: { kinds: chartKinds, data: chartData } }), ...(appHost === null ? {} : { apps: true }) });
 
   const photoAspects = new Map<string, number>();
   /** The width over the height of the picture at `url`, once the browser has read it. */
@@ -916,7 +918,18 @@ export function createPainter(options: PainterOptions): Painter {
       if (frame.spec !== lastReadySpec && !reset) sendReady(frame.spec);
       if (reset) renderer.reset();
       if (host !== null) host.sync(frame.charts ?? [], viewport.dpr);
-      if (appHost !== null && !reset) appHost.sync(frame.apps ?? [], viewport.dpr);
+      if (appHost !== null && !reset) {
+        appHost.sync(frame.apps ?? [], viewport.dpr);
+        const asked = appHost.contents?.();
+        if (asked !== undefined) {
+          let changed = asked.size !== appHeights.size;
+          if (!changed) for (const [key, height] of asked) if (appHeights.get(key) !== height) changed = true;
+          if (changed) {
+            appHeights = new Map(asked);
+            refreshTimeline();
+          }
+        }
+      }
       // the music follows the stage: begun when a tune is whole, held while the stage is paused or hidden, let go when its tune has left
       if (player !== null && !reset) player.sync(frame.tunes ?? [], { aq: reading.ambient, running: reading.state !== 'paused' && !reading.hidden });
       lastFrame = frame;
@@ -1829,6 +1842,7 @@ export function createPainter(options: PainterOptions): Painter {
 
     resize(next) {
       viewport = next;
+      appHeights = new Map();
       renderer.resize(next);
       if (turn !== null) rebuild(timeline.schedule);
       else if (reviewing && review !== null) timeline = buildTimeline(review.schedule, review.base, timelineContext());

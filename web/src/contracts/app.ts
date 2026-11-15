@@ -98,6 +98,8 @@ export interface AppHost {
   refresh(ms: number): Promise<void>;
   /** Removes every app and keeps them from starting again while they stay on stage (`/stop-all`). Returns how many it ended. */
   killAll(): number;
+  /** The height each app's content asks of its frame, screen pixels, by key: the stage plans the app's room again when this changes. Absent: none asks. */
+  contents?(): ReadonlyMap<string, number>;
   /** What the host knows of each app: for the test hook and the battery. */
   probe(): readonly AppProbe[];
   dispose(): void;
