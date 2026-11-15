@@ -1,0 +1,28 @@
+{
+ "id": "page-keeps-own-type",
+ "title": "a real page keeps its own type",
+ "family": "type-scale",
+ "owner": "painter",
+ "kind": "draw",
+ "found": "2026-11-15",
+ "note": "The type pass raised every text below the stage's small size and the stage's sizes were given as the page's variables, so a real web page (own CSS, own type scale) had its nav wrap, its hero heading enormous and its prices break. A document that is a real page (its own face, a nav, sections, a centred column) is set at web scale and never type-raised; little apps keep the raise.",
+ "own": [
+  "page-own-type"
+ ],
+ "surface": "main",
+ "priority": "core",
+ "turns": [
+  {
+   "say": "render me a real webpage for a small coffee roaster",
+   "source": {
+    "scenario": "coffee-page",
+    "index": 0
+   },
+   "check": [
+    {
+     "k": "page-own-type"
+    }
+   ]
+  }
+ ]
+}

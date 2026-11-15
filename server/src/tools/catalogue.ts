@@ -1165,6 +1165,29 @@ async function runCheck(cx: Cx, spec: Spec): Promise<Res> {
       }
       return res(name, bad, notes.join('; '));
     }
+    case 'page-own-type': {
+      // a real page keeps its own type: at desk widths its nav is on one line (every item on the same row) and no price line breaks across two rows
+      if (cx.screen.width < Number(spec['from'] ?? 1280)) return { check: name, verdict: 'PASS', detail: `${cx.screen.width} px wide: a phone-width page may stack` };
+      const targets = await cx.tab.browser.send<{ targetInfos: { type: string; targetId: string }[] }>('Target.getTargets');
+      const bad: string[] = [];
+      let seen = 0;
+      for (const target of targets.targetInfos.filter((t) => t.type === 'iframe')) {
+        const attached = await cx.tab.browser.send<{ sessionId: string }>('Target.attachToTarget', { targetId: target.targetId, flatten: true });
+        const expression = `(() => { const navs = [...document.querySelectorAll('nav')]; const out = { navs: navs.length, bad: [] };
+          const rows = (el) => { const tops = [...el.querySelectorAll('*')].filter((c) => c.children.length === 0 && c.getBoundingClientRect().width > 0).map((c) => c.getBoundingClientRect()); const ys = tops.map((r) => r.top + r.height / 2); return ys.length === 0 ? 0 : Math.max(...ys) - Math.min(...ys); };
+          const lineOf = (el) => parseFloat(getComputedStyle(el).lineHeight) || parseFloat(getComputedStyle(el).fontSize) * 1.3;
+          for (const n of navs) if (rows(n) > lineOf(n) * 0.9) out.bad.push('nav wraps: ' + n.textContent.trim().replace(/\\s+/g, ' ').slice(0, 40));
+          for (const b of document.querySelectorAll('b, .price, .row b')) { const r = b.getClientRects(); if (r.length > 1 && /[$€£]/.test(b.textContent)) out.bad.push('price breaks: ' + b.textContent.trim().slice(0, 30)); }
+          return out; })()`;
+        const got = await cx.tab.browser.send<{ result?: { value?: { navs: number; bad: string[] } } }>('Runtime.evaluate', { expression, returnByValue: true }, attached.sessionId);
+        const v = got.result?.value;
+        if (v === undefined) continue;
+        seen += v.navs;
+        bad.push(...v.bad);
+      }
+      if (seen === 0 && bad.length === 0) return { check: name, verdict: 'FAIL', detail: 'no page with a nav on stage' };
+      return res(name, bad, `${seen} nav(s) on one line at ${cx.screen.width} px`);
+    }
     case 'app-fills-stage': {
       const frames = await cx.tab.eval<{ height: number }[]>(`[...document.querySelectorAll('iframe')].map((f) => ({ height: f.getBoundingClientRect().height })).filter((r) => r.height > 50)`);
       if (frames.length === 0) return { check: name, verdict: 'FAIL', detail: 'no live app on stage' };
