@@ -1,0 +1,22 @@
+{
+ "id": "gate-bill-flow-veto",
+ "title": "gate turn 2: a link runs through a node's words",
+ "family": "flowchart",
+ "owner": "painter",
+ "kind": "draw",
+ "found": "2026-11-15",
+ "note": "The house:no link to 'The bill dies' runs down through 'It becomes law anyway'.",
+ "own": [
+  "no-overlap"
+ ],
+ "turns": [
+  {
+   "say": "how does a bill become a law, as a flowchart (gate turn 2)",
+   "source": {
+    "scenario": "gate",
+    "index": 0
+   },
+   "check": []
+  }
+ ]
+}
