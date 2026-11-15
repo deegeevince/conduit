@@ -36,7 +36,7 @@ export const WIREFRAME_TOKENS: UiTokens = {
     sunken: '#eceef2',
     ink: '#1d2129',
     dim: '#5d6573',
-    faint: '#8a93a3',
+    faint: '#636c7e',
     line: '#c9ced8',
     edge: '#1d2129',
     accent: '#1d2129',

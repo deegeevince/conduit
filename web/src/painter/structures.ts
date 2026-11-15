@@ -342,7 +342,7 @@ function planOf(structure: ElementSpan, schedule: Schedule, env: StructureEnv): 
       // v2.2: a mock-up is laid out and drawn by the interface kit, as finished frames
       if (figure.structure === 'screen' && env.engine === undefined) {
         try {
-          return layoutUi({ structure: shown, room, spec: look, dpr: env.viewport.dpr });
+          return layoutUi({ structure: shown, room, spec: look, dpr: env.viewport.dpr, viewportWidth: env.viewport.width });
         } catch {
           return EMPTY_STRUCTURE_LAYOUT;
         }

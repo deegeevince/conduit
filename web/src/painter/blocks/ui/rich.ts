@@ -151,11 +151,11 @@ export function segmentOf(k: Kit, p: UiPartNode): N {
     const action: UiAction = { kind: 'pick', control: p.id, index: i };
     if (tabs) {
       const ink = on ? (wire ? c.ink : c.accentInk) : c.dim;
-      const label = text(k, o.text, { ...k.type.label, weight: on ? 'bold' : 'normal' }, { id: p.id, nowrap: true, squeeze: true, colour: ink, align: 'center', what: `option:${i}`, width: 'fill' });
+      const label = text(k, o.text, { ...k.type.label, weight: on ? 'bold' : 'normal' }, { id: p.id, nowrap: true, ellipsis: true, colour: ink, align: 'center', what: `option:${i}`, width: 'fill', grow: Math.max(1, Math.round(k.measure.width(o.text, k.type.label.size, 'bold', k.type.label.face))) });
       const paint = (b: Rect, out: Out): void => {
         if (on) rectOf(out, p.id, `under:${i}`, { x: b.x + 8, y: b.y + b.h - 3, w: Math.max(0, b.w - 16), h: 3 }, { radius: 2, fill: wire ? c.ink : c.accent });
       };
-      return mk({ width: 'fill', height: 48, minW: 44 }, flex('row', { align: 'center', justify: 'center', pad: [0, 4, 0, 4] }), null, [label], { id, part: 'segment-tab', target: true, paint, action, owner: p.id });
+      return mk({ width: 'fill', height: 48, minW: 44, grow: Math.max(1, Math.round(k.measure.width(o.text, k.type.label.size, 'bold', k.type.label.face))) }, flex('row', { align: 'center', justify: 'center', pad: [0, 4, 0, 4] }), null, [label], { id, part: 'segment-tab', target: true, paint, action, owner: p.id });
     }
     const ink = on ? (wire ? c.onAccent : c.onAccent) : c.ink;
     const label = text(k, o.text, k.type.label, { id: p.id, nowrap: true, squeeze: true, colour: ink, align: 'center', what: `option:${i}` });
@@ -187,8 +187,13 @@ export function statOf(k: Kit, p: UiPartNode): N {
   const down = p.flags.includes('down') || (!p.flags.includes('up') && /^[-−–]/.test(delta.trim()));
   const tone = k.t.wire ? c.ink : down ? c.danger : c.success;
   const kids: N[] = [];
-  if (label !== '') kids.push(text(k, label, k.type.note, { id: p.id, colour: c.dim, what: 'label', maxLines: 1 }));
-  if (value !== '') kids.push(text(k, value, { ...k.type.heading, size: Math.max(k.type.heading.size, 24), line: Math.max(k.type.heading.line, 32) }, { id: p.id, colour: c.ink, what: 'value' }));
+  // a card has the width its words need at the type it is set in: the label's longest word, the number whole (never broken across lines), the change's longest word
+  // and its arrow. A row of stats that cannot all stand at that width reflows (see `balance`), so no label is cut to "Rev..." and no number wraps.
+  const valueToken = { ...k.type.heading, size: Math.max(k.type.heading.size, 24), line: Math.max(k.type.heading.line, 32) };
+  const pad = 16;
+  const need = pad * 2 + Math.max(k.measure.longestWord(label, k.type.note.size, k.type.note.weight, k.type.note.face), value === '' ? 0 : k.measure.width(value, valueToken.size, valueToken.weight, valueToken.face), delta === '' ? 0 : k.measure.longestWord(delta, k.type.note.size, 'bold', k.type.note.face) + 20);
+  if (label !== '') kids.push(text(k, label, k.type.note, { id: p.id, colour: c.dim, what: 'label', maxLines: 2 }));
+  if (value !== '') kids.push(text(k, value, valueToken, { id: p.id, colour: c.ink, what: 'value', nowrap: true }));
   if (delta !== '') {
     kids.push(
       mk({ width: 'fill', height: 'hug' }, flex('row', { align: 'center', gap: 4 }), null, [icon(p.id, down ? 'trend-down' : 'trend-up', 16, tone, 2.25), text(k, delta, { ...k.type.note, weight: 'bold' }, { id: p.id, colour: tone, what: 'delta', grow: 1, maxLines: 2 })], { id: `${p.id}:delta`, part: 'stat-delta', quiet: true, owner: p.id }),
@@ -201,7 +206,7 @@ export function statOf(k: Kit, p: UiPartNode): N {
     const shadow = k.t.wire ? undefined : shadowOf(k, 'low');
     rectOf(out, p.id, 'card', b, { radius: k.t.radius.l, fill: c.surface, edge: { colour: k.t.wire ? c.edge : c.line, width: 1 }, ...(shadow === undefined ? {} : { shadow }) });
   };
-  return mk({ width: 'fill', height: 'hug', minW: 0 }, flex('col', { gap: 4, pad: 16, align: 'stretch' }), null, kids, { id: p.id, part: 'stat', paint });
+  return mk({ width: 'fill', height: 'hug', minW: need }, flex('col', { gap: 4, pad, align: 'stretch' }), null, kids, { id: p.id, part: 'stat', paint });
 }
 
 // ------------------------------------------------------------------ people: a list with avatars

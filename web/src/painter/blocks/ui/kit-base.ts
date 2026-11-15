@@ -74,14 +74,22 @@ const DESK_TYPE: Partial<Record<keyof UiTokens['type'], UiTextToken>> = {
   hero: { size: 64, line: 72, weight: 'bold' },
 };
 
-/** A type scale with nothing set smaller than `min` points; a role that is taken up keeps its proportions and stays on the four-point grid. */
+/**
+ * A type scale with nothing set smaller than `min` points. The smallest role is taken up to `min`; the roles above it keep their order and their rough
+ * proportions (each stands above the smallest by 60% of the gap it had), so a screen scaled down to a small room has its captions and labels raised first
+ * and its titles and headings only as far as they must stand above them, and not every role collapsed to one size. Sizes stay on the quarter-point grid.
+ */
 function atLeast(type: UiTokens['type'], min: number | undefined): UiTokens['type'] {
   if (min === undefined) return type;
+  const roles = Object.keys(type) as (keyof UiTokens['type'])[];
+  const least = Math.min(...roles.map((role) => type[role].size));
   const out = { ...type };
-  for (const role of Object.keys(type) as (keyof UiTokens['type'])[]) {
+  for (const role of roles) {
     const token = type[role];
-    if (token.size >= min) continue;
-    out[role] = { ...token, size: min, line: Math.max(token.line, Math.ceil((min * 1.4) / 4) * 4) };
+    if (token.size >= min && min <= least) continue;
+    const raised = Math.ceil((min + (token.size - least) * (min > least ? 0.6 : 1)) * 4) / 4;
+    if (raised <= token.size) continue;
+    out[role] = { ...token, size: raised, line: Math.max(token.line, Math.ceil((raised * 1.4) / 4) * 4) };
   }
   return out;
 }

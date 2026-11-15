@@ -263,7 +263,8 @@ function badgeOf(k: Kit, p: UiPartNode): N {
   const tone = p.flags.includes('success') ? c.success : p.flags.includes('danger') ? c.danger : c.accentInk;
   const wire = k.t.wire;
   const paint = (b: Rect, out: Out): void => rectOf(out, p.id, 'badge', b, { radius: 12, fill: wire ? null : c.accentWash, edge: wire ? { colour: c.edge, width: 1 } : null });
-  const word = text(k, p.fields[0] ?? '', { ...k.type.caption, weight: 'bold' }, { id: p.id, nowrap: true, colour: wire ? c.ink : tone, what: 'label' });
+  // a badge's words wrap to the room it has rather than stand outside it: the type is never made smaller to fit
+  const word = text(k, p.fields[0] ?? '', { ...k.type.caption, weight: 'bold' }, { id: p.id, colour: wire ? c.ink : tone, what: 'label' });
   return mk({ width: 'hug', height: 'hug', minH: 24 }, flex('row', { align: 'center', pad: [2, 10, 2, 10] }), null, [word], { id: p.id, part: 'badge', hug: true, paint });
 }
 
@@ -468,7 +469,8 @@ function navOf(k: Kit, p: UiPartNode): N {
             if (k.state.pressed === `${p.id}:${what}`) rectOf(out, p.id, 'pressed', b, { radius: 24, fill: c.ink, fillAlpha: 0.08 });
           },
         });
-  const middle = text(k, title, k.type.title, { id: p.id, nowrap: true, squeeze: true, colour: c.ink, align: 'center', what: 'title', width: 'fill' });
+  // a title too long for its bar ends in an ellipsis: it is not set smaller, and not drawn outside its part
+  const middle = text(k, title, k.type.title, { id: p.id, maxLines: 1, colour: c.ink, align: 'center', what: 'title', width: 'fill' });
   return mk({ width: 'fill', height: 56 }, flex('row', { align: 'center', pad: [0, 8, 0, 8] }), null, [slot('l', left, 'left'), middle, slot('r', right, 'right')], { id: p.id, part: 'nav', paint: bar });
 }
 
@@ -484,7 +486,7 @@ function boxOf(k: Kit, c: UiContainer, kids: N[], ctx: Ctx): N {
   const fit = held ? (k.t.rowFit ?? 0) : 0;
   const gap = fit >= 1 ? Math.min(gapOf(p.gap, 8 + packOf(k) * 4), 4) : gapOf(p.gap, 8 + packOf(k) * 4);
   // a row of cards stands them at one height; any other row centres what is in it
-  const cards = dir === 'row' && c.children.filter((n) => isUiContainer(n) && n.props.card).length > 1;
+  const cards = dir === 'row' && c.children.filter((n) => (isUiContainer(n) && n.props.card) || (!isUiContainer(n) && n.kind === 'stat')).length > 1;
   const align: Align = p.align ?? (dir === 'row' ? (cards ? 'stretch' : 'center') : 'stretch');
   const wide = p.spread || p.center || p.max !== null;
   // `grow` takes the room that is left along the line the container stands in, shared equally as `flex: 1` does
@@ -508,7 +510,12 @@ function boxOf(k: Kit, c: UiContainer, kids: N[], ctx: Ctx): N {
         }
       : undefined;
   const item: Item = { id: c.id, part: c.kind, quiet: !card, ...(paint === undefined ? {} : { paint }) };
-  return mk(style, flex(dir, { gap, pad, align, justify: p.spread ? 'between' : 'start', wrap: p.wrap || fit >= 2 }), null, kids, item);
+  // a row of two or more stats is a row of headline numbers: it wraps, and when they cannot all stand across at the width their words need they reflow evenly
+  // (four become two and two, then one a line), in reading order
+  // a row of a switch, a note beside another ("Remember me" and "Forgot password?") goes on to a second line when the type is too large for both across
+  const beside = dir === 'row' && c.children.length >= 2 && c.children.every((n) => !isUiContainer(n)) && c.children.some((n) => !isUiContainer(n) && (n.kind === 'toggle' || n.kind === 'note'));
+  const stats = dir === 'row' && c.children.length >= 2 && c.children.every((n) => !isUiContainer(n) && n.kind === 'stat');
+  return mk(style, flex(dir, { gap, pad, align, justify: p.spread ? 'between' : 'start', wrap: p.wrap || fit >= 2 || stats || beside, ...(stats ? { balance: true } : {}) }), null, kids, item);
 }
 
 function build(k: Kit, node: UiContainer | UiPartNode, ctx: Ctx): N {
