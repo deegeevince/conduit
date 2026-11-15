@@ -120,7 +120,9 @@ function place(division: Division, blocks: readonly StageBlock[], rooms: Map<str
   for (const block of blocks) {
     const box = division.rooms.get(block.key);
     if (box === undefined) continue;
-    rooms.set(block.key, box);
+    // a live app is no taller than it asked to be: a frame taller than its content is room the words and the stage can use
+    const kept = block.live === true && box.height > block.natural.height ? { ...box, height: block.natural.height } : box;
+    rooms.set(block.key, kept);
     if (box.height < block.least.height - 1e-6 || box.width < block.least.width - 1e-6) crowded.push(block.key);
   }
 }
@@ -189,8 +191,10 @@ export function planStage(input: PlanInput): StagePlan {
     area = column;
   } else if (input.beside === true && !needsPicture && unpinned.length > 0 && viewport.width >= viewport.height) {
     const gutter = Math.max(16, margin * 0.75);
-    const share = column.width * BESIDE_SHARE;
-    const flowW = wider(column.width - share - gutter / 2, column.width - gutter);
+    // a live app keeps the width it was made for (up to most of the stage) before the words are given the rest
+    const lone = unpinned.length === 1 ? unpinned[0] : undefined;
+    const share = lone?.live === true ? Math.max(column.width * BESIDE_SHARE, Math.min(lone.natural.width, column.width * 0.6)) : column.width * BESIDE_SHARE;
+    const flowW = lone?.live === true ? column.width - share - gutter : wider(column.width - share - gutter / 2, column.width - gutter);
     area = { x: column.x, y: column.y, width: column.width - flowW - gutter, height: column.height };
     flow = { x: column.x + column.width - flowW, y: column.y, width: flowW, height: column.height };
     flowWords = input.flowHeight(flow.width);

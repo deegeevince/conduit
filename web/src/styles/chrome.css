@@ -692,6 +692,12 @@ input {
   box-sizing: border-box;
 }
 
+/* the drawn field shows its own words: the real one behind it shows none, its placeholder least of all */
+.access__widget::placeholder {
+  color: transparent;
+  opacity: 0;
+}
+
 .access__widget::selection,
 .access__widget ::selection {
   background: transparent;
