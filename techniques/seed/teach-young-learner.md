@@ -1,13 +1,13 @@
 # Help a young learner work a question out
 
-summary: Teach a child, help my kid with homework, a worksheet of sums, a lesson on adding, times tables or number bonds, show the working and not the answer, a young learner who is to try each question herself.
-reason: only if the person is a young child in the first years of school who is to try each question herself, with help she pulls
+summary: A worksheet or a page of homework with several questions on it, a photo of a sheet of sums to go through in turn, a document of questions to work through, a young learner who is to try each question herself.
+reason: only if there is a worksheet or a page of several questions (a photo or a sheet the person gives), or a document or worksheet to work through is asked for
 
 Writes the work as a document of parts: her own try first, then help she asks for as a thinking ladder, then ways to go at it that she does together with you.
 
 **Use it when** a young child is to do the work herself. Short words, small steps, warm and plain; give approaches, never answers; never write a name. ASK ALONE FIRST: open with the question as printed (title, crop) and her answer space, nothing else; help only when she taps Help. HER TRY: an `ask` straight on the question (`is=` with every spelling she may type, no `pick=`, she writes it) and a thinking ladder as its hints, facts first, each a question back to her and never a step toward the answer: hint 1 marks what we know, with the question's own facts in [brackets] ("We know [3 bags] and [4 apples in each bag]. What do we know?"); hint 2 asks what it is asking ("What are we asked to find?"); hint 3 offers ways ("Could we draw it, count on, or break it apart?"); then she has a go. WAYS: three to five help parts, each `for=<her ask>` with a `tag=` of the way (draw-it, share-it-out, count-on-a-line, make-ten, break-it-apart, find-the-pattern, read-the-question, work-backwards), each a different approach of three to six small steps; start with the one she most likely knows. DO IT TOGETHER: every step sets up one piece and is followed by an `ask` she answers: the gap first (a jump's size), then where she lands. Never a reveal. Give `pick=` with three large choices, one right. A step is about twelve words she can read alone: say what to do ("Tap each flower"), never the result. A picture is told only what the question says (`parts=6,2,4`, never `each=12`; a line gets its span and hop size, never where it lands). Show partial work, never the total. Finish with a `reply` of one warm sentence on how she did it.
 
-**Not when** the person is an adult or an older learner who wants the answer explained (a plain answer or a drawn one), or the question is a thing to watch and not to try.
+**Not when** there is one question or none on a page (a typed ask for a child: set it on the stage as asks, never a map of one card), the person is an adult or an older learner who wants the answer explained (a plain answer or a drawn one), or the question is a thing to watch and not to try.
 
 **Example**
 ```series
