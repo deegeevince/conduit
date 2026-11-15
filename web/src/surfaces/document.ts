@@ -393,13 +393,13 @@ const BRIDGE = String.raw`(function () {
   addEventListener('wheel', function () { userScrolled = true; }, { passive: true });
   addEventListener('touchmove', function () { userScrolled = true; }, { passive: true });
   addEventListener('keydown', function (e) { if (e.key === 'PageDown' || e.key === 'PageUp' || e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === ' ') userScrolled = true; });
-  addEventListener('scroll', function () { cue(); }, { passive: true });
+  addEventListener('scroll', function () { if (typeOn) cue(); }, { passive: true });
   function report() {
     var h = Math.ceil(document.documentElement.scrollHeight);
     var w = Math.ceil(document.documentElement.scrollWidth);
     var c = contentHeight();
-    keepPrimary();
-    cue();
+    // only a stage app is kept to its primary buttons and given a scroll cue: a lesson or a published page is its own
+    if (typeOn) { keepPrimary(); cue(); }
     if (h !== lastHeight || w !== lastWidth || c !== lastContent) { lastHeight = h; lastWidth = w; lastContent = c; post('size', { height: h, width: w, content: c, frame: Math.round(window.innerWidth), room: Math.round(window.innerHeight) }); }
   }
   addEventListener('resize', function () { if (started) { lastHeight = 0; report(); } });
