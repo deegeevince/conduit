@@ -188,7 +188,7 @@ export interface Plot {
   /** the final range of the value scale: pinned from the first frame */
   readonly range: { readonly lo: number; readonly hi: number };
   readonly log: boolean;
-  /** columns drawn grouped (two or more series) */
+  /** columns drawn by the grouped view, one series or more: a gap between the groups, which the library's histogram has not */
   readonly grouped: boolean;
 }
 
@@ -261,7 +261,7 @@ export function plotOf(state: ChartState): Plot {
     if (!(columns && lo >= 0)) lo -= span * 0.04;
     if (!(columns && hi <= 0)) hi += span * 0.04;
   }
-  return { axis, series, range: { lo, hi }, log, grouped: series.filter((s) => s.draw === 'columns').length > 1 };
+  return { axis, series, range: { lo, hi }, log, grouped: series.some((s) => s.draw === 'columns') };
 }
 
 /** What of the final data is drawn: for a line, slots up to a point; for the rest, whole bars and a part of one. */
@@ -360,7 +360,10 @@ export function tickLabels(prices: readonly number[], format: NumberFormat): str
   let smallest = Infinity;
   for (let i = 1; i < sorted.length; i += 1) smallest = Math.min(smallest, (sorted[i] ?? 0) - (sorted[i - 1] ?? 0));
   const big = sorted.some((p) => Math.abs(p) >= 1e6) || format.short;
-  const needed = Number.isFinite(smallest) && smallest > 0 && !big ? Math.min(6, Math.max(0, Math.ceil(-Math.log10(smallest) - 1e-9))) : 0;
+  // enough decimals that no tick is rounded: a step of 2.5 is written 22.5, never 23
+  const places = (p: number): number => (String(Number(p.toPrecision(10))).split('.')[1] ?? '').length;
+  const spaced = Number.isFinite(smallest) && smallest > 0 && !big ? Math.min(6, Math.max(0, Math.ceil(-Math.log10(smallest) - 1e-9))) : 0;
+  const needed = big ? 0 : Math.max(spaced, Math.min(6, ...[Math.max(0, ...sorted.map(places))]));
   const f: NumberFormat = { ...format, decimals: Math.max(format.decimals, needed) };
   return prices.map((p) => {
     const text = formatNumber(p, f);

@@ -1,0 +1,13 @@
+{
+ "turns": [
+  {
+   "script": "scene layout=stack\nsay c1 strong | Sales by quarter\nchart c2 columns | Bakery sales by quarter, $ thousand\nrow c2 | Q1 Jan | 42\nrow c2 | Q2 Apr | 55\nrow c2 | Q3 Jul | 61\nrow c2 | *Q4 Oct* | 78\nsay c3 | The year ends strongest, in the holiday quarter.\nsay c4 choice | Show it by month\n"
+  },
+  {
+   "script": "scene layout=stack\nsay d1 strong | This year against last\nchart d2 columns | Visitors by quarter, thousand\nrow d2 | Quarter | Last year | This year\nrow d2 | Q1 | 120 | 135\nrow d2 | Q2 | 150 | 148\nrow d2 | Q3 | 180 | 205\nrow d2 | Q4 | 140 | 170\nsay d3 | Three of four quarters grew; the second held level.\nsay d4 choice | Show only this year\n"
+  },
+  {
+   "script": "scene layout=stack\nsay e1 strong | Temperature through the year\nchart e2 line | Average temperature by month, degrees C\nrow e2 | Jan | 3\nrow e2 | Mar | 8\nrow e2 | May | 15\nrow e2 | Jul | 22\nrow e2 | Sep | 17\nrow e2 | Nov | 8\nsay e3 | It peaks in July and falls back by November.\nsay e4 choice | Show the rainfall\n"
+  }
+ ]
+}

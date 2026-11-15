@@ -1,0 +1,28 @@
+{
+ "id": "chart-line-axis",
+ "title": "a line chart: its x axis is labelled and its text is the stage's own",
+ "family": "chart-type",
+ "owner": "painter",
+ "kind": "draw",
+ "found": "2026-11-15",
+ "note": "A line chart's axis words and type sizes follow the same rules as a bar chart's.",
+ "own": [
+  "chart-labels"
+ ],
+ "surface": "main",
+ "priority": "core",
+ "turns": [
+  {
+   "say": "Chart the average temperature across the year",
+   "source": {
+    "scenario": "charts",
+    "index": 2
+   },
+   "check": [
+    {
+     "k": "chart-labels"
+    }
+   ]
+  }
+ ]
+}

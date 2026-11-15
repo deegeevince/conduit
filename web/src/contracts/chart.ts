@@ -105,6 +105,8 @@ export interface ChartProbe {
   readonly points: number;
   /** the axis ticks as written, bottom then side: what "properly formatted" is checked against */
   readonly ticks: { readonly x: readonly string[]; readonly y: readonly string[] };
+  /** the sizes the chart's text is set at, CSS pixels at rest: the axis ticks and legend, the title, the credit */
+  readonly type: { readonly label: number; readonly title: number; readonly credit: number; /** the stage's small size, which the label is set at unless the room is too short for it */ readonly small: number };
   /** median and worst frame time over the engine's last second of drawing, ms */
   readonly frameMs: { readonly median: number; readonly worst: number };
 }

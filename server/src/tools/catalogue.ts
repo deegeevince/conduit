@@ -1142,6 +1142,29 @@ async function runCheck(cx: Cx, spec: Spec): Promise<Res> {
       }
       return res(name, bad, notes.join('; '));
     }
+    case 'chart-labels': {
+      // every bar has its words under it, and the chart's text is set at no less than the stage's small size, the title at the body size
+      const charts = cx.answer.charts.filter((c) => !c.waiting);
+      if (charts.length === 0) return { check: name, verdict: 'FAIL', detail: 'no chart on stage' };
+      const bad: string[] = [];
+      const notes: string[] = [];
+      for (const c of charts) {
+        const probe = await cx.tab.eval<{ ticks: { x: string[]; y: string[] }; type: { label: number; title: number; credit: number; small: number } } | null>(`window.__stage.chart(${JSON.stringify(c.id)}, { reset: true }).catch(() => null)`);
+        if (probe === null) {
+          bad.push(`chart ${c.id} could not be read`);
+          continue;
+        }
+        const bars = /column|bar/.test(c.kind);
+        const need = bars ? c.points : 2;
+        if (probe.ticks.x.length < need) bad.push(`chart ${c.id}: ${probe.ticks.x.length} label(s) under ${c.points} point(s) [${probe.ticks.x.join(' | ')}]`);
+        const { label, title, credit, small } = probe.type;
+        if (label < small - 0.5) bad.push(`chart ${c.id}: tick and legend text ${label} px, under the stage's small size ${small}`);
+        if (title < Math.round(small * 1.25) - 1.5) bad.push(`chart ${c.id}: title ${title} px, under the stage body ${Math.round(small * 1.25)}`);
+        if (credit < 11) bad.push(`chart ${c.id}: credit ${credit} px`);
+        notes.push(`${c.kind}: labels [${probe.ticks.x.join(' | ')}], text ${label}/${title}/${credit} px, stage small ${small}`);
+      }
+      return res(name, bad, notes.join('; '));
+    }
     case 'app-fills-stage': {
       const frames = await cx.tab.eval<{ height: number }[]>(`[...document.querySelectorAll('iframe')].map((f) => ({ height: f.getBoundingClientRect().height })).filter((r) => r.height > 50)`);
       if (frames.length === 0) return { check: name, verdict: 'FAIL', detail: 'no live app on stage' };

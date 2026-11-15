@@ -24,20 +24,20 @@ const SERIES_CONTRAST = 3;
 export const LEAST_LABEL_PX = 11;
 /** A hand face is set larger: its strokes are thin. */
 const LEAST_HAND_PX = 14;
-/** The size words are in the stage's own steps: the title is `s` and a label is `xs`, so the title is this many times a label. */
-export const TITLE_OVER_LABEL = 0.8 / 0.64;
+/** The size words are in the stage's own steps: the title is `m` (the body) and a label is `s` (the small size), so the title is this many times a label. */
+export const TITLE_OVER_LABEL = 1 / 0.8;
 
 /** What a screen of 1280x720 is, for a caller that has no viewport to hand (the bench, an export). */
 const DESK: Viewport = { width: 1280, height: 720, dpr: 1 };
 
 /**
- * The chart's label size on this stage: the stage's own `xs` at this viewport and in this look, so a chart reads at
- * the scale of the words round it, and never under 11 CSS pixels. The title (`s`, bold) and a mark's words (`xs`,
- * in ink) are set from it: `fontPx * TITLE_OVER_LABEL` and `fontPx`.
+ * The chart's label size on this stage: the stage's own small size (`s`) at this viewport and in this look, so the ticks and
+ * the legend read at the scale of the words round them, and never under 11 CSS pixels. The title (the body size, bold) is
+ * `fontPx * TITLE_OVER_LABEL`, and a mark's words are `fontPx`.
  */
 export function labelPx(look: LookSpec, viewport: Viewport): number {
   const least = look.type.face === 'hand' ? LEAST_HAND_PX : LEAST_LABEL_PX;
-  return Math.max(least, Math.round(cellOf('xs', viewport, look).fontSize));
+  return Math.max(least, Math.round(cellOf('s', viewport, look).fontSize));
 }
 
 export function chartThemeOf(look: LookSpec, viewport: Viewport = DESK): ChartTheme {

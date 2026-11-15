@@ -1,0 +1,28 @@
+{
+ "id": "chart-grouped-bars",
+ "title": "a grouped bar chart of two series: every quarter has its label under its pair, and the type is the stage's",
+ "family": "chart-type",
+ "owner": "painter",
+ "kind": "draw",
+ "found": "2026-11-15",
+ "note": "Same cause as chart-quarterly-bars, for a grouped chart (FY against FY, a quarter at a time).",
+ "own": [
+  "chart-labels"
+ ],
+ "surface": "main",
+ "priority": "core",
+ "turns": [
+  {
+   "say": "Compare visitors this year and last, by quarter",
+   "source": {
+    "scenario": "charts",
+    "index": 1
+   },
+   "check": [
+    {
+     "k": "chart-labels"
+    }
+   ]
+  }
+ ]
+}

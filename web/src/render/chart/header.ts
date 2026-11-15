@@ -82,7 +82,7 @@ export function familyOf(theme: ChartTheme, bold = false): string {
 }
 
 let ruler: CanvasRenderingContext2D | null = null;
-function measure(font: string, text: string): number {
+export function measure(font: string, text: string): number {
   if (ruler === null) {
     ruler = document.createElement('canvas').getContext('2d');
     if (ruler === null) throw new Error('This browser gives no 2d canvas to measure a chart title with.');
@@ -135,7 +135,7 @@ export function headerOf(input: HeaderInput): Header {
   const titlePx = Math.round(labelPx * TITLE_OVER_LABEL);
   const labelFont = fontOf(theme, labelPx);
   const titleFont = fontOf(theme, titlePx, true);
-  const creditPx = Math.max(LEAST_LABEL_PX, Math.round(labelPx * 0.62));
+  const creditPx = Math.max(LEAST_LABEL_PX, Math.round(labelPx * 0.72));
   const creditFont = fontOf(theme, creditPx);
   const smallH = Math.round(labelPx * 1.35);
   const inner = width - 2 * SIDE;

@@ -750,8 +750,8 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
       // a mock-up takes what the stage can give it: its screens are scaled together to the room
       const mockup = figure.structure === 'screen';
       const drawing = figure.structure === 'figure';
-      const natural = mockup ? { width: 1600, height: 900 } : drawing ? { width: 900, height: 700 } : live ? { width: 960, height: Math.max(120, context.appHeights?.get(element.key) ?? figure.height ?? 480) } : tune ? { width: 760, height: 260 } : chart ? { width: 560, height: 320 } : table ? { width: Math.max(280, 150 * columns), height: 60 + 34 * figure.rows.length } : { width: 640, height: 120 + 40 * parts };
-      const least = mockup ? { width: 300, height: 300 } : drawing ? { width: 280, height: 300 } : live ? { width: 280, height: 220 } : tune ? { width: 260, height: 150 } : chart ? { width: 260, height: 190 } : table ? { width: Math.max(200, 100 * columns), height: 40 + 24 * figure.rows.length } : { width: 160, height: 100 };
+      const natural = mockup ? { width: 1600, height: 900 } : drawing ? { width: 900, height: 700 } : live ? { width: 960, height: Math.max(120, context.appHeights?.get(element.key) ?? figure.height ?? 480) } : tune ? { width: 760, height: 260 } : chart ? { width: 560, height: 400 } : table ? { width: Math.max(280, 150 * columns), height: 60 + 34 * figure.rows.length } : { width: 640, height: 120 + 40 * parts };
+      const least = mockup ? { width: 300, height: 300 } : drawing ? { width: 280, height: 300 } : live ? { width: 280, height: 220 } : tune ? { width: 260, height: 150 } : chart ? { width: 260, height: 300 } : table ? { width: Math.max(200, 100 * columns), height: 40 + 24 * figure.rows.length } : { width: 160, height: 100 };
       list.push({
         key: element.key,
         kind: chart ? 'chart' : 'structure',
