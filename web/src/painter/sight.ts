@@ -404,7 +404,7 @@ export function sightOf(timeline: Timeline, schedule: Schedule, base: StageBase,
         if (textOverText(entry, index) || textOnDiagram(entry) || variantCollides(entry)) notes.push('collides');
         if (strokeThrough(element.key) && !notes.includes('crossed')) notes.push('crossed');
         const view = restViews.get(element.key);
-        if (view !== undefined && view.contrast < (view.fontPx >= 24 ? 3 : 4.5) - 0.01) notes.push('faint');
+        if (view !== undefined && view.contrast < 4.5 - 0.01) notes.push('faint');
         if (placed.lines.length > WRAPPED_LINES && layout !== 'page') notes.push('wrapped');
         if (isInFlow(style, layout) && placed.fontSize * planeScale(placed.layer, viewport) < SHRUNK_BELOW * cellOf(style.size, viewport, spec).fontSize) notes.push('shrunk');
         const asked = style.ink;
