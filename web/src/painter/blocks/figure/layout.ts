@@ -231,7 +231,10 @@ export function layoutFigure(input: FigureInput, held: { readonly step: number }
   const textW = Math.max(8, hasSteps && !phone ? W - 3 * pad - (2 * BUTTON + counterW) : W - 2 * pad);
   const linesFor = (at: number): number => Math.max(1, ...texts.map((t) => wrapWords(t, at, textW, false, env.measure).length));
   let px = captionPx;
-  while (linesFor(px) > 3 && px > env.floor) px -= 1;
+  // a long step is set in up to three lines, smaller as it must be but never below three quarters of the stage's body size; past that it takes more lines (up to five) before it goes smaller
+  const stripFloor = env.body === undefined ? env.floor : Math.max(env.floor, Math.round(captionPx * 0.75));
+  while (linesFor(px) > 3 && px > stripFloor) px -= 1;
+  while (env.body !== undefined && linesFor(px) > 5 && px > env.floor) px -= 1;
   const lineHeight = Math.round(px * 1.3);
   const textH = texts.length === 0 ? 0 : linesFor(px) * lineHeight;
   const padV = phone ? 8 : 10;

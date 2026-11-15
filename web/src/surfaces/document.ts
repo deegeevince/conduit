@@ -244,7 +244,8 @@ const BRIDGE = String.raw`(function () {
   var SKIP = { SCRIPT: 1, STYLE: 1, NOSCRIPT: 1, TEMPLATE: 1, CANVAS: 1, HEAD: 1, TITLE: 1 };
   var TAP = 'button,[role=button],a[href],input:not([type=hidden]),select,textarea,summary,[onclick]';
   var FORM = 'input:not([type=hidden]):not([type=range]):not([type=checkbox]):not([type=radio]),select,textarea,button';
-  function inSvg(node) { for (var n = node; n && n !== document.body; n = n.parentNode) if (n.namespaceURI === 'http://www.w3.org/2000/svg') return true; return false; }
+  function inSvg(node) { return node.namespaceURI === 'http://www.w3.org/2000/svg'; }
+  var svgSet = [];
   function typeNow() {
     typeTimer = 0;
     if (!typeOn || !document.body) return;
@@ -254,7 +255,11 @@ const BRIDGE = String.raw`(function () {
     if (typeWatch) typeWatch.takeRecords();
     var old = document.querySelectorAll('[data-cd-fs],[data-cd-tap]');
     for (var o = 0; o < old.length; o++) { old[o].removeAttribute('data-cd-fs'); old[o].removeAttribute('data-cd-tap'); }
+    // words inside a drawing are in the drawing's own units: they are raised to the small size as shown, by the scale the drawing is drawn at (the app's own inline size is put back first)
+    for (var v = 0; v < svgSet.length; v++) { var was = svgSet[v]; if (was.now === was.el.style.getPropertyValue('font-size')) { if (was.v === '') was.el.style.removeProperty('font-size'); else was.el.style.setProperty('font-size', was.v, was.p); } }
+    svgSet = [];
     var text = [];
+    var known = new Set();
     var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
     var node;
     var seen = 0;
@@ -262,19 +267,31 @@ const BRIDGE = String.raw`(function () {
       seen++;
       var el = node.parentElement;
       if (!el || SKIP[el.tagName] || !/\S/.test(node.nodeValue)) continue;
-      if (text.indexOf(el) < 0 && !inSvg(el)) text.push(el);
+      if (!known.has(el)) { known.add(el); text.push(el); }
     }
     var forms = document.querySelectorAll(FORM);
-    for (var f = 0; f < forms.length; f++) if (text.indexOf(forms[f]) < 0) text.push(forms[f]);
+    for (var f = 0; f < forms.length; f++) if (!known.has(forms[f])) { known.add(forms[f]); text.push(forms[f]); }
     var marks = [];
+    var drawn = [];
     for (var t = 0; t < text.length; t++) {
       var style = getComputedStyle(text[t]);
       if (style.display === 'none' || style.visibility === 'hidden') continue;
-      if (parseFloat(style.fontSize) < small - 0.5) marks.push(text[t]);
+      var size = parseFloat(style.fontSize);
+      if (inSvg(text[t])) {
+        var ctm = text[t].getScreenCTM && text[t].getScreenCTM();
+        var scale = ctm ? Math.sqrt(ctm.a * ctm.a + ctm.b * ctm.b) : 0;
+        if (scale > 0 && size * scale < small - 0.5) drawn.push({ el: text[t], px: small / scale });
+      } else if (size < small - 0.5) marks.push(text[t]);
     }
     var taps = [];
-    var cands = document.querySelectorAll(TAP);
-    for (var c = 0; c < cands.length && c < 600; c++) {
+    var cands = [].slice.call(document.querySelectorAll(TAP));
+    // what the app shows to be grabbed or pressed by its pointer (a cookie to drag, a card to turn) is a target too: the outermost element of each run of such a cursor
+    var every = document.body.querySelectorAll('*');
+    for (var q = 0; q < every.length && q < 1500; q++) {
+      var cur = getComputedStyle(every[q]).cursor;
+      if ((cur === 'pointer' || cur === 'grab' || cur === 'move') && every[q].parentElement && getComputedStyle(every[q].parentElement).cursor !== cur && cands.indexOf(every[q]) < 0) cands.push(every[q]);
+    }
+    for (var c = 0; c < cands.length && c < 900; c++) {
       var box = cands[c];
       var cs = getComputedStyle(box);
       if (cs.display === 'none' || cs.visibility === 'hidden' || cs.display === 'inline' || cs.pointerEvents === 'none') continue;
@@ -282,7 +299,14 @@ const BRIDGE = String.raw`(function () {
       if (r.width > 0 && r.height > 0 && (r.width < tap - 0.5 || r.height < tap - 0.5)) taps.push(box);
     }
     for (var m = 0; m < marks.length; m++) marks[m].setAttribute('data-cd-fs', '');
+    for (var g = 0; g < drawn.length; g++) {
+      var item = drawn[g].el;
+      var px = (Math.round(drawn[g].px * 10) / 10) + 'px';
+      svgSet.push({ el: item, v: item.style.getPropertyValue('font-size'), p: item.style.getPropertyPriority('font-size'), now: px });
+      item.style.setProperty('font-size', px, 'important');
+    }
     for (var k = 0; k < taps.length; k++) taps[k].setAttribute('data-cd-tap', '');
+    if (typeWatch) typeWatch.takeRecords();
     typeBusy = false;
   }
   function typeSoon() {
