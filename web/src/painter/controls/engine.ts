@@ -34,6 +34,7 @@ import type { BlockLook, BlockPart, MeasuredText, TextSpec } from '../../contrac
 import type { ControlEngine, ControlInput, ControlKey, ControlLayout, ControlZone } from '../../contracts/controls';
 import type { Box } from '../../contracts/space';
 import { atLeast, chevron, circleLine, inflate, rectLine, segment, shapePart, textPart } from './shapes';
+import { penReady } from './pen';
 import { askOf, hasNext, lockedOf, runOf, shownAnswer } from './ask-state';
 
 const LABEL: TextSpec = { size: 'm', weight: 'normal', face: null, letterCase: 'asis', shrink: 1 };
@@ -809,7 +810,7 @@ function layoutAsk(input: ControlInput, m: Metrics): ControlLayout {
         if (on) zone(part, cell);
         x += w + m.gap * 1.5;
       };
-      const ready = ask.check === 'done' || (picks.length > 0 ? run.chosen > 0 : held.trim() !== '');
+      const ready = ask.check === 'done' || (picks.length > 0 ? run.chosen > 0 : held.trim() !== '' || (typed && penReady()));
       chip('check', ask.check === null ? ASK_WORDS.check : ASK_WORDS.done, 'primary', ready, false);
       if (run.hints < ask.hints.length) chip('hint', ask.hints.length > 1 ? `${ASK_WORDS.hint} ${run.hints + 1} of ${ask.hints.length}` : ASK_WORDS.hint, 'plain', true, run.ringed);
       if (ask.check === null && ask.accepted.length > 0 && (run.verdict === 'wrong' || run.hints > 0)) chip('show', ASK_WORDS.show, 'plain', true, false);

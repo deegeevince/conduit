@@ -1748,3 +1748,5 @@ body.work .ink-bar__words, body.work .ink-btn--send { display: none; }
 }
 .report__button--send { border-color: var(--chrome-text); font-weight: 700; }
 .report__button:disabled { opacity: 0.5; }
+.work-note { position: fixed; z-index: 60; left: 50%; bottom: max(70px, env(safe-area-inset-bottom)); transform: translateX(-50%); max-width: 80vw; padding: 10px 16px; border-radius: 18px; background: var(--chrome-ground); border: 1px solid var(--chrome-line); color: var(--chrome-text); font: 500 16px/1.3 system-ui, sans-serif; text-align: center; }
+.work-note[hidden] { display: none; }

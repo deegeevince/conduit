@@ -7,6 +7,7 @@
 
 import { accepts } from '@conduit/language';
 import type { ElementSpan, StageAsk } from '@conduit/language';
+import { penReady } from './pen';
 
 export type AskVerdict = 'open' | 'wrong' | 'right' | 'shown';
 
@@ -65,7 +66,7 @@ export function askSignature(span: ElementSpan): string {
   const ask = askOf(span);
   if (ask === null) return '';
   const run = runOf(span);
-  return `${run.verdict}.${run.tries.length}.${run.chosen}.${run.hints}.${run.ringed ? 1 : 0}.${lockedOf(span) ? 1 : 0}.${hasNext(span) ? 1 : 0}.${ask.hints.length}`;
+  return `${run.verdict}.${run.tries.length}.${run.chosen}.${run.hints}.${run.ringed ? 1 : 0}.${lockedOf(span) ? 1 : 0}.${hasNext(span) ? 1 : 0}.${ask.hints.length}.${penReady() ? 1 : 0}`;
 }
 
 export const askRevision = (): number => revision;
