@@ -38,8 +38,8 @@ export function mountSpeak(button: HTMLButtonElement, speaker: Speaker, menu: Co
     button.dataset['state'] = speaking ? 'speaking' : speaker.on ? 'on' : 'off';
     if (speaking) {
       button.innerHTML = STOP;
-      button.setAttribute('aria-label', 'Stop speaking');
-      button.title = 'Stop speaking (Read aloud stays on)';
+      button.setAttribute('aria-label', 'Stop and turn off read aloud');
+      button.title = 'Stop speaking and turn read aloud off';
     } else {
       button.innerHTML = speaker.on ? WAVES : WAVES.replace('</svg>', `${OFF}</svg>`);
       button.setAttribute('aria-label', speaker.on ? 'Read aloud: on. Press to turn off' : 'Read aloud: off. Press to turn on');
@@ -48,10 +48,8 @@ export function mountSpeak(button: HTMLButtonElement, speaker: Speaker, menu: Co
   };
 
   button.addEventListener('click', () => {
-    if (speaker.on && speaker.speaking) {
-      speaker.stop();
-      return;
-    }
+    // while it is on, one tap always turns it off (and stops what is being said): a tap that only stopped the sentence left it on, and
+    // the next line of the answer started speaking again, so it could never be turned off during an answer
     if (speaker.on) {
       speaker.setOn(false);
       return;

@@ -8,7 +8,7 @@ Newest first. Each item is something the brain can show live when asked "showcas
 - What happens to the graphics is now in the session log, so it can be seen afterwards why a screen went dark.
 
 ## Read aloud (new)
-- There is a speaker button in the message box, beside the microphone. Turn it on and Conduit reads its answers out loud as they appear: the words, the headings, the questions it asks you, and a hint when you tap it. Choices are read at the end ("You can choose: A, B or C"). Labels on a drawing, code, tables and chart numbers are never read. Tap any block of words on the screen to hear just that one. While it is speaking the button becomes a stop button.
+- There is a speaker button in the message box, beside the microphone. Turn it on and Conduit reads its answers out loud as they appear: the words, the headings, the questions it asks you, and a hint when you tap it. Choices are read at the end ("You can choose: A, B or C"). Labels on a drawing, code, tables and chart numbers are never read. Tap any block of words on the screen to hear just that one. Tap the speaker again to turn it off; that also stops anything being said.
 - It uses the voice that is already on your iPad or Mac, so nothing is sent anywhere. In the + menu, "Voice and speed" picks the voice and slow, normal or fast (slow to start with). It stops when you send a message, press Stop, record a voice note, or leave the page. Maths like "1 000 = ___ ÷ 3" is read as "1000 equals blank divided by 3".
 
 ## Voice and drawing, out of the way (live)
