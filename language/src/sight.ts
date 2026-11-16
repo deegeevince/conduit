@@ -31,6 +31,7 @@ export const SIGHT_NOTE = {
   painted: 'the painting arrived and replaced the sketch',
   unpainted: 'no painting arrived; the sketch is what was seen',
   undrawn: 'the shelf has no drawing of this subject yet: a soft placeholder stands in its place, so draw it with shapes if the picture needs it',
+  pending: 'a drawing of this subject is being made and will replace the soft placeholder in a minute or two: leave it, and do not draw it again with shapes',
   refused: 'this subject is not drawn here (a real person, a brand, a named character, or something not for a young child): a soft placeholder stands in its place',
 } as const;
 export type SightNote = keyof typeof SIGHT_NOTE;

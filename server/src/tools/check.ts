@@ -35,6 +35,7 @@ import { CHROME_CANDIDATES, repoRoot, sleep, stop, waitFor } from './explore-bro
 import { Conversation, Tab } from './smoke';
 import { LENS_SCREENS, lensGroup } from './lens-check';
 import { ASK_SCREEN, askGroup } from './ask-check';
+import { ART_FAKE_MS, ART_SCREEN, artGroup } from './art-check';
 import type { Answer, CheckResult, Options, Probe, Step, Verdict } from './smoke';
 
 // ---------------------------------------------------------------------------------------------------------------------------------
@@ -108,7 +109,7 @@ function freePort(): Promise<number> {
 }
 
 /** The server from the current build: BRAIN=replay, its own data folder and skills folder, a free port. Stopped by its handle. */
-async function startServer(): Promise<Started> {
+async function startServer(extra: Readonly<Record<string, string>> = {}): Promise<Started> {
   const root = repoRoot();
   if (!existsSync(join(root, 'web', 'dist', 'index.html'))) throw new Error('there is no build to check: run "pnpm build" first (or pass --url of a running server)');
   const scratch = await mkdtemp(join(tmpdir(), 'conduit-check-'));
@@ -129,6 +130,7 @@ async function startServer(): Promise<Started> {
       LOG_LEVEL: 'warn',
       // a faster pen than a model's, so a demo's text arrives quickly; the page's own timing is unchanged
       REPLAY_CPS: '3000',
+      ...extra,
     },
   });
   for (const stream of [child.stdout, child.stderr]) stream?.on('data', (chunk: Buffer) => (log = (log + chunk.toString()).slice(-4000)));
@@ -842,7 +844,31 @@ async function main(): Promise<void> {
       failures += 1;
       process.stdout.write(`  FAIL ask stopped: ${error instanceof Error ? error.message : String(error)}\n`);
     }
-    await writeFile(join(args.out, 'check.json'), JSON.stringify({ url: base, at: new Date().toISOString(), failures, screens: summary, lens, asks }, null, 2));
+    // the art-maker group: a server of its own whose studio has a fake maker (no model), so a drawing the shelf lacks arrives a few seconds after its placeholder
+    const arts: unknown[] = [];
+    let artServer: Started | null = null;
+    try {
+      artServer = args.url === null ? await startServer({ ART_MAKER: 'fake', ART_FAKE_MS: String(ART_FAKE_MS), ART_FAKE_STAGES: 'on' }) : null;
+      const artBase = artServer?.url ?? process.env['ART_CHECK_URL'] ?? null;
+      if (artBase === null) process.stdout.write('\nart-maker: skipped (--url was given and ART_CHECK_URL names no server with ART_MAKER=fake)\n');
+      else {
+        const scenes = await artGroup(artBase, ART_SCREEN, join(args.out, 'art-maker'), args.timeoutMs, (text) => (args.quiet ? undefined : process.stdout.write(`[art] ${text}\n`)));
+        process.stdout.write(`\nart-maker ${ART_SCREEN.name}\n`);
+        for (const scene of scenes) {
+          for (const result of scene.results) {
+            process.stdout.write(`  ${result.verdict === 'PASS' ? 'ok  ' : result.verdict} ${scene.name} ${result.check}: ${result.detail}\n`);
+            if (result.verdict === 'FAIL') failures += 1;
+          }
+        }
+        arts.push({ screen: ART_SCREEN.name, scenes });
+      }
+    } catch (error) {
+      failures += 1;
+      process.stdout.write(`  FAIL art-maker stopped: ${error instanceof Error ? error.message : String(error)}\n`);
+    } finally {
+      await artServer?.stop();
+    }
+    await writeFile(join(args.out, 'check.json'), JSON.stringify({ url: base, at: new Date().toISOString(), failures, screens: summary, lens, asks, arts }, null, 2));
   } catch (error) {
     failures += 1;
     process.stdout.write(`check: ${error instanceof Error ? error.message : String(error)}\n`);

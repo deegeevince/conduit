@@ -35,9 +35,13 @@ import type { Brain, BrainEvent, BrainRegistry, Snapshot } from './brain';
 import { DOCUMENT_LIMITS, findUrls, hostOf } from './documents';
 import type { DocumentReader } from './documents';
 import type { ImageModel } from './images';
-import { Cast, planDraw } from '../art/draw';
+import { Cast, planDraw, planSwap } from '../art/draw';
+import type { Wanting } from '../art/draw';
 import { noteArt } from '../art/notes';
 import type { Shelf } from '../art/shelf';
+import { commissionOf } from '../art/studio';
+import type { Studio, StudioEvent } from '../art/studio';
+import type { Sheet } from '../art/sheet';
 import { creditLine } from './pictures';
 import type { PictureService } from './pictures';
 import type { HeldDocument } from './documents';
@@ -92,6 +96,8 @@ export interface ConductorDeps {
   readonly pictures?: PictureService;
   /** v3 art. The shelf of finished drawings `draw` is answered from. Absent: every `draw` is a quiet placeholder. */
   readonly art?: Shelf;
+  /** v3 art. Draws what the shelf lacks, off the answer's clock. Absent or off: a miss stays a placeholder. */
+  readonly studio?: Studio;
   /** fetches the links a prompt contains */
   readonly reader: DocumentReader;
   /** what a brain is told about how its last answer landed */
@@ -167,6 +173,23 @@ function refusalOf(raw: string, issues: readonly Issue[]): { readonly raw: strin
 }
 
 
+/** v3 art. A placeholder waiting for its drawing. */
+interface PendingArt {
+  readonly wanting: Wanting;
+  /** the newest sheet made and not yet shown */
+  next: Sheet | null;
+  /** `next` is the finished drawing, not a stage of it */
+  final: boolean;
+  /** the ids of the parts on stage, once a sheet has been shown (null: the placeholder still stands) */
+  shown: readonly string[] | null;
+  delivering: boolean;
+  /** nothing more will be shown: it failed, was shown in full, or its figure was said again */
+  over: boolean;
+}
+
+/** v3 art. How long a made drawing waits for the person to stop typing and the answer to come to rest before it is left on the shelf for next time. */
+const ART_PATIENCE_MS = 120_000;
+
 /**
  * Runs conversations. It owns the two one-way streams: lines flow from a
  * brain to the painter, and the painter's back channel flows in. HTTP routes
@@ -176,6 +199,10 @@ export class Conductor {
   private readonly deps: ConductorDeps;
   /** v3 art. One casting of characters a conversation: the fox it drew stays the fox until the brain says `new`. */
   private readonly casts = new WeakMap<Session, Cast>();
+  /** v3 art. The drawings a session is waiting for, by figure id: each stands in a placeholder until its sheet is made and it is safe to swap it in. */
+  private readonly drawings = new WeakMap<Session, Map<string, PendingArt>>();
+  /** v3 art. The turns that put a made drawing in place: they are said to the page as any in-place turn, but are not "tidying" */
+  private readonly artTurns = new WeakSet<ActiveTurn>();
   private readonly waiters = new Map<string, Set<() => void>>();
   /** The technique cards that wrote a session's document (a lesson for a young learner, a recipe): they ride on every later turn of it, so the part written ahead, and the answer to a tap, are written by the same rules. */
   private readonly documentCards = new Map<string, readonly TechniqueCard[]>();
@@ -979,7 +1006,7 @@ export class Conductor {
 
         if (turn === undefined || turn.reported) return;
         turn.reported = true;
-        if (turn.input.kind === 'repair' && report.outcome === 'finished') {
+        if (turn.input.kind === 'repair' && !this.artTurns.has(turn) && report.outcome === 'finished') {
           this.deps.sessionLog.write(s.id, { type: 'pass', turn: turn.id, pass: 2, state: 'repaired', reason: null });
           this.emit(s, turn, { type: 'pass', turn: turn.id, pass: 2, state: 'repaired', reason: null });
         }
@@ -1698,9 +1725,16 @@ export class Conductor {
 
   /** Opens the repair as a turn of its own (`input.kind` `repair`, `previous` the answer it mends) and puts its lines on the page, in place. Answers its id. */
   private showRepair(s: Session, of: ActiveTurn, normalizer: LineNormalizer, outcome: RepairOutcome): string {
+    return this.showInPlace(s, of, { kind: 'repair', of: of.id }, outcome.lines, normalizer, true);
+  }
+
+  /**
+   * An in-place turn of the server's own: lines put on the stage, over the answer on it, in a turn that is logged, replayed and reported like
+   * any. A repair is one, and so is a made drawing taking the place of its placeholder (`announce` false: nothing is being tidied).
+   */
+  private showInPlace(s: Session, of: ActiveTurn, input: TurnInput, lines: readonly BrainEvent[], normalizer: LineNormalizer, announce: boolean): string {
     const { sessions, now } = this.deps;
     const brain = this.deps.brains.configured;
-    const input: TurnInput = { kind: 'repair', of: of.id };
     const turn: ActiveTurn = {
       id: sessions.nextTurnId(),
       session: s.id,
@@ -1741,9 +1775,11 @@ export class Conductor {
     sessions.indexTurn(s, turn);
     this.journal(s, { type: 'turn', turn: turn.id, input, brain: brain.id, login: turn.login });
     this.emit(s, turn, { type: 'turn', turn: turn.id, input });
-    this.emit(s, turn, { type: 'pass', turn: turn.id, pass: 2, state: 'repairing', reason: null });
-    this.deps.sessionLog.write(s.id, { type: 'pass', turn: turn.id, pass: 2, state: 'repairing', reason: null });
-    for (const event of outcome.lines) if (this.ingest(s, turn, event, normalizer, 2) === 'stop') break;
+    if (announce) {
+      this.emit(s, turn, { type: 'pass', turn: turn.id, pass: 2, state: 'repairing', reason: null });
+      this.deps.sessionLog.write(s.id, { type: 'pass', turn: turn.id, pass: 2, state: 'repairing', reason: null });
+    } else this.artTurns.add(turn);
+    for (const event of lines) if (this.ingest(s, turn, event, normalizer, 2) === 'stop') break;
     // `repaired` is said when the painter reports the repair played out (`apply`, `report`), so that "Tidied" is about the picture the person sees
     this.finish(s, turn, 'done', null);
     return turn.id;
@@ -2230,25 +2266,114 @@ export class Conductor {
     return { ok: reason === 'done', turn, lines, refused: refused.length, costUsd: cost, ms: now() - started, reason: reason === 'done' ? (amended ? 'rewritten once after a refusal' : null) : (message ?? reason) };
   }
 
-  /** v3 art. One `draw` line as the lines of a figure from the shelf, or of a placeholder; see `art/draw.ts`. */
+  /** v3 art. One `draw` line as the lines of a figure from the shelf, or of a placeholder (and, for a subject the shelf lacks, a commission); see `art/draw.ts`. */
   private drawFromShelf(s: Session, turn: ActiveTurn, line: DrawLine, normalizer: LineNormalizer, pass: number, repairing: boolean): 'stop' | undefined {
     const schedule = turn.score.schedule;
     const scene = schedule.scenes.at(-1);
     const cast = this.casts.get(s) ?? new Cast(s.id);
     this.casts.set(s, cast);
+    const canvasName = scene?.canvas ?? s.screen.canvas;
     const planned = planDraw(line, {
       shelf: this.deps.art ?? null,
       cast,
       live: new Set(schedule.elements.map((element) => element.id)),
-      canvas: CANVAS[scene?.canvas ?? s.screen.canvas],
+      canvas: CANVAS[canvasName],
+      canvasName,
       look: wearingAt(schedule, turn.score.base, schedule.pen),
     });
     this.deps.log.info('art.draw', { session: s.id, turn: turn.id, ...planned.detail });
-    if (planned.note !== null) noteArt(turn, planned.id, planned.note);
+    if (planned.note !== null) noteArt(turn, planned.id, planned.wanted === null ? planned.note : this.commissionArt(s, planned.wanted) ?? planned.note);
     for (const made of planned.lines) {
       if (this.ingest(s, turn, { type: 'line', line: made, issues: [] }, normalizer, pass, repairing) === 'stop') return 'stop';
     }
     return undefined;
+  }
+
+  /** v3 art. Asks the studio for a drawing of what the shelf lacks. The `pending` note when it will be made; null when it will not (off, at a ceiling, near the cap), and the note stays `undrawn`. */
+  private commissionArt(s: Session, wanting: Wanting): { readonly kind: 'pending'; readonly subject: string } | null {
+    const { studio, log } = this.deps;
+    if (studio === undefined) return null;
+    const pending: PendingArt = { wanting, next: null, final: false, shown: null, delivering: false, over: false };
+    const accepted = studio.commission(commissionOf(wanting.subject, wanting.words, wanting, wanting.detail), (event) => this.onArt(s, pending, event));
+    if (!accepted.ok) {
+      log.info('art.not_commissioned', { session: s.id, id: wanting.id, subject: wanting.subject, why: accepted.why });
+      return null;
+    }
+    const held = this.drawings.get(s) ?? new Map<string, PendingArt>();
+    // the same figure id said again is a new placeholder: the one before it is let go
+    const before = held.get(wanting.id);
+    if (before !== undefined) before.over = true;
+    held.set(wanting.id, pending);
+    this.drawings.set(s, held);
+    return { kind: 'pending', subject: wanting.subject };
+  }
+
+  private onArt(s: Session, pending: PendingArt, event: StudioEvent): void {
+    const { log } = this.deps;
+    if (event.kind === 'failed') {
+      pending.over = true;
+      log.info('art.left_as_placeholder', { session: s.id, id: pending.wanting.id, why: event.why });
+      return;
+    }
+    pending.next = event.sheet;
+    pending.final = event.kind === 'made';
+    void this.deliverArt(s, pending).catch((error: unknown) => log.error('art.delivery_failed', { session: s.id, id: pending.wanting.id, error }));
+  }
+
+  /** Why a made drawing cannot be put in its placeholder's place now: `gone` for good (the stage moved on), `wait` for a better moment, null when it can. */
+  private artLimit(s: Session, pending: PendingArt): { readonly state: 'gone' | 'wait'; readonly why: string } | null {
+    if (pending.over || this.deps.sessions.get(s.id) === undefined || s.abort.signal.aborted) return { state: 'gone', why: 'the session or the figure is gone' };
+    const turn = s.turn;
+    if (turn === null) return { state: 'gone', why: 'no turn is on the stage' };
+    const { id } = pending.wanting;
+    const live = (element: string): boolean => turn.score.schedule.elements.some((candidate) => candidate.id === element && candidate.exit === null);
+    // a newer scene, or a `drop`, took the placeholder: the drawing stays on the shelf for next time
+    if (!live(id) || (pending.shown === null && !live(`${id}-soft`.slice(0, 24)))) return { state: 'gone', why: 'the stage moved on' };
+    if (turn.endReason === null) return { state: 'wait', why: 'a turn is still being written' };
+    if (turn.endReason !== 'done' || !turn.reported) return { state: 'wait', why: 'the answer has not come to rest' };
+    if (s.typingUntil > this.deps.now()) return { state: 'wait', why: 'the person is typing' };
+    return null;
+  }
+
+  /** Puts the latest sheet of a drawing in its place when it is safe to, and says so in the log. One delivery at a time a figure; a newer sheet that arrives meanwhile is the one shown. */
+  private async deliverArt(s: Session, pending: PendingArt): Promise<void> {
+    if (pending.delivering) return;
+    pending.delivering = true;
+    const { log, now } = this.deps;
+    const id = pending.wanting.id;
+    try {
+      while (pending.next !== null) {
+        const patience = now() + ART_PATIENCE_MS;
+        let limit = this.artLimit(s, pending);
+        while (limit?.state === 'wait' && now() < patience) {
+          await new Promise<void>((resolve) => setTimeout(resolve, 400));
+          limit = this.artLimit(s, pending);
+        }
+        if (limit !== null) {
+          log.info('art.kept_for_later', { session: s.id, id, why: limit.why, final: pending.final });
+          return;
+        }
+        const sheet = pending.next;
+        pending.next = null;
+        const turn = this.showArt(s, pending, sheet);
+        log.info('art.shown', { session: s.id, id, turn, parts: sheet.parts.length, final: pending.final, subject: sheet.subject });
+      }
+    } finally {
+      pending.delivering = false;
+      if (pending.final && pending.next === null) pending.over = true;
+    }
+  }
+
+  /** The made drawing as an in-place turn: the placeholder leaves and the parts draw in `in=` the group that is on the stage. Answers the turn's id. */
+  private showArt(s: Session, pending: PendingArt, sheet: Sheet): string {
+    const turn = s.turn as ActiveTurn;
+    const normalizer = new LineNormalizer(() => {
+      s.nextAutoId += 1;
+      return `x${s.nextAutoId}`;
+    }, Object.keys(s.stage.styles));
+    const planned = planSwap(pending.wanting, sheet, wearingAt(turn.score.schedule, turn.score.base, turn.score.schedule.pen), pending.shown);
+    pending.shown = planned.parts;
+    return this.showInPlace(s, turn, { kind: 'repair', of: turn.id }, planned.lines.map((line) => ({ type: 'line' as const, line, issues: [] })), normalizer, false);
   }
 
   /**

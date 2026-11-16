@@ -173,7 +173,9 @@ export function createShelf(options: ShelfOptions): Shelf {
       cached = loadDir(cacheDir, 'cache', log);
       cacheStamp = now;
     }
-    return [...seeds, ...cached, ...added];
+    // a sheet this process wrote is in the cache folder too once the folder has been read again: it counts once
+    const filed = new Set(cached.map((entry) => entry.origin));
+    return [...seeds, ...cached, ...added.filter((entry) => !filed.has(entry.origin))];
   };
   const known = (sheet: Sheet): boolean => all().some((entry) => entry.sheet.subject === sheet.subject && entry.sheet.pose === sheet.pose && entry.sheet.view === sheet.view && entry.sheet.made.by === sheet.made.by && entry.sheet.made.arm === sheet.made.arm);
 

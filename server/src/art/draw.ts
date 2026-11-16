@@ -20,14 +20,34 @@ export const DEFAULT_SHARE = 0.4;
 export const DRAW_IN_SECONDS = 1;
 
 /** Why a figure was not drawn: it is not on the shelf yet, or the subject is not drawn here. */
-export type ArtNote = { readonly kind: 'undrawn'; readonly subject: string } | { readonly kind: 'refused'; readonly subject: string; readonly why: string };
+export type ArtNote = { readonly kind: 'undrawn'; readonly subject: string } | { readonly kind: 'pending'; readonly subject: string } | { readonly kind: 'refused'; readonly subject: string; readonly why: string };
 
 export interface Planned {
   readonly id: string;
   readonly lines: readonly Line[];
   readonly note: ArtNote | null;
+  /** a placeholder for a subject the shelf does not hold: what the studio is asked for, and what the swap needs to put the drawing in place */
+  readonly wanted: Wanting | null;
   /** for the log: what was asked, what was chosen */
   readonly detail: Readonly<Record<string, string | number | boolean | null>>;
+}
+
+/** What a placeholder stands for: kept until the drawing is made, so that it can be put in the placeholder's place. */
+export interface Wanting {
+  readonly id: string;
+  /** the shelf's name for the subject, and the words the brain said */
+  readonly subject: string;
+  readonly words: string;
+  readonly detail: string;
+  readonly pose: string | null;
+  readonly view: string | null;
+  readonly facing: 'left' | 'right' | null;
+  /** the side of the 100 box, canvas units */
+  readonly size: number;
+  /** the word `fill=` gave the main colour, if one */
+  readonly main: string | null;
+  /** the canvas the figure was drawn on, for the swap to check it has not moved on */
+  readonly canvas: keyof typeof CANVAS;
 }
 
 /** The conversation's casting: one character a subject, kept, and the next one when the brain says `new`. */
@@ -60,6 +80,7 @@ export interface DrawContext {
   /** ids on stage now (an id said again is the same figure) */
   readonly live: ReadonlySet<string>;
   readonly canvas: { readonly width: number; readonly height: number };
+  readonly canvasName: keyof typeof CANVAS;
   readonly look: Pick<ResolvedLook, 'preset' | 'ground' | 'ink' | 'dim' | 'accent' | 'alt'>;
 }
 
@@ -106,7 +127,8 @@ export function planDraw(line: DrawLine, context: DrawContext): Planned {
         when: { kind: 'with' },
       },
     ];
-    return { id, lines, note, detail: { ...detail, outcome: note.kind } };
+    const wanting: Wanting | null = note.kind === 'undrawn' ? { id, subject: normalised, words: subject, detail: line.detail, pose: want.pose, view: want.view, facing: want.facing, size, main: fillWord(line), canvas: context.canvasName } : null;
+    return { id, lines, note, wanted: wanting, detail: { ...detail, outcome: note.kind } };
   };
 
   const refused = refusalOf(subject, line.detail);
@@ -124,7 +146,30 @@ export function planDraw(line: DrawLine, context: DrawContext): Planned {
     main: fillWord(line),
   };
   const lines = expandSheet(sheet, { id, at, size, mirror, over: DRAW_IN_SECONDS }, dress, passed);
-  return { id, lines, note: null, detail: { ...detail, outcome: 'drawn', sheet: `${sheet.subject}/${sheet.pose}/${sheet.made.arm}`, variant: cast, of: found.sheets.length, mirrored: mirror, poseMatch: found.poseMatch, parts: sheet.parts.length } };
+  return { id, lines, note: null, wanted: null, detail: { ...detail, outcome: 'drawn', sheet: `${sheet.subject}/${sheet.pose}/${sheet.made.arm}`, variant: cast, of: found.sheets.length, mirrored: mirror, poseMatch: found.poseMatch, parts: sheet.parts.length } };
+}
+
+/**
+ * The lines that put a made drawing where its placeholder stands: the placeholder leaves, and the parts come `in=` the group that is already there,
+ * so the group's id, its place, its size and anything the brain did to it since (a `move`, a `loop=`) are kept. Pure.
+ * `first` is false for a later stage of the same drawing: the parts that are in both change into the new ones, the new ones draw in, and the ones
+ * the new stage no longer has leave (`had` says what the last stage put on stage).
+ */
+export function planSwap(wanting: Wanting, sheet: Sheet, look: DrawContext['look'], had: readonly string[] | null): { readonly lines: readonly Line[]; readonly parts: readonly string[] } {
+  const want = { facing: wanting.facing };
+  const mirror = want.facing !== null && sheet.facing !== 'front' && sheet.facing !== want.facing;
+  const dress: Dress = {
+    look: lookClassOf(look.preset as LookId, look.ground),
+    roles: { ink: look.ink, dim: look.dim, accent: look.accent, alt: look.alt, ground: look.ground },
+    main: wanting.main,
+  };
+  const made = expandSheet(sheet, { id: wanting.id, at: { x: 0, y: 0 }, size: wanting.size, mirror, over: DRAW_IN_SECONDS }, dress).slice(1);
+  const parts = made.map((line) => (line as { id: string }).id);
+  const leaving = had === null ? [`${wanting.id}-soft`.slice(0, 24)] : had.filter((id) => !parts.includes(id));
+  const lines: Line[] = [];
+  if (leaving.length > 0) lines.push({ verb: 'drop', target: { kind: 'id', id: leaving[0] as string }, ...(leaving.length > 1 ? { also: leaving.slice(1) } : {}), exit: 'fade' } as Line);
+  lines.push(...made);
+  return { lines, parts };
 }
 
 /** What a canvas of this name measures: `CANVAS[name]`. */

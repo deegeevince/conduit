@@ -13,7 +13,7 @@ export function noteArt(turn: object, id: string, note: ArtNote): void {
   NOTES.set(turn, held);
 }
 
-const NOTE_OF: Readonly<Record<ArtNote['kind'], SightNote>> = { undrawn: 'undrawn', refused: 'refused' };
+const NOTE_OF: Readonly<Record<ArtNote['kind'], SightNote>> = { undrawn: 'undrawn', pending: 'pending', refused: 'refused' };
 
 /** A report's sight with the turn's art notes on the placeholders they belong to. A turn with none gives its sight back as it was. */
 export function withArtNotes(turn: object, sight: Sight | null): Sight | null {
