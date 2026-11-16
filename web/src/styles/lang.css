@@ -169,17 +169,6 @@
   color: var(--lang-words);
 }
 
-/* The ring on the stage around what a line made (or what the pointer is over). */
-.lang-ring {
-  position: absolute;
-  z-index: 3;
-  pointer-events: none;
-  border: 2px solid var(--stage-accent);
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--stage-accent) 10%, transparent);
-  box-shadow: 0 0 0 1px var(--stage-ground);
-}
-
 @keyframes lang-in {
   from {
     opacity: 0;
