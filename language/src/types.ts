@@ -335,8 +335,6 @@ export interface StructureLine {
   readonly words?: readonly ChartWord[];
   /** a chart: the id of DATA the brief named, drawn instead of rows the brain would have to retype */
   readonly data?: string;
-  /** v2.1. A chart: one of the owner's stored datasets, drawn by reference (`data=dataset:<name> instrument=ZEC field=close`) */
-  readonly dataset?: DatasetRef;
   /** v2.1. A code block: the language, as the brain wrote it (`python`, `c++`) */
   readonly lang?: string;
   /** v2.1. A code block: the file it is from, shown as its header */
@@ -365,13 +363,6 @@ export interface StructureLine {
   /** a title the painter sets with the structure */
   readonly title?: string;
   readonly when?: When;
-}
-
-/** v2.1. A stored dataset a chart draws by reference: which table, which series in it, and which of its fields. The names are the server's and keep their case. */
-export interface DatasetRef {
-  readonly name: string;
-  readonly instrument?: string;
-  readonly field?: string;
 }
 
 /** Where a node's incoming link comes from, written `from=<id>` or `from=<id>:<label>`. */
