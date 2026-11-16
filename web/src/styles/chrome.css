@@ -1712,5 +1712,6 @@ body.work.work--ask .bar { display: block; }
 .work-button--done { left: max(14px, env(safe-area-inset-left)); top: max(14px, env(safe-area-inset-top)); }
 .work-button--ask { right: max(14px, env(safe-area-inset-right)); bottom: max(14px, env(safe-area-inset-bottom)); }
 body.work--ask .work-button--ask { bottom: auto; top: max(14px, env(safe-area-inset-top)); }
-body.work .ink-stage__bar { top: auto; bottom: 12px; left: 12px; transform: none; }
+body.work .ink-stage__bar { top: 8px; bottom: auto; left: auto; right: 12px; transform: none; max-width: calc(100% - 130px); }
+@media (max-width: 640px) { body.work .ink-stage__bar .ink-swatch:nth-of-type(n+2), body.work .ink-stage__bar .ink-bar__group + .ink-bar__group { display: none; } }
 body.work .ink-bar__words, body.work .ink-btn--send { display: none; }
