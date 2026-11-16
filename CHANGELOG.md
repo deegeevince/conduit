@@ -2,6 +2,10 @@
 
 Newest first. Each item is something the brain can show live when asked "showcase what's new": draw it, don't describe it. The server reads this file.
 
+## A wireframe you ask for comes out as a wireframe (live)
+- "Wireframe a music app clone" or "mock up a banking app" now gives a mock-up of screens you can tap through, not a live app that overflows. A live app is for something that has to run.
+- A live app laid out like a desktop product (a sidebar and a main view) is set in its own type, so its text stays inside its boxes.
+
 ## Works with ChatGPT too (not live)
 - The app can now think with your ChatGPT subscription through the Codex command line, as well as with Claude. Nothing changes here: this server stays on Claude.
 - On ChatGPT it draws, answers, looks at its own drawing and fixes it, searches the web, reads your photos and uses the canvas tools. The model picker, skills, agent mode, the critic and filling parts ahead stay with Claude. Answers arrive a message at a time rather than word by word.

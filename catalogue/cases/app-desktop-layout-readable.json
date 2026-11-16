@@ -1,0 +1,34 @@
+{
+ "id": "app-desktop-layout-readable",
+ "title": "a desktop-style live app (sidebar, main view, player bar): its text stays inside its boxes and its caption reads",
+ "family": "type-scale",
+ "owner": "painter",
+ "kind": "draw",
+ "found": "2026-11-16",
+ "note": "A wireframe of a music app was written as a live app laid out for 13 to 14 px type, and set in the stage's own large type: the logo wrapped and was cut off, labels overlapped, the player buttons were blank boxes and the caption beside it was cut off. A sidebar with a main view is a page, not a little app, and keeps its own type; a wireframe asked for is now a mock-up.",
+ "own": [
+  "no-overlap",
+  "nothing-cut-off",
+  "words-in-shapes",
+  "legible"
+ ],
+ "surface": "main",
+ "priority": "high",
+ "turns": [
+  {
+   "say": "can you help me wireframe up a spotify clone",
+   "source": {
+    "log": "20261116-133100-c5",
+    "turns": [
+     "t10"
+    ]
+   },
+   "check": [
+    {
+     "k": "words-visible",
+     "re": "wireframe"
+    }
+   ]
+  }
+ ]
+}

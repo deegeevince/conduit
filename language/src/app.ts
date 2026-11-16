@@ -47,5 +47,7 @@ export function shelfOf(asked: readonly AppShelf[] | undefined, source: string):
 
 /** Making or copying something to play or use: the thing itself is the answer, whatever recipe the library would also offer (a walk-through of steps). */
 export function asksToMakeGame(text: string): boolean {
+  // "wireframe a ... clone" is a picture of an app (the mock-up kit), unless they say it must work
+  if (ASKS_FOR_PICTURE.test(text) && !/\b(working|fully interactive|actually|really|real|interactive|usable|publish\w*)\b/i.test(text)) return false;
   return /\b(?:make|build|create|write|design|code|give\s+me)\b[^.?!]{0,40}\b(?:game|app)\b|\b(?:replicate|recreate|re-create|clone|rebuild|remake)\b/i.test(text);
 }
