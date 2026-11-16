@@ -283,6 +283,11 @@ export function fakeMaker(waitMs: number, stages = false): Maker {
       signal.addEventListener('abort', () => (clearTimeout(timer), resolve()), { once: true });
     });
   return async (_commission, hooks) => {
+    // a test rig's subject that cannot be drawn: the commission fails, with no stage first
+    if (_commission.subject === 'unmakeable') {
+      await wait(waitMs, hooks.signal);
+      throw new Error('the fake maker was told to fail');
+    }
     if (stages) {
       await wait(waitMs / 2, hooks.signal);
       if (!hooks.signal.aborted) hooks.stage(FAKE_ROUGH_SVG, 1);
