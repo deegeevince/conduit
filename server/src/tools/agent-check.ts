@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { API, EMPTY_STAGE, FULL_CAPABILITIES, LEAD_WINDOW, LOOK_IDS, NO_SERVICES, REFERENCE_SCREEN } from '@conduit/language';
 import { createClaudeCliBrain } from '../brains/claude-cli/claude-cli-brain';
-import { detailOf, gateCall, NO_AGENT, redactSecrets, riskOf, summaryOf } from '../domain/agent';
+import { detailOf, gateCall, NO_AGENT, redactSecrets, riskOf, serviceReads, summaryOf } from '../domain/agent';
 import type { AgentSettings } from '../domain/agent';
 import type { BrainEvent, TurnRequest } from '../domain/brain';
 import { newBrowserState, noteBrowserResult } from '../domain/browser';
@@ -104,6 +104,7 @@ const states = (events: BrainEvent[], tool: string): string[] => events.flatMap(
     check(got === expected, `riskOf: ${what}`, `${c.tool} -> ${got}`);
   }
   check(riskOf(call('mcp__remote__get_block', { id: '1' }), true, folder) === 'read', 'riskOf: a service read is free only when the service itself says it only reads', 'with readOnlyHint');
+  check(serviceReads({ ...NO_AGENT, services: [{ name: 'notes', config: '/x', gist: 'g', reads: ['list'] }] }, 'mcp__notes__list') && !serviceReads({ ...NO_AGENT, services: [{ name: 'notes', config: '/x', gist: 'g', reads: ['list'] }] }, 'mcp__notes__delete'), 'serviceReads: only the tools the service note names as reads', 'note');
   check(riskOf(call('mcp__mail__send_email', { to: 'a@b.c' }), true, folder) === 'send', 'riskOf: and the hint never frees what the name says sends', 'with readOnlyHint');
   const settings: AgentSettings = { enabled: true, tools: ['WebSearch'], services: [{ name: 'mail', config: '/x', gist: '' }], dir: null, answerMs: 1 };
   check(gateCall(call('Bash', { command: 'ls' }), settings, new Set(['WebSearch', 'mail'])).kind === 'deny', 'gateCall: a tool the owner did not offer is denied, not asked', 'Bash');

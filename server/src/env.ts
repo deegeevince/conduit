@@ -2,7 +2,7 @@
 
 import { skillSettingsFrom } from './skills/catalogue';
 import type { SkillSettings } from './skills/catalogue';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve as resolvePath } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parsePromptVariant, REFINE_LIMITS, REVIEW_POLICY } from '@conduit/language';
@@ -162,6 +162,25 @@ const CREDENTIAL_NAMES: readonly RegExp[] = [
   /(?:^|_)(?:API_?KEY|TOKEN|ACCESS_KEY(?:_ID)?|SECRET(?:_KEY|_ACCESS_KEY)?|PASSWORD|PASSWD|CREDENTIALS?)$/i,
 ];
 const CREDENTIAL_EXCEPTIONS: readonly string[] = ['CLAUDE_CODE_OAUTH_TOKEN'];
+
+/**
+ * A service may describe itself in a note beside its configuration file: `<config without .json>.service.json`, `{ "gist": "...", "reads": ["tool", ...] }`.
+ * `gist` is the one line `/tools` shows; `reads` names the tools that only read (a call to one runs unasked; every other call is asked for).
+ * Nothing else is taken from it, and a missing or unreadable note changes nothing.
+ */
+function serviceNote(config: string): { gist?: string; reads?: string[] } {
+  try {
+    const raw: unknown = JSON.parse(readFileSync(config.replace(/\.json$/, '') + '.service.json', 'utf8'));
+    if (typeof raw !== 'object' || raw === null) return {};
+    const { gist, reads } = raw as { gist?: unknown; reads?: unknown };
+    return {
+      ...(typeof gist === 'string' && gist.trim() !== '' ? { gist: gist.trim().slice(0, 160) } : {}),
+      ...(Array.isArray(reads) ? { reads: reads.filter((name): name is string => typeof name === 'string' && /^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(name)) } : {}),
+    };
+  } catch {
+    return {};
+  }
+}
 
 /** Whether a variable of this name is kept from every child process. Exported for the tools that print what a run will be given. */
 export function isCredentialName(name: string): boolean {
@@ -377,7 +396,10 @@ export function loadEnv(source: Source): Env {
     const config = at < 0 ? '' : resolvePath(root, item.slice(at + 1).trim());
     if (!/^[a-z][a-z0-9-]{0,31}$/.test(name) || config === '' || !existsSync(config)) problems.push(`AGENT_SERVICES entries are name=path to an MCP configuration file that exists, got "${item}"`);
     else if (config.startsWith(root)) problems.push(`AGENT_SERVICES: "${name}" is configured from inside the repository; keep ${config} outside it, it may hold a credential`);
-    else services.push({ name, config, gist: 'a connected service; asks before it acts' });
+    else {
+      const note = serviceNote(config);
+      services.push({ name, config, gist: note.gist ?? 'a connected service; asks before it acts', ...(note.reads === undefined ? {} : { reads: note.reads }) });
+    }
   }
   const agent: AgentSettings = agentOn
     ? {

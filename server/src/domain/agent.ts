@@ -32,7 +32,7 @@ export interface AgentSettings {
   /** tools of the CLI's own the owner offers, by the CLI's names (`BRAIN_TOOLS`): `WebSearch`, `WebFetch`, `Read`, `Glob`, `Grep`, … */
   readonly tools: readonly string[];
   /** connected services the owner offers (`AGENT_SERVICES`): a name, and the path of the MCP configuration file that defines it */
-  readonly services: readonly { readonly name: string; readonly config: string; readonly gist: string }[];
+  readonly services: readonly { readonly name: string; readonly config: string; readonly gist: string; /** tools the service itself says only read (its own note beside the configuration file); a call to one runs unasked */ readonly reads?: readonly string[] }[];
   /** the one folder file tools may touch (`AGENT_DIR`); the process is started in it and confined to it */
   readonly dir: string | null;
   /** ms the owner has to answer a confirm control before it is a no */
@@ -188,6 +188,12 @@ export function riskOf(call: ToolCall, readOnlyHint = false, dir: string | null 
   }
   if (service !== null && readOnlyHint && (risk === null || risk === 'write')) return 'read';
   return risk ?? 'run';
+}
+
+/** Whether the owner's own note on a connected service says this tool only reads. The service's note, never the model's word. */
+export function serviceReads(settings: AgentSettings, tool: string): boolean {
+  const { service, action } = splitTool(tool);
+  return service !== null && settings.services.some((entry) => entry.name === service && entry.reads?.includes(action) === true);
 }
 
 /** `?` and what follows is cut from a URL: a query is the commonest place for a token. */
