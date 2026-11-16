@@ -250,6 +250,22 @@ export interface PainterSnapshot {
 export type TranscriptEvent =
   | { readonly kind: 'turn'; readonly turn: string; readonly input: TurnInput }
   | { readonly kind: 'shown'; readonly key: string; readonly id: string; readonly text: string; readonly tappable: boolean; readonly replaces: string | null }
+  /**
+   * Read aloud. A line of words, or an ask, as it begins to show: told for words that stand in a card as well (the transcript tells the card once). Not told for
+   * a drawing's parts, a table's cells, code, a chart or a mock-up: none of those is a line of words to be read.
+   */
+  | {
+      readonly kind: 'said';
+      readonly key: string;
+      readonly text: string;
+      readonly tappable: boolean;
+      /** the words label a part of a drawing (`near=`): shown, not read */
+      readonly near: boolean;
+      /** an ask of the stage: its question is `text`, and a pick has these choices */
+      readonly ask?: { readonly options: readonly string[] };
+    }
+  /** a hint the person opened on an ask of the stage */
+  | { readonly kind: 'hint'; readonly key: string; readonly text: string }
   /** a diagram's words changed (its cells follow a control): what the line of `shown` for it now says */
   | { readonly kind: 'told'; readonly key: string; readonly text: string }
   | { readonly kind: 'struck'; readonly key: string }

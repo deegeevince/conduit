@@ -59,3 +59,18 @@ The script must run entirely on the machine; Conduit has no way to check that it
 ## Not done here
 
 The helper is untested under the `launchd` service (`ops/install.sh`); the dialog needs the owner at the screen for the first note, and a note sent from a phone before then is told why it cannot be read.
+
+
+## Read aloud (voice out)
+
+The other direction: Conduit reads its answers aloud with the browser's own speech (`speechSynthesis`). It runs on the device, costs nothing, uses no server and sends nothing anywhere. A voice that is not local (some browsers list voices that go to a speech service) is never used.
+
+- **The switch.** A speaker button in the message box beside the mic: on or off, remembered per device (`conduit.speak`). While a line is being spoken it shows a stop square and pressing it stops the voice (Read aloud stays on). If the device has no voice for the page's language, pressing it says so and it stays off. The first utterance is primed inside the tap (an empty one), which iOS needs; a remembered "on" is primed again on the first touch after a reload.
+- **What is read, as it begins to show:** `say` words (headings, captions, in or out of a card), an ask's question (blank read as "blank"), the choices of a pick ask and the text choices of an answer ("You can choose: A, B or C", at the end of the answer), a hint when it is opened, and in the lesson view the step she has come to, its question, its choices and a hint she opens. **Never read:** labels on a drawing (`near=`), code, a table's cells, a chart's numbers, a mock-up's contents, live apps, diagram parts, controls.
+- **Hooks (no model call, no language change).** The painter's reporter already crosses each element as the playhead reaches it; it now also tells a `said` transcript event for a line of words or a stage ask, and a `hint` event when a hint is opened (`web/src/painter/index.ts`). `chrome/speak-reader.ts` turns those into speech. The lesson view (a sandboxed frame) sends `say` and `saytap` over its bridge, which the page turns into a `conduit:say` window event.
+- **Tap to hear.** With Read aloud on, a tap on a block of words on the stage (not a choice or control) reads that block; in the lesson, a tap on words reads them.
+- **Stops.** A new message, a new answer, Stop, Escape, the page going hidden, and touching the mic (and while a recording runs) stop speech at once and drop what waited. Nothing is ever spoken over a recording.
+- **Voice and pace.** The best local voice for the page's language is used, made exact by the device's own (page `en`, device `en-AU`): the exact language beats the same language elsewhere, Premium beats Enhanced beats Siri or Natural beats plain; novelty voices are left out. [+] > Voice and speed picks another voice and slow (0.78, the start), normal or fast (1.25). Voices load late on iOS (`voiceschanged`, and asked again after 0.4, 1.2 and 3 seconds).
+- **Maths.** `chrome/speak-text.ts` says signs as words: `___` blank, `÷` divided by, `×` times, `-` between numbers minus, `=` equals, `<`, `>`, `%`, `°`, `²`, `√`, `1 000` as 1000. Long lines are spoken in sentences.
+- **Better voices on an iPad.** Settings > Accessibility > Spoken Content > Voices > English > (Australia) > download an "Enhanced" or "Premium" one. Whether Safari offers a given downloaded voice to web pages is not confirmed here.
+- **Not covered.** The older chat shell (`chat.html`) has no speaker button yet.

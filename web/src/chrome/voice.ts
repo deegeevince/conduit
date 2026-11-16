@@ -23,6 +23,8 @@ export interface Voice {
 export interface VoiceHandlers {
   /** the words came back: put them in the field (appended to what is there). `send` is true when the owner asked for voice notes to go at once. */
   readonly onWords: (text: string, send: boolean) => void;
+  /** a recording has begun or ended (read aloud is held while one runs: nothing is ever spoken over a voice note) */
+  readonly onRecording?: (recording: boolean) => void;
 }
 
 const MIC = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3"/></svg>';
@@ -179,6 +181,7 @@ export function mountVoice(button: HTMLButtonElement, pill: HTMLElement, field: 
   const sent = new WeakSet<Blob>();
 
   const view = (mode: 'field' | 'recording' | 'reading' | 'say'): void => {
+    handlers.onRecording?.(mode === 'recording');
     bar.hidden = mode === 'field';
     pill.classList.toggle('voice--busy', mode === 'recording' || mode === 'reading');
     pill.classList.toggle('voice--say', mode === 'say');

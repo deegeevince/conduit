@@ -24,6 +24,8 @@ import type { Picker } from './chrome/picker';
 import { mountPromptBar } from './chrome/prompt';
 import { mountSound } from './chrome/sound';
 import { mountTranscript } from './chrome/transcript';
+import { pageSpeaker } from './chrome/speak';
+import { mountReader } from './chrome/speak-reader';
 import type { WallRoom } from './wall/wall-room';
 import { FONTS, fontFor } from './fonts';
 import { LOOKS } from './looks';
@@ -175,6 +177,7 @@ async function start(): Promise<void> {
     onCopyAnswer: (turn) => void copyAnswer(mounted, turn),
     ...(params.wall ? { onTurnTap: (turn: string) => wall?.goTurn(turn), skipPages: true } : {}),
   });
+  mountReader(mounted.painter, pageSpeaker(), stageHost);
   stageInk = mountStageInk(stageHost, promptBar.menu, {
     upload: async (png) => (await mounted.link.uploadPhoto(png)).id,
     lastTurn: () => mounted.lastTurn(),
