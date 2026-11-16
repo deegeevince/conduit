@@ -29,6 +29,8 @@ import type { StageGraph } from './stage';
 export interface PostPipeline {
   resize(viewport: Viewport): void;
   setQuality(quality: Quality): void;
+  /** Lets go of every target the effects allocated (they are made again when next asked for): after a picture is taken, the pictures kit holds nothing. */
+  releaseTargets(): void;
   /** Clears feedback targets so the next frame inherits no picture. */
   reset(): void;
   /**
@@ -88,6 +90,9 @@ const MSAA_SAMPLES = 4;
 /** A target nothing has asked for in this many renders belongs to a look or an effect that is gone, and is let go. */
 const IDLE_RENDERS = 180;
 
+/** The most pixels the visible drawing buffer may have: 3 million is a 1024x1366 tablet at ratio 1.5, and any phone at 2. */
+const MAX_BUFFER_PIXELS = 3_000_000;
+
 /**
  * `detached` builds a pipeline that never touches the renderer's pixel ratio or the canvas size: its
  * drawing size is computed here and its picture can only go to a capture target. Warm-up kits for looks
@@ -127,7 +132,12 @@ export function createPostPipeline(renderer: WebGLRenderer, fx: FxPipeline, view
     depthWrite: false,
   });
 
-  const wantedRatio = (): number => (detached ? Math.max(0.05, current.dpr) : Math.max(0.5, Math.min(current.dpr, quality === 'lite' ? 1.25 : 2)));
+  const wantedRatio = (): number => {
+    if (detached) return Math.max(0.05, current.dpr);
+    // At most 2 (1.25 in lite), and a big screen is held to a budget of pixels, so a phone or tablet at device ratio 3 does not ask the GPU for the memory of a desktop.
+    const budget = Math.sqrt(MAX_BUFFER_PIXELS / Math.max(1, current.width * current.height));
+    return Math.max(0.5, Math.min(current.dpr, quality === 'lite' ? 1.25 : 2, Math.max(1, budget)));
+  };
 
   const apply = (): void => {
     pixelRatio = wantedRatio();
@@ -135,7 +145,8 @@ export function createPostPipeline(renderer: WebGLRenderer, fx: FxPipeline, view
       drawingSize.set(Math.max(1, Math.round(current.width * pixelRatio)), Math.max(1, Math.round(current.height * pixelRatio)));
       return;
     }
-    renderer.setPixelRatio(pixelRatio);
+    // setPixelRatio resizes the canvas by itself (at the old CSS size) and setSize does it again: so the ratio is only set when it really changes
+    if (renderer.getPixelRatio() !== pixelRatio) renderer.setPixelRatio(pixelRatio);
     renderer.setSize(current.width, current.height, false);
     renderer.getDrawingBufferSize(drawingSize);
   };
@@ -297,6 +308,8 @@ export function createPostPipeline(renderer: WebGLRenderer, fx: FxPipeline, view
       return pixelRatio;
     },
     resize(next) {
+      // the same size again (a keyboard animating, a rotation settling on where it was) must not reallocate the buffer and every target
+      if (next.width === current.width && next.height === current.height && next.dpr === current.dpr) return;
       current = next;
       apply();
       disposeTargets();
@@ -306,6 +319,10 @@ export function createPostPipeline(renderer: WebGLRenderer, fx: FxPipeline, view
       if (next === quality) return;
       quality = next;
       apply();
+      disposeTargets();
+      fx.reset(tools);
+    },
+    releaseTargets() {
       disposeTargets();
       fx.reset(tools);
     },

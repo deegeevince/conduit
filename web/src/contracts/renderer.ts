@@ -96,6 +96,9 @@ export interface Renderer {
   /** Tells the listener when the GPU context is lost, restored, rebuilt or cannot be. Absent on a renderer with no GPU context. Returns the way to stop listening. */
   readonly onContext?: (listener: (event: ContextEvent) => void) => () => void;
 
+  /** Looks at the GPU context now, and rebuilds it if it is gone. Called when the page becomes visible again. Absent on a renderer with no GPU context. */
+  readonly recheck?: () => void;
+
   /**
    * Builds the canvas or DOM inside `host` and loads fonts. Resolves only when
    * `look` is truly ready: its face is fully typeset for every character in

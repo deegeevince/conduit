@@ -50,6 +50,7 @@ export function createHook(app: Omit<StageApp, 'hook'>, ready: Promise<void>): S
     playScript: (script) => app.playScript(script),
     sight: () => app.sight(),
     capture: (maxSide) => app.capture(maxSide),
+    gpu: () => app.gpu(),
     export: (request) => app.export(request),
   };
 }

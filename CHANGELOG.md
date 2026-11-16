@@ -2,6 +2,11 @@
 
 Newest first. Each item is something the brain can show live when asked "showcase what's new": draw it, don't describe it. The server reads this file.
 
+## The screen no longer goes black on a phone (new)
+- If the phone takes the graphics away (it does when memory is short, or when you leave the page and come back), the screen now shows the page's own colour and "Bringing the drawing back..." instead of black. If the graphics cannot come back, the answer stays on the screen drawn the plain way, with no reload.
+- Phones and tablets use less memory: the drawing is made at most twice as sharp as the screen's size, the other styles are made ready only when they are first used, pen ink is kept at twice, and pictures taken of the screen are let go once taken.
+- What happens to the graphics is now in the session log, so it can be seen afterwards why a screen went dark.
+
 ## Read aloud (new)
 - There is a speaker button in the message box, beside the microphone. Turn it on and Conduit reads its answers out loud as they appear: the words, the headings, the questions it asks you, and a hint when you tap it. Choices are read at the end ("You can choose: A, B or C"). Labels on a drawing, code, tables and chart numbers are never read. Tap any block of words on the screen to hear just that one. While it is speaking the button becomes a stop button.
 - It uses the voice that is already on your iPad or Mac, so nothing is sent anywhere. In the + menu, "Voice and speed" picks the voice and slow, normal or fast (slow to start with). It stops when you send a message, press Stop, record a voice note, or leave the page. Maths like "1 000 = ___ ÷ 3" is read as "1000 equals blank divided by 3".

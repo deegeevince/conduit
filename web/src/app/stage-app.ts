@@ -12,7 +12,7 @@ import { appTokensOf } from '../painter/apps';
 import type { DocumentView as DocumentLayer } from './document-view';
 import type { LinkStatus, StageLink } from '../contracts/link';
 import type { Painter } from '../contracts/painter';
-import type { Renderer } from '../contracts/renderer';
+import type { ContextEvent, Renderer } from '../contracts/renderer';
 import type { Viewport } from '../contracts/space';
 import { createExporter } from '../export';
 import { createHttpLink } from '../link/http-link';
@@ -27,6 +27,7 @@ import { createChartEngine } from '../render/chart';
 import { createFilm } from '../painter/film';
 import { createReel, lastAnswer } from '../painter/reel';
 import { createPlainRenderer } from '../render/plain';
+import { createSwappable } from '../render/swap';
 import { canUseThree, createThreeRenderer } from '../render/three';
 import { asDataTable } from '../link/guards';
 import { createAccessLayer } from './access';
@@ -146,6 +147,8 @@ export interface StageApp {
   playScript(text: string): Promise<string>;
   sight(): Sight | null;
   capture(maxSide?: number, mime?: 'image/jpeg' | 'image/png'): Promise<string | null>;
+  /** What the GPU is holding: the renderer in use, its drawing buffer, three's own memory count; null on a renderer with no GPU. For the measurement of memory, and for tests. */
+  gpu(): { renderer: string; buffer: { width: number; height: number }; pixelRatio: number; memory: { geometries: number; textures: number; parked: number; capture: boolean }; covered: boolean } | null;
   /** Throws a sentence a person can act on when there is nothing to export yet. */
   export(request: ExportRequest): ExportJob;
   formats(): ReturnType<Exporter['formats']>;
@@ -391,6 +394,11 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   } catch (cause) {
     throw new Error(`The stage could not start: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
   }
+  // the renderer can be replaced in place (the plain one, if the GPU cannot be brought back), so what the painter holds is the swappable's
+  const swappable = createSwappable(rawRenderer);
+  rawRenderer = swappable.renderer;
+  let reportGpu: ((id: string, text: string, severity?: 'info' | 'note') => void) | null = null;
+  swappable.onQuality = (quality) => reportGpu?.('quality', `the stage drew at ${quality} quality`, quality === 'lite' ? 'note' : 'info');
   let shownSpec: object | null = null;
   let restyleDocument: (() => void) | null = null;
   let audience: Audience = readAudience();
@@ -1058,17 +1066,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     return found[found.length - 1]?.key ?? null;
   }
 
-  const offContext = renderer.onContext?.((event) => {
-    if (event === 'lost') announce('The graphics context was lost. Trying to bring the stage back.');
-    else if (event === 'restored' || event === 'rebuilt') announce('The stage is back.');
-    else {
-      // Nothing else is coming: the notice stays until the page is reloaded.
-      notice = 'The graphics could not be brought back. Reload this page with ?renderer=plain to carry on with the plain renderer.';
-      clearTimeout(noticeTimer);
-      lastStatus = '';
-      publishStatus();
-    }
-  });
+  const offContext = renderer.onContext?.((event) => gpuEvent(event));
 
   const offBack = painter.on('back', (event) => {
     // What the painter says about a page the app played for itself stays here.
@@ -1302,6 +1300,74 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
 
   // SA3: what only the page knows goes up as `observe` events, once the session exists
   const eyes = startObserver(sendBack, document, connected);
+  reportGpu = (id, text, severity) => eyes.report(id, text, severity);
+  const bufferOf = (): string => {
+    const probe = (swappable.current() as { probe?: () => { buffer: { width: number; height: number }; pixelRatio: number; memory: { geometries: number; textures: number } } }).probe?.();
+    return probe === undefined ? '' : `, buffer ${probe.buffer.width}x${probe.buffer.height} at ${probe.pixelRatio}x, ${probe.memory.geometries} geometries, ${probe.memory.textures} textures`;
+  };
+  eyes.report('renderer', `renderer ${swappable.current().id}${bufferOf()}${notes.length === 0 ? '' : `; ${notes.join('; ')}`}`);
+  /** While the GPU context is gone the canvas is black: the stage is covered in the look's own ground, with a line to say so. */
+  let cover: HTMLElement | null = null;
+  const showCover = (): void => {
+    if (cover === null) {
+      cover = document.createElement('div');
+      cover.setAttribute('data-gpu-cover', '');
+      cover.setAttribute('aria-hidden', 'true');
+      const line = document.createElement('div');
+      line.textContent = 'Bringing the drawing back\u2026';
+      cover.append(line);
+      host.append(cover);
+    }
+    const spec = (shownSpec ?? LOOKS[lockLook ?? DEFAULT_LOOK]) as LookSpec;
+    cover.style.cssText = `position:absolute;inset:0;z-index:2;display:flex;align-items:flex-end;justify-content:center;padding:0 24px calc(18% + env(safe-area-inset-bottom,0px));pointer-events:none;background:${spec.roles.ground};color:${spec.roles.dim};font:500 15px/1.4 var(--chrome-font, system-ui);text-align:center`;
+  };
+  const hideCover = (): void => {
+    cover?.remove();
+    cover = null;
+  };
+  let switching = false;
+  /** The GPU cannot be had: the plain renderer takes the stage over where it stands, with what was on it, and the page is not reloaded. */
+  const goPlain = async (): Promise<void> => {
+    if (switching || disposed) return;
+    switching = true;
+    try {
+      const plain = createPlainRenderer();
+      const next = viewportOf(host);
+      await plain.mount(host, next, observed.lastFrame()?.look ?? lockLook ?? DEFAULT_LOOK);
+      swappable.swapTo(plain, next);
+      hideCover();
+      eyes.report('renderer', 'renderer plain (switched in place after the GPU failed)', 'note');
+      announce('The stage is drawn plainly now.');
+    } catch (cause) {
+      eyes.report('renderer', `the plain renderer failed to take over: ${cause instanceof Error ? cause.message : String(cause)}`, 'note');
+      notice = 'The graphics could not be brought back. Reload this page with ?renderer=plain to carry on with the plain renderer.';
+      clearTimeout(noticeTimer);
+      lastStatus = '';
+      publishStatus();
+    } finally {
+      switching = false;
+    }
+  };
+  function gpuEvent(event: ContextEvent): void {
+    eyes.report(`gpu-${event}`, `graphics context ${event}${bufferOf()}`, event === 'failed' ? 'note' : 'info');
+    if (event === 'lost') {
+      showCover();
+      announce('The graphics context was lost. Trying to bring the stage back.');
+    } else if (event === 'restored' || event === 'rebuilt') {
+      hideCover();
+      announce('The stage is back.');
+    } else void goPlain();
+  }
+  // A page that was in the background may have had its context taken without a word: when it is shown again, the renderer looks.
+  const onVisible = (): void => {
+    const hidden = document.visibilityState === 'hidden';
+    eyes.report(hidden ? 'page-hidden' : 'page-visible', hidden ? 'the page is hidden' : 'the page is visible again');
+    if (!hidden) renderer.recheck?.();
+  };
+  document.addEventListener('visibilitychange', onVisible);
+  window.addEventListener('pageshow', (event) => {
+    if ((event as PageTransitionEvent).persisted) renderer.recheck?.();
+  });
   // v3: the server tidies an answer after the critic has judged it, never while the person is typing, and only if they allow it (`/review repair`).
   // `presence` says both: it goes up when either changes, and again every few seconds while keys keep coming.
   let typing = false;
@@ -1341,15 +1407,20 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   document.addEventListener('focusout', onTypingEnds, true);
   sendPresence();
   let resizeTimer: ReturnType<typeof setTimeout> | undefined;
+  let settled: Viewport | null = viewport;
   const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => {
     clearTimeout(resizeTimer);
+    // once per settle: a keyboard sliding in or a screen turning fires this many times, and each real change reallocates the stage's buffers
     resizeTimer = setTimeout(() => {
       if (disposed) return;
       const next = viewportOf(host);
+      const was = settled;
+      if (was !== null && was.width === next.width && was.height === next.height && was.dpr === next.dpr) return;
+      settled = next;
       painter.resize(next);
       lens?.resize();
       eyes.viewport(next.width, next.height, next.dpr);
-    }, 100);
+    }, 200);
   });
   observer?.observe(host);
 
@@ -1812,6 +1883,10 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     script: scriptText,
     answerMarkdown: (turn) => text.markdown(turn),
     sight: () => lastSight,
+    gpu() {
+      const probe = (swappable.current() as { probe?: () => { buffer: { width: number; height: number }; pixelRatio: number; memory: { geometries: number; textures: number; parked: number; capture: boolean } } }).probe?.();
+      return probe === undefined ? null : { renderer: swappable.current().id, buffer: probe.buffer, pixelRatio: probe.pixelRatio, memory: probe.memory, covered: cover !== null };
+    },
     async capture(maxSide = 768, mime = 'image/jpeg') {
       const frame = observed.lastFrame();
       if (frame === null || !renderer.capabilities.capture) return null;
@@ -1867,6 +1942,8 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
       offUpload();
       offBack();
       offContext?.();
+      document.removeEventListener('visibilitychange', onVisible);
+      cover?.remove();
       statusListeners.clear();
       exporter?.dispose();
       document.removeEventListener('pointerdown', wake, { capture: true });

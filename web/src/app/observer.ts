@@ -18,6 +18,8 @@ export interface Observer {
   viewport(width: number, height: number, dpr: number): void;
   /** a live app or another surface reported in */
   surface(id: string, note: string): void;
+  /** what the renderer and the page are doing (the GPU context, the renderer in use, the page hidden or shown), under an id of its own so two in a second are both told */
+  report(id: string, note: string, severity?: 'info' | 'note'): void;
   dispose(): void;
 }
 
@@ -125,6 +127,9 @@ export function startObserver(send: (event: BackEvent) => void, root: Document, 
     },
     surface(id, text) {
       note({ kind: 'surface', on: id, note: text, severity: 'info' });
+    },
+    report(id, text, severity = 'info') {
+      note({ kind: 'surface', on: id, note: text, severity });
     },
     dispose() {
       disposed = true;

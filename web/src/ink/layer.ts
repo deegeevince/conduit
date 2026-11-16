@@ -114,6 +114,8 @@ export interface Ink {
 
 const DEFAULT_COLORS = ['#1f2933', '#c62828', '#1565c0', '#2e7d32'] as const;
 const MAX_CANVAS_SIDE = 4096;
+/** Ink is drawn at most at twice the CSS size: at device ratio 3 that is 44% fewer pixels in each of the three canvases it keeps, and a pen line this fine is not seen to be softer. */
+const MAX_INK_RATIO = 2;
 const ERASER_CSS = 14;
 
 interface Building {
@@ -207,7 +209,7 @@ export function createInk(host: HTMLElement, options: InkOptions = {}): Ink {
     if (placement === 'flow') root.style.aspectRatio = `${space.w} / ${space.h}`;
     const w = Math.max(1, root.clientWidth);
     const h = Math.max(1, root.clientHeight);
-    const dpr = Math.min(window.devicePixelRatio || 1, MAX_CANVAS_SIDE / Math.max(w, h));
+    const dpr = Math.min(window.devicePixelRatio || 1, MAX_INK_RATIO, MAX_CANVAS_SIDE / Math.max(w, h));
     fit(w, h, dpr);
     for (const canvas of [base, live]) {
       const pw = Math.round(w * dpr);
