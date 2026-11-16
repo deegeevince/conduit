@@ -55,6 +55,8 @@ export interface PainterOptions {
    * into it. When it answers a picture, that is the snapshot (the stage under it is not what the person sees); null: nothing covers the stage.
    */
   readonly cover?: () => Promise<Blob | null>;
+  /** PLAN-canvas step 2 (`?lens=1`). A scene that would be squeezed to fit the screen is laid out on a page as tall as its content needs instead. Absent: the screen is always the page. */
+  readonly grow?: boolean;
 }
 
 /** A picture the painter has made for someone else: the app sends it to the server. */
@@ -245,6 +247,10 @@ export interface PainterSnapshot {
   readonly plan?: StagePlanView;
   /** PLAN-canvas step 0. What the scene on stage gave up to fit the screen (words let go or set smaller, blocks short of room, controls set tighter, an app scaled down), and why. Facts only. */
   readonly squeeze: Squeeze;
+  /** PLAN-canvas step 2. The page the scene is laid out on, host CSS pixels from the screen's top-left, when it has grown past the screen; absent while the screen is the page. */
+  readonly page?: Box;
+  /** PLAN-canvas step 2. Where the newest line of a grown page stands, host CSS pixels of the page (what a lens that follows keeps in view); absent otherwise. */
+  readonly follow?: Box;
   /** v2.1. The deck on stage and the slide it stands at, from 1; null or absent when what is on stage is not a deck. */
   readonly deck?: { readonly slide: number; readonly slides: number; readonly title: string } | null;
 }

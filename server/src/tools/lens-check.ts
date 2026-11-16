@@ -137,6 +137,9 @@ export function line(a: Point, b: Point, n: number): Point[] {
   return Array.from({ length: n + 1 }, (_, i) => ({ x: a.x + ((b.x - a.x) * i) / n, y: a.y + ((b.y - a.y) * i) / n }));
 }
 
+/** a lens that arrived fitted on a page that grew (the welcome on a short screen) is at rest too: only its scale differs from one */
+const grownArrival = (view: View): boolean => view.scale < 1 && view.y === 0;
+
 const near = (a: Point, b: Point, tolerance: number): boolean => Math.hypot(a.x - b.x, a.y - b.y) <= tolerance;
 
 export interface LensScene {
@@ -178,18 +181,18 @@ export async function lensGroup(base: string, screen: LensScreen, dir: string, t
     try {
       const all = await starters(tab);
       const first = await hands.lens();
-      result(results, 'lens-on', first === null ? ['the page has no lens: ?lens=1 did nothing'] : first.view !== null ? [`the lens is not at rest on arrival (${JSON.stringify(first.view)})`] : [], 'the lens is on and at rest on arrival');
+      result(results, 'lens-on', first === null ? ['the page has no lens: ?lens=1 did nothing'] : first.view !== null && !grownArrival(first.view) ? [`the lens is not at rest on arrival (${JSON.stringify(first.view)})`] : [], 'the lens is on and at rest on arrival');
       if (all.length === 0) result(results, 'lens-starters', ['no starter on stage to work'], '');
       else {
         // 1. pinch to 2x about the first starter, which then stays where it is under the fingers
-        const o = await hands.origin();
+        const start0 = first?.view?.scale ?? 1;
         const first0 = all[0] as { text: string; box: Box };
         const aim = { x: first0.box.x + first0.box.width / 2, y: first0.box.y + first0.box.height / 2 };
-        const centre = { x: o.x + aim.x, y: o.y + aim.y };
+        const centre = await hands.onScreen(aim);
         await hands.pinch(centre.x, centre.y, 100, 200);
         const zoomed = await hands.lens();
         const view = zoomed?.view ?? null;
-        result(results, 'lens-pinch', view === null || Math.abs(view.scale - 2) > 0.15 ? [`two fingers spread to twice the distance read ${view === null ? 'no lens' : `${view.scale.toFixed(2)}x`}, wanted 2x`] : zoomed?.touched !== true ? ['the lens does not know it was touched'] : [], `the lens reads ${view?.scale.toFixed(2)}x`);
+        result(results, 'lens-pinch', view === null || Math.abs(view.scale - 2 * start0) > 0.15 * start0 ? [`two fingers spread to twice the distance read ${view === null ? 'no lens' : `${view.scale.toFixed(2)}x`}, wanted 2x`] : zoomed?.touched !== true ? ['the lens does not know it was touched'] : [], `the lens reads ${view?.scale.toFixed(2)}x`);
         // the page point that was between the fingers is still between them
         const under = await hands.onPage(centre);
         result(results, 'lens-pinch-anchor', near(under, aim, 6) ? [] : [`the page point under the fingers moved to ${Math.round(under.x)},${Math.round(under.y)} from ${Math.round(aim.x)},${Math.round(aim.y)}`], 'the page point between the fingers stayed between them');
@@ -231,7 +234,7 @@ export async function lensGroup(base: string, screen: LensScreen, dir: string, t
       result(results, 'lens-pen-draws', n1 !== 1 ? [`a pen drag left ${n1} stroke(s) with Draw off, wanted 1`] : (await hands.drawToggle()) ? ['Draw was switched on by the pen'] : [], 'a pen drag drew a stroke without Draw switched on');
       // its points are the page points under the pen
       const p0 = doc1?.strokes[0]?.points[0];
-      result(results, 'lens-pen-point', p0 === undefined || !near({ x: p0[0] as number, y: p0[1] as number }, { x: a.x - o.x, y: a.y - o.y }, 3) ? [`the stroke starts at ${p0 === undefined ? 'nothing' : `${Math.round(p0[0] as number)},${Math.round(p0[1] as number)}`}, the pen went down at ${Math.round(a.x - o.x)},${Math.round(a.y - o.y)}`] : [], 'the stroke starts where the pen went down');
+      result(results, 'lens-pen-point', p0 === undefined || !near({ x: p0[0] as number, y: p0[1] as number }, await hands.onPage(a), 3) ? [`the stroke starts at ${p0 === undefined ? 'nothing' : `${Math.round(p0[0] as number)},${Math.round(p0[1] as number)}`}, the pen went down at ${Math.round(a.x - o.x)},${Math.round(a.y - o.y)}`] : [], 'the stroke starts where the pen went down');
       // the toolbar is there for what waits to be sent
       const bar = await tab.eval<boolean>(`(() => { const b = document.querySelector('.ink-stage__bar'); return !!b && !b.hidden && getComputedStyle(b).display !== 'none'; })()`);
       result(results, 'lens-pen-bar', bar ? [] : ['the ink toolbar is not shown with a stroke waiting'], 'the toolbar shows once a stroke waits');
@@ -239,7 +242,7 @@ export async function lensGroup(base: string, screen: LensScreen, dir: string, t
       const s = all[0];
       if (s === undefined) result(results, 'lens-pen-tap', ['no starter on stage'], '');
       else {
-        const at = { x: o.x + s.box.x + s.box.width / 2, y: o.y + s.box.y + s.box.height / 2 };
+        const at = await hands.onScreen({ x: s.box.x + s.box.width / 2, y: s.box.y + s.box.height / 2 });
         const before = tab.posted.length;
         await hands.pen([at, at]);
         let sent: (typeof tab.posted)[number] | undefined;
@@ -269,6 +272,8 @@ export async function lensGroup(base: string, screen: LensScreen, dir: string, t
       if (rest !== '') result(results, 'lens-rest', [rest], '');
       const controls = (): Promise<{ id: string; control: string; min: number; max: number; value: number; box: Box; parts: { part: string; box: Box }[] }[]> =>
         tab.eval('window.__stage.controls().map((c) => ({ id: c.id, control: c.control, min: c.min, max: c.max, value: c.value, box: c.box, parts: c.parts }))');
+      const startScale = (await hands.lens())?.view?.scale ?? 1;
+      const arrival = (await hands.lens())?.view ?? null;
       const slider = (await controls()).find((c) => c.control === 'slider');
       if (slider === undefined) result(results, 'lens-slider', ['no slider in the explorable demo'], '');
       else {
@@ -277,7 +282,7 @@ export async function lensGroup(base: string, screen: LensScreen, dir: string, t
         const mid = { x: o.x + track.x + track.width / 2, y: o.y + track.y + track.height / 2 };
         await hands.pinch(mid.x, mid.y, 100, 200);
         const view = (await hands.lens())?.view ?? null;
-        result(results, 'lens-pinch-demo', view === null || Math.abs(view.scale - 2) > 0.15 ? ['the pinch did not reach 2x on the explorable demo'] : [], 'the lens is at 2x');
+        result(results, 'lens-pinch-demo', view === null || Math.abs(view.scale - 2 * startScale) > 0.15 * startScale ? ['the pinch did not reach 2x on the explorable demo'] : [], 'the lens is at 2x');
         const t = (await controls()).find((c) => c.id === slider.id) as typeof slider;
         const trackNow = t.parts.find((p) => p.part === 'track')?.box ?? t.box;
         const range = t.max - t.min;
@@ -321,12 +326,74 @@ export async function lensGroup(base: string, screen: LensScreen, dir: string, t
         // 5. `0` fits again, and the stroke is where it was on the page
         await hands.key('0');
         const fitted = await hands.lens();
-        result(results, 'lens-fit-key', fitted?.view === null ? [] : [`after 0 the lens still reads ${JSON.stringify(fitted?.view)}`], 'the 0 key fits the page again');
+        result(results, 'lens-fit-key', (arrival === null ? fitted?.view === null : fitted?.view != null && Math.abs(fitted.view.scale - arrival.scale) < 0.01 && Math.abs(fitted.view.y - arrival.y) < 1) ? [] : [`after 0 the lens still reads ${JSON.stringify(fitted?.view)}`], 'the 0 key fits the page again');
         const again = (await hands.strokes())?.strokes.at(-1)?.points[0];
         result(results, 'lens-ink-stays', again === undefined || first === undefined || !near({ x: again[0] as number, y: again[1] as number }, { x: first[0] as number, y: first[1] as number }, 0.01) ? ['the stroke moved when the lens did'] : [], 'the stroke is the same page points after Fit');
         void shotName;
       }
       scenes.push({ name: 'explorable-slider-pen', picture: await shot(tab, 'explorable'), results, seconds: (Date.now() - began) / 1000 });
+    } finally {
+      await tab.close();
+    }
+  }
+  // ---------------------------------------------------------------------------------------------------------------------- grow: a long answer is a page
+  {
+    const began = Date.now();
+    const results: CheckResult[] = [];
+    note('lens: a long answer grows the page');
+    const { tab, hands, conv } = await open(false);
+    try {
+      conv.seenReports = new Set();
+      const sentences = ['A tall answer is set on a page as tall as it needs, at the size it was meant to be read.', 'Nothing shrinks, nothing is let go, and nothing is hidden behind an earlier pile.', 'The lens arrives fitted, and follows the newest line while the answer is still coming.', 'Once you have touched it, it stays where you put it until you press fit.', 'A pinch zooms in about your fingers, and a drag on the empty page moves it.', 'The choices stand at the end of the page, and a chip at the foot of the screen says so.'];
+      const body = Array.from({ length: 12 }, (_, i) => `say | ${i + 1}. ${sentences[i % sentences.length]}`);
+      const script = ['scene stack pace=brisk', 'say title | A long answer', ...body, 'say choice | Go on', 'say choice | Say it shorter', 'say choice | Show me'].join('\n');
+      const started = await tab.eval<string | null>(`Promise.resolve(window.__stage.playScript(${JSON.stringify(script)})).then(() => null, (e) => String(e && e.message || e))`);
+      const rest = started !== null ? `the script would not play: ${started}` : await conv.rest(true);
+      if (rest !== '') result(results, 'lens-grow-rest', [rest], '');
+      const state = await tab.eval<{ page?: { width: number; height: number }; squeeze: { squeezed: boolean; kinds: string[] }; elements: unknown[] }>(`(() => { const s = window.__stage.state(); return { page: s.page, squeeze: s.squeeze, elements: [] }; })()`);
+      const tall = state.page !== undefined && state.page.height > screen.height + 1;
+      result(results, 'lens-grow-page', tall ? [] : [`the page is ${state.page === undefined ? 'the screen' : `${Math.round(state.page.height)} px`}, taller than ${screen.height} was wanted`], `the page grew to ${Math.round(state.page?.height ?? 0)} px on a ${screen.height} px screen`);
+      result(results, 'lens-grow-never-squeezed', state.squeeze.squeezed ? [`squeezed: ${state.squeeze.kinds.join(', ')}`] : [], 'nothing was squeezed');
+      // the lens arrived fitted: at the floor or the whole page, from the top, and the first line is in view
+      const first = await hands.lens();
+      const view = first?.view ?? null;
+      const floor = Math.min(screen.width, screen.height) <= 600 ? 0.8 : 0.6;
+      const problems: string[] = [];
+      if (view !== null && view.scale < floor - 0.02) problems.push(`the lens is at ${view.scale.toFixed(2)}x, under the floor ${floor}`);
+      if (view !== null && view.y > 4) problems.push(`the lens arrived ${Math.round(view.y)} px down the page, not at its top`);
+      if (first?.touched === true) problems.push('the lens reads as touched on arrival');
+      result(results, 'lens-grow-fitted', problems, `the lens arrived fitted at ${view === null ? '1' : view.scale.toFixed(2)}x, from the top`);
+      const pic1 = await shot(tab, 'grow');
+      // the chip says the choices are below, and a tap on it takes the lens to them
+      const chip = await tab.eval<string | null>(`(() => { const b = document.querySelector('[data-page-chip]'); return b && !b.hidden ? b.textContent : null; })()`);
+      if (chip === null) result(results, 'lens-grow-chip', ['no "choices below" chip while the choices are out of view'], '');
+      else {
+        const box = await tab.eval<Box>(`(() => { const r = document.querySelector('[data-page-chip]').getBoundingClientRect(); return { x: r.left, y: r.top, width: r.width, height: r.height }; })()`);
+        await hands.finger([{ x: box.x + box.width / 2, y: box.y + box.height / 2 }]);
+        for (let waited = 0; waited < 3000; waited += 250) {
+          await sleep(250);
+          if (!(await tab.eval<boolean>('window.__lensMoving ? window.__lensMoving() : false'))) break;
+        }
+        const after = await tab.eval<string | null>(`(() => { const b = document.querySelector('[data-page-chip]'); return b && !b.hidden ? b.textContent : null; })()`);
+        result(results, 'lens-grow-chip', after === null ? [] : [`the chip "${after}" is still there after it was tapped`], `the "${chip}" chip took the lens to the choices`);
+      }
+      // a real tap on a choice lands, once the lens is on it
+      const choices = await starters(tab);
+      const pick = choices.find((c) => /go on|shorter|show me/i.test(c.text));
+      if (pick === undefined) result(results, 'lens-grow-tap', ['no choice on the page'], '');
+      else {
+        const at = await hands.onScreen({ x: pick.box.x + pick.box.width / 2, y: pick.box.y + pick.box.height / 2 });
+        const before = tab.posted.length;
+        await hands.finger([at]);
+        let sent: (typeof tab.posted)[number] | undefined;
+        for (let waited = 0; waited < 6000 && sent === undefined; waited += 200) {
+          sent = tab.posted.slice(before)[0];
+          if (sent === undefined) await sleep(200);
+        }
+        result(results, 'lens-grow-tap', sent === undefined ? [`a finger on "${pick.text}" at the end of the page sent nothing`] : [], `a finger on "${pick.text}" at the end of the page sent it`);
+      }
+      void pic1;
+      scenes.push({ name: 'grow-long-answer', picture: await shot(tab, 'grow-end'), results, seconds: (Date.now() - began) / 1000 });
     } finally {
       await tab.close();
     }

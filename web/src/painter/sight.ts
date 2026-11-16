@@ -179,7 +179,9 @@ export function sightOf(timeline: Timeline, schedule: Schedule, base: StageBase,
     list.push(figure);
     figureFrames.set(figure.key.split('/')[0] ?? figure.key, list);
   }
-  const screen: Rect = { x: -viewport.width / 2, y: -viewport.height / 2, w: viewport.width, h: viewport.height };
+  // a scene that has grown past the screen is judged against its own page: what stands on it is not cut off
+  const page = timeline.pageAt(restAt);
+  const screen: Rect = { x: -viewport.width / 2, y: -viewport.height / 2, w: viewport.width, h: page === null ? viewport.height : page.height };
 
   interface Entry {
     readonly element: ElementSpan;

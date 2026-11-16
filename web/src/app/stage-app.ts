@@ -13,7 +13,8 @@ import type { DocumentView as DocumentLayer } from './document-view';
 import type { LinkStatus, StageLink } from '../contracts/link';
 import type { Painter } from '../contracts/painter';
 import type { ContextEvent, Renderer } from '../contracts/renderer';
-import type { Viewport } from '../contracts/space';
+import type { Box, Viewport } from '../contracts/space';
+import type { Frame } from '../contracts/frame';
 import { createExporter } from '../export';
 import { createHttpLink } from '../link/http-link';
 import type { HttpLink } from '../link/http-link';
@@ -35,6 +36,7 @@ import { createChartHost } from './chart-host';
 import { createEarlier } from './earlier';
 import { createTextLayer } from './text-layer';
 import { createLiveApps } from './live-app';
+import { createPageChip } from './chip';
 import { createLensRenderer, createStageLens } from './lens';
 import type { StageLens } from './lens';
 import { createHook } from './hook';
@@ -406,7 +408,12 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   let audience: Audience = readAudience();
   // `?lens=1`: every frame carries the lens (the wall keeps the stage's hands to itself, and has its own camera)
   const lensRenderer = params.lens && !params.wall ? createLensRenderer(rawRenderer) : null;
+  // `?lens=1`: the page the scene is laid out on, as the last frame said (the screen's size until a scene grows past it), and what follows a page that grows
+  let framePage: Box | null = null;
+  let followFrame: ((frame: Frame) => void) | null = null;
   const observed = observeRenderer(lensRenderer === null ? rawRenderer : lensRenderer.renderer, (frame) => {
+    framePage = frame.page ?? null;
+    followFrame?.(frame);
     if (frame.spec === shownSpec) return;
     shownSpec = frame.spec;
     applyLook(host, frame.spec);
@@ -446,6 +453,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
       cover: () => documents.still(),
       pointer: pointerKind(),
       reducedMotion: params.motion === 'reduced' ? true : params.motion === 'full' ? false : null,
+      ...(lensRenderer === null ? {} : { grow: true }),
     });
   } catch (cause) {
     liveApps.dispose();
@@ -1610,6 +1618,10 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
 
   // `?lens=1`: the hands. Made after the stage's own listeners above so that the wheel is first the stage's (a scrolling controls area under it), then the lens's.
   if (lensRenderer !== null) {
+    const chip = createPageChip(host, () => {
+      const v = viewportOf(host);
+      return { width: v.width, height: v.height };
+    }, (box) => lens?.reveal(box));
     const penPress = (event: PointerEvent): void => {
       // a short Pencil tap is a press: down and up at the same place (a button acts on the up)
       const { x, y } = localPoint(event);
@@ -1631,8 +1643,9 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
       },
       pageBox: () => {
         const v = viewportOf(host);
-        return { x: 0, y: 0, width: v.width, height: v.height };
+        return framePage ?? { x: 0, y: 0, width: v.width, height: v.height };
       },
+      onView: (view) => chip.update(view),
       motion: () => (painter.snapshot().reducedMotion ? 'fade' : 'glide'),
       active: () => !documents.shown,
       keysAreMine: (target) =>
@@ -1687,6 +1700,25 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
         }
       },
     });
+    // a page that grows: the lens follows the newest line until the person has taken hold of it; the chip says the choices are at the end
+    let seen = '';
+    let scene = '';
+    let turnKey = '';
+    followFrame = (frame) => {
+      if (disposed || lens === null) return;
+      const key = `${frame.page === undefined ? 0 : Math.round(frame.page.height)}|${frame.elements.length}|${frame.clock === 'idle' ? 'rest' : 'live'}`;
+      if (key === seen) return;
+      seen = key;
+      const at = painter.snapshot();
+      // a new turn or a new scene gives the lens back to the page (the turn going quiet at its end does not)
+      if (at.turn !== null) turnKey = at.turn;
+      const here = `${turnKey}|${at.scene.id}`;
+      const fresh = here !== scene;
+      scene = here;
+      const v = viewportOf(host);
+      lens.follow({ page: frame.page ?? { x: 0, y: 0, width: v.width, height: v.height }, newest: frame.clock === 'idle' ? null : (at.follow ?? null), fresh, body: frame.bodySize, reading: at.scene.layout === 'page' });
+      chip.set({ page: at.page ?? null, foot: at.plan?.foot ?? null, newest: at.follow ?? null, free: lens.touched });
+    };
   }
 
   function getExporter(): Exporter {

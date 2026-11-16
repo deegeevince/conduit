@@ -20,7 +20,7 @@ import type { Recording } from '../contracts/film';
 import { noteArrivals as noteArrivalsInto } from './arrivals';
 import type { ElementFrame, Frame, Quality, ShapeFrame } from '../contracts/frame';
 import type { LookSpec } from '../contracts/look';
-import type { BindingView, ControlView, LineView, Painter, PainterEvents, PainterOptions, PainterSnapshot, UiMockup } from '../contracts/painter';
+import type { BindingView, ControlView, LineView, Painter, PainterEvents, PainterOptions, PainterSnapshot, StageElementView, UiMockup } from '../contracts/painter';
 import { REST_POSE } from '../contracts/space';
 import type { Box, CameraPose, Viewport } from '../contracts/space';
 import { PlayClock, pinnedWallTime } from './clock';
@@ -42,6 +42,7 @@ import type { UiSend } from './ui-stage';
 import { isFigureBlock, pressFigure } from './figure-stage';
 import { ENGINE_VERSION, measureStage } from '../engine';
 import type { EngineInputs, EngineView } from '../engine';
+import { stillSide, wholePage } from './view';
 import { buildTimeline, settledAfter, settledEnd as settledEndOf } from './timeline';
 import type { Timeline, TimelineContext, TimelineInstant } from './timeline';
 
@@ -349,7 +350,7 @@ export function createPainter(options: PainterOptions): Painter {
   const chartKinds = host === null ? [] : CHARTS_READY.filter((kind) => host.kinds.includes(kind));
   // what each live app's content asks of its frame (the app host measures it): the stage plans the app's room again when it changes
   let appHeights: ReadonlyMap<string, number> = new Map();
-  const timelineContext = (): TimelineContext => ({ viewport, reducedMotion, lockLook, paintings, onFault: noteFault, arrivals, controls: runtime, appHeights, ...(host === null || chartKinds.length === 0 ? {} : { charts: { kinds: chartKinds, data: chartData } }), ...(appHost === null ? {} : { apps: true }) });
+  const timelineContext = (): TimelineContext => ({ viewport, reducedMotion, lockLook, paintings, onFault: noteFault, arrivals, controls: runtime, appHeights, ...(host === null || chartKinds.length === 0 ? {} : { charts: { kinds: chartKinds, data: chartData } }), ...(appHost === null ? {} : { apps: true }), ...(options.grow === true ? { grow: true } : {}) });
 
   const photoAspects = new Map<string, number>();
   /** The width over the height of the picture at `url`, once the browser has read it. */
@@ -726,7 +727,7 @@ export function createPainter(options: PainterOptions): Painter {
     // a busy page) must not make the server give the whole fix up (v2.1 review, W-6). A picture that comes later is still uploaded.
     const late = setTimeout(() => report(false), DRAFT_PICTURE_MS);
     void renderer
-      .rasterise(frame, { maxSide: PICTURE_SIDE, mime: 'image/jpeg', quality: 0.8, ...stills(frame) })
+      .rasterise(wholePage(frame), { maxSide: stillSide(frame, PICTURE_SIDE), mime: 'image/jpeg', quality: 0.8, ...stills(frame) })
       .then((blob) => {
         clearTimeout(late);
         if (blob !== null && !disposed) held(() => emit('upload', { kind: 'draft', turn: open.id, pass, blob }));
@@ -749,7 +750,7 @@ export function createPainter(options: PainterOptions): Painter {
     void covering
       .then((cover) => {
         if (cover !== null) return cover;
-        return appsFresh().then(() => renderer.rasterise(frame, { maxSide: PICTURE_SIDE, mime: 'image/jpeg', quality: 0.8, ...stills(frame) }));
+        return appsFresh().then(() => renderer.rasterise(wholePage(frame), { maxSide: stillSide(frame, PICTURE_SIDE), mime: 'image/jpeg', quality: 0.8, ...stills(frame) }));
       })
       .then((blob) => {
         if (blob !== null && !disposed) emit('upload', { kind: 'snapshot', turn: turnId, blob });
@@ -1124,6 +1125,15 @@ export function createPainter(options: PainterOptions): Painter {
     return squeezeOf({ ...timeline.squeezeAt(at), apps });
   };
 
+  /** the page of a grown scene and the newest line standing on it (what a lens that follows keeps in view) */
+  const grownNow = (views: readonly StageElementView[], at: number): { page?: Box; follow?: Box } => {
+    const page = timeline.pageAt(at);
+    if (page === null) return {};
+    let newest: StageElementView | null = null;
+    for (const view of views) if (view.kind === 'text' && view.phase !== 'leaving' && view.opacity > 0.05 && view.layer === 'mid') newest = view;
+    return { page, ...(newest === null ? {} : { follow: newest.box }) };
+  };
+
   const snapshotNow = (): PainterSnapshot => {
     const reading = clock.read();
     const instant = instantOf(reading);
@@ -1171,6 +1181,7 @@ export function createPainter(options: PainterOptions): Painter {
       pass: passState === null || turn === null || passState.turn !== turn.id ? null : { pass: passState.pass, state: passState.state },
       plan: timeline.planAt(reading.playhead),
       squeeze: squeezeNow(reading.playhead),
+      ...grownNow(views, reading.playhead),
     };
   };
 
@@ -1761,7 +1772,7 @@ export function createPainter(options: PainterOptions): Painter {
         const plain: Frame = { ...at.frameAt({ time: when, ambient: 3, wallTime: pinnedWallTime(3), clock: 'paused' }), camera: REST_POSE };
         const frame = annotated(plain, at, at.schedule, when, plain.spec);
         void renderer
-          .rasterise(frame, { maxSide: PICTURE_SIDE, mime: 'image/jpeg', quality: 0.7, ...stills(frame) })
+          .rasterise(wholePage(frame), { maxSide: stillSide(frame, PICTURE_SIDE), mime: 'image/jpeg', quality: 0.7, ...stills(frame) })
           .then((blob) => {
             if (blob !== null && !disposed) emit('upload', { kind: 'look', turn: id, request, blob });
           })

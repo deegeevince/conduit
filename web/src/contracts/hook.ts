@@ -59,6 +59,8 @@ export interface StageHook {
   bindings(): readonly BindingView[];
   /** PLAN-canvas step 1 (`?lens=1`): the lens now. `view` is null at rest; `touched` once a person has moved it. Null without the flag. */
   lens(): { readonly view: import('./space').LensView | null; readonly touched: boolean } | null;
+  /** `?lens=1`: brings a point of the page into view (a box one pixel across) and answers where the screen then has it, client pixels; null without the lens. Waits for the lens to stop. */
+  reach(x: number, y: number): Promise<{ readonly x: number; readonly y: number } | null>;
   /** The controls on stage, with their values and where they are on screen. */
   controls(): readonly ControlView[];
   /**
