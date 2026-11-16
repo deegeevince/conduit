@@ -95,4 +95,5 @@ export const PRINTOUT: LookSpec = {
 
   margin: 0.07,
   furniture: { top: 0 },
+  shade: false,
 };

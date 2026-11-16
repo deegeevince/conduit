@@ -391,6 +391,7 @@ class Screen {
         Screen.add(results, 'script-lines', bad.slice(0, 3), 'every line of the script reads');
         results.push(Screen.restResult(started !== null ? `the demo would not start: ${started}` : await talk.rest(true), began));
         if (demo.name === 'explorable') await this.explorable(tab, talk, results);
+        if (demo.name === 'richness') await this.richness(tab, results);
         await this.judge(tab, talk, `demo-${demo.name}`, results, began, true, first);
         first = false;
       }
@@ -580,6 +581,17 @@ class Screen {
     } finally {
       await tab.close();
     }
+  }
+
+  /** the richness demo: the painting the renderer makes itself is on stage at rest, developed, and inked in the screenshot (it was absent from the resting picture once) */
+  private async richness(tab: Tab, results: CheckResult[]): Promise<void> {
+    const live = await tab.eval<Stage[]>('window.__stage.elements().map((e) => ({ id: e.id, kind: e.kind, text: String(e.text || ""), phase: e.phase, opacity: e.opacity, box: e.box }))');
+    const art = live.find((element) => element.kind === 'picture');
+    if (art === undefined) return void Screen.add(results, 'richness', ['the painting "art" is not on stage at rest'], '');
+    const picture = await tab.shot();
+    const marks = await tab.call<{ px: number; share: number }[]>('inkIn', picture, [{ x: art.box.x, y: art.box.y, w: art.box.width, h: art.box.height }], tab.dpr);
+    const share = marks[0]?.share ?? 0;
+    Screen.add(results, 'richness', art.opacity < 0.3 ? [`the painting is on stage but faint (opacity ${art.opacity})`] : share < 0.05 ? [`the painting's box holds almost no ink (${(share * 100).toFixed(1)}%)`] : [], `the painting shows at rest, ${(share * 100).toFixed(0)}% of its box inked`);
   }
 
   /** a slider, a toggle and a pick of the explorable demo: the drawing changes, and no request is made */

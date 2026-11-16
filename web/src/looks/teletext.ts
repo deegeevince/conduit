@@ -94,4 +94,5 @@ export const TELETEXT: LookSpec = {
 
   margin: 0.05,
   furniture: { top: 1 },
+  shade: false,
 };

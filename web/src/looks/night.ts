@@ -13,6 +13,7 @@ export const NIGHT: LookSpec = softLook({
   stroke: { thick: 0.6, wobble: 0 },
   groundAlt: null,
   hot: '#fff8e8',
+  shade: true,
   mood: {
     calm: { agitation: 0.04, dim: 0, sway: 0.003, swayPeriod: 18, lean: 0, snap: 1.35 },
     neutral: { agitation: 0.08, dim: 0, sway: 0.0025, swayPeriod: 14, lean: 0, snap: 1.15 },

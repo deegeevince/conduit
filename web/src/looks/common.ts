@@ -111,6 +111,8 @@ export interface SoftLook {
   readonly mood?: Readonly<Partial<Record<Mood, MoodCharacter>>>;
   readonly blink?: number;
   readonly margin?: number;
+  /** the painter lights the brain's shapes in this look (behind `?shade=1`) */
+  readonly shade?: boolean;
 }
 
 /**
@@ -150,5 +152,6 @@ export function softLook(look: SoftLook): LookSpec {
     mood: { ...SOFT_MOOD, ...look.mood },
     margin: look.margin ?? 0.07,
     furniture: { top: 0 },
+    shade: look.shade ?? false,
   };
 }

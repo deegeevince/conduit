@@ -181,4 +181,10 @@ export interface LookSpec {
    * in them. 0 when the look has none.
    */
   readonly furniture: { readonly top: number };
+
+  /**
+   * Whether the painter lights what the brain drew (`?shade=1`): a two-tone fill from the light overhead, a darker rim where there is no outline,
+   * and a contact shadow under a group that stands on something. On for the looks of daylight and night; off where a flat or ruled line is the idiom.
+   */
+  readonly shade: boolean;
 }
