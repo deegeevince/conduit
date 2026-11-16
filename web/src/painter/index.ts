@@ -1311,6 +1311,33 @@ export function createPainter(options: PainterOptions): Painter {
     const after = siteById(site.id) ?? now;
     if (act !== null) sayAsk(after, act);
   };
+  /**
+   * The brain put an answer the person gave (by pen marks, voice or chat) in an ask's blank (`fill <id> | <answer>`): it is held there and checked as if typed,
+   * and said the way a typed answer is (so a `send=yes` ask reports as usual). False when there is no such ask, it waits for an earlier one, or it is settled:
+   * nothing is then shown as filled.
+   */
+  const fillAsk = (id: string, text: string): boolean => {
+    const site = siteById(id);
+    const given = text.trim();
+    if (site === null || site.input.spec.ask === undefined || given === '' || askLocked(site.span)) return false;
+    if (['right', 'shown'].includes(askRun(site.span).verdict)) return false;
+    const spec = site.input.spec;
+    if (spec.control === 'pick') {
+      const n = spec.options.findIndex((option) => option.trim().toLowerCase() === given.toLowerCase()) + 1;
+      if (n === 0) return false;
+      askChoose(site.span, n);
+    } else {
+      const held = holdControl(spec, given);
+      if (held === null) return false;
+      holdValue(site, held);
+    }
+    const act = askCheck(site.span, given);
+    refreshTimeline();
+    revealOpenAsk();
+    drawNow();
+    if (act !== null) sayAsk(siteById(id) ?? site, act);
+    return act !== null;
+  };
   /** HI1. A press on a part of an ask. Nothing is checked until Check (or Enter): a hand cannot wiggle a field until it turns green. */
   const askOn = (site: ControlSite, zone: ControlSite['layout']['zones'][number]): void => {
     const span = site.span;
@@ -1631,6 +1658,7 @@ export function createPainter(options: PainterOptions): Painter {
       }
       const reading = clock.read();
       const result = open.score.push(line, seq, reading.playhead);
+      if (line.verb === 'fill') fillAsk(line.id, line.text);
       open.issues.set(seq, [...result.issues]);
       open.ack = Math.max(open.ack, seq);
       if (!open.started) startTurnState();

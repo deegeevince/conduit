@@ -102,6 +102,8 @@ export interface StageApp {
   readonly hook: StageHook;
   /** PLAN-canvas step 1, behind `?lens=1`: pinch and pan into the page. Null without the flag, and then nothing about the stage differs from before. */
   readonly lens: StageLens | null;
+  /** whether a screen point is on a part of an open ask (its blank, Check, Hint, Show me, a choice) */
+  askAt(clientX: number, clientY: number): boolean;
   /** "Show the language": the lines the page was told, as they came, and whether the pane that shows them (and a film's copy of it) is on */
   readonly lang: LangLog;
   /** where this stage's charts live; null when this build has no charting engine */
@@ -1447,6 +1449,20 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     }
     return null;
   };
+  /** Whether a screen point is on a part of an ask that is still open (its blank, Check, Hint, Show me, a choice): a short tap there is the ask's, even under the Draw layer. */
+  const askAt = (clientX: number, clientY: number): boolean => {
+    const box = host.getBoundingClientRect();
+    const at = lens === null ? { x: clientX - box.left, y: clientY - box.top } : lens.toPage(clientX - box.left, clientY - box.top);
+    return painter.snapshot().controls.some(
+      (view) =>
+        view.ask === true &&
+        view.enabled &&
+        view.askState?.locked !== true &&
+        view.askState?.verdict !== 'right' &&
+        view.askState?.verdict !== 'shown' &&
+        view.parts.some((part) => part.part !== 'whole' && at.x >= part.box.x && at.x <= part.box.x + part.box.width && at.y >= part.box.y && at.y <= part.box.y + part.box.height),
+    );
+  };
   const tappableAt = (x: number, y: number): boolean =>
     painter.snapshot().elements.some((el) => el.tappable && x >= el.box.x && x <= el.box.x + el.box.width && y >= el.box.y && y <= el.box.y + el.box.height);
   // A pen is for drawing: a pen that goes down on the stage presses nothing until it comes up again without having travelled (a tap). A stroke, which travels, is never a press,
@@ -1468,11 +1484,14 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     if (painter.pointer({ phase: 'down', x, y, pointer: event.pointerId })) {
       taken.add(event.pointerId);
       event.preventDefault();
-      try {
-        host.setPointerCapture(event.pointerId);
-      } catch {
-        // a pointer that has already gone: its up is not coming either
-        taken.delete(event.pointerId);
+      // a press handed on from under the Draw layer (`ask taps`) is not a live pointer of the host's: there is nothing to capture
+      if (event.isTrusted) {
+        try {
+          host.setPointerCapture(event.pointerId);
+        } catch {
+          // a pointer that has already gone: its up is not coming either
+          taken.delete(event.pointerId);
+        }
       }
       return;
     }
@@ -1627,6 +1646,8 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
         if (inInk(event)) {
           // the layer is over the stage: in the work mode it hands every finger on to what is under it; otherwise a finger is the ink's unless the guard says it pans
           if (document.body.classList.contains('work')) return true;
+          // a finger on an open ask's blank, Check or Hint is that ask's, not the pan's
+          if (askAt(event.clientX, event.clientY)) return true;
           return lens === null || lens.guard.peek({ kind: 'touch', id: event.pointerId, time: event.timeStamp, width: event.width, height: event.height, eraser: false, primaryButton: true }).act !== 'pan';
         }
         // a finger that goes down on a control, or on a live part of a mock-up, a stepper or a scrolling area, is that thing's: it holds the rest of the gesture
@@ -1792,6 +1813,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     painter,
     link,
     lens,
+    askAt,
     lang,
     charts: chartHost,
     apps: liveApps,

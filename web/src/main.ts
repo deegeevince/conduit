@@ -185,6 +185,14 @@ async function start(): Promise<void> {
     capture: (maxSide) => mounted.capture(maxSide),
     prompt: (words, marks) => mounted.prompt(words, [], marks),
     announce: (text) => mounted.announce(text),
+    answerBoxes: () =>
+      mounted.hook
+        .controls()
+        .filter((view) => view.ask === true && view.enabled && view.askState?.locked !== true && view.askState?.verdict !== 'right' && view.askState?.verdict !== 'shown')
+        .flatMap((view) => {
+          const box = view.parts.find((part) => part.part === 'field')?.box;
+          return box === undefined ? [] : [{ id: view.id, kind: 'answer' as const, label: view.label.slice(0, 60), box: { x: box.x, y: box.y, w: box.width, h: box.height } }];
+        }),
   }, mounted.lens === null ? {} : { guard: mounted.lens.guard });
   // ?lens=1: the pen draws on the stage without Draw, and the ink is looked through the lens
   mounted.lens?.useInk(stageInk);
@@ -201,6 +209,7 @@ async function start(): Promise<void> {
     penChanged: () => mounted.painter.penChanged(),
     problems: trackProblems(mounted.hook),
     calm: () => mounted.hook.state().reducedMotion,
+    askAt: (x, y) => mounted.askAt(x, y),
   });
   // for the browser checks (web/scripts/ink-check.mjs): the ink layer's own latency numbers
   (window as unknown as { __inkStats?: () => unknown }).__inkStats = () => stageInk?.ink.stats();

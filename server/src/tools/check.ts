@@ -13,6 +13,8 @@
 //   problems           each `problem` of language/demos/problem.series is played at its own turn: the question is on the screen exactly as written, "What do we know?"
 //                      lights its numbers, every way draws and its stepper adds a piece a step, a typed wrong then right answer is marked so (no turn sent, no model),
 //                      and nothing overlaps or is cut off
+//   ask                (tablet 1180x820 at two pixels, touch, the lens off and on) a finger tap on an ask's blank focuses its input, also under the Draw layer after a pen stroke;
+//                      a short pen tap too, a pen drag writes; `fill` puts a wrong or right answer in the blank and opens the next stage; Send drawing names the ask (ask-check.ts)
 //   lens               (flag on, ?lens=1; tablet 1180x820 at two pixels to the point with touch, and 390x844) a two-finger pinch to 2x, then a tap on a choice, a slider
 //                      drag and a pen stroke each land on the right page point; 0 fits again; the pen draws without Draw, a short pen tap presses (lens-check.ts)
 //
@@ -32,6 +34,7 @@ import { spawnTracked } from '../brains/claude-cli/process';
 import { CHROME_CANDIDATES, repoRoot, sleep, stop, waitFor } from './explore-browser';
 import { Conversation, Tab } from './smoke';
 import { LENS_SCREENS, lensGroup } from './lens-check';
+import { ASK_SCREEN, askGroup } from './ask-check';
 import type { Answer, CheckResult, Options, Probe, Step, Verdict } from './smoke';
 
 // ---------------------------------------------------------------------------------------------------------------------------------
@@ -775,7 +778,23 @@ async function main(): Promise<void> {
         process.stdout.write(`  FAIL lens ${screen.name} stopped: ${error instanceof Error ? error.message : String(error)}\n`);
       }
     }
-    await writeFile(join(args.out, 'check.json'), JSON.stringify({ url: base, at: new Date().toISOString(), failures, screens: summary, lens }, null, 2));
+    // the ask group: a staged chain worked by a finger and a pen on the tablet, and filled in by the brain's `fill` lines
+    const asks: unknown[] = [];
+    try {
+      const scenes = await askGroup(base, ASK_SCREEN, join(args.out, 'ask'), args.timeoutMs, (text) => (args.quiet ? undefined : process.stdout.write(`[ask] ${text}\n`)));
+      process.stdout.write(`\nask ${ASK_SCREEN.name} (dpr ${ASK_SCREEN.dpr}, touch)\n`);
+      for (const scene of scenes) {
+        for (const result of scene.results) {
+          process.stdout.write(`  ${result.verdict === 'PASS' ? 'ok  ' : result.verdict} ${scene.name} ${result.check}: ${result.detail}\n`);
+          if (result.verdict === 'FAIL') failures += 1;
+        }
+      }
+      asks.push({ screen: ASK_SCREEN.name, scenes });
+    } catch (error) {
+      failures += 1;
+      process.stdout.write(`  FAIL ask stopped: ${error instanceof Error ? error.message : String(error)}\n`);
+    }
+    await writeFile(join(args.out, 'check.json'), JSON.stringify({ url: base, at: new Date().toISOString(), failures, screens: summary, lens, asks }, null, 2));
   } catch (error) {
     failures += 1;
     process.stdout.write(`check: ${error instanceof Error ? error.message : String(error)}\n`);

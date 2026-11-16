@@ -2,6 +2,11 @@
 
 Newest first. Each item is something the brain can show live when asked "showcase what's new": draw it, don't describe it. The server reads this file.
 
+## Question blanks open the keyboard, and Conduit can fill them in (new)
+- Tap the blank of a question on the iPad or a phone and the keyboard now comes up. It used to open a moment too late for the iPad to allow it. It works with the drawing layer open too: a short tap with a finger or the pen on the blank, Check or Hint goes to it, and a pen drag across the blank still writes.
+- When you give an answer by writing it with the pen, by voice or in the chat, Conduit can put it in the blank for real (`fill w1 | 20`): it shows in the box, is marked right or wrong like a typed answer, and a right one opens the next step. It can fill nothing any other way.
+- "Send drawing" now tells Conduit which question's blank your writing is over.
+
 ## The screen no longer goes black on a phone (new)
 - If the phone takes the graphics away (it does when memory is short, or when you leave the page and come back), the screen now shows the page's own colour and "Bringing the drawing back..." instead of black. If the graphics cannot come back, the answer stays on the screen drawn the plain way, with no reload.
 - Phones and tablets use less memory: the drawing is made at most twice as sharp as the screen's size, the other styles are made ready only when they are first used, pen ink is kept at twice, and pictures taken of the screen are let go once taken.

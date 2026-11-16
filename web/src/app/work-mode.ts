@@ -28,6 +28,8 @@ export interface WorkModeOptions {
   readonly problems: () => readonly OnStage[];
   /** the person's setting asks for no motion */
   readonly calm: () => boolean;
+  /** whether a screen point is on a part of an open ask (its blank, Check, Hint, a choice) */
+  readonly askAt: (clientX: number, clientY: number) => boolean;
 }
 
 export interface WorkMode {
@@ -210,6 +212,41 @@ export function mountWorkMode(options: WorkModeOptions): WorkMode {
     }
   };
   for (const type of ['pointerdown', 'pointerup', 'pointermove']) ink.ink.root.addEventListener(type, through as EventListener, true);
+
+  // The Draw layer is over an ordinary stage: a short tap, by a finger or by the pen, on an open ask's blank, Check or Hint is that ask's (it goes to the
+  // stage under the layer, down and up at the same place, as the work mode hands on a finger). A pen that travels is still writing, and a finger that travels is
+  // still the layer's. The stroke the tap began is thrown away; the press is made inside the tap's own handler, so the keyboard comes up for the blank.
+  const TAP_TRAVEL = 8;
+  const TAP_MS = 800;
+  const taps = new Map<number, { readonly x: number; readonly y: number; readonly at: number; travel: number }>();
+  const askTap = (event: PointerEvent): void => {
+    if (!event.isTrusted || event.pointerType === 'mouse' || !ink.isOpen()) return;
+    if (on && stage.querySelector('.pb') !== null) return;
+    if (event.type === 'pointerdown') {
+      if ((event.target as Element | null)?.closest('.ink-bar') !== null || event.button !== 0) return;
+      if (options.askAt(event.clientX, event.clientY)) taps.set(event.pointerId, { x: event.clientX, y: event.clientY, at: event.timeStamp, travel: 0 });
+      return;
+    }
+    const down = taps.get(event.pointerId);
+    if (down === undefined) return;
+    if (event.type === 'pointermove') {
+      down.travel = Math.max(down.travel, Math.hypot(event.clientX - down.x, event.clientY - down.y));
+      return;
+    }
+    taps.delete(event.pointerId);
+    if (event.type !== 'pointerup' || Math.max(down.travel, Math.hypot(event.clientX - down.x, event.clientY - down.y)) > TAP_TRAVEL || event.timeStamp - down.at > TAP_MS) return;
+    ink.abort(event.pointerId);
+    const layer = ink.ink.root.closest<HTMLElement>('.ink-stage');
+    if (layer === null) return;
+    layer.style.pointerEvents = 'none';
+    const under = document.elementFromPoint(event.clientX, event.clientY);
+    layer.style.pointerEvents = '';
+    if (under === null) return;
+    const init = { bubbles: true, cancelable: true, composed: true, clientX: event.clientX, clientY: event.clientY, pointerId: event.pointerId, pointerType: event.pointerType, isPrimary: true, button: 0, buttons: 1 };
+    under.dispatchEvent(new PointerEvent('pointerdown', init));
+    under.dispatchEvent(new PointerEvent('pointerup', { ...init, buttons: 0 }));
+  };
+  for (const type of ['pointerdown', 'pointerup', 'pointermove', 'pointercancel']) ink.ink.root.addEventListener(type, askTap as EventListener, true);
 
   const timer = window.setInterval(() => {
     const now = signature();

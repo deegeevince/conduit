@@ -2078,7 +2078,7 @@ export function parseLine(raw: string): ParseResult {
         const target = head.words[0];
         warnUnknownPairs(head.pairs, issues);
         line = null;
-        if (target === undefined || !isValidElementId(target)) issues.error('missing-argument', 'fill needs the id of the problem: fill p1 | 12');
+        if (target === undefined || !isValidElementId(target)) issues.error('missing-argument', 'fill needs the id of the problem or ask: fill p1 | 12');
         else if (text === null || text.trim() === '') issues.error('missing-text', 'fill needs the answer after " | ": fill p1 | 12');
         else line = { verb: 'fill', id: target, text: text.trim().slice(0, 60) };
         break;
