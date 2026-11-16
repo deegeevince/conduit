@@ -12,7 +12,7 @@
 pnpm install --frozen-lockfile
 pnpm build
 BRAIN=codex-cli CODEX_MODEL=<a model from your list> \
-  HOST=127.0.0.1 PORT=4300 DATA_DIR=/path/to/data LIBRARY=seed DATASETS=none pnpm start
+  HOST=127.0.0.1 PORT=4300 DATA_DIR=/path/to/data pnpm start
 ```
 
 Settings: `CODEX_MODEL` (required), `CODEX_BIN` (default `codex`), `CODEX_TIMEOUT_MS` (a whole turn, default 180000), `CODEX_WEB` (`on`/`off`, default `on`), `BRAIN_EFFORT` (`low`, `medium`, `high`; default `low`), `PROMPT_VARIANT`, `CANVAS_TOOLS=off`. They are in `docs/runbook.md` and `.env.example`.

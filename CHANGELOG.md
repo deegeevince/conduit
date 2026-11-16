@@ -178,7 +178,7 @@ Newest first. Each item is something the brain can show live when asked "showcas
 - Controls: buttons, toggles, sliders, picks and inputs, bound to the drawing.
 - Painting media (watercolour, oil, and more) from a sketch.
 - Look and fix: the brain checks its own drawing and mends it.
-- A technique library in Remote that grows from reviews.
+- A technique library that grows from reviews.
 
 ## v1
 - The Series language streamed line by line; a persistent stage; nine looks; a back channel that tells the brain what you saw.
