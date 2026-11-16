@@ -17,6 +17,7 @@ import { installTrace } from './chrome/trace';
 import { mountAbout } from './chrome/about';
 import { DRAW_WORDS, mountStageInk } from './ink/stage';
 import { mountWorkMode } from './app/work-mode';
+import { trackProblems } from './app/problem-lines';
 import type { StageInk } from './ink/stage';
 import { mountPermission } from './chrome/permission';
 import { mountPicker } from './chrome/picker';
@@ -193,6 +194,8 @@ async function start(): Promise<void> {
     upload: async (png) => (await mounted.link.uploadPhoto(png)).id,
     read: (request) => mounted.link.readInk(request),
     penChanged: () => mounted.painter.penChanged(),
+    problems: trackProblems(mounted.hook),
+    calm: () => mounted.hook.state().reducedMotion,
   });
   // for the browser checks (web/scripts/ink-check.mjs): the ink layer's own latency numbers
   (window as unknown as { __inkStats?: () => unknown }).__inkStats = () => stageInk?.ink.stats();

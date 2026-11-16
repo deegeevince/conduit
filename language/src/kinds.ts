@@ -17,6 +17,7 @@ import type { ElementSpan } from './schedule';
 import { describeFigure } from './stage';
 import { asksForLiveApp } from './app';
 import { asksForFigure } from './figure';
+import { asksForMaths } from './problem';
 import type { Capabilities } from './wire';
 
 export type KindId = 'words' | 'choice' | 'canvas' | 'figure' | StructureKind | ControlKind;
@@ -163,6 +164,13 @@ export const LEXICON: Lexicon = {
     teach: { where: 'chapter', form: 'figure <id> [cutaway|exploded] | title', gloss: 'a labelled drawing: parts that label themselves, routes along them, and steps that light them in turn', cue: asksForFigure },
     describes: 'summary',
     describe: (element) => `figure "${element.text.trim()}"`,
+  },
+  problem: {
+    id: 'problem',
+    // taught per turn only, on its cue (a maths question, a question number, a worksheet): `PROBLEM_CHAPTER`. The stage draws all of it.
+    teach: { where: 'chapter', form: form('problem'), gloss: gist('problem'), cue: asksForMaths },
+    describes: 'summary',
+    describe: (element) => `maths question "${element.figure?.kind === 'structure' && element.figure.problem?.question ? element.figure.problem.question : element.text.trim()}"`,
   },
   flow: structure('flow', 'kernel', 'words'),
   tree: structure('tree', 'kernel', 'words'),

@@ -6,6 +6,9 @@ import type { StageInk } from '../ink/stage';
 import { exportPng } from '../ink';
 import { setPen } from '../painter/controls/pen';
 import { tryText } from './document-ink';
+import { createProblemView, problemKey } from '../painter/problem/view';
+import type { ProblemView } from '../painter/problem/view';
+import type { OnStage } from './problem-lines';
 
 export interface WorkModeOptions {
   readonly stage: HTMLElement;
@@ -21,6 +24,10 @@ export interface WorkModeOptions {
   readonly read: (request: { readonly image: string; readonly node: string; readonly ask: string; readonly question: string; readonly prompt: string }) => Promise<{ readonly lines: readonly string[] }>;
   /** the painter redraws: Check is ready now that the pen has written (or not) */
   readonly penChanged: () => void;
+  /** the maths questions on stage (`problem` lines): each takes the whole screen, drawn by the painter's problem workspace */
+  readonly problems: () => readonly OnStage[];
+  /** the person's setting asks for no motion */
+  readonly calm: () => boolean;
 }
 
 export interface WorkMode {
@@ -44,10 +51,6 @@ export function mountWorkMode(options: WorkModeOptions): WorkMode {
     return element;
   };
   const exit = button('Done', 'work-button--done', () => leave(true));
-  const asking = button('Ask', 'work-button--ask', () => {
-    const open = body.classList.toggle('work--ask');
-    asking.textContent = open ? 'Back' : 'Ask';
-  });
 
   // a short line for her when a reading did not work: it goes by itself
   const note = document.createElement('div');
@@ -72,8 +75,9 @@ export function mountWorkMode(options: WorkModeOptions): WorkMode {
         if (made === null) return null;
         const count = ink.ink.model.strokes.length;
         const image = await options.upload(made.blob);
-        const ask = options.controls().find((control) => control.ask === true)?.id ?? 'a1';
-        const read = await options.read({ image, node: '', ask, question: options.question(), prompt: '' });
+        const problem = options.problems()[0];
+        const ask = problem?.spec.id ?? options.controls().find((control) => control.ask === true)?.id ?? 'a1';
+        const read = await options.read({ image, node: '', ask, question: problem === undefined ? options.question() : problem.spec.question.replace(/_{2,}/g, '(blank)'), prompt: problem === undefined ? '' : 'She writes the number that goes in the blank.' });
         if (read.lines.length === 0) {
           say('I could not read that. Write it bigger, or type it.');
           return null;
@@ -90,33 +94,103 @@ export function mountWorkMode(options: WorkModeOptions): WorkMode {
   ink.ink.onChange(() => options.penChanged());
 
   const signature = (): string =>
+    // only a maths `problem` takes the screen: an ordinary answer that happens to hold a quiz question stays an ordinary answer
     options
-      .controls()
-      .filter((control) => control.ask === true)
-      .map((control) => control.id)
-      .sort()
+      .problems()
+      .slice(0, 1)
+      .map((entry) => `problem:${problemKey(entry.spec)}`)
       .join(',');
+
+  // a maths question takes the screen: its workspace is built once and kept, so what she did to it (tries, a picture open) survives Done and back
+  const views = new Map<string, ProblemView>();
+  let shown: ProblemView | null = null;
+  const sync = (): void => {
+    const entry = on ? (options.problems()[0] ?? null) : null;
+    if (entry === null) {
+      shown?.element.remove();
+      shown = null;
+      return;
+    }
+    const key = `${problemKey(entry.spec)}|${entry.said.join('\u0001')}`;
+    let view = views.get(key);
+    if (view === undefined) {
+      view = createProblemView({ spec: entry.spec, said: entry.said, calm: options.calm });
+      views.set(key, view);
+    }
+    if (shown !== view) {
+      shown?.element.remove();
+      shown = view;
+      stage.append(view.element);
+      view.relayout();
+    }
+    for (const fill of entry.fills) view.fill(fill.key, fill.text);
+  };
 
   function enter(): void {
     on = true;
     body.classList.add('work');
-    body.classList.remove('work--ask');
     exit.hidden = false;
-    asking.hidden = false;
-    asking.textContent = 'Ask';
     ink.show(true);
+    sync();
   }
   function leave(dismiss: boolean): void {
     if (dismiss) dismissed = signature();
     on = false;
-    body.classList.remove('work', 'work--ask');
+    body.classList.remove('work');
     exit.hidden = true;
-    asking.hidden = true;
     ink.show(false);
+    sync();
   }
 
   // a finger or a mouse goes through the layer to what is under it; the pen writes
+  // a pen that goes down on a button of the workspace presses it (a child holds a pen, not a finger): a stroke that starts on one writes nothing
+  const penPress = new Map<number, Element>();
+  const pressable = (x: number, y: number): Element | null => {
+    const layer = ink.ink.root.closest<HTMLElement>('.ink-stage');
+    if (layer === null) return null;
+    layer.style.pointerEvents = 'none';
+    const under = document.elementFromPoint(x, y)?.closest('.pb button, .pb input, .pb .pb__tok--blank') ?? null;
+    layer.style.pointerEvents = '';
+    return under;
+  };
+  // iOS raises its keyboard only for a focus made inside the gesture itself: a tap on the Type it button or on the blank focuses the real field here, in the
+  // trusted handler, and not only later in the click handler it dispatches
+  const focusTyped = (under: Element): void => {
+    if (under.closest('[data-act=type], .pb__tok--blank') === null) return;
+    const field = stage.querySelector<HTMLInputElement>('.pb__input');
+    if (field === null || field.closest('.pb')?.getAttribute('data-verdict') === 'right') return;
+    field.hidden = false;
+    field.focus({ preventScroll: true });
+  };
   const through = (event: PointerEvent): void => {
+    if (on && event.pointerType === 'pen' && event.isTrusted && stage.querySelector('.pb') !== null) {
+      if (event.type === 'pointerdown' && (event.target as Element | null)?.closest('.ink-bar') === null) {
+        const hit = pressable(event.clientX, event.clientY);
+        // the blank is the pen's: it writes there; only the buttons are pressed
+        if (hit !== null && !hit.classList.contains('pb__tok--blank')) {
+          penPress.set(event.pointerId, hit);
+          event.stopImmediatePropagation();
+          event.preventDefault();
+          return;
+        }
+      }
+      const held = penPress.get(event.pointerId);
+      if (held !== undefined) {
+        event.stopImmediatePropagation();
+        event.preventDefault();
+        if (event.type === 'pointerup') {
+          penPress.delete(event.pointerId);
+          if (held instanceof HTMLElement) {
+            if (held.tagName === 'INPUT') held.focus();
+            else {
+              held.click();
+              focusTyped(held);
+            }
+          }
+        }
+        return;
+      }
+    }
     if (!on || event.pointerType === 'pen' || !event.isTrusted) return;
     const layer = ink.ink.root.closest<HTMLElement>('.ink-stage');
     if (layer === null) return;
@@ -132,6 +206,7 @@ export function mountWorkMode(options: WorkModeOptions): WorkMode {
     if (event.type === 'pointerup') {
       under.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, clientX: event.clientX, clientY: event.clientY }));
       if (under instanceof HTMLElement && ['INPUT', 'TEXTAREA'].includes(under.tagName)) under.focus();
+      else focusTyped(under);
     }
   };
   for (const type of ['pointerdown', 'pointerup', 'pointermove']) ink.ink.root.addEventListener(type, through as EventListener, true);
@@ -140,6 +215,7 @@ export function mountWorkMode(options: WorkModeOptions): WorkMode {
     const now = signature();
     if (!on && now !== '' && now !== dismissed) enter();
     else if (on && now === '') leave(false);
+    else if (on) sync();
     if (now === '') dismissed = '';
   }, 400);
   void stage;
@@ -149,8 +225,8 @@ export function mountWorkMode(options: WorkModeOptions): WorkMode {
     dispose() {
       window.clearInterval(timer);
       exit.remove();
-      asking.remove();
       note.remove();
+      for (const view of views.values()) view.dispose();
       setPen(null);
     },
   };

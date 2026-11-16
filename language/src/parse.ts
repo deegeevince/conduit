@@ -37,6 +37,8 @@ import type {
   When,
 } from './types';
 import {
+  PROBLEM_WAYS,
+  PROBLEM_WAY_WORDS,
   ALIGNS,
   AMBIENT_KINDS,
   AMOUNTS,
@@ -1034,6 +1036,19 @@ function parseStructure(verb: StructureVerb, head: Head, text: string | null, is
     else if (key === 'field' && verb === 'chart') dataset = { ...dataset, field: pair.raw };
     else if ((key === 'lang' || key === 'language') && verb === 'code' && /^[a-z][a-z0-9+#_.-]{0,15}$/.test(value)) line.lang = value;
     else if (key === 'file' && verb === 'code' && pair.raw !== '') line.file = pair.raw.slice(0, LIMITS.file);
+    else if ((key === 'answer' || key === 'is') && verb === 'problem') line.answer = splitValues(pair.raw).filter((value) => value.length <= LESSON_LIMITS.answer).slice(0, LESSON_LIMITS.accepted);
+    else if (key === 'ways' && verb === 'problem') {
+      const wanted = value.split(/[,+]+/).filter((word) => word !== '');
+      const known = wanted.flatMap((word) => {
+        const way = PROBLEM_WAY_WORDS[word];
+        if (way === undefined) issues.warn('bad-value', `ways=${word} is not one of ${PROBLEM_WAYS.join(' | ')}; ignored`, pair.token);
+        return way === undefined ? [] : [way];
+      });
+      if (known.length > 0) line.ways = [...new Set(known)];
+    } else if (key === 'for' && verb === 'problem') {
+      if (/^[a-z]{1,16}$/.test(value)) line.for = value;
+      else issues.warn('bad-value', `for=${value} is a word such as child or adult; ignored`, pair.token);
+    }
     else if ((key === 'voice' || key === 'instrument' || key === 'sound') && verb === 'tune' && oneOf(TUNE_VOICES, value)) line.voice = value;
     else if ((key === 'voice' || key === 'instrument' || key === 'sound') && verb === 'tune') issues.warn('bad-value', `voice=${value} is not one of ${TUNE_VOICES.join(' | ')}; a piano is used`, pair.token);
     else if ((key === 'tempo' || key === 'bpm') && verb === 'tune' && /^\d+(\.\d+)?$/.test(value) && Number(value) >= TUNE_TEMPO_RANGE.min && Number(value) <= TUNE_TEMPO_RANGE.max) line.tempo = Number(value);
@@ -1784,6 +1799,8 @@ const TEXT_LIMIT: Readonly<Partial<Record<Verb, number>>> = {
   code: LIMITS.text,
   tune: LIMITS.text,
   figure: LIMITS.text,
+  problem: LIMITS.text,
+  fill: LIMITS.text,
   app: LIMITS.text,
   screen: LIMITS.text,
   deck: LIMITS.text,
@@ -1806,7 +1823,7 @@ function isControlVerb(verb: Verb): verb is ControlVerb {
 const COLON_KEYS: ReadonlySet<string> = new Set(['is', 'tag', 'pick', 'show', 'from', 'x', 'y', 'at', 'in', 'near', 'data', 'grow', 'unit', 'step', 'value', 'send', 'form', 'layout', 'canvas', 'mood', 'pace', 'align', 'clear', 'lines', 'fill', 'stroke', 'ink', 'size', 'thick', 'enter', 'exit', 'over', 'speed', 'dur', 'scale', 'rot', 'opacity', 'layer', 'loop', 'mark', 'id', 'min', 'max', 'year', 'kind', 'type']);
 
 /** Verbs whose words come after the bar; written without one, the words are found by other signs. */
-const WORDED: ReadonlySet<string> = new Set(['say', 'node', 'button', 'toggle', 'input', 'correct', 'card', 'bind', 'deck', 'standing', 'part', 'step', 'ask', 'hint', 'reply']);
+const WORDED: ReadonlySet<string> = new Set(['fill', 'say', 'node', 'button', 'toggle', 'input', 'correct', 'card', 'bind', 'deck', 'standing', 'part', 'step', 'ask', 'hint', 'reply']);
 
 const ARROW = /\s(?:->|-->|=>|→)\s/;
 const RANGE = /^(-?\d+(?:\.\d+)?)[-–—](\d+(?:\.\d+)?)$/;
@@ -1893,6 +1910,15 @@ export function parseLine(raw: string): ParseResult {
   source = unwrap(source.replace(/^(?:[-*•]|\d+[.)])\s+(?=[a-zA-Z])/, ''));
 
   let pipe = barOf(source);
+  // a problem's answers may be written with spaces or quotes inside (`answer=250,two hundred fifty`, `answer="3000,3 000"`): a space inside the value is a `_`
+  if (pipe >= 0 && /^problem\b/i.test(source)) {
+    const head = source.slice(0, pipe);
+    const tidy = head.replace(/\b(answer|is)=("[^"]*"|“[^”]*”|.*?)(?=\s+[a-z]+=|\s*$)/i, (_all, key: string, value: string) => `${key}=${value.replace(/["“”]/g, '').split(',').map((part) => part.trim().replace(/\s+/g, '_')).filter((part) => part !== '').join(',')}`);
+    if (tidy !== head) {
+      source = `${tidy.trimEnd()} ${source.slice(pipe)}`;
+      pipe = barOf(source);
+    }
+  }
   // `a -> b | then`: an arrow between two ids is a link.
   const shorthand = /^([a-z][a-z0-9_-]*)\s*(?:->|-->|=>|→)\s*([a-z][a-z0-9_-]*)(.*)$/i.exec(source);
   if (shorthand?.[1] !== undefined && shorthand[2] !== undefined && !oneOf(VERBS, shorthand[1].toLowerCase()) && isValidElementId(shorthand[1].toLowerCase())) {
@@ -2070,6 +2096,15 @@ export function parseLine(raw: string): ParseResult {
       case 'cancel':
         line = parseCancel(head, issues);
         break;
+      case 'fill': {
+        const target = head.words[0];
+        warnUnknownPairs(head.pairs, issues);
+        line = null;
+        if (target === undefined || !isValidElementId(target)) issues.error('missing-argument', 'fill needs the id of the problem: fill p1 | 12');
+        else if (text === null || text.trim() === '') issues.error('missing-text', 'fill needs the answer after " | ": fill p1 | 12');
+        else line = { verb: 'fill', id: target, text: text.trim().slice(0, 60) };
+        break;
+      }
     }
   }
 

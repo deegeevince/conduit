@@ -184,6 +184,8 @@ export type Figure =
       readonly marks?: readonly TableMark[];
       /** FG2. A figure: `cutaway` or `exploded`; absent or null: plain. Its parts, routes and steps are its rows, one line each. */
       readonly mode?: 'cutaway' | 'exploded' | null;
+      /** A problem: the question exactly as given, what it accepts, and the ways it was asked to offer; the stage draws the rest */
+      readonly problem?: { readonly question: string; readonly answer: readonly string[]; readonly ways: readonly string[] | null; readonly for: string } | null;
       /** v2.1. A code block: its language as the brain wrote it, and the file it is from; absent or null: none */
       readonly lang?: string | null;
       readonly file?: string | null;
@@ -1273,6 +1275,7 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
         bars: line.verb === 'table' && line.bars === true,
         ...(line.verb === 'code' && { lang: line.lang ?? null, file: line.file ?? null }),
         ...(line.verb === 'figure' && { mode: line.mode ?? null }),
+        ...(line.verb === 'problem' && { problem: { question: line.title ?? '', answer: line.answer ?? [], ways: line.ways ?? null, for: line.for ?? 'child' } }),
         ...(line.verb === 'tune' && { tempo: line.tempo ?? null, voice: line.voice ?? DEFAULT_TUNE_VOICE, sealed: null }),
         ...(line.verb === 'app' && { height: line.height ?? null, sealed: null, ...((line.uses?.length ?? 0) > 0 && { uses: line.uses }) }),
         box: line.box ?? null,
@@ -1775,6 +1778,7 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
       case 'step':
       case 'reply':
       case 'end':
+      case 'fill':
         // The words of the document and its lessons (v3, lesson.ts). They put nothing on a painted stage and take no time: the document keeps them.
         lines.push({ seq, verb: line.verb, start: pen, end: pen });
         break;
@@ -1802,6 +1806,7 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
       case 'tune':
       case 'app':
       case 'figure':
+      case 'problem':
       case 'screen':
       case 'pic':
       case 'node':

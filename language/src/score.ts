@@ -266,6 +266,7 @@ function revised(origin: Line, change: ReviseLine): Line | null {
     case 'tune':
     case 'app':
     case 'figure':
+    case 'problem':
     case 'screen':
       // The words of a structure or a card are its title.
       return { ...origin, styles: styles ?? origin.styles, props: { ...origin.props, ...change.props }, ...(change.text !== undefined && { title: change.text }) };
@@ -295,6 +296,7 @@ function revised(origin: Line, change: ReviseLine): Line | null {
     case 'hint':
     case 'reply':
     case 'end':
+    case 'fill':
       return null;
     default:
       // Anything drawn can be restyled before it is seen; its geometry is changed by declaring it again.

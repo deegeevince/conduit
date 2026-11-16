@@ -226,6 +226,30 @@ export interface Normalized {
  * The server runs this once per line before scheduling and forwarding, so the
  * painter only ever receives explicit lines and never needs one.
  */
+/**
+ * A run of three or more underscores in plain words is a fake blank: it looks like somewhere to write and is not. It is shown as a short line instead, and
+ * the brain is told where a real blank comes from (a `problem` for a maths question, an `ask` for a question to answer). Only words are scrubbed: code,
+ * a tune, an app and the question of a `problem` are taken exactly.
+ */
+const FAKE_BLANK = /_{3,}/g;
+function scrubBlanks(line: Line): { readonly line: Line; readonly issues: Issue[] } | null {
+  const issue: Issue = { code: 'bad-value', severity: 'warn', message: 'a run of underscores is not a blank and was shown as a short line: a maths question is a `problem` line, a question to answer an `ask`' };
+  if ((line.verb === 'say' || line.verb === 'correct' || line.verb === 'node') && typeof line.text === 'string' && FAKE_BLANK.test(line.text)) {
+    FAKE_BLANK.lastIndex = 0;
+    return { line: { ...line, text: line.text.replace(FAKE_BLANK, '–') } as Line, issues: [issue] };
+  }
+  FAKE_BLANK.lastIndex = 0;
+  if (line.verb === 'card' && line.title !== undefined && FAKE_BLANK.test(line.title)) {
+    FAKE_BLANK.lastIndex = 0;
+    return { line: { ...line, title: line.title.replace(FAKE_BLANK, '–') }, issues: [issue] };
+  }
+  FAKE_BLANK.lastIndex = 0;
+  return null;
+}
+
+/** What may follow a `problem` in its scene: more problems, the hints written for them, and what is no performance */
+const PROBLEM_COMPANY: ReadonlySet<string> = new Set(['problem', 'fill', 'hint', 'style', 'color', 'look', 'standing', 'reply', 'refine', 'end', 'wait']);
+
 export class LineNormalizer {
   private readonly makeId: () => string;
   private readonly styles: Set<string>;
@@ -286,7 +310,26 @@ export class LineNormalizer {
     return { line: { ...line, id: open.id, cells: text }, issues };
   }
 
+  /** A maths question stands on the scene being written: it is the whole screen, so what else the brain writes in the scene is dropped (and told so) */
+  private problemScene = false;
+
   normalize(line: Line): Normalized {
+    const scrubbed = scrubBlanks(line);
+    if (scrubbed !== null) {
+      const inner = this.normalizeLine(scrubbed.line);
+      return { line: inner.line, issues: [...scrubbed.issues, ...inner.issues] };
+    }
+    return this.normalizeLine(line);
+  }
+
+  private normalizeLine(line: Line): Normalized {
+    if (line.verb === 'scene') this.problemScene = false;
+    else if (this.problemScene && !PROBLEM_COMPANY.has(line.verb)) {
+      return { line: null, issues: [{ code: 'no-structure', severity: 'warn', message: `a maths question is the whole screen and draws everything itself: "${line.verb}" was dropped (write the problem line alone)` }] };
+    }
+    if (line.verb === 'problem') this.problemScene = true;
+    // a hint written for a question the painter cannot read: kept as written (the plain workspace says it when Hint is tapped), never held to an ask
+    if (line.verb === 'hint' && this.problemScene) return { line, issues: [] };
     switch (line.verb) {
       case 'style':
         this.styles.add(line.name);
@@ -379,13 +422,15 @@ export class LineNormalizer {
       case 'code':
       case 'tune':
       case 'figure':
+      case 'problem':
       case 'app': {
         const id = line.id === '-' ? this.makeId() : line.id;
         this.sprite = null;
         this.ui = null;
         this.figureId = line.verb === 'figure' ? id : null;
         this.figureRows = 0;
-        if (STRUCTURE[line.verb].parts === 'rows') this.table = id;
+        // a problem is one line, complete in itself: nothing follows it as its rows
+        this.table = line.verb === 'problem' ? null : STRUCTURE[line.verb].parts === 'rows' ? id : this.table;
         // A chart takes rows and, as its marks, nodes; a table takes rows only.
         if (STRUCTURE[line.verb].parts === 'nodes' || line.verb === 'chart') this.structure = id;
         // SA5. A room on a structure's opening line is the brain placing by guess: the stage gives the room.

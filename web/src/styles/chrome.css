@@ -1693,7 +1693,7 @@ input {
 }
 
 /* The work mode (web/src/app/work-mode.ts): a question to work out fills the screen; the composer steps back to an Ask button. */
-/* The message box stays where it always is: a person can always type, whatever is on the stage. */
+/* the message box stays where it is, so a person can always type: only a maths problem takes the rest of the screen */
 body.work .work-button--ask { display: none; }
 .work-button {
   position: fixed;
@@ -1710,8 +1710,6 @@ body.work .work-button--ask { display: none; }
 }
 .work-button[hidden] { display: none; }
 .work-button--done { left: max(14px, env(safe-area-inset-left)); top: max(14px, env(safe-area-inset-top)); }
-.work-button--ask { right: max(14px, env(safe-area-inset-right)); bottom: max(14px, env(safe-area-inset-bottom)); }
-body.work--ask .work-button--ask { bottom: auto; top: max(14px, env(safe-area-inset-top)); }
 body.work .ink-stage__bar { top: 8px; bottom: auto; left: auto; right: 12px; transform: none; max-width: calc(100% - 130px); }
 @media (max-width: 640px) { body.work .ink-stage__bar .ink-swatch:nth-of-type(n+2), body.work .ink-stage__bar .ink-bar__group + .ink-bar__group { display: none; } }
 body.work .ink-bar__words, body.work .ink-btn--send { display: none; }

@@ -62,6 +62,7 @@ export function describeFigure(figure: Figure, box: CanvasBox | null = null): st
         const parts = figure.rows.filter((row) => !/^(screen|end)\b/.test(row.cells[0] ?? '')).length;
         return `mock-up of ${screens.length} screen${screens.length === 1 ? '' : 's'} (${screens.map((m) => `${m[1] ?? ''} ${m[2] ?? ''}${m[3] === undefined || m[3] === '' ? '' : ` "${m[3]}"`}`).join(', ')}), ${parts} parts`;
       }
+      if (figure.structure === 'problem') return `maths question${figure.problem?.question === undefined || figure.problem.question === '' ? '' : ` "${figure.problem.question}"`}`;
       if (figure.structure === 'figure') {
         const read = readFigure('', '', figure.mode ?? 'plain', figure.rows.map((row) => row.cells[0] ?? ''));
         const named = read.input.parts.flatMap((part) => (part.label === undefined ? [] : [part.label]));

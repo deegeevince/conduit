@@ -352,6 +352,12 @@ export interface StructureLine {
   readonly bars?: boolean;
   /** FG2. A figure: `cutaway` hatches the cut faces; `exploded` offsets the parts along one axis */
   readonly mode?: 'cutaway' | 'exploded';
+  /** A problem: every answer it accepts (`answer=3000,3_000`); never drawn */
+  readonly answer?: readonly string[];
+  /** A problem: which ways of laying the question out it offers (`ways=groups,bar`); absent: the stage chooses from the numbers */
+  readonly ways?: readonly string[];
+  /** A problem: who it is for (`for=child`); absent: a child */
+  readonly for?: string;
   /** the room it is laid out in, canvas units; absent means the whole canvas */
   readonly box?: CanvasBox;
   /** a map joins its pins in the order they were written */
@@ -614,8 +620,16 @@ export interface CancelLine {
   readonly id?: string;
 }
 
+/** An answer the person gave, put in the blank of the problem it names */
+export interface ProblemFillLine {
+  readonly verb: 'fill';
+  readonly id: string;
+  readonly text: string;
+}
+
 export type Line =
   | SceneLine
+  | ProblemFillLine
   | PlanLine
   | StyleLine
   | ColorLine

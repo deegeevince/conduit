@@ -1414,7 +1414,13 @@ export class Conductor {
    * writes in reply is shown. Its lines reach the stage only as a diff that was tried first and found no worse; a refused one leaves the
    * draft as it was. A look that goes wrong never fails the turn: `reviewTurn` does not throw, and what it gave up on is logged and shown.
    */
+  /** A maths `problem` on the stage: the page draws its workspace itself and the stage's own picture holds only the question, so there is nothing for a look, a fix or the critic to judge */
+  private holdsProblem(turn: ActiveTurn): boolean {
+    return turn.score.schedule.elements.some((element) => element.exit === null && element.figure?.kind === 'structure' && element.figure.structure === 'problem');
+  }
+
   private async lookAndFix(s: Session, turn: ActiveTurn, brain: Brain, input: TurnInput, normalizer: LineNormalizer): Promise<void> {
+    if (this.holdsProblem(turn)) return;
     const { sessionLog, critic } = this.deps;
     let pass = 1;
     const steps = reviewTurn({
@@ -1558,6 +1564,7 @@ export class Conductor {
     if (snapshot === undefined) return;
     const facts = draftFactsOf(turn.score.schedule, 0);
     // A turn that only changed what an earlier turn left on the stage draws nothing new, but it is the follow-up the critic is for (critic v2)
+    if (this.holdsProblem(turn)) return;
     const previous = this.previousForCritic(s, turn);
     if (previous === null && !worthALook(facts, { ...this.deps.review, enabled: true, passes: 1 }).look) return;
     turn.criticAsked = true;
