@@ -13,6 +13,7 @@ export const PAPER: LookSpec = softLook({
   stroke: { thick: 0.7, wobble: 0.2 },
   groundAlt: null,
   hot: null,
+  shade: true,
   margin: 0.08,
   mood: {
     calm: { agitation: 0.04, dim: 0, sway: 0.003, swayPeriod: 16, lean: 0, snap: 1.25 },

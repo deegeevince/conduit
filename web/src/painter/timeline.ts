@@ -37,7 +37,7 @@ import { canvasToStage, fitIn, lerpFit } from './canvas';
 import type { CanvasFit } from './canvas';
 import { contrastRatio, mapToGamut, minContrastFor, plateFor, resolveInk, spriteBacking } from './colour';
 import { ease, quantise } from './ease';
-import { canvasBoxOf, figuresAt, groupMatrixAt, spriteColours } from './figures';
+import { DEVELOP_SECONDS, canvasBoxOf, figuresAt, groupMatrixAt, spriteColours } from './figures';
 import type { Painting } from './figures';
 import { revealShare } from '../fonts/measure';
 import { arrange, controlRoomOf, controlsNeedOf, needsOf } from './layout';
@@ -3120,5 +3120,12 @@ export function settledAfter(timeline: Timeline, lockLook: LookId | null, fallba
 
 /** When a turn has finished and everything has come to rest: the schedule's end, or later if the layout was still easing. */
 export function settledEnd(timeline: Timeline, lockLook: LookId | null, fallbackMood: Mood): number {
-  return Math.max(timeline.schedule.end, settledAfter(timeline, lockLook, fallbackMood));
+  let end = Math.max(timeline.schedule.end, settledAfter(timeline, lockLook, fallbackMood));
+  // A painting the renderer makes itself develops over a few seconds after it has come in: the turn is not at rest before.
+  for (const element of timeline.schedule.elements) {
+    const figure = element.figure;
+    if (figure === null || figure.kind !== 'picture' || figure.medium === null || element.carried) continue;
+    end = Math.max(end, (element.enter?.end ?? element.enter?.start ?? 0) + DEVELOP_SECONDS);
+  }
+  return end;
 }

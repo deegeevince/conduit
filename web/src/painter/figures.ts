@@ -24,6 +24,7 @@ import { ease } from './ease';
 import { bodySize } from './layout/metrics';
 import { morphedOutline, wobbled } from './outline';
 import { has, own } from './own';
+import { castInk, litFrom, shadeIsOn, strengthFor } from './shade';
 import { laidOutOf } from './registry';
 
 /** What is known about a painting at this moment. Arrival is not on the turn clock, so it comes in from outside. */
@@ -836,6 +837,8 @@ interface Frm {
   readonly envs: Map<string, Env | null>;
   readonly fades: ReadonlyMap<string, number>;
   readonly defaultFit: CanvasFit;
+  /** `?shade=1` and a look that wants it: shapes the brain drew get a light, a rim and (for a group) a contact shadow */
+  readonly lit: boolean;
   readonly fixedFit: CanvasFit | null;
   readonly fitOf: ((sceneId: string) => CanvasFit) | null;
   /** v2.1 (D3): the painting that stands on a group, by the group's key: the group's members are a frame, kept inside the picture's box */
@@ -990,6 +993,12 @@ function flatOf(fill: Fill): { from: Paint; to: Paint | null } | null {
 }
 
 function fillOf(trans: Trans, look: LookSpec, flash: number, arrival: number): FillFrame | null {
+  const filled = fillColours(trans, look, flash, arrival);
+  const tex = trans.to.tex;
+  return filled === null || tex === 'flat' ? filled : { ...filled, texture: tex };
+}
+
+function fillColours(trans: Trans, look: LookSpec, flash: number, arrival: number): FillFrame | null {
   const a = flatOf(trans.from.fill);
   const b = flatOf(trans.to.fill);
   const strong = flash > 0 ? strongest(look) : null;
@@ -1020,7 +1029,7 @@ function strokeOf(trans: Trans, look: LookSpec, flash: number, progress: number)
   else return null;
   if (flash > 0) colour = mixHex(colour, strongest(look), flash);
   const width = lerp(trans.from.thick ?? look.stroke.thick, trans.to.thick ?? look.stroke.thick, trans.p);
-  return { colour, width, progress, character: look.stroke.character };
+  return { colour, width, progress, character: trans.to.brush ?? look.stroke.character };
 }
 
 const outlineMemo = new WeakMap<readonly Polyline[], Map<string, readonly Polyline[]>>();
@@ -1246,6 +1255,43 @@ function spanOf(lines: readonly Polyline[]): { readonly top: number; readonly he
   return top === Infinity ? { top: 0, height: 0 } : { top, height: bottom - top };
 }
 
+/**
+ * Light from one place (above), for a filled shape the brain drew in a plain colour: the fill becomes a two-tone gradient of its own hue, and
+ * a shape with no outline gets a thin darker rim of that hue. What the brain already gave a gradient, a texture or a soft edge is left alone,
+ * and so is a fill in the ground's own colour (a cut-out).
+ */
+function lightOf(placed: Placed, fill: FillFrame | null, stroke: StrokeFrame | null, look: LookSpec, draw: number, lines: readonly Polyline[]): { fill: FillFrame; stroke: StrokeFrame | null } | null {
+  if (fill === null || fill.to !== null || fill.texture !== undefined) return null;
+  if (placed.trans.to.tex !== 'flat' || placed.trans.to.soft > 0 || placed.trans.from.soft > 0 || fill.colour === look.roles.ground) return null;
+  let x0 = Infinity;
+  let x1 = -Infinity;
+  let y0 = Infinity;
+  let y1 = -Infinity;
+  for (const line of lines) {
+    for (const p of line.points) {
+      x0 = Math.min(x0, p.x);
+      x1 = Math.max(x1, p.x);
+      y0 = Math.min(y0, p.y);
+      y1 = Math.max(y1, p.y);
+    }
+  }
+  const share = x1 > x0 && y1 > y0 ? ((x1 - x0) * (y1 - y0)) / (CANVAS.wide.width * CANVAS.wide.height) : 0;
+  const tones = litFrom(fill.colour, look, strengthFor(share));
+  return {
+    fill: { ...fill, colour: tones.top, to: tones.bottom },
+    stroke: stroke !== null ? stroke : { colour: tones.rim, width: Math.max(0.25, look.stroke.thick * 0.5), progress: draw, character: look.stroke.character },
+  };
+}
+
+function spanned(fill: FillFrame | null, edged: boolean, lines: readonly Polyline[]): FillFrame | null {
+  return fill === null || fill.to === null || !edged ? fill : { ...fill, span: spanOf(lines) };
+}
+
+function softOf(trans: Trans): { soft?: number } {
+  const soft = lerp(trans.from.soft, trans.to.soft, trans.p);
+  return soft > 0 ? { soft } : {};
+}
+
 function shapeFrame(placed: Placed, frm: Frm): ShapeFrame | null {
   const figure = placed.el.figure as FigureOf<'shape'>;
   const env = envelope(placed.owner, frm);
@@ -1262,6 +1308,8 @@ function shapeFrame(placed: Placed, frm: Frm): ShapeFrame | null {
   const fill = fillOf(placed.trans, look, placed.flash, arrival);
   const fullBleed = latest.shape === 'rect' && latest.full;
   const edged = fill !== null && !fullBleed && placed.trans.to.bleed !== 'none' && !underPainting(placed.el, frm.standing, frm.sc) && standsWhereWritten(placed) ? bleedOutline(morph.polylines, placed, frm) : { lines: morph.polylines, key: '' };
+  const stroke = strokeOf(placed.trans, look, placed.flash, draw);
+  const lit = frm.lit && !fullBleed ? lightOf(placed, fill, stroke, look, draw, morph.polylines) : null;
   return {
     kind: 'shape',
     key: placed.key,
@@ -1271,9 +1319,10 @@ function shapeFrame(placed: Placed, frm: Frm): ShapeFrame | null {
     outline: wobbledFor(edged.lines, placed.el.key, amount),
     geometryKey: `${placed.key}|${morph.token}|${look.name}|${amount}${edged.key === '' ? '' : `|bleed${edged.key}`}`,
     transform: toStage(placed, frm, env),
-    fill: fill === null || fill.to === null || edged.key === '' ? fill : { ...fill, span: spanOf(morph.polylines) },
-    stroke: strokeOf(placed.trans, look, placed.flash, draw),
+    fill: spanned(lit === null ? fill : lit.fill, edged.key !== '', morph.polylines),
+    stroke: lit === null ? stroke : lit.stroke,
     opacity: clamp01(env.opacity * placed.opacity * (frm.fades.get(placed.owner.key) ?? 1)),
+    ...softOf(placed.trans),
     bleed: fullBleed,
     ...(fullBleed ? {} : clipField(placed, frm, edged.key !== '')),
     tappable: placed.trans.to.tap,
@@ -1424,6 +1473,8 @@ function developOf(painting: Painting | undefined, ambient: number): number {
  * on the timeline from the moment its picture has come in, so a seek and a film show what a live run shows.
  */
 function ownDevelopOf(picture: ElementSpan, time: number): number {
+  // A picture carried from an earlier turn, or rebuilt at rest, has long since developed.
+  if (picture.carried) return 1;
   const since = picture.enter?.end ?? picture.enter?.start ?? 0;
   return clamp01((time - since) / DEVELOP_SECONDS);
 }
@@ -1499,6 +1550,107 @@ function fieldFrame(element: ElementSpan, frm: Frm): FieldFrame | null {
 
 // ---------------------------------------------------------------------------
 // Views
+
+interface Span2 {
+  readonly x0: number;
+  readonly x1: number;
+  readonly y0: number;
+  readonly y1: number;
+}
+
+/** The frame's extent in stage units on its own plane, or (with `view`) as it lands on the screen, where frames of different layers can be compared. */
+function spanOfFrame(frame: FigureFrame, view: { readonly camera: CameraPose; readonly viewport: Viewport } | null = null): Span2 | null {
+  const stage = framePoints(frame);
+  const points = view === null ? stage : stage.map((p) => projectToScreen({ x: p.x, y: p.y, z: layerZ(frame.layer, view.viewport) }, view.camera, view.viewport));
+  if (points.length === 0) return null;
+  let x0 = Infinity;
+  let x1 = -Infinity;
+  let y0 = Infinity;
+  let y1 = -Infinity;
+  for (const p of points) {
+    x0 = Math.min(x0, p.x);
+    x1 = Math.max(x1, p.x);
+    y0 = Math.min(y0, p.y);
+    y1 = Math.max(y1, p.y);
+  }
+  return { x0, x1, y0, y1 };
+}
+
+/**
+ * The soft shadow of a group that stands on something: an ellipse under its box, in the ink of the surface it stands on, deepened. A group
+ * stands on a filled shape (not one of its own parts, not a full-screen ground) whose top meets the group between its head and its foot and which reaches wider
+ * than it does. Nothing else casts one: a group floating in air or hung on a wall has no ground to shade.
+ */
+function contactShadowOf(group: ElementSpan, parts: readonly FigureFrame[], all: readonly FigureFrame[], look: LookSpec, view: { readonly camera: CameraPose; readonly viewport: Viewport }): ShapeFrame | null {
+  const own = new Set(parts);
+  let box: Span2 | null = null;
+  let z = Infinity;
+  let opacity = 0;
+  let layer: Layer | null = null;
+  for (const part of parts) {
+    if (part.kind !== 'shape' || part.fill === null || part.bleed) continue;
+    const span = spanOfFrame(part);
+    if (span === null) continue;
+    box = box === null ? span : { x0: Math.min(box.x0, span.x0), x1: Math.max(box.x1, span.x1), y0: Math.min(box.y0, span.y0), y1: Math.max(box.y1, span.y1) };
+    z = Math.min(z, part.z);
+    opacity = Math.max(opacity, part.opacity);
+    layer = part.layer;
+  }
+  if (box === null || layer === null || opacity <= 0.02) return null;
+  const width = box.x1 - box.x0;
+  const height = box.y1 - box.y0;
+  if (width <= 0 || height <= 0) return null;
+  // what it stands on is looked for as the viewer sees it: a ground on a far layer is still what a near thing stands on
+  const here = { x0: Infinity, x1: -Infinity, y0: Infinity, y1: -Infinity };
+  for (const part of parts) {
+    const span = part.kind === 'shape' && part.fill !== null && !part.bleed ? spanOfFrame(part, view) : null;
+    if (span === null) continue;
+    here.x0 = Math.min(here.x0, span.x0);
+    here.x1 = Math.max(here.x1, span.x1);
+    here.y0 = Math.min(here.y0, span.y0);
+    here.y1 = Math.max(here.y1, span.y1);
+  }
+  const seenWidth = here.x1 - here.x0;
+  const seenHeight = here.y1 - here.y0;
+  let surface: Colour | null = null;
+  for (const other of all) {
+    if (other.kind !== 'shape' || own.has(other) || other.bleed || other.fill === null || other.opacity < 0.5) continue;
+    if (LAYER_RANK[other.layer] > LAYER_RANK[layer] || (other.layer === layer && other.z >= z)) continue;
+    const span = spanOfFrame(other, view);
+    if (span === null) continue;
+    const overlap = Math.min(here.x1, span.x1) - Math.max(here.x0, span.x0);
+    if (overlap < 0.4 * seenWidth || span.x1 - span.x0 < 0.9 * seenWidth) continue;
+    if (span.y0 < here.y0 - 0.1 * seenHeight || span.y0 > here.y1 + 0.08 * seenHeight) continue;
+    surface = other.fill.colour;
+  }
+  if (surface === null) return null;
+  const rx = 0.5 * width;
+  const ry = Math.max(0.05 * width, 0.04 * height);
+  const cx = (box.x0 + box.x1) / 2;
+  const cy = box.y1;
+  const points: { x: number; y: number }[] = [];
+  for (let i = 0; i < 24; i += 1) {
+    const a = (i / 24) * Math.PI * 2;
+    points.push({ x: rx * Math.cos(a), y: ry * Math.sin(a) });
+  }
+  return {
+    kind: 'shape',
+    key: `${group.key}/shadow`,
+    id: group.id,
+    layer,
+    z: z - 0.5,
+    outline: [{ points, closed: true }],
+    geometryKey: `${group.key}|shadow|${rx.toFixed(2)}|${ry.toFixed(2)}`,
+    // the ellipse is built about its own centre, so the geometry a renderer keeps stays the same as the group moves
+    transform: { a: 1, b: 0, c: 0, d: 1, e: cx, f: cy },
+    fill: { colour: castInk(surface, look), to: null, opacity: 0.28 },
+    stroke: null,
+    opacity: clamp01(opacity),
+    bleed: false,
+    tappable: false,
+    soft: 0.35 * ry + 0.02 * width,
+  };
+}
 
 function screenBox(points: readonly Pt[], layer: Layer, camera: CameraPose, viewport: Viewport): Box {
   const box = emptyBox();
@@ -1589,7 +1741,7 @@ export function figuresAt(schedule: Schedule, base: StageBase, time: number, amb
   const standing = new Map<string, ElementSpan>();
   for (const picture of schedule.elements) if (picture.figure?.kind === 'picture' && picture.figure.over !== null && isOnStage(picture, time)) standing.set(picture.figure.over, picture);
   const placedAll = placeAll(sc);
-  const frm: Frm = { sc, viewport, look, paintings: context.paintings, body: bodySize(viewport, look), fits: new Map(), envs: new Map(), fades, defaultFit: context.fit, fixedFit: context.fixedFit ?? null, fitOf: context.fitOf ?? null, standing, open: context.fitOf === undefined ? new Map() : openEdgesOf(placedAll, standing, sc) };
+  const frm: Frm = { sc, viewport, look, paintings: context.paintings, body: bodySize(viewport, look), fits: new Map(), envs: new Map(), fades, defaultFit: context.fit, lit: shadeIsOn() && look.shade, fixedFit: context.fixedFit ?? null, fitOf: context.fitOf ?? null, standing, open: context.fitOf === undefined ? new Map() : openEdgesOf(placedAll, standing, sc) };
 
   const figures: FigureFrame[] = [];
   const byOwner = new Map<string, FigureFrame[]>();
@@ -1607,6 +1759,11 @@ export function figuresAt(schedule: Schedule, base: StageBase, time: number, amb
     const list = byOwner.get(item.owner.key) ?? [];
     list.push(frame);
     byOwner.set(item.owner.key, list);
+  }
+  if (frm.lit) for (const element of schedule.elements) {
+    if (element.figure?.kind !== 'group' || !isOnStage(element, time)) continue;
+    const shadow = contactShadowOf(element, (sc.idx.children.get(element.key) ?? []).flatMap((part) => byOwner.get(part.key) ?? []), figures, look, { camera: context.camera, viewport });
+    if (shadow !== null) figures.push(shadow);
   }
   // the renderer's own paintings stand on the figures that are their sketch: it re-renders those, in the medium, into the picture's box
   for (let i = 0; i < figures.length; i += 1) {

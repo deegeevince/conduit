@@ -1,6 +1,7 @@
 // pnpm capture: a logged turn, seen as motion.
 //
-//   pnpm capture <log> <turn> [--screen 1280x720|1920x825|390x844] [--look <id>] [--out <dir>] [--fps 15] [--no-video]
+//   pnpm capture <log> <turn> [--screen 1280x720|1920x825|390x844] [--look <id>] [--out <dir>] [--fps 15] [--no-video] [--shade]
+//   --shade                                     performs it as the page does with ?shade=1 (light, rim and contact shadow on what the brain drew)
 //   pnpm capture --all <log> [same flags]       every turn of the log that drew something
 //
 // Replays the turn's logged lines at their logged arrival times (the playhead each arrived at, as the painter was told it), from the
@@ -35,7 +36,7 @@ const sleep = (ms: number): Promise<void> => new Promise((done) => setTimeout(do
 
 function usage(message: string): never {
   process.stderr.write(`capture: ${message}\n`);
-  process.stderr.write('usage: pnpm capture <log> <turn> [--screen 1280x720|1920x825|390x844] [--look <id>] [--out <dir>] [--fps n] [--no-video] [--web <url>] [--data <dir>]\n  <log> is a path, or the log file name or session id as found in the data folder\n       pnpm capture --all <log> [flags]\n');
+  process.stderr.write('usage: pnpm capture <log> <turn> [--screen 1280x720|1920x825|390x844] [--look <id>] [--out <dir>] [--fps n] [--no-video] [--shade] [--web <url>] [--data <dir>]\n  <log> is a path, or the log file name or session id as found in the data folder\n       pnpm capture --all <log> [flags]\n');
   process.exit(2);
 }
 
@@ -174,7 +175,7 @@ interface Page {
   close(): Promise<void>;
 }
 
-async function openPage(web: string | null): Promise<{ page: Page; web: string }> {
+async function openPage(web: string | null, query = ''): Promise<{ page: Page; web: string }> {
   const started: ChildProcess[] = [];
   const cleanups: (() => Promise<void>)[] = [];
   const close = async (): Promise<void> => {
@@ -209,7 +210,7 @@ async function openPage(web: string | null): Promise<{ page: Page; web: string }
     const { sessionId } = await browser.send<{ sessionId: string }>('Target.attachToTarget', { targetId, flatten: true });
     await browser.send('Page.enable', {}, sessionId);
     // Any page of the app will do: it is only the origin the script imports the app's modules from. The review page's is the lightest.
-    await browser.send('Page.navigate', { url: `${url}/explore.html` }, sessionId);
+    await browser.send('Page.navigate', { url: `${url}/explore.html${query}` }, sessionId);
     const page: Page = {
       async evaluate<T>(expression: string): Promise<T> {
         const out = await browser.send<{ result: { value?: T }; exceptionDetails?: { text: string; exception?: { description?: string } } }>('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }, sessionId);
@@ -239,6 +240,7 @@ interface Job {
   readonly lines: readonly { readonly seq: number; readonly text: string; readonly floor: number }[];
   readonly viewport: { readonly width: number; readonly height: number; readonly dpr: number };
   readonly look: string | null;
+  readonly shade: boolean;
   readonly frames: number;
   readonly fps: number;
   readonly video: boolean;
@@ -270,6 +272,7 @@ const PAGE_SCRIPT = String.raw`async (job) => {
     import('/src/explore/chart-host.ts'), import('/src/app/chart-host.ts'), import('/src/export/index.ts'), import('/src/render/plain/index.ts'), import('/src/render/three/index.ts'),
   ]);
   const notes = [];
+  // --shade loads the harness page with ?shade=1, the way the bake-off does: the painter reads the switch from the address
   const base = job.base === null ? L.EMPTY_STAGE : job.base;
   const viewport = job.viewport;
 
@@ -423,6 +426,7 @@ interface Options {
   readonly screen: { readonly width: number; readonly height: number };
   readonly screenName: string;
   readonly look: string | null;
+  readonly shade: boolean;
   readonly out: string | null;
   readonly fps: number;
   readonly video: boolean;
@@ -446,6 +450,7 @@ function parseArgs(argv: readonly string[]): Options {
   let all = false;
   let screenName = '1280x720';
   let look: string | null = null;
+  let shade = false;
   let out: string | null = null;
   let fps = 15;
   let video = true;
@@ -464,6 +469,7 @@ function parseArgs(argv: readonly string[]): Options {
     else if (arg === '--web') web = value();
     else if (arg === '--data') data = value();
     else if (arg === '--no-video') video = false;
+    else if (arg === '--shade') shade = true;
     else if (arg === '--debug') debug = true;
     else if (arg === '--trace') trace = value().split(',').map(Number);
     else if (arg.startsWith('--')) usage(`unknown flag ${arg}`);
@@ -476,7 +482,7 @@ function parseArgs(argv: readonly string[]): Options {
   const log = positional[0];
   if (log === undefined) usage('which log?');
   if (!all && positional[1] === undefined) usage('which turn? (or --all)');
-  return { all, log: locate(log, data), turn: all ? null : (positional[1] ?? null), screen, screenName, look, out, fps, video, web, debug, trace };
+  return { all, log: locate(log, data), turn: all ? null : (positional[1] ?? null), screen, screenName, look, shade, out, fps, video, web, debug, trace };
 }
 
 interface Captured {
@@ -503,6 +509,7 @@ async function captureOne(page: Page, options: Options, turns: readonly LoggedTu
     lines: turn.lines,
     viewport: { ...options.screen, dpr: 1 },
     look: options.look,
+    shade: options.shade,
     frames: STRIP_FRAMES,
     fps: options.fps,
     video: options.video,
@@ -511,7 +518,7 @@ async function captureOne(page: Page, options: Options, turns: readonly LoggedTu
     trace: options.trace,
   };
   const made = await page.evaluate<Made>(`(${PAGE_SCRIPT})(${JSON.stringify(job)})`);
-  const stem = join(dir, `${basename(options.log, '.jsonl')}-${turn.turn}${options.look === null ? '' : `-${options.look}`}${options.screenName === '1280x720' ? '' : `-${options.screenName}`}`);
+  const stem = join(dir, `${basename(options.log, '.jsonl')}-${turn.turn}${options.look === null ? '' : `-${options.look}`}${options.shade ? '-shade' : ''}${options.screenName === '1280x720' ? '' : `-${options.screenName}`}`);
   await mkdir(dirname(stem), { recursive: true });
   const strip = `${stem}.strip.png`;
   const rest = `${stem}.rest.png`;
@@ -535,7 +542,7 @@ async function main(): Promise<void> {
   const dir = options.out === null ? dirname(options.log) : resolve(options.out);
   const wanted = options.all ? turns.map((_, index) => index) : [turns.findIndex((turn) => turn.turn === options.turn)];
   if (wanted.some((index) => index < 0)) usage(`the log has no turn ${options.turn ?? ''}: it has ${turns.map((turn) => turn.turn).join(', ')}`);
-  const { page } = await openPage(options.web);
+  const { page } = await openPage(options.web, options.shade ? '?shade=1' : '');
   try {
     for (const index of wanted) await captureOne(page, options, turns, index, dir);
   } finally {

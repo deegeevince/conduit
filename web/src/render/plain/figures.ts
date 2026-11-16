@@ -213,6 +213,7 @@ export function createPlainFigures(host: HTMLElement): PlainFigures {
     put(node, node.root, 'transform', figure.bleed ? '' : matrixText(m));
     put(node, node.root, 'opacity', figure.opacity >= 1 ? '' : px(figure.opacity));
     put(node, body, 'filter', figure.soft !== undefined && figure.soft > 0 && !figure.bleed ? `url(#${softness(node.layer, figure.soft)})` : '');
+    put(node, body, 'fill-rule', 'evenodd');
     const texture = figure.fill?.texture;
     if (figure.fill !== null && (texture === 'hatch' || texture === 'dots')) {
       put(node, body, 'fill', `url(#${pattern(node.layer, texture, figure.fill.colour, Math.max(1, (figure.stroke?.width ?? 1.2) * 2.2))})`);
