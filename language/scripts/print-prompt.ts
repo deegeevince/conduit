@@ -16,9 +16,9 @@ const FLAT: Capabilities = { ...V3, depth: false, layers: ['mid'], camera: [], k
 const SHIPPED: Capabilities = { ...FULL_CAPABILITIES, structures: FULL_CAPABILITIES.structures.filter((name) => name !== 'code'), decks: false, uploads: false, links: false };
 const variants = {
   // What ships: a painter that does everything, the brain on the subscription, look and fix on, no image model.
-  full: buildSystemPrompt({ capabilities: FULL_CAPABILITIES, services: { paint: false, sight: 'snapshot', review: true, critic: true, refine: true, uploads: true } }),
-  model: buildSystemPrompt({ capabilities: FULL_CAPABILITIES, services: { paint: true, sight: 'snapshot', review: true, critic: true, refine: true, uploads: true } }),
-  shipped: buildSystemPrompt({ capabilities: SHIPPED, services: { paint: false, sight: 'snapshot', review: true, critic: true, refine: true, uploads: false } }),
+  full: buildSystemPrompt({ capabilities: FULL_CAPABILITIES, services: { paint: false, sight: 'snapshot', review: true, critic: true, refine: true, uploads: true, art: true } }),
+  model: buildSystemPrompt({ capabilities: FULL_CAPABILITIES, services: { paint: true, sight: 'snapshot', review: true, critic: true, refine: true, uploads: true, art: true } }),
+  shipped: buildSystemPrompt({ capabilities: SHIPPED, services: { paint: false, sight: 'snapshot', review: true, critic: true, refine: true, uploads: false, art: true } }),
   v3: buildSystemPrompt({ capabilities: V3, services: { paint: false, sight: 'report', review: false } }),
   flat: buildSystemPrompt({ capabilities: FLAT, services: { paint: false, sight: 'report', review: false } }),
 };

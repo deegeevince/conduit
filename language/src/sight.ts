@@ -32,6 +32,7 @@ export const SIGHT_NOTE = {
   unpainted: 'no painting arrived; the sketch is what was seen',
   undrawn: 'the shelf has no drawing of this subject yet: a soft placeholder stands in its place, so draw it with shapes if the picture needs it',
   pending: 'a drawing of this subject is being made and will replace the soft placeholder in a minute or two: leave it, and do not draw it again with shapes',
+  drawn: 'a drawing from the shelf, made of named parts (listed with it): label one with near=<figure>-<part>, and never redraw it with shapes',
   refused: 'this subject is not drawn here (a real person, a brand, a named character, or something not for a young child): a soft placeholder stands in its place',
 } as const;
 export type SightNote = keyof typeof SIGHT_NOTE;
@@ -46,10 +47,13 @@ export interface SightItem {
   readonly notes: readonly SightNote[];
   /** with the `spills` note: the id of the shape it spills out of */
   readonly within?: string;
+  /** with the `drawn` note: the names of the parts of the drawing, as `<figure>-<name>` */
+  readonly parts?: readonly string[];
 }
 
 /** A note in the words the brain reads: `spills` names the shape it spills out of. */
-export function noteText(item: Pick<SightItem, 'within'>, note: SightNote): string {
+export function noteText(item: Pick<SightItem, 'within' | 'parts'>, note: SightNote): string {
+  if (note === 'drawn' && item.parts !== undefined && item.parts.length > 0) return `${SIGHT_NOTE[note]}. Parts: ${item.parts.slice(0, 16).join(', ')}`;
   return note === 'spills' && item.within !== undefined ? `spills out of ${item.within}: ${SIGHT_NOTE[note].replace(/^it spills out past the edge of a bigger filled shape that mostly holds it: /, '')}` : SIGHT_NOTE[note];
 }
 

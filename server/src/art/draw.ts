@@ -4,7 +4,7 @@
 // and the parts `in=` it, each `<id>-<part>`), plus what happened for the log and a note for the brain's next look. The conductor ingests the
 // lines one after another, so they are scheduled, timed, logged and replayed like any lines the brain wrote itself.
 
-import { CANVAS, serializeLine } from '@conduit/language';
+import { CANVAS, parseLine, serializeLine } from '@conduit/language';
 import type { DrawLine, Line, LookId, ResolvedLook } from '@conduit/language';
 import { drawIdOf } from '@conduit/language';
 import { isHueName, isRole, lookClassOf } from './palette';
@@ -20,7 +20,9 @@ export const DEFAULT_SHARE = 0.4;
 export const DRAW_IN_SECONDS = 1;
 
 /** Why a figure was not drawn: it is not on the shelf yet, or the subject is not drawn here. */
-export type ArtNote = { readonly kind: 'undrawn'; readonly subject: string } | { readonly kind: 'pending'; readonly subject: string } | { readonly kind: 'refused'; readonly subject: string; readonly why: string };
+export type ArtNote = { readonly kind: 'undrawn'; readonly subject: string } | { readonly kind: 'pending'; readonly subject: string } | { readonly kind: 'refused'; readonly subject: string; readonly why: string }
+  /** a figure the shelf drew: its parts' ids, so the brain can name them on its next turn */
+  | { readonly kind: 'drawn'; readonly subject: string; readonly parts: readonly string[] };
 
 export interface Planned {
   readonly id: string;
@@ -146,7 +148,8 @@ export function planDraw(line: DrawLine, context: DrawContext): Planned {
     main: fillWord(line),
   };
   const lines = expandSheet(sheet, { id, at, size, mirror, over: DRAW_IN_SECONDS }, dress, passed);
-  return { id, lines, note: null, wanted: null, detail: { ...detail, outcome: 'drawn', sheet: `${sheet.subject}/${sheet.pose}/${sheet.made.arm}`, variant: cast, of: found.sheets.length, mirrored: mirror, poseMatch: found.poseMatch, parts: sheet.parts.length } };
+  const drawn: ArtNote = { kind: 'drawn', subject: found.subject, parts: lines.slice(1).map((made) => (made as { id: string }).id) };
+  return { id, lines, note: drawn, wanted: null, detail: { ...detail, outcome: 'drawn', sheet: `${sheet.subject}/${sheet.pose}/${sheet.made.arm}`, variant: cast, of: found.sheets.length, mirrored: mirror, poseMatch: found.poseMatch, parts: sheet.parts.length } };
 }
 
 /**
@@ -165,7 +168,7 @@ export function planSwap(wanting: Wanting, sheet: Sheet, look: DrawContext['look
   };
   const made = expandSheet(sheet, { id: wanting.id, at: { x: 0, y: 0 }, size: wanting.size, mirror, over: DRAW_IN_SECONDS }, dress).slice(1);
   const parts = made.map((line) => (line as { id: string }).id);
-  const leaving = had === null ? [`${wanting.id}-soft`.slice(0, 24)] : had.filter((id) => !parts.includes(id));
+  const leaving = had === null ? [`${wanting.id}-soft`.slice(0, 24), captionId(wanting.id)] : had.filter((id) => !parts.includes(id));
   const lines: Line[] = [];
   if (leaving.length > 0) lines.push({ verb: 'drop', target: { kind: 'id', id: leaving[0] as string }, ...(leaving.length > 1 ? { also: leaving.slice(1) } : {}), exit: 'fade' } as Line);
   lines.push(...made);
@@ -177,3 +180,17 @@ export const canvasOf = (name: keyof typeof CANVAS): { width: number; height: nu
 
 /** The lines as text, for a tool that wants to see them. */
 export const textOf = (lines: readonly Line[]): string[] => lines.map((line) => serializeLine(line));
+
+/** The id of the small caption that stands under a placeholder while its drawing is made. */
+export const captionId = (id: string): string => `cap-${id}`.slice(0, 24);
+
+/** The caption under a pending placeholder: "Drawing a giraffe…", in the subject's own words, small and dim. Server-made, like the swap. */
+export function captionLines(wanting: Wanting): Line[] {
+  const words = wanting.words.replace(/[^\p{L}\p{N} '-]+/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, 40);
+  if (words === '') return [];
+  const parsed = parseLine(`say ${captionId(wanting.id)} aside near=${`${wanting.id}-soft`.slice(0, 24)}:below | Drawing ${/^[aeiou]/i.test(words) ? 'an' : 'a'} ${words}…`);
+  return parsed.kind === 'line' ? [parsed.line] : [];
+}
+
+/** The line that takes the caption away when the drawing will not come. */
+export const dropCaption = (id: string): Line => ({ verb: 'drop', target: { kind: 'id', id: captionId(id) }, exit: 'fade' }) as Line;

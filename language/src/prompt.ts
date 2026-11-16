@@ -526,7 +526,10 @@ Drawings live on a canvas of square units that the painter fits to the screen; 0
     capabilities.uploads ? '`pic u1` puts a photo the user gave on stage (the brief names them); label or trace it.' : '',
     services.refine ? 'Asked to iterate or improve it: end with `refine 3`; you are shown the picture and add to it.' : '',
     capabilities.links ? '`say href=<url> | site` is a link; cite every web source as one.' : '',
-    draws ? 'A heart, a leaf, a bird, a person: one smooth closed `path`, never circles and rectangles stuck together. Not for anatomy, a machine or labelled parts.' : '',
+    draws && services.art === true
+      ? 'A character, animal or thing: `draw <id> <subject> at= size= | pose, facing`, never plotted. Diagrams, anatomy, machines, maps, labelled parts: your own shapes.'
+      : '',
+    draws && services.art !== true ? 'A heart, a leaf, a bird, a person: one smooth closed `path`, never circles and rectangles stuck together. Not for anatomy, a machine or labelled parts.' : '',
     structures.includes('chart') && controls.includes('slider')
       ? 'Numbers a control changes: a `chart` whose cells hold braces (`| 4 | {rate*4}`) beside the slider, never hand-drawn axes.'
       : '',
@@ -912,6 +915,9 @@ export const DRAWING_CHAPTER = (canvas: string): string => `DRAWING (coordinates
   .map(([name, spec]) => `${name} ${spec.width}x${spec.height}`)
   .join(', ')}. Work back to front: the ground or sky first ($\`rect full\` covers the screen), then the subject as three or four big shapes, then two or three details; eight to fifteen shapes make a picture, forty a mess. Name your colours once ($\`color sky=#1b2a49\`) and use the names. Anything with parts is a $\`group\`: its parts say $\`in=<id>\` and measure from its $\`at=x,y\`, so it can be moved, turned or copied ($\`use\`) as one. Curves are $\`path\` with SVG path data. To change a shape, declare it again under the same id.`;
 
+/** v3 art. The shelf's words, taught on a drawing turn when the server has one: what to say after the bar, how to keep or change a character, and how to label one. */
+export const ART_BRIEF = `DRAW (a character, animal or thing is one \`draw\` line, not shapes): \`draw fox1 fox at=50,60 size=40 | sitting, facing left, curious\`. After the bar: a pose (sitting, standing, running, sleeping, waving), a view (side, front, back) and a mood. One subject a line, with no scenery in it; the ground and the sky are yours. Two of one kind in a story: \`as=<name>\` gives each its own look; \`new\` asks for a different one. Parts are named \`<id>-<part>\`: label with \`say callout near=<id>-<part-word> | tail\` (the nearest part is found; the parts of a drawing you made are listed on your next turn). A subject never drawn before arrives up to a minute later, a soft shape holds its place meanwhile: carry on, never redraw it.`;
+
 const DRAWS = /\b(draw|drawing|drew|sketch|paint|painting|picture|illustrat\w*|diagram|pixel|sprite|animat\w*|cartoon|logo|poster|scene|story|memory|mechanism|anatomy|parts? of|labell?ed|how (?:a|an|the|does|do)\b.*\bwork|look like|looks like|shape|landscape|portrait|art)\b/i;
 
 /** Whether the user's words call for a drawing: the cue of the drawing chapter. */
@@ -1103,6 +1109,7 @@ export function buildTurnBrief(context: TurnContext, input: TurnInput, form: Bri
   const questionsOnStage = stage.elements.some((element) => element.style.tap && /^\s*which one first\b/i.test(element.text)) || stage.elements.some((element) => element.text.toLowerCase().includes('which one first'));
   if (context.capabilities.structures.includes('problem') && !liveApp && (((input.kind === 'prompt' || input.kind === 'tap') && asksForMaths(input.text)) || problemOnStage || questionsOnStage || usesProblem(context.techniques))) parts.push(PROBLEM_CHAPTER);
   if (drawsNow) parts.push(DRAWING_CHAPTER(`${screen.canvas} (${canvas.width}x${canvas.height})${screen.canvas === 'wide' ? '; a figure scene that names no canvas gets square (100x100)' : ''}`));
+  if (drawsNow && context.services.art === true) parts.push(ART_BRIEF);
   // L2: the shapes, weather, depth and camera that left the fixed prompt ride with a drawing or a staged answer; pixel art has a chapter of its own.
   const stagesNow = context.capabilities.kinds.includes('shape') && ((input.kind === 'prompt' && asksToStage(input.text)) || onStageDrawn);
   if (stagesNow) {

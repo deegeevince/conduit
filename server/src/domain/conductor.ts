@@ -1,5 +1,5 @@
 import { API, SKILL_HOLD, CANVAS, DATA_LIMITS, EMPTY_STAGE, isLessonVerb, PASTE_AS_DOCUMENT_CHARS, FULL_CAPABILITIES, LANGUAGE, LEAD_WINDOW, LineNormalizer, LineReader, PRESENCE_TYPING_MS, TurnScore, buildSystemPrompt, draftFactsOf, hasLesson, usesParts, repairWorth, serializeLine, settle, splitCells, wearingAt, withoutUnknownBraces, worthALook } from '@conduit/language';
-import type { DrawLine, RepairWorth, SkillBlockFacts, TechniqueCard } from '@conduit/language';
+import type { DrawLine, RepairWorth, StyleProps, SkillBlockFacts, TechniqueCard } from '@conduit/language';
 import type { ActivityState, BrainChange, BrainChoice, BrainMode, CriticFinding, DocumentSummary, DocumentView, FixPolicy, NodeId, NodeStatus, OpenDocumentResponse, PromptVariant, Seen, ToolChoice } from '@conduit/language';
 import type {
   BackEvent,
@@ -35,9 +35,10 @@ import type { Brain, BrainEvent, BrainRegistry, Snapshot } from './brain';
 import { DOCUMENT_LIMITS, findUrls, hostOf } from './documents';
 import type { DocumentReader } from './documents';
 import type { ImageModel } from './images';
-import { Cast, planDraw, planSwap } from '../art/draw';
+import { Cast, captionId, captionLines, dropCaption, planDraw, planSwap } from '../art/draw';
 import type { Wanting } from '../art/draw';
 import { noteArt } from '../art/notes';
+import { resolveNear } from '../art/parts';
 import type { Shelf } from '../art/shelf';
 import { commissionOf } from '../art/studio';
 import type { Studio, StudioEvent } from '../art/studio';
@@ -203,6 +204,8 @@ export class Conductor {
   private readonly drawings = new WeakMap<Session, Map<string, PendingArt>>();
   /** v3 art. The turns that put a made drawing in place: they are said to the page as any in-place turn, but are not "tidying" */
   private readonly artTurns = new WeakSet<ActiveTurn>();
+  /** v3 art. The figures a session has drawn, by id, and the ids of their parts: `near=<figure>-<word>` is settled against these. */
+  private readonly figures = new WeakMap<Session, Map<string, readonly string[]>>();
   private readonly waiters = new Map<string, Set<() => void>>();
   /** The technique cards that wrote a session's document (a lesson for a young learner, a recipe): they ride on every later turn of it, so the part written ahead, and the answer to a tap, are written by the same rules. */
   private readonly documentCards = new Map<string, readonly TechniqueCard[]>();
@@ -1427,7 +1430,7 @@ export class Conductor {
       input,
       styles: () => Object.keys(turn.score.schedule.styles),
       drafts: s.capabilities.drafts,
-      state: () => ({ schedule: turn.score.schedule, rejects: turn.rejects, lastSeq: s.nextSeq - 1, problems: turn.problems }),
+      state: () => ({ schedule: turn.score.schedule, rejects: turn.rejects, lastSeq: s.nextSeq - 1, problems: turn.problems, shelf: this.shelfIds(s) }),
       signal: turn.abort.signal,
       now: this.deps.now,
       log: this.deps.log,
@@ -1557,7 +1560,7 @@ export class Conductor {
     if ((turn.input.kind === 'demo' || turn.input.kind === 'script') && !scripts) return;
     const snapshot = this.deps.assets.snapshot(s.id, turn.id);
     if (snapshot === undefined) return;
-    const facts = draftFactsOf(turn.score.schedule, 0);
+    const facts = draftFactsOf(turn.score.schedule, 0, 0, this.shelfIds(s));
     // A turn that only changed what an earlier turn left on the stage draws nothing new, but it is the follow-up the critic is for (critic v2)
     if (this.holdsProblem(turn)) return;
     const previous = this.previousForCritic(s, turn);
@@ -1683,7 +1686,7 @@ export class Conductor {
           input: turn.input,
           styles: () => Object.keys(turn.score.schedule.styles),
           drafts: true,
-          state: () => ({ schedule: turn.score.schedule, rejects: turn.rejects, lastSeq: s.nextSeq - 1, problems: turn.problems }),
+          state: () => ({ schedule: turn.score.schedule, rejects: turn.rejects, lastSeq: s.nextSeq - 1, problems: turn.problems, shelf: this.shelfIds(s) }),
           signal,
           now,
           log,
@@ -1924,7 +1927,7 @@ export class Conductor {
       this.finish(s, turn, 'failed', `the brain wrote more than ${SERVER_LIMITS.linesPerTurn} lines`);
       return 'stop';
     }
-    const normalized = normalizer.normalize(event.line);
+    const normalized = normalizer.normalize(this.withPartsResolved(s, turn, event.line));
     if (normalized.line === null) {
       // A step, ask or hint that came before the part or ask it belongs to is held, and read when that one is written; refused only if it never comes
       const missing = ['step', 'ask', 'hint'].includes(event.line.verb) ? normalized.issues.find((issue) => issue.code === 'unknown-id' && issue.token !== undefined)?.token : undefined;
@@ -2282,11 +2285,48 @@ export class Conductor {
       look: wearingAt(schedule, turn.score.base, schedule.pen),
     });
     this.deps.log.info('art.draw', { session: s.id, turn: turn.id, ...planned.detail });
-    if (planned.note !== null) noteArt(turn, planned.id, planned.wanted === null ? planned.note : this.commissionArt(s, planned.wanted) ?? planned.note);
-    for (const made of planned.lines) {
+    const lines = [...planned.lines];
+    if (planned.note !== null) {
+      const pending = planned.wanted === null ? null : this.commissionArt(s, planned.wanted);
+      noteArt(turn, planned.id, pending ?? planned.note);
+      // a drawing on its way: a small dim line under the placeholder says what is being drawn, and leaves with it
+      if (pending !== null && planned.wanted !== null) lines.push(...captionLines(planned.wanted));
+    }
+    this.figureHas(s, planned.id, planned.note?.kind === 'drawn' ? planned.note.parts : []);
+    for (const made of lines) {
       if (this.ingest(s, turn, { type: 'line', line: made, issues: [] }, normalizer, pass, repairing) === 'stop') return 'stop';
     }
     return undefined;
+  }
+
+  /** The ids of everything the shelf put on stage: figures, parts, placeholders and captions. Review leaves them alone. */
+  private shelfIds(s: Session): ReadonlySet<string> {
+    const ids = new Set<string>();
+    for (const [id, parts] of this.figures.get(s) ?? []) {
+      ids.add(id);
+      ids.add(`${id}-soft`.slice(0, 24));
+      ids.add(captionId(id));
+      for (const part of parts) ids.add(part);
+    }
+    return ids;
+  }
+
+  private figureHas(s: Session, id: string, parts: readonly string[]): void {
+    const held = this.figures.get(s) ?? new Map<string, readonly string[]>();
+    held.set(id, parts);
+    this.figures.set(s, held);
+  }
+
+  /** v3 art. A label's `near=<figure>-<word>` is read against the parts the figure really has: the best match, else the figure itself. */
+  private withPartsResolved(s: Session, turn: ActiveTurn, line: Line): Line {
+    const figures = this.figures.get(s);
+    const near = 'props' in line ? ((line as { props: StyleProps }).props).near : undefined;
+    if (figures === undefined || figures.size === 0 || near === undefined) return line;
+    const live = new Set(turn.score.schedule.elements.filter((element) => element.exit === null).map((element) => element.id));
+    const found = resolveNear(near.id, live, figures);
+    if (found === null) return line;
+    this.deps.log.info('art.near', { session: s.id, turn: turn.id, said: near.id, put: found });
+    return { ...line, props: { ...(line as { props: StyleProps }).props, near: { ...near, id: found } } } as Line;
   }
 
   /** v3 art. Asks the studio for a drawing of what the shelf lacks. The `pending` note when it will be made; null when it will not (off, at a ceiling, near the cap), and the note stays `undrawn`. */
@@ -2313,6 +2353,7 @@ export class Conductor {
     if (event.kind === 'failed') {
       pending.over = true;
       log.info('art.left_as_placeholder', { session: s.id, id: pending.wanting.id, why: event.why });
+      void this.dropCaptionOf(s, pending).catch((error: unknown) => log.error('art.caption_failed', { session: s.id, id: pending.wanting.id, error }));
       return;
     }
     pending.next = event.sheet;
@@ -2333,6 +2374,28 @@ export class Conductor {
     if (turn.endReason !== 'done' || !turn.reported) return { state: 'wait', why: 'the answer has not come to rest' };
     if (s.typingUntil > this.deps.now()) return { state: 'wait', why: 'the person is typing' };
     return null;
+  }
+
+  /** A drawing that will not come leaves its placeholder; the caption that said it was coming goes, once the stage is at rest. */
+  private async dropCaptionOf(s: Session, pending: PendingArt): Promise<void> {
+    const { now } = this.deps;
+    const patience = now() + ART_PATIENCE_MS;
+    pending.over = false;
+    let limit = this.artLimit(s, pending);
+    while (limit?.state === 'wait' && now() < patience) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 400));
+      limit = this.artLimit(s, pending);
+    }
+    pending.over = true;
+    const turn = s.turn;
+    if (limit !== null || turn === null) return;
+    const live = turn.score.schedule.elements.some((element) => element.id === captionId(pending.wanting.id) && element.exit === null);
+    if (!live) return;
+    const normalizer = new LineNormalizer(() => {
+      s.nextAutoId += 1;
+      return `x${s.nextAutoId}`;
+    }, Object.keys(s.stage.styles));
+    this.showInPlace(s, turn, { kind: 'repair', of: turn.id }, [{ type: 'line' as const, line: dropCaption(pending.wanting.id), issues: [] }], normalizer, false);
   }
 
   /** Puts the latest sheet of a drawing in its place when it is safe to, and says so in the log. One delivery at a time a figure; a newer sheet that arrives meanwhile is the one shown. */
@@ -2373,7 +2436,12 @@ export class Conductor {
     }, Object.keys(s.stage.styles));
     const planned = planSwap(pending.wanting, sheet, wearingAt(turn.score.schedule, turn.score.base, turn.score.schedule.pen), pending.shown);
     pending.shown = planned.parts;
-    return this.showInPlace(s, turn, { kind: 'repair', of: turn.id }, planned.lines.map((line) => ({ type: 'line' as const, line, issues: [] })), normalizer, false);
+    this.figureHas(s, pending.wanting.id, planned.parts);
+    const shown = this.showInPlace(s, turn, { kind: 'repair', of: turn.id }, planned.lines.map((line) => ({ type: 'line' as const, line, issues: [] })), normalizer, false);
+    const swap = s.turns.get(shown);
+    // what the parts are called goes into the next brief, with the rest of how this turn landed
+    if (swap !== undefined) noteArt(swap, pending.wanting.id, { kind: 'drawn', subject: sheet.subject, parts: planned.parts });
+    return shown;
   }
 
   /**
