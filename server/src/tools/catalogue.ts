@@ -974,6 +974,12 @@ async function runCheck(cx: Cx, spec: Spec): Promise<Res> {
       const stops = Math.max(...picks.map((c) => c.options.length), picks.length, 0);
       return stops >= Number(spec['min']) ? { check: name, verdict: 'PASS', detail: `${stops} tappable stops` } : { check: name, verdict: 'FAIL', detail: `${stops} tappable stop(s), wanted ${String(spec['min'])}: a step-by-step answer you cannot step through` };
     }
+    case 'choices': {
+      // a choice the person taps: `say choice` lines the stage shows, never a map of cards or a document
+      const lines = cx.answer.script.split('\n').filter((l) => /^say\b[^|]*\bchoice\b/.test(l)).length;
+      const want = Number(spec['min'] ?? 1);
+      return lines >= want ? { check: name, verdict: 'PASS', detail: `${lines} choice(s) to tap` } : { check: name, verdict: 'FAIL', detail: `${lines} tappable choice(s), wanted ${want}` };
+    }
     case 'ask-first': {
       // a problem for a learner: the question is a thing to answer (an ask line, or a field), never a stepper that walks the working, and no answer given away in a tap
       const script = cx.answer.script;

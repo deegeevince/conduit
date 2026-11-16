@@ -32,6 +32,10 @@ export interface StageInk {
   /** the ink went up: forget it and put the layer away */
   sent(): void;
   readonly ink: Ink;
+  /** the layer is over the stage (the Draw toggle, or the work mode) */
+  isOpen(): boolean;
+  /** lays the layer over the stage, or puts it away; what is drawn is kept */
+  show(open: boolean): void;
   dispose(): void;
 }
 
@@ -111,6 +115,8 @@ export function mountStageInk(stage: HTMLElement, menu: ComposerMenu, app: Stage
     take,
     sent,
     ink,
+    isOpen: () => layer.hidden === false,
+    show: set,
     dispose() {
       bar.dispose();
       ink.dispose();

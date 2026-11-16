@@ -90,6 +90,14 @@ export function createDocumentInk(options: DocumentInkOptions): DocumentInk {
     const svg = exportSvg(doc);
     return svg === null ? null : `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
   };
+  // the pen is never put away or rebuilt while she is writing, or within a moment of her last touch: a save or a re-render of the lesson goes round it
+  let touched = 0;
+  const writing = (): boolean => Date.now() - touched < 2500;
+  box.addEventListener('pointerdown', () => (touched = Date.now()), true);
+  box.addEventListener('pointermove', (event) => {
+    if (event.buttons !== 0) touched = Date.now();
+  }, true);
+  box.addEventListener('pointerup', () => (touched = Date.now()), true);
   let draftTimer: ReturnType<typeof setTimeout> | undefined;
   const saveDraft = (): void => {
     clearTimeout(draftTimer);
@@ -112,14 +120,15 @@ export function createDocumentInk(options: DocumentInkOptions): DocumentInk {
     slot(slot) {
       if (slot === null || slot.w < 40 || slot.h < 40) {
         // off screen, or moving (the lesson scrolls, or is drawn again): the pen is put away, not thrown away, so Check still reads what is on it
-        if (current !== null) {
+        if (current !== null && !writing()) {
           current.overlay.setActive(false);
           box.style.display = 'none';
         }
         return;
       }
       const key = `${slot.node}\u0000${slot.ask}`;
-      if (current !== null && current.key === key && Math.abs(current.slot.w - slot.w) < 2 && Math.abs(current.slot.h - slot.h) < 2) {
+      // the same paper, moved or sized a little differently by a re-render: the layer follows its box in place, still active, strokes and all
+      if (current !== null && current.key === key && (writing() || (Math.abs(current.slot.w - slot.w) < 2 && Math.abs(current.slot.h - slot.h) < 2) || (Math.abs(current.slot.w - slot.w) < slot.w * 0.5 && Math.abs(current.slot.h - slot.h) < slot.h * 0.5))) {
         Object.assign(box.style, { display: 'block', left: `${slot.x}px`, top: `${slot.y}px`, width: `${slot.w}px`, height: `${slot.h}px` });
         current = { ...current, slot };
         current.overlay.setActive(true);

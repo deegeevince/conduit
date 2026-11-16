@@ -1691,3 +1691,27 @@ input {
 .skills__apart[aria-expanded='false'] .composer__label::after {
   content: ' \203A';
 }
+
+/* The work mode (web/src/app/work-mode.ts): a question to work out fills the screen; the composer steps back to an Ask button. */
+body.work .bar { position: fixed; left: 0; right: 0; bottom: 0; display: none; }
+body.work.work--ask .bar { display: block; }
+.work-button {
+  position: fixed;
+  z-index: 60;
+  min-height: 44px;
+  min-width: 72px;
+  padding: 0 18px;
+  border: 1px solid var(--chrome-line);
+  border-radius: 22px;
+  background: var(--chrome-ground);
+  color: var(--chrome-text);
+  font: 600 16px/1 system-ui, sans-serif;
+  cursor: pointer;
+}
+.work-button[hidden] { display: none; }
+.work-button--done { left: max(14px, env(safe-area-inset-left)); top: max(14px, env(safe-area-inset-top)); }
+.work-button--ask { right: max(14px, env(safe-area-inset-right)); bottom: max(14px, env(safe-area-inset-bottom)); }
+body.work--ask .work-button--ask { bottom: auto; top: max(14px, env(safe-area-inset-top)); }
+body.work .ink-stage__bar { top: 8px; bottom: auto; left: auto; right: 12px; transform: none; max-width: calc(100% - 130px); }
+@media (max-width: 640px) { body.work .ink-stage__bar .ink-swatch:nth-of-type(n+2), body.work .ink-stage__bar .ink-bar__group + .ink-bar__group { display: none; } }
+body.work .ink-bar__words, body.work .ink-btn--send { display: none; }

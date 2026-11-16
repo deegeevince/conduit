@@ -2,6 +2,12 @@
 
 Newest first. Each item is something the brain can show live when asked "showcase what's new": draw it, don't describe it. The server reads this file.
 
+## Maths help happens on the canvas (live)
+- Ask for help with a maths question, typed or photographed, and the answer is the question itself on the canvas: retyped big, with a blank to answer, a hint behind a tap, and a choice of ways to see it (groups, a number line, a bar) drawn a step at a time.
+- The question takes the whole screen. The composer steps back to a small Ask button, Done puts the screen back, the pen writes anywhere on it, and your ink stays while a hint or a layout changes underneath. A finger still presses Check and Hint.
+- A photo of a whole page with no question named gives "Which one first?" and the questions to tap. No map of cards, no questions written in the background that nobody asked for. A document of questions comes only when you ask for a document, worksheet or checklist.
+- The pen no longer drops a stroke while a lesson saves or redraws, or after the pen leaves the screen mid-stroke.
+
 ## A wireframe you ask for comes out as a wireframe (live)
 - "Wireframe a music app clone" or "mock up a banking app" now gives a mock-up of screens you can tap through, not a live app that overflows. A live app is for something that has to run.
 - A live app laid out like a desktop product (a sidebar and a main view) is set in its own type, so its text stays inside its boxes.

@@ -14,6 +14,7 @@ import { isCommand } from './chrome/commands';
 import { mountActivity } from './chrome/activity';
 import { mountAbout } from './chrome/about';
 import { DRAW_WORDS, mountStageInk } from './ink/stage';
+import { mountWorkMode } from './app/work-mode';
 import type { StageInk } from './ink/stage';
 import { mountPermission } from './chrome/permission';
 import { mountPicker } from './chrome/picker';
@@ -177,8 +178,10 @@ async function start(): Promise<void> {
     prompt: (words, marks) => mounted.prompt(words, [], marks),
     announce: (text) => mounted.announce(text),
   });
+  mountWorkMode({ stage: stageHost, bar: bar as HTMLElement, ink: stageInk, controls: () => mounted.hook.controls() });
   // for the browser checks (web/scripts/ink-check.mjs): the ink layer's own latency numbers
   (window as unknown as { __inkStats?: () => unknown }).__inkStats = () => stageInk?.ink.stats();
+  (window as unknown as { __inkStrokes?: () => number }).__inkStrokes = () => stageInk?.ink.model.strokes.length ?? 0;
   mountActions(promptBar.extra, mounted, transcript, stageHost, { top: promptBar.top, menu: promptBar.menu });
   mountSound(promptBar.top, mounted);
   picker = mountPicker(promptBar.menu, mounted);
