@@ -38,6 +38,7 @@ import { answerScript, messagesOfTurn, shorten } from './model';
 import type { AnswerTurn, Message, ReplyChoice, ReplyMessage } from './model';
 import { stageScheme, systemScheme, watchStage, watchSystem, wear } from './theme';
 import { mountThread } from './thread';
+import { followVisualViewport } from '../app/viewport';
 
 const UNTITLED = 'New conversation';
 const PAST_NOTE = 'An earlier conversation. Send a message to pick it up where it left off.';
@@ -562,18 +563,7 @@ const measurePill = (): void => shell.style.setProperty('--sh-pill-h', `${Math.c
 if (typeof ResizeObserver !== 'undefined') new ResizeObserver(measurePill).observe(pillBox);
 measurePill();
 
-const keepAboveKeyboard = (): void => {
-  const viewport = window.visualViewport;
-  if (viewport === null) return;
-  document.documentElement.style.setProperty('--app-height', `${Math.round(viewport.height)}px`);
-  window.scrollTo(0, 0);
-};
-window.visualViewport?.addEventListener('resize', keepAboveKeyboard);
-keepAboveKeyboard();
-// the page never scrolls: if anything moves it (a focus, a keyboard), it goes straight back
-window.addEventListener('scroll', () => {
-  if (window.scrollX !== 0 || window.scrollY !== 0) window.scrollTo(0, 0);
-});
+followVisualViewport();
 
 // ---- the stage, once it is up
 
