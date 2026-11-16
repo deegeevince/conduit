@@ -33,6 +33,13 @@ export const INK_CSS = `
 .ink-stage{position:absolute;inset:0;z-index:30}
 .ink-stage[hidden]{display:none}
 .ink-stage__bar{position:absolute;left:50%;transform:translateX(-50%);top:10px;max-width:calc(100% - 20px);z-index:2}
+.ink-bar[hidden],.ink-bar [hidden]{display:none}
+.ink-bar__fold{padding-right:2px}
+.ink-bar__fold+.ink-bar__group{padding-left:0;border-left:none}
+.ink-bar--collapsed{padding:0;border-radius:22px;flex-wrap:nowrap;gap:0}
+.ink-bar--collapsed>:not(.ink-btn--pill){display:none}
+.ink-btn--pill{border-radius:22px;width:44px}
+.ink-stage__bar.ink-bar--collapsed{left:auto;right:12px;top:10px;transform:none;max-width:none}
 .ink-stage .ink{background:rgba(255,255,255,.02)}
 @media (prefers-reduced-motion:no-preference){.ink-btn,.ink-swatch__dot{transition:background-color .12s,box-shadow .12s}}
 `;

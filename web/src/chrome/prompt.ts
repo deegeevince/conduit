@@ -199,7 +199,7 @@ export function mountPromptBar(
   // The microphone: what is said comes back as words in the field, to be checked before sending (or sent at once when the owner chose that).
   if (mic !== null && handlers.voice !== undefined) {
     mic.innerHTML = '';
-    voice = mountVoice(mic, float, input, handlers.voice, {
+    voice = mountVoice(mic, form, input, handlers.voice, {
       onWords: (words, send) => {
         const there = input.value.trim();
         input.value = there === '' ? words : `${there} ${words}`;
@@ -207,7 +207,7 @@ export function mountPromptBar(
         if (send) submit();
         else input.focus({ preventScroll: true });
       },
-    });
+    }, { menu });
   }
 
   const refocus = (): void => {
