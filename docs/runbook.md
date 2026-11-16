@@ -30,7 +30,10 @@ Both ports are strict: if one is taken the process fails instead of picking anot
 | --- | --- |
 | `pnpm dev` | server and web dev server together, both reloading on change. Open http://127.0.0.1:4301 |
 | `pnpm dev:server` / `pnpm dev:web` | one of them |
-| `pnpm typecheck` | type-checks every package. The only automated gate. |
+| `pnpm typecheck` | type-checks every package. |
+| `pnpm check [--url <server>] [--out <dir>] [--screens 1280x720,390x844] [--allow-plain]` | the free browser check, and the one CI runs: with no `--url` it starts its own server from the build (`BRAIN=replay`, a throwaway `DATA_DIR`, a free port) and stops it; plays the welcome (also under reduced motion) and every offered demo in headless Chrome, taps a starter, works the explorable's controls, and runs smoke's checks on each screen. Run `pnpm build` first. Prints the renderer it got (a fall back from WebGL fails it unless `--allow-plain`). No model, no account. |
+| `pnpm smoke [--url <server>]` | one scripted conversation with a live brain, in headless Chrome at desk and phone sizes (the deploy gate). Needs a server with a real brain. |
+| `pnpm catalogue` | the real-browser cases in `catalogue/`, replayed at desk and phone sizes. |
 | `pnpm build` | builds the web app into `web/dist` |
 | `pnpm start` | production mode: the server serves the API and `web/dist` on 4300. Run `pnpm build` first. |
 | `pnpm timeline <name or path>` | prints when every line of a script would play. `pnpm timeline overture`. With no argument it checks every worked example in the prompt. |
@@ -42,6 +45,8 @@ Both ports are strict: if one is taken the process fails instead of picking anot
 | `pnpm explore [flags]` | runs the exploration battery (see "The exploration battery") |
 | `pnpm docs:language` | regenerates the reference section of `docs/language.md` from the code |
 | `pnpm --filter @conduit/web fonts` | rebuilds the processed font files in `web/src/fonts` (needs Node 22.6 or later) |
+
+The browser tools (`pnpm check`, `smoke`, `catalogue`, `explore`) find Chrome in the usual places on macOS and Linux, or at `CHROME_BIN`. They use the GPU on a Mac and SwiftShader (software WebGL) on Linux; `CHROME_GL=swiftshader` forces that anywhere.
 
 One brain at a time (`claude-cli`, `codex-cli` for a ChatGPT login, `relay`, `replay`; `docs/codex.md` says what `codex-cli` does and does not do). To switch brains, stop the server and start it with another `BRAIN`; for a single run you can set it inline: `BRAIN=replay pnpm dev`.
 

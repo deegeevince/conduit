@@ -86,8 +86,30 @@ export const CHROME_CANDIDATES = [
   processEnvironment()['CHROME_BIN'],
   '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
   '/usr/bin/google-chrome',
+  '/usr/bin/google-chrome-stable',
   '/usr/bin/chromium',
+  '/usr/bin/chromium-browser',
+  '/snap/bin/chromium',
 ].filter((path): path is string => typeof path === 'string' && path !== '');
+
+/**
+ * The flags every headless Chrome here is started with, by platform. A Mac has a GPU, reached through Metal. A Linux machine (a CI runner) has none, so WebGL
+ * runs on SwiftShader, Chrome's software renderer; the page still gets WebGL2, only slower. `CHROME_GL=swiftshader` forces that on any platform (to try what a
+ * runner will do); `CHROME_GL=metal` or `default` leaves the choice to the platform. On Linux in CI, or as root, the sandbox is off: a runner's user namespaces
+ * may be restricted, and the page is this repository's own on localhost.
+ */
+export function chromeFlags(): string[] {
+  const env = processEnvironment();
+  const choice = env['CHROME_GL'] ?? '';
+  const software = choice === 'swiftshader' || (choice === '' && process.platform !== 'darwin');
+  const flags = ['--headless=new', ...(software ? ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] : ['--use-angle=metal']), '--ignore-gpu-blocklist', '--no-first-run', '--no-default-browser-check'];
+  if (process.platform === 'linux') {
+    flags.push('--disable-dev-shm-usage');
+    if (env['CI'] !== undefined && env['CI'] !== '' && env['CI'] !== 'false') flags.push('--no-sandbox');
+    else if (typeof process.getuid === 'function' && process.getuid() === 0) flags.push('--no-sandbox');
+  }
+  return flags;
+}
 
 export const sleep = (ms: number): Promise<void> => new Promise((done) => setTimeout(done, ms));
 
@@ -191,7 +213,7 @@ export async function openEyes(options: EyesOptions): Promise<Eyes> {
     cleanups.push(() => rm(profile, { recursive: true, force: true }));
     const child = spawnTracked(
       chrome,
-      ['--headless=new', '--use-angle=metal', '--ignore-gpu-blocklist', '--no-first-run', '--no-default-browser-check', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--window-size=1280,800', 'about:blank'],
+      [...chromeFlags(), '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--window-size=1280,800', 'about:blank'],
       undefined,
       { quiet: true },
     );

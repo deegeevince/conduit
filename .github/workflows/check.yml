@@ -1,0 +1,33 @@
+name: check
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm build
+      - name: Browser check (no model, no account)
+        run: pnpm check --out "$RUNNER_TEMP/check-pictures"
+        env:
+          CHROME_BIN: /usr/bin/google-chrome
+      - name: Keep the screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: check-pictures
+          path: ${{ runner.temp }}/check-pictures
+          if-no-files-found: ignore
