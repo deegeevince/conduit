@@ -11,7 +11,7 @@
 //
 // Arms. A: the shipped brain through `pnpm explore` (the real server path), its drawing alone. A+: the same lines with the page loaded with
 // ?shade=1. B: one `ask()` of the strongest model at high effort, one strict SVG. C: a hand-picked SVG from --seeds. D: the staged illustrator,
-// a server-driven loop of `ask()` calls that each get the rendered picture back. B, C and D go through the converter (art-svg.ts).
+// a server-driven loop of `ask()` calls that each get the rendered picture back. B, C and D go through the converter (art/svg.ts).
 // Everything runs on the owner's `claude` login (`ask()` starts the CLI; no API key is read or sent anywhere).
 
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
@@ -25,7 +25,7 @@ import { spawnTracked } from '../brains/claude-cli/process';
 import { processEnvironment } from '../env';
 import { openEyes, repoRoot } from './explore-browser';
 import type { Eyes } from './explore-browser';
-import { convertSvg } from './art-svg';
+import { convertSvg } from '../art/svg';
 
 // ---- options ----
 

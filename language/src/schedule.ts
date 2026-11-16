@@ -50,7 +50,7 @@ import {
   dwellSeconds,
   waitSeconds,
 } from './timing';
-import type { Anchor, AppShelf, LessonVerb, TuneVoice } from './vocabulary';
+import type { Anchor, AppShelf, ArtVerb, LessonVerb, TuneVoice } from './vocabulary';
 import type { BindLine, BindOn, CanvasBox, ControlLine, SceneLine, ControlValue, CreatingLine, Issue, IssueCode, Line, Paint, Point, Range, ShapeGeometry, StructureLine, StyleProps, TablePart, Target, When } from './types';
 import { cachedTune, tuneRowsOf } from './tune';
 import { BACKDROP_LAYERS, CANVAS, CONTROL, DEFAULT_CANVAS, DEFAULT_CHART, DEFAULT_LOOK, DEFAULT_TUNE_VOICE, LESSON_VERBS, LIMITS, STRUCTURE } from './vocabulary';
@@ -462,7 +462,7 @@ export interface LookSpan extends Span {
 
 export interface LineTime extends Span {
   readonly seq: number;
-  readonly verb: Verb | LessonVerb;
+  readonly verb: Verb | LessonVerb | ArtVerb;
 }
 
 export interface ScheduleIssue {
@@ -575,6 +575,14 @@ function sameStyle(a: ElementStyle, b: ElementStyle): boolean {
 }
 
 /** Lines that only define, edit or hand something to the server: the first line that is none of these is the one that begins the answer. */
+/** The id a `draw` line stands under when nobody named it: its subject and a one, as the server names it (`fox1`). */
+export function drawIdOf(line: { readonly id: string; readonly subject: string }): string {
+  if (line.id !== '-') return line.id;
+  const word = line.subject.split(/\s+/).pop() ?? '';
+  const slug = word.replace(/[^a-z0-9]/g, '').slice(0, 16);
+  return `${/^[a-z]/.test(slug) ? slug : 'art'}1`;
+}
+
 const QUIET_VERBS: ReadonlySet<string> = new Set(['style', 'color', 'look', 'plan', 'wait', 'revise', 'cancel', 'bind', 'row', 'frame', 'standing', 'refine', ...LESSON_VERBS]);
 
 /** Whether the scene's layout, not the element itself, decides where it goes. Text flows, and so does a control: it takes a line of the flow like a choice does. */
@@ -1175,11 +1183,14 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
       return;
     }
 
-    if (line.verb === 'group' || line.verb === 'card') {
-      const same = findLive(line.id, start);
+    if (line.verb === 'group' || line.verb === 'card' || line.verb === 'draw') {
+      // `draw` is a group to the schedule: the server writes the parts. Left unexpanded (a script played with no shelf) it is an empty group.
+      const gid = line.verb === 'draw' ? drawIdOf(line) : line.id;
+      const gstyles: readonly string[] = line.verb === 'draw' ? [] : line.styles;
+      const same = findLive(gid, start);
       if (same !== null && same.span.kind === 'group') {
         // A group written again is the same group, restyled or moved: its parts stay.
-        const merged = mergeStyles(sheet, line.styles, line.props);
+        const merged = mergeStyles(sheet, gstyles, line.props);
         for (const name of merged.unknown) report(seq, 'unknown-style', `no style called "${name}"; ignored`, name);
         const change = coloured(seq, merged.props);
         const patched = patchStyle(same.style, change);
@@ -1198,10 +1209,10 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
         lines.push({ seq, verb: line.verb, start, end });
         return;
       }
-      const style = styleFor(seq, 'group', line.styles, line.props);
-      const slot = takeSlot(line.id, start);
+      const style = styleFor(seq, 'group', gstyles, line.props);
+      const slot = takeSlot(gid, start);
       const card = line.verb === 'card' ? splitEmphasis(line.title ?? '') : null;
-      create(entry, 'group', line.id, style, start, 0, slot.order, {
+      create(entry, 'group', gid, style, start, 0, slot.order, {
         figure: card === null || line.verb !== 'card' ? { kind: 'group' } : { kind: 'group', card: { title: card.plain, box: line.box ?? null } },
       });
       lines.push({ seq, verb: line.verb, start, end: start });
@@ -1789,6 +1800,7 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
       case 'path':
       case 'pix':
       case 'group':
+      case 'draw':
       case 'use':
       case 'paint':
       case 'ambient':

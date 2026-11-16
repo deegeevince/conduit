@@ -1,0 +1,90 @@
+{
+ "v": 1,
+ "subject": "rocket",
+ "pose": "",
+ "view": "side",
+ "facing": "front",
+ "ground": 95,
+ "slots": [
+  {
+   "name": "red",
+   "hue": "red"
+  },
+  {
+   "name": "cream",
+   "hue": "cream"
+  },
+  {
+   "name": "yellow",
+   "hue": "yellow"
+  }
+ ],
+ "parts": [
+  {
+   "id": "shadow",
+   "line": "ellipse shadow 0,46 22x2.5 fill=dim stroke=none opacity=0.18"
+  },
+  {
+   "id": "flame-outer",
+   "line": "path flame-outer fill=$red+2 stroke=ink thick=1.6 | M-7 25 C-13 34 -6 40 0 45 C6 40 13 34 7 25 Z"
+  },
+  {
+   "id": "flame-inner",
+   "line": "path flame-inner fill=$yellow+1 stroke=none | M-4 26 C-6 32 -3 36 0 39 C3 36 6 32 4 26 Z"
+  },
+  {
+   "id": "left-fin",
+   "line": "path left-fin fill=$red stroke=ink thick=1.8 | M-16.5 0 C-28 6 -33 18 -32 32 C-27 26 -22 23 -16 22 Z"
+  },
+  {
+   "id": "right-fin",
+   "line": "path right-fin fill=$red-1 stroke=ink thick=1.8 | M16.5 0 C28 6 33 18 32 32 C27 26 22 23 16 22 Z"
+  },
+  {
+   "id": "nozzle",
+   "line": "rect nozzle -9,21 18x5.5 fill=$red-1 stroke=ink thick=1.6"
+  },
+  {
+   "id": "body",
+   "line": "path body fill=$cream stroke=ink thick=2 | M0 -44 C-16 -30 -20 -10 -17 22 L17 22 C20 -10 16 -30 0 -44 Z"
+  },
+  {
+   "id": "body-shade",
+   "line": "path body-shade fill=deep stroke=none opacity=0.12 | M8 -34 C14 -22 17 -2 16 21 L9.5 21 C11.5 -2 11 -20 8 -34 Z"
+  },
+  {
+   "id": "nose",
+   "line": "path nose fill=$red stroke=ink thick=2 | M0 -44 C-7 -38 -11.5 -31 -14 -23 Q0 -19 14 -23 C11.5 -31 7 -38 0 -44 Z"
+  },
+  {
+   "id": "nose-highlight",
+   "line": "path nose-highlight fill=$red+2 stroke=none | M-3.5 -38.5 C-7 -35 -9 -31 -10 -26 L-6.5 -25.2 C-6 -31 -5 -35 -3.5 -38.5 Z"
+  },
+  {
+   "id": "band",
+   "line": "path band fill=$red-1 stroke=ink thick=1 | M-17.4 13 Q0 16.5 17.4 13 L17 22 L-17 22 Z"
+  },
+  {
+   "id": "window-rim",
+   "line": "circle window-rim 0,-6 9 fill=$yellow+1 stroke=ink thick=1"
+  },
+  {
+   "id": "window",
+   "line": "circle window 0,-6 6 fill=$cream-3 stroke=ink thick=0.8"
+  },
+  {
+   "id": "window-shine",
+   "line": "path window-shine fill=$cream stroke=none | M-0.6 -9.66 C-0.22 -9.12 -0.72 -8.11 -1.71 -7.42 C-2.71 -6.72 -3.82 -6.6 -4.2 -7.14 C-4.58 -7.68 -4.08 -8.69 -3.09 -9.38 C-2.09 -10.08 -0.98 -10.2 -0.6 -9.66 Z"
+  },
+  {
+   "id": "center-fin",
+   "line": "path center-fin fill=$red stroke=ink thick=1 | M0 9 C-3.2 14 -3.2 26 0 32 C3.2 26 3.2 14 0 9 Z"
+  }
+ ],
+ "made": {
+  "by": "fable",
+  "arm": "B",
+  "how": "Fable, one careful drawing off the answer's clock (bake-off arm B); read by the strict converter and restyled to the house palette"
+ },
+ "licence": "MIT (made for this project on the owner's own subscription)"
+}

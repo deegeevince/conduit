@@ -1,4 +1,5 @@
 import { LEAD_WINDOW, STANDING_LIMITS, describeFigure } from '@conduit/language';
+import { withArtNotes } from '../art/notes';
 import type { BackEventRecord, ReviewOutcome, Services, ShownItem, TurnContext, TurnMemory, TurnReport } from '@conduit/language';
 import type { ActiveTurn, Session } from './session';
 import { SERVER_LIMITS } from './session';
@@ -62,7 +63,7 @@ export function rememberTurn(turn: ActiveTurn, report: TurnReport | null, snapsh
       outcome: report.outcome,
       playhead: report.playhead,
       shown: report.shown,
-      sight: report.sight,
+      sight: withArtNotes(turn, report.sight),
       skippedAt: report.skippedAt,
       problems: [...turn.problems],
       snapshot,

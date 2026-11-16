@@ -1,0 +1,122 @@
+{
+ "v": 1,
+ "subject": "fox",
+ "pose": "sitting",
+ "view": "side",
+ "facing": "left",
+ "ground": 90,
+ "slots": [
+  {
+   "name": "orange",
+   "hue": "orange"
+  },
+  {
+   "name": "cream",
+   "hue": "cream"
+  }
+ ],
+ "parts": [
+  {
+   "id": "shadow",
+   "line": "ellipse shadow 7,40 37x3.5 fill=dim stroke=none"
+  },
+  {
+   "id": "tail",
+   "line": "path tail fill=$orange-1 stroke=none | M12 37 C26 42 43 36 43.5 16 C43.5 4 40 -5 34 -8 C29.5 -4 29 3 31 9 C33 17 27 23 16 25 Z"
+  },
+  {
+   "id": "tail-light",
+   "line": "path tail-light fill=$orange stroke=none | M31 9 C33 17 27 23 16 25 L16 29 C28 28 36.5 22 35 10.5 C33.8 11.5 32.5 10.5 31 9 Z"
+  },
+  {
+   "id": "tail-tip",
+   "line": "path tail-tip fill=$cream stroke=ink thick=0.7 | M34 -8 C40 -5 43.5 4 43.5 16 C41 11 38 13 36.5 10 C35 12 33 11 31 9 C29 3 29.5 -4 34 -8 Z"
+  },
+  {
+   "id": "tail-outline",
+   "line": "path tail-outline fill=none stroke=ink thick=1.8 | M12 37 C26 42 43 36 43.5 16 C43.5 4 40 -5 34 -8 C29.5 -4 29 3 31 9 C33 17 27 23 16 25 Z"
+  },
+  {
+   "id": "body",
+   "line": "path body fill=$orange stroke=ink thick=1.8 | M-10 -6 C2 -8 18 4 22 22 C24 32 20 39 10 39 L-16 39 C-20 28 -21 12 -17 -4 Z"
+  },
+  {
+   "id": "haunch",
+   "line": "path haunch fill=$orange-1 stroke=ink thick=0.8 | M1 38 C-3 27 3 16 11.5 16 C18 16 21.5 22 21.5 28 C21.5 34 17 38 10 38 Z"
+  },
+  {
+   "id": "haunch-light",
+   "line": "path haunch-light fill=$orange stroke=none | M3.5 27 C3.5 21.5 7.5 18.2 12 18.2 C14.5 18.2 16.2 19 17.2 20.5 C12 19.5 6.5 22 3.5 27 Z"
+  },
+  {
+   "id": "chest",
+   "line": "path chest fill=$cream stroke=none | M-17.4 -3 C-18.6 4 -18.8 10 -18.2 18 C-16 24 -12 28 -9 30 C-4 22 -1 10 -2 -3 Z"
+  },
+  {
+   "id": "chest-shade",
+   "line": "path chest-shade fill=$cream-2 stroke=none | M-17.6 -1 C-13 1 -7 1.5 -2 0 C-2 4 -3 7 -4 9 C-9 7.5 -14 5.5 -18 3 Z"
+  },
+  {
+   "id": "front-leg",
+   "line": "path front-leg fill=$orange stroke=ink thick=1.6 | M-6 12 C-7.5 20 -8.5 28 -8.5 35 C-8.5 37.5 -19 37.5 -19 35 C-19.5 27 -19.4 18 -18.4 9"
+  },
+  {
+   "id": "hind-paw",
+   "line": "ellipse hind-paw 4,37.4 7x2.6 fill=deep stroke=none"
+  },
+  {
+   "id": "front-paw",
+   "line": "ellipse front-paw -15,37 7x2.8 fill=deep stroke=none"
+  },
+  {
+   "id": "far-ear",
+   "line": "path far-ear fill=$orange-1 stroke=ink thick=1.8 | M-17 -26 C-18 -35 -17 -41 -14.5 -45 C-10 -41 -6 -35 -4 -28 Z"
+  },
+  {
+   "id": "head",
+   "line": "path head fill=$orange stroke=none | M-42 -10 C-36 -12 -31 -16 -28 -22 C-25 -28 -18 -30.5 -11 -30.5 C-1 -30.5 6 -23 5 -13 C4.5 -7.5 2 -3.5 -2 -0.5 C-8 1 -15 -0.5 -21 -2 C-29 -3.5 -38 -4.5 -42 -10 Z"
+  },
+  {
+   "id": "head-light",
+   "line": "path head-light fill=$orange+1 stroke=none | M-31 -15.5 C-27.5 -20 -25 -25.5 -19 -27 C-16 -27.8 -13 -27.8 -10 -27 C-15 -26 -20 -23.5 -23 -20 C-25.5 -17.5 -28 -16 -31 -15.5 Z"
+  },
+  {
+   "id": "cheek",
+   "line": "path cheek fill=$cream stroke=none | M-41 -10 C-33 -10.5 -25 -12.5 -18 -10.5 Q-14.5 -10.8 -11.5 -11.2 Q-11.5 -8.5 -10.5 -7 Q-7.5 -7.4 -5 -7.2 Q-5 -4 -2 -0.5 C-8 1 -15 -0.5 -21 -2 C-29 -3.5 -38 -4.5 -41 -10 Z"
+  },
+  {
+   "id": "head-outline",
+   "line": "path head-outline fill=none stroke=ink thick=1.8 | M-42 -10 C-36 -12 -31 -16 -28 -22 C-25 -28 -18 -30.5 -11 -30.5 C-1 -30.5 6 -23 5 -13 C4.5 -7.5 2 -3.5 -2 -0.5 C-8 1 -15 -0.5 -21 -2 C-29 -3.5 -38 -4.5 -42 -10 Z"
+  },
+  {
+   "id": "near-ear",
+   "line": "path near-ear fill=$orange stroke=ink thick=1.8 | M-9 -25 C-9 -34 -6 -42 -1 -47 C4 -41 7 -31 4 -19"
+  },
+  {
+   "id": "ear-inner",
+   "line": "path ear-inner fill=$orange-1 stroke=none | M-5.5 -26 C-5 -33 -3 -39 -0.5 -42 C2 -37 3 -30 2 -23 C-1 -23 -3.5 -24 -5.5 -26 Z"
+  },
+  {
+   "id": "mouth",
+   "line": "path mouth fill=none stroke=ink thick=0.8 | M-38.5 -7.6 C-35 -5.4 -30 -5 -26 -7.6"
+  },
+  {
+   "id": "nose",
+   "line": "ellipse nose -41.5,-10.4 2.5x2.1 fill=deep stroke=none"
+  },
+  {
+   "id": "eye",
+   "line": "circle eye -21,-19 2.5 fill=deep stroke=none"
+  },
+  {
+   "id": "eye-shine",
+   "line": "circle eye-shine -21.8,-19.8 0.85 fill=$cream stroke=none"
+  }
+ ],
+ "made": {
+  "by": "fable",
+  "arm": "D",
+  "how": "Fable, a staged drawing off the answer's clock (bake-off arm D); read by the strict converter and restyled to the house palette"
+ },
+ "licence": "MIT (made for this project on the owner's own subscription)"
+}

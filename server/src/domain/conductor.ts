@@ -1,5 +1,5 @@
 import { API, SKILL_HOLD, CANVAS, DATA_LIMITS, EMPTY_STAGE, isLessonVerb, PASTE_AS_DOCUMENT_CHARS, FULL_CAPABILITIES, LANGUAGE, LEAD_WINDOW, LineNormalizer, LineReader, PRESENCE_TYPING_MS, TurnScore, buildSystemPrompt, draftFactsOf, hasLesson, usesParts, repairWorth, serializeLine, settle, splitCells, wearingAt, withoutUnknownBraces, worthALook } from '@conduit/language';
-import type { RepairWorth, SkillBlockFacts, TechniqueCard } from '@conduit/language';
+import type { DrawLine, RepairWorth, SkillBlockFacts, TechniqueCard } from '@conduit/language';
 import type { ActivityState, BrainChange, BrainChoice, BrainMode, CriticFinding, DocumentSummary, DocumentView, FixPolicy, NodeId, NodeStatus, OpenDocumentResponse, PromptVariant, Seen, ToolChoice } from '@conduit/language';
 import type {
   BackEvent,
@@ -35,6 +35,9 @@ import type { Brain, BrainEvent, BrainRegistry, Snapshot } from './brain';
 import { DOCUMENT_LIMITS, findUrls, hostOf } from './documents';
 import type { DocumentReader } from './documents';
 import type { ImageModel } from './images';
+import { Cast, planDraw } from '../art/draw';
+import { noteArt } from '../art/notes';
+import type { Shelf } from '../art/shelf';
 import { creditLine } from './pictures';
 import type { PictureService } from './pictures';
 import type { HeldDocument } from './documents';
@@ -87,6 +90,8 @@ export interface ConductorDeps {
   readonly images: ImageModel;
   /** v2.2. Photographs for the `image` parts of a mock-up; absent or unavailable: the placeholder stands */
   readonly pictures?: PictureService;
+  /** v3 art. The shelf of finished drawings `draw` is answered from. Absent: every `draw` is a quiet placeholder. */
+  readonly art?: Shelf;
   /** fetches the links a prompt contains */
   readonly reader: DocumentReader;
   /** what a brain is told about how its last answer landed */
@@ -169,6 +174,8 @@ function refusalOf(raw: string, issues: readonly Issue[]): { readonly raw: strin
  */
 export class Conductor {
   private readonly deps: ConductorDeps;
+  /** v3 art. One casting of characters a conversation: the fox it drew stays the fox until the brain says `new`. */
+  private readonly casts = new WeakMap<Session, Cast>();
   private readonly waiters = new Map<string, Set<() => void>>();
   /** The technique cards that wrote a session's document (a lesson for a young learner, a recipe): they ride on every later turn of it, so the part written ahead, and the answer to a tap, are written by the same rules. */
   private readonly documentCards = new Map<string, readonly TechniqueCard[]>();
@@ -364,6 +371,7 @@ export class Conductor {
       review: review.enabled && review.passes >= 1 && capabilities.drafts && capabilities.candidates && brains.configured.review !== undefined,
       ...(critic.available ? { critic: true } : {}),
       ...(this.deps.uploads?.available === true ? { uploads: true } : {}),
+      ...(this.deps.art === undefined ? {} : { art: true }),
       ...(mode === undefined || mode === 'plain' ? {} : { mode }),
     };
   }
@@ -1893,6 +1901,9 @@ export class Conductor {
       this.reject(s, turn, serializeLine(event.line), [...event.issues, ...normalized.issues]);
       return undefined;
     }
+    // v3 art. `draw` is expanded here, beside `paint` and `findPicture`: a shelf hit becomes a group and its parts, a miss a quiet placeholder.
+    // The lines it makes are ingested one by one as if the brain had written them, so the log, the schedule and the page see only real lines.
+    if (normalized.line.verb === 'draw') return this.drawFromShelf(s, turn, normalized.line, normalizer, pass, repairing);
     const braced = this.withoutRawBraces(turn, normalized.line);
     const line = braced.line;
     const bracedIssues: Issue[] = [];
@@ -2217,6 +2228,27 @@ export class Conductor {
     }
     if (sessions.get(session) !== undefined) this.journal(s, { type: 'end', turn, reason, message, lines });
     return { ok: reason === 'done', turn, lines, refused: refused.length, costUsd: cost, ms: now() - started, reason: reason === 'done' ? (amended ? 'rewritten once after a refusal' : null) : (message ?? reason) };
+  }
+
+  /** v3 art. One `draw` line as the lines of a figure from the shelf, or of a placeholder; see `art/draw.ts`. */
+  private drawFromShelf(s: Session, turn: ActiveTurn, line: DrawLine, normalizer: LineNormalizer, pass: number, repairing: boolean): 'stop' | undefined {
+    const schedule = turn.score.schedule;
+    const scene = schedule.scenes.at(-1);
+    const cast = this.casts.get(s) ?? new Cast(s.id);
+    this.casts.set(s, cast);
+    const planned = planDraw(line, {
+      shelf: this.deps.art ?? null,
+      cast,
+      live: new Set(schedule.elements.map((element) => element.id)),
+      canvas: CANVAS[scene?.canvas ?? s.screen.canvas],
+      look: wearingAt(schedule, turn.score.base, schedule.pen),
+    });
+    this.deps.log.info('art.draw', { session: s.id, turn: turn.id, ...planned.detail });
+    if (planned.note !== null) noteArt(turn, planned.id, planned.note);
+    for (const made of planned.lines) {
+      if (this.ingest(s, turn, { type: 'line', line: made, issues: [] }, normalizer, pass, repairing) === 'stop') return 'stop';
+    }
+    return undefined;
   }
 
   /**

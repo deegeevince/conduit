@@ -1,0 +1,126 @@
+{
+ "v": 1,
+ "subject": "house",
+ "pose": "",
+ "view": "front",
+ "facing": "front",
+ "ground": 95.3,
+ "slots": [
+  {
+   "name": "red",
+   "hue": "red"
+  },
+  {
+   "name": "cream",
+   "hue": "cream"
+  }
+ ],
+ "parts": [
+  {
+   "id": "ground",
+   "line": "ellipse ground 2.5,40.5 43x4.8 fill=$red-2 stroke=none opacity=0.28"
+  },
+  {
+   "id": "smoke",
+   "line": "path smoke fill=$cream stroke=$cream-2 thick=1 | M18 -41.4 Q15.8 -45.4 20 -46.2 Q22 -49.2 25.6 -47 Q29.8 -47 28.7 -43.4 Q29.2 -40.2 25 -40.8 Q21 -39.2 18 -41.4 Z"
+  },
+  {
+   "id": "chimney",
+   "line": "path chimney fill=$red-1 stroke=ink thick=1.6 | M15.5 -33 L24.5 -33 Q25 -22 25.5 -10 L15 -10 Q15 -22 15.5 -33 Z"
+  },
+  {
+   "id": "chimney-shade",
+   "line": "path chimney-shade fill=$red-2 stroke=none | M21.6 -32.2 L23.7 -32.2 Q24.2 -22 24.6 -11 L22.2 -11 Q22 -22 21.6 -32.2 Z"
+  },
+  {
+   "id": "chimney-cap",
+   "line": "path chimney-cap fill=$red-2 stroke=ink thick=1.6 | M14.5 -38 L25.5 -38 Q27.5 -38 27.5 -36 L27.5 -34.5 Q27.5 -32.5 25.5 -32.5 L14.5 -32.5 Q12.5 -32.5 12.5 -34.5 L12.5 -36 Q12.5 -38 14.5 -38 Z"
+  },
+  {
+   "id": "body",
+   "line": "path body fill=$cream-1 stroke=ink thick=1.8 | M-31 -3 Q0 -5 31 -3 Q32.5 18 31 38 Q31 39.5 29.5 39.5 Q0 41 -29.5 39.5 Q-31 39.5 -31 38 Q-32.5 18 -31 -3 Z"
+  },
+  {
+   "id": "body-shade",
+   "line": "path body-shade fill=$cream-2 stroke=none | M21 -2.5 Q26 -3 30.2 -2.5 Q31.6 18 30.2 38.5 L23 38.9 Q26.5 18 21 -2.5 Z"
+  },
+  {
+   "id": "wall-light",
+   "line": "path wall-light fill=$cream stroke=none | M-29.7 2.4 L-26.6 2.2 Q-27.7 20 -26.6 38.7 L-29.6 38.5 Q-31 20 -29.7 2.4 Z"
+  },
+  {
+   "id": "eave-shadow",
+   "line": "path eave-shadow fill=$cream-2 stroke=none | M-30.2 -2 Q0 -4 30.2 -2 L30.4 2.6 Q0 0 -30.4 2.6 Z"
+  },
+  {
+   "id": "roof",
+   "line": "path roof fill=$red stroke=ink thick=2 | M-42 -2.5 C-45.5 0 -44.5 3 -40 2.2 Q0 -4.5 40 2.2 C44.5 3 45.5 0 42 -2.5 Q21 -17 3 -37.5 Q0 -40.5 -3 -37.5 Q-21 -17 -42 -2.5 Z"
+  },
+  {
+   "id": "roof-shade",
+   "line": "path roof-shade fill=$red-1 stroke=none | M-39.5 0.6 Q0 -5.5 39.5 0.6 Q37.5 -2.5 34 -5 Q23 -13 10 -26 Q15 -14 18 -7.2 Q-5 -10 -34 -5 Q-37.5 -2.5 -39.5 0.6 Z"
+  },
+  {
+   "id": "roof-light",
+   "line": "path roof-light fill=$red+2 stroke=none | M-2.5 -33.5 Q-13 -20 -27 -10 Q-9 -15 -2.5 -33.5 Z"
+  },
+  {
+   "id": "roof-tiles",
+   "line": "path roof-tiles fill=none stroke=$red-2 thick=0.8 opacity=0.75 | M-9 -25 Q-6 -21.8 -3 -25 Q0 -21.8 3 -25 Q6 -21.8 9 -25"
+  },
+  {
+   "id": "roof-tiles-2",
+   "line": "path roof-tiles-2 fill=none stroke=$red-2 thick=0.8 opacity=0.75 | M-16 -17 Q-13 -13.8 -10 -17 Q-7 -13.8 -4 -17 Q-1 -13.8 2 -17 Q5 -13.8 8 -17 Q11 -13.8 14 -17 Q17 -13.8 20 -17"
+  },
+  {
+   "id": "left-window",
+   "line": "path left-window fill=$cream stroke=$red-2 thick=1 | M-23.5 6 L-13.5 6 Q-12 6 -12 7.5 L-12 18.5 Q-12 20 -13.5 20 L-23.5 20 Q-25 20 -25 18.5 L-25 7.5 Q-25 6 -23.5 6 Z"
+  },
+  {
+   "id": "left-window-ba",
+   "line": "path left-window-ba fill=none stroke=$red-2 thick=0.8 | M-18.5 6 L-18.5 20 L-18.5 13 L-25 13 L-12 13"
+  },
+  {
+   "id": "left-sill",
+   "line": "path left-sill fill=$red-1 stroke=ink thick=0.7 | M-26.2 20 L-10.8 20 Q-9.6 21.1 -10.8 22.2 L-26.2 22.2 Q-27.4 21.1 -26.2 20 Z"
+  },
+  {
+   "id": "right-window",
+   "line": "path right-window fill=$cream stroke=$red-2 thick=1 | M13.5 6 L23.5 6 Q25 6 25 7.5 L25 18.5 Q25 20 23.5 20 L13.5 20 Q12 20 12 18.5 L12 7.5 Q12 6 13.5 6 Z"
+  },
+  {
+   "id": "right-window-b",
+   "line": "path right-window-b fill=none stroke=$red-2 thick=0.8 | M18.5 6 L18.5 20 L18.5 13 L12 13 L25 13"
+  },
+  {
+   "id": "right-sill",
+   "line": "path right-sill fill=$red-1 stroke=ink thick=0.7 | M10.8 20 L26.2 20 Q27.4 21.1 26.2 22.2 L10.8 22.2 Q9.6 21.1 10.8 20 Z"
+  },
+  {
+   "id": "door",
+   "line": "path door fill=$red-2 stroke=ink thick=1 | M-8 39 L-8 17 C-8 8 8 8 8 17 L8 39 Z"
+  },
+  {
+   "id": "door-light",
+   "line": "path door-light fill=$red-1 stroke=none | M-5.5 37.5 L-5.5 17.5 Q-5 13 0 12 L0 37.5 Z"
+  },
+  {
+   "id": "door-window",
+   "line": "circle door-window 0,18.5 2.8 fill=$cream stroke=ink thick=0.8"
+  },
+  {
+   "id": "doorknob",
+   "line": "circle doorknob 4.5,28 1.4 fill=$cream-1 stroke=ink thick=0.5"
+  },
+  {
+   "id": "step",
+   "line": "path step fill=$cream-2 stroke=ink thick=0.9 | M-10.5 38 L10.5 38 Q12 38 12 39.7 Q12 41.5 10.5 41.5 L-10.5 41.5 Q-12 41.5 -12 39.7 Q-12 38 -10.5 38 Z"
+  }
+ ],
+ "made": {
+  "by": "fable",
+  "arm": "D",
+  "how": "Fable, a staged drawing off the answer's clock (bake-off arm D); read by the strict converter and restyled to the house palette"
+ },
+ "licence": "MIT (made for this project on the owner's own subscription)"
+}
