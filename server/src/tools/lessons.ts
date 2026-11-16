@@ -2,9 +2,9 @@
 //
 //   pnpm lessons                  --dry-run (the default): read what the critic found since the last run, ask one `claude` call to
 //                                 group the recurring problems and draft at most three technique proposals, check each one, and print
-//                                 the proposals, the painter-bug list and the exact Remote commands. Writes nothing.
-//   pnpm lessons --write          the steward's: write each proposal to Remote as `Proposed technique: <title>`, read it back, append
-//                                 the painter bugs to loop/queue/painter-bugs.md and move the cursor. REMOTE_AGENT=conduit-steward.
+//                                 the proposals and the painter-bug list. Writes nothing.
+//   pnpm lessons --write          the steward's: write each proposal to techniques/proposed/ as `Proposed technique: <title>`, append
+//                                 the painter bugs to loop/queue/painter-bugs.md and move the cursor.
 //   --data <dir>                  the data folder, with `loop/queue/` and `logs/` in it (default: DATA_DIR, else ~/Library/Application Support/Conduit); `--from` is its older spelling
 //   --all                         ignore the cursor: every finding again
 //   --force                       go ahead although the last hour is near the cap (USAGE_HOURLY_CAP): lessons stand down first
@@ -12,7 +12,7 @@
 // A proposal is a technique in the library's own format that targets what the brain controls: how it writes Series. A problem that is
 // the painter's (text drawn over text by the layout, a clipped label, a wrong default) is not a technique; it goes to the steward's list.
 // A proposal is NOT read by the brain: the library skips every title that begins "Proposed technique:" (domain/techniques.ts
-// `isProposedTitle`, applied in library/memory-library.ts `merge` and library/remote/remote-cli.ts `readRemoteTechniques`).
+// `isProposedTitle`, applied in library/memory-library.ts `merge`; the library does not read techniques/proposed at all).
 // Promotion is the improvement loop's: it measures a proposal with the battery, and only on a measured gain does the steward retitle it.
 import { execFile } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, appendFileSync, mkdtempSync, rmSync } from 'node:fs';
@@ -25,11 +25,7 @@ import type { JudgeSettings, JudgeUsage } from '../judge/ask';
 import { PROPOSED_PREFIX, lintTechnique } from '../domain/techniques';
 import { dataPaths, resolveDataDir, withDataFlag } from '../data-dir';
 import { appendUsage, capFromEnv, throttleOf } from '../usage';
-import { CONDUIT_ROOT_BLOCK } from '../env';
-import { readTechniqueDir } from '../library/files';
-import { createRemoteWriter, STEWARD, stewardIdentity } from '../library/remote/remote-cli';
-import type { RemoteSettings } from '../library/remote/remote-cli';
-import { createLogger } from '../log';
+import { readTechniqueDir, writeProposedFile } from '../library/files';
 
 const repo = fileURLToPath(new URL('../../../', import.meta.url));
 const out = (text: string): void => void process.stdout.write(`${text}\n`);
@@ -295,21 +291,8 @@ async function problemsOf(p: Proposal, existing: ReadonlySet<string>): Promise<s
 // ---------- main ----------
 
 async function main(): Promise<void> {
-  const settings: RemoteSettings = {
-    kind: 'remote',
-    bin: process.env['REMOTE_BIN'] ?? 'remote',
-    actor: 'series@example.invalid',
-    env: 'prod',
-    root: CONDUIT_ROOT_BLOCK,
-    seedDir: join(repo, 'techniques', 'seed'),
-    cacheDir: dataFolders.techniquesCache,
-    overlayDir: null,
-    refreshMs: 0,
-    timeoutMs: 30_000,
-  };
-  const identity = stewardIdentity(!write);
-  if (write && identity.agent !== STEWARD) fail(`--write writes to Remote and only the steward may: set REMOTE_AGENT=${STEWARD} (this is ${identity.agent})`);
-  if (write && process.env['REMOTE_SESSION_ID'] === undefined) fail('--write needs REMOTE_SESSION_ID set (the tree records it for every write)');
+  const seedDir = join(repo, 'techniques', 'seed');
+  const proposedDir = join(repo, 'techniques', 'proposed');
 
   const all = readFindings();
   const seen = argv.includes('--all') ? new Set<string>() : readCursor();
@@ -322,17 +305,11 @@ async function main(): Promise<void> {
   fresh.forEach((f, i) => (f.id = `f${i + 1}`));
 
   const limit = AbortSignal.timeout(600_000);
-  const writer = createRemoteWriter(settings, identity, createLogger('warn'));
   const existing = new Set<string>();
-  try {
-    for (const entry of await writer.index(limit)) existing.add(entry.title.trim().toLowerCase());
-  } catch (error) {
-    if (write) fail(`Remote cannot be read, so duplicates cannot be checked: ${error instanceof Error ? error.message : String(error)}`);
-    out(`(Remote could not be read, duplicates are checked against the seed only: ${error instanceof Error ? error.message : String(error)})`);
-  }
-  for (const seed of readTechniqueDir(settings.seedDir, 'seed')) existing.add(seed.title.trim().toLowerCase());
+  for (const seed of readTechniqueDir(seedDir, 'seed')) existing.add(seed.title.trim().toLowerCase());
+  for (const proposed of readTechniqueDir(proposedDir, 'seed')) existing.add(proposed.title.trim().toLowerCase());
   const language = (await run('pnpm', ['--silent', 'prompt'], repo)).output;
-  const seedExample = readFileSync(join(settings.seedDir, 'flow-process.md'), 'utf8');
+  const seedExample = readFileSync(join(seedDir, 'flow-process.md'), 'utf8');
   const system = systemPrompt(language, seedExample, [...existing].filter((t) => !t.startsWith(PROPOSED_PREFIX.toLowerCase())).slice(0, 80));
 
   // The lessons are the first thing to stand down when the hour's spending nears the cap (USAGE_HOURLY_CAP). `--force` is the owner's word.
@@ -374,30 +351,17 @@ async function main(): Promise<void> {
   if (bugs.length === 0) out('(none)');
   for (const b of bugs) out(`- ${b.what}  [${citeLine(b.cites)}]`);
 
-  out(`\n=== REMOTE ${write ? 'WRITES' : 'COMMANDS (run by --write, as the steward)'} ===`);
+  out(`\n=== ${write ? `FILES WRITTEN to ${proposedDir}` : 'FILES (written by --write)'} ===`);
   let wrote = 0;
   for (const p of good) {
-    const draft = { id: null, title: titleOf(p), summary: p.summary, reason: p.reason, markdown: bodyOf(p) };
-    const result = await writer.write(draft, null, limit);
-    if (result.outcome === 'refused') {
-      out(`refused: ${titleOf(p)}: ${result.problems.join('; ')}`);
-      continue;
-    }
-    if (result.outcome === 'conflict') {
-      out(`conflict: ${titleOf(p)}`);
-      continue;
-    }
-    if (write) {
-      const back = await writer.read(result.id, limit);
-      const same = back !== null && back.title.trim() === draft.title && back.summary.trim() === draft.summary.trim() && back.markdown.replace(/\r\n/g, '\n').trim() === draft.markdown.trim();
-      out(same ? `written and read back identical: ${result.id}  ${draft.title}` : `WRITTEN BUT THE READ-BACK DIFFERS: ${result.id}  ${draft.title}; read it and repair`);
-      wrote += 1;
-    }
+    if (!write) continue;
+    const result = writeProposedFile(proposedDir, { title: titleOf(p), summary: p.summary, reason: p.reason, markdown: bodyOf(p) });
+    out(`${result.written ? 'written' : 'already there'}: ${result.path}`);
+    if (result.written) wrote += 1;
   }
   if (!write) {
-    for (const step of writer.plan) out(`\n${step.line}\n----- body.md -----\n${step.stdin ?? ''}-------------------`);
     if (good.length === 0) out('(no proposal to write)');
-    out('\ndry run complete: nothing was written; the commands above are what --write runs');
+    out('\ndry run complete: nothing was written; --write puts each proposal in techniques/proposed/');
     return;
   }
   mkdirSync(queueDir, { recursive: true });

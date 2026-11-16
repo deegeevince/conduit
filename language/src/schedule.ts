@@ -51,7 +51,7 @@ import {
   waitSeconds,
 } from './timing';
 import type { Anchor, AppShelf, LessonVerb, TuneVoice } from './vocabulary';
-import type { BindLine, BindOn, CanvasBox, ControlLine, SceneLine, ControlValue, CreatingLine, DatasetRef, Issue, IssueCode, Line, Paint, Point, Range, ShapeGeometry, StructureLine, StyleProps, TablePart, Target, When } from './types';
+import type { BindLine, BindOn, CanvasBox, ControlLine, SceneLine, ControlValue, CreatingLine, Issue, IssueCode, Line, Paint, Point, Range, ShapeGeometry, StructureLine, StyleProps, TablePart, Target, When } from './types';
 import { cachedTune, tuneRowsOf } from './tune';
 import { BACKDROP_LAYERS, CANVAS, CONTROL, DEFAULT_CANVAS, DEFAULT_CHART, DEFAULT_LOOK, DEFAULT_TUNE_VOICE, LESSON_VERBS, LIMITS, STRUCTURE } from './vocabulary';
 import type {
@@ -176,8 +176,6 @@ export type Figure =
       readonly words: readonly ChartWord[];
       /** a chart: the id of the DATA it draws, when its points come by reference; null when they are its rows */
       readonly data: string | null;
-      /** v2.1. A chart: one of the owner's stored datasets it draws by reference; absent or null: none */
-      readonly dataset?: DatasetRef | null;
       /** a table: its numbers are drawn as bars too */
       readonly bars: boolean;
       /** A table: the rows and cells marked (`set t1.row2 mark=box`), in the order written */
@@ -1221,7 +1219,7 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
         openFigure?.kind === 'structure' &&
         openFigure.structure === line.verb &&
         (line.verb === 'table' || line.verb === 'chart') &&
-        (line.verb === 'table' ? (line.bars === true) === openFigure.bars : alike(line.chart ?? DEFAULT_CHART, openFigure.chart) && alike(line.words ?? [], openFigure.words) && alike(line.data ?? null, openFigure.data) && alike(line.dataset ?? null, openFigure.dataset ?? null));
+        (line.verb === 'table' ? (line.bars === true) === openFigure.bars : alike(line.chart ?? DEFAULT_CHART, openFigure.chart) && alike(line.words ?? [], openFigure.words) && alike(line.data ?? null, openFigure.data));
       if (open !== null && openFigure?.kind === 'structure' && openFigure.structure === line.verb && (STRUCTURE[line.verb].parts === 'nodes' || sameRows)) {
         const merged = mergeStyles(sheet, line.styles, line.props);
         for (const name of merged.unknown) report(seq, 'unknown-style', `no style called "${name}"; ignored`, name);
@@ -1271,7 +1269,6 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
         chart: line.verb === 'chart' ? (line.chart ?? DEFAULT_CHART) : null,
         words: line.verb === 'chart' ? (line.words ?? []) : [],
         data: line.verb === 'chart' ? (line.data ?? null) : null,
-        ...(line.verb === 'chart' && { dataset: line.dataset ?? null }),
         bars: line.verb === 'table' && line.bars === true,
         ...(line.verb === 'code' && { lang: line.lang ?? null, file: line.file ?? null }),
         ...(line.verb === 'figure' && { mode: line.mode ?? null }),

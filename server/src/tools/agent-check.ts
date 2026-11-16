@@ -96,14 +96,14 @@ const states = (events: BrainEvent[], tool: string): string[] => events.flatMap(
     ['an authenticate is a sign-in', call('mcp__linear__authenticate'), 'signin'],
     ['a key in the input is a sign-in', call('mcp__x__get', { api_key: 'k' }), 'signin'],
     ['a POST through a fetch tool sends', call('mcp__http__request', { method: 'POST', url: 'https://a.b' }), 'send'],
-    ['a service read with no hint is still asked for', call('mcp__remote__get_block', { id: '1' }), 'run'],
+    ['a service read with no hint is still asked for', call('mcp__notes__get_page', { id: '1' }), 'run'],
     ['a tool nobody has heard of is run', call('mcp__x__frobnicate'), 'run'],
   ];
   for (const [what, c, expected] of table) {
     const got = riskOf(c, false, folder);
     check(got === expected, `riskOf: ${what}`, `${c.tool} -> ${got}`);
   }
-  check(riskOf(call('mcp__remote__get_block', { id: '1' }), true, folder) === 'read', 'riskOf: a service read is free only when the service itself says it only reads', 'with readOnlyHint');
+  check(riskOf(call('mcp__notes__get_page', { id: '1' }), true, folder) === 'read', 'riskOf: a service read is free only when the service itself says it only reads', 'with readOnlyHint');
   check(serviceReads({ ...NO_AGENT, services: [{ name: 'notes', config: '/x', gist: 'g', reads: ['list'] }] }, 'mcp__notes__list') && !serviceReads({ ...NO_AGENT, services: [{ name: 'notes', config: '/x', gist: 'g', reads: ['list'] }] }, 'mcp__notes__delete'), 'serviceReads: only the tools the service note names as reads', 'note');
   check(riskOf(call('mcp__mail__send_email', { to: 'a@b.c' }), true, folder) === 'send', 'riskOf: and the hint never frees what the name says sends', 'with readOnlyHint');
   const settings: AgentSettings = { enabled: true, tools: ['WebSearch'], services: [{ name: 'mail', config: '/x', gist: '' }], dir: null, answerMs: 1 };

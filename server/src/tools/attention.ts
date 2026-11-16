@@ -5,9 +5,9 @@
 //   --out <dir>                            write the proposal file here instead of <data>/lessons
 //   --no-file                              print only
 //   --json                                 print the proposal file's JSON instead of the report
-//   --to-remote <file> [--only L1,L2]     the owner's approval step for technique-card lessons: plan the `Proposed technique:` blocks
-//                                          the lessons loop already writes. A dry run, printing the exact Remote commands.
-//      --write                             run them. Only the steward's session may (REMOTE_AGENT=conduit-steward, REMOTE_SESSION_ID set).
+//   --to-techniques <file> [--only L1,L2]  the owner's approval step for technique-card lessons: plan the `Proposed technique:` files
+//                                          the lessons loop already writes. A dry run, printing each draft.
+//      --write                             write them to techniques/proposed/ (the brain never reads that folder; a person moves a good one into techniques/seed)
 //   --to-queue <file> [--only L1,L2]       append approved painter and kit lessons to loop/queue/painter-bugs.md (the steward's ticket list)
 //
 // Per turn it joins the `attention` record (shown, pulled, ignore, open, cleared) with that turn's critic finding (gate, owner, evidence,
@@ -19,11 +19,7 @@ import { fileURLToPath } from 'node:url';
 import { dataPaths, resolveDataDir, withDataFlag } from '../data-dir';
 import { PROPOSED_PREFIX, lintTechnique } from '../domain/techniques';
 import type { Technique } from '../domain/techniques';
-import { readTechniqueDir } from '../library/files';
-import { createRemoteWriter, STEWARD, stewardIdentity } from '../library/remote/remote-cli';
-import type { RemoteSettings } from '../library/remote/remote-cli';
-import { CONDUIT_ROOT_BLOCK } from '../env';
-import { createLogger } from '../log';
+import { readTechniqueDir, writeProposedFile } from '../library/files';
 
 const repo = fileURLToPath(new URL('../../../', import.meta.url));
 const out = (text: string): void => void process.stdout.write(`${text}\n`);
@@ -498,7 +494,7 @@ function report(turns: readonly Turn[], lessons: readonly Lesson[], matched: rea
     for (const e of l.evidence.slice(0, 4)) lines.push(`  - ${e.session} ${e.turn}${e.element === null ? '' : ` element ${e.element}`}${e.gate === null ? '' : ` [${e.gate}${e.owner === null ? '' : `/${e.owner}`}]`}: ${clip(e.said, 110)}`);
     if (l.evidence.length > 4) lines.push(`  (+${l.evidence.length - 4} more in the file)`);
   }
-  lines.push(file === null ? '\n(no file written)' : `\nproposals written to ${file}; approve with \`pnpm attention --to-remote ${file}\` (a dry run) or \`--to-queue\``);
+  lines.push(file === null ? '\n(no file written)' : `\nproposals written to ${file}; approve with \`pnpm attention --to-techniques ${file}\` (a dry run) or \`--to-queue\``);
   return lines;
 }
 
@@ -521,19 +517,15 @@ const readProposals = (path: string, only: ReadonlySet<string> | null): Lesson[]
   return parsed.lessons.filter((l) => only === null || only.has(l.id));
 };
 
-async function toRemote(path: string, only: ReadonlySet<string> | null, write: boolean, dataRoot: string): Promise<void> {
-  const identity = stewardIdentity(!write);
-  if (write && identity.agent !== STEWARD) fail(`--write writes to Remote and only the steward may: set REMOTE_AGENT=${STEWARD} (this is ${identity.agent})`);
-  if (write && process.env['REMOTE_SESSION_ID'] === undefined) fail('--write needs REMOTE_SESSION_ID set (the tree records it for every write)');
-  const settings: RemoteSettings = { kind: 'remote', bin: process.env['REMOTE_BIN'] ?? 'remote', actor: 'series@example.invalid', env: 'prod', root: CONDUIT_ROOT_BLOCK, seedDir: join(repo, 'techniques', 'seed'), cacheDir: dataPaths(dataRoot).techniquesCache, overlayDir: null, refreshMs: 0, timeoutMs: 30_000 };
-  const cards = new Map(readTechniqueDir(settings.seedDir, 'seed').map((c) => [c.title, c]));
-  const writer = createRemoteWriter(settings, identity, createLogger('warn'));
-  const limit = AbortSignal.timeout(300_000);
-  out(write ? 'WRITE (steward)' : 'dry run (nothing is written; these are the commands the steward would run)');
+function toTechniques(path: string, only: ReadonlySet<string> | null, write: boolean): void {
+  const seedDir = join(repo, 'techniques', 'seed');
+  const proposedDir = join(repo, 'techniques', 'proposed');
+  const cards = new Map(readTechniqueDir(seedDir, 'seed').map((c) => [c.title, c]));
+  out(write ? `WRITE to ${proposedDir}` : 'dry run (nothing is written; --write puts these in techniques/proposed/)');
   let n = 0;
   for (const lesson of readProposals(path, only)) {
     if (lesson.target.kind !== 'technique') {
-      out(`${lesson.id}: ${lesson.target.kind} lessons do not go to Remote; use --to-queue for tickets, or put the line in the prompt by hand`);
+      out(`${lesson.id}: ${lesson.target.kind} lessons do not become techniques; use --to-queue for tickets, or put the line in the prompt by hand`);
       continue;
     }
     const card = cards.get(lesson.target.card);
@@ -560,25 +552,21 @@ async function toRemote(path: string, only: ReadonlySet<string> | null, write: b
       '',
       '**Score** Not measured yet.',
     ].join('\n');
-    const draft = { id: null, title: `${PROPOSED_PREFIX} ${card.title}: ${lesson.family}`, summary: `${card.summary} Lesson: ${lesson.title}.`, reason: card.reason, markdown: body };
+    const draft = { title: `${PROPOSED_PREFIX} ${card.title}: ${lesson.family}`, summary: `${card.summary} Lesson: ${lesson.title}.`, reason: card.reason, markdown: body };
     const problems = lintTechnique(draft.title, draft.summary, draft.reason, draft.markdown);
     if (problems.length > 0) {
       out(`${lesson.id}: refused by lint: ${problems.join('; ')}`);
       continue;
     }
-    let result: Awaited<ReturnType<typeof writer.write>>;
-    try {
-      result = await writer.write(draft, null, limit);
-    } catch (error) {
-      if (write) return fail(`Remote cannot be reached, so duplicates cannot be checked: ${error instanceof Error ? error.message : String(error)}`);
-      out(`${lesson.id}: passes lint as "${draft.title}", but Remote could not be read to check for a duplicate (${error instanceof Error ? error.message : String(error)}); the draft body follows\n----- body.md -----\n${body}\n-------------------`);
+    if (!write) {
+      out(`${lesson.id}: passes lint as "${draft.title}"; the draft body follows\n----- body.md -----\n${body}\n-------------------`);
       n += 1;
       continue;
     }
-    out(result.outcome === 'refused' ? `${lesson.id}: refused: ${result.problems.join('; ')}` : result.outcome === 'conflict' ? `${lesson.id}: conflict` : `${lesson.id}: ${write ? `written ${result.id}` : 'planned'}  ${draft.title}`);
-    n += 1;
+    const result = writeProposedFile(proposedDir, draft);
+    out(`${lesson.id}: ${result.written ? 'written' : 'already there'} ${result.path}  ${draft.title}`);
+    if (result.written) n += 1;
   }
-  if (!write) for (const step of writer.plan) out(`\n${step.line}\n----- body.md -----\n${step.stdin ?? ''}-------------------`);
   out(write ? `${n} written` : `dry run complete: nothing was written (${n} planned)`);
 }
 
@@ -604,8 +592,8 @@ async function main(): Promise<void> {
   };
   const root = resolve(resolveDataDir(withDataFlag(argv, process.env)));
   const only = flag('--only') === null ? null : new Set((flag('--only') ?? '').split(',').map((s) => s.trim()));
-  const remoteFile = flag('--to-remote');
-  if (remoteFile !== null) return toRemote(remoteFile, only, argv.includes('--write'), root);
+  const techniquesFile = flag('--to-techniques');
+  if (techniquesFile !== null) return toTechniques(techniquesFile, only, argv.includes('--write'));
   const queueFile = flag('--to-queue');
   if (queueFile !== null) return toQueue(queueFile, only, root);
 

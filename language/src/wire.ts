@@ -627,7 +627,7 @@ export function askFirst(risk: ActionRisk): boolean {
 
 /**
  * v2.1. One thing the brain may use in agent mode: a tool of the CLI's own (`WebSearch`, `WebFetch`, `Read`, …) or a connected service
- * (an MCP server from the owner's allowlist, e.g. `remote`). Nothing is on that the owner's configuration did not offer; `on` is this
+ * (an MCP server from the owner's allowlist). Nothing is on that the owner's configuration did not offer; `on` is this
  * session's choice (`/tools`). `reads` is true when everything it does only reads: such a tool runs without asking.
  */
 export interface ToolChoice {

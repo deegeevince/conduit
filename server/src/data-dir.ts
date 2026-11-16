@@ -31,8 +31,6 @@ export interface DataPaths {
   readonly audit: string;
   readonly usage: string;
   readonly cache: string;
-  readonly techniquesCache: string;
-  readonly datasetsCache: string;
   readonly picturesCache: string;
   readonly queue: string;
   readonly state: string;
@@ -65,8 +63,6 @@ export function dataPaths(root: string): DataPaths {
     audit: join(root, 'audit.jsonl'),
     usage: join(root, 'usage.jsonl'),
     cache: join(root, 'cache'),
-    techniquesCache: join(root, 'cache', 'techniques'),
-    datasetsCache: join(root, 'cache', 'datasets'),
     picturesCache: join(root, 'cache', 'pictures'),
     queue: join(root, 'loop', 'queue'),
     state: join(root, 'state'),
@@ -130,8 +126,7 @@ interface Legacy {
 }
 
 /**
- * Where the data used to live: the repository's own `logs/`, `loop/queue/` and `techniques/.cache/`, and the dataset index in the owner's
- * cache folder. `extraRepos` are other checkouts the owner ran from (`MIGRATE_FROM`, a comma list): the server has run from several
+ * Where the data used to live: the repository's own `logs/` and `loop/queue/`. `extraRepos` are other checkouts the owner ran from (`MIGRATE_FROM`, a comma list): the server has run from several
  * worktrees, and the logs are wherever it was started.
  */
 export function legacyPlaces(repoRoot: string, paths: DataPaths, extraRepos: readonly string[], source: Source): Legacy[] {
@@ -140,11 +135,8 @@ export function legacyPlaces(repoRoot: string, paths: DataPaths, extraRepos: rea
     places.push(
       { name: `${repo}/logs`, from: join(repo, 'logs'), to: paths.logs },
       { name: `${repo}/loop/queue`, from: join(repo, 'loop', 'queue'), to: paths.queue },
-      { name: `${repo}/techniques/.cache`, from: join(repo, 'techniques', '.cache'), to: paths.techniquesCache },
     );
   }
-  const xdg = source['XDG_CACHE_HOME']?.trim();
-  places.push({ name: 'datasets cache', from: join(xdg !== undefined && xdg !== '' ? xdg : join(homedir(), '.cache'), 'conduit', 'datasets'), to: paths.datasetsCache });
   return places;
 }
 

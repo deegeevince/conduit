@@ -44,7 +44,6 @@ NODE="$(command -v node || true)"; [ -n "$NODE" ] || die "node is not on PATH (2
 "$NODE" -e 'const [a,b]=process.versions.node.split(".").map(Number); process.exit(a>22||(a===22&&b>=14)?0:1)' || die "node $("$NODE" -v) is too old: 22.14 or newer"
 PNPM="$(command -v pnpm || true)"; [ -n "$PNPM" ] || die "pnpm is not on PATH (corepack enable)"
 CLAUDE="$(command -v claude || true)"; [ -n "$CLAUDE" ] || die "the claude CLI is not on PATH: the brain is claude-cli"
-REMOTE="$(command -v remote || true)"
 
 if [ "$OWNER_CHECK" = 1 ] && [ -z "${OWNER_LOGINS:-}" ]; then
   die "OWNER_LOGINS is not set. Without it anyone on the tailnet who can reach the port may use the server, and its agent tools. Set it to your Tailscale login, or pass --no-owner-check to go without."
@@ -88,7 +87,7 @@ else
 fi
 
 # The plist: the template with its tokens filled in, then the optional settings added with PlistBuddy (values are never put through sed).
-PATH_VALUE="$(dirname "$NODE"):$(dirname "$CLAUDE")${REMOTE:+:$(dirname "$REMOTE")}:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+PATH_VALUE="$(dirname "$NODE"):$(dirname "$CLAUDE"):/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 esc() { printf '%s' "$1" | sed -e 's/[\/&|]/\\&/g'; }
 sed -e "s|@LABEL@|$(esc "$LABEL")|g" -e "s|@NODE@|$(esc "$NODE")|g" -e "s|@INSTALL_DIR@|$(esc "$INSTALL_DIR")|g" \
     -e "s|@DATA_DIR@|$(esc "$DATA_DIR")|g" -e "s|@TRUSTED_HOSTS@|$(esc "$TRUSTED_HOSTS")|g" -e "s|@BATTERY_SEALED_DIR@|$(esc "$BATTERY_SEALED_DIR")|g" \

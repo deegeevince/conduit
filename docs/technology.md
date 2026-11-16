@@ -16,7 +16,7 @@ server/     Sessions, turns, the two streams, the brains, the image model, the s
 web/        The painter, its renderers, the exporter, and a small amount of chrome. Browser.
 explore/    The exploration battery (a JSON file) and, untracked, the runs it produces.
             (v2) sealed/ the held-out set; taste/ the owner's own scores.
-techniques/ (v2) seed/ the techniques in the repository: the library's fallback and its first contents. .cache/ is untracked.
+techniques/ (v2) seed/ the techniques in the repository: the library's contents. proposed/ holds candidates the lessons tools wrote, which the library never reads.
 loop/       (v2) The improvement loop's changelog and ledger.
 ```
 
@@ -33,8 +33,7 @@ Domain types are plain interfaces in the middle. Edges translate. Every outside 
 | (v2) `StructureEngine`, `CalloutEngine` (`web/src/contracts/blocks.ts`) | painter | `web/src/painter/blocks/` |
 | (v2) `ControlEngine`, `ControlStore` (`web/src/contracts/controls.ts`) | painter | `web/src/painter/controls/` |
 | (v2) `ChartEngine` (`web/src/contracts/chart.ts`) | painter | `lightweight-charts` |
-| (v2) `TechniqueLibrary`, `TechniqueWriter` (`server/src/domain/techniques.ts`) | server domain | memory over seed, file cache and Remote; none |
-| (v2) `DatasetLibrary` (`server/src/domain/datasets.ts`) | server domain | Remote; none |
+| (v2) `TechniqueLibrary` (`server/src/domain/techniques.ts`) | server domain | memory over the seed and an overlay; none |
 | (v2) `Brain.review` (`server/src/domain/brain.ts`) | server domain | claude-cli |
 
 Each vendor is imported in exactly one place, so replacing one is a change to one place:
@@ -49,11 +48,10 @@ Each vendor is imported in exactly one place, so replacing one is a change to on
 | `node:dns`, `node:net`, `node:http(s)`, `node:zlib` (reading links) | `server/src/reading/safe-fetch.ts` |
 | `hono`, `@hono/node-server` | files under `server/src/http/`, and `server/src/main.ts` for `serve` |
 | (v2) `lightweight-charts` | `web/src/render/chart/lightweight.ts` |
-| (v2) the `remote` command: its arguments, its output, the tree's write rules | `server/src/library/remote/remote-cli.ts` |
-| (v2) `node:fs` for the technique seed, overlay and cache | `server/src/library/files.ts` |
+| (v2) `node:fs` for the technique seed and overlay | `server/src/library/files.ts` |
 | (v2) `git` (worktrees, branches, diffs) | `server/src/loop/git.ts` |
-| (v2) `claude -p` as an agent with tools (the critic, the builder, the reviewer, the edit and reader passes) | `server/src/loop/agents.ts` |
-| `process.env` | `server/src/env.ts` reads it through `loadEnv` and makes every child's environment (`childEnvironment`, which leaves out credentials); handed over only by `main.ts` and the tools under `server/src/tools/` and `brains/claude-cli/probe.ts`. Three places still read it directly and are to be brought in by v2.1: `tools/improve.ts`, `library/remote/remote-cli.ts`, `loop/deps.ts` |
+| (v2) `claude -p` as an agent with tools (the critic, the builder, the reviewer) | `server/src/loop/agents.ts` |
+| `process.env` | `server/src/env.ts` reads it through `loadEnv` and makes every child's environment (`childEnvironment`, which leaves out credentials); handed over only by `main.ts` and the tools under `server/src/tools/` and `brains/claude-cli/probe.ts`. Two places still read it directly and are to be brought in by v2.1: `tools/improve.ts`, `loop/deps.ts` |
 | the console | `server/src/log.ts` (and one line in `main.ts` for a failed boot) |
 
 ## Six ideas the rest depends on
@@ -112,7 +110,7 @@ Look and fix is a second call to the same warm process inside one turn (`Brain.r
 
 ### 10. (v2) Craft is data, and it is never on the turn's path
 
-The system prompt is the language. Everything about how to answer a kind of question well is a technique: a block in Remote, mirrored to a file cache, with a seed in the repository. The server keeps an index in memory and chooses for each message with a few dozen string comparisons. Remote is read by a background refresh that nothing awaits. The same shape will hold anything else that must be both remote and instant.
+The system prompt is the language. Everything about how to answer a kind of question well is a technique: a markdown file in the repository (`techniques/seed`). The server keeps an index in memory and chooses for each message with a few dozen string comparisons; nothing on a turn's path reads a file or waits for a network.
 
 ## The two streams
 
@@ -230,15 +228,11 @@ The OpenAI adapter and its stand-in were removed in v2.1: every model call is th
 
 `server/src/domain/techniques.ts` holds the port and the two pure functions: reading a technique's body (a fixed layout: what it is for, use it when, not when, an example fenced as `series`, what failed, score) and choosing techniques for a message.
 
-**Choosing.** Each technique is indexed once on its title, its summary and its link reason, which are written to say when it applies; not on its body, whose prose is full of ordinary words. A message's words are stemmed and matched; a word counts for more the fewer techniques use it. A technique is handed over only if it clears a floor, matches on two words or on one word of its own title, and scores at least 60% of the best. At most three, at most 1,650 characters in all. Measured on the 86 prompts of the two batteries against the 19 seed techniques: about 50 microseconds a prompt, and no plain question is handed a recipe.
+**Choosing.** Each technique is indexed once on its title, its summary and its reason, which are written to say when it applies; not on its body, whose prose is full of ordinary words. A message's words are stemmed and matched; a word counts for more the fewer techniques use it. A technique is handed over only if it clears a floor, matches on two words or on one word of its own title, and scores at least 60% of the best. At most three, at most 1,650 characters in all. Measured on the 86 prompts of the two batteries against the 19 seed techniques: about 50 microseconds a prompt, and no plain question is handed a recipe.
 
-**Sources**, later ones winning by title: the seed (`techniques/seed/*.md`, read at boot), the file cache of the last good read of Remote, Remote itself, and an overlay folder (`LIBRARY_OVERLAY`) that an experiment of the improvement loop lays over the rest.
+**Sources**, later ones winning by title: the seed (`techniques/seed/*.md`, read once at boot) and an overlay folder (`LIBRARY_OVERLAY`) that an experiment of the improvement loop lays over it. A title that begins "Proposed technique:" is never handed over.
 
-**Reading Remote.** One call lists every technique: `remote get memory <root> --links 1` returns the root's links, each with the linked block's id, title, summary, reason and fingerprint (checked on this machine: about one second). A technique's body is fetched (`--content 1`) only when its fingerprint differs from the cache's. The refresh runs at boot and every ten minutes and is awaited by nothing.
-
-**Writing** is not on the server's path at all: it is `pnpm library push`, used by a person, a review or the loop's steward. It refuses what `lintTechnique` refuses (no example, an example that does not parse, a date, a change number, history, a possible secret, a reason that does not begin "only if"), reads the block again, sends that read's fingerprint, re-applies on a conflict, and sets `REMOTE_SESSION_ID` and `REMOTE_AGENT` (to the steward when the shell sets neither: the write is not refused for want of a role). An edit pass and a reader pass by cold `claude -p` sessions come before the write.
-
-**Datasets** (`DatasetLibrary`) are the same idea with one difference that is stated rather than hidden: finding whether a prompt names a stored series is instant and from memory, but reading its rows is a network call on the turn's path. It is treated exactly as reading a link is: a `reading` event, one short deadline, and a brief that says it could not be read when it could not.
+**Writing** is not on the server's path at all: a technique is a file someone adds to `techniques/seed/`. `pnpm library lint` refuses what `lintTechnique` refuses (no example, an example that does not parse, a date, a change number, history, a possible secret, a reason that does not begin "only if"). Candidates from the lessons tools go to `techniques/proposed/`, which the library never reads; a person moves a good one into the seed.
 
 ## (v2) The improvement loop
 

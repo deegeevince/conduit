@@ -20,7 +20,7 @@ import { createUploadStore } from './uploads/store';
 import { NO_VOICE } from './domain/voice';
 import { createAppleTranscriber } from './voice/helper';
 import { createVoiceNotes } from './voice/store';
-import { createDatasets, createLibrary } from './library/registry';
+import { createLibrary } from './library/registry';
 import { createDocumentReader } from './reading/web-reader';
 import { createCatalogue } from './documents/catalogue';
 import { createDocuments } from './documents/store';
@@ -94,34 +94,11 @@ function boot(env: Env): void {
     ? createVoiceNotes({ dir: env.data.voice, transcriber: createAppleTranscriber({ cacheDir: env.data.voiceCache, workDir: `${env.data.voice}/work`, command: env.voice.command, log: log.child({ part: 'voice' }) }), locale: env.voice.locale, keep: env.voice.keep, log: log.child({ part: 'voice' }), now })
     : NO_VOICE;
   const sessionLog = env.logDir === null ? NO_SESSION_LOG : createJsonlSessionLog({ log: log.child({ part: 'sessionlog' }), dir: env.logDir, now });
-  // The seed is in memory from here on. Remote is read in the background, now and every `refreshMs`; no turn waits for it.
-  const library = createLibrary(env.library, log.child({ part: 'library' }), now);
-  // Said once per outage: the warning on the first failed refresh, silence while it persists, a line when it recovers.
-  let libraryDown = false;
-  const refreshLibrary = (): void => {
-    void library.refresh(new AbortController().signal).then((status) => {
-      audit.record({ kind: 'connector', login: 'system', tool: 'remote', target: 'technique library', decision: status.failure === null ? 'allowed' : 'failed', decidedBy: 'system', note: status.failure === null ? `${status.techniques} techniques` : 'unreachable' });
-      if (status.failure !== null) {
-        if (!libraryDown) log.warn('library.unreachable', { failure: status.failure, serving: status.techniques });
-        libraryDown = true;
-      } else {
-        if (libraryDown) log.info('library.recovered', { techniques: status.techniques });
-        libraryDown = false;
-        log.info('library.refreshed', { techniques: status.techniques, bySource: status.bySource });
-      }
-    });
-  };
-  if (env.library.kind === 'remote') {
-    refreshLibrary();
-    setInterval(refreshLibrary, env.library.refreshMs).unref();
-  }
-  // Read in the background, now and every `refreshMs`; a turn only ever uses the index held in memory.
-  const datasets = createDatasets(env.datasets, log.child({ part: 'datasets' }), env.data.datasetsCache);
-  if (env.datasets.kind !== 'none') {
-    const refreshDatasets = (): void => void datasets.refresh(new AbortController().signal).catch((error: unknown) => log.warn('datasets.refresh_failed', { error }));
-    refreshDatasets();
-    setInterval(refreshDatasets, env.datasets.refreshMs).unref();
-  }
+  // The techniques are read from the repository, once, here; a turn only ever uses the index held in memory.
+  const library = createLibrary(env.library);
+  const loaded = library.status();
+  log.info('library.loaded', { techniques: loaded.techniques, bySource: loaded.bySource, line: `${loaded.techniques} techniques: ${Object.entries(loaded.bySource).map(([source, count]) => `${count} ${source}`).join(', ')}` });
+  for (const note of env.notes) log.warn('env.setting_ignored', { note });
   // v3. The documents conversations make, and the catalogue of them in the data folder (an index over the session logs, rebuilt from them when it is behind).
   const docAssets = createDocumentAssets({ dir: env.data.documents, log: log.child({ part: 'documents' }) });
   const documents = createDocuments({ catalogue: createCatalogue({ dir: env.data.documents, logs: env.logDir, log: log.child({ part: 'documents' }), now }), log: log.child({ part: 'documents' }), now });
@@ -145,8 +122,6 @@ function boot(env: Env): void {
     sight: env.sight,
     variant: env.promptVariant,
     library,
-    // The owner's datasets are off unless `DATASETS` names a reader for them; `env.datasets` says which.
-    datasets,
     review: env.review,
     maxPaintings: env.paintingsPerSession,
     critic: createCritic({ policy: env.critic, bin: env.brain.kind === 'claude-cli' ? env.brain.bin : 'claude', log: log.child({ part: 'critic' }), now, meter: usage, throttle: usage }),

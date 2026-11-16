@@ -71,10 +71,6 @@ export function describeFigure(figure: Figure, box: CanvasBox | null = null): st
       if (figure.structure === 'tune') return describeTune(cachedTune(tuneRowsOf(figure.rows), { tempo: figure.tempo ?? null }), figure.rows.length);
       const name = figure.chart === null ? figure.structure : [...figure.words, `${figure.chart} chart`].join(' ');
       if (figure.data !== null) return `${name} of DATA ${figure.data}`;
-      if (figure.dataset !== undefined && figure.dataset !== null) {
-        const { dataset } = figure;
-        return `${name} of the stored dataset ${dataset.name}${dataset.instrument === undefined ? '' : `, ${dataset.instrument}`}${dataset.field === undefined ? '' : `, ${dataset.field}`}`;
-      }
       if (figure.rows.length === 0) return name;
       // A chart of many points is named by its first and last, not recited.
       const rows = figure.rows.length > 8 ? [...figure.rows.slice(0, 2), { cells: [`… ${figure.rows.length - 3} more …`] }, ...figure.rows.slice(-1)] : figure.rows;

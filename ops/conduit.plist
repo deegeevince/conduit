@@ -73,7 +73,7 @@
     <string>@DATA_DIR@</string>
     <key>CLAUDE_BIN</key>
     <string>@CLAUDE_BIN@</string>
-    <!-- launchd starts with a bare PATH; the server needs node, claude (and remote) on it. -->
+    <!-- launchd starts with a bare PATH; the server needs node and claude on it. -->
     <key>PATH</key>
     <string>@PATH@</string>
     <key>HOME</key>

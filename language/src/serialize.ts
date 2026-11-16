@@ -239,11 +239,6 @@ export function serializeLine(line: Line): string {
       head.push(...boxTokens(line.box), ...line.styles);
       if (line.file !== undefined) head.push(`file=${line.file}`);
       if (line.data !== undefined) head.push(`data=${line.data}`);
-      if (line.dataset !== undefined) {
-        head.push(`data=dataset:${line.dataset.name}`);
-        if (line.dataset.instrument !== undefined) head.push(`instrument=${line.dataset.instrument}`);
-        if (line.dataset.field !== undefined) head.push(`field=${line.dataset.field}`);
-      }
       return withText([...head, ...propTokens(line.props), ...whenToken(line.when)], line.title);
     }
     case 'node': {

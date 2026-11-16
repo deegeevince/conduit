@@ -14,7 +14,6 @@ import type {
   Approx,
   CardLine,
   ColourRef,
-  DatasetRef,
   ControlLine,
   FillRef,
   HexColor,
@@ -1000,10 +999,6 @@ function boxOf(numbers: readonly number[], issues: Issues, what: string): Canvas
   return undefined;
 }
 
-const DATASET_NAME = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,47}$/;
-const INSTRUMENT_NAME = /^[A-Za-z0-9^][A-Za-z0-9_.:^=-]{0,23}$/;
-const FIELD_NAME = /^[A-Za-z0-9_.-]{1,24}$/;
-
 function parseStructure(verb: StructureVerb, head: Head, text: string | null, issues: Issues): Line {
   const own: readonly string[] =
     verb === 'flow' || verb === 'tree' ? GROWTHS : verb === 'chart' ? [...CHART_KINDS, ...CHART_WORDS] : verb === 'map' ? ['route'] : verb === 'table' ? ['bars'] : verb === 'code' ? CODE_LANGUAGES : verb === 'tune' ? TUNE_VOICES : verb === 'figure' ? ['cutaway', 'exploded'] : [];
@@ -1024,16 +1019,11 @@ function parseStructure(verb: StructureVerb, head: Head, text: string | null, is
     else if (verb === 'figure' && (name === 'cutaway' || name === 'exploded')) line.mode = name;
     else styleWords.push(name);
   }
-  let dataset: { name?: string; instrument?: string; field?: string } = {};
   for (const pair of rest) {
     const { key, value } = pair;
     if ((key === 'grow' || key === 'dir') && (verb === 'flow' || verb === 'tree') && oneOf(GROWTHS, value)) line.grow = value;
     else if ((key === 'kind' || key === 'type') && verb === 'chart' && oneOf(CHART_KINDS, value)) line.chart = value;
-    else if (key === 'data' && verb === 'chart' && value.startsWith('dataset:')) dataset = { ...dataset, name: pair.raw.slice('dataset:'.length) };
-    else if (key === 'dataset' && verb === 'chart') dataset = { ...dataset, name: pair.raw.replace(/^dataset:/i, '') };
     else if (key === 'data' && verb === 'chart' && isValidElementId(value)) line.data = value;
-    else if (key === 'instrument' && verb === 'chart') dataset = { ...dataset, instrument: pair.raw };
-    else if (key === 'field' && verb === 'chart') dataset = { ...dataset, field: pair.raw };
     else if ((key === 'lang' || key === 'language') && verb === 'code' && /^[a-z][a-z0-9+#_.-]{0,15}$/.test(value)) line.lang = value;
     else if (key === 'file' && verb === 'code' && pair.raw !== '') line.file = pair.raw.slice(0, LIMITS.file);
     else if ((key === 'answer' || key === 'is') && verb === 'problem') line.answer = splitValues(pair.raw).filter((value) => value.length <= LESSON_LIMITS.answer).slice(0, LESSON_LIMITS.accepted);
@@ -1064,18 +1054,6 @@ function parseStructure(verb: StructureVerb, head: Head, text: string | null, is
     else if (key === 'height' && verb === 'app') issues.warn('bad-value', `height=${value} is not a number of canvas units from ${APP_HEIGHT.min} to ${APP_HEIGHT.max}; ${APP_HEIGHT.default} is used`, pair.token);
     else if ((key === 'tempo' || key === 'bpm') && verb === 'tune') issues.warn('bad-value', `tempo=${value} is not a number of beats a minute from ${TUNE_TEMPO_RANGE.min} to ${TUNE_TEMPO_RANGE.max}; the score's own is used`, pair.token);
     else issues.warn('unknown-key', `"${key}" is not a property here; ignored`, pair.token);
-  }
-  if (dataset.name !== undefined || dataset.instrument !== undefined || dataset.field !== undefined) {
-    const named = dataset.name;
-    if (named === undefined || !DATASET_NAME.test(named)) issues.warn('bad-value', 'a dataset is named: data=dataset:<name> [instrument=…] [field=…]; ignored');
-    else {
-      const ref: { -readonly [K in keyof DatasetRef]: DatasetRef[K] } = { name: named };
-      if (dataset.instrument !== undefined && INSTRUMENT_NAME.test(dataset.instrument)) ref.instrument = dataset.instrument;
-      else if (dataset.instrument !== undefined) issues.warn('bad-value', `instrument=${dataset.instrument} ignored; it is a symbol such as ZEC`);
-      if (dataset.field !== undefined && FIELD_NAME.test(dataset.field)) ref.field = dataset.field;
-      else if (dataset.field !== undefined) issues.warn('bad-value', `field=${dataset.field} ignored; it is a column's name such as close`);
-      line.dataset = ref;
-    }
   }
   line.styles = readStyleNames(styleWords, issues);
   const box = boxOf(numbers, issues, verb);

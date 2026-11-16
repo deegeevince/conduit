@@ -2,7 +2,7 @@
 //
 // The owner asked the canvas to do things ("i need you to do it"), and a brain with no tools can only say that it cannot. In agent
 // mode the conversation's brain is the same `claude` process with a list of tools it may use: the CLI's own (`WebSearch`,
-// `WebFetch`, `Read`, …) and connected services from the owner's allowlist (MCP servers, e.g. `remote`). It still answers in
+// `WebFetch`, `Read`, …) and connected services from the owner's allowlist (MCP servers). It still answers in
 // Series on the stage; it is never a second chat beside the canvas.
 //
 // Three rules, in this order, are the whole of its safety. They are code, not prompt:
@@ -48,7 +48,7 @@ export const NO_AGENT: AgentSettings = { enabled: false, tools: [], services: []
 /** One call the model wants to make, as the CLI reported it and before anything has happened. */
 export interface ToolCall {
   readonly id: string;
-  /** the CLI's name for it: `WebFetch`, `Bash`, `mcp__remote__get_block` */
+  /** the CLI's name for it: `WebFetch`, `Bash`, `mcp__notes__get_page` */
   readonly tool: string;
   /** the call's input as the CLI gave it; never logged, never sent anywhere */
   readonly input: Readonly<Record<string, unknown>>;
@@ -87,7 +87,7 @@ const INPUT_SIGNALS: readonly { readonly risk: ActionRisk; readonly keys: readon
 const RISK_ORDER: readonly ActionRisk[] = ['read', 'write', 'run', 'send', 'buy', 'delete', 'publish', 'signin'];
 const worse = (a: ActionRisk, b: ActionRisk): ActionRisk => (RISK_ORDER.indexOf(b) > RISK_ORDER.indexOf(a) ? b : a);
 
-/** `mcp__remote__get_block` -> `{ service: 'remote', action: 'get_block' }`; a tool of the CLI's own has no service. */
+/** `mcp__notes__get_page` -> `{ service: 'notes', action: 'get_page' }`; a tool of the CLI's own has no service. */
 export function splitTool(tool: string): { readonly service: string | null; readonly action: string } {
   const match = /^mcp__([^_](?:[^_]|_(?!_))*)__(.+)$/.exec(tool);
   if (match === null) return { service: null, action: tool };

@@ -66,13 +66,13 @@ export interface TechniqueCard {
 
 /**
  * Rows the server holds for this conversation and a chart can draw by
- * reference: a table the user pasted, or rows read from the owner's own
- * datasets. The brain is told what is in it and never retypes it.
+ * reference: a table the user pasted, or a CSV behind a link. The brain is
+ * told what is in it and never retypes it.
  */
 export interface DataTable {
   /** `d1`, `d2`, …: what `chart … data=` names */
   readonly id: string;
-  /** where it came from, in a few words: `pasted by the user`, `your dataset prices (ACME, daily)` */
+  /** where it came from, in a few words: `pasted by the user`, `a CSV at a link` */
   readonly source: string;
   /** the column names, the first being what runs along the bottom */
   readonly columns: readonly string[];

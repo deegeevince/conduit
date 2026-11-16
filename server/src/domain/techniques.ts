@@ -1,46 +1,37 @@
 // The technique library, as the server sees it.
 //
 // A technique is a recipe that judged well on a kind of answer: when to use
-// it, a short worked example in Series, what failed before. Techniques live in
-// Remote, on the Series account, one block each, linked from the Conduit root
-// block. They are written by reviews and by the improvement loop, and handed
-// to the brain a few at a time, in the turn's brief.
+// it, a short worked example in Series, what failed before. Techniques are
+// markdown files in the repository (`techniques/seed/*.md`), with an optional
+// overlay folder on top for the improvement loop's candidates. They are
+// handed to the brain a few at a time, in the turn's brief.
 //
 // Never in the system prompt. That is fixed for a conversation, so the warm
 // process and the provider's prompt cache hold, and it is at its size limit.
 //
-// THE TURN NEVER WAITS FOR REMOTE. Choosing techniques for a turn is a
-// function over an index held in memory: no network, no file, no model, well
-// under a millisecond. The index is filled from three sources, best first:
-//   1. Remote (the truth), read in the background at boot and every
-//      `refreshMs`, in one call for the index and one per changed technique;
-//   2. the file cache of the last good read (`<cacheDir>/*.json`), so a
-//      restart with Remote unreachable serves what it last knew;
-//   3. the seed in the repository (`techniques/seed/*.md`), so a fresh
-//      checkout with no network and no login still hands over good recipes.
-// A failed or slow refresh changes nothing a turn can see; it is logged once.
+// Choosing techniques for a turn is a function over an index held in memory:
+// no network, no model, well under a millisecond. The index is read from the
+// two folders once, when the library is made.
 //
 // This module is the domain: the types, the port, and the two pure functions
-// (reading a technique's body, choosing techniques for a message). Adapters
-// are under `server/src/library/`.
+// (reading a technique's body, choosing techniques for a message). The
+// adapter is under `server/src/library/`.
 
 import { parseScript, TECHNIQUE_LIMITS } from '@conduit/language';
 import type { TechniqueCard, TurnInput } from '@conduit/language';
 
 /** Where a technique in the index came from. */
-export type TechniqueSource = 'remote' | 'cache' | 'seed' | 'overlay';
+export type TechniqueSource = 'seed' | 'overlay';
 
 /** One technique, as the library holds it. */
 export interface Technique {
-  /** the Remote block id; for a seed that has no block yet, `seed:<file name>` */
+  /** `<source>:<file name>` */
   readonly id: string;
   readonly title: string;
-  /** the block's summary: says when it applies. Read without fetching the body, so it carries the words a message is matched on. */
+  /** says when it applies; it carries the words a message is matched on */
   readonly summary: string;
-  /** the link's reason from the root block: begins "only if …" */
+  /** begins "only if …": when following the technique is worth it */
   readonly reason: string;
-  /** the block's fingerprint when it was read; what a write must send back */
-  readonly fingerprint: string | null;
   readonly source: TechniqueSource;
   readonly body: TechniqueBody;
 }
@@ -318,26 +309,17 @@ export function cardOf(technique: Technique): TechniqueCard {
   return { id: technique.id, title: technique.title, when: `${body.when === '' ? body.purpose : body.when}${not}`.trim(), example: body.example };
 }
 
-/** How the last refresh went, for `pnpm library status` and the boot log. */
+/** What the library holds, for `pnpm library status` and the boot log. */
 export interface LibraryStatus {
   readonly techniques: number;
   readonly bySource: Readonly<Record<TechniqueSource, number>>;
-  /** ISO time of the last read of Remote that succeeded; null when none has */
-  readonly refreshedAt: string | null;
-  /** why the last read failed, in a sentence; null when it did not */
-  readonly failure: string | null;
 }
 
-/**
- * The port. `cardsFor` is what a turn calls, and it never waits: it answers
- * from memory, whatever state the sources are in. `refresh` is what the
- * background calls; nothing in a turn awaits it.
- */
+/** The port. `cardsFor` is what a turn calls; it answers from memory and never waits. */
 export interface TechniqueLibrary {
   cardsFor(query: TechniqueQuery): readonly TechniqueCard[];
   /** the same choice with its scores, for the log and the tools */
   match(query: TechniqueQuery): readonly TechniqueHit[];
-  refresh(signal: AbortSignal): Promise<LibraryStatus>;
   status(): LibraryStatus;
   close(): void;
 }
@@ -345,50 +327,5 @@ export interface TechniqueLibrary {
 export type LibrarySettings =
   /** no techniques are handed over */
   | { readonly kind: 'none' }
-  /** the seed in the repository only: no network, no login */
-  | { readonly kind: 'seed'; readonly seedDir: string; readonly overlayDir: string | null }
-  | {
-      readonly kind: 'remote';
-      readonly bin: string;
-      /** the account the library lives on: `series@example.invalid` */
-      readonly actor: string;
-      readonly env: 'prod' | 'local';
-      /** the Conduit root block every technique hangs off */
-      readonly root: string;
-      readonly seedDir: string;
-      readonly cacheDir: string;
-      /** techniques laid over the library for one experiment: the improvement loop's candidates, never written to Remote until kept and approved */
-      readonly overlayDir: string | null;
-      readonly refreshMs: number;
-      /** one call to Remote may take this long before it is given up on */
-      readonly timeoutMs: number;
-    };
-
-/**
- * A technique to write, and where. The write path is not the read path: it
- * is used by the tools (`pnpm library`) and the improvement loop, never by a
- * turn. Every write follows the tree's rules: read the block again first,
- * send the fingerprint from that read, re-apply on a conflict, and never
- * write what `lintTechnique` refuses.
- */
-export interface TechniqueDraft {
-  /** the block to rewrite; null to create one and link it from the root */
-  readonly id: string | null;
-  readonly title: string;
-  readonly summary: string;
-  /** required for a new block; begins "only if" */
-  readonly reason: string;
-  readonly markdown: string;
-}
-
-export type WriteResult =
-  | { readonly outcome: 'written'; readonly id: string; readonly fingerprint: string }
-  /** the block changed since it was read: `current` is what is there now; re-apply the change to it and write again */
-  | { readonly outcome: 'conflict'; readonly id: string; readonly current: string; readonly fingerprint: string }
-  | { readonly outcome: 'refused'; readonly problems: readonly string[] };
-
-export interface TechniqueWriter {
-  /** the block as it is now, with the fingerprint a write must carry */
-  read(id: string, signal: AbortSignal): Promise<{ readonly markdown: string; readonly fingerprint: string; readonly title: string; readonly summary: string } | null>;
-  write(draft: TechniqueDraft, baseFingerprint: string | null, signal: AbortSignal): Promise<WriteResult>;
-}
+  /** the seed folder, and an overlay folder laid over it */
+  | { readonly kind: 'seed'; readonly seedDir: string; readonly overlayDir: string | null };

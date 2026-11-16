@@ -22,7 +22,7 @@ Answer with one JSON array in a \`\`\`json block and nothing after it. Each item
 export function builderPrompt(proposal: Proposal, refusal: readonly string[]): string {
   const where =
     proposal.kind === 'technique'
-      ? 'A technique is a markdown file in techniques/overlay/ (read one in techniques/seed/ for the form). It is not written to Remote; the steward does that if it is kept.'
+      ? 'A technique is a markdown file in techniques/overlay/ (read one in techniques/seed/ for the form). The steward moves it into techniques/seed/ if it is kept.'
       : proposal.kind === 'prompt'
         ? 'Change only language/src/prompt.ts, and keep `pnpm prompt count` within its budget.'
         : proposal.kind === 'style'

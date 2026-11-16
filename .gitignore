@@ -10,7 +10,6 @@ dist/
 *.log
 /logs/
 explore/runs/
-techniques/.cache/
 loop/runs/
 loop/queue/
 .DS_Store
@@ -18,5 +17,4 @@ loop/queue/
 .vscode/
 explore/runs
 explore/taste/
-techniques/.cache
 coverage/

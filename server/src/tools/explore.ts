@@ -666,7 +666,7 @@ async function main(): Promise<void> {
   }
   process.stdout.write(` ready (structures: ${capabilities.structures.join(',') || 'none'}; charts: ${capabilities.charts.join(',') || 'none'}; controls: ${capabilities.controls.join(',') || 'none'})\n`);
   // Techniques are chosen as the server chooses them: from memory (the seed, the cache, an overlay), never over the network.
-  const library = createLibrary(env.library, log, () => Date.now());
+  const library = createLibrary(env.library);
 
   const promptChars = buildSystemPrompt({ capabilities, services }).length;
   process.stdout.write(`run ${id}: ${units.length} units through ${brain.id}${model === null ? '' : ` (${model}${env.brain.kind === 'claude-cli' ? `, effort ${env.brain.effort}` : ''}, the ${options.configuration} configuration)`}, window ${window.width}x${window.height}${judging ? `, judged by ${options.judgeModel}` : ''}, samples ${options.samples}, variants ${options.variants.join(',')}, pool ${pool}\n`);

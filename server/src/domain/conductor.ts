@@ -52,8 +52,7 @@ import { MAX_PROBLEMS, SERVER_LIMITS } from './session';
 import type { SessionEntry, SessionLog } from './session-log';
 import type { ActiveTurn, Session, SessionStore, StageSink } from './session';
 import { readPasted } from '../reading/pasted';
-import { factsOf, tableFromText } from './datasets';
-import type { DatasetLibrary } from './datasets';
+import { factsOf, tableFromText } from './tables';
 import { worthQueuing } from './critic';
 import type { Critic, FindingQueue } from './critic';
 import { DETAIL_MAX, redactSecrets, splitTool } from './agent';
@@ -98,8 +97,6 @@ export interface ConductorDeps {
   readonly library: TechniqueLibrary;
   /** SK1. The owner's skills, read only: a turn that holds one has its text read fresh and put in the brief. Absent: no skill can be held. */
   readonly skills?: SkillCatalogue;
-  /** the owner's own datasets, for a chart drawn by reference; `NO_DATASETS` unless switched on */
-  readonly datasets: DatasetLibrary;
   /** look and fix: whether the brain is shown its draft, and every deadline of it */
   readonly review: ReviewPolicy;
   /** paintings a conversation may ask the image model for */
@@ -164,8 +161,6 @@ function refusalOf(raw: string, issues: readonly Issue[]): { readonly raw: strin
   return { raw: raw.replace(/\s+/g, ' ').trim().slice(0, 160), why: errors.map((issue) => issue.message).join('; ') };
 }
 
-/** The longest a turn waits on the owner's datasets before it goes on without them: it is a network call on the turn's path. */
-const DATASET_WAIT_MS = 5_000;
 
 /**
  * Runs conversations. It owns the two one-way streams: lines flow from a
@@ -1192,8 +1187,8 @@ export class Conductor {
    * the brain is told what could not be read and answers honestly.
    */
   /**
-   * Everything a prompt brings for the brain to read or draw from. A pasted table is data and costs nothing to read; the links and
-   * the owner's dataset are fetched at the same time, each announced to the stage and each with its own deadline.
+   * Everything a prompt brings for the brain to read or draw from. A pasted table is data and costs nothing to read; the links
+   * are fetched at the same time, each announced to the stage and each with its own deadline.
    * `text` is the prompt the brain is shown when it is not the one the user typed (a table too long to retype is taken out of it).
    */
   private async gather(s: Session, turn: ActiveTurn, brain: Brain): Promise<{ fresh: Set<string>; unread: UnreadFacts[]; data: Set<string>; text: string | null }> {
@@ -1214,43 +1209,8 @@ export class Conductor {
       }
     }
 
-    const [documents, dataset] = await Promise.all([this.gatherDocuments(s, turn, brain), pasted === null ? this.gatherDataset(s, turn, input.text, say) : Promise.resolve(null)]);
-    if (dataset !== null) {
-      if (dataset.table !== null) data.add(dataset.table.id);
-      else documents.unread.push({ url: dataset.label, why: dataset.why });
-    }
+    const documents = await this.gatherDocuments(s, turn, brain);
     return { ...documents, data, text: null };
-  }
-
-  /** The owner's own rows, when the prompt names a dataset the index knows. A network call with one short deadline: a failure is told to the brain, never thrown. */
-  private async gatherDataset(
-    s: Session,
-    turn: ActiveTurn,
-    prompt: string,
-    say: (label: string, state: 'start' | 'done' | 'failed', message: string | null) => void,
-  ): Promise<{ label: string; table: DataTable | null; why: string } | null> {
-    const entry = this.deps.datasets.find(prompt)[0];
-    if (entry === undefined) return null;
-    const label = `your dataset ${entry.dataset}`;
-    say(label, 'start', null);
-    const started = this.deps.now();
-    try {
-      const signal = AbortSignal.any([turn.abort.signal, AbortSignal.timeout(DATASET_WAIT_MS)]);
-      const rows = await Promise.race([
-        this.deps.datasets.rows(entry, signal),
-        new Promise<never>((_, reject) => signal.addEventListener('abort', () => reject(new Error(turn.abort.signal.aborted ? 'the turn was interrupted' : `no answer within ${DATASET_WAIT_MS} ms`)), { once: true })),
-      ]);
-      this.auditTurn(s, turn, { kind: 'connector', tool: 'remote', target: `dataset ${entry.dataset}`, decision: 'allowed', decidedBy: 'policy', note: 'the owner\'s own data, read for a chart the prompt named' });
-      const table = this.holdTable(s, turn, { ...rows, source: rows.source === '' ? `your dataset ${entry.dataset}` : rows.source });
-      if (!turn.abort.signal.aborted) say(label, 'done', null);
-      this.deps.log.info('turn.dataset', { session: s.id, turn: turn.id, dataset: entry.dataset, rows: table.rows.length, ms: this.deps.now() - started });
-      return { label, table, why: '' };
-    } catch (error) {
-      const why = error instanceof Error ? error.message : 'it could not be read';
-      this.deps.log.warn('turn.dataset_failed', { session: s.id, turn: turn.id, dataset: entry.dataset, why });
-      if (!turn.abort.signal.aborted) say(label, 'failed', why);
-      return { label, table: null, why };
-    }
   }
 
   /** Keeps a table under the next id; the oldest goes when the conversation holds more than `DATA_LIMITS.tables`. */

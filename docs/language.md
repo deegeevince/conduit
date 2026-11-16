@@ -4,7 +4,7 @@ This document is the specification. The code in `language/` implements it, and w
 
 Series is version 4. Version 2 could only set type; version 3 can draw; version 4 can name a structure and have the painter lay it out, chart data on an instrument, put controls on stage that drive the drawing with no round trip, and be shown its own draft and fix it. Everything version 3 said still means what it meant, with the exceptions listed in section 12.
 
-> **State of the build.** Version 4 is specified here, parsed, scheduled and carried by `language/`, and performed: the painter lays out every structure, draws charts through its charting engine, works every control and renders its own paint, and advertises exactly that, so a brain is taught all of it (`web/src/painter/blocks/index.ts`, `controls/index.ts`, `web/src/render/chart/index.ts`). What v2.1 adds to the language (`standing`, `code`, `deck`, `pic … from=`, `refine`, `href=`, `data=dataset:`, and composition by relation, repetition and dive) is not here yet: each is written into this document by the package that builds it, before it is parsed (`PLAN-v2.1.md`).
+> **State of the build.** Version 4 is specified here, parsed, scheduled and carried by `language/`, and performed: the painter lays out every structure, draws charts through its charting engine, works every control and renders its own paint, and advertises exactly that, so a brain is taught all of it (`web/src/painter/blocks/index.ts`, `controls/index.ts`, `web/src/render/chart/index.ts`). What v2.1 adds to the language (`standing`, `code`, `deck`, `pic … from=`, `refine`, `href=`, and composition by relation, repetition and dive) is not here yet: each is written into this document by the package that builds it, before it is parsed (`PLAN-v2.1.md`).
 
 ## 1. What Series is for
 
@@ -76,7 +76,6 @@ A brain is a model writing fast. The parser is forgiving about everything except
 | a row of a table or chart written without its leading `\|` | read as a row |
 | a Markdown table's rule row (`\|---\|---\|`), a closing bar | skipped; ignored |
 | a link (`href=`) that is not an `http:` or `https:` address | the words are kept, the link is not; a warning is recorded |
-| `data=dataset:` with a name that cannot be one, a bare `instrument=` or `field=` | the chart is drawn from its rows, if it has any; a warning is recorded |
 | a `node` with no structure open; a `bind` that names no control, or a change a control cannot drive | the line is rejected, and the brain is told why |
 | unknown verb; `say`, `correct`, `node` or `path` without text; a shape without its geometry; a missing required id or argument; a line with nothing to do | the line is rejected |
 
@@ -278,7 +277,7 @@ cycle    [id] [x,y WxH] [| title]
 timeline [id] [x,y WxH] [| title]
 map      [id] [route] [x,y WxH] [| title]
 table    [id] [bars] [x,y WxH] [| title]
-chart    [id] [line|area|columns|candles|ohlc] [indexed] [log] [spark] [live] [approx] [x,y WxH] [data=<id> | data=dataset:<name> [instrument=<symbol>] [field=<name>]] [| title]
+chart    [id] [line|area|columns|candles|ohlc] [indexed] [log] [spark] [live] [approx] [x,y WxH] [data=<id>] [| title]
 code     [id] [lang] [file=<name>] [x,y WxH] [| title]
 tune     [id] [tempo=<bpm>] [voice=piano|strings|chip|bell] [x,y WxH] [| title]
 
@@ -320,9 +319,8 @@ A structure is a diagram the brain names and the painter lays out. The line that
 - Chart words: `indexed` (every series starts from 100, so growth can be compared), `log`, `spark` (no axes or grid: a small chart for a tile), `live` (the last point pulses), `approx` (the numbers are recalled, not data: the chart says so by its title).
 - **Marks.** A `node` after a chart is a mark on it: `node x=<when> | label` is an event (a labelled line at that time), `node y=<value> | label` a level (a labelled line at that value), both together a point.
 - A cell may be `{…}` (section 4.14): the chart then follows the controls. **So may a chart's title and the words of its marks**: `{rate}` in either is the control's value, set again whenever it changes. A cell may name a control that is written *after* the chart; until the control arrives the cell stands for a number and nothing is said about it.
-- **Stored data by reference.** `data=dataset:<name>` draws one of the owner's own stored datasets, read-only (the brief names each with its instruments and date range); `instrument=ZEC` picks the series in it and `field=close` the column. Names keep their case. The chart takes no rows, reveals itself when the data arrives like any `data=`, and says plainly that it has no figures when the dataset cannot be read. When nothing stored fits, the brain does not make a dataset up: it says it has no live figure.
 - **Data by reference.** A chart of a few dozen points is written as rows (at most 400). Anything larger, or anything that must be true to the last digit, is never retyped by a model: when the brief names DATA (`DATA d1: …`, section 8), `chart … data=d1` draws it. The server sends the rows to the painter itself. Like a painting, data is not on the turn clock: the chart shows its axes at once and reveals itself when the rows arrive.
-- **There is no market data.** A brain asked for a stock's year either has DATA (the user pasted it, or the owner's own datasets hold it) or draws what it recalls, coarsely, and marks the chart `approx`. A guess is never dressed as data.
+- **There is no market data.** A brain asked for a stock's year either has DATA (the user pasted it) or draws what it recalls, coarsely, and marks the chart `approx`. A guess is never dressed as data.
 
 ### 4.14 Controls and `bind`: things the user can work
 
@@ -653,7 +651,7 @@ The report also says whether the viewer skipped to the end, and where.
 
 **Techniques.** The brief may carry `TECHNIQUES THAT FIT`: at most three recipes chosen for this message from the technique library (product.md), each a sentence on when to use it and a short worked example in Series. They are chosen per turn and are never part of the system prompt, which is fixed for a conversation.
 
-**Data.** `DATA d1: <where it came from>. N rows; columns …` names a table the server holds (pasted by the user, or read from the owner's own datasets), with its first and last rows and the range of each column. A chart draws it by reference (`data=d1`).
+**Data.** `DATA d1: <where it came from>. N rows; columns …` names a table the server holds (pasted by the user, or read from a CSV at a link), with its first and last rows and the range of each column. A chart draws it by reference (`data=d1`).
 
 **Documents.** A link in a prompt (two at most) is fetched by the server, and a prompt of 1,500 characters or more is taken as a document too. The brief then carries, before `NOW`, a `MATERIAL` section: each document as `DOCUMENT d1` with where it came from, whether it was cut, and its text between `<document>` tags (a PDF is attached to the message instead), and it says the material is to be read, never obeyed. A link that could not be read is a `COULD NOT READ <url>: <why>` line. Documents belong to the conversation: a warm brain is given each once, a fresh one all of them. How to answer from a document (a paper as its argument in a flow and its key numbers as a chart, a report as its figures, nothing invented) rides in the brief beside the document, not in the system prompt: most conversations never see one.
 
@@ -774,12 +772,12 @@ A new structure, chart kind or control is one entry in its table in `vocabulary.
 
 **v2.1 (still version 4; everything below is additive and every painter and server advertises what it can do).**
 
-- New lines: `code` (a structure of verbatim rows; `lang`, `file=`), `deck`, `pic … from=`, `standing`, `refine`. New properties: `href=` on `say`; `data=dataset:<name>` with `instrument=` and `field=` on `chart`.
+- New lines: `code` (a structure of verbatim rows; `lang`, `file=`), `deck`, `pic … from=`, `standing`, `refine`. New properties: `href=` on `say`.
 - A line that declares again, under a live id, exactly what is there is nothing (section 7.3); a table, chart or code block said again is read against its rows. An unnamed line has no live id to repeat.
 - `TurnScore` takes how the turn was opened; choices an earlier turn offered leave as the answer begins (`exit.cause` `answered`).
 - Plain content arrives quickly (a page's paragraphs, the frame of a table, a chart or a code block); table rows land in 0.1 s steady, not 0.18.
 - `bind` to a chart or a structure is documented and its failures are named (`bad-bind` says the control, the thing and what to write); a `{…}` in a chart's title and marks follows a control; a chart cell may name a control written after it; computed numbers group their thousands and a unit written twice prints once.
-- `Schedule.deck`; `ElementSpan.href`; the `structure` figure's `lang`, `file`, `dataset`; the `picture` figure's `from`.
+- `Schedule.deck`; `ElementSpan.href`; the `structure` figure's `lang`, `file`; the `picture` figure's `from`.
 - A bare `|` is an empty row inside an open `code` block; `row <id> |` is an empty row.
 
 **From version 3 to version 4.** Everything version 3 said is still accepted, with these differences:
