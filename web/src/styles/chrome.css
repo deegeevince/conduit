@@ -1693,8 +1693,8 @@ input {
 }
 
 /* The work mode (web/src/app/work-mode.ts): a question to work out fills the screen; the composer steps back to an Ask button. */
-body.work .bar { position: fixed; left: 0; right: 0; bottom: 0; display: none; }
-body.work.work--ask .bar { display: block; }
+/* The message box stays where it always is: a person can always type, whatever is on the stage. */
+body.work .work-button--ask { display: none; }
 .work-button {
   position: fixed;
   z-index: 60;
