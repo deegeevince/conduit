@@ -24,7 +24,8 @@ export type { BriefForm };
 import { asksForLiveApp, asksToMakeGame } from './app';
 import { FIGURE_CHAPTER, asksForFigure } from './figure';
 import { INTERFACE_CHAPTER } from './interface';
-import { ASK_CHAPTER, ASK_CHAPTER_WITH_DOCUMENT, DOCUMENT_CHAPTER, carriesAsk, carriesDocument, documentBlocks, hasLesson, usesParts } from './teach';
+import { ASK_CHAPTER, ASK_CHAPTER_WITH_DOCUMENT, DOCUMENT_CHAPTER, carriesAsk, carriesDocument, documentBlocks, hasLesson, usesParts, usesProblem } from './teach';
+import { PROBLEM_CHAPTER, asksForMaths } from './problem';
 import { inkBrief } from './ink';
 import { describeSight } from './sight';
 import { BUILTIN_STYLES } from './style';
@@ -353,7 +354,7 @@ export function buildSystemPrompt({ capabilities, services }: PromptOptions): st
   const structures = draws ? capabilities.structures.filter((name) => name !== 'chart' || charts.length > 0) : [];
   // `code` is taught where the verbs for what you write are ("More to say with"), in its own words, and not twice in the list of shapes.
   // `tune` is taught only on a turn about music (`tuneChapter`, in the brief), never here: the system prompt is full.
-  const shapes = structures.filter((name) => name !== 'code' && name !== 'tune' && name !== 'screen' && name !== 'app' && name !== 'figure');
+  const shapes = structures.filter((name) => name !== 'code' && name !== 'tune' && name !== 'screen' && name !== 'app' && name !== 'figure' && name !== 'problem');
   const controls = capabilities.controls;
   const deep = false;
   const camera = false;
@@ -434,7 +435,7 @@ export function buildSystemPrompt({ capabilities, services }: PromptOptions): st
       : draws
         ? "- A thing, a place, a mechanism, a comparison, a set of numbers: draw it and label it, and keep every fact a good plain answer would give: numbers and names on the drawing, the rest in short lines. Words are cheap; a missing fact is not. A comparison covers every row a good table would (cost, upkeep, lifespan, limits, risks), as paired lines beneath the two shapes. Compare with matching shapes side by side (bars sized by the numbers, a column each), never two lists of words."
         : '',
-    draws ? '- A process, a breakdown, how something works: lay it out to read whole, the steps numbered and all on stage beside the picture, each step\'s part lit or labelled. Asked step by step (instructions, a recipe, a build, a how-to), or to go one at a time: draw the finished picture with its parts at `opacity=0` and a stepper, `pick s steps | a | b`, `bind s=a | set part opacity=1`; a document of parts only when a document, a checklist or a learner\'s worksheet is the ask. Arrows that only page through text are what to avoid. A child\'s maths question: only its technique\'s shape.' : '',
+    draws ? '- A process, a breakdown, how something works: lay it out to read whole, the steps numbered and all on stage beside the picture, each step\'s part lit or labelled. Asked step by step (instructions, a recipe, a build, a how-to), or to go one at a time: draw the finished picture with its parts at `opacity=0` and a stepper, `pick s steps | a | b`, `bind s=a | set part opacity=1`; a document of parts only when a document, a checklist or a learner\'s worksheet is the ask. Arrows that only page through text are what to avoid. A maths question to work out: one `problem` line.' : '',
     controls.includes('slider') ? '- Something that depends on a quantity or a choice (an angle, a rate, a mode): hand over the control, bound to the drawing.' : '',
     draws
       ? `- A story, a memory, a mood: stage it. A scene in layers${weather ? ', weather' : ''}${camera ? ', a camera' : ''}, a handful of words as captions.`
@@ -1097,6 +1098,10 @@ export function buildTurnBrief(context: TurnContext, input: TurnInput, form: Bri
   // FG2: a labelled drawing is taught when the words ask for one, or while one is on stage to be changed; never in the system prompt.
   const figureOnStage = stage.elements.some((element) => element.figure?.kind === 'structure' && element.figure.structure === 'figure');
   if (context.capabilities.structures.includes('figure') && !liveApp && ((input.kind === 'prompt' && asksForFigure(input.text)) || figureOnStage)) parts.push(FIGURE_CHAPTER);
+  // A maths question to work out is one `problem` line: taught when the words are a maths question, when one is on stage, or when the choices of a photo's questions are (a tap on one gives its problem); never in the system prompt. A card that writes one says it itself.
+  const problemOnStage = stage.elements.some((element) => element.figure?.kind === 'structure' && element.figure.structure === 'problem');
+  const questionsOnStage = stage.elements.some((element) => element.style.tap && /^\s*which one first\b/i.test(element.text)) || stage.elements.some((element) => element.text.toLowerCase().includes('which one first'));
+  if (context.capabilities.structures.includes('problem') && !liveApp && !usesProblem(context.techniques) && (((input.kind === 'prompt' || input.kind === 'tap') && asksForMaths(input.text)) || problemOnStage || questionsOnStage)) parts.push(PROBLEM_CHAPTER);
   if (drawsNow) parts.push(DRAWING_CHAPTER(`${screen.canvas} (${canvas.width}x${canvas.height})${screen.canvas === 'wide' ? '; a figure scene that names no canvas gets square (100x100)' : ''}`));
   // L2: the shapes, weather, depth and camera that left the fixed prompt ride with a drawing or a staged answer; pixel art has a chapter of its own.
   const stagesNow = context.capabilities.kinds.includes('shape') && ((input.kind === 'prompt' && asksToStage(input.text)) || onStageDrawn);

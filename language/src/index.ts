@@ -6,6 +6,7 @@ export * from './geometry';
 export * from './parse';
 export * from './normalize';
 export * from './figure';
+export * from './problem';
 export * from './serialize';
 export * from './style';
 export * from './timing';

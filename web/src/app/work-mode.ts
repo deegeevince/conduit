@@ -6,6 +6,9 @@ import type { StageInk } from '../ink/stage';
 import { exportPng } from '../ink';
 import { setPen } from '../painter/controls/pen';
 import { tryText } from './document-ink';
+import { createProblemView, problemKey } from '../painter/problem/view';
+import type { ProblemView } from '../painter/problem/view';
+import type { OnStage } from './problem-lines';
 
 export interface WorkModeOptions {
   readonly stage: HTMLElement;
@@ -21,6 +24,10 @@ export interface WorkModeOptions {
   readonly read: (request: { readonly image: string; readonly node: string; readonly ask: string; readonly question: string; readonly prompt: string }) => Promise<{ readonly lines: readonly string[] }>;
   /** the painter redraws: Check is ready now that the pen has written (or not) */
   readonly penChanged: () => void;
+  /** the maths questions on stage (`problem` lines): each takes the whole screen, drawn by the painter's problem workspace */
+  readonly problems: () => readonly OnStage[];
+  /** the person's setting asks for no motion */
+  readonly calm: () => boolean;
 }
 
 export interface WorkMode {
@@ -72,8 +79,9 @@ export function mountWorkMode(options: WorkModeOptions): WorkMode {
         if (made === null) return null;
         const count = ink.ink.model.strokes.length;
         const image = await options.upload(made.blob);
-        const ask = options.controls().find((control) => control.ask === true)?.id ?? 'a1';
-        const read = await options.read({ image, node: '', ask, question: options.question(), prompt: '' });
+        const problem = options.problems()[0];
+        const ask = problem?.spec.id ?? options.controls().find((control) => control.ask === true)?.id ?? 'a1';
+        const read = await options.read({ image, node: '', ask, question: problem === undefined ? options.question() : problem.spec.question.replace(/_{2,}/g, '(blank)'), prompt: problem === undefined ? '' : 'She writes the number that goes in the blank.' });
         if (read.lines.length === 0) {
           say('I could not read that. Write it bigger, or type it.');
           return null;
@@ -90,12 +98,37 @@ export function mountWorkMode(options: WorkModeOptions): WorkMode {
   ink.ink.onChange(() => options.penChanged());
 
   const signature = (): string =>
-    options
-      .controls()
-      .filter((control) => control.ask === true)
-      .map((control) => control.id)
-      .sort()
-      .join(',');
+    [
+      ...options
+        .controls()
+        .filter((control) => control.ask === true)
+        .map((control) => control.id)
+        .sort(),
+      ...options.problems().slice(0, 1).map((entry) => `problem:${problemKey(entry.spec)}`),
+    ].join(',');
+
+  // a maths question takes the screen: its workspace is built once and kept, so what she did to it (tries, a picture open) survives Done and back
+  const views = new Map<string, ProblemView>();
+  let shown: ProblemView | null = null;
+  const sync = (): void => {
+    const entry = on ? (options.problems()[0] ?? null) : null;
+    if (entry === null) {
+      shown?.element.remove();
+      shown = null;
+      return;
+    }
+    const key = `${problemKey(entry.spec)}|${entry.said.join('\u0001')}`;
+    let view = views.get(key);
+    if (view === undefined) {
+      view = createProblemView({ spec: entry.spec, said: entry.said, calm: options.calm });
+      views.set(key, view);
+    }
+    if (shown === view) return;
+    shown?.element.remove();
+    shown = view;
+    stage.append(view.element);
+    view.relayout();
+  };
 
   function enter(): void {
     on = true;
@@ -105,6 +138,7 @@ export function mountWorkMode(options: WorkModeOptions): WorkMode {
     asking.hidden = false;
     asking.textContent = 'Ask';
     ink.show(true);
+    sync();
   }
   function leave(dismiss: boolean): void {
     if (dismiss) dismissed = signature();
@@ -113,10 +147,46 @@ export function mountWorkMode(options: WorkModeOptions): WorkMode {
     exit.hidden = true;
     asking.hidden = true;
     ink.show(false);
+    sync();
   }
 
   // a finger or a mouse goes through the layer to what is under it; the pen writes
+  // a pen that goes down on a button of the workspace presses it (a child holds a pen, not a finger): a stroke that starts on one writes nothing
+  const penPress = new Map<number, Element>();
+  const pressable = (x: number, y: number): Element | null => {
+    const layer = ink.ink.root.closest<HTMLElement>('.ink-stage');
+    if (layer === null) return null;
+    layer.style.pointerEvents = 'none';
+    const under = document.elementFromPoint(x, y)?.closest('.pb button, .pb input, .pb .pb__tok--blank') ?? null;
+    layer.style.pointerEvents = '';
+    return under;
+  };
   const through = (event: PointerEvent): void => {
+    if (on && event.pointerType === 'pen' && event.isTrusted && stage.querySelector('.pb') !== null) {
+      if (event.type === 'pointerdown' && (event.target as Element | null)?.closest('.ink-bar') === null) {
+        const hit = pressable(event.clientX, event.clientY);
+        // the blank is the pen's: it writes there; only the buttons are pressed
+        if (hit !== null && !hit.classList.contains('pb__tok--blank')) {
+          penPress.set(event.pointerId, hit);
+          event.stopImmediatePropagation();
+          event.preventDefault();
+          return;
+        }
+      }
+      const held = penPress.get(event.pointerId);
+      if (held !== undefined) {
+        event.stopImmediatePropagation();
+        event.preventDefault();
+        if (event.type === 'pointerup') {
+          penPress.delete(event.pointerId);
+          if (held instanceof HTMLElement) {
+            if (held.tagName === 'INPUT') held.focus();
+            else held.click();
+          }
+        }
+        return;
+      }
+    }
     if (!on || event.pointerType === 'pen' || !event.isTrusted) return;
     const layer = ink.ink.root.closest<HTMLElement>('.ink-stage');
     if (layer === null) return;
@@ -140,6 +210,7 @@ export function mountWorkMode(options: WorkModeOptions): WorkMode {
     const now = signature();
     if (!on && now !== '' && now !== dismissed) enter();
     else if (on && now === '') leave(false);
+    else if (on) sync();
     if (now === '') dismissed = '';
   }, 400);
   void stage;
@@ -151,6 +222,7 @@ export function mountWorkMode(options: WorkModeOptions): WorkMode {
       exit.remove();
       asking.remove();
       note.remove();
+      for (const view of views.values()) view.dispose();
       setPen(null);
     },
   };

@@ -37,6 +37,8 @@ import type {
   When,
 } from './types';
 import {
+  PROBLEM_WAYS,
+  PROBLEM_WAY_WORDS,
   ALIGNS,
   AMBIENT_KINDS,
   AMOUNTS,
@@ -1034,6 +1036,19 @@ function parseStructure(verb: StructureVerb, head: Head, text: string | null, is
     else if (key === 'field' && verb === 'chart') dataset = { ...dataset, field: pair.raw };
     else if ((key === 'lang' || key === 'language') && verb === 'code' && /^[a-z][a-z0-9+#_.-]{0,15}$/.test(value)) line.lang = value;
     else if (key === 'file' && verb === 'code' && pair.raw !== '') line.file = pair.raw.slice(0, LIMITS.file);
+    else if ((key === 'answer' || key === 'is') && verb === 'problem') line.answer = splitValues(pair.raw).filter((value) => value.length <= LESSON_LIMITS.answer).slice(0, LESSON_LIMITS.accepted);
+    else if (key === 'ways' && verb === 'problem') {
+      const wanted = value.split(/[,+]+/).filter((word) => word !== '');
+      const known = wanted.flatMap((word) => {
+        const way = PROBLEM_WAY_WORDS[word];
+        if (way === undefined) issues.warn('bad-value', `ways=${word} is not one of ${PROBLEM_WAYS.join(' | ')}; ignored`, pair.token);
+        return way === undefined ? [] : [way];
+      });
+      if (known.length > 0) line.ways = [...new Set(known)];
+    } else if (key === 'for' && verb === 'problem') {
+      if (/^[a-z]{1,16}$/.test(value)) line.for = value;
+      else issues.warn('bad-value', `for=${value} is a word such as child or adult; ignored`, pair.token);
+    }
     else if ((key === 'voice' || key === 'instrument' || key === 'sound') && verb === 'tune' && oneOf(TUNE_VOICES, value)) line.voice = value;
     else if ((key === 'voice' || key === 'instrument' || key === 'sound') && verb === 'tune') issues.warn('bad-value', `voice=${value} is not one of ${TUNE_VOICES.join(' | ')}; a piano is used`, pair.token);
     else if ((key === 'tempo' || key === 'bpm') && verb === 'tune' && /^\d+(\.\d+)?$/.test(value) && Number(value) >= TUNE_TEMPO_RANGE.min && Number(value) <= TUNE_TEMPO_RANGE.max) line.tempo = Number(value);
@@ -1784,6 +1799,7 @@ const TEXT_LIMIT: Readonly<Partial<Record<Verb, number>>> = {
   code: LIMITS.text,
   tune: LIMITS.text,
   figure: LIMITS.text,
+  problem: LIMITS.text,
   app: LIMITS.text,
   screen: LIMITS.text,
   deck: LIMITS.text,

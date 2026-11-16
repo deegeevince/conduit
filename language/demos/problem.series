@@ -1,0 +1,28 @@
+# Problem: a maths question to work out. One line each: the question exactly as given, ___ for the blank, and the answer.
+# The stage draws everything else (the question large, a blank for the pen, hints, pictures from its numbers) and checks the answer itself.
+# This script holds one scene per kind of sum; the first plays as the demo, `pnpm check` plays each.
+
+scene stack
+problem p1 answer=3000,3_000 | 1 000 = ___ ÷ 3
+
+scene stack
+problem p2 answer=250 | 1 000 ÷ 4 = ___
+
+scene stack
+problem p3 answer=83 | 46 + 37 = ___
+
+scene stack
+problem p4 answer=29 | 46 − 17 = ___
+
+scene stack
+problem p5 answer=15 | 3/4 of 20 = ___
+
+scene stack
+problem p6 answer=24 | 4 × 6 = ___
+
+scene stack
+problem p7 answer=7 | 21 ÷ ___ = 3
+
+scene stack
+problem p8 answer=9 | Sam has 5 apples and 4 more are given. How many apples now? ___
+hint p8 | Draw the apples.

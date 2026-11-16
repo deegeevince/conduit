@@ -379,13 +379,15 @@ export class LineNormalizer {
       case 'code':
       case 'tune':
       case 'figure':
+      case 'problem':
       case 'app': {
         const id = line.id === '-' ? this.makeId() : line.id;
         this.sprite = null;
         this.ui = null;
         this.figureId = line.verb === 'figure' ? id : null;
         this.figureRows = 0;
-        if (STRUCTURE[line.verb].parts === 'rows') this.table = id;
+        // a problem is one line, complete in itself: nothing follows it as its rows
+        this.table = line.verb === 'problem' ? null : STRUCTURE[line.verb].parts === 'rows' ? id : this.table;
         // A chart takes rows and, as its marks, nodes; a table takes rows only.
         if (STRUCTURE[line.verb].parts === 'nodes' || line.verb === 'chart') this.structure = id;
         // SA5. A room on a structure's opening line is the brain placing by guess: the stage gives the room.

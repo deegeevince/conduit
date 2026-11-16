@@ -53,6 +53,11 @@ export const DEMOS = [
     summary: 'A talk of three slides: `deck` makes each scene a slide, and the stage stops at the end of each for the viewer to step on.',
   },
   {
+    name: 'problem',
+    title: 'Problem',
+    summary: 'A maths question to work out: the brain says the question and its answer in one line, and the stage draws the whole workspace (the question large, a blank for the pen, hints, pictures from its numbers) and checks the answer.',
+  },
+  {
     name: 'explorable',
     title: 'Explorable',
     summary: 'A picture with a slider, a toggle and a pick bound to it, and a button that asks the brain.',

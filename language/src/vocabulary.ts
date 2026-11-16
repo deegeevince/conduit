@@ -606,10 +606,26 @@ export const STRUCTURE = {
   tune: { gist: 'rows `| line` of ABC notation, taken exactly: a piano roll that plays, with a playhead and the notes lighting as they sound', parts: 'rows', lays: 'engine' },
   app: { gist: 'rows `| line` of one HTML document (inline style and script), taken exactly: a live app that runs in a locked sandbox on the stage and answers back (taught only when the user asks for something that works)', parts: 'rows', lays: 'engine' },
   figure: { gist: 'a labelled drawing: each part one line (taught by the FIGURE chapter in the brief); rows are the lines of the figure, taken as written', parts: 'rows', lays: 'engine' },
+  problem: { gist: 'a maths question to work out, `| the question exactly as given` with `___` for the blank: the stage draws the whole workspace itself (the question large, a blank for the pen, hints, ways to lay it out), so write nothing else', parts: 'rows', lays: 'engine' },
   screen: { gist: 'a mock-up: devices at true size, each part one line (taught by the INTERFACE chapter in the brief); rows are the lines of the interface, taken as written', parts: 'rows', lays: 'engine' },
 } as const satisfies Record<string, { gist: string; parts: 'nodes' | 'rows'; lays: 'painter' | 'axis' | 'brain' | 'engine' }>;
 export type StructureKind = keyof typeof STRUCTURE;
 export const STRUCTURE_KINDS = keysOf(STRUCTURE);
+
+/**
+ * The ways a `problem` can be laid out under its question. The painter draws each from the question's own numbers; the brain never draws one.
+ * `ways=` on a problem chooses or limits them; without it the painter offers every way that fits the question.
+ */
+export const PROBLEM_WAYS = ['groups', 'bar', 'array', 'column', 'line'] as const;
+export type ProblemWay = (typeof PROBLEM_WAYS)[number];
+/** The words a brain says for a way, as they are written after `ways=`. */
+export const PROBLEM_WAY_WORDS: Readonly<Record<string, ProblemWay>> = {
+  groups: 'groups', group: 'groups', equal: 'groups', sharing: 'groups', share: 'groups',
+  bar: 'bar', bars: 'bar', strip: 'bar', model: 'bar',
+  array: 'array', grid: 'array', rows: 'array',
+  column: 'column', columns: 'column', tens: 'column', place: 'column', blocks: 'column',
+  line: 'line', numberline: 'line', 'number-line': 'line', jumps: 'line', jump: 'line',
+};
 
 /**
  * The names a `code` block knows a language by, as the brain writes them. A word here is never taken for an id: `code python` is a block of
@@ -907,6 +923,12 @@ export const VERB = {
   figure: {
     form: 'figure <id> [cutaway|exploded] [| title]',
     gist: 'A labelled drawing: follow it with its parts (path, poly, line, ellipse, rect, each with label="…"), route and step lines, then `end`. Taught by the FIGURE chapter in the brief.',
+    time: 'starts',
+    family: 'structure',
+  },
+  problem: {
+    form: 'problem <id> answer=<a>[,<b>…] [ways=<way>[,<way>…]] [for=<who>] | <the question exactly as given, ___ for the blank>',
+    gist: 'A maths question for a child to work out, on a full screen of its own. Say the question and its answer and nothing more: the stage sets the question large with a blank for the pen, offers hints and pictures (groups, a bar, an array, a column, a number line) drawn from its numbers, and checks her answer itself. `answer=` is every form you accept (`3000,3_000`, `_` is a space).',
     time: 'starts',
     family: 'structure',
   },

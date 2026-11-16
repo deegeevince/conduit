@@ -220,8 +220,12 @@ export function serializeLine(line: Line): string {
     case 'tune':
     case 'app':
     case 'figure':
+    case 'problem':
     case 'screen': {
       const head: string[] = [line.verb, line.id];
+      if (line.answer !== undefined && line.answer.length > 0) head.push(`answer=${line.answer.map(encodeValue).join(',')}`);
+      if (line.ways !== undefined && line.ways.length > 0) head.push(`ways=${line.ways.join(',')}`);
+      if (line.for !== undefined) head.push(`for=${line.for}`);
       if (line.mode !== undefined) head.push(line.mode);
       if (line.grow !== undefined) head.push(line.grow);
       if (line.chart !== undefined) head.push(line.chart);
