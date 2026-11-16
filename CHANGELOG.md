@@ -6,9 +6,10 @@ Newest first. Each item is something the brain can show live when asked "showcas
 - On a phone the first screen now shows all seven starters. Before, the first one could go missing and leave a gap, on some phone sizes. If the choices do not fit, they are set a little smaller and closer together instead of being dropped.
 
 ## Maths help happens on the canvas (live)
-- Ask for help with a maths question, typed or photographed, and the answer is the question itself on the canvas: retyped big, with a blank to answer, a hint behind a tap, and a choice of ways to see it (groups, a number line, a bar) drawn a step at a time.
-- The question takes the whole screen. The composer steps back to a small Ask button, Done puts the screen back, the pen writes anywhere on it, and your ink stays while a hint or a layout changes underneath. A finger still presses Check and Hint.
-- A photo of a whole page with no question named gives "Which one first?" and the questions to tap. No map of cards, no questions written in the background that nobody asked for. A document of questions comes only when you ask for a document, worksheet or checklist.
+- Ask for help with a maths question, typed or photographed, and the question itself is on the canvas: retyped exactly, big, in one row at the top, with a box to write the answer in. No story labels, no method before she tries.
+- She writes the answer with the pen, in the box or near it, and taps Check. Check reads the handwriting (the same small reader the lesson uses; a server on the Codex brain refuses it, and the typed field is the fallback), shows what it read in the field, and checks it. Writing more and pressing Check reads again.
+- Two tabs under the question light its own parts: "What do we know?" the numbers and sign, "What are we finding?" the box. Tabs choose a layout (groups, bar, number line, column), and a stepper adds one labelled piece at a time; your ink stays while any of it changes.
+- The question takes the whole screen. The composer steps back to a small Ask button, Done puts the screen back, the pen is on by default, and a finger presses Check and the tabs. A photo of a whole page with no question named gives "Which one first?"; a document comes only when you ask for one.
 - The pen no longer drops a stroke while a lesson saves or redraws, or after the pen leaves the screen mid-stroke.
 
 ## A wireframe you ask for comes out as a wireframe (live)

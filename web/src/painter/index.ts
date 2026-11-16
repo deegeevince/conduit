@@ -4,6 +4,7 @@ import { setTarget, targetPx } from './target';
 import { STRUCTURES_READY } from './blocks';
 import { CONTROLS_READY, controlEngine, createControlStore, nextEases } from './controls';
 import { controlIndexOf, createRuntime, controlSpecOf, heldBy, stateReader } from './bound';
+import { penRead, penReady } from './controls/pen';
 import { runOf as askRun, check as askCheck, choose as askChoose, hint as askHint, lockedOf as askLocked, show as askShow } from './controls/ask-state';
 import type { AskAct } from './controls/ask-state';
 import { drivenLayers } from './controls';
@@ -1276,6 +1277,19 @@ export function createPainter(options: PainterOptions): Painter {
     const top = open.centre.y - open.layout.height / 2;
     scrollArea(open.window.scene, top - open.window.box.y);
   };
+  /** A Check pressed with the field empty and the pen written on: the handwriting is read, put in the field, and checked as if typed. */
+  const readPen = async (site: ControlSite): Promise<void> => {
+    const text = await penRead();
+    const now = siteById(site.id);
+    if (text === null || text.trim() === '' || now === null) return;
+    holdValue(now, text.trim());
+    const act = askCheck(now.span, text.trim());
+    refreshTimeline();
+    revealOpenAsk();
+    drawNow();
+    const after = siteById(site.id) ?? now;
+    if (act !== null) sayAsk(after, act);
+  };
   /** HI1. A press on a part of an ask. Nothing is checked until Check (or Enter): a hand cannot wiggle a field until it turns green. */
   const askOn = (site: ControlSite, zone: ControlSite['layout']['zones'][number]): void => {
     const span = site.span;
@@ -1286,7 +1300,10 @@ export function createPainter(options: PainterOptions): Painter {
       return;
     }
     if (zone.part.startsWith('option:')) askChoose(span, Number(zone.part.slice(7)));
-    else if (zone.part === 'check') act = askCheck(span, typed);
+    else if (zone.part === 'check' && penReady()) {
+      void readPen(site);
+      return;
+    } else if (zone.part === 'check') act = askCheck(span, typed);
     else if (zone.part === 'hint') act = askHint(span);
     else if (zone.part === 'show') {
       act = askShow(span);
@@ -1864,6 +1881,9 @@ export function createPainter(options: PainterOptions): Painter {
         return true;
       }
       return false;
+    },
+    penChanged() {
+      drawNow();
     },
     setControl(id, value, commit) {
       const site = siteById(id);

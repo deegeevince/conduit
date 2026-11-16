@@ -3,6 +3,9 @@
 // layer (Check, a hint, a choice); only the pen writes. What she drew stays put while a hint, a choice of layout or a new step changes the stage under it.
 
 import type { StageInk } from '../ink/stage';
+import { exportPng } from '../ink';
+import { setPen } from '../painter/controls/pen';
+import { tryText } from './document-ink';
 
 export interface WorkModeOptions {
   readonly stage: HTMLElement;
@@ -10,6 +13,14 @@ export interface WorkModeOptions {
   readonly ink: StageInk;
   /** the controls on the stage now (the stage hook's own list) */
   readonly controls: () => readonly { readonly id: string; readonly ask?: boolean }[];
+  /** the question's own words, as the stage says them (for the reader of her handwriting) */
+  readonly question: () => string;
+  /** keeps the picture of the ink; resolves with its upload id */
+  readonly upload: (png: Blob) => Promise<string>;
+  /** reads what was written (a small Claude process server side; refused on a server without the Claude brain) */
+  readonly read: (request: { readonly image: string; readonly node: string; readonly ask: string; readonly question: string; readonly prompt: string }) => Promise<{ readonly lines: readonly string[] }>;
+  /** the painter redraws: Check is ready now that the pen has written (or not) */
+  readonly penChanged: () => void;
 }
 
 export interface WorkMode {
@@ -37,6 +48,46 @@ export function mountWorkMode(options: WorkModeOptions): WorkMode {
     const open = body.classList.toggle('work--ask');
     asking.textContent = open ? 'Back' : 'Ask';
   });
+
+  // a short line for her when a reading did not work: it goes by itself
+  const note = document.createElement('div');
+  note.className = 'work-note';
+  note.hidden = true;
+  document.body.append(note);
+  let noteTimer: number | undefined;
+  const say = (words: string): void => {
+    note.textContent = words;
+    note.hidden = false;
+    window.clearTimeout(noteTimer);
+    noteTimer = window.setTimeout(() => (note.hidden = true), 6000);
+  };
+  // the pen's writing is her answer: Check reads it (`painter/controls/pen.ts`), the typed field stays as the fallback
+  // strokes already read are her last try: Check reads again only when she has written more
+  let readAt = 0;
+  setPen({
+    has: () => on && ink.ink.model.strokes.length > (ink.ink.model.strokes.length < readAt ? 0 : readAt),
+    read: async () => {
+      try {
+        const made = await exportPng(ink.ink.model.document(), {});
+        if (made === null) return null;
+        const count = ink.ink.model.strokes.length;
+        const image = await options.upload(made.blob);
+        const ask = options.controls().find((control) => control.ask === true)?.id ?? 'a1';
+        const read = await options.read({ image, node: '', ask, question: options.question(), prompt: '' });
+        if (read.lines.length === 0) {
+          say('I could not read that. Write it bigger, or type it.');
+          return null;
+        }
+        readAt = count;
+        options.penChanged();
+        return tryText(read.lines, false);
+      } catch {
+        say('I could not read that. Type your answer instead.');
+        return null;
+      }
+    },
+  });
+  ink.ink.onChange(() => options.penChanged());
 
   const signature = (): string =>
     options
@@ -99,6 +150,8 @@ export function mountWorkMode(options: WorkModeOptions): WorkMode {
       window.clearInterval(timer);
       exit.remove();
       asking.remove();
+      note.remove();
+      setPen(null);
     },
   };
 }

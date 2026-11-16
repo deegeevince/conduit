@@ -66,7 +66,7 @@ export interface HttpLink extends StageLink {
   /** v3. Every stroke kept with a document: the papers as they stand and every try's working, latest of each. */
   documentInk(id: string): Promise<readonly DocumentInk[]>;
   /** v3. Reads what the person wrote by hand in an ask's answer area, from the picture of the ink (an upload id): the words, as the server's reader sees them. */
-  readInk(request: { readonly image: string; readonly node: string; readonly ask: string }): Promise<{ readonly text: string; readonly lines: readonly string[]; readonly unclear: boolean; readonly sees: string | null }>;
+  readInk(request: { readonly image: string; readonly node: string; readonly ask: string; readonly question?: string; readonly prompt?: string }): Promise<{ readonly text: string; readonly lines: readonly string[]; readonly unclear: boolean; readonly sees: string | null }>;
 }
 
 /** One hour or one day of model use, as `/api/usage` gives it; only what `/usage` shows. */
@@ -639,7 +639,7 @@ export function createHttpLink(): HttpLink {
       return Array.isArray(body) ? (body as DocumentInk[]) : [];
     },
 
-    async readInk(request): Promise<{ readonly text: string; readonly lines: readonly string[]; readonly unclear: boolean; readonly sees: string | null }> {
+    async readInk(request: { readonly image: string; readonly node: string; readonly ask: string; readonly question?: string; readonly prompt?: string }): Promise<{ readonly text: string; readonly lines: readonly string[]; readonly unclear: boolean; readonly sees: string | null }> {
       if (session === null || !canSend()) throw new Error('Not connected. Try again in a moment.');
       const response = await fetch(API.readInk(session), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(request) });
       const body = (await bodyOf(response)) as { text?: unknown; lines?: unknown; unclear?: unknown; sees?: unknown } | null;

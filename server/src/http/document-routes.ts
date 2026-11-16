@@ -67,8 +67,10 @@ export function registerDocumentRoutes(app: Hono, deps: HttpDeps): void {
     const view = conductor.documentOf(session);
     const node = view === null || typeof body['node'] !== 'string' ? null : nodeOf(view.document, body['node']);
     const step = node?.body?.kind === 'lesson' ? node.body.steps.find((s) => s.kind === 'ask' && s.id === body['ask']) : undefined;
-    const question = node === null || node === undefined ? '' : node.title;
-    const prompt = step?.kind === 'ask' ? step.prompt : '';
+    // a question on the stage (no document): the page says which question it is, in a few words; the reader only reads, so this is never trusted for more
+    const said = (key: string): string => (typeof body[key] === 'string' ? (body[key] as string).replace(/\s+/g, ' ').trim().slice(0, 160) : '');
+    const question = node === null || node === undefined ? said('question') : node.title;
+    const prompt = step?.kind === 'ask' ? step.prompt : node === null || node === undefined ? said('prompt') : '';
     const reading = await readInk(
       { picture: { data: Buffer.from(picture.bytes).toString('base64'), mime: picture.mime }, question, ask: prompt, accepted: step?.kind === 'ask' ? step.accepted : [] },
       {

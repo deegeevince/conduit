@@ -178,9 +178,21 @@ async function start(): Promise<void> {
     prompt: (words, marks) => mounted.prompt(words, [], marks),
     announce: (text) => mounted.announce(text),
   });
-  mountWorkMode({ stage: stageHost, bar: bar as HTMLElement, ink: stageInk, controls: () => mounted.hook.controls() });
+  mountWorkMode({ stage: stageHost, bar: bar as HTMLElement, ink: stageInk, controls: () => mounted.hook.controls(),
+    question: () =>
+      mounted.hook
+        .lines()
+        .map((line) => /^say\s+[^|]*\|\s*(.+)$/.exec(line.text)?.[1] ?? '')
+        .filter((words) => words !== '')
+        .slice(0, 4)
+        .join(' '),
+    upload: async (png) => (await mounted.link.uploadPhoto(png)).id,
+    read: (request) => mounted.link.readInk(request),
+    penChanged: () => mounted.painter.penChanged(),
+  });
   // for the browser checks (web/scripts/ink-check.mjs): the ink layer's own latency numbers
   (window as unknown as { __inkStats?: () => unknown }).__inkStats = () => stageInk?.ink.stats();
+  (window as unknown as { __inkClear?: () => void }).__inkClear = () => stageInk?.ink.reset();
   (window as unknown as { __inkStrokes?: () => number }).__inkStrokes = () => stageInk?.ink.model.strokes.length ?? 0;
   mountActions(promptBar.extra, mounted, transcript, stageHost, { top: promptBar.top, menu: promptBar.menu });
   mountSound(promptBar.top, mounted);

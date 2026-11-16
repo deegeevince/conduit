@@ -1,6 +1,6 @@
 # Something to work out or choose, set on the stage and checked on a press
 
-summary: Teach a child something, a question or a puzzle for my kid to do by hand (division, sums, times tables), make me do each step myself, let me guess first, let me try it, quiz me, solve an equation step by step, work it out myself, what comes next in a pattern, which word fits the gap in a sentence (their, there and they're, spelling), which of these suits me, predict what happens, a blank to complete, choose between options.
+summary: Make me do each step myself, let me guess first, let me try it, quiz me, solve an equation step by step, work it out myself, what comes next in a pattern, which word fits the gap in a sentence (their, there and they're, spelling), which of these suits me, predict what happens, a blank to complete, choose between options.
 reason: only if the person asks to do the work or make a choice themselves, in an answer that is not a document of parts
 
 Asks on the stage: the words set the question, each step is an `ask` with a blank where the answer goes (or large choices), the next opens when this one is right, and a hint behind a tap asks back. No app, and nothing they are to find is on the stage before they try.

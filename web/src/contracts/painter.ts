@@ -477,6 +477,8 @@ export interface Painter {
    * control's range is clamped; an id that is not a live control does nothing.
    */
   setControl(id: string, value: ControlValue | null, commit: boolean): void;
+  /** the pen has written something, or nothing now (`controls/pen.ts`): an ask's Check is drawn ready or not */
+  penChanged(): void;
 
   resize(viewport: Viewport): void;
   snapshot(): PainterSnapshot;
