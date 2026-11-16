@@ -1,0 +1,110 @@
+{
+ "v": 1,
+ "subject": "aeroplane",
+ "pose": "",
+ "view": "side",
+ "facing": "left",
+ "ground": 79.8,
+ "slots": [
+  {
+   "name": "red",
+   "hue": "red"
+  },
+  {
+   "name": "cream",
+   "hue": "cream"
+  },
+  {
+   "name": "yellow",
+   "hue": "yellow"
+  }
+ ],
+ "parts": [
+  {
+   "id": "shadow",
+   "line": "ellipse shadow 0,35 34x3.5 fill=dim stroke=none"
+  },
+  {
+   "id": "far-wing",
+   "line": "path far-wing fill=$red-1 stroke=ink thick=1.6 brush=ink | M-10 -8 L0 -26 Q5 -29 10 -26 L10 -8 Z"
+  },
+  {
+   "id": "tail-fin",
+   "line": "path tail-fin fill=$red stroke=ink thick=1.8 brush=ink | M26 -4 Q29 -24 39 -29 Q45 -30 44 -23 L42 0 Z"
+  },
+  {
+   "id": "tail-stripe",
+   "line": "path tail-stripe fill=$yellow+1 stroke=ink thick=0.6 brush=ink | M31 -17 Q33 -22 36 -25 L44 -23 L43.5 -17 Z"
+  },
+  {
+   "id": "front-strut",
+   "line": "line front-strut -26,11 -26,24 fill=none stroke=ink thick=1.6 brush=ink"
+  },
+  {
+   "id": "rear-strut",
+   "line": "line rear-strut 18,10 18,24 fill=none stroke=ink thick=1.6 brush=ink"
+  },
+  {
+   "id": "body",
+   "line": "path body fill=$red stroke=ink thick=2 brush=ink | M-40 2 C-40 -10 -26 -14 -10 -14 L20 -12 C32 -10 42 -6 44 -2 C44 2 36 6 24 10 C10 15 -14 16 -26 13 C-36 11 -40 8 -40 2 Z"
+  },
+  {
+   "id": "belly",
+   "line": "path belly fill=$cream stroke=none | M-36 6 C-24 9 10 8 36 1.5 C32 5 26 8 23 9 C10 13.5 -13 14.5 -25 12 C-31 10.5 -35 8.5 -36 6 Z"
+  },
+  {
+   "id": "highlight",
+   "line": "path highlight fill=$red+2 stroke=none | M-14 -11.5 C-4 -12.2 10 -11.4 22 -9.5 C10 -9.4 -4 -9.6 -14 -9.5 Z"
+  },
+  {
+   "id": "cockpit",
+   "line": "path cockpit fill=$cream-3 stroke=ink thick=0.9 brush=ink | M-33 -4 C-32 -7 -29 -9.5 -25 -10.5 L-17 -11 L-17 -4 Z"
+  },
+  {
+   "id": "window-1",
+   "line": "circle window-1 -6,-3 3 fill=$cream-3 stroke=ink thick=0.8 brush=ink"
+  },
+  {
+   "id": "window-2",
+   "line": "circle window-2 4,-3 3 fill=$cream-3 stroke=ink thick=0.8 brush=ink"
+  },
+  {
+   "id": "window-3",
+   "line": "circle window-3 14,-3 3 fill=$cream-3 stroke=ink thick=0.8 brush=ink"
+  },
+  {
+   "id": "tailplane",
+   "line": "path tailplane fill=$red-1 stroke=ink thick=1.6 brush=ink | M26 -2 L42 -4 Q47 -2 43 2 L28 4 Q23 1 26 -2 Z"
+  },
+  {
+   "id": "wing",
+   "line": "path wing fill=$red+2 stroke=ink thick=1.8 brush=ink | M-12 4 C-6 2 4 2 8 4 L6 26 Q2 31 -4 28 Z"
+  },
+  {
+   "id": "wing-shade",
+   "line": "path wing-shade fill=$red-1 stroke=none opacity=0.7 | M7 5 L5.2 25.5 Q3.5 28 1 28.4 L3 4 Z"
+  },
+  {
+   "id": "front-wheel",
+   "line": "circle front-wheel -26,26 3.8 fill=$cream stroke=ink thick=2.6 brush=ink"
+  },
+  {
+   "id": "rear-wheel",
+   "line": "circle rear-wheel 18,26 3.8 fill=$cream stroke=ink thick=2.6 brush=ink"
+  },
+  {
+   "id": "propeller",
+   "line": "ellipse propeller -42,2 1.9x15 fill=deep stroke=none"
+  },
+  {
+   "id": "spinner",
+   "line": "ellipse spinner -40.5,2 4x5 fill=$yellow+1 stroke=ink thick=1.6 brush=ink"
+  }
+ ],
+ "made": {
+  "by": "fable",
+  "arm": "B",
+  "how": "fable, one careful drawing off the answer's clock (bake-off arm B), 40.1 s, $0.15; read by the strict converter and restyled to the house palette"
+ },
+ "licence": "MIT (made for this project on the owner's own subscription)"
+}

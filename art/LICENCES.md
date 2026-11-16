@@ -18,6 +18,45 @@ Every seed was drawn by Fable (a model) for this project, off the answer's clock
 | `rocket-b.json`, `rocket-d.json` | rocket | fable | B, D | MIT |
 | `oak-tree-b.json`, `oak-tree-d.json` | oak tree | fable | B, D | MIT |
 | `cat-sitting-b.json` | cat, sitting, facing left (the first sheet of `pnpm art fill`) | fable | B | MIT |
+| `aeroplane-b.json` | aeroplane (`pnpm art fill`, art/common.txt) | fable | B | MIT |
+| `apple-b.json` | apple (`pnpm art fill`, art/common.txt) | fable | B | MIT |
+| `baby-sitting-b.json` | baby, sitting (`pnpm art fill`, art/common.txt) | fable | B | MIT |
+| `ball-b.json` | ball (`pnpm art fill`, art/common.txt) | fable | B | MIT |
+| `bear-standing-b.json` | bear, standing (`pnpm art fill`, art/common.txt) | fable | B | MIT |
+| `bee-flying-b.json` | bee, flying (`pnpm art fill`, art/common.txt) | fable | B | MIT |
+| `bicycle-b.json` | bicycle (`pnpm art fill`, art/common.txt) | fable | B | MIT |
+| `bird-flying-b.json` | bird, flying (`pnpm art fill`, art/common.txt) | fable | B | MIT |
+| `boat-b.json` | boat (`pnpm art fill`, art/common.txt) | fable | B | MIT |
+| `book-b.json` | book (`pnpm art fill`, art/common.txt) | fable | B | MIT |
+| `bus-b.json` | bus (`pnpm art fill`, art/common.txt) | fable | B | MIT |
+| `butterfly-flying-b.json` | butterfly, flying (`pnpm art fill`, art/common.txt) | fable | B | MIT |
+| `cake-b.json` | cake (`pnpm art fill`, art/common.txt) | fable | B | MIT |
+| `car-b.json` | car (`pnpm art fill`, art/common.txt) | fable | B | MIT |
+| `castle-b.json` | castle (`pnpm art fill`, art/common.txt) | fable | B | MIT |
+| `cow-standing-b.json` | cow, standing (`pnpm art fill`, art/common.txt) | fable | B | MIT |
+| `dinosaur-standing-b.json` | dinosaur, standing (`pnpm art fill`, art/common.txt) | fable | B | MIT |
+| `dog-sitting-b.json` | dog, sitting (`pnpm art fill`, art/common.txt) | fable | B | MIT |
+| `dragon-sitting-b.json` | dragon, sitting (`pnpm art fill`, art/common.txt) | fable | B | MIT |
+| `duck-standing-b.json` | duck, standing (`pnpm art fill`, art/common.txt) | fable | B | MIT |
+| `elephant-standing-b.json` | elephant, standing (`pnpm art fill`, art/common.txt) | fable | B | MIT |
+| `fish-b.json` | fish (`pnpm art fill`, art/common.txt) | fable | B | MIT |
+| `flower-b.json` | flower (`pnpm art fill`, art/common.txt) | fable | B | MIT |
+| `frog-sitting-b.json` | frog, sitting (`pnpm art fill`, art/common.txt) | fable | B | MIT |
+| `giraffe-standing-b.json` | giraffe, standing (`pnpm art fill`, art/common.txt) | fable | B | MIT |
+| `grandparent-sitting-b.json` | grandparent, sitting (`pnpm art fill`, art/common.txt) | fable | B | MIT |
+| `hen-standing-b.json` | hen, standing (`pnpm art fill`, art/common.txt) | fable | B | MIT |
+| `horse-standing-b.json` | horse, standing (`pnpm art fill`, art/common.txt) | fable | B | MIT |
+| `lion-standing-b.json` | lion, standing (`pnpm art fill`, art/common.txt) | fable | B | MIT |
+| `mouse-sitting-b.json` | mouse, sitting (`pnpm art fill`, art/common.txt) | fable | B | MIT |
+| `owl-sitting-b.json` | owl, sitting (`pnpm art fill`, art/common.txt) | fable | B | MIT |
+| `pig-standing-b.json` | pig, standing (`pnpm art fill`, art/common.txt) | fable | B | MIT |
+| `rabbit-sitting-b.json` | rabbit, sitting (`pnpm art fill`, art/common.txt) | fable | B | MIT |
+| `robot-standing-b.json` | robot, standing (`pnpm art fill`, art/common.txt) | fable | B | MIT |
+| `sheep-standing-b.json` | sheep, standing (`pnpm art fill`, art/common.txt) | fable | B | MIT |
+| `snail-b.json` | snail (`pnpm art fill`, art/common.txt) | fable | B | MIT |
+| `teacher-standing-b.json` | teacher, standing (`pnpm art fill`, art/common.txt) | fable | B | MIT |
+| `train-b.json` | train (`pnpm art fill`, art/common.txt) | fable | B | MIT |
+| `turtle-walking-b.json` | turtle, walking (`pnpm art fill`, art/common.txt) | fable | B | MIT |
 
 The bake-off's heart cutaway is not on the shelf: diagrams stay with the brain's diagram tools.
 

@@ -1,0 +1,78 @@
+{
+ "v": 1,
+ "subject": "apple",
+ "pose": "",
+ "view": "side",
+ "facing": "left",
+ "ground": 90.3,
+ "slots": [
+  {
+   "name": "red",
+   "hue": "red"
+  },
+  {
+   "name": "green",
+   "hue": "green"
+  },
+  {
+   "name": "cocoa",
+   "hue": "cocoa"
+  }
+ ],
+ "parts": [
+  {
+   "id": "shadow",
+   "line": "ellipse shadow 0,41 31x4 fill=dim stroke=none opacity=0.25"
+  },
+  {
+   "id": "body",
+   "line": "path body fill=$red stroke=none | M0 -16 C-8 -24 -28 -24 -36 -6 C-42 10 -34 32 -18 39 C-10 42 -5 39 0 38 C5 39 10 42 18 39 C34 32 42 10 36 -6 C28 -24 8 -24 0 -16 Z"
+  },
+  {
+   "id": "body-shade",
+   "line": "path body-shade fill=$red-2 stroke=none | M36 -6 C42 10 34 32 18 39 C10 42 5 39 0 38 C-5 39 -10 42 -18 39 C6 36 28 18 36 -6 Z"
+  },
+  {
+   "id": "body-light",
+   "line": "path body-light fill=$red+1 stroke=none | M-29 -5 C-23 -16 -10 -19 -4 -13 C-14 -12 -23 -2 -25 13 C-30 9 -32 1 -29 -5 Z"
+  },
+  {
+   "id": "body-outline",
+   "line": "path body-outline fill=none stroke=ink thick=2 brush=ink | M0 -16 C-8 -24 -28 -24 -36 -6 C-42 10 -34 32 -18 39 C-10 42 -5 39 0 38 C5 39 10 42 18 39 C34 32 42 10 36 -6 C28 -24 8 -24 0 -16 Z"
+  },
+  {
+   "id": "dimple",
+   "line": "path dimple fill=$red-2 stroke=ink thick=0.6 brush=ink | M-11 -17 Q0 -7 11 -17 Q0 -13 -11 -17 Z"
+  },
+  {
+   "id": "stem",
+   "line": "path stem fill=$cocoa stroke=ink thick=1.6 brush=ink | M-2 -13 C-2 -23 0 -32 5 -39 L9 -36 C4 -29 2 -22 2 -13 Z"
+  },
+  {
+   "id": "leaf",
+   "line": "path leaf fill=$green+1 stroke=ink thick=1.6 brush=ink | M4 -26 C8 -38 22 -42 33 -38 C30 -26 16 -20 4 -26 Z"
+  },
+  {
+   "id": "leaf-shade",
+   "line": "path leaf-shade fill=$green-1 stroke=none | M6 -26 C14 -29 24 -33 31 -37 C28 -27 16 -22 6 -26 Z"
+  },
+  {
+   "id": "leaf-vein",
+   "line": "path leaf-vein fill=none stroke=ink thick=0.7 brush=ink | M5 -26 C14 -29 22 -33 29 -36"
+  },
+  {
+   "id": "highlight",
+   "line": "path highlight fill=$green stroke=none | M-16.91 -1.36 C-18.72 2.06 -21.58 4.09 -23.29 3.18 C-24.99 2.27 -24.91 -1.23 -23.09 -4.64 C-21.28 -8.06 -18.42 -10.09 -16.71 -9.18 C-15.01 -8.27 -15.09 -4.77 -16.91 -1.36 Z"
+  },
+  {
+   "id": "highlight-dot",
+   "line": "circle highlight-dot -24.5,10 1.8 fill=$green stroke=none"
+  }
+ ],
+ "made": {
+  "by": "fable",
+  "arm": "B",
+  "how": "fable, one careful drawing off the answer's clock (bake-off arm B), 32 s, $0.12; read by the strict converter and restyled to the house palette"
+ },
+ "licence": "MIT (made for this project on the owner's own subscription)"
+}

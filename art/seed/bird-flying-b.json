@@ -1,0 +1,94 @@
+{
+ "v": 1,
+ "subject": "bird",
+ "pose": "flying",
+ "view": "side",
+ "facing": "left",
+ "ground": 75.2,
+ "slots": [
+  {
+   "name": "sky",
+   "hue": "sky"
+  },
+  {
+   "name": "cream",
+   "hue": "cream"
+  },
+  {
+   "name": "yellow",
+   "hue": "yellow"
+  }
+ ],
+ "parts": [
+  {
+   "id": "shadow",
+   "line": "ellipse shadow 0,43 18x2.5 fill=dim stroke=none opacity=0.15"
+  },
+  {
+   "id": "far-wing",
+   "line": "path far-wing fill=$sky-3 stroke=ink thick=1.8 brush=ink | M-10 -6 C-15 -18 -14 -32 -6 -42 C-3 -37 0 -32 0 -26 C4 -24 5 -19 4 -14 L2 -6 Z"
+  },
+  {
+   "id": "tail",
+   "line": "path tail fill=$sky-3 stroke=ink thick=1.8 brush=ink | M20 1 L42 -6 Q39 -2 38 2 L43 6 L38 9 Q39 12 41 15 L20 10 Z"
+  },
+  {
+   "id": "feet",
+   "line": "path feet fill=$yellow stroke=ink thick=1 brush=ink | M4 18 C6 24 10 26 15 25 L14 22 C11 22 9 20 8 17 Z"
+  },
+  {
+   "id": "beak",
+   "line": "path beak fill=$yellow stroke=ink thick=1.6 brush=ink | M-32 -11 L-45 -5 L-32 -1 Z"
+  },
+  {
+   "id": "beak-line",
+   "line": "line beak-line -43.5,-5 -34,-5 fill=none stroke=ink thick=0.6 brush=ink"
+  },
+  {
+   "id": "body",
+   "line": "path body fill=$sky-1 stroke=ink thick=1.8 brush=ink | M-34 -6 C-35 -16 -26 -21 -18 -19 C-12 -18 -9 -13 -6 -10 C6 -12 18 -6 26 6 C20 18 4 24 -10 20 C-20 18 -26 10 -28 4 C-32 2 -34 -2 -34 -6 Z"
+  },
+  {
+   "id": "belly",
+   "line": "path belly fill=$cream stroke=none | M-26 4 C-20 8 -8 11 8 11 C14 11 19 9 23 7 C17 16 4 21.5 -9 18.5 C-17 17 -23 11 -26 4 Z"
+  },
+  {
+   "id": "head-shine",
+   "line": "path head-shine fill=$sky+2 stroke=none | M-30 -13 C-28 -17.5 -22 -18.5 -17 -16 C-22 -16.5 -26 -15 -30 -13 Z"
+  },
+  {
+   "id": "cheek",
+   "line": "circle cheek -22,-3 2.6 fill=accent stroke=none"
+  },
+  {
+   "id": "eye",
+   "line": "circle eye -25,-10 2.3 fill=deep stroke=none"
+  },
+  {
+   "id": "eye-shine",
+   "line": "circle eye-shine -25.7,-10.8 0.8 fill=$cream stroke=none"
+  },
+  {
+   "id": "near-wing",
+   "line": "path near-wing fill=$sky+2 stroke=ink thick=1.8 brush=ink | M-4 0 C-5 -14 2 -30 16 -40 C18 -34 19 -29 17 -24 C21 -22 22 -17 20 -13 C23 -9 22 -4 18 0 C12 6 2 6 -4 0 Z"
+  },
+  {
+   "id": "wing-shade",
+   "line": "path wing-shade fill=$sky-1 stroke=none | M15.5 -37.5 C17 -33 17.5 -29 15.5 -23.5 C19.5 -21.5 20.5 -17 18.5 -12.5 C21.5 -9 20.5 -4.5 17 -1 C13 -6 10 -12 10 -18 C10 -26 12 -33 15.5 -37.5 Z"
+  },
+  {
+   "id": "feather-line-t",
+   "line": "path feather-line-t fill=none stroke=ink thick=0.7 brush=ink | M17 -24 Q11 -23 7 -18"
+  },
+  {
+   "id": "feather-line-l",
+   "line": "path feather-line-l fill=none stroke=ink thick=0.7 brush=ink | M20 -13 Q13 -12 8 -7"
+  }
+ ],
+ "made": {
+  "by": "fable",
+  "arm": "B",
+  "how": "fable, one careful drawing off the answer's clock (bake-off arm B), 65.8 s, $0.24; read by the strict converter and restyled to the house palette"
+ },
+ "licence": "MIT (made for this project on the owner's own subscription)"
+}

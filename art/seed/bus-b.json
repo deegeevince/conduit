@@ -1,0 +1,106 @@
+{
+ "v": 1,
+ "subject": "bus",
+ "pose": "",
+ "view": "side",
+ "facing": "left",
+ "ground": 77.3,
+ "slots": [
+  {
+   "name": "yellow",
+   "hue": "yellow"
+  },
+  {
+   "name": "sky",
+   "hue": "sky"
+  },
+  {
+   "name": "red",
+   "hue": "red"
+  }
+ ],
+ "parts": [
+  {
+   "id": "shadow",
+   "line": "ellipse shadow 1,28.5 42x2.5 fill=dim stroke=none opacity=0.18"
+  },
+  {
+   "id": "body",
+   "line": "path body fill=$yellow stroke=ink thick=2 brush=ink | M-40 16 L-40 0 C-40 -4 -38 -8 -36 -13 L-33 -21 Q-31 -26 -25 -26 L36 -26 Q42 -26 42 -20 L42 16 Q42 20 38 20 L-36 20 Q-40 20 -40 16 Z"
+  },
+  {
+   "id": "roof-light",
+   "line": "path roof-light fill=$yellow+1 stroke=none | M-29 -24 L37 -24 Q40 -24 40 -21 L-30 -21 Z"
+  },
+  {
+   "id": "lower-shade",
+   "line": "path lower-shade fill=$yellow-2 stroke=none | M-39 10 L41 10 L41 16 Q41 19 38 19 L-36 19 Q-39 19 -39 16 Z"
+  },
+  {
+   "id": "stripe",
+   "line": "rect stripe -39,4 80x4 fill=$red stroke=none"
+  },
+  {
+   "id": "windshield",
+   "line": "path windshield fill=$sky+2 stroke=ink thick=0.8 brush=ink | M-33.5 -16 L-26 -16 L-26 -2 L-37.5 -2 C-37 -6 -35.5 -11 -33.5 -16 Z"
+  },
+  {
+   "id": "window-1",
+   "line": "rect window-1 -23,-16 8.5x14 r=1.5 fill=$sky+2 stroke=ink thick=0.8 brush=ink"
+  },
+  {
+   "id": "door",
+   "line": "rect door -11.5,-17 10x34 r=1 fill=$yellow+1 stroke=ink thick=0.8 brush=ink"
+  },
+  {
+   "id": "door-window",
+   "line": "rect door-window -9.5,-14.5 6x12.5 r=1 fill=$sky+2 stroke=ink thick=0.6 brush=ink"
+  },
+  {
+   "id": "window-2",
+   "line": "rect window-2 2,-16 10x14 r=1.5 fill=$sky+2 stroke=ink thick=0.8 brush=ink"
+  },
+  {
+   "id": "window-3",
+   "line": "rect window-3 15,-16 10x14 r=1.5 fill=$sky+2 stroke=ink thick=0.8 brush=ink"
+  },
+  {
+   "id": "window-4",
+   "line": "rect window-4 28,-16 10x14 r=1.5 fill=$sky+2 stroke=ink thick=0.8 brush=ink"
+  },
+  {
+   "id": "headlight",
+   "line": "ellipse headlight -36.5,11.5 2x2.5 fill=$sky+3 stroke=ink thick=0.7 brush=ink"
+  },
+  {
+   "id": "tail-light",
+   "line": "rect tail-light 38,10.5 3x4 r=0.8 fill=$red stroke=ink thick=0.5 brush=ink"
+  },
+  {
+   "id": "bumper",
+   "line": "rect bumper -42.5,16 8.5x4 r=2 fill=$sky+3 stroke=ink thick=1.4 brush=ink"
+  },
+  {
+   "id": "rear-wheel",
+   "line": "circle rear-wheel 24,20 7.3 fill=deep stroke=ink thick=1.6 brush=ink"
+  },
+  {
+   "id": "rear-hub",
+   "line": "circle rear-hub 24,20 3.4 fill=$sky+3 stroke=$yellow-2 thick=0.8 brush=ink"
+  },
+  {
+   "id": "front-wheel",
+   "line": "circle front-wheel -25,20 7.3 fill=deep stroke=ink thick=1.6 brush=ink"
+  },
+  {
+   "id": "front-hub",
+   "line": "circle front-hub -25,20 3.4 fill=$sky+3 stroke=$yellow-2 thick=0.8 brush=ink"
+  }
+ ],
+ "made": {
+  "by": "fable",
+  "arm": "B",
+  "how": "fable, one careful drawing off the answer's clock (bake-off arm B), 43.8 s, $0.17; read by the strict converter and restyled to the house palette"
+ },
+ "licence": "MIT (made for this project on the owner's own subscription)"
+}

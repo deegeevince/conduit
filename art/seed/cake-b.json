@@ -1,0 +1,90 @@
+{
+ "v": 1,
+ "subject": "cake",
+ "pose": "",
+ "view": "side",
+ "facing": "left",
+ "ground": 90,
+ "slots": [
+  {
+   "name": "gold",
+   "hue": "gold"
+  },
+  {
+   "name": "pink",
+   "hue": "pink"
+  },
+  {
+   "name": "cream",
+   "hue": "cream"
+  }
+ ],
+ "parts": [
+  {
+   "id": "shadow",
+   "line": "ellipse shadow 0,40 38x4 fill=dim stroke=none opacity=0.3"
+  },
+  {
+   "id": "plate",
+   "line": "ellipse plate 0,34 40x6 fill=$cream stroke=ink thick=1.8 brush=ink"
+  },
+  {
+   "id": "plate-shade",
+   "line": "ellipse plate-shade 0,34.5 35x4 fill=$gold+3 stroke=none"
+  },
+  {
+   "id": "body",
+   "line": "path body fill=$gold+1 stroke=ink thick=2 brush=ink | M-34 -4 L-34 29 C-34 38 34 38 34 29 L34 -4 Z"
+  },
+  {
+   "id": "body-shade",
+   "line": "path body-shade fill=$gold-1 stroke=none opacity=0.55 | M18 -4 L33 -4 L33 29 C33 31.5 28 33.6 18 34.6 Z"
+  },
+  {
+   "id": "filling",
+   "line": "path filling fill=$cream stroke=ink thick=0.7 brush=ink | M-34 17 C-20 21 20 21 34 17 L34 22 C20 26 -20 26 -34 22 Z"
+  },
+  {
+   "id": "frosting",
+   "line": "path frosting fill=$pink stroke=ink thick=2 brush=ink | M-34 -6 C-34 -16 34 -16 34 -6 L34 2 Q34 8 30 8 Q26 8 26 3 Q26 0 22 0 Q18 0 18 6 Q18 12 13 12 Q8 12 8 5 Q8 1 3 1 Q-2 1 -2 4 Q-2 9 -6.5 9 Q-11 9 -11 4 Q-11 0 -15 0 Q-19 0 -19 7 Q-19 13 -23.5 13 Q-28 13 -28 6 Q-28 2 -31 2 Q-34 2 -34 0 Z"
+  },
+  {
+   "id": "frosting-shade",
+   "line": "path frosting-shade fill=$pink-2 stroke=none opacity=0.35 | M26 -10.4 C31 -9.4 33 -8 33 -6 L33 2 Q33 7 30 7 Q27 7 27 3 Z"
+  },
+  {
+   "id": "frosting-shine",
+   "line": "ellipse frosting-shine -2,-8.5 27x3.5 fill=$pink+2 stroke=none"
+  },
+  {
+   "id": "left-flame",
+   "line": "path left-flame fill=$gold+3 stroke=$gold-1 thick=1.4 brush=ink | M-16 -37 C-13 -33 -12.5 -27 -16 -27 C-19.5 -27 -19 -33 -16 -37 Z"
+  },
+  {
+   "id": "middle-flame",
+   "line": "path middle-flame fill=$gold+3 stroke=$gold-1 thick=1.4 brush=ink | M0 -40 C3 -36 3.5 -30 0 -30 C-3.5 -30 -3 -36 0 -40 Z"
+  },
+  {
+   "id": "right-flame",
+   "line": "path right-flame fill=$gold+3 stroke=$gold-1 thick=1.4 brush=ink | M16 -37 C19 -33 19.5 -27 16 -27 C12.5 -27 13 -33 16 -37 Z"
+  },
+  {
+   "id": "left-candle",
+   "line": "rect left-candle -18,-26 4x18 fill=$cream stroke=ink thick=1.4 brush=ink"
+  },
+  {
+   "id": "middle-candle",
+   "line": "rect middle-candle -2,-29 4x22 fill=$cream stroke=ink thick=1.4 brush=ink"
+  },
+  {
+   "id": "right-candle",
+   "line": "rect right-candle 14,-26 4x18 fill=$cream stroke=ink thick=1.4 brush=ink"
+  }
+ ],
+ "made": {
+  "by": "fable",
+  "arm": "B",
+  "how": "fable, one careful drawing off the answer's clock (bake-off arm B), 38.7 s, $0.16; read by the strict converter and restyled to the house palette"
+ },
+ "licence": "MIT (made for this project on the owner's own subscription)"
+}

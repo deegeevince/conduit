@@ -1,0 +1,114 @@
+{
+ "v": 1,
+ "subject": "fish",
+ "pose": "",
+ "view": "side",
+ "facing": "left",
+ "ground": 75.9,
+ "slots": [
+  {
+   "name": "orange",
+   "hue": "orange"
+  },
+  {
+   "name": "cream",
+   "hue": "cream"
+  },
+  {
+   "name": "pink",
+   "hue": "pink"
+  }
+ ],
+ "parts": [
+  {
+   "id": "shadow",
+   "line": "ellipse shadow 0,37 30x3.5 fill=dim stroke=none opacity=0.15"
+  },
+  {
+   "id": "tail",
+   "line": "path tail fill=$orange-1 stroke=ink thick=1.8 brush=ink | M18 -2 C26 -10 35 -20 42 -23 C38 -10 38 6 42 19 C35 16 26 6 18 -2 Z"
+  },
+  {
+   "id": "tail-line-top",
+   "line": "line tail-line-top 27,-5 37,-14 fill=none stroke=$orange+2 thick=1 brush=ink"
+  },
+  {
+   "id": "tail-line-bott",
+   "line": "line tail-line-bott 27,1 37,10 fill=none stroke=$orange+2 thick=1 brush=ink"
+  },
+  {
+   "id": "top-fin",
+   "line": "path top-fin fill=$orange-1 stroke=ink thick=1.8 brush=ink | M-18 -20 C-12 -37 6 -37 13 -18 Z"
+  },
+  {
+   "id": "bottom-fin",
+   "line": "path bottom-fin fill=$orange-1 stroke=ink thick=1.8 brush=ink | M-10 17 C-7 29 4 29 7 16 Z"
+  },
+  {
+   "id": "body",
+   "line": "path body fill=$orange stroke=ink thick=2 brush=ink | M-42 -2 C-36 -20 -14 -26 2 -23 C14 -21 22 -10 24 -2 C22 6 14 17 2 19 C-14 22 -36 16 -42 -2 Z"
+  },
+  {
+   "id": "back-shade",
+   "line": "path back-shade fill=$orange-1 stroke=none opacity=0.6 | M-35 -11 C-27 -20 -10 -23 2 -21 C12 -19 19 -12 22 -4 C12 -14 -14 -18 -35 -11 Z"
+  },
+  {
+   "id": "belly",
+   "line": "path belly fill=$orange+2 stroke=none | M-39 3 C-30 16 -10 20 3 17 C12 15 18 8 21 2 C8 11 -20 13 -39 3 Z"
+  },
+  {
+   "id": "gill",
+   "line": "path gill fill=none stroke=ink thick=0.9 brush=ink | M-20 -15 Q-13 -2 -20 11"
+  },
+  {
+   "id": "scale-1",
+   "line": "path scale-1 fill=none stroke=ink thick=0.7 brush=ink | M-6 -14 Q-1 -10 -6 -6"
+  },
+  {
+   "id": "scale-2",
+   "line": "path scale-2 fill=none stroke=ink thick=0.7 brush=ink | M4 -12 Q9 -8 4 -4"
+  },
+  {
+   "id": "scale-3",
+   "line": "path scale-3 fill=none stroke=ink thick=0.7 brush=ink | M11 -3 Q16 1 11 5"
+  },
+  {
+   "id": "side-fin",
+   "line": "path side-fin fill=$orange+2 stroke=ink thick=0.9 brush=ink | M-11 0 C-4 -5 5 -2 6 5 C-1 8 -8 6 -11 0 Z"
+  },
+  {
+   "id": "eye",
+   "line": "circle eye -30,-7 4.6 fill=$cream stroke=ink thick=0.9 brush=ink"
+  },
+  {
+   "id": "pupil",
+   "line": "circle pupil -31,-6.7 2.4 fill=deep stroke=none"
+  },
+  {
+   "id": "glint",
+   "line": "circle glint -31.8,-7.8 0.8 fill=$cream stroke=none"
+  },
+  {
+   "id": "cheek",
+   "line": "circle cheek -26,4 2.6 fill=$pink stroke=none opacity=0.7"
+  },
+  {
+   "id": "mouth",
+   "line": "path mouth fill=none stroke=ink thick=1 brush=ink | M-39.5 3 Q-35 6.5 -31 2.5"
+  },
+  {
+   "id": "bubble-big",
+   "line": "circle bubble-big -41,-20 3.2 fill=$cream stroke=alt thick=1 brush=ink"
+  },
+  {
+   "id": "bubble-small",
+   "line": "circle bubble-small -35,-30 2 fill=$cream stroke=alt thick=0.9 brush=ink"
+  }
+ ],
+ "made": {
+  "by": "fable",
+  "arm": "B",
+  "how": "fable, one careful drawing off the answer's clock (bake-off arm B), 28.6 s, $0.12; read by the strict converter and restyled to the house palette"
+ },
+ "licence": "MIT (made for this project on the owner's own subscription)"
+}

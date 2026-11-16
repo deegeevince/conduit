@@ -1,0 +1,198 @@
+{
+ "v": 1,
+ "subject": "bicycle",
+ "pose": "",
+ "view": "side",
+ "facing": "left",
+ "ground": 81,
+ "slots": [
+  {
+   "name": "cream",
+   "hue": "cream"
+  },
+  {
+   "name": "yellow",
+   "hue": "yellow"
+  },
+  {
+   "name": "red",
+   "hue": "red"
+  }
+ ],
+ "parts": [
+  {
+   "id": "shadow",
+   "line": "ellipse shadow 0,31.5 41x3 fill=dim stroke=none"
+  },
+  {
+   "id": "rear-tyre",
+   "line": "circle rear-tyre 23,13 18 fill=deep stroke=none"
+  },
+  {
+   "id": "rear-rim",
+   "line": "circle rear-rim 23,13 14 fill=$cream stroke=$cream-2 thick=1.2 brush=ink"
+  },
+  {
+   "id": "rear-spokes",
+   "line": "path rear-spokes fill=none stroke=ink thick=0.6 brush=ink | M23 -1 L23 27"
+  },
+  {
+   "id": "rear-spokes-2",
+   "line": "path rear-spokes-2 fill=none stroke=ink thick=0.6 brush=ink | M9 13 L37 13"
+  },
+  {
+   "id": "rear-spokes-3",
+   "line": "path rear-spokes-3 fill=none stroke=ink thick=0.6 brush=ink | M13.1 3.1 L32.9 22.9"
+  },
+  {
+   "id": "rear-spokes-4",
+   "line": "path rear-spokes-4 fill=none stroke=ink thick=0.6 brush=ink | M13.1 22.9 L32.9 3.1"
+  },
+  {
+   "id": "front-tyre",
+   "line": "circle front-tyre -23,13 18 fill=deep stroke=none"
+  },
+  {
+   "id": "front-rim",
+   "line": "circle front-rim -23,13 14 fill=$cream stroke=$cream-2 thick=1.2 brush=ink"
+  },
+  {
+   "id": "front-spokes",
+   "line": "path front-spokes fill=none stroke=ink thick=0.6 brush=ink | M-23 -1 L-23 27"
+  },
+  {
+   "id": "front-spokes-2",
+   "line": "path front-spokes-2 fill=none stroke=ink thick=0.6 brush=ink | M-37 13 L-9 13"
+  },
+  {
+   "id": "front-spokes-3",
+   "line": "path front-spokes-3 fill=none stroke=ink thick=0.6 brush=ink | M-32.9 3.1 L-13.1 22.9"
+  },
+  {
+   "id": "front-spokes-4",
+   "line": "path front-spokes-4 fill=none stroke=ink thick=0.6 brush=ink | M-32.9 22.9 L-13.1 3.1"
+  },
+  {
+   "id": "basket",
+   "line": "path basket fill=$yellow stroke=ink thick=1.6 brush=ink | M-37 -21 L-19 -21 L-21 -9 Q-21 -8 -22 -8 L-34 -8 Q-35 -8 -35 -9 Z"
+  },
+  {
+   "id": "basket-weave",
+   "line": "path basket-weave fill=none stroke=$red-2 thick=0.7 brush=ink | M-36 -17 L-19.6 -17"
+  },
+  {
+   "id": "basket-weave-2",
+   "line": "path basket-weave-2 fill=none stroke=$red-2 thick=0.7 brush=ink | M-35.4 -13 L-20.2 -13"
+  },
+  {
+   "id": "basket-weave-3",
+   "line": "path basket-weave-3 fill=none stroke=$red-2 thick=0.7 brush=ink | M-31 -20.5 L-30 -8.5"
+  },
+  {
+   "id": "basket-weave-4",
+   "line": "path basket-weave-4 fill=none stroke=$red-2 thick=0.7 brush=ink | M-24.5 -20.5 L-25.2 -8.5"
+  },
+  {
+   "id": "frame-outline",
+   "line": "path frame-outline fill=none stroke=ink thick=5.4 brush=ink | M-23 13 Q-16 4 -14 -8 L-16.2 -19.2"
+  },
+  {
+   "id": "frame-outlin2",
+   "line": "path frame-outlin2 fill=none stroke=ink thick=5.4 brush=ink | M-15 -13 L8.5 -11"
+  },
+  {
+   "id": "frame-outlin3",
+   "line": "path frame-outlin3 fill=none stroke=ink thick=5.4 brush=ink | M8 -11 L23 13"
+  },
+  {
+   "id": "frame-outlin4",
+   "line": "path frame-outlin4 fill=none stroke=ink thick=5.4 brush=ink | M1 15 L23 13"
+  },
+  {
+   "id": "frame-outlin5",
+   "line": "path frame-outlin5 fill=none stroke=ink thick=5.4 brush=ink | M1 15 L9.1 -15.1"
+  },
+  {
+   "id": "frame-outlin6",
+   "line": "path frame-outlin6 fill=none stroke=ink thick=5.4 brush=ink | M-14 -9 L1 15"
+  },
+  {
+   "id": "rear-stays",
+   "line": "path rear-stays fill=none stroke=$red-2 thick=2.8 brush=ink | M8 -11 L23 13"
+  },
+  {
+   "id": "rear-stays-2",
+   "line": "path rear-stays-2 fill=none stroke=$red-2 thick=2.8 brush=ink | M1 15 L23 13"
+  },
+  {
+   "id": "fork",
+   "line": "path fork fill=none stroke=$red-2 thick=2.8 brush=ink | M-23 13 Q-16 4 -14 -8"
+  },
+  {
+   "id": "frame-main",
+   "line": "path frame-main fill=none stroke=$red thick=2.8 brush=ink | M-15 -13 L8.5 -11"
+  },
+  {
+   "id": "frame-main-2",
+   "line": "path frame-main-2 fill=none stroke=$red thick=2.8 brush=ink | M-14 -9 L1 15"
+  },
+  {
+   "id": "frame-main-3",
+   "line": "path frame-main-3 fill=none stroke=$red thick=2.8 brush=ink | M1 15 L8.8 -13.9"
+  },
+  {
+   "id": "frame-main-4",
+   "line": "path frame-main-4 fill=none stroke=$red thick=2.8 brush=ink | M-13.9 -7.5 L-16 -17.7"
+  },
+  {
+   "id": "frame-shine",
+   "line": "path frame-shine fill=none stroke=$red+2 thick=0.9 brush=ink | M-12.5 -13.5 L6 -11.9"
+  },
+  {
+   "id": "frame-shine-2",
+   "line": "path frame-shine-2 fill=none stroke=$red+2 thick=0.9 brush=ink | M-11.8 -7.6 L-1 9.8"
+  },
+  {
+   "id": "seat-post",
+   "line": "path seat-post fill=none stroke=ink thick=2.2 brush=ink | M8.8 -14 L10 -19"
+  },
+  {
+   "id": "saddle",
+   "line": "path saddle fill=accent stroke=ink thick=1.6 brush=ink | M2.5 -20 Q8 -22.5 16 -22.5 Q20.5 -22.5 19.5 -18.5 Q16 -15.8 10 -16.8 Q5 -17 2.5 -18.4 Q1.6 -19.2 2.5 -20 Z"
+  },
+  {
+   "id": "handlebar",
+   "line": "path handlebar fill=none stroke=ink thick=2.4 brush=ink | M-16.1 -18.5 L-18.5 -26 Q-20 -31 -14 -30.4 L-11 -30"
+  },
+  {
+   "id": "grip",
+   "line": "poly grip -11.81,-31.79 -3.86,-30.95 -4.23,-27.37 -12.19,-28.21 fill=accent stroke=ink thick=1 brush=ink"
+  },
+  {
+   "id": "chainring",
+   "line": "circle chainring 1,15 5.5 fill=$yellow stroke=ink thick=1.5 brush=ink"
+  },
+  {
+   "id": "crank",
+   "line": "path crank fill=none stroke=ink thick=1.8 brush=ink | M1 15 L-3.5 23"
+  },
+  {
+   "id": "pedal",
+   "line": "rect pedal -7.5,22 8x2.6 r=1 fill=accent stroke=ink thick=1 brush=ink"
+  },
+  {
+   "id": "rear-hub",
+   "line": "circle rear-hub 23,13 3 fill=$yellow stroke=ink thick=1.2 brush=ink"
+  },
+  {
+   "id": "front-hub",
+   "line": "circle front-hub -23,13 3 fill=$yellow stroke=ink thick=1.2 brush=ink"
+  }
+ ],
+ "made": {
+  "by": "fable",
+  "arm": "B",
+  "how": "fable, one careful drawing off the answer's clock (bake-off arm B), 78.6 s, $0.30; read by the strict converter and restyled to the house palette"
+ },
+ "licence": "MIT (made for this project on the owner's own subscription)"
+}

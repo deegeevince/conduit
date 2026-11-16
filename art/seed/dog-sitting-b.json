@@ -1,0 +1,98 @@
+{
+ "v": 1,
+ "subject": "dog",
+ "pose": "sitting",
+ "view": "side",
+ "facing": "left",
+ "ground": 89.1,
+ "slots": [
+  {
+   "name": "tan",
+   "hue": "tan"
+  },
+  {
+   "name": "cream",
+   "hue": "cream"
+  },
+  {
+   "name": "red",
+   "hue": "red"
+  }
+ ],
+ "parts": [
+  {
+   "id": "shadow",
+   "line": "ellipse shadow 2,39.5 37x4.5 fill=dim stroke=none"
+  },
+  {
+   "id": "tail",
+   "line": "path tail fill=$tan-2 stroke=ink thick=1.8 brush=ink | M26 31 C38 31 45 20 41 8 C40 4 35 5 36 10 C38 18 32 24 24 24 Z"
+  },
+  {
+   "id": "far-leg",
+   "line": "path far-leg fill=$tan-3 stroke=ink thick=1.8 brush=ink | M-17 10 C-18 20 -18 28 -19 35 C-20 39 -9 39 -9 36 L-7 10 Z"
+  },
+  {
+   "id": "body",
+   "line": "path body fill=$tan-2 stroke=ink thick=2 brush=ink | M-8 -12 C-16 -4 -19 8 -14 20 C-12 28 -10 36 -6 38 L24 38 C36 38 38 26 32 14 C26 2 18 -8 8 -14 Z"
+  },
+  {
+   "id": "back-shade",
+   "line": "path back-shade fill=$tan-3 stroke=none | M8 -12.5 C18 -7 26 3 31 14 C34 21 35 28 33 33 C32 22 24 6 10 -6 Z"
+  },
+  {
+   "id": "chest",
+   "line": "path chest fill=$cream stroke=none | M-10 -6 C-16 2 -16 12 -12 20 C-6 16 -3 4 -5 -6 Z"
+  },
+  {
+   "id": "haunch",
+   "line": "path haunch fill=$tan stroke=ink thick=0.9 brush=ink | M8 37 C4 24 12 14 22 16 C32 18 36 30 30 37 Z"
+  },
+  {
+   "id": "hind-paw",
+   "line": "ellipse hind-paw 11,35.5 9.5x3.6 fill=$tan stroke=ink thick=1.6 brush=ink"
+  },
+  {
+   "id": "near-leg",
+   "line": "path near-leg fill=$tan-2 stroke=ink thick=1.6 brush=ink | M-10 8 C-11 18 -12 28 -13 35 C-14 39 -1 39 -2 35 C-2 26 -1 16 0 8"
+  },
+  {
+   "id": "collar",
+   "line": "path collar fill=$red stroke=ink thick=0.8 brush=ink | M-13 -9 C-6 -4 4 -6 11 -12 L8 -17 C2 -12 -6 -11 -11 -14 Z"
+  },
+  {
+   "id": "head",
+   "line": "path head fill=$tan-2 stroke=ink thick=2 brush=ink | M4 -26 C4 -36 -6 -41 -14 -39 C-21 -38 -24 -33 -26 -28 C-30 -26 -36 -24 -37 -20 C-38 -15 -32 -13 -24 -13 C-20 -10 -10 -9 -4 -12 C1 -14 4 -20 4 -26 Z"
+  },
+  {
+   "id": "head-light",
+   "line": "ellipse head-light -15,-34.5 5x2.2 fill=$tan stroke=none"
+  },
+  {
+   "id": "muzzle",
+   "line": "path muzzle fill=$cream stroke=none | M-25 -26 C-29 -24 -34.5 -22 -35 -19.5 C-35.5 -16 -31 -14.5 -24 -14.5 C-20 -17 -21 -23 -25 -26 Z"
+  },
+  {
+   "id": "nose",
+   "line": "ellipse nose -35.5,-21 2.8x2.4 fill=deep stroke=none"
+  },
+  {
+   "id": "mouth",
+   "line": "path mouth fill=none stroke=ink thick=0.8 brush=ink | M-33 -16.5 C-29 -15.5 -25 -17 -23 -19.5"
+  },
+  {
+   "id": "eye",
+   "line": "circle eye -18,-28 1.9 fill=deep stroke=none"
+  },
+  {
+   "id": "ear",
+   "line": "path ear fill=$tan-3 stroke=ink thick=1.8 brush=ink | M-7 -38 C2 -39 8 -30 7 -18 C6 -11 0 -12 -2 -18 C-4 -24 -8 -30 -10 -35 Z"
+  }
+ ],
+ "made": {
+  "by": "fable",
+  "arm": "B",
+  "how": "fable, one careful drawing off the answer's clock (bake-off arm B), 48.8 s, $0.17; read by the strict converter and restyled to the house palette"
+ },
+ "licence": "MIT (made for this project on the owner's own subscription)"
+}

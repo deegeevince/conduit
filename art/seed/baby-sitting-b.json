@@ -1,0 +1,110 @@
+{
+ "v": 1,
+ "subject": "baby",
+ "pose": "sitting",
+ "view": "side",
+ "facing": "left",
+ "ground": 90.1,
+ "slots": [
+  {
+   "name": "peach",
+   "hue": "peach"
+  },
+  {
+   "name": "sky",
+   "hue": "sky"
+  },
+  {
+   "name": "brown",
+   "hue": "brown"
+  }
+ ],
+ "parts": [
+  {
+   "id": "shadow",
+   "line": "ellipse shadow -4,41 37x4 fill=dim stroke=none opacity=0.18"
+  },
+  {
+   "id": "far-leg",
+   "line": "path far-leg fill=$peach-2 stroke=ink thick=1.8 brush=ink | M6 24 C-6 20 -20 20 -30 23 C-36 20 -40 24 -39 30 C-38 35 -32 37 -28 35 L6 37 Z"
+  },
+  {
+   "id": "body",
+   "line": "path body fill=$sky+1 stroke=ink thick=1.8 brush=ink | M-8 0 C-15 8 -16 24 -10 36 L18 38 C28 30 26 10 14 0 Z"
+  },
+  {
+   "id": "body-shade",
+   "line": "path body-shade fill=deep stroke=none opacity=0.15 | M12 2 C22 10 23 28 17 37 L10 37 C16 26 16 12 8 2 Z"
+  },
+  {
+   "id": "diaper",
+   "line": "path diaper fill=$peach+2 stroke=ink thick=1 brush=ink | M-12 26 C-12 34 -8 38 0 39 L17 39 C24 35 25 28 22 23 C12 30 -2 31 -12 26 Z"
+  },
+  {
+   "id": "near-leg",
+   "line": "path near-leg fill=$peach stroke=ink thick=1.8 brush=ink | M12 24 C2 21 -12 24 -23 28 L-23 40 L8 40 C18 40 20 28 12 24 Z"
+  },
+  {
+   "id": "leg-shade",
+   "line": "path leg-shade fill=$peach-2 stroke=none | M-20 36 C-10 38 4 38 14 34 C13 38 11 39 8 39 L-20 39 Z"
+  },
+  {
+   "id": "foot",
+   "line": "path foot fill=$peach stroke=ink thick=1.8 brush=ink | M-20 40 C-28 41 -35 36 -34 28 C-34 22 -26 21 -24 26 C-23 30 -19 32 -19 36 Z"
+  },
+  {
+   "id": "arm",
+   "line": "path arm fill=$peach stroke=ink thick=1 brush=ink | M4 5 C10 7 10 15 4 19 C-2 23 -8 25 -13 24 C-17 23 -17 17 -13 16 C-9 15 -5 11 -3 7 C-2 5 1 4 4 5 Z"
+  },
+  {
+   "id": "hand",
+   "line": "circle hand -15,20 4.2 fill=$peach+1 stroke=ink thick=1 brush=ink"
+  },
+  {
+   "id": "head",
+   "line": "path head fill=$peach stroke=ink thick=2 brush=ink | M-4 -39 C9 -39 18 -29 18 -17 C18 -4 8 4 -4 4 C-14 4 -22 -1 -24 -9 C-26 -10 -28 -12 -27 -14 C-26 -16 -25 -16 -25 -18 C-25 -30 -16 -39 -4 -39 Z"
+  },
+  {
+   "id": "head-shade",
+   "line": "path head-shade fill=$peach-2 stroke=none opacity=0.6 | M16 -20 C18 -6 8 3 -4 3 C6 0 12 -8 12 -20 Z"
+  },
+  {
+   "id": "head-highlight",
+   "line": "path head-highlight fill=$peach+1 stroke=none | M-4.75 -31.38 C-3.58 -28.88 -5.88 -25.34 -9.89 -23.47 C-13.89 -21.6 -18.08 -22.12 -19.25 -24.62 C-20.42 -27.12 -18.12 -30.66 -14.11 -32.53 C-10.11 -34.4 -5.92 -33.88 -4.75 -31.38 Z"
+  },
+  {
+   "id": "ear",
+   "line": "ellipse ear 6,-13 4x5.2 fill=$peach-2 stroke=ink thick=0.9 brush=ink"
+  },
+  {
+   "id": "hair",
+   "line": "path hair fill=$brown stroke=ink thick=1 brush=ink | M-12 -38 C-8 -46 2 -45 -1 -39 C6 -43 12 -38 7 -34 C1 -38 -6 -38 -12 -38 Z"
+  },
+  {
+   "id": "cheek",
+   "line": "circle cheek -15,-7 4.2 fill=$brown+3 stroke=none opacity=0.8"
+  },
+  {
+   "id": "eye",
+   "line": "circle eye -16,-16 2.4 fill=deep stroke=none"
+  },
+  {
+   "id": "eye-glint",
+   "line": "circle eye-glint -16.8,-16.8 0.8 fill=$peach+2 stroke=none"
+  },
+  {
+   "id": "brow",
+   "line": "path brow fill=none stroke=ink thick=0.8 brush=ink | M-20 -22 Q-16 -24 -12 -22"
+  },
+  {
+   "id": "mouth",
+   "line": "path mouth fill=none stroke=ink thick=0.9 brush=ink | M-23 -5 Q-20 -1 -16 -3"
+  }
+ ],
+ "made": {
+  "by": "fable",
+  "arm": "B",
+  "how": "fable, one careful drawing off the answer's clock (bake-off arm B), 44.3 s, $0.16; read by the strict converter and restyled to the house palette"
+ },
+ "licence": "MIT (made for this project on the owner's own subscription)"
+}
