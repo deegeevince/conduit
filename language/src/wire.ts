@@ -862,6 +862,8 @@ export interface SkillSummary {
 
 export interface SkillsView {
   readonly skills: readonly SkillSummary[];
+  /** said instead of a list when this server's brain cannot use the owner's skills (the Codex brain); the list is then empty */
+  readonly note?: string;
 }
 
 export interface StartTurnResponse {

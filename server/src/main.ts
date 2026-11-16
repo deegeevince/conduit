@@ -71,7 +71,7 @@ function boot(env: Env): void {
   // steward use the same handlers at /api/sessions/:session/canvas/:tool. CANVAS_TOOLS=off (dev) leaves the processes without them.
   const sessions = new SessionStore();
   const canvas = new CanvasService({ sessions, log: log.child({ part: 'canvas' }), now, wantPicture: (s, target, deadlineMs) => conductor.wantPicture(s, target, deadlineMs) });
-  const canvasOn = env.brain.kind === 'claude-cli' && processEnvironment()['CANVAS_TOOLS'] !== 'off';
+  const canvasOn = (env.brain.kind === 'claude-cli' || env.brain.kind === 'codex-cli') && processEnvironment()['CANVAS_TOOLS'] !== 'off';
   const brains = createBrains({
     kill,
     settings: env.brain,
@@ -129,7 +129,7 @@ function boot(env: Env): void {
   const skills = createSkillCatalogue(env.skills, log.child({ part: 'skills' }), now);
   skills.warm();
   const conductor = new Conductor({
-    skills,
+    ...(env.brain.kind === 'codex-cli' ? {} : { skills }),
     sessions,
     canvas,
     canvasTools: canvasOn,

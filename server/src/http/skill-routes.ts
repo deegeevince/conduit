@@ -10,6 +10,8 @@ import type { HttpDeps } from './deps';
 export function registerSkillRoutes(app: Hono, deps: HttpDeps): void {
   /** 200 `SkillsView`. `?refresh=1` reads the folders again first; otherwise the list is the one built at boot, refreshed at most once a minute. */
   app.get(API.skills, async (c) => {
+    // Skills are Claude Code skills read into the brief; only the Claude brain is given them.
+    if (deps.env.brain.kind === 'codex-cli') return c.json<SkillsView>({ skills: [], note: 'Skills are your Claude Code skills, so they are only offered when Claude is the brain.' });
     const refresh = c.req.query('refresh') === '1';
     const list = await deps.skills.list(refresh);
     return c.json<SkillsView>({ skills: list.map(summaryOf) });

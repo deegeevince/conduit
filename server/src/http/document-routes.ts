@@ -55,6 +55,8 @@ export function registerDocumentRoutes(app: Hono, deps: HttpDeps): void {
     const session = param(c, 'session');
     conductor.assertSession(session);
     if (!uploads.available) throw errors.forbidden('photos are switched off on this server');
+    // The ink is read by a small Claude process; a server on the Codex brain has none, so she types the answer.
+    if (env.brain.kind === 'codex-cli') throw errors.forbidden('reading handwriting needs the Claude brain on this server; type the answer instead');
     const raw: unknown = await c.req.json().catch(() => null);
     const body = typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>) : {};
     const image = typeof body['image'] === 'string' ? body['image'] : '';

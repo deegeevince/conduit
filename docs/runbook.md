@@ -43,7 +43,7 @@ Both ports are strict: if one is taken the process fails instead of picking anot
 | `pnpm docs:language` | regenerates the reference section of `docs/language.md` from the code |
 | `pnpm --filter @conduit/web fonts` | rebuilds the processed font files in `web/src/fonts` (needs Node 22.6 or later) |
 
-One brain at a time. To switch brains, stop the server and start it with another `BRAIN`; for a single run you can set it inline: `BRAIN=replay pnpm dev`.
+One brain at a time (`claude-cli`, `codex-cli` for a ChatGPT login, `relay`, `replay`; `docs/codex.md` says what `codex-cli` does and does not do). To switch brains, stop the server and start it with another `BRAIN`; for a single run you can set it inline: `BRAIN=replay pnpm dev`.
 
 ## Environment
 
@@ -73,6 +73,10 @@ Only the selected brain's settings are read.
 | (v2) `DATASETS`, `DATASETS_ACTOR`, `DATASETS_TIMEOUT_MS` | no | `none`, none, `4000` | the owner's own Remote datasets for charts: off unless `remote`; the account is the owner's, never the Series one |
 | (v2) `EXPLORE_WEB_PORT` | no | `4661` | the web dev server the battery starts for its pictures (or pass `--web <url>` to use one that is running) |
 | `CLAUDE_BIN` | no | `claude` | the Claude Code executable |
+| `CODEX_MODEL` | when `BRAIN=codex-cli` | none | a model your ChatGPT account offers; `docs/codex.md` |
+| `CODEX_BIN` | no | `codex` | the Codex CLI executable (0.169 or newer) |
+| `CODEX_TIMEOUT_MS` | no | `180000` | the whole turn, tools included |
+| `CODEX_WEB` | no | `on` | Codex's own read-only web search (`on`, `off`) |
 | `CLAUDE_WARM` | no | `on` | `off` starts one process per turn instead of keeping one per conversation (an interrupted turn's process is killed at once) |
 | `CLAUDE_MAX_WARM` | no | `4` | conversations that may hold a process at once |
 | `CLAUDE_WARM_IDLE_MS` | no | `600000` | a process nobody has asked anything for this long is stopped |
