@@ -1,0 +1,56 @@
+{
+ "id": "group-slow-run-off-whole",
+ "title": "a group sent off the canvas by a slow timed move runs off whole; no part is stretched into a band",
+ "family": "motion",
+ "owner": "painter",
+ "kind": "draw",
+ "found": "2026-11-16",
+ "note": "A retelling with ground that covers the right edge, a group sent past the right edge with a slow move over three seconds after a camera shake. Its curved body path was stretched into a long band to the stage edge and stayed so. The parts stay one rigid group, and a target off the canvas takes the whole group off.",
+ "own": [
+  "group-rigid"
+ ],
+ "turns": [
+  {
+   "say": "tell me the story of the gruffalo",
+   "source": {
+    "log": "20261116-133100-c5",
+    "turns": [
+     "t7"
+    ]
+   },
+   "check": [
+    {
+     "k": "group-rigid",
+     "unit": "x47",
+     "parts": {
+      "x44": [
+       0,
+       6.5,
+       26,
+       31
+      ],
+      "x45": [
+       -3,
+       -11,
+       4,
+       6
+      ],
+      "x46": [
+       3,
+       -11,
+       4,
+       6
+      ],
+      "x47": [
+       2,
+       -2,
+       3.2,
+       3.2
+      ]
+     },
+     "expect": "gone"
+    }
+   ]
+  }
+ ]
+}

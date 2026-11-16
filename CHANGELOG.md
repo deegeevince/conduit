@@ -2,6 +2,9 @@
 
 Newest first. Each item is something the brain can show live when asked "showcase what's new": draw it, don't describe it. The server reads this file.
 
+## A character that runs off runs off whole (live)
+- A character you drew in parts, sent off to the right of the picture, now goes as one: nothing stretches into a long band across the screen, in a quick move or a slow one, and it stays itself when it rests at the edge. Sent past the edge, it leaves the picture.
+
 ## Every starter shows on a phone (live)
 - On a phone the first screen now shows all seven starters. Before, the first one could go missing and leave a gap, on some phone sizes. If the choices do not fit, they are set a little smaller and closer together instead of being dropped.
 

@@ -1120,6 +1120,48 @@ async function runCheck(cx: Cx, spec: Spec): Promise<Res> {
       const share = (y1 - y0) / Math.max(1, cx.answer.viewport.height);
       return share >= Number(spec['min'] ?? 0.5) ? { check: name, verdict: 'PASS', detail: `the figure spans ${Math.round(share * 100)}% of the stage height` } : { check: name, verdict: 'FAIL', detail: `the figure spans only ${Math.round(share * 100)}% of the stage height` };
     }
+    case 'group-rigid': {
+      // a group moved as one: either all of its parts have left the stage, or every part is there at its own size and place about the others
+      // (parts: id -> [centre x, centre y, width, height] in the group's own units; `unit` is a part of known size that sets px per unit)
+      const parts = spec['parts'] as Record<string, readonly number[]>;
+      const unitId = String(spec['unit']);
+      const tol = Number(spec['tol'] ?? 0.35);
+      const here = (id: string): LiveElement | undefined => cx.answer.live.find((e) => e.id === id && e.phase === 'on' && e.opacity > 0.05 && area(e.box) > 0);
+      const ids = Object.keys(parts);
+      const present = ids.filter((id) => here(id) !== undefined);
+      if (present.length === 0) return spec['expect'] === 'there' ? { check: name, verdict: 'FAIL', detail: 'the group is not on stage' } : { check: name, verdict: 'PASS', detail: `all ${ids.length} parts left the stage together` };
+      if (spec['expect'] === 'gone') return { check: name, verdict: 'FAIL', detail: `the group was sent off the canvas but ${present.join(', ')} are still on stage` };
+      const bad: string[] = [];
+      if (present.length < ids.length) bad.push(`only ${present.join(', ')} of ${ids.join(', ')} are on stage`);
+      const ref = here(unitId);
+      const refSpec = parts[unitId];
+      if (ref === undefined || refSpec === undefined) return { check: name, verdict: 'FAIL', detail: `the unit part ${unitId} is not on stage`, };
+      const unit = ref.box.width / (refSpec[2] as number);
+      const refAt = centre(ref.box);
+      for (const id of present) {
+        const e = here(id) as LiveElement;
+        const [cxu, cyu, w, h] = parts[id] as readonly number[];
+        const wantW = (w as number) * unit;
+        const wantH = (h as number) * unit;
+        const slack = 2 * unit;
+        if (e.box.width > wantW * (1 + tol) + slack || e.box.height > wantH * (1 + tol) + slack) bad.push(`${id} is ${Math.round(e.box.width)}x${Math.round(e.box.height)} px, its own size is about ${Math.round(wantW)}x${Math.round(wantH)}`);
+        const at = centre(e.box);
+        const dx = at.x - refAt.x - ((cxu as number) - (refSpec[0] as number)) * unit;
+        const dy = at.y - refAt.y - ((cyu as number) - (refSpec[1] as number)) * unit;
+        if (Math.hypot(dx, dy) > 4 * unit) bad.push(`${id} is ${Math.round(Math.hypot(dx, dy))} px from where the group holds it`);
+      }
+      // `apart`: the group came to where it was sent: this part stands this many of the group's units from another thing's centre
+      const apart = spec['apart'] as { readonly from: string; readonly units: number; readonly tol: number } | undefined;
+      if (apart !== undefined) {
+        const other = here(apart.from);
+        if (other === undefined) bad.push(`${apart.from} is not on stage`);
+        else {
+          const got = (refAt.x - centre(other.box).x) / unit;
+          if (Math.abs(got - apart.units) > apart.tol) bad.push(`the group stands ${got.toFixed(0)} units right of ${apart.from}, it was sent to ${apart.units}`);
+        }
+      }
+      return res(name, bad, `${present.length} parts at their own size and place about each other`);
+    }
     case 'has-shapes': {
       const n = cx.answer.live.filter((e) => e.kind !== 'text' && e.phase === 'on' && area(e.box) > 100).length;
       return n >= Number(spec['min']) ? { check: name, verdict: 'PASS', detail: `${n} shapes on stage` } : { check: name, verdict: 'FAIL', detail: `${n} shape(s) on stage, wanted ${String(spec['min'])}: a table and a bar, no shapes` };

@@ -1,0 +1,69 @@
+{
+ "id": "group-rests-on-edge",
+ "title": "a group that moves to the canvas edge keeps its shape at rest against ground that covers the edge",
+ "family": "motion",
+ "owner": "painter",
+ "kind": "draw",
+ "found": "2026-11-16",
+ "note": "The same group sent to a point whose body reaches the canvas edge, over ground that covers that edge, at each of the three speeds and with a bobbing group moving beside it. Parts keep their own size and place about each other at rest.",
+ "own": [
+  "group-rigid"
+ ],
+ "turns": [
+  {
+   "say": "show a creature slip to the right edge while a small one walks",
+   "source": {
+    "scenario": "group-rests-on-edge",
+    "index": 0
+   },
+   "check": [
+    {
+     "k": "group-rigid",
+     "unit": "x24",
+     "parts": {
+      "x22": [
+       0,
+       -2,
+       25,
+       28
+      ],
+      "x23": [
+       0,
+       -16.5,
+       18,
+       7
+      ],
+      "x24": [
+       -4,
+       -8,
+       3.2,
+       3.2
+      ],
+      "x25": [
+       4,
+       -8,
+       3.2,
+       3.2
+      ],
+      "x26": [
+       0,
+       -1,
+       4,
+       4
+      ]
+     },
+     "expect": "there",
+     "apart": {
+      "from": "x27",
+      "units": 114,
+      "tol": 14
+     }
+    },
+    {
+     "k": "has-shapes",
+     "min": 6
+    }
+   ]
+  }
+ ]
+}
