@@ -1909,6 +1909,15 @@ export function parseLine(raw: string): ParseResult {
   source = unwrap(source.replace(/^(?:[-*•]|\d+[.)])\s+(?=[a-zA-Z])/, ''));
 
   let pipe = barOf(source);
+  // a problem's answers may be written with spaces or quotes inside (`answer=250,two hundred fifty`, `answer="3000,3 000"`): a space inside the value is a `_`
+  if (pipe >= 0 && /^problem\b/i.test(source)) {
+    const head = source.slice(0, pipe);
+    const tidy = head.replace(/\b(answer|is)=("[^"]*"|“[^”]*”|.*?)(?=\s+[a-z]+=|\s*$)/i, (_all, key: string, value: string) => `${key}=${value.replace(/["“”]/g, '').split(',').map((part) => part.trim().replace(/\s+/g, '_')).filter((part) => part !== '').join(',')}`);
+    if (tidy !== head) {
+      source = `${tidy.trimEnd()} ${source.slice(pipe)}`;
+      pipe = barOf(source);
+    }
+  }
   // `a -> b | then`: an arrow between two ids is a link.
   const shorthand = /^([a-z][a-z0-9_-]*)\s*(?:->|-->|=>|→)\s*([a-z][a-z0-9_-]*)(.*)$/i.exec(source);
   if (shorthand?.[1] !== undefined && shorthand[2] !== undefined && !oneOf(VERBS, shorthand[1].toLowerCase()) && isValidElementId(shorthand[1].toLowerCase())) {
