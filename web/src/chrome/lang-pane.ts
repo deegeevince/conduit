@@ -1,6 +1,7 @@
 // "Show the language": the pane that makes the stream visible. The model writes lines of Series; the page reads each one as its newline
 // arrives and draws it. This pane is that reading, shown: each line appears whole when it arrives, the one being drawn is lit by the
-// painter's own schedule and playhead, and a line and what it made on stage point at each other (hover, tap or focus either one).
+// painter's own schedule and playhead, and pointing at something on stage (hover or tap) lights the line that made it. Nothing is drawn
+// over the stage itself.
 //
 // The stage keeps the rest of the room: the page's grid gives the pane a column (a row, on a phone) and the stage, resized by the page's own
 // observer, lays itself out in what is left. The pane knows nothing of how the stage draws; it reads `painter.snapshot()` and the log.
@@ -56,7 +57,6 @@ export function mountLangPane(root: HTMLElement, stage: HTMLElement, app: StageA
   list.setAttribute('aria-label', 'Lines');
   pane.append(head, list);
   root.insertBefore(pane, stage);
-  const rings: HTMLElement[] = [];
 
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
   const rowOf = new Map<number, HTMLLIElement>();
@@ -172,34 +172,7 @@ export function mountLangPane(root: HTMLElement, stage: HTMLElement, app: StageA
     following = list.scrollHeight - list.scrollTop - list.clientHeight < 24;
   });
 
-  // ---- what a line made, and what made an element
-  const elementsOf = (id: string): readonly { readonly x: number; readonly y: number; readonly width: number; readonly height: number }[] =>
-    app.painter
-      .snapshot()
-      .elements.filter((element) => element.id === id && element.phase !== 'struck' && element.opacity > 0.05 && element.box.width > 0)
-      .map((element) => element.box);
-
-  const showRings = (id: string | null): void => {
-    const boxes = id === null ? [] : elementsOf(id);
-    while (rings.length < boxes.length) {
-      const ring = document.createElement('div');
-      ring.className = 'lang-ring';
-      ring.setAttribute('aria-hidden', 'true');
-      stage.append(ring);
-      rings.push(ring);
-    }
-    rings.forEach((ring, index) => {
-      const box = boxes[index];
-      ring.hidden = box === undefined;
-      if (box === undefined) return;
-      const grow = 4;
-      ring.style.left = `${box.x - grow}px`;
-      ring.style.top = `${box.y - grow}px`;
-      ring.style.width = `${box.width + grow * 2}px`;
-      ring.style.height = `${box.height + grow * 2}px`;
-    });
-  };
-
+  // ---- what made an element: pointing at something on stage lights its line; nothing is drawn over the stage
   const rowForId = (id: string): HTMLLIElement | null => {
     for (const row of list.querySelectorAll<HTMLLIElement>('.lang__row[data-id]')) {
       const entry = entryOf.get(row);
@@ -239,7 +212,6 @@ export function mountLangPane(root: HTMLElement, stage: HTMLElement, app: StageA
       light.row?.classList.add('is-pointed');
       lastPointed = light.row;
     }
-    showRings(light.id);
   };
 
   const lineEnter = (event: Event): void => {
@@ -329,7 +301,6 @@ export function mountLangPane(root: HTMLElement, stage: HTMLElement, app: StageA
       stage.removeEventListener('pointermove', onStageMove);
       stage.removeEventListener('pointerdown', onStageDown, true);
       stage.removeEventListener('pointerleave', onStageLeave);
-      showRings(null);
       hovered = null;
       pinned = null;
     }
@@ -350,7 +321,6 @@ export function mountLangPane(root: HTMLElement, stage: HTMLElement, app: StageA
       stage.removeEventListener('pointermove', onStageMove);
       stage.removeEventListener('pointerdown', onStageDown, true);
       stage.removeEventListener('pointerleave', onStageLeave);
-      for (const ring of rings) ring.remove();
       entry.remove();
       pane.remove();
       delete root.dataset['lang'];
