@@ -87,7 +87,7 @@ pnpm build
 # with Claude
 BRAIN=claude-cli CLAUDE_MODEL=sonnet LIBRARY=seed pnpm start
 
-# or with ChatGPT (pick a model your plan offers)
+# or with ChatGPT (`codex debug models` lists the models your plan offers)
 BRAIN=codex-cli CODEX_MODEL=<model> LIBRARY=seed pnpm start
 ```
 
