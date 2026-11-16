@@ -926,7 +926,11 @@ export class Conversation {
     const problems: string[] = [];
     const facts: string[] = [];
     const report = answer.report;
-    const view = answer.viewport;
+    // a page that has grown past the screen is judged whole; the screenshot shows only the part of it the lens shows
+    const view = answer.page === null ? answer.viewport : { width: answer.page.width, height: answer.page.height };
+    const lens = answer.page === null ? null : (await this.tab.eval<{ view: { x: number; y: number; scale: number; width: number; height: number } | null } | null>('window.__stage.lens()'))?.view ?? { x: 0, y: 0, scale: 1, width: answer.viewport.width, height: answer.viewport.height };
+    const shot = (box: Box): Box => (lens === null ? box : { x: (box.x - lens.x) * lens.scale, y: (box.y - lens.y) * lens.scale, width: box.width * lens.scale, height: box.height * lens.scale });
+    const inFirstView = (box: Box): boolean => lens === null || intersection(shot(box), { x: 0, y: 0, width: lens.width, height: lens.height }) >= 0.9 * area(shot(box));
     if (report === null) problems.push('no report: the turn never ended on the page');
     const liveById = new Map<string, LiveElement[]>();
     for (const element of answer.live) liveById.set(element.id, [...(liveById.get(element.id) ?? []), element]);
@@ -946,13 +950,13 @@ export class Conversation {
         }
         // a drawn thing may run on past the screen's edge (a sea, a sky); words and diagrams may not
         if (['text', 'structure'].includes(here.kind) && intersection(here.box, { x: 0, y: 0, width: view.width, height: view.height }) < 0.9 * area(here.box)) offscreen.push(`${element.id} ${boxText(here.box)}`);
-        if (['text', 'structure', 'picture', 'sprite'].includes(here.kind) && area(here.box) > 400) inked.push(here);
+        if (['text', 'structure', 'picture', 'sprite'].includes(here.kind) && area(here.box) > 400 && inFirstView(here.box)) inked.push(here);
       }
       if (missing.length > 0) problems.push(`in the report's resting stage but not on screen at rest: ${missing.slice(0, 5).join(', ')}${missing.length > 5 ? ` and ${missing.length - 5} more` : ''}`);
       if (offscreen.length > 0) problems.push(`outside the screen: ${offscreen.slice(0, 3).join(', ')}`);
       // and it must really be drawn there: pixels, not the painter's say-so
       if (inked.length > 0) {
-        const marks = await this.tab.call<{ px: number; share: number }[]>('inkIn', picture, inked.map((element) => ({ x: element.box.x, y: element.box.y, w: element.box.width, h: element.box.height })), this.tab.dpr);
+        const marks = await this.tab.call<{ px: number; share: number }[]>('inkIn', picture, inked.map((element) => ({ x: shot(element.box).x, y: shot(element.box).y, w: shot(element.box).width, h: shot(element.box).height })), this.tab.dpr);
         const blank = inked.filter((_, index) => (marks[index]?.px ?? 0) < 12 * this.tab.dpr * this.tab.dpr);
         if (blank.length > 0) problems.push(`listed on stage but nothing is drawn where it is in the screenshot: ${blank.slice(0, 4).map((element) => `${element.id} (${element.kind}) ${boxText(element.box)}`).join(', ')}`);
         facts.push(`${inked.length - blank.length}/${inked.length} inked`);

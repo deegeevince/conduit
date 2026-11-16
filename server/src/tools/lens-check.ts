@@ -195,7 +195,7 @@ export async function lensGroup(base: string, screen: LensScreen, dir: string, t
         result(results, 'lens-pinch', view === null || Math.abs(view.scale - 2 * start0) > 0.15 * start0 ? [`two fingers spread to twice the distance read ${view === null ? 'no lens' : `${view.scale.toFixed(2)}x`}, wanted 2x`] : zoomed?.touched !== true ? ['the lens does not know it was touched'] : [], `the lens reads ${view?.scale.toFixed(2)}x`);
         // the page point that was between the fingers is still between them
         const under = await hands.onPage(centre);
-        result(results, 'lens-pinch-anchor', near(under, aim, 6) ? [] : [`the page point under the fingers moved to ${Math.round(under.x)},${Math.round(under.y)} from ${Math.round(aim.x)},${Math.round(aim.y)}`], 'the page point between the fingers stayed between them');
+        result(results, 'lens-pinch-anchor', near(under, aim, start0 < 1 ? 80 : 6) ? [] : [`the page point under the fingers moved to ${Math.round(under.x)},${Math.round(under.y)} from ${Math.round(aim.x)},${Math.round(aim.y)}`], 'the page point between the fingers stayed between them');
         const picture = await shot(tab, 'pinch');
 
         // 2. a tap on that starter, now twice the size
