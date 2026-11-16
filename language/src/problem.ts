@@ -50,6 +50,8 @@ export interface ProblemRead {
   readonly form: ProblemForm | null;
   /** the blank was not written: it was put after the question */
   readonly added: boolean;
+  /** where the sum ends: what follows (a remark in brackets, a second sentence) is shown small under it; `tokens.length` when the whole question is the sum or no sum was read */
+  readonly sumEnd: number;
 }
 
 /** What `readProblemLine` returns for a `problem` line the page holds: the question, what is accepted, and the ways the brain asked for. */
@@ -192,8 +194,16 @@ export function readProblem(question: string): ProblemRead {
   let from = 0;
   while (from < tokens.length && tokens[from]?.kind === 'word' && LEAD.has((tokens[from]?.text ?? '').toLowerCase())) from += 1;
   const run = tokens.slice(from);
-  const form = formOf(run, run.map((_, i) => i + from));
-  return { tokens, blank, form, added };
+  // the sum is the longest run from the start that reads as one: a remark after it ("(share 1000 sweets…)", a second sentence) is shown but is not the sum
+  let form: ProblemForm | null = null;
+  let sumEnd = tokens.length;
+  for (let end = run.length; end >= 3 && form === null; end -= 1) {
+    if (end < run.length && !(run[end]?.kind === 'word' || run[end]?.kind === 'blank')) continue;
+    const cut = run.slice(0, end);
+    if (cut.filter((token) => token.kind === 'blank').length === 1) form = formOf(cut, cut.map((_, i) => i + from));
+    if (form !== null) sumEnd = end + from;
+  }
+  return { tokens, blank, form, added, sumEnd };
 }
 
 // -------------------------------------------------------------------------------------------------------------------------------- ways
@@ -316,6 +326,6 @@ export function problemOfLine(text: string): ProblemSpec | null {
  */
 export const PROBLEM_CHAPTER = [
   'A MATHS QUESTION TO WORK OUT (typed, or in a photo): write ONE line and nothing else: `problem <id> answer=<every form you accept, _ for a space> | <the question exactly as given, ___ for the blank>`, for example `problem p1 answer=3000,3_000 | 1 000 = ___ ÷ 3`.',
-  'The stage draws the whole workspace (the question large, a blank for the pen, hints, pictures from its numbers) and checks her answer itself. Add no `say`, `ask`, `hint` or drawing unless the person asks for one, and never the answer in words. `ways=groups,bar,array,column,line` only to limit the pictures.',
+  'It is NOT a drawing and no other recipe applies to it: the stage draws the whole workspace itself (the question large, a blank for the pen, hints, pictures from its numbers, steps, checking). So never write a `scene`, `say`, `rect`, `pick`, `bind`, `slider`, `ask` or `hint`, never a title, a caption, a choice or the answer in words, even when they ask for visuals, step by step, interactive or the pen. `ways=groups,bar,array,column,line` only to limit the pictures.',
   'A photo of several questions with none named: `say title | Which one first?` and a `say choice | <number>. <question>` each; a tap on one gives that question\'s `problem`. A number named: go straight to it.',
 ].join('\n');

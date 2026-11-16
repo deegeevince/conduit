@@ -1098,10 +1098,10 @@ export function buildTurnBrief(context: TurnContext, input: TurnInput, form: Bri
   // FG2: a labelled drawing is taught when the words ask for one, or while one is on stage to be changed; never in the system prompt.
   const figureOnStage = stage.elements.some((element) => element.figure?.kind === 'structure' && element.figure.structure === 'figure');
   if (context.capabilities.structures.includes('figure') && !liveApp && ((input.kind === 'prompt' && asksForFigure(input.text)) || figureOnStage)) parts.push(FIGURE_CHAPTER);
-  // A maths question to work out is one `problem` line: taught when the words are a maths question, when one is on stage, or when the choices of a photo's questions are (a tap on one gives its problem); never in the system prompt. A card that writes one says it itself.
+  // A maths question to work out is one `problem` line: taught when the words are a maths question, when one is on stage, or when the choices of a photo's questions are (a tap on one gives its problem); never in the system prompt. The card the library chose shows only its example, so the chapter says the rest.
   const problemOnStage = stage.elements.some((element) => element.figure?.kind === 'structure' && element.figure.structure === 'problem');
   const questionsOnStage = stage.elements.some((element) => element.style.tap && /^\s*which one first\b/i.test(element.text)) || stage.elements.some((element) => element.text.toLowerCase().includes('which one first'));
-  if (context.capabilities.structures.includes('problem') && !liveApp && !usesProblem(context.techniques) && (((input.kind === 'prompt' || input.kind === 'tap') && asksForMaths(input.text)) || problemOnStage || questionsOnStage)) parts.push(PROBLEM_CHAPTER);
+  if (context.capabilities.structures.includes('problem') && !liveApp && (((input.kind === 'prompt' || input.kind === 'tap') && asksForMaths(input.text)) || problemOnStage || questionsOnStage || usesProblem(context.techniques))) parts.push(PROBLEM_CHAPTER);
   if (drawsNow) parts.push(DRAWING_CHAPTER(`${screen.canvas} (${canvas.width}x${canvas.height})${screen.canvas === 'wide' ? '; a figure scene that names no canvas gets square (100x100)' : ''}`));
   // L2: the shapes, weather, depth and camera that left the fixed prompt ride with a drawing or a staged answer; pixel art has a chapter of its own.
   const stagesNow = context.capabilities.kinds.includes('shape') && ((input.kind === 'prompt' && asksToStage(input.text)) || onStageDrawn);

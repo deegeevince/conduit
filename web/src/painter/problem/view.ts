@@ -65,7 +65,7 @@ function button(className: string, label: string, run: () => void): HTMLButtonEl
 
 /** the size class of the question by how much there is to set */
 function sizeOf(read: ProblemRead): 'xl' | 'l' | 'm' {
-  const chars = read.tokens.reduce((n, token) => n + token.text.length + 1, 0);
+  const chars = read.tokens.slice(0, read.sumEnd).reduce((n, token) => n + token.text.length + 1, 0);
   return chars <= 22 ? 'xl' : chars <= 42 ? 'l' : 'm';
 }
 
@@ -79,6 +79,8 @@ export function createProblemView(options: ProblemViewOptions): ProblemView {
   root.dataset['problem'] = spec.id;
   root.dataset['size'] = sizeOf(read);
   root.setAttribute('aria-label', 'A maths question to work out');
+  // a press on the workspace is the workspace's own: the stage under it takes no tap from it
+  for (const type of ['pointerdown', 'pointerup', 'pointermove', 'click', 'mousedown', 'mouseup', 'touchstart', 'touchend']) root.addEventListener(type, (event) => event.stopPropagation());
 
   // ---- state
   let verdict: ProblemState['verdict'] = 'open';
@@ -99,6 +101,7 @@ export function createProblemView(options: ProblemViewOptions): ProblemView {
   const question = el('h1', 'pb__question');
   question.setAttribute('aria-label', `${read.tokens.map((token) => (token.kind === 'blank' ? 'blank' : token.text)).join(' ')}`);
   const tokenNodes: HTMLElement[] = [];
+  let remark: HTMLElement | null = null;
   let blankNode: HTMLElement | null = null;
   read.tokens.forEach((token, index) => {
     const node = el('span', `pb__tok pb__tok--${token.kind}`);
@@ -120,7 +123,13 @@ export function createProblemView(options: ProblemViewOptions): ProblemView {
       question.append(lead);
     }
     tokenNodes.push(node);
-    question.append(node);
+    if (index >= read.sumEnd) {
+      if (remark === null) {
+        remark = el('span', 'pb__remark');
+        question.append(remark);
+      }
+      remark.append(node);
+    } else question.append(node);
   });
   const lineNode = el('p', 'pb__line');
   lineNode.setAttribute('aria-live', 'polite');

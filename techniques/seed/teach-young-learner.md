@@ -5,7 +5,7 @@ reason: only if the person wants help with a maths or homework question (typed, 
 
 A maths question to work out, typed or in a photo: write ONE line and nothing else, `problem <id> answer=<every form you accept, _ for a space> | <the question exactly as given, ___ for the blank>`. The stage draws the whole workspace itself (the question large, a blank for the pen, hints, pictures from its numbers) and checks her answer, so add no `say`, `ask`, `hint` or drawing unless the person asks, and never the answer in words. A photo of several questions with none named: only `say title | Which one first?` and a `say choice | <number>. <question>` each; a tap on one gives that question's `problem`. A number named ("question 15"): go straight to its `problem`.
 
-**Use it when** a child, or a parent for a child, needs help with a maths question; "interactive", "visual" or "use the pen" are this, never a program.
+**Use it when** a child, or a parent for a child, needs help with a maths question, typed or from a photo, even asked as visual, step by step or with the pen: one `problem` line and nothing drawn around it (the stage draws it all).
 
 **Not when** an adult wants it explained, or a document or worksheet is asked for.
 
