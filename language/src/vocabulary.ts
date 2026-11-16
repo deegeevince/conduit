@@ -1239,6 +1239,21 @@ export const LIMITS = {
 // lesson is taught by its own chapter on its own cues (package WS7), which builds its text from `LESSON_VERB`, `TECHNIQUE` and `VISUAL`.
 // ---------------------------------------------------------------------------------------------------------------------------------
 
+/**
+ * v3 art (PLAN-art step 4). `draw`: a finished drawing of a named thing from the server's shelf. A table of its own, and not a row of `VERB`, for the
+ * same reason as the lesson words: the fixed prompt is built by walking `VERB`, and `draw` is taught nowhere yet (step 7, behind `Services.art`).
+ * The parser and the server accept it regardless.
+ */
+export const ART_VERB = {
+  draw: {
+    form: 'draw [id] <subject> [at=x,y] [size=N] [fill=<colour>] [as=<name>] [new] [in=<group>] [| pose, view, mood]',
+    gist: 'A finished drawing of a named thing, from the shelf: a group whose parts are its own (`fox1-tail`). Centred and two fifths of the canvas high unless said.',
+    time: 'instant',
+    family: 'composition',
+  },
+} as const satisfies Record<string, { form: string; gist: string; time: VerbTime; family: VerbFamily }>;
+export type ArtVerb = keyof typeof ART_VERB;
+
 /** The words that build a document and a lesson. Their forms are what the TEACH chapter and `docs/language.md` print. */
 export const LESSON_VERB = {
   part: {

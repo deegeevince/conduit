@@ -292,6 +292,30 @@ export interface GroupLine {
   readonly when?: When;
 }
 
+/**
+ * v3 art. A finished drawing of a named thing, taken from the shelf. It is a group to the schedule; the server expands it into the
+ * group and its parts (`server/src/art`), so the painter never sees it.
+ */
+export interface DrawLine {
+  readonly verb: 'draw';
+  /** `-` when no id was written: the first word is an id only when it ends in a digit (or is already on stage, which only the server can tell) */
+  readonly id: string;
+  /** every bare word as written (the id included, when it was read as one), for the server's rule about a word already on stage */
+  readonly words: readonly string[];
+  /** what to draw, in words: the bare words after the id */
+  readonly subject: string;
+  readonly props: StyleProps;
+  /** the whole figure's height, canvas units; absent means about two fifths of the canvas */
+  readonly size?: number;
+  /** a name for this one: two foxes in one story are `as=rusty` and `as=fern` */
+  readonly as?: string;
+  /** a different one from the one the conversation has already drawn */
+  readonly fresh?: boolean;
+  /** after the bar: pose, view, mood, in words */
+  readonly detail: string;
+  readonly when?: When;
+}
+
 export interface UseLine {
   readonly verb: 'use';
   readonly id: string;
@@ -631,6 +655,7 @@ export type Line =
   | RowLine
   | FrameLine
   | GroupLine
+  | DrawLine
   | UseLine
   | PaintLine
   | PicLine
@@ -657,7 +682,7 @@ export type Line =
   | LessonLine;
 
 /** The lines that put a new element on stage. */
-export type CreatingLine = SayLine | ShapeLine | PixLine | GroupLine | UseLine | PaintLine | PicLine | AmbientLine | StructureLine | NodeLine | LinkLine | ControlLine | CardLine;
+export type CreatingLine = SayLine | ShapeLine | PixLine | GroupLine | DrawLine | UseLine | PaintLine | PicLine | AmbientLine | StructureLine | NodeLine | LinkLine | ControlLine | CardLine;
 
 export type IssueSeverity =
   /** the line was dropped */

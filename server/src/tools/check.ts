@@ -392,6 +392,7 @@ class Screen {
         results.push(Screen.restResult(started !== null ? `the demo would not start: ${started}` : await talk.rest(true), began));
         if (demo.name === 'explorable') await this.explorable(tab, talk, results);
         if (demo.name === 'richness') await this.richness(tab, results);
+        if (demo.name === 'art') await this.art(tab, results);
         await this.judge(tab, talk, `demo-${demo.name}`, results, began, true, first);
         first = false;
       }
@@ -594,6 +595,40 @@ class Screen {
     Screen.add(results, 'richness', art.opacity < 0.3 ? [`the painting is on stage but faint (opacity ${art.opacity})`] : share < 0.05 ? [`the painting's box holds almost no ink (${(share * 100).toFixed(1)}%)`] : [], `the painting shows at rest, ${(share * 100).toFixed(0)}% of its box inked`);
   }
 
+  /**
+   * the art demo, played through the server's line path (the server expands each `draw`): the parts of the fox, the child and the mirrored fox are on stage,
+   * the label sits by the fox's tail, the whole of the child moved, and the giraffe the shelf does not hold is a quiet placeholder, not an error.
+   */
+  private async art(tab: Tab, results: CheckResult[]): Promise<void> {
+    const live = await tab.eval<Stage[]>('window.__stage.elements().map((e) => ({ id: e.id, kind: e.kind, text: String(e.text || ""), phase: e.phase, opacity: e.opacity, box: e.box }))');
+    const problems: string[] = [];
+    const partsOf = (group: string): Stage[] => live.filter((element) => element.id.startsWith(`${group}-`));
+    for (const [group, least] of [['fox1', 10], ['kid1', 10], ['fox2', 10]] as const) {
+      const parts = partsOf(group);
+      if (parts.length < least) problems.push(`${group} has ${parts.length} parts on stage, expected at least ${least}`);
+      else if (parts.some((part) => part.opacity < 0.05)) problems.push(`a part of ${group} is on stage but invisible`);
+    }
+    const tail = live.find((element) => element.id === 'fox1-tail');
+    const label = live.find((element) => element.kind === 'text' && (element.text ?? '').trim() === 'tail');
+    if (tail === undefined) problems.push('fox1-tail is not on stage');
+    else if (label === undefined) problems.push('the label "tail" is not on stage');
+    else {
+      const gap = Math.hypot(label.box.x + label.box.width / 2 - (tail.box.x + tail.box.width / 2), label.box.y + label.box.height / 2 - (tail.box.y + tail.box.height / 2));
+      const reach = Math.max(tail.box.width, tail.box.height) * 1.2 + label.box.height * 2;
+      if (gap > reach) problems.push(`the label "tail" is ${gap.toFixed(0)} px from fox1-tail's middle (more than ${reach.toFixed(0)})`);
+    }
+    const holder = live.find((element) => element.id === 'kid1');
+    const kidBody = live.find((element) => element.id === 'kid1-body');
+    if (holder === undefined || kidBody === undefined) problems.push('the group kid1 or its body is not on stage');
+    const mirrored = live.find((element) => element.id === 'fox2-head');
+    const original = live.find((element) => element.id === 'fox1-head');
+    if (mirrored === undefined || original === undefined) problems.push('a fox head is missing');
+    const soft = live.find((element) => element.id === 'giraffe1-soft');
+    if (soft === undefined) problems.push('the giraffe has no placeholder on stage');
+    else if (partsOf('giraffe1').length !== 1) problems.push(`the giraffe is a placeholder of one soft shape, but ${partsOf('giraffe1').length} parts are on stage`);
+    Screen.add(results, 'art', problems, `fox1 ${partsOf('fox1').length}, kid1 ${partsOf('kid1').length} and the mirrored fox2 ${partsOf('fox2').length} parts on stage, the label by the tail, a quiet placeholder for the giraffe`);
+  }
+
   /** a slider, a toggle and a pick of the explorable demo: the drawing changes, and no request is made */
   private async explorable(tab: Tab, talk: Conversation, results: CheckResult[]): Promise<void> {
     interface Control {
@@ -702,6 +737,7 @@ const COLUMNS: readonly (readonly [string, string])[] = [
   ['choice-sent', 'sent'],
   ['explorable-controls', 'ctrls'],
   ['problem', 'problem'],
+  ['art', 'art'],
   ['answer-on-stage', 'stage'],
   ['no-overlap', 'overlap'],
   ['nothing-cut-off', 'cutoff'],

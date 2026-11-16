@@ -1,0 +1,126 @@
+{
+ "v": 1,
+ "subject": "child",
+ "pose": "standing",
+ "view": "front",
+ "facing": "front",
+ "ground": 92,
+ "slots": [
+  {
+   "name": "tan",
+   "hue": "tan"
+  },
+  {
+   "name": "orange",
+   "hue": "orange"
+  },
+  {
+   "name": "purple",
+   "hue": "purple"
+  }
+ ],
+ "parts": [
+  {
+   "id": "shadow",
+   "line": "ellipse shadow 2.5,43 26x3.6 fill=dim stroke=none opacity=0.55"
+  },
+  {
+   "id": "legs",
+   "line": "path legs fill=deep stroke=ink thick=1.6 | M-8.5 15 C-9.5 22 -9.5 30 -9 37 L-2 37 C-1.7 31 -1.2 25 0 20 C1.2 25 1.7 31 2 37 L9 37 C9.5 30 9.5 22 8.5 15 Z"
+  },
+  {
+   "id": "left-shoe",
+   "line": "path left-shoe fill=$tan+3 stroke=ink thick=1.6 | M-1.5 36 C-1 38 -1 40.5 -2 42 L-12 42 C-15 42 -15.5 38.5 -13 36.5 C-11 35 -8 35.5 -7 36 Q-4 35 -1.5 36 Z"
+  },
+  {
+   "id": "right-shoe",
+   "line": "path right-shoe fill=$tan+3 stroke=ink thick=1.6 | M1.5 36 C1 38 1 40.5 2 42 L12 42 C15 42 15.5 38.5 13 36.5 C11 35 8 35.5 7 36 Q4 35 1.5 36 Z"
+  },
+  {
+   "id": "left-hand",
+   "line": "circle left-hand -21.5,16 3.6 fill=$tan+1 stroke=ink thick=1.5"
+  },
+  {
+   "id": "right-hand",
+   "line": "circle right-hand 21.5,16 3.6 fill=$tan stroke=ink thick=1.5"
+  },
+  {
+   "id": "left-arm",
+   "line": "path left-arm fill=$tan-1 stroke=ink thick=1.6 | M-9 -5 C-16 -6 -23 2 -25 12 C-24 15.5 -19.5 16 -17.5 13.5 C-16.5 7 -13 3 -8 1 Z"
+  },
+  {
+   "id": "right-arm",
+   "line": "path right-arm fill=$orange-1 stroke=ink thick=1.6 | M9 -5 C16 -6 23 2 25 12 C24 15.5 19.5 16 17.5 13.5 C16.5 7 13 3 8 1 Z"
+  },
+  {
+   "id": "body",
+   "line": "path body fill=$orange stroke=ink thick=1.8 | M-11 -6.5 C-7 -9 7 -9 11 -6.5 C14 0 15.5 10 14.5 18 C8 21 -8 21 -14.5 18 C-15.5 10 -14 0 -11 -6.5 Z"
+  },
+  {
+   "id": "body-shade",
+   "line": "path body-shade fill=$orange-1 stroke=none | M7.5 -6.6 C10 1 11 12 9.5 18.9 Q11.8 18.4 13.6 17.5 C14.5 10 13.2 1 10.3 -5.8 Q9 -6.3 7.5 -6.6 Z"
+  },
+  {
+   "id": "star",
+   "line": "poly star -1,1 0.23,4.3 3.76,4.45 1,6.65 1.94,10.05 -1,8.1 -3.94,10.05 -3,6.65 -5.76,4.45 -2.23,4.3 fill=$tan+3 stroke=$orange-1 thick=0.6"
+  },
+  {
+   "id": "neck",
+   "line": "path neck fill=$tan stroke=none | M-4 -14 L-4 -7 Q0 -4.5 4 -7 L4 -14 Z"
+  },
+  {
+   "id": "head",
+   "line": "path head fill=$tan+1 stroke=ink thick=1.8 | M0 -43 C11 -43 17.5 -35 17.5 -26.5 C21.5 -27.5 22.5 -20 17.2 -20 C15.5 -13.5 9 -9 0 -9 C-9 -9 -15.5 -13.5 -17.2 -20 C-22.5 -20 -21.5 -27.5 -17.5 -26.5 C-17.5 -35 -11 -43 0 -43 Z"
+  },
+  {
+   "id": "head-shade",
+   "line": "path head-shade fill=$tan stroke=none | M16.5 -25.6 C20 -26.4 20.8 -21 16.4 -20.9 C14.8 -14.5 9 -10 1 -10 C8 -12.5 12.5 -19 12.5 -32 L16 -32 Z"
+  },
+  {
+   "id": "hair",
+   "line": "path hair fill=deep stroke=ink thick=1.6 | M-17.2 -26 C-19.5 -38 -11 -44.5 0 -44.5 C11 -44.5 19.5 -38 17.2 -26 C15 -31 11 -34.5 6 -35.5 C2 -32.5 -6 -32 -10 -34.5 C-13.5 -32.5 -16 -29.5 -17.2 -26 Z"
+  },
+  {
+   "id": "hair-light",
+   "line": "path hair-light fill=$purple stroke=none | M-12.5 -36.5 C-10.5 -40 -6 -41.8 -1.5 -42 C-5 -40.2 -8 -38.5 -9.8 -36.2 Q-11.5 -35.4 -12.5 -36.5 Z"
+  },
+  {
+   "id": "left-eye",
+   "line": "circle left-eye -7,-22.5 2.1 fill=deep stroke=none"
+  },
+  {
+   "id": "right-eye",
+   "line": "circle right-eye 7,-22.5 2.1 fill=deep stroke=none"
+  },
+  {
+   "id": "left-shine",
+   "line": "circle left-shine -6.3,-23.3 0.7 fill=$tan+3 stroke=none"
+  },
+  {
+   "id": "right-shine",
+   "line": "circle right-shine 7.7,-23.3 0.7 fill=$tan+3 stroke=none"
+  },
+  {
+   "id": "left-cheek",
+   "line": "circle left-cheek -11,-17.5 2.6 fill=$orange stroke=none opacity=0.45"
+  },
+  {
+   "id": "right-cheek",
+   "line": "circle right-cheek 11,-17.5 2.6 fill=$orange stroke=none opacity=0.45"
+  },
+  {
+   "id": "nose",
+   "line": "path nose fill=none stroke=$orange-1 thick=0.9 | M-1.1 -19.6 Q0 -18.1 1.1 -19.6"
+  },
+  {
+   "id": "mouth",
+   "line": "path mouth fill=none stroke=ink thick=1 | M-4 -16.2 Q0 -12 4 -16.2"
+  }
+ ],
+ "made": {
+  "by": "fable",
+  "arm": "D",
+  "how": "Fable, a staged drawing off the answer's clock (bake-off arm D); read by the strict converter and restyled to the house palette"
+ },
+ "licence": "MIT (made for this project on the owner's own subscription)"
+}

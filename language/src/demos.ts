@@ -63,6 +63,11 @@ export const DEMOS = [
     summary: 'A brush for each stroke character, a texture for each fill, a soft edge, a gradient and a painting the renderer makes itself.',
   },
   {
+    name: 'art',
+    title: 'Art',
+    summary: 'Finished drawings from the shelf: a fox and a child by name, a mirrored fox, a label on a part, a move of the whole figure, and a quiet placeholder where the shelf has nothing yet.',
+  },
+  {
     name: 'explorable',
     title: 'Explorable',
     summary: 'A picture with a slider, a toggle and a pick bound to it, and a button that asks the brain.',

@@ -926,6 +926,48 @@ function parseGroup(head: Head, issues: Issues): Line | null {
   return withWhen({ verb: 'group' as const, id, styles: readStyleNames(names, issues), props: at === undefined ? props : { ...props, at } }, head.when);
 }
 
+/** The longest figure the brain may ask for, canvas units (a canvas is at most 160 long). */
+const DRAW_MAX_SIZE = 200;
+
+/**
+ * `draw [id] <subject> [at=x,y] [size=N] [fill=…] [as=<name>] [new] [in=<group>] [| pose, view, mood]`. The first bare word is the id when it
+ * ends in a digit and a subject follows it; a word that is already on stage is an id too, but only the server can tell, so it keeps every word.
+ * `size=` is a number here (the figure's height), not the text size word.
+ */
+function parseDraw(head: Head, text: string | null, issues: Issues): Line | null {
+  const words: string[] = [];
+  let fresh = false;
+  for (const word of head.words) {
+    if (GEOMETRY_PATTERN.test(word) || word === '-') continue;
+    if (word === 'new') fresh = true;
+    else words.push(word.toLowerCase().replace(/[^a-z0-9'-]/g, '')) ;
+  }
+  const spoken = words.filter((word) => word !== '');
+  if (spoken.length === 0) {
+    issues.error('missing-argument', 'draw needs a subject: draw fox | sitting');
+    return null;
+  }
+  const first = spoken[0] ?? '';
+  const named = spoken.length >= 2 && /\d$/.test(first) && isValidElementId(first);
+  let size: number | undefined;
+  let as: string | undefined;
+  const others: Pair[] = [];
+  for (const pair of head.pairs) {
+    if (pair.key === 'size') {
+      const value = parseNumber(pair.value, 1, DRAW_MAX_SIZE);
+      if (value !== null) size = value;
+      else issues.warn('bad-value', `${pair.token} ignored; expected a height in canvas units`, pair.token);
+    } else if (pair.key === 'as') {
+      if (isValidElementId(pair.value)) as = pair.value;
+      else issues.warn('bad-value', `${pair.token} ignored; expected a name`, pair.token);
+    } else others.push(pair);
+  }
+  const { props, rest } = readStyleProps(others, issues);
+  warnUnknownPairs(rest, issues);
+  const line = { verb: 'draw' as const, id: named ? first : '-', words: spoken, subject: (named ? spoken.slice(1) : spoken).join(' '), props, detail: (text ?? '').trim() };
+  return withWhen({ ...line, ...(size === undefined ? {} : { size }), ...(as === undefined ? {} : { as }), ...(fresh ? { fresh } : {}) }, head.when);
+}
+
 function parseUse(head: Head, issues: Issues): Line | null {
   const { numbers, names } = splitWords(head.words, false);
   const ids = names.filter((name) => isValidElementId(name));
@@ -1953,6 +1995,12 @@ export function parseLine(raw: string): ParseResult {
     const lesson = parseLesson(verb, lessonHead, lessonText, issues);
     if (lesson === null || issues.failed) return { kind: 'reject', issues: issues.list };
     return { kind: 'line', line: lesson, issues: issues.list };
+  }
+  if (verb === 'draw') {
+    if (wordsAsWritten !== null) issues.warn('missing-text', wordsAsWritten);
+    const drawn = parseDraw(readHead(tokens.slice(1), issues), cleanText(rawText, LIMITS.text, issues), issues);
+    if (drawn === null || issues.failed) return { kind: 'reject', issues: issues.list };
+    return { kind: 'line', line: drawn, issues: issues.list };
   }
   if (!oneOf(VERBS, verb)) {
     issues.error('unknown-verb', verbToken === '' ? 'line has no verb' : `"${verbToken}" is not a verb`, verbToken);

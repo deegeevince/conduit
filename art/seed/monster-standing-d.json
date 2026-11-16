@@ -1,0 +1,142 @@
+{
+ "v": 1,
+ "subject": "monster",
+ "pose": "standing",
+ "view": "front",
+ "facing": "front",
+ "ground": 93.8,
+ "slots": [
+  {
+   "name": "leaf",
+   "hue": "leaf"
+  },
+  {
+   "name": "cream",
+   "hue": "cream"
+  },
+  {
+   "name": "orange",
+   "hue": "orange"
+  }
+ ],
+ "parts": [
+  {
+   "id": "shadow",
+   "line": "ellipse shadow 3,43 37x4.5 fill=dim stroke=none opacity=0.3"
+  },
+  {
+   "id": "left-horn",
+   "line": "path left-horn fill=$cream-1 stroke=ink thick=1.8 | M-19 -22 C-25 -29 -26 -39 -21 -45 C-19 -38 -14 -33 -6 -30 Z"
+  },
+  {
+   "id": "right-horn",
+   "line": "path right-horn fill=$cream-1 stroke=ink thick=1.8 | M6 -30 C14 -33 19 -38 21 -45 C26 -39 25 -29 19 -22 Z"
+  },
+  {
+   "id": "left-arm",
+   "line": "path left-arm fill=$leaf-1 stroke=ink thick=1.8 | M-27 8 C-38 3 -44 -8 -42 -20 C-44 -25 -43 -31 -38 -32 C-33 -33 -29 -30 -28 -24 C-27 -21 -28 -19 -28 -16 C-27 -10 -23 -6 -17 -3 Z"
+  },
+  {
+   "id": "right-arm",
+   "line": "path right-arm fill=$leaf-2 stroke=ink thick=1.8 | M26 0 C37 3 44 13 43 24 C43 30 38 33 34 31 C30 29 30 25 30 21 C29 16 26 13 21 11 Z"
+  },
+  {
+   "id": "left-foot",
+   "line": "path left-foot fill=$leaf-3 stroke=ink thick=1.8 | M-23 33 C-31 34 -32 43 -23 43.5 C-17 44 -10 44 -6 43 C-1 41 -3 34 -8 33 Z"
+  },
+  {
+   "id": "right-foot",
+   "line": "path right-foot fill=$leaf-3 stroke=ink thick=1.8 | M8 33 C3 34 1 41 6 43 C10 44 17 44 23 43.5 C32 43 31 34 23 33 Z"
+  },
+  {
+   "id": "body",
+   "line": "path body fill=$leaf-1 stroke=ink thick=2 | M0 -34 C13 -35 23 -26 26 -12 C28 -4 33 6 33 18 C33 32 20 39 0 39 C-20 39 -33 32 -33 18 C-33 6 -28 -4 -26 -12 C-23 -26 -13 -35 0 -34 Z"
+  },
+  {
+   "id": "body-shade",
+   "line": "path body-shade fill=$leaf-3 stroke=none opacity=0.42 | M22 -20 C26 -8 31 6 31.5 18 C31.5 30 20 37.5 0 38 C15 34 22.5 22 22.5 8 C22.5 -2 23.5 -11 22 -20 Z"
+  },
+  {
+   "id": "body-light",
+   "line": "path body-light fill=$leaf stroke=none opacity=0.9 | M-23.5 -8 C-22 -21 -14 -29.5 -3 -30.5 C-10.5 -26 -15.5 -19 -17 -7.5 C-19 -6.5 -22 -6.5 -23.5 -8 Z"
+  },
+  {
+   "id": "belly",
+   "line": "path belly fill=$cream-1 stroke=$leaf-3 thick=0.6 | M0 7 C11 7 17 13.5 17 21 C17 30 10 35 0 35 C-10 35 -17 30 -17 21 C-17 13.5 -11 7 0 7 Z"
+  },
+  {
+   "id": "fur-marks",
+   "line": "path fur-marks fill=none stroke=$leaf-3 thick=0.8 | M-6.5 14.5 Q-4.8 17.2 -3.1 14.5"
+  },
+  {
+   "id": "fur-marks-2",
+   "line": "path fur-marks-2 fill=none stroke=$leaf-3 thick=0.8 | M3.1 14.5 Q4.8 17.2 6.5 14.5"
+  },
+  {
+   "id": "fur-marks-3",
+   "line": "path fur-marks-3 fill=none stroke=$leaf-3 thick=0.8 | M-1.7 20 Q0 22.7 1.7 20"
+  },
+  {
+   "id": "fur-marks-4",
+   "line": "path fur-marks-4 fill=none stroke=$leaf-3 thick=0.8 | M-28.5 10 Q-26.5 12.5 -24.2 10.6"
+  },
+  {
+   "id": "fur-marks-5",
+   "line": "path fur-marks-5 fill=none stroke=$leaf-3 thick=0.8 | M-28.5 16.5 Q-26.5 19 -24.2 17.1"
+  },
+  {
+   "id": "left-cheek",
+   "line": "ellipse left-cheek -19.5,-3.5 4x2.6 fill=$orange+2 stroke=none opacity=0.8"
+  },
+  {
+   "id": "right-cheek",
+   "line": "ellipse right-cheek 19.5,-3.5 4x2.6 fill=$orange+2 stroke=none opacity=0.8"
+  },
+  {
+   "id": "left-eye",
+   "line": "circle left-eye -11,-14.5 7.2 fill=$cream-1 stroke=ink thick=0.9"
+  },
+  {
+   "id": "right-eye",
+   "line": "circle right-eye 11,-14.5 7.2 fill=$cream-1 stroke=ink thick=0.9"
+  },
+  {
+   "id": "left-pupil",
+   "line": "circle left-pupil -9.5,-13.5 3.6 fill=deep stroke=none"
+  },
+  {
+   "id": "right-pupil",
+   "line": "circle right-pupil 9.5,-13.5 3.6 fill=deep stroke=none"
+  },
+  {
+   "id": "left-glint",
+   "line": "circle left-glint -10.8,-15 1.2 fill=$cream-1 stroke=none"
+  },
+  {
+   "id": "right-glint",
+   "line": "circle right-glint 8.2,-15 1.2 fill=$cream-1 stroke=none"
+  },
+  {
+   "id": "nose",
+   "line": "ellipse nose 0,-5.2 2.3x1.6 fill=$orange+2 stroke=ink thick=0.7"
+  },
+  {
+   "id": "tooth",
+   "line": "path tooth fill=$cream-1 stroke=ink thick=0.6 | M-6.5 1.5 L-3.8 6.2 L-1.6 2.9 Z"
+  },
+  {
+   "id": "mouth",
+   "line": "path mouth fill=none stroke=ink thick=1 | M-13.5 -2.5 C-9 5 9 5 13.5 -2.5"
+  },
+  {
+   "id": "leaf",
+   "line": "path leaf fill=$leaf stroke=ink thick=1.5 | M-0.5 -33.5 C-3 -40 1 -45.5 7 -46 C7.5 -40 5 -35 -0.5 -33.5 Z"
+  }
+ ],
+ "made": {
+  "by": "fable",
+  "arm": "D",
+  "how": "Fable, a staged drawing off the answer's clock (bake-off arm D); read by the strict converter and restyled to the house palette"
+ },
+ "licence": "MIT (made for this project on the owner's own subscription)"
+}

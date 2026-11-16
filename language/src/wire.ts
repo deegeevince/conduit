@@ -133,6 +133,8 @@ export interface Services {
   readonly refine?: boolean;
   /** v2.1. The user may give pictures with a prompt (`TurnInput.images`), and the brain may put them on stage. Absent: no. */
   readonly uploads?: boolean;
+  /** v3 art. The server holds a shelf of finished drawings, so `draw <subject>` can be answered. Absent: no. Not taught yet. */
+  readonly art?: boolean;
   /** v2.1. What kind of mind is answering this conversation right now: it decides what the brain is told it can do. Absent: `plain`. */
   readonly mode?: BrainMode;
 }

@@ -186,6 +186,11 @@ export function serializeLine(line: Line): string {
       return `row ${line.id} | ${line.cells}`;
     case 'frame':
       return `frame ${line.id}`;
+    case 'draw':
+      return [
+        ['draw', ...(line.id === '-' ? [] : [line.id]), line.subject, ...propTokens(line.props), ...(line.size === undefined ? [] : [`size=${number(line.size)}`]), ...(line.as === undefined ? [] : [`as=${line.as}`]), ...(line.fresh === true ? ['new'] : []), ...whenToken(line.when)].join(' '),
+        ...(line.detail === '' ? [] : [line.detail]),
+      ].join(' | ');
     case 'group':
       return ['group', line.id, ...line.styles, ...propTokens(line.props), ...whenToken(line.when)].join(' ');
     case 'use':

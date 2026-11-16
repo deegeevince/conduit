@@ -28,6 +28,7 @@ import { createDocumentAssets } from './documents/assets';
 import { createJsonlSessionLog } from './logs/jsonl-session-log';
 import { NO_SESSION_LOG } from './domain/session-log';
 import { createLogger } from './log';
+import { createShelf } from './art/shelf';
 import { createPictures } from './pictures/registry';
 import { createAudit } from './audit';
 import { createKillSwitch } from './kill';
@@ -88,6 +89,9 @@ function boot(env: Env): void {
   // v2.2. Photographs for a mock-up's `image` parts: off unless `PICTURES=openverse`. Only the words of the line ever leave the machine.
   const pictures = createPictures(env.pictures, log.child({ part: 'pictures' }));
   // v2.1. The user's photos: kept under the data folder as safe JPEGs, or not taken at all with `UPLOADS=off`.
+  // v3 art. The shelf of finished drawings: the seeds in the repository, and what the data folder keeps. `draw` is answered from it.
+  const art = createShelf({ seedDir: fileURLToPath(new URL('../../art/seed', import.meta.url)), cacheDir: env.data.artCache, log: log.child({ part: 'art' }) });
+  log.info('art.loaded', { sheets: art.count(), subjects: art.subjects().join(',') });
   const uploads = env.uploads ? createUploadStore({ dir: env.data.uploads, log: log.child({ part: 'uploads' }), now }) : NO_UPLOADS;
   // v2.1. Voice notes: read on this Mac by Apple's on-device recogniser (a helper built with swiftc on first use), or not taken at all with `VOICE=off`.
   const voice = env.voice.enabled
@@ -116,6 +120,7 @@ function boot(env: Env): void {
     sessionLog,
     images,
     pictures,
+    art,
     uploads,
     voice,
     reader: createDocumentReader({ enabled: env.readLinks, log: log.child({ part: 'reading' }) }),

@@ -182,7 +182,7 @@ export class TurnScore {
       const begins = this.startOf(entry.seq);
       if (begins !== null && begins <= floor) return;
       const inside = other.verb === 'look' || other.verb === 'set' || other.verb === 'bind' || !('props' in other) ? undefined : other.props.in;
-      if ((isStructure || line.verb === 'group' || line.verb === 'card') && inside === id) this.retract(at, floor);
+      if ((isStructure || line.verb === 'group' || line.verb === 'draw' || line.verb === 'card') && inside === id) this.retract(at, floor);
       else if (isStructure && other.verb === 'row' && other.id === id) this.retract(at, floor);
       else if (line.verb === 'node' && other.verb === 'link' && other.nodes.includes(id)) {
         const rest = other.nodes.filter((name) => name !== id);
@@ -289,6 +289,8 @@ function revised(origin: Line, change: ReviseLine): Line | null {
     case 'deck':
     case 'standing':
     case 'refine':
+    // a drawing from the shelf is written again, not restyled; the server has already put its parts on stage
+    case 'draw':
     // v3: a lesson's words are the document's and are not on the stage; they are changed by writing them again
     case 'part':
     case 'step':
