@@ -691,29 +691,68 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
   function cardIsInFlow(style: ElementStyle): boolean {
     return style.near === null && style.group === null && !(typeof style.at === 'object' && style.at !== null);
   }
+  /** the card (a group with a frame) that words say `in=`, when they do */
+  function cardOfWords(element: ElementSpan): ElementSpan | null {
+    if (element.parent === null) return null;
+    const group = drawnByKey.get(element.parent);
+    return group?.figure?.kind === 'group' && group.figure.card !== undefined ? group : null;
+  }
+  /** the widest words in a card are set: what a control may take, so the frame is no wider than the stage's flow */
+  const cardWordsRoom = (fit: CanvasFit, ps: number): number => (fit.flow.width * 0.8) / ps;
+  /** what the layout is told of words in a card: they are set no wider than the card's column, so that what the card reserved is what they take */
+  const cardWordsWidth = (element: ElementSpan, fit: CanvasFit): { maxWidth?: number } => {
+    const group = cardOfWords(element);
+    return group === null ? {} : { maxWidth: cardWordsRoom(fit, planeScale(group.style.layer, viewport)) };
+  };
+  /** the room a card's words take, set as the layout will set them: the widest and the tallest of everything they may say (a bound `correct` changes them) */
+  function cardWordsSize(member: ElementSpan, tq: number, look: LookSpec, fit: CanvasFit, ps: number): { width: number; height: number } {
+    const style = styleAt(member, tq);
+    const source = sourceOf(member);
+    let width = 0;
+    let height = 0;
+    for (const words of [{ text: source.text, emphasis: source.emphasis }, ...textVariants(member)]) {
+      const set = setTextOnce({ look, viewport, text: words.text, emphasis: words.emphasis, style, shrink: 1, maxWidth: cardWordsRoom(fit, ps), align: 'left' });
+      width = Math.max(width, set.widest);
+      height = Math.max(height, set.lines.length * set.lineHeight);
+    }
+    return { width, height };
+  }
   /**
-   * The column of controls inside a card and the frame round it, measured with the card at the origin: `inner` is where the column
+   * What stands in a card at `tq`, in the order it was written: its controls and its words, each with the room it asks. The card is as wide as the
+   * widest, and what is above and below stands clear of it.
+   */
+  function cardPartsOf(group: ElementSpan, tq: number, look: LookSpec, fit: CanvasFit, ps: number, fading: boolean) {
+    const here = (member: ElementSpan): boolean => {
+      if (!member.carried && (member.enter === null || member.enter.start > tq)) return false;
+      const gone = exitOf(member);
+      return gone === null || (fading ? tq < gone.end : gone.start > tq);
+    };
+    const parts: { span: ElementSpan; order: number; width: number; height: number; layout: ControlLayout | null }[] = [];
+    for (const member of controlSpans) {
+      if (member.parent !== group.key || !here(member)) continue;
+      const spec = controlSpecOf(member);
+      const layout = spec === null ? null : controlLayoutOf({ span: member, value: spec.value, mood: CALM, maxWidth: cardWordsRoom(fit, ps), look, viewport, fit });
+      if (layout !== null) parts.push({ span: member, order: member.order, width: layout.width, height: layout.height, layout });
+    }
+    for (const member of elements) {
+      if (member.parent !== group.key || !here(member)) continue;
+      const size = cardWordsSize(member, tq, look, fit, ps);
+      if (size.height > 0) parts.push({ span: member, order: member.order, ...size, layout: null });
+    }
+    return parts.sort((a, b) => a.order - b.order);
+  }
+  /**
+   * The column of controls and words inside a card and the frame round it, measured with the card at the origin: `inner` is where the column
    * goes relative to the card's own centre, `outer` the frame. The same arithmetic draws the card and reserves its room in the flow.
    */
   function cardRoom(group: ElementSpan, tq: number, look: LookSpec, fit: CanvasFit) {
     if (group.figure?.kind !== 'group' || group.figure.card === undefined) return null;
     const ps = planeScale(group.style.layer, viewport);
     const gap = cellOf('m', viewport, look).height / ps / 4;
-    let width = 0;
-    let height = -gap;
-    let count = 0;
-    for (const member of controlSpans) {
-      if (member.parent !== group.key || (!member.carried && (member.enter === null || member.enter.start > tq))) continue;
-      const gone = exitOf(member);
-      if (gone !== null && gone.start <= tq) continue;
-      const spec = controlSpecOf(member);
-      const layout = spec === null ? null : controlLayoutOf({ span: member, value: spec.value, mood: CALM, maxWidth: (fit.flow.width * 0.8) / ps, look, viewport, fit });
-      if (layout === null) continue;
-      width = Math.max(width, layout.width);
-      height += layout.height + gap;
-      count += 1;
-    }
-    if (count === 0) return null;
+    const parts = cardPartsOf(group, tq, look, fit, ps, false);
+    if (parts.length === 0) return null;
+    const width = Math.max(...parts.map((part) => part.width));
+    const height = parts.reduce((sum, part) => sum + part.height + gap, -gap);
     const inner: Box = { x: -width / 2, y: -height / 2, width, height };
     const card = layoutCard({ owner: group.key, title: group.figure.card.title, inner, measure: measurerFor(look, viewport, group.style), look: lookOf(look, viewport, fit, ps) });
     return { inner, outer: card.outer };
@@ -860,7 +899,10 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
       const roomWide = scroll ? Math.max(1, roomRaw - (columns === 2 ? cueW / 2 : cueW)) : roomRaw;
       const roomOf = (span: ElementSpan): number => Math.min(roomWide / planeScale(span.style.layer, viewport), controlRoom(span, controlFit));
       const compact = Math.min(3, Math.max(0, level)) as 0 | 1 | 2 | 3;
-      const items: LayoutItem[] = [...baseItems];
+      const items: LayoutItem[] = baseItems.map((item) => {
+        const element = byKey.get(item.key);
+        return element === undefined ? item : { ...item, ...cardWordsWidth(element, controlFit) };
+      });
       // a control the brain set at a point of the canvas keeps its point unless that stands it on a table or a chart: then it takes its place in the flow
       const controlStyle = (span: ElementSpan, time: number): ElementStyle => (freed.has(span.key) ? { ...styleAt(span, time), at: null } : laidStyle(styleAt(span, time)));
       const liveControls: ElementSpan[] = [];
@@ -1932,22 +1974,15 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
   };
   /** The controls of a `card` (or any group) stand in a column inside it, one under another, where the group was put. */
   const stackOf = (group: ElementSpan, tq: number, look: LookSpec) => {
-    const members = controlSpans.filter((member) => member.parent === group.key && presentControl(member, tq)).sort((a, b) => a.order - b.order);
-    if (members.length === 0) return null;
     const fit = fitOfElement(group, look, tq);
     const ps = planeScale(group.style.layer, viewport);
+    const parts = cardPartsOf(group, tq, look, fit, ps, true);
+    if (parts.length === 0) return null;
     const gap = cellOf('m', viewport, look).height / ps / 4;
     const layouts = new Map<string, ControlLayout>();
-    let width = 0;
-    let height = -gap;
-    for (const member of members) {
-      const spec = controlSpecOf(member);
-      const layout = spec === null ? null : controlLayoutOf({ span: member, value: spec.value, mood: CALM, maxWidth: (fit.flow.width * 0.8) / ps, look, viewport, fit });
-      if (layout === null) continue;
-      layouts.set(member.key, layout);
-      width = Math.max(width, layout.width);
-      height += layout.height + gap;
-    }
+    for (const part of parts) if (part.layout !== null) layouts.set(part.span.key, part.layout);
+    const width = Math.max(...parts.map((part) => part.width));
+    const height = parts.reduce((sum, part) => sum + part.height + gap, -gap);
     const at = styleAt(group, tq).at;
     let middle = typeof at === 'object' && at !== null ? { x: (fit.box.x + at.x * fit.unit) / ps, y: (fit.box.y + at.y * fit.unit) / ps } : { x: (fit.flow.x + fit.flow.width / 2) / ps, y: (fit.flow.y + fit.flow.height / 2) / ps };
     const pose = typeof at === 'object' && at !== null ? null : poseAt(group.key, tq, null);
@@ -1962,11 +1997,9 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
     const inner: Box = { x: middle.x - width / 2, y: middle.y - height / 2, width, height };
     const slots = new Map<string, { x: number; y: number }>();
     let top = inner.y;
-    for (const member of members) {
-      const layout = layouts.get(member.key);
-      if (layout === undefined) continue;
-      slots.set(member.key, { x: inner.x + layout.width / 2, y: top + layout.height / 2 });
-      top += layout.height + gap;
+    for (const part of parts) {
+      slots.set(part.span.key, { x: inner.x + part.width / 2, y: top + part.height / 2 });
+      top += part.height + gap;
     }
     return { fit, ps, inner, slots, layouts };
   };
@@ -2125,6 +2158,7 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
         obstacles.push({ rect: toScreenRect(box, fit), owner: element, outline: big });
       }
     };
+    const nextBelow = new Map<string, number>();
     const callouts: { key: string; ps: number; w: number; h: number; px: number; element: ElementSpan; target: Rect; side: 'auto' | 'above' | 'below' | 'left' | 'right'; fit: CanvasFit; layer: Layer }[] = [];
     calloutLeaders = new Map();
     calloutScales = new Map();
@@ -2148,6 +2182,16 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
       if (style.near === null) {
         // Words that are a part of a group (`say in=<group>`) stand where the group's own units put them, and go with it.
         const group = element.parent === null ? undefined : drawnByKey.get(element.parent);
+        // Words in a card stand in its column, in the order written, between and under its controls: where the card's own arithmetic put them
+        const card = cardOfWords(element);
+        if (card !== null) {
+          const stack = stackOf(card, tq, look);
+          const slot = stack?.slots.get(element.key);
+          // the card cannot say where they stand: the layout's own place for them, clear of the other words, is better than the card's corner
+          if (stack === undefined || stack === null || slot === undefined) continue;
+          out.set(element.key, { x: stack.inner.x + pose.width / 2, y: slot.y });
+          continue;
+        }
         const m = group === undefined ? null : groupMatrixAt(group, schedule, tq);
         if (m === null) continue;
         const local = typeof style.at === 'object' && style.at !== null ? style.at : { x: 0, y: 0 };
@@ -2156,7 +2200,13 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
         const halfX = viewport.width / 2 - edge - w / 2;
         const halfY = viewport.height / 2 - edge - h / 2;
         const cx = Math.max(-halfX, Math.min(halfX, fit.box.x + wx * fit.unit));
-        const cy = Math.max(-viewport.height / 2 + topEdge + h / 2, Math.min(halfY, fit.box.y + wy * fit.unit));
+        let cy = Math.max(-viewport.height / 2 + topEdge + h / 2, Math.min(halfY, fit.box.y + wy * fit.unit));
+        // Words of a group that were not told where to stand do not all stand at its origin: each goes under the one before, so words never lie on words
+        if (typeof style.at !== 'object' || style.at === null) {
+          const top = Math.max(cy - h / 2, nextBelow.get(element.parent ?? '') ?? Number.NEGATIVE_INFINITY);
+          cy = Math.min(halfY, top + h / 2);
+          nextBelow.set(element.parent ?? '', top + h + cell.height * 0.25);
+        }
         out.set(element.key, { x: cx / ps, y: cy / ps });
         continue;
       }

@@ -1,0 +1,41 @@
+{
+ "id": "card-words-in-card",
+ "title": "cards of choices: the words said in a card stand in that card, in order, with their controls",
+ "family": "placement",
+ "owner": "painter",
+ "kind": "draw",
+ "found": "2026-11-16",
+ "note": "Words written in a card (the step's explanation, the line a choice answers) were drawn at the stage's top left, all on top of each other and the title, while the card showed only its buttons. A card holds its words and its controls in the order they were written, and words never land on words.",
+ "own": [
+  "no-overlap",
+  "words-in-shapes"
+ ],
+ "surface": "main",
+ "priority": "high",
+ "turns": [
+  {
+   "say": "how do I share 1000 between 4 friends, step by step",
+   "source": {
+    "log": "20261116-153129-c1",
+    "turns": [
+     "t9"
+    ]
+   },
+   "check": [
+    {
+     "k": "words-in-card"
+    },
+    {
+     "k": "words-visible",
+     "re": "Too many: that would need 12 hundreds"
+    }
+   ],
+   "do": [
+    {
+     "a": "click-control",
+     "id": "h1"
+    }
+   ]
+  }
+ ]
+}
