@@ -35,7 +35,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function launch() {
   const profile = mkdtempSync(join(tmpdir(), 'fg2-chrome-'));
-  const proc = spawn(CHROME, ['--headless=new', `--remote-debugging-port=${PORT}`, `--user-data-dir=${profile}`, '--no-first-run', '--hide-scrollbars', '--force-color-profile=srgb', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', 'about:blank'], { stdio: 'ignore' });
+  const proc = spawn(CHROME, ['--headless=new', '--mute-audio', `--remote-debugging-port=${PORT}`, `--user-data-dir=${profile}`, '--no-first-run', '--hide-scrollbars', '--force-color-profile=srgb', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', 'about:blank'], { stdio: 'ignore' });
   for (let i = 0; i < 60; i += 1) {
     try {
       const list = await (await fetch(`http://127.0.0.1:${PORT}/json`)).json();
