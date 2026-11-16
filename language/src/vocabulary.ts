@@ -932,6 +932,12 @@ export const VERB = {
     time: 'starts',
     family: 'structure',
   },
+  fill: {
+    form: 'fill <problem id> | <the answer>',
+    gist: 'Puts an answer the person gave you (by voice, by pen or in the chat) into a maths problem\'s blank. The page shows it there and checks it itself, like a typed answer. It is the only way anything gets filled in: never say you filled a blank any other way.',
+    time: 'instant',
+    family: 'mind',
+  },
   screen: {
     form: 'screen <id> phone|tablet|desktop|browser [from=<screen>[:label]] [| name]',
     gist: 'A mock-up: a device at its true size. The parts of the screen follow, one a line (nav, heading, button, field, item, image, row, col, end…); the painter lays them out. Taught by the INTERFACE chapter in the brief; on the wire its first line is the title and each later line a row, taken as written.',

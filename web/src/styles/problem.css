@@ -50,6 +50,7 @@
 }
 .pb__written { position: absolute; inset: 0; display: grid; place-items: center; color: var(--stage-accent); font-weight: 700; }
 .pb[data-plain='1'] .pb__tok--blank { min-width: max(2.7em, 150px); height: max(1.45em, 76px); margin-top: 0.3em; }
+.pb__tok--blank.is-try .pb__written { color: var(--stage-ink); }
 .pb__tok--blank.is-right { border-style: solid; background: color-mix(in srgb, var(--stage-accent) 14%, transparent); }
 .pb__tok.is-lit { color: var(--stage-accent); background: color-mix(in srgb, var(--stage-accent) 18%, transparent); box-shadow: 0 0 0 0.05em color-mix(in srgb, var(--stage-accent) 55%, transparent); }
 .pb__tok--blank.is-lit { border-style: solid; background: color-mix(in srgb, var(--stage-accent) 20%, transparent); }

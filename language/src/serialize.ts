@@ -335,6 +335,8 @@ export function serializeLine(line: Line): string {
       );
     case 'hint':
       return withText(['hint', ...(line.in === undefined ? [] : [`in=${line.in}`]), ...(line.stage === true ? ['stage=yes'] : [])], line.text);
+    case 'fill':
+      return `fill ${line.id} | ${line.text}`;
     case 'reply':
       return `reply | ${line.text}`;
     case 'end':

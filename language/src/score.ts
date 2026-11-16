@@ -296,6 +296,7 @@ function revised(origin: Line, change: ReviseLine): Line | null {
     case 'hint':
     case 'reply':
     case 'end':
+    case 'fill':
       return null;
     default:
       // Anything drawn can be restyled before it is seen; its geometry is changed by declaring it again.

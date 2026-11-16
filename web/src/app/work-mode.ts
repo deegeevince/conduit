@@ -117,11 +117,13 @@ export function mountWorkMode(options: WorkModeOptions): WorkMode {
       view = createProblemView({ spec: entry.spec, said: entry.said, calm: options.calm });
       views.set(key, view);
     }
-    if (shown === view) return;
-    shown?.element.remove();
-    shown = view;
-    stage.append(view.element);
-    view.relayout();
+    if (shown !== view) {
+      shown?.element.remove();
+      shown = view;
+      stage.append(view.element);
+      view.relayout();
+    }
+    for (const fill of entry.fills) view.fill(fill.key, fill.text);
   };
 
   function enter(): void {
@@ -151,6 +153,15 @@ export function mountWorkMode(options: WorkModeOptions): WorkMode {
     layer.style.pointerEvents = '';
     return under;
   };
+  // iOS raises its keyboard only for a focus made inside the gesture itself: a tap on the Type it button or on the blank focuses the real field here, in the
+  // trusted handler, and not only later in the click handler it dispatches
+  const focusTyped = (under: Element): void => {
+    if (under.closest('[data-act=type], .pb__tok--blank') === null) return;
+    const field = stage.querySelector<HTMLInputElement>('.pb__input');
+    if (field === null || field.closest('.pb')?.getAttribute('data-verdict') === 'right') return;
+    field.hidden = false;
+    field.focus({ preventScroll: true });
+  };
   const through = (event: PointerEvent): void => {
     if (on && event.pointerType === 'pen' && event.isTrusted && stage.querySelector('.pb') !== null) {
       if (event.type === 'pointerdown' && (event.target as Element | null)?.closest('.ink-bar') === null) {
@@ -171,7 +182,10 @@ export function mountWorkMode(options: WorkModeOptions): WorkMode {
           penPress.delete(event.pointerId);
           if (held instanceof HTMLElement) {
             if (held.tagName === 'INPUT') held.focus();
-            else held.click();
+            else {
+              held.click();
+              focusTyped(held);
+            }
           }
         }
         return;
@@ -192,6 +206,7 @@ export function mountWorkMode(options: WorkModeOptions): WorkMode {
     if (event.type === 'pointerup') {
       under.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, clientX: event.clientX, clientY: event.clientY }));
       if (under instanceof HTMLElement && ['INPUT', 'TEXTAREA'].includes(under.tagName)) under.focus();
+      else focusTyped(under);
     }
   };
   for (const type of ['pointerdown', 'pointerup', 'pointermove']) ink.ink.root.addEventListener(type, through as EventListener, true);

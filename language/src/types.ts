@@ -620,8 +620,16 @@ export interface CancelLine {
   readonly id?: string;
 }
 
+/** An answer the person gave, put in the blank of the problem it names */
+export interface ProblemFillLine {
+  readonly verb: 'fill';
+  readonly id: string;
+  readonly text: string;
+}
+
 export type Line =
   | SceneLine
+  | ProblemFillLine
   | PlanLine
   | StyleLine
   | ColorLine

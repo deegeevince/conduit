@@ -1800,6 +1800,7 @@ const TEXT_LIMIT: Readonly<Partial<Record<Verb, number>>> = {
   tune: LIMITS.text,
   figure: LIMITS.text,
   problem: LIMITS.text,
+  fill: LIMITS.text,
   app: LIMITS.text,
   screen: LIMITS.text,
   deck: LIMITS.text,
@@ -1822,7 +1823,7 @@ function isControlVerb(verb: Verb): verb is ControlVerb {
 const COLON_KEYS: ReadonlySet<string> = new Set(['is', 'tag', 'pick', 'show', 'from', 'x', 'y', 'at', 'in', 'near', 'data', 'grow', 'unit', 'step', 'value', 'send', 'form', 'layout', 'canvas', 'mood', 'pace', 'align', 'clear', 'lines', 'fill', 'stroke', 'ink', 'size', 'thick', 'enter', 'exit', 'over', 'speed', 'dur', 'scale', 'rot', 'opacity', 'layer', 'loop', 'mark', 'id', 'min', 'max', 'year', 'kind', 'type']);
 
 /** Verbs whose words come after the bar; written without one, the words are found by other signs. */
-const WORDED: ReadonlySet<string> = new Set(['say', 'node', 'button', 'toggle', 'input', 'correct', 'card', 'bind', 'deck', 'standing', 'part', 'step', 'ask', 'hint', 'reply']);
+const WORDED: ReadonlySet<string> = new Set(['fill', 'say', 'node', 'button', 'toggle', 'input', 'correct', 'card', 'bind', 'deck', 'standing', 'part', 'step', 'ask', 'hint', 'reply']);
 
 const ARROW = /\s(?:->|-->|=>|→)\s/;
 const RANGE = /^(-?\d+(?:\.\d+)?)[-–—](\d+(?:\.\d+)?)$/;
@@ -2095,6 +2096,15 @@ export function parseLine(raw: string): ParseResult {
       case 'cancel':
         line = parseCancel(head, issues);
         break;
+      case 'fill': {
+        const target = head.words[0];
+        warnUnknownPairs(head.pairs, issues);
+        line = null;
+        if (target === undefined || !isValidElementId(target)) issues.error('missing-argument', 'fill needs the id of the problem: fill p1 | 12');
+        else if (text === null || text.trim() === '') issues.error('missing-text', 'fill needs the answer after " | ": fill p1 | 12');
+        else line = { verb: 'fill', id: target, text: text.trim().slice(0, 60) };
+        break;
+      }
     }
   }
 

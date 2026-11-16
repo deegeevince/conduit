@@ -42,6 +42,8 @@ export interface ProblemView {
   state(): ProblemState;
   /** draws the ways again at the room the view has now */
   relayout(): void;
+  /** the brain put an answer the person gave (by voice, pen or chat) in the blank: shown there and marked like a typed one; once per `key` */
+  fill(key: string, text: string): void;
   dispose(): void;
 }
 
@@ -389,6 +391,10 @@ export function createProblemView(options: ProblemViewOptions): ProblemView {
     if (verdict === 'right' || reading) return;
     let given = input.value.trim();
     let written = false;
+    // a new try: what the brain put in the blank last time is cleared
+    const stale = blankNode?.querySelector<HTMLElement>('.pb__written');
+    if (stale !== null && stale !== undefined) stale.textContent = '';
+    blankNode?.classList.remove('is-try');
     if (given === '') {
       if (!penReady()) {
         say(tries.length > 0 ? 'Write your answer again in the box with the pen, then tap Check.' : 'Write your answer in the box with the pen, then tap Check.');
@@ -411,6 +417,11 @@ export function createProblemView(options: ProblemViewOptions): ProblemView {
         return;
       }
     }
+    judge(given, written ? 'pen' : 'typed');
+  }
+
+  /** an answer is marked here, whoever gave it: the pen's reading, the typed field, or the brain putting what she said in the blank */
+  function judge(given: string, how: 'pen' | 'typed' | 'said'): void {
     tries.push(given);
     const right = spec.answer.length === 0 ? false : problemAnswerRight(spec.answer, given);
     options.onTry?.(given, right);
@@ -435,7 +446,11 @@ export function createProblemView(options: ProblemViewOptions): ProblemView {
     verdict = 'wrong';
     root.dataset['verdict'] = 'wrong';
     input.value = '';
-    say(spec.answer.length === 0 ? `I cannot check this one${written ? `: I read “${given}”` : ''}.` : `${written ? `I read “${given}”. ` : ''}Not quite: have another go.`, 'wrong');
+    const shown = blankNode?.querySelector<HTMLElement>('.pb__written');
+    if (shown !== null && shown !== undefined) shown.textContent = how === 'said' ? given : '';
+    blankNode?.classList.toggle('is-try', how === 'said');
+    const lead = how === 'pen' ? `I read “${given}”. ` : how === 'said' ? `I put “${given}” in the box. ` : '';
+    say(spec.answer.length === 0 ? `I cannot check this one${how === 'pen' ? `: I read “${given}”` : ''}.` : `${lead}Not quite: have another go.`, 'wrong');
     hintButton.classList.add('is-ringed');
     showButton.hidden = usable.length === 0;
   }
@@ -481,6 +496,7 @@ export function createProblemView(options: ProblemViewOptions): ProblemView {
   fitObserver?.observe(question);
   requestAnimationFrame(fitQuestion);
 
+  const applied = new Set<string>();
   light();
   const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => {
     if (wayIndex >= 0) {
@@ -495,6 +511,13 @@ export function createProblemView(options: ProblemViewOptions): ProblemView {
   return {
     element: root,
     key,
+    fill(key, text) {
+      if (applied.has(key) || verdict === 'right') return;
+      applied.add(key);
+      stopPlaying();
+      input.value = '';
+      judge(text.trim(), 'said');
+    },
     state: () => ({ verdict, tries: [...tries], way: wayIndex < 0 ? null : (usable[wayIndex]?.way ?? null), step: wayIndex < 0 ? 0 : step, steps: drawn?.steps.length ?? 0, lit, line, playing }),
     relayout() {
       fitQuestion();

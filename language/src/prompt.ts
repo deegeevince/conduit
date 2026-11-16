@@ -337,7 +337,7 @@ const PLAIN_FX: readonly string[] = ['grain', 'glow', 'vignette', 'scanlines', '
 /** Words of v2.1 whose forms are written in "More to say with", so the list of verbs does not say them twice when the vocabulary gains them. */
 const TAUGHT_HERE: readonly string[] = ['code', 'deck', 'standing', 'refine', 'pic', 'tune'];
 /** L2: the verbs that left the kernel. Each is taught by a chapter in the brief (`drawingKit`, `pixelChapter`), on the cue of its kind of answer. */
-const CHAPTERED: readonly string[] = ['ellipse', 'poly', 'pix', 'row', 'frame', 'group', 'use', 'ambient', 'cam'];
+const CHAPTERED: readonly string[] = ['ellipse', 'poly', 'pix', 'row', 'frame', 'group', 'use', 'ambient', 'cam', 'fill'];
 
 /** The system prompt for any brain that writes Series. */
 export function buildSystemPrompt({ capabilities, services }: PromptOptions): string {

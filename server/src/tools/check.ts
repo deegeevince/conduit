@@ -478,8 +478,24 @@ class Screen {
           problems.push(...bad.map((entry) => `${way}: ${entry}`));
           await click(`.pb [data-way=${way}]`);
         }
+        // 3b. the keyboard: a real tap (a finger on a phone, a click on a desk) on "Type it" and on the blank puts the focus on the real field, inside the gesture
+        const centreOf = (selector: string): Promise<{ readonly x: number; readonly y: number } | null> => read<{ x: number; y: number } | null>(`(() => { const n = document.querySelector(${JSON.stringify(selector)}); if (!n || n.hidden) return null; const r = n.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+        const focused = (): Promise<boolean> => read<boolean>(`document.activeElement && document.activeElement.classList.contains('pb__input')`);
+        const typeAt = await centreOf('[data-act=type]');
+        if (typeAt === null) problems.push('no Type it button');
+        else {
+          await tab.tap(typeAt.x, typeAt.y);
+          if (!(await focused())) problems.push('a tap on Type it did not focus the field (no keyboard would open)');
+          await click('[data-act=type]');
+          const blankAt = await centreOf('.pb__tok--blank');
+          if (blankAt !== null) {
+            await tab.tap(blankAt.x, blankAt.y);
+            if (!(await focused())) problems.push('a tap on the blank did not focus the field (no keyboard would open)');
+          }
+          await tab.eval(`document.activeElement && document.activeElement.blur()`);
+        }
         // 4. a wrong then a right answer, typed: marked here, no turn sent
-        await click('[data-act=type]');
+        if (await read<boolean>(`document.querySelector('.pb__input').hidden`)) await click('[data-act=type]');
         await tab.eval(`document.querySelector('.pb__input').focus()`);
         await tab.type('1');
         await click('[data-act=check]');
@@ -513,6 +529,45 @@ class Screen {
         Screen.add(results, 'no-console-errors', drained.consoleErrors.map((entry) => entry.text).slice(0, 3), 'nothing logged as an error');
         const scenery: Scene = { name, seconds: (Date.now() - began) / 1000, picture: file, results };
         this.scenes.push(scenery);
+        for (const result of results) if (result.verdict === 'FAIL') this.note(`  FAIL ${name} ${result.check}: ${result.detail.slice(0, 300)}`);
+      }
+      // the brain puts an answer the person gave into the blank, in a later turn: `fill p3 | …`. It shows there and is marked locally, like a typed one; no model is asked
+      const target = problemScenes().find((scene) => scene.id === 'p3') ?? problemScenes()[0];
+      if (target !== undefined) {
+        const began = Date.now();
+        const name = 'problem-fill';
+        this.note(name);
+        tab.drain();
+        const results: CheckResult[] = [];
+        const problems: string[] = [];
+        const play = (script: string): Promise<string | null> => tab.eval<string | null>(`Promise.resolve(window.__stage.playScript(${JSON.stringify(script)})).then(() => null, (e) => String(e && e.message || e))`);
+        await play(target.script);
+        for (let waited = 0; waited < 6000 && (await q('.pb')) !== true; waited += 200) await sleep(200);
+        await talk.rest(true);
+        const sent = tab.posted.length;
+        await play(`fill ${target.id} | 1`);
+        await talk.rest(true);
+        await sleep(500);
+        const afterWrong = await read<{ readonly up: boolean; readonly verdict: string; readonly blank: string }>(`({ up: !!document.querySelector('.pb'), verdict: (document.querySelector('.pb') || { dataset: {} }).dataset.verdict || '', blank: (document.querySelector('.pb .pb__written') || {}).textContent || '' })`);
+        if (!afterWrong.up) problems.push('the workspace went away when the brain answered in a later turn');
+        if (afterWrong.verdict !== 'wrong') problems.push(`fill of a wrong answer was marked "${afterWrong.verdict}"`);
+        if (afterWrong.blank !== '1') problems.push(`the blank shows "${afterWrong.blank}", not what the brain put in it`);
+        const turnsBefore = tab.posted.length;
+        await play(`fill ${target.id} | ${target.answer}`);
+        await talk.rest(true);
+        await sleep(500);
+        const afterRight = await read<{ readonly verdict: string; readonly blank: string }>(`({ verdict: (document.querySelector('.pb') || { dataset: {} }).dataset.verdict || '', blank: (document.querySelector('.pb .pb__written') || {}).textContent || '' })`);
+        if (afterRight.verdict !== 'right') problems.push(`fill of the right answer was marked "${afterRight.verdict}"`);
+        if (afterRight.blank !== target.answer) problems.push(`the blank shows "${afterRight.blank}", not "${target.answer}"`);
+        if (tab.posted.length !== sent && tab.posted.length !== turnsBefore) problems.push('marking a filled answer sent a turn to the server');
+        // a run of underscores is not a blank: plain words never draw one
+        await play('scene stack\nsay a | 2. ______ and 3. ________\nsay b | keep this');
+        await talk.rest(true);
+        await sleep(300);
+        const fake = await read<string[]>(`window.__stage.elements().filter((e) => /_{3,}/.test(String(e.text || ''))).map((e) => e.text)`);
+        if (fake.length > 0) problems.push(`a run of underscores was drawn as a blank: "${fake[0]}"`);
+        Screen.add(results, 'problem', problems, 'a filled answer shows in the blank and is marked locally; a run of underscores is not drawn as a blank');
+        this.scenes.push({ name, seconds: (Date.now() - began) / 1000, picture: '', results });
         for (const result of results) if (result.verdict === 'FAIL') this.note(`  FAIL ${name} ${result.check}: ${result.detail.slice(0, 300)}`);
       }
     } finally {
@@ -609,7 +664,7 @@ async function runScreen(args: Args, base: string, screen: Args['screens'][numbe
     ),
   );
   // the order a reader expects: the welcome, the choice, the reduced-motion welcome, then the demos as the app lists them
-  const order = ['welcome', 'choice', 'welcome-reduced-motion', ...offered.map((name) => `demo-${name}`), ...problemScenes().map((scene) => `problem-${scene.id}`)];
+  const order = ['welcome', 'choice', 'welcome-reduced-motion', ...offered.map((name) => `demo-${name}`), ...problemScenes().map((scene) => `problem-${scene.id}`), 'problem-fill'];
   run.scenes.sort((a, b) => order.indexOf(a.name) - order.indexOf(b.name));
   if (run.renderer !== 'unknown') {
     const webgl = run.renderer === 'three';

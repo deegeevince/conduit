@@ -226,8 +226,29 @@ export interface Normalized {
  * The server runs this once per line before scheduling and forwarding, so the
  * painter only ever receives explicit lines and never needs one.
  */
+/**
+ * A run of three or more underscores in plain words is a fake blank: it looks like somewhere to write and is not. It is shown as a short line instead, and
+ * the brain is told where a real blank comes from (a `problem` for a maths question, an `ask` for a question to answer). Only words are scrubbed: code,
+ * a tune, an app and the question of a `problem` are taken exactly.
+ */
+const FAKE_BLANK = /_{3,}/g;
+function scrubBlanks(line: Line): { readonly line: Line; readonly issues: Issue[] } | null {
+  const issue: Issue = { code: 'bad-value', severity: 'warn', message: 'a run of underscores is not a blank and was shown as a short line: a maths question is a `problem` line, a question to answer an `ask`' };
+  if ((line.verb === 'say' || line.verb === 'correct' || line.verb === 'node') && typeof line.text === 'string' && FAKE_BLANK.test(line.text)) {
+    FAKE_BLANK.lastIndex = 0;
+    return { line: { ...line, text: line.text.replace(FAKE_BLANK, '–') } as Line, issues: [issue] };
+  }
+  FAKE_BLANK.lastIndex = 0;
+  if (line.verb === 'card' && line.title !== undefined && FAKE_BLANK.test(line.title)) {
+    FAKE_BLANK.lastIndex = 0;
+    return { line: { ...line, title: line.title.replace(FAKE_BLANK, '–') }, issues: [issue] };
+  }
+  FAKE_BLANK.lastIndex = 0;
+  return null;
+}
+
 /** What may follow a `problem` in its scene: more problems, the hints written for them, and what is no performance */
-const PROBLEM_COMPANY: ReadonlySet<string> = new Set(['problem', 'hint', 'style', 'color', 'look', 'standing', 'reply', 'refine', 'end', 'wait']);
+const PROBLEM_COMPANY: ReadonlySet<string> = new Set(['problem', 'fill', 'hint', 'style', 'color', 'look', 'standing', 'reply', 'refine', 'end', 'wait']);
 
 export class LineNormalizer {
   private readonly makeId: () => string;
@@ -293,6 +314,15 @@ export class LineNormalizer {
   private problemScene = false;
 
   normalize(line: Line): Normalized {
+    const scrubbed = scrubBlanks(line);
+    if (scrubbed !== null) {
+      const inner = this.normalizeLine(scrubbed.line);
+      return { line: inner.line, issues: [...scrubbed.issues, ...inner.issues] };
+    }
+    return this.normalizeLine(line);
+  }
+
+  private normalizeLine(line: Line): Normalized {
     if (line.verb === 'scene') this.problemScene = false;
     else if (this.problemScene && !PROBLEM_COMPANY.has(line.verb)) {
       return { line: null, issues: [{ code: 'no-structure', severity: 'warn', message: `a maths question is the whole screen and draws everything itself: "${line.verb}" was dropped (write the problem line alone)` }] };
