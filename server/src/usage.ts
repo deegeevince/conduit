@@ -25,7 +25,7 @@
 import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readSync, statSync } from 'node:fs';
 import { dirname } from 'node:path';
 
-export type UsageKind = 'turn' | 'review' | 'critic' | 'compare' | 'lessons' | 'ahead' | 'verify' | 'ink' | 'repair';
+export type UsageKind = 'turn' | 'review' | 'critic' | 'compare' | 'lessons' | 'ahead' | 'verify' | 'ink' | 'repair' | 'art';
 
 export interface UsageRecord {
   readonly time: string;

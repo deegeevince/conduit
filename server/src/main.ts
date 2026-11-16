@@ -29,6 +29,10 @@ import { createJsonlSessionLog } from './logs/jsonl-session-log';
 import { NO_SESSION_LOG } from './domain/session-log';
 import { createLogger } from './log';
 import { createShelf } from './art/shelf';
+import { createHeadlessLook } from './art/eyes';
+import { stagedMaker } from './art/staged';
+import { createStudio, fakeMaker, oneShotMaker } from './art/studio';
+import type { MakerSettings } from './art/studio';
 import { createPictures } from './pictures/registry';
 import { createAudit } from './audit';
 import { createKillSwitch } from './kill';
@@ -92,6 +96,23 @@ function boot(env: Env): void {
   // v3 art. The shelf of finished drawings: the seeds in the repository, and what the data folder keeps. `draw` is answered from it.
   const art = createShelf({ seedDir: fileURLToPath(new URL('../../art/seed', import.meta.url)), cacheDir: env.data.artCache, log: log.child({ part: 'art' }) });
   log.info('art.loaded', { sheets: art.count(), subjects: art.subjects().join(',') });
+  // v3 art. The studio draws what the shelf lacks, off the answer's clock, on the owner's login. Its calls are on the usage meter, and it stands down near the cap.
+  const artBin = env.brain.kind === 'claude-cli' ? env.brain.bin : (processEnvironment()['CLAUDE_BIN'] ?? 'claude');
+  const artSettings: MakerSettings = {
+    bin: artBin,
+    callMs: env.art.callMs,
+    meter: (call) => usage.record({ kind: 'art', model: call.model, session: null, turn: null, login: null, inputTokens: call.usage.inputTokens, cacheReadTokens: call.usage.cacheReadTokens, cacheWriteTokens: call.usage.cacheWriteTokens, outputTokens: call.usage.outputTokens, thinkingTokens: call.usage.thinkingTokens, costUsd: call.usage.costUsd, ms: call.usage.ms }),
+  };
+  const oneShot = oneShotMaker(artSettings);
+  const studio = createStudio({
+    policy: env.art,
+    shelf: art,
+    maker: env.art.maker === 'fake' ? fakeMaker(env.art.fakeMs, env.art.fakeStages) : env.art.maker === 'staged' ? stagedMaker({ settings: artSettings, looker: createHeadlessLook(env.art.eyesPort), fallback: oneShot }) : oneShot,
+    throttle: usage,
+    log: log.child({ part: 'art' }),
+    now,
+  });
+  log.info('art.studio', { maker: env.art.maker, perHour: env.art.perHour });
   const uploads = env.uploads ? createUploadStore({ dir: env.data.uploads, log: log.child({ part: 'uploads' }), now }) : NO_UPLOADS;
   // v2.1. Voice notes: read on this Mac by Apple's on-device recogniser (a helper built with swiftc on first use), or not taken at all with `VOICE=off`.
   const voice = env.voice.enabled
@@ -121,6 +142,7 @@ function boot(env: Env): void {
     images,
     pictures,
     art,
+    studio,
     uploads,
     voice,
     reader: createDocumentReader({ enabled: env.readLinks, log: log.child({ part: 'reading' }) }),

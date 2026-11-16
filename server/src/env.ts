@@ -12,6 +12,8 @@ import { CHROME_GIST, NO_AGENT } from './domain/agent';
 import type { AgentSettings } from './domain/agent';
 import { CRITIC_POLICY } from './domain/critic';
 import type { CriticPolicy } from './domain/critic';
+import { ART_POLICY } from './art/studio';
+import type { ArtPolicy } from './art/studio';
 import { AHEAD_POLICY } from './domain/ahead';
 import type { AheadPolicy } from './domain/ahead';
 import type { LibrarySettings } from './domain/techniques';
@@ -108,6 +110,8 @@ export interface Env {
   readonly webDist: string | null;
   /** v2.1. The live critic (`CRITIC`, `CRITIC_MODEL`, `CRITIC_EFFORT`, `CRITIC_PER_HOUR`): on by default with the claude-cli brain, off with the others */
   readonly critic: CriticPolicy;
+  /** v3 art. The studio that draws what the shelf lacks (`ART_MAKER`, `ART_PER_HOUR`): on by default with the claude-cli brain, off with the others */
+  readonly art: ArtPolicy;
   /** v3 (WS5). Fill ahead and verify (`AHEAD`, `AHEAD_PARALLEL`, `AHEAD_VERIFY_MODEL`, `AHEAD_VERIFY_EFFORT`, `AHEAD_BATCH`, `AHEAD_LIMIT`): on by default with the claude-cli brain, off with the others */
   readonly ahead: AheadPolicy;
   /** v2.1. What agent mode may use (`AGENT`, `AGENT_TOOLS`, `AGENT_SERVICES`, `AGENT_DIR`, `AGENT_ANSWER_MS`, `AGENT_PERMITS=ask|auto`): off, with nothing offered, unless the owner says */
@@ -354,6 +358,15 @@ export function loadEnv(source: Source): Env {
     lookMs: integer('CRITIC_LOOK_MS', CRITIC_POLICY.lookMs, 5_000, 300_000),
     queueBelow: CRITIC_POLICY.queueBelow,
   };
+  // v3 art. A drawing the shelf lacks is made off the answer's clock on the owner's login. `ART_MAKER=off` is the kill switch; `fake` is a test rig's.
+  const art: ArtPolicy = {
+    maker: choice('ART_MAKER', ['one', 'staged', 'off', 'fake'] as const, withModel ? 'one' : 'off'),
+    perHour: integer('ART_PER_HOUR', ART_POLICY.perHour, 0, 1_000),
+    callMs: ART_POLICY.callMs,
+    fakeMs: integer('ART_FAKE_MS', ART_POLICY.fakeMs, 0, 120_000),
+    fakeStages: choice('ART_FAKE_STAGES', ['on', 'off'] as const, 'off') === 'on',
+    eyesPort: integer('ART_EYES_PORT', ART_POLICY.eyesPort, 1024, 65_535),
+  };
   // v3, WS5. A part written ahead takes a process of its own beside the conversation's, so at most one fewer than the warm pool holds are written at once.
   const warmRoom = brain.kind === 'claude-cli' ? Math.max(1, brain.maxWarm - 1) : 1;
   const ahead: AheadPolicy = {
@@ -423,5 +436,5 @@ export function loadEnv(source: Source): Env {
   }
 
   if (problems.length > 0) throw new EnvError(problems);
-  return { production, host, trustedHosts, ownerLogins, usageCapUsd: usageCapUsd !== null && Number.isFinite(usageCapUsd) && usageCapUsd > 0 ? usageCapUsd : null, port, logLevel, brain, images, pictures, sight, promptVariant: parsePromptVariant(text('PROMPT_VARIANT')), review, library, notes, logDir, data, readLinks: choice('READ_LINKS', ['on', 'off'] as const, 'on') === 'on', paintingsPerSession: 0, exploreDir, webDist, critic, ahead, agent, modes, refine, uploads, voice, statusFile, changelogFile, sealedDir, skills: skillSettingsFrom(text('SKILL_ROOTS'), text('SKILL_SETTINGS') === undefined ? undefined : resolvePath(root, text('SKILL_SETTINGS') ?? '')) };
+  return { production, host, trustedHosts, ownerLogins, usageCapUsd: usageCapUsd !== null && Number.isFinite(usageCapUsd) && usageCapUsd > 0 ? usageCapUsd : null, port, logLevel, brain, images, pictures, sight, promptVariant: parsePromptVariant(text('PROMPT_VARIANT')), review, library, notes, logDir, data, readLinks: choice('READ_LINKS', ['on', 'off'] as const, 'on') === 'on', paintingsPerSession: 0, exploreDir, webDist, critic, art, ahead, agent, modes, refine, uploads, voice, statusFile, changelogFile, sealedDir, skills: skillSettingsFrom(text('SKILL_ROOTS'), text('SKILL_SETTINGS') === undefined ? undefined : resolvePath(root, text('SKILL_SETTINGS') ?? '')) };
 }

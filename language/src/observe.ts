@@ -140,6 +140,7 @@ const LINT: Readonly<Record<SightNote, { readonly kind: ObsKind; readonly severi
   painted: null,
   unpainted: null,
   undrawn: null,
+  pending: null,
   refused: null,
 };
 
