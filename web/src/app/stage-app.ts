@@ -141,7 +141,7 @@ export interface StageApp {
   answerMarkdown(turn?: string): string;
   playScript(text: string): Promise<string>;
   sight(): Sight | null;
-  capture(maxSide?: number): Promise<string | null>;
+  capture(maxSide?: number, mime?: 'image/jpeg' | 'image/png'): Promise<string | null>;
   /** Throws a sentence a person can act on when there is nothing to export yet. */
   export(request: ExportRequest): ExportJob;
   formats(): ReturnType<Exporter['formats']>;
@@ -1708,10 +1708,10 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     script: scriptText,
     answerMarkdown: (turn) => text.markdown(turn),
     sight: () => lastSight,
-    async capture(maxSide = 768) {
+    async capture(maxSide = 768, mime = 'image/jpeg') {
       const frame = observed.lastFrame();
       if (frame === null || !renderer.capabilities.capture) return null;
-      const blob = await renderer.rasterise(frame, { maxSide, mime: 'image/jpeg', quality: 0.8 });
+      const blob = await renderer.rasterise(frame, { maxSide, mime, ...(mime === 'image/jpeg' ? { quality: 0.8 } : {}) });
       if (blob === null) return null;
       return await new Promise<string | null>((resolve) => {
         const reader = new FileReader();

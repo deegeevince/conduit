@@ -1715,3 +1715,36 @@ body.work--ask .work-button--ask { bottom: auto; top: max(14px, env(safe-area-in
 body.work .ink-stage__bar { top: 8px; bottom: auto; left: auto; right: 12px; transform: none; max-width: calc(100% - 130px); }
 @media (max-width: 640px) { body.work .ink-stage__bar .ink-swatch:nth-of-type(n+2), body.work .ink-stage__bar .ink-bar__group + .ink-bar__group { display: none; } }
 body.work .ink-bar__words, body.work .ink-btn--send { display: none; }
+
+/* Report a problem: a small sheet with one note field, Send and Cancel. */
+.report { padding: var(--space-4); gap: var(--space-3); }
+.report[open] { display: grid; }
+.report__title { margin: 0; font-size: var(--chrome-text-size, 1.1rem); }
+.report__help { margin: 0; font-size: var(--chrome-text-size-small); color: var(--chrome-text-quiet); }
+.report__note {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 6rem;
+  padding: var(--space-2);
+  font: inherit;
+  font-size: 1rem;
+  color: var(--chrome-text);
+  background: transparent;
+  border: 1px solid var(--chrome-text-quiet);
+  border-radius: 8px;
+  resize: vertical;
+}
+.report__status { margin: 0; min-height: 1.2em; font-size: var(--chrome-text-size-small); }
+.report__row { display: flex; gap: var(--space-2); justify-content: flex-end; }
+.report__button {
+  min-height: 44px;
+  min-width: 88px;
+  padding: 0 var(--space-3);
+  font: inherit;
+  color: var(--chrome-text);
+  background: transparent;
+  border: 2px solid var(--chrome-text-quiet);
+  border-radius: 999px;
+}
+.report__button--send { border-color: var(--chrome-text); font-weight: 700; }
+.report__button:disabled { opacity: 0.5; }

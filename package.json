@@ -37,6 +37,7 @@
     "parity": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/parity.ts",
     "wall-check": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/wall-check.ts",
     "wall-bench": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/wall-bench.ts",
+    "reports": "pnpm --filter @conduit/server exec tsx src/tools/reports.ts",
     "check": "pnpm --filter @conduit/server exec tsx src/tools/check.ts",
     "smoke": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/smoke.ts",
     "scenarios": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/scenarios.ts",

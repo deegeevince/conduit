@@ -2,6 +2,9 @@
 
 Newest first. Each item is something the brain can show live when asked "showcase what's new": draw it, don't describe it. The server reads this file.
 
+## Report a problem (live)
+- Report a problem, in the + menu, saves what is on screen and what just happened, for fixing.
+
 ## Every starter shows on a phone (live)
 - On a phone the first screen now shows all seven starters. Before, the first one could go missing and leave a gap, on some phone sizes. If the choices do not fit, they are set a little smaller and closer together instead of being dropped.
 
