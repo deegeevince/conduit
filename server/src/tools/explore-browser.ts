@@ -184,6 +184,8 @@ export interface EyesOptions {
   readonly web: string | null;
   readonly port: number;
   readonly repo: string;
+  /** a query string for the harness page, without the `?` (the bake-off passes `shade=1`); absent: none */
+  readonly query?: string;
 }
 
 export async function openEyes(options: EyesOptions): Promise<Eyes> {
@@ -228,7 +230,7 @@ export async function openEyes(options: EyesOptions): Promise<Eyes> {
     const { targetId } = await browser.send<{ targetId: string }>('Target.createTarget', { url: 'about:blank' });
     const { sessionId } = await browser.send<{ sessionId: string }>('Target.attachToTarget', { targetId, flatten: true });
     await browser.send('Page.enable', {}, sessionId);
-    await browser.send('Page.navigate', { url: `${web}/explore.html#harness` }, sessionId);
+    await browser.send('Page.navigate', { url: `${web}/explore.html${options.query === undefined || options.query === '' ? '' : `?${options.query}`}#harness` }, sessionId);
 
     const evaluate = async <T>(expression: string): Promise<T> => {
       const out = await browser.send<{ result: { value?: T }; exceptionDetails?: { text: string; exception?: { description?: string } } }>(
