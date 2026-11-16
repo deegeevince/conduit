@@ -38,7 +38,7 @@ import type { ImageModel } from './images';
 import { Cast, captionId, captionLines, dropCaption, planDraw, planSwap } from '../art/draw';
 import type { Wanting } from '../art/draw';
 import { noteArt } from '../art/notes';
-import { relabel, resolveNear } from '../art/parts';
+import { bestPart, relabel, resolveNear } from '../art/parts';
 import type { Shelf } from '../art/shelf';
 import { commissionOf } from '../art/studio';
 import type { Studio, StudioEvent } from '../art/studio';
@@ -184,6 +184,8 @@ interface PendingArt {
   /** the ids of the parts on stage, once a sheet has been shown (null: the placeholder still stands) */
   shown: readonly string[] | null;
   delivering: boolean;
+  /** labels the brain wrote for parts (`near=<figure>-<word>`) while only the placeholder stood: held, as the lines they are, until the parts are there (or the drawing will not come) */
+  readonly labels: Line[];
   /** nothing more will be shown: it failed, was shown in full, or its figure was said again */
   over: boolean;
 }
@@ -1943,6 +1945,7 @@ export class Conductor {
     // v3 art. `draw` is expanded here, beside `paint` and `findPicture`: a shelf hit becomes a group and its parts, a miss a quiet placeholder.
     // The lines it makes are ingested one by one as if the brain had written them, so the log, the schedule and the page see only real lines.
     if (normalized.line.verb === 'draw') return this.drawFromShelf(s, turn, normalized.line, normalizer, pass, repairing);
+    if (this.holdsLabel(s, normalized.line)) return undefined;
     const braced = this.withoutRawBraces(turn, normalized.line);
     const line = braced.line;
     const bracedIssues: Issue[] = [];
@@ -2329,11 +2332,39 @@ export class Conductor {
     return { ...line, props: { ...(line as { props: StyleProps }).props, near: { ...near, id: found } } } as Line;
   }
 
+  /**
+   * v3 art. A label for a part (`near=giraffe1-neck`) of a figure that is still a placeholder has nothing to stand beside: it is held, as the line it
+   * is, and shown beside its part when the drawing arrives (`showArt`), or beside the placeholder if the drawing will not come (`dropCaptionOf`).
+   */
+  private holdsLabel(s: Session, line: Line): boolean {
+    const near = 'props' in line ? ((line as { props: StyleProps }).props).near : undefined;
+    if (near === undefined || line.verb === 'draw') return false;
+    for (const [id, pending] of this.drawings.get(s) ?? []) {
+      if (pending.over || pending.shown !== null || !near.id.startsWith(`${id}-`) || near.id === `${id}-soft`.slice(0, 24)) continue;
+      pending.labels.push(line);
+      this.deps.log.info('art.label_held', { session: s.id, id, near: near.id });
+      return true;
+    }
+    return false;
+  }
+
+  /** The held labels pointed at `near` (a part of the drawing, or the figure itself) when `parts` is given and has a better match. */
+  private heldLabels(pending: PendingArt, parts: readonly string[] | null): Line[] {
+    const id = pending.wanting.id;
+    return pending.labels.splice(0).map((line) => {
+      const props = (line as { props: StyleProps }).props;
+      const near = props.near;
+      if (near === undefined) return line;
+      const put = parts === null ? id : (bestPart(id, parts, near.id.slice(id.length + 1)) ?? id);
+      return { ...line, props: { ...props, near: { ...near, id: put } } } as Line;
+    });
+  }
+
   /** v3 art. Asks the studio for a drawing of what the shelf lacks. The `pending` note when it will be made; null when it will not (off, at a ceiling, near the cap), and the note stays `undrawn`. */
   private commissionArt(s: Session, wanting: Wanting): { readonly kind: 'pending'; readonly subject: string } | null {
     const { studio, log } = this.deps;
     if (studio === undefined) return null;
-    const pending: PendingArt = { wanting, next: null, final: false, shown: null, delivering: false, over: false };
+    const pending: PendingArt = { wanting, next: null, final: false, shown: null, delivering: false, labels: [], over: false };
     const accepted = studio.commission(commissionOf(wanting.subject, wanting.words, wanting, wanting.detail), (event) => this.onArt(s, pending, event));
     if (!accepted.ok) {
       log.info('art.not_commissioned', { session: s.id, id: wanting.id, subject: wanting.subject, why: accepted.why });
@@ -2388,14 +2419,19 @@ export class Conductor {
     }
     pending.over = true;
     const turn = s.turn;
-    if (limit !== null || turn === null) return;
+    if (limit !== null || turn === null) {
+      pending.labels.length = 0;
+      return;
+    }
     const live = turn.score.schedule.elements.some((element) => element.id === captionId(pending.wanting.id) && element.exit === null);
-    if (!live) return;
+    // the labels held for its parts are shown beside the placeholder, so that the words are not lost
+    const held = this.heldLabels(pending, null);
+    if (!live && held.length === 0) return;
     const normalizer = new LineNormalizer(() => {
       s.nextAutoId += 1;
       return `x${s.nextAutoId}`;
     }, Object.keys(s.stage.styles));
-    this.showInPlace(s, turn, { kind: 'repair', of: turn.id }, [{ type: 'line' as const, line: dropCaption(pending.wanting.id), issues: [] }], normalizer, false);
+    this.showInPlace(s, turn, { kind: 'repair', of: turn.id }, [...(live ? [dropCaption(pending.wanting.id)] : []), ...held].map((line) => ({ type: 'line' as const, line, issues: [] })), normalizer, false);
   }
 
   /** Puts the latest sheet of a drawing in its place when it is safe to, and says so in the log. One delivery at a time a figure; a newer sheet that arrives meanwhile is the one shown. */
@@ -2444,7 +2480,7 @@ export class Conductor {
       return parsed.kind === 'line' ? [parsed.line] : [];
     });
     if (pointed.length > 0) this.deps.log.info('art.relabel', { session: s.id, id: pending.wanting.id, labels: pointed.length });
-    const shown = this.showInPlace(s, turn, { kind: 'repair', of: turn.id }, [...planned.lines, ...pointed].map((line) => ({ type: 'line' as const, line, issues: [] })), normalizer, false);
+    const shown = this.showInPlace(s, turn, { kind: 'repair', of: turn.id }, [...planned.lines, ...this.heldLabels(pending, planned.parts), ...pointed].map((line) => ({ type: 'line' as const, line, issues: [] })), normalizer, false);
     const swap = s.turns.get(shown);
     // what the parts are called goes into the next brief, with the rest of how this turn landed
     if (swap !== undefined) noteArt(swap, pending.wanting.id, { kind: 'drawn', subject: sheet.subject, parts: planned.parts });

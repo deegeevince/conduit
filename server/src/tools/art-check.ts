@@ -91,6 +91,10 @@ export async function artGroup(base: string, screen: LensScreen, dir: string, ti
         else if (parts(first, 'giraffe1').length > 0) problems.push('the drawing was on stage before it could have been made');
         const captioned = first === null ? null : await until(4000, async () => ((await live()).some((element) => element.kind === 'text' && /Drawing a giraffe/.test(element.text)) ? true : null));
         if (first !== null && captioned === null) problems.push('no caption ("Drawing a giraffe…") under the placeholder');
+        // labels said for the parts of a drawing still on its way are held, not shown piled at the centre
+        const showing = (now: readonly Live[], words: string): boolean => now.some((element) => element.kind === 'text' && element.text.trim() === words && element.opacity > 0.05);
+        const early = await live();
+        if (first !== null && (showing(early, 'neck') || showing(early, 'face'))) problems.push('a label for a part of the pending drawing is on stage before the drawing arrived');
         // at rest with the placeholder still standing: where the move took the group
         await sleep(2500);
         const before = soft(await live(), 'giraffe1');
@@ -164,7 +168,7 @@ export async function artGroup(base: string, screen: LensScreen, dir: string, ti
     try {
       await withTab(base, screen, dir, timeoutMs, async (tab, conv, live, play) => {
         const problems: string[] = [];
-        const script = ['look dusk like=night ground=#2b1d3a ink=#f6e3c0 accent=#ffb454', 'scene captioned layout=caption', 'rect sky full layer=far fill=#3a2a55', 'rect ground 0,70 160x20 layer=bg fill=#3d5a3a', 'circle sun 120,58 14 layer=far fill=#ffb454', 'draw ostrich1 ostrich at=45,45 size=66', 'draw vole1 vole at=125,68 size=12', 'say story | A story is told under the picture, in the usual place.', 'wait 1'].join('\n');
+        const script = ['look dusk like=night ground=#2b1d3a ink=#f6e3c0 accent=#ffb454', 'scene captioned layout=caption', 'rect sky full layer=far fill=#3a2a55', 'rect ground 0,70 160x20 layer=bg fill=#3d5a3a', 'circle sun 120,58 14 layer=far fill=#ffb454', 'draw ostrich1 ostrich at=45,45 size=66', 'draw vole1 vole at=125,68 size=12', 'say story | A story is told under the picture, in the usual place.', 'say headlabel near=ostrich1-head:right | head', 'wait 1'].join('\n');
         const started = await play(script);
         if (started !== null) problems.push(`the script would not play: ${started}`);
         const placed = async (name: string): Promise<{ soft: Live; cap: Live } | null> => {
@@ -180,6 +184,8 @@ export async function artGroup(base: string, screen: LensScreen, dir: string, ti
           if (drop < -2 || drop > 60) problems.push(`the caption of ${name} is ${drop.toFixed(0)} px below its placeholder's bottom (wanted 0 to 60)`);
           if (across > Math.max(40, at.soft.box.width * 0.3)) problems.push(`the caption of ${name} is ${across.toFixed(0)} px to the side of its placeholder's middle`);
         };
+        const heldOk = await live();
+        if (heldOk.some((element) => element.kind === 'text' && element.text.trim() === 'head' && element.opacity > 0.05)) problems.push('a label for a part of the pending ostrich is on stage');
         const mouse = await until(8000, () => placed('vole1'));
         const giraffe = await until(8000, () => placed('ostrich1'));
         if (mouse === null || giraffe === null) problems.push('a placeholder or its caption is missing');
@@ -211,6 +217,42 @@ export async function artGroup(base: string, screen: LensScreen, dir: string, ti
       });
     } catch (error) {
       fail('caption', began, error);
+    }
+  }
+
+  // ---- failed ----
+  {
+    const began = Date.now();
+    note('art-maker: failed');
+    try {
+      await withTab(base, screen, dir, timeoutMs, async (tab, conv, live, play) => {
+        const problems: string[] = [];
+        const started = await play([...HEAD, 'draw unmakeable1 unmakeable at=50,50 size=46', 'say whisker near=unmakeable1-whisker:below | whisker', 'wait 1'].join('\n'));
+        if (started !== null) problems.push(`the script would not play: ${started}`);
+        await until(8000, async () => (soft(await live(), 'unmakeable1') === undefined ? null : true));
+        const shows = (now: readonly Live[]): Live | undefined => now.find((element) => element.kind === 'text' && element.text.trim() === 'whisker' && element.opacity > 0.05);
+        if (shows(await live()) !== undefined) problems.push('the label for a part is on stage while the drawing is pending');
+        // the maker fails: the label is shown beside the placeholder, so that its words are not lost
+        const label = await until(ART_FAKE_MS + 20_000, async () => shows(await live()) ?? null);
+        await sleep(1500);
+        const now = await live();
+        const placeholder = soft(now, 'unmakeable1');
+        const word = shows(now);
+        if (label === null || word === undefined) problems.push('the label was lost when the drawing could not be made');
+        else if (placeholder === undefined) problems.push('the placeholder is gone');
+        else {
+          const a = centre(word.box);
+          const b = centre(placeholder.box);
+          const reach = Math.max(placeholder.box.width, placeholder.box.height) * 0.5 + word.box.height * 2 + word.box.width / 2;
+          if (Math.hypot(a.x - b.x, a.y - b.y) > reach) problems.push(`the label is ${Math.hypot(a.x - b.x, a.y - b.y).toFixed(0)} px from the placeholder (more than ${reach.toFixed(0)})`);
+        }
+        await conv.rest(null, false).catch(() => undefined);
+        const picture = `${dir}/art-failed.png`;
+        await tab.shot().then((data) => writeFile(picture, Buffer.from(data.split(',')[1] ?? '', 'base64'))).catch(() => undefined);
+        result('failed', picture, began, problems, 'a label for a part was held while the drawing was pending, and shown beside the placeholder when the drawing could not be made');
+      });
+    } catch (error) {
+      fail('failed', began, error);
     }
   }
 
