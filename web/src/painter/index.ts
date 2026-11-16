@@ -598,6 +598,18 @@ export function createPainter(options: PainterOptions): Painter {
   const emitMilestones = (milestones: ReturnType<Reporter['observe']>): void => {
     for (const item of milestones) {
       const element = item.element;
+      if (item.kind === 'shown') {
+        // Read aloud hears each line of words and each ask as it begins, in a card or not
+        const home = element.parent === null ? undefined : timeline.schedule.elements.find((candidate) => candidate.key === element.parent);
+        if (home === undefined || home.kind === 'group') {
+          if (element.kind === 'text' && element.figure === null && element.text !== '') {
+            const tappable = element.changes.reduce<boolean>((tap, change) => (change.kind === 'set' && change.start <= item.time ? change.style.tap : tap), element.style.tap);
+            emit('transcript', { kind: 'said', key: element.key, text: timeline.wordsAt(element, item.time), tappable, near: element.style.near !== null });
+          } else if (element.kind === 'control' && element.figure?.kind === 'control' && element.figure.ask !== undefined) {
+            emit('transcript', { kind: 'said', key: element.key, text: element.text, tappable: false, near: false, ask: { options: element.figure.control === 'pick' ? element.figure.options : [] } });
+          }
+        }
+      }
       // The parts of a group are told once, as the group.
       if (element.parent !== null) continue;
       if (item.kind === 'shown') {
@@ -1304,8 +1316,12 @@ export function createPainter(options: PainterOptions): Painter {
       void readPen(site);
       return;
     } else if (zone.part === 'check') act = askCheck(span, typed);
-    else if (zone.part === 'hint') act = askHint(span);
-    else if (zone.part === 'show') {
+    else if (zone.part === 'hint') {
+      act = askHint(span);
+      // the hint that has just opened, for read aloud
+      const opened = span.figure?.kind === 'control' ? span.figure.ask?.hints[askRun(span).hints - 1] : undefined;
+      if (act !== null && opened !== undefined) emit('transcript', { kind: 'hint', key: site.key, text: opened });
+    } else if (zone.part === 'show') {
       act = askShow(span);
       // the answer is put in the field: what the person sees is what was given up on
     }

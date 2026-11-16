@@ -46,6 +46,8 @@ export interface PlayerPort {
   inkCheck(node: string, ask: string): void;
   /** she asked for a clean sheet to write on */
   inkClear(node: string, ask: string): void;
+  /** words for the page to read aloud if she has Read aloud on: as they arrive (`tap` false), or because she tapped them (`tap` true) */
+  say(text: string, tap: boolean): void;
 }
 
 /** What is on screen when it is not the part the cursor rests on. Ephemeral: the cursor is what is kept. */
@@ -99,6 +101,9 @@ export class Player {
   private wrote = 0;
   /** what the reader saw in her last working at an ask, by ask: said before the hint when it was not right */
   private readonly sees = new Map<string, string>();
+  /** read aloud: the steps and questions already offered to be read, so a redraw never reads one twice; and whether the first drawing (a page that has just opened) is done */
+  private readonly told = new Set<string>();
+  private drawn = false;
 
   constructor(
     private readonly root: HTMLElement,
@@ -107,6 +112,13 @@ export class Player {
   ) {
     this.input = input;
     this.state = input.state;
+    // a tap on words reads them (the page says nothing unless Read aloud is on)
+    root.addEventListener('click', (event) => {
+      if (!(event.target instanceof Element) || event.target.closest('button, a, input, textarea, select, [data-slot], .fig') !== null) return;
+      const words = event.target.closest<HTMLElement>('.words, .ask-prompt, .ctx-text, .hint, .verdict, .ask-note');
+      const text = words?.textContent?.trim() ?? '';
+      if (text !== '') this.port.say(text, true);
+    });
     // a document she has not begun opens on its map; one she has begun opens where she was
     this.screen = (input.state.progress[input.state.cursor.node]?.seen ?? 0) === 0 ? { kind: 'map', node: input.doc.root } : null;
   }
@@ -297,6 +309,7 @@ export class Player {
       if (node !== null) this.part(page, node);
     }
     this.root.replaceChildren(page);
+    this.readNew();
     window.scrollTo(x, y);
     this.watch();
     this.fit();
@@ -307,6 +320,25 @@ export class Player {
         field.focus({ preventScroll: true });
         if (keep.at !== null) field.setSelectionRange(keep.at, keep.at);
       }
+    }
+  }
+
+  /** The step she has just come to and the question it ends on are offered to be read aloud once each (never on the first drawing of a page that has just opened). */
+  private readNew(): void {
+    const first = !this.drawn;
+    this.drawn = true;
+    for (const el of this.root.querySelectorAll<HTMLElement>('.say.latest .words, .ask.open .ask-prompt')) {
+      const owner = el.closest<HTMLElement>('[data-step], [data-ask]');
+      if (owner === null) continue;
+      const key = `${this.state.cursor.node}:${owner.dataset['step'] ?? `ask.${owner.dataset['ask'] ?? ''}`}`;
+      if (this.told.has(key)) continue;
+      this.told.add(key);
+      if (first) continue;
+      const text = el.textContent?.trim() ?? '';
+      if (text === '') continue;
+      this.port.say(text, false);
+      const picks = [...(owner.querySelectorAll<HTMLElement>('.choices .choice') ?? [])].map((choice) => choice.firstChild?.textContent?.trim() ?? '').filter((label) => label !== '');
+      if (el.classList.contains('ask-prompt') && picks.length > 1) this.port.say(`You can choose: ${picks.slice(0, -1).join(', ')} or ${picks[picks.length - 1] ?? ''}`, false);
     }
   }
 
@@ -763,6 +795,9 @@ export class Player {
           h('button', { type: 'button', class: 'btn soft hint-btn', 'data-act': 'hint', onclick: () => {
             this.apply({ kind: 'held', node: node.id, key, value: asked + 1 });
             this.render();
+            // the hint she has just opened is read aloud
+            const opened = [...this.root.querySelectorAll<HTMLElement>('.nudge.hints .hint[data-hint]')].pop();
+            if (opened?.textContent) this.port.say(opened.textContent, false);
             requestAnimationFrame(() => this.revealBelowPaper('.nudge.hints'));
           } }, asked === 0 ? 'Help' : 'More'),
         );

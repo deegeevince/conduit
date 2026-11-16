@@ -71,6 +71,22 @@ let asked = 0;
 let flush = 0;
 const waiting = new Map<string, StateChange>();
 
+/** Words for the page to read aloud (it does so only when the person has Read aloud on): in pieces the bridge takes, the first of a tap saying it should cut in. */
+function speak(text: string, tap: boolean): void {
+  const pieces = text.match(/[^.!?]+[.!?]*\s*/g) ?? [text];
+  let line = '';
+  const out: string[] = [];
+  for (const piece of pieces) {
+    if (line !== '' && line.length + piece.length > 260) {
+      out.push(line);
+      line = '';
+    }
+    line += piece;
+  }
+  if (line.trim() !== '') out.push(line);
+  out.forEach((part, at) => bridge?.send(tap && at === 0 ? 'saytap' : 'say', part.trim().slice(0, 290)));
+}
+
 function tell(change: StateChange): void {
   const wire = encode(change);
   if (wire !== null) bridge?.send(wire.name, wire.value);
@@ -157,7 +173,7 @@ function watchSlot(): void {
 
 function start(input: LessonInput): void {
   if (root === null) return;
-  player = new Player(root, input, { commit, open: (id) => bridge?.send('open', id), openPart: (id) => bridge?.send('openpart', id), picture: () => bridge?.send('picture', 1), inkCheck: (node, ask) => bridge?.send('inkcheck', JSON.stringify([node, ask])), inkClear: (node, ask) => bridge?.send('inkclear', JSON.stringify([node, ask])) });
+  player = new Player(root, input, { commit, open: (id) => bridge?.send('open', id), openPart: (id) => bridge?.send('openpart', id), picture: () => bridge?.send('picture', 1), inkCheck: (node, ask) => bridge?.send('inkcheck', JSON.stringify([node, ask])), inkClear: (node, ask) => bridge?.send('inkclear', JSON.stringify([node, ask])), say: (text, tap) => speak(text, tap) });
   player.render();
   player.landOnPaper();
   reportSlot();

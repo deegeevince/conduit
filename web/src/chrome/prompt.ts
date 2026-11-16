@@ -4,6 +4,8 @@ import type { Photo, PhotoPort } from './photos';
 import { mountVoice } from './voice';
 import type { Voice, VoicePort } from './voice';
 import { mountComposerMenu } from './menu';
+import { pageSpeaker } from './speak';
+import { mountSpeak } from './speak-ui';
 import type { ComposerMenu } from './menu';
 import { mountSkills } from './skills';
 import type { HeldSkill, SkillPort, SkillShelf } from './skills';
@@ -96,6 +98,7 @@ export function mountPromptBar(
         }
         <textarea class="prompt__input" id="${inputId}" name="prompt" rows="1" placeholder="${ASK}" aria-describedby="${inputId}-hint" enterkeyhint="send" maxlength="${PROMPT_MAX_CHARS}" autocomplete="off" autocapitalize="sentences" spellcheck="true"></textarea>
         <span class="visually-hidden" id="${inputId}-hint">Enter sends, Shift and Enter make a new line. You can also paste a link or a long text. Lines starting with a slash are commands: /help lists them.</span>
+        <button class="composer__btn prompt__speak" type="button" aria-label="Read aloud" aria-pressed="false" title="Read answers aloud" hidden></button>
         ${handlers.voice === undefined ? '' : '<button class="composer__btn prompt__voice" type="button" aria-label="Record a voice note" aria-pressed="false" title="Record a voice note: tap to start and stop, or hold while you speak. It is read on your Mac and goes nowhere else."></button>'}
         <button class="composer__btn prompt__button" type="button" aria-label="Send" title="Send">${SEND}</button>
       </form>
@@ -115,10 +118,30 @@ export function mountPromptBar(
   const button = root.querySelector<HTMLButtonElement>('.prompt__button');
   const plus = root.querySelector<HTMLButtonElement>('.composer__plus');
   const mic = root.querySelector<HTMLButtonElement>('.prompt__voice');
+  const speakButton = root.querySelector<HTMLButtonElement>('.prompt__speak');
   if (status === null || top === null || float === null || activity === null || notice === null || extra === null || composer === null || cancel === null || form === null || input === null || button === null || plus === null) {
     throw new Error('The prompt bar could not be built.');
   }
   const menu = mountComposerMenu(plus, root);
+  // Read aloud: the browser's own voice, on this device. A new message, Stop and a voice note all stop it at once.
+  const speaker = pageSpeaker();
+  let speakNote: HTMLElement | null = null;
+  let speakNoteTimer = 0;
+  const noteSpeak = (text: string): void => {
+    if (speakNote === null) {
+      speakNote = document.createElement('p');
+      speakNote.className = 'prompt__status prompt__speaknote';
+      speakNote.setAttribute('role', 'status');
+      float.append(speakNote);
+    }
+    speakNote.textContent = text;
+    speakNote.hidden = false;
+    window.clearTimeout(speakNoteTimer);
+    speakNoteTimer = window.setTimeout(() => {
+      if (speakNote !== null) speakNote.hidden = true;
+    }, 7000);
+  };
+  const speakUi = speakButton === null ? null : mountSpeak(speakButton, speaker, menu, noteSpeak);
   const tray = handlers.photos === undefined ? null : mountPhotoTray(form, handlers.photos, () => undefined);
   const shelf: SkillShelf | null = handlers.skills === undefined ? null : mountSkills(menu, form, handlers.skills, () => input.focus({ preventScroll: true }));
   let voice: Voice | null = null;
@@ -185,6 +208,7 @@ export function mountPromptBar(
     const text = typed === '' ? (skills.length > 0 && photos.length === 0 && !extra ? (shelf?.bareWords(skills) ?? '') : extra && photos.length === 0 ? '' : photos.length === 1 ? 'Please look at this photo.' : 'Please look at these photos.') : typed;
     const held = tray?.held() ?? [];
     const spoken = voice?.ids() ?? [];
+    speaker.stop();
     input.value = '';
     fit();
     const sending = [...skills];
@@ -200,6 +224,7 @@ export function mountPromptBar(
   if (mic !== null && handlers.voice !== undefined) {
     mic.innerHTML = '';
     voice = mountVoice(mic, form, input, handlers.voice, {
+      onRecording: (recording) => speaker.hold(recording),
       onWords: (words, send) => {
         const there = input.value.trim();
         input.value = there === '' ? words : `${there} ${words}`;
@@ -209,6 +234,9 @@ export function mountPromptBar(
       },
     }, { menu });
   }
+
+  // the first touch of the microphone silences the voice before the mic is even open
+  mic?.addEventListener('pointerdown', () => speaker.stop());
 
   const refocus = (): void => {
     if (!coarse.matches) input.focus();
@@ -224,14 +252,17 @@ export function mountPromptBar(
   });
 
   button.addEventListener('click', () => {
-    if (busy) handlers.onStop();
-    else submit();
+    if (busy) {
+      speaker.stop();
+      handlers.onStop();
+    } else submit();
     refocus();
   });
 
   const onKey = (event: KeyboardEvent): void => {
     if (event.key !== 'Escape' || event.defaultPrevented || !busy || document.querySelector('dialog[open]') !== null) return;
     event.preventDefault();
+    speaker.stop();
     handlers.onStop();
   };
   document.addEventListener('keydown', onKey);
@@ -293,6 +324,8 @@ export function mountPromptBar(
       tray?.dispose();
       shelf?.dispose();
       voice?.dispose();
+      speakUi?.dispose();
+      window.clearTimeout(speakNoteTimer);
       root.remove();
     },
   };

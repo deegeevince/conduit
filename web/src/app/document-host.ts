@@ -160,6 +160,11 @@ export class DocumentHost {
       if (Array.isArray(read) && typeof read[0] === 'string' && typeof read[1] === 'string') (name === 'inkcheck' ? this.handlers.onInkCheck : this.handlers.onInkClear)?.(read[0], read[1]);
       return;
     }
+    if (name === 'say' || name === 'saytap') {
+      // read aloud (chrome/speak-reader.ts listens): the words are the lesson's own, and nothing is said unless the person has switched Read aloud on
+      if (typeof value === 'string' && value !== '') window.dispatchEvent(new CustomEvent('conduit:say', { detail: { text: value, tap: name === 'saytap' } }));
+      return;
+    }
     if (name === 'openpart') {
       if (typeof value === 'string') this.handlers.onOpenPart?.(value);
       return;

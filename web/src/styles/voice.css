@@ -119,3 +119,57 @@
   opacity: 1;
   cursor: pointer;
 }
+
+/* Read aloud (web/src/chrome/speak-ui.ts): the speaker switch beside the microphone. Off is a struck speaker; on is a speaker with its waves; while a voice is speaking it shows
+   a stop square in a quiet ring that breathes (still, with reduced motion), and pressing it stops the voice and leaves Read aloud on. */
+.prompt__speak {
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.prompt__speak[hidden] {
+  display: none;
+}
+
+.prompt__speak.speak--on {
+  color: var(--stage-accent, var(--chrome-text));
+}
+
+.prompt__speak .speak__off {
+  stroke-width: 2;
+}
+
+.prompt__speak.speak--speaking {
+  background: color-mix(in srgb, var(--chrome-text) 12%, transparent);
+  animation: speak-breathe 1.6s ease-in-out infinite;
+}
+
+@keyframes speak-breathe {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--chrome-text) 28%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 5px color-mix(in srgb, var(--chrome-text) 0%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .prompt__speak.speak--speaking {
+    animation: none;
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--chrome-text) 28%, transparent);
+  }
+}
+
+.voice--busy .prompt__speak,
+.voice--say .prompt__speak {
+  display: none;
+}
+
+.speak__try {
+  justify-content: center;
+  width: 100%;
+  cursor: pointer;
+}

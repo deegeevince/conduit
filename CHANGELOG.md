@@ -2,6 +2,10 @@
 
 Newest first. Each item is something the brain can show live when asked "showcase what's new": draw it, don't describe it. The server reads this file.
 
+## Read aloud (new)
+- There is a speaker button in the message box, beside the microphone. Turn it on and Conduit reads its answers out loud as they appear: the words, the headings, the questions it asks you, and a hint when you tap it. Choices are read at the end ("You can choose: A, B or C"). Labels on a drawing, code, tables and chart numbers are never read. Tap any block of words on the screen to hear just that one. While it is speaking the button becomes a stop button.
+- It uses the voice that is already on your iPad or Mac, so nothing is sent anywhere. In the + menu, "Voice and speed" picks the voice and slow, normal or fast (slow to start with). It stops when you send a message, press Stop, record a voice note, or leave the page. Maths like "1 000 = ___ ÷ 3" is read as "1000 equals blank divided by 3".
+
 ## Voice and drawing, out of the way (live)
 - The drawing tools fold down to one small pen in the corner, so they never sit on the answer. The pen still draws while they are folded, and tapping it opens them again. Your choice is remembered on that device; a phone starts folded.
 - Recording happens inside the message box now, no box pops up. While you talk it shows the sound and the time, with a cross to throw it away, a tick to turn it into words you can edit, and an arrow to send it straight away.
