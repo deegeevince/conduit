@@ -17,6 +17,8 @@ export interface InkBarOptions {
   readonly allowEmptyWords?: boolean;
   /** the finger-draws toggle on touch screens (default true) */
   readonly fingerToggle?: boolean;
+  /** the bar can fold down to one small pen button (the stage's bar, which floats over the work); the choice is remembered on this device. Default false. */
+  readonly collapsible?: boolean;
 }
 
 export interface InkBar {
@@ -28,7 +30,31 @@ export interface InkBar {
   dispose(): void;
 }
 
+const FOLD_KEY = 'conduit.ink.bar';
+
+/** Whether the bar starts folded: what this device chose last, else folded on a phone and open on an iPad or a desktop. */
+function startsFolded(): boolean {
+  try {
+    const kept = localStorage.getItem(FOLD_KEY);
+    if (kept === 'collapsed') return true;
+    if (kept === 'open') return false;
+  } catch {
+    // a browser that will not remember is not a problem
+  }
+  const small = Math.min(window.screen?.width || window.innerWidth, window.screen?.height || window.innerHeight);
+  return window.matchMedia('(pointer: coarse)').matches ? small < 600 : window.innerWidth < 640;
+}
+
+function keepFolded(folded: boolean): void {
+  try {
+    localStorage.setItem(FOLD_KEY, folded ? 'collapsed' : 'open');
+  } catch {
+    // as above
+  }
+}
+
 const ICON = {
+  fold: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M6 10l6 6 6-6"/></svg>',
   pen: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M4 20l1-4L16.5 4.5a2.1 2.1 0 013 3L8 19z"/><path d="M14.5 6.5l3 3"/></svg>',
   highlighter: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M9 14l6-9 5 4-7 8z"/><path d="M9 14l-3 5h5l2-2"/><path d="M4 21h16" opacity=".5"/></svg>',
   eraser: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M8 20h11"/><path d="M5 15l8-9a2 2 0 013 0l3 3a2 2 0 010 3l-6 6H9z"/><path d="M9 11l6 6"/></svg>',
@@ -134,7 +160,36 @@ export function mountInkBar(host: HTMLElement, ink: Ink, options: InkBarOptions)
   const status = document.createElement('p');
   status.className = 'ink-bar__status';
   status.setAttribute('role', 'status');
-  bar.append(tools, colours, history, send, status);
+  // Folding: one small pen pill that never covers more than itself, and a fold button at the head of the open bar. The layer still draws either way.
+  if (options.collapsible === true) {
+    const pill = button('Show drawing tools', ICON.pen, 'ink-btn--pill');
+    const fold = button('Hide drawing tools', ICON.fold, 'ink-btn--fold');
+    pill.setAttribute('aria-expanded', 'false');
+    fold.setAttribute('aria-expanded', 'true');
+    const fold1 = document.createElement('div');
+    fold1.className = 'ink-bar__group ink-bar__fold';
+    fold1.append(fold);
+    const apply = (folded: boolean): void => {
+      bar.classList.toggle('ink-bar--collapsed', folded);
+      pill.hidden = !folded;
+      fold1.hidden = folded;
+      if (folded) status.textContent = '';
+    };
+    pill.addEventListener('click', () => {
+      keepFolded(false);
+      apply(false);
+      fold.focus({ preventScroll: true });
+    });
+    fold.addEventListener('click', () => {
+      keepFolded(true);
+      apply(true);
+      pill.focus({ preventScroll: true });
+    });
+    bar.append(pill, fold1, tools, colours, history, send, status);
+    apply(startsFolded());
+  } else {
+    bar.append(tools, colours, history, send, status);
+  }
   host.append(bar);
 
   let sending = false;

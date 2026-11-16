@@ -2,6 +2,12 @@
 
 Newest first. Each item is something the brain can show live when asked "showcase what's new": draw it, don't describe it. The server reads this file.
 
+## Voice and drawing, out of the way (live)
+- The drawing tools fold down to one small pen in the corner, so they never sit on the answer. The pen still draws while they are folded, and tapping it opens them again. Your choice is remembered on that device; a phone starts folded.
+- Recording happens inside the message box now, no box pops up. While you talk it shows the sound and the time, with a cross to throw it away, a tick to turn it into words you can edit, and an arrow to send it straight away.
+- If the mic hears nothing for three seconds it stops and tells you, instead of letting you talk into nothing. A recording is only ever sent once.
+- The microphone is asked for once and kept for a couple of minutes, so the iPad stops asking each time.
+
 ## Words inside a card stay in the card (live)
 - Words written in a card now stand in that card, in the order they were written, above or under its choices; a line that answers a choice sits right under it. Before, they were all drawn at the top left of the screen, on top of each other and on the title. Words that belong to a thing and were not told where to stand now go one under another, so text never lands on other text.
 

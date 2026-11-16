@@ -1,6 +1,6 @@
 // The composer: one pill. `+` (a menu: photo, camera, draw, save), a field that rests at one line and grows only while typing, the microphone, and Send
 // (which reads Stop while a reply is being made). It takes no row of its own for a status: what needs saying (a refusal, a stop, a failure) sits above the
-// pill for as long as it is true, and the photos being sent and the voice strip appear there only while they are in use.
+// pill for as long as it is true, and the photos being sent appear there only while they are in use; the voice recorder is the pill itself.
 // Photos and voice notes are the chrome's own pieces (chrome/photos.ts, chrome/voice.ts); this file only gives them a place.
 
 import { PROMPT_MAX_CHARS, UPLOAD_LIMITS } from '@conduit/language';
@@ -52,7 +52,6 @@ export function mountComposer(host: HTMLElement, handlers: ComposerHandlers): Co
   host.innerHTML = `
     <div class="composer__status" hidden><span class="composer__text"></span><button type="button" class="composer__cancel" hidden>Cancel</button></div>
     <p class="vh composer__announce" role="status"></p>
-    <div class="shcomposer__float"></div>
     <form class="pill" autocomplete="off">
       <button type="button" class="pill__btn pill__plus composer__plus" aria-label="More: photo, draw, save, transcript, model" title="More">${PLUS}</button>
       <input class="vh" type="file" accept="image/*,application/pdf,.pdf" multiple tabindex="-1" aria-hidden="true" data-photos="pick" />
@@ -74,7 +73,6 @@ export function mountComposer(host: HTMLElement, handlers: ComposerHandlers): Co
   const announcer = part('.composer__announce');
   const form = part<HTMLFormElement>('.pill');
   const plus = part<HTMLButtonElement>('.pill__plus');
-  const float = part('.shcomposer__float');
   const field = part<HTMLTextAreaElement>('.pill__field');
   const mic = part<HTMLButtonElement>('.pill__voice');
   const send = part<HTMLButtonElement>('.pill__send');
@@ -163,7 +161,7 @@ export function mountComposer(host: HTMLElement, handlers: ComposerHandlers): Co
   };
   document.addEventListener('keydown', onKey);
 
-  voice = mountVoice(mic, float, field, handlers.voice, {
+  voice = mountVoice(mic, form, field, handlers.voice, {
     onWords: (words, now) => {
       const there = field.value.trim();
       field.value = there === '' ? words : `${there} ${words}`;
@@ -172,7 +170,7 @@ export function mountComposer(host: HTMLElement, handlers: ComposerHandlers): Co
       if (now) submit();
       else field.focus({ preventScroll: true });
     },
-  });
+  }, { menu });
 
   cancel.addEventListener('click', () => onCancel?.());
   refresh();
