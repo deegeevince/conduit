@@ -2,6 +2,9 @@
 
 Newest first. Each item is something the brain can show live when asked "showcase what's new": draw it, don't describe it. The server reads this file.
 
+## Every starter shows on a phone (live)
+- On a phone the first screen now shows all seven starters. Before, the first one could go missing and leave a gap, on some phone sizes. If the choices do not fit, they are set a little smaller and closer together instead of being dropped.
+
 ## Maths help happens on the canvas (live)
 - Ask for help with a maths question, typed or photographed, and the answer is the question itself on the canvas: retyped big, with a blank to answer, a hint behind a tap, and a choice of ways to see it (groups, a number line, a bar) drawn a step at a time.
 - The question takes the whole screen. The composer steps back to a small Ask button, Done puts the screen back, the pen writes anywhere on it, and your ink stays while a hint or a layout changes underneath. A finger still presses Check and Hint.

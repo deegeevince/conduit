@@ -122,6 +122,11 @@ Conduit works well on a phone or an iPad, and the pen works with a finger or an 
 - **More tools are opt-in.** With Claude, your own browser (through Claude in Chrome), a folder and other services can be connected; each is off unless you list it in `AGENT_SERVICES` or `AGENT_DIR`.
 - **Only you over the network.** Served over Tailscale, only the logins in `OWNER_LOGINS` get in; any other request that is not from your own machine is refused.
 
+## Tests
+
+`pnpm check` is the free browser check: it starts its own server on the replay brain, plays the welcome and every demo in headless Chrome at desk and phone sizes, and needs no model or account. CI runs it on every push.
+`pnpm smoke --url <server>` drives a real conversation against a server with a live brain, and `pnpm catalogue` replays the real-browser cases in `catalogue/`; both are run by hand.
+
 ## Project layout
 
 ```

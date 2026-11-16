@@ -38,7 +38,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { NEW_COMMAND_TEXT } from '@conduit/language';
 import { spawnTracked } from '../brains/claude-cli/process';
-import { Cdp, CHROME_CANDIDATES, sleep, stop, waitFor } from './explore-browser';
+import { Cdp, CHROME_CANDIDATES, chromeFlags, sleep, stop, waitFor } from './explore-browser';
 
 // ---------------------------------------------------------------------------------------------------------------------------------
 // What is asked
@@ -466,7 +466,7 @@ export class Tab {
     const profile = await mkdtemp(join(tmpdir(), 'conduit-smoke-'));
     const child = spawnTracked(
       chrome,
-      ['--headless=new', '--use-angle=metal', '--ignore-gpu-blocklist', '--no-first-run', '--no-default-browser-check', '--remote-debugging-port=0', `--user-data-dir=${profile}`, `--window-size=${width},${height}`, 'about:blank'],
+      [...chromeFlags(), '--remote-debugging-port=0', `--user-data-dir=${profile}`, `--window-size=${width},${height}`, 'about:blank'],
       undefined,
       { quiet: true },
     );

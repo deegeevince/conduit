@@ -1462,7 +1462,8 @@ function footRows(units: readonly Unit[], width: number, ctx: Context, limit?: n
   let laid = footRowsAt(units, width, ctx, 1);
   // Given the height the foot has, a choice is never let go while setting the choices a step smaller (the same steps) makes them fit
   if (limit !== undefined && laid.height > limit + EPS) {
-    for (const k of ctx.viewport.width < 600 ? [] : [0.85, 0.72]) {
+    // (a phone too: full size while the foot holds them, a step smaller each time it does not, rather than letting a choice go)
+    for (const k of [0.85, 0.72, 0.62, 0.52]) {
       const tighter = footRowsAt(units, width, ctx, k);
       if (tighter.height < laid.height - EPS) laid = tighter;
       if (laid.height <= limit + EPS) return laid;
@@ -1480,7 +1481,8 @@ function footRows(units: readonly Unit[], width: number, ctx: Context, limit?: n
 
 function footRowsAt(units: readonly Unit[], width: number, ctx: Context, k: number): { rows: FootRow[]; height: number; vgap: number; hgap: number } {
   const hgap = 2 * ctx.bodyW;
-  const vgap = ctx.bodyH * 0.75;
+  // set smaller, the choices also stand closer (the touch target of each stays whole)
+  const vgap = ctx.bodyH * 0.75 * Math.max(0.15, (k - 0.4) / 0.6);
   const rows: { blocks: Block[]; width: number; height: number }[] = [];
   for (const unit of units) {
     const block = makeBlock(unit.main, k, width, 0, null, ctx);

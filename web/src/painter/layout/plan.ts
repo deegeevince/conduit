@@ -154,7 +154,10 @@ export function planStage(input: PlanInput): StagePlan {
 
   // 1. the foot
   const wanted = input.footHeight(safe.width);
-  const footHeight = Math.min(wanted, safe.height * (blocks.length > 0 ? FOOT_SHARE_MAX : FOOT_SHARE_MAX_WORDS));
+  // With only words and choices the choices may take more than their share when the words leave the room: a choice is never let go while it fits
+  const share = safe.height * (blocks.length > 0 ? FOOT_SHARE_MAX : FOOT_SHARE_MAX_WORDS);
+  const room = blocks.length > 0 || wanted <= share ? share : Math.max(share, safe.height - input.flowHeight(safe.width) - gap);
+  const footHeight = Math.min(wanted, room);
   const foot: Box | null = wanted > 0 ? { x: safe.x, y: safe.y + safe.height - footHeight, width: safe.width, height: footHeight } : null;
   const column: Box = foot === null ? safe : { x: safe.x, y: safe.y, width: safe.width, height: Math.max(1, safe.height - footHeight - gap) };
 
