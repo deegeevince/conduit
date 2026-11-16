@@ -22,7 +22,7 @@ import type { CanvasFit } from './canvas';
 import { contrastRatio, mapToGamut } from './colour';
 import { ease } from './ease';
 import { bodySize } from './layout/metrics';
-import { morphedOutline, wobbled } from './outline';
+import { dashed, morphedOutline, wobbled } from './outline';
 import { has, own } from './own';
 import { castInk, litFrom, shadeIsOn, strengthFor } from './shade';
 import { laidOutOf } from './registry';
@@ -1029,7 +1029,34 @@ function strokeOf(trans: Trans, look: LookSpec, flash: number, progress: number)
   else return null;
   if (flash > 0) colour = mixHex(colour, strongest(look), flash);
   const width = lerp(trans.from.thick ?? look.stroke.thick, trans.to.thick ?? look.stroke.thick, trans.p);
-  return { colour, width, progress, character: trans.to.brush ?? look.stroke.character };
+  const profile = pressureOf(trans.to.thickAlong);
+  const colours = trans.to.strokeAlong !== null && to !== 'none' ? gradedOf(trans, to, colour, look, flash) : null;
+  return {
+    colour,
+    width,
+    progress,
+    character: trans.to.brush ?? look.stroke.character,
+    ...(profile !== null && { pressure: profile }),
+    ...(colours !== null && { along: colours }),
+  };
+}
+
+/** `thick=a>b>c` as shares of the widest, or null when the widths do not vary or there is nothing to vary. */
+function pressureOf(widths: readonly number[] | null): readonly number[] | null {
+  if (widths === null || widths.length < 2) return null;
+  const widest = Math.max(...widths);
+  return widest > 0 ? widths.map((w) => w / widest) : null;
+}
+
+/** `stroke=c1>c2`: the colours along the stroke, the first having come from the stroke's colour a moment ago when it is changing. */
+function gradedOf(trans: Trans, to: Paint, colour: Colour, look: LookSpec, flash: number): readonly Colour[] {
+  const stops = [to, ...(trans.to.strokeAlong ?? [])].map((paint) => paintColour(paint, look));
+  const earlier = trans.p >= 1 || trans.from.stroke === 'none' ? null : paintColour(trans.from.stroke, look);
+  const strong = flash > 0 ? strongest(look) : null;
+  return stops.map((stop, i) => {
+    const mixed = earlier === null || i > 0 ? stop : mixHex(earlier, stop, trans.p);
+    return strong === null ? mixed : mixHex(mixed, strong, flash);
+  }).map((stop, i) => (i === 0 ? colour : stop));
 }
 
 const outlineMemo = new WeakMap<readonly Polyline[], Map<string, readonly Polyline[]>>();
@@ -1046,6 +1073,24 @@ function wobbledFor(lines: readonly Polyline[], seed: string, amount: number): r
   if (found === undefined) {
     found = wobbled(lines, seed, amount);
     byKey.set(memo, found);
+  }
+  return found;
+}
+
+const dashMemo = new WeakMap<readonly Polyline[], Map<string, readonly Polyline[] | null>>();
+
+/** `outline` cut into dashes, remembered for as long as the outline is the same one. */
+function dashedFor(lines: readonly Polyline[], dash: readonly [number, number]): readonly Polyline[] | null {
+  let byDash = dashMemo.get(lines);
+  if (byDash === undefined) {
+    byDash = new Map();
+    dashMemo.set(lines, byDash);
+  }
+  const memo = `${dash[0]},${dash[1]}`;
+  let found = byDash.get(memo);
+  if (found === undefined) {
+    found = dashed(lines, dash[0], dash[1]);
+    byDash.set(memo, found);
   }
   return found;
 }
@@ -1310,14 +1355,18 @@ function shapeFrame(placed: Placed, frm: Frm): ShapeFrame | null {
   const edged = fill !== null && !fullBleed && placed.trans.to.bleed !== 'none' && !underPainting(placed.el, frm.standing, frm.sc) && standsWhereWritten(placed) ? bleedOutline(morph.polylines, placed, frm) : { lines: morph.polylines, key: '' };
   const stroke = strokeOf(placed.trans, look, placed.flash, draw);
   const lit = frm.lit && !fullBleed ? lightOf(placed, fill, stroke, look, draw, morph.polylines) : null;
+  const outline = wobbledFor(edged.lines, placed.el.key, amount);
+  const dash = placed.trans.to.dash;
+  const cut = dash !== null && stroke !== null && !fullBleed ? dashedFor(outline, dash) : null;
   return {
     kind: 'shape',
     key: placed.key,
     id: placed.owner.id,
     layer: layerOf(placed),
     z: placed.z,
-    outline: wobbledFor(edged.lines, placed.el.key, amount),
-    geometryKey: `${placed.key}|${morph.token}|${look.name}|${amount}${edged.key === '' ? '' : `|bleed${edged.key}`}`,
+    outline,
+    ...(cut !== null && { strokeOutline: cut }),
+    geometryKey: `${placed.key}|${morph.token}|${look.name}|${amount}${edged.key === '' ? '' : `|bleed${edged.key}`}${cut === null || dash === null ? '' : `|dash${dash[0]},${dash[1]}`}`,
     transform: toStage(placed, frm, env),
     fill: spanned(lit === null ? fill : lit.fill, edged.key !== '', morph.polylines),
     stroke: lit === null ? stroke : lit.stroke,

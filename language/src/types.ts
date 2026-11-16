@@ -41,6 +41,7 @@ import type {
   StrokeCharacter,
   StructureVerb,
   Texture,
+  Blend,
   TuneVoice,
   Weight,
   AppShelf,
@@ -78,6 +79,8 @@ export interface Gradient<C> {
   readonly from: C;
   /** the colour at its bottom */
   readonly to: C;
+  /** colours between the two, in order, spread evenly (`fill=a>b>c` is `from` a, `to` c, `mid` [b]) */
+  readonly mid?: readonly C[];
 }
 
 export type FillRef = ColourRef | 'none' | Gradient<ColourRef>;
@@ -110,8 +113,22 @@ export interface StyleProps {
   readonly stroke?: ColourRef | 'none';
   /** whether a filled shape touching the canvas edge runs on to the screen edge; absent means `auto` */
   readonly bleed?: Bleed;
-  /** outline thickness, canvas units */
+  /** outline thickness, canvas units; with `thickAlong`, the widest of them */
   readonly thick?: number;
+  /** `thick=a>b>c`: the width at stops spread evenly along the stroke, canvas units */
+  readonly thickAlong?: readonly number[];
+  /** `stroke=c1>c2>…`: the colours after the first (which is `stroke`), spread evenly along the stroke */
+  readonly strokeAlong?: readonly ColourRef[];
+  /** `dash=on,off`: the stroke broken into dashes, canvas units */
+  readonly dash?: readonly [number, number];
+  /** `clip=<shape id>`: paint only inside that shape */
+  readonly clip?: string;
+  /** how the paint meets what is under it; absent means `normal` */
+  readonly blend?: Blend;
+  /** a gradient fill runs out from the middle of the shape */
+  readonly radial?: boolean;
+  /** a linear gradient's direction, degrees: 0 runs top to bottom, 90 left to right */
+  readonly angle?: number;
   /** the character of this one line; absent means the look's own */
   readonly brush?: StrokeCharacter;
   /** what the fill is made of; absent means `flat` */

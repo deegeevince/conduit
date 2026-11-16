@@ -127,6 +127,16 @@ export interface StrokeFrame {
   /** 0..1: the share of the outline's whole length that has been drawn, in the order its polylines are listed */
   readonly progress: number;
   readonly character: StrokeCharacter;
+  /**
+   * `thick=a>b>c`: how wide the stroke is at stops spread evenly along its length, as shares of `width` (the widest is 1), as pressure
+   * would make it. Absent: one width. A renderer that cannot vary a width draws the mean.
+   */
+  readonly pressure?: readonly number[];
+  /**
+   * `stroke=c1>c2`: the colour at stops spread evenly along the stroke's length, the first being `colour`. Absent: one colour. A renderer
+   * that cannot grade a line draws the mean of them.
+   */
+  readonly along?: readonly Colour[];
 }
 
 export interface FillFrame {
@@ -145,7 +155,21 @@ export interface FillFrame {
    * v2.1. The top and height, in the shape's own units, that a gradient runs over, when the outline has been made to run on past what
    * the brain drew (bleed). Absent: the outline's own box. A flat fill ignores it.
    */
-  readonly span?: { readonly top: number; readonly height: number };
+  readonly span?: { readonly top: number; readonly height: number; readonly left?: number; readonly width?: number };
+  /** the colours of a gradient with more than two stops, first to last, spread evenly; `colour` and `to` are its ends */
+  readonly stops?: readonly Colour[];
+  /** a gradient running out from the middle of the shape's box, not across it */
+  readonly radial?: boolean;
+  /** a linear gradient's direction, degrees: 0 runs top to bottom (the default), 90 left to right */
+  readonly angle?: number;
+}
+
+/** Another shape's outline, as one shape is painted only inside it (`clip=<id>`): the clip's own units and the matrix to the layer's plane. */
+export interface ShapeClip {
+  readonly key: string;
+  readonly outline: readonly Polyline[];
+  readonly geometryKey: string;
+  readonly transform: Affine;
 }
 
 /**
@@ -163,6 +187,11 @@ export interface ShapeFrame {
   readonly z: number;
   /** canvas units (polylines of the figure's own space); `transform` carries them to the layer's plane */
   readonly outline: readonly Polyline[];
+  /**
+   * `dash=on,off`: the outline's stroke cut into dashes, each its own open polyline. Absent: the stroke runs along `outline`. The fill is
+   * always made from `outline`. A renderer draws the stroke from this when it has it.
+   */
+  readonly strokeOutline?: readonly Polyline[];
   readonly geometryKey: string;
   readonly transform: Affine;
   readonly fill: FillFrame | null;
@@ -172,6 +201,10 @@ export interface ShapeFrame {
   readonly bleed: boolean;
   /** v2.1: see `Clip`. A shape with `bleed` is never clipped by the renderer and the painter never sets both. */
   readonly clip?: Clip;
+  /** `clip=<id>`: drawn only inside this other shape (on the same layer). A renderer without a way to cut to a shape draws it whole. */
+  readonly clipTo?: ShapeClip;
+  /** `blend=`: how the paint meets what is under it. Absent: over it. A renderer that cannot blend draws it over. */
+  readonly blend?: 'multiply' | 'screen';
   readonly tappable: boolean;
   /**
    * How far the shape's edge fades out, in the shape's own units (`soft=`): light, cloud, shadow. Absent or 0 is a hard edge.

@@ -63,6 +63,11 @@ export const DEMOS = [
     summary: 'A brush for each stroke character, a texture for each fill, a soft edge, a gradient and a painting the renderer makes itself.',
   },
   {
+    name: 'toolkit',
+    title: 'Toolkit',
+    summary: 'A painter\'s tools on lines the brain draws: dashes along a stroke, pressure, a graded colour, packed strokes that each taper alone, and gradients, glazes and clips.',
+  },
+  {
     name: 'art',
     title: 'Art',
     summary: 'Finished drawings from the shelf: a fox and a child by name, a mirrored fox, a label on a part, a move of the whole figure, and a quiet placeholder where the shelf has nothing yet.',

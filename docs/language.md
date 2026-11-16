@@ -891,6 +891,19 @@ A new structure, chart kind or control is one entry in its table in `vocabulary.
 | `tap` | `yes` `no` | any | mind | yes makes it a choice the user can tap |
 | `dur` | Ns | any | hand | exact entrance length |
 
+### Painter's tools
+
+Settings on a line the brain draws, taught in the drawing brief. None of them places anything.
+
+| Word | Takes | Meaning |
+| --- | --- | --- |
+| `dash` | on,off | breaks the stroke into dashes along its own length, in canvas units |
+| `thick` | a>b>c | width along the stroke, like pressure: thin, full, thin |
+| `stroke` | c1>c2 | colour along the stroke |
+| `clip` | <shape id> | paints only inside that shape |
+| `blend` | normal \| multiply \| screen | multiply glazes, screen lights |
+| `fill` | a>b>c, radial, angle=N | a gradient of any number of stops; radial from the middle; angle turns it (0 top to bottom, 90 left to right) |
+
 ### Built-in styles
 
 | Style | Defined as | Meaning |
@@ -1404,6 +1417,10 @@ The painter renders these media by itself: `watercolor`, `oil`, `gouache`, `ink`
 | `partial` | the answer stopped while it was still arriving |
 | `painted` | the painting arrived and replaced the sketch |
 | `unpainted` | no painting arrived; the sketch is what was seen |
+| `undrawn` | the shelf has no drawing of this subject yet: a soft placeholder stands in its place, so draw it with shapes if the picture needs it |
+| `pending` | a drawing of this subject is being made and will replace the soft placeholder in a minute or two: leave it, and do not draw it again with shapes. Labels written for its parts wait for the drawing and appear beside the parts: do not rewrite them |
+| `drawn` | a drawing from the shelf, made of named parts (listed with it): label one with near=<figure>-<part>, and never redraw it with shapes |
+| `refused` | this subject is not drawn here (a real person, a brand, a named character, or something not for a young child): a soft placeholder stands in its place |
 
 ### Look presets
 

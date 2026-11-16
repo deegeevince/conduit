@@ -18,8 +18,14 @@ export interface StrokeBuffers {
   readonly offset: Float32Array;
   /** -1 or 1 across the ribbon, 0 at the middle: coverage is anti-aliased from it */
   readonly edge: Float32Array;
-  /** share of the whole outline's length, 0..1 */
+  /** share of the whole outline's length, 0..1: what drawing on is measured by */
   readonly dist: Float32Array;
+  /**
+   * What the brush shader measures its stroke by: the share of this stroke's own length, then that length in shape units, then which stroke
+   * of the outline it is. Each sub-path of a path is a stroke of its own, with its own start, taper and run-out (3 numbers a vertex).
+   * Dashes are the one exception: they are pieces of one stroke, so they share its length.
+   */
+  readonly sub: Float32Array;
   /** how sharply the line turns here, 0..1 */
   readonly turn: Float32Array;
   readonly index: Uint32Array;
@@ -64,6 +70,15 @@ export function outlineLength(outline: readonly Polyline[]): number {
       if (a !== undefined && b !== undefined) total += Math.hypot(b.x - a.x, b.y - a.y);
     }
   }
+  return total;
+}
+
+function lineLength(points: readonly P[], closed: boolean): number {
+  let total = 0;
+  for (let i = 0; i + 1 < points.length; i++) total += Math.hypot((points[i + 1]?.x ?? 0) - (points[i]?.x ?? 0), (points[i + 1]?.y ?? 0) - (points[i]?.y ?? 0));
+  const first = points[0];
+  const last = points[points.length - 1];
+  if (closed && first !== undefined && last !== undefined) total += Math.hypot(first.x - last.x, first.y - last.y);
   return total;
 }
 
@@ -230,8 +245,16 @@ class Ribbon {
   readonly offset: number[] = [];
   readonly edge: number[] = [];
   readonly dist: number[] = [];
+  readonly sub: number[] = [];
   readonly turn: number[] = [];
   readonly index: number[] = [];
+  /** where the stroke being laid begins in the outline's length, and how long it is (shape units), and which it is */
+  start = 0;
+  span = 1;
+  scale = 1;
+  part = 0;
+  /** the outline's whole length and the stroke's own, when the stroke is not the whole outline */
+  own = true;
 
   vertex(p: P, ox: number, oy: number, edge: number, dist: number, turn: number): number {
     const at = this.position.length / 2;
@@ -239,6 +262,8 @@ class Ribbon {
     this.offset.push(ox, oy);
     this.edge.push(edge);
     this.dist.push(dist);
+    // `dist` is the outline's share; the stroke's own share is how far into it this is.
+    this.sub.push(this.own ? Math.min(1, Math.max(0, (dist * this.scale - this.start) / Math.max(this.span, EPS))) : dist, this.own ? this.span : this.scale, this.part);
     this.turn.push(turn);
     return at;
   }
@@ -273,20 +298,26 @@ interface Pair {
   readonly outRight: number;
 }
 
-export function buildStroke(outline: readonly Polyline[]): StrokeBuffers | null {
+/** `whole`: the polylines are pieces of one stroke (dashes) and not strokes of their own (the sub-paths of a path). */
+export function buildStroke(outline: readonly Polyline[], whole = false): StrokeBuffers | null {
   const lines = outline.map(cleaned).filter((line) => line.points.length >= 1);
   const total = outlineLength(outline);
   if (lines.length === 0) return null;
   const ribbon = new Ribbon();
   const scale = Math.max(total, EPS);
+  ribbon.scale = scale;
+  ribbon.own = !whole;
   let travelled = 0;
 
-  for (const { points, closed } of lines) {
+  lines.forEach(({ points, closed }, partIndex) => {
     const count = points.length;
+    ribbon.part = partIndex;
+    ribbon.start = travelled;
+    ribbon.span = lineLength(points, closed);
     if (count === 1) {
       const only = points[0];
       if (only !== undefined) ribbon.fan(only, { x: 0, y: 0 }, 0, Math.PI * 2, travelled / scale, 0);
-      continue;
+      return;
     }
     // Stations: where the ribbon turns. A closed line returns to its first point, which is the same place at a longer distance.
     const stations: Station[] = [];
@@ -380,7 +411,7 @@ export function buildStroke(outline: readonly Polyline[]): StrokeBuffers | null 
       ribbon.triangle(a.outLeft, a.outRight, b.inLeft);
       ribbon.triangle(a.outRight, b.inRight, b.inLeft);
     }
-  }
+  });
 
   if (ribbon.index.length === 0) return null;
   return {
@@ -388,6 +419,7 @@ export function buildStroke(outline: readonly Polyline[]): StrokeBuffers | null 
     offset: new Float32Array(ribbon.offset),
     edge: new Float32Array(ribbon.edge),
     dist: new Float32Array(ribbon.dist),
+    sub: new Float32Array(ribbon.sub),
     turn: new Float32Array(ribbon.turn),
     index: new Uint32Array(ribbon.index),
     length: total,

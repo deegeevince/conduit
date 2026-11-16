@@ -6,6 +6,7 @@ import { layerZ, projectToScreen } from '../contracts/space';
 import { chartBoxOf, clipQuad } from '../render/place';
 import type { Vec3 } from '../contracts/space';
 import type { Layer } from '@conduit/language';
+import { mixHex } from '../painter/affine';
 
 export interface SvgSize {
   readonly width: number;
@@ -164,16 +165,60 @@ function textSvg(element: ElementFrame, frame: Frame, fonts: Map<string, Rendere
   return `<g id="${escapeXml(element.id)}" transform="${matrix(local)}">${out.join('')}</g>`;
 }
 
+/** A value read off stops spread evenly over 0..1, in between by a straight line. */
+function across(stops: readonly number[], t: number): number {
+  const f = Math.min(1, Math.max(0, t)) * (stops.length - 1);
+  const i = Math.min(stops.length - 2, Math.floor(f));
+  const a = stops[i] ?? 1;
+  return a + ((stops[i + 1] ?? a) - a) * (f - i);
+}
+
+function colourAcross(stops: readonly string[], t: number): string {
+  const f = Math.min(1, Math.max(0, t)) * (stops.length - 1);
+  const i = Math.min(stops.length - 2, Math.floor(f));
+  return mixHex(stops[i] ?? '#000000', stops[i + 1] ?? stops[i] ?? '#000000', f - i);
+}
+
+/** A polyline cut at even steps along it, each piece with where along the line (0..1) its middle lies. */
+function pieces(points: readonly { x: number; y: number }[], closed: boolean, count: number): { points: { x: number; y: number }[]; middle: number }[] {
+  const ring = closed && points.length > 1 ? [...points, points[0] as { x: number; y: number }] : [...points];
+  const cumulative = [0];
+  for (let i = 1; i < ring.length; i += 1) cumulative.push((cumulative[i - 1] ?? 0) + Math.hypot((ring[i]?.x ?? 0) - (ring[i - 1]?.x ?? 0), (ring[i]?.y ?? 0) - (ring[i - 1]?.y ?? 0)));
+  const total = cumulative[cumulative.length - 1] ?? 0;
+  if (!(total > 0) || count < 2) return [{ points: [...points], middle: 0.5 }];
+  const at = (d: number): { x: number; y: number } => {
+    let i = 1;
+    while (i < cumulative.length - 1 && (cumulative[i] ?? 0) < d) i += 1;
+    const span = (cumulative[i] ?? 0) - (cumulative[i - 1] ?? 0);
+    const t = span > 0 ? Math.min(1, Math.max(0, (d - (cumulative[i - 1] ?? 0)) / span)) : 0;
+    const p = ring[i - 1] ?? { x: 0, y: 0 };
+    const q = ring[i] ?? p;
+    return { x: p.x + (q.x - p.x) * t, y: p.y + (q.y - p.y) * t };
+  };
+  const out: { points: { x: number; y: number }[]; middle: number }[] = [];
+  for (let k = 0; k < count; k += 1) {
+    const from = (total * k) / count;
+    const to = (total * (k + 1)) / count;
+    const piece = [at(from)];
+    for (let i = 1; i < ring.length - 1; i += 1) if ((cumulative[i] ?? 0) > from && (cumulative[i] ?? 0) < to) piece.push(ring[i] as { x: number; y: number });
+    piece.push(at(to));
+    out.push({ points: piece, middle: (k + 0.5) / count });
+  }
+  return out;
+}
+
 function shapeSvg(shape: ShapeFrame, frame: Frame, defs: string[]): string {
   const project = projectorFor(frame, shape.layer);
   const a = shape.transform;
-  const polylines = shape.outline.map((line) =>
-    line.points.map((point) => {
-      const plane = apply(a, point.x, point.y);
-      const screen = project(plane.x, plane.y);
-      return { x: screen.x, y: screen.y, scale: screen.scale };
-    }),
-  );
+  const projected = (lines: ShapeFrame['outline']): { x: number; y: number; scale: number }[][] =>
+    lines.map((line) =>
+      line.points.map((point) => {
+        const plane = apply(a, point.x, point.y);
+        const screen = project(plane.x, plane.y);
+        return { x: screen.x, y: screen.y, scale: screen.scale };
+      }),
+    );
+  const polylines = projected(shape.outline);
   let minX = Infinity;
   let minY = Infinity;
   let maxX = -Infinity;
@@ -218,24 +263,47 @@ function shapeSvg(shape: ShapeFrame, frame: Frame, defs: string[]): string {
   const stroke = shape.stroke;
   if (stroke !== null && stroke.progress > 0.0005 && !shape.bleed) {
     const width = Math.max(1.25, stroke.width * unit);
-    const lengths = polylines.map((points, i) => {
+    // The stroke is the dashes when it has been cut into dashes; the fill is always the whole outline.
+    const lines = shape.strokeOutline ?? shape.outline;
+    const strokes = shape.strokeOutline === undefined ? polylines : projected(lines);
+    const lengths = strokes.map((points, i) => {
       let length = 0;
       for (let k = 1; k < points.length; k += 1) length += Math.hypot((points[k]?.x ?? 0) - (points[k - 1]?.x ?? 0), (points[k]?.y ?? 0) - (points[k - 1]?.y ?? 0));
-      if (shape.outline[i]?.closed === true && points.length > 1) length += Math.hypot((points[0]?.x ?? 0) - (points[points.length - 1]?.x ?? 0), (points[0]?.y ?? 0) - (points[points.length - 1]?.y ?? 0));
+      if (lines[i]?.closed === true && points.length > 1) length += Math.hypot((points[0]?.x ?? 0) - (points[points.length - 1]?.x ?? 0), (points[0]?.y ?? 0) - (points[points.length - 1]?.y ?? 0));
       return length;
     });
     const total = lengths.reduce((sum, length) => sum + length, 0);
     let budget = Math.min(1, stroke.progress) * total;
     const pixel = stroke.character === 'pixel';
-    polylines.forEach((points, i) => {
+    const pressure = stroke.pressure;
+    const colours = stroke.along;
+    // Pressure and a graded colour are drawn as short pieces, each at the width and colour of where it lies: the stroke's own length is the whole
+    // outline when it is dashes and the polyline itself otherwise. While it is still drawing on, it is one piece at the mean.
+    const graded = (pressure !== undefined || colours !== undefined) && stroke.progress >= 1 && !pixel;
+    let before = 0;
+    strokes.forEach((points, i) => {
       const length = lengths[i] ?? 0;
-      const closed = shape.outline[i]?.closed ?? false;
+      const closed = lines[i]?.closed ?? false;
       const drawn = Math.min(length, Math.max(0, budget));
       budget -= length;
+      const start = before;
+      before += length;
       if (drawn <= 0 || points.length === 0) return;
+      if (graded && length > 0) {
+        const count = Math.max(1, Math.min(32, Math.ceil(length / 8)));
+        for (const piece of pieces(points, closed, count)) {
+          const where = shape.strokeOutline === undefined ? piece.middle : (start + piece.middle * length) / Math.max(total, 1e-9);
+          const w = pressure === undefined ? width : Math.max(1.25, width * across(pressure, where));
+          const colour = colours === undefined ? stroke.colour : colourAcross(colours, where);
+          parts.push(`<path d="${pathOf(piece.points, false)}" fill="none" stroke="${colour}" stroke-width="${n(w)}" stroke-linecap="round" stroke-linejoin="round"/>`);
+        }
+        return;
+      }
+      const mean = pressure === undefined ? 1 : pressure.reduce((sum, share) => sum + share, 0) / pressure.length;
       const dash = drawn >= length - 0.01 ? '' : ` stroke-dasharray="${n(drawn)} ${n(length + 1)}"`;
+      const colour = colours === undefined ? stroke.colour : colourAcross(colours, 0.5);
       parts.push(
-        `<path d="${pathOf(points, closed)}" fill="none" stroke="${stroke.colour}" stroke-width="${n(width)}" stroke-linecap="${pixel ? 'butt' : 'round'}" stroke-linejoin="${pixel ? 'miter' : 'round'}"${dash}/>`,
+        `<path d="${pathOf(points, closed)}" fill="none" stroke="${colour}" stroke-width="${n(Math.max(1.25, width * mean))}" stroke-linecap="${pixel ? 'butt' : 'round'}" stroke-linejoin="${pixel ? 'miter' : 'round'}"${dash}/>`,
       );
     });
   }

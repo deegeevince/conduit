@@ -1,0 +1,20 @@
+# Toolkit: the painter's own tools on a line the brain draws. Dashes that follow a stroke, a width that swells and thins like pressure, a colour
+# that grades along a stroke, packed strokes that each taper alone, and a gradient of many stops. pnpm check plays it and looks for them on screen.
+
+look paper
+scene draw free calm
+color deep=#1b2a49
+color sea=#2f7f9a
+color foam=#e8f2f4
+color ember=#e0742a
+color straw=#e8c85a
+rect sky 0,0 160x90 fill=deep>foam
+path dashed stroke=foam thick=1.4 dash=5,2.5 | M8,22 C30,2 50,44 76,24 C90,14 100,18 104,28
+path inked stroke=foam brush=ink thick=2.4 dash=9,3 | M8,44 C30,28 52,64 78,46 C92,38 100,40 104,48
+circle ring 130,24 14 fill=straw stroke=ember thick=1.2 dash=3,2
+rect frame 112,46 40x20 stroke=foam thick=1 dash=4,2
+path pressure stroke=foam thick=0.3>3.2>0.3 | M8,70 C28,56 52,84 80,68 C92,62 100,64 104,70
+path graded stroke=ember>straw>foam thick=2.6 | M8,82 C30,70 56,92 82,80 C94,74 102,76 106,82
+path packed stroke=foam brush=dry thick=1.4 | M112,76 L128,74 M112,81 L130,80 M134,75 L152,73 M134,82 L152,80
+say | Dashes, pressure, a graded colour, and packed strokes that each taper alone.
+wait 4

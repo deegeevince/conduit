@@ -58,6 +58,7 @@ import {
   STAY,
   STRIKE_SECONDS,
   STROKE,
+  PAINT_PROP,
   STYLE_PROP,
   TIME_FORM,
   VERB,
@@ -124,6 +125,19 @@ sections.push(
       const values = [spec.values === null ? '' : spec.values.map((value) => `\`${value}\``).join(' '), spec.also ?? ''].filter((part) => part !== '').join('; ');
       return `| \`${name}\` | ${values.replaceAll('|', '\\|')} | ${spec.scope} | ${spec.level} | ${spec.gist} |`;
     }),
+    '',
+  ].join('\n'),
+);
+
+sections.push(
+  [
+    '### Painter\'s tools',
+    '',
+    'Settings on a line the brain draws, taught in the drawing brief. None of them places anything.',
+    '',
+    '| Word | Takes | Meaning |',
+    '| --- | --- | --- |',
+    ...Object.entries(PAINT_PROP).map(([name, spec]) => `| \`${name}\` | ${spec.also.replaceAll('|', '\\|')} | ${spec.gist} |`),
     '',
   ].join('\n'),
 );

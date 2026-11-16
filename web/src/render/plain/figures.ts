@@ -5,6 +5,7 @@
 import type { Layer } from '@conduit/language';
 import type { Affine, FigureFrame, PictureFrame, ShapeFrame, SpriteFrame } from '../../contracts/frame';
 import { layerZ, projectToScreen } from '../../contracts/space';
+import { mixHex } from '../../painter/affine';
 import { clipQuad } from '../place';
 import type { CameraPose, Viewport } from '../../contracts/space';
 
@@ -24,6 +25,8 @@ interface Node {
   readonly outer: SVGGElement;
   readonly root: SVGGElement;
   readonly body: SVGElement;
+  /** the stroke, as a path of its own, when it is not the fill's outline (dashes) */
+  extra: SVGPathElement | null;
   readonly layer: Layer;
   /** attributes as last written, so an unchanged frame touches nothing */
   readonly written: Map<string, string>;
@@ -35,7 +38,7 @@ function px(value: number): string {
 }
 
 function put(node: Node, target: Element, name: string, value: string): void {
-  const key = `${target === node.outer ? 'o' : target === node.root ? 'r' : 'b'}:${name}`;
+  const key = `${target === node.outer ? 'o' : target === node.root ? 'r' : target === node.extra ? 'x' : 'b'}:${name}`;
   if (node.written.get(key) === value) return;
   node.written.set(key, value);
   if (value === '') target.removeAttribute(name);
@@ -56,6 +59,15 @@ function screenMatrix(transform: Affine, layer: Layer, camera: CameraPose, viewp
   return { a: right.x - origin.x, b: right.y - origin.y, c: down.x - origin.x, d: down.y - origin.y, e: origin.x, f: origin.y };
 }
 
+/** The mean of some colours. */
+function meanColour(colours: readonly string[]): string {
+  let mean = colours[0] ?? '#000000';
+  colours.forEach((colour, i) => {
+    if (i > 0) mean = mixHex(mean, colour, 1 / (i + 1));
+  });
+  return mean;
+}
+
 function matrixText(m: Affine): string {
   return `matrix(${px(m.a)} ${px(m.b)} ${px(m.c)} ${px(m.d)} ${px(m.e)} ${px(m.f)})`;
 }
@@ -64,9 +76,9 @@ function scaleOf(m: Affine): number {
   return Math.sqrt(Math.abs(m.a * m.d - m.b * m.c));
 }
 
-function pathData(shape: ShapeFrame): string {
+function pathData(shape: ShapeFrame, lines: ShapeFrame['outline'] = shape.outline): string {
   const parts: string[] = [];
-  for (const line of shape.outline) {
+  for (const line of lines) {
     line.points.forEach((p, i) => parts.push(`${i === 0 ? 'M' : 'L'}${px(p.x)} ${px(p.y)}`));
     if (line.closed && line.points.length > 0) parts.push('Z');
   }
@@ -98,7 +110,7 @@ export function createPlainFigures(host: HTMLElement): PlainFigures {
     const outer = document.createElementNS(SVG, 'g');
     outer.appendChild(root);
     svg.appendChild(outer);
-    return { outer, root, body, layer: figure.layer, written: new Map(), shape: '' };
+    return { outer, root, body, extra: null, layer: figure.layer, written: new Map(), shape: '' };
   };
 
   const gradient = (layer: Layer, id: string, from: string, to: string): void => {
@@ -207,7 +219,20 @@ export function createPlainFigures(host: HTMLElement): PlainFigures {
       node.shape = key;
       body.setAttribute('d', pathData(figure));
       node.written.delete('b:d');
+      if (figure.strokeOutline !== undefined) {
+        // Dashes are the stroke of a path of their own; the fill keeps the whole outline.
+        if (node.extra === null) {
+          node.extra = document.createElementNS(SVG, 'path');
+          node.root.appendChild(node.extra);
+        }
+        node.extra.setAttribute('d', pathData(figure, figure.strokeOutline));
+      } else if (node.extra !== null) {
+        node.extra.remove();
+        node.extra = null;
+        for (const name of node.written.keys()) if (name.startsWith('x:')) node.written.delete(name);
+      }
     }
+    const line = node.extra ?? body;
     const scale = Math.max(1e-6, scaleOf(m));
     const stroke = figure.stroke;
     put(node, node.root, 'transform', figure.bleed ? '' : matrixText(m));
@@ -228,18 +253,24 @@ export function createPlainFigures(host: HTMLElement): PlainFigures {
       put(node, body, 'fill', `url(#${id})`);
       put(node, body, 'fill-opacity', figure.fill.opacity >= 1 ? '' : px(figure.fill.opacity));
     }
-    if (stroke === null) {
+    if (node.extra !== null) {
       put(node, body, 'stroke', 'none');
-      put(node, body, 'stroke-dasharray', '');
+      put(node, node.extra, 'fill', 'none');
+    }
+    if (stroke === null) {
+      put(node, line, 'stroke', 'none');
+      put(node, line, 'stroke-dasharray', '');
     } else {
-      put(node, body, 'stroke', stroke.colour);
-      put(node, body, 'stroke-width', px(Math.max(stroke.width, MIN_STROKE_DEVICE_PX / viewport.dpr / scale)));
-      put(node, body, 'stroke-linecap', 'round');
-      put(node, body, 'stroke-linejoin', 'round');
-      put(node, body, 'pathLength', '1');
+      // A plain line has one width and one colour: a pressure stroke is drawn at its mean, a graded one in the mean of its colours.
+      const mean = stroke.pressure === undefined ? 1 : stroke.pressure.reduce((sum, share) => sum + share, 0) / stroke.pressure.length;
+      put(node, line, 'stroke', stroke.along === undefined ? stroke.colour : meanColour(stroke.along));
+      put(node, line, 'stroke-width', px(Math.max(stroke.width * mean, MIN_STROKE_DEVICE_PX / viewport.dpr / scale)));
+      put(node, line, 'stroke-linecap', 'round');
+      put(node, line, 'stroke-linejoin', 'round');
+      put(node, line, 'pathLength', '1');
       // The share drawn so far, in the order the outline was written; one tick short of whole is still a dash and a gap.
-      put(node, body, 'stroke-dasharray', stroke.progress >= 1 ? '' : `${px(Math.max(0, stroke.progress))} 2`);
-      put(node, body, 'shape-rendering', stroke.character === 'pixel' ? 'crispEdges' : '');
+      put(node, line, 'stroke-dasharray', stroke.progress >= 1 ? '' : `${px(Math.max(0, stroke.progress))} 2`);
+      put(node, line, 'shape-rendering', stroke.character === 'pixel' ? 'crispEdges' : '');
     }
     if (figure.bleed) {
       // A full-bleed sheet covers the screen whatever the camera does.

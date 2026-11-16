@@ -214,3 +214,55 @@ export function wobbled(lines: readonly Polyline[], seed: string, amount: number
     return { points: moved, closed: line.closed };
   });
 }
+
+/** The most dashes one stroke may be cut into: past it the line is left whole, so a tiny `dash=` cannot flood a frame. */
+const MAX_DASHES = 1500;
+
+/**
+ * Each polyline cut into dashes of `on` along it with `off` between, the pattern starting afresh at the start of each (a closed
+ * line is walked round once, back to where it began). A dash is its own open polyline, so a renderer sees one stroke in pieces.
+ * Returns null when the pattern would make more than `MAX_DASHES`.
+ */
+export function dashed(lines: readonly Polyline[], on: number, off: number): Polyline[] | null {
+  const period = on + off;
+  if (!(on > 0) || !(period > 0)) return null;
+  let count = 0;
+  for (const line of lines) count += Math.ceil(polylineLength(line) / period);
+  if (count > MAX_DASHES) return null;
+  const out: Polyline[] = [];
+  for (const line of lines) {
+    const points = line.closed && line.points.length > 1 ? [...line.points, line.points[0] as Point] : line.points;
+    if (points.length < 2) {
+      if (points.length === 1) out.push({ points: [...points], closed: false });
+      continue;
+    }
+    // the cumulative length at each point
+    const at: number[] = [0];
+    for (let i = 1; i < points.length; i += 1) {
+      const a = points[i - 1] as Point;
+      const b = points[i] as Point;
+      at.push((at[i - 1] ?? 0) + Math.hypot(b.x - a.x, b.y - a.y));
+    }
+    const total = at[at.length - 1] ?? 0;
+    const pointAt = (d: number): Point => {
+      let i = 1;
+      while (i < at.length - 1 && (at[i] ?? 0) < d) i += 1;
+      const a = points[i - 1] as Point;
+      const b = points[i] as Point;
+      const span = (at[i] ?? 0) - (at[i - 1] ?? 0);
+      const t = span > 0 ? Math.min(1, Math.max(0, (d - (at[i - 1] ?? 0)) / span)) : 0;
+      return { x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t) };
+    };
+    for (let start = 0; start < total - 1e-9; start += period) {
+      const end = Math.min(total, start + on);
+      const piece: Point[] = [pointAt(start)];
+      for (let i = 1; i < points.length - 1; i += 1) {
+        const d = at[i] ?? 0;
+        if (d > start + 1e-9 && d < end - 1e-9) piece.push(points[i] as Point);
+      }
+      piece.push(pointAt(end));
+      out.push({ points: piece, closed: false });
+    }
+  }
+  return out;
+}

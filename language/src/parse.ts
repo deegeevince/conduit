@@ -43,6 +43,7 @@ import {
   AMOUNTS,
   ANCHORS,
   BLEEDS,
+  BLENDS,
   BYS,
   CAMERA_MOVES,
   CAMERA_SPEEDS,
@@ -161,6 +162,9 @@ const MAX_BEATS = 20;
 const MAX_CAMERA_SECONDS = 20;
 const MAX_SCENE_LINES = 12;
 const MAX_THICK = 40;
+const MAX_DASH = 200;
+/** Colours in a gradient or along a stroke. */
+const MAX_STOPS = 8;
 const MAX_SCALE = 100;
 const MAX_FPS = 24;
 const MAX_SOFT = 40;
@@ -310,15 +314,51 @@ function parseColour(value: string): ColourRef | null {
   return isValidName(value) && value !== 'none' ? { named: value } : null;
 }
 
+/** Colours joined by `>`, two to `MAX_STOPS` of them. */
+function parseStops(value: string): ColourRef[] | null {
+  const parts = value.split('>');
+  if (parts.length < 2 || parts.length > MAX_STOPS) return null;
+  const stops: ColourRef[] = [];
+  for (const part of parts) {
+    const colour = parseColour(part);
+    if (colour === null) return null;
+    stops.push(colour);
+  }
+  return stops;
+}
+
 function parseFill(value: string): FillRef | null {
   if (value === 'none') return 'none';
-  const parts = value.split('>');
-  if (parts.length === 2 && parts[0] !== undefined && parts[1] !== undefined) {
-    const from = parseColour(parts[0]);
-    const to = parseColour(parts[1]);
-    return from === null || to === null ? null : { from, to };
+  if (value.includes('>')) {
+    const stops = parseStops(value);
+    const from = stops?.[0];
+    const to = stops?.[stops.length - 1];
+    if (stops === null || from === undefined || to === undefined) return null;
+    return stops.length > 2 ? { from, to, mid: stops.slice(1, -1) } : { from, to };
   }
   return parseColour(value);
+}
+
+/** `a>b>c`: widths along a stroke. */
+function parseWidths(value: string): number[] | null {
+  const parts = value.split('>');
+  if (parts.length < 2 || parts.length > MAX_STOPS) return null;
+  const widths: number[] = [];
+  for (const part of parts) {
+    const width = parseNumber(part, 0, MAX_THICK);
+    if (width === null) return null;
+    widths.push(width);
+  }
+  return widths;
+}
+
+/** `on,off` (or one number for both), in canvas units: never so fine that a stroke becomes thousands of dashes. */
+function parseDash(value: string): [number, number] | null {
+  const parts = value.split(',');
+  if (parts.length < 1 || parts.length > 2) return null;
+  const on = parseNumber(parts[0] ?? '', 0.05, MAX_DASH);
+  const off = parts[1] === undefined ? on : parseNumber(parts[1], 0.05, MAX_DASH);
+  return on === null || off === null ? null : [on, off];
 }
 
 function parseNear(value: string): Near | null {
@@ -358,8 +398,14 @@ function readStyleProps(pairs: readonly Pair[], issues: Issues): { props: StyleP
       }
       case 'stroke': {
         const colour = value === 'none' ? 'none' : parseColour(value);
-        if (colour !== null) props.stroke = colour;
-        else bad(pair, 'none | a colour');
+        if (value.includes('>')) {
+          const stops = parseStops(value);
+          if (stops !== null) {
+            props.stroke = stops[0] ?? 'ink';
+            props.strokeAlong = stops.slice(1);
+          } else bad(pair, 'c1>c2');
+        } else if (colour !== null) props.stroke = colour;
+        else bad(pair, 'none | a colour | c1>c2');
         break;
       }
       case 'bleed':
@@ -368,9 +414,38 @@ function readStyleProps(pairs: readonly Pair[], issues: Issues): { props: StyleP
         break;
       case 'thick':
       case 'stroke-width': {
-        const thick = parseNumber(value, 0, MAX_THICK);
-        if (thick !== null) props.thick = thick;
-        else bad(pair, 'a number of canvas units');
+        const widths = value.includes('>') ? parseWidths(value) : null;
+        const thick = widths !== null ? Math.max(...widths) : parseNumber(value, 0, MAX_THICK);
+        if (thick !== null) {
+          props.thick = thick;
+          if (widths !== null) props.thickAlong = widths;
+        } else bad(pair, 'a number of canvas units | a>b>c');
+        break;
+      }
+      case 'dash': {
+        const dash = parseDash(value);
+        if (dash !== null) props.dash = dash;
+        else bad(pair, 'on,off in canvas units');
+        break;
+      }
+      case 'clip':
+        if (value === 'none' || isValidElementId(value)) props.clip = value;
+        else bad(pair, 'the id of a shape');
+        break;
+      case 'blend':
+        if (oneOf(BLENDS, value)) props.blend = value;
+        else bad(pair, BLENDS.join(' | '));
+        break;
+      case 'radial': {
+        const radial = parseTap(value);
+        if (radial !== null) props.radial = radial;
+        else bad(pair, 'yes | no');
+        break;
+      }
+      case 'angle': {
+        const angle = parseNumber(value, -360, 360);
+        if (angle !== null) props.angle = angle;
+        else bad(pair, 'degrees');
         break;
       }
       case 'brush':
@@ -786,7 +861,11 @@ function pointsOf(numbers: readonly number[]): Point[] {
 function parseShape(verb: ShapeVerb, head: Head, text: string | null, issues: Issues): Line | null {
   const { id, numbers, names } = splitWords(head.words, true);
   const { found, rest: afterGeometry } = geometryPairs(head.pairs);
-  const { props, rest } = readStyleProps(afterGeometry, issues);
+  const read = readStyleProps(afterGeometry, issues);
+  const { rest } = read;
+  // `radial` on its own is the gradient running out from the middle, as `full` is the whole screen.
+  const radialWord = names.includes('radial');
+  const props: StyleProps = radialWord && read.props.radial === undefined ? { ...read.props, radial: true } : read.props;
   warnUnknownPairs(rest, issues);
   const pick = (index: number, ...keys: string[]): number | undefined => {
     for (const key of keys) {
@@ -801,7 +880,7 @@ function parseShape(verb: ShapeVerb, head: Head, text: string | null, issues: Is
   };
 
   let geometry: ShapeGeometry;
-  let styleWords = names;
+  let styleWords = radialWord ? names.filter((name) => name !== 'radial') : names;
   switch (verb) {
     case 'circle': {
       const cx = pick(0, 'cx', 'x');
@@ -823,7 +902,7 @@ function parseShape(verb: ShapeVerb, head: Head, text: string | null, issues: Is
     case 'rect': {
       const radius = Math.max(0, found.r ?? 0);
       if (names.includes('full')) {
-        styleWords = names.filter((name) => name !== 'full');
+        styleWords = styleWords.filter((name) => name !== 'full');
         geometry = { shape: 'rect', x: 0, y: 0, w: 0, h: 0, r: 0, full: true };
         break;
       }
