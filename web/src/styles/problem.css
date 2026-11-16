@@ -25,18 +25,15 @@
 .pb__top { width: 100%; max-width: 1100px; text-align: center; flex: none; }
 .pb__question {
   margin: 0;
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  align-items: center;
-  column-gap: 0;
-  row-gap: 0.12em;
+  display: block;
   font-size: var(--pb-q);
   font-weight: 600;
   line-height: 1.2;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.01em;
 }
+.pb__sum { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; row-gap: 0.12em; }
+.pb__sum[data-fit='1'] { flex-wrap: nowrap; }
 .pb__tok { display: inline-block; padding: 0.02em 0.06em; border-radius: 0.14em; transition: background 160ms, color 160ms, box-shadow 160ms; white-space: pre; }
 .pb__tok--gap { margin-left: 0.26em; }
 .pb__tok--sign, .pb__tok--eq { color: var(--stage-dim); font-weight: 500; }
@@ -52,10 +49,11 @@
   cursor: text;
 }
 .pb__written { position: absolute; inset: 0; display: grid; place-items: center; color: var(--stage-accent); font-weight: 700; }
+.pb[data-plain='1'] .pb__tok--blank { min-width: max(2.7em, 150px); height: max(1.45em, 76px); margin-top: 0.3em; }
 .pb__tok--blank.is-right { border-style: solid; background: color-mix(in srgb, var(--stage-accent) 14%, transparent); }
 .pb__tok.is-lit { color: var(--stage-accent); background: color-mix(in srgb, var(--stage-accent) 18%, transparent); box-shadow: 0 0 0 0.05em color-mix(in srgb, var(--stage-accent) 55%, transparent); }
 .pb__tok--blank.is-lit { border-style: solid; background: color-mix(in srgb, var(--stage-accent) 20%, transparent); }
-.pb__remark { flex: 1 0 100%; margin-top: 0.3em; font-size: 0.4em; font-weight: 500; line-height: 1.3; color: var(--stage-dim); text-align: center; }
+.pb__remark { display: block; margin-top: 0.3em; font-size: 0.4em; font-weight: 500; line-height: 1.3; color: var(--stage-dim); text-align: center; }
 .pb__answer-word { flex-basis: 100%; height: 0; overflow: hidden; }
 .pb__line { margin: 0.4em 0 0; min-height: 1.4em; font-size: clamp(17px, 2.3vw, 24px); line-height: 1.35; color: var(--stage-dim); }
 .pb__line[data-tone='wrong'] { color: var(--stage-ink); }

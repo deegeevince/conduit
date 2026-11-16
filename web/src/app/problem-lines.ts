@@ -9,7 +9,12 @@ export interface OnStage {
   readonly said: readonly string[];
 }
 
+/** What may stand in a turn beside a problem for the problem to take the screen: the turn is the question and nothing else */
+const ALONE = new Set(['scene', 'look', 'problem', 'hint', 'style', 'color', 'standing', 'reply', 'refine', 'end', 'wait']);
+
 export function problemsOf(lines: readonly { readonly text: string }[]): OnStage[] {
+  // a problem that is one part of a longer answer (a tour with a sum in it) is drawn where it stands; only a turn that is the question takes the whole screen
+  if (lines.some((entry) => !ALONE.has((/^\s*([a-z]+)/i.exec(entry.text)?.[1] ?? '').toLowerCase()) && !/^\s*(#|$)/.test(entry.text))) return [];
   const found: { spec: ProblemSpec; said: string[] }[] = [];
   for (const entry of lines) {
     const spec = problemOfLine(entry.text);

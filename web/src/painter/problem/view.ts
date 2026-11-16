@@ -78,6 +78,7 @@ export function createProblemView(options: ProblemViewOptions): ProblemView {
   const key = problemKey(spec);
   root.dataset['problem'] = spec.id;
   root.dataset['size'] = sizeOf(read);
+  if (read.form === null) root.dataset['plain'] = '1';
   root.setAttribute('aria-label', 'A maths question to work out');
   // a press on the workspace is the workspace's own: the stage under it takes no tap from it
   for (const type of ['pointerdown', 'pointerup', 'pointermove', 'click', 'mousedown', 'mouseup', 'touchstart', 'touchend']) root.addEventListener(type, (event) => event.stopPropagation());
@@ -101,6 +102,9 @@ export function createProblemView(options: ProblemViewOptions): ProblemView {
   const question = el('h1', 'pb__question');
   question.setAttribute('aria-label', `${read.tokens.map((token) => (token.kind === 'blank' ? 'blank' : token.text)).join(' ')}`);
   const tokenNodes: HTMLElement[] = [];
+  const sum = el('span', 'pb__sum');
+  if (read.form !== null) sum.dataset['fit'] = '1';
+  question.append(sum);
   let remark: HTMLElement | null = null;
   let blankNode: HTMLElement | null = null;
   read.tokens.forEach((token, index) => {
@@ -120,7 +124,7 @@ export function createProblemView(options: ProblemViewOptions): ProblemView {
     if (read.added && index === read.blank && read.tokens.length > 1 && index === read.tokens.length - 1 && read.form === null) {
       const lead = el('span', 'pb__answer-word', 'Answer');
       lead.dataset['added'] = '1';
-      question.append(lead);
+      sum.append(lead);
     }
     tokenNodes.push(node);
     if (index >= read.sumEnd) {
@@ -129,7 +133,7 @@ export function createProblemView(options: ProblemViewOptions): ProblemView {
         question.append(remark);
       }
       remark.append(node);
-    } else question.append(node);
+    } else sum.append(node);
   });
   const lineNode = el('p', 'pb__line');
   lineNode.setAttribute('aria-live', 'polite');
@@ -463,6 +467,20 @@ export function createProblemView(options: ProblemViewOptions): ProblemView {
     timer = window.setTimeout(advance, options.calm() ? 300 : 1100);
   }
 
+  // a sum is set on one line, as large as the screen allows: the type shrinks until it fits, it never wraps
+  function fitQuestion(): void {
+    if (sum.dataset['fit'] !== '1') return;
+    question.style.fontSize = '';
+    let size = parseFloat(getComputedStyle(question).fontSize);
+    for (let i = 0; i < 24 && question.clientWidth > 0 && sum.scrollWidth > question.clientWidth + 1 && size > 18; i += 1) {
+      size *= 0.94;
+      question.style.fontSize = `${size.toFixed(1)}px`;
+    }
+  }
+  const fitObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => fitQuestion());
+  fitObserver?.observe(question);
+  requestAnimationFrame(fitQuestion);
+
   light();
   const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => {
     if (wayIndex >= 0) {
@@ -479,6 +497,7 @@ export function createProblemView(options: ProblemViewOptions): ProblemView {
     key,
     state: () => ({ verdict, tries: [...tries], way: wayIndex < 0 ? null : (usable[wayIndex]?.way ?? null), step: wayIndex < 0 ? 0 : step, steps: drawn?.steps.length ?? 0, lit, line, playing }),
     relayout() {
+      fitQuestion();
       if (wayIndex >= 0) {
         const keep = step;
         paintWay();
@@ -489,6 +508,7 @@ export function createProblemView(options: ProblemViewOptions): ProblemView {
     dispose() {
       stopPlaying();
       observer?.disconnect();
+      fitObserver?.disconnect();
       root.remove();
     },
   };
