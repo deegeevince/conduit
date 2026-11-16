@@ -11,7 +11,7 @@
   flex-direction: column;
   align-items: center;
   gap: 12px;
-  padding: max(70px, calc(env(safe-area-inset-top) + 62px)) max(16px, env(safe-area-inset-right)) max(72px, calc(env(safe-area-inset-bottom) + 66px)) max(16px, env(safe-area-inset-left));
+  padding: max(70px, calc(env(safe-area-inset-top) + 62px)) max(16px, env(safe-area-inset-right)) max(18px, calc(env(safe-area-inset-bottom) + 12px)) max(16px, env(safe-area-inset-left));
   background: var(--stage-ground);
   color: var(--stage-ink);
   font-family: var(--chrome-font);
@@ -147,7 +147,7 @@
 
 /* a short screen (a phone on its side, an iPad with its keyboard up): the question and its controls first */
 @media (max-height: 560px) {
-  .pb { gap: 8px; padding-top: 58px; padding-bottom: 60px; }
+  .pb { gap: 8px; padding-top: 58px; padding-bottom: 12px; }
   .pb { --pb-q: clamp(28px, min(8vw, 12vh), 70px); }
   .pb__btn { min-height: 46px; }
   .pb__line { margin-top: 0.2em; }

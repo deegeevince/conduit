@@ -51,10 +51,6 @@ export function mountWorkMode(options: WorkModeOptions): WorkMode {
     return element;
   };
   const exit = button('Done', 'work-button--done', () => leave(true));
-  const asking = button('Ask', 'work-button--ask', () => {
-    const open = body.classList.toggle('work--ask');
-    asking.textContent = open ? 'Back' : 'Ask';
-  });
 
   // a short line for her when a reading did not work: it goes by itself
   const note = document.createElement('div');
@@ -98,14 +94,12 @@ export function mountWorkMode(options: WorkModeOptions): WorkMode {
   ink.ink.onChange(() => options.penChanged());
 
   const signature = (): string =>
-    [
-      ...options
-        .controls()
-        .filter((control) => control.ask === true)
-        .map((control) => control.id)
-        .sort(),
-      ...options.problems().slice(0, 1).map((entry) => `problem:${problemKey(entry.spec)}`),
-    ].join(',');
+    // only a maths `problem` takes the screen: an ordinary answer that happens to hold a quiz question stays an ordinary answer
+    options
+      .problems()
+      .slice(0, 1)
+      .map((entry) => `problem:${problemKey(entry.spec)}`)
+      .join(',');
 
   // a maths question takes the screen: its workspace is built once and kept, so what she did to it (tries, a picture open) survives Done and back
   const views = new Map<string, ProblemView>();
@@ -133,19 +127,15 @@ export function mountWorkMode(options: WorkModeOptions): WorkMode {
   function enter(): void {
     on = true;
     body.classList.add('work');
-    body.classList.remove('work--ask');
     exit.hidden = false;
-    asking.hidden = false;
-    asking.textContent = 'Ask';
     ink.show(true);
     sync();
   }
   function leave(dismiss: boolean): void {
     if (dismiss) dismissed = signature();
     on = false;
-    body.classList.remove('work', 'work--ask');
+    body.classList.remove('work');
     exit.hidden = true;
-    asking.hidden = true;
     ink.show(false);
     sync();
   }
@@ -220,7 +210,6 @@ export function mountWorkMode(options: WorkModeOptions): WorkMode {
     dispose() {
       window.clearInterval(timer);
       exit.remove();
-      asking.remove();
       note.remove();
       for (const view of views.values()) view.dispose();
       setPen(null);
