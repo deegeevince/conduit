@@ -102,7 +102,7 @@ export function chromeFlags(): string[] {
   const env = processEnvironment();
   const choice = env['CHROME_GL'] ?? '';
   const software = choice === 'swiftshader' || (choice === '' && process.platform !== 'darwin');
-  const flags = ['--headless=new', ...(software ? ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] : ['--use-angle=metal']), '--ignore-gpu-blocklist', '--no-first-run', '--no-default-browser-check'];
+  const flags = ['--headless=new', ...(software ? ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] : ['--use-angle=metal']), '--ignore-gpu-blocklist', '--mute-audio', '--no-first-run', '--no-default-browser-check'];
   if (process.platform === 'linux') {
     flags.push('--disable-dev-shm-usage');
     if (env['CI'] !== undefined && env['CI'] !== '' && env['CI'] !== 'false') flags.push('--no-sandbox');

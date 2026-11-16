@@ -6,7 +6,7 @@ import type { ActionRisk, AgentPermits, AppStatus, BrainChange, BrainChoice, Bra
 import type { BriefForm, Capabilities } from '@conduit/language';
 import { buildReviewBrief, isKeep } from '@conduit/language';
 import type { AmendRequest, Brain, BrainEvent, BrainSession, ReviewRequest, Snapshot, TurnRequest } from '../../domain/brain';
-import { detailOf, FILE_TOOLS, gateCall, NO_AGENT, splitTool, summaryOf, toolChoices } from '../../domain/agent';
+import { detailOf, FILE_TOOLS, gateCall, NO_AGENT, serviceReads, splitTool, summaryOf, toolChoices } from '../../domain/agent';
 import { addressesIn, deniedAfterResolving, deniedDestination } from '../../domain/destinations';
 import { newBrowserState, noteBrowserResult } from '../../domain/browser';
 import type { BrowserState } from '../../domain/browser';
@@ -454,7 +454,7 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
       // The plain brain (no agent) may read a page when the owner offered WebFetch, and only where `deniedDestination` lets it go (SK0).
       const plainFetch = modeOf(out.session) !== 'agent' && out.noTools !== true && !kill.engaged() && ask.tool === 'WebFetch' && deps.tools.includes('WebFetch');
       const plainWhy = plainFetch ? deniedDestination(ask.input, agent.allowPrivate) : null;
-      const verdict = out.noTools === true ? ({ kind: 'deny', risk: 'run', why: 'no tools in a look; write lines' } as const) : modeOf(out.session) === 'agent' ? gateCall(call, agent, on, false, entry.browser, permitsOf(out.session)) : plainFetch ? (plainWhy === null ? ({ kind: 'allow', risk: 'read' } as const) : ({ kind: 'deny', risk: 'run', why: plainWhy } as const)) : ({ kind: 'deny', risk: 'run', why: kill.engaged() ? 'agent tools have been switched off by the kill switch' : 'this conversation has no tools' } as const);
+      const verdict = out.noTools === true ? ({ kind: 'deny', risk: 'run', why: 'no tools in a look; write lines' } as const) : modeOf(out.session) === 'agent' ? gateCall(call, agent, on, serviceReads(agent, ask.tool), entry.browser, permitsOf(out.session)) : plainFetch ? (plainWhy === null ? ({ kind: 'allow', risk: 'read' } as const) : ({ kind: 'deny', risk: 'run', why: plainWhy } as const)) : ({ kind: 'deny', risk: 'run', why: kill.engaged() ? 'agent tools have been switched off by the kill switch' : 'this conversation has no tools' } as const);
       const summary = summaryOf(call);
       if (inner.signal.aborted) {
         // The turn was stopped (or timed out) and the model has not heard yet: nothing more is asked of the owner, nothing runs.
