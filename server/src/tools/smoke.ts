@@ -895,6 +895,7 @@ export class Conversation {
     await this.checkCutOff(answer, results);
     // Information, never a verdict: what the layout gave up to fit this screen (PLAN-canvas step 0)
     this.add(results, 'squeeze', 'PASS', squeezeText(answer.squeeze));
+    if (answer.squeeze?.squeezed === true) this.note(`  squeezed (information only): ${squeezeText(answer.squeeze)}`);
     if (step.n === 1) {
       this.at('working the composer');
       await this.checkComposer(results);
