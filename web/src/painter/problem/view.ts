@@ -207,9 +207,13 @@ export function createProblemView(options: ProblemViewOptions): ProblemView {
   const caption = el('p', 'pb__caption');
   stepper.append(prev, counter, next);
   const lower = el('div', 'pb__lower');
-  lower.append(wayBox, stepper, caption);
+  const under = el('div', 'pb__under');
+  under.append(stepper, caption);
+  lower.append(wayBox, under);
 
-  root.append(top, controls, hintRow, waysRow, lower);
+  const chips = el('div', 'pb__chips');
+  chips.append(hintRow, waysRow);
+  root.append(top, controls, chips, lower);
 
   // ---- drawing
   function room(): { width: number; height: number } {

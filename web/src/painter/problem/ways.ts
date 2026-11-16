@@ -98,13 +98,13 @@ interface Bowl {
 function bowlsIn(room: Room, count: number, top: number, bottom: number, extra = 0, wantRows?: number): Bowl[] {
   const m = 16;
   const availW = room.width - 2 * m;
-  const availH = Math.max(60, bottom - top);
+  const availH = Math.max(40, bottom - top);
   let best: Bowl[] = [];
   let bestR = 0;
   for (let rows = wantRows ?? 1; rows <= (wantRows ?? count); rows += 1) {
     const perRow = ceilDiv(count, rows);
     const cell = Math.min(availW / perRow, availH / rows - extra);
-    const r = Math.min(cell / 2 - 6, 110);
+    const r = Math.max(10, Math.min(cell / 2 - 6, 110));
     if (r <= bestR) continue;
     bestR = r;
     best = Array.from({ length: count }, (_, i) => {
@@ -258,7 +258,7 @@ function fractionGroups(form: ProblemForm, room: Room): WayDrawing | null {
   const s = new Sheet(room.width, room.height);
   const px = labelPx(room);
   const whole = form.b;
-  const bowls = bowlsIn(room, frac.den, 16 + px * 3.4, room.height - px * 3.6, px * 1.4);
+  const bowls = bowlsIn(room, frac.den, 12 + px * 2.6, room.height - px * 3.6, px * 1.4);
   const bottom = Math.max(...bowls.map((b) => b.cy + b.r)) + px * 0.9;
   const one = s.step(`The whole is ${spaced(whole)}.`);
   s.rect(one, room.width / 2 - 70, 12, 140, px * 1.9, 'pw-block');
@@ -416,8 +416,9 @@ function columnWay(form: ProblemForm, room: Room): WayDrawing | null {
   const signW = 38;
   const colW = Math.min(220, (room.width - signW - 32) / places);
   const x0 = (room.width - signW - colW * places) / 2 + signW;
-  const rowH = Math.max(46, Math.min(130, (room.height - px * 3) / 4.2));
+  const rowH = Math.max(30, Math.min(130, (room.height - px * 3.2) / 3.8));
   const top = px * 2;
+  const dpx = Math.min(px * 1.5, rowH * 0.62);
   const rowY = (row: number): number => top + rowH * row;
   const cell = (c: number): number => x0 + colW * (c + 0.5);
   // headers sit with the first row
@@ -442,14 +443,14 @@ function columnWay(form: ProblemForm, room: Room): WayDrawing | null {
   const writeRow = (step: number, row: number, n: number | null, sign: string | null, role: 'a' | 'b'): void => {
     if (sign !== null) s.text(step, x0 - 22, rowY(row) + rowH / 2 + px * 0.4, sign, px * 1.4, 'dim');
     if (n === null) {
-      names.forEach((_, c) => s.text(step, cell(c), rowY(row) + rowH / 2 + px * 0.45, '?', px * 1.5, 'q'));
+      names.forEach((_, c) => s.text(step, cell(c), rowY(row) + rowH / 2 + px * 0.45, '?', dpx, 'q'));
       return;
     }
     const ds = digitsOf(n, places);
     ds.forEach((d, c) => {
       const place = c + (3 - places);
       if (c < places - String(n).length) return;
-      s.text(step, cell(c) - colW * 0.4, rowY(row) + rowH / 2 + px * 0.45, String(d), px * 1.5, role === 'a' ? 'a' : 'b', 'middle');
+      s.text(step, cell(c) - colW * 0.4, rowY(row) + rowH / 2 + px * 0.45, String(d), dpx, role === 'a' ? 'a' : 'b', 'middle');
       pictureOf(step, row, c, d, place, role);
     });
   };
@@ -464,12 +465,12 @@ function columnWay(form: ProblemForm, room: Room): WayDrawing | null {
   writeRow(two, 1, rb, sign, 'b');
   const three = s.step(form.unknown === 'c' ? (form.op === 'add' ? 'Ones first, then tens.' : 'Take away the ones first, then the tens.') : 'What is left to make the whole?');
   s.line(three, x0 - 6, rowY(2) - 4, x0 + colW * places + 6, rowY(2) - 4, 'pw-rule');
-  if (rc === null) names.forEach((_, c) => s.text(three, cell(c), rowY(2) + rowH / 2 + px * 0.45, '?', px * 1.5, 'q'));
+  if (rc === null) names.forEach((_, c) => s.text(three, cell(c), rowY(2) + rowH / 2 + px * 0.45, '?', dpx, 'q'));
   else {
     const ds = digitsOf(rc, places);
     ds.forEach((d, c) => {
       if (c < places - String(rc).length) return;
-      s.text(three, cell(c) - colW * 0.4, rowY(2) + rowH / 2 + px * 0.45, String(d), px * 1.5, 'a', 'middle');
+      s.text(three, cell(c) - colW * 0.4, rowY(2) + rowH / 2 + px * 0.45, String(d), dpx, 'a', 'middle');
     });
   }
   return s.done();
@@ -523,7 +524,7 @@ function lineWay(form: ProblemForm, room: Room): WayDrawing | null {
   };
   const arc = (step: number, x1: number, x2: number, label: string, role: Role): void => {
     const mid = (x1 + x2) / 2;
-    const lift = Math.min(70, Math.max(26, Math.abs(x2 - x1) * 0.5));
+    const lift = Math.max(18, Math.min(70, Math.abs(x2 - x1) * 0.5, y - px * 1.6 - 14));
     s.path(step, `M${round(x1)} ${round(y - 4)} Q${round(mid)} ${round(y - 4 - lift * 2)} ${round(x2)} ${round(y - 4)}`, `pw-arc pw-arc--${role}`);
     s.text(step, mid, y - lift - 12, label, px, role);
   };
