@@ -600,12 +600,18 @@ export function createAccessLayer(stage: HTMLElement, handlers: AccessHandlers):
     charts: syncCharts,
     focusControl(id) {
       toPointer();
-      // after the painter has taken the new value, so the keyboard carries on from the option just chosen
+      const slotOf = (): Slot | undefined => {
+        const view = live.find((candidate) => candidate.id === id);
+        return view === undefined ? undefined : slots.get(view.key);
+      };
+      // a phone raises its keyboard only for a focus made inside the gesture itself: focus now, in the handler that called this
+      const now = slotOf()?.focusable() ?? null;
+      now?.focus({ preventScroll: true });
+      // and again once the painter has taken the new value (the keyboard carries on from the option just chosen), when the first focus did not hold
       requestAnimationFrame(() =>
         requestAnimationFrame(() => {
-          const view = live.find((candidate) => candidate.id === id);
-          const slot = view === undefined ? undefined : slots.get(view.key);
-          slot?.focusable()?.focus({ preventScroll: true });
+          const target = slotOf()?.focusable() ?? null;
+          if (target !== null && document.activeElement !== target) target.focus({ preventScroll: true });
         }),
       );
     },

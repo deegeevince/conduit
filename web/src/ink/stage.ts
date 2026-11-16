@@ -1,7 +1,7 @@
 // The stage's Draw toggle: an entry in the composer's [+] menu that lays the ink layer over the stage. What is drawn goes up with the next prompt (the prompt bar's
 // Send, or the ink bar's own), cropped to the inked part, over a picture of the stage as it was, with the turn it was drawn on named.
 
-import type { InkMarks } from '@conduit/language';
+import type { InkMarks, InkRegionDef } from '@conduit/language';
 import type { InkBackdrop } from './export';
 import { createInk } from './layer';
 import type { Ink } from './layer';
@@ -23,6 +23,8 @@ export interface StageInkApp {
   /** starts a turn with these words and marks */
   prompt(words: string, marks: InkMarks): Promise<unknown>;
   announce(text: string): void;
+  /** the blanks of the asks still open on the stage, each as an answer box named by its ask: the marks then say which blank the writing covers */
+  answerBoxes?(): readonly InkRegionDef[];
 }
 
 export interface StageInk {
@@ -95,7 +97,15 @@ export function mountStageInk(stage: HTMLElement, menu: ComposerMenu, app: Stage
     if (ink.model.strokes.length === 0) return null;
     const turn = app.lastTurn();
     ink.setOn({ element: 'stage', ...(turn === null ? {} : { node: turn }), label: 'the stage, as the user saw it' });
-    return prepareMarks(ink, app.upload);
+    // the blanks of the open asks are the boxes the writing is reported against, only for this one turn
+    const boxes = app.answerBoxes?.() ?? [];
+    if (boxes.length === 0) return prepareMarks(ink, app.upload);
+    ink.setRegions(boxes);
+    try {
+      return await prepareMarks(ink, app.upload);
+    } finally {
+      ink.setRegions([]);
+    }
   };
   const captureBackdrop = (): void => {
     void app.capture(1280).then(async (url) => {

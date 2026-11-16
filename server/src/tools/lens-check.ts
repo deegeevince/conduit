@@ -41,14 +41,14 @@ interface Box {
   readonly width: number;
   readonly height: number;
 }
-interface Point {
+export interface Point {
   readonly x: number;
   readonly y: number;
 }
 
 const norm = (text: string): string => text.replace(/\s+/g, ' ').trim().toLowerCase();
 
-class Hands {
+export class Hands {
   constructor(readonly tab: Tab) {}
 
   async lens(): Promise<{ view: View | null; touched: boolean } | null> {
@@ -133,7 +133,7 @@ class Hands {
   }
 }
 
-function line(a: Point, b: Point, n: number): Point[] {
+export function line(a: Point, b: Point, n: number): Point[] {
   return Array.from({ length: n + 1 }, (_, i) => ({ x: a.x + ((b.x - a.x) * i) / n, y: a.y + ((b.y - a.y) * i) / n }));
 }
 

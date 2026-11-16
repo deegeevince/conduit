@@ -933,8 +933,8 @@ export const VERB = {
     family: 'structure',
   },
   fill: {
-    form: 'fill <problem id> | <the answer>',
-    gist: 'Puts an answer the person gave you (by voice, by pen or in the chat) into a maths problem\'s blank. The page shows it there and checks it itself, like a typed answer. It is the only way anything gets filled in: never say you filled a blank any other way.',
+    form: 'fill <problem or ask id> | <the answer>',
+    gist: 'Puts an answer the person gave you (by voice, by pen or in the chat) into the blank of a maths problem or an ask. The page shows it there and checks it itself, like a typed answer. It is the only way anything gets filled in: never say you filled a blank any other way.',
     time: 'instant',
     family: 'mind',
   },

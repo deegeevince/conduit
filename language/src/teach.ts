@@ -109,6 +109,7 @@ export function askChapter(withDocument: boolean): string {
     '- The key is `is=` (every accepted spelling) and nowhere else: not in a `say`, a hint, a title or another ask\'s words. A line that shows it is refused.',
     '- A hint asks back or says what to try, never the step that gives the answer.',
     '- You hear of their tries on your next turn, and at once when the last ask is done (`send=no` waits, `send=yes` tells you now).',
+    '- An answer they give by pen marks, voice or chat goes in with `fill <ask id> | <answer>` (the page shows and checks it): that is the only way a blank gets filled, so never say you filled one otherwise.',
   ]
     .filter((line) => line !== '')
     .join('\n');
