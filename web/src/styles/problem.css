@@ -18,6 +18,7 @@
   overflow: hidden;
   touch-action: manipulation;
 }
+.pb[data-size='xxl'] { --pb-q: clamp(38px, min(11vw, 11.5vh), 108px); }
 .pb[data-size='l'] { --pb-q: clamp(28px, min(7vw, 10vh), 76px); }
 .pb[data-size='m'] { --pb-q: clamp(22px, min(4.6vw, 7vh), 48px); }
 

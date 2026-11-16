@@ -64,9 +64,9 @@ function button(className: string, label: string, run: () => void): HTMLButtonEl
 }
 
 /** the size class of the question by how much there is to set */
-function sizeOf(read: ProblemRead): 'xl' | 'l' | 'm' {
+function sizeOf(read: ProblemRead): 'xxl' | 'xl' | 'l' | 'm' {
   const chars = read.tokens.slice(0, read.sumEnd).reduce((n, token) => n + token.text.length + 1, 0);
-  return chars <= 22 ? 'xl' : chars <= 42 ? 'l' : 'm';
+  return chars <= 16 ? 'xxl' : chars <= 22 ? 'xl' : chars <= 42 ? 'l' : 'm';
 }
 
 export function createProblemView(options: ProblemViewOptions): ProblemView {
