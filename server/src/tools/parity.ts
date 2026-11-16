@@ -214,7 +214,7 @@ class Page {
     const chrome = CHROME_CANDIDATES.find((path) => existsSync(path));
     if (chrome === undefined) throw new Error('no Chrome found: set CHROME_BIN to a Chrome or Chromium executable');
     const profile = await mkdtemp(join(tmpdir(), 'conduit-parity-'));
-    const child = spawnTracked(chrome, ['--headless=new', '--use-angle=metal', '--ignore-gpu-blocklist', '--no-first-run', '--no-default-browser-check', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--window-size=1280,720', 'about:blank'], undefined, { quiet: true });
+    const child = spawnTracked(chrome, ['--headless=new', '--use-angle=metal', '--ignore-gpu-blocklist', '--no-first-run', '--no-default-browser-check', '--mute-audio', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--window-size=1280,720', 'about:blank'], undefined, { quiet: true });
     try {
       const endpoint = await waitFor('Chrome', 20_000, async () => {
         const [port, path] = (await readFile(join(profile, 'DevToolsActivePort'), 'utf8')).split('\n');
