@@ -139,6 +139,8 @@ const LINT: Readonly<Record<SightNote, { readonly kind: ObsKind; readonly severi
   partial: null,
   painted: null,
   unpainted: null,
+  undrawn: null,
+  refused: null,
 };
 
 /** The part of a measurement the feed reads. A server `Measured`, a page `draft` or a report's `sight` all satisfy it. */
