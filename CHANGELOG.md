@@ -2,6 +2,12 @@
 
 Newest first. Each item is something the brain can show live when asked "showcase what's new": draw it, don't describe it. The server reads this file.
 
+## Maths help happens on the canvas (live)
+- Ask for help with a maths question, typed or photographed, and the answer is the question itself on the canvas: retyped big, with a blank to answer, a hint behind a tap, and a choice of ways to see it (groups, a number line, a bar) drawn a step at a time.
+- The question takes the whole screen. The composer steps back to a small Ask button, Done puts the screen back, the pen writes anywhere on it, and your ink stays while a hint or a layout changes underneath. A finger still presses Check and Hint.
+- A photo of a whole page with no question named gives "Which one first?" and the questions to tap. No map of cards, no questions written in the background that nobody asked for. A document of questions comes only when you ask for a document, worksheet or checklist.
+- The pen no longer drops a stroke while a lesson saves or redraws, or after the pen leaves the screen mid-stroke.
+
 ## Works with ChatGPT too (not live)
 - The app can now think with your ChatGPT subscription through the Codex command line, as well as with Claude. Nothing changes here: this server stays on Claude.
 - On ChatGPT it draws, answers, looks at its own drawing and fixes it, searches the web, reads your photos and uses the canvas tools. The model picker, skills, agent mode, the critic and filling parts ahead stay with Claude. Answers arrive a message at a time rather than word by word.

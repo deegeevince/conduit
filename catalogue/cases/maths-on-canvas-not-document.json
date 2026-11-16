@@ -1,0 +1,32 @@
+{
+ "id": "maths-on-canvas-not-document",
+ "title": "help with one maths question from a photographed page is answered on the canvas, with tappable choices, never a document or a map of cards",
+ "family": "teaching",
+ "owner": "prompt",
+ "kind": "flow",
+ "found": "2026-11-16",
+ "note": "Owner: a photo of a child's worksheet and a request for help with one question gave a map of six cards, background work for the others, and the help as text steps in the document view. The answer is on the canvas; the question is shown, a choice of ways is tapped. The recording lives in the data dir; this file holds only neutral words and checks.",
+ "own": [
+  "document-yields"
+ ],
+ "turns": [
+  {
+   "say": "Can you help me with one question from this homework? She does not know division yet, so a visual step by step guide please, I want her to use the pen",
+   "source": {
+    "log": "20261116-135252-c7",
+    "turns": [
+     "t15"
+    ]
+   },
+   "check": [
+    {
+     "k": "document-yields"
+    },
+    {
+     "k": "choices",
+     "min": 1
+    }
+   ]
+  }
+ ]
+}

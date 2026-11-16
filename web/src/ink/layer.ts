@@ -455,7 +455,8 @@ export function createInk(host: HTMLElement, options: InkOptions = {}): Ink {
       root.setPointerCapture(e.pointerId);
       return;
     }
-    if (building !== null) return;
+    // a stroke that never heard its pointerup (the layer was hidden, or the pen left the screen) ends here; it must not swallow the next one
+    if (building !== null) finish(building);
     begin(e, kind, verdict.erase);
     const b = building as Building | null;
     if (b !== null) {
