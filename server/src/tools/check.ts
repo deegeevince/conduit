@@ -231,20 +231,26 @@ class Screen {
     if (!this.args.quiet) process.stdout.write(`[${this.screen.name}] ${text}\n`);
   }
 
+  /** A tab on the page, ready. A page that never comes ready (a Chrome that stalled on start-up) is given up on after a minute and opened once more in a new tab. */
   private async open(page: string, demo: boolean): Promise<{ tab: Tab; talk: Conversation }> {
-    let opened: Tab | null = null;
-    for (let attempt = 0; attempt < 3 && opened === null; attempt += 1) opened = await Tab.open(this.screen.width, this.screen.height).catch(() => null);
-    if (opened === null) throw new Error('Chrome would not start (three tries)');
-    const options: Options = { url: this.base, screens: [this.screen], out: this.args.out, turns: new Set(), timeoutMs: this.args.timeoutMs, parallel: false, demo, quiet: true, page, say: null, chat: 'off' };
-    const talk = new Conversation(opened, options, this.screen, this.dir);
-    try {
-      await opened.send('DOM.enable');
-      await talk.start();
-    } catch (error) {
-      await opened.close();
-      throw error;
+    let last: unknown = null;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      let opened: Tab | null = null;
+      for (let tries = 0; tries < 3 && opened === null; tries += 1) opened = await Tab.open(this.screen.width, this.screen.height).catch(() => null);
+      if (opened === null) throw new Error('Chrome would not start (three tries)');
+      const options: Options = { url: this.base, screens: [this.screen], out: this.args.out, turns: new Set(), timeoutMs: this.args.timeoutMs, parallel: false, demo, quiet: true, page, say: null, chat: 'off' };
+      const talk = new Conversation(opened, options, this.screen, this.dir);
+      try {
+        await opened.send('DOM.enable');
+        await talk.start();
+        return { tab: opened, talk };
+      } catch (error) {
+        last = error;
+        this.note(`the page did not come ready (${error instanceof Error ? error.message : String(error)}); opening it again`);
+        await opened.close().catch(() => undefined);
+      }
     }
-    return { tab: opened, talk };
+    throw last instanceof Error ? last : new Error(String(last));
   }
 
   private async look(tab: Tab): Promise<void> {
