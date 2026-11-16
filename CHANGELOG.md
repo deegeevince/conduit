@@ -2,6 +2,9 @@
 
 Newest first. Each item is something the brain can show live when asked "showcase what's new": draw it, don't describe it. The server reads this file.
 
+## Words inside a card stay in the card (live)
+- Words written in a card now stand in that card, in the order they were written, above or under its choices; a line that answers a choice sits right under it. Before, they were all drawn at the top left of the screen, on top of each other and on the title. Words that belong to a thing and were not told where to stand now go one under another, so text never lands on other text.
+
 ## Every starter shows on a phone (live)
 - On a phone the first screen now shows all seven starters. Before, the first one could go missing and leave a gap, on some phone sizes. If the choices do not fit, they are set a little smaller and closer together instead of being dropped.
 

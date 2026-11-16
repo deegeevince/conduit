@@ -46,6 +46,8 @@ export interface LayoutItem {
   readonly alternatives?: readonly { readonly text: string; readonly emphasis: readonly Range[] }[];
   /** L3. Let go first when the room is short */
   readonly optional?: boolean;
+  /** words that stand in a box of their own (a card) are set no wider than this, layer units, whatever room the stage has */
+  readonly maxWidth?: number;
 }
 
 export interface LayoutInput {
@@ -878,8 +880,9 @@ function buildLoose(unit: Unit, anchor: Anchor | Point | null, frame: Box, ctx: 
   const fallback = ctx.input.align === 'left' || ctx.input.align === 'right' || ctx.input.align === 'center' ? ctx.input.align : 'center';
   const align = anchorAlign(anchor, fallback);
   const attempt = (k: number): Loose => {
-    const ghosts = unit.ghosts.map((ghost) => makeBlock(ghost, 0.8 * k, frame.width, 0, null, ctx));
-    const main = makeBlock(unit.main, k, frame.width, 0, null, ctx);
+    const room = Math.min(frame.width, unit.main.item.maxWidth ?? Number.POSITIVE_INFINITY);
+    const ghosts = unit.ghosts.map((ghost) => makeBlock(ghost, 0.8 * k, room, 0, null, ctx));
+    const main = makeBlock(unit.main, k, room, 0, null, ctx);
     const width = Math.max(main.width, ...ghosts.map((g) => g.width));
     const height = main.height + ghosts.reduce((sum, g) => sum + g.height, 0);
     return { ghosts, main, width, height, align };

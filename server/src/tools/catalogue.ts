@@ -742,6 +742,23 @@ async function runCheck(cx: Cx, spec: Spec): Promise<Res> {
       }
       return { check: tried.map((r) => r.check).join('|'), verdict: 'FAIL', detail: tried.map((r) => `${r.check}: ${r.detail}`).join('; or ') };
     }
+    case 'words-in-card': {
+      // every words said `in=` a card stand wholly inside that card's frame, and none of them is left at the stage's corner
+      const report = cx.answer.report;
+      if (report === null) return { check: name, verdict: 'FAIL', detail: 'no report' };
+      const bad: string[] = [];
+      let n = 0;
+      for (const e of report.stage) {
+        if (e.parent === null || e.kind !== 'text') continue;
+        const word = cx.answer.live.find((l) => l.id === e.id && l.phase === 'on');
+        const home = cx.answer.live.find((l) => l.id === e.parent?.split('@')[0] && l.kind === 'group' && l.phase === 'on');
+        if (word === undefined || home === undefined || area(home.box) === 0) continue;
+        n += 1;
+        if (inter(word.box, home.box) < 0.98 * area(word.box)) bad.push(`"${word.text.slice(0, 16)}" is not inside its ${e.parent}`);
+      }
+      if (n === 0) return { check: name, verdict: 'FAIL', detail: 'no words with a card to stand in were found on stage' };
+      return res(name, bad, `${n} words, each inside its own card`);
+    }
     case 'words-in-grid': {
       const found = wordBoxes(cx, words, match);
       if (found.length === 0) return { check: name, verdict: 'FAIL', detail: 'none of the words are on stage' };
