@@ -252,7 +252,7 @@ export const PAGE_LIB = String.raw`(() => {
     const reports = s.events().filter((e) => e.type === 'report');
     const last = reports[reports.length - 1];
     const live = s.elements().map((e) => ({ id: e.id, kind: e.kind, text: e.text.slice(0, 70), phase: e.phase, opacity: e.opacity, box: e.box, layer: e.layer, contrast: e.contrast, fontPx: e.fontPx, painting: e.painting }));
-    const base = { live, charts: s.charts().map((c) => ({ id: c.id, kind: c.kind, waiting: c.waiting, points: c.points, box: c.box })), controls: s.controls().map((c) => ({ id: c.id, control: c.control, label: c.label, enabled: c.enabled, box: c.box })), script: s.script(), viewport: s.state().viewport, hasHook: typeof s.mockups === 'function', mockups: typeof s.mockups === 'function' ? s.mockups() : [], leaders: typeof s.leaders === 'function' ? s.leaders() : null };
+    const base = { live, charts: s.charts().map((c) => ({ id: c.id, kind: c.kind, waiting: c.waiting, points: c.points, box: c.box })), controls: s.controls().map((c) => ({ id: c.id, control: c.control, label: c.label, enabled: c.enabled, box: c.box })), script: s.script(), viewport: s.state().viewport, hasHook: typeof s.mockups === 'function', squeeze: s.state().squeeze || null, mockups: typeof s.mockups === 'function' ? s.mockups() : [], leaders: typeof s.leaders === 'function' ? s.leaders() : null };
     if (!last) return Object.assign({ report: null }, base);
     const r = last.report;
     return Object.assign({
@@ -678,6 +678,8 @@ export interface Answer {
   readonly script: string;
   readonly viewport: { readonly width: number; readonly height: number };
   readonly hasHook: boolean;
+  /** what the scene on stage gave up to fit the screen (PLAN-canvas step 0); null on a build that does not say */
+  readonly squeeze: { readonly squeezed: boolean; readonly kinds: readonly string[]; readonly facts: readonly { readonly kind: string; readonly key: string | null; readonly why: string }[] } | null;
   readonly mockups: readonly MockupView[];
   /** the leader lines of the callouts (null on a build whose hook does not say) */
   readonly leaders: readonly { readonly label: string; readonly part: string; readonly end: { readonly x: number; readonly y: number }; readonly distance: number; readonly nearer: { readonly id: string; readonly distance: number } | null }[] | null;
@@ -692,6 +694,13 @@ export interface TurnRecord {
   readonly picture: string;
   readonly seconds: number;
   readonly results: CheckResult[];
+}
+
+/** what a scene squeezed, in a line: `none`, or each kind with how many things it touched */
+export function squeezeText(squeeze: Answer['squeeze']): string {
+  if (squeeze === null) return 'this build does not report it';
+  if (!squeeze.squeezed) return 'none';
+  return squeeze.kinds.map((kind) => `${kind} x${squeeze.facts.filter((fact) => fact.kind === kind).length}`).join(', ');
 }
 
 export const fmt = (n: number): string => (Math.round(n * 100) / 100).toFixed(2);
@@ -880,6 +889,8 @@ export class Conversation {
     this.checkOverlap(step, answer, results);
     this.at('checking nothing is cut off');
     await this.checkCutOff(answer, results);
+    // Information, never a verdict: what the layout gave up to fit this screen (PLAN-canvas step 0)
+    this.add(results, 'squeeze', 'PASS', squeezeText(answer.squeeze));
     if (step.n === 1) {
       this.at('working the composer');
       await this.checkComposer(results);

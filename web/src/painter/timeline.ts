@@ -44,6 +44,8 @@ import { arrange, controlRoomOf, controlsNeedOf, needsOf } from './layout';
 import { wrapStrips } from './strips';
 import { planStage, viewOfPlan } from './layout/plan';
 import type { StageBlock, StagePlan, StagePlanView } from '../contracts/stage-plan';
+import type { SqueezeInput } from '../contracts/squeeze';
+import { SQUEEZE } from './squeeze';
 import { STRUCTURES_READY } from './blocks';
 import { has, own as lookup } from './own';
 import { placeLabel } from './layout/labels';
@@ -125,6 +127,8 @@ export interface Timeline {
   fitAt(sceneId: string, time: number): CanvasFit;
   /** v2.1: how the stage is divided at `time`, host CSS pixels with the camera at rest */
   planAt(time: number): StagePlanView;
+  /** PLAN-canvas step 0: what the layout gave up in the scene at `time` (everything but the apps, which the host knows), as facts */
+  squeezeAt(time: number): Omit<SqueezeInput, 'apps'>;
 }
 
 /** Seconds a laid-out element takes to approach a new place, before the mood scales it. */
@@ -3035,6 +3039,27 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
       const found = sceneEpochAt(sceneAt(schedule, time).id, time);
       const epoch = found === null ? epochs[epochIndexAt(time)] : found.epoch;
       return epoch === undefined ? { picture: null, rooms: [], flow: { x: 0, y: 0, width: viewport.width, height: viewport.height }, foot: null } : viewOfPlan(epoch.plan, epoch.kinds, viewport);
+    },
+    squeezeAt: (time) => {
+      const scene = sceneAt(schedule, time);
+      const found = sceneEpochAt(scene.id, time);
+      const epoch = found === null ? undefined : found.epoch;
+      if (epoch === undefined) return { retired: [], shrunk: [], crowded: [], compact: { level: 0, scrolls: false } };
+      const gone: string[] = [];
+      for (const [key, began] of retired) if (began <= time && byKey.get(key)?.scene === scene.id) gone.push(key);
+      const small: { key: string; share: number }[] = [];
+      for (const [key, placement] of epoch.arrangement.placements) {
+        const element = byKey.get(key);
+        if (element === undefined || element.scene !== scene.id) continue;
+        const style = styleAt(element, epoch.start);
+        if (!isInFlow(style, scene.layout)) continue;
+        const asked = cellOf(style.size, viewport, epoch.look).fontSize;
+        const share = (placement.fontSize * planeScale(placement.layer, viewport)) / Math.max(1, asked);
+        if (share < SQUEEZE.shrunkBelow) small.push({ key, share });
+      }
+      const crowded = new Set<string>(epoch.plan.crowded);
+      for (const [key, notes] of structures.notesAt(time)) if (notes.includes('crowded')) crowded.add(key);
+      return { retired: gone, shrunk: small, crowded: [...crowded], compact: { level: epoch.controls.compact, scrolls: epoch.controls.scroll !== null } };
     },
     onStageAt: (time) =>
       schedule.elements
