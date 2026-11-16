@@ -92,7 +92,7 @@ function drawKit(kit: Kit, frame: Frame, quality: Quality): void {
     kit.stage.resize(frame.viewport);
     kit.pipeline.resize(frame.viewport);
   }
-  kit.stage.setCamera(frame.camera);
+  kit.stage.setCamera(frame.camera, frame.view ?? null);
   const groups = { far: kit.stage.layers.far, bg: kit.stage.layers.bg, mid: kit.stage.layers.mid, fg: kit.stage.layers.fg };
   kit.text.setInk(frame.reducedMotion ? 0 : frame.agitation, quality === 'full');
   kit.text.sync({ ...groups, furniture: kit.stage.furniture }, frame.elements, kit.fx.furniture(frame), style);
@@ -513,7 +513,9 @@ export function createProbedRenderer(): ThreeRenderer {
       const active = kit;
       if (frame === null || active === null) return null;
       const vp = active.viewport;
-      const picture = active.fx.toPicture(x, y, frame);
+      // a point of the page is where the lens puts it on the screen; the camera, cropped to the lens, is asked about the screen
+      const view = frame.view;
+      const picture = active.fx.toPicture(view === undefined ? x : (x - view.x) * view.scale, view === undefined ? y : (y - view.y) * view.scale, frame);
       const camera = active.stage.camera;
       const near = new Vector3((picture.x / vp.width) * 2 - 1, -((picture.y / vp.height) * 2 - 1), -1).unproject(camera);
       const far = new Vector3((picture.x / vp.width) * 2 - 1, -((picture.y / vp.height) * 2 - 1), 1).unproject(camera);

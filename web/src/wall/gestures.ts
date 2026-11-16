@@ -9,20 +9,56 @@
 
 import type { Tile, WallPlan } from './plan';
 import { LensRig, tileAt } from './lens';
-import type { Screen } from './view';
+import type { Lens, Screen } from './view';
+
+/** What the hands drive: any camera made of the motion core (the wall's `LensRig`, a page's `PageRig`). */
+export interface HandsRig {
+  grab(now: number): void;
+  pan(dx: number, dy: number): void;
+  zoom(ln: number, sx: number, sy: number): void;
+  release(vx: number, vy: number, pinched: boolean): void;
+  current(now: number): Lens;
+}
 
 export interface GestureOptions {
-  readonly plan: () => WallPlan;
+  /** The wall's plan: with it a tap goes to the tile under it and the arrows step between tiles (the rig is then a `LensRig`). Without it neither is done here. */
+  readonly plan?: () => WallPlan;
   readonly screen: () => Screen;
   readonly now?: () => number;
-  /** Is this target inside the live frame's DOM? One finger there is the frame's. */
-  readonly inLive?: (target: EventTarget | null) => boolean;
+  /** Is this target inside the live frame's DOM? One finger there is the frame's. The event is passed so a page can ask what is under the finger, not only what element it is on. */
+  readonly inLive?: (target: EventTarget | null, event: PointerEvent | WheelEvent) => boolean;
   /** A tap landed on a tile (the lens is going there). */
   readonly onTap?: (tile: Tile) => void;
   /** Something changed that the page should draw. */
   readonly onChange?: () => void;
   /** Listen in the capture phase: the wall hears a pointer before the page's own handlers, which a layer above the stage can then keep from it (WL3). */
   readonly capture?: boolean;
+  /** A page (no plan): a finger that went down and came up in the same place, at client pixels. Returns true when it pressed something; false leaves the spot empty (a double tap there is Fit). */
+  readonly onTapAt?: (x: number, y: number, event: PointerEvent) => boolean;
+  /** A page: two quick taps on empty stage, at client pixels. Returns true when it did something. */
+  readonly onDoubleTap?: (x: number, y: number) => boolean;
+  /** Keys, in place of the wall's. Returns true when it took the key. */
+  readonly onKeys?: (event: KeyboardEvent) => boolean;
+  /** A second finger came down: every finger now belongs to the lens, so whoever began a press or a stroke with one is told to let go of it. */
+  readonly onPinch?: (pointers: readonly number[]) => void;
+  /** A touch to be ignored altogether: a resting palm, or any hand while a pen is at work. */
+  readonly rejectTouch?: (event: PointerEvent) => boolean;
+  /** A mouse button that pans (the wall's: the left one; a page's: the middle one, or the left one with Space held, so text can still be selected). */
+  readonly mousePans?: (event: PointerEvent) => boolean;
+  /** A pen is never the hands' (a page's: it draws or presses). */
+  readonly ignorePen?: boolean;
+  /** A page takes hold of the lens at the first real move, not at the finger's first touch: a tap must leave it where it was. */
+  readonly lazyGrab?: boolean;
+  /** A page keeps what the lens owns from the page's own listeners: pointer events of a finger it has taken go no further. */
+  readonly swallow?: boolean;
+  /** A page hears the wheel after the page's own listeners (which scroll an area under it and then own the wheel) rather than before. */
+  readonly wheelAfter?: boolean;
+  /** The longest a finger may stay down and still be a tap, milliseconds. */
+  readonly tapMs?: number;
+  /** A page: events a script made (the work mode hands a finger on to what is under its layer) are not hands. */
+  readonly ignoreSynthetic?: boolean;
+  /** A page: whether the lens is the one to hear a new hand now (not while a document or a wall covers the stage). Fingers already down are always finished. */
+  readonly active?: () => boolean;
 }
 
 export interface Hands {
@@ -36,6 +72,8 @@ export interface Hands {
 
 const SLOP = 10;
 const TAP_MS = 600;
+const DOUBLE_MS = 350;
+const DOUBLE_PX = 36;
 const WINDOW_MS = 90;
 const WHEEL_LINE = 16;
 const WHEEL_ZOOM = 0.01;
@@ -59,9 +97,11 @@ const editable = (target: EventTarget | null): boolean => {
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable === true;
 };
 
-export function attachGestures(el: HTMLElement, rig: LensRig, options: GestureOptions): Hands {
+export function attachGestures(el: HTMLElement, rig: HandsRig, options: GestureOptions): Hands {
   const clock = options.now ?? ((): number => performance.now());
   const inLive = options.inLive ?? ((): boolean => false);
+  const tapMs = options.tapMs ?? TAP_MS;
+  const lazy = options.lazyGrab === true;
   const fingers = new Map<number, Finger>();
   let on = false;
   let before = '';
@@ -74,6 +114,9 @@ export function attachGestures(el: HTMLElement, rig: LensRig, options: GestureOp
   let wheelKind: 'zoom' | 'pan' = 'pan';
   let gestureScale = 1;
   let gestureLive = false;
+  let lastTap: { t: number; x: number; y: number } | null = null;
+  /** touches turned away (a palm, a hand under a pen at work): their moves and ends are not the lens's either */
+  const turnedAway = new Set<number>();
 
   const rect = (): { left: number; top: number; width: number; height: number } => el.getBoundingClientRect();
   const local = (x: number, y: number): { x: number; y: number } => {
@@ -112,17 +155,27 @@ export function attachGestures(el: HTMLElement, rig: LensRig, options: GestureOp
     return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, d: Math.hypot(a.x - b.x, a.y - b.y) };
   };
 
-  const finishAll = (lastFinger: Finger | undefined, wasTap: boolean, point: { x: number; y: number }): void => {
+  const finishAll = (lastFinger: Finger | undefined, wasTap: boolean, point: { x: number; y: number }, event: PointerEvent): void => {
     const speed = lastFinger !== undefined && !pinched ? velocity(lastFinger) : { vx: 0, vy: 0 };
     if (wasTap) {
       // a tap is not a pan: let go with no speed, then go where it was
       rig.release(0, 0, false);
       grabbed = false;
-      const p = local(point.x, point.y);
-      const tile = tileAt(options.plan(), rig.current(clock()), options.screen(), p.x, p.y);
-      if (tile !== null) {
-        rig.goTo(tile, clock());
-        options.onTap?.(tile);
+      if (options.plan !== undefined) {
+        const p = local(point.x, point.y);
+        const tile = tileAt(options.plan(), rig.current(clock()), options.screen(), p.x, p.y);
+        if (tile !== null) {
+          (rig as LensRig).goTo(tile, clock());
+          options.onTap?.(tile);
+        }
+      } else {
+        const now = clock();
+        const again = lastTap !== null && now - lastTap.t <= DOUBLE_MS && Math.hypot(point.x - lastTap.x, point.y - lastTap.y) <= DOUBLE_PX;
+        lastTap = null;
+        if (!again || options.onDoubleTap?.(point.x, point.y) !== true) {
+          const pressed = options.onTapAt?.(point.x, point.y, event) === true;
+          if (!pressed) lastTap = { t: now, x: point.x, y: point.y };
+        }
       }
     } else if (grabbed) {
       rig.release(speed.vx, speed.vy, pinched);
@@ -133,25 +186,35 @@ export function attachGestures(el: HTMLElement, rig: LensRig, options: GestureOp
   };
 
   const onDown = (e: PointerEvent): void => {
-    if (!on || (e.pointerType === 'mouse' && e.button !== 0)) return;
-    const owned = fingers.size === 0 && inLive(e.target);
+    if (!on || options.active?.() === false) return;
+    if (options.ignoreSynthetic === true && !e.isTrusted) return;
+    if (e.pointerType === 'pen' && options.ignorePen === true) return;
+    if (e.pointerType === 'mouse' && !(options.mousePans === undefined ? e.button === 0 : options.mousePans(e))) return;
+    if (e.pointerType === 'touch' && options.rejectTouch?.(e) === true) {
+      turnedAway.add(e.pointerId);
+      return;
+    }
+    const owned = fingers.size === 0 && inLive(e.target, e);
     fingers.set(e.pointerId, { x: e.clientX, y: e.clientY, startX: e.clientX, startY: e.clientY, t0: e.timeStamp, owned, samples: [{ t: e.timeStamp, x: e.clientX, y: e.clientY }] });
     if (fingers.size === 1) {
       tapOk = true;
       pinched = false;
       if (owned) return;
-      grab();
+      if (!lazy) grab();
       try {
         el.setPointerCapture(e.pointerId);
       } catch {
         // not capturable: the page still gets its moves
       }
       if (e.pointerType === 'mouse') e.preventDefault();
+      if (options.swallow === true) e.stopImmediatePropagation();
     } else if (fingers.size === 2) {
-      // two fingers are the wall's, wherever the first began
+      // two fingers are the lens's, wherever the first began
       tapOk = false;
       pinched = true;
       grab();
+      // whoever began a press or a stroke with the first finger lets go of it before the lens takes the capture
+      options.onPinch?.([...fingers.keys()]);
       for (const id of fingers.keys()) {
         try {
           el.setPointerCapture(id);
@@ -163,12 +226,13 @@ export function attachGestures(el: HTMLElement, rig: LensRig, options: GestureOp
       prevDist = m.d;
       prevMid = { x: m.x, y: m.y };
       e.preventDefault();
-    }
+      if (options.swallow === true) e.stopImmediatePropagation();
+    } else if (options.swallow === true) e.stopImmediatePropagation();
   };
 
   const onMove = (e: PointerEvent): void => {
     const finger = fingers.get(e.pointerId);
-    if (finger === undefined || !on) return;
+    if (finger === undefined || !on || (options.ignoreSynthetic === true && !e.isTrusted)) return;
     const px = e.clientX - finger.x;
     const py = e.clientY - finger.y;
     finger.x = e.clientX;
@@ -185,11 +249,22 @@ export function attachGestures(el: HTMLElement, rig: LensRig, options: GestureOp
       prevDist = m.d;
       prevMid = { x: m.x, y: m.y };
       e.preventDefault();
+      if (options.swallow === true) e.stopImmediatePropagation();
       changed();
       return;
     }
     if (finger.owned) return;
-    if (Math.hypot(e.clientX - finger.startX, e.clientY - finger.startY) > SLOP) tapOk = false;
+    if (options.swallow === true) e.stopImmediatePropagation();
+    if (tapOk && Math.hypot(e.clientX - finger.startX, e.clientY - finger.startY) > SLOP) {
+      tapOk = false;
+      if (lazy) {
+        grab();
+        // the pan counts from where the finger first went down, so the lens does not lag the slop behind it
+        rig.pan(e.clientX - finger.startX, e.clientY - finger.startY);
+        changed();
+        return;
+      }
+    }
     if (!tapOk) {
       rig.pan(px, py);
       changed();
@@ -197,6 +272,8 @@ export function attachGestures(el: HTMLElement, rig: LensRig, options: GestureOp
   };
 
   const onUp = (e: PointerEvent): void => {
+    if (options.ignoreSynthetic === true && !e.isTrusted) return;
+    if (turnedAway.delete(e.pointerId)) return;
     const finger = fingers.get(e.pointerId);
     if (finger === undefined) return;
     fingers.delete(e.pointerId);
@@ -205,6 +282,7 @@ export function attachGestures(el: HTMLElement, rig: LensRig, options: GestureOp
     } catch {
       // gone already
     }
+    if (options.swallow === true && !finger.owned) e.stopImmediatePropagation();
     if (fingers.size === 1) {
       // one finger of a pinch lifts: the other carries on as a pan from here
       const rest = [...fingers.values()][0];
@@ -214,16 +292,16 @@ export function attachGestures(el: HTMLElement, rig: LensRig, options: GestureOp
     }
     if (fingers.size > 0) return;
     if (!grabbed && finger.owned) return;
-    const quick = e.timeStamp - finger.t0 <= TAP_MS;
+    const quick = e.timeStamp - finger.t0 <= tapMs;
     const wasTap = e.type === 'pointerup' && tapOk && quick && !pinched && !finger.owned && Math.hypot(e.clientX - finger.startX, e.clientY - finger.startY) <= SLOP;
-    finishAll(finger, wasTap, { x: e.clientX, y: e.clientY });
+    finishAll(finger, wasTap, { x: e.clientX, y: e.clientY }, e);
   };
 
   const onWheel = (e: WheelEvent): void => {
-    if (!on) return;
+    if (!on || e.defaultPrevented || options.active?.() === false) return;
     const zoom = e.ctrlKey || e.metaKey;
     // one finger or a wheel over the live frame at full size is the frame's scroll; ctrl and wheel is always the wall's
-    if (!zoom && inLive(e.target)) return;
+    if (!zoom && inLive(e.target, e)) return;
     e.preventDefault();
     const unit = e.deltaMode === 1 ? WHEEL_LINE : e.deltaMode === 2 ? options.screen().height : 1;
     grab();
@@ -278,26 +356,35 @@ export function attachGestures(el: HTMLElement, rig: LensRig, options: GestureOp
   };
 
   const onKey = (e: KeyboardEvent): void => {
-    if (!on || e.metaKey || e.ctrlKey || e.altKey || editable(e.target)) return;
+    if (!on || editable(e.target) || options.active?.() === false) return;
+    if (options.onKeys !== undefined) {
+      if (options.onKeys(e)) {
+        e.preventDefault();
+        changed();
+      }
+      return;
+    }
+    if (e.metaKey || e.ctrlKey || e.altKey || options.plan === undefined) return;
+    const wall = rig as LensRig;
     const now = clock();
     const rows = rowAxis(options.plan());
     let handled = true;
     switch (e.key) {
       case 'ArrowRight':
-        rows ? rig.step(1, 0, now) : rig.step(0, 1, now);
+        rows ? wall.step(1, 0, now) : wall.step(0, 1, now);
         break;
       case 'ArrowLeft':
-        rows ? rig.step(-1, 0, now) : rig.step(0, -1, now);
+        rows ? wall.step(-1, 0, now) : wall.step(0, -1, now);
         break;
       case 'ArrowDown':
-        rows ? rig.step(0, 1, now) : rig.step(1, 0, now);
+        rows ? wall.step(0, 1, now) : wall.step(1, 0, now);
         break;
       case 'ArrowUp':
-        rows ? rig.step(0, -1, now) : rig.step(-1, 0, now);
+        rows ? wall.step(0, -1, now) : wall.step(-1, 0, now);
         break;
       case '0':
       case 'Escape':
-        rig.toggleMap(now);
+        wall.toggleMap(now);
         break;
       default:
         handled = false;
@@ -314,7 +401,7 @@ export function attachGestures(el: HTMLElement, rig: LensRig, options: GestureOp
     el.addEventListener('pointermove', onMove, cap);
     el.addEventListener('pointerup', onUp, cap);
     el.addEventListener('pointercancel', onUp, cap);
-    el.addEventListener('wheel', onWheel, { passive: false, capture: cap });
+    el.addEventListener('wheel', onWheel, { passive: false, capture: cap && options.wheelAfter !== true });
     el.addEventListener('gesturestart', onGestureStart as EventListener, { passive: false });
     el.addEventListener('gesturechange', onGestureChange as EventListener, { passive: false });
     el.addEventListener('gestureend', onGestureEnd as EventListener, { passive: false });
@@ -325,7 +412,7 @@ export function attachGestures(el: HTMLElement, rig: LensRig, options: GestureOp
     el.removeEventListener('pointermove', onMove, cap);
     el.removeEventListener('pointerup', onUp, cap);
     el.removeEventListener('pointercancel', onUp, cap);
-    el.removeEventListener('wheel', onWheel, { capture: cap });
+    el.removeEventListener('wheel', onWheel, { capture: cap && options.wheelAfter !== true });
     el.removeEventListener('gesturestart', onGestureStart as EventListener);
     el.removeEventListener('gesturechange', onGestureChange as EventListener);
     el.removeEventListener('gestureend', onGestureEnd as EventListener);
@@ -348,11 +435,12 @@ export function attachGestures(el: HTMLElement, rig: LensRig, options: GestureOp
         el.style.touchAction = before;
         unbind();
         fingers.clear();
+        turnedAway.clear();
         grabbed = false;
       }
     },
     toggleMap(): void {
-      rig.toggleMap(clock());
+      (rig as LensRig).toggleMap(clock());
       changed();
     },
     dispose(): void {

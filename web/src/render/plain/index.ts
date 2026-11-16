@@ -2,7 +2,7 @@ import { LOOK_IDS } from '@conduit/language';
 import type { Layer, LookId } from '@conduit/language';
 import type { ElementFrame, Frame, Quality } from '../../contracts/frame';
 import type { Renderer, RendererCapabilities } from '../../contracts/renderer';
-import { layerZ, projectToScreen } from '../../contracts/space';
+import { cssOf, layerZ, projectToScreen } from '../../contracts/space';
 import { clipQuad } from '../place';
 import type { Viewport } from '../../contracts/space';
 import { FONTS } from '../../fonts';
@@ -52,6 +52,7 @@ export function createPlainRenderer(): Renderer {
   let picked: Picked[] = [];
   let loaded = false;
   let figures: PlainFigures | null = null;
+  let lensCss = '';
 
   const makeNode = (parent: HTMLElement): Node => {
     const outer = document.createElement('div');
@@ -256,6 +257,13 @@ export function createPlainRenderer(): Renderer {
     render(frame: Frame): void {
       if (root === null) return;
       root.style.background = frame.ground;
+      // the lens: the page is drawn as it always is, and the box that holds it is moved and scaled over the screen (the stage clips it)
+      const lens = cssOf(frame.view);
+      if (lens !== lensCss) {
+        lensCss = lens;
+        root.style.transformOrigin = lens === '' ? '' : '0 0';
+        root.style.transform = lens;
+      }
       figures?.sync(frame.figures, frame.camera, frame.viewport);
       picked = [];
       const seen = new Set<string>();

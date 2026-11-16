@@ -115,6 +115,7 @@ Query parameters on `/`:
 | `look=<name>` | locks the stage to one of the nine looks |
 | `renderer=plain` | forces the DOM renderer. `renderer=three` forces WebGL. |
 | `motion=reduced` | behaves as if the OS asked for reduced motion. `motion=full` ignores the OS setting. |
+| `lens=1` | (PLAN-canvas step 1, experimental) a lens on the stage: two fingers pinch and pan, one finger on empty stage pans, Ctrl or Cmd with the wheel zooms, `0` fits, `1` goes to 100%, `+` and `-` zoom, the arrows move. A Pencil drags to draw without Draw switched on, and a short Pencil tap presses. The layout is untouched; off, nothing changes. `pnpm check` has a lens group for it. Ignored with `wall=1`. |
 
 The bar under the stage has Show all (also the `.` key while the stage has focus: the stage is a focusable region, so the key never swallows a character typed elsewhere), Save (film of the latest answer, the whole conversation as one WebM, a picture as PNG or SVG, MIDI, copy script, play a script) and Transcript.
 

@@ -181,7 +181,9 @@ async function start(): Promise<void> {
     capture: (maxSide) => mounted.capture(maxSide),
     prompt: (words, marks) => mounted.prompt(words, [], marks),
     announce: (text) => mounted.announce(text),
-  });
+  }, mounted.lens === null ? {} : { guard: mounted.lens.guard });
+  // ?lens=1: the pen draws on the stage without Draw, and the ink is looked through the lens
+  mounted.lens?.useInk(stageInk);
   mountWorkMode({ stage: stageHost, bar: bar as HTMLElement, ink: stageInk, controls: () => mounted.hook.controls(),
     question: () =>
       mounted.hook
@@ -196,6 +198,7 @@ async function start(): Promise<void> {
   });
   // for the browser checks (web/scripts/ink-check.mjs): the ink layer's own latency numbers
   (window as unknown as { __inkStats?: () => unknown }).__inkStats = () => stageInk?.ink.stats();
+  (window as unknown as { __inkDoc?: () => unknown }).__inkDoc = () => stageInk?.ink.document();
   (window as unknown as { __inkClear?: () => void }).__inkClear = () => stageInk?.ink.reset();
   (window as unknown as { __inkStrokes?: () => number }).__inkStrokes = () => stageInk?.ink.model.strokes.length ?? 0;
   mountActions(promptBar.extra, mounted, transcript, stageHost, { top: promptBar.top, menu: promptBar.menu });

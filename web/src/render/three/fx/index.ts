@@ -319,8 +319,7 @@ void main() {
       // The stage: premultiplied picture of every layer, on transparent.
       const stageTarget = gp > 0 ? tools.target('stage', { width: gridW, height: gridH, nearest: true }) : tools.target('stage', { msaa: !lite });
       if (gp > 0) {
-        stage.camera.setViewOffset(fullW, fullH, 0, 0, gridW, gridH);
-        stage.camera.updateProjectionMatrix();
+        stage.viewCells(fullW, fullH, gridW, gridH);
       }
       const behind: Layer[] = [];
       if (gp === 0) {
@@ -351,8 +350,7 @@ void main() {
         tools.drawStage(stage.scene, stage.camera, stageTarget, { layers: ['far', 'bg', 'mid', 'fg'], clear: 'transparent' });
       }
       if (gp > 0) {
-        stage.camera.clearViewOffset();
-        stage.camera.updateProjectionMatrix();
+        stage.viewRest();
       }
       if (listed.some(({ effect }) => effect.name === 'header')) {
         placeHeaderCamera(tools.viewport, fullW, fullH, gridW, gridH, gp > 0);

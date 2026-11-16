@@ -460,7 +460,10 @@ export class Tab {
     });
   }
 
-  static async open(width: number, height: number): Promise<Tab> {
+  /** the page has a touch screen (a phone's size, or asked for): `tap` then uses a finger */
+  touch = false;
+
+  static async open(width: number, height: number, emulate: { readonly dpr?: number; readonly touch?: boolean } = {}): Promise<Tab> {
     const chrome = CHROME_CANDIDATES.find((path) => existsSync(path));
     if (chrome === undefined) throw new Error('no Chrome found: set CHROME_BIN to a Chrome or Chromium executable');
     const profile = await mkdtemp(join(tmpdir(), 'conduit-smoke-'));
@@ -480,11 +483,12 @@ export class Tab {
       const { targetId } = await browser.send<{ targetId: string }>('Target.createTarget', { url: 'about:blank' });
       const { sessionId } = await browser.send<{ sessionId: string }>('Target.attachToTarget', { targetId, flatten: true });
       const mobile = width < 600;
-      const dpr = mobile ? 2 : 1;
+      const dpr = emulate.dpr ?? (mobile ? 2 : 1);
       const tab = new Tab(browser, sessionId, child, profile, width, height, mobile, dpr);
+      tab.touch = mobile || emulate.touch === true;
       for (const domain of ['Page', 'Runtime', 'Network', 'Log', 'Debugger']) await tab.send(`${domain}.enable`);
       await tab.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: dpr, mobile });
-      if (mobile) await tab.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 });
+      if (mobile || emulate.touch === true) await tab.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: emulate.touch === true ? 5 : 1 });
       await tab.send('Page.addScriptToEvaluateOnNewDocument', { source: PAGE_LIB });
       return tab;
     } catch (error) {
@@ -571,7 +575,7 @@ export class Tab {
 
   /** a click with a mouse, or a tap with a finger on a phone: the page gets real pointer events either way */
   async tap(x: number, y: number): Promise<void> {
-    if (this.mobile) {
+    if (this.touch) {
       await this.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
       await sleep(60);
       await this.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });

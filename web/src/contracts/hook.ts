@@ -57,6 +57,8 @@ export interface StageHook {
   leaders(): readonly LeaderView[];
   /** What the controls bind on the stage's elements, as it holds now: bound words, table marks, `set` values. What the catalogue's pick check reads. */
   bindings(): readonly BindingView[];
+  /** PLAN-canvas step 1 (`?lens=1`): the lens now. `view` is null at rest; `touched` once a person has moved it. Null without the flag. */
+  lens(): { readonly view: import('./space').LensView | null; readonly touched: boolean } | null;
   /** The controls on stage, with their values and where they are on screen. */
   controls(): readonly ControlView[];
   /**

@@ -615,7 +615,9 @@ async function start(): Promise<void> {
     capture: (maxSide) => mounted.capture(maxSide),
     prompt: (words, marks) => mounted.prompt(words, [], marks),
     announce: (text) => mounted.announce(text),
-  });
+  }, mounted.lens === null ? {} : { guard: mounted.lens.guard });
+  // ?lens=1: the pen draws on the stage without Draw, and the ink is looked through the lens
+  mounted.lens?.useInk(stageInk);
   stageInk.ink.onChange(() => composer.refresh());
   mountActions(canvas.tools, mounted, transcript, canvas.stageHost, { top: canvas.navTop, menu });
   mountSound(canvas.navTop, mounted);

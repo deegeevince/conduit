@@ -2,7 +2,7 @@ import type { Layer } from '@conduit/language';
 import { Group, PerspectiveCamera, Scene } from 'three';
 import type { ElementFrame } from '../../contracts/frame';
 import { cameraRig, layerZ, restDistance } from '../../contracts/space';
-import type { CameraPose, Viewport } from '../../contracts/space';
+import type { CameraPose, LensView, Viewport } from '../../contracts/space';
 
 /**
  * The three.js scene: one group per layer at its depth, and the camera.
@@ -18,8 +18,15 @@ export interface StageGraph {
   /** the look's surface in the scene, on the reading plane, so it moves under the camera: paper, fanfold, a drafting grid */
   readonly surface: Group;
   resize(viewport: Viewport): void;
-  /** Places the camera exactly where `cameraRig(pose, viewport)` says. */
-  setCamera(pose: CameraPose): void;
+  /**
+   * Places the camera exactly where `cameraRig(pose, viewport)` says. With a lens view the camera is cropped to the part of the picture it names
+   * (`setViewOffset`): the picture is that of a screen `scale` times as large, and only the window is drawn, so nothing is resampled.
+   */
+  setCamera(pose: CameraPose, view?: LensView | null): void;
+  /** A look that draws on a coarse grid: the camera cropped to the grid's raster (the lens, if there is one, is carried into the crop). */
+  viewCells(fullWidth: number, fullHeight: number, gridWidth: number, gridHeight: number): void;
+  /** Puts the camera back to the view the frame asked for, after `viewCells`. */
+  viewRest(): void;
   dispose(): void;
 }
 
@@ -60,6 +67,12 @@ export function createStageGraph(viewport: Viewport): StageGraph {
 
   let current = viewport;
   let pose: CameraPose = { x: 0, y: 0, dolly: 0, yaw: 0, pitch: 0, roll: 0 };
+  let lens: LensView | null = null;
+
+  const crop = (): void => {
+    if (lens === null) camera.clearViewOffset();
+    else camera.setViewOffset(lens.width * lens.scale, lens.height * lens.scale, lens.x * lens.scale, lens.y * lens.scale, lens.width, lens.height);
+  };
 
   const place = (): void => {
     for (const layer of ['far', 'bg', 'mid', 'fg'] as const) layers[layer].position.set(0, 0, layerZ(layer, current));
@@ -73,6 +86,7 @@ export function createStageGraph(viewport: Viewport): StageGraph {
     camera.up.set(0, 1, 0);
     camera.lookAt(rig.target.x, -rig.target.y, rig.target.z);
     camera.rotateZ(rig.roll);
+    crop();
     camera.updateProjectionMatrix();
     camera.updateMatrixWorld(true);
   };
@@ -88,9 +102,24 @@ export function createStageGraph(viewport: Viewport): StageGraph {
       current = next;
       place();
     },
-    setCamera(next) {
+    setCamera(next, view = null) {
       pose = next;
+      lens = view;
       place();
+    },
+    viewCells(fullWidth, fullHeight, gridWidth, gridHeight) {
+      if (lens === null) camera.setViewOffset(fullWidth, fullHeight, 0, 0, gridWidth, gridHeight);
+      else {
+        // the raster has `fullWidth` cells across the screen: the lens crops that raster the way it crops the screen
+        const k = fullWidth / lens.width;
+        const j = fullHeight / lens.height;
+        camera.setViewOffset(fullWidth * lens.scale, fullHeight * lens.scale, lens.x * lens.scale * k, lens.y * lens.scale * j, gridWidth, gridHeight);
+      }
+      camera.updateProjectionMatrix();
+    },
+    viewRest() {
+      crop();
+      camera.updateProjectionMatrix();
     },
     dispose() {
       scene.clear();

@@ -32,6 +32,9 @@ export const INK_CSS = `
 .ink-bar__status:empty{display:none}
 .ink-stage{position:absolute;inset:0;z-index:30}
 .ink-stage[hidden]{display:none}
+.ink-stage--through,.ink-stage--through .ink{pointer-events:none}
+.ink-stage--through .ink-stage__bar{pointer-events:auto}
+.ink-bar[hidden]{display:none}
 .ink-stage__bar{position:absolute;left:50%;transform:translateX(-50%);top:10px;max-width:calc(100% - 20px);z-index:2}
 .ink-stage .ink{background:rgba(255,255,255,.02)}
 @media (prefers-reduced-motion:no-preference){.ink-btn,.ink-swatch__dot{transition:background-color .12s,box-shadow .12s}}

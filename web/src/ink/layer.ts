@@ -42,6 +42,8 @@ export interface InkOptions {
   readonly context?: InkBox;
   /** `auto` (default): a finger draws until a pen has been seen. */
   readonly fingerDraws?: 'auto' | boolean;
+  /** One palm guard shared with whatever else listens to the same hands (the stage's lens), so a pen seen by one is seen by both. Absent: the layer has its own. */
+  readonly guard?: PalmGuard;
   /** CSS pixels the pen draws at full pressure (default 3.2) and the highlighter's width (default 18) */
   readonly penSize?: number;
   readonly highlighterSize?: number;
@@ -78,6 +80,15 @@ export interface Ink {
   setContext(box: InkBox | undefined): void;
   setBackground(background: InkBackground | null, space?: InkSpace): void;
   setFingerDraws(value: 'auto' | boolean): void;
+  /**
+   * The lens the layer is looked through (PLAN-canvas): the space point at the layer's top-left and how many layer pixels one space unit takes on top of the layer's own
+   * fit. Strokes stay in space units, so zooming and panning never touches them; the pen's width on the screen stays what it was. Null: no lens.
+   */
+  setView(view: { readonly x: number; readonly y: number; readonly scale: number } | null): void;
+  /** A pen that went down on the stage elsewhere (the lens's capture) begins its stroke here, as if the layer had been under it. */
+  pointerDown(event: PointerEvent): void;
+  /** Throws away the stroke this pointer has begun (a second finger took the hand, or the pen turned out to be a tap). */
+  abort(pointerId: number): void;
   /** whether a finger draws now (with `auto`: until a pen has been seen) */
   fingerDraws(): boolean;
   undo(): void;
@@ -170,11 +181,12 @@ export function createInk(host: HTMLElement, options: InkOptions = {}): Ink {
   let background: InkBackground | null = options.background ?? null;
   let tool: InkToolName = 'pen';
   let color: string = colors[0]!;
-  const guard = new PalmGuard(options.fingerDraws ?? 'auto');
+  const guard = options.guard ?? new PalmGuard(options.fingerDraws ?? 'auto');
   let building: Building | null = null;
   const pans = new Map<number, Panning>();
   const ignored = new Set<number>();
   let view = { scale: 1, ox: 0, oy: 0, w: 1, h: 1, dpr: 1 };
+  let lens: { readonly x: number; readonly y: number; readonly scale: number } | null = null;
   let disposed = false;
   let scratch: { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D } | null = null;
   const lat: number[] = [];
@@ -195,9 +207,8 @@ export function createInk(host: HTMLElement, options: InkOptions = {}): Ink {
     if (placement === 'flow') root.style.aspectRatio = `${space.w} / ${space.h}`;
     const w = Math.max(1, root.clientWidth);
     const h = Math.max(1, root.clientHeight);
-    const scale = placement === 'flow' ? w / space.w : Math.min(w / space.w, h / space.h);
     const dpr = Math.min(window.devicePixelRatio || 1, MAX_CANVAS_SIDE / Math.max(w, h));
-    view = { scale, ox: placement === 'flow' ? 0 : (w - space.w * scale) / 2, oy: placement === 'flow' ? 0 : (h - space.h * scale) / 2, w, h, dpr };
+    fit(w, h, dpr);
     for (const canvas of [base, live]) {
       const pw = Math.round(w * dpr);
       const ph = Math.round(h * dpr);
@@ -206,6 +217,21 @@ export function createInk(host: HTMLElement, options: InkOptions = {}): Ink {
         canvas.height = ph;
       }
     }
+    place();
+    redrawBase();
+    redrawLive();
+  }
+
+  /** space to pixels: the layer's own fit, then the lens over it */
+  function fit(w: number, h: number, dpr: number): void {
+    const scale = placement === 'flow' ? w / space.w : Math.min(w / space.w, h / space.h);
+    const ox = placement === 'flow' ? 0 : (w - space.w * scale) / 2;
+    const oy = placement === 'flow' ? 0 : (h - space.h * scale) / 2;
+    view = lens === null ? { scale, ox, oy, w, h, dpr } : { scale: scale * lens.scale, ox: ox - lens.x * scale * lens.scale, oy: oy - lens.y * scale * lens.scale, w, h, dpr };
+  }
+
+  /** the picture and the guides stand where the view puts them */
+  function place(): void {
     const left = `${view.ox}px`;
     const top = `${view.oy}px`;
     const width = `${space.w * view.scale}px`;
@@ -213,8 +239,6 @@ export function createInk(host: HTMLElement, options: InkOptions = {}): Ink {
     Object.assign(bg.style, { left, top, width, height });
     Object.assign(guides.style, { left, top, width, height });
     drawGuides();
-    redrawBase();
-    redrawLive();
   }
 
   const apply = (ctx: CanvasRenderingContext2D): void => ctx.setTransform(view.dpr * view.scale, 0, 0, view.dpr * view.scale, view.dpr * view.ox, view.dpr * view.oy);
@@ -640,6 +664,18 @@ export function createInk(host: HTMLElement, options: InkOptions = {}): Ink {
         model.space = nextSpace;
       }
       layout();
+    },
+    setView(next) {
+      lens = next;
+      fit(view.w, view.h, view.dpr);
+      place();
+      redrawBase();
+      redrawLive();
+    },
+    pointerDown: (event) => onDown(event),
+    abort(pointerId) {
+      if (building !== null && building.pointerId === pointerId) abandon(building);
+      pans.delete(pointerId);
     },
     setFingerDraws: (value) => {
       guard.setFingerDraws(value);
