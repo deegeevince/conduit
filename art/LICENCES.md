@@ -17,10 +17,13 @@ Every seed was drawn by Fable (a model) for this project, off the answer's clock
 | `child-standing-b.json`, `child-standing-d.json` | child, standing | fable | B, D | MIT |
 | `rocket-b.json`, `rocket-d.json` | rocket | fable | B, D | MIT |
 | `oak-tree-b.json`, `oak-tree-d.json` | oak tree | fable | B, D | MIT |
+| `cat-sitting-b.json` | cat, sitting, facing left (the first sheet of `pnpm art fill`) | fable | B | MIT |
 
 The bake-off's heart cutaway is not on the shelf: diagrams stay with the brain's diagram tools.
 
 ## Adding a sheet
+
+`pnpm art fill --into seed` commissions the subjects of `art/common.txt` that the shelf lacks, through the studio's own path, and writes each sheet here as `made: fable`, MIT; add a row for it above. `--dry-run` projects the time and cost first.
 
 ```
 pnpm art import /path/to/drawing.svg --subject "red panda" --pose sitting --view side --facing left --arm B --by fable

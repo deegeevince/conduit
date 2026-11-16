@@ -1,0 +1,126 @@
+{
+ "v": 1,
+ "subject": "cat",
+ "pose": "sitting",
+ "view": "side",
+ "facing": "left",
+ "ground": 89.1,
+ "slots": [
+  {
+   "name": "orange",
+   "hue": "orange"
+  },
+  {
+   "name": "cream",
+   "hue": "cream"
+  }
+ ],
+ "parts": [
+  {
+   "id": "shadow",
+   "line": "ellipse shadow 4,39 38x5 fill=dim stroke=none"
+  },
+  {
+   "id": "tail",
+   "line": "path tail fill=$orange+1 stroke=ink thick=1.8 brush=ink | M16 35 C32 39 45 30 41 14 C39 8 32 9 33 15 C35 24 28 28 18 26 Z"
+  },
+  {
+   "id": "tail-tip",
+   "line": "path tail-tip fill=$orange-1 stroke=ink thick=1.8 brush=ink | M41 16 C40 8 32 8 33 15 C35 19 39 19 41 16 Z"
+  },
+  {
+   "id": "far-leg",
+   "line": "path far-leg fill=$orange-1 stroke=ink thick=1.8 brush=ink | M-20 8 C-21 18 -22 28 -23 34 C-24 38 -14 38 -14 35 L-12 10 Z"
+  },
+  {
+   "id": "body",
+   "line": "path body fill=$orange+1 stroke=ink thick=1.8 brush=ink | M-12 -8 C6 -12 28 2 30 24 C31 33 25 37 18 37 L-12 37 C-17 26 -20 12 -18 -2 Z"
+  },
+  {
+   "id": "back-shade",
+   "line": "path back-shade fill=$orange-1 stroke=none | M2 -6.5 C16 -4 27 8 28.8 24 C29 29 27 33 24 35 C26 22 18 4 2 -6.5 Z"
+  },
+  {
+   "id": "chest",
+   "line": "path chest fill=$cream stroke=none | M-17 -3 C-10 2 -6 12 -10 26 C-15 20 -18 8 -17 -3 Z"
+  },
+  {
+   "id": "haunch",
+   "line": "path haunch fill=$orange+1 stroke=ink thick=0.8 brush=ink | M4 37 C1 24 10 15 19 18 C26 21 28 30 23 37 Z"
+  },
+  {
+   "id": "near-leg",
+   "line": "path near-leg fill=$orange+2 stroke=ink thick=1.4 brush=ink | M-12 8 C-13 20 -14 28 -15 34 C-16 39 -4 39 -4 35 C-4 26 -3 18 -2 10 C-5 7 -9 6 -12 8 Z"
+  },
+  {
+   "id": "hind-paw",
+   "line": "ellipse hind-paw 7,35.5 9x3.6 fill=$orange+2 stroke=ink thick=1.4 brush=ink"
+  },
+  {
+   "id": "far-ear",
+   "line": "path far-ear fill=$orange-1 stroke=ink thick=1.8 brush=ink | M-31 -28 C-33 -36 -33 -42 -31 -47 C-26 -44 -21 -40 -18 -35 Z"
+  },
+  {
+   "id": "near-ear",
+   "line": "path near-ear fill=$orange+1 stroke=ink thick=1.8 brush=ink | M-13 -36 C-9 -41 -4 -45 1 -47 C3 -40 3 -33 0 -26 Z"
+  },
+  {
+   "id": "near-ear-inner",
+   "line": "path near-ear-inner fill=$cream-2 stroke=none | M-9 -36 C-6 -39 -3 -42 -0.5 -43 C0.5 -38 0 -34 -1.5 -30 Z"
+  },
+  {
+   "id": "head",
+   "line": "ellipse head -16,-20 18x16 fill=$orange+1 stroke=ink thick=1.8 brush=ink"
+  },
+  {
+   "id": "forehead-strip",
+   "line": "path forehead-strip fill=$orange-1 stroke=none | M-20.5 -35 C-19.5 -32 -19.5 -30 -20.5 -27 C-17 -29 -15.5 -32 -15.5 -35 Z"
+  },
+  {
+   "id": "muzzle",
+   "line": "ellipse muzzle -24,-13 7.5x6 fill=$cream stroke=none"
+  },
+  {
+   "id": "cheek",
+   "line": "circle cheek -10,-14 3 fill=$cream-2 stroke=none opacity=0.6"
+  },
+  {
+   "id": "far-eye",
+   "line": "ellipse far-eye -28,-22 1.8x2.6 fill=deep stroke=none"
+  },
+  {
+   "id": "near-eye",
+   "line": "ellipse near-eye -17,-22 2.2x2.9 fill=deep stroke=none"
+  },
+  {
+   "id": "nose",
+   "line": "poly nose -27.7,-17 -23.3,-17 -25.5,-14.4 fill=$cream-2 stroke=ink thick=0.6 brush=ink"
+  },
+  {
+   "id": "mouth",
+   "line": "path mouth fill=none stroke=ink thick=0.8 brush=ink | M-29 -12 Q-27 -9.8 -25.5 -12.4 Q-24 -9.8 -21.5 -12"
+  },
+  {
+   "id": "whiskers",
+   "line": "path whiskers fill=none stroke=ink thick=0.6 brush=ink | M-30.5 -13.5 L-41 -15.5"
+  },
+  {
+   "id": "whiskers-2",
+   "line": "path whiskers-2 fill=none stroke=ink thick=0.6 brush=ink | M-30.5 -11.5 L-41 -9.5"
+  },
+  {
+   "id": "whiskers-3",
+   "line": "path whiskers-3 fill=none stroke=ink thick=0.6 brush=ink | M-18 -13 L-7 -14.5"
+  },
+  {
+   "id": "whiskers-4",
+   "line": "path whiskers-4 fill=none stroke=ink thick=0.6 brush=ink | M-18 -11 L-7 -8.5"
+  }
+ ],
+ "made": {
+  "by": "fable",
+  "arm": "B",
+  "how": "fable, one careful drawing off the answer's clock (bake-off arm B), 57.6 s, $0.22; read by the strict converter and restyled to the house palette"
+ },
+ "licence": "MIT (made for this project on the owner's own subscription)"
+}

@@ -1,4 +1,4 @@
-import { API, SKILL_HOLD, CANVAS, DATA_LIMITS, EMPTY_STAGE, isLessonVerb, PASTE_AS_DOCUMENT_CHARS, FULL_CAPABILITIES, LANGUAGE, LEAD_WINDOW, LineNormalizer, LineReader, PRESENCE_TYPING_MS, TurnScore, buildSystemPrompt, draftFactsOf, hasLesson, usesParts, repairWorth, serializeLine, settle, splitCells, wearingAt, withoutUnknownBraces, worthALook } from '@conduit/language';
+import { API, SKILL_HOLD, CANVAS, DATA_LIMITS, EMPTY_STAGE, isLessonVerb, PASTE_AS_DOCUMENT_CHARS, FULL_CAPABILITIES, LANGUAGE, LEAD_WINDOW, LineNormalizer, LineReader, PRESENCE_TYPING_MS, parseLine, TurnScore, buildSystemPrompt, draftFactsOf, hasLesson, usesParts, repairWorth, serializeLine, settle, splitCells, wearingAt, withoutUnknownBraces, worthALook } from '@conduit/language';
 import type { DrawLine, RepairWorth, StyleProps, SkillBlockFacts, TechniqueCard } from '@conduit/language';
 import type { ActivityState, BrainChange, BrainChoice, BrainMode, CriticFinding, DocumentSummary, DocumentView, FixPolicy, NodeId, NodeStatus, OpenDocumentResponse, PromptVariant, Seen, ToolChoice } from '@conduit/language';
 import type {
@@ -38,7 +38,7 @@ import type { ImageModel } from './images';
 import { Cast, captionId, captionLines, dropCaption, planDraw, planSwap } from '../art/draw';
 import type { Wanting } from '../art/draw';
 import { noteArt } from '../art/notes';
-import { resolveNear } from '../art/parts';
+import { relabel, resolveNear } from '../art/parts';
 import type { Shelf } from '../art/shelf';
 import { commissionOf } from '../art/studio';
 import type { Studio, StudioEvent } from '../art/studio';
@@ -2437,7 +2437,14 @@ export class Conductor {
     const planned = planSwap(pending.wanting, sheet, wearingAt(turn.score.schedule, turn.score.base, turn.score.schedule.pen), pending.shown);
     pending.shown = planned.parts;
     this.figureHas(s, pending.wanting.id, planned.parts);
-    const shown = this.showInPlace(s, turn, { kind: 'repair', of: turn.id }, planned.lines.map((line) => ({ type: 'line' as const, line, issues: [] })), normalizer, false);
+    // labels said while the drawing was on its way name parts by the brain's guess (`near=giraffe1-neck`): they are pointed at the parts the drawing has
+    const labels = turn.score.schedule.elements.flatMap((element) => (element.kind === 'text' && element.exit === null && element.style.near !== null ? [{ id: element.id, near: element.style.near.id, side: element.style.near.side }] : []));
+    const pointed = relabel(pending.wanting.id, planned.parts, labels).flatMap((moved) => {
+      const parsed = parseLine(`set ${moved.id} near=${moved.near}:${labels.find((label) => label.id === moved.id)?.side ?? 'auto'}`);
+      return parsed.kind === 'line' ? [parsed.line] : [];
+    });
+    if (pointed.length > 0) this.deps.log.info('art.relabel', { session: s.id, id: pending.wanting.id, labels: pointed.length });
+    const shown = this.showInPlace(s, turn, { kind: 'repair', of: turn.id }, [...planned.lines, ...pointed].map((line) => ({ type: 'line' as const, line, issues: [] })), normalizer, false);
     const swap = s.turns.get(shown);
     // what the parts are called goes into the next brief, with the rest of how this turn landed
     if (swap !== undefined) noteArt(swap, pending.wanting.id, { kind: 'drawn', subject: sheet.subject, parts: planned.parts });

@@ -4,6 +4,7 @@
 //   swap      `draw giraffe1 giraffe` shows a soft placeholder; a `move` and a label `near=giraffe1-neck` are said meanwhile; then the parts of the drawing
 //             appear in the placeholder's place (the group kept, the move kept, the label by the neck), the placeholder is gone, and a second `draw` of the
 //             subject is an immediate hit (the sheet is on the shelf)
+//   caption   the caption of a pending drawing stands directly under its placeholder (a little dim line, no box), and follows the placeholder when it moves
 //   typing    the person keeps typing while the drawing is made: the placeholder stays; when the keys stop, the drawing arrives
 //   newer     a new scene is said before the drawing is made: the placeholder is gone with the old scene, nothing is swapped over the new one, and the
 //             drawing is on the shelf for the next `draw`
@@ -82,7 +83,7 @@ export async function artGroup(base: string, screen: LensScreen, dir: string, ti
     try {
       await withTab(base, screen, dir, timeoutMs, async (tab, conv, live, play) => {
         const problems: string[] = [];
-        const script = [...HEAD, 'draw giraffe1 giraffe at=40,50 size=46', 'move giraffe1 60,50 over=1s', 'say label near=giraffe1-neck:below | neck', 'wait 1'].join('\n');
+        const script = [...HEAD, 'draw giraffe1 giraffe at=40,50 size=46', 'move giraffe1 60,50 over=1s', 'say label near=giraffe1-neck:below | neck', 'say facelabel near=giraffe1-face:right | face', 'wait 1'].join('\n');
         const started = await play(script);
         if (started !== null) problems.push(`the script would not play: ${started}`);
         const first = await until(8000, async () => (soft(await live(), 'giraffe1') === undefined ? null : await live()));
@@ -116,6 +117,17 @@ export async function artGroup(base: string, screen: LensScreen, dir: string, ti
               const reach = Math.max(neck.box.width, neck.box.height, body.box.width) * 0.7;
               if (off > reach) problems.push(`the drawing's body sits ${off.toFixed(0)} px from where the placeholder stood after the move (more than ${reach.toFixed(0)})`);
             }
+            // a label that named a part by the brain's guess (`face`; the drawing's part is `head`) was pointed at the part when the drawing came
+            const faceLabel = settled.find((element) => element.kind === 'text' && element.text.trim() === 'face');
+            const head = settled.find((element) => element.id === 'giraffe1-head');
+            if (faceLabel === undefined || head === undefined) problems.push('the label "face" or the head part is not on stage');
+            else {
+              const a = centre(faceLabel.box);
+              const b = centre(head.box);
+              const gap = Math.hypot(a.x - b.x, a.y - b.y);
+              const reach = Math.max(head.box.width, head.box.height) * 1.2 + faceLabel.box.height * 2 + faceLabel.box.width / 2;
+              if (gap > reach) problems.push(`the label "face" is ${gap.toFixed(0)} px from the head's middle (more than ${reach.toFixed(0)}): it was not pointed at the part`);
+            }
             if (label === undefined) problems.push('the label "neck" is not on stage');
             else {
               const a = centre(label.box);
@@ -142,6 +154,63 @@ export async function artGroup(base: string, screen: LensScreen, dir: string, ti
       });
     } catch (error) {
       fail('swap', began, error);
+    }
+  }
+
+  // ---- caption ----
+  {
+    const began = Date.now();
+    note('art-maker: caption');
+    try {
+      await withTab(base, screen, dir, timeoutMs, async (tab, conv, live, play) => {
+        const problems: string[] = [];
+        const script = ['look dusk like=night ground=#2b1d3a ink=#f6e3c0 accent=#ffb454', 'scene captioned layout=caption', 'rect sky full layer=far fill=#3a2a55', 'rect ground 0,70 160x20 layer=bg fill=#3d5a3a', 'circle sun 120,58 14 layer=far fill=#ffb454', 'draw ostrich1 ostrich at=45,45 size=66', 'draw vole1 vole at=125,68 size=12', 'say story | A story is told under the picture, in the usual place.', 'wait 1'].join('\n');
+        const started = await play(script);
+        if (started !== null) problems.push(`the script would not play: ${started}`);
+        const placed = async (name: string): Promise<{ soft: Live; cap: Live } | null> => {
+          const now = await live();
+          const placeholder = soft(now, name);
+          const cap = now.find((element) => element.id === `cap-${name}` && element.opacity > 0.5);
+          return placeholder === undefined || cap === undefined ? null : { soft: placeholder, cap };
+        };
+        // the caption's box is wider than its words, so it is judged by its middle and by how far its top is below the placeholder's bottom
+        const under = (name: string, at: { soft: Live; cap: Live }): void => {
+          const drop = at.cap.box.y - (at.soft.box.y + at.soft.box.height);
+          const across = Math.abs(centre(at.cap.box).x - centre(at.soft.box).x);
+          if (drop < -2 || drop > 60) problems.push(`the caption of ${name} is ${drop.toFixed(0)} px below its placeholder's bottom (wanted 0 to 60)`);
+          if (across > Math.max(40, at.soft.box.width * 0.3)) problems.push(`the caption of ${name} is ${across.toFixed(0)} px to the side of its placeholder's middle`);
+        };
+        const mouse = await until(8000, () => placed('vole1'));
+        const giraffe = await until(8000, () => placed('ostrich1'));
+        if (mouse === null || giraffe === null) problems.push('a placeholder or its caption is missing');
+        else {
+          under('ostrich1', giraffe);
+          under('vole1', mouse);
+          // the mouse is moved while its drawing is on its way: the caption goes with it
+          const moved = await play('move vole1 125,25 over=1s');
+          if (moved !== null) problems.push(`the move would not play: ${moved}`);
+          const later = await until(5000, async () => {
+            const at = await placed('vole1');
+            return at !== null && Math.hypot(centre(at.soft.box).x - centre(mouse.soft.box).x, centre(at.soft.box).y - centre(mouse.soft.box).y) > 30 ? at : null;
+          });
+          if (later === null) problems.push('the placeholder of vole1 did not move');
+          else {
+            await sleep(1500);
+            const settled = await placed('vole1');
+            if (settled === null) problems.push('the caption of vole1 is gone after its move');
+            else {
+              under('vole1 after its move', settled);
+              if (Math.hypot(centre(settled.cap.box).x - centre(mouse.cap.box).x, centre(settled.cap.box).y - centre(mouse.cap.box).y) < 20) problems.push('the caption of vole1 did not follow its placeholder');
+            }
+          }
+        }
+        const picture = `${dir}/art-caption.png`;
+        await tab.shot().then((data) => writeFile(picture, Buffer.from(data.split(',')[1] ?? '', 'base64'))).catch(() => undefined);
+        await conv.rest(null, false).catch(() => undefined);
+        result('caption', picture, began, problems, 'each pending drawing has its caption directly under its placeholder, and the caption of the one that moved went with it');
+      });
+    } catch (error) {
+      fail('caption', began, error);
     }
   }
 
