@@ -76,11 +76,9 @@ You need:
 - pnpm 10 (run `corepack enable`)
 - the [Claude Code](https://claude.com/claude-code) CLI, installed and signed in (`claude` on your `PATH`), with a Claude subscription
 
-Then:
+Then clone this repository and, from its folder:
 
 ```sh
-git clone <this repository> conduit
-cd conduit
 pnpm install
 pnpm build
 BRAIN=claude-cli CLAUDE_MODEL=sonnet LIBRARY=seed pnpm start
