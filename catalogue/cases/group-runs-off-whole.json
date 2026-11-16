@@ -1,0 +1,65 @@
+{
+ "id": "group-runs-off-whole",
+ "title": "a group sent off the canvas runs off whole; no part is stretched into a bar",
+ "family": "motion",
+ "owner": "painter",
+ "kind": "draw",
+ "found": "2026-11-16",
+ "note": "A story scene with a group that runs off: the group is sent to a point past the canvas edge with a fast move. Its body path was stretched into a long bar from the face to the stage edge and stayed so at rest. Every part moves together, rigidly, and a target off the canvas takes the whole group off the stage.",
+ "own": [
+  "group-rigid"
+ ],
+ "turns": [
+  {
+   "say": "tell me a story on the left and animate something on the right",
+   "source": {
+    "log": "20261116-132639-c1",
+    "turns": [
+     "t2"
+    ]
+   },
+   "check": [
+    {
+     "k": "group-rigid",
+     "unit": "x24",
+     "parts": {
+      "x22": [
+       0,
+       -2,
+       25,
+       28
+      ],
+      "x23": [
+       0,
+       -16.5,
+       18,
+       7
+      ],
+      "x24": [
+       -4,
+       -8,
+       3.2,
+       3.2
+      ],
+      "x25": [
+       4,
+       -8,
+       3.2,
+       3.2
+      ],
+      "x26": [
+       0,
+       -1,
+       4,
+       4
+      ]
+     }
+    },
+    {
+     "k": "has-shapes",
+     "min": 3
+    }
+   ]
+  }
+ ]
+}

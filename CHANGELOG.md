@@ -2,6 +2,9 @@
 
 Newest first. Each item is something the brain can show live when asked "showcase what's new": draw it, don't describe it. The server reads this file.
 
+## A character that runs off runs off whole (live)
+- A character you drew in parts, sent off to the right of the picture, now goes as one: nothing stretches into a long band across the screen, in a quick move or a slow one, and it stays itself when it rests at the edge. Sent past the edge, it leaves the picture.
+
 ## Works with ChatGPT too (not live)
 - The app can now think with your ChatGPT subscription through the Codex command line, as well as with Claude. Nothing changes here: this server stays on Claude.
 - On ChatGPT it draws, answers, looks at its own drawing and fixes it, searches the web, reads your photos and uses the canvas tools. The model picker, skills, agent mode, the critic and filling parts ahead stay with Claude. Answers arrive a message at a time rather than word by word.

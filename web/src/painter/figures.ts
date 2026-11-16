@@ -382,8 +382,15 @@ function centreOf(element: ElementSpan, trans: Trans, natural: Pt, sc: Scn): Pt 
   }
   // A move ends inside the picture (PLAN-v2.1, D4): what it carries never leaves the canvas, whatever point was written.
   // (a stage that carries what a move left has only the point, so a written place is held to the same rule when it puts most of the thing inside)
-  const end = element.parent === null && trans.to.at !== null && (move !== null || mostlyInside(b, element, trans.to, sc)) ? keptInside(b, element, trans.to, sc) : b;
+  // A group sent to a point off the canvas is sent out of it: it runs off whole, and what it left is not there (as the stage it leaves says).
+  const leaves = element.figure?.kind === 'group' && trans.to.at !== null && !onCanvas(b, element, sc);
+  const end = !leaves && element.parent === null && trans.to.at !== null && (move !== null || mostlyInside(b, element, trans.to, sc)) ? keptInside(b, element, trans.to, sc) : b;
   return { x: lerp(a.x, end.x, trans.p), y: lerp(a.y, end.y, trans.p) };
+}
+
+function onCanvas(at: Pt, element: ElementSpan, sc: Scn): boolean {
+  const canvas = canvasOf(element, sc);
+  return at.x >= 0 && at.x <= canvas.width && at.y >= 0 && at.y <= canvas.height;
 }
 
 /**
@@ -1127,6 +1134,17 @@ function clipOf(placed: Placed, frm: Frm, bleeds: boolean): Box | undefined {
   return { x: rect.x / ps, y: rect.y / ps, width: rect.width / ps, height: rect.height / ps };
 }
 
+/**
+ * Whether a shape stands where it was written (no offset, no change of size from a group, a move or a scale). Only that is ground: a thing that
+ * has been carried, or is on its way, has an edge of its own wherever it comes to rest, and one that rests against the canvas's side stays itself
+ * and does not run on to the stage's edge. This is read from the place, not from a move in the schedule, because the settled stage that a
+ * turn leaves keeps only the place.
+ */
+function standsWhereWritten(placed: Placed): boolean {
+  const { a, b, c, d, e, f } = placed.M;
+  return Math.abs(a - 1) < 1e-3 && Math.abs(d - 1) < 1e-3 && Math.abs(b) < 1e-3 && Math.abs(c) < 1e-3 && Math.abs(e) < 1e-3 && Math.abs(f) < 1e-3;
+}
+
 /** Whether an element is a member (at any depth) of a group a painting stands on. */
 function underPainting(element: ElementSpan, standing: ReadonlyMap<string, ElementSpan>, sc: Pick<Scn, 'idx'>): boolean {
   let parent = element.parent;
@@ -1153,7 +1171,7 @@ function openEdgesOf(placed: readonly Placed[], standing: ReadonlyMap<string, El
   const inPainting = (element: ElementSpan): boolean => underPainting(element, standing, sc);
   for (const item of placed) {
     const figure = item.el.figure;
-    if (figure === null || figure.kind !== 'shape' || item.trans.to.bleed === 'none' || inPainting(item.el)) continue;
+    if (figure === null || figure.kind !== 'shape' || item.trans.to.bleed === 'none' || inPainting(item.el) || !standsWhereWritten(item)) continue;
     // an outline with nothing in it does not cover an edge: only a filled shape does
     if (item.el.style.fill === undefined || item.el.style.fill === 'none') continue;
     const { a, b, c, d, e, f } = item.M;
@@ -1222,7 +1240,7 @@ function shapeFrame(placed: Placed, frm: Frm): ShapeFrame | null {
   const latest = done[done.length - 1]?.geometry ?? figure.geometry;
   const fill = fillOf(placed.trans, look, placed.flash, arrival);
   const fullBleed = latest.shape === 'rect' && latest.full;
-  const edged = fill !== null && !fullBleed && placed.trans.to.bleed !== 'none' && !underPainting(placed.el, frm.standing, frm.sc) ? bleedOutline(morph.polylines, placed, frm) : { lines: morph.polylines, key: '' };
+  const edged = fill !== null && !fullBleed && placed.trans.to.bleed !== 'none' && !underPainting(placed.el, frm.standing, frm.sc) && standsWhereWritten(placed) ? bleedOutline(morph.polylines, placed, frm) : { lines: morph.polylines, key: '' };
   return {
     kind: 'shape',
     key: placed.key,
