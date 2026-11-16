@@ -599,7 +599,7 @@ class Screen {
 
   /**
    * the art demo, played through the server's line path (the server expands each `draw`): the parts of the fox, the child and the mirrored fox are on stage,
-   * the label sits by the fox's tail, the whole of the child moved, and the giraffe the shelf does not hold is a quiet placeholder, not an error.
+   * the label sits by the fox's tail, the whole of the child moved, and the okapi the shelf does not hold is a quiet placeholder, not an error.
    */
   private async art(tab: Tab, results: CheckResult[]): Promise<void> {
     const live = await tab.eval<Stage[]>('window.__stage.elements().map((e) => ({ id: e.id, kind: e.kind, text: String(e.text || ""), phase: e.phase, opacity: e.opacity, box: e.box }))');
@@ -625,10 +625,10 @@ class Screen {
     const mirrored = live.find((element) => element.id === 'fox2-head');
     const original = live.find((element) => element.id === 'fox1-head');
     if (mirrored === undefined || original === undefined) problems.push('a fox head is missing');
-    const soft = live.find((element) => element.id === 'giraffe1-soft');
-    if (soft === undefined) problems.push('the giraffe has no placeholder on stage');
-    else if (partsOf('giraffe1').length !== 1) problems.push(`the giraffe is a placeholder of one soft shape, but ${partsOf('giraffe1').length} parts are on stage`);
-    Screen.add(results, 'art', problems, `fox1 ${partsOf('fox1').length}, kid1 ${partsOf('kid1').length} and the mirrored fox2 ${partsOf('fox2').length} parts on stage, the label by the tail, a quiet placeholder for the giraffe`);
+    const soft = live.find((element) => element.id === 'okapi1-soft');
+    if (soft === undefined) problems.push('the okapi has no placeholder on stage');
+    else if (partsOf('okapi1').length !== 1) problems.push(`the okapi is a placeholder of one soft shape, but ${partsOf('okapi1').length} parts are on stage`);
+    Screen.add(results, 'art', problems, `fox1 ${partsOf('fox1').length}, kid1 ${partsOf('kid1').length} and the mirrored fox2 ${partsOf('fox2').length} parts on stage, the label by the tail, a quiet placeholder for the okapi`);
   }
 
   /** a slider, a toggle and a pick of the explorable demo: the drawing changes, and no request is made */

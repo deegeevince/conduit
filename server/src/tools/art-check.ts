@@ -1,7 +1,7 @@
 // pnpm check's art-maker group: a drawing the shelf lacks is made in the background and put in its placeholder's place (PLAN-art.md, steps 5 and 6).
 // It needs a server whose studio has a fake maker (`ART_MAKER=fake`, `ART_FAKE_MS` a few seconds), so no model is called. Three conversations, one tab each:
 //
-//   swap      `draw giraffe1 giraffe` shows a soft placeholder; a `move` and a label `near=giraffe1-neck` are said meanwhile; then the parts of the drawing
+//   swap      `draw okapi1 okapi` shows a soft placeholder; a `move` and a label `near=okapi1-neck` are said meanwhile; then the parts of the drawing
 //             appear in the placeholder's place (the group kept, the move kept, the label by the neck), the placeholder is gone, and a second `draw` of the
 //             subject is an immediate hit (the sheet is on the shelf)
 //   caption   the caption of a pending drawing stands directly under its placeholder (a little dim line, no box), and follows the placeholder when it moves
@@ -83,36 +83,36 @@ export async function artGroup(base: string, screen: LensScreen, dir: string, ti
     try {
       await withTab(base, screen, dir, timeoutMs, async (tab, conv, live, play) => {
         const problems: string[] = [];
-        const script = [...HEAD, 'draw giraffe1 giraffe at=40,50 size=46', 'move giraffe1 60,50 over=1s', 'say label near=giraffe1-neck:below | neck', 'say facelabel near=giraffe1-face:right | face', 'wait 1'].join('\n');
+        const script = [...HEAD, 'draw okapi1 okapi at=40,50 size=46', 'move okapi1 60,50 over=1s', 'say label near=okapi1-neck:below | neck', 'say facelabel near=okapi1-face:right | face', 'wait 1'].join('\n');
         const started = await play(script);
         if (started !== null) problems.push(`the script would not play: ${started}`);
-        const first = await until(8000, async () => (soft(await live(), 'giraffe1') === undefined ? null : await live()));
-        if (first === null) problems.push('no soft placeholder for the giraffe');
-        else if (parts(first, 'giraffe1').length > 0) problems.push('the drawing was on stage before it could have been made');
-        const captioned = first === null ? null : await until(4000, async () => ((await live()).some((element) => element.kind === 'text' && /Drawing a giraffe/.test(element.text)) ? true : null));
-        if (first !== null && captioned === null) problems.push('no caption ("Drawing a giraffe…") under the placeholder');
+        const first = await until(8000, async () => (soft(await live(), 'okapi1') === undefined ? null : await live()));
+        if (first === null) problems.push('no soft placeholder for the okapi');
+        else if (parts(first, 'okapi1').length > 0) problems.push('the drawing was on stage before it could have been made');
+        const captioned = first === null ? null : await until(4000, async () => ((await live()).some((element) => element.kind === 'text' && /Drawing an okapi/.test(element.text)) ? true : null));
+        if (first !== null && captioned === null) problems.push('no caption ("Drawing an okapi…") under the placeholder');
         // labels said for the parts of a drawing still on its way are held, not shown piled at the centre
         const showing = (now: readonly Live[], words: string): boolean => now.some((element) => element.kind === 'text' && element.text.trim() === words && element.opacity > 0.05);
         const early = await live();
         if (first !== null && (showing(early, 'neck') || showing(early, 'face'))) problems.push('a label for a part of the pending drawing is on stage before the drawing arrived');
         // at rest with the placeholder still standing: where the move took the group
         await sleep(2500);
-        const before = soft(await live(), 'giraffe1');
+        const before = soft(await live(), 'okapi1');
         const resting = before === undefined ? null : centre(before.box);
         const after = await until(ART_FAKE_MS + 20_000, async () => {
           const now = await live();
-          return parts(now, 'giraffe1').length >= 8 ? now : null;
+          return parts(now, 'okapi1').length >= 8 ? now : null;
         });
         await sleep(1800);
         const settled = await live();
         if (after === null) problems.push('the drawing never replaced the placeholder');
         else {
-          const body = settled.find((element) => element.id === 'giraffe1-body');
-          const neck = settled.find((element) => element.id === 'giraffe1-neck');
+          const body = settled.find((element) => element.id === 'okapi1-body');
+          const neck = settled.find((element) => element.id === 'okapi1-neck');
           const label = settled.find((element) => element.kind === 'text' && element.text.trim() === 'neck');
-          if (soft(settled, 'giraffe1') !== undefined) problems.push('the placeholder is still on stage beside the drawing');
-          if (settled.some((element) => element.kind === 'text' && /Drawing a giraffe/.test(element.text) && element.opacity > 0.05)) problems.push('the caption is still on stage after the drawing arrived');
-          if (!settled.some((element) => element.id === 'giraffe1')) problems.push('the group giraffe1 is gone (its id was not kept)');
+          if (soft(settled, 'okapi1') !== undefined) problems.push('the placeholder is still on stage beside the drawing');
+          if (settled.some((element) => element.kind === 'text' && /Drawing an okapi/.test(element.text) && element.opacity > 0.05)) problems.push('the caption is still on stage after the drawing arrived');
+          if (!settled.some((element) => element.id === 'okapi1')) problems.push('the group okapi1 is gone (its id was not kept)');
           if (body === undefined || neck === undefined) problems.push('the drawing has no body or neck part');
           else {
             if (resting !== null) {
@@ -123,7 +123,7 @@ export async function artGroup(base: string, screen: LensScreen, dir: string, ti
             }
             // a label that named a part by the brain's guess (`face`; the drawing's part is `head`) was pointed at the part when the drawing came
             const faceLabel = settled.find((element) => element.kind === 'text' && element.text.trim() === 'face');
-            const head = settled.find((element) => element.id === 'giraffe1-head');
+            const head = settled.find((element) => element.id === 'okapi1-head');
             if (faceLabel === undefined || head === undefined) problems.push('the label "face" or the head part is not on stage');
             else {
               const a = centre(faceLabel.box);
@@ -143,18 +143,18 @@ export async function artGroup(base: string, screen: LensScreen, dir: string, ti
           }
         }
         // a second figure of the subject is a hit, at once
-        const again = await play('draw giraffe2 giraffe at=20,20 size=30');
+        const again = await play('draw okapi2 okapi at=20,20 size=30');
         if (again !== null) problems.push(`the second script would not play: ${again}`);
         const quick = await until(2500, async () => {
           const now = await live();
-          return parts(now, 'giraffe2').length >= 8 ? now : null;
+          return parts(now, 'okapi2').length >= 8 ? now : null;
         });
-        if (quick === null) problems.push('a second giraffe was not drawn from the shelf at once');
-        else if (soft(quick, 'giraffe2') !== undefined) problems.push('the second giraffe had a placeholder: the sheet was not on the shelf');
+        if (quick === null) problems.push('a second okapi was not drawn from the shelf at once');
+        else if (soft(quick, 'okapi2') !== undefined) problems.push('the second okapi had a placeholder: the sheet was not on the shelf');
         await conv.rest(null, false).catch(() => undefined);
         const picture = `${dir}/art-swap.png`;
         await tab.shot().then((data) => writeFile(picture, Buffer.from(data.split(',')[1] ?? '', 'base64'))).catch(() => undefined);
-        result('swap', picture, began, problems, `a placeholder, then the giraffe's ${after === null ? 0 : parts(after, 'giraffe1').length} parts in its place, the group and its move kept, the label by the neck, and a second giraffe from the shelf at once`);
+        result('swap', picture, began, problems, `a placeholder, then the okapi's ${after === null ? 0 : parts(after, 'okapi1').length} parts in its place, the group and its move kept, the label by the neck, and a second okapi from the shelf at once`);
       });
     } catch (error) {
       fail('swap', began, error);
