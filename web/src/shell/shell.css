@@ -72,6 +72,8 @@ button {
 /* The frame */
 
 .shell {
+  position: relative;
+  top: var(--app-top, 0px);
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   height: var(--app-height, 100dvh);
@@ -1146,7 +1148,7 @@ button {
   .shell[data-canvas='open'] .shell-composer {
     position: fixed;
     z-index: 31;
-    top: calc(var(--app-height, 100dvh) - var(--sh-pill-h, 4rem));
+    top: calc(var(--app-top, 0px) + var(--app-height, 100dvh) - var(--sh-pill-h, 4rem));
     right: 0;
     left: 0;
     background: var(--sh-ground);

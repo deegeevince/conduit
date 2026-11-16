@@ -59,6 +59,8 @@ input {
 /* The stage page: the stage fills the viewport above the bar. */
 
 .page-stage {
+  position: relative;
+  top: var(--app-top, 0px);
   height: var(--app-height, 100dvh);
   overflow: clip;
   overscroll-behavior: none;

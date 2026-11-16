@@ -24,6 +24,7 @@ import { mountTranscript } from './chrome/transcript';
 import type { WallRoom } from './wall/wall-room';
 import { FONTS, fontFor } from './fonts';
 import { LOOKS } from './looks';
+import { followVisualViewport } from './app/viewport';
 
 // The default look's face is asked for before anything else so the first words do not wait for it.
 function preloadFace(): void {
@@ -139,18 +140,7 @@ const promptBar = mountPromptBar(bar, {
 promptBar.setStatus('connecting');
 promptBar.setBusy(false);
 
-const keepAboveKeyboard = (): void => {
-  const viewport = window.visualViewport;
-  if (viewport === null) return;
-  document.documentElement.style.setProperty('--app-height', `${Math.round(viewport.height)}px`);
-  window.scrollTo(0, 0);
-};
-window.visualViewport?.addEventListener('resize', keepAboveKeyboard);
-keepAboveKeyboard();
-// the page never scrolls: if anything moves it (a focus, a keyboard), it goes straight back
-window.addEventListener('scroll', () => {
-  if (window.scrollX !== 0 || window.scrollY !== 0) window.scrollTo(0, 0);
-});
+followVisualViewport();
 
 function unavailable(message: string): void {
   const note = document.createElement('p');
