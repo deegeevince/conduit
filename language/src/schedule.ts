@@ -1778,6 +1778,7 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
       case 'step':
       case 'reply':
       case 'end':
+      case 'fill':
         // The words of the document and its lessons (v3, lesson.ts). They put nothing on a painted stage and take no time: the document keeps them.
         lines.push({ seq, verb: line.verb, start: pen, end: pen });
         break;

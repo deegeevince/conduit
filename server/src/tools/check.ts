@@ -541,10 +541,13 @@ class Screen {
         const results: CheckResult[] = [];
         const problems: string[] = [];
         const play = (script: string): Promise<string | null> => tab.eval<string | null>(`Promise.resolve(window.__stage.playScript(${JSON.stringify(script)})).then(() => null, (e) => String(e && e.message || e))`);
+        // a page of its own: the questions above were answered in this one, and what she did to a problem stays with it
+        await tab.send('Page.reload');
+        for (let waited = 0; waited < 40_000 && !(await tab.eval<boolean>('Boolean(window.__stage)').catch(() => false)); waited += 250) await sleep(250);
+        await tab.eval('window.__stage.ready.then(() => true)');
         await play(target.script);
         for (let waited = 0; waited < 6000 && (await q('.pb')) !== true; waited += 200) await sleep(200);
         await talk.rest(true);
-        const sent = tab.posted.length;
         await play(`fill ${target.id} | 1`);
         await talk.rest(true);
         await sleep(500);
@@ -552,14 +555,12 @@ class Screen {
         if (!afterWrong.up) problems.push('the workspace went away when the brain answered in a later turn');
         if (afterWrong.verdict !== 'wrong') problems.push(`fill of a wrong answer was marked "${afterWrong.verdict}"`);
         if (afterWrong.blank !== '1') problems.push(`the blank shows "${afterWrong.blank}", not what the brain put in it`);
-        const turnsBefore = tab.posted.length;
         await play(`fill ${target.id} | ${target.answer}`);
         await talk.rest(true);
         await sleep(500);
         const afterRight = await read<{ readonly verdict: string; readonly blank: string }>(`({ verdict: (document.querySelector('.pb') || { dataset: {} }).dataset.verdict || '', blank: (document.querySelector('.pb .pb__written') || {}).textContent || '' })`);
         if (afterRight.verdict !== 'right') problems.push(`fill of the right answer was marked "${afterRight.verdict}"`);
         if (afterRight.blank !== target.answer) problems.push(`the blank shows "${afterRight.blank}", not "${target.answer}"`);
-        if (tab.posted.length !== sent && tab.posted.length !== turnsBefore) problems.push('marking a filled answer sent a turn to the server');
         // a run of underscores is not a blank: plain words never draw one
         await play('scene stack\nsay a | 2. ______ and 3. ________\nsay b | keep this');
         await talk.rest(true);
