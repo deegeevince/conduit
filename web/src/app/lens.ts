@@ -155,8 +155,16 @@ export function createStageLens(options: LensOptions): StageLens {
   const loop = (now: number): void => {
     frame = 0;
     if (disposed) return;
+    // for the browser checks (`lens-bench.ts`): what each frame of a moving lens cost on the page's thread, and the gap since the one before
+    const trace = (window as unknown as { __lensTrace?: { cost: number[]; gap: number[]; last: number } }).__lensTrace;
+    const began = trace === undefined ? 0 : performance.now();
     rig.tick(now);
     apply();
+    if (trace !== undefined) {
+      trace.cost.push(performance.now() - began);
+      if (trace.last > 0) trace.gap.push(now - trace.last);
+      trace.last = now;
+    }
     if (rig.moving()) frame = requestAnimationFrame(loop);
   };
   const kick = (): void => {
