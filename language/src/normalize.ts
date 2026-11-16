@@ -226,6 +226,9 @@ export interface Normalized {
  * The server runs this once per line before scheduling and forwarding, so the
  * painter only ever receives explicit lines and never needs one.
  */
+/** What may follow a `problem` in its scene: more problems, the hints written for them, and what is no performance */
+const PROBLEM_COMPANY: ReadonlySet<string> = new Set(['problem', 'hint', 'style', 'color', 'look', 'standing', 'reply', 'refine', 'end', 'wait']);
+
 export class LineNormalizer {
   private readonly makeId: () => string;
   private readonly styles: Set<string>;
@@ -286,7 +289,17 @@ export class LineNormalizer {
     return { line: { ...line, id: open.id, cells: text }, issues };
   }
 
+  /** A maths question stands on the scene being written: it is the whole screen, so what else the brain writes in the scene is dropped (and told so) */
+  private problemScene = false;
+
   normalize(line: Line): Normalized {
+    if (line.verb === 'scene') this.problemScene = false;
+    else if (this.problemScene && !PROBLEM_COMPANY.has(line.verb)) {
+      return { line: null, issues: [{ code: 'no-structure', severity: 'warn', message: `a maths question is the whole screen and draws everything itself: "${line.verb}" was dropped (write the problem line alone)` }] };
+    }
+    if (line.verb === 'problem') this.problemScene = true;
+    // a hint written for a question the painter cannot read: kept as written (the plain workspace says it when Hint is tapped), never held to an ask
+    if (line.verb === 'hint' && this.problemScene) return { line, issues: [] };
     switch (line.verb) {
       case 'style':
         this.styles.add(line.name);

@@ -325,7 +325,7 @@ export function problemOfLine(text: string): ProblemSpec | null {
  * (`painter/problem`). Short on purpose: nothing in it describes a layout.
  */
 export const PROBLEM_CHAPTER = [
-  'A MATHS QUESTION TO WORK OUT (typed, or in a photo): write ONE line and nothing else: `problem <id> answer=<every form you accept, _ for a space> | <the question exactly as given, ___ for the blank>`, for example `problem p1 answer=3000,3_000 | 1 000 = ___ ÷ 3`.',
+  'A MATHS QUESTION TO WORK OUT (typed, or in a photo): write ONE line and nothing else: `problem <id> answer=<every form you accept, _ for a space> | <the question exactly as given, ___ for the blank: no word of yours, no story, no brackets>`, for example `problem p1 answer=12,twelve | 48 ÷ 4 = ___`.',
   'It is NOT a drawing and no other recipe applies to it: the stage draws the whole workspace itself (the question large, a blank for the pen, hints, pictures from its numbers, steps, checking). So never write a `scene`, `say`, `rect`, `pick`, `bind`, `slider`, `ask` or `hint`, never a title, a caption, a choice or the answer in words, even when they ask for visuals, step by step, interactive or the pen. `ways=groups,bar,array,column,line` only to limit the pictures.',
   'A photo of several questions with none named: `say title | Which one first?` and a `say choice | <number>. <question>` each; a tap on one gives that question\'s `problem`. A number named: go straight to it.',
 ].join('\n');
