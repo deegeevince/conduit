@@ -53,14 +53,17 @@ export interface DraftFacts {
   readonly rejects: number;
 }
 
-/** Counts what a draft put on stage. `fromSeq`: only lines after this one count, so a later pass is judged on what it added. */
-export function draftFactsOf(schedule: Schedule, rejects: number, fromSeq = 0): DraftFacts {
+const NO_SHELF: ReadonlySet<string> = new Set();
+
+/** Counts what a draft put on stage. `shelf`: the ids of figures the server drew from the art shelf (the figure, its parts, its placeholder); they are not free drawing, and a fix has nothing to say about them. `fromSeq`: only lines after this one count, so a later pass is judged on what it added. */
+export function draftFactsOf(schedule: Schedule, rejects: number, fromSeq = 0, shelf: ReadonlySet<string> = NO_SHELF): DraftFacts {
   let drawn = 0;
   let structures = 0;
   let controls = 0;
   let placedText = 0;
   for (const element of schedule.elements) {
     if (element.carried || element.seq <= fromSeq) continue;
+    if (shelf.has(element.id) || (element.parent !== null && shelf.has(element.parent))) continue;
     const backdrop = BACKDROP_LAYERS.includes(element.style.layer);
     if (element.kind === 'shape' || element.kind === 'sprite' || element.kind === 'copy') drawn += backdrop ? 0 : 1;
     else if (element.kind === 'structure') structures += 1;

@@ -88,6 +88,8 @@ export async function artGroup(base: string, screen: LensScreen, dir: string, ti
         const first = await until(8000, async () => (soft(await live(), 'giraffe1') === undefined ? null : await live()));
         if (first === null) problems.push('no soft placeholder for the giraffe');
         else if (parts(first, 'giraffe1').length > 0) problems.push('the drawing was on stage before it could have been made');
+        const captioned = first === null ? null : await until(4000, async () => ((await live()).some((element) => element.kind === 'text' && /Drawing a giraffe/.test(element.text)) ? true : null));
+        if (first !== null && captioned === null) problems.push('no caption ("Drawing a giraffe…") under the placeholder');
         // at rest with the placeholder still standing: where the move took the group
         await sleep(2500);
         const before = soft(await live(), 'giraffe1');
@@ -104,6 +106,7 @@ export async function artGroup(base: string, screen: LensScreen, dir: string, ti
           const neck = settled.find((element) => element.id === 'giraffe1-neck');
           const label = settled.find((element) => element.kind === 'text' && element.text.trim() === 'neck');
           if (soft(settled, 'giraffe1') !== undefined) problems.push('the placeholder is still on stage beside the drawing');
+          if (settled.some((element) => element.kind === 'text' && /Drawing a giraffe/.test(element.text) && element.opacity > 0.05)) problems.push('the caption is still on stage after the drawing arrived');
           if (!settled.some((element) => element.id === 'giraffe1')) problems.push('the group giraffe1 is gone (its id was not kept)');
           if (body === undefined || neck === undefined) problems.push('the drawing has no body or neck part');
           else {

@@ -5,7 +5,7 @@ reason: only if the user asked for a painting or a picture in a named medium
 
 Draws the picture in a few big shapes, then has the painter re-render it in a medium.
 
-**Use it when** a painting is asked for. Three to six big shapes back to front, a wash on the large ones, soft edges on light and cloud, then `paint` over the group.
+**Use it when** a painting is asked for. Three to six big shapes back to front, a wash on the large ones, soft edges on light and cloud, then `paint` over the group. A character or animal is not sketched from shapes: draw it with `draw <id> <subject> | pose` after the `paint`, on top of the painted ground.
 
 **Not when** the picture needs things you have not drawn: the painter adds nothing, it paints what is there.
 
@@ -22,6 +22,7 @@ circle in=view 120,22 9 fill=#fff3c4 soft=6
 line in=view 62,54 62,34 brush=ink thick=1.2
 poly in=view 62,36 76,52 62,52 fill=#fbf3e4
 paint over=view as=watercolor mask=soft | a small boat off a beach at noon
+draw gull1 bird at=118,30 size=12 | flying, facing left
 say | Noon, and nowhere to be.
 ```
 

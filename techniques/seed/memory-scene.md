@@ -7,6 +7,8 @@ Stages a few words inside a picture: layers far to near, weather, one camera mov
 
 **Use it when** the answer is felt more than known. Lay the far ground first, then one lit thing, then one small thing that is alive, then few words, one at a time.
 
+A person, an animal or a thing in the scene is a `draw` line (`draw child1 child at=40,64 | sitting, facing left`), never shapes; the room, the light and the weather are yours.
+
 **Not when** the user wants information: a scene delays it.
 
 **Example**
@@ -17,10 +19,7 @@ scene caption calm slow
 rect full layer=far fill=wall>#2a1a10
 rect win 98,12 44x32 r=2 layer=bg fill=glow
 line 120,12 120,44 layer=bg stroke=wall thick=1.5
-group cup at=60,64 loop=sway
-rect in=cup 0,0 10x8 r=2 fill=ink
-path in=cup stroke=ink thick=1 | M10 2 q5 0 5 3 t-5 3
-path in=cup stroke=dim thick=1 loop=drift | M5 -2 q-3 -4 0 -8 t0 -8
+draw child1 child at=60,62 size=40 loop=sway | sitting, facing right, sleepy
 ambient dust light layer=fg
 cam push slow
 say | It always smelled of toast and rain.

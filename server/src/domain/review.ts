@@ -219,6 +219,8 @@ export interface ReviewState {
   /** the `seq` of the last line pushed */
   readonly lastSeq: number;
   readonly problems: readonly LineProblem[];
+  /** v3 art. The ids of what the art shelf drew (figures, parts, placeholders, captions): not free drawing */
+  readonly shelf?: ReadonlySet<string>;
 }
 
 export interface ReviewTurnArgs {
@@ -289,7 +291,7 @@ export async function* reviewTurn(args: ReviewTurnArgs): AsyncGenerator<ReviewSt
   const record = (): ReviewStep => ({ type: 'record', record: { result, passes: written, why, decisions, firstLineMs, totalMs: now() - t0, costUsd, fixes } });
 
   const first = args.state();
-  const before = worthALook(draftFactsOf(first.schedule, first.rejects), policy);
+  const before = worthALook(draftFactsOf(first.schedule, first.rejects, 0, first.shelf), policy);
   decisions.push(before);
   if (!before.look || signal.aborted) {
     why = before.why;
@@ -322,7 +324,7 @@ export async function* reviewTurn(args: ReviewTurnArgs): AsyncGenerator<ReviewSt
   let floor = 0;
   for (;;) {
     const state = args.state();
-    const facts = draftFactsOf(state.schedule, state.rejects, floor);
+    const facts = draftFactsOf(state.schedule, state.rejects, floor, state.shelf);
     if (pass === 1) t0 = now();
     const passStart = now();
     gate.open(args.turn, pass);
