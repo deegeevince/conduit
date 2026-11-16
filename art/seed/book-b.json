@@ -1,0 +1,98 @@
+{
+ "v": 1,
+ "subject": "book",
+ "pose": "",
+ "view": "side",
+ "facing": "left",
+ "ground": 90,
+ "slots": [
+  {
+   "name": "rust",
+   "hue": "rust"
+  },
+  {
+   "name": "tan",
+   "hue": "tan"
+  },
+  {
+   "name": "yellow",
+   "hue": "yellow"
+  }
+ ],
+ "parts": [
+  {
+   "id": "shadow",
+   "line": "ellipse shadow 2,37.5 41x6 fill=dim stroke=none opacity=0.2"
+  },
+  {
+   "id": "back-cover",
+   "line": "poly back-cover -34,-40 -14,-45 32,-37 32,35 12,40 -34,32 fill=$rust-1 stroke=ink thick=2 brush=ink"
+  },
+  {
+   "id": "top-pages",
+   "line": "poly top-pages -28.2,-40.3 15,-32.75 29,-36.25 -14.2,-43.8 fill=$tan+3 stroke=ink thick=0.7 brush=ink"
+  },
+  {
+   "id": "edge-pages",
+   "line": "poly edge-pages 15,-32.75 29,-36.25 29,34 15,37.5 fill=$tan+1 stroke=ink thick=0.7 brush=ink"
+  },
+  {
+   "id": "page-line-1",
+   "line": "line page-line-1 19,-33.6 19,36.4 fill=none stroke=ink thick=0.5 opacity=0.5 brush=ink"
+  },
+  {
+   "id": "page-line-2",
+   "line": "line page-line-2 22.5,-34.5 22.5,35.5 fill=none stroke=ink thick=0.5 opacity=0.5 brush=ink"
+  },
+  {
+   "id": "page-line-3",
+   "line": "line page-line-3 26,-35.4 26,34.7 fill=none stroke=ink thick=0.5 opacity=0.5 brush=ink"
+  },
+  {
+   "id": "front-cover",
+   "line": "poly front-cover -34,-40 12,-32 12,40 -34,32 fill=$rust+1 stroke=ink thick=2 brush=ink"
+  },
+  {
+   "id": "spine-shade",
+   "line": "poly spine-shade -33,-39 -27.5,-38.03 -27.5,32.37 -33,31.4 fill=$rust-1 stroke=none"
+  },
+  {
+   "id": "cover-highligh",
+   "line": "poly cover-highligh 7.5,-30.86 10,-30.42 10,38.08 7.5,37.64 fill=$rust+2 stroke=none"
+  },
+  {
+   "id": "cover-glow",
+   "line": "poly cover-glow -26,-36.77 6,-31.13 6,-26.13 -26,-31.77 fill=$rust+2 stroke=none"
+  },
+  {
+   "id": "gold-frame",
+   "line": "poly gold-frame -22.5,-28.15 3.5,-23.57 3.5,30.43 -22.5,25.85 fill=none stroke=$yellow+1 thick=1 brush=ink"
+  },
+  {
+   "id": "title-plate",
+   "line": "poly title-plate -18,-22.36 -1,-19.36 -1,-9.36 -18,-12.36 fill=$tan+3 stroke=ink thick=0.6 brush=ink"
+  },
+  {
+   "id": "title-line-1",
+   "line": "line title-line-1 -15,-18.33 -4,-16.39 fill=none stroke=ink thick=1 brush=ink"
+  },
+  {
+   "id": "title-line-2",
+   "line": "line title-line-2 -13,-14.98 -6,-13.74 fill=none stroke=ink thick=1 brush=ink"
+  },
+  {
+   "id": "star",
+   "line": "poly star -9.5,-3.86 -7.15,2.32 -0.94,3.87 -5.7,7.05 -4.21,13.35 -9.5,9.14 -14.79,11.49 -13.3,5.71 -18.06,0.85 -11.85,1.49 fill=$yellow+1 stroke=ink thick=0.6 brush=ink"
+  },
+  {
+   "id": "frame-rule",
+   "line": "line frame-rule -17,18.82 -2,21.46 fill=none stroke=$yellow+1 thick=1 brush=ink"
+  }
+ ],
+ "made": {
+  "by": "fable",
+  "arm": "B",
+  "how": "fable, one careful drawing off the answer's clock (bake-off arm B), 47.9 s, $0.18; read by the strict converter and restyled to the house palette"
+ },
+ "licence": "MIT (made for this project on the owner's own subscription)"
+}

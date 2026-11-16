@@ -1,0 +1,98 @@
+{
+ "v": 1,
+ "subject": "snail",
+ "pose": "",
+ "view": "side",
+ "facing": "left",
+ "ground": 86.3,
+ "slots": [
+  {
+   "name": "orange",
+   "hue": "orange"
+  },
+  {
+   "name": "leaf",
+   "hue": "leaf"
+  },
+  {
+   "name": "cream",
+   "hue": "cream"
+  }
+ ],
+ "parts": [
+  {
+   "id": "shadow",
+   "line": "ellipse shadow 1,38 41x4 fill=dim stroke=none opacity=0.15"
+  },
+  {
+   "id": "far-tentacle",
+   "line": "path far-tentacle fill=$leaf-1 stroke=ink thick=1.5 brush=ink | M-27 8 Q-26 -5 -29 -16 L-25.5 -16.5 Q-22 -5 -22 8 Z"
+  },
+  {
+   "id": "near-tentacle",
+   "line": "path near-tentacle fill=$leaf+1 stroke=ink thick=1.5 brush=ink | M-35 10 Q-37 -3 -41.5 -12 L-38 -13.5 Q-33 -4 -30 8 Z"
+  },
+  {
+   "id": "body",
+   "line": "path body fill=$leaf+1 stroke=ink thick=2 brush=ink | M43 34 Q20 37 -20 36 C-33 36 -41 30 -40 18 C-40 8 -34 2 -27 2 C-20 2 -16 8 -17 16 C-17 22 -13 24 -5 24 L30 26 Q40 28 43 34 Z"
+  },
+  {
+   "id": "body-shade",
+   "line": "path body-shade fill=$leaf-1 stroke=none | M-36 28 Q-30 35 -20 35 Q20 36 40 33.5 Q30 30 20 31 Q-10 32 -22 31 Q-31 30 -36 28 Z"
+  },
+  {
+   "id": "shell",
+   "line": "circle shell 10,0 29 fill=$orange stroke=ink thick=2 brush=ink"
+  },
+  {
+   "id": "shell-shade",
+   "line": "path shell-shade fill=$orange-1 stroke=none | M37 10 Q28 26 10 28 Q-3 27 -12 17 Q0 26 14 22 Q30 18 37 10 Z"
+  },
+  {
+   "id": "shell-whorl",
+   "line": "circle shell-whorl 7,4 19 fill=$orange+2 stroke=$orange-1 thick=1 brush=ink"
+  },
+  {
+   "id": "shell-core",
+   "line": "circle shell-core 5,7 9.5 fill=$orange stroke=$orange-1 thick=1 brush=ink"
+  },
+  {
+   "id": "shell-centre",
+   "line": "circle shell-centre 4,8.5 3 fill=$orange-1 stroke=none"
+  },
+  {
+   "id": "shell-highligh",
+   "line": "path shell-highligh fill=$cream stroke=none opacity=0.7 | M-12 -9 Q-6 -22 8 -25 Q-2 -19 -7 -10 Q-10 -7 -12 -9 Z"
+  },
+  {
+   "id": "far-eye",
+   "line": "circle far-eye -27.5,-18 3.6 fill=$cream stroke=ink thick=1.5 brush=ink"
+  },
+  {
+   "id": "far-pupil",
+   "line": "circle far-pupil -28.5,-18 1.5 fill=deep stroke=none"
+  },
+  {
+   "id": "near-eye",
+   "line": "circle near-eye -40,-14.5 4 fill=$cream stroke=ink thick=1.5 brush=ink"
+  },
+  {
+   "id": "near-pupil",
+   "line": "circle near-pupil -41,-14.5 1.7 fill=deep stroke=none"
+  },
+  {
+   "id": "cheek",
+   "line": "circle cheek -27,17 3 fill=$orange+2 stroke=none opacity=0.8"
+  },
+  {
+   "id": "smile",
+   "line": "path smile fill=none stroke=ink thick=1 brush=ink | M-37 21 Q-34 25.5 -29 23"
+  }
+ ],
+ "made": {
+  "by": "fable",
+  "arm": "B",
+  "how": "fable, one careful drawing off the answer's clock (bake-off arm B), 49.1 s, $0.18; read by the strict converter and restyled to the house palette"
+ },
+ "licence": "MIT (made for this project on the owner's own subscription)"
+}

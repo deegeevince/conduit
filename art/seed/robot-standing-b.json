@@ -1,0 +1,126 @@
+{
+ "v": 1,
+ "subject": "robot",
+ "pose": "standing",
+ "view": "side",
+ "facing": "left",
+ "ground": 90,
+ "slots": [
+  {
+   "name": "teal",
+   "hue": "teal"
+  },
+  {
+   "name": "cream",
+   "hue": "cream"
+  },
+  {
+   "name": "yellow",
+   "hue": "yellow"
+  }
+ ],
+ "parts": [
+  {
+   "id": "shadow",
+   "line": "ellipse shadow -2,40.5 25x3.5 fill=dim stroke=none opacity=0.3"
+  },
+  {
+   "id": "back-arm",
+   "line": "path back-arm fill=$teal-1 stroke=ink thick=1.6 brush=ink | M-13 1 L-28 7 Q-32 10 -28 13 L-13 9 Z"
+  },
+  {
+   "id": "back-leg",
+   "line": "rect back-leg 4,22 7x14 fill=$teal-1 stroke=ink thick=1.6 brush=ink"
+  },
+  {
+   "id": "back-foot",
+   "line": "path back-foot fill=$teal-1 stroke=ink thick=1.8 brush=ink | M-3 40 Q-3 33 5 33 L13 33 L13 40 Z"
+  },
+  {
+   "id": "front-leg",
+   "line": "rect front-leg -10,22 7x14 fill=$teal+1 stroke=ink thick=1.6 brush=ink"
+  },
+  {
+   "id": "front-foot",
+   "line": "path front-foot fill=$yellow stroke=ink thick=1.8 brush=ink | M-19 40 Q-19 33 -11 33 L-1 33 L-1 40 Z"
+  },
+  {
+   "id": "neck",
+   "line": "rect neck -7,-10 10x8 fill=$teal-1 stroke=ink thick=1.2 brush=ink"
+  },
+  {
+   "id": "body",
+   "line": "rect body -17,-4 36x28 r=5 fill=$teal+1 stroke=ink thick=1.8 brush=ink"
+  },
+  {
+   "id": "body-shade",
+   "line": "path body-shade fill=$teal-1 stroke=none | M11 -3 L14 -3 Q18 -3 18 1 L18 19 Q18 23 14 23 L11 23 Z"
+  },
+  {
+   "id": "chest-panel",
+   "line": "rect chest-panel -13.5,2 12x10 r=2 fill=$cream stroke=ink thick=0.7 brush=ink"
+  },
+  {
+   "id": "chest-button",
+   "line": "circle chest-button -7.5,7 2.5 fill=accent stroke=ink thick=0.6 brush=ink"
+  },
+  {
+   "id": "antenna-stem",
+   "line": "line antenna-stem -3,-34 -3,-40 fill=none stroke=ink thick=1.6 brush=ink"
+  },
+  {
+   "id": "antenna-bulb",
+   "line": "circle antenna-bulb -3,-42 3 fill=accent stroke=ink thick=1.4 brush=ink"
+  },
+  {
+   "id": "head",
+   "line": "rect head -23,-34 40x26 r=6 fill=$teal+1 stroke=ink thick=1.8 brush=ink"
+  },
+  {
+   "id": "head-shade",
+   "line": "path head-shade fill=$teal-1 stroke=none | M8 -33 L11 -33 Q16 -33 16 -28 L16 -14 Q16 -9 11 -9 L8 -9 Z"
+  },
+  {
+   "id": "head-highlight",
+   "line": "rect head-highlight -18,-32.2 22x1.8 r=0.9 fill=$teal+3 stroke=none"
+  },
+  {
+   "id": "face",
+   "line": "rect face -20,-28.5 23x15 r=4 fill=$cream stroke=ink thick=0.7 brush=ink"
+  },
+  {
+   "id": "left-eye",
+   "line": "circle left-eye -14.5,-23 2.1 fill=deep stroke=none"
+  },
+  {
+   "id": "right-eye",
+   "line": "circle right-eye -4.5,-23 2.6 fill=deep stroke=none"
+  },
+  {
+   "id": "mouth",
+   "line": "path mouth fill=none stroke=ink thick=0.9 brush=ink | M-14.5 -18 Q-10 -15 -5 -18"
+  },
+  {
+   "id": "ear",
+   "line": "circle ear 11,-21 4 fill=$yellow stroke=ink thick=0.8 brush=ink"
+  },
+  {
+   "id": "front-arm",
+   "line": "path front-arm fill=$teal+1 stroke=ink thick=1.6 brush=ink | M2 3 L-2.5 19 Q0 23 4.5 21 L10 5 Z"
+  },
+  {
+   "id": "shoulder",
+   "line": "circle shoulder 6,3 4.5 fill=$teal+3 stroke=ink thick=1 brush=ink"
+  },
+  {
+   "id": "hand",
+   "line": "circle hand 0.5,22 4 fill=$yellow stroke=ink thick=1.4 brush=ink"
+  }
+ ],
+ "made": {
+  "by": "fable",
+  "arm": "B",
+  "how": "fable, one careful drawing off the answer's clock (bake-off arm B), 43.1 s, $0.17; read by the strict converter and restyled to the house palette"
+ },
+ "licence": "MIT (made for this project on the owner's own subscription)"
+}

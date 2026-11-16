@@ -1,0 +1,118 @@
+{
+ "v": 1,
+ "subject": "train",
+ "pose": "",
+ "view": "side",
+ "facing": "left",
+ "ground": 91,
+ "slots": [
+  {
+   "name": "red",
+   "hue": "red"
+  },
+  {
+   "name": "tan",
+   "hue": "tan"
+  },
+  {
+   "name": "blue",
+   "hue": "blue"
+  }
+ ],
+ "parts": [
+  {
+   "id": "ground-shadow",
+   "line": "ellipse ground-shadow -1,37.5 43x3.5 fill=$tan stroke=none"
+  },
+  {
+   "id": "smoke",
+   "line": "path smoke fill=$tan+3 stroke=$tan thick=1 brush=ink | M-23 -28 C-30 -28 -30 -36 -24 -36 C-24 -43 -14 -44 -11 -39 C-7 -43 1 -40 -1 -34 C3 -32 1 -27 -5 -28 Z"
+  },
+  {
+   "id": "chimney",
+   "line": "path chimney fill=$red-2 stroke=ink thick=1.8 brush=ink | M-27 -7 L-28 -19 L-31 -24 L-17 -24 L-20 -19 L-21 -7 Z"
+  },
+  {
+   "id": "cab",
+   "line": "rect cab 8,-22 28x44 fill=$red stroke=ink thick=1.8 brush=ink"
+  },
+  {
+   "id": "cab-shade",
+   "line": "rect cab-shade 29.5,-21 5.6x42 fill=$red-2 stroke=none"
+  },
+  {
+   "id": "roof",
+   "line": "rect roof 4,-28 36x7 r=2.5 fill=$red-2 stroke=ink thick=1.8 brush=ink"
+  },
+  {
+   "id": "boiler",
+   "line": "path boiler fill=$red stroke=ink thick=1.8 brush=ink | M10 -8 L-28 -8 Q-36 -8 -36 0 L-36 16 Q-36 22 -30 22 L10 22 Z"
+  },
+  {
+   "id": "boiler-highlig",
+   "line": "rect boiler-highlig -30,-5 36x5 r=2.5 fill=$red+2 stroke=none"
+  },
+  {
+   "id": "boiler-shade",
+   "line": "path boiler-shade fill=$red-2 stroke=none | M-35 13 L9 13 L9 21 L-30 21 Q-35 21 -35 16 Z"
+  },
+  {
+   "id": "boiler-band",
+   "line": "rect boiler-band -17,-7.1 3.4x28.2 fill=accent stroke=ink thick=0.6 brush=ink"
+  },
+  {
+   "id": "dome",
+   "line": "path dome fill=accent stroke=ink thick=1.6 brush=ink | M-10 -8 Q-10 -18 -3.5 -18 Q3 -18 3 -8 Z"
+  },
+  {
+   "id": "window",
+   "line": "rect window 13,-16 13x14 r=2 fill=$blue+1 stroke=ink thick=0.9 brush=ink"
+  },
+  {
+   "id": "chassis",
+   "line": "rect chassis -37,20 76x5.5 r=1 fill=deep stroke=ink thick=1.4 brush=ink"
+  },
+  {
+   "id": "cowcatcher",
+   "line": "poly cowcatcher -34,22 -45,35.5 -31,35.5 -31,22 fill=accent stroke=ink thick=1.6 brush=ink"
+  },
+  {
+   "id": "headlamp",
+   "line": "circle headlamp -36,2 3.6 fill=accent stroke=ink thick=1.5 brush=ink"
+  },
+  {
+   "id": "rear-wheel",
+   "line": "circle rear-wheel 23,26 10 fill=$blue+1 stroke=ink thick=2 brush=ink"
+  },
+  {
+   "id": "mid-wheel",
+   "line": "circle mid-wheel -2,29 7 fill=$blue+1 stroke=ink thick=2 brush=ink"
+  },
+  {
+   "id": "front-wheel",
+   "line": "circle front-wheel -19,29 7 fill=$blue+1 stroke=ink thick=2 brush=ink"
+  },
+  {
+   "id": "rod",
+   "line": "line rod -19,29 23,27 fill=none stroke=ink thick=2.2 brush=ink"
+  },
+  {
+   "id": "rear-hub",
+   "line": "circle rear-hub 23,26 3.4 fill=accent stroke=ink thick=0.8 brush=ink"
+  },
+  {
+   "id": "mid-hub",
+   "line": "circle mid-hub -2,29 2.5 fill=accent stroke=ink thick=0.8 brush=ink"
+  },
+  {
+   "id": "front-hub",
+   "line": "circle front-hub -19,29 2.5 fill=accent stroke=ink thick=0.8 brush=ink"
+  }
+ ],
+ "made": {
+  "by": "fable",
+  "arm": "B",
+  "how": "fable, one careful drawing off the answer's clock (bake-off arm B), 38.6 s, $0.15; read by the strict converter and restyled to the house palette"
+ },
+ "licence": "MIT (made for this project on the owner's own subscription)"
+}

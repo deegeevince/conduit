@@ -1,0 +1,70 @@
+{
+ "v": 1,
+ "subject": "ball",
+ "pose": "",
+ "view": "side",
+ "facing": "left",
+ "ground": 95.5,
+ "slots": [
+  {
+   "name": "red",
+   "hue": "red"
+  },
+  {
+   "name": "cream",
+   "hue": "cream"
+  },
+  {
+   "name": "blue",
+   "hue": "blue"
+  }
+ ],
+ "parts": [
+  {
+   "id": "ground-shadow",
+   "line": "ellipse ground-shadow 2,41 30x4.5 fill=deep stroke=none opacity=0.25"
+  },
+  {
+   "id": "ball",
+   "line": "circle ball 0,0 40 fill=$red stroke=none"
+  },
+  {
+   "id": "top-light",
+   "line": "path top-light fill=$red+2 stroke=none | M-38 -12 C-34 -28 -20 -38.5 -2 -39.5 C-16 -34 -28 -24 -33 -10 Z"
+  },
+  {
+   "id": "band",
+   "line": "path band fill=$cream stroke=ink thick=0.7 brush=ink | M-39 -8.9 Q0 4 39 -8.9 C40.34 -3.04 40.34 3.04 39 8.9 Q0 24 -39 8.9 C-40.34 3.04 -40.34 -3.04 -39 -8.9 Z"
+  },
+  {
+   "id": "stripe",
+   "line": "path stripe fill=$blue+1 stroke=none | M-39.8 -4 Q0 10 39.8 -4 C40.07 -1.34 40.07 1.34 39.8 4 Q0 19 -39.8 4 C-40.07 1.34 -40.07 -1.34 -39.8 -4 Z"
+  },
+  {
+   "id": "star",
+   "line": "poly star 8,-33 10.4,-27.2 16.6,-26.8 11.8,-22.8 13.3,-16.7 8,-20 2.7,-16.7 4.2,-22.8 -0.6,-26.8 5.6,-27.2 fill=$cream stroke=ink thick=0.7 brush=ink"
+  },
+  {
+   "id": "shade",
+   "line": "path shade fill=deep stroke=none opacity=0.22 | M34.6 -20 C44.62 -2.62 40.22 19.49 24.31 31.7 C8.4 43.92 -14.1 42.46 -28.3 28.3 C2 32 30 12 34.6 -20 Z"
+  },
+  {
+   "id": "highlight",
+   "line": "path highlight fill=$cream stroke=none opacity=0.85 | M-15.43 -27.02 C-14.02 -25.46 -15.38 -21.95 -18.46 -19.18 C-21.54 -16.4 -25.17 -15.42 -26.57 -16.98 C-27.98 -18.54 -26.62 -22.05 -23.54 -24.82 C-20.46 -27.6 -16.83 -28.58 -15.43 -27.02 Z"
+  },
+  {
+   "id": "glint",
+   "line": "circle glint -30,-11.5 1.8 fill=$cream stroke=none opacity=0.85"
+  },
+  {
+   "id": "outline",
+   "line": "circle outline 0,0 40 fill=none stroke=ink thick=2 brush=ink"
+  }
+ ],
+ "made": {
+  "by": "fable",
+  "arm": "B",
+  "how": "fable, one careful drawing off the answer's clock (bake-off arm B), 36.4 s, $0.13; read by the strict converter and restyled to the house palette"
+ },
+ "licence": "MIT (made for this project on the owner's own subscription)"
+}

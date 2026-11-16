@@ -1,0 +1,114 @@
+{
+ "v": 1,
+ "subject": "dinosaur",
+ "pose": "standing",
+ "view": "side",
+ "facing": "left",
+ "ground": 87,
+ "slots": [
+  {
+   "name": "leaf",
+   "hue": "leaf"
+  },
+  {
+   "name": "cream",
+   "hue": "cream"
+  },
+  {
+   "name": "orange",
+   "hue": "orange"
+  }
+ ],
+ "parts": [
+  {
+   "id": "shadow",
+   "line": "ellipse shadow 4,37.5 34x3.6 fill=dim stroke=none opacity=0.18"
+  },
+  {
+   "id": "tail",
+   "line": "path tail fill=$leaf stroke=ink thick=1.8 brush=ink | M20 -2 C30 -1 37 -3 42 -12 C44 0 38 14 22 20 Z"
+  },
+  {
+   "id": "tail-shade",
+   "line": "path tail-shade fill=$leaf-2 stroke=none | M40 -4 C40 4 35 11 27 16 C33 10 36 4 37 -3 Z"
+  },
+  {
+   "id": "far-front-leg",
+   "line": "path far-front-leg fill=$leaf-2 stroke=ink thick=1.6 brush=ink | M-6 18 L-6 33 C-6 36.5 3 36.5 3 33 L3 18 Z"
+  },
+  {
+   "id": "far-back-leg",
+   "line": "path far-back-leg fill=$leaf-2 stroke=ink thick=1.6 brush=ink | M16 18 L16 33 C16 36.5 26 36.5 26 33 L26 16 Z"
+  },
+  {
+   "id": "plates",
+   "line": "poly plates -6,-6 -3,-17 2,-5 7,-18 13,-4 18,-15 23,1 27,-8 28,6 fill=$orange+1 stroke=ink thick=1.6 brush=ink"
+  },
+  {
+   "id": "body",
+   "line": "path body fill=$leaf stroke=ink thick=1.8 brush=ink | M-28 -22 C-28 -6 -24 4 -18 12 C-14 18 -8 28 6 28 C20 28 30 22 30 10 C30 0 20 -6 8 -6 C-2 -6 -13 -10 -15 -24 Z"
+  },
+  {
+   "id": "belly",
+   "line": "path belly fill=$cream stroke=none | M-26 -18 C-25 -2 -19 8 -14 15 C-9 22 0 25 12 25 C2 21 -6 16 -11 8 C-16 0 -19 -8 -20 -18 Z"
+  },
+  {
+   "id": "back-light",
+   "line": "path back-light fill=$leaf+2 stroke=none | M-4 -3 C6 -4 18 -2 24 6 C16 1 6 0 -4 0 Z"
+  },
+  {
+   "id": "spot-big",
+   "line": "circle spot-big 8,4.5 2.4 fill=$leaf-2 stroke=none"
+  },
+  {
+   "id": "spot-mid",
+   "line": "circle spot-mid 16,6 1.7 fill=$leaf-2 stroke=none"
+  },
+  {
+   "id": "spot-small",
+   "line": "circle spot-small 1,6 1.5 fill=$leaf-2 stroke=none"
+  },
+  {
+   "id": "near-front-leg",
+   "line": "path near-front-leg fill=$leaf stroke=ink thick=1.6 brush=ink | M-13 14 C-14 22 -14 30 -14 34 C-14 38 -3 38 -3 34 C-3 28 -2 20 -3 14 C-6 10 -11 10 -13 14 Z"
+  },
+  {
+   "id": "near-back-leg",
+   "line": "path near-back-leg fill=$leaf stroke=ink thick=1.6 brush=ink | M9 14 C8 22 8 30 8 34 C8 38 19 38 19 34 C19 28 20 20 19 13 C16 8 11 9 9 14 Z"
+  },
+  {
+   "id": "head",
+   "line": "path head fill=$leaf stroke=ink thick=1.8 brush=ink | M-12 -28 C-12 -36 -20 -39 -26 -38 C-34 -37 -40 -33 -40 -27 C-40 -20 -34 -17 -26 -17 C-18 -16 -12 -20 -12 -28 Z"
+  },
+  {
+   "id": "head-light",
+   "line": "ellipse head-light -24,-34 7x1.9 fill=$leaf+2 stroke=none"
+  },
+  {
+   "id": "cheek",
+   "line": "circle cheek -19.5,-23.5 2.3 fill=accent stroke=none opacity=0.85"
+  },
+  {
+   "id": "smile",
+   "line": "path smile fill=none stroke=ink thick=0.9 brush=ink | M-37 -24 C-34 -20 -27 -20 -23 -24"
+  },
+  {
+   "id": "nostril",
+   "line": "circle nostril -36.5,-30 0.8 fill=deep stroke=none"
+  },
+  {
+   "id": "eye",
+   "line": "circle eye -27,-29 2.3 fill=deep stroke=none"
+  },
+  {
+   "id": "eye-shine",
+   "line": "circle eye-shine -27.7,-29.8 0.75 fill=$cream stroke=none"
+  }
+ ],
+ "made": {
+  "by": "fable",
+  "arm": "B",
+  "how": "fable, one careful drawing off the answer's clock (bake-off arm B), 108.1 s, $0.39; read by the strict converter and restyled to the house palette"
+ },
+ "licence": "MIT (made for this project on the owner's own subscription)"
+}

@@ -1,0 +1,122 @@
+{
+ "v": 1,
+ "subject": "cow",
+ "pose": "standing",
+ "view": "side",
+ "facing": "left",
+ "ground": 85,
+ "slots": [
+  {
+   "name": "cream",
+   "hue": "cream"
+  },
+  {
+   "name": "brown",
+   "hue": "brown"
+  }
+ ],
+ "parts": [
+  {
+   "id": "shadow",
+   "line": "ellipse shadow 4,35.5 40x4 fill=dim stroke=none"
+  },
+  {
+   "id": "tail",
+   "line": "path tail fill=none stroke=ink thick=1.8 brush=ink | M39 -12 C45 -10 45 2 43 10"
+  },
+  {
+   "id": "tail-tuft",
+   "line": "ellipse tail-tuft 42.5,13 2.2x3.6 fill=$brown stroke=ink thick=1.4 brush=ink"
+  },
+  {
+   "id": "far-front-leg",
+   "line": "path far-front-leg fill=$cream-2 stroke=ink thick=1.6 brush=ink | M-7 6 L-6.5 29 L-0.5 29 L0 6 Z"
+  },
+  {
+   "id": "far-front-hoof",
+   "line": "rect far-front-hoof -7,28 7x5.5 r=1.5 fill=deep stroke=none"
+  },
+  {
+   "id": "far-back-leg",
+   "line": "path far-back-leg fill=$cream-2 stroke=ink thick=1.6 brush=ink | M15 6 L15.5 29 L21.5 29 L22 6 Z"
+  },
+  {
+   "id": "far-back-hoof",
+   "line": "rect far-back-hoof 15,28 7x5.5 r=1.5 fill=deep stroke=none"
+  },
+  {
+   "id": "udder",
+   "line": "ellipse udder 11,17 6x5.5 fill=$cream-2 stroke=ink thick=1.6 brush=ink"
+  },
+  {
+   "id": "near-front-leg",
+   "line": "path near-front-leg fill=$cream stroke=ink thick=1.8 brush=ink | M-18 6 L-17 30 L-10 30 L-9 6 Z"
+  },
+  {
+   "id": "near-front-hoo",
+   "line": "rect near-front-hoo -17.5,29 8x6 r=1.5 fill=deep stroke=none"
+  },
+  {
+   "id": "near-back-leg",
+   "line": "path near-back-leg fill=$cream stroke=ink thick=1.8 brush=ink | M25 4 L26 30 L33 30 L35 4 Z"
+  },
+  {
+   "id": "near-back-hoof",
+   "line": "rect near-back-hoof 25.5,29 8x6 r=1.5 fill=deep stroke=none"
+  },
+  {
+   "id": "body",
+   "line": "path body fill=$cream stroke=ink thick=2 brush=ink | M-20 -16 C-5 -20 22 -19 34 -16 C41 -14 42 0 39 10 C36 17 20 17 8 16 C-4 18 -16 18 -21 12 C-26 5 -26 -10 -20 -16 Z"
+  },
+  {
+   "id": "belly-shade",
+   "line": "path belly-shade fill=$cream-2 stroke=none | M-22.5 7 C-16 12 -4 13 8 12 C20 13 32 12 39 5 C38.5 12 34 15.5 20 15.5 C16 15.5 12 15.2 8 15 C-4 17 -16 16.5 -20 12 C-21.5 10.5 -22 9 -22.5 7 Z"
+  },
+  {
+   "id": "back-patch",
+   "line": "path back-patch fill=$brown stroke=none | M10 -13 C16 -16.5 28 -16 31 -11 C34 -4 26 1 19 -1 C11 -2 6 -8 10 -13 Z"
+  },
+  {
+   "id": "shoulder-patch",
+   "line": "path shoulder-patch fill=$brown stroke=none | M-14 -6 C-10 -10 -2 -8 -1 -2 C0 4 -7 7 -12 4 C-16 1 -17 -3 -14 -6 Z"
+  },
+  {
+   "id": "far-horn",
+   "line": "path far-horn fill=$cream-2 stroke=ink thick=1.6 brush=ink | M-33 -26 C-34 -30 -36 -33 -39 -34 C-39 -30 -38 -27 -36 -24 Z"
+  },
+  {
+   "id": "near-horn",
+   "line": "path near-horn fill=$cream-2 stroke=ink thick=1.6 brush=ink | M-26 -26 C-26 -31 -24 -34 -20 -36 C-20 -31 -20.5 -28 -21.5 -25 Z"
+  },
+  {
+   "id": "ear",
+   "line": "path ear fill=$brown stroke=ink thick=1.6 brush=ink | M-22 -22 C-18 -25 -13 -24 -11 -21 C-14 -17 -19 -17 -22 -19 Z"
+  },
+  {
+   "id": "head",
+   "line": "path head fill=$cream stroke=ink thick=2 brush=ink | M-34 -26 C-28 -29 -20 -26 -20 -18 C-20 -10 -23 -3 -28 0 C-33 3 -41 2 -42 -4 C-43 -9 -39 -13 -38 -18 C-38 -22 -37 -24 -34 -26 Z"
+  },
+  {
+   "id": "tuft",
+   "line": "path tuft fill=$brown stroke=ink thick=1.4 brush=ink | M-35 -25 C-35 -30 -30 -31 -28 -29 C-25 -31 -21 -28 -23 -24 C-27 -22 -32 -22 -35 -25 Z"
+  },
+  {
+   "id": "muzzle",
+   "line": "path muzzle fill=$cream-2 stroke=ink thick=1.8 brush=ink | M-28.26 -5.44 C-27.47 -2.51 -30.08 0.74 -34.08 1.81 C-38.08 2.88 -41.96 1.38 -42.74 -1.56 C-43.53 -4.49 -40.92 -7.74 -36.92 -8.81 C-32.92 -9.88 -29.04 -8.38 -28.26 -5.44 Z"
+  },
+  {
+   "id": "nostril",
+   "line": "ellipse nostril -39,-3.5 1x1.5 fill=deep stroke=none"
+  },
+  {
+   "id": "eye",
+   "line": "circle eye -32,-16 1.7 fill=deep stroke=none"
+  }
+ ],
+ "made": {
+  "by": "fable",
+  "arm": "B",
+  "how": "fable, one careful drawing off the answer's clock (bake-off arm B), 74.9 s, $0.29; read by the strict converter and restyled to the house palette"
+ },
+ "licence": "MIT (made for this project on the owner's own subscription)"
+}

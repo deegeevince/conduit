@@ -1,0 +1,122 @@
+{
+ "v": 1,
+ "subject": "teacher",
+ "pose": "standing",
+ "view": "side",
+ "facing": "left",
+ "ground": 91.5,
+ "slots": [
+  {
+   "name": "pink",
+   "hue": "pink"
+  },
+  {
+   "name": "teal",
+   "hue": "teal"
+  },
+  {
+   "name": "peach",
+   "hue": "peach"
+  }
+ ],
+ "parts": [
+  {
+   "id": "shadow",
+   "line": "ellipse shadow 0,42.5 24x3 fill=dim stroke=none opacity=0.2"
+  },
+  {
+   "id": "pointer",
+   "line": "line pointer -23,-6 -42,-26 fill=none stroke=$pink-3 thick=1.8 brush=ink"
+  },
+  {
+   "id": "far-arm",
+   "line": "path far-arm fill=$teal-2 stroke=ink thick=1.8 brush=ink | M-6 -16 C-12 -16 -20 -14 -25 -12 L-25.5 -7 C-19 -6.5 -12 -7 -6 -8 Z"
+  },
+  {
+   "id": "far-hand",
+   "line": "circle far-hand -27,-9.5 3 fill=$peach stroke=ink thick=1.4 brush=ink"
+  },
+  {
+   "id": "left-leg",
+   "line": "rect left-leg -7,24 4.5x15 fill=$teal-2 stroke=ink thick=1.4 brush=ink"
+  },
+  {
+   "id": "right-leg",
+   "line": "rect right-leg 3,24 4.5x15 fill=$teal-2 stroke=ink thick=1.4 brush=ink"
+  },
+  {
+   "id": "left-shoe",
+   "line": "path left-shoe fill=deep stroke=ink thick=1.4 brush=ink | M-2 37.5 L-2 41.5 L-12.5 41.5 C-12.5 39 -9.5 37.5 -7 37.5 Z"
+  },
+  {
+   "id": "right-shoe",
+   "line": "path right-shoe fill=deep stroke=ink thick=1.4 brush=ink | M8 37.5 L8 41.5 L-0.5 41.5 C-0.5 39 1.5 37.5 3.5 37.5 Z"
+  },
+  {
+   "id": "skirt",
+   "line": "path skirt fill=$pink-1 stroke=ink thick=1.8 brush=ink | M-10.5 5 L11.5 5 C14 12 16 20 17 26 L-16 26 C-15 19 -13 12 -10.5 5 Z"
+  },
+  {
+   "id": "skirt-shade",
+   "line": "path skirt-shade fill=deep stroke=none opacity=0.18 | M7 6 L11 6 C13.5 12 15 19 16 25 L10 25 C10 18 9 12 7 6 Z"
+  },
+  {
+   "id": "body",
+   "line": "path body fill=$teal stroke=ink thick=1.8 brush=ink | M-8 -17 C-4 -18.5 4 -18.5 8 -17 C11 -15 12 -8 11.5 6 L-10.5 6 C-11 -6 -10.5 -14 -8 -17 Z"
+  },
+  {
+   "id": "neck",
+   "line": "rect neck -4,-23 6x7 fill=$peach stroke=ink thick=0.8 brush=ink"
+  },
+  {
+   "id": "collar",
+   "line": "poly collar -5.5,-17.5 -2,-12 2.5,-16.5 0,-18.5 fill=$peach+2 stroke=ink thick=0.7 brush=ink"
+  },
+  {
+   "id": "bun",
+   "line": "circle bun 10,-39 4.5 fill=$pink-3 stroke=ink thick=1.6 brush=ink"
+  },
+  {
+   "id": "head",
+   "line": "path head fill=$peach stroke=ink thick=1.8 brush=ink | M-2 -40 C4 -40 8 -36 8 -30 C8 -24 4 -20 -2 -20 C-7 -20 -10.5 -23 -11.5 -26.5 L-13.7 -27.5 Q-14.2 -28.8 -12 -30 C-12 -36 -8 -40 -2 -40 Z"
+  },
+  {
+   "id": "hair",
+   "line": "path hair fill=$pink-3 stroke=ink thick=1.6 brush=ink | M-11.5 -32.5 C-10.5 -39.5 -4 -42.5 1 -42 C7 -41 10 -36 9.5 -30 C9 -26 8 -23.5 6 -22.5 C6 -28 4 -32 0 -33.5 C-4 -34.5 -8 -33.5 -11.5 -32.5 Z"
+  },
+  {
+   "id": "eye",
+   "line": "circle eye -7.5,-29 1 fill=deep stroke=none"
+  },
+  {
+   "id": "glasses",
+   "line": "circle glasses -7.5,-29 3 fill=none stroke=ink thick=0.7 brush=ink"
+  },
+  {
+   "id": "cheek",
+   "line": "circle cheek -3.5,-25 1.8 fill=$pink-1 stroke=none opacity=0.6"
+  },
+  {
+   "id": "smile",
+   "line": "path smile fill=none stroke=ink thick=0.7 brush=ink | M-10 -24 Q-8 -22 -5.5 -23.5"
+  },
+  {
+   "id": "book",
+   "line": "poly book -9.92,-8.1 2.96,-9.91 5.05,4.95 -7.83,6.76 fill=$peach+2 stroke=ink thick=1.2 brush=ink"
+  },
+  {
+   "id": "near-arm",
+   "line": "path near-arm fill=$teal+3 stroke=ink thick=1.4 brush=ink | M4 -16 C9 -17 13 -13 13 -6 C13 0 10 3 5 3 L-1 2.5 L-1 -2.5 L6 -2.5 C7 -6 6 -10 3 -12 Z"
+  },
+  {
+   "id": "near-hand",
+   "line": "circle near-hand -2.5,0 2.8 fill=$peach stroke=ink thick=1.2 brush=ink"
+  }
+ ],
+ "made": {
+  "by": "fable",
+  "arm": "B",
+  "how": "fable, one careful drawing off the answer's clock (bake-off arm B), 62.5 s, $0.23; read by the strict converter and restyled to the house palette"
+ },
+ "licence": "MIT (made for this project on the owner's own subscription)"
+}

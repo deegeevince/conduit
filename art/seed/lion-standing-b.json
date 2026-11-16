@@ -1,0 +1,118 @@
+{
+ "v": 1,
+ "subject": "lion",
+ "pose": "standing",
+ "view": "side",
+ "facing": "left",
+ "ground": 92,
+ "slots": [
+  {
+   "name": "gold",
+   "hue": "gold"
+  },
+  {
+   "name": "tan",
+   "hue": "tan"
+  },
+  {
+   "name": "red",
+   "hue": "red"
+  }
+ ],
+ "parts": [
+  {
+   "id": "ground-shadow",
+   "line": "ellipse ground-shadow 2,38.5 38x3.5 fill=$tan stroke=none"
+  },
+  {
+   "id": "tail",
+   "line": "path tail fill=$gold stroke=ink thick=1.6 brush=ink | M30 -5 C40 -8 46 2 42 14 L39 13.5 C42 4 37 -2 30 -1 Z"
+  },
+  {
+   "id": "tail-tuft",
+   "line": "path tail-tuft fill=$gold-3 stroke=ink thick=1.6 brush=ink | M40.5 11 C46 14 46 22 40 25 C35 22 35 14 40.5 11 Z"
+  },
+  {
+   "id": "far-back-leg",
+   "line": "path far-back-leg fill=$gold-1 stroke=ink thick=1.6 brush=ink | M14 10 L14 33 Q11 33.5 11 35.5 Q11 37 13 37 L21 37 Q22.5 37 22.5 35 L22.5 10 Z"
+  },
+  {
+   "id": "far-front-leg",
+   "line": "path far-front-leg fill=$gold-1 stroke=ink thick=1.6 brush=ink | M-9 10 L-9 33 Q-12 33.5 -12 35.5 Q-12 37 -10 37 L-2 37 Q-0.5 37 -0.5 35 L-0.5 10 Z"
+  },
+  {
+   "id": "body",
+   "line": "path body fill=$gold stroke=ink thick=1.8 brush=ink | M-16 -4 C-5 -10 20 -10 30 -5 C37 -1 36 12 30 17 C20 20 -5 20 -14 17 C-20 12 -20 0 -16 -4 Z"
+  },
+  {
+   "id": "belly",
+   "line": "path belly fill=$gold+2 stroke=none | M-13 13 C-2 16 18 16 29 12 C26 18 20 18.5 8 18.5 C-4 18.5 -10 18 -13 13 Z"
+  },
+  {
+   "id": "back-highlight",
+   "line": "path back-highlight fill=$gold+2 stroke=none | M-4 -5.5 C6 -7.5 20 -7 28 -3 C18 -4.5 6 -4.5 -4 -5.5 Z"
+  },
+  {
+   "id": "near-back-leg",
+   "line": "path near-back-leg fill=$gold stroke=ink thick=1.6 brush=ink | M20 0 C29 -3 36 3 34 13 L33.5 35 Q33.5 38 31 38 L21 38 Q18.5 38 18.5 36 Q19 34 22.5 33.5 L23.5 18 C18 14 16 4 20 0 Z"
+  },
+  {
+   "id": "near-front-leg",
+   "line": "path near-front-leg fill=$gold stroke=ink thick=1.8 brush=ink | M-19 8 L-18.5 33.5 Q-22 34 -22.5 36 Q-22.5 38 -20 38 L-10.5 38 Q-8.5 38 -8.5 35.5 L-8.5 8 Z"
+  },
+  {
+   "id": "mane",
+   "line": "path mane fill=$gold-3 stroke=ink thick=2 brush=ink | M-1 -10 Q4.9 0.3 -6.6 3.4 Q-9.7 14.9 -20 9 Q-30.3 14.9 -33.4 3.4 Q-44.9 0.3 -39 -10 Q-44.9 -20.3 -33.4 -23.4 Q-30.3 -34.9 -20 -29 Q-9.7 -34.9 -6.6 -23.4 Q4.9 -20.3 -1 -10 Z"
+  },
+  {
+   "id": "left-ear",
+   "line": "circle left-ear -33.5,-19.5 3.6 fill=$gold stroke=ink thick=1 brush=ink"
+  },
+  {
+   "id": "right-ear",
+   "line": "circle right-ear -16.5,-20 3.6 fill=$gold stroke=ink thick=1 brush=ink"
+  },
+  {
+   "id": "head",
+   "line": "circle head -25,-9 12 fill=$gold stroke=ink thick=1.2 brush=ink"
+  },
+  {
+   "id": "forelock",
+   "line": "path forelock fill=$gold-3 stroke=ink thick=0.6 brush=ink | M-30.5 -19.5 Q-25 -24 -19 -19.5 Q-22.5 -16.5 -25 -18.5 Q-27.5 -16.5 -30.5 -19.5 Z"
+  },
+  {
+   "id": "muzzle",
+   "line": "ellipse muzzle -29.5,-3.2 7.3x5 fill=$tan+3 stroke=none"
+  },
+  {
+   "id": "cheek",
+   "line": "circle cheek -19,-5.5 2.2 fill=$red+1 stroke=none opacity=0.6"
+  },
+  {
+   "id": "nose",
+   "line": "path nose fill=$red+1 stroke=ink thick=0.6 brush=ink | M-33 -7.2 Q-30 -8.4 -27 -7.2 Q-28.8 -4 -30 -4 Q-31.2 -4 -33 -7.2 Z"
+  },
+  {
+   "id": "mouth",
+   "line": "path mouth fill=none stroke=ink thick=0.8 brush=ink | M-30 -4 L-30 -2"
+  },
+  {
+   "id": "mouth-2",
+   "line": "path mouth-2 fill=none stroke=ink thick=0.8 brush=ink | M-33.5 -1.7 Q-31.5 0.5 -30 -2 Q-28.5 0.5 -26.5 -1.7"
+  },
+  {
+   "id": "left-eye",
+   "line": "circle left-eye -33.5,-11.5 1.4 fill=deep stroke=none"
+  },
+  {
+   "id": "right-eye",
+   "line": "circle right-eye -24,-11.5 1.5 fill=deep stroke=none"
+  }
+ ],
+ "made": {
+  "by": "fable",
+  "arm": "B",
+  "how": "fable, one careful drawing off the answer's clock (bake-off arm B), 61.8 s, $0.24; read by the strict converter and restyled to the house palette"
+ },
+ "licence": "MIT (made for this project on the owner's own subscription)"
+}

@@ -1,0 +1,126 @@
+{
+ "v": 1,
+ "subject": "bee",
+ "pose": "flying",
+ "view": "side",
+ "facing": "left",
+ "ground": 83.5,
+ "slots": [
+  {
+   "name": "yellow",
+   "hue": "yellow"
+  },
+  {
+   "name": "sky",
+   "hue": "sky"
+  },
+  {
+   "name": "pink",
+   "hue": "pink"
+  }
+ ],
+ "parts": [
+  {
+   "id": "shadow",
+   "line": "ellipse shadow 2,42 24x3 fill=dim stroke=none opacity=0.18"
+  },
+  {
+   "id": "back-wing",
+   "line": "path back-wing fill=$sky+3 stroke=ink thick=1.6 brush=ink | M22.16 -17.2 C18.42 -9.19 11.74 -4.4 7.24 -6.5 C2.73 -8.6 2.11 -16.79 5.84 -24.8 C9.58 -32.81 16.26 -37.6 20.76 -35.5 C25.27 -33.4 25.89 -25.21 22.16 -17.2 Z"
+  },
+  {
+   "id": "stinger",
+   "line": "poly stinger 32,4 43,8 32,12 fill=deep stroke=ink thick=1.4 brush=ink"
+  },
+  {
+   "id": "leg-front",
+   "line": "path leg-front fill=none stroke=ink thick=1.6 brush=ink | M-6 24 Q-8 30 -11.5 31"
+  },
+  {
+   "id": "leg-mid",
+   "line": "path leg-mid fill=none stroke=ink thick=1.6 brush=ink | M6 26 Q5 32 1.5 33.5"
+  },
+  {
+   "id": "leg-back",
+   "line": "path leg-back fill=none stroke=ink thick=1.6 brush=ink | M18 24 Q18 30 14.5 32"
+  },
+  {
+   "id": "body",
+   "line": "ellipse body 8,8 26x19 fill=$yellow stroke=ink thick=2 brush=ink"
+  },
+  {
+   "id": "belly-shade",
+   "line": "path belly-shade fill=$yellow-2 stroke=none | M-15 13 Q8 30 31 13 Q25 24 8 25.5 Q-9 24 -15 13 Z"
+  },
+  {
+   "id": "body-highlight",
+   "line": "path body-highlight fill=$yellow+2 stroke=none | M-13 2 Q-6 -7 8 -7.5 Q22 -7 28 0 Q18 -4.5 8 -4.5 Q-4 -4 -13 2 Z"
+  },
+  {
+   "id": "stripe-front",
+   "line": "path stripe-front fill=deep stroke=none | M-2 -9.5 Q2 -10.6 6 -10.9 Q9 8 6 26.9 Q2 26.6 -2 25.5 Q1 8 -2 -9.5 Z"
+  },
+  {
+   "id": "stripe-back",
+   "line": "path stripe-back fill=deep stroke=none | M16 -10.1 Q20 -9.2 23 -7.5 Q26 8 23 23.5 Q20 25.2 16 26.1 Q19 8 16 -10.1 Z"
+  },
+  {
+   "id": "antenna-back",
+   "line": "path antenna-back fill=none stroke=ink thick=1.5 brush=ink | M-19 -8 Q-19 -19 -27 -23"
+  },
+  {
+   "id": "antenna-front",
+   "line": "path antenna-front fill=none stroke=ink thick=1.5 brush=ink | M-26 -7 Q-29 -17 -37 -18"
+  },
+  {
+   "id": "antenna-tip-ba",
+   "line": "circle antenna-tip-ba -27.5,-23.5 2 fill=deep stroke=none"
+  },
+  {
+   "id": "antenna-tip-fr",
+   "line": "circle antenna-tip-fr -37.5,-18.5 2 fill=deep stroke=none"
+  },
+  {
+   "id": "head",
+   "line": "circle head -22,4 13 fill=$yellow stroke=ink thick=2 brush=ink"
+  },
+  {
+   "id": "cheek",
+   "line": "circle cheek -22,9.5 2.8 fill=$pink stroke=none"
+  },
+  {
+   "id": "eye",
+   "line": "ellipse eye -27,2 2.3x3.2 fill=deep stroke=none"
+  },
+  {
+   "id": "eye-shine",
+   "line": "circle eye-shine -27.7,0.8 0.9 fill=$sky+3 stroke=none"
+  },
+  {
+   "id": "smile",
+   "line": "path smile fill=none stroke=ink thick=0.9 brush=ink | M-32.5 8.5 Q-29.5 12 -26 9.8"
+  },
+  {
+   "id": "front-wing",
+   "line": "path front-wing fill=$sky+3 stroke=ink thick=1.6 brush=ink | M9.66 -25.59 C11.95 -17.05 9.48 -8.97 4.14 -7.55 C-1.19 -6.12 -7.37 -11.88 -9.66 -20.41 C-11.95 -28.95 -9.48 -37.03 -4.14 -38.45 C1.19 -39.88 7.37 -34.12 9.66 -25.59 Z"
+  },
+  {
+   "id": "wing-shade",
+   "line": "path wing-shade fill=$sky+3 stroke=none | M0 -10 Q7 -18 5 -32 Q11 -20 3.5 -9 Z"
+  },
+  {
+   "id": "whoosh-top",
+   "line": "path whoosh-top fill=none stroke=$yellow-2 thick=1 brush=ink | M37 -7 Q43 -5.5 45 0"
+  },
+  {
+   "id": "whoosh-bottom",
+   "line": "path whoosh-bottom fill=none stroke=$yellow-2 thick=1 brush=ink | M38 20 Q44 20.5 47 16"
+  }
+ ],
+ "made": {
+  "by": "fable",
+  "arm": "B",
+  "how": "fable, one careful drawing off the answer's clock (bake-off arm B), 55.6 s, $0.21; read by the strict converter and restyled to the house palette"
+ },
+ "licence": "MIT (made for this project on the owner's own subscription)"
+}

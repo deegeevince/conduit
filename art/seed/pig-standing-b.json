@@ -1,0 +1,118 @@
+{
+ "v": 1,
+ "subject": "pig",
+ "pose": "standing",
+ "view": "side",
+ "facing": "left",
+ "ground": 87,
+ "slots": [
+  {
+   "name": "pink",
+   "hue": "pink"
+  },
+  {
+   "name": "leaf",
+   "hue": "leaf"
+  }
+ ],
+ "parts": [
+  {
+   "id": "ground-shadow",
+   "line": "ellipse ground-shadow 4,33.5 35x3.5 fill=$leaf+2 stroke=none"
+  },
+  {
+   "id": "tail",
+   "line": "path tail fill=none stroke=ink thick=2 brush=ink | M34 -2 C40 -3 43 -8 39 -10 C35 -12 33 -6 38 -5 C42 -4 45 -8 44 -12"
+  },
+  {
+   "id": "far-back-leg",
+   "line": "path far-back-leg fill=$pink stroke=ink thick=1.6 brush=ink | M10 16 L10 28 Q10 31 12.5 31 L14.5 31 Q17 31 17 28 L17 16"
+  },
+  {
+   "id": "far-back-hoof",
+   "line": "path far-back-hoof fill=deep stroke=none | M10 27 L17 27 L17 28 Q17 31 14.5 31 L12.5 31 Q10 31 10 28 Z"
+  },
+  {
+   "id": "far-front-leg",
+   "line": "path far-front-leg fill=$pink stroke=ink thick=1.6 brush=ink | M-3 16 L-3 28 Q-3 31 -0.5 31 L1.5 31 Q4 31 4 28 L4 16"
+  },
+  {
+   "id": "far-front-hoof",
+   "line": "path far-front-hoof fill=deep stroke=none | M-3 27 L4 27 L4 28 Q4 31 1.5 31 L-0.5 31 Q-3 31 -3 28 Z"
+  },
+  {
+   "id": "far-ear",
+   "line": "path far-ear fill=$pink stroke=ink thick=1.6 brush=ink | M-31 -16 C-33 -23 -30 -29 -25 -30 C-23 -25 -22 -20 -23 -16 Z"
+  },
+  {
+   "id": "body",
+   "line": "ellipse body 6,2 29x20 fill=$pink+1 stroke=ink thick=1.8 brush=ink"
+  },
+  {
+   "id": "belly-shade",
+   "line": "path belly-shade fill=$pink stroke=none | M-19 10 C-10 24 22 24 30.5 10 C20 17 -8 17 -19 10 Z"
+  },
+  {
+   "id": "back-highlight",
+   "line": "path back-highlight fill=$pink+2 stroke=none | M-2 -13 C6 -16 18 -15 26 -10 C18 -13 7 -14 -2 -13 Z"
+  },
+  {
+   "id": "near-back-leg",
+   "line": "path near-back-leg fill=$pink+1 stroke=ink thick=1.8 brush=ink | M18 14 L18 30 Q18 33 21 33 L25 33 Q28 33 28 30 L28 14"
+  },
+  {
+   "id": "near-back-hoof",
+   "line": "path near-back-hoof fill=deep stroke=none | M18 28.5 L28 28.5 L28 30 Q28 33 25 33 L21 33 Q18 33 18 30 Z"
+  },
+  {
+   "id": "near-front-leg",
+   "line": "path near-front-leg fill=$pink+1 stroke=ink thick=1.8 brush=ink | M-14 14 L-14 30 Q-14 33 -11 33 L-7 33 Q-4 33 -4 30 L-4 14"
+  },
+  {
+   "id": "near-front-hoo",
+   "line": "path near-front-hoo fill=deep stroke=none | M-14 28.5 L-4 28.5 L-4 30 Q-4 33 -7 33 L-11 33 Q-14 33 -14 30 Z"
+  },
+  {
+   "id": "head",
+   "line": "circle head -22,-4 16 fill=$pink+1 stroke=ink thick=1.8 brush=ink"
+  },
+  {
+   "id": "cheek",
+   "line": "ellipse cheek -18,3 4x2.8 fill=$pink stroke=none opacity=0.6"
+  },
+  {
+   "id": "near-ear",
+   "line": "path near-ear fill=$pink+1 stroke=ink thick=1.6 brush=ink | M-20 -17 C-18 -25 -11 -29 -6 -27 C-6 -21 -9 -15 -13 -12 Z"
+  },
+  {
+   "id": "snout",
+   "line": "ellipse snout -37,0 6x7.5 fill=$pink+2 stroke=ink thick=1.6 brush=ink"
+  },
+  {
+   "id": "left-nostril",
+   "line": "ellipse left-nostril -39,0 1x1.9 fill=deep stroke=none"
+  },
+  {
+   "id": "right-nostril",
+   "line": "ellipse right-nostril -35,0 1x1.9 fill=deep stroke=none"
+  },
+  {
+   "id": "eye",
+   "line": "circle eye -25,-8 2.1 fill=deep stroke=none"
+  },
+  {
+   "id": "eye-shine",
+   "line": "circle eye-shine -25.6,-8.7 0.7 fill=$pink+3 stroke=none"
+  },
+  {
+   "id": "smile",
+   "line": "path smile fill=none stroke=ink thick=0.9 brush=ink | M-31 7.5 Q-27 10 -23 6"
+  }
+ ],
+ "made": {
+  "by": "fable",
+  "arm": "B",
+  "how": "fable, one careful drawing off the answer's clock (bake-off arm B), 56.5 s, $0.22; read by the strict converter and restyled to the house palette"
+ },
+ "licence": "MIT (made for this project on the owner's own subscription)"
+}

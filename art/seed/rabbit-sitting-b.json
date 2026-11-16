@@ -1,0 +1,102 @@
+{
+ "v": 1,
+ "subject": "rabbit",
+ "pose": "sitting",
+ "view": "side",
+ "facing": "left",
+ "ground": 90,
+ "slots": [
+  {
+   "name": "tan",
+   "hue": "tan"
+  },
+  {
+   "name": "pink",
+   "hue": "pink"
+  }
+ ],
+ "parts": [
+  {
+   "id": "shadow",
+   "line": "ellipse shadow 4,40.5 38x4 fill=dim stroke=none"
+  },
+  {
+   "id": "tail",
+   "line": "circle tail 35,28 6 fill=$tan+3 stroke=ink thick=1.8 brush=ink"
+  },
+  {
+   "id": "far-front-leg",
+   "line": "path far-front-leg fill=$tan-3 stroke=ink thick=1.8 brush=ink | M-17 12 C-19 22 -22 30 -24 35 C-26 38 -24 40 -21 40 L-15 40 C-12 40 -12 36 -13 33 L-11 12 Z"
+  },
+  {
+   "id": "far-ear",
+   "line": "path far-ear fill=$tan-3 stroke=ink thick=1.8 brush=ink | M-25 -19 C-29 -32 -25 -42 -19 -44 C-14 -40 -14 -30 -17 -21 Z"
+  },
+  {
+   "id": "near-ear",
+   "line": "path near-ear fill=$tan-2 stroke=ink thick=2 brush=ink | M-19 -19 C-22 -34 -14 -45 -5 -45 C-1 -38 -4 -26 -10 -17 Z"
+  },
+  {
+   "id": "inner-ear",
+   "line": "path inner-ear fill=$pink stroke=none | M-16 -22 C-18 -32 -13 -40 -7 -41 C-5 -36 -7 -28 -11 -21 Z"
+  },
+  {
+   "id": "body",
+   "line": "path body fill=$tan-2 stroke=ink thick=2 brush=ink | M-10 -6 C6 -14 30 -6 36 16 C39 28 34 38 22 38 L-14 38 C-20 26 -20 8 -16 -2 Z"
+  },
+  {
+   "id": "back-light",
+   "line": "path back-light fill=$tan stroke=none | M2 -6 C16 -8 28 0 32 12 C24 4 14 -2 2 -3 Z"
+  },
+  {
+   "id": "chest",
+   "line": "path chest fill=$tan+3 stroke=none | M-14 4 C-17 14 -17 28 -12 37 L-3 37 C-8 28 -9 14 -7 4 Z"
+  },
+  {
+   "id": "haunch",
+   "line": "path haunch fill=$tan-2 stroke=$tan-3 thick=0.9 brush=ink | M4 26 C2 12 12 6 20 7 C30 8 35 18 32 30 C28 37 10 38 4 26 Z"
+  },
+  {
+   "id": "hind-foot",
+   "line": "path hind-foot fill=$tan stroke=ink thick=1.8 brush=ink | M-4 38 C-4 32 4 31 12 32 L28 34 C32 35 32 40 28 40 L0 40 C-3 40 -4 39 -4 38 Z"
+  },
+  {
+   "id": "front-leg",
+   "line": "path front-leg fill=$tan-2 stroke=ink thick=1.4 brush=ink | M-14 10 C-15 20 -17 30 -19 35 C-21 38 -19 40 -16 40 L-9 40 C-6 40 -6 37 -7 33 C-6 25 -5 18 -5 10"
+  },
+  {
+   "id": "head",
+   "line": "path head fill=$tan-2 stroke=ink thick=2 brush=ink | M-6 -16 C-10 -24 -22 -26 -29 -20 C-35 -16 -39 -10 -38 -5 C-37 0 -30 4 -22 4 C-12 4 -4 -4 -6 -16 Z"
+  },
+  {
+   "id": "muzzle",
+   "line": "ellipse muzzle -29.5,-4 6.5x5 fill=$tan+3 stroke=none"
+  },
+  {
+   "id": "cheek",
+   "line": "circle cheek -18,-4 3.5 fill=$pink stroke=none opacity=0.7"
+  },
+  {
+   "id": "nose",
+   "line": "ellipse nose -36.5,-7.5 2x1.6 fill=$pink stroke=ink thick=0.6 brush=ink"
+  },
+  {
+   "id": "mouth",
+   "line": "path mouth fill=none stroke=ink thick=0.8 brush=ink | M-36 -5 Q-33 -1 -29 -3"
+  },
+  {
+   "id": "eye",
+   "line": "circle eye -24,-13 2.6 fill=deep stroke=none"
+  },
+  {
+   "id": "eye-shine",
+   "line": "circle eye-shine -24.8,-13.8 0.8 fill=$tan+3 stroke=none"
+  }
+ ],
+ "made": {
+  "by": "fable",
+  "arm": "B",
+  "how": "fable, one careful drawing off the answer's clock (bake-off arm B), 49.8 s, $0.19; read by the strict converter and restyled to the house palette"
+ },
+ "licence": "MIT (made for this project on the owner's own subscription)"
+}

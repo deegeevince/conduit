@@ -1,0 +1,110 @@
+{
+ "v": 1,
+ "subject": "elephant",
+ "pose": "standing",
+ "view": "side",
+ "facing": "left",
+ "ground": 87,
+ "slots": [
+  {
+   "name": "grey",
+   "hue": "grey"
+  }
+ ],
+ "parts": [
+  {
+   "id": "shadow",
+   "line": "ellipse shadow 2,37 38x3.5 fill=dim stroke=none"
+  },
+  {
+   "id": "tail",
+   "line": "path tail fill=none stroke=ink thick=1.8 brush=ink | M36 -8 C42 -4 41 5 39.5 11"
+  },
+  {
+   "id": "tail-tuft",
+   "line": "ellipse tail-tuft 39.3,13.5 1.8x3 fill=deep stroke=none"
+  },
+  {
+   "id": "far-back-leg",
+   "line": "path far-back-leg fill=$grey-1 stroke=ink thick=1.8 brush=ink | M12 14 L12 33 Q12 36 15 36 L19 36 Q22 36 22 33 L22 14 Z"
+  },
+  {
+   "id": "far-front-leg",
+   "line": "path far-front-leg fill=$grey-1 stroke=ink thick=1.8 brush=ink | M-2 14 L-2 33 Q-2 36 1 36 L5 36 Q8 36 8 33 L8 14 Z"
+  },
+  {
+   "id": "body",
+   "line": "path body fill=$grey stroke=ink thick=1.8 brush=ink | M-16 -16 C-6 -28 28 -28 36 -10 C41 2 39 14 34 20 L-12 20 C-21 14 -22 -4 -16 -16 Z"
+  },
+  {
+   "id": "back-highlight",
+   "line": "path back-highlight fill=$grey+2 stroke=none | M6 -21 C13 -22.5 22 -21 29 -15 C21 -18.5 13 -19 6 -18.5 Z"
+  },
+  {
+   "id": "belly-shade",
+   "line": "path belly-shade fill=$grey-1 stroke=none opacity=0.6 | M-10 18.8 C2 13 24 13 37 8 C38 13 36 16 34 18.8 Z"
+  },
+  {
+   "id": "near-back-leg",
+   "line": "path near-back-leg fill=$grey stroke=ink thick=1.8 brush=ink | M20 14 L20 34 Q20 37 23 37 L31 37 Q34 37 34 34 L34 16"
+  },
+  {
+   "id": "near-front-leg",
+   "line": "path near-front-leg fill=$grey stroke=ink thick=1.8 brush=ink | M-12 12 L-12 34 Q-12 37 -9 37 L0 37 Q3 37 3 34 L3 14"
+  },
+  {
+   "id": "back-toes",
+   "line": "path back-toes fill=$grey+3 stroke=ink thick=0.6 brush=ink | M21.5 36 Q23.5 32 25.5 36 Q27.5 32 29.5 36 Z"
+  },
+  {
+   "id": "front-toes",
+   "line": "path front-toes fill=$grey+3 stroke=ink thick=0.6 brush=ink | M-10.5 36 Q-8.5 32 -6.5 36 Q-4.5 32 -2.5 36 Z"
+  },
+  {
+   "id": "head",
+   "line": "path head fill=$grey stroke=ink thick=1.8 brush=ink | M-20 -29 C-30 -29 -36 -21 -35 -10 C-35 0 -34 7 -35 12 C-36 16 -38 16 -39 13 L-43 14 C-44 20 -38 26 -32 22 C-27 18 -26 10 -24 5 C-18 8 -8 4 -5 -4 C-2 -14 -8 -29 -20 -29 Z"
+  },
+  {
+   "id": "head-highlight",
+   "line": "path head-highlight fill=$grey+2 stroke=none | M-30 -20 C-27 -25 -21 -26 -17 -25 C-22 -24 -26 -22 -28 -18 Z"
+  },
+  {
+   "id": "trunk-shade",
+   "line": "path trunk-shade fill=$grey-1 stroke=none opacity=0.6 | M-26 6 C-28 11 -28.5 16 -32.5 20.5 C-31.5 16 -31 11 -30 6 Z"
+  },
+  {
+   "id": "trunk-line-1",
+   "line": "path trunk-line-1 fill=none stroke=ink thick=0.7 brush=ink | M-33 10 Q-30.5 11.5 -28 10"
+  },
+  {
+   "id": "trunk-line-2",
+   "line": "path trunk-line-2 fill=none stroke=ink thick=0.7 brush=ink | M-34 16 Q-32 18 -29.5 16.5"
+  },
+  {
+   "id": "ear",
+   "line": "path ear fill=$grey stroke=ink thick=1 brush=ink | M-13 -21 C-4 -24 5 -19 4 -8 C3 3 -4 10 -9 8 C-14 5 -16 -3 -15 -11 C-15 -16 -15 -19 -13 -21 Z"
+  },
+  {
+   "id": "ear-shade",
+   "line": "path ear-shade fill=$grey-1 stroke=none opacity=0.7 | M2 -5 C0 3 -5 7.5 -8.5 6.8 C-5 4 -1 0 0 -7 Z"
+  },
+  {
+   "id": "tusk",
+   "line": "path tusk fill=$grey+3 stroke=ink thick=1 brush=ink | M-24 -1 C-26 5 -32 9 -40 7 C-34 6 -30 3 -29 -2 Z"
+  },
+  {
+   "id": "cheek",
+   "line": "circle cheek -20,-4.5 3 fill=$grey+2 stroke=none opacity=0.8"
+  },
+  {
+   "id": "eye",
+   "line": "circle eye -26,-12 1.7 fill=deep stroke=none"
+  }
+ ],
+ "made": {
+  "by": "fable",
+  "arm": "B",
+  "how": "fable, one careful drawing off the answer's clock (bake-off arm B), 122.2 s, $0.44; read by the strict converter and restyled to the house palette"
+ },
+ "licence": "MIT (made for this project on the owner's own subscription)"
+}
