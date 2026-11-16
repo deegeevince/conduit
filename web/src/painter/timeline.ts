@@ -709,7 +709,7 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
     return group === null ? {} : { maxWidth: cardWordsRoom(fit, planeScale(group.style.layer, viewport)) };
   };
   /** the room a card's words take, set as the layout will set them: the widest and the tallest of everything they may say (a bound `correct` changes them) */
-  function cardWordsSize(member: ElementSpan, tq: number, look: LookSpec, fit: CanvasFit, ps: number): { width: number; height: number } {
+  function cardWordsSize(member: ElementSpan, tq: number, look: LookSpec, fit: CanvasFit, ps: number): { width: number; height: number; tap: boolean } {
     const style = styleAt(member, tq);
     const source = sourceOf(member);
     let width = 0;
@@ -719,7 +719,9 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
       width = Math.max(width, set.widest);
       height = Math.max(height, set.lines.length * set.lineHeight);
     }
-    return { width, height };
+    // a choice is a target for a finger: it takes at least the screen's least, as the layout gives it (the box drawn round it is that tall)
+    if (style.tap) height = Math.max(height, targetPx() / ps);
+    return { width, height, tap: style.tap === true };
   }
   /**
    * What stands in a card at `tq`, in the order it was written: its controls and its words, each with the room it asks. The card is as wide as the
@@ -731,12 +733,12 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
       const gone = exitOf(member);
       return gone === null || (fading ? tq < gone.end : gone.start > tq);
     };
-    const parts: { span: ElementSpan; order: number; width: number; height: number; layout: ControlLayout | null }[] = [];
+    const parts: { span: ElementSpan; order: number; width: number; height: number; tap: boolean; layout: ControlLayout | null }[] = [];
     for (const member of controlSpans) {
       if (member.parent !== group.key || !here(member)) continue;
       const spec = controlSpecOf(member);
       const layout = spec === null ? null : controlLayoutOf({ span: member, value: spec.value, mood: CALM, maxWidth: cardWordsRoom(fit, ps), look, viewport, fit });
-      if (layout !== null) parts.push({ span: member, order: member.order, width: layout.width, height: layout.height, layout });
+      if (layout !== null) parts.push({ span: member, order: member.order, width: layout.width, height: layout.height, tap: false, layout });
     }
     for (const member of elements) {
       if (member.parent !== group.key || !here(member)) continue;
@@ -745,6 +747,11 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
     }
     return parts.sort((a, b) => a.order - b.order);
   }
+  /** the room under a part of a card before the next: choices stand apart as the foot's choices do, so their boxes never touch; the rest a quarter line */
+  function cardGapsOf(parts: readonly { tap: boolean }[], look: LookSpec, ps: number): number[] {
+    const line = cellOf('m', viewport, look).height / ps;
+    return parts.map((part, index) => (part.tap && parts[index + 1]?.tap === true ? line * 0.75 : line / 4));
+  }
   /**
    * The column of controls and words inside a card and the frame round it, measured with the card at the origin: `inner` is where the column
    * goes relative to the card's own centre, `outer` the frame. The same arithmetic draws the card and reserves its room in the flow.
@@ -752,11 +759,11 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
   function cardRoom(group: ElementSpan, tq: number, look: LookSpec, fit: CanvasFit) {
     if (group.figure?.kind !== 'group' || group.figure.card === undefined) return null;
     const ps = planeScale(group.style.layer, viewport);
-    const gap = cellOf('m', viewport, look).height / ps / 4;
     const parts = cardPartsOf(group, tq, look, fit, ps, false);
     if (parts.length === 0) return null;
+    const gaps = cardGapsOf(parts, look, ps);
     const width = Math.max(...parts.map((part) => part.width));
-    const height = parts.reduce((sum, part) => sum + part.height + gap, -gap);
+    const height = parts.reduce((sum, part, index) => sum + part.height + (gaps[index] ?? 0), 0) - (gaps[parts.length - 1] ?? 0);
     const inner: Box = { x: -width / 2, y: -height / 2, width, height };
     const card = layoutCard({ owner: group.key, title: group.figure.card.title, inner, measure: measurerFor(look, viewport, group.style), look: lookOf(look, viewport, fit, ps) });
     return { inner, outer: card.outer };
@@ -1982,11 +1989,11 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
     const ps = planeScale(group.style.layer, viewport);
     const parts = cardPartsOf(group, tq, look, fit, ps, true);
     if (parts.length === 0) return null;
-    const gap = cellOf('m', viewport, look).height / ps / 4;
+    const gaps = cardGapsOf(parts, look, ps);
     const layouts = new Map<string, ControlLayout>();
     for (const part of parts) if (part.layout !== null) layouts.set(part.span.key, part.layout);
     const width = Math.max(...parts.map((part) => part.width));
-    const height = parts.reduce((sum, part) => sum + part.height + gap, -gap);
+    const height = parts.reduce((sum, part, index) => sum + part.height + (gaps[index] ?? 0), 0) - (gaps[parts.length - 1] ?? 0);
     const at = styleAt(group, tq).at;
     let middle = typeof at === 'object' && at !== null ? { x: (fit.box.x + at.x * fit.unit) / ps, y: (fit.box.y + at.y * fit.unit) / ps } : { x: (fit.flow.x + fit.flow.width / 2) / ps, y: (fit.flow.y + fit.flow.height / 2) / ps };
     const pose = typeof at === 'object' && at !== null ? null : poseAt(group.key, tq, null);
@@ -2001,9 +2008,9 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
     const inner: Box = { x: middle.x - width / 2, y: middle.y - height / 2, width, height };
     const slots = new Map<string, { x: number; y: number }>();
     let top = inner.y;
-    for (const part of parts) {
+    for (const [index, part] of parts.entries()) {
       slots.set(part.span.key, { x: inner.x + part.width / 2, y: top + part.height / 2 });
-      top += part.height + gap;
+      top += part.height + (gaps[index] ?? 0);
     }
     return { fit, ps, inner, slots, layouts };
   };

@@ -39,3 +39,12 @@ poly blob 56,60 80,18 104,60 fill=ink
 say | and another.
 ambient confetti
 wait 2
+
+scene choices layout=caption
+look paper
+card c1 | Words stay in their card
+say x48 in=c1 | Which shape has three sides?
+say x50 choice in=c1 | Triangle
+say x52 choice in=c1 | Square
+say x54 aside | Choices in a card stand apart, each a target of its own.
+wait 2

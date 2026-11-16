@@ -25,3 +25,13 @@ wait 2
 scene end solo
 say card ink=accent | fin
 wait 2
+
+scene moved layout=caption
+look paper
+card c2 | Words stay in their card
+say x60 in=c2 | Which colour for the fox?
+say x62 choice in=c2 | Orange
+say x64 choice in=c2 | Grey
+move x62 21,72
+move x60 24,58
+wait 2
