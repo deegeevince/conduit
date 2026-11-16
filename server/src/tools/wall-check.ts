@@ -247,7 +247,7 @@ async function main(): Promise<void> {
   const chrome = CHROME_CANDIDATES.find((path) => existsSync(path));
   if (chrome === undefined) throw new Error('no Chrome found: set CHROME_BIN');
   const profile = await mkdtemp(join(tmpdir(), 'conduit-wall-check-'));
-  const child: ChildProcess = spawnTracked(chrome, ['--headless=new', '--use-angle=metal', '--ignore-gpu-blocklist', '--no-first-run', '--no-default-browser-check', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--window-size=1280,800', 'about:blank'], undefined, { quiet: true });
+  const child: ChildProcess = spawnTracked(chrome, ['--headless=new', '--mute-audio', '--use-angle=metal', '--ignore-gpu-blocklist', '--no-first-run', '--no-default-browser-check', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--window-size=1280,800', 'about:blank'], undefined, { quiet: true });
   const results: Record<string, unknown> = { rate, when: new Date().toISOString(), base };
   const gates: Gate[] = [];
   const gate = (config: Config, name: string, ok: boolean, detail: string): void => {
