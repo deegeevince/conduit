@@ -3,21 +3,21 @@
 
 look paper
 scene show figure lines=2 neutral steady
-rect ink_brush 6,6 22x18 fill=accent brush=ink stroke=ink thick=2
-rect dry_brush 32,6 22x18 fill=alt brush=dry stroke=ink thick=2
-rect plain_brush 58,6 22x18 fill=dim stroke=ink thick=2
-rect wash_tex 84,6 22x18 fill=accent tex=wash
-rect hatch_tex 110,6 22x18 fill=alt tex=hatch
-rect dots_tex 136,6 18x18 fill=accent tex=dots
-rect grain_tex 6,30 22x18 fill=alt tex=grain
-rect weave_tex 32,30 22x18 fill=accent tex=weave
-circle soft_edge 76,40 9 fill=accent stroke=none soft=3
-rect gradient_fill 94,30 22x18 fill=accent>alt
+rect ink_brush 6,4 20x14 fill=none brush=ink stroke=ink thick=3
+rect dry_brush 30,4 20x14 fill=none brush=dry stroke=ink thick=3
+rect plain_brush 54,4 20x14 fill=none stroke=ink thick=3
+rect wash_tex 78,4 20x14 fill=accent tex=wash
+rect hatch_tex 6,22 20x14 fill=alt tex=hatch
+rect dots_tex 30,22 20x14 fill=accent tex=dots
+rect grain_tex 54,22 20x14 fill=alt tex=grain
+rect weave_tex 78,22 20x14 fill=accent tex=weave
+circle soft_edge 16,47 7 fill=accent stroke=none soft=3
+rect gradient_fill 30,40 20x14 fill=accent>alt
 group land at=0,0
-path hill in=land fill=accent stroke=none | M6,88 Q40,56 80,76 T154,70 L154,88 Z
-circle sun in=land 128,62 6 fill=alt stroke=none
-poly pine in=land 30,78 36,58 42,78 fill=ink stroke=none
-paint art 6,54 148x34 over=land as=watercolor | a small landscape in washes
+path hill in=land fill=accent stroke=none | M6,88 Q30,58 56,74 T98,70 L98,88 Z
+circle sun in=land 84,64 5 fill=alt stroke=none
+poly pine in=land 22,80 28,60 34,80 fill=ink stroke=none
+paint art 6,58 92x30 over=land as=watercolor | a small landscape in washes
 say title | Richness
 say | A brush for each stroke, a texture for each fill, a soft edge and a gradient, and a painting made in the renderer.
 wait 4
