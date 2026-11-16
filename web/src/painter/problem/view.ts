@@ -67,7 +67,7 @@ function button(className: string, label: string, run: () => void): HTMLButtonEl
 
 /** the size class of the question by how much there is to set */
 function sizeOf(read: ProblemRead): 'xxl' | 'xl' | 'l' | 'm' {
-  const chars = read.tokens.slice(0, read.sumEnd).reduce((n, token) => n + token.text.length + 1, 0);
+  const chars = read.tokens.slice(read.leadEnd, read.tailStart >= 0 ? read.tailStart : read.sumEnd).reduce((n, token) => n + token.text.length + 1, 0);
   return chars <= 16 ? 'xxl' : chars <= 22 ? 'xl' : chars <= 42 ? 'l' : 'm';
 }
 
@@ -109,6 +109,8 @@ export function createProblemView(options: ProblemViewOptions): ProblemView {
   question.append(sum);
   let remark: HTMLElement | null = null;
   let blankNode: HTMLElement | null = null;
+  let lead: HTMLElement | null = null;
+  let second: HTMLElement | null = null;
   read.tokens.forEach((token, index) => {
     const node = el('span', `pb__tok pb__tok--${token.kind}`);
     node.dataset['tok'] = String(index);
@@ -129,7 +131,19 @@ export function createProblemView(options: ProblemViewOptions): ProblemView {
       sum.append(lead);
     }
     tokenNodes.push(node);
-    if (index >= read.sumEnd) {
+    if (index < read.leadEnd) {
+      if (lead === null) {
+        lead = el('span', 'pb__lead');
+        question.insertBefore(lead, sum);
+      }
+      lead.append(node);
+    } else if (read.tailStart >= 0 && index >= read.tailStart) {
+      if (second === null) {
+        second = el('span', 'pb__then');
+        question.append(second);
+      }
+      second.append(node);
+    } else if (index >= read.sumEnd) {
       if (remark === null) {
         remark = el('span', 'pb__remark');
         question.append(remark);

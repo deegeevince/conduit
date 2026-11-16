@@ -26,3 +26,15 @@ problem p7 answer=7 | 21 ÷ ___ = 3
 scene stack
 problem p8 answer=9 | Sam has 5 apples and 4 more are given. How many apples now? ___
 hint p8 | Draw the apples.
+
+scene stack
+problem p9 answer=4 | Solve for x: 3x + 5 = 17, x = ___
+
+scene stack
+problem p10 answer=12 | Work out: 48 ÷ 4 = ___
+
+scene stack
+problem p11 answer=18 | 7:18 is ___ past 7
+
+scene stack
+problem p12 answer=4 | 3:2 = 6:___

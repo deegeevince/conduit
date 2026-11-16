@@ -185,7 +185,8 @@ function groupsWay(form: ProblemForm, room: Room): WayDrawing | null {
     const three = s.step('Share them out fairly.');
     if (!bigPile(total) && total % groups === 0 && total / groups <= 12) {
       const each2 = total / groups;
-      bowls.forEach((b) => dotsIn(s, three, b, each2, 'pw-dot'));
+      // dots too small to count in a narrow room: say it in words rather than add nothing
+      if (!bowls.map((b) => dotsIn(s, three, b, each2, 'pw-dot')).every(Boolean)) s.text(three, room.width / 2, 16 + topStrip + 4, 'share equally', px * 0.9, 'dim');
     } else {
       s.text(three, room.width / 2, 16 + topStrip + 4, 'share equally', px * 0.9, 'dim');
     }
