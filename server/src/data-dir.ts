@@ -12,6 +12,7 @@
 //   <DATA_DIR>/usage.jsonl     every model call the server made: model, tokens, cost-equivalent, ms
 //   <DATA_DIR>/cache/          the technique library's last good read, the dataset index, the photographs found for mock-ups (pictures/)
 //   <DATA_DIR>/loop/queue/     findings waiting for the improvement loop, lessons usage, the steward's painter-bugs file
+//   <DATA_DIR>/reports/        "Report a problem": one folder a report (report.json and its pictures), written by the page's own button, read by `pnpm reports`
 //   <DATA_DIR>/state/          small switches that must outlive a restart (the kill switch)
 
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
@@ -35,6 +36,7 @@ export interface DataPaths {
   readonly picturesCache: string;
   readonly queue: string;
   readonly state: string;
+  readonly reports: string;
 }
 
 /** `~` and `~/x` mean the owner's home folder. */
@@ -68,6 +70,7 @@ export function dataPaths(root: string): DataPaths {
     picturesCache: join(root, 'cache', 'pictures'),
     queue: join(root, 'loop', 'queue'),
     state: join(root, 'state'),
+    reports: join(root, 'reports'),
   };
 }
 

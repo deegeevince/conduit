@@ -1,3 +1,4 @@
+import { execSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
@@ -23,7 +24,17 @@ const chatAddress = (): Plugin => ({
 const devPort = Number(process.env['VITE_PORT'] ?? '4301');
 const apiTarget = process.env['VITE_API'] ?? 'http://127.0.0.1:4300';
 
+/** The commit the page was built from, for "Report a problem"; empty when git is not there. */
+const commit = ((): string => {
+  try {
+    return execSync('git rev-parse --short HEAD', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+  } catch {
+    return '';
+  }
+})();
+
 export default defineConfig({
+  define: { __BUILD_COMMIT__: JSON.stringify(commit) },
   plugins: [lessonProgram(), chatAddress()],
   server: {
     host: '127.0.0.1',

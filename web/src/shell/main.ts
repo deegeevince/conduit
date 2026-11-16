@@ -10,6 +10,8 @@ import { mountStage } from '../app/stage-app';
 import { sourcesOf } from '../chrome/photos';
 import type { StageApp, StageStatus } from '../app/stage-app';
 import { copyAnswer } from '../chrome/files';
+import { mountReport } from '../chrome/report';
+import { installTrace } from '../chrome/trace';
 import { mountAbout } from '../chrome/about';
 import { mountActions } from '../chrome/actions';
 import { runCommand } from '../chrome/command-runner';
@@ -39,6 +41,8 @@ import type { AnswerTurn, Message, ReplyChoice, ReplyMessage } from './model';
 import { stageScheme, systemScheme, watchStage, watchSystem, wear } from './theme';
 import { mountThread } from './thread';
 import { followVisualViewport } from '../app/viewport';
+
+installTrace();
 
 const UNTITLED = 'New conversation';
 const PAST_NOTE = 'An earlier conversation. Send a message to pick it up where it left off.';
@@ -616,6 +620,7 @@ async function start(): Promise<void> {
   mountActions(canvas.tools, mounted, transcript, canvas.stageHost, { top: canvas.navTop, menu });
   mountSound(canvas.navTop, mounted);
   picker = mountPicker(menu, mounted);
+  mountReport(menu, mounted, canvas.stageHost);
   mountAbout(menu, mounted, (body) => mountUsage(body, mounted, menu.button));
   mountOverflow(part('.shell-bar'), mounted);
   mountActivity(part('.shell-activity'), mounted);

@@ -408,6 +408,7 @@ export function createInk(host: HTMLElement, options: InkOptions = {}): Ink {
     }
     const stroke: InkStroke = { ...b.stroke, points: b.points };
     model.add(stroke);
+    note({ what: 'stroke kept', points: b.points.length, pen: b.stroke.tool });
     redrawBase();
     redrawLive();
     options.onStroke?.({ stroke, region: regions.length === 0 ? null : regionOf(stroke, regions) });
@@ -416,7 +417,13 @@ export function createInk(host: HTMLElement, options: InkOptions = {}): Ink {
   function abandon(b: Building): void {
     building = null;
     if (b.erase) model.endErase();
+    note({ what: 'stroke abandoned', pen: b.kind });
     redrawLive();
+  }
+
+  /** Tells the page what the layer decided (taken, ignored and why, a stroke kept), for "Report a problem". Deferred so it never counts in a stroke's latency. */
+  function note(detail: Record<string, string | number | boolean>): void {
+    queueMicrotask(() => root.dispatchEvent(new CustomEvent('ink:note', { bubbles: true, detail })));
   }
 
   function record(started: number, event: PointerEvent): void {
@@ -446,8 +453,10 @@ export function createInk(host: HTMLElement, options: InkOptions = {}): Ink {
     for (const id of cancel) pans.delete(id);
     if (verdict.act === 'ignore') {
       ignored.add(e.pointerId);
+      note({ what: 'pointer ignored', kind, why: verdict.why });
       return;
     }
+    note({ what: verdict.act === 'pan' ? 'pointer pans' : verdict.erase ? 'pointer erases' : 'pointer draws', kind });
     e.preventDefault();
     root.focus({ preventScroll: true });
     if (verdict.act === 'pan') {

@@ -12,6 +12,8 @@ import { runCommand } from './chrome/command-runner';
 import { copyAnswer } from './chrome/files';
 import { isCommand } from './chrome/commands';
 import { mountActivity } from './chrome/activity';
+import { mountReport } from './chrome/report';
+import { installTrace } from './chrome/trace';
 import { mountAbout } from './chrome/about';
 import { DRAW_WORDS, mountStageInk } from './ink/stage';
 import { mountWorkMode } from './app/work-mode';
@@ -26,6 +28,8 @@ import type { WallRoom } from './wall/wall-room';
 import { FONTS, fontFor } from './fonts';
 import { LOOKS } from './looks';
 import { followVisualViewport } from './app/viewport';
+
+installTrace();
 
 // The default look's face is asked for before anything else so the first words do not wait for it.
 function preloadFace(): void {
@@ -185,6 +189,7 @@ async function start(): Promise<void> {
   mountActions(promptBar.extra, mounted, transcript, stageHost, { top: promptBar.top, menu: promptBar.menu });
   mountSound(promptBar.top, mounted);
   picker = mountPicker(promptBar.menu, mounted);
+  mountReport(promptBar.menu, mounted, stageHost);
   mountAbout(promptBar.menu, mounted, params.wall ? (body) => mountMotionSetting(body, () => wall) : undefined);
   if (params.wall) {
     const { mountWall } = await import('./wall/wall-room');

@@ -25,6 +25,7 @@ import { registerSessionRoutes } from './session-routes';
 import { registerStatic } from './static';
 import { registerSkillRoutes } from './skill-routes';
 import { registerOpsRoutes } from './ops-routes';
+import { registerReportRoutes, REPORT_LIMITS } from './report-routes';
 import { registerStatusRoutes } from './status-routes';
 
 const LOCAL_HOSTS: ReadonlySet<string> = new Set(['localhost', '127.0.0.1', '[::1]']);
@@ -81,6 +82,7 @@ export function createApp(deps: HttpDeps): Hono {
   const withFilm = limited(ASSET_LIMITS.filmBytes);
   const withPhoto = limited(UPLOAD_LIMITS.bytes);
   const withVoice = limited(VOICE_LIMITS.bytes);
+  const withProblem = limited(REPORT_LIMITS.bytes);
   // Only the two session POSTs that can carry a report get the larger limit, and only the two uploads a picture's.
   const carriesReport = /^\/api\/(?:sessions\/[^/]+\/(?:events|turns)|engine\/measure)$/;
   const carriesPicture = /^\/api\/sessions\/[^/]+\/(?:sketches\/[^/]+|looks\/[^/]+|turns\/[^/]+\/(?:snapshot|drafts\/\d+))$/;
@@ -90,6 +92,7 @@ export function createApp(deps: HttpDeps): Hono {
     if (/^\/api\/sessions\/[^/]+\/turns\/[^/]+\/capture$/.test(c.req.path)) return withFilm(c, next);
     if (/^\/api\/sessions\/[^/]+\/uploads$/.test(c.req.path)) return withPhoto(c, next);
     if (/^\/api\/sessions\/[^/]+\/voice$/.test(c.req.path)) return withVoice(c, next);
+    if (c.req.path === '/api/reports') return withProblem(c, next);
     return carriesPicture.test(c.req.path) ? withPicture(c, next) : ordinary(c, next);
   });
 
@@ -100,6 +103,7 @@ export function createApp(deps: HttpDeps): Hono {
   registerDocumentRoutes(app, deps);
   registerAssetRoutes(app, deps);
   registerUploadRoutes(app, deps);
+  registerReportRoutes(app, deps);
   registerConversationRoutes(app, deps);
   registerVoiceRoutes(app, deps);
   registerStatusRoutes(app, deps);
