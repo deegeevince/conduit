@@ -1551,6 +1551,15 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
         if (group === null) report(seq, 'unknown-id', `nothing called "${line.over}" is on stage to paint over; the picture takes the whole canvas`, line.over);
         else over = group.span.key;
       }
+      // A second painting over the same group takes the first one's place: two stacked would be one picture dimmed by the other.
+      if (over !== null) {
+        const group = findLive(line.over ?? '', start);
+        for (const prior of live) {
+          if (prior.ghost || prior.span.id === line.id || !isActive(prior, start) || prior.span.figure?.kind !== 'picture' || prior.span.figure.over === null) continue;
+          const was = live.find((other) => other.span.key === (prior.span.figure as { over: string | null }).over);
+          if (group !== null && (prior.span.figure.over === over || was?.span.id === group.span.id)) leave(prior, start, 'fade', 'resay');
+        }
+      }
       const slot = takeSlot(line.id, start);
       create(entry, 'picture', line.id, style, start, 0, slot.order, {
         figure: { kind: 'picture', prompt: line.prompt, box: line.box ?? null, over, medium: line.medium ?? null, sketch: line.sketch ?? 'fade', mask: line.mask ?? 'none' },

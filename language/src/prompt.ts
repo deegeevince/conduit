@@ -31,7 +31,7 @@ import { describeSight } from './sight';
 import { BUILTIN_STYLES } from './style';
 import type { LookDef, StyleDef } from './style';
 import { serializeLine } from './serialize';
-import { describeCarried, transcriptOf } from './stage';
+import { describeCarried, drawingRows, transcriptOf } from './stage';
 import { PACE_TIMING } from './timing';
 import type { LeadWindow } from './timing';
 import { REVIEW_KEEP } from './review';
@@ -913,14 +913,22 @@ export const asksToStage = (text: string): boolean => DRAWS.test(text) || STAGIN
  */
 export const DRAWING_CHAPTER = (canvas: string): string => `DRAWING (coordinates are for art only): the canvas for this screen is ${canvas}; set another on the scene ($\`scene canvas=square\`): ${Object.entries(CANVAS)
   .map(([name, spec]) => `${name} ${spec.width}x${spec.height}`)
-  .join(', ')}. Work back to front: the ground or sky first ($\`rect full\` covers the screen), then the subject as three or four big shapes, then two or three details; eight to fifteen shapes make a picture, forty a mess. Name your colours once ($\`color sky=#1b2a49\`) and use the names. Anything with parts is a $\`group\`: its parts say $\`in=<id>\` and measure from its $\`at=x,y\`, so it can be moved, turned or copied ($\`use\`) as one. Curves are $\`path\` with SVG path data. To change a shape, declare it again under the same id.`;
+  .join(', ')}. Work back to front: the ground or sky first ($\`rect full\` covers the screen), then the subject as three or four big shapes, then the details: as many marks as the picture needs (a landscape or a portrait may take a hundred; a diagram stays spare). Name your colours once ($\`color sky=#1b2a49\`) and use the names. Anything with parts is a $\`group\`: its parts say $\`in=<id>\` and measure from its $\`at=x,y\`, so it can be moved, turned or copied ($\`use\`) as one. Curves are $\`path\` with SVG path data. To change a shape, declare it again under the same id. A $\`paint\` goes over its group ($\`over=\`): what must stay crisp is written after the $\`paint\`, outside that group, and a second $\`paint over=\` the same group replaces the first.`;
 
 /** v3 art. The shelf's words, taught on a drawing turn when the server has one: what to say after the bar, how to keep or change a character, and how to label one. */
 export const ART_BRIEF = `DRAW (a character, animal or thing is one \`draw\` line, not shapes): \`draw fox1 fox at=50,60 size=40 | sitting, facing left, curious\`. After the bar: a pose (sitting, standing, running, sleeping, waving), a view (side, front, back) and a mood. One subject a line, with no scenery in it; the ground and the sky are yours. Two of one kind in a story: \`as=<name>\` gives each its own look; \`new\` asks for a different one. Parts are named \`<id>-<part>\`: label with \`say callout near=<id>-<part-word> | tail\` (the nearest part is found; the parts of a drawing you made are listed on your next turn). A subject never drawn before arrives up to a minute later, a soft shape holds its place meanwhile: carry on, never redraw it.`;
 
 const DRAWS = /\b(draw|drawing|drew|sketch|paint|painting|picture|illustrat\w*|diagram|pixel|sprite|animat\w*|cartoon|logo|poster|scene|story|memory|mechanism|anatomy|parts? of|labell?ed|how (?:a|an|the|does|do)\b.*\bwork|look like|looks like|shape|landscape|portrait|art)\b/i;
 
-/** Whether the user's words call for a drawing: the cue of the drawing chapter. */
+const IMPROVES = /\b(improv\w*|better|keep going|go on|carry on|continue|polish\w*|refine\w*|enhanc\w*|tweak\w*|adjust\w*|chang\w*|modif\w*|fix\w*|add|remove|more|less|bigger|smaller|darker|lighter|brighter|richer|detail\w*|redo|your choice|make (?:it|the|them))\b/i;
+/** Whether the words ask to change or carry on with what is already drawn. */
+export const asksToImprove = (text: string): boolean => IMPROVES.test(text);
+
+/** Said on a turn that changes the live drawing: its parts are named in YOUR DRAWING NOW, and they are changed, never thrown away. */
+export const IMPROVE_BRIEF =
+  'THE DRAWING ON STAGE IS TO BE CHANGED, NOT REBUILT: work on its parts by id (they are listed in YOUR DRAWING NOW): `set <id> …`, `move <id> …`, `drop <id>`, or say a part\'s line again under its id; add new marks where the picture needs them. Never write `scene`: it clears the canvas and the picture the person liked is gone. A different picture is only for when they ask for one.';
+
+/** Whether the user\'s words call for a drawing: the cue of the drawing chapter. */
 export const asksToDraw = (text: string): boolean => DRAWS.test(text);
 
 /**
@@ -1110,6 +1118,12 @@ export function buildTurnBrief(context: TurnContext, input: TurnInput, form: Bri
   if (context.capabilities.structures.includes('problem') && !liveApp && (((input.kind === 'prompt' || input.kind === 'tap') && asksForMaths(input.text)) || problemOnStage || questionsOnStage || usesProblem(context.techniques))) parts.push(PROBLEM_CHAPTER);
   if (drawsNow) parts.push(DRAWING_CHAPTER(`${screen.canvas} (${canvas.width}x${canvas.height})${screen.canvas === 'wide' ? '; a figure scene that names no canvas gets square (100x100)' : ''}`));
   if (drawsNow && context.services.art === true) parts.push(ART_BRIEF);
+  // The live drawing by id, in every brief of a drawing turn: the brain cannot change what it cannot name (a "keep going" turn once rebuilt it all with `scene`).
+  const drawingNow = drawsNow ? drawingRows(stage) : null;
+  if (drawingNow !== null) {
+    parts.push(drawingNow);
+    if ((input.kind === 'prompt' && asksToImprove(input.text)) || input.kind === 'refine') parts.push(IMPROVE_BRIEF);
+  }
   // L2: the shapes, weather, depth and camera that left the fixed prompt ride with a drawing or a staged answer; pixel art has a chapter of its own.
   const stagesNow = context.capabilities.kinds.includes('shape') && ((input.kind === 'prompt' && asksToStage(input.text)) || onStageDrawn);
   if (stagesNow) {

@@ -3,7 +3,7 @@ import { holdControl } from './bind';
 import { boundsOf } from './geometry';
 import { figureAt, isStruckAt, lookAt, sceneAt, styleAt, valueAt, wearingAt } from './schedule';
 import type { CarriedElement, ElementSpan, Figure, Schedule, StageBase } from './schedule';
-import type { CanvasBox, ControlValues } from './types';
+import type { CanvasBox, ControlValues, Fill, Paint } from './types';
 import type { ElementKind } from './vocabulary';
 import { cachedTune, describeTune, tuneRowsOf } from './tune';
 
@@ -321,4 +321,31 @@ export function transcriptOf(shown: readonly ShownItem[]): string {
     .filter((item) => item.part !== true)
     .map((item) => (item.kind === 'text' ? (item.struck ? `~~${item.text}~~` : item.text) : `[${item.id}: ${item.text}]`))
     .join('\n');
+}
+
+/** A fill or stroke as the brain would write it: its own colour name when it has one, else the hex; a gradient as `from>to`. */
+function paintWords(paint: Fill | Paint | 'none', colors: Readonly<Record<string, string>>): string {
+  if (typeof paint === 'object') return `${paintWords(paint.from, colors)}>${paintWords(paint.to, colors)}`;
+  const named = Object.entries(colors).find(([, hex]) => hex.toLowerCase() === String(paint).toLowerCase());
+  return named === undefined ? String(paint) : named[0];
+}
+
+/** The drawn parts of a stage as the brain is shown them: id, kind, box and fill, largest first, parts inside groups too. Null when nothing is drawn. */
+export function drawingRows(stage: StageBase, limit = 40): string | null {
+  const drawn = stage.elements.filter((element) => !element.struck && (element.kind === 'shape' || element.kind === 'group' || element.kind === 'sprite' || element.figure?.kind === 'picture'));
+  if (drawn.length === 0) return null;
+  const parentOf = (key: string | null): string | null => (key === null ? null : (stage.elements.find((element) => element.key === key)?.id ?? null));
+  const rows = drawn
+    .map((element) => {
+      const box = restingBox(element, stage.elements);
+      const figure = element.figure;
+      const what = figure?.kind === 'shape' ? figure.geometry.shape : figure?.kind === 'picture' ? 'painting' : element.kind;
+      const paint = element.kind === 'group' ? '' : element.style.fill !== 'none' ? `fill=${paintWords(element.style.fill, stage.colors)}` : element.style.stroke !== 'none' ? `stroke=${paintWords(element.style.stroke, stage.colors)}` : '';
+      const where = box === null ? '' : `${round(box.x)},${round(box.y)} ${round(box.w)}x${round(box.h)}`;
+      const inside = parentOf(element.parent);
+      return { area: box === null ? 0 : box.w * box.h, text: [element.id, what, where, paint, inside === null ? '' : `in=${inside}`].filter((part) => part !== '').join(' ') };
+    })
+    .sort((a, b) => b.area - a.area);
+  const shown = rows.slice(0, limit).map((row) => `  ${row.text}`);
+  return `YOUR DRAWING NOW (${drawn.length} live parts, largest first${rows.length > limit ? `, ${limit} shown` : ''}; the ids to change by):\n${shown.join('\n')}`;
 }
