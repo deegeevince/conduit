@@ -52,6 +52,10 @@ export interface ProblemRead {
   readonly added: boolean;
   /** where the sum ends: what follows (a remark in brackets, a second sentence) is shown small under it; `tokens.length` when the whole question is the sum or no sum was read */
   readonly sumEnd: number;
+  /** how many tokens at the start are a lead-in label ("Solve for x:", colon included), shown small before the sum; 0 when there is none */
+  readonly leadEnd: number;
+  /** where a second line starts ("x = ___" after the equation), or -1 when the question is one line */
+  readonly tailStart: number;
 }
 
 /** What `readProblemLine` returns for a `problem` line the page holds: the question, what is accepted, and the ways the brain asked for. */
@@ -93,7 +97,9 @@ export function tokenizeProblem(question: string): ProblemToken[] {
       const [n, d] = piece.split('/').map((part) => Number(part.trim())) as [number, number];
       push({ kind: 'frac', text: `${n}/${d}`, num: n, den: d });
     } else if (/^\d+(?:\.\d+)?$/.test(piece)) push({ kind: 'num', text: piece, value: Number(piece) });
-    else if (piece === '÷' || piece === '/' || piece === ':') push({ kind: 'sign', text: '÷', sign: 'div' });
+    // a colon is never a sign: after words it is a lead-in ("Solve for x:"), between numbers a time or a ratio (7:18, 3:2); it stays as written
+    else if (piece === ':') push({ kind: 'word', text: ':' });
+    else if (piece === '÷' || piece === '/') push({ kind: 'sign', text: '÷', sign: 'div' });
     else if (piece === '×' || piece === '*') push({ kind: 'sign', text: '×', sign: 'mul' });
     else if ((piece === 'x' || piece === 'X') && out.length > 0 && next !== undefined && /^[\d_□\[]/.test(next)) push({ kind: 'sign', text: '×', sign: 'mul' });
     else if (piece === '+') push({ kind: 'sign', text: '+', sign: 'add' });
@@ -186,12 +192,17 @@ export function readProblem(question: string): ProblemRead {
     added = true;
     const last = tokens[tokens.length - 1];
     const sums = tokens.some((token) => token.kind === 'sign') || tokens.some((token) => isOf(token));
-    if (sums && last?.kind !== 'eq') tokens = [...tokens, { kind: 'eq', text: '=', gap: true }];
+    // an "=" is only added to a sum that has none anywhere: an equation the question wrote ("3x + 5 = 17") is left as it is
+    if (sums && last?.kind !== 'eq' && !tokens.some((token) => token.kind === 'eq')) tokens = [...tokens, { kind: 'eq', text: '=', gap: true }];
     tokens = [...tokens, { kind: 'blank', text: '___', gap: true }];
     blank = tokens.length - 1;
   }
   // the sum itself: leading words ("What is", "Work out") and a closing "?" are not part of it
-  let from = 0;
+  // a colon after words only ("Solve for x:", "Work out:") ends a lead-in label
+  let leadEnd = 0;
+  const colon = tokens.findIndex((token) => token.kind === 'word' && token.text === ':');
+  if (colon > 0 && colon < tokens.length - 1 && tokens.slice(0, colon).every((token) => token.kind === 'word' && /^\p{L}/u.test(token.text))) leadEnd = colon + 1;
+  let from = leadEnd;
   while (from < tokens.length && tokens[from]?.kind === 'word' && LEAD.has((tokens[from]?.text ?? '').toLowerCase())) from += 1;
   const run = tokens.slice(from);
   // the sum is the longest run from the start that reads as one: a remark after it ("(share 1000 sweets…)", a second sentence) is shown but is not the sum
@@ -203,7 +214,14 @@ export function readProblem(question: string): ProblemRead {
     if (cut.filter((token) => token.kind === 'blank').length === 1) form = formOf(cut, cut.map((_, i) => i + from));
     if (form !== null) sumEnd = end + from;
   }
-  return { tokens, blank, form, added, sumEnd };
+  // algebra ("3x + 5 = 17, x = ___"): the equation is one line and "x = ___" the line after it; no sum is read, so no way is offered
+  let tailStart = -1;
+  if (form === null) {
+    const n = tokens.length;
+    const cut = n - 4;
+    if (cut > from && tokens[cut]?.kind === 'word' && /^[,.;]$/.test(tokens[cut]?.text ?? '') && tokens[n - 3]?.kind === 'word' && /^\p{L}$/u.test(tokens[n - 3]?.text ?? '') && tokens[n - 2]?.kind === 'eq' && tokens[n - 1]?.kind === 'blank' && tokens.slice(from, cut).some((token) => token.kind === 'eq')) tailStart = n - 3;
+  }
+  return { tokens, blank, form, added, sumEnd, leadEnd, tailStart };
 }
 
 // -------------------------------------------------------------------------------------------------------------------------------- ways
