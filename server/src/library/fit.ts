@@ -7,8 +7,8 @@
 // it. For a prompt with a `family` (and `structure`) the rule is general and
 // is the same for the tune set and the held-out set. A few tune prompts of the
 // older, unlabelled kind are named one by one; none of the held-out set is.
-// Techniques are named by their seed file's stem, which is the one name that
-// is the same in the seed and in Remote.
+// Techniques are named by their seed file's stem, which does not change when a
+// title is reworded.
 
 import type { ExplorePrompt } from '@conduit/language';
 

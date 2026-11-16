@@ -12,7 +12,7 @@
 //                then a style, then the prompt. It is never shown the held-out set.
 //   3. BUILD     For each proposal, a coding model (sonnet, effort high, --restricted, no shell) works in an export of
 //                the base commit outside the repository: no .git, no sealed path, the protected paths read-only.
-//                A technique is built as an overlay file, not written to Remote.
+//                A technique is built as an overlay file.
 //   4. GUARD     The diff is read back by code: protected paths untouched, no battery text in the source. The runner
 //                then makes a commit by plumbing and runs typecheck, timeline and the prompt budget on a detached
 //                copy, from the base commit's scripts. A diff that fails is discarded unmeasured.
@@ -23,7 +23,7 @@
 //   7. REVIEW    A reviewer (fable, effort xhigh) reads the kept diff and the numbers cold, looking for a gain
 //                that is the test being gamed rather than the answer being better.
 //   8. STEWARD   The steward (opus, effort medium) approves or refuses, merges an approved experiment into the
-//                integration branch, writes an approved technique to Remote, and keeps the root block true.
+//                integration branch, and moves an approved technique from the overlay into the seed.
 //                Merging to `main` is the owner's.
 //   9. LOG       Every experiment, kept or not, is one entry in loop/CHANGELOG.md and one line in loop/ledger.jsonl.
 //

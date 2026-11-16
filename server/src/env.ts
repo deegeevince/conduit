@@ -14,7 +14,6 @@ import { CRITIC_POLICY } from './domain/critic';
 import type { CriticPolicy } from './domain/critic';
 import { AHEAD_POLICY } from './domain/ahead';
 import type { AheadPolicy } from './domain/ahead';
-import type { DatasetSettings } from './domain/datasets';
 import type { LibrarySettings } from './domain/techniques';
 import type { PictureSettings } from './domain/pictures';
 import { readPictureSettings } from './pictures/registry';
@@ -23,8 +22,8 @@ import { loadPrivateHostAllowList } from './domain/destinations';
 import type { DataPaths } from './data-dir';
 import type { LogLevel } from './log';
 
-/** The Conduit root block on the Series account: every technique hangs off it. */
-export const CONDUIT_ROOT_BLOCK = '00000000-0000-4000-8000-000000000000';
+/** Settings an earlier version read. Setting one now does nothing but earn a line in the start-up log. */
+const REMOVED_SETTINGS = ['LIBRARY_ROOT', 'LIBRARY_REFRESH_MS', 'LIBRARY_TIMEOUT_MS', 'DATASETS', 'DATASETS_ACTOR', 'DATASETS_REFRESH_MS', 'DATASETS_TIMEOUT_MS'] as const;
 
 /** The only tools a brain may ever hold: read-only web. Nothing else is accepted. */
 export const BRAIN_TOOL_NAMES = ['WebSearch', 'WebFetch'] as const;
@@ -91,10 +90,10 @@ export interface Env {
   readonly promptVariant: PromptVariant;
   /** look and fix: whether the brain is shown its draft, how many times, and how long anything may take (`REVIEW`, `REVIEW_PASSES`, `REVIEW_*_MS`) */
   readonly review: ReviewPolicy;
-  /** where techniques come from (`LIBRARY`, `REMOTE_*`, `LIBRARY_*`) */
+  /** where techniques come from (`LIBRARY`, `LIBRARY_OVERLAY`) */
   readonly library: LibrarySettings;
-  /** whether the owner's own datasets may be read for a chart (`DATASETS`, `DATASETS_*`); off unless asked for */
-  readonly datasets: DatasetSettings;
+  /** settings that were set but are no longer read, said once at start-up; never an error */
+  readonly notes: readonly string[];
   /** absolute path of the folder session logs are written to; null when LOG_DIR=off */
   readonly logDir: string | null;
   /** v2.1 ops. The owner's data, outside the repository (`DATA_DIR`): logs, snapshots, the audit trail, the usage meter, caches, the loop's queue */
@@ -189,8 +188,7 @@ export function isCredentialName(name: string): boolean {
 
 /**
  * What a child process is given: the server's environment without anything that selects or carries a paid credential, with `overrides`
- * laid over it. This is the only place a child's environment is made (the brain, the judge, the critic, the loop's agents, the browser,
- * the Remote CLI), so no key can reach any of them; an override that names a credential is dropped too.
+ * laid over it. This is the only place a child's environment is made (the brain, the judge, the critic, the loop's agents, the browser), so no key can reach any of them; an override that names a credential is dropped too.
  */
 export function childEnvironment(overrides: Readonly<Record<string, string>>): NodeJS.ProcessEnv {
   const out: NodeJS.ProcessEnv = {};
@@ -335,26 +333,14 @@ export function loadEnv(source: Source): Env {
     passMs: integer('REVIEW_PASS_MS', REVIEW_POLICY.passMs, 2_000, 300_000),
   };
 
-  // Only the selected library's settings are read, exactly as with brains. The seed in the repository is under all of them.
+  // The techniques in the repository, with an overlay folder laid over them when LIBRARY_OVERLAY names one.
   const seedDir = resolvePath(root, 'techniques/seed');
   const overlayDir = text('LIBRARY_OVERLAY') === undefined ? null : resolvePath(root, text('LIBRARY_OVERLAY') ?? '');
-  const libraryKind = choice('LIBRARY', ['remote', 'seed', 'none'] as const, 'remote');
-  let library: LibrarySettings = { kind: 'none' };
-  if (libraryKind === 'seed') library = { kind: 'seed', seedDir, overlayDir };
-  else if (libraryKind === 'remote') {
-    library = {
-      kind: 'remote',
-      bin: text('REMOTE_BIN') ?? 'remote',
-      actor: text('REMOTE_ACTOR') ?? 'series@example.invalid',
-      env: choice('REMOTE_ENV', ['prod', 'local'] as const, 'prod'),
-      root: text('LIBRARY_ROOT') ?? CONDUIT_ROOT_BLOCK,
-      seedDir,
-      cacheDir: data.techniquesCache,
-      overlayDir,
-      refreshMs: integer('LIBRARY_REFRESH_MS', 600_000, 10_000, 86_400_000),
-      timeoutMs: integer('LIBRARY_TIMEOUT_MS', 8_000, 500, 60_000),
-    };
-  }
+  const notes: string[] = [];
+  const rawLibrary = text('LIBRARY');
+  if (rawLibrary !== undefined && rawLibrary !== 'seed' && rawLibrary !== 'none') notes.push(`LIBRARY=${rawLibrary} is not a library this server has; the techniques in techniques/seed are used`);
+  for (const name of REMOVED_SETTINGS) if (text(name) !== undefined) notes.push(`${name} is no longer read`);
+  const library: LibrarySettings = rawLibrary === 'none' ? { kind: 'none' } : { kind: 'seed', seedDir, overlayDir };
   const logDir = resolveLogDir(source);
 
   // v2.1. Read here so that no package needs this file; each is used by the package the comment names (PLAN-v2.1.md).
@@ -430,19 +416,6 @@ export function loadEnv(source: Source): Env {
   if (sealedDir !== null && sealedDir.startsWith(root)) problems.push(`BATTERY_SEALED_DIR must be outside the repository, got ${sealedDir}`);
   const exploreDir = resolvePath(root, 'explore');
 
-  // The owner's own data: read only when switched on, and never from the account the techniques live on.
-  const datasets: DatasetSettings =
-    choice('DATASETS', ['none', 'remote'] as const, 'none') === 'remote'
-      ? {
-          kind: 'remote',
-          bin: text('REMOTE_BIN') ?? 'remote',
-          actor: text('DATASETS_ACTOR') ?? null,
-          env: choice('REMOTE_ENV', ['prod', 'local'] as const, 'prod'),
-          timeoutMs: integer('DATASETS_TIMEOUT_MS', 4_000, 500, 30_000),
-          refreshMs: integer('DATASETS_REFRESH_MS', 900_000, 10_000, 86_400_000),
-        }
-      : { kind: 'none' };
-
   let webDist: string | null = null;
   if (production) {
     webDist = fileURLToPath(new URL('../../web/dist/', import.meta.url));
@@ -450,5 +423,5 @@ export function loadEnv(source: Source): Env {
   }
 
   if (problems.length > 0) throw new EnvError(problems);
-  return { production, host, trustedHosts, ownerLogins, usageCapUsd: usageCapUsd !== null && Number.isFinite(usageCapUsd) && usageCapUsd > 0 ? usageCapUsd : null, port, logLevel, brain, images, pictures, sight, promptVariant: parsePromptVariant(text('PROMPT_VARIANT')), review, library, datasets, logDir, data, readLinks: choice('READ_LINKS', ['on', 'off'] as const, 'on') === 'on', paintingsPerSession: 0, exploreDir, webDist, critic, ahead, agent, modes, refine, uploads, voice, statusFile, changelogFile, sealedDir, skills: skillSettingsFrom(text('SKILL_ROOTS'), text('SKILL_SETTINGS') === undefined ? undefined : resolvePath(root, text('SKILL_SETTINGS') ?? '')) };
+  return { production, host, trustedHosts, ownerLogins, usageCapUsd: usageCapUsd !== null && Number.isFinite(usageCapUsd) && usageCapUsd > 0 ? usageCapUsd : null, port, logLevel, brain, images, pictures, sight, promptVariant: parsePromptVariant(text('PROMPT_VARIANT')), review, library, notes, logDir, data, readLinks: choice('READ_LINKS', ['on', 'off'] as const, 'on') === 'on', paintingsPerSession: 0, exploreDir, webDist, critic, ahead, agent, modes, refine, uploads, voice, statusFile, changelogFile, sealedDir, skills: skillSettingsFrom(text('SKILL_ROOTS'), text('SKILL_SETTINGS') === undefined ? undefined : resolvePath(root, text('SKILL_SETTINGS') ?? '')) };
 }

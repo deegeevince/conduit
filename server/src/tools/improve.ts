@@ -7,12 +7,11 @@
 //   pnpm improve --gates                         the five safety gates, each tried on a scratch repository; PASS or FAIL for each
 //   pnpm improve --resample [--trials 2000]      how often the keep rule keeps two identical runs, and a run with a true +1.0 on one family
 //   pnpm improve status                          what is awaiting the steward, and the last entries of the ledger
-//   pnpm improve approve <id> [--into <branch>] [--push]   the steward's verdict; merges into the integration branch
+//   pnpm improve approve <id> [--into <branch>]   the steward's verdict; merges into the integration branch
 //   pnpm improve refuse <id> --why "..."         the steward's refusal; the experiment's branch is deleted
 //   pnpm improve vault --file <path> [--budget 4] --yes   run the vault set (kept outside the repository) on the integration branch and on main
 //
-// The loop proposes; the steward writes. Nothing here writes to Remote unless `approve --push` is run with
-// REMOTE_AGENT=conduit-steward set by the steward's own session.
+// The loop proposes; the steward decides. A kept technique stays an overlay file until the steward moves it into techniques/seed.
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -86,7 +85,7 @@ function dryRun(): void {
   out(`  re-measure  held-out set (read from BATTERY_SEALED_DIR, in no tree), ${DEFAULTS.rounds} rounds each of baseline and candidate, interleaved (${interleave(DEFAULTS.rounds).join(' ')}), ${DEFAULTS.samples} samples a prompt (never fewer than ${MIN_SAMPLES}); both arms by the BASE commit's harness, each with its own LIBRARY_OVERLAY, asserted loaded before any money is spent; one judge, same rubric hash or no comparison`);
   out(`  decide      paired by prompt. Kept only if an aimed family rises by ${KEEP_RULE.gain} with its lower confidence bound (the mean less t standard errors) still there, and no family's coherence (fall ${KEEP_RULE.slip}), correct answers (${KEEP_RULE.correctSlip}), own measure (chartQuality, responds, readable), collisions (+${KEEP_RULE.collisionRise}), tokens (+${Math.round(KEEP_RULE.tokenGrowth * 100)}%) or first line (+${KEEP_RULE.firstLineSlip} ms) worsens by its allowance with a difference clear of chance (only a metric the harness reports per prompt can be); a family with nothing judged is absent; a tie is a discard`);
   out(`  reviewer    ${LOOP_ROLES.reviewer.model}, effort ${LOOP_ROLES.reviewer.effort}: reads a kept diff cold; no answer in the form is an objection`);
-  out('  steward     `pnpm improve approve|refuse <id>`: merges an approved branch into the integration branch; the loop writes nothing to Remote');
+  out('  steward     `pnpm improve approve|refuse <id>`: merges an approved branch into the integration branch; a kept technique stays an overlay file');
   out('  records     loop/ledger.jsonl and loop/CHANGELOG.md, every experiment, written even when the run is interrupted');
   out(`\nProtected paths: ${PROTECTED_PATHS.join('  ')}  (and package.json, tsconfig*.json, vite.config.* wherever they are)`);
   out(`Never put in any tree the builder or the critic can reach: ${SEALED_PATHS.join('  ')}`);
@@ -194,15 +193,7 @@ async function verdict(approve: boolean): Promise<void> {
     merged = await mergeBranch(repo, found.branch, `Merge experiment ${found.id}: ${found.proposal.title}`);
     out(`merged ${found.branch} into ${into} as ${merged.slice(0, 8)}`);
     const techniques = files.filter((file) => file.startsWith('techniques/overlay/'));
-    for (const file of techniques) {
-      const command = `REMOTE_SESSION_ID=<session> REMOTE_AGENT=conduit-steward pnpm library push ${file}`;
-      if (has('push') && process.env['REMOTE_AGENT'] === 'conduit-steward') {
-        const run = await exec({ bin: 'pnpm', args: ['library', 'push', file], cwd: repo, timeoutMs: 300_000 });
-        out(`pushed ${file}: ${run.code === 0 ? 'ok' : (run.stderr || run.stdout).trim().slice(-300)}`);
-      } else {
-        out(`to write this technique to Remote, the steward runs: ${command}`);
-      }
-    }
+    for (const file of techniques) out(`kept as ${file}; to make it permanent, move it into techniques/seed/ and commit it`);
     await dropBranch(repo, found.branch, new Set([found.branch]));
   } else {
     const gone = await dropBranch(repo, found.branch, new Set([found.branch]));

@@ -91,7 +91,7 @@ export function claudeAgents(bin = 'claude'): Agents {
         cwd: call.cwd,
         stdin: call.prompt,
         // the subscription's own login is used: a key in the environment must not be, and the loop's write identity is not lent to a model
-        env: { ANTHROPIC_API_KEY: '', ANTHROPIC_AUTH_TOKEN: '', REMOTE_AGENT: '', REMOTE_SESSION_ID: '', BATTERY_SEALED_DIR: '' },
+        env: { ANTHROPIC_API_KEY: '', ANTHROPIC_AUTH_TOKEN: '', BATTERY_SEALED_DIR: '' },
         signal: call.signal,
         timeoutMs: call.timeoutMs,
       });

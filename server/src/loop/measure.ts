@@ -228,7 +228,7 @@ const EXPLORE = ['--filter', '@conduit/server', 'exec', 'tsx', '--env-file-if-ex
 
 /** What an arm is measured under: the seed library (the same in both arms, with no network and no cache between), its own overlay (the techniques folder of its own tree), the model the loop compares at, and the folder the held-out set is in. */
 export function measurementEnvironment(tree: string, pool: ExplorePool, sealedDir: string | null): Record<string, string> {
-  return { LIBRARY: 'seed', LIBRARY_OVERLAY: join(tree, 'techniques', 'overlay'), CLAUDE_MODEL: 'sonnet', REMOTE_AGENT: '', REMOTE_SESSION_ID: '', BATTERY_SEALED_DIR: pool !== 'heldout' || sealedDir === null ? '' : sealedDir };
+  return { LIBRARY: 'seed', LIBRARY_OVERLAY: join(tree, 'techniques', 'overlay'), CLAUDE_MODEL: 'sonnet', BATTERY_SEALED_DIR: pool !== 'heldout' || sealedDir === null ? '' : sealedDir };
 }
 
 /**

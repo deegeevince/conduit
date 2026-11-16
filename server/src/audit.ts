@@ -8,7 +8,7 @@
 //   permission_asked        a confirm control was put to the owner
 //   permission_answered     the owner's answer, or the deadline's, or the kill switch's: who decided is in `decidedBy`
 //   setting                 a setting changed: model, effort, mode, a tool switched, what is held for every reply
-//   connector               a connected service or the owner's own data was used (a Remote read, an MCP service, a dataset)
+//   connector               a connected service or the owner's own data was used (an MCP service)
 //   kill                    the kill switch was pulled, or agent tools were switched back on
 //   refused                 a request this server turned away on identity
 //   upload                  a photo the owner gave: taken (id, size, where kept; never the bytes) or turned away and why
