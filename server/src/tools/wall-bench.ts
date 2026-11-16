@@ -522,7 +522,7 @@ async function tourCommand(): Promise<void> {
   const profile = await mkdtemp(join(tmpdir(), 'conduit-wall-'));
   const child: ChildProcess = spawnTracked(
     chrome,
-    ['--headless=new', '--use-angle=metal', '--ignore-gpu-blocklist', '--enable-precise-memory-info', '--no-first-run', '--no-default-browser-check', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--window-size=1280,800', 'about:blank'],
+    ['--headless=new', '--mute-audio', '--use-angle=metal', '--ignore-gpu-blocklist', '--enable-precise-memory-info', '--no-first-run', '--no-default-browser-check', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--window-size=1280,800', 'about:blank'],
     undefined,
     { quiet: true },
   );
@@ -793,7 +793,7 @@ async function handsCommand(): Promise<void> {
   const chrome = CHROME_CANDIDATES.find((path) => existsSync(path));
   if (chrome === undefined) throw new Error('no Chrome found: set CHROME_BIN');
   const profile = await mkdtemp(join(tmpdir(), 'conduit-wall-hands-'));
-  const child: ChildProcess = spawnTracked(chrome, ['--headless=new', '--use-angle=metal', '--ignore-gpu-blocklist', '--no-first-run', '--no-default-browser-check', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--window-size=1280,800', 'about:blank'], undefined, { quiet: true });
+  const child: ChildProcess = spawnTracked(chrome, ['--headless=new', '--mute-audio', '--use-angle=metal', '--ignore-gpu-blocklist', '--no-first-run', '--no-default-browser-check', '--remote-debugging-port=0', `--user-data-dir=${profile}`, '--window-size=1280,800', 'about:blank'], undefined, { quiet: true });
   const results: Record<string, unknown> = { rate, when: new Date().toISOString() };
   const say = (text: string): void => void process.stdout.write(`${text}\n`);
   const f2 = (v: number): string => v.toFixed(2);

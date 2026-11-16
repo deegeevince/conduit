@@ -190,7 +190,7 @@ async function openPage(web: string | null): Promise<{ page: Page; web: string }
     const profile = await mkdtemp(join(tmpdir(), 'conduit-capture-'));
     cleanups.push(() => rm(profile, { recursive: true, force: true }));
     started.push(
-      spawnTracked(chrome, ['--headless=new', '--use-angle=metal', '--ignore-gpu-blocklist', '--no-first-run', '--no-default-browser-check', `--remote-debugging-port=${CHROME_PORT}`, `--user-data-dir=${profile}`, '--window-size=1280,800', 'about:blank'], undefined, { quiet: true }),
+      spawnTracked(chrome, ['--headless=new', '--mute-audio', '--use-angle=metal', '--ignore-gpu-blocklist', '--no-first-run', '--no-default-browser-check', `--remote-debugging-port=${CHROME_PORT}`, `--user-data-dir=${profile}`, '--window-size=1280,800', 'about:blank'], undefined, { quiet: true }),
     );
     const endpoint = await waitFor('Chrome', 20_000, async () => {
       const reply = await fetch(`http://127.0.0.1:${CHROME_PORT}/json/version`);

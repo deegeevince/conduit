@@ -26,7 +26,7 @@ await new Promise((r) => evil.listen(4889, '127.0.0.1', r));
 
 const profile = mkdtempSync(join(tmpdir(), 'surface-hostile-'));
 const port = 9100 + Math.floor(Math.random() * 400);
-const chrome = spawn(chromePath, ['--headless=new', `--user-data-dir=${profile}`, `--remote-debugging-port=${port}`, '--window-size=900,700', '--no-first-run', 'about:blank'], { stdio: 'ignore' });
+const chrome = spawn(chromePath, ['--headless=new', '--mute-audio', `--user-data-dir=${profile}`, `--remote-debugging-port=${port}`, '--window-size=900,700', '--no-first-run', 'about:blank'], { stdio: 'ignore' });
 let ws;
 for (let i = 0; i < 60 && !ws; i++) {
   await sleep(200);
