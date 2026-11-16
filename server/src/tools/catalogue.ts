@@ -9,6 +9,7 @@
 //   --only a,b      only these cases          --screens 1280x720,390x844       --label head   the name of this run (catalogue/results/<label>.json)
 //   --build <dir>   run the server of another worktree (a branch under test); the browser and the checks are always this checkout's
 //   --port 4870     the replay server's port (4870-4879)       --jobs 3  tabs at once       --compare <label|file>   which cases flipped since that run
+//   --lens          the pages are opened with ?lens=1 (grow mode); the cases also pass never-squeezed, first-view, steady and reachable
 //   --no-board      do not rewrite catalogue/SCOREBOARD.md     --data <dir>    the data dir (default DATA_DIR)
 //
 // What goes where. The repo holds only what is not private: the case files (neutral prompts, family, checks, date found) and verdict-only results. The brain's recorded lines
@@ -23,7 +24,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { Conversation, Tab } from './smoke';
+import { Conversation, Tab, squeezeText } from './smoke';
 import type { Answer, CheckResult, LiveElement, Options, Probe } from './smoke';
 import { repoRoot, sleep, waitFor } from './explore-browser';
 
@@ -94,6 +95,8 @@ interface Args {
   readonly logs: string;
   readonly qaLogs: string | null;
   readonly chat: boolean;
+  /** `?lens=1`: grow mode, with the gates a page that grows must pass */
+  readonly lens: boolean;
   readonly timeoutMs: number;
 }
 
@@ -116,7 +119,7 @@ function parseArgs(argv: readonly string[]): Args {
       continue;
     }
     const name = arg.slice(2);
-    if (['live', 'replay', 'no-board', 'quiet', 'chat'].includes(name)) flags.set(name, 'true');
+    if (['live', 'replay', 'no-board', 'quiet', 'chat', 'lens'].includes(name)) flags.set(name, 'true');
     else {
       const value = argv[i + 1];
       if (value === undefined || value.startsWith('--')) usage(`--${name} needs a value`);
@@ -150,6 +153,7 @@ function parseArgs(argv: readonly string[]): Args {
     logs: resolve(flags.get('logs') ?? join(homedir(), 'Library', 'Application Support', 'Conduit', 'logs')),
     qaLogs: flags.get('qa-logs') ?? process.env['QA_LOGS'] ?? null,
     chat: flags.has('chat'),
+    lens: flags.has('lens'),
     timeoutMs: Number(flags.get('timeout') ?? 180) * 1000,
   };
 }
@@ -326,6 +330,90 @@ async function generic(cx: Cx): Promise<Res[]> {
   out.push(await earlierWorks(cx));
   const picks = await pickConsistent(cx);
   if (picks !== null) out.push(picks);
+  if (cx.tab.lens) out.push(...(await grownGates(cx)));
+  return out;
+}
+
+/**
+ * PLAN-canvas step 2, with `?lens=1`: the four gates a page that grows must pass (a case that does not grow passes them trivially).
+ *   never-squeezed  the scene gave up nothing to fit the screen, and no "earlier" is shown
+ *   first-view      with the lens untouched, the first line and the picture are in view, and the body type is at or above the floor at that zoom
+ *   steady          at rest nothing moves, and a lens the person has moved holds still
+ *   reachable       every control is on the page, and a real tap lands after the lens is taken to it
+ */
+async function grownGates(cx: Cx): Promise<Res[]> {
+  const out: Res[] = [];
+  const squeeze = cx.answer.squeeze;
+  const earlier = await cx.tab.eval<boolean>(`!!document.querySelector('[data-earlier]:not([hidden])')`);
+  const bad: string[] = [];
+  // structures, charts, code and live apps are laid out at their natural height in steps 3 and 4: a scene with one on it keeps the screen until then
+  const blocks = cx.answer.live.some((e) => e.kind === 'structure') || cx.answer.charts.length > 0;
+  if (squeeze?.squeezed === true && !blocks) bad.push(`still squeezed: ${squeezeText(squeeze)}`);
+  if (earlier && !blocks) bad.push('an "earlier" pile is shown');
+  out.push(res('never-squeezed', bad, blocks ? 'a structure, chart or app is on stage: it keeps the screen until steps 3 and 4' : 'nothing was squeezed, and no "earlier"'));
+
+  const page = cx.answer.page;
+  const lens = await cx.tab.eval<{ view: { x: number; y: number; scale: number; width: number; height: number } | null; touched: boolean } | null>('window.__stage.lens()');
+  const grown = page !== null && page.height > cx.screen.height + 1;
+  if (!grown || lens === null) {
+    out.push({ check: 'first-view', verdict: 'PASS', detail: 'the page is the screen' }, { check: 'steady', verdict: 'PASS', detail: 'the page is the screen' });
+  } else {
+    // first-view: the lens as the page left it (the person has not touched it)
+    const view = lens.view ?? { x: 0, y: 0, scale: 1, width: cx.screen.width, height: cx.screen.height };
+    const words = shown(cx.answer).filter((e) => e.layer === 'mid');
+    const first = [...words].sort((a, b) => a.box.y - b.box.y)[0];
+    const inView = (b: LiveElement['box']): boolean => b.y + b.height > view.y && b.y < view.y + view.height / view.scale && b.x + b.width > view.x && b.x < view.x + view.width / view.scale;
+    const first_: string[] = [];
+    if (lens.touched) first_.push('the lens was touched before the check');
+    if (first !== undefined && !inView(first.box)) first_.push(`the first line "${first.text.slice(0, 20)}" is not in the first view`);
+    const pictures = cx.answer.live.filter((e) => ['shape', 'sprite', 'copy', 'picture'].includes(e.kind) && e.phase === 'on' && e.opacity > 0.3 && area(e.box) > 0);
+    if (pictures.length > 0 && !pictures.some((e) => inView(e.box))) first_.push('the picture is not in the first view');
+    const sizes = words.map((e) => e.fontPx).filter((n) => n > 0).sort((a, b) => a - b);
+    const body = sizes[Math.floor(sizes.length / 2)] ?? 0;
+    const floor = cx.mobile ? 11 : 12;
+    if (body * view.scale < floor - 0.01 && body >= floor) first_.push(`body type is ${(body * view.scale).toFixed(1)} px at the first view (under ${floor})`);
+    out.push(res('first-view', first_, `the first line${pictures.length > 0 ? ' and the picture' : ''} in view at ${Math.round(view.scale * 100)}%, body type ${(body * view.scale).toFixed(1)} px`));
+
+    // steady: at rest nothing moves; a lens moved by hand holds
+    const sample = async (): Promise<string> => cx.tab.eval<string>(`JSON.stringify([window.__stage.lens(), window.__stage.elements().filter((e) => e.kind === 'text' || e.kind === 'control').map((e) => [e.id, Math.round(e.box.x), Math.round(e.box.y)])])`);
+    // the lens may still be settling back to the start of the answer when the turn ended: let it arrive
+    for (let waited = 0; waited < 3000; waited += 250) {
+      if (!(await cx.tab.eval<boolean>('window.__lensMoving ? window.__lensMoving() : false'))) break;
+      await sleep(250);
+    }
+    const a = await sample();
+    await sleep(900);
+    const b = await sample();
+    const steady: string[] = [];
+    if (a !== b) steady.push('something moved while the stage was at rest');
+    const key = async (name: string, code: number): Promise<void> => {
+      await cx.tab.send('Input.dispatchKeyEvent', { type: 'keyDown', key: name, code: name, windowsVirtualKeyCode: code, nativeVirtualKeyCode: code });
+      await cx.tab.send('Input.dispatchKeyEvent', { type: 'keyUp', key: name, code: name, windowsVirtualKeyCode: code, nativeVirtualKeyCode: code });
+    };
+    // the keys are the stage's only while nothing else (a field, a button) has the keyboard
+    await cx.tab.eval(`(() => { const a = document.activeElement; if (a && a !== document.body && a.blur) a.blur(); })()`);
+    await key('PageDown', 34);
+    await sleep(1500);
+    const held = await cx.tab.eval<{ view: unknown; touched: boolean } | null>('window.__stage.lens()');
+    await sleep(1200);
+    const later = await cx.tab.eval<{ view: unknown; touched: boolean } | null>('window.__stage.lens()');
+    if (held !== null && held.touched && JSON.stringify(held) !== JSON.stringify(later)) steady.push('a lens moved by the person did not hold');
+    await key('0', 48);
+    await sleep(1200);
+    out.push(res('steady', steady, 'nothing moves at rest, and a moved lens holds'));
+  }
+
+  // reachable: every control is on the page, and a tap lands after the lens is taken to it
+  const all = await controls(cx.tab);
+  const height = page?.height ?? cx.screen.height;
+  const off = all.filter((c) => c.box.y < -1 || c.box.y + c.box.height > height + 1 || c.box.x < -1 || c.box.x + c.box.width > cx.screen.width + 1).map((c) => `control "${c.label.slice(0, 18)}" is off the page`);
+  const last = all[all.length - 1];
+  if (last !== undefined && cx.tab.lens) {
+    const at = await cx.tab.reach(last.box.x + last.box.width / 2, last.box.y + last.box.height / 2);
+    const host = await cx.tab.eval<{ left: number; top: number; width: number; height: number }>(`(() => { const r = document.getElementById('stage').getBoundingClientRect(); return { left: r.left, top: r.top, width: r.width, height: r.height }; })()`);
+    if (at.x < host.left || at.y < host.top || at.x > host.left + host.width || at.y > host.top + host.height) off.push(`the last control "${last.label.slice(0, 18)}" is not on the screen after the lens was taken to it`);
+  }
+  out.push(res('reachable', off, `${all.length} controls on the page, and a tap lands`));
   return out;
 }
 
@@ -875,6 +963,8 @@ async function runCheck(cx: Cx, spec: Spec): Promise<Res> {
       return res(name, [...bad, ...noted.map((s) => `${s.id} ${s.notes.join('/')}`)], 'no link label on a line');
     }
     case 'showall-clear':
+      // on a page that grows and is looked at through a lens, the pill floats over a scrolling page as any button does over a document: only a stage that is the screen keeps words out from under it
+      if (cx.tab.lens && cx.answer.page !== null) return { check: name, verdict: 'PASS', detail: 'the page scrolls under the pill' };
       return cx.watched.pillSeen === 0 ? { check: name, verdict: 'SKIP', detail: 'the Show all pill never appeared while the answer played' } : cx.watched.showAllOver === null ? { check: name, verdict: 'PASS', detail: `the Show all pill (seen ${cx.watched.pillSeen} times) never stood on words` } : { check: name, verdict: 'FAIL', detail: cx.watched.showAllOver };
     case 'fields-clear': {
       const fields = await cx.tab.eval<{ x: number; y: number; width: number; height: number; label: string }[]>(
@@ -1100,7 +1190,8 @@ async function runCheck(cx: Cx, spec: Spec): Promise<Res> {
     }
     case 'controls-reachable': {
       const all = await controls(cx.tab);
-      const bad = all.filter((c) => c.box.y + c.box.height > cx.screen.height + 1 || c.box.y < -1 || c.box.x + c.box.width > cx.screen.width + 1).map((c) => `control "${c.label.slice(0, 18)}" is at y ${Math.round(c.box.y)}, off a ${cx.screen.height} px stage`);
+      const pageHeight = cx.answer.page?.height ?? cx.screen.height;
+      const bad = all.filter((c) => c.box.y + c.box.height > pageHeight + 1 || c.box.y < -1 || c.box.x + c.box.width > cx.screen.width + 1).map((c) => `control "${c.label.slice(0, 18)}" is at y ${Math.round(c.box.y)}, off a ${cx.screen.height} px stage`);
       return all.length === 0 ? { check: name, verdict: 'FAIL', detail: 'no controls on stage' } : res(name, bad, `${all.length} controls all on the stage`);
     }
     case 'pick-taps': {
@@ -1743,7 +1834,7 @@ async function runCell(args: Args, c: Case, screen: Args['screens'][number], url
   for (let attempt = 0; attempt < 3 && opened === null; attempt += 1) opened = await Tab.open(screen.width, screen.height).catch(() => null);
   if (opened === null) return { verdict: 'ERR', failed: ['run'], details: [{ check: 'run', verdict: 'FAIL', detail: 'Chrome would not start (three tries)' }] };
   const tab: Tab = opened;
-  const options: Options = { url, screens: [screen], out, turns: new Set(), timeoutMs: args.timeoutMs, parallel: false, demo: false, quiet: true, page: '', say: null, chat: 'off' };
+  const options: Options = { url, screens: [screen], out, turns: new Set(), timeoutMs: args.timeoutMs, parallel: false, demo: false, quiet: true, page: args.lens ? 'lens=1' : '', say: null, chat: 'off' };
   const conv = new Conversation(tab, options, screen, dir);
   const cx: Cx = { tab, c: conv, screen, dir, mobile: tab.mobile, answer: null as unknown as Answer, picture: '', watched: { showAllOver: null, pillSeen: 0 }, before: '', words: '', early: [], sig: '' };
   const details: Res[] = [];

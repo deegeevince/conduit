@@ -364,6 +364,10 @@ export class LensRig extends MotionRig {
  */
 export class PageRig extends MotionRig {
   private free = false;
+  /** the smallest scale Fit may take the page to (the body text's legible share); absent: the screen's default */
+  private legible: number | undefined;
+  /** where the last move that followed a growing page was bound, so that the same target is not set off again while it glides there */
+  private bound: Lens | null = null;
 
   constructor(
     private page: Box,
@@ -373,6 +377,7 @@ export class PageRig extends MotionRig {
     super(screen, options, fitLens(page, screen), PageRig.limitsFor(page, screen));
   }
 
+  /** how far a person may zoom out: to the whole page, down to the view's floor (the floor of legible type only decides where Fit goes) */
   private static limitsFor(page: Box, screen: Screen): Limits {
     const fit = fitLens(page, screen).scale;
     return { min: Math.min(fit, 1), max: Math.max(VIEW.max, fit) };
@@ -383,8 +388,33 @@ export class PageRig extends MotionRig {
     this.page = page;
     this.screen = screen;
     this.limits = PageRig.limitsFor(page, screen);
-    if (!this.free && this.mode.kind === 'rest') this.lens = fitLens(page, screen);
+    if (!this.free && this.mode.kind === 'rest') this.lens = fitLens(page, screen, this.legible);
     else this.lens = this.clamp({ ...this.lens, scale: Math.min(this.limits.max, Math.max(this.limits.min, this.lens.scale)) });
+  }
+
+  /**
+   * A page that grows, and the newest line on it (PLAN-canvas step 2). A lens the person has not touched goes where Fit puts it, and when the page is taller than the window
+   * at that scale (the floor of legible type) it keeps the newest line in view; one they have touched holds still. `fresh`: another scene or turn has begun, so the lens
+   * is the page's to place again.
+   */
+  follow(page: Box, newest: Box | null, now: number, fresh: boolean, floor?: number): void {
+    if (fresh) this.free = false;
+    this.legible = floor;
+    this.page = page;
+    this.limits = PageRig.limitsFor(page, this.screen);
+    if (this.mode.kind === 'hand') return;
+    if (this.free) {
+      this.lens = this.clamp({ ...this.lens, scale: Math.min(this.limits.max, Math.max(this.limits.min, this.lens.scale)) });
+      return;
+    }
+    let target = fitLens(page, this.screen, floor);
+    if (newest !== null && this.screen.height / target.scale < page.height - 1) target = this.clamp(revealed(target, newest, this.screen, 16));
+    const last = this.bound;
+    if (last !== null && Math.abs(last.x - target.x) < 0.5 && Math.abs(last.y - target.y) < 0.5 && Math.abs(last.scale - target.scale) < 1e-4 && this.mode.kind === 'glide') return;
+    const here = this.current(now);
+    if (this.mode.kind === 'rest' && Math.abs(here.x - target.x) < 0.5 && Math.abs(here.y - target.y) < 0.5 && Math.abs(here.scale - target.scale) < 1e-4) return;
+    this.bound = target;
+    this.glideTo(target, now);
   }
 
   /** the person has touched the lens: it stays where they put it until Fit */
@@ -406,7 +436,7 @@ export class PageRig extends MotionRig {
 
   /** where Fit puts the lens */
   fitted(): Lens {
-    return fitLens(this.page, this.screen);
+    return fitLens(this.page, this.screen, this.legible);
   }
 
   /** `0`, a double tap on empty stage: the whole page, or as much of it as reads. The lens is following again. */
@@ -444,20 +474,7 @@ export class PageRig extends MotionRig {
 
   /** Brings a page box into view by the least move: no zoom when it fits the window at the lens's scale, else the zoom that shows all of it. A box already in view moves nothing. */
   reveal(box: Box, now: number, margin = 16): void {
-    const from = this.current(now);
-    const fits = Math.min((this.screen.width - margin * 2) / Math.max(1, box.width), (this.screen.height - margin * 2) / Math.max(1, box.height));
-    const scale = Math.max(this.limits.min, Math.min(from.scale, fits));
-    const spanX = this.screen.width / scale;
-    const spanY = this.screen.height / scale;
-    const pad = margin / scale;
-    const axis = (centre: number, span: number, lo: number, hi: number): number => {
-      const left = centre - span / 2;
-      const right = centre + span / 2;
-      if (lo - pad >= left && hi + pad <= right) return centre;
-      if (hi - lo + 2 * pad >= span) return (lo + hi) / 2;
-      return lo - pad < left ? lo - pad + span / 2 : hi + pad - span / 2;
-    };
-    this.glideTo(this.clamp({ x: axis(from.x, spanX, box.x, box.x + box.width), y: axis(from.y, spanY, box.y, box.y + box.height), scale }), now);
+    this.glideTo(this.clamp(revealed(this.current(now), box, this.screen, margin, this.limits.min)), now);
   }
 
   /** the lens as the frame carries it */
@@ -474,4 +491,21 @@ export class PageRig extends MotionRig {
     const y = spanY >= p.height ? p.y + p.height / 2 : Math.max(p.y + spanY / 2, Math.min(p.y + p.height - spanY / 2, lens.y));
     return x === lens.x && y === lens.y ? lens : { x, y, scale: lens.scale };
   }
+}
+
+/** The lens that brings a page box into view from `from` by the least move: its scale kept when the box fits the window at it, else the scale that shows all of the box (not under `least`). */
+export function revealed(from: Lens, box: Box, screen: Screen, margin = 16, least = 0): Lens {
+  const fits = Math.min((screen.width - margin * 2) / Math.max(1, box.width), (screen.height - margin * 2) / Math.max(1, box.height));
+  const scale = Math.max(least, Math.min(from.scale, fits));
+  const spanX = screen.width / scale;
+  const spanY = screen.height / scale;
+  const pad = margin / scale;
+  const axis = (centre: number, span: number, lo: number, hi: number): number => {
+    const left = centre - span / 2;
+    const right = centre + span / 2;
+    if (lo - pad >= left && hi + pad <= right) return centre;
+    if (hi - lo + 2 * pad >= span) return (lo + hi) / 2;
+    return lo - pad < left ? lo - pad + span / 2 : hi + pad - span / 2;
+  };
+  return { x: axis(from.x, spanX, box.x, box.x + box.width), y: axis(from.y, spanY, box.y, box.y + box.height), scale };
 }

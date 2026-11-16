@@ -1,6 +1,7 @@
 // pnpm capture: a logged turn, seen as motion.
 //
-//   pnpm capture <log> <turn> [--screen 1280x720|1920x825|390x844] [--look <id>] [--out <dir>] [--fps 15] [--no-video] [--shade]
+//   pnpm capture <log> <turn> [--screen 1280x720|1920x825|390x844] [--look <id>] [--out <dir>] [--fps 15] [--no-video] [--shade] [--lens]
+//   --lens                                      performs it as the page does with ?lens=1: an answer that would be squeezed grows a page taller than the screen, and the resting picture is of the whole page
 //   --shade                                     performs it as the page does with ?shade=1 (light, rim and contact shadow on what the brain drew)
 //   pnpm capture --all <log> [same flags]       every turn of the log that drew something
 //
@@ -241,6 +242,8 @@ interface Job {
   readonly viewport: { readonly width: number; readonly height: number; readonly dpr: number };
   readonly look: string | null;
   readonly shade: boolean;
+  /** `?lens=1`: grow mode */
+  readonly lens: boolean;
   readonly frames: number;
   readonly fps: number;
   readonly video: boolean;
@@ -267,8 +270,8 @@ interface Made {
 /** Source of an async function of a Job, run in the page. Plain JavaScript: the page has no TypeScript. */
 const PAGE_SCRIPT = String.raw`async (job) => {
   const L = await import(job.language);
-  const [{ buildTimeline, settledEnd }, { pinnedWallTime }, { REST_POSE }, { CHARTS_READY, createChartEngine }, { createHarnessChartHost }, { loadChartFonts }, { createExporter }, { createPlainRenderer }, { canUseThree, createThreeRenderer }] = await Promise.all([
-    import('/src/painter/timeline.ts'), import('/src/painter/clock.ts'), import('/src/contracts/space.ts'), import('/src/render/chart/index.ts'),
+  const [{ buildTimeline, settledEnd }, { wholePage, stillSide }, { pinnedWallTime }, { REST_POSE }, { CHARTS_READY, createChartEngine }, { createHarnessChartHost }, { loadChartFonts }, { createExporter }, { createPlainRenderer }, { canUseThree, createThreeRenderer }] = await Promise.all([
+    import('/src/painter/timeline.ts'), import('/src/painter/view.ts'), import('/src/painter/clock.ts'), import('/src/contracts/space.ts'), import('/src/render/chart/index.ts'),
     import('/src/explore/chart-host.ts'), import('/src/app/chart-host.ts'), import('/src/export/index.ts'), import('/src/render/plain/index.ts'), import('/src/render/three/index.ts'),
   ]);
   const notes = [];
@@ -296,7 +299,7 @@ const PAGE_SCRIPT = String.raw`async (job) => {
   }
   const schedule = score.schedule;
   const lockLook = job.look;
-  const context = (arrivalMap) => ({ viewport, reducedMotion: false, lockLook, paintings: new Map(), arrivals: arrivalMap, charts: { kinds: CHARTS_READY, data: new Map() } });
+  const context = (arrivalMap) => ({ viewport, reducedMotion: false, lockLook, paintings: new Map(), arrivals: arrivalMap, charts: { kinds: CHARTS_READY, data: new Map() }, ...(job.lens ? { grow: true } : {}) });
   const timeline = buildTimeline(schedule, base, context(arrivals));
   const duration = settledEnd(timeline, null, base.scene.mood);
   const frameAt = (seconds) => { const time = Math.max(0, seconds); return timeline.frameAt({ time, ambient: time, wallTime: pinnedWallTime(time), clock: 'paused' }); };
@@ -357,7 +360,7 @@ const PAGE_SCRIPT = String.raw`async (job) => {
   const frames = [];
   for (const time of times) frames.push(await picture(frameAt(time), 1280));
   frames.push(await picture(restFrame, 1280));
-  const restBlob = await picture(restFrame, 1600);
+  const restBlob = await picture(wholePage(restFrame), stillSide(restFrame, 1600));
 
   // The contact strip: a grid of the frames, each with its time.
   const portrait = viewport.height > viewport.width;
@@ -427,6 +430,7 @@ interface Options {
   readonly screenName: string;
   readonly look: string | null;
   readonly shade: boolean;
+  readonly lens: boolean;
   readonly out: string | null;
   readonly fps: number;
   readonly video: boolean;
@@ -451,6 +455,7 @@ function parseArgs(argv: readonly string[]): Options {
   let screenName = '1280x720';
   let look: string | null = null;
   let shade = false;
+  let lens = false;
   let out: string | null = null;
   let fps = 15;
   let video = true;
@@ -470,6 +475,7 @@ function parseArgs(argv: readonly string[]): Options {
     else if (arg === '--data') data = value();
     else if (arg === '--no-video') video = false;
     else if (arg === '--shade') shade = true;
+    else if (arg === '--lens') lens = true;
     else if (arg === '--debug') debug = true;
     else if (arg === '--trace') trace = value().split(',').map(Number);
     else if (arg.startsWith('--')) usage(`unknown flag ${arg}`);
@@ -482,7 +488,7 @@ function parseArgs(argv: readonly string[]): Options {
   const log = positional[0];
   if (log === undefined) usage('which log?');
   if (!all && positional[1] === undefined) usage('which turn? (or --all)');
-  return { all, log: locate(log, data), turn: all ? null : (positional[1] ?? null), screen, screenName, look, shade, out, fps, video, web, debug, trace };
+  return { all, log: locate(log, data), turn: all ? null : (positional[1] ?? null), screen, screenName, look, shade, lens, out, fps, video, web, debug, trace };
 }
 
 interface Captured {
@@ -510,6 +516,7 @@ async function captureOne(page: Page, options: Options, turns: readonly LoggedTu
     viewport: { ...options.screen, dpr: 1 },
     look: options.look,
     shade: options.shade,
+    lens: options.lens,
     frames: STRIP_FRAMES,
     fps: options.fps,
     video: options.video,
@@ -518,7 +525,7 @@ async function captureOne(page: Page, options: Options, turns: readonly LoggedTu
     trace: options.trace,
   };
   const made = await page.evaluate<Made>(`(${PAGE_SCRIPT})(${JSON.stringify(job)})`);
-  const stem = join(dir, `${basename(options.log, '.jsonl')}-${turn.turn}${options.look === null ? '' : `-${options.look}`}${options.shade ? '-shade' : ''}${options.screenName === '1280x720' ? '' : `-${options.screenName}`}`);
+  const stem = join(dir, `${basename(options.log, '.jsonl')}-${turn.turn}${options.look === null ? '' : `-${options.look}`}${options.shade ? '-shade' : ''}${options.lens ? '-lens' : ''}${options.screenName === '1280x720' ? '' : `-${options.screenName}`}`);
   await mkdir(dirname(stem), { recursive: true });
   const strip = `${stem}.strip.png`;
   const rest = `${stem}.rest.png`;

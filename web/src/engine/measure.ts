@@ -27,6 +27,8 @@ export interface EngineView {
   readonly look: LookId;
   readonly lockLook: LookId | null;
   readonly insets: Insets;
+  /** PLAN-canvas step 2: lay the scene out as the page does with `?lens=1`, on a page as tall as it needs when it would be squeezed; absent: the screen is the page */
+  readonly grow?: boolean;
 }
 
 export interface EngineInputs {
@@ -47,6 +49,8 @@ export interface StageFacts {
   readonly content: ContentCount;
   /** digest of the placed boxes, rounded to 0.01 */
   readonly boxes: string;
+  /** PLAN-canvas step 2: the page the answer rests on when it has grown past the screen (stage units, its top-left the screen's); absent while the screen is the page */
+  readonly page?: { readonly width: number; readonly height: number };
   /** a leaf threw: what it said; the other facts are empty */
   readonly fault: string | null;
 }
@@ -89,6 +93,7 @@ function contextOf(view: EngineView, inputs: EngineInputs, schedule: Schedule): 
     arrivals: new Map(),
     controls: runtime,
     charts: { kinds: inputs.chartKinds ?? CHART_KINDS, data },
+    ...(view.grow === true ? { grow: true } : {}),
   };
 }
 
@@ -103,7 +108,8 @@ export function measureStage(schedule: Schedule, base: StageBase, view: EngineVi
     // only what is on the stage when it rests
     const keys = new Set(built.elements.filter((element) => element.exit === null || element.exit.start > when).map((element) => element.key));
     const placed = placedOf(at, built, when, keys);
-    return { view, sight, placed, content: contentOf(built), boxes: digestOf(placed), fault: null };
+    const page = at.pageAt(when);
+    return { view, sight, placed, content: contentOf(built), boxes: digestOf(placed), ...(page === null ? {} : { page: { width: page.width, height: page.height } }), fault: null };
   } catch (error) {
     return { view, sight: NO_SIGHT, placed: [], content: EMPTY_CONTENT, boxes: digestOf([]), fault: error instanceof Error ? error.message : String(error) };
   }

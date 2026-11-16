@@ -15,7 +15,7 @@ import type { Layout } from '@conduit/language';
 import type { LookSpec } from '../../contracts/look';
 import type { StageBlock, StagePlan, StagePlanView } from '../../contracts/stage-plan';
 import type { Box, Viewport } from '../../contracts/space';
-import { cellOf, marginOf, safeFrame } from './metrics';
+import { bottomInset, cellOf, marginOf, safeFrame } from './metrics';
 
 /** The share of the column the flow's words may take when blocks or a picture are on the stage: they are offered at least the rest. */
 export const FLOW_SHARE_MAX = 0.55;
@@ -49,6 +49,11 @@ export interface PlanInput {
   readonly beside?: boolean;
   /** the width the flow would like beside the blocks (controls set two to a row): given, down to what the blocks least need, in a side-by-side division */
   readonly flowWidth?: number;
+  /**
+   * PLAN-canvas step 2: grow. The scene has a page as tall as its content needs instead of one screen: the words take the height they ask, the choices
+   * stand at the end of the page, and only the picture gives way, to what is left of the first screen. Nothing is squeezed; `crowded` is empty.
+   */
+  readonly grow?: boolean;
 }
 
 /** How much of what a block would like it is given, 0 to 1: the worse of its height and its width. */
@@ -144,7 +149,40 @@ function divide(area: Box, blocks: readonly StageBlock[], gap: number): Division
   return top;
 }
 
+/** A picture on a page that grows keeps at least this share of the first screen. */
+export const PICTURE_FIRST_VIEW = 0.45;
+
+/**
+ * Grow: the page is as tall as the content needs. From the top, the picture (with blocks pinned to it) in what is left of the first screen after the words'
+ * first share of it, then the words at their natural height, then the choices. The page is never shorter than the screen.
+ */
+function growStage(input: PlanInput): StagePlan {
+  const { viewport, look, blocks } = input;
+  const safe = safeFrame(viewport, look);
+  const margin = marginOf(viewport, look);
+  const gap = Math.max(8, Math.min(margin * 0.75, cellOf('m', viewport, look).height * 0.5));
+  const words = input.flowHeight(safe.width);
+  const wanted = input.footHeight(safe.width);
+  const needsPicture = blocks.some((block) => block.kind === 'picture' || block.pinned !== null);
+  let y = safe.y;
+  let picture: Box | null = null;
+  if (needsPicture) {
+    const first = safe.height;
+    const wordsFirst = Math.min(words, first * FLOW_SHARE_MAX);
+    const height = Math.min(first, Math.max(first * PICTURE_FIRST_VIEW, first - wordsFirst - (words > 0 ? gap : 0)));
+    picture = { x: safe.x, y, width: safe.width, height };
+    y += height + (words > 0 || wanted > 0 ? gap : 0);
+  }
+  const flow: Box = { x: safe.x, y, width: safe.width, height: words > 0 ? words : 0 };
+  y += flow.height + (words > 0 && wanted > 0 ? gap : 0);
+  const foot: Box | null = wanted > 0 ? { x: safe.x, y, width: safe.width, height: wanted } : null;
+  y += wanted;
+  const height = Math.max(viewport.height, y + bottomInset(viewport, look) + viewport.height / 2);
+  return { picture, rooms: new Map<string, Box>(), flow, foot, crowded: [], page: { x: -viewport.width / 2, y: -viewport.height / 2, width: viewport.width, height } };
+}
+
 export function planStage(input: PlanInput): StagePlan {
+  if (input.grow === true) return growStage(input);
   const { viewport, look, layout, blocks } = input;
   const safe = safeFrame(viewport, look);
   const margin = marginOf(viewport, look);
@@ -267,5 +305,6 @@ export function viewOfPlan(plan: StagePlan, kinds: ReadonlyMap<string, StageBloc
     rooms: [...plan.rooms].map(([key, box]) => ({ key, kind: kinds.get(key) ?? 'structure', box: shift(box) })),
     flow: shift(plan.flow),
     foot: plan.foot === null ? null : shift(plan.foot),
+    ...(plan.page === undefined ? {} : { page: shift(plan.page) }),
   };
 }

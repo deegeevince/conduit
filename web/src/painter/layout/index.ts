@@ -89,6 +89,11 @@ export interface LayoutInput {
    * (`controlRoomOf` says how wide a control may then be). Decided by the painter when one column of them does not fit.
    */
   readonly controlColumns?: 1 | 2;
+  /**
+   * PLAN-canvas step 2: the room is a page that grows. Everything is set at the size it asks and nothing is let go to make it fit: no shorter form is taken, no line
+   * retires, nothing is set smaller, the choices keep their size and every one stands. `overflow` is always empty.
+   */
+  readonly natural?: boolean;
 }
 
 export interface PlacedRun {
@@ -730,14 +735,15 @@ function arrangeFlow(units: readonly Unit[], ctx: Context): FlowResult {
   const overflow: string[] = [];
   const page = ctx.input.layout === 'page';
   const plan = makePlan([...units], ctx);
-  resolveAlternatives(plan, ctx);
+  const natural = ctx.input.natural === true;
+  if (!natural) resolveAlternatives(plan, ctx);
   // The words are set a step smaller together (one size per role, never below the look's floor) before any line is let go: a line that retires is a
   // line the answer said and the stage no longer shows.
   const restShrink = ctx.input.items.some((item) => item.reserve !== undefined) ? 1 : Math.max(MIN_SHRINK, REST_SHRINK, Math.min(1, ctx.look.type.minFont / Math.max(1, cellOf('m', ctx.viewport, ctx.look).fontSize)));
   // A column never shrinks once it is placed. When what is present would pass the bottom of its box, the oldest lines leave at the top (they are
   // retired and the rest move up, eased like a `page`); lines that stay `pin` and the newest line are kept. Each column scrolls on its own.
   const originals = plan.map((column) => [...column.units]);
-  for (let guard = 0; guard < 4096; guard += 1) {
+  for (let guard = 0; guard < 4096 && !natural; guard += 1) {
     // A column with a card or a control in it sets its words a little smaller before it lets any of them go: the hand's controls and the line
     // that explains them are meant to be on the stage together.
     const full = plan.find((column) => layoutColumn(column, column.units.some((unit) => unit.main.item.reserve !== undefined) ? WITH_CONTROLS_SHRINK : restShrink, ctx).end > ctx.safe.height + EPS && retirable(column) >= 0);
@@ -751,7 +757,7 @@ function arrangeFlow(units: readonly Unit[], ctx: Context): FlowResult {
   }
   // A heading never stands without the lines it introduces: when two or more of the lines under it have left and none is left, it goes with them (and is
   // told as let go, like they are, for the control that brings them back).
-  plan.forEach((column, index) => {
+  if (!natural) plan.forEach((column, index) => {
     const before = originals[index] ?? [];
     for (let guard = 0; guard < before.length; guard += 1) {
       const orphan = column.units.findIndex((unit, at) => {
@@ -769,7 +775,7 @@ function arrangeFlow(units: readonly Unit[], ctx: Context): FlowResult {
     }
   });
   // Only a single line (or pinned ones) taller than the room is ever made smaller, and never below the smallest the look allows.
-  const f = fitFactor(plan, ctx) ?? MIN_SHRINK;
+  const f = natural ? 1 : (fitFactor(plan, ctx) ?? MIN_SHRINK);
 
   const layouts = plan.map((column) => layoutColumn(column, f, ctx));
   const room = ctx.safe.height + EPS;
@@ -801,7 +807,7 @@ function arrangeFlow(units: readonly Unit[], ctx: Context): FlowResult {
   let top = ctx.safe.y + (ctx.safe.height - anchored) / 2 + centreShift;
   top = Math.max(ctx.safe.y, Math.min(top, bottom - (anchored > 0 && ctx.input.sides !== undefined && plan.length === 2 ? Math.max(anchored, reserved[0] ?? 0) : block)));
   // a reading column begins at the top of its box and never moves until it scrolls
-  if (page) top = ctx.safe.y;
+  if (page || natural) top = ctx.safe.y;
   if (ctx.snap) {
     top = ctx.safe.y + Math.floor((top - ctx.safe.y) / ctx.bodyH + EPS) * ctx.bodyH;
     if (top + block > bottom + EPS) top -= ctx.bodyH;
@@ -1463,6 +1469,8 @@ interface FootRow {
 function footRows(units: readonly Unit[], width: number, ctx: Context, limit?: number): { rows: FootRow[]; height: number; vgap: number; hgap: number } {
   // the choices are set a little smaller before they wrap onto a second row: the foot is room taken from everything else
   let laid = footRowsAt(units, width, ctx, 1);
+  // on a page that grows the choices keep their size and wrap onto as many rows as they need
+  if (ctx.input.natural === true) return laid;
   // Given the height the foot has, a choice is never let go while setting the choices a step smaller (the same steps) makes them fit
   if (limit !== undefined && laid.height > limit + EPS) {
     // (a phone too: full size while the foot holds them, a step smaller each time it does not, rather than letting a choice go)
@@ -1534,7 +1542,7 @@ export function arrange(input: LayoutInput): Arrangement {
     // the oldest choices let go when the foot cannot hold all of them
     let shown = footed;
     let laid = footRows(shown, foot.width, ctx, foot.height);
-    while (laid.height > foot.height + EPS && shown.length > 1) {
+    while (input.natural !== true && laid.height > foot.height + EPS && shown.length > 1) {
       const [gone, ...kept] = shown;
       if (gone !== undefined) overflow.push(gone.main.item.key);
       shown = kept;

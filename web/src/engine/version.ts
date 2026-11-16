@@ -3,7 +3,7 @@ import { FACES } from '../fonts/faces';
 import { GLYPHS } from '../fonts/glyphs';
 
 /** Bump when the engine's own arithmetic changes in a way the tables do not show. */
-export const ENGINE_CONSTANT = 1;
+export const ENGINE_CONSTANT = 2;
 
 /** cyrb53: a 53-bit string hash, the same on every JavaScript engine; no crypto, no DOM. */
 export function hashOf(text: string): string {

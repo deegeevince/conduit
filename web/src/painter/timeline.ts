@@ -45,7 +45,7 @@ import { wrapStrips } from './strips';
 import { planStage, viewOfPlan } from './layout/plan';
 import type { StageBlock, StagePlan, StagePlanView } from '../contracts/stage-plan';
 import type { SqueezeInput } from '../contracts/squeeze';
-import { SQUEEZE } from './squeeze';
+import { SQUEEZE, squeezeOf } from './squeeze';
 import { STRUCTURES_READY } from './blocks';
 import { has, own as lookup } from './own';
 import { placeLabel } from './layout/labels';
@@ -72,6 +72,8 @@ export interface TimelineContext {
   readonly apps?: boolean;
   /** the height each live app's content asks of its frame, by key, screen pixels: the frame follows it (taller than asked: it grows; shorter: no empty band). Read when the stage is planned. */
   readonly appHeights?: ReadonlyMap<string, number>;
+  /** PLAN-canvas step 2 (`?lens=1`): a scene of words, choices, controls and a picture that would be squeezed to fit the screen is laid out on a page as tall as it needs instead. Absent: nothing grows. */
+  readonly grow?: boolean;
 }
 
 export interface TimelineInstant {
@@ -129,6 +131,8 @@ export interface Timeline {
   planAt(time: number): StagePlanView;
   /** PLAN-canvas step 0: what the layout gave up in the scene at `time` (everything but the apps, which the host knows), as facts */
   squeezeAt(time: number): Omit<SqueezeInput, 'apps'>;
+  /** PLAN-canvas step 2: the page the scene at `time` is laid out on, in stage units with its top-left at the screen's top-left; null while the screen is the page */
+  pageAt(time: number): Box | null;
 }
 
 /** Seconds a laid-out element takes to approach a new place, before the mood scales it. */
@@ -675,7 +679,7 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
    * Words that a point of the canvas or a thing drawn decides the place of are not in the flow, and the layout must not stack them there:
    * it is told they are anchored at the centre, and `placeLoose` puts them where they belong each frame.
    */
-  const laidStyle = (style: ElementStyle): ElementStyle => (style.near !== null || style.group !== null || (typeof style.at === 'object' && style.at !== null) ? { ...style, at: 'center', near: null } : style);
+  const laidStyleOf = (style: ElementStyle): ElementStyle => (style.near !== null || style.group !== null || (typeof style.at === 'object' && style.at !== null) ? { ...style, at: 'center', near: null } : style);
 
   /** the widest a control may be, in its layer's plane units: the room the flow has across */
   const controlRoom = (span: ElementSpan, fit: CanvasFit): number => {
@@ -830,7 +834,8 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
 
   const besideOf = new Map<string, boolean>();
   const needOf = new Map<string, number>();
-  for (const start of starts) {
+  /** One layout epoch at `start`: the whole division, arrangement and fit of its scene. `grow`: the scene has a page of its own height (PLAN-canvas step 2) and nothing is squeezed to fit the screen. Nothing here is committed: the caller decides. */
+  const layOut = (start: number, grow: boolean) => {
     const look = specAt(start);
     const scene = sceneAt(schedule, start);
     const present = elements.filter((element) => {
@@ -842,6 +847,9 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
     for (const element of present) if (element.replaces !== null) replaced.add(element.replaces);
     // The stage plan's blocks: what is on stage that takes room besides the words (PLAN-v2.1, D1)
     const blocks = blocksAt(start, scene.id);
+    // On a page that grows with no picture on it, words given a point of the canvas have no canvas to stand on: they take their place in the flow, in the order they were written
+    const flat = grow && !blocks.list.some((block) => block.kind === 'picture' || block.pinned !== null);
+    const laidStyle = (style: ElementStyle): ElementStyle => (flat && style.group === null && (style.near !== null || (typeof style.at === 'object' && style.at !== null)) ? { ...style, at: null, near: null } : laidStyleOf(style));
     const safe = safeFrame(viewport, look);
     // what the controls are sized for: the flow's width, which only a side-by-side layout narrows
     const first = planStage({ viewport, look, layout: scene.layout, blocks: blocks.list, flowHeight: () => 0, flowOrder: null, footHeight: () => 0 });
@@ -900,7 +908,7 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
       // A wide stage with controls on it sets them in a column of their own, to the left, and the words to the right: the controls keep their
       // place whatever the words do, and neither covers the other. A narrow stage keeps one column.
       const withControls = controlSpans.some((span) => span.scene === scene.id && span.parent === null && askOf(span) === null) || drawn.some((group) => group.scene === scene.id && group.figure?.kind === 'group' && group.figure.card !== undefined);
-      const arrLayout: Layout = withControls && !beside && viewport.width >= 900 && viewport.width >= 1.5 * viewport.height && (scene.layout === 'stack' || scene.layout === 'caption' || scene.layout === 'solo') ? 'split' : scene.layout;
+      const arrLayout: Layout = withControls && !beside && !grow && viewport.width >= 900 && viewport.width >= 1.5 * viewport.height && (scene.layout === 'stack' || scene.layout === 'caption' || scene.layout === 'solo') ? 'split' : scene.layout;
       const sides = arrLayout === 'split' ? (scene.layout === 'split' ? splitSides(schedule, scene.id) : new Map<string, 'left' | 'right'>([...controlSpans, ...drawn].filter((span) => span.scene === scene.id).map((span): [string, 'left' | 'right'] => [span.key, 'left']).concat(elements.filter((span) => span.scene === scene.id).map((span): [string, 'left' | 'right'] => [span.key, 'right'])))) : undefined;
       // what the controls may be wide: the column they stand in (half of it when they stand two to a row), at the width the flow really has
       const roomInput: LayoutInput = { viewport, look, layout: arrLayout, align: scene.align, expected: null, items: [], foot: safe, ...(sides === undefined ? {} : { sides }), ...(columns === 2 ? { controlColumns: 2 as const } : {}) };
@@ -990,7 +998,7 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
         liveControls.push(group);
         items.push({ key: group.key, order: group.order, text: '', emphasis: [], style: { ...laidStyle(style), stay: 'pin' }, struck: false, replaces: null, reserve: { width: room.outer.width, height: room.outer.height } });
       }
-      const probe: LayoutInput = { viewport, look, layout: arrLayout, align: scene.align, expected: valueAt(scene.expected, start, null), items: [...items, ...comingItems, ...upcoming], foot: safe, ...(sides === undefined ? {} : { sides }), ...(columns === 2 && !scroll ? { controlColumns: 2 as const } : {}) };
+      const probe: LayoutInput = { viewport, look, layout: arrLayout, align: scene.align, expected: valueAt(scene.expected, start, null), items: [...items, ...comingItems, ...upcoming], foot: safe, ...(sides === undefined ? {} : { sides }), ...(columns === 2 && !scroll ? { controlColumns: 2 as const } : {}), ...(grow ? { natural: true } : {}) };
       const needs = needsOf(probe, safe.width);
       // a scene's words never ask for less than they did a moment ago, so the picture does not breathe as lines come and go
       const floor = flowFloor.get(scene.id) ?? 0;
@@ -1005,6 +1013,7 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
           layout: scene.layout,
           blocks: list,
           beside,
+          ...(grow ? { grow: true } : {}),
           flowHeight: (width) => (wanted <= 0 ? 0 : Math.max(floor, width === safe.width ? wanted : needsOf(probe, width).flow)),
           flowOrder: needs.order === null ? null : Math.min(needs.order, firstWord),
           flowLeast: (width) => (width === safe.width ? needs.least : needsOf(probe, width).least),
@@ -1073,7 +1082,8 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
     let solved!: ReturnType<typeof solve>;
     let ran = false;
     for (let attempt = 0; attempt < 2; attempt += 1) {
-      const tries: readonly (readonly [number, 1 | 2])[] = [[0, 1], [1, 1], [2, 1], [3, 1], [2, 2], [3, 2]];
+      // a page that grows sets its controls at their own size, one to a row, in the flow: there is nothing to compact and no area that scrolls
+      const tries: readonly (readonly [number, 1 | 2])[] = grow ? [[0, 1]] : [[0, 1], [1, 1], [2, 1], [3, 1], [2, 2], [3, 2]];
       const roomy = viewport.width >= 560;
       for (const [level, columns] of tries) {
         if (columns === 2 && !roomy) continue;
@@ -1087,7 +1097,7 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
         if (solved.fits) break;
       }
       // none fits: the controls stand in an area of their own that scrolls, in two columns where there is width for them
-      if (!ran || !solved.fits) {
+      if (!ran || (!solved.fits && !grow)) {
         const wide = roomy && solve(controlFit, 3, 2).viable;
         for (let pass = 0; pass < 3; pass += 1) {
           solved = solve(controlFit, 3, wide ? 2 : 1, true);
@@ -1124,7 +1134,7 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
     const keeps = Math.max(0.55, Math.min(1, fit.unit / wholeUnit));
     for (const element of [...present, ...liveControls]) {
       const style = styleAt(element, start);
-      if (style.near !== null || style.group !== null || typeof style.at !== 'object' || style.at === null) continue;
+      if (flat || style.near !== null || style.group !== null || typeof style.at !== 'object' || style.at === null) continue;
       const scale = planeScale(style.layer, viewport);
       pins.set(element.key, { x: (fit.box.x + style.at.x * fit.unit) / scale, y: (fit.box.y + style.at.y * fit.unit) / scale, k: keeps });
     }
@@ -1190,15 +1200,60 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
       pins,
       ...(sides === undefined ? {} : { sides }),
       ...(solved.columns === 2 ? { controlColumns: 2 as const } : {}),
+      ...(grow ? { natural: true } : {}),
     });
-    for (const key of arrangement.overflow) {
+    const mood = moodAt(start, look);
+    const epoch: Epoch = { start, look, snap: mood.snap, arrangement, scene: scene.id, plan, fit, kinds: blocks.kinds, controls: { compact: solved.compact, room: solved.room, scroll: solved.scrollInfo } };
+    return { epoch, scene, blocks };
+  };
+
+  /** words of the scene set at less than what their size word asks for, as this epoch laid them out */
+  const shrunkIn = (epoch: Epoch, scene: Pick<SceneSpan, 'id' | 'layout'>): { key: string; share: number }[] => {
+    const small: { key: string; share: number }[] = [];
+    for (const [key, placement] of epoch.arrangement.placements) {
+      const element = byKey.get(key);
+      if (element === undefined || element.scene !== scene.id) continue;
+      const style = styleAt(element, epoch.start);
+      if (!isInFlow(style, scene.layout)) continue;
+      const asked = cellOf(style.size, viewport, epoch.look).fontSize;
+      const share = (placement.fontSize * planeScale(placement.layer, viewport)) / Math.max(1, asked);
+      if (share < SQUEEZE.shrunkBelow) small.push({ key, share });
+    }
+    return small;
+  };
+  /** what a freshly laid epoch gave up to fit the screen (the squeeze facts, before the page grows): the layout's own word for it */
+  const squeezedBy = (epoch: Epoch, start: number): SqueezeInput => ({
+    retired: [...epoch.arrangement.overflow],
+    shrunk: shrunkIn(epoch, sceneAt(schedule, start)),
+    crowded: [...epoch.plan.crowded],
+    compact: { level: epoch.controls.compact, scrolls: epoch.controls.scroll !== null },
+    apps: [],
+  });
+  /** Grow mode is for scenes of words, choices, controls and a picture: a scene with a structure, chart, code block or live app laid out in the plan keeps the screen (steps 3 and 4). */
+  const growable = (list: readonly StageBlock[]): boolean => list.every((block) => block.kind === 'picture' || block.pinned !== null);
+
+  /** Scenes whose words, choices, controls and picture are laid out on a page taller than the screen (decided once, and kept: a scene that grows never goes back to fit). */
+  const growing = new Set<string>();
+  /** the tallest page each growing scene has needed so far: a page only grows within its scene */
+  const pageHeight = new Map<string, number>();
+  for (const start of starts) {
+    let made = layOut(start, growing.has(sceneAt(schedule, start).id));
+    if (context.grow === true && !growing.has(made.scene.id) && growable(made.blocks.list) && squeezeOf(squeezedBy(made.epoch, start)).squeezed) {
+      growing.add(made.scene.id);
+      made = layOut(start, true);
+    }
+    const { epoch, scene } = made;
+    for (const key of epoch.arrangement.overflow) {
       const element = byKey.get(key);
       if (element === undefined || forced.has(key)) continue;
       const effect = styleAt(element, start).exit;
       forced.set(key, { start, end: start + exitSeconds(effect, paceAt(start)), effect });
     }
-    const mood = moodAt(start, look);
-    epochs.push({ start, look, snap: mood.snap, arrangement, scene: scene.id, plan, fit, kinds: blocks.kinds, controls: { compact: solved.compact, room: solved.room, scroll: solved.scrollInfo } });
+    if (growing.has(scene.id) && epoch.plan.page !== undefined) {
+      const height = Math.max(epoch.plan.page.height, pageHeight.get(scene.id) ?? 0);
+      pageHeight.set(scene.id, height);
+      epochs.push({ ...epoch, plan: { ...epoch.plan, page: { ...epoch.plan.page, height } } });
+    } else epochs.push(epoch);
   }
 
   const epochIndexAt = (time: number): number => {
@@ -1875,6 +1930,12 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
     const epoch = epochs[list[at] as number] as Epoch;
     const previous = at > 0 ? (epochs[list[at - 1] as number] ?? null) : null;
     return { epoch, previous };
+  };
+  /** The page of the scene at `time`, in page units (the screen's top-left is the origin), or null while the screen is the page. */
+  const pageAt = (time: number): Box | null => {
+    const found = sceneEpochAt(sceneAt(schedule, time).id, time);
+    const page = found?.epoch.plan.page;
+    return page === undefined ? null : { x: 0, y: 0, width: page.width, height: page.height };
   };
   const fitAt = (sceneId: string, time: number): CanvasFit => {
     const found = sceneEpochAt(sceneId, time);
@@ -2969,7 +3030,9 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
     }
     const chartFrameList = context.charts === undefined ? undefined : chartFrames(schedule, tq, aq, drawLook, { viewport, reducedMotion, camera, kinds: context.charts.kinds, data: context.charts.data, scope: scopeOf([...cindex.ids], (id) => controlNamed(id, tq)), fitOf: (element) => fitOfElement(element, drawLook, tq), roomOf: (element) => roomEasedOf(element, tq) });
     const appCueList = context.apps === true ? appCues(schedule, tq, drawLook, { viewport, camera, closed: instant.closed === true, fitOf: (element) => fitOfElement(element, drawLook, tq), roomOf: (element) => roomEasedOf(element, tq) }) : [];
+    const pageNow = pageAt(instant.time);
     const frame: Frame = {
+      ...(pageNow === null ? {} : { page: pageNow }),
       ...(chartFrameList === undefined ? {} : { charts: chartFrameList }),
       ...(appCueList.length === 0 ? {} : { apps: appCueList }),
       ...(tuneCues.length === 0 ? {} : { tunes: tuneCues }),
@@ -3042,6 +3105,7 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
     wordsAt: (element, time) => wordsNow(element, null, time)?.text ?? element.text,
     reactive,
     fitAt: (sceneId, time) => fitAt(sceneId, time),
+    pageAt,
     planAt: (time) => {
       const found = sceneEpochAt(sceneAt(schedule, time).id, time);
       const epoch = found === null ? epochs[epochIndexAt(time)] : found.epoch;
@@ -3054,16 +3118,7 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
       if (epoch === undefined) return { retired: [], shrunk: [], crowded: [], compact: { level: 0, scrolls: false } };
       const gone: string[] = [];
       for (const [key, began] of retired) if (began <= time && byKey.get(key)?.scene === scene.id) gone.push(key);
-      const small: { key: string; share: number }[] = [];
-      for (const [key, placement] of epoch.arrangement.placements) {
-        const element = byKey.get(key);
-        if (element === undefined || element.scene !== scene.id) continue;
-        const style = styleAt(element, epoch.start);
-        if (!isInFlow(style, scene.layout)) continue;
-        const asked = cellOf(style.size, viewport, epoch.look).fontSize;
-        const share = (placement.fontSize * planeScale(placement.layer, viewport)) / Math.max(1, asked);
-        if (share < SQUEEZE.shrunkBelow) small.push({ key, share });
-      }
+      const small = shrunkIn(epoch, scene);
       const crowded = new Set<string>(epoch.plan.crowded);
       for (const [key, notes] of structures.notesAt(time)) if (notes.includes('crowded')) crowded.add(key);
       return { retired: gone, shrunk: small, crowded: [...crowded], compact: { level: epoch.controls.compact, scrolls: epoch.controls.scroll !== null } };

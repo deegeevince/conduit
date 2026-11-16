@@ -13,11 +13,11 @@
 
 import type { Frame } from '../contracts/frame';
 import type { Renderer } from '../contracts/renderer';
-import { cssOf, isRest, toPage as pageOf } from '../contracts/space';
+import { cssOf, isRest, toPage as pageOf, toScreen as screenOf } from '../contracts/space';
 import type { Box, LensView } from '../contracts/space';
 import { PalmGuard, PALM_SIZE } from '../ink/palm';
 import type { StageInk } from '../ink/stage';
-import { viewOf } from '../painter/view';
+import { legibleFloor, viewOf } from '../painter/view';
 import { PageRig } from '../wall/lens';
 import { attachGestures } from '../wall/gestures';
 import type { Hands } from '../wall/gestures';
@@ -103,6 +103,8 @@ export interface LensOptions {
   readonly letGo: (pointers: readonly number[]) => void;
   /** Whether the keyboard is the stage's now (nothing else holds it). */
   readonly keysAreMine: (target: EventTarget | null) => boolean;
+  /** The lens moved (null: at rest). The chips that say more is below read it. */
+  readonly onView?: (view: LensView | null) => void;
 }
 
 export interface StageLens {
@@ -112,6 +114,8 @@ export interface StageLens {
   view(): LensView | null;
   /** a point of the screen (CSS pixels from the stage's top-left) as a point of the page */
   toPage(x: number, y: number): { readonly x: number; readonly y: number };
+  /** a point of the page as the screen has it now (CSS pixels from the stage's top-left) */
+  toScreen(x: number, y: number): { readonly x: number; readonly y: number };
   /** whether the lens is the one to hear a new finger now (not while a document covers the stage) */
   handling(): boolean;
   /** has the person touched the lens: if not, it goes where Fit puts it */
@@ -121,6 +125,11 @@ export interface StageLens {
   reveal(box: Box): void;
   /** the screen or the page changed size */
   resize(): void;
+  /**
+   * A page that grows (PLAN-canvas step 2): the page, the newest line on it and the body size. A lens the person has not touched goes where Fit puts it and keeps the
+   * newest line in view; one they have touched holds still. `fresh`: another scene or turn has begun.
+   */
+  follow(info: { readonly page: Box; readonly newest: Box | null; readonly fresh: boolean; readonly body: number; /** long prose (`layout=page`): it arrives at one to one, from the top, and follows the newest line */ readonly reading?: boolean }): void;
   /** the stage's ink: the lens hands it the pen and the view, and takes them back when it is put away */
   useInk(ink: StageInk | null): void;
   /** whether the lens is drawing the pen's strokes itself (there is ink, and Draw is not what has it) */
@@ -151,6 +160,7 @@ export function createStageLens(options: LensOptions): StageLens {
     page.style.transform = cssOf(view);
     options.renderer.setView(view);
     ink?.setView(view === null ? null : { x: view.x, y: view.y, scale: view.scale });
+    options.onView?.(view);
   };
 
   const loop = (now: number): void => {
@@ -323,6 +333,7 @@ export function createStageLens(options: LensOptions): StageLens {
     guard,
     view: () => view,
     toPage: (x, y) => pageOf(viewOf(rig.current(clock()), screen()), x, y),
+    toScreen: (x, y) => screenOf(viewOf(rig.current(clock()), screen()), x, y),
     handling: () => options.active(),
     get touched() {
       return rig.touched;
@@ -330,6 +341,10 @@ export function createStageLens(options: LensOptions): StageLens {
     fit,
     reveal(box) {
       rig.reveal(box, clock());
+      kick();
+    },
+    follow(info) {
+      rig.follow(info.page, info.newest, clock(), info.fresh, info.reading === true ? 1 : legibleFloor(screen(), info.body));
       kick();
     },
     resize() {

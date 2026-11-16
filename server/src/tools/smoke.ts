@@ -252,7 +252,7 @@ export const PAGE_LIB = String.raw`(() => {
     const reports = s.events().filter((e) => e.type === 'report');
     const last = reports[reports.length - 1];
     const live = s.elements().map((e) => ({ id: e.id, kind: e.kind, text: e.text.slice(0, 70), phase: e.phase, opacity: e.opacity, box: e.box, layer: e.layer, contrast: e.contrast, fontPx: e.fontPx, painting: e.painting }));
-    const base = { live, charts: s.charts().map((c) => ({ id: c.id, kind: c.kind, waiting: c.waiting, points: c.points, box: c.box })), controls: s.controls().map((c) => ({ id: c.id, control: c.control, label: c.label, enabled: c.enabled, box: c.box })), script: s.script(), viewport: s.state().viewport, hasHook: typeof s.mockups === 'function', squeeze: s.state().squeeze || null, mockups: typeof s.mockups === 'function' ? s.mockups() : [], leaders: typeof s.leaders === 'function' ? s.leaders() : null };
+    const base = { live, charts: s.charts().map((c) => ({ id: c.id, kind: c.kind, waiting: c.waiting, points: c.points, box: c.box })), controls: s.controls().map((c) => ({ id: c.id, control: c.control, label: c.label, enabled: c.enabled, box: c.box })), script: s.script(), viewport: s.state().viewport, page: s.state().page ? { width: s.state().page.width, height: s.state().page.height } : null, hasHook: typeof s.mockups === 'function', squeeze: s.state().squeeze || null, mockups: typeof s.mockups === 'function' ? s.mockups() : [], leaders: typeof s.leaders === 'function' ? s.leaders() : null };
     if (!last) return Object.assign({ report: null }, base);
     const r = last.report;
     return Object.assign({
@@ -462,6 +462,15 @@ export class Tab {
 
   /** the page has a touch screen (a phone's size, or asked for): `tap` then uses a finger */
   touch = false;
+  /** the page is `?lens=1`: a point of the page is brought into view before it is tapped (`reach`) */
+  lens = false;
+
+  /** a point of the stage's page as the screen has it now, client pixels: the lens is moved to it first when it is out of view. With no lens the point is where it is. */
+  async reach(x: number, y: number): Promise<{ x: number; y: number }> {
+    if (!this.lens) return { x, y };
+    const at = await this.eval<{ x: number; y: number } | null>(`window.__stage.reach(${x}, ${y})`);
+    return at ?? { x, y };
+  }
 
   static async open(width: number, height: number, emulate: { readonly dpr?: number; readonly touch?: boolean } = {}): Promise<Tab> {
     const chrome = CHROME_CANDIDATES.find((path) => existsSync(path));
@@ -574,7 +583,8 @@ export class Tab {
   // ---- real input
 
   /** a click with a mouse, or a tap with a finger on a phone: the page gets real pointer events either way */
-  async tap(x: number, y: number): Promise<void> {
+  async tap(pageX: number, pageY: number): Promise<void> {
+    const { x, y } = await this.reach(pageX, pageY);
     if (this.touch) {
       await this.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
       await sleep(60);
@@ -681,6 +691,8 @@ export interface Answer {
   readonly controls: readonly { readonly id: string; readonly control: string; readonly label: string; readonly enabled: boolean; readonly box: Box }[];
   readonly script: string;
   readonly viewport: { readonly width: number; readonly height: number };
+  /** PLAN-canvas step 2: the page the scene is laid out on when it has grown past the screen (host CSS pixels); null otherwise */
+  readonly page: { readonly width: number; readonly height: number } | null;
   readonly hasHook: boolean;
   /** what the scene on stage gave up to fit the screen (PLAN-canvas step 0); null on a build that does not say */
   readonly squeeze: { readonly squeezed: boolean; readonly kinds: readonly string[]; readonly facts: readonly { readonly kind: string; readonly key: string | null; readonly why: string }[] } | null;
@@ -781,6 +793,7 @@ export class Conversation {
 
   async start(): Promise<void> {
     const { tab } = this;
+    tab.lens = /(^|&)lens=1(&|$)/.test(this.options.page);
     await tab.send('Page.navigate', { url: `${this.options.url}/${this.options.demo ? '' : '?demo=none'}${this.options.page === '' ? '' : `${this.options.demo ? '?' : '&'}${this.options.page}`}` });
     await waitFor('the page to be ready', 60_000, async () => {
       const probe = await tab.call<Probe>('probe').catch(() => null);
@@ -913,7 +926,11 @@ export class Conversation {
     const problems: string[] = [];
     const facts: string[] = [];
     const report = answer.report;
-    const view = answer.viewport;
+    // a page that has grown past the screen is judged whole; the screenshot shows only the part of it the lens shows
+    const view = answer.page === null ? answer.viewport : { width: answer.page.width, height: answer.page.height };
+    const lens = answer.page === null ? null : (await this.tab.eval<{ view: { x: number; y: number; scale: number; width: number; height: number } | null } | null>('window.__stage.lens()'))?.view ?? { x: 0, y: 0, scale: 1, width: answer.viewport.width, height: answer.viewport.height };
+    const shot = (box: Box): Box => (lens === null ? box : { x: (box.x - lens.x) * lens.scale, y: (box.y - lens.y) * lens.scale, width: box.width * lens.scale, height: box.height * lens.scale });
+    const inFirstView = (box: Box): boolean => lens === null || intersection(shot(box), { x: 0, y: 0, width: lens.width, height: lens.height }) >= 0.9 * area(shot(box));
     if (report === null) problems.push('no report: the turn never ended on the page');
     const liveById = new Map<string, LiveElement[]>();
     for (const element of answer.live) liveById.set(element.id, [...(liveById.get(element.id) ?? []), element]);
@@ -933,13 +950,13 @@ export class Conversation {
         }
         // a drawn thing may run on past the screen's edge (a sea, a sky); words and diagrams may not
         if (['text', 'structure'].includes(here.kind) && intersection(here.box, { x: 0, y: 0, width: view.width, height: view.height }) < 0.9 * area(here.box)) offscreen.push(`${element.id} ${boxText(here.box)}`);
-        if (['text', 'structure', 'picture', 'sprite'].includes(here.kind) && area(here.box) > 400) inked.push(here);
+        if (['text', 'structure', 'picture', 'sprite'].includes(here.kind) && area(here.box) > 400 && inFirstView(here.box)) inked.push(here);
       }
       if (missing.length > 0) problems.push(`in the report's resting stage but not on screen at rest: ${missing.slice(0, 5).join(', ')}${missing.length > 5 ? ` and ${missing.length - 5} more` : ''}`);
       if (offscreen.length > 0) problems.push(`outside the screen: ${offscreen.slice(0, 3).join(', ')}`);
       // and it must really be drawn there: pixels, not the painter's say-so
       if (inked.length > 0) {
-        const marks = await this.tab.call<{ px: number; share: number }[]>('inkIn', picture, inked.map((element) => ({ x: element.box.x, y: element.box.y, w: element.box.width, h: element.box.height })), this.tab.dpr);
+        const marks = await this.tab.call<{ px: number; share: number }[]>('inkIn', picture, inked.map((element) => ({ x: shot(element.box).x, y: shot(element.box).y, w: shot(element.box).width, h: shot(element.box).height })), this.tab.dpr);
         const blank = inked.filter((_, index) => (marks[index]?.px ?? 0) < 12 * this.tab.dpr * this.tab.dpr);
         if (blank.length > 0) problems.push(`listed on stage but nothing is drawn where it is in the screenshot: ${blank.slice(0, 4).map((element) => `${element.id} (${element.kind}) ${boxText(element.box)}`).join(', ')}`);
         facts.push(`${inked.length - blank.length}/${inked.length} inked`);
@@ -1252,7 +1269,9 @@ export class Conversation {
 
   async checkCutOff(answer: Answer, results: CheckResult[], inCanvas = false): Promise<void> {
     const problems: string[] = [];
-    const { width, height } = answer.viewport;
+    // a page that has grown is judged as it is: its own height (the browser's own page still never scrolls)
+    const width = answer.page?.width ?? answer.viewport.width;
+    const height = answer.page?.height ?? answer.viewport.height;
     const slack = 2;
     const outside: string[] = [];
     for (const element of answer.live) {
