@@ -2,6 +2,10 @@
 
 Newest first. Each item is something the brain can show live when asked "showcase what's new": draw it, don't describe it. The server reads this file.
 
+## Works with ChatGPT too (not live)
+- The app can now think with your ChatGPT subscription through the Codex command line, as well as with Claude. Nothing changes here: this server stays on Claude.
+- On ChatGPT it draws, answers, looks at its own drawing and fixes it, searches the web, reads your photos and uses the canvas tools. The model picker, skills, agent mode, the critic and filling parts ahead stay with Claude. Answers arrive a message at a time rather than word by word.
+
 ## Step by step on the canvas (live)
 - Ask for instructions, a recipe, a build or a how-to step by step, or give it a photo of them, and the answer is a picture with Back and Next: each step adds its part. A document of steps to work through comes only when you ask for a checklist or a document, or for a learner's worksheet.
 - When you ask for a drawing while a document is open ("Build it on canvas", "Interactive step by step"), the drawing is what you see. The document is put away, one tap on "Show the document" brings it back.

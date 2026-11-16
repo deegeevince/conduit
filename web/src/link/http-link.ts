@@ -506,6 +506,8 @@ export function createHttpLink(): HttpLink {
     async skills(refresh = false): Promise<SkillsView> {
       const body = await bodyOf(await fetch(refresh ? `${API.skills}?refresh=1` : API.skills));
       const list = typeof body === 'object' && body !== null ? (body as { skills?: unknown }).skills : undefined;
+      const note = typeof body === 'object' && body !== null ? (body as { note?: unknown }).note : undefined;
+      if (typeof note === 'string' && note !== '') throw new Error(note);
       if (!Array.isArray(list)) throw new Error('the server answered with something that is not a list of skills');
       return { skills: list as SkillsView['skills'] };
     },

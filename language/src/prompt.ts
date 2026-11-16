@@ -805,6 +805,7 @@ function documentsText(documents: readonly DocumentFacts[]): string {
 
 /** What this turn truly runs with; the brain that knows it says it. */
 export interface AboutYou {
+  readonly provider?: 'claude' | 'codex';
   readonly model: string;
   readonly effort: string;
   /** shown a picture of its own last drawing this turn */
@@ -1025,7 +1026,7 @@ export function aboutYouText(about: AboutYou, links = false): string {
   const tools = about.tools ?? [];
   // The same words whether the web tools came with a server that has no agent or as the agent's own: a different wording of this note
   // was measured to make the brain search for a drawing it needed no search for (15 s to the first line, against 2).
-  const searches = `You can search the web and read pages (WebSearch, WebFetch), read-only. Use search for anything current: prices, news, today, recent facts; never guess a live figure. Search before your first line or between lines, then say the answer and ${links ? 'cite each source as a link on stage' : 'name each source in a short line'}. Lines of the language are text you write, never tool calls: there is no tool named scene or say.`;
+  const searches = `You can search the web and read pages (${about.provider === 'codex' ? 'web_search' : 'WebSearch, WebFetch'}), read-only. Use search for anything current: prices, news, today, recent facts; never guess a live figure. Search before your first line or between lines, then say the answer and ${links ? 'cite each source as a link on stage' : 'name each source in a short line'}. Lines of the language are text you write, never tool calls: there is no tool named scene or say.`;
   const others = tools.filter((name) => name !== 'WebSearch' && name !== 'WebFetch');
   const acts =
     mode === 'agent'
@@ -1036,7 +1037,7 @@ export function aboutYouText(about: AboutYou, links = false): string {
           ? `${searches} You cannot act on their accounts or files, or run commands here: say so plainly, then offer what you can do.`
           : 'No tools here: you cannot act on their accounts or files; say so plainly, then offer what you can do.';
   return [
-    `ABOUT YOU: model ${about.model}, effort ${about.effort}, on the owner's Claude subscription via the Claude Code CLI; no API key.`,
+    `ABOUT YOU: model ${about.model}, effort ${about.effort}, on the owner's ${about.provider === 'codex' ? 'ChatGPT subscription via the Codex CLI' : 'Claude subscription via the Claude Code CLI'}; no API key.`,
     `Snapshot of your last drawing this turn: ${about.sees ? 'yes' : 'no'}. Look-and-fix: ${about.look ? 'on' : 'off'}.`,
     'A model or effort change starts you fresh.',
     acts,

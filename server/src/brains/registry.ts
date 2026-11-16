@@ -6,6 +6,7 @@ import type { BrainSettings } from '../env';
 import { NEVER_ENGAGED } from '../kill';
 import type { KillSwitch } from '../kill';
 import type { Logger } from '../log';
+import { createCodexCliBrain } from './codex-cli/codex-cli-brain';
 import { createClaudeCliBrain } from './claude-cli/claude-cli-brain';
 import type { CanvasLink } from './claude-cli/claude-cli-brain';
 import { createRelayBrain } from './relay/relay-brain';
@@ -47,6 +48,9 @@ export function createBrains(deps: BrainsDeps): BrainRegistry {
       break;
     case 'relay':
       configured = createRelayBrain(deps.relayHub);
+      break;
+    case 'codex-cli':
+      configured = createCodexCliBrain({ ...settings, canvas: deps.canvas });
       break;
     case 'claude-cli':
       configured = createClaudeCliBrain({
