@@ -157,6 +157,9 @@ const LARGE_SHARE = 0.05;
 const LAYER_ORDER: Readonly<Record<Layer, number>> = { far: -1, bg: 0, mid: 1, fg: 2 };
 const FADE_RECIPE: MotionRecipe = { from: { opacity: 0 }, ease: 'out', reveal: false, flicker: false };
 
+/** The server's caption under a drawing's placeholder: `cap-<figure>` naming `<figure>-soft` (`captionLines` in the server's art/draw.ts). */
+const isPlaceholderCaption = (id: string, near: string): boolean => id.startsWith('cap-') && near.endsWith('-soft');
+
 function clamp01(value: number): number {
   return value <= 0 ? 0 : value >= 1 ? 1 : value;
 }
@@ -2311,18 +2314,23 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
       const family = new Set<ElementSpan>([target]);
       for (const other of drawn) if (other.parent === target.key) family.add(other);
       seedText();
+      const caption = isPlaceholderCaption(element.id, style.near.id);
+      const outer: Rect = { x: -viewport.width / 2 + edge, y: -viewport.height / 2 + topEdge, w: viewport.width - 2 * edge, h: viewport.height - topEdge - edge };
       const chosen = placeLabel({
         w,
         h,
         target: targetRect,
-        region,
+        // a caption under a placeholder may stand below the canvas's own edge: directly under beats inside
+        region: caption ? outer : region,
         side: style.near.side,
         gap,
         step: cell.width,
-        pad: cell.width,
+        pad: caption ? 2 : cell.width,
         taken,
-        outer: { x: -viewport.width / 2 + edge, y: -viewport.height / 2 + topEdge, w: viewport.width - 2 * edge, h: viewport.height - topEdge - edge },
-        obstacles: obstacles.filter((obstacle) => !family.has(obstacle.owner)).map((obstacle) => ({ rect: obstacle.rect, outline: obstacle.outline })),
+        outer,
+        // the server's caption under a placeholder (`cap-<id>` near `<id>-soft`) stands directly under it, wherever the placeholder is: it is
+        // small and dim, so it gives way to other text only, never to a drawn shape that happens to lie below
+        obstacles: caption ? [] : obstacles.filter((obstacle) => !family.has(obstacle.owner)).map((obstacle) => ({ rect: obstacle.rect, outline: obstacle.outline })),
       });
       taken.push({ x: chosen.x - w / 2, y: chosen.y - h / 2, w, h });
       out.set(element.key, { x: chosen.x / ps, y: chosen.y / ps });

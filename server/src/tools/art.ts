@@ -9,7 +9,13 @@
 //   pnpm art lines <file.json> [--id fox1] [--size 40] [--look paper|night|blueprint] [--mirror]
 //       The Series lines a sheet expands to, as the server would put them on stage.
 //
-// Nothing here touches the network or a model.
+//   pnpm art fill [--list <file>] [--max N] [--into seed|cache] [--data <dir>] [--dry-run]
+//       Commissions, one at a time, every subject of the list (default art/common.txt) that the shelf lacks, through the studio's own path (the same
+//       prompt, converter and validation as a live miss). Each costs about $0.15 to $0.50 and 40 to 130 s on the owner's login; it stops near the usage
+//       throttle and on Ctrl-C, keeping what is done. --into seed writes art/seed/ (made: fable, MIT); --into cache (the default) writes <data>/cache/art.
+//       --dry-run lists what it would commission and projects the time and cost, calling no model.
+//
+// Everything but `fill` touches neither the network nor a model.
 
 import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
@@ -23,12 +29,18 @@ import type { LookId } from '@conduit/language';
 import { importSvg } from '../art/import';
 import { lookClassOf } from '../art/palette';
 import { expandSheet, readSheet } from '../art/sheet';
-import { normaliseSubject } from '../art/shelf';
+import { normaliseSubject, createShelf } from '../art/shelf';
+import { describeProjection, fill, parseList, project, seedingShelf } from '../art/fill';
+import { oneShotMaker } from '../art/studio';
+import type { MakerSettings } from '../art/studio';
+import { dataPaths, resolveDataDir, withDataFlag } from '../data-dir';
+import { createLogger } from '../log';
+import { appendUsage, capFromEnv, throttleOf } from '../usage';
 
 const SEED_DIR = resolve(fileURLToPath(new URL('../../../art/seed', import.meta.url)));
 
 function usage(message: string): never {
-  process.stderr.write(`art: ${message}\nusage: pnpm art import <file.svg> --subject <words> [--pose <word>] [--view <word>] [--facing left|right|front] [--arm <name>] [--by <maker>] [--how <words>] [--licence <text>] [--brush <stroke>] [--out <file>|--print]\n       pnpm art check\n       pnpm art lines <sheet.json> [--id fox1] [--size 40] [--look paper] [--mirror]\n`);
+  process.stderr.write(`art: ${message}\nusage: pnpm art import <file.svg> --subject <words> [--pose <word>] [--view <word>] [--facing left|right|front] [--arm <name>] [--by <maker>] [--how <words>] [--licence <text>] [--brush <stroke>] [--out <file>|--print]\n       pnpm art check\n       pnpm art fill [--list <file>] [--max N] [--into seed|cache] [--data <dir>] [--dry-run]\n       pnpm art lines <sheet.json> [--id fox1] [--size 40] [--look paper] [--mirror]\n`);
   process.exit(2);
 }
 
@@ -170,9 +182,51 @@ async function shotsCommand(argv: readonly string[]): Promise<void> {
   }
 }
 
+
+const REPO_ART = resolve(SEED_DIR, '..');
+
+async function fillCommand(argv: readonly string[]): Promise<void> {
+  const { flags } = flagsOf(argv);
+  const listFile = resolve(flags.get('list') ?? join(REPO_ART, 'common.txt'));
+  const maxRaw = flags.get('max');
+  const max = maxRaw === undefined ? Number.POSITIVE_INFINITY : Number(maxRaw);
+  if (!(max > 0)) usage('--max is a number of drawings above 0');
+  const into = flags.get('into') ?? 'cache';
+  if (into !== 'seed' && into !== 'cache') usage('--into is seed or cache');
+  const source = withDataFlag(flags.has('data') ? ['--data', flags.get('data') ?? ''] : [], process.env);
+  const paths = dataPaths(resolveDataDir(source));
+  const log = createLogger('warn', { part: 'art-fill' });
+  const base = createShelf({ seedDir: SEED_DIR, cacheDir: paths.artCache, log });
+  const wants = parseList(readFileSync(listFile, 'utf8'));
+  const plan = project(wants, base, max);
+  process.stdout.write(`${listFile}\nshelf: ${base.count()} sheets of ${base.subjects().length} subjects; filling into ${into === 'seed' ? SEED_DIR : paths.artCache}\n${describeProjection(plan)}\n`);
+  if (flags.has('dry-run') || plan.toMake.length === 0) return;
+  const throttle = throttleOf(paths.usage, capFromEnv(process.env));
+  const settings: MakerSettings = {
+    bin: process.env['CLAUDE_BIN'] ?? 'claude',
+    callMs: 300_000,
+    meter: (call) => void appendUsage(paths.usage, { time: new Date().toISOString(), kind: 'art', model: call.model, session: null, turn: null, login: null, inputTokens: call.usage.inputTokens, cacheReadTokens: call.usage.cacheReadTokens, cacheWriteTokens: call.usage.cacheWriteTokens, outputTokens: call.usage.outputTokens, thinkingTokens: call.usage.thinkingTokens, costUsd: call.usage.costUsd, ms: call.usage.ms }),
+  };
+  const shelf = into === 'seed' ? seedingShelf(base, SEED_DIR, (file) => process.stdout.write(`      wrote ${file}\n`)) : base;
+  let stopped = false;
+  let current: { stop(): void } | null = null;
+  process.on('SIGINT', () => {
+    if (stopped) process.exit(130);
+    stopped = true;
+    process.stdout.write('\nstopping: the drawing in hand is abandoned, what is done is kept (Ctrl-C again to quit at once)\n');
+    current?.stop();
+  });
+  const result = await fill(plan.toMake, { shelf, maker: oneShotMaker(settings), throttle, log, now: Date.now, say: (text) => process.stdout.write(`${text}\n`), interrupted: () => stopped, onStudio: (studio) => (current = studio) });
+  const spent = result.made.reduce((sum, made) => sum + (made.usd ?? 0), 0);
+  process.stdout.write(`\nmade ${result.made.length}, failed ${result.failed.length}${result.stopped === null ? '' : `, stopped: ${result.stopped}`}; $${spent.toFixed(2)} cost-equivalent\n`);
+  if (into === 'seed' && result.made.length > 0) process.stdout.write('add a row for each new sheet to art/LICENCES.md, then: pnpm art check\n');
+  if (result.failed.length > 0 && result.made.length === 0) process.exitCode = 1;
+}
+
 const [command = '', ...rest] = process.argv.slice(2);
 if (command === 'import') importCommand(rest);
 else if (command === 'check') checkCommand();
 else if (command === 'lines') linesCommand(rest);
+else if (command === 'fill') await fillCommand(rest);
 else if (command === 'shots') await shotsCommand(rest);
 else usage(command === '' ? 'a command is needed' : `no command called ${command}`);

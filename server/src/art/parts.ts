@@ -75,3 +75,18 @@ export function resolveNear(id: string, live: ReadonlySet<string>, figures: Read
   }
   return null;
 }
+
+/**
+ * Labels that were said before their drawing came (`near=giraffe1-neck` while only the placeholder stood) and name a part the made drawing does not
+ * have under that name: each one's best part now (exact, contains, synonym), else the figure itself. A label whose part is there is left alone.
+ */
+export function relabel(group: string, parts: readonly string[], labels: readonly { readonly id: string; readonly near: string }[]): { readonly id: string; readonly near: string }[] {
+  const have = new Set(parts);
+  const out: { id: string; near: string }[] = [];
+  for (const label of labels) {
+    if (!label.near.startsWith(`${group}-`) || have.has(label.near) || label.near === `${group}-soft`.slice(0, 24)) continue;
+    const put = bestPart(group, parts, label.near.slice(group.length + 1)) ?? group;
+    if (put !== label.near) out.push({ id: label.id, near: put });
+  }
+  return out;
+}

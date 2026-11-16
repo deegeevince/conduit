@@ -105,6 +105,24 @@ function fillWord(line: DrawLine): string | null {
   return isHueName(word) || isRole(word) || /^#[0-9a-f]{6}$/.test(word) ? word : null;
 }
 
+/** A rough shape for what a placeholder stands for, so that it hints at the drawing to come: tall (a giraffe, a person), wide (a car, a cow) or round (a ball, a frog). The rest are the usual upright pill. */
+const ASPECT: Readonly<Record<string, readonly [number, number]>> = (() => {
+  const table: Record<string, readonly [number, number]> = {};
+  const set = (shape: readonly [number, number], names: string): void => {
+    for (const name of names.split(' ')) table[name] = shape;
+  };
+  set([0.4, 1], 'giraffe ostrich flamingo heron crane lighthouse tower rocket robot child teacher baby grandparent person man woman boy girl knight wizard fairy princess prince king queen tree oak-tree palm-tree cactus penguin');
+  set([1, 0.58], 'car bus train boat ship aeroplane airplane plane helicopter bicycle truck tractor snake crocodile alligator whale dolphin shark caterpillar worm horse cow pig sheep goat dog lion tiger elephant hippo camel zebra donkey dinosaur dragon');
+  set([0.82, 0.82], 'ball apple cake pumpkin orange moon sun planet frog snail turtle tortoise bee butterfly ladybird ladybug owl hen duck chick bird fish cat mouse rabbit hedgehog flower balloon pie cookie');
+  return table;
+})();
+
+/** The side lengths of a placeholder of this subject, in the same units as `size`. */
+export function softBox(subject: string, size: number): { readonly w: number; readonly h: number } {
+  const [w, h] = ASPECT[subject] ?? [0.64, 1];
+  return { w: size * w, h: size * h };
+}
+
 export function planDraw(line: DrawLine, context: DrawContext): Planned {
   const { id, subject } = settleId(line, context.live);
   const want = wantedIn(line.detail);
@@ -116,6 +134,7 @@ export function planDraw(line: DrawLine, context: DrawContext): Planned {
   const normalised = normaliseSubject(subject);
   const detail = { id, subject: normalised, pose: want.pose, view: want.view, facing: want.facing, size, fresh: line.fresh === true };
 
+  const box = softBox(normalised, size);
   const placeholder = (note: ArtNote): Planned => {
     // a soft, rounded, dim shape of the drawing's own size: the place is kept and nothing is said on the stage
     const lines: Line[] = [
@@ -125,7 +144,7 @@ export function planDraw(line: DrawLine, context: DrawContext): Planned {
         id: `${id}-soft`.slice(0, 24),
         styles: [],
         props: { in: id, fill: 'dim', stroke: 'none', opacity: 0.32, soft: Math.max(1, Math.round(size * 0.06 * 10) / 10), enter: 'fade', dur: DRAW_IN_SECONDS },
-        geometry: { shape: 'rect', x: -size * 0.32, y: -size / 2, w: size * 0.64, h: size, r: size * 0.3, full: false },
+        geometry: { shape: 'rect', x: -box.w / 2, y: -box.h / 2, w: box.w, h: box.h, r: Math.min(box.w, box.h) * 0.47, full: false },
         when: { kind: 'with' },
       },
     ];
@@ -188,7 +207,7 @@ export const captionId = (id: string): string => `cap-${id}`.slice(0, 24);
 export function captionLines(wanting: Wanting): Line[] {
   const words = wanting.words.replace(/[^\p{L}\p{N} '-]+/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, 40);
   if (words === '') return [];
-  const parsed = parseLine(`say ${captionId(wanting.id)} aside near=${`${wanting.id}-soft`.slice(0, 24)}:below | Drawing ${/^[aeiou]/i.test(words) ? 'an' : 'a'} ${words}…`);
+  const parsed = parseLine(`say ${captionId(wanting.id)} xs opacity=0.7 near=${`${wanting.id}-soft`.slice(0, 24)}:below | Drawing ${/^[aeiou]/i.test(words) ? 'an' : 'a'} ${words}…`);
   return parsed.kind === 'line' ? [parsed.line] : [];
 }
 

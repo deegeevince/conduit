@@ -1,0 +1,48 @@
+# The subjects a child's story or lesson reaches for most, for `pnpm art fill` (one a line: `subject` or `subject | pose`).
+# All child-safe and generic: no named characters, no brands. The subjects already on the shelf (fox, house, rocket, oak tree, child, monster) are not repeated.
+
+# animals
+cat | sitting
+dog | sitting
+rabbit | sitting
+mouse | sitting
+owl | sitting
+bear | standing
+lion | standing
+elephant | standing
+giraffe | standing
+frog | sitting
+fish
+bird | flying
+duck | standing
+horse | standing
+cow | standing
+pig | standing
+sheep | standing
+hen | standing
+butterfly | flying
+bee | flying
+snail
+turtle | walking
+a friendly dinosaur | standing
+a friendly dragon | sitting
+
+# people
+a teacher | standing
+a baby | sitting
+a grandparent | sitting
+
+# things
+car
+bus
+train
+boat
+aeroplane
+bicycle
+ball
+apple
+flower
+castle
+robot | standing
+cake
+book
