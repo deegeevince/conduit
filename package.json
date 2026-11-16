@@ -28,6 +28,7 @@
     "server-check": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/server-check.ts",
     "agent-check": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/agent-check.ts",
     "explore": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/explore.ts",
+    "bakeoff": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/art-bakeoff.ts",
     "library": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/library.ts",
     "improve": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/improve.ts",
     "critic-usage": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/critic-usage.ts",
