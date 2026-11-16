@@ -13,7 +13,7 @@ const H = phone ? 844 : 825;
 mkdirSync(`${outDir}/profile-${screen}`, { recursive: true });
 const chrome = spawn(
   '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-  ['--headless=new', `--remote-debugging-port=${CDP}`, '--no-first-run', '--no-sandbox', '--no-default-browser-check', `--user-data-dir=${outDir}/profile-${screen}`, `--window-size=${W},${H}`, 'about:blank'],
+  ['--headless=new', '--mute-audio', `--remote-debugging-port=${CDP}`, '--no-first-run', '--no-sandbox', '--no-default-browser-check', `--user-data-dir=${outDir}/profile-${screen}`, `--window-size=${W},${H}`, 'about:blank'],
   { stdio: 'ignore' },
 );
 process.on('exit', () => chrome.kill());
