@@ -22,6 +22,7 @@ export function observeRenderer(inner: Renderer, onFrame: (frame: Frame) => void
     },
     ...(inner.fontFile === undefined ? {} : { fontFile: inner.fontFile }),
     ...(inner.onContext === undefined ? {} : { onContext: inner.onContext.bind(inner) }),
+    ...(inner.recheck === undefined ? {} : { recheck: inner.recheck.bind(inner) }),
     mount: (host, viewport, look, options) => inner.mount(host, viewport, look, options),
     resize: (viewport) => inner.resize(viewport),
     render(frame) {

@@ -81,6 +81,8 @@ export interface StageHook {
   sight(): Sight | null;
   /** A picture of the stage right now as a data URL, at most `maxSide` pixels on its longer side; null when the renderer cannot capture. */
   capture(maxSide?: number): Promise<string | null>;
+  /** What the GPU holds (the renderer in use, its drawing buffer and three's memory count), or null when the renderer has no GPU; and whether the stage is covered while its context is lost. */
+  gpu(): { renderer: string; buffer: { width: number; height: number }; pixelRatio: number; memory: { geometries: number; textures: number; parked: number; capture: boolean }; covered: boolean } | null;
   /** Starts an export of the last turn and returns the job, whose `done` resolves with the file. */
   export(request: ExportRequest): ExportJob;
 }

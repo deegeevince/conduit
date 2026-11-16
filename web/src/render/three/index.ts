@@ -40,6 +40,10 @@ export interface ThreeProbe {
   readonly programNames: readonly string[];
   readonly targets: number;
   readonly pixelRatio: number;
+  /** the visible canvas's drawing buffer, in device pixels */
+  readonly buffer: { readonly width: number; readonly height: number };
+  /** `renderer.info.memory`, and how many parked kits and capture targets are held */
+  readonly memory: { readonly geometries: number; readonly textures: number; readonly parked: number; readonly capture: boolean };
   readonly look: LookId | null;
   readonly canvas: HTMLCanvasElement | null;
   /** Reads canvas pixels (device pixels, origin top-left) in the same task as the last render. */
@@ -138,12 +142,16 @@ const ALL_LOOKS: readonly LookId[] = LOOK_IDS;
 const RESTORE_WAIT_MS = 2000;
 const REBUILD_ATTEMPTS = 4;
 
+/** A phone or a tablet: little GPU memory to spare, and a page the system may take the context from. */
+const isCoarse = (): boolean => typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+
 export function createProbedRenderer(): ThreeRenderer {
   let canvas: HTMLCanvasElement | null = null;
   let gl: WebGLRenderer | null = null;
   let kit: Kit | null = null;
   let taking: Kit | null = null;
   let takingTarget: WebGLRenderTarget | null = null;
+  let taken = 0;
   let viewport: Viewport = { width: 1, height: 1, dpr: 1 };
   let quality: Quality = 'full';
   let last: Frame | null = null;
@@ -255,6 +263,8 @@ export function createProbedRenderer(): ThreeRenderer {
     }
     canvas?.remove();
     parked.length = 0;
+    warmed.clear();
+    warmed.add(last?.look ?? mountedLook);
     taking = null;
     takingTarget = null;
     preloaded.clear();
@@ -269,7 +279,7 @@ export function createProbedRenderer(): ThreeRenderer {
         return;
       }
       gl = dead;
-      lostTimer = setTimeout(() => rebuild(attempt + 1), RESTORE_WAIT_MS * 2 ** attempt);
+      lostTimer = setTimeout(() => rebuild(attempt + 1), RESTORE_WAIT_MS * attempt);
       return;
     }
     const fresh = gl as WebGLRenderer | null;
@@ -293,6 +303,9 @@ export function createProbedRenderer(): ThreeRenderer {
     kit.pipeline.setQuality(quality);
     taking = null;
     takingTarget = null;
+    parked.length = 0;
+    warmed.clear();
+    warmed.add(last?.look ?? mountedLook);
     preloaded.clear();
     if (last !== null) renderer.render(last);
     tell('restored');
@@ -372,14 +385,21 @@ export function createProbedRenderer(): ThreeRenderer {
     parked.push(entry);
   };
 
+  const warmed = new Set<LookId>();
+  /** The looks this stage can show, and whether the others are warmed ahead (not on a coarse pointer: each parked kit holds its own text pool and programs, and a phone's GPU has none to spare). */
+  let showable: readonly LookId[] = ALL_LOOKS;
+  const warmOnDemand = isCoarse();
+
   const warmRest = (looks: readonly LookId[]): void => {
     // A stage that can only ever show one look never changes look: nothing to keep ready.
     if (looks.length < 2) return;
+    if (warmOnDemand) return;
     void preloadFonts(Object.keys(FACES) as Face[])
       .then(async () => {
         for (const id of looks) {
           await pause(250);
           if (gl === null) return;
+          warmed.add(id);
           await warmOffscreen(id);
         }
       })
@@ -403,6 +423,8 @@ export function createProbedRenderer(): ThreeRenderer {
       attach(createContext(), target);
       mounted = target;
       mountedLook = look;
+      showable = options?.looks ?? ALL_LOOKS;
+      warmed.add(look);
       const context = gl as WebGLRenderer | null;
       if (context === null) return;
       kit = makeKit(context, viewport, false);
@@ -420,8 +442,9 @@ export function createProbedRenderer(): ThreeRenderer {
     },
 
     resize(next) {
+      const same = next.width === viewport.width && next.height === viewport.height && next.dpr === viewport.dpr;
       viewport = next;
-      if (kit === null) return;
+      if (kit === null || same) return;
       kit.viewport = next;
       kit.stage.resize(next);
       kit.pipeline.resize(next);
@@ -436,6 +459,11 @@ export function createProbedRenderer(): ThreeRenderer {
       drawKit(kit, frame, quality);
       viewport = kit.viewport;
       drawn = true;
+      // On a phone a look is warmed the first time it is shown, so that coming back to it later does not compile again.
+      if (warmOnDemand && !warmed.has(frame.look) && showable.includes(frame.look)) {
+        warmed.add(frame.look);
+        void pause(250).then(() => warmOffscreen(frame.look)).catch(() => undefined);
+      }
     },
 
     isDrawable() {
@@ -446,6 +474,20 @@ export function createProbedRenderer(): ThreeRenderer {
       if (gl === null || kit === null) throw new Error('the renderer is not mounted');
       await kit.pictures.preload(url);
       preloaded.add(url);
+    },
+
+    recheck() {
+      // The page was away: a context lost while it was hidden may never have told us, and one that was lost may be waiting on a timer. Look now.
+      if (gl === null || canvas === null) return;
+      if (!lost && gl.getContext().isContextLost()) {
+        lost = true;
+        tell('lost');
+      }
+      if (lost) {
+        if (lostTimer !== null) clearTimeout(lostTimer);
+        lostTimer = null;
+        rebuild(1);
+      }
     },
 
     onContext(listener) {
@@ -470,6 +512,15 @@ export function createProbedRenderer(): ThreeRenderer {
         for (const face of fresh) faceLoads.set(face, load);
       }
       const ready = Promise.all(faces.map((face) => faceLoads.get(face)));
+      taken += 1;
+      // A picture is a one-off at a size of its own: once the last one asked for is done, its target and the kit's effect targets are let go.
+      const letGo = (): void => {
+        taken -= 1;
+        if (taken > 0) return;
+        takingTarget?.dispose();
+        takingTarget = null;
+        taking?.pipeline.releaseTargets();
+      };
       return rasteriseFrame(
         (shot, width, height, withFx, force) => {
           if (gl === null || taking === null) return null;
@@ -501,7 +552,7 @@ export function createProbedRenderer(): ThreeRenderer {
         frame,
         { ...options, fx: fx },
         ready,
-      );
+      ).finally(letGo);
     },
 
     reset() {
@@ -623,6 +674,8 @@ export function createProbedRenderer(): ThreeRenderer {
         programNames: (info?.programs ?? []).map((program) => `${program.name}:${program.cacheKey.slice(0, 60)}`),
         targets: kit?.pipeline.targetCount() ?? 0,
         pixelRatio: kit?.pipeline.pixelRatio ?? 1,
+        buffer: { width: canvas?.width ?? 0, height: canvas?.height ?? 0 },
+        memory: { geometries: info?.memory.geometries ?? 0, textures: info?.memory.textures ?? 0, parked: parked.length, capture: takingTarget !== null },
         look: last?.look ?? null,
         canvas,
         read(x, y, width, height) {
