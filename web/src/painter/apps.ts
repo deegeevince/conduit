@@ -128,6 +128,7 @@ export function webPageOf(source: string): boolean {
   if (/<footer[\s>]/i.test(source)) marks += 1;
   if (/<header[\s>]/i.test(source)) marks += 1;
   if (/<section[\s>]/i.test(source)) marks += 1;
+  if (/<aside[\s>]/i.test(source) && /<main[\s>]/i.test(source)) marks += 1;
   if (/max-width\s*:\s*\d{3,4}px/i.test(source)) marks += 1;
   if (/<h1[\s>]/i.test(source) && /grid-template-columns|display\s*:\s*grid/i.test(source)) marks += 1;
   return marks >= 3;
