@@ -6,6 +6,7 @@ import type { InkBackdrop } from './export';
 import { createInk } from './layer';
 import type { Ink } from './layer';
 import type { ComposerMenu } from '../chrome/menu';
+import { PalmGuard } from './palm';
 import { prepareMarks } from './send';
 import { injectInkStyles } from './styles';
 import { mountInkBar } from './toolbar';
@@ -32,10 +33,22 @@ export interface StageInk {
   /** the ink went up: forget it and put the layer away */
   sent(): void;
   readonly ink: Ink;
-  /** the layer is over the stage (the Draw toggle, or the work mode) */
+  /** the layer is over the stage (the Draw toggle, or the work mode) and takes every pointer */
   isOpen(): boolean;
   /** lays the layer over the stage, or puts it away; what is drawn is kept */
   show(open: boolean): void;
+  /**
+   * PLAN-canvas, behind `?lens=1`. On: the layer stays over the stage but lets every pointer through, so a pen on a device that has shown one can
+   * draw without Draw being switched on (the lens hands it the pen's first touch with `penDown`), and what is drawn waits for the next message with
+   * the same toolbar, which shows once there is a stroke to send. Off: the layer is shown only when Draw is on, as it always was.
+   */
+  through(on: boolean): void;
+  /** The pen went down on the stage, outside the layer: the layer begins its stroke. Only while `through` is on and Draw is not. */
+  penDown(event: PointerEvent): void;
+  /** Throws away the stroke a pointer has begun. */
+  abort(pointerId: number): void;
+  /** The lens the stage is looked through: strokes stay in page units. Null: none. */
+  setView(view: { readonly x: number; readonly y: number; readonly scale: number } | null): void;
   dispose(): void;
 }
 
@@ -50,9 +63,14 @@ function loadImage(url: string): Promise<HTMLImageElement | null> {
   });
 }
 
-export function mountStageInk(stage: HTMLElement, menu: ComposerMenu, app: StageInkApp): StageInk {
+export interface StageInkOptions {
+  /** the palm guard the lens shares, so a pen seen by one is seen by both */
+  readonly guard?: PalmGuard;
+}
+
+export function mountStageInk(stage: HTMLElement, menu: ComposerMenu, app: StageInkApp, options: StageInkOptions = {}): StageInk {
   injectInkStyles(document);
-  const toggle = menu.add({ id: 'draw', label: 'Draw', gist: 'on the stage; it goes up with your next message', order: 30, check: true, checked: false, run: () => set(layer.hidden !== false) });
+  const toggle = menu.add({ id: 'draw', label: 'Draw', gist: 'on the stage; it goes up with your next message', order: 30, check: true, checked: false, run: () => set(!explicit) });
 
   const layer = document.createElement('div');
   layer.className = 'ink-stage';
@@ -61,7 +79,12 @@ export function mountStageInk(stage: HTMLElement, menu: ComposerMenu, app: Stage
   stage.append(layer);
 
   let backdrop: InkBackdrop | null = null;
+  /** Draw (or the work mode) has the layer open and taking every pointer */
+  let explicit = false;
+  /** the lens's pen-through mode (see `through`) */
+  let throughOn = false;
   const ink = createInk(layer, {
+    ...(options.guard === undefined ? {} : { guard: options.guard }),
     space: { w: Math.max(1, stage.clientWidth), h: Math.max(1, stage.clientHeight) },
     on: { element: 'stage', label: 'the stage, as the user saw it' },
     backdrop: async () => backdrop,
@@ -74,18 +97,28 @@ export function mountStageInk(stage: HTMLElement, menu: ComposerMenu, app: Stage
     ink.setOn({ element: 'stage', ...(turn === null ? {} : { node: turn }), label: 'the stage, as the user saw it' });
     return prepareMarks(ink, app.upload);
   };
+  const captureBackdrop = (): void => {
+    void app.capture(1280).then(async (url) => {
+      const image = url === null ? null : await loadImage(url);
+      backdrop = image === null ? null : { kind: 'image', image };
+    });
+  };
+  /** the layer is shown when Draw has it, or when the lens lets the pen through it; the bar shows with Draw, or once a pen stroke waits */
+  const refresh = (): void => {
+    layer.hidden = !(explicit || throughOn);
+    layer.classList.toggle('ink-stage--through', throughOn && !explicit);
+    if (throughOn) bar.element.hidden = !explicit && ink.model.strokes.length === 0;
+  };
   const set = (open: boolean): void => {
-    layer.hidden = !open;
+    explicit = open;
+    refresh();
     toggle.set({ checked: open });
     if (!open) return;
     // the ink's space is the stage as it is now, unless there is ink already (then it keeps its own)
     if (ink.model.strokes.length === 0) ink.setBackground(null, { w: Math.max(1, stage.clientWidth), h: Math.max(1, stage.clientHeight) });
     ink.refresh();
     ink.root.focus({ preventScroll: true });
-    void app.capture(1280).then(async (url) => {
-      const image = url === null ? null : await loadImage(url);
-      backdrop = image === null ? null : { kind: 'image', image };
-    });
+    captureBackdrop();
   };
   const sent = (): void => {
     ink.reset();
@@ -106,6 +139,7 @@ export function mountStageInk(stage: HTMLElement, menu: ComposerMenu, app: Stage
   bar.element.classList.add('ink-stage__bar');
 
   ink.onChange(() => {
+    if (throughOn) refresh();
     const n = ink.model.strokes.length;
     menu.badge(n === 0 ? null : String(n));
     toggle.set({ label: n === 0 ? 'Draw' : `Draw (${n} stroke${n === 1 ? '' : 's'} waiting)` });
@@ -116,8 +150,26 @@ export function mountStageInk(stage: HTMLElement, menu: ComposerMenu, app: Stage
     take,
     sent,
     ink,
-    isOpen: () => layer.hidden === false,
+    isOpen: () => explicit,
     show: set,
+    through(on) {
+      if (on === throughOn) return;
+      throughOn = on;
+      refresh();
+      if (!on) bar.element.hidden = false;
+    },
+    penDown(event) {
+      if (!throughOn || explicit) return;
+      if (ink.model.strokes.length === 0) {
+        // the stage as it is now is what the drawing is on: its space is the page, and its picture is taken now
+        ink.setBackground(null, { w: Math.max(1, stage.clientWidth), h: Math.max(1, stage.clientHeight) });
+        ink.refresh();
+        captureBackdrop();
+      }
+      ink.pointerDown(event);
+    },
+    abort: (pointerId) => ink.abort(pointerId),
+    setView: (view) => ink.setView(view),
     dispose() {
       bar.dispose();
       ink.dispose();

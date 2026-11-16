@@ -68,25 +68,32 @@ export class PalmGuard {
     this.penLastSeen = time;
   }
 
+  /** Whether a pen is at work or has only just left the screen: any touch now is a hand resting by it. */
+  penBusy(time: number): boolean {
+    return this.penDown.size > 0 || time - this.penLastSeen < GRACE_MS;
+  }
+
+  /** What `down` would decide for a pointer that is about to go down, with nothing recorded: the lens asks it about a finger to know whose it is. */
+  peek(f: PointerFacts): Verdict {
+    if (f.kind === 'pen') return { act: 'draw', erase: f.eraser };
+    if (f.kind === 'mouse') return f.primaryButton ? { act: 'draw', erase: false } : { act: 'ignore', why: 'button' };
+    if (this.penBusy(f.time)) return { act: 'ignore', why: 'pen-busy' };
+    if (Math.max(f.width, f.height) > PALM_SIZE) return { act: 'ignore', why: 'palm' };
+    return this.fingerDrawing ? { act: 'draw', erase: false } : { act: 'pan' };
+  }
+
   /** Decides for a pointer that has just gone down. `cancel` lists touch pointers whose strokes must be thrown away (rule 4). */
   down(f: PointerFacts): { readonly verdict: Verdict; readonly cancel: readonly number[] } {
+    const verdict = this.peek(f);
     if (f.kind === 'pen') {
       this.penNear(f.time);
       this.penDown.add(f.id);
       const cancel = [...this.drawingTouches];
       this.drawingTouches.clear();
-      return { verdict: { act: 'draw', erase: f.eraser }, cancel };
+      return { verdict, cancel };
     }
-    if (f.kind === 'mouse') {
-      return f.primaryButton ? { verdict: { act: 'draw', erase: false }, cancel: [] } : { verdict: { act: 'ignore', why: 'button' }, cancel: [] };
-    }
-    if (this.penDown.size > 0 || f.time - this.penLastSeen < GRACE_MS) return { verdict: { act: 'ignore', why: 'pen-busy' }, cancel: [] };
-    if (Math.max(f.width, f.height) > PALM_SIZE) return { verdict: { act: 'ignore', why: 'palm' }, cancel: [] };
-    if (this.fingerDrawing) {
-      this.drawingTouches.add(f.id);
-      return { verdict: { act: 'draw', erase: false }, cancel: [] };
-    }
-    return { verdict: { act: 'pan' }, cancel: [] };
+    if (verdict.act === 'draw' && f.kind === 'touch') this.drawingTouches.add(f.id);
+    return { verdict, cancel: [] };
   }
 
   /** A move or an end of a touch already decided: a pen that has come close since turns a pan into nothing. */

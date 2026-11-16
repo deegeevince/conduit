@@ -28,6 +28,7 @@ import type { Quality } from './frame';
 import type { Renderer } from './renderer';
 import type { Box, Viewport } from './space';
 import type { StagePlanView } from './stage-plan';
+import type { Squeeze } from './squeeze';
 import type { TunePlayer } from './tune';
 import type { TextSpanView } from './text-layer';
 
@@ -242,6 +243,8 @@ export interface PainterSnapshot {
   readonly pass: { readonly pass: number; readonly state: PassState } | null;
   /** v2.1. How the stage is divided right now (`StagePlan`), camera at rest. Absent until the painter plans its stage as one layout. */
   readonly plan?: StagePlanView;
+  /** PLAN-canvas step 0. What the scene on stage gave up to fit the screen (words let go or set smaller, blocks short of room, controls set tighter, an app scaled down), and why. Facts only. */
+  readonly squeeze: Squeeze;
   /** v2.1. The deck on stage and the slide it stands at, from 1; null or absent when what is on stage is not a deck. */
   readonly deck?: { readonly slide: number; readonly slides: number; readonly title: string } | null;
 }

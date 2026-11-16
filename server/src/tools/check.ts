@@ -13,6 +13,8 @@
 //   problems           each `problem` of language/demos/problem.series is played at its own turn: the question is on the screen exactly as written, "What do we know?"
 //                      lights its numbers, every way draws and its stepper adds a piece a step, a typed wrong then right answer is marked so (no turn sent, no model),
 //                      and nothing overlaps or is cut off
+//   lens               (flag on, ?lens=1; tablet 1180x820 at two pixels to the point with touch, and 390x844) a two-finger pinch to 2x, then a tap on a choice, a slider
+//                      drag and a pen stroke each land on the right page point; 0 fits again; the pen draws without Draw, a short pen tap presses (lens-check.ts)
 //
 // Every scene is judged at rest by smoke's checks: answer on stage, no overlap, nothing cut off, readable chrome and prompt, no console errors,
 // no failed requests. The renderer the page got is printed; a fall back to the plain renderer fails the check unless --allow-plain.
@@ -29,6 +31,7 @@ import { DEMOS, DEMOS_NOT_PAINTED, LineReader } from '@conduit/language';
 import { spawnTracked } from '../brains/claude-cli/process';
 import { CHROME_CANDIDATES, repoRoot, sleep, stop, waitFor } from './explore-browser';
 import { Conversation, Tab } from './smoke';
+import { LENS_SCREENS, lensGroup } from './lens-check';
 import type { Answer, CheckResult, Options, Probe, Step, Verdict } from './smoke';
 
 // ---------------------------------------------------------------------------------------------------------------------------------
@@ -753,7 +756,26 @@ async function main(): Promise<void> {
       process.stdout.write(`  ${run.screen.name}: ${run.seconds.toFixed(0)} s, ${run.scenes.length} scenes\n`);
       summary.push({ screen: run.screen.name, renderer: run.renderer, gpu: run.gpu, aborted: run.aborted, seconds: run.seconds, scenes: run.scenes });
     }
-    await writeFile(join(args.out, 'check.json'), JSON.stringify({ url: base, at: new Date().toISOString(), failures, screens: summary }, null, 2));
+    // the lens group: the flag is on for these, and only these
+    const lens: unknown[] = [];
+    for (const screen of LENS_SCREENS) {
+      const dir = join(args.out, `lens-${screen.name}`);
+      try {
+        const scenes = await lensGroup(base, screen, dir, args.timeoutMs, (text) => (args.quiet ? undefined : process.stdout.write(`[lens ${screen.name}] ${text}\n`)));
+        process.stdout.write(`\nlens ${screen.name} (dpr ${screen.dpr}, touch)\n`);
+        for (const scene of scenes) {
+          for (const result of scene.results) {
+            process.stdout.write(`  ${result.verdict === 'PASS' ? 'ok  ' : result.verdict} ${scene.name} ${result.check}: ${result.detail}\n`);
+            if (result.verdict === 'FAIL') failures += 1;
+          }
+        }
+        lens.push({ screen: screen.name, scenes });
+      } catch (error) {
+        failures += 1;
+        process.stdout.write(`  FAIL lens ${screen.name} stopped: ${error instanceof Error ? error.message : String(error)}\n`);
+      }
+    }
+    await writeFile(join(args.out, 'check.json'), JSON.stringify({ url: base, at: new Date().toISOString(), failures, screens: summary, lens }, null, 2));
   } catch (error) {
     failures += 1;
     process.stdout.write(`check: ${error instanceof Error ? error.message : String(error)}\n`);

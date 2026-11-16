@@ -6,8 +6,11 @@
 // `tick(now)` is the only thing that changes with time, and it only ever drops a finished move into `rest`. Nothing here draws, plans or measures.
 
 import type { Tile, WallPlan } from './plan';
+import type { Box, LensView } from '../contracts/space';
 import { focusLens, glideSeconds, lensState, limitsOf, mapLens, panBy, zoomAbout } from './view';
 import type { Lens, LensState, Limits, Motion, Screen } from './view';
+import { VIEW } from '../core/invariants';
+import { fitLens, viewOf } from '../painter/view';
 
 /** Coasting: how fast a let-go pan slows (per second), the speed under which it has stopped (screen px a second), and the speed it needs to start. */
 export const COAST = { k: 5.5, stop: 6, start: 140, window: 90 } as const;
@@ -40,44 +43,41 @@ export function tileAt(plan: WallPlan, lens: Lens, screen: Screen, sx: number, s
   return null;
 }
 
-export class LensRig {
-  private mode: Mode = { kind: 'rest' };
-  private lens: Lens;
-  private focusIndex: number | null = null;
-  private back: { lens: Lens; focus: number | null } | null = null;
+/**
+ * The motion core both cameras share (the wall's, and a page's): where the lens is and how it got there (rest, hand, coast, glide), the hands that
+ * drive it (grab, pan, zoom, release) and the one thing that changes with time, `tick`. It knows nothing of what the lens looks at: a subclass says
+ * where the lens may go (`clamp`), what the hands' release may settle into (`settle`) and what it does when a glide arrives (`arrived`).
+ */
+export abstract class MotionRig {
+  protected mode: Mode = { kind: 'rest' };
+  protected lens: Lens;
   /** e-folds the hands have asked for and the lens has not yet taken: it takes them at the zoom cap, so no hand makes a lens that zooms faster */
-  private pending = 0;
-  private anchor = { x: 0, y: 0 };
-  private lastTick = 0;
-  private letGo: { vx: number; vy: number; pinched: boolean } | null = null;
+  protected pending = 0;
+  protected anchor = { x: 0, y: 0 };
+  protected lastTick = 0;
+  protected letGo: { vx: number; vy: number; pinched: boolean } | null = null;
   limits: Limits;
-  map: Lens;
-  /** a move that arrives: the tile it was for, once it is there */
-  onArrive: ((tile: Tile | null) => void) | null = null;
-  /** a move was begun toward a tile (its still should be asked for before it lands) */
-  onGo: ((tile: Tile | null) => void) | null = null;
 
-  constructor(
-    private plan: WallPlan,
-    private screen: Screen,
-    private readonly options: RigOptions,
-    start?: Lens,
+  protected constructor(
+    protected screen: Screen,
+    protected readonly options: RigOptions,
+    start: Lens,
+    limits: Limits,
   ) {
-    this.map = mapLens(plan, screen);
-    this.limits = limitsOf(plan, screen);
-    this.lens = start ?? this.map;
+    this.lens = start;
+    this.limits = limits;
   }
 
-  setPlan(plan: WallPlan, screen: Screen = this.screen): void {
-    this.plan = plan;
-    this.screen = screen;
-    this.map = mapLens(plan, screen);
-    this.limits = limitsOf(plan, screen);
+  /** where the lens may be: the wall's centre stays within it and a half screen beyond; a page's covers the window */
+  protected abstract clamp(lens: Lens): Lens;
+
+  /** a pinch let go: whether it settled into something (and so has moved the lens itself); false lets it rest or coast */
+  protected settle(_lens: Lens, _now: number): boolean {
+    return false;
   }
 
-  get focus(): number | null {
-    return this.focusIndex;
-  }
+  /** a glide has arrived at its end */
+  protected arrived(): void {}
 
   get floor(): number {
     return this.limits.min;
@@ -115,7 +115,7 @@ export class LensRig {
       if ((now - mode.began) / 1000 >= seconds) {
         this.lens = mode.to;
         this.mode = { kind: 'rest' };
-        this.onArrive?.(this.focusIndex === null ? null : (this.plan.tiles[this.focusIndex] ?? null));
+        this.arrived();
         return { lens: this.lens, fade: null };
       }
     } else if (mode.kind === 'coast') {
@@ -142,6 +142,110 @@ export class LensRig {
     return this.state(now).lens;
   }
 
+  /** Go to a lens by a glide, or under reduced motion a cross-fade with no travel. True when the lens was already there (nothing moves). */
+  protected glideTo(target: Lens, now: number): boolean {
+    const from = this.current(now);
+    this.pending = 0;
+    this.letGo = null;
+    const motion = this.options.motion();
+    if (Math.abs(from.x - target.x) < 1e-6 && Math.abs(from.y - target.y) < 1e-6 && Math.abs(from.scale - target.scale) < 1e-9) {
+      this.lens = target;
+      this.mode = { kind: 'rest' };
+      return true;
+    }
+    this.mode = { kind: 'glide', from, to: target, began: now, motion };
+    return false;
+  }
+
+  // ------------------------------------------------------------------ hands
+
+  /** Fingers or a wheel have it: freeze where the lens is. */
+  grab(now: number): void {
+    if (this.mode.kind !== 'hand') {
+      this.lens = this.current(now);
+      this.mode = { kind: 'hand' };
+      this.lastTick = now;
+    }
+    this.letGo = null;
+  }
+
+  pan(dx: number, dy: number): void {
+    if (this.mode.kind !== 'hand') return;
+    this.lens = this.clamp(panBy(this.lens, dx, dy));
+  }
+
+  /** Ask to zoom by `ln` e-folds about a screen point (relative to the screen's centre). The lens takes it at the zoom cap, over the next frames. */
+  zoom(ln: number, sx: number, sy: number): void {
+    if (this.mode.kind !== 'hand') return;
+    this.anchor = { x: sx, y: sy };
+    this.pending = Math.max(-1.5, Math.min(1.5, this.pending + ln));
+  }
+
+  /** Hands let go. When what they asked for has been taken: a pan carries on by a closed form; a pinch near full size settles into the frame. */
+  release(vx: number, vy: number, pinched: boolean): void {
+    if (this.mode.kind !== 'hand') return;
+    this.letGo = { vx, vy, pinched };
+  }
+
+  protected finish(now: number, vx: number, vy: number, pinched: boolean): void {
+    const lens = this.lens;
+    if (pinched && this.settle(lens, now)) return;
+    const speed = Math.hypot(vx, vy);
+    if (this.options.motion() === 'glide' && !pinched && speed >= COAST.start) {
+      const seconds = Math.log(speed / COAST.stop) / COAST.k;
+      this.mode = { kind: 'coast', from: lens, vx, vy, began: now, seconds };
+      return;
+    }
+    this.mode = { kind: 'rest' };
+  }
+
+  /** The lens a coast is at: x0 + v/k (1 - e^-kt) in screen px, as world units, held in the rig's reach. A function of the time alone. */
+  protected coastAt(mode: Extract<Mode, { kind: 'coast' }>, now: number): Lens {
+    const t = Math.min(mode.seconds, Math.max(0, (now - mode.began) / 1000));
+    const travel = (1 - Math.exp(-COAST.k * t)) / COAST.k;
+    return this.clamp(panBy(mode.from, mode.vx * travel, mode.vy * travel));
+  }
+
+  /** The lens settles where it is told with no animation: a reload, or the owner of the rig putting it somewhere. */
+  jump(lens: Lens): void {
+    this.lens = lens;
+    this.mode = { kind: 'rest' };
+    this.pending = 0;
+    this.letGo = null;
+  }
+}
+
+export class LensRig extends MotionRig {
+  private focusIndex: number | null = null;
+  private back: { lens: Lens; focus: number | null } | null = null;
+  map: Lens;
+  /** a move that arrives: the tile it was for, once it is there */
+  onArrive: ((tile: Tile | null) => void) | null = null;
+  /** a move was begun toward a tile (its still should be asked for before it lands) */
+  onGo: ((tile: Tile | null) => void) | null = null;
+
+  constructor(
+    private plan: WallPlan,
+    screen: Screen,
+    options: RigOptions,
+    start?: Lens,
+  ) {
+    const map = mapLens(plan, screen);
+    super(screen, options, start ?? map, limitsOf(plan, screen));
+    this.map = map;
+  }
+
+  setPlan(plan: WallPlan, screen: Screen = this.screen): void {
+    this.plan = plan;
+    this.screen = screen;
+    this.map = mapLens(plan, screen);
+    this.limits = limitsOf(plan, screen);
+  }
+
+  get focus(): number | null {
+    return this.focusIndex;
+  }
+
   /** The tile at full size and at rest: the one frame that is live. Null while anything moves, or away from full size. */
   live(): Tile | null {
     if (this.mode.kind !== 'rest' || this.focusIndex === null) return null;
@@ -160,19 +264,9 @@ export class LensRig {
 
   /** Go to a lens. A glide, or under reduced motion a cross-fade with no travel. */
   goToLens(target: Lens, now: number, tile: Tile | null): void {
-    const from = this.current(now);
     this.focusIndex = tile === null ? this.focusIndex : tile.index;
-    this.pending = 0;
-    this.letGo = null;
     this.onGo?.(tile);
-    const motion = this.options.motion();
-    if (Math.abs(from.x - target.x) < 1e-6 && Math.abs(from.y - target.y) < 1e-6 && Math.abs(from.scale - target.scale) < 1e-9) {
-      this.lens = target;
-      this.mode = { kind: 'rest' };
-      this.onArrive?.(tile);
-      return;
-    }
-    this.mode = { kind: 'glide', from, to: target, began: now, motion };
+    if (this.glideTo(target, now)) this.onArrive?.(tile);
   }
 
   goTo(tile: Tile, now: number): void {
@@ -226,53 +320,19 @@ export class LensRig {
     return best;
   }
 
-  // ------------------------------------------------------------------ hands
 
-  /** Fingers or a wheel have it: freeze where the lens is. */
-  grab(now: number): void {
-    if (this.mode.kind !== 'hand') {
-      this.lens = this.current(now);
-      this.mode = { kind: 'hand' };
-      this.lastTick = now;
-    }
-    this.letGo = null;
+  protected override arrived(): void {
+    this.onArrive?.(this.focusIndex === null ? null : (this.plan.tiles[this.focusIndex] ?? null));
   }
 
-  pan(dx: number, dy: number): void {
-    if (this.mode.kind !== 'hand') return;
-    this.lens = this.clamp(panBy(this.lens, dx, dy));
-  }
-
-  /** Ask to zoom by `ln` e-folds about a screen point (relative to the screen's centre). The lens takes it at the zoom cap, over the next frames. */
-  zoom(ln: number, sx: number, sy: number): void {
-    if (this.mode.kind !== 'hand') return;
-    this.anchor = { x: sx, y: sy };
-    this.pending = Math.max(-1.5, Math.min(1.5, this.pending + ln));
-  }
-
-  /** Hands let go. When what they asked for has been taken: a pan carries on by a closed form; a pinch near full size settles into the frame. */
-  release(vx: number, vy: number, pinched: boolean): void {
-    if (this.mode.kind !== 'hand') return;
-    this.letGo = { vx, vy, pinched };
-  }
-
-  private finish(now: number, vx: number, vy: number, pinched: boolean): void {
-    const lens = this.lens;
-    if (pinched && this.limits.max / lens.scale < SETTLE_NEAR_FULL && lens.scale > this.limits.max / SETTLE_NEAR_FULL) {
-      const tile = this.tileUnder(lens);
-      if (tile !== null) {
-        this.mode = { kind: 'rest' };
-        this.goTo(tile, now);
-        return;
-      }
-    }
-    const speed = Math.hypot(vx, vy);
-    if (this.options.motion() === 'glide' && !pinched && speed >= COAST.start) {
-      const seconds = Math.log(speed / COAST.stop) / COAST.k;
-      this.mode = { kind: 'coast', from: lens, vx, vy, began: now, seconds };
-      return;
-    }
+  /** a pinch let go near full size settles into the frame under it */
+  protected override settle(lens: Lens, now: number): boolean {
+    if (!(this.limits.max / lens.scale < SETTLE_NEAR_FULL && lens.scale > this.limits.max / SETTLE_NEAR_FULL)) return false;
+    const tile = this.tileUnder(lens);
+    if (tile === null) return false;
     this.mode = { kind: 'rest' };
+    this.goTo(tile, now);
+    return true;
   }
 
   /** The tile that has most of the screen's centre: where a pinch let go near full size lands. */
@@ -280,15 +340,8 @@ export class LensRig {
     return tileAt(this.plan, lens, this.screen, this.screen.width / 2, this.screen.height / 2) ?? this.plan.tiles[this.nearest(lens)] ?? null;
   }
 
-  /** The lens a coast is at: x0 + v/k (1 - e^-kt) in screen px, as world units, held in the wall's reach. A function of the time alone. */
-  private coastAt(mode: Extract<Mode, { kind: 'coast' }>, now: number): Lens {
-    const t = Math.min(mode.seconds, Math.max(0, (now - mode.began) / 1000));
-    const travel = (1 - Math.exp(-COAST.k * t)) / COAST.k;
-    return this.clamp(panBy(mode.from, mode.vx * travel, mode.vy * travel));
-  }
-
   /** The lens's centre stays within the wall and a half screen beyond it: the ground never leaves entirely. */
-  private clamp(lens: Lens): Lens {
+  protected clamp(lens: Lens): Lens {
     const b = this.plan.bounds;
     const mx = this.screen.width / 2 / lens.scale;
     const my = this.screen.height / 2 / lens.scale;
@@ -298,9 +351,127 @@ export class LensRig {
   }
 
   /** The lens settles by the hands on a tile or the map with no animation: the shell's "go there now" and a reload. */
-  jump(lens: Lens, tile: Tile | null): void {
-    this.lens = lens;
-    this.mode = { kind: 'rest' };
+  override jump(lens: Lens, tile: Tile | null = null): void {
+    super.jump(lens);
     if (tile !== null) this.focusIndex = tile.index;
+  }
+}
+
+/**
+ * A page's camera (PLAN-canvas): the same motion as the wall's, over one page. The page is a box with its top-left at the screen's top-left; the
+ * lens never leaves it. It is in one of two states: `following` (the lens is where Fit puts it, and moves when the page changes) and free (the person
+ * has touched it, and it holds still until they press Fit). `reveal` takes a box into view by the least move.
+ */
+export class PageRig extends MotionRig {
+  private free = false;
+
+  constructor(
+    private page: Box,
+    screen: Screen,
+    options: RigOptions,
+  ) {
+    super(screen, options, fitLens(page, screen), PageRig.limitsFor(page, screen));
+  }
+
+  private static limitsFor(page: Box, screen: Screen): Limits {
+    const fit = fitLens(page, screen).scale;
+    return { min: Math.min(fit, 1), max: Math.max(VIEW.max, fit) };
+  }
+
+  /** the page grew, or the screen changed size: the lens keeps where it is, held inside the new page; a lens not yet touched is refitted */
+  setPage(page: Box, screen: Screen = this.screen): void {
+    this.page = page;
+    this.screen = screen;
+    this.limits = PageRig.limitsFor(page, screen);
+    if (!this.free && this.mode.kind === 'rest') this.lens = fitLens(page, screen);
+    else this.lens = this.clamp({ ...this.lens, scale: Math.min(this.limits.max, Math.max(this.limits.min, this.lens.scale)) });
+  }
+
+  /** the person has touched the lens: it stays where they put it until Fit */
+  get touched(): boolean {
+    return this.free;
+  }
+
+  /** a hand has hold of the lens; it is the person's from the first thing it really moves */
+  override pan(dx: number, dy: number): void {
+    const before = this.lens;
+    super.pan(dx, dy);
+    if (this.lens !== before) this.free = true;
+  }
+
+  override zoom(ln: number, sx: number, sy: number): void {
+    if (this.mode.kind === 'hand' && ln !== 0) this.free = true;
+    super.zoom(ln, sx, sy);
+  }
+
+  /** where Fit puts the lens */
+  fitted(): Lens {
+    return fitLens(this.page, this.screen);
+  }
+
+  /** `0`, a double tap on empty stage: the whole page, or as much of it as reads. The lens is following again. */
+  fit(now: number): void {
+    this.free = false;
+    this.glideTo(this.fitted(), now);
+  }
+
+  /** `1`: one to one about a point of the screen (relative to its centre), or about the middle */
+  actual(now: number, sx = 0, sy = 0): void {
+    this.zoomTo(1, now, sx, sy);
+  }
+
+  /** a given scale about a point of the screen (relative to its centre), by a glide */
+  zoomTo(scale: number, now: number, sx = 0, sy = 0): void {
+    this.free = true;
+    const from = this.current(now);
+    this.glideTo(this.clamp(zoomAbout(from, scale / from.scale, sx, sy, this.limits)), now);
+  }
+
+  /** `+` and `-`, a step in zoom about a point of the screen (relative to its centre) */
+  step(factor: number, now: number, sx = 0, sy = 0): void {
+    this.free = true;
+    const from = this.current(now);
+    const next = zoomAbout(from, factor, sx, sy, this.limits);
+    this.glideTo(this.clamp(next), now);
+  }
+
+  /** the arrows and the paging keys: a move across the page by screen pixels */
+  nudge(dx: number, dy: number, now: number): void {
+    this.free = true;
+    const from = this.current(now);
+    this.glideTo(this.clamp(panBy(from, -dx, -dy)), now);
+  }
+
+  /** Brings a page box into view by the least move: no zoom when it fits the window at the lens's scale, else the zoom that shows all of it. A box already in view moves nothing. */
+  reveal(box: Box, now: number, margin = 16): void {
+    const from = this.current(now);
+    const fits = Math.min((this.screen.width - margin * 2) / Math.max(1, box.width), (this.screen.height - margin * 2) / Math.max(1, box.height));
+    const scale = Math.max(this.limits.min, Math.min(from.scale, fits));
+    const spanX = this.screen.width / scale;
+    const spanY = this.screen.height / scale;
+    const pad = margin / scale;
+    const axis = (centre: number, span: number, lo: number, hi: number): number => {
+      const left = centre - span / 2;
+      const right = centre + span / 2;
+      if (lo - pad >= left && hi + pad <= right) return centre;
+      if (hi - lo + 2 * pad >= span) return (lo + hi) / 2;
+      return lo - pad < left ? lo - pad + span / 2 : hi + pad - span / 2;
+    };
+    this.glideTo(this.clamp({ x: axis(from.x, spanX, box.x, box.x + box.width), y: axis(from.y, spanY, box.y, box.y + box.height), scale }), now);
+  }
+
+  /** the lens as the frame carries it */
+  view(now: number): LensView {
+    return viewOf(this.current(now), this.screen);
+  }
+
+  /** the lens covers the window with the page, and the page is centred on an axis it is smaller than the window on */
+  protected clamp(lens: Lens): Lens {
+    const p = this.page;
+    const spanX = this.screen.width / lens.scale;
+    const spanY = this.screen.height / lens.scale;
+    const x = spanX >= p.width ? p.x + p.width / 2 : Math.max(p.x + spanX / 2, Math.min(p.x + p.width - spanX / 2, lens.x));
+    const y = spanY >= p.height ? p.y + p.height / 2 : Math.max(p.y + spanY / 2, Math.min(p.y + p.height - spanY / 2, lens.y));
+    return x === lens.x && y === lens.y ? lens : { x, y, scale: lens.scale };
   }
 }

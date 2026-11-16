@@ -32,6 +32,9 @@ export const INK_CSS = `
 .ink-bar__status:empty{display:none}
 .ink-stage{position:absolute;inset:0;z-index:30}
 .ink-stage[hidden]{display:none}
+.ink-stage--through,.ink-stage--through .ink{pointer-events:none}
+.ink-stage--through .ink-stage__bar{pointer-events:auto}
+.ink-bar[hidden]{display:none}
 .ink-stage__bar{position:absolute;left:50%;transform:translateX(-50%);top:10px;max-width:calc(100% - 20px);z-index:2}
 .ink-bar[hidden],.ink-bar [hidden]{display:none}
 .ink-bar__fold{padding-right:2px}

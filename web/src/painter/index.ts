@@ -32,6 +32,8 @@ import type { Painting } from './figures';
 import { QualityGovernor } from './governor';
 import { bodySize, marginOf, screenFacts } from './layout/metrics';
 import { Reporter } from './report';
+import { squeezeOf } from './squeeze';
+import type { Squeeze } from '../contracts/squeeze';
 import { annotated } from './annotate';
 import { leadersOf, placedOf, sightOf } from './sight';
 import { textSignature, textSpansOf } from './text-out';
@@ -1116,6 +1118,12 @@ export function createPainter(options: PainterOptions): Painter {
     return report;
   };
 
+  /** PLAN-canvas step 0: what the scene at `at` gave up to fit the screen, from the layout's facts and the app host's (an app shown smaller than its natural size) */
+  const squeezeNow = (at: number): Squeeze => {
+    const apps = (appHost?.probe() ?? []).flatMap((probe) => (probe.fit !== undefined && probe.fit < 1 ? [{ key: probe.key, scale: probe.fit }] : []));
+    return squeezeOf({ ...timeline.squeezeAt(at), apps });
+  };
+
   const snapshotNow = (): PainterSnapshot => {
     const reading = clock.read();
     const instant = instantOf(reading);
@@ -1162,6 +1170,7 @@ export function createPainter(options: PainterOptions): Painter {
       charts: chartViews(frame),
       pass: passState === null || turn === null || passState.turn !== turn.id ? null : { pass: passState.pass, state: passState.state },
       plan: timeline.planAt(reading.playhead),
+      squeeze: squeezeNow(reading.playhead),
     };
   };
 

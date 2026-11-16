@@ -30,6 +30,19 @@ export interface Box {
 }
 
 /**
+ * The part of the page the screen shows (PLAN-canvas), for a stage looked at through a lens. `x`, `y` are the page point at the screen's top-left,
+ * `scale` is the screen pixels one page unit takes, and `width`, `height` are the screen window in CSS pixels. Absent on a frame: the screen shows
+ * the page from its top-left at one to one, as it always has.
+ */
+export interface LensView {
+  readonly x: number;
+  readonly y: number;
+  readonly scale: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+/**
  * Where the camera is, relative to rest. The painter animates these numbers;
  * the renderer turns them into a real camera with `cameraRig`.
  */
@@ -83,6 +96,28 @@ export function planeBounds(layer: Layer, viewport: Viewport): Box {
   const width = viewport.width / scale;
   const height = viewport.height / scale;
   return { x: -width / 2, y: -height / 2, width, height };
+}
+
+/** Whether a view is the plain one (the page's top-left at one to one), which a renderer draws as it always has. */
+export function isRest(view: LensView | null | undefined): boolean {
+  return view === null || view === undefined || (view.scale === 1 && view.x === 0 && view.y === 0);
+}
+
+/** A point on the screen (CSS pixels from its top-left) as a point on the page. */
+export function toPage(view: LensView | null | undefined, x: number, y: number): { readonly x: number; readonly y: number } {
+  return view === null || view === undefined ? { x, y } : { x: view.x + x / view.scale, y: view.y + y / view.scale };
+}
+
+/** A point on the page as a point on the screen. */
+export function toScreen(view: LensView | null | undefined, x: number, y: number): { readonly x: number; readonly y: number } {
+  return view === null || view === undefined ? { x, y } : { x: (x - view.x) * view.scale, y: (y - view.y) * view.scale };
+}
+
+/** The CSS transform that lays a page-sized layer (origin at its top-left) over the screen as the view says. */
+export function cssOf(view: LensView | null | undefined): string {
+  if (isRest(view)) return '';
+  const v = view as LensView;
+  return `translate(${-v.x * v.scale}px, ${-v.y * v.scale}px) scale(${v.scale})`;
 }
 
 export interface CameraRig {

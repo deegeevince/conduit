@@ -34,6 +34,8 @@ import { createChartHost } from './chart-host';
 import { createEarlier } from './earlier';
 import { createTextLayer } from './text-layer';
 import { createLiveApps } from './live-app';
+import { createLensRenderer, createStageLens } from './lens';
+import type { StageLens } from './lens';
 import { createHook } from './hook';
 import { observeRenderer } from './observe';
 import { startObserver } from './observer';
@@ -97,6 +99,8 @@ export interface StageApp {
   readonly painter: Painter;
   readonly link: HttpLink;
   readonly hook: StageHook;
+  /** PLAN-canvas step 1, behind `?lens=1`: pinch and pan into the page. Null without the flag, and then nothing about the stage differs from before. */
+  readonly lens: StageLens | null;
   /** "Show the language": the lines the page was told, as they came, and whether the pane that shows them (and a film's copy of it) is on */
   readonly lang: LangLog;
   /** where this stage's charts live; null when this build has no charting engine */
@@ -238,6 +242,14 @@ function localSteps(source: string): LocalStep[] {
 function pointerKind(): ScreenFacts['pointer'] {
   if (matchMedia('(pointer: coarse)').matches) return 'coarse';
   return matchMedia('(pointer: fine)').matches ? 'fine' : 'none';
+}
+
+/** The box the DOM layers go in when the stage has a lens: the page itself, at the stage's size, carrying the lens's one transform. */
+function makePage(host: HTMLElement): HTMLElement {
+  const page = document.createElement('div');
+  page.className = 'stage__page';
+  host.append(page);
+  return page;
 }
 
 function viewportOf(host: HTMLElement): Viewport {
@@ -382,7 +394,9 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   let shownSpec: object | null = null;
   let restyleDocument: (() => void) | null = null;
   let audience: Audience = readAudience();
-  const observed = observeRenderer(rawRenderer, (frame) => {
+  // `?lens=1`: every frame carries the lens (the wall keeps the stage's hands to itself, and has its own camera)
+  const lensRenderer = params.lens && !params.wall ? createLensRenderer(rawRenderer) : null;
+  const observed = observeRenderer(lensRenderer === null ? rawRenderer : lensRenderer.renderer, (frame) => {
     if (frame.spec === shownSpec) return;
     shownSpec = frame.spec;
     applyLook(host, frame.spec);
@@ -394,16 +408,18 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   let painter: Painter;
   host.style.touchAction = 'pinch-zoom';
   const engine = createChartEngine();
-  const text = createTextLayer(host);
-  const earlier = createEarlier(host);
-  const access = createAccessLayer(host, {
+  // With the lens the DOM layers (words, controls, charts, apps) live in one box that carries the lens's transform; without it they are in the stage itself
+  const page = lensRenderer === null ? host : makePage(host);
+  const text = createTextLayer(page);
+  const earlier = createEarlier(page);
+  const access = createAccessLayer(page, {
     setControl: (id, value, commit) => painter.setControl(id, value, commit),
     chartAct: (key, action) => (chartHost === null ? Promise.reject(new Error('No charts.')) : chartHost.act(key, action)),
   });
-  const chartHost: ChartHost | null = engine === null ? null : createChartHost({ engine, stage: host, access });
+  const chartHost: ChartHost | null = engine === null ? null : createChartHost({ engine, stage: page, access });
   const sound = createSound();
   // Live apps run here, in sandboxed frames over the stage; what the user does in one goes up the back channel (`appAct`, below).
-  const liveApps: AppHost = createLiveApps({ stage: host, onAct: (act) => appAct(act), onNote: (text) => announce(text) });
+  const liveApps: AppHost = createLiveApps({ stage: page, onAct: (act) => appAct(act), onNote: (text) => announce(text) });
   // A browser lets a page make sound once the person has done something on it: the Send that asks for music is that, and so is any first click or key.
   const wake = (): void => sound.unlock();
   document.addEventListener('pointerdown', wake, { capture: true });
@@ -1331,6 +1347,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
       if (disposed) return;
       const next = viewportOf(host);
       painter.resize(next);
+      lens?.resize();
       eyes.viewport(next.width, next.height, next.dpr);
     }, 100);
   });
@@ -1338,14 +1355,16 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
 
   /** the pointers a control has taken: the rest of their gesture is the control's */
   const taken = new Set<number>();
+  let lens: StageLens | null = null;
   let hoverFrame = 0;
   let hoverAt: { readonly x: number; readonly y: number } | null = null;
   const inChart = (event: Event): boolean => event.target instanceof Element && event.target.closest('.stage__chart') !== null;
   // While Draw is on its layer is over the stage and every pointer is the pen's: a stroke that starts on a control or a mock-up's part draws, it never presses
   const inInk = (event: Event): boolean => event.target instanceof Element && event.target.closest('.ink-stage') !== null;
+  // The one place a pointer becomes a point: host CSS pixels of the page, through the lens when there is one
   const localPoint = (event: MouseEvent): { readonly x: number; readonly y: number } => {
     const box = host.getBoundingClientRect();
-    return { x: event.clientX - box.left, y: event.clientY - box.top };
+    return lens === null ? { x: event.clientX - box.left, y: event.clientY - box.top } : lens.toPage(event.clientX - box.left, event.clientY - box.top);
   };
   const controlAt = (point: { readonly x: number; readonly y: number }): string | null => {
     const views = painter.snapshot().controls;
@@ -1365,6 +1384,8 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   const PEN_TAP_TRAVEL = 8;
   const onPointerDown = (event: PointerEvent): void => {
     if (event.button !== 0 || inChart(event) || inInk(event)) return;
+    // with the lens a finger is the lens's to place (`ownsPointer`, and a tap when it lifts); what the work mode hands on from under its layer is not a finger of the lens's
+    if (lens !== null && event.pointerType === 'touch' && event.isTrusted && lens.handling()) return;
     if (event.pointerType === 'pen') {
       penDowns.set(event.pointerId, { x: event.clientX, y: event.clientY });
       return;
@@ -1491,8 +1512,90 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   document.addEventListener('focusin', (event) => {
     const holder = event.target instanceof Element ? event.target.closest<HTMLElement>('[data-control]') : null;
     const id = holder?.dataset['control'];
-    if (id !== undefined) painter.reveal(id);
+    if (id === undefined) return;
+    painter.reveal(id);
+    const view = lens === null ? undefined : painter.snapshot().controls.find((candidate) => candidate.id === id);
+    if (view !== undefined) lens?.reveal(view.box);
   });
+
+  // `?lens=1`: the hands. Made after the stage's own listeners above so that the wheel is first the stage's (a scrolling controls area under it), then the lens's.
+  if (lensRenderer !== null) {
+    const penPress = (event: PointerEvent): void => {
+      // a short Pencil tap is a press: down and up at the same place (a button acts on the up)
+      const { x, y } = localPoint(event);
+      if (painter.pointer({ phase: 'down', x, y, pointer: event.pointerId })) {
+        taken.add(event.pointerId);
+        onPointerEnd(event);
+        return;
+      }
+      if (starting && tappableAt(x, y)) return;
+      painter.tapAt(x, y);
+    };
+    lens = createStageLens({
+      host,
+      page,
+      renderer: lensRenderer,
+      screen: () => {
+        const v = viewportOf(host);
+        return { width: v.width, height: v.height };
+      },
+      pageBox: () => {
+        const v = viewportOf(host);
+        return { x: 0, y: 0, width: v.width, height: v.height };
+      },
+      motion: () => (painter.snapshot().reducedMotion ? 'fade' : 'glide'),
+      active: () => !documents.shown,
+      keysAreMine: (target) =>
+        target === document.body || target === document.documentElement || target === host || (target instanceof Element && host.contains(target) && target.closest('button, a[href], .ink-bar, [data-earlier-sheet]') === null),
+      owns: (event) => {
+        const target = event.target;
+        if (!(target instanceof Element)) return false;
+        // a button, a field, a chart or an app is worked by the finger or the wheel on it
+        if (target.closest('button, input, textarea, select, a[href], [contenteditable="true"], .stage__chart, .stage__app, .ink-bar, [data-earlier], [data-earlier-sheet]') !== null) return true;
+        if (event instanceof WheelEvent) return false;
+        if (inInk(event)) {
+          // the layer is over the stage: in the work mode it hands every finger on to what is under it; otherwise a finger is the ink's unless the guard says it pans
+          if (document.body.classList.contains('work')) return true;
+          return lens === null || lens.guard.peek({ kind: 'touch', id: event.pointerId, time: event.timeStamp, width: event.width, height: event.height, eraser: false, primaryButton: true }).act !== 'pan';
+        }
+        // a finger that goes down on a control, or on a live part of a mock-up, a stepper or a scrolling area, is that thing's: it holds the rest of the gesture
+        const { x, y } = localPoint(event);
+        if (painter.pointer({ phase: 'down', x, y, pointer: event.pointerId })) {
+          taken.add(event.pointerId);
+          try {
+            host.setPointerCapture(event.pointerId);
+          } catch {
+            taken.delete(event.pointerId);
+            return false;
+          }
+          return true;
+        }
+        return false;
+      },
+      tap: (clientX, clientY) => {
+        const box = host.getBoundingClientRect();
+        const at = lens === null ? { x: clientX - box.left, y: clientY - box.top } : lens.toPage(clientX - box.left, clientY - box.top);
+        const tappable = tappableAt(at.x, at.y);
+        if (starting && tappable) return true;
+        painter.tapAt(at.x, at.y);
+        return tappable;
+      },
+      penTap: penPress,
+      letGo: (ids) => {
+        for (const id of ids) {
+          if (!taken.has(id)) continue;
+          taken.delete(id);
+          const at = hoverAt ?? { x: 0, y: 0 };
+          painter.pointer({ phase: 'cancel', x: at.x, y: at.y, pointer: id });
+          try {
+            host.releasePointerCapture(id);
+          } catch {
+            // already released
+          }
+        }
+      },
+    });
+  }
 
   function getExporter(): Exporter {
     exporter ??= createExporter({ createRenderer: () => newRenderer(params), appStill: (key) => liveApps.still(key), appsFresh: () => liveApps.refresh(1500), chartStill: (frame, key) => { const chart = frame.charts?.find((candidate) => candidate.key === key); return chart === undefined ? null : (chartHost?.stillOf(chart) ?? null); } });
@@ -1617,6 +1720,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   const app: Omit<StageApp, 'hook'> = {
     painter,
     link,
+    lens,
     lang,
     charts: chartHost,
     apps: liveApps,
@@ -1746,6 +1850,8 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
       host.removeEventListener('pointerup', onPointerEnd);
       host.removeEventListener('pointercancel', onPointerEnd);
       host.removeEventListener('pointerleave', onPointerLeave);
+      lens?.dispose();
+      if (page !== host) page.remove();
       cancelAnimationFrame(hoverFrame);
       for (const call of dataCalls) call.abort();
       agentListeners.clear();

@@ -8,7 +8,7 @@ import type { AppCue } from './app';
 import type { ChartState } from './chart';
 import type { TuneCue } from './tune';
 import type { LookSpec } from './look';
-import type { Box, CameraPose, Viewport } from './space';
+import type { Box, CameraPose, LensView, Viewport } from './space';
 
 /** `#rrggbb`, already mapped into the look's gamut and checked for contrast against the ground. */
 export type Colour = string;
@@ -320,6 +320,10 @@ export interface Frame {
   readonly wallTime: number;
   readonly clock: ClockState;
   readonly viewport: Viewport;
+  /** PLAN-canvas. The page the scene is laid out on, in stage units with its top-left at the screen's top-left. Absent: the page is the screen. */
+  readonly page?: Box;
+  /** PLAN-canvas. The part of the page the screen shows, when the person has a lens on it. Absent: the screen shows the page at one to one from its top-left. A renderer crops to it; nothing else about the frame changes. */
+  readonly view?: LensView;
   /** the preset the look drawn now stands on. During a change it is the old look's until `progress` reaches 0.5, then the new one's. */
   readonly look: LookId;
   /** the look drawn now, fully resolved: a preset as shipped, or the brain's own variation of one. Everything a renderer needs about colour, type, stroke and surface is here. */

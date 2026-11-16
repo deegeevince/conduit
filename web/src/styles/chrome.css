@@ -634,6 +634,15 @@ input {
   z-index: 1;
 }
 
+/* The lens (?lens=1, web/src/app/lens.ts): the words, controls, charts and apps are in one box, the size of the stage, that the lens moves and scales with one transform. */
+.stage__page {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  transform-origin: 0 0;
+  pointer-events: none;
+}
+
 /* A live app: a sandboxed frame laid over the room the stage gave it (web/src/app/live-app.ts). It is laid out at its rest size and moved by a transform. */
 .stage__app {
   position: absolute;

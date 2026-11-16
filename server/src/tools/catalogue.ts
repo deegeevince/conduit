@@ -1707,6 +1707,8 @@ interface Cell {
   failed: string[];
   details: Res[];
   cost?: number;
+  /** PLAN-canvas step 0: what the scene squeezed where each turn that was checked came to rest (facts only, never a verdict) */
+  squeeze?: { turn: number; kinds: string[]; facts: string[] }[];
 }
 
 /** the tier-1 findings the critic wrote for the newest turn of the newest session in the data dir's logs */
@@ -1745,6 +1747,7 @@ async function runCell(args: Args, c: Case, screen: Args['screens'][number], url
   const conv = new Conversation(tab, options, screen, dir);
   const cx: Cx = { tab, c: conv, screen, dir, mobile: tab.mobile, answer: null as unknown as Answer, picture: '', watched: { showAllOver: null, pillSeen: 0 }, before: '', words: '', early: [], sig: '' };
   const details: Res[] = [];
+  const squeezed: NonNullable<Cell['squeeze']> = [];
   let cost = 0;
   try {
     await tab.send('DOM.enable');
@@ -1801,6 +1804,7 @@ async function runCell(args: Args, c: Case, screen: Args['screens'][number], url
         await sleep(400);
         if (cx.picture === '' || (turn.do ?? []).every((a) => a.a !== 'click-control')) cx.picture = await tab.shot();
         cx.answer = await tab.call<Answer>('answer');
+        squeezed.push({ turn: n, kinds: [...(cx.answer.squeeze?.kinds ?? [])], facts: (cx.answer.squeeze?.facts ?? []).map((fact) => `${fact.kind} ${fact.key ?? ''}: ${fact.why}`.replace('  ', ' ')) });
         await writeFile(join(dir, `${screen.name}-t${n}.png`), Buffer.from(cx.picture.split(',')[1] ?? '', 'base64'));
         for (const spec of checks) if (!(spec.k === 'pen-draws')) details.push(await runCheck(cx, spec));
         if (n === c.turns.length && c.generic !== false) for (const r of await generic(cx)) if (!details.some((d) => d.check === r.check)) details.push(r);
@@ -1815,7 +1819,7 @@ async function runCell(args: Args, c: Case, screen: Args['screens'][number], url
     }
   } catch (error) {
     details.push({ check: 'run', verdict: 'FAIL', detail: error instanceof Error ? error.message.slice(0, 200) : String(error) });
-    return { verdict: 'ERR', failed: ['run'], details, cost };
+    return { verdict: 'ERR', failed: ['run'], details, cost, squeeze: squeezed };
   } finally {
     await tab.close().catch(() => undefined);
   }
@@ -1824,7 +1828,7 @@ async function runCell(args: Args, c: Case, screen: Args['screens'][number], url
   const ownNames = new Set([...c.own, ...c.turns.flatMap((t) => (t.check ?? []).map((s) => s.k))]);
   const ownFailed = failed.filter((name) => ownNames.has(name) || name.startsWith('rest'));
   const verdict = failed.length === 0 ? 'PASS' : ownFailed.length === 0 ? 'OWN' : 'FAIL';
-  return { verdict, failed: [...new Set(failed)], details, cost };
+  return { verdict, failed: [...new Set(failed)], details, cost, squeeze: squeezed };
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------------
@@ -1862,6 +1866,8 @@ async function startServer(args: Args, replayFile: string, out: string): Promise
 interface CellOut {
   v: Cell['verdict'];
   failed: string[];
+  /** the kinds of squeeze seen at rest, over the turns checked (absent: none squeezed, or a run from before step 0) */
+  squeeze?: string[];
 }
 interface CaseOut {
   desk?: CellOut;
@@ -1989,6 +1995,7 @@ async function run(args: Args): Promise<void> {
   const prev = readResults(args.label);
   const outFile: ResultFile = { label: args.label, commit: gitHead(args.build), at: new Date().toISOString(), mode: args.mode, cases: {} };
   const details: Record<string, Record<string, Res[]>> = {};
+  const squeezes: Record<string, NonNullable<Cell['squeeze']>> = {};
   let spent = 0;
   const jobs = cases.flatMap((c) => args.screens.map((screen) => ({ c, screen })));
   const key = (screen: string): 'desk' | 'phone' => (/^\d+/.test(screen) && Number(screen.split('x')[0]) < 600 ? 'phone' : 'desk');
@@ -2006,9 +2013,11 @@ async function run(args: Args): Promise<void> {
       }
       const cell = await runCell(args, c, screen, server.url, out, false);
       spent += cell.cost ?? 0;
-      slot[where] = { v: cell.verdict, failed: cell.failed };
+      const kinds = [...new Set((cell.squeeze ?? []).flatMap((entry) => entry.kinds))];
+      slot[where] = { v: cell.verdict, failed: cell.failed, ...(kinds.length > 0 ? { squeeze: kinds } : {}) };
       (details[c.id] ??= {})[screen.name] = cell.details;
-      process.stdout.write(`${cell.verdict.padEnd(5)} ${c.id} ${screen.name}${cell.failed.length > 0 ? `  [${cell.failed.join(', ')}]` : ''}\n`);
+      squeezes[`${c.id} ${screen.name}`] = cell.squeeze ?? [];
+      process.stdout.write(`${cell.verdict.padEnd(5)} ${c.id} ${screen.name}${cell.failed.length > 0 ? `  [${cell.failed.join(', ')}]` : ''}${kinds.length > 0 ? `  {squeezed: ${kinds.join(', ')}}` : ''}\n`);
     });
   } finally {
     await server.stop();
@@ -2025,6 +2034,9 @@ async function run(args: Args): Promise<void> {
   await mkdir(resultsDir, { recursive: true });
   await writeFile(join(resultsDir, `${args.label}.json`), `${JSON.stringify(outFile, null, 1)}\n`);
   await writeFile(join(out, 'details.json'), JSON.stringify(details, null, 1));
+  await writeFile(join(out, 'squeeze.json'), JSON.stringify(squeezes, null, 1));
+  const squeezedCells = Object.entries(squeezes).filter(([, turns]) => turns.some((turn) => turn.kinds.length > 0));
+  process.stdout.write(`squeezed at rest: ${squeezedCells.length} of ${Object.keys(squeezes).length} cells (details in ${join(out, 'squeeze.json')})\n`);
   const greens = Object.values(outFile.cases).filter(green).length;
   process.stdout.write(`\n${greens} of ${cases.length} green (${args.label}, ${outFile.commit}); pictures and details in ${out}\n`);
   if (args.board && args.only === null && args.label === 'head') await writeFile(join(root, 'catalogue', 'SCOREBOARD.md'), writeBoard(outFile, cases));
