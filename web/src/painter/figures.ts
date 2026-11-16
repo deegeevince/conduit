@@ -394,6 +394,26 @@ function onCanvas(at: Pt, element: ElementSpan, sc: Scn): boolean {
 }
 
 /**
+ * How much of a group sent off the canvas is still on it: 1 until it reaches the edge, then less as it goes, 0 once all of it is past. The
+ * stage past the canvas's edge is not the canvas (on a wide screen the picture's region runs on beyond it), so what has gone off is gone, not parked
+ * in the margin. A group whose move ends on the canvas is not touched.
+ */
+function shareOnCanvas(group: ElementSpan, st: State, sc: Scn): number {
+  const to = st.trans.to.at;
+  if (to === null || typeof to === 'string' || onCanvas(to, group, sc)) return 1;
+  const extent = groupExtent(group, sc);
+  if (extent === null) return 1;
+  const canvas = canvasOf(group, sc);
+  const scale = st.scale;
+  const across = (low: number, high: number, at: number, size: number): number => {
+    const width = Math.max(1e-6, (high - low) * scale);
+    const from = at + low * scale;
+    return Math.min(1, Math.max(0, Math.min(from + width, size) - Math.max(from, 0)) / width);
+  };
+  return across(extent.minX, extent.maxX, st.centre.x, canvas.width) * across(extent.minY, extent.maxY, st.centre.y, canvas.height);
+}
+
+/**
  * The extent of a group about its own origin, canvas units, from the shapes that stand directly in it: what its place keeps inside the
  * canvas. Null when it holds nothing measurable.
  */
@@ -534,8 +554,9 @@ function groupState(group: ElementSpan, sc: Scn): GroupState {
   const known = sc.groups.get(group.key);
   if (known !== undefined) return known;
   const st = stateFor(group, sc);
+  const share = shareOnCanvas(group, st, sc);
   const M = mul(translation(st.extras.dx, st.extras.dy), mul(translation(st.centre.x, st.centre.y), mul(rotation(st.rot + st.extras.rot), scaling(st.scale * st.extras.scale))));
-  const made: GroupState = { M, opacity: st.opacity * st.extras.opacity, flash: st.extras.flash, extras: st.extras, origin: st.centre };
+  const made: GroupState = { M, opacity: st.opacity * st.extras.opacity * share, flash: st.extras.flash, extras: st.extras, origin: st.centre };
   sc.groups.set(group.key, made);
   return made;
 }

@@ -246,6 +246,8 @@ interface Job {
   readonly maxSeconds: number;
   /** also return the plan and every element's box at each strip time and at rest */
   readonly debug: boolean;
+  /** `--trace from,to,step`: the boxes of what is drawn (not words) at these times, into the debug file */
+  readonly trace: readonly number[] | null;
 }
 
 interface Made {
@@ -319,10 +321,16 @@ const PAGE_SCRIPT = String.raw`async (job) => {
   const instantAt = (seconds) => ({ time: seconds, ambient: seconds, wallTime: pinnedWallTime(seconds), clock: 'paused' });
   const viewsOf = (tl, seconds) => tl.viewsAt(instantAt(seconds)).filter((v) => v.opacity > 0.02).map((v) => ({ key: v.key, id: v.id, kind: v.kind, text: v.text.slice(0, 40), box: [v.box.x, v.box.y, v.box.width, v.box.height].map((n) => Math.round(n)), px: Math.round(v.fontPx) }));
   let debug = null;
-  if (job.debug) {
+  if (job.debug && job.trace === null) {
 
     debug = { viewport, rest: { plan: restTimeline.planAt(0), views: viewsOf(restTimeline, 0), notes: [...restTimeline.layoutNotesAt(0)].map(([k, n]) => k + ': ' + n.join(',')) }, at: [] };
     for (let i = 0; i <= 12; i += 1) { const t = (duration * i) / 12; debug.at.push({ t: +t.toFixed(2), plan: timeline.planAt(t), views: viewsOf(timeline, t) }); }
+  }
+  if (job.trace !== null) {
+    const [from, to, step] = job.trace;
+    debug = debug || { viewport, at: [] };
+    debug.trace = [];
+    for (let t = from; t <= to + 1e-9; t += step) debug.trace.push({ t: +t.toFixed(2), views: viewsOf(timeline, t).filter((v) => v.kind !== 'text') });
   }
   const times = [];
   for (let i = 0; i < job.frames - 1; i += 1) times.push((duration * i) / (job.frames - 1));
@@ -420,6 +428,7 @@ interface Options {
   readonly video: boolean;
   readonly web: string | null;
   readonly debug: boolean;
+  readonly trace: number[] | null;
 }
 
 /** A log named by its path, or by its file name or session id, which is looked for in the data folder's logs (`--data <dir>`, `DATA_DIR`, else the default). */
@@ -443,6 +452,7 @@ function parseArgs(argv: readonly string[]): Options {
   let web: string | null = null;
   let data: string | null = null;
   let debug = false;
+  let trace: number[] | null = null;
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i] ?? '';
     const value = (): string => argv[(i += 1)] ?? usage(`${arg} needs a value`);
@@ -455,6 +465,7 @@ function parseArgs(argv: readonly string[]): Options {
     else if (arg === '--data') data = value();
     else if (arg === '--no-video') video = false;
     else if (arg === '--debug') debug = true;
+    else if (arg === '--trace') trace = value().split(',').map(Number);
     else if (arg.startsWith('--')) usage(`unknown flag ${arg}`);
     else positional.push(arg);
   }
@@ -465,7 +476,7 @@ function parseArgs(argv: readonly string[]): Options {
   const log = positional[0];
   if (log === undefined) usage('which log?');
   if (!all && positional[1] === undefined) usage('which turn? (or --all)');
-  return { all, log: locate(log, data), turn: all ? null : (positional[1] ?? null), screen, screenName, look, out, fps, video, web, debug };
+  return { all, log: locate(log, data), turn: all ? null : (positional[1] ?? null), screen, screenName, look, out, fps, video, web, debug, trace };
 }
 
 interface Captured {
@@ -497,6 +508,7 @@ async function captureOne(page: Page, options: Options, turns: readonly LoggedTu
     video: options.video,
     maxSeconds: 90,
     debug: options.debug,
+    trace: options.trace,
   };
   const made = await page.evaluate<Made>(`(${PAGE_SCRIPT})(${JSON.stringify(job)})`);
   const stem = join(dir, `${basename(options.log, '.jsonl')}-${turn.turn}${options.look === null ? '' : `-${options.look}`}${options.screenName === '1280x720' ? '' : `-${options.screenName}`}`);

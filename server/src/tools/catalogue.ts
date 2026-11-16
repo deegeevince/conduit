@@ -1120,10 +1120,11 @@ async function runCheck(cx: Cx, spec: Spec): Promise<Res> {
       const parts = spec['parts'] as Record<string, readonly number[]>;
       const unitId = String(spec['unit']);
       const tol = Number(spec['tol'] ?? 0.35);
-      const here = (id: string): LiveElement | undefined => cx.answer.live.find((e) => e.id === id && e.phase === 'on' && area(e.box) > 0);
+      const here = (id: string): LiveElement | undefined => cx.answer.live.find((e) => e.id === id && e.phase === 'on' && e.opacity > 0.05 && area(e.box) > 0);
       const ids = Object.keys(parts);
       const present = ids.filter((id) => here(id) !== undefined);
-      if (present.length === 0) return { check: name, verdict: 'PASS', detail: `all ${ids.length} parts left the stage together` };
+      if (present.length === 0) return spec['expect'] === 'there' ? { check: name, verdict: 'FAIL', detail: 'the group is not on stage' } : { check: name, verdict: 'PASS', detail: `all ${ids.length} parts left the stage together` };
+      if (spec['expect'] === 'gone') return { check: name, verdict: 'FAIL', detail: `the group was sent off the canvas but ${present.join(', ')} are still on stage` };
       const bad: string[] = [];
       if (present.length < ids.length) bad.push(`only ${present.join(', ')} of ${ids.join(', ')} are on stage`);
       const ref = here(unitId);
@@ -1142,6 +1143,16 @@ async function runCheck(cx: Cx, spec: Spec): Promise<Res> {
         const dx = at.x - refAt.x - ((cxu as number) - (refSpec[0] as number)) * unit;
         const dy = at.y - refAt.y - ((cyu as number) - (refSpec[1] as number)) * unit;
         if (Math.hypot(dx, dy) > 4 * unit) bad.push(`${id} is ${Math.round(Math.hypot(dx, dy))} px from where the group holds it`);
+      }
+      // `apart`: the group came to where it was sent: this part stands this many of the group's units from another thing's centre
+      const apart = spec['apart'] as { readonly from: string; readonly units: number; readonly tol: number } | undefined;
+      if (apart !== undefined) {
+        const other = here(apart.from);
+        if (other === undefined) bad.push(`${apart.from} is not on stage`);
+        else {
+          const got = (refAt.x - centre(other.box).x) / unit;
+          if (Math.abs(got - apart.units) > apart.tol) bad.push(`the group stands ${got.toFixed(0)} units right of ${apart.from}, it was sent to ${apart.units}`);
+        }
       }
       return res(name, bad, `${present.length} parts at their own size and place about each other`);
     }

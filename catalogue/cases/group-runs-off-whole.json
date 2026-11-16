@@ -53,7 +53,8 @@
        4,
        4
       ]
-     }
+     },
+     "expect": "gone"
     },
     {
      "k": "has-shapes",
