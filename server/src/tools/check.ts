@@ -42,6 +42,7 @@ import { MEMORY_SCREEN, memoryGroup } from './memory-check';
 import { loopGroup } from './loop-check';
 import { TOUR_SCREENS, tourGroup } from './tour-check';
 import { driftGroup } from './drift-check';
+import { printWebkit, webkitGroup, webkitMissing } from './webkit-check';
 import type { Answer, CheckResult, Options, Probe, Step, Verdict } from './smoke';
 
 // ---------------------------------------------------------------------------------------------------------------------------------
@@ -55,10 +56,11 @@ interface Args {
   readonly allowPlain: boolean;
   readonly sequential: boolean;
   readonly quiet: boolean;
+  readonly webkit: boolean;
 }
 
 function usage(message: string): never {
-  process.stderr.write(`check: ${message}\nusage: pnpm check [--url http://127.0.0.1:<port>] [--out <dir>] [--screens 1280x720,390x844] [--timeout <seconds>] [--allow-plain] [--sequential] [--quiet]\n`);
+  process.stderr.write(`check: ${message}\nusage: pnpm check [--url http://127.0.0.1:<port>] [--out <dir>] [--screens 1280x720,390x844] [--timeout <seconds>] [--allow-plain] [--sequential] [--quiet] [--webkit]\n`);
   process.exit(2);
 }
 
@@ -68,7 +70,7 @@ function parseArgs(argv: readonly string[]): Args {
     const arg = argv[i] as string;
     if (!arg.startsWith('--')) usage(`unexpected argument ${arg}`);
     const name = arg.slice(2);
-    if (['allow-plain', 'sequential', 'quiet'].includes(name)) flags.set(name, 'true');
+    if (['allow-plain', 'sequential', 'quiet', 'webkit'].includes(name)) flags.set(name, 'true');
     else {
       const value = argv[i + 1];
       if (!['url', 'out', 'screens', 'timeout'].includes(name)) usage(`unknown flag --${name}`);
@@ -91,6 +93,7 @@ function parseArgs(argv: readonly string[]): Args {
     allowPlain: flags.has('allow-plain'),
     sequential: flags.has('sequential'),
     quiet: flags.has('quiet'),
+    webkit: flags.has('webkit'),
   };
 }
 
@@ -771,6 +774,22 @@ function table(run: ScreenRun): string {
   return lines.join('\n');
 }
 
+async function webkitHook(base: string, out: string, timeoutMs: number, quiet: boolean): Promise<number> {
+  const missing = webkitMissing();
+  if (missing !== null) {
+    process.stdout.write(`\nwebkit: SKIPPED, ${missing}\n`);
+    return 0;
+  }
+  try {
+    const scenes = await webkitGroup(base, join(out, 'webkit'), timeoutMs, (text) => (quiet ? undefined : process.stdout.write(`[${text}]\n`)));
+    process.stdout.write('\nwebkit (iPhone landscape, iPhone, iPad)\n');
+    return printWebkit(scenes, (text) => process.stdout.write(text));
+  } catch (error) {
+    process.stdout.write(`  FAIL webkit stopped: ${error instanceof Error ? error.message : String(error)}\n`);
+    return 1;
+  }
+}
+
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   if (!CHROME_CANDIDATES.some((path) => existsSync(path))) usage('no Chrome found: set CHROME_BIN to a Chrome or Chromium executable');
@@ -968,6 +987,8 @@ async function main(): Promise<void> {
         await chain?.stop();
       }
     }
+    // the WebKit group (--webkit): the bugs only Safari had, in Playwright's WebKit (webkit-check.ts); skipped with a message when that browser is not installed
+    if (args.webkit) failures += await webkitHook(base, args.out, args.timeoutMs, args.quiet);
     await writeFile(join(args.out, 'check.json'), JSON.stringify({ url: base, at: new Date().toISOString(), failures, screens: summary, lens, asks, arts }, null, 2));
   } catch (error) {
     failures += 1;
