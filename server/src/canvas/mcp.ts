@@ -27,7 +27,7 @@ export const TOOLS: readonly ToolDef[] = [
   },
   {
     name: 'canvas_fits',
-    description: 'Read-only dry run, instant. Give the lines you mean to write; it says whether they would land (lines it would reject, boxes added or moved, overlaps or clipping they would add or clear) and shows nothing. view=both also tries a phone and a desktop.',
+    description: 'Read-only dry run, instant. Give the lines you mean to write; it says whether they would land (lines it would reject, boxes added or moved, overlaps or clipping they would add or clear) and draws nothing: only the lines you write as your answer are drawn, so write them after. view=both also tries a phone and a desktop.',
     inputSchema: { type: 'object', properties: { lines: { type: 'string', description: 'up to 40 lines, one per line' }, view: { enum: ['reported', 'both'] } }, required: ['lines'], additionalProperties: false },
   },
   {
