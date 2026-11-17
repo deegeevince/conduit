@@ -266,6 +266,8 @@ export function serializeLine(line: Line): string {
       if (line.voice !== undefined) head.push(line.voice);
       if (line.tempo !== undefined) head.push(`tempo=${line.tempo}`);
       if (line.height !== undefined) head.push(`height=${line.height}`);
+      // the shelf an app asked for: the page reads this text, so a word left out here never reaches the host (only what the code's own globals give away would)
+      if (line.uses !== undefined && line.uses.length > 0) head.push(`uses=${line.uses.join(',')}`);
       if (line.lang !== undefined) head.push((CODE_LANGUAGES as readonly string[]).includes(line.lang) ? line.lang : `lang=${line.lang}`);
       head.push(...boxTokens(line.box), ...line.styles);
       if (line.file !== undefined) head.push(`file=${line.file}`);
