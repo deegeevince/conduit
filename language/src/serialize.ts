@@ -47,6 +47,7 @@ function propTokens(props: StyleProps): string[] {
   if (props.layer !== undefined) out.push(`layer=${props.layer}`);
   if (props.at !== undefined) out.push(typeof props.at === 'string' ? `at=${props.at}` : `at=${point(props.at)}`);
   if (props.near !== undefined) out.push(props.near.side === 'auto' ? `near=${props.near.id}` : `near=${props.near.id}:${props.near.side}`);
+  if (props.align !== undefined) out.push(`align=${props.align}`);
   if (props.leader !== undefined) out.push(`leader=${props.leader ? 'yes' : 'no'}`);
   if (props.in !== undefined) out.push(`in=${props.in}`);
   if (props.size !== undefined) out.push(`size=${props.size}`);

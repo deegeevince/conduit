@@ -1180,6 +1180,7 @@ export const STYLE_PROP = {
   scale: { values: null, also: 'N', gist: 'size multiplier (a sprite: canvas units per pixel)', level: 'mind', scope: 'drawn' },
   rot: { values: null, also: 'N degrees', gist: 'turned clockwise', level: 'mind', scope: 'any' },
   opacity: { values: null, also: '0..1', gist: 'how solid', level: 'mind', scope: 'any' },
+  align: { values: ['left', 'center', 'right'], also: null, gist: 'with at=x,y: which edge of the words that point is (right for digits lined up in a column)', level: 'mind', scope: 'text' },
   tap: { values: ['yes', 'no'], also: null, gist: 'yes makes it a choice the user can tap', level: 'mind', scope: 'any' },
   dur: { values: null, also: 'Ns', gist: 'exact entrance length', level: 'hand', scope: 'any' },
 } as const satisfies Record<string, PropSpec>;

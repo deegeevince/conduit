@@ -3,4 +3,4 @@
 
 import { notYet } from './not-yet';
 
-export const problem = notYet('problem', 'no longer drawn: a `problem` line plays as an `ask` (normalize.ts), so the painter does not advertise it', [['problem p1 answer=12 | 48 ÷ 4 = ___']]);
+export const problem = notYet('problem', 'no longer drawn: a `problem` line plays as an `ask` (normalize.ts), so the painter does not advertise it', []);

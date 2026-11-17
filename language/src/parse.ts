@@ -472,6 +472,11 @@ function readStyleProps(pairs: readonly Pair[], issues: Issues): { props: StyleP
         else bad(pair, 'a number of canvas units');
         break;
       }
+      case 'align': {
+        if (value === 'left' || value === 'center' || value === 'right') props.align = value;
+        else bad(pair, 'left | center | right');
+        break;
+      }
       case 'leader': {
         const leader = parseTap(value);
         if (leader !== null) props.leader = leader;
