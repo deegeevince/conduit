@@ -72,7 +72,7 @@ export function mathProblems(captures: readonly Capture[]): { problems: string[]
     }
     blocks += 1;
     const worked = /\bworked\b/.test(one.lines[0] ?? '');
-    const typedBy = one.lines.some((line) => line.startsWith('type '));
+    const typedBy = one.lines.some((line) => line.startsWith('type ') || line.startsWith('press '));
     const filled = one.lines.some((line) => line.startsWith('fill '));
     const isGrid = method === 'column' || method === 'times' || method === 'split' || method === 'bond';
     // 1. place: every digit cell of one place, in any row, stands on one x (carries and exchanges are set smaller, in the same column)
@@ -118,6 +118,16 @@ export function mathProblems(captures: readonly Capture[]): { problems: string[]
       if (word === undefined || frame === undefined) problems.push(`${where}: the digit typed in ${m[1]} is not drawn in its cell`);
       else if (word.text.trim() !== m[2] || Math.abs(word.x - (frame.x0 + frame.x1) / 2) > 2 || Math.abs(word.y - (frame.y0 + frame.y1) / 2) > frame.y1 - frame.y0) problems.push(`${where}: the digit typed in ${m[1]} reads "${word.text}" at ${word.x.toFixed(0)},${word.y.toFixed(0)}, not typeset in its cell`);
     }
+    // 4c. marks: a tick or a cross (the red pen) stands outside the digits: it touches no digit's ink, given or written
+    for (const mark of figures.filter((f) => /^(ok|bad):/.test(partOf(f.key)))) {
+      for (const e of elements.filter((candidate) => /^c:/.test(partOf(candidate.key)) && candidate.text.trim() !== '')) {
+        // the ink of a digit: a line box is taller than the digits in it, and a digit is about half as wide as the line is tall
+        const w = e.height * 0.55 * e.text.trim().length;
+        const h = e.height * 0.6;
+        if (mark.x1 > e.x - w / 2 && mark.x0 < e.x + w / 2 && mark.y1 > e.y - h / 2 && mark.y0 < e.y + h / 2) problems.push(`${where}: the mark ${partOf(mark.key)} lies on the digit ${partOf(e.key)}`);
+      }
+    }
+    if (one.lines.some((line) => line.startsWith('press ')) && figures.filter((f) => /^(ok|bad):/.test(partOf(f.key))).length < 2) problems.push(`${where}: Check left fewer than two marks (a tick and a cross)`);
     // 5. rule: spans the columns of every digit and sign
     const rule = figures.find((f) => partOf(f.key) === 'rule');
     if (isGrid && method !== 'split' && method !== 'bond') {
@@ -240,9 +250,9 @@ export class MathsTab {
     this.hands = new Hands(tab);
   }
 
-  static async open(base: string, screen: InputScreen, dir: string, timeoutMs: number): Promise<MathsTab> {
+  static async open(base: string, screen: InputScreen, dir: string, timeoutMs: number, page = ''): Promise<MathsTab> {
     const tab = await Tab.open(screen.width, screen.height, { dpr: screen.dpr, touch: true });
-    const options: Options = { url: base, screens: [], out: dir, turns: new Set(), timeoutMs, parallel: false, demo: false, quiet: true, page: '', say: null, chat: 'off' };
+    const options: Options = { url: base, screens: [], out: dir, turns: new Set(), timeoutMs, parallel: false, demo: false, quiet: true, page, say: null, chat: 'off' };
     const conv = new Conversation(tab, options, { name: screen.name, width: screen.width, height: screen.height }, dir);
     await tab.send('DOM.enable');
     await conv.start();
@@ -398,6 +408,7 @@ async function keysScene(mine: MathsTab, dir: string, problems: Problems): Promi
   await mine.hands.finger([await mine.centre(ones.box)]);
   // a tap on a machine busy with other groups can be lost to the browser's own gesture handling: once more, as a person would
   if ((await mine.focused()) === '') {
+    (problems['notes'] as string[]).push(`maths-keys tap retried at ${screen.name}`);
     await sleep(400);
     await mine.hands.finger([await mine.centre(ones.box)]);
   }
@@ -629,9 +640,33 @@ async function penScene(mine: MathsTab, dir: string, problems: Problems): Promis
   return penned;
 }
 
+
+/** The marking in a dark look: the learner's digits in ink, the red pen's tick and cross beside them. A picture to look at (the colours are the look's own). */
+async function darkScene(base: string, screen: InputScreen, dir: string, timeoutMs: number, problems: Problems): Promise<string> {
+  const list = problems['keys'] as string[];
+  const dark = await MathsTab.open(base, screen, dir, timeoutMs, 'look=night');
+  try {
+    const played = await dark.play(SUM);
+    if (played !== '') {
+      list.push(`dark look: ${played}`);
+      return '';
+    }
+    const ones = (await dark.cell('m1', 'ans-ones'))?.box;
+    if (ones === undefined) return '';
+    await dark.hands.finger([await dark.centre(ones)]);
+    await dark.type('212');
+    await dark.press('Enter');
+    await dark.blur();
+    await sleep(300);
+    return await dark.shot(dir, `${screen.name}-maths-checked-night.png`);
+  } finally {
+    await dark.close();
+  }
+}
+
 /** One screen's whole input run. */
 async function inputScreen(base: string, screen: InputScreen, dir: string, timeoutMs: number, note: (text: string) => void): Promise<{ results: CheckResult[]; pictures: string[] }> {
-  const problems: Problems = { keys: [], hint: [], fill: [], pen: [] };
+  const problems: Problems = { keys: [], hint: [], fill: [], pen: [], notes: [] };
   const pictures: string[] = [];
   note(`maths input: ${screen.name}`);
   const mine = await MathsTab.open(base, screen, dir, timeoutMs);
@@ -640,6 +675,7 @@ async function inputScreen(base: string, screen: InputScreen, dir: string, timeo
     const { checked, hinted } = await hintScene(mine, dir, problems);
     pictures.push(checked, hinted);
     await fillScene(mine, problems);
+    pictures.push(await darkScene(base, screen, dir, timeoutMs, problems));
     pictures.push(await penScene(mine, dir, problems));
   } catch (error) {
     (problems['keys'] as string[]).push(`stopped: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`);
@@ -651,6 +687,8 @@ async function inputScreen(base: string, screen: InputScreen, dir: string, timeo
     const list = problems[name] ?? [];
     results.push({ turn: 0, check: `maths-${name}-${screen.name}`, verdict: list.length === 0 ? 'PASS' : 'FAIL', detail: list.length === 0 ? good : list.slice(0, 8).join('; ') });
   };
+  // not a failure: how often a tap was lost and made again, so that it can be watched
+  for (const text of problems['notes'] ?? []) results.push({ turn: 0, check: 'maths-note', verdict: 'PASS', detail: `note: ${text}` });
   add('keys', 'a finger tap focuses a cell inside the gesture; 2 moves to the carry then the tens; Backspace, Tab and the arrows walk the sum; Enter marks it; the active cell stays above a short visual viewport');
   add('hint', 'Hint lights the next cell and says its step without its digit; Show me comes only after a wrong try and fills one cell as shown');
   add('fill', 'fill m1 | 72 and fill m1.ans-ones | 2 put marked digits in the cells, and a later hand wins');
@@ -682,7 +720,7 @@ export async function mathsLive(dir: string, timeoutMs: number, note: (text: str
   let detail = '';
   try {
     note('maths live: a real handwriting read (BRAIN=claude-cli)');
-    server = await startMathsServer({ BRAIN: 'claude-cli', CLAUDE_MODEL: process.env['CLAUDE_MODEL'] ?? 'sonnet' });
+    server = await startMathsServer({ BRAIN: 'claude-cli', CLAUDE_MODEL: process.env['CLAUDE_MODEL'] ?? 'sonnet', ...(process.env['INK_MODEL'] === undefined ? {} : { INK_MODEL: process.env['INK_MODEL'] }) });
     const mine = await MathsTab.open(server.url, screen, dir, timeoutMs);
     try {
       const played = await mine.play(['scene layout=stack mood=calm', 'math m8 column | 35+36'].join('\n'));

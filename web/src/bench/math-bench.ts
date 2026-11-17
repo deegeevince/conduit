@@ -31,6 +31,7 @@ const SUMS: readonly (readonly string[])[] = [
   ['math m8 column | 12+12', 'fill m8 | 24'],
   ['math m9 bar | 3/4'],
   ['math m11 column | 12+12+12+12+12+12', 'type m11.ans-ones | 2', 'type m11.ans-tens | 7'],
+  ['math m12 column | 12+12', 'type m12.ans-ones | 4', 'type m12.ans-tens | 9', 'press m12 check'],
   ['math m10 groups | 12 ÷ 3'],
 ];
 
@@ -80,11 +81,17 @@ async function play(screen: Screen, lines: readonly string[]): Promise<unknown> 
   painter.openTurn('t1', { kind: 'prompt', text: 'go' });
   let seq = 0;
   const typed: { key: string; part: string; text: string }[] = [];
+  const pressed: string[] = [];
   for (const text of ['scene layout=stack', ...lines]) {
     // `type m1.part | digits`: what a keyboard writes in a cell, once the page has come to rest (not a line of the language)
     const typing = /^type (\S+)\.(\S+) \| (\d+)$/.exec(text);
     if (typing !== null) {
       typed.push({ key: typing[1] as string, part: typing[2] as string, text: typing[3] as string });
+      continue;
+    }
+    const pressing = /^press (\S+) check$/.exec(text);
+    if (pressing !== null) {
+      pressed.push(pressing[1] as string);
       continue;
     }
     const parsed = parseLine(text);
@@ -100,6 +107,11 @@ async function play(screen: Screen, lines: readonly string[]): Promise<unknown> 
   for (const write of typed) {
     const block = painter.mathViews().find((view) => view.id === write.key);
     if (block !== undefined) painter.mathWrite(block.key, write.part, write.text, 'key');
+    await tick(4);
+  }
+  for (const id of pressed) {
+    const block = painter.mathViews().find((view) => view.id === id);
+    if (block !== undefined) painter.mathPress(block.key, 'check');
     await tick(4);
   }
   const f = last as { elements: { key: string; x: number; y: number; width: number; height: number; runs: { text: string }[] }[]; figures: { key: string; outline: { points: { x: number; y: number }[] }[] }[] } | null;

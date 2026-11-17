@@ -79,7 +79,7 @@ export function registerDocumentRoutes(app: Hono, deps: HttpDeps): void {
         { picture: { data: Buffer.from(picture.bytes).toString('base64'), mime: picture.mime }, cells: asked },
         {
           bin: env.brain.kind === 'claude-cli' ? env.brain.bin : 'claude',
-          model: env.ahead.verifyModel,
+          model: env.inkModel,
           effort: 'low',
           timeoutMs: 60_000,
           meter: (call) => usage.record({ kind: 'ink', model: call.model, session, turn: null, login: null, inputTokens: call.usage.inputTokens, cacheReadTokens: call.usage.cacheReadTokens, cacheWriteTokens: call.usage.cacheWriteTokens, outputTokens: call.usage.outputTokens, thinkingTokens: call.usage.thinkingTokens, costUsd: call.usage.costUsd, ms: call.usage.ms }),

@@ -367,8 +367,10 @@ function gridBlock(input: StructureInput, math: MathFigure, grid: maths.Grid, sh
     const tapH = Math.min(at.height, Math.max(MIN_TARGET, drawn.height));
     writing.set(name, box(drawn.x + drawn.width / 2 - tap / 2, drawn.y + drawn.height / 2 - tapH / 2, tap, tapH));
     // what stands in it: the digits typed, filled or shown, set in the cell; what the pen wrote is the learner's own, and the digit read from it is small beside it
+    // what the learner wrote is in pencil: the ink of the givens, never the accent (a red digit reads as wrong before anything is checked). A digit Show me wrote is dim:
+    // it is not the learner's.
     const typeset = state.by === 'key' || state.by === 'fill' || state.by === 'shown';
-    if (typeset && state.value !== '') texts.push(plain(key, `c:${name}`, state.value, at, small_ ? small : big, 'cell', [{ start: 0, end: state.value.length }]));
+    if (typeset && state.value !== '') texts.push(plain(key, `c:${name}`, state.value, at, small_ ? small : big, state.by === 'shown' ? 'value' : 'cell'));
     const corner = Math.min(drawn.width * 0.42, 22);
     if (state.by === 'pen' && state.read !== '') {
       texts.push(plain(key, `r:${name}`, state.read, box(drawn.x + drawn.width - corner - 2, drawn.y + 1, corner, corner), small_ ? noted : small, 'value'));
@@ -377,17 +379,15 @@ function gridBlock(input: StructureInput, math: MathFigure, grid: maths.Grid, sh
     const tint = (kind: string): void => void marksBack.push({ kind: 'shape', owner: key, part: `mark:${kind}-${name}`, outline: [roundedRect(inflate(drawn, 1), radius)], role: 'fill' });
     if (state.reading) tint('reading');
     if (run.hint === name) tint('hint');
-    if (state.mark === 'shown') tint('shown');
-    if (state.mark === 'wrong' || state.mark === 'empty') tint('bad');
+    if (state.mark === 'wrong') tint('wrong');
     if (run.active === name) frames.push({ kind: 'shape', owner: key, part: `act:${name}`, outline: [roundedRect(inflate(drawn, 3), radius + 2)], role: 'frame' });
     if (state.mark === 'empty') frames.push({ kind: 'shape', owner: key, part: `bad:ring-${name}`, outline: dashedRound(inflate(drawn, 4)), role: 'frame' });
-    const s = Math.max(10, Math.min(16, drawn.width * 0.3));
-    const bx = drawn.x + drawn.width - s - 3;
-    const by = drawn.y + drawn.height - s - 3;
+    // the teacher's red pen: a tick or a cross, outside the cell's top-right corner, never on the digit
+    const s = 11;
+    const bx = drawn.x + drawn.width + 1;
+    const by = drawn.y - s + 3;
     if (state.mark === 'right') lines.push({ kind: 'shape', owner: key, part: `ok:${name}`, outline: [open([{ x: bx, y: by + s * 0.55 }, { x: bx + s * 0.38, y: by + s * 0.95 }, { x: bx + s, y: by + s * 0.1 }])], role: 'line' });
-    if (state.mark === 'wrong') {
-      lines.push({ kind: 'shape', owner: key, part: `bad:${name}`, outline: [open([{ x: bx + s * 0.1, y: by + s * 0.1 }, { x: bx + s * 0.9, y: by + s * 0.9 }]), open([{ x: bx + s * 0.9, y: by + s * 0.1 }, { x: bx + s * 0.1, y: by + s * 0.9 }])], role: 'line' });
-    }
+    if (state.mark === 'wrong') lines.push({ kind: 'shape', owner: key, part: `bad:${name}`, outline: [open([{ x: bx + s * 0.1, y: by + s * 0.1 }, { x: bx + s * 0.9, y: by + s * 0.9 }]), open([{ x: bx + s * 0.9, y: by + s * 0.1 }, { x: bx + s * 0.1, y: by + s * 0.9 }])], role: 'line' });
     // the pen's ink can be taken off a cell: a small cross at its corner. A finger or a pen finds it in a box that reaches only 20 into the cell, so that the middle of
     // the cell (where a tap opens the keyboard) is never the cross's
     if (state.ink) {
