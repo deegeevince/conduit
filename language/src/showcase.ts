@@ -76,8 +76,8 @@ export interface ShowcaseEntry {
 export const SHOWCASE_LIMITS = { name: 22, caption: 90, gist: 60, perCategory: 7 } as const;
 
 /**
- * The reel is the pages with a `reel` in table order, between an opening and a close, with a one-second card ahead of each category that has pages in
- * it. Together they come to `min`..`max` seconds. (The section order inside "Ask it" is the reel's own: the photo goes before the pen and the voice.)
+ * The reel is the pages with a `reel` in table order, between an opening and a close, with a title card (`card` seconds) ahead of each category that has
+ * pages in it. Together they come to `min`..`max` seconds. (The section order inside "Ask it" is the reel's own: the photo goes before the pen and the voice.)
  */
 export const SHOWCASE_REEL = { opening: 4.0, close: 4.0, card: 1.2, min: 60, max: 90 } as const;
 
