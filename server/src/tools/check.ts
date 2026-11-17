@@ -39,6 +39,7 @@ import { DRAW_SCREEN, drawGroup } from './draw-check';
 import { ART_FAKE_MS, ART_SCREEN, artGroup } from './art-check';
 import { CONTINUE_SCREEN, continueFixtures, continueGroup } from './continue-check';
 import { MEMORY_SCREEN, memoryGroup } from './memory-check';
+import { loopGroup } from './loop-check';
 import type { Answer, CheckResult, Options, Probe, Step, Verdict } from './smoke';
 
 // ---------------------------------------------------------------------------------------------------------------------------------
@@ -900,6 +901,19 @@ async function main(): Promise<void> {
     } catch (error) {
       failures += 1;
       process.stdout.write(`  FAIL memory stopped: ${error instanceof Error ? error.message : String(error)}\n`);
+    }
+    // the feedback-loop group: no browser and no model. A label an earlier turn left is measured as crossed by a later turn's lines; a thrown-out fix is told back and a
+    // better second try is kept; a critic finding a repair never mended rides in the next brief; `move` frees a `near=` label with no copy left behind
+    try {
+      const results = await loopGroup((text) => (args.quiet ? undefined : process.stdout.write(`[${text}]\n`)));
+      process.stdout.write('\nloop (820x971)\n');
+      for (const result of results) {
+        process.stdout.write(`  ${result.verdict === 'PASS' ? 'ok  ' : result.verdict} ${result.check}: ${result.detail}\n`);
+        if (result.verdict === 'FAIL') failures += 1;
+      }
+    } catch (error) {
+      failures += 1;
+      process.stdout.write(`  FAIL loop stopped: ${error instanceof Error ? error.message : String(error)}\n`);
     }
     // the continuation group: a fake brain ends its answer with `refine | what next` five times; the server runs it again each time; a message or Stop takes over
     if (args.url === null) {

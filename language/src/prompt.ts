@@ -34,7 +34,7 @@ import { serializeLine } from './serialize';
 import { describeCarried, drawingRows, transcriptOf } from './stage';
 import { PACE_TIMING } from './timing';
 import type { LeadWindow } from './timing';
-import { REVIEW_KEEP } from './review';
+import { REVIEW_KEEP, owedText } from './review';
 import type { CanvasBox, ControlValues, StyleProps } from './types';
 import {
   CAMERA,
@@ -1219,6 +1219,8 @@ export function buildTurnBrief(context: TurnContext, input: TurnInput, form: Bri
     const landed = landedText(last, context.eyes !== undefined);
     if (landed !== null) parts.push(landed);
   }
+  const owed = owedText(context.owed ?? []);
+  if (owed !== null) parts.push(owed);
   if (context.eyes !== undefined && context.eyes !== null) parts.push(context.eyes);
   // SA4. One line, and only where it may be wanted: a cold start, or an EYES block that flags something.
   if (context.canvas === true && (form === 'full' || /urgent|blocking/.test(context.eyes ?? ''))) parts.push(CANVAS_LINE);

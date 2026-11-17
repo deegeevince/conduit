@@ -48,7 +48,7 @@ export type SessionRecord =
   | { readonly type: 'control'; readonly at: number; readonly turn: string | null; readonly id: string; readonly value: ControlValue; readonly text: string; readonly send: boolean; readonly app?: boolean; readonly ask?: boolean }
   | { readonly type: 'tap'; readonly at: number; readonly turn: string | null; readonly id: string; readonly text: string; readonly choice: boolean }
   /** v2.1. A fix or a refine pass that was tried out of sight, and what became of it: shown, or refused and why. `lines` are what the brain wrote, shown or not. */
-  | { readonly type: 'fix'; readonly at: number; readonly turn: string; readonly pass: number; readonly form: ReviewForm; readonly lines: readonly string[]; readonly shown: boolean; readonly why: string | null; readonly draft: ContentCount | null; readonly candidate: ContentCount | null; readonly file: string | null }
+  | { readonly type: 'fix'; readonly at: number; readonly turn: string; readonly pass: number; readonly form: ReviewForm; readonly lines: readonly string[]; readonly shown: boolean; readonly why: string | null; readonly draft: ContentCount | null; readonly candidate: ContentCount | null; readonly file: string | null; readonly retried?: boolean }
   /** v2.1. What the critic made of a turn's resting picture, seconds after the turn ended; `queued` when it was passed to the loop as evidence */
   | { readonly type: 'critic'; readonly at: number; readonly turn: string; readonly finding: CriticFinding; readonly queued: boolean }
   /** v2.1, a brain with tools. One tool call, at its start and again at its end: what it was in a few safe words (`redactSecrets`), never its input or its result. Takes the place of `tool`, which older logs still hold. */
@@ -74,6 +74,8 @@ export type SessionRecord =
    * that showed it), `refused` (nothing changed; `why`), `nothing` (the brain wrote nothing), `failed`, `cancelled` (a new turn came), `skipped` (a
    * limit held it back before the brain was asked). `ms` is the whole repair from the critic's verdict; `sinceEndMs` from the answer's `end`.
    */
+  /** The critic found these ids broken in `turn` and nothing mended them: they ride in the brief of the next turns (`why`: what held the repair back) */
+  | { readonly type: 'owed'; readonly at: number; readonly turn: string; readonly ids: readonly (string | null)[]; readonly why: string }
   /** The brain ended turn `turn` with `refine | note` and the server ran it again at once (`note` is its own words) */
   | { readonly type: 'continue'; readonly at: number; readonly turn: string; readonly note: string }
   | {

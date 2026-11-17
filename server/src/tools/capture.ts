@@ -468,6 +468,12 @@ const PAGE_SCRIPT = String.raw`async (job) => {
   }
   charts && charts.dispose();
   hold.remove();
+  // What the stage itself measures about this turn at rest (the same notes the brain is told): printed with the other notes, one line for each thing that did not land
+  try {
+    const { sightOf } = await import('/src/painter/sight.ts');
+    const sight = sightOf(timeline, schedule, base, duration, false);
+    for (const item of sight.items) if (item.notes.length > 0) notes.push('measure: ' + item.id + ' (' + item.kind + ') ' + item.notes.join(', '));
+  } catch (error) { notes.push('measure failed: ' + String((error && error.message) || error)); }
   return { duration, times, strip, rest, svgText, svgPng, plainPng, webm, videoNote, notes, rejected, debug };
 }`;
 

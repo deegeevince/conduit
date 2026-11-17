@@ -1,5 +1,5 @@
 import { API, asksToImprove, SKILL_HOLD, CANVAS, DATA_LIMITS, EMPTY_STAGE, isLessonVerb, PASTE_AS_DOCUMENT_CHARS, FULL_CAPABILITIES, LANGUAGE, LEAD_WINDOW, LineNormalizer, LineReader, PRESENCE_TYPING_MS, parseLine, TurnScore, buildSystemPrompt, draftFactsOf, hasLesson, usesParts, repairWorth, serializeLine, settle, splitCells, wearingAt, withoutUnknownBraces, worthALook } from '@conduit/language';
-import type { DrawLine, RepairWorth, StyleProps, SkillBlockFacts, TechniqueCard } from '@conduit/language';
+import type { DrawLine, OwedFinding, RepairWorth, StyleProps, SkillBlockFacts, TechniqueCard } from '@conduit/language';
 import type { ActivityState, BrainChange, BrainChoice, BrainMode, CriticFinding, DocumentSummary, DocumentView, FixPolicy, NodeId, NodeStatus, OpenDocumentResponse, PromptVariant, Seen, ToolChoice } from '@conduit/language';
 import type {
   BackEvent,
@@ -55,7 +55,7 @@ import type { DocChange, Documents, LoadedDocument } from './document';
 import type { DocumentAssets } from '../documents/assets';
 import { cropJpeg } from '../pictures/image';
 import { rebuildMemory } from './drawing-memory';
-import { buildContext, holdStanding, parseStanding, rememberTurn } from './memory';
+import { buildContext, holdStanding, oweFindings, owedToTell, parseStanding, rememberTurn } from './memory';
 import type { StandingAsk } from './memory';
 import { MAX_PROBLEMS, SERVER_LIMITS } from './session';
 import type { SessionEntry, SessionLog, SessionRecord } from './session-log';
@@ -540,7 +540,8 @@ export class Conductor {
     for (const made of s.obs.all().filter((one) => one.seq > before)) this.deps.sessionLog.write(s.id, { type: 'obs', turn: null, obs: made });
     const tools = this.deps.canvasTools === true && brain === brains.configured;
     const briefed = briefEyes(s, tools);
-    const context = { ...buildContext(s, this.servicesFor(s.capabilities, s.id)), ...(briefed.eyes === null ? {} : { eyes: briefed.eyes }), ...(tools ? { canvas: true } : {}) };
+    const owed = this.owedFor(s);
+    const context = { ...buildContext(s, this.servicesFor(s.capabilities, s.id)), ...(briefed.eyes === null ? {} : { eyes: briefed.eyes }), ...(tools ? { canvas: true } : {}), ...(owed.length === 0 ? {} : { owed }) };
     const turn: ActiveTurn = {
       id: sessions.nextTurnId(),
       session: s.id,
@@ -1554,7 +1555,7 @@ export class Conductor {
   }
 
   private logFix(s: Session, turn: ActiveTurn, attempt: FixAttempt): void {
-    if (!attempt.shown && attempt.why !== null) this.observe(s, turn.id, { source: 'server', kind: 'refusal', severity: 'blocking', answer: true, note: `a fix was refused: ${attempt.why}` });
+    if (!attempt.shown && attempt.why !== null && attempt.retried !== true) this.observe(s, turn.id, { source: 'server', kind: 'refusal', severity: 'blocking', answer: true, note: `a fix was refused: ${attempt.why}` });
     this.deps.sessionLog.write(s.id, {
       type: 'fix',
       turn: turn.id,
@@ -1566,6 +1567,7 @@ export class Conductor {
       draft: attempt.draft,
       candidate: attempt.candidate,
       file: this.draftFiles.get(`${s.id}/${turn.id}#${attempt.pass}`) ?? null,
+      ...(attempt.retried === true ? { retried: true } : {}),
     });
   }
 
@@ -1688,13 +1690,41 @@ export class Conductor {
     return null;
   }
 
+  /**
+   * What the critic found broken that no repair mended, as the next brief is to tell it. A finding is kept while the thing it names is still on
+   * stage, and told at most twice: if the brain has had it in two briefs and left it, it was not to be mended by words.
+   */
+  private owedFor(s: Session): OwedFinding[] {
+    return owedToTell(s);
+  }
+
+  /**
+   * Keeps the critic's blocking findings of an answer that was not repaired, to be told at the next turn. Chosen over repairing the old answer after
+   * the newer turn rests: that turn has already moved the drawing (and the person with it), so a repair written for the picture the critic saw may
+   * undo or fight what they asked for since. The brain, which knows what the new turn is for, gets the ids and mends them when it next touches them.
+   * A repair that is later kept for the same answer does not owe them (a kept repair never reaches here).
+   */
+  /** Keeps the critic's blocking findings of an answer that was not repaired, to be told at the next turn. A repair that is later kept for the same answer clears them. */
+  private oweFindings(s: Session, turn: ActiveTurn, finding: CriticFinding, why: string): void {
+    const owed = oweFindings(s, turn.id, finding);
+    if (owed.length === 0) return;
+    this.deps.log.info('critic.owed', { session: s.id, turn: turn.id, ids: owed.map((one) => one.id ?? '-').join(','), why });
+    this.deps.sessionLog.write(s.id, { type: 'owed', turn: turn.id, ids: owed.map((one) => one.id), why });
+  }
+
   private considerRepair(s: Session, turn: ActiveTurn, finding: CriticFinding): void {
     const worth = repairWorth(finding);
-    if (!worth.wanted || s.repaired.has(turn.id)) return;
+    if (!worth.wanted || s.repaired.has(turn.id)) {
+      // not a repair's business (a lower tier, or one already tried): the blocking findings are still the brain's to hear of
+      if (!s.repaired.has(turn.id)) this.oweFindings(s, turn, finding, 'not a repair\'s kind of finding');
+      return;
+    }
     const { now, sessionLog, log } = this.deps;
     const skipped = (why: string): void => {
       log.info('repair.skipped', { session: s.id, turn: turn.id, why });
       sessionLog.write(s.id, { type: 'repair', turn: turn.id, repair: null, state: 'skipped', gates: worth.gates, why, lines: [], coherenceBefore: finding.coherence, blockingBefore: null, blockingAfter: null, costUsd: null, ms: 0, tryMs: null, firstLineMs: null, sinceEndMs: now() - (turn.endedAt ?? now()) });
+      // The finding is not dropped with the repair: the brain is told of it at its next turn (never if the person switched repairs off to be left alone).
+      this.oweFindings(s, turn, finding, why);
     };
     if (!s.repairOn) return skipped('switched off (/review repair off)');
     if (turn.continueNote !== undefined) return skipped('the brain went on by its own choice');
@@ -1715,6 +1745,7 @@ export class Conductor {
     const write = (state: 'kept' | 'refused' | 'nothing' | 'failed' | 'cancelled' | 'skipped', patch: { repair?: string; why?: string | null; lines?: readonly string[]; blockingBefore?: number | null; blockingAfter?: number | null; costUsd?: number | null; tryMs?: number | null; firstLineMs?: number | null } = {}): void => {
       const entry = { type: 'repair' as const, turn: turn.id, repair: null, state, gates: worth.gates, why: null, lines: [], coherenceBefore: finding.coherence, blockingBefore: null, blockingAfter: null, costUsd: null, ms: now() - started, tryMs: null, firstLineMs: null, sinceEndMs: now() - (turn.endedAt ?? started), ...patch };
       sessionLog.write(s.id, entry);
+      if (state !== 'kept') this.oweFindings(s, turn, finding, `the repair was ${state}${entry.why === null ? '' : `: ${entry.why}`}`);
       log.info(`repair.${state}`, { session: s.id, turn: turn.id, gates: worth.gates.join(','), why: entry.why, repair: entry.repair, blockingBefore: entry.blockingBefore, blockingAfter: entry.blockingAfter, costUsd: entry.costUsd, ms: entry.ms });
     };
     const here = (): boolean => !signal.aborted && s.turn === turn && turn.endReason === 'done' && turn.reported;

@@ -15,6 +15,16 @@ export interface LineProblem {
   readonly why: string;
 }
 
+/** A blocking finding of the critic that nothing has acted on, kept to be told to the brain at its next turn. */
+export interface OwedFinding {
+  /** the turn the critic looked at */
+  readonly turn: string;
+  /** the element it names; null when it names no one */
+  readonly id: string | null;
+  readonly gate: string | null;
+  readonly what: string;
+}
+
 /** One earlier turn as the brain should remember it: what the user said and what they actually SAW. */
 export interface TurnMemory {
   readonly turn: string;
@@ -193,6 +203,8 @@ export interface TurnContext {
   readonly canvas?: boolean;
   /** The drawing memory's index: a row for each of the newest versions of the drawing (the turn, what was asked, what stood in it). Absent: nothing is remembered. */
   readonly drawingMemory?: readonly MemoryRow[];
+  /** What the critic found broken in an answer that no repair could mend (a newer turn had come, or the repair failed), and that is still on stage: the brief names the ids so the brain mends them when it next touches the drawing. Absent: none. */
+  readonly owed?: readonly OwedFinding[];
 }
 
 /** One version of the drawing the conversation remembers: the turn that made it, the words that asked, how many parts, and the ones at the top. */
