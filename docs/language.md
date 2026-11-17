@@ -1452,6 +1452,7 @@ The painter renders these media by itself: `watercolor`, `oil`, `gouache`, `ink`
 | Note | Meaning |
 | --- | --- |
 | `clipped` | part of it fell outside the screen |
+| `outside` | part of it stands outside the canvas, the frame the picture is read in: put it back inside (the point in `at=` or `move` is where the middle of the words goes, or their right edge with `align=right`, not their corner) |
 | `off-canvas` | none of it was on screen |
 | `covered` | something drawn later hides most of it |
 | `overlaps` | it sits on top of text |

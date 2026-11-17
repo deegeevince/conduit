@@ -481,6 +481,9 @@ function sightItem(value: unknown, what: string): SightItem {
     resting: bool(raw.resting, `${what}.resting`),
     notes: [...new Set(notes)],
     ...(typeof raw.within === 'string' && raw.within.length > 0 ? { within: raw.within.replace(/\s+/g, ' ').slice(0, SIGHT_ID_CHARS) } : {}),
+    // the ids of the words it runs into go back into the brain's brief, so each is one short id, and there are few
+    ...(Array.isArray(raw.against) && notes.includes('collides') ? { against: strings(raw.against, `${what}.against`).slice(0, 3).map((other) => other.replace(/\s+/g, ' ').slice(0, SIGHT_ID_CHARS)).filter((other) => other.length > 0) } : {}),
+    ...(raw.hidden === true ? { hidden: true as const } : {}),
   };
 }
 

@@ -6,14 +6,50 @@
 
 import type { Film } from './film';
 
-export type ExportRequest =
+/**
+ * A video file; the container is chosen by what this browser can encode (`formats()` says). The film is the session as it ran (the language pane, the
+ * input box with the prompt typed into it, the waits cut and marked, the controls as the session left them, the view following what is drawn), and
+ * every option below defaults to that, so a request that names none of them is the film as it was before they existed.
+ */
+export interface VideoRequest {
+  readonly kind: 'video';
+  readonly format: 'webm' | 'mp4';
+  readonly width: number;
+  readonly height: number;
+  readonly fps: number;
+  readonly from?: number;
+  readonly to?: number;
   /**
-   * a video file; the container is chosen by what this browser can encode (`formats()` says). `scope` is for the app, which decides what film
-   * it hands the exporter: `turn` the last turn alone, `answer` (the default) the last answer and the taps that carried it on, `conversation`
-   * every turn, each after a title card. The exporter only names the file by it. The tunes in the film are in the file as sound when this
-   * browser can encode it.
+   * For the app, which decides what film it hands the exporter: `turn` the last turn alone, `answer` (the default) the last answer and the taps that carried it on,
+   * `conversation` every turn, each after a title card (unless `cards` is false). The exporter only names the file by it. The tunes in the film are in the file as
+   * sound when this browser can encode it.
    */
-  | { readonly kind: 'video'; readonly format: 'webm' | 'mp4'; readonly width: number; readonly height: number; readonly fps: number; readonly from?: number; readonly to?: number; readonly scope?: 'turn' | 'answer' | 'conversation'; /** a film that says where it is quiet has its long waits cut to a moment with a marker (default on); `false` keeps them whole, `{ threshold }` sets how long a wait must be (seconds, default 4) */ readonly cuts?: boolean | { readonly threshold?: number }; /** a film that can (`Film.framing`) eases its framing toward the element being drawn and back out to the whole stage between lines (default on); `false` keeps the whole stage always */ readonly follow?: boolean }
+  readonly scope?: 'turn' | 'answer' | 'conversation';
+  /** a film that says where it is quiet has its long waits cut to a moment with a marker (default on); `false` keeps them whole, `{ threshold }` sets how long a wait must be (seconds, default 4) */
+  readonly cuts?: boolean | { readonly threshold?: number };
+  /** a film that can (`Film.framing`) eases its framing toward the element being drawn and back out to the whole stage between lines (default on); `false` keeps the whole stage always */
+  readonly follow?: boolean;
+  /** `scope: 'conversation'`: a title card (what the viewer asked) comes before each turn (default on); `false` runs the turns on into one another. Other scopes have no cards. */
+  readonly cards?: boolean;
+  /**
+   * What is drawn round the stage (default: both). `pane: false` leaves out the language pane, `prompt: false` the input box with the prompt typed into it; the stage takes the room
+   * they leave, and with both off it is the whole picture, full frame. The tap's ripple and the cut marker lie over the stage whatever is switched off.
+   */
+  readonly surround?: { readonly pane?: boolean; readonly prompt?: boolean };
+  /**
+   * A caption for a turn, by the turn's id (what `prompt`, `demo` and `playScript` on the stage hook resolve with): drawn at the bottom left of the stage, the name large and the
+   * words under it smaller, in the look's own colours. It begins to fade in 0.3 s after the turn starts (the turn starts where its prompt begins to be typed, or its touch lands) and is
+   * whole 0.3 s later, and fades out over the 0.3 s before the turn ends (the next turn's start; the film's end for the last). A turn with no entry has no caption.
+   */
+  readonly captions?: Readonly<Record<string, { readonly name: string; readonly caption: string }>>;
+  /** A short line that stands at the top right of the stage in every frame of the film, in the look's own colours: "Scripted tour, no model". */
+  readonly tag?: string;
+  /** A control the session recorded moved (a slider the viewer dragged before an act) is played as a drag, the knob going smoothly from where it stood to the new value over `DRAG.seconds` at the start of the turn's lead-in, and the picture bound to it following (default off: it jumps when the turn begins). */
+  readonly drag?: boolean;
+}
+
+export type ExportRequest =
+  | VideoRequest
   /** one still */
   | { readonly kind: 'still'; readonly format: 'png' | 'svg'; readonly width: number; readonly height: number; readonly at: number }
   /** the Series lines, as a .series text file */

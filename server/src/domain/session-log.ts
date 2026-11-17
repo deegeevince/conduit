@@ -1,6 +1,7 @@
 import type { ActionRisk, ActivityState, BriefForm, Capabilities, ContentCount, ControlValue, CriticFinding, Issue, NodeId, NodeStatus, PageFacts, PassState, ReviewDecision, ReviewForm, ReviewOutcome, ScreenFacts, Services, StateChange, TurnEndReason, TurnInput, TurnReport } from '@conduit/language';
 import type { Observation } from '@conduit/language';
 import type { BrainId, BrainUsage } from './brain';
+import type { FixBlocking } from './review';
 import type { FetchOutcome } from './documents';
 
 /**
@@ -39,7 +40,8 @@ export type SessionRecord =
   /** look and fix: where a turn's passes stood, in order */
   | { readonly type: 'pass'; readonly at: number; readonly turn: string; readonly pass: number; readonly state: PassState; readonly reason: string | null }
   /** the painter's report on a draft: how many things did not land, and whether a picture came with it */
-  | { readonly type: 'draft'; readonly at: number; readonly turn: string; readonly pass: number; readonly noted: number; readonly picture: boolean; readonly file: string | null; readonly facts?: PageFacts }
+  /** `noted`: how many things the page's measure said do not land; null on the line that only files the draft's picture, which counts nothing (it once said 0 there, and was read as a clean draft) */
+  | { readonly type: 'draft'; readonly at: number; readonly turn: string; readonly pass: number; readonly noted: number | null; readonly picture: boolean; readonly file: string | null; readonly facts?: PageFacts }
   /** what look and fix came to for a turn: the decisions, the times and the cost */
   | { readonly type: 'review'; readonly at: number; readonly turn: string; readonly outcome: ReviewOutcome; readonly decisions: readonly ReviewDecision[]; readonly firstLineMs: number | null; readonly totalMs: number; readonly costUsd: number | null }
   /** a table the conversation holds, and what became of sending it to the painter (`ready` when a chart asked for it) */
@@ -48,7 +50,7 @@ export type SessionRecord =
   | { readonly type: 'control'; readonly at: number; readonly turn: string | null; readonly id: string; readonly value: ControlValue; readonly text: string; readonly send: boolean; readonly app?: boolean; readonly ask?: boolean }
   | { readonly type: 'tap'; readonly at: number; readonly turn: string | null; readonly id: string; readonly text: string; readonly choice: boolean }
   /** v2.1. A fix or a refine pass that was tried out of sight, and what became of it: shown, or refused and why. `lines` are what the brain wrote, shown or not. */
-  | { readonly type: 'fix'; readonly at: number; readonly turn: string; readonly pass: number; readonly form: ReviewForm; readonly lines: readonly string[]; readonly shown: boolean; readonly why: string | null; readonly draft: ContentCount | null; readonly candidate: ContentCount | null; readonly file: string | null; readonly retried?: boolean }
+  | { readonly type: 'fix'; readonly at: number; readonly turn: string; readonly pass: number; readonly form: ReviewForm; readonly lines: readonly string[]; readonly shown: boolean; readonly why: string | null; readonly draft: ContentCount | null; readonly candidate: ContentCount | null; readonly file: string | null; readonly retried?: boolean; readonly blocking?: FixBlocking }
   /** v2.1. What the critic made of a turn's resting picture, seconds after the turn ended; `queued` when it was passed to the loop as evidence */
   | { readonly type: 'critic'; readonly at: number; readonly turn: string; readonly finding: CriticFinding; readonly queued: boolean }
   /** v2.1, a brain with tools. One tool call, at its start and again at its end: what it was in a few safe words (`redactSecrets`), never its input or its result. Takes the place of `tool`, which older logs still hold. */

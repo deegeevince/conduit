@@ -130,6 +130,14 @@ export interface FixAttempt {
   readonly candidate: ContentCount | null;
   /** the brain was told why it was thrown out and asked for another: this was not the last word on the draft */
   readonly retried?: boolean;
+  /** how many things the stage's measure said did not land, in the draft and with this fix tried (null when it was not tried): what the verdict was made from */
+  readonly blocking?: FixBlocking;
+}
+
+/** What a fix was held to by the measure: things not landing in the draft, and in the draft with the fix on it. */
+export interface FixBlocking {
+  readonly draft: number;
+  readonly candidate: number | null;
 }
 
 interface Slot {
@@ -402,7 +410,7 @@ export async function* reviewTurn(args: ReviewTurnArgs): AsyncGenerator<ReviewSt
           written += 1;
           if (result !== 'fixed') result = 'kept';
           why = outcome.reason;
-          fixes.push({ pass: next, form, lines: outcome.texts, shown: false, why, draft: draftContent, candidate: null });
+          fixes.push({ pass: next, form, lines: outcome.texts, shown: false, why, draft: draftContent, candidate: null, blocking: { draft: blockingCount(report?.sight ?? null), candidate: null } });
           yield { type: 'pass', pass: next, state: 'refused', reason: outcome.reason };
         } else {
           if (result !== 'fixed') result = 'skipped';
@@ -462,7 +470,7 @@ export async function* reviewTurn(args: ReviewTurnArgs): AsyncGenerator<ReviewSt
         const improving = attempt === 1 || (after !== null && lastAfter !== null && after < lastAfter);
         const remaining = policy.passMs - (now() - triesFrom);
         again = refusal !== REFUSALS.late && improving && remaining >= Math.min(policy.firstLineMs, policy.passMs / 2) && !signal.aborted;
-        fixes.push({ pass: next, form, lines: outcome.texts, shown: false, why: refusal, draft: draftContent, candidate: tried?.content ?? null, retried: again });
+        fixes.push({ pass: next, form, lines: outcome.texts, shown: false, why: refusal, draft: draftContent, candidate: tried?.content ?? null, retried: again, blocking: { draft: blockingCount(report?.sight ?? null), candidate: tried === null ? null : blockingCount(tried.sight) } });
         if (again) {
           thrown.push(retryProblem(attempt, outcome.texts, refusal, tried?.sight ?? null));
           lastAfter = after ?? lastAfter;
@@ -476,7 +484,7 @@ export async function* reviewTurn(args: ReviewTurnArgs): AsyncGenerator<ReviewSt
         break;
       }
 
-      fixes.push({ pass: next, form, lines: outcome.texts, shown: true, why: null, draft: draftContent, candidate: tried?.content ?? null });
+      fixes.push({ pass: next, form, lines: outcome.texts, shown: true, why: null, draft: draftContent, candidate: tried?.content ?? null, blocking: { draft: blockingCount(report?.sight ?? null), candidate: tried === null ? null : blockingCount(tried.sight) } });
       result = 'fixed';
       why = null;
       yield { type: 'pass', pass: next, state: 'fixing', reason: null };

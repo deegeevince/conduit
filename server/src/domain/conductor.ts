@@ -796,7 +796,7 @@ export class Conductor {
     const file = this.deps.sessionLog.saveSnapshot(s.id, `${turn}-draft${pass}`, snapshot.mime, snapshot.bytes);
     if (file !== '') {
       this.draftFiles.set(`${s.id}/${turn}#${pass}`, file);
-      this.deps.sessionLog.write(s.id, { type: 'draft', turn, pass, noted: 0, picture: true, file });
+      this.deps.sessionLog.write(s.id, { type: 'draft', turn, pass, noted: null, picture: true, file });
     }
   }
 
@@ -1682,6 +1682,7 @@ export class Conductor {
       candidate: attempt.candidate,
       file: this.draftFiles.get(`${s.id}/${turn.id}#${attempt.pass}`) ?? null,
       ...(attempt.retried === true ? { retried: true } : {}),
+      ...(attempt.blocking === undefined ? {} : { blocking: attempt.blocking }),
     });
   }
 
