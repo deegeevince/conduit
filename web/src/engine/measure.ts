@@ -3,7 +3,10 @@ import { contentOf, EMPTY_STAGE, LineNormalizer, NO_SIGHT, parseLine, TurnScore 
 import type { ContentCount, ControlValues, DataTable, Issue, Line, LookId, PlacedBox, Schedule, Sight, StageBase, TurnOpening, TurnScore } from '@conduit/language';
 import { createRuntime } from '../painter/bound';
 import { controlSpecOf } from '../painter/bound';
+import { withAsks } from '../painter/controls/ask-state';
+import type { AskFacts } from '../painter/controls/ask-state';
 import { createControlStore } from '../painter/controls/store';
+import { withTarget } from '../painter/target';
 import type { ChartData } from '../painter/charts';
 import type { Painting } from '../painter/figures';
 import { placedOf, sightOf } from '../painter/sight';
@@ -40,6 +43,12 @@ export interface EngineInputs {
   readonly pictures: ReadonlyMap<string, { readonly width: number; readonly height: number }>;
   /** the chart kinds the page can draw; absent: all five */
   readonly chartKinds?: readonly string[];
+  /**
+   * What the page itself keeps outside the score: the least a tappable thing measures (css px) and what the hand has done to the asks. The page
+   * leaves both absent (its own are read); a server measuring what the page measured is given the page's (`PageFacts`).
+   */
+  readonly target?: number;
+  readonly asks?: AskFacts;
 }
 
 export interface StageFacts {
@@ -99,6 +108,11 @@ function contextOf(view: EngineView, inputs: EngineInputs, schedule: Schedule): 
 
 /** How a schedule WILL land, as it rests: nothing is waited for, nothing on stage is touched. Total: a leaf that throws is a `fault`. */
 export function measureStage(schedule: Schedule, base: StageBase, view: EngineView, inputs: EngineInputs): StageFacts {
+  const asked = (): StageFacts => (inputs.asks === undefined ? measureOnce(schedule, base, view, inputs) : withAsks(inputs.asks, () => measureOnce(schedule, base, view, inputs)));
+  return inputs.target === undefined ? asked() : withTarget(inputs.target, asked);
+}
+
+function measureOnce(schedule: Schedule, base: StageBase, view: EngineView, inputs: EngineInputs): StageFacts {
   try {
     const stage = view.lockLook === null || base.look === view.lockLook ? base : { ...base, look: view.lockLook };
     const at = buildTimeline(schedule, stage, contextOf(view, inputs, schedule));

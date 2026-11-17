@@ -5,7 +5,7 @@ import { STRUCTURES_READY } from './blocks';
 import { CONTROLS_READY, controlEngine, createControlStore, nextEases } from './controls';
 import { controlIndexOf, createRuntime, controlSpecOf, heldBy, stateReader } from './bound';
 import { penRead, penReady } from './controls/pen';
-import { runOf as askRun, check as askCheck, choose as askChoose, hint as askHint, lockedOf as askLocked, show as askShow } from './controls/ask-state';
+import { asksOf, runOf as askRun, check as askCheck, choose as askChoose, hint as askHint, lockedOf as askLocked, show as askShow } from './controls/ask-state';
 import type { AskAct } from './controls/ask-state';
 import { drivenLayers } from './controls';
 import { scrollCueBoxes } from './controls-stage';
@@ -15,7 +15,7 @@ import type { ChartView } from '../contracts/chart';
 import { CALM } from '../contracts/controls';
 import { NO_SIGHT } from '@conduit/language';
 import type { DataTable, ControlValue, ControlValues, PassState } from '@conduit/language';
-import type { BackEvent, Capabilities, ClockState, ElementSpan, Issue, Line, Schedule, ScoreEntry, Services, StageBase, TurnEndReason, TurnInput, TurnReport } from '@conduit/language';
+import type { BackEvent, Capabilities, ClockState, ElementSpan, Issue, Line, PageFacts, Schedule, ScoreEntry, Services, StageBase, TurnEndReason, TurnInput, TurnReport } from '@conduit/language';
 import type { Recording } from '../contracts/film';
 import { noteArrivals as noteArrivalsInto } from './arrivals';
 import type { ElementFrame, Frame, Quality, ShapeFrame } from '../contracts/frame';
@@ -651,7 +651,17 @@ export function createPainter(options: PainterOptions): Painter {
     return store.values(byId);
   };
 
-  const landingFor = (at: Timeline, schedule: Schedule, stage: StageBase, skippedAt: number | null) => ({
+  /** What this page measures with that the lines alone do not say (`PageFacts`): sent with every draft and report, so the server measures what the page measured. */
+  const factsOf = (score: TurnScore, schedule: Schedule): PageFacts => ({
+    view: { width: viewport.width, height: viewport.height, dpr: viewport.dpr },
+    floors: score.floors(),
+    target: targetPx(),
+    asks: asksOf(schedule),
+    controls: heldValues(schedule),
+  });
+
+  const landingFor = (at: Timeline, schedule: Schedule, stage: StageBase, skippedAt: number | null, score: TurnScore) => ({
+    facts: factsOf(score, schedule),
     controls: heldValues(schedule),
     sight: (when: number) => sightOf(at, schedule, stage, when, wantsSnapshot()),
     placed: (when: number, keys: ReadonlySet<string>) => placedOf(at, schedule, when, keys),
@@ -700,6 +710,7 @@ export function createPainter(options: PainterOptions): Painter {
       return;
     }
     const { sight, placed, content } = facts;
+    const pageFacts = factsOf(open.score, source);
     let reported = false;
     const holdMs = Number(devFlag('holdDraft') ?? 0);
     const held = (send: () => void): void => {
@@ -709,7 +720,7 @@ export function createPainter(options: PainterOptions): Painter {
     const report = (snapshot: boolean): void => {
       if (disposed || reported) return;
       reported = true;
-      held(() => emitBack({ type: 'draft', turn: open.id, pass, sight: { ...sight, snapshot }, placed: placed.map(({ key: _key, ...item }) => item), snapshot, content, boxes: facts.boxes }));
+      held(() => emitBack({ type: 'draft', turn: open.id, pass, sight: { ...sight, snapshot }, placed: placed.map(({ key: _key, ...item }) => item), snapshot, content, boxes: facts.boxes, facts: pageFacts }));
     };
     if (!(services.review && wantsSnapshot())) {
       report(false);
@@ -893,7 +904,7 @@ export function createPainter(options: PainterOptions): Painter {
     const schedule = timeline.schedule;
     const pose = cameraNow(reading);
     observe(reading);
-    const report = reporter.close(schedule, timeline.retired, closing.base, reading.playhead, 'finished', landingFor(timeline, schedule, closing.base, closing.skippedAt));
+    const report = reporter.close(schedule, timeline.retired, closing.base, reading.playhead, 'finished', landingFor(timeline, schedule, closing.base, closing.skippedAt, closing.score));
     memory = { playhead: reading.playhead, pen: schedule.pen, end: Math.max(schedule.end, settledEnd()), lines: linesOf(closing, schedule) };
     review = { schedule, base: closing.base };
     record(closing, schedule);
@@ -1082,7 +1093,7 @@ export function createPainter(options: PainterOptions): Painter {
     const playhead = reading.playhead;
     const frozen = open.started ? patched(timeline.schedule, playhead) : timeline.schedule;
     const frozenTimeline = open.started ? buildTimeline(frozen, open.base, timelineContext()) : timeline;
-    const report = reporter.close(frozen, timeline.retired, open.base, playhead, 'interrupted', landingFor(frozenTimeline, frozen, open.base, open.skippedAt));
+    const report = reporter.close(frozen, timeline.retired, open.base, playhead, 'interrupted', landingFor(frozenTimeline, frozen, open.base, open.skippedAt, open.score));
     memory = { playhead, pen: Math.min(timeline.schedule.pen, playhead), end: playhead, lines: linesOf(open, frozen) };
     const pose = cameraNow(reading);
     // A picture that had begun gets its sketch sent: it is on stage, and it will be whole. One that had not is forgotten.
@@ -1691,7 +1702,7 @@ export function createPainter(options: PainterOptions): Painter {
       if (!turn.started) {
         const reading = clock.read();
         const closing = turn;
-        const report = reporter.close(timeline.schedule, timeline.retired, closing.base, 0, 'finished', landingFor(timeline, timeline.schedule, closing.base, closing.skippedAt));
+        const report = reporter.close(timeline.schedule, timeline.retired, closing.base, 0, 'finished', landingFor(timeline, timeline.schedule, closing.base, closing.skippedAt, closing.score));
         memory = { playhead: 0, pen: 0, end: 0, lines: [] };
         review = null;
         anticipation = null;

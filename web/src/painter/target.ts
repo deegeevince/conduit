@@ -14,3 +14,14 @@ export function setTarget(audience: Parameters<typeof targetFor>[0], pointer: Pa
 export function targetPx(): number {
   return target;
 }
+
+/** Works with this least size for a tappable thing (a server measuring what the page measured with), then puts the page's own back. */
+export function withTarget<T>(px: number, work: () => T): T {
+  const kept = target;
+  target = px;
+  try {
+    return work();
+  } finally {
+    target = kept;
+  }
+}

@@ -41,6 +41,7 @@
     "wall-bench": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/wall-bench.ts",
     "reports": "pnpm --filter @conduit/server exec tsx src/tools/reports.ts",
     "check": "pnpm --filter @conduit/server exec tsx src/tools/check.ts",
+    "drift-check": "pnpm --filter @conduit/server exec tsx src/tools/drift-check.ts",
     "smoke": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/smoke.ts",
     "scenarios": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/scenarios.ts",
     "voice-check": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/voice-check.ts",

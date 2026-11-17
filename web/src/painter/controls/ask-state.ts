@@ -6,7 +6,7 @@
 // It is checked on a press, never live: a hand cannot wiggle a field until it turns green.
 
 import { accepts } from '@conduit/language';
-import type { ElementSpan, StageAsk } from '@conduit/language';
+import type { ElementSpan, PageFacts, StageAsk } from '@conduit/language';
 import { penReady } from './pen';
 
 export type AskVerdict = 'open' | 'wrong' | 'right' | 'shown';
@@ -23,9 +23,9 @@ export interface AskRun {
   ringed: boolean;
 }
 
-const RUNS = new Map<string, AskRun>();
+let RUNS = new Map<string, AskRun>();
 /** an ask's id to the key of the run it is working now */
-const LATEST = new Map<string, string>();
+let LATEST = new Map<string, string>();
 let revision = 0;
 
 export const askOf = (span: ElementSpan): StageAsk | null => (span.figure?.kind === 'control' && span.figure.ask !== undefined ? span.figure.ask : null);
@@ -67,6 +67,49 @@ export function askSignature(span: ElementSpan): string {
   if (ask === null) return '';
   const run = runOf(span);
   return `${run.verdict}.${run.tries.length}.${run.chosen}.${run.hints}.${run.ringed ? 1 : 0}.${lockedOf(span) ? 1 : 0}.${hasNext(span) ? 1 : 0}.${ask.hints.length}.${penReady() ? 1 : 0}`;
+}
+
+/**
+ * What the hand has done to the asks of this schedule, as the server is told it (`PageFacts.asks`): the run of each ask on stage, and the
+ * key each id is working now, for the ids these asks wait on too. Nothing is made: an ask nobody has touched has no run to tell.
+ */
+export function asksOf(schedule: { readonly elements: readonly ElementSpan[] }): AskFacts {
+  const runs: [string, AskRun][] = [];
+  const latest: [string, string][] = [];
+  const seen = new Set<string>();
+  const note = (id: string): void => {
+    const key = LATEST.get(id);
+    if (key !== undefined && !latest.some(([name]) => name === id)) latest.push([id, key]);
+  };
+  for (const span of schedule.elements) {
+    const ask = askOf(span);
+    if (ask === null) continue;
+    const key = keyOf(span, ask);
+    const run = RUNS.get(key);
+    if (run !== undefined && !seen.has(key)) {
+      seen.add(key);
+      runs.push([key, { ...run, tries: [...run.tries] }]);
+    }
+    note(span.id);
+    if (ask.after !== null) note(ask.after);
+  }
+  return { runs, latest };
+}
+
+export type AskFacts = PageFacts['asks'];
+
+/** Works with the asks as the page held them (a server measuring what the page measured), then puts the page's own back: nothing here outlives the call. */
+export function withAsks<T>(facts: AskFacts, work: () => T): T {
+  const keptRuns = RUNS;
+  const keptLatest = LATEST;
+  RUNS = new Map(facts.runs.map(([key, run]) => [key, { ...run, tries: [...run.tries] }]));
+  LATEST = new Map(facts.latest);
+  try {
+    return work();
+  } finally {
+    RUNS = keptRuns;
+    LATEST = keptLatest;
+  }
 }
 
 export const askRevision = (): number => revision;

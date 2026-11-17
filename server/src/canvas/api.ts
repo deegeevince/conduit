@@ -6,7 +6,7 @@
 // route (`http/canvas-routes.ts`; the relay and the steward use it) and the tests all call the same code.
 
 import { CANVAS, OBS_KINDS, floorKind, lintOf, placedLine, quoted, urgentOf } from '@conduit/language';
-import type { ObsKind, Observation, PlacedBox, Schedule } from '@conduit/language';
+import type { ObsKind, Observation, PageFacts, PlacedBox, Schedule } from '@conduit/language';
 import type { Snapshot } from '../domain/brain';
 import type { Logger } from '../log';
 import type { Session, SessionStore } from '../domain/session';
@@ -283,6 +283,12 @@ export class CanvasService {
     return `${s.id}|${turn?.id ?? '-'}|${turn?.lineCount ?? 0}|${view}|${s.screen.width}x${s.screen.height}|${JSON.stringify(s.held)}`;
   }
 
+  /** What the page last measured this turn with (its floors, asks, target and controls), for the screen being looked at: a view the page is not on keeps its own size. */
+  private factsFor(s: Session, seen: Session): PageFacts | undefined {
+    const facts = s.turn?.facts;
+    return facts === null || facts === undefined ? undefined : { ...facts, view: { width: seen.screen.width, height: seen.screen.height, dpr: seen.screen.dpr } };
+  }
+
   private remember(key: string, value: Measured | null): void {
     this.cache.set(key, value);
     while (this.cache.size > CACHE_KEPT) this.cache.delete(this.cache.keys().next().value as string);
@@ -294,7 +300,8 @@ export class CanvasService {
     if (score === undefined || !measurable(score.schedule)) return null;
     const key = this.cacheKey(s, view);
     if (this.cache.has(key)) return this.cache.get(key) ?? null;
-    const value = measureDraft(score, this.viewOf(s, view));
+    const seen = this.viewOf(s, view);
+    const value = measureDraft(score, seen, this.factsFor(s, seen));
     this.remember(key, value);
     return value;
   }
@@ -392,7 +399,8 @@ export class CanvasService {
     let lint: Observation[] = [];
     for (const view of views) {
       const before = this.measured(s, view);
-      const tried = tryFix(s.turn.score, lines, this.viewOf(s, view));
+      const seen = this.viewOf(s, view);
+      const tried = tryFix(s.turn.score, lines, seen, this.factsFor(s, seen));
       if (tried === null || before === null) {
         parts.push(`${view === 'reported' ? '' : `${VIEWS[view].label}: `}could not be tried here`);
         allFit = false;

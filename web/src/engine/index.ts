@@ -6,3 +6,6 @@ export { WALL_SHAPES, generatedNodes, movedTiles, planWall, wallCounters } from 
 export type { Tile, WallBox, WallNode, WallPlan, WallShape } from './wall';
 export { wallNodesOfTurns } from '../wall/source-turns';
 export type { WallTurn } from '../wall/source-turns';
+export { asksOf } from '../painter/controls/ask-state';
+export type { AskFacts } from '../painter/controls/ask-state';
+export { targetFor } from '../core/contracts';

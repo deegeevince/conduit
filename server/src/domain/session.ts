@@ -21,7 +21,7 @@ import type {
   TurnScore,
 } from '@conduit/language';
 import { PROMPT_MAX_CHARS } from '@conduit/language';
-import type { OwedFinding } from '@conduit/language';
+import type { OwedFinding, PageFacts } from '@conduit/language';
 import { errors } from '../errors';
 import type { Brain, BrainId } from './brain';
 import type { HeldDocument } from './documents';
@@ -68,6 +68,16 @@ export interface PainterClock {
   readonly at: number;
 }
 
+/** The two sides' digests of one pass's boxes. */
+export interface BoxDigests {
+  page?: string;
+  server?: string;
+  /** what the page measured with (`draft` and `report` carry it) */
+  facts?: PageFacts;
+  /** the server's measure of the same lines again, with the page's facts: what the two sides are compared by once the page's facts are in */
+  again?: (facts: PageFacts) => string | null;
+}
+
 export interface ActiveTurn {
   readonly id: string;
   readonly session: string;
@@ -96,6 +106,8 @@ export interface ActiveTurn {
   /** position in the session's turns; a later turn has a larger ordinal */
   readonly ordinal: number;
   lineCount: number;
+  /** SA2. What the page last said it measured this turn with (a draft's or a report's `facts`): the server's own measures use it, floors and all */
+  facts: PageFacts | null;
   /** lines of this turn that wrote into the document, and `doc` events it sent: a turn that wrote and sent none still tells the page which document it meant */
   docLines: number;
   docEvents: number;
@@ -189,10 +201,12 @@ export interface Session {
   readonly draft: DraftGate;
   /** SA2. What the user last set each control to, by element id: an input to the server's own measurement */
   held: ControlValues;
-  /** SA2. Why this session's drafts are no longer measured here (the page's engine or a digest differed); null while they are */
+  /** SA2. Why this session's drafts are no longer measured here (the page's engine, or a digest that differed in the turn `driftTurn`); null while they are */
   drift: string | null;
-  /** SA2. The digest of a pass's boxes as the server and the page each said it, by `turn#pass` (or `turn#report`); compared when both are in */
-  readonly boxes: Map<string, { page?: string; server?: string }>;
+  /** SA2. The turn a differing digest was found in: that turn's drafts are the page's to measure, and the next turn is measured here again. Null: the engine itself differs, for good */
+  driftTurn: string | null;
+  /** SA2. The digest of a pass's boxes as the server and the page each said it, by `turn#pass` (or `turn#report`); compared when both are in. With the page's facts and a way to measure again as it did, the server's is the page's inputs' digest */
+  readonly boxes: Map<string, BoxDigests>;
   /** turns a snapshot has been uploaded for */
   snapshotTurns: Set<string>;
   /** aborted when the session is dropped: stops paintings that outlive their turns */
@@ -272,6 +286,7 @@ export class SessionStore {
       paintings: 0,
       held: {},
       drift: null,
+      driftTurn: null,
       boxes: new Map(),
       snapshotTurns: new Set(),
       abort: new AbortController(),
