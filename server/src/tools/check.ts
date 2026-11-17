@@ -766,22 +766,39 @@ class Screen {
         good = 'the empty frame is told: the host found nothing visible three seconds after it loaded, and the server holds `app fixblank drew nothing` as blocking';
         break;
       }
-      case 'fb-026':
-      case 'fb-026-named': {
-        // fb-026: the world's land is real. The app draws `World.land` (the shelf's Natural Earth outlines); the screenshot is read for its literal colours, where they fall and how much there is of them.
-        // The globe is turned to centre on 30E 10N, so Africa is not the middle pixel, and the flat map is the whole world in a plane: the same two questions of each.
-        const globe = id === 'fb-026';
-        const app = await this.appWhen(tab, globe ? 'earth' : 'flat', (one) => one.blank !== null);
+      case 'fb-026': {
+        // fb-026: the world's land is real. The app draws `World.land` (the shelf's Natural Earth outlines) with D3; the screenshot is read for its literal colours, where they fall and how much there is
+        // of them. The globe is turned to centre on 30E 10N, so Africa is not the middle pixel.
+        const app = await this.appWhen(tab, 'earth', (one) => one.blank !== null);
         if (app === null) problems.push('the map app is not running');
         else {
           if (!app.loaded) problems.push('the map app never loaded');
           if (app.crashes > 0) problems.push(`the map app threw ${app.crashes} time${app.crashes === 1 ? '' : 's'}: \`World\` was not in its page`);
           if (app.blank === true) problems.push('the map app drew nothing');
         }
-        if (app !== null && app.loaded) problems.push(...(await this.landLooks(tab, globe)));
-        good = globe
-          ? 'the globe turned to 30E 10N shows the land: its fill is a good part of the disc, land is where Africa, Zambia, Chad and Arabia are, and sea is where the mid-Atlantic, the Arabian Sea and the Indian Ocean are'
-          : 'the flat map shows the land: its fill is a good part of the map, land is where Africa, Brazil, Siberia and Australia are, and sea is where the Atlantic, the Pacific and the Indian Ocean are';
+        if (app !== null && app.loaded) problems.push(...(await this.landLooks(tab)));
+        good = 'the globe turned to 30E 10N shows the land: its fill is a good part of the disc, land is where the Congo basin, Zambia, Chad and Arabia are, and sea is where the mid-Atlantic, the Arabian Sea and the Indian Ocean are';
+        break;
+      }
+      case 'fb-026-inferred': {
+        // an app that never named `maps` and reaches for `World.land` is given it, whole and frozen: its block is land-coloured only if so (and the log's `uses-inferred` warning is read in the brief check)
+        const app = await this.appWhen(tab, 'world', (one) => one.blank !== null);
+        if (app === null) problems.push('the world app is not running');
+        else {
+          if (!app.loaded) problems.push('the world app never loaded');
+          if (app.crashes > 0) problems.push(`the world app threw ${app.crashes} time${app.crashes === 1 ? '' : 's'}: \`World\` was not in its page`);
+        }
+        if (app !== null && app.loaded) {
+          const frame = await tab.eval<{ x: number; y: number; w: number; h: number } | null>(
+            `(() => { const f = [...document.querySelectorAll('iframe')].filter((one) => one.style.visibility === 'visible'); if (f.length !== 1) return null; const r = f[0].getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; })()`,
+          );
+          if (frame === null) problems.push('not one frame is showing, so there is nothing to read');
+          else {
+            const [seen] = await tab.call<(number[] | null)[]>('colourAt', await tab.shot(), [{ x: frame.x + frame.w / 2, y: frame.y + frame.h / 2 }], tab.dpr);
+            if (seen === null || seen === undefined || LAND_RGB.reduce((far, channel, at) => far + Math.abs((seen[at] ?? 0) - channel), 0) > 48) problems.push(`the middle of the world app should be the land colour (World.land whole and frozen) and is ${seen === null || seen === undefined ? 'outside the picture' : `rgb(${seen.join(', ')})`}`);
+          }
+        }
+        good = 'the land reached an app that never asked for it: World.land is a MultiPolygon of over a hundred polygons and frozen, so the page shows its land-coloured block';
         break;
       }
       default:
@@ -791,11 +808,11 @@ class Screen {
   }
 
   /**
-   * fb-026: what the screenshot shows of a map app's frame. The fixtures draw the land in LAND_RGB over SEA_RGB, nothing else in either colour. The globe (an orthographic one, centred on
-   * 30E 10N: `d3.geoOrthographic().rotate([-30, -10])`, a disc of 0.45 of the frame's shorter side) and the flat map (the whole world in a plane, centred) are read at known places: how much of the
-   * middle is land, then the colour at a few points that are land (inland, away from a coast) and a few that are sea. The problems it found, none when the map is real.
+   * fb-026: what the screenshot shows of the globe app's frame. The fixture draws the land in LAND_RGB over SEA_RGB, nothing else in either colour. The globe is an orthographic one centred on
+   * 30E 10N (`d3.geoOrthographic().rotate([-30, -10])`, a disc of 0.45 of the frame's shorter side): how much of the middle is land, then the colour at a few points that are land (inland, away
+   * from a coast) and a few that are sea. The problems it found, none when the map is real.
    */
-  private async landLooks(tab: Tab, globe: boolean): Promise<string[]> {
+  private async landLooks(tab: Tab): Promise<string[]> {
     const frame = await tab.eval<{ x: number; y: number; w: number; h: number } | null>(
       `(() => { const f = [...document.querySelectorAll('iframe')].filter((one) => one.style.visibility === 'visible'); if (f.length !== 1) return null; const r = f[0].getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; })()`,
     );
@@ -805,27 +822,19 @@ class Screen {
     const cy = frame.y + frame.h / 2;
     const radius = 0.45 * Math.min(frame.w, frame.h);
     const where = (lon: number, lat: number): { x: number; y: number } | null => {
-      if (!globe) {
-        const k = Math.min(frame.w / 360, frame.h / 180);
-        return { x: cx + lon * k, y: cy - lat * k };
-      }
       const rad = Math.PI / 180;
       const [lon0, lat0] = [30 * rad, 10 * rad];
       const [l, p] = [lon * rad, lat * rad];
       if (Math.sin(lat0) * Math.sin(p) + Math.cos(lat0) * Math.cos(p) * Math.cos(l - lon0) <= 0.05) return null;
       return { x: cx + radius * Math.cos(p) * Math.sin(l - lon0), y: cy - radius * (Math.cos(lat0) * Math.sin(p) - Math.sin(lat0) * Math.cos(p) * Math.cos(l - lon0)) };
     };
-    const lands: readonly (readonly [string, number, number])[] = globe
-      ? [['the Congo basin', 20, 0], ['Zambia', 25, -15], ['Chad', 15, 15], ['Arabia', 45, 25]]
-      : [['the Congo basin', 20, 0], ['Brazil', -55, -10], ['Siberia', 100, 62], ['Australia', 135, -25]];
-    const seas: readonly (readonly [string, number, number])[] = globe
-      ? [['the mid-Atlantic', -30, 0], ['the Arabian Sea', 62, 12], ['the Indian Ocean', 75, -15]]
-      : [['the mid-Atlantic', -30, 0], ['the Pacific', -150, 0], ['the Indian Ocean', 80, -30]];
+    const lands: readonly (readonly [string, number, number])[] = [['the Congo basin', 20, 0], ['Zambia', 25, -15], ['Chad', 15, 15], ['Arabia', 45, 25]];
+    const seas: readonly (readonly [string, number, number])[] = [['the mid-Atlantic', -30, 0], ['the Arabian Sea', 62, 12], ['the Indian Ocean', 75, -15]];
     const problems: string[] = [];
-    // the middle of the picture: the square inside the disc (or the middle half of the map) holds a good share of land fill
-    const half = globe ? radius / Math.SQRT2 : Math.min(frame.w / 4, frame.h / 4);
+    // the middle of the picture: the square inside the disc holds a good share of land fill
+    const half = radius / Math.SQRT2;
     const [share] = await tab.call<number[]>('colourShare', picture, [{ x: cx - half, y: cy - half, w: 2 * half, h: 2 * half }], LAND_RGB, 48, tab.dpr);
-    if ((share ?? 0) < 0.15) problems.push(`only ${(100 * (share ?? 0)).toFixed(1)}% of the middle of the ${globe ? 'globe' : 'map'} is the land fill (a real one is about a third or more)`);
+    if ((share ?? 0) < 0.15) problems.push(`only ${(100 * (share ?? 0)).toFixed(1)}% of the middle of the globe is the land fill (a real one is about a third or more)`);
     const probes = [...lands.map(([name, lon, lat]) => ({ name, lon, lat, want: LAND_RGB, kind: 'land' })), ...seas.map(([name, lon, lat]) => ({ name, lon, lat, want: SEA_RGB, kind: 'sea' }))];
     const spots = probes.map((probe) => where(probe.lon, probe.lat));
     const seen = await tab.call<(number[] | null)[]>('colourAt', picture, spots.map((spot) => spot ?? { x: -10, y: -10 }), tab.dpr);
@@ -936,8 +945,8 @@ class Screen {
     }
     const problems: string[] = [];
     for (const [what, pattern] of wanted) if (!shown.some((fingerprint) => pattern.test(fingerprint))) problems.push(`no brief listed ${what} among its urgent items (${shown.length} urgent item${shown.length === 1 ? '' : 's'} shown over the session)`);
-    // fb-025: the globe's first row that reaches for d3 says so in the log, once; fb-026: so does the earth's first row that reaches for `World`, once; no other app is said to (the rest reach for nothing, or name what they use)
-    if (inferred.length !== 2 || !/^row globe \| .*\(charts\)$/.test(inferred[0] as string) || !/^row earth \| .*\(maps\)$/.test(inferred[1] as string)) problems.push(`the log should hold two \`uses-inferred\` warnings, one on a row of the globe naming charts and one on a row of the earth naming maps: ${inferred.length === 0 ? 'none' : inferred.join('; ')}`);
+    // fb-025: the globe's first row that reaches for d3 says so in the log, once; fb-026: so does the world app's first row that reaches for `World`, once; no other app is said to (the rest reach for nothing, or name what they use)
+    if (inferred.length !== 2 || !/^row globe \| .*\(charts\)$/.test(inferred[0] as string) || !/^row world \| .*\(maps\)$/.test(inferred[1] as string)) problems.push(`the log should hold two \`uses-inferred\` warnings, one on a row of the globe naming charts and one on a row of the world app naming maps: ${inferred.length === 0 ? 'none' : inferred.join('; ')}`);
     // the words the brain reads: the digest, made from the logged observations by the shared function
     const digest = attention === null ? '' : digestFull(noted.filter((one) => one.severity === 'blocking'), attention).text;
     if (!/app fixthrow threw: "Error: fixture: thrown on purpose" \(line 8\)/.test(digest)) problems.push(`the digest does not say how the app threw: ${digest.replace(/\s+/g, ' ').slice(0, 200)}`);

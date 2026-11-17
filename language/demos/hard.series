@@ -185,14 +185,11 @@ row fixblank | </script>
 say c1 | An app that draws nothing.
 wait 1
 
-# fb-026: the world's land, real. An app that draws `World.land` (the shelf's Natural Earth outlines) must draw land, and in the right place. This one asks for `uses=charts` only: the
-# `World` it reaches for is loaded anyway (the log holds a `uses-inferred` warning for it). Literal colours, a fixed turn of the globe (centred on 30E 10N): the check reads the screenshot.
+# fb-026: the world's land, real. An app that draws `World.land` (the shelf's Natural Earth outlines) with D3 must draw land, and in the right place. It names `uses=maps,charts`, and turns the
+# globe to centre on 30E 10N, so that Africa is not the middle pixel: the check reads the screenshot (literal colours: land #e8b84a over sea #1b4f9c, nothing else in either).
 scene fb-026 layout=caption
-app earth height=330 uses=charts | The Earth, drawn from World.land
-row earth | <style>
-row earth | body { margin: 0; overflow: hidden; background: #f4f1ea; }
-row earth | svg { display: block; width: 100vw; height: 100vh; }
-row earth | </style>
+app earth height=330 uses=maps,charts | The Earth, drawn from World.land
+row earth | <style>body { margin: 0; overflow: hidden; background: #f4f1ea; } svg { display: block; width: 100vw; height: 100vh; }</style>
 row earth | <svg id="s"></svg>
 row earth | <script>
 row earth | var w = innerWidth, h = innerHeight, svg = d3.select('#s');
@@ -204,20 +201,17 @@ row earth | </script>
 say c1 | The Earth, from the shelf's land.
 wait 1
 
-# fb-026, the named way: `uses=maps,charts`, and a flat map of the same land through an equirectangular projection (the outlines cross the date line, so a flat map goes through a d3 projection).
-scene fb-026-named layout=caption
-app flat height=300 uses=maps,charts | A flat map of the land
-row flat | <style>
-row flat | body { margin: 0; overflow: hidden; background: #1b4f9c; }
-row flat | svg { display: block; width: 100vw; height: 100vh; }
-row flat | </style>
-row flat | <svg id="s"></svg>
-row flat | <script>
-row flat | var w = innerWidth, h = innerHeight, k = Math.min(w / 360, h / 180);
-row flat | var proj = d3.geoEquirectangular().scale((k * 180) / Math.PI).translate([w / 2, h / 2]);
-row flat | d3.select('#s').append('path').datum(World.land).attr('d', d3.geoPath(proj)).attr('fill', '#e8b84a');
-row flat | </script>
-say c1 | A flat map, from the shelf's land.
+# fb-026, the other way in: an app that never says `uses=` and reaches for `World.land`. The land is loaded for it anyway (the log holds a `uses-inferred` warning for it), whole and frozen:
+# the page shows its land-coloured block only if `World.land` is a MultiPolygon of over a hundred polygons and cannot be changed. No D3 here, so the page stays light.
+scene fb-026-inferred layout=caption brisk
+app world height=120 | The land is there, and frozen
+row world | <style>body { margin: 0; background: #1b4f9c; } #d { width: 50vw; height: 60vh; margin: 20vh auto; background: #e8b84a; }</style>
+row world | <div id="d"></div>
+row world | <script>
+row world | var ok = World.land.type === 'MultiPolygon' && World.land.coordinates.length > 100 && Object.isFrozen(World.land);
+row world | if (!ok) document.getElementById('d').remove();
+row world | </script>
+say c1 | The land arrived without being asked for.
 wait 1
 
 # a photo with callouts at spots. The check puts a generated test pattern up as u1 (900 by 600) and, as the server does for a photo a turn carries, the shape is stamped: aspect=1.5
