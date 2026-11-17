@@ -5,7 +5,7 @@
 // never worded as an instruction. Handlers are plain functions of the session and the arguments, so the MCP face (`mcp.ts`), the owner's HTTP
 // route (`http/canvas-routes.ts`; the relay and the steward use it) and the tests all call the same code.
 
-import { BUSY_STAGE, CANVAS, OBS_KINDS, floorKind, lintOf, placedLine, quoted, urgentOf } from '@conduit/language';
+import { CANVAS, OBS_KINDS, floorKind, lintOf, placedLine, quoted, urgentOf } from '@conduit/language';
 import type { ObsKind, Observation, PageFacts, PlacedBox, Schedule } from '@conduit/language';
 import type { Snapshot } from '../domain/brain';
 import type { Logger } from '../log';
@@ -219,15 +219,6 @@ export class CanvasService {
       this.host.log.info('canvas.call', { session, tool, ms: 0, refused: 'budget', turn: state.turn });
       return out;
     }
-    // Nothing is called before the first line is written: the stage and the observations are already in the brief, and a model that checks first
-    // keeps the viewer waiting (a turn that called `canvas_fits` twice before writing took 13 s to its first line, against 2 to 3). Not charged.
-    // One exception: on a busy stage (the brief says so) one `canvas_look` may come first, so that the brain sees the picture it is about to change.
-    const busyLook = tool === 'canvas_look' && state.looks === 0 && s.stage.elements.filter((element) => !element.struck && element.parent === null).length > BUSY_STAGE;
-    if (counted && waitForAdapter && (s.turn?.lineCount ?? 0) === 0 && s.turn?.id === state.turn && !busyLook) {
-      state.early += 1;
-      this.host.log.info('canvas.call', { session, tool, ms: 0, refused: 'first-line', turn: state.turn });
-      return { text: `rev ${s.obs.rev}\nwrite your first line before you check anything: the stage and what was seen are in your brief. Then call again if you still need to.` };
-    }
     if (counted) state.calls += 1;
     try {
       switch (tool) {
@@ -267,7 +258,7 @@ export class CanvasService {
       state.toolMs += ms;
       if (state.pulled.length < MAX_PULLED) state.pulled.push({ tool, kind: kindPulled === '' ? '-' : kindPulled, since, n, ms: Math.round(ms * 10) / 10 });
     }
-    this.host.log.info('canvas.call', { session, tool, ms: Math.round(ms * 100) / 100, turn: state.turn, call: counted ? state.calls : null, chars: out.text.length });
+    this.host.log.info('canvas.call', { session, tool, ms: Math.round(ms * 100) / 100, turn: state.turn, call: counted ? state.calls : null, chars: out.text.length, lines_before: s.turn?.lineCount ?? 0 });
     return out;
   }
 
@@ -555,7 +546,7 @@ export class CanvasService {
     const target = typeof args['target'] === 'string' && args['target'] !== '' ? clip(args['target'], 40) : null;
     const wait = Math.min(LOOK_DEADLINE_MS, Math.max(500, Math.trunc(Number(args['wait'] ?? LOOK_DEADLINE_MS)) || LOOK_DEADLINE_MS));
     const lead = (stage: ToolOutput, line: string): ToolOutput => ({ ...stage, text: stage.text.replace(/^(rev \d+\n)/, `$1${line}\n`) });
-    // no count of its own: a look is a call, and the turn's budget of calls (`CANVAS_BUDGET`) is the limit; the first line must still come first (`call`)
+    // no count of its own: a look is a call, and the turn's budget of calls (`CANVAS_BUDGET`) is the limit; a look before the first line is the brain's to choose
     state.looks += 1;
     const picture = s.turn === null ? null : await this.host.wantPicture(s, target, wait);
     const stage = this.stage(s, state, {});

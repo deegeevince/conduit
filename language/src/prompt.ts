@@ -31,7 +31,7 @@ import { describeSight } from './sight';
 import { BUILTIN_STYLES } from './style';
 import type { LookDef, StyleDef } from './style';
 import { serializeLine } from './serialize';
-import { BUSY_STAGE, drawingRows, stageRows, transcriptOf } from './stage';
+import { drawingRows, stageRows, transcriptOf } from './stage';
 import { PACE_TIMING } from './timing';
 import type { LeadWindow } from './timing';
 import { REVIEW_KEEP, owedText } from './review';
@@ -78,7 +78,7 @@ export const PROMPT_BUDGET = { tokens: 9400, charsPerToken: 2.36 } as const;
  * (18,643 characters, 7,865 tokens).
  */
 /** SA4. The one line of a brief that says the canvas tools exist. */
-export const CANVAS_LINE = 'CANVAS TOOLS (read-only): canvas_stage, canvas_fits, canvas_where, canvas_observe read the stage; canvas_look asks for a picture. Use one after your first line is written, when it helps the work: a painting is worth looking at (only on a busy stage may one canvas_look come before it, as the brief says). Most other answers need none.';
+export const CANVAS_LINE = 'CANVAS TOOLS (read-only), yours to use or not: canvas_stage lists everything on stage with its box (instant); canvas_fits tries lines before you write them (instant); canvas_where and canvas_observe read one thing or what was seen (instant); canvas_look returns a picture of the stage as it stands (about 2 to 4 s). Looking before your first line delays that line by as long as the look takes.';
 
 export function estimateTokens(text: string): number {
   return Math.ceil(text.length / PROMPT_BUDGET.charsPerToken);
@@ -544,7 +544,7 @@ You write ${LANGUAGE.name}: one command per line. A painter in the user's browse
 
 # Start at once
 
-The audience watches an empty stage while you deliberate. Write the first line now.
+The audience watches an empty stage while you deliberate. Write the first line now, or read the canvas first if you need to.
 
 # Choose the form the answer needs
 
@@ -943,11 +943,9 @@ export function memoryHint(rows: readonly MemoryRow[], tool = false): string {
 }
 
 /** Said on a drawing turn when the canvas tools are on: a painter steps back and looks. Brief only; the one constraint is that the first line comes first. */
-export const PAINT_LOOKS = 'ON A PAINTING canvas_look shows the lines so far, settled, whenever stepping back helps: when the sketch is down, when the colour is in, before you finish. Then change what is weak by id. Write your first line before any look, unless the brief says the stage is busy.';
+export const PAINT_LOOKS = 'ON A PAINTING canvas_look shows the lines so far, settled (about 2 to 4 s), whenever stepping back helps: when the sketch is down, when the colour is in, before you finish. Then change what is weak by id.';
 
 /** Said whenever something is on stage: judgement, not a rule. Improving a picture changes its parts; a new beat or subject may open a scene; a story's narration lives in the caption band. */
-export const BUSY_LOOK = 'THE STAGE IS BUSY: before your first line, call canvas_look once to see the picture you are about to change (this one time it may come first); then write.';
-
 export const STAGE_JUDGEMENT =
   'CHANGING WHAT IS ON STAGE: to improve a picture, change its parts in place by id (`set`, `move`, `drop`, or a part\'s line again under its id; add marks where it needs them): a `scene` would clear the picture the person liked. A new beat of a story, or a new subject, may open a new `scene` and bring back what it needs from your drawing memory (`use <id> from=<turn>`). A story\'s running narration lives in the caption band (`scene caption`: one line at a time, each replacing the last), never stacked at a `near=` anchor; drop or replace the words of the last beat.';
 
@@ -1176,8 +1174,6 @@ export function buildTurnBrief(context: TurnContext, input: TurnInput, form: Bri
     // Words have rows of their own (kind, where they rest, the first words, what they run into) so that they can be dropped or replaced on purpose; drawn parts are in YOUR DRAWING NOW when that is shown.
     const listed = stageRows(stage, reported, drawingNow !== null);
     if (listed !== null && listed.rows.length > 0) parts.push(`ON STAGE NOW (a new \`scene\` clears all but the pinned; id (kind) x,y WxH: first words):\n${listed.rows.join('\n')}${listed.older > 0 ? `\n  and ${listed.older} older things` : ''}${drawingNow !== null ? '\n  (what is drawn is in YOUR DRAWING NOW)' : ''}`);
-    // A stage already busy: one look at it before the first line shows what the new lines would land on.
-    if (context.canvas === true && visible.length > BUSY_STAGE && (input.kind === 'prompt' || input.kind === 'tap')) parts.push(BUSY_LOOK);
     if (input.kind === 'prompt' || input.kind === 'tap' || input.kind === 'refine') parts.push(STAGE_JUDGEMENT);
     // A follow-up about what is on stage changes it in place. The ids it can be changed by are named here, at the point of use, because
     // the system prompt's rule was not enough: "now make it 40 years" opened a scene and drew the whole answer again (v2.1 review, P1-11).

@@ -351,9 +351,6 @@ export function drawingRows(stage: StageBase, limit = 40): string | null {
   return `YOUR DRAWING NOW (${drawn.length} live parts, largest first${rows.length > limit ? `, ${limit} shown` : ''}; the ids to change by):\n${shown.join('\n')}`;
 }
 
-/** More than this many things carried on stage and the stage is busy: the brief invites one look before the first line, and the server lets it through. */
-export const BUSY_STAGE = 12;
-
 /** The most rows ON STAGE NOW lists; about 700 tokens. Words come first and the newest are kept. */
 export const STAGE_ROWS = 36;
 
