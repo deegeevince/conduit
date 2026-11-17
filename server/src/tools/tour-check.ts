@@ -89,7 +89,8 @@ export async function tourGroup(base: string, screen: LensScreen, dir: string, t
       picture = await shoot('tour');
       // a chapter, then a demo of it
       if (await tapCard(chapter)) {
-        const demoCard = first.cards[0];
+        // the shortest demo card of the chapter: the card's demo is judged by the demo pass, here it only has to start and give the way back
+        const demoCard = first.cards.find((card) => card.kind === 'demo' && card.name === 'art') ?? first.cards[0];
         if (demoCard === undefined || demoCard.kind !== 'demo') throw new Error('the first chapter starts with no demo');
         if (await until('the chapter page', async () => (await shown(demoCard.label)) !== null, 12_000)) {
           await shoot('chapter');
@@ -126,9 +127,6 @@ export async function tourGroup(base: string, screen: LensScreen, dir: string, t
         if (await until('the voice card', async () => (await shown('Try it: the mic')) !== null, 12_000)) await shoot('how');
       }
     }
-    await typeCommand('/demo controls');
-    if (await barReady()) await shoot('controls');
-    await until('the stage to be at rest', async () => !(await tab.eval<boolean>(`/^Playing/.test(document.querySelector('.prompt__input').placeholder)`)), 40_000);
     await typeCommand('/demo nonesuch');
     const said = async (): Promise<boolean> => tab.eval<boolean>(`[...document.querySelectorAll('.prompt__status, .prompt__notice')].some((n) => /no demo called/.test(n.textContent))`);
     let told = false;
@@ -137,6 +135,9 @@ export async function tourGroup(base: string, screen: LensScreen, dir: string, t
       if (!told) await sleep(100);
     }
     if (!told) list.push('/demo with an unknown name did not say so');
+    // a named jump starts its demo (its first lines land); the demo itself is judged by the demo pass, so it is not played to the end here
+    await typeCommand('/demo controls');
+    await until('the named demo to start', async () => (await tab.eval<boolean>(`/^Playing/.test(document.querySelector('.prompt__input').placeholder)`)) && (await seen()).some((e) => e.opacity > 0.05), 12_000);
     const failedRequests = tab.drain();
     if (failedRequests.consoleErrors.length > 0) list.push(`console errors: ${failedRequests.consoleErrors.map((e) => e.text).slice(0, 3).join(' | ')}`);
   } catch (error) {

@@ -39,6 +39,7 @@ import { join, resolve } from 'node:path';
 import { NEW_COMMAND_TEXT } from '@conduit/language';
 import { spawnTracked } from '../brains/claude-cli/process';
 import { Cdp, CHROME_CANDIDATES, chromeFlags, sleep, stop, waitFor } from './explore-browser';
+import { claimPort, portCount, releasePort } from './check-ports';
 
 // ---------------------------------------------------------------------------------------------------------------------------------
 // What is asked
@@ -374,7 +375,87 @@ export interface Posted {
   readonly body: string;
 }
 
-/** One headless Chrome with one page, driven over the DevTools protocol, and everything it reported: console errors, failed requests, requests in flight, turns POSTed. */
+// ---------------------------------------------------------------------------------------------------------------------------------
+// The browsers the tabs live in
+//
+// A few headless Chromes, each with its own debugging port (from CHECK_PORTS when set), share the tabs: every Tab is a page in a browser context of its own (its own
+// storage and session), in a window of its own and brought to the front, with background throttling off, so one tab's clock is not slowed by the others. A browser
+// starts with its first tab and stops with its last.
+
+interface Host {
+  readonly port: number;
+  readonly child: ChildProcess;
+  readonly profile: string;
+  readonly browser: Cdp;
+  tabs: number;
+}
+
+const hosts: Host[] = [];
+let hostQueue: Promise<unknown> = Promise.resolve();
+
+/** how many browsers share the tabs: four, fewer when CHECK_PORTS leaves room for fewer after the servers' ports */
+function hostLimit(): number {
+  const ports = portCount();
+  return ports === null ? 4 : Math.max(1, Math.min(4, ports - 4));
+}
+
+async function startHost(): Promise<Host> {
+  const chrome = CHROME_CANDIDATES.find((path) => existsSync(path));
+  if (chrome === undefined) throw new Error('no Chrome found: set CHROME_BIN to a Chrome or Chromium executable');
+  const profile = await mkdtemp(join(tmpdir(), 'conduit-smoke-'));
+  // a debugging port from CHECK_PORTS when it is set (0, Chrome's own, when not)
+  const port = await claimPort('a Chrome', true);
+  const child = spawnTracked(
+    chrome,
+    [...chromeFlags(), '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows', `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`, 'about:blank'],
+    undefined,
+    { quiet: true },
+  );
+  try {
+    const endpoint = await waitFor('Chrome', 20_000, async () => {
+      // a Chrome given its debugging port writes no DevToolsActivePort file: it is asked for its address
+      if (port !== 0) return ((await (await fetch(`http://127.0.0.1:${port}/json/version`)).json()) as { webSocketDebuggerUrl?: string }).webSocketDebuggerUrl ?? null;
+      const text = await readFile(join(profile, 'DevToolsActivePort'), 'utf8');
+      const [chosen, path] = text.split('\n');
+      return chosen !== undefined && path !== undefined ? `ws://127.0.0.1:${chosen}${path}` : null;
+    });
+    return { port, child, profile, browser: await Cdp.open(endpoint), tabs: 0 };
+  } catch (error) {
+    await stop(child);
+    releasePort(port);
+    await rm(profile, { recursive: true, force: true }).catch(() => undefined);
+    throw error;
+  }
+}
+
+/** a browser for one more tab: a new one while there are fewer than the limit, then the least busy */
+function acquireHost(): Promise<Host> {
+  const next = hostQueue.then(async () => {
+    const least = hosts.reduce<Host | null>((best, host) => (best === null || host.tabs < best.tabs ? host : best), null);
+    let host: Host;
+    if (least !== null && (hosts.length >= hostLimit() || least.tabs === 0)) host = least;
+    else {
+      host = await startHost();
+      hosts.push(host);
+    }
+    host.tabs += 1;
+    return host;
+  });
+  hostQueue = next.catch(() => undefined);
+  return next;
+}
+
+async function releaseHost(host: Host): Promise<void> {
+  host.tabs -= 1;
+  if (host.tabs > 0 || !hosts.includes(host)) return;
+  hosts.splice(hosts.indexOf(host), 1);
+  host.browser.close();
+  await stop(host.child);
+  releasePort(host.port);
+  await rm(host.profile, { recursive: true, force: true }).catch(() => undefined);
+}
+
+/** One page of a headless Chrome, driven over the DevTools protocol, and everything it reported: console errors, failed requests, requests in flight, turns POSTed. */
 export class Tab {
   readonly consoleErrors: Logged[] = [];
   readonly failedRequests: Logged[] = [];
@@ -390,8 +471,7 @@ export class Tab {
   private constructor(
     readonly browser: Cdp,
     readonly session: string,
-    private readonly child: ChildProcess,
-    private readonly profile: string,
+    private readonly dispose: () => Promise<void>,
     readonly width: number,
     readonly height: number,
     readonly mobile: boolean,
@@ -473,36 +553,31 @@ export class Tab {
   }
 
   static async open(width: number, height: number, emulate: { readonly dpr?: number; readonly touch?: boolean } = {}): Promise<Tab> {
-    const chrome = CHROME_CANDIDATES.find((path) => existsSync(path));
-    if (chrome === undefined) throw new Error('no Chrome found: set CHROME_BIN to a Chrome or Chromium executable');
-    const profile = await mkdtemp(join(tmpdir(), 'conduit-smoke-'));
-    const child = spawnTracked(
-      chrome,
-      [...chromeFlags(), '--remote-debugging-port=0', `--user-data-dir=${profile}`, `--window-size=${width},${height}`, 'about:blank'],
-      undefined,
-      { quiet: true },
-    );
+    const host = await acquireHost();
+    let context: string | null = null;
+    let targetId: string | null = null;
+    const dispose = async (): Promise<void> => {
+      if (targetId !== null) await host.browser.send('Target.closeTarget', { targetId }).catch(() => undefined);
+      if (context !== null) await host.browser.send('Target.disposeBrowserContext', { browserContextId: context }).catch(() => undefined);
+      await releaseHost(host);
+    };
     try {
-      const endpoint = await waitFor('Chrome', 20_000, async () => {
-        const text = await readFile(join(profile, 'DevToolsActivePort'), 'utf8');
-        const [port, path] = text.split('\n');
-        return port !== undefined && path !== undefined ? `ws://127.0.0.1:${port}${path}` : null;
-      });
-      const browser = await Cdp.open(endpoint);
-      const { targetId } = await browser.send<{ targetId: string }>('Target.createTarget', { url: 'about:blank' });
-      const { sessionId } = await browser.send<{ sessionId: string }>('Target.attachToTarget', { targetId, flatten: true });
+      // a context of its own: the page's storage and session are this tab's alone, whatever else the browser holds
+      context = (await host.browser.send<{ browserContextId: string }>('Target.createBrowserContext', {})).browserContextId;
+      targetId = (await host.browser.send<{ targetId: string }>('Target.createTarget', { url: 'about:blank', width, height, newWindow: true, background: false, browserContextId: context })).targetId;
+      const { sessionId } = await host.browser.send<{ sessionId: string }>('Target.attachToTarget', { targetId, flatten: true });
       const mobile = width < 600;
       const dpr = emulate.dpr ?? (mobile ? 2 : 1);
-      const tab = new Tab(browser, sessionId, child, profile, width, height, mobile, dpr);
+      const tab = new Tab(host.browser, sessionId, dispose, width, height, mobile, dpr);
       tab.touch = mobile || emulate.touch === true;
       for (const domain of ['Page', 'Runtime', 'Network', 'Log', 'Debugger']) await tab.send(`${domain}.enable`);
       await tab.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: dpr, mobile });
       if (mobile || emulate.touch === true) await tab.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: emulate.touch === true ? 5 : 1 });
       await tab.send('Page.addScriptToEvaluateOnNewDocument', { source: PAGE_LIB });
+      await tab.send('Page.bringToFront').catch(() => undefined);
       return tab;
     } catch (error) {
-      await stop(child);
-      await rm(profile, { recursive: true, force: true });
+      await dispose();
       throw error;
     }
   }
@@ -613,9 +688,7 @@ export class Tab {
   }
 
   async close(): Promise<void> {
-    this.browser.close();
-    await stop(this.child);
-    await rm(this.profile, { recursive: true, force: true }).catch(() => undefined);
+    await this.dispose();
   }
 }
 

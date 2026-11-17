@@ -46,6 +46,8 @@ Both ports are strict: if one is taken the process fails instead of picking anot
 | `pnpm docs:language` | regenerates the reference section of `docs/language.md` from the code |
 | `pnpm --filter @conduit/web fonts` | rebuilds the processed font files in `web/src/fonts` (needs Node 22.6 or later) |
 
+`pnpm check` takes two more flags. `--only <groups>` runs just those groups (comma-separated, each a name or the start of one: `--only art-maker,memory`, `--only demo`, `--only demo-toolkit`; `choice` picks the welcome) plus only the servers they need, and `--list` prints the names. `--jobs <n>` runs that many groups side by side, each in its own Chrome (default min(8, cpus/2); `--sequential` means 1), and the report keeps its usual shape and order. `CHECK_PORTS=a-b` is honoured by every server and Chrome debugging port it starts (three servers and up to `--jobs` Chromes at once, so give it 8 or more: each server takes one, and a few shared Chromes the rest). Builders run `--only` for their area; the steward runs the full suite before a deploy.
+
 The browser tools (`pnpm check`, `smoke`, `catalogue`, `explore`) find Chrome in the usual places on macOS and Linux, or at `CHROME_BIN`. They use the GPU on a Mac and SwiftShader (software WebGL) on Linux; `CHROME_GL=swiftshader` forces that anywhere.
 
 One brain at a time (`claude-cli`, `codex-cli` for a ChatGPT login, `relay`, `replay`; `docs/codex.md` says what `codex-cli` does and does not do). To switch brains, stop the server and start it with another `BRAIN`; for a single run you can set it inline: `BRAIN=replay pnpm dev`.
