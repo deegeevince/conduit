@@ -1377,3 +1377,39 @@ export const LESSON_LIMITS = {
   /** numbers in a `numbers` value */
   numbers: 24,
 } as const;
+
+// ---------------------------------------------------------------------------------------------------------------------------------
+// v3 maths (PLAN-maths M0). `math`: a written method laid out as on paper. A table of its own and not a row of `VERB`, for the same reason as
+// `draw`: the fixed prompt is built by walking `VERB` and is at its budget. It is taught nowhere yet (M5); the parser and the server accept it.
+// ---------------------------------------------------------------------------------------------------------------------------------
+
+/** The written methods (the digit algorithms) and the pictures (`bar`, `groups`, `array`, `line`). */
+export const MATH_METHODS = ['column', 'times', 'split', 'bond', 'bar', 'groups', 'array', 'line'] as const;
+export type MathMethod = (typeof MATH_METHODS)[number];
+/** The methods the painter lays out digit by digit; the rest are pictures. */
+export const MATH_WRITTEN = ['column', 'times', 'split', 'bond'] as const satisfies readonly MathMethod[];
+/** What is left empty for the learner: the answer cells (the default), or every cell the method asks to be written. */
+export const MATH_BLANKS = ['answer', 'all'] as const;
+export type MathBlank = (typeof MATH_BLANKS)[number];
+/** Carries: the learner writes them, they are drawn (small, above the column), or there are none. */
+export const MATH_CARRIES = ['write', 'shown', 'none'] as const;
+export type MathCarry = (typeof MATH_CARRIES)[number];
+/** The place names a part can be named by. */
+export const MATH_PLACES = ['ones', 'tens', 'hundreds', 'thousands', 'tenthousands', 'tenths', 'hundredths', 'thousandths'] as const;
+export type MathPlace = (typeof MATH_PLACES)[number];
+export const MATH_LIMITS = {
+  /** rows in a column sum */
+  rows: 8,
+  /** digits in one number */
+  digits: 9,
+} as const;
+
+export const MATH_VERB = {
+  math: {
+    form: 'math <id> column|times|split|bond|bar|groups|array|line [worked] [blank=answer|all] [carry=write|shown|none] [steps | step=<n|control>] | <sum>',
+    gist: 'A written method laid out as on paper, in place-value columns. The painter computes every digit; you write none. The answer is sealed like an ask\'s `is=`: the default shows the method (the givens, the signs, the rule and empty cells) and never the answer. `worked` writes everything, for teaching on a different sum. `steps` adds a stepper, `step=<id>` follows a `pick`. Its parts are named `<id>.<part>`: `m1.r3` (a row), `m1.tens`, `m1.carry-tens`, `m1.ans-ones`, `m1.rule`, `m1.s2` (a step).',
+    time: 'starts',
+    family: 'structure',
+  },
+} as const satisfies Record<string, { form: string; gist: string; time: VerbTime; family: VerbFamily }>;
+export type MathVerb = keyof typeof MATH_VERB;

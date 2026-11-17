@@ -6,7 +6,8 @@
 
 import { isLessonVerb } from './lesson';
 import { InterfaceReader, UI_WORDS, nodeLine, screenLine } from './interface';
-import { LessonBook, StageBook } from './lesson';
+import { LessonBook, StageBook, textHolds } from './lesson';
+import { answerOf, readSum } from './maths/sum';
 import { FIGURE_WORDS, figureRowLine } from './figure';
 import { parseLine } from './parse';
 import type { Approx, Issue, Line, ParseResult, StyleProps } from './types';
@@ -322,6 +323,8 @@ export class LineNormalizer {
   private readonly book: LessonBook;
   /** HI1. The asks of the scene being written, when no part holds them: they stand on the stage. */
   private readonly asks: StageBook;
+  /** PLAN-maths M0. What the written methods of this scene come to, which no words may show: sealed as an ask's `is=` is. A `worked` method seals nothing. */
+  private mathAnswers: string[] = [];
 
   /** SA5. `flow`: a live brain's words and controls are placed by the stage, never by a coordinate. `free`: lines are taken as written (replays, golden, old logs). */
   private readonly placement: 'flow' | 'free';
@@ -467,6 +470,10 @@ export class LineNormalizer {
           if (showing !== null) {
             return { line: null, issues: [{ code: 'spoiler', severity: 'error', message: `these words show ${showing.answer}, which ask ${showing.ask} accepts; the person would see the answer before trying. Say them without it (a bound change can show it once the ask is right)` }] };
           }
+          const spoiled = this.mathAnswers.find((answer) => textHolds(line.text, answer));
+          if (spoiled !== undefined) {
+            return { line: null, issues: [{ code: 'spoiler', severity: 'error', message: `these words show ${spoiled}, which a written method (math) works out for the person; they would see the answer before trying. Say what to do next, not what it comes to` }] };
+          }
           this.asks.said(line.text);
           const placed = this.placedByStage({ ...line, id, styles });
           const said = placed.line;
@@ -557,9 +564,18 @@ export class LineNormalizer {
         const read = this.book.read(line);
         return { line: read.line, issues: read.issues };
       }
+      case 'math': {
+        // The painter computes every digit; the answer is held here, on the server's side of the line, and no `say` may state it.
+        this.sprite = null;
+        this.table = null;
+        const read = readSum(line.method, line.sum);
+        if (read.ok && line.worked !== true) this.mathAnswers.push(...answerOf(read.sum));
+        return { line, issues: [] };
+      }
       case 'scene':
       case 'deck':
         if (line.verb === 'scene') this.layout = line.layout ?? 'stack';
+        this.mathAnswers = [];
         this.asks.reset();
         this.ui = null;
         this.sprite = null;

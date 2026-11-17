@@ -4,6 +4,7 @@ import type { StageSlot } from './lesson';
 import { isLessonId, isLessonVerb, isSpan, readCrop, readShow, splitValues, tagWord } from './lesson';
 import type { LessonLine } from './lesson';
 import { BUILTIN_STYLE_NAMES, own } from './style';
+import { readSum, splitMathPart } from './maths/sum';
 import { splitCells } from './text';
 import { TUNE_TEMPO_RANGE } from './tune';
 import { APPROX_FROM } from './types';
@@ -22,6 +23,7 @@ import type {
   Line,
   LinkLine,
   LookProps,
+  MathLine,
   Near,
   NodeLine,
   ParseResult,
@@ -89,6 +91,9 @@ import {
   VERBS,
   WEIGHTS,
   LESSON_LIMITS,
+  MATH_BLANKS,
+  MATH_CARRIES,
+  MATH_METHODS,
 } from './vocabulary';
 import { REFINE_LIMITS } from './wire';
 import type { AmbientKind, Amount, AppShelf, Anchor, CameraMove, CameraSpeed, ControlVerb, FxName, ShapeVerb, StructureVerb, Verb } from './vocabulary';
@@ -371,10 +376,15 @@ function parseDash(value: string): [number, number] | null {
 }
 
 function parseNear(value: string): Near | null {
-  const [id, side] = value.split(':');
-  if (id === undefined || !isValidElementId(id)) return null;
-  if (side === undefined) return { id, side: 'auto' };
-  return oneOf(SIDES, side) ? { id, side } : null;
+  const [named, side] = value.split(':');
+  if (named === undefined) return null;
+  // `near=m1.r3`: a part of a written method; the id is the block's
+  const mathPart = splitMathPart(named);
+  const id = mathPart === null ? named : mathPart.id;
+  if (!isValidElementId(id)) return null;
+  const part = mathPart === null ? {} : { part: mathPart.part };
+  if (side === undefined) return { id, side: 'auto', ...part };
+  return oneOf(SIDES, side) ? { id, side, ...part } : null;
 }
 
 /** Reads every style property out of `pairs`; anything it does not know is left in `rest`. */
@@ -1525,6 +1535,13 @@ function readSpeedAndOver(pairs: readonly Pair[], issues: Issues): { speed?: Cam
 const TABLE_PART = /^([a-z][a-z0-9_-]*)\.(row|cell)(\d+)(?:,(\d+))?$/;
 
 function parseSet(head: Head, text: string | null, issues: Issues): Line | null {
+  // `set m1.carry-tens mark=box`: a part of a written method
+  const mathPart = splitMathPart(head.words[0] ?? '');
+  if (mathPart !== null && isValidElementId(mathPart.id)) {
+    const { props, rest } = readStyleProps(head.pairs, issues);
+    warnUnknownPairs(rest, issues);
+    return withWhen({ verb: 'set' as const, target: { kind: 'id' as const, id: mathPart.id }, mathPart: mathPart.part, styles: [], props: { mark: props.mark ?? ('box' as const) } }, head.when);
+  }
   // `set t1.row2 mark=box`, `set t1.cell2,3 mark=box`: a row or a cell of a table
   const tablePart = TABLE_PART.exec(head.words[0] ?? '');
   if (tablePart?.[1] !== undefined && isValidElementId(tablePart[1]) && (tablePart[2] === 'row' ? tablePart[4] === undefined : tablePart[4] !== undefined)) {
@@ -1633,8 +1650,51 @@ function parseDrop(head: Head, issues: Issues): Line | null {
   return withWhen(dropped, head.when);
 }
 
-function parseHit(head: Head, issues: Issues): Line | null {
+/** `math <id> <method> [worked] [blank=answer|all] [carry=write|shown|none] [steps | step=<n|control>] | <sum>` (PLAN-maths M0). */
+function parseMath(head: Head, rawText: string | null, issues: Issues): MathLine | null {
   const id = readElementId(head.words[0], issues);
+  if (id === null) return null;
+  const method = head.words[1];
+  if (method === undefined || !oneOf(MATH_METHODS, method)) {
+    issues.error('missing-argument', `math needs a method after its id: ${MATH_METHODS.join(' | ')}`, method);
+    return null;
+  }
+  const line: { -readonly [K in keyof MathLine]: MathLine[K] } = { verb: 'math', id, method, sum: '' };
+  for (const word of head.words.slice(2)) {
+    if (word === 'worked') line.worked = true;
+    else if (word === 'steps') line.steps = true;
+    else issues.warn('unknown-word', `"${word}" is not a word of math; ignored (worked | steps)`, word);
+  }
+  for (const pair of head.pairs) {
+    if (pair.key === 'blank') {
+      if (oneOf(MATH_BLANKS, pair.value)) line.blank = pair.value;
+      else issues.warn('bad-value', `blank=${pair.value} ignored; expected ${MATH_BLANKS.join(' | ')}`, pair.token);
+    } else if (pair.key === 'carry') {
+      if (oneOf(MATH_CARRIES, pair.value)) line.carry = pair.value;
+      else issues.warn('bad-value', `carry=${pair.value} ignored; expected ${MATH_CARRIES.join(' | ')}`, pair.token);
+    } else if (pair.key === 'step') {
+      if (/^\d{1,2}$/.test(pair.value) && Number(pair.value) >= 1) line.step = Number(pair.value);
+      else if (isValidElementId(pair.value)) line.step = pair.value;
+      else issues.warn('bad-value', `step=${pair.value} ignored; expected a step number or the id of a pick`, pair.token);
+    } else warnUnknownPairs([pair], issues);
+  }
+  if (line.steps === true && line.step !== undefined) {
+    issues.warn('bad-value', 'steps and step= together: step= wins, and the stepper is dropped');
+    delete line.steps;
+  }
+  const read = readSum(method, rawText ?? '');
+  if (!read.ok) {
+    issues.error(rawText === null || rawText.trim() === '' ? 'missing-text' : 'bad-sum', read.why);
+    return null;
+  }
+  line.sum = read.text;
+  return withWhen(line, head.when);
+}
+
+function parseHit(head: Head, issues: Issues): Line | null {
+  // `hit m1.tens`: a part of a written method
+  const mathPart = splitMathPart(head.words[0] ?? '');
+  const id = readElementId(mathPart === null ? head.words[0] : mathPart.id, issues);
   if (id === null) return null;
   let gesture: (typeof HIT_GESTURES)[number] = 'pulse';
   const word = head.words[1];
@@ -1644,7 +1704,7 @@ function parseHit(head: Head, issues: Issues): Line | null {
   }
   warnUnknownWords(head.words.slice(2), issues);
   warnUnknownPairs(head.pairs, issues);
-  return withWhen({ verb: 'hit' as const, id, gesture }, head.when);
+  return withWhen({ verb: 'hit' as const, id, ...(mathPart === null ? {} : { part: mathPart.part }), gesture }, head.when);
 }
 
 function parseCam(head: Head, issues: Issues): Line | null {
@@ -2139,6 +2199,12 @@ export function parseLine(raw: string): ParseResult {
     if (drawn === null || issues.failed) return { kind: 'reject', issues: issues.list };
     return { kind: 'line', line: drawn, issues: issues.list };
   }
+  if (verb === 'math') {
+    if (wordsAsWritten !== null) issues.warn('missing-text', wordsAsWritten);
+    const written = parseMath(readHead(tokens.slice(1), issues), rawText, issues);
+    if (written === null || issues.failed) return { kind: 'reject', issues: issues.list };
+    return { kind: 'line', line: written, issues: issues.list };
+  }
   if (verb === 'restore') {
     const word = readHead(tokens.slice(1), issues).words[0]?.toLowerCase() ?? '';
     if (!/^(t\d+|undo|back|prev|previous)$/.test(word)) {
@@ -2268,12 +2334,13 @@ export function parseLine(raw: string): ParseResult {
         line = parseCancel(head, issues);
         break;
       case 'fill': {
-        const target = head.words[0];
+        const filled = splitMathPart(head.words[0] ?? '');
+        const target = filled === null ? head.words[0] : filled.id;
         warnUnknownPairs(head.pairs, issues);
         line = null;
         if (target === undefined || !isValidElementId(target)) issues.error('missing-argument', 'fill needs the id of the problem or ask: fill p1 | 12');
         else if (text === null || text.trim() === '') issues.error('missing-text', 'fill needs the answer after " | ": fill p1 | 12');
-        else line = { verb: 'fill', id: target, text: text.trim().slice(0, 60) };
+        else line = { verb: 'fill', id: target, ...(filled === null ? {} : { part: filled.part }), text: text.trim().slice(0, 60) };
         break;
       }
     }

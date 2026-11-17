@@ -9,3 +9,4 @@ export * from './relation';
 export * from './solve';
 export * from './working';
 export * from './check';
+export * from './sum';

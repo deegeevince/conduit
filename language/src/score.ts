@@ -327,6 +327,8 @@ function revised(origin: Line, change: ReviseLine): Line | null {
     case 'reply':
     case 'end':
     case 'fill':
+    // a written method is changed by writing it again
+    case 'math':
       return null;
     default:
       // Anything drawn can be restyled before it is seen; its geometry is changed by declaring it again.
