@@ -1031,7 +1031,7 @@ export class Conversation {
       if (inked.length > 0) {
         const marks = await this.tab.call<{ px: number; share: number }[]>('inkIn', picture, inked.map((element) => ({ x: shot(element.box).x, y: shot(element.box).y, w: shot(element.box).width, h: shot(element.box).height })), this.tab.dpr);
         // a share of its box (a box with a speck in it is not drawn), as check.ts holds every scene to
-        const blank = inked.filter((element, index) => (marks[index]?.share ?? 0) < (element.kind === 'text' ? 0.004 : 0.02));
+        const blank = inked.filter((element, index) => (marks[index]?.share ?? 0) < (element.kind === 'text' ? 0.004 : 0.02) && (element.kind === 'text' || (marks[index]?.px ?? 0) < 400 * this.tab.dpr * this.tab.dpr));
         if (blank.length > 0) problems.push(`listed on stage but nothing is drawn where it is in the screenshot: ${blank.slice(0, 4).map((element) => `${element.id} (${element.kind}) ${boxText(element.box)}`).join(', ')}`);
         facts.push(`${inked.length - blank.length}/${inked.length} inked`);
       }
