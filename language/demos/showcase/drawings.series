@@ -52,7 +52,7 @@ scene looks caption brisk
 look paper
 circle sun 40,34 10 fill=accent
 path hill @with thick=1.5 | M8 72 Q40 40 80 62 T152 58
-say label @with near=sun:below | one answer
+say label @with near=hill:below | one answer
 look chalk
 look blueprint
 look phosphor
