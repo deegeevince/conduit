@@ -41,13 +41,18 @@ export function hasDevice(text: string): boolean {
   return DEVICE.test(text);
 }
 
-/** Whether the first character with a direction of its own (a letter, or the right-to-left mark) runs right to left: the base direction of the run. */
+/**
+ * Whether the run reads right to left: most of its letters are in a right-to-left script. A line is drawn on its own after the text is wrapped, so the first letter is
+ * no guide (the second line of an English sentence can open with an Arabic word and still sit in a left-to-right paragraph); the letters in the majority are.
+ */
 export function startsRtl(text: string): boolean {
+  let rtl = 0;
+  let other = 0;
   for (const char of text) {
-    if (RTL.test(char)) return true;
-    if (/\p{L}/u.test(char)) return false;
+    if (RTL.test(char)) rtl += /\p{L}/u.test(char) ? 1 : 0;
+    else if (/\p{L}/u.test(char)) other += 1;
   }
-  return false;
+  return rtl > other;
 }
 
 const SUBSTITUTES: Readonly<Record<string, string>> = {
