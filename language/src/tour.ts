@@ -84,14 +84,14 @@ export const TOUR_CHAPTERS: readonly TourChapter[] = [
   {
     id: 'words',
     title: 'Words',
-    gist: 'prose, titles, every language, code, slides, music',
+    gist: 'prose, titles, every language, code, music',
     cards: [
       { kind: 'demo', label: 'Plainly: a fact as prose', name: 'plainly', tryText: 'How far away is the moon?' },
       { kind: 'demo', label: 'Titles: type as the whole show', name: 'titles', tryText: 'Say good morning as a title card' },
       { kind: 'demo', label: 'Styles: one script in every look', name: 'styles', tryText: 'Explain how a bicycle stays upright' },
       { kind: 'demo', label: 'Every language it can write', name: 'scripts', tryText: 'Say hello in Greek, Arabic, Hindi and Thai' },
       { kind: 'demo', label: 'Code, kept exactly', name: 'code', tryText: 'Show me a small Python function that reverses a string' },
-      { kind: 'demo', label: 'A slide deck', name: 'deck', tryText: 'Make a three slide talk on how bees make honey' },
+      // "A slide deck" (the `deck` demo) comes back when a deck stops at each slide and waits for the viewer (`DECKS_READY`, PLAN-v2.1 package T2): until then the slides play straight through (fb-027)
       { kind: 'demo', label: 'A tune you can hear', name: 'tune', tryText: 'Write me a short tune in a minor key' },
     ],
   },
@@ -125,15 +125,20 @@ export const TOUR_CHAPTERS: readonly TourChapter[] = [
   },
 ];
 
-/** The earlier drawings the memory card plays, as real scripts one after another; `{1}` is the turn of the first. */
+/**
+ * The earlier drawings the memory card plays: five real turns, one after another, so the server remembers them as it remembers an answer (`{1}` is the turn of the first). Both drawings are on
+ * the square canvas, so nothing rescales; the colours are written as hex, so the moon is a moon in every look; one line of words under one id (`note`) is said again each turn. The last turn
+ * puts the first drawing's moon over the house that is on stage (docs/demo-audit.md 1B).
+ */
 export const MEMORY_STEPS: readonly string[] = [
-  'look paper\nscene night figure lines=2\ncircle moon1 40,30 12 fill=accent stroke=none\nrect trunk1 108,50 6x30 fill=ink\ncircle crown1 111,42 16 fill=alt stroke=none\nsay | First, a drawing: a moon and a tree.\nwait 1',
-  'scene day figure lines=2\ncircle sun2 120,20 10 fill=accent stroke=none\nrect house2 40,40 50x34 fill=ink\npoly roof2 36,40 65,22 94,40 fill=alt\nsay | Then a different one. The first is gone from the stage, but kept.\nwait 1',
-  'restore {1}\nsay | restore brings the first drawing back whole.\nwait 1',
-  'scene mixed figure lines=2\nuse moon1 from={1} at=80,28 scale=1.6\nrect ground3 0,70 160x20 fill=dim\nsay | use brings just the moon into a new drawing.\nwait 1',
+  'look paper\nscene night figure canvas=square lines=1\nline ground1 6,80 94,80 thick=1\ncircle moon1 28,24 9 fill=#f2c94c stroke=none\nrect trunk1 64,56 4x24 fill=#6b4a2b\ncircle crown1 66,46 14 fill=#3d7a4f stroke=none\nsay note | A first drawing: a moon over a tree.\nwait 1s',
+  'scene day figure canvas=square lines=1\nline ground2 6,80 94,80 thick=1\nrect house2 34,50 32x30 fill=#c96f4a\npoly roof2 30,50 50,32 70,50 fill=#7a3b2e\nrect door2 46,64 8x16 fill=#3a2a20\nsay note | Then a new drawing. The first has left the stage, but it is kept.\nwait 1s',
+  'restore {1}\nsay note | "Bring back the first one." It returns whole, exactly as it was.\nwait 1s',
+  'restore undo\nsay note | "Undo." One step back: the house again.\nwait 1s',
+  'use moon1 from={1} at=78,18 scale=0.8\nsay note | "Put that moon over the house." Only the moon comes back, into the drawing that is here.\nwait 2s',
 ];
 
-export const TOUR_MEMORY_NOTE = 'Four real turns, no model: draw, draw again, restore the first, then reuse its moon.';
+export const TOUR_MEMORY_NOTE = 'Five real turns, no model.';
 
 const cardLabels = new Map<string, TourAction>();
 const tryTexts = new Map<string, string>();

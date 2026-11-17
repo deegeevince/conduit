@@ -85,17 +85,17 @@ export const DEMOS = [
   {
     name: 'explorable',
     title: 'Explorable',
-    summary: 'A picture with a slider, a toggle and a pick bound to it, and a button that asks the brain.',
+    summary: 'A picture with a slider and a pick bound to it, and a button that asks the brain.',
   },
   {
     name: 'iterate',
     title: 'Iterate',
-    summary: 'A drawing kept and improved in place: a sail, a bigger sail, a sun and a flag, then the whole boat moving; each change says only what changes.',
+    summary: 'A drawing kept and improved in place: a sail, a bigger sail, a new colour and a flag, then the whole boat moving as one group; each change says only what changes.',
   },
   {
     name: 'controls',
     title: 'Controls',
-    summary: 'A toggle, a pick and a field handed to the person, bound to a lamp: they answer at once with no round trip.',
+    summary: 'A toggle, a pick and a field handed to the person, bound to a lamp: they answer at once with no round trip, and the name typed in is the lamp\'s label.',
   },
   {
     name: 'charts',

@@ -17,7 +17,7 @@ flow plant right | Should I water this plant?
 node dry ask from=start | Is the top inch of soil dry?
 node pot from=light | Roots at the holes? Repot
 say aside | One more step, and the rest has not moved.
-wait 2
+wait 7s
 
 scene caption
 tree down | Where a sentence comes from
@@ -28,7 +28,7 @@ node noun from=subject | The cat
 node verb from=predicate | sat on
 node object from=predicate | the mat
 say aside | Every sentence is a tree before it is a line.
-wait 2
+wait 5.2s
 
 scene caption
 cycle | Water, always moving
@@ -38,7 +38,7 @@ node rain | Rain
 node river | River
 link rain river | runs off
 say | Nothing is used up. It only changes where it is.
-wait 2
+wait 4.5s
 
 scene caption
 timeline | The way to the Moon
@@ -47,7 +47,7 @@ node 1961 | First human in orbit
 node 1969 | Apollo 11
 node 1961 1972 note | The Apollo programme
 say aside | Twelve years from the first satellite to the first footprint.
-wait 2
+wait 5.4s
 
 scene caption
 table bars | Cups of tea a year
@@ -56,4 +56,4 @@ table bars | Cups of tea a year
 | Ireland | 1,200
 | United Kingdom | 900
 | Japan | 560
-say | Turkey drinks more tea than anyone, and it is not close.
+say | Turkey drinks the most tea, with Ireland close behind.
