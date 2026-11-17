@@ -530,7 +530,7 @@ function backEvent(value: unknown, index: number): BackEvent {
     case 'observe':
       return { type, items: decodeObserveItems(raw.items) };
     case 'presence':
-      return { type, typing: bool(raw.typing, 'typing'), repair: bool(raw.repair, 'repair') };
+      return { type, typing: bool(raw.typing, 'typing'), repair: bool(raw.repair, 'repair'), ...(raw.stop === true ? { stop: true as const } : {}) };
   }
 }
 

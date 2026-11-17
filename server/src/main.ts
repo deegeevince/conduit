@@ -154,6 +154,7 @@ function boot(env: Env): void {
     critic: createCritic({ policy: env.critic, bin: env.brain.kind === 'claude-cli' ? env.brain.bin : 'claude', log: log.child({ part: 'critic' }), now, meter: usage, throttle: usage }),
     findings: createFindingQueue(env.critic.enabled && env.logDir !== null ? env.data.queue : null, log.child({ part: 'critic' })),
     fix: FIX_POLICY,
+    continuation: env.refine.enabled,
     criticQueueBelow: env.critic.queueBelow,
     modes: env.modes,
     audit,

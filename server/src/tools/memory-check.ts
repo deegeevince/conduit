@@ -5,6 +5,7 @@
 //   restore   a turn whose elements a later `scene` dropped comes back whole with `restore <turn>`, with the same boxes digest it had
 //   mix       parts of two earlier turns come back on one canvas (`use … from=`): ids unchanged when free, `<id>-<turn>` when taken, a colour name since
 //             redefined written as hex; they are real elements, so a later `move` moves one and a `drop` removes one
+//   painted   a procedural painting (`paint … as=oil`) is kept in its version and comes back with `restore` and `/undo`; one that asks an image model is not kept
 //   chip      an Undo chip stands after a turn that changed a drawing
 //
 // Run by `pnpm check` and standalone (`tsx memory-check.ts --url <server>`), with smoke's own Tab and Conversation.
@@ -22,16 +23,17 @@ import type { LensScene, LensScreen } from './lens-check';
 
 export const MEMORY_SCREEN: LensScreen = { name: '1280x800', width: 1280, height: 800, dpr: 1 };
 
-interface Live {
+export interface Live {
   readonly id: string;
   readonly kind: string;
   readonly opacity: number;
   readonly box: { readonly x: number; readonly y: number; readonly width: number; readonly height: number };
 }
 
-const standing = (live: readonly Live[]): Live[] => live.filter((element) => element.opacity > 0.05 && ['shape', 'group', 'copy'].includes(element.kind));
+export const standing = (live: readonly Live[]): Live[] => live.filter((element) => element.opacity > 0.05 && ['shape', 'group', 'copy'].includes(element.kind));
+const paintings = (live: readonly Live[]): string[] => live.filter((element) => element.kind === 'picture' && element.opacity > 0.05).map((element) => element.id);
 /** the boxes of what stands, as one string: ids with their rounded boxes, in id order */
-const digest = (live: readonly Live[]): string =>
+export const digest = (live: readonly Live[]): string =>
   standing(live)
     .map((element) => `${element.id}:${Math.round(element.box.x)},${Math.round(element.box.y)},${Math.round(element.box.width)},${Math.round(element.box.height)}`)
     .sort()
@@ -44,7 +46,7 @@ const alike = (a: string, b: string): boolean => {
   return x.length === y.length && x.every((part, at) => (/^-?\d+$/.test(part) ? Math.abs(Number(part) - Number(y[at])) <= 3 : part === y[at]));
 };
 
-async function withTab<T>(base: string, screen: LensScreen, dir: string, timeoutMs: number, body: (tab: Tab, live: () => Promise<Live[]>, play: (script: string) => Promise<string>) => Promise<T>): Promise<T> {
+export async function withTab<T>(base: string, screen: LensScreen, dir: string, timeoutMs: number, body: (tab: Tab, live: () => Promise<Live[]>, play: (script: string) => Promise<string>) => Promise<T>): Promise<T> {
   const tab = await Tab.open(screen.width, screen.height, { dpr: screen.dpr });
   const options: Options = { url: base, screens: [], out: dir, turns: new Set(), timeoutMs, parallel: false, demo: false, quiet: true, page: '', say: null, chat: 'off' };
   const conv = new Conversation(tab, options, { name: screen.name, width: screen.width, height: screen.height }, dir);
@@ -141,10 +143,33 @@ export function digestProblems(): string[] {
   big.close();
   if (big.lineCount > MEMORY_LIMITS.lines) problems.push(`the memory holds ${big.lineCount} lines, more than ${MEMORY_LIMITS.lines}`);
   if (big.versions.length === 0) problems.push('past the cap the memory holds no versions');
+  // paintings: a procedural one is kept with its version and comes back with it; one that asks an image model is not kept
+  const painted = new DrawingMemory();
+  const sets: { readonly turn: string; readonly lines: readonly string[] }[] = [
+    { turn: 't1', lines: ['scene a canvas=wide', 'group hill at=40,60', 'rect slope 0,0 60x20 fill=#336644 in=hill', 'paint oil1 over=hill as=oil | a hill', 'paint photo1 as=photo | a hill', 'paint plain1 | a hill'] },
+    { turn: 't2', lines: ['scene b canvas=wide', 'circle sun 80,45 15 fill=#ffcc00'] },
+  ];
+  let n = 0;
+  for (const set of sets) {
+    painted.begin(set.turn, 'x');
+    for (const text of set.lines) painted.record(set.turn, (n += 1), text);
+  }
+  painted.close();
+  const first = painted.versions[0];
+  if (painted.versions.length !== 2) problems.push(`the painting memory holds ${painted.versions.length} versions, expected 2`);
+  if (first === undefined || first.paints.length !== 1 || !first.paints[0]?.startsWith('paint oil1')) problems.push(`a procedural painting was not kept in its version (${first?.paints.join(' / ') ?? 'no version'})`);
+  if (first !== undefined && first.paints.some((text) => /photo1|plain1/.test(text))) problems.push('a painting that asks an image model was kept');
+  const put = painted.restore(0, ['sun']).lines.map((line) => serialize(line));
+  if (!put.some((text) => text.startsWith('paint oil1'))) problems.push('restore did not put the painting back');
+  if (put.findIndex((text) => text.startsWith('paint oil1')) < put.findIndex((text) => text.includes('slope'))) problems.push('restore put the painting before the parts it paints over');
+  const stepped = painted.find('undo');
+  if (!painted.restore(stepped?.index ?? -1, ['sun']).lines.some((line) => line.verb === 'paint')) problems.push('undo did not put the painting back');
+  if (painted.paintOf('oil1') === null) problems.push('the memory cannot say the painting again');
   return problems;
 }
 
 const FIRST = ['scene one canvas=wide', 'color sky=#1b2a49 moon=#f5e6a8', 'rect sky1 0,0 160x90 fill=sky', 'group tree at=40,60', 'circle crown 0,-10 12 fill=#226644 in=tree', 'rect trunk -2,0 4x14 fill=#554433 in=tree', 'circle moon1 130,15 8 fill=moon', 'wait 1'].join('\n');
+const PAINTED = ['scene three canvas=wide', 'group hill at=40,60', 'rect slope 0,0 60x20 fill=#336644 in=hill', 'paint oil1 over=hill as=oil | a hill', 'wait 1'].join('\n');
 const SECOND = ['scene two canvas=wide', 'color sky=#880000', 'rect field 0,0 160x90 fill=#334455', 'circle sun 80,45 15 fill=#ffcc00', 'wait 1'].join('\n');
 
 /** Runs the drawing-memory group against a server (BRAIN=replay). A failure is a `FAIL` result, never a throw. */
@@ -207,7 +232,17 @@ export async function memoryGroup(base: string, screen: LensScreen, dir: string,
       if (grown === undefined || grown.box.width < widthBefore * 1.3) problems.push('a part brought back could not be set');
       if (standing(after).some((element) => element.id === 'tree')) problems.push('a part brought back could not be dropped');
       if (!standing(after).some((element) => element.id === 'sun')) problems.push('dropping a mixed-in part dropped the second drawing too');
-      result('memory', began, problems, `restore ${one} gave the first drawing's boxes back after a scene dropped it; undo stepped back twice with no model; moon1 and tree of ${one} mixed into ${two}, moved and dropped`);
+      // a painting: kept with its turn, and back with `restore` and with `restore undo` after a new scene dropped it
+      const drawn = await play(PAINTED);
+      if (!paintings(await live()).includes('oil1')) problems.push('the painting did not appear');
+      await play(SECOND);
+      if (paintings(await live()).includes('oil1')) problems.push('a new scene left the painting on stage');
+      await play('restore undo');
+      if (!paintings(await live()).includes('oil1')) problems.push('undo did not bring the painting back');
+      await play(SECOND);
+      await play(`restore ${drawn}`);
+      if (!paintings(await live()).includes('oil1')) problems.push(`restore ${drawn} did not bring the painting back`);
+      result('memory', began, problems, `restore ${one} gave the first drawing's boxes back after a scene dropped it; undo stepped back twice with no model; moon1 and tree of ${one} mixed into ${two}, moved and dropped; a procedural painting came back with restore and undo`);
     });
   } catch (error) {
     result('memory', began, [`stopped: ${error instanceof Error ? error.message : String(error)}`], '');

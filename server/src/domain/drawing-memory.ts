@@ -9,8 +9,9 @@ import type { CanvasBox, ColourRef, FillRef, Line, Point, ScoreEntry, StyleProps
 /** lines and bytes a conversation's memory holds; past either the oldest turns fold into the version that follows them */
 export const MEMORY_LIMITS = { lines: 4000, bytes: 1_000_000 } as const;
 
-/** Verbs of a drawing: what is kept. Words, structures, controls and paintings (which cost a model call to make again) are not. */
-const KEPT: ReadonlySet<string> = new Set(['scene', 'color', 'style', 'circle', 'ellipse', 'rect', 'line', 'poly', 'path', 'group', 'use', 'pix', 'row', 'frame', 'set', 'move', 'drop']);
+/** Verbs of a drawing: what is kept. Words, structures and controls are not. A `paint` is kept only when it is procedural (`as=oil` and the like: no model call to
+ *  make it again); one that asks an image model (`as=photo`, or no medium) is not. */
+const KEPT: ReadonlySet<string> = new Set(['scene', 'color', 'style', 'circle', 'ellipse', 'rect', 'line', 'poly', 'path', 'group', 'use', 'pix', 'row', 'frame', 'set', 'move', 'drop', 'paint']);
 const SHAPES: ReadonlySet<string> = new Set(['shape', 'group', 'sprite', 'copy']);
 
 interface MemoryLine {
@@ -38,6 +39,8 @@ export interface Version {
   /** a signature of the resting drawing: two versions with the same one look alike */
   readonly sig: string;
   readonly elements: readonly ElementMemory[];
+  /** the procedural paintings standing in it (`paint … as=oil`), as lines: they come back after the parts they paint over */
+  readonly paints: readonly string[];
   /** `style` lines in force, by name */
   readonly styles: Readonly<Record<string, string>>;
   /** the index of the version this one put back (`/undo` and `restore`), when it did */
@@ -133,6 +136,7 @@ export class DrawingMemory {
   record(turn: string, seq: number, text: string): void {
     const line = parsed(text);
     if (line === null || !KEPT.has(line.verb)) return;
+    if (line.verb === 'paint' && (line.medium === undefined || line.medium === 'photo')) return;
     if (this.open === null || this.open.turn !== turn) this.begin(turn, '');
     this.push({ turn, seq, text }, line);
     if (this.open !== null && line.verb !== 'color' && line.verb !== 'style') this.open.touched = true;
@@ -207,8 +211,15 @@ export class DrawingMemory {
         lines: texts,
       };
     });
-    const sig = elements.map((element) => element.lines.join(';')).join('\n');
-    return { turn, said, sig, elements, styles: Object.fromEntries(this.styleLines), ...(restored === undefined ? {} : { restored }) };
+    const paints: string[] = [];
+    for (const element of stage.elements) {
+      if (element.struck || element.kind !== 'picture') continue;
+      const span = schedule.elements.find((candidate) => candidate.key === element.key);
+      const line = span === undefined ? undefined : bySeq.get(span.seq);
+      if (line !== undefined && line.verb === 'paint') paints.push(serializeLine(settled(line, colors)));
+    }
+    const sig = [...elements.map((element) => element.lines.join(';')), ...paints.map((text) => `paint:${text}`)].join('\n');
+    return { turn, said, sig, elements, paints, styles: Object.fromEntries(this.styleLines), ...(restored === undefined ? {} : { restored }) };
   }
 
   /** Past the limits the replay's lines go: it starts again from the newest version's resting drawing. The versions keep their own copy of what each held. */
@@ -228,6 +239,23 @@ export class DrawingMemory {
         this.push({ turn: last?.turn ?? 't0', seq, text }, line);
       }
     }
+    for (const text of last?.paints ?? []) {
+      const line = parsed(text);
+      if (line === null) continue;
+      seq += 1;
+      this.push({ turn: last?.turn ?? 't0', seq, text }, line);
+    }
+  }
+
+  /** The newest `paint` line kept for an id, as text: what puts a painting over parts that came back after it. */
+  paintOf(id: string): string | null {
+    for (let at = this.lines.length - 1; at >= 0; at -= 1) {
+      const entry = this.lines[at];
+      if (entry === undefined || !entry.text.startsWith('paint ')) continue;
+      const line = parsed(entry.text);
+      if (line !== null && line.verb === 'paint' && line.id === id) return entry.text;
+    }
+    return null;
   }
 
   /** The version of a turn, `undo` for the one before the one showing, or null. `-1` is the empty canvas before the first. */
@@ -275,6 +303,11 @@ export class DrawingMemory {
           if (line !== null) lines.push(arriving(line, n === 0));
         }
       }
+    }
+    // the paintings of that version go last, over the parts they paint
+    for (const text of version?.paints ?? []) {
+      const line = parsed(text);
+      if (line !== null) lines.push(line);
     }
     return { lines, ids, note: version === null ? 'the empty canvas' : `${version.turn} (${version.elements.length} parts)` };
   }

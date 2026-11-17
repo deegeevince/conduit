@@ -1,7 +1,7 @@
 // The slash commands: one line starting with `/` is for the app, never for the brain. `APP_COMMANDS` (language/src/wire.ts)
 // is the list: `/help` prints it, the brain's brief is made from it, and this file parses exactly those names.
 
-import { APP_COMMANDS, HIDDEN_COMMANDS, BRAIN_EFFORTS, BRAIN_MODELS, BRAIN_MODES, LOOK_IDS, REFINE_LIMITS } from '@conduit/language';
+import { APP_COMMANDS, HIDDEN_COMMANDS, BRAIN_EFFORTS, BRAIN_MODELS, BRAIN_MODES, LOOK_IDS } from '@conduit/language';
 import type { AppCommandName, BrainChange, BrainChoice, BrainEffort, BrainMode, BrainModel, LookId } from '@conduit/language';
 
 export type ExportFormat = 'png' | 'svg' | 'film' | 'conversation' | 'pdf' | 'script';
@@ -17,7 +17,6 @@ export type Command =
   | { readonly kind: 'asks'; readonly clear: boolean }
   | { readonly kind: 'look'; readonly look: LookId | null }
   | { readonly kind: 'review'; readonly on: boolean | null; /** v3. `/review repair on|off`: the server tidies an answer after the critic has judged it */ readonly repair?: boolean | null }
-  | { readonly kind: 'better'; readonly passes: number }
   | { readonly kind: 'undo' }
   | { readonly kind: 'stop' }
   | { readonly kind: 'stop-all'; readonly resume: boolean }
@@ -129,12 +128,6 @@ export function parseCommand(text: string): Command {
       if (rest.length === 0) return { kind: 'review', on: null };
       if (first === 'repair') return rest.length === 1 ? { kind: 'review', on: null, repair: null } : rest.length === 2 && ((rest[1] ?? '').toLowerCase() === 'on' || (rest[1] ?? '').toLowerCase() === 'off') ? { kind: 'review', on: null, repair: (rest[1] ?? '').toLowerCase() === 'on' } : refuse('/review repair: say on or off');
       return rest.length === 1 && (first === 'on' || first === 'off') ? { kind: 'review', on: first === 'on' } : refuse('/review: say on or off, or "repair on" or "repair off"');
-    case 'better': {
-      if (rest.length === 0) return { kind: 'better', passes: REFINE_LIMITS.passes };
-      const passes = Number(first);
-      if (rest.length === 1 && Number.isInteger(passes) && passes >= 1 && passes <= REFINE_LIMITS.max) return { kind: 'better', passes };
-      return refuse(`/better: passes are a whole number from 1 to ${REFINE_LIMITS.max}`);
-    }
     case 'undo':
       return { kind: 'undo' };
     case 'stop':

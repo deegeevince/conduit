@@ -108,6 +108,8 @@ export interface ActiveTurn {
   review: ReviewOutcome | undefined;
   /** the memory of this turn is closed: a report arrived, or the next turn replaced it */
   reported: boolean;
+  /** the brain ended this turn with `refine | …`: what it will do next, and the server runs it again at once. Undefined when it did not. */
+  continueNote?: string;
   /** everything sent to the painter for this turn, so a reconnecting stream can be brought up to date */
   readonly sent: StageEvent[];
   /**
@@ -212,6 +214,8 @@ export interface Session {
   repairOn: boolean;
   /** v3. The repair waiting or running, of the answer `of`; any new turn aborts it */
   repair: { readonly of: string; readonly abort: AbortController } | null;
+  /** The brain's own continuation, waiting for the stage to rest before it is started; a message from the person, Stop and a new turn end it */
+  continuing: { readonly of: string; readonly abort: AbortController } | null;
   /** v3. Answers a repair was started for: one each, kept or not */
   readonly repaired: Set<string>;
   /** Every accepted line of a drawing by turn, and a version for each turn that changed it: what `restore`, `use … from=` and `/undo` bring back */
@@ -277,6 +281,7 @@ export class SessionStore {
       typingUntil: 0,
       repairOn: true,
       repair: null,
+      continuing: null,
       repaired: new Set(),
       memory: new DrawingMemory(),
     };

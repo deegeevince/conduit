@@ -115,7 +115,7 @@ export function observeInput(s: Session, input: TurnInput, now: number): void {
     // the page already told us of the tap or the control as it happened; this is the same act arriving as the turn's input
     if (!s.obs.recent(['tap', 'state', 'did'], input.id, 5000, now, s.obs.briefedThrough)) add('tap', `you ${input.kind === 'act' ? 'pressed' : 'tapped'} ${quoted(input.text, 60)}`, input.id);
   } else if (input.kind === 'refine') {
-    add('said', 'you asked to keep making it better');
+    add('said', `you chose to go on: ${input.note}`);
   }
 }
 

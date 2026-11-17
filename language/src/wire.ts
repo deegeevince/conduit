@@ -129,7 +129,7 @@ export interface Services {
   readonly review: boolean;
   /** v2.1. A critic looks at every real turn's resting picture in the background; what it finds is logged and queued for the loop. Absent: no. */
   readonly critic?: boolean;
-  /** v2.1. The brain may ask for its picture to be made better pass by pass (`refine`), and the user may (`/better`). Absent: no. */
+  /** v2.1. The brain may ask for its picture to be made better pass by pass (`refine | what next`): the server runs it again at once, for as long as it keeps writing it. Absent: no. */
   readonly refine?: boolean;
   /** v2.1. The user may give pictures with a prompt (`TurnInput.images`), and the brain may put them on stage. Absent: no. */
   readonly uploads?: boolean;
@@ -248,11 +248,11 @@ export type TurnInput =
    */
   | { readonly kind: 'act'; readonly id: string; readonly text: string; readonly values: ControlValues; readonly screen?: string; readonly seen?: Seen }
   /**
-   * v2.1. Keep making what is on stage better (`/better`, or a tapped "keep going"). No new answer is asked for: the critic looks at
-   * the resting picture, the brain is shown what it found and adds to the picture, and that repeats until the critic sees no gain,
-   * `passes` are spent (`REFINE_LIMITS`), or the user stops it. Answered by the configured brain when `Services.refine` is on.
+   * The brain went on: it ended its answer with `refine | <what it will do next>`, and the server runs it again at once, as a turn of its own, for as
+   * long as it keeps writing that. `note` is its own words. Opened by the server and never by a client; no count, no clock: the brain, the person
+   * (any message takes over), Stop and the usage cap end it.
    */
-  | { readonly kind: 'refine'; readonly passes: number }
+  | { readonly kind: 'refine'; readonly note: string }
   /**
    * v3. The server's own repair of the answer at rest (`of`: that turn): the critic found something the brain can mend, and the brain wrote fix
    * lines that were tried on the server first and kept. Opened by the server and never by a client; it carries no words of the person's. The
@@ -489,7 +489,7 @@ export type BackEvent =
    * seconds), and whether they allow the server to tidy an answer after the critic has judged it (`/review repair on|off`, default on).
    * Sent when either changes. A `typing` that is not renewed lapses on the server after `PRESENCE_TYPING_MS`.
    */
-  | { readonly type: 'presence'; readonly typing: boolean; readonly repair: boolean };
+  | { readonly type: 'presence'; readonly typing: boolean; readonly repair: boolean; /** `/stop` or the Stop button: it ends the brain's own continuation, which runs between turns */ readonly stop?: true };
 
 /** How long the server takes a `presence … typing` to hold with no word from the page: a lost "stopped typing" never blocks a repair for long. */
 export const PRESENCE_TYPING_MS = 6000;
@@ -811,7 +811,6 @@ export const APP_COMMANDS = [
   { name: 'asks', args: '[clear]', gist: 'what you asked to hold for every reply; clear forgets them' },
   { name: 'look', args: '<name>', gist: 'the look of the stage; bare lists them' },
   { name: 'review', args: '<on|off|repair on|repair off>', gist: 'whether a drawing is checked and fixed after its first draft; "repair" whether an answer the critic found broken is tidied after it is shown (on by default)' },
-  { name: 'better', args: '[passes]', gist: 'keep making the picture on stage better, pass by pass', needs: 'refine' },
   { name: 'undo', args: '', gist: 'put the drawing back as it was before the last change that touched it; again goes back one more' },
   { name: 'stop', args: '', gist: 'stop what is being written or made better' },
   { name: 'usage', args: '', gist: 'what the model calls have used, per hour and per day, and where the hour stands against the cap you set' },
@@ -825,12 +824,11 @@ export const APP_COMMANDS = [
 export type AppCommandName = (typeof APP_COMMANDS)[number]['name'];
 
 /**
- * The commands this app can really do right now: a command that needs a service (`/better` needs the server's refine) is left out of
- * what the brief and the help page advertise until the server says it has it. An app that advertises what it cannot do sends the user
- * into an error (the v2.1 review: `/better` answered "cannot yet", and every brief told the brain to offer it).
+ * The commands this app can really do right now. Every command is the app's own today; the services are the place to leave one out until the server
+ * says it has what it needs (an app that advertises what it cannot do sends the user into an error).
  */
-export function commandsFor(services: Pick<Services, 'refine'> | undefined): readonly (typeof APP_COMMANDS)[number][] {
-  return APP_COMMANDS.filter((command) => !HIDDEN_COMMANDS.includes(command.name) && (!('needs' in command) || services?.[command.needs] === true));
+export function commandsFor(_services?: Pick<Services, 'refine'>): readonly (typeof APP_COMMANDS)[number][] {
+  return APP_COMMANDS.filter((command) => !HIDDEN_COMMANDS.includes(command.name));
 }
 
 /** Commands that work but are not listed: not in `/help`, not in the brain's note of the app (which is held to a token budget). `/brain` is the developer's (`/brain steward`); `/lines` is for whoever is watching, and the [+] menu says it. */

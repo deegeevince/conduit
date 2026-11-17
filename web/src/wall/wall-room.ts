@@ -68,10 +68,10 @@ interface TurnRec {
   final: boolean;
 }
 
-function wordsOfInput(input: { readonly kind: string; readonly text?: string; readonly script?: string }): string {
+function wordsOfInput(input: { readonly kind: string; readonly text?: string; readonly script?: string; readonly note?: string }): string {
   if (input.kind === 'prompt' || input.kind === 'tap' || input.kind === 'act') return input.text ?? '';
   if (input.kind === 'demo') return input.script ?? 'a demo';
-  if (input.kind === 'refine') return 'keep making it better';
+  if (input.kind === 'refine') return input.note ?? 'went on';
   return 'a script';
 }
 

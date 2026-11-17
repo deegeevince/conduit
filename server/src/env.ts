@@ -5,7 +5,7 @@ import type { SkillSettings } from './skills/catalogue';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve as resolvePath } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parsePromptVariant, REFINE_LIMITS, REVIEW_POLICY } from '@conduit/language';
+import { parsePromptVariant, REVIEW_POLICY } from '@conduit/language';
 import { AGENT_PERMITS } from '@conduit/language';
 import type { BrainMode, PromptVariant, ReviewPolicy } from '@conduit/language';
 import { CHROME_GIST, NO_AGENT } from './domain/agent';
@@ -118,8 +118,8 @@ export interface Env {
   readonly agent: AgentSettings;
   /** v2.1. The kinds of mind a session may choose (`/brain`): `plain` always; `agent` when `AGENT=on`; `steward` when `STEWARD=on` */
   readonly modes: readonly BrainMode[];
-  /** v2.1. "Keep making it better" (`REFINE`, `REFINE_PASSES`): on by default with the claude-cli brain when the critic is on */
-  readonly refine: { readonly enabled: boolean; readonly passes: number };
+  /** The brain keeps working at will (`REFINE`): it ends an answer with `refine | what next` and the server runs it again at once, for as long as it keeps writing that. On by default with a model brain. */
+  readonly refine: { readonly enabled: boolean };
   /** v2.1. Pictures with a prompt (`UPLOADS`): on by default */
   readonly uploads: boolean;
   /** v2.1. Voice notes, read on this Mac (`VOICE`, `VOICE_LOCALE`, `VOICE_KEEP`): on by default; the audio is deleted once read unless `VOICE_KEEP=on`; `VOICE_LOCALE` (like `en-US`) names the language, else the Mac's own; `VOICE_COMMAND` is the owner's own recogniser (whisper.cpp behind a script) in place of Apple's */
@@ -415,8 +415,7 @@ export function loadEnv(source: Source): Env {
   const modes: BrainMode[] = [agent.enabled ? 'agent' : 'plain', ...(withModel && choice('STEWARD', ['on', 'off'] as const, 'off') === 'on' ? (['steward'] as const) : [])];
   // package S4
   const refine = {
-    enabled: choice('REFINE', ['on', 'off'] as const, critic.enabled ? 'on' : 'off') === 'on' && critic.enabled,
-    passes: integer('REFINE_PASSES', REFINE_LIMITS.passes, 1, REFINE_LIMITS.max),
+    enabled: choice('REFINE', ['on', 'off'] as const, withModel ? 'on' : 'off') === 'on',
   };
   const uploads = choice('UPLOADS', ['on', 'off'] as const, 'on') === 'on';
   const voiceLocale = text('VOICE_LOCALE');

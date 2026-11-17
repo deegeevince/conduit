@@ -74,6 +74,8 @@ export type SessionRecord =
    * that showed it), `refused` (nothing changed; `why`), `nothing` (the brain wrote nothing), `failed`, `cancelled` (a new turn came), `skipped` (a
    * limit held it back before the brain was asked). `ms` is the whole repair from the critic's verdict; `sinceEndMs` from the answer's `end`.
    */
+  /** The brain ended turn `turn` with `refine | note` and the server ran it again at once (`note` is its own words) */
+  | { readonly type: 'continue'; readonly at: number; readonly turn: string; readonly note: string }
   | {
       readonly type: 'repair';
       readonly at: number;

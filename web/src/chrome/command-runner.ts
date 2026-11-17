@@ -1,7 +1,7 @@
 // What each slash command does. A command is the app's, never the brain's: it never becomes a turn, and a page it prints on
 // the stage (`/help`, `/status`, `/tools`) is a turn the app plays for itself and the server never hears of.
 
-import { commandsFor, LOOK_IDS, NEW_COMMAND_TEXT, REFINE_LIMITS } from '@conduit/language';
+import { commandsFor, LOOK_IDS, NEW_COMMAND_TEXT } from '@conduit/language';
 import type { BrainChoice, Services, SkillSummary } from '@conduit/language';
 import type { UsageView } from '../link/http-link';
 import type { StageApp } from '../app/stage-app';
@@ -213,18 +213,6 @@ async function perform(app: StageApp, command: Command, onChoice: (choice: Brain
       }
       if (command.on !== null) app.review.set(command.on);
       app.announce(`Check the drawing: ${app.review.on ? 'on' : 'off'}`);
-      return;
-    }
-    case 'better': {
-      if (app.diagnostics().services?.refine !== true) {
-        app.announce('This server cannot keep making a picture better yet.');
-        return;
-      }
-      if (app.painter.recording() === null) {
-        app.announce('There is nothing to make better yet. Ask for something first.');
-        return;
-      }
-      await app.refine(Math.min(command.passes, REFINE_LIMITS.max));
       return;
     }
     case 'undo':

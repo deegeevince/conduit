@@ -79,7 +79,7 @@ export const PROMPT_BUDGET = { tokens: 9400, charsPerToken: 2.36 } as const;
  * (18,643 characters, 7,865 tokens).
  */
 /** SA4. The one line of a brief that says the canvas tools exist. */
-export const CANVAS_LINE = 'CANVAS TOOLS (read-only): canvas_stage, canvas_fits, canvas_where, canvas_observe read the stage; canvas_look asks for a picture. Use one only after your first line is written, and only when unsure of a placement or when EYES flags something. Most answers need none.';
+export const CANVAS_LINE = 'CANVAS TOOLS (read-only): canvas_stage, canvas_fits, canvas_where, canvas_observe read the stage; canvas_look asks for a picture. Use one only after your first line is written, and when it helps the work: a painting is worth looking at. Most other answers need none.';
 
 export function estimateTokens(text: string): number {
   return Math.ceil(text.length / PROMPT_BUDGET.charsPerToken);
@@ -524,7 +524,7 @@ Drawings live on a canvas of square units that the painter fits to the screen; 0
       : '',
     capabilities.decks ? '`deck | title` opens a turn of slides: each `scene` after it is one, four to eight, a heading and three lines or one picture at most.' : '',
     capabilities.uploads ? '`pic u1` puts a photo the user gave on stage (the brief names them); label or trace it.' : '',
-    services.refine ? 'Asked to iterate or improve it: end with `refine 3`; you are shown the picture and add to it.' : '',
+    services.refine ? 'More to do: end with `refine | what next`; you carry on at once, shown the picture, as long as you write it.' : '',
     capabilities.links ? '`say href=<url> | site` is a link; cite every web source as one.' : '',
     draws && services.art === true
       ? 'A character, animal or thing: `draw <id> <subject> at= size= | pose, facing`, never plotted. Diagrams, anatomy, machines, maps, labelled parts: your own shapes.'
@@ -690,7 +690,7 @@ function inputText(input: TurnInput, pastedAs?: string): string {
     if (input.screen !== undefined) return `The user pressed "${input.text}" on screen ${input.screen} of your mock-up (button ${input.id}).${values === '' ? '' : ` What the screen's fields and controls hold now: ${values}.`} Answer the press: change the mock-up, or say what it did.`;
     return `The user worked your control ${input.id}: "${input.text}".${values === '' ? '' : ` Every control now: ${values}.`}`;
   }
-  if (input.kind === 'refine') return `The user asked you to keep making what is on stage better, up to ${input.passes} passes. The stage shows you the picture each pass; you add to it.`;
+  if (input.kind === 'refine') return `You chose to go on: "${input.note}". This is not the user: it is you, carrying on. The picture as it stands is attached and YOUR DRAWING NOW names its parts. Change parts by id, reuse your own earlier work, or start a new scene if the work calls for one. End with \`refine | what you will do next\` to go on, or without it when you are content.`;
   if (input.kind === 'repair') return `The server is tidying the answer ${input.of} that is on stage, after a critic looked at it.`;
   return `Play the fixture script "${input.script}".`;
 }
@@ -925,15 +925,19 @@ const IMPROVES = /\b(improv\w*|better|keep going|go on|carry on|continue|polish\
 /** Whether the words ask to change or carry on with what is already drawn. */
 export const asksToImprove = (text: string): boolean => IMPROVES.test(text);
 
-const RECALLS = /\b(back|restore|previous|earlier|before|original|undo|first one|last one|the one (?:you|we|from)|bring|again)\b/i;
-/** Whether the words ask to go back to a drawing from before. */
-export const asksToRecall = (text: string): boolean => RECALLS.test(text);
-
-/** DRAWING MEMORY: one row a version, newest last, and the two words that bring a drawing back. About 250 tokens. */
+/** DRAWING MEMORY: one row a version, newest last, and how to reuse any of it. About 250 tokens. */
 export function memoryText(rows: readonly MemoryRow[], tool = false): string {
   const lines = rows.map((row) => `  ${row.turn}${row.current ? ' (on the canvas now)' : ''}: "${row.said}" - ${row.parts} parts${row.roots.length === 0 ? '' : `: ${row.roots.slice(0, 7).join(', ')}${row.roots.length > 7 ? ', …' : ''}`}${row.inside.length === 0 ? '' : `; inside: ${row.inside.slice(0, 14).join(' ')}${row.inside.length > 14 ? ` … ${row.inside.length - 14} more` : ''}`}`);
-  return `DRAWING MEMORY (every drawing you made in this conversation is kept; nothing is lost):\n${lines.join('\n')}\n$\`restore <turn>\` puts a whole earlier drawing back on the canvas, as parts you can change. $\`use <id…> from=<turn> [at=x,y] [scale=N] [rot=N]\` brings only those parts back and mixes them into what is there (a taken id comes back as <id>-<turn>).${tool ? ' The ids and boxes of any turn: the canvas_memory tool.' : ''}`;
+  return `YOUR OWN WORK SO FAR (everything you drew in this conversation is kept, and is yours to reuse at will):\n${lines.join('\n')}\nReuse rather than redraw: it is instant and exact. $\`use <id…> from=<turn> [at=x,y] [scale=N] [rot=N]\` brings any parts of any turn onto the canvas, mixed with what is there and with parts of other turns, at any place, size and turn (a taken id comes back as <id>-<turn>); $\`restore <turn>\` puts a whole drawing back. A character returning in a later scene, a callback, two versions side by side, a gallery of what you made, a new composition from old pieces: all are yours to make.${tool ? ' The ids and boxes of any turn: the canvas_memory tool.' : ''}`;
 }
+
+/** The same, for a turn that is not drawing: one line, so that it is known and costs nothing. */
+export function memoryHint(rows: readonly MemoryRow[], tool = false): string {
+  return `${rows.length} earlier drawing${rows.length === 1 ? ' is' : 's are'} kept as your own material (use <id> from=<turn>, restore <turn>${tool ? '; canvas_memory lists them' : ''}).`;
+}
+
+/** Said on a drawing turn when the canvas tools are on: a painter steps back and looks. Brief only; the one constraint is that the first line comes first. */
+export const PAINT_LOOKS = 'ON A PAINTING canvas_look shows the lines so far, settled, whenever stepping back helps: when the sketch is down, when the colour is in, before you finish. Then change what is weak by id. Write your first line before any look.';
 
 /** Said on a turn that changes the live drawing: its parts are named in YOUR DRAWING NOW, and they are changed, never thrown away. */
 export const IMPROVE_BRIEF =
@@ -1129,6 +1133,7 @@ export function buildTurnBrief(context: TurnContext, input: TurnInput, form: Bri
   if (context.capabilities.structures.includes('problem') && !liveApp && (((input.kind === 'prompt' || input.kind === 'tap') && asksForMaths(input.text)) || problemOnStage || questionsOnStage || usesProblem(context.techniques))) parts.push(PROBLEM_CHAPTER);
   if (drawsNow) parts.push(DRAWING_CHAPTER(`${screen.canvas} (${canvas.width}x${canvas.height})${screen.canvas === 'wide' ? '; a figure scene that names no canvas gets square (100x100)' : ''}`));
   if (drawsNow && context.services.art === true) parts.push(ART_BRIEF);
+  if (drawsNow && context.canvas === true) parts.push(PAINT_LOOKS);
   // The live drawing by id, in every brief of a drawing turn: the brain cannot change what it cannot name (a "keep going" turn once rebuilt it all with `scene`).
   const drawingNow = drawsNow ? drawingRows(stage) : null;
   if (drawingNow !== null) {
@@ -1148,7 +1153,7 @@ export function buildTurnBrief(context: TurnContext, input: TurnInput, form: Bri
   }
   // The drawing memory: what the conversation drew before, and how to bring it back. Carried while a drawing is live, or when the words ask to go back to one.
   const remembered = context.drawingMemory ?? [];
-  if (remembered.length > 0 && (drawsNow || (input.kind === 'prompt' && asksToRecall(input.text)))) parts.push(memoryText(remembered, context.canvas === true));
+  if (remembered.length > 0 && context.capabilities.kinds.includes('shape')) parts.push(drawsNow || input.kind === 'prompt' ? memoryText(remembered, context.canvas === true) : memoryHint(remembered, context.canvas === true));
   const standing = standingText(context.standing);
   if (standing !== null) parts.push(standing);
   // A conversation the user has come back to: the stage is empty, but what was said before is not forgotten. Told once, in the first full brief.

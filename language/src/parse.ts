@@ -1244,17 +1244,16 @@ function parseStanding(head: Head, text: string | null, issues: Issues): Line | 
   return { verb: 'standing', text };
 }
 
-function parseRefine(head: Head, issues: Issues): Line {
+function parseRefine(head: Head, text: string | null, issues: Issues): Line {
   warnUnknownPairs(head.pairs.filter((pair) => pair.key !== 'passes'), issues);
   const given = head.words[0] ?? head.pairs.find((pair) => pair.key === 'passes')?.value;
-  warnUnknownWords(head.words.slice(1), issues);
-  if (given === undefined) return { verb: 'refine' };
+  const words = text !== null && text.trim() !== '' ? text.trim().slice(0, 400) : undefined;
+  if (given === undefined) return words === undefined ? { verb: 'refine' } : { verb: 'refine', text: words };
   const passes = /^\d+$/.test(given) ? Number(given) : null;
-  if (passes === null || passes < 1) {
-    issues.warn('bad-value', `"${given}" is not a number of passes; refined as asked, as often as is worth it`, given);
-    return { verb: 'refine' };
-  }
-  return { verb: 'refine', passes: Math.min(REFINE_LIMITS.max, passes) };
+  // `refine more light on the water` without a bar: the words are the note
+  if (passes === null) return { verb: 'refine', text: words ?? head.words.join(' ').slice(0, 400) };
+  warnUnknownWords(head.words.slice(1), issues);
+  return { verb: 'refine', passes: Math.min(REFINE_LIMITS.max, Math.max(1, passes)), ...(words === undefined ? {} : { text: words }) };
 }
 
 function parseNode(head: Head, text: string | null, issues: Issues): Line | null {
@@ -1895,6 +1894,7 @@ const TEXT_LIMIT: Readonly<Partial<Record<Verb, number>>> = {
   set: LIMITS.text,
   path: LIMITS.line,
   paint: LIMITS.prompt,
+  refine: LIMITS.line,
   flow: LIMITS.text,
   tree: LIMITS.text,
   cycle: LIMITS.text,
@@ -2193,7 +2193,7 @@ export function parseLine(raw: string): ParseResult {
         line = parseStanding(head, text, issues);
         break;
       case 'refine':
-        line = parseRefine(head, issues);
+        line = parseRefine(head, text, issues);
         break;
       case 'ambient':
         line = parseAmbient(head, issues);

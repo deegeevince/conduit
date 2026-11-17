@@ -35,7 +35,7 @@ function saidOf(input: TurnInput): string {
     case 'script':
       return 'Played a script';
     case 'refine':
-      return 'Keep making it better';
+      return input.note;
     case 'repair':
       return 'Tidied up the last answer';
   }
