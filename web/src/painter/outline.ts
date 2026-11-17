@@ -148,7 +148,8 @@ export function morphedOutline(first: ShapeGeometry, morphs: readonly Morph[], t
   if (morph === undefined) return { polylines: outlineFor(first), token: 'g0', moving: false };
   if (time >= morph.end) return { polylines: outlineFor(morph.geometry), token: `g${index + 1}`, moving: false };
   const before = morphedOutline(first, morphs.slice(0, index), morph.start, curve);
-  const progress = ease(curve === 'hold' ? 'in-out' : curve, clamp01((time - morph.start) / Math.max(1e-6, morph.end - morph.start)));
+  // a morph the hand made (seq -1, see bound.ts) is as far along as its control says: eased once, by the control's own travel, never again by the look
+  const progress = ease(morph.seq < 0 ? 'linear' : curve === 'hold' ? 'in-out' : curve, clamp01((time - morph.start) / Math.max(1e-6, morph.end - morph.start)));
   return {
     polylines: blendOutlines(before.polylines, outlineFor(morph.geometry), progress),
     token: `m${index}:${Math.round(progress * 4096)}`,

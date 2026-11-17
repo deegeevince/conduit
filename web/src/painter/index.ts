@@ -931,6 +931,7 @@ export function createPainter(options: PainterOptions): Painter {
   };
 
   const linesOf = (of: Turn, schedule: Schedule): LineView[] => {
+    const settled = of.score.settledIssues();
     const bySeq = new Map<number, ScoreEntry[]>();
     for (const entry of of.score.score) {
       if (entry.void) continue;
@@ -945,7 +946,8 @@ export function createPainter(options: PainterOptions): Painter {
         text: entry === undefined ? time.verb : serializeLine(entry.line),
         start: time.start,
         end: time.end,
-        issues: of.issues.get(time.seq) ?? [],
+        // a line's issues as they were when it came, and what the whole turn adds up to now for the binds of a control that does nothing
+        issues: [...(of.issues.get(time.seq) ?? []), ...settled.filter((item) => item.seq === time.seq).map((item) => item.issue)],
       };
     });
   };
