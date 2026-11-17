@@ -541,9 +541,8 @@ class Screen {
       const results: CheckResult[] = [];
       Screen.add(results, 'script-lines', rejectedLinesOf(source).slice(0, 3), 'every line of the script reads');
       const played = await tab.eval<string | null>(`Promise.resolve(window.__stage.playScript(${JSON.stringify(source)})).then(() => null, (e) => String(e && e.message || e))`);
-      // the script plays in real time and is now over a minute of the clock: its rest is waited for as long as the script runs, and a while more for a busy machine
-      const clock = await tab.eval<number>('window.__stage.state().end').catch(() => 0);
-      results.push(Screen.restResult(played !== null ? `the demo would not start: ${played}` : await talk.rest(true, true, Math.max(this.args.timeoutMs, 1000 * (clock + 60))), began));
+      // the script plays in real time and runs over a minute of the clock (a busy machine plays it slower still): its rest is waited for as long as that
+      results.push(Screen.restResult(played !== null ? `the demo would not start: ${played}` : await talk.rest(true, true, Math.max(this.args.timeoutMs, 240_000)), began));
       const starts = await this.sceneStarts(tab);
       if (starts.length !== ids.length) results.push({ turn: 0, check: 'scenes', verdict: 'FAIL', detail: `the script has ${ids.length} scenes but the turn has ${starts.length}` });
       const last = ids.length - 1;
