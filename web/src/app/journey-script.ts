@@ -49,11 +49,16 @@ export interface StepTiming {
   typingStart: Stamp | null;
   typingEnd: Stamp | null;
   sent: Stamp | null;
+  /** the first new line that PAINTS: the first panel row or the first stage element that was not there when the turn opened is on screen. What a film is cut by. */
   firstLine: Stamp | null;
+  /** the first line arriving in the page's log (before it paints); what `firstLine` was before the paint was timed */
+  firstLineEvent: Stamp | null;
   /** the turn's own end: the stage has played it out */
   turnEnded: Stamp | null;
-  /** the `rest` that followed: ended, still, and any critic or repair done or skipped */
+  /** the `rest` step: the last change anyone could see (a stage element, a control, a chart, a panel row) before the stage came to rest. What a film is cut by. */
   rest: Stamp | null;
+  /** the page judged the stage settled (still for a moment, any critic or repair done or skipped): the last visible change is `rest`, this comes after it */
+  restSettled: Stamp | null;
   /** a tap or an undo: the finger going down, and what it landed on */
   tapAt: Stamp | null;
   tapped: string | null;

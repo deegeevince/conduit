@@ -248,12 +248,45 @@ export function startJourney(options: JourneyOptions): JourneyState {
   };
   const sampler = window.setInterval(sampleFollow, 100);
 
-  /** the step whose turn is open: when its first line came and when the stage had played it out */
+  // ---- what can be seen: when the first new thing paints after a turn opens, and when the last visible thing changed. A film is cut by these, not by the events (a line
+  // is in the log before it is on screen, and the page judges a stage settled a while after it stopped changing).
+  const panelSeq = (): number => {
+    let newest = -1;
+    for (const row of document.querySelectorAll<HTMLElement>('.lang__row[data-seq]')) newest = Math.max(newest, Number(row.dataset['seq']));
+    return newest;
+  };
+  const shownKeys = (): Set<string> => new Set(app.painter.snapshot().elements.filter((element) => element.opacity > 0.02 && element.phase !== 'struck').map((element) => element.key));
+  /** what stood when the watched turn opened: a new panel row or stage element after it is the first line painting */
+  let paintBase = { seq: -1, keys: new Set<string>() };
+  const painted = (): boolean => {
+    if (panelSeq() > paintBase.seq) return true;
+    return app.painter.snapshot().elements.some((element) => element.opacity > 0.05 && element.phase !== 'struck' && !paintBase.keys.has(element.key));
+  };
+  const look = (): string => {
+    const snap = app.painter.snapshot();
+    let out = '';
+    for (const element of snap.elements) if (element.opacity > 0.02 && element.phase !== 'struck') out += `${element.key}:${Math.round(element.box.x)},${Math.round(element.box.y)},${Math.round(element.box.width)},${Math.round(element.box.height)},${Math.round(element.opacity * 25)};`;
+    for (const control of snap.controls) out += `${control.key}=${String(control.value)};`;
+    for (const chart of snap.charts) out += `${chart.key}@${Math.round(chart.box.x)},${Math.round(chart.box.y)},${Math.round(chart.box.width)},${Math.round(chart.box.height)};`;
+    const rows = document.querySelectorAll('.lang__row');
+    return `${out}|${rows.length}|${rows[rows.length - 1]?.textContent?.length ?? 0}|${panelSeq()}`;
+  };
+  let lastLook = '';
+  let lastChange: Stamp = stamp();
+  const looker = window.setInterval(() => {
+    const now = look();
+    if (now === lastLook) return;
+    lastLook = now;
+    lastChange = stamp();
+  }, 40);
+
+  /** the step whose turn is open: when its first line came and painted, and when the stage had played it out */
   let watched: StepTiming | null = null;
   const watch = (): void => {
     if (watched === null || watched.turn === null) return;
     if (watched.firstLine === null) {
-      if (app.lang.entriesOf(watched.turn).length > 0) watched.firstLine = stamp();
+      if (watched.firstLineEvent === null && app.lang.entriesOf(watched.turn).length > 0) watched.firstLineEvent = stamp();
+      if (painted()) watched.firstLine = stamp();
     } else if (watched.turnEnded === null && app.painter.snapshot().turn === null) watched.turnEnded = stamp();
   };
   const watcher = window.setInterval(watch, 25);
@@ -362,6 +395,7 @@ export function startJourney(options: JourneyOptions): JourneyState {
       const turn = app.lang.turn;
       if (turn !== null && turn !== before) {
         timing.turn = turn;
+        paintBase = { seq: panelSeq(), keys: shownKeys() };
         watched = timing;
         return;
       }
@@ -537,7 +571,8 @@ export function startJourney(options: JourneyOptions): JourneyState {
       await sleep(50);
     }
     noteModel();
-    timing.rest = stamp();
+    timing.restSettled = stamp();
+    timing.rest = lastChange;
   };
 
   const run = async (): Promise<void> => {
@@ -585,6 +620,7 @@ export function startJourney(options: JourneyOptions): JourneyState {
   const finish = (): void => {
     window.clearInterval(sampler);
     window.clearInterval(watcher);
+    window.clearInterval(looker);
     cancelAnimationFrame(focusFrame);
     cursor.hide();
   };
@@ -618,8 +654,10 @@ function blank(step: JourneyStep): StepTiming {
     typingEnd: null,
     sent: null,
     firstLine: null,
+    firstLineEvent: null,
     turnEnded: null,
     rest: null,
+    restSettled: null,
     tapAt: null,
     tapped: null,
     used: null,
