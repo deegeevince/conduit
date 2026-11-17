@@ -46,7 +46,10 @@ function propTokens(props: StyleProps): string[] {
   const out: string[] = [];
   if (props.layer !== undefined) out.push(`layer=${props.layer}`);
   if (props.at !== undefined) out.push(typeof props.at === 'string' ? `at=${props.at}` : `at=${point(props.at)}`);
-  if (props.near !== undefined) out.push(props.near.side === 'auto' ? `near=${props.near.id}` : `near=${props.near.id}:${props.near.side}`);
+  if (props.near !== undefined) {
+    const named = props.near.part === undefined ? props.near.id : `${props.near.id}.${props.near.part}`;
+    out.push(props.near.side === 'auto' ? `near=${named}` : `near=${named}:${props.near.side}`);
+  }
   if (props.align !== undefined) out.push(`align=${props.align}`);
   if (props.leader !== undefined) out.push(`leader=${props.leader ? 'yes' : 'no'}`);
   if (props.in !== undefined) out.push(`in=${props.in}`);
@@ -297,7 +300,7 @@ export function serializeLine(line: Line): string {
       return [...head, ...line.styles, ...propTokens(line.props), ...whenToken(line.when)].join(' ');
     }
     case 'set': {
-      const head: string[] = ['set', line.part === undefined ? targetToken(line.target) : `${targetToken(line.target)}.${'row' in line.part ? `row${line.part.row}` : `cell${line.part.cell[0]},${line.part.cell[1]}`}`, ...line.styles, ...propTokens(line.props)];
+      const head: string[] = ['set', line.mathPart !== undefined ? `${targetToken(line.target)}.${line.mathPart}` : line.part === undefined ? targetToken(line.target) : `${targetToken(line.target)}.${'row' in line.part ? `row${line.part.row}` : `cell${line.part.cell[0]},${line.part.cell[1]}`}`, ...line.styles, ...propTokens(line.props)];
       if (line.speed !== undefined) head.push(line.speed);
       if (line.over !== undefined) head.push(`over=${seconds(line.over)}`);
       return [...head, ...whenToken(line.when)].join(' ');
@@ -316,7 +319,7 @@ export function serializeLine(line: Line): string {
       return [...head, ...whenToken(line.when)].join(' ');
     }
     case 'hit':
-      return ['hit', line.id, line.gesture, ...whenToken(line.when)].join(' ');
+      return ['hit', line.part === undefined ? line.id : `${line.id}.${line.part}`, line.gesture, ...whenToken(line.when)].join(' ');
     case 'cam': {
       const head: string[] = ['cam', line.move];
       if (line.target !== undefined) head.push(line.target);
@@ -347,7 +350,9 @@ export function serializeLine(line: Line): string {
     case 'hint':
       return withText(['hint', ...(line.in === undefined ? [] : [`in=${line.in}`]), ...(line.stage === true ? ['stage=yes'] : [])], line.text);
     case 'fill':
-      return `fill ${line.id} | ${line.text}`;
+      return `fill ${line.id}${line.part === undefined ? '' : `.${line.part}`} | ${line.text}`;
+    case 'math':
+      return withText(['math', line.id, line.method, ...(line.worked === true ? ['worked'] : []), ...(line.blank === undefined ? [] : [`blank=${line.blank}`]), ...(line.carry === undefined ? [] : [`carry=${line.carry}`]), ...(line.steps === true ? ['steps'] : []), ...(line.step === undefined ? [] : [`step=${line.step}`]), ...whenToken(line.when)], line.sum);
     case 'reply':
       return `reply | ${line.text}`;
     case 'end':

@@ -63,6 +63,11 @@ import {
   TIME_FORM,
   VERB,
   WEIGHT,
+  MATH_BLANKS,
+  MATH_CARRIES,
+  MATH_METHODS,
+  MATH_PLACES,
+  MATH_VERB,
   BOUND_SECONDS,
   CHART,
   CHART_REVEAL_SECONDS,
@@ -215,6 +220,18 @@ sections.push(
     '| Structure | Its parts | Who places them | Meaning |',
     '| --- | --- | --- | --- |',
     ...Object.entries(STRUCTURE).map(([name, spec]) => `| \`${name}\` | ${spec.parts === 'rows' ? 'rows' : 'nodes and links'}${name === 'chart' ? ', and nodes as marks' : ''} | ${spec.lays === 'painter' ? 'the painter' : spec.lays === 'engine' ? "the painter's charting engine" : spec.lays === 'axis' ? 'the painter, along an axis, by each node\'s number' : 'the brain (x,y); the painter labels and routes'} | ${spec.gist.replaceAll('|', '\\|')} |`),
+    '',
+  ].join('\n'),
+);
+sections.push(
+  [
+    '### `math` (written methods)',
+    '',
+    '| Form | Time | Meaning |',
+    '| --- | --- | --- |',
+    ...Object.values(MATH_VERB).map((spec) => `| \`${spec.form.replaceAll('|', '\\|')}\` | ${TIME_WORDS[spec.time]} | ${spec.gist} |`),
+    '',
+    `Methods: ${MATH_METHODS.map((name) => `\`${name}\``).join(', ')}. \`blank=\`: ${MATH_BLANKS.map((name) => `\`${name}\``).join(', ')} (the first is the default). \`carry=\`: ${MATH_CARRIES.map((name) => `\`${name}\``).join(', ')}. Places in a part: ${MATH_PLACES.map((name) => `\`${name}\``).join(', ')}.`,
     '',
   ].join('\n'),
 );

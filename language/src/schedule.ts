@@ -50,7 +50,7 @@ import {
   dwellSeconds,
   waitSeconds,
 } from './timing';
-import type { Anchor, AppShelf, ArtVerb, LessonVerb, TuneVoice } from './vocabulary';
+import type { Anchor, AppShelf, ArtVerb, LessonVerb, MathVerb, TuneVoice } from './vocabulary';
 import type { BindLine, BindOn, CanvasBox, ControlLine, SceneLine, ControlValue, CreatingLine, Issue, IssueCode, Line, Paint, Point, Range, ShapeGeometry, StructureLine, StyleProps, TablePart, Target, When } from './types';
 import { cachedTune, tuneRowsOf } from './tune';
 import { BACKDROP_LAYERS, CANVAS, CONTROL, DEFAULT_CANVAS, DEFAULT_CHART, DEFAULT_LOOK, DEFAULT_TUNE_VOICE, LESSON_VERBS, LIMITS, STRUCTURE } from './vocabulary';
@@ -464,7 +464,7 @@ export interface LookSpan extends Span {
 
 export interface LineTime extends Span {
   readonly seq: number;
-  readonly verb: Verb | LessonVerb | ArtVerb;
+  readonly verb: Verb | LessonVerb | ArtVerb | MathVerb;
 }
 
 export interface ScheduleIssue {
@@ -1823,6 +1823,8 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
       case 'reply':
       case 'end':
       case 'fill':
+      // PLAN-maths M0: the contract only. The painter lays a written method out in M2; until then it is no time and no place on the stage.
+      case 'math':
         // The words of the document and its lessons (v3, lesson.ts). They put nothing on a painted stage and take no time: the document keeps them.
         lines.push({ seq, verb: line.verb, start: pen, end: pen });
         break;
@@ -2019,6 +2021,12 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
 
       case 'set': {
         const start = startOf(entry, line.when);
+        if (line.mathPart !== undefined) {
+          // a part of a written method is marked by the painter that lays it out (PLAN-maths M2); here it is no time and no place
+          previousStart = start;
+          lines.push({ seq, verb: line.verb, start, end: start });
+          break;
+        }
         if (line.part !== undefined) {
           const owner = line.target.kind === 'id' ? findLive(line.target.id, start) : null;
           const held = owner?.span.figure;

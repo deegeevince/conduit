@@ -464,6 +464,24 @@ Every line stands alone on the wire: the normaliser writes `in=` and an id on ev
 
 Limits are `LESSON_LIMITS`: 400 parts, 6 deep, 40 steps and asks to a part, 8 answers, 6 choices and 6 hints to an ask.
 
+### 4.21 `math`: a written method, laid out as on paper
+
+`math <id> <method> [worked] [blank=answer|all] [carry=write|shown|none] [steps | step=<n|control>] | <sum>` puts a sum on the canvas the way it is written on paper: stacked in place-value columns, carries above, a rule under, the answer below. **The painter computes every digit and the brain writes none**, so the working cannot be wrong and cannot leak the answer. It is in the language and the server now; the painter that lays it out is PLAN-maths step M2, and the brain is not taught it until M5 (the fixed prompt is unchanged).
+
+```
+math m1 column | 12 + 12 + 12 + 12 + 12 + 12
+math m2 column | 503 - 278
+math m3 times | 47 × 6
+```
+
+- **Methods.** `column`: addition of any number of rows (up to 8), subtraction by exchange (the first number is not the smaller), decimals aligned on the point. `times`: short multiplication, a whole number by a single digit. `split`: expanded form, `347` is `300 + 40 + 7`. `bond`: part and whole, `10 = 4 + ?` (one part is `?`). `bar`, `groups`, `array`, `line`: the pictures, written with the question's own numbers (`12 ÷ 3`, `3/4`); parsed now.
+- **The sum** is read exactly (decimals are exact, never floats; commas as thousands are dropped, `×`, `x` and `*` are one sign) and written back in one canonical form, so a line reads back as itself. A sum that cannot be read, or that a method cannot hold (`5 - 8`, `12.5 × 3` in `times`), refuses the line with `bad-sum` and says why.
+- **The default shows the method without the answer:** the givens, the signs, the rule and empty cells. `worked` writes everything, for teaching on a different sum. `blank=answer` (the default) leaves the answer cells empty; `blank=all` asks for every step to be written. `carry=write` leaves the carries for the learner (a carry held in the head is not marked down, a wrong one is), `carry=shown` draws them, `carry=none` has none. `steps` adds a stepper and captions (a tap advances); `step=<n>` shows step n, and `step=<id>` follows a `pick <id> steps`.
+- **The answer is sealed** like an ask's `is=`. The server computes it from the sum (`answerOf`, `language/src/maths/sum.ts`) and the normaliser refuses a `say` that states it (`spoiler`), unless the block is `worked`. A number the sum itself shows is no secret and is not sealed. For `split` each place's value is sealed (`300`, `40`, `7`); for a `bond`, the missing part.
+- **Parts** are written `<id>.<part>` (an id cannot hold a dot, so it is unambiguous): `m1.r3` (a row), `m1.r3-tens` (one digit of it), `m1.tens` (a place), `m1.carry-tens` (the carry above a place), `m1.ans-ones` (an answer cell), `m1.ans` (the whole answer row), `m1.ex-tens` (the exchanged digits of a subtraction), `m1.top-tens`, `m1.rule`, `m1.sign`, `m1.s2` (what step 2 adds). Places are `ones tens hundreds thousands tenthousands tenths hundredths thousandths`. A part works in `near=` (`say near=m1.r3:below | …`), `hit` (`hit m1.tens`), `set` (`set m1.carry-tens mark=box`, as `set t1.row2 mark=box` marks a table's row) and `fill`. Whether the block has that part is for the painter to say.
+- **`fill m1 | 72`** spreads a given answer across the answer cells, right to left, one digit to each; `fill m1.ans-ones | 2` writes one.
+- **Composition.** A block in the flow like a table, or in a room on a free scene.
+
 ## 5. Time
 
 ### 5.1 The two clocks, the pen and the playhead
@@ -831,7 +849,7 @@ A new structure, chart kind or control is one entry in its table in `vocabulary.
 | `tune [id] [tempo=<bpm>] [voice=piano\|strings\|chip\|bell] [x,y WxH] [\| title]` | starts at the pen and leaves the pen where it is | Music, in ABC notation: follow it with one `| line` per line of the score (K: M: L: Q: V:1 V:2, then the notes). It is drawn as a piano roll and played when it is whole. |
 | `app [id] [height=<n>] [x,y WxH] [\| title]` | starts at the pen and leaves the pen where it is | A live app: follow it with one `| line` per line of one HTML document (inline <style> and <script>). It runs in a locked sandbox on the stage, with no network. Taught only when the user asks for something that works. |
 | `figure <id> [cutaway\|exploded] [\| title]` | starts at the pen and leaves the pen where it is | A labelled drawing: follow it with its parts (path, poly, line, ellipse, rect, each with label="…"), route and step lines, then `end`. Taught by the FIGURE chapter in the brief. |
-| `problem <id> answer=<a>[,<b>…] [ways=<way>[,<way>…]] [for=<who>] \| <the question exactly as given, ___ for the blank>` | starts at the pen and leaves the pen where it is | A maths question for a child to work out, on a full screen of its own. Say the question and its answer and nothing more: the stage sets the question large with a blank for the pen, offers hints and pictures (groups, a bar, an array, a column, a number line) drawn from its numbers, and checks her answer itself. `answer=` is every form you accept (`3000,3_000`, `_` is a space). |
+| `problem <id> answer=<a>[,<b>…] [ways=<way>[,<way>…]] [for=<who>] \| <the question exactly as given, ___ for the blank>` | starts at the pen and leaves the pen where it is | An old maths question, kept so earlier answers still play: it is an `ask` for its answer, with the question as its words. Write an `ask` instead. |
 | `fill <problem or ask id> \| <the answer>` | takes no time | Puts an answer the person gave you (by voice, by pen or in the chat) into the blank of a maths problem or an ask. The page shows it there and checks it itself, like a typed answer. It is the only way anything gets filled in: never say you filled a blank any other way. |
 | `screen <id> phone\|tablet\|desktop\|browser [from=<screen>[:label]] [\| name]` | starts at the pen and leaves the pen where it is | A mock-up: a device at its true size. The parts of the screen follow, one a line (nav, heading, button, field, item, image, row, col, end…); the painter lays them out. Taught by the INTERFACE chapter in the brief; on the wire its first line is the title and each later line a row, taken as written. |
 | `node [id] [number \| x,y] [ask\|end\|note] [from=<id>[:label]] [x=<when>] [y=<value>] [prop=value…] \| <text>` | starts at the pen and moves the pen part of the way through its own drawing | One part of the structure above. from= also draws the link from that node. On a chart it is a mark: x= an event, y= a level, both a point. |
@@ -888,6 +906,7 @@ A new structure, chart kind or control is one entry in its table in `vocabulary.
 | `scale` | N | drawn | mind | size multiplier (a sprite: canvas units per pixel) |
 | `rot` | N degrees | any | mind | turned clockwise |
 | `opacity` | 0..1 | any | mind | how solid |
+| `align` | `left` `center` `right` | text | mind | with at=x,y: which edge of the words that point is (right for digits lined up in a column) |
 | `tap` | `yes` `no` | any | mind | yes makes it a choice the user can tap |
 | `dur` | Ns | any | hand | exact entrance length |
 
@@ -1251,8 +1270,16 @@ Nominal scale against body: `xs` 0.64, `s` 0.8, `m` 1, `l` 1.5, `xl` 2.25, `xxl`
 | `tune` | rows | the painter's charting engine | rows `\| line` of ABC notation, taken exactly: a piano roll that plays, with a playhead and the notes lighting as they sound |
 | `app` | rows | the painter's charting engine | rows `\| line` of one HTML document (inline style and script), taken exactly: a live app that runs in a locked sandbox on the stage and answers back (taught only when the user asks for something that works) |
 | `figure` | rows | the painter's charting engine | a labelled drawing: each part one line (taught by the FIGURE chapter in the brief); rows are the lines of the figure, taken as written |
-| `problem` | rows | the painter's charting engine | a maths question to work out, `\| the question exactly as given` with `___` for the blank: the stage draws the whole workspace itself (the question large, a blank for the pen, hints, ways to lay it out), so write nothing else |
+| `problem` | rows | the painter's charting engine | an old maths question: it plays as an `ask` for its answer (the question as its words); write an `ask` instead |
 | `screen` | rows | the painter's charting engine | a mock-up: devices at true size, each part one line (taught by the INTERFACE chapter in the brief); rows are the lines of the interface, taken as written |
+
+### `math` (written methods)
+
+| Form | Time | Meaning |
+| --- | --- | --- |
+| `math <id> column\|times\|split\|bond\|bar\|groups\|array\|line [worked] [blank=answer\|all] [carry=write\|shown\|none] [steps \| step=<n\|control>] \| <sum>` | starts at the pen and leaves the pen where it is | A written method laid out as on paper, in place-value columns. The painter computes every digit; you write none. The answer is sealed like an ask's `is=`: the default shows the method (the givens, the signs, the rule and empty cells) and never the answer. `worked` writes everything, for teaching on a different sum. `steps` adds a stepper, `step=<id>` follows a `pick`. Its parts are named `<id>.<part>`: `m1.r3` (a row), `m1.tens`, `m1.carry-tens`, `m1.ans-ones`, `m1.rule`, `m1.s2` (a step). |
+
+Methods: `column`, `times`, `split`, `bond`, `bar`, `groups`, `array`, `line`. `blank=`: `answer`, `all` (the first is the default). `carry=`: `write`, `shown`, `none`. Places in a part: `ones`, `tens`, `hundreds`, `thousands`, `tenthousands`, `tenths`, `hundredths`, `thousandths`.
 
 ### `node` shapes (flow, tree, cycle)
 

@@ -4,7 +4,7 @@
 // Every question here is made up, in the same kinds as a primary-maths worksheet (fifty less, missing numbers, times to 100, metric
 // conversions, ordering numbers, halving chains, months from an age, a time after a bus journey, change from a note, a fraction of a number).
 // Nothing is copied from a real worksheet, and nothing names a learner.
-import { accepts, foldSource, maths, parseLine, serializeLine } from '../src/index';
+import { accepts, foldSource, LineNormalizer, maths, parseLine, serializeLine } from '../src/index';
 
 let passed = 0;
 let failed = 0;
@@ -532,6 +532,293 @@ function hardChecks(): void {
   expect('hard: working with nothing in it', maths.checkWorking({ accepted: ['4'] }, ['', ' ']).verdict, 'empty');
 }
 
+
+// --- the written methods (PLAN-maths M0 and M1): the contract, and the digit algorithms over ranges of sums -----------------------------------------
+
+type Grid = maths.Grid;
+type Cell = maths.Cell;
+
+const showN = (text: string): string => maths.showDec(maths.readDec(text) as maths.Dec);
+const cellsOf = (grid: Grid, role: Cell['role']): Cell[] => grid.cells.filter((cell) => cell.role === role);
+const gridOf = (method: 'column' | 'times' | 'split' | 'bond', sum: string, options: { worked?: boolean; blank?: 'answer' | 'all'; carry?: 'write' | 'shown' | 'none' } = {}): Grid | null =>
+  maths.gridOf({ method, sum, ...options });
+
+/** The number the given cells of row `r<n>` write, as the digits of its places. */
+function rowNumber(grid: Grid, row: number): string {
+  const digits = new Map<number, string>();
+  for (const cell of cellsOf(grid, 'given')) if (cell.part.startsWith(`r${row}-`) && cell.place !== null) digits.set(cell.place, cell.value);
+  if (digits.size === 0) return '0';
+  const places = [...digits.keys()];
+  let text = '';
+  for (let at = Math.max(...places, 0); at >= Math.min(...places, 0); at -= 1) {
+    text += digits.get(at) ?? '0';
+    if (at === 0 && Math.min(...places) < 0) text += '.';
+  }
+  return showN(text);
+}
+
+/** The number the answer cells write. */
+function answerNumber(grid: Grid): string {
+  const digits = cellsOf(grid, 'answer').filter((cell) => cell.place !== null);
+  const places = digits.map((cell) => cell.place as number);
+  let text = '';
+  for (let at = Math.max(...places); at >= Math.min(...places); at -= 1) {
+    text += digits.find((cell) => cell.place === at)?.value ?? '0';
+    if (at === 0 && Math.min(...places) < 0) text += '.';
+  }
+  return showN(text);
+}
+
+/** What every grid must be, whatever the method: unique parts, a working order that visits each written cell once, nothing of the answer on show. */
+function gridChecks(name: string, grid: Grid | null, options: { worked?: boolean }, answer: string): void {
+  if (grid === null) {
+    expect(`${name}: a grid`, grid, 'something');
+    return;
+  }
+  expect(`${name}: every part is named once`, new Set(grid.cells.map((cell) => cell.part)).size, grid.cells.length);
+  const written = grid.cells.map((cell, at) => ({ cell, at })).filter(({ cell }) => (cell.role === 'carry' || cell.role === 'answer' || cell.role === 'working') && cell.value !== '');
+  expect(`${name}: the working order visits every written cell once`, [...grid.order].sort((a, b) => a - b), written.map(({ at }) => at));
+  expect(`${name}: each cell knows its place in the order`, grid.order.every((at, index) => grid.cells[at]?.order === index), true);
+  expect(`${name}: a cell nobody writes has no place in the order`, grid.cells.every((cell, at) => cell.order === null || grid.order.includes(at)), true);
+  expect(`${name}: no two cells share a seat`, new Set(grid.cells.filter((cell) => cell.role !== 'rule').map((cell) => `${cell.row},${cell.col}`)).size, grid.cells.filter((cell) => cell.role !== 'rule').length);
+  expect(`${name}: the answer cells say the answer`, answerNumber(grid), showN(answer));
+  if (options.worked === true) {
+    expect(`${name}: worked fills everything`, grid.cells.filter((cell) => cell.blank), []);
+  } else {
+    expect(`${name}: the answer cells are blank`, cellsOf(grid, 'answer').every((cell) => cell.blank), true);
+    expect(`${name}: no given is blank`, cellsOf(grid, 'given').some((cell) => cell.blank), false);
+    // no row on show reads as the answer, and no visible cell is an answer cell
+    const answerDigits = grid.answer.replace('.', '');
+    for (let row = 0; row < grid.rows; row += 1) {
+      const shown = grid.cells.filter((cell) => cell.row === row && !cell.blank && cell.role !== 'sign' && cell.role !== 'rule' && cell.value !== '');
+      const given = shown.every((cell) => cell.role === 'given');
+      if (!given && shown.length > 1) expect(`${name}: row ${row} on show does not read as the answer`, shown.sort((a, b) => a.col - b.col).map((cell) => cell.value).join('') === answerDigits, false);
+    }
+    const topGiven = Math.max(...cellsOf(grid, 'given').map((cell) => cell.place ?? 0));
+    expect(`${name}: no carry above the leading given digit is on show`, cellsOf(grid, 'carry').some((cell) => !cell.blank && cell.value !== '' && (cell.place as number) > topGiven), false);
+    expect(`${name}: no exchange on show is an answer digit`, cellsOf(grid, 'working').some((cell) => !cell.blank && grid.cells.some((one) => one.role === 'answer' && one.place === cell.place && one.value === cell.value)), false);
+    expect(`${name}: nothing blank is in the visible text of an answer cell`, cellsOf(grid, 'answer').some((cell) => !cell.blank && cell.value !== ''), false);
+  }
+}
+
+/** The carry into place `at`, worked out another way: what the places below it come to, over the place. */
+function carryInto(operands: readonly string[], at: number, low: number): number {
+  const scaled = operands.map((operand) => {
+    const dec = maths.readDec(operand) as maths.Dec;
+    return dec.n * 10n ** BigInt(-low - dec.scale);
+  });
+  const unit = 10n ** BigInt(at - low);
+  return Number(scaled.reduce((sum, n) => sum + (n % unit), 0n) / unit);
+}
+
+function addChecks(operands: readonly string[], options: { worked?: boolean; carry?: 'write' | 'shown' | 'none'; blank?: 'answer' | 'all' } = {}): void {
+  const sum = operands.join(' + ');
+  const name = `column ${sum} ${JSON.stringify(options)}`;
+  const grid = gridOf('column', sum, options);
+  const total = operands.map((operand) => maths.readDec(operand) as maths.Dec).reduce(maths.addDec);
+  gridChecks(name, grid, options, maths.showDec(total));
+  if (grid === null) return;
+  operands.forEach((operand, at) => expect(`${name}: row ${at + 1} rebuilds`, rowNumber(grid, at + 1), showN(operand)));
+  const low = Math.min(...operands.map((operand) => -(operand.split('.')[1] ?? '').length));
+  const places = cellsOf(grid, 'answer').map((cell) => cell.place as number);
+  expect(`${name}: the answer's places run right to left in the order`, grid.order.map((at) => grid.cells[at]).filter((cell) => cell?.role === 'answer').map((cell) => cell?.place), [...places].sort((a, b) => a - b));
+  for (const cell of cellsOf(grid, 'carry')) expect(`${name}: carry into ${cell.part} agrees with the arithmetic`, Number(cell.value === '' ? '0' : cell.value), carryInto(operands, cell.place as number, low));
+  // a carry that is not a cell is a carry of nothing
+  for (const at of places.filter((place) => place > low)) {
+    const want = carryInto(operands, at, low);
+    const cell = grid.cells.find((one) => one.role === 'carry' && one.place === at);
+    if (options.carry === 'none') expect(`${name}: no carry cells`, cell, undefined);
+    else expect(`${name}: carry into place ${at} is a cell`, Number(cell?.value === '' ? '0' : (cell?.value ?? 'x')), want);
+  }
+  if (options.worked !== true && options.carry !== 'shown') expect(`${name}: carries are for the learner to write`, cellsOf(grid, 'carry').every((cell) => cell.value === '' || (cell.blank && cell.optional === (options.blank !== 'all'))), true);
+  if (options.worked !== true && options.carry === 'shown') expect(`${name}: shown carries are shown, bar the one that is the answer's first digit`, cellsOf(grid, 'carry').every((cell) => !cell.blank || (cell.place as number) > Math.max(...operands.map((operand) => operand.split('.')[0]?.length ?? 1)) - 1), true);
+  if (options.worked === true) expect(`${name}: worked shows its carries`, cellsOf(grid, 'carry').every((cell) => !cell.blank), true);
+}
+
+function subtractChecks(a: string, b: string, options: { worked?: boolean; carry?: 'write' | 'shown' | 'none'; blank?: 'answer' | 'all' } = {}): void {
+  const name = `column ${a} - ${b} ${JSON.stringify(options)}`;
+  const grid = gridOf('column', `${a} - ${b}`, options);
+  const difference = maths.showDec(maths.subDec(maths.readDec(a) as maths.Dec, maths.readDec(b) as maths.Dec));
+  gridChecks(name, grid, options, difference);
+  if (grid === null) return;
+  expect(`${name}: the top row rebuilds`, rowNumber(grid, 1), showN(a));
+  expect(`${name}: the bottom row rebuilds`, rowNumber(grid, 2), showN(b));
+  // the exchange keeps the value of the top number, and leaves each place enough to take its digit away
+  if (options.carry !== 'none') {
+    const top = new Map<number, number>();
+    for (const cell of cellsOf(grid, 'given')) if (cell.part.startsWith('r1-') && cell.place !== null) top.set(cell.place, Number(cell.value));
+    const bottom = new Map<number, number>();
+    for (const cell of cellsOf(grid, 'given')) if (cell.part.startsWith('r2-') && cell.place !== null) bottom.set(cell.place, Number(cell.value));
+    const was = [...top].reduce((sum, [place, digit]) => sum + BigInt(digit) * 10n ** BigInt(place + 3), 0n);
+    for (const cell of cellsOf(grid, 'working')) top.set(cell.place as number, Number(cell.value));
+    const now = [...top].reduce((sum, [place, digit]) => sum + BigInt(digit) * 10n ** BigInt(place + 3), 0n);
+    expect(`${name}: the exchange keeps the value of the top number`, String(now), String(was));
+    for (const cell of cellsOf(grid, 'answer')) expect(`${name}: ${cell.part} is what is left in its place`, (top.get(cell.place as number) ?? 0) - (bottom.get(cell.place as number) ?? 0), Number(cell.value));
+    for (const cell of cellsOf(grid, 'working')) {
+      const crossed = grid.cells.find((one) => one.role === 'given' && one.part === `r1-${maths.placeName(cell.place as number)}`);
+      expect(`${name}: ${cell.part} sits over a crossed digit`, crossed?.crossed, true);
+    }
+    expect(`${name}: only an exchanged digit is crossed`, cellsOf(grid, 'given').filter((cell) => cell.crossed).length, cellsOf(grid, 'working').length);
+  }
+  if (options.carry === 'none') expect(`${name}: no exchange cells`, cellsOf(grid, 'working').length, 0);
+}
+
+function timesChecks(n: string, d: string, options: { worked?: boolean; carry?: 'write' | 'shown' | 'none'; blank?: 'answer' | 'all' } = {}): void {
+  const name = `times ${n} × ${d} ${JSON.stringify(options)}`;
+  const grid = gridOf('times', `${n} × ${d}`, options);
+  gridChecks(name, grid, options, (BigInt(n) * BigInt(d)).toString());
+  if (grid === null) return;
+  expect(`${name}: the number rebuilds`, rowNumber(grid, 1), n);
+  expect(`${name}: the digit rebuilds`, rowNumber(grid, 2), d);
+  for (const cell of cellsOf(grid, 'carry')) {
+    const at = cell.place as number;
+    expect(`${name}: carry into ${cell.part} agrees with the arithmetic`, Number(cell.value === '' ? '0' : cell.value), Number((BigInt(n) % 10n ** BigInt(at)) * BigInt(d) / 10n ** BigInt(at)));
+  }
+  expect(`${name}: the answer's places run right to left`, grid.order.map((at) => grid.cells[at]).filter((cell) => cell?.role === 'answer').map((cell) => cell?.place), cellsOf(grid, 'answer').map((cell) => cell.place as number).sort((a, b) => a - b));
+}
+
+function splitChecks(n: string, options: { worked?: boolean } = {}): void {
+  const name = `split ${n} ${JSON.stringify(options)}`;
+  const grid = gridOf('split', n, options);
+  if (grid === null) {
+    expect(`${name}: a grid`, grid, 'something');
+    return;
+  }
+  const parts = cellsOf(grid, 'answer');
+  const total = parts.map((cell) => maths.readDec(cell.value) as maths.Dec).reduce(maths.addDec, { n: 0n, scale: 0 });
+  expect(`${name}: the parts add up to the number`, maths.showDec(total), n);
+  expect(`${name}: every part is one digit's value`, parts.every((cell) => /^[1-9]0*$|^0\.0*[1-9]$/.test(cell.value)), true);
+  expect(`${name}: the order runs left to right`, grid.order.map((at) => grid.cells[at]?.place), parts.map((cell) => cell.place as number).sort((a, b) => b - a));
+  expect(`${name}: the digits rebuild`, rowNumber(grid, 1), n);
+  expect(`${name}: the parts are not on show`, options.worked === true ? 0 : parts.filter((cell) => !cell.blank).length, 0);
+  if (options.worked === true) expect(`${name}: worked fills everything`, grid.cells.filter((cell) => cell.blank), []);
+  expect(`${name}: the working order visits every part once`, [...grid.order].sort((a, b) => a - b), grid.cells.map((cell, at) => (cell.role === 'answer' ? at : -1)).filter((at) => at >= 0));
+}
+
+function bondChecks(sum: string, unknown: string, options: { worked?: boolean } = {}): void {
+  const name = `bond ${sum} ${JSON.stringify(options)}`;
+  const grid = gridOf('bond', sum, options);
+  if (grid === null) {
+    expect(`${name}: a grid`, grid, 'something');
+    return;
+  }
+  const given = cellsOf(grid, 'given').map((cell) => cell.value);
+  const answer = cellsOf(grid, 'answer');
+  expect(`${name}: one number to find`, answer.map((cell) => cell.value), [unknown]);
+  const at = (row: number, col: number): maths.Dec => maths.readDec(grid.cells.find((cell) => cell.row === row && cell.col === col)?.value ?? '0') as maths.Dec;
+  expect(`${name}: the numbers make a bond`, maths.showDec(maths.addDec(at(1, 0), at(1, 2))), maths.showDec(at(0, 1)));
+  expect(`${name}: the answer is not on show`, options.worked === true ? 0 : answer.filter((cell) => !cell.blank).length, 0);
+  expect(`${name}: the other numbers are given`, given.length, 2);
+  expect(`${name}: the order is the one cell`, grid.order.length, 1);
+}
+
+function writtenChecks(): void {
+  // the contract: read, round-tripped, refused
+  const lines = [
+    'math m1 column | 12 + 12 + 12 + 12 + 12 + 12',
+    'math m2 column worked blank=all carry=shown steps | 503 - 278',
+    'math m3 times step=s1 | 47 × 6',
+    'math m4 split | 347',
+    'math m5 bond blank=answer carry=none | 10 = 4 + ?',
+    'math m6 column | 3.4 + 12.75',
+    'math m7 bar | 3/4',
+    'math m8 groups | 12 ÷ 3',
+    'math m9 array | 3 × 4',
+    'math m10 line | 7 + 5',
+    'set m1.carry-tens mark=box',
+    'set m1.s2 mark=box',
+    'hit m1.tens pulse',
+    'fill m1 | 72',
+    'fill m1.ans-ones | 2',
+    'say - near=m1.r3:below | This row',
+  ];
+  for (const line of lines) {
+    const read = parseLine(line);
+    expect(`math: ${line} reads`, read.kind, 'line');
+    if (read.kind === 'line') expect(`math: ${line} reads back as itself`, serializeLine(read.line), line);
+  }
+  const loose = parseLine('math m1 column | 12+12 + 12');
+  expect('math: a loose sum is written in one form', loose.kind === 'line' ? serializeLine(loose.line) : null, 'math m1 column | 12 + 12 + 12');
+  const timesSign = parseLine('math m1 times | 47 x 6');
+  expect('math: x is a times sign', timesSign.kind === 'line' ? serializeLine(timesSign.line) : null, 'math m1 times | 47 × 6');
+  for (const refused of ['math m1 column', 'math m1 column | 5 - 8', 'math m1 column | 12 × 3', 'math m1 times | 12 × 34', 'math m1 times | 1.5 × 3', 'math m1 divide | 12 ÷ 3', 'math m1 bond | 10 = 4 + 5', 'math m1 bond | 10 = ? + ?', 'math column | 1 + 1', 'math m1 column | 1 +', 'math m1 split | abc', 'math m1 column | 1 + 2 - 3']) {
+    expect(`math: ${refused} is refused`, parseLine(refused).kind, 'reject');
+  }
+  expect('math: a part that is no part is no part', maths.isMathPart('m1'), false);
+  expect('math: parts of a method', ['r3', 'r3-tens', 'tens', 'carry-tens', 'ans-ones', 'rule', 's2', 'ex-hundreds', 'sign', 'sign2'].map(maths.isMathPart), [true, true, true, true, true, true, true, true, true, true]);
+  expect('math: row2 is a table\'s and not a method\'s', ['row2', 'cell2,3', 'carry', 'ans-', 'r0'].map(maths.isMathPart), [false, false, false, false, false]);
+  const read = (method: 'column' | 'times' | 'split' | 'bond', text: string): string[] => {
+    const sum = maths.readSum(method, text);
+    return sum.ok ? [...maths.answerOf(sum.sum)] : ['unread'];
+  };
+  expect('math: the answer is worked out for the seal', [read('column', '12+12+12+12+12+12'), read('column', '503-278'), read('column', '3.4+12.75'), read('times', '47 x 6'), read('split', '347'), read('bond', '10 = 4 + ?'), read('bond', '? = 4 + 6')], [['72'], ['225'], ['16.15'], ['282'], ['300', '40', '7'], ['6'], ['10']]);
+  expect('math: 0.1 + 0.2 is 0.3 and not a float', read('column', '0.1 + 0.2'), ['0.3']);
+  expect('math: what the sum itself shows is no secret', read('column', '10 - 0'), []);
+
+  // the seal: a say that states the answer is refused, a worked one is free to
+  const guard = (lines: readonly string[]): string[] => {
+    const normalizer = new LineNormalizer(() => 'x1');
+    return lines.map((text) => {
+      const parsed = parseLine(text);
+      return parsed.kind === 'line' ? (normalizer.normalize(parsed.line).line === null ? 'refused' : 'ok') : 'unread';
+    });
+  };
+  expect('math: a say that states the answer is refused', guard(['math m1 column | 12+12+12+12+12+12', 'say | Six twelves make 72', 'say | Start with the ones', 'say | There are 6 rows of 12']), ['ok', 'refused', 'ok', 'ok']);
+  expect('math: a worked method seals nothing', guard(['math m1 column worked | 12+12+12+12+12+12', 'say | Six twelves make 72']), ['ok', 'ok']);
+  expect('math: a new scene lifts the seal', guard(['math m1 column | 12+12', 'scene', 'say | Twenty four']), ['ok', 'ok', 'ok']);
+
+  // the sums of the issue, as cells
+  const twelves = gridOf('column', '12 + 12 + 12 + 12 + 12 + 12');
+  expect('column: six 12s carry a 1 into the tens', twelves === null ? null : [twelves.answer, cellsOf(twelves, 'carry').filter((cell) => cell.value !== '').map((cell) => `${cell.part}=${cell.value}`)], ['72', ['carry-tens=1']]);
+  const crossZero = gridOf('column', '503 - 278');
+  expect('column: 503 - 278 exchanges across the zero', crossZero === null ? null : cellsOf(crossZero, 'working').map((cell) => `${cell.part}=${cell.value}`), ['ex-hundreds=4', 'ex-tens=9', 'ex-ones=13']);
+  const fortySeven = gridOf('times', '47 × 6');
+  expect('times: 47 × 6 carries a 4', fortySeven === null ? null : [fortySeven.answer, cellsOf(fortySeven, 'carry').map((cell) => `${cell.part}=${cell.value}`)], ['282', ['carry-tens=4', 'carry-hundreds=2']]);
+  const newColumn = gridOf('column', '99 + 1');
+  expect('column: a carry into a new column writes it as the answer digit', newColumn === null ? null : [newColumn.answer, newColumn.cols, cellsOf(newColumn, 'answer').map((cell) => cell.value)], ['100', 4, ['0', '0', '1']]);
+  expect('column: the point is drawn between the ones and the tenths', gridOf('column', '3.4 + 12.75')?.pointAfter, 0);
+
+  // ranges
+  for (const options of [{}, { worked: true }, { carry: 'shown' as const }, { carry: 'none' as const }, { blank: 'all' as const }, { worked: true, carry: 'none' as const }]) {
+    for (const operands of [['12', '12', '12', '12', '12', '12'], ['99', '1'], ['999', '1'], ['0', '0'], ['9', '9', '9', '9', '9', '9', '9', '9'], ['3.4', '12.75'], ['0.5', '0.5'], ['0.1', '0.2'], ['99.99', '0.01'], ['1000', '1'], ['7', '8', '9'], ['105', '95'], ['25', '75', '50']]) addChecks(operands, options);
+    for (const [a, b] of [['503', '278'], ['100', '1'], ['5003', '2008'], ['1000', '999'], ['7000', '6999'], ['5.2', '1.75'], ['10', '0.01'], ['9', '9'], ['10', '0'], ['400', '399'], ['30', '7'], ['62', '47'], ['201', '99']]) subtractChecks(a as string, b as string, options);
+    for (const [n, d] of [['47', '6'], ['9', '9'], ['99', '9'], ['100', '5'], ['305', '0'], ['47', '0'], ['47', '1'], ['999', '9'], ['12345', '8']]) timesChecks(n as string, d as string, options);
+  }
+  for (let a = 0; a <= 60; a += 1) for (let b = 0; b <= 60; b += 7) {
+    addChecks([String(a), String(b)]);
+    if (a >= b) subtractChecks(String(a), String(b));
+  }
+  // a lot of subtractions, across zeros and not
+  let seed = 7;
+  const next = (to: number): number => {
+    seed = (seed * 1103515245 + 12345) % 2147483648;
+    return seed % to;
+  };
+  for (let at = 0; at < 400; at += 1) {
+    const a = next(100000);
+    const b = next(a + 1);
+    subtractChecks(String(a), String(b));
+    addChecks([String(next(5000)), String(next(5000)), String(next(300))]);
+    timesChecks(String(1 + next(99999)), String(next(10)));
+    const fraction = (): string => `${next(300)}.${String(next(1000)).padStart(1 + next(3), '0')}`.replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '');
+    addChecks([fraction(), fraction(), String(next(40))]);
+    const x = fraction();
+    const y = fraction();
+    if ((maths.compareDec(maths.readDec(x) as maths.Dec, maths.readDec(y) as maths.Dec)) >= 0) subtractChecks(x, y);
+    else subtractChecks(y, x);
+  }
+  for (const n of ['347', '503', '7', '10', '1000', '3.47', '0.5', '12.05', '999999999']) {
+    splitChecks(n);
+    splitChecks(n, { worked: true });
+  }
+  for (const [sum, unknown] of [['10 = 4 + ?', '6'], ['10 = ? + 4', '6'], ['? = 4 + 6', '10'], ['100 = 35 + ?', '65'], ['1 = 0.25 + ?', '0.75'], ['0 = 0 + ?', '0']] as const) {
+    bondChecks(sum, unknown);
+    bondChecks(sum, unknown, { worked: true });
+  }
+  const picture = maths.readSum('groups', '12 ÷ 3');
+  expect('pictures have no grid', picture.ok ? maths.written(picture.sum) : 'unread', null);
+}
+
 /** Run by `pnpm timeline`. */
 export function mathsChecks(): boolean {
   exactChecks();
@@ -544,6 +831,7 @@ export function mathsChecks(): boolean {
   workingChecks();
   orderChecks();
   hardChecks();
+  writtenChecks();
   process.stdout.write(`\nmaths checks: ${passed + failed} cases, ${passed} passed, ${failed} failed\n`);
   return failed === 0;
 }

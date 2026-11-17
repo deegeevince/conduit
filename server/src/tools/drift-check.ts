@@ -132,7 +132,17 @@ function canon(value: unknown): string {
  */
 export function wireProblems(): string[] {
   const problems: string[] = [];
-  const written = ['node conf from=floor2:"different text" in=x5 | Both agree', 'node over end from=veto:"2/3 of both" in=x5 | Law anyway', 'node a from=b:"it\'s a long one" in=x5 | Words'];
+  const written = ['node conf from=floor2:"different text" in=x5 | Both agree', 'node over end from=veto:"2/3 of both" in=x5 | Law anyway', 'node a from=b:"it\'s a long one" in=x5 | Words',
+    // PLAN-maths M0: a written method, its options, and the parts of it that other lines name
+    'math m1 column | 12+12+12+12+12+12',
+    'math m2 column worked blank=all carry=shown steps | 503 - 278',
+    'math m3 times step=s1 | 47 x 6',
+    'math m4 bond | 10 = 4 + ?',
+    'say near=m1.r3:below | Look at this row',
+    'set m1.carry-tens mark=box',
+    'hit m1.tens pulse',
+    'fill m1 | 72',
+  ];
   const sources = [...written.map((text, at) => ({ name: `written ${at + 1}`, text })), ...DEMOS.map((demo) => ({ name: demo.name, text: readFileSync(fileURLToPath(import.meta.resolve(`@conduit/language/demos/${demo.name}.series`)), 'utf8') }))];
   for (const source of sources) {
     let counter = 0;

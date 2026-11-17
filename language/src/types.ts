@@ -28,6 +28,9 @@ import type {
   LinkEnd,
   Loop,
   Mark,
+  MathBlank,
+  MathCarry,
+  MathMethod,
   Mask,
   Medium,
   Mood,
@@ -89,6 +92,8 @@ export type Fill = Paint | 'none' | Gradient<Paint>;
 export interface Near {
   readonly id: string;
   readonly side: Side;
+  /** a part of a `math` block (`near=m1.r3`): `id` is the block and this is the part; the painter places the words beside it */
+  readonly part?: string;
 }
 
 /** The properties a style can set. Every one is optional; absent means "inherit". */
@@ -591,6 +596,8 @@ export interface SetLine {
   readonly target: Target;
   /** L-VLOOKUP. A row or a cell of the table the target names: the change is a mark on it (`mark=none` clears it) */
   readonly part?: TablePart;
+  /** a part of a `math` block (`set m1.carry-tens mark=box`): the target is the block */
+  readonly mathPart?: string;
   readonly styles: readonly string[];
   readonly props: StyleProps;
   readonly speed?: CameraSpeed;
@@ -624,6 +631,8 @@ export interface DropLine {
 export interface HitLine {
   readonly verb: 'hit';
   readonly id: string;
+  /** a part of a `math` block (`hit m1.tens`): `id` is the block */
+  readonly part?: string;
   readonly gesture: HitGesture;
   readonly when?: When;
 }
@@ -674,11 +683,36 @@ export interface CancelLine {
 export interface ProblemFillLine {
   readonly verb: 'fill';
   readonly id: string;
+  /** a part of a `math` block (`fill m1.ans-ones | 2`); without one, the value spreads across the block's answer cells */
+  readonly part?: string;
   readonly text: string;
+}
+
+/**
+ * v3 maths. `math <id> <method> [worked] [blank=answer|all] [carry=write|shown|none] [steps | step=<n|control>] | <sum>`: a written method laid out as on
+ * paper. The brain writes the sum and never a digit: the painter computes every cell, and the answer is sealed (`answerOf`, `language/src/maths/sum.ts`).
+ */
+export interface MathLine {
+  readonly verb: 'math';
+  readonly id: string;
+  readonly method: MathMethod;
+  /** the sum, canonical: numbers without commas or needless zeros, `+ - × ÷ =` spaced */
+  readonly sum: string;
+  /** everything written for the learner, for teaching on a different sum */
+  readonly worked?: boolean;
+  /** what is left empty: the answer cells (when absent) or every cell */
+  readonly blank?: MathBlank;
+  readonly carry?: MathCarry;
+  /** a stepper and captions: a tap advances */
+  readonly steps?: boolean;
+  /** the step shown: a number, or the id of a `pick` that follows it */
+  readonly step?: number | string;
+  readonly when?: When;
 }
 
 export type Line =
   | SceneLine
+  | MathLine
   | ProblemFillLine
   | PlanLine
   | StyleLine
@@ -760,6 +794,7 @@ export type IssueCode =
   | 'structure-limit'
   /** a `bind` that names something that is not a control, or a change a control cannot drive */
   | 'bad-bind'
+  | 'bad-sum'
   /** a `{…}` in text that does not read as an expression of the controls on stage */
   | 'bad-expression'
   /** v3. A step, a hint or a picture that would show the learner an answer an `ask` accepts before it is tried */
