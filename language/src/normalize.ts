@@ -9,14 +9,19 @@ import { InterfaceReader, UI_WORDS, nodeLine, screenLine } from './interface';
 import { LessonBook, StageBook, textHolds } from './lesson';
 import { answerOf, readSum } from './maths/sum';
 import { FIGURE_WORDS, figureRowLine } from './figure';
+import { shelfReached } from './app';
 import { parseLine } from './parse';
 import type { Approx, Issue, Line, ParseResult, StyleProps } from './types';
 import { LIMITS, STRUCTURE } from './vocabulary';
+import type { AppShelf } from './vocabulary';
 
 /** Lines that do not end a sprite being written: its next row may follow them. */
 const KEEPS_SPRITE_OPEN: ReadonlySet<string> = new Set(['wait', 'plan', 'color', 'style', 'look', 'cam', 'hit', 'standing', 'refine']);
 
 const ROW_ALPHABET = '.#0123456789abcdefABCDEF';
+
+/** What an app's code reaches for, by shelf word, as the warning names it. */
+const SHELF_NAME: Readonly<Record<AppShelf, string>> = { physics: 'Matter', sound: 'Tone', maths: 'katex', charts: 'd3', graphs: 'd3', fonts: 'the shelf fonts' };
 
 const HEDGE = /\b(about|around|roughly|approximately|approx|nearly|almost|circa|maybe|perhaps)\b|[~\u2248]/i;
 const DOUBT_NOTE: Readonly<Record<Approx, string>> = { yes: 'approx.', computed: 'approx.', given: 'approx.', recalled: 'from memory', guessed: 'a guess' };
@@ -316,6 +321,8 @@ export class LineNormalizer {
   private structure: string | null = null;
   /** v2.2. The mock-up being written: the block's id, and the reader that keeps the stack of open rows and cols so that every line says what it sits in */
   private ui: { readonly id: string; readonly reader: InterfaceReader; told: number } | null = null;
+  /** The app being written: which shelves its line asked for, and which it has been told it reaches for without asking (once each) */
+  private app: { readonly id: string; readonly asked: readonly AppShelf[]; readonly told: Set<AppShelf> } | null = null;
   /** FG2. The figure being written: its rows get an id each, so that a route and a step can name them */
   private figureRows = 0;
   private figureId: string | null = null;
@@ -363,6 +370,22 @@ export class LineNormalizer {
   /** v3. The conversation's document as it has been written so far: the parts and what each holds. */
   get lessons(): LessonBook {
     return this.book;
+  }
+
+  /**
+   * A row of an app whose code reaches for a shelf library the app line did not name (`d3.select(…)` with no `uses=charts`): the row is kept as written, and the host loads the
+   * library all the same (`shelfOf`), so the app runs. The first row that does says so, once for each library, as a warning: it shows in the log, and the brain is told to say it.
+   */
+  private shelfNote(id: string, cells: string): Issue[] {
+    const app = this.app;
+    if (app === null || app.id !== id) return [];
+    const issues: Issue[] = [];
+    for (const shelf of shelfReached(app.asked, cells)) {
+      if (app.told.has(shelf)) continue;
+      app.told.add(shelf);
+      issues.push({ code: 'uses-inferred', severity: 'warn', message: `the code reaches for ${SHELF_NAME[shelf]} and the app line does not say uses=${shelf}: it was loaded anyway; say uses=${shelf} on the app line`, token: shelf });
+    }
+    return issues;
   }
 
   /** A line of the interface, as the line that stands alone: what it is and what it sits in. */
@@ -413,14 +436,14 @@ export class LineNormalizer {
         this.styles.add(line.name);
         return { line, issues: [] };
       case 'row': {
-        if (line.id !== '-') return { line, issues: [] };
+        if (line.id !== '-') return { line, issues: this.shelfNote(line.id, line.cells) };
         if (this.sprite !== null) return { line: { ...line, id: this.sprite }, issues: [] };
         if (this.ui !== null) return this.interfaceRow(line);
         if (this.table !== null && this.figureId === this.table) {
           this.figureRows += 1;
           return { line: { ...line, id: this.table, cells: figureRowLine(line.cells, this.figureRows) }, issues: [] };
         }
-        if (this.table !== null) return { line: { ...line, id: this.table }, issues: [] };
+        if (this.table !== null) return { line: { ...line, id: this.table }, issues: this.shelfNote(this.table, line.cells) };
         if (line.cells.trim() === '') return { line: null, issues: [{ code: 'no-structure', severity: 'warn', message: 'an empty row with no sprite, table or code block to belong to was dropped' }] };
         // Speech after all: a bar and some words, with no sprite open. Not cut to a sprite's width; a long one is split by `normalize`.
         const text = line.cells.trim();
@@ -510,6 +533,7 @@ export class LineNormalizer {
         this.ui = null;
         this.figureId = line.verb === 'figure' ? id : null;
         this.figureRows = 0;
+        this.app = line.verb === 'app' ? { id, asked: line.uses ?? [], told: new Set() } : null;
         this.table = STRUCTURE[line.verb].parts === 'rows' ? id : this.table;
         // A chart takes rows and, as its marks, nodes; a table takes rows only.
         if (STRUCTURE[line.verb].parts === 'nodes' || line.verb === 'chart') this.structure = id;

@@ -127,4 +127,13 @@ export interface AppProbe {
   /** messages the host refused: wrong source, wrong shape, too big, too fast */
   readonly refused: number;
   readonly acts: number;
+  /** how many times the app's code threw, as its frame told it */
+  readonly crashes: number;
+  /** it had painted nothing visible when it was looked at three seconds after it loaded; null until then */
+  readonly blank: boolean | null;
 }
+
+/** An app that is broken: its code threw (`message` and `line` are the app's own words, plain text; `line` is of its own text, or null) or it showed nothing three seconds after it loaded. */
+export type AppBroken =
+  | { readonly key: string; readonly id: string; readonly kind: 'crash'; readonly message: string; readonly line: number | null }
+  | { readonly key: string; readonly id: string; readonly kind: 'blank' };

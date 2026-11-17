@@ -65,15 +65,18 @@ export function tokenCss(tokens: SurfaceTokens): string {
  * own text honest as well.
  */
 export function cleanMarkup(source: string, defer = true): string {
-  return source
+  // An inline script is written inert and set going by the bridge once the frame has a layout (see `release` in the bridge). It carries the line of the app's own text it starts
+  // on, counted before anything is taken out, so that an error is told to the brain where the app wrote it and not where the frame's page happens to be.
+  const marked = defer
+    ? source.replace(/<script\b([^>]*)>/gi, (tag: string, attrs: string, at: number) => (/\b(?:src|type)\s*=/i.test(attrs) ? tag : `<script${attrs} type="application/x-conduit-app" data-cd-line="${source.slice(0, at).split('\n').length}">`))
+    : source;
+  return marked
     .replace(/<!doctype[^>]*>/gi, '')
     .replace(/<\/?(?:html|head|body)\b[^>]*>/gi, '')
     .replace(/<meta\b[^>]*>/gi, '')
     .replace(/<base\b[^>]*>/gi, '')
     .replace(/<link\b[^>]*>/gi, '')
     .replace(/<(iframe|object|embed|frame|frameset|applet)\b[\s\S]*?(?:<\/\1\s*>|$)/gi, '')
-    // an inline script is written inert and set going by the bridge once the frame has a layout (see `release` in the bridge)
-    .replace(/<script\b([^>]*)>/gi, (tag: string, attrs: string) => (!defer || /\b(?:src|type)\s*=/i.test(attrs) ? tag : `<script${attrs} type="application/x-conduit-app">`))
     .replace(/<form\b/gi, '<div data-was-form')
     .replace(/<\/form\s*>/gi, '</div>');
 }
@@ -231,8 +234,26 @@ const BRIDGE = String.raw`(function () {
     else if (data.type === 'picture' && typeof data.id === 'number') { var wait = pictureWaits[data.id]; if (wait) { delete pictureWaits[data.id]; wait(typeof data.url === 'string' && data.url.indexOf('data:image/') === 0 ? { url: data.url, credit: String(data.credit || '').slice(0, 300) } : null); } }
     else if (data.type === 'data' && data.tokens && typeof data.tokens === 'object') wear(data.tokens);
   });
-  addEventListener('error', function (event) { post('fault', { message: String(event.message || 'error').slice(0, 200) }); });
-  addEventListener('unhandledrejection', function (event) { post('fault', { message: String((event.reason && event.reason.message) || event.reason || 'rejected').slice(0, 200) }); });
+  // CRASH. What the app's own code throws (a script that fails as it starts, a callback that fails later, a promise nobody caught) is told to the host so that it can tell the
+  // brain: the message and the line of the app's own text, at most three times, 200 characters each. The host reads them as plain text and as the app's words, never as the page's.
+  var crashes = 0;
+  var releasing = 0;
+  var starts = [];
+  function crash(message, at) {
+    if (crashes >= 3) return;
+    crashes += 1;
+    var text = String(message || 'error').replace(/^Uncaught\s+/, '').replace(/\s+/g, ' ').trim().slice(0, 200) || 'error';
+    // the browser counts a released script's lines from the script's own first line; the app's line is where that script began in its text, plus that
+    var base = releasing > 0 ? releasing : starts.length === 1 ? starts[0] : 0;
+    var line = typeof at === 'number' && isFinite(at) && at >= 1 && base > 0 ? Math.min(100000, Math.floor(at) + base - 1) : 0;
+    post('crash', { message: text, line: line });
+  }
+  addEventListener('error', function (event) { crash(event.message, event.lineno); });
+  addEventListener('unhandledrejection', function (event) {
+    var why = event.reason;
+    var stack = why && typeof why.stack === 'string' ? /:(\d+):\d+\)?\s*$/m.exec(why.stack.split('\n').slice(1, 3).join('\n')) : null;
+    crash((why && why.message) || why || 'rejected', stack ? +stack[1] : 0);
+  });
   // TYPE. The words beside an app are set in the stage's body size, and an app that wrote bare pixel sizes (most do) would sit at half that. So, once it has a
   // layout and again whenever its document changes, text set below the stage's small size is marked and made that size (a rule on the mark, in the page's own
   // <style>: the app's styles and its inline styles are never touched), and what can be tapped is marked to be at least the tap size across. Nothing is made
@@ -417,7 +438,11 @@ const BRIDGE = String.raw`(function () {
     for (var i = 0; i < held.length; i++) {
       var live = document.createElement('script');
       live.textContent = held[i].textContent;
+      var from = parseInt(held[i].getAttribute('data-cd-line') || '0', 10) || 0;
+      starts.push(from);
+      releasing = from;
       held[i].parentNode.replaceChild(live, held[i]);
+      releasing = 0;
     }
     if (sawDom) { try { document.dispatchEvent(new Event('DOMContentLoaded', { bubbles: true })); } catch (e) {} }
     if (sawLoad) { try { window.dispatchEvent(new Event('load')); } catch (e) {} }

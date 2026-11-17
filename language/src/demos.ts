@@ -50,7 +50,7 @@ export const DEMOS = [
   {
     name: 'app',
     title: 'App',
-    summary: 'A live app: one HTML document that runs in a locked sandbox on the stage, keeps its state and tells the stage what the user did.',
+    summary: 'A live app beside the canvas: a Galton board. One HTML document in a locked sandbox drops a ball every 0.3 s, works out every bounce sixty times a second and builds a bell curve in its bins. It opens with fifty balls landed, keeps its count across a reload, and a tap drops a ball. The title and the label are drawn by the canvas.',
   },
   {
     name: 'deck',

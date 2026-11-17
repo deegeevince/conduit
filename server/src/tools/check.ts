@@ -32,12 +32,13 @@
 // It prints a table, saves a screenshot per scene in --out, and exits 1 on any failure. Nothing here is part of the server.
 
 import type { ChildProcess } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { cpus, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { DEMOS, LineReader, TOUR_CHAPTERS } from '@conduit/language';
+import { DEMOS, LineReader, TOUR_CHAPTERS, digestFull } from '@conduit/language';
+import type { Attention, Observation } from '@conduit/language';
 import { spawnTracked } from '../brains/claude-cli/process';
 import { CHROME_CANDIDATES, repoRoot, sleep, stop, waitFor } from './explore-browser';
 import { claimPort, releasePort } from './check-ports';
@@ -126,6 +127,9 @@ interface Started {
   stop(): Promise<void>;
 }
 
+/** The folder of session logs of each server this check started, by its address: what a check reads back to see what the brain was told. A server it was only given has none (unless CHECK_LOG_DIR names it). */
+const LOG_DIRS = new Map<string, string>();
+
 /** The server from the current build: BRAIN=replay, its own data folder and skills folder, a free port. Stopped by its handle. */
 async function startServer(extra: Readonly<Record<string, string>> = {}): Promise<Started> {
   const root = repoRoot();
@@ -153,7 +157,9 @@ async function startServer(extra: Readonly<Record<string, string>> = {}): Promis
   });
   for (const stream of [child.stdout, child.stderr]) stream?.on('data', (chunk: Buffer) => (log = (log + chunk.toString()).slice(-4000)));
   const url = `http://127.0.0.1:${port}`;
+  LOG_DIRS.set(url, join(scratch, 'data', 'logs'));
   const stopAll = async (): Promise<void> => {
+    LOG_DIRS.delete(url);
     await stop(child);
     releasePort(port);
     await rm(scratch, { recursive: true, force: true }).catch(() => undefined);
@@ -256,6 +262,16 @@ function problemScenes(): { readonly id: string; readonly script: string; readon
 // ---------------------------------------------------------------------------------------------------------------------------------
 // One screen
 
+/** What the page's host says of a running app (`AppProbe`, the part a check reads). */
+interface AppFacts {
+  readonly id: string;
+  readonly running: boolean;
+  readonly loaded: boolean;
+  readonly shown: boolean;
+  readonly crashes: number;
+  readonly blank: boolean | null;
+}
+
 export interface Scene {
   readonly name: string;
   readonly seconds: number;
@@ -304,13 +320,13 @@ class Screen {
   }
 
   /** A tab on the page, ready. A page that never comes ready (a Chrome that stalled on start-up) is given up on after a minute and opened once more in a new tab. */
-  private async open(page: string, demo: boolean): Promise<{ tab: Tab; talk: Conversation }> {
+  private async open(page: string, demo: boolean, restMs = 0): Promise<{ tab: Tab; talk: Conversation }> {
     let last: unknown = null;
     for (let attempt = 0; attempt < 2; attempt += 1) {
       let opened: Tab | null = null;
       for (let tries = 0; tries < 3 && opened === null; tries += 1) opened = await Tab.open(this.screen.width, this.screen.height).catch(() => null);
       if (opened === null) throw new Error('Chrome would not start (three tries)');
-      const options: Options = { url: this.base, screens: [this.screen], out: this.args.out, turns: new Set(), timeoutMs: this.args.timeoutMs, parallel: false, demo, quiet: true, page, say: null, chat: 'off' };
+      const options: Options = { url: this.base, screens: [this.screen], out: this.args.out, turns: new Set(), timeoutMs: Math.max(this.args.timeoutMs, restMs), parallel: false, demo, quiet: true, page, say: null, chat: 'off' };
       const talk = new Conversation(opened, options, this.screen, this.dir);
       try {
         await opened.send('DOM.enable');
@@ -382,13 +398,15 @@ class Screen {
   }
 
   /** each scene before the last, at rest: the clock is sought to the moment before the next scene opens, so what is on screen is the end of this one */
-  private async earlierScenes(tab: Tab, talk: Conversation, base: string, starts: readonly number[], footprints: boolean, names?: readonly string[], then?: (index: number, scene: Scene) => Promise<void>): Promise<void> {
+  private async earlierScenes(tab: Tab, talk: Conversation, base: string, starts: readonly number[], footprints: boolean, names?: readonly string[], then?: (index: number, scene: Scene) => Promise<void>, before?: (index: number) => Promise<void>): Promise<void> {
     for (let index = 0; index + 1 < starts.length; index += 1) {
       const at = Date.now();
       const name = `${base}#${names?.[index] ?? index + 1}`;
       this.note(name);
       await tab.eval(`window.__stage.seek(${Math.max(0, (starts[index + 1] as number) - 0.02)})`);
       await sleep(250);
+      // a scene's apps are made afresh by the seek: they are let to load, and to be looked at, before the scene is judged
+      if (before !== undefined) await before(index);
       const results: CheckResult[] = [];
       const scene = await this.judge(tab, talk, name, results, at, false, false, { earlier: true, footprints, photo: names?.[index] === 'photo' });
       if (then !== undefined) await then(index, scene);
@@ -525,7 +543,8 @@ class Screen {
       const found = /^scene\s+(\S+)/.exec(raw);
       return found?.[1] === undefined ? [] : [found[1]];
     });
-    const { tab, talk } = await this.open('', false);
+    // one long turn: the script plays for a minute and a half on a machine at its ease, and the rest is waited for as long as that takes
+    const { tab, talk } = await this.open('', false, 180_000);
     try {
       await this.look(tab);
       const began = Date.now();
@@ -541,14 +560,17 @@ class Screen {
       const results: CheckResult[] = [];
       Screen.add(results, 'script-lines', rejectedLinesOf(source).slice(0, 3), 'every line of the script reads');
       const played = await tab.eval<string | null>(`Promise.resolve(window.__stage.playScript(${JSON.stringify(source)})).then(() => null, (e) => String(e && e.message || e))`);
-      // the script plays in real time and runs over a minute of the clock (a busy machine plays it slower still): its rest is waited for as long as that
-      results.push(Screen.restResult(played !== null ? `the demo would not start: ${played}` : await talk.rest(true, true, Math.max(this.args.timeoutMs, 240_000)), began));
+      // the script is one long turn that plays in real time (a minute and a half of the clock now, and a busy machine plays it slower): it is given as long as four demos
+      results.push(Screen.restResult(played !== null ? `the demo would not start: ${played}` : await talk.rest(true, true, Math.max(Math.round(this.args.timeoutMs * 1.5), 240_000)), began));
       const starts = await this.sceneStarts(tab);
       if (starts.length !== ids.length) results.push({ turn: 0, check: 'scenes', verdict: 'FAIL', detail: `the script has ${ids.length} scenes but the turn has ${starts.length}` });
       const last = ids.length - 1;
       await this.judge(tab, talk, `demo-hard#${ids[last]}`, results, began, true, false, { footprints: true, photo: ids[last] === 'photo' });
       await this.hardAsserts(ids[last] as string, tab, talk, results, photo);
-      await this.earlierScenes(tab, talk, 'demo-hard', starts, true, ids, async (index, scene) => this.hardAsserts(ids[index] as string, tab, talk, scene.results, photo));
+      await this.earlierScenes(tab, talk, 'demo-hard', starts, true, ids, async (index, scene) => this.hardAsserts(ids[index] as string, tab, talk, scene.results, photo), async (index) => {
+        if (/^fb-025/.test(ids[index] as string)) await this.appsLooked(tab);
+      });
+      await this.briefHolds(tab, talk, session, results);
     } finally {
       await tab.close();
     }
@@ -621,6 +643,76 @@ class Screen {
         const faint = texts.filter((e) => e.contrast < 3 || e.fontPx < 9);
         if (faint.length > 0) problems.push(`hard to read on the dark ground: ${faint.slice(0, 3).map((e) => `"${e.text.slice(0, 20)}" ${e.contrast.toFixed(1)}:1 at ${e.fontPx.toFixed(0)} px`).join(', ')}`);
         good = `${texts.length} notes read on the dark ground (contrast 3:1 or more)`;
+        break;
+      }
+      case 'fb-051': {
+        // fb-051: a slider bound to a move to a point moved nothing (the painter never read where a bound move went). A real drag along the track, at both ends and the middle:
+        // every shape the slider names must have moved, be half way at half way, and come back; the toggle whose only bind changes nothing is told, the slider is not.
+        const ids = ['fbdot', 'fbring', 'fbbar', 'fbleaf', 'fbpair'];
+        interface Held { readonly id: string; readonly min: number; readonly max: number; readonly value: number; readonly parts: readonly { part: string; box: { x: number; y: number; width: number; height: number } }[]; readonly box: { x: number; y: number; width: number; height: number } }
+        const held = async (): Promise<Held | undefined> => (await tab.eval<Held[]>('window.__stage.controls().map((c) => ({ id: c.id, min: c.min, max: c.max, value: c.value, parts: c.parts, box: c.box }))')).find((c) => c.id === 'fbspin');
+        const centres = async (): Promise<Map<string, { x: number; y: number }>> => {
+          const out = new Map<string, { x: number; y: number }>();
+          for (const e of await tab.eval<{ id: string; box: { x: number; y: number; width: number; height: number } }[]>('window.__stage.elements().map((e) => ({ id: e.id, box: e.box }))')) out.set(e.id, { x: e.box.x + e.box.width / 2, y: e.box.y + e.box.height / 2 });
+          return out;
+        };
+        const slider = await held();
+        if (slider === undefined) {
+          problems.push('the slider fbspin is not on stage');
+          break;
+        }
+        const track = slider.parts.find((p) => p.part === 'track')?.box ?? slider.box;
+        const y = track.y + track.height / 2;
+        const at = (share: number): { x: number; y: number } => ({ x: track.x + 2 + (track.width - 4) * share, y });
+        const sent = tab.posted.length;
+        const start = await centres();
+        await tab.drag(at(0), at(1));
+        const end = await centres();
+        const full = (await held())?.value;
+        await tab.drag(at(1), at(0.5));
+        const middle = await centres();
+        const half = (await held())?.value;
+        await tab.drag(at(0.5), at(0));
+        const home = await centres();
+        if (full !== slider.max) problems.push(`a drag to the end of the track left the slider at ${String(full)}, not ${slider.max}`);
+        if (typeof half !== 'number' || Math.abs(half - (slider.min + slider.max) / 2) > 0.1 * (slider.max - slider.min)) problems.push(`a drag to the middle of the track left the slider at ${String(half)}`);
+        for (const id of ids) {
+          const a = start.get(id);
+          const b = end.get(id);
+          const m = middle.get(id);
+          const h = home.get(id);
+          if (a === undefined || b === undefined || m === undefined || h === undefined) {
+            problems.push(`${id} is not on stage`);
+            continue;
+          }
+          const run = Math.hypot(b.x - a.x, b.y - a.y);
+          if (run < 8) {
+            problems.push(`dragging the slider to its end moved ${id} by ${run.toFixed(1)} px: a bound move to a point must carry it there`);
+            continue;
+          }
+          // linear: half way across the slider is half way along the move, never eased
+          const off = Math.hypot(m.x - (a.x + b.x) / 2, m.y - (a.y + b.y) / 2);
+          if (off > Math.max(6, 0.12 * run)) problems.push(`${id} stood ${off.toFixed(1)} px from the middle of its ${run.toFixed(0)} px move with the slider half way`);
+          if (Math.hypot(h.x - a.x, h.y - a.y) > 3) problems.push(`${id} did not come back when the slider did (${Math.hypot(h.x - a.x, h.y - a.y).toFixed(1)} px off)`);
+        }
+        if (tab.posted.length !== sent) problems.push(`dragging the slider sent ${tab.posted.length - sent} turn(s): a bound change needs no round trip`);
+        // the toggle's only bind sets what is already set: dead. The slider's four work: it is not.
+        const dead = (await tab.eval<{ token: string | null }[]>(`window.__stage.lines().flatMap((l) => l.issues.filter((i) => i.code === 'dead-bind').map((i) => ({ token: i.token || null })))`)).map((i) => i.token);
+        if (!dead.includes('fbmark')) problems.push(`no dead-bind warning for the toggle fbmark, whose only bind sets what is already set (${dead.length === 0 ? 'no dead-bind at all' : `told of ${dead.join(', ')}`})`);
+        if (dead.includes('fbspin')) problems.push('the slider fbspin, whose binds all move something, was called dead');
+        good = `a real drag moved ${ids.length} bound things (${ids.join(', ')}) to their targets, each half way at half way and back at the start; the control whose only bind does nothing was told`;
+        break;
+      }
+      case 'fb-054': {
+        // fb-054: a choice revised by id came back as plain words nobody could tap
+        const words = await tab.eval<{ text: string; phase: string; opacity: number; tappable: boolean }[]>('window.__stage.elements().filter((e) => e.kind === "text").map((e) => ({ text: String(e.text || ""), phase: e.phase, opacity: e.opacity, tappable: e.tappable }))');
+        for (const wanted of ['Spec the bindable transforms first', 'Which matters most to you?']) {
+          const found = words.find((e) => norm(e.text) === norm(wanted) && e.phase === 'on' && e.opacity > 0.3);
+          if (found === undefined) problems.push(`the revised choice "${wanted}" is not on stage`);
+          else if (!found.tappable) problems.push(`"${wanted}" is on stage but is plain words: the revised choice lost its tap`);
+        }
+        for (const old of ['Spec the sphere', 'Write the test']) if (words.some((e) => norm(e.text) === norm(old) && e.phase === 'on' && e.opacity > 0.3)) problems.push(`the words "${old}" are still on stage after they were revised`);
+        good = 'both revised choices show their new words and are still taps';
         break;
       }
       case 'photo': {
@@ -699,10 +791,149 @@ class Screen {
         good = 'ask q1 accepts the one answer 6281 (the thousands comma kept in its number, the step dropped) and its hint is on it';
         break;
       }
+      case 'fb-025': {
+        // fb-025: an app that reaches for d3 and never says `uses=`: the library is loaded for it (d3-geo too), so the globe is drawn, and nothing it ran threw
+        const app = await this.appWhen(tab, 'globe', (one) => one.blank !== null);
+        if (app === null) problems.push('the globe app is not running');
+        else {
+          if (!app.loaded) problems.push('the globe app never loaded');
+          if (app.crashes > 0) problems.push(`the globe app threw ${app.crashes} time${app.crashes === 1 ? '' : 's'}: the library its code reaches for was not in its page`);
+          if (app.blank === true) problems.push('the globe app drew nothing');
+          else if (app.blank === null) problems.push('the globe app was never looked at for something visible');
+        }
+        good = 'the globe is drawn: d3 reached an app that never asked for it, nothing threw, and the picture of it shows something';
+        break;
+      }
+      case 'fb-025-throws': {
+        // an app that throws is reported by its frame, and the server holds it as a blocking observation (the brief carries it: see `briefHolds`)
+        const app = await this.appWhen(tab, 'fixthrow', (one) => one.crashes > 0);
+        if (app === null || app.crashes === 0) problems.push('the app threw on purpose and its frame did not tell the page');
+        const heard = await this.observed(tab, (text) => /surface fixthrow \[blocking\]: app fixthrow threw: "Error: fixture: thrown on purpose" \(line 8\)/.test(text));
+        if (heard !== null) problems.push(`the page's report of the crash did not reach the server's feed as a blocking observation with the app's words and its line: ${heard}`);
+        good = 'the throw is told: the frame said so, the server holds `app fixthrow threw: "Error: fixture: thrown on purpose" (line 8)` as blocking';
+        break;
+      }
+      case 'fb-025-blank': {
+        // no error and nothing drawn but a flat ground: looked at three seconds after it loaded, and told
+        const app = await this.appWhen(tab, 'fixblank', (one) => one.blank !== null);
+        if (app === null || app.blank !== true) problems.push(`an app that shows only a flat ground was not found blank (${app === null ? 'not running' : app.blank === null ? 'never looked at' : 'looked at: something is visible'})`);
+        if (app !== null && app.crashes > 0) problems.push('the blank fixture threw, and it is meant to throw nothing');
+        const heard = await this.observed(tab, (text) => /surface fixblank \[blocking\]: app fixblank drew nothing/.test(text));
+        if (heard !== null) problems.push(`the page's report that the app drew nothing did not reach the server's feed: ${heard}`);
+        good = 'the empty frame is told: the host found nothing visible three seconds after it loaded, and the server holds `app fixblank drew nothing` as blocking';
+        break;
+      }
       default:
         return;
     }
     add(`hard-${id}`, problems.length === 0 ? 'PASS' : 'FAIL', problems.length === 0 ? good : problems.join('; '));
+  }
+
+  /** The apps the page's host runs, as it probes them (`window.__stage.apps()`). */
+  private async appsOf(tab: Tab): Promise<AppFacts[]> {
+    return tab.eval<AppFacts[]>('window.__stage.apps()');
+  }
+
+  /** One app once `ready` says so (its frame has loaded, it has been looked at, it has thrown); what there is of it after `waitMs` if not; null when it is not running at all. */
+  private async appWhen(tab: Tab, id: string, ready: (app: AppFacts) => boolean, waitMs = 9000): Promise<AppFacts | null> {
+    const until = Date.now() + waitMs;
+    for (;;) {
+      const app = (await this.appsOf(tab)).find((one) => one.id === id && one.running);
+      if (app !== undefined && app.loaded && ready(app)) return app;
+      if (Date.now() > until) return app ?? null;
+      await sleep(300);
+    }
+  }
+
+  /** Every app on stage loaded and looked at (the look three seconds after it loaded, thrown or not), or the wait is out: so that a scene's picture is taken of apps that have settled. */
+  private async appsLooked(tab: Tab, waitMs = 9000): Promise<void> {
+    const until = Date.now() + waitMs;
+    for (;;) {
+      const apps = (await this.appsOf(tab)).filter((one) => one.running);
+      if (apps.every((one) => one.loaded && one.blank !== null) || Date.now() > until) return;
+      await sleep(300);
+    }
+  }
+
+  /** The id of this page's session, from the addresses it has asked for. */
+  private async sessionOf(tab: Tab): Promise<string | null> {
+    return tab.eval<string | null>(`(() => { for (const r of performance.getEntriesByType('resource')) { const m = /\\/api\\/sessions\\/([^/]+)\\//.exec(r.name); if (m) return m[1]; } return null; })()`);
+  }
+
+  /**
+   * What the server holds of what the page's eyes reported (the canvas tool `canvas_observe`, blocking items): null once `want` holds of its words, or what it said when the wait was out.
+   * The page tells the server at most once a second, so a report is waited for.
+   */
+  private async observed(tab: Tab, want: (text: string) => boolean, waitMs = 8000): Promise<string | null> {
+    const session = await this.sessionOf(tab);
+    if (session === null) return 'the page has no session';
+    const until = Date.now() + waitMs;
+    let said = '';
+    for (;;) {
+      said = await fetch(`${this.base}/api/sessions/${session}/canvas/canvas_observe?severity=blocking&since=0&limit=30`)
+        .then((response) => response.json() as Promise<{ text?: string }>)
+        .then((body) => body.text ?? '')
+        .catch((error: unknown) => `no answer (${error instanceof Error ? error.message : String(error)})`);
+      if (want(said)) return null;
+      if (Date.now() > until) return said.replace(/\s+/g, ' ').slice(0, 300);
+      await sleep(400);
+    }
+  }
+
+  /**
+   * fb-025: what the fixtures that threw and drew nothing came to in the brain's brief. A short turn is played, so that a brief is built; its `attention` record (the fingerprints of the urgent
+   * items its digest printed) and the `obs` records, in the session's own log, are read back. The digest is made again from those records by the function the brief uses, and says the words.
+   */
+  private async briefHolds(tab: Tab, talk: Conversation, session: string | null, results: CheckResult[]): Promise<void> {
+    const add = (verdict: Verdict, detail: string): void => talk.add(results, 'hard-fb-025-brief', verdict, detail);
+    const logs = LOG_DIRS.get(this.base) ?? process.env['CHECK_LOG_DIR'];
+    if (logs === undefined) return add('SKIP', 'the server is not this check\'s own, so its session log cannot be read (CHECK_LOG_DIR names one)');
+    if (session === null) return add('FAIL', 'the page has no session');
+    const played = await tab.eval<string | null>(`Promise.resolve(window.__stage.playScript('say fb | A short turn, so that the brain is given a brief.')).then(() => null, (e) => String(e && e.message || e))`);
+    if (played !== null) return add('FAIL', `the short turn would not start: ${played}`);
+    await talk.rest(true);
+    interface LogRecord {
+      readonly type: string;
+      readonly shown?: string[];
+      readonly rev?: [number, number];
+      readonly obs?: Observation;
+      readonly text?: string;
+      readonly issues?: readonly { readonly code: string; readonly token?: string }[];
+    }
+    let inferred: string[] = [];
+    const wanted: readonly (readonly [string, RegExp])[] = [['the app that threw', /^surface\|fixthrow\|app fixthrow threw: /], ['the app that drew nothing', /^surface\|fixblank\|app fixblank drew nothing/]];
+    const until = Date.now() + 12_000;
+    let shown: readonly string[] = [];
+    let noted: Observation[] = [];
+    let attention: Attention | null = null;
+    for (;;) {
+      const file = existsSync(logs) ? readdirSync(logs).find((name) => name.endsWith(`-${session}.jsonl`)) : undefined;
+      const records = file === undefined ? [] : readFileSync(join(logs, file), 'utf8').split('\n').flatMap((line) => {
+        try {
+          return line.trim() === '' ? [] : [JSON.parse(line) as LogRecord];
+        } catch {
+          return [];
+        }
+      });
+      const told = records.filter((record) => record.type === 'attention' && Array.isArray(record.shown));
+      shown = told.flatMap((record) => record.shown ?? []);
+      noted = records.flatMap((record) => (record.type === 'obs' && record.obs !== undefined ? [record.obs] : []));
+      // the lines that carry a `uses-inferred` warning: the log shows that a library was loaded for an app that did not ask
+      inferred = records.flatMap((record) => (record.type === 'line' && (record.issues ?? []).some((issue) => issue.code === 'uses-inferred') ? [`${(record.text ?? '').slice(0, 24)} (${(record.issues ?? []).filter((issue) => issue.code === 'uses-inferred').map((issue) => issue.token).join(',')})`] : []));
+      const last = told[told.length - 1];
+      if (last !== undefined) attention = { rev: last.rev?.[1] ?? 0, wrote: last.rev?.[0] ?? 0, screen: '1280x720 desktop', engine: 'ok', clean: null, watch: [], ignore: [], tools: false };
+      if (wanted.every(([, pattern]) => shown.some((fingerprint) => pattern.test(fingerprint))) || Date.now() > until) break;
+      await sleep(400);
+    }
+    const problems: string[] = [];
+    for (const [what, pattern] of wanted) if (!shown.some((fingerprint) => pattern.test(fingerprint))) problems.push(`no brief listed ${what} among its urgent items (${shown.length} urgent item${shown.length === 1 ? '' : 's'} shown over the session)`);
+    // fb-025: the globe's first row that reaches for d3 says so in the log, once, and no other app (they reach for nothing) is said to
+    if (inferred.length !== 1 || !/^row globe \| .*\(charts\)$/.test(inferred[0] as string)) problems.push(`the log should hold one \`uses-inferred\` warning, on a row of the globe, naming charts: ${inferred.length === 0 ? 'none' : inferred.join('; ')}`);
+    // the words the brain reads: the digest, made from the logged observations by the shared function
+    const digest = attention === null ? '' : digestFull(noted.filter((one) => one.severity === 'blocking'), attention).text;
+    if (!/app fixthrow threw: "Error: fixture: thrown on purpose" \(line 8\)/.test(digest)) problems.push(`the digest does not say how the app threw: ${digest.replace(/\s+/g, ' ').slice(0, 200)}`);
+    if (!/app fixblank drew nothing/.test(digest)) problems.push('the digest does not say the app drew nothing');
+    add(problems.length === 0 ? 'PASS' : 'FAIL', problems.length === 0 ? `the next brief lists both as urgent: \`app fixthrow threw: "Error: fixture: thrown on purpose" (line 8)\` and \`app fixblank drew nothing\`; the log holds the globe's \`uses-inferred\` warning (${inferred[0] ?? ''})` : problems.join('; '));
   }
 
   /**

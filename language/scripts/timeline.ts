@@ -14,6 +14,7 @@ import { eventChecks, reviewChecks } from './review-checks';
 import { anchorChecks } from './anchor-checks';
 import { nocutChecks } from './nocut-checks';
 import { motionChecks } from './motion-checks';
+import { bindChecks } from './bind-checks';
 import { showcaseChecks } from './showcase-checks';
 import { spaceChecks } from './space-checks';
 import { feedbackChecks } from './feedback-checks';
@@ -58,6 +59,11 @@ function run(title: string, source: string): boolean {
     }
   });
   const schedule = score.schedule;
+  // What the lines add up to: a control whose binds all change nothing (a line's own issues cannot say it: a later bind may make it work)
+  for (const item of score.settledIssues()) {
+    clean = false;
+    process.stdout.write(`  line ${item.seq} SETTLED  ${describe([item.issue])}\n`);
+  }
   // The score, not the source: a `revise` shows up as the line it rewrote.
   const texts = new Map<number, string>();
   for (const entry of score.score) {
@@ -111,6 +117,7 @@ if (argument === undefined || argument === 'all') {
   ok = anchorChecks() && ok;
   ok = nocutChecks() && ok;
   ok = motionChecks() && ok;
+  ok = bindChecks() && ok;
   ok = showcaseChecks() && ok;
   ok = spaceChecks() && ok;
   ok = feedbackChecks() && ok;
