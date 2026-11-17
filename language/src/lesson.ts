@@ -8,6 +8,7 @@
 // It touches no clock and no DOM, so the server and the page run the same code.
 
 import { evalExpr, namesIn, parseExpr } from './expr';
+import { contradicted } from './maths/accepted';
 import { checkWorking } from './maths/working';
 import { plainText } from './text';
 import type { Issue, IssueCode } from './types';
@@ -213,6 +214,38 @@ export function splitValues(raw: string): string[] {
     .split(',')
     .map(decodeValue)
     .filter((value) => value !== '');
+}
+
+/**
+ * `is=` as the answers it lists: a comma between answers, `_` for a space inside one. A number written with its thousands comma (`6,281`, `10,000`,
+ * `1,250,000`, `£1,250`) is ONE number, never a list of `6` and `281`; it is read as `6281`. Three digits after a three-digit start (`100,200`) are a list
+ * unless they end in `000` (`120,000`), and the items of `check=order` (`items`) are never merged. Repeats are dropped.
+ */
+export function answerValues(raw: string, items = false): string[] {
+  const parts = raw
+    .replace(/[“”"]/g, '')
+    .split(',')
+    .map(decodeValue)
+    .filter((value) => value !== '');
+  const out: string[] = [];
+  for (let at = 0; at < parts.length; at += 1) {
+    const lead = parts[at] as string;
+    const head = items ? null : /^([£$€]?)([1-9]\d{0,2})$/.exec(lead);
+    if (head === null) {
+      out.push(lead);
+      continue;
+    }
+    let end = at;
+    while (parts[end + 1] !== undefined && /^\d{3}$/.test(parts[end + 1] as string)) end += 1;
+    const merges = end > at && ((head[2] as string).length <= 2 || parts[end] === '000');
+    if (!merges) {
+      out.push(lead);
+      continue;
+    }
+    out.push(`${head[1]}${[head[2], ...parts.slice(at + 1, end + 1)].join('')}`);
+    at = end;
+  }
+  return out.filter((value, index) => out.findIndex((other) => other.toLowerCase() === value.toLowerCase()) === index);
 }
 
 function paramKinds(visual: VisualKind): Readonly<Record<string, VisualParam>> {
@@ -512,7 +545,8 @@ function unitOf(word: string): { readonly dim: UnitDim; readonly factor: number 
   return Object.hasOwn(UNITS, word) ? (UNITS[word] ?? null) : null;
 }
 
-const DIGITS = /^(-?\d+(?:,\d{3})*(?:\.\d+)?|-?\.\d+)/;
+/** a number as typed: plain, with a thousands comma (`6,281`) or with a space or thin space between its thousands (`6 281`, `10 000`), a decimal, or a bare `.5` */
+const DIGITS = /^(-?(?:\d{1,3}(?:[ \u00a0\u202f]\d{3})+|\d+(?:,\d{3})*)(?:\.\d+)?|-?\.\d+)/;
 
 /**
  * What a typed answer or an accepted answer is, as a number: `34`, `£1.50`, `150p`, `1,000`, `2 1/2`, `30 cm`, `60 flowers`, `forty two`,
@@ -543,7 +577,7 @@ export function parseQuantity(input: string): Quantity | null {
     value = Number(fraction[1]) / Number(fraction[2]);
     rest = fraction[3] ?? '';
   } else if (digits?.[1] !== undefined) {
-    value = Number(digits[1].replaceAll(',', ''));
+    value = Number(digits[1].replace(/[,\s\u00a0\u202f]/g, ''));
     rest = text.slice(digits[1].length);
   } else {
     const tokens = text.split(/[\s-]+/).filter((token) => token !== '');
@@ -672,6 +706,7 @@ export function accepts(ask: Pick<LessonAsk, 'accepted' | 'unit' | 'check'>, tex
 // --- the spoiler -------------------------------------------------------------------------------------------------------------------
 
 const NUMERIC_G = /[£$€]?-?\d[\d,]*(?:\.\d+)?(?:\s?\/\s?\d+)?(?:\s?(?:%|[a-z]{1,14}))?/gi;
+const SPACED_G = /(?<![\d,.])\d{1,3}(?:[ \u00a0\u202f]\d{3})+(?:\.\d+)?(?!\d)/g;
 const TIME_G = /\b\d{1,2}[:.]\d{2}\b|\b(?:half|quarter) (?:past|to) \w+\b|\b\w+ o'?clock\b/gi;
 
 /** Every stretch of `text` that could be a number or a quantity, with each written as it could be matched. */
@@ -689,6 +724,8 @@ function numericCandidates(text: string): string[] {
       if (bare?.[1] !== undefined && bare[1] !== found) out.push(bare[1]);
     }
   }
+  // `6 281`: a space between thousands is part of the number
+  for (const match of text.matchAll(SPACED_G)) out.push(match[0]);
   const tokens = text.toLowerCase().split(/[^a-z']+/).filter((token) => token !== '');
   for (let index = 0; index < tokens.length; index += 1) {
     const read = numberWords(tokens.slice(index));
@@ -744,6 +781,7 @@ export function maskSealed(text: string, openAsks: readonly OpenAsk[], mask = '?
     if (expr === null || namesIn(expr).length > 0) return whole;
     return sealed(evalExpr(expr, {}), openAsks) ? mask : whole;
   });
+  out = out.replace(SPACED_G, (found) => (sealed(found, openAsks) ? mask : found));
   out = out.replace(NUMERIC_G, (found) => {
     const bare = /^[£$€]?-?\d[\d,]*(?:\.\d+)?/.exec(found)?.[0] ?? found;
     return sealed(found.trim(), openAsks) || sealed(bare, openAsks) ? found.replace(bare, mask) : found;
@@ -1131,8 +1169,22 @@ export class LessonBook {
     const target = this.target(line.in, 'ask');
     if ('refused' in target) return target.refused;
     const { part } = target;
-    const accepted = line.is.slice(0, LESSON_LIMITS.accepted);
     const open = line.check === 'any' || line.check === 'done';
+    // an ask accepts the ways of writing ONE answer: what its own words (a plain sum) rule out is dropped, and the brain is told which and why
+    const said = line.is.slice(0, LESSON_LIMITS.accepted);
+    const ruled = open || line.check !== undefined ? null : contradicted(line.text, said, line.unit ?? null);
+    const accepted = ruled === null ? said : said.filter((answer) => !ruled.wrong.includes(answer));
+    const warned: Issue[] =
+      ruled === null
+        ? []
+        : [
+            {
+              code: 'bad-value',
+              severity: 'warn',
+              message: `ask ${line.id === '-' ? '' : `${line.id} `}says ${quoted(line.text)}, which comes to ${ruled.computed}, so ${ruled.wrong.join(' and ')} cannot be an answer to it and ${ruled.wrong.length === 1 ? 'was' : 'were'} dropped: is= lists the ways of writing the one answer, never a step of the working (a step is its own ask, or a math block with blank=all)`,
+              token: ruled.wrong[0] ?? 'is',
+            },
+          ];
     if (accepted.length === 0 && !open) return this.refuse('bad-ask', 'an ask needs is=<answer>');
     if (!open && accepted.every((answer) => answer === '?' || answer === '')) return this.refuse('bad-ask', 'an ask needs the answer it accepts; `?` is a gap, not an answer (write it again once the answer is known)');
     const pick = line.pick ?? null;
@@ -1171,7 +1223,7 @@ export class LessonBook {
     this.open = this.path(part.id);
     return {
       line: { verb: 'ask', id, in: part.id, is: open ? [] : accepted, ...(pick === null ? {} : { pick }), ...(line.unit === undefined ? {} : { unit: line.unit }), ...(line.check === undefined ? {} : { check: line.check }), text: line.text },
-      issues: [],
+      issues: warned,
     };
   }
 
