@@ -340,7 +340,7 @@ export function drawingRows(stage: StageBase, limit = 40): string | null {
       const box = restingBox(element, stage.elements);
       const figure = element.figure;
       const what = figure?.kind === 'shape' ? figure.geometry.shape : figure?.kind === 'picture' ? 'painting' : element.kind;
-      const paint = element.kind === 'group' ? '' : element.style.fill !== 'none' ? `fill=${paintWords(element.style.fill, stage.colors)}` : element.style.stroke !== 'none' ? `stroke=${paintWords(element.style.stroke, stage.colors)}` : '';
+      const paint = element.kind === 'group' || figure?.kind === 'picture' ? '' : element.style.fill !== 'none' ? `fill=${paintWords(element.style.fill, stage.colors)}` : element.style.stroke !== 'none' ? `stroke=${paintWords(element.style.stroke, stage.colors)}` : '';
       const where = box === null ? '' : `${round(box.x)},${round(box.y)} ${round(box.w)}x${round(box.h)}`;
       const inside = parentOf(element.parent);
       return { area: box === null ? 0 : box.w * box.h, text: [element.id, what, where, paint, inside === null ? '' : `in=${inside}`].filter((part) => part !== '').join(' ') };

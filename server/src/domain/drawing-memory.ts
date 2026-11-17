@@ -381,7 +381,7 @@ export class DrawingMemory {
   }
 
   /** A row of the brief's index for each of the newest versions: the turn, what was asked, and what stood in it. */
-  index(limit = 6): readonly { readonly turn: string; readonly said: string; readonly parts: number; readonly roots: readonly string[]; readonly current: boolean }[] {
+  index(limit = 6): readonly { readonly turn: string; readonly said: string; readonly parts: number; readonly roots: readonly string[]; readonly inside: readonly string[]; readonly current: boolean }[] {
     const last = this.versions.length - 1;
     return this.versions
       .map((version, at) => ({
@@ -389,6 +389,7 @@ export class DrawingMemory {
         said: version.said,
         parts: version.elements.length,
         roots: version.elements.filter((element) => element.parent === null).map((element) => element.id),
+        inside: version.elements.filter((element) => element.parent !== null).map((element) => element.id),
         current: at === last,
       }))
       .slice(-limit);

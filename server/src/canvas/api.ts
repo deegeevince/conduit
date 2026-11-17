@@ -23,9 +23,9 @@ export const LOOK_BYTES = 150_000;
 /** The barrier: how long a handler waits for the adapter to have seen its call. */
 export const BARRIER_MS = 250;
 
-export const CAPS = { stage: 4_000, fits: 1_500, where: 600, observe: 2_400, attend: 200 } as const;
+export const CAPS = { stage: 4_000, fits: 1_500, where: 600, observe: 2_400, attend: 200, memory: 3_000 } as const;
 
-export const TOOL_NAMES = ['canvas_stage', 'canvas_fits', 'canvas_where', 'canvas_observe', 'canvas_attend', 'canvas_look'] as const;
+export const TOOL_NAMES = ['canvas_stage', 'canvas_fits', 'canvas_where', 'canvas_observe', 'canvas_attend', 'canvas_look', 'canvas_memory'] as const;
 export type CanvasTool = (typeof TOOL_NAMES)[number];
 
 export const isCanvasTool = (name: string): name is CanvasTool => (TOOL_NAMES as readonly string[]).includes(name);
@@ -250,6 +250,9 @@ export class CanvasService {
         case 'canvas_look':
           out = await this.look(s, state, input);
           break;
+        case 'canvas_memory':
+          out = this.memory(s, state, input);
+          break;
       }
     } catch (error) {
       this.host.log.warn('canvas.failed', { session, tool, error });
@@ -425,6 +428,21 @@ export class CanvasService {
     }
     const body = capped([...parts.flatMap((part) => part.split('\n')), allFit ? '' : 'nothing was shown or changed; write the lines you now mean'].filter((row) => row !== ''), CAPS.fits, '… cut');
     return this.wrap(s, state, body, lint);
+  }
+
+  /** The drawing memory: every version, or one turn's parts by id (kind, group, box, fill), the ids `use … from=<turn>` takes. Read-only. */
+  private memory(s: Session, state: State, args: Record<string, unknown>): ToolOutput {
+    const versions = s.memory.versions;
+    if (versions.length === 0) return this.wrap(s, state, 'nothing is remembered yet: no drawing has been made in this conversation', []);
+    const turn = typeof args['turn'] === 'string' ? args['turn'].trim() : '';
+    if (turn === '') {
+      const rows = versions.map((version) => `${version.turn}: "${clip(version.said, 80)}" - ${version.elements.length} parts (${version.elements.filter((element) => element.parent === null).map((element) => element.id).slice(0, 12).join(', ')})`);
+      return this.wrap(s, state, capped(['versions, oldest first (restore <turn> brings one back whole; use <id…> from=<turn> some of it):', ...rows], CAPS.memory, '… ask for a turn to see its parts'), []);
+    }
+    const found = s.memory.find(turn)?.version ?? null;
+    if (found === null) return this.wrap(s, state, `${clip(turn, 40)}: no drawing of that turn is remembered (turns: ${versions.map((version) => version.turn).join(', ')})`, []);
+    const rows = found.elements.map((element) => `${element.id} ${element.kind}${element.parent === null ? '' : ` in=${element.parent}`}${element.box === null ? '' : ` ${boxOf(element.box)}`}${element.fill === '' ? '' : ` fill=${element.fill}`}`);
+    return this.wrap(s, state, capped([`${found.turn} "${clip(found.said, 80)}": ${found.elements.length} parts, as they stood at its end`, ...rows], CAPS.memory, '… more parts than fit; bring a group back by its id'), []);
   }
 
   private where(s: Session, state: State, args: Record<string, unknown>): ToolOutput {

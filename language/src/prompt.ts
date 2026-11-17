@@ -18,7 +18,7 @@
 //   never here.
 
 import { DOCUMENT_TEXT_CHARS, PASTE_AS_DOCUMENT_CHARS, STANDING_LIMITS, TECHNIQUE_LIMITS } from './context';
-import type { BriefForm, DocumentFacts, LineProblem, TechniqueCard, TurnContext, TurnMemory } from './context';
+import type { BriefForm, DocumentFacts, LineProblem, MemoryRow, TechniqueCard, TurnContext, TurnMemory } from './context';
 
 export type { BriefForm };
 import { asksForLiveApp, asksToMakeGame } from './app';
@@ -924,6 +924,16 @@ const IMPROVES = /\b(improv\w*|better|keep going|go on|carry on|continue|polish\
 /** Whether the words ask to change or carry on with what is already drawn. */
 export const asksToImprove = (text: string): boolean => IMPROVES.test(text);
 
+const RECALLS = /\b(back|restore|previous|earlier|before|original|undo|first one|last one|the one (?:you|we|from)|bring|again)\b/i;
+/** Whether the words ask to go back to a drawing from before. */
+export const asksToRecall = (text: string): boolean => RECALLS.test(text);
+
+/** DRAWING MEMORY: one row a version, newest last, and the two words that bring a drawing back. About 250 tokens. */
+export function memoryText(rows: readonly MemoryRow[], tool = false): string {
+  const lines = rows.map((row) => `  ${row.turn}${row.current ? ' (on the canvas now)' : ''}: "${row.said}" - ${row.parts} parts${row.roots.length === 0 ? '' : `: ${row.roots.slice(0, 7).join(', ')}${row.roots.length > 7 ? ', …' : ''}`}${row.inside.length === 0 ? '' : `; inside: ${row.inside.slice(0, 14).join(' ')}${row.inside.length > 14 ? ` … ${row.inside.length - 14} more` : ''}`}`);
+  return `DRAWING MEMORY (every drawing you made in this conversation is kept; nothing is lost):\n${lines.join('\n')}\n$\`restore <turn>\` puts a whole earlier drawing back on the canvas, as parts you can change. $\`use <id…> from=<turn> [at=x,y] [scale=N] [rot=N]\` brings only those parts back and mixes them into what is there (a taken id comes back as <id>-<turn>).${tool ? ' The ids and boxes of any turn: the canvas_memory tool.' : ''}`;
+}
+
 /** Said on a turn that changes the live drawing: its parts are named in YOUR DRAWING NOW, and they are changed, never thrown away. */
 export const IMPROVE_BRIEF =
   'THE DRAWING ON STAGE IS TO BE CHANGED, NOT REBUILT: work on its parts by id (they are listed in YOUR DRAWING NOW): `set <id> …`, `move <id> …`, `drop <id>`, or say a part\'s line again under its id; add new marks where the picture needs them. Never write `scene`: it clears the canvas and the picture the person liked is gone. A different picture is only for when they ask for one.';
@@ -1135,6 +1145,9 @@ export function buildTurnBrief(context: TurnContext, input: TurnInput, form: Bri
     const pixels = pixelChapter(context.capabilities);
     if (pixels !== null) parts.push(pixels);
   }
+  // The drawing memory: what the conversation drew before, and how to bring it back. Carried while a drawing is live, or when the words ask to go back to one.
+  const remembered = context.drawingMemory ?? [];
+  if (remembered.length > 0 && (drawsNow || (input.kind === 'prompt' && asksToRecall(input.text)))) parts.push(memoryText(remembered, context.canvas === true));
   const standing = standingText(context.standing);
   if (standing !== null) parts.push(standing);
   // A conversation the user has come back to: the stage is empty, but what was said before is not forgotten. Told once, in the first full brief.
