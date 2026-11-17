@@ -13,6 +13,8 @@ export type Command =
   | { readonly kind: 'set'; readonly change: BrainChange }
   | { readonly kind: 'tools'; readonly change: { readonly name: string; readonly on: boolean } | null }
   | { readonly kind: 'new' }
+  /** `/demo` shows the tour; `/demo <name>` plays that demo (no model) */
+  | { readonly kind: 'demo'; readonly name: string }
   | { readonly kind: 'status' }
   | { readonly kind: 'asks'; readonly clear: boolean }
   | { readonly kind: 'look'; readonly look: LookId | null }
@@ -114,6 +116,8 @@ export function parseCommand(text: string): Command {
     }
     case 'new':
       return { kind: 'new' };
+    case 'demo':
+      return { kind: 'demo', name: first };
     case 'status':
       return { kind: 'status' };
     case 'asks':

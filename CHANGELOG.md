@@ -2,6 +2,12 @@
 
 Newest first. Each item is something the brain can show live when asked "showcase what's new": draw it, don't describe it. The server reads this file.
 
+## /demo: a tour of what Conduit can do (new)
+- Type `/demo` and a tour opens on the stage: a title, then chapters as cards (drawing and art, explaining, interactive, words, iteration and memory, input, the language view). Tap a chapter, then a card, and its demo plays at once, with no model call.
+- Every demo ends with "Back to the tour" and "Try it yourself", which sends a real question for Conduit to answer.
+- `/demo sketchbook` (or any demo's name) jumps straight to one. "Bring back an earlier drawing" plays four real turns: draw, draw again, restore the first, reuse its moon.
+- The input cards (typing, voice, a photo or PDF, the Pencil and Draw, taps, the keyboard) say how, and open the real control.
+
 ## Question blanks open the keyboard, and Conduit can fill them in (new)
 - Tap the blank of a question on the iPad or a phone and the keyboard now comes up. It used to open a moment too late for the iPad to allow it. It works with the drawing layer open too: a short tap with a finger or the pen on the blank, Check or Hint goes to it, and a pen drag across the blank still writes.
 - When you give an answer by writing it with the pen, by voice or in the chat, Conduit can put it in the blank for real (`fill w1 | 20`): it shows in the box, is marked right or wrong like a typed answer, and a right one opens the next step. It can fill nothing any other way.

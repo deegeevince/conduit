@@ -14,6 +14,7 @@
 //                      screen, a wrong answer put in the blank is marked wrong and the right one right (no model)
 //   ask                (tablet 1180x820 at two pixels, touch, the lens off and on) a finger tap on an ask's blank focuses its input, also under the Draw layer after a pen stroke;
 //                      a short pen tap too, a pen drag writes; `fill` puts a wrong or right answer in the blank and opens the next stage; Send drawing names the ask (ask-check.ts)
+//   tour               (`/demo`; 1280x800, 820x971, 390x844) the tour opens on the stage, a chapter lists its cards, a card plays its demo with no model call, "Back to the tour" returns, `/demo <name>` jumps to one (tour-check.ts)
 //   lens               (flag on, ?lens=1; tablet 1180x820 at two pixels to the point with touch, and 390x844) a two-finger pinch to 2x, then a tap on a choice, a slider
 //                      drag and a pen stroke each land on the right page point; 0 fits again; the pen draws without Draw, a short pen tap presses (lens-check.ts)
 //
@@ -39,6 +40,7 @@ import { ART_FAKE_MS, ART_SCREEN, artGroup } from './art-check';
 import { CONTINUE_SCREEN, continueFixtures, continueGroup } from './continue-check';
 import { MEMORY_SCREEN, memoryGroup } from './memory-check';
 import { loopGroup } from './loop-check';
+import { TOUR_SCREENS, tourGroup } from './tour-check';
 import { driftGroup } from './drift-check';
 import type { Answer, CheckResult, Options, Probe, Step, Verdict } from './smoke';
 
@@ -903,6 +905,22 @@ async function main(): Promise<void> {
     } catch (error) {
       failures += 1;
       process.stdout.write(`  FAIL memory stopped: ${error instanceof Error ? error.message : String(error)}\n`);
+    }
+    // the tour group (`/demo`): the tour opens on the stage, a card plays its demo with no model call, "Back to the tour" returns, `/demo <name>` jumps to one
+    try {
+      for (const screen of TOUR_SCREENS) {
+        const scenes = await tourGroup(base, screen, join(args.out, 'tour'), args.timeoutMs, (text) => (args.quiet ? undefined : process.stdout.write(`[${text}]\n`)));
+        process.stdout.write(`\ntour ${screen.name}\n`);
+        for (const scene of scenes) {
+          for (const result of scene.results) {
+            process.stdout.write(`  ${result.verdict === 'PASS' ? 'ok  ' : result.verdict} ${scene.name} ${result.check}: ${result.detail}\n`);
+            if (result.verdict === 'FAIL') failures += 1;
+          }
+        }
+      }
+    } catch (error) {
+      failures += 1;
+      process.stdout.write(`  FAIL tour stopped: ${error instanceof Error ? error.message : String(error)}\n`);
     }
     // the feedback-loop group: no browser and no model. A label an earlier turn left is measured as crossed by a later turn's lines; a thrown-out fix is told back and a
     // better second try is kept; a critic finding a repair never mended rides in the next brief; `move` frees a `near=` label with no copy left behind

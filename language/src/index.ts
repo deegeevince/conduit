@@ -40,3 +40,4 @@ export * from './anchor';
 export * from './source';
 export * from './action';
 export * from './annotate';
+export * from './tour';

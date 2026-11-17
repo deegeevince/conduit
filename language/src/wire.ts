@@ -844,6 +844,7 @@ export const APP_COMMANDS = [
   { name: 'brain', args: `<${BRAIN_MODES.join('|')}>`, gist: 'agent: the brain can act, and asks first (always). steward: the steward answers' },
   { name: 'tools', args: '[name on|off | auto | ask]', gist: 'what the brain may use in agent mode (web search, connected services); bare lists them; auto lets its browser reads, writes and runs go without asking (sending, buying, deleting, posting and sign-in pages still ask), ask brings every prompt back' },
   { name: 'new', args: '', gist: "what is new in this app, shown live" },
+  { name: 'demo', args: '[name]', gist: 'a tour of what this app can do; a name plays one demo' },
   { name: 'status', args: '', gist: 'what is live, what is being built and what is waiting on you' },
   { name: 'asks', args: '[clear]', gist: 'what you asked to hold for every reply; clear forgets them' },
   { name: 'look', args: '<name>', gist: 'the look of the stage; bare lists them' },
