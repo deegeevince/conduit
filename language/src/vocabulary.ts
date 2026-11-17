@@ -628,7 +628,7 @@ export const STRUCTURE = {
   tune: { gist: 'rows `| line` of ABC notation, taken exactly: a piano roll that plays, with a playhead and the notes lighting as they sound', parts: 'rows', lays: 'engine' },
   app: { gist: 'rows `| line` of one HTML document (inline style and script), taken exactly: a live app that runs in a locked sandbox on the stage and answers back (taught only when the user asks for something that works)', parts: 'rows', lays: 'engine' },
   figure: { gist: 'a labelled drawing: each part one line (taught by the FIGURE chapter in the brief); rows are the lines of the figure, taken as written', parts: 'rows', lays: 'engine' },
-  problem: { gist: 'a maths question to work out, `| the question exactly as given` with `___` for the blank: the stage draws the whole workspace itself (the question large, a blank for the pen, hints, ways to lay it out), so write nothing else', parts: 'rows', lays: 'engine' },
+  problem: { gist: 'an old maths question: it plays as an `ask` for its answer (the question as its words); write an `ask` instead', parts: 'rows', lays: 'engine' },
   screen: { gist: 'a mock-up: devices at true size, each part one line (taught by the INTERFACE chapter in the brief); rows are the lines of the interface, taken as written', parts: 'rows', lays: 'engine' },
 } as const satisfies Record<string, { gist: string; parts: 'nodes' | 'rows'; lays: 'painter' | 'axis' | 'brain' | 'engine' }>;
 export type StructureKind = keyof typeof STRUCTURE;
@@ -950,7 +950,7 @@ export const VERB = {
   },
   problem: {
     form: 'problem <id> answer=<a>[,<b>…] [ways=<way>[,<way>…]] [for=<who>] | <the question exactly as given, ___ for the blank>',
-    gist: 'A maths question for a child to work out, on a full screen of its own. Say the question and its answer and nothing more: the stage sets the question large with a blank for the pen, offers hints and pictures (groups, a bar, an array, a column, a number line) drawn from its numbers, and checks her answer itself. `answer=` is every form you accept (`3000,3_000`, `_` is a space).',
+    gist: 'An old maths question, kept so earlier answers still play: it is an `ask` for its answer, with the question as its words. Write an `ask` instead.',
     time: 'starts',
     family: 'structure',
   },

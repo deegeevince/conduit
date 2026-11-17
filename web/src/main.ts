@@ -16,8 +16,7 @@ import { mountReport } from './chrome/report';
 import { installTrace } from './chrome/trace';
 import { mountAbout } from './chrome/about';
 import { DRAW_WORDS, mountStageInk } from './ink/stage';
-import { mountWorkMode } from './app/work-mode';
-import { trackProblems } from './app/problem-lines';
+import { mountPenAsk } from './app/pen-ask';
 import type { StageInk } from './ink/stage';
 import { mountPermission } from './chrome/permission';
 import { mountPicker } from './chrome/picker';
@@ -196,7 +195,7 @@ async function start(): Promise<void> {
   }, mounted.lens === null ? {} : { guard: mounted.lens.guard });
   // ?lens=1: the pen draws on the stage without Draw, and the ink is looked through the lens
   mounted.lens?.useInk(stageInk);
-  mountWorkMode({ stage: stageHost, bar: bar as HTMLElement, ink: stageInk, controls: () => mounted.hook.controls(),
+  mountPenAsk({ stage: stageHost, bar: bar as HTMLElement, ink: stageInk, controls: () => mounted.hook.controls(),
     question: () =>
       mounted.hook
         .lines()
@@ -207,8 +206,6 @@ async function start(): Promise<void> {
     upload: async (png) => (await mounted.link.uploadPhoto(png)).id,
     read: (request) => mounted.link.readInk(request),
     penChanged: () => mounted.painter.penChanged(),
-    problems: trackProblems(mounted.hook),
-    calm: () => mounted.hook.state().reducedMotion,
     askAt: (x, y) => mounted.askAt(x, y),
   });
   // for the browser checks (web/scripts/ink-check.mjs): the ink layer's own latency numbers

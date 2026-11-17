@@ -86,10 +86,6 @@ export function usesStageAsk(cards: readonly TechniqueCard[] | undefined): boole
   return (cards ?? []).some((card) => card.example.some((line) => /^\s*ask\s/.test(line)) && !card.example.some((line) => /^\s*part\s/.test(line)));
 }
 
-/** Whether a technique card writes a maths `problem` line: the card then carries what the PROBLEM chapter would say. */
-export function usesProblem(cards: readonly TechniqueCard[] | undefined): boolean {
-  return (cards ?? []).some((card) => card.example.some((line) => /^\s*problem\s/.test(line)));
-}
 
 /** Whether this turn carries the ASK chapter: an ask stands on the stage, or a card the library chose writes one. Never matched on the user's words. */
 export function carriesAsk(context: Pick<TurnContext, 'techniques'>, onStage: boolean): boolean {

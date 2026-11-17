@@ -1666,7 +1666,6 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
         if (event instanceof WheelEvent) return false;
         if (inInk(event)) {
           // the layer is over the stage: in the work mode it hands every finger on to what is under it; otherwise a finger is the ink's unless the guard says it pans
-          if (document.body.classList.contains('work')) return true;
           // a finger on an open ask's blank, Check or Hint is that ask's, not the pan's
           if (askAt(event.clientX, event.clientY)) return true;
           return lens === null || lens.guard.peek({ kind: 'touch', id: event.pointerId, time: event.timeStamp, width: event.width, height: event.height, eraser: false, primaryButton: true }).act !== 'pan';

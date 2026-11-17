@@ -10,9 +10,8 @@
 //   choice             a real tap on a starter is sent as a turn and the replay brain answers it, to rest
 //   every demo         each demo the app offers (not DEMOS_NOT_PAINTED) is played by name and comes to rest
 //   explorable         a slider, a toggle and a pick of the explorable demo change the drawing with no request to the server
-//   problems           each `problem` of language/demos/problem.series is played at its own turn: the question is on the screen exactly as written, "What do we know?"
-//                      lights its numbers, every way draws and its stepper adds a piece a step, a typed wrong then right answer is marked so (no turn sent, no model),
-//                      and nothing overlaps or is cut off
+//   problems           each `problem` of language/demos/problem.series (old logs) is played at its own turn: the question is on the canvas with a blank, nothing takes the
+//                      screen, a wrong answer put in the blank is marked wrong and the right one right (no turn sent, no model)
 //   ask                (tablet 1180x820 at two pixels, touch, the lens off and on) a finger tap on an ask's blank focuses its input, also under the Draw layer after a pen stroke;
 //                      a short pen tap too, a pen drag writes; `fill` puts a wrong or right answer in the blank and opens the next stage; Send drawing names the ask (ask-check.ts)
 //   lens               (flag on, ?lens=1; tablet 1180x820 at two pixels to the point with touch, and 390x844) a two-finger pinch to 2x, then a tap on a choice, a slider
@@ -420,14 +419,11 @@ class Screen {
   }
 
   /**
-   * The maths questions of problem.series, each as its own turn: the whole-screen workspace the page draws from one `problem` line.
-   * Judged by what is on the page (its DOM), for what a person sees and presses; the generic checks do not see a workspace.
+   * The maths questions of problem.series: old logs hold `problem` lines, and they still play, as ordinary canvas content: the question as words and an `ask` blank
+   * for its answer. Nothing takes the screen. A wrong answer put in the blank is marked wrong, the right one right (with no turn sent).
    */
   async problemScenes(): Promise<void> {
     const { tab, talk } = await this.open('', false);
-    const q = (selector: string): Promise<unknown> => tab.eval(`document.querySelector(${JSON.stringify(selector)}) !== null`);
-    const click = (selector: string): Promise<unknown> => tab.eval(`document.querySelector(${JSON.stringify(selector)}).click()`);
-    const read = <T>(expression: string): Promise<T> => tab.eval<T>(expression);
     try {
       await this.look(tab);
       for (const scene of problemScenes()) {
@@ -437,164 +433,33 @@ class Screen {
         tab.drain();
         const results: CheckResult[] = [];
         const problems: string[] = [];
-        const played = await tab.eval<string | null>(`Promise.resolve(window.__stage.playScript(${JSON.stringify(scene.script)})).then(() => null, (e) => String(e && e.message || e))`);
+        const play = (script: string): Promise<string | null> => tab.eval<string | null>(`Promise.resolve(window.__stage.playScript(${JSON.stringify(script)})).then(() => null, (e) => String(e && e.message || e))`);
+        const played = await play(scene.script);
         results.push(Screen.restResult(played !== null ? `the script would not play: ${played}` : await talk.rest(true), began));
         const sent = tab.posted.length;
-        // the workspace comes up by itself (work mode), full screen
-        let up = false;
-        for (let waited = 0; waited < 6000 && !up; waited += 200) {
-          up = (await q('.pb')) === true;
-          if (!up) await sleep(200);
+        const verdict = (): Promise<string> => tab.eval<string>(`(window.__stage.controls().find((c) => c.id === ${JSON.stringify(scene.id)}) || { askState: { verdict: 'none' } }).askState.verdict`);
+        if ((await tab.eval<boolean>(`document.body.classList.contains('work') || document.querySelector('.pb') !== null`)) === true) problems.push('something took the whole screen');
+        const words = norm(scene.question.replace(/_{2,}|□/g, ' '));
+        const said = norm(await tab.eval<string>(`window.__stage.elements().map((e) => e.text).join(' ')`));
+        if (!said.includes(words.split(' ').slice(0, 6).join(' '))) problems.push(`the question is not on the canvas: "${scene.question}"`);
+        if ((await verdict()) === 'none') problems.push('there is no blank to answer in');
+        else {
+          await play(`fill ${scene.id} | 7777777`);
+          await talk.rest(true);
+          const wrong = await verdict();
+          if (wrong !== 'wrong') problems.push(`a wrong answer in the blank was marked "${wrong}"`);
+          await play(`fill ${scene.id} | ${scene.answer}`);
+          await talk.rest(true);
+          const right = await verdict();
+          if (right !== 'right') problems.push(`the right answer in the blank was marked "${right}"`);
         }
-        if (!up) {
-          results.push({ turn: 0, check: 'problem', verdict: 'FAIL', detail: 'no workspace came up for the problem line' });
-          this.scenes.push({ name, seconds: (Date.now() - began) / 1000, picture: '', results });
-          continue;
-        }
+        if (tab.posted.length !== sent) problems.push('marking an answer sent a turn');
         const picture = await tab.shot();
         const file = `${this.screen.name}-${name}.png`;
         await writeFile(join(this.dir, file), Buffer.from(picture.split(',')[1] ?? '', 'base64'));
-        // 1. the hero question, exactly (the blank as ___)
-        const hero = await read<string>(`[...document.querySelectorAll('.pb__question [data-kind]')].map((n) => (n.classList.contains('pb__tok--gap') ? ' ' : '') + (n.dataset.kind === 'blank' ? '___' : n.textContent)).join('')`);
-        const want = scene.question.replace(/\\s+/g, ' ').trim();
-        const got = hero.replace(/\\s+/g, ' ').trim();
-        // spaced thousands and a sentence's marks are the question's own: compare as the question is written, with a word problem's final marks free
-        const tidy = (text: string): string => text.replace(/\\s+([?.,!])/g, '$1').replace(/(\\d) (\\d{3})(?!\\d)/g, '$1$2');
-        if (tidy(got) !== tidy(want)) problems.push(`the question on screen is "${got}", not "${want}"`);
-        const heroBox = await read<{ readonly x: number; readonly y: number; readonly w: number; readonly h: number; readonly px: number }>(`(() => { const r = document.querySelector('.pb__question').getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height, px: parseFloat(getComputedStyle(document.querySelector('.pb__question')).fontSize) }; })()`);
-        if (heroBox.px < 20) problems.push(`the question is set at ${heroBox.px.toFixed(0)} px: not large`);
-        if (Math.abs(heroBox.x + heroBox.w / 2 - this.screen.width / 2) > 6) problems.push('the question is not centred');
-        const blank = (await q('.pb__tok--blank')) === true;
-        if (!blank) problems.push('the question has no blank');
-        const supported = (await q('.pb__ways')) === true && (await read<boolean>(`!document.querySelector('.pb__ways').hidden`));
-        // 2. "What do we know?" lights the numbers
-        await click('[data-act=hint]');
-        await click('[data-hint=know]');
-        const lit = await read<{ readonly lit: readonly string[]; readonly nums: readonly string[] }>(`({ lit: [...document.querySelectorAll('.pb__question .is-lit')].map((n) => n.dataset.kind + ':' + n.textContent), nums: [...document.querySelectorAll('.pb__question [data-kind=num], .pb__question [data-kind=frac]')].map((n) => n.dataset.kind + ':' + n.textContent) })`);
-        for (const number of lit.nums) if (!lit.lit.includes(number)) problems.push(`"What do we know?" did not light ${number}`);
-        if (lit.lit.some((entry) => entry.startsWith('blank'))) problems.push('"What do we know?" lit the blank');
-        await click('[data-hint=find]');
-        const found = await read<string[]>(`[...document.querySelectorAll('.pb__question .is-lit')].map((n) => n.dataset.kind)`);
-        if (found.join() !== 'blank') problems.push(`"What are we finding?" lit ${found.join(', ') || 'nothing'}, not the blank`);
-        // 3. every way draws, and each step adds a piece
-        const ways = await read<string[]>(`[...document.querySelectorAll('.pb [data-way]')].map((b) => b.dataset.way)`);
-        if (supported && ways.length === 0) problems.push('a sum it can read offers no way');
-        if (!supported && ways.length > 0) problems.push('a question it cannot read offers ways');
-        for (const way of ways) {
-          await click(`.pb [data-way=${way}]`);
-          await sleep(250);
-          const steps = Number(await read<string>(`document.querySelector('.pb').dataset.steps`));
-          let before = 0;
-          for (let step = 1; step <= steps; step += 1) {
-            const pieces = await read<number>(`document.querySelectorAll('.pb__svg [data-step]:not(.pw-off)').length`);
-            if (pieces <= before) problems.push(`${way}: step ${step} of ${steps} added no piece`);
-            before = pieces;
-            if (step < steps) {
-              await click('.pb [data-act=next]');
-              await sleep(60);
-            }
-          }
-          if (steps < 2) problems.push(`${way}: only ${steps} step`);
-          // the unknown is a "?" and the answer is never drawn: no text of the picture is the answer
-          const words = await read<string[]>(`[...document.querySelectorAll('.pb__svg text:not(.pw-off)')].map((n) => n.textContent)`);
-          if (words.some((word) => scene.answer !== '' && word.replace(/\\s/g, '') === scene.answer.replace(/\\s/g, '') && !scene.question.replace(/\\s/g, '').includes(scene.answer.replace(/\\s/g, '')))) problems.push(`${way}: the picture says the answer`);
-          if (!words.some((word) => word.startsWith('?')) && steps > 0 && !['column'].includes(way)) problems.push(`${way}: the unknown is not a "?"`);
-          // no overlap, nothing cut off: the picture's words at the last step
-          const bad = await read<string[]>(`(() => { const svg = document.querySelector('.pb__svg').getBoundingClientRect(); const t = [...document.querySelectorAll('.pb__svg text:not(.pw-off)')].map((n) => ({ s: n.textContent, r: n.getBoundingClientRect() })); const out = []; for (const a of t) if (a.r.left < svg.left - 2 || a.r.right > svg.right + 2 || a.r.top < svg.top - 2 || a.r.bottom > svg.bottom + 2) out.push('cut off: ' + a.s); for (let i = 0; i < t.length; i++) for (let j = i + 1; j < t.length; j++) { const a = t[i].r, b = t[j].r; const w = Math.min(a.right, b.right) - Math.max(a.left, b.left), h = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top); if (w > 3 && h > 3) out.push('overlap: ' + t[i].s + ' / ' + t[j].s); } return out; })()`);
-          problems.push(...bad.map((entry) => `${way}: ${entry}`));
-          await click(`.pb [data-way=${way}]`);
-        }
-        // 3b. the keyboard: a real tap (a finger on a phone, a click on a desk) on "Type it" and on the blank puts the focus on the real field, inside the gesture
-        const centreOf = (selector: string): Promise<{ readonly x: number; readonly y: number } | null> => read<{ x: number; y: number } | null>(`(() => { const n = document.querySelector(${JSON.stringify(selector)}); if (!n || n.hidden) return null; const r = n.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
-        const focused = (): Promise<boolean> => read<boolean>(`document.activeElement && document.activeElement.classList.contains('pb__input')`);
-        const typeAt = await centreOf('[data-act=type]');
-        if (typeAt === null) problems.push('no Type it button');
-        else {
-          await tab.tap(typeAt.x, typeAt.y);
-          if (!(await focused())) problems.push('a tap on Type it did not focus the field (no keyboard would open)');
-          await click('[data-act=type]');
-          const blankAt = await centreOf('.pb__tok--blank');
-          if (blankAt !== null) {
-            await tab.tap(blankAt.x, blankAt.y);
-            if (!(await focused())) problems.push('a tap on the blank did not focus the field (no keyboard would open)');
-          }
-          await tab.eval(`document.activeElement && document.activeElement.blur()`);
-        }
-        // 4. a wrong then a right answer, typed: marked here, no turn sent
-        if (await read<boolean>(`document.querySelector('.pb__input').hidden`)) await click('[data-act=type]');
-        await tab.eval(`document.querySelector('.pb__input').focus()`);
-        await tab.type('1');
-        await click('[data-act=check]');
-        await sleep(150);
-        const wrong = await read<string>(`document.querySelector('.pb').dataset.verdict || ''`);
-        if (wrong !== 'wrong') problems.push(`a wrong answer was marked "${wrong}"`);
-        if (supported && (await read<boolean>(`document.querySelector('[data-act=show]').hidden`))) problems.push('Show me is not offered after a wrong try');
-        await tab.eval(`document.querySelector('.pb__input').value = ''`);
-        await tab.eval(`document.querySelector('.pb__input').focus()`);
-        await tab.type(scene.answer);
-        await click('[data-act=check]');
-        await sleep(150);
-        const right = await read<string>(`document.querySelector('.pb').dataset.verdict || ''`);
-        if (right !== 'right') problems.push(`the right answer "${scene.answer}" was marked "${right}"`);
-        if (tab.posted.length !== sent) problems.push(`marking sent ${tab.posted.length - sent} turn(s): it must not call a model`);
-        // 5. the screen as it rests: nothing overlaps the question or the blank, nothing is cut off, the pen's toolbar and the buttons are clear
-        const layout = await read<string[]>(`(() => { const vw = innerWidth, vh = innerHeight; const out = []; const boxes = {}; const get = (name, sel) => { const n = document.querySelector(sel); if (n && !n.hidden && n.getClientRects().length) boxes[name] = n.getBoundingClientRect(); }; get('question', '.pb__question'); get('line', '.pb__line'); get('controls', '.pb__controls'); get('hints', '.pb__hints'); get('ways', '.pb__ways'); get('stepper', '.pb__stepper'); get('done', '.work-button--done'); get('ask', '.work-button--ask'); get('pen', '.ink-stage__bar'); for (const [k, r] of Object.entries(boxes)) if (r.left < -1 || r.top < -1 || r.right > vw + 1 || r.bottom > vh + 1) out.push(k + ' is cut off'); const hit = (a, b) => Math.min(a.right, b.right) - Math.max(a.left, b.left) > 2 && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 2; const blank = document.querySelector('.pb__tok--blank').getBoundingClientRect(); const names = Object.keys(boxes); for (let i = 0; i < names.length; i++) for (let j = i + 1; j < names.length; j++) if (hit(boxes[names[i]], boxes[names[j]])) out.push(names[i] + ' overlaps ' + names[j]); for (const k of ['controls', 'done', 'ask', 'pen', 'hints', 'ways']) if (boxes[k] && hit(boxes[k], blank)) out.push(k + ' covers the blank'); const q = document.querySelector('.pb__question'); if (q.scrollWidth > q.clientWidth + 2) out.push('the question is wider than the screen'); for (const b of document.querySelectorAll('.pb button')) { const r = b.getBoundingClientRect(); if (b.getClientRects().length && (r.height < 40 || r.width < 40)) out.push('a target is smaller than 40 px: ' + b.textContent); } return out; })()`);
-        problems.push(...layout);
-        // the message box stays where a person can reach it: visible, on screen, clear of the workspace, and typing into it works
-        const box = await read<{ readonly ok: boolean; readonly why: string }>(`(() => { const i = document.querySelector('.prompt__input'); if (!i) return { ok: false, why: 'no message box' }; const r = i.getBoundingClientRect(); const pb = document.querySelector('.pb').getBoundingClientRect(); if (!r.width || !r.height) return { ok: false, why: 'the message box is hidden' }; if (r.bottom > innerHeight + 1 || r.top < 0) return { ok: false, why: 'the message box is off screen' }; if (Math.min(r.right, pb.right) - Math.max(r.left, pb.left) > 2 && Math.min(r.bottom, pb.bottom) - Math.max(r.top, pb.top) > 2) return { ok: false, why: 'the workspace covers the message box' }; return { ok: true, why: '' }; })()`);
-        if (!box.ok) problems.push(box.why);
-        else {
-          await tab.eval(`document.querySelector('.prompt__input').focus()`);
-          await tab.type('hello');
-          const typed = await read<string>(`document.querySelector('.prompt__input').value`);
-          if (typed !== 'hello') problems.push(`typing in the message box gave "${typed}" while a problem was on stage`);
-          await tab.eval(`(() => { const i = document.querySelector('.prompt__input'); i.value = ''; i.dispatchEvent(new Event('input', { bubbles: true })); i.blur(); })()`);
-        }
-        Screen.add(results, 'problem', problems.slice(0, 6), `question exact, numbers lit by the hint, ${ways.length === 0 ? 'plain workspace' : `${ways.length} way${ways.length === 1 ? '' : 's'} drawn step by step`}, wrong then right marked with no turn sent, nothing overlaps or is cut off`);
-        const drained = tab.drain();
-        Screen.add(results, 'no-console-errors', drained.consoleErrors.map((entry) => entry.text).slice(0, 3), 'nothing logged as an error');
+        Screen.add(results, 'problem', problems, 'the question is on the canvas with a blank, nothing takes the screen, a wrong answer is marked wrong and the right one right');
         const scenery: Scene = { name, seconds: (Date.now() - began) / 1000, picture: file, results };
         this.scenes.push(scenery);
-        for (const result of results) if (result.verdict === 'FAIL') this.note(`  FAIL ${name} ${result.check}: ${result.detail.slice(0, 300)}`);
-      }
-      // the brain puts an answer the person gave into the blank, in a later turn: `fill p3 | …`. It shows there and is marked locally, like a typed one; no model is asked
-      const target = problemScenes().find((scene) => scene.id === 'p3') ?? problemScenes()[0];
-      if (target !== undefined) {
-        const began = Date.now();
-        const name = 'problem-fill';
-        this.note(name);
-        tab.drain();
-        const results: CheckResult[] = [];
-        const problems: string[] = [];
-        const play = (script: string): Promise<string | null> => tab.eval<string | null>(`Promise.resolve(window.__stage.playScript(${JSON.stringify(script)})).then(() => null, (e) => String(e && e.message || e))`);
-        // a page of its own: the questions above were answered in this one, and what she did to a problem stays with it
-        await tab.send('Page.reload');
-        for (let waited = 0; waited < 40_000 && !(await tab.eval<boolean>('Boolean(window.__stage)').catch(() => false)); waited += 250) await sleep(250);
-        await tab.eval('window.__stage.ready.then(() => true)');
-        await play(target.script);
-        for (let waited = 0; waited < 6000 && (await q('.pb')) !== true; waited += 200) await sleep(200);
-        await talk.rest(true);
-        await play(`fill ${target.id} | 1`);
-        await talk.rest(true);
-        await sleep(500);
-        const afterWrong = await read<{ readonly up: boolean; readonly verdict: string; readonly blank: string }>(`({ up: !!document.querySelector('.pb'), verdict: (document.querySelector('.pb') || { dataset: {} }).dataset.verdict || '', blank: (document.querySelector('.pb .pb__written') || {}).textContent || '' })`);
-        if (!afterWrong.up) problems.push('the workspace went away when the brain answered in a later turn');
-        if (afterWrong.verdict !== 'wrong') problems.push(`fill of a wrong answer was marked "${afterWrong.verdict}"`);
-        if (afterWrong.blank !== '1') problems.push(`the blank shows "${afterWrong.blank}", not what the brain put in it`);
-        await play(`fill ${target.id} | ${target.answer}`);
-        await talk.rest(true);
-        await sleep(500);
-        const afterRight = await read<{ readonly verdict: string; readonly blank: string }>(`({ verdict: (document.querySelector('.pb') || { dataset: {} }).dataset.verdict || '', blank: (document.querySelector('.pb .pb__written') || {}).textContent || '' })`);
-        if (afterRight.verdict !== 'right') problems.push(`fill of the right answer was marked "${afterRight.verdict}"`);
-        if (afterRight.blank !== target.answer) problems.push(`the blank shows "${afterRight.blank}", not "${target.answer}"`);
-        // a run of underscores is not a blank: plain words never draw one
-        await play('scene stack\nsay a | 2. ______ and 3. ________\nsay b | keep this');
-        await talk.rest(true);
-        await sleep(300);
-        const fake = await read<string[]>(`window.__stage.elements().filter((e) => /_{3,}/.test(String(e.text || ''))).map((e) => e.text)`);
-        if (fake.length > 0) problems.push(`a run of underscores was drawn as a blank: "${fake[0]}"`);
-        Screen.add(results, 'problem', problems, 'a filled answer shows in the blank and is marked locally; a run of underscores is not drawn as a blank');
-        this.scenes.push({ name, seconds: (Date.now() - began) / 1000, picture: '', results });
         for (const result of results) if (result.verdict === 'FAIL') this.note(`  FAIL ${name} ${result.check}: ${result.detail.slice(0, 300)}`);
       }
     } finally {
@@ -773,7 +638,7 @@ async function runScreen(args: Args, base: string, screen: Args['screens'][numbe
     ),
   );
   // the order a reader expects: the welcome, the choice, the reduced-motion welcome, then the demos as the app lists them
-  const order = ['welcome', 'choice', 'welcome-reduced-motion', ...offered.map((name) => `demo-${name}`), ...problemScenes().map((scene) => `problem-${scene.id}`), 'problem-fill'];
+  const order = ['welcome', 'choice', 'welcome-reduced-motion', ...offered.map((name) => `demo-${name}`), ...problemScenes().map((scene) => `problem-${scene.id}`)];
   run.scenes.sort((a, b) => order.indexOf(a.name) - order.indexOf(b.name));
   if (run.renderer !== 'unknown') {
     const webgl = run.renderer === 'three';
