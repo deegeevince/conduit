@@ -603,7 +603,7 @@ class Screen {
       case 'fb-051': {
         // fb-051: a slider bound to a move to a point moved nothing (the painter never read where a bound move went). A real drag along the track, at both ends and the middle:
         // every shape the slider names must have moved, be half way at half way, and come back; the toggle whose only bind changes nothing is told, the slider is not.
-        const ids = ['fbdot', 'fbbar', 'fbleaf', 'fbpair'];
+        const ids = ['fbdot', 'fbring', 'fbbar', 'fbleaf', 'fbpair'];
         interface Held { readonly id: string; readonly min: number; readonly max: number; readonly value: number; readonly parts: readonly { part: string; box: { x: number; y: number; width: number; height: number } }[]; readonly box: { x: number; y: number; width: number; height: number } }
         const held = async (): Promise<Held | undefined> => (await tab.eval<Held[]>('window.__stage.controls().map((c) => ({ id: c.id, min: c.min, max: c.max, value: c.value, parts: c.parts, box: c.box }))')).find((c) => c.id === 'fbspin');
         const centres = async (): Promise<Map<string, { x: number; y: number }>> => {
