@@ -54,10 +54,11 @@ import { NO_THROTTLE } from '../usage';
 import type { DocChange, Documents, LoadedDocument } from './document';
 import type { DocumentAssets } from '../documents/assets';
 import { cropJpeg } from '../pictures/image';
+import { rebuildMemory } from './drawing-memory';
 import { buildContext, holdStanding, parseStanding, rememberTurn } from './memory';
 import type { StandingAsk } from './memory';
 import { MAX_PROBLEMS, SERVER_LIMITS } from './session';
-import type { SessionEntry, SessionLog } from './session-log';
+import type { SessionEntry, SessionLog, SessionRecord } from './session-log';
 import type { ActiveTurn, Session, SessionStore, StageSink } from './session';
 import { readPasted } from '../reading/pasted';
 import { factsOf, tableFromText } from './tables';
@@ -433,7 +434,7 @@ export class Conductor {
    * above that log's, and the brain's first brief carries `earlier` (a short account of the words, never the system prompt or a brief).
    * A session that has begun a conversation of its own cannot: that one would be torn in two. Asking again for the same one is a no-op.
    */
-  continueConversation(session: string, id: string, earlier: string, highestTurn: number, highestPhoto: number, firstSession: string): void {
+  continueConversation(session: string, id: string, earlier: string, highestTurn: number, highestPhoto: number, firstSession: string, records: readonly SessionRecord[] = []): void {
     const { sessions, now, sessionLog } = this.deps;
     const s = sessions.require(session, now());
     if (s.continued?.id === id) return;
@@ -442,6 +443,8 @@ export class Conductor {
     sessions.reserveTurns(highestTurn);
     this.deps.uploads?.reserve(s.id, highestPhoto);
     s.continued = { id, earlier };
+    // the drawings of that conversation are kept in its log: the memory is read from there, so a drawing can be brought back after a restart
+    s.memory = rebuildMemory(records);
     sessionLog.write(s.id, { type: 'continued', session: s.id, from: firstSession, started: new Date(now()).toISOString() });
     this.deps.log.info('session.continued', { session: s.id, conversation: id });
   }
@@ -573,6 +576,7 @@ export class Conductor {
     const chosen = brain.choice?.(s.id);
     this.journal(s, { type: 'turn', turn: turn.id, input, brain: brain.id, login: turn.login, ...(chosen?.model ? { model: chosen.model } : {}), ...(chosen?.effort ? { effort: chosen.effort } : {}) });
     // The attention record is written when the turn ends, with what the canvas tools were used for (`finish`).
+    s.memory.begin(turn.id, input.kind === 'prompt' || input.kind === 'tap' || input.kind === 'act' ? input.text : input.kind === 'script' ? 'a script' : input.kind);
     this.attention.set(turn.id, briefed.record);
     this.deps.canvas?.beginTurn(s.id, turn.id, briefed.record.rev[0]);
     this.emit(s, turn, { type: 'turn', turn: turn.id, input });
@@ -1147,6 +1151,7 @@ export class Conductor {
       turn.held.clear();
     });
     step('draft', () => s.draft.close(turn.id));
+    step('memory', () => s.memory.close());
     // Nothing the owner was asked and did not answer outlives the turn: it is a no.
     step('permissions', () => this.denyPending(s, turn.id, 'turn'));
     // A call that began under the gate's own yes and had not ended when the turn did is still a call that was made.
@@ -1929,6 +1934,8 @@ export class Conductor {
       this.finish(s, turn, 'failed', `the brain wrote more than ${SERVER_LIMITS.linesPerTurn} lines`);
       return 'stop';
     }
+    // Drawing memory: `restore` and `use … from=` are read here and become the remembered lines, ingested one by one as if the brain had written them.
+    if (event.line.verb === 'restore' || (event.line.verb === 'use' && event.line.from !== undefined)) return this.recall(s, turn, event.line, normalizer, pass, repairing);
     const normalized = normalizer.normalize(this.withPartsResolved(s, turn, event.line));
     if (normalized.line === null) {
       // A step, ask or hint that came before the part or ask it belongs to is held, and read when that one is written; refused only if it never comes
@@ -1966,6 +1973,7 @@ export class Conductor {
     const node = this.docs.place(s.id, text);
     if (node !== null) turn.docLines += 1;
     this.journal(s, { type: 'line', turn: turn.id, seq, text, start, issues, pass, ...(node === null ? {} : { node }) });
+    if (turn.input.kind !== 'demo') s.memory.record(turn.id, seq, text);
     this.emit(s, turn, { type: 'line', turn: turn.id, seq, text, issues });
     if (line.verb === 'paint') this.paint(s, turn, seq, line, pushed.schedule);
     if (line.verb === 'row') this.findPicture(s, turn, line.id, line.cells, pushed.schedule);
@@ -2274,6 +2282,46 @@ export class Conductor {
     }
     if (sessions.get(session) !== undefined) this.journal(s, { type: 'end', turn, reason, message, lines });
     return { ok: reason === 'done', turn, lines, refused: refused.length, costUsd: cost, ms: now() - started, reason: reason === 'done' ? (amended ? 'rewritten once after a refusal' : null) : (message ?? reason) };
+  }
+
+  /** The ids of the drawn things on the canvas now that stand alone (not parts of a group): what a whole `restore` clears first. */
+  private liveDrawn(turn: ActiveTurn): string[] {
+    const ids = new Set<string>();
+    for (const element of turn.score.schedule.elements) {
+      if (element.exit !== null || element.parent !== null) continue;
+      if (element.kind === 'shape' || element.kind === 'group' || element.kind === 'sprite' || element.kind === 'copy' || element.figure?.kind === 'picture') ids.add(element.id);
+    }
+    return [...ids];
+  }
+
+  /**
+   * Drawing memory. `restore <turn>` puts that turn's whole resting drawing back (what stood is dropped first); `use <id…> from=<turn>` brings parts of it
+   * back beside what is there. The remembered lines are ingested one by one, so what comes back is real: parts the brain can `set`, `move` and `drop`.
+   */
+  private recall(s: Session, turn: ActiveTurn, line: Line, normalizer: LineNormalizer, pass: number, repairing: boolean): 'stop' | undefined {
+    const said = serializeLine(line);
+    const refuse = (why: string): undefined => {
+      this.reject(s, turn, said, [{ code: 'unknown-id', severity: 'error', message: why }]);
+      return undefined;
+    };
+    let made: ReturnType<typeof s.memory.restore> | null;
+    if (line.verb === 'restore') {
+      const found = s.memory.find(line.turn);
+      if (found === null) return refuse(`DRAWING MEMORY holds no ${line.turn}`);
+      // `restore undo` goes on from where the last undo stopped; a named turn is a new place to stand
+      if (!/^t\d+$/.test(line.turn)) s.memory.restoredIndex(found.index);
+      made = s.memory.restore(found.index, this.liveDrawn(turn));
+    } else if (line.verb === 'use' && line.from !== undefined) {
+      const taken = new Set(turn.score.schedule.elements.filter((element) => element.exit === null).map((element) => element.id));
+      const at = line.props.at !== undefined && typeof line.props.at === 'object' && 'x' in line.props.at ? line.props.at : undefined;
+      made = s.memory.bring(line.from, line.sources ?? [line.source], taken, { ...(at === undefined ? {} : { at }), ...(line.props.scale === undefined ? {} : { scale: line.props.scale }), ...(line.props.rot === undefined ? {} : { rot: line.props.rot }) });
+      if (made === null) return refuse(`DRAWING MEMORY has no ${(line.sources ?? [line.source]).join(', ')} in ${line.from}`);
+    } else return undefined;
+    this.deps.log.info('memory.recall', { session: s.id, turn: turn.id, said, brought: made.note, lines: made.lines.length });
+    for (const brought of made.lines) {
+      if (this.ingest(s, turn, { type: 'line', line: brought, issues: [] }, normalizer, pass, repairing) === 'stop') return 'stop';
+    }
+    return undefined;
   }
 
   /** v3 art. One `draw` line as the lines of a figure from the shelf, or of a placeholder (and, for a subject the shelf lacks, a commission); see `art/draw.ts`. */

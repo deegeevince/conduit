@@ -227,6 +227,10 @@ async function perform(app: StageApp, command: Command, onChoice: (choice: Brain
       await app.refine(Math.min(command.passes, REFINE_LIMITS.max));
       return;
     }
+    case 'undo':
+      // the server steps the drawing back from its own memory: no model is asked
+      await app.playScript('restore undo');
+      return;
     case 'stop':
       app.interrupt();
       return;

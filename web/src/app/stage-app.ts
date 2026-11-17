@@ -37,6 +37,7 @@ import { createEarlier } from './earlier';
 import { createTextLayer } from './text-layer';
 import { createLiveApps } from './live-app';
 import { createPageChip } from './chip';
+import { createUndoChip } from './undo-chip';
 import { createLensRenderer, createStageLens } from './lens';
 import type { StageLens } from './lens';
 import { createHook } from './hook';
@@ -849,6 +850,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
       case 'turn':
         if (event.turn === currentTurn || opened.has(event.turn)) return;
         opened.add(event.turn);
+        undoChip.hide();
         if (mutingNext) {
           mutingNext = false;
           mutedTurns.add(event.turn);
@@ -904,6 +906,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
           painter.ingest(event.turn, event.seq, parsed.line);
           if (parsed.line.verb === 'reply') repliedWith.set(event.turn, parsed.line.text);
           else if (!['wait', 'end', 'plan', 'part', 'step', 'ask', 'hint'].includes(parsed.line.verb)) showedSomething.add(event.turn);
+          if (DRAWING_VERBS.has(parsed.line.verb)) drawnTurns.add(event.turn);
           const written = turnLines.get(event.turn);
           if (written === undefined) turnLines.set(event.turn, [serializeLine(parsed.line)]);
           else written.push(serializeLine(parsed.line));
@@ -992,6 +995,8 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
         if (event.reason === 'done' && ['tap', 'prompt'].includes(turnInputs.get(event.turn)?.kind ?? '') && !showedSomething.has(event.turn)) announce(repliedWith.get(event.turn) ?? 'Nothing new came back for that.');
         showedSomething.delete(event.turn);
         repliedWith.delete(event.turn);
+        if (event.reason === 'done' && drawnTurns.has(event.turn) && turnInputs.get(event.turn)?.kind !== 'demo') undoChip.show();
+        drawnTurns.delete(event.turn);
         lastEnd = { reason: event.reason, message: event.message };
         readingNow.clear();
         passState = null;
@@ -1789,6 +1794,10 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
 
   /** how each turn was opened, so the answer kept for a reload can say what it answered */
   const turnInputs = new Map<string, TurnInput>();
+  /** turns whose lines drew, changed or dropped a drawing: the Undo chip follows one of these */
+  const drawnTurns = new Set<string>();
+  const DRAWING_VERBS = new Set(['circle', 'ellipse', 'rect', 'line', 'poly', 'path', 'group', 'use', 'pix', 'set', 'move', 'drop', 'paint']);
+  const undoChip = createUndoChip(host, () => void submit({ kind: 'script', text: 'restore undo' }, null, true));
   /** the lines each open turn has been told, as written, for the answer kept for a reload */
   const turnLines = new Map<string, string[]>();
   /** A painted answer that came to its end is kept: a reload brings it back at rest. A demo, a page the app played, an answer cut short and an empty one are not. */
@@ -1980,6 +1989,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
       host.removeEventListener('pointercancel', onPointerEnd);
       host.removeEventListener('pointerleave', onPointerLeave);
       lens?.dispose();
+      undoChip.dispose();
       if (page !== host) page.remove();
       cancelAnimationFrame(hoverFrame);
       for (const call of dataCalls) call.abort();

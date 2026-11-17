@@ -291,6 +291,7 @@ function revised(origin: Line, change: ReviseLine): Line | null {
     case 'refine':
     // a drawing from the shelf is written again, not restyled; the server has already put its parts on stage
     case 'draw':
+    case 'restore':
     // v3: a lesson's words are the document's and are not on the stage; they are changed by writing them again
     case 'part':
     case 'step':

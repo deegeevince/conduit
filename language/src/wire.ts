@@ -812,6 +812,7 @@ export const APP_COMMANDS = [
   { name: 'look', args: '<name>', gist: 'the look of the stage; bare lists them' },
   { name: 'review', args: '<on|off|repair on|repair off>', gist: 'whether a drawing is checked and fixed after its first draft; "repair" whether an answer the critic found broken is tidied after it is shown (on by default)' },
   { name: 'better', args: '[passes]', gist: 'keep making the picture on stage better, pass by pass', needs: 'refine' },
+  { name: 'undo', args: '', gist: 'put the drawing back as it was before the last change that touched it; again goes back one more' },
   { name: 'stop', args: '', gist: 'stop what is being written or made better' },
   { name: 'usage', args: '', gist: 'what the model calls have used, per hour and per day, and where the hour stands against the cap you set' },
   { name: 'stop-all', args: '[resume]', gist: 'stop everything now, in every conversation: answers, questions waiting for you, helper processes. Agent tools stay off until "/stop-all resume"' },

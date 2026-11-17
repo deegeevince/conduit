@@ -18,6 +18,7 @@ export type Command =
   | { readonly kind: 'look'; readonly look: LookId | null }
   | { readonly kind: 'review'; readonly on: boolean | null; /** v3. `/review repair on|off`: the server tidies an answer after the critic has judged it */ readonly repair?: boolean | null }
   | { readonly kind: 'better'; readonly passes: number }
+  | { readonly kind: 'undo' }
   | { readonly kind: 'stop' }
   | { readonly kind: 'stop-all'; readonly resume: boolean }
   | { readonly kind: 'usage' }
@@ -134,6 +135,8 @@ export function parseCommand(text: string): Command {
       if (rest.length === 1 && Number.isInteger(passes) && passes >= 1 && passes <= REFINE_LIMITS.max) return { kind: 'better', passes };
       return refuse(`/better: passes are a whole number from 1 to ${REFINE_LIMITS.max}`);
     }
+    case 'undo':
+      return { kind: 'undo' };
     case 'stop':
       return { kind: 'stop' };
     case 'usage':

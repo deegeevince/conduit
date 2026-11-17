@@ -193,7 +193,10 @@ export function serializeLine(line: Line): string {
       ].join(' | ');
     case 'group':
       return ['group', line.id, ...line.styles, ...propTokens(line.props), ...whenToken(line.when)].join(' ');
+    case 'restore':
+      return `restore ${line.turn}`;
     case 'use':
+      if (line.from !== undefined) return ['use', ...(line.sources ?? [line.source]), `from=${line.from}`, ...propTokens(line.props), ...whenToken(line.when)].join(' ');
       return ['use', line.id, line.source, ...line.styles, ...propTokens(line.props), ...whenToken(line.when)].join(' ');
     case 'paint': {
       const head: string[] = ['paint', line.id, ...boxTokens(line.box)];

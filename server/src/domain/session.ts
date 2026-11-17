@@ -1,5 +1,6 @@
 import { STREAM_HEARTBEAT } from '@conduit/language';
 import { Observations } from './observations';
+import { DrawingMemory } from './drawing-memory';
 import type {
   ActionRisk,
   BackEventRecord,
@@ -213,6 +214,8 @@ export interface Session {
   repair: { readonly of: string; readonly abort: AbortController } | null;
   /** v3. Answers a repair was started for: one each, kept or not */
   readonly repaired: Set<string>;
+  /** Every accepted line of a drawing by turn, and a version for each turn that changed it: what `restore`, `use … from=` and `/undo` bring back */
+  memory: DrawingMemory;
 }
 
 /** In-memory sessions. There is no database; a restart forgets everything, by design. */
@@ -275,6 +278,7 @@ export class SessionStore {
       repairOn: true,
       repair: null,
       repaired: new Set(),
+      memory: new DrawingMemory(),
     };
     this.sessions.set(session.id, session);
     return session;
