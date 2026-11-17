@@ -2,12 +2,12 @@
 
 import type { Group } from 'three';
 import type { Layer, StrokeCharacter, Texture as FillTexture } from '@conduit/language';
-import { BufferAttribute, BufferGeometry, Color, DoubleSide, Matrix4, Mesh, ShaderMaterial, Sphere, Vector2, Vector3, Vector4 } from 'three';
-import type { Affine, ShapeFrame, StrokeFrame } from '../../contracts/frame';
+import { AddEquation, BufferAttribute, BufferGeometry, Color, CustomBlending, DoubleSide, DstColorFactor, Matrix4, Mesh, NormalBlending, OneFactor, OneMinusSrcColorFactor, ShaderMaterial, Sphere, Vector2, Vector3, Vector4, ZeroFactor } from 'three';
+import type { Affine, ShapeClip, ShapeFrame, StrokeFrame } from '../../contracts/frame';
 import type { LookSpec } from '../../contracts/look';
 import { planeBounds } from '../../contracts/space';
 import type { Viewport } from '../../contracts/space';
-import { CLIP_FRAGMENT_DECL, CLIP_TEST, CLIP_VERTEX_DECL, clipVertex, makeClipUniform, setClip } from './clip';
+import { CLIP_FRAGMENT_DECL, CLIP_TEST, CLIP_VERTEX_DECL, SHAPE_CLIP_FRAGMENT, clipVertex, makeClipUniform, makeShapeClipUniforms, setClip, setShapeClip } from './clip';
 import { HASH, NOISE, PIXEL_SCALE } from './glsl';
 import { buildFill, buildStroke } from './shape-geometry';
 import { buildDistanceField } from './sdf';
@@ -47,6 +47,19 @@ const CHARACTER: Readonly<Record<StrokeCharacter, number>> = { clean: 0, pencil:
 
 /** The shader's number for each fill texture. */
 const TEXTURE: Readonly<Record<FillTexture, number>> = { flat: 0, wash: 1, hatch: 2, dots: 3, grain: 4, weave: 5 };
+
+/**
+ * How the paint meets what is under it (`blend=`). The program writes what the blend function wants: for multiply the colour the ground is
+ * to be scaled by, for screen the light to add, each already weighed by the paint's own alpha.
+ */
+const BLEND_FRAGMENT = /* glsl */ `
+uniform float uBlend;
+vec4 conduitBlendOut(vec3 colour, float alpha) {
+  if (uBlend > 1.5) return vec4(colour * alpha, 0.0);
+  if (uBlend > 0.5) return vec4(mix(vec3(1.0), colour, alpha), 0.0);
+  return vec4(colour, alpha);
+}
+`;
 
 const STROKE_VERTEX = /* glsl */ `
 attribute vec2 aOff;
@@ -139,6 +152,8 @@ varying float vLengthPx;
 varying float vSoftPx;
 varying vec3 vOwn;
 ${CLIP_FRAGMENT_DECL}
+${SHAPE_CLIP_FRAGMENT}
+${BLEND_FRAGMENT}
 
 // The stroke's colour along it: the stops are spread evenly over the stroke's own length.
 vec3 colourAt(float t) {
@@ -217,8 +232,9 @@ void main() {
     float tooth = 0.72 + 0.28 * hash21(floor(grainAt) + 17.0);
     alpha *= alive * bar * tooth;
   }
+  alpha *= conduitShapeCover();
   if (alpha <= 0.002) discard;
-  gl_FragColor = vec4(colourAt(own), alpha);
+  gl_FragColor = conduitBlendOut(colourAt(own), alpha);
 }
 `;
 
@@ -241,7 +257,13 @@ const FILL_FRAGMENT = /* glsl */ `
 precision highp float;
 uniform vec3 uFrom;
 uniform vec3 uTo;
+uniform vec3 uStops[8];
+uniform float uStopN;
 uniform vec2 uSpan;
+uniform vec4 uBox;
+uniform float uGrad;
+uniform float uRadial;
+uniform vec2 uDir;
 uniform float uOpacity;
 uniform float uTexture;
 uniform float uPitch;
@@ -256,13 +278,28 @@ varying float vY;
 varying vec2 vLocal;
 varying float vPpu;
 ${CLIP_FRAGMENT_DECL}
+${SHAPE_CLIP_FRAGMENT}
+${BLEND_FRAGMENT}
 ${HASH}
 ${NOISE}
 
 void main() {
   ${CLIP_TEST}
+  // A gradient runs top to bottom of the shape's box; \`angle\` turns it and \`radial\` runs it out from the middle (the box's own proportions).
   float t = uSpan.y > 1e-6 ? clamp((vY - uSpan.x) / uSpan.y, 0.0, 1.0) : 0.0;
+  if (uGrad > 0.5) {
+    vec2 n = (vLocal - (uBox.xy + 0.5 * uBox.zw)) / max(uBox.zw, vec2(1e-6));
+    t = clamp(uRadial > 0.5 ? length(n) * 2.0 : dot(n, uDir) + 0.5, 0.0, 1.0);
+  }
   vec3 colour = mix(uFrom, uTo, t);
+  if (uStopN > 2.5) {
+    float f = t * (uStopN - 1.0);
+    colour = uStops[0];
+    for (int i = 0; i < 7; i++) {
+      float fi = float(i);
+      if (fi < uStopN - 1.0 && f >= fi) colour = mix(uStops[i], uStops[i + 1], clamp(f - fi, 0.0, 1.0));
+    }
+  }
   float alpha = uOpacity;
 
   // Distance to the outline, negative inside, in the shape's units.
@@ -325,8 +362,9 @@ void main() {
     float knot = hash21(id + uSeed * 23.0);
     colour *= 0.78 + 0.24 * shade + 0.05 * (knot - 0.5);
   }
+  alpha *= conduitShapeCover();
   if (alpha <= 0.002) discard;
-  gl_FragColor = vec4(colour, alpha);
+  gl_FragColor = conduitBlendOut(colour, alpha);
 }
 `;
 
@@ -372,6 +410,8 @@ export function createShapePool(): ShapePool {
         uPressN: { value: 0 },
         uAlong: { value: Array.from({ length: 8 }, () => new Color()) },
         uAlongN: { value: 0 },
+        uBlend: { value: 0 },
+        ...makeShapeClipUniforms(),
         uViewPx: VIEW_PX,
         uConduitClip: makeClipUniform(),
       },
@@ -388,6 +428,14 @@ export function createShapePool(): ShapePool {
       uniforms: {
         uFrom: { value: new Color() },
         uTo: { value: new Color() },
+        uStops: { value: Array.from({ length: 8 }, () => new Color()) },
+        uStopN: { value: 0 },
+        uBox: { value: new Vector4(0, 0, 1, 1) },
+        uGrad: { value: 0 },
+        uRadial: { value: 0 },
+        uDir: { value: new Vector2(0, 1) },
+        uBlend: { value: 0 },
+        ...makeShapeClipUniforms(),
         uSpan: { value: new Vector2(0, 1) },
         uOpacity: { value: 1 },
         uTexture: { value: 0 },
@@ -498,16 +546,67 @@ export function createShapePool(): ShapePool {
     }
   };
 
-  const boxOf = (shape: ShapeFrame): { top: number; height: number } => {
+  const boxOf = (shape: ShapeFrame): { top: number; height: number; left: number; width: number } => {
     let top = Infinity;
     let bottom = -Infinity;
+    let left = Infinity;
+    let right = -Infinity;
     for (const line of shape.outline) {
       for (const point of line.points) {
         top = Math.min(top, point.y);
         bottom = Math.max(bottom, point.y);
+        left = Math.min(left, point.x);
+        right = Math.max(right, point.x);
       }
     }
-    return top === Infinity ? { top: 0, height: 0 } : { top, height: bottom - top };
+    return top === Infinity ? { top: 0, height: 0, left: 0, width: 0 } : { top, height: bottom - top, left, width: right - left };
+  };
+
+  /** The distance fields of the shapes others are clipped to, kept while a frame asks for them and rebuilt when the shape's outline changes. */
+  const clipFields = new Map<string, { geometryKey: string; field: DistanceField | null; used: boolean }>();
+  const clipMatrix = new Matrix4();
+
+  /** What a shape is clipped to (`clip=<id>`), as a field the programs can ask, or null when there is none to cut by. */
+  const fieldFor = (clip: ShapeClip | undefined): DistanceField | null => {
+    if (clip === undefined) return null;
+    let held = clipFields.get(clip.key);
+    if (held === undefined || held.geometryKey !== clip.geometryKey) {
+      held?.field?.texture.dispose();
+      let minX = Infinity;
+      let maxX = -Infinity;
+      let minY = Infinity;
+      let maxY = -Infinity;
+      for (const line of clip.outline) {
+        for (const point of line.points) {
+          minX = Math.min(minX, point.x);
+          maxX = Math.max(maxX, point.x);
+          minY = Math.min(minY, point.y);
+          maxY = Math.max(maxY, point.y);
+        }
+      }
+      // A few texels either side of the edge are all a cut needs: the field is thin and sharp.
+      const reach = Math.max(maxX - minX, maxY - minY) * 0.03;
+      held = { geometryKey: clip.geometryKey, field: minX === Infinity ? null : buildDistanceField(clip.outline, Math.max(reach, 1e-3), 1), used: true };
+      clipFields.set(clip.key, held);
+    }
+    held.used = true;
+    return held.field;
+  };
+
+  const setBlend = (material: ShaderMaterial, blend: ShapeFrame['blend']): void => {
+    const slot = material.uniforms['uBlend'];
+    if (slot !== undefined) slot.value = blend === 'multiply' ? 1 : blend === 'screen' ? 2 : 0;
+    if (blend === undefined) {
+      material.blending = NormalBlending;
+      return;
+    }
+    // Multiply scales the ground by the colour; screen adds light the ground lets through. The programs write what each wants.
+    material.blending = CustomBlending;
+    material.blendEquation = AddEquation;
+    material.blendSrc = blend === 'multiply' ? DstColorFactor : OneFactor;
+    material.blendDst = blend === 'multiply' ? ZeroFactor : OneMinusSrcColorFactor;
+    material.blendSrcAlpha = ZeroFactor;
+    material.blendDstAlpha = OneFactor;
   };
 
   /** How wide a wash pools at its edge: a fifth of the shape's shorter side, within what reads as a pooled edge. */
@@ -602,14 +701,37 @@ export function createShapePool(): ShapePool {
           (material.uniforms['uFrom']?.value as Color).copy(inkColour(style, shape.fill.colour));
           (material.uniforms['uTo']?.value as Color).copy(inkColour(style, shape.fill.to ?? shape.fill.colour));
           const span = material.uniforms['uSpan']?.value as Vector2;
+          const own = boxOf(shape);
+          const left = box.left ?? own.left;
+          const width = box.width ?? own.width;
+          const gradient = material.uniforms['uBox']?.value as Vector4;
           if (shape.bleed) {
             // A bleeding fill is in stage units on its plane: its gradient runs over the box the shape would have had.
             const top = shape.transform.d * box.top + shape.transform.f;
             const bottom = shape.transform.d * (box.top + box.height) + shape.transform.f;
             span.set(top, bottom - top);
+            gradient.set(shape.transform.a * left + shape.transform.e, top, shape.transform.a * width, bottom - top);
           } else {
             span.set(box.top, box.height);
+            gradient.set(left, box.top, width, box.height);
           }
+          // More than two stops, a gradient that runs out from the middle, or one turned from top to bottom.
+          const colours = shape.fill.stops;
+          const count = colours === undefined || colours.length < 3 || shape.fill.to === null ? 0 : Math.min(8, colours.length);
+          const palette = (material.uniforms['uStops']?.value ?? []) as Color[];
+          for (let i = 0; i < count; i += 1) palette[i]?.copy(inkColour(style, colours?.[i] ?? shape.fill.colour));
+          const angle = ((shape.fill.angle ?? 0) * Math.PI) / 180;
+          const radial = shape.fill.radial === true;
+          const setUniform = (name: string, value: number): void => {
+            const slot = material.uniforms[name];
+            if (slot !== undefined) slot.value = value;
+          };
+          setUniform('uStopN', count);
+          setUniform('uGrad', shape.fill.to !== null && (radial || angle !== 0) ? 1 : 0);
+          setUniform('uRadial', radial ? 1 : 0);
+          (material.uniforms['uDir']?.value as Vector2).set(Math.sin(angle), Math.cos(angle));
+          setBlend(material, shape.blend);
+          setShapeClip(material.uniforms, shape.bleed ? null : fieldFor(shape.clipTo), clipMatrix.copy(matrixOf(shape.clipTo?.transform ?? shape.transform, scratch)));
           const opacity = material.uniforms['uOpacity'];
           if (opacity !== undefined) opacity.value = shape.fill.opacity * shape.opacity;
           setFill(material, shape, entry, style);
@@ -627,6 +749,8 @@ export function createShapePool(): ShapePool {
         if (entry.stroke !== null && entry.strokeMaterial !== null && shape.stroke !== null) {
           setStroke(entry.strokeMaterial, shape, shape.stroke, entry.length, style, shape.layer);
           setClip(entry.strokeMaterial.uniforms['uConduitClip'], shape.clip);
+          setBlend(entry.strokeMaterial, shape.blend);
+          setShapeClip(entry.strokeMaterial.uniforms, shape.bleed ? null : fieldFor(shape.clipTo), clipMatrix.copy(matrixOf(shape.clipTo?.transform ?? shape.transform, scratch)));
           entry.stroke.renderOrder = strokeOrder;
           entry.stroke.visible = shape.opacity > 0.002 && shape.stroke.progress > 0;
           matrixOf(shape.transform, scratch);
@@ -640,10 +764,19 @@ export function createShapePool(): ShapePool {
           entries.delete(key);
         }
       }
+      for (const [key, held] of clipFields) {
+        if (held.used) held.used = false;
+        else {
+          held.field?.texture.dispose();
+          clipFields.delete(key);
+        }
+      }
     },
     dispose() {
       for (const entry of entries.values()) release(entry);
       entries.clear();
+      for (const held of clipFields.values()) held.field?.texture.dispose();
+      clipFields.clear();
     },
   };
 }

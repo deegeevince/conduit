@@ -210,10 +210,10 @@ function pieces(points: readonly { x: number; y: number }[], closed: boolean, co
 function shapeSvg(shape: ShapeFrame, frame: Frame, defs: string[]): string {
   const project = projectorFor(frame, shape.layer);
   const a = shape.transform;
-  const projected = (lines: ShapeFrame['outline']): { x: number; y: number; scale: number }[][] =>
+  const projected = (lines: ShapeFrame['outline'], matrixOf: Affine = a): { x: number; y: number; scale: number }[][] =>
     lines.map((line) =>
       line.points.map((point) => {
-        const plane = apply(a, point.x, point.y);
+        const plane = apply(matrixOf, point.x, point.y);
         const screen = project(plane.x, plane.y);
         return { x: screen.x, y: screen.y, scale: screen.scale };
       }),
@@ -248,7 +248,20 @@ function shapeSvg(shape: ShapeFrame, frame: Frame, defs: string[]): string {
     fillOpacity = ` fill-opacity="${n(shape.fill.opacity)}"`;
     if (shape.fill.to !== null) {
       const id = `g-${defs.length}`;
-      defs.push(`<linearGradient id="${id}" gradientUnits="userSpaceOnUse" x1="0" y1="${n(minY)}" x2="0" y2="${n(maxY)}"><stop offset="0" stop-color="${shape.fill.colour}"/><stop offset="1" stop-color="${shape.fill.to}"/></linearGradient>`);
+      const colours = shape.fill.stops ?? [shape.fill.colour, shape.fill.to];
+      const stops = colours.map((colour, i) => `<stop offset="${n(i / Math.max(1, colours.length - 1))}" stop-color="${colour}"/>`).join('');
+      const centreX = (minX + maxX) / 2;
+      const centreY = (minY + maxY) / 2;
+      const turn = ((shape.fill.angle ?? 0) * Math.PI) / 180;
+      if (shape.fill.radial === true) {
+        // From the middle of the box, as wide and as tall as the box: an ellipse in a square box is a circle.
+        const half = Math.max((maxX - minX) / 2, 1e-6);
+        defs.push(`<radialGradient id="${id}" gradientUnits="userSpaceOnUse" cx="${n(centreX)}" cy="${n(centreY)}" r="${n(half)}" gradientTransform="translate(${n(centreX)} ${n(centreY)}) scale(1 ${n((maxY - minY) / 2 / half)}) translate(${n(-centreX)} ${n(-centreY)})">${stops}</radialGradient>`);
+      } else {
+        const reachX = Math.sin(turn) * (maxX - minX) / 2;
+        const reachY = Math.cos(turn) * (maxY - minY) / 2;
+        defs.push(`<linearGradient id="${id}" gradientUnits="userSpaceOnUse" x1="${n(centreX - reachX)}" y1="${n(centreY - reachY)}" x2="${n(centreX + reachX)}" y2="${n(centreY + reachY)}">${stops}</linearGradient>`);
+      }
       fill = `url(#${id})`;
     } else {
       fill = shape.fill.colour;
@@ -307,7 +320,15 @@ function shapeSvg(shape: ShapeFrame, frame: Frame, defs: string[]): string {
       );
     });
   }
-  return `<g id="${escapeXml(shape.id)}"${opacity < 0.999 ? ` opacity="${n(opacity)}"` : ''}>${parts.join('')}</g>`;
+  // `clip=<id>`: only what lies inside the other shape's outline shows; `blend=`: how it meets what is under it.
+  let clipped = '';
+  if (shape.clipTo !== undefined && !shape.bleed) {
+    const id = `c-${defs.length}`;
+    const outline = projected(shape.clipTo.outline, shape.clipTo.transform);
+    defs.push(`<clipPath id="${id}"><path d="${outline.map((points) => pathOf(points, true)).join('')}" clip-rule="evenodd"/></clipPath>`);
+    clipped = ` clip-path="url(#${id})"`;
+  }
+  return `<g id="${escapeXml(shape.id)}"${opacity < 0.999 ? ` opacity="${n(opacity)}"` : ''}${clipped}>${parts.join('')}</g>`;
 }
 
 function spriteSvg(sprite: SpriteFrame, frame: Frame): string {
@@ -420,7 +441,10 @@ export async function frameToSvg(frame: Frame, size?: SvgSize, resolve?: FontRes
     else svg = await pictureSvg(figure, frame, defs);
     // A shape that bleeds covers the whole picture and is not framed.
     const frameOf = figure.kind === 'shape' && figure.bleed ? undefined : figure.clip;
-    if (svg !== '') pieces.push({ layer: LAYER_ORDER[figure.layer], z: figure.z, order: order++, svg: framed(svg, frameOf, figure.layer, frame, defs) });
+    // A blend (`blend=`) goes on the outermost group: a clip path makes a group of its own, and a blend inside one finds nothing under it.
+    const blend = figure.kind === 'shape' ? figure.blend : undefined;
+    const framedSvg = framed(svg, frameOf, figure.layer, frame, defs);
+    if (svg !== '') pieces.push({ layer: LAYER_ORDER[figure.layer], z: figure.z, order: order++, svg: blend === undefined ? framedSvg : `<g style="mix-blend-mode:${blend}">${framedSvg}</g>` });
   }
   pieces.sort((p, q) => p.layer - q.layer || p.z - q.z || p.order - q.order);
 
