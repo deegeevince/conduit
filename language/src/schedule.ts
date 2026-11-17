@@ -873,7 +873,8 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
    */
   const frameOf = (id: string | undefined, at: number): CanvasBox | null => {
     if (id === undefined) return null;
-    const pic = findLive(id, at);
+    // the picture's own id, or the upload it shows (`in=u1`): the one most recently put on stage
+    const pic = findLive(id, at) ?? [...live].reverse().find((candidate) => candidate.span.figure?.kind === 'picture' && candidate.span.figure.from === id && isActive(candidate, at)) ?? null;
     const figure = pic?.span.figure;
     if (pic === null || figure?.kind !== 'picture') return null;
     const canvas = CANVAS[scene.canvas];
