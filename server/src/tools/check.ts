@@ -440,7 +440,7 @@ class Screen {
         const verdict = (): Promise<string> => tab.eval<string>(`(window.__stage.controls().find((c) => c.id === ${JSON.stringify(scene.id)}) || { askState: { verdict: 'none' } }).askState.verdict`);
         if ((await tab.eval<boolean>(`document.body.classList.contains('work') || document.querySelector('.pb') !== null`)) === true) problems.push('something took the whole screen');
         const words = norm(scene.question.replace(/_{2,}|□/g, ' '));
-        const said = norm(await tab.eval<string>(`window.__stage.elements().map((e) => e.text).concat(window.__stage.controls().map((c) => c.label)).join(' ')`));
+        const said = norm((await tab.eval<string>(`window.__stage.elements().map((e) => e.text).concat(window.__stage.controls().map((c) => c.label)).join(' ')`)).replaceAll('…', ' '));
         if (!said.includes(words.split(' ').slice(0, 6).join(' '))) problems.push(`the question is not on the canvas: "${scene.question}"`);
         if ((await verdict()) === 'none') problems.push('there is no blank to answer in');
         else {
