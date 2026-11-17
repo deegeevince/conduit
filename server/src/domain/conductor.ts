@@ -2321,6 +2321,42 @@ export class Conductor {
     for (const brought of made.lines) {
       if (this.ingest(s, turn, { type: 'line', line: brought, issues: [] }, normalizer, pass, repairing) === 'stop') return 'stop';
     }
+    if (line.verb === 'use') return this.paintAgain(s, turn, made.lines, normalizer, pass, repairing);
+    return undefined;
+  }
+
+  /**
+   * Parts that come back under a live painting must not sit under it: a painting of a group or of the whole scene has been developed over the parts it
+   * saw, not these. So the painting is said again after them (a second `paint` over the same thing takes the first one's place), and it develops over
+   * everything that is there now. The words are the ones kept in the memory.
+   */
+  private paintAgain(s: Session, turn: ActiveTurn, brought: readonly Line[], normalizer: LineNormalizer, pass: number, repairing: boolean): 'stop' | undefined {
+    const schedule = turn.score.schedule;
+    const live = schedule.elements.filter((element) => element.exit === null);
+    const byKey = new Map(live.map((element) => [element.key, element] as const));
+    const byId = new Map(live.map((element) => [element.id, element] as const));
+    const reach = new Set<string>();
+    for (const line of brought) {
+      const id = (line as { id?: string }).id;
+      const home = (line as { props?: { in?: string } }).props?.in;
+      if (id === undefined || id === '-' || line.verb === 'paint') continue;
+      // the group it lands in, and every group above that
+      for (let at = home === undefined ? undefined : byId.get(home); at !== undefined; at = at.parent === null ? undefined : byKey.get(at.parent)) reach.add(at.id);
+      if (home === undefined) reach.add('');
+    }
+    if (reach.size === 0) return undefined;
+    for (const picture of live) {
+      const figure = picture.figure;
+      if (figure?.kind !== 'picture') continue;
+      const over = figure.over === null ? null : (byKey.get(figure.over)?.id ?? null);
+      // a painting of the whole scene covers whatever lands on the canvas; one of a group covers what lands in it
+      if (over !== null && !reach.has(over)) continue;
+      const text = s.memory.paintOf(picture.id);
+      const again = text === null ? null : parseLine(text);
+      if (again === null || again.kind !== 'line') continue;
+      this.deps.log.info('memory.repaint', { session: s.id, turn: turn.id, painting: picture.id });
+      if (this.ingest(s, turn, { type: 'line', line: again.line as Line, issues: [] }, normalizer, pass, repairing) === 'stop') return 'stop';
+    }
     return undefined;
   }
 
