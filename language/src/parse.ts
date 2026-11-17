@@ -15,6 +15,7 @@ import type {
   Approx,
   CardLine,
   ColourRef,
+  ClockRole,
   ControlLine,
   FillRef,
   HexColor,
@@ -235,6 +236,12 @@ function parseNumber(token: string, min: number, max: number): number | null {
   if (!SIGNED_PATTERN.test(token)) return null;
   const value = Number(token);
   return Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : null;
+}
+
+/** A period is any number but zero, kept exactly as written: no rounding, no clamp short of a number that is not one. */
+function parsePeriod(token: string): number | null {
+  const value = parseNumber(token, -VALUE_LIMIT, VALUE_LIMIT);
+  return value === null || value === 0 ? null : value;
 }
 
 function parseWhen(token: string): When | null {
@@ -591,6 +598,35 @@ function readStyleProps(pairs: readonly Pair[], issues: Issues): { props: StyleP
         else bad(pair, 'seconds, e.g. dur=0.8s');
         break;
       }
+      case 'period': {
+        const period = parsePeriod(value);
+        if (period !== null) props.period = period;
+        else bad(pair, 'a number of clock units, not zero (negative runs backwards)');
+        break;
+      }
+      case 'around': {
+        const point = parsePoint(value);
+        if (point !== null) props.around = point;
+        else if (isValidElementId(value)) props.around = value;
+        else bad(pair, 'an element id, or x,y');
+        break;
+      }
+      case 'phase': {
+        const phase = parseNumber(value, 0, 1);
+        if (phase !== null) props.phase = phase;
+        else bad(pair, '0..1');
+        break;
+      }
+      case 'amp': {
+        const amp = parseNumber(value, -VALUE_LIMIT, VALUE_LIMIT);
+        if (amp !== null) props.amp = amp;
+        else bad(pair, 'a number');
+        break;
+      }
+      case 'along':
+        if (value === 'none' || isValidElementId(value)) props.along = value;
+        else bad(pair, 'the id of a shape, or none');
+        break;
       default:
         rest.push(pair);
     }
@@ -1404,6 +1440,8 @@ function parseControl(verb: ControlVerb, head: Head, text: string | null, issues
       if (parsed !== null && parsed > 0) step = parsed;
       else issues.warn('bad-value', `${pair.token} ignored; expected a step larger than zero`, pair.token);
     } else if (key === 'unit' && verb === 'slider') line.unit = pair.raw.slice(0, 8);
+    else if (key === 'clock' && (verb === 'slider' ? pair.value === 'time' || pair.value === 'rate' : verb === 'toggle' && pair.value === 'rate')) line.clock = pair.value as ClockRole;
+    else if (key === 'clock') issues.warn('bad-value', `clock=${pair.value} ignored; a slider takes clock=time or clock=rate, a toggle clock=rate`, pair.token);
     else if (key === 'value' || key === 'at') {
       const parsed = parseNumber(pair.value, -VALUE_LIMIT, VALUE_LIMIT);
       if (parsed !== null && (verb === 'slider' || verb === 'pick')) value = parsed;
@@ -1524,8 +1562,10 @@ function readSpeedAndOver(pairs: readonly Pair[], issues: Issues): { speed?: Cam
   for (const pair of pairs) {
     if (pair.key === 'over') {
       const seconds = parseSeconds(pair.value);
-      if (seconds !== null && seconds > 0) out.over = Math.min(seconds, MAX_CAMERA_SECONDS);
-      else issues.warn('bad-value', `over=${pair.value} ignored; expected seconds`, pair.token);
+      if (seconds !== null && seconds > 0) {
+        out.over = Math.min(seconds, MAX_CAMERA_SECONDS);
+        if (seconds > MAX_CAMERA_SECONDS) issues.warn('bad-value', `over=${pair.value} is cut to ${MAX_CAMERA_SECONDS} s; something that repeats or lasts longer takes period=N (one cycle, in clock units), not a long over=`, pair.token);
+      } else issues.warn('bad-value', `over=${pair.value} ignored; expected seconds`, pair.token);
     } else if (pair.key === 'speed' && oneOf(CAMERA_SPEEDS, pair.value)) out.speed = pair.value;
     else out.rest.push(pair);
   }
@@ -1598,6 +1638,7 @@ function parseMove(head: Head, issues: Issues): Line | null {
   let speed = timing.speed;
   let to: Anchor | Point | undefined;
   let along: string | undefined;
+  let period: number | undefined;
   const { numbers, names } = splitWords(head.words.slice(1), false);
   if (numbers.length >= 2) to = { x: numbers[0] ?? 0, y: numbers[1] ?? 0 };
   for (const word of names) {
@@ -1606,8 +1647,12 @@ function parseMove(head: Head, issues: Issues): Line | null {
     else issues.warn('unknown-word', `"${word}" means nothing in a move; ignored`, word);
   }
   for (const pair of timing.rest) {
-    if (pair.key === 'along' && isValidElementId(pair.value)) along = pair.value;
-    else if (pair.key === 'to' || pair.key === 'at') {
+    if (pair.key === 'along' && (isValidElementId(pair.value) || pair.value === 'none')) along = pair.value;
+    else if (pair.key === 'period') {
+      const parsed = parsePeriod(pair.value);
+      if (parsed !== null) period = parsed;
+      else issues.warn('bad-value', `${pair.token} ignored; expected a number of clock units, not zero`, pair.token);
+    } else if (pair.key === 'to' || pair.key === 'at') {
       const point = oneOf(ANCHORS, pair.value) ? pair.value : parsePoint(pair.value);
       if (point !== null) to = point;
       else issues.warn('bad-value', `${pair.token} ignored; expected x,y or an anchor`, pair.token);
@@ -1617,6 +1662,10 @@ function parseMove(head: Head, issues: Issues): Line | null {
     issues.error('missing-argument', 'move needs somewhere to go: move sun 120,20 slow');
     return null;
   }
+  if (period !== undefined && (along === undefined || along === 'none')) {
+    issues.warn('bad-value', 'period= on a move needs along=<shape id> to ride; ignored', 'period');
+    period = undefined;
+  }
   return withWhen(
     {
       verb: 'move' as const,
@@ -1625,6 +1674,7 @@ function parseMove(head: Head, issues: Issues): Line | null {
       ...(speed !== undefined && { speed }),
       ...(timing.over !== undefined && { over: timing.over }),
       ...(along !== undefined && { along }),
+      ...(period !== undefined && { period }),
     },
     head.when,
   );
@@ -1739,8 +1789,10 @@ function parseCam(head: Head, issues: Issues): Line | null {
     const { key, value } = pair;
     if (key === 'over') {
       const seconds = parseSeconds(value);
-      if (seconds !== null && seconds > 0) line.over = Math.min(seconds, MAX_CAMERA_SECONDS);
-      else issues.warn('bad-value', `over=${value} ignored; expected seconds`, pair.token);
+      if (seconds !== null && seconds > 0) {
+        line.over = Math.min(seconds, MAX_CAMERA_SECONDS);
+        if (seconds > MAX_CAMERA_SECONDS) issues.warn('bad-value', `over=${value} is cut to ${MAX_CAMERA_SECONDS} s; a camera move is one pass, and anything that repeats takes period=N`, pair.token);
+      } else issues.warn('bad-value', `over=${value} ignored; expected seconds`, pair.token);
     } else if (key === 'amount') {
       const amount = Number(value);
       if (value !== '' && Number.isFinite(amount)) line.amount = Math.min(1, Math.max(0, amount));

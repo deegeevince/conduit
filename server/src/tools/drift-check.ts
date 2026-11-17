@@ -142,6 +142,17 @@ export function wireProblems(): string[] {
     'set m1.carry-tens mark=box',
     'hit m1.tens pulse',
     'fill m1 | 72',
+    // MOTION: the words that keep time, every digit of them, and the control options
+    'circle earth 80,50 2.5 fill=#4f8fe0 loop=spin around=sun period=-1',
+    'circle moon 85,50 1 loop=spin around=earth period=-0.0748 phase=0.2408467 amp=0.0000123',
+    'group pend at=50,10 loop=sway amp=20 period=2',
+    'line hand 50,50 50,20 around=50,50 period=60',
+    'circle sun 50,50 6 along=track period=27.3',
+    'move train along=track period=8.123456789',
+    'set train along=none',
+    'slider yr 0 3 0 step=0.01 unit=yr clock=time | Years',
+    'slider speed 0 10 1 clock=rate | Speed',
+    'toggle run on clock=rate | Running',
   ];
   const sources = [...written.map((text, at) => ({ name: `written ${at + 1}`, text })), ...DEMOS.map((demo) => ({ name: demo.name, text: readFileSync(fileURLToPath(import.meta.resolve(`@conduit/language/demos/${demo.name}.series`)), 'utf8') }))];
   for (const source of sources) {

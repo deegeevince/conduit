@@ -237,7 +237,7 @@ Fills the scene with a field of small moving things: rain, snow, stars and the r
 
 ```
 set  <id|scene|all> [style…] [<prop>=<value>…] [speed] [over=Ns] [@time]
-move <id> <x,y|anchor> [speed] [over=Ns] [along=<path id>] [@time]
+move <id> <x,y|anchor> [speed] [over=Ns] [along=<path id> [period=N]] [@time]
 drop <id|scene|all> [exit=…] [@time]
 hit  <id> [gesture] [@time]
 ```
@@ -247,6 +247,26 @@ hit  <id> [gesture] [@time]
 - `drop` makes elements leave now, with `exit=` or their own exit. It takes several ids (`drop a1 a2 a3`); `set` moves an element and refuses to resize it.
 - `hit` performs one gesture on one element and then is over.
 - The target `scene` means every live element of the open scene; `all` means every live element.
+
+### 4.9a Motion that keeps time
+
+Five properties and one option on a control. They add no verb.
+
+```
+circle moon 85,50 1 loop=spin around=earth period=27.3
+group pend at=50,10 loop=sway amp=20 period=2
+move train along=track period=8
+slider day 0 730 0 unit=d clock=time | Day
+toggle run on clock=rate | Running
+```
+
+- `period=N` is one cycle of the element's loop (or one lap of its ride), in clock units: a second until a slider is the clock. Any size, negative runs backwards, and it is kept at full precision in the parser and on the wire (`period=0.0748` stays `0.0748`). A loop with no `period=` is decoration, as it always was. `period=` with nothing to time (no loop, no `around=`, no `along=`) is a `bad-value` warning.
+- `around=<id|x,y>` is the point the element turns about, for `spin`, `sway` and a plain `rot=`. With an id the pivot is that element's centre and the element is carried by it as it moves: that is a moon. With a period and no loop it is a spin. The mover and its pivot must both be top-level or in the same group, or the line is a `bad-around` warning. An id that names nothing drawn is `unknown-id`, reported when the scene is over (the moon may be written before the planet).
+- `along=<shape id>` with `period=` rides that outline for ever, upright: round and round on a closed one, there and back on an open one. It may be written on the shape's own line, in a `set`, or as `move x along=p period=N`; all three mean the same. `along=none` stops it. A `move … along=` without `period=` is still one pass on the turn clock.
+- `phase=0..1` is how far into its cycle it is when the clock reads zero. `amp=N` is how far a loop goes: degrees for `sway`, canvas units for `bob`, a share for `pulse` and `breathe`.
+- `clock=time` on a slider makes its value the stage clock, so periods are in its units; `clock=rate` on a slider or a toggle makes it how fast the clock runs (a toggle is 1 or 0). A second `clock=time` slider replaces the first, with a warning. The option is `clock=`, never a bare word, so a slider may still be called `clock`.
+- **Motion takes no time on the turn clock.** It holds no pen and adds nothing to the schedule's end; the same lines give the same schedule as without it. An `over=` longer than 20 s is cut, and now says so and names `period=`.
+- Painters say whether they perform it with `Capabilities.clockwork`; none does yet, and the brain is not taught these words until one does.
 
 ### 4.10 `cam`: the camera
 
@@ -326,8 +346,8 @@ A structure is a diagram the brain names and the painter lays out. The line that
 
 ```
 button [id] | <label>
-toggle [id] [on|off] [send] | <label>
-slider [id] <min> <max> [value] [step=N] [unit=…] [send] | <label>
+toggle [id] [on|off] [clock=rate] [send] | <label>
+slider [id] <min> <max> [value] [step=N] [unit=…] [clock=time|rate] [send] | <label>
 pick   [id] [tabs|menu|steps] [N] [send] | <a> | <b> | <c>
 input  [id] [send] | <placeholder>
 card   [id] [x,y WxH] [| title]
@@ -909,6 +929,11 @@ A new structure, chart kind or control is one entry in its table in `vocabulary.
 | `align` | `left` `center` `right` | text | mind | with at=x,y: which edge of the words that point is (right for digits lined up in a column) |
 | `tap` | `yes` `no` | any | mind | yes makes it a choice the user can tap |
 | `dur` | Ns | any | hand | exact entrance length |
+| `period` | N | any | hand | with loop=, around= or along=: one cycle in clock units (seconds until a slider is the clock); negative runs backwards, any size, kept exactly |
+| `around` | <id> or x,y | any | hand | the point it turns about (spin, sway or rot=): another element's centre, which carries it, or a fixed point; both top-level or in the same group |
+| `phase` | 0..1 | any | hand | how far into its cycle it is when the clock reads zero |
+| `amp` | N | any | hand | how far a loop goes: degrees for sway, canvas units for bob, a share for pulse and breathe |
+| `along` | <shape id> \| none | any | hand | with period=: rides that outline for ever, upright (round a closed one, there and back on an open one); none stops it |
 
 ### Painter's tools
 
@@ -1270,6 +1295,7 @@ Nominal scale against body: `xs` 0.64, `s` 0.8, `m` 1, `l` 1.5, `xl` 2.25, `xxl`
 | `tune` | rows | the painter's charting engine | rows `\| line` of ABC notation, taken exactly: a piano roll that plays, with a playhead and the notes lighting as they sound |
 | `app` | rows | the painter's charting engine | rows `\| line` of one HTML document (inline style and script), taken exactly: a live app that runs in a locked sandbox on the stage and answers back (taught only when the user asks for something that works) |
 | `figure` | rows | the painter's charting engine | a labelled drawing: each part one line (taught by the FIGURE chapter in the brief); rows are the lines of the figure, taken as written |
+| `math` | rows | the painter's charting engine | a written method laid out as on paper (taught by the maths chapter, not yet in the brief): the line is `math <id> <method> \| <sum>`, the painter works every digit |
 | `problem` | rows | the painter's charting engine | an old maths question: it plays as an `ask` for its answer (the question as its words); write an `ask` instead |
 | `screen` | rows | the painter's charting engine | a mock-up: devices at true size, each part one line (taught by the INTERFACE chapter in the brief); rows are the lines of the interface, taken as written |
 

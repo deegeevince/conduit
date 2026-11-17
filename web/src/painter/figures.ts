@@ -7,7 +7,7 @@
 // canvas units, from the schedule alone (`canvasBoxOf` stops here). The second
 // puts the look's colour, stroke and motion on it and maps it to the stage.
 
-import { boundsOf, CANVAS, describeFigure, pointAlong, resample, ROW_SECONDS, sceneAt, valueAt } from '@conduit/language';
+import { boundsOf, CANVAS, describeFigure, LOOP_DEFAULT, pointAlong, resample, ROW_SECONDS, sceneAt, valueAt } from '@conduit/language';
 import type { Anchor, ElementChange, ElementSpan, ElementStyle, Fill, Figure, Layer, Paint, Polyline, Schedule, SceneSpan, SpriteData, StageBase, StrokeCharacter } from '@conduit/language';
 import type { Affine, Colour, FieldFrame, FigureFrame, FillFrame, PictureFrame, ShapeFrame, SpriteFrame, StrokeFrame } from '../contracts/frame';
 import { IDENTITY } from '../contracts/frame';
@@ -486,39 +486,39 @@ function extrasOf(element: ElementSpan, style: ElementStyle, sc: Scn, cell: numb
   let flash = 0;
   switch (style.loop) {
     case 'breathe':
-      scale = 1 + 0.03 * Math.sin((2 * Math.PI * aq) / 4);
+      scale = 1 + LOOP_DEFAULT.breathe.amp * Math.sin((2 * Math.PI * aq) / LOOP_DEFAULT.breathe.period);
       break;
     case 'pulse':
-      scale = 1 + 0.08 * (0.5 - 0.5 * Math.cos(2 * Math.PI * ((aq / 1.2) % 1)));
+      scale = 1 + LOOP_DEFAULT.pulse.amp * (0.5 - 0.5 * Math.cos(2 * Math.PI * ((aq / LOOP_DEFAULT.pulse.period) % 1)));
       break;
     case 'blink':
-      if (!reduced && (aq / 0.9) % 1 >= 0.5) opacity = 0;
+      if (!reduced && (aq / LOOP_DEFAULT.blink.period) % 1 >= 0.5) opacity = 0;
       break;
     case 'shake':
       if (!reduced) {
-        const slot = Math.floor(aq * 24);
-        dx = 0.8 * (hash(`${element.key}x${slot}`) * 2 - 1);
-        dy = 0.8 * (hash(`${element.key}y${slot}`) * 2 - 1);
+        const slot = Math.floor(aq * LOOP_DEFAULT.shake.rate);
+        dx = LOOP_DEFAULT.shake.amp * (hash(`${element.key}x${slot}`) * 2 - 1);
+        dy = LOOP_DEFAULT.shake.amp * (hash(`${element.key}y${slot}`) * 2 - 1);
       }
       break;
     case 'drift': {
-      const theta = (2 * Math.PI * aq) / 9;
-      dx = 1.6 * Math.sin(theta);
-      dy = 0.8 * Math.sin(2 * theta);
+      const theta = (2 * Math.PI * aq) / LOOP_DEFAULT.drift.period;
+      dx = LOOP_DEFAULT.drift.amp * Math.sin(theta);
+      dy = LOOP_DEFAULT.drift.amp * LOOP_DEFAULT.drift.lift * Math.sin(2 * theta);
       break;
     }
     case 'spin':
-      if (!reduced) rot = (360 * aq) / 6;
+      if (!reduced) rot = (LOOP_DEFAULT.spin.amp * aq) / LOOP_DEFAULT.spin.period;
       break;
     case 'bob':
       if (!reduced) {
-        const wave = Math.sin((2 * Math.PI * aq) / 1.8);
+        const wave = Math.sin((2 * Math.PI * aq) / LOOP_DEFAULT.bob.period);
         // A sprite rides by whole cells.
-        dy = cell > 0 ? -cell * Math.round(wave * 0.9) : -1.2 * wave;
+        dy = cell > 0 ? -cell * Math.round(wave * LOOP_DEFAULT.bob.cells) : -LOOP_DEFAULT.bob.amp * wave;
       }
       break;
     case 'sway':
-      if (!reduced) rot = 4 * Math.sin((2 * Math.PI * aq) / 3.2);
+      if (!reduced) rot = LOOP_DEFAULT.sway.amp * Math.sin((2 * Math.PI * aq) / LOOP_DEFAULT.sway.period);
       break;
     case 'none':
       break;

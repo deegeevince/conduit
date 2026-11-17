@@ -150,7 +150,20 @@ export interface StyleProps {
   readonly opacity?: number;
   readonly tap?: boolean;
   readonly dur?: number;
+  /** MOTION. One cycle of its loop, in clock units (a second until a slider is the clock); negative runs backwards. Full precision, never rounded. */
+  readonly period?: number;
+  /** MOTION. The point it turns about: another element's centre, or a point in canvas units */
+  readonly around?: Around;
+  /** MOTION. How far into its cycle it is when the clock reads zero, 0..1. Full precision. */
+  readonly phase?: number;
+  /** MOTION. How far its loop goes: degrees for `sway`, canvas units for `bob`, a share for `pulse` and `breathe`. Full precision. */
+  readonly amp?: number;
+  /** MOTION. The id of a drawn shape it rides round for ever (with `period`); `none` stops it */
+  readonly along?: string;
 }
+
+/** What an element turns about: another element, by id, or a fixed point. */
+export type Around = string | Point;
 
 /** When a line starts, if the brain overrides "at the pen". */
 export type When =
@@ -479,6 +492,9 @@ export type ControlValue = number | boolean | string;
 export type ControlValues = Readonly<Record<string, ControlValue>>;
 
 /** Puts a control on stage. The verb is its kind. */
+/** How a control takes part in the stage clock. */
+export type ClockRole = 'time' | 'rate';
+
 export interface ControlLine {
   readonly verb: ControlVerb;
   /** `-` until the normaliser assigns one */
@@ -495,6 +511,8 @@ export interface ControlLine {
   readonly initial?: ControlValue;
   /** written after a slider's value */
   readonly unit?: string;
+  /** MOTION. `time`: a slider's value is the stage clock; `rate`: a slider or toggle sets how fast the clock runs */
+  readonly clock?: ClockRole;
   /** a change the user commits is sent to the brain as their next message; a button always sends */
   readonly send?: boolean;
   /** the label of a button, toggle or slider; the placeholder of an input. Absent on a pick, whose words are its options. */
@@ -614,8 +632,10 @@ export interface MoveLine {
   readonly speed?: CameraSpeed;
   /** hand level: exact length in seconds */
   readonly over?: number;
-  /** the id of a drawn path to travel along */
+  /** the id of a drawn path to travel along; `none` stops a ride */
   readonly along?: string;
+  /** MOTION. With `along`: ride that outline for ever, one lap in this many clock units. Not a pass on the turn clock; the same as `set <id> along= period=`. */
+  readonly period?: number;
   readonly when?: When;
 }
 
@@ -763,6 +783,7 @@ export type IssueSeverity =
   | 'warn';
 
 export type IssueCode =
+  | 'bad-around'
   | 'not-a-line'
   | 'unknown-name'
   | 'too-long'
