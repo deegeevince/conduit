@@ -352,6 +352,9 @@ function parseWidths(value: string): number[] | null {
   return widths;
 }
 
+/** What a bare `dashed` on a shape means: `dash=3,2`, canvas units. */
+const DEFAULT_DASH: [number, number] = [3, 2];
+
 /** `on,off` (or one number for both), in canvas units: never so fine that a stroke becomes thousands of dashes. */
 function parseDash(value: string): [number, number] | null {
   const parts = value.split(',');
@@ -865,7 +868,10 @@ function parseShape(verb: ShapeVerb, head: Head, text: string | null, issues: Is
   const { rest } = read;
   // `radial` on its own is the gradient running out from the middle, as `full` is the whole screen.
   const radialWord = names.includes('radial');
-  const props: StyleProps = radialWord && read.props.radial === undefined ? { ...read.props, radial: true } : read.props;
+  const radialProps: StyleProps = radialWord && read.props.radial === undefined ? { ...read.props, radial: true } : read.props;
+  // `dashed` on its own is `dash=` at its default, as it is on a link; an explicit `dash=` wins.
+  const dashedWord = names.includes('dashed');
+  const props: StyleProps = dashedWord && radialProps.dash === undefined ? { ...radialProps, dash: DEFAULT_DASH } : radialProps;
   warnUnknownPairs(rest, issues);
   const pick = (index: number, ...keys: string[]): number | undefined => {
     for (const key of keys) {
@@ -880,7 +886,7 @@ function parseShape(verb: ShapeVerb, head: Head, text: string | null, issues: Is
   };
 
   let geometry: ShapeGeometry;
-  let styleWords = radialWord ? names.filter((name) => name !== 'radial') : names;
+  let styleWords = names.filter((name) => !(radialWord && name === 'radial') && name !== 'dashed');
   switch (verb) {
     case 'circle': {
       const cx = pick(0, 'cx', 'x');
