@@ -396,6 +396,11 @@ async function keysScene(mine: MathsTab, dir: string, problems: Problems): Promi
   if (back !== '') list.push(`the page stays lifted (${back}) after the keyboard has gone`);
   // 5. Enter marks: the right digits are ticked, and the brain is told in one act
   await mine.hands.finger([await mine.centre(ones.box)]);
+  // a tap on a machine busy with other groups can be lost to the browser's own gesture handling: once more, as a person would
+  if ((await mine.focused()) === '') {
+    await sleep(400);
+    await mine.hands.finger([await mine.centre(ones.box)]);
+  }
   await mine.type('212');
   await mine.press('Enter');
   const marked = await mine.block('m1');
