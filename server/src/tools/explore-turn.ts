@@ -163,6 +163,8 @@ export async function playTurn(play: TurnPlay): Promise<TurnPlayed> {
         if (firstVisibleMs === null && pushed.schedule.elements.length > before) firstVisibleMs = ms;
         accepted.push(normalized.line);
         lines.push({ seq, text: serializeLine(normalized.line), ms, issues: [...event.issues, ...normalized.issues, ...pushed.issues] });
+        // a long `say` the normaliser split: its continuations follow, in order
+        for (const next of normalized.rest ?? []) onEvent({ type: 'line', line: next, issues: [] });
       }
     };
     for await (const event of brain.respond({ turn: play.turn, session: play.session, input: play.input, context, snapshot: play.snapshot }, local.signal)) onEvent(event);

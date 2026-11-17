@@ -623,7 +623,7 @@ function cleanText(text: string | null, limit: number, issues: Issues): string |
   // One pair of quotes around the whole text is wrapping; quotes anywhere else are the text's own (dialogue).
   if (cleaned.length >= 2 && cleaned.startsWith('"') && cleaned.endsWith('"') && !cleaned.slice(1, -1).includes('"')) cleaned = cleaned.slice(1, -1).trim();
   if (cleaned === '') return null;
-  if (cleaned.length > limit) {
+  if (cleaned.length > limit && Number.isFinite(limit)) {
     const cut = cleaned.lastIndexOf(' ', limit - 1);
     cleaned = `${cleaned.slice(0, cut > limit / 2 ? cut : limit - 1)}…`;
     issues.warn('text-too-long', `text cut to ${limit} characters; say less per line`);
@@ -1888,7 +1888,8 @@ const TRAILING_TIME = /\s(@(?:with|[+-]?\d+(?:\.\d+)?s?))\s*$/i;
 
 /** Verbs whose line carries something after the bar, and how much of it is kept. */
 const TEXT_LIMIT: Readonly<Partial<Record<Verb, number>>> = {
-  say: LIMITS.text,
+  // never cut: the normaliser splits a long `say` into consecutive lines (`splitSpeech`), so no word is lost
+  say: Number.POSITIVE_INFINITY,
   correct: LIMITS.text,
   revise: LIMITS.text,
   set: LIMITS.text,
@@ -2013,7 +2014,8 @@ export function parseLine(raw: string): ParseResult {
     issues.warn('not-a-line', 'code fence ignored; write bare lines');
     return { kind: 'reject', issues: issues.list };
   }
-  if (source.length > LIMITS.line) {
+  // speech is not held to the line limit: a long paragraph is split into lines by the normaliser, not refused
+  if (source.length > (/^(?:say\b|\|)/i.test(source) ? LIMITS.speechLine : LIMITS.line)) {
     issues.error('too-long', `line is longer than ${LIMITS.line} characters`);
     return { kind: 'reject', issues: issues.list };
   }

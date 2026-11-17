@@ -2029,6 +2029,8 @@ export class Conductor {
     this.journal(s, { type: 'line', turn: turn.id, seq, text, start, issues, pass, ...(node === null ? {} : { node }) });
     if (turn.input.kind !== 'demo') s.memory.record(turn.id, seq, text);
     this.emit(s, turn, { type: 'line', turn: turn.id, seq, text, issues });
+    // A long `say` was split by the normaliser: its continuations follow at once, in order, as lines of their own. No word is cut.
+    for (const next of normalized.rest ?? []) if (this.ingest(s, turn, { type: 'line', line: next, issues: [] }, normalizer, pass, repairing) === 'stop') return 'stop';
     if (line.verb === 'paint') this.paint(s, turn, seq, line, pushed.schedule);
     if (line.verb === 'refine' && !repairing && this.deps.continuation === true) turn.continueNote = (line.text ?? '').trim() === '' ? 'go on' : (line.text ?? '').trim();
     if (line.verb === 'row') this.findPicture(s, turn, line.id, line.cells, pushed.schedule);

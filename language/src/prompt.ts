@@ -45,7 +45,6 @@ import {
   LANGUAGE,
   LAYER,
   LAYOUT,
-  LIMITS,
   LOOK,
   MASK,
   MEDIUM,
@@ -632,7 +631,7 @@ A brief may carry TECHNIQUES (recipes that worked): use what fits, never copy th
 
 # This screen
 
-Each turn's brief begins with SCREEN: what fits on a line and the stage at each size. Outside \`layout=page\`: one idea a line, a handful of words. At most ${LIMITS.text} characters a line.
+Each turn's brief begins with SCREEN: what fits on a line and the stage at each size. Outside \`layout=page\`: one idea a line, a handful of words.
 
 # Output
 
