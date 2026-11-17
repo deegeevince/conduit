@@ -323,18 +323,18 @@ interface Problems {
 }
 
 /** The keyboard: a finger tap focuses a cell inside the gesture, digits walk the sum in working order, Backspace, Tab and the arrows, Enter marks it, the keyboard never covers the cell. */
-async function keysScene(mine: MathsTab, dir: string, problems: Problems): Promise<string> {
+async function keysScene(mine: MathsTab, dir: string, problems: Problems): Promise<string[]> {
   const list = problems['keys'] as string[];
   const { screen } = mine;
   const played = await mine.play(SUM);
   if (played !== '') {
     list.push(played);
-    return '';
+    return [];
   }
   const block = await mine.block('m1');
   if (block === undefined) {
     list.push('the sum has no cells to write in');
-    return '';
+    return [];
   }
   const order = [...block.cells].sort((a, b) => (a.order ?? 99) - (b.order ?? 99)).map((cell) => cell.part);
   if (order.join(',') !== 'ans-ones,carry-tens,ans-tens') list.push(`the working order is ${order.join(',')}, wanted ans-ones,carry-tens,ans-tens`);
@@ -403,7 +403,9 @@ async function keysScene(mine: MathsTab, dir: string, problems: Problems): Promi
   if (marks !== 'ans-ones=right carry-tens=right ans-tens=wrong') list.push(`after typing 2, 1, 2 and Enter the marks are "${marks}"`);
   const acts = await mine.acts();
   if (!acts.some((act) => /^m1: ones right, carry tens right, tens wrong \(2\)$/.test(act))) list.push(`the brain was told ${JSON.stringify(acts)}, wanted one act "m1: ones right, carry tens right, tens wrong (2)"`);
-  return typing;
+  await mine.blur();
+  await sleep(200);
+  return [typing, await mine.shot(dir, `${screen.name}-maths-checked.png`)];
 }
 
 
@@ -431,7 +433,7 @@ async function hintScene(mine: MathsTab, dir: string, problems: Problems): Promi
   await sleep(250);
   const marked = (await mine.block('m2'))?.cells.map((cell) => `${cell.part}=${cell.mark}`).join(' ');
   if (marked !== 'ans-ones=wrong carry-tens= ans-tens=empty') list.push(`after a 9 in the ones and Check the marks are "${marked}", wanted the ones crossed, the carry left alone and the tens ringed`);
-  const checked = await mine.shot(dir, `${screen.name}-maths-checked.png`);
+  const checked = await mine.shot(dir, `${screen.name}-maths-ringed.png`);
   const acts = await mine.acts();
   if (!acts.some((act) => act === 'm2: ones wrong (9), tens empty')) list.push(`the brain was told ${JSON.stringify(acts.slice(-3))}, wanted "m2: ones wrong (9), tens empty"`);
   if (!(await mine.block('m2'))?.buttons.some((button) => button.name === 'show')) list.push('Show me was not offered after a wrong try');
@@ -629,7 +631,7 @@ async function inputScreen(base: string, screen: InputScreen, dir: string, timeo
   note(`maths input: ${screen.name}`);
   const mine = await MathsTab.open(base, screen, dir, timeoutMs);
   try {
-    pictures.push(await keysScene(mine, dir, problems));
+    pictures.push(...(await keysScene(mine, dir, problems)));
     const { checked, hinted } = await hintScene(mine, dir, problems);
     pictures.push(checked, hinted);
     await fillScene(mine, problems);

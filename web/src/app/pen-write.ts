@@ -185,11 +185,11 @@ export function mountPenWrite(options: PenWriteOptions): PenWrite {
   };
   for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel']) host.addEventListener(type, onPen as EventListener, true);
 
-  // A palm is ignored: once a pen has been seen, a touch that comes while the pen is at work, or whose contact is wider than a fingertip, is not a hand's press
+  // A palm is ignored: once a pen has been seen, a touch that comes while the pen is on the screen, or whose contact is wider than a fingertip, is not a hand's press
   // (with the lens, the lens's own gestures say the same through the same guard)
   const onTouch = (e: PointerEvent): void => {
     if (e.pointerType !== 'touch' || anywhere || !guard.seenPen) return;
-    if (guard.penBusy(e.timeStamp) || Math.max(e.width, e.height) > PALM_SIZE) e.stopImmediatePropagation();
+    if (guard.penInContact || Math.max(e.width, e.height) > PALM_SIZE) e.stopImmediatePropagation();
   };
   host.addEventListener('pointerdown', onTouch, true);
 
