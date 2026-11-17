@@ -69,7 +69,7 @@ export type MathSum =
   | { readonly method: 'column'; readonly op: '+' | '-'; readonly operands: readonly string[] }
   | { readonly method: 'times'; readonly operands: readonly [string, string] }
   | { readonly method: 'split'; readonly operands: readonly [string] }
-  /** `whole = a + b`; the blank part is `?` */
+  /** `whole = a + b`; the one to find is `?` (the whole, or a part) */
   | { readonly method: 'bond'; readonly whole: string; readonly parts: readonly [string, string] }
   | { readonly method: 'bar' | 'groups' | 'array' | 'line'; readonly text: string };
 
@@ -130,14 +130,17 @@ export function readSum(method: MathMethod, written: string): SumRead {
       const found = /^([^=+\s]+)=([^=+\s]+)\+([^=+\s]+)$/.exec(text.replace(/\s+/g, ''));
       const [whole, left, right] = [found?.[1], found?.[2], found?.[3]];
       if (whole === undefined || left === undefined || right === undefined) return fail('a bond is a whole and its two parts: 10 = 4 + ?');
-      const w = canonical(whole);
+      const w = whole === '?' ? '?' : canonical(whole);
       const a = left === '?' ? '?' : canonical(left);
       const b = right === '?' ? '?' : canonical(right);
-      if (w === null || a === null || b === null) return fail('a bond is made of numbers, and `?` for the part to find: 10 = 4 + ?');
-      if (a === '?' && b === '?') return fail('a bond leaves one part to find, not both');
+      if (w === null || a === null || b === null) return fail('a bond is made of numbers, and `?` for the one to find: 10 = 4 + ?');
+      if ([w, a, b].filter((part) => part === '?').length !== 1) return fail('a bond leaves exactly one number to find: 10 = 4 + ?');
       const known = [a, b].filter((part) => part !== '?').map((part) => readDec(part) as Dec);
-      const total = readDec(w) as Dec;
-      if (known.some((part) => compareDec(part, total) > 0) || (known.length === 2 && compareDec(addDec(known[0] as Dec, known[1] as Dec), total) !== 0)) return fail('the parts of a bond must make its whole');
+      if (w !== '?') {
+        const total = readDec(w) as Dec;
+        const made = known.length === 2 ? addDec(known[0] as Dec, known[1] as Dec) : (known[0] as Dec);
+        if (known.length === 2 ? compareDec(made, total) !== 0 : compareDec(made, total) > 0) return fail('the parts of a bond must make its whole');
+      }
       return { ok: true, sum: { method, whole: w, parts: [a, b] }, text: `${w} = ${a} + ${b}` };
     }
     default: {
@@ -162,7 +165,7 @@ export function placeOf(name: string): number | null {
 }
 
 const PART_WORD = MATH_PLACES.join('|');
-const PART = new RegExp(`^(?:r[1-9]\\d?|rule|ans|sign|s[1-9]\\d?|(?:${PART_WORD})|(?:carry|ans|ex|top|b)-(?:${PART_WORD}))$`);
+const PART = new RegExp(`^(?:r[1-9]\\d?(?:-(?:${PART_WORD}))?|rule|ans|sign(?:[1-9]\\d?)?|s[1-9]\\d?|(?:${PART_WORD})|(?:carry|ans|ex|top|b)-(?:${PART_WORD}))$`);
 
 /**
  * Whether `part` names a part of a written method: a row (`r3`), a place (`tens`), the carry above a place (`carry-tens`), an answer cell (`ans-ones`; `ans`
@@ -210,8 +213,8 @@ export function answerOf(sum: MathSum): readonly string[] {
     }
     case 'bond': {
       const [a, b] = sum.parts;
-      const whole = readDec(sum.whole) as Dec;
-      out.push(a === '?' ? showDec(subDec(whole, readDec(b) as Dec)) : b === '?' ? showDec(subDec(whole, readDec(a) as Dec)) : b);
+      if (sum.whole === '?') out.push(showDec(addDec(readDec(a) as Dec, readDec(b) as Dec)));
+      else out.push(showDec(subDec(readDec(sum.whole) as Dec, readDec(a === '?' ? b : a) as Dec)));
       break;
     }
     default: {
@@ -237,7 +240,7 @@ export function sumNumbers(sum: MathSum): readonly string[] {
     case 'split':
       return sum.operands;
     case 'bond':
-      return [sum.whole, ...sum.parts.filter((part) => part !== '?')];
+      return [sum.whole, ...sum.parts].filter((part) => part !== '?');
     default:
       return sum.text.match(/\d+(?:\.\d+)?/g) ?? [];
   }
