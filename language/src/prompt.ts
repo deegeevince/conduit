@@ -524,7 +524,7 @@ Drawings live on a canvas of square units that the painter fits to the screen; 0
       : '',
     capabilities.decks ? '`deck | title` opens a turn of slides: each `scene` after it is one, four to eight, a heading and three lines or one picture at most.' : '',
     capabilities.uploads ? '`pic u1` puts a photo the user gave on stage (the brief names them); label or trace it.' : '',
-    services.refine ? 'Asked to iterate or improve it: end with `refine 3`; you are shown the picture and add to it.' : '',
+    services.refine ? 'More to do: end with `refine | what next`; you carry on at once, shown the picture, as long as you write it.' : '',
     capabilities.links ? '`say href=<url> | site` is a link; cite every web source as one.' : '',
     draws && services.art === true
       ? 'A character, animal or thing: `draw <id> <subject> at= size= | pose, facing`, never plotted. Diagrams, anatomy, machines, maps, labelled parts: your own shapes.'
@@ -690,7 +690,7 @@ function inputText(input: TurnInput, pastedAs?: string): string {
     if (input.screen !== undefined) return `The user pressed "${input.text}" on screen ${input.screen} of your mock-up (button ${input.id}).${values === '' ? '' : ` What the screen's fields and controls hold now: ${values}.`} Answer the press: change the mock-up, or say what it did.`;
     return `The user worked your control ${input.id}: "${input.text}".${values === '' ? '' : ` Every control now: ${values}.`}`;
   }
-  if (input.kind === 'refine') return `The user asked you to keep making what is on stage better, up to ${input.passes} passes. The stage shows you the picture each pass; you add to it.`;
+  if (input.kind === 'refine') return `You chose to go on: "${input.note}". This is not the user: it is you, carrying on. The picture as it stands is attached and YOUR DRAWING NOW names its parts. Change parts by id, reuse your own earlier work, or start a new scene if the work calls for one. End with \`refine | what you will do next\` to go on, or without it when you are content.`;
   if (input.kind === 'repair') return `The server is tidying the answer ${input.of} that is on stage, after a critic looked at it.`;
   return `Play the fixture script "${input.script}".`;
 }

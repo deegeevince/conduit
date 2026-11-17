@@ -221,7 +221,7 @@ export function serializeLine(line: Line): string {
     case 'standing':
       return 'drop' in line ? `standing drop ${line.drop}` : `standing | ${line.text}`;
     case 'refine':
-      return line.passes === undefined ? 'refine' : `refine ${line.passes}`;
+      return withText(['refine', ...(line.passes === undefined ? [] : [String(line.passes)])], line.text);
     case 'flow':
     case 'tree':
     case 'cycle':

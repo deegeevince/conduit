@@ -23,17 +23,17 @@ import type { LensScene, LensScreen } from './lens-check';
 
 export const MEMORY_SCREEN: LensScreen = { name: '1280x800', width: 1280, height: 800, dpr: 1 };
 
-interface Live {
+export interface Live {
   readonly id: string;
   readonly kind: string;
   readonly opacity: number;
   readonly box: { readonly x: number; readonly y: number; readonly width: number; readonly height: number };
 }
 
-const standing = (live: readonly Live[]): Live[] => live.filter((element) => element.opacity > 0.05 && ['shape', 'group', 'copy'].includes(element.kind));
+export const standing = (live: readonly Live[]): Live[] => live.filter((element) => element.opacity > 0.05 && ['shape', 'group', 'copy'].includes(element.kind));
 const paintings = (live: readonly Live[]): string[] => live.filter((element) => element.kind === 'picture' && element.opacity > 0.05).map((element) => element.id);
 /** the boxes of what stands, as one string: ids with their rounded boxes, in id order */
-const digest = (live: readonly Live[]): string =>
+export const digest = (live: readonly Live[]): string =>
   standing(live)
     .map((element) => `${element.id}:${Math.round(element.box.x)},${Math.round(element.box.y)},${Math.round(element.box.width)},${Math.round(element.box.height)}`)
     .sort()
@@ -46,7 +46,7 @@ const alike = (a: string, b: string): boolean => {
   return x.length === y.length && x.every((part, at) => (/^-?\d+$/.test(part) ? Math.abs(Number(part) - Number(y[at])) <= 3 : part === y[at]));
 };
 
-async function withTab<T>(base: string, screen: LensScreen, dir: string, timeoutMs: number, body: (tab: Tab, live: () => Promise<Live[]>, play: (script: string) => Promise<string>) => Promise<T>): Promise<T> {
+export async function withTab<T>(base: string, screen: LensScreen, dir: string, timeoutMs: number, body: (tab: Tab, live: () => Promise<Live[]>, play: (script: string) => Promise<string>) => Promise<T>): Promise<T> {
   const tab = await Tab.open(screen.width, screen.height, { dpr: screen.dpr });
   const options: Options = { url: base, screens: [], out: dir, turns: new Set(), timeoutMs, parallel: false, demo: false, quiet: true, page: '', say: null, chat: 'off' };
   const conv = new Conversation(tab, options, { name: screen.name, width: screen.width, height: screen.height }, dir);

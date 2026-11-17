@@ -557,10 +557,15 @@ export interface DeckLine {
  */
 export type StandingLine = { readonly verb: 'standing'; readonly text: string } | { readonly verb: 'standing'; readonly drop: number | 'all' };
 
-/** v2.1. Keep making the picture better, `passes` times at most. Consumed by the server; never scheduled. */
+/**
+ * The brain has more it wants to do: `refine | <what it will do next>` ends an answer, and the server runs the brain again at once, as a turn of its
+ * own, for as long as it keeps writing it. Consumed by the server; never scheduled. (`passes` is the old `refine 3`, read and ignored.)
+ */
 export interface RefineLine {
   readonly verb: 'refine';
   readonly passes?: number;
+  /** what it will do next: its own note to itself, given back in the next brief */
+  readonly text?: string;
 }
 
 export interface AmbientLine {

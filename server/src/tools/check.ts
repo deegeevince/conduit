@@ -36,6 +36,7 @@ import { Conversation, Tab } from './smoke';
 import { LENS_SCREENS, lensGroup } from './lens-check';
 import { ASK_SCREEN, askGroup } from './ask-check';
 import { ART_FAKE_MS, ART_SCREEN, artGroup } from './art-check';
+import { CONTINUE_SCREEN, continueFixtures, continueGroup } from './continue-check';
 import { MEMORY_SCREEN, memoryGroup } from './memory-check';
 import type { Answer, CheckResult, Options, Probe, Step, Verdict } from './smoke';
 
@@ -882,6 +883,26 @@ async function main(): Promise<void> {
     } catch (error) {
       failures += 1;
       process.stdout.write(`  FAIL memory stopped: ${error instanceof Error ? error.message : String(error)}\n`);
+    }
+    // the continuation group: a fake brain ends its answer with `refine | what next` five times; the server runs it again each time; a message or Stop takes over
+    if (args.url === null) {
+      let chain: Started | null = null;
+      try {
+        chain = await startServer({ REFINE: 'on', REPLAY_CASE: await continueFixtures() });
+        const scenes = await continueGroup(chain.url, CONTINUE_SCREEN, join(args.out, 'continue'), args.timeoutMs, (text) => (args.quiet ? undefined : process.stdout.write(`[${text}]\n`)));
+        process.stdout.write(`\ncontinue ${CONTINUE_SCREEN.name}\n`);
+        for (const scene of scenes) {
+          for (const result of scene.results) {
+            process.stdout.write(`  ${result.verdict === 'PASS' ? 'ok  ' : result.verdict} ${scene.name} ${result.check}: ${result.detail}\n`);
+            if (result.verdict === 'FAIL') failures += 1;
+          }
+        }
+      } catch (error) {
+        failures += 1;
+        process.stdout.write(`  FAIL continue stopped: ${error instanceof Error ? error.message : String(error)}\n`);
+      } finally {
+        await chain?.stop();
+      }
     }
     await writeFile(join(args.out, 'check.json'), JSON.stringify({ url: base, at: new Date().toISOString(), failures, screens: summary, lens, asks, arts }, null, 2));
   } catch (error) {

@@ -123,6 +123,8 @@ export interface ConductorDeps {
   readonly findings: FindingQueue;
   /** v2.1. True revision: what a fix must keep, and how long trying one may take (`FIX_POLICY`). Not read from the environment: the loop may not change it. */
   readonly fix: FixPolicy;
+  /** The brain may go on by its own choice (`refine | what next`): the server runs it again at once, for as long as it keeps writing that (`REFINE`). Absent: off. */
+  readonly continuation?: boolean;
   /** v2.1. A finding with a coherence below this is queued for the loop as evidence (`CriticPolicy.queueBelow`) */
   readonly criticQueueBelow: number;
   /** v2.1. The kinds of mind a session may choose (`Env.modes`); `plain` is always there */
@@ -403,6 +405,8 @@ export class Conductor {
       // A look is promised only when a fix can be tried first: a painter that cannot gets no fix at all, never a redraw.
       review: review.enabled && review.passes >= 1 && capabilities.drafts && capabilities.candidates && brains.configured.review !== undefined,
       ...(critic.available ? { critic: true } : {}),
+      // the brain may go on by its own choice: it needs a brain that is asked again in its own conversation
+      ...(this.deps.continuation === true ? { refine: true } : {}),
       ...(this.deps.uploads?.available === true ? { uploads: true } : {}),
       ...(this.deps.art === undefined ? {} : { art: true }),
       ...(mode === undefined || mode === 'plain' ? {} : { mode }),
@@ -490,6 +494,9 @@ export class Conductor {
 
     // v3. A new prompt (or tap) cancels a repair that is waiting or running: the person has moved on and the answer it would mend is no longer the one on stage.
     s.repair?.abort.abort();
+    // a message from the person (or anything else that opens a turn) takes over from a continuation that is waiting
+    s.continuing?.abort.abort();
+    s.continuing = null;
     const previous = s.turn;
     // T1 (b). A bare prompt (words only: no photo, ink or voice) sent while a turn is writing a document does not cancel the write: it is refused with a plain note and
     // stays in the box. A person who means to stop it presses Stop; a prompt that carries something (a photo, ink, a voice note) or a tap still replaces the open turn.
@@ -576,7 +583,7 @@ export class Conductor {
     const chosen = brain.choice?.(s.id);
     this.journal(s, { type: 'turn', turn: turn.id, input, brain: brain.id, login: turn.login, ...(chosen?.model ? { model: chosen.model } : {}), ...(chosen?.effort ? { effort: chosen.effort } : {}) });
     // The attention record is written when the turn ends, with what the canvas tools were used for (`finish`).
-    s.memory.begin(turn.id, input.kind === 'prompt' || input.kind === 'tap' || input.kind === 'act' ? input.text : input.kind === 'script' ? 'a script' : input.kind);
+    s.memory.begin(turn.id, input.kind === 'prompt' || input.kind === 'tap' || input.kind === 'act' ? input.text : input.kind === 'script' ? 'a script' : input.kind === 'refine' ? input.note : input.kind);
     this.attention.set(turn.id, briefed.record);
     this.deps.canvas?.beginTurn(s.id, turn.id, briefed.record.rev[0]);
     this.emit(s, turn, { type: 'turn', turn: turn.id, input });
@@ -894,6 +901,7 @@ export class Conductor {
       try {
         this.ahead.release(s.id);
         s.repair?.abort.abort();
+        s.continuing?.abort.abort();
         this.denyPending(s, null, 'kill');
         const turn = s.turn;
         if (turn !== null && turn.endReason === null) {
@@ -1073,6 +1081,11 @@ export class Conductor {
       case 'presence':
         // A `typing` that is not renewed lapses: a lost "stopped typing" never holds a repair back for long.
         s.typingUntil = event.typing ? this.deps.now() + PRESENCE_TYPING_MS : 0;
+        // `/stop` and the Stop button: the brain's own continuation runs between turns, where the painter has nothing open to interrupt
+        if (event.stop === true) {
+          s.continuing?.abort.abort();
+          s.continuing = null;
+        }
         if (s.repairOn !== event.repair) {
           s.repairOn = event.repair;
           this.deps.sessionLog.write(s.id, { type: 'setting', name: 'repair', value: event.repair ? 'on' : 'off' });
@@ -1181,6 +1194,7 @@ export class Conductor {
     step('wake', () => this.wake(s.id));
     // After `end` has gone, and never waited for.
     step('critic', () => this.lookAtResult(s, turn));
+    step('continue', () => this.considerContinue(s, turn));
   }
 
   /**
@@ -1613,6 +1627,45 @@ export class Conductor {
   }
 
   // ------------------------------------------------------------------------------------------------------------------------------
+  // The brain keeps working at will. A turn that ends with `refine | what next` is the brain saying it has more to do. Once the stage has come
+  // to rest the server runs the brain again at once, as a turn of its own (`kind: 'refine'`, carrying the brain's own note): it is shown the
+  // picture, YOUR DRAWING NOW and the drawing memory, like any turn, and may draw, write, start a new scene or reuse earlier work. That turn
+  // ends with `refine | …` again, or without it, and then it is done. No count and no clock: the brain stops writing it, the person sends a
+  // message (a new turn takes over), Stop, the usage cap, or a failed turn. Each continuation is an ordinary turn, in the log and a version.
+  // ------------------------------------------------------------------------------------------------------------------------------
+
+  private considerContinue(s: Session, turn: ActiveTurn): void {
+    const note = turn.continueNote;
+    if (note === undefined || this.deps.continuation !== true || turn.endReason !== 'done') return;
+    const { log, usage, now } = this.deps;
+    const state = usage?.state(now()) ?? 'off';
+    if (state === 'near' || state === 'over') {
+      log.info('continue.stopped', { session: s.id, turn: turn.id, why: 'usage is near the cap' });
+      return;
+    }
+    s.continuing?.abort.abort();
+    const abort = new AbortController();
+    const mine = { of: turn.id, abort };
+    s.continuing = mine;
+    const signal = AbortSignal.any([abort.signal, s.abort.signal]);
+    void (async () => {
+      // the stage comes to rest on the page first (its picture is what the brain is shown), and the person's typing is waited out
+      while (!signal.aborted && (!turn.reported || s.typingUntil > now())) await new Promise<void>((resolve) => setTimeout(resolve, 200));
+      if (signal.aborted || s.turn !== turn) return;
+      // the picture comes a moment after the report
+      for (let waited = 0; this.deps.assets.snapshot(s.id, turn.id) === undefined && waited < 8000 && !signal.aborted; waited += 200) await new Promise<void>((resolve) => setTimeout(resolve, 200));
+      if (signal.aborted || s.turn !== turn) return;
+      if (s.continuing === mine) s.continuing = null;
+      log.info('continue.started', { session: s.id, turn: turn.id, note: note.slice(0, 120) });
+      this.deps.sessionLog.write(s.id, { type: 'continue', turn: turn.id, note });
+      this.startTurn(s.id, { kind: 'refine', note });
+    })().catch((error: unknown) => {
+      if (s.continuing === mine) s.continuing = null;
+      log.warn('continue.failed', { session: s.id, turn: turn.id, error });
+    });
+  }
+
+  // ------------------------------------------------------------------------------------------------------------------------------
   // v3: critic-driven repair. The critic sees the picture an answer left at rest. When it says that picture is broken in a way the brain can
   // work around, the server asks the brain (the warm process that wrote it) for fix lines, tries them on a copy of the answer's score here,
   // and shows them as an in-place edit only if the stage then measures strictly better. One repair per answer; never while the person is
@@ -1644,6 +1697,7 @@ export class Conductor {
       sessionLog.write(s.id, { type: 'repair', turn: turn.id, repair: null, state: 'skipped', gates: worth.gates, why, lines: [], coherenceBefore: finding.coherence, blockingBefore: null, blockingAfter: null, costUsd: null, ms: 0, tryMs: null, firstLineMs: null, sinceEndMs: now() - (turn.endedAt ?? now()) });
     };
     if (!s.repairOn) return skipped('switched off (/review repair off)');
+    if (turn.continueNote !== undefined) return skipped('the brain went on by its own choice');
     const limit = this.repairLimit(s, turn);
     if (limit !== null) return skipped(limit);
     s.repaired.add(turn.id);
@@ -1950,8 +2004,8 @@ export class Conductor {
       return undefined;
     }
     // An improve turn that opens a new `scene` over a live drawing loses it. It is let through (refusing it mid-stream would pile the rewrite on the old picture); the log says so.
-    if (normalized.line.verb === 'scene' && !repairing && (turn.input.kind === 'refine' || (turn.input.kind === 'prompt' && asksToImprove(turn.input.text))) && s.stage.elements.some((element) => !element.struck && (element.kind === 'shape' || element.kind === 'group'))) {
-      this.deps.log.warn('drawing.scene_over_live', { session: s.id, turn: turn.id, said: turn.input.kind === 'prompt' ? turn.input.text.slice(0, 80) : turn.input.kind });
+    if (normalized.line.verb === 'scene' && !repairing && (turn.input.kind === 'prompt' && asksToImprove(turn.input.text)) && s.stage.elements.some((element) => !element.struck && (element.kind === 'shape' || element.kind === 'group'))) {
+      this.deps.log.warn('drawing.scene_over_live', { session: s.id, turn: turn.id, said: turn.input.text.slice(0, 80) });
     }
     // v3 art. `draw` is expanded here, beside `paint` and `findPicture`: a shelf hit becomes a group and its parts, a miss a quiet placeholder.
     // The lines it makes are ingested one by one as if the brain had written them, so the log, the schedule and the page see only real lines.
@@ -1976,6 +2030,7 @@ export class Conductor {
     if (turn.input.kind !== 'demo') s.memory.record(turn.id, seq, text);
     this.emit(s, turn, { type: 'line', turn: turn.id, seq, text, issues });
     if (line.verb === 'paint') this.paint(s, turn, seq, line, pushed.schedule);
+    if (line.verb === 'refine' && !repairing && this.deps.continuation === true) turn.continueNote = (line.text ?? '').trim() === '' ? 'go on' : (line.text ?? '').trim();
     if (line.verb === 'row') this.findPicture(s, turn, line.id, line.cells, pushed.schedule);
     if (line.verb === 'chart' && line.data !== undefined) this.announceData(s, turn, line.data);
     // what was waiting for this part or ask is read now

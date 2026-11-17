@@ -134,8 +134,6 @@ export interface StageApp {
   permit(turn: string, request: string, allow: boolean): void;
   /** v2.1. Hears what the agent is doing and what it is asking. Returns the way to stop hearing. */
   onAgent(listener: (note: AgentNote) => void): () => void;
-  /** v2.1. Keep making the picture on stage better, `passes` times at most (`/better`). Rejects when the server cannot. */
-  refine(passes: number): Promise<string>;
   /**
    * v2.1. Puts a page of the app's own on the stage (`/help`, `/status`, `/tools`): lines of Series, played at once as a turn that
    * belongs to the page, never reported to the server. Whatever was playing is stopped first, as Stop does.
@@ -1388,10 +1386,10 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   let typing = false;
   let typingTimer: ReturnType<typeof setTimeout> | undefined;
   let presenceSentAt = Number.NEGATIVE_INFINITY;
-  const sendPresence = (): void => {
+  const sendPresence = (stop = false): void => {
     presenceSentAt = performance.now();
     void connected.then(() => {
-      if (!disposed) sendBack({ type: 'presence', typing, repair: repairOn });
+      if (!disposed) sendBack({ type: 'presence', typing, repair: repairOn, ...(stop ? { stop: true as const } : {}) });
     }, () => undefined);
   };
   const isField = (target: EventTarget | null): boolean => target instanceof HTMLTextAreaElement || (target instanceof HTMLInputElement && /^(text|search|email|url|tel|password|number)?$/.test(target.type));
@@ -1901,6 +1899,8 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     playScript: (text) => submit({ kind: 'script', text }, null, true),
     interrupt() {
       sound.stop();
+      // the brain's own continuation runs between turns, with nothing open for the painter to interrupt: Stop tells the server
+      sendPresence(true);
       if (localOpen) {
         stopLocal();
         stoppedByUser = true;
@@ -1928,7 +1928,6 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
       agentListeners.add(listener);
       return () => agentListeners.delete(listener);
     },
-    refine: (passes) => submit({ kind: 'refine', passes }, null, false),
     showPage,
     // A page of the app's own is not a turn the server knows: Save, /export and /capture never name it to the server.
     lastTurn: () => {
