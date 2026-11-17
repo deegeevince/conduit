@@ -2349,7 +2349,7 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
         // small and dim, so it gives way to other text only, never to a drawn shape that happens to lie below
         obstacles: caption ? [] : obstacles.filter((obstacle) => !family.has(obstacle.owner)).map((obstacle) => ({ rect: obstacle.rect, outline: obstacle.outline })),
       });
-      // A label that cannot stand beside its part without lying on something else drawn, or on a photo the user gave, is set clear of it with a line to its part, as a callout is
+      // A label that cannot stand beside its part without lying on a photo the user gave is set clear of it with a line to its part, as a callout is
       const lands: Rect = { x: chosen.x - w / 2, y: chosen.y - h / 2, w, h };
       const onPhoto = (): boolean =>
         drawn.some((other) => {
@@ -2357,8 +2357,7 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
           const at = canvasBoxOf(other, schedule, tq);
           return at !== null && hitRects(lands, toScreenRect(at, fitOfElement(other, look, tq)), 0);
         });
-      const onDrawing = (): boolean => obstacles.some((o) => !family.has(o.owner) && !backdrop(o.owner) && hitRects(lands, o.rect, 0) && !(o.outline && lands.x >= o.rect.x && lands.y >= o.rect.y && lands.x + lands.w <= o.rect.x + o.rect.w && lands.y + lands.h <= o.rect.y + o.rect.h));
-      if (CALLOUTS_READY && !caption && target !== null && isLiveAt(target, tq) && (onDrawing() || onPhoto())) {
+      if (CALLOUTS_READY && !caption && target !== null && isLiveAt(target, tq) && onPhoto()) {
         callouts.push({ key: element.key, ps, w, h, px: pose.fontSize * ps, element: target, target: targetRect, side: style.near.side, fit, layer: pose.layer });
         continue;
       }
