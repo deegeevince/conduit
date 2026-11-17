@@ -21,7 +21,13 @@
 //   lens               (flag on, ?lens=1; tablet 1180x820 at two pixels to the point with touch, and 390x844) a two-finger pinch to 2x, then a tap on a choice, a slider
 //                      drag and a pen stroke each land on the right page point; 0 fits again; the pen draws without Draw, a short pen tap presses (lens-check.ts)
 //
-// Every scene is judged at rest by smoke's checks: answer on stage, no overlap, nothing cut off, readable chrome and prompt, no console errors,
+//   hard               language/demos/hard.series: the failures real sessions turned up, one scene each (a 400-character line, CJK, a flowchart, words beside strokes, digits lined up, crowded labels,
+//                      many lines, a dark ground, a photo with callouts); judged like a demo, each scene with its own question
+//   stream             a turn at 80 characters a second has its first element on stage long before its last line is sent; a recorded stream-json turn comes out line by line
+//   flows, photo       `pnpm flows` and `pnpm photo-check` (no model), run as groups
+//
+// Every scene of every demo (split at its `scene` lines, each sought to its rest) is judged, not only the last. Beyond smoke's checks each gets the pixel judges of real-check.ts: ink in the box (a share of
+// it), the stage is what is at its centre and corners (not an overlay), and, for scenes with words on drawings, each line of words hidden in turn (footprints). Every scene is judged at rest by smoke's checks: answer on stage, no overlap, nothing cut off, readable chrome and prompt, no console errors,
 // no failed requests. The renderer the page got is printed; a fall back to the plain renderer fails the check unless --allow-plain.
 // It prints a table, saves a screenshot per scene in --out, and exits 1 on any failure. Nothing here is part of the server.
 
@@ -47,6 +53,8 @@ import { TOUR_SCREENS, tourGroup } from './tour-check';
 import { printWebkit, webkitGroup, webkitMissing } from './webkit-check';
 import { driftGroup } from './drift-check';
 import { mathsGroup } from './math-check';
+import { checkGlyphs, checkInk, checkTakeover, flowsGroup, footprintJudge, photoGroup, streamFixtureCheck, testPattern } from './real-check';
+import type { Footprint } from './real-check';
 import type { Answer, CheckResult, Options, Probe, Step, Verdict } from './smoke';
 
 // ---------------------------------------------------------------------------------------------------------------------------------
@@ -187,6 +195,17 @@ function readWelcome(): Welcome {
 /** how many starters the welcome offers (the README and the script's own comment say seven) */
 const STARTERS = 7;
 
+/** the lines of a script text that the language rejects, by line number */
+function rejectedLinesOf(source: string): string[] {
+  const reader = new LineReader();
+  const bad: string[] = [];
+  source.split('\n').forEach((raw, index) => {
+    const result = reader.read(raw);
+    if (result.kind === 'reject') bad.push(`line ${index + 1} "${raw.slice(0, 50)}": ${result.issues.map((issue) => issue.message).join('; ')}`);
+  });
+  return bad;
+}
+
 /** the lines of a demo script that the language rejects, by line number: the page skips such a line without a word, so the script itself is read the way `pnpm timeline` reads it */
 function rejectedLines(name: string): string[] {
   const source = readFileSync(fileURLToPath(import.meta.resolve(`@conduit/language/demos/${name}.series`)), 'utf8');
@@ -198,6 +217,18 @@ function rejectedLines(name: string): string[] {
   });
   return bad;
 }
+
+/** the demos whose scenes put words on drawings (or lay many lines out): each line of words in them is hidden in turn and judged by what it paints (real-check.ts) */
+const FOOTPRINT_DEMOS = ['sketchbook', 'diagrams', 'art', 'iterate', 'scripts', 'overture', 'titles', 'plainly', 'toolkit', 'explorable', 'richness', 'charts', 'styles', 'controls'];
+
+/** the position of a hard-cases scene in its file, by its id */
+function hardOrder(id: string): number {
+  const source = readFileSync(fileURLToPath(import.meta.resolve('@conduit/language/demos/hard.series')), 'utf8');
+  return source.split('\n').flatMap((raw) => /^scene\s+(\S+)/.exec(raw)?.[1] ?? []).indexOf(id) + 1;
+}
+
+/** the spots of the photo scene, as a percent of the photo's width and height (the same as `pnpm photo-check` uses) */
+const PHOTO_SPOTS: readonly (readonly [string, number, number])[] = [['c1', 8, 10], ['c2', 92, 12], ['c3', 50, 50], ['c4', 20, 78], ['c5', 81, 90], ['c6', 50, 8], ['c7', 3, 50], ['c8', 97, 55]];
 
 const norm = (text: string): string => text.replace(/\s+/g, ' ').trim().toLowerCase();
 
@@ -297,18 +328,37 @@ class Screen {
     }
   }
 
-  /** the judgement every scene gets, at rest: smoke's own checks. `report`: the scene's turn ended and is on stage (a demo or an answer; the local welcome has no report) */
-  private async judge(tab: Tab, talk: Conversation, name: string, results: CheckResult[], began: number, report: boolean, prompt: boolean): Promise<Scene> {
+  /** the footprints of the last scene judged with them (what hiding each line of words showed), for a scene's own questions */
+  feet = new Map<string, Footprint>();
+
+  /**
+   * the judgement every scene gets, at rest: smoke's own checks, then the pixels. `report`: the scene's turn ended and is on stage (a demo or an answer; the local welcome has no report).
+   * `earlier`: a scene before the last of a turn, seen by seeking the clock there: what the turn's report says is about the last scene, so only what the screen shows is judged.
+   * `footprints`: also hide each line of words in turn and judge what it really paints (real-check.ts).
+   */
+  private async judge(tab: Tab, talk: Conversation, name: string, results: CheckResult[], began: number, report: boolean, prompt: boolean, options: { readonly earlier?: boolean; readonly footprints?: boolean; readonly photo?: boolean } = {}): Promise<Scene> {
     talk.current = this.scenes.length + 1;
     const picture = await tab.shot();
     const file = `${this.screen.name}-${name.replace(/[^\w-]+/g, '-')}.png`;
     await writeFile(join(this.dir, file), Buffer.from(picture.split(',')[1] ?? '', 'base64'));
     const answer = await tab.call<Answer>('answer');
-    if (report) await talk.checkAnswer(ANY, answer, picture, results);
-    if (prompt) await talk.checkPrompt(results);
-    await talk.checkChrome(picture, results);
-    talk.checkOverlap(ANY, answer, results);
-    await talk.checkCutOff(answer, results);
+    const earlier = options.earlier === true;
+    const said = earlier ? { ...answer, report: null } : answer;
+    if (report && !earlier) await talk.checkAnswer(ANY, answer, picture, results);
+    if (prompt && !earlier) await talk.checkPrompt(results);
+    if (!earlier) await talk.checkChrome(picture, results);
+    talk.checkOverlap(ANY, said, results);
+    await talk.checkCutOff(said, results);
+    const add = (check: string, verdict: Verdict, detail: string): void => talk.add(results, check, verdict, detail);
+    await checkInk(tab, add, picture, answer.live, tab.dpr);
+    await checkTakeover(tab, add);
+    // a photo's callouts are looked at with a long reach (their leaders run to their spots) and their spots asked for
+    const spots = new Map<string, { x: number; y: number }>();
+    if (options.photo === true) {
+      const box = answer.live.find((e) => e.id === 'p1')?.box;
+      if (box !== undefined) for (const [id, x, y] of PHOTO_SPOTS) spots.set(id, { x: box.x + (x / 100) * box.width, y: box.y + (y / 100) * box.height });
+    }
+    this.feet = options.footprints === true ? await footprintJudge(tab, add, { scale: tab.dpr, spots }) : new Map();
     const drained = tab.drain();
     // KNOWN: the page uploads the stage's snapshot for the first-load demo under its local turn id, which the server does not know (404). Harmless, and said in the detail.
     const known = drained.failedRequests.filter((entry) => KNOWN_FAILURE.test(entry.text));
@@ -319,6 +369,25 @@ class Screen {
     this.scenes.push(scene);
     for (const result of results) if (result.verdict === 'FAIL') this.note(`  FAIL ${name} ${result.check}: ${result.detail.slice(0, 200)}`);
     return scene;
+  }
+
+  /** the times the scenes of the turn on stage open, on its clock (a `scene` line's start) */
+  private async sceneStarts(tab: Tab): Promise<number[]> {
+    return tab.eval<number[]>(`window.__stage.lines().filter((l) => /^scene\\b/.test(l.text)).map((l) => l.start)`);
+  }
+
+  /** each scene before the last, at rest: the clock is sought to the moment before the next scene opens, so what is on screen is the end of this one */
+  private async earlierScenes(tab: Tab, talk: Conversation, base: string, starts: readonly number[], footprints: boolean, names?: readonly string[], then?: (index: number, scene: Scene) => Promise<void>): Promise<void> {
+    for (let index = 0; index + 1 < starts.length; index += 1) {
+      const at = Date.now();
+      const name = `${base}#${names?.[index] ?? index + 1}`;
+      this.note(name);
+      await tab.eval(`window.__stage.seek(${Math.max(0, (starts[index + 1] as number) - 0.02)})`);
+      await sleep(250);
+      const results: CheckResult[] = [];
+      const scene = await this.judge(tab, talk, name, results, at, false, false, { earlier: true, footprints, photo: names?.[index] === 'photo' });
+      if (then !== undefined) await then(index, scene);
+    }
   }
 
   private static add(results: CheckResult[], check: string, problems: readonly string[], good: string): void {
@@ -408,12 +477,176 @@ class Screen {
         if (demo.name === 'richness') await this.richness(tab, results);
         if (demo.name === 'art') await this.art(tab, results);
         if (demo.name === 'scripts') await this.scripts(tab, results);
-        await this.judge(tab, talk, `demo-${demo.name}`, results, began, true, first);
+        const starts = await this.sceneStarts(tab);
+        const base = `demo-${demo.name}`;
+        const footprints = FOOTPRINT_DEMOS.includes(demo.name);
+        await this.judge(tab, talk, starts.length > 1 ? `${base}#${starts.length}` : base, results, began, true, first, { footprints });
+        if (demo.name === 'scripts') await this.scriptGlyphs(tab, talk, results);
+        if (starts.length > 1) await this.earlierScenes(tab, talk, base, starts, footprints);
         first = false;
       }
     } finally {
       await tab.close();
     }
+  }
+
+  /**
+   * language/demos/hard.series: the failures real sessions and reviews turned up, each as a scene, written again in our own words. Played like a demo (one turn, every scene),
+   * every scene judged at rest with the footprints, and each scene asked what its bug would break: the end of a long line, the CJK glyphs, a flowchart's parts, digits that line up
+   * on their right edge, words clear of strokes, every line of many kept, and a photo's callouts on their spots (a generated test pattern is put up as the photo first).
+   */
+  async hardScenes(): Promise<void> {
+    const source = readFileSync(fileURLToPath(import.meta.resolve('@conduit/language/demos/hard.series')), 'utf8');
+    const ids = source.split('\n').flatMap((raw) => {
+      const found = /^scene\s+(\S+)/.exec(raw);
+      return found?.[1] === undefined ? [] : [found[1]];
+    });
+    const { tab, talk } = await this.open('', false);
+    try {
+      await this.look(tab);
+      const began = Date.now();
+      this.note('demo hard');
+      tab.drain();
+      // the photo of the last scene: a test pattern, kept by the server for this page's session as u1
+      const session = await tab.eval<string | null>(`(() => { for (const r of performance.getEntriesByType('resource')) { const m = /\\/api\\/sessions\\/([^/]+)\\//.exec(r.name); if (m) return m[1]; } return null; })()`);
+      let photo = 'no session to put the photo in';
+      if (session !== null) {
+        const sent = await fetch(`${this.base}/api/sessions/${session}/uploads`, { method: 'POST', body: new Uint8Array(testPattern(900, 600)), headers: { 'content-type': 'image/png' } }).catch(() => null);
+        photo = sent !== null && sent.status === 201 ? '' : `the server kept no photo (${sent === null ? 'no answer' : sent.status})`;
+      }
+      const results: CheckResult[] = [];
+      Screen.add(results, 'script-lines', rejectedLinesOf(source).slice(0, 3), 'every line of the script reads');
+      const played = await tab.eval<string | null>(`Promise.resolve(window.__stage.playScript(${JSON.stringify(source)})).then(() => null, (e) => String(e && e.message || e))`);
+      results.push(Screen.restResult(played !== null ? `the demo would not start: ${played}` : await talk.rest(true), began));
+      const starts = await this.sceneStarts(tab);
+      if (starts.length !== ids.length) results.push({ turn: 0, check: 'scenes', verdict: 'FAIL', detail: `the script has ${ids.length} scenes but the turn has ${starts.length}` });
+      const last = ids.length - 1;
+      await this.judge(tab, talk, `demo-hard#${ids[last]}`, results, began, true, false, { footprints: true, photo: ids[last] === 'photo' });
+      await this.hardAsserts(ids[last] as string, tab, talk, results, photo);
+      await this.earlierScenes(tab, talk, 'demo-hard', starts, true, ids, async (index, scene) => this.hardAsserts(ids[index] as string, tab, talk, scene.results, photo));
+    } finally {
+      await tab.close();
+    }
+  }
+
+  /** what each scene of hard.series says its own bug would break */
+  private async hardAsserts(id: string, tab: Tab, talk: Conversation, results: CheckResult[], photo: string): Promise<void> {
+    const add = (check: string, verdict: Verdict, detail: string): void => talk.add(results, check, verdict, detail);
+    const live = await tab.eval<{ id: string; kind: string; text: string; phase: string; opacity: number; fontPx: number; contrast: number; box: { x: number; y: number; width: number; height: number } }[]>('window.__stage.elements().map((e) => ({ id: e.id, kind: e.kind, text: String(e.text || ""), phase: e.phase, opacity: e.opacity, fontPx: e.fontPx, contrast: e.contrast, box: e.box }))');
+    const texts = live.filter((e) => e.kind === 'text' && e.phase === 'on' && e.opacity > 0.3);
+    const said = (words: string): boolean => texts.some((e) => norm(e.text) === norm(words));
+    const problems: string[] = [];
+    let good = '';
+    switch (id) {
+      case 'long': {
+        // the painter may set one say as several lines of words; together they hold every word, the last included
+        const said = texts.map((e) => e.text).join(' ');
+        const closing = texts.find((e) => /\bzebra\.?$/.test(e.text.trim()));
+        if (said.length < 380) problems.push(`only ${said.length} of the about 400 characters of the long line are on stage`);
+        if (closing === undefined) problems.push(`the long line's last word is not on stage: the longest line ends "...${(texts.find((e) => e.text.length > 100)?.text ?? '').slice(-30)}"`);
+        else if (this.feet.get(closing.id)?.drawn === null) problems.push('the last words of the long line are on stage but not drawn');
+        good = `the long line is whole on stage (${said.length} characters, ending on its last word, drawn)`;
+        break;
+      }
+      case 'scripts': {
+        const here: CheckResult[] = [];
+        await this.scriptGlyphs(tab, talk, here, 'hard');
+        for (const result of here) add(result.check, result.verdict, result.detail);
+        return;
+      }
+      case 'flow': {
+        const nodes = live.filter((e) => e.kind === 'node' && e.phase === 'on').length;
+        const links = live.filter((e) => e.kind === 'link' && e.phase === 'on').length;
+        if (nodes !== 14) problems.push(`the flowchart has ${nodes} of its 14 nodes on stage`);
+        if (links < 14) problems.push(`the flowchart has ${links} of its 14 connectors on stage`);
+        good = `the flowchart's 14 nodes and ${links} connectors are on stage`;
+        break;
+      }
+      case 'beside': {
+        for (const words of ['the old road', 'the river bend', 'the fence line', 'the well', 'The narration must stand clear of every line drawn here.']) if (!said(words)) problems.push(`"${words.slice(0, 30)}" is not on stage`);
+        good = 'the four labels and the narration are on stage, each clear of the strokes (the footprints say so)';
+        break;
+      }
+      case 'digits': {
+        const rights = ['h', 'd1', 'd2', 'd3', 'd4', 'd5'].flatMap((name) => {
+          const drawn = this.feet.get(name)?.drawn;
+          return drawn === null || drawn === undefined ? [] : [{ name, right: drawn.x + drawn.w }];
+        });
+        if (rights.length < 6) problems.push(`only ${rights.length} of the 6 right-aligned lines are drawn`);
+        else {
+          const spread = Math.max(...rights.map((r) => r.right)) - Math.min(...rights.map((r) => r.right));
+          // a digit's own side bearing is a pixel or two; a line that is left-aligned or centred is many pixels off
+          if (spread > 4) problems.push(`the right edges of the digits are ${spread.toFixed(1)} px apart: ${rights.map((r) => `${r.name} ${r.right.toFixed(0)}`).join(', ')}`);
+          good = `six right-aligned lines end within ${spread.toFixed(1)} px of one edge`;
+        }
+        break;
+      }
+      case 'crowd': {
+        for (const words of ['eye', 'mouth', 'ear']) if (!said(words)) problems.push(`the label "${words}" is not on stage`);
+        good = 'three labels round one part, none on another or on a stroke (the footprints say so)';
+        break;
+      }
+      case 'many': {
+        const lines = texts.filter((e) => /line of eight\.$/.test(e.text)).length;
+        if (lines !== 8) problems.push(`${lines} of the 8 lines are on stage`);
+        good = 'all 8 lines are on stage';
+        break;
+      }
+      case 'dark': {
+        const faint = texts.filter((e) => e.contrast < 3 || e.fontPx < 9);
+        if (faint.length > 0) problems.push(`hard to read on the dark ground: ${faint.slice(0, 3).map((e) => `"${e.text.slice(0, 20)}" ${e.contrast.toFixed(1)}:1 at ${e.fontPx.toFixed(0)} px`).join(', ')}`);
+        good = `${texts.length} notes read on the dark ground (contrast 3:1 or more)`;
+        break;
+      }
+      case 'photo': {
+        if (photo !== '') return add('photo-spots', 'SKIP', photo);
+        const box = live.find((e) => e.id === 'p1')?.box;
+        if (box === undefined) problems.push('the photo p1 is not on stage');
+        else {
+          for (const [name] of PHOTO_SPOTS) {
+            const gap = this.feet.get(`${name}/leader`)?.spotGap;
+            if (gap === undefined || gap === null) problems.push(`${name} has no leader to its spot`);
+            else if (gap > 0.02 * box.width) problems.push(`${name}'s leader stops ${gap.toFixed(0)} px (${((100 * gap) / box.width).toFixed(1)}% of the photo's width) short of its spot`);
+          }
+        }
+        good = 'all 8 callouts paint to within 2% of the photo width of their spots';
+        break;
+      }
+      default:
+        return;
+    }
+    add(`hard-${id}`, problems.length === 0 ? 'PASS' : 'FAIL', problems.length === 0 ? good : problems.join('; '));
+  }
+
+  /**
+   * A turn streamed at about 80 characters a second (the pace of a model writing, not the 3000 the other groups use): the first element is on stage while the turn is still
+   * being written, long before its last line has been sent. A page that holds the stage back until the whole turn has come would show nothing for half a minute.
+   */
+  async streamScene(): Promise<CheckResult[]> {
+    const results: CheckResult[] = [];
+    const total = readFileSync(fileURLToPath(import.meta.resolve('@conduit/language/demos/diagrams.series')), 'utf8').split('\n').filter((raw) => raw.trim() !== '' && !raw.startsWith('#')).length;
+    const { tab } = await this.open('', false);
+    try {
+      const began = Date.now();
+      await tab.eval(`Promise.resolve(window.__stage.demo('diagrams')).then(() => null, () => null)`);
+      let first: { at: number; lines: number; open: boolean } | null = null;
+      while (first === null && Date.now() - began < 40_000) {
+        const now = await tab.eval<{ shown: number; lines: number; open: boolean }>(`({ shown: window.__stage.elements().filter((e) => e.phase === 'on' || e.phase === 'entering').length, lines: window.__stage.lines().length, open: window.__stage.state().turn !== null })`);
+        if (now.shown > 0) first = { at: (Date.now() - began) / 1000, lines: now.lines, open: now.open };
+        else await sleep(100);
+      }
+      const problems: string[] = [];
+      if (first === null) problems.push('nothing was on stage after 40 s of a turn streaming at 80 characters a second');
+      else {
+        if (!first.open) problems.push('the turn had ended before its first element was on stage');
+        if (first.lines > total / 2) problems.push(`the first element came only when ${first.lines} of the ${total} lines had been sent`);
+        if (first.at > 12) problems.push(`the first element came after ${first.at.toFixed(1)} s`);
+      }
+      Screen.add(results, 'stream-first-element', problems, `the first element was on stage after ${first?.at.toFixed(1)} s, with ${first?.lines} of the ${total} lines sent and the turn still being written`);
+    } finally {
+      await tab.close();
+    }
+    return results;
   }
 
   /**
@@ -519,7 +752,7 @@ class Screen {
         results.push(Screen.restResult(played !== null ? `the script would not play: ${played}` : await talk.rest(true), began));
         const sent = tab.posted.length;
         const verdict = (): Promise<string> => tab.eval<string>(`(window.__stage.controls().find((c) => c.id === ${JSON.stringify(scene.id)}) || { askState: { verdict: 'none' } }).askState.verdict`);
-        if ((await tab.eval<boolean>(`document.body.classList.contains('work') || document.querySelector('.pb') !== null`)) === true) problems.push('something took the whole screen');
+        await checkTakeover(tab, (check, verdict, detail) => talk.add(results, check, verdict, detail));
         const words = norm(scene.question.replace(/_{2,}|□/g, ' '));
         const said = norm((await tab.eval<string>(`window.__stage.elements().map((e) => e.text).concat(window.__stage.controls().map((c) => c.label)).join(' ')`)).replaceAll('…', ' '));
         if (!said.includes(words.split(' ').slice(0, 6).join(' '))) problems.push(`the question is not on the canvas: "${scene.question}"`);
@@ -541,6 +774,7 @@ class Screen {
         const picture = await tab.shot();
         const file = `${this.screen.name}-${name}.png`;
         await writeFile(join(this.dir, file), Buffer.from(picture.split(',')[1] ?? '', 'base64'));
+        await checkInk(tab, (check, verdict, detail) => talk.add(results, check, verdict, detail), picture, (await tab.call<Answer>('answer')).live, tab.dpr);
         Screen.add(results, 'problem', problems, 'the question is on the canvas with a blank, nothing takes the screen, a wrong answer is marked wrong and the right one right');
         const scenery: Scene = { name, seconds: (Date.now() - began) / 1000, picture: file, results };
         this.scenes.push(scenery);
@@ -549,6 +783,17 @@ class Screen {
     } finally {
       await tab.close();
     }
+  }
+
+  /** the CJK lines of a script, found by their own characters: each character must be its own picture (not one "?" or one box repeated) */
+  private async scriptGlyphs(tab: Tab, talk: Conversation, results: CheckResult[], file = 'scripts'): Promise<void> {
+    const source = readFileSync(fileURLToPath(import.meta.resolve(`@conduit/language/demos/${file}.series`)), 'utf8');
+    const lines = source.split('\n').flatMap((raw) => {
+      const found = /^say [^|]*\| (.+)$/.exec(raw);
+      return found?.[1] !== undefined && /[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/.test(found[1]) ? [found[1].replace(/\s+/g, ' ').trim()] : [];
+    });
+    if (lines.length === 0) return;
+    await checkGlyphs(tab, (check, verdict, detail) => talk.add(results, check, verdict, detail), this.feet, lines, tab.dpr);
   }
 
   /**
@@ -715,6 +960,11 @@ const COLUMNS: readonly (readonly [string, string])[] = [
   ['answer-on-stage', 'stage'],
   ['no-overlap', 'overlap'],
   ['nothing-cut-off', 'cutoff'],
+  ['ink-in-box', 'ink'],
+  ['stage-not-covered', 'top'],
+  ['footprints', 'feet'],
+  ['glyphs', 'glyph'],
+  ['hard', 'hard'],
   ['chrome-readable', 'chrome'],
   ['prompt-readable', 'prompt'],
   ['no-console-errors', 'console'],
@@ -727,7 +977,7 @@ function table(run: ScreenRun): string {
   lines.push(`${'scene'.padEnd(26)}${COLUMNS.map(([, label]) => label.padEnd(9)).join('')}secs`);
   for (const scene of run.scenes) {
     const cells = COLUMNS.map(([check]) => {
-      const verdict = scene.results.find((result) => result.check === check)?.verdict;
+      const verdict = (scene.results.find((result) => result.check === check && result.verdict === 'FAIL') ?? scene.results.find((result) => result.check === check || (check === 'hard' && result.check.startsWith('hard-'))))?.verdict;
       return (verdict === undefined ? '-' : verdict === 'PASS' ? 'ok' : verdict).padEnd(9);
     });
     lines.push(`${scene.name.padEnd(26)}${cells.join('')}${scene.seconds.toFixed(0)}`);
@@ -755,7 +1005,7 @@ async function webkitHook(base: string, out: string, timeoutMs: number, quiet: b
 // The groups, and how they are run
 
 /** which server a group plays against: the main one (shared: every tab here has its own Chrome profile, so its own session), one with a fake art maker, or one that chains `refine` */
-type Needs = 'main' | 'art' | 'chain' | 'none';
+type Needs = 'main' | 'art' | 'chain' | 'slow' | 'none';
 
 /** what one group wrote: its lines for the report, how many problems, and what check.json keeps */
 interface Output {
@@ -829,6 +1079,7 @@ function buildUnits(args: Args, welcome: Welcome): { readonly units: Unit[]; rea
     units.push(screenUnit('problems', 30, [], (run) => run.problemScenes()));
     units.push(screenUnit('follow', 45, [], (run) => run.followScene()));
     demos.forEach((name, index) => units.push(screenUnit(`demo-${name}`, 40, [], (run) => run.demoScenes([name], index === 0))));
+    units.push(screenUnit('demo-hard', 60, [], (run) => run.hardScenes()));
   }
   for (const screen of LENS_SCREENS) {
     units.push({
@@ -900,6 +1151,36 @@ function buildUnits(args: Args, welcome: Welcome): { readonly units: Unit[]; rea
       },
     });
   }
+  units.push({
+    name: 'stream',
+    needs: 'slow',
+    weight: 25,
+    run: async (servers, out) => {
+      out.lines.push('\nstream (a turn at 80 characters a second, a recorded stream-json turn)');
+      const results = await streamFixtureCheck();
+      if (servers.slow === null) results.push({ turn: 0, check: 'stream-first-element', verdict: 'SKIP', detail: 'skipped (--url was given: this needs a server that streams slowly)' });
+      else results.push(...(await new Screen(args, servers.slow, args.screens[0] as Args['screens'][number], join(args.out, 'stream'), welcome).streamScene()));
+      checkLines(out, results);
+    },
+  });
+  units.push({
+    name: 'flows',
+    needs: 'none',
+    weight: 8,
+    run: async (_servers, out) => {
+      out.lines.push('\nflows (pnpm flows)');
+      checkLines(out, await flowsGroup());
+    },
+  });
+  units.push({
+    name: 'photo',
+    needs: 'none',
+    weight: 20,
+    run: async (_servers, out) => {
+      out.lines.push('\nphoto (pnpm photo-check)');
+      checkLines(out, await photoGroup());
+    },
+  });
   units.push({
     name: 'loop',
     needs: 'none',
@@ -995,8 +1276,9 @@ async function main(): Promise<void> {
     // the main server is up for the whole run; the art and continuation servers (each for one group) are started as their group begins and stopped when it ends,
     // so they hold a port only while they are needed
     const wants = (needs: Needs): boolean => chosen.some((unit) => unit.needs === needs);
-    const address: Record<Needs, string | null> = { main: null, art: null, chain: null, none: null };
-    const extras: Record<'art' | 'chain', () => Promise<Record<string, string>>> = {
+    const address: Record<Needs, string | null> = { main: null, art: null, chain: null, slow: null, none: null };
+    const extras: Record<'art' | 'chain' | 'slow', () => Promise<Record<string, string>>> = {
+      slow: async () => ({ REPLAY_CPS: '80' }),
       art: async () => ({ ART_MAKER: 'fake', ART_FAKE_MS: String(ART_FAKE_MS), ART_FAKE_STAGES: 'on' }),
       chain: async () => ({ REFINE: 'on', REPLAY_CASE: await continueFixtures() }),
     };
@@ -1023,7 +1305,7 @@ async function main(): Promise<void> {
       let own: Started | null = null;
       const at = Date.now();
       try {
-        if (args.url === null && (unit.needs === 'art' || unit.needs === 'chain')) {
+        if (args.url === null && (unit.needs === 'art' || unit.needs === 'chain' || unit.needs === 'slow')) {
           own = await startServer(await extras[unit.needs]());
           servers.push(own);
           here[unit.needs] = own.url;
@@ -1046,8 +1328,10 @@ async function main(): Promise<void> {
       const { run, screen, stopped } = entry;
       if (run.scenes.length === 0 && stopped.length === 0) continue;
       const offered = offeredDemos();
-      const sequence = ['welcome', 'choice', 'welcome-reduced-motion', ...offered.map((name) => `demo-${name}`), ...problemScenes().map((scene) => `problem-${scene.id}`), 'problem-fill', 'follow'];
-      run.scenes.sort((a, b) => sequence.indexOf(a.name) - sequence.indexOf(b.name));
+      const sequence = ['welcome', 'choice', 'welcome-reduced-motion', ...offered.map((name) => `demo-${name}`), 'demo-hard', ...problemScenes().map((scene) => `problem-${scene.id}`), 'problem-fill', 'follow'];
+      // a demo's scenes keep their own order (`demo-diagrams#1`, `#2`...; the hard cases by the order of the file)
+      const place = (name: string): number => sequence.indexOf(name.split('#')[0] as string) + (name.includes('#') ? (Number(name.split('#')[1]) || hardOrder(name.split('#')[1] as string)) / 1000 : 0);
+      run.scenes.sort((a, b) => place(a.name) - place(b.name));
       if (run.renderer !== 'unknown') {
         const webgl = run.renderer === 'three';
         run.scenes[0]?.results.push({ turn: 0, check: 'renderer', verdict: webgl || args.allowPlain ? 'PASS' : 'FAIL', detail: webgl ? 'the page got WebGL (three)' : `the page fell back to the "${run.renderer}" renderer: WebGL did not run in this Chrome` });

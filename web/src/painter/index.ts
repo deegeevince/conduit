@@ -274,6 +274,10 @@ export function createPainter(options: PainterOptions): Painter {
   let anticipation: { readonly tappedKey: string | null; readonly since: number } | null = null;
   let fading: { readonly from: Frame; readonly startedAt: number } | null = null;
   let lastFrame: Frame | null = null;
+  /** the elements a test has asked to leave undrawn (`hide`) */
+  let hiddenKeys: ReadonlySet<string> = new Set();
+  /** which of them the last frame held (and so left out) */
+  let hiddenSeen: string[] = [];
 
   /** Faults seen while making frames, by message: said once to the console, counted for the HUD and `__stage`. */
   const faults = new Map<string, number>();
@@ -939,6 +943,12 @@ export function createPainter(options: PainterOptions): Painter {
     let frame: Frame;
     try {
       frame = frameFor(reading);
+      // a tester's hide (`hide`): these elements are left out of what the renderer is given, so a picture with and without them shows their real footprint
+      // (a figure is named by its key too: a callout's leader is `<its key>/leader`)
+      if (hiddenKeys.size > 0) {
+        hiddenSeen = [...frame.elements.map((element) => element.key), ...frame.figures.map((figure) => figure.key)].filter((key) => hiddenKeys.has(key));
+        frame = { ...frame, elements: frame.elements.filter((element) => !hiddenKeys.has(element.key)), figures: frame.figures.filter((figure) => !hiddenKeys.has(figure.key)) };
+      }
     } catch (error) {
       // A frame that cannot be made is not the end of the show: say so, and keep what was last on screen.
       noteFault(error, 'frame');
@@ -2057,6 +2067,13 @@ export function createPainter(options: PainterOptions): Painter {
     },
 
     mockups: mockupViews,
+
+    hide(keys) {
+      hiddenKeys = new Set(keys);
+      hiddenSeen = [];
+      drawNow();
+      return hiddenSeen;
+    },
 
     leaders: () => leadersOf(timeline, timeline.schedule, clock.read().playhead),
 

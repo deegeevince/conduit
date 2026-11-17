@@ -1,0 +1,114 @@
+# Hard cases: the failures that real sessions and reviews turned up, written again in
+# our own words so nothing in this file comes from anyone's conversation. Each scene is
+# one kind of bug. `pnpm check` plays this file like a demo, judges every scene at rest,
+# and for each line of words hides it and looks at what the screen loses (its footprint).
+# It is not offered in the app: it is the check's own script.
+
+look paper
+
+# a long line is kept whole: the last word must be on the stage
+scene long layout=stack lines=2 brisk
+say long | A good answer is sometimes long, and the stage has to carry every word of it without cutting the end off at some invisible limit, because a reader who is halfway through a sentence cannot tell that the rest was thrown away. So this line goes on well past three hundred and twenty characters, through clauses and commas and a few small asides, to prove that nothing is clipped, and it ends on the word zebra.
+say | Short lines still sit under it.
+wait 1
+
+# Japanese and Korean: the glyphs are drawn, not a question mark each
+scene scripts layout=stack lines=4
+say ja | 日本語の文章も、正しい字で表示されます。
+say ko | 한국어 문장도 올바른 글자로 표시됩니다.
+say title size=xxl | 漢字と한글
+say zh | 学习汉字需要耐心和时间
+wait 1
+
+# a flowchart with multi-word edge labels and cross-links
+scene flow layout=caption
+flow car right | How a car's core parts connect
+node tank | Fuel tank
+node pump from=tank | Fuel pump
+node engine from=pump:fuel | Engine
+node rad | Radiator
+node exh from=engine:burnt gas | Exhaust
+node gear from=engine:turning | Gearbox and clutch
+node shaft from=gear | Driveshaft and differential
+node wheels end from=shaft | Wheels
+node battery | Battery
+node starter from=battery | Starter motor
+node alt from=engine:belt drive | Alternator
+node ecu note | ECU computer
+node pedal | Brake pedal
+node brakes from=pedal:brake fluid | Calipers and discs
+link rad engine both | coolant loop
+link starter engine | cranks it
+link alt battery | charges it
+link ecu engine dashed | times fuel and spark
+link brakes wheels | slow them
+wait 1
+
+# words beside strokes: labels and a narration line that no drawn line may run through
+scene beside layout=figure
+line road 6,60 94,60 thick=2
+line river 8,12 92,40 thick=2
+line fence 50,6 50,66 thick=1
+circle well 22,36 5 fill=accent
+say label near=road:below | the old road
+say label near=river:above | the river bend
+say label near=fence:right | the fence line
+say label near=well leader=yes | the well
+say aside | The narration must stand clear of every line drawn here.
+wait 1
+
+# a column of digits lined up on their right edge
+scene digits layout=free canvas=square
+say h at=70,12 align=right size=s ink=dim | Total
+say d1 at=70,26 align=right | 1,204
+say d2 at=70,40 align=right | 98
+say d3 at=70,54 align=right | 7,310.5
+say d4 at=70,68 align=right | 12
+say d5 at=70,84 align=right size=l | 8,624.5
+wait 1
+
+# many labels crowded round one part
+scene crowd layout=figure
+rect body 50,24 60x40 fill=dim
+circle eye 64,36 4 fill=accent
+circle mouth 80,54 4 fill=accent
+circle ear 106,36 4 fill=accent
+say label near=eye leader=yes | eye
+say label near=mouth leader=yes | mouth
+say label near=ear leader=yes | ear
+say aside | Three labels, three leaders, none across another.
+wait 1
+
+# more lines than a small stage likes: every one of them stays
+scene many layout=stack lines=8 brisk
+say | First line of eight.
+say | Second line of eight.
+say | Third line of eight.
+say | Fourth line of eight.
+say | Fifth line of eight.
+say | Sixth line of eight.
+say | Seventh line of eight.
+say | Eighth line of eight.
+wait 1
+
+# a dark look with small dim notes: they must still read
+scene dark layout=figure
+look night
+rect panel 30,20 100x50 fill=dim
+say label near=panel:above | A dim note on a dark ground
+say label near=panel:below size=s ink=dim | a smaller dimmer one
+wait 1
+
+# a photo with callouts at spots. The check puts a generated test pattern up as u1 (900 by 600) and, as the server does for a photo a turn carries, the shape is stamped: aspect=1.5
+
+scene photo layout=figure canvas=wide
+pic p1 from=u1 aspect=1.5
+say c1 callout at=8,10 in=p1 | top left
+say c2 callout at=92,12 in=p1 | top right
+say c3 callout at=50,50 in=p1 | middle
+say c4 callout at=20,78 in=p1 | low left
+say c5 callout at=81,90 in=p1 | bottom right
+say c6 callout at=50,8 in=p1 | top middle
+say c7 callout at=3,50 in=p1 | left edge
+say c8 callout at=97,55 in=p1 | right edge
+wait 1
