@@ -9,7 +9,7 @@ line shadow 31,78 75,78 stroke=accent thick=2
 path sky stroke=none | M5.6 53.1 A26 26 0 0 1 25.5 36.4
 circle sun 5.6,53.1 5 fill=accent soft=3
 card tools | Try it
-slider height 20 80 20 unit=° in=tools | Sun height
+slider height 20 80 20 in=tools | Sun height
 pick view tabs in=tools | Day | Dusk | Night
 bind height | move sun along=sky
 bind height 20..30 | line shadow 31,78 59,78
@@ -18,5 +18,5 @@ bind height 45..60 | line shadow 31,78 40,78
 bind height 60..80 | line shadow 31,78 34,78
 bind view=dusk | set sun fill=#ff8a4c
 bind view=night | set sun fill=dim
-say | Sun {height} up: a 2 m post throws a {round(2/tan(rad(height)), 1)} m shadow.
+say | Sun {height} degrees up: a 2 m post throws a {round(2/tan(rad(height)), 1)} m shadow.
 button ask | Why is it longer at dusk?
