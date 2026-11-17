@@ -1,6 +1,7 @@
 // Prints the schedule a script adds up to: when every line starts and ends,
 // as if the whole script had arrived before playback began.
 // Usage: pnpm timeline <demo name | path to a .series file>
+//        pnpm timeline showcase   the capability pages one to a line: their seconds, hold, lines and what is wrong with them
 //        pnpm timeline            checks every worked example in the brain's prompt, every demo and every seed technique,
 //                                 and that each line reads back as itself
 import { readdirSync, readFileSync } from 'node:fs';
@@ -128,7 +129,8 @@ if (argument === undefined || argument === 'all') {
     });
   }
 }
-if (argument !== undefined && argument !== 'examples' && argument !== 'all') {
+if (argument === 'showcase') ok = showcaseChecks(true) && ok;
+if (argument !== undefined && argument !== 'examples' && argument !== 'all' && argument !== 'showcase') {
   const path = argument.endsWith('.series') ? argument : fileURLToPath(new URL(`../demos/${argument}.series`, import.meta.url));
   ok = run(argument, readFileSync(path, 'utf8')) && ok;
 }

@@ -1,0 +1,73 @@
+# Diagrams: the pages for what the painter lays out (PLAN-catalogue.md). The brain names the parts; none of these has a coordinate but the map's pins.
+
+# flow: steps and decisions joined by arrows that go round every box.
+scene flow caption brisk
+look paper
+flow plant right | Should I water this plant?
+node start end | A drooping leaf
+node dry ask from=start | Is the top inch of soil dry?
+node water from=dry:yes fill=accent | Water it, slowly
+node wait from=dry:no | Wait two days
+node light from=wait | Check the light instead
+say enter=fade by=all dur=0.2s | Check the soil.
+
+# tree: each thing drawn under the thing it belongs to.
+scene tree caption brisk
+look paper
+tree down | Where a sentence comes from
+node root | Sentence
+node subject from=root | Subject
+node predicate from=root | Predicate
+node noun from=subject | The cat
+node verb from=predicate | sat on
+node object from=predicate | the mat
+say enter=fade by=all dur=0.2s | Sentences are trees.
+wait 0.15s
+
+# cycle: things that go round, drawn as a ring that closes.
+scene cycle caption brisk
+look paper
+cycle | Water, always moving
+node sea | Sea
+node cloud | Cloud
+node rain | Rain
+node river | River
+link rain river | runs off
+say enter=fade by=all dur=0.2s | It only moves.
+
+# timeline: dates placed to scale along a line.
+scene timeline caption brisk
+look paper
+timeline tl | The way to the Moon
+node sputnik 1957 | Sputnik
+node gagarin @with 1961 | First human in orbit
+node apollo @with 1969 | Apollo 11
+node programme @with 1961 1972 note | The Apollo programme
+say enter=fade by=all dur=0.2s | Twelve years, then footprints.
+wait 0.13s
+
+# cutaway: a drawing cut open, every part named, the labels clear of each other.
+scene cutaway caption brisk
+look paper
+figure heart cutaway | A heart, cut open
+path body fill=muscle | M52 14 C74 10 90 30 84 54 C78 76 60 90 46 94 C28 84 12 62 16 38 C20 20 36 12 52 14 Z
+poly ra smooth 24,30 38,26 42,40 30,46 in=body fill=blue label="right atrium"
+poly rv smooth 26,52 44,48 46,84 34,78 in=body fill=blue label="right ventricle"
+poly la smooth 56,26 74,28 76,42 58,42 in=body fill=red label="left atrium"
+poly lv smooth 54,48 76,50 70,74 48,90 in=body fill=red label="left ventricle"
+path aorta stroke=red thick=5 label="aorta" | M62 50 C60 8 82 4 88 18
+end
+say enter=fade by=all dur=0.2s | Every part is named.
+wait 0.58s
+
+# pins: places marked as pins on a route, each label clear of the others (a drawing under a map hides its pins, so this page draws none).
+scene pins caption brisk
+look paper
+map trip route | A day in town
+node station 24,46 | Station
+node market 48,40 | Market
+node library 62,44 | Library
+node park 100,36 | Park
+node harbour 128,50 | Harbour
+say enter=fade by=all dur=0.2s | Labels keep clear.
+wait 0.39s
