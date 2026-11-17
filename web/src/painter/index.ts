@@ -99,7 +99,7 @@ function askedOf(input: TurnInput): string {
     case 'tap':
       return `Tapped "${words(input.text)}"`;
     case 'act':
-      return `Used "${words(input.text)}"`;
+      return input.part === undefined ? `Used "${words(input.text)}"` : `Tapped "${words(input.part.label)}"`;
     case 'demo':
       return `Played the demo ${words(input.script)}`;
     case 'script':
@@ -115,7 +115,7 @@ function askedOf(input: TurnInput): string {
 function openedBy(input: TurnInput): Pick<Recording, 'typed' | 'touched' | 'controls'> {
   if (input.kind === 'prompt') return { typed: input.text };
   if (input.kind === 'tap') return { touched: { id: input.id, text: input.text } };
-  if (input.kind === 'act') return { touched: { id: input.id, text: input.text }, controls: input.values };
+  if (input.kind === 'act') return { touched: { id: input.id, text: input.part?.label ?? input.text }, controls: input.values };
   return {};
 }
 

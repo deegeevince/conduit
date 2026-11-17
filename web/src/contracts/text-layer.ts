@@ -17,6 +17,18 @@ export interface TextLine {
   readonly box: Box;
 }
 
+/**
+ * fb-055. A label the brain drew that a tap can ask about (`say callout near=X`, `say label near=X`, a figure part's `label=`): what it says as written, the
+ * id of the element (or figure part) that is the label, and what it names (the `near=` target, the figure a part is in), when it names one. One label can be
+ * several spans (a figure sets each line of its words as an element of its own): they share `group`.
+ */
+export interface TextAsk {
+  readonly label: string;
+  readonly id: string;
+  readonly on: string | null;
+  readonly group: string;
+}
+
 /** The words of one element on stage, for the text layer. */
 export interface TextSpanView {
   /** the element's key; a structure's parts are `<key>/<part>` */
@@ -47,6 +59,8 @@ export interface TextSpanView {
    * a canvas. `lines` is then empty: they are copied and read, not laid over the picture.
    */
   readonly placed: boolean;
+  /** fb-055. Set when a tap on these words asks about what they label; absent for every other kind of words */
+  readonly ask?: TextAsk;
 }
 
 /** The element a key on stage belongs to: a structure's parts are `<owner>/<part>`, a mock-up's lines `<owner>/…#<n>`. */

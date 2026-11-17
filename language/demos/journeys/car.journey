@@ -1,7 +1,8 @@
 # The car journey: a scripted walk through one live conversation, played on the real brain. Never a replay.
 # One step per line. A step may be named, `name: step`, so a film editor can find it in the timings.
 #   type | <prompt>                 type it into the real box, letter by letter (about 12 a second), and send
-#   tap | <visible label>           a choice, a part or a label on stage (tap? | ... skips the step when it never shows)
+#   tap | <visible label>           a choice, a control, or a label the brain drew on a part (a callout, a figure's label), found by its words: "Brakes" taps "brake disc"
+#                                   (tap? | ... skips the step when it never shows)
 #   drag <control id or label> <from> > <to> over=<s>   (min and max stand for the ends of the slider)
 #                                   work a slider by its knob (drag? skips it when there is no such control)
 #   undo                            the Undo chip
@@ -15,7 +16,7 @@ hold 5
 car: type | Show me the main parts of a car
 rest
 hold 4
-# the brain draws what it likes: a part it did not draw is skipped after a few seconds, and said so in the timings
+# the brain draws what it likes, and what it labels can be tapped: "Brakes" is the closest label ("brake disc", "brakes"); a part it did not label is skipped after a few seconds, and said so in the timings
 brakes: tap? | Brakes
 rest
 hold 4

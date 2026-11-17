@@ -13,7 +13,7 @@ export interface JourneyStep {
   readonly optional: boolean;
   /** `name: type | …`: what a film editor calls this step (`car`, `brakes`, `dragSpeed`); null when it has none */
   readonly name: string | null;
-  /** type: the words; tap: the label */
+  /** type: the words; tap: the label (a choice, a control, or a label the brain drew on a part, found by its words) */
   readonly text: string;
   /** drag: the control's id or label, the two values and the seconds */
   readonly target: string;

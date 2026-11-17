@@ -8,7 +8,7 @@ import type { ElementFrame, Frame } from '../contracts/frame';
 import type { Box, Viewport } from '../contracts/space';
 import { layerZ, projectToScreen } from '../contracts/space';
 import { ownerKeyOf } from '../contracts/text-layer';
-import type { TextLine, TextRole, TextSpanView } from '../contracts/text-layer';
+import type { TextAsk, TextLine, TextRole, TextSpanView } from '../contracts/text-layer';
 import { FACES } from '../fonts/faces';
 
 /** a run closer to the one before than this share of the font size is the same word (emphasis splits a word, it never leaves a gap) */
@@ -98,8 +98,32 @@ function linesOf(element: ElementFrame): { readonly box: Box; readonly runs: rea
 
 const HEADING_LEVEL: Readonly<Record<string, number>> = { xxl: 1, xl: 2 };
 
+const partOf = (key: string): string => (key.includes('/') ? key.slice(key.indexOf('/') + 1) : '');
+
+/** A figure sets each line of a part's label as an element of its own: `<figure>/label:<part>:<line>` */
+const FIGURE_LABEL = /(?:^|\/)label:(.+):(\d+)$/;
+
+/**
+ * fb-055. Whether a tap on these words asks about what they label, and what they label. Only the words the brain set against something drawn count: text with
+ * `near=` (a `say label near=x`, a `say callout near=x`), a callout with a leader (`say callout at=x,y`), a figure part's `label=`. Never a choice (that is
+ * its own tap), a line of the flow, or a cell, a node or a mock-up's text: the drawn part itself is never the target, only its words (a tap anywhere on a big
+ * drawn area would be a question nobody asked).
+ */
+function askOf(element: ElementFrame, owner: ElementSpan | undefined, structure: string | null, part: string, ownerKey: string): { readonly ask: Omit<TextAsk, 'label'>; readonly label: string | null; readonly index: number } | null {
+  if (element.tappable || owner === undefined) return null;
+  if (structure === 'figure') {
+    const found = FIGURE_LABEL.exec(part);
+    if (found === null || owner.figure?.kind !== 'structure') return null;
+    return { ask: { id: found[1] as string, on: owner.id, group: `${ownerKey}/label:${found[1]}` }, label: null, index: Number(found[2]) };
+  }
+  if (part !== '' || owner.kind !== 'text' || owner.text.trim() === '' || owner.href !== undefined) return null;
+  const near = owner.style.near;
+  if ((near === null || near.part !== undefined) && owner.style.leader !== true) return null;
+  return { ask: { id: owner.id, on: near === null ? null : near.id, group: ownerKey }, label: owner.text.replace(/\s+/g, ' ').trim(), index: 0 };
+}
+
 function roleOf(element: ElementFrame, owner: ElementSpan | undefined, parent: ElementSpan | undefined): { role: TextRole; level: number; within: TextSpanView['within']; structure: string | null; lang: string | null } {
-  const part = element.key.includes('/') ? element.key.slice(element.key.indexOf('/') + 1) : '';
+  const part = partOf(element.key);
   const structureOf = (span: ElementSpan | undefined): ElementSpan | undefined => (span?.figure?.kind === 'structure' ? span : undefined);
   const home = structureOf(owner) ?? structureOf(parent);
   const structure = home?.figure?.kind === 'structure' ? home.figure.structure : null;
@@ -126,6 +150,8 @@ function roleOf(element: ElementFrame, owner: ElementSpan | undefined, parent: E
 
 interface Draft {
   readonly span: Omit<TextSpanView, 'order'>;
+  /** fb-055: set for the words of a label; `label` is null for a figure's, whose words are all the lines of its group */
+  readonly asks?: { readonly ask: Omit<TextAsk, 'label'>; readonly label: string | null; readonly index: number };
   readonly ownerOrder: number;
   readonly ownerKey: string;
   readonly y: number;
@@ -165,7 +191,9 @@ export function textSpansOf(frame: Frame, schedule: Schedule): readonly TextSpan
     drawnOwners.add(ownerKey);
     const first = placed[0] as Placed;
     const text = placed.map((p) => p.line.text).join(found.role === 'code' ? '\n' : ' ');
+    const asks = askOf(element, owner, found.structure, partOf(element.key), ownerKey);
     drafts.push({
+      ...(asks === null ? {} : { asks }),
       ownerKey,
       ownerOrder: owner?.order ?? element.z,
       y: first.centre.y,
@@ -212,7 +240,15 @@ export function textSpansOf(frame: Frame, schedule: Schedule): readonly TextSpan
     if (Math.abs(a.y - b.y) > band) return a.y - b.y;
     return a.x - b.x;
   });
-  return drafts.map((draft, order) => ({ ...draft.span, order }));
+  // a figure's label is the lines of its words, together
+  const lines = new Map<string, { index: number; text: string }[]>();
+  for (const draft of drafts) if (draft.asks !== undefined && draft.asks.label === null) lines.set(draft.asks.ask.group, [...(lines.get(draft.asks.ask.group) ?? []), { index: draft.asks.index, text: draft.span.text }]);
+  const wordsOf = (group: string): string =>
+    (lines.get(group) ?? [])
+      .sort((a, b) => a.index - b.index)
+      .map((line) => line.text)
+      .join(' ');
+  return drafts.map((draft, order) => ({ ...draft.span, order, ...(draft.asks === undefined ? {} : { ask: { ...draft.asks.ask, label: draft.asks.label ?? wordsOf(draft.asks.ask.group) } }) }));
 }
 
 /** A signature of what the layer shows, to send it only when it changes. */
@@ -221,7 +257,7 @@ export function textSignature(spans: readonly TextSpanView[]): string {
   for (const span of spans) {
     out += `${span.key}|${span.role}|${span.text}|`;
     for (const line of span.lines) out += `${Math.round(line.box.x)},${Math.round(line.box.y)},${Math.round(line.box.width)},${Math.round(line.box.height)};`;
-    out += `|${Math.round(span.rotation)}\n`;
+    out += `|${Math.round(span.rotation)}${span.ask === undefined ? '' : `|${span.ask.group}`}\n`;
   }
   return out;
 }

@@ -113,7 +113,7 @@ export function observeInput(s: Session, input: TurnInput, now: number): void {
     for (const id of input.voice ?? []) add('voice', `you sent a voice note (${id})`, id);
   } else if (input.kind === 'tap' || input.kind === 'act') {
     // the page already told us of the tap or the control as it happened; this is the same act arriving as the turn's input
-    if (!s.obs.recent(['tap', 'state', 'did'], input.id, 5000, now, s.obs.briefedThrough)) add('tap', `you ${input.kind === 'act' ? 'pressed' : 'tapped'} ${quoted(input.text, 60)}`, input.id);
+    if (!s.obs.recent(['tap', 'state', 'did'], input.id, 5000, now, s.obs.briefedThrough)) add('tap', `you ${input.kind === 'act' && input.part === undefined ? 'pressed' : 'tapped'} ${quoted(input.kind === 'act' && input.part !== undefined ? input.part.label : input.text, 60)}`, input.id);
   } else if (input.kind === 'refine') {
     add('said', `you chose to go on: ${input.note}`);
   }

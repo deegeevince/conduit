@@ -1797,7 +1797,8 @@ export class Conductor {
     if (s.turn !== turn || turn.endReason !== 'done') return 'a newer turn is on the stage';
     if (!turn.reported) return 'the answer has not come to rest';
     if (this.deps.brains.configured.review === undefined) return 'this brain cannot look at an answer again';
-    if (turn.input.kind === 'act') return 'the person is working a control';
+    // a tap on a label is a question like a choice's tap, and its answer is looked at as that one's is
+    if (turn.input.kind === 'act' && turn.input.part === undefined) return 'the person is working a control';
     const view = this.docs.viewOfSession(s.id);
     if ((view !== null && hasLesson({ document: { document: view.document, state: view.state } }))) return 'a lesson or document turn';
     const structures = turn.score.schedule.elements.filter((element) => element.exit === null && element.figure?.kind === 'structure');

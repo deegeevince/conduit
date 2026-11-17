@@ -1,0 +1,3 @@
+# The journey pnpm check plays for fb-055 on the replay brain: the check draws a labelled car by itself while this waits, and "Brakes" must find the label "brake disc".
+tap | Brakes
+rest

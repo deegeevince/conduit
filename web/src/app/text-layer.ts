@@ -51,6 +51,14 @@ export function createTextLayer(stage: HTMLElement): TextLayer {
       const slash = span.key.indexOf('/');
       if (slash >= 0) holder.dataset['part'] = span.key.slice(slash + 1);
       if (span.within !== null) holder.dataset['structure'] = span.within.key;
+      // fb-055: words a tap asks about. The stage's pointer path (`app/stage-app.ts`) reads these; the styling is `.stage__text-block--ask` (chrome.css)
+      if (span.ask !== undefined) {
+        holder.classList.add('stage__text-block--ask');
+        holder.dataset['ask'] = span.ask.label;
+        holder.dataset['askId'] = span.ask.id;
+        holder.dataset['askGroup'] = span.ask.group;
+        if (span.ask.on !== null) holder.dataset['askOn'] = span.ask.on;
+      }
       let offset = 0;
       if (span.within !== null) {
         holder.dataset['row'] = String(span.within.row);

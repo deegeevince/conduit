@@ -3,6 +3,7 @@
 // for each step, when things happened (the page's clock and `performance.now()`), for a film editor that cuts the waits and places captions.
 
 import { parseJourney, seeded } from './journey-script';
+import { likeness, norm } from './journey-words';
 import type { FocusBox, FocusSample, JourneyState, JourneyStep, Stamp, StepTiming } from './journey-script';
 import type { StageApp } from './stage-app';
 import type { ControlView, StageElementView } from '../contracts/painter';
@@ -16,7 +17,6 @@ declare global {
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 const stamp = (): Stamp => ({ at: Date.now(), perf: performance.now() });
 const ease = (t: number): number => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
-const norm = (text: string): string => text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 
 /** a tap target that never shows, a rest that never comes: how long each is waited for */
 const TAP_WAIT_MS = ((): number => {
@@ -164,6 +164,42 @@ export function startJourney(options: JourneyOptions): JourneyState {
       if (best === null || score < best.score) best = { target, score };
     }
     return best?.target ?? null;
+  };
+
+  // ---- labels: what a tap can ask about (fb-055). A label is the brain's words set against a part (`say callout near=x`, a figure part's `label=`), and the text layer
+  // carries it as `.stage__text-block--ask`. `tap | Brakes` finds the closest of them by what the words say: "Brakes" finds "brake disc", "brakes" and "Brake".
+  /** the labels on stage now: each is the first line of its words, in stage pixels (the text layer is only there while the stage is at rest) */
+  const labels = (): Target[] => {
+    const at = stageBox();
+    const seen = new Set<string>();
+    const out: Target[] = [];
+    for (const holder of document.querySelectorAll<HTMLElement>('.stage__text-block--ask')) {
+      const group = holder.dataset['askGroup'] ?? holder.dataset['key'] ?? '';
+      const label = holder.dataset['ask'] ?? '';
+      const line = holder.querySelector<HTMLElement>('.stage__text-line');
+      if (label === '' || seen.has(group) || line === null || holder.closest('[data-moving]') !== null) continue;
+      const rect = line.getBoundingClientRect();
+      if (rect.width < 2 || rect.height < 2 || rect.right < at.left || rect.bottom < at.top || rect.left > at.right || rect.top > at.bottom) continue;
+      seen.add(group);
+      out.push({ id: holder.dataset['askId'] ?? group, label, box: { x: rect.left - at.left, y: rect.top - at.top, width: rect.width, height: rect.height }, tappable: true, key: holder.dataset['key'] ?? group });
+    }
+    return out;
+  };
+
+  const findLabel = (wanted: string): Target | null => {
+    let best: { target: Target; score: number } | null = null;
+    for (const target of labels()) {
+      const score = likeness(target.label, wanted);
+      if (score >= 0 && (best === null || score < best.score)) best = { target, score };
+    }
+    return best?.target ?? null;
+  };
+
+  /** what `tap | <words>` taps: a choice or a control that says exactly that; else the closest label by its words; else the first thing on stage that has them (`findTarget`) */
+  const findTap = (wanted: string): Target | null => {
+    const exact = findTarget(wanted);
+    if (exact !== null && exact.tappable && norm(exact.label) === norm(wanted)) return exact;
+    return findLabel(wanted) ?? exact;
   };
 
   /** the target, once it has stopped moving and is on stage; null if it does not come in `waitMs` */
@@ -325,7 +361,7 @@ export function startJourney(options: JourneyOptions): JourneyState {
   };
 
   const doTap = async (step: JourneyStep, timing: StepTiming): Promise<boolean> => {
-    const target = await settled(() => findTarget(step.text), step.optional ? OPTIONAL_WAIT_MS : TAP_WAIT_MS);
+    const target = await settled(() => findTap(step.text), step.optional ? OPTIONAL_WAIT_MS : TAP_WAIT_MS);
     if (target === null) {
       if (step.optional) return false;
       return fail(`step ${step.n} (line ${step.line}): "${step.text}" never appeared on stage within ${Math.round(TAP_WAIT_MS / 1000)} s, so the journey stopped there`);
