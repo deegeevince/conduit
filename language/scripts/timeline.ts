@@ -15,6 +15,7 @@ import { anchorChecks } from './anchor-checks';
 import { nocutChecks } from './nocut-checks';
 import { motionChecks } from './motion-checks';
 import { showcaseChecks } from './showcase-checks';
+import { spaceChecks } from './space-checks';
 
 function describe(issues: readonly Issue[]): string {
   return issues.map((issue) => `${issue.severity} ${issue.code}: ${issue.message}`).join('; ');
@@ -110,6 +111,7 @@ if (argument === undefined || argument === 'all') {
   ok = nocutChecks() && ok;
   ok = motionChecks() && ok;
   ok = showcaseChecks() && ok;
+  ok = spaceChecks() && ok;
   for (const demo of DEMOS) ok = run(`demo ${demo.name}`, readFileSync(fileURLToPath(new URL(`../demos/${demo.name}.series`, import.meta.url)), 'utf8')) && ok;
   const seedDir = fileURLToPath(new URL('../../techniques/seed/', import.meta.url));
   for (const file of readdirSync(seedDir).filter((name) => name.endsWith('.md')).sort()) {
