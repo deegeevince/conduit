@@ -1,6 +1,6 @@
-import { LEAD_WINDOW, STANDING_LIMITS, describeFigure } from '@conduit/language';
+import { LEAD_WINDOW, STANDING_LIMITS, describeFigure, owedFrom, owedStanding } from '@conduit/language';
 import { withArtNotes } from '../art/notes';
-import type { BackEventRecord, ReviewOutcome, Services, ShownItem, TurnContext, TurnMemory, TurnReport } from '@conduit/language';
+import type { BackEventRecord, CriticFinding, OwedFinding, ReviewOutcome, Services, ShownItem, TurnContext, TurnMemory, TurnReport } from '@conduit/language';
 import type { ActiveTurn, Session } from './session';
 import { SERVER_LIMITS } from './session';
 
@@ -91,4 +91,35 @@ function reviewOf(turn: ActiveTurn): { review?: ReviewOutcome } {
 /** What the painter reported since the previous turn opened: taps, and the controls the user worked; they go into the next turn's context. */
 export function heardSince(session: Session, cursor: number): BackEventRecord[] {
   return session.events.filter((record) => record.cursor > cursor && (record.event.type === 'tap' || record.event.type === 'control'));
+}
+
+
+/** The most findings a conversation holds owed, and the most briefs that tell one: past two, it was not to be mended by words. */
+const OWED_KEPT = 8;
+const OWED_TOLD = 2;
+
+/**
+ * Keeps the critic's blocking findings of an answer that nothing mended (its repair was skipped because a newer turn is on stage, or was
+ * refused, or failed), so the brain is told of them at its next turn. One answer's findings replace its earlier ones. Answers what was kept.
+ */
+export function oweFindings(session: Pick<Session, 'owed'>, turn: string, finding: Pick<CriticFinding, 'problems'>): OwedFinding[] {
+  const owed = owedFrom(turn, finding);
+  if (owed.length === 0) return owed;
+  session.owed = session.owed.filter((item) => item.finding.turn !== turn);
+  for (const one of owed) session.owed.push({ finding: one, told: 0 });
+  while (session.owed.length > OWED_KEPT) session.owed.shift();
+  return owed;
+}
+
+/**
+ * What the next brief says is still broken: findings whose element is still on stage (or that name none), told at most twice each.
+ * Counts the telling, so call it once, when a turn's brief is built.
+ */
+export function owedToTell(session: Pick<Session, 'owed' | 'stage'>): OwedFinding[] {
+  if (session.owed.length === 0) return [];
+  const live = new Set(session.stage.elements.map((element) => element.id));
+  session.owed = session.owed.filter((item) => item.told < OWED_TOLD && (item.finding.id === null || live.has(item.finding.id)));
+  const told = owedStanding(session.owed.map((item) => item.finding), live);
+  for (const item of session.owed) if (told.includes(item.finding)) item.told += 1;
+  return told;
 }

@@ -24,7 +24,13 @@
 //      both pictures in time). Shown: `pass … fixing`, then the lines, as
 //      ordinary lines (same turn, same `seq` numbering, same normaliser, same
 //      score). Refused: `pass … refused` with the reason; nothing was pushed
-//      anywhere, so the draft stands exactly as it was. A painter that cannot
+//      anywhere, so the draft stands exactly as it was. A refusal is not
+//      the end while the pass has time: the brain is told why (and what the
+//      candidate would have left wrong, as a rejected line of its brief) and writes
+//      another, as long as `policy.passMs` from the first call allows and each
+//      try leaves fewer things not landing than the one before (the first
+//      refusal always earns a second). Only the first try the rules accept is
+//      shown; `pass … refused` is said once, when the last try is thrown out. A painter that cannot
 //      try a candidate gets no fix at all, never a redraw.
 //   7. Abandon the pass (abort, `pass … skipped`) when the first line has not
 //      come within `policy.firstLineMs` of the draft's end, or the whole pass
@@ -44,7 +50,7 @@
 // any reason other than the user's interruption ends as `skipped`: the draft
 // was already good enough to show, and the turn never fails because of a look.
 
-import { FIX_POLICY, blockingCount, contentOf, criticPrefers, draftFactsOf, fixKeeps, fixLineAllowed, isKeep, landsNoWorse, repairKeeps, serializeLine, worthAFix, worthALook } from '@conduit/language';
+import { FIX_POLICY, blockingCount, contentOf, retryProblem, criticPrefers, draftFactsOf, fixKeeps, fixLineAllowed, isKeep, landsNoWorse, repairKeeps, serializeLine, worthAFix, worthALook } from '@conduit/language';
 import type {
   ContentCount,
   CriticFinding,
@@ -122,6 +128,8 @@ export interface FixAttempt {
   readonly why: string | null;
   readonly draft: ContentCount | null;
   readonly candidate: ContentCount | null;
+  /** the brain was told why it was thrown out and asked for another: this was not the last word on the draft */
+  readonly retried?: boolean;
 }
 
 interface Slot {
@@ -369,91 +377,116 @@ export async function* reviewTurn(args: ReviewTurnArgs): AsyncGenerator<ReviewSt
     yield { type: 'pass', pass: next, state: 'looking', reason: null };
     const wasSeq = args.state().lastSeq;
     const draftContent = report?.content ?? contentOf(state.schedule);
-    const outcome = yield* collectFix(args, { pass: next, report, passStart, form });
-    if (outcome.cost !== null) costUsd = (costUsd ?? 0) + outcome.cost;
-    if (outcome.firstLineMs !== null && firstLineMs === null) firstLineMs = outcome.firstLineMs;
-    if (signal.aborted) return;
+    // A fix that is thrown out is told back to the brain, with what it would have left wrong, and it writes another, while the pass's own time
+    // (`policy.passMs`, from the first call) allows and each try is nearer than the last. Nothing is shown until a try is accepted.
+    const triesFrom = now();
+    const thrown: LineProblem[] = [];
+    let lastAfter: number | null = null;
+    let verdictLeft: string | null = null;
+    let accepted = false;
+    for (let attempt = 1; ; attempt += 1) {
+      const left = policy.passMs - (now() - triesFrom);
+      const outcome = yield* collectFix(args, { pass: next, report, passStart: attempt === 1 ? passStart : now(), form, extra: thrown, passMs: Math.max(1, left) });
+      if (outcome.cost !== null) costUsd = (costUsd ?? 0) + outcome.cost;
+      if (outcome.firstLineMs !== null && firstLineMs === null) firstLineMs = outcome.firstLineMs;
+      if (signal.aborted) return;
 
-    if (outcome.state === 'failed') {
-      why = outcome.reason;
-      if (result !== 'fixed') result = 'skipped';
-      break;
-    }
-    if (outcome.state === 'abandoned') {
-      // Cut at its deadline with lines in hand: it was never tried, so it is refused and the draft stands (P2-14), never "fixed".
-      if (outcome.wrote > 0) {
+      if (outcome.state === 'failed') {
+        why = outcome.reason;
+        if (result !== 'fixed') result = 'skipped';
+        break;
+      }
+      if (outcome.state === 'abandoned') {
+        // Cut at its deadline with lines in hand: it was never tried, so it is refused and the draft stands (P2-14), never "fixed".
+        if (outcome.wrote > 0) {
+          written += 1;
+          if (result !== 'fixed') result = 'kept';
+          why = outcome.reason;
+          fixes.push({ pass: next, form, lines: outcome.texts, shown: false, why, draft: draftContent, candidate: null });
+          yield { type: 'pass', pass: next, state: 'refused', reason: outcome.reason };
+        } else {
+          if (result !== 'fixed') result = 'skipped';
+          why = outcome.reason;
+          yield { type: 'pass', pass: next, state: 'skipped', reason: outcome.reason };
+        }
+        break;
+      }
+      if (outcome.wrote === 0) {
         written += 1;
         if (result !== 'fixed') result = 'kept';
-        why = outcome.reason;
-        fixes.push({ pass: next, form, lines: outcome.texts, shown: false, why, draft: draftContent, candidate: null });
-        yield { type: 'pass', pass: next, state: 'refused', reason: outcome.reason };
-      } else {
-        if (result !== 'fixed') result = 'skipped';
-        why = outcome.reason;
-        yield { type: 'pass', pass: next, state: 'skipped', reason: outcome.reason };
+        why = attempt === 1 ? null : verdictLeft;
+        yield { type: 'pass', pass: next, state: attempt === 1 ? 'kept' : 'refused', reason: attempt === 1 ? null : verdictLeft };
+        break;
       }
-      break;
-    }
-    if (outcome.wrote === 0) {
       written += 1;
-      if (result !== 'fixed') result = 'kept';
+
+      // Tried out of sight. Nothing below touches the turn's score or the stage until the three rules have said yes.
+      let refusal: string | null = null;
+      let tried: DraftReport | null = null;
+      let here: ReturnType<NonNullable<ReviewTurnArgs['tryFix']>> = null;
+      if (outcome.lines.length === 0) {
+        refusal = REFUSALS.nothing;
+      } else {
+        gate.open(args.turn, next);
+        yield { type: 'pass', pass: next, state: 'staged', reason: null };
+        here = measured !== null && args.tryFix !== undefined ? args.tryFix(next, outcome.texts) : null;
+        if (here !== null) {
+          // SA2: tried on a copy of the turn's score, here. The page is not asked.
+          tried = { turn: args.turn, pass: next, sight: here.measured.sight, placed: here.measured.placed, picture: null, content: here.measured.content };
+          args.log?.info('review.tried', { turn: args.turn, pass: next, attempt, ms: Math.round(here.measured.ms * 10) / 10, rejects: here.rejects.length });
+        } else if (args.candidate !== undefined) {
+          args.candidate(next, outcome.texts);
+          tried = await gate.wait(args.turn, next, fixPolicy.candidateWaitMs, signal);
+        }
+        if (signal.aborted) return;
+        const verdict = await judgeFix(args, { policy: fixPolicy, form, pass: next, draft: report, draftContent, tried });
+        refusal = verdict.refusal;
+        // A fix tried here has no picture of its own. When the draft has one and the critic is on, the page is asked for the candidate's picture
+        // alone, after the fix is shown and off the turn's clock, and the critic compares the two in the background.
+        if (here !== null && refusal === null && args.critic !== undefined && args.candidate !== undefined && report?.picture != null) {
+          const draftPicture = report.picture;
+          const triedSight = here.measured.sight;
+          args.candidate(next, outcome.texts);
+          void gate.wait(args.turn, next, fixPolicy.compareMs, signal).then((late) => {
+            if (late?.picture != null) startCompare(args, { policy: fixPolicy, form, pass: next, draftPicture, candidatePicture: late.picture, sight: triedSight });
+          });
+        }
+        decisions.push({ look: refusal === null, why: refusal ?? 'the fix keeps what was there and lands no worse' });
+      }
+      if (signal.aborted) return;
+
+      let again = false;
+      if (refusal !== null) {
+        // Another try, when the time allows and the last one came nearer: the first refusal always earns a second.
+        const after = tried === null ? null : blockingCount(tried.sight);
+        const improving = attempt === 1 || (after !== null && lastAfter !== null && after < lastAfter);
+        const remaining = policy.passMs - (now() - triesFrom);
+        again = refusal !== REFUSALS.late && improving && remaining >= Math.min(policy.firstLineMs, policy.passMs / 2) && !signal.aborted;
+        fixes.push({ pass: next, form, lines: outcome.texts, shown: false, why: refusal, draft: draftContent, candidate: tried?.content ?? null, retried: again });
+        if (again) {
+          thrown.push(retryProblem(attempt, outcome.texts, refusal, tried?.sight ?? null));
+          lastAfter = after ?? lastAfter;
+          verdictLeft = refusal;
+          yield { type: 'pass', pass: next, state: 'looking', reason: `trying again: ${refusal}` };
+          continue;
+        }
+        if (result !== 'fixed') result = 'kept';
+        why = refusal;
+        yield { type: 'pass', pass: next, state: 'refused', reason: refusal };
+        break;
+      }
+
+      fixes.push({ pass: next, form, lines: outcome.texts, shown: true, why: null, draft: draftContent, candidate: tried?.content ?? null });
+      result = 'fixed';
       why = null;
-      yield { type: 'pass', pass: next, state: 'kept', reason: null };
+      yield { type: 'pass', pass: next, state: 'fixing', reason: null };
+      for (const line of outcome.lines) yield line;
+      floor = wasSeq;
+      pass = next;
+      accepted = true;
       break;
     }
-    written += 1;
-    if (outcome.lines.length === 0) {
-      const refusal: string = REFUSALS.nothing;
-      if (result !== 'fixed') result = 'kept';
-      why = refusal;
-      fixes.push({ pass: next, form, lines: [], shown: false, why: refusal, draft: draftContent, candidate: null });
-      yield { type: 'pass', pass: next, state: 'refused', reason: refusal };
-      break;
-    }
-
-    // Tried out of sight. Nothing below touches the turn's score or the stage until the three rules have said yes.
-    gate.open(args.turn, next);
-    yield { type: 'pass', pass: next, state: 'staged', reason: null };
-    let tried: DraftReport | null;
-    const here = measured !== null && args.tryFix !== undefined ? args.tryFix(next, outcome.texts) : null;
-    if (here !== null) {
-      // SA2: tried on a copy of the turn's score, here. The page is not asked.
-      tried = { turn: args.turn, pass: next, sight: here.measured.sight, placed: here.measured.placed, picture: null, content: here.measured.content };
-      args.log?.info('review.tried', { turn: args.turn, pass: next, ms: Math.round(here.measured.ms * 10) / 10, rejects: here.rejects.length });
-    } else if (args.candidate !== undefined) {
-      args.candidate(next, outcome.texts);
-      tried = await gate.wait(args.turn, next, fixPolicy.candidateWaitMs, signal);
-    } else {
-      tried = null;
-    }
-    if (signal.aborted) return;
-    const verdict = await judgeFix(args, { policy: fixPolicy, form, pass: next, draft: report, draftContent, tried });
-    // A fix tried here has no picture of its own. When the draft has one and the critic is on, the page is asked for the candidate's picture
-    // alone, after the fix is shown and off the turn's clock, and the critic compares the two in the background.
-    if (here !== null && verdict.refusal === null && args.critic !== undefined && args.candidate !== undefined && report?.picture != null) {
-      const draftPicture = report.picture;
-      args.candidate(next, outcome.texts);
-      void gate.wait(args.turn, next, fixPolicy.compareMs, signal).then((late) => {
-        if (late?.picture != null) startCompare(args, { policy: fixPolicy, form, pass: next, draftPicture, candidatePicture: late.picture, sight: here.measured.sight });
-      });
-    }
-    decisions.push({ look: verdict.refusal === null, why: verdict.refusal ?? 'the fix keeps what was there and lands no worse' });
-    fixes.push({ pass: next, form, lines: outcome.texts, shown: verdict.refusal === null, why: verdict.refusal, draft: draftContent, candidate: tried?.content ?? null });
-    if (signal.aborted) return;
-    if (verdict.refusal !== null) {
-      if (result !== 'fixed') result = 'kept';
-      why = verdict.refusal;
-      yield { type: 'pass', pass: next, state: 'refused', reason: verdict.refusal };
-      break;
-    }
-
-    result = 'fixed';
-    why = null;
-    yield { type: 'pass', pass: next, state: 'fixing', reason: null };
-    for (const line of outcome.lines) yield line;
-    floor = wasSeq;
-    pass = next;
-    if (pass > policy.passes) break;
+    if (!accepted || pass > policy.passes) break;
   }
   yield record();
 }
@@ -506,7 +539,7 @@ interface CollectOutcome {
  * `permission` events pass through at once (the log and the bill must show the pass, and an agent's calls must be seen as they happen),
  * and a line a fix may not hold goes back as a `reject`, so the next brief says why it was dropped.
  */
-export async function* collectFix(args: ReviewTurnArgs, at: { pass: number; report: DraftReport | null; passStart: number; form: ReviewForm }): AsyncGenerator<ReviewStep, CollectOutcome> {
+export async function* collectFix(args: ReviewTurnArgs, at: { pass: number; report: DraftReport | null; passStart: number; form: ReviewForm; extra?: readonly LineProblem[]; passMs?: number }): AsyncGenerator<ReviewStep, CollectOutcome> {
   const { brain, policy, signal, now } = args;
   const state = args.state();
   const controller = new AbortController();
@@ -522,7 +555,8 @@ export async function* collectFix(args: ReviewTurnArgs, at: { pass: number; repo
 
   const firstLeft = Math.max(0, policy.firstLineMs - (now() - at.passStart));
   let firstTimer: NodeJS.Timeout | undefined = setTimeout(() => abandon(`no first line of the fix within ${policy.firstLineMs} ms of the draft`), firstLeft);
-  const passTimer = setTimeout(() => abandon(`the fix took longer than ${policy.passMs} ms`), policy.passMs);
+  const passMs = at.passMs ?? policy.passMs;
+  const passTimer = setTimeout(() => abandon(`the fix took longer than ${passMs} ms`), passMs);
   const stopped = new Promise<'stopped'>((resolve) => controller.signal.addEventListener('abort', () => resolve('stopped'), { once: true }));
 
   const held: BrainEvent[] = [];
@@ -542,7 +576,7 @@ export async function* collectFix(args: ReviewTurnArgs, at: { pass: number; repo
           input: args.input,
           sight: at.report?.sight ?? null,
           picture: at.report?.picture ?? null,
-          problems: state.problems,
+          problems: at.extra === undefined || at.extra.length === 0 ? state.problems : [...state.problems, ...at.extra],
           styles: args.styles(),
           form: at.form,
           ...(at.report === null || at.report.placed.length === 0 ? {} : { placed: at.report.placed }),

@@ -741,6 +741,10 @@ export interface ContentCount {
   readonly words: number;
   /** the words of every choice (a tap element) on stage, in the order they were written: a fix may not drop or reword one. Absent from a painter of v2.1 before this; read as none. */
   readonly choices?: readonly string[];
+  /** how many words on stage say what other words on stage already say (two labels "your turn"): a fix may not add one. Absent from a painter before this; read as none. */
+  readonly dupes?: number;
+  /** the first words said twice, for the refusal to name */
+  readonly dupeOf?: string;
 }
 
 /**

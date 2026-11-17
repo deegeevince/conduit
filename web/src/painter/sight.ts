@@ -284,7 +284,7 @@ export function sightOf(timeline: Timeline, schedule: Schedule, base: StageBase,
     for (const stroke of strokes) {
       if (stroke.layer !== placed.layer || stroke.owner === key) continue;
       for (const box of lines) {
-        const padX = Math.min(box.w * 0.08, 6);
+        const padX = Math.min(box.w * 0.04, 3);
         const padY = box.h * 0.22;
         for (let i = 0; i + 1 < stroke.points.length; i += 1) if (segmentHits(stroke.points[i] as Pt, stroke.points[i + 1] as Pt, box, padX, padY)) return true;
       }
@@ -662,6 +662,34 @@ export function sightOf(timeline: Timeline, schedule: Schedule, base: StageBase,
       let wrong = mine > WRONG_PART_TOLERANCE;
       for (const [id, lines] of called) if (id !== wanted?.id && lines.length > 0 && near(end, lines) < mine - 0.5) wrong = true;
       if (wrong && !entry.notes.includes('wrong-part')) entry.notes.push('wrong-part');
+    }
+  }
+
+  // Words an earlier turn left on the stage, that this turn's drawing now runs through or lies on. `shown` is only what this turn made, so a label
+  // left by turn 11 under a box that turn 12 redrew was never measured, and the brain was never told its words were struck through. Only a crossing
+  // or a collision is said of these (the rest of their measure was said when they were made), and only of words standing at rest.
+  {
+    const made = new Set(entries.map((entry) => entry.element.key));
+    for (const element of schedule.elements) {
+      if (!element.carried || element.kind !== 'text' || made.has(element.key) || (element.exit !== null && element.exit.start <= playhead)) continue;
+      const placed = textFrames.get(element.key);
+      if (placed === undefined || placed.opacity < 0.5 || element.scene !== scene.id) continue;
+      const ps = planeScale(placed.layer, viewport);
+      const fit = fitOf(element.scene);
+      const a = stageToCanvas({ x: (placed.x - placed.width / 2) * ps, y: (placed.y - placed.height / 2) * ps }, fit);
+      const box: Rect = { x: a.x, y: a.y, w: (placed.width * ps) / fit.unit, h: (placed.height * ps) / fit.unit };
+      const topLeft = canvasToStage({ x: box.x, y: box.y }, fit, 'mid', viewport);
+      lineBoxes.set(element.key, placed.lines.map((line) => ({ x: (placed.x + line.x) * ps, y: (placed.y + line.y) * ps, w: line.width * ps, h: line.height * ps })));
+      const notes: SightNote[] = [];
+      if (strokeThrough(element.key)) notes.push('crossed');
+      const mine = lineBoxes.get(element.key) ?? [];
+      const onWords = entries.some((other) => {
+        if (other.element.kind !== 'text' || !other.resting) return false;
+        const theirs = lineBoxes.get(other.element.key) ?? [];
+        return mine.some((x) => theirs.some((y) => overlapArea(x, y) > 6 && overlapArea(x, y) > 0.04 * Math.min(areaOf(x), areaOf(y))));
+      });
+      if (onWords) notes.push('collides');
+      if (notes.length > 0) entries.push({ element, box, screenBox: { x: topLeft.x, y: topLeft.y, w: box.w * fit.unit, h: box.h * fit.unit }, resting: true, notes });
     }
   }
 

@@ -12,7 +12,7 @@
 // painter reports how the draft WILL land as soon as the brain has finished
 // writing it, without waiting for the playhead.
 
-import type { LineProblem } from './context';
+import type { LineProblem, OwedFinding } from './context';
 import type { Schedule } from './schedule';
 import { isInFlow } from './schedule';
 import { describeSight } from './sight';
@@ -219,7 +219,7 @@ export function buildReviewBrief(input: ReviewBriefInput): string {
         'Write fix lines for what the critic found, not a new answer. You have one try. It is tried out of sight and kept only if fewer things on THE STAGE MEASURES list still do not land than now (and it takes nothing away): clear as many of those as you can, and never move one thing onto another.',
         '- change a thing by its id: `set <id> size=... fill=...`, `move <id> x,y` (or the same through the canvas tools\' own intents), `revise <id> | shorter words`, `drop <id>` for a thing that only gets in the way;',
         '- a table or grid that is empty or mis-sized is opened again by its id with what differs;',
-        '- a label made with `say callout near=<id>` is placed by the stage: name the right part in `near=`, or move the part;',
+        '- a label made with `say callout near=<id>` is placed by the stage: name the right part in `near=`, or `move <id> x,y` to free it and put it there; never add a second label for words already on stage;',
         '- never `scene`, never the lines that were right, never fewer parts than before (that fix is thrown out);',
         '- before you write, check the lines you mean to write with `canvas_fits` (one line per line): it says whether they add anything that would not land, and what they clear. Write only lines it says fit, and fewer things that do not land than now; it is the only tool you have;',
         '- say nothing about the fix.',
@@ -242,7 +242,8 @@ export function buildReviewBrief(input: ReviewBriefInput): string {
       `If it reads right, answers what was asked and keeps to what was asked for every reply, write the one line \`${REVIEW_KEEP}\` and nothing else.`,
       'If not, change only what is wrong, in as few lines as it takes. What you write now is tried out of sight and shown only if it is better:',
       '- change a thing by its id: `set` (`set <id> | new words` too), `move`, `cancel <id>`, or its own line again with what differs;',
-      '- a label made with `say callout near=<id>` is placed by the stage and cannot be moved by coordinates: if it is beside the wrong thing, name the right part in `near=` or move the part itself; other words crossed or crowded can be `move`d;',
+      '- words crossed by a line, or on other words, are `move`d (`move <id> x,y`, which also frees a label from its `near=`) or `set <id> | shorter words`: never draw them again as a new label, that leaves the old one standing;',
+      '- if a try of yours is listed above as thrown out, it was measured: read why, and write a different fix;',
       '- never `scene`, never the lines that were right, never fewer parts than before: a fix that takes something away is thrown out and the draft stays;',
       '- add nothing the user did not ask for, and say nothing about the fix.',
       'Start at once.',
@@ -292,15 +293,11 @@ export const FIX_POLICY: FixPolicy = { keepDrawn: 0.8, keepWords: 0.6, candidate
  * Whether a line may be part of a pass after the draft. `scene` and `look` never are: a fix does not start again and does not change
  * the whole stage's dress. `wait` is dropped without a word: a fix takes no time of its own. `why` is what the brain is told next turn.
  */
-export function fixLineAllowed(line: Line, schedule?: Schedule): { readonly allowed: boolean; readonly why: string | null } {
+export function fixLineAllowed(line: Line, _schedule?: Schedule): { readonly allowed: boolean; readonly why: string | null } {
   if (line.verb === 'scene') return { allowed: false, why: 'a fix changes what is there; it never opens a new scene' };
   if (line.verb === 'look') return { allowed: false, why: 'a fix does not change the look' };
   if (line.verb === 'wait') return { allowed: false, why: null };
-  // a callout stands where the stage puts it, with its leader: a `move` by coordinates would only part it from its line
-  if (line.verb === 'move' && schedule !== undefined) {
-    const target = [...schedule.elements].reverse().find((element) => element.id === line.id && element.kind === 'text');
-    if (target !== undefined && (target.style.near !== null || target.style.leader)) return { allowed: false, why: 'placed by the stage: a callout cannot be moved by coordinates; name the right part in near= or move the part' };
-  }
+  // `move <id> x,y` on a label placed by `near=` is allowed: the schedule lets the label go from its anchor and stand where it is moved to (and drops its leader)
   return { allowed: true, why: null };
 }
 
@@ -315,6 +312,9 @@ export function contentOf(schedule: Schedule): ContentCount {
   let controls = 0;
   let words = 0;
   const choices: string[] = [];
+  const said = new Set<string>();
+  let dupes = 0;
+  let dupeOf: string | undefined;
   const resting = new Set<string>();
   for (const element of schedule.elements) if (element.exit === null) resting.add(element.key);
   for (const element of schedule.elements) {
@@ -328,10 +328,20 @@ export function contentOf(schedule: Schedule): ContentCount {
     else if (element.kind === 'control') controls += 1;
     else if (element.kind === 'text' && !element.struck) {
       if (element.style.tap) choices.push(element.text);
-      else words += element.text.length;
+      else {
+        words += element.text.length;
+        // the same words twice on one stage: a label drawn again beside the one it was meant to replace
+        const same = element.text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+        if (same.length >= 3) {
+          if (said.has(same)) {
+            dupes += 1;
+            dupeOf ??= element.text.trim();
+          } else said.add(same);
+        }
+      }
     }
   }
-  return { structures, parts, drawn, controls, words, choices };
+  return { structures, parts, drawn, controls, words, choices, dupes, ...(dupeOf === undefined ? {} : { dupeOf }) };
 }
 
 /** Rule one of three: the fix takes nothing away. A structure, a part of one, a control or a choice fewer (or reworded) is a refusal outright; drawing and words may shrink a little, not go. */
@@ -349,6 +359,7 @@ export function fixKeeps(draft: ContentCount, candidate: ContentCount, policy: F
       left.splice(at, 1);
     }
   }
+  if ((candidate.dupes ?? 0) > (draft.dupes ?? 0)) return { keeps: false, why: `it added a second copy of words already on stage ("${(candidate.dupeOf ?? '').slice(0, 40)}"): change the first with set, move or cancel, never draw it again` };
   if (candidate.drawn < Math.ceil(draft.drawn * policy.keepDrawn)) return { keeps: false, why: `drawing was removed (${draft.drawn} things before, ${candidate.drawn} after)` };
   if (candidate.words < Math.floor(draft.words * policy.keepWords)) return { keeps: false, why: `words were removed (${draft.words} characters before, ${candidate.words} after)` };
   return { keeps: true, why: null };
@@ -427,4 +438,51 @@ export function repairKeeps(
   const after = blockingCount(candidate.sight);
   if (after >= before) return { keeps: false, why: before === 0 ? 'the stage measures nothing wrong, so it cannot tell that the repair is better' : `no better by the stage's measure: ${after} thing${after === 1 ? '' : 's'} do not land, against ${before} before` };
   return { keeps: true, why: null };
+}
+
+
+// ---------------------------------------------------------------- the loop: a fix thrown out is told back; a critic's finding is not lost
+
+const RETRY_ROWS = 6;
+
+/** What a fix that was thrown out left wrong, as rows the brain can act on: id, then what did not land. */
+function wrongRows(sight: Sight | null): string[] {
+  if (sight === null) return [];
+  return sight.items.filter((item) => item.notes.some((note) => BLOCKING_NOTES.includes(note))).slice(0, RETRY_ROWS).map((item) => `${item.id}: ${item.notes.filter((note) => BLOCKING_NOTES.includes(note)).join(', ')}`);
+}
+
+/**
+ * The brain's own try, thrown out, as the next try is told of it: the lines it wrote, why they were refused, and what they would have left wrong.
+ * It rides in the brief as a rejected line, so every brain prints it and none has to know about retries.
+ */
+export function retryProblem(attempt: number, lines: readonly string[], refusal: string, sight: Sight | null): LineProblem {
+  const rows = wrongRows(sight);
+  const written = lines.length === 0 ? 'nothing it could use' : lines.join(' / ');
+  return {
+    raw: `try ${attempt}: ${written.length > 110 ? `${written.slice(0, 109)}…` : written}`,
+    kind: 'rejected',
+    why: `thrown out, not shown: ${refusal}.${rows.length === 0 ? '' : ` It would have left these not landing: ${rows.join('; ')}.`} Write a different fix.`,
+  };
+}
+
+
+/** The critic's raised, blocking problems, as owed. */
+export function owedFrom(turn: string, finding: Pick<CriticFinding, 'problems'>): OwedFinding[] {
+  return finding.problems
+    .filter((problem) => problem.raised !== false && problem.weight === 'blocks')
+    .map((problem) => ({ turn, id: problem.id, gate: problem.gate ?? null, what: problem.what.replace(/\s+/g, ' ').slice(0, 220) }));
+}
+
+const OWED_LIMIT = 4;
+
+/** Findings still standing: those that name something still on stage (or no one), the newest few. */
+export function owedStanding(owed: readonly OwedFinding[], live: ReadonlySet<string>): OwedFinding[] {
+  return owed.filter((item) => item.id === null || live.has(item.id)).slice(-OWED_LIMIT);
+}
+
+/** The block of the brief that carries them. Null when nothing is owed. */
+export function owedText(owed: readonly OwedFinding[]): string | null {
+  if (owed.length === 0) return null;
+  const rows = owed.map((item) => `  - ${item.id === null ? '(no one element)' : item.id}${item.gate === null ? '' : ` [${item.gate}]`}: ${item.what}`);
+  return `A CRITIC WHO CAN SEE FOUND THESE BROKEN IN AN EARLIER ANSWER, AND NOTHING HAS MENDED THEM:\n${rows.join('\n')}\nMend them when you next touch that drawing (\`set\`, \`move\`, \`cancel\`, \`revise\` by the id named): never draw the thing again beside the old one.`;
 }

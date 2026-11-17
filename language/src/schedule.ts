@@ -2066,6 +2066,15 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
           lines.push({ seq, verb: line.verb, start, end: start });
           break;
         }
+        if (target.span.kind === 'text' && along === null && typeof to === 'object') {
+          // Words moved by a point are `set at=`: the layout re-seats words only at a `set` of `at`, and a label placed by `near=` is let go of its anchor (and its
+          // leader), standing where it is sent. So the same refused-then-redrawn label never has to be added twice.
+          const props: ResolvedProps = { at: to, ...(target.style.near !== null && { leader: false }) };
+          target.style = patchStyle(target.style, props);
+          target.span.changes.push({ kind: 'set', seq, start, end, props, style: target.style });
+          lines.push({ seq, verb: line.verb, start, end });
+          break;
+        }
         target.style = patchStyle(target.style, { at: to });
         target.span.changes.push({ kind: 'move', seq, start, end, to, along, style: target.style });
         lines.push({ seq, verb: line.verb, start, end });

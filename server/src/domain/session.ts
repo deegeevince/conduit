@@ -21,6 +21,7 @@ import type {
   TurnScore,
 } from '@conduit/language';
 import { PROMPT_MAX_CHARS } from '@conduit/language';
+import type { OwedFinding } from '@conduit/language';
 import { errors } from '../errors';
 import type { Brain, BrainId } from './brain';
 import type { HeldDocument } from './documents';
@@ -218,6 +219,8 @@ export interface Session {
   continuing: { readonly of: string; readonly abort: AbortController } | null;
   /** v3. Answers a repair was started for: one each, kept or not */
   readonly repaired: Set<string>;
+  /** The critic's blocking findings that no repair mended, kept for the brain's next brief until they are mended, gone from the stage, or have been told twice */
+  owed: { finding: OwedFinding; told: number }[];
   /** Every accepted line of a drawing by turn, and a version for each turn that changed it: what `restore`, `use … from=` and `/undo` bring back */
   memory: DrawingMemory;
 }
@@ -283,6 +286,7 @@ export class SessionStore {
       repair: null,
       continuing: null,
       repaired: new Set(),
+      owed: [],
       memory: new DrawingMemory(),
     };
     this.sessions.set(session.id, session);
