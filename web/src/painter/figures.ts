@@ -8,7 +8,7 @@
 // puts the look's colour, stroke and motion on it and maps it to the stage.
 
 import { boundsOf, CANVAS, describeFigure, pointAlong, resample, ROW_SECONDS, sceneAt, valueAt } from '@conduit/language';
-import type { Anchor, ElementChange, ElementSpan, ElementStyle, Fill, Figure, Layer, Paint, Polyline, Schedule, SceneSpan, SpriteData, StageBase } from '@conduit/language';
+import type { Anchor, ElementChange, ElementSpan, ElementStyle, Fill, Figure, Layer, Paint, Polyline, Schedule, SceneSpan, SpriteData, StageBase, StrokeCharacter } from '@conduit/language';
 import type { Affine, Colour, FieldFrame, FigureFrame, FillFrame, PictureFrame, ShapeFrame, SpriteFrame, StrokeFrame } from '../contracts/frame';
 import { IDENTITY } from '../contracts/frame';
 import type { Ease, LookSpec, MotionRecipe } from '../contracts/look';
@@ -1072,6 +1072,14 @@ function fillColours(trans: Trans, look: LookSpec, flash: number, arrival: numbe
   };
 }
 
+/** From this width (canvas units) a stroke is no longer a pencil line: the grain of a pencil turns to hatching and stripes at that size, so it is drawn as clean ink. */
+const PENCIL_MAX_THICK = 2.5;
+
+/** The character a stroke of this width is drawn in when the line gave no `brush=`: the look's own, except that a thick pencil line is clean ink. */
+function characterAt(character: StrokeCharacter, width: number): StrokeCharacter {
+  return character === 'pencil' && width >= PENCIL_MAX_THICK ? 'ink' : character;
+}
+
 function strokeOf(trans: Trans, look: LookSpec, flash: number, progress: number): StrokeFrame | null {
   const { from, to } = trans.from.stroke === 'none' && trans.to.stroke === 'none' ? { from: null, to: null } : { from: trans.from.stroke, to: trans.to.stroke };
   if (from === null || to === null) return null;
@@ -1091,7 +1099,7 @@ function strokeOf(trans: Trans, look: LookSpec, flash: number, progress: number)
     colour,
     width,
     progress,
-    character: trans.to.brush ?? look.stroke.character,
+    character: trans.to.brush ?? characterAt(look.stroke.character, width),
     ...(profile !== null && { pressure: profile }),
     ...(colours !== null && { along: colours }),
   };
