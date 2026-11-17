@@ -44,3 +44,4 @@ export * from './tour';
 // `rebase` is the clock's; `anchor` has its own, so the package's name for it is `rebaseClock`
 export { LOOP_DEFAULT, NO_OFFSET, clockAt, cosTurns, cycleAt, frac, loopOffset, openClock, pinnedClock, rideShare, sinTurns, turnAbout, rebase as rebaseClock } from './motion';
 export type { ClockHold, LoopOffset, MotionClock } from './motion';
+export * from './showcase';
