@@ -817,6 +817,8 @@ export type IssueCode =
   | 'structure-limit'
   /** a `bind` that names something that is not a control, or a change a control cannot drive */
   | 'bad-bind'
+  /** a control whose binds all leave what they name exactly as it is: dragging it changes nothing on stage */
+  | 'dead-bind'
   | 'bad-sum'
   /** a `{…}` in text that does not read as an expression of the controls on stage */
   | 'bad-expression'
@@ -825,7 +827,9 @@ export type IssueCode =
   /** v3. A `step` or an `ask` with no `part` to belong to */
   | 'no-part'
   /** v3. An `ask` no one could answer: no answer, one choice, or choices that hold no accepted answer */
-  | 'bad-ask';
+  | 'bad-ask'
+  /** An app's code reaches for a shelf library (`d3.`, `Matter.`, `Tone.`, `katex.`, its fonts) its `uses=` did not name: the host loads it anyway, and the line carries this so the log shows it */
+  | 'uses-inferred';
 
 export interface Issue {
   readonly code: IssueCode;

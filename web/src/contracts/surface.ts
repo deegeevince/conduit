@@ -38,6 +38,14 @@ export interface SurfaceEmit {
   readonly ask: boolean;
 }
 
+/**
+ * A surface that is broken, as the host knows it: its code threw (`crash`: the message and the line of the app's own text the frame told, or null; the app's own words, plain text and
+ * nothing more), or it had painted nothing visible three seconds after it loaded (`blank`). Each app's crashes are passed on at most three times.
+ */
+export type SurfaceBroken =
+  | { readonly key: string; readonly id: string; readonly kind: 'crash'; readonly message: string; readonly line: number | null }
+  | { readonly key: string; readonly id: string; readonly kind: 'blank' };
+
 /** Why a surface is not running when it was meant to be. */
 export type SurfaceHold = 'killed' | 'navigated' | 'frozen' | 'marked';
 
@@ -58,7 +66,10 @@ export interface SurfaceProbe {
   /** messages the host refused: wrong source, wrong origin, wrong shape, too big, too fast */
   readonly refused: number;
   readonly emits: number;
-  readonly faults: number;
+  /** how many times its code threw, as the frame told it */
+  readonly crashes: number;
+  /** it had painted nothing visible when it was looked at three seconds after it loaded; null until then */
+  readonly blank: boolean | null;
   /** the sandbox attribute the frame was made with, so a check can read it back */
   readonly sandbox: string | null;
 }

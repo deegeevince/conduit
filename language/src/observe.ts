@@ -78,12 +78,21 @@ export const UNREADABLE_KINDS: readonly ObsKind[] = ['apart', 'present', 'inside
 /** The eyes cannot be trusted: the server's facts are not the page's for this session. */
 export const UNTRUSTED_KINDS: readonly ObsKind[] = ['drift', 'fonts'];
 
-export type UrgentClass = 'person' | 'refusal' | 'unreadable' | 'untrusted';
+/**
+ * An app on stage threw, or drew nothing: the page's eyes report it as a blocking `surface` item whose words are the app's own, quoted (web/src/app/observer.ts). The person sees an
+ * empty frame and says "nothing showed up"; this is how the brain is told why, in the very next brief.
+ */
+export function isBroken(o: Observation): boolean {
+  return o.kind === 'surface' && o.severity === 'blocking' && o.source === 'eyes';
+}
+
+export type UrgentClass = 'person' | 'broken' | 'refusal' | 'unreadable' | 'untrusted';
 
 /** Why an observation is urgent, or null when it only counts. */
 export function urgentClass(o: Observation): UrgentClass | null {
   if (PERSON_KINDS.includes(o.kind)) return 'person';
   if (o.kind === 'refusal') return 'refusal';
+  if (isBroken(o)) return 'broken';
   if (UNREADABLE_KINDS.includes(o.kind) && o.answer && o.severity === 'blocking') return 'unreadable';
   if (UNTRUSTED_KINDS.includes(o.kind)) return 'untrusted';
   return null;
@@ -92,7 +101,7 @@ export function urgentClass(o: Observation): UrgentClass | null {
 /** The floor: the brain may not put these in `ignore`, and an open one always causes the measured look at the end of a draft. */
 export function onFloor(o: Observation): boolean {
   const why = urgentClass(o);
-  return why === 'person' || why === 'refusal' || why === 'unreadable';
+  return why === 'person' || why === 'refusal' || why === 'unreadable' || why === 'broken';
 }
 
 /** A kind the brain is not allowed to ignore. */
@@ -189,10 +198,11 @@ export function openOf(feed: readonly Observation[]): string[] {
 // ---------------------------------------------------------------------------------------------------------------------------------------
 // THE DIGEST
 
-const CLASS_ORDER: readonly UrgentClass[] = ['person', 'unreadable', 'refusal', 'untrusted'];
+const CLASS_ORDER: readonly UrgentClass[] = ['person', 'broken', 'unreadable', 'refusal', 'untrusted'];
 
 function itemText(o: Observation): string {
-  if (PERSON_KINDS.includes(o.kind) || o.kind === 'refusal') return o.note;
+  // an app's crash reads as the sentence it is: `app earth threw: "…" (line 12)`
+  if (PERSON_KINDS.includes(o.kind) || o.kind === 'refusal' || isBroken(o)) return o.note;
   return `${o.kind}${o.on === null ? '' : ` ${o.on}`}: ${o.note}`;
 }
 

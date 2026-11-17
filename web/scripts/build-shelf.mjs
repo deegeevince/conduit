@@ -17,7 +17,7 @@ const force = process.argv.includes('--force');
 const pkgDir = (name) => realpathSync(join(web, 'node_modules', name));
 const read = (path) => readFileSync(path, 'utf8');
 
-const D3_MODULES = ['array', 'axis', 'chord', 'color', 'dispatch', 'drag', 'ease', 'force', 'format', 'hierarchy', 'interpolate', 'path', 'polygon', 'quadtree', 'random', 'scale', 'scale-chromatic', 'selection', 'shape', 'time', 'time-format', 'timer', 'transition', 'zoom'];
+const D3_MODULES = ['array', 'axis', 'chord', 'color', 'dispatch', 'drag', 'ease', 'force', 'format', 'geo', 'hierarchy', 'interpolate', 'path', 'polygon', 'quadtree', 'random', 'scale', 'scale-chromatic', 'selection', 'shape', 'time', 'time-format', 'timer', 'transition', 'zoom'];
 /** KaTeX's fonts kept (woff2, inlined as data: URIs): body, bold, italic, math italic, the AMS symbols, the four big-delimiter sizes, sans. Script, fraktur, caligraphic and typewriter fall back to the page's own. */
 const KATEX_FONTS = ['Main-Regular', 'Main-Bold', 'Main-Italic', 'Math-Italic', 'AMS-Regular', 'Size1-Regular', 'Size2-Regular', 'Size3-Regular', 'Size4-Regular', 'SansSerif-Regular'];
 
@@ -85,7 +85,7 @@ const note = (name, version, spdx, dir, role) => licences.push({ name, version, 
   parts.katex = `<style>${inertText(css, 'katex css')}</style>${script(read(join(dir, 'dist/katex.min.js')), 'katex')}`;
   note('katex', versions.katex, 'MIT', dir, `maths typesetting (the \`maths\` shelf), global \`katex\`; its stylesheet with ${KATEX_FONTS.length} fonts inlined (${dropped} font faces dropped)`);
 }
-// D3: the modules a chart, a graph or a force layout needs; delaunay (its robust-predicates is public-domain, not MIT/BSD/Apache), geo, brush, contour, fetch and dsv are left out
+// D3: the modules a chart, a graph, a force layout or a globe needs (d3-geo: projections and paths, no map data); delaunay (its robust-predicates is public-domain, not MIT/BSD/Apache), brush, contour, fetch and dsv are left out
 {
   const dir = pkgDir('d3');
   const modules = D3_MODULES.map((name) => `d3-${name}`);
@@ -97,7 +97,7 @@ const note = (name, version, spdx, dir, role) => licences.push({ name, version, 
   for (const name of modules) {
     const moduleDir = realpathSync(join(dir, '..', name));
     const json = JSON.parse(read(join(moduleDir, 'package.json')));
-    note(name, json.version, json.license, moduleDir, name === modules[0] ? 'charts, graphs and force layouts (the `charts` and `graphs` shelves), global `d3`' : 'part of D3');
+    note(name, json.version, json.license, moduleDir, name === modules[0] ? 'charts, graphs, force layouts and map projections (the `charts` and `graphs` shelves), global `d3`' : 'part of D3');
   }
 }
 
@@ -143,7 +143,7 @@ const lines = [
   '|---|---|---|---|',
   ...licences.map((entry) => `| ${entry.name} | ${entry.version} | ${entry.spdx} | ${entry.role} |`),
   '',
-  'Left out on purpose: d3-delaunay (it bundles robust-predicates, which is public domain, not MIT/BSD/Apache), d3-geo, d3-brush, d3-contour, d3-fetch, d3-dsv, and the KaTeX fonts for script, fraktur, caligraphic and typewriter faces.',
+  'Left out on purpose: d3-delaunay (it bundles robust-predicates, which is public domain, not MIT/BSD/Apache), d3-brush, d3-contour, d3-fetch, d3-dsv, and the KaTeX fonts for script, fraktur, caligraphic and typewriter faces.',
   '',
   '## Licence texts',
   '',

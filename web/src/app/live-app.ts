@@ -2,7 +2,7 @@
 // protocol and the watchdog are `web/src/surfaces/host.ts`; this only turns the painter's `AppCue`s into surfaces and a surface's events into
 // the acts the back channel carries. The lesson view uses the same host with its own adapter.
 
-import type { AppAct, AppHost, AppProbe } from '../contracts/app';
+import type { AppAct, AppBroken, AppHost, AppProbe } from '../contracts/app';
 import { API } from '@conduit/language';
 import { createSurfaceHost } from '../surfaces/host';
 
@@ -52,6 +52,8 @@ export interface LiveAppsOptions {
   readonly onAct: (act: AppAct) => void;
   /** something to say in the status line (an app that stopped, one that could not run) */
   readonly onNote?: (text: string) => void;
+  /** an app that threw, or showed nothing: for the brain's next brief */
+  readonly onBroken?: (broken: AppBroken) => void;
 }
 
 export function createLiveApps(options: LiveAppsOptions): AppHost {
@@ -62,6 +64,7 @@ export function createLiveApps(options: LiveAppsOptions): AppHost {
     // the app's saved state goes to the brain as one quiet act, a moment after it stops changing
     onSave: (save) => options.onAct({ key: save.key, id: save.id, name: 'state', value: save.json.slice(0, 300), ask: false, state: save.json }),
     ...(options.onNote === undefined ? {} : { onNote: options.onNote }),
+    ...(options.onBroken === undefined ? {} : { onBroken: options.onBroken }),
   });
   return {
     exportPage: () => surfaces.exportPage(),
@@ -71,7 +74,7 @@ export function createLiveApps(options: LiveAppsOptions): AppHost {
     killAll: () => surfaces.killAll(),
     contents: () => surfaces.contents(),
     probe: (): readonly AppProbe[] =>
-      surfaces.probe().map((probe) => ({ key: probe.key, id: probe.id, running: probe.running, loaded: probe.loaded, killed: probe.held === 'killed', shown: probe.shown, box: probe.box, fit: probe.fit, state: probe.state, still: probe.still, refused: probe.refused, acts: probe.emits })),
+      surfaces.probe().map((probe) => ({ key: probe.key, id: probe.id, running: probe.running, loaded: probe.loaded, killed: probe.held === 'killed', shown: probe.shown, box: probe.box, fit: probe.fit, state: probe.state, still: probe.still, refused: probe.refused, acts: probe.emits, crashes: probe.crashes, blank: probe.blank })),
     dispose: () => surfaces.dispose(),
   };
 }

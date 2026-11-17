@@ -673,6 +673,32 @@ export class Tab {
     await sleep(80);
   }
 
+  /** a press at `from`, a drag to `to` and a release, with a mouse, or a finger on a phone: the page gets real pointer events, as a person's hand makes them (a slider's knob follows it) */
+  async drag(from: { readonly x: number; readonly y: number }, to: { readonly x: number; readonly y: number }, steps = 12): Promise<void> {
+    const start = await this.reach(from.x, from.y);
+    const end = await this.reach(to.x, to.y);
+    const along = (i: number): { x: number; y: number } => ({ x: start.x + ((end.x - start.x) * i) / steps, y: start.y + ((end.y - start.y) * i) / steps });
+    if (this.touch) {
+      await this.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ ...start, id: 1 }] });
+      await sleep(40);
+      for (let i = 1; i <= steps; i += 1) {
+        await this.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ ...along(i), id: 1 }] });
+        await sleep(16);
+      }
+      await this.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    } else {
+      await this.send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...start, pointerType: 'mouse' });
+      await this.send('Input.dispatchMouseEvent', { type: 'mousePressed', ...start, button: 'left', buttons: 1, clickCount: 1, pointerType: 'mouse' });
+      await sleep(40);
+      for (let i = 1; i <= steps; i += 1) {
+        await this.send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...along(i), button: 'left', buttons: 1, pointerType: 'mouse' });
+        await sleep(16);
+      }
+      await this.send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...end, button: 'left', buttons: 0, clickCount: 1, pointerType: 'mouse' });
+    }
+    await sleep(120);
+  }
+
   async key(key: 'Enter' | 'Backspace' | 'Tab' | 'Escape', modifiers = 0): Promise<void> {
     const code = { Enter: 13, Backspace: 8, Tab: 9, Escape: 27 }[key];
     await this.send('Input.dispatchKeyEvent', { type: 'keyDown', key, code: key, modifiers, windowsVirtualKeyCode: code, nativeVirtualKeyCode: code, ...(key === 'Enter' ? { text: '\r' } : {}) });
@@ -879,9 +905,9 @@ export class Conversation {
   }
 
   /** waits for the page's own rest; returns a sentence about how it went (empty when all is well) */
-  async rest(expectReport: boolean | null, requireNewReport = true): Promise<string> {
+  async rest(expectReport: boolean | null, requireNewReport = true, limitMs: number = this.options.timeoutMs): Promise<string> {
     const { tab } = this;
-    const deadline = Date.now() + this.options.timeoutMs;
+    const deadline = Date.now() + limitMs;
     this.lastSig = '';
     this.stableSince = Date.now();
     let problem = '';
