@@ -9,7 +9,8 @@
 //   drag      a pointer that goes down on a label and travels, that crosses a label, or that comes back to it after travelling, sends nothing; the same label is then
 //             tapped with a little wobble and does send one (so the nothing before it is not for want of a live label)
 //   touch     the same with a finger on a tablet, with the lens off and on: a drag over a label sends nothing, a tap sends one act
-//   journey   `/?journey=labels` taps "Brakes" on a stage it did not see drawn: the step's tap landed on "brake disc" and the act reached the server
+//   journey   `/?journey=labels` taps `Gearbox / Brakes / Wheel` on a stage it did not see drawn: the first alternative on stage ("Brakes") is used and lands on "brake disc", the act reaches the server,
+//             and a tap on a line of speech is skipped, never made
 //
 // Run by `pnpm check` (as `fb-055`) and standalone: `tsx label-check.ts --url <server>`, with smoke's own Tab and Conversation.
 
@@ -21,6 +22,7 @@ import type { CheckResult, Options, Posted } from './smoke';
 import { Hands } from './lens-check';
 import type { LensScene, LensScreen, Point } from './lens-check';
 import { likeness } from '../../../web/src/app/journey-words';
+import { alternativesOf } from '../../../web/src/app/journey-script';
 import type { JourneyState } from '../../../web/src/app/journey-script';
 
 export const LABEL_SCREEN = { name: '1280x800', width: 1280, height: 800 };
@@ -93,6 +95,7 @@ export function wordsResults(): CheckResult[] {
   expect('How does the engine work?', null);
   if (likeness('brakes', 'Brakes') !== 0) problems.push('the same words are not the closest');
   if (!(likeness('brake', 'brakes') < likeness('brake disc', 'brakes'))) problems.push('"brake" is not closer to "brakes" than "brake disc" is');
+  if (alternativesOf('Brakes / Brake / Wheels / Wheel').join('|') !== 'Brakes|Brake|Wheels|Wheel' || alternativesOf('on/off').join('|') !== 'on/off' || alternativesOf('Engine').join('|') !== 'Engine') problems.push('a tap\'s alternatives are not read: " / " splits them, a slash inside a word does not');
   return [{ turn: 0, check: 'fb-055-words', verdict: problems.length === 0 ? 'PASS' : 'FAIL', detail: problems.length === 0 ? '"Brakes", "brakes" and "Brake" find "brake disc"; "Engine" finds "engine"; "Gearbox" and a sentence find nothing' : problems.join('; ') }];
 }
 
@@ -387,17 +390,19 @@ export async function labelGroup(base: string, dir: string, timeoutMs: number, n
         if (now === 'done' || now === 'stopped') break;
       }
       journey = await tab.eval<JourneyState | null>('JSON.parse(JSON.stringify(window.__journey || null))');
-      const step = journey?.steps[0];
-      if (journey === null || step === undefined) problems.push('the journey has no steps');
+      const [speech, step] = journey?.steps.filter((candidate) => candidate.op === 'tap') ?? [];
+      if (journey === null || step === undefined || speech === undefined) problems.push('the journey has no taps');
       else {
         if (journey.status !== 'done') problems.push(`the journey ended ${journey.status}: ${journey.message ?? 'no message'}`);
-        if (step.tapped === null || !/^brake disc$/i.test(step.tapped)) problems.push(`"Brakes" tapped ${step.tapped === null ? 'nothing' : `"${step.tapped}"`}, not "brake disc"`);
+        if (speech.status !== 'skipped' || speech.tapAt !== null) problems.push(`a tap on a line of speech was ${speech.status}${speech.tapAt === null ? '' : ` and touched "${speech.tapped ?? ''}"`}: words that cannot be tapped are no target`);
+        if (step.tapped === null || !/^brake disc$/i.test(step.tapped)) problems.push(`"Gearbox / Brakes / Wheel" tapped ${step.tapped === null ? 'nothing' : `"${step.tapped}"`}, not "brake disc"`);
+        if (step.used !== 'Brakes') problems.push(`the alternative used was ${step.used === null ? 'none' : `"${step.used}"`}, not "Brakes" (the first of them on stage)`);
         if (step.turn === null) problems.push('the tap opened no turn');
       }
       const sent = acts(tab, 0);
       const part = sent.length === 1 ? partOf(sent[0] as Posted) : null;
       if (part === null || part.label !== 'brake disc') problems.push(`the server was sent ${sent.length} acts naming ${part === null ? 'nothing' : `"${part.label}"`}, not one naming "brake disc"`);
-      result(journeyResults, 'fb-055-journey', problems, `\`tap | Brakes\` landed on "${step?.tapped ?? ''}" and the server was sent one act naming it`);
+      result(journeyResults, 'fb-055-journey', problems, `\`tap | Gearbox / Brakes / Wheel\` used "${step?.used ?? ''}" and landed on "${step?.tapped ?? ''}", a line of speech was skipped, and the server was sent one act naming the label`);
     } finally {
       await tab.close();
     }

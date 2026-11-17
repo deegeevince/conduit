@@ -2,7 +2,7 @@
 // events at the places a hand would, and waits for the real brain between steps. Nothing is replayed. `window.__journey` says where it is and,
 // for each step, when things happened (the page's clock and `performance.now()`), for a film editor that cuts the waits and places captions.
 
-import { parseJourney, seeded } from './journey-script';
+import { alternativesOf, parseJourney, seeded } from './journey-script';
 import { likeness, norm } from './journey-words';
 import type { FocusBox, FocusSample, JourneyState, JourneyStep, Stamp, StepTiming } from './journey-script';
 import type { StageApp } from './stage-app';
@@ -203,6 +203,15 @@ export function startJourney(options: JourneyOptions): JourneyState {
     return findLabel(wanted) ?? (exact !== null && exact.tappable ? exact : null);
   };
 
+  /** what a tap that lists alternatives taps: the first of them, in the order written, that is a real choice, control or label on stage; and which it was */
+  const findAmong = (wanted: string): { readonly target: Target; readonly used: string } | null => {
+    for (const alternative of alternativesOf(wanted)) {
+      const target = findTap(alternative);
+      if (target !== null) return { target, used: alternative };
+    }
+    return null;
+  };
+
   /** the target, once it has stopped moving and is on stage; null if it does not come in `waitMs` */
   const settled = async (find: () => Target | null, waitMs: number): Promise<Target | null> => {
     const until = performance.now() + waitMs;
@@ -362,11 +371,17 @@ export function startJourney(options: JourneyOptions): JourneyState {
   };
 
   const doTap = async (step: JourneyStep, timing: StepTiming): Promise<boolean> => {
-    const target = await settled(() => findTap(step.text), step.optional ? OPTIONAL_WAIT_MS : TAP_WAIT_MS);
+    const picked: { used: string | null } = { used: null };
+    const target = await settled(() => {
+      const found = findAmong(step.text);
+      picked.used = found?.used ?? null;
+      return found?.target ?? null;
+    }, step.optional ? OPTIONAL_WAIT_MS : TAP_WAIT_MS);
     if (target === null) {
       if (step.optional) return false;
       return fail(`step ${step.n} (line ${step.line}): "${step.text}" never appeared on stage within ${Math.round(TAP_WAIT_MS / 1000)} s, so the journey stopped there`);
     }
+    timing.used = picked.used;
     const before = app.lang.turn;
     const to = globalOf(target.box);
     await travel(to.x, to.y, 650);
@@ -607,6 +622,7 @@ function blank(step: JourneyStep): StepTiming {
     rest: null,
     tapAt: null,
     tapped: null,
+    used: null,
     dragStart: null,
     dragEnd: null,
     drag: null,
