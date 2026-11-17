@@ -119,10 +119,19 @@ export function boundElement(element: ElementSpan, time: number, now: number, in
   if (layers.every((layer) => layer.amount <= 0)) return { element, words: null };
   const result = applyDriven(styleAt(element, time), layers);
   const extra: ElementChange[] = [{ kind: 'set', seq: -1, start: time - 2 * PIN, end: time - PIN, props: {}, style: result.style }];
-  for (const move of result.moves) {
-    const start = time - move.t * PIN;
-    extra.push({ kind: 'move', seq: -1, start, end: start + PIN, to: move.to, along: move.along, style: result.style });
+  // A move is drawn from the style it ends in: the clock's own `move` leaves `at` on the style it carries, and the painter reads the place a move goes to there.
+  // A bound move that left `at` alone would stand still (a point is only ever read from the style), so each carries the place it goes to. The later a layer is written
+  // the later it starts, so the last one written is the one in flight and each begins from where the one before ended.
+  let latest = Number.POSITIVE_INFINITY;
+  const moves: ElementChange[] = [];
+  for (let i = result.moves.length - 1; i >= 0; i -= 1) {
+    const move = result.moves[i];
+    if (move === undefined) continue;
+    const start = Math.min(time - move.t * PIN, latest - PIN * 1e-3);
+    latest = start;
+    moves.unshift({ kind: 'move', seq: -1, start, end: start + PIN, to: move.to, along: move.along, style: { ...result.style, at: move.to } });
   }
+  extra.push(...moves);
   for (const morph of result.morphs) {
     const start = time - morph.t * PIN;
     extra.push({ kind: 'morph', seq: -1, start, end: start + PIN, geometry: morph.geometry, style: result.style });
