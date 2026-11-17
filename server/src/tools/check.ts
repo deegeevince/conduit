@@ -12,7 +12,7 @@
 //                      script's own words; it settles under reduced motion too
 //   choice             a real tap on a starter is sent as a turn and the replay brain answers it, to rest
 //   every demo         each demo (`problem` has its own scenes) is played by name and comes to rest, the ones the app does not offer yet (`DEMOS_NOT_PAINTED`) too: not offered is not unjudged
-//   explorable         a slider, a toggle and a pick of the explorable demo change the drawing with no request to the server
+//   explorable         a slider and a pick of the explorable demo change the drawing with no request to the server (a higher sun stands higher and throws a shorter shadow, away from it)
 //   problems           each `problem` of language/demos/problem.series (old logs) is played at its own turn: the question is on the canvas with a blank, nothing takes the
 //                      screen, a wrong answer put in the blank is marked wrong and the right one right (no model)
 //   ask                (tablet 1180x820 at two pixels, touch, the lens off and on) a finger tap on an ask's blank focuses its input, also under the Draw layer after a pen stroke;
@@ -21,6 +21,10 @@
 //   lens               (flag on, ?lens=1; tablet 1180x820 at two pixels to the point with touch, and 390x844) a two-finger pinch to 2x, then a tap on a choice, a slider
 //                      drag and a pen stroke each land on the right page point; 0 fits again; the pen draws without Draw, a short pen tap presses (lens-check.ts)
 //
+//   fb-023, fb-002     the demo audit's checks with no browser (`pnpm timeline demos`, `pnpm demo-checks`), named by the backlog row they guard (docs/feedback.md): the reading rule, a chart that is what it says, a control
+//                      that changes something; a drawing past its canvas, parts that come apart in a move, a morphed shape that is moved. Their page-side twins run in every demo scene (server/src/tools/demo-check.ts):
+//                      fb-004 the tour's bar (a tour demo plays with it up, and nothing meets it), fb-023 what the scene wrote is on the stage, fb-030 no line let go, fb-037 a label on the side it was written, fb-005 the
+//                      crosshair's tag
 //   hard               language/demos/hard.series: the failures real sessions turned up, one scene each (a 400-character line, CJK, a flowchart, words beside strokes, digits lined up, crowded labels,
 //                      many lines, a dark ground, a photo with callouts); judged like a demo, each scene with its own question
 //   stream             a turn at 80 characters a second has its first element on stage long before its last line is sent; a recorded stream-json turn comes out line by line
