@@ -1,9 +1,10 @@
 // The page's eyes, reporting up (SA3): what only the page knows and no turn carries, sent as one `observe` back event at most once a second,
 // 20 items and 8 kB at a time. A resize, a scroll that has settled, a font whose metrics are not the table's, a live app reporting in.
 
-import { OBSERVE_LIMITS } from '@conduit/language';
+import { OBSERVE_LIMITS, quoted } from '@conduit/language';
 import type { BackEvent, ObserveItem } from '@conduit/language';
 import type { Face, Weight } from '@conduit/language';
+import type { AppBroken } from '../contracts/app';
 import { FONTS, GLYPHS } from '../fonts';
 import { FACES } from '../fonts/faces';
 import { measureEm } from '../fonts/measure';
@@ -14,6 +15,8 @@ const SETTLE_MS = 250;
 const FONT_TOLERANCE = 0.005;
 
 export interface Observer {
+  /** a live app threw, or showed nothing: a blocking item, so the brain's next brief says so (the app's own words quoted, never more than text) */
+  broken(broken: AppBroken): void;
   /** a viewport change that has settled */
   viewport(width: number, height: number, dpr: number): void;
   /** a live app or another surface reported in */
@@ -54,8 +57,8 @@ export function startObserver(send: (event: BackEvent) => void, root: Document, 
   };
 
   const note = (item: ObserveItem): void => {
-    // the latest of the same thing replaces an unsent earlier one
-    const same = queue.findIndex((one) => one.kind === item.kind && one.on === item.on);
+    // the latest of the same thing replaces an unsent earlier one (a blocking item is its own words: two different crashes of one app are two)
+    const same = queue.findIndex((one) => one.kind === item.kind && one.on === item.on && (item.severity !== 'blocking' || one.note === item.note));
     if (same >= 0) queue.splice(same, 1);
     queue.push(item);
     if (queue.length > OBSERVE_LIMITS.items * 3) queue.shift();
@@ -127,6 +130,9 @@ export function startObserver(send: (event: BackEvent) => void, root: Document, 
     },
     surface(id, text) {
       note({ kind: 'surface', on: id, note: text, severity: 'info' });
+    },
+    broken(one) {
+      note({ kind: 'surface', on: one.id, note: one.kind === 'crash' ? `app ${one.id} threw: ${quoted(one.message, 90)}${one.line === null ? '' : ` (line ${one.line})`}` : `app ${one.id} drew nothing: nothing visible 3 s after it loaded`, severity: 'blocking' });
     },
     report(id, text, severity = 'info') {
       note({ kind: 'surface', on: id, note: text, severity });
