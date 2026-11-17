@@ -30,6 +30,17 @@ const CHAIN = [
   'hint in=w2 stage=yes | How many 4s make your last answer?',
 ].join('\n');
 
+/** working as on paper: 12 six times as a column of digits on the right edge of one x, a rule, and the ask for the total below */
+const COLUMN = [
+  'scene layout=free canvas=square',
+  'say h at=50,8 size=l | 12 + 12 + 12 + 12 + 12 + 12',
+  ...[22, 30, 38, 46, 54, 62].map((y, i) => `say d${i + 1} at=62,${y} align=right face=mono | 12`),
+  'say pl at=40,62 face=mono | +',
+  'path r1 stroke=ink thick=0.6 | M32,67 L64,67',
+  'ask a1 is=72,seventy_two | Write the total with the pen',
+  'hint in=a1 | Add the ones first.',
+].join('\n');
+
 interface AskView {
   readonly id: string;
   readonly value: unknown;
@@ -204,6 +215,62 @@ export async function askGroup(base: string, screen: LensScreen, dir: string, ti
     }
     results.push({ turn: 0, check: 'ask-fill', verdict: list.length === 0 ? 'PASS' : 'FAIL', detail: list.length === 0 ? 'a fill shows in the blank, is marked wrong or right, opens stage 2, and reports as typed when send=yes' : list.join('; ') });
     scenes.push({ name: 'ask-fill', picture, results, seconds: (Date.now() - began) / 1000 });
+  }
+  // column: working as on paper on the canvas. The pen writes the total in the answer area, Check reads it (the reader is stood in for here: no model) and marks it right
+  {
+    const began = Date.now();
+    const results: CheckResult[] = [];
+    const list: string[] = [];
+    note('ask: column');
+    const tab = await Tab.open(screen.width, screen.height, { dpr: screen.dpr, touch: true });
+    const options: Options = { url: base, screens: [], out: dir, turns: new Set(), timeoutMs, parallel: false, demo: false, quiet: true, page: '', say: null, chat: 'off' };
+    const conv = new Conversation(tab, options, { name: screen.name, width: screen.width, height: screen.height }, dir);
+    let picture = '';
+    try {
+      await tab.send('DOM.enable');
+      await conv.start();
+      const hands = new Hands(tab);
+      await tab.eval(`(() => { const real = window.fetch.bind(window); window.fetch = (url, init) => /read-ink/.test(String(url)) ? Promise.resolve(new Response(JSON.stringify({ text: '72', lines: ['72'], unclear: false, sees: '72' }), { headers: { 'content-type': 'application/json' } })) : real(url, init); })()`);
+      const played = await tab.eval<string | null>(`Promise.resolve(window.__stage.playScript(${JSON.stringify(COLUMN)})).then(() => null, (e) => String(e && e.message || e))`);
+      const rest = played !== null ? `the script would not play: ${played}` : await conv.rest(true);
+      if (rest !== '') list.push(rest);
+      // the digits stand in one column: every "12" ends at the same x, a row apart
+      const digits = await tab.eval<{ readonly right: number; readonly top: number }[]>(`window.__stage.elements().filter((e) => e.text.trim() === '12' && e.kind !== 'control').map((e) => ({ right: Math.round(e.box.x + e.box.width), top: Math.round(e.box.y) }))`);
+      if (digits.length !== 6) list.push(`six 12s were wanted on the canvas, found ${digits.length}`);
+      else if (Math.max(...digits.map((d) => d.right)) - Math.min(...digits.map((d) => d.right)) > 2) list.push(`the digits do not share a right edge: ${digits.map((d) => d.right).join(',')}`);
+      else if (new Set(digits.map((d) => d.top)).size !== 6) list.push('two rows of digits stand on each other');
+      await tab.eval(`document.querySelector('.composer__plus').click()`);
+      await sleep(200);
+      await tab.eval(`[...document.querySelectorAll('.composer__item')].find((n) => /^Draw/.test(n.textContent.trim())).click()`);
+      await sleep(300);
+      const view = (await tab.eval<AskView[]>(`window.__stage.controls().filter((c) => c.ask).map((c) => ({ id: c.id, value: c.value, parts: c.parts, askState: c.askState }))`)).find((c) => c.id === 'a1');
+      const field = view?.parts.find((part) => part.part === 'field')?.box;
+      const check = view?.parts.find((part) => part.part === 'check')?.box;
+      if (field === undefined || check === undefined) list.push('the ask has no answer area or no Check');
+      else {
+        const a = await hands.onScreen({ x: field.x + field.width * 0.2, y: field.y + field.height * 0.3 });
+        const b = await hands.onScreen({ x: field.x + field.width * 0.8, y: field.y + field.height * 0.7 });
+        await hands.pen(line(a, b, 16));
+        if (((await hands.strokes())?.strokes.length ?? 0) < 1) list.push('the pen left no stroke in the answer area');
+        await sleep(200);
+        await hands.finger([await hands.onScreen({ x: check.x + check.width / 2, y: check.y + check.height / 2 })]);
+        let state: { verdict: string; value: unknown } | null = null;
+        for (let waited = 0; waited < 8000; waited += 250) {
+          state = await tab.eval(`(() => { const c = window.__stage.controls().find((n) => n.id === 'a1'); return c ? { verdict: c.askState.verdict, value: c.value } : null; })()`);
+          if (state?.verdict === 'right') break;
+          await sleep(250);
+        }
+        if (state?.verdict !== 'right') list.push(`Check after the pen wrote 72 marked it "${state?.verdict ?? 'nothing'}", not right`);
+        if (String(state?.value ?? '') !== '72') list.push(`the answer area holds "${String(state?.value ?? '')}", not 72`);
+      }
+      picture = await shot(tab, dir, `${screen.name}-ask-column.png`);
+    } catch (error) {
+      list.push(`stopped: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      await tab.close();
+    }
+    results.push({ turn: 0, check: 'ask-column', verdict: list.length === 0 ? 'PASS' : 'FAIL', detail: list.length === 0 ? 'six 12s stand in one right-aligned column; the pen writes 72 in the answer area and Check marks it right' : list.join('; ') });
+    scenes.push({ name: 'ask-column', picture, results, seconds: (Date.now() - began) / 1000 });
   }
   return scenes;
 }
