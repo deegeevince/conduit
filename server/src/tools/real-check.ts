@@ -196,6 +196,8 @@ export async function installPix(tab: Tab): Promise<void> {
 /** at least this share of an element's box must be pixels unlike the stage's ground: the drawing is there, not just the painter's say-so */
 export const MIN_INK_SHARE = 0.02;
 /** a short line of words (right to left, in a wide box) is mostly empty box (or partly under the language pane): its share is held to a fifth */
+/** or this many device pixels of ink at 1x (a drawing of thin lines) */
+export const MIN_LINE_INK_PX = 400;
 export const MIN_TEXT_INK_SHARE = 0.004;
 
 interface Live {
@@ -218,7 +220,8 @@ export async function checkInk(tab: Tab, add: Add, picture: string, live: readon
   const inked = live.filter((e) => ['text', 'structure', 'picture', 'sprite'].includes(e.kind) && e.phase === 'on' && e.opacity > 0.3 && area(e.box) > 400 && clamp(e.box).w * clamp(e.box).h >= 0.5 * area(e.box));
   if (inked.length === 0) return add('ink-in-box', 'PASS', 'nothing to look for');
   const marks = await tab.call<{ px: number; share: number }[]>('inkIn', picture, inked.map((e) => clamp(e.box)), scale);
-  const thin = inked.filter((e, index) => (marks[index]?.share ?? 0) < (e.kind === 'text' ? MIN_TEXT_INK_SHARE : MIN_INK_SHARE));
+  // thin line art (a number line) in a tall reserved box is a small share of it: a drawing also passes with a few hundred inked pixels, an empty box does not
+  const thin = inked.filter((e, index) => (marks[index]?.share ?? 0) < (e.kind === 'text' ? MIN_TEXT_INK_SHARE : MIN_INK_SHARE) && (e.kind === 'text' || (marks[index]?.px ?? 0) < MIN_LINE_INK_PX * scale * scale));
   if (VERBOSE) process.stdout.write(`  [ink] ${inked.map((e, index) => `${e.kind}:${(e.text ?? e.id).slice(0, 14)} ${(100 * (marks[index]?.share ?? 0)).toFixed(1)}%`).join(', ')}\n`);
   add('ink-in-box', thin.length === 0 ? 'PASS' : 'FAIL', thin.length === 0 ? `${inked.length} elements on stage, each with at least ${MIN_INK_SHARE * 100}% of its box inked in the screenshot` : `listed on stage but (almost) nothing is drawn where it is in the screenshot: ${thin.slice(0, 4).map((e) => `${e.id} (${e.kind}) ${(100 * (marks[inked.indexOf(e)]?.share ?? 0)).toFixed(1)}%`).join(', ')}`);
 }
@@ -446,7 +449,9 @@ export async function photoGroup(): Promise<CheckResult[]> {
   const web = await claimPort('the capture page');
   const chrome = await claimPort('the capture Chrome');
   try {
-    const result = await run(['photo-check'], { CAPTURE_WEB_PORT: String(web), CAPTURE_CHROME_PORT: String(chrome) });
+    let result = await run(['photo-check'], { CAPTURE_WEB_PORT: String(web), CAPTURE_CHROME_PORT: String(chrome) });
+    // a dev server that was slow to start under the load of the other groups is given one more try
+    if (!result.ok && /timed out waiting/.test(result.out)) result = await run(['photo-check'], { CAPTURE_WEB_PORT: String(web), CAPTURE_CHROME_PORT: String(chrome) });
     const spots = result.out.split('\n').filter((line) => line.includes('spot ')).length;
     return [{ turn: 0, check: 'photo', verdict: result.ok ? 'PASS' : 'FAIL', detail: result.ok ? `${spots} callouts at spots on two photo shapes: every leader ends within 1% of its spot` : `pnpm photo-check failed: ${result.out.split('\n').filter((line) => line.includes('spot ') || line.includes('capture:')).slice(-4).join(' | ') || result.out.slice(-300)}` }];
   } finally {

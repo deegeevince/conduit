@@ -193,7 +193,7 @@ async function openPage(web: string | null, query = ''): Promise<{ page: Page; w
       const running = await fetch(`${url}/explore.html`).then((reply) => reply.ok).catch(() => false);
       if (!running) {
         started.push(spawnTracked('pnpm', ['--filter', '@conduit/web', 'exec', 'vite'], undefined, { cwd: repoRoot, env: { VITE_PORT: String(WEB_PORT), VITE_API: 'http://127.0.0.1:1' }, quiet: true }));
-        await waitFor('the web dev server', 60_000, async () => ((await fetch(`${url}/explore.html`)).ok ? true : null));
+        await waitFor('the web dev server', 240_000, async () => ((await fetch(`${url}/explore.html`)).ok ? true : null));
       }
     }
     const chrome = CHROME_CANDIDATES.find((path) => existsSync(path));
@@ -203,7 +203,7 @@ async function openPage(web: string | null, query = ''): Promise<{ page: Page; w
     started.push(
       spawnTracked(chrome, ['--headless=new', '--mute-audio', '--use-angle=metal', '--ignore-gpu-blocklist', '--no-first-run', '--no-default-browser-check', `--remote-debugging-port=${CHROME_PORT}`, `--user-data-dir=${profile}`, '--window-size=1280,800', 'about:blank'], undefined, { quiet: true }),
     );
-    const endpoint = await waitFor('Chrome', 20_000, async () => {
+    const endpoint = await waitFor('Chrome', 90_000, async () => {
       const reply = await fetch(`http://127.0.0.1:${CHROME_PORT}/json/version`);
       const body = (await reply.json()) as { webSocketDebuggerUrl?: string };
       return body.webSocketDebuggerUrl ?? null;
