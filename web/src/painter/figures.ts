@@ -234,7 +234,8 @@ function transition(element: ElementSpan, tq: number, curve: Ease): Trans {
       bestStart = change.start;
       from = previous;
       to = change.style;
-      p = change.end > change.start ? ease(curve === 'hold' ? 'out' : curve, clamp01((tq - change.start) / (change.end - change.start))) : 1;
+      // a change the hand made (seq -1, see bound.ts) is as far along as the control says, so it is never eased a second time
+      p = change.end > change.start ? ease(change.seq < 0 ? 'linear' : curve === 'hold' ? 'out' : curve, clamp01((tq - change.start) / (change.end - change.start))) : 1;
       move = change.kind === 'move' ? change : null;
     }
     previous = change.style;
