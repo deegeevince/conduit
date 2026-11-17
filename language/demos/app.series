@@ -62,6 +62,6 @@ app sim height=280 | Galton board
 | tell(); draw();
 | if (!matchMedia('(prefers-reduced-motion: reduce)').matches) requestAnimationFrame(frame);
 | </script>
-say callout near=sim | real code: every bounce is worked out
+say callout near=sim:below | real code: every bounce is worked out
 say | It keeps its count, and a tap drops a ball: try one.
 wait 10s
