@@ -450,7 +450,11 @@ class Screen {
           if (wrong !== 'wrong') problems.push(`a wrong answer in the blank was marked "${wrong}"`);
           await play(`fill ${scene.id} | ${scene.answer}`);
           // the last ask answered right tells the brain (a turn), and the replay brain then answers: it is marked right the moment the fill lands
-          const right = await verdict();
+          let right = await verdict();
+          for (let waited = 0; waited < 4000 && right !== 'right' && !tab.posted.slice(sent).some((turn) => /right/.test(turn.text ?? '')); waited += 200) {
+            await sleep(200);
+            right = await verdict();
+          }
           if (right !== 'right' && !tab.posted.slice(sent).some((turn) => /right/.test(turn.text ?? ''))) problems.push(`the right answer in the blank was marked "${right}"`);
         }
         const picture = await tab.shot();

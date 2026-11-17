@@ -387,7 +387,14 @@ export class LineNormalizer {
       const label = (line.title ?? '').replace(/_{2,}|□|\[\s*\]/g, '').replace(/\s+/g, ' ').trim();
       const answers = (line.answer ?? []).map((value) => value.replace(/_/g, ' '));
       if (answers.length === 0) return { line: { verb: 'say', id: this.makeId(), styles: [], props: {}, text: label } as Line, issues: [] };
-      return this.normalizeLine({ verb: 'ask', id: line.id === '-' ? this.makeId() : line.id, is: answers, text: label === '' ? 'Your answer' : label } as Line);
+      const id = line.id === '-' ? this.makeId() : line.id;
+      // a question whose own words hold its answer (a time, "7:18 is ___ past 7") would be refused as a spoiler: it is said first, and the ask carries no words of it
+      const shows = answers.some((value) => new RegExp(`(^|[^\\p{L}\\p{N}])${value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^\\p{L}\\p{N}])`, 'iu').test(label));
+      if (shows) {
+        const said = { verb: 'say', id: this.makeId(), styles: [], props: {}, text: (line.title ?? '').replace(/_{2,}|□|\[\s*\]/g, '…') } as Line;
+        return { line: said, issues: [], rest: [{ verb: 'ask', id, is: answers, text: 'Your answer' } as Line] };
+      }
+      return this.normalizeLine({ verb: 'ask', id, is: answers, text: label === '' ? 'Your answer' : label } as Line);
     }
     switch (line.verb) {
       case 'style':
