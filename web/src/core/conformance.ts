@@ -49,6 +49,7 @@ type Check = 'pure' | 'inside' | 'ink' | 'floor' | 'targets' | 'describe' | 'inp
 const WAIVED: readonly { readonly kind: KindId; readonly check: Check; readonly why: string }[] = [
   { kind: 'timeline', check: 'floor', why: 'teletext at 375 sets its body type at 10.5px, under the phone floor of 11: the look\'s size ladder; the stage solver (PC5, PC6) raises it' },
   { kind: 'table', check: 'floor', why: 'the same: teletext at 375 sets its body type at 10.5px (PC5, PC6)' },
+  { kind: 'code', check: 'floor', why: 'the same: teletext at 375 sets its body type at 10.5px, and a listing is set in the look\'s own face there, at the body size (PC5, PC6)' },
   { kind: 'screen', check: 'floor', why: 'the kit sets its smallest type at 11.9px on paper at 1280, against a floor of 12 (its own MIN_TEXT_PX is 12; a rounding): PC9 takes the floor from Env.tokens' },
   { kind: 'tune', check: 'inside', why: 'under the fixed-pitch grid at 1280 (printout) the roll\'s last notes run 6 units past the room\'s right edge: the engine\'s grid snapping; PC14' },
   { kind: 'button', check: 'inside', why: 'under the fixed-pitch grid at 375 (teletext) the box outline spans 58 units in a control the engine reports as 48 high: the control engine\'s grid snapping; PC8' },
@@ -410,16 +411,17 @@ function wholeRegistry(): { readonly lines: string[]; readonly failed: number } 
     const undrawn = taughtNotAdvertised(taught, drawable);
     check(`taught is drawn (chart host ${hosts.chart}, app host ${hosts.app}): ${taught.length} taught, ${teaching.kernel.length} in the prompt, ${teaching.chapter.length} in the brief`, undrawn.length === 0, `taught but not drawn: ${undrawn.join(', ')}`);
   }
-  // and code, which the vocabulary teaches and no painter draws, is left out
+  // and code, which has an engine (PC10), is taught because it is drawn
   const codeTaught = [...teachingFor(capabilitiesOfRegistry(HOSTS_BOTH)).kernel].some((entry) => entry.id === 'code');
-  check('code is not taught (it has no engine)', !codeTaught, 'code is advertised');
-  const brokenCaps: Capabilities = { ...capabilitiesOfRegistry(HOSTS_BOTH), structures: [...advertisedStructures(HOSTS_BOTH), 'code'] };
-  const leaked = taughtNotAdvertised([...teachingFor(brokenCaps).kernel].map((e) => e.id), [...readyKinds(HOSTS_BOTH), ...LEGACY_DRAWN]);
-  check('the check catches it: advertising code is "taught but not drawn"', leaked.join() === 'code', `got [${leaked.join(' ')}]`);
+  check('code is taught, and drawn (it has an engine)', codeTaught && isReady(KINDS['code'].status, HOSTS_BOTH), `taught ${codeTaught}, ready ${isReady(KINDS['code'].status, HOSTS_BOTH)}`);
+  // the check that taught is drawn still bites: with code's engine taken away, the same lists say "taught but not drawn"
+  const withoutCode = readyKinds(HOSTS_BOTH).filter((id) => id !== 'code');
+  const leaked = taughtNotAdvertised([...teachingFor(capabilitiesOfRegistry(HOSTS_BOTH)).kernel].map((e) => e.id), [...withoutCode, ...LEGACY_DRAWN]);
+  check('the check catches it: code taught with no engine behind it is "taught but not drawn"', leaked.join() === 'code', `got [${leaked.join(' ')}]`);
 
   // the prompt built today from the derived capabilities: every structure it lists as a shape is in the lexicon's kernel
   const prompt = buildSystemPrompt({ capabilities: capabilitiesOfRegistry(HOSTS_BOTH), services: { paint: false, sight: 'report', review: false } });
-  const kernelStructures = teachingFor(capabilitiesOfRegistry(HOSTS_BOTH)).kernel.map((e) => e.id).filter(isStructureKind).filter((id) => id !== 'code' && id !== 'chart');
+  const kernelStructures = teachingFor(capabilitiesOfRegistry(HOSTS_BOTH)).kernel.map((e) => e.id).filter(isStructureKind).filter((id) => id !== 'chart');
   const absent = kernelStructures.filter((id) => !new RegExp(`\\b${id}\\b`).test(prompt));
   check(`today's prompt, built from the derived capabilities (${prompt.length} chars), names each kernel structure`, absent.length === 0, `not in the prompt: ${absent.join(', ')}`);
 
@@ -462,7 +464,7 @@ function report(): void {
     map: 'blocks/map.ts layoutMap',
     table: 'blocks/table.ts layoutTable',
     chart: 'a surface (charts.ts, chart-host)',
-    code: 'nothing: no engine yet (PC10)',
+    code: 'blocks/code.ts layoutCode (+ code-lex.ts)',
     tune: 'blocks/tune.ts layoutTune',
     app: 'blocks/app.ts layoutApp + a surface',
     screen: 'ui-stage.ts layoutUi',

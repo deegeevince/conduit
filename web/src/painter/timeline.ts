@@ -30,6 +30,7 @@ import { CALM } from '../contracts/controls';
 import { registerLaidOut, laidOutOf } from './registry';
 import { buildStructures, probeStructure, setTextOnce } from './structures';
 import type { StructurePlans } from './structures';
+import { codeSizes } from './blocks/code';
 import { mathLeast, mathNatural } from './blocks/math';
 import { CALLOUTS_READY, layoutCallouts } from './blocks';
 import type { CalloutInput } from '../contracts/blocks';
@@ -812,8 +813,10 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
       // a mock-up takes what the stage can give it: its screens are scaled together to the room
       const mockup = figure.structure === 'screen';
       const drawing = figure.structure === 'figure';
-      const natural = figure.structure === 'math' && figure.math != null ? mathNatural(figure.math) : mockup ? { width: 1600, height: 900 } : drawing ? { width: 900, height: 700 } : live ? { width: 960, height: Math.max(120, context.appHeights?.get(element.key) ?? figure.height ?? 480) } : tune ? { width: 760, height: 260 } : chart ? { width: 560, height: 400 } : table ? { width: Math.max(280, 150 * columns), height: 60 + 34 * figure.rows.length } : { width: 640, height: 120 + 40 * parts };
-      const least = figure.structure === 'math' && figure.math != null ? mathLeast(figure.math) : mockup ? { width: 300, height: 300 } : drawing ? { width: 280, height: 300 } : live ? { width: 280, height: 220 } : tune ? { width: 260, height: 150 } : chart ? { width: 260, height: 300 } : table ? { width: Math.max(200, 100 * columns), height: 40 + 24 * figure.rows.length } : { width: 160, height: 100 };
+      // a listing is sized by its longest line and its rows, at the em it is set in
+      const listing = figure.structure === 'code' ? codeSizes(element, cellOf('s', viewport, specAt(start)).fontSize / planeScale(element.style.layer, viewport)) : null;
+      const natural = listing !== null ? listing.natural : figure.structure === 'math' && figure.math != null ? mathNatural(figure.math) : mockup ? { width: 1600, height: 900 } : drawing ? { width: 900, height: 700 } : live ? { width: 960, height: Math.max(120, context.appHeights?.get(element.key) ?? figure.height ?? 480) } : tune ? { width: 760, height: 260 } : chart ? { width: 560, height: 400 } : table ? { width: Math.max(280, 150 * columns), height: 60 + 34 * figure.rows.length } : { width: 640, height: 120 + 40 * parts };
+      const least = listing !== null ? listing.least : figure.structure === 'math' && figure.math != null ? mathLeast(figure.math) : mockup ? { width: 300, height: 300 } : drawing ? { width: 280, height: 300 } : live ? { width: 280, height: 220 } : tune ? { width: 260, height: 150 } : chart ? { width: 260, height: 300 } : table ? { width: Math.max(200, 100 * columns), height: 40 + 24 * figure.rows.length } : { width: 160, height: 100 };
       list.push({
         key: element.key,
         kind: chart ? 'chart' : 'structure',

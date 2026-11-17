@@ -448,6 +448,15 @@ function strongest(look: LookSpec): string {
   return best;
 }
 
+/**
+ * The ground of a listing's panel: the look's ground moved half way from its ink toward white or black, a paler card on paper and a deeper well on a dark ground.
+ * Every colour the look reads on its ground then reads at least as well on the panel (a tint toward the ink would take the accent and the dim below 4.5).
+ */
+function panelGround(look: LookSpec): string {
+  const toward = contrastRatio(look.roles.ink, '#ffffff') > contrastRatio(look.roles.ink, '#000000') ? '#ffffff' : '#000000';
+  return mixHex(look.roles.ground, toward, 0.5);
+}
+
 export function buildStructures(schedule: Schedule, env: StructureEnv): StructurePlans {
   const plans: Plan[] = [];
   for (const element of schedule.elements) {
@@ -625,7 +634,7 @@ export function buildStructures(schedule: Schedule, env: StructureEnv): Structur
         const stroked = part.role === 'frame' || part.role === 'line' || part.role === 'grid' || part.role === 'lit' || ring || (part.role === 'marker' && !isControl);
         const colour = ring || part.part.startsWith('ok:') || part.part.startsWith('act:') ? look.roles.accent : part.part.startsWith('bad:') ? look.roles.accent : part.role === 'grid' ? look.roles.dim : paintColour(strokePaint, look);
         const filled = part.role === 'fill' || part.role === 'head' || (part.role === 'bar' && !ring) || part.role === 'marker' || part.role === 'note' || part.role === 'note2' || part.role === 'lit';
-        const fillColour = part.role === 'note' ? (style.fill !== 'none' && typeof style.fill === 'string' ? paintColour(style.fill, look) : look.roles.accent) : part.role === 'note2' ? look.roles.alt : part.role === 'lit' ? strongest(look) : part.role === 'fill' && part.part.startsWith('mark:') ? mixHex(look.roles.ground, look.roles.accent, 0.3) : part.role === 'fill' ? (style.fill !== 'none' && typeof style.fill === 'string' ? paintColour(style.fill, look) : mixHex(look.roles.ground, look.roles.ink, 0.1)) : part.role === 'head' ? colour : part.role === 'bar' ? (style.fill !== 'none' && typeof style.fill === 'string' ? paintColour(style.fill, look) : look.roles.accent) : isControl && part.role === 'marker' ? look.roles.ink : look.roles.accent;
+        const fillColour = part.role === 'note' ? (style.fill !== 'none' && typeof style.fill === 'string' ? paintColour(style.fill, look) : look.roles.accent) : part.role === 'note2' ? look.roles.alt : part.role === 'lit' ? strongest(look) : part.role === 'fill' && part.part.startsWith('mark:') ? mixHex(look.roles.ground, look.roles.accent, 0.3) : part.role === 'fill' && part.part === 'panel' ? panelGround(look) : part.role === 'fill' ? (style.fill !== 'none' && typeof style.fill === 'string' ? paintColour(style.fill, look) : mixHex(look.roles.ground, look.roles.ink, 0.1)) : part.role === 'head' ? colour : part.role === 'bar' ? (style.fill !== 'none' && typeof style.fill === 'string' ? paintColour(style.fill, look) : look.roles.accent) : isControl && part.role === 'marker' ? look.roles.ink : look.roles.accent;
         const transform = pulse === 1 && shake === 0 ? IDENTITY : { ...about(centre, 0, pulse), e: about(centre, 0, pulse).e + shake };
         out.figures.push({
           kind: 'shape',
@@ -649,7 +658,7 @@ export function buildStructures(schedule: Schedule, env: StructureEnv): Structur
         const spec: TextSpec = earlier !== undefined && earlier.kind === 'text' ? { ...part.spec, shrink: lerp(earlier.spec.shrink, part.spec.shrink, q) } : part.spec;
         const set = setTextOnce({ look: squeezedLook(look), viewport: env.viewport, text: part.text, emphasis: part.emphasis as readonly Range[], style: { ...textStyleOf(style, spec), layer: structure.style.layer }, shrink: spec.shrink, maxWidth: box.width, width: box.width, align: part.align });
         const px = set.fontSize * ps;
-        const role = part.role === 'tick' || part.role === 'value' ? 'dim' : style.ink;
+        const role = part.role === 'tick' || part.role === 'value' || part.tone === 'comment' ? 'dim' : part.tone === 'keyword' ? 'accent' : part.tone === 'literal' ? 'alt' : style.ink;
         const minRatio = minContrastFor(px, structure.style.layer);
         const cx0 = box.x + box.width / 2;
         const cy0 = box.y + box.height / 2;
