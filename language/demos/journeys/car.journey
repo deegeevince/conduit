@@ -15,7 +15,8 @@ hold 5
 car: type | Show me the main parts of a car
 rest
 hold 4
-brakes: tap | Brakes
+# the brain draws what it likes: a part it did not draw is skipped after a few seconds, and said so in the timings
+brakes: tap? | Brakes
 rest
 hold 4
 stop: type | How far does it take to stop? Let me change the speed.
@@ -26,7 +27,7 @@ hold 4
 back: back
 rest
 hold 4
-engine: tap | Engine
+engine: tap? | Engine
 rest
 hold 2
 dragEngine: drag? engine min > max over=3
