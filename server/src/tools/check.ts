@@ -562,6 +562,7 @@ class Screen {
       const played = await tab.eval<string | null>(`Promise.resolve(window.__stage.playScript(${JSON.stringify(source)})).then(() => null, (e) => String(e && e.message || e))`);
       // the script is one long turn that plays in real time (a minute, and a scene more with each failure written down): it is given half as long again as a demo
       results.push(Screen.restResult(played !== null ? `the demo would not start: ${played}` : await talk.rest(true, true, Math.round(this.args.timeoutMs * 1.5)), began));
+      Screen.add(results, 'hard-layout-work', await this.layoutWork(tab, source), 'each diagram was laid out for its own lines: the lines written after it cost it no layout');
       const starts = await this.sceneStarts(tab);
       if (starts.length !== ids.length) results.push({ turn: 0, check: 'scenes', verdict: 'FAIL', detail: `the script has ${ids.length} scenes but the turn has ${starts.length}` });
       const last = ids.length - 1;
@@ -574,6 +575,32 @@ class Screen {
     } finally {
       await tab.close();
     }
+  }
+
+  /**
+   * fb-065: a diagram is laid out for the lines that make it (each part that arrives changes it), and not again for every line the turn writes after it. The painter counts
+   * the layouts it really ran by structure (`window.__layoutWork`, the rest answered from memory); a structure whose scene writes `node` and `link` lines may have run
+   * three layouts for each of its own lines, no more. (The flowchart of hard.series, with 170 lines written after it, was laid out 176 times for its 20 lines, and the page
+   * stood still for 45 s while the turn arrived at a phone's width: the check's rest limit was spent before the script began to play.)
+   */
+  private async layoutWork(tab: Tab, source: string): Promise<string[]> {
+    const work = await tab.eval<{ runs: Record<string, number>; remembered: number } | null>('window.__layoutWork || null');
+    if (work === null) return ['the page does not count its layouts (window.__layoutWork)'];
+    const scenes = source.split(/^scene\b/m).slice(1);
+    const problems: string[] = [];
+    let judged = 0;
+    for (const [key, runs] of Object.entries(work.runs)) {
+      const id = key.split('@')[0] as string;
+      const scene = scenes.find((part) => new RegExp(`^\\w+ ${id}\\b`, 'm').test(part));
+      if (scene === undefined) continue;
+      const own = scene.split('\n').filter((line) => /^(node|link)\s/.test(line)).length;
+      if (own === 0) continue;
+      judged += 1;
+      const most = 3 * (own + 2);
+      if (runs > most) problems.push(`${id} was laid out ${runs} times for its ${own + 1} lines (at most ${most}): the lines after it laid it out again`);
+    }
+    if (judged === 0) problems.push('no diagram of the script was found among the layouts counted');
+    return problems;
   }
 
   /** what each scene of hard.series says its own bug would break */
