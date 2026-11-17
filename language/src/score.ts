@@ -4,6 +4,9 @@ import { splitCells } from './text';
 import type { Issue, Line, ReviseLine } from './types';
 import { CONTROL, LIMITS, STRUCTURE } from './vocabulary';
 
+/** The one issue a line is not told of when it is pushed: see `TurnScore.settledIssues`. */
+const SETTLED_CODE = 'dead-bind';
+
 export type PushOutcome =
   /** placed on the timeline at the pen */
   | 'scheduled'
@@ -123,9 +126,19 @@ export class TurnScore {
 
     this.current = buildSchedule(this.entries, this.base, this.options);
     for (const item of this.current.issues) {
-      if (item.seq === seq) issues.push(item.issue);
+      // what a control's binds add up to is only known when the turn's lines are all in: `settledIssues` has it, a line's own issues do not
+      if (item.seq === seq && item.issue.code !== SETTLED_CODE) issues.push(item.issue);
     }
     return { outcome, schedule: this.current, issues };
+  }
+
+  /**
+   * What the lines so far add up to, as the schedule says it now: a control whose every bind leaves what it names as it is (`dead-bind`). It is not among a
+   * line's issues because a later bind may yet make it work (`bind view=chart | set sales opacity=1` is no change on its own, and the line after it is the one that is).
+   * Each carries the seq of the control's last bind. Ask it when the turn has ended.
+   */
+  settledIssues(): readonly { readonly seq: number; readonly issue: Issue }[] {
+    return this.current.issues.filter((item) => item.issue.code === SETTLED_CODE);
   }
 
   private newestElement(id: string): ElementSpan | null {

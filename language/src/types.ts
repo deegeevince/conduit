@@ -817,6 +817,8 @@ export type IssueCode =
   | 'structure-limit'
   /** a `bind` that names something that is not a control, or a change a control cannot drive */
   | 'bad-bind'
+  /** a control whose binds all leave what they name exactly as it is: dragging it changes nothing on stage */
+  | 'dead-bind'
   | 'bad-sum'
   /** a `{…}` in text that does not read as an expression of the controls on stage */
   | 'bad-expression'

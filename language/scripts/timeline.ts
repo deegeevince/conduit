@@ -55,6 +55,11 @@ function run(title: string, source: string): boolean {
     }
   });
   const schedule = score.schedule;
+  // What the lines add up to: a control whose binds all change nothing (a line's own issues cannot say it: a later bind may make it work)
+  for (const item of score.settledIssues()) {
+    clean = false;
+    process.stdout.write(`  line ${item.seq} SETTLED  ${describe([item.issue])}\n`);
+  }
   // The score, not the source: a `revise` shows up as the line it rewrote.
   const texts = new Map<number, string>();
   for (const entry of score.score) {

@@ -58,6 +58,7 @@ import { rebuildMemory } from './drawing-memory';
 import { buildContext, holdStanding, oweFindings, owedToTell, parseStanding, rememberTurn } from './memory';
 import type { StandingAsk } from './memory';
 import { MAX_PROBLEMS, SERVER_LIMITS } from './session';
+
 import type { SessionEntry, SessionLog, SessionRecord } from './session-log';
 import type { ActiveTurn, Session, SessionStore, StageSink } from './session';
 import { readPasted } from '../reading/pasted';
@@ -86,6 +87,9 @@ import type { Briefed } from './observations';
 import type { TechniqueLibrary } from './techniques';
 import type { SkillCatalogue } from '../skills/catalogue';
 import { readSkillBlock, SKILL_CUTS } from '../skills/text';
+
+/** How many dead binds a turn's end tells the brain of: the first few say what it needs to know, a dozen would bury the rest of its brief. */
+const MAX_DEAD_BINDS = 3;
 
 export interface ConductorDeps {
   readonly sessions: SessionStore;
@@ -1237,6 +1241,7 @@ export class Conductor {
       if (reason !== 'done') turn.abort.abort();
     });
     step('braces', () => this.noteUndeclaredBraces(turn));
+    step('binds', () => this.noteDeadBinds(s, turn));
     step('held', () => {
       for (const waiting of turn.held.values()) for (const held of waiting) this.reject(s, turn, serializeLine((held.event as { line: Line }).line), held.issues as Issue[]);
       turn.held.clear();
@@ -2290,6 +2295,25 @@ export class Conductor {
     const never = waiting.flatMap((text) => withoutUnknownBraces(text, (name) => this.declared(turn, name)).dropped);
     if (never.length === 0) return;
     this.noteProblem(turn, never.join(' '), 'repaired', [{ code: 'unknown-name', severity: 'warn', message: `${never.join(' ')} in the words names no control declared in the turn, so it was taken out; a name in braces must be the id of a slider, toggle or pick you declared` }]);
+  }
+
+  /**
+   * At the turn's end: a control, bound in this turn, whose every bind leaves what it names exactly as it is (the schedule says so: `TurnScore.settledIssues`). The
+   * brain is told in its next brief twice, as the line that did nothing and as something the eyes found, so it learns its slider is dead before the person tries it.
+   */
+  private noteDeadBinds(s: Session, turn: ActiveTurn): void {
+    const said = new Set<number>();
+    const tell = (seq: number, issue: Issue, problem: boolean): void => {
+      const entry = turn.score.score.find((candidate) => candidate.seq === seq && !candidate.void);
+      // a bind of an earlier turn was told of in its own; one line is told of once
+      if (entry === undefined || entry.line.verb !== 'bind' || said.has(seq) || said.size >= MAX_DEAD_BINDS) return;
+      said.add(seq);
+      // a bind that names nothing drawn, or cannot do what it says, was given back to the brain with its line as it came: only what still holds at the end is seen
+      if (problem) this.noteProblem(turn, serializeLine(entry.line), 'repaired', [issue]);
+      this.observe(s, turn.id, { source: 'server', kind: 'refusal', severity: 'blocking', on: issue.token ?? null, answer: true, note: `a bind did nothing: ${issue.message.split('. ')[0] ?? issue.message}` });
+    };
+    for (const { seq, issue } of turn.score.settledIssues()) tell(seq, issue, true);
+    for (const { seq, issue } of turn.score.schedule.issues) if (issue.code === 'bad-bind' || issue.code === 'unknown-id') tell(seq, issue, false);
   }
 
   private reject(s: Session, turn: ActiveTurn, raw: string, issues: readonly Issue[]): void {
