@@ -13,6 +13,7 @@
 //   choices    a mouse's target is smaller than a finger's, so a choice is shorter (the server always measured as a finger)
 //   controls   a slider the hand moved, then a new question with a slider of the same name
 //   cjk, flow, carry, words   the plain cases, so that the check has something that must never drift
+//   free-title  a free scene: a title with no place of its own over words set at points, and asks that wait (fb-059, fb-060): placed and measured alike
 //   scripts    Greek, Cyrillic, Arabic: the page measures them in the device's own font, so the server leaves the turn to the page
 //   app        a live app is sized by the browser: the server says so and leaves the turn to the page
 //

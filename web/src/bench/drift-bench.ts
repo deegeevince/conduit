@@ -70,6 +70,8 @@ export const PATTERNS: readonly Pattern[] = [
   { name: 'carry', turns: [{ lines: [['scene layout=caption', 0], ['say a | The first turn says this', 0.3], ['say b | And this, which the next turn will stand on', 0.3]] }, { lines: [['say c | The second turn adds its own line below', 0.3], ['revise a | The first turn said this, but better', 5]] }] },
   { name: 'math', turns: [{ lines: [['scene layout=stack', 0], ['say a | Six lots of 12.', 0.3], ['math m1 column | 12+12+12+12+12+12', 0.3], ['set m1.ans-ones mark=box', 0.2], ['say b | Take 278 from 503.', 0.3], ['math m2 column | 503 - 278', 0.3], ['math m3 times | 47 × 6', 0.3], ['math m4 bond | 10 = 4 + ?', 0.3]] }] },
   { name: 'math-pictures', turns: [{ lines: [['scene layout=stack', 0], ['say a | Three quarters.', 0.3], ['math m1 bar | 3/4', 0.3], ['scene layout=stack', 0.5], ['math m2 groups | 12 ÷ 3', 0.3], ['scene layout=stack', 0.5], ['math m3 line steps | 7 + 5', 0.3]] }] },
+  // fb-059 and fb-060: a free scene whose title has no place of its own, over words set at points, and asks that wait: the page and the server place and measure them alike
+  { name: 'free-title', turns: [{ lines: [['scene layout=free canvas=square', 0], ['say t1 title | Adding big numbers', 0.3], ['say d1 at=60,28 align=right face=mono | 4768', 0.2], ['say d2 at=60,42 align=right face=mono | 2557', 0.2], ['say d3 at=60,58 align=right face=mono | 7325', 0.2], ['ask q1 is=6281 stage=1 | 3486 + 2795 = __', 0.3], ['ask q2 is=7043 stage=2:q1 | 5079 + 1964 = __', 0.3], ['ask q3 is=10000 stage=3:q2 | 6358 + 3642 = __', 0.3]] }] },
   { name: 'app', turns: [{ lines: [['scene layout=caption', 0], ['app tally height=320 | Tally', 0.3], ['| <div id="n">0</div>', 0], ['say s | A counter.', 0.3]] }] },
 ];
 

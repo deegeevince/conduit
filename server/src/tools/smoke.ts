@@ -879,9 +879,9 @@ export class Conversation {
   }
 
   /** waits for the page's own rest; returns a sentence about how it went (empty when all is well) */
-  async rest(expectReport: boolean | null, requireNewReport = true): Promise<string> {
+  async rest(expectReport: boolean | null, requireNewReport = true, limitMs: number = this.options.timeoutMs): Promise<string> {
     const { tab } = this;
-    const deadline = Date.now() + this.options.timeoutMs;
+    const deadline = Date.now() + limitMs;
     this.lastSig = '';
     this.stableSince = Date.now();
     let problem = '';
@@ -906,7 +906,7 @@ export class Conversation {
         return problem;
       }
       if (Date.now() > deadline) {
-        return `no rest within ${Math.round(this.options.timeoutMs / 1000)} s (status "${probe.status}", clock ${probe.clock}, turn ${probe.turn ?? 'none'}, new report ${fresh.length > 0 ? 'yes' : 'no'}, ${tab.pending()} requests in flight${tab.pending() > 0 ? ` (${tab.pendingUrls().join(', ')})` : ''}, ${probe.moving ? 'elements still moving' : 'stage still'})`;
+        return `no rest within ${Math.round(limitMs / 1000)} s (status "${probe.status}", clock ${probe.clock}, turn ${probe.turn ?? 'none'}, new report ${fresh.length > 0 ? 'yes' : 'no'}, ${tab.pending()} requests in flight${tab.pending() > 0 ? ` (${tab.pendingUrls().join(', ')})` : ''}, ${probe.moving ? 'elements still moving' : 'stage still'})`;
       }
     }
   }
