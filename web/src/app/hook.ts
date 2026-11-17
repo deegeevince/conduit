@@ -35,6 +35,7 @@ export function createHook(app: Omit<StageApp, 'hook'>, ready: Promise<void>): S
       return app.charts.act(view.key, action);
     },
     mockups: () => painter.mockups(),
+    hide: (keys) => painter.hide(keys),
     leaders: () => painter.leaders(),
     bindings: () => painter.bindings(),
     lens: () => (app.lens === null ? null : { view: app.lens.view(), touched: app.lens.touched }),

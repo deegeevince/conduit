@@ -1094,7 +1094,10 @@ function narrationColumn(units: readonly Unit[], ctx: Context): Map<string, { lo
       let top = first + dy;
       return best.map((unit, i) => {
         const loose = looses[i] as Loose;
-        const rect = { x: Math.max(frame.x, Math.min(pin(unit).x - loose.width / 2 + dx, frame.x + frame.width - loose.width)), y: top, width: loose.width, height: loose.height };
+        // told `align=right` (or left) the point is the line's right (left) edge: a column of digits lines up on it; else the line is centred on it
+        const align = unit.main.item.style.align;
+        const edge = align === 'right' ? 1 : align === 'left' ? 0 : 0.5;
+        const rect = { x: Math.max(frame.x, Math.min(pin(unit).x - loose.width * edge + dx, frame.x + frame.width - loose.width)), y: top, width: loose.width, height: loose.height };
         top += loose.height + gap;
         return rect;
       });

@@ -474,6 +474,9 @@ export interface Painter {
    */
   mockups(): readonly UiMockup[];
 
+  /** For a test: leaves the elements with these keys undrawn (none: all drawn again) and draws the frame now, so a picture taken with and without an element shows what it really paints. A figure has a key too (a callout's leader is `<its key>/leader`). Returns which of the keys the frame held. */
+  hide(keys: readonly string[]): readonly string[];
+
   /** The leader lines on stage as they rest: where each ends and how that end stands to its own part and to the other labelled parts (what the catalogue's label check reads). */
   leaders(): readonly LeaderView[];
 
