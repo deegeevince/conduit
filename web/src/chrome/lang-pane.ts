@@ -39,7 +39,13 @@ function remember(on: boolean): void {
   }
 }
 
-export function mountLangPane(root: HTMLElement, stage: HTMLElement, app: StageApp, menu: ComposerMenu): LangPane {
+export interface LangPaneOptions {
+  /** the demo's journey: the pane is always open and cannot be closed, and the reader's own setting is neither read nor changed */
+  readonly locked?: boolean;
+}
+
+export function mountLangPane(root: HTMLElement, stage: HTMLElement, app: StageApp, menu: ComposerMenu, options: LangPaneOptions = {}): LangPane {
+  const locked = options.locked === true;
   const pane = document.createElement('aside');
   pane.className = 'lang';
   pane.hidden = true;
@@ -239,7 +245,10 @@ export function mountLangPane(root: HTMLElement, stage: HTMLElement, app: StageA
   };
 
   // the reader's own scrolling (wheel, finger, keys, the scrollbar) ends the following; the programmatic scroll never does
-  const leave = (): void => setFollowing(false);
+  // in the demo nobody scrolls the pane by hand: nothing a stray pointer does may take the follow away
+  const leave = (): void => {
+    if (!locked) setFollowing(false);
+  };
   list.addEventListener('wheel', leave, { passive: true });
   list.addEventListener('touchmove', leave, { passive: true });
   list.addEventListener('pointerdown', (event) => {
@@ -401,6 +410,7 @@ export function mountLangPane(root: HTMLElement, stage: HTMLElement, app: StageA
     order: 55,
     check: true,
     checked: false,
+    hidden: locked,
     run: () => app.lang.set(!app.lang.on),
   });
 
@@ -430,13 +440,14 @@ export function mountLangPane(root: HTMLElement, stage: HTMLElement, app: StageA
       hovered = null;
       pinned = null;
     }
-    remember(on);
+    if (!locked) remember(on);
   };
   const off = app.lang.onChange(() => {
-    if (app.lang.on !== running) apply();
+    if (locked && !app.lang.on) app.lang.set(true);
+    else if (app.lang.on !== running) apply();
     else if (running) render();
   });
-  if (remembered()) app.lang.set(true);
+  if (locked || remembered()) app.lang.set(true);
   else apply();
 
   return {

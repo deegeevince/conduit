@@ -116,6 +116,14 @@ export interface StageApp {
   readonly pen: { set(writer: { clear(key: string, part: string): void; flush(): Promise<void> } | null): void };
   /** "Show the language": the lines the page was told, as they came, and whether the pane that shows them (and a film's copy of it) is on */
   readonly lang: LangLog;
+  /** What the brain itself said ran (`model`) and whether the answer on stage may still be changed after it came to rest (`mend`): for the journey and the demo's model label. */
+  readonly facts: {
+    /** the model id the brain's process reported and the effort the turn used; the last one heard, null until a brain says */
+    model(): { readonly model: string; readonly effort: string; readonly turn: string } | null;
+    onModel(listener: () => void): () => void;
+    /** the critic or a repair may still change the last answer: `pending` the critic has not yet had its say, `working` a repair is being written, `tidying` its lines are playing */
+    mending(): { readonly pending: boolean; readonly working: boolean; readonly tidying: boolean };
+  };
   /** where this stage's charts live; null when this build has no charting engine */
   readonly charts: ChartHost | null;
   /** v2.3. Where live apps run: the sandboxed frames over the stage. `/stop-all` ends them. */
@@ -498,6 +506,11 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   /** v3. The server's repair turn whose lines are playing: the status line says "Tidying up the last answer…" until it reports */
   let tidying: string | null = null;
   let passInfo: { readonly pass: number; readonly of: number | null; readonly reason: string | null } | null = null;
+  let modelFact: { readonly model: string; readonly effort: string; readonly turn: string } | null = null;
+  const modelListeners = new Set<() => void>();
+  /** the answer whose critic verdict (and so any repair) is still to come, and whether a repair for it is being written */
+  let criticPending: string | null = null;
+  let repairWorking = false;
   /** one controller per data call: a slow table does not cancel the others, and leaving the page cancels all */
   const dataCalls = new Set<AbortController>();
   /** the rows that came, by id, for an export to draw the charts the same way */
@@ -864,9 +877,25 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
         if (event.turn !== null) showedSomething.add(event.turn);
         documents.onDoc(event, event.turn !== null && ['prompt', 'tap'].includes(turnInputs.get(event.turn)?.kind ?? ''));
         return;
+      case 'model':
+        modelFact = { model: event.model, effort: event.effort, turn: event.turn };
+        for (const listener of modelListeners) listener();
+        return;
+      case 'mend':
+        if (event.state === 'working') {
+          if (criticPending === event.turn) repairWorking = true;
+        } else if (criticPending === event.turn) {
+          criticPending = null;
+          repairWorking = false;
+        }
+        return;
       case 'turn':
         if (event.turn === currentTurn || opened.has(event.turn)) return;
         opened.add(event.turn);
+        if (event.input.kind !== 'repair') {
+          criticPending = null;
+          repairWorking = false;
+        }
         undoChip.hide();
         tourBar.hide();
         if (tourWants !== null && event.input.kind === 'demo' && event.input.script === tourWants) {
@@ -1016,6 +1045,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
         return;
       case 'end':
         lang.settle(event.turn);
+        if (event.reason === 'done' && services?.critic === true && ['prompt', 'tap', 'act'].includes(turnInputs.get(event.turn)?.kind ?? '')) criticPending = event.turn;
         if (event.turn !== currentTurn) return;
         endStarting();
         // a tap or a question that ended with nothing drawn and no document opened is not left looking dead: what the brain said, or that nothing came, is shown
@@ -1984,6 +2014,14 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
       },
     },
     lang,
+    facts: {
+      model: () => modelFact,
+      onModel(listener) {
+        modelListeners.add(listener);
+        return () => modelListeners.delete(listener);
+      },
+      mending: () => ({ pending: criticPending !== null && !repairWorking, working: repairWorking, tidying: tidying !== null }),
+    },
     charts: chartHost,
     apps: liveApps,
     sound,

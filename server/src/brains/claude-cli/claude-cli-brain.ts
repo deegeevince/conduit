@@ -106,6 +106,8 @@ interface Entry {
   lastUsed: number;
   /** `total_cost_usd` is cumulative for a process; this is where the last turn left it */
   costBase: number;
+  /** the model id the CLI itself reported in its `system`/`init` event (never the setting): what really ran. Null until the process has said. */
+  reportedModel: string | null;
   /** settles when the turn using this process has fully let go of it */
   running: Promise<void> | null;
   /** the browser's tabs this process has opened and where they are (`domain/browser.ts`); empty and unused unless `chrome` is on */
@@ -245,6 +247,7 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
       heardSkills: new Set(),
       lastUsed: Date.now(),
       costBase: 0,
+      reportedModel: null,
       running: null,
       browser: newBrowserState(),
       forgetCanvas: canvas.forget,
@@ -511,11 +514,17 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
 
     async function* chunks(): AsyncGenerator<string> {
       rearm();
+      // A warm process says its model once; each turn restates what it said, with the effort this turn runs on.
+      if (entry.reportedModel !== null) box.push({ type: 'model', model: entry.reportedModel, effort: entry.effort });
       for await (const event of entry.proc.ask({ text, image: out.image, pdfs, images: out.images }, inner.signal)) {
         if (event.type === 'system' && (event as { subtype?: unknown }).subtype === 'init') {
           const init = event as { tools?: readonly unknown[]; mcp_servers?: readonly unknown[]; model?: string };
           const tools = init.tools?.length ?? 0;
           const mcp = init.mcp_servers?.length ?? 0;
+          if (typeof init.model === 'string' && init.model !== '') {
+            entry.reportedModel = init.model;
+            box.push({ type: 'model', model: init.model, effort: entry.effort });
+          }
           turnLog.info('claude_init', { model: init.model, effort: entry.effort, requested: entry.model, mode: modeOf(out.session) });
           if (entry.agentKey === 'plain' && (tools > deps.tools.length + (deps.canvas === undefined ? 0 : 6) || mcp > (deps.canvas === undefined ? 0 : 1))) turnLog.warn('claude_not_isolated', { model: init.model, tools, mcp_servers: mcp });
           continue;

@@ -47,6 +47,7 @@ import { ASK_SCREEN, askGroup } from './ask-check';
 import { DRAW_SCREEN, drawGroup } from './draw-check';
 import { ART_FAKE_MS, ART_SCREEN, artGroup } from './art-check';
 import { CONTINUE_SCREEN, continueFixtures, continueGroup } from './continue-check';
+import { journeyGroup } from './journey-check';
 import { MEMORY_SCREEN, memoryGroup } from './memory-check';
 import { loopGroup } from './loop-check';
 import { TOUR_SCREENS, tourGroup } from './tour-check';
@@ -1127,6 +1128,16 @@ function buildUnits(args: Args, welcome: Welcome): { readonly units: Unit[]; rea
       out.lines.push(`\nart-maker ${ART_SCREEN.name}`);
       sceneLines(out, scenes);
       out.json = { key: 'arts', value: { screen: ART_SCREEN.name, scenes } };
+    },
+  });
+  units.push({
+    name: 'journey',
+    needs: 'main',
+    weight: 50,
+    run: async (servers, out) => {
+      const scenes = await journeyGroup(servers.main as string, join(args.out, 'journey'), args.timeoutMs, plain);
+      out.lines.push('\njourney (1280x800, replay brain: typing, a tap, a drag, an undo and rest, with the hook\'s timings)');
+      sceneLines(out, scenes);
     },
   });
   units.push({
