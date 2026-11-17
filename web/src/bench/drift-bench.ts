@@ -62,6 +62,7 @@ export const PATTERNS: readonly Pattern[] = [
     ],
   },
   { name: 'cjk', turns: [{ lines: [['scene layout=caption', 0], ['say a | 你好，今天我们来看一个很长的句子，它需要在窄的屏幕上换行显示出来。', 0.4], ['say b | これは日本語の文章で、画面の幅に合わせて折り返されます。', 0.4], ['say c | 한국어 문장도 같은 방식으로 줄을 바꿉니다.', 0.4]] }] },
+  { name: 'scripts', turns: [{ lines: [['scene layout=caption', 0], ['say a | Καλημέρα κόσμε, this line has Greek in it', 0.4], ['say b | Привет, мир: и немного кириллицы', 0.4], ['say c | مرحبا بالعالم', 0.4]] }] },
   { name: 'flow', turns: [{ lines: [['scene layout=caption', 0], ['flow x1 down | How it goes', 0.3], ['node a in=x1 | Start here', 0.2], ['node b from=a in=x1 | Then this', 0.2], ['node c from=b in=x1 | Finally that', 0.2], ['say s | Words under the flow', 0.3]] }] },
   { name: 'carry', turns: [{ lines: [['scene layout=caption', 0], ['say a | The first turn says this', 0.3], ['say b | And this, which the next turn will stand on', 0.3]] }, { lines: [['say c | The second turn adds its own line below', 0.3], ['revise a | The first turn said this, but better', 5]] }] },
   { name: 'app', turns: [{ lines: [['scene layout=caption', 0], ['app tally height=320 | Tally', 0.3], ['| <div id="n">0</div>', 0], ['say s | A counter.', 0.3]] }] },
