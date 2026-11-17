@@ -420,6 +420,88 @@ class Screen {
   }
 
   /**
+   * "Show the language" follows what is drawn: a long answer (a loop and a move early, then twelve long lines and thirty-six dots) is played with the pane on, and while it plays
+   * the line lit as being drawn stays inside the pane's own rect, though the pane is several pages long and the lines arrive ahead of the drawing. The pane's scroll
+   * is not at the end while it follows; what keeps moving is marked; a wheel turn in the pane stops the following and shows "Follow", which resumes it.
+   * Frames at about half a second are kept in `<screen>/follow/`.
+   */
+  async followScene(): Promise<void> {
+    const name = 'follow';
+    const began = Date.now();
+    this.note(name);
+    const { tab, talk } = await this.open('', false);
+    try {
+      await this.look(tab);
+      const frames = join(this.dir, 'follow');
+      await mkdir(frames, { recursive: true });
+      await tab.eval(`(() => { try { localStorage.setItem('conduit.lines', 'on'); } catch (e) {} return true; })()`);
+      await tab.send('Page.reload');
+      for (let waited = 0; waited < 40_000 && !(await tab.eval<boolean>('Boolean(window.__stage)').catch(() => false)); waited += 250) await sleep(250);
+      await tab.eval('window.__stage.ready.then(() => true)');
+      tab.drain();
+      const results: CheckResult[] = [];
+      const lines: string[] = ['look paper', 'scene long stack lines=3 brisk', 'circle beacon 12,20 3 fill=accent loop=pulse', 'circle ball 12,60 3 fill=ink', 'move ball 140,60 over=12s'];
+      for (let n = 1; n <= 12; n += 1) {
+        for (let dot = 0; dot < 3; dot += 1) lines.push(`circle d${n}x${dot} ${20 + dot * 6},${10 + n * 3} 0.6 fill=dim`);
+        lines.push(`say | Line ${n} of a long answer, written well ahead of its drawing, so the pane runs on and the line being drawn stays in view.`);
+      }
+      lines.push('wait 1');
+      await tab.eval(`(window.__follow = window.__stage.playScript(${JSON.stringify(lines.join('\n'))}), true)`);
+      type Sample = { readonly at: number; readonly pane: { top: number; bottom: number } | null; readonly row: { top: number; bottom: number; index: number } | null; readonly rows: number; readonly away: number; readonly moving: number; readonly marked: number };
+      const read = (): Promise<Sample> =>
+        tab.eval<Sample>(`(() => { const list = document.querySelector('.lang__body'); if (!list) return { at: Date.now(), pane: null, row: null, rows: 0, away: 0, moving: 0, marked: 0 }; const box = list.getBoundingClientRect(); const rows = [...list.querySelectorAll('.lang__row')]; const now = list.querySelector('.lang__row.is-now'); const r = now ? now.getBoundingClientRect() : null; return { at: Date.now(), pane: { top: box.top, bottom: box.bottom }, row: r ? { top: r.top, bottom: r.bottom, index: rows.indexOf(now) } : null, rows: rows.length, away: list.scrollHeight - list.scrollTop - list.clientHeight, moving: list.querySelectorAll('.is-moving').length, marked: list.querySelectorAll('.is-moving--lead').length }; })()`);
+      const samples: Sample[] = [];
+      let frame = 0;
+      let quiet = 0;
+      const t0 = Date.now();
+      let nextFrame = 0;
+      while (Date.now() - t0 < 85_000 && quiet < 12) {
+        const sample = await read();
+        samples.push(sample);
+        quiet = sample.row === null && samples.length > 8 ? quiet + 1 : 0;
+        if (Date.now() - t0 >= nextFrame && sample.row !== null) {
+          nextFrame += 500;
+          frame += 1;
+          const picture = await tab.shot();
+          await writeFile(join(frames, `${this.screen.name}-follow-${String(frame).padStart(3, '0')}.png`), Buffer.from(picture.split(',')[1] ?? '', 'base64'));
+        }
+        await sleep(150);
+      }
+      const drawn = samples.filter((sample) => sample.row !== null && sample.pane !== null);
+      const inView = (sample: Sample): boolean => sample.row !== null && sample.pane !== null && sample.row.top >= sample.pane.top - 2 && sample.row.bottom <= sample.pane.bottom + 2;
+      const seen = drawn.filter(inView).length;
+      const problems: string[] = [];
+      const rowsMax = Math.max(0, ...samples.map((sample) => sample.rows));
+      if (rowsMax < 40) problems.push(`the pane listed ${rowsMax} rows, expected the 53 lines of the script`);
+      // the drawn line is in the pane's rect in nearly every sample (a smooth scroll may lag one sample behind a new line)
+      if (drawn.length < 10) problems.push(`only ${drawn.length} samples had a line being drawn`);
+      else if (seen / drawn.length < 0.85) problems.push(`the drawn line was inside the pane in ${seen} of ${drawn.length} samples`);
+      const awayFromEnd = drawn.filter((sample) => inView(sample) && sample.away > 60).length;
+      if (awayFromEnd < 3) problems.push(`the pane was never scrolled to a drawn line short of its end (${awayFromEnd} samples)`);
+      if (!samples.some((sample) => sample.moving > 0 && sample.marked > 0)) problems.push('no row was marked as moving while the loop and the move ran');
+      Screen.add(results, 'follow', problems, `the drawn line stayed inside the pane in ${seen} of ${drawn.length} samples, ${awayFromEnd} of them with the pane scrolled short of its end; moving rows marked; ${frame} frames kept`);
+      // the person's own scrolling ends the following and offers "Follow", which resumes it
+      const own: string[] = [];
+      const chipState = (): Promise<{ hidden: boolean; top: number }> => tab.eval(`(() => { const c = document.querySelector('.lang__follow'); return { hidden: !c || c.hidden, top: document.querySelector('.lang__body').scrollTop }; })()`);
+      const before = await chipState();
+      if (!before.hidden) own.push('the Follow chip shows while the pane follows');
+      await tab.eval(`(() => { const l = document.querySelector('.lang__body'); l.scrollTop = 0; l.dispatchEvent(new WheelEvent('wheel', { deltaY: -40, bubbles: true })); return true; })()`);
+      await sleep(400);
+      const left = await chipState();
+      if (left.hidden) own.push('a wheel turn in the pane did not show the Follow chip');
+      await tab.eval(`document.querySelector('.lang__follow').click()`);
+      await sleep(900);
+      const back = await chipState();
+      if (!back.hidden) own.push('tapping Follow left the chip showing');
+      Screen.add(results, 'follow-chip', own, 'a wheel turn shows Follow; tapping it resumes');
+      results.push(Screen.restResult(await talk.rest(true), began));
+      await this.judge(tab, talk, name, results, began, true, false);
+    } finally {
+      await tab.close();
+    }
+  }
+
+  /**
    * The maths questions of problem.series, each as its own turn: the whole-screen workspace the page draws from one `problem` line.
    * Judged by what is on the page (its DOM), for what a person sees and presses; the generic checks do not see a workspace.
    */
@@ -760,6 +842,7 @@ async function runScreen(args: Args, base: string, screen: Args['screens'][numbe
     { name: 'the welcome', go: () => run.welcomeScene(false) },
     { name: 'the welcome under reduced motion', go: () => run.welcomeScene(true) },
     { name: 'problems', go: () => run.problemScenes() },
+    { name: 'follow', go: () => run.followScene() },
     ...Array.from({ length: DEMO_JOBS }, (_, job) => ({ name: `demos ${job + 1}`, names: offered.filter((_name, index) => index % DEMO_JOBS === job) })).map((job, index) => ({ name: job.name, go: () => run.demoScenes(job.names, index === 0) })),
   ];
   const stopped: string[] = [];
@@ -773,7 +856,7 @@ async function runScreen(args: Args, base: string, screen: Args['screens'][numbe
     ),
   );
   // the order a reader expects: the welcome, the choice, the reduced-motion welcome, then the demos as the app lists them
-  const order = ['welcome', 'choice', 'welcome-reduced-motion', ...offered.map((name) => `demo-${name}`), ...problemScenes().map((scene) => `problem-${scene.id}`), 'problem-fill'];
+  const order = ['welcome', 'choice', 'welcome-reduced-motion', ...offered.map((name) => `demo-${name}`), ...problemScenes().map((scene) => `problem-${scene.id}`), 'problem-fill', 'follow'];
   run.scenes.sort((a, b) => order.indexOf(a.name) - order.indexOf(b.name));
   if (run.renderer !== 'unknown') {
     const webgl = run.renderer === 'three';
@@ -792,6 +875,8 @@ const COLUMNS: readonly (readonly [string, string])[] = [
   ['choice-sent', 'sent'],
   ['explorable-controls', 'ctrls'],
   ['problem', 'problem'],
+  ['follow', 'follow'],
+  ['follow-chip', 'chip'],
   ['art', 'art'],
   ['answer-on-stage', 'stage'],
   ['no-overlap', 'overlap'],

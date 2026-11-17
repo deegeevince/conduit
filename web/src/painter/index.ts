@@ -20,7 +20,7 @@ import type { Recording } from '../contracts/film';
 import { noteArrivals as noteArrivalsInto } from './arrivals';
 import type { ElementFrame, Frame, Quality, ShapeFrame } from '../contracts/frame';
 import type { LookSpec } from '../contracts/look';
-import type { BindingView, ControlView, LineView, Painter, PainterEvents, PainterOptions, PainterSnapshot, StageElementView, UiMockup } from '../contracts/painter';
+import type { BindingView, ControlView, LineView, MotionView, Painter, PainterEvents, PainterOptions, PainterSnapshot, StageElementView, UiMockup } from '../contracts/painter';
 import { REST_POSE } from '../contracts/space';
 import type { Box, CameraPose, Viewport } from '../contracts/space';
 import { PlayClock, pinnedWallTime } from './clock';
@@ -1145,6 +1145,32 @@ export function createPainter(options: PainterOptions): Painter {
     return { page, ...(newest === null ? {} : { follow: newest.box }) };
   };
 
+  /** what keeps moving at `at`: loops running, moves under way, binds live (read from the schedule alone) */
+  const motionsAt = (at: number): MotionView[] => {
+    const out: MotionView[] = [];
+    for (const element of (turn !== null ? timeline.schedule : (review?.schedule ?? timeline.schedule)).elements) {
+      if (!element.carried && (element.enter === null || element.enter.start > at)) continue;
+      if (element.exit !== null && element.exit.start <= at) continue;
+      let loop = element.style.loop;
+      let loopSeq = element.seq;
+      let loopSince = element.enter?.start ?? 0;
+      for (const change of element.changes) {
+        if (change.start > at) continue;
+        if (change.kind === 'move' && at < change.end) out.push({ id: element.id, kind: 'move', seq: change.seq, since: change.start });
+        if (change.kind === 'set' || change.kind === 'move' || change.kind === 'morph') {
+          if (change.style.loop !== loop) {
+            loop = change.style.loop;
+            loopSeq = change.seq;
+            loopSince = change.start;
+          }
+        }
+      }
+      if (loop !== 'none') out.push({ id: element.id, kind: 'loop', seq: loopSeq, since: loopSince });
+      for (const driven of element.driven) if (driven.since <= at && (driven.until === undefined || at < driven.until)) out.push({ id: element.id, kind: 'bind', seq: driven.seq, since: driven.since });
+    }
+    return out;
+  };
+
   const snapshotNow = (): PainterSnapshot => {
     const reading = clock.read();
     const instant = instantOf(reading);
@@ -1154,6 +1180,7 @@ export function createPainter(options: PainterOptions): Painter {
     const scene = sceneAt(schedule, reading.playhead);
     const active = turn !== null;
     const showingAll = turn !== null && turn.showingAll;
+    const motions = motionsAt(reading.playhead);
     const pen = active ? (showingAll ? Math.max(schedule.pen, reading.playhead) : schedule.pen) : (memory?.pen ?? 0);
     const end = active ? (turn !== null && turn.closed && settling === null ? settledEnd() : schedule.end) : (memory?.end ?? 0);
     const playhead = active || reviewing || memory === null ? reading.playhead : memory.playhead;
@@ -1176,6 +1203,7 @@ export function createPainter(options: PainterOptions): Painter {
         canvas: frame.canvas,
       },
       elements: views,
+      ...(motions.length === 0 ? {} : { motions }),
       lines: active ? linesOf(turn as Turn, schedule) : (memory?.lines ?? []),
       renderer: renderer.id,
       quality: governor.quality,

@@ -62,6 +62,7 @@
   font-size: 0.8125rem;
   line-height: 1.5;
   border-right: 1px solid var(--lang-edge);
+  position: relative;
 }
 
 .lang[hidden] {
@@ -134,6 +135,52 @@
   background: var(--lang-verb);
 }
 
+.lang__row.is-moving {
+  background: color-mix(in srgb, var(--lang-now) 45%, transparent);
+}
+
+.lang__row.is-moving--lead {
+  background: color-mix(in srgb, var(--lang-now) 75%, transparent);
+}
+
+/* a small mark on a row whose element is moving now */
+.lang__row.is-moving::after {
+  content: '';
+  position: absolute;
+  right: 0.45rem;
+  top: 0.55em;
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 50%;
+  background: var(--lang-verb);
+  opacity: 0.7;
+  animation: lang-moving 1.4s ease-in-out infinite;
+}
+
+@keyframes lang-moving {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+.lang__follow {
+  position: absolute;
+  right: var(--space-3);
+  bottom: var(--space-3);
+  padding: 0.25rem 0.75rem;
+  border: 1px solid var(--lang-verb);
+  border-radius: 999px;
+  background: var(--lang-ground);
+  color: var(--lang-verb);
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.lang__follow[hidden] {
+  display: none;
+}
+
 .lang__row.is-pointed {
   background: var(--lang-pointed);
 }
@@ -200,7 +247,8 @@
   .lang__row {
     animation: none;
   }
-  .lang__cursor {
+  .lang__cursor,
+  .lang__row.is-moving::after {
     animation: none;
   }
 }

@@ -55,7 +55,14 @@ export function mountLangPane(root: HTMLElement, stage: HTMLElement, app: StageA
   list.className = 'lang__body';
   list.tabIndex = -1;
   list.setAttribute('aria-label', 'Lines');
-  pane.append(head, list);
+  // shown only once the reader has scrolled the pane themselves: following the drawing is then theirs to resume
+  const chip = document.createElement('button');
+  chip.type = 'button';
+  chip.className = 'lang__follow';
+  chip.textContent = 'Follow';
+  chip.title = 'Follow what is being drawn';
+  chip.hidden = true;
+  pane.append(head, list, chip);
   root.insertBefore(pane, stage);
 
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -64,8 +71,17 @@ export function mountLangPane(root: HTMLElement, stage: HTMLElement, app: StageA
   let shownTurn: string | null = null;
   let shownCount = 0;
   let empty: HTMLElement | null = null;
-  /** follow the newest line unless the reader has scrolled up */
+  /** follow what is being drawn (or, while nothing is, the line being written) unless the reader has scrolled the pane themselves */
   let following = true;
+  /** when a line was last being drawn (performance.now), and the row the pane last came to rest on */
+  let lastDrawnAt = -1e9;
+  let lastTarget = '';
+  let lastRow: HTMLLIElement | null = null;
+  const setFollowing = (on: boolean): void => {
+    following = on;
+    chip.hidden = on;
+  };
+  const instant = (): ScrollBehavior => (reduced.matches ? 'auto' : 'smooth');
   let pinned: { readonly id: string | null; readonly row: HTMLLIElement | null; readonly until: number } | null = null;
   let hovered: string | null = null;
   let rafHandle = 0;
@@ -170,6 +186,15 @@ export function mountLangPane(root: HTMLElement, stage: HTMLElement, app: StageA
     list.scrollTop = list.scrollHeight;
   };
 
+  /** bring a row to about a third from the top of the pane, unless it already sits comfortably in view */
+  const reveal = (row: HTMLLIElement): void => {
+    const box = list.getBoundingClientRect();
+    const at = row.getBoundingClientRect();
+    const top = at.top - box.top;
+    if (top >= box.height * 0.1 && at.bottom - box.top <= box.height * 0.7) return;
+    list.scrollTo({ top: Math.max(0, list.scrollTop + top - box.height / 3), behavior: instant() });
+  };
+
   const render = (): void => {
     const turn = app.lang.turn;
     const entries = turn === null ? [] : app.lang.entriesOf(turn);
@@ -181,7 +206,10 @@ export function mountLangPane(root: HTMLElement, stage: HTMLElement, app: StageA
       shownTurn = turn;
       shownCount = 0;
       empty = null;
-      following = true;
+      setFollowing(true);
+      lastDrawnAt = -1e9;
+      lastTarget = '';
+      lastRow = null;
     }
     if (entries.length === 0 && app.lang.live === null) {
       if (empty === null) {
@@ -206,11 +234,26 @@ export function mountLangPane(root: HTMLElement, stage: HTMLElement, app: StageA
     }
     shownCount = entries.length;
     showLive();
-    scrollEnd();
+    // while a line is being drawn the pane stays on it (tick); lines arriving ahead of the drawing do not pull it away
+    if (performance.now() - lastDrawnAt > 1200 && (liveRow !== null || lastRow === null)) scrollEnd();
   };
 
-  list.addEventListener('scroll', () => {
-    following = list.scrollHeight - list.scrollTop - list.clientHeight < 24;
+  // the reader's own scrolling (wheel, finger, keys, the scrollbar) ends the following; the programmatic scroll never does
+  const leave = (): void => setFollowing(false);
+  list.addEventListener('wheel', leave, { passive: true });
+  list.addEventListener('touchmove', leave, { passive: true });
+  list.addEventListener('pointerdown', (event) => {
+    if (event.target === list) leave();
+  });
+  list.addEventListener('keydown', (event) => {
+    if (['PageUp', 'PageDown', 'Home', 'End', 'ArrowUp', 'ArrowDown', ' '].includes(event.key)) leave();
+  });
+  chip.addEventListener('click', () => {
+    setFollowing(true);
+    lastTarget = '';
+    if (lastRow !== null && performance.now() - lastDrawnAt <= 1200) reveal(lastRow);
+    else if (liveRow !== null || lastRow === null) scrollEnd();
+    else reveal(lastRow);
   });
 
   // ---- what made an element: pointing at something on stage lights its line; nothing is drawn over the stage
@@ -231,6 +274,8 @@ export function mountLangPane(root: HTMLElement, stage: HTMLElement, app: StageA
 
   // ---- the line being drawn: the painter's schedule against its playhead
   let lastNow = -2;
+  let moving: HTMLLIElement[] = [];
+  let lead: HTMLLIElement | null = null;
   let lastPointed: HTMLLIElement | null = null;
   const tick = (time: number): void => {
     rafHandle = requestAnimationFrame(tick);
@@ -246,6 +291,45 @@ export function mountLangPane(root: HTMLElement, stage: HTMLElement, app: StageA
       rowOf.get(lastNow)?.classList.remove('is-now');
       rowOf.get(nowSeq)?.classList.add('is-now');
       lastNow = nowSeq;
+    }
+    // what keeps moving (a loop, a move under way, a live bind): its line is lit softly, the most recent start a little more
+    const rows = new Map<HTMLLIElement, number>();
+    for (const motion of snap.motions ?? []) {
+      const row = rowOf.get(motion.seq);
+      if (row !== undefined) rows.set(row, Math.max(rows.get(row) ?? -1, motion.since));
+    }
+    let newest: HTMLLIElement | null = null;
+    let newestSince = -1;
+    for (const [row, since] of rows) {
+      if (since >= newestSince) {
+        newest = row;
+        newestSince = since;
+      }
+    }
+    for (const row of moving) if (!rows.has(row)) row.classList.remove('is-moving');
+    for (const row of rows.keys()) row.classList.add('is-moving');
+    moving = [...rows.keys()];
+    if (lead !== newest) {
+      lead?.classList.remove('is-moving--lead');
+      newest?.classList.add('is-moving--lead');
+      lead = newest;
+    }
+    // follow: the line being drawn; with none for a moment, the one that began moving last while the turn plays; else the live row (render)
+    const now = performance.now();
+    if (nowSeq >= 0) lastDrawnAt = now;
+    let target: HTMLLIElement | null = null;
+    let key = '';
+    if (nowSeq >= 0) {
+      target = rowOf.get(nowSeq) ?? null;
+      key = `n${nowSeq}`;
+    } else if (now - lastDrawnAt > 1200 && liveRow === null && snap.turn !== null && newest !== null) {
+      target = newest;
+      key = `m${newest.dataset['seq'] ?? ''}`;
+    }
+    if (target !== null && key !== lastTarget) {
+      lastTarget = key;
+      lastRow = target;
+      if (following) reveal(target);
     }
     const light = lightFor();
     if (lastPointed !== light.row) {
@@ -289,19 +373,20 @@ export function mountLangPane(root: HTMLElement, stage: HTMLElement, app: StageA
     }
     return best === null ? null : best.id;
   };
+  let lastHover: string | null = null;
   const onStageMove = (event: PointerEvent): void => {
     if (event.pointerType === 'touch') return;
     hovered = elementAt(event);
     const row = hovered === null ? null : rowForId(hovered);
-    if (row !== null && following) row.scrollIntoView({ block: 'nearest', behavior: 'auto' });
+    if (row !== null && hovered !== lastHover) reveal(row);
+    lastHover = hovered;
   };
   const onStageDown = (event: PointerEvent): void => {
     const id = elementAt(event);
     if (id === null) return;
     const row = rowForId(id);
     if (row === null) return;
-    following = false;
-    row.scrollIntoView({ block: 'center', behavior: reduced.matches ? 'auto' : 'smooth' });
+    reveal(row);
     pinned = { id, row, until: performance.now() + PIN_MS };
   };
   const onStageLeave = (): void => {
