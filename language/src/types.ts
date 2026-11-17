@@ -825,7 +825,9 @@ export type IssueCode =
   /** v3. A `step` or an `ask` with no `part` to belong to */
   | 'no-part'
   /** v3. An `ask` no one could answer: no answer, one choice, or choices that hold no accepted answer */
-  | 'bad-ask';
+  | 'bad-ask'
+  /** An app's code reaches for a shelf library (`d3.`, `Matter.`, `Tone.`, `katex.`, its fonts) its `uses=` did not name: the host loads it anyway, and the line carries this so the log shows it */
+  | 'uses-inferred';
 
 export interface Issue {
   readonly code: IssueCode;

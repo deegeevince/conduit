@@ -8,7 +8,7 @@ The libraries are permissively licensed (MIT, BSD or ISC, which is the MIT licen
 | matter-js | 0.20.0 | MIT | physics (the `physics` shelf), global `Matter` |
 | tone | 15.1.22 | MIT | sound (the `sound` shelf), global `Tone`; bundles standardized-audio-context (MIT), automation-events (MIT), tslib (0BSD) |
 | katex | 0.16.22 | MIT | maths typesetting (the `maths` shelf), global `katex`; its stylesheet with 10 fonts inlined (10 font faces dropped) |
-| d3-array | 3.2.5 | ISC | charts, graphs and force layouts (the `charts` and `graphs` shelves), global `d3` |
+| d3-array | 3.2.5 | ISC | charts, graphs, force layouts and map projections (the `charts` and `graphs` shelves), global `d3` |
 | d3-axis | 3.0.1 | ISC | part of D3 |
 | d3-chord | 3.0.2 | ISC | part of D3 |
 | d3-color | 3.1.1 | ISC | part of D3 |
@@ -17,6 +17,7 @@ The libraries are permissively licensed (MIT, BSD or ISC, which is the MIT licen
 | d3-ease | 3.0.2 | BSD-3-Clause | part of D3 |
 | d3-force | 3.0.1 | ISC | part of D3 |
 | d3-format | 3.1.3 | ISC | part of D3 |
+| d3-geo | 3.1.2 | ISC | part of D3 |
 | d3-hierarchy | 3.1.3 | ISC | part of D3 |
 | d3-interpolate | 3.0.2 | ISC | part of D3 |
 | d3-path | 3.1.1 | ISC | part of D3 |
@@ -37,7 +38,7 @@ The libraries are permissively licensed (MIT, BSD or ISC, which is the MIT licen
 | @fontsource/archivo-black | 5.3.0 | OFL-1.1 | Archivo Black 400 latin (the `fonts` shelf) |
 | @fontsource/jetbrains-mono | 5.3.0 | OFL-1.1 | JetBrains Mono 400, 700 latin (the `fonts` shelf) |
 
-Left out on purpose: d3-delaunay (it bundles robust-predicates, which is public domain, not MIT/BSD/Apache), d3-geo, d3-brush, d3-contour, d3-fetch, d3-dsv, and the KaTeX fonts for script, fraktur, caligraphic and typewriter faces.
+Left out on purpose: d3-delaunay (it bundles robust-predicates, which is public domain, not MIT/BSD/Apache), d3-brush, d3-contour, d3-fetch, d3-dsv, and the KaTeX fonts for script, fraktur, caligraphic and typewriter faces.
 
 ## Licence texts
 
@@ -168,6 +169,45 @@ LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
 ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+```
+
+### d3-geo
+
+```
+Copyright 2010-2026 Mike Bostock
+
+Permission to use, copy, modify, and/or distribute this software for any purpose
+with or without fee is hereby granted, provided that the above copyright notice
+and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
+FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
+OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
+THIS SOFTWARE.
+
+This license applies to GeographicLib, versions 1.12 and later.
+
+Copyright 2008-2012 Charles Karney
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software is furnished to do so,
+subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL THE AUTHORS OR
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ```
 
 ### d3-path

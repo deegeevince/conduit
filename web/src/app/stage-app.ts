@@ -453,7 +453,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   const chartHost: ChartHost | null = engine === null ? null : createChartHost({ engine, stage: page, access });
   const sound = createSound();
   // Live apps run here, in sandboxed frames over the stage; what the user does in one goes up the back channel (`appAct`, below).
-  const liveApps: AppHost = createLiveApps({ stage: page, onAct: (act) => appAct(act), onNote: (text) => announce(text) });
+  const liveApps: AppHost = createLiveApps({ stage: page, onAct: (act) => appAct(act), onNote: (text) => announce(text), onBroken: (broken) => eyes.broken(broken) });
   // A browser lets a page make sound once the person has done something on it: the Send that asks for music is that, and so is any first click or key.
   const wake = (): void => sound.unlock();
   document.addEventListener('pointerdown', wake, { capture: true });
