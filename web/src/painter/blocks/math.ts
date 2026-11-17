@@ -21,11 +21,16 @@ import type { Box } from '../../contracts/space';
 import { box, closedLine, dashes, inflate, open, roundedRect, union } from './geom';
 import { drawWay, formOf } from './math-ways';
 import type { WayDrawing, WayName, WayPiece } from './math-ways';
+import { canShow, inputCells, mathRev, runOf, stateOf, takeFills } from './math-cells';
 
 /** The least a thing the learner writes in is, on a side: a fingertip. */
 const MIN_TARGET = 44;
 /** The unit a block is sized by before the look's own type is known: what the stage plan reserves. */
 const NATURAL_UNIT = 56;
+/** What a block with cells to write in keeps under its digits, in units: a row of Check, Hint and Show me, and the line a hint is said in. */
+const ROWS_BELOW = 2.1;
+/** The most words of a hint that stand under the block, in stage units of width. */
+const HINT_WIDTH = 330;
 
 // ---------------------------------------------------------------------------------------------------------------------------------
 // The stepper held on the block: a tap advances it. The state of a hand, kept here and not in the schedule, as a control's value is.
@@ -36,7 +41,7 @@ const HELD = new Map<string, number>();
 export const mathHeld = (key: string): number => HELD.get(key) ?? 0;
 
 /** What the layout must be asked again for, when the stepper moved. */
-export const mathKey = (key: string): string => `m${mathHeld(key)}`;
+export const mathKey = (key: string): string => `m${mathHeld(key)}.${mathRev(key)}`;
 
 /** Moves the block's own stepper on by one step, round to the start after the last; returns the new step. */
 export function advanceMath(key: string, steps: number): number {
@@ -76,7 +81,7 @@ export function mathNatural(math: MathFigure): { readonly width: number; readonl
   const unit = NATURAL_UNIT;
   const carries = grid.method === 'column' || grid.method === 'times';
   const used = (row: number): boolean => grid.cells.some((cell) => cell.row === row);
-  let height = stepper;
+  let height = stepper + (inputCells(grid).length > 0 ? unit * ROWS_BELOW : 0);
   for (let row = 0; row < grid.rows; row += 1) {
     if (!used(row)) continue;
     height += grid.cells.some((cell) => cell.row === row && cell.role === 'rule') ? unit * 0.34 : carries && row === 0 ? unit * 0.8 : grid.method === 'bond' ? unit * 1.6 : unit;
@@ -176,6 +181,11 @@ function circleOutline(cx: number, cy: number, r: number): Polyline {
   return closedLine(Array.from({ length: 28 }, (_, i) => ({ x: cx + r * Math.cos((i / 28) * 2 * Math.PI), y: cy + r * Math.sin((i / 28) * 2 * Math.PI) })));
 }
 
+/** A ring of dashes round a box with rounded corners (a required cell left empty). */
+function dashedRound(at: Box): Polyline[] {
+  return dashedBox(at, 5, 4);
+}
+
 function dashedBox(at: Box, on: number, off: number): Polyline[] {
   const right = at.x + at.width;
   const bottom = at.y + at.height;
@@ -251,7 +261,9 @@ function gridBlock(input: StructureInput, math: MathFigure, grid: maths.Grid, sh
   const floor = MIN_TARGET + gapBetween;
   const unitX = Math.max(floor, dm.width * 1.45);
   const unitY = Math.max(floor, dm.height * 0.85);
-  const filled = fillsOf(grid, math);
+  const run = runOf(key, input.structure.id, math, grid);
+  takeFills(run, fillsOf(grid, math));
+  const inputs = new Set(inputCells(grid));
   const radius = Math.max(input.look.radius, unitY * 0.12);
 
   // how many characters the cell will hold: from the sum, never from what the learner is to write
@@ -308,7 +320,10 @@ function gridBlock(input: StructureInput, math: MathFigure, grid: maths.Grid, sh
     y += h;
   }
   const stepper = hasOwnStepper(math) ? unitY * 0.7 : 0;
-  const height = y + stepper;
+  // a block with cells to write in keeps a row for Check, Hint and Show me under its digits, and a line for a hint: always, so that nothing moves when they are used
+  const buttonsH = inputs.size > 0 ? MIN_TARGET + 14 : 0;
+  const hintH = inputs.size > 0 ? Math.max(unitY * 0.9, 56) : 0;
+  const height = y + stepper + buttonsH + hintH;
   const left = room.x + Math.max(0, (room.width - width) / 2);
   const top = room.y;
 
@@ -321,13 +336,67 @@ function gridBlock(input: StructureInput, math: MathFigure, grid: maths.Grid, sh
 
   const visible = (cell: maths.Cell): boolean => cell.step <= shown;
   const exchangeShown = (cell: maths.Cell): boolean => grid.cells.some((other) => other.role === 'working' && other.place === cell.place && !other.blank && other.value !== '' && visible(other));
-  const writeCarries = grid.cells.some((cell) => cell.role === 'carry' && cell.blank);
 
   const marksBack: BlockPart[] = [];
   const frames: BlockPart[] = [];
   const lines: BlockPart[] = [];
   const texts: BlockPart[] = [];
   const cellBox = new Map<maths.Cell, Box>();
+  /** where each cell the learner writes in takes a finger, and its clear mark: for the access layer and the stage's taps */
+  const writing = new Map<string, Box>();
+  const clearing = new Map<string, Box>();
+  const noted = spec('xs' as Size, shrink);
+
+  /** The box a cell the learner writes in is drawn as, and the (never smaller than a fingertip) box a finger or a pen finds it by. */
+  const writeIn = (cell: maths.Cell, at: Box): void => {
+    const name = cell.part;
+    const state = stateOf(run, name);
+    const small_ = cell.role === 'carry' || cell.role === 'working';
+    let drawn: Box;
+    if (small_) {
+      const side = Math.min(at.width * 0.7, at.height * 0.82);
+      drawn = box(at.x + (at.width - side) / 2, at.y + (at.height - side) / 2, side, side);
+      frames.push({ kind: 'shape', owner: key, part: `d:${name}`, outline: dashedBox(drawn, 4, 3), role: 'grid' });
+    } else {
+      // the learner's own cell: a box to write in, at least a fingertip on each side, and empty
+      const inset = Math.max(0, Math.min(gapBetween / 2, (Math.min(at.width, at.height) - MIN_TARGET) / 2));
+      drawn = box(at.x + inset, at.y + inset, at.width - 2 * inset, at.height - 2 * inset);
+      frames.push({ kind: 'shape', owner: key, part: `f:${name}`, outline: [roundedRect(drawn, radius)], role: 'frame' });
+    }
+    const tap = Math.min(at.width, Math.max(MIN_TARGET, drawn.width));
+    const tapH = Math.min(at.height, Math.max(MIN_TARGET, drawn.height));
+    writing.set(name, box(drawn.x + drawn.width / 2 - tap / 2, drawn.y + drawn.height / 2 - tapH / 2, tap, tapH));
+    // what stands in it: the digits typed, filled or shown, set in the cell; what the pen wrote is the learner's own, and the digit read from it is small beside it
+    const typeset = state.by === 'key' || state.by === 'fill' || state.by === 'shown';
+    if (typeset && state.value !== '') texts.push(plain(key, `c:${name}`, state.value, at, small_ ? small : big, 'cell', [{ start: 0, end: state.value.length }]));
+    const corner = Math.min(drawn.width * 0.42, 22);
+    if (state.by === 'pen' && state.read !== '') {
+      texts.push(plain(key, `r:${name}`, state.read, box(drawn.x + drawn.width - corner - 2, drawn.y + 1, corner, corner), small_ ? noted : small, 'value'));
+    } else if (state.reading) texts.push(plain(key, `r:${name}`, '…', box(drawn.x + drawn.width - corner - 2, drawn.y + 1, corner, corner), small_ ? noted : small, 'value'));
+    // marks of the last Check, the hint, the cell the keyboard is in
+    const tint = (kind: string): void => void marksBack.push({ kind: 'shape', owner: key, part: `mark:${kind}-${name}`, outline: [roundedRect(inflate(drawn, 1), radius)], role: 'fill' });
+    if (state.reading) tint('reading');
+    if (run.hint === name) tint('hint');
+    if (state.mark === 'shown') tint('shown');
+    if (state.mark === 'wrong' || state.mark === 'empty') tint('bad');
+    if (run.active === name) frames.push({ kind: 'shape', owner: key, part: `act:${name}`, outline: [roundedRect(inflate(drawn, 3), radius + 2)], role: 'frame' });
+    if (state.mark === 'empty') frames.push({ kind: 'shape', owner: key, part: `bad:ring-${name}`, outline: dashedRound(inflate(drawn, 4)), role: 'frame' });
+    const s = Math.max(10, Math.min(16, drawn.width * 0.3));
+    const bx = drawn.x + drawn.width - s - 3;
+    const by = drawn.y + drawn.height - s - 3;
+    if (state.mark === 'right') lines.push({ kind: 'shape', owner: key, part: `ok:${name}`, outline: [open([{ x: bx, y: by + s * 0.55 }, { x: bx + s * 0.38, y: by + s * 0.95 }, { x: bx + s, y: by + s * 0.1 }])], role: 'line' });
+    if (state.mark === 'wrong') {
+      lines.push({ kind: 'shape', owner: key, part: `bad:${name}`, outline: [open([{ x: bx + s * 0.1, y: by + s * 0.1 }, { x: bx + s * 0.9, y: by + s * 0.9 }]), open([{ x: bx + s * 0.9, y: by + s * 0.1 }, { x: bx + s * 0.1, y: by + s * 0.9 }])], role: 'line' });
+    }
+    // the pen's ink can be taken off a cell: a small cross at its corner, which a finger or a pen finds from a fingertip's box
+    if (state.ink) {
+      const r = Math.max(7, Math.min(10, drawn.width * 0.2));
+      const cx = drawn.x + 2 + r;
+      const cy = drawn.y + 2 + r;
+      lines.push({ kind: 'shape', owner: key, part: `clr:${name}`, outline: [circleOutline(cx, cy, r), open([{ x: cx - r * 0.45, y: cy - r * 0.45 }, { x: cx + r * 0.45, y: cy + r * 0.45 }]), open([{ x: cx + r * 0.45, y: cy - r * 0.45 }, { x: cx - r * 0.45, y: cy + r * 0.45 }])], role: 'grid' });
+      clearing.set(name, box(cx - MIN_TARGET / 2, cy - MIN_TARGET / 2, MIN_TARGET, MIN_TARGET));
+    }
+  };
 
   for (const cell of grid.cells) {
     const at = rectOf(cell);
@@ -343,22 +412,12 @@ function gridBlock(input: StructureInput, math: MathFigure, grid: maths.Grid, sh
       texts.push(plain(key, `c:${name}`, SIGNS[cell.value] ?? cell.value, at, big));
       continue;
     }
-    const fillText = filled.get(cell);
-    if (cell.role === 'carry' || cell.role === 'working') {
-      const side = Math.min(at.width * 0.7, at.height * 0.82);
-      const boxAt = box(at.x + (at.width - side) / 2, at.y + (at.height - side) / 2, side, side);
-      if (cell.blank || (cell.value === '' && writeCarries && cell.role === 'carry')) {
-        frames.push({ kind: 'shape', owner: key, part: `d:${name}`, outline: dashedBox(boxAt, 4, 3), role: 'grid' });
-        if (fillText !== undefined) texts.push(plain(key, `c:${name}`, fillText, at, small, 'cell', [{ start: 0, end: fillText.length }]));
-      } else if (cell.value !== '') texts.push(plain(key, `c:${name}`, cell.value, at, small));
+    if (inputs.has(cell)) {
+      writeIn(cell, at);
       continue;
     }
-    if (cell.blank) {
-      // the learner's own cell: a box to write in, at least a fingertip on each side, and empty
-      const inset = Math.max(0, Math.min(gapBetween / 2, (Math.min(at.width, at.height) - MIN_TARGET) / 2));
-      const boxAt = box(at.x + inset, at.y + inset, at.width - 2 * inset, at.height - 2 * inset);
-      frames.push({ kind: 'shape', owner: key, part: `f:${name}`, outline: [roundedRect(boxAt, radius)], role: 'frame' });
-      if (fillText !== undefined) texts.push(plain(key, `c:${name}`, fillText, at, big, 'cell', [{ start: 0, end: fillText.length }]));
+    if (cell.role === 'carry' || cell.role === 'working') {
+      if (cell.value !== '') texts.push(plain(key, `c:${name}`, cell.value, at, small));
       continue;
     }
     if (cell.value === '') continue;
@@ -406,6 +465,44 @@ function gridBlock(input: StructureInput, math: MathFigure, grid: maths.Grid, sh
     }
   }
 
+  // Check, Hint and Show me, in a row under the digits; the line a hint is said in is under that
+  const buttonBoxes = new Map<string, Box>();
+  let shortened = false;
+  if (inputs.size > 0 && run.verdict !== 'right' && run.verdict !== 'shown') {
+    const label = (name: string): string => (name === 'check' ? 'Check' : name === 'hint' ? 'Hint' : 'Show me');
+    const names = ['check', 'hint', ...(canShow(run) ? ['show'] : [])];
+    const labelSpec: TextSpec = { size: 'm', weight: 'normal', face: null, letterCase: 'asis', shrink: 1 };
+    // the row is as wide as its words ask, and no wider than the room: a narrow room takes less padding, then shorter words
+    const shortLabel = (name: string): string => (name === 'show' ? 'Show' : label(name));
+    let gapB = 10;
+    let widths: number[] = [];
+    for (const [pad, words] of [[28, label], [16, label], [8, shortLabel], [4, shortLabel]] as const) {
+      gapB = pad > 8 ? 10 : 6;
+      widths = names.map((name) => Math.max(MIN_TARGET, input.measure(words(name), labelSpec, 1e9).width + pad));
+      if (widths.reduce((a, b) => a + b, 0) + (names.length - 1) * gapB <= room.width + 0.5) {
+        shortened = words === shortLabel;
+        break;
+      }
+    }
+    const total = widths.reduce((a, b) => a + b, 0) + (names.length - 1) * gapB;
+    let bxAt = left + width / 2 - total / 2;
+    const rowTop = top + y + stepper + 7;
+    names.forEach((name, i) => {
+      const w = widths[i] as number;
+      const at = box(bxAt, rowTop, w, MIN_TARGET);
+      buttonBoxes.set(name, at);
+      frames.push({ kind: 'shape', owner: key, part: `btn:${name}`, outline: [roundedRect(at, at.height / 2)], role: 'frame' });
+      texts.push(plain(key, `bt:${name}`, shortened && name === 'show' ? 'Show' : label(name), at, labelSpec, 'cell'));
+      bxAt += w + gapB;
+    });
+  }
+  let hintWidth = width;
+  if (inputs.size > 0 && run.hintText !== '' && run.verdict !== 'right' && run.verdict !== 'shown') {
+    hintWidth = Math.min(Math.max(room.width, width), Math.max(width, HINT_WIDTH));
+    const at = box(left + width / 2 - hintWidth / 2, top + y + stepper + buttonsH + 2, hintWidth, hintH - 4);
+    texts.push(plain(key, 'hint', run.hintText, at, spec('s' as Size, shrink), 'value'));
+  }
+
   // marks put on parts by later lines, under everything else
   const partBoxes = new Map<string, Box>();
   const names = new Set<string>(['rule']);
@@ -442,8 +539,11 @@ function gridBlock(input: StructureInput, math: MathFigure, grid: maths.Grid, sh
   }
   const boxes = new Map<string, Box>();
   for (const [name, at] of partBoxes) boxes.set(`${key}.${name}`, at);
-  boxes.set(key, box(left, top, width, height));
-  return { lineHeight: dm.height, parts, boxes, width, height };
+  for (const [name, at] of writing) boxes.set(`${key}@cell:${name}`, at);
+  for (const [name, at] of clearing) boxes.set(`${key}@clear:${name}`, at);
+  for (const [name, at] of buttonBoxes) boxes.set(`${key}@btn:${name}`, at);
+  boxes.set(key, box(left, top, Math.max(width, hintWidth), height));
+  return { lineHeight: dm.height, parts, boxes, width: Math.max(width, hintWidth), height };
 }
 
 // --- a picture ----------------------------------------------------------------------------------------------------------------------

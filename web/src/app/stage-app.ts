@@ -11,7 +11,7 @@ import type { Audience } from '../core/contracts';
 import { appTokensOf } from '../painter/apps';
 import type { DocumentView as DocumentLayer } from './document-view';
 import type { LinkStatus, StageLink } from '../contracts/link';
-import type { Painter } from '../contracts/painter';
+import type { MathHit, Painter } from '../contracts/painter';
 import type { ContextEvent, Renderer } from '../contracts/renderer';
 import type { Box, Viewport } from '../contracts/space';
 import type { Frame } from '../contracts/frame';
@@ -106,8 +106,10 @@ export interface StageApp {
   readonly hook: StageHook;
   /** PLAN-canvas step 1, behind `?lens=1`: pinch and pan into the page. Null without the flag, and then nothing about the stage differs from before. */
   readonly lens: StageLens | null;
-  /** whether a screen point is on a part of an open ask (its blank, Check, Hint, Show me, a choice) */
+  /** whether a screen point is on a part of an open ask (its blank, Check, Hint, Show me, a choice), or on a cell or button of a written method */
   askAt(clientX: number, clientY: number): boolean;
+  /** Who takes the pen's ink off a cell when its ✕ is pressed (`app/pen-write.ts`); the cell is then marked as holding none. */
+  readonly mathClear: { set(handler: ((key: string, part: string) => void) | null): void };
   /** "Show the language": the lines the page was told, as they came, and whether the pane that shows them (and a film's copy of it) is on */
   readonly lang: LangLog;
   /** where this stage's charts live; null when this build has no charting engine */
@@ -438,6 +440,11 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   const access = createAccessLayer(page, {
     setControl: (id, value, commit) => painter.setControl(id, value, commit),
     chartAct: (key, action) => (chartHost === null ? Promise.reject(new Error('No charts.')) : chartHost.act(key, action)),
+    mathWrite: (key, part, text) => painter.mathWrite(key, part, text, 'key'),
+    mathMove: (key, part, move) => painter.mathMove(key, part, move),
+    mathPress: (key, name) => painter.mathPress(key, name),
+    mathActive: (key, part) => painter.mathActive(key, part),
+    mathClear: (key, part) => clearMath(key, part),
   });
   const chartHost: ChartHost | null = engine === null ? null : createChartHost({ engine, stage: page, access });
   const sound = createSound();
@@ -475,6 +482,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   }
   setTarget(audience, pointerKind());
   const offControls = painter.on('controls', (views) => access.controls(views));
+  const offMath = painter.on('math', (views) => access.maths(views));
   const offRetired = painter.on('retired', (view) => earlier.update(view));
   const offText = painter.on('text', (spans) => text.update(spans, painter.snapshot().turn ?? painter.recording()?.turn ?? null));
   access.controls(painter.snapshot().controls);
@@ -1493,6 +1501,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   const askAt = (clientX: number, clientY: number): boolean => {
     const box = host.getBoundingClientRect();
     const at = lens === null ? { x: clientX - box.left, y: clientY - box.top } : lens.toPage(clientX - box.left, clientY - box.top);
+    if (painter.mathAt(at.x, at.y) !== null) return true;
     return painter.snapshot().controls.some(
       (view) =>
         view.ask === true &&
@@ -1502,6 +1511,19 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
         view.askState?.verdict !== 'shown' &&
         view.parts.some((part) => part.part !== 'whole' && at.x >= part.box.x && at.x <= part.box.x + part.box.width && at.y >= part.box.y && at.y <= part.box.y + part.box.height),
     );
+  };
+  // Written methods (PLAN-maths M3): a tap on a cell puts the keyboard in it, inside the tap itself (a phone raises its number pad only for a focus made in the
+  // gesture); a tap on Check, Hint or Show me works it; a tap on a cell's ✕ takes the pen's ink off it. A finger, a pen's short tap and a mouse all come here.
+  let clearer: ((key: string, part: string) => void) | null = null;
+  const clearMath = (key: string, part: string): void => {
+    clearer?.(key, part);
+    painter.mathInk(key, part, false);
+  };
+  const mathDowns = new Map<number, { readonly x: number; readonly y: number }>();
+  const tapMath = (hit: MathHit): void => {
+    if (hit.kind === 'cell') access.focusMath(hit.key, hit.part);
+    else if (hit.kind === 'button') painter.mathPress(hit.key, hit.name);
+    else clearMath(hit.key, hit.part);
   };
   const tappableAt = (x: number, y: number): boolean =>
     painter.snapshot().elements.some((el) => el.tappable && x >= el.box.x && x <= el.box.x + el.box.width && y >= el.box.y && y <= el.box.y + el.box.height);
@@ -1513,6 +1535,14 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     if (event.button !== 0 || inChart(event) || inInk(event)) return;
     // with the lens a finger is the lens's to place (`ownsPointer`, and a tap when it lifts); what the work mode hands on from under its layer is not a finger of the lens's
     if (lens !== null && event.pointerType === 'touch' && event.isTrusted && lens.handling()) return;
+    if (event.pointerType !== 'pen') {
+      const at = localPoint(event);
+      if (painter.mathAt(at.x, at.y) !== null) {
+        mathDowns.set(event.pointerId, at);
+        // the browser's own mouse events after a touch would move the focus to the canvas, away from the cell the tap puts the keyboard in
+        event.preventDefault();
+      }
+    }
     if (event.pointerType === 'pen') {
       penDowns.set(event.pointerId, { x: event.clientX, y: event.clientY });
       return;
@@ -1559,7 +1589,18 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
       host.style.cursor = over || (!starting && tappableAt(at.x, at.y)) ? 'pointer' : '';
     });
   };
+  /** a finger or a mouse that went down on a cell, button or ✕ and came up where it was: the tap */
+  const mathUp = (event: PointerEvent): void => {
+    const from = mathDowns.get(event.pointerId);
+    mathDowns.delete(event.pointerId);
+    if (from === undefined || event.type !== 'pointerup') return;
+    const at = localPoint(event);
+    if (Math.hypot(at.x - from.x, at.y - from.y) > PEN_TAP_TRAVEL) return;
+    const hit = painter.mathAt(at.x, at.y);
+    if (hit !== null) tapMath(hit);
+  };
   const onPointerEnd = (event: PointerEvent): void => {
+    mathUp(event);
     const down = penDowns.get(event.pointerId);
     penDowns.delete(event.pointerId);
     if (down !== undefined && event.type === 'pointerup' && Math.hypot(event.clientX - down.x, event.clientY - down.y) <= PEN_TAP_TRAVEL) pressAt(event);
@@ -1639,6 +1680,34 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     { passive: false },
   );
   // the keyboard arriving at a control that is scrolled out of its area brings it into view
+  // and the keyboard in a cell of a written method keeps that cell on the screen: the page is lifted (or the lens moved) just far enough that the cell stands above the
+  // on-screen keyboard, and put back when the keyboard leaves
+  let lifted = 0;
+  const liftTo = (value: number): void => {
+    lifted = Math.max(0, value);
+    host.style.transform = lifted > 0 ? `translateY(${-lifted}px)` : '';
+  };
+  const revealMath = (): void => {
+    const field = document.activeElement;
+    if (!(field instanceof HTMLElement) || field.dataset['mathCell'] === undefined) {
+      if (lifted > 0) liftTo(0);
+      return;
+    }
+    if (lens !== null) {
+      const view = painter.mathViews().find((candidate) => candidate.key === field.dataset['mathBlock'])?.cells.find((cell) => cell.part === field.dataset['mathCell']);
+      if (view !== undefined) lens.reveal(view.box);
+      return;
+    }
+    const seen = window.visualViewport;
+    const top = (seen?.offsetTop ?? 0) + 8;
+    const bottom = (seen === null ? window.innerHeight : seen.offsetTop + seen.height) - 8;
+    const rect = field.getBoundingClientRect();
+    if (rect.bottom > bottom) liftTo(lifted + (rect.bottom - bottom));
+    else if (rect.top < top && lifted > 0) liftTo(lifted - (top - rect.top));
+  };
+  document.addEventListener('focusin', revealMath);
+  document.addEventListener('focusout', () => requestAnimationFrame(revealMath));
+  window.visualViewport?.addEventListener('resize', revealMath);
   document.addEventListener('focusin', (event) => {
     const holder = event.target instanceof Element ? event.target.closest<HTMLElement>('[data-control]') : null;
     const id = holder?.dataset['control'];
@@ -1657,6 +1726,11 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     const penPress = (event: PointerEvent): void => {
       // a short Pencil tap is a press: down and up at the same place (a button acts on the up)
       const { x, y } = localPoint(event);
+      const math = painter.mathAt(x, y);
+      if (math !== null) {
+        tapMath(math);
+        return;
+      }
       if (painter.pointer({ phase: 'down', x, y, pointer: event.pointerId })) {
         taken.add(event.pointerId);
         onPointerEnd(event);
@@ -1711,6 +1785,11 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
       tap: (clientX, clientY) => {
         const box = host.getBoundingClientRect();
         const at = lens === null ? { x: clientX - box.left, y: clientY - box.top } : lens.toPage(clientX - box.left, clientY - box.top);
+        const math = painter.mathAt(at.x, at.y);
+        if (math !== null) {
+          tapMath(math);
+          return true;
+        }
         const tappable = tappableAt(at.x, at.y);
         if (starting && tappable) return true;
         painter.tapAt(at.x, at.y);
@@ -1887,6 +1966,11 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     link,
     lens,
     askAt,
+    mathClear: {
+      set(handler) {
+        clearer = handler;
+      },
+    },
     lang,
     charts: chartHost,
     apps: liveApps,
@@ -2040,6 +2124,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
       for (const call of dataCalls) call.abort();
       agentListeners.clear();
       offControls();
+      offMath();
       offText();
       offRetired();
       earlier.dispose();

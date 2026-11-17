@@ -63,6 +63,8 @@ export interface StageHook {
   reach(x: number, y: number): Promise<{ readonly x: number; readonly y: number } | null>;
   /** The controls on stage, with their values and where they are on screen. */
   controls(): readonly ControlView[];
+  /** The written methods with cells to write in, with where each cell and button is, what it holds and how Check marked it (PLAN-maths M3). */
+  maths(): readonly import('./painter').MathBlockView[];
   /**
    * The same as the user setting this control and letting go: bindings follow at once, a `control` back event is sent, and a
    * button or a control marked `send` opens a turn. A button takes no value. Throws when no live control has the id.

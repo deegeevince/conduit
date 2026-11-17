@@ -3,6 +3,7 @@ import { CHARTS_READY } from '../render/chart';
 import { setTarget, targetPx } from './target';
 import { STRUCTURES_READY } from './blocks';
 import { advanceMath, hasOwnStepper, mathSteps } from './blocks/math';
+import * as cells from './blocks/math-cells';
 import { CONTROLS_READY, controlEngine, createControlStore, nextEases } from './controls';
 import { controlIndexOf, createRuntime, controlSpecOf, heldBy, stateReader } from './bound';
 import { penRead, penReady } from './controls/pen';
@@ -21,7 +22,7 @@ import type { Recording } from '../contracts/film';
 import { noteArrivals as noteArrivalsInto } from './arrivals';
 import type { ElementFrame, Frame, Quality, ShapeFrame } from '../contracts/frame';
 import type { LookSpec } from '../contracts/look';
-import type { BindingView, ControlView, LineView, MotionView, Painter, PainterEvents, PainterOptions, PainterSnapshot, StageElementView, UiMockup } from '../contracts/painter';
+import type { BindingView, ControlView, LineView, MathBlockView, MathHit, MotionView, Painter, PainterEvents, PainterOptions, PainterSnapshot, StageElementView, UiMockup } from '../contracts/painter';
 import { REST_POSE } from '../contracts/space';
 import type { Box, CameraPose, Viewport } from '../contracts/space';
 import { PlayClock, pinnedWallTime } from './clock';
@@ -216,7 +217,7 @@ export function createPainter(options: PainterOptions): Painter {
   setTarget('adult', options.pointer);
   const reducedMotion = options.reducedMotion ?? (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches);
 
-  const listeners: { [K in keyof PainterEvents]: Set<Listener<K>> } = { back: new Set(), transcript: new Set(), clock: new Set(), upload: new Set(), controls: new Set(), text: new Set(), retired: new Set() };
+  const listeners: { [K in keyof PainterEvents]: Set<Listener<K>> } = { back: new Set(), transcript: new Set(), clock: new Set(), upload: new Set(), controls: new Set(), math: new Set(), text: new Set(), retired: new Set() };
   const emit = <K extends keyof PainterEvents>(type: K, event: PainterEvents[K]): void => {
     queueMicrotask(() => {
       for (const listener of listeners[type]) (listener as Listener<K>)(event);
@@ -1044,6 +1045,7 @@ export function createPainter(options: PainterOptions): Painter {
     }
     reading = advanceTurnState(reading, drawn || glyphStalled);
     announceControls();
+    announceMath();
     announceDescriptions(reading);
     announceText();
     observe(reading);
@@ -1524,6 +1526,53 @@ export function createPainter(options: PainterOptions): Painter {
     lastControlsSignature = signature;
     emit('controls', views);
   };
+
+  // Written methods (PLAN-maths M3): the cells a hand writes in, as the access layer and the stage's taps find them
+  const mathBox = (placed: { readonly boxes: ReadonlyMap<string, Box>; readonly ps: number }, name: string): Box | null => {
+    const b = placed.boxes.get(name);
+    return b === undefined ? null : { x: b.x * placed.ps + viewport.width / 2, y: b.y * placed.ps + viewport.height / 2, width: b.width * placed.ps, height: b.height * placed.ps };
+  };
+  const mathViewsNow = (): MathBlockView[] => {
+    const out: MathBlockView[] = [];
+    for (const placed of timeline.mathAt(instantOf(clock.read()).time)) {
+      const run = cells.runNamed(placed.key);
+      const whole = mathBox(placed, placed.key);
+      if (run === null || whole === null) continue;
+      const order = new Map(cells.walkOf(run.grid).map((cell, at) => [cell.part, at] as const));
+      const views = cells.inputCells(run.grid).flatMap((cell) => {
+        const at = mathBox(placed, `${placed.key}@cell:${cell.part}`);
+        if (at === null) return [];
+        const state = cells.stateOf(run, cell.part);
+        return [{ part: cell.part, label: cells.labelOf(cell), box: at, value: state.value, by: state.by, mark: state.mark, optional: !cells.required(cell), order: order.get(cell.part) ?? null, maxLength: cells.maxLengthOf(cell), lit: run.hint === cell.part, active: run.active === cell.part, read: state.read, reading: state.reading, ink: state.ink, dim: state.dim, clear: state.ink ? mathBox(placed, `${placed.key}@clear:${cell.part}`) : null }];
+      });
+      if (views.length === 0) continue;
+      const buttons = (['check', 'hint', 'show'] as const).flatMap((name) => {
+        const at = mathBox(placed, `${placed.key}@btn:${name}`);
+        return at === null ? [] : [{ name, label: name === 'check' ? 'Check' : name === 'hint' ? 'Hint' : 'Show me', box: at }];
+      });
+      out.push({ key: placed.key, id: run.id, verdict: run.verdict, box: whole, cells: views, buttons, hint: run.hintText });
+    }
+    return out;
+  };
+  let lastMathSignature = '';
+  const announceMath = (): void => {
+    const views = mathViewsNow();
+    if (views.length === 0 && lastMathSignature === '') return;
+    const signature = JSON.stringify(views.map((view) => [view.key, view.verdict, view.hint, view.cells.map((cell) => [cell.part, Math.round(cell.box.x), Math.round(cell.box.y), Math.round(cell.box.width), Math.round(cell.box.height), cell.value, cell.mark, cell.lit, cell.active, cell.read, cell.reading, cell.ink, cell.dim]), view.buttons.map((button) => [button.name, Math.round(button.box.x), Math.round(button.box.y)])]));
+    if (signature === lastMathSignature) return;
+    lastMathSignature = signature;
+    emit('math', views);
+  };
+  const sayMath = (run: cells.MathRun, act: cells.MathAct): void => {
+    emitBack({ type: 'control', turn: turn === null ? null : turn.id, id: run.id, value: act.value, text: act.text, playhead: clock.read().playhead, send: false, ask: true });
+  };
+  /** the written method changed: its layout is made again and drawn at once */
+  const mathChanged = (): void => {
+    refreshTimeline();
+    drawNow();
+    announceMath();
+  };
+  const within_ = (b: Box, x: number, y: number): boolean => x >= b.x && x <= b.x + b.width && y >= b.y && y <= b.y + b.height;
 
   /** the mock-ups on stage as they rest, in host CSS pixels (the test hook's `mockups()`, and the text layer's way to leave a mock-up's live parts to the finger) */
   const mockupViews = (): readonly UiMockup[] => {
@@ -2009,6 +2058,67 @@ export function createPainter(options: PainterOptions): Painter {
     penChanged() {
       drawNow();
     },
+    mathViews: mathViewsNow,
+    mathAt(x, y): MathHit | null {
+      for (const view of mathViewsNow()) {
+        if (view.verdict === 'right' || view.verdict === 'shown') continue;
+        for (const cell of view.cells) if (cell.clear !== null && within_(cell.clear, x, y)) return { kind: 'clear', key: view.key, part: cell.part };
+        for (const button of view.buttons) if (within_(button.box, x, y)) return { kind: 'button', key: view.key, name: button.name };
+        for (const cell of view.cells) if (within_(cell.box, x, y)) return { kind: 'cell', key: view.key, part: cell.part };
+      }
+      return null;
+    },
+    mathWrite(key, part, text, by) {
+      const run = cells.runNamed(key);
+      if (run === null) return false;
+      const changed = by === 'pen' ? (cells.readIn(run, part, text), true) : cells.writeCell(run, part, text, 'key');
+      if (changed) mathChanged();
+      return changed;
+    },
+    mathActive(key, part) {
+      const run = cells.runNamed(key);
+      if (run === null || run.active === part) return;
+      cells.activate(run, part);
+      mathChanged();
+    },
+    mathMove(key, part, move) {
+      const run = cells.runNamed(key);
+      if (run === null) return null;
+      return move === 'empty' ? cells.nextEmpty(run, part) : move === 'back' ? cells.previous(run, part) : move === 'next' ? cells.following(run, part) : cells.neighbour(run, part, move);
+    },
+    mathPress(key, name) {
+      const run = cells.runNamed(key);
+      if (run === null) return;
+      if (name === 'check') {
+        const act = cells.check(run);
+        mathChanged();
+        if (act !== null) sayMath(run, act);
+      } else if (name === 'hint') {
+        const made = cells.hint(run);
+        mathChanged();
+        if (made !== null) {
+          emit('transcript', { kind: 'hint', key, text: made.text });
+          sayMath(run, made.act);
+        }
+      } else {
+        const act = cells.show(run);
+        mathChanged();
+        if (act !== null) sayMath(run, act);
+      }
+    },
+    mathInk(key, part, on) {
+      const run = cells.runNamed(key);
+      if (run === null) return;
+      cells.inkIn(run, part, on);
+      mathChanged();
+    },
+    mathRead(key, part, digits) {
+      const run = cells.runNamed(key);
+      if (run === null) return;
+      cells.readIn(run, part, digits);
+      mathChanged();
+    },
+
     setControl(id, value, commit) {
       const site = siteById(id);
       if (site === null) return;

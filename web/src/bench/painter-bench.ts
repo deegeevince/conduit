@@ -223,7 +223,7 @@ function build(): Painter {
   const v = viewport();
   const engine = createChartEngine();
 chartHost?.dispose();
-const charts = engine === null ? null : (chartHost = createChartHost({ engine, stage: host, access: { root: host, controls: () => undefined, charts: () => undefined, focusControl: () => undefined, dispose: () => undefined } }));
+const charts = engine === null ? null : (chartHost = createChartHost({ engine, stage: host, access: { root: host, controls: () => undefined, charts: () => undefined, maths: () => undefined, focusMath: () => false, focusControl: () => undefined, dispose: () => undefined } }));
   const next = createPainter({
     renderer,
     viewport: v,
