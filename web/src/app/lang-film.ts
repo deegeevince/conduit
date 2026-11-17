@@ -280,7 +280,7 @@ export function paneSurround(sources: readonly PaneSource[], leads: readonly Pan
       // a line comes up into its place; the one being drawn is already in it, so the lit bar is never out of the window
       const rise = item === now ? 0 : (1 - alpha) * lineHeight * 0.35;
       placed.push({ item, y, rise, alpha });
-      rows.push({ text: item.entry.text, top: y + rise - 2, bottom: y + rise + item.height - gap + 2, lit: item === now });
+      rows.push({ text: [item.entry.text, ...item.note.map((row) => row.map((piece) => piece.text).join('').trim())].join('\n'), top: y + rise - 2, bottom: y + rise + item.height - gap + 2, lit: item === now });
     }
     const litRow = rows.find((row) => row.lit) ?? null;
     const typed = typing(t);
