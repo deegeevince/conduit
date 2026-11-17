@@ -12,7 +12,7 @@ table bars | Cups of tea a year
 | Turkey | 1,300
 | Ireland | 1,200
 | Japan | 560
-say aside | The same four numbers, and you saw the winner first.
+say aside | The same three numbers, and you saw the winner first.
 wait 1
 
 scene layout=page
