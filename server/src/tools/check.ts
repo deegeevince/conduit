@@ -28,7 +28,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { DEMOS, DEMOS_NOT_PAINTED, LineReader } from '@conduit/language';
 import { spawnTracked } from '../brains/claude-cli/process';
 import { CHROME_CANDIDATES, repoRoot, sleep, stop, waitFor } from './explore-browser';
@@ -398,6 +398,7 @@ class Screen {
         if (demo.name === 'explorable') await this.explorable(tab, talk, results);
         if (demo.name === 'richness') await this.richness(tab, results);
         if (demo.name === 'art') await this.art(tab, results);
+        if (demo.name === 'scripts') await this.scripts(tab, results);
         await this.judge(tab, talk, `demo-${demo.name}`, results, began, true, first);
         first = false;
       }
@@ -587,6 +588,43 @@ class Screen {
     } finally {
       await tab.close();
     }
+  }
+
+  /**
+   * the scripts demo: every line of every language is kept whole by the fold (no `?`, no accent stripped, nothing dropped), is on stage at rest, on screen, and has ink in
+   * its box in the picture (the device's own font drew it: a missing glyph shows as a blank or a box, which the check cannot tell, so the pictures are looked at too)
+   */
+  private async scripts(tab: Tab, results: CheckResult[]): Promise<void> {
+    const source = readFileSync(fileURLToPath(import.meta.resolve('@conduit/language/demos/scripts.series')), 'utf8');
+    const lines = source.split('\n').flatMap((raw) => {
+      const found = /^say \S+ \| (.+)$/.exec(raw);
+      return found?.[1] === undefined ? [] : [found[1]];
+    });
+    const folded = (await import(pathToFileURL(join(repoRoot(), 'web/src/fonts/fold.ts')).href)) as { foldText: (text: string) => string };
+    const changed = lines.filter((line) => folded.foldText(line) !== line.normalize('NFC').replace(/ {2,}/g, ' '));
+    Screen.add(results, 'scripts-kept', lines.length < 10 ? [`the demo has ${lines.length} lines, expected 10`] : changed.map((line) => `the fold changed "${line}" to "${folded.foldText(line)}"`), `all ${lines.length} lines pass the fold whole: no "?", no stripped accent`);
+    const live = await tab.eval<Stage[]>('window.__stage.elements().map((e) => ({ id: e.id, kind: e.kind, text: String(e.text || ""), phase: e.phase, opacity: e.opacity, box: e.box }))');
+    const view = await tab.eval<{ w: number; h: number }>('({ w: innerWidth, h: innerHeight })');
+    const shown = live.filter((element) => element.kind === 'text' && element.phase === 'on' && element.opacity > 0.3);
+    const problems: string[] = [];
+    const boxes: { x: number; y: number; w: number; h: number }[] = [];
+    const named: string[] = [];
+    for (const line of lines) {
+      const found = shown.find((element) => norm(element.text ?? '') === norm(line));
+      if (found === undefined) problems.push(`not on stage at rest: "${line}"`);
+      else if (found.box.x < -2 || found.box.y < -2 || found.box.x + found.box.width > view.w + 2 || found.box.y + found.box.height > view.h + 2) problems.push(`off screen: "${line}"`);
+      else {
+        boxes.push({ x: found.box.x, y: found.box.y, w: found.box.width, h: found.box.height });
+        named.push(line);
+      }
+    }
+    if (boxes.length > 0) {
+      const marks = await tab.call<{ px: number; share: number }[]>('inkIn', await tab.shot(), boxes, tab.dpr);
+      marks.forEach((mark, index) => {
+        if (mark.share < 0.01) problems.push(`no ink in the box of "${named[index] ?? ''}"`);
+      });
+    }
+    Screen.add(results, 'scripts-drawn', problems, `all ${lines.length} lines are on stage at rest, on screen and inked`);
   }
 
   /** the richness demo: the painting the renderer makes itself is on stage at rest, developed, and inked in the screenshot (it was absent from the resting picture once) */

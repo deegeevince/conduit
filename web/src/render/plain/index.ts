@@ -5,7 +5,8 @@ import type { Renderer, RendererCapabilities } from '../../contracts/renderer';
 import { cssOf, layerZ, projectToScreen } from '../../contracts/space';
 import { clipQuad } from '../place';
 import type { Viewport } from '../../contracts/space';
-import { FONTS } from '../../fonts';
+import { FONTS, hasDevice, startsRtl } from '../../fonts';
+import '../../fonts/device';
 import { FACES } from '../../fonts/faces';
 import { LOOKS } from '../../looks';
 import { fontFile } from '../fonts';
@@ -113,6 +114,12 @@ export function createPlainRenderer(): Renderer {
       const width = (run.width * s) / element.stretch;
       span.style.display = '';
       span.textContent = run.text;
+      // Scripts the faces lack are the browser's own text: shaping, joining and bidi must be left on (they are off for Latin, where the painter's widths rely on it).
+      const device = hasDevice(run.text);
+      span.dir = device && startsRtl(run.text) ? 'rtl' : 'ltr';
+      span.style.fontKerning = device ? 'normal' : 'none';
+      span.style.fontVariantLigatures = device ? 'normal' : 'none';
+      span.style.fontFeatureSettings = device ? 'normal' : '"liga" 0,"kern" 0,"calt" 0';
       span.style.fontFamily = faceFamily;
       span.style.fontSize = px(fontPx);
       span.style.lineHeight = px(lineHeight);
