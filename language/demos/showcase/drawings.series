@@ -1,0 +1,82 @@
+# Drawings: the pages for what is drawn (PLAN-catalogue.md).
+
+# labels: each part named, the label beside its part.
+scene labels figure brisk
+look paper
+line beam 14,50 86,50 thick=2
+poly pivot 38,62 44,50 50,62 fill=accent
+rect load 72,40 12x10 fill=dim
+say label near=beam:above | beam
+say label @with near=pivot:below | pivot
+say label @with near=load:above | load
+wait 1.67s
+
+# fox: a finished figure from the shelf, its parts on stage as ordinary shapes a label can point at.
+scene fox figure canvas=square brisk
+look paper
+draw fox1 fox at=50,46 size=70 | sitting, facing left
+say label near=fox1-tail:below | tail
+say label near=fox1-nose:above | nose
+wait 1.66s
+
+# paint: the painter's own tools on lines the brain draws, nothing placed by hand.
+scene paint caption brisk
+look paper
+color deep=#1b2a49 sea=#2f7f9a foam=#e8f2f4 ember=#e0742a straw=#e8c85a moss=#2f5a3c
+rect sky 0,0 160x90 fill=deep>sea>foam
+circle moon @with 128,20 16 fill=straw>deep radial blend=screen stroke=none
+path hills @with fill=moss stroke=none | M0,56 C24,44 52,66 84,54 C108,46 132,56 160,50 L160,90 L0,90 Z
+rect glow @with 0,40 160x50 fill=ember>straw>foam angle=90 clip=hills stroke=none opacity=0.85
+path furrows @with stroke=deep thick=1.2 dash=4,2 clip=hills dur=0.4 | M0,46 C40,36 100,70 160,44 M0,62 C50,52 100,76 160,60
+circle haze @with 52,50 20 fill=ember blend=multiply opacity=0.7 stroke=none
+path swell @with stroke=foam thick=0.3>3>0.3 | M10,16 C34,2 60,30 96,12
+wait 2.09s
+
+# pixel: a small picture set square by square; its two frames cycle.
+scene pixel caption brisk
+look paper
+pix bug scale=6 fps=2
+| ..8.8..
+| .88888.
+| 8.888.8
+| .8...8.
+frame
+| ..8.8..
+| .88888.
+| 8.888.8
+| 8.....8
+wait 2.75s
+
+# looks: one answer, four looks (paper, blackboard, blueprint, a 1980s terminal).
+scene looks caption brisk
+look paper
+circle sun 40,34 10 fill=accent
+path hill @with thick=1.5 | M8 72 Q40 40 80 62 T152 58
+say label @with near=sun:below | one answer
+look chalk
+look blueprint
+look phosphor
+wait 1.53s
+
+# motion: a planet goes round its track while its moon turns.
+scene motion caption brisk
+look blueprint
+circle star 80,45 7 fill=accent stroke=none
+ellipse track 80,45 46x24 stroke=dim thick=0.5 dur=0.5
+group sys at=126,45 loop=spin
+circle planet in=sys 0,0 3 fill=ink stroke=none
+circle moon in=sys 7,0 1.4 fill=alt stroke=none
+move sys along=track over=1.93s
+wait 0.3s
+
+# camera: the view moves in slowly while stars and snow fill the air.
+scene camera caption brisk
+look night
+cam push over=2.9s
+ambient sky stars
+ambient rain1 rain heavy
+path hill fill=#1f2c48 stroke=none | M-60 120 L-60 66 C-30 56 0 64 30 56 C60 52 90 66 120 60 C150 54 180 62 220 56 L220 120 Z
+rect house 70,50 24x16 fill=#3b4a6b stroke=none
+poly roof 67,50 82,38 97,50 fill=#e9e4d6 stroke=none
+rect window 78,56 6x6 fill=accent stroke=none
+wait 0.38s
