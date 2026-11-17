@@ -925,14 +925,15 @@ const IMPROVES = /\b(improv\w*|better|keep going|go on|carry on|continue|polish\
 /** Whether the words ask to change or carry on with what is already drawn. */
 export const asksToImprove = (text: string): boolean => IMPROVES.test(text);
 
-const RECALLS = /\b(back|restore|previous|earlier|before|original|undo|first one|last one|the one (?:you|we|from)|bring|again)\b/i;
-/** Whether the words ask to go back to a drawing from before. */
-export const asksToRecall = (text: string): boolean => RECALLS.test(text);
-
-/** DRAWING MEMORY: one row a version, newest last, and the two words that bring a drawing back. About 250 tokens. */
+/** DRAWING MEMORY: one row a version, newest last, and how to reuse any of it. About 250 tokens. */
 export function memoryText(rows: readonly MemoryRow[], tool = false): string {
   const lines = rows.map((row) => `  ${row.turn}${row.current ? ' (on the canvas now)' : ''}: "${row.said}" - ${row.parts} parts${row.roots.length === 0 ? '' : `: ${row.roots.slice(0, 7).join(', ')}${row.roots.length > 7 ? ', …' : ''}`}${row.inside.length === 0 ? '' : `; inside: ${row.inside.slice(0, 14).join(' ')}${row.inside.length > 14 ? ` … ${row.inside.length - 14} more` : ''}`}`);
-  return `DRAWING MEMORY (every drawing you made in this conversation is kept; nothing is lost):\n${lines.join('\n')}\n$\`restore <turn>\` puts a whole earlier drawing back on the canvas, as parts you can change. $\`use <id…> from=<turn> [at=x,y] [scale=N] [rot=N]\` brings only those parts back and mixes them into what is there (a taken id comes back as <id>-<turn>).${tool ? ' The ids and boxes of any turn: the canvas_memory tool.' : ''}`;
+  return `YOUR OWN WORK SO FAR (everything you drew in this conversation is kept, and is yours to reuse at will):\n${lines.join('\n')}\nReuse rather than redraw: it is instant and exact. $\`use <id…> from=<turn> [at=x,y] [scale=N] [rot=N]\` brings any parts of any turn onto the canvas, mixed with what is there and with parts of other turns, at any place, size and turn (a taken id comes back as <id>-<turn>); $\`restore <turn>\` puts a whole drawing back. A character returning in a later scene, a callback, two versions side by side, a gallery of what you made, a new composition from old pieces: all are yours to make.${tool ? ' The ids and boxes of any turn: the canvas_memory tool.' : ''}`;
+}
+
+/** The same, for a turn that is not drawing: one line, so that it is known and costs nothing. */
+export function memoryHint(rows: readonly MemoryRow[], tool = false): string {
+  return `${rows.length} earlier drawing${rows.length === 1 ? ' is' : 's are'} kept as your own material (use <id> from=<turn>, restore <turn>${tool ? '; canvas_memory lists them' : ''}).`;
 }
 
 /** Said on a drawing turn when the canvas tools are on: a painter steps back and looks. Brief only; the one constraint is that the first line comes first. */
@@ -1152,7 +1153,7 @@ export function buildTurnBrief(context: TurnContext, input: TurnInput, form: Bri
   }
   // The drawing memory: what the conversation drew before, and how to bring it back. Carried while a drawing is live, or when the words ask to go back to one.
   const remembered = context.drawingMemory ?? [];
-  if (remembered.length > 0 && (drawsNow || (input.kind === 'prompt' && asksToRecall(input.text)))) parts.push(memoryText(remembered, context.canvas === true));
+  if (remembered.length > 0 && context.capabilities.kinds.includes('shape')) parts.push(drawsNow || input.kind === 'prompt' ? memoryText(remembered, context.canvas === true) : memoryHint(remembered, context.canvas === true));
   const standing = standingText(context.standing);
   if (standing !== null) parts.push(standing);
   // A conversation the user has come back to: the stage is empty, but what was said before is not forgotten. Told once, in the first full brief.
