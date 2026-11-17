@@ -26,7 +26,9 @@ const ASKS_FOR_WORKING =
 const ASKS_FOR_PICTURE = /\b(mock[- ]?ups?|wire[- ]?frames?|storyboards?|figma|user journey|design (?:of|for)|screens? (?:for|of))\b/i;
 
 /** Whether the user's words are about something that works, so that this turn is taught `app`. A mock-up is not that, unless they say it must work. */
-export function asksForLiveApp(text: string): boolean {
+export function asksForLiveApp(asked: string): boolean {
+  // "working out" a sum is arithmetic on paper, not something that works
+  const text = asked.replace(/\bwork(?:ing|ed|s)? (?:it |this |that |them )?out\b/gi, '');
   if (!ASKS_FOR_WORKING.test(text)) return false;
   return !ASKS_FOR_PICTURE.test(text) || /\b(working|fully interactive|actually|really|real|interactive|usable|publish\w*)\b/i.test(text);
 }
