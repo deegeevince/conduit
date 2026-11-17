@@ -11,9 +11,9 @@ import type { Capabilities } from '../src/index';
 
 const V3: Capabilities = { ...FULL_CAPABILITIES, ...NO_V4_CAPABILITIES };
 const FLAT: Capabilities = { ...V3, depth: false, layers: ['mid'], camera: [], kinds: ['text'], ambient: [], fx: [], looks: ['paper'], sight: 'report' };
-// What the painter really says it can do today (web/src/painter/index.ts): no `code` block, no decks, no uploads, no links yet. The brain must
+// What the painter really says it can do today (web/src/painter/index.ts): a `code` block since PC10, but no decks, no uploads, no links yet. The brain must
 // not be taught a word the painter cannot paint, so this is the variant that runs, and the check below holds it to that.
-const SHIPPED: Capabilities = { ...FULL_CAPABILITIES, structures: FULL_CAPABILITIES.structures.filter((name) => name !== 'code'), decks: false, uploads: false, links: false };
+const SHIPPED: Capabilities = { ...FULL_CAPABILITIES, decks: false, uploads: false, links: false };
 const variants = {
   // What ships: a painter that does everything, the brain on the subscription, look and fix on, no image model.
   full: buildSystemPrompt({ capabilities: FULL_CAPABILITIES, services: { paint: false, sight: 'snapshot', review: true, critic: true, refine: true, uploads: true, art: true } }),
@@ -31,7 +31,7 @@ if (which === 'count') {
   const used = Math.max(estimateTokens(variants.full), estimateTokens(variants.v3), estimateTokens(variants.flat), estimateTokens(variants.shipped));
   process.stdout.write(`budget   ${PROMPT_BUDGET.tokens} tokens: ${used <= PROMPT_BUDGET.tokens ? 'within' : 'OVER'} (${Math.round((used / PROMPT_BUDGET.tokens) * 100)}%, the largest of full, shipped, v3 and flat)\n`);
   // Every verb the prompt teaches is one the painter paints: a painter without the capability is never taught the verb.
-  const taught: readonly [string, RegExp][] = [['a `code` block', /`code \[id\]/], ['a link (`say href=`)', /href=/], ['a deck', /`deck \|/], ['the user\'s pictures (`pic … from=`)', /from=u1/]];
+  const taught: readonly [string, RegExp][] = [['a link (`say href=`)', /href=/], ['a deck', /`deck \|/], ['the user\'s pictures (`pic … from=`)', /from=u1/]];
   const leaks = taught.filter(([, pattern]) => pattern.test(variants.shipped)).map(([name]) => name);
   if (leaks.length > 0) process.stdout.write(`TAUGHT BUT NOT PAINTED: ${leaks.join(', ')}\n`);
   process.exitCode = used <= PROMPT_BUDGET.tokens && leaks.length === 0 ? 0 : 1;

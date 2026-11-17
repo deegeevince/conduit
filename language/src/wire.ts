@@ -359,6 +359,14 @@ export type StageEvent =
    * `line` event that follows is the line itself; a pane that has a `line`, a `reject` or an `end` for the turn drops what it was typing.
    */
   | { readonly type: 'typing'; readonly turn: string; readonly text: string }
+  /**
+   * Whether the answer of `turn` may still be changed after it came to rest: `working` while a repair is being written, `shown` once its lines are
+   * on their way to the page, `none` when nothing more will happen (the critic had no say, or the repair ended without a change). Not on the turn
+   * clock and never replayed. For whoever waits for the stage to be done; the painter does nothing with it.
+   */
+  | { readonly type: 'mend'; readonly turn: string; readonly state: 'none' | 'working' | 'shown' }
+  /** What really ran this turn: the model id the brain's own process reported, and the effort the turn used. Only a brain that can say sends it. For the label in demo mode. */
+  | { readonly type: 'model'; readonly turn: string; readonly model: string; readonly effort: string }
   /** something the brain wrote that was dropped; for the debug HUD only */
   | { readonly type: 'reject'; readonly turn: string; readonly raw: string; readonly issues: readonly Issue[] }
   | { readonly type: 'end'; readonly turn: string; readonly reason: TurnEndReason; readonly message: string | null }
@@ -422,7 +430,7 @@ export type StageEventType = StageEvent['type'];
  * the beat is a named event the page reads but does not pass on as a stage event.)
  */
 export const STREAM_HEARTBEAT = { eventName: 'heartbeat', everyMs: 15_000, silentMs: 40_000 } as const;
-export const STAGE_EVENT_TYPES: readonly StageEventType[] = ['hello', 'turn', 'reading', 'line', 'typing', 'reject', 'end', 'pass', 'asset', 'data', 'picture', 'candidate', 'critic', 'activity', 'permission', 'doc', 'want'];
+export const STAGE_EVENT_TYPES: readonly StageEventType[] = ['hello', 'turn', 'reading', 'line', 'typing', 'model', 'mend', 'reject', 'end', 'pass', 'asset', 'data', 'picture', 'candidate', 'critic', 'activity', 'permission', 'doc', 'want'];
 
 /** What the page keeps of one ask (HI1): the hand's tries, the choice held, the hints open and how it came out. */
 export interface AskRunFacts {

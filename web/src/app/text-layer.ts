@@ -94,6 +94,8 @@ export function createTextLayer(stage: HTMLElement): TextLayer {
     if (!root.contains(range.commonAncestorContainer) && range.commonAncestorContainer !== root) return;
     const out: string[] = [];
     let last: HTMLElement | null = null;
+    /** where the last stretch of a listing's line ended, in columns: the next stretch of that line is put that far on, spaces between */
+    let ends = 0;
     for (const block of root.querySelectorAll<HTMLElement>('.stage__text-block')) {
       if (!range.intersectsNode(block)) continue;
       const parts: string[] = [];
@@ -108,9 +110,13 @@ export function createTextLayer(stage: HTMLElement): TextLayer {
       if (parts.length === 0) continue;
       const code = block.dataset['role'] === 'code';
       const joined = parts.join(code ? '\n' : ' ');
-      const sameRow = last !== null && block.dataset['row'] !== undefined && last.dataset['row'] === block.dataset['row'] && block.dataset['role'] === 'cell';
-      if (out.length > 0) out.push(sameRow ? '\t' : '\n');
+      const sameRow = last !== null && block.dataset['row'] !== undefined && last.dataset['row'] === block.dataset['row'] && (block.dataset['role'] === 'cell' || (code && last.dataset['role'] === 'code' && last.dataset['structure'] === block.dataset['structure']));
+      const column = Number(block.dataset['column'] ?? 0);
+      // a listing: the stretches of one line stand at their columns, the lines of it on lines of their own
+      if (out.length > 0) out.push(sameRow ? (code ? ' '.repeat(Math.max(0, column - ends)) : '\t') : '\n');
+      if (code && !sameRow && block.dataset['row'] !== undefined) out.push(' '.repeat(column));
       out.push(joined);
+      ends = column + joined.length;
       last = block;
     }
     if (out.length === 0) return;

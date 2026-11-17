@@ -14,6 +14,8 @@ export interface AppParams {
   readonly motion: 'auto' | 'reduced' | 'full';
   /** ?wall=1 turns the endless canvas on at `/`: every answer that draws is a frame on one wall, and the camera travels it (PLAN-wall WL3) */
   readonly wall: boolean;
+  /** ?journey=<name>: plays language/demos/journeys/<name>.journey on the real brain (see app/journey.ts); the language pane stays open and a label says what model ran */
+  readonly journey: string | null;
   /** ?lens=1 (PLAN-canvas step 1): pinch and pan into any answer, the Pencil draws on the stage without Draw, and a tap lands where it is made. Off, nothing changes. */
   readonly lens: boolean;
 }
@@ -33,6 +35,7 @@ export function readParams(search: string): AppParams {
   const motion = query.get('motion');
   const wall = query.get('wall');
   const lens = query.get('lens');
+  const journey = query.get('journey');
   return {
     debug: debug === '1' || debug === 'true',
     renderer: renderer === 'plain' || renderer === 'three' ? renderer : 'auto',
@@ -41,5 +44,6 @@ export function readParams(search: string): AppParams {
     motion: motion === 'reduced' || motion === 'full' ? motion : 'auto',
     wall: wall === '1' || wall === 'true',
     lens: lens === '1' || lens === 'true',
+    journey: journey !== null && /^[\w-]{1,40}$/.test(journey) ? journey : null,
   };
 }
