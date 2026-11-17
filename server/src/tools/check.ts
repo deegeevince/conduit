@@ -1111,7 +1111,8 @@ function buildUnits(args: Args, welcome: Welcome): { readonly units: Unit[]; rea
     units.push(screenUnit('welcome-reduced-motion', 25, [], (run) => run.welcomeScene(true)));
     units.push(screenUnit('problems', 30, [], (run) => run.problemScenes()));
     units.push(screenUnit('follow', 45, [], (run) => run.followScene()));
-    demos.forEach((name, index) => units.push(screenUnit(`demo-${name}`, 40, [], (run) => run.demoScenes([name], index === 0))));
+    // fb-001 (docs/feedback.md): code blocks that did not render in the tour's code chapter. `--only fb-001` is the code demo's judging.
+    demos.forEach((name, index) => units.push(screenUnit(`demo-${name}`, 40, name === 'code' ? ['fb-001'] : [], (run) => run.demoScenes([name], index === 0))));
     units.push(screenUnit('demo-hard', 60, [], (run) => run.hardScenes()));
   }
   for (const screen of LENS_SCREENS) {
