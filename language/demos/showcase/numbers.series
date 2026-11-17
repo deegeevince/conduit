@@ -1,0 +1,40 @@
+# Numbers: the pages for what is counted (PLAN-catalogue.md). `sum` takes two turns and keeps both in the table (`turns`).
+
+# chart: an instrument, not a drawing: rows in, axes and a crosshair out.
+scene chart caption brisk
+look paper
+chart loaf line | Average price of a loaf, dollars
+| 2019 | $2.90
+| 2020 | $3.05
+| 2021 | $3.20
+| 2022 | $3.85
+| 2023 | $4.10
+node x=2022 | The wheat shock
+say enter=fade by=all dur=0.2s | The price jumped, then stayed.
+wait 0.08s
+
+# table: rows and columns, the numbers lined up and drawn as bars.
+scene table caption brisk
+look paper
+table tea bars | Cups of tea a year
+| Country | Cups
+| Turkey | 1,300
+| Ireland | 1,200
+| United Kingdom | 900
+| Japan | 560
+say enter=fade by=all dur=0.2s | Turkey leads by a lot.
+wait 0.17s
+
+# maths: a sum set out in columns as on paper; the answer's boxes are the learner's.
+scene maths stack brisk
+look paper
+say | Take 278 from 503.
+math m2 column @with | 503 - 278
+wait 1.76s
+
+# sum: a question to work out. The turn that writes the answer is in the table (`turns`).
+scene sum stack brisk
+look paper
+problem p3 answer=83 | 46 + 37 = ___
+say enter=fade by=all | It marks it.
+wait 0.11s
