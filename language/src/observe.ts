@@ -127,6 +127,7 @@ export const fingerprintOf = (kind: ObsKind, on: string | null, rule: string): s
 const LINT: Readonly<Record<SightNote, { readonly kind: ObsKind; readonly severity: ObsSeverity; readonly words: string } | null>> = {
   clipped: { kind: 'inside', severity: 'blocking', words: 'part of it falls off the screen' },
   'off-canvas': { kind: 'inside', severity: 'blocking', words: 'none of it is on screen' },
+  outside: { kind: 'inside', severity: 'blocking', words: 'part of it stands outside the canvas' },
   covered: { kind: 'present', severity: 'blocking', words: 'something drawn later hides it' },
   overlaps: { kind: 'apart', severity: 'blocking', words: 'it sits on top of text' },
   collides: { kind: 'apart', severity: 'blocking', words: 'its words run into other words' },
@@ -176,7 +177,7 @@ export function lintOf(facts: LintFacts | null, rev = 0): Observation[] {
         severity: rule.severity,
         on: item.id,
         answer: true,
-        note: clip(`${rule.words} (${item.kind})`, NOTE_CHARS),
+        note: clip(`${note === 'collides' && item.against !== undefined && item.against.length > 0 ? `${rule.words}, those of ${item.against.join(', ')}` : rule.words} (${item.kind})`, NOTE_CHARS),
         box: item.box,
         fingerprint: fingerprintOf(rule.kind, item.id, note),
       });

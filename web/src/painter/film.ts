@@ -2,7 +2,7 @@
 // no clock, no renderer and no server. See contracts/film.ts.
 
 import { DEFAULT_TUNE_VOICE, cachedTune, serializeLine, TurnScore, tuneRowsOf } from '@conduit/language';
-import type { Film, FilmOptions, FilmTune, Recording } from '../contracts/film';
+import type { ControlMove, Film, FilmOptions, FilmTune, Recording } from '../contracts/film';
 import { noteArrivals } from './arrivals';
 import { pinnedWallTime } from './clock';
 import type { Painting } from './figures';
@@ -11,6 +11,7 @@ import { controlSpecOf, createRuntime } from './bound';
 import { createControlStore } from './controls';
 import type { ChartData } from './charts';
 import { holdControl } from '@conduit/language';
+import type { ControlSpec } from '@conduit/language';
 import { buildTimeline, settledEnd } from './timeline';
 import { tuneStartOf } from './structures';
 
@@ -21,6 +22,19 @@ export function lineSpans(recording: Recording): Map<number, { readonly start: n
   const spans = new Map<number, { readonly start: number; readonly end: number }>();
   for (const time of score.schedule.lines) spans.set(time.seq, { start: time.start, end: time.end });
   return spans;
+}
+
+/** How far along a drag is at `time`, 0..1: still at both ends, quickest in the middle, as a hand's is. */
+export function dragShare(move: Pick<ControlMove, 'start' | 'end'>, time: number): number {
+  if (!(move.end > move.start)) return time >= move.end ? 1 : 0;
+  const p = Math.max(0, Math.min(1, (time - move.start) / (move.end - move.start)));
+  return p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2;
+}
+
+/** The value a drag has reached at `time`: exactly `from` before it and exactly `to` after it. */
+export function dragValue(move: ControlMove, time: number): number {
+  const share = dragShare(move, time);
+  return share <= 0 ? move.from : share >= 1 ? move.to : move.from + (move.to - move.from) * share;
 }
 
 /**
@@ -48,13 +62,26 @@ export function createFilm(recording: Recording, options: FilmOptions): Film {
   }
   // What the hand held, and the data that came: a film is a pure function of these as of everything else.
   const store = createControlStore();
+  /** the sliders a drag moves: the control elements of that id, each with its spec to hold the value to */
+  const dragged = (options.moves ?? []).map((move) => ({ move, sliders: [] as { readonly key: string; readonly spec: ControlSpec }[] }));
   for (const element of schedule.elements) {
     const spec = controlSpecOf(element);
     if (spec === null) continue;
     store.declare(element.key, element.id, spec);
     const held = holdControl(spec, options.controls?.[element.id]);
     if (held !== null) store.set(element.key, held);
+    if (spec.control === 'slider') for (const entry of dragged) if (entry.move.id === element.id) entry.sliders.push({ key: element.key, spec });
   }
+  /** Puts every dragged slider where its drag has it at `time`: a film is a pure function of time, and the store is only ever read after this. */
+  const hand = (time: number): void => {
+    for (const { move, sliders } of dragged) {
+      const value = dragValue(move, time);
+      for (const { key, spec } of sliders) {
+        const held = holdControl(spec, value);
+        if (held !== null) store.set(key, held);
+      }
+    }
+  };
   const data = new Map<string, ChartData>();
   for (const [id, table] of Object.entries(options.data ?? {})) data.set(id, { table, since: -10 });
   const timeline = buildTimeline(schedule, recording.base, { viewport: options.viewport, reducedMotion: options.reducedMotion, lockLook: null, paintings, arrivals, controls: createRuntime(store), charts: { kinds: CHARTS_READY, data }, ...(options.apps === true ? { apps: true } : {}) });
@@ -77,16 +104,19 @@ export function createFilm(recording: Recording, options: FilmOptions): Film {
     ...(tunes.length === 0 ? {} : { tunes: tunes.map((tune) => ({ ...tune, until: Math.min(tune.until, duration) })) }),
     frameAt: (seconds) => {
       const time = Math.max(0, seconds);
+      hand(time);
       return timeline.frameAt({ time, ambient: time, wallTime: pinnedWallTime(time), clock: 'paused' });
     },
     boxOf: (id, seconds) => {
       const time = Math.max(0, seconds);
+      hand(time);
       const view = timeline.viewsAt({ time, ambient: time, wallTime: pinnedWallTime(time), clock: 'paused' }).find((candidate) => candidate.id === id && candidate.opacity > 0.02);
       return view === undefined ? null : view.box;
     },
     controlsAt: (seconds) => {
       const time = Math.max(0, seconds);
-      return timeline.controlsAt({ time, ambient: time, wallTime: pinnedWallTime(time), clock: 'paused' }).map((site) => ({ id: site.id, value: site.value }));
+      hand(time);
+      return timeline.controlsAt({ time, ambient: time, wallTime: pinnedWallTime(time), clock: 'paused' }).map((site) => ({ id: site.id, value: site.value, ...(site.span.figure?.kind === 'control' ? { control: site.span.figure.control } : {}) }));
     },
     script: () => script,
   };

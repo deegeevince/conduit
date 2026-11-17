@@ -9,6 +9,7 @@ import type { CanvasName, ElementKind } from './vocabulary';
 /** Something about an element's landing the brain would want to know, because it would have written the line differently. */
 export const SIGHT_NOTE = {
   clipped: 'part of it fell outside the screen',
+  outside: 'part of it stands outside the canvas, the frame the picture is read in: put it back inside (the point in `at=` or `move` is where the middle of the words goes, or their right edge with `align=right`, not their corner)',
   'off-canvas': 'none of it was on screen',
   covered: 'something drawn later hides most of it',
   overlaps: 'it sits on top of text',
@@ -47,13 +48,18 @@ export interface SightItem {
   readonly notes: readonly SightNote[];
   /** with the `spills` note: the id of the shape it spills out of */
   readonly within?: string;
+  /** with the `collides` note: the ids of the lines of words it runs into (at most three, in the order they came). Two lines that run into one another are each told of the other, so the brain can tell which of them to move */
+  readonly against?: readonly string[];
+  /** it is on the stage at rest but fully transparent: not a fault in a draft (a stepper's parts wait at `opacity=0`), but a fix that makes something so has hidden it, not mended it */
+  readonly hidden?: true;
   /** with the `drawn` note: the names of the parts of the drawing, as `<figure>-<name>` */
   readonly parts?: readonly string[];
 }
 
 /** A note in the words the brain reads: `spills` names the shape it spills out of. */
-export function noteText(item: Pick<SightItem, 'within' | 'parts'>, note: SightNote): string {
+export function noteText(item: Pick<SightItem, 'within' | 'parts' | 'against'>, note: SightNote): string {
   if (note === 'drawn' && item.parts !== undefined && item.parts.length > 0) return `${SIGHT_NOTE[note]}. Parts: ${item.parts.slice(0, 16).join(', ')}`;
+  if (note === 'collides' && item.against !== undefined && item.against.length > 0) return `${SIGHT_NOTE[note]} (${item.against.join(', ')})`;
   return note === 'spills' && item.within !== undefined ? `spills out of ${item.within}: ${SIGHT_NOTE[note].replace(/^it spills out past the edge of a bigger filled shape that mostly holds it: /, '')}` : SIGHT_NOTE[note];
 }
 

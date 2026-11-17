@@ -26,7 +26,7 @@ import { createPainter } from '../painter';
 import { setTarget } from '../painter/target';
 import { createChartEngine } from '../render/chart';
 import { createFilm } from '../painter/film';
-import { createReel, lastAnswer } from '../painter/reel';
+import type { Film } from '../contracts/film';
 import { createPlainRenderer } from '../render/plain';
 import { createSwappable } from '../render/swap';
 import { canUseThree, createThreeRenderer } from '../render/three';
@@ -48,7 +48,7 @@ import type { AppParams } from './params';
 import { applyLook } from './theme';
 import { createLangLog } from './lang-log';
 import type { LangLog } from './lang-log';
-import { langLayout, withPane } from './lang-film';
+import { videoFilm } from './film-request';
 
 export interface StageAppOptions {
   /** the element the stage fills; its size is the painter's viewport */
@@ -1909,26 +1909,19 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     const recording = painter.recording();
     if (recording === null) throw new Error('There is nothing to take away yet. Ask for something first.');
     const snap = painter.snapshot();
-    // A film is the session as it ran: the language pane beside the stage and the input box along the bottom, the stage laid out in the room they leave.
-    const split = request.kind === 'video' ? langLayout(request.width, request.height) : null;
-    const size = request.kind === 'script' ? snap.viewport : split !== null ? { width: split.stage.width, height: split.stage.height, dpr: 1 } : { width: request.width, height: request.height, dpr: 1 };
     // What the viewer's hand held and what the charts were given go into the file: it shows the picture as they left it.
     // A film is the exception: every control starts at its written value, and a change the session recorded plays back at its time. The live controls are never touched.
     const held: Record<string, ControlValue> = {};
     if (request.kind !== 'video') for (const view of snap.controls) if (view.value !== null) held[view.id] = view.value;
-    const filmOptions = { apps: true, viewport: size, reducedMotion: snap.reducedMotion, arrival: 'at-once' as const, ...(request.kind === 'video' ? {} : { controls: held }), data: Object.fromEntries(dataTables) };
-    // A film is of the last answer (a prompt and the taps that carried it on) unless `scope` says the last turn alone, or the whole conversation.
-    let film;
+    const filmOptions = { apps: true, reducedMotion: snap.reducedMotion, arrival: 'at-once' as const, ...(request.kind === 'video' ? {} : { controls: held }), data: Object.fromEntries(dataTables) };
+    let film: Film;
     let reelNote: string | null = null;
     if (request.kind === 'video') {
-      const everything = painter.recordings();
-      const conversation = request.scope === 'conversation';
-      const turns = request.scope === 'turn' ? [recording] : conversation ? everything : lastAnswer(everything);
-      const reel = createReel(turns.length > 0 ? turns : [recording], filmOptions, { cards: conversation, maxSeconds: REEL_MAX_SECONDS, session: true });
-      film = reel;
-      if (reel.leftOut > 0 || reel.cut) reelNote = `The film holds at most ${REEL_MAX_SECONDS / 60} minutes: ${reel.leftOut > 0 ? `the first ${reel.leftOut} turn${reel.leftOut === 1 ? '' : 's'} ${reel.leftOut === 1 ? 'is' : 'are'} left out` : 'the last turn is cut short'}`;
-    } else film = createFilm(recording, filmOptions);
-    if (split !== null) film = withPane(film, painter.recordings().length > 0 ? painter.recordings() : [recording], lang, split);
+      // A film is the session as it ran: the language pane beside the stage and the input box along the bottom (each unless the request leaves it out), the stage laid out in the room they leave.
+      const made = videoFilm(request, { recording, recordings: painter.recordings(), log: lang, options: filmOptions, maxSeconds: REEL_MAX_SECONDS });
+      film = made.film;
+      reelNote = made.note;
+    } else film = createFilm(recording, { ...filmOptions, viewport: request.kind === 'script' ? snap.viewport : { width: request.width, height: request.height, dpr: 1 } });
     // A film is not touched by a second job: the exporter refuses it, and the one still running keeps the status line.
     const refused = exporting !== null && request.kind !== 'script' && !(request.kind === 'still' && request.format === 'svg');
     const job = getExporter().start(film, request.kind === 'still' ? { ...request, at: Math.min(request.at, film.duration) } : request);
