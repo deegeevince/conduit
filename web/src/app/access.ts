@@ -12,7 +12,7 @@ import type { ControlValue } from '@conduit/language';
 import { formatNumber } from '@conduit/language';
 import type { ChartProbe } from '../contracts/chart';
 import type { ChartFrame } from '../contracts/frame';
-import type { ControlView } from '../contracts/painter';
+import type { ControlView, MathBlockView, MathCellView } from '../contracts/painter';
 
 export type ChartAction = { readonly hover: number } | { readonly zoom: number } | { readonly pan: number } | { readonly reset: true };
 
@@ -21,6 +21,16 @@ export interface AccessHandlers {
   setControl(id: string, value: ControlValue | null, commit: boolean): void;
   /** a chart was worked from the keyboard; resolves with what it shows afterwards */
   chartAct(key: string, action: ChartAction): Promise<ChartProbe>;
+  /** a cell of a written method took digits from the keyboard */
+  mathWrite?(key: string, part: string, text: string): void;
+  /** where the keyboard goes from a cell (see `Painter.mathMove`) */
+  mathMove?(key: string, part: string, move: 'empty' | 'back' | 'next' | 'left' | 'right' | 'up' | 'down'): string | null;
+  /** Check, Hint or Show me of a written method */
+  mathPress?(key: string, name: 'check' | 'hint' | 'show'): void;
+  /** the keyboard is in a cell, or in none */
+  mathActive?(key: string, part: string | null): void;
+  /** the ✕ of a cell the pen has written in */
+  mathClear?(key: string, part: string): void;
 }
 
 export interface AccessLayer {
@@ -30,6 +40,10 @@ export interface AccessLayer {
   controls(views: readonly ControlView[]): void;
   /** the charts on stage now */
   charts(frames: readonly ChartFrame[]): void;
+  /** the written methods on stage now: a real input over each cell the learner writes in, and a button for each of Check, Hint and Show me */
+  maths(views: readonly MathBlockView[]): void;
+  /** puts the keyboard in a cell of a written method, inside the tap that was made on it; with its digit selected so that typing replaces it */
+  focusMath(key: string, part: string): boolean;
   /** puts the keyboard on the real control behind a drawn one (a click on a drawn text field opens its keyboard) */
   focusControl(id: string): void;
   dispose(): void;
@@ -594,8 +608,212 @@ export function createAccessLayer(stage: HTMLElement, handlers: AccessHandlers):
     }
   }
 
+
+  // ---- written methods: a real input over every cell the learner writes in, so a phone raises its number pad and a keyboard walks the sum in working order ----
+
+  interface MathCell {
+    readonly input: HTMLInputElement;
+    readonly clear: HTMLButtonElement;
+    view: MathCellView;
+  }
+  interface MathBlock {
+    readonly holder: HTMLElement;
+    readonly cells: Map<string, MathCell>;
+    readonly buttons: Map<string, HTMLButtonElement>;
+    readonly status: HTMLElement;
+    view: MathBlockView;
+  }
+  const mathHolder = make('div', 'access__math');
+  mathHolder.setAttribute('role', 'group');
+  mathHolder.setAttribute('aria-label', 'Written sums');
+  root.append(mathHolder);
+  const blocks = new Map<string, MathBlock>();
+
+  const cellField = (block: () => MathBlock, key: string, cell: MathCellView): MathCell => {
+    const input = make('input', 'access__widget access__math-cell');
+    input.type = 'text';
+    input.inputMode = 'numeric';
+    input.maxLength = cell.maxLength;
+    input.autocomplete = 'off';
+    input.spellcheck = false;
+    input.enterKeyHint = 'done';
+    input.setAttribute('autocapitalize', 'off');
+    input.setAttribute('autocorrect', 'off');
+    input.dataset['mathCell'] = cell.part;
+    input.dataset['mathBlock'] = key;
+    const part = cell.part;
+    const goTo = (to: string | null): void => {
+      if (to === null) return;
+      const target = block().cells.get(to);
+      if (target === undefined) return;
+      target.input.focus({ preventScroll: true });
+    };
+    const mine = (): MathCellView => block().cells.get(part)?.view ?? cell;
+    input.addEventListener('focus', () => {
+      handlers.mathActive?.(key, part);
+      input.select();
+    });
+    input.addEventListener('blur', () => {
+      // moving to another cell is not leaving the sum: only a focus that goes elsewhere puts the keyboard in none
+      requestAnimationFrame(() => {
+        if (!(document.activeElement instanceof HTMLElement) || document.activeElement.dataset['mathBlock'] !== key) handlers.mathActive?.(key, null);
+      });
+    });
+    input.addEventListener('keydown', (event) => {
+      if (event.isComposing || event.metaKey || event.ctrlKey || event.altKey) return;
+      const arrows: Record<string, 'left' | 'right' | 'up' | 'down'> = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' };
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        handlers.mathPress?.(key, 'check');
+      } else if (event.key === 'Tab') {
+        const to = handlers.mathMove?.(key, part, event.shiftKey ? 'back' : 'next') ?? null;
+        if (to !== null) {
+          event.preventDefault();
+          goTo(to);
+        }
+      } else if (arrows[event.key] !== undefined) {
+        const to = handlers.mathMove?.(key, part, arrows[event.key] as 'left') ?? null;
+        if (to !== null) {
+          event.preventDefault();
+          goTo(to);
+        }
+      } else if (event.key === 'Backspace' && input.value === '') {
+        // an empty cell goes back: to the cell before it in working order, whose digit is taken off
+        const to = handlers.mathMove?.(key, part, 'back') ?? null;
+        if (to !== null) {
+          event.preventDefault();
+          handlers.mathWrite?.(key, to, '');
+          goTo(to);
+        }
+      } else if (/^[0-9.]$/.test(event.key) && input.value.length >= input.maxLength) {
+        // a full cell takes the digit that is typed over what it holds
+        input.select();
+      }
+    });
+    input.addEventListener('input', () => {
+      const text = input.value.replace(/[^\d.]/g, '').slice(0, input.maxLength);
+      if (text !== input.value) input.value = text;
+      handlers.mathWrite?.(key, part, text);
+      // a full cell sends the keyboard on, to the next empty cell in working order
+      if (text !== '' && text.length >= mine().maxLength) goTo(handlers.mathMove?.(key, part, 'empty') ?? null);
+    });
+    const clear = make('button', 'access__widget access__math-clear');
+    clear.type = 'button';
+    clear.tabIndex = -1;
+    clear.addEventListener('click', () => handlers.mathClear?.(key, part));
+    return { input, clear, view: cell };
+  };
+
+  function syncMaths(views: readonly MathBlockView[]): void {
+    const wanted = new Set(views.map((view) => view.key));
+    for (const [key, block] of [...blocks]) {
+      if (wanted.has(key)) continue;
+      if (block.holder.contains(document.activeElement)) stage.focus({ preventScroll: true });
+      block.holder.remove();
+      blocks.delete(key);
+    }
+    for (const view of views) {
+      let block = blocks.get(view.key);
+      if (block === undefined) {
+        const holder = make('div', 'access__math-block');
+        holder.setAttribute('role', 'group');
+        holder.dataset['mathGroup'] = view.key;
+        const status = make('p', 'visually-hidden');
+        status.setAttribute('role', 'status');
+        status.setAttribute('aria-live', 'polite');
+        holder.append(status);
+        mathHolder.append(holder);
+        block = { holder, cells: new Map(), buttons: new Map(), status, view };
+        blocks.set(view.key, block);
+      }
+      const here = block;
+      here.view = view;
+      here.holder.setAttribute('aria-label', `Sum ${view.id}`);
+      const seen = new Set<string>();
+      // the cells stand in working order, then the rest: the DOM order is what a screen reader and Tab find them in
+      const ordered = [...view.cells].sort((a, b) => (a.order ?? 1e6) - (b.order ?? 1e6));
+      let previous: HTMLElement | null = here.status;
+      for (const cell of ordered) {
+        seen.add(cell.part);
+        let slot = here.cells.get(cell.part);
+        if (slot === undefined) {
+          slot = cellField(() => here, view.key, cell);
+          here.cells.set(cell.part, slot);
+        }
+        slot.view = cell;
+        const field = slot.input;
+        place(field, { x: cell.box.x, y: cell.box.y, width: cell.box.width, height: cell.box.height });
+        field.maxLength = cell.maxLength;
+        field.setAttribute('aria-label', `${cell.label}${cell.optional ? ', optional' : ''}`);
+        field.readOnly = view.verdict === 'right' || view.verdict === 'shown';
+        field.tabIndex = cell.order === null ? -1 : 0;
+        field.setAttribute('aria-invalid', String(cell.mark === 'wrong'));
+        const text = cell.by === 'pen' ? cell.read === '?' ? '' : cell.value : cell.value;
+        if (!typing(field) && field.value !== text) field.value = text;
+        if (field.parentElement !== here.holder || field.previousElementSibling !== previous) {
+          const focused = document.activeElement === field;
+          previous.after(field);
+          if (focused) field.focus({ preventScroll: true });
+        }
+        previous = field;
+        // the ✕ of a cell the pen wrote in
+        if (cell.clear !== null) {
+          place(slot.clear, cell.clear);
+          slot.clear.setAttribute('aria-label', `Clear the writing in ${cell.label}`);
+          if (slot.clear.parentElement !== here.holder) here.holder.append(slot.clear);
+        } else slot.clear.remove();
+      }
+      for (const [part, slot] of [...here.cells]) {
+        if (seen.has(part)) continue;
+        if (document.activeElement === slot.input) stage.focus({ preventScroll: true });
+        slot.input.remove();
+        slot.clear.remove();
+        here.cells.delete(part);
+      }
+      // Check, Hint and Show me are real buttons too, after the cells
+      const named = new Set(view.buttons.map((button) => button.name));
+      for (const button of view.buttons) {
+        let element = here.buttons.get(button.name);
+        if (element === undefined) {
+          const made = make('button', 'access__widget');
+          made.type = 'button';
+          const name = button.name;
+          made.addEventListener('click', () => handlers.mathPress?.(view.key, name));
+          element = made;
+          here.buttons.set(button.name, made);
+        }
+        place(element, button.box);
+        element.textContent = button.label;
+        element.setAttribute('aria-label', `${button.label} ${view.id}`);
+        here.holder.append(element);
+      }
+      for (const [name, element] of [...here.buttons]) {
+        if (named.has(name as 'check')) continue;
+        element.remove();
+        here.buttons.delete(name);
+      }
+      const done = view.verdict === 'right' ? 'All right.' : view.verdict === 'shown' ? 'Finished with help.' : view.hint;
+      if (here.status.textContent !== done) here.status.textContent = done;
+    }
+  }
+
   return {
     root,
+    maths: syncMaths,
+    focusMath(key, part) {
+      toPointer();
+      const field = blocks.get(key)?.cells.get(part)?.input;
+      if (field === undefined) return false;
+      // a phone raises its keyboard only for a focus made inside the gesture itself: focus now, and again if the browser's own handling of the tap took it away
+      field.focus({ preventScroll: true });
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() => {
+          const again = blocks.get(key)?.cells.get(part)?.input;
+          if (again !== undefined && document.activeElement !== again && (document.activeElement === document.body || document.activeElement === stage)) again.focus({ preventScroll: true });
+        }),
+      );
+      return document.activeElement === field;
+    },
     controls: syncControls,
     charts: syncCharts,
     focusControl(id) {
@@ -619,6 +837,7 @@ export function createAccessLayer(stage: HTMLElement, handlers: AccessHandlers):
       document.removeEventListener('pointerdown', toPointer, true);
       document.removeEventListener('keydown', toKeyboard, true);
       root.remove();
+      blocks.clear();
       slots.clear();
       regions.clear();
     },

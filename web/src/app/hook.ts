@@ -63,6 +63,7 @@ export function createHook(app: Omit<StageApp, 'hook'>, ready: Promise<void>): S
       return { x: origin.left + at.x, y: origin.top + at.y };
     },
     controls: () => painter.snapshot().controls,
+    maths: () => painter.mathViews(),
     control(id, value) {
       if (!painter.snapshot().controls.some((candidate) => candidate.id === id)) throw new Error(`No control with the id "${id}" is on stage.`);
       painter.setControl(id, value ?? null, true);

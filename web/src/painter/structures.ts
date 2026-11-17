@@ -109,6 +109,8 @@ export interface StructurePlans {
   frames(tq: number, aq: number, look: LookSpec, tunes?: ReadonlyMap<string, number | null>): StructureFrames;
   /** what the layout could not keep clear, by element key, as of `time` */
   notesAt(time: number): ReadonlyMap<string, readonly SightNote[]>;
+  /** the written methods on stage at `time`, with the boxes of their cells and buttons: plane units, centred on the screen, and the plane's scale */
+  mathAt(time: number): readonly { readonly key: string; readonly id: string; readonly boxes: ReadonlyMap<string, Box>; readonly ps: number }[];
   /** the last moment a layout changed: what the stage is still easing toward after */
   readonly lastChange: number;
 }
@@ -621,7 +623,7 @@ export function buildStructures(schedule: Schedule, env: StructureEnv): Structur
         const ring = isControl && part.role === 'bar' && part.part.startsWith('ring');
         const width = ring ? 2 / ps : (style.thick ?? look.stroke.thick) * unit * (part.role === 'grid' ? 0.6 : 1);
         const stroked = part.role === 'frame' || part.role === 'line' || part.role === 'grid' || part.role === 'lit' || ring || (part.role === 'marker' && !isControl);
-        const colour = ring ? look.roles.accent : part.role === 'grid' ? look.roles.dim : paintColour(strokePaint, look);
+        const colour = ring || part.part.startsWith('ok:') || part.part.startsWith('act:') ? look.roles.accent : part.part.startsWith('bad:') ? look.roles.accent : part.role === 'grid' ? look.roles.dim : paintColour(strokePaint, look);
         const filled = part.role === 'fill' || part.role === 'head' || (part.role === 'bar' && !ring) || part.role === 'marker' || part.role === 'note' || part.role === 'note2' || part.role === 'lit';
         const fillColour = part.role === 'note' ? (style.fill !== 'none' && typeof style.fill === 'string' ? paintColour(style.fill, look) : look.roles.accent) : part.role === 'note2' ? look.roles.alt : part.role === 'lit' ? strongest(look) : part.role === 'fill' && part.part.startsWith('mark:') ? mixHex(look.roles.ground, look.roles.accent, 0.3) : part.role === 'fill' ? (style.fill !== 'none' && typeof style.fill === 'string' ? paintColour(style.fill, look) : mixHex(look.roles.ground, look.roles.ink, 0.1)) : part.role === 'head' ? colour : part.role === 'bar' ? (style.fill !== 'none' && typeof style.fill === 'string' ? paintColour(style.fill, look) : look.roles.accent) : isControl && part.role === 'marker' ? look.roles.ink : look.roles.accent;
         const transform = pulse === 1 && shake === 0 ? IDENTITY : { ...about(centre, 0, pulse), e: about(centre, 0, pulse).e + shake };
@@ -767,7 +769,20 @@ export function buildStructures(schedule: Schedule, env: StructureEnv): Structur
     return out;
   };
 
+  const mathAt = (time: number): { key: string; id: string; boxes: ReadonlyMap<string, Box>; ps: number }[] => {
+    const out: { key: string; id: string; boxes: ReadonlyMap<string, Box>; ps: number }[] = [];
+    for (const plan of plans) {
+      const { structure } = plan;
+      if (structure.figure?.kind !== 'structure' || structure.figure.structure !== 'math') continue;
+      if (!structure.carried && (structure.enter === null || time < structure.enter.start)) continue;
+      if (structure.exit !== null && time >= structure.exit.start) continue;
+      const epoch = plan.epochs[epochIndex(plan, time)];
+      if (epoch !== undefined) out.push({ key: structure.key, id: structure.id, boxes: epoch.layout.boxes, ps: epoch.ps });
+    }
+    return out;
+  };
+
   let lastChange = 0;
   for (const plan of plans) for (const epoch of plan.epochs) lastChange = Math.max(lastChange, epoch.start);
-  return { any: plans.length > 0, renderOwner, frames, notesAt, lastChange };
+  return { any: plans.length > 0, renderOwner, frames, notesAt, mathAt, lastChange };
 }

@@ -29,6 +29,7 @@ import { appCues, loneAppScenes } from './apps';
 import { CALM } from '../contracts/controls';
 import { registerLaidOut, laidOutOf } from './registry';
 import { buildStructures, probeStructure, setTextOnce } from './structures';
+import type { StructurePlans } from './structures';
 import { mathLeast, mathNatural } from './blocks/math';
 import { CALLOUTS_READY, layoutCallouts } from './blocks';
 import type { CalloutInput } from '../contracts/blocks';
@@ -122,6 +123,8 @@ export interface Timeline {
   readonly lastLayoutChange: number;
   /** what a structure's layout could not keep clear (`crowded`, `crossed`, `clipped`), by element key, as of `time` */
   layoutNotesAt(time: number): ReadonlyMap<string, readonly SightNote[]>;
+  /** the written methods on stage at `time`: where each cell, button and clear mark stands (`structures.mathAt`) */
+  mathAt(time: number): ReturnType<StructurePlans['mathAt']>;
   /** the controls on stage at this instant: where each is, what it holds, which parts the pointer can work */
   controlsAt(instant: TimelineInstant): ControlSite[];
   /** true when a structure or a chart reads a control's value: the timeline is then stale as soon as a control changes */
@@ -3156,6 +3159,7 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
     retired,
     lastLayoutChange: structures.lastChange,
     layoutNotesAt: structures.notesAt,
+    mathAt: structures.mathAt,
     frameAt: (instant) => cached(instant).frame,
     viewsAt: (instant) => cached(instant).views,
     controlsAt: (instant) => cached(instant).sites,

@@ -109,6 +109,55 @@ export interface ControlView {
   readonly numeric?: boolean;
 }
 
+/** One cell of a written method that a hand writes in (PLAN-maths M3): where it stands, what it holds, and how the last Check marked it. Host CSS pixels. */
+export interface MathCellView {
+  readonly part: string;
+  /** "tens", "carry tens", "exchange ones": what a screen reader and the brain call it */
+  readonly label: string;
+  readonly box: Box;
+  readonly value: string;
+  readonly by: 'key' | 'pen' | 'fill' | 'shown' | '';
+  readonly mark: 'right' | 'wrong' | 'empty' | 'shown' | '';
+  /** a carry or an exchange the learner may leave empty */
+  readonly optional: boolean;
+  /** its place in working order (0 first); null for a box nobody is asked to write at a fixed point */
+  readonly order: number | null;
+  readonly maxLength: number;
+  /** a hint has lit it, and the keyboard is in it */
+  readonly lit: boolean;
+  readonly active: boolean;
+  /** what the reader made of the pen's writing: a digit, `?`, or '' */
+  readonly read: string;
+  readonly reading: boolean;
+  /** there is pen ink in it, and where a finger takes it off (its ✕) */
+  readonly ink: boolean;
+  readonly dim: boolean;
+  readonly clear: Box | null;
+}
+
+/** Check, Hint or Show me of a written method. */
+export interface MathButtonView {
+  readonly name: 'check' | 'hint' | 'show';
+  readonly label: string;
+  readonly box: Box;
+}
+
+/** A written method with cells to write in, as it stands on screen. */
+export interface MathBlockView {
+  readonly key: string;
+  readonly id: string;
+  /** how Check last found it */
+  readonly verdict: 'open' | 'wrong' | 'right' | 'shown';
+  readonly box: Box;
+  readonly cells: readonly MathCellView[];
+  readonly buttons: readonly MathButtonView[];
+  /** the hint that is open, in words */
+  readonly hint: string;
+}
+
+/** What is under a point of a written method: a cell to write in, one of its buttons, or the cross that takes the pen's ink off a cell. */
+export type MathHit = { readonly kind: 'cell'; readonly key: string; readonly part: string } | { readonly kind: 'button'; readonly key: string; readonly name: 'check' | 'hint' | 'show' } | { readonly kind: 'clear'; readonly key: string; readonly part: string };
+
 /** A pointer, as the app hands it to the painter. `x`, `y` are host CSS pixels. */
 export interface PointerInput {
   readonly phase: 'down' | 'move' | 'up' | 'cancel';
@@ -299,6 +348,8 @@ export interface PainterEvents {
   readonly upload: PainterUpload;
   /** the controls on stage changed: one arrived, left, moved or took a new value. Not sent on every frame of a drag. */
   readonly controls: readonly ControlView[];
+  /** the written methods with cells to write in changed: a cell arrived, moved, took a digit or a mark (PLAN-maths M3) */
+  readonly math: readonly MathBlockView[];
   /**
    * v2.1, text out. The words on stage and where they are, for the chrome's text layer. Sent when words arrive, leave, change or come
    * to rest in a new place, and when the camera comes to rest; never on every frame of a move (the layer is hidden while things move).
@@ -517,6 +568,23 @@ export interface Painter {
   setControl(id: string, value: ControlValue | null, commit: boolean): void;
   /** the pen has written something, or nothing now (`controls/pen.ts`): an ask's Check is drawn ready or not */
   penChanged(): void;
+
+  /** The written methods with cells to write in, as they stand now (host CSS pixels). */
+  mathViews(): readonly MathBlockView[];
+  /** What a point is on, among the cells, buttons and ✕ marks of the written methods; null when it is on none (or the cell is settled). */
+  mathAt(x: number, y: number): MathHit | null;
+  /** A hand wrote in a cell (`key`: the digits typed; `pen`: what the pen's writing was read as). Returns false when the cell takes nothing now. */
+  mathWrite(key: string, part: string, text: string, by: 'key' | 'pen'): boolean;
+  /** The keyboard is in this cell, or in none. */
+  mathActive(key: string, part: string | null): void;
+  /** Where the keyboard goes from a cell: the next empty one in working order, the one before or after it, or along the grid. Null: nowhere. */
+  mathMove(key: string, part: string, move: 'empty' | 'back' | 'next' | 'left' | 'right' | 'up' | 'down'): string | null;
+  /** Check, Hint or Show me. The act of Check and Show me is told to the brain as one short line. */
+  mathPress(key: string, name: 'check' | 'hint' | 'show'): void;
+  /** The pen's ink in a cell: there is some now (the reader is waiting), or none (cleared, erased). */
+  mathInk(key: string, part: string, on: boolean): void;
+  /** What the reader made of a cell's ink: digits, '' for none, `?` for a smudge. */
+  mathRead(key: string, part: string, digits: string): void;
 
   resize(viewport: Viewport): void;
   snapshot(): PainterSnapshot;

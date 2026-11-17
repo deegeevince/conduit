@@ -1204,10 +1204,10 @@ function buildUnits(args: Args, welcome: Welcome): { readonly units: Unit[]; rea
   units.push({
     name: 'maths',
     needs: 'none',
-    weight: 20,
+    weight: 60,
     run: async (_servers, out) => {
-      out.lines.push('\nmaths (820x971, 390x844, 1280x720)');
-      checkLines(out, await mathsGroup(plain));
+      out.lines.push('\nmaths (820x971, 390x844, 1280x720; input at 820x971 dpr 2 and 390x844 dpr 3, on a server of its own)');
+      checkLines(out, await mathsGroup(plain, join(args.out, 'maths'), args.timeoutMs));
     },
   });
   units.push({

@@ -139,6 +139,18 @@ export class InkModel {
     return true;
   }
 
+  /** Changes the colour of strokes (the writing a typed digit has taken over is shown faint). Not a step of history: undo and redo bring the strokes back as they are. */
+  recolour(ids: ReadonlySet<string>, color: string): boolean {
+    let any = false;
+    this.list = this.list.map((stroke) => {
+      if (!ids.has(stroke.id) || stroke.color === color) return stroke;
+      any = true;
+      return { ...stroke, color };
+    });
+    if (any) this.changed();
+    return any;
+  }
+
   /** Replaces the strokes (a saved document opened again); history starts afresh. */
   load(doc: InkDocument): void {
     this.space = doc.space;
