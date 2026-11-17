@@ -12,9 +12,9 @@ import type { StageBase } from '@conduit/language';
 import type { Film, Recording } from '../contracts/film';
 import { createLangLog } from '../app/lang-log';
 import type { LangLog } from '../app/lang-log';
-import { langLayout, withPane } from '../app/lang-film';
+import type { VideoRequest } from '../contracts/export';
+import { videoFilm } from '../app/film-request';
 import type { LangLayout } from '../app/lang-film';
-import { createReel } from '../painter/reel';
 import type { Reel } from '../painter/reel';
 
 export const PROMPT = 'show me how the sun and a post make a shadow';
@@ -44,9 +44,15 @@ export interface Session {
   readonly notes: number;
 }
 
-/** `explorable`: the text of the explorable demo (`language/demos/explorable.series`). `held`: what the viewer's hand held when the film was asked for (a film must ignore it). */
-export function buildSession(width: number, height: number, explorable: string, held?: Record<string, number>): Session {
-  const one = recordingOf('t1', parseScript(explorable).lines, { opened: 'prompt', asked: PROMPT, typed: PROMPT, waited: WAITED });
+/** What a video request may say beyond its size: the film of the session is made from the same request the app would be given. */
+export type SessionRequest = Omit<VideoRequest, 'kind' | 'format' | 'width' | 'height' | 'fps'>;
+
+/**
+ * `explorable`: the text of the explorable demo (`language/demos/explorable.series`). `held`: what the viewer's hand held when the film was asked for (a film must ignore it).
+ * `request`: the options of the video request, as the app would be given them for a conversation (the default has no title cards, as a film of the session as it ran). `look`: the look the first turn is written in, when it is not the demo's own.
+ */
+export function buildSession(width: number, height: number, explorable: string, held?: Record<string, number>, request: SessionRequest = { cards: false }, look?: string): Session {
+  const one = recordingOf('t1', parseScript(look === undefined ? explorable : `look ${look}\n${explorable}`).lines, { opened: 'prompt', asked: PROMPT, typed: PROMPT, waited: WAITED });
   const second = parseScript('set sun fill=#ff8a4c\nsay | At dusk the sun is low and the shadow is long.').lines;
   const two = { ...recordingOf('t2', second, { opened: 'act', asked: 'Used "Why is it longer at dusk?"', touched: { id: 'ask', text: 'Why is it longer at dusk?' }, controls: { height: 60 }, waited: 0.3 }), base: leftBy(one) };
   const three = { ...recordingOf('t3', parseScript('say | Here is why it is longer at dusk.').lines, { opened: 'tap', asked: 'Tapped "Day"', touched: { id: 'x1', text: 'Day' }, waited: 0.2 }), base: leftBy(two) };
@@ -68,8 +74,7 @@ export function buildSession(width: number, height: number, explorable: string, 
       notes += 1;
     }
   }
-  const layout = langLayout(width, height);
-  const options = { apps: false, viewport: { width: layout.stage.width, height: layout.stage.height, dpr: 1 }, reducedMotion: false, arrival: 'at-once' as const, ...(held === undefined ? {} : { controls: held }) };
-  const reel = createReel(recordings, options, { cards: false, maxSeconds: 600, session: true });
-  return { recordings, log, layout, reel, film: withPane(reel, recordings, log, layout), notes };
+  const options = { apps: false, reducedMotion: false, arrival: 'at-once' as const, ...(held === undefined ? {} : { controls: held }) };
+  const made = videoFilm({ kind: 'video', format: 'webm', width, height, fps: 30, scope: 'conversation', ...request }, { recording: four, recordings, log, options, maxSeconds: 600 });
+  return { recordings, log, layout: made.layout, reel: made.reel, film: made.film, notes };
 }
