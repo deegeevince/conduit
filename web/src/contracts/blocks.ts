@@ -123,9 +123,12 @@ export type BlockPart =
       /**
        * `words` (a node's own words), `label` (on a link, beside a pin, a
        * callout), `title`, `header` and `cell` (a table), `tick` and `value`
-       * (a chart or a timeline: drawn in `dim`).
+       * (a chart or a timeline: drawn in `dim`), and `code` (a stretch of one
+       * line of a listing, coloured by its `tone`).
        */
-      readonly role: 'words' | 'label' | 'title' | 'header' | 'cell' | 'tick' | 'value';
+      readonly role: 'words' | 'label' | 'title' | 'header' | 'cell' | 'tick' | 'value' | 'code';
+      /** a stretch of code's colour: a reserved word in the accent, a string or a number in the alt, a comment dim, anything else (or absent) the owner's ink */
+      readonly tone?: 'plain' | 'keyword' | 'literal' | 'comment';
       readonly row?: number;
       /** true when the text sits on something drawn and needs the ground behind it to stay readable (a label on a link) */
       readonly plate: boolean;

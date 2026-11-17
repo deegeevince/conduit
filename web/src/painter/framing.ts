@@ -1,6 +1,7 @@
 // Following what is being drawn: while a line is performed the film's framing eases toward the element it draws, and between lines and at rest it eases back to the
 // whole stage. A pure function of time and of the painter's own element boxes at that time, so a film is the same wherever and however fast it is made.
 //
+//   panning   the view stays inside the stage (no blank margin); an element near an edge is off the middle of the view but in it
 //   zoom      1 (the whole stage) to 1.6, chosen so the element takes up about half the view, never more than the stage and never less than the whole of it
 //   easing    cubic-bezier(0.16, 1, 0.3, 1) over half a second
 //   holding   a framing stays at least 1.2 s; lines that begin within 0.8 s of each other (or inside that hold) share one framing, the union of their elements
@@ -86,12 +87,8 @@ export function framingOf(shots: readonly Shot[], boxOf: (id: string, seconds: n
     }
     if (right < left) return FULL;
     const zoom = Math.max(1, Math.min(FRAMING.zoomMax, FRAMING.fill * Math.min(stage.width / (right - left), stage.height / (bottom - top))));
-    // the view keeps to the stage where it can; it goes past the edge only as far as keeping the element inside the middle two thirds needs
-    const centre = (at: number): number => {
-      const kept = Math.max(0.5 / zoom, Math.min(1 - 0.5 / zoom, at));
-      const reach = (1 / 3 - 0.02) / zoom;
-      return Math.max(at - reach, Math.min(at + reach, kept));
-    };
+    // the view never leaves the stage: near an edge the element sits off the middle of the view, still inside it
+    const centre = (at: number): number => Math.max(0.5 / zoom, Math.min(1 - 0.5 / zoom, at));
     return { zoom, x: centre((left + right) / 2 / stage.width), y: centre((top + bottom) / 2 / stage.height) };
   };
   const mix = (a: Framing, b: Framing, p: number): Framing => ({ zoom: a.zoom + (b.zoom - a.zoom) * p, x: a.x + (b.x - a.x) * p, y: a.y + (b.y - a.y) * p });

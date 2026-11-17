@@ -1,6 +1,15 @@
-// kinds/code.ts: PLAN-v3-core 2.3, package PC1. Code taken exactly. It is in the vocabulary and taught as a form, and it has no engine: the
-// painter does not advertise it (`DEMOS_NOT_PAINTED`). PC10 builds it. Until then it is a typed "not yet", and the registry says so by name.
+// kinds/code.ts: PLAN-v3-core 2.3, package PC1, made ready by PC10. The `code` engine (a listing: rows taken exactly, monospaced, each word coloured by what it is)
+// wrapped; its code stays in `painter/blocks/code.ts` (the tokenizer in `code-lex.ts`).
 
-import { notYet } from './not-yet';
+import { layoutCode } from '../../painter/blocks/code';
+import { seal } from '../seal';
+import { structureKind } from './adapt-structure';
 
-export const code = notYet('code', 'no engine yet: not advertised by today\'s painter (PC10 builds it on the table\'s reflow leaf)', [['code py | Hello', '| def hello(name):', '|     return "hi " + name']]);
+export const code = seal(
+  structureKind({
+    id: 'code',
+    engine: layoutCode,
+    fit: 'reflow',
+    fixtures: [['code py | Hello', '| def hello(name):', '|     return "hi " + name']],
+  }),
+);

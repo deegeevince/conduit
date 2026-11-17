@@ -1,0 +1,4 @@
+# What pnpm check plays to see a journey stop cleanly when a tap target never appears (the wait is shortened with ?journeywait=).
+hold 0.2
+tap | A label no answer has
+rest

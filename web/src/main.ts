@@ -8,6 +8,8 @@ import type { StageApp, StageStatus } from './app/stage-app';
 import { mountActions } from './chrome/actions';
 import { mountHud } from './chrome/hud';
 import { mountLangPane } from './chrome/lang-pane';
+import { mountModelLabel } from './chrome/model-label';
+import { startJourney } from './app/journey';
 import { runCommand } from './chrome/command-runner';
 import { mountTour } from './chrome/tour';
 import { copyAnswer } from './chrome/files';
@@ -65,6 +67,7 @@ root.innerHTML = `
   <main class="stage" id="stage" aria-label="Stage" tabindex="0"></main>
   <footer class="bar" id="bar"></footer>`;
 const appRoot: HTMLElement = root;
+if (params.journey !== null) appRoot.dataset['journey'] = params.journey;
 const stageHost = root.querySelector<HTMLElement>('#stage');
 const bar = root.querySelector<HTMLElement>('#bar');
 if (stageHost === null || bar === null) throw new Error('The page could not be built.');
@@ -162,7 +165,8 @@ function unavailable(message: string): void {
 
 async function start(): Promise<void> {
   if (stageHost === null) return;
-  const autoplay = params.demo === 'none' ? null : (params.demo ?? FIRST_LOAD_DEMO);
+  // a journey starts on an empty stage: its first step is the first thing the film shows
+  const autoplay = params.demo === 'none' || params.journey !== null ? null : (params.demo ?? FIRST_LOAD_DEMO);
   try {
     app = await mountStage({ host: stageHost, params, lockLook: params.look, autoplay });
   } catch (cause) {
@@ -244,7 +248,11 @@ async function start(): Promise<void> {
     wall = await mountWall({ host: stageHost, app: mounted, transcript, motionParam: params.motion });
   }
   mountActivity(promptBar.activity, mounted);
-  mountLangPane(appRoot, stageHost, mounted, promptBar.menu);
+  mountLangPane(appRoot, stageHost, mounted, promptBar.menu, { locked: params.journey !== null });
+  if (params.journey !== null) {
+    mountModelLabel(appRoot, mounted);
+    void playJourney(params.journey, mounted, stageHost);
+  }
   mountPermission(mounted);
   const show = (status: StageStatus): void => {
     promptBar.setStatus(status.text, status.announce);
@@ -257,6 +265,17 @@ async function start(): Promise<void> {
   show(mounted.status());
   if (params.debug) mountHud(document.body, mounted);
   promptBar.focus();
+}
+
+/** The journey of this name, from language/demos/journeys: lazily read, so a page without `?journey=` carries none of it. */
+async function playJourney(name: string, mounted: StageApp, stage: HTMLElement): Promise<void> {
+  const files = import.meta.glob('../../language/demos/journeys/*.journey', { query: '?raw', import: 'default' }) as Record<string, () => Promise<string>>;
+  const load = Object.entries(files).find(([path]) => path.endsWith(`/${name}.journey`))?.[1];
+  if (load === undefined) {
+    window.__journey = { name, status: 'stopped', message: `There is no journey called "${name}".`, started: null, finished: null, steps: [], model: null, follow: { samples: 0, misses: 0, longestMissMs: 0 }, focus: [] };
+    return;
+  }
+  startJourney({ app: mounted, stage, name, source: await load() });
 }
 
 /** "Motion: glide or fade", beside the system's reduced-motion setting: how the camera travels the wall. */

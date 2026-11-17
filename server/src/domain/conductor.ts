@@ -174,7 +174,7 @@ interface TypingState {
 }
 
 /** Stage events that describe a moment and are not part of the turn's score: a reconnecting painter is not given the ones it heard. */
-const TRANSIENT: ReadonlySet<StageEvent['type']> = new Set(['pass', 'data', 'candidate', 'permission', 'activity', 'critic', 'want', 'typing']);
+const TRANSIENT: ReadonlySet<StageEvent['type']> = new Set(['pass', 'data', 'candidate', 'permission', 'activity', 'critic', 'want', 'typing', 'mend']);
 
 /**
  * A line of the lesson the reader would not take, with why, for the brain to write again; null when the refusal is no lesson line's (a
@@ -1688,15 +1688,15 @@ export class Conductor {
     const { critic, sessionLog, findings, now, log } = this.deps;
     // CRITIC_SCRIPTS=on (a test rig's switch, never the owner's): a played script is judged, and mended, like an answer, so a known-bad one can be replayed.
     const scripts = processEnvironment()['CRITIC_SCRIPTS'] === 'on';
-    if (!critic.available || turn.criticAsked || turn.endReason !== 'done' || turn.snapshotFile === null || (turn.brain === 'replay' && !scripts)) return;
-    if ((turn.input.kind === 'demo' || turn.input.kind === 'script') && !scripts) return;
+    if (turn.criticAsked || turn.endReason !== 'done' || turn.snapshotFile === null) return;
+    if (!critic.available || (turn.brain === 'replay' && !scripts) || ((turn.input.kind === 'demo' || turn.input.kind === 'script') && !scripts)) return this.mend(s, turn, 'none');
     const snapshot = this.deps.assets.snapshot(s.id, turn.id);
-    if (snapshot === undefined) return;
+    if (snapshot === undefined) return this.mend(s, turn, 'none');
     const facts = draftFactsOf(turn.score.schedule, 0, 0, this.shelfIds(s));
     // A turn that only changed what an earlier turn left on the stage draws nothing new, but it is the follow-up the critic is for (critic v2)
-    if (this.holdsProblem(turn)) return;
+    if (this.holdsProblem(turn)) return this.mend(s, turn, 'none');
     const previous = this.previousForCritic(s, turn);
-    if (previous === null && !worthALook(facts, { ...this.deps.review, enabled: true, passes: 1 }).look) return;
+    if (previous === null && !worthALook(facts, { ...this.deps.review, enabled: true, passes: 1 }).look) return this.mend(s, turn, 'none');
     turn.criticAsked = true;
     const picture = snapshot;
     const file = turn.snapshotFile;
@@ -1714,7 +1714,7 @@ export class Conductor {
     void (async () => {
       try {
         const judged = await critic.look(request, s.abort.signal);
-        if (judged === null || s.abort.signal.aborted) return;
+        if (judged === null || s.abort.signal.aborted) return this.mend(s, turn, 'none');
         const finding = this.withRepeats(s, turn.id, judged);
         const raised = finding.problems.filter((problem) => problem.raised !== false).length;
         log.info('critic.verdict', { session: s.id, turn: turn.id, coherence: finding.coherence, failedTier: finding.failedTier ?? null, failed: (finding.gates ?? []).filter((gate) => !gate.pass).map((gate) => gate.gate).join(','), raised, held: finding.problems.length - raised, followUp: request.previous !== null && request.previous !== undefined, trend: finding.progress?.trend ?? null });
@@ -1733,8 +1733,19 @@ export class Conductor {
         else this.considerRepair(s, turn, finding);
       } catch (error) {
         log.warn('critic.failed', { session: s.id, turn: turn.id, error });
+        this.mend(s, turn, 'none');
       }
     })();
+  }
+
+  /**
+   * Tells the page whether this answer may still be changed by the critic or a repair: `none` when nothing more will happen to it (said once the
+   * critic is known to have no say, or the repair has ended without a change), `working` when a repair is being written, `shown` when its lines went
+   * to the page. For whoever waits for the stage to be done (the journey's `rest`); the stage itself does nothing with it.
+   */
+  private mend(s: Session, turn: ActiveTurn, state: 'none' | 'working' | 'shown'): void {
+    if (turn.input.kind === 'repair') return;
+    this.emit(s, turn, { type: 'mend', turn: turn.id, state });
   }
 
   // ------------------------------------------------------------------------------------------------------------------------------
@@ -1826,6 +1837,7 @@ export class Conductor {
     if (!worth.wanted || s.repaired.has(turn.id)) {
       // not a repair's business (a lower tier, or one already tried): the blocking findings are still the brain's to hear of
       if (!s.repaired.has(turn.id)) this.oweFindings(s, turn, finding, 'not a repair\'s kind of finding');
+      this.mend(s, turn, 'none');
       return;
     }
     const { now, sessionLog, log } = this.deps;
@@ -1834,12 +1846,14 @@ export class Conductor {
       sessionLog.write(s.id, { type: 'repair', turn: turn.id, repair: null, state: 'skipped', gates: worth.gates, why, lines: [], coherenceBefore: finding.coherence, blockingBefore: null, blockingAfter: null, costUsd: null, ms: 0, tryMs: null, firstLineMs: null, sinceEndMs: now() - (turn.endedAt ?? now()) });
       // The finding is not dropped with the repair: the brain is told of it at its next turn (never if the person switched repairs off to be left alone).
       this.oweFindings(s, turn, finding, why);
+      this.mend(s, turn, 'none');
     };
     if (!s.repairOn) return skipped('switched off (/review repair off)');
     if (turn.continueNote !== undefined) return skipped('the brain went on by its own choice');
     const limit = this.repairLimit(s, turn);
     if (limit !== null) return skipped(limit);
     s.repaired.add(turn.id);
+    this.mend(s, turn, 'working');
     const abort = new AbortController();
     s.repair = { of: turn.id, abort };
     void this.runRepair(s, turn, finding, worth, abort).catch((error: unknown) => log.error('repair.escaped', { session: s.id, turn: turn.id, error })).finally(() => {
@@ -1855,6 +1869,7 @@ export class Conductor {
       const entry = { type: 'repair' as const, turn: turn.id, repair: null, state, gates: worth.gates, why: null, lines: [], coherenceBefore: finding.coherence, blockingBefore: null, blockingAfter: null, costUsd: null, ms: now() - started, tryMs: null, firstLineMs: null, sinceEndMs: now() - (turn.endedAt ?? started), ...patch };
       sessionLog.write(s.id, entry);
       if (state !== 'kept') this.oweFindings(s, turn, finding, `the repair was ${state}${entry.why === null ? '' : `: ${entry.why}`}`);
+      this.mend(s, turn, state === 'kept' ? 'shown' : 'none');
       log.info(`repair.${state}`, { session: s.id, turn: turn.id, gates: worth.gates.join(','), why: entry.why, repair: entry.repair, blockingBefore: entry.blockingBefore, blockingAfter: entry.blockingAfter, costUsd: entry.costUsd, ms: entry.ms });
     };
     const here = (): boolean => !signal.aborted && s.turn === turn && turn.endReason === 'done' && turn.reported;
@@ -2052,6 +2067,10 @@ export class Conductor {
     // What the brain was told and what the turn cost are recorded even when the turn was cut short; its lines no longer matter.
     if (event.type === 'brief') {
       sessionLog.write(s.id, { type: 'brief', turn: turn.id, form: event.form, text: event.text, system: event.system, withSnapshot: event.withSnapshot, pass });
+      return undefined;
+    }
+    if (event.type === 'model') {
+      if (pass === 1 && !repairing) this.emit(s, turn, { type: 'model', turn: turn.id, model: event.model, effort: event.effort });
       return undefined;
     }
     if (event.type === 'typing') {

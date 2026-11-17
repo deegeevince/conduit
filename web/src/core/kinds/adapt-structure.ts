@@ -35,8 +35,8 @@ export const modelOfStructure = (structure: ElementSpan, parts: readonly Element
 });
 
 /** The ink a part's role asks for. `value` and `tick` are drawn in `dim`, as `BlockPart` says. */
-export function inkRoleOf(role: Extract<BlockPart, { kind: 'text' }>['role']): InkRole {
-  return role === 'value' || role === 'tick' ? 'dim' : 'ink';
+export function inkRoleOf(role: Extract<BlockPart, { kind: 'text' }>['role'], tone?: Extract<BlockPart, { kind: 'text' }>['tone']): InkRole {
+  return role === 'value' || role === 'tick' || tone === 'comment' ? 'dim' : tone === 'keyword' ? 'accent' : tone === 'literal' ? 'alt' : 'ink';
 }
 
 export function inputOf(model: StructureModel, room: Box, env: Env): StructureInput {
@@ -83,7 +83,7 @@ export function wordsOf(layout: StructureLayout, env: Env): readonly CensusWord[
   const words: CensusWord[] = [];
   for (const part of layout.parts) {
     if (part.kind !== 'text' || part.text.trim() === '') continue;
-    words.push({ part: part.part, text: part.text, box: part.box, px: env.px(part.spec), colour: env.ink(inkRoleOf(part.role)), on: env.ground });
+    words.push({ part: part.part, text: part.text, box: part.box, px: env.px(part.spec), colour: env.ink(inkRoleOf(part.role, part.tone)), on: env.ground });
   }
   for (const element of layout.drawn?.elements ?? []) {
     const text = element.runs.map((run) => run.text).join(' ').trim();
