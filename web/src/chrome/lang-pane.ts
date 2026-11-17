@@ -7,7 +7,7 @@
 // observer, lays itself out in what is left. The pane knows nothing of how the stage draws; it reads `painter.snapshot()` and the log.
 
 import type { StageApp } from '../app/stage-app';
-import { entryNote } from '../app/lang-log';
+import { shownNote } from '../app/lang-log';
 import type { LangEntry } from '../app/lang-log';
 import { ensureMono, paletteOf, tokenize } from '../app/lang-style';
 import type { PanePalette } from '../app/lang-style';
@@ -139,7 +139,7 @@ export function mountLangPane(root: HTMLElement, stage: HTMLElement, app: StageA
         }
       }
     }
-    const note = entryNote(entry);
+    const note = shownNote(entry);
     if (note !== null) {
       const quiet = document.createElement('span');
       quiet.className = 'lang__note';

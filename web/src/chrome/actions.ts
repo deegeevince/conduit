@@ -4,7 +4,7 @@
 import type { StageApp } from '../app/stage-app';
 import type { ExportRequest } from '../contracts/export';
 import type { ComposerMenu, MenuEntryHandle } from './menu';
-import { SIZES, copyAnswer, copyScript, saveBlob, saveMidi, saveScript, saveStill } from './files';
+import { SIZES, copyAnswer, copyScript, saveBlob, saveMade, saveMidi, saveScript, saveStill } from './files';
 
 export interface Actions {
   dispose(): void;
@@ -240,10 +240,7 @@ export function mountActions(host: HTMLElement, app: StageApp, transcript: Trans
       const job = app.export(request);
       dialog.close();
       job.done.then(
-        ({ blob, fileName, hasSound, note }) => {
-          saveBlob(blob, fileName);
-          app.announce(`Saved ${fileName}${hasSound === true ? ', with its music' : ''}${note === undefined ? '' : `. ${note}`}`);
-        },
+        (made) => saveMade(app, made),
         () => undefined,
       );
     } catch (cause) {

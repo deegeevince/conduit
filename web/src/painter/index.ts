@@ -111,6 +111,14 @@ function askedOf(input: TurnInput): string {
   }
 }
 
+/** What a film needs to know of how a turn was opened: the words typed whole, what was touched, what the controls held. */
+function openedBy(input: TurnInput): Pick<Recording, 'typed' | 'touched' | 'controls'> {
+  if (input.kind === 'prompt') return { typed: input.text };
+  if (input.kind === 'tap') return { touched: { id: input.id, text: input.text } };
+  if (input.kind === 'act') return { touched: { id: input.id, text: input.text }, controls: input.values };
+  return {};
+}
+
 interface Turn {
   readonly id: string;
   readonly input: TurnInput;
@@ -125,6 +133,9 @@ interface Turn {
   showingAll: boolean;
   /** where the playhead was when they asked */
   skippedAt: number | null;
+  /** when the turn was opened (performance.now), and the real seconds until its first line arrived (null: none yet) */
+  readonly openedAt: number;
+  waited: number | null;
 }
 
 /** What a finished or interrupted turn leaves for the hook to read. */
@@ -896,7 +907,7 @@ export function createPainter(options: PainterOptions): Painter {
       const painting = paintings.get(element.key);
       if (element.figure?.kind === 'picture' && painting !== undefined && painting.status === 'ready' && painting.url !== null) pictures[element.key] = painting.url;
     }
-    recordings.set(closing.id, { turn: closing.id, base: closing.base, lines, paintings: pictures, aspects: Object.fromEntries(photoAspects), opened: closing.input.kind, asked: askedOf(closing.input) });
+    recordings.set(closing.id, { turn: closing.id, base: closing.base, lines, paintings: pictures, aspects: Object.fromEntries(photoAspects), opened: closing.input.kind, asked: askedOf(closing.input), ...openedBy(closing.input), waited: Math.round((closing.waited ?? 0) * 100) / 100 });
     lastRecorded = closing.id;
     for (const id of [...recordings.keys()]) {
       if (recordings.size <= KEPT_RECORDINGS) break;
@@ -1755,7 +1766,7 @@ export function createPainter(options: PainterOptions): Painter {
         pageUnder = null;
       }
       letGo.clear();
-      const opened: Turn = { id, input, base, score: new TurnScore(base, input.kind), seqs: new Set(), issues: new Map(), ack: 0, closed: false, started: false, showingAll: false, skippedAt: null };
+      const opened: Turn = { id, input, base, score: new TurnScore(base, input.kind), seqs: new Set(), issues: new Map(), ack: 0, closed: false, started: false, showingAll: false, skippedAt: null, openedAt: performance.now(), waited: null };
       turn = opened;
       if (input.kind === 'prompt' || input.kind === 'script') store.restart();
       memory = null;
@@ -1770,6 +1781,7 @@ export function createPainter(options: PainterOptions): Painter {
       const open = turn;
       if (open === null || settling !== null || open.id !== id || open.closed || open.seqs.has(seq)) return [];
       open.seqs.add(seq);
+      open.waited ??= (performance.now() - open.openedAt) / 1000;
       if (lockLook !== null && line.verb === 'look') {
         open.ack = Math.max(open.ack, seq);
         if (!open.started) startTurnState();
