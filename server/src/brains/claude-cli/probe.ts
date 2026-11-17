@@ -103,6 +103,7 @@ try {
           out(`${stamp()}  USAGE ${JSON.stringify(u)}   cache read ${total === 0 ? 'n/a' : `${Math.round((100 * read) / total)}%`}`);
         } else if (event.type === 'tool') out(`${stamp()}  TOOL ${event.tool} ${event.target ?? ''}`);
         else if (event.type === 'activity') out(`${stamp()}  TOOL ${event.tool} ${event.state}: ${event.summary}`);
+        else if (event.type === 'typing') continue;
         else if (event.type === 'permission') out(`${stamp()}  ASKS ${event.tool} (${event.risk}): ${event.summary}`);
         else out(`${stamp()}  BRIEF ${event.form}, ${event.text.length} characters${event.system === null ? '' : `, with system prompt ${event.system.length}`}${event.withSnapshot ? ', with snapshot' : ''}`);
       }

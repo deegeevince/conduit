@@ -18,6 +18,11 @@ export class LineAssembler {
     return lines;
   }
 
+  /** The text of the line still being written (no newline yet). */
+  get pending(): string {
+    return this.buffer;
+  }
+
   /** Returns the unterminated last line, if any, and empties the buffer. Call when the stream ends. */
   flush(): string[] {
     const rest = this.buffer;

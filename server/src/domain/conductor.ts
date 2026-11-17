@@ -161,8 +161,20 @@ export interface EventsPage {
 
 const REAP_INTERVAL_MS = 60_000;
 
+/** The least time between two `typing` events of a turn: about 20 a second. */
+const TYPING_EVERY_MS = 50;
+/** More than a line of Series is ever this long; the pane has no use for the rest of a runaway one. */
+const TYPING_MAX_CHARS = 600;
+
+/** The throttle of one turn's `typing` events: the latest text waits for its turn to be sent, and a line, a reject or the end drops it. */
+interface TypingState {
+  at: number;
+  text: string | null;
+  timer: NodeJS.Timeout | null;
+}
+
 /** Stage events that describe a moment and are not part of the turn's score: a reconnecting painter is not given the ones it heard. */
-const TRANSIENT: ReadonlySet<StageEvent['type']> = new Set(['pass', 'data', 'candidate', 'permission', 'activity', 'critic', 'want']);
+const TRANSIENT: ReadonlySet<StageEvent['type']> = new Set(['pass', 'data', 'candidate', 'permission', 'activity', 'critic', 'want', 'typing']);
 
 /**
  * A line of the lesson the reader would not take, with why, for the brain to write again; null when the refusal is no lesson line's (a
@@ -975,11 +987,50 @@ export class Conductor {
     for (const done of [...set]) done();
   }
 
+  private readonly typingOf = new WeakMap<ActiveTurn, TypingState>();
+
+  /** The line being written, for the pane that shows the language: throttled, sent to a stream that is open now, and kept nowhere. */
+  private typing(session: Session, turn: ActiveTurn, text: string): void {
+    if (session.sink === null) return;
+    const state = this.typingOf.get(turn) ?? { at: 0, text: null, timer: null };
+    this.typingOf.set(turn, state);
+    state.text = text.length > TYPING_MAX_CHARS ? text.slice(-TYPING_MAX_CHARS) : text;
+    if (state.timer !== null) return;
+    const send = (): void => {
+      state.timer = null;
+      if (state.text === null) return;
+      const body = state.text;
+      state.text = null;
+      state.at = this.deps.now();
+      try {
+        session.sink?.({ type: 'typing', turn: turn.id, text: body });
+      } catch (error) {
+        this.deps.log.warn('stream.sink_failed', { session: session.id, error });
+      }
+    };
+    const wait = state.at + TYPING_EVERY_MS - this.deps.now();
+    if (wait <= 0) send();
+    else {
+      state.timer = setTimeout(send, wait);
+      state.timer.unref();
+    }
+  }
+
+  /** A line was finished (or the turn is over): what was waiting to be typed is no longer true. */
+  private typingDone(turn: ActiveTurn): void {
+    const state = this.typingOf.get(turn);
+    if (state === undefined) return;
+    if (state.timer !== null) clearTimeout(state.timer);
+    state.timer = null;
+    state.text = null;
+  }
+
   private emit(session: Session, turn: ActiveTurn | null, event: StageEvent): void {
+    if (event.type === 'line' || event.type === 'reject' || event.type === 'end') if (turn !== null) this.typingDone(turn);
     if (turn !== null) {
       if (event.type === 'reject' && turn.sent.length >= SERVER_LIMITS.linesPerTurn * 2) return;
       // A candidate and a confirm control are answered or gone within seconds: a painter that was not there to hear them cannot use them.
-      if (event.type !== 'candidate' && event.type !== 'permission') {
+      if (event.type !== 'candidate' && event.type !== 'permission' && event.type !== 'typing') {
         turn.sent.push(event);
         if (session.sink === null) turn.missed.push(event);
       }
@@ -1982,6 +2033,11 @@ export class Conductor {
     // What the brain was told and what the turn cost are recorded even when the turn was cut short; its lines no longer matter.
     if (event.type === 'brief') {
       sessionLog.write(s.id, { type: 'brief', turn: turn.id, form: event.form, text: event.text, system: event.system, withSnapshot: event.withSnapshot, pass });
+      return undefined;
+    }
+    if (event.type === 'typing') {
+      // Only the first pass is shown as it is written; a look's fix is tried out of sight and a repair is not the owner's stream.
+      if (pass === 1 && !repairing && turn.endReason === null) this.typing(s, turn, event.text);
       return undefined;
     }
     if (event.type === 'tool') {

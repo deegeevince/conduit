@@ -5,8 +5,9 @@
 // the turn clock when it arrived (the same `floor` a recording keeps), so a film can show the pane's lines at the rhythm they came. It holds
 // nothing the painter does not already hold, except what is dropped, which the painter never hears of.
 //
-// Token by token: the link carries whole lines (`line` events), never the stream's text deltas, so the pane shows a line when it is whole.
-// Showing the stream letter by letter would need the server to forward the deltas; the log is where they would be added.
+// Token by token: the link carries whole lines (`line` events) and, for this pane alone, the unfinished line as far as it has got (`typing`,
+// about 20 a second). The unfinished line is kept here as `live`, never as an entry: the painter hears nothing of it, a film does not
+// record it, and the line event that ends it (or a reject, or the turn's end) takes it away.
 
 import { parseLine } from '@conduit/language';
 import type { Issue } from '@conduit/language';
@@ -45,6 +46,11 @@ export interface LangLog {
   openTurn(turn: string): void;
   line(turn: string, seq: number, text: string, issues: readonly Issue[], playhead: number): void;
   dropped(turn: string, raw: string, issues: readonly Issue[], playhead: number): void;
+  /** the line being written right now, as far as it has got, or null */
+  readonly live: { readonly turn: string; readonly text: string } | null;
+  typing(turn: string, text: string): void;
+  /** the turn is over: nothing is being written */
+  settle(turn: string): void;
   /** the turn the pane is showing: the latest opened */
   readonly turn: string | null;
   entriesOf(turn: string): readonly LangEntry[];
@@ -57,6 +63,7 @@ export function createLangLog(start: boolean): LangLog {
   const listeners = new Set<() => void>();
   let on = start;
   let current: string | null = null;
+  let live: { readonly turn: string; readonly text: string } | null = null;
   const tell = (): void => {
     for (const listener of listeners) listener();
   };
@@ -81,7 +88,21 @@ export function createLangLog(start: boolean): LangLog {
     get turn() {
       return current;
     },
+    get live() {
+      return live;
+    },
+    typing(turn, text) {
+      if (current !== null && turn !== current) return;
+      live = text === '' ? null : { turn, text };
+      tell();
+    },
+    settle(turn) {
+      if (live === null || live.turn !== turn) return;
+      live = null;
+      tell();
+    },
     openTurn(turn) {
+      live = null;
       current = turn;
       listOf(turn);
       tell();
@@ -91,11 +112,13 @@ export function createLangLog(start: boolean): LangLog {
       const line = parsed.kind === 'line' ? parsed.line : null;
       const id = line !== null && 'id' in line && typeof line.id === 'string' ? line.id : null;
       if (current === null || turn !== current) current = turn;
+      live = null;
       listOf(turn).push({ turn, seq, kind: 'line', text, verb: line?.verb ?? null, id, issues, playhead });
       tell();
     },
     dropped(turn, raw, issues, playhead) {
       if (current === null || turn !== current) current = turn;
+      live = null;
       const text = raw.length > WORDS_LIMIT ? `${raw.slice(0, WORDS_LIMIT - 1)}…` : raw;
       listOf(turn).push({ turn, seq: -1, kind: 'dropped', text, verb: null, id: null, issues, playhead });
       tell();

@@ -347,6 +347,12 @@ export type StageEvent =
   | { readonly type: 'reading'; readonly turn: string; readonly label: string; readonly state: 'start' | 'done' | 'failed'; readonly message: string | null }
   /** one normalised line of Series; `seq` increases over the whole session */
   | { readonly type: 'line'; readonly turn: string; readonly seq: number; readonly text: string; readonly issues: readonly Issue[] }
+  /**
+   * The line the brain is writing right now, as far as it has got (no newline yet). For the "Show the language" pane only: the painter never
+   * acts on it, it is not part of the turn's score, a reconnecting stream is not given it again, and at most about 20 a second are sent. The
+   * `line` event that follows is the line itself; a pane that has a `line`, a `reject` or an `end` for the turn drops what it was typing.
+   */
+  | { readonly type: 'typing'; readonly turn: string; readonly text: string }
   /** something the brain wrote that was dropped; for the debug HUD only */
   | { readonly type: 'reject'; readonly turn: string; readonly raw: string; readonly issues: readonly Issue[] }
   | { readonly type: 'end'; readonly turn: string; readonly reason: TurnEndReason; readonly message: string | null }
@@ -410,7 +416,7 @@ export type StageEventType = StageEvent['type'];
  * the beat is a named event the page reads but does not pass on as a stage event.)
  */
 export const STREAM_HEARTBEAT = { eventName: 'heartbeat', everyMs: 15_000, silentMs: 40_000 } as const;
-export const STAGE_EVENT_TYPES: readonly StageEventType[] = ['hello', 'turn', 'reading', 'line', 'reject', 'end', 'pass', 'asset', 'data', 'picture', 'candidate', 'critic', 'activity', 'permission', 'doc', 'want'];
+export const STAGE_EVENT_TYPES: readonly StageEventType[] = ['hello', 'turn', 'reading', 'line', 'typing', 'reject', 'end', 'pass', 'asset', 'data', 'picture', 'candidate', 'critic', 'activity', 'permission', 'doc', 'want'];
 
 /** What the page keeps of one ask (HI1): the hand's tries, the choice held, the hints open and how it came out. */
 export interface AskRunFacts {

@@ -123,7 +123,7 @@ export function createCodexCliBrain(settings: Settings): Brain {
       }
       pump = (async () => {
         try {
-          for await (const event of brainEventsFromText(chunks(), styles)) {
+          for await (const event of brainEventsFromText(chunks(), styles, true)) {
             if (keep && event.type === 'reject' && isKeep(event.raw)) continue;
             box.push(event);
           }
