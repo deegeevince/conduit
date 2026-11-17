@@ -1586,7 +1586,8 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   let lit: { readonly group: string; readonly state: 'hot' | 'press' } | null = null;
   const light = (holder: HTMLElement | null, state: 'hot' | 'press'): void => {
     const group = holder?.dataset['askGroup'] ?? null;
-    if (lit === null ? group === null : group !== null && lit.group === group && lit.state === state) return;
+    // (the layer is built again when the words change under a pointer that has not moved: what was lit is then lit again)
+    if (lit === null ? group === null : group !== null && lit.group === group && lit.state === state && text.root.querySelector('[data-lit]') !== null) return;
     for (const node of text.root.querySelectorAll<HTMLElement>('[data-lit]')) delete node.dataset['lit'];
     lit = group === null ? null : { group, state };
     if (group === null) return;

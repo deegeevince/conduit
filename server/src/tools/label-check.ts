@@ -8,7 +8,7 @@
 //   part      a click on the drawn part itself, on plain words, and on the empty ground sends nothing (a label is the target, not a big drawn area)
 //   drag      a pointer that goes down on a label and travels, that crosses a label, or that comes back to it after travelling, sends nothing; the same label is then
 //             tapped with a little wobble and does send one (so the nothing before it is not for want of a live label)
-//   touch     the same with a finger on a tablet: a drag over a label sends nothing, a tap sends one act
+//   touch     the same with a finger on a tablet, with the lens off and on: a drag over a label sends nothing, a tap sends one act
 //   journey   `/?journey=labels` taps "Brakes" on a stage it did not see drawn: the step's tap landed on "brake disc" and the act reached the server
 //
 // Run by `pnpm check` (as `fb-055`) and standalone: `tsx label-check.ts --url <server>`, with smoke's own Tab and Conversation.
@@ -308,52 +308,56 @@ export async function labelGroup(base: string, dir: string, timeoutMs: number, n
   }
   push('fb-055-mouse', began, mouseResults, picture);
 
-  // ---- a finger, on a tablet
-  began = Date.now();
-  note('fb-055: finger');
-  const touchResults: CheckResult[] = [];
-  try {
-    const tab = await Tab.open(TOUCH_SCREEN.width, TOUCH_SCREEN.height, { dpr: TOUCH_SCREEN.dpr, touch: true });
+  // ---- a finger, on a tablet, with the lens off and on (`?lens=1`: the finger is the lens's to pan with, and a tap when it lifts)
+  for (const variant of [{ name: 'touch', page: '' }, { name: 'touch-lens', page: 'lens=1' }]) {
+    began = Date.now();
+    note(`fb-055: finger${variant.page === '' ? '' : ' with the lens'}`);
+    const touchResults: CheckResult[] = [];
     try {
-      const options: Options = { url: base, screens: [], out: dir, turns: new Set(), timeoutMs, parallel: false, demo: false, quiet: true, page: '', say: null, chat: 'off' };
-      const conv = new Conversation(tab, options, { name: TOUCH_SCREEN.name, width: TOUCH_SCREEN.width, height: TOUCH_SCREEN.height }, dir);
-      await tab.send('DOM.enable');
-      await conv.start();
-      const hands = new Hands(tab);
-      const problems: string[] = [];
-      const played = await tab.eval<string | null>(`Promise.resolve(window.__stage.playScript(${JSON.stringify(CAR)})).then(() => null, (e) => String(e && e.message || e))`);
-      const rest = played !== null ? `the script would not play: ${played}` : await conv.rest(true);
-      if (rest !== '') problems.push(rest);
-      let labels: LabelView[] = [];
-      for (let waited = 0; waited < 4000 && labels.length === 0; waited += 200) {
-        labels = await labelsOf(tab);
-        if (labels.length === 0) await sleep(200);
+      const tab = await Tab.open(TOUCH_SCREEN.width, TOUCH_SCREEN.height, { dpr: TOUCH_SCREEN.dpr, touch: true });
+      try {
+        const options: Options = { url: base, screens: [], out: dir, turns: new Set(), timeoutMs, parallel: false, demo: false, quiet: true, page: variant.page, say: null, chat: 'off' };
+        const conv = new Conversation(tab, options, { name: TOUCH_SCREEN.name, width: TOUCH_SCREEN.width, height: TOUCH_SCREEN.height }, dir);
+        await tab.send('DOM.enable');
+        await conv.start();
+        const hands = new Hands(tab);
+        const problems: string[] = [];
+        const played = await tab.eval<string | null>(`Promise.resolve(window.__stage.playScript(${JSON.stringify(CAR)})).then(() => null, (e) => String(e && e.message || e))`);
+        const rest = played !== null ? `the script would not play: ${played}` : await conv.rest(true);
+        if (rest !== '') problems.push(rest);
+        let labels: LabelView[] = [];
+        for (let waited = 0; waited < 4000 && labels.length === 0; waited += 200) {
+          labels = await labelsOf(tab);
+          if (labels.length === 0) await sleep(200);
+        }
+        const disc = labels.find((label) => label.label === 'brake disc');
+        if (disc === undefined) problems.push('no brake disc label on the tablet');
+        else {
+          const at = { x: disc.x, y: disc.y };
+          const mark = tab.posted.length;
+          await hands.finger(steps({ x: at.x, y: at.y }, { x: at.x + 90, y: at.y + 70 }, 10));
+          await hands.finger(steps({ x: at.x - 160, y: at.y + 90 }, at, 12));
+          await sleep(SETTLE_MS);
+          const sent = acts(tab, mark);
+          if (sent.length > 0) problems.push(`${sent.length} act${sent.length === 1 ? ' was' : 's were'} sent by a finger dragged from, or onto, the label`);
+          // the page may have moved under the drags (the lens pans): the label is found again where it now is
+          const now = (await labelsOf(tab)).find((label) => label.label === 'brake disc');
+          const again = tab.posted.length;
+          await hands.finger([now === undefined ? at : { x: now.x, y: now.y }]);
+          await sleep(SETTLE_MS);
+          const tapped = acts(tab, again);
+          const part = tapped.length === 1 ? partOf(tapped[0] as Posted) : null;
+          if (part === null || part.label !== 'brake disc') problems.push(`a finger tap on the label sent ${tapped.length} acts naming ${part === null ? 'nothing' : `"${part.label}"`}, not one naming "brake disc"`);
+        }
+        result(touchResults, `fb-055-${variant.name}`, problems, 'a finger dragged from or onto a label sent nothing; a finger tap on it sent one act naming the brake disc');
+      } finally {
+        await tab.close();
       }
-      const disc = labels.find((label) => label.label === 'brake disc');
-      if (disc === undefined) problems.push('no brake disc label on the tablet');
-      else {
-        const at = { x: disc.x, y: disc.y };
-        const mark = tab.posted.length;
-        await hands.finger(steps({ x: at.x, y: at.y }, { x: at.x + 90, y: at.y + 70 }, 10));
-        await hands.finger(steps({ x: at.x - 160, y: at.y + 90 }, at, 12));
-        await sleep(SETTLE_MS);
-        const sent = acts(tab, mark);
-        if (sent.length > 0) problems.push(`${sent.length} act${sent.length === 1 ? ' was' : 's were'} sent by a finger dragged from, or onto, the label`);
-        const again = tab.posted.length;
-        await hands.finger([at]);
-        await sleep(SETTLE_MS);
-        const tapped = acts(tab, again);
-        const part = tapped.length === 1 ? partOf(tapped[0] as Posted) : null;
-        if (part === null || part.label !== 'brake disc') problems.push(`a finger tap on the label sent ${tapped.length} acts naming ${part === null ? 'nothing' : `"${part.label}"`}, not one naming "brake disc"`);
-      }
-      result(touchResults, 'fb-055-touch', problems, 'a finger dragged from or onto a label sent nothing; a finger tap on it sent one act naming the brake disc');
-    } finally {
-      await tab.close();
+    } catch (error) {
+      result(touchResults, `fb-055-${variant.name}`, [error instanceof Error ? error.message : String(error)], '');
     }
-  } catch (error) {
-    result(touchResults, 'fb-055-touch', [error instanceof Error ? error.message : String(error)], '');
+    push(`fb-055-${variant.name}`, began, touchResults);
   }
-  push('fb-055-touch', began, touchResults);
 
   // ---- the journey
   began = Date.now();
@@ -362,7 +366,8 @@ export async function labelGroup(base: string, dir: string, timeoutMs: number, n
   try {
     const tab = await Tab.open(LABEL_SCREEN.width, LABEL_SCREEN.height);
     try {
-      await tab.send('Page.navigate', { url: `${base}/?journey=labels` });
+      // a journey that cannot find "Brakes" gives up after 25 s, not the minute it would wait for a person's own
+      await tab.send('Page.navigate', { url: `${base}/?journey=labels&journeywait=25` });
       // the journey waits for something to tap: this draws the car while it does
       let status: string | null = null;
       for (let waited = 0; waited < 30_000 && status !== 'running'; waited += 250) {

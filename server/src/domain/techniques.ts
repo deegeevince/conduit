@@ -268,7 +268,8 @@ export const MATCH_NEAR = 0.6;
  * two words or on one word of its own title, and must come close to the best.
  */
 export function selectTechniques(index: readonly TechniqueTerms[], query: TechniqueQuery, limit: number = TECHNIQUE_LIMITS.cards): TechniqueHit[] {
-  const said = query.input.kind === 'prompt' || query.input.kind === 'tap' || query.input.kind === 'act' ? query.input.text : '';
+  // a tap on a label asks about what the label says (fb-055), not about the words of the tap
+  const said = query.input.kind === 'act' && query.input.part !== undefined ? query.input.part.label : query.input.kind === 'prompt' || query.input.kind === 'tap' || query.input.kind === 'act' ? query.input.text : '';
   const other = wordsInOtherSense(said);
   const words = new Set(wordsOf(said).filter((word) => !other.has(word)));
   // An ask for a meaning or a usage, with nothing that asks to see: one word of a recipe's name is not enough to hand it over.
