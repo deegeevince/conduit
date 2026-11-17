@@ -27,6 +27,8 @@ export const SCREENS: readonly Scene[] = [
   { name: 'phone-wide', width: 719, height: 356, dpr: 3, pointer: 'coarse' },
   { name: 'phone-tall', width: 353, height: 595, dpr: 3, pointer: 'coarse' },
   { name: 'desktop', width: 1920, height: 856, dpr: 2, pointer: 'fine' },
+  { name: 'desktop-dpr1', width: 1920, height: 757, dpr: 1, pointer: 'fine' },
+  { name: 'phone-390', width: 390, height: 776, dpr: 2, pointer: 'coarse' },
   { name: 'ipad-mouse', width: 820, height: 971, dpr: 2, pointer: 'fine' },
 ];
 
@@ -63,6 +65,7 @@ export const PATTERNS: readonly Pattern[] = [
   },
   { name: 'cjk', turns: [{ lines: [['scene layout=caption', 0], ['say a | 你好，今天我们来看一个很长的句子，它需要在窄的屏幕上换行显示出来。', 0.4], ['say b | これは日本語の文章で、画面の幅に合わせて折り返されます。', 0.4], ['say c | 한국어 문장도 같은 방식으로 줄을 바꿉니다.', 0.4]] }] },
   { name: 'scripts', turns: [{ lines: [['scene layout=caption', 0], ['say a | Καλημέρα κόσμε, this line has Greek in it', 0.4], ['say b | Привет, мир: и немного кириллицы', 0.4], ['say c | مرحبا بالعالم', 0.4]] }] },
+  { name: 'flow-choices', turns: [{ lines: [['look paper', 0.1], ['scene layout=caption', 0.1], ['flow x5 right | How a bill becomes a law', 0.1], ['node intro in=x5 | Introduced in House or Senate', 0.1], ['node comm from=intro in=x5 | Committee studies and amends it', 0.1], ['node floor1 from=comm in=x5 | First chamber debates and votes', 0.1], ['node floor2 from=floor1:passes in=x5 | Second chamber votes', 0.1], ['node conf from=floor2:different text in=x5 | Both agree on one text', 0.1], ['node pres ask from=conf in=x5 | President signs?', 0.1], ['node law end from=pres:yes in=x5 fill=accent | Law', 0.1], ['node veto from=pres:veto in=x5 | Veto: Congress can override with 2/3', 0.1], ['link veto law id=x6 dashed | override', 0.1], ['say x7 | A bill can die at any step.', 0.1], ['say x9 choice | What happens in committee?', 0.1], ['say x11 choice | How often are vetoes overridden?', 0.1]] }] },
   { name: 'flow', turns: [{ lines: [['scene layout=caption', 0], ['flow x1 down | How it goes', 0.3], ['node a in=x1 | Start here', 0.2], ['node b from=a in=x1 | Then this', 0.2], ['node c from=b in=x1 | Finally that', 0.2], ['say s | Words under the flow', 0.3]] }] },
   { name: 'carry', turns: [{ lines: [['scene layout=caption', 0], ['say a | The first turn says this', 0.3], ['say b | And this, which the next turn will stand on', 0.3]] }, { lines: [['say c | The second turn adds its own line below', 0.3], ['revise a | The first turn said this, but better', 5]] }] },
   { name: 'app', turns: [{ lines: [['scene layout=caption', 0], ['app tally height=320 | Tally', 0.3], ['| <div id="n">0</div>', 0], ['say s | A counter.', 0.3]] }] },

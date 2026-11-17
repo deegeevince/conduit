@@ -257,7 +257,9 @@ export function serializeLine(line: Line): string {
     case 'node': {
       const head: string[] = ['node', line.id, ...line.values.map(number)];
       if (line.shape !== undefined) head.push(line.shape);
-      if (line.from !== undefined) head.push(line.from.label === undefined ? `from=${line.from.id}` : `from=${line.from.id}:${line.from.label}`);
+      // A label of several words is written in quotes, as the parser reads it: bare, its second word would be read as a style of the node, and the page (which
+      // reads this text) would lay out a different line than the server holds.
+      if (line.from !== undefined) head.push(line.from.label === undefined ? `from=${line.from.id}` : `from=${line.from.id}:${/\s/.test(line.from.label) ? `"${line.from.label.replaceAll('"', "'")}"` : line.from.label}`);
       if (line.x !== undefined) head.push(`x=${line.x}`);
       if (line.y !== undefined) head.push(`y=${number(line.y)}`);
       if (line.approx !== undefined) head.push(line.approx === 'yes' ? 'approx' : `approx=${line.approx}`);

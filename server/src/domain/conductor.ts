@@ -213,6 +213,13 @@ const ART_PATIENCE_MS = 120_000;
  * brain to the painter, and the painter's back channel flows in. HTTP routes
  * translate requests into calls on this class and never touch a brain.
  */
+/** What the page measured with, as the session log keeps it: whole when it is small, with the oldest playheads cut when it is not, so that a drift can be worked again from the log alone. */
+function loggedFacts(facts: PageFacts): PageFacts {
+  const text = JSON.stringify(facts);
+  if (text.length <= 8000) return facts;
+  return { ...facts, floors: facts.floors.slice(-120), asks: { runs: facts.asks.runs.slice(-8).map(([key, run]) => [key.slice(0, 200), run] as const), latest: facts.asks.latest.slice(-16).map(([id, key]) => [id, key.slice(0, 200)] as const) } };
+}
+
 export class Conductor {
   private readonly deps: ConductorDeps;
   /** v3 art. One casting of characters a conversation: the fox it drew stays the fox until the brain says `new`. */
@@ -1072,7 +1079,7 @@ export class Conductor {
       case 'report': {
         const report = event.report;
         const turn = s.turns.get(report.turn);
-        this.journal(s, { type: 'report', turn: report.turn, report });
+        this.journal(s, { type: 'report', turn: report.turn, report, ...(event.facts === undefined ? {} : { facts: loggedFacts(event.facts) }) });
         if (turn !== undefined && event.facts !== undefined) turn.facts = event.facts;
         if (event.boxes !== undefined && turn !== undefined && turn.input.kind === 'prompt' && report.outcome === 'finished' && report.skippedAt === null && this.measuresHere(s) && measurable(turn.score.schedule)) {
           // How the turn rested, as the page measured it, against the server's own measure of the same score. Only for a typed prompt: a turn
@@ -1147,7 +1154,7 @@ export class Conductor {
           s.boxes.set(`${event.turn}#${event.pass}`, held);
         }
         if (event.boxes !== undefined) this.noteBoxes(s, `${event.turn}#${event.pass}`, 'page', event.boxes, 'draft', event.turn);
-        this.deps.sessionLog.write(s.id, { type: 'draft', turn: event.turn, pass: event.pass, noted: event.sight.items.filter((item) => item.notes.length > 0).length, picture: event.snapshot, file: null });
+        this.deps.sessionLog.write(s.id, { type: 'draft', turn: event.turn, pass: event.pass, noted: event.sight.items.filter((item) => item.notes.length > 0).length, picture: event.snapshot, file: null, ...(event.facts === undefined ? {} : { facts: loggedFacts(event.facts) }) });
         return;
       case 'presence':
         // A `typing` that is not renewed lapses: a lost "stopped typing" never holds a repair back for long.
@@ -1632,7 +1639,7 @@ export class Conductor {
     }
     const why = `the page's boxes (${held.page}) and the server's (${held.server}) differ at ${key}`;
     this.deps.log.warn('engine.drift', { session: s.id, where, page: held.page, server: held.server, why });
-    this.deps.sessionLog.write(s.id, { type: 'drift', turn, where, page: held.page, server: held.server, why });
+    this.deps.sessionLog.write(s.id, { type: 'drift', turn, where, page: held.page, server: held.server, why, ...(held.facts === undefined ? {} : { facts: loggedFacts(held.facts) }) });
     // it costs the turn it was found in, and only while that turn is the one being measured: a report that comes after the next turn opened has no say in it
     if (s.drift === null && (s.turn === null || s.turn.id === turn)) {
       s.drift = why;

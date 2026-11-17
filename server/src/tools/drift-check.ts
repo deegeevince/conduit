@@ -19,7 +19,9 @@
 // And the check must be able to see: without the page's facts, the same measure is held against the same digest, and at least one case of each
 // of revise, ask and choices has to differ, or the case no longer tests what it was made for.
 
-import { EMPTY_STAGE, TurnScore, parseLine } from '@conduit/language';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { DEMOS, EMPTY_STAGE, LineNormalizer, TurnScore, parseLine, serializeLine } from '@conduit/language';
 import type { BackEvent, Line, PageFacts, StageBase, TurnReport } from '@conduit/language';
 import { ENGINE_VERSION } from '@conduit/web/engine';
 import { measurable, measureDraft } from '../domain/stage-facts';
@@ -118,11 +120,42 @@ export function compare(captures: readonly Capture[]): Tally {
   return tally;
 }
 
+/** The same value with its keys in order, so that two lines are equal when they say the same. */
+function canon(value: unknown): string {
+  return JSON.stringify(value, (_key, item: unknown) => (item !== null && typeof item === 'object' && !Array.isArray(item) ? Object.fromEntries(Object.entries(item as Record<string, unknown>).sort(([a], [b]) => (a < b ? -1 : 1))) : item));
+}
+
+/**
+ * The wire: the server scores the line it holds, the page scores the text the server sends (`serializeLine`) read again. They are one line only if
+ * the text says all of it. Every line the demos write, and the ones below that a brain writes and a demo does not (a port label of several words), goes
+ * through the normaliser as the server does, then through the text and back.
+ */
+export function wireProblems(): string[] {
+  const problems: string[] = [];
+  const written = ['node conf from=floor2:"different text" in=x5 | Both agree', 'node over end from=veto:"2/3 of both" in=x5 | Law anyway', 'node a from=b:"it\'s a long one" in=x5 | Words'];
+  const sources = [...written.map((text, at) => ({ name: `written ${at + 1}`, text })), ...DEMOS.map((demo) => ({ name: demo.name, text: readFileSync(fileURLToPath(import.meta.resolve(`@conduit/language/demos/${demo.name}.series`)), 'utf8') }))];
+  for (const source of sources) {
+    let counter = 0;
+    const normalizer = new LineNormalizer(() => `x${(counter += 1)}`);
+    for (const raw of source.text.split('\n')) {
+      const parsed = parseLine(raw);
+      if (parsed.kind !== 'line') continue;
+      const normalized = normalizer.normalize(parsed.line);
+      if (normalized.line === null) continue;
+      for (const line of [normalized.line, ...(normalized.rest ?? [])]) {
+        const again = parseLine(serializeLine(line));
+        if (again.kind !== 'line' || canon(again.line) !== canon(line)) problems.push(`wire: ${source.name}: "${raw.slice(0, 60)}" is not the same line when the page reads what the server sends`);
+      }
+    }
+  }
+  return problems.slice(0, 8);
+}
+
 /** What each pattern's cases must be able to show without the page's facts, or the case is not testing what it was made for. */
 const MUST_SEE = ['revise-late', 'ask-answered', 'choices', 'controls'] as const;
 
 export async function driftProblems(): Promise<{ problems: string[]; tally: Tally }> {
-  const problems: string[] = [];
+  const problems: string[] = wireProblems();
   const tally = compare(await capture());
   if (tally.agreed < 40) problems.push(`only ${tally.agreed} comparisons were made`);
   for (const line of tally.differed.slice(0, 12)) problems.push(line);
