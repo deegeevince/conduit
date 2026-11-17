@@ -135,8 +135,8 @@ export interface StageApp {
   playTourDemo(name: string): Promise<string>;
   /** Where a tap on the tour's pages, and the tour's bar, go; null forgets it. */
   onTour(handler: ((action: TourAction) => void) | null): void;
-  /** The tour's bar, for a sequence the tour plays itself. */
-  showTourBar(tryText: string | null): void;
+  /** The tour's bar, for a sequence the tour plays itself: up and held across its turns until it is called again with `ready`, when "Try it yourself" can be pressed. */
+  showTourBar(tryText: string | null, ready: boolean): void;
   /** Stops the current turn where it is. */
   interrupt(): void;
   /** The same as tapping the element with this key. */
@@ -868,11 +868,15 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
         if (event.turn === currentTurn || opened.has(event.turn)) return;
         opened.add(event.turn);
         undoChip.hide();
-        tourBar.hide();
+        pendingUndo = false;
+        // The tour's bar is up from the first moment of a tour demo, and the stage keeps its room (fb-004); a sequence the tour plays itself (the memory card) holds it across its turns
+        if (tourHold && event.input.kind !== 'script') tourHold = false;
         if (tourWants !== null && event.input.kind === 'demo' && event.input.script === tourWants) {
           tourTurns.set(event.turn, tourTryFor(tourWants));
+          tourBar.show(tourTryFor(tourWants), false);
           tourWants = null;
-        }
+        } else if (!tourHold) tourBar.hide();
+        refreshViewport();
         if (mutingNext) {
           mutingNext = false;
           mutedTurns.add(event.turn);
@@ -1022,9 +1026,16 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
         if (event.reason === 'done' && ['tap', 'prompt'].includes(turnInputs.get(event.turn)?.kind ?? '') && !showedSomething.has(event.turn)) announce(repliedWith.get(event.turn) ?? 'Nothing new came back for that.');
         showedSomething.delete(event.turn);
         repliedWith.delete(event.turn);
-        if (event.reason === 'done' && drawnTurns.has(event.turn) && turnInputs.get(event.turn)?.kind !== 'demo') undoChip.show();
+        if (event.reason === 'done' && drawnTurns.has(event.turn) && turnInputs.get(event.turn)?.kind !== 'demo') {
+          // while the tour plays a sequence of its own, the Undo chip waits for its end; with the bar up it stands in the bar's row, not over it (fb-031)
+          if (tourHold) pendingUndo = true;
+          else {
+            undoChip.show(tourBar.visible() ? tourBar.row : null);
+            refreshViewport();
+          }
+        }
         drawnTurns.delete(event.turn);
-        if (event.reason === 'done' && tourTurns.has(event.turn)) tourBar.show(tourTurns.get(event.turn) ?? null);
+        if (tourTurns.has(event.turn)) tourBar.ready();
         tourTurns.delete(event.turn);
         lastEnd = { reason: event.reason, message: event.message };
         readingNow.clear();
@@ -1462,19 +1473,28 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   sendPresence();
   let resizeTimer: ReturnType<typeof setTimeout> | undefined;
   let settled: Viewport | null = viewport;
+  /** the room the page's own controls keep at the foot of the stage right now (the tour's bar, fb-004); set once the bar exists */
+  let footNow: () => number = () => 0;
+  const layoutViewport = (): Viewport => {
+    const next = viewportOf(host);
+    const foot = footNow();
+    return foot > 0 ? { ...next, foot } : next;
+  };
+  /** the painter lays out in a viewport that is the stage's size less the room the page's controls keep; told again whenever that changes */
+  const refreshViewport = (): void => {
+    if (disposed) return;
+    const next = layoutViewport();
+    const was = settled;
+    if (was !== null && was.width === next.width && was.height === next.height && was.dpr === next.dpr && (was.foot ?? 0) === (next.foot ?? 0)) return;
+    settled = next;
+    painter.resize(next);
+    lens?.resize();
+    eyes.viewport(next.width, next.height, next.dpr);
+  };
   const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => {
     clearTimeout(resizeTimer);
     // once per settle: a keyboard sliding in or a screen turning fires this many times, and each real change reallocates the stage's buffers
-    resizeTimer = setTimeout(() => {
-      if (disposed) return;
-      const next = viewportOf(host);
-      const was = settled;
-      if (was !== null && was.width === next.width && was.height === next.height && was.dpr === next.dpr) return;
-      settled = next;
-      painter.resize(next);
-      lens?.resize();
-      eyes.viewport(next.width, next.height, next.dpr);
-    }, 200);
+    resizeTimer = setTimeout(refreshViewport, 200);
   });
   observer?.observe(host);
 
@@ -1913,7 +1933,20 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   /** turns whose lines drew, changed or dropped a drawing: the Undo chip follows one of these */
   const drawnTurns = new Set<string>();
   const DRAWING_VERBS = new Set(['circle', 'ellipse', 'rect', 'line', 'poly', 'path', 'group', 'use', 'pix', 'set', 'move', 'drop', 'paint']);
-  const tourBar = createTourBar(host, (action) => tourHandler?.(action));
+  /** a sequence the tour plays itself is on (the memory card): the bar stays up across its turns */
+  let tourHold = false;
+  /** the Undo chip is owed once such a sequence has ended */
+  let pendingUndo = false;
+  const tourBar = createTourBar(
+    host,
+    (action) => {
+      tourHold = false;
+      pendingUndo = false;
+      tourHandler?.(action);
+    },
+    () => refreshViewport(),
+  );
+  footNow = () => tourBar.occupied();
   let tourHandler: ((action: TourAction) => void) | null = null;
   /** the demo `/demo` has asked for, until its turn opens */
   let tourWants: string | null = null;
@@ -1997,7 +2030,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
         audience = next;
         writeAudience(next);
         setTarget(next, pointerKind());
-        painter.resize(viewportOf(host));
+        painter.resize(layoutViewport());
         documents.restyle();
       },
     },
@@ -2037,7 +2070,15 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     onTour(handler) {
       tourHandler = handler;
     },
-    showTourBar: (tryText) => tourBar.show(tryText),
+    showTourBar(tryText, ready) {
+      tourHold = !ready;
+      tourBar.show(tryText, ready);
+      if (ready && pendingUndo) {
+        pendingUndo = false;
+        undoChip.show(tourBar.row);
+      }
+      refreshViewport();
+    },
     playScript: (text) => submit({ kind: 'script', text }, null, true),
     interrupt() {
       sound.stop();

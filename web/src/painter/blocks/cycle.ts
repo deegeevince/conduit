@@ -6,7 +6,7 @@
 // room sets the cycle as a vertical loop: a column, down, and one line up the side.
 
 import type { Point, Polyline } from '@conduit/language';
-import type { BlockPart, StructureInput, StructureLayout } from '../../contracts/blocks';
+import type { BlockPart, StructureInput, StructureLayout, TextSpec } from '../../contracts/blocks';
 import type { Box } from '../../contracts/space';
 import { box, circle, contains, overlaps, right, bottom, union } from './geom';
 import type { Draft, LinkSpec, NodeBox, Note } from './kit';
@@ -109,8 +109,33 @@ function buildCycle(env: Env): Draft {
   const halfW = Math.max(-extent.x, right(extent));
   const halfH = Math.max(-extent.y, bottom(extent));
   const title = env.input.structure.text.trim();
+  // The title stands in the middle of the ring when the ring's own room holds it. A narrow ring has none there ("Water, always moving" did not fit between four nodes on a phone and was
+  // left out): its title is then set large above the ring, the way the loop's is, and the ring has the room that is left (fb-044).
+  const above = env.title();
+  const middleSpec = (inner: number): TextSpec | null => {
+    for (const size of ['l', 'm'] as const) {
+      for (let sh = 1; sh >= env.input.look.minShrink; sh -= 0.15) {
+        const spec = { ...env.spec, size, shrink: env.shrink * sh };
+        const m = env.input.measure(title, spec, Math.max(1, inner * 1.5));
+        if (inner > 0 && m.width <= inner * 1.7 && m.height <= inner * 1.5 && Math.hypot(m.width / 2, m.height / 2) <= inner) return spec;
+      }
+    }
+    return null;
+  };
+  const innerAt = (ps: readonly Placed[], r: number, cx: number, cy: number): number => {
+    let inner = r * Math.min(1, k);
+    for (const p of ps) {
+      const f = box(p.frame.x + cx, p.frame.y + cy, p.frame.width, p.frame.height);
+      const nx = Math.max(f.x, Math.min(cx, right(f)));
+      const ny = Math.max(f.y, Math.min(cy, bottom(f)));
+      inner = Math.min(inner, Math.hypot(nx - cx, ny - cy));
+    }
+    return inner - gap;
+  };
+  const titleAbove = title !== '' && middleSpec(innerAt(placed, Rmin, 0, 0)) === null;
 
-  const finish = (room: Box): ReturnType<Draft['finish']> => {
+  const finish = (full: Box): ReturnType<Draft['finish']> => {
+    const room = titleAbove ? box(full.x, full.y + above.h, full.width, Math.max(1, full.height - above.h)) : full;
     const cx = env.snap(room.x + room.width / 2, 'x');
     const cy = env.snap(room.y + room.height / 2, 'y');
     const fitsAt = (r: number): Placed[] | null => {
@@ -245,8 +270,11 @@ function buildCycle(env: Env): Draft {
       }
     }
 
-    // The title in the middle of the ring.
-    if (title) {
+    // The title above the ring, or in the middle of it.
+    if (titleAbove) {
+      const tp = above.part(full);
+      if (tp) labels.push(tp);
+    } else if (title) {
       let inner = R2 * Math.min(1, k);
       for (const p of ps) {
         const f = abs(p.frame);
@@ -267,12 +295,12 @@ function buildCycle(env: Env): Draft {
         }
         if (done) break;
       }
-      // not in the middle: above the ring if the room has the height, else it is the one thing left out, and said
+      // not in the middle and not above it either: it is the one thing left out, and said
       if (!done) notes.push({ key: env.input.structure.key, note: 'crowded' });
     }
     return { parts: [...fills, ...lines, ...heads, ...frames, ...words, ...labels], boxes, routes, notes };
   };
-  return { width: 2 * halfW, height: 2 * halfH, finish };
+  return { width: 2 * halfW, height: 2 * halfH + (titleAbove ? above.h : 0), finish };
 }
 
 /** A narrow room: nodes in a column of one width, an arrow down each gap, and one line up the right side that closes the loop. */

@@ -1207,6 +1207,7 @@ input {
 
 .prompt__top {
   display: flex;
+  max-width: 100%;
   flex-wrap: wrap;
   align-items: center;
   justify-content: center;
@@ -1222,10 +1223,14 @@ input {
 .prompt__status {
   margin: 0;
   min-width: 0;
+  max-width: 100%;
   font-size: var(--chrome-text-size-small);
   color: var(--chrome-text);
-  overflow-wrap: anywhere;
   text-align: center;
+  /* one line, so the pill cannot outgrow the room the stage keeps clear for it (fb-006); its words are the tooltip and are in the notice for a screen reader */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* a routine status is in the placeholder; its words are kept here for the page's own checks and for a screen reader's reading */
