@@ -5,6 +5,7 @@
 
 import type { Face, Weight } from '@conduit/language';
 import { FACES } from './faces';
+import { isWide } from './fold';
 import type { FaceMetrics } from './faces';
 
 const CACHE_LIMIT = 6000;
@@ -36,7 +37,7 @@ export function prefixEm(text: string, face: Face, weight: Weight): Float64Array
   const running = new Float64Array(text.length + 1);
   for (let i = 0; i < text.length; i += 1) {
     const char = text.charAt(i);
-    const width = metrics === null ? advance : (metrics.advance[char] ?? metrics.fallback);
+    const width = isWide(char) ? 1 : metrics === null ? advance : (metrics.advance[char] ?? metrics.fallback);
     running[i + 1] = (running[i] ?? 0) + width;
   }
   if (cache.size >= CACHE_LIMIT) cache.clear();

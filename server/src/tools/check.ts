@@ -35,6 +35,7 @@ import { CHROME_CANDIDATES, repoRoot, sleep, stop, waitFor } from './explore-bro
 import { Conversation, Tab } from './smoke';
 import { LENS_SCREENS, lensGroup } from './lens-check';
 import { ASK_SCREEN, askGroup } from './ask-check';
+import { DRAW_SCREEN, drawGroup } from './draw-check';
 import { ART_FAKE_MS, ART_SCREEN, artGroup } from './art-check';
 import { CONTINUE_SCREEN, continueFixtures, continueGroup } from './continue-check';
 import { MEMORY_SCREEN, memoryGroup } from './memory-check';
@@ -845,6 +846,22 @@ async function main(): Promise<void> {
     } catch (error) {
       failures += 1;
       process.stdout.write(`  FAIL ask stopped: ${error instanceof Error ? error.message : String(error)}\n`);
+    }
+    // the draw group: Draw opened on a phone held in landscape (719x356 at three pixels to the point), with the lens off and on; the screen must stay lit
+    try {
+      process.stdout.write(`\ndraw ${DRAW_SCREEN.name} (dpr ${DRAW_SCREEN.dpr}, touch)\n`);
+      for (const page of ['', 'lens=1']) {
+        const scenes = await drawGroup(base, DRAW_SCREEN, join(args.out, 'draw'), args.timeoutMs, (text) => (args.quiet ? undefined : process.stdout.write(`[draw] ${text}\n`)), page);
+        for (const scene of scenes) {
+          for (const result of scene.results) {
+            process.stdout.write(`  ${result.verdict === 'PASS' ? 'ok  ' : result.verdict} ${scene.name} ${result.check}: ${result.detail}\n`);
+            if (result.verdict === 'FAIL') failures += 1;
+          }
+        }
+      }
+    } catch (error) {
+      failures += 1;
+      process.stdout.write(`  FAIL draw stopped: ${error instanceof Error ? error.message : String(error)}\n`);
     }
     // the art-maker group: a server of its own whose studio has a fake maker (no model), so a drawing the shelf lacks arrives a few seconds after its placeholder
     const arts: unknown[] = [];

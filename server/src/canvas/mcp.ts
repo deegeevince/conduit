@@ -47,7 +47,7 @@ export const TOOLS: readonly ToolDef[] = [
   },
   {
     name: 'canvas_look',
-    description: 'Rarely needed, and never first: ask the page for a picture of the stage as it stands, for taste. Up to 4 s each, and never before your first line; with none in time you get the facts of canvas_stage.',
+    description: 'Ask the page for a picture of the stage as it stands, whenever a look helps the drawing; never before your first line. Up to 4 s each; with none in time you get the facts of canvas_stage.',
     inputSchema: { type: 'object', properties: { target: { type: 'string' }, wait: { type: 'integer', maximum: 4000 } }, additionalProperties: false },
   },
   {

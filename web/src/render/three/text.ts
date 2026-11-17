@@ -1,12 +1,13 @@
 // The only module that imports troika-three-text.
 
 import type { Face, Layer } from '@conduit/language';
-import { Group, MeshBasicMaterial } from 'three';
+import { CanvasTexture, Group, LinearFilter, Mesh, MeshBasicMaterial, PlaneGeometry, SRGBColorSpace } from 'three';
 import type { IUniform, Vector4 } from 'three';
 import type { Object3D, WebGLProgramParametersWithUniforms } from 'three';
 import { Text, configureTextBuilder, preloadFont } from 'troika-three-text';
 import type { ElementFrame, RunFrame } from '../../contracts/frame';
-import { GLYPHS, fontFor, foldText } from '../../fonts';
+import { FONTS, GLYPHS, fontFor, foldText, hasWide, isWide } from '../../fonts';
+import { prefixEm } from '../../fonts/measure';
 import { FACES } from '../../fonts/faces';
 import { CLIP_FRAGMENT_DECL, CLIP_TEST, CLIP_VERTEX_DECL, clipVertex, makeClipUniform, setClip } from './clip';
 import { BAYER4, HASH } from './glsl';
@@ -21,6 +22,44 @@ const TYPESET_SIZE = 64;
 const SDF_SIZE: Readonly<Record<string, number>> = { vt323: 64, bedstead: 128, 'doto-700': 128, 'doto-900': 128 };
 
 const ALLOWED: ReadonlySet<string> = new Set(GLYPHS);
+
+/** The device's own CJK fonts, in the order a phone, a Mac, a PC and a Linux box are likely to have them. Nothing is downloaded. */
+const WIDE_STACK = '"PingFang SC","Hiragino Sans","Hiragino Kaku Gothic ProN","Apple SD Gothic Neo","Noto Sans CJK SC","Noto Sans SC","Source Han Sans SC","Microsoft YaHei","Yu Gothic","Malgun Gothic",sans-serif';
+/** The most pixels an em of a CJK run is drawn at, and the widest picture of one run. */
+const WIDE_PX = 96;
+const WIDE_MAX_SIDE = 4096;
+
+/** The plane every CJK run is drawn on: one unit, its top left corner at the origin, so a run is placed like troika's text (left, top). */
+let widePlane: PlaneGeometry | null = null;
+const wideGeometry = (): PlaneGeometry => {
+  if (widePlane === null) {
+    widePlane = new PlaneGeometry(1, 1);
+    widePlane.translate(0.5, -0.5, 0);
+  }
+  return widePlane;
+};
+
+/** Face files the page has been asked to register for the 2D canvas (the canvas can draw only what the document has loaded), by font key. */
+const wideFaces = new Map<string, 'loading' | 'done'>();
+function wideFace(key: string): boolean {
+  const state = wideFaces.get(key);
+  if (state === 'done') return true;
+  if (state === undefined) {
+    wideFaces.set(key, 'loading');
+    const face = FONTS[key];
+    if (face === undefined || typeof FontFace === 'undefined' || typeof document === 'undefined') {
+      wideFaces.set(key, 'done');
+      return true;
+    }
+    const loaded = new FontFace(face.family, `url(${face.url}) format("${face.format}")`);
+    void loaded
+      .load()
+      .then((ok) => document.fonts.add(ok))
+      .catch(() => undefined)
+      .finally(() => wideFaces.set(key, 'done'));
+  }
+  return false;
+}
 
 /**
  * Keeps one text mesh per run alive between frames. Text content and font are
@@ -58,6 +97,8 @@ interface RunEntry {
   readonly clip: IUniform<Vector4>;
   content: string;
   fontKey: string;
+  /** a run with CJK characters is a picture of its text, drawn with the device's own font */
+  wide: { readonly mesh: Mesh; readonly material: MeshBasicMaterial; texture: CanvasTexture | null; key: string; em: number } | null;
   token: number;
   ready: boolean;
   /** typeset at least once, so there is something truthful to draw even while a change of text is in flight */
@@ -192,7 +233,7 @@ export function preloadFonts(faces: readonly Face[]): Promise<void> {
 function guard(text: string): string {
   const folded = foldText(text);
   let out = '';
-  for (const char of folded) out += ALLOWED.has(char) ? char : '?';
+  for (const char of folded) out += ALLOWED.has(char) || isWide(char) ? char : '?';
   return out;
 }
 
@@ -306,7 +347,7 @@ export function createTextPool(): TextPool {
     }
     const group = new Group();
     group.add(text);
-    return { text, group, base, clip, content: '', fontKey: '', token: 0, ready: false, typeset: false };
+    return { text, group, base, clip, content: '', fontKey: '', wide: null, token: 0, ready: false, typeset: false };
   };
 
   const disposeEntry = (entry: ElementEntry): void => {
@@ -315,6 +356,11 @@ export function createTextPool(): TextPool {
       run.text.removeFromParent();
       run.text.dispose();
       run.base.dispose();
+      if (run.wide !== null) {
+        run.wide.mesh.removeFromParent();
+        run.wide.texture?.dispose();
+        run.wide.material.dispose();
+      }
     }
   };
 
@@ -326,6 +372,8 @@ export function createTextPool(): TextPool {
   const configureRun = (run: RunEntry, element: ElementFrame, runFrame: RunFrame, style: SurfaceStyle, index: number, order: number, fontKey: string): boolean => {
     const spec = FACES[element.face];
     const content = guard(runFrame.text);
+    if (hasWide(content)) return configureWide(run, element, runFrame, style, order, fontKey, content);
+    if (run.wide !== null) run.wide.mesh.visible = false;
     if (run.content !== content || run.fontKey !== fontKey) {
       run.content = content;
       run.fontKey = fontKey;
@@ -380,6 +428,96 @@ export function createTextPool(): TextPool {
     // The reveal is a share of the run's drawn width, whatever the face: the painter has already turned characters into a width.
     run.text.clipRect = runFrame.reveal >= 1 ? null : [-TYPESET_SIZE * 2, -TYPESET_SIZE * 6, (runFrame.reveal * runFrame.width) / across, TYPESET_SIZE * 2];
     return honest;
+  };
+
+  /** A run with CJK characters: the whole run is drawn on a canvas, one character at a time at the advance the painter measured, and shown on a plane in the run's place. */
+  const configureWide = (run: RunEntry, element: ElementFrame, runFrame: RunFrame, style: SurfaceStyle, order: number, fontKey: string, content: string): boolean => {
+    const spec = FACES[element.face];
+    const bold = element.weight === 'bold';
+    run.text.visible = false;
+    run.content = content;
+    run.fontKey = fontKey;
+    const opacity = element.opacity * runFrame.opacity;
+    const wantedNow = runFrame.reveal > 0 && opacity > 0.002;
+    if (run.wide === null) {
+      const material = new MeshBasicMaterial({ transparent: true, depthTest: false, depthWrite: false, toneMapped: false });
+      material.customProgramCacheKey = () => 'conduit-text-wide';
+      material.onBeforeCompile = (shader) => {
+        patchClip(shader);
+        shader.uniforms['uConduitClip'] = run.clip;
+      };
+      const mesh = new Mesh(wideGeometry(), material);
+      mesh.frustumCulled = false;
+      mesh.visible = false;
+      run.group.add(mesh);
+      run.wide = { mesh, material, texture: null, key: '', em: 0 };
+    }
+    const wide = run.wide;
+    const key = `${content}|${fontKey}|${bold ? 'b' : 'n'}|${element.face}`;
+    if (wide.key !== key) {
+      if (!wideFace(fontKey)) {
+        run.ready = false;
+        return !wantedNow;
+      }
+      const running = prefixEm(content, element.face, bold ? 'bold' : 'normal');
+      const em = running[content.length] ?? 0;
+      const px = Math.max(8, Math.min(WIDE_PX, WIDE_MAX_SIDE / Math.max(1, em)));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.ceil(em * px));
+      canvas.height = Math.max(1, Math.ceil(spec.lineHeight * px));
+      const ctx = canvas.getContext('2d');
+      if (ctx !== null) {
+        const latin = `${bold ? '700 ' : ''}${px}px "${FONTS[fontKey]?.family ?? 'sans-serif'}", ${WIDE_STACK}`;
+        const cjk = `${bold ? '700 ' : ''}${px}px ${WIDE_STACK}`;
+        ctx.fillStyle = '#fff';
+        ctx.textBaseline = 'alphabetic';
+        const baseline = metricsFor(fontKey, spec.lineHeight).baseline * px;
+        for (let i = 0; i < content.length; i += 1) {
+          const char = content.charAt(i);
+          if (char === ' ') continue;
+          ctx.font = isWide(char) ? cjk : latin;
+          // a CJK glyph is centred in its em, a Latin one starts at its pen position, as the painter's running widths place them
+          const x = (running[i] ?? 0) * px;
+          if (isWide(char)) {
+            ctx.textAlign = 'center';
+            ctx.fillText(char, x + px / 2, baseline);
+          } else {
+            ctx.textAlign = 'left';
+            ctx.fillText(char, x, baseline);
+          }
+        }
+      }
+      wide.texture?.dispose();
+      const texture = new CanvasTexture(canvas);
+      texture.colorSpace = SRGBColorSpace;
+      texture.minFilter = LinearFilter;
+      texture.generateMipmaps = false;
+      wide.texture = texture;
+      wide.material.map = texture;
+      wide.material.needsUpdate = true;
+      wide.key = key;
+      wide.em = em;
+    }
+    run.ready = true;
+    run.typeset = true;
+    wide.mesh.visible = wantedNow;
+    if (!wantedNow) return true;
+    const cellHeight = element.fontSize * spec.lineHeight;
+    const scale = element.fontSize / TYPESET_SIZE;
+    const across = scale * element.stretch;
+    const reveal = Math.max(0, Math.min(1, runFrame.reveal));
+    const m = metricsFor(fontKey, spec.lineHeight);
+    run.group.position.set(runFrame.x + runFrame.dx + runFrame.width / 2, -(runFrame.y + runFrame.dy + cellHeight / 2), 0);
+    run.group.rotation.z = 0;
+    run.group.scale.set(runFrame.scale, runFrame.scale, 1);
+    wide.mesh.position.set(-runFrame.width / 2, cellHeight / 2 + (m.baseline - m.target) * element.fontSize, 0);
+    wide.mesh.scale.set(wide.em * TYPESET_SIZE * across * reveal, spec.lineHeight * TYPESET_SIZE * scale, 1);
+    if (wide.texture !== null) wide.texture.repeat.set(Math.max(reveal, 1e-4), 1);
+    wide.mesh.renderOrder = order;
+    wide.material.color.copy(inkColour(style, runFrame.colour));
+    wide.material.opacity = opacity;
+    setClip(run.clip, element.clip);
+    return true;
   };
 
   const syncSet = (

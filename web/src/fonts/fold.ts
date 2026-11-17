@@ -4,6 +4,22 @@ import { GLYPHS } from './glyphs';
 
 const ALLOWED: ReadonlySet<string> = new Set(GLYPHS);
 
+/**
+ * Chinese, Japanese and Korean characters (Han, kana, Hangul, CJK punctuation and the full-width forms), in the Basic Multilingual Plane. No shipped face has them: they are kept by
+ * `foldText`, measured as one em wide, and drawn by the WebGL renderer from the device's own CJK font (see render/three/text.ts), never downloaded.
+ */
+const WIDE = /[\u2E80-\u303F\u3040-\u30FF\u3100-\u312F\u3190-\u31FF\u3400-\u4DBF\u4E00-\u9FFF\uAC00-\uD7AF\uF900-\uFAFF\uFE30-\uFE4F\uFF00-\uFFEF]/;
+
+/** Whether this one character is CJK (one em wide, drawn from the device's own font). */
+export function isWide(char: string): boolean {
+  return WIDE.test(char);
+}
+
+/** Whether any character of the text is CJK. */
+export function hasWide(text: string): boolean {
+  return WIDE.test(text);
+}
+
 const SUBSTITUTES: Readonly<Record<string, string>> = {
   ' ': ' ',
   '\t': ' ',
@@ -55,6 +71,10 @@ export function foldText(text: string): string {
     const base = char.normalize('NFKD').replace(/\p{M}/gu, '');
     if (base !== char && [...base].every((part) => ALLOWED.has(part))) {
       out += base;
+      continue;
+    }
+    if (WIDE.test(char)) {
+      out += char;
       continue;
     }
     if (/\p{Extended_Pictographic}|\p{M}|\p{Cf}/u.test(char)) continue;

@@ -237,6 +237,7 @@ export function createProbedRenderer(): ThreeRenderer {
     canvas.addEventListener('webglcontextlost', onLost);
     canvas.addEventListener('webglcontextrestored', onRestored);
     host.appendChild(canvas);
+    startWatch();
   };
 
   const onLost = (event: Event): void => {
@@ -406,6 +407,31 @@ export function createProbedRenderer(): ThreeRenderer {
       .catch(() => undefined);
   };
 
+  /** Draws the last frame again on the live canvas (a frame the stage is already showing, so nothing changes where it was fine). */
+  const repaint = (): void => {
+    if (gl === null || kit === null || lost || last === null || !drawn) return;
+    try {
+      drawKit(kit, last, quality);
+    } catch {
+      // a failed repaint is the next frame's to show
+    }
+  };
+
+  /** A context taken without a word (no `webglcontextlost`) is found within a couple of seconds, not at the next visit: the cover and a gpu-lost note follow. */
+  let watchTimer: ReturnType<typeof setInterval> | null = null;
+  const watch = (): void => {
+    if (gl === null || canvas === null) return;
+    if (!lost && gl.getContext().isContextLost()) {
+      lost = true;
+      tell('lost');
+      if (lostTimer !== null) clearTimeout(lostTimer);
+      lostTimer = setTimeout(() => rebuild(1), RESTORE_WAIT_MS);
+    }
+  };
+  const startWatch = (): void => {
+    if (watchTimer === null) watchTimer = setInterval(watch, 2000);
+  };
+
   const takeKit = (context: WebGLRenderer): Kit => {
     taking ??= makeKit(context, { width: 160, height: 100, dpr: 1 }, true);
     return taking;
@@ -477,6 +503,7 @@ export function createProbedRenderer(): ThreeRenderer {
     },
 
     recheck() {
+      watch();
       // The page was away: a context lost while it was hidden may never have told us, and one that was lost may be waiting on a timer. Look now.
       if (gl === null || canvas === null) return;
       if (!lost && gl.getContext().isContextLost()) {
@@ -487,7 +514,7 @@ export function createProbedRenderer(): ThreeRenderer {
         if (lostTimer !== null) clearTimeout(lostTimer);
         lostTimer = null;
         rebuild(1);
-      }
+      } else repaint();
     },
 
     onContext(listener) {
@@ -520,6 +547,9 @@ export function createProbedRenderer(): ThreeRenderer {
         takingTarget?.dispose();
         takingTarget = null;
         taking?.pipeline.releaseTargets();
+        // A picture is taken through the live context. Some phones (WebKit) then composite the visible canvas's cleared back buffer, which is black, because nothing was drawn
+        // into it since: the last frame is drawn again so the canvas always holds what the stage is showing.
+        repaint();
       };
       return rasteriseFrame(
         (shot, width, height, withFx, force) => {
@@ -642,6 +672,8 @@ export function createProbedRenderer(): ThreeRenderer {
     dispose() {
       if (lostTimer !== null) clearTimeout(lostTimer);
       lostTimer = null;
+      if (watchTimer !== null) clearInterval(watchTimer);
+      watchTimer = null;
       listeners.clear();
       mounted = null;
       releaseContext();

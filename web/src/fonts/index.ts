@@ -56,4 +56,4 @@ export function fontFor(key: string): FontFace {
   return face;
 }
 
-export { foldText } from './fold';
+export { foldText, hasWide, isWide } from './fold';
