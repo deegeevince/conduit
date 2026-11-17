@@ -321,6 +321,30 @@ export const PAGE_LIB = String.raw`(() => {
       return { px: n, share: n / (w * h) };
     });
   };
+  // what is really drawn where: the colour at each point of a picture (the mean of the 3 by 3 pixels about it), and the share of each region within tol (summed channel distance) of one colour
+  const colourAt = async (url, points, scale) => {
+    const { g, width, height } = await pixelsOf(url);
+    return points.map((p) => {
+      const x = Math.round(p.x * scale), y = Math.round(p.y * scale);
+      if (x < 1 || y < 1 || x >= width - 1 || y >= height - 1) return null;
+      const d = g.getImageData(x - 1, y - 1, 3, 3).data;
+      let r = 0, gg = 0, b = 0;
+      for (let i = 0; i < d.length; i += 4) { r += d[i]; gg += d[i + 1]; b += d[i + 2]; }
+      return [Math.round(r / 9), Math.round(gg / 9), Math.round(b / 9)];
+    });
+  };
+  const colourShare = async (url, rects, rgb, tol, scale) => {
+    const { g, width, height } = await pixelsOf(url);
+    return rects.map((r) => {
+      const x = Math.max(0, Math.floor(r.x * scale)), y = Math.max(0, Math.floor(r.y * scale));
+      const w = Math.min(width - x, Math.ceil(r.w * scale)), h = Math.min(height - y, Math.ceil(r.h * scale));
+      if (w <= 0 || h <= 0) return 0;
+      const d = g.getImageData(x, y, w, h).data;
+      let n = 0;
+      for (let i = 0; i < d.length; i += 4) if (Math.abs(d[i] - rgb[0]) + Math.abs(d[i + 1] - rgb[1]) + Math.abs(d[i + 2] - rgb[2]) <= tol) n++;
+      return n / (w * h);
+    });
+  };
   // the share of pixels that differ between two pictures of one region
   const changed = async (a, b) => {
     const pa = await pixelsOf(a), pb = await pixelsOf(b);
@@ -348,7 +372,7 @@ export const PAGE_LIB = String.raw`(() => {
     };
   };
   const page = () => ({ sw: document.documentElement.scrollWidth, sh: document.documentElement.scrollHeight, iw: window.innerWidth, ih: window.innerHeight, bw: document.body.scrollWidth, bh: document.body.scrollHeight });
-  window.__smoke = { rect, composerInfo, probe, promptInfo, chromeButtons, answer, analyse, inkIn, changed, page };
+  window.__smoke = { rect, composerInfo, probe, promptInfo, chromeButtons, answer, analyse, inkIn, colourAt, colourShare, changed, page };
 })();`;
 
 // ---------------------------------------------------------------------------------------------------------------------------------

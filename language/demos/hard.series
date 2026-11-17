@@ -154,6 +154,41 @@ row fixblank | </script>
 say c1 | An app that draws nothing.
 wait 1
 
+# fb-026: the world's land, real. An app that draws `World.land` (the shelf's Natural Earth outlines) must draw land, and in the right place. This one asks for `uses=charts` only: the
+# `World` it reaches for is loaded anyway (the log holds a `uses-inferred` warning for it). Literal colours, a fixed turn of the globe (centred on 30E 10N): the check reads the screenshot.
+scene fb-026 layout=caption
+app earth height=330 uses=charts | The Earth, drawn from World.land
+row earth | <style>
+row earth | body { margin: 0; overflow: hidden; background: #f4f1ea; }
+row earth | svg { display: block; width: 100vw; height: 100vh; }
+row earth | </style>
+row earth | <svg id="s"></svg>
+row earth | <script>
+row earth | var w = innerWidth, h = innerHeight, svg = d3.select('#s');
+row earth | var proj = d3.geoOrthographic().scale(Math.min(w, h) * 0.45).translate([w / 2, h / 2]).rotate([-30, -10]);
+row earth | var path = d3.geoPath(proj);
+row earth | svg.append('path').datum({ type: 'Sphere' }).attr('d', path).attr('fill', '#1b4f9c');
+row earth | svg.append('path').datum(World.land).attr('d', path).attr('fill', '#e8b84a');
+row earth | </script>
+say c1 | The Earth, from the shelf's land.
+wait 1
+
+# fb-026, the named way: `uses=maps,charts`, and a flat map of the same land through an equirectangular projection (the outlines cross the date line, so a flat map goes through a d3 projection).
+scene fb-026-named layout=caption
+app flat height=300 uses=maps,charts | A flat map of the land
+row flat | <style>
+row flat | body { margin: 0; overflow: hidden; background: #1b4f9c; }
+row flat | svg { display: block; width: 100vw; height: 100vh; }
+row flat | </style>
+row flat | <svg id="s"></svg>
+row flat | <script>
+row flat | var w = innerWidth, h = innerHeight, k = Math.min(w / 360, h / 180);
+row flat | var proj = d3.geoEquirectangular().scale((k * 180) / Math.PI).translate([w / 2, h / 2]);
+row flat | d3.select('#s').append('path').datum(World.land).attr('d', d3.geoPath(proj)).attr('fill', '#e8b84a');
+row flat | </script>
+say c1 | A flat map, from the shelf's land.
+wait 1
+
 # a photo with callouts at spots. The check puts a generated test pattern up as u1 (900 by 600) and, as the server does for a photo a turn carries, the shape is stamped: aspect=1.5
 
 scene photo layout=figure canvas=wide
