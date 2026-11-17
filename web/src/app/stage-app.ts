@@ -1859,21 +1859,22 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     const recording = painter.recording();
     if (recording === null) throw new Error('There is nothing to take away yet. Ask for something first.');
     const snap = painter.snapshot();
-    // With the language pane on, a film is the pane and the stage together: the stage is laid out in the room the pane leaves.
-    const split = lang.on && request.kind === 'video' ? langLayout(request.width, request.height) : null;
+    // A film is the session as it ran: the language pane beside the stage and the input box along the bottom, the stage laid out in the room they leave.
+    const split = request.kind === 'video' ? langLayout(request.width, request.height) : null;
     const size = request.kind === 'script' ? snap.viewport : split !== null ? { width: split.stage.width, height: split.stage.height, dpr: 1 } : { width: request.width, height: request.height, dpr: 1 };
     // What the viewer's hand held and what the charts were given go into the file: it shows the picture as they left it.
+    // A film is the exception: every control starts at its written value, and a change the session recorded plays back at its time. The live controls are never touched.
     const held: Record<string, ControlValue> = {};
-    for (const view of snap.controls) if (view.value !== null) held[view.id] = view.value;
-    const filmOptions = { apps: true, viewport: size, reducedMotion: snap.reducedMotion, arrival: 'at-once' as const, controls: held, data: Object.fromEntries(dataTables) };
+    if (request.kind !== 'video') for (const view of snap.controls) if (view.value !== null) held[view.id] = view.value;
+    const filmOptions = { apps: true, viewport: size, reducedMotion: snap.reducedMotion, arrival: 'at-once' as const, ...(request.kind === 'video' ? {} : { controls: held }), data: Object.fromEntries(dataTables) };
     // A film is of the last answer (a prompt and the taps that carried it on) unless `scope` says the last turn alone, or the whole conversation.
     let film;
     let reelNote: string | null = null;
-    if (request.kind === 'video' && request.scope !== 'turn') {
+    if (request.kind === 'video') {
       const everything = painter.recordings();
       const conversation = request.scope === 'conversation';
-      const turns = conversation ? everything : lastAnswer(everything);
-      const reel = createReel(turns.length > 0 ? turns : [recording], filmOptions, { cards: conversation, maxSeconds: REEL_MAX_SECONDS });
+      const turns = request.scope === 'turn' ? [recording] : conversation ? everything : lastAnswer(everything);
+      const reel = createReel(turns.length > 0 ? turns : [recording], filmOptions, { cards: conversation, maxSeconds: REEL_MAX_SECONDS, session: true });
       film = reel;
       if (reel.leftOut > 0 || reel.cut) reelNote = `The film holds at most ${REEL_MAX_SECONDS / 60} minutes: ${reel.leftOut > 0 ? `the first ${reel.leftOut} turn${reel.leftOut === 1 ? '' : 's'} ${reel.leftOut === 1 ? 'is' : 'are'} left out` : 'the last turn is cut short'}`;
     } else film = createFilm(recording, filmOptions);
