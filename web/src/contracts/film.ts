@@ -4,7 +4,7 @@
 // The exporter, the review page of the exploration harness and "play a
 // script" are all built on this and on nothing else.
 
-import type { ControlValue, ControlValues, DataTable, Line, StageBase, TuneModel, TuneVoice } from '@conduit/language';
+import type { ControlKind, ControlValue, ControlValues, DataTable, Line, StageBase, TuneModel, TuneVoice } from '@conduit/language';
 import type { Frame } from './frame';
 import type { Box, Viewport } from './space';
 
@@ -40,6 +40,19 @@ export interface Recording {
   readonly aspects?: Readonly<Record<string, number>>;
 }
 
+/**
+ * A slider the hand moves while the film plays, as a drag: its value is `from` until `start`, goes to `to` by `end` (the film's own seconds, which may be past its
+ * duration, where the stage goes on breathing), eased at both ends, and is `to` after. The bound picture follows it frame by frame. Only a slider moves; the value is
+ * held to the slider's range and step as the hand's would be.
+ */
+export interface ControlMove {
+  readonly id: string;
+  readonly from: number;
+  readonly to: number;
+  readonly start: number;
+  readonly end: number;
+}
+
 export interface FilmOptions {
   readonly viewport: Viewport;
   /** null: as the recording was first played */
@@ -54,6 +67,8 @@ export interface FilmOptions {
   readonly apps?: boolean;
   /** what the user's hand held, by control id: a film of an explorable shows the picture as they left it. Absent: every control shows what was written. */
   readonly controls?: ControlValues;
+  /** controls the hand moves during the film, as drags; `controls` is where they stand outside the drag's own seconds when it names the same id. Absent: none move. */
+  readonly moves?: readonly ControlMove[];
   /** the rows of DATA that charts drew by reference, by id; null: it could not be had. Absent: such charts are waiting. */
   readonly data?: Readonly<Record<string, DataTable | null>>;
 }
@@ -87,7 +102,7 @@ export interface Film {
    */
   readonly activity?: readonly (readonly [number, number])[];
   /** what each control on stage holds at `seconds`, by id: the surest way to know a film begins with every control at its written value */
-  controlsAt?(seconds: number): readonly { readonly id: string; readonly value: ControlValue | null }[];
+  controlsAt?(seconds: number): readonly { readonly id: string; readonly value: ControlValue | null; /** what kind of control it is */ readonly control?: ControlKind }[];
   /**
    * Where the painter has the element `id` on the stage at `seconds` (the stage's own pixels), or null when it is not there. What a film that follows
    * what is drawn looks at.
@@ -146,6 +161,10 @@ export interface SurroundScene {
   readonly ripple: { readonly x: number; readonly y: number; readonly spread: number } | null;
   /** the cut marker, in words (`⏩ 20 s`), or null */
   readonly marker: string | null;
+  /** the caption standing at the stage's bottom left while a captioned turn is on (`alpha` 0..1 is how far it has faded in), and the colours it is set in: absent when the film has no captions */
+  readonly caption?: { readonly name: string; readonly caption: string; readonly alpha: number; readonly box: Box; /** the type sizes in picture pixels: the name's, then the words' */ readonly sizes: { readonly name: number; readonly words: number }; readonly ink: string; readonly quiet: string; readonly ground: string } | null;
+  /** the tag standing at the stage's top right, and its colours: absent when the film has none */
+  readonly tag?: { readonly text: string; readonly box: Box; readonly size: number; readonly ink: string; readonly ground: string } | null;
 }
 
 /** The part of a 2D canvas context a surround is drawn with (the contracts see no DOM; a `CanvasRenderingContext2D` is one). */

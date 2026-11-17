@@ -14,6 +14,8 @@ import type { Box } from '../contracts/space';
 import { planeQuad } from '../render/place';
 import { shownNote } from './lang-log';
 import type { LangEntry, LangLog } from './lang-log';
+import { labelsOf } from './film-labels';
+import type { Labels, TurnSpan } from './film-labels';
 import { MONO, paletteOf, tokenize } from './lang-style';
 import type { PanePalette, Token, TokenRole } from './lang-style';
 
@@ -27,24 +29,38 @@ export interface LangLayout {
   readonly bar: Box;
   /** how many picture pixels a CSS pixel of the live page is: the picture is the page at 1280 px wide (390 for a tall one), scaled */
   readonly k: number;
+  /** whether the pane and the input box are in the picture; one that is not has an empty box, and the stage has the room */
+  readonly showPane: boolean;
+  readonly showBar: boolean;
 }
+
+/** What of the surround is drawn: each part, default on. With neither, the stage is the whole picture. */
+export interface SurroundParts {
+  readonly pane?: boolean;
+  readonly prompt?: boolean;
+}
+
+const NOWHERE: Box = { x: 0, y: 0, width: 0, height: 0 };
 
 /**
  * How a picture is divided, as the live page divides its own: a wide one has the pane at its left (30% of the width, at least 16rem), a tall one
  * (a phone) has it on top (34% of the height, at least 7rem), and the input box lies along the bottom of both. The stage keeps the rest.
  */
-export function langLayout(width: number, height: number): LangLayout {
+export function langLayout(width: number, height: number, parts: SurroundParts = {}): LangLayout {
+  const showPane = parts.pane !== false;
+  const showBar = parts.prompt !== false;
   const vertical = height > width;
   const k = vertical ? width / 390 : width / 1280;
-  const bar = Math.round(68 * k);
+  const bar = showBar ? Math.round(68 * k) : 0;
   const rest = height - bar;
-  const barBox = { x: 0, y: rest, width, height: bar };
+  const barBox = showBar ? { x: 0, y: rest, width, height: bar } : NOWHERE;
+  if (!showPane) return { width, height, vertical, pane: NOWHERE, stage: { x: 0, y: 0, width, height: rest }, bar: barBox, k, showPane, showBar };
   if (vertical) {
     const pane = Math.round(Math.max(112 * k, rest * 0.34));
-    return { width, height, vertical, pane: { x: 0, y: 0, width, height: pane }, stage: { x: 0, y: pane, width, height: rest - pane }, bar: barBox, k };
+    return { width, height, vertical, pane: { x: 0, y: 0, width, height: pane }, stage: { x: 0, y: pane, width, height: rest - pane }, bar: barBox, k, showPane, showBar };
   }
   const pane = Math.round(Math.max(256 * k, width * 0.3));
-  return { width, height, vertical, pane: { x: 0, y: 0, width: pane, height: rest }, stage: { x: pane, y: 0, width: width - pane, height: rest }, bar: barBox, k };
+  return { width, height, vertical, pane: { x: 0, y: 0, width: pane, height: rest }, stage: { x: pane, y: 0, width: width - pane, height: rest }, bar: barBox, k, showPane, showBar };
 }
 
 interface Piece {
@@ -123,6 +139,8 @@ export interface PaneLead {
   readonly typed: string | null;
   /** where a tap began the turn, as a fraction of the stage (0..1), or null when the film does not know */
   readonly touched: { readonly x: number; readonly y: number } | null;
+  /** seconds from `from` before the typing begins or the touch lands: a slider is being dragged (0: none) */
+  readonly drag: number;
 }
 
 interface Drawn {
@@ -131,7 +149,7 @@ interface Drawn {
 }
 
 /** A pane in film: the lines of the turns in `sources`, laid out once for `layout`, drawn at any moment, with the input box and the typing along the bottom. */
-export function paneSurround(sources: readonly PaneSource[], leads: readonly PaneLead[], log: LangLog, layout: LangLayout, lookAt: (seconds: number) => PanePalette): Surround {
+export function paneSurround(sources: readonly PaneSource[], leads: readonly PaneLead[], log: LangLog, layout: LangLayout, lookAt: (seconds: number) => PanePalette, labels?: { readonly set: Labels; readonly spans: readonly TurnSpan[] }): Surround {
   // The live pane's own metrics (styles/lang.css), in picture pixels: 13px type (12 on a phone) in the mono face, a line a half again as tall, rows 1rem in from each side
   // with a continuation 2ch further in, 0.05rem above and below each row, a head of 0.5rem and 11px type, and 0.5rem above the first row.
   const k = layout.k;
@@ -147,7 +165,7 @@ export function paneSurround(sources: readonly PaneSource[], leads: readonly Pan
   const bodyTop = 8 * k;
   const bodyBottom = 12 * k;
   const items: Item[] = [];
-  for (const source of sources) {
+  for (const source of layout.showPane ? sources : []) {
     const spans = lineSpans(source.recording);
     const floors = new Map(source.recording.lines.map((line) => [line.seq, line.floor ?? 0]));
     let latest = 0;
@@ -249,7 +267,7 @@ export function paneSurround(sources: readonly PaneSource[], leads: readonly Pan
   // ---- the input box
   const bar = layout.bar;
   const pillHeight = Math.round(52 * k);
-  const pill: Box = (() => {
+  const pill: Box = !layout.showBar ? NOWHERE : (() => {
     const width = Math.min(layout.width - size * 2, size * 48);
     return { x: Math.round((layout.width - width) / 2), y: Math.round(bar.y + (bar.height - pillHeight) / 2), width: Math.round(width), height: pillHeight };
   })();
@@ -259,7 +277,7 @@ export function paneSurround(sources: readonly PaneSource[], leads: readonly Pan
       if (t < lead.from || t >= lead.from + lead.acting) continue;
       if (lead.typed === null) return { text: '', sending: false, caret: false };
       const letters = [...lead.typed];
-      const into = t - lead.from - TYPING.before;
+      const into = t - lead.from - lead.drag - TYPING.before;
       const typedFor = letters.length / TYPING.cps;
       if (into < 0) return { text: '', sending: false, caret: true };
       if (into < typedFor) return { text: letters.slice(0, Math.floor(into * TYPING.cps) + 1).join(''), sending: false, caret: true };
@@ -270,11 +288,14 @@ export function paneSurround(sources: readonly PaneSource[], leads: readonly Pan
   const rippleAt = (t: number): { readonly x: number; readonly y: number; readonly spread: number } | null => {
     for (const lead of leads) {
       if (lead.touched === null || lead.typed !== null) continue;
-      const into = t - lead.from - 0.1;
+      const into = t - lead.from - lead.drag - 0.1;
       if (into >= 0 && into < RIPPLE) return { x: lead.touched.x, y: lead.touched.y, spread: into / RIPPLE };
     }
     return null;
   };
+
+  // the caption and the tag, which lie over the stage
+  const said = labels === undefined ? undefined : labelsOf(labels.set, labels.spans, layout.stage, { width: layout.width, height: layout.height });
 
   const sceneAt = (t: number): Drawn => {
     const palette = lookAt(t);
@@ -296,16 +317,18 @@ export function paneSurround(sources: readonly PaneSource[], leads: readonly Pan
       rows.push({ text: [item.entry.text, ...item.note.map((row) => row.map((piece) => piece.text).join('').trim())].join('\n'), top: y + rise, bottom: y + rise + item.height, lit: item === now, width: Math.max(...item.rows.map((row) => row.reduce((sum, piece) => sum + piece.text.length, 0))) * advance, lines: item.rows.length });
     }
     const litRow = rows.find((row) => row.lit) ?? null;
-    const typed = typing(t);
+    const shown = said?.(t, palette);
+    const typed = layout.showBar ? typing(t) : { text: '', sending: false, caret: false };
     const scene: SurroundScene = {
-      panel: window,
+      panel: layout.showPane ? window : NOWHERE,
       rows,
       lit: litRow === null ? null : { top: litRow.top, bottom: litRow.bottom },
       input: { box: pill, text: typed.text, sending: typed.sending },
       ripple: rippleAt(t),
       marker: null,
+      ...(shown === undefined ? {} : { caption: shown.caption, tag: shown.tag }),
     };
-    const paint = (context: SurroundPen): void => {
+    const paintPane = (context: SurroundPen): void => {
       context.save();
       context.fillStyle = palette.ground;
       context.fillRect(pane.x, pane.y, pane.width, pane.height);
@@ -355,7 +378,11 @@ export function paneSurround(sources: readonly PaneSource[], leads: readonly Pan
         for (const row of item.note) setRow(row, true);
       }
       context.restore();
+      context.restore();
+    };
 
+    const paintBar = (context: SurroundPen): void => {
+      context.save();
       // the input box, as the page has it: a pill with the plus at its left and the send button at its right, on the page's own ground
       context.globalAlpha = 1;
       context.fillStyle = palette.ground;
@@ -422,28 +449,34 @@ export function paneSurround(sources: readonly PaneSource[], leads: readonly Pan
       context.stroke();
       context.restore();
     };
+    const paint = (context: SurroundPen): void => {
+      if (layout.showPane) paintPane(context);
+      if (layout.showBar) paintBar(context);
+    };
     return { scene, paint };
   };
 
   const overlay = (context: SurroundPen, t: number): void => {
-    const ripple = rippleAt(t);
-    if (ripple === null) return;
     const palette = lookAt(t);
-    const x = layout.stage.x + ripple.x * layout.stage.width;
-    const y = layout.stage.y + ripple.y * layout.stage.height;
-    context.save();
-    context.strokeStyle = palette.text.verb;
-    context.fillStyle = palette.text.verb;
-    context.lineWidth = Math.max(2, size * 0.18);
-    context.globalAlpha = 0.28 * (1 - ripple.spread);
-    context.beginPath();
-    context.arc(x, y, size * (0.8 + 3.2 * ripple.spread), 0, Math.PI * 2);
-    context.fill();
-    context.globalAlpha = 0.6 * (1 - ripple.spread);
-    context.beginPath();
-    context.arc(x, y, size * (0.8 + 3.2 * ripple.spread), 0, Math.PI * 2);
-    context.stroke();
-    context.restore();
+    const ripple = rippleAt(t);
+    if (ripple !== null) {
+      const x = layout.stage.x + ripple.x * layout.stage.width;
+      const y = layout.stage.y + ripple.y * layout.stage.height;
+      context.save();
+      context.strokeStyle = palette.text.verb;
+      context.fillStyle = palette.text.verb;
+      context.lineWidth = Math.max(2, size * 0.18);
+      context.globalAlpha = 0.28 * (1 - ripple.spread);
+      context.beginPath();
+      context.arc(x, y, size * (0.8 + 3.2 * ripple.spread), 0, Math.PI * 2);
+      context.fill();
+      context.globalAlpha = 0.6 * (1 - ripple.spread);
+      context.beginPath();
+      context.arc(x, y, size * (0.8 + 3.2 * ripple.spread), 0, Math.PI * 2);
+      context.stroke();
+      context.restore();
+    }
+    said?.(t, palette).paint(context);
   };
 
   return { width: layout.width, height: layout.height, stage: layout.stage, draw: (context, t) => sceneAt(t).paint(context), overlay, describe: (t) => sceneAt(t).scene };
@@ -468,20 +501,32 @@ function touchOf(film: Film, part: ReelPart): PaneLead['touched'] {
   return { x: Math.max(0, Math.min(1, x / frame.viewport.width)), y: Math.max(0, Math.min(1, y / frame.viewport.height)) };
 }
 
-/** `film` (made for `layout.stage`'s size) with the pane laid beside or above it and the input box along the bottom. `parts` are the turns the film holds, in order and where each begins; a film of one turn is `[{ turn, from: 0 }]`. */
-export function withPane(film: Film | Reel, recordings: readonly Recording[], log: LangLog, layout: LangLayout): Film {
+/** `film` (made for `layout.stage`'s size) with the pane laid beside or above it and the input box along the bottom (each as `layout` has it). `parts` are the turns the film holds, in order and where each begins; a film of one turn is `[{ turn, from: 0 }]`. `labels` are the captions by turn and the tag that stand over the stage. */
+export function withPane(film: Film | Reel, recordings: readonly Recording[], log: LangLog, layout: LangLayout, labels: Labels = {}): Film {
   const parts = 'parts' in film ? film.parts.filter((part) => !part.card) : null;
   const sources: PaneSource[] = [];
   const leads: PaneLead[] = [];
+  /** where each turn is on the film's clock: from where its lead begins, to where the next turn's lead does (the film's end for the last) */
+  const spans: TurnSpan[] = [];
   if (parts === null) {
     const only = recordings[recordings.length - 1];
-    if (only !== undefined) sources.push({ recording: only, from: 0 });
+    if (only !== undefined) {
+      sources.push({ recording: only, from: 0 });
+      spans.push({ turn: only.turn, from: 0, to: film.duration });
+    }
   } else {
     for (const part of parts) {
       const recording = recordings.find((candidate) => candidate.turn === part.turn);
       if (recording !== undefined) sources.push({ recording, from: part.from });
-      if (part.lead !== undefined) leads.push({ from: part.lead.from, acting: part.lead.acting, waiting: part.lead.waiting, typed: part.lead.typed, touched: touchOf(film, part) });
+      if (part.lead !== undefined) leads.push({ from: part.lead.from, acting: part.lead.acting, waiting: part.lead.waiting, typed: part.lead.typed, touched: touchOf(film, part), drag: part.lead.drag });
     }
+    const all = 'parts' in film ? film.parts : [];
+    parts.forEach((part, index) => {
+      // a card of its own comes after the lead, so the turn is on from the lead's start whether there is a card or not
+      const start = part.lead?.from ?? all.find((candidate) => candidate.turn === part.turn)?.from ?? part.from;
+      const next = parts[index + 1];
+      spans.push({ turn: part.turn, from: start, to: next === undefined ? film.duration : (next.lead?.from ?? all.find((candidate) => candidate.turn === next.turn)?.from ?? next.from) });
+    });
   }
   // The pane's colours are the look's, sampled a few times a second: cheap, and the same for every run of the film.
   const cache = new Map<number, PanePalette>();
@@ -495,5 +540,6 @@ export function withPane(film: Film | Reel, recordings: readonly Recording[], lo
     }
     return palette;
   };
-  return { ...film, surround: paneSurround(sources, leads, log, layout, lookAt) };
+  const labelled = labels.tag !== undefined || (labels.captions !== undefined && Object.keys(labels.captions).length > 0);
+  return { ...film, surround: paneSurround(sources, leads, log, layout, lookAt, labelled ? { set: labels, spans } : undefined) };
 }
