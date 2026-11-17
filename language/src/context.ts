@@ -180,6 +180,8 @@ export interface TurnContext {
   readonly skills?: readonly SkillBlockFacts[];
   /** tables a chart can draw by reference; absent means none */
   readonly data?: readonly DataFacts[];
+  /** v3. The shape (width over height) of each photo this turn's message holds, by upload id: the brief says the photo's frame and its shape. Absent: none known. */
+  readonly photos?: Readonly<Record<string, number>>;
   /**
    * v2.1. What the user asked to hold from now on ("add a visual to every reply"), in their words, oldest first. The brain records
    * one with a `standing | …` line; the conductor keeps it for the conversation and gives it back in every later brief, and the

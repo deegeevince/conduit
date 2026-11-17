@@ -1210,8 +1210,10 @@ function parsePic(head: Head, issues: Issues): Line | null {
   const { id, numbers, names } = splitWords(head.words, true);
   const { props, rest } = readStyleProps(head.pairs, issues);
   let from: string | undefined;
+  let aspect: number | undefined;
   for (const pair of rest) {
     if ((pair.key === 'from' || pair.key === 'upload' || pair.key === 'src') && isValidElementId(pair.value)) from = pair.value;
+    else if (pair.key === 'aspect' && Number.isFinite(Number(pair.value)) && Number(pair.value) > 0.05 && Number(pair.value) < 20) aspect = Number(pair.value);
     else issues.warn('unknown-key', `"${pair.key}" is not a property here; ignored`, pair.token);
   }
   // `pic u1`: the one word that names the upload, when nothing else does.
@@ -1222,7 +1224,7 @@ function parsePic(head: Head, issues: Issues): Line | null {
     return null;
   }
   const box = boxOf(numbers, issues, 'pic');
-  const line = { verb: 'pic' as const, id: bare ? '-' : id, styles: readStyleNames(names, issues), props, from };
+  const line = { verb: 'pic' as const, id: bare ? '-' : id, styles: readStyleNames(names, issues), props, from, ...(aspect === undefined ? {} : { aspect }) };
   return withWhen(box === undefined ? line : { ...line, box }, head.when);
 }
 

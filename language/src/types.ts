@@ -541,6 +541,8 @@ export interface PicLine {
   readonly props: StyleProps;
   readonly from: string;
   readonly box?: CanvasBox;
+  /** width over height of the photo, stamped by the server (never written by the brain): where the photo stands in its box, so `in=<pic>` addresses its own frame exactly */
+  readonly aspect?: number;
   readonly when?: When;
 }
 
