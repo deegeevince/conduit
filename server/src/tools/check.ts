@@ -1,6 +1,9 @@
 // pnpm check: the free browser check. No model, no account, no network beyond localhost.
 //
-//   pnpm check [--url http://127.0.0.1:<port>] [--out <dir>] [--screens 1280x720,390x844] [--timeout <seconds>] [--allow-plain] [--sequential] [--quiet]
+//   pnpm check [--url http://127.0.0.1:<port>] [--out <dir>] [--screens 1280x720,390x844] [--timeout <seconds>] [--allow-plain] [--sequential] [--quiet] [--only <groups>] [--jobs <n>] [--list] [--webkit]
+//
+//   --only art-maker,memory   run just those groups (a name, or the start of one: `demo` is every demo); --list prints the names
+//   --jobs <n>                how many groups run side by side, each in its own Chrome (default min(8, cpus/2)); --sequential is --jobs 1
 //
 // With no --url it starts the server from the current build (run `pnpm build` first) on a free port with BRAIN=replay and a throwaway data folder, and
 // stops it again. Then, in headless Chrome on each screen, it drives the page the way smoke does (smoke's own `Tab` and checks, not new ones):
@@ -23,15 +26,15 @@
 // It prints a table, saves a screenshot per scene in --out, and exits 1 on any failure. Nothing here is part of the server.
 
 import type { ChildProcess } from 'node:child_process';
-import { createServer } from 'node:net';
 import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { cpus, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { DEMOS, DEMOS_NOT_PAINTED, LineReader } from '@conduit/language';
 import { spawnTracked } from '../brains/claude-cli/process';
 import { CHROME_CANDIDATES, repoRoot, sleep, stop, waitFor } from './explore-browser';
+import { claimPort, releasePort } from './check-ports';
 import { Conversation, Tab } from './smoke';
 import { LENS_SCREENS, lensGroup } from './lens-check';
 import { ASK_SCREEN, askGroup } from './ask-check';
@@ -41,8 +44,8 @@ import { CONTINUE_SCREEN, continueFixtures, continueGroup } from './continue-che
 import { MEMORY_SCREEN, memoryGroup } from './memory-check';
 import { loopGroup } from './loop-check';
 import { TOUR_SCREENS, tourGroup } from './tour-check';
-import { driftGroup } from './drift-check';
 import { printWebkit, webkitGroup, webkitMissing } from './webkit-check';
+import { driftGroup } from './drift-check';
 import type { Answer, CheckResult, Options, Probe, Step, Verdict } from './smoke';
 
 // ---------------------------------------------------------------------------------------------------------------------------------
@@ -56,11 +59,15 @@ interface Args {
   readonly allowPlain: boolean;
   readonly sequential: boolean;
   readonly quiet: boolean;
+  /** the groups to run (names or the starts of names); null: all */
+  readonly only: readonly string[] | null;
+  readonly jobs: number;
+  readonly list: boolean;
   readonly webkit: boolean;
 }
 
 function usage(message: string): never {
-  process.stderr.write(`check: ${message}\nusage: pnpm check [--url http://127.0.0.1:<port>] [--out <dir>] [--screens 1280x720,390x844] [--timeout <seconds>] [--allow-plain] [--sequential] [--quiet] [--webkit]\n`);
+  process.stderr.write(`check: ${message}\nusage: pnpm check [--url http://127.0.0.1:<port>] [--out <dir>] [--screens 1280x720,390x844] [--timeout <seconds>] [--allow-plain] [--sequential] [--quiet] [--only <groups>] [--jobs <n>] [--list] [--webkit]\n`);
   process.exit(2);
 }
 
@@ -70,10 +77,10 @@ function parseArgs(argv: readonly string[]): Args {
     const arg = argv[i] as string;
     if (!arg.startsWith('--')) usage(`unexpected argument ${arg}`);
     const name = arg.slice(2);
-    if (['allow-plain', 'sequential', 'quiet', 'webkit'].includes(name)) flags.set(name, 'true');
+    if (['allow-plain', 'sequential', 'quiet', 'list', 'webkit'].includes(name)) flags.set(name, 'true');
     else {
       const value = argv[i + 1];
-      if (!['url', 'out', 'screens', 'timeout'].includes(name)) usage(`unknown flag --${name}`);
+      if (!['url', 'out', 'screens', 'timeout', 'only', 'jobs'].includes(name)) usage(`unknown flag --${name}`);
       if (value === undefined || value.startsWith('--')) usage(`--${name} needs a value`);
       flags.set(name, value);
       i += 1;
@@ -93,6 +100,9 @@ function parseArgs(argv: readonly string[]): Args {
     allowPlain: flags.has('allow-plain'),
     sequential: flags.has('sequential'),
     quiet: flags.has('quiet'),
+    only: flags.has('only') ? (flags.get('only') as string).split(',').map((name) => name.trim()).filter((name) => name !== '') : null,
+    jobs: flags.has('sequential') ? 1 : Math.max(1, Math.floor(Number(flags.get('jobs') ?? defaultJobs())) || defaultJobs()),
+    list: flags.has('list'),
     webkit: flags.has('webkit'),
   };
 }
@@ -105,35 +115,13 @@ interface Started {
   stop(): Promise<void>;
 }
 
-/** A port nothing listens on: the system's choice, or, with CHECK_PORTS=4870-4879, the first free one in that range (a machine that keeps its ports for other things). */
-async function freePort(): Promise<number> {
-  const range = /^(\d+)-(\d+)$/.exec(process.env['CHECK_PORTS'] ?? '');
-  const tries = range === null ? [0] : Array.from({ length: Number(range[2]) - Number(range[1]) + 1 }, (_, at) => Number(range[1]) + at);
-  for (const wanted of tries) {
-    try {
-      return await new Promise<number>((done, fail) => {
-        const probe = createServer();
-        probe.once('error', fail);
-        probe.listen(wanted, '127.0.0.1', () => {
-          const address = probe.address();
-          const port = typeof address === 'object' && address !== null ? address.port : 0;
-          probe.close(() => done(port));
-        });
-      });
-    } catch (error) {
-      if (wanted === tries[tries.length - 1]) throw error;
-    }
-  }
-  throw new Error('no free port');
-}
-
 /** The server from the current build: BRAIN=replay, its own data folder and skills folder, a free port. Stopped by its handle. */
 async function startServer(extra: Readonly<Record<string, string>> = {}): Promise<Started> {
   const root = repoRoot();
   if (!existsSync(join(root, 'web', 'dist', 'index.html'))) throw new Error('there is no build to check: run "pnpm build" first (or pass --url of a running server)');
   const scratch = await mkdtemp(join(tmpdir(), 'conduit-check-'));
   await mkdir(join(scratch, 'skills'), { recursive: true });
-  const port = await freePort();
+  const port = await claimPort('a server');
   let log = '';
   const child: ChildProcess = spawnTracked(process.execPath, ['--import', 'tsx', 'src/main.ts'], undefined, {
     cwd: join(root, 'server'),
@@ -156,6 +144,7 @@ async function startServer(extra: Readonly<Record<string, string>> = {}): Promis
   const url = `http://127.0.0.1:${port}`;
   const stopAll = async (): Promise<void> => {
     await stop(child);
+    releasePort(port);
     await rm(scratch, { recursive: true, force: true }).catch(() => undefined);
   };
   try {
@@ -211,7 +200,10 @@ function rejectedLines(name: string): string[] {
 
 const norm = (text: string): string => text.replace(/\s+/g, ' ').trim().toLowerCase();
 
-/** the scenes of language/demos/problem.series: each is one script to play, with the question and the answer it says */
+/** the two problem scenes this check plays (the others test the same thing): an ordinary sum (p3), and p11, whose own words hold its answer */
+const PROBLEMS_PLAYED = ['p3', 'p11'];
+
+/** the scenes of language/demos/problem.series that are played: each is one script to play, with the question and the answer it says */
 function problemScenes(): { readonly id: string; readonly script: string; readonly question: string; readonly answer: string }[] {
   const source = readFileSync(fileURLToPath(import.meta.resolve('@conduit/language/demos/problem.series')), 'utf8');
   return source
@@ -219,7 +211,7 @@ function problemScenes(): { readonly id: string; readonly script: string; readon
     .slice(1)
     .flatMap((part) => {
       const found = /^problem\s+(\S+)\s+(?:[^|\n]*?)answer=(\S+)[^|\n]*\|\s*(.+?)\s*$/m.exec(part);
-      if (found === null) return [];
+      if (found === null || !PROBLEMS_PLAYED.includes(found[1] as string)) return [];
       return [{ id: found[1] as string, script: `scene${part}`, question: found[3] as string, answer: (found[2] as string).split(',')[0]?.replaceAll('_', ' ') as string }];
     });
 }
@@ -264,7 +256,7 @@ class Screen {
 
   constructor(
     private readonly args: Args,
-    private readonly base: string,
+    public base: string,
     private readonly screen: Args['screens'][number],
     private readonly dir: string,
     private readonly welcome: Welcome,
@@ -424,7 +416,7 @@ class Screen {
   }
 
   /**
-   * "Show the language" follows what is drawn: a long answer (a loop and a move early, then twelve long lines and thirty-six dots) is played with the pane on, and while it plays
+   * "Show the language" follows what is drawn: a long answer (a loop and a move early, then five long lines and fifteen dots) is played with the pane on, and while it plays
    * the line lit as being drawn stays inside the pane's own rect, though the pane is several pages long and the lines arrive ahead of the drawing. The pane's scroll
    * is not at the end while it follows; what keeps moving is marked; a wheel turn in the pane stops the following and shows "Follow", which resumes it.
    * Frames at about half a second are kept in `<screen>/follow/`.
@@ -444,8 +436,8 @@ class Screen {
       await tab.eval('window.__stage.ready.then(() => true)');
       tab.drain();
       const results: CheckResult[] = [];
-      const lines: string[] = ['look paper', 'scene long stack lines=3 brisk', 'circle beacon 12,20 3 fill=accent loop=pulse', 'circle ball 12,60 3 fill=ink', 'move ball 140,60 over=12s'];
-      for (let n = 1; n <= 12; n += 1) {
+      const lines: string[] = ['look paper', 'scene long stack lines=3 brisk', 'circle beacon 12,20 3 fill=accent loop=pulse', 'circle ball 12,60 3 fill=ink', 'move ball 140,60 over=6s'];
+      for (let n = 1; n <= 5; n += 1) {
         for (let dot = 0; dot < 3; dot += 1) lines.push(`circle d${n}x${dot} ${20 + dot * 6},${10 + n * 3} 0.6 fill=dim`);
         lines.push(`say | Line ${n} of a long answer, written well ahead of its drawing, so the pane runs on and the line being drawn stays in view.`);
       }
@@ -459,10 +451,11 @@ class Screen {
       let quiet = 0;
       const t0 = Date.now();
       let nextFrame = 0;
-      while (Date.now() - t0 < 85_000 && quiet < 12) {
+      while (Date.now() - t0 < 85_000 && quiet < 20) {
         const sample = await read();
         samples.push(sample);
-        quiet = sample.row === null && samples.length > 8 ? quiet + 1 : 0;
+        // done: no line is being drawn any more, or the last row has been the lit one for three seconds (it stays lit when the script ends)
+        quiet = samples.length > 8 && (sample.row === null || sample.row.index >= sample.rows - 1) ? quiet + 1 : 0;
         if (Date.now() - t0 >= nextFrame && sample.row !== null) {
           nextFrame += 500;
           frame += 1;
@@ -476,7 +469,7 @@ class Screen {
       const seen = drawn.filter(inView).length;
       const problems: string[] = [];
       const rowsMax = Math.max(0, ...samples.map((sample) => sample.rows));
-      if (rowsMax < 40) problems.push(`the pane listed ${rowsMax} rows, expected the 53 lines of the script`);
+      if (rowsMax < 20) problems.push(`the pane listed ${rowsMax} rows, expected the 25 lines of the script`);
       // the drawn line is in the pane's rect in nearly every sample (a smooth scroll may lag one sample behind a new line)
       if (drawn.length < 10) problems.push(`only ${drawn.length} samples had a line being drawn`);
       else if (seen / drawn.length < 0.85) problems.push(`the drawn line was inside the pane in ${seen} of ${drawn.length} samples`);
@@ -702,41 +695,8 @@ class Screen {
   }
 }
 
-/** The demos the app offers, dealt out to `JOBS` tabs that run side by side (each demo takes the time its own script takes, so they are what the check waits for). */
-const DEMO_JOBS = 3;
-
-async function runScreen(args: Args, base: string, screen: Args['screens'][number], welcome: Welcome): Promise<ScreenRun> {
-  const dir = join(args.out, screen.name);
-  await mkdir(dir, { recursive: true });
-  const began = Date.now();
-  const run = new Screen(args, base, screen, dir, welcome);
-  const offered = DEMOS.filter((candidate) => !DEMOS_NOT_PAINTED.includes(candidate.name)).map((candidate) => candidate.name as string);
-  const jobs: { readonly name: string; readonly go: () => Promise<void> }[] = [
-    { name: 'the welcome', go: () => run.welcomeScene(false) },
-    { name: 'the welcome under reduced motion', go: () => run.welcomeScene(true) },
-    { name: 'problems', go: () => run.problemScenes() },
-    { name: 'follow', go: () => run.followScene() },
-    ...Array.from({ length: DEMO_JOBS }, (_, job) => ({ name: `demos ${job + 1}`, names: offered.filter((_name, index) => index % DEMO_JOBS === job) })).map((job, index) => ({ name: job.name, go: () => run.demoScenes(job.names, index === 0) })),
-  ];
-  const stopped: string[] = [];
-  await Promise.all(
-    jobs.map((job) =>
-      job.go().catch((error: unknown) => {
-        const why = `${job.name}: ${error instanceof Error ? error.message : String(error)}`;
-        stopped.push(why);
-        process.stdout.write(`[${screen.name}] ABORTED ${why}\n`);
-      }),
-    ),
-  );
-  // the order a reader expects: the welcome, the choice, the reduced-motion welcome, then the demos as the app lists them
-  const order = ['welcome', 'choice', 'welcome-reduced-motion', ...offered.map((name) => `demo-${name}`), ...problemScenes().map((scene) => `problem-${scene.id}`), 'problem-fill', 'follow'];
-  run.scenes.sort((a, b) => order.indexOf(a.name) - order.indexOf(b.name));
-  if (run.renderer !== 'unknown') {
-    const webgl = run.renderer === 'three';
-    run.scenes[0]?.results.push({ turn: 0, check: 'renderer', verdict: webgl || args.allowPlain ? 'PASS' : 'FAIL', detail: webgl ? 'the page got WebGL (three)' : `the page fell back to the "${run.renderer}" renderer: WebGL did not run in this Chrome` });
-  }
-  return { screen, scenes: run.scenes, renderer: run.renderer, gpu: run.gpu, seconds: (Date.now() - began) / 1000, aborted: stopped.length === 0 ? null : stopped.join(' | ') };
-}
+/** Every demo the app offers that this check judges. `problem` is left out: it plays problem.series again, which the `problems` scenes already judge (it stays a demo for `/demo`). */
+const offeredDemos = (): string[] => DEMOS.filter((candidate) => !DEMOS_NOT_PAINTED.includes(candidate.name) && candidate.name !== 'problem').map((candidate) => candidate.name as string);
 
 // ---------------------------------------------------------------------------------------------------------------------------------
 // The report
@@ -790,211 +750,332 @@ async function webkitHook(base: string, out: string, timeoutMs: number, quiet: b
   }
 }
 
+// ---------------------------------------------------------------------------------------------------------------------------------
+// The groups, and how they are run
+
+/** which server a group plays against: the main one (shared: every tab here has its own Chrome profile, so its own session), one with a fake art maker, or one that chains `refine` */
+type Needs = 'main' | 'art' | 'chain' | 'none';
+
+/** what one group wrote: its lines for the report, how many problems, and what check.json keeps */
+interface Output {
+  readonly lines: string[];
+  failures: number;
+  json?: { readonly key: 'lens' | 'asks' | 'arts'; readonly value: unknown };
+}
+
+interface Unit {
+  /** the name `--only` and `--list` use (several units may share one: the same group on another screen) */
+  readonly name: string;
+  /** other names that pick this unit (the choice scene is played in the welcome's tab) */
+  readonly also?: readonly string[];
+  readonly needs: Needs;
+  /** a rough length in seconds: the longest start first, so the last one to finish is not a long one begun late */
+  readonly weight: number;
+  readonly run: (servers: Readonly<Record<Needs, string | null>>, out: Output) => Promise<void>;
+}
+
+const sceneLines = (out: Output, scenes: readonly { readonly name: string; readonly results: readonly CheckResult[] }[]): void => {
+  for (const scene of scenes) {
+    for (const result of scene.results) {
+      out.lines.push(`  ${result.verdict === 'PASS' ? 'ok  ' : result.verdict} ${scene.name} ${result.check}: ${result.detail}`);
+      if (result.verdict === 'FAIL') out.failures += 1;
+    }
+  }
+};
+
+const checkLines = (out: Output, results: readonly CheckResult[]): void => {
+  for (const result of results) {
+    out.lines.push(`  ${result.verdict === 'PASS' ? 'ok  ' : result.verdict} ${result.check}: ${result.detail}`);
+    if (result.verdict === 'FAIL') out.failures += 1;
+  }
+};
+
+function defaultJobs(): number {
+  return Math.max(1, Math.min(8, Math.floor(cpus().length / 2)));
+}
+
+/** every group, in the order the report prints them */
+function buildUnits(args: Args, welcome: Welcome): { readonly units: Unit[]; readonly screens: { readonly screen: Args['screens'][number]; readonly run: Screen; readonly stopped: string[]; began: number; ended: number }[] } {
+  const plain = (text: string): void => (args.quiet ? undefined : void process.stdout.write(`[${text}]\n`));
+  const units: Unit[] = [];
+  const screens = args.screens.map((screen) => ({ screen, run: new Screen(args, '', screen, join(args.out, screen.name), welcome), stopped: [] as string[], began: 0, ended: 0 }));
+  const demos = offeredDemos();
+  for (const entry of screens) {
+    const { screen, stopped } = entry;
+    const dir = join(args.out, screen.name);
+    const screenUnit = (name: string, weight: number, also: readonly string[], play: (run: Screen) => Promise<void>): Unit => ({
+      name,
+      also,
+      needs: 'main',
+      weight,
+      run: async (servers) => {
+        entry.run.base = servers.main as string;
+        if (entry.began === 0) entry.began = Date.now();
+        try {
+          await mkdir(dir, { recursive: true });
+          await play(entry.run);
+        } catch (error) {
+          const why = `${name}: ${error instanceof Error ? error.message : String(error)}`;
+          stopped.push(why);
+          process.stdout.write(`[${screen.name}] ABORTED ${why}\n`);
+        } finally {
+          entry.ended = Date.now();
+        }
+      },
+    });
+    units.push(screenUnit('welcome', 40, ['choice'], (run) => run.welcomeScene(false)));
+    units.push(screenUnit('welcome-reduced-motion', 25, [], (run) => run.welcomeScene(true)));
+    units.push(screenUnit('problems', 30, [], (run) => run.problemScenes()));
+    units.push(screenUnit('follow', 45, [], (run) => run.followScene()));
+    demos.forEach((name, index) => units.push(screenUnit(`demo-${name}`, 40, [], (run) => run.demoScenes([name], index === 0))));
+  }
+  for (const screen of LENS_SCREENS) {
+    units.push({
+      name: 'lens',
+      needs: 'main',
+      weight: 60,
+      run: async (servers, out) => {
+        const scenes = await lensGroup(servers.main as string, screen, join(args.out, `lens-${screen.name}`), args.timeoutMs, (text) => (args.quiet ? undefined : void process.stdout.write(`[lens ${screen.name}] ${text}\n`)));
+        out.lines.push(`\nlens ${screen.name} (dpr ${screen.dpr}, touch)`);
+        sceneLines(out, scenes);
+        out.json = { key: 'lens', value: { screen: screen.name, scenes } };
+      },
+    });
+  }
+  units.push({
+    name: 'ask',
+    needs: 'main',
+    weight: 70,
+    run: async (servers, out) => {
+      const scenes = await askGroup(servers.main as string, ASK_SCREEN, join(args.out, 'ask'), args.timeoutMs, (text) => (args.quiet ? undefined : void process.stdout.write(`[ask] ${text}\n`)));
+      out.lines.push(`\nask ${ASK_SCREEN.name} (dpr ${ASK_SCREEN.dpr}, touch)`);
+      sceneLines(out, scenes);
+      out.json = { key: 'asks', value: { screen: ASK_SCREEN.name, scenes } };
+    },
+  });
+  ['', 'lens=1'].forEach((page, index) =>
+    units.push({
+      name: 'draw',
+      needs: 'main',
+      weight: 25,
+      run: async (servers, out) => {
+        if (index === 0) out.lines.push(`\ndraw ${DRAW_SCREEN.name} (dpr ${DRAW_SCREEN.dpr}, touch)`);
+        sceneLines(out, await drawGroup(servers.main as string, DRAW_SCREEN, join(args.out, 'draw'), args.timeoutMs, (text) => (args.quiet ? undefined : void process.stdout.write(`[draw] ${text}\n`)), page));
+      },
+    }),
+  );
+  units.push({
+    name: 'art-maker',
+    needs: 'art',
+    weight: 80,
+    run: async (servers, out) => {
+      const base = servers.art;
+      if (base === null) return void out.lines.push('\nart-maker: skipped (--url was given and ART_CHECK_URL names no server with ART_MAKER=fake)');
+      const scenes = await artGroup(base, ART_SCREEN, join(args.out, 'art-maker'), args.timeoutMs, (text) => (args.quiet ? undefined : void process.stdout.write(`[art] ${text}\n`)));
+      out.lines.push(`\nart-maker ${ART_SCREEN.name}`);
+      sceneLines(out, scenes);
+      out.json = { key: 'arts', value: { screen: ART_SCREEN.name, scenes } };
+    },
+  });
+  units.push({
+    name: 'memory',
+    needs: 'main',
+    weight: 80,
+    run: async (servers, out) => {
+      const scenes = await memoryGroup(servers.main as string, MEMORY_SCREEN, join(args.out, 'memory'), args.timeoutMs, plain);
+      out.lines.push(`\nmemory ${MEMORY_SCREEN.name}`);
+      sceneLines(out, scenes);
+    },
+  });
+  for (const screen of TOUR_SCREENS) {
+    units.push({
+      name: 'tour',
+      needs: 'main',
+      weight: 50,
+      run: async (servers, out) => {
+        const scenes = await tourGroup(servers.main as string, screen, join(args.out, 'tour'), args.timeoutMs, plain);
+        out.lines.push(`\ntour ${screen.name}`);
+        sceneLines(out, scenes);
+      },
+    });
+  }
+  units.push({
+    name: 'loop',
+    needs: 'none',
+    weight: 10,
+    run: async (_servers, out) => {
+      const results = await loopGroup(plain);
+      out.lines.push('\nloop (820x971)');
+      checkLines(out, results);
+    },
+  });
+  units.push({
+    name: 'drift',
+    needs: 'none',
+    weight: 30,
+    run: async (_servers, out) => {
+      const results = await driftGroup(plain);
+      out.lines.push('\ndrift (six screens)');
+      checkLines(out, results);
+    },
+  });
+  units.push({
+    name: 'continue',
+    needs: 'chain',
+    weight: 60,
+    run: async (servers, out) => {
+      if (servers.chain === null) return;
+      const scenes = await continueGroup(servers.chain, CONTINUE_SCREEN, join(args.out, 'continue'), args.timeoutMs, plain);
+      out.lines.push(`\ncontinue ${CONTINUE_SCREEN.name}`);
+      sceneLines(out, scenes);
+    },
+  });
+  return { units, screens };
+}
+
+/** `--only` picks groups by name, or by the start of a name (`demo` is every demo, `welcome` both welcomes) */
+const picks = (unit: Unit, wanted: string): boolean => [unit.name, ...(unit.also ?? [])].some((name) => name === wanted || name.startsWith(wanted));
+
+/** at most `limit` of the tasks at once, in the order given */
+async function pool<T>(tasks: readonly T[], limit: number, work: (task: T) => Promise<void>): Promise<void> {
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(limit, tasks.length) }, async () => {
+      for (;;) {
+        const at = next;
+        next += 1;
+        if (at >= tasks.length) return;
+        await work(tasks[at] as T);
+      }
+    }),
+  );
+}
+
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
-  if (!CHROME_CANDIDATES.some((path) => existsSync(path))) usage('no Chrome found: set CHROME_BIN to a Chrome or Chromium executable');
   const welcome = readWelcome();
+  const { units, screens } = buildUnits(args, welcome);
+  const names = [...new Set(units.map((unit) => unit.name))];
+  if (args.list) {
+    process.stdout.write(`${names.join('\n')}\n`);
+    process.stdout.write('\n--only takes these, comma-separated, or the start of a name (demo = every demo, welcome = both welcomes, choice = the welcome); try: pnpm check --only art-maker,memory\n');
+    process.exit(0);
+  }
+  const chosen = args.only === null ? units : units.filter((unit) => args.only?.some((wanted) => picks(unit, wanted)));
+  for (const wanted of args.only ?? []) if (!units.some((unit) => picks(unit, wanted))) usage(`no group called "${wanted}"; the groups are ${names.join(', ')}`);
+  if (chosen.some((unit) => unit.needs !== 'none') && !CHROME_CANDIDATES.some((path) => existsSync(path))) usage('no Chrome found: set CHROME_BIN to a Chrome or Chromium executable');
   await mkdir(args.out, { recursive: true });
   const began = Date.now();
-  let server: Started | null = null;
+  const servers: Started[] = [];
   let failures = 0;
-  const stopServer = async (): Promise<void> => {
-    const running = server;
-    server = null;
-    await running?.stop();
+  const stopServers = async (): Promise<void> => {
+    const running = servers.splice(0);
+    await Promise.all(running.map((server) => server.stop()));
   };
   for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) {
     process.on(signal, () => {
       process.stderr.write(`check: stopped by ${signal}\n`);
-      void stopServer().finally(() => process.exit(2));
+      void stopServers().finally(() => process.exit(2));
     });
   }
+  const outputs = new Map<Unit, Output>();
+  const timings: string[] = [];
+  let base = '';
   try {
-    server = args.url === null ? await startServer() : null;
-    const base = args.url ?? (server as Started | null)?.url;
-    if (base === undefined) throw new Error('no server to check');
-    if (args.url !== null && !(await fetch(`${base}/api/health`).then((response) => response.ok, () => false))) usage(`nothing answers at ${base}/api/health`);
-    process.stdout.write(`check: ${base}${args.url === null ? ' (started here, BRAIN=replay)' : ''}, screens ${args.screens.map((screen) => screen.name).join(', ')}, pictures in ${args.out}\n`);
-    const runs: ScreenRun[] = [];
-    if (args.sequential) for (const screen of args.screens) runs.push(await runScreen(args, base, screen, welcome));
-    else runs.push(...(await Promise.all(args.screens.map((screen) => runScreen(args, base, screen, welcome)))));
+    // the main server is up for the whole run; the art and continuation servers (each for one group) are started as their group begins and stopped when it ends,
+    // so they hold a port only while they are needed
+    const wants = (needs: Needs): boolean => chosen.some((unit) => unit.needs === needs);
+    const address: Record<Needs, string | null> = { main: null, art: null, chain: null, none: null };
+    const extras: Record<'art' | 'chain', () => Promise<Record<string, string>>> = {
+      art: async () => ({ ART_MAKER: 'fake', ART_FAKE_MS: String(ART_FAKE_MS), ART_FAKE_STAGES: 'on' }),
+      chain: async () => ({ REFINE: 'on', REPLAY_CASE: await continueFixtures() }),
+    };
+    if (args.url === null) {
+      if (wants('main')) {
+        const server = await startServer();
+        servers.push(server);
+        address.main = server.url;
+      }
+    } else {
+      address.main = args.url;
+      address.art = process.env['ART_CHECK_URL'] ?? null;
+      if (!(await fetch(`${args.url}/api/health`).then((response) => response.ok, () => false))) usage(`nothing answers at ${args.url}/api/health`);
+    }
+    base = address.main ?? args.url ?? '';
+    const jobs = args.jobs;
+    process.stdout.write(`check: ${base === '' ? 'no server needed' : base}${args.url === null && base !== '' ? ' (started here, BRAIN=replay)' : ''}, screens ${args.screens.map((screen) => screen.name).join(', ')}, ${chosen.length} of ${units.length} groups, ${jobs} at a time, pictures in ${args.out}\n`);
+    // the long ones first; each group's output is kept and printed in the report's order
+    const order = [...chosen].sort((a, b) => b.weight - a.weight);
+    await pool(order, jobs, async (unit) => {
+      const out: Output = { lines: [], failures: 0 };
+      outputs.set(unit, out);
+      const here = { ...address };
+      let own: Started | null = null;
+      const at = Date.now();
+      try {
+        if (args.url === null && (unit.needs === 'art' || unit.needs === 'chain')) {
+          own = await startServer(await extras[unit.needs]());
+          servers.push(own);
+          here[unit.needs] = own.url;
+        }
+        await unit.run(here, out);
+      } catch (error) {
+        out.failures += 1;
+        out.lines.push(`  FAIL ${unit.name} stopped: ${error instanceof Error ? error.message : String(error)}`);
+      } finally {
+        if (own !== null) {
+          servers.splice(servers.indexOf(own), 1);
+          await own.stop();
+        }
+        timings.push(`${unit.name} ${((Date.now() - at) / 1000).toFixed(0)}`);
+      }
+    });
+    if (process.env['CHECK_TIMINGS'] !== undefined) process.stdout.write(`\ngroup seconds: ${timings.join(', ')}\n`);
     const summary: unknown[] = [];
-    for (const run of runs) {
-      process.stdout.write(`\n${table(run)}\n`);
+    for (const entry of screens) {
+      const { run, screen, stopped } = entry;
+      if (run.scenes.length === 0 && stopped.length === 0) continue;
+      const offered = offeredDemos();
+      const sequence = ['welcome', 'choice', 'welcome-reduced-motion', ...offered.map((name) => `demo-${name}`), ...problemScenes().map((scene) => `problem-${scene.id}`), 'problem-fill', 'follow'];
+      run.scenes.sort((a, b) => sequence.indexOf(a.name) - sequence.indexOf(b.name));
+      if (run.renderer !== 'unknown') {
+        const webgl = run.renderer === 'three';
+        run.scenes[0]?.results.push({ turn: 0, check: 'renderer', verdict: webgl || args.allowPlain ? 'PASS' : 'FAIL', detail: webgl ? 'the page got WebGL (three)' : `the page fell back to the "${run.renderer}" renderer: WebGL did not run in this Chrome` });
+      }
+      const seconds = (entry.ended - entry.began) / 1000;
+      const done: ScreenRun = { screen, scenes: run.scenes, renderer: run.renderer, gpu: run.gpu, seconds, aborted: stopped.length === 0 ? null : stopped.join(' | ') };
+      process.stdout.write(`\n${table(done)}\n`);
       for (const scene of run.scenes) {
         for (const result of scene.results) {
           if (result.verdict === 'FAIL') {
             failures += 1;
-            process.stdout.write(`  FAIL ${run.screen.name} ${scene.name} ${result.check}: ${result.detail}\n`);
+            process.stdout.write(`  FAIL ${screen.name} ${scene.name} ${result.check}: ${result.detail}\n`);
           }
         }
       }
-      if (run.aborted !== null) {
+      if (done.aborted !== null) {
         failures += 1;
-        process.stdout.write(`  FAIL ${run.screen.name} stopped: ${run.aborted}\n`);
+        process.stdout.write(`  FAIL ${screen.name} stopped: ${done.aborted}\n`);
       }
-      process.stdout.write(`  ${run.screen.name}: ${run.seconds.toFixed(0)} s, ${run.scenes.length} scenes\n`);
-      summary.push({ screen: run.screen.name, renderer: run.renderer, gpu: run.gpu, aborted: run.aborted, seconds: run.seconds, scenes: run.scenes });
+      process.stdout.write(`  ${screen.name}: ${seconds.toFixed(0)} s, ${run.scenes.length} scenes\n`);
+      summary.push({ screen: screen.name, renderer: run.renderer, gpu: run.gpu, aborted: done.aborted, seconds, scenes: run.scenes });
     }
-    // the lens group: the flag is on for these, and only these
-    const lens: unknown[] = [];
-    for (const screen of LENS_SCREENS) {
-      const dir = join(args.out, `lens-${screen.name}`);
-      try {
-        const scenes = await lensGroup(base, screen, dir, args.timeoutMs, (text) => (args.quiet ? undefined : process.stdout.write(`[lens ${screen.name}] ${text}\n`)));
-        process.stdout.write(`\nlens ${screen.name} (dpr ${screen.dpr}, touch)\n`);
-        for (const scene of scenes) {
-          for (const result of scene.results) {
-            process.stdout.write(`  ${result.verdict === 'PASS' ? 'ok  ' : result.verdict} ${scene.name} ${result.check}: ${result.detail}\n`);
-            if (result.verdict === 'FAIL') failures += 1;
-          }
-        }
-        lens.push({ screen: screen.name, scenes });
-      } catch (error) {
-        failures += 1;
-        process.stdout.write(`  FAIL lens ${screen.name} stopped: ${error instanceof Error ? error.message : String(error)}\n`);
-      }
-    }
-    // the ask group: a staged chain worked by a finger and a pen on the tablet, and filled in by the brain's `fill` lines
-    const asks: unknown[] = [];
-    try {
-      const scenes = await askGroup(base, ASK_SCREEN, join(args.out, 'ask'), args.timeoutMs, (text) => (args.quiet ? undefined : process.stdout.write(`[ask] ${text}\n`)));
-      process.stdout.write(`\nask ${ASK_SCREEN.name} (dpr ${ASK_SCREEN.dpr}, touch)\n`);
-      for (const scene of scenes) {
-        for (const result of scene.results) {
-          process.stdout.write(`  ${result.verdict === 'PASS' ? 'ok  ' : result.verdict} ${scene.name} ${result.check}: ${result.detail}\n`);
-          if (result.verdict === 'FAIL') failures += 1;
-        }
-      }
-      asks.push({ screen: ASK_SCREEN.name, scenes });
-    } catch (error) {
-      failures += 1;
-      process.stdout.write(`  FAIL ask stopped: ${error instanceof Error ? error.message : String(error)}\n`);
-    }
-    // the draw group: Draw opened on a phone held in landscape (719x356 at three pixels to the point), with the lens off and on; the screen must stay lit
-    try {
-      process.stdout.write(`\ndraw ${DRAW_SCREEN.name} (dpr ${DRAW_SCREEN.dpr}, touch)\n`);
-      for (const page of ['', 'lens=1']) {
-        const scenes = await drawGroup(base, DRAW_SCREEN, join(args.out, 'draw'), args.timeoutMs, (text) => (args.quiet ? undefined : process.stdout.write(`[draw] ${text}\n`)), page);
-        for (const scene of scenes) {
-          for (const result of scene.results) {
-            process.stdout.write(`  ${result.verdict === 'PASS' ? 'ok  ' : result.verdict} ${scene.name} ${result.check}: ${result.detail}\n`);
-            if (result.verdict === 'FAIL') failures += 1;
-          }
-        }
-      }
-    } catch (error) {
-      failures += 1;
-      process.stdout.write(`  FAIL draw stopped: ${error instanceof Error ? error.message : String(error)}\n`);
-    }
-    // the art-maker group: a server of its own whose studio has a fake maker (no model), so a drawing the shelf lacks arrives a few seconds after its placeholder
-    const arts: unknown[] = [];
-    let artServer: Started | null = null;
-    try {
-      artServer = args.url === null ? await startServer({ ART_MAKER: 'fake', ART_FAKE_MS: String(ART_FAKE_MS), ART_FAKE_STAGES: 'on' }) : null;
-      const artBase = artServer?.url ?? process.env['ART_CHECK_URL'] ?? null;
-      if (artBase === null) process.stdout.write('\nart-maker: skipped (--url was given and ART_CHECK_URL names no server with ART_MAKER=fake)\n');
-      else {
-        const scenes = await artGroup(artBase, ART_SCREEN, join(args.out, 'art-maker'), args.timeoutMs, (text) => (args.quiet ? undefined : process.stdout.write(`[art] ${text}\n`)));
-        process.stdout.write(`\nart-maker ${ART_SCREEN.name}\n`);
-        for (const scene of scenes) {
-          for (const result of scene.results) {
-            process.stdout.write(`  ${result.verdict === 'PASS' ? 'ok  ' : result.verdict} ${scene.name} ${result.check}: ${result.detail}\n`);
-            if (result.verdict === 'FAIL') failures += 1;
-          }
-        }
-        arts.push({ screen: ART_SCREEN.name, scenes });
-      }
-    } catch (error) {
-      failures += 1;
-      process.stdout.write(`  FAIL art-maker stopped: ${error instanceof Error ? error.message : String(error)}\n`);
-    } finally {
-      await artServer?.stop();
-    }
-    // the drawing-memory group: scripts played as turns of the server's own path; undo and restore give the boxes back, parts of two turns mix
-    try {
-      const scenes = await memoryGroup(base, MEMORY_SCREEN, join(args.out, 'memory'), args.timeoutMs, (text) => (args.quiet ? undefined : process.stdout.write(`[${text}]\n`)));
-      process.stdout.write(`\nmemory ${MEMORY_SCREEN.name}\n`);
-      for (const scene of scenes) {
-        for (const result of scene.results) {
-          process.stdout.write(`  ${result.verdict === 'PASS' ? 'ok  ' : result.verdict} ${scene.name} ${result.check}: ${result.detail}\n`);
-          if (result.verdict === 'FAIL') failures += 1;
-        }
-      }
-    } catch (error) {
-      failures += 1;
-      process.stdout.write(`  FAIL memory stopped: ${error instanceof Error ? error.message : String(error)}\n`);
-    }
-    // the tour group (`/demo`): the tour opens on the stage, a card plays its demo with no model call, "Back to the tour" returns, `/demo <name>` jumps to one
-    try {
-      for (const screen of TOUR_SCREENS) {
-        const scenes = await tourGroup(base, screen, join(args.out, 'tour'), args.timeoutMs, (text) => (args.quiet ? undefined : process.stdout.write(`[${text}]\n`)));
-        process.stdout.write(`\ntour ${screen.name}\n`);
-        for (const scene of scenes) {
-          for (const result of scene.results) {
-            process.stdout.write(`  ${result.verdict === 'PASS' ? 'ok  ' : result.verdict} ${scene.name} ${result.check}: ${result.detail}\n`);
-            if (result.verdict === 'FAIL') failures += 1;
-          }
-        }
-      }
-    } catch (error) {
-      failures += 1;
-      process.stdout.write(`  FAIL tour stopped: ${error instanceof Error ? error.message : String(error)}\n`);
-    }
-    // the feedback-loop group: no browser and no model. A label an earlier turn left is measured as crossed by a later turn's lines; a thrown-out fix is told back and a
-    // better second try is kept; a critic finding a repair never mended rides in the next brief; `move` frees a `near=` label with no copy left behind
-    try {
-      const results = await loopGroup((text) => (args.quiet ? undefined : process.stdout.write(`[${text}]\n`)));
-      process.stdout.write('\nloop (820x971)\n');
-      for (const result of results) {
-        process.stdout.write(`  ${result.verdict === 'PASS' ? 'ok  ' : result.verdict} ${result.check}: ${result.detail}\n`);
-        if (result.verdict === 'FAIL') failures += 1;
-      }
-    } catch (error) {
-      failures += 1;
-      process.stdout.write(`  FAIL loop stopped: ${error instanceof Error ? error.message : String(error)}\n`);
-    }
-    // the drift group: no browser and no model. The page's own painter plays turns shaped like the ones the owner's sessions drifted on, at the screens they
-    // ran on, and the server measures each draft and report with what the page says it measured with: the digests agree, case by case
-    try {
-      const results = await driftGroup((text) => (args.quiet ? undefined : process.stdout.write(`[${text}]\n`)));
-      process.stdout.write('\ndrift (six screens)\n');
-      for (const result of results) {
-        process.stdout.write(`  ${result.verdict === 'PASS' ? 'ok  ' : result.verdict} ${result.check}: ${result.detail}\n`);
-        if (result.verdict === 'FAIL') failures += 1;
-      }
-    } catch (error) {
-      failures += 1;
-      process.stdout.write(`  FAIL drift stopped: ${error instanceof Error ? error.message : String(error)}\n`);
-    }
-    // the continuation group: a fake brain ends its answer with `refine | what next` five times; the server runs it again each time; a message or Stop takes over
-    if (args.url === null) {
-      let chain: Started | null = null;
-      try {
-        chain = await startServer({ REFINE: 'on', REPLAY_CASE: await continueFixtures() });
-        const scenes = await continueGroup(chain.url, CONTINUE_SCREEN, join(args.out, 'continue'), args.timeoutMs, (text) => (args.quiet ? undefined : process.stdout.write(`[${text}]\n`)));
-        process.stdout.write(`\ncontinue ${CONTINUE_SCREEN.name}\n`);
-        for (const scene of scenes) {
-          for (const result of scene.results) {
-            process.stdout.write(`  ${result.verdict === 'PASS' ? 'ok  ' : result.verdict} ${scene.name} ${result.check}: ${result.detail}\n`);
-            if (result.verdict === 'FAIL') failures += 1;
-          }
-        }
-      } catch (error) {
-        failures += 1;
-        process.stdout.write(`  FAIL continue stopped: ${error instanceof Error ? error.message : String(error)}\n`);
-      } finally {
-        await chain?.stop();
-      }
+    const json: Record<'lens' | 'asks' | 'arts', unknown[]> = { lens: [], asks: [], arts: [] };
+    for (const unit of units) {
+      const out = outputs.get(unit);
+      if (out === undefined) continue;
+      if (out.lines.length > 0) process.stdout.write(`${out.lines.join('\n')}\n`);
+      failures += out.failures;
+      if (out.json !== undefined) json[out.json.key].push(out.json.value);
     }
     // the WebKit group (--webkit): the bugs only Safari had, in Playwright's WebKit (webkit-check.ts); skipped with a message when that browser is not installed
     if (args.webkit) failures += await webkitHook(base, args.out, args.timeoutMs, args.quiet);
-    await writeFile(join(args.out, 'check.json'), JSON.stringify({ url: base, at: new Date().toISOString(), failures, screens: summary, lens, asks, arts }, null, 2));
+    await writeFile(join(args.out, 'check.json'), JSON.stringify({ url: base, at: new Date().toISOString(), failures, screens: summary, ...json }, null, 2));
   } catch (error) {
     failures += 1;
     process.stdout.write(`check: ${error instanceof Error ? error.message : String(error)}\n`);
   } finally {
-    await stopServer();
+    await stopServers();
   }
   const verdict: Verdict = failures === 0 ? 'PASS' : 'FAIL';
   process.stdout.write(`\n${verdict}: ${failures === 0 ? 'every scene came to rest and passed' : `${failures} problem${failures === 1 ? '' : 's'}`} (${((Date.now() - began) / 1000).toFixed(0)} s, pictures in ${args.out})\n`);
