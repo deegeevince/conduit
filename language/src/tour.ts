@@ -1,6 +1,9 @@
 // `/demo`: a tour of what Conduit can do. It is one scripted page on the stage (a title, then chapters as tappable cards), each card plays a demo
 // the server already has (no model), and every demo ends with "Back to the tour" and "Try it yourself". Only what works today is listed. This
 // file is the whole of the tour's content; the page that shows it (web/src/chrome/tour.ts) only draws it and does what a tap says.
+// A card is offered only when what it plays is judged: a demo the painter does not paint yet (`DEMOS_NOT_PAINTED`) has no card until it does.
+
+import { DEMOS_NOT_PAINTED } from './demos';
 
 export type TourControl = 'mic' | 'photo' | 'draw' | 'typing';
 
@@ -23,6 +26,8 @@ export interface TourDemoCard {
   readonly lines?: true;
   /** the prompt "Try it yourself" sends to the brain after this demo */
   readonly tryText: string;
+  /** the word for this demo in its chapter's gist; the gist drops it while the card is not offered */
+  readonly gistTerm?: string;
 }
 export interface TourMemoryCard {
   readonly kind: 'memory';
@@ -49,7 +54,7 @@ export interface TourChapter {
 export const TOUR_BACK = 'Back to the tour';
 export const TOUR_TRY = 'Try it yourself';
 
-export const TOUR_CHAPTERS: readonly TourChapter[] = [
+const ALL_CHAPTERS: readonly TourChapter[] = [
   {
     id: 'drawing',
     title: 'Drawing and art',
@@ -90,8 +95,8 @@ export const TOUR_CHAPTERS: readonly TourChapter[] = [
       { kind: 'demo', label: 'Titles: type as the whole show', name: 'titles', tryText: 'Say good morning as a title card' },
       { kind: 'demo', label: 'Styles: one script in every look', name: 'styles', tryText: 'Explain how a bicycle stays upright' },
       { kind: 'demo', label: 'Every language it can write', name: 'scripts', tryText: 'Say hello in Greek, Arabic, Hindi and Thai' },
-      { kind: 'demo', label: 'Code, kept exactly', name: 'code', tryText: 'Show me a small Python function that reverses a string' },
-      { kind: 'demo', label: 'A slide deck', name: 'deck', tryText: 'Make a three slide talk on how bees make honey' },
+      { kind: 'demo', label: 'Code, kept exactly', name: 'code', gistTerm: 'code', tryText: 'Show me a small Python function that reverses a string' },
+      { kind: 'demo', label: 'A slide deck', name: 'deck', gistTerm: 'slides', tryText: 'Make a three slide talk on how bees make honey' },
       { kind: 'demo', label: 'A tune you can hear', name: 'tune', tryText: 'Write me a short tune in a minor key' },
     ],
   },
@@ -125,6 +130,29 @@ export const TOUR_CHAPTERS: readonly TourChapter[] = [
   },
 ];
 
+/** Whether a card is offered: a demo is not while `held` names it; the other cards always are. */
+export function tourCardOffered(card: TourCard, held: readonly string[] = DEMOS_NOT_PAINTED): boolean {
+  return card.kind !== 'demo' || !held.includes(card.name);
+}
+
+/** The chapters as the tour lists them: without the cards of demos that are held, and without their words in the gist. */
+export function offeredChapters(chapters: readonly TourChapter[], held: readonly string[] = DEMOS_NOT_PAINTED): readonly TourChapter[] {
+  return chapters.map((chapter) => {
+    const hidden = chapter.cards.filter((card): card is TourDemoCard => card.kind === 'demo' && !tourCardOffered(card, held));
+    if (hidden.length === 0) return chapter;
+    const terms = hidden.flatMap((card) => (card.gistTerm === undefined ? [] : [card.gistTerm]));
+    return { ...chapter, gist: chapter.gist.split(', ').filter((term) => !terms.includes(term)).join(', '), cards: chapter.cards.filter((card) => tourCardOffered(card, held)) };
+  });
+}
+
+/** What the tour lists. */
+export const TOUR_CHAPTERS: readonly TourChapter[] = offeredChapters(ALL_CHAPTERS);
+
+/** The demo cards the tour holds back for now (their demos are in `DEMOS_NOT_PAINTED`). */
+export function heldTourCards(): readonly TourDemoCard[] {
+  return ALL_CHAPTERS.flatMap((chapter) => chapter.cards.filter((card): card is TourDemoCard => card.kind === 'demo' && !tourCardOffered(card)));
+}
+
 /** The earlier drawings the memory card plays, as real scripts one after another; `{1}` is the turn of the first. */
 export const MEMORY_STEPS: readonly string[] = [
   'look paper\nscene night figure lines=2\ncircle moon1 40,30 12 fill=accent stroke=none\nrect trunk1 108,50 6x30 fill=ink\ncircle crown1 111,42 16 fill=alt stroke=none\nsay | First, a drawing: a moon and a tree.\nwait 1',
@@ -138,12 +166,17 @@ export const TOUR_MEMORY_NOTE = 'Four real turns, no model: draw, draw again, re
 const cardLabels = new Map<string, TourAction>();
 const tryTexts = new Map<string, string>();
 function indexCards(): void {
+  // a demo that is not offered still plays by name (`/demo code`), so it keeps its "Try it yourself"
+  for (const chapter of ALL_CHAPTERS) {
+    for (const card of chapter.cards) {
+      if (card.kind === 'demo' && card.lines !== true) tryTexts.set(card.name, card.tryText);
+    }
+  }
   for (const chapter of TOUR_CHAPTERS) {
     cardLabels.set(chapter.title, { kind: 'chapter', id: chapter.id });
     for (const card of chapter.cards) {
       if (card.kind === 'demo') {
         cardLabels.set(card.label, card.lines === true ? { kind: 'demo', name: card.name, lines: true } : { kind: 'demo', name: card.name });
-        if (card.lines !== true) tryTexts.set(card.name, card.tryText);
       } else if (card.kind === 'memory') {
         cardLabels.set(card.label, { kind: 'memory' });
         tryTexts.set('memory', card.tryText);

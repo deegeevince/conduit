@@ -28,7 +28,7 @@ interface Box {
 }
 interface Scene {
   readonly panel: Box;
-  readonly rows: readonly { readonly text: string; readonly top: number; readonly bottom: number; readonly lit: boolean }[];
+  readonly rows: readonly { readonly text: string; readonly top: number; readonly bottom: number; readonly lit: boolean; readonly width: number; readonly lines: number }[];
   readonly lit: { readonly top: number; readonly bottom: number } | null;
   readonly input: { readonly box: Box; readonly text: string; readonly sending: boolean };
   readonly marker: string | null;
@@ -140,7 +140,13 @@ export function judge(runs: readonly Bench[]): CheckResult[] {
       if (framing.zoom > 1.2) zoomed += 1;
       const u = ((box.x + box.width / 2) / stage.width - framing.x) * framing.zoom + 0.5;
       const v = ((box.y + box.height / 2) / stage.height - framing.y) * framing.zoom + 0.5;
-      if (u < 1 / 6 || u > 5 / 6 || v < 1 / 6 || v > 5 / 6) follow.push(`${where}: ${probe.id} sits at ${u.toFixed(2)},${v.toFixed(2)} of the view while it is drawn`);
+      // the view stays inside the stage (no blank margin): its middle is at least half a view from every edge
+      if (framing.x < 0.5 / framing.zoom - 1e-6 || framing.x > 1 - 0.5 / framing.zoom + 1e-6 || framing.y < 0.5 / framing.zoom - 1e-6 || framing.y > 1 - 0.5 / framing.zoom + 1e-6) follow.push(`${where}: the view of ${probe.id} leaves the stage (zoom ${framing.zoom.toFixed(2)} at ${framing.x.toFixed(2)},${framing.y.toFixed(2)})`);
+      // the element is in the middle two thirds of the view, or, where the view is held at the stage's edge, at least in the view on the side of that edge
+      const heldX = framing.x <= 0.5 / framing.zoom + 1e-6 || framing.x >= 1 - 0.5 / framing.zoom - 1e-6;
+      const heldY = framing.y <= 0.5 / framing.zoom + 1e-6 || framing.y >= 1 - 0.5 / framing.zoom - 1e-6;
+      const fits = (at: number, held: boolean): boolean => (held ? at >= 0 && at <= 1 : at >= 1 / 6 && at <= 5 / 6);
+      if (!fits(u, heldX) || !fits(v, heldY)) follow.push(`${where}: ${probe.id} sits at ${u.toFixed(2)},${v.toFixed(2)} of the view while it is drawn`);
     }
     if (zoomed < 1) follow.push(`${where}: no line was ever followed in close (the check proves nothing)`);
     if (run.follow.rest.framing.zoom > 1.001) follow.push(`${where}: the film ends at zoom ${run.follow.rest.framing.zoom.toFixed(2)}, not on the whole stage`);
@@ -151,14 +157,38 @@ export function judge(runs: readonly Bench[]): CheckResult[] {
   results.push(result('film-notes', notes, 'no row reads "repaired:" or "dropped:" though the log holds such notes'));
   results.push(result('film-cuts', cuts, 'the 20 s wait is cut to 1.2 s with its marker, and the cuts are the session\'s gaps'));
   results.push(result('film-controls', controls, 'the slider starts at its written value whatever the viewer left, and the act turn shows the value it was used at'));
-  results.push(result('film-follow', follow, 'the element being drawn is inside the middle two thirds of the view at zoom 1 to 1.6; the stage is whole while waiting and at rest'));
+  results.push(result('film-follow', follow, 'the element being drawn is in view (the middle two thirds, or held at the stage edge), the view never leaves the stage, zoom 1 to 1.6; the stage is whole while waiting and at rest'));
   return results;
+}
+
+/** The film's rows against the live pane's, by the row's first line: every row's text width within 5% (the live page is 1280 wide, so a CSS pixel is a picture pixel at 1280x720). Exported so a break can be seen to fail. */
+export function judgeLook(wide: Bench, live: Live): CheckResult {
+  const problems: string[] = [];
+  const film = new Map<string, { width: number; lines: number }>();
+  for (const sample of wide.samples) for (const row of sample.scene.rows) film.set((row.text.split('\n')[0] ?? '').trim(), { width: row.width, lines: row.lines });
+  let compared = 0;
+  let wrapped = 0;
+  for (const row of live.rows) {
+    const key = row.text.replace(/\s+/g, ' ').trim();
+    const mine = [...film.entries()].find(([text]) => text.replace(/\s+/g, ' ').trim() === key);
+    if (mine === undefined) continue;
+    compared += 1;
+    const ratio = mine[1].width / row.width;
+    if (Math.abs(ratio - 1) > 0.05) problems.push(`${JSON.stringify(key.slice(0, 40))}: the film row is ${mine[1].width.toFixed(0)} px wide, the live row ${row.width.toFixed(0)} px (${((ratio - 1) * 100).toFixed(0)}%)`);
+    if (mine[1].lines === row.lines) wrapped += 1;
+  }
+  if (compared < 15) problems.push(`only ${compared} rows could be compared`);
+  if (compared > 0 && wrapped < compared * 0.9) problems.push(`only ${wrapped} of ${compared} rows wrap into as many rows as the live pane's`);
+  if (!/JetBrains Mono/.test(live.font)) problems.push(`the live pane is set in ${live.font}, not the mono face`);
+  return result('film-look', problems, `${compared} rows of the film's panel are as wide as the live pane's (within 5%) and wrap as it does (${wrapped} of ${compared}), in ${live.font.split(',')[0]} at ${live.size}`);
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------------
 // The exporter, in a real browser
 
 interface Made {
+  /** the pane's mono face is in the page's font set and loaded when the film is drawn */
+  readonly monoLoaded: boolean;
   readonly cuts: { readonly cuts: readonly { readonly from: number; readonly to: number; readonly removed: number }[]; readonly filmSeconds: number } | null;
   readonly seconds: number;
   readonly bytes: number;
@@ -175,6 +205,7 @@ const PAGE_SCRIPT = String.raw`async (job) => {
     import('/src/bench/film-session.ts'), import('/src/export/index.ts'), import('/src/render/plain/index.ts'), import('/src/render/three/index.ts'), import('/src/app/lang-style.ts'),
   ]);
   await ensureMono();
+  const monoLoaded = [...document.fonts].some((face) => face.family.replace(/["']/g, '') === 'Conduit JetBrains Mono 400' && face.status === 'loaded');
   const session = buildSession(job.width, job.height, job.explorable, { height: 70 });
   const exporter = createExporter({ createRenderer: () => (canUseThree() ? createThreeRenderer() : createPlainRenderer()) });
   const formats = await exporter.formats();
@@ -219,12 +250,90 @@ const PAGE_SCRIPT = String.raw`async (job) => {
   const dark = []; for (const t of job.darkTimes) dark.push(await darkAt(t));
   const stills = [];
   for (const [name, t] of job.stills) { await frameAt(t); stills.push({ name, png: await base64Of(await new Promise((done) => canvas.toBlob(done, 'image/png'))) }); }
-  const out = { cuts: made.cuts || null, seconds: video.duration, bytes: made.blob.size, width: video.videoWidth, height: video.videoHeight, inks, dark, stills, webm: job.keep ? await base64Of(made.blob) : null };
+  const out = { monoLoaded, cuts: made.cuts || null, seconds: video.duration, bytes: made.blob.size, width: video.videoWidth, height: video.videoHeight, inks, dark, stills, webm: job.keep ? await base64Of(made.blob) : null };
   URL.revokeObjectURL(url);
   return out;
 }`;
 
-async function inBrowser(job: Record<string, unknown>): Promise<Made> {
+interface Tools {
+  evaluate<T>(expression: string): Promise<T>;
+  /** the page as a PNG (base64), or a part of it */
+  screenshot(clip?: Box): Promise<string>;
+}
+
+
+/**
+ * The live pane, mounted for real (`chrome/lang-pane.ts` with the page's own stylesheets) on the same lines, in a 1280x720 page: how wide each row's text is and how many rows it
+ * wraps to, by the row's first line. With `film`, a picture of the film's panel is laid beside it, so one screenshot has both.
+ */
+const LIVE_SCRIPT = String.raw`async (job) => {
+  const [{ buildSession }, { createLangLog }, { mountLangPane }, { ensureMono }] = await Promise.all([
+    import('/src/bench/film-session.ts'), import('/src/app/lang-log.ts'), import('/src/chrome/lang-pane.ts'), import('/src/app/lang-style.ts'),
+  ]);
+  await ensureMono();
+  for (const name of ['tokens', 'chrome', 'lang']) {
+    const link = document.createElement('link');
+    link.rel = 'stylesheet'; link.href = '/src/styles/' + name + '.css?direct';
+    document.head.append(link);
+    await new Promise((done) => { link.onload = done; link.onerror = done; });
+  }
+  document.body.className = 'page-stage';
+  document.body.style.cssText = 'margin:0;background:#fff';
+  const session = buildSession(job.width, job.height, job.explorable);
+  const roles = session.film.frameAt(job.paletteAt).spec.roles;
+  const root = document.documentElement;
+  root.style.setProperty('--stage-ground', roles.ground); root.style.setProperty('--stage-ink', roles.ink); root.style.setProperty('--stage-dim', roles.dim); root.style.setProperty('--stage-accent', roles.accent);
+  const app = document.createElement('div');
+  app.id = 'app';
+  app.style.cssText = 'position:fixed;left:0;top:0;width:' + job.width + 'px;height:' + job.height + 'px;display:grid;background:var(--stage-ground)';
+  const stage = document.createElement('div'); stage.className = 'stage';
+  app.append(stage); document.body.append(app);
+  const log = createLangLog(false);
+  const none = () => ({ lines: [], playhead: 0, motions: [], elements: [], turn: null });
+  const menu = { add: () => ({ set() {}, remove() {} }) };
+  const pane = mountLangPane(app, stage, { lang: log, painter: { snapshot: none } }, menu);
+  log.set(true);
+  const turn = session.recordings[0];
+  log.openTurn(turn.turn);
+  for (const entry of session.log.entriesOf(turn.turn)) {
+    if (entry.kind === 'dropped') log.dropped(turn.turn, entry.text, entry.issues, 0);
+    else log.line(turn.turn, entry.seq, entry.text, entry.issues, 0);
+  }
+  await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
+  const list = app.querySelector('.lang__body');
+  list.scrollTop = 0;
+  const rows = [];
+  for (const row of app.querySelectorAll('.lang__row')) {
+    const range = document.createRange();
+    range.selectNodeContents(row);
+    const rects = [...range.getClientRects()].filter((r) => r.width > 0);
+    const left = row.getBoundingClientRect().left + parseFloat(getComputedStyle(row).paddingLeft) - parseFloat(getComputedStyle(row).fontSize) * 0.6 * 2;
+    const tops = new Set(rects.map((r) => Math.round(r.top)));
+    const right = Math.max(...rects.map((r) => r.right));
+    rows.push({ text: row.textContent, width: right - left, lines: tops.size, font: getComputedStyle(row).fontFamily + ' ' + getComputedStyle(row).fontSize });
+  }
+  if (job.filmPng) {
+    const holder = document.createElement('div');
+    holder.style.cssText = 'position:fixed;left:' + (job.width * 0.3 + 16) + 'px;top:0;width:' + (job.width * 0.3) + 'px;height:' + job.height + 'px;overflow:hidden;outline:2px solid #888';
+    const image = new Image();
+    image.src = 'data:image/png;base64,' + job.filmPng;
+    image.style.cssText = 'position:absolute;left:0;top:0;width:' + job.width + 'px;height:' + job.height + 'px';
+    holder.append(image);
+    document.body.append(holder);
+    await image.decode();
+  }
+  return { rows, font: getComputedStyle(app.querySelector('.lang')).fontFamily, size: getComputedStyle(app.querySelector('.lang')).fontSize, panel: JSON.parse(JSON.stringify(app.querySelector('.lang').getBoundingClientRect())) };
+}`;
+
+interface Live {
+  readonly rows: readonly { readonly text: string; readonly width: number; readonly lines: number; readonly font: string }[];
+  readonly font: string;
+  readonly size: string;
+}
+
+const exportFilm = (tools: Tools, job: Record<string, unknown>): Promise<Made> => tools.evaluate<Made>(`(${PAGE_SCRIPT})(${JSON.stringify(job)})`);
+
+async function withBrowser<T>(use: (tools: Tools) => Promise<T>): Promise<T> {
   const web = await claimPort('the film page');
   const chrome = await claimPort('the film Chrome');
   const started: ChildProcess[] = [];
@@ -254,7 +363,8 @@ async function inBrowser(job: Record<string, unknown>): Promise<Made> {
       return out.result.value as T;
     };
     await waitFor('the page', 30_000, async () => ((await evaluate<string>('document.readyState')) === 'complete' ? true : null));
-    return await evaluate<Made>(`(${PAGE_SCRIPT})(${JSON.stringify(job)})`);
+    const screenshot = async (clip?: Box): Promise<string> => (await browser.send<{ data: string }>('Page.captureScreenshot', { format: 'png', ...(clip === undefined ? {} : { clip: { ...clip, scale: 1 } }) }, sessionId)).data;
+    return await use({ evaluate, screenshot });
   } finally {
     for (const child of started.splice(0)) await stop(child);
     for (const cleanup of cleanups.splice(0)) await cleanup().catch(() => undefined);
@@ -264,7 +374,7 @@ async function inBrowser(job: Record<string, unknown>): Promise<Made> {
 }
 
 /** the times (on the cut film's clock) the real frames are looked at, from the bench's own scenes */
-function plan(run: Bench): { readonly typed: number[]; readonly marker: number; readonly scrolled: number; readonly back: number; readonly slider: number; readonly act: number; readonly close: number; readonly rest: number; readonly box: Box } {
+function plan(run: Bench): { readonly typed: number[]; readonly marker: number; readonly scrolled: number; readonly back: number; readonly slider: number; readonly act: number; readonly close: number; readonly rest: number; readonly t1End: number; readonly box: Box } {
   const at = (find: (sample: Bench['samples'][number], index: number) => boolean, fallback: number): number => run.samples.find(find)?.at ?? fallback;
   const typedAt = (letters: number): number => at((sample) => sample.scene.input.text.length >= letters, 1);
   const cut = run.cutList.cuts[0];
@@ -290,6 +400,8 @@ function plan(run: Bench): { readonly typed: number[]; readonly marker: number; 
     act: run.height.inAct.at - removed(run.height.inAct.at),
     close: closest === undefined ? 1 : closest.real - removed(closest.real),
     rest: run.filmDuration - 0.2,
+    // the end of the first turn: every one of its rows has come and none of the second turn's yet
+    t1End: [...run.samples].reverse().find((sample) => !sample.scene.rows.some((row) => row.text.startsWith('set sun')) && sample.scene.rows.some((row) => row.text.startsWith('button ask')))?.at ?? 1,
     box: run.samples[0]?.scene.input.box ?? { x: 0, y: 0, width: 1, height: 1 },
   };
 }
@@ -303,8 +415,14 @@ export async function filmGroup(note: (text: string) => void = () => undefined):
   if (wide === undefined || process.env['FILM_BENCH_ONLY'] === '1') return results;
   const where = plan(wide);
   const shown = 20;
-  const made = await inBrowser({ width: 1280, height: 720, fps: 10, to: shown, explorable: await readFile(join(repoRoot(), 'language', 'demos', 'explorable.series'), 'utf8'), box: where.box, inkTimes: [0.2, 1.0, 2.0, 3.0, 3.8], darkTimes: [2.0, where.marker], stills: [], keep: false });
+  const { made, live } = await withBrowser(async (tools) => {
+    const exported = await exportFilm(tools, { width: 1280, height: 720, fps: 10, to: shown, explorable: await readFile(join(repoRoot(), 'language', 'demos', 'explorable.series'), 'utf8'), box: where.box, inkTimes: [0.2, 1.0, 2.0, 3.0, 3.8], darkTimes: [2.0, where.marker], stills: [], keep: false });
+    const looked = await tools.evaluate<Live>(`(${LIVE_SCRIPT})(${JSON.stringify({ width: 1280, height: 720, paletteAt: 30, explorable: await readFile(join(repoRoot(), 'language', 'demos', 'explorable.series'), 'utf8') })})`);
+    return { made: exported, live: looked };
+  });
+  results.push(judgeLook(wide, live));
   const problems: string[] = [];
+  if (!made.monoLoaded) problems.push('the pane\'s mono face was not loaded when the film was drawn (the rows would be set in a fallback face)');
   if (made.cuts === null) problems.push('the exporter returned no cuts');
   else if (JSON.stringify(made.cuts.cuts) !== JSON.stringify(wide.cutList.cuts)) problems.push(`the exporter's cuts ${JSON.stringify(made.cuts.cuts)} are not the session's ${JSON.stringify(wide.cutList.cuts)}`);
   if (Math.abs(made.seconds - shown) > 0.6) problems.push(`the file is ${made.seconds.toFixed(2)} s, not the ${shown} s asked`);
@@ -325,21 +443,30 @@ async function proof(dir: string, size: { width: number; height: number }): Prom
   const run = runs.find((candidate) => candidate.screen === `${size.width}x${size.height}`) ?? runs[0];
   if (run === undefined) throw new Error('no bench run');
   const where = plan(run);
-  const made = await inBrowser({
-    ...size,
-    fps: 15,
-    to: null,
-    explorable: await readFile(join(repoRoot(), 'language', 'demos', 'explorable.series'), 'utf8'),
-    box: where.box,
-    inkTimes: [],
-    darkTimes: [],
-    keep: true,
-    stills: [
-      ['typing-a', where.typed[1]], ['typing-b', where.typed[2]], ['typing-c', where.typed[3]], ['typing-sent', where.typed[4]],
-      ['marker', where.marker], ['panel-scrolled', where.scrolled], ['panel-back-up', where.back],
-      ['slider-written', where.slider], ['slider-act', where.act], ['follow-close', where.close], ['rest', where.rest],
-    ],
+  const explorable = await readFile(join(repoRoot(), 'language', 'demos', 'explorable.series'), 'utf8');
+  const { made, live, shot } = await withBrowser(async (tools) => {
+    const exported = await exportFilm(tools, {
+      ...size,
+      fps: 15,
+      to: null,
+      explorable,
+      box: where.box,
+      inkTimes: [],
+      darkTimes: [],
+      keep: true,
+      stills: [
+        ['typing-a', where.typed[1]], ['typing-b', where.typed[2]], ['typing-c', where.typed[3]], ['typing-sent', where.typed[4]],
+        ['marker', where.marker], ['panel-scrolled', where.scrolled], ['panel-back-up', where.back],
+        ['slider-written', where.slider], ['slider-act', where.act], ['follow-close', where.close], ['rest', where.rest], ['panel-t1', where.t1End],
+      ],
+    });
+    const filmPng = exported.stills.find((still) => still.name === 'panel-t1')?.png ?? '';
+    const looked = await tools.evaluate<Live>(`(${LIVE_SCRIPT})(${JSON.stringify({ ...size, paletteAt: 30, explorable, filmPng })})`);
+    return { made: exported, live: looked, shot: await tools.screenshot({ x: 0, y: 0, width: size.width, height: size.height }) };
   });
+  await writeFile(join(dir, `film-${size.width}x${size.height}-live-vs-film.png`), Buffer.from(shot, 'base64'));
+  const look = judgeLook(run, live);
+  process.stdout.write(`${look.verdict} ${look.check}: ${look.detail}\n`);
   const stem = `film-${size.width}x${size.height}`;
   if (made.webm !== null) await writeFile(join(dir, `${stem}.webm`), Buffer.from(made.webm, 'base64'));
   await writeFile(join(dir, `${stem}.cuts.json`), `${JSON.stringify(made.cuts, null, 2)}\n`);

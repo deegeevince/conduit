@@ -5,6 +5,9 @@
 //                holds other ink (a stroke, another word) in the same place
 //   takeover     `document.elementsFromPoint` at the stage's centre and corners: what is there must be in the stage, not an overlay that took the screen
 //   glyphs       the character cells of a CJK line, compared with each other: all alike means "?" or missing-glyph boxes
+//   listings     each `code` block of a scene at rest: on stage in a box of a real size inside the screen, and every row of it read back from the text layer as written
+//                (indentation and all) and really drawn (its words hidden in turn through `hide`: the pixels that change are the row)
+//   slides       the words a scene says and the tables it makes, found on stage (what a deck's slides and a code demo's captions are judged by)
 //   streaming    a turn replayed at about 80 characters a second has its first element on stage before the last line is sent; a recorded stream-json turn
 //                fed through the brain's own reader comes out line by line, not in one burst
 //   flows, photo the two free checks that were never part of `pnpm check` (`pnpm flows`, `pnpm photo-check`), run as groups
@@ -15,6 +18,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { deflateSync } from 'node:zlib';
 import { spawnTracked } from '../brains/claude-cli/process';
+import { LineReader } from '@conduit/language';
 import { brainEventsFromText } from '../domain/lines';
 import { parseStreamLine, textDeltaOf } from '../brains/claude-cli/stream-json';
 import { repoRoot, sleep } from './explore-browser';
@@ -498,3 +502,193 @@ export async function streamFixtureCheck(): Promise<CheckResult[]> {
   return [{ turn: 0, check: 'stream-fixture', verdict: problems.length === 0 ? 'PASS' : 'FAIL', detail: problems.length === 0 ? `${seenAt.length} lines came out one by one while ${total} deltas were fed (first after delta ${seenAt[0]})` : problems.join('; ') }];
 }
 
+
+// ---------------------------------------------------------------------------------------------------------------------------------
+// listings and slides
+
+/** What a demo script holds in one scene: the code blocks (their rows as written), the lines said, how many tables. */
+export interface SceneFacts {
+  /** `id` is null when the script gave the block none (the page names it) */
+  readonly listings: { readonly id: string | null; readonly rows: string[] }[];
+  readonly says: string[];
+  tables: number;
+}
+
+/** The scenes of a script, read the way the page reads it (`LineReader`): `code` blocks with their rows, `say` lines, `table` blocks. A `deck` line opens the first slide, which a `scene` straight after it only names. */
+export function sceneFactsOf(source: string): SceneFacts[] {
+  const reader = new LineReader();
+  const scenes: SceneFacts[] = [];
+  let fresh = false;
+  /** the code block whose rows are being written: any other line closes it */
+  let open: SceneFacts['listings'][number] | null = null;
+  const here = (): SceneFacts => {
+    if (scenes.length === 0) scenes.push({ listings: [], says: [], tables: 0 });
+    return scenes[scenes.length - 1] as SceneFacts;
+  };
+  for (const raw of source.split('\n')) {
+    const result = reader.read(raw);
+    if (result.kind !== 'line') continue;
+    const line = result.line;
+    if (line.verb === 'row') {
+      open?.rows.push(line.cells);
+      continue;
+    }
+    open = null;
+    switch (line.verb) {
+      case 'deck':
+        scenes.push({ listings: [], says: [], tables: 0 });
+        fresh = true;
+        break;
+      case 'scene':
+        if (!fresh) scenes.push({ listings: [], says: [], tables: 0 });
+        fresh = false;
+        break;
+      case 'code':
+        fresh = false;
+        open = { id: line.id === undefined || line.id === '-' ? null : line.id, rows: [] };
+        here().listings.push(open);
+        break;
+      case 'table':
+        fresh = false;
+        here().tables += 1;
+        break;
+      case 'say':
+        fresh = false;
+        here().says.push(line.text);
+        break;
+      default:
+    }
+  }
+  return scenes;
+}
+
+interface Stretch {
+  readonly key: string;
+  readonly row: number;
+  readonly column: number;
+  readonly text: string;
+  readonly x: number;
+  readonly y: number;
+  readonly w: number;
+  readonly h: number;
+}
+
+/** the stretches of text of every listing the text layer holds, as the page has them (the text layer is the painter's own account of where each drawn word is) */
+const STRETCHES = `[...document.querySelectorAll('.stage__text-block--code')].flatMap((block) => {
+  const line = block.querySelector('.stage__text-line');
+  if (!line) return [];
+  const r = line.getBoundingClientRect();
+  return [{ key: block.dataset.key || '', row: Number(block.dataset.row), column: Number(block.dataset.column), text: line.textContent || '', x: r.left, y: r.top, w: r.width, h: r.height }];
+})`;
+
+interface OnStage {
+  readonly id: string;
+  readonly key: string;
+  readonly kind: string;
+  readonly text: string;
+  readonly phase: string;
+  readonly opacity: number;
+  readonly box: { readonly x: number; readonly y: number; readonly width: number; readonly height: number };
+}
+
+const ON_STAGE = 'window.__stage.elements().map((e) => ({ id: e.id, key: e.key, kind: e.kind, text: String(e.text || ""), phase: e.phase, opacity: e.opacity, box: e.box }))';
+
+/**
+ * Each `code` block of a scene at rest, on real pixels. It is on stage (an element of the structure kind, phase `on`) in a box of a real size inside the screen: a block
+ * the painter lists but gives no box (the engine that is missing says nothing and draws nothing) fails here, where the ink check lets a box under 400 square pixels go
+ * unjudged. Every row of the script is read back from the text layer, stretch by stretch at its column, and must be the row as written, indentation and all, and no row more.
+ * Then each row's words are hidden in turn: the pixels that change are the row's footprint, and it must have ink, inside the block's box.
+ */
+export async function checkListings(tab: Tab, add: Add, listings: SceneFacts['listings'], scale: number): Promise<void> {
+  if (listings.length === 0) return;
+  await installPix(tab);
+  const view = await tab.eval<{ w: number; h: number }>('({ w: innerWidth, h: innerHeight })');
+  const live = await tab.eval<OnStage[]>(ON_STAGE);
+  const blocks = live.filter((e) => e.kind === 'structure' && e.phase === 'on' && e.opacity > 0.3 && /^code\b/.test(e.text));
+  const onStage: string[] = [];
+  const placed: string[] = [];
+  const rowProblems: string[] = [];
+  const drawnRows: string[] = [];
+  let rowsJudged = 0;
+  for (const [index, listing] of listings.entries()) {
+    const name = listing.id ?? `#${index + 1}`;
+    const block = listing.id === null ? blocks[index] : blocks.find((e) => e.id === listing.id);
+    if (block === undefined) {
+      onStage.push(`the code block ${name} is not on stage (${blocks.length === 0 ? 'no code block is' : `only ${blocks.map((e) => e.id).join(', ')} ${blocks.length === 1 ? 'is' : 'are'}`})`);
+      if (listing.rows.some((row) => row.trim() !== '')) rowProblems.push(`${name}: the script wrote ${listing.rows.filter((row) => row.trim() !== '').length} rows and none of them is on stage`);
+      continue;
+    }
+    const box = block.box;
+    if (box.width < 80 || box.height < 30) onStage.push(`the code block ${name} is on stage but has no box to speak of (${Math.round(box.width)}x${Math.round(box.height)}): nothing of it is drawn`);
+    else if (box.x < -2 || box.y < -2 || box.x + box.width > view.w + 2 || box.y + box.height > view.h + 2) placed.push(`the code block ${name} stands outside the screen (${Math.round(box.x)},${Math.round(box.y)} ${Math.round(box.width)}x${Math.round(box.height)} on ${view.w}x${view.h})`);
+    if (box.width < 80 || box.height < 30) {
+      // a block with no box has drawn no row: the rows the script wrote are not on stage, and none is passed for want of something to look at
+      if (listing.rows.some((row) => row.trim() !== '')) rowProblems.push(`${name}: the script wrote ${listing.rows.filter((row) => row.trim() !== '').length} rows and none of them is drawn`);
+      continue;
+    }
+    // the text layer is built when the stage comes to rest: given a moment after a seek
+    let stretches: Stretch[] = [];
+    for (let waited = 0; waited < 3000; waited += 150) {
+      stretches = (await tab.eval<Stretch[]>(STRETCHES)).filter((stretch) => stretch.key.startsWith(`${block.key}/`));
+      if (stretches.length > 0) break;
+      await sleep(150);
+    }
+    const read = new Map<number, Stretch[]>();
+    for (const stretch of stretches) read.set(stretch.row, [...(read.get(stretch.row) ?? []), stretch]);
+    const lineOf = (row: number): string => (read.get(row) ?? []).sort((a, b) => a.column - b.column).reduce((line, stretch) => `${line.padEnd(stretch.column, ' ')}${stretch.text}`, '');
+    const wrong: string[] = [];
+    listing.rows.forEach((row, at) => {
+      const got = lineOf(at);
+      if (got !== row.replace(/\s+$/, '')) wrong.push(`row ${at + 1} reads "${got.slice(0, 40)}" where the script has "${row.slice(0, 40)}"`);
+    });
+    for (const row of read.keys()) if (row >= listing.rows.length) wrong.push(`row ${row + 1} is on stage but the script has only ${listing.rows.length}`);
+    if (wrong.length > 0) rowProblems.push(`${name}: ${wrong.slice(0, 3).join('; ')}${wrong.length > 3 ? ` and ${wrong.length - 3} more` : ''}`);
+    if (stretches.length === 0 && listing.rows.some((row) => row.trim() !== '')) continue;
+    // each row's footprint
+    try {
+      await tab.eval('window.__stage.hide([])');
+      await tab.eval('window.__pix.clear()');
+      await tab.eval(`window.__pix.put('a', ${JSON.stringify(await tab.shot())})`);
+      await sleep(120);
+      await tab.eval(`window.__pix.put('b', ${JSON.stringify(await tab.shot())})`);
+      for (const [at, row] of listing.rows.entries()) {
+        const mine = read.get(at) ?? [];
+        if (row.trim() === '' || mine.length === 0) continue;
+        rowsJudged += 1;
+        await tab.eval(`window.__stage.hide(${JSON.stringify(mine.map((stretch) => stretch.key))})`);
+        await tab.eval(`window.__pix.put('h', ${JSON.stringify(await tab.shot())})`);
+        const x0 = Math.min(...mine.map((stretch) => stretch.x));
+        const y0 = Math.min(...mine.map((stretch) => stretch.y));
+        const here = { x: x0, y: y0, w: Math.max(...mine.map((stretch) => stretch.x + stretch.w)) - x0, h: Math.max(...mine.map((stretch) => stretch.y + stretch.h)) - y0 };
+        const foot = await tab.eval<{ count: number; x?: number; y?: number; w?: number; h?: number }>(`window.__pix.foot(${JSON.stringify(`${block.id}/row${at}`)}, ${JSON.stringify(here)}, ${scale}, 4, null)`);
+        const chars = row.replace(/\s+/g, '').length;
+        const least = Math.max(10, 8 * chars) * scale * scale;
+        if (VERBOSE) process.stdout.write(`  [code] ${name} row ${at + 1} "${row.trim().slice(0, 24)}" ink ${foot.count} px (least ${least})\n`);
+        if (foot.count < least || foot.x === undefined) drawnRows.push(`${name} row ${at + 1} "${row.trim().slice(0, 24)}" is on the text layer but hiding it changes ${foot.count} px on screen (least ${Math.round(least)}): it is not drawn`);
+        else {
+          const grow = 4;
+          if ((foot.x as number) < box.x - grow || (foot.x as number) + (foot.w as number) > box.x + box.width + grow || (foot.y as number) < box.y - grow || (foot.y as number) + (foot.h as number) > box.y + box.height + grow) {
+            drawnRows.push(`${name} row ${at + 1} "${row.trim().slice(0, 24)}" is drawn outside its block (${Math.round(foot.x as number)},${Math.round(foot.y as number)} ${Math.round(foot.w as number)}x${Math.round(foot.h as number)} against ${Math.round(box.x)},${Math.round(box.y)} ${Math.round(box.width)}x${Math.round(box.height)})`);
+          }
+        }
+      }
+    } finally {
+      await tab.eval('window.__stage.hide([])').catch(() => undefined);
+    }
+  }
+  add('code-block', onStage.length === 0 && placed.length === 0 ? 'PASS' : 'FAIL', onStage.length === 0 && placed.length === 0 ? `${listings.length} code block${listings.length === 1 ? ' is' : 's are'} on stage, in a box of a real size inside the screen` : [...onStage, ...placed].slice(0, 3).join('; '));
+  const bad = [...rowProblems, ...drawnRows];
+  add('code-rows', bad.length === 0 ? 'PASS' : 'FAIL', bad.length === 0 ? `every row is on the text layer as written, indentation and all, and ${rowsJudged} rows hidden in turn each take real ink off the screen, inside their block` : `${bad.slice(0, 3).join('; ')}${bad.length > 3 ? ` and ${bad.length - 3} more` : ''}`);
+}
+
+/** The lines a scene says are on stage, and the tables it makes (a table is a structure with a box of a real size): a deck's slides, and a code demo's captions. */
+export async function checkSlideWords(tab: Tab, add: Add, facts: SceneFacts): Promise<void> {
+  const live = await tab.eval<OnStage[]>(ON_STAGE);
+  const norm = (text: string): string => text.replace(/\s+/g, ' ').trim().toLowerCase();
+  const texts = live.filter((e) => e.kind === 'text' && e.phase === 'on' && e.opacity > 0.3);
+  const problems: string[] = [];
+  for (const words of facts.says) if (!texts.some((e) => norm(e.text) === norm(words))) problems.push(`"${words.slice(0, 40)}" is not on stage`);
+  const tables = live.filter((e) => e.kind === 'structure' && e.phase === 'on' && e.opacity > 0.3 && /^table\b/.test(e.text) && e.box.width >= 80 && e.box.height >= 30);
+  if (tables.length < facts.tables) problems.push(`${facts.tables} table${facts.tables === 1 ? ' is' : 's are'} written but ${tables.length} stand${tables.length === 1 ? 's' : ''} on stage in a box of a real size`);
+  add('slide-words', problems.length === 0 ? 'PASS' : 'FAIL', problems.length === 0 ? `the ${facts.says.length} line${facts.says.length === 1 ? '' : 's'} said${facts.tables > 0 ? ` and ${facts.tables} table${facts.tables === 1 ? '' : 's'}` : ''} of the scene are on stage` : problems.slice(0, 3).join('; '));
+}

@@ -59,6 +59,25 @@ function chartTableOf(cells: readonly TextSpanView[]): string {
 /** What a span belongs to when it is part of a structure: the structure itself, whoever owns the part. */
 const groupOf = (span: TextSpanView): string => span.within?.key ?? ownerKeyOf(span.key);
 
+/**
+ * The lines of a listing, as written: its stretches of text are put back at their columns, row by row, and a row with nothing in it stays an empty line.
+ * (Words with no row and column, from a painter that sets a line whole, are one line each.)
+ */
+function codeOf(group: readonly TextSpanView[]): string {
+  const stretches = group.filter((s) => s.role === 'code');
+  if (stretches.some((s) => s.within === null)) return stretches.map((s) => s.text).join('\n');
+  const rows = new Map<number, TextSpanView[]>();
+  for (const s of stretches) rows.set(s.within?.row ?? 0, [...(rows.get(s.within?.row ?? 0) ?? []), s]);
+  const last = Math.max(-1, ...rows.keys());
+  const lines: string[] = [];
+  for (let row = 0; row <= last; row += 1) {
+    let line = '';
+    for (const s of (rows.get(row) ?? []).sort((a, b) => (a.within?.column ?? 0) - (b.within?.column ?? 0))) line = `${line.padEnd(s.within?.column ?? 0, ' ')}${s.text}`;
+    lines.push(line);
+  }
+  return lines.join('\n');
+}
+
 /** The stage's words as Markdown. Empty when there are none. */
 export function answerMarkdown(spans: readonly TextSpanView[]): string {
   const blocks: string[] = [];
@@ -88,7 +107,7 @@ export function answerMarkdown(spans: readonly TextSpanView[]): string {
         if (text !== '') blocks.push(text);
       } else if (span.structure === 'code') {
         const lang = group.find((s) => s.lang !== null)?.lang ?? '';
-        blocks.push(`\`\`\`${lang}\n${group.map((s) => s.text).join('\n')}\n\`\`\``);
+        blocks.push(`\`\`\`${lang}\n${codeOf(group)}\n\`\`\``);
       } else if (span.structure === 'screen') {
         const words = group.map((s) => s.text);
         if (words.length > 0) blocks.push(`> Mock-up:\n${words.map((word) => `> - ${word}`).join('\n')}`);

@@ -108,9 +108,12 @@ export function ensureMono(): Promise<void> {
   monoReady ??= Promise.all(
     ['jetbrains-mono-400', 'jetbrains-mono-700'].map(async (key) => {
       const face = FONTS[key];
-      if (face === undefined || document.fonts.check(`12px "${face.family}"`)) return;
+      if (face === undefined) return;
       try {
-        document.fonts.add(await new FontFace(face.family, `url(${face.url}) format("${face.format}")`).load());
+        // `check` is true for a family nobody has registered (there is nothing to wait for), so ask the set whether the face is in it at all
+        const known = [...document.fonts].some((candidate) => candidate.family.replace(/["']/g, '') === face.family);
+        if (known) await document.fonts.load(`12px "${face.family}"`);
+        else document.fonts.add(await new FontFace(face.family, `url(${face.url}) format("${face.format}")`).load());
       } catch {
         // the system's monospace stands in
       }

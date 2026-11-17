@@ -105,11 +105,12 @@ export const DEMOS = [
 ] as const satisfies readonly DemoInfo[];
 
 /**
- * Demos of what the painter does not paint yet (part two of v2.1): parsed and checked by `pnpm timeline`, still playable by name, but not
- * offered in the gallery or the demo list until `code` and `deck` put something on stage (the v2.1 review: the `code` demo showed captions
- * about code on an empty stage).
+ * Demos of what the painter does not do yet (part two of v2.1): parsed and checked by `pnpm timeline`, still playable by name (the tour plays them), but not
+ * offered in the gallery or the demo list until `deck` is whole. `code` left this list when the painter began to draw it (PC10: `painter/blocks/code.ts`).
+ * `deck` has not: the words and blocks of its slides are painted, but the stop at the end of each slide and the stepping on (`DECKS_READY`, `Painter.slide`) are not
+ * built, so it plays its slides one after another. Not offered is not unjudged: `pnpm check` plays every demo here too and judges what is on stage, as it does every other.
  */
-export const DEMOS_NOT_PAINTED: readonly string[] = ['code', 'deck'];
+export const DEMOS_NOT_PAINTED: readonly string[] = ['deck'];
 
 export type DemoName = (typeof DEMOS)[number]['name'];
 export const FIRST_LOAD_DEMO: DemoName = 'overture';

@@ -1,0 +1,40 @@
+# The car journey: a scripted walk through one live conversation, played on the real brain. Never a replay.
+# One step per line. A step may be named, `name: step`, so a film editor can find it in the timings.
+#   type | <prompt>                 type it into the real box, letter by letter (about 12 a second), and send
+#   tap | <visible label>           a choice, a part or a label on stage (tap? | ... skips the step when it never shows)
+#   drag <control id or label> <from> > <to> over=<s>   (min and max stand for the ends of the slider)
+#                                   work a slider by its knob (drag? skips it when there is no such control)
+#   undo                            the Undo chip
+#   back                            a Back choice when the brain offers one, else the Undo chip
+#   hold <s>                        look at the stage for a while
+#   rest                            wait until the turn has ended, the stage is still and any repair is done or skipped
+# A line that starts with # is a note.
+
+# five seconds of idle screen before the first key
+hold 5
+car: type | Show me the main parts of a car
+rest
+hold 4
+# the brain draws what it likes: a part it did not draw is skipped after a few seconds, and said so in the timings
+brakes: tap? | Brakes
+rest
+hold 4
+stop: type | How far does it take to stop? Let me change the speed.
+rest
+hold 4
+dragSpeed: drag speed 50 > 100 over=4
+hold 4
+back: back
+rest
+hold 4
+engine: tap? | Engine
+rest
+hold 2
+dragEngine: drag? engine min > max over=3
+hold 4
+diesel: type | What's different in a diesel?
+rest
+hold 4
+how: type | Show me how you're doing this
+rest
+hold 4
