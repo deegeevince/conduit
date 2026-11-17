@@ -1,5 +1,5 @@
 // "Show the language": the pane that makes the stream visible. The model writes lines of Series; the page reads each one as its newline
-// arrives and draws it. This pane is that reading, shown: each line appears whole when it arrives, the one being drawn is lit by the
+// arrives and draws it. This pane is that reading, shown: the line being written is typed in a live row at its end (the stage never hears of it), each finished line is a row of its own, the one being drawn is lit by the
 // painter's own schedule and playhead, and pointing at something on stage (hover or tap) lights the line that made it. Nothing is drawn
 // over the stage itself.
 //
@@ -49,7 +49,7 @@ export function mountLangPane(root: HTMLElement, stage: HTMLElement, app: StageA
   const title = document.createElement('span');
   title.textContent = 'Series';
   const sub = document.createElement('span');
-  sub.textContent = 'as it arrives';
+  sub.textContent = 'typed as it arrives \u00b7 bar: on stage now';
   head.append(title, sub);
   const list = document.createElement('ol');
   list.className = 'lang__body';
@@ -128,6 +128,43 @@ export function mountLangPane(root: HTMLElement, stage: HTMLElement, app: StageA
     return row;
   };
 
+  // the live row: what is being written now, as far as it has got, with a cursor. It always sits last and is never an entry.
+  let liveRow: HTMLLIElement | null = null;
+  let liveText = '';
+  const showLive = (): void => {
+    const turn = app.lang.turn;
+    const live = app.lang.live;
+    if (live === null || turn === null || live.turn !== turn) {
+      liveRow?.remove();
+      liveRow = null;
+      liveText = '';
+      return;
+    }
+    if (liveRow === null) {
+      liveRow = document.createElement('li');
+      liveRow.className = 'lang__row lang__row--live';
+      liveRow.setAttribute('aria-hidden', 'true');
+      liveText = '';
+    }
+    if (live.text !== liveText) {
+      liveText = live.text;
+      const cursor = document.createElement('span');
+      cursor.className = 'lang__cursor';
+      const parts: (Node | string)[] = [];
+      for (const token of tokenize(live.text)) {
+        if (token.role === 'plain') parts.push(token.text);
+        else {
+          const span = document.createElement('span');
+          span.className = `t-${token.role}`;
+          span.textContent = token.text;
+          parts.push(span);
+        }
+      }
+      liveRow.replaceChildren(...parts, cursor);
+    }
+    if (liveRow.parentNode !== list || liveRow !== list.lastElementChild) list.append(liveRow);
+  };
+
   const scrollEnd = (): void => {
     if (!following) return;
     list.scrollTop = list.scrollHeight;
@@ -138,13 +175,15 @@ export function mountLangPane(root: HTMLElement, stage: HTMLElement, app: StageA
     const entries = turn === null ? [] : app.lang.entriesOf(turn);
     if (turn !== shownTurn || entries.length < shownCount) {
       list.replaceChildren();
+      liveRow = null;
+      liveText = '';
       rowOf.clear();
       shownTurn = turn;
       shownCount = 0;
       empty = null;
       following = true;
     }
-    if (entries.length === 0) {
+    if (entries.length === 0 && app.lang.live === null) {
       if (empty === null) {
         empty = document.createElement('li');
         empty.className = 'lang__empty';
@@ -162,9 +201,11 @@ export function mountLangPane(root: HTMLElement, stage: HTMLElement, app: StageA
       if (entry === undefined) continue;
       const row = makeRow(entry);
       if (entry.seq >= 0) rowOf.set(entry.seq, row);
-      list.append(row);
+      if (liveRow !== null && liveRow.parentNode === list) liveRow.before(row);
+      else list.append(row);
     }
     shownCount = entries.length;
+    showLive();
     scrollEnd();
   };
 

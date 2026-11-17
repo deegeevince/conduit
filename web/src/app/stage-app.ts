@@ -918,6 +918,10 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
         }
         return;
       }
+      case 'typing':
+        // The line still being written: for the pane that shows the language and nothing else. The painter is never told of it.
+        if (event.turn === currentTurn) lang.typing(event.turn, event.text);
+        return;
       case 'reject':
         lang.dropped(event.turn, event.raw, event.issues, 0);
         noteReject({ turn: event.turn, raw: event.raw, issues: event.issues });
@@ -987,6 +991,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
         tellAgent(event);
         return;
       case 'end':
+        lang.settle(event.turn);
         if (event.turn !== currentTurn) return;
         endStarting();
         // a tap or a question that ended with nothing drawn and no document opened is not left looking dead: what the brain said, or that nothing came, is shown

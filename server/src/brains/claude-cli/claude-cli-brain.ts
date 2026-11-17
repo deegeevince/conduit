@@ -608,7 +608,7 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
 
     const pump = (async (): Promise<void> => {
       try {
-        for await (const event of brainEventsFromText(chunks(), out.styles)) box.push(event);
+        for await (const event of brainEventsFromText(chunks(), out.styles, true)) box.push(event);
         box.close();
       } catch (error) {
         box.fail(error);

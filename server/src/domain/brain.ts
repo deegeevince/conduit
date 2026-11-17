@@ -109,6 +109,11 @@ export interface BrainUsage {
 export type BrainEvent =
   /** one complete, parsed line; `issues` are warnings about parts that were ignored */
   | { readonly type: 'line'; readonly line: Line; readonly issues: readonly Issue[] }
+  /**
+   * The line being written, as far as it has got: yielded after the lines a chunk completed, whenever the chunk left a line unfinished.
+   * For the pane that shows the language; the conductor throttles it and nothing else acts on it.
+   */
+  | { readonly type: 'typing'; readonly text: string }
   /** something the brain wrote that is not a usable line */
   | { readonly type: 'reject'; readonly raw: string; readonly issues: readonly Issue[] }
   /**
