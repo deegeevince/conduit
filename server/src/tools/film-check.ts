@@ -187,6 +187,8 @@ export function judgeLook(wide: Bench, live: Live): CheckResult {
 // The exporter, in a real browser
 
 interface Made {
+  /** the pane's mono face is in the page's font set and loaded when the film is drawn */
+  readonly monoLoaded: boolean;
   readonly cuts: { readonly cuts: readonly { readonly from: number; readonly to: number; readonly removed: number }[]; readonly filmSeconds: number } | null;
   readonly seconds: number;
   readonly bytes: number;
@@ -203,6 +205,7 @@ const PAGE_SCRIPT = String.raw`async (job) => {
     import('/src/bench/film-session.ts'), import('/src/export/index.ts'), import('/src/render/plain/index.ts'), import('/src/render/three/index.ts'), import('/src/app/lang-style.ts'),
   ]);
   await ensureMono();
+  const monoLoaded = [...document.fonts].some((face) => face.family.replace(/["']/g, '') === 'Conduit JetBrains Mono 400' && face.status === 'loaded');
   const session = buildSession(job.width, job.height, job.explorable, { height: 70 });
   const exporter = createExporter({ createRenderer: () => (canUseThree() ? createThreeRenderer() : createPlainRenderer()) });
   const formats = await exporter.formats();
@@ -247,7 +250,7 @@ const PAGE_SCRIPT = String.raw`async (job) => {
   const dark = []; for (const t of job.darkTimes) dark.push(await darkAt(t));
   const stills = [];
   for (const [name, t] of job.stills) { await frameAt(t); stills.push({ name, png: await base64Of(await new Promise((done) => canvas.toBlob(done, 'image/png'))) }); }
-  const out = { cuts: made.cuts || null, seconds: video.duration, bytes: made.blob.size, width: video.videoWidth, height: video.videoHeight, inks, dark, stills, webm: job.keep ? await base64Of(made.blob) : null };
+  const out = { monoLoaded, cuts: made.cuts || null, seconds: video.duration, bytes: made.blob.size, width: video.videoWidth, height: video.videoHeight, inks, dark, stills, webm: job.keep ? await base64Of(made.blob) : null };
   URL.revokeObjectURL(url);
   return out;
 }`;
@@ -419,6 +422,7 @@ export async function filmGroup(note: (text: string) => void = () => undefined):
   });
   results.push(judgeLook(wide, live));
   const problems: string[] = [];
+  if (!made.monoLoaded) problems.push('the pane\'s mono face was not loaded when the film was drawn (the rows would be set in a fallback face)');
   if (made.cuts === null) problems.push('the exporter returned no cuts');
   else if (JSON.stringify(made.cuts.cuts) !== JSON.stringify(wide.cutList.cuts)) problems.push(`the exporter's cuts ${JSON.stringify(made.cuts.cuts)} are not the session's ${JSON.stringify(wide.cutList.cuts)}`);
   if (Math.abs(made.seconds - shown) > 0.6) problems.push(`the file is ${made.seconds.toFixed(2)} s, not the ${shown} s asked`);
