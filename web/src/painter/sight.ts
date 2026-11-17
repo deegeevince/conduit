@@ -27,6 +27,14 @@ const CORNER_SHARE = 0.5;
 const TINY_PX = 12;
 /** More than this share of a box outside the screen is "clipped". */
 const CLIPPED_SHARE = 0.05;
+/** More than this share of a box the brain told a point, outside the canvas, is "outside": the canvas is the frame the picture is read in, and the screen around it is only room. A few units of spill past an edge (a line told a point near it) is not parking. */
+const OUTSIDE_SHARE = 0.25;
+/** Words drawn under this many screen pixels (on the reading plane) are too small to make out. The looks never set type below 12. */
+const TEXT_TINY_PX = 10;
+/** An element drawn at less than this opacity is "hidden": there at rest and not to be seen. */
+const HIDDEN_BELOW = 0.08;
+/** Lines of words a line of words is told to run into, at most. */
+const AGAINST_NAMED = 3;
 /** A later opaque figure that hides more than this share of a box has "covered" it. */
 const COVERED_SHARE = 0.6;
 /** `spills`: a filled shape with more than this share of its area inside a bigger filled shape, and less than SPILL_CLEAN of it (so a visible part is outside) */
@@ -291,21 +299,37 @@ export function sightOf(timeline: Timeline, schedule: Schedule, base: StageBase,
     }
     return false;
   };
+  // Words that lie on words are told of one another: `against` is the ids of the lines a line runs into, said of each of the two.
+  const against = new Map<Entry, string[]>();
+  const runInto = (entry: Entry, other: Entry): void => {
+    const known = against.get(entry) ?? [];
+    if (!known.includes(other.element.id) && known.length < AGAINST_NAMED) known.push(other.element.id);
+    against.set(entry, known);
+    if (!entry.notes.includes('collides')) entry.notes.push('collides');
+  };
+  /** Words set big (a title, the line the answer rests on): if they lie on words, they are the thing to move, and the stage says so of them and not only of the smaller words under them. */
+  const big = (entry: Entry): boolean => entry.element.style.size === 'l' || entry.element.style.size === 'xl' || entry.element.style.size === 'xxl';
   const textOverText = (entry: Entry, index: number): boolean => {
     const mine = lineBoxes.get(entry.element.key);
     if (mine === undefined) return false;
+    let found = false;
     for (const earlier of entries.slice(0, index)) {
       const theirs = lineBoxes.get(earlier.element.key);
       if (theirs === undefined) continue;
-      for (const a of mine) {
-        for (const b of theirs) {
+      const lies = mine.some((a) =>
+        theirs.some((b) => {
           // A hairline of shared leading is not a collision: it takes a visible patch of letters.
           const area = overlapArea(a, b);
-          if (area > 6 && area > 0.04 * Math.min(areaOf(a), areaOf(b))) return true;
-        }
-      }
+          return area > 6 && area > 0.04 * Math.min(areaOf(a), areaOf(b));
+        }),
+      );
+      if (!lies) continue;
+      found = true;
+      against.set(entry, [...(against.get(entry) ?? []), earlier.element.id].filter((id, at, all) => all.indexOf(id) === at).slice(0, AGAINST_NAMED));
+      // the later line is the one the painter has always blamed; the earlier is too when either is big (a title is written first and stands over what comes after)
+      if (big(entry) || big(earlier)) runInto(earlier, entry);
     }
-    return false;
+    return found;
   };
 
   // Words a bound `correct` can replace are set for the tallest of them; one that nevertheless comes out taller than that room (or wider) is told as a
@@ -371,6 +395,18 @@ export function sightOf(timeline: Timeline, schedule: Schedule, base: StageBase,
       if (seen <= 0) notes.push('off-canvas');
       else if (1 - seen / area > CLIPPED_SHARE) notes.push('clipped');
       if (element.kind !== 'text' && Math.max(screenBox.w, screenBox.h) < TINY_PX) notes.push('tiny');
+      // words and controls the brain told a point (at=, move) stand where they were told, even past the canvas, and the stage's nudging may carry them
+      // past it to clear something (the canvas is smaller than the screen, so nothing is "off the screen" there): the canvas is where the picture is read
+      // (a word told a point inside something, `in=` a photo or a group, is placed in that thing's space, not the canvas's; a callout's place is the stage's, which parks its words in the foot)
+      if ((element.kind === 'text' || element.kind === 'control') && element.parent === null && element.style.group === null && !element.style.leader && typeof element.style.at === 'object' && element.style.at !== null && !notes.includes('off-canvas') && !notes.includes('clipped')) {
+        const fitted = fitOf(element.scene);
+        const canvasRect: Rect = { x: fitted.box.x, y: fitted.box.y, w: fitted.box.width, h: fitted.box.height };
+        if (1 - overlapArea(probe, canvasRect) / area > OUTSIDE_SHARE) notes.push('outside');
+      }
+      if (element.kind === 'text') {
+        const drawn = textFrames.get(element.key);
+        if (drawn !== undefined && drawn.layer === 'mid' && drawn.fontSize * planeScale(drawn.layer, viewport) < TEXT_TINY_PX) notes.push('tiny');
+      }
     }
     // A subject that ends outside the picture's region (the final frame, not the first): the stage clips it there, and what is cut off is gone.
     if (entry.resting && element.kind !== 'text' && !notes.includes('clipped') && !notes.includes('off-canvas') && element.figure?.kind !== 'group') {
@@ -403,7 +439,7 @@ export function sightOf(timeline: Timeline, schedule: Schedule, base: StageBase,
       const style = element.style;
       if (placed !== undefined && entry.resting) {
         const layout = scene.layout;
-        if (textOverText(entry, index) || textOnDiagram(entry) || variantCollides(entry)) notes.push('collides');
+        if ((textOverText(entry, index) || textOnDiagram(entry) || variantCollides(entry)) && !notes.includes('collides')) notes.push('collides');
         if (strokeThrough(element.key) && !notes.includes('crossed')) notes.push('crossed');
         const view = restViews.get(element.key);
         if (view !== undefined && view.contrast < 4.5 - 0.01) notes.push('faint');
@@ -685,22 +721,45 @@ export function sightOf(timeline: Timeline, schedule: Schedule, base: StageBase,
       const notes: SightNote[] = [];
       if (strokeThrough(element.key)) notes.push('crossed');
       const mine = lineBoxes.get(element.key) ?? [];
-      const onWords = entries.some((other) => {
+      const onWords = entries.filter((other) => {
         if (other.element.kind !== 'text' || !other.resting) return false;
         const theirs = lineBoxes.get(other.element.key) ?? [];
         return mine.some((x) => theirs.some((y) => overlapArea(x, y) > 6 && overlapArea(x, y) > 0.04 * Math.min(areaOf(x), areaOf(y))));
       });
-      if (onWords) notes.push('collides');
-      if (notes.length > 0) entries.push({ element, box, screenBox: { x: topLeft.x, y: topLeft.y, w: box.w * fit.unit, h: box.h * fit.unit }, resting: true, notes });
+      if (onWords.length > 0) notes.push('collides');
+      if (notes.length > 0) {
+        const carried: Entry = { element, box, screenBox: { x: topLeft.x, y: topLeft.y, w: box.w * fit.unit, h: box.h * fit.unit }, resting: true, notes };
+        if (onWords.length > 0) against.set(carried, onWords.slice(0, AGAINST_NAMED).map((other) => other.element.id).filter((id, at, all) => all.indexOf(id) === at));
+        entries.push(carried);
+      }
     }
   }
 
   const noted = entries.filter((entry) => entry.notes.length > 0);
   const rest = entries.filter((entry) => entry.notes.length === 0);
   const keep = new Set<Entry>([...noted.slice(-SIGHT_ITEMS), ...rest.slice(-Math.max(0, SIGHT_ITEMS - noted.length))]);
+  const hiddenKey = (entry: Entry): boolean => {
+    if (!entry.resting) return false;
+    if (entry.element.kind === 'text') {
+      const drawn = textFrames.get(entry.element.key);
+      return drawn !== undefined && drawn.opacity < HIDDEN_BELOW;
+    }
+    if (entry.element.kind === 'control' || entry.element.kind === 'structure' || entry.element.kind === 'node' || entry.element.kind === 'link') return false;
+    const drawn = figureFrames.get(entry.element.key);
+    return drawn !== undefined && drawn.length > 0 && drawn.every((figure) => figure.opacity < HIDDEN_BELOW);
+  };
   const items: SightItem[] = entries
     .filter((entry) => keep.has(entry))
-    .map((entry) => ({ id: entry.element.id, kind: entry.element.kind, box: round(entry.box), resting: entry.resting, notes: entry.notes, ...(within.has(entry) ? { within: within.get(entry) as string } : {}) }));
+    .map((entry) => ({
+      id: entry.element.id,
+      kind: entry.element.kind,
+      box: round(entry.box),
+      resting: entry.resting,
+      notes: entry.notes,
+      ...(within.has(entry) ? { within: within.get(entry) as string } : {}),
+      ...(entry.notes.includes('collides') && (against.get(entry)?.length ?? 0) > 0 ? { against: against.get(entry) as string[] } : {}),
+      ...(hiddenKey(entry) ? { hidden: true as const } : {}),
+    }));
   const fit = timeline.fitAt(scene.id, restAt);
   return { canvas: scene.canvas, coverage: fit.coverage, items, snapshot };
 }
