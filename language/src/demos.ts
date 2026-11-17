@@ -23,6 +23,11 @@ export const DEMOS = [
     summary: 'Type as the whole show: a title card, a stalled brain held in silence, a visible correction.',
   },
   {
+    name: 'scripts',
+    title: 'Scripts',
+    summary: 'Every language the stage can write: Polish, Vietnamese, Greek, Russian, Arabic, Hebrew, Hindi, Thai and Chinese, one line each, and a line mixing English with Arabic.',
+  },
+  {
     name: 'styles',
     title: 'Styles',
     summary: 'One short script with no look of its own, so the same lines can be compared in every look.',

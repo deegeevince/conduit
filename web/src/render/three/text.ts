@@ -6,7 +6,8 @@ import type { IUniform, Vector4 } from 'three';
 import type { Object3D, WebGLProgramParametersWithUniforms } from 'three';
 import { Text, configureTextBuilder, preloadFont } from 'troika-three-text';
 import type { ElementFrame, RunFrame } from '../../contracts/frame';
-import { FONTS, GLYPHS, fontFor, foldText, hasWide, isWide } from '../../fonts';
+import { FONTS, GLYPHS, fontFor, foldText, hasDevice, hasWide, isDevice, isWide, startsRtl } from '../../fonts';
+import { WIDE_STACK, deviceFont, ensureFace, fitSpaces } from '../../fonts/device';
 import { prefixEm } from '../../fonts/measure';
 import { FACES } from '../../fonts/faces';
 import { CLIP_FRAGMENT_DECL, CLIP_TEST, CLIP_VERTEX_DECL, clipVertex, makeClipUniform, setClip } from './clip';
@@ -23,11 +24,11 @@ const SDF_SIZE: Readonly<Record<string, number>> = { vt323: 64, bedstead: 128, '
 
 const ALLOWED: ReadonlySet<string> = new Set(GLYPHS);
 
-/** The device's own CJK fonts, in the order a phone, a Mac, a PC and a Linux box are likely to have them. Nothing is downloaded. */
-const WIDE_STACK = '"PingFang SC","Hiragino Sans","Hiragino Kaku Gothic ProN","Apple SD Gothic Neo","Noto Sans CJK SC","Noto Sans SC","Source Han Sans SC","Microsoft YaHei","Yu Gothic","Malgun Gothic",sans-serif';
 /** The most pixels an em of a CJK run is drawn at, and the widest picture of one run. */
 const WIDE_PX = 96;
 const WIDE_MAX_SIDE = 4096;
+/** Room above and below the line box, in em, in a picture of a run: Devanagari and Thai marks, Arabic descenders and Vietnamese stacked accents reach past it. */
+const WIDE_PAD = 0.3;
 
 /** The plane every CJK run is drawn on: one unit, its top left corner at the origin, so a run is placed like troika's text (left, top). */
 let widePlane: PlaneGeometry | null = null;
@@ -38,28 +39,6 @@ const wideGeometry = (): PlaneGeometry => {
   }
   return widePlane;
 };
-
-/** Face files the page has been asked to register for the 2D canvas (the canvas can draw only what the document has loaded), by font key. */
-const wideFaces = new Map<string, 'loading' | 'done'>();
-function wideFace(key: string): boolean {
-  const state = wideFaces.get(key);
-  if (state === 'done') return true;
-  if (state === undefined) {
-    wideFaces.set(key, 'loading');
-    const face = FONTS[key];
-    if (face === undefined || typeof FontFace === 'undefined' || typeof document === 'undefined') {
-      wideFaces.set(key, 'done');
-      return true;
-    }
-    const loaded = new FontFace(face.family, `url(${face.url}) format("${face.format}")`);
-    void loaded
-      .load()
-      .then((ok) => document.fonts.add(ok))
-      .catch(() => undefined)
-      .finally(() => wideFaces.set(key, 'done'));
-  }
-  return false;
-}
 
 /**
  * Keeps one text mesh per run alive between frames. Text content and font are
@@ -97,8 +76,8 @@ interface RunEntry {
   readonly clip: IUniform<Vector4>;
   content: string;
   fontKey: string;
-  /** a run with CJK characters is a picture of its text, drawn with the device's own font */
-  wide: { readonly mesh: Mesh; readonly material: MeshBasicMaterial; texture: CanvasTexture | null; key: string; em: number } | null;
+  /** a run with CJK characters, or in a script the faces lack, is a picture of its text, drawn with the device's own fonts */
+  wide: { readonly mesh: Mesh; readonly material: MeshBasicMaterial; texture: CanvasTexture | null; key: string; em: number; rtl: boolean } | null;
   token: number;
   ready: boolean;
   /** typeset at least once, so there is something truthful to draw even while a change of text is in flight */
@@ -233,7 +212,7 @@ export function preloadFonts(faces: readonly Face[]): Promise<void> {
 function guard(text: string): string {
   const folded = foldText(text);
   let out = '';
-  for (const char of folded) out += ALLOWED.has(char) || isWide(char) ? char : '?';
+  for (const char of folded) out += ALLOWED.has(char) || isWide(char) || isDevice(char) ? char : '?';
   return out;
 }
 
@@ -372,7 +351,7 @@ export function createTextPool(): TextPool {
   const configureRun = (run: RunEntry, element: ElementFrame, runFrame: RunFrame, style: SurfaceStyle, index: number, order: number, fontKey: string): boolean => {
     const spec = FACES[element.face];
     const content = guard(runFrame.text);
-    if (hasWide(content)) return configureWide(run, element, runFrame, style, order, fontKey, content);
+    if (hasWide(content) || hasDevice(content)) return configureWide(run, element, runFrame, style, order, fontKey, content);
     if (run.wide !== null) run.wide.mesh.visible = false;
     if (run.content !== content || run.fontKey !== fontKey) {
       run.content = content;
@@ -430,7 +409,7 @@ export function createTextPool(): TextPool {
     return honest;
   };
 
-  /** A run with CJK characters: the whole run is drawn on a canvas, one character at a time at the advance the painter measured, and shown on a plane in the run's place. */
+  /** A run with CJK characters or a script the faces lack: drawn on a canvas (CJK one character at a time at the painter's advance, any other script as one string), and shown on a plane in the run's place. */
   const configureWide = (run: RunEntry, element: ElementFrame, runFrame: RunFrame, style: SurfaceStyle, order: number, fontKey: string, content: string): boolean => {
     const spec = FACES[element.face];
     const bold = element.weight === 'bold';
@@ -450,43 +429,57 @@ export function createTextPool(): TextPool {
       mesh.frustumCulled = false;
       mesh.visible = false;
       run.group.add(mesh);
-      run.wide = { mesh, material, texture: null, key: '', em: 0 };
+      run.wide = { mesh, material, texture: null, key: '', em: 0, rtl: false };
     }
     const wide = run.wide;
-    const key = `${content}|${fontKey}|${bold ? 'b' : 'n'}|${element.face}`;
+    const key = `${content}|${fontKey}|${bold ? 'b' : 'n'}|${element.face}|${hasDevice(content) ? 'd' : 'c'}`;
     if (wide.key !== key) {
-      if (!wideFace(fontKey)) {
+      if (!ensureFace(fontKey)) {
         run.ready = false;
         return !wantedNow;
       }
       const running = prefixEm(content, element.face, bold ? 'bold' : 'normal');
       const em = running[content.length] ?? 0;
       const px = Math.max(8, Math.min(WIDE_PX, WIDE_MAX_SIDE / Math.max(1, em)));
+      const pad = Math.round(WIDE_PAD * px);
       const canvas = document.createElement('canvas');
       canvas.width = Math.max(1, Math.ceil(em * px));
-      canvas.height = Math.max(1, Math.ceil(spec.lineHeight * px));
+      canvas.height = Math.max(1, Math.ceil(spec.lineHeight * px) + 2 * pad);
       const ctx = canvas.getContext('2d');
+      const rtl = startsRtl(content);
       if (ctx !== null) {
-        const latin = `${bold ? '700 ' : ''}${px}px "${FONTS[fontKey]?.family ?? 'sans-serif'}", ${WIDE_STACK}`;
-        const cjk = `${bold ? '700 ' : ''}${px}px ${WIDE_STACK}`;
         ctx.fillStyle = '#fff';
         ctx.textBaseline = 'alphabetic';
-        const baseline = metricsFor(fontKey, spec.lineHeight).baseline * px;
-        for (let i = 0; i < content.length; i += 1) {
-          const char = content.charAt(i);
-          if (char === ' ') continue;
-          ctx.font = isWide(char) ? cjk : latin;
-          // a CJK glyph is centred in its em, a Latin one starts at its pen position, as the painter's running widths place them
-          const x = (running[i] ?? 0) * px;
-          if (isWide(char)) {
-            ctx.textAlign = 'center';
-            ctx.fillText(char, x + px / 2, baseline);
-          } else {
-            ctx.textAlign = 'left';
-            ctx.fillText(char, x, baseline);
+        const baseline = pad + metricsFor(fontKey, spec.lineHeight).baseline * px;
+        if (hasDevice(content)) {
+          // A script that shapes or joins (Arabic, Indic, Thai) or reads right to left is drawn as one string: the browser forms the letters, orders the bidi runs and
+          // places the marks. Its own width may differ from the estimate the painter laid out with, so the picture is squeezed to the painter's width.
+          ctx.font = deviceFont(fontKey, bold, px, content);
+          ctx.direction = rtl ? 'rtl' : 'ltr';
+          ctx.textAlign = 'left';
+          const natural = fitSpaces(ctx, content);
+          if (natural > 0) ctx.scale(canvas.width / natural, 1);
+          ctx.fillText(content, 0, baseline);
+        } else {
+          const latin = `${bold ? '700 ' : ''}${px}px "${FONTS[fontKey]?.family ?? 'sans-serif'}", ${WIDE_STACK}`;
+          const cjk = `${bold ? '700 ' : ''}${px}px ${WIDE_STACK}`;
+          for (let i = 0; i < content.length; i += 1) {
+            const char = content.charAt(i);
+            if (char === ' ') continue;
+            ctx.font = isWide(char) ? cjk : latin;
+            // a CJK glyph is centred in its em, a Latin one starts at its pen position, as the painter's running widths place them
+            const x = (running[i] ?? 0) * px;
+            if (isWide(char)) {
+              ctx.textAlign = 'center';
+              ctx.fillText(char, x + px / 2, baseline);
+            } else {
+              ctx.textAlign = 'left';
+              ctx.fillText(char, x, baseline);
+            }
           }
         }
       }
+      wide.rtl = rtl;
       wide.texture?.dispose();
       const texture = new CanvasTexture(canvas);
       texture.colorSpace = SRGBColorSpace;
@@ -510,9 +503,14 @@ export function createTextPool(): TextPool {
     run.group.position.set(runFrame.x + runFrame.dx + runFrame.width / 2, -(runFrame.y + runFrame.dy + cellHeight / 2), 0);
     run.group.rotation.z = 0;
     run.group.scale.set(runFrame.scale, runFrame.scale, 1);
-    wide.mesh.position.set(-runFrame.width / 2, cellHeight / 2 + (m.baseline - m.target) * element.fontSize, 0);
-    wide.mesh.scale.set(wide.em * TYPESET_SIZE * across * reveal, spec.lineHeight * TYPESET_SIZE * scale, 1);
-    if (wide.texture !== null) wide.texture.repeat.set(Math.max(reveal, 1e-4), 1);
+    // The reveal shows the first share of the run's width; a run that reads right to left begins at its right edge, so it is shown from there.
+    const full = wide.em * TYPESET_SIZE * across;
+    wide.mesh.position.set(-runFrame.width / 2 + (wide.rtl ? full * (1 - reveal) : 0), cellHeight / 2 + (m.baseline - m.target) * element.fontSize + WIDE_PAD * element.fontSize, 0);
+    wide.mesh.scale.set(full * reveal, (spec.lineHeight + 2 * WIDE_PAD) * element.fontSize, 1);
+    if (wide.texture !== null) {
+      wide.texture.repeat.set(Math.max(reveal, 1e-4), 1);
+      wide.texture.offset.set(wide.rtl ? 1 - Math.max(reveal, 1e-4) : 0, 0);
+    }
     wide.mesh.renderOrder = order;
     wide.material.color.copy(inkColour(style, runFrame.colour));
     wide.material.opacity = opacity;

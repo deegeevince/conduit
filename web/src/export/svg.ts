@@ -7,6 +7,7 @@ import { chartBoxOf, clipQuad } from '../render/place';
 import type { Vec3 } from '../contracts/space';
 import type { Layer } from '@conduit/language';
 import { mixHex } from '../painter/affine';
+import { hasDevice, startsRtl } from '../fonts/fold';
 
 export interface SvgSize {
   readonly width: number;
@@ -158,8 +159,14 @@ function textSvg(element: ElementFrame, frame: Frame, fonts: Map<string, Rendere
     const cy = box.y + run.dy + box.height / 2;
     const clip = run.reveal < 0.999 ? ` clip-path="inset(0 ${n((1 - run.reveal) * 100)}% 0 0)"` : '';
     const transform = run.scale !== 1 ? ` transform="translate(${n(cx)} ${n(cy)}) scale(${n(run.scale)}) translate(${n(-cx)} ${n(-cy)})"` : '';
+    // A script the faces lack (Arabic, Indic, Thai, Greek...) is left to the viewer's own shaping: letter spacing would pull joined letters apart, so the run is not
+    // stretched to the painter's width, and a run that reads right to left is anchored at its right edge.
+    const device = hasDevice(run.text);
+    const rtl = device && startsRtl(run.text);
+    const x = rtl ? run.x + run.dx + run.width / stretch : run.x + run.dx;
+    const fit = device ? (rtl ? ' direction="rtl" unicode-bidi="plaintext" text-anchor="end"' : ' unicode-bidi="plaintext"') : ` textLength="${n(run.width / stretch)}" lengthAdjust="spacing"`;
     out.push(
-      `<g${transform}><text x="${n(run.x + run.dx)}" y="${n(cy)}" dominant-baseline="central" font-family="${escapeXml(family)}" font-size="${n(element.fontSize)}" fill="${run.colour}" fill-opacity="${n(run.opacity * element.opacity)}" textLength="${n(run.width / stretch)}" lengthAdjust="spacing" xml:space="preserve"${stretch !== 1 ? ` transform="translate(${n(run.x + run.dx)} 0) scale(${n(stretch)} 1) translate(${n(-(run.x + run.dx))} 0)"` : ''}${clip}>${escapeXml(run.text)}</text></g>`,
+      `<g${transform}><text x="${n(x)}" y="${n(cy)}" dominant-baseline="central" font-family="${escapeXml(device ? `${family}, sans-serif` : family)}" font-size="${n(element.fontSize)}" fill="${run.colour}" fill-opacity="${n(run.opacity * element.opacity)}"${fit} xml:space="preserve"${stretch !== 1 ? ` transform="translate(${n(run.x + run.dx)} 0) scale(${n(stretch)} 1) translate(${n(-(run.x + run.dx))} 0)"` : ''}${clip}>${escapeXml(run.text)}</text></g>`,
     );
   }
   return `<g id="${escapeXml(element.id)}" transform="${matrix(local)}">${out.join('')}</g>`;

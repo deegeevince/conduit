@@ -1,0 +1,18 @@
+# Scripts: every language the stage can write. One line each, drawn from the
+# device's own fonts where the shipped faces have no letters: Latin with all its
+# accents, Greek, Cyrillic, Arabic and Hebrew (right to left, Arabic joined),
+# Hindi (conjuncts formed), Thai and Chinese, and a line mixing English with Arabic.
+
+look paper
+scene stack lines=10 calm steady
+say pl | Zażółć gęślą jaźń
+say vi | Tiếng Việt có dấu
+say el | Γειά σου κόσμε
+say ru | Привет, мир
+say ar | مرحبا بالعالم
+say he | שלום עולם
+say hi | नमस्ते दुनिया
+say th | สวัสดีชาวโลก
+say zh | 你好世界
+say mix | The word for hello in Arabic is مرحبا and it reads right to left
+wait 2

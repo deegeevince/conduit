@@ -1,7 +1,7 @@
 import { isInFlow } from '@conduit/language';
 import type { Align, Anchor, ElementStyle, Face, Layer, Layout, Point, Range, Size, Weight } from '@conduit/language';
 import type { LookSpec } from '../../contracts/look';
-import { foldText } from '../../fonts/fold';
+import { foldText, hasDevice } from '../../fonts/fold';
 import { FACES } from '../../fonts/faces';
 import { measureEm, prefixEm } from '../../fonts/measure';
 import { planeBounds, planeScale } from '../../contracts/space';
@@ -372,6 +372,9 @@ function emit(block: Block, left: number, top: number, blockWidth: number, align
     const foot = row === block.spans.length - 1 ? spare / 2 : 0;
     lines.push({ x, y: y - top, width: lineWidth, height: cell.height + top + foot });
     text.push(prep.text.slice(span.start, span.end));
+    // A line in a script the faces lack (Arabic, Hindi, Greek...) is one run, not a run a word: the renderer draws a run as one string, and only a whole line can be
+    // shaped, joined and put in bidi order by the browser, with the spaces of the font it is drawn in. Latin lines stay a run a word.
+    const whole = hasDevice(prep.text.slice(span.start, span.end));
     let from = span.start;
     while (from < span.end) {
       if (prep.text[from] === ' ') {
@@ -380,7 +383,8 @@ function emit(block: Block, left: number, top: number, blockWidth: number, align
       }
       const emphasised = prep.emph[from] === true;
       let end = from;
-      while (end < span.end && prep.text[end] !== ' ' && (prep.emph[end] === true) === emphasised) end += 1;
+      while (end < span.end && (whole || prep.text[end] !== ' ') && (prep.emph[end] === true) === emphasised) end += 1;
+      while (whole && end > from + 1 && prep.text[end - 1] === ' ') end -= 1;
       runs.push({
         text: prep.text.slice(from, end),
         offset: prep.orig[from] ?? 0,
