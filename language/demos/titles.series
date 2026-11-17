@@ -12,7 +12,7 @@ say card | WAITING
 cam push slow
 wait 2.6s
 
-scene hold stack lines=4 calm slow
+scene hold stack lines=3 calm slow
 cam rest
 say a1 | Hold on.
 #! stall 5

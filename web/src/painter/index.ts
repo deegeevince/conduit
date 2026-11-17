@@ -959,7 +959,8 @@ export function createPainter(options: PainterOptions): Painter {
       // (a figure is named by its key too: a callout's leader is `<its key>/leader`)
       if (hiddenKeys.size > 0) {
         hiddenSeen = [...frame.elements.map((element) => element.key), ...frame.figures.map((figure) => figure.key)].filter((key) => hiddenKeys.has(key));
-        frame = { ...frame, elements: frame.elements.filter((element) => !hiddenKeys.has(element.key)), figures: frame.figures.filter((figure) => !hiddenKeys.has(figure.key)) };
+        // `fields` leaves out the ambient weather too: it moves between two pictures, and its specks are not the footprint of anything
+        frame = { ...frame, elements: frame.elements.filter((element) => !hiddenKeys.has(element.key)), figures: frame.figures.filter((figure) => !hiddenKeys.has(figure.key)), ...(hiddenKeys.has('fields') ? { fields: [] } : {}) };
       }
     } catch (error) {
       // A frame that cannot be made is not the end of the show: say so, and keep what was last on screen.

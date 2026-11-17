@@ -330,7 +330,8 @@ export async function footprintJudge(tab: Tab, add: Add, options: { readonly sca
   const problems: string[] = [];
   const names = new Map(chosen.map((p) => [p.id, `"${(p.kind === 'text' ? p.text : p.id).slice(0, 24)}"`]));
   try {
-    await tab.eval('window.__stage.hide([])');
+    // the ambient weather (confetti, rain) is left out of every picture: its specks move between them and are no line's footprint
+    await tab.eval(`window.__stage.hide(${JSON.stringify(['fields'])})`);
     await tab.eval('window.__pix.clear()');
     await tab.eval(`window.__pix.put('a', ${JSON.stringify(await tab.shot())})`);
     await sleep(120);
@@ -340,14 +341,14 @@ export async function footprintJudge(tab: Tab, add: Add, options: { readonly sca
       const spot = options.spots?.get(piece.id) ?? null;
       const here = { x: piece.box.x, y: piece.box.y, w: piece.box.width, h: piece.box.height };
       // a callout's leader is its own figure: when the frame holds one, it is hidden alone first, so the line is looked at apart from the words
-      if (piece.kind === 'text' && (await tab.eval<string[]>(`window.__stage.hide(${JSON.stringify([`${piece.key}/leader`])})`)).length > 0) {
+      if (piece.kind === 'text' && (await tab.eval<string[]>(`window.__stage.hide(${JSON.stringify([`${piece.key}/leader`, 'fields'])})`)).length > 0) {
         await tab.eval(`window.__pix.put('h', ${JSON.stringify(await tab.shot())})`);
         const line = await tab.eval<{ count: number; x?: number; y?: number; w?: number; h?: number; spotGap?: number }>(`window.__pix.foot(${JSON.stringify(`${piece.id}/leader`)}, ${JSON.stringify(here)}, ${options.scale}, 4000, ${JSON.stringify(spot)})`);
         found.set(`${piece.id}/leader`, { id: `${piece.id}/leader`, kind: 'leader', text: '', box: piece.box, drawn: line.count >= 4 && line.x !== undefined ? { x: line.x, y: line.y as number, w: line.w as number, h: line.h as number } : null, spotGap: line.spotGap ?? null });
         if (line.count >= 4) leaderIds.push(`${piece.id}/leader`);
         names.set(`${piece.id}/leader`, `the leader of "${piece.text.slice(0, 20)}"`);
       }
-      await tab.eval(`window.__stage.hide(${JSON.stringify([piece.key])})`);
+      await tab.eval(`window.__stage.hide(${JSON.stringify([piece.key, 'fields'])})`);
       await tab.eval(`window.__pix.put('h', ${JSON.stringify(await tab.shot())})`);
       const margin = Math.max(40, piece.box.height * 1.5);
       const grow = Math.max(8, 0.35 * piece.fontPx);

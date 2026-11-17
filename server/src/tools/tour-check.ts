@@ -142,14 +142,27 @@ export async function tourGroup(base: string, screen: LensScreen, dir: string, t
     // (fb-006), and the bar and everything on the stage keep apart (fb-004)
     if (await tapCard('The language view', 30_000)) {
       if (await tapCard('Watch the picture being written')) {
+        // while it plays, the line over the stage's lower edge holds "Show all"; tapped, it says where the earlier scenes are. Each stands over the middle of the stage's column (fb-006), on one line
+        const pillUp = (): Promise<boolean> => tab.eval<boolean>(`(() => { const t = document.querySelector('.prompt__top'); return !!t && !t.hidden && t.offsetParent !== null; })()`);
+        if (!(await until('the line over the stage (Show all) while the language view plays', pillUp, 15_000))) list.push('there was no line over the stage while the language view played');
+        else {
+          const pill = await checkPill(tab);
+          if (pill.length > 0) list.push(`the language view, Show all: ${pill.join('; ')}`);
+          await tab.eval(`document.querySelector('.action--show').click()`);
+          // the note is said only when the stage can rest on the last of several scenes; when it is, it stands where the Show all line did
+          let noted = false;
+          for (let waited = 0; waited < 6000 && !noted; waited += 250) {
+            noted = await tab.eval<boolean>(`[...document.querySelectorAll('.prompt__top .prompt__status')].some((n) => /Transcript/.test(n.textContent) && !n.classList.contains('prompt__status--quiet'))`);
+            if (!noted) await sleep(250);
+          }
+          if (noted) {
+            const note = await checkPill(tab);
+            if (note.length > 0) list.push(`the language view, the Transcript note: ${note.join('; ')}`);
+          }
+        }
         if (await barReady()) {
           await shoot('language');
           await barClear('the language view at its end');
-          // an earlier moment: the status line (Show all, the Transcript) is up then
-          await tab.eval('window.__stage.seek(1)');
-          await sleep(600);
-          const pill = await checkPill(tab);
-          if (pill.length > 0) list.push(`the language view: ${pill.join('; ')}`);
           await tab.eval(`[...document.querySelectorAll('[data-tour-bar] button')].find((b) => b.textContent === 'Back to the tour').click()`);
           await until('the tour page after the language view', async () => (await shown('A tour of Conduit')) !== null, 12_000);
         }

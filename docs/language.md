@@ -533,6 +533,7 @@ This rule is what makes a schedule reproducible: with no revisions, **the same l
 | `cam`, `set`, `move`, `drop`, `paint`, `ambient` | at the pen | stays where it is |
 | `style`, `color`, `plan`, `group`, `frame`, `card`, `bind` | no time | stays where it is |
 | a structure (`flow` … `chart`) | at the pen | stays where it is; its title fades in |
+| `math` | at the pen | moves to the end of its entrance: the working has arrived before the next line, a `scene` too, begins (fb-023) |
 | `node`, a control | at the pen | moves half way through its entrance, like anything drawn |
 | `link` | at the pen | moves half way through each link, so a chain is drawn link after link |
 | a row of a table or chart | a step after the row before it | moves to its landing |
@@ -1303,7 +1304,7 @@ Nominal scale against body: `xs` 0.64, `s` 0.8, `m` 1, `l` 1.5, `xl` 2.25, `xxl`
 
 | Form | Time | Meaning |
 | --- | --- | --- |
-| `math <id> column\|times\|split\|bond\|bar\|groups\|array\|line [worked] [blank=answer\|all] [carry=write\|shown\|none] [steps \| step=<n\|control>] \| <sum>` | starts at the pen and leaves the pen where it is | A written method laid out as on paper, in place-value columns. The painter computes every digit; you write none. The answer is sealed like an ask's `is=`: the default shows the method (the givens, the signs, the rule and empty cells) and never the answer. `worked` writes everything, for teaching on a different sum. `steps` adds a stepper, `step=<id>` follows a `pick`. Its parts are named `<id>.<part>`: `m1.r3` (a row), `m1.tens`, `m1.carry-tens`, `m1.ans-ones`, `m1.rule`, `m1.s2` (a step). |
+| `math <id> column\|times\|split\|bond\|bar\|groups\|array\|line [worked] [blank=answer\|all] [carry=write\|shown\|none] [steps \| step=<n\|control>] \| <sum>` | starts at the pen and moves the pen past itself | A written method laid out as on paper, in place-value columns. The painter computes every digit; you write none. The answer is sealed like an ask's `is=`: the default shows the method (the givens, the signs, the rule and empty cells) and never the answer. `worked` writes everything, for teaching on a different sum. `steps` adds a stepper, `step=<id>` follows a `pick`. Its parts are named `<id>.<part>`: `m1.r3` (a row), `m1.tens`, `m1.carry-tens`, `m1.ans-ones`, `m1.rule`, `m1.s2` (a step). |
 
 Methods: `column`, `times`, `split`, `bond`, `bar`, `groups`, `array`, `line`. `blank=`: `answer`, `all` (the first is the default). `carry=`: `write`, `shown`, `none`. Places in a part: `ones`, `tens`, `hundreds`, `thousands`, `tenthousands`, `tenths`, `hundredths`, `thousandths`.
 

@@ -128,7 +128,12 @@ if (argument === undefined || argument === 'all') {
   }
 }
 if (argument === 'reading') ok = readingChecks(true) && ok;
-if (argument === 'demos') ok = readingChecks() && demoRules() && ok;
+if (argument === 'demos') {
+  // both run: one failing must not hide the other
+  const reading = readingChecks();
+  const rules = demoRules();
+  ok = reading && rules && ok;
+}
 if (argument !== undefined && argument !== 'examples' && argument !== 'all' && argument !== 'reading' && argument !== 'demos') {
   const path = argument.endsWith('.series') ? argument : fileURLToPath(new URL(`../demos/${argument}.series`, import.meta.url));
   ok = run(argument, readFileSync(path, 'utf8')) && ok;
