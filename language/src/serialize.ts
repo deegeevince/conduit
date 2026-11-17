@@ -352,7 +352,7 @@ export function serializeLine(line: Line): string {
     case 'fill':
       return `fill ${line.id}${line.part === undefined ? '' : `.${line.part}`} | ${line.text}`;
     case 'math':
-      return withText(['math', line.id, line.method, ...(line.worked === true ? ['worked'] : []), ...(line.blank === undefined ? [] : [`blank=${line.blank}`]), ...(line.carry === undefined ? [] : [`carry=${line.carry}`]), ...(line.steps === true ? ['steps'] : []), ...(line.step === undefined ? [] : [`step=${line.step}`]), ...whenToken(line.when)], line.sum);
+      return withText(['math', line.id, line.method, ...(line.box === undefined ? [] : [`${line.box.x},${line.box.y}`, `${line.box.w}x${line.box.h}`]), ...(line.worked === true ? ['worked'] : []), ...(line.blank === undefined ? [] : [`blank=${line.blank}`]), ...(line.carry === undefined ? [] : [`carry=${line.carry}`]), ...(line.steps === true ? ['steps'] : []), ...(line.step === undefined ? [] : [`step=${line.step}`]), ...whenToken(line.when)], line.sum);
     case 'reply':
       return `reply | ${line.text}`;
     case 'end':

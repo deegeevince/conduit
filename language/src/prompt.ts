@@ -353,7 +353,7 @@ export function buildSystemPrompt({ capabilities, services }: PromptOptions): st
   const structures = draws ? capabilities.structures.filter((name) => name !== 'chart' || charts.length > 0) : [];
   // `code` is taught where the verbs for what you write are ("More to say with"), in its own words, and not twice in the list of shapes.
   // `tune` is taught only on a turn about music (`tuneChapter`, in the brief), never here: the system prompt is full.
-  const shapes = structures.filter((name) => name !== 'code' && name !== 'tune' && name !== 'screen' && name !== 'app' && name !== 'figure' && name !== 'problem');
+  const shapes = structures.filter((name) => name !== 'code' && name !== 'tune' && name !== 'screen' && name !== 'app' && name !== 'figure' && name !== 'problem' && name !== 'math');
   const controls = capabilities.controls;
   const deep = false;
   const camera = false;

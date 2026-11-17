@@ -63,6 +63,11 @@ export const DEMOS = [
     summary: 'A maths question to work out: the brain says the question and its answer in one line, and the stage draws the whole workspace (the question large, a blank for the pen, hints, pictures from its numbers) and checks the answer.',
   },
   {
+    name: 'maths',
+    title: 'Maths',
+    summary: 'Written methods laid out as on paper, one block per method: a column sum of six 12s, subtraction by exchange, short multiplication, expanded form, a part-whole bond, a decimal sum, a worked sum that steps, and the four pictures (a bar, groups, an array and a number line). The painter works every digit and the answer is never drawn.',
+  },
+  {
     name: 'richness',
     title: 'Richness',
     summary: 'A brush for each stroke character, a texture for each fill, a soft edge, a gradient and a painting the renderer makes itself.',

@@ -497,6 +497,8 @@ export function sightOf(timeline: Timeline, schedule: Schedule, base: StageBase,
       // words and structures the brain placed on the canvas are part of the drawing: a row of numbers with a box round one is not "in a corner"
       const placedWords = kind === 'text' && (entry.element.style.near !== null || entry.element.style.group !== null || (typeof entry.element.style.at === 'object' && entry.element.style.at !== null));
       if (kind !== 'shape' && kind !== 'sprite' && kind !== 'copy' && kind !== 'group' && kind !== 'structure' && !placedWords) return false;
+      // a written method is as big as its sum is: a small sum is not a drawing left in a corner
+      if (entry.element.figure?.kind === 'structure' && entry.element.figure.structure === 'math') return false;
       // a backdrop (a sheet that bleeds, or most of the canvas) is not the subject
       if (figureFrames.get(entry.element.key)?.some((figure) => figure.kind === 'shape' && figure.bleed)) return false;
       return entry.screenBox.w * entry.screenBox.h > 0 && entry.screenBox.w * entry.screenBox.h < SUBJECT_MAX_SHARE * canvas.w * canvas.h;

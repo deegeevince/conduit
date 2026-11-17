@@ -1,0 +1,49 @@
+# Maths: written methods laid out as on paper. One line each: the method and the sum. The painter works every digit; the brain writes none, so the working cannot be
+# wrong and the answer is never on the page until the learner writes it. Blank boxes are the learner's. `pnpm check` plays and judges each scene.
+
+scene stack
+say a1 | Six lots of 12, added in a column. Start with the ones.
+math m1 column | 12+12+12+12+12+12
+set m1.ans-ones mark=box
+say near=m1.r3:left | a 12
+
+scene stack
+say a2 | Take 278 from 503. The ones need an exchange first.
+math m2 column | 503 - 278
+
+scene stack
+say a3 | Forty-seven, six times.
+math m3 times | 47 × 6
+hit m3.tens pulse
+
+scene stack
+say a4 | Pull 347 apart, place by place.
+math m4 split | 347
+
+scene stack
+say a5 | The whole is 10, one part is 4. What is the other part?
+math m5 bond | 10 = 4 + ?
+
+scene stack
+say a6 | Line the decimal points up, then add.
+math m6 column | 3.4 + 12.75
+
+scene stack
+say a7 | Here it is worked, a step at a time. Tap for the next one.
+math m7 column worked steps | 346 + 285
+
+scene stack
+say a8 | Three quarters of a bar.
+math m8 bar | 3/4
+
+scene stack
+say a9 | Twelve shared into three groups.
+math m9 groups | 12 ÷ 3
+
+scene stack
+say a10 | Three rows of four.
+math m10 array | 3 × 4
+
+scene stack
+say a11 | Seven, and five more.
+math m11 line | 7 + 5

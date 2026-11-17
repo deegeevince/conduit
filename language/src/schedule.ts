@@ -50,7 +50,7 @@ import {
   dwellSeconds,
   waitSeconds,
 } from './timing';
-import type { Anchor, AppShelf, ArtVerb, LessonVerb, MathVerb, TuneVoice } from './vocabulary';
+import type { Anchor, AppShelf, ArtVerb, LessonVerb, MathBlank, MathCarry, MathMethod, MathVerb, TuneVoice } from './vocabulary';
 import type { BindLine, BindOn, CanvasBox, ControlLine, SceneLine, ControlValue, CreatingLine, Issue, IssueCode, Line, Paint, Point, Range, ShapeGeometry, StructureLine, StyleProps, TablePart, Target, When } from './types';
 import { cachedTune, tuneRowsOf } from './tune';
 import { BACKDROP_LAYERS, CANVAS, CONTROL, DEFAULT_CANVAS, DEFAULT_CHART, DEFAULT_LOOK, DEFAULT_TUNE_VOICE, LESSON_VERBS, LIMITS, STRUCTURE } from './vocabulary';
@@ -182,6 +182,8 @@ export type Figure =
       readonly marks?: readonly TableMark[];
       /** FG2. A figure: `cutaway` or `exploded`; absent or null: plain. Its parts, routes and steps are its rows, one line each. */
       readonly mode?: 'cutaway' | 'exploded' | null;
+      /** A written method (`math`): what the line said, and what later lines did to its parts. The painter works every digit from it (`maths/written.ts`). */
+      readonly math?: MathFigure | null;
       /** A problem: the question exactly as given, what it accepts, and the ways it was asked to offer; the stage draws the rest */
       readonly problem?: { readonly question: string; readonly answer: readonly string[]; readonly ways: readonly string[] | null; readonly for: string } | null;
       /** v2.1. A code block: its language as the brain wrote it, and the file it is from; absent or null: none */
@@ -257,6 +259,23 @@ export interface CarriedElement {
   readonly driven?: readonly DrivenChange[];
   /** v2.1. The address its words link to (`say … href=`); absent: not a link */
   readonly href?: string;
+}
+
+/** A written method on the stage: its line, and the marks and fills later lines put on its parts, each from the moment it was written. */
+export interface MathFigure {
+  readonly method: MathMethod;
+  readonly sum: string;
+  readonly worked: boolean;
+  readonly blank: MathBlank | null;
+  readonly carry: MathCarry | null;
+  /** a stepper on the block itself (a tap advances) */
+  readonly steps: boolean;
+  /** the step shown: a number, or the id of the `pick` that follows it; null: all of it */
+  readonly step: number | string | null;
+  /** `set m1.tens mark=box`, in the order written: a later one on the same part replaces it */
+  readonly marks: readonly { readonly part: string; readonly mark: string; readonly at: number }[];
+  /** `fill m1 | 72` (`part` null: spread across the answer cells by place) and `fill m1.ans-ones | 2` */
+  readonly fills: readonly { readonly part: string | null; readonly text: string; readonly at: number }[];
 }
 
 /** A mark on a row or a cell of a table. */
@@ -364,7 +383,7 @@ export type ElementChange =
       readonly geometry: ShapeGeometry;
       readonly style: ElementStyle;
     }
-  | { readonly kind: 'hit'; readonly seq: number; readonly start: number; readonly end: number; readonly gesture: HitGesture }
+  | { readonly kind: 'hit'; readonly seq: number; readonly start: number; readonly end: number; readonly gesture: HitGesture; /** a part of a written method (`hit m1.tens`) */ readonly part?: string }
   | { readonly kind: 'strike'; readonly seq: number; readonly start: number; readonly end: number };
 
 export interface ElementSpan {
@@ -1243,6 +1262,27 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
       return;
     }
 
+    if (line.verb === 'math') {
+      // A written method (PLAN-maths M2): a structure the painter lays out as on paper. Written again under its id with the same words it is nothing; with other words, it is that block, rewritten in place.
+      const open = findLive(line.id, start);
+      const openFigure = open?.span.figure;
+      const wanted: MathFigure = { method: line.method, sum: line.sum, worked: line.worked === true, blank: line.blank ?? null, carry: line.carry ?? null, steps: line.steps === true, step: line.step ?? null, marks: [], fills: [] };
+      const figure = (math: MathFigure): Figure => ({ kind: 'structure', structure: 'math', grow: null, chart: null, words: [], data: null, bars: false, math, box: line.box ?? null, route: false, rows: [] });
+      if (open !== null && openFigure?.kind === 'structure' && openFigure.math != null) {
+        const same = alike({ ...openFigure.math, marks: [], fills: [] }, wanted) && alike(openFigure.box, line.box ?? null);
+        if (!same) open.span.figure = { ...figure({ ...wanted, marks: openFigure.math.marks, fills: [] }) };
+        previousStart = same ? priorStart : previousStart;
+        lines.push({ seq, verb: line.verb, start, end: start });
+        return;
+      }
+      const joined = joinGroup(seq, styleFor(seq, 'structure', [], {}), start);
+      const duration = figureEnterSeconds(joined.style.enter, pace, joined.style.dur, false);
+      const slot = takeSlot(line.id, start);
+      create(entry, 'structure', line.id, joined.style, start + slot.delay, duration, slot.order, { text: '', emphasis: [], figure: figure(wanted), parent: joined.parent });
+      lines.push({ seq, verb: line.verb, start, end: start + slot.delay + duration });
+      return;
+    }
+
     if (isStructureLine(line)) {
       // A diagram of nodes written again under its own id, as the same kind, is the same diagram retitled, restyled or given another room: its parts stay.
       const open = findLive(line.id, start);
@@ -1822,13 +1862,23 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
       case 'step':
       case 'reply':
       case 'end':
-      case 'fill':
-      // PLAN-maths M0: the contract only. The painter lays a written method out in M2; until then it is no time and no place on the stage.
-      case 'math':
         // The words of the document and its lessons (v3, lesson.ts). They put nothing on a painted stage and take no time: the document keeps them.
         lines.push({ seq, verb: line.verb, start: pen, end: pen });
         break;
 
+      case 'fill': {
+        // `fill m1 | 72`, `fill m1.ans-ones | 2`: the answer a person gave, put in the cells of a written method that is on stage; for anything else it is the document's
+        const target = findLive(line.id, pen);
+        const held = target?.span.figure;
+        if (target !== null && held?.kind === 'structure' && held.math != null) {
+          const math = held.math;
+          target.span.figure = { ...held, math: { ...math, fills: [...math.fills.filter((fill) => fill.part !== (line.part ?? null)), { part: line.part ?? null, text: line.text, at: pen }] } };
+        }
+        lines.push({ seq, verb: line.verb, start: pen, end: pen });
+        break;
+      }
+
+      case 'math':
       case 'say':
       case 'circle':
       case 'ellipse':
@@ -2022,7 +2072,15 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
       case 'set': {
         const start = startOf(entry, line.when);
         if (line.mathPart !== undefined) {
-          // a part of a written method is marked by the painter that lays it out (PLAN-maths M2); here it is no time and no place
+          // a part of a written method is marked by the painter that lays it out (PLAN-maths M2); here it is a mark on the figure from this moment, no time and no place
+          const owner = line.target.kind === 'id' ? findLive(line.target.id, start) : null;
+          const held = owner?.span.figure;
+          if (owner === null || held?.kind !== 'structure' || held.math == null) report(seq, 'unknown-id', `no written method called "${line.target.kind === 'id' ? line.target.id : ''}" is on stage to mark a part of`);
+          else {
+            const mark = line.props.mark ?? 'box';
+            const rest = held.math.marks.filter((prior) => prior.part !== line.mathPart);
+            owner.span.figure = { ...held, math: { ...held.math, marks: mark === 'none' ? rest : [...rest, { part: line.mathPart, mark, at: start }] } };
+          }
           previousStart = start;
           lines.push({ seq, verb: line.verb, start, end: start });
           break;
@@ -2136,7 +2194,7 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
         if (target === null) {
           report(seq, 'unknown-id', `nothing called "${line.id}" is on stage to point at`, line.id);
         } else {
-          target.span.changes.push({ kind: 'hit', seq, start, end, gesture: line.gesture });
+          target.span.changes.push({ kind: 'hit', seq, start, end, gesture: line.gesture, ...(line.part === undefined ? {} : { part: line.part }) });
           pen = Math.max(pen, end);
         }
         previousStart = start;

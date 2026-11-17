@@ -792,8 +792,10 @@ export function groupMatrixAt(group: ElementSpan, schedule: Schedule, time: numb
 }
 
 /** The box a drawn element occupies on the canvas at `time`, canvas units: used for `near=`, for `cam focus`, and for the sight report. */
-export function canvasBoxOf(element: ElementSpan, schedule: Schedule, time: number): CanvasRect | null {
+export function canvasBoxOf(element: ElementSpan, schedule: Schedule, time: number, part?: string): CanvasRect | null {
   if (element.kind === 'text' || element.kind === 'field') return null;
+  // `near=m1.tens`: the part of a written method; the whole block when the layout does not know the part
+  if (element.kind === 'structure' && part !== undefined) return laidOutOf(schedule)?.boxOf(`${element.key}.${part}`, time) ?? laidOutOf(schedule)?.boxOf(element.key, time) ?? null;
   if (element.kind === 'structure' || element.kind === 'node' || element.kind === 'link' || element.kind === 'control') return laidOutOf(schedule)?.boxOf(element.key, time) ?? null;
   return unionBox(element, schedule, time, null, 'out');
 }

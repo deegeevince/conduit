@@ -628,6 +628,7 @@ export const STRUCTURE = {
   tune: { gist: 'rows `| line` of ABC notation, taken exactly: a piano roll that plays, with a playhead and the notes lighting as they sound', parts: 'rows', lays: 'engine' },
   app: { gist: 'rows `| line` of one HTML document (inline style and script), taken exactly: a live app that runs in a locked sandbox on the stage and answers back (taught only when the user asks for something that works)', parts: 'rows', lays: 'engine' },
   figure: { gist: 'a labelled drawing: each part one line (taught by the FIGURE chapter in the brief); rows are the lines of the figure, taken as written', parts: 'rows', lays: 'engine' },
+  math: { gist: 'a written method laid out as on paper (taught by the maths chapter, not yet in the brief): the line is `math <id> <method> | <sum>`, the painter works every digit', parts: 'rows', lays: 'engine' },
   problem: { gist: 'an old maths question: it plays as an `ask` for its answer (the question as its words); write an `ask` instead', parts: 'rows', lays: 'engine' },
   screen: { gist: 'a mock-up: devices at true size, each part one line (taught by the INTERFACE chapter in the brief); rows are the lines of the interface, taken as written', parts: 'rows', lays: 'engine' },
 } as const satisfies Record<string, { gist: string; parts: 'nodes' | 'rows'; lays: 'painter' | 'axis' | 'brain' | 'engine' }>;
@@ -1112,8 +1113,9 @@ export const SHAPE_VERBS = ['circle', 'ellipse', 'rect', 'line', 'poly', 'path']
 export type ShapeVerb = (typeof SHAPE_VERBS)[number];
 
 /** The verbs that open a structure. The verb is the structure's kind. */
-export const STRUCTURE_VERBS = STRUCTURE_KINDS satisfies readonly Verb[];
-export type StructureVerb = StructureKind;
+export const STRUCTURE_VERBS = STRUCTURE_KINDS satisfies readonly (Verb | 'math')[];
+/** `math` is a structure on the stage but its own line (`MathLine`), not a `StructureLine`. */
+export type StructureVerb = Exclude<StructureKind, 'math'>;
 
 /** The verbs that put a control on stage. The verb is the control's kind. */
 export const CONTROL_VERBS = CONTROL_KINDS satisfies readonly Verb[];

@@ -12,7 +12,7 @@
 // `prompt.ts` yet (WS7 owns it); `taughtNotAdvertised` is the run-time half of the check (review I2) for the day it is.
 
 import type { ControlKind, StructureKind } from './vocabulary';
-import { CONTROL_KINDS, SHAPE_VERBS, STRUCTURE_KINDS, VERB } from './vocabulary';
+import { CONTROL_KINDS, MATH_VERB, SHAPE_VERBS, STRUCTURE_KINDS, VERB } from './vocabulary';
 import type { ElementSpan } from './schedule';
 import { describeFigure } from './stage';
 import { asksForLiveApp } from './app';
@@ -91,8 +91,8 @@ export type Lexicon = { readonly [K in KindId]: KindWords<K> };
 
 /** L2: the shapes the fixed prompt teaches. The rest of `SHAPE_VERBS` and the other verbs of a drawing are chapters. */
 const KERNEL_SHAPES = SHAPE_VERBS.filter((name) => name === 'circle' || name === 'rect' || name === 'line' || name === 'path');
-const form = (verb: keyof typeof VERB): string => VERB[verb].form;
-const gist = (verb: keyof typeof VERB): string => VERB[verb].gist;
+const form = (verb: keyof typeof VERB | 'math'): string => (verb === 'math' ? MATH_VERB.math.form : VERB[verb].form);
+const gist = (verb: keyof typeof VERB | 'math'): string => (verb === 'math' ? MATH_VERB.math.gist : VERB[verb].gist);
 
 /**
  * What a structure's own figure says, then the words of its nodes in the order written, with the date or place a node sits at, and the
@@ -170,6 +170,13 @@ export const LEXICON: Lexicon = {
     teach: { where: 'chapter', form: form('problem'), gloss: gist('problem'), cue: () => false },
     describes: 'summary',
     describe: (element) => `maths question "${element.figure?.kind === 'structure' && element.figure.problem?.question ? element.figure.problem.question : element.text.trim()}"`,
+  },
+  math: {
+    id: 'math',
+    // PLAN-maths M5 teaches it; until then the brief never offers it (the cue never holds)
+    teach: { where: 'chapter', form: form('math'), gloss: gist('math'), cue: () => false },
+    describes: 'summary',
+    describe: (element) => describeFigure(element.figure ?? { kind: 'group' }),
   },
   flow: structure('flow', 'kernel', 'words'),
   tree: structure('tree', 'kernel', 'words'),

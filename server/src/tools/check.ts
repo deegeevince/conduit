@@ -46,6 +46,7 @@ import { loopGroup } from './loop-check';
 import { TOUR_SCREENS, tourGroup } from './tour-check';
 import { printWebkit, webkitGroup, webkitMissing } from './webkit-check';
 import { driftGroup } from './drift-check';
+import { mathsGroup } from './math-check';
 import type { Answer, CheckResult, Options, Probe, Step, Verdict } from './smoke';
 
 // ---------------------------------------------------------------------------------------------------------------------------------
@@ -917,6 +918,15 @@ function buildUnits(args: Args, welcome: Welcome): { readonly units: Unit[]; rea
       const results = await driftGroup(plain);
       out.lines.push('\ndrift (six screens)');
       checkLines(out, results);
+    },
+  });
+  units.push({
+    name: 'maths',
+    needs: 'none',
+    weight: 20,
+    run: async (_servers, out) => {
+      out.lines.push('\nmaths (820x971, 390x844, 1280x720)');
+      checkLines(out, await mathsGroup(plain));
     },
   });
   units.push({

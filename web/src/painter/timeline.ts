@@ -29,6 +29,7 @@ import { appCues, loneAppScenes } from './apps';
 import { CALM } from '../contracts/controls';
 import { registerLaidOut, laidOutOf } from './registry';
 import { buildStructures, probeStructure, setTextOnce } from './structures';
+import { mathLeast, mathNatural } from './blocks/math';
 import { CALLOUTS_READY, layoutCallouts } from './blocks';
 import type { CalloutInput } from '../contracts/blocks';
 import type { StructureFrames } from './structures';
@@ -808,8 +809,8 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
       // a mock-up takes what the stage can give it: its screens are scaled together to the room
       const mockup = figure.structure === 'screen';
       const drawing = figure.structure === 'figure';
-      const natural = mockup ? { width: 1600, height: 900 } : drawing ? { width: 900, height: 700 } : live ? { width: 960, height: Math.max(120, context.appHeights?.get(element.key) ?? figure.height ?? 480) } : tune ? { width: 760, height: 260 } : chart ? { width: 560, height: 400 } : table ? { width: Math.max(280, 150 * columns), height: 60 + 34 * figure.rows.length } : { width: 640, height: 120 + 40 * parts };
-      const least = mockup ? { width: 300, height: 300 } : drawing ? { width: 280, height: 300 } : live ? { width: 280, height: 220 } : tune ? { width: 260, height: 150 } : chart ? { width: 260, height: 300 } : table ? { width: Math.max(200, 100 * columns), height: 40 + 24 * figure.rows.length } : { width: 160, height: 100 };
+      const natural = figure.structure === 'math' && figure.math != null ? mathNatural(figure.math) : mockup ? { width: 1600, height: 900 } : drawing ? { width: 900, height: 700 } : live ? { width: 960, height: Math.max(120, context.appHeights?.get(element.key) ?? figure.height ?? 480) } : tune ? { width: 760, height: 260 } : chart ? { width: 560, height: 400 } : table ? { width: Math.max(280, 150 * columns), height: 60 + 34 * figure.rows.length } : { width: 640, height: 120 + 40 * parts };
+      const least = figure.structure === 'math' && figure.math != null ? mathLeast(figure.math) : mockup ? { width: 300, height: 300 } : drawing ? { width: 280, height: 300 } : live ? { width: 280, height: 220 } : tune ? { width: 260, height: 150 } : chart ? { width: 260, height: 300 } : table ? { width: Math.max(200, 100 * columns), height: 40 + 24 * figure.rows.length } : { width: 160, height: 100 };
       list.push({
         key: element.key,
         kind: chart ? 'chart' : 'structure',
@@ -2305,7 +2306,7 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
       let target = drawnLive(style.near.id, tq);
       if (CALLOUTS_READY && style.leader && target !== null) {
         // a label with a line to the part it names is placed with the others of its drawing: no two leaders cross, no label sits on a stroke
-        const box = canvasBoxOf(target, schedule, tq);
+        const box = canvasBoxOf(target, schedule, tq, style.near.part);
         if (box !== null) {
           callouts.push({ key: element.key, ps, w, h, px: pose.fontSize * ps, element: target, target: toScreenRect(box, fitOfElement(target, look, tq)), side: style.near.side, fit, layer: pose.layer });
           continue;
@@ -2321,7 +2322,7 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
         if (target === null) continue;
         seenAt = Math.max(0, (target.exit?.end ?? tq) - 1e-3);
       }
-      const box = canvasBoxOf(target, schedule, seenAt);
+      const box = canvasBoxOf(target, schedule, seenAt, style.near.part);
       if (box === null) continue;
       const targetRect = toScreenRect(box, fitOfElement(target, look, tq));
       const region: Rect = { x: fit.box.x, y: fit.box.y, w: fit.box.width, h: fit.box.height };
@@ -2333,6 +2334,24 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
       seedText();
       const caption = isPlaceholderCaption(element.id, style.near.id);
       const outer: Rect = { x: -viewport.width / 2 + edge, y: -viewport.height / 2 + topEdge, w: viewport.width - 2 * edge, h: viewport.height - topEdge - edge };
+      // Words beside a part of a written method (`near=m1.r3:right`) stand beside the block, level with the part, never on its digits: the block's own words are not
+      // an obstacle the leader code can see, so the place is worked out here from the part and the block
+      if (style.near.part !== undefined && target.figure?.kind === 'structure' && target.figure.structure === 'math') {
+        const whole = canvasBoxOf(target, schedule, seenAt);
+        if (whole !== null) {
+          const block = toScreenRect(whole, fitOfElement(target, look, tq));
+          const side = style.near.side === 'auto' ? 'right' : style.near.side;
+          const px0 = targetRect.x + targetRect.w / 2;
+          const py0 = targetRect.y + targetRect.h / 2;
+          const wantX = side === 'left' ? block.x - gap - w / 2 : side === 'right' ? block.x + block.w + gap + w / 2 : px0;
+          const wantY = side === 'above' ? block.y - gap - h / 2 : side === 'below' ? block.y + block.h + gap + h / 2 : py0;
+          const cx = Math.max(outer.x + w / 2, Math.min(outer.x + outer.w - w / 2, wantX));
+          const cy = Math.max(outer.y + h / 2, Math.min(outer.y + outer.h - h / 2, wantY));
+          taken.push({ x: cx - w / 2, y: cy - h / 2, w, h });
+          out.set(element.key, { x: cx / ps, y: cy / ps });
+          continue;
+        }
+      }
       const chosen = placeLabel({
         w,
         h,

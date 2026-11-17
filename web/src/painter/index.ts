@@ -2,6 +2,7 @@ import { controlText, describeFigure, EMPTY_STAGE, holdControl, FULL_CAPABILITIE
 import { CHARTS_READY } from '../render/chart';
 import { setTarget, targetPx } from './target';
 import { STRUCTURES_READY } from './blocks';
+import { advanceMath, hasOwnStepper, mathSteps } from './blocks/math';
 import { CONTROLS_READY, controlEngine, createControlStore, nextEases } from './controls';
 import { controlIndexOf, createRuntime, controlSpecOf, heldBy, stateReader } from './bound';
 import { penRead, penReady } from './controls/pen';
@@ -1633,7 +1634,27 @@ export function createPainter(options: PainterOptions): Painter {
     return best;
   };
 
+  /** The written method with a stepper of its own that a tap at (x, y) is on: a tap anywhere on the block moves it on. */
+  const mathStepperAt = (x: number, y: number): string | null => {
+    for (const view of timeline.viewsAt(instantOf(clock.read()))) {
+      if (view.kind !== 'structure' || view.opacity < 0.5) continue;
+      if (x < view.box.x || x > view.box.x + view.box.width || y < view.box.y || y > view.box.y + view.box.height) continue;
+      const span = timeline.schedule.elements.find((candidate) => candidate.key === view.key);
+      if (span?.figure?.kind === 'structure' && span.figure.math != null && hasOwnStepper(span.figure.math)) return view.key;
+    }
+    return null;
+  };
+
   const tapOn = (key: string): void => {
+    // A written method that steps by a tap: the tap moves it on, and is no message
+    const base = key.split('/')[0] ?? key;
+    const held = timeline.schedule.elements.find((candidate) => candidate.key === base);
+    if (held?.figure?.kind === 'structure' && held.figure.math != null && hasOwnStepper(held.figure.math)) {
+      advanceMath(held.key, mathSteps(held.figure.math));
+      refreshTimeline();
+      drawNow();
+      return;
+    }
     // A second tap while the first is being answered is not a second message.
     if (anticipation !== null) return;
     const reading = clock.read();
@@ -1770,7 +1791,7 @@ export function createPainter(options: PainterOptions): Painter {
     },
 
     tapAt(x, y) {
-      const key = renderer.pick(x, y) ?? nearTappable(x, y);
+      const key = renderer.pick(x, y) ?? nearTappable(x, y) ?? mathStepperAt(x, y);
       if (key !== null) tapOn(key);
     },
 

@@ -1660,9 +1660,14 @@ function parseMath(head: Head, rawText: string | null, issues: Issues): MathLine
     return null;
   }
   const line: { -readonly [K in keyof MathLine]: MathLine[K] } = { verb: 'math', id, method, sum: '' };
+  const numbers: number[] = [];
   for (const word of head.words.slice(2)) {
+    const corner = /^(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)$/.exec(word);
+    const size = /^(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)$/.exec(word);
     if (word === 'worked') line.worked = true;
     else if (word === 'steps') line.steps = true;
+    else if (corner?.[1] !== undefined && corner[2] !== undefined) numbers.push(Number(corner[1]), Number(corner[2]));
+    else if (size?.[1] !== undefined && size[2] !== undefined) numbers.push(Number(size[1]), Number(size[2]));
     else issues.warn('unknown-word', `"${word}" is not a word of math; ignored (worked | steps)`, word);
   }
   for (const pair of head.pairs) {
@@ -1682,6 +1687,8 @@ function parseMath(head: Head, rawText: string | null, issues: Issues): MathLine
     issues.warn('bad-value', 'steps and step= together: step= wins, and the stepper is dropped');
     delete line.steps;
   }
+  const box = numbers.length === 0 ? undefined : boxOf(numbers, issues, 'math');
+  if (box !== undefined) line.box = box;
   const read = readSum(method, rawText ?? '');
   if (!read.ok) {
     issues.error(rawText === null || rawText.trim() === '' ? 'missing-text' : 'bad-sum', read.why);
