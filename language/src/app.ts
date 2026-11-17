@@ -35,16 +35,24 @@ export function asksForLiveApp(asked: string): boolean {
 
 /** What a document reaches for by name, whichever shelf word it said: the library's own global in its code is as good as asking, so an app that forgets `uses=` still runs. */
 const SHELF_GLOBALS: readonly (readonly [RegExp, AppShelf])[] = [
-  [/\bMatter\b/, 'physics'],
+  // the library's own name used as code (`Matter.Engine`, `= Matter`), not the word in a sentence an app prints
+  [/(?:\bMatter\s*\.\s*[A-Za-z]|[=(]\s*Matter\b)/, 'physics'],
   [/font[^;}]{0,80}\b(?:Inter|Source Serif(?: 4)?|Archivo Black|JetBrains Mono)\b/, 'fonts'],
   [/(?:\bTone\s*\.|=\s*Tone\b)/, 'sound'],
   [/\bkatex\b/, 'maths'],
   [/(?:\bd3\s*\.[a-z]|=\s*d3\b)/, 'charts'],
 ];
+/** The shelves an app is given: the ones it asked for (`uses=`), and any whose library its code reaches for. The host loads these. */
 export function shelfOf(asked: readonly AppShelf[] | undefined, source: string): readonly AppShelf[] {
   const out = [...(asked ?? [])];
   for (const [pattern, shelf] of SHELF_GLOBALS) if (!out.includes(shelf) && pattern.test(source)) out.push(shelf);
   return out;
+}
+
+/** The shelves the code reaches for that the app line did not name: what `shelfOf` adds. The reader says so on the line (`uses-inferred`); nothing is refused. */
+export function shelfReached(asked: readonly AppShelf[] | undefined, source: string): readonly AppShelf[] {
+  const named = asked ?? [];
+  return shelfOf(asked, source).filter((shelf) => !named.includes(shelf));
 }
 
 /** Making or copying something to play or use: the thing itself is the answer, whatever recipe the library would also offer (a walk-through of steps). */

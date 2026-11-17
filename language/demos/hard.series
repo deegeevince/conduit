@@ -91,12 +91,98 @@ say | Seventh line of eight.
 say | Eighth line of eight.
 wait 1
 
+# fb-051: a slider bound to moves to points (and a shape drawn again) moves every shape it names as it is dragged, half way at half way (the check drags it with real pointer events), and a control whose binds change nothing is told
+scene fb-051 layout=figure lines=3
+circle fbdisc 60,40 18 stroke=ink thick=0.4
+circle fbdot 50,32 3 fill=accent
+circle fbring 44,44 2 fill=ink
+rect fbbar 62,46 12x4 fill=ink
+path fbleaf fill=accent | M 52 52 L 60 48 L 58 58 Z
+group fbpair
+circle fbp1 82,30 2 fill=accent in=fbpair
+circle fbp2 88,30 2 fill=ink in=fbpair
+card fbtools | Try it
+slider fbspin 0 90 0 unit=deg in=fbtools | Turn it
+toggle fbmark on in=fbtools | Marker
+bind fbspin | move fbdot 72,32
+bind fbspin | move fbbar 46,54
+bind fbspin | move fbleaf 76,60
+bind fbspin | move fbpair 100,56
+bind fbspin | circle fbring 78,44 2 fill=ink
+bind fbmark=on | set fbdot opacity=1
+wait 1
+
+# fb-054: a choice that has left the stage and is written again by its id (a revise that came after it had played is this `correct`) is a choice with the new words, not plain words nobody can tap
+scene fb-054 layout=caption brisk
+say fbc1 choice | Spec the sphere
+say fbc2 choice | Write the test
+drop fbc1
+drop fbc2
+wait 1
+correct fbc1 | Spec the bindable transforms first
+correct fbc2 | Which matters most to you?
+
 # a dark look with small dim notes: they must still read
 scene dark layout=figure
 look night
 rect panel 30,20 100x50 fill=dim
 say label near=panel:above | A dim note on a dark ground
 say label near=panel:below size=s ink=dim | a smaller dimmer one
+wait 1
+
+# fb-025: an app whose code reaches for d3 and never says `uses=`. The host loads the library all the same (and d3-geo is on the shelf), so the globe is drawn.
+# The scene asks for nothing on its app line: if the frame ever stops hearing that, d3 is not defined, the script throws, and the frame shows an empty ground.
+scene fb-025 layout=caption
+app globe height=300 | A globe, drawn with D3
+row globe | <style>
+row globe | body { margin: 0; overflow: hidden; }
+row globe | svg { display: block; width: 100vw; height: 100vh; }
+row globe | .sea { fill: var(--accent); }
+row globe | .grat { fill: none; stroke: var(--ground); stroke-opacity: 0.5; }
+row globe | .land { fill: var(--ink); }
+row globe | </style>
+row globe | <svg id="s"></svg>
+row globe | <script>
+row globe | var w = innerWidth, h = innerHeight, svg = d3.select('#s');
+row globe | var proj = d3.geoOrthographic().scale(Math.min(w, h) * 0.45).translate([w / 2, h / 2]).rotate([-10, -20]);
+row globe | var path = d3.geoPath(proj);
+row globe | svg.append('path').attr('class', 'sea').datum({ type: 'Sphere' }).attr('d', path);
+row globe | svg.append('path').attr('class', 'grat').datum(d3.geoGraticule10()).attr('d', path);
+row globe | svg.append('path').attr('class', 'land').datum(d3.geoCircle().center([10, 15]).radius(28)()).attr('d', path);
+row globe | </script>
+say c1 | A globe, from D3.
+wait 1
+
+# fb-025, the other half: an app that throws. This one paints, then throws on purpose. The frame tells the page, the page tells the server, and the brain's next brief says
+# `app fixthrow threw: "…" (line 8)`. The check reads that back from the session's own log.
+scene fb-025-throws layout=caption
+app fixthrow height=200 | A fixture that throws on purpose
+row fixthrow | <style>
+row fixthrow | body { margin: 0; background: #1f3a5f; color: #ffffff; font: 16px sans-serif; }
+row fixthrow | p { margin: 0; padding: 24px; }
+row fixthrow | </style>
+row fixthrow | <p>This app paints, and then throws.</p>
+row fixthrow | <script>
+row fixthrow | var seen = 0;
+row fixthrow | throw new Error('fixture: thrown on purpose');
+row fixthrow | </script>
+say c1 | An app that throws.
+wait 1
+
+# fb-025, the third way to show nothing: no error, and nothing drawn but a flat ground. Three seconds after it loads the page looks at it and tells the brain it drew nothing.
+scene fb-025-blank layout=caption
+app fixblank height=200 | A fixture that draws nothing
+row fixblank | <style>
+row fixblank | body { margin: 0; background: #1f3a5f; }
+row fixblank | canvas { display: block; width: 100vw; height: 100vh; }
+row fixblank | </style>
+row fixblank | <canvas id="c"></canvas>
+row fixblank | <script>
+row fixblank | var c = document.getElementById('c'), x = c.getContext('2d');
+row fixblank | c.width = innerWidth; c.height = innerHeight;
+row fixblank | x.fillStyle = '#1f3a5f'; x.fillRect(0, 0, c.width, c.height);
+row fixblank | </script>
+say c1 | An app that draws nothing.
 wait 1
 
 # a photo with callouts at spots. The check puts a generated test pattern up as u1 (900 by 600) and, as the server does for a photo a turn carries, the shape is stamped: aspect=1.5

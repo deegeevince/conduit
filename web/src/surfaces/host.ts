@@ -7,14 +7,14 @@
 // microphone, location, clipboard, payment) and `referrerpolicy="no-referrer"`. The document goes in by `srcdoc`, never from our origin.
 // POLICY. In the document, first (`document.ts`): no network at all. In the page (`PAGE_FRAME_POLICY`, a meta in index.html): a frame may hold
 // nothing but an inline document, so a surface cannot navigate itself to an address with data in it. A frame that loads a second time is removed.
-// PROTOCOL. Up: ready, pong, save, emit, size, fault, still. Down: ping, shoot, data (the look). None of them acts. A message is believed only
+// PROTOCOL. Up: ready, pong, save, emit, size, crash, picture, still. Down: ping, shoot, data (the look), picture. None of them acts. A message is believed only
 // when it comes from the frame's own window, from the opaque origin, carries the secret the page was built with, and has exactly one of these
 // shapes at a bounded size and rate. Everything else is dropped and counted.
 // WATCHDOG. A ping a second; three missed replaces the surface with its still. A mark is set before a surface runs and cleared on its first reply,
 // so one that froze the tab does not run again by itself.
 
 import type { AppTokens } from '../contracts/app';
-import type { SurfaceEmit, SurfaceHold, SurfaceHost, SurfaceProbe, SurfaceSpec } from '../contracts/surface';
+import type { SurfaceBroken, SurfaceEmit, SurfaceHold, SurfaceHost, SurfaceProbe, SurfaceSpec } from '../contracts/surface';
 import { SURFACE_LIMITS, SURFACE_SOURCE_MAX, buildStandalonePage, buildSurfaceDocument } from './document';
 import { loadShelf, shelfKey, shelfText } from './shelf';
 
@@ -27,6 +27,8 @@ export interface SurfaceHostOptions {
   readonly onSave?: (save: { readonly key: string; readonly id: string; readonly json: string }) => void;
   /** a line for the status line: a fault, a surface that stopped */
   readonly onNote?: (text: string) => void;
+  /** a surface that is broken: its code threw (at most three times a surface), or it had painted nothing visible three seconds after it started. The words are the app's own: plain text, never to be taken as more. */
+  readonly onBroken?: (broken: SurfaceBroken) => void;
   /** a picture for what an app asked for in words (`conduit.picture`): a `data:` address and the credit line to show, or null. The frame can reach nothing itself; the page asks the server's picture service on its behalf. Absent: every ask is answered with none. */
   readonly onPicture?: (ask: { readonly query: string; readonly aspect: number }) => Promise<{ readonly url: string; readonly credit: string } | null>;
   /** the hostile bench only: leave the boot script's own removals out, so the policy and the sandbox are seen holding alone */
@@ -40,7 +42,7 @@ export type FromSurface =
   | { readonly type: 'emit'; readonly name: string; readonly value: string | number | boolean; readonly ask: boolean }
   | { readonly type: 'save'; readonly json: string }
   | { readonly type: 'size'; readonly height: number; readonly width: number | null; /** the height the content reaches down to, whatever the frame's own height is (null: not told) */ readonly content: number | null; /** the height of the frame's own layout when it measured */ readonly room: number | null; /** the width of the frame's own layout when it measured: a size measured at another width is stale (the room has changed since) */ readonly frame: number | null }
-  | { readonly type: 'fault'; readonly message: string }
+  | { readonly type: 'crash'; readonly message: string; /** the line of the app's own text, or null when the frame could not tell */ readonly line: number | null }
   | { readonly type: 'picture'; readonly id: number; readonly query: string; readonly aspect: number }
   | { readonly type: 'still'; readonly id: number; readonly failed: string | null; readonly how: 'own' | 'dom' | null; readonly w: number; readonly h: number; readonly data: string | null };
 
@@ -50,6 +52,9 @@ const PICTURE_MAX = 4_000_000;
 const RATE = { perSecond: 20, emitsPerMinute: 120 } as const;
 const STILL_AFTER_LOAD_MS = 500;
 const STILL_AFTER_ACT_MS = 700;
+/** How long after an app has loaded it is looked at for something visible; and the most times one app's crashes are passed on. */
+const BLANK_AFTER_MS = 3000;
+const CRASH_LIMIT = 3;
 const SAVE_TELL_MS = 2500;
 /** A ping a second; three missed in a row and the surface is replaced by its still. */
 const PING_MS = 1000;
@@ -83,6 +88,49 @@ export function fingerprint(text: string): string {
     b = (b * 33) ^ c;
   }
   return `${(a >>> 0).toString(36)}${(b >>> 0).toString(36)}${text.length.toString(36)}`;
+}
+
+/**
+ * Whether a picture of a surface shows nothing: one flat colour, give or take a handful of marks (a few hundredths of a percent of it). It is read from the picture the
+ * frame gave (`own` or `dom`), the same one the stage's snapshots and the critic are shown, so "nothing visible" here is what they would see. A picture that cannot be read is not empty.
+ */
+export function looksEmpty(picture: HTMLCanvasElement): boolean {
+  const width = picture.width;
+  const height = picture.height;
+  if (width < 8 || height < 8) return false;
+  let data: Uint8ClampedArray;
+  try {
+    data = picture.getContext('2d')?.getImageData(0, 0, width, height).data ?? new Uint8ClampedArray(0);
+  } catch {
+    return false;
+  }
+  if (data.length === 0) return false;
+  const STRIDE = 3;
+  const counts = new Map<number, number>();
+  let sampled = 0;
+  for (let y = 0; y < height; y += STRIDE) {
+    for (let x = 0; x < width; x += STRIDE) {
+      const at = (y * width + x) * 4;
+      const key = ((data[at] as number) >> 3) << 10 | ((data[at + 1] as number) >> 3) << 5 | ((data[at + 2] as number) >> 3);
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+      sampled += 1;
+    }
+  }
+  let ground = 0;
+  let most = 0;
+  for (const [key, n] of counts) {
+    if (n > most) {
+      most = n;
+      ground = key;
+    }
+  }
+  // marks: samples whose colour is not the ground's (or a shade next to it, which a soft edge or a gradient makes)
+  const gr = ground >> 10;
+  const gg = (ground >> 5) & 31;
+  const gb = ground & 31;
+  let marks = 0;
+  for (const [key, n] of counts) if (Math.abs((key >> 10) - gr) + Math.abs(((key >> 5) & 31) - gg) + Math.abs((key & 31) - gb) > 2) marks += n;
+  return sampled >= 400 && marks / sampled < 0.0005;
 }
 
 function randomToken(): string {
@@ -145,9 +193,13 @@ export function readFromSurface(raw: unknown, channel: string): FromSurface | nu
     const aspect = typeof w === 'number' && typeof h === 'number' && w > 0 && h > 0 ? Math.max(0.25, Math.min(4, w / h)) : 16 / 9;
     return { type, id, query: query.trim(), aspect };
   }
-  if (type === 'fault') {
+  if (type === 'crash') {
     const message = data['message'];
-    return typeof message === 'string' ? { type, message: message.slice(0, 200) } : null;
+    if (typeof message !== 'string') return null;
+    // the app's own words: one line of plain text, no control characters, at most 200 characters
+    const plain = message.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200);
+    const line = data['line'];
+    return { type, message: plain === '' ? 'error' : plain, line: typeof line === 'number' && Number.isInteger(line) && line >= 1 && line <= 100_000 ? line : null };
   }
   if (type === 'still') {
     const id = data['id'];
@@ -209,7 +261,11 @@ interface Running {
   still: { readonly canvas: HTMLCanvasElement; readonly how: 'own' | 'dom' } | null;
   refused: number;
   emits: number;
-  faults: number;
+  /** how many times its code threw, as the frame told it (the first `CRASH_LIMIT` are passed on) */
+  crashes: number;
+  /** whether it had painted nothing visible when it was looked at three seconds after it started: null until then */
+  blank: boolean | null;
+  blankTimer: ReturnType<typeof setTimeout> | undefined;
   window: { start: number; count: number };
   minute: { start: number; count: number };
   snaps: Map<number, (done: boolean) => void>;
@@ -317,6 +373,7 @@ export function createSurfaceHost(options: SurfaceHostOptions): SurfaceHost {
     tellSave(run);
     clearTimeout(run.stillTimer);
     clearTimeout(run.fitTimer);
+    clearTimeout(run.blankTimer);
     clearInterval(run.pinger);
     for (const done of [...run.snaps.values()]) done(false);
     if (run.still !== null) stills.set(run.key, run.still);
@@ -405,7 +462,7 @@ export function createSurfaceHost(options: SurfaceHostOptions): SurfaceHost {
     frame.style.opacity = '0';
     const run: Running = {
       key: spec.key, id: spec.id, channel, frame, source: spec.source, shelf: library, shelfText: shelf, gotPictures: new Map(), fingerprint: print, spec, loads: 0, loaded: false, shown: false, state, told: state, height: null, fit: 1, pictures: 0, fitted: false, fitRoom: '', measured: null, want: null, wanted: null, reach: null, followsFrame: false, chain: 0, chainAt: 0, growSince: 0, fitTimer: undefined, boxAt: '', boxSince: 0, still: stills.get(spec.key) ?? null,
-      refused: 0, emits: 0, faults: 0, window: { start: 0, count: 0 }, minute: { start: 0, count: 0 }, snaps: new Map(), snapSeq: 0, stillTimer: undefined, saveTimer: undefined, pinger: undefined, pings: 0, answered: 0, placed: '', typeFit: 1,
+      refused: 0, emits: 0, crashes: 0, blank: null, blankTimer: undefined, window: { start: 0, count: 0 }, minute: { start: 0, count: 0 }, snaps: new Map(), snapSeq: 0, stillTimer: undefined, saveTimer: undefined, pinger: undefined, pings: 0, answered: 0, placed: '', typeFit: 1,
     };
     // a frame that loads a second time has navigated itself (a script, a link): it is removed, and what it was reaching for was never allowed to answer
     frame.addEventListener('load', () => {
@@ -502,6 +559,26 @@ export function createSurfaceHost(options: SurfaceHostOptions): SurfaceHost {
     }
   };
 
+  /**
+   * BLANK. Three seconds after an app has loaded it is asked for a picture of itself; if the picture shows nothing (see `looksEmpty`) the brain is told it drew nothing, once. An app
+   * that threw says so by itself (`crash`); this is for the one that threw nothing and still shows nothing. A hidden page runs no animation frames, so an app that draws on one
+   * has had no chance to: the look waits for the page to be seen, a few times, and then gives up without a word.
+   */
+  const lookForBlank = async (run: Running, tries: number): Promise<void> => {
+    if (disposed || running.get(run.key) !== run || run.blank !== null) return;
+    if (document.hidden) {
+      if (tries < 20) run.blankTimer = setTimeout(() => void lookForBlank(run, tries + 1), 1000);
+      return;
+    }
+    const got = await requestStill(run, 2500);
+    if (!got || disposed || running.get(run.key) !== run || run.still === null || run.blank !== null) return;
+    run.blank = looksEmpty(run.still.canvas);
+    if (run.blank) {
+      options.onNote?.(`The app "${run.spec.title === '' ? run.id : run.spec.title}" drew nothing.`);
+      options.onBroken?.({ key: run.key, id: run.id, kind: 'blank' });
+    }
+  };
+
   const onMessage = (event: MessageEvent): void => {
     if (disposed) return;
     let from: Running | undefined;
@@ -539,6 +616,8 @@ export function createSurfaceHost(options: SurfaceHostOptions): SurfaceHost {
         startWatch(run);
         place(run, run.spec);
         scheduleStill(run, STILL_AFTER_LOAD_MS);
+        clearTimeout(run.blankTimer);
+        run.blankTimer = setTimeout(() => void lookForBlank(run, 0), BLANK_AFTER_MS);
         return;
       case 'pong':
         run.answered = Math.max(run.answered, message.n);
@@ -615,9 +694,13 @@ const good = found !== null && found.url.startsWith('data:image/') && found.url.
         );
         return;
       }
-      case 'fault':
-        run.faults += 1;
-        if (run.faults <= 3) options.onNote?.(`The app "${run.spec.title === '' ? run.id : run.spec.title}" hit an error: ${message.message}`);
+      case 'crash':
+        run.crashes += 1;
+        // the frame says it stops at three; the host holds it to that whatever the frame says
+        if (run.crashes <= CRASH_LIMIT) {
+          options.onNote?.(`The app "${run.spec.title === '' ? run.id : run.spec.title}" hit an error: ${message.message}`);
+          options.onBroken?.({ key: run.key, id: run.id, kind: 'crash', message: message.message, line: message.line });
+        }
         return;
     }
   };
@@ -731,10 +814,11 @@ const good = found !== null && found.url.startsWith('data:image/') && found.url.
         still: run.still === null ? null : { how: run.still.how, width: run.still.canvas.width, height: run.still.canvas.height },
         refused: run.refused,
         emits: run.emits,
-        faults: run.faults,
+        crashes: run.crashes,
+        blank: run.blank,
         sandbox: run.frame.getAttribute('sandbox'),
       }));
-      const off = [...held].map(([key, entry]) => ({ key, id: entry.id, running: false, loaded: false, shown: false, held: entry.why, box: null, state: null, height: null, fit: 1, still: null, refused: 0, emits: 0, faults: 0, sandbox: null }));
+      const off = [...held].map(([key, entry]) => ({ key, id: entry.id, running: false, loaded: false, shown: false, held: entry.why, box: null, state: null, height: null, fit: 1, still: null, refused: 0, emits: 0, crashes: 0, blank: null, sandbox: null }));
       return [...live, ...off];
     },
     dispose() {
