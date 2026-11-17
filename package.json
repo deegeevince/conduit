@@ -22,6 +22,7 @@
     "timeline": "pnpm --filter @conduit/language exec tsx scripts/timeline.ts",
     "kinds": "pnpm --filter @conduit/language exec tsx --import ../web/src/bench/node-register.mjs ../web/src/core/conformance.ts && pnpm flows",
     "flows": "pnpm --filter @conduit/language exec tsx --import ../web/src/bench/node-register.mjs ../web/src/painter/blocks/flowcheck.ts",
+    "demo-checks": "pnpm --filter @conduit/language exec tsx --import ../web/src/bench/node-register.mjs scripts/demo-checks.ts",
     "sessions": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/sessions.ts",
     "photo-check": "pnpm --filter @conduit/server exec tsx src/tools/photo-check.ts",
     "capture": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/capture.ts",
