@@ -31,10 +31,11 @@ export interface CanvasFit {
  * words and the picture are laid out from one division of the stage.
  *
  * The same canvas point lands on the same screen point on every layer with the camera at rest: `canvasToStage` divides by the layer's
- * `planeScale`.
+ * `planeScale`. `grown` is the scene's drawing space when what was drawn runs past the declared canvas (`sceneCanvasOf`): its origin is the canvas's, so
+ * every point keeps its coordinates and the whole drawing is in view.
  */
-export function fitIn(canvas: CanvasName, region: Box, flow: Box, viewport: Viewport): CanvasFit {
-  const size = CANVAS[canvas];
+export function fitIn(canvas: CanvasName, region: Box, flow: Box, viewport: Viewport, grown?: { readonly width: number; readonly height: number }): CanvasFit {
+  const size = grown ?? CANVAS[canvas];
   const unit = Math.max(1e-6, Math.min(region.width / size.width, region.height / size.height));
   const width = size.width * unit;
   const height = size.height * unit;

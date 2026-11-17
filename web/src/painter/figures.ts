@@ -796,6 +796,49 @@ export function canvasBoxOf(element: ElementSpan, schedule: Schedule, time: numb
   return unionBox(element, schedule, time, null, 'out');
 }
 
+/** The most a canvas grows to take in what was drawn past it: this many times its declared size on each side. Past it the drawing is cropped, as before. */
+const MAX_GROWTH = 4;
+/** Room past the far edge of what was drawn, on each axis that grew, as a share of its size: a stroke on the edge is not cut, and a label under the last box has room to stand. */
+const GROWTH_EDGE = 0.3;
+const sceneSizes = new WeakMap<Schedule, Map<string, { width: number; height: number }>>();
+type Size = { width: number; height: number };
+
+/** One side of the grown canvas: the declared size, unless the drawing reached past it, then the reach and the room beyond it, within the bound. */
+function reach(declared: number, drawn: number): number {
+  return drawn <= declared ? declared : Math.min(declared * MAX_GROWTH, drawn * (1 + GROWTH_EDGE));
+}
+
+/**
+ * The size of the drawing space of a scene: its declared canvas, or, when something was drawn with its centre past the right or the bottom edge
+ * (a row of practice boxes that runs off the square), the declared canvas grown to take in all that was drawn there, so the whole drawing is
+ * fitted to the screen and nothing is cropped. The origin stays where it was, so a picture that fits is fitted exactly as before. Within reason:
+ * never more than MAX_GROWTH times the declared size on a side.
+ */
+export function sceneCanvasOf(schedule: Schedule, scene: Pick<SceneSpan, 'id' | 'canvas'>): Size {
+  const declared: Size = CANVAS[scene.canvas];
+  const memo = sceneSizes.get(schedule) ?? new Map<string, { width: number; height: number }>();
+  sceneSizes.set(schedule, memo);
+  const known = memo.get(scene.id);
+  if (known !== undefined) return known;
+  let right = declared.width;
+  let bottom = declared.height;
+  let past = false;
+  for (const element of schedule.elements) {
+    if (element.scene !== scene.id || element.parent !== null || element.figure === null || element.figure.kind !== 'shape') continue;
+    if (element.style.layer !== 'mid' || (element.figure.geometry.shape === 'rect' && element.figure.geometry.full)) continue;
+    const box = unionBox(element, schedule, Math.max(0, element.enter?.end ?? 0), null, 'out');
+    if (box === null) continue;
+    if (box.x + box.w / 2 > declared.width || box.y + box.h / 2 > declared.height) past = true;
+    right = Math.max(right, box.x + box.w);
+    bottom = Math.max(bottom, box.y + box.h);
+  }
+  const grown: Size = past
+    ? { width: reach(declared.width, right), height: reach(declared.height, bottom) }
+    : { width: declared.width, height: declared.height };
+  memo.set(scene.id, grown);
+  return grown;
+}
+
 /** The keys of the elements a picture stands on: the sketch the image model is shown, and the lines that fade as the painting grows. */
 export function sketchKeysOf(picture: ElementSpan, schedule: Schedule): Set<string> {
   const keys = new Set<string>();
