@@ -17,7 +17,6 @@ import type { ElementSpan } from './schedule';
 import { describeFigure } from './stage';
 import { asksForLiveApp } from './app';
 import { asksForFigure } from './figure';
-import { asksForMaths } from './problem';
 import type { Capabilities } from './wire';
 
 export type KindId = 'words' | 'choice' | 'canvas' | 'figure' | StructureKind | ControlKind;
@@ -167,8 +166,8 @@ export const LEXICON: Lexicon = {
   },
   problem: {
     id: 'problem',
-    // taught per turn only, on its cue (a maths question, a question number, a worksheet): `PROBLEM_CHAPTER`. The stage draws all of it.
-    teach: { where: 'chapter', form: form('problem'), gloss: gist('problem'), cue: asksForMaths },
+    // no longer taught: a `problem` line of an old log is turned into an `ask` before the stage sees it, and the painter does not advertise the word
+    teach: { where: 'chapter', form: form('problem'), gloss: gist('problem'), cue: () => false },
     describes: 'summary',
     describe: (element) => `maths question "${element.figure?.kind === 'structure' && element.figure.problem?.question ? element.figure.problem.question : element.text.trim()}"`,
   },

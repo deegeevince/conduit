@@ -24,8 +24,8 @@ export type { BriefForm };
 import { asksForLiveApp, asksToMakeGame } from './app';
 import { FIGURE_CHAPTER, asksForFigure } from './figure';
 import { INTERFACE_CHAPTER } from './interface';
-import { ASK_CHAPTER, ASK_CHAPTER_WITH_DOCUMENT, DOCUMENT_CHAPTER, carriesAsk, carriesDocument, documentBlocks, hasLesson, usesParts, usesProblem } from './teach';
-import { PROBLEM_CHAPTER, asksForMaths } from './problem';
+import { ASK_CHAPTER, ASK_CHAPTER_WITH_DOCUMENT, DOCUMENT_CHAPTER, carriesAsk, carriesDocument, documentBlocks, hasLesson, usesParts } from './teach';
+import { MATHS_CHAPTER, asksForMaths } from './problem';
 import { inkBrief } from './ink';
 import { describeSight } from './sight';
 import { BUILTIN_STYLES } from './style';
@@ -394,7 +394,7 @@ export function buildSystemPrompt({ capabilities, services }: PromptOptions): st
     .filter(([name, spec]) => (draws || spec.scope !== 'drawn') && (draws || (name !== 'near' && name !== 'in' && name !== 'leader')) && (deep || name !== 'layer'))
     // The words for paint are taught together, where they are of use, and only to a painter that has them; `leader` comes with `callout`;
     // `dur` is under "Exact values"; `bleed` is right as it stands and is in the reference for the day it is not.
-    .filter(([name]) => name !== 'tex' && name !== 'soft' && name !== 'brush' && name !== 'leader' && name !== 'dur' && name !== 'bleed')
+    .filter(([name]) => name !== 'tex' && name !== 'soft' && name !== 'brush' && name !== 'leader' && name !== 'align' && name !== 'dur' && name !== 'bleed')
     .map(([name, spec]) => {
       const values = spec.values === null ? '' : spec.values.filter((value) => allows(capabilities, name, value)).join(' | ');
       const also = name === 'at' ? ' | x,y (drawn things only)' : spec.also === null ? '' : `${values === '' ? '' : ' | '}${spec.also}`;
@@ -434,7 +434,7 @@ export function buildSystemPrompt({ capabilities, services }: PromptOptions): st
       : draws
         ? "- A thing, a place, a mechanism, a comparison, a set of numbers: draw it and label it, and keep every fact a good plain answer would give: numbers and names on the drawing, the rest in short lines. Words are cheap; a missing fact is not. A comparison covers every row a good table would (cost, upkeep, lifespan, limits, risks), as paired lines beneath the two shapes. Compare with matching shapes side by side (bars sized by the numbers, a column each), never two lists of words."
         : '',
-    draws ? '- A process, a breakdown, how something works: lay it out to read whole, the steps numbered and all on stage beside the picture, each step\'s part lit or labelled. Asked step by step (instructions, a recipe, a build, a how-to), or to go one at a time: draw the finished picture with its parts at `opacity=0` and a stepper, `pick s steps | a | b`, `bind s=a | set part opacity=1`; a document of parts only when a document, a checklist or a learner\'s worksheet is the ask. Arrows that only page through text are what to avoid. A maths question to work out: one `problem` line.' : '',
+    draws ? '- A process, a breakdown, how something works: lay it out to read whole, the steps numbered and all on stage beside the picture, each step\'s part lit or labelled. Asked step by step (instructions, a recipe, a build, a how-to), or to go one at a time: draw the finished picture with its parts at `opacity=0` and a stepper, `pick s steps | a | b`, `bind s=a | set part opacity=1`; a document of parts only when a document, a checklist or a learner\'s worksheet is the ask. Arrows that only page through text are what to avoid.' : '',
     controls.includes('slider') ? '- Something that depends on a quantity or a choice (an angle, a rate, a mode): hand over the control, bound to the drawing.' : '',
     draws
       ? `- A story, a memory, a mood: stage it. A scene in layers${weather ? ', weather' : ''}${camera ? ', a camera' : ''}, a handful of words as captions.`
@@ -509,7 +509,7 @@ Braces in text hold a value or arithmetic: \`say | At {angle}, a {round(10/tan(r
     ? `
 # The canvas
 
-Drawings live on a canvas of square units that the painter fits to the screen; 0,0 is the top-left, y runs down. Words and controls are never placed by coordinates: they flow, and a row of labelled things is a structure, not \`say at=x,y\` lines. A bare shape is an outline in ink that draws itself; \`fill=\` alone makes it flat. Shapes appear in the order written, later ones on top.
+Drawings live on a canvas of square units that the painter fits to the screen; 0,0 is the top-left, y runs down. Words and controls are never placed by coordinates (digits in a column aside): they flow, and a row of labelled things is a structure, not \`say at=x,y\` lines. A bare shape is an outline in ink that draws itself; \`fill=\` alone makes it flat. Shapes appear in the order written, later ones on top.
 
 - Put words on a drawing with \`say label near=<id> | …\`.
 - To change a shape, declare it again under the same id: it morphs into the new one.
@@ -560,7 +560,7 @@ Never talk about the stage, the medium or what you will do. Answer the question.
 - A follow-up about what is on stage continues it; never write again what is there. \`scene\` is only for a new subject (a new problem is one: its own drawing, never the last one's, one stepper at most). A lesson's steps stack up, not captions.
 - A problem posed to a learner (or from a learner's page) is worked out by them, never watched: lay out the breakdown whole, each step saying what to do with its result left blank, no in-between values on the picture, one \`ask\` for the final answer (a field or picks) with \`check=\` and a hint behind a tap that asks back; blanks fill in after a right answer. An adult asking for the answer gets it worked. Choices never hold the answer ("I think I know"). Words beside it: a line or two.
 - Match the level asked or implied. A young learner (under 10, "my kid", "like I'm 7"): plain words, one small idea a step, the question shown; no letters for numbers or \`*\`/\`x\` signs before they are explained; count on the picture; words at size m or larger.
-- What the user says to hold from now on ("only visuals", "no code", "always brief"): record it once, \`standing | their words\`, and keep it on every later turn, answers about yourself or this app too.
+- What the user says to hold from now on ("only visuals", "no code", "always brief", "the method, not the answer"): record it once, \`standing | their words\`, and keep it on every later turn, answers about yourself or this app too.
 - Lines of one role (narration, steps, list items) share one style and size; only the one that matters differs. A demo with invented numbers says so ("a sketch", "example figures").
 - "What can you do?", "show me": a tiny example of each thing, never a list. "Top news": about five headlines as a list, a line each with its source.
 - No live price feed: figures come from DATA or the web, with source and date, or you say you have none. Never copy a protected character, logo or artwork: make an original, or a homage in the style, and say so.
@@ -1137,10 +1137,9 @@ export function buildTurnBrief(context: TurnContext, input: TurnInput, form: Bri
   // FG2: a labelled drawing is taught when the words ask for one, or while one is on stage to be changed; never in the system prompt.
   const figureOnStage = stage.elements.some((element) => element.figure?.kind === 'structure' && element.figure.structure === 'figure');
   if (context.capabilities.structures.includes('figure') && !liveApp && ((input.kind === 'prompt' && asksForFigure(input.text)) || figureOnStage)) parts.push(FIGURE_CHAPTER);
-  // A maths question to work out is one `problem` line: taught when the words are a maths question, when one is on stage, or when the choices of a photo's questions are (a tap on one gives its problem); never in the system prompt. The card the library chose shows only its example, so the chapter says the rest.
-  const problemOnStage = stage.elements.some((element) => element.figure?.kind === 'structure' && element.figure.structure === 'problem');
+  // A maths question the person answers is drawn with an `ask` like any other: taught when the words are one, or when the choices of a photo's questions are on stage (a tap on one gives its question); never in the system prompt.
   const questionsOnStage = stage.elements.some((element) => element.style.tap && /^\s*which one first\b/i.test(element.text)) || stage.elements.some((element) => element.text.toLowerCase().includes('which one first'));
-  if (context.capabilities.structures.includes('problem') && !liveApp && (((input.kind === 'prompt' || input.kind === 'tap') && asksForMaths(input.text)) || problemOnStage || questionsOnStage || usesProblem(context.techniques))) parts.push(PROBLEM_CHAPTER);
+  if (!liveApp && (((input.kind === 'prompt' || input.kind === 'tap') && asksForMaths(input.text)) || questionsOnStage)) parts.push(MATHS_CHAPTER);
   if (drawsNow) parts.push(DRAWING_CHAPTER(`${screen.canvas} (${canvas.width}x${canvas.height})${screen.canvas === 'wide' ? '; a figure scene that names no canvas gets square (100x100)' : ''}`));
   if (drawsNow && context.services.art === true) parts.push(ART_BRIEF);
   if (drawsNow && context.canvas === true) parts.push(PAINT_LOOKS);

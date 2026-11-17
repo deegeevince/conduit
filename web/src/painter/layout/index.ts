@@ -1315,6 +1315,8 @@ function arrangeLooseWith(
       const k = layerScale(other, ctx) / ps;
       for (const rect of occupied[other]) across.push({ x: rect.x * k, y: rect.y * k, width: rect.width * k, height: rect.height * k });
     }
+    // `align=right` on words set at a point: the point is their right edge (digits lined up in a column); `left`, their left; else the centre
+    const edge = style.align === 'right' ? 1 : style.align === 'left' ? 0 : 0.5;
     const pin = columnOf.has(unit.main.item.key) ? null : (ctx.input.pins?.get(unit.main.item.key) ?? null);
     const candidates: readonly (Anchor | Point)[] =
       explicit !== null ? [explicit] : layer === 'bg' ? BG_CANDIDATES : layer === 'fg' ? FG_CANDIDATES : FREE_CANDIDATES;
@@ -1339,7 +1341,7 @@ function arrangeLooseWith(
           const loose = buildLoose(unit, 'center', frame, ctx, shrink * kept);
           if (loose.width > 0.96 * cell.width || loose.height > 0.96 * cell.height) continue;
           const position = {
-            x: Math.max(cell.x, Math.min(pin.x - loose.width / 2, cell.x + cell.width - loose.width)),
+            x: Math.max(cell.x, Math.min(pin.x - loose.width * edge, cell.x + cell.width - loose.width)),
             y: Math.max(cell.y, Math.min(pin.y - loose.height / 2, cell.y + cell.height - loose.height)),
           };
           best = { loose, position, moved: 0 };
@@ -1350,7 +1352,7 @@ function arrangeLooseWith(
         const loose = buildLoose(unit, 'center', frame, ctx, shrink * kept);
         const size = { width: loose.width, height: loose.height };
         const wanted = {
-          x: Math.max(frame.x, Math.min(pin.x - size.width / 2, frame.x + frame.width - size.width)),
+          x: Math.max(frame.x, Math.min(pin.x - size.width * edge, frame.x + frame.width - size.width)),
           y: Math.max(frame.y, Math.min(pin.y - size.height / 2, frame.y + frame.height - size.height)),
         };
         // a card the word lies wholly inside is its ground, not in its way
@@ -1382,7 +1384,7 @@ function arrangeLooseWith(
         const loose = buildLoose(unit, 'center', frame, ctx, (CLEAR_SHRINK[CLEAR_SHRINK.length - 1] ?? 1) * kept);
         const size = { width: loose.width, height: loose.height };
         const wanted = {
-          x: Math.max(frame.x, Math.min(pin.x - size.width / 2, frame.x + frame.width - size.width)),
+          x: Math.max(frame.x, Math.min(pin.x - size.width * edge, frame.x + frame.width - size.width)),
           y: Math.max(frame.y, Math.min(pin.y - size.height / 2, frame.y + frame.height - size.height)),
         };
         best = { loose, position: snapInside(wanted, size, frame, ctx), moved: 0 };

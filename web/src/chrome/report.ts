@@ -90,7 +90,6 @@ function contextOf(app: StageApp): Record<string, unknown> {
     theme: root.dataset['theme'] ?? null,
     look: state['look'] ?? null,
     stage: pick('scene', 'renderer', 'quality', 'fps', 'clock', 'hidden'),
-    workMode: document.body.classList.contains('work'),
     bodyClasses: [...document.body.classList],
     inkStrokesWaiting: strokes(),
     inkOpen: [...document.querySelectorAll('.ink')].filter(visible).map((layer) => describe(layer)),

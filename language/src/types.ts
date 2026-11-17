@@ -137,6 +137,8 @@ export interface StyleProps {
   readonly soft?: number;
   /** a label with a line to what it names: with `near=` the line ends on that element, with `at=x,y` at that point, and the painter finds the label clear room */
   readonly leader?: boolean;
+  /** words set at a point (`at=x,y`): which edge of them the point is; absent means the centre */
+  readonly align?: 'left' | 'center' | 'right';
   readonly scale?: number;
   /** degrees, clockwise */
   readonly rot?: number;

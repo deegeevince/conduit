@@ -1,21 +1,6 @@
-// kinds/problem.ts: a maths question to work out. The stage draws nothing for it: the page's problem workspace (`app/problem-view.ts`, drawn by
-// `painter/problem`) takes the whole screen while one is on stage, as work mode does for an ask. The kind is here so the registry is complete and the
-// painter advertises the word; every function is total and draws nothing.
+// kinds/problem.ts: the old maths question. A `problem` line is an ordinary `ask` now (the language turns it into one before the stage sees it), so
+// the stage never holds one and the painter does not advertise the word. It is in the vocabulary so that old logs parse, and typed "not yet" here.
 
-import { NOTHING_DRAWN } from '../contracts';
-import type { Kind } from '../contracts';
-import { seal } from '../seal';
+import { notYet } from './not-yet';
 
-const kind: Kind<'problem', null, null> = {
-  id: 'problem',
-  status: { state: 'ready' },
-  model: () => null,
-  measure: () => ({ width: 0, height: 0, least: { width: 0, height: 0 }, fit: 'reflow' }),
-  layout: () => null,
-  draw: () => NOTHING_DRAWN,
-  census: () => ({ words: [], regions: [] }),
-  input: null,
-  fixtures: [],
-};
-
-export const problem = seal(kind);
+export const problem = notYet('problem', 'no longer drawn: a `problem` line plays as an `ask` (normalize.ts), so the painter does not advertise it', []);

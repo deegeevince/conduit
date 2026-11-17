@@ -179,6 +179,8 @@ export interface ElementStyle {
   readonly soft: number;
   /** a label with a line to what it names; the painter places such labels together, in clear room, with lines that do not cross */
   readonly leader: boolean;
+  /** words set at a point: which edge of them the point is */
+  readonly align: 'left' | 'center' | 'right';
   /** null: the painter sizes it (a sprite: a share of the canvas; anything else: as drawn) */
   readonly scale: number | null;
   /** degrees, clockwise */
@@ -327,6 +329,7 @@ export function completeStyle(props: ResolvedProps, context: StyleContext): Elem
     tex: props.tex ?? 'flat',
     soft: props.soft ?? 0,
     leader: props.leader ?? false,
+    align: props.align ?? 'center',
     scale: props.scale ?? null,
     rot: props.rot ?? 0,
     opacity: props.opacity ?? 1,
@@ -379,6 +382,7 @@ export function patchStyle(style: ElementStyle, props: ResolvedProps): ElementSt
     ...(props.tex !== undefined && { tex: props.tex }),
     ...(props.soft !== undefined && { soft: props.soft }),
     ...(props.leader !== undefined && { leader: props.leader }),
+    ...(props.align !== undefined && { align: props.align }),
     ...(props.scale !== undefined && { scale: props.scale }),
     ...(props.rot !== undefined && { rot: props.rot }),
     ...(props.opacity !== undefined && { opacity: props.opacity }),
