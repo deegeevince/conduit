@@ -79,7 +79,7 @@ export const PROMPT_BUDGET = { tokens: 9400, charsPerToken: 2.36 } as const;
  * (18,643 characters, 7,865 tokens).
  */
 /** SA4. The one line of a brief that says the canvas tools exist. */
-export const CANVAS_LINE = 'CANVAS TOOLS (read-only): canvas_stage, canvas_fits, canvas_where, canvas_observe read the stage; canvas_look asks for a picture. Use one only after your first line is written, and only when unsure of a placement or when EYES flags something. Most answers need none.';
+export const CANVAS_LINE = 'CANVAS TOOLS (read-only): canvas_stage, canvas_fits, canvas_where, canvas_observe read the stage; canvas_look asks for a picture. Use one only after your first line is written, and when it helps the work: a painting is worth looking at. Most other answers need none.';
 
 export function estimateTokens(text: string): number {
   return Math.ceil(text.length / PROMPT_BUDGET.charsPerToken);
@@ -935,6 +935,9 @@ export function memoryText(rows: readonly MemoryRow[], tool = false): string {
   return `DRAWING MEMORY (every drawing you made in this conversation is kept; nothing is lost):\n${lines.join('\n')}\n$\`restore <turn>\` puts a whole earlier drawing back on the canvas, as parts you can change. $\`use <id…> from=<turn> [at=x,y] [scale=N] [rot=N]\` brings only those parts back and mixes them into what is there (a taken id comes back as <id>-<turn>).${tool ? ' The ids and boxes of any turn: the canvas_memory tool.' : ''}`;
 }
 
+/** Said on a drawing turn when the canvas tools are on: a painter steps back and looks. Brief only; the one constraint is that the first line comes first. */
+export const PAINT_LOOKS = 'ON A PAINTING canvas_look shows the lines so far, settled, whenever stepping back helps: when the sketch is down, when the colour is in, before you finish. Then change what is weak by id. Write your first line before any look.';
+
 /** Said on a turn that changes the live drawing: its parts are named in YOUR DRAWING NOW, and they are changed, never thrown away. */
 export const IMPROVE_BRIEF =
   'THE DRAWING ON STAGE IS TO BE CHANGED, NOT REBUILT: work on its parts by id (they are listed in YOUR DRAWING NOW): `set <id> …`, `move <id> …`, `drop <id>`, or say a part\'s line again under its id; add new marks where the picture needs them. Never write `scene`: it clears the canvas and the picture the person liked is gone. A different picture is only for when they ask for one.';
@@ -1129,6 +1132,7 @@ export function buildTurnBrief(context: TurnContext, input: TurnInput, form: Bri
   if (context.capabilities.structures.includes('problem') && !liveApp && (((input.kind === 'prompt' || input.kind === 'tap') && asksForMaths(input.text)) || problemOnStage || questionsOnStage || usesProblem(context.techniques))) parts.push(PROBLEM_CHAPTER);
   if (drawsNow) parts.push(DRAWING_CHAPTER(`${screen.canvas} (${canvas.width}x${canvas.height})${screen.canvas === 'wide' ? '; a figure scene that names no canvas gets square (100x100)' : ''}`));
   if (drawsNow && context.services.art === true) parts.push(ART_BRIEF);
+  if (drawsNow && context.canvas === true) parts.push(PAINT_LOOKS);
   // The live drawing by id, in every brief of a drawing turn: the brain cannot change what it cannot name (a "keep going" turn once rebuilt it all with `scene`).
   const drawingNow = drawsNow ? drawingRows(stage) : null;
   if (drawingNow !== null) {

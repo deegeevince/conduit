@@ -46,6 +46,7 @@ export interface CanvasHost {
   readonly wantPicture: (s: Session, target: string | null, deadlineMs: number) => Promise<Snapshot | null>;
 }
 
+
 /** What one turn's use of the tools comes to, for the session log's `attention` record. */
 export interface CanvasTurnUse {
   readonly pulled: readonly { readonly tool: string; readonly kind: string; readonly since: number; readonly n: number; readonly ms: number }[];
@@ -74,7 +75,8 @@ interface State {
   watch: Set<ObsKind>;
   ignore: Set<ObsKind>;
   refusedIgnore: string[];
-  looked: boolean;
+  /** pictures given this turn (`canvas_look`) */
+  looks: number;
   /** fingerprints of watched faults the footer has already told */
   told: Set<string>;
   /** handlers that have arrived, and calls the adapter has seen on the stream (after the lines before them were taken) */
@@ -124,7 +126,7 @@ export class CanvasService {
   private stateOf(session: string): State {
     let state = this.states.get(session);
     if (state === undefined) {
-      state = { turn: null, from: 0, calls: 0, refused: 0, early: 0, toolMs: 0, pulled: [], watch: new Set(), ignore: new Set(), refusedIgnore: [], looked: false, told: new Set(), arrived: 0, marked: 0, waiters: [] };
+      state = { turn: null, from: 0, calls: 0, refused: 0, early: 0, toolMs: 0, pulled: [], watch: new Set(), ignore: new Set(), refusedIgnore: [], looks: 0, told: new Set(), arrived: 0, marked: 0, waiters: [] };
       this.states.set(session, state);
     }
     return state;
@@ -146,7 +148,7 @@ export class CanvasService {
     state.watch = new Set();
     state.ignore = new Set();
     state.refusedIgnore = [];
-    state.looked = false;
+    state.looks = 0;
     state.told = new Set();
     state.arrived = 0;
     state.marked = 0;
@@ -543,8 +545,8 @@ export class CanvasService {
     const target = typeof args['target'] === 'string' && args['target'] !== '' ? clip(args['target'], 40) : null;
     const wait = Math.min(LOOK_DEADLINE_MS, Math.max(500, Math.trunc(Number(args['wait'] ?? LOOK_DEADLINE_MS)) || LOOK_DEADLINE_MS));
     const lead = (stage: ToolOutput, line: string): ToolOutput => ({ ...stage, text: stage.text.replace(/^(rev \d+\n)/, `$1${line}\n`) });
-    if (state.looked) return lead(this.stage(s, state, {}), 'a second picture in one turn is not given: the facts instead');
-    state.looked = true;
+    // no count of its own: a look is a call, and the turn's budget of calls (`CANVAS_BUDGET`) is the limit; the first line must still come first (`call`)
+    state.looks += 1;
     const picture = s.turn === null ? null : await this.host.wantPicture(s, target, wait);
     const stage = this.stage(s, state, {});
     if (picture === null || picture.bytes.byteLength > LOOK_BYTES) return lead(stage, `${picture === null ? 'no picture in time' : 'the picture was too large to send'}; the facts instead`);
