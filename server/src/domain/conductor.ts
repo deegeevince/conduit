@@ -1116,11 +1116,14 @@ export class Conductor {
         this.observe(s, event.turn, { source: 'person', kind: 'tap', on: event.id, note: `you tapped ${quoted(event.text, 60)}` });
         return;
       case 'observe': {
-        if (!s.obs.allowObserve(this.deps.now())) {
+        // One event a second. What is blocking (an app that threw, or drew nothing) is never lost to that: the page itself sends at most three crashes and one blank an app.
+        const open = s.obs.allowObserve(this.deps.now());
+        const items = open ? event.items : event.items.filter((item) => item.severity === 'blocking');
+        if (items.length === 0) {
           this.deps.log.debug('observe.dropped', { session: s.id, items: event.items.length });
           return;
         }
-        for (const item of event.items) this.observe(s, s.turn?.id ?? null, itemObservation(item));
+        for (const item of items) this.observe(s, s.turn?.id ?? null, itemObservation(item));
         return;
       }
       case 'control':

@@ -52,8 +52,10 @@ export class Observations {
     if (input.source === 'person' || input.source === 'eyes') this.rev += 1;
     this.seq += 1;
     const note = input.note.replace(/\s+/g, ' ').trim().slice(0, 160);
-    // the person's moves are each their own; a repeated report of the same thing from the eyes is one observation that appears and clears
-    const fingerprint = fingerprintOf(input.kind, on, input.source === 'person' ? String(this.seq) : input.kind === 'fonts' || input.kind === 'drift' ? note : '');
+    // the person's moves are each their own; a repeated report of the same thing from the eyes is one observation that appears and clears. An app's crashes are told by their words:
+    // three different errors of one app are three, the same error told again (the page was reloaded, the app started afresh) is the one
+    const byWords = input.kind === 'fonts' || input.kind === 'drift' || (input.kind === 'surface' && severity === 'blocking');
+    const fingerprint = fingerprintOf(input.kind, on, input.source === 'person' ? String(this.seq) : byWords ? note : '');
     const o: Observation = { seq: this.seq, rev: this.rev, source: input.source, kind: input.kind, severity, on, answer: input.answer ?? false, note, box: null, fingerprint };
     this.held.push({ o, at: now });
     if (this.held.length > KEPT) this.held.splice(0, this.held.length - KEPT);
