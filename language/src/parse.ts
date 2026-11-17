@@ -1050,6 +1050,22 @@ function parseDraw(head: Head, text: string | null, issues: Issues): Line | null
 function parseUse(head: Head, issues: Issues): Line | null {
   const { numbers, names } = splitWords(head.words, false);
   const ids = names.filter((name) => isValidElementId(name));
+  // Drawing memory: `use [id…] from=<turn>` brings parts of an earlier turn's drawing back; every id named is one to bring.
+  const from = head.pairs.find((pair) => pair.key === 'from');
+  if (from !== undefined) {
+    if (!/^t\d+$/.test(from.value)) {
+      issues.error('bad-value', `${from.token} is not a turn; say from=t5, a turn in DRAWING MEMORY`, from.token);
+      return null;
+    }
+    if (ids.length === 0) {
+      issues.error('missing-id', 'use … from= needs the ids of the parts to bring back: use bridge sun from=t5');
+      return null;
+    }
+    const { props: held, rest: left } = readStyleProps(head.pairs.filter((pair) => pair !== from), issues);
+    warnUnknownPairs(left, issues);
+    const place = held.at === undefined && numbers.length >= 2 ? { x: numbers[0] ?? 0, y: numbers[1] ?? 0 } : held.at;
+    return withWhen({ verb: 'use' as const, id: '-', source: ids[0] as string, sources: ids, from: from.value, styles: [], props: place === undefined ? held : { ...held, at: place } }, head.when);
+  }
   const source = ids.length >= 2 ? ids[1] : ids[0];
   if (source === undefined) {
     issues.error('missing-id', 'use needs the id of what to copy: use tree2 tree at=70,72');
@@ -2080,6 +2096,14 @@ export function parseLine(raw: string): ParseResult {
     const drawn = parseDraw(readHead(tokens.slice(1), issues), cleanText(rawText, LIMITS.text, issues), issues);
     if (drawn === null || issues.failed) return { kind: 'reject', issues: issues.list };
     return { kind: 'line', line: drawn, issues: issues.list };
+  }
+  if (verb === 'restore') {
+    const word = readHead(tokens.slice(1), issues).words[0]?.toLowerCase() ?? '';
+    if (!/^(t\d+|undo|back|prev|previous)$/.test(word)) {
+      issues.error('missing-argument', 'restore needs a turn: restore t5 (a turn in DRAWING MEMORY)');
+      return { kind: 'reject', issues: issues.list };
+    }
+    return { kind: 'line', line: { verb: 'restore', turn: word }, issues: issues.list };
   }
   if (!oneOf(VERBS, verb)) {
     issues.error('unknown-verb', verbToken === '' ? 'line has no verb' : `"${verbToken}" is not a verb`, verbToken);

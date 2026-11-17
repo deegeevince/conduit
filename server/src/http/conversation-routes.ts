@@ -114,7 +114,7 @@ export function registerConversationRoutes(app: Hono, deps: HttpDeps): void {
     const view = foldConversation(id, records, updated);
     if (view.turns.length === 0) throw errors.notFound(`conversation ${id}`);
     const first = records.find((record) => record.type === 'session');
-    deps.conductor.continueConversation(session, id, earlierText(view), highestTurn(records), highestPhoto(records), first?.type === 'session' ? first.session : id.slice(16));
+    deps.conductor.continueConversation(session, id, earlierText(view), highestTurn(records), highestPhoto(records), first?.type === 'session' ? first.session : id.slice(16), records);
     c.header('Cache-Control', 'no-store');
     return c.json<ContinueResponse>({ id, session });
   });

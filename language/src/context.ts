@@ -191,6 +191,20 @@ export interface TurnContext {
   readonly eyes?: string | null;
   /** SA4. The canvas tools are on for this conversation: the brief says so in one line */
   readonly canvas?: boolean;
+  /** The drawing memory's index: a row for each of the newest versions of the drawing (the turn, what was asked, what stood in it). Absent: nothing is remembered. */
+  readonly drawingMemory?: readonly MemoryRow[];
+}
+
+/** One version of the drawing the conversation remembers: the turn that made it, the words that asked, how many parts, and the ones at the top. */
+export interface MemoryRow {
+  readonly turn: string;
+  readonly said: string;
+  readonly parts: number;
+  readonly roots: readonly string[];
+  /** the ids inside its groups, in the order they were made */
+  readonly inside: readonly string[];
+  /** it is the one on the canvas now */
+  readonly current: boolean;
 }
 
 /** The document a conversation has made, and what the person has done in it. */

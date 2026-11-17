@@ -17,6 +17,7 @@ export function buildContext(session: Session, services: Services): TurnContext 
     // What the user asked to hold: given back in every brief, so a later turn cannot forget it.
     ...(session.standing.length > 0 ? { standing: [...session.standing] } : {}),
     ...(session.continued === null ? {} : { earlier: session.continued.earlier }),
+    ...(session.memory.versions.length > 0 ? { drawingMemory: session.memory.index() } : {}),
   };
 }
 

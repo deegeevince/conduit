@@ -338,9 +338,18 @@ export interface UseLine {
   readonly id: string;
   /** the id of the element copied */
   readonly source: string;
+  /** drawing memory: `use bridge sun from=t5` brings these parts of that turn's drawing back; the server expands it, the painter never sees it. `source` is the first. */
+  readonly from?: string;
+  readonly sources?: readonly string[];
   readonly styles: readonly string[];
   readonly props: StyleProps;
   readonly when?: When;
+}
+
+/** Drawing memory: put that turn's whole resting drawing back (`restore t5`; `restore undo` is the version before the one showing). The server expands it. */
+export interface RestoreLine {
+  readonly verb: 'restore';
+  readonly turn: string;
 }
 
 export interface PaintLine {
@@ -673,6 +682,7 @@ export type Line =
   | FrameLine
   | GroupLine
   | DrawLine
+  | RestoreLine
   | UseLine
   | PaintLine
   | PicLine

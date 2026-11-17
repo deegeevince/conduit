@@ -36,6 +36,7 @@ import { Conversation, Tab } from './smoke';
 import { LENS_SCREENS, lensGroup } from './lens-check';
 import { ASK_SCREEN, askGroup } from './ask-check';
 import { ART_FAKE_MS, ART_SCREEN, artGroup } from './art-check';
+import { MEMORY_SCREEN, memoryGroup } from './memory-check';
 import type { Answer, CheckResult, Options, Probe, Step, Verdict } from './smoke';
 
 // ---------------------------------------------------------------------------------------------------------------------------------
@@ -867,6 +868,20 @@ async function main(): Promise<void> {
       process.stdout.write(`  FAIL art-maker stopped: ${error instanceof Error ? error.message : String(error)}\n`);
     } finally {
       await artServer?.stop();
+    }
+    // the drawing-memory group: scripts played as turns of the server's own path; undo and restore give the boxes back, parts of two turns mix
+    try {
+      const scenes = await memoryGroup(base, MEMORY_SCREEN, join(args.out, 'memory'), args.timeoutMs, (text) => (args.quiet ? undefined : process.stdout.write(`[${text}]\n`)));
+      process.stdout.write(`\nmemory ${MEMORY_SCREEN.name}\n`);
+      for (const scene of scenes) {
+        for (const result of scene.results) {
+          process.stdout.write(`  ${result.verdict === 'PASS' ? 'ok  ' : result.verdict} ${scene.name} ${result.check}: ${result.detail}\n`);
+          if (result.verdict === 'FAIL') failures += 1;
+        }
+      }
+    } catch (error) {
+      failures += 1;
+      process.stdout.write(`  FAIL memory stopped: ${error instanceof Error ? error.message : String(error)}\n`);
     }
     await writeFile(join(args.out, 'check.json'), JSON.stringify({ url: base, at: new Date().toISOString(), failures, screens: summary, lens, asks, arts }, null, 2));
   } catch (error) {
