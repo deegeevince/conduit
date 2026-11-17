@@ -44,6 +44,7 @@ export const INK_CSS = `
 .ink-btn--pill{border-radius:22px;width:44px}
 .ink-stage__bar.ink-bar--collapsed{left:auto;right:12px;top:10px;transform:none;max-width:none}
 .ink-stage .ink{background:rgba(255,255,255,.02)}
+@media (max-height:520px){.ink-bar{flex-wrap:nowrap;gap:2px;padding:4px;border-radius:12px;max-width:100%}.ink-bar__group{gap:0;flex:0 0 auto}.ink-bar__group+.ink-bar__group{padding-left:3px;margin-left:1px}.ink-bar__group:has(.ink-bar__words){flex:1 1 auto;min-width:0}.ink-btn{min-width:40px;min-height:40px;padding:0 6px}.ink-btn--send{padding:0 12px;white-space:nowrap}.ink-swatch{width:36px;height:40px}.ink-swatch__dot{width:22px;height:22px}.ink-bar__words{flex:1 1 60px;min-width:60px;min-height:40px;padding:0 8px}.ink-bar__status{position:absolute;left:0;right:0;top:calc(100% + 4px);flex-basis:auto;padding:4px 10px;border-radius:10px;background:var(--ink-ui-ground,#fff);box-shadow:0 2px 10px rgba(0,0,0,.12)}.ink-stage__bar{top:6px}}
 @media (prefers-reduced-motion:no-preference){.ink-btn,.ink-swatch__dot{transition:background-color .12s,box-shadow .12s}}
 `;
 
