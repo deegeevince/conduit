@@ -54,7 +54,7 @@ export const HEART = [
   'end',
 ].join('\n');
 
-interface LabelView {
+export interface LabelView {
   readonly label: string;
   readonly id: string;
   readonly on: string | null;
@@ -101,16 +101,16 @@ const shot = async (tab: Tab, dir: string, name: string): Promise<string> => {
   return name;
 };
 
-const labelsOf = (tab: Tab): Promise<LabelView[]> =>
+export const labelsOf = (tab: Tab): Promise<LabelView[]> =>
   tab.eval<LabelView[]>(`[...document.querySelectorAll('.stage__text-block--ask')].map((holder) => {
     const line = holder.querySelector('.stage__text-line');
     const r = line.getBoundingClientRect();
     return { label: holder.dataset.ask, id: holder.dataset.askId, on: holder.dataset.askOn || null, group: holder.dataset.askGroup, lit: holder.dataset.lit || null, underline: getComputedStyle(line).borderBottomStyle, x: r.left + r.width / 2, y: r.top + r.height / 2, width: r.width, height: r.height };
   })`);
 
-const acts = (tab: Tab, mark: number): Posted[] => tab.posted.slice(mark).filter((turn) => turn.kind === 'act');
+export const acts = (tab: Tab, mark: number): Posted[] => tab.posted.slice(mark).filter((turn) => turn.kind === 'act');
 
-const partOf = (turn: Posted): { id: string; label: string; on: string | null; text: string } | null => {
+export const partOf = (turn: Posted): { id: string; label: string; on: string | null; text: string } | null => {
   try {
     const input = (JSON.parse(turn.body) as { input?: { id?: string; text?: string; part?: { label?: string; on?: string | null } } }).input;
     if (input?.part?.label === undefined) return null;
