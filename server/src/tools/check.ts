@@ -50,7 +50,7 @@ import { ART_FAKE_MS, ART_SCREEN, artGroup } from './art-check';
 import { CONTINUE_SCREEN, continueFixtures, continueGroup } from './continue-check';
 import { journeyGroup } from './journey-check';
 import { MEMORY_SCREEN, memoryGroup } from './memory-check';
-import { loopGroup } from './loop-check';
+import { fb062Group, loopGroup } from './loop-check';
 import { TOUR_SCREENS, tourGroup } from './tour-check';
 import { printWebkit, webkitGroup, webkitMissing } from './webkit-check';
 import { driftGroup } from './drift-check';
@@ -1243,6 +1243,17 @@ function buildUnits(args: Args, welcome: Welcome): { readonly units: Unit[]; rea
     run: async (_servers, out) => {
       const results = await loopGroup(plain);
       out.lines.push('\nloop (820x971)');
+      checkLines(out, results);
+    },
+  });
+  // fb-062 (docs/feedback.md): the loop missed a title over text and accepted a fix that moved things off the canvas. `--only fb-062` runs just this.
+  units.push({
+    name: 'fb-062',
+    needs: 'none',
+    weight: 10,
+    run: async (_servers, out) => {
+      const results = await fb062Group(plain);
+      out.lines.push('\nfb-062 (1344x866: a title on words, and the fixes that dodge it)');
       checkLines(out, results);
     },
   });
