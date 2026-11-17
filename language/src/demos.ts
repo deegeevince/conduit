@@ -60,7 +60,7 @@ export const DEMOS = [
   {
     name: 'problem',
     title: 'Problem',
-    summary: 'A maths question to work out: the brain says the question and its answer in one line, and the stage draws the whole workspace (the question large, a blank for the pen, hints, pictures from its numbers) and checks the answer.',
+    summary: 'Old maths questions, kept so earlier logs still play: a `problem` line is an ask for its answer, with the question as its words and a blank to write in (the brain writes `ask` and `math` now).',
   },
   {
     name: 'maths',
