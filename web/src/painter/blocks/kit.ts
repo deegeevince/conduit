@@ -267,7 +267,7 @@ export function besideRun(a: Point, b: Point, w: number, h: number, off: number)
   const out: Box[] = [];
   const horizontal = Math.abs(b.x - a.x) >= Math.abs(b.y - a.y);
   for (const o of [off, off * 3]) {
-    for (const t of [0.5, 0.3, 0.7, 0.15, 0.85]) {
+    for (const t of [0.5, 0.3, 0.7, 0.15, 0.85, 0.4, 0.6, 0.22, 0.78, 0.05, 0.95]) {
       const c = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
       if (horizontal) out.push(box(c.x - w / 2, c.y - h - o, w, h), box(c.x - w / 2, c.y + o, w, h));
       else out.push(box(c.x + o, c.y - h / 2, w, h), box(c.x - o - w, c.y - h / 2, w, h));

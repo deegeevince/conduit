@@ -466,7 +466,7 @@ Each may take an id, a room (\`x,y WxH\`) and \` | a title\`; then its parts, a 
 node [id] [${Object.keys(NODE)
           .filter((shape) => shape !== 'step')
           .join('|')}] [from=<id>[:label]] | <words>
-  from= draws the arrow from that node (\`from=q1:yes\`). On a timeline the year comes first (\`node 1969 | Apollo 11\`); on a map the place (\`node 140,40 | Xi'an\`).
+  from= draws the arrow from that node (\`from=q1:yes\`). A \`note\` is an aside, never a part. On a timeline the year comes first (\`node 1969 | Apollo 11\`); on a map the place (\`node 140,40 | Xi'an\`).
 link <a> <b> [c…] [both|plain] [dashed] | <label>
 | <cell> | <cell>
   A row. *Stars* mark the one that matters. A grid of values is a table, never rects and words. Highlight: \`set t1.row2 mark=box\` or \`t1.cell2,3\` (row 1 is the header), per option \`bind pick=apple | set t1.row2 mark=box\`.${

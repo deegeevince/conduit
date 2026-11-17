@@ -27,9 +27,13 @@ export interface RouteAsk {
   readonly clear: number;
   /** the charge for a bend (the unit the others are scaled by) */
   readonly bend: number;
+  /** two ends (arrowheads) on one side of a node, nearer than this, run into one another; a side offers ports this far apart (default: the middle only) */
+  readonly portGap?: number;
+  /** sides the route must not use: `from` or `to`, and which side of that box (right, left, bottom, top) */
+  readonly avoid?: readonly { readonly end: 'from' | 'to'; readonly side: Dir }[];
 }
 
-type Dir = 0 | 1 | 2 | 3; // right, left, down, up
+export type Dir = 0 | 1 | 2 | 3; // right, left, down, up
 const DX = [1, -1, 0, 0] as const;
 const DY = [0, 0, 1, -1] as const;
 
@@ -42,18 +46,26 @@ interface Port {
   readonly cost: number;
 }
 
-/** The four middles of a box's sides; `leaving` prefers the foot of the node (the way a flow goes down), `entering` the head. */
-function ports(b: Box, pad: number, bend: number, leaving: boolean): Port[] {
-  const cx = b.x + b.width / 2;
-  const cy = b.y + b.height / 2;
-  const r = b.x + b.width;
-  const d = b.y + b.height;
-  return [
-    { at: { x: cx, y: d }, out: { x: cx, y: d + pad }, dir: 2, cost: leaving ? 0 : bend * 5 },
-    { at: { x: cx, y: b.y }, out: { x: cx, y: b.y - pad }, dir: 3, cost: leaving ? bend * 5 : 0 },
-    { at: { x: r, y: cy }, out: { x: r + pad, y: cy }, dir: 0, cost: bend * 2 },
-    { at: { x: b.x, y: cy }, out: { x: b.x - pad, y: cy }, dir: 1, cost: bend * 2 }
-  ];
+/**
+ * The ports of a box: the middle of each side and, where a side is long enough to take them a `gap` apart, two more either side of it. `leaving`
+ * prefers the foot of the node (the way a flow goes down), `entering` the head.
+ */
+function ports(b: Box, pad: number, bend: number, leaving: boolean, gap: number): Port[] {
+  const out: Port[] = [];
+  const spots = (len: number): number[] => (gap > 0 && len >= 3 * gap + 2 * bend * 0.2 ? [0.5, 0.5 - gap / len, 0.5 + gap / len] : [0.5]);
+  for (const f of spots(b.width)) {
+    const x = b.x + b.width * f;
+    const off = f === 0.5 ? 0 : bend * 0.5;
+    out.push({ at: { x, y: b.y + b.height }, out: { x, y: b.y + b.height + pad }, dir: 2, cost: (leaving ? 0 : bend * 5) + off });
+    out.push({ at: { x, y: b.y }, out: { x, y: b.y - pad }, dir: 3, cost: (leaving ? bend * 5 : 0) + off });
+  }
+  for (const f of spots(b.height)) {
+    const y = b.y + b.height * f;
+    const off = f === 0.5 ? 0 : bend * 0.5;
+    out.push({ at: { x: b.x + b.width, y }, out: { x: b.x + b.width + pad, y }, dir: 0, cost: bend * 2 + off });
+    out.push({ at: { x: b.x, y }, out: { x: b.x - pad, y }, dir: 1, cost: bend * 2 + off });
+  }
+  return out;
 }
 
 class Heap {
@@ -116,12 +128,25 @@ const indexOf = (arr: readonly number[], v: number): number => {
 export function routeAround(ask: RouteAsk): Point[] | null {
   const { pad, clear, bend, room } = ask;
   const solid = ask.obstacles.map((o) => ({ x0: o.x - clear, y0: o.y - clear, x1: o.x + o.width + clear, y1: o.y + o.height + clear }));
-  const outs = ports(ask.from, pad, bend, true);
-  const ins = ports(ask.to, pad, bend, false);
-  // a side where another link's arrowhead stands is not a way out, and a side where another link leaves is not a way in
-  const meets = (a: Point, b: Point): boolean => Math.abs(a.x - b.x) < 1 && Math.abs(a.y - b.y) < 1;
+  const gap = ask.portGap ?? 0;
+  const outs = ports(ask.from, pad, bend, true, gap);
+  const ins = ports(ask.to, pad, bend, false, gap);
+  // a side where another link's arrowhead stands is not a way out, and a side where another link leaves is not a way in; two ends of a kind
+  // a head's width apart or less are worse still (they would lie on one another)
+  const reach = Math.max(1, gap * 0.9);
+  const crowds = (a: Point, b: Point): boolean => Math.abs(a.x - b.x) < reach && Math.abs(a.y - b.y) < reach;
   const busy = (list: Port[], arrivals: boolean): Port[] =>
-    list.map((p) => (ask.lines.some((l) => meets(arrivals ? (l.points[l.points.length - 1] as Point) : (l.points[0] as Point), p.at)) ? { ...p, cost: p.cost + bend * 8 } : p));
+    list.map((p) => {
+      let extra = 0;
+      for (const l of ask.lines) {
+        const first = l.points[0] as Point;
+        const last = l.points[l.points.length - 1] as Point;
+        if (crowds(arrivals ? last : first, p.at)) extra = Math.max(extra, bend * 8);
+        if (crowds(arrivals ? first : last, p.at)) extra = Math.max(extra, bend * 12);
+      }
+      const barred = (ask.avoid ?? []).some((a) => a.end === (arrivals ? 'from' : 'to') && a.side === p.dir);
+      return extra === 0 && !barred ? p : { ...p, cost: p.cost + extra + (barred ? bend * 1000 : 0) };
+    });
   const outPorts = busy(outs, true);
   const inPorts = busy(ins, false);
   // the grid: the sides of every box and the middle of every free corridor between them, the room's margins, the ports, the bends of the lines already drawn

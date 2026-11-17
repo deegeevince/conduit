@@ -328,7 +328,9 @@ if (process.argv.includes('--dump')) {
   const script = process.argv[process.argv.indexOf('--dump') + 1] ?? '';
   const src = script.replace(/;/g, '\n');
   const lookName = (process.argv[process.argv.indexOf('--dump') + 2] ?? 'paper') as keyof typeof LOOKS;
-  const s0 = setupFor(LOOKS[lookName], SCREENS[Number(process.argv[process.argv.indexOf('--dump') + 3] ?? 0)] as Screen);
+  // `--screen=WxH` sets the size the dump is laid out at (else the screen numbered after the look)
+  const sized = /^--screen=(\d+)x(\d+)$/.exec(process.argv.find((a) => a.startsWith('--screen=')) ?? '');
+  const s0 = setupFor(LOOKS[lookName], sized === null ? (SCREENS[Number(process.argv[process.argv.indexOf('--dump') + 3] ?? 0)] as Screen) : { name: sized[0].slice(9), width: Number(sized[1]), height: Number(sized[2]) });
   const p0 = structuresOf(src)[0] as Parsed;
   const input = inputFor(p0, s0);
   const lay = layoutStructure(input);

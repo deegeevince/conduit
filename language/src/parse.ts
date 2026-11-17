@@ -181,6 +181,8 @@ interface Pair {
   /** as written; a sprite key's characters keep their case */
   readonly raw: string;
   readonly token: string;
+  /** the bare words written straight after this pair (as written, with their place among the head's words); only a node line's `from=a:label` reads them */
+  after?: { readonly raw: string; readonly index: number }[];
 }
 
 interface Head {
@@ -270,19 +272,23 @@ function barOf(source: string): number {
 function readHead(rawTokens: readonly string[], issues: Issues): Head {
   const head: Head = { words: [], pairs: [], when: undefined };
   const tokens = rawTokens.map((token) => token.replaceAll(SPACE_MARK, ' '));
+  let last: Pair | null = null;
   for (const token of tokens) {
     if (token.startsWith('@')) {
       const when = parseWhen(token.toLowerCase());
       if (when === null) issues.warn('bad-time', `"${token}" is not a time; use @with, @+N, @-N or @N`, token);
       else head.when = when;
+      last = null;
       continue;
     }
     const equals = token.indexOf('=');
     if (equals > 0) {
       const raw = token.slice(equals + 1);
-      head.pairs.push({ key: token.slice(0, equals).toLowerCase(), value: raw.toLowerCase(), raw, token });
+      last = { key: token.slice(0, equals).toLowerCase(), value: raw.toLowerCase(), raw, token };
+      head.pairs.push(last);
       continue;
     }
+    if (last !== null) (last.after ??= []).push({ raw: token, index: head.words.length });
     head.words.push(token.toLowerCase());
   }
   return head;
@@ -1267,7 +1273,23 @@ function parseNode(head: Head, text: string | null, issues: Issues): Line | null
     issues.error('missing-text', 'node needs its words after " | "');
     return null;
   }
-  const { id, numbers, names } = splitWords(head.words, true, false, [...NODE_SHAPES, 'approx'], VALUE_LIMIT);
+  // `from=engine:burnt gas`: the words after a labelled `from=` that no style or shape is called are the rest of the label (only the node's own id, written before it, is never taken)
+  const taken = new Map<Pair, string[]>();
+  const eaten = new Set<number>();
+  for (const pair of head.pairs) {
+    if (pair.key !== 'from' || pair.after === undefined || oneOf(APPROX_FROM, pair.value)) continue;
+    const colon = pair.raw.indexOf(':');
+    if (colon < 0 || colon === pair.raw.length - 1) continue;
+    const more: string[] = [];
+    for (const word of pair.after) {
+      const lower = word.raw.toLowerCase();
+      if (word.index < 1 || BUILTIN_STYLE_NAMES.has(lower) || oneOf(NODE_SHAPES, lower) || lower === 'approx' || GEOMETRY_PATTERN.test(lower)) break;
+      more.push(word.raw);
+      eaten.add(word.index);
+    }
+    if (more.length > 0) taken.set(pair, more);
+  }
+  const { id, numbers, names } = splitWords(eaten.size === 0 ? head.words : head.words.filter((_, index) => !eaten.has(index)), true, false, [...NODE_SHAPES, 'approx'], VALUE_LIMIT);
   const { props, rest } = readStyleProps(head.pairs, issues);
   const line: { -readonly [K in keyof NodeLine]: NodeLine[K] } = { verb: 'node', id, styles: [], props, values: numbers.slice(0, 2), text };
   const styleWords: string[] = [];
@@ -1284,7 +1306,7 @@ function parseNode(head: Head, text: string | null, issues: Issues): Line | null
       // The id is a word of the language; the label is the brain's own and keeps its case.
       const colon = pair.raw.indexOf(':');
       const from = (colon < 0 ? pair.raw : pair.raw.slice(0, colon)).toLowerCase();
-      const label = colon < 0 ? '' : pair.raw.slice(colon + 1);
+      const label = colon < 0 ? '' : [pair.raw.slice(colon + 1), ...(taken.get(pair) ?? [])].join(' ');
       if (!isValidElementId(from)) issues.warn('bad-value', `${pair.token} ignored; from= names the node this one follows`, pair.token);
       else line.from = label === '' ? { id: from } : { id: from, label };
     } else if (pair.key === 'shape' && oneOf(NODE_SHAPES, pair.value)) line.shape = pair.value;

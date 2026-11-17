@@ -7,8 +7,10 @@
 import type { Point, Polyline } from '@conduit/language';
 import type { BlockPart, StructureInput, StructureLayout } from '../../contracts/blocks';
 import type { Box } from '../../contracts/space';
-import { box, boxOfPoints, inflate, packOrdered, polylineHitsBox, polylinesCross, simplify, union } from './geom';
+import { box, boxOfPoints, inflate, lengthOf, packOrdered, polylineHitsBox, polylinesCross, simplify, union } from './geom';
+import type { Dir } from './flowroute';
 import { routeAround } from './flowroute';
+import { separateRoutes } from './flowtidy';
 import type { Draft, LinkSpec, NodeBox, Note } from './kit';
 import { best, connectorParts, knockOut, Env, fit, isCrowded, labelPart, linkSpecs, nodeParts, placeBeside, sizeNode, WRAPS } from './kit';
 
@@ -136,8 +138,90 @@ function mendRoutes(env: Env, links: readonly LinkSpec[], routes: Point[][], nod
     if (from === undefined || to === undefined) continue;
     const others = all().filter((_, j) => j !== i);
     const was = faultsOf(link, routes[i] as Point[], others, nodes, words);
-    const around = routeAround({ from, to, obstacles: [...nodes.values(), ...words], lines: others.map((o) => ({ points: o.pts, kin: sharesEnd(link, o.link) })), room: world, pad: env.headLength * 1.6, clear: Math.max(3, env.stroke * 2), bend: Math.max(env.body, 10) });
-    if (around !== null && faultsOf(link, around, others, nodes, words) < was) routes[i] = around;
+    const around = routeAround({ from, to, obstacles: [...nodes.values(), ...words], lines: others.map((o) => ({ points: o.pts, kin: sharesEnd(link, o.link) })), room: world, pad: env.headLength * 1.6, clear: Math.max(3, env.stroke * 2), bend: Math.max(env.body, 10), portGap: portGapOf(env) });
+    // a way round that goes the long way about, to keep clear of a crossing or two, is worse than the crossings: only a node in the way justifies it
+    if (around !== null && faultsOf(link, around, others, nodes, words) < was && (was >= 100 || !detour(around, from, to, env))) routes[i] = around;
+  }
+}
+
+/**
+ * The place for a connector's words: beside its runs, longest first as the caller orders them. Where the words in one line find no clear place (a short
+ * link between boxes, a corridor with other lines in it) they are set in two or three lines, narrower, which often do.
+ */
+function placeLabel(env: Env, text: string, runs: readonly (readonly [Point, Point])[], blockers: { boxes: readonly Box[]; lines: readonly Polyline[] }, room: Box): { pick: { box: Box; penalty: number } | null; m: { width: number; height: number } } {
+  const full = env.measure(text, env.wrapWidth, env.label());
+  const off = env.stroke * 1.5 + 3;
+  let m: { width: number; height: number } = full;
+  let pick = placeBeside(runs, m.width, m.height, off, blockers, room);
+  if ((pick === null || pick.penalty > 0) && /\s/.test(text.trim())) {
+    for (const share of [0.62, 0.45]) {
+      const narrow = env.measure(text, full.width * share, env.label());
+      if (narrow.width >= full.width * 0.95) continue;
+      const again = placeBeside(runs, narrow.width, narrow.height, off, blockers, room);
+      if (again !== null && (pick === null || again.penalty < pick.penalty)) {
+        pick = again;
+        m = narrow;
+      }
+      if (pick !== null && pick.penalty === 0) break;
+    }
+  }
+  return { pick, m };
+}
+
+/** the room between two routes in one channel: they read as two lines */
+const laneGap = (env: Env): number => Math.max(env.stroke * 2.5, env.body * 0.3);
+
+/** a route that is much longer than the way between its ends (the box centres, by right angles) */
+function detour(pts: readonly Point[], from: Box, to: Box, env: Env): boolean {
+  const straight = Math.abs(from.x + from.width / 2 - (to.x + to.width / 2)) + Math.abs(from.y + from.height / 2 - (to.y + to.height / 2));
+  return lengthOf(pts) > 2.5 * straight + 6 * env.headLength;
+}
+
+/** two arrowheads side by side on one side of a node need this much between them */
+const portGapOf = (env: Env): number => env.headLength * 1.15 + env.stroke;
+
+/** the side of a box a point stands on (right, left, bottom, top), or null */
+function sideOf(b: Box, p: Point): Dir | null {
+  const t = 1.5;
+  const inX = p.x > b.x - t && p.x < b.x + b.width + t;
+  const inY = p.y > b.y - t && p.y < b.y + b.height + t;
+  if (inX && Math.abs(p.y - (b.y + b.height)) < t) return 2;
+  if (inX && Math.abs(p.y - b.y) < t) return 3;
+  if (inY && Math.abs(p.x - (b.x + b.width)) < t) return 0;
+  if (inY && Math.abs(p.x - b.x) < t) return 1;
+  return null;
+}
+
+/**
+ * Ends crowded on one side of a node: when more links end (or begin) on a side than it has room for, side by side with an arrowhead's width
+ * between, the longest of them are found another side to use (flowroute.ts, barred from the crowded one).
+ */
+function relievePorts(env: Env, links: readonly LinkSpec[], routes: Point[][], nodes: ReadonlyMap<string, Box>, words: readonly Box[], room: Box): void {
+  const gap = portGapOf(env);
+  const world = union([room, ...nodes.values()]);
+  for (const [key, b] of nodes) {
+    for (const side of [0, 1, 2, 3] as Dir[]) {
+      const cap = Math.max(1, Math.floor((side < 2 ? b.height : b.width) / gap) - 1);
+      const ends: { i: number; end: 'from' | 'to' }[] = [];
+      links.forEach((l, i) => {
+        const r = routes[i] as Point[];
+        if (l.from === key && sideOf(b, r[0] as Point) === side) ends.push({ i, end: 'from' });
+        if (l.to === key && sideOf(b, r[r.length - 1] as Point) === side) ends.push({ i, end: 'to' });
+      });
+      if (ends.length <= cap) continue;
+      ends.sort((x, y) => lengthOf(routes[y.i] as Point[]) - lengthOf(routes[x.i] as Point[]));
+      for (const { i, end } of ends.slice(0, ends.length - cap)) {
+        const link = links[i] as LinkSpec;
+        const from = nodes.get(link.from);
+        const to = nodes.get(link.to);
+        if (from === undefined || to === undefined) continue;
+        const others = links.map((l, j) => ({ link: l, pts: routes[j] as Point[] })).filter((_, j) => j !== i);
+        const was = faultsOf(link, routes[i] as Point[], others, nodes, words);
+        const around = routeAround({ from, to, obstacles: [...nodes.values(), ...words], lines: others.map((o) => ({ points: o.pts, kin: sharesEnd(link, o.link) })), room: world, pad: env.headLength * 1.6, clear: Math.max(3, env.stroke * 2), bend: Math.max(env.body, 10), portGap: gap, avoid: [{ end, side }] });
+        if (around === null || detour(around, from, to, env)) continue;
+        if (faultsOf(link, around, others, nodes, words) <= Math.max(was, 0) + 10) routes[i] = around;
+      }
+    }
   }
 }
 
@@ -184,6 +268,32 @@ function chainOrder(input: StructureInput, links: readonly LinkSpec[]): string[]
   return order.length === n ? order : null;
 }
 
+/**
+ * The nodes in the order written, except that a node joined only by `link` lines (no `from=` to or from it: a radiator, a computer, a part that only
+ * touches the rest) stands right after the node it is joined to, so that it is set beside it and not wherever the order left a place.
+ */
+function besideWhatTheyJoin(input: StructureInput, links: readonly LinkSpec[]): string[] {
+  const order = input.nodes.map((el) => el.key);
+  const flowing = new Set<string>();
+  for (const l of links) if (l.el.id.endsWith('-in')) flowing.add(l.from).add(l.to);
+  const partner = new Map<string, string>();
+  for (const key of order) {
+    if (flowing.has(key)) continue;
+    const mine = links.filter((l) => l.from === key || l.to === key).map((l) => (l.from === key ? l.to : l.from));
+    const near = mine.filter((k) => k !== key && flowing.has(k)).sort((a, b) => order.indexOf(a) - order.indexOf(b))[0];
+    if (near !== undefined) partner.set(key, near);
+  }
+  if (partner.size === 0) return order;
+  const out = order.filter((k) => !partner.has(k));
+  for (const [key, near] of partner) {
+    // after the node and after any loose nodes already set beside it
+    let at = out.indexOf(near) + 1;
+    while (at < out.length && partner.get(out[at] as string) === near) at += 1;
+    out.splice(at, 0, key);
+  }
+  return out;
+}
+
 /** Rows of a chain: the fewest, then the largest type, in which every row fits. Null when the structure is not a chain. */
 /** a folded chain may be set smaller than a single row may: more of it is on the page, and rows keep it readable */
 const FOLD_MIN_SHRINK = 0.5;
@@ -192,7 +302,7 @@ function foldChain(input: StructureInput): StructureLayout | null {
   if (f?.kind !== 'structure') return null;
   const links = linkSpecs(input);
   // a chain is folded in the order of its path; any other graph in the order written (what is written first is read first), its crossing links routed through the gutters
-  const order = chainOrder(input, links) ?? (input.nodes.length >= 4 && links.length > 0 ? input.nodes.map((el) => el.key) : null);
+  const order = chainOrder(input, links) ?? (input.nodes.length >= 4 && links.length > 0 ? besideWhatTheyJoin(input, links) : null);
   if (order === null) return null;
   const byKey = new Map(input.nodes.map((el) => [el.key, el]));
   const base = new Env(input, 1, 1, input.look.stroke);
@@ -302,6 +412,15 @@ function foldChain(input: StructureInput): StructureLayout | null {
         placed.push({ link, pts: pick });
       });
       if (through) continue;
+      {
+        // links that lie along one another (or along a link inside a band) are given lanes of their own; the band's own stay where they were drawn
+        const fixedRoutes = inBand.map((o) => [...o.pts]);
+        const lanes = [...fixedRoutes, ...crossing.map((_, k) => [...((final[k] ?? []) as Point[])])];
+        separateRoutes(lanes, { nodes: nodeBoxes, gap: laneGap(env), stub: env.headLength * 1.2, fixed: new Set(fixedRoutes.map((_, i) => i)), bounds: input.room, keepCrossings: true });
+        crossing.forEach((_, k) => {
+          if ((final[k] ?? []).length >= 2) final[k] = lanes[fixedRoutes.length + k] as Point[];
+        });
+      }
       crossing.forEach((link, k) => {
         const pts = final[k];
         if (pts === null || pts === undefined || pts.length < 2) return;
@@ -313,13 +432,14 @@ function foldChain(input: StructureInput): StructureLayout | null {
         if (pts === null || pts === undefined || pts.length < 2) return;
         let area = boxOfPoints(pts);
         if (link.label !== '') {
-          const m = env.measure(link.label, env.wrapWidth, env.label());
           // beside the line, longest run first, never on it; with no clear place the lines break round the word
           const runs: (readonly [Point, Point])[] = [];
           for (let q = 0; q + 1 < pts.length; q += 1) runs.push([pts[q] as Point, pts[q + 1] as Point]);
           const len = (r: readonly [Point, Point]): number => Math.hypot(r[1].x - r[0].x, r[1].y - r[0].y);
           runs.sort((x, y) => len(y) - len(x));
-          const pick = placeBeside(runs, m.width, m.height, env.stroke * 1.5 + 3, { boxes: [...nodeBoxes, ...taken], lines: [...routes.values()] }, input.room);
+          const placedAt = placeLabel(env, link.label, runs, { boxes: [...nodeBoxes, ...taken], lines: [...routes.values()] }, input.room);
+          const pick = placedAt.pick;
+          const m = placedAt.m;
           const longest = runs[0] as readonly [Point, Point];
           const at = pick?.box ?? box((longest[0].x + longest[1].x) / 2 - m.width / 2, (longest[0].y + longest[1].y) / 2 - m.height / 2, m.width, m.height);
           if ((pick === null || pick.penalty > 0) && knockOut(lines, at, env.stroke * 1.5, [...nodeBoxes, ...taken])) notes.push({ key: link.el.key, note: 'crossed' });
@@ -659,6 +779,7 @@ function buildFlow(env: Env, grow: Grow): Draft {
     indeg[e.v] = (indeg[e.v] ?? 0) + 1;
   });
   const queue: number[] = [];
+  const inCount = indeg.slice();
   nodes.forEach((_, i) => {
     if (indeg[i] === 0) queue.push(i);
   });
@@ -669,6 +790,24 @@ function buildFlow(env: Env, grow: Grow): Draft {
       rank[v] = Math.max(rank[v] as number, (rank[u] as number) + 1);
       indeg[v] = (indeg[v] as number) - 1;
       if (indeg[v] === 0) queue.push(v);
+    }
+  }
+  // A part that only gives (nothing leads to it), or only hands on what such a part gives, stands beside what it feeds, not at the head of the
+  // diagram: pulled down to the rank before its earliest successor, so a radiator or a computer or a brake pedal is next to what it joins.
+  const pulled = new Set<number>();
+  const feeder = (u: number): boolean => {
+    if (inCount[u] === 0) return (succ[u]?.length ?? 0) > 0;
+    if (inCount[u] !== 1 || succ[u]?.length !== 1) return false;
+    const only = ends.find((e) => e.v === u);
+    return only !== undefined && inCount[only.u] === 0 && succ[only.u]?.length === 1;
+  };
+  for (let h = queue.length - 1; h >= 0; h -= 1) {
+    const u = queue[h] as number;
+    if (!feeder(u)) continue;
+    const want = Math.min(...(succ[u] ?? []).map((e) => (rank[(ends[e] as { v: number }).v] as number) - 1));
+    if (want > (rank[u] as number)) {
+      rank[u] = want;
+      pulled.add(u);
     }
   }
   // A node nothing joins, beside a diagram that has links, belongs after it (the last step the brain wrote and did not link).
@@ -722,14 +861,16 @@ function buildFlow(env: Env, grow: Grow): Draft {
 
   // One downward sweep: order by the barycentre of what is placed, then pack.
   const gapC = (a: V, b: V): number => env.up(a.real && b.real ? 0.9 * body * tight : 0.45 * body * tight, down ? 'x' : 'y') + (a.c + b.c) / 2;
-  layers.forEach((layer, r) => {
+  // A part with nothing before it below the first rank (one pulled down to what it feeds) is set where what it feeds stood on the last sweep: the sweep is run again, once, to find that
+  const floatWant = new Map<V, number>();
+  const sweep = (): void => layers.forEach((layer, r) => {
     if (r === 0) {
       layer.sort((x, y) => x.index - y.index);
     } else {
       const want = new Map<V, number>();
       for (const v of layer) {
         const p = preds.get(v) ?? [];
-        want.set(v, p.length ? p.reduce((s, q) => s + q.pos, 0) / p.length : 0);
+        want.set(v, p.length ? p.reduce((s, q) => s + q.pos, 0) / p.length : (floatWant.get(v) ?? 0));
       }
       layer.sort((x, y) => (want.get(x) as number) - (want.get(y) as number) || x.index - y.index);
       const prevOrder = new Map<V, number>(layers[r - 1]?.map((v, i) => [v, i]));
@@ -753,7 +894,7 @@ function buildFlow(env: Env, grow: Grow): Draft {
       }
       layer.forEach((v) => {
         const p = preds.get(v) ?? [];
-        want.set(v, p.length ? p.reduce((s, q) => s + q.pos, 0) / p.length : 0);
+        want.set(v, p.length ? p.reduce((s, q) => s + q.pos, 0) / p.length : (floatWant.get(v) ?? 0));
       });
       const desired = layer.map((v) => want.get(v) as number);
       const min = layer.slice(1).map((v, i) => gapC(layer[i] as V, v));
@@ -769,6 +910,19 @@ function buildFlow(env: Env, grow: Grow): Draft {
       v.pos = v.real ? env.centre(pos[i] as number, v.c, down ? 'x' : 'y') : (pos[i] as number);
     });
   });
+  sweep();
+  if (pulled.size > 0) {
+    for (let again = 0; again < 2; again += 1) {
+      for (const e of edges) {
+        const v = e.chain[0] as V;
+        if (v.real !== null && pulled.has(v.index) && !preds.has(v)) {
+          const next = edges.filter((x) => x.chain[0] === v).map((x) => (x.chain[1] as V).pos);
+          floatWant.set(v, next.reduce((t, q) => t + q, 0) / next.length);
+        }
+      }
+      sweep();
+    }
+  }
 
   // Ports: connectors leaving or entering a side share it evenly, in the order of what they reach.
   const outs = new Map<V, Seg[]>();
@@ -925,10 +1079,23 @@ function buildFlow(env: Env, grow: Grow): Draft {
       const mended = placed.map((p) => [...p.pts]);
       const words2: Box[] = [...(title.part(room)?.kind === 'text' ? [(title.part(room) as { box: Box }).box] : [])];
       mendRoutes(env, specs, mended, boxes, words2, room);
+      relievePorts(env, specs, mended, boxes, words2, room);
       placed.forEach((p, i) => {
         if (mended[i] !== undefined && mended[i] !== p.pts && (mended[i] as Point[]).length >= 2 && (mended[i] as Point[]).some((q, k) => q !== p.pts[k])) {
           p.pts = mended[i] as Point[];
           routes.set(p.edge.spec.el.key, { points: p.pts, closed: false });
+        }
+      });
+    }
+    // Links that lie along one another are given lanes of their own
+    {
+      const lanes = placed.map((p) => [...p.pts]);
+      separateRoutes(lanes, { nodes: nodeBoxes, gap: laneGap(env), stub: env.headLength * 1.2, bounds: union([room, ...nodeBoxes, ...placed.map((p) => boxOfPoints(p.pts))]) });
+      placed.forEach((p, i) => {
+        const lane = lanes[i] as Point[];
+        if (lane.length !== p.pts.length || lane.some((q, k) => q !== (p.pts[k] as Point) && (q.x !== (p.pts[k] as Point).x || q.y !== (p.pts[k] as Point).y))) {
+          p.pts = lane;
+          routes.set(p.edge.spec.el.key, { points: lane, closed: false });
         }
       });
     }
@@ -938,10 +1105,7 @@ function buildFlow(env: Env, grow: Grow): Draft {
     const taken: Box[] = [];
     const allLines = [...routes.values()];
     for (const p of placed) {
-      const m = labelM[edges.indexOf(p.edge)] ?? null;
-      if (!m) continue;
-      const w = m.width;
-      const h = m.height;
+      if ((labelM[edges.indexOf(p.edge)] ?? null) === null) continue;
       const pts = p.pts;
       // beside the line, never on it: its first stretch first, then the longest runs
       const runs: (readonly [Point, Point])[] = [];
@@ -949,8 +1113,7 @@ function buildFlow(env: Env, grow: Grow): Draft {
       const len = (r: readonly [Point, Point]): number => Math.hypot(r[1].x - r[0].x, r[1].y - r[0].y);
       const ordered2 = [...runs.slice(0, 1), ...runs.slice(1).sort((x, y) => len(y) - len(x))];
       const blockers = { boxes: [...nodeBoxes, ...taken], lines: allLines };
-      const off = env.stroke * 1.5 + 3;
-      const pick = placeBeside(ordered2, w, h, off, blockers, room);
+      const { pick, m } = placeLabel(env, p.edge.spec.label, ordered2, blockers, room);
       if (!pick) continue;
       if (pick.penalty > 0 && knockOut(lines, pick.box, env.stroke * 1.5, blockers.boxes)) notes.push({ key: p.edge.spec.el.key, note: 'crossed' });
       taken.push(pick.box);
