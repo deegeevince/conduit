@@ -707,6 +707,8 @@ export interface MathLine {
   readonly steps?: boolean;
   /** the step shown: a number, or the id of a `pick` that follows it */
   readonly step?: number | string;
+  /** a room on a free scene (`m1 column 10,10 80x60`); in the flow the stage gives it */
+  readonly box?: CanvasBox;
   readonly when?: When;
 }
 
@@ -752,7 +754,7 @@ export type Line =
   | LessonLine;
 
 /** The lines that put a new element on stage. */
-export type CreatingLine = SayLine | ShapeLine | PixLine | GroupLine | DrawLine | UseLine | PaintLine | PicLine | AmbientLine | StructureLine | NodeLine | LinkLine | ControlLine | CardLine;
+export type CreatingLine = MathLine | SayLine | ShapeLine | PixLine | GroupLine | DrawLine | UseLine | PaintLine | PicLine | AmbientLine | StructureLine | NodeLine | LinkLine | ControlLine | CardLine;
 
 export type IssueSeverity =
   /** the line was dropped */

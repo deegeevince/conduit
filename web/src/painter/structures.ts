@@ -27,6 +27,7 @@ import { own } from './own';
 import { registerLaidOut } from './registry';
 import { STRUCTURES_READY, layoutStructure } from './blocks';
 import { modelOf, playingParts, rollKey } from './blocks/tune';
+import { mathKey } from './blocks/math';
 import { drawUi, layoutUi, uiKey } from './ui-stage';
 import { figureKey, layoutFigureBlock } from './figure-stage';
 import { loneAppScenes } from './apps';
@@ -97,6 +98,8 @@ export interface OwnerCall {
   readonly aq: number;
   readonly look: LookSpec;
   readonly style: ElementStyle;
+  /** the boxes the layout knows by name (`<key>.<part>` of a written method): what a `hit m1.tens` lights */
+  readonly boxes?: ReadonlyMap<string, Box>;
 }
 
 export interface StructurePlans {
@@ -293,6 +296,8 @@ function planOf(structure: ElementSpan, schedule: Schedule, env: StructureEnv): 
   }
   figure.rows.forEach((_, index) => times.add(arrival(`${structure.key}#r${index}`)));
   times.add(arrival(structure.key));
+  // a written method: each mark and each fill put on a part lands when its line was written
+  if (figure.math != null) for (const change of [...figure.math.marks, ...figure.math.fills]) times.add(change.at);
   for (const flip of env.flips) times.add(flip);
   for (const change of env.roomTimes(structure)) times.add(change);
   // a burst of arrivals is one layout, made when the first of them came
@@ -336,9 +341,11 @@ function planOf(structure: ElementSpan, schedule: Schedule, env: StructureEnv): 
             ...(structure.driven ?? []).flatMap((change) => (change.effect.kind === 'mark' && env.scope[change.control.split('@')[0] ?? ''] === change.effect.equals ? [{ part: change.effect.part, mark: change.effect.mark }] : [])),
           ]
         : [];
-    const key = [signature(structure, present, rows, env.scope), JSON.stringify(marks), look.id, look.name, env.viewport.width, env.viewport.height, room.x.toFixed(2), room.y.toFixed(2), room.width.toFixed(2), room.height.toFixed(2), obstacles.map((o) => `${o.x.toFixed(0)},${o.y.toFixed(0)},${o.width.toFixed(0)},${o.height.toFixed(0)}`).join(';'), env.engine === undefined ? 'e' : 'b', figure.structure === 'screen' ? uiKey(structure.key) : figure.structure === 'figure' ? figureKey(structure.key) : '', env.viewport.dpr].join('|');
+    // a written method as it stands at the end of this cluster: the marks and fills that were written by then
+    const math = figure.math == null ? figure.math : { ...figure.math, marks: figure.math.marks.filter((mark) => mark.at < next), fills: figure.math.fills.filter((fill) => fill.at < next) };
+    const key = [signature(structure, present, rows, env.scope), JSON.stringify(marks), JSON.stringify(math), figure.structure === 'math' ? mathKey(structure.key) : '', look.id, look.name, env.viewport.width, env.viewport.height, room.x.toFixed(2), room.y.toFixed(2), room.width.toFixed(2), room.height.toFixed(2), obstacles.map((o) => `${o.x.toFixed(0)},${o.y.toFixed(0)},${o.width.toFixed(0)},${o.height.toFixed(0)}`).join(';'), env.engine === undefined ? 'e' : 'b', figure.structure === 'screen' ? uiKey(structure.key) : figure.structure === 'figure' ? figureKey(structure.key) : '', env.viewport.dpr].join('|');
     const layout = remembered(key, () => {
-      const shown: ElementSpan = { ...structure, figure: { ...figure, rows: figure.rows.slice(0, rows), marks } };
+      const shown: ElementSpan = { ...structure, figure: { ...figure, rows: figure.rows.slice(0, rows), marks, ...(math === undefined ? {} : { math }) } };
       // v2.2: a mock-up is laid out and drawn by the interface kit, as finished frames
       if (figure.structure === 'screen' && env.engine === undefined) {
         try {
@@ -468,21 +475,24 @@ export function buildStructures(schedule: Schedule, env: StructureEnv): Structur
   };
 
   const boxIn = (epoch: Epoch, key: string): Box | undefined => epoch.layout.boxes.get(key);
-  const boxAtTime = (plan: Plan, owner: ElementSpan, time: number): Box | null => {
+  const boxAtTime = (plan: Plan, owner: ElementSpan, time: number, key: string = owner.key): Box | null => {
     const { epoch, previous, q } = placeOf(plan, owner, time);
-    const now = boxIn(epoch, owner.key);
+    const now = boxIn(epoch, key);
     if (now === undefined) return null;
-    const was = previous === null || q >= 1 ? undefined : boxIn(previous, owner.key);
+    const was = previous === null || q >= 1 ? undefined : boxIn(previous, key);
     if (was === undefined) return now;
     return { x: lerp(was.x, now.x, q), y: lerp(was.y, now.y, q), width: lerp(was.width, now.width, q), height: lerp(was.height, now.height, q) };
   };
 
   registerLaidOut(schedule, {
     boxOf(key, time) {
-      const plan = byKey.get(key);
-      const owner = spans.get(key);
+      // `<key>.<part>`: a part of a written method (`near=m1.tens`); element keys hold no dot
+      const dot = key.indexOf('.');
+      const base = dot < 0 ? key : key.slice(0, dot);
+      const plan = byKey.get(base);
+      const owner = spans.get(base);
       if (plan === undefined || owner === undefined) return null;
-      const box = boxAtTime(plan, owner, time);
+      const box = boxAtTime(plan, owner, time, key);
       if (box === null) return null;
       const fit = env.fitOf(owner, env.specAt(time), time);
       const ps = planeScale(owner.style.layer, env.viewport);
@@ -526,8 +536,15 @@ export function buildStructures(schedule: Schedule, env: StructureEnv): Structur
     let pulse = 1;
     let shake = 0;
     let flash = 0;
+    // a hit on a part of a written method (`hit m1.tens`) lights the part's own words and lines, and moves nothing
+    const partFlash: { readonly box: Box; readonly level: number }[] = [];
     for (const change of hits) {
       if (change.kind !== 'hit') continue;
+      if (change.part !== undefined) {
+        const named = call.boxes?.get(`${owner.key}.${change.part}`);
+        if (named !== undefined) partFlash.push({ box: named, level: Math.sin(Math.PI * ((tq - change.start) / (change.end - change.start))) });
+        continue;
+      }
       const p = (tq - change.start) / (change.end - change.start);
       const gesture = change.gesture === 'shake' && reduced ? 'flash' : change.gesture;
       if (gesture === 'pulse') pulse = 1 + 0.12 * Math.sin(Math.PI * p);
@@ -593,7 +610,10 @@ export function buildStructures(schedule: Schedule, env: StructureEnv): Structur
       const earlier = before?.find((candidate) => candidate.part === part.part && candidate.kind === part.kind);
       const key = part.part === 'words' && part.kind === 'text' ? owner.key : `${owner.key}/${part.part}`;
       const z = owner.order + 0.001;
-      const mix = (colour: string): string => (flash > 0 ? mixHex(colour, strongest(look), flash) : colour);
+      const partBounds = partFlash.length === 0 ? null : boundsOf([part]);
+      const lit = partBounds === null ? 0 : partFlash.reduce((most, one) => (partBounds.x + partBounds.width / 2 >= one.box.x - 1 && partBounds.x + partBounds.width / 2 <= one.box.x + one.box.width + 1 && partBounds.y + partBounds.height / 2 >= one.box.y - 1 && partBounds.y + partBounds.height / 2 <= one.box.y + one.box.height + 1 ? Math.max(most, one.level) : most), 0);
+      const flashHere = Math.max(flash, lit);
+      const mix = (colour: string): string => (flashHere > 0 ? mixHex(colour, strongest(look), flashHere) : colour);
       if (part.kind === 'shape') {
         let outline = part.outline;
         if (earlier !== undefined && earlier.kind === 'shape' && earlier.outline.length === part.outline.length) outline = part.outline.map((line, i) => blendLine((earlier.outline[i] as Polyline), line, q));
@@ -728,7 +748,7 @@ export function buildStructures(schedule: Schedule, env: StructureEnv): Structur
         }
         if (parts.length === 0) continue;
         const before = previous === null || q >= 1 ? null : (previous.byOwner.get(owner.key) ?? null);
-        renderOwner({ structure, owner, parts, before, q, epochStart: epoch.start, cut: epoch.cut, ownerBox: boxAtTime(plan, owner, tq), tq, aq, look, style: styleAt(owner, tq) }, out);
+        renderOwner({ structure, owner, parts, before, q, epochStart: epoch.start, cut: epoch.cut, ownerBox: boxAtTime(plan, owner, tq), tq, aq, look, style: styleAt(owner, tq), boxes: epoch.layout.boxes }, out);
       }
     }
     return out;

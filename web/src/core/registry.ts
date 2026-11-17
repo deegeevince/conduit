@@ -29,6 +29,7 @@ import { problem } from './kinds/problem';
 import { flow } from './kinds/flow';
 import { input } from './kinds/input';
 import { map } from './kinds/map';
+import { math } from './kinds/math';
 import { pick } from './kinds/pick';
 import { screen } from './kinds/screen';
 import { slider } from './kinds/slider';
@@ -50,6 +51,7 @@ export const KINDS: Registry = {
   cycle,
   timeline,
   map,
+  math,
   table,
   chart,
   code,

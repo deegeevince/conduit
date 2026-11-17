@@ -68,7 +68,7 @@ export const TOUR_CHAPTERS: readonly TourChapter[] = [
     cards: [
       { kind: 'demo', label: 'Diagrams: flow, tree, cycle, timeline, table', name: 'diagrams', tryText: 'Explain how a heat pump works' },
       { kind: 'demo', label: 'Charts: line, columns, candles', name: 'charts', tryText: 'Chart the average rainfall by month in London as columns' },
-      { kind: 'demo', label: 'Maths: a question to work out', name: 'problem', tryText: 'Teach my 7-year-old division' },
+      { kind: 'demo', label: 'Maths: written methods, as on paper', name: 'maths', tryText: 'Teach my 7-year-old division' },
     ],
   },
   {

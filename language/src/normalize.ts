@@ -570,6 +570,11 @@ export class LineNormalizer {
         this.table = null;
         const read = readSum(line.method, line.sum);
         if (read.ok && line.worked !== true) this.mathAnswers.push(...answerOf(read.sum));
+        // SA5. A room on the opening line is the brain placing by guess: the stage gives the room.
+        if (this.placement === 'flow' && line.box !== undefined) {
+          const { box: _room, ...rest } = line;
+          return { line: rest, issues: [{ code: 'bad-geometry', severity: 'warn', message: 'placed by the stage', token: 'box' }] };
+        }
         return { line, issues: [] };
       }
       case 'scene':

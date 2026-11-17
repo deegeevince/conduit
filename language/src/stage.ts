@@ -7,6 +7,8 @@ import type { CanvasBox, ControlValues, Fill, Paint } from './types';
 import { CANVAS } from './vocabulary';
 import type { ElementKind } from './vocabulary';
 import { cachedTune, describeTune, tuneRowsOf } from './tune';
+import { gridOf } from './maths/written';
+import type { MathFigure } from './schedule';
 
 /** One thing the user actually saw during a turn. */
 export interface ShownItem {
@@ -36,6 +38,20 @@ function round(value: number): number {
   return Math.round(value);
 }
 
+/**
+ * A written method as the brief tells it: the method and its sum as given, and the parts a line can name (`near=m1.ans-tens`). What the blank cells hold
+ * is never said: a cell the person writes is listed by its name, and the answer is sealed (`answerOf`).
+ */
+function describeMath(math: MathFigure): string {
+  const head = `written method ${math.method} ${math.sum}${math.worked ? ' (worked)' : ''}`;
+  const grid = gridOf({ method: math.method, sum: math.sum, worked: math.worked, ...(math.blank === null ? {} : { blank: math.blank }), ...(math.carry === null ? {} : { carry: math.carry }) });
+  if (grid === null) return `${head} drawn as a picture; the unknown is ?`;
+  const blanks = grid.cells.filter((cell) => cell.blank).map((cell) => cell.part);
+  const rows = new Set(grid.cells.filter((cell) => cell.role === 'given').map((cell) => cell.part.split('-')[0] ?? ''));
+  const filled = math.fills.length === 0 ? '' : ', filled by the person';
+  return `${head}${blanks.length === 0 ? '' : `: blank ${blanks.join(' ')}`}${rows.size === 0 ? '' : `; parts ${[...rows].join(' ')} rule`}${math.steps ? `; ${grid.steps} steps` : ''}${filled}`;
+}
+
 /** A drawn thing in a few words, for memory and the transcript: enough to know what was there, not enough to redraw it. `box` is where it really rests, when known. */
 export function describeFigure(figure: Figure, box: CanvasBox | null = null): string {
   switch (figure.kind) {
@@ -63,6 +79,7 @@ export function describeFigure(figure: Figure, box: CanvasBox | null = null): st
         const parts = figure.rows.filter((row) => !/^(screen|end)\b/.test(row.cells[0] ?? '')).length;
         return `mock-up of ${screens.length} screen${screens.length === 1 ? '' : 's'} (${screens.map((m) => `${m[1] ?? ''} ${m[2] ?? ''}${m[3] === undefined || m[3] === '' ? '' : ` "${m[3]}"`}`).join(', ')}), ${parts} parts`;
       }
+      if (figure.structure === 'math' && figure.math != null) return describeMath(figure.math);
       if (figure.structure === 'problem') return `maths question${figure.problem?.question === undefined || figure.problem.question === '' ? '' : ` "${figure.problem.question}"`}`;
       if (figure.structure === 'figure') {
         const read = readFigure('', '', figure.mode ?? 'plain', figure.rows.map((row) => row.cells[0] ?? ''));
