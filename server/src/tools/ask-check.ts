@@ -243,25 +243,37 @@ export async function askGroup(base: string, screen: LensScreen, dir: string, ti
       await sleep(200);
       await tab.eval(`[...document.querySelectorAll('.composer__item')].find((n) => /^Draw/.test(n.textContent.trim())).click()`);
       await sleep(300);
-      const view = (await tab.eval<AskView[]>(`window.__stage.controls().filter((c) => c.ask).map((c) => ({ id: c.id, value: c.value, parts: c.parts, askState: c.askState }))`)).find((c) => c.id === 'a1');
-      const field = view?.parts.find((part) => part.part === 'field')?.box;
-      const check = view?.parts.find((part) => part.part === 'check')?.box;
-      if (field === undefined || check === undefined) list.push('the ask has no answer area or no Check');
+      const ask = async (): Promise<AskView | undefined> => (await tab.eval<AskView[]>(`window.__stage.controls().filter((c) => c.ask).map((c) => ({ id: c.id, value: c.value, parts: c.parts, askState: c.askState }))`)).find((c) => c.id === 'a1');
+      const field = (await ask())?.parts.find((part) => part.part === 'field')?.box;
+      if (field === undefined) list.push('the ask has no answer area');
       else {
         const a = await hands.onScreen({ x: field.x + field.width * 0.2, y: field.y + field.height * 0.3 });
         const b = await hands.onScreen({ x: field.x + field.width * 0.8, y: field.y + field.height * 0.7 });
         await hands.pen(line(a, b, 16));
         if (((await hands.strokes())?.strokes.length ?? 0) < 1) list.push('the pen left no stroke in the answer area');
-        await sleep(200);
-        await hands.finger([await hands.onScreen({ x: check.x + check.width / 2, y: check.y + check.height / 2 })]);
-        let state: { verdict: string; value: unknown } | null = null;
-        for (let waited = 0; waited < 8000; waited += 250) {
-          state = await tab.eval(`(() => { const c = window.__stage.controls().find((n) => n.id === 'a1'); return c ? { verdict: c.askState.verdict, value: c.value } : null; })()`);
-          if (state?.verdict === 'right') break;
-          await sleep(250);
+        // Check is ready once the pen has written
+        let check: { x: number; y: number; width: number; height: number } | undefined;
+        for (let waited = 0; waited < 3000 && check === undefined; waited += 250) {
+          check = (await ask())?.parts.find((part) => part.part === 'check')?.box;
+          if (check === undefined) await sleep(250);
         }
-        if (state?.verdict !== 'right') list.push(`Check after the pen wrote 72 marked it "${state?.verdict ?? 'nothing'}", not right`);
-        if (String(state?.value ?? '') !== '72') list.push(`the answer area holds "${String(state?.value ?? '')}", not 72`);
+        if (check === undefined) list.push('Check was not ready after the pen wrote');
+        else {
+          const before = tab.posted.length;
+          await hands.finger([await hands.onScreen({ x: check.x + check.width / 2, y: check.y + check.height / 2 })]);
+          let told: string | undefined;
+          let state: { verdict: string; value: unknown } | null = null;
+          for (let waited = 0; waited < 8000; waited += 250) {
+            state = await tab.eval(`(() => { const c = window.__stage.controls().find((n) => n.id === 'a1'); return c ? { verdict: c.askState.verdict, value: c.value } : null; })()`);
+            // the last ask of a chain answered right tells the brain, whose turn may then replace the scene: either the ask is marked right, or the turn says so
+            told = tab.posted.slice(before).find((turn) => turn.kind === 'act' && /right/.test(turn.text ?? ''))?.text ?? undefined;
+            if (state?.verdict === 'right' || told !== undefined) break;
+            await sleep(250);
+          }
+          if (state?.verdict !== 'right' && told === undefined) list.push(`Check after the pen wrote 72 marked it "${state?.verdict ?? 'nothing'}", not right`);
+          else if (told !== undefined && !/72/.test(told)) list.push(`the brain was told "${told}", not 72`);
+          else if (state !== null && String(state.value) !== '72') list.push(`the answer area holds "${String(state.value)}", not 72`);
+        }
       }
       picture = await shot(tab, dir, `${screen.name}-ask-column.png`);
     } catch (error) {

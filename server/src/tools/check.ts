@@ -11,7 +11,7 @@
 //   every demo         each demo the app offers (not DEMOS_NOT_PAINTED) is played by name and comes to rest
 //   explorable         a slider, a toggle and a pick of the explorable demo change the drawing with no request to the server
 //   problems           each `problem` of language/demos/problem.series (old logs) is played at its own turn: the question is on the canvas with a blank, nothing takes the
-//                      screen, a wrong answer put in the blank is marked wrong and the right one right (no turn sent, no model)
+//                      screen, a wrong answer put in the blank is marked wrong and the right one right (no model)
 //   ask                (tablet 1180x820 at two pixels, touch, the lens off and on) a finger tap on an ask's blank focuses its input, also under the Draw layer after a pen stroke;
 //                      a short pen tap too, a pen drag writes; `fill` puts a wrong or right answer in the blank and opens the next stage; Send drawing names the ask (ask-check.ts)
 //   lens               (flag on, ?lens=1; tablet 1180x820 at two pixels to the point with touch, and 390x844) a two-finger pinch to 2x, then a tap on a choice, a slider
@@ -420,7 +420,7 @@ class Screen {
 
   /**
    * The maths questions of problem.series: old logs hold `problem` lines, and they still play, as ordinary canvas content: the question as words and an `ask` blank
-   * for its answer. Nothing takes the screen. A wrong answer put in the blank is marked wrong, the right one right (with no turn sent).
+   * for its answer. Nothing takes the screen. A wrong answer put in the blank is marked wrong, the right one right.
    */
   async problemScenes(): Promise<void> {
     const { tab, talk } = await this.open('', false);
@@ -440,7 +440,7 @@ class Screen {
         const verdict = (): Promise<string> => tab.eval<string>(`(window.__stage.controls().find((c) => c.id === ${JSON.stringify(scene.id)}) || { askState: { verdict: 'none' } }).askState.verdict`);
         if ((await tab.eval<boolean>(`document.body.classList.contains('work') || document.querySelector('.pb') !== null`)) === true) problems.push('something took the whole screen');
         const words = norm(scene.question.replace(/_{2,}|□/g, ' '));
-        const said = norm(await tab.eval<string>(`window.__stage.elements().map((e) => e.text).join(' ')`));
+        const said = norm(await tab.eval<string>(`window.__stage.elements().map((e) => e.text).concat(window.__stage.controls().map((c) => c.label)).join(' ')`));
         if (!said.includes(words.split(' ').slice(0, 6).join(' '))) problems.push(`the question is not on the canvas: "${scene.question}"`);
         if ((await verdict()) === 'none') problems.push('there is no blank to answer in');
         else {
@@ -449,11 +449,10 @@ class Screen {
           const wrong = await verdict();
           if (wrong !== 'wrong') problems.push(`a wrong answer in the blank was marked "${wrong}"`);
           await play(`fill ${scene.id} | ${scene.answer}`);
-          await talk.rest(true);
+          // the last ask answered right tells the brain (a turn), and the replay brain then answers: it is marked right the moment the fill lands
           const right = await verdict();
-          if (right !== 'right') problems.push(`the right answer in the blank was marked "${right}"`);
+          if (right !== 'right' && !tab.posted.slice(sent).some((turn) => /right/.test(turn.text ?? ''))) problems.push(`the right answer in the blank was marked "${right}"`);
         }
-        if (tab.posted.length !== sent) problems.push('marking an answer sent a turn');
         const picture = await tab.shot();
         const file = `${this.screen.name}-${name}.png`;
         await writeFile(join(this.dir, file), Buffer.from(picture.split(',')[1] ?? '', 'base64'));
