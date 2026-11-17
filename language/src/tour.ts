@@ -78,7 +78,7 @@ export const TOUR_CHAPTERS: readonly TourChapter[] = [
     cards: [
       { kind: 'demo', label: 'Explorable: a slider bound to the drawing', name: 'explorable', tryText: 'Let me explore how compound interest grows with the rate' },
       { kind: 'demo', label: 'Controls: a pick, a toggle, a field', name: 'controls', tryText: 'Make a lamp I can switch on and off and change the colour of' },
-      { kind: 'demo', label: 'A live app on the stage', name: 'app', tryText: 'Make a little piano I can play' },
+      { kind: 'demo', label: 'A live app: a simulation that keeps its count', name: 'app', tryText: 'Make a Galton board I can drop balls into' },
     ],
   },
   {

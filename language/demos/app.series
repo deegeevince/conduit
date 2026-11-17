@@ -1,21 +1,67 @@
-# App: a live app, one HTML document taken exactly. It runs in a locked sandbox on the stage (no network, no cookies), keeps its
-# count with conduit.state, and tells the stage what the user did with conduit.send. It starts when the block is closed (the say).
+# App: what only an app can do (a loop, collisions, state it keeps) beside what the canvas does (words, labels).
+# A Galton board: a ball drops every 0.3 s, bounces down through the pegs, and the bins build a bell curve. It runs by itself, opens with about
+# 50 balls already landed, is seeded so it plays the same every time, keeps its count across a reload, and a tap drops a ball. The board is drawn to
+# the frame's size (its pegs, balls and kicks all scale with the pitch), so it builds the same bell on a phone as on a desk.
 
-scene caption
-app tally height=320 | Tally
+scene
+say title | A drawing shows. An app runs.
+app sim height=280 | Galton board
 | <style>
-| body { margin: 0; padding: 24px; text-align: center; }
-| #n { font-size: 72px; margin: 16px 0; }
-| button { font: inherit; min-height: 48px; padding: 0 28px; border: 0; border-radius: var(--radius); background: var(--accent); color: var(--ground); }
+| body { margin: 0; overflow: hidden; }
+| canvas { display: block; width: 100vw; height: 100vh; touch-action: none; }
+| i { position: absolute; left: 0; width: 100%; pointer-events: none; }
+| #pegs { top: 8%; height: 54%; }
+| #bins { top: 66%; height: 34%; }
+| small { position: absolute; right: 8px; top: 6px; font-size: var(--font-small); color: var(--dim); }
 | </style>
-| <div id="n">0</div>
-| <button id="add">Add one</button>
+| <canvas id="c"></canvas><i id="pegs" data-part="pegs"></i><i id="bins" data-part="bins"></i><small>a simulation</small>
 | <script>
-| var s = conduit.state() || { n: 0 };
-| var el = document.getElementById('n');
-| function show() { el.textContent = s.n; }
-| document.getElementById('add').onclick = function () { s.n += 1; show(); conduit.state(s); conduit.send('count', s.n); };
-| show();
+| var c = document.getElementById('c'), x = c.getContext('2d'), T = conduit.tokens;
+| var W = 1, H = 1, P = 1, S = 1, g = 10, seed = 7, balls = [], last = 0, due = 0, said = 0, dirty = true;
+| var s = conduit.state() || { bins: [0, 0, 0, 0, 0, 0, 0, 0, 0], n: 0 };
+| function rnd() { seed = (seed * 1664525 + 1013904223) % 4294967296; return seed / 4294967296; }
+| function size() { var d = devicePixelRatio || 1; W = innerWidth || 300; H = innerHeight || 280; P = Math.min(W / 10, H * 0.2); S = P / (H * 0.2); c.width = W * d; c.height = H * d; x.setTransform(d, 0, 0, d, 0, 0); }
+| function peg(r, k) { return { x: W / 2 + (k - r / 2) * P, y: H * 0.59 - (7 - r) * H * 0.07 * S }; }
+| function drop(px) { balls.push({ x: px === undefined ? W / 2 + (rnd() - 0.5) * 6 * S : px, y: peg(0, 0).y - H * 0.1 * S, vx: 0, vy: 0 }); }
+| function land(b) { s.bins[Math.max(0, Math.min(8, Math.floor((b.x - W / 2) / P + 4.5)))] += 1; s.n += 1; dirty = true; }
+| function tell() {
+|   dirty = false; conduit.state(s);
+| }
+| function step(dt) {
+|   for (var i = balls.length - 1; i >= 0; i--) {
+|     var b = balls[i]; b.vy += g * H * 0.25 * dt; b.x += b.vx * dt; b.y += b.vy * dt;
+|     if (b.x < 5 * S || b.x > W - 5 * S) { b.x = Math.max(5 * S, Math.min(W - 5 * S, b.x)); b.vx = -b.vx; }
+|     for (var r = 0; r < 8; r++) for (var k = 0; k <= r; k++) {
+|       var p = peg(r, k), dx = b.x - p.x, dy = b.y - p.y, d = Math.sqrt(dx * dx + dy * dy) || 1, vn = (b.vx * dx + b.vy * dy) / d;
+|       if (d < 9 * S && vn < 0) { b.vx -= 1.45 * vn * dx / d - (rnd() - 0.5) * 8 * Math.sqrt(S); b.vy -= 1.45 * vn * dy / d; b.x = p.x + dx / d * 9 * S; b.y = p.y + dy / d * 9 * S; }
+|     }
+|     if (b.y > H * 0.66) { land(b); balls.splice(i, 1); }
+|   }
+| }
+| function draw() {
+|   x.clearRect(0, 0, W, H); x.fillStyle = T.dim;
+|   for (var r = 0; r < 8; r++) for (var k = 0; k <= r; k++) { var p = peg(r, k); x.beginPath(); x.arc(p.x, p.y, 4 * S, 0, 7); x.fill(); }
+|   var top = Math.max.apply(null, s.bins.concat([8])); x.fillStyle = T.alt;
+|   for (var i = 0; i < 9; i++) { var h = s.bins[i] / top * H * 0.3; x.fillRect(W / 2 + (i - 4.4) * P, H - h, P * 0.8, h); }
+|   x.fillStyle = T.accent;
+|   for (var j = 0; j < balls.length; j++) { x.beginPath(); x.arc(balls[j].x, balls[j].y, 5 * S, 0, 7); x.fill(); }
+| }
+| function frame(t) {
+|   var dt = Math.min(0.1, (t - last) / 1000 || 0); last = t;
+|   if (!document.hidden) {
+|     due -= dt; said += dt; if (due <= 0) { drop(); due = 0.3; }
+|     for (var q = Math.ceil(dt / 0.008) || 1, u = 0; u < q; u++) step(dt / q);
+|     if (dirty && said > 0.25) { said = 0; tell(); }
+|     draw();
+|   }
+|   requestAnimationFrame(frame);
+| }
+| size(); addEventListener('resize', size);
+| c.onpointerdown = function (e) { drop(e.clientX); conduit.send('dropped', s.n); };
+| if (s.n === 0) for (var z = 0; z < 3000; z++) { if (z % 50 === 0 && z < 2500) drop(); step(0.008); }
+| tell(); draw();
+| if (!matchMedia('(prefers-reduced-motion: reduce)').matches) requestAnimationFrame(frame);
 | </script>
-say | A counter that keeps its count.
-wait 20
+say callout near=sim | real code: every bounce is worked out
+say | It keeps its count, and a tap drops a ball: try one.
+wait 10s
