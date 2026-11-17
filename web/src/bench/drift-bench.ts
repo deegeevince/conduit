@@ -22,6 +22,8 @@ interface Scene {
 
 /** The screens the owner's drifted sessions ran on, and a mouse on the iPad's size. */
 export const SCREENS: readonly Scene[] = [
+  // the owner's laptop, where a lesson on a free layout had its title stand on its worked answer (fb-062)
+  { name: 'laptop', width: 1344, height: 866, dpr: 2, pointer: 'fine' },
   { name: 'ipad-upright', width: 820, height: 971, dpr: 2, pointer: 'coarse' },
   { name: 'ipad-short', width: 820, height: 775, dpr: 2, pointer: 'coarse' },
   { name: 'phone-wide', width: 719, height: 356, dpr: 3, pointer: 'coarse' },
@@ -70,8 +72,35 @@ export const PATTERNS: readonly Pattern[] = [
   { name: 'carry', turns: [{ lines: [['scene layout=caption', 0], ['say a | The first turn says this', 0.3], ['say b | And this, which the next turn will stand on', 0.3]] }, { lines: [['say c | The second turn adds its own line below', 0.3], ['revise a | The first turn said this, but better', 5]] }] },
   { name: 'math', turns: [{ lines: [['scene layout=stack', 0], ['say a | Six lots of 12.', 0.3], ['math m1 column | 12+12+12+12+12+12', 0.3], ['set m1.ans-ones mark=box', 0.2], ['say b | Take 278 from 503.', 0.3], ['math m2 column | 503 - 278', 0.3], ['math m3 times | 47 × 6', 0.3], ['math m4 bond | 10 = 4 + ?', 0.3]] }] },
   { name: 'math-pictures', turns: [{ lines: [['scene layout=stack', 0], ['say a | Three quarters.', 0.3], ['math m1 bar | 3/4', 0.3], ['scene layout=stack', 0.5], ['math m2 groups | 12 ÷ 3', 0.3], ['scene layout=stack', 0.5], ['math m3 line steps | 7 + 5', 0.3]] }] },
-  // fb-059 and fb-060: a free scene whose title has no place of its own, over words set at points, and asks that wait: the page and the server place and measure them alike
-  { name: 'free-title', turns: [{ lines: [['scene layout=free canvas=square', 0], ['say t1 title | Adding big numbers', 0.3], ['say d1 at=60,28 align=right face=mono | 4768', 0.2], ['say d2 at=60,42 align=right face=mono | 2557', 0.2], ['say d3 at=60,58 align=right face=mono | 7325', 0.2], ['ask q1 is=6281 stage=1 | 3486 + 2795 = __', 0.3], ['ask q2 is=7043 stage=2:q1 | 5079 + 1964 = __', 0.3], ['ask q3 is=10000 stage=3:q2 | 6358 + 3642 = __', 0.3]] }] },
+  // fb-062: a lesson on a free layout in the shape of the one whose title stood on its worked answer (made-up words and sums). The title has no `at=`, so the stage
+  // places it; the steps and the sum are pinned; the asks open one after another. The page and the server must agree on every box, and on which of them do not land.
+  {
+    name: 'free-title',
+    turns: [
+      {
+        lines: [
+          ['scene layout=free canvas=square', 0],
+          ['say t1 title | Adding big numbers', 0.3],
+          ['say k1 aside at=8,14 | Carries', 0.3],
+          ['say k2 aside at=40,14 align=right face=mono | 1 1 1', 0.3],
+          ['say r1 at=40,24 align=right face=mono | 3719', 0.3],
+          ['say r2 at=40,34 align=right face=mono | 2845', 0.3],
+          ['say rp at=22,34 align=right face=mono | +', 0.3],
+          ['path rule stroke=ink | M20,40 L42,40', 0.3],
+          ['say r3 at=40,48 align=right ink=accent face=mono | 6564', 0.3],
+          ['say s1 aside at=75,22 | 1. Line the columns up.', 0.3],
+          ['say s2 aside at=75,32 | 2. Add from the right: 9+5=14.', 0.3],
+          ['say s3 aside at=75,42 | 3. Write 4, carry the 1 above.', 0.3],
+          ['say s4 aside at=75,52 | 4. Each column adds its carry too.', 0.3],
+          ['say go strong | Your turn: line them up and add.', 0.3],
+          ['ask q1 is=6564 stage=1 | 3719 + 2845 = __', 0.3],
+          ['hint in=q1 stage=yes | Start in the ones column.', 0.3],
+          ['ask q2 is=7043 stage=2:q1 | 5079 + 1964 = __', 0.3],
+          ['ask q3 is=10000 stage=3:q2 | 6358 + 3642 = __', 0.3],
+        ],
+      },
+    ],
+  },
   { name: 'app', turns: [{ lines: [['scene layout=caption', 0], ['app tally height=320 | Tally', 0.3], ['| <div id="n">0</div>', 0], ['say s | A counter.', 0.3]] }] },
 ];
 

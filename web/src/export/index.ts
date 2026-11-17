@@ -353,7 +353,7 @@ export function createExporter(deps: ExporterDeps): Exporter {
       const hasSound = sink.hasSound;
       const blob = await wait(sink.finish());
       sink = null;
-      return { blob, hasSound, ...(cutList === null ? {} : { cuts: cutList }), fileName: `conduit-${request.scope === 'conversation' ? 'conversation' : 'film'}${surround === undefined ? '' : '-lines'}-${width}x${height}.${request.format}` };
+      return { blob, hasSound, ...(cutList === null ? {} : { cuts: cutList }), fileName: `conduit-${request.scope === 'conversation' ? 'conversation' : 'film'}${surround === undefined || request.surround?.pane === false ? '' : '-lines'}-${width}x${height}.${request.format}` };
     } catch (error) {
       if (signal.aborted && !(error instanceof DOMException && error.name === 'AbortError')) throw abortError();
       throw error;

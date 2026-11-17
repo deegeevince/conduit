@@ -12,8 +12,8 @@
 //   ask        a hand had answered an ask: the next ask opens and the first one folds, which only the page knew
 //   choices    a mouse's target is smaller than a finger's, so a choice is shorter (the server always measured as a finger)
 //   controls   a slider the hand moved, then a new question with a slider of the same name
+//   free-title a title the stage places on a free layout, over the worked answer (fb-062; and its asks that wait, fb-059, fb-060): the page and the server place it alike, and say alike which things do not land
 //   cjk, flow, carry, words   the plain cases, so that the check has something that must never drift
-//   free-title  a free scene: a title with no place of its own over words set at points, and asks that wait (fb-059, fb-060): placed and measured alike
 //   scripts    Greek, Cyrillic, Arabic: the page measures them in the device's own font, so the server leaves the turn to the page
 //   app        a live app is sized by the browser: the server says so and leaves the turn to the page
 //
@@ -22,7 +22,7 @@
 
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { DEMOS, EMPTY_STAGE, LineNormalizer, TurnScore, parseLine, serializeLine } from '@conduit/language';
+import { BLOCKING_NOTES, DEMOS, EMPTY_STAGE, LineNormalizer, TurnScore, parseLine, serializeLine } from '@conduit/language';
 import type { BackEvent, Line, PageFacts, StageBase, TurnReport } from '@conduit/language';
 import { ENGINE_VERSION } from '@conduit/web/engine';
 import { measurable, measureDraft } from '../domain/stage-facts';
@@ -69,10 +69,21 @@ export interface Tally {
   seen: Map<string, number>;
   /** cases the server leaves to the page, as it must */
   left: string[];
+  /** comparisons of what does not land (each thing's blocking notes, and what it runs into) that were made, and agreed */
+  sights: number;
+}
+
+/** What a measure says does not land, as one line: each blocking thing, its notes, and the words it runs into. The page's and the server's must be the same line. */
+export function blockingOf(sight: import('@conduit/language').Sight): string {
+  return sight.items
+    .filter((item) => item.resting && item.notes.some((note) => BLOCKING_NOTES.includes(note)))
+    .map((item) => `${item.id}:${item.notes.filter((note) => BLOCKING_NOTES.includes(note)).sort().join('+')}${item.against === undefined ? '' : `>${[...item.against].sort().join('+')}`}`)
+    .sort()
+    .join(' ');
 }
 
 export function compare(captures: readonly Capture[]): Tally {
-  const tally: Tally = { agreed: 0, differed: [], seen: new Map(), left: [] };
+  const tally: Tally = { agreed: 0, differed: [], seen: new Map(), left: [], sights: 0 };
   for (const one of captures) {
     const ready = one.ready;
     if (ready === null) {
@@ -104,8 +115,14 @@ export function compare(captures: readonly Capture[]): Tally {
         }
         const measured = measureDraft(score, { ...session, held }, facts);
         if (measured === null) tally.differed.push(`${where} ${kind}: the server's engine threw`);
-        else if (measured.boxes === pageBoxes) tally.agreed += 1;
-        else tally.differed.push(`${where} ${kind}: page ${pageBoxes}, server ${measured.boxes}`);
+        else if (measured.boxes === pageBoxes) {
+          tally.agreed += 1;
+          // the same boxes are not yet the same verdict: what does not land, and what it runs into, must be what the page said
+          const pageSays = blockingOf(event.type === 'report' ? event.report.sight : event.sight);
+          const serverSays = blockingOf(measured.sight);
+          if (pageSays === serverSays) tally.sights += 1;
+          else tally.differed.push(`${where} ${kind}: the page says [${pageSays}] does not land, the server says [${serverSays}]`);
+        } else tally.differed.push(`${where} ${kind}: page ${pageBoxes}, server ${measured.boxes}`);
         // the same measure as the server made it before: with no facts at all, with a finger's target whatever the pointer, and with the controls
         // every earlier turn left held (what the server kept for the conversation). Where one of them differs, the facts are what made it agree.
         const variants = [
@@ -194,7 +211,7 @@ export async function driftGroup(note: (text: string) => void = () => undefined)
   try {
     const { problems, tally } = await driftProblems();
     const seen = [...tally.seen].map(([name, count]) => `${name} ${count}`).join(', ');
-    return [{ turn: 0, check: 'drift', verdict: problems.length === 0 ? 'PASS' : 'FAIL', detail: problems.length === 0 ? `${tally.agreed} drafts and reports of the page's own painter, at six screens, measured by the server with the page's facts: all agree (without them, differing: ${seen}); ${tally.left.length} left to the page` : problems.join('; ') }];
+    return [{ turn: 0, check: 'drift', verdict: problems.length === 0 ? 'PASS' : 'FAIL', detail: problems.length === 0 ? `${tally.agreed} drafts and reports of the page's own painter, at every screen of the bench, measured by the server with the page's facts: all agree on every box, and ${tally.sights} on which things do not land and what they run into (without the facts, differing: ${seen}); ${tally.left.length} left to the page` : problems.join('; ') }];
   } catch (error) {
     return [{ turn: 0, check: 'drift', verdict: 'FAIL', detail: `stopped: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}` }];
   }
