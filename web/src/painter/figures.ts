@@ -798,19 +798,12 @@ export function canvasBoxOf(element: ElementSpan, schedule: Schedule, time: numb
 
 /** The most a canvas grows to take in what was drawn past it: this many times its declared size on each side. Past it the drawing is cropped, as before. */
 const MAX_GROWTH = 4;
-/** Room past the far edge of what was drawn, on each axis that grew, as a share of its size: a stroke on the edge is not cut, and a label under the last box has room to stand. */
-const GROWTH_EDGE = 0.3;
 const sceneSizes = new WeakMap<Schedule, Map<string, { width: number; height: number }>>();
 type Size = { width: number; height: number };
 
-/** One side of the grown canvas: the declared size, unless the drawing reached past it, then the reach and the room beyond it, within the bound. */
-function reach(declared: number, drawn: number): number {
-  return drawn <= declared ? declared : Math.min(declared * MAX_GROWTH, drawn * (1 + GROWTH_EDGE));
-}
-
 /**
  * The size of the drawing space of a scene: its declared canvas, or, when something was drawn with its centre past the right or the bottom edge
- * (a row of practice boxes that runs off the square), the declared canvas grown to take in all that was drawn there, so the whole drawing is
+ * (a row of practice boxes that runs off the square), the declared canvas grown to take in all that was drawn there (`fitIn` then leaves room past it for labels), so the whole drawing is
  * fitted to the screen and nothing is cropped. The origin stays where it was, so a picture that fits is fitted exactly as before. Within reason:
  * never more than MAX_GROWTH times the declared size on a side.
  */
@@ -833,7 +826,7 @@ export function sceneCanvasOf(schedule: Schedule, scene: Pick<SceneSpan, 'id' | 
     bottom = Math.max(bottom, box.y + box.h);
   }
   const grown: Size = past
-    ? { width: reach(declared.width, right), height: reach(declared.height, bottom) }
+    ? { width: Math.min(declared.width * MAX_GROWTH, right), height: Math.min(declared.height * MAX_GROWTH, bottom) }
     : { width: declared.width, height: declared.height };
   memo.set(scene.id, grown);
   return grown;

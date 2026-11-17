@@ -35,7 +35,16 @@ export interface CanvasFit {
  * every point keeps its coordinates and the whole drawing is in view.
  */
 export function fitIn(canvas: CanvasName, region: Box, flow: Box, viewport: Viewport, grown?: { readonly width: number; readonly height: number }): CanvasFit {
-  const size = grown ?? CANVAS[canvas];
+  const declared = CANVAS[canvas];
+  let size: { readonly width: number; readonly height: number } = declared;
+  if (grown !== undefined && (grown.width > declared.width || grown.height > declared.height)) {
+    // Room past the far edge of what was drawn, on each side that grew, as much as a label needs (in stage units, not canvas units, so it is the same on any screen): a stroke on the edge is not cut and a label under the last box has a place to stand.
+    const wide = grown.width > declared.width;
+    const tall = grown.height > declared.height;
+    const room = Math.max(40, Math.min(64, viewport.height * 0.06));
+    const first = Math.max(1e-6, Math.min((region.width - (wide ? room : 0)) / grown.width, (region.height - (tall ? room : 0)) / grown.height));
+    size = { width: wide ? grown.width + room / first : declared.width, height: tall ? grown.height + room / first : declared.height };
+  }
   const unit = Math.max(1e-6, Math.min(region.width / size.width, region.height / size.height));
   const width = size.width * unit;
   const height = size.height * unit;
