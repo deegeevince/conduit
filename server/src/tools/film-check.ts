@@ -347,7 +347,7 @@ async function proof(dir: string, size: { width: number; height: number }): Prom
   process.stdout.write(`wrote ${stem}.webm (${made.seconds.toFixed(1)} s), its cuts and ${made.stills.length} stills in ${dir}\n`);
 }
 
-if (process.argv[1] !== undefined && import.meta.url.endsWith(process.argv[1].split('/').pop() ?? '#')) {
+if (process.argv[1] !== undefined && import.meta.url.endsWith(`/${process.argv[1].split('/').pop() ?? '#'}`)) {
   const at = process.argv.indexOf('--proof');
   if (at >= 0) {
     const sized = /^(\d+)x(\d+)$/.exec(process.argv[at + 2] ?? '1280x720');
