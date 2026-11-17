@@ -1,0 +1,36 @@
+# Toolkit: the painter's own tools on lines the brain draws, each a setting on a mark and none placing anything. The first scene: dashes that follow
+# a stroke, a width that swells and thins like pressure, a colour that grades along a stroke, and packed strokes that each taper alone. The second: a
+# gradient of many stops, a gradient from the middle, a turned one, paint kept inside a shape, a glaze and a light. pnpm check plays it.
+
+look paper
+scene caption calm
+color deep=#1b2a49
+color sea=#2f7f9a
+color foam=#e8f2f4
+color ember=#e0742a
+color straw=#e8c85a
+rect sky 0,0 160x90 fill=deep>sea>foam
+path dashed stroke=foam thick=1.4 dash=5,2.5 | M8,22 C30,2 50,44 76,24 C90,14 100,18 104,28
+path inked stroke=foam brush=ink thick=2.4 dash=9,3 | M8,44 C30,28 52,64 78,46 C92,38 100,40 104,48
+circle ring 130,24 14 fill=straw stroke=ember thick=1.2 dash=3,2
+rect frame 112,46 40x20 stroke=foam thick=1 dash=4,2
+path pressure stroke=foam thick=0.3>3.2>0.3 | M8,70 C28,56 52,84 80,68 C92,62 100,64 104,70
+path graded stroke=ember>straw>foam thick=2.6 | M8,82 C30,70 56,92 82,80 C94,74 102,76 106,82
+path packed stroke=foam brush=dry thick=1.4 | M112,76 L128,74 M112,81 L130,80 M134,75 L152,73 M134,82 L152,80
+say | Dashes, pressure, a graded colour, and packed strokes that each taper alone.
+wait 4
+scene caption calm
+color deep=#1b2a49
+color sea=#2f7f9a
+color foam=#e8f2f4
+color ember=#e0742a
+color straw=#e8c85a
+color moss=#2f5a3c
+rect sky 0,0 160x90 fill=deep>sea>foam
+circle moon 128,20 16 fill=straw>deep radial blend=screen stroke=none
+path hills fill=moss stroke=none | M0,56 C24,44 52,66 84,54 C108,46 132,56 160,50 L160,90 L0,90 Z
+rect glow 0,40 160x50 fill=ember>straw>foam angle=90 clip=hills stroke=none opacity=0.85
+path furrows stroke=deep thick=1.2 dash=4,2 clip=hills | M0,46 C40,36 100,70 160,44 M0,62 C50,52 100,76 160,60
+circle haze 52,50 20 fill=ember blend=multiply opacity=0.7 stroke=none
+say | Many stops, from the middle, turned, kept inside a shape, a glaze and a light.
+wait 4

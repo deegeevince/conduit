@@ -37,7 +37,7 @@ function colour(value: ColourRef): string {
 
 function fill(value: FillRef): string {
   if (value === 'none') return 'none';
-  if (typeof value === 'object' && 'from' in value) return `${colour(value.from)}>${colour(value.to)}`;
+  if (typeof value === 'object' && 'from' in value) return [value.from, ...(value.mid ?? []), value.to].map(colour).join('>');
   return colour(value);
 }
 
@@ -56,9 +56,14 @@ function propTokens(props: StyleProps): string[] {
   if (props.case !== undefined) out.push(`case=${props.case}`);
   if (props.mark !== undefined) out.push(`mark=${props.mark}`);
   if (props.fill !== undefined) out.push(`fill=${fill(props.fill)}`);
-  if (props.stroke !== undefined) out.push(`stroke=${props.stroke === 'none' ? 'none' : colour(props.stroke)}`);
+  if (props.stroke !== undefined) out.push(`stroke=${props.stroke === 'none' ? 'none' : [props.stroke, ...(props.strokeAlong ?? [])].map(colour).join('>')}`);
   if (props.bleed !== undefined) out.push(`bleed=${props.bleed}`);
-  if (props.thick !== undefined) out.push(`thick=${number(props.thick)}`);
+  if (props.thick !== undefined) out.push(`thick=${props.thickAlong === undefined ? number(props.thick) : props.thickAlong.map(number).join('>')}`);
+  if (props.dash !== undefined) out.push(`dash=${number(props.dash[0])},${number(props.dash[1])}`);
+  if (props.radial !== undefined) out.push(`radial=${props.radial ? 'yes' : 'no'}`);
+  if (props.angle !== undefined) out.push(`angle=${number(props.angle)}`);
+  if (props.blend !== undefined) out.push(`blend=${props.blend}`);
+  if (props.clip !== undefined) out.push(`clip=${props.clip}`);
   if (props.brush !== undefined) out.push(`brush=${props.brush}`);
   if (props.tex !== undefined) out.push(`tex=${props.tex}`);
   if (props.soft !== undefined) out.push(`soft=${number(props.soft)}`);

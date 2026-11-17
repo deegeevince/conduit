@@ -5,6 +5,7 @@
 import type { Layer } from '@conduit/language';
 import type { Affine, FigureFrame, PictureFrame, ShapeFrame, SpriteFrame } from '../../contracts/frame';
 import { layerZ, projectToScreen } from '../../contracts/space';
+import { mixHex } from '../../painter/affine';
 import { clipQuad } from '../place';
 import type { CameraPose, Viewport } from '../../contracts/space';
 
@@ -24,6 +25,8 @@ interface Node {
   readonly outer: SVGGElement;
   readonly root: SVGGElement;
   readonly body: SVGElement;
+  /** the stroke, as a path of its own, when it is not the fill's outline (dashes) */
+  extra: SVGPathElement | null;
   readonly layer: Layer;
   /** attributes as last written, so an unchanged frame touches nothing */
   readonly written: Map<string, string>;
@@ -35,7 +38,7 @@ function px(value: number): string {
 }
 
 function put(node: Node, target: Element, name: string, value: string): void {
-  const key = `${target === node.outer ? 'o' : target === node.root ? 'r' : 'b'}:${name}`;
+  const key = `${target === node.outer ? 'o' : target === node.root ? 'r' : target === node.extra ? 'x' : 'b'}:${name}`;
   if (node.written.get(key) === value) return;
   node.written.set(key, value);
   if (value === '') target.removeAttribute(name);
@@ -56,6 +59,15 @@ function screenMatrix(transform: Affine, layer: Layer, camera: CameraPose, viewp
   return { a: right.x - origin.x, b: right.y - origin.y, c: down.x - origin.x, d: down.y - origin.y, e: origin.x, f: origin.y };
 }
 
+/** The mean of some colours. */
+function meanColour(colours: readonly string[]): string {
+  let mean = colours[0] ?? '#000000';
+  colours.forEach((colour, i) => {
+    if (i > 0) mean = mixHex(mean, colour, 1 / (i + 1));
+  });
+  return mean;
+}
+
 function matrixText(m: Affine): string {
   return `matrix(${px(m.a)} ${px(m.b)} ${px(m.c)} ${px(m.d)} ${px(m.e)} ${px(m.f)})`;
 }
@@ -64,9 +76,9 @@ function scaleOf(m: Affine): number {
   return Math.sqrt(Math.abs(m.a * m.d - m.b * m.c));
 }
 
-function pathData(shape: ShapeFrame): string {
+function pathData(shape: ShapeFrame, lines: ShapeFrame['outline'] = shape.outline): string {
   const parts: string[] = [];
-  for (const line of shape.outline) {
+  for (const line of lines) {
     line.points.forEach((p, i) => parts.push(`${i === 0 ? 'M' : 'L'}${px(p.x)} ${px(p.y)}`));
     if (line.closed && line.points.length > 0) parts.push('Z');
   }
@@ -98,29 +110,76 @@ export function createPlainFigures(host: HTMLElement): PlainFigures {
     const outer = document.createElementNS(SVG, 'g');
     outer.appendChild(root);
     svg.appendChild(outer);
-    return { outer, root, body, layer: figure.layer, written: new Map(), shape: '' };
+    return { outer, root, body, extra: null, layer: figure.layer, written: new Map(), shape: '' };
   };
 
-  const gradient = (layer: Layer, id: string, from: string, to: string): void => {
+  /** A gradient of any number of stops over the shape's box: top to bottom, turned by `angle` (degrees; 90 is left to right), or `radial` from the middle. */
+  const gradient = (layer: Layer, id: string, colours: readonly string[], radial: boolean, angle: number): void => {
     const definitions = defs.get(layer);
     if (definitions === undefined) return;
+    const signature = `${radial ? 'r' : 'l'}|${angle}|${colours.join(',')}`;
     let found = definitions.querySelector(`#${CSS.escape(id)}`);
-    if (found === null) {
-      found = document.createElementNS(SVG, 'linearGradient');
-      found.setAttribute('id', id);
-      found.setAttribute('x1', '0');
-      found.setAttribute('y1', '0');
-      found.setAttribute('x2', '0');
-      found.setAttribute('y2', '1');
-      found.appendChild(document.createElementNS(SVG, 'stop'));
-      found.appendChild(document.createElementNS(SVG, 'stop'));
-      definitions.appendChild(found);
+    if (found !== null && found.getAttribute('data-sig') === signature) return;
+    found?.remove();
+    found = document.createElementNS(SVG, radial ? 'radialGradient' : 'linearGradient');
+    found.setAttribute('id', id);
+    found.setAttribute('data-sig', signature);
+    if (radial) {
+      found.setAttribute('cx', '0.5');
+      found.setAttribute('cy', '0.5');
+      found.setAttribute('r', '0.5');
+    } else {
+      const turn = (angle * Math.PI) / 180;
+      found.setAttribute('x1', px(0.5 - Math.sin(turn) / 2));
+      found.setAttribute('y1', px(0.5 - Math.cos(turn) / 2));
+      found.setAttribute('x2', px(0.5 + Math.sin(turn) / 2));
+      found.setAttribute('y2', px(0.5 + Math.cos(turn) / 2));
     }
-    const stops = found.querySelectorAll('stop');
-    stops[0]?.setAttribute('stop-color', from);
-    stops[0]?.setAttribute('offset', '0');
-    stops[1]?.setAttribute('stop-color', to);
-    stops[1]?.setAttribute('offset', '1');
+    colours.forEach((colour, i) => {
+      const stop = document.createElementNS(SVG, 'stop');
+      stop.setAttribute('offset', px(colours.length < 2 ? 0 : i / (colours.length - 1)));
+      stop.setAttribute('stop-color', colour);
+      found?.appendChild(stop);
+    });
+    definitions.appendChild(found);
+  };
+
+  /** Keeps a shape inside another shape's outline (`clip=<id>`): the outline as a clip path on the shape's own group, in the shape's own units. */
+  const clipShape = (node: Node, figure: ShapeFrame, m: Affine, camera: CameraPose, viewport: Viewport): void => {
+    const id = `s-${figure.key.replace(/[^a-z0-9_-]/gi, '_')}`;
+    const clip = figure.clipTo;
+    const definitions = defs.get(figure.layer);
+    if (clip === undefined || figure.bleed || definitions === undefined) {
+      put(node, node.root, 'clip-path', '');
+      return;
+    }
+    // The clipping shape's own units to the screen, then back into this shape's own units.
+    const there = screenMatrix(clip.transform, figure.layer, camera, viewport);
+    const det = m.a * m.d - m.b * m.c;
+    if (Math.abs(det) < 1e-9) return;
+    const inverse: Affine = { a: m.d / det, b: -m.b / det, c: -m.c / det, d: m.a / det, e: (m.c * m.f - m.d * m.e) / det, f: (m.b * m.e - m.a * m.f) / det };
+    const into: Affine = {
+      a: inverse.a * there.a + inverse.c * there.b,
+      b: inverse.b * there.a + inverse.d * there.b,
+      c: inverse.a * there.c + inverse.c * there.d,
+      d: inverse.b * there.c + inverse.d * there.d,
+      e: inverse.a * there.e + inverse.c * there.f + inverse.e,
+      f: inverse.b * there.e + inverse.d * there.f + inverse.f,
+    };
+    let path = definitions.querySelector(`#${CSS.escape(id)}`);
+    if (path === null) {
+      path = document.createElementNS(SVG, 'clipPath');
+      path.setAttribute('id', id);
+      path.appendChild(document.createElementNS(SVG, 'path'));
+      definitions.appendChild(path);
+    }
+    const shape = path.firstElementChild;
+    if (shape !== null) {
+      shape.setAttribute('d', pathData(figure, clip.outline));
+      shape.setAttribute('transform', matrixText(into));
+      shape.setAttribute('clip-rule', 'evenodd');
+    }
+    put(node, node.root, 'clip-path', `url(#${id})`);
   };
 
   /** A pattern for a hatched or dotted fill, in the shape's own units so it stays put on the shape: one per kind, colour and pitch. */
@@ -200,18 +259,35 @@ export function createPlainFigures(host: HTMLElement): PlainFigures {
     put(node, node.outer, 'clip-path', `url(#${id})`);
   };
 
-  const drawShape = (node: Node, figure: ShapeFrame, m: Affine, viewport: Viewport): void => {
+  const drawShape = (node: Node, figure: ShapeFrame, m: Affine, camera: CameraPose, viewport: Viewport): void => {
     const body = node.body;
     const key = figure.geometryKey;
     if (node.shape !== key) {
       node.shape = key;
       body.setAttribute('d', pathData(figure));
       node.written.delete('b:d');
+      if (figure.strokeOutline !== undefined) {
+        // Dashes are the stroke of a path of their own; the fill keeps the whole outline.
+        if (node.extra === null) {
+          node.extra = document.createElementNS(SVG, 'path');
+          node.root.appendChild(node.extra);
+        }
+        node.extra.setAttribute('d', pathData(figure, figure.strokeOutline));
+      } else if (node.extra !== null) {
+        node.extra.remove();
+        node.extra = null;
+        for (const name of node.written.keys()) if (name.startsWith('x:')) node.written.delete(name);
+      }
     }
+    const line = node.extra ?? body;
     const scale = Math.max(1e-6, scaleOf(m));
     const stroke = figure.stroke;
     put(node, node.root, 'transform', figure.bleed ? '' : matrixText(m));
     put(node, node.root, 'opacity', figure.opacity >= 1 ? '' : px(figure.opacity));
+    // A glaze or a light: the browser blends the layer's svg with what is under it. A renderer without that draws it plainly over.
+    // It goes on the outermost group: a clip path makes a group of its own, and a blend inside one finds nothing under it.
+    put(node, node.outer, 'style', figure.blend === undefined ? '' : `mix-blend-mode:${figure.blend}`);
+    clipShape(node, figure, m, camera, viewport);
     put(node, body, 'filter', figure.soft !== undefined && figure.soft > 0 && !figure.bleed ? `url(#${softness(node.layer, figure.soft)})` : '');
     put(node, body, 'fill-rule', 'evenodd');
     const texture = figure.fill?.texture;
@@ -224,22 +300,28 @@ export function createPlainFigures(host: HTMLElement): PlainFigures {
       put(node, body, 'fill-opacity', figure.fill.opacity >= 1 ? '' : px(figure.fill.opacity));
     } else {
       const id = `g-${figure.key.replace(/[^a-z0-9_-]/gi, '_')}`;
-      gradient(node.layer, id, figure.fill.colour, figure.fill.to);
+      gradient(node.layer, id, figure.fill.stops ?? [figure.fill.colour, figure.fill.to], figure.fill.radial === true, figure.fill.angle ?? 0);
       put(node, body, 'fill', `url(#${id})`);
       put(node, body, 'fill-opacity', figure.fill.opacity >= 1 ? '' : px(figure.fill.opacity));
     }
-    if (stroke === null) {
+    if (node.extra !== null) {
       put(node, body, 'stroke', 'none');
-      put(node, body, 'stroke-dasharray', '');
+      put(node, node.extra, 'fill', 'none');
+    }
+    if (stroke === null) {
+      put(node, line, 'stroke', 'none');
+      put(node, line, 'stroke-dasharray', '');
     } else {
-      put(node, body, 'stroke', stroke.colour);
-      put(node, body, 'stroke-width', px(Math.max(stroke.width, MIN_STROKE_DEVICE_PX / viewport.dpr / scale)));
-      put(node, body, 'stroke-linecap', 'round');
-      put(node, body, 'stroke-linejoin', 'round');
-      put(node, body, 'pathLength', '1');
+      // A plain line has one width and one colour: a pressure stroke is drawn at its mean, a graded one in the mean of its colours.
+      const mean = stroke.pressure === undefined ? 1 : stroke.pressure.reduce((sum, share) => sum + share, 0) / stroke.pressure.length;
+      put(node, line, 'stroke', stroke.along === undefined ? stroke.colour : meanColour(stroke.along));
+      put(node, line, 'stroke-width', px(Math.max(stroke.width * mean, MIN_STROKE_DEVICE_PX / viewport.dpr / scale)));
+      put(node, line, 'stroke-linecap', 'round');
+      put(node, line, 'stroke-linejoin', 'round');
+      put(node, line, 'pathLength', '1');
       // The share drawn so far, in the order the outline was written; one tick short of whole is still a dash and a gap.
-      put(node, body, 'stroke-dasharray', stroke.progress >= 1 ? '' : `${px(Math.max(0, stroke.progress))} 2`);
-      put(node, body, 'shape-rendering', stroke.character === 'pixel' ? 'crispEdges' : '');
+      put(node, line, 'stroke-dasharray', stroke.progress >= 1 ? '' : `${px(Math.max(0, stroke.progress))} 2`);
+      put(node, line, 'shape-rendering', stroke.character === 'pixel' ? 'crispEdges' : '');
     }
     if (figure.bleed) {
       // A full-bleed sheet covers the screen whatever the camera does.
@@ -352,7 +434,7 @@ export function createPlainFigures(host: HTMLElement): PlainFigures {
         }
         const matrix = screenMatrix(figure.transform, figure.layer, camera, viewport);
         frame(node, figure, camera, viewport);
-        if (figure.kind === 'shape') drawShape(node, figure, matrix, viewport);
+        if (figure.kind === 'shape') drawShape(node, figure, matrix, camera, viewport);
         else if (figure.kind === 'sprite') drawSprite(node, figure, matrix);
         else drawPicture(node, figure, matrix);
         const list = wanted.get(figure.layer) ?? [];
@@ -363,6 +445,8 @@ export function createPlainFigures(host: HTMLElement): PlainFigures {
         if (seen.has(key)) continue;
         node.outer.remove();
         defs.get(node.layer)?.querySelector(`#${CSS.escape(`k-${key.replace(/[^a-z0-9_-]/gi, '_')}`)}`)?.remove();
+        defs.get(node.layer)?.querySelector(`#${CSS.escape(`s-${key.replace(/[^a-z0-9_-]/gi, '_')}`)}`)?.remove();
+        defs.get(node.layer)?.querySelector(`#${CSS.escape(`g-${key.replace(/[^a-z0-9_-]/gi, '_')}`)}`)?.remove();
         nodes.delete(key);
       }
       for (const layer of LAYERS) {

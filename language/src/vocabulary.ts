@@ -367,6 +367,28 @@ export const TEXTURE = {
 export type Texture = keyof typeof TEXTURE;
 export const TEXTURES = keysOf(TEXTURE);
 
+/** How a shape's paint meets what is under it: `multiply` darkens like a glaze, `screen` lightens like light. */
+export const BLEND = {
+  normal: 'paint over paint. Default.',
+  multiply: 'a glaze: darkens what is under it',
+  screen: 'light: lightens what is under it',
+} as const;
+export type Blend = keyof typeof BLEND;
+export const BLENDS = keysOf(BLEND);
+
+/**
+ * The painter's tools on a drawn line, read by their own verbs and taught in the drawing brief (`drawingKit`) only: they are not in the fixed
+ * prompt, so a line that has none of them costs nothing. Every one is a setting on a mark the brain makes; none places anything.
+ */
+export const PAINT_PROP = {
+  dash: { also: 'on,off', gist: 'breaks the stroke into dashes along its own length, in canvas units' },
+  thick: { also: 'a>b>c', gist: 'width along the stroke, like pressure: thin, full, thin' },
+  stroke: { also: 'c1>c2', gist: 'colour along the stroke' },
+  clip: { also: '<shape id>', gist: 'paints only inside that shape' },
+  blend: { also: BLENDS.join(' | '), gist: 'multiply glazes, screen lights' },
+  fill: { also: 'a>b>c, radial, angle=N', gist: 'a gradient of any number of stops; radial from the middle; angle turns it (0 top to bottom, 90 left to right)' },
+} as const;
+
 export const MASK = {
   none: 'the whole rectangle. Default.',
   round: 'rounded corners',

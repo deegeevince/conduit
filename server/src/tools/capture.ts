@@ -3,6 +3,8 @@
 //   pnpm capture <log> <turn> [--screen 1280x720|1920x825|390x844] [--look <id>] [--out <dir>] [--fps 15] [--no-video] [--shade] [--lens]
 //   --lens                                      performs it as the page does with ?lens=1: an answer that would be squeezed grows a page taller than the screen, and the resting picture is of the whole page
 //   --shade                                     performs it as the page does with ?shade=1 (light, rim and contact shadow on what the brain drew)
+//   --svg                                       also writes the resting picture as the app exports it (<stem>.rest.svg) and that file drawn as a picture (<stem>.rest.svg.png)
+//   --plain                                     also draws the resting picture with the plain (no WebGL) renderer's own svg layers (<stem>.rest.plain.png); its text is not drawn
 //   pnpm capture --all <log> [same flags]       every turn of the log that drew something
 //
 // Replays the turn's logged lines at their logged arrival times (the playhead each arrived at, as the painter was told it), from the
@@ -37,7 +39,7 @@ const sleep = (ms: number): Promise<void> => new Promise((done) => setTimeout(do
 
 function usage(message: string): never {
   process.stderr.write(`capture: ${message}\n`);
-  process.stderr.write('usage: pnpm capture <log> <turn> [--screen 1280x720|1920x825|390x844] [--look <id>] [--out <dir>] [--fps n] [--no-video] [--shade] [--web <url>] [--data <dir>]\n  <log> is a path, or the log file name or session id as found in the data folder\n       pnpm capture --all <log> [flags]\n');
+  process.stderr.write('usage: pnpm capture <log> <turn> [--screen 1280x720|1920x825|390x844] [--look <id>] [--out <dir>] [--fps n] [--no-video] [--shade] [--svg] [--plain] [--web <url>] [--data <dir>]\n  <log> is a path, or the log file name or session id as found in the data folder\n       pnpm capture --all <log> [flags]\n');
   process.exit(2);
 }
 
@@ -244,6 +246,10 @@ interface Job {
   readonly shade: boolean;
   /** `?lens=1`: grow mode */
   readonly lens: boolean;
+  /** also return the resting picture as an exported svg, and that svg drawn */
+  readonly svg: boolean;
+  /** also return the resting picture drawn by the plain renderer's svg layers */
+  readonly plain: boolean;
   readonly frames: number;
   readonly fps: number;
   readonly video: boolean;
@@ -260,6 +266,9 @@ interface Made {
   readonly times: readonly number[];
   readonly strip: string;
   readonly rest: string;
+  readonly svgText: string | null;
+  readonly svgPng: string | null;
+  readonly plainPng: string | null;
   readonly webm: string | null;
   readonly videoNote: string | null;
   readonly notes: readonly string[];
@@ -393,6 +402,49 @@ const PAGE_SCRIPT = String.raw`async (job) => {
   renderer.dispose();
   host.remove();
 
+  // The same resting frame as the app's exporter draws it (svg), and as the plain renderer's own svg layers draw it.
+  const drawn = async (markup) => {
+    const image = new Image();
+    image.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(markup);
+    await image.decode();
+    return image;
+  };
+  const picturePng = async (layers) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    const g = canvas.getContext('2d');
+    g.fillStyle = restFrame.spec ? restFrame.spec.roles.ground : '#ffffff';
+    g.fillRect(0, 0, canvas.width, canvas.height);
+    for (const layer of layers) g.drawImage(layer, 0, 0, canvas.width, canvas.height);
+    return base64Of(await new Promise((done) => canvas.toBlob(done, 'image/png')));
+  };
+  let svgText = null;
+  let svgPng = null;
+  if (job.svg) {
+    const { frameToSvg } = await import('/src/export/svg.ts');
+    svgText = await frameToSvg(restFrame, { width: viewport.width, height: viewport.height });
+    svgPng = await picturePng([await drawn(svgText)]);
+  }
+  let plainPng = null;
+  if (job.plain) {
+    const plain = createPlainRenderer();
+    const plainHost = document.createElement('div');
+    plainHost.style.cssText = 'position:fixed;left:-20000px;top:0;width:' + viewport.width + 'px;height:' + viewport.height + 'px;overflow:hidden;';
+    document.body.append(plainHost);
+    await plain.mount(plainHost, viewport, restFrame.look);
+    plain.render(restFrame);
+    const layers = [];
+    for (const svg of plainHost.querySelectorAll('svg')) {
+      svg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+      svg.setAttribute('viewBox', '0 0 ' + viewport.width + ' ' + viewport.height);
+      layers.push(await drawn(new XMLSerializer().serializeToString(svg)));
+    }
+    plainPng = await picturePng(layers);
+    plain.dispose();
+    plainHost.remove();
+  }
+
   // The film, from the app's own exporter, at the viewport's own size.
   let webm = null;
   let videoNote = null;
@@ -416,7 +468,7 @@ const PAGE_SCRIPT = String.raw`async (job) => {
   }
   charts && charts.dispose();
   hold.remove();
-  return { duration, times, strip, rest, webm, videoNote, notes, rejected, debug };
+  return { duration, times, strip, rest, svgText, svgPng, plainPng, webm, videoNote, notes, rejected, debug };
 }`;
 
 // ---------------------------------------------------------------------------------------------------------------------------------
@@ -431,6 +483,8 @@ interface Options {
   readonly look: string | null;
   readonly shade: boolean;
   readonly lens: boolean;
+  readonly svg: boolean;
+  readonly plain: boolean;
   readonly out: string | null;
   readonly fps: number;
   readonly video: boolean;
@@ -456,6 +510,8 @@ function parseArgs(argv: readonly string[]): Options {
   let look: string | null = null;
   let shade = false;
   let lens = false;
+  let svg = false;
+  let plain = false;
   let out: string | null = null;
   let fps = 15;
   let video = true;
@@ -476,6 +532,8 @@ function parseArgs(argv: readonly string[]): Options {
     else if (arg === '--no-video') video = false;
     else if (arg === '--shade') shade = true;
     else if (arg === '--lens') lens = true;
+    else if (arg === '--svg') svg = true;
+    else if (arg === '--plain') plain = true;
     else if (arg === '--debug') debug = true;
     else if (arg === '--trace') trace = value().split(',').map(Number);
     else if (arg.startsWith('--')) usage(`unknown flag ${arg}`);
@@ -488,7 +546,7 @@ function parseArgs(argv: readonly string[]): Options {
   const log = positional[0];
   if (log === undefined) usage('which log?');
   if (!all && positional[1] === undefined) usage('which turn? (or --all)');
-  return { all, log: locate(log, data), turn: all ? null : (positional[1] ?? null), screen, screenName, look, shade, lens, out, fps, video, web, debug, trace };
+  return { all, log: locate(log, data), turn: all ? null : (positional[1] ?? null), screen, screenName, look, shade, lens, svg, plain, out, fps, video, web, debug, trace };
 }
 
 interface Captured {
@@ -517,6 +575,8 @@ async function captureOne(page: Page, options: Options, turns: readonly LoggedTu
     look: options.look,
     shade: options.shade,
     lens: options.lens,
+    svg: options.svg,
+    plain: options.plain,
     frames: STRIP_FRAMES,
     fps: options.fps,
     video: options.video,
@@ -532,12 +592,26 @@ async function captureOne(page: Page, options: Options, turns: readonly LoggedTu
   if (made.debug !== null) await writeFile(`${stem}.debug.json`, JSON.stringify(made.debug, null, 1));
   await writeFile(strip, Buffer.from(made.strip, 'base64'));
   await writeFile(rest, Buffer.from(made.rest, 'base64'));
+  const extras: string[] = [];
+  if (made.svgText !== null) {
+    await writeFile(`${stem}.rest.svg`, made.svgText);
+    extras.push(`${stem}.rest.svg`);
+  }
+  if (made.svgPng !== null) {
+    await writeFile(`${stem}.rest.svg.png`, Buffer.from(made.svgPng, 'base64'));
+    extras.push(`${stem}.rest.svg.png`);
+  }
+  if (made.plainPng !== null) {
+    await writeFile(`${stem}.rest.plain.png`, Buffer.from(made.plainPng, 'base64'));
+    extras.push(`${stem}.rest.plain.png`);
+  }
   let webm: string | null = null;
   if (made.webm !== null) {
     webm = `${stem}.webm`;
     await writeFile(webm, Buffer.from(made.webm, 'base64'));
   }
   process.stdout.write(`${turn.turn}: ${JSON.stringify(turn.asked.slice(0, 70))}  ${made.duration.toFixed(1)} s, ${turn.lines.length} lines${made.rejected > 0 ? `, ${made.rejected} would not read back` : ''}${baseOf(turns, index) === null ? '' : ', from the stage the log left'}\n  strip ${strip}\n  rest  ${rest}\n  film  ${webm ?? `none${made.videoNote === null ? ' (--no-video)' : ` (${made.videoNote})`}`}\n`);
+  for (const extra of extras) process.stdout.write(`  extra ${extra}\n`);
   for (const note of made.notes) process.stdout.write(`  note: ${note}\n`);
   return { turn: turn.turn, strip, rest, webm, duration: made.duration };
 }

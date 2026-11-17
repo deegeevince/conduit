@@ -19,6 +19,7 @@ import type {
   StayWord,
   StrokeCharacter,
   Texture,
+  Blend,
   Weight,
 } from './vocabulary';
 
@@ -157,6 +158,19 @@ export interface ElementStyle {
   readonly bleed: Bleed;
   /** outline thickness in canvas units; null: the look's own */
   readonly thick: number | null;
+  /** `thick=a>b>c`: width at stops along the stroke, canvas units; null: one width */
+  readonly thickAlong: readonly number[] | null;
+  /** `stroke=c1>c2>…`: the colours after `stroke`, along the stroke; null: one colour */
+  readonly strokeAlong: readonly Paint[] | null;
+  /** `dash=on,off` in canvas units; null: a whole line */
+  readonly dash: readonly [number, number] | null;
+  /** the id of the shape this paints inside; null: unclipped */
+  readonly clip: string | null;
+  readonly blend: Blend;
+  /** a gradient fill runs out from the middle */
+  readonly radial: boolean;
+  /** a linear gradient's direction, degrees: 0 top to bottom, 90 left to right */
+  readonly angle: number;
   /** the character of this one line; null: the look's own */
   readonly brush: StrokeCharacter | null;
   /** what the fill is made of */
@@ -175,10 +189,11 @@ export interface ElementStyle {
 }
 
 /** Style properties with colour names already looked up. */
-export type ResolvedProps = Omit<StyleProps, 'ink' | 'fill' | 'stroke'> & {
+export type ResolvedProps = Omit<StyleProps, 'ink' | 'fill' | 'stroke' | 'strokeAlong'> & {
   readonly ink?: Paint;
   readonly fill?: Fill;
   readonly stroke?: Paint | 'none';
+  readonly strokeAlong?: readonly Paint[];
 };
 
 function lookupProps(sheet: StyleSheet, name: string, depth: number, unknown: string[]): StyleProps {
@@ -220,19 +235,26 @@ function paintOf(ref: ColourRef, colors: ColorSheet, unknown: string[]): Paint {
 
 function fillOf(ref: FillRef, colors: ColorSheet, unknown: string[]): Fill {
   if (ref === 'none') return 'none';
-  if (typeof ref === 'object' && 'from' in ref) return { from: paintOf(ref.from, colors, unknown), to: paintOf(ref.to, colors, unknown) };
+  if (typeof ref === 'object' && 'from' in ref) {
+    return {
+      from: paintOf(ref.from, colors, unknown),
+      to: paintOf(ref.to, colors, unknown),
+      ...(ref.mid !== undefined && { mid: ref.mid.map((stop) => paintOf(stop, colors, unknown)) }),
+    };
+  }
   return paintOf(ref, colors, unknown);
 }
 
 /** Looks up every colour name in `props`. A name nobody defined becomes `ink` and is reported. */
 export function resolveColours(props: StyleProps, colors: ColorSheet): { props: ResolvedProps; unknown: string[] } {
   const unknown: string[] = [];
-  const { ink, fill, stroke, ...rest } = props;
+  const { ink, fill, stroke, strokeAlong, ...rest } = props;
   const resolved: ResolvedProps = {
     ...rest,
     ...(ink !== undefined && { ink: paintOf(ink, colors, unknown) }),
     ...(fill !== undefined && { fill: fillOf(fill, colors, unknown) }),
     ...(stroke !== undefined && { stroke: stroke === 'none' ? 'none' : paintOf(stroke, colors, unknown) }),
+    ...(strokeAlong !== undefined && { strokeAlong: strokeAlong.map((stop) => paintOf(stop, colors, unknown)) }),
   };
   return { props: resolved, unknown };
 }
@@ -294,6 +316,13 @@ export function completeStyle(props: ResolvedProps, context: StyleContext): Elem
     stroke,
     bleed: props.bleed ?? 'auto',
     thick: props.thick ?? null,
+    thickAlong: props.thickAlong ?? null,
+    strokeAlong: props.strokeAlong ?? null,
+    dash: props.dash ?? null,
+    clip: props.clip ?? null,
+    blend: props.blend ?? 'normal',
+    radial: props.radial ?? false,
+    angle: props.angle ?? 0,
     brush: props.brush ?? null,
     tex: props.tex ?? 'flat',
     soft: props.soft ?? 0,
@@ -338,9 +367,14 @@ export function patchStyle(style: ElementStyle, props: ResolvedProps): ElementSt
     ...(props.near !== undefined && { near: props.near, at: null }),
     ...(props.in !== undefined && { group: props.in }),
     ...(props.fill !== undefined && { fill: props.fill }),
-    ...(props.stroke !== undefined && { stroke: props.stroke }),
+    ...(props.stroke !== undefined && { stroke: props.stroke, strokeAlong: props.strokeAlong ?? null }),
     ...(props.bleed !== undefined && { bleed: props.bleed }),
-    ...(props.thick !== undefined && { thick: props.thick }),
+    ...(props.thick !== undefined && { thick: props.thick, thickAlong: props.thickAlong ?? null }),
+    ...(props.dash !== undefined && { dash: props.dash }),
+    ...(props.clip !== undefined && { clip: props.clip === 'none' ? null : props.clip }),
+    ...(props.blend !== undefined && { blend: props.blend }),
+    ...(props.radial !== undefined && { radial: props.radial }),
+    ...(props.angle !== undefined && { angle: props.angle }),
     ...(props.brush !== undefined && { brush: props.brush }),
     ...(props.tex !== undefined && { tex: props.tex }),
     ...(props.soft !== undefined && { soft: props.soft }),

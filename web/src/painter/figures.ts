@@ -22,7 +22,7 @@ import type { CanvasFit } from './canvas';
 import { contrastRatio, mapToGamut } from './colour';
 import { ease } from './ease';
 import { bodySize } from './layout/metrics';
-import { morphedOutline, wobbled } from './outline';
+import { dashed, morphedOutline, wobbled } from './outline';
 import { has, own } from './own';
 import { castInk, litFrom, shadeIsOn, strengthFor } from './shade';
 import { laidOutOf } from './registry';
@@ -986,10 +986,10 @@ function toStage(placed: Placed, frm: Frm, env: Env): Affine {
   return mul(translation(env.dx, env.dy), mul(about(apply(S, placed.pivot), 0, env.scale), full));
 }
 
-function flatOf(fill: Fill): { from: Paint; to: Paint | null } | null {
+function flatOf(fill: Fill): { from: Paint; to: Paint | null; mid: readonly Paint[] } | null {
   if (fill === 'none') return null;
-  if (typeof fill === 'string') return { from: fill, to: null };
-  return { from: fill.from, to: fill.to };
+  if (typeof fill === 'string') return { from: fill, to: null, mid: [] };
+  return { from: fill.from, to: fill.to, mid: fill.mid ?? [] };
 }
 
 function fillOf(trans: Trans, look: LookSpec, flash: number, arrival: number): FillFrame | null {
@@ -1005,15 +1005,28 @@ function fillColours(trans: Trans, look: LookSpec, flash: number, arrival: numbe
   const tint = (c: Colour): Colour => (strong === null ? c : mixHex(c, strong, flash));
   if (a === null && b === null) return null;
   const t = trans.p;
+  // The colours between the ends of a gradient, spread evenly (`fill=a>b>c`); a change between gradients of as many stops moves each stop.
+  const stopsOf = (fill: { from: Paint; to: Paint | null; mid: readonly Paint[] }): Colour[] => [fill.from, ...fill.mid, ...(fill.to === null ? [] : [fill.to])].map((paint) => tint(paintColour(paint, look)));
+  const shape = trans.to.fill === 'none' ? {} : { ...(trans.to.radial && { radial: true }), ...(trans.to.angle !== 0 && !trans.to.radial && { angle: trans.to.angle }) };
   if (a === null || b === null) {
     const only = a ?? b;
     if (only === null) return null;
-    return { colour: tint(paintColour(only.from, look)), to: only.to === null ? null : tint(paintColour(only.to, look)), opacity: (a === null ? t : 1 - t) * arrival };
+    const stops = stopsOf(only);
+    return { colour: tint(paintColour(only.from, look)), to: only.to === null ? null : tint(paintColour(only.to, look)), opacity: (a === null ? t : 1 - t) * arrival, ...(stops.length > 2 && { stops }), ...(only.to !== null && shape) };
   }
   const toA = paintColour(a.to ?? a.from, look);
   const toB = paintColour(b.to ?? b.from, look);
   const gradient = a.to !== null || b.to !== null;
-  return { colour: tint(mixHex(paintColour(a.from, look), paintColour(b.from, look), t)), to: gradient ? tint(mixHex(toA, toB, t)) : null, opacity: arrival };
+  const before = stopsOf(a);
+  const after = stopsOf(b);
+  const stops = before.length === after.length ? after.map((stop, i) => mixHex(before[i] ?? stop, stop, t)) : t < 0.5 ? before : after;
+  return {
+    colour: tint(mixHex(paintColour(a.from, look), paintColour(b.from, look), t)),
+    to: gradient ? tint(mixHex(toA, toB, t)) : null,
+    opacity: arrival,
+    ...(gradient && stops.length > 2 && { stops }),
+    ...(gradient && shape),
+  };
 }
 
 function strokeOf(trans: Trans, look: LookSpec, flash: number, progress: number): StrokeFrame | null {
@@ -1029,7 +1042,34 @@ function strokeOf(trans: Trans, look: LookSpec, flash: number, progress: number)
   else return null;
   if (flash > 0) colour = mixHex(colour, strongest(look), flash);
   const width = lerp(trans.from.thick ?? look.stroke.thick, trans.to.thick ?? look.stroke.thick, trans.p);
-  return { colour, width, progress, character: trans.to.brush ?? look.stroke.character };
+  const profile = pressureOf(trans.to.thickAlong);
+  const colours = trans.to.strokeAlong !== null && to !== 'none' ? gradedOf(trans, to, colour, look, flash) : null;
+  return {
+    colour,
+    width,
+    progress,
+    character: trans.to.brush ?? look.stroke.character,
+    ...(profile !== null && { pressure: profile }),
+    ...(colours !== null && { along: colours }),
+  };
+}
+
+/** `thick=a>b>c` as shares of the widest, or null when the widths do not vary or there is nothing to vary. */
+function pressureOf(widths: readonly number[] | null): readonly number[] | null {
+  if (widths === null || widths.length < 2) return null;
+  const widest = Math.max(...widths);
+  return widest > 0 ? widths.map((w) => w / widest) : null;
+}
+
+/** `stroke=c1>c2`: the colours along the stroke, the first having come from the stroke's colour a moment ago when it is changing. */
+function gradedOf(trans: Trans, to: Paint, colour: Colour, look: LookSpec, flash: number): readonly Colour[] {
+  const stops = [to, ...(trans.to.strokeAlong ?? [])].map((paint) => paintColour(paint, look));
+  const earlier = trans.p >= 1 || trans.from.stroke === 'none' ? null : paintColour(trans.from.stroke, look);
+  const strong = flash > 0 ? strongest(look) : null;
+  return stops.map((stop, i) => {
+    const mixed = earlier === null || i > 0 ? stop : mixHex(earlier, stop, trans.p);
+    return strong === null ? mixed : mixHex(mixed, strong, flash);
+  }).map((stop, i) => (i === 0 ? colour : stop));
 }
 
 const outlineMemo = new WeakMap<readonly Polyline[], Map<string, readonly Polyline[]>>();
@@ -1046,6 +1086,24 @@ function wobbledFor(lines: readonly Polyline[], seed: string, amount: number): r
   if (found === undefined) {
     found = wobbled(lines, seed, amount);
     byKey.set(memo, found);
+  }
+  return found;
+}
+
+const dashMemo = new WeakMap<readonly Polyline[], Map<string, readonly Polyline[] | null>>();
+
+/** `outline` cut into dashes, remembered for as long as the outline is the same one. */
+function dashedFor(lines: readonly Polyline[], dash: readonly [number, number]): readonly Polyline[] | null {
+  let byDash = dashMemo.get(lines);
+  if (byDash === undefined) {
+    byDash = new Map();
+    dashMemo.set(lines, byDash);
+  }
+  const memo = `${dash[0]},${dash[1]}`;
+  let found = byDash.get(memo);
+  if (found === undefined) {
+    found = dashed(lines, dash[0], dash[1]);
+    byDash.set(memo, found);
   }
   return found;
 }
@@ -1243,16 +1301,20 @@ function openEdgesOf(placed: readonly Placed[], standing: ReadonlyMap<string, El
 const OPEN_GAP = 1.5;
 
 /** The top and height of an outline as the brain drew it, in the shape's own units: what a gradient runs over, though the outline is made to run on. */
-function spanOf(lines: readonly Polyline[]): { readonly top: number; readonly height: number } {
+function spanOf(lines: readonly Polyline[]): { readonly top: number; readonly height: number; readonly left: number; readonly width: number } {
   let top = Infinity;
   let bottom = -Infinity;
+  let left = Infinity;
+  let right = -Infinity;
   for (const line of lines) {
     for (const p of line.points) {
       top = Math.min(top, p.y);
       bottom = Math.max(bottom, p.y);
+      left = Math.min(left, p.x);
+      right = Math.max(right, p.x);
     }
   }
-  return top === Infinity ? { top: 0, height: 0 } : { top, height: bottom - top };
+  return top === Infinity ? { top: 0, height: 0, left: 0, width: 0 } : { top, height: bottom - top, left, width: right - left };
 }
 
 /**
@@ -1310,19 +1372,24 @@ function shapeFrame(placed: Placed, frm: Frm): ShapeFrame | null {
   const edged = fill !== null && !fullBleed && placed.trans.to.bleed !== 'none' && !underPainting(placed.el, frm.standing, frm.sc) && standsWhereWritten(placed) ? bleedOutline(morph.polylines, placed, frm) : { lines: morph.polylines, key: '' };
   const stroke = strokeOf(placed.trans, look, placed.flash, draw);
   const lit = frm.lit && !fullBleed ? lightOf(placed, fill, stroke, look, draw, morph.polylines) : null;
+  const outline = wobbledFor(edged.lines, placed.el.key, amount);
+  const dash = placed.trans.to.dash;
+  const cut = dash !== null && stroke !== null && !fullBleed ? dashedFor(outline, dash) : null;
   return {
     kind: 'shape',
     key: placed.key,
     id: placed.owner.id,
     layer: layerOf(placed),
     z: placed.z,
-    outline: wobbledFor(edged.lines, placed.el.key, amount),
-    geometryKey: `${placed.key}|${morph.token}|${look.name}|${amount}${edged.key === '' ? '' : `|bleed${edged.key}`}`,
+    outline,
+    ...(cut !== null && { strokeOutline: cut }),
+    geometryKey: `${placed.key}|${morph.token}|${look.name}|${amount}${edged.key === '' ? '' : `|bleed${edged.key}`}${cut === null || dash === null ? '' : `|dash${dash[0]},${dash[1]}`}`,
     transform: toStage(placed, frm, env),
     fill: spanned(lit === null ? fill : lit.fill, edged.key !== '', morph.polylines),
     stroke: lit === null ? stroke : lit.stroke,
     opacity: clamp01(env.opacity * placed.opacity * (frm.fades.get(placed.owner.key) ?? 1)),
     ...softOf(placed.trans),
+    ...(placed.trans.to.blend !== 'normal' && { blend: placed.trans.to.blend }),
     bleed: fullBleed,
     ...(fullBleed ? {} : clipField(placed, frm, edged.key !== '')),
     tappable: placed.trans.to.tap,
@@ -1745,6 +1812,7 @@ export function figuresAt(schedule: Schedule, base: StageBase, time: number, amb
 
   const figures: FigureFrame[] = [];
   const byOwner = new Map<string, FigureFrame[]>();
+  const clips: { at: number; target: string }[] = [];
   for (const item of placedAll) {
     const kind = item.el.figure?.kind;
     let frame: FigureFrame | null = null;
@@ -1755,10 +1823,18 @@ export function figuresAt(schedule: Schedule, base: StageBase, time: number, amb
       sc.fault(error, item.key);
     }
     if (frame === null) continue;
+    if (frame.kind === 'shape' && item.trans.to.clip !== null) clips.push({ at: figures.length, target: item.trans.to.clip });
     figures.push(frame);
     const list = byOwner.get(item.owner.key) ?? [];
     list.push(frame);
     byOwner.set(item.owner.key, list);
+  }
+  // `clip=<id>`: a shape is painted only inside another shape on its layer, as that shape stands now (moved, morphed, drawn on or not).
+  for (const { at, target } of clips) {
+    const frame = figures[at];
+    if (frame === undefined || frame.kind !== 'shape' || frame.bleed) continue;
+    const source = figures.find((other): other is ShapeFrame => other.kind === 'shape' && other.id === target && other.key !== frame.key && other.layer === frame.layer && !other.bleed);
+    if (source !== undefined) figures[at] = { ...frame, clipTo: { key: source.key, outline: source.outline, geometryKey: source.geometryKey, transform: source.transform } };
   }
   if (frm.lit) for (const element of schedule.elements) {
     if (element.figure?.kind !== 'group' || !isOnStage(element, time)) continue;

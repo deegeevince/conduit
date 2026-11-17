@@ -886,6 +886,7 @@ export function drawingKit(capabilities: Capabilities, services: Services): stri
   const paint = [
     textures.length > 0 ? `\`tex=\` makes a fill ${textures.join(', ')}; \`soft=N\` fades an edge (light, cloud, shadow).` : '',
     brushes.length > 0 ? `\`brush=\` gives one line a stroke of its own (${brushes.filter((name) => name === 'ink' || name === 'dry' || name === 'marker' || name === 'pencil').join(', ')} …).` : '',
+    `Tools on a line you draw: \`dash=5,2\` breaks a stroke into dashes, \`thick=0.5>3>0.5\` swells and thins it like pressure, \`stroke=pale>foam\` grades its colour; each \`M\` of a \`path\` is a stroke of its own. \`clip=<shape id>\` paints only inside that shape, \`blend=multiply|screen\` glazes or lights, \`fill=a>b>c\` takes any number of stops, with \`radial\` from the middle or \`angle=90\` turned.`,
     media.length > 0 ? `\`paint [over=<group>] as=<medium>\` re-renders what you drew as a painting (${media.join(' | ')}): it adds nothing you did not draw: draw the picture first, in big shapes.` : '',
     modelPaints ? `\`paint ${media.length > 0 ? 'as=photo ' : ''}| <what to paint>\` asks an image model: many seconds, and it may never come, so your sketch shows meanwhile. One an answer at most${media.length > 0 ? '' : `; \`as=\` names the medium (${words(MEDIUM)}), \`mask=\` its edge (${words(MASK)})`}.` : '',
   ].filter((line) => line !== '');
