@@ -16,7 +16,7 @@ const chromePath = flag('--chrome') ?? '/Applications/Google Chrome.app/Contents
 const only = flag('--only');
 // --shelf: every fixture runs in an app that asked for the whole library shelf, so the libraries are in the page beside it
 const shelf = args.includes('--shelf');
-const USES = JSON.stringify(['physics', 'sound', 'maths', 'charts', 'graphs']);
+const USES = JSON.stringify(['physics', 'sound', 'maths', 'charts', 'graphs', 'maps']);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const hits = [];

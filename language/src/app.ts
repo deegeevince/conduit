@@ -41,6 +41,8 @@ const SHELF_GLOBALS: readonly (readonly [RegExp, AppShelf])[] = [
   [/(?:\bTone\s*\.|=\s*Tone\b)/, 'sound'],
   [/\bkatex\b/, 'maths'],
   [/(?:\bd3\s*\.[a-z]|=\s*d3\b)/, 'charts'],
+  // `World.land` (the shelf's land outlines), or `World` handed on (`const w = World;`): never the word in a sentence an app prints ("Hello World.")
+  [/(?:\bWorld\s*\.\s*land\b|=\s*World\s*(?:[;,)}]|$))/m, 'maps'],
 ];
 /** The shelves an app is given: the ones it asked for (`uses=`), and any whose library its code reaches for. The host loads these. */
 export function shelfOf(asked: readonly AppShelf[] | undefined, source: string): readonly AppShelf[] {
