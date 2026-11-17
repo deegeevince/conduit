@@ -190,6 +190,14 @@ export interface LineView {
   readonly issues: readonly Issue[];
 }
 
+/** Something on stage that keeps moving at this instant: a `loop=`, a `move` in progress, or a live `bind`. `seq` is the line that began it, `since` when (turn clock). */
+export interface MotionView {
+  readonly id: string;
+  readonly kind: 'loop' | 'move' | 'bind';
+  readonly seq: number;
+  readonly since: number;
+}
+
 /** Everything observable about the painter at one instant. */
 export interface PainterSnapshot {
   /** the turn being played. Null before the first turn, once a turn has fully played, and while an interruption settles: the Stop button follows this. */
@@ -219,6 +227,8 @@ export interface PainterSnapshot {
   readonly elements: readonly StageElementView[];
   /** the lines of the open turn, oldest first */
   readonly lines: readonly LineView[];
+  /** what keeps moving now (loops, moves in progress, live binds); absent when nothing does */
+  readonly motions?: readonly MotionView[];
   readonly renderer: string;
   readonly quality: Quality;
   /** frames per second, smoothed */
