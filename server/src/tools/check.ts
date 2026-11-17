@@ -615,7 +615,8 @@ class Screen {
       const results: CheckResult[] = [];
       Screen.add(results, 'script-lines', rejectedLinesOf(source).slice(0, 3), 'every line of the script reads');
       const played = await tab.eval<string | null>(`Promise.resolve(window.__stage.playScript(${JSON.stringify(source)})).then(() => null, (e) => String(e && e.message || e))`);
-      results.push(Screen.restResult(played !== null ? `the demo would not start: ${played}` : await talk.rest(true), began));
+      // the script is one long turn that plays in real time (a minute, and a scene more with each failure written down): it is given half as long again as a demo
+      results.push(Screen.restResult(played !== null ? `the demo would not start: ${played}` : await talk.rest(true, true, Math.round(this.args.timeoutMs * 1.5)), began));
       const starts = await this.sceneStarts(tab);
       if (starts.length !== ids.length) results.push({ turn: 0, check: 'scenes', verdict: 'FAIL', detail: `the script has ${ids.length} scenes but the turn has ${starts.length}` });
       const last = ids.length - 1;
@@ -697,6 +698,76 @@ class Screen {
         const faint = texts.filter((e) => e.contrast < 3 || e.fontPx < 9);
         if (faint.length > 0) problems.push(`hard to read on the dark ground: ${faint.slice(0, 3).map((e) => `"${e.text.slice(0, 20)}" ${e.contrast.toFixed(1)}:1 at ${e.fontPx.toFixed(0)} px`).join(', ')}`);
         good = `${texts.length} notes read on the dark ground (contrast 3:1 or more)`;
+        break;
+      }
+      case 'fb-051': {
+        // fb-051: a slider bound to a move to a point moved nothing (the painter never read where a bound move went). A real drag along the track, at both ends and the middle:
+        // every shape the slider names must have moved, be half way at half way, and come back; the toggle whose only bind changes nothing is told, the slider is not.
+        const ids = ['fbdot', 'fbring', 'fbbar', 'fbleaf', 'fbpair'];
+        interface Held { readonly id: string; readonly min: number; readonly max: number; readonly value: number; readonly parts: readonly { part: string; box: { x: number; y: number; width: number; height: number } }[]; readonly box: { x: number; y: number; width: number; height: number } }
+        const held = async (): Promise<Held | undefined> => (await tab.eval<Held[]>('window.__stage.controls().map((c) => ({ id: c.id, min: c.min, max: c.max, value: c.value, parts: c.parts, box: c.box }))')).find((c) => c.id === 'fbspin');
+        const centres = async (): Promise<Map<string, { x: number; y: number }>> => {
+          const out = new Map<string, { x: number; y: number }>();
+          for (const e of await tab.eval<{ id: string; box: { x: number; y: number; width: number; height: number } }[]>('window.__stage.elements().map((e) => ({ id: e.id, box: e.box }))')) out.set(e.id, { x: e.box.x + e.box.width / 2, y: e.box.y + e.box.height / 2 });
+          return out;
+        };
+        const slider = await held();
+        if (slider === undefined) {
+          problems.push('the slider fbspin is not on stage');
+          break;
+        }
+        const track = slider.parts.find((p) => p.part === 'track')?.box ?? slider.box;
+        const y = track.y + track.height / 2;
+        const at = (share: number): { x: number; y: number } => ({ x: track.x + 2 + (track.width - 4) * share, y });
+        const sent = tab.posted.length;
+        const start = await centres();
+        await tab.drag(at(0), at(1));
+        const end = await centres();
+        const full = (await held())?.value;
+        await tab.drag(at(1), at(0.5));
+        const middle = await centres();
+        const half = (await held())?.value;
+        await tab.drag(at(0.5), at(0));
+        const home = await centres();
+        if (full !== slider.max) problems.push(`a drag to the end of the track left the slider at ${String(full)}, not ${slider.max}`);
+        if (typeof half !== 'number' || Math.abs(half - (slider.min + slider.max) / 2) > 0.1 * (slider.max - slider.min)) problems.push(`a drag to the middle of the track left the slider at ${String(half)}`);
+        for (const id of ids) {
+          const a = start.get(id);
+          const b = end.get(id);
+          const m = middle.get(id);
+          const h = home.get(id);
+          if (a === undefined || b === undefined || m === undefined || h === undefined) {
+            problems.push(`${id} is not on stage`);
+            continue;
+          }
+          const run = Math.hypot(b.x - a.x, b.y - a.y);
+          if (run < 8) {
+            problems.push(`dragging the slider to its end moved ${id} by ${run.toFixed(1)} px: a bound move to a point must carry it there`);
+            continue;
+          }
+          // linear: half way across the slider is half way along the move, never eased
+          const off = Math.hypot(m.x - (a.x + b.x) / 2, m.y - (a.y + b.y) / 2);
+          if (off > Math.max(6, 0.12 * run)) problems.push(`${id} stood ${off.toFixed(1)} px from the middle of its ${run.toFixed(0)} px move with the slider half way`);
+          if (Math.hypot(h.x - a.x, h.y - a.y) > 3) problems.push(`${id} did not come back when the slider did (${Math.hypot(h.x - a.x, h.y - a.y).toFixed(1)} px off)`);
+        }
+        if (tab.posted.length !== sent) problems.push(`dragging the slider sent ${tab.posted.length - sent} turn(s): a bound change needs no round trip`);
+        // the toggle's only bind sets what is already set: dead. The slider's four work: it is not.
+        const dead = (await tab.eval<{ token: string | null }[]>(`window.__stage.lines().flatMap((l) => l.issues.filter((i) => i.code === 'dead-bind').map((i) => ({ token: i.token || null })))`)).map((i) => i.token);
+        if (!dead.includes('fbmark')) problems.push(`no dead-bind warning for the toggle fbmark, whose only bind sets what is already set (${dead.length === 0 ? 'no dead-bind at all' : `told of ${dead.join(', ')}`})`);
+        if (dead.includes('fbspin')) problems.push('the slider fbspin, whose binds all move something, was called dead');
+        good = `a real drag moved ${ids.length} bound things (${ids.join(', ')}) to their targets, each half way at half way and back at the start; the control whose only bind does nothing was told`;
+        break;
+      }
+      case 'fb-054': {
+        // fb-054: a choice revised by id came back as plain words nobody could tap
+        const words = await tab.eval<{ text: string; phase: string; opacity: number; tappable: boolean }[]>('window.__stage.elements().filter((e) => e.kind === "text").map((e) => ({ text: String(e.text || ""), phase: e.phase, opacity: e.opacity, tappable: e.tappable }))');
+        for (const wanted of ['Spec the bindable transforms first', 'Which matters most to you?']) {
+          const found = words.find((e) => norm(e.text) === norm(wanted) && e.phase === 'on' && e.opacity > 0.3);
+          if (found === undefined) problems.push(`the revised choice "${wanted}" is not on stage`);
+          else if (!found.tappable) problems.push(`"${wanted}" is on stage but is plain words: the revised choice lost its tap`);
+        }
+        for (const old of ['Spec the sphere', 'Write the test']) if (words.some((e) => norm(e.text) === norm(old) && e.phase === 'on' && e.opacity > 0.3)) problems.push(`the words "${old}" are still on stage after they were revised`);
+        good = 'both revised choices show their new words and are still taps';
         break;
       }
       case 'photo': {

@@ -18,6 +18,7 @@ import { nocutChecks } from './nocut-checks';
 import { motionChecks } from './motion-checks';
 import { demoRules } from './demo-rules';
 import { readingChecks } from './reading-checks';
+import { bindChecks } from './bind-checks';
 import { showcaseChecks } from './showcase-checks';
 import { spaceChecks } from './space-checks';
 
@@ -61,6 +62,11 @@ function run(title: string, source: string): boolean {
     }
   });
   const schedule = score.schedule;
+  // What the lines add up to: a control whose binds all change nothing (a line's own issues cannot say it: a later bind may make it work)
+  for (const item of score.settledIssues()) {
+    clean = false;
+    process.stdout.write(`  line ${item.seq} SETTLED  ${describe([item.issue])}\n`);
+  }
   // The score, not the source: a `revise` shows up as the line it rewrote.
   const texts = new Map<number, string>();
   for (const entry of score.score) {
@@ -116,6 +122,7 @@ if (argument === undefined || argument === 'all') {
   ok = motionChecks() && ok;
   ok = readingChecks() && ok;
   ok = demoRules() && ok;
+  ok = bindChecks() && ok;
   ok = showcaseChecks() && ok;
   ok = spaceChecks() && ok;
   for (const demo of DEMOS) ok = run(`demo ${demo.name}`, readFileSync(fileURLToPath(new URL(`../demos/${demo.name}.series`, import.meta.url)), 'utf8')) && ok;

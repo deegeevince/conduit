@@ -11,7 +11,7 @@
 import { pickHasOption } from './bind';
 import { chartModelOf } from './chart';
 import { namesIn, numberOf, parseExpr } from './expr';
-import { containedIn, inFrame, lengthOf, outlineOf, pointAlong, refitInside } from './geometry';
+import { boundsOf, containedIn, inFrame, lengthOf, outlineOf, pointAlong, refitInside } from './geometry';
 import { isLessonVerb, stageAskOf } from './lesson';
 import type { ClockRole } from './types';
 import type { AskLine, HintLine, StageAsk, StageSlot } from './lesson';
@@ -574,12 +574,53 @@ function unbindable(control: string, id: string, kind: ElementKind, figure: Figu
   const what = figure?.kind === 'structure' ? (figure.chart === null ? figure.structure : `${figure.chart} chart`) : kind;
   const head = `"${control}" cannot ${effect === 'text' ? 'swap the words of' : effect === 'morph' ? 'reshape' : 'move'} "${id}", a ${what}`;
   if (figure?.kind === 'structure') {
-    return `${head}: bind a set (opacity=0 hides it, opacity=1 shows it, ink= recolours it) or a move; for its numbers write {${control}} in a cell, a title or a mark`;
+    return `${head}: the painter lays it out, so it cannot travel; bind a set (opacity=0 hides it, opacity=1 shows it, ink= recolours it); for its numbers write {${control}} in a cell, a title or a mark`;
   }
   if (effect === 'text') return `${head}: only text has words to swap; bind a set instead`;
   if (effect === 'morph') return `${head}: only a drawn shape can change into another; bind a set or a move instead`;
+  if (kind === 'text') return `${head}: the layout places words and a control cannot carry them; bind a set (opacity= shows or hides them, ink= recolours them) or a correct (swaps them), or draw the label as a shape and move that`;
   return `${head}: it cannot travel; bind a set instead`;
 }
+
+/**
+ * Why a bound change, carried all the way, would leave `target` exactly as it stands now; null when it would change something (or when that cannot be known
+ * from the schedule: a group's parts, a structure's, a move along a track).
+ */
+function bindLeavesAlone(target: Live, effect: DrivenEffect): string | null {
+  const span = target.span;
+  const figure = span.figure;
+  switch (effect.kind) {
+    case 'set': {
+      // what a set on a group or a diagram reaches is in its parts, which the schedule does not follow
+      if (span.kind === 'group' || span.kind === 'structure' || span.kind === 'copy') return null;
+      if (!sameStyle(patchStyle(target.style, effect.props), target.style)) return null;
+      const given = Object.entries(effect.props).slice(0, 2).map(([name, value]) => `${name}=${typeof value === 'object' ? '…' : String(value)}`);
+      return `${span.id} already has ${given.length === 0 ? 'nothing to change' : given.join(' ')}`;
+    }
+    case 'move': {
+      if (effect.along !== null) return null;
+      const to = effect.to;
+      const at = target.style.at;
+      if (typeof to === 'string') return at === to ? `${span.id} is already at ${to}` : null;
+      let here: Point | null = null;
+      if (at !== null && typeof at === 'object') here = at;
+      else if (at === null && figure?.kind === 'shape') {
+        const box = boundsOf(figure.geometry);
+        here = { x: box.x + box.w / 2, y: box.y + box.h / 2 };
+      }
+      return here !== null && Math.hypot(here.x - to.x, here.y - to.y) < 0.05 ? `${span.id} is already at ${Number(to.x.toFixed(2))},${Number(to.y.toFixed(2))}` : null;
+    }
+    case 'morph':
+      return figure?.kind === 'shape' && alike(effect.geometry, figure.geometry) && sameStyle(patchStyle(target.style, effect.props), target.style) ? `${span.id} already has that shape` : null;
+    case 'text':
+      return effect.text === span.text ? `${span.id} already says that` : null;
+    case 'mark':
+      return null;
+  }
+}
+
+/** The kinds the painter places by a point, and so the ones a bound `move` can carry: a shape, pixel art, a picture, a group or a card, a copy. */
+const MOVED_BY_POINT: readonly ElementKind[] = ['shape', 'sprite', 'picture', 'group', 'copy'];
 
 /** Whether two values are the same all the way down: what "declares again exactly what is there" is measured with. */
 function alike(a: unknown, b: unknown): boolean {
@@ -1009,9 +1050,19 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
   /** The bound changes that found nothing to change yet: tried again each time something comes on stage, and reported at the end if still unplaced. */
   const waiting: { readonly seq: number; readonly line: BindLine; readonly at: number }[] = [];
 
+  /** The newest words by this id when they were a choice (a thing to tap) and are no longer on stage; null when they were not, or there were none. */
+  const departedChoice = (id: string): Live | null => {
+    for (let i = live.length - 1; i >= 0; i -= 1) {
+      const candidate = live[i];
+      if (candidate === undefined || candidate.span.id !== id || candidate.ghost || candidate.span.kind !== 'text') continue;
+      return candidate.style.tap ? candidate : null;
+    }
+    return null;
+  };
+
   /** Whether a bound change of this kind can change this element. */
   const bindFits = (effect: DrivenEffect, span: MutableElement): boolean =>
-    effect.kind === 'set' || (effect.kind === 'move' && span.kind !== 'field' && span.kind !== 'node' && span.kind !== 'link') || (effect.kind === 'morph' && span.kind === 'shape') || (effect.kind === 'text' && span.kind === 'text') || (effect.kind === 'mark' && span.figure?.kind === 'structure' && span.figure.structure === 'table');
+    effect.kind === 'set' || (effect.kind === 'move' && MOVED_BY_POINT.includes(span.kind)) || (effect.kind === 'morph' && span.kind === 'shape') || (effect.kind === 'text' && span.kind === 'text') || (effect.kind === 'mark' && span.figure?.kind === 'structure' && span.figure.structure === 'table');
 
   /**
    * Binds a change to its control. `only` is an element it must go to (a bind that waited, an element written again); null: wherever its words say.
@@ -2057,7 +2108,15 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
         const start = startOf(entry, line.when);
         const old = findLive(line.id, start);
         let done: number;
-        if (old === null || old.span.kind !== 'text') {
+        // A choice that has left (its question was answered, or it was dropped) and is revised by id comes back as a choice with the new words, as it was: the words of
+        // an option are what a revision changes, and being a thing to tap is no part of them. (The first answer line of a turn retires the choices an earlier turn
+        // offered, so a brain that rewords them after writing its answer is revising what already left.)
+        const left = old === null ? departedChoice(line.id) : null;
+        if (left !== null && left !== undefined) {
+          report(seq, 'unknown-id', `"${line.id}" had left the stage (a choice goes when it is answered or dropped); its new words are offered again as a choice`, line.id);
+          done = enterText(entry, line.id, line.text, { ...left.style, dur: null }, start, nextOrder, null);
+          nextOrder += 1;
+        } else if (old === null || old.span.kind !== 'text') {
           report(seq, 'unknown-id', `no text called "${line.id}" is on stage to correct; said as a new line`, line.id);
           done = enterText(entry, line.id, line.text, completeStyle({}, contextFor('text')), start, nextOrder, null);
           nextOrder += 1;
@@ -2375,6 +2434,32 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
       const track = named(style.along);
       const figure = track?.span.figure;
       if (track === null || figure?.kind !== 'shape' || outlineOf(figure.geometry)[0] === undefined) report(at, 'unknown-id', `no drawn shape called "${style.along}" is on stage to ride along`, style.along);
+    }
+  }
+
+  // A control whose every bind leaves what it names exactly as it is does nothing when it is worked. It is said once, on the control's last bind, so the brain
+  // finds out its slider is dead before the person does. A control with no bind at all is left alone (a form's field, a choice: the brain is told what it holds).
+  {
+    const dead = new Map<string, { id: string; seq: number; reasons: string[]; alive: boolean }>();
+    for (const target of live) {
+      // (what left with its scene is judged too, and so is a bind that ended with its control: it was dead while it stood there)
+      if (target.ghost) continue;
+      for (const change of target.span.driven) {
+        const owner = byKey.get(change.control);
+        if (owner === undefined || owner.ghost) continue;
+        const entry = dead.get(change.control) ?? { id: owner.span.id, seq: change.seq, reasons: [], alive: false };
+        dead.set(change.control, entry);
+        entry.seq = Math.max(entry.seq, change.seq);
+        const unchanged = bindLeavesAlone(target, change.effect);
+        if (unchanged === null) entry.alive = true;
+        else entry.reasons.push(unchanged);
+      }
+    }
+    for (const entry of dead.values()) {
+      if (entry.alive || entry.reasons.length === 0) continue;
+      const shown = entry.reasons.slice(0, 3).join('; ');
+      const more = entry.reasons.length > 3 ? ` and ${entry.reasons.length - 3} more` : '';
+      report(entry.seq, 'dead-bind', `"${entry.id}" changes nothing on stage: ${shown}${more}. Whatever the user does with it, the picture stays as it is; bind a change that differs from what is drawn`, entry.id);
     }
   }
 

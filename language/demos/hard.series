@@ -112,6 +112,37 @@ move ma 21,72
 move mq 24,58
 wait 1
 
+# fb-051: a slider bound to moves to points (and a shape drawn again) moves every shape it names as it is dragged, half way at half way (the check drags it with real pointer events), and a control whose binds change nothing is told
+scene fb-051 layout=figure lines=3
+circle fbdisc 60,40 18 stroke=ink thick=0.4
+circle fbdot 50,32 3 fill=accent
+circle fbring 44,44 2 fill=ink
+rect fbbar 62,46 12x4 fill=ink
+path fbleaf fill=accent | M 52 52 L 60 48 L 58 58 Z
+group fbpair
+circle fbp1 82,30 2 fill=accent in=fbpair
+circle fbp2 88,30 2 fill=ink in=fbpair
+card fbtools | Try it
+slider fbspin 0 90 0 unit=deg in=fbtools | Turn it
+toggle fbmark on in=fbtools | Marker
+bind fbspin | move fbdot 72,32
+bind fbspin | move fbbar 46,54
+bind fbspin | move fbleaf 76,60
+bind fbspin | move fbpair 100,56
+bind fbspin | circle fbring 78,44 2 fill=ink
+bind fbmark=on | set fbdot opacity=1
+wait 1
+
+# fb-054: a choice that has left the stage and is written again by its id (a revise that came after it had played is this `correct`) is a choice with the new words, not plain words nobody can tap
+scene fb-054 layout=caption brisk
+say fbc1 choice | Spec the sphere
+say fbc2 choice | Write the test
+drop fbc1
+drop fbc2
+wait 1
+correct fbc1 | Spec the bindable transforms first
+correct fbc2 | Which matters most to you?
+
 # a dark look with small dim notes: they must still read
 scene dark layout=figure
 look night
