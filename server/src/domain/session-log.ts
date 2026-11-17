@@ -1,4 +1,4 @@
-import type { ActionRisk, ActivityState, BriefForm, Capabilities, ContentCount, ControlValue, CriticFinding, Issue, NodeId, NodeStatus, PassState, ReviewDecision, ReviewForm, ReviewOutcome, ScreenFacts, Services, StateChange, TurnEndReason, TurnInput, TurnReport } from '@conduit/language';
+import type { ActionRisk, ActivityState, BriefForm, Capabilities, ContentCount, ControlValue, CriticFinding, Issue, NodeId, NodeStatus, PageFacts, PassState, ReviewDecision, ReviewForm, ReviewOutcome, ScreenFacts, Services, StateChange, TurnEndReason, TurnInput, TurnReport } from '@conduit/language';
 import type { Observation } from '@conduit/language';
 import type { BrainId, BrainUsage } from './brain';
 import type { FetchOutcome } from './documents';
@@ -27,7 +27,7 @@ export type SessionRecord =
   /** the painter's first line of this turn began to play: the user saw something */
   | { readonly type: 'started'; readonly at: number; readonly turn: string }
   /** what was shown, and how it landed. The stage it left behind is in the report. */
-  | { readonly type: 'report'; readonly at: number; readonly turn: string; readonly report: TurnReport }
+  | { readonly type: 'report'; readonly at: number; readonly turn: string; readonly report: TurnReport; readonly facts?: PageFacts }
   /** a picture of the resting stage was saved beside the log under this file name */
   | { readonly type: 'snapshot'; readonly at: number; readonly turn: string; readonly file: string }
   /** a painting was asked for, and what became of it */
@@ -39,7 +39,7 @@ export type SessionRecord =
   /** look and fix: where a turn's passes stood, in order */
   | { readonly type: 'pass'; readonly at: number; readonly turn: string; readonly pass: number; readonly state: PassState; readonly reason: string | null }
   /** the painter's report on a draft: how many things did not land, and whether a picture came with it */
-  | { readonly type: 'draft'; readonly at: number; readonly turn: string; readonly pass: number; readonly noted: number; readonly picture: boolean; readonly file: string | null }
+  | { readonly type: 'draft'; readonly at: number; readonly turn: string; readonly pass: number; readonly noted: number; readonly picture: boolean; readonly file: string | null; readonly facts?: PageFacts }
   /** what look and fix came to for a turn: the decisions, the times and the cost */
   | { readonly type: 'review'; readonly at: number; readonly turn: string; readonly outcome: ReviewOutcome; readonly decisions: readonly ReviewDecision[]; readonly firstLineMs: number | null; readonly totalMs: number; readonly costUsd: number | null }
   /** a table the conversation holds, and what became of sending it to the painter (`ready` when a chart asked for it) */
@@ -114,7 +114,7 @@ export type SessionRecord =
   /** SA2. The server measured a pass's draft itself: how long it took, the digest of its boxes and the number of things it noted */
   | { readonly type: 'measure'; readonly at: number; readonly turn: string; readonly pass: number; readonly ms: number; readonly boxes: string; readonly noted: number }
   /** SA2. The page and the server do not measure alike (`where`: `engine` the version, `draft` or `report` a digest). From then on this session's drafts go through the page's gate. */
-  | { readonly type: 'drift'; readonly at: number; readonly turn: string | null; readonly where: 'engine' | 'draft' | 'report'; readonly page: string | null; readonly server: string | null; readonly why: string }
+  | { readonly type: 'drift'; readonly at: number; readonly turn: string | null; readonly where: 'engine' | 'draft' | 'report'; readonly page: string | null; readonly server: string | null; readonly why: string; readonly facts?: PageFacts }
   /** SA3. One observation: the person's input, what only the page's eyes know, a refusal, a drift. Engine lint is derived from the report and not logged. */
   | { readonly type: 'obs'; readonly at: number; readonly turn: string | null; readonly obs: Observation }
   /** SA3. What the brain was shown of what was observed before a turn, what it pulled (SA4), and what stood open or cleared. Each list holds fingerprints. */
