@@ -1,0 +1,14 @@
+# Controls: a pick, a toggle and a field handed to the person, bound to the drawing. They answer at once, with no round trip.
+
+scene lamp figure lines=3
+rect floor 10,70 140x10 fill=dim
+rect stand 78,44 4x26 fill=ink
+circle bulb 80,34 12 fill=accent soft=4
+card tools | Try it
+toggle power on in=tools | Light on
+pick mood tabs in=tools | Warm | Cool | Party
+input name in=tools | Name this lamp
+bind power=off | set bulb opacity=0.15
+bind mood=cool | set bulb fill=#7fb2ff
+bind mood=party | set bulb fill=#ff4fa3
+say | Switch it, pick a colour, give it a name: each answers at once, with no round trip.

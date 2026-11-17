@@ -83,6 +83,16 @@ export const DEMOS = [
     summary: 'A picture with a slider, a toggle and a pick bound to it, and a button that asks the brain.',
   },
   {
+    name: 'iterate',
+    title: 'Iterate',
+    summary: 'A drawing kept and improved in place: a sail, a bigger sail, a sun and a flag, then the whole boat moving; each change says only what changes.',
+  },
+  {
+    name: 'controls',
+    title: 'Controls',
+    summary: 'A toggle, a pick and a field handed to the person, bound to a lamp: they answer at once with no round trip.',
+  },
+  {
     name: 'charts',
     title: 'Charts',
     summary: 'A line, columns, candles and an indexed comparison: rows in, an instrument with a crosshair out.',

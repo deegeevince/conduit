@@ -9,6 +9,7 @@ import { mountActions } from './chrome/actions';
 import { mountHud } from './chrome/hud';
 import { mountLangPane } from './chrome/lang-pane';
 import { runCommand } from './chrome/command-runner';
+import { mountTour } from './chrome/tour';
 import { copyAnswer } from './chrome/files';
 import { isCommand } from './chrome/commands';
 import { mountActivity } from './chrome/activity';
@@ -196,6 +197,22 @@ async function start(): Promise<void> {
   }, mounted.lens === null ? {} : { guard: mounted.lens.guard });
   // ?lens=1: the pen draws on the stage without Draw, and the ink is looked through the lens
   mounted.lens?.useInk(stageInk);
+  // `/demo`: a tap on a card of the tour, and the bar after a demo, are handled here; the real controls are the bar's own
+  mountTour(mounted, {
+    showCanvas: () => undefined,
+    showAnswer: () => undefined,
+    prompt: (text) => void mounted.prompt(text).catch((cause: unknown) => mounted.announce(cause instanceof Error ? cause.message : 'That could not be sent.')),
+    open: (control) => {
+      const pick = (selector: string): HTMLElement | null => bar?.querySelector<HTMLElement>(selector) ?? null;
+      if (control === 'mic') pick('.prompt__voice')?.click();
+      else if (control === 'typing') pick('.prompt__input')?.focus();
+      else if (control === 'photo') promptBar.menu.open();
+      else if (control === 'draw') {
+        promptBar.menu.open();
+        pick('.composer__item[data-item="draw"]')?.click();
+      }
+    },
+  });
   mountWorkMode({ stage: stageHost, bar: bar as HTMLElement, ink: stageInk, controls: () => mounted.hook.controls(),
     question: () =>
       mounted.hook

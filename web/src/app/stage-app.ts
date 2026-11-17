@@ -1,6 +1,6 @@
-import { DEFAULT_LOOK, FIRST_LOAD_DEMO, LineNormalizer, LineReader, parseLine, parseReplayDirective, serializeLine } from '@conduit/language';
+import { DEFAULT_LOOK, FIRST_LOAD_DEMO, LineNormalizer, LineReader, parseLine, parseReplayDirective, serializeLine, tourActionOf, tourTryFor } from '@conduit/language';
 import overtureScript from '@conduit/language/demos/overture.series?raw';
-import type { ActivityState, ActionRisk, BackEvent, ControlValue, ControlValues, CriticFinding, DataTable, InkMarks, Issue, PassState, Line, LeadWindow, LookId, ScreenFacts, Services, Sight, StageEvent, TurnEndReason, TurnInput, TurnSource } from '@conduit/language';
+import type { ActivityState, ActionRisk, BackEvent, ControlValue, ControlValues, CriticFinding, DataTable, InkMarks, Issue, PassState, Line, LeadWindow, LookId, ScreenFacts, Services, Sight, StageEvent, TourAction, TurnEndReason, TurnInput, TurnSource } from '@conduit/language';
 import type { AppAct, AppHost } from '../contracts/app';
 import type { ExportJob, ExportRequest, Exporter } from '../contracts/export';
 import type { ChartHost } from '../contracts/chart';
@@ -38,6 +38,7 @@ import { createTextLayer } from './text-layer';
 import { createLiveApps } from './live-app';
 import { createPageChip } from './chip';
 import { createUndoChip } from './undo-chip';
+import { createTourBar } from './tour-bar';
 import { createLensRenderer, createStageLens } from './lens';
 import type { StageLens } from './lens';
 import { createHook } from './hook';
@@ -124,6 +125,12 @@ export interface StageApp {
   /** Interrupts whatever is playing, reports it, then starts a turn with this prompt (the photos the server kept for it, `link.uploadPhoto`; the ink drawn on the stage; the voice notes whose words it holds, `link.uploadVoice`). */
   prompt(text: string, photos?: readonly string[], marks?: InkMarks, voice?: readonly string[], sources?: readonly TurnSource[], skills?: readonly string[]): Promise<string>;
   demo(name: string): Promise<string>;
+  /** `/demo <name>`: the demo plays (no model), and the tour's bar (Back to the tour, Try it yourself) stands at its end */
+  playTourDemo(name: string): Promise<string>;
+  /** Where a tap on the tour's pages, and the tour's bar, go; null forgets it. */
+  onTour(handler: ((action: TourAction) => void) | null): void;
+  /** The tour's bar, for a sequence the tour plays itself. */
+  showTourBar(tryText: string | null): void;
   /** Stops the current turn where it is. */
   interrupt(): void;
   /** The same as tapping the element with this key. */
@@ -849,6 +856,11 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
         if (event.turn === currentTurn || opened.has(event.turn)) return;
         opened.add(event.turn);
         undoChip.hide();
+        tourBar.hide();
+        if (tourWants !== null && event.input.kind === 'demo' && event.input.script === tourWants) {
+          tourTurns.set(event.turn, tourTryFor(tourWants));
+          tourWants = null;
+        }
         if (mutingNext) {
           mutingNext = false;
           mutedTurns.add(event.turn);
@@ -1000,6 +1012,8 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
         repliedWith.delete(event.turn);
         if (event.reason === 'done' && drawnTurns.has(event.turn) && turnInputs.get(event.turn)?.kind !== 'demo') undoChip.show();
         drawnTurns.delete(event.turn);
+        if (event.reason === 'done' && tourTurns.has(event.turn)) tourBar.show(tourTurns.get(event.turn) ?? null);
+        tourTurns.delete(event.turn);
         lastEnd = { reason: event.reason, message: event.message };
         readingNow.clear();
         passState = null;
@@ -1087,6 +1101,16 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   const offContext = renderer.onContext?.((event) => gpuEvent(event));
 
   const offBack = painter.on('back', (event) => {
+    // A tap on a card of the tour's own pages is the tour's, never a turn
+    // (a page that has come to rest has no open turn: it is the one the painter last recorded)
+    const tapped = event.type === 'tap' ? (event.turn ?? painter.snapshot().turn ?? painter.recording()?.turn ?? null) : null;
+    if (event.type === 'tap' && event.choice && tourHandler !== null && tapped !== null && tapped.startsWith(PAGE_PREFIX)) {
+      const action = tourActionOf(event.text);
+      if (action !== null) {
+        tourHandler(action);
+        return;
+      }
+    }
     // What the painter says about a page the app played for itself stays here.
     if (('turn' in event && typeof event.turn === 'string' && event.turn.startsWith(PAGE_PREFIX)) || (event.type === 'report' && event.report.turn.startsWith(PAGE_PREFIX))) return;
     if (event.type === 'ready') {
@@ -1800,6 +1824,12 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   /** turns whose lines drew, changed or dropped a drawing: the Undo chip follows one of these */
   const drawnTurns = new Set<string>();
   const DRAWING_VERBS = new Set(['circle', 'ellipse', 'rect', 'line', 'poly', 'path', 'group', 'use', 'pix', 'set', 'move', 'drop', 'paint']);
+  const tourBar = createTourBar(host, (action) => tourHandler?.(action));
+  let tourHandler: ((action: TourAction) => void) | null = null;
+  /** the demo `/demo` has asked for, until its turn opens */
+  let tourWants: string | null = null;
+  /** the turns of demos the tour played, with the prompt they offer to try */
+  const tourTurns = new Map<string, string | null>();
   const undoChip = createUndoChip(host, () => void submit({ kind: 'script', text: 'restore undo' }, null, true));
   /** the lines each open turn has been told, as written, for the answer kept for a reload */
   const turnLines = new Map<string, string[]>();
@@ -1901,6 +1931,17 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     },
     prompt: (text, photos, marks, voice, sources, skills) => submit({ kind: 'prompt', text, ...(photos === undefined || photos.length === 0 ? {} : { images: photos }), ...(marks === undefined ? {} : { marks }), ...(voice === undefined || voice.length === 0 ? {} : { voice }), ...(sources === undefined || sources.length === 0 ? {} : { sources }), ...(skills === undefined || skills.length === 0 ? {} : { skills }) }, null, true),
     demo: (name) => submit({ kind: 'demo', script: name }, null, true),
+    playTourDemo(name) {
+      tourWants = name;
+      return submit({ kind: 'demo', script: name }, null, true).catch((cause: unknown) => {
+        tourWants = null;
+        throw cause;
+      });
+    },
+    onTour(handler) {
+      tourHandler = handler;
+    },
+    showTourBar: (tryText) => tourBar.show(tryText),
     playScript: (text) => submit({ kind: 'script', text }, null, true),
     interrupt() {
       sound.stop();
@@ -1994,6 +2035,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
       host.removeEventListener('pointerleave', onPointerLeave);
       lens?.dispose();
       undoChip.dispose();
+      tourBar.dispose();
       if (page !== host) page.remove();
       cancelAnimationFrame(hoverFrame);
       for (const call of dataCalls) call.abort();

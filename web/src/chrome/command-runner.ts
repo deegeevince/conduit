@@ -1,7 +1,7 @@
 // What each slash command does. A command is the app's, never the brain's: it never becomes a turn, and a page it prints on
 // the stage (`/help`, `/status`, `/tools`) is a turn the app plays for itself and the server never hears of.
 
-import { commandsFor, LOOK_IDS, NEW_COMMAND_TEXT } from '@conduit/language';
+import { commandsFor, DEMOS, LOOK_IDS, NEW_COMMAND_TEXT, tourSource } from '@conduit/language';
 import type { BrainChoice, Services, SkillSummary } from '@conduit/language';
 import type { UsageView } from '../link/http-link';
 import type { StageApp } from '../app/stage-app';
@@ -167,6 +167,19 @@ async function perform(app: StageApp, command: Command, onChoice: (choice: Brain
       // Not a page of the app's own: a turn like any other, whose brief carries the changelog, so the brain draws what changed.
       await app.prompt(NEW_COMMAND_TEXT);
       return;
+    case 'demo': {
+      if (command.name === '') {
+        app.showPage(tourSource());
+        return;
+      }
+      const found = DEMOS.find((demo) => demo.name === command.name);
+      if (found === undefined) {
+        app.announce(`/demo: there is no demo called "${command.name}". /demo shows the tour; the demos are ${DEMOS.map((demo) => demo.name).join(', ')}`);
+        return;
+      }
+      await app.playTourDemo(found.name);
+      return;
+    }
     case 'status': {
       const status = await app.link.appStatus();
       const rows: string[][] = [];

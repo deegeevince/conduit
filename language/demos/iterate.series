@@ -1,0 +1,27 @@
+# Iterate: a drawing is kept and improved in place. Each change says only what changes (the same id again, a move, a new part);
+# everything else stays exactly where it was, so a follow-up costs a few lines and the picture never starts over.
+
+look paper
+scene boat figure lines=2
+line sea 0,70 160,70 thick=1
+poly hull 50,60 110,60 100,72 60,72 fill=ink
+rect mast 78,26 2x34 fill=ink
+say | A first draft of a boat.
+wait 2
+poly sail 80,28 80,56 104,56 fill=accent
+say | Ask for a sail and only the sail arrives.
+wait 2
+poly sail 80,22 80,56 116,56 fill=accent
+say | Make it bigger: the same sail, said again with new corners.
+wait 2
+circle sun 132,20 8 fill=alt stroke=none
+poly flag 82,26 82,18 92,22 fill=alt
+say label near=flag:above | flag
+say | A sun and a flag more. Nothing before them was redrawn.
+wait 2
+move hull 70,66 over=1.5s
+move mast 98,40 over=1.5s
+move sail 100,40 over=1.5s
+move flag 100,24 over=1.5s
+say | And the boat sets off. /undo puts the drawing back as it was before the last change.
+wait 2

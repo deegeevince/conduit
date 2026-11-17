@@ -1,0 +1,173 @@
+// pnpm check's tour group (`/demo`): no model. In a browser at three screens, `/demo` is typed in the box and the tour opens on the canvas with a card for each
+// chapter; a chapter opens its cards; a card plays its demo (scripted, instant, the replay brain) and, when it has come to rest, "Back to the tour" and
+// "Try it yourself" stand at the foot of the stage; "Back to the tour" returns to the tour. `/demo <name>` jumps straight to one demo. The tour, a chapter and a demo
+// are photographed at each screen.
+//
+// Run by `pnpm check` and standalone (`tsx tour-check.ts --url <server> [--out dir]`).
+
+import { mkdir, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { TOUR_CHAPTERS } from '@conduit/language';
+import { sleep } from './explore-browser';
+import { Conversation, Tab } from './smoke';
+import type { LensScene, LensScreen } from './lens-check';
+import type { CheckResult, Options } from './smoke';
+
+export const TOUR_SCREENS: readonly LensScreen[] = [
+  { name: '1280x800', width: 1280, height: 800, dpr: 1 },
+  { name: '820x971', width: 820, height: 971, dpr: 1 },
+  { name: '390x844', width: 390, height: 844, dpr: 2 },
+];
+
+interface Seen {
+  readonly id: string;
+  readonly text: string;
+  readonly tappable: boolean;
+  readonly opacity: number;
+  readonly box: { readonly x: number; readonly y: number; readonly width: number; readonly height: number };
+}
+
+export async function tourGroup(base: string, screen: LensScreen, dir: string, timeoutMs: number, note: (text: string) => void = () => undefined): Promise<LensScene[]> {
+  await mkdir(dir, { recursive: true });
+  const began = Date.now();
+  const list: string[] = [];
+  let picture = '';
+  const tab = await Tab.open(screen.width, screen.height, { dpr: screen.dpr, touch: screen.width < 600 });
+  const options: Options = { url: base, screens: [], out: dir, turns: new Set(), timeoutMs, parallel: false, demo: false, quiet: true, page: '', say: null, chat: 'off' };
+  const conv = new Conversation(tab, options, { name: screen.name, width: screen.width, height: screen.height }, dir);
+  const tag = screen.name;
+  const shoot = async (name: string): Promise<string> => {
+    await until('the stage to be at rest', async () => !(await tab.eval<boolean>(`/^Playing/.test(document.querySelector('.prompt__input').placeholder)`)), 40_000);
+    await sleep(600);
+    const file = `${tag}-${name}.png`;
+    await writeFile(join(dir, file), Buffer.from((await tab.shot()).split(',')[1] ?? '', 'base64'));
+    return file;
+  };
+  const seen = (): Promise<Seen[]> => tab.eval<Seen[]>('window.__stage.elements().map((e) => ({ id: e.id, text: e.text, tappable: e.tappable, opacity: e.opacity, box: e.box }))');
+  const shown = async (text: string): Promise<Seen | null> => (await seen()).find((e) => e.text === text && e.opacity > 0.9) ?? null;
+  const until = async (what: string, test: () => Promise<boolean>, ms = 25_000): Promise<boolean> => {
+    for (let waited = 0; waited < ms; waited += 250) {
+      if (await test()) return true;
+      await sleep(250);
+    }
+    list.push(`${what} did not happen in ${ms / 1000} s`);
+    return false;
+  };
+  const typeCommand = async (text: string): Promise<void> => {
+    await tab.eval(`document.querySelector('.prompt__input').focus()`);
+    await tab.type(text);
+    await tab.key('Enter');
+  };
+  const tapCard = async (text: string): Promise<boolean> => {
+    if (!(await until(`the card "${text}"`, async () => (await shown(text)) !== null, 12_000))) return false;
+    const card = await shown(text);
+    if (card === null) return false;
+    if (!card.tappable) await sleep(1500);
+    if (!(await shown(text))?.tappable) list.push(`the card "${text}" is not tappable`);
+    if (card.box.x < -1 || card.box.x + card.box.width > screen.width + 1) list.push(`the card "${text}" is cut off at the side (${Math.round(card.box.x)}..${Math.round(card.box.x + card.box.width)} of ${screen.width})`);
+    await tab.eval(`window.__stage.tap(${JSON.stringify(card.id)})`);
+    return true;
+  };
+  const barText = (): Promise<string[]> => tab.eval<string[]>(`[...document.querySelectorAll('[data-tour-bar] button')].filter((b) => !b.hidden && b.offsetParent !== null).map((b) => b.textContent)`);
+  const barReady = (): Promise<boolean> => until('the tour bar after the demo', async () => (await barText()).includes('Back to the tour'), 40_000);
+  try {
+    note(`tour: ${tag}`);
+    await tab.send('DOM.enable');
+    await conv.start();
+    // /demo opens the tour
+    await typeCommand('/demo');
+    const first = TOUR_CHAPTERS[0];
+    const chapter = TOUR_CHAPTERS[0]?.title ?? '';
+    if (first === undefined) throw new Error('the tour has no chapters');
+    if (await until('the tour page', async () => (await shown('A tour of Conduit')) !== null, 12_000)) {
+      await until('every chapter card to be tappable', async () => {
+        const now = await seen();
+        return TOUR_CHAPTERS.every((entry) => now.some((card) => card.text === entry.title && card.tappable));
+      }, 12_000);
+      const cards = await seen();
+      for (const entry of TOUR_CHAPTERS) if (!cards.some((card) => card.text === entry.title && card.tappable)) list.push(`the tour has no tappable card "${entry.title}"`);
+      picture = await shoot('tour');
+      // a chapter, then a demo of it
+      if (await tapCard(chapter)) {
+        const demoCard = first.cards[0];
+        if (demoCard === undefined || demoCard.kind !== 'demo') throw new Error('the first chapter starts with no demo');
+        if (await until('the chapter page', async () => (await shown(demoCard.label)) !== null, 12_000)) {
+          await shoot('chapter');
+          if (await tapCard(demoCard.label)) {
+            if (await barReady()) {
+              const bar = await barText();
+              if (!bar.includes('Try it yourself')) list.push('"Try it yourself" is not offered after the demo');
+              await shoot('demo');
+              // no model was asked: the turn was a demo
+              const asked = await tab.eval<string>('JSON.stringify(window.__stage.events().filter((e) => e.type === "tap").length)');
+              if (asked !== '0') list.push(`a tap on a tour card was sent to the brain (${asked} tap events)`);
+              await tab.eval(`[...document.querySelectorAll('[data-tour-bar] button')].find((b) => b.textContent === 'Back to the tour').click()`);
+              if (await until('the tour page again', async () => (await shown('A tour of Conduit')) !== null, 12_000)) await shoot('back');
+            }
+          }
+        }
+      }
+    }
+    // the memory card: four real turns (draw, draw again, restore the first, reuse its moon), then the bar
+    if (await tapCard('Iteration and memory')) {
+      if (await tapCard('Bring back an earlier drawing')) {
+        if (await barReady()) {
+          const ids = await tab.eval<string[]>('window.__stage.elements().filter((e) => e.opacity > 0.05).map((e) => e.id)');
+          if (!ids.some((id) => id.startsWith('moon1'))) list.push(`the first drawing's moon did not come back with use (on stage: ${ids.join(', ')})`);
+          await shoot('memory');
+          await tab.eval(`[...document.querySelectorAll('[data-tour-bar] button')].find((b) => b.textContent === 'Back to the tour').click()`);
+          await until('the tour page after the memory card', async () => (await shown('A tour of Conduit')) !== null, 12_000);
+        }
+      }
+    }
+    // an input how-to card, and a named jump
+    if (await tapCard('Input')) {
+      if (await tapCard('Your voice')) {
+        if (await until('the voice card', async () => (await shown('Try it: the mic')) !== null, 12_000)) await shoot('how');
+      }
+    }
+    await typeCommand('/demo controls');
+    if (await barReady()) await shoot('controls');
+    await until('the stage to be at rest', async () => !(await tab.eval<boolean>(`/^Playing/.test(document.querySelector('.prompt__input').placeholder)`)), 40_000);
+    await typeCommand('/demo nonesuch');
+    const said = async (): Promise<boolean> => tab.eval<boolean>(`[...document.querySelectorAll('.prompt__status, .prompt__notice')].some((n) => /no demo called/.test(n.textContent))`);
+    let told = false;
+    for (let waited = 0; waited < 6000 && !told; waited += 100) {
+      told = await said();
+      if (!told) await sleep(100);
+    }
+    if (!told) list.push('/demo with an unknown name did not say so');
+    const failedRequests = tab.drain();
+    if (failedRequests.consoleErrors.length > 0) list.push(`console errors: ${failedRequests.consoleErrors.map((e) => e.text).slice(0, 3).join(' | ')}`);
+  } catch (error) {
+    list.push(`stopped: ${error instanceof Error ? error.message : String(error)}`);
+  } finally {
+    await tab.close();
+  }
+  const results: CheckResult[] = [
+    { turn: 0, check: `tour-${tag}`, verdict: list.length === 0 ? 'PASS' : 'FAIL', detail: list.length === 0 ? '/demo opens the tour, a chapter lists its cards, a card plays its demo with no model call, "Back to the tour" returns, /demo <name> jumps to one' : list.join('; ') },
+  ];
+  return [{ name: `tour-${tag}`, picture, results, seconds: (Date.now() - began) / 1000 }];
+}
+
+if (process.argv[1] !== undefined && /tour-check\.ts$/.test(process.argv[1])) {
+  const arg = (name: string, fallback: string): string => (process.argv.includes(name) ? (process.argv[process.argv.indexOf(name) + 1] as string) : fallback);
+  const url = arg('--url', '');
+  const out = arg('--out', '/tmp/conduit-tour');
+  if (!url.startsWith('http')) {
+    process.stderr.write('usage: tsx tour-check.ts --url http://127.0.0.1:<port> [--out <dir>]\n');
+    process.exit(2);
+  }
+  void (async () => {
+    let failed = 0;
+    for (const screen of TOUR_SCREENS) {
+      for (const scene of await tourGroup(url, screen, out, 90_000, (text) => process.stdout.write(`${text}\n`))) {
+        for (const r of scene.results) {
+          process.stdout.write(`${r.verdict} ${scene.name} ${r.check}: ${r.detail}\n`);
+          if (r.verdict === 'FAIL') failed += 1;
+        }
+      }
+    }
+    process.exit(failed === 0 ? 0 : 1);
+  })();
+}

@@ -15,6 +15,7 @@ import { installTrace } from '../chrome/trace';
 import { mountAbout } from '../chrome/about';
 import { mountActions } from '../chrome/actions';
 import { runCommand } from '../chrome/command-runner';
+import { mountTour } from '../chrome/tour';
 import { isCommand } from '../chrome/commands';
 import { mountActivity } from '../chrome/activity';
 import { mountHud } from '../chrome/hud';
@@ -185,7 +186,8 @@ const composer = mountComposer(part('.shell-composer'), {
     const mounted = app;
     if (isCommand(text)) {
       void runCommand(mounted, text, (choice) => picker?.show(choice)).then(() => {
-        if (/^\/(help|status|asks|usage|look|tools)\b/i.test(text)) showPageCanvas();
+        if (/^\/(help|status|asks|usage|look|tools)\b/i.test(text) || /^\/demo\s*$/i.test(text)) showPageCanvas();
+        else if (/^\/demo\b/i.test(text)) void openCanvas(mounted.lastTurn(), null);
       });
       return false;
     }
@@ -618,6 +620,27 @@ async function start(): Promise<void> {
   }, mounted.lens === null ? {} : { guard: mounted.lens.guard });
   // ?lens=1: the pen draws on the stage without Draw, and the ink is looked through the lens
   mounted.lens?.useInk(stageInk);
+  mountTour(mounted, {
+    showCanvas: () => showPageCanvas(),
+    showAnswer: () => void openCanvas(mounted.lastTurn(), null),
+    prompt: (text) => {
+      showLive();
+      live?.addPending(text, [], false, false);
+      void mounted.prompt(text).catch((cause: unknown) => {
+        live?.dropPending();
+        say(cause instanceof Error ? cause.message : 'That could not be sent.');
+      });
+    },
+    open: (control) => {
+      if (control === 'mic') part<HTMLButtonElement>('.pill__voice').click();
+      else if (control === 'typing') composer.focus();
+      else if (control === 'photo') menu.open();
+      else if (control === 'draw') {
+        menu.open();
+        part<HTMLButtonElement>('.composer__item[data-item="draw"]').click();
+      }
+    },
+  });
   stageInk.ink.onChange(() => composer.refresh());
   mountActions(canvas.tools, mounted, transcript, canvas.stageHost, { top: canvas.navTop, menu });
   mountSound(canvas.navTop, mounted);
