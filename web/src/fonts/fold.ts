@@ -20,6 +20,41 @@ export function hasWide(text: string): boolean {
   return WIDE.test(text);
 }
 
+/**
+ * Every other script the device can draw and the shipped faces cannot: Latin Extended (Polish, Czech, Turkish, Romanian, Vietnamese), Greek, Cyrillic, Armenian,
+ * Hebrew, Arabic, Indic, Thai, Lao, Tibetan, Myanmar, Georgian, Khmer and the rest of U+0100-U+1FFF, the combining marks, the zero-width non-joiner and direction marks
+ * that shaping needs (the zero-width joiner is dropped: it is what glues emoji together), other currency signs, and the Hebrew and Arabic presentation forms. `foldText` keeps them; they are measured by a per-script estimate (or the
+ * device, on the page) and drawn from the device's own fonts as whole runs (see render/three/text.ts and fonts/device.ts). Nothing is downloaded.
+ */
+const DEVICE = /[\u0100-\u1FFF\u200C\u200E\u200F\u20A0-\u20CF\u2C60-\u2C7F\uA720-\uA7FF\uA8E0-\uA8FF\uAB30-\uAB6F\uFB1D-\uFDFF\uFE70-\uFEFE]/;
+
+/** Scripts written right to left: Hebrew, Arabic, Syriac, Thaana, N'Ko, their presentation forms, and the right-to-left mark. */
+const RTL = /[\u0590-\u08FF\u200F\uFB1D-\uFDFF\uFE70-\uFEFE]/;
+
+/** Whether this one character comes from the device's own fonts (any script above), not from a shipped face. */
+export function isDevice(char: string): boolean {
+  return DEVICE.test(char);
+}
+
+/** Whether any character of the text comes from the device's fonts (CJK excluded): such a run is drawn whole. */
+export function hasDevice(text: string): boolean {
+  return DEVICE.test(text);
+}
+
+/**
+ * Whether the run reads right to left: most of its letters are in a right-to-left script. A line is drawn on its own after the text is wrapped, so the first letter is
+ * no guide (the second line of an English sentence can open with an Arabic word and still sit in a left-to-right paragraph); the letters in the majority are.
+ */
+export function startsRtl(text: string): boolean {
+  let rtl = 0;
+  let other = 0;
+  for (const char of text) {
+    if (RTL.test(char)) rtl += /\p{L}/u.test(char) ? 1 : 0;
+    else if (/\p{L}/u.test(char)) other += 1;
+  }
+  return rtl > other;
+}
+
 const SUBSTITUTES: Readonly<Record<string, string>> = {
   ' ': ' ',
   '\t': ' ',
@@ -51,14 +86,15 @@ const SUBSTITUTES: Readonly<Record<string, string>> = {
 };
 
 /**
- * Brings any text into the set the faces can draw. Known symbols become
- * their ASCII spelling, accented letters outside Latin-1 lose the accent,
- * pictographs are dropped, and anything else becomes `?`. The transcript
+ * Brings any text into the set the page can draw. Known symbols become
+ * their ASCII spelling; CJK and every script of `DEVICE` is kept whole, accents
+ * and all (the device's own fonts draw it); pictographs are dropped, and
+ * anything else becomes `?`. The transcript
  * keeps the original text; only what is drawn is folded.
  */
 export function foldText(text: string): string {
   let out = '';
-  for (const char of text) {
+  for (const char of text.normalize('NFC')) {
     if (ALLOWED.has(char)) {
       out += char;
       continue;
@@ -69,6 +105,10 @@ export function foldText(text: string): string {
       continue;
     }
     const base = char.normalize('NFKD').replace(/\p{M}/gu, '');
+    if (DEVICE.test(char)) {
+      out += char;
+      continue;
+    }
     if (base !== char && [...base].every((part) => ALLOWED.has(part))) {
       out += base;
       continue;
