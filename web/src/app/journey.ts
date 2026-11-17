@@ -195,11 +195,12 @@ export function startJourney(options: JourneyOptions): JourneyState {
     return best?.target ?? null;
   };
 
-  /** what `tap | <words>` taps: a choice or a control that says exactly that; else the closest label by its words; else the first thing on stage that has them (`findTarget`) */
+  /** what `tap | <words>` taps: a choice or a control that says exactly that; else the closest label by its words; else a choice or control that has them (`findTarget`).
+   *  Words that cannot be tapped (a figure's description, a line of speech that names the part) are no target: a tap there does nothing, so the step is skipped or stops instead. */
   const findTap = (wanted: string): Target | null => {
     const exact = findTarget(wanted);
     if (exact !== null && exact.tappable && norm(exact.label) === norm(wanted)) return exact;
-    return findLabel(wanted) ?? exact;
+    return findLabel(wanted) ?? (exact !== null && exact.tappable ? exact : null);
   };
 
   /** the target, once it has stopped moving and is on stage; null if it does not come in `waitMs` */

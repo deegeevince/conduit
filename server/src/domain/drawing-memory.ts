@@ -1,8 +1,8 @@
 // The drawing memory: every accepted line of a drawing, by turn, and a version for each turn that changed the drawing. The brain sees an index
 // of the versions (`DRAWING MEMORY`) and brings any of it back: all of a turn (`restore t5`, `/undo`) or some of its parts (`use bridge from=t5`).
 // What comes back is lines, read by the server and ingested one by one, so they are real elements the brain can `set`, `move` and `drop`.
-// fb-064: a version also holds the words that stood with the drawing (its labels, its lines of speech, its choices) and the scene they stood in, so that the Undo chip
-// can put the whole answer back, not only its shapes: `restore(…, whole)`.
+// fb-064: a version also holds the words that stood with the drawing (its labels, its lines of speech, its choices), the structures (a figure, a table, a flow: their own lines,
+// when they hold no control's value) and the scene they stood in, so that the Undo chip can put the whole answer back, not only its shapes: `restore(…, whole)`.
 // Held in memory for the conversation; the session log is the durable copy, and `rebuildMemory` reads it again on resume.
 
 import { EMPTY_STAGE, LineNormalizer, buildSchedule, parseLine, restingBox, serializeLine, settle } from '@conduit/language';
@@ -13,7 +13,10 @@ export const MEMORY_LIMITS = { lines: 4000, bytes: 1_000_000 } as const;
 
 /** Verbs of a drawing: what is kept. Structures and controls are not; words (`say`) are kept as the words that stood with a version, and never make one. A `paint` is kept only when it is procedural (`as=oil` and the like: no model call to
  *  make it again); one that asks an image model (`as=photo`, or no medium) is not. */
-const KEPT: ReadonlySet<string> = new Set(['scene', 'color', 'style', 'circle', 'ellipse', 'rect', 'line', 'poly', 'path', 'group', 'use', 'pix', 'row', 'frame', 'set', 'move', 'drop', 'paint']);
+const KEPT: ReadonlySet<string> = new Set(['scene', 'color', 'style', 'circle', 'ellipse', 'rect', 'line', 'poly', 'path', 'group', 'use', 'pix', 'row', 'frame', 'set', 'move', 'drop', 'paint', 'figure', 'table', 'flow', 'tree', 'cycle', 'timeline', 'map', 'chart', 'code', 'node', 'link']);
+/** The lines that open a structure, and those that go on filling it (fb-064): a structure is kept as the block of its own lines */
+const HEADS: ReadonlySet<string> = new Set(['figure', 'table', 'flow', 'tree', 'cycle', 'timeline', 'map', 'chart', 'code']);
+const CHILDREN: ReadonlySet<string> = new Set(['row', 'node', 'link']);
 const SHAPES: ReadonlySet<string> = new Set(['shape', 'group', 'sprite', 'copy']);
 
 interface MemoryLine {
@@ -45,6 +48,8 @@ export interface Version {
   readonly paints: readonly string[];
   /** fb-064. The `say` lines standing in it, in the order written: its labels (`callout near=`), its words, its choices. They come back only with a whole restore (the Undo chip). */
   readonly says: readonly string[];
+  /** fb-064. The structures standing in it (a figure, a table, a flow), each as its own lines, in the order written; one that holds a control's value (`{v}`) is not kept */
+  readonly structures: readonly (readonly string[])[];
   /** fb-064. The `scene` line in force when it was made, so that the words come back in the layout they were written for; null before any */
   readonly scene: string | null;
   /** `style` lines in force, by name */
@@ -121,6 +126,9 @@ export class DrawingMemory {
   private styleLines = new Map<string, string>();
   /** the last `scene` line kept (a version remembers the layout its words stood in) */
   private sceneLine: string | null = null;
+  /** the lines of each structure written, by the `seq` of its opening line; the last is the one still being filled */
+  private blocks: { readonly seq: number; readonly lines: string[] }[] = [];
+  private filling = false;
   /** lines kept for the turn now open, and whether any of them touched the drawing */
   private open: { turn: string; said: string; touched: boolean; restored?: number } | null = null;
 
@@ -150,6 +158,11 @@ export class DrawingMemory {
     if (this.open === null || this.open.turn !== turn) this.begin(turn, '');
     this.push({ turn, seq, text }, line);
     if (line.verb === 'scene') this.sceneLine = text;
+    if (HEADS.has(line.verb)) {
+      this.blocks.push({ seq, lines: [text] });
+      this.filling = true;
+    } else if (CHILDREN.has(line.verb) && this.filling) this.blocks[this.blocks.length - 1]?.lines.push(text);
+    else this.filling = false;
     if (this.open !== null && !says && line.verb !== 'color' && line.verb !== 'style') this.open.touched = true;
   }
 
@@ -238,8 +251,17 @@ export class DrawingMemory {
       if (line?.verb !== 'say' || (span.parent !== null && !parts.has(span.parent))) continue;
       says.push(serializeLine(settled(line, colors)));
     }
-    const sig = [...elements.map((element) => element.lines.join(';')), ...paints.map((text) => `paint:${text}`), ...says.map((text) => `say:${text}`)].join('\n');
-    return { turn, said, sig, elements, paints, says, scene: this.sceneLine, styles: Object.fromEntries(this.styleLines), ...(restored === undefined ? {} : { restored }) };
+    // the structures that stand, each as the lines that made it (not one that reads a control: its control is not kept)
+    const structures: string[][] = [];
+    for (const span of schedule.elements.filter((candidate) => candidate.figure?.kind === 'structure').sort((a, b) => a.order - b.order)) {
+      const carried = stage.elements.find((element) => element.key === span.key);
+      if (carried === undefined || carried.struck) continue;
+      const block = this.blocks.find((candidate) => candidate.seq === span.seq);
+      if (block === undefined || block.lines.some((text) => text.includes('{'))) continue;
+      structures.push([...block.lines]);
+    }
+    const sig = [...elements.map((element) => element.lines.join(';')), ...paints.map((text) => `paint:${text}`), ...says.map((text) => `say:${text}`), ...structures.map((lines) => `structure:${lines.join(';')}`)].join('\n');
+    return { turn, said, sig, elements, paints, says, structures, scene: this.sceneLine, styles: Object.fromEntries(this.styleLines), ...(restored === undefined ? {} : { restored }) };
   }
 
   /** Past the limits the replay's lines go: it starts again from the newest version's resting drawing. The versions keep their own copy of what each held. */
@@ -248,6 +270,8 @@ export class DrawingMemory {
     this.lines = [];
     this.bytes = 0;
     this.entries = [];
+    this.blocks = [];
+    this.filling = false;
     this.normalizer = this.freshNormalizer();
     const last = this.versions.at(-1);
     let seq = 0;
@@ -265,6 +289,20 @@ export class DrawingMemory {
       seq += 1;
       this.push({ turn: last?.turn ?? 't0', seq, text }, line);
     }
+    for (const lines of last?.structures ?? []) {
+      this.filling = false;
+      for (const text of lines) {
+        const line = parsed(text);
+        if (line === null) continue;
+        seq += 1;
+        this.push({ turn: last?.turn ?? 't0', seq, text }, line);
+        if (HEADS.has(line.verb)) {
+          this.blocks.push({ seq, lines: [text] });
+          this.filling = true;
+        } else if (CHILDREN.has(line.verb) && this.filling) this.blocks[this.blocks.length - 1]?.lines.push(text);
+      }
+    }
+    this.filling = false;
     for (const text of last?.says ?? []) {
       const line = parsed(text);
       if (line === null) continue;
@@ -335,8 +373,14 @@ export class DrawingMemory {
         }
       }
     }
-    // the words that stood with it, labels first among them in the order they were written, arriving at once
+    // the structures that stood with it, then its words (labels among them) in the order they were written
     if (whole) {
+      for (const block of version?.structures ?? []) {
+        for (const [n, text] of block.entries()) {
+          const line = parsed(text);
+          if (line !== null) lines.push(arriving(line, n === 0));
+        }
+      }
       for (const text of version?.says ?? []) {
         const line = parsed(text);
         if (line !== null) lines.push(arriving(line, true));
@@ -347,7 +391,7 @@ export class DrawingMemory {
       const line = parsed(text);
       if (line !== null) lines.push(line);
     }
-    return { lines, ids, note: version === null ? 'the empty canvas' : `${version.turn} (${version.elements.length} parts${whole ? `, ${version.says.length} lines of words` : ''})` };
+    return { lines, ids, note: version === null ? 'the empty canvas' : `${version.turn} (${version.elements.length} parts${whole ? `, ${version.structures.length} structures, ${version.says.length} lines of words` : ''})` };
   }
 
   /**
