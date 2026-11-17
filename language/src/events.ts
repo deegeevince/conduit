@@ -12,6 +12,8 @@ const SHAPES: Record<StageEventType, Record<string, Shape>> = {
   reading: { turn: 'string', label: 'string', state: 'string', message: 'string|null' },
   line: { turn: 'string', seq: 'number', text: 'string', issues: 'array' },
   typing: { turn: 'string', text: 'string' },
+  model: { turn: 'string', model: 'string', effort: 'string' },
+  mend: { turn: 'string', state: 'string' },
   reject: { turn: 'string', raw: 'string', issues: 'array' },
   end: { turn: 'string', reason: 'string', message: 'string|null' },
   pass: { turn: 'string', pass: 'number', state: 'string', reason: 'string|null' },

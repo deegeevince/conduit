@@ -122,6 +122,8 @@ export type BrainEvent =
    * turn a process first hears it; `form` is `script` for the replay brain.
    */
   | { readonly type: 'brief'; readonly form: BriefForm | 'script'; readonly text: string; readonly system: string | null; readonly withSnapshot: boolean }
+  /** What really ran, as the brain's own process reported it (the CLI's `init` event), with the effort the turn used. Never taken from configuration alone. */
+  | { readonly type: 'model'; readonly model: string; readonly effort: string }
   /** Yielded once, after the last line, by a brain that can measure itself. */
   | { readonly type: 'usage'; readonly usage: BrainUsage }
   /**
