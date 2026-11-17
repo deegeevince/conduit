@@ -9,3 +9,4 @@ export type { WallTurn } from '../wall/source-turns';
 export { asksOf } from '../painter/controls/ask-state';
 export type { AskFacts } from '../painter/controls/ask-state';
 export { targetFor } from '../core/contracts';
+export { hasDevice } from '../fonts/fold';

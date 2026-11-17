@@ -13,6 +13,7 @@
 //   choices    a mouse's target is smaller than a finger's, so a choice is shorter (the server always measured as a finger)
 //   controls   a slider the hand moved, then a new question with a slider of the same name
 //   cjk, flow, carry, words   the plain cases, so that the check has something that must never drift
+//   scripts    Greek, Cyrillic, Arabic: the page measures them in the device's own font, so the server leaves the turn to the page
 //   app        a live app is sized by the browser: the server says so and leaves the turn to the page
 //
 // And the check must be able to see: without the page's facts, the same measure is held against the same digest, and at least one case of each
@@ -128,6 +129,7 @@ export async function driftProblems(): Promise<{ problems: string[]; tally: Tall
   if (tally.differed.length > 12) problems.push(`... and ${tally.differed.length - 12} more`);
   for (const pattern of MUST_SEE) if ((tally.seen.get(pattern) ?? 0) === 0) problems.push(`${pattern}: measured without the page's facts, nothing differed, so this case no longer shows what it was made to`);
   if (!tally.left.some((name) => name.startsWith('app '))) problems.push('app: a live app was not left to the page');
+  if (!tally.left.some((name) => name.startsWith('scripts '))) problems.push('scripts: words in a device-font script were not left to the page');
   return { problems, tally };
 }
 

@@ -1,7 +1,7 @@
 // The server's own measurement of a draft (SA2): the same engine the page runs (`@conduit/web/engine`), on the turn's score, for the screen
 // the page said it has and the look in force. Nothing here waits for the browser.
 
-import { ENGINE_VERSION, targetFor, digestOf, measureStage, planWall, scoreOfCase, tryLines } from '@conduit/web/engine';
+import { ENGINE_VERSION, hasDevice, targetFor, digestOf, measureStage, planWall, scoreOfCase, tryLines } from '@conduit/web/engine';
 import type { EngineInputs, EngineView, LineProblem, WallNode, WallPlan, WallShape } from '@conduit/web/engine';
 import type { Capabilities, ContentCount, ControlValues, DataTable, PageFacts, PlacedBox, Schedule, ScreenFacts, Sight, TurnScore } from '@conduit/language';
 
@@ -33,10 +33,11 @@ export function engineMismatch(capabilities: Capabilities): string | null {
 /**
  * What only the page can size, so only the page measures it: a photo the user gave (the server has not loaded it) and a live app (the height
  * its content asks of its frame is the browser's). A turn whose stage holds either is the page's to measure, here and in every later turn that
- * still has it on the stage.
+ * still has it on the stage. Words in a script no shipped face has (Greek, Cyrillic, Arabic, Hebrew, Indic, Thai, Latin Extended...) are the same: the page sets a
+ * run in the device's own font and measures it there, the server only estimates it, so such a turn is the page's to measure and costs the conversation nothing.
  */
 export function measurable(schedule: Schedule): boolean {
-  return !schedule.elements.some((element) => (element.figure?.kind === 'picture' && element.figure.from !== undefined && element.figure.from !== null) || (element.figure?.kind === 'structure' && element.figure.structure === 'app'));
+  return !schedule.elements.some((element) => hasDevice(element.text) || (element.figure !== null && element.figure.kind !== 'shape' && hasDevice(JSON.stringify(element.figure))) || (element.figure?.kind === 'picture' && element.figure.from !== undefined && element.figure.from !== null) || (element.figure?.kind === 'structure' && element.figure.structure === 'app'));
 }
 
 function viewOf(s: MeasureSession, look: EngineView['look'], page?: PageFacts): EngineView {
