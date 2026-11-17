@@ -6,13 +6,15 @@
 import { parseScript } from '@conduit/language';
 import type { Frame } from '../contracts/frame';
 import type { Box } from '../contracts/space';
-import type { Film, FilmOptions, FilmTune, Recording } from '../contracts/film';
+import type { ControlMove, Film, FilmOptions, FilmTune, Recording } from '../contracts/film';
 import { createFilm, lineSpans } from './film';
 import { framingOf } from './framing';
 import type { Shot } from './framing';
 
 /** How a prompt is typed into the input box in a film: characters a second, a beat of the empty box before, and a beat the full words stay before they are sent. */
 export const TYPING = { cps: 14, before: 0.5, sent: 0.45, touch: 0.9 } as const;
+/** A slider the session recorded moved is played as a drag: the knob eases from where it stood to where the viewer left it over this many seconds, at the start of the turn's lead and before the touch that sent it. */
+export const DRAG = { seconds: 1.1 } as const;
 /** A line being drawn stays lit this long past its end (the language pane's own hold). */
 const LIT_HOLD = 0.4;
 /** A film as the session ran ends with this long at rest. */
@@ -53,6 +55,8 @@ export interface ReelPart {
     readonly waiting: number;
     readonly typed: string | null;
     readonly touched: { readonly id: string; readonly text: string } | null;
+    /** the seconds, at the start of `acting`, in which a slider the session moved is dragged to its new value (0: none); the typing or the touch follows them */
+    readonly drag: number;
   };
 }
 
@@ -67,6 +71,8 @@ export interface ReelOptions {
    * quiet (`activity`) so a long wait can be cut. Absent: a film of the turns alone, with the controls as `options` hold them.
    */
   readonly session?: boolean;
+  /** With `session`: a slider a turn recorded moved (an `act` carries the values) is dragged from where the turn before left it to its new value, over `DRAG.seconds` that the turn's lead then takes first. Absent: it is at its new value when the turn begins. */
+  readonly drag?: boolean;
 }
 
 export interface Reel extends Film {
@@ -86,6 +92,19 @@ export function lastAnswer(recordings: readonly Recording[]): readonly Recording
     if (opened === 'prompt' || opened === 'demo' || opened === 'script') return recordings.slice(i);
   }
   return recordings;
+}
+
+/** The sliders `recording` (an `act`, which carries what the viewer's controls held) has at another value than `before` (the film of the turn before) ended with: each dragged from the one to the other as the turn begins. */
+function dragsOf(before: Film | undefined, recording: Recording): ControlMove[] {
+  if (before === undefined || recording.controls === undefined) return [];
+  const shown = before.controlsAt?.(before.duration) ?? [];
+  const moves: ControlMove[] = [];
+  for (const [id, to] of Object.entries(recording.controls)) {
+    const now = shown.find((control) => control.id === id);
+    if (now === undefined || now.control !== 'slider' || typeof to !== 'number' || typeof now.value !== 'number' || now.value === to) continue;
+    moves.push({ id, from: now.value, to, start: before.duration, end: before.duration + DRAG.seconds });
+  }
+  return moves;
 }
 
 function cardLines(text: string): string {
@@ -116,14 +135,32 @@ export function createReel(recordings: readonly Recording[], options: FilmOption
   // starts every control at its written value instead, and shows a change the session recorded (an `act`) from the turn that carries it.
   const { controls: _held, ...unheld } = options;
   const session = reel.session === true;
-  const made = recordings.map((recording, index) => {
+  interface Made {
+    readonly recording: Recording;
+    readonly film: Film;
+    readonly options: FilmOptions;
+    readonly title: string;
+    readonly card: Film | null;
+    readonly cardSeconds: number;
+    /** the typing or the touch */
+    readonly acting: number;
+    /** the sliders this turn moves, as the turn before left them, and the seconds that takes */
+    readonly moves: readonly ControlMove[];
+    readonly dragging: number;
+    readonly waiting: number;
+    readonly lead: number;
+  }
+  const made: Made[] = [];
+  recordings.forEach((recording, index) => {
     const turnOptions = session ? (recording.controls === undefined ? unheld : { ...unheld, controls: recording.controls }) : index === recordings.length - 1 ? options : unheld;
     const film = createFilm(recording, turnOptions);
     const title = recording.asked ?? '';
     const card = reel.cards ? createFilm(cardOf(title, recording), unheld) : null;
     const acting = session ? leadOf(recording) : 0;
     const waiting = session ? Math.max(0, recording.waited ?? 0) : 0;
-    return { recording, film, title, card, cardSeconds: card === null ? 0 : Math.min(CARD_MOST, Math.max(CARD_LEAST, card.duration + CARD_BREATH)), acting, waiting, lead: acting + waiting };
+    const moves = session && reel.drag === true ? dragsOf(made[index - 1]?.film, recording) : [];
+    const dragging = moves.length > 0 ? DRAG.seconds : 0;
+    made.push({ recording, film, options: turnOptions, title, card, cardSeconds: card === null ? 0 : Math.min(CARD_MOST, Math.max(CARD_LEAST, card.duration + CARD_BREATH)), acting, moves, dragging, waiting, lead: dragging + acting + waiting });
   });
   // Newest first: what the viewer has just seen is what they most want kept.
   let total = 0;
@@ -150,21 +187,27 @@ export function createReel(recordings: readonly Recording[], options: FilmOption
   const activity: (readonly [number, number])[] = [];
   const shots: Shot[] = [];
   let at = 0;
-  let previous: { readonly film: Film; readonly end: number } | null = null;
+  let previous: { readonly film: Film; readonly end: number; readonly recording: Recording; readonly options: FilmOptions } | null = null;
   for (const entry of kept) {
     const leadFrom = at;
-    if (entry.lead > 0) {
-      // The wait: the stage as the last turn left it, going on breathing, or (the first turn) as it is before anything has come.
+    // the first turn kept has no turn before it to drag a slider from
+    const dragging = previous === null ? 0 : entry.dragging;
+    const acting = dragging + entry.acting;
+    const lead = acting + entry.waiting;
+    if (lead > 0) {
+      // The wait: the stage as the last turn left it, going on breathing (its sliders, if the session moved one, dragged to where the viewer left it), or (the first turn) as it is before anything has come.
       const held = previous;
       const next = entry.card ?? entry.film;
+      const standing = held === null ? null : dragging > 0 ? createFilm(held.recording, { ...held.options, moves: entry.moves }) : held.film;
       const hold: Source['film'] = {
-        frameAt: (seconds) => (held === null ? next.frameAt(0) : held.film.frameAt(held.end + seconds)),
-        controlsAt: (seconds) => (held === null ? (next.controlsAt?.(0) ?? []) : (held.film.controlsAt?.(held.end + seconds) ?? [])),
+        frameAt: (seconds) => (held === null || standing === null ? next.frameAt(0) : standing.frameAt(held.end + seconds)),
+        controlsAt: (seconds) => (held === null || standing === null ? (next.controlsAt?.(0) ?? []) : (standing.controlsAt?.(held.end + seconds) ?? [])),
+        boxOf: (id, seconds) => (held === null || standing === null ? (next.boxOf?.(id, 0) ?? null) : (standing.boxOf?.(id, held.end + seconds) ?? null)),
       };
       sources.push({ from: at, film: hold, offset: at });
       landmarks.push(at);
-      if (entry.acting > 0) activity.push([at, at + entry.acting]);
-      at += entry.lead;
+      if (acting > 0) activity.push([at, at + acting]);
+      at += lead;
     }
     if (entry.card !== null) {
       parts.push({ turn: entry.recording.turn, title: entry.title, card: true, from: at, to: at + entry.cardSeconds });
@@ -173,8 +216,8 @@ export function createReel(recordings: readonly Recording[], options: FilmOption
       activity.push([at, at + entry.cardSeconds]);
       at += entry.cardSeconds;
     }
-    const lead = entry.lead > 0 ? { from: leadFrom, acting: entry.acting, waiting: entry.waiting, typed: entry.recording.typed ?? null, touched: entry.recording.touched ?? null } : undefined;
-    parts.push({ turn: entry.recording.turn, title: entry.title, card: false, from: at, to: at + entry.film.duration, ...(lead === undefined ? {} : { lead }) });
+    const leading = lead > 0 ? { from: leadFrom, acting, waiting: entry.waiting, typed: entry.recording.typed ?? null, touched: entry.recording.touched ?? null, drag: dragging } : undefined;
+    parts.push({ turn: entry.recording.turn, title: entry.title, card: false, from: at, to: at + entry.film.duration, ...(leading === undefined ? {} : { lead: leading }) });
     sources.push({ from: at, film: entry.film, offset: at });
     landmarks.push(at, at + entry.film.duration);
     if (session) {
@@ -193,7 +236,7 @@ export function createReel(recordings: readonly Recording[], options: FilmOption
       tunes.push({ ...tune, key: `${entry.recording.turn}:${tune.key}`, at: tune.at + at, until: tune.until + at });
       activity.push([tune.at + at, Math.min(tune.at + at + tune.model.seconds, tune.until + at)]);
     }
-    previous = { film: entry.film, end: entry.film.duration };
+    previous = { film: entry.film, end: entry.film.duration, recording: entry.recording, options: entry.options };
     at += entry.film.duration;
   }
   // A film made as the session ran rests a moment at its end, the framing back out on the whole stage.
