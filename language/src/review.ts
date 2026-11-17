@@ -18,7 +18,7 @@ import { isInFlow } from './schedule';
 import { describeSight } from './sight';
 import type { PlacedBox, Sight, SightNote } from './sight';
 import type { Line } from './types';
-import { BACKDROP_LAYERS } from './vocabulary';
+import { BACKDROP_LAYERS, CANVAS } from './vocabulary';
 import type { ContentCount, CriticFinding, CriticProblem } from './wire';
 
 export interface ReviewPolicy {
@@ -157,6 +157,33 @@ export function placedLine(item: PlacedBox): string {
   return `${item.id} (${item.kind}${item.parent === null ? '' : ` in ${item.parent}`}): ${Math.round(item.box.w)}x${Math.round(item.box.h)} at ${Math.round(item.box.x)},${Math.round(item.box.y)}`;
 }
 
+/**
+ * Where there is room to put words: the widest free bands across the canvas and down it, nothing standing on them. Backdrops (a box over most of the canvas) and parts of groups are ignored,
+ * so that a sky or a frame does not hide the room in front of it. Null when nothing is free that is worth naming.
+ */
+export function freeRoomRows(placed: readonly PlacedBox[], canvas: { readonly width: number; readonly height: number }): string | null {
+  const things = placed.filter((item) => item.parent === null && item.box.w * item.box.h < canvas.width * canvas.height * 0.45 && item.kind !== 'group');
+  const bands = (length: number, across: number, spans: readonly (readonly [number, number])[]): { at: number; size: number }[] => {
+    const busy = new Array<boolean>(length).fill(false);
+    for (const [from, to] of spans) for (let at = Math.max(0, Math.floor(from)); at < Math.min(length, Math.ceil(to)); at += 1) busy[at] = true;
+    const out: { at: number; size: number }[] = [];
+    let start = -1;
+    for (let at = 0; at <= length; at += 1) {
+      if (at < length && !busy[at]) {
+        if (start < 0) start = at;
+      } else if (start >= 0) {
+        if (at - start >= Math.max(4, across * 0.06)) out.push({ at: start, size: at - start });
+        start = -1;
+      }
+    }
+    return out.sort((a, b) => b.size - a.size).slice(0, 2);
+  };
+  const across = bands(canvas.height, canvas.height, things.map((item) => [item.box.y, item.box.y + item.box.h] as const)).map((band) => `0,${band.at} ${canvas.width}x${band.size} (a band across)`);
+  const down = bands(canvas.width, canvas.width, things.map((item) => [item.box.x, item.box.x + item.box.w] as const)).map((band) => `${band.at},0 ${band.size}x${canvas.height} (a band down)`);
+  const rooms = [...across, ...down];
+  return rooms.length === 0 ? null : `FREE ROOM (nothing stands on these; put moved words here, one line to a row, never on another line of words):\n${rooms.map((room) => `  ${room}`).join('\n')}`;
+}
+
 function placedRows(placed: readonly PlacedBox[]): string[] {
   return [...placed]
     .sort((a, b) => b.box.w * b.box.h - a.box.w * a.box.h)
@@ -182,6 +209,7 @@ export function buildReviewBrief(input: ReviewBriefInput): string {
   for (const problem of input.problems) rows.push(`  ${problem.kind === 'rejected' ? 'REJECTED' : 'REPAIRED'} \`${problem.raw}\`: ${problem.why}`);
   const seen = input.picture ? 'The picture attached is the stage as the lines you have written will leave it.' : (input.canvas === true ? 'No picture is attached. The canvas tools are the only tools you have, and only canvas_look fetches a picture; otherwise go by the measurements.' : 'No picture is attached and none can be fetched: use no tool, go by the measurements.');
   const where = input.placed === undefined || input.placed.length === 0 ? null : `WHERE THINGS ARE (id: size at top-left corner, canvas units):\n${placedRows(input.placed).join('\n')}`;
+  const room = input.placed === undefined || input.sight === null ? null : freeRoomRows(input.placed, CANVAS[input.sight.canvas]);
   const critic = input.critic ?? null;
   if (form === 'refine') {
     const wants = critic === null || critic.suggestions.length === 0 ? null : `A CRITIC WHO CAN SEE IT SAYS it would be better for:\n${critic.suggestions.map((line) => `  - ${line}`).join('\n')}`;
@@ -212,6 +240,7 @@ export function buildReviewBrief(input: ReviewBriefInput): string {
       rows.length === 0 ? 'THE STAGE MEASURES: nothing wrong that it can measure.' : `THE STAGE MEASURES:\n${rows.join('\n')}`,
       input.eyes === undefined || input.eyes === null || input.eyes.trim() === '' ? null : `EYES (what has been seen since you last wrote):\n${input.eyes}`,
       where,
+      room,
       input.written === undefined || input.written.length === 0 ? null : `THE LINES YOU WROTE FOR IT, in order:\n${input.written.slice(0, REPAIR_LINES_SHOWN).map((line) => `  ${line.length > 220 ? `${line.slice(0, 219)}…` : line}`).join('\n')}${input.written.length > REPAIR_LINES_SHOWN ? `\n  … and ${input.written.length - REPAIR_LINES_SHOWN} more` : ''}`,
       input.asked === '' ? null : `THE USER ASKED: ${input.asked}`,
       input.standing === undefined || input.standing.length === 0 ? null : `AND ASKED EARLIER, FOR EVERY REPLY:\n${input.standing.map((ask) => `  - ${ask}`).join('\n')}`,
@@ -236,13 +265,14 @@ export function buildReviewBrief(input: ReviewBriefInput): string {
     rows.length === 0 ? 'THE STAGE MEASURES: nothing wrong that it can measure.' : `THE STAGE MEASURES:\n${rows.join('\n')}`,
     found,
     where,
+    room,
     `THE USER ASKED: ${input.asked}`,
     input.standing === undefined || input.standing.length === 0 ? null : `AND ASKED EARLIER, FOR EVERY REPLY:\n${input.standing.map((ask) => `  - ${ask}`).join('\n')}`,
     [
       `If it reads right, answers what was asked and keeps to what was asked for every reply, write the one line \`${REVIEW_KEEP}\` and nothing else.`,
       'If not, change only what is wrong, in as few lines as it takes. What you write now is tried out of sight and shown only if it is better:',
       '- change a thing by its id: `set` (`set <id> | new words` too), `move`, `cancel <id>`, or its own line again with what differs;',
-      '- words crossed by a line, or on other words, are `move`d (`move <id> x,y`, which also frees a label from its `near=`) or `set <id> | shorter words`: never draw them again as a new label, that leaves the old one standing;',
+      '- words crossed by a line, or on other words, are `move`d (`move <id> x,y`, which also frees a label from its `near=`; use FREE ROOM above, and no two lines of words in one place) or `set <id> | shorter words`, or `cancel <id>` for words the story has moved past: never draw them again as a new label, that leaves the old one standing;',
       '- if a try of yours is listed above as thrown out, it was measured: read why, and write a different fix;',
       '- never `scene`, never the lines that were right, never fewer parts than before: a fix that takes something away is thrown out and the draft stays;',
       '- add nothing the user did not ask for, and say nothing about the fix.',
@@ -370,7 +400,17 @@ export function landsNoWorse(draft: Sight | null, candidate: Sight | null): { re
   if (candidate === null) return { ok: false, why: 'the painter did not say how the fix would land' };
   const before = blockingCount(draft);
   const after = blockingCount(candidate);
-  return after > before ? { ok: false, why: `${after} things would not land, against ${before} in the draft` } : { ok: true, why: null };
+  if (after > before) return { ok: false, why: `${after} things would not land, against ${before} in the draft` };
+  // Words still running into words are not let through on a tie: moving them about without clearing them is no mend (a fix once moved narration lines by coordinates and left them stacked).
+  const wordsAfter = wordsCollideCount(candidate);
+  if (wordsAfter > 0 && wordsAfter >= wordsCollideCount(draft) && after >= before) return { ok: false, why: `${wordsAfter} lines of words would still run into other words` };
+  return { ok: true, why: null };
+}
+
+/** How many resting lines of words the painter says run into other words (or sit under something over them). */
+export function wordsCollideCount(sight: Sight | null): number {
+  if (sight === null) return 0;
+  return sight.items.filter((item) => item.kind === 'text' && item.resting && item.notes.some((note) => note === 'collides' || note === 'overlaps')).length;
 }
 
 /**

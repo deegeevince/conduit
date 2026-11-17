@@ -4,6 +4,7 @@ import { boundsOf } from './geometry';
 import { figureAt, isStruckAt, lookAt, sceneAt, styleAt, valueAt, wearingAt } from './schedule';
 import type { CarriedElement, ElementSpan, Figure, Schedule, StageBase } from './schedule';
 import type { CanvasBox, ControlValues, Fill, Paint } from './types';
+import { CANVAS } from './vocabulary';
 import type { ElementKind } from './vocabulary';
 import { cachedTune, describeTune, tuneRowsOf } from './tune';
 
@@ -348,4 +349,47 @@ export function drawingRows(stage: StageBase, limit = 40): string | null {
     .sort((a, b) => b.area - a.area);
   const shown = rows.slice(0, limit).map((row) => `  ${row.text}`);
   return `YOUR DRAWING NOW (${drawn.length} live parts, largest first${rows.length > limit ? `, ${limit} shown` : ''}; the ids to change by):\n${shown.join('\n')}`;
+}
+
+/** The most rows ON STAGE NOW lists; about 700 tokens. Words come first and the newest are kept. */
+export const STAGE_ROWS = 36;
+
+const overlapArea = (a: CanvasBox, b: CanvasBox): number => Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x)) * Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));
+
+/** What a line of words is for, from how it was set: a choice, a title (headline size), a label (anchored to a thing), else the running words. */
+function wordsKind(element: CarriedElement): string {
+  if (element.style.tap) return 'choice';
+  if (element.style.near !== null) return `label near=${element.style.near.id}`;
+  if (element.style.size === 'xl' || element.style.size === 'xxl' || element.style.size === 'l') return 'title';
+  return element.style.size === 'xs' || element.style.size === 's' ? 'caption' : 'narration';
+}
+
+/**
+ * ON STAGE NOW, one row per thing that is on stage: the words get their own rows (id, kind, where they really rest, the first words, and which other words they run into),
+ * so that the brain can drop or replace them on purpose; what is drawn follows as before. `skipDrawn` leaves drawn parts out when YOUR DRAWING NOW already lists them.
+ * `reported` is a box the painter reported for an id when the element itself carries none. Null when nothing is on stage.
+ */
+export function stageRows(stage: StageBase, reported: (element: CarriedElement) => CanvasBox | null, skipDrawn: boolean, limit = STAGE_ROWS): { readonly rows: readonly string[]; readonly older: number } | null {
+  const visible = stage.elements.filter((element) => !element.struck && element.parent === null);
+  if (visible.length === 0) return null;
+  const drawn = (element: CarriedElement): boolean => element.figure !== null && (element.kind === 'shape' || element.kind === 'group' || element.kind === 'copy' || element.kind === 'sprite');
+  const listed = visible.filter((element) => !(skipDrawn && drawn(element)));
+  const kept = listed.slice(-limit);
+  const boxOf = (element: CarriedElement): CanvasBox | null => element.placed ?? reported(element);
+  const words = kept.filter((element) => element.figure === null);
+  const spot = (box: CanvasBox | null): string => (box === null ? '' : `${round(box.x)},${round(box.y)} ${round(box.w)}x${round(box.h)}`);
+  const rows = kept.map((element) => {
+    const note = [element.style.layer === 'mid' ? '' : element.style.layer, element.style.stay === 'pin' ? 'pinned' : ''].filter((item) => item !== '').join(', ');
+    const box = boxOf(element);
+    if (element.figure === null) {
+      const quoted = element.text.replace(/\s+/g, ' ').trim();
+      const hit = box === null ? [] : words.filter((other) => other !== element).filter((other) => { const there = boxOf(other); return there !== null && overlapArea(box, there) > 0.15 * Math.min(box.w * box.h, there.w * there.h); });
+      const edge = CANVAS[stage.scene.canvas];
+      const clipped = box !== null && (box.x < -0.5 || box.y < -0.5 || box.x + box.w > edge.width + 0.5 || box.y + box.h > edge.height + 0.5) ? ' [past the edge of the canvas]' : '';
+      const runs = clipped + (hit.length === 0 ? '' : ` [runs into ${hit.slice(0, 3).map((other) => other.id).join(', ')}]`);
+      return `  ${element.id} (${wordsKind(element)}${note === '' ? '' : `, ${note}`})${box === null ? '' : ` ${spot(box)}`}: "${quoted.length > 52 ? `${quoted.slice(0, 50)}…` : quoted}"${runs}`;
+    }
+    return `  ${element.id}${note === '' ? '' : ` (${note})`}: [${describeCarried(element, stage.elements, box)}]`;
+  });
+  return { rows, older: listed.length - kept.length };
 }

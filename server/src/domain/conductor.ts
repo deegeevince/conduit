@@ -1,4 +1,4 @@
-import { API, asksToImprove, SKILL_HOLD, CANVAS, DATA_LIMITS, EMPTY_STAGE, isLessonVerb, PASTE_AS_DOCUMENT_CHARS, FULL_CAPABILITIES, LANGUAGE, LEAD_WINDOW, LineNormalizer, LineReader, PRESENCE_TYPING_MS, parseLine, TurnScore, buildSystemPrompt, draftFactsOf, hasLesson, usesParts, repairWorth, serializeLine, settle, splitCells, wearingAt, withoutUnknownBraces, worthALook } from '@conduit/language';
+import { API, SKILL_HOLD, CANVAS, DATA_LIMITS, EMPTY_STAGE, isLessonVerb, PASTE_AS_DOCUMENT_CHARS, FULL_CAPABILITIES, LANGUAGE, LEAD_WINDOW, LineNormalizer, LineReader, PRESENCE_TYPING_MS, parseLine, TurnScore, buildSystemPrompt, draftFactsOf, hasLesson, usesParts, repairWorth, serializeLine, settle, splitCells, wearingAt, withoutUnknownBraces, worthALook } from '@conduit/language';
 import type { DrawLine, OwedFinding, PageFacts, RepairWorth, StyleProps, SkillBlockFacts, TechniqueCard } from '@conduit/language';
 import type { ActivityState, BrainChange, BrainChoice, BrainMode, CriticFinding, DocumentSummary, DocumentView, FixPolicy, NodeId, NodeStatus, OpenDocumentResponse, PromptVariant, Seen, ToolChoice } from '@conduit/language';
 import type {
@@ -2146,8 +2146,8 @@ export class Conductor {
       this.reject(s, turn, serializeLine(event.line), [...event.issues, ...normalized.issues]);
       return undefined;
     }
-    // An improve turn that opens a new `scene` over a live drawing loses it. It is let through (refusing it mid-stream would pile the rewrite on the old picture); the log says so.
-    if (normalized.line.verb === 'scene' && !repairing && (turn.input.kind === 'prompt' && asksToImprove(turn.input.text)) && s.stage.elements.some((element) => !element.struck && (element.kind === 'shape' || element.kind === 'group'))) {
+    // A prompt that opens a new `scene` over a live drawing replaces it (a new beat of a story does so on purpose). It is let through, and the log says so.
+    if (normalized.line.verb === 'scene' && !repairing && turn.input.kind === 'prompt' && s.stage.elements.some((element) => !element.struck && (element.kind === 'shape' || element.kind === 'group'))) {
       this.deps.log.warn('drawing.scene_over_live', { session: s.id, turn: turn.id, said: turn.input.text.slice(0, 80) });
     }
     // v3 art. `draw` is expanded here, beside `paint` and `findPicture`: a shelf hit becomes a group and its parts, a miss a quiet placeholder.
