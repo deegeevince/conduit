@@ -7,7 +7,7 @@ scene type caption brisk
 look paper
 circle sun 20,22 9 fill=accent stroke=none
 line beam 30,26 80,46 thick=1.2
-path blue stroke=alt thick=1.2 | M80 46 L98 28 M80 46 L102 56 M80 46 L92 70 M80 46 L66 66
+path blue stroke=alt thick=1.2 | M80 46 L62 28 M80 46 L102 56 M80 46 L92 70 M80 46 L66 66
 line red 80,46 148,60 stroke=accent thick=1.2
 say enter=fade by=all | Blue light scatters most.
 say label @with near=blue:above | blue scatters

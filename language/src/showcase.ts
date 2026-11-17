@@ -164,7 +164,7 @@ export const SHOWCASE: readonly ShowcaseEntry[] = [
 
   // Things that work
   live({ id: 'switch', category: 'works', name: 'Switches and picks', caption: 'Flip a switch or pick a colour and the drawing changes at once.', today: ['controls#1'], page: 'cut', reel: null, seconds: 3.0, needs: ['control:toggle', 'control:pick'], expect: ['bulb', 'power', 'mood'] }),
-  live({ id: 'app', category: 'works', name: 'A small app', caption: 'A working counter, game or tool that runs on the canvas in a locked box.', today: ['app#1'], page: 'cut', reel: null, seconds: 3.0, needs: ['structure:app'], expect: ['tally'] }),
+  live({ id: 'app', category: 'works', name: 'A small app', caption: 'A working counter, game or tool that runs on the canvas in a locked box.', today: [], page: 'new', reel: null, seconds: 3.0, needs: ['structure:app'], expect: ['tally'], note: 'a counter written for the page: app#1 is the Galton board now' }),
   live({ id: 'mockup', category: 'works', name: 'An app mock-up', caption: 'A phone screen with real fields and buttons at its true size.', today: ['language/src/interface.ts:674'], page: 'new', reel: 2.5, needs: ['structure:screen'], expect: ['x1'], note: 'the taught example in interface.ts; x1 is the block that holds the screen s1' }),
   live({ id: 'music', category: 'works', name: 'A tune you can hear', caption: 'It writes the notes; the canvas draws and plays them.', today: ['tune#1'], page: 'new', reel: 3.5, needs: ['structure:tune'], expect: ['riff'], note: 'two bars' }),
 
