@@ -1050,6 +1050,16 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
   /** The bound changes that found nothing to change yet: tried again each time something comes on stage, and reported at the end if still unplaced. */
   const waiting: { readonly seq: number; readonly line: BindLine; readonly at: number }[] = [];
 
+  /** The newest words by this id when they were a choice (a thing to tap) and are no longer on stage; null when they were not, or there were none. */
+  const departedChoice = (id: string): Live | null => {
+    for (let i = live.length - 1; i >= 0; i -= 1) {
+      const candidate = live[i];
+      if (candidate === undefined || candidate.span.id !== id || candidate.ghost || candidate.span.kind !== 'text') continue;
+      return candidate.style.tap ? candidate : null;
+    }
+    return null;
+  };
+
   /** Whether a bound change of this kind can change this element. */
   const bindFits = (effect: DrivenEffect, span: MutableElement): boolean =>
     effect.kind === 'set' || (effect.kind === 'move' && MOVED_BY_POINT.includes(span.kind)) || (effect.kind === 'morph' && span.kind === 'shape') || (effect.kind === 'text' && span.kind === 'text') || (effect.kind === 'mark' && span.figure?.kind === 'structure' && span.figure.structure === 'table');
@@ -2096,7 +2106,15 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
         const start = startOf(entry, line.when);
         const old = findLive(line.id, start);
         let done: number;
-        if (old === null || old.span.kind !== 'text') {
+        // A choice that has left (its question was answered, or it was dropped) and is revised by id comes back as a choice with the new words, as it was: the words of
+        // an option are what a revision changes, and being a thing to tap is no part of them. (The first answer line of a turn retires the choices an earlier turn
+        // offered, so a brain that rewords them after writing its answer is revising what already left.)
+        const left = old === null ? departedChoice(line.id) : null;
+        if (left !== null && left !== undefined) {
+          report(seq, 'unknown-id', `"${line.id}" had left the stage (a choice goes when it is answered or dropped); its new words are offered again as a choice`, line.id);
+          done = enterText(entry, line.id, line.text, { ...left.style, dur: null }, start, nextOrder, null);
+          nextOrder += 1;
+        } else if (old === null || old.span.kind !== 'text') {
           report(seq, 'unknown-id', `no text called "${line.id}" is on stage to correct; said as a new line`, line.id);
           done = enterText(entry, line.id, line.text, completeStyle({}, contextFor('text')), start, nextOrder, null);
           nextOrder += 1;
@@ -2422,11 +2440,11 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
   {
     const dead = new Map<string, { id: string; seq: number; reasons: string[]; alive: boolean }>();
     for (const target of live) {
-      if (target.ghost || target.span.exit !== null) continue;
+      // (what left with its scene is judged too, and so is a bind that ended with its control: it was dead while it stood there)
+      if (target.ghost) continue;
       for (const change of target.span.driven) {
-        if (change.until !== undefined) continue;
         const owner = byKey.get(change.control);
-        if (owner === undefined || owner.ghost || owner.span.exit !== null) continue;
+        if (owner === undefined || owner.ghost) continue;
         const entry = dead.get(change.control) ?? { id: owner.span.id, seq: change.seq, reasons: [], alive: false };
         dead.set(change.control, entry);
         entry.seq = Math.max(entry.seq, change.seq);
