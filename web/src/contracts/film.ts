@@ -137,7 +137,7 @@ export interface SurroundScene {
   /** the window the language panel's rows show through */
   readonly panel: Box;
   /** the rows of the panel that are in the picture at all (not scrolled out of the window), top to bottom */
-  readonly rows: readonly { readonly text: string; readonly top: number; readonly bottom: number; readonly lit: boolean }[];
+  readonly rows: readonly { readonly text: string; readonly top: number; readonly bottom: number; readonly lit: boolean; /** the width of its widest visual row in picture pixels, and how many visual rows it has */ readonly width: number; readonly lines: number }[];
   /** the lit row's extent (picture y), or null when no line is being drawn */
   readonly lit: { readonly top: number; readonly bottom: number } | null;
   /** the input box along the bottom */

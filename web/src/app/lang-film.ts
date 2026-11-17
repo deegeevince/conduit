@@ -25,20 +25,26 @@ export interface LangLayout {
   readonly stage: Box;
   /** the input box's strip along the bottom, under both */
   readonly bar: Box;
+  /** how many picture pixels a CSS pixel of the live page is: the picture is the page at 1280 px wide (390 for a tall one), scaled */
+  readonly k: number;
 }
 
-/** How a picture is divided: a wide one has the pane at its left, a tall one has it on top, and the input box lies along the bottom of both. The stage keeps the rest. */
+/**
+ * How a picture is divided, as the live page divides its own: a wide one has the pane at its left (30% of the width, at least 16rem), a tall one
+ * (a phone) has it on top (34% of the height, at least 7rem), and the input box lies along the bottom of both. The stage keeps the rest.
+ */
 export function langLayout(width: number, height: number): LangLayout {
-  const bar = Math.round((Math.min(width, height) / 44) * 4.2);
+  const vertical = height > width;
+  const k = vertical ? width / 390 : width / 1280;
+  const bar = Math.round(68 * k);
   const rest = height - bar;
   const barBox = { x: 0, y: rest, width, height: bar };
-  const vertical = height > width * 0.9;
   if (vertical) {
-    const pane = Math.round(rest * 0.34);
-    return { width, height, vertical, pane: { x: 0, y: 0, width, height: pane }, stage: { x: 0, y: pane, width, height: rest - pane }, bar: barBox };
+    const pane = Math.round(Math.max(112 * k, rest * 0.34));
+    return { width, height, vertical, pane: { x: 0, y: 0, width, height: pane }, stage: { x: 0, y: pane, width, height: rest - pane }, bar: barBox, k };
   }
-  const pane = Math.round(Math.max(Math.min(width * 0.33, 720), Math.min(width * 0.5, 360)));
-  return { width, height, vertical, pane: { x: 0, y: 0, width: pane, height: rest }, stage: { x: pane, y: 0, width: width - pane, height: rest }, bar: barBox };
+  const pane = Math.round(Math.max(256 * k, width * 0.3));
+  return { width, height, vertical, pane: { x: 0, y: 0, width: pane, height: rest }, stage: { x: pane, y: 0, width: width - pane, height: rest }, bar: barBox, k };
 }
 
 interface Piece {
@@ -126,12 +132,20 @@ interface Drawn {
 
 /** A pane in film: the lines of the turns in `sources`, laid out once for `layout`, drawn at any moment, with the input box and the typing along the bottom. */
 export function paneSurround(sources: readonly PaneSource[], leads: readonly PaneLead[], log: LangLog, layout: LangLayout, lookAt: (seconds: number) => PanePalette): Surround {
-  const size = Math.round(Math.min(layout.width, layout.height) / 44);
-  const lineHeight = Math.round(size * 1.5);
-  const pad = Math.round(size * 1.1);
-  const advance = size * 0.6;
-  const cols = Math.max(12, Math.floor((layout.pane.width - pad * 2 - size * 0.4) / advance));
-  const headerHeight = Math.round(lineHeight * 1.9);
+  // The live pane's own metrics (styles/lang.css), in picture pixels: 13px type (12 on a phone) in the mono face, a line a half again as tall, rows 1rem in from each side
+  // with a continuation 2ch further in, 0.05rem above and below each row, a head of 0.5rem and 11px type, and 0.5rem above the first row.
+  const k = layout.k;
+  const size = 16 * k;
+  const fontPx = (layout.vertical ? 12 : 13) * k;
+  const lineHeight = fontPx * 1.5;
+  const rowPad = 0.8 * k;
+  const padX = 16 * k;
+  const advance = fontPx * 0.6;
+  const cols = Math.max(12, Math.floor((layout.pane.width - k - padX * 2) / advance - 0.01));
+  const headFont = 11 * k;
+  const headerHeight = 8 * k + headFont * 1.5;
+  const bodyTop = 8 * k;
+  const bodyBottom = 12 * k;
   const items: Item[] = [];
   for (const source of sources) {
     const spans = lineSpans(source.recording);
@@ -158,15 +172,14 @@ export function paneSurround(sources: readonly PaneSource[], leads: readonly Pan
   }
   items.sort((a, b) => a.at - b.at);
   /** the lit bar reaches this far past a line, so the first line sits this far down and the last this far up */
-  const inset = 3;
+  const inset = bodyTop;
   let cursor = inset;
-  const gap = Math.round(lineHeight * 0.18);
   for (const item of items) {
     item.top = cursor;
-    item.height = (item.rows.length + item.note.length) * lineHeight + gap;
+    item.height = (item.rows.length + item.note.length) * lineHeight + rowPad * 2;
     cursor += item.height;
   }
-  const innerHeight = layout.pane.height - headerHeight - pad;
+  const innerHeight = layout.pane.height - headerHeight;
 
   /** how far each line has come in at `t`: 0 not yet, 1 settled */
   const came = (item: Item, t: number): number => {
@@ -206,20 +219,20 @@ export function paneSurround(sources: readonly PaneSource[], leads: readonly Pan
     const ease = 1 - Math.exp(-1 / (FOLLOW_RATE * FOLLOW));
     for (let step = 0; step <= Math.ceil(lastAt * FOLLOW_RATE); step += 1) {
       const t = step / FOLLOW_RATE;
-      const most = Math.max(0, reach(t) + inset - innerHeight);
+      const most = Math.max(0, reach(t) + bodyBottom - innerHeight);
       const now = lit(t);
       if (now !== null) {
         const top = now.top - scroll;
-        const bottom = top + now.height - gap;
+        const bottom = top + now.height;
         if (top < innerHeight * 0.1 || bottom > innerHeight * 0.7) target = now.top - innerHeight / 3;
         else target = scroll;
       }
       target = Math.max(0, Math.min(most, target));
       scroll += (target - scroll) * ease;
-      if (now !== null && now.height - gap + 4 <= innerHeight) {
-        // inside the window while it is lit (its lit bar reaches two pixels past the line), with a little air around it
-        const air = Math.min(lineHeight * 0.5, (innerHeight - (now.height - gap + 4)) / 2) + 2;
-        scroll = Math.max(now.top + now.height - gap + air - innerHeight, Math.min(now.top - air, scroll));
+      if (now !== null && now.height <= innerHeight) {
+        // inside the window while it is lit, with a little air around it
+        const air = Math.min(lineHeight * 0.5, (innerHeight - now.height) / 2);
+        scroll = Math.max(now.top + now.height + air - innerHeight, Math.min(now.top - air, scroll));
       }
       scroll = Math.max(0, Math.min(most, scroll));
       follow.push(scroll);
@@ -235,7 +248,7 @@ export function paneSurround(sources: readonly PaneSource[], leads: readonly Pan
 
   // ---- the input box
   const bar = layout.bar;
-  const pillHeight = Math.round(size * 3);
+  const pillHeight = Math.round(52 * k);
   const pill: Box = (() => {
     const width = Math.min(layout.width - size * 2, size * 48);
     return { x: Math.round((layout.width - width) / 2), y: Math.round(bar.y + (bar.height - pillHeight) / 2), width: Math.round(width), height: pillHeight };
@@ -270,7 +283,7 @@ export function paneSurround(sources: readonly PaneSource[], leads: readonly Pan
     const now = lit(t);
     const originY = pane.y + headerHeight - scroll;
     const window: Box = { x: pane.x, y: pane.y + headerHeight, width: pane.width, height: pane.height - headerHeight };
-    const rows: { text: string; top: number; bottom: number; lit: boolean }[] = [];
+    const rows: { text: string; top: number; bottom: number; lit: boolean; width: number; lines: number }[] = [];
     const placed: { item: Item; y: number; rise: number; alpha: number }[] = [];
     for (const item of items) {
       if (item.at > t) break;
@@ -280,7 +293,7 @@ export function paneSurround(sources: readonly PaneSource[], leads: readonly Pan
       // a line comes up into its place; the one being drawn is already in it, so the lit bar is never out of the window
       const rise = item === now ? 0 : (1 - alpha) * lineHeight * 0.35;
       placed.push({ item, y, rise, alpha });
-      rows.push({ text: [item.entry.text, ...item.note.map((row) => row.map((piece) => piece.text).join('').trim())].join('\n'), top: y + rise - 2, bottom: y + rise + item.height - gap + 2, lit: item === now });
+      rows.push({ text: [item.entry.text, ...item.note.map((row) => row.map((piece) => piece.text).join('').trim())].join('\n'), top: y + rise, bottom: y + rise + item.height, lit: item === now, width: Math.max(...item.rows.map((row) => row.reduce((sum, piece) => sum + piece.text.length, 0))) * advance, lines: item.rows.length });
     }
     const litRow = rows.find((row) => row.lit) ?? null;
     const typed = typing(t);
@@ -297,13 +310,23 @@ export function paneSurround(sources: readonly PaneSource[], leads: readonly Pan
       context.fillStyle = palette.ground;
       context.fillRect(pane.x, pane.y, pane.width, pane.height);
       context.fillStyle = palette.edge;
-      if (layout.vertical) context.fillRect(pane.x, pane.y + pane.height - 2, pane.width, 2);
-      else context.fillRect(pane.x + pane.width - 2, pane.y, 2, pane.height);
+      if (layout.vertical) context.fillRect(pane.x, pane.y + pane.height - k, pane.width, k);
+      else context.fillRect(pane.x + pane.width - k, pane.y, k, pane.height);
       context.textBaseline = 'alphabetic';
       context.textAlign = 'left';
-      context.font = `400 ${Math.round(size * 0.78)}px "${MONO.regular}"`;
+      // the head: "SERIES" at the left and what it is at the right, small and spaced, in the quiet colour
+      context.font = `400 ${headFont}px "${MONO.regular}"`;
       context.fillStyle = palette.text.key;
-      context.fillText('SERIES  as it arrives', pane.x + pad, pane.y + pad + size * 0.5);
+      const spaced = (text: string, from: number, baseline: number): void => {
+        let x = from;
+        for (const ch of text) {
+          context.fillText(ch, x, baseline);
+          x += headFont * 0.6 + headFont * 0.08;
+        }
+      };
+      const sub = 'TYPED AS IT ARRIVES \u00b7 BAR: ON STAGE NOW';
+      spaced('SERIES', pane.x + padX, pane.y + 8 * k + headFont * 1.15);
+      spaced(sub, pane.x + pane.width - k - padX - sub.length * (headFont * 0.68), pane.y + 8 * k + headFont * 1.15);
       context.save();
       context.beginPath();
       context.rect(window.x, window.y, window.width, window.height);
@@ -312,15 +335,16 @@ export function paneSurround(sources: readonly PaneSource[], leads: readonly Pan
         context.globalAlpha = alpha;
         if (item === now) {
           context.fillStyle = palette.now;
-          context.fillRect(pane.x, y - 2 + rise, pane.width - 2, item.height - gap + 4);
+          context.fillRect(pane.x, y + rise, pane.width - k, item.height);
           context.fillStyle = palette.text.verb;
-          context.fillRect(pane.x, y - 2 + rise, Math.max(3, Math.round(size * 0.18)), item.height - gap + 4);
+          context.fillRect(pane.x, y + rise, 3 * k, item.height);
         }
-        let rowY = y + rise + lineHeight * 0.76;
+        let rowY = y + rise + rowPad + lineHeight * 0.5 + fontPx * 0.35;
         const setRow = (row: Row, quiet: boolean): void => {
-          let x = pane.x + pad;
+          let x = pane.x + padX;
           for (const piece of row) {
-            context.font = `${piece.face === 'bold' ? 700 : 400} ${size}px "${piece.face === 'bold' ? MONO.bold : MONO.regular}"`;
+            // the page sets the verb and the id in the same face at weight 700
+            context.font = `${piece.face === 'bold' ? 700 : 400} ${fontPx}px "${MONO.regular}"`;
             context.fillStyle = quiet ? palette.note : palette.text[piece.role];
             context.fillText(piece.text, x, rowY);
             x += piece.text.length * advance;

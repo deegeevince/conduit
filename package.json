@@ -43,6 +43,7 @@
     "wall-check": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/wall-check.ts",
     "wall-bench": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/wall-bench.ts",
     "reports": "pnpm --filter @conduit/server exec tsx src/tools/reports.ts",
+    "record": "pnpm --filter @conduit/server exec tsx src/tools/record.ts",
     "check": "pnpm --filter @conduit/server exec tsx src/tools/check.ts",
     "webkit-check": "pnpm --filter @conduit/server exec tsx src/tools/webkit-check.ts",
     "drift-check": "pnpm --filter @conduit/server exec tsx src/tools/drift-check.ts",

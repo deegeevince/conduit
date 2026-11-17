@@ -24,7 +24,7 @@ const EXEMPT: Readonly<Record<string, string>> = {
 
 /** Demos whose scenes are reported but do not fail the run: another builder owns them. */
 const WARN_ONLY: Readonly<Record<string, string>> = {
-  code: 'v3-codefix owns code.series: it applies the audit\'s waits (docs/demo-audit.md 2.4); delete this line when it has',
+  code: 'code.series is v3-codefix\'s and merged without the audit\'s waits (docs/demo-audit.md 2.4: wait 8s after the first listing, 8.4s after the second); add them there and delete this line',
 };
 
 export const words = (text: string): number => text.trim().split(/\s+/).filter((word) => /[\p{L}\p{N}]/u.test(word)).length;

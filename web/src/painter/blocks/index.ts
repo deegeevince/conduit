@@ -8,6 +8,7 @@
 //   timeline.ts   an axis to scale, labels alternating, tiers when crowded
 //   map.ts        pins where the brain put them; eight places round each; a route
 //   table.ts      columns by content, numbers on their decimal point, bars
+//   code.ts       a listing: rows taken exactly, set in a monospaced face, each word coloured by what it is (code-lex.ts)
 //   app.ts        the place a live app runs in: its title, its lines arriving, its frame (the app itself is the app shell's)
 //   tune.ts       a piano roll for ABC rows, and the playhead and lit notes added while it sounds
 //   callouts.ts   boundary labelling: labels in clear room, leaders that never cross
@@ -23,6 +24,7 @@ import type { StructureKind } from '@conduit/language';
 import { EMPTY_CALLOUT_LAYOUT, EMPTY_STRUCTURE_LAYOUT } from '../../contracts/blocks';
 import type { CalloutEngine, StructureEngine } from '../../contracts/blocks';
 import { layoutApp } from './app';
+import { layoutCode } from './code';
 import { layoutCallouts as callouts } from './callouts';
 import { layoutCycle } from './cycle';
 import { layoutFlow } from './flow';
@@ -35,7 +37,7 @@ import { layoutTree } from './tree';
 
 /** The structures this painter can lay out today. */
 /** `screen` (v2.2) is laid out and drawn by the interface kit (`painter/ui-stage.ts`), which hands the stage finished frames: this engine only says it is known. */
-export const STRUCTURES_READY: readonly StructureKind[] = ['flow', 'tree', 'cycle', 'timeline', 'map', 'table', 'tune', 'app', 'screen', 'figure', 'math'];
+export const STRUCTURES_READY: readonly StructureKind[] = ['flow', 'tree', 'cycle', 'timeline', 'map', 'table', 'tune', 'app', 'screen', 'figure', 'math', 'code'];
 
 /** True once `layoutCallouts` places labels with leaders; until then a `callout` is placed as a plain `near=` label. */
 export const CALLOUTS_READY = true;
@@ -60,6 +62,8 @@ export const layoutStructure: StructureEngine = (input) => {
       return layoutTune(input);
     case 'math':
       return layoutMath(input);
+    case 'code':
+      return layoutCode(input);
     case 'app':
       return layoutApp(input);
     case 'screen':
