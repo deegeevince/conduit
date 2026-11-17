@@ -8,6 +8,8 @@ import type { Viewport } from '../contracts/space';
 import { chartBoxOf, clipQuad } from '../render/place';
 import type { LookId } from '@conduit/language';
 import { renderSound } from './audio';
+import { CUTS, cutFilm, cutsOf } from './cuts';
+import type { CutList } from '../contracts/export';
 import { createPdfSink } from './pdf';
 import { frameToSvg } from './svg';
 import { createVideoSink, videoFormats } from './video';
@@ -30,7 +32,7 @@ export interface ExporterDeps {
   readonly appsFresh?: () => Promise<void>;
 }
 
-type Outcome = { readonly blob: Blob; readonly fileName: string; readonly hasSound?: boolean };
+type Outcome = { readonly blob: Blob; readonly fileName: string; readonly hasSound?: boolean; readonly cuts?: CutList };
 
 const MAX_PIXELS = 4096 * 2304;
 /** A deck of this many slides is a book; a PDF held in memory stays well under a browser's limits. */
@@ -105,7 +107,7 @@ export function createExporter(deps: ExporterDeps): Exporter {
     return canvas;
   };
 
-  const run = async (film: Film, request: ExportRequest, signal: AbortSignal, report: (progress: ExportProgress) => void): Promise<Outcome> => {
+  const run = async (given: Film, request: ExportRequest, signal: AbortSignal, report: (progress: ExportProgress) => void): Promise<Outcome> => {
     const guard = (): void => {
       if (signal.aborted) throw abortError();
     };
@@ -116,6 +118,16 @@ export function createExporter(deps: ExporterDeps): Exporter {
     });
     stopped.catch(() => undefined);
     const wait = <T>(work: Promise<T>): Promise<T> => Promise.race([work, stopped]);
+
+    // A film that says where it is quiet has its long waits cut (unless the request says not): what is left of each is a moment and a marker.
+    let cutList: CutList | null = null;
+    let film = given;
+    if (request.kind === 'video' && request.cuts !== false && given.activity !== undefined) {
+      const threshold = typeof request.cuts === 'object' && request.cuts.threshold !== undefined ? Math.max(1.5, request.cuts.threshold) : CUTS.threshold;
+      const cutting = cutFilm(given, cutsOf(given.activity, given.duration, threshold, CUTS.keep), { threshold, keep: CUTS.keep });
+      cutList = cutting.list;
+      film = cutting.film;
+    }
 
     if (request.kind === 'script') {
       return { blob: new Blob([film.script() + '\n'], { type: 'text/plain;charset=utf-8' }), fileName: 'conduit.series' };
@@ -296,7 +308,27 @@ export function createExporter(deps: ExporterDeps): Exporter {
         context.scale(scale, scale);
         surround.draw(context, seconds);
         context.restore();
-        context.drawImage(stage, Math.round(surround.stage.x * scale), Math.round(surround.stage.y * scale), stageWidth, stageHeight);
+        const framing = request.kind === 'video' && request.follow === false ? undefined : film.framing?.(seconds);
+        if (framing === undefined || framing.zoom <= 1.0005) context.drawImage(stage, Math.round(surround.stage.x * scale), Math.round(surround.stage.y * scale), stageWidth, stageHeight);
+        else {
+          // eased in on what is being drawn: the stage is drawn larger about that point, inside the room it has, over its own ground
+          const x = Math.round(surround.stage.x * scale);
+          const y = Math.round(surround.stage.y * scale);
+          context.save();
+          context.beginPath();
+          context.rect(x, y, stageWidth, stageHeight);
+          context.clip();
+          context.fillStyle = film.frameAt(seconds).ground;
+          context.fillRect(x, y, stageWidth, stageHeight);
+          context.drawImage(stage, x + stageWidth / 2 - framing.x * stageWidth * framing.zoom, y + stageHeight / 2 - framing.y * stageHeight * framing.zoom, stageWidth * framing.zoom, stageHeight * framing.zoom);
+          context.restore();
+        }
+        if (surround.overlay !== undefined) {
+          context.save();
+          context.scale(scale, scale);
+          surround.overlay(context, seconds);
+          context.restore();
+        }
         return sheet;
       };
       for (let index = 0; index < frames; index += 1) {
@@ -321,7 +353,7 @@ export function createExporter(deps: ExporterDeps): Exporter {
       const hasSound = sink.hasSound;
       const blob = await wait(sink.finish());
       sink = null;
-      return { blob, hasSound, fileName: `conduit-${request.scope === 'conversation' ? 'conversation' : 'film'}${surround === undefined ? '' : '-lines'}-${width}x${height}.${request.format}` };
+      return { blob, hasSound, ...(cutList === null ? {} : { cuts: cutList }), fileName: `conduit-${request.scope === 'conversation' ? 'conversation' : 'film'}${surround === undefined ? '' : '-lines'}-${width}x${height}.${request.format}` };
     } catch (error) {
       if (signal.aborted && !(error instanceof DOMException && error.name === 'AbortError')) throw abortError();
       throw error;
