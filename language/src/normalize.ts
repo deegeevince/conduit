@@ -26,7 +26,63 @@ const DOUBT_NOTE: Readonly<Record<Approx, string>> = { yes: 'approx.', computed:
  */
 export function doubted(text: string, approx: Approx): string {
   if (HEDGE.test(text) || /\((?:approx\.|from memory|a guess)\)$/.test(text)) return text;
-  return `${text} (${DOUBT_NOTE[approx]})`.slice(0, LIMITS.text);
+  return `${text} (${DOUBT_NOTE[approx]})`;
+}
+
+/**
+ * Words are never cut. A text longer than `limit` is split into pieces that each fit, in order and with every character kept (apart from the
+ * spaces at the joins): at sentence boundaries when it can, else at the last space before the limit, else hard.
+ */
+export function splitSpeech(text: string, limit: number = LIMITS.text): string[] {
+  if (text.length <= limit) return [text];
+  const pieces: string[] = [];
+  let current = '';
+  const flush = (): void => {
+    if (current !== '') pieces.push(current);
+    current = '';
+  };
+  const sentences = text.match(/.*?(?:[.!?\u2026]["'\u201d\u2019)\]*]*(?=\s)|$)\s*/gs) ?? [text];
+  for (const sentence of sentences) {
+    if (sentence === '') continue;
+    if ((current + sentence).trimEnd().length <= limit) {
+      current += sentence;
+      continue;
+    }
+    flush();
+    let rest = sentence;
+    while (rest.trimEnd().length > limit) {
+      const space = rest.lastIndexOf(' ', limit);
+      const at = space > limit / 4 ? space : limit;
+      pieces.push(rest.slice(0, at).trim());
+      rest = rest.slice(at).trimStart();
+    }
+    current = rest;
+  }
+  flush();
+  return pieces.map((piece) => piece.trim()).filter((piece) => piece !== '');
+}
+
+/** The id of the n-th piece of a split line: `x24-2`, the base trimmed so the whole stays within the id rule. */
+function continuationId(id: string, n: number): string {
+  const tail = `-${n}`;
+  return `${id.slice(0, LIMITS.name - tail.length)}${tail}`;
+}
+
+/** A long `say` as the lines it becomes: the first keeps everything, the rest are its continuations with ids of their own, no time, place or alternates. */
+function splitSay(line: Extract<Line, { verb: 'say' }>): Line[] {
+  // A choice, a tappable line and a link are one thing to press: kept whole (the painter wraps it), never made into several.
+  if (line.styles.includes('choice') || line.props.tap === true || line.href !== undefined) return [line];
+  const parts = splitSpeech(line.text);
+  if (parts.length < 2) return [line];
+  return parts.map((text, index): Line => {
+    const last = index === parts.length - 1;
+    const { approx: _approx, alts: _alts, ...whole } = line;
+    const base = last && line.approx !== undefined ? { ...whole, approx: line.approx } : whole;
+    if (index === 0) return { ...base, text };
+    const { when: _when, ...rest } = base;
+    const { at: _at, near: _near, ...props } = line.props;
+    return { ...rest, id: continuationId(line.id, index + 1), props, text };
+  });
 }
 
 /**
@@ -203,6 +259,8 @@ export class LineReader {
 export interface Normalized {
   /** null when the line had nothing to attach to and was dropped */
   readonly line: Line | null;
+  /** a long `say` is split: the lines that follow `line`, in order, each already explicit (ingest them one by one, as the lines that follow) */
+  readonly rest?: readonly Line[];
   readonly issues: readonly Issue[];
 }
 
@@ -314,6 +372,13 @@ export class LineNormalizer {
   private problemScene = false;
 
   normalize(line: Line): Normalized {
+    const whole = this.normalizeWhole(line);
+    if (whole.line === null || whole.line.verb !== 'say' || whole.line.text.length <= LIMITS.text) return whole;
+    const [first, ...rest] = splitSay(whole.line);
+    return { line: first ?? null, issues: whole.issues, ...(rest.length === 0 ? {} : { rest }) };
+  }
+
+  private normalizeWhole(line: Line): Normalized {
     const scrubbed = scrubBlanks(line);
     if (scrubbed !== null) {
       const inner = this.normalizeLine(scrubbed.line);
@@ -344,13 +409,9 @@ export class LineNormalizer {
         }
         if (this.table !== null) return { line: { ...line, id: this.table }, issues: [] };
         if (line.cells.trim() === '') return { line: null, issues: [{ code: 'no-structure', severity: 'warn', message: 'an empty row with no sprite, table or code block to belong to was dropped' }] };
-        // Speech after all: a bar and some words, with no sprite open. Not cut to a sprite's width.
+        // Speech after all: a bar and some words, with no sprite open. Not cut to a sprite's width; a long one is split by `normalize`.
         const text = line.cells.trim();
-        const cut = text.length > LIMITS.text;
-        return {
-          line: { verb: 'say', id: this.makeId(), styles: [], props: {}, text: cut ? `${text.slice(0, LIMITS.text - 1)}…` : text },
-          issues: cut ? [{ code: 'text-too-long', severity: 'warn', message: `text cut to ${LIMITS.text} characters; say less per line` }] : [],
-        };
+        return { line: { verb: 'say', id: this.makeId(), styles: [], props: {}, text }, issues: [] };
       }
       case 'frame': {
         if (line.id !== '-') {

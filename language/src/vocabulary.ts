@@ -1198,6 +1198,8 @@ export const RESERVED_IDS = ['all', 'scene', '-', 'none', 'full'] as const;
 export const LIMITS = {
   /** characters in one raw line */
   line: 1200,
+  /** characters in one raw `say` line; longer text is split into lines, never cut */
+  speechLine: 12000,
   /** characters of text in one element */
   text: 320,
   /** characters in an id or a style name */
