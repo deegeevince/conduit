@@ -1,6 +1,6 @@
 import { settle, shownAt } from '@conduit/language';
 import { digestOf } from '../engine';
-import type { BackEvent, ClockState, ControlValues, ElementSpan, PlacedBox, Schedule, Sight, StageBase, TurnReport } from '@conduit/language';
+import type { BackEvent, ClockState, ControlValues, ElementSpan, PageFacts, PlacedBox, Schedule, Sight, StageBase, TurnReport } from '@conduit/language';
 
 /** Minimum gap between two `progress` events while nothing but the playhead changes. */
 export const PROGRESS_INTERVAL_MS = 500;
@@ -123,7 +123,7 @@ export class Reporter {
     base: StageBase,
     playhead: number,
     outcome: TurnReport['outcome'],
-    landing: { readonly sight: (at: number) => Sight; readonly placed: (at: number, keys: ReadonlySet<string>) => (PlacedBox & { readonly key: string })[]; readonly skippedAt: number | null; readonly controls?: ControlValues },
+    landing: { readonly facts?: PageFacts; readonly sight: (at: number) => Sight; readonly placed: (at: number, keys: ReadonlySet<string>) => (PlacedBox & { readonly key: string })[]; readonly skippedAt: number | null; readonly controls?: ControlValues },
   ): TurnReport {
     const at = reportAt(outcome, playhead);
     const held = landing.controls ?? {};
@@ -143,7 +143,7 @@ export class Reporter {
       placed: placed.map(({ key: _key, ...item }) => item),
       ...(Object.keys(held).length === 0 ? {} : { controls: held }),
     };
-    this.emit({ type: 'report', report, boxes: digestOf(report.placed ?? []) });
+    this.emit({ type: 'report', report, boxes: digestOf(report.placed ?? []), ...(landing.facts === undefined ? {} : { facts: landing.facts }) });
     this.turn = null;
     return report;
   }

@@ -1,5 +1,5 @@
 import { API, asksToImprove, SKILL_HOLD, CANVAS, DATA_LIMITS, EMPTY_STAGE, isLessonVerb, PASTE_AS_DOCUMENT_CHARS, FULL_CAPABILITIES, LANGUAGE, LEAD_WINDOW, LineNormalizer, LineReader, PRESENCE_TYPING_MS, parseLine, TurnScore, buildSystemPrompt, draftFactsOf, hasLesson, usesParts, repairWorth, serializeLine, settle, splitCells, wearingAt, withoutUnknownBraces, worthALook } from '@conduit/language';
-import type { DrawLine, OwedFinding, RepairWorth, StyleProps, SkillBlockFacts, TechniqueCard } from '@conduit/language';
+import type { DrawLine, OwedFinding, PageFacts, RepairWorth, StyleProps, SkillBlockFacts, TechniqueCard } from '@conduit/language';
 import type { ActivityState, BrainChange, BrainChoice, BrainMode, CriticFinding, DocumentSummary, DocumentView, FixPolicy, NodeId, NodeStatus, OpenDocumentResponse, PromptVariant, Seen, ToolChoice } from '@conduit/language';
 import type {
   BackEvent,
@@ -536,6 +536,13 @@ export class Conductor {
     if (brain === brains.configured && (input.kind === 'prompt' || input.kind === 'tap' || input.kind === 'act')) this.prepareBrain(s);
     // SA3. What the person did becomes observations, and the brain is given the digest of what has been seen since it last wrote.
     const before = s.obs.all().length === 0 ? 0 : (s.obs.all()[s.obs.all().length - 1]?.seq ?? 0);
+    // SA2. A differing digest costs the turn it was found in, not the conversation: the next turn is measured here again. And a new question
+    // clears what a hand left on the controls of an earlier answer (the page does the same), so a stale value is not measured into this one.
+    if (s.drift !== null && s.driftTurn !== null) {
+      s.drift = null;
+      s.driftTurn = null;
+    }
+    if (input.kind === 'prompt' || input.kind === 'script') s.held = {};
     observeInput(s, input, now());
     for (const made of s.obs.all().filter((one) => one.seq > before)) this.deps.sessionLog.write(s.id, { type: 'obs', turn: null, obs: made });
     const tools = this.deps.canvasTools === true && brain === brains.configured;
@@ -560,6 +567,7 @@ export class Conductor {
       relayCursor: s.nextCursor - 1,
       ordinal: s.nextOrdinal,
       lineCount: 0,
+      facts: null,
       docLines: 0,
       docEvents: 0,
       held: new Map(),
@@ -1012,10 +1020,12 @@ export class Conductor {
         const report = event.report;
         const turn = s.turns.get(report.turn);
         this.journal(s, { type: 'report', turn: report.turn, report });
+        if (turn !== undefined && event.facts !== undefined) turn.facts = event.facts;
         if (event.boxes !== undefined && turn !== undefined && turn.input.kind === 'prompt' && report.outcome === 'finished' && report.skippedAt === null && this.measuresHere(s) && measurable(turn.score.schedule)) {
           // How the turn rested, as the page measured it, against the server's own measure of the same score. Only for a typed prompt: a turn
           // that carries on from the viewer's own doing (a mock-up's fields, a pressed button) rests on state only the page holds.
-          const rested = measureDraft(turn.score, { ...s, held: report.controls ?? s.held });
+          // The server measures with what the page measured with (its floors, asks, target, screen and controls); a page that sends none is measured as before.
+          const rested = measureDraft(turn.score, { ...s, held: report.controls ?? s.held }, event.facts);
           if (rested !== null) {
             this.noteBoxes(s, `${turn.id}#report`, 'server', rested.boxes, 'report', turn.id);
             this.noteBoxes(s, `${turn.id}#report`, 'page', event.boxes, 'report', turn.id);
@@ -1076,6 +1086,13 @@ export class Conductor {
       case 'draft':
         // How the draft will land: what look and fix is waiting on. The picture, when there is one, arrives by upload.
         s.draft.receive(event.turn, event.pass, event.sight, event.placed ?? [], event.snapshot, event.content);
+        if (event.facts !== undefined) {
+          const drafted = s.turns.get(event.turn);
+          if (drafted !== undefined) drafted.facts = event.facts;
+          const held = s.boxes.get(`${event.turn}#${event.pass}`) ?? {};
+          held.facts = event.facts;
+          s.boxes.set(`${event.turn}#${event.pass}`, held);
+        }
         if (event.boxes !== undefined) this.noteBoxes(s, `${event.turn}#${event.pass}`, 'page', event.boxes, 'draft', event.turn);
         this.deps.sessionLog.write(s.id, { type: 'draft', turn: event.turn, pass: event.pass, noted: event.sight.items.filter((item) => item.notes.length > 0).length, picture: event.snapshot, file: null });
         return;
@@ -1463,14 +1480,15 @@ export class Conductor {
         ? {
             measure: (measurePass: number) => {
               if (this.measuresHere(s) === false || !measurable(turn.score.schedule)) return null;
-              const measured = measureDraft(turn.score, s);
+              const upto = turn.score.pushes;
+              const measured = measureDraft(turn.score, s, turn.facts ?? undefined);
               if (measured === null) return null;
               this.deps.canvas?.seed(s, measured);
               this.deps.sessionLog.write(s.id, { type: 'measure', turn: turn.id, pass: measurePass, ms: Math.round(measured.ms * 10) / 10, boxes: measured.boxes, noted: measured.sight.items.filter((item) => item.notes.length > 0).length });
-              this.noteBoxes(s, `${turn.id}#${measurePass}`, 'server', measured.boxes, 'draft', turn.id);
+              this.noteBoxes(s, `${turn.id}#${measurePass}`, 'server', measured.boxes, 'draft', turn.id, (facts) => measureDraft(turn.score, s, facts, upto)?.boxes ?? null);
               return measured;
             },
-            tryFix: (tryPass: number, lines: readonly string[]) => (this.measuresHere(s) ? tryFix(turn.score, lines, s) : null),
+            tryFix: (tryPass: number, lines: readonly string[]) => (this.measuresHere(s) ? tryFix(turn.score, lines, s, turn.facts ?? undefined) : null),
           }
         : {}),
       fix: this.deps.fix,
@@ -1507,30 +1525,47 @@ export class Conductor {
   }
 
   /**
-   * SA2. True when this session's drafts are measured by the server: the page's engine is the server's and no digest has differed yet.
-   * The first time a session is found not to be, the log says why (`drift`), and its drafts go through the gate from then on.
+   * SA2. True when this turn's drafts are measured by the server: the page's engine is the server's and no digest has differed in this turn.
+   * The first time a session is found not to be (its engine), or a turn (a digest), the log says why (`drift`), and that turn's drafts go through
+   * the gate. A differing digest is the turn's: the next turn is measured here again, and what it finds is its own.
    */
   private measuresHere(s: Session): boolean {
     // Dev only: STAGE_MEASURE=off is the path before SA2 (the page measures, the server waits), for measuring what the change bought.
     if (processEnvironment()['STAGE_MEASURE'] === 'off') return false;
-    const why = s.drift ?? engineMismatch(s.capabilities);
-    if (why === null) return true;
-    if (s.drift === null) {
-      s.drift = why;
-      this.deps.log.warn('engine.drift', { session: s.id, where: 'engine', why });
-      this.deps.sessionLog.write(s.id, { type: 'drift', turn: s.turn?.id ?? null, where: 'engine', page: s.capabilities.engine ?? null, server: ENGINE_VERSION, why });
-      this.observe(s, s.turn?.id ?? null, { source: 'server', kind: 'drift', severity: 'fault', note: why });
+    const engine = engineMismatch(s.capabilities);
+    if (engine !== null) {
+      if (s.drift === null) {
+        s.drift = engine;
+        this.deps.log.warn('engine.drift', { session: s.id, where: 'engine', why: engine });
+        this.deps.sessionLog.write(s.id, { type: 'drift', turn: s.turn?.id ?? null, where: 'engine', page: s.capabilities.engine ?? null, server: ENGINE_VERSION, why: engine });
+        this.observe(s, s.turn?.id ?? null, { source: 'server', kind: 'drift', severity: 'fault', note: engine });
+      }
+      return false;
     }
-    return false;
+    // the page's engine is the server's now (a page that reloaded, or came back on a new build): what was held against it is over
+    if (s.drift !== null && s.driftTurn === null) s.drift = null;
+    return s.drift === null;
   }
 
-  /** SA2. One side's digest for a pass; when both are in and they differ, this session drifts. */
-  private noteBoxes(s: Session, key: string, side: 'page' | 'server', value: string, where: 'draft' | 'report', turn: string): void {
+  /**
+   * SA2. One side's digest for a pass; when both are in and they differ, this turn drifts. Once the page's facts are in, the server's digest
+   * is the one it gets measuring again with them (`again`): the comparison is then of the two engines on one set of inputs, not of what the
+   * server guessed (the playhead each line arrived at, the asks the hand has worked) against what the page knew.
+   */
+  private noteBoxes(s: Session, key: string, side: 'page' | 'server', value: string, where: 'draft' | 'report', turn: string, again?: (facts: PageFacts) => string | null): void {
     const held = s.boxes.get(key) ?? {};
     held[side] = value;
+    if (again !== undefined) held.again = again;
     s.boxes.set(key, held);
     while (s.boxes.size > 64) s.boxes.delete(s.boxes.keys().next().value as string);
     if (held.page === undefined || held.server === undefined) return;
+    if (held.facts !== undefined && held.again !== undefined) {
+      const remeasured = held.again(held.facts);
+      if (remeasured !== null) {
+        if (remeasured !== held.server) this.deps.log.info('engine.refloored', { session: s.id, turn, where, estimate: held.server, withPageFacts: remeasured });
+        held.server = remeasured;
+      }
+    }
     if (held.page === held.server) {
       this.deps.log.info('engine.agree', { session: s.id, turn, where, boxes: held.page });
       return;
@@ -1538,7 +1573,11 @@ export class Conductor {
     const why = `the page's boxes (${held.page}) and the server's (${held.server}) differ at ${key}`;
     this.deps.log.warn('engine.drift', { session: s.id, where, page: held.page, server: held.server, why });
     this.deps.sessionLog.write(s.id, { type: 'drift', turn, where, page: held.page, server: held.server, why });
-    if (s.drift === null) s.drift = why;
+    // it costs the turn it was found in, and only while that turn is the one being measured: a report that comes after the next turn opened has no say in it
+    if (s.drift === null && (s.turn === null || s.turn.id === turn)) {
+      s.drift = why;
+      s.driftTurn = turn;
+    }
     this.observe(s, turn, { source: 'server', kind: 'drift', severity: 'fault', note: why });
   }
 
@@ -1757,7 +1796,7 @@ export class Conductor {
       while (s.typingUntil > now() && now() < patience && !signal.aborted) await new Promise<void>((resolve) => setTimeout(resolve, 400));
       if (!here()) return write('cancelled', { why: gone() });
       if (s.typingUntil > now()) return write('skipped', { why: 'the person is still typing' });
-      const rest = measureDraft(turn.score, s);
+      const rest = measureDraft(turn.score, s, turn.facts ?? undefined);
       if (rest === null) return write('skipped', { why: 'the server could not measure this stage' });
       this.deps.canvas?.seed(s, rest);
       const briefed = briefEyes(s, this.deps.canvasTools === true);
@@ -1782,7 +1821,7 @@ export class Conductor {
           signal,
           now,
           log,
-          tryFix: (_pass, lines) => tryFix(turn.score, lines, s),
+          tryFix: (_pass, lines) => tryFix(turn.score, lines, s, turn.facts ?? undefined),
           fix: this.deps.fix,
           form: 'repair',
           finding: { problems: finding.problems, suggestions: finding.suggestions },
@@ -1848,6 +1887,7 @@ export class Conductor {
       relayCursor: s.nextCursor - 1,
       ordinal: s.nextOrdinal,
       lineCount: 0,
+      facts: null,
       docLines: 0,
       docEvents: 0,
       held: new Map(),

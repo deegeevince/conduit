@@ -40,6 +40,7 @@ import { ART_FAKE_MS, ART_SCREEN, artGroup } from './art-check';
 import { CONTINUE_SCREEN, continueFixtures, continueGroup } from './continue-check';
 import { MEMORY_SCREEN, memoryGroup } from './memory-check';
 import { loopGroup } from './loop-check';
+import { driftGroup } from './drift-check';
 import type { Answer, CheckResult, Options, Probe, Step, Verdict } from './smoke';
 
 // ---------------------------------------------------------------------------------------------------------------------------------
@@ -100,16 +101,26 @@ interface Started {
   stop(): Promise<void>;
 }
 
-function freePort(): Promise<number> {
-  return new Promise((done, fail) => {
-    const probe = createServer();
-    probe.once('error', fail);
-    probe.listen(0, '127.0.0.1', () => {
-      const address = probe.address();
-      const port = typeof address === 'object' && address !== null ? address.port : 0;
-      probe.close(() => done(port));
-    });
-  });
+/** A port nothing listens on: the system's choice, or, with CHECK_PORTS=4870-4879, the first free one in that range (a machine that keeps its ports for other things). */
+async function freePort(): Promise<number> {
+  const range = /^(\d+)-(\d+)$/.exec(process.env['CHECK_PORTS'] ?? '');
+  const tries = range === null ? [0] : Array.from({ length: Number(range[2]) - Number(range[1]) + 1 }, (_, at) => Number(range[1]) + at);
+  for (const wanted of tries) {
+    try {
+      return await new Promise<number>((done, fail) => {
+        const probe = createServer();
+        probe.once('error', fail);
+        probe.listen(wanted, '127.0.0.1', () => {
+          const address = probe.address();
+          const port = typeof address === 'object' && address !== null ? address.port : 0;
+          probe.close(() => done(port));
+        });
+      });
+    } catch (error) {
+      if (wanted === tries[tries.length - 1]) throw error;
+    }
+  }
+  throw new Error('no free port');
 }
 
 /** The server from the current build: BRAIN=replay, its own data folder and skills folder, a free port. Stopped by its handle. */
@@ -952,6 +963,19 @@ async function main(): Promise<void> {
     } catch (error) {
       failures += 1;
       process.stdout.write(`  FAIL loop stopped: ${error instanceof Error ? error.message : String(error)}\n`);
+    }
+    // the drift group: no browser and no model. The page's own painter plays turns shaped like the ones the owner's sessions drifted on, at the screens they
+    // ran on, and the server measures each draft and report with what the page says it measured with: the digests agree, case by case
+    try {
+      const results = await driftGroup((text) => (args.quiet ? undefined : process.stdout.write(`[${text}]\n`)));
+      process.stdout.write('\ndrift (six screens)\n');
+      for (const result of results) {
+        process.stdout.write(`  ${result.verdict === 'PASS' ? 'ok  ' : result.verdict} ${result.check}: ${result.detail}\n`);
+        if (result.verdict === 'FAIL') failures += 1;
+      }
+    } catch (error) {
+      failures += 1;
+      process.stdout.write(`  FAIL drift stopped: ${error instanceof Error ? error.message : String(error)}\n`);
     }
     // the continuation group: a fake brain ends its answer with `refine | what next` five times; the server runs it again each time; a message or Stop takes over
     if (args.url === null) {

@@ -47,6 +47,8 @@ export function retiresChoices(opened: TurnOpening): boolean {
 export class TurnScore {
   readonly base: StageBase;
   private readonly entries: ScoreEntry[] = [];
+  /** every line as it was pushed, in order, before a revision or a cancel changed the entries: what a score is made again from with other floors */
+  private readonly pushed: { readonly line: Line; readonly seq: number; readonly floor: number }[] = [];
   private readonly options: ScheduleOptions;
   private readonly opened: TurnOpening;
   private current: Schedule;
@@ -78,6 +80,30 @@ export class TurnScore {
     return this.entries;
   }
 
+  /**
+   * The playhead each line was pushed at, by `seq`: the painter's own is the truth, the server's is an estimate. A page tells the server
+   * its own (`PageFacts.floors`) so that a score made here can be made again with them.
+   */
+  floors(): readonly (readonly [number, number])[] {
+    return this.pushed.map((item) => [item.seq, item.floor] as const);
+  }
+
+  /**
+   * The same turn made again with the playhead each line really arrived at, where `floorOf` knows it (a revision or a cancel turns out
+   * differently by it: a line not yet played is edited quietly, one already played is changed in view). `upto` is how many pushes to take,
+   * so a score as it stood earlier can be had.
+   */
+  refloored(floorOf: (seq: number) => number | undefined, upto: number = this.pushed.length): TurnScore {
+    const copy = new TurnScore(this.base, this.opened);
+    for (const item of this.pushed.slice(0, upto)) copy.push(item.line, item.seq, floorOf(item.seq) ?? item.floor);
+    return copy;
+  }
+
+  /** How many lines have been pushed (for `refloored`'s `upto`). */
+  get pushes(): number {
+    return this.pushed.length;
+  }
+
   push(line: Line, seq: number, playhead: number): PushResult {
     const floor = Math.max(0, playhead);
     let outcome: PushOutcome = 'scheduled';
@@ -85,6 +111,7 @@ export class TurnScore {
 
     // What is for the server alone (`standing`, `refine`) is not on the score: it is not scheduled and the painter never hears it.
     if (line.verb === 'standing' || line.verb === 'refine') return { outcome: 'ignored', schedule: this.current, issues };
+    this.pushed.push({ line, seq, floor });
 
     if (line.verb === 'revise') {
       outcome = this.revise(line, seq, floor, issues);

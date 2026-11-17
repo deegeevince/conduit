@@ -14,6 +14,7 @@ import type {
   CreateSessionRequest,
   Cursor,
   Held,
+  PageFacts,
   Seen,
   StateChange,
   InkMarks,
@@ -154,6 +155,55 @@ function controlValues(value: unknown, what: string): ControlValues {
   const out: Record<string, ControlValue> = {};
   for (const [id, held] of entries) out[id.slice(0, LIMITS.name)] = controlValue(held, `${what}.${id}`);
   return out;
+}
+
+/** SA2. What the page measured with besides the score. Whole or not at all: facts cut short would only make the two sides disagree, so a malformed or over-long set is left out and the server measures as it did before. */
+const FACT_LIMITS = { floors: 4000, asks: 256, key: 4000, tries: 50, tryChars: 400 } as const;
+function pageFacts(value: unknown): PageFacts | undefined {
+  try {
+    if (value === undefined || value === null) return undefined;
+    const raw = obj(value, 'facts');
+    const view = obj(raw.view, 'facts.view');
+    const width = num(view.width, 'facts.view.width');
+    const height = num(view.height, 'facts.view.height');
+    const dpr = num(view.dpr, 'facts.view.dpr');
+    if (!(width > 0 && width <= 20000 && height > 0 && height <= 20000 && dpr > 0 && dpr <= 8)) return undefined;
+    const floorList = list(raw.floors, 'facts.floors');
+    if (floorList.length > FACT_LIMITS.floors) return undefined;
+    const floors = floorList.map((pair, index) => {
+      const two = list(pair, `facts.floors[${index}]`);
+      return [num(two[0], 'seq'), Math.max(0, num(two[1], 'floor'))] as const;
+    });
+    const target = num(raw.target, 'facts.target');
+    if (!(target >= 0 && target <= 400)) return undefined;
+    const asks = obj(raw.asks, 'facts.asks');
+    const runList = list(asks.runs, 'facts.asks.runs');
+    const latestList = list(asks.latest, 'facts.asks.latest');
+    if (runList.length > FACT_LIMITS.asks || latestList.length > FACT_LIMITS.asks) return undefined;
+    const runs = runList.map((pair, index) => {
+      const two = list(pair, `facts.asks.runs[${index}]`);
+      const key = text(two[0], 'key');
+      const run = obj(two[1], 'run');
+      const tries = list(run.tries, 'tries');
+      if (key.length > FACT_LIMITS.key || tries.length > FACT_LIMITS.tries) throw errors.badRequest('too long');
+      return [key, { tries: tries.map((one) => text(one, 'try').slice(0, FACT_LIMITS.tryChars)), chosen: Math.max(0, Math.round(num(run.chosen, 'chosen'))), hints: Math.max(0, Math.round(num(run.hints, 'hints'))), verdict: oneOf(run.verdict, ['open', 'wrong', 'right', 'shown'] as const, 'verdict'), ringed: bool(run.ringed, 'ringed') }] as const;
+    });
+    const latest = latestList.map((pair, index) => {
+      const two = list(pair, `facts.asks.latest[${index}]`);
+      const id = text(two[0], 'id');
+      const key = text(two[1], 'key');
+      if (key.length > FACT_LIMITS.key) throw errors.badRequest('too long');
+      return [id, key] as const;
+    });
+    return { view: { width, height, dpr }, floors, target, asks: { runs, latest }, controls: controlValues(raw.controls ?? {}, 'facts.controls') };
+  } catch {
+    return undefined;
+  }
+}
+
+function optionalFacts(value: unknown): { facts?: PageFacts } {
+  const facts = pageFacts(value);
+  return facts === undefined ? {} : { facts };
 }
 
 // ---- v3: the person's state in a document (2.5). Checked as the other back events are: whole, bounded, and named when wrong.
@@ -494,7 +544,7 @@ function backEvent(value: unknown, index: number): BackEvent {
         ...optionalSeen(raw.seen, 'seen'),
       };
     case 'report':
-      return { type, report: report(raw.report), ...(typeof raw.boxes === 'string' ? { boxes: raw.boxes.slice(0, 64) } : {}) };
+      return { type, report: report(raw.report), ...(typeof raw.boxes === 'string' ? { boxes: raw.boxes.slice(0, 64) } : {}), ...optionalFacts(raw.facts) };
     case 'control':
       return {
         type,
@@ -521,6 +571,7 @@ function backEvent(value: unknown, index: number): BackEvent {
         snapshot: bool(raw.snapshot, 'snapshot'),
         ...(raw.content === undefined || raw.content === null ? {} : { content: contentCount(raw.content) }),
         ...(typeof raw.boxes === 'string' ? { boxes: raw.boxes.slice(0, 64) } : {}),
+        ...optionalFacts(raw.facts),
       };
     }
     case 'permit':

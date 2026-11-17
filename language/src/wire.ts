@@ -412,6 +412,33 @@ export type StageEventType = StageEvent['type'];
 export const STREAM_HEARTBEAT = { eventName: 'heartbeat', everyMs: 15_000, silentMs: 40_000 } as const;
 export const STAGE_EVENT_TYPES: readonly StageEventType[] = ['hello', 'turn', 'reading', 'line', 'reject', 'end', 'pass', 'asset', 'data', 'picture', 'candidate', 'critic', 'activity', 'permission', 'doc', 'want'];
 
+/** What the page keeps of one ask (HI1): the hand's tries, the choice held, the hints open and how it came out. */
+export interface AskRunFacts {
+  readonly tries: readonly string[];
+  readonly chosen: number;
+  readonly hints: number;
+  readonly verdict: 'open' | 'wrong' | 'right' | 'shown';
+  readonly ringed: boolean;
+}
+
+/**
+ * What the page measured a stage with that the lines alone do not say (SA2). Everything a stage's boxes depend on besides the score, the
+ * look, the screen and the data: the server measures with exactly these, so that its boxes and the page's are the same boxes. Sent with a
+ * `draft` and a `report`.
+ */
+export interface PageFacts {
+  /** the screen it measured on: the page's own viewport when it measured, which a resize may have moved from the last `ready` */
+  readonly view: { readonly width: number; readonly height: number; readonly dpr: number };
+  /** the playhead each line of the turn was scheduled at, by `seq`: a revision or a cancel is quiet or visible by it */
+  readonly floors: readonly (readonly [number, number])[];
+  /** the least a tappable thing measures, css px (the pointer in use and the audience) */
+  readonly target: number;
+  /** what the hand has done to the asks on the stage, by the key of each ask and the ask's id to the key it is working now */
+  readonly asks: { readonly runs: readonly (readonly [string, AskRunFacts])[]; readonly latest: readonly (readonly [string, string])[] };
+  /** what every control on the stage holds, by id: whole, though it is empty (a new question clears what the hand left) */
+  readonly controls: ControlValues;
+}
+
 /** Painter to server: the back channel. */
 export type BackEvent =
   /** sent when the session is created and again whenever the screen changes */
@@ -443,7 +470,7 @@ export type BackEvent =
       readonly seen?: Seen;
     }
   /** `boxes` (SA2): the digest of the boxes in `report.placed` (`digestOf`), for the server to hold against its own */
-  | { readonly type: 'report'; readonly report: TurnReport; readonly boxes?: string }
+  | { readonly type: 'report'; readonly report: TurnReport; readonly boxes?: string; readonly facts?: PageFacts }
   /**
    * The user committed a change to a control (released a slider, flipped a
    * toggle, chose an option, pressed Enter in an input). Not sent while
@@ -473,7 +500,7 @@ export type BackEvent =
    * Sent in answer to `pass … drafted`. `snapshot` is true when a picture of
    * that stage was uploaded beside it (`API.draft`).
    */
-  | { readonly type: 'draft'; readonly turn: string; readonly pass: number; readonly sight: Sight; readonly placed?: readonly PlacedBox[]; readonly snapshot: boolean; readonly content?: ContentCount; readonly boxes?: string }
+  | { readonly type: 'draft'; readonly turn: string; readonly pass: number; readonly sight: Sight; readonly placed?: readonly PlacedBox[]; readonly snapshot: boolean; readonly content?: ContentCount; readonly boxes?: string; readonly facts?: PageFacts }
   /** v2.1, agent mode. The owner's answer to a `permission` event. `allow: true` lets that one action happen once; there is no "always". */
   | { readonly type: 'permit'; readonly turn: string; readonly request: string; readonly allow: boolean }
   /**
