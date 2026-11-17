@@ -11,7 +11,7 @@
 //   welcome            the first-visit welcome (language/demos/overture.series) plays and settles with its intro line and every starter, found by the
 //                      script's own words; it settles under reduced motion too
 //   choice             a real tap on a starter is sent as a turn and the replay brain answers it, to rest
-//   every demo         each demo the app offers (not DEMOS_NOT_PAINTED) is played by name and comes to rest
+//   every demo         each demo (`problem` has its own scenes) is played by name and comes to rest, the ones the app does not offer yet (`DEMOS_NOT_PAINTED`) too: not offered is not unjudged
 //   explorable         a slider, a toggle and a pick of the explorable demo change the drawing with no request to the server
 //   problems           each `problem` of language/demos/problem.series (old logs) is played at its own turn: the question is on the canvas with a blank, nothing takes the
 //                      screen, a wrong answer put in the blank is marked wrong and the right one right (no model)
@@ -39,7 +39,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { cpus, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { DEMOS, DEMOS_NOT_PAINTED, LineReader } from '@conduit/language';
+import { DEMOS, LineReader, TOUR_CHAPTERS } from '@conduit/language';
 import { spawnTracked } from '../brains/claude-cli/process';
 import { CHROME_CANDIDATES, repoRoot, sleep, stop, waitFor } from './explore-browser';
 import { claimPort, releasePort } from './check-ports';
@@ -58,7 +58,7 @@ import { TOUR_SCREENS, tourGroup } from './tour-check';
 import { printWebkit, webkitGroup, webkitMissing } from './webkit-check';
 import { driftGroup } from './drift-check';
 import { mathsGroup } from './math-check';
-import { checkGlyphs, checkInk, checkTakeover, flowsGroup, footprintJudge, photoGroup, streamFixtureCheck, testPattern } from './real-check';
+import { checkGlyphs, checkInk, checkListings, checkSlideWords, checkTakeover, flowsGroup, footprintJudge, photoGroup, sceneFactsOf, streamFixtureCheck, testPattern } from './real-check';
 import type { Footprint } from './real-check';
 import type { Answer, CheckResult, Options, Probe, Step, Verdict } from './smoke';
 
@@ -224,7 +224,10 @@ function rejectedLines(name: string): string[] {
 }
 
 /** the demos whose scenes put words on drawings (or lay many lines out): each line of words in them is hidden in turn and judged by what it paints (real-check.ts) */
-const FOOTPRINT_DEMOS = ['sketchbook', 'diagrams', 'art', 'iterate', 'scripts', 'overture', 'titles', 'plainly', 'toolkit', 'explorable', 'richness', 'charts', 'styles', 'controls'];
+const FOOTPRINT_DEMOS = ['sketchbook', 'diagrams', 'art', 'iterate', 'scripts', 'overture', 'titles', 'plainly', 'toolkit', 'explorable', 'richness', 'charts', 'styles', 'controls', 'code', 'deck'];
+
+/** the demos whose scenes are also asked what the script wrote in them: the code blocks (each row, as written and really drawn), the lines said, the tables (real-check.ts `sceneFactsOf`) */
+const FACT_DEMOS = ['code', 'deck'];
 
 /** the position of a hard-cases scene in its file, by its id */
 function hardOrder(id: string): number {
@@ -485,14 +488,33 @@ class Screen {
         const starts = await this.sceneStarts(tab);
         const base = `demo-${demo.name}`;
         const footprints = FOOTPRINT_DEMOS.includes(demo.name);
-        await this.judge(tab, talk, starts.length > 1 ? `${base}#${starts.length}` : base, results, began, true, first, { footprints });
+        const facts = FACT_DEMOS.includes(demo.name) ? sceneFactsOf(readFileSync(fileURLToPath(import.meta.resolve(`@conduit/language/demos/${demo.name}.series`)), 'utf8')) : null;
+        const last = await this.judge(tab, talk, starts.length > 1 ? `${base}#${starts.length}` : base, results, began, true, first, { footprints });
+        if (facts !== null) await this.sceneFacts(tab, talk, facts, starts.length, starts.length - 1, last.results);
         if (demo.name === 'scripts') await this.scriptGlyphs(tab, talk, results);
-        if (starts.length > 1) await this.earlierScenes(tab, talk, base, starts, footprints);
+        if (starts.length > 1) await this.earlierScenes(tab, talk, base, starts, footprints, undefined, facts === null ? undefined : (index, scene) => this.sceneFacts(tab, talk, facts, starts.length, index, scene.results));
         first = false;
       }
     } finally {
       await tab.close();
     }
+  }
+
+  /**
+   * What a scene's script wrote in it, found on stage at its rest: the lines it says and the tables it makes, and each code block (on stage in a box of a real size, every row
+   * as written and really drawn: real-check.ts). The painter's own account of a block it cannot draw is a structure with no box; a judge that only asks the boxes it is given
+   * never meets it, so the script is asked what should be there.
+   */
+  private async sceneFacts(tab: Tab, talk: Conversation, facts: ReturnType<typeof sceneFactsOf>, scenes: number, index: number, results: CheckResult[]): Promise<void> {
+    const before = results.length;
+    const add = (check: string, verdict: Verdict, detail: string): void => talk.add(results, check, verdict, detail);
+    if (facts.length !== scenes) add('scenes', 'FAIL', `the script has ${facts.length} scenes but the turn has ${scenes}`);
+    const here = facts[index];
+    if (here !== undefined) {
+      await checkSlideWords(tab, add, here);
+      await checkListings(tab, add, here.listings, tab.dpr);
+    }
+    for (const result of results.slice(before)) if (result.verdict === 'FAIL') this.note(`  FAIL scene ${index + 1} ${result.check}: ${result.detail.slice(0, 200)}`);
   }
 
   /**
@@ -946,8 +968,15 @@ class Screen {
   }
 }
 
-/** Every demo the app offers that this check judges. `problem` is left out: it plays problem.series again, which the `problems` scenes already judge (it stays a demo for `/demo`). */
-const offeredDemos = (): string[] => DEMOS.filter((candidate) => !DEMOS_NOT_PAINTED.includes(candidate.name) && candidate.name !== 'problem').map((candidate) => candidate.name as string);
+/**
+ * Every demo this check judges: all of them, the ones the app does not offer yet (`DEMOS_NOT_PAINTED`) too. The list used to leave those out, and `code` was among them: its
+ * painter did not exist, the demo was never played, and the tour offered it all the same. `problem` is left out: it plays problem.series again, which the `problems` scenes
+ * already judge (it stays a demo for `/demo`).
+ */
+const judgedDemos = (): string[] => DEMOS.filter((candidate) => candidate.name !== 'problem').map((candidate) => candidate.name as string);
+
+/** the demos the tour plays by name that no demo group judges: there must be none (the tour check starts a card's demo and leaves its judging to the demo groups) */
+const tourDemosUnjudged = (): string[] => [...new Set(TOUR_CHAPTERS.flatMap((chapter) => chapter.cards.flatMap((card) => (card.kind === 'demo' ? [card.name] : []))))].filter((name) => name !== 'problem' && !judgedDemos().includes(name));
 
 // ---------------------------------------------------------------------------------------------------------------------------------
 // The report
@@ -968,6 +997,9 @@ const COLUMNS: readonly (readonly [string, string])[] = [
   ['ink-in-box', 'ink'],
   ['stage-not-covered', 'top'],
   ['footprints', 'feet'],
+  ['code-block', 'code'],
+  ['code-rows', 'rows'],
+  ['slide-words', 'slides'],
   ['glyphs', 'glyph'],
   ['hard', 'hard'],
   ['chrome-readable', 'chrome'],
@@ -1055,7 +1087,7 @@ function buildUnits(args: Args, welcome: Welcome): { readonly units: Unit[]; rea
   const plain = (text: string): void => (args.quiet ? undefined : void process.stdout.write(`[${text}]\n`));
   const units: Unit[] = [];
   const screens = args.screens.map((screen) => ({ screen, run: new Screen(args, '', screen, join(args.out, screen.name), welcome), stopped: [] as string[], began: 0, ended: 0 }));
-  const demos = offeredDemos();
+  const demos = judgedDemos();
   for (const entry of screens) {
     const { screen, stopped } = entry;
     const dir = join(args.out, screen.name);
@@ -1083,7 +1115,8 @@ function buildUnits(args: Args, welcome: Welcome): { readonly units: Unit[]; rea
     units.push(screenUnit('welcome-reduced-motion', 25, [], (run) => run.welcomeScene(true)));
     units.push(screenUnit('problems', 30, [], (run) => run.problemScenes()));
     units.push(screenUnit('follow', 45, [], (run) => run.followScene()));
-    demos.forEach((name, index) => units.push(screenUnit(`demo-${name}`, 40, [], (run) => run.demoScenes([name], index === 0))));
+    // fb-001 (docs/feedback.md): code blocks that did not render in the tour's code chapter. `--only fb-001` is the code demo's judging.
+    demos.forEach((name, index) => units.push(screenUnit(`demo-${name}`, 40, name === 'code' ? ['fb-001'] : [], (run) => run.demoScenes([name], index === 0))));
     units.push(screenUnit('demo-hard', 60, [], (run) => run.hardScenes()));
   }
   for (const screen of LENS_SCREENS) {
@@ -1186,6 +1219,16 @@ function buildUnits(args: Args, welcome: Welcome): { readonly units: Unit[]; rea
       if (servers.slow === null) results.push({ turn: 0, check: 'stream-first-element', verdict: 'SKIP', detail: 'skipped (--url was given: this needs a server that streams slowly)' });
       else results.push(...(await new Screen(args, servers.slow, args.screens[0] as Args['screens'][number], join(args.out, 'stream'), welcome).streamScene()));
       checkLines(out, results);
+    },
+  });
+  units.push({
+    name: 'demo-tour',
+    needs: 'none',
+    weight: 1,
+    run: async (_servers, out) => {
+      const unjudged = tourDemosUnjudged();
+      out.lines.push('\ndemo-tour (every demo the tour plays is judged by a demo group)');
+      checkLines(out, [{ turn: 0, check: 'demo-tour', verdict: unjudged.length === 0 ? 'PASS' : 'FAIL', detail: unjudged.length === 0 ? 'every demo a tour card plays is judged on pixels by a demo group' : `the tour plays ${unjudged.join(', ')} but no demo group judges ${unjudged.length === 1 ? 'it' : 'them'}` }]);
     },
   });
   units.push({
@@ -1361,7 +1404,7 @@ async function main(): Promise<void> {
     for (const entry of screens) {
       const { run, screen, stopped } = entry;
       if (run.scenes.length === 0 && stopped.length === 0) continue;
-      const offered = offeredDemos();
+      const offered = judgedDemos();
       const sequence = ['welcome', 'choice', 'welcome-reduced-motion', ...offered.map((name) => `demo-${name}`), 'demo-hard', ...problemScenes().map((scene) => `problem-${scene.id}`), 'problem-fill', 'follow'];
       // a demo's scenes keep their own order (`demo-diagrams#1`, `#2`...; the hard cases by the order of the file)
       const place = (name: string): number => sequence.indexOf(name.split('#')[0] as string) + (name.includes('#') ? (Number(name.split('#')[1]) || hardOrder(name.split('#')[1] as string)) / 1000 : 0);

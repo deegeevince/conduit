@@ -135,7 +135,12 @@ function roleOf(element: ElementFrame, owner: ElementSpan | undefined, parent: E
     return { role: cell[1] === 'head' ? 'label' : 'cell', level: 0, within, structure, lang };
   }
   if (part === 'title') return { role: 'heading', level: 3, within: null, structure, lang };
-  if (structure === 'code') return { role: 'code', level: 0, within: null, structure, lang };
+  if (structure === 'code') {
+    // a listing's rows are set as stretches of text, each at its column (`l:<row>:<column>`): one line of code is read back from them. Its file or language and its "more lines" are labels.
+    const stretch = /^l:(\d+):(\d+)$/.exec(part);
+    if (stretch !== null && home !== undefined) return { role: 'code', level: 0, within: { key: home.key, row: Number(stretch[1]), column: Number(stretch[2]) }, structure, lang };
+    return { role: 'label', level: 0, within: home === undefined ? null : { key: home.key, row: -1, column: -1 }, structure, lang };
+  }
   if (structure === 'screen') return { role: 'label', level: 0, within: null, structure, lang };
   if (owner?.kind === 'node') return { role: 'node', level: 0, within: parent === undefined ? null : { key: parent.key, row: 0, column: 0 }, structure, lang };
   if (part !== '' || owner?.kind === 'link') return { role: 'label', level: 0, within: home === undefined ? null : { key: home.key, row: -1, column: -1 }, structure, lang };
