@@ -15,6 +15,15 @@ function number(value: number): string {
   return String(Number(value.toFixed(3)));
 }
 
+/**
+ * Motion words keep every digit they were written with (`period=0.0748`, `phase=0.2408467`): a period is a ratio, and a rounded one drifts a lap at
+ * a time. The shortest text that reads back as the same number, and never an exponent, which the line language does not read.
+ */
+function exact(value: number): string {
+  const text = String(value);
+  return /e/i.test(text) ? value.toLocaleString('en-US', { useGrouping: false, maximumFractionDigits: 20 }) : text;
+}
+
 function point(value: Point): string {
   return `${number(value.x)},${number(value.y)}`;
 }
@@ -79,6 +88,11 @@ function propTokens(props: StyleProps): string[] {
   if (props.dur !== undefined) out.push(`dur=${seconds(props.dur)}`);
   if (props.exit !== undefined) out.push(`exit=${props.exit}`);
   if (props.loop !== undefined) out.push(`loop=${props.loop}`);
+  if (props.period !== undefined) out.push(`period=${exact(props.period)}`);
+  if (props.around !== undefined) out.push(typeof props.around === 'string' ? `around=${props.around}` : `around=${exact(props.around.x)},${exact(props.around.y)}`);
+  if (props.phase !== undefined) out.push(`phase=${exact(props.phase)}`);
+  if (props.amp !== undefined) out.push(`amp=${exact(props.amp)}`);
+  if (props.along !== undefined) out.push(`along=${props.along}`);
   if (props.stay !== undefined) out.push(typeof props.stay === 'string' ? `stay=${props.stay}` : `stay=${stayOf(props.stay.seconds)}`);
   if (props.tap !== undefined) out.push(`tap=${props.tap ? 'yes' : 'no'}`);
   return out;
@@ -287,6 +301,7 @@ export function serializeLine(line: Line): string {
       if (typeof line.initial === 'boolean') head.push(line.initial ? 'on' : 'off');
       if (line.range?.step !== undefined) head.push(`step=${number(line.range.step)}`);
       if (line.unit !== undefined) head.push(`unit=${line.unit}`);
+      if (line.clock !== undefined) head.push(`clock=${line.clock}`);
       if (line.send === true) head.push('send');
       return withText([...head, ...line.styles, ...propTokens(line.props), ...whenToken(line.when)], line.options === undefined ? line.text : line.options.join(' | '));
     }
@@ -311,6 +326,7 @@ export function serializeLine(line: Line): string {
       if (line.speed !== undefined) head.push(line.speed);
       if (line.over !== undefined) head.push(`over=${seconds(line.over)}`);
       if (line.along !== undefined) head.push(`along=${line.along}`);
+      if (line.period !== undefined) head.push(`period=${exact(line.period)}`);
       return [...head, ...whenToken(line.when)].join(' ');
     }
     case 'drop': {

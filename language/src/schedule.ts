@@ -13,8 +13,9 @@ import { chartModelOf } from './chart';
 import { namesIn, numberOf, parseExpr } from './expr';
 import { containedIn, inFrame, lengthOf, outlineOf, pointAlong, refitInside } from './geometry';
 import { isLessonVerb, stageAskOf } from './lesson';
+import type { ClockRole } from './types';
 import type { AskLine, HintLine, StageAsk, StageSlot } from './lesson';
-import { completeStyle, mergeStyles, patchStyle, resolveColours, resolveLook, resolveStyle } from './style';
+import { completeStyle, mergeStyles, onlyMotion, patchStyle, resolveColours, resolveLook, resolveStyle } from './style';
 import type { ColorSheet, ElementStyle, LookDef, LookSheet, ResolvedLook, ResolvedProps, StyleContext, StyleDef, StyleSheet } from './style';
 import { isRuleRow, splitCells, splitEmphasis } from './text';
 import {
@@ -144,6 +145,8 @@ export interface ControlSpec {
   readonly step: number | null;
   /** written after a slider's value */
   readonly unit: string | null;
+  /** MOTION. Absent: not the stage clock. `time`: its value is the clock; `rate`: it sets how fast the clock runs */
+  readonly clock?: ClockRole;
   /**
    * What it holds: a slider's number, a toggle's state, the 1-based index of a
    * pick's option, an input's text; null for a button. As written when the line
@@ -1530,6 +1533,10 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
         return;
       }
       const joined = joinGroup(seq, styleFor(seq, 'control', line.styles, line.props), start);
+      if (line.clock === 'time') {
+        const other = live.find((candidate) => candidate.span.figure?.kind === 'control' && candidate.span.figure.clock === 'time' && isActive(candidate, start) && candidate.span.id !== line.id);
+        if (other !== undefined) report(seq, 'bad-value', `"${other.span.id}" is already the stage clock; "${line.id}" replaces it (one clock=time slider a stage)`, 'clock=time');
+      }
       const options = line.options ?? [];
       const min = line.range?.min ?? 0;
       const max = line.range?.max ?? 1;
@@ -1548,7 +1555,7 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
       else if (same && !restart && line.verb === 'input' && was.value !== null && was.value !== '') value = was.value;
       const { plain, emphasis } = splitEmphasis(line.text ?? '');
       // D2(b): a control said again exactly as it stands is nothing: it keeps what the user set and what it drives.
-      if (before !== null && was !== null && same && (!restart || value === was.value) && was.form === (line.verb === 'pick' ? (line.form ?? 'row') : null) && was.step === (line.range?.step ?? null) && was.unit === (line.unit ?? null) && was.send === (line.verb === 'button' ? true : (line.send ?? false)) && alike(was.options, options) && before.span.text === plain && alike(before.span.emphasis, emphasis) && sameStyle(before.style, joined.style) && before.span.parent === joined.parent && (line.initial === undefined || line.initial === was.value)) {
+      if (before !== null && was !== null && same && (!restart || value === was.value) && was.form === (line.verb === 'pick' ? (line.form ?? 'row') : null) && was.step === (line.range?.step ?? null) && was.unit === (line.unit ?? null) && was.clock === line.clock && was.send === (line.verb === 'button' ? true : (line.send ?? false)) && alike(was.options, options) && before.span.text === plain && alike(before.span.emphasis, emphasis) && sameStyle(before.style, joined.style) && before.span.parent === joined.parent && (line.initial === undefined || line.initial === was.value)) {
         previousStart = priorStart;
         lines.push({ seq, verb: line.verb, start, end: start });
         return;
@@ -1558,7 +1565,7 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
       const made = create(entry, 'control', line.id, joined.style, start + slot.delay, duration, slot.order, {
         text: plain,
         emphasis,
-        figure: { kind: 'control', control: line.verb, form: line.verb === 'pick' ? (line.form ?? 'row') : null, options, min, max, step: line.range?.step ?? null, unit: line.unit ?? null, value, send: line.verb === 'button' ? true : (line.send ?? false) },
+        figure: { kind: 'control', control: line.verb, form: line.verb === 'pick' ? (line.form ?? 'row') : null, options, min, max, step: line.range?.step ?? null, unit: line.unit ?? null, ...(line.clock !== undefined && { clock: line.clock }), value, send: line.verb === 'button' ? true : (line.send ?? false) },
         parent: joined.parent,
       });
       if (same && before !== null) {
@@ -2102,7 +2109,8 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
         const merged = mergeStyles(sheet, line.styles, line.props);
         for (const name of merged.unknown) report(seq, 'unknown-style', `no style called "${name}"; ignored`, name);
         const props = coloured(seq, merged.props);
-        const end = start + moveSeconds(line.speed, line.over, SET_SECONDS * PACE_TIMING[pace].ease);
+        // Motion that keeps time takes no time on the turn clock: it holds no pen, and the turn comes to rest as it did.
+        const end = onlyMotion(props) ? start : start + moveSeconds(line.speed, line.over, SET_SECONDS * PACE_TIMING[pace].ease);
         // Colour set on a group or a structure is colour set on its parts; place, turn, size and opacity belong to the group itself.
         const { ink, fill, stroke, thick } = props;
         const inherited: ResolvedProps = {
@@ -2140,6 +2148,14 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
         const target = findLive(line.id, start);
         if (target === null) {
           report(seq, 'unknown-id', `nothing called "${line.id}" is on stage to move`, line.id);
+          lines.push({ seq, verb: line.verb, start, end: start });
+          break;
+        }
+        if (line.period !== undefined || line.along === 'none') {
+          // `move x along=p period=N` and `move x along=none` are `set x along= period=`: a ride on the stage clock, no pass on the turn clock
+          const props: ResolvedProps = { along: line.along ?? 'none', ...(line.period !== undefined && { period: line.period }) };
+          target.style = patchStyle(target.style, props);
+          target.span.changes.push({ kind: 'set', seq, start, end: start, props, style: target.style });
           lines.push({ seq, verb: line.verb, start, end: start });
           break;
         }
@@ -2332,6 +2348,33 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
             return { index, scene: slide.scene, seq: slide.seq, start: slide.start, end: own.reduce((latest, time) => Math.max(latest, time.end), slide.start) };
           }),
         };
+
+  // Motion is checked once the scene is written, since the moon may come before the planet.
+  for (const held of live) {
+    const style = held.style;
+    const at = held.span.seq;
+    if (held.ghost || held.span.exit !== null) continue;
+    const named = (id: string): Live | null => {
+      for (let i = live.length - 1; i >= 0; i -= 1) {
+        const candidate = live[i];
+        if (candidate !== undefined && candidate.span.id === id && !candidate.ghost && candidate.span.exit === null) return candidate;
+      }
+      return null;
+    };
+    if (style.period !== undefined && style.loop === 'none' && style.around === undefined && style.along === undefined) {
+      report(at, 'bad-value', `"${held.span.id}" has period= and nothing to time; give it loop=spin, around= or along=`, 'period');
+    }
+    if (typeof style.around === 'string') {
+      const pivot = named(style.around);
+      if (pivot === null || pivot === held) report(at, pivot === held ? 'bad-around' : 'unknown-id', pivot === held ? `"${held.span.id}" cannot turn about itself` : `nothing drawn called "${style.around}" is on stage to turn about`, style.around);
+      else if (pivot.span.parent !== held.span.parent) report(at, 'bad-around', `"${held.span.id}" and "${style.around}" must both be top-level or in the same group to turn about one another`, style.around);
+    }
+    if (style.along !== undefined) {
+      const track = named(style.along);
+      const figure = track?.span.figure;
+      if (track === null || figure?.kind !== 'shape' || outlineOf(figure.geometry)[0] === undefined) report(at, 'unknown-id', `no drawn shape called "${style.along}" is on stage to ride along`, style.along);
+    }
+  }
 
   for (const held of waiting) {
     const change = held.line.change;

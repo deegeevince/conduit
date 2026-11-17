@@ -1185,6 +1185,11 @@ export const STYLE_PROP = {
   align: { values: ['left', 'center', 'right'], also: null, gist: 'with at=x,y: which edge of the words that point is (right for digits lined up in a column)', level: 'mind', scope: 'text' },
   tap: { values: ['yes', 'no'], also: null, gist: 'yes makes it a choice the user can tap', level: 'mind', scope: 'any' },
   dur: { values: null, also: 'Ns', gist: 'exact entrance length', level: 'hand', scope: 'any' },
+  period: { values: null, also: 'N', gist: 'with loop=, around= or along=: one cycle in clock units (seconds until a slider is the clock); negative runs backwards, any size, kept exactly', level: 'hand', scope: 'any' },
+  around: { values: null, also: '<id> or x,y', gist: 'the point it turns about (spin, sway or rot=): another element\'s centre, which carries it, or a fixed point; both top-level or in the same group', level: 'hand', scope: 'any' },
+  phase: { values: null, also: '0..1', gist: 'how far into its cycle it is when the clock reads zero', level: 'hand', scope: 'any' },
+  amp: { values: null, also: 'N', gist: 'how far a loop goes: degrees for sway, canvas units for bob, a share for pulse and breathe', level: 'hand', scope: 'any' },
+  along: { values: null, also: '<shape id> | none', gist: 'with period=: rides that outline for ever, upright (round a closed one, there and back on an open one); none stops it', level: 'hand', scope: 'any' },
 } as const satisfies Record<string, PropSpec>;
 export type StylePropName = keyof typeof STYLE_PROP;
 export const STYLE_PROP_NAMES = keysOf(STYLE_PROP);

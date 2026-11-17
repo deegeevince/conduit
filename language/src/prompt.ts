@@ -393,8 +393,9 @@ export function buildSystemPrompt({ capabilities, services }: PromptOptions): st
   const props = Object.entries(STYLE_PROP)
     .filter(([name, spec]) => (draws || spec.scope !== 'drawn') && (draws || (name !== 'near' && name !== 'in' && name !== 'leader')) && (deep || name !== 'layer'))
     // The words for paint are taught together, where they are of use, and only to a painter that has them; `leader` comes with `callout`;
-    // `dur` is under "Exact values"; `bleed` is right as it stands and is in the reference for the day it is not.
-    .filter(([name]) => name !== 'tex' && name !== 'soft' && name !== 'brush' && name !== 'leader' && name !== 'align' && name !== 'dur' && name !== 'bleed')
+    // `dur` is under "Exact values"; `bleed` is right as it stands and is in the reference for the day it is not;
+    // `period`, `around`, `phase`, `amp` and `along` are motion that keeps time: not taught until the painter advertises `clockwork` (the drawing kit says it then).
+    .filter(([name]) => name !== 'tex' && name !== 'soft' && name !== 'brush' && name !== 'leader' && name !== 'align' && name !== 'dur' && name !== 'bleed' && name !== 'period' && name !== 'around' && name !== 'phase' && name !== 'amp' && name !== 'along')
     .map(([name, spec]) => {
       const values = spec.values === null ? '' : spec.values.filter((value) => allows(capabilities, name, value)).join(' | ');
       const also = name === 'at' ? ' | x,y (drawn things only)' : spec.also === null ? '' : `${values === '' ? '' : ' | '}${spec.also}`;

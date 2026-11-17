@@ -135,6 +135,8 @@ function capabilities(value: unknown): Capabilities {
     uploads: raw.uploads === undefined ? NO_V21_CAPABILITIES.uploads : bool(raw.uploads, 'capabilities.uploads'),
     links: raw.links === undefined ? NO_V21_CAPABILITIES.links : bool(raw.links, 'capabilities.links'),
     ...(typeof raw.engine === 'string' ? { engine: raw.engine.slice(0, 64) } : {}),
+    // MOTION. Absent is off; no painter says yes yet.
+    ...(raw.clockwork === undefined ? {} : { clockwork: bool(raw.clockwork, 'capabilities.clockwork') }),
   };
 }
 

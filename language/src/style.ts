@@ -1,4 +1,4 @@
-import type { ColourRef, Fill, FillRef, HexColor, LookProps, Near, Paint, Point, Seconds, StyleProps } from './types';
+import type { Around, ColourRef, Fill, FillRef, HexColor, LookProps, Near, Paint, Point, Seconds, StyleProps } from './types';
 import { DEFAULT_LOOK, INK_ROLES, LOOK } from './vocabulary';
 import type {
   Anchor,
@@ -188,6 +188,16 @@ export interface ElementStyle {
   readonly opacity: number;
   readonly tap: boolean;
   readonly dur: number | null;
+  /**
+   * MOTION. Absent unless written, so a style that never moves is the style it always was. A stage saved before these existed has none: read them with `??`.
+   * `period`: one cycle of its loop, or one lap of its ride, in clock units; negative runs backwards. `around`: what it turns about. `phase`: 0..1 into its
+   * cycle at clock zero. `amp`: how far its loop goes. `along`: the id of the outline it rides.
+   */
+  readonly period?: number;
+  readonly around?: Around;
+  readonly phase?: number;
+  readonly amp?: number;
+  readonly along?: string;
 }
 
 /** Style properties with colour names already looked up. */
@@ -335,7 +345,25 @@ export function completeStyle(props: ResolvedProps, context: StyleContext): Elem
     opacity: props.opacity ?? 1,
     tap: props.tap ?? false,
     dur: props.dur ?? null,
+    ...motionOf(props),
   };
+}
+
+/** The motion words a line wrote, as a style carries them: nothing at all when it wrote none; `along=none` is no ride. */
+function motionOf(props: ResolvedProps): Pick<ElementStyle, 'period' | 'around' | 'phase' | 'amp' | 'along'> {
+  return {
+    ...(props.period !== undefined && { period: props.period }),
+    ...(props.around !== undefined && { around: props.around }),
+    ...(props.phase !== undefined && { phase: props.phase }),
+    ...(props.amp !== undefined && { amp: props.amp }),
+    ...(props.along !== undefined && props.along !== 'none' && { along: props.along }),
+  };
+}
+
+/** Whether a set of props says anything but motion that keeps time: that is what takes time on the turn clock, and motion does not. */
+export function onlyMotion(props: ResolvedProps): boolean {
+  const keys = Object.entries(props).filter(([, value]) => value !== undefined).map(([key]) => key);
+  return keys.length > 0 && keys.every((key) => key === 'period' || key === 'around' || key === 'phase' || key === 'amp' || key === 'along');
 }
 
 export interface ResolvedStyle {
@@ -352,8 +380,9 @@ export function resolveStyle(sheet: StyleSheet, colors: ColorSheet, names: reado
 
 /** Applies a `set` to an element that already has a full style. Only what was named changes. */
 export function patchStyle(style: ElementStyle, props: ResolvedProps): ElementStyle {
+  const { along: _ride, ...kept } = style;
   return {
-    ...style,
+    ...(props.along === undefined ? style : kept),
     ...(props.size !== undefined && { size: props.size }),
     ...(props.ink !== undefined && { ink: props.ink }),
     ...(props.weight !== undefined && { weight: props.weight }),
@@ -388,5 +417,6 @@ export function patchStyle(style: ElementStyle, props: ResolvedProps): ElementSt
     ...(props.opacity !== undefined && { opacity: props.opacity }),
     ...(props.tap !== undefined && { tap: props.tap }),
     ...(props.dur !== undefined && { dur: props.dur }),
+    ...motionOf(props),
   };
 }

@@ -117,6 +117,11 @@ export interface Capabilities {
   readonly links: boolean;
   /** SA2. The engine the page measures with (`ENGINE_VERSION`). The server measures a draft itself only when it is the server's own; absent or different: the draft gate. */
   readonly engine?: string;
+  /**
+   * MOTION. True when the painter performs motion that keeps time (`period=`, `around=`, `phase=`, `amp=`, `along=`, and a control that is the clock):
+   * the brain is taught it only then. Absent: no. No painter advertises it yet.
+   */
+  readonly clockwork?: boolean;
 }
 
 /** What the server can do for a turn that the painter cannot. The brain's prompt is filtered by these too. */
@@ -169,6 +174,7 @@ export const FULL_CAPABILITIES: Capabilities = {
   decks: true,
   uploads: true,
   links: true,
+  clockwork: false,
 };
 
 /** What a painter that speaks Series 3 can do of Series 4: nothing. A `ready` that leaves the new lists out is read as this. */
