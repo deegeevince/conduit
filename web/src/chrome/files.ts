@@ -2,7 +2,7 @@
 // each does one thing one way.
 
 import { parseScript, parseTune, tuneToMidi } from '@conduit/language';
-import type { ExportJob, ExportRequest } from '../contracts/export';
+import type { CutList, ExportJob, ExportRequest } from '../contracts/export';
 import type { StageApp } from '../app/stage-app';
 
 export const SIZES = [
@@ -29,6 +29,14 @@ export function saveBlob(blob: Blob, fileName: string): void {
   setTimeout(() => URL.revokeObjectURL(url), 30_000);
 }
 
+/** Saves a finished export, and beside a film that had waits cut out of it, the cuts as `<name>.cuts.json` for the editor. Says what was saved. */
+export function saveMade(app: StageApp, made: { readonly blob: Blob; readonly fileName: string; readonly hasSound?: boolean; readonly note?: string; readonly cuts?: CutList }): void {
+  saveBlob(made.blob, made.fileName);
+  const cuts = made.cuts !== undefined && made.cuts.cuts.length > 0 ? made.cuts : null;
+  if (cuts !== null) saveBlob(new Blob([`${JSON.stringify(cuts, null, 2)}\n`], { type: 'application/json' }), made.fileName.replace(/\.[a-z0-9]+$/i, '.cuts.json'));
+  app.announce(`Saved ${made.fileName}${made.hasSound === true ? ', with its music' : ''}${cuts === null ? '' : ` and its cuts (${cuts.cuts.length})`}${made.note === undefined ? '' : `. ${made.note}`}`);
+}
+
 /** The size an export is made at when nobody chose one: the screen's own shape. */
 export function defaultSize(app: StageApp): { width: number; height: number } {
   const viewport = app.painter.snapshot().viewport;
@@ -46,10 +54,7 @@ export function runExport(app: StageApp, request: ExportRequest): ExportJob | nu
   try {
     const job = app.export(request);
     job.done.then(
-      ({ blob, fileName, hasSound, note }) => {
-        saveBlob(blob, fileName);
-        app.announce(`Saved ${fileName}${hasSound === true ? ', with its music' : ''}${note === undefined ? '' : `. ${note}`}`);
-      },
+      (made) => saveMade(app, made),
       () => undefined,
     );
     return job;

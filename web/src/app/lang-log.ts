@@ -38,6 +38,20 @@ export function entryNote(entry: LangEntry): string | null {
   return `${entry.kind === 'dropped' ? 'dropped' : 'repaired'}: ${first.message}${more}`;
 }
 
+/**
+ * Whether a quiet note ("repaired: …", "dropped: …") is kept out of the pane, on the page and in a film alike: the owner reads the language, not the
+ * page's housekeeping about it. The one predicate both ask.
+ */
+export function hiddenNote(note: string): boolean {
+  return /^(repaired|dropped):/.test(note);
+}
+
+/** The note the pane shows under a line: `entryNote`, unless it is one the pane hides. */
+export function shownNote(entry: LangEntry): string | null {
+  const note = entryNote(entry);
+  return note === null || hiddenNote(note) ? null : note;
+}
+
 export interface LangLog {
   /** whether the pane is shown: the one switch the [+] menu, `/lines` and the exporter read */
   readonly on: boolean;

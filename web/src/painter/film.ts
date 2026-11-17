@@ -14,6 +14,15 @@ import { holdControl } from '@conduit/language';
 import { buildTimeline, settledEnd } from './timeline';
 import { tuneStartOf } from './structures';
 
+/** What each line of a recording took on the turn's clock, by seq, as the painter's own score gives it. */
+export function lineSpans(recording: Recording): Map<number, { readonly start: number; readonly end: number }> {
+  const score = new TurnScore(recording.base, recording.opened ?? 'none');
+  for (const { seq, line, floor } of recording.lines) score.push(line, seq, floor ?? 0);
+  const spans = new Map<number, { readonly start: number; readonly end: number }>();
+  for (const time of score.schedule.lines) spans.set(time.seq, { start: time.start, end: time.end });
+  return spans;
+}
+
 /**
  * Builds the schedule from the recording's lines, each pushed at the playhead it arrived at (0 for a recording that has none), as a turn
  * opened the way the recording says it was (the live painter's own `TurnScore`), builds the timeline for the given viewport, and answers
@@ -69,6 +78,15 @@ export function createFilm(recording: Recording, options: FilmOptions): Film {
     frameAt: (seconds) => {
       const time = Math.max(0, seconds);
       return timeline.frameAt({ time, ambient: time, wallTime: pinnedWallTime(time), clock: 'paused' });
+    },
+    boxOf: (id, seconds) => {
+      const time = Math.max(0, seconds);
+      const view = timeline.viewsAt({ time, ambient: time, wallTime: pinnedWallTime(time), clock: 'paused' }).find((candidate) => candidate.id === id && candidate.opacity > 0.02);
+      return view === undefined ? null : view.box;
+    },
+    controlsAt: (seconds) => {
+      const time = Math.max(0, seconds);
+      return timeline.controlsAt({ time, ambient: time, wallTime: pinnedWallTime(time), clock: 'paused' }).map((site) => ({ id: site.id, value: site.value }));
     },
     script: () => script,
   };

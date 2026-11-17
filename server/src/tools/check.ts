@@ -41,6 +41,7 @@ import { DEMOS, DEMOS_NOT_PAINTED, LineReader } from '@conduit/language';
 import { spawnTracked } from '../brains/claude-cli/process';
 import { CHROME_CANDIDATES, repoRoot, sleep, stop, waitFor } from './explore-browser';
 import { claimPort, releasePort } from './check-ports';
+import { filmGroup } from './film-check';
 import { Conversation, Tab } from './smoke';
 import { LENS_SCREENS, lensGroup } from './lens-check';
 import { ASK_SCREEN, askGroup } from './ask-check';
@@ -1208,6 +1209,15 @@ function buildUnits(args: Args, welcome: Welcome): { readonly units: Unit[]; rea
     run: async (_servers, out) => {
       out.lines.push('\nmaths (820x971, 390x844, 1280x720; input at 820x971 dpr 2 and 390x844 dpr 3, on a server of its own)');
       checkLines(out, await mathsGroup(plain, join(args.out, 'maths'), args.timeoutMs));
+    },
+  });
+  units.push({
+    name: 'film',
+    needs: 'none',
+    weight: 60,
+    run: async (_servers, out) => {
+      out.lines.push('\nfilm (the export as the session ran: typing, the panel, cuts, controls, following; a real WebM at 1280x720)');
+      checkLines(out, await filmGroup(plain));
     },
   });
   units.push({
