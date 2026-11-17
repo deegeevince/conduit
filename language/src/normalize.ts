@@ -331,7 +331,11 @@ export class LineNormalizer {
   /** SA5. The layout of the scene being written: a `free` scene keeps honouring `at=x,y` on words */
   private layout: string | null;
 
-  constructor(makeId: () => string, definedStyles: Iterable<string> = [], options: { readonly placement?: 'flow' | 'free'; readonly layout?: string | null } = {}) {
+  /** The shape (width over height) of each photo the user gave, by upload id: stamped on a `pic` so that `in=<pic>` addresses the photo's own frame. */
+  private readonly photos: Readonly<Record<string, number>>;
+
+  constructor(makeId: () => string, definedStyles: Iterable<string> = [], options: { readonly placement?: 'flow' | 'free'; readonly layout?: string | null; readonly photos?: Readonly<Record<string, number>> } = {}) {
+    this.photos = options.photos ?? {};
     this.makeId = makeId;
     this.styles = new Set(definedStyles);
     this.book = new LessonBook(makeId);
@@ -344,8 +348,13 @@ export class LineNormalizer {
    * SA5. A numeric `at=x,y` on words or a control that is not in a group, not near anything and not in a `free` scene is the brain placing by guess: it is
    * dropped, the line joins the flow, and the brain is told. A callout with a leader keeps its spot: the spot is what the line points to.
    */
-  private placedByStage<T extends { readonly props: StyleProps }>(line: T): { line: T; issues: Issue[] } {
+  private placedByStage<T extends { readonly props: StyleProps; readonly styles?: readonly string[] }>(line: T): { line: T; issues: Issue[] } {
     const { at, near, in: group, leader } = line.props;
+    // A callout or a label at a spot (`say callout at=x,y`) names that spot: its words are the stage's to place, and a line runs from them to the spot.
+    const names = line.styles ?? [];
+    if (this.placement === 'flow' && (line as { verb?: string }).verb === 'say' && typeof at === 'object' && near === undefined && leader !== false && (names.includes('callout') || names.includes('label') || leader === true)) {
+      return { line: leader === true ? line : { ...line, props: { ...line.props, leader: true } }, issues: [] };
+    }
     if (this.placement !== 'flow' || at === undefined || typeof at === 'string' || near !== undefined || group !== undefined || leader === true || this.layout === 'free') return { line, issues: [] };
     const { at: _dropped, ...props } = line.props;
     return { line: { ...line, props }, issues: [{ code: 'bad-geometry', severity: 'warn', message: 'placed by the stage', token: 'at' }] };
@@ -442,6 +451,10 @@ export class LineNormalizer {
         }
         if (id === '-') id = this.makeId();
         this.sprite = line.verb === 'pix' ? id : null;
+        if (line.verb === 'pic') {
+          const aspect = this.photos[line.from];
+          return { line: { ...line, id, styles, ...(aspect === undefined || line.aspect !== undefined ? {} : { aspect: Math.round(aspect * 10000) / 10000 }) }, issues: [] };
+        }
         // A sprite begun after a table takes the rows from here on.
         if (line.verb === 'pix') {
           this.table = null;

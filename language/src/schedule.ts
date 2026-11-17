@@ -11,7 +11,7 @@
 import { pickHasOption } from './bind';
 import { chartModelOf } from './chart';
 import { namesIn, numberOf, parseExpr } from './expr';
-import { lengthOf, outlineOf, pointAlong, refitInside } from './geometry';
+import { containedIn, inFrame, lengthOf, outlineOf, pointAlong, refitInside } from './geometry';
 import { isLessonVerb, stageAskOf } from './lesson';
 import type { AskLine, HintLine, StageAsk, StageSlot } from './lesson';
 import { completeStyle, mergeStyles, patchStyle, resolveColours, resolveLook, resolveStyle } from './style';
@@ -221,6 +221,8 @@ export type Figure =
       readonly mask: Mask;
       /** v2.1. The id of a picture the user gave (`pic … from=u1`); this is then that picture, not a painting. Absent or null: a painting. */
       readonly from?: string | null;
+      /** width over height of that photo, when the server said: it stands contained in its box, and `in=<pic>` addresses that frame */
+      readonly aspect?: number;
     }
   | { readonly kind: 'field'; readonly field: AmbientKind; readonly amount: Amount };
 
@@ -865,6 +867,28 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
     return resolved.props;
   };
 
+  /**
+   * `in=<picture>`: the numbers of the line are a percent (0 to 100) of the picture's own width and height, from its top left. The frame is where
+   * the picture stands on the canvas now (its box, or the canvas, the photo contained in it by its aspect); null when `id` is no picture on stage.
+   */
+  const frameOf = (id: string | undefined, at: number): CanvasBox | null => {
+    if (id === undefined) return null;
+    // the picture's own id, or the upload it shows (`in=u1`): the one most recently put on stage
+    const pic = findLive(id, at) ?? [...live].reverse().find((candidate) => candidate.span.figure?.kind === 'picture' && candidate.span.figure.from === id && isActive(candidate, at)) ?? null;
+    const figure = pic?.span.figure;
+    if (pic === null || figure?.kind !== 'picture') return null;
+    const canvas = CANVAS[scene.canvas];
+    return containedIn(figure.box ?? { x: 0, y: 0, w: canvas.width, h: canvas.height }, figure.aspect);
+  };
+  /** The props of a line written in a picture's frame, as they are on the canvas: a spot (`at=x,y`) carried over, and the `in=` taken off. */
+  const framedProps = (props: StyleProps, at: number): StyleProps => {
+    const frame = frameOf(props.in, at);
+    if (frame === null) return props;
+    const { in: _in, at: spot, ...rest } = props;
+    if (typeof spot !== 'object' || spot === null) return spot === undefined ? rest : { ...rest, at: spot };
+    return { ...rest, at: { x: Math.round((frame.x + (spot.x / 100) * frame.w) * 1000) / 1000, y: Math.round((frame.y + (spot.y / 100) * frame.h) * 1000) / 1000 } };
+  };
+
   /** A part belongs to its group: it is found now, and it lives on the group's layer. */
   const joinGroup = (seq: number, style: ElementStyle, at: number): { style: ElementStyle; parent: string | null } => {
     if (style.group === null) return { style, parent: null };
@@ -1140,7 +1164,7 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
 
     if (line.verb === 'say') {
       // Text may be a part of a group (`say in=boat | …`): it lives on the group's layer and leaves with it.
-      const joined = joinGroup(seq, styleFor(seq, 'text', line.styles, line.props), start);
+      const joined = joinGroup(seq, styleFor(seq, 'text', line.styles, framedProps(line.props, start)), start);
       const style = joined.style;
       let enterStart = start;
       let order = nextOrder;
@@ -1597,7 +1621,7 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
       const style = styleFor(seq, 'picture', line.styles, line.props);
       const there = findLive(line.id, start);
       const figure = there?.span.figure;
-      if (there !== null && figure?.kind === 'picture' && figure.from === line.from && alike(figure.box, line.box ?? null) && sameStyle(there.style, style)) {
+      if (there !== null && figure?.kind === 'picture' && figure.from === line.from && figure.aspect === line.aspect && alike(figure.box, line.box ?? null) && sameStyle(there.style, style)) {
         previousStart = priorStart;
         lines.push({ seq, verb: line.verb, start, end: start });
         return;
@@ -1606,7 +1630,7 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
       const duration = figureEnterSeconds(joined.style.enter, pace, joined.style.dur);
       const slot = takeSlot(line.id, start);
       create(entry, 'picture', line.id, joined.style, start + slot.delay, duration, slot.order, {
-        figure: { kind: 'picture', prompt: '', box: line.box ?? null, over: null, medium: null, sketch: 'keep', mask: 'none', from: line.from },
+        figure: { kind: 'picture', prompt: '', box: line.box ?? null, over: null, medium: null, sketch: 'keep', mask: 'none', from: line.from, ...(line.aspect === undefined ? {} : { aspect: line.aspect }) },
         parent: joined.parent,
       });
       advanceForDrawn(joined.style, start + slot.delay, duration);
@@ -1616,11 +1640,14 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
 
     // A shape.
     let geometry = line.geometry;
+    const shapeFrame = frameOf(line.props.in, start);
+    const shapeProps = shapeFrame === null ? line.props : framedProps(line.props, start);
+    if (shapeFrame !== null) geometry = inFrame(geometry, shapeFrame);
     if (geometry.shape === 'rect' && geometry.full) geometry = { ...geometry, w: CANVAS[scene.canvas].width, h: CANVAS[scene.canvas].height };
     const same = findLive(line.id, start);
     if (same !== null && same.span.kind === 'shape') {
       // Said again, a shape changes into what it now is: only what the line names is restyled.
-      const merged = mergeStyles(sheet, line.styles, line.props);
+      const merged = mergeStyles(sheet, line.styles, shapeProps);
       for (const name of merged.unknown) report(seq, 'unknown-style', `no style called "${name}"; ignored`, name);
       const patched = patchStyle(same.style, coloured(seq, merged.props));
       const now = figureAt(same.span, Number.POSITIVE_INFINITY);
@@ -1639,7 +1666,7 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
     }
     // A shape written `in=` another closed shape is kept inside it: shrunk toward its own centre until it is, and told so
     let refit = false;
-    let shapeStyle = styleFor(seq, 'shape', line.styles, line.props);
+    let shapeStyle = styleFor(seq, 'shape', line.styles, shapeProps);
     if (shapeStyle.group !== null) {
       const host = findLive(shapeStyle.group, start);
       const hostFigure = host === null || host.span.kind !== 'shape' ? null : figureAt(host.span, Number.POSITIVE_INFINITY);

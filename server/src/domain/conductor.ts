@@ -226,6 +226,8 @@ export class Conductor {
   private readonly waiters = new Map<string, Set<() => void>>();
   /** The technique cards that wrote a session's document (a lesson for a young learner, a recipe): they ride on every later turn of it, so the part written ahead, and the answer to a tap, are written by the same rules. */
   private readonly documentCards = new Map<string, readonly TechniqueCard[]>();
+  /** The shape (width over height) of each photo a session has named, by upload id: stamped on its `pic` and told in the brief. */
+  private readonly photoShapes = new Map<string, Record<string, number>>();
   private readonly reaper: NodeJS.Timeout;
   /** the file each draft's picture was saved under, for the `fix` record; forgotten with the turn's session */
   private readonly draftFiles = new Map<string, string>();
@@ -1437,9 +1439,26 @@ export class Conductor {
       const skillBlocks = await this.skillsFor(s, turn);
       if (turn.abort.signal.aborted) return;
       const data: DataFacts[] = s.tables.map((table) => factsOf(table, gathered.data.has(table.id)));
+      // The photos this prompt names, as they were kept, after the stage's snapshot. A photo that cannot be read back is left out and said in the log.
+      const images: Snapshot[] = [];
+      const shapes: Record<string, number> = { ...this.photoShapes.get(s.id) };
+      if (turn.input.kind === 'prompt') {
+        // The photos, then the picture of the ink last: the brief says it is the one that was written or drawn.
+        const named = turn.input.images ?? [];
+        for (const id of [...named, ...(turn.input.marks === undefined ? [] : [turn.input.marks.image])]) {
+          const loaded = await (this.deps.uploads ?? NO_UPLOADS).load(s.id, id);
+          if (loaded === null) log.warn('turn.photo_missing', { session: s.id, turn: turn.id, photo: id });
+          else {
+            images.push(loaded);
+            if (named.includes(id) && loaded.height > 0) shapes[id] = loaded.width / loaded.height;
+          }
+        }
+        this.photoShapes.set(s.id, shapes);
+      }
       const documentNow = this.docs.viewOfSession(s.id);
       const context = {
         ...base,
+        ...(Object.keys(shapes).length > 0 ? { photos: shapes } : {}),
         documents: s.documents.map((doc): DocumentFacts => ({ ...doc.facts, fresh: fresh.has(doc.facts.id) })),
         unread: gathered.unread,
         techniques,
@@ -1454,22 +1473,12 @@ export class Conductor {
       const input: TurnInput = gathered.text !== null && turn.input.kind === 'prompt' ? { ...turn.input, text: gathered.text } : turn.input;
       // What was said in a voice note goes to the brain as words too (the transcript, beside the text the user sent); never into the log or the audit trail.
       const withVoice: TurnInput = input.kind === 'prompt' && spoken.length > 0 ? { ...input, spoken } : input;
-      // The photos this prompt names, as they were kept, after the stage's snapshot. A photo that cannot be read back is left out and said in the log.
-      const images: Snapshot[] = [];
-      if (input.kind === 'prompt') {
-        // The photos, then the picture of the ink last: the brief says it is the one that was written or drawn.
-        for (const id of [...(input.images ?? []), ...(input.marks === undefined ? [] : [input.marks.image])]) {
-          const loaded = await (this.deps.uploads ?? NO_UPLOADS).load(s.id, id);
-          if (loaded === null) log.warn('turn.photo_missing', { session: s.id, turn: turn.id, photo: id });
-          else images.push(loaded);
-        }
-      }
       if (turn.abort.signal.aborted) return;
       const request = { turn: turn.id, session: s.id, input: withVoice, context, snapshot, pdfs, look: this.deps.review.enabled && turn.lookAllowed, ...(images.length > 0 ? { images } : {}) };
       const normalizer = new LineNormalizer(() => {
         s.nextAutoId += 1;
         return `x${s.nextAutoId}`;
-      }, Object.keys(s.stage.styles), { placement: brain.id === 'replay' ? 'free' : 'flow', layout: s.stage.scene.layout });
+      }, Object.keys(s.stage.styles), { placement: brain.id === 'replay' ? 'free' : 'flow', layout: s.stage.scene.layout, photos: shapes });
       // v3. A turn of a conversation that has a document reads its lines against it: `part q3a in=q3` finds q3, and an ask is read against what is on the page.
       if (documentNow !== null) seedBook(normalizer.lessons, documentNow.document);
       let stopped = false;
@@ -1856,7 +1865,7 @@ export class Conductor {
       const normalizer = new LineNormalizer(() => {
         s.nextAutoId += 1;
         return `x${s.nextAutoId}`;
-      }, Object.keys(s.stage.styles));
+      }, Object.keys(s.stage.styles), { photos: this.photoShapes.get(s.id) ?? {} });
       let outcome: RepairOutcome;
       try {
         const steps = repairTurn({

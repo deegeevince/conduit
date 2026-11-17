@@ -267,13 +267,15 @@ function pictureBoxOf(element: ElementSpan, sc: Scn): CanvasRect {
   const figure = element.figure;
   const canvas = canvasOf(element, sc);
   if (figure === null || figure.kind !== 'picture') return { x: 0, y: 0, w: canvas.width, h: canvas.height };
-  if (figure.box !== null) return figure.box;
+  // a photo whose shape the server stamped stands contained in its box: the same frame `in=<pic>` addresses
+  const held = (box: CanvasRect): CanvasRect => (figure.from != null && figure.aspect !== undefined ? containIn(box, figure.aspect) : box);
+  if (figure.box !== null) return held(figure.box);
   if (figure.over !== null) {
     const group = sc.idx.byKey.get(figure.over);
     const found = group === undefined ? null : unionBox(group, sc.schedule, sc.tq, sc.base, sc.curve);
-    if (found !== null) return found;
+    if (found !== null) return held(found);
   }
-  return { x: 0, y: 0, w: canvas.width, h: canvas.height };
+  return held({ x: 0, y: 0, w: canvas.width, h: canvas.height });
 }
 
 const centres = new WeakMap<ElementSpan, Pt>();

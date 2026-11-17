@@ -1137,7 +1137,7 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
     const keeps = Math.max(0.55, Math.min(1, fit.unit / wholeUnit));
     for (const element of [...present, ...liveControls]) {
       const style = styleAt(element, start);
-      if (flat || style.near !== null || style.group !== null || typeof style.at !== 'object' || style.at === null) continue;
+      if (flat || style.near !== null || style.group !== null || typeof style.at !== 'object' || style.at === null || (style.leader && element.kind === 'text')) continue;
       const scale = planeScale(style.layer, viewport);
       pins.set(element.key, { x: (fit.box.x + style.at.x * fit.unit) / scale, y: (fit.box.y + style.at.y * fit.unit) / scale, k: keeps });
     }
@@ -2233,8 +2233,17 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
         obstacles.push({ rect: toScreenRect(box, fit), owner: element, outline: big });
       }
     };
+    // a backdrop (a rectangle that is the whole canvas, or most of it) is the ground the drawing stands on, not a part of it
+    const backdrop = (element: ElementSpan): boolean => {
+      const geometry = element.figure?.kind === 'shape' ? element.figure.geometry : null;
+      if (geometry === null || geometry.shape !== 'rect') return false;
+      if (geometry.full) return true;
+      const at = canvasBoxOf(element, schedule, tq);
+      const fit = fitOfElement(element, look, tq);
+      return at !== null && at.w * at.h > (0.6 * (fit.box.width * fit.box.height)) / (fit.unit * fit.unit);
+    };
     const nextBelow = new Map<string, number>();
-    const callouts: { key: string; ps: number; w: number; h: number; px: number; element: ElementSpan; target: Rect; side: 'auto' | 'above' | 'below' | 'left' | 'right'; fit: CanvasFit; layer: Layer }[] = [];
+    const callouts: { key: string; ps: number; w: number; h: number; px: number; element: ElementSpan | null; target: Rect; side: 'auto' | 'above' | 'below' | 'left' | 'right'; fit: CanvasFit; layer: Layer }[] = [];
     calloutLeaders = new Map();
     calloutScales = new Map();
     for (const element of elements) {
@@ -2246,7 +2255,9 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
       if (exitEnd !== null && tq >= exitEnd) continue;
       if (!element.carried && (enterStart === null || tq < enterStart)) continue;
       const style = styleAt(element, tq);
-      if (style.near === null && element.parent === null) continue;
+      // a callout at a spot (`say callout at=x,y`): the spot is what its line points to, and the stage finds the words clear room
+      const spot = style.near === null && element.parent === null && element.kind === 'text' && style.leader && typeof style.at === 'object' && style.at !== null ? style.at : null;
+      if (style.near === null && element.parent === null && spot === null) continue;
       const exit = exitOf(element);
       const pose = poseAt(element.key, tq, exit === null ? null : exit.start);
       if (pose === null) continue;
@@ -2254,6 +2265,12 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
       const w = pose.width * ps;
       const h = pose.height * ps;
       const fit = fitOfElement(element, look, tq);
+      if (spot !== null) {
+        const sx = fit.box.x + spot.x * fit.unit;
+        const sy = fit.box.y + spot.y * fit.unit;
+        callouts.push({ key: element.key, ps, w, h, px: pose.fontSize * ps, element: null, target: { x: sx - 0.5, y: sy - 0.5, w: 1, h: 1 }, side: 'auto', fit, layer: pose.layer });
+        continue;
+      }
       if (style.near === null) {
         // Words that are a part of a group (`say in=<group>`) stand where the group's own units put them, and go with it.
         const group = element.parent === null ? undefined : drawnByKey.get(element.parent);
@@ -2332,7 +2349,19 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
         // small and dim, so it gives way to other text only, never to a drawn shape that happens to lie below
         obstacles: caption ? [] : obstacles.filter((obstacle) => !family.has(obstacle.owner)).map((obstacle) => ({ rect: obstacle.rect, outline: obstacle.outline })),
       });
-      taken.push({ x: chosen.x - w / 2, y: chosen.y - h / 2, w, h });
+      // A label that cannot stand beside its part without lying on a photo the user gave is set clear of it with a line to its part, as a callout is
+      const lands: Rect = { x: chosen.x - w / 2, y: chosen.y - h / 2, w, h };
+      const onPhoto = (): boolean =>
+        drawn.some((other) => {
+          if (other.figure?.kind !== 'picture' || other.figure.from == null || family.has(other) || !isLiveAt(other, tq)) return false;
+          const at = canvasBoxOf(other, schedule, tq);
+          return at !== null && hitRects(lands, toScreenRect(at, fitOfElement(other, look, tq)), 0);
+        });
+      if (CALLOUTS_READY && !caption && target !== null && isLiveAt(target, tq) && onPhoto()) {
+        callouts.push({ key: element.key, ps, w, h, px: pose.fontSize * ps, element: target, target: targetRect, side: style.near.side, fit, layer: pose.layer });
+        continue;
+      }
+      taken.push(lands);
       out.set(element.key, { x: chosen.x / ps, y: chosen.y / ps });
     }
     if (callouts.length > 0) {
@@ -2347,15 +2376,6 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
       let fy0 = Number.POSITIVE_INFINITY;
       let fx1 = Number.NEGATIVE_INFINITY;
       let fy1 = Number.NEGATIVE_INFINITY;
-      // a backdrop (a rectangle that is the whole canvas, or most of it) is the ground the drawing stands on, not a part of it
-      const backdrop = (element: ElementSpan): boolean => {
-        const geometry = element.figure?.kind === 'shape' ? element.figure.geometry : null;
-        if (geometry === null || geometry.shape !== 'rect') return false;
-        if (geometry.full) return true;
-        const at = canvasBoxOf(element, schedule, tq);
-        const fit = fitOfElement(element, look, tq);
-        return at !== null && at.w * at.h > (0.6 * (fit.box.width * fit.box.height)) / (fit.unit * fit.unit);
-      };
       for (const rect of [...obstacles.filter((o) => !backdrop(o.owner)).map((o) => o.rect), ...callouts.map((c) => c.target)]) {
         fx0 = Math.min(fx0, rect.x);
         fy0 = Math.min(fy0, rect.y);
@@ -2408,6 +2428,16 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
         }
         if (longest !== null) outlines.set(element.key, longest);
       }
+      // a photo the user gave is ink too: no label sits on it, and the leaders cross its edge to the spots they name
+      for (const element of drawn) {
+        if (element.figure?.kind !== 'picture' || element.figure.from == null || !isLiveAt(element, tq)) continue;
+        const at = canvasBoxOf(element, schedule, tq);
+        if (at === null) continue;
+        const rect = toScreenRect(at, fitOfElement(element, look, tq));
+        const points = [{ x: rect.x, y: rect.y }, { x: rect.x + rect.w, y: rect.y }, { x: rect.x + rect.w, y: rect.y + rect.h }, { x: rect.x, y: rect.y + rect.h }];
+        strokes.push({ closed: true, points });
+        fills.push({ closed: true, points });
+      }
       // where labels may go: the stage round the drawing, up to the words the layout has put on each side of it
       const clearance = cell.width;
       let wx0 = outerX;
@@ -2435,7 +2465,7 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
       const body = cell.height;
       const input: CalloutInput = {
         labels: callouts.map((callout) => {
-          const outline = outlines.get(callout.element.key);
+          const outline = callout.element === null ? undefined : outlines.get(callout.element.key);
           return { key: callout.key, size: { width: callout.w, height: callout.h }, target: { x: callout.target.x, y: callout.target.y, width: callout.target.w, height: callout.target.h }, side: callout.side, ...(outline === undefined ? {} : { outline: { points: outline.points, closed: outline.closed }, filled: outline.filled }) };
         }),
         figure: { x: fx0, y: fy0, width: Math.max(1, fx1 - fx0), height: Math.max(1, fy1 - fy0) },

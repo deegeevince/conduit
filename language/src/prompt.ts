@@ -911,6 +911,17 @@ export const asksToStage = (text: string): boolean => DRAWS.test(text) || STAGIN
  * SA5. The canvas, taught only on a turn that draws (or while a drawing is on stage): its sizes, and how to draw well in few lines. Words and
  * controls never use these coordinates; they flow, so the system prompt does not teach them.
  */
+/**
+ * A photo on stage is addressed in its own frame: `in=<pic id>` makes every number a percent of the photo, so the brain reads positions straight off the
+ * image it sees. One line, in the brief of a turn with a photo, never in the fixed prompt.
+ */
+export function photoFrame(images: readonly string[], shapes: Readonly<Record<string, number>> | undefined): string {
+  const first = images[0];
+  const aspect = first === undefined ? undefined : shapes?.[first];
+  const shape = aspect === undefined ? '' : ` ${first} is ${aspect >= 1 ? `${(Math.round(aspect * 100) / 100).toString()} wide to 1 high` : `1 wide to ${(Math.round(100 / aspect) / 100).toString()} high`}.`;
+  return ` A photo's own frame is 0 to 100 across and 0 to 100 down, from its top left: \`ellipse c1 52,18 6x8 in=<pic id>\` rings the spot you see at 52% across, 18% down (radii in percent too), and \`say callout at=52,18 in=<pic id> | name\` labels it with a line to that spot.${shape} Once its marks are on stage, \`canvas_look\` and move any that are off the part they name.`;
+}
+
 export const DRAWING_CHAPTER = (canvas: string): string => `DRAWING (coordinates are for art only): the canvas for this screen is ${canvas}; set another on the scene ($\`scene canvas=square\`): ${Object.entries(CANVAS)
   .map(([name, spec]) => `${name} ${spec.width}x${spec.height}`)
   .join(', ')}. Work back to front: the ground or sky first ($\`rect full\` covers the screen), then the subject as three or four big shapes, then the details: as many marks as the picture needs (a landscape or a portrait may take a hundred; a diagram stays spare). Name your colours once ($\`color sky=#1b2a49\`) and use the names. Anything with parts is a $\`group\`: its parts say $\`in=<id>\` and measure from its $\`at=x,y\`, so it can be moved, turned or copied ($\`use\`) as one. Curves are $\`path\` with SVG path data. To change a shape, declare it again under the same id. A $\`paint\` goes over its group ($\`over=\`): what must stay crisp is written after the $\`paint\`, outside that group, and a second $\`paint over=\` the same group replaces the first.`;
@@ -1267,7 +1278,7 @@ export function buildTurnBrief(context: TurnContext, input: TurnInput, form: Bri
     const ids = (input.images ?? []).join(', ');
     parts.push(
       context.capabilities.uploads && context.services.uploads
-        ? `THE USER'S PHOTOS (attached to this message): ${ids}. Look at them and answer from what you see. Show one on stage with \`pic ${(input.images ?? [])[0]}\` when it helps, to label, trace or build on.`
+        ? `THE USER'S PHOTOS (attached to this message): ${ids}. Look at them and answer from what you see. Show one on stage with \`pic ${(input.images ?? [])[0]}\` when it helps, to label, trace or build on.${photoFrame(input.images ?? [], context.photos)}`
         : `The user attached photos (${ids}) that this stage cannot show; answer from what you see in them.`,
     );
   }

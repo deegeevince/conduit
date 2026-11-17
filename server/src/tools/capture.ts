@@ -21,12 +21,13 @@
 
 import type { ChildProcess } from 'node:child_process';
 import { existsSync, readdirSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import type { StageBase } from '@conduit/language';
 import { spawnTracked } from '../brains/claude-cli/process';
-import { withDataFlag } from '../data-dir';
+import { resolveDataDir, withDataFlag } from '../data-dir';
 import { processEnvironment, resolveLogDir } from '../env';
 import type { SessionRecord } from '../domain/session-log';
 
@@ -259,6 +260,39 @@ interface Job {
   readonly debug: boolean;
   /** `--trace from,to,step`: the boxes of what is drawn (not words) at these times, into the debug file */
   readonly trace: readonly number[] | null;
+  /** `--spots`: for each `say … at=x,y in=<pic>` line, how far from that spot (percent of the photo's width) its leader ends at rest */
+  readonly spots: boolean;
+  /** the user's photos this turn draws, by upload id: a data address, so the harness shows the photo where the app would */
+  readonly photos: Readonly<Record<string, string>>;
+}
+
+/**
+ * The photos a turn puts on stage (`pic … from=u1`, and any the stage it began from still shows), read from the data folder's uploads
+ * (`<DATA_DIR>/uploads/<run>-<session>/u1.jpg`; the folder whose name ends with the log's session id first). A photo that is not there is left out.
+ */
+function photosOf(options: Options, turn: LoggedTurn, base: StageBase | null): Record<string, string> {
+  const wanted = new Set<string>();
+  for (const line of turn.lines) {
+    const found = /\bfrom=(u\d+)\b/.exec(line.text);
+    if (line.text.startsWith('pic') && found?.[1] !== undefined) wanted.add(found[1]);
+  }
+  for (const element of base?.elements ?? []) if (element.figure?.kind === 'picture' && typeof element.figure.from === 'string') wanted.add(element.figure.from);
+  if (wanted.size === 0) return {};
+  const root = join(options.data === null ? resolveDataDir(processEnvironment()) : resolve(options.data), 'uploads');
+  if (!existsSync(root)) return {};
+  const session = basename(options.log, '.jsonl');
+  const folders = readdirSync(root).sort((a, b) => Number(session.endsWith(b.replace(/^.*-/, ''))) < Number(session.endsWith(a.replace(/^.*-/, ''))) ? 1 : -1);
+  const out: Record<string, string> = {};
+  for (const id of wanted) {
+    for (const folder of folders) {
+      const kind = ['jpg', 'png'].find((extension) => existsSync(join(root, folder, `${id}.${extension}`)));
+      if (kind !== undefined) {
+        out[id] = `data:image/${kind === 'jpg' ? 'jpeg' : 'png'};base64,${readFileSync(join(root, folder, `${id}.${kind}`)).toString('base64')}`;
+        break;
+      }
+    }
+  }
+  return out;
 }
 
 interface Made {
@@ -274,6 +308,7 @@ interface Made {
   readonly notes: readonly string[];
   readonly rejected: number;
   readonly debug: unknown;
+  readonly spots: readonly { readonly id: string; readonly words: string; readonly error: number | null }[];
 }
 
 /** Source of an async function of a Job, run in the page. Plain JavaScript: the page has no TypeScript. */
@@ -289,7 +324,15 @@ const PAGE_SCRIPT = String.raw`async (job) => {
   const viewport = job.viewport;
 
   // The score, as the painter heard it: each line pushed at the playhead it arrived at; each part's arrival noted for its layout epochs.
-  const normalizer = new L.LineNormalizer(() => 'cx' + (++counter));
+  // the user's photos: how wide each is for how tall, and the address the renderer draws it from
+  const shapes = {};
+  for (const [id, url] of Object.entries(job.photos)) {
+    const image = new Image();
+    image.src = url;
+    await image.decode();
+    shapes[id] = image.naturalWidth / image.naturalHeight;
+  }
+  const normalizer = new L.LineNormalizer(() => 'cx' + (++counter), [], { photos: shapes });
   let counter = 0;
   const score = new L.TurnScore(base, job.opened);
   const arrivals = new Map();
@@ -308,7 +351,12 @@ const PAGE_SCRIPT = String.raw`async (job) => {
   }
   const schedule = score.schedule;
   const lockLook = job.look;
-  const context = (arrivalMap) => ({ viewport, reducedMotion: false, lockLook, paintings: new Map(), arrivals: arrivalMap, charts: { kinds: CHARTS_READY, data: new Map() }, ...(job.lens ? { grow: true } : {}) });
+  const paintings = new Map();
+  for (const element of schedule.elements) {
+    const from = element.figure && element.figure.kind === 'picture' ? element.figure.from : null;
+    if (from && job.photos[from]) paintings.set(element.key, { status: 'ready', url: job.photos[from], since: 0, aspect: shapes[from] });
+  }
+  const context = (arrivalMap) => ({ viewport, reducedMotion: false, lockLook, paintings,  arrivals: arrivalMap, charts: { kinds: CHARTS_READY, data: new Map() }, ...(job.lens ? { grow: true } : {}) });
   const timeline = buildTimeline(schedule, base, context(arrivals));
   const duration = settledEnd(timeline, null, base.scene.mood);
   const frameAt = (seconds) => { const time = Math.max(0, seconds); return timeline.frameAt({ time, ambient: time, wallTime: pinnedWallTime(time), clock: 'paused' }); };
@@ -319,6 +367,29 @@ const PAGE_SCRIPT = String.raw`async (job) => {
   const restTimeline = buildTimeline(new L.TurnScore(stage).schedule, stage, context(new Map()));
   const restFrame = { ...restTimeline.frameAt({ time: 0, ambient: 3, wallTime: pinnedWallTime(3), clock: 'paused' }), camera: REST_POSE };
 
+  // --spots: where each leader of a callout written at a spot of a photo ends, against that spot read off the photo's own frame (box and transform)
+  const spots = [];
+  if (job.spots) {
+    const pictures = restFrame.figures.filter((f) => f.kind === 'picture');
+    for (const entry of job.lines) {
+      const m = /^say (\S+)[^|]*\bat=(-?[\d.]+),(-?[\d.]+)[^|]*\bin=(\S+)[^|]*\|\s*(.*)$/.exec(entry.text);
+      if (!m) continue;
+      const picture = pictures.find((f) => f.id === m[4]);
+      const leader = restFrame.figures.find((f) => f.key.endsWith('/leader') && f.id === m[1]);
+      const mine = { id: m[1], words: m[5], error: null };
+      if (picture && leader) {
+        const t = picture.transform;
+        const px = picture.box.x + (Number(m[2]) / 100) * picture.box.width;
+        const py = picture.box.y + (Number(m[3]) / 100) * picture.box.height;
+        const want = { x: t.a * px + t.c * py + t.e, y: t.b * px + t.d * py + t.f };
+        const points = leader.outline[0].points;
+        const ends = [points[0], points[points.length - 1]];
+        const wide = Math.abs(t.a) * picture.box.width;
+        mine.error = Math.min(...ends.map((q) => Math.hypot(q.x - want.x, q.y - want.y))) / wide * 100;
+      }
+      spots.push(mine);
+    }
+  }
   const makeRenderer = () => (canUseThree() ? createThreeRenderer() : createPlainRenderer());
   const hold = document.createElement('div');
   hold.style.cssText = 'position:fixed;left:-30000px;top:0;width:' + viewport.width + 'px;height:' + viewport.height + 'px;overflow:hidden;';
@@ -474,13 +545,14 @@ const PAGE_SCRIPT = String.raw`async (job) => {
     const sight = sightOf(timeline, schedule, base, duration, false);
     for (const item of sight.items) if (item.notes.length > 0) notes.push('measure: ' + item.id + ' (' + item.kind + ') ' + item.notes.join(', '));
   } catch (error) { notes.push('measure failed: ' + String((error && error.message) || error)); }
-  return { duration, times, strip, rest, svgText, svgPng, plainPng, webm, videoNote, notes, rejected, debug };
+  return { duration, times, strip, rest, svgText, svgPng, plainPng, webm, videoNote, notes, rejected, debug, spots };
 }`;
 
 // ---------------------------------------------------------------------------------------------------------------------------------
 // The command
 
 interface Options {
+  readonly data: string | null;
   readonly all: boolean;
   readonly log: string;
   readonly turn: string | null;
@@ -497,6 +569,7 @@ interface Options {
   readonly web: string | null;
   readonly debug: boolean;
   readonly trace: number[] | null;
+  readonly spots: boolean;
 }
 
 /** A log named by its path, or by its file name or session id, which is looked for in the data folder's logs (`--data <dir>`, `DATA_DIR`, else the default). */
@@ -525,6 +598,7 @@ function parseArgs(argv: readonly string[]): Options {
   let data: string | null = null;
   let debug = false;
   let trace: number[] | null = null;
+  let spots = false;
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i] ?? '';
     const value = (): string => argv[(i += 1)] ?? usage(`${arg} needs a value`);
@@ -541,6 +615,7 @@ function parseArgs(argv: readonly string[]): Options {
     else if (arg === '--svg') svg = true;
     else if (arg === '--plain') plain = true;
     else if (arg === '--debug') debug = true;
+    else if (arg === '--spots') spots = true;
     else if (arg === '--trace') trace = value().split(',').map(Number);
     else if (arg.startsWith('--')) usage(`unknown flag ${arg}`);
     else positional.push(arg);
@@ -552,7 +627,7 @@ function parseArgs(argv: readonly string[]): Options {
   const log = positional[0];
   if (log === undefined) usage('which log?');
   if (!all && positional[1] === undefined) usage('which turn? (or --all)');
-  return { all, log: locate(log, data), turn: all ? null : (positional[1] ?? null), screen, screenName, look, shade, lens, svg, plain, out, fps, video, web, debug, trace };
+  return { data, all, log: locate(log, data), turn: all ? null : (positional[1] ?? null), screen, screenName, look, shade, lens, svg, plain, out, fps, video, web, debug, trace, spots };
 }
 
 interface Captured {
@@ -589,6 +664,8 @@ async function captureOne(page: Page, options: Options, turns: readonly LoggedTu
     maxSeconds: 90,
     debug: options.debug,
     trace: options.trace,
+    spots: options.spots,
+    photos: photosOf(options, turn, baseOf(turns, index)),
   };
   const made = await page.evaluate<Made>(`(${PAGE_SCRIPT})(${JSON.stringify(job)})`);
   const stem = join(dir, `${basename(options.log, '.jsonl')}-${turn.turn}${options.look === null ? '' : `-${options.look}`}${options.shade ? '-shade' : ''}${options.lens ? '-lens' : ''}${options.screenName === '1280x720' ? '' : `-${options.screenName}`}`);
@@ -619,6 +696,8 @@ async function captureOne(page: Page, options: Options, turns: readonly LoggedTu
   process.stdout.write(`${turn.turn}: ${JSON.stringify(turn.asked.slice(0, 70))}  ${made.duration.toFixed(1)} s, ${turn.lines.length} lines${made.rejected > 0 ? `, ${made.rejected} would not read back` : ''}${baseOf(turns, index) === null ? '' : ', from the stage the log left'}\n  strip ${strip}\n  rest  ${rest}\n  film  ${webm ?? `none${made.videoNote === null ? ' (--no-video)' : ` (${made.videoNote})`}`}\n`);
   for (const extra of extras) process.stdout.write(`  extra ${extra}\n`);
   for (const note of made.notes) process.stdout.write(`  note: ${note}\n`);
+  for (const spot of made.spots) process.stdout.write(`  spot ${spot.id} ${JSON.stringify(spot.words)}: ${spot.error === null ? 'no leader' : `leader ends ${spot.error.toFixed(2)}% of the photo's width from its spot`}\n`);
+  if (made.spots.some((spot) => spot.error === null || spot.error > 1)) process.exitCode = 1;
   return { turn: turn.turn, strip, rest, webm, duration: made.duration };
 }
 

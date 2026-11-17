@@ -473,3 +473,43 @@ export function refitInside(child: ShapeGeometry, container: ShapeGeometry): { g
   }
   return { geometry: scaleGeometry(g, 0.1, at), refit: true };
 }
+
+/**
+ * A shape written in the frame of a picture (`in=<pic>`): every number is a percent (0 to 100) of the picture's width across and of its height down,
+ * from its top left. This is the same shape in canvas units, where the picture's `frame` stands. A circle's radius is a percent of the width.
+ */
+export function inFrame(geometry: ShapeGeometry, frame: CanvasBox): ShapeGeometry {
+  const px = (x: number): number => frame.x + (x / 100) * frame.w;
+  const py = (y: number): number => frame.y + (y / 100) * frame.h;
+  const sw = frame.w / 100;
+  const sh = frame.h / 100;
+  const round = (n: number): number => Math.round(n * 1000) / 1000;
+  switch (geometry.shape) {
+    case 'circle':
+      return { shape: 'circle', cx: round(px(geometry.cx)), cy: round(py(geometry.cy)), r: round(geometry.r * sw) };
+    case 'ellipse':
+      return { shape: 'ellipse', cx: round(px(geometry.cx)), cy: round(py(geometry.cy)), rx: round(geometry.rx * sw), ry: round(geometry.ry * sh) };
+    case 'rect':
+      return geometry.full ? geometry : { ...geometry, x: round(px(geometry.x)), y: round(py(geometry.y)), w: round(geometry.w * sw), h: round(geometry.h * sh), r: round(geometry.r * Math.min(sw, sh)) };
+    case 'line':
+    case 'poly':
+      return { ...geometry, points: geometry.points.map((p) => ({ x: round(px(p.x)), y: round(py(p.y)) })) };
+    case 'path': {
+      const commands: PathCommand[] = geometry.commands.map((c) => {
+        if (c.op === 'Z') return c;
+        if (c.op === 'C') return { op: 'C', x1: round(px(c.x1)), y1: round(py(c.y1)), x2: round(px(c.x2)), y2: round(py(c.y2)), x: round(px(c.x)), y: round(py(c.y)) };
+        return { op: c.op, x: round(px(c.x)), y: round(py(c.y)) };
+      });
+      const d = commands.map((c) => (c.op === 'Z' ? 'Z' : c.op === 'C' ? `C${c.x1} ${c.y1} ${c.x2} ${c.y2} ${c.x} ${c.y}` : `${c.op}${c.x} ${c.y}`)).join(' ');
+      return { shape: 'path', d, commands };
+    }
+  }
+}
+
+/** The largest box of this width over height that fits whole inside `box`, centred in it: where a picture of that shape stands in its box. */
+export function containedIn(box: CanvasBox, aspect: number | null | undefined): CanvasBox {
+  if (aspect === null || aspect === undefined || !(aspect > 0) || !Number.isFinite(aspect)) return box;
+  const w = Math.min(box.w, box.h * aspect);
+  const h = w / aspect;
+  return { x: box.x + (box.w - w) / 2, y: box.y + (box.h - h) / 2, w, h };
+}

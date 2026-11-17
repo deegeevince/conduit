@@ -1216,19 +1216,26 @@ function parsePic(head: Head, issues: Issues): Line | null {
   const { id, numbers, names } = splitWords(head.words, true);
   const { props, rest } = readStyleProps(head.pairs, issues);
   let from: string | undefined;
+  let aspect: number | undefined;
   for (const pair of rest) {
     if ((pair.key === 'from' || pair.key === 'upload' || pair.key === 'src') && isValidElementId(pair.value)) from = pair.value;
+    else if (pair.key === 'aspect' && Number.isFinite(Number(pair.value)) && Number(pair.value) > 0.05 && Number(pair.value) < 20) aspect = Number(pair.value);
     else issues.warn('unknown-key', `"${pair.key}" is not a property here; ignored`, pair.token);
   }
-  // `pic u1`: the one word that names the upload, when nothing else does.
+  // `pic u1`: the one word that names the upload, when nothing else does. `pic wheel u1`: the upload as a word beside the id is the same.
   const bare = from === undefined && id !== '-' && /^u\d+$/.test(id);
   if (bare) from = id;
+  const named = from === undefined ? names.find((word) => /^u\d+$/.test(word)) : undefined;
+  if (named !== undefined) {
+    from = named;
+    names.splice(names.indexOf(named), 1);
+  }
   if (from === undefined) {
     issues.error('missing-argument', 'pic needs the id of the picture the user gave: pic photo from=u1');
     return null;
   }
   const box = boxOf(numbers, issues, 'pic');
-  const line = { verb: 'pic' as const, id: bare ? '-' : id, styles: readStyleNames(names, issues), props, from };
+  const line = { verb: 'pic' as const, id: bare ? '-' : id, styles: readStyleNames(names, issues), props, from, ...(aspect === undefined ? {} : { aspect }) };
   return withWhen(box === undefined ? line : { ...line, box }, head.when);
 }
 

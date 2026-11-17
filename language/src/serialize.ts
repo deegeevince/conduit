@@ -213,7 +213,7 @@ export function serializeLine(line: Line): string {
       return withText([...head, ...propTokens(line.props), ...whenToken(line.when)], line.prompt === '' ? undefined : line.prompt);
     }
     case 'pic': {
-      const head: string[] = ['pic', line.id, ...boxTokens(line.box), ...line.styles, `from=${line.from}`];
+      const head: string[] = ['pic', line.id, ...boxTokens(line.box), ...line.styles, `from=${line.from}`, ...(line.aspect === undefined ? [] : [`aspect=${line.aspect}`])];
       return [...head, ...propTokens(line.props), ...whenToken(line.when)].join(' ');
     }
     case 'deck':
