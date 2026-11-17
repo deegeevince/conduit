@@ -8,7 +8,7 @@
 // puts the look's colour, stroke and motion on it and maps it to the stage.
 
 import { boundsOf, CANVAS, describeFigure, pointAlong, resample, ROW_SECONDS, sceneAt, valueAt } from '@conduit/language';
-import type { Anchor, ElementChange, ElementSpan, ElementStyle, Fill, Figure, Layer, Paint, Polyline, Schedule, SceneSpan, SpriteData, StageBase } from '@conduit/language';
+import type { Anchor, ElementChange, ElementSpan, ElementStyle, Fill, Figure, Layer, Paint, Polyline, Schedule, SceneSpan, SpriteData, StageBase, StrokeCharacter } from '@conduit/language';
 import type { Affine, Colour, FieldFrame, FigureFrame, FillFrame, PictureFrame, ShapeFrame, SpriteFrame, StrokeFrame } from '../contracts/frame';
 import { IDENTITY } from '../contracts/frame';
 import type { Ease, LookSpec, MotionRecipe } from '../contracts/look';
@@ -796,6 +796,42 @@ export function canvasBoxOf(element: ElementSpan, schedule: Schedule, time: numb
   return unionBox(element, schedule, time, null, 'out');
 }
 
+/** The most a canvas grows to take in what was drawn past it: this many times its declared size on each side. Past it the drawing is cropped, as before. */
+const MAX_GROWTH = 4;
+const sceneSizes = new WeakMap<Schedule, Map<string, { width: number; height: number }>>();
+type Size = { width: number; height: number };
+
+/**
+ * The size of the drawing space of a scene: its declared canvas, or, when something was drawn with its centre past the right or the bottom edge
+ * (a row of practice boxes that runs off the square), the declared canvas grown to take in all that was drawn there (`fitIn` then leaves room past it for labels), so the whole drawing is
+ * fitted to the screen and nothing is cropped. The origin stays where it was, so a picture that fits is fitted exactly as before. Within reason:
+ * never more than MAX_GROWTH times the declared size on a side.
+ */
+export function sceneCanvasOf(schedule: Schedule, scene: Pick<SceneSpan, 'id' | 'canvas'>): Size {
+  const declared: Size = CANVAS[scene.canvas];
+  const memo = sceneSizes.get(schedule) ?? new Map<string, { width: number; height: number }>();
+  sceneSizes.set(schedule, memo);
+  const known = memo.get(scene.id);
+  if (known !== undefined) return known;
+  let right = declared.width;
+  let bottom = declared.height;
+  let past = false;
+  for (const element of schedule.elements) {
+    if (element.scene !== scene.id || element.parent !== null || element.figure === null || element.figure.kind !== 'shape') continue;
+    if (element.style.layer !== 'mid' || (element.figure.geometry.shape === 'rect' && element.figure.geometry.full)) continue;
+    const box = unionBox(element, schedule, Math.max(0, element.enter?.end ?? 0), null, 'out');
+    if (box === null) continue;
+    if (box.x + box.w / 2 > declared.width || box.y + box.h / 2 > declared.height) past = true;
+    right = Math.max(right, box.x + box.w);
+    bottom = Math.max(bottom, box.y + box.h);
+  }
+  const grown: Size = past
+    ? { width: Math.min(declared.width * MAX_GROWTH, right), height: Math.min(declared.height * MAX_GROWTH, bottom) }
+    : { width: declared.width, height: declared.height };
+  memo.set(scene.id, grown);
+  return grown;
+}
+
 /** The keys of the elements a picture stands on: the sketch the image model is shown, and the lines that fade as the painting grows. */
 export function sketchKeysOf(picture: ElementSpan, schedule: Schedule): Set<string> {
   const keys = new Set<string>();
@@ -1029,6 +1065,14 @@ function fillColours(trans: Trans, look: LookSpec, flash: number, arrival: numbe
   };
 }
 
+/** From this width (canvas units) a stroke is no longer a pencil line: the grain of a pencil turns to hatching and stripes at that size, so it is drawn as clean ink. */
+const PENCIL_MAX_THICK = 2.5;
+
+/** The character a stroke of this width is drawn in when the line gave no `brush=`: the look's own, except that a thick pencil line is clean ink. */
+function characterAt(character: StrokeCharacter, width: number): StrokeCharacter {
+  return character === 'pencil' && width >= PENCIL_MAX_THICK ? 'ink' : character;
+}
+
 function strokeOf(trans: Trans, look: LookSpec, flash: number, progress: number): StrokeFrame | null {
   const { from, to } = trans.from.stroke === 'none' && trans.to.stroke === 'none' ? { from: null, to: null } : { from: trans.from.stroke, to: trans.to.stroke };
   if (from === null || to === null) return null;
@@ -1048,7 +1092,7 @@ function strokeOf(trans: Trans, look: LookSpec, flash: number, progress: number)
     colour,
     width,
     progress,
-    character: trans.to.brush ?? look.stroke.character,
+    character: trans.to.brush ?? characterAt(look.stroke.character, width),
     ...(profile !== null && { pressure: profile }),
     ...(colours !== null && { along: colours }),
   };

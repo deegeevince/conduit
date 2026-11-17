@@ -105,6 +105,12 @@ export async function drawGroup(base: string, screen: LensScreen, dir: string, t
     const after = await litShare(tab, afterFile);
     picture = `${tag}-draw-after.png`;
     const m1 = await tab.eval<Measure>(MEASURE);
+    // the bar opened from its pen button (it starts folded on a short screen): how much of the stage it takes is what this picture is for
+    const opened = await tab.eval<boolean>(`(() => { const pill = document.querySelector('.ink-btn--pill'); if (!pill || pill.hidden) return false; pill.click(); return true; })()`);
+    if (opened) {
+      await sleep(400);
+      await writeFile(join(dir, `${tag}-draw-open.png`), Buffer.from((await tab.shot()).split(',')[1] ?? '', 'base64'));
+    }
     await writeFile(join(dir, `${tag}-draw-measure.json`), JSON.stringify({ before: m0, after: m1, litBefore: before, litAfter: after }, null, 1));
     note(`draw: lit ${before.toFixed(2)} -> ${after.toFixed(2)}, canvases ${m0.canvasMegapixels.toFixed(2)} -> ${m1.canvasMegapixels.toFixed(2)} MP, GPU allocations ${JSON.stringify(m0.count)} -> ${JSON.stringify(m1.count)}, viewport ${m0.css} -> ${m1.css}`);
     if (after < 0.2 || after < before * 0.5) list.push(`the screen went dark when Draw opened (${(before * 100).toFixed(0)}% of it lit before, ${(after * 100).toFixed(0)}% after)`);

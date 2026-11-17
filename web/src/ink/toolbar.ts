@@ -32,7 +32,7 @@ export interface InkBar {
 
 const FOLD_KEY = 'conduit.ink.bar';
 
-/** Whether the bar starts folded: what this device chose last, else folded on a phone and open on an iPad or a desktop. */
+/** Whether the bar starts folded: what this device chose last, else folded on a phone or any short window, and open on an iPad or a desktop. */
 function startsFolded(): boolean {
   try {
     const kept = localStorage.getItem(FOLD_KEY);
@@ -41,6 +41,8 @@ function startsFolded(): boolean {
   } catch {
     // a browser that will not remember is not a problem
   }
+  // a short window (a phone held sideways) is mostly bar if the bar is open: it waits behind its pen button until it is asked for
+  if (window.innerHeight < 520) return true;
   const small = Math.min(window.screen?.width || window.innerWidth, window.screen?.height || window.innerHeight);
   return window.matchMedia('(pointer: coarse)').matches ? small < 600 : window.innerWidth < 640;
 }

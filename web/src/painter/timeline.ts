@@ -1,4 +1,4 @@
-import { CANVAS, DEFAULT_TUNE_VOICE, withoutUnknownBraces, cachedTune, describeFigure, outlineOf, tuneRowsOf, ENTER_SECONDS, exitSeconds, isInFlow, isStruckAt, lookOfStage, PACE_TIMING, sceneAt, styleAt, valueAt } from '@conduit/language';
+import { DEFAULT_TUNE_VOICE, withoutUnknownBraces, cachedTune, describeFigure, outlineOf, tuneRowsOf, ENTER_SECONDS, exitSeconds, isInFlow, isStruckAt, lookOfStage, PACE_TIMING, sceneAt, styleAt, valueAt } from '@conduit/language';
 import type { SightNote, ClockState, ElementChange, ElementSpan, ElementStyle, ExitEffect, Layer, LookId, Mood, ResolvedLook, SceneSpan, Schedule, StageBase } from '@conduit/language';
 import type { CameraSpan, Layout } from '@conduit/language';
 import type { Colour, ElementFrame, FigureFrame, Frame, RunFrame, ShapeFrame } from '../contracts/frame';
@@ -37,7 +37,7 @@ import { canvasToStage, fitIn, lerpFit } from './canvas';
 import type { CanvasFit } from './canvas';
 import { contrastRatio, mapToGamut, minContrastFor, plateFor, resolveInk, spriteBacking } from './colour';
 import { ease, quantise } from './ease';
-import { DEVELOP_SECONDS, canvasBoxOf, figuresAt, groupMatrixAt, spriteColours } from './figures';
+import { DEVELOP_SECONDS, canvasBoxOf, sceneCanvasOf, figuresAt, groupMatrixAt, spriteColours } from './figures';
 import type { Painting } from './figures';
 import { revealShare } from '../fonts/measure';
 import { arrange, controlRoomOf, controlsNeedOf, needsOf } from './layout';
@@ -856,7 +856,7 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
     const safe = safeFrame(viewport, look);
     // what the controls are sized for: the flow's width, which only a side-by-side layout narrows
     const first = planStage({ viewport, look, layout: scene.layout, blocks: blocks.list, flowHeight: () => 0, flowOrder: null, footHeight: () => 0 });
-    const sceneFit = fitIn(scene.canvas, first.picture ?? safe, first.flow, viewport);
+    const sceneFit = fitIn(scene.canvas, first.picture ?? safe, first.flow, viewport, sceneCanvasOf(schedule, scene));
     const baseItems: LayoutItem[] = present.map((element) => {
       const template = templateOf(element);
       const source = sourceOf(element);
@@ -1060,7 +1060,7 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
       });
       if (grown.some((block, i) => block !== blocks.list[i])) plan = planWith(grown);
       flowFloor.set(scene.id, wanted);
-      const fit = fitIn(scene.canvas, plan.picture ?? safe, plan.flow, viewport);
+      const fit = fitIn(scene.canvas, plan.picture ?? safe, plan.flow, viewport, sceneCanvasOf(schedule, scene));
       // whether the controls, set as they are, fit what the plan gave the flow (the words give way to them)
       const asked = [...items, ...upcoming].filter((item) => item.reserve !== undefined && item.style.tap !== true);
       const flowOf = (list: readonly LayoutItem[]) => ({ ...probe, items: list, expected: null });
@@ -1133,7 +1133,7 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
     // text given a point of the canvas is set by the layout, which keeps it off other text; this is where it wants its centre
     const pins = new Map<string, { x: number; y: number; k: number }>();
     // words on the picture keep their size against the picture: when the plan gives it less than the whole stage, they shrink with it
-    const wholeUnit = Math.max(1e-6, Math.min(safe.width / CANVAS[scene.canvas].width, safe.height / CANVAS[scene.canvas].height));
+    const wholeUnit = Math.max(1e-6, Math.min(safe.width / sceneCanvasOf(schedule, scene).width, safe.height / sceneCanvasOf(schedule, scene).height));
     const keeps = Math.max(0.55, Math.min(1, fit.unit / wholeUnit));
     for (const element of [...present, ...liveControls]) {
       const style = styleAt(element, start);
@@ -1187,7 +1187,7 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
       if ((element.kind !== 'shape' && element.kind !== 'copy') || element.style.layer !== 'mid') continue;
       const ground = element.style.fill !== undefined && element.style.fill !== 'none';
       const at = canvasBoxOf(element, schedule, Math.max(start, element.enter?.end ?? 0));
-      if (at === null || at.w * at.h > 0.6 * CANVAS[scene.canvas].width * CANVAS[scene.canvas].height) continue;
+      if (at === null || at.w * at.h > 0.6 * sceneCanvasOf(schedule, scene).width * sceneCanvasOf(schedule, scene).height) continue;
       solids.push({ x: fit.box.x + at.x * fit.unit, y: fit.box.y + at.y * fit.unit, width: Math.max(1, at.w * fit.unit), height: Math.max(1, at.h * fit.unit), shape: true, ...(ground ? { ground } : {}) });
     }
     const arrangement = arrange({
@@ -1945,7 +1945,7 @@ export function buildTimeline(drawnSchedule: Schedule, base: StageBase, context:
     if (found === null) {
       const scene = schedule.scenes.find((candidate) => candidate.id === sceneId) ?? schedule.scenes[0];
       const safe = safeFrame(viewport, specAt(time));
-      return fitIn(scene?.canvas ?? base.scene.canvas, safe, safe, viewport);
+      return fitIn(scene?.canvas ?? base.scene.canvas, safe, safe, viewport, sceneCanvasOf(schedule, scene ?? base.scene));
     }
     const { epoch, previous } = found;
     if (previous === null || previous.look !== epoch.look) return epoch.fit;
