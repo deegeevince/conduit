@@ -388,13 +388,14 @@ function gridBlock(input: StructureInput, math: MathFigure, grid: maths.Grid, sh
     if (state.mark === 'wrong') {
       lines.push({ kind: 'shape', owner: key, part: `bad:${name}`, outline: [open([{ x: bx + s * 0.1, y: by + s * 0.1 }, { x: bx + s * 0.9, y: by + s * 0.9 }]), open([{ x: bx + s * 0.9, y: by + s * 0.1 }, { x: bx + s * 0.1, y: by + s * 0.9 }])], role: 'line' });
     }
-    // the pen's ink can be taken off a cell: a small cross at its corner, which a finger or a pen finds from a fingertip's box
+    // the pen's ink can be taken off a cell: a small cross at its corner. A finger or a pen finds it in a box that reaches only 20 into the cell, so that the middle of
+    // the cell (where a tap opens the keyboard) is never the cross's
     if (state.ink) {
-      const r = Math.max(7, Math.min(10, drawn.width * 0.2));
+      const r = Math.max(6, Math.min(8, drawn.width * 0.16));
       const cx = drawn.x + 2 + r;
       const cy = drawn.y + 2 + r;
       lines.push({ kind: 'shape', owner: key, part: `clr:${name}`, outline: [circleOutline(cx, cy, r), open([{ x: cx - r * 0.45, y: cy - r * 0.45 }, { x: cx + r * 0.45, y: cy + r * 0.45 }]), open([{ x: cx + r * 0.45, y: cy - r * 0.45 }, { x: cx - r * 0.45, y: cy + r * 0.45 }])], role: 'grid' });
-      clearing.set(name, box(cx - MIN_TARGET / 2, cy - MIN_TARGET / 2, MIN_TARGET, MIN_TARGET));
+      clearing.set(name, box(drawn.x - 8, drawn.y - 8, 28, 28));
     }
   };
 

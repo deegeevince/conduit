@@ -27,6 +27,7 @@ import { mountTranscript } from '../chrome/transcript';
 import type { Transcript } from '../chrome/transcript';
 import { FONTS, fontFor } from '../fonts';
 import { DRAW_WORDS, mountStageInk } from '../ink/stage';
+import { guardFor, mountPenWriting } from '../app/pen-write';
 import type { StageInk } from '../ink/stage';
 import { LOOKS } from '../looks';
 import { continueConversation, listConversations, readConversation } from './api';
@@ -611,15 +612,18 @@ async function start(): Promise<void> {
   // The words panel opens over the room (the stage's box), so it is made there; its button goes up to the header with the rest of the tools.
   const menu = composer.menu;
   transcript = mountTranscript(canvas.room, mounted.painter, { menu, onChoice: (key) => mounted.choose(key), onCopyAnswer: (turn) => void copyAnswer(mounted, turn) });
+  const penGuard = guardFor(mounted.lens);
   stageInk = mountStageInk(canvas.stageHost, menu, {
     upload: async (png) => (await mounted.link.uploadPhoto(png)).id,
     lastTurn: () => mounted.lastTurn(),
     capture: (maxSide) => mounted.capture(maxSide),
     prompt: (words, marks) => mounted.prompt(words, [], marks),
     announce: (text) => mounted.announce(text),
-  }, mounted.lens === null ? {} : { guard: mounted.lens.guard });
-  // ?lens=1: the pen draws on the stage without Draw, and the ink is looked through the lens
+  }, { guard: penGuard });
+  // the lens (`?lens=1`) looks at the ink through its own view
   mounted.lens?.useInk(stageInk);
+  // the Pencil writes on the stage with no mode: in a written method's cells (and anywhere with the lens)
+  mountPenWriting(mounted, stageInk, canvas.stageHost, penGuard);
   mountTour(mounted, {
     showCanvas: () => showPageCanvas(),
     showAnswer: () => void openCanvas(mounted.lastTurn(), null),

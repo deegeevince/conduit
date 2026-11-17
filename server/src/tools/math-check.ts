@@ -31,7 +31,7 @@ import { spawnTracked } from '../brains/claude-cli/process';
 import { claimPort, releasePort } from './check-ports';
 import { repoRoot, sleep, stop, waitFor } from './explore-browser';
 import { Conversation, Tab } from './smoke';
-import { Hands } from './lens-check';
+import { Hands, line } from './lens-check';
 import type { Point } from './lens-check';
 import type { CheckResult, Options } from './smoke';
 
@@ -475,9 +475,156 @@ async function fillScene(mine: MathsTab, problems: Problems): Promise<void> {
   }
 }
 
+
+interface PenHook {
+  owners(): { stroke: string; key: string; part: string }[];
+  free(): string[];
+  colours(): string[];
+}
+
+/** The pen: no Draw, one stroke owned by its cell, the larger share wins, a finger leaves no ink, the fake reader's digits show and Check marks them, a misread is corrected by a tap and a typed digit. */
+async function penScene(mine: MathsTab, dir: string, problems: Problems): Promise<string> {
+  const list = problems['pen'] as string[];
+  const { tab, hands, screen } = mine;
+  const owners = (): Promise<PenHook['owners'] extends () => infer R ? R : never> => tab.eval('window.__penWrite ? window.__penWrite.owners() : []');
+  const strokes = async (): Promise<number> => (await hands.strokes())?.strokes.length ?? 0;
+  const reads = (): Promise<{ cells: number; totalMs: number }[]> => tab.eval('window.__mathReads || []');
+  const stroke = async (id: string, part: string, from: [number, number], to: [number, number], n = 10): Promise<void> => {
+    const box = (await mine.cell(id, part))?.box;
+    if (box === undefined) throw new Error(`no cell ${id}.${part}`);
+    await hands.pen(line(await mine.centre(box, { x: from[0], y: from[1] }), await mine.centre(box, { x: to[0], y: to[1] }), n));
+  };
+  const wait = async (what: string, until: () => Promise<boolean>, ms = 6000): Promise<boolean> => {
+    for (let waited = 0; waited < ms; waited += 200) {
+      if (await until()) return true;
+      await sleep(200);
+    }
+    list.push(`never: ${what}`);
+    return false;
+  };
+  const played = await mine.play(['scene layout=stack mood=calm', 'math m4 column | 12+12'].join('\n'));
+  if (played !== '') {
+    list.push(played);
+    return '';
+  }
+  if (await hands.drawToggle()) list.push('Draw is open at the start');
+  // 0. no pen seen yet: a finger drag across the cells leaves no ink, and a short pen tap is a press (it focuses the cell and leaves no ink)
+  const tens = (await mine.cell('m4', 'ans-tens'))?.box as { x: number; y: number; width: number; height: number };
+  const ones = (await mine.cell('m4', 'ans-ones'))?.box as { x: number; y: number; width: number; height: number };
+  await mine.upFocus();
+  await hands.pen([await mine.centre(tens), await mine.centre(tens)]);
+  if ((await strokes()) !== 0) list.push('a short pen tap on a cell left ink');
+  if ((await mine.focused()) !== 'ans-tens') list.push(`a short pen tap on the tens cell focused "${(await mine.focused()) || 'nothing'}": a tap is still a press`);
+  else if (!(await mine.upFocus()).includes('ans-tens')) list.push('the focus after a pen tap came after the tap, not inside it');
+  await mine.blur();
+  await hands.finger(line(await mine.centre(tens, { x: 0.1, y: 0.2 }), await mine.centre(ones, { x: 0.9, y: 0.8 }), 12));
+  if ((await strokes()) !== 0) list.push(`a finger drag across the cells left ${await strokes()} stroke(s) of ink`);
+  // a palm (a wide contact) is ignored once a pen has been seen: it does not take the keyboard
+  const palm = await mine.centre(tens);
+  await tab.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: palm.x, y: palm.y, id: 1, radiusX: 80, radiusY: 80 }] });
+  await sleep(60);
+  await tab.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await sleep(300);
+  if ((await mine.focused()) !== '') list.push(`a palm (a contact 160 wide) took the keyboard into "${await mine.focused()}"`);
+  // 1. a pen stroke with Draw closed is one stroke, owned by the cell it is in
+  await stroke('m4', 'ans-tens', [0.25, 0.2], [0.75, 0.8]);
+  if (await hands.drawToggle()) list.push('writing with the pen opened Draw');
+  const first = await owners();
+  if ((await strokes()) !== 1 || first.length !== 1 || first[0]?.part !== 'ans-tens') list.push(`one pen stroke in the tens cell is ${await strokes()} stroke(s), owned by ${JSON.stringify(first)}`);
+  // 2. a stroke over two cells goes to the cell with the larger share: from the tens cell's middle across to well into the ones cell
+  const tensCentre = tens.x + tens.width / 2;
+  const reach = ones.x + ones.width * 0.8;
+  await hands.pen(line(await hands.onScreen({ x: tensCentre, y: ones.y + ones.height / 2 }), await hands.onScreen({ x: reach, y: ones.y + ones.height / 2 }), 14));
+  const second = await owners();
+  if (second.length !== 2 || second[1]?.part !== 'ans-ones') list.push(`a stroke from the tens cell's middle to the ones cell's right is owned by "${second[1]?.part}", wanted ans-ones (the larger share)`);
+  // 2b. ink above the dashed carry box, inside no cell, is free working: outside every cell
+  const band = { x: tensCentre - 60, y: tens.y - 150 };
+  await hands.pen(line(await hands.onScreen(band), await hands.onScreen({ x: band.x + 90, y: band.y + 8 }), 8));
+  const third = await owners();
+  if (third.length !== 2) list.push(`ink far above every cell was given to a cell (${JSON.stringify(third)}), wanted free working`);
+  // 3. more strokes: the tens cell holds two, the ones cell four (the fake reader reads a cell's strokes as its digit)
+  await stroke('m4', 'ans-tens', [0.2, 0.7], [0.8, 0.3]);
+  for (const [a, b] of [[[0.2, 0.2], [0.3, 0.8]], [[0.5, 0.2], [0.6, 0.8]], [[0.75, 0.2], [0.8, 0.8]]] as [number, number][][]) await stroke('m4', 'ans-ones', a as [number, number], b as [number, number], 6);
+  // it is read once, 800 ms after the pen lifts: both cells in one request, shown small beside the ink
+  await wait('the digits to be read into the cells', async () => (await mine.cell('m4', 'ans-ones'))?.read !== '' && (await mine.cell('m4', 'ans-tens'))?.read !== '');
+  const done = await reads();
+  if (done.length !== 1 || done[0]?.cells !== 2) list.push(`the pen's writing was read in ${done.length} request(s) (${JSON.stringify(done)}), wanted one with both cells`);
+  const got = (await mine.block('m4'))?.cells.filter((cell) => cell.by === 'pen').map((cell) => `${cell.part}=${cell.read}:${cell.ink}`).sort().join(' ');
+  if (got !== 'ans-ones=4:true ans-tens=2:true') list.push(`the cells read "${got}", wanted ans-ones=4 and ans-tens=2 (the strokes counted by the fake reader)`);
+  const penned = await mine.shot(dir, `${screen.name}-maths-pen.png`);
+  // Check marks what the pen wrote (a finger that comes within half a second of the pen is a palm: the wait is the guard's grace)
+  await sleep(500);
+  await hands.finger([await mine.centre(((await mine.block('m4'))?.buttons.find((button) => button.name === 'check') as { box: { x: number; y: number; width: number; height: number } }).box)]);
+  await sleep(300);
+  const marks = (await mine.block('m4'))?.cells.filter((cell) => cell.by === 'pen').map((cell) => `${cell.part}=${cell.mark}`).sort().join(' ');
+  if (marks !== 'ans-ones=right ans-tens=right') list.push(`Check on the pen's 4 and 2 marked "${marks}"`);
+  if (!(await mine.acts()).some((act) => act === 'm4: all right')) list.push(`the brain was told ${JSON.stringify((await mine.acts()).slice(-2))}, wanted "m4: all right"`);
+  // 4. Check reads what has not been read yet: two strokes in the ones cell and Check at once (inside the 800 ms)
+  const q = await mine.play(['scene layout=stack mood=calm', 'math m5 column | 1+1'].join('\n'));
+  if (q !== '') list.push(q);
+  else {
+    const before = (await reads()).length;
+    await stroke('m5', 'ans-ones', [0.25, 0.2], [0.35, 0.8], 6);
+    await stroke('m5', 'ans-ones', [0.6, 0.2], [0.7, 0.8], 6);
+    const check = (await mine.block('m5'))?.buttons.find((button) => button.name === 'check');
+    if (check === undefined) list.push('no Check button on the second sum');
+    else {
+      // just past the palm guard's half second, and inside the 800 ms: the pen's last stroke has not been read yet
+      await sleep(170);
+      await hands.finger([await mine.centre(check.box)]);
+      await wait('Check to mark what the pen wrote', async () => (await mine.cell('m5', 'ans-ones'))?.mark === 'right');
+      if ((await reads()).length !== before + 1) list.push(`Check made ${(await reads()).length - before} read request(s), wanted one`);
+    }
+  }
+  // 5. a misread: three strokes are read as 3 where a 4 was meant; a tap opens the cell's input with the 3 selected, a typed 4 wins and the ink dims
+  const r = await mine.play(['scene layout=stack mood=calm', 'math m6 column | 12+12'].join('\n'));
+  if (r !== '') list.push(r);
+  else {
+    for (const [a, b] of [[[0.2, 0.2], [0.3, 0.8]], [[0.5, 0.2], [0.6, 0.8]], [[0.75, 0.2], [0.8, 0.8]]] as [number, number][][]) await stroke('m6', 'ans-ones', a as [number, number], b as [number, number], 6);
+    await wait('the three strokes to be read', async () => (await mine.cell('m6', 'ans-ones'))?.read === '3');
+    const cell = (await mine.cell('m6', 'ans-ones'))?.box as { x: number; y: number; width: number; height: number };
+    await sleep(500);
+    await mine.upFocus();
+    await hands.finger([await mine.centre(cell)]);
+    const selected = await tab.eval<string>(`(() => { const a = document.activeElement; return a && a.dataset && a.dataset.mathCell === 'ans-ones' ? a.value + ':' + a.selectionStart + '-' + a.selectionEnd : 'none'; })()`);
+    if (selected !== '3:0-1') list.push(`a tap on the misread cell opened "${selected}", wanted its input holding 3 with the 3 selected`);
+    await mine.press('4');
+    const typed = await mine.cell('m6', 'ans-ones');
+    if (typed?.value !== '4' || typed.by !== 'key' || !typed.dim) list.push(`a 4 typed over the read 3 left "${typed?.value}" by ${typed?.by}, dim ${typed?.dim}: typing should win and the ink dim`);
+    await sleep(300);
+    const colours = await tab.eval<string[]>('window.__penWrite.colours()');
+    if (colours.filter((colour) => colour === '#b9b3a8').length !== 3) list.push(`the three strokes under the typed digit are not all faint (${colours.join(',')})`);
+    // ✕ takes the ink off the cell
+    const cross = (await mine.cell('m6', 'ans-ones'))?.clear;
+    if (cross === null || cross === undefined) list.push('a cell with ink shows no ✕');
+    else {
+      await mine.blur();
+      await hands.finger([await mine.centre(cross)]);
+      await wait('the ✕ to take the ink off', async () => (await strokes()) === 0 || (await tab.eval<number>('window.__penWrite.owners().filter((o) => o.key.startsWith("m6")).length')) === 0);
+      const cleared = await mine.cell('m6', 'ans-ones');
+      if (cleared?.ink !== false || cleared.value !== '4') list.push(`after ✕ the cell holds ink ${cleared?.ink} and "${cleared?.value}", wanted no ink and the typed 4 kept`);
+    }
+  }
+  // 6. mixed: the pen in the ones cell, keys in the tens cell, one Check
+  const x = await mine.play(['scene layout=stack mood=calm', 'math m7 column | 12+12'].join('\n'));
+  if (x !== '') list.push(x);
+  else {
+    for (const [a, b] of [[[0.2, 0.2], [0.3, 0.8]], [[0.4, 0.2], [0.45, 0.8]], [[0.6, 0.2], [0.65, 0.8]], [[0.75, 0.2], [0.8, 0.8]]] as [number, number][][]) await stroke('m7', 'ans-ones', a as [number, number], b as [number, number], 6);
+    await sleep(500);
+    await mine.hands.finger([await mine.centre((await mine.cell('m7', 'ans-tens'))?.box as { x: number; y: number; width: number; height: number })]);
+    await mine.press('2');
+    await wait('the pen and the keys to be in their cells', async () => (await mine.cell('m7', 'ans-ones'))?.read === '4');
+    await mine.press('Enter');
+    await sleep(300);
+    const mixed = (await mine.block('m7'))?.cells.filter((cell) => cell.part !== 'carry-tens').map((cell) => `${cell.part}=${cell.value}:${cell.by}:${cell.mark}`).sort().join(' ');
+    if (mixed !== 'ans-ones=4:pen:right ans-tens=2:key:right') list.push(`the pen in the ones and keys in the tens, then Enter, left "${mixed}"`);
+  }
+  return penned;
+}
+
 /** One screen's whole input run. */
 async function inputScreen(base: string, screen: InputScreen, dir: string, timeoutMs: number, note: (text: string) => void): Promise<{ results: CheckResult[]; pictures: string[] }> {
-  const problems: Problems = { keys: [], hint: [], fill: [] };
+  const problems: Problems = { keys: [], hint: [], fill: [], pen: [] };
   const pictures: string[] = [];
   note(`maths input: ${screen.name}`);
   const mine = await MathsTab.open(base, screen, dir, timeoutMs);
@@ -486,6 +633,7 @@ async function inputScreen(base: string, screen: InputScreen, dir: string, timeo
     const { checked, hinted } = await hintScene(mine, dir, problems);
     pictures.push(checked, hinted);
     await fillScene(mine, problems);
+    pictures.push(await penScene(mine, dir, problems));
   } catch (error) {
     (problems['keys'] as string[]).push(`stopped: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`);
   } finally {
@@ -499,6 +647,7 @@ async function inputScreen(base: string, screen: InputScreen, dir: string, timeo
   add('keys', 'a finger tap focuses a cell inside the gesture; 2 moves to the carry then the tens; Backspace, Tab and the arrows walk the sum; Enter marks it; the active cell stays above a short visual viewport');
   add('hint', 'Hint lights the next cell and says its step without its digit; Show me comes only after a wrong try and fills one cell as shown');
   add('fill', 'fill m1 | 72 and fill m1.ans-ones | 2 put marked digits in the cells, and a later hand wins');
+  add('pen', 'with Draw closed a pen stroke is one stroke owned by its cell, the larger share wins, a finger and a palm leave no ink, a short pen tap is a press; the fake reader reads both cells in one request and Check marks them; a misread is corrected by a tap and a typed digit, the ✕ clears; pen and keys mix');
   return { results, pictures };
 }
 
@@ -517,6 +666,57 @@ export async function mathsInputGroup(dir: string, timeoutMs: number, note: (tex
   return results;
 }
 
+
+/** Live: one real handwriting read on a server with the Claude brain, to time it. A 1 in the ones cell and a 7 in the tens cell of 35 + 36, as one sheet of two tiles. */
+export async function mathsLive(dir: string, timeoutMs: number, note: (text: string) => void = () => undefined): Promise<CheckResult[]> {
+  let server: Started | null = null;
+  const screen = INPUT_SCREENS[0] as InputScreen;
+  const list: string[] = [];
+  let detail = '';
+  try {
+    note('maths live: a real handwriting read (BRAIN=claude-cli)');
+    server = await startMathsServer({ BRAIN: 'claude-cli', CLAUDE_MODEL: process.env['CLAUDE_MODEL'] ?? 'sonnet' });
+    const mine = await MathsTab.open(server.url, screen, dir, timeoutMs);
+    try {
+      const played = await mine.play(['scene layout=stack mood=calm', 'math m8 column | 35+36'].join('\n'));
+      if (played !== '') list.push(played);
+      const trace = async (part: string, points: readonly (readonly [number, number])[][]): Promise<void> => {
+        const box = (await mine.cell('m8', part))?.box;
+        if (box === undefined) throw new Error(`no cell ${part}`);
+        for (const path of points) {
+          const screenPoints: Point[] = [];
+          for (let at = 0; at < path.length - 1; at += 1) {
+            const a = path[at] as readonly [number, number];
+            const b = path[at + 1] as readonly [number, number];
+            screenPoints.push(...line(await mine.centre(box, { x: a[0], y: a[1] }), await mine.centre(box, { x: b[0], y: b[1] }), 6));
+          }
+          await mine.hands.pen(screenPoints);
+        }
+      };
+      // a 1 (a flag and a stem) and a 7 (a bar and a stem), as a child might
+      await trace('ans-ones', [[[0.3, 0.38], [0.52, 0.18]], [[0.52, 0.18], [0.52, 0.86]]]);
+      await trace('ans-tens', [[[0.22, 0.2], [0.78, 0.2]], [[0.78, 0.2], [0.4, 0.88]]]);
+      let reads: { cells: number; uploadMs: number; readMs: number; totalMs: number; ok: boolean }[] = [];
+      for (let waited = 0; waited < 90_000 && reads.length === 0; waited += 500) {
+        reads = await mine.tab.eval('window.__mathReads || []');
+        if (reads.length === 0) await sleep(500);
+      }
+      const one = reads[0];
+      const cells = (await mine.block('m8'))?.cells.map((cell) => `${cell.part}=${cell.read || '-'}`).join(' ') ?? '';
+      detail = one === undefined ? 'no read came back' : `one real read of ${one.cells} cells: ${one.totalMs} ms from the pen's lift to the digits (800 ms wait not counted): upload ${one.uploadMs} ms, read ${one.readMs} ms; the cells read ${cells}`;
+      if (one === undefined || !one.ok) list.push(detail);
+      await mine.shot(dir, `${screen.name}-maths-live.png`);
+    } finally {
+      await mine.close();
+    }
+  } catch (error) {
+    list.push(`stopped: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`);
+  } finally {
+    await server?.stop();
+  }
+  return [{ turn: 0, check: 'maths-live', verdict: list.length === 0 ? 'PASS' : 'FAIL', detail: list.length === 0 ? detail : `${list.join('; ')}${detail === '' ? '' : ` (${detail})`}` }];
+}
+
 /** The group as `pnpm check` runs it: the layout (no browser), then the input half (a real Chrome). */
 export async function mathsGroup(note: (text: string) => void = () => undefined, dir = join(tmpdir(), 'conduit-maths-out'), timeoutMs = 90_000): Promise<CheckResult[]> {
   note('maths');
@@ -528,11 +728,19 @@ export async function mathsGroup(note: (text: string) => void = () => undefined,
     results.push({ turn: 0, check: 'maths-layout', verdict: 'FAIL', detail: `stopped: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}` });
   }
   results.push(...(await mathsInputGroup(dir, timeoutMs, note)));
+  // a real read costs a few cents and needs the owner's login: only when asked (`MATHS_LIVE=1`)
+  if (process.env['MATHS_LIVE'] === '1') results.push(...(await mathsLive(dir, timeoutMs, note)));
   return results;
 }
 
 if (process.argv[1] !== undefined && /math-check\.ts$/.test(process.argv[1])) {
   const out = process.argv.includes('--out') ? (process.argv[process.argv.indexOf('--out') + 1] as string) : join(tmpdir(), 'conduit-maths-out');
+  if (process.argv.includes('--live')) {
+    void mathsLive(out, 180_000, (text) => process.stdout.write(`${text}\n`)).then((results) => {
+      for (const result of results) process.stdout.write(`${result.verdict} ${result.check}: ${result.detail}\n`);
+      process.exit(results.every((result) => result.verdict === 'PASS') ? 0 : 1);
+    });
+  } else
   mathsGroup((text) => process.stdout.write(`${text}\n`), out).then((results) => {
     for (const result of results) process.stdout.write(`${result.verdict} ${result.check}: ${result.detail}\n`);
     process.exit(results.every((result) => result.verdict === 'PASS') ? 0 : 1);

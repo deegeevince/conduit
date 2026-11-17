@@ -8,7 +8,7 @@
 //              moves its box; at rest the frame is passed on untouched
 //   DOM layers the text, charts, apps and controls layers live in one `div.stage__page`, which carries one CSS transform
 //   ink        the layer is looked through the same lens (`Ink.setView`), its strokes in page units
-//   pen        on a device that has shown a pen, a Pencil drag draws without Draw being switched on and a short tap presses
+//   pen        a Pencil that draws without Draw, and a short tap that presses, is `app/pen-write.ts` (on every stage, the lens or not); the lens only looks at the ink
 //   pointers   `toPage` maps a screen point to the page: the one place the stage's own handlers turn a pointer into a point
 
 import type { Frame } from '../contracts/frame';
@@ -23,8 +23,7 @@ import { attachGestures } from '../wall/gestures';
 import type { Hands } from '../wall/gestures';
 import type { Motion, Screen } from '../wall/view';
 
-/** A Pencil tap is a press when the pen travelled no further than this (CSS pixels) between going down and coming up. */
-const PEN_TAP_TRAVEL = 8;
+
 /** An arrow key moves the page this far, screen pixels; Page Up and Page Down this share of the window. */
 const ARROW_PX = 80;
 const PAGE_SHARE = 0.85;
@@ -97,8 +96,6 @@ export interface LensOptions {
   readonly owns: (event: PointerEvent | WheelEvent) => boolean;
   /** A tap, at client pixels. True when it pressed something; false leaves the spot empty. */
   readonly tap: (x: number, y: number, event: PointerEvent) => boolean;
-  /** A short Pencil tap: press what is under it as a down and an up there. */
-  readonly penTap: (event: PointerEvent) => void;
   /** The lens has taken these pointers: whoever began a press or a drag with one must let go of it. */
   readonly letGo: (pointers: readonly number[]) => void;
   /** Whether the keyboard is the stage's now (nothing else holds it). */
@@ -132,8 +129,6 @@ export interface StageLens {
   follow(info: { readonly page: Box; readonly newest: Box | null; readonly fresh: boolean; readonly body: number; /** long prose (`layout=page`): it arrives at one to one, from the top, and follows the newest line */ readonly reading?: boolean }): void;
   /** the stage's ink: the lens hands it the pen and the view, and takes them back when it is put away */
   useInk(ink: StageInk | null): void;
-  /** whether the lens is drawing the pen's strokes itself (there is ink, and Draw is not what has it) */
-  readonly pen: boolean;
   dispose(): void;
 }
 
@@ -290,42 +285,6 @@ export function createStageLens(options: LensOptions): StageLens {
   window.addEventListener('keydown', onSpace);
   window.addEventListener('keyup', onSpace);
 
-  // ----------------------------------------------------------------------------------------------------------------------------- the pen
-  // A pen is the lens's own to look after only when there is ink to draw on and Draw is not what has the layer (then the layer takes the pen itself). It goes down
-  // on the stage: the ink begins the stroke at once; if the pen then comes up having hardly moved it was a tap, the stroke is thrown away and what is under it is pressed.
-  const downs = new Map<number, { readonly x: number; readonly y: number; travel: number }>();
-  const penWorks = (): boolean => ink !== null && !ink.isOpen() && options.active();
-  const onPen = (e: PointerEvent): void => {
-    if (e.pointerType !== 'pen') return;
-    // seen: from now on a hand resting by the pen is a palm, and a finger on this device pans or points
-    if (e.type === 'pointermove' || e.type === 'pointerdown') guard.penNear(e.timeStamp);
-    if (e.type === 'pointerdown') {
-      if (!penWorks() || ink === null || e.button !== 0 && e.button !== 5) return;
-      const target = e.target;
-      // a button, a field or a chart is worked by the pen as it always was
-      if (target instanceof Element && target.closest('button, input, textarea, select, a[href], [contenteditable="true"], .stage__chart, .stage__app, .ink-bar')) return;
-      downs.set(e.pointerId, { x: e.clientX, y: e.clientY, travel: 0 });
-      e.stopImmediatePropagation();
-      ink.penDown(e);
-      return;
-    }
-    const down = downs.get(e.pointerId);
-    if (down === undefined) return;
-    if (e.type === 'pointermove') {
-      down.travel = Math.max(down.travel, Math.hypot(e.clientX - down.x, e.clientY - down.y));
-      return;
-    }
-    if (e.type !== 'pointerup' && e.type !== 'pointercancel') return;
-    downs.delete(e.pointerId);
-    // the layer is the one to tell the guard the pen has lifted when it had the stroke; this makes sure that it is told, whoever had it
-    guard.penLifted(e.pointerId, e.timeStamp);
-    if (e.type === 'pointerup' && Math.max(down.travel, Math.hypot(e.clientX - down.x, e.clientY - down.y)) <= PEN_TAP_TRAVEL) {
-      ink?.abort(e.pointerId);
-      options.penTap(e);
-    }
-  };
-  for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel']) host.addEventListener(type, onPen as EventListener, true);
-
   // for the browser checks: whether a move of the lens is still going
   (window as unknown as { __lensMoving?: () => boolean }).__lensMoving = () => rig.moving();
 
@@ -361,13 +320,9 @@ export function createStageLens(options: LensOptions): StageLens {
         ink.setView(view === null ? null : { x: view.x, y: view.y, scale: view.scale });
       }
     },
-    get pen() {
-      return penWorks();
-    },
     dispose() {
       disposed = true;
       if (frame !== 0) cancelAnimationFrame(frame);
-      for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel']) host.removeEventListener(type, onPen as EventListener, true);
       window.removeEventListener('keydown', onSpace);
       window.removeEventListener('keyup', onSpace);
       hands.dispose();

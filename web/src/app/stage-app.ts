@@ -108,8 +108,12 @@ export interface StageApp {
   readonly lens: StageLens | null;
   /** whether a screen point is on a part of an open ask (its blank, Check, Hint, Show me, a choice), or on a cell or button of a written method */
   askAt(clientX: number, clientY: number): boolean;
-  /** Who takes the pen's ink off a cell when its ✕ is pressed (`app/pen-write.ts`); the cell is then marked as holding none. */
-  readonly mathClear: { set(handler: ((key: string, part: string) => void) | null): void };
+  /** whether the stage is the one to hear a pen now (no document covers it) */
+  stageActive(): boolean;
+  /** A short Pencil tap, as a press: a cell takes the keyboard, a button works, what is under it is pressed (`app/pen-write.ts`). */
+  penTap(event: PointerEvent): void;
+  /** The pen's writing on a written method (`app/pen-write.ts`): who takes the ink off a cell when its ✕ is pressed, and who reads what the pen wrote before Check marks it. */
+  readonly pen: { set(writer: { clear(key: string, part: string): void; flush(): Promise<void> } | null): void };
   /** "Show the language": the lines the page was told, as they came, and whether the pane that shows them (and a film's copy of it) is on */
   readonly lang: LangLog;
   /** where this stage's charts live; null when this build has no charting engine */
@@ -442,7 +446,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     chartAct: (key, action) => (chartHost === null ? Promise.reject(new Error('No charts.')) : chartHost.act(key, action)),
     mathWrite: (key, part, text) => painter.mathWrite(key, part, text, 'key'),
     mathMove: (key, part, move) => painter.mathMove(key, part, move),
-    mathPress: (key, name) => painter.mathPress(key, name),
+    mathPress: (key, name) => pressMath(key, name),
     mathActive: (key, part) => painter.mathActive(key, part),
     mathClear: (key, part) => clearMath(key, part),
   });
@@ -1514,15 +1518,20 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   };
   // Written methods (PLAN-maths M3): a tap on a cell puts the keyboard in it, inside the tap itself (a phone raises its number pad only for a focus made in the
   // gesture); a tap on Check, Hint or Show me works it; a tap on a cell's ✕ takes the pen's ink off it. A finger, a pen's short tap and a mouse all come here.
-  let clearer: ((key: string, part: string) => void) | null = null;
+  let writer: { clear(key: string, part: string): void; flush(): Promise<void> } | null = null;
   const clearMath = (key: string, part: string): void => {
-    clearer?.(key, part);
+    writer?.clear(key, part);
     painter.mathInk(key, part, false);
+  };
+  /** Check reads what the pen wrote first (`app/pen-write.ts`), so that the marks are of what is on the paper */
+  const pressMath = (key: string, name: 'check' | 'hint' | 'show'): void => {
+    if (name === 'check' && writer !== null) void writer.flush().then(() => painter.mathPress(key, name));
+    else painter.mathPress(key, name);
   };
   const mathDowns = new Map<number, { readonly x: number; readonly y: number }>();
   const tapMath = (hit: MathHit): void => {
     if (hit.kind === 'cell') access.focusMath(hit.key, hit.part);
-    else if (hit.kind === 'button') painter.mathPress(hit.key, hit.name);
+    else if (hit.kind === 'button') pressMath(hit.key, hit.name);
     else clearMath(hit.key, hit.part);
   };
   const tappableAt = (x: number, y: number): boolean =>
@@ -1717,28 +1726,30 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     if (view !== undefined) lens?.reveal(view.box);
   });
 
+  /** a short Pencil tap is a press (`app/pen-write.ts` calls it when the pen came up where it went down) */
+  const penPress = (event: PointerEvent): void => {
+    // a short Pencil tap is a press: down and up at the same place (a button acts on the up)
+    const { x, y } = localPoint(event);
+    const math = painter.mathAt(x, y);
+    if (math !== null) {
+      tapMath(math);
+      return;
+    }
+    if (painter.pointer({ phase: 'down', x, y, pointer: event.pointerId })) {
+      taken.add(event.pointerId);
+      onPointerEnd(event);
+      return;
+    }
+    if (starting && tappableAt(x, y)) return;
+    painter.tapAt(x, y);
+  };
+
   // `?lens=1`: the hands. Made after the stage's own listeners above so that the wheel is first the stage's (a scrolling controls area under it), then the lens's.
   if (lensRenderer !== null) {
     const chip = createPageChip(host, () => {
       const v = viewportOf(host);
       return { width: v.width, height: v.height };
     }, (box) => lens?.reveal(box));
-    const penPress = (event: PointerEvent): void => {
-      // a short Pencil tap is a press: down and up at the same place (a button acts on the up)
-      const { x, y } = localPoint(event);
-      const math = painter.mathAt(x, y);
-      if (math !== null) {
-        tapMath(math);
-        return;
-      }
-      if (painter.pointer({ phase: 'down', x, y, pointer: event.pointerId })) {
-        taken.add(event.pointerId);
-        onPointerEnd(event);
-        return;
-      }
-      if (starting && tappableAt(x, y)) return;
-      painter.tapAt(x, y);
-    };
     lens = createStageLens({
       host,
       page,
@@ -1795,7 +1806,6 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
         painter.tapAt(at.x, at.y);
         return tappable;
       },
-      penTap: penPress,
       letGo: (ids) => {
         for (const id of ids) {
           if (!taken.has(id)) continue;
@@ -1966,9 +1976,11 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     link,
     lens,
     askAt,
-    mathClear: {
-      set(handler) {
-        clearer = handler;
+    penTap: penPress,
+    stageActive: () => !documents.shown,
+    pen: {
+      set(next) {
+        writer = next;
       },
     },
     lang,

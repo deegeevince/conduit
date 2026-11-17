@@ -112,6 +112,8 @@ export interface Env {
   readonly critic: CriticPolicy;
   /** v3 art. The studio that draws what the shelf lacks (`ART_MAKER`, `ART_PER_HOUR`): on by default with the claude-cli brain, off with the others */
   readonly art: ArtPolicy;
+  /** PLAN-maths M4. Who reads the digits a pen wrote in a written method's cells (`INK_READER`): `claude` (a small Claude process; the default) or `fake`, a test rig's, which reads no picture: it answers each cell with the number of strokes sent for it */
+  readonly inkReader: 'claude' | 'fake';
   /** v3 (WS5). Fill ahead and verify (`AHEAD`, `AHEAD_PARALLEL`, `AHEAD_VERIFY_MODEL`, `AHEAD_VERIFY_EFFORT`, `AHEAD_BATCH`, `AHEAD_LIMIT`): on by default with the claude-cli brain, off with the others */
   readonly ahead: AheadPolicy;
   /** v2.1. What agent mode may use (`AGENT`, `AGENT_TOOLS`, `AGENT_SERVICES`, `AGENT_DIR`, `AGENT_ANSWER_MS`, `AGENT_PERMITS=ask|auto`): off, with nothing offered, unless the owner says */
@@ -435,5 +437,5 @@ export function loadEnv(source: Source): Env {
   }
 
   if (problems.length > 0) throw new EnvError(problems);
-  return { production, host, trustedHosts, ownerLogins, usageCapUsd: usageCapUsd !== null && Number.isFinite(usageCapUsd) && usageCapUsd > 0 ? usageCapUsd : null, port, logLevel, brain, images, pictures, sight, promptVariant: parsePromptVariant(text('PROMPT_VARIANT')), review, library, notes, logDir, data, readLinks: choice('READ_LINKS', ['on', 'off'] as const, 'on') === 'on', paintingsPerSession: 0, exploreDir, webDist, critic, art, ahead, agent, modes, refine, uploads, voice, statusFile, changelogFile, sealedDir, skills: skillSettingsFrom(text('SKILL_ROOTS'), text('SKILL_SETTINGS') === undefined ? undefined : resolvePath(root, text('SKILL_SETTINGS') ?? '')) };
+  return { production, host, trustedHosts, ownerLogins, usageCapUsd: usageCapUsd !== null && Number.isFinite(usageCapUsd) && usageCapUsd > 0 ? usageCapUsd : null, port, logLevel, brain, images, pictures, sight, promptVariant: parsePromptVariant(text('PROMPT_VARIANT')), review, library, notes, logDir, data, readLinks: choice('READ_LINKS', ['on', 'off'] as const, 'on') === 'on', paintingsPerSession: 0, exploreDir, webDist, critic, art, inkReader: choice('INK_READER', ['claude', 'fake'] as const, 'claude'), ahead, agent, modes, refine, uploads, voice, statusFile, changelogFile, sealedDir, skills: skillSettingsFrom(text('SKILL_ROOTS'), text('SKILL_SETTINGS') === undefined ? undefined : resolvePath(root, text('SKILL_SETTINGS') ?? '')) };
 }
