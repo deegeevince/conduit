@@ -284,3 +284,23 @@ say c6 callout at=50,8 in=p1 | top middle
 say c7 callout at=3,50 in=p1 | left edge
 say c8 callout at=97,55 in=p1 | right edge
 wait 1
+
+# PLAN-maths M7: a typeset formula. TeX after the bar, set as a textbook sets it (a fraction bar, italic variables, a Delta, units upright): in a box with ink in it, a bar drawn,
+# and its MathML in the text layer. The second has the numbers put in, as the owner's film shows c = d / dt worked out.
+scene formula layout=stack brisk
+say | The speed is the distance over the time.
+math f1 formula | c = \frac{d}{\Delta t}
+math f2 formula | c = \frac{3.0\times10^{8}\,\text{km}}{1320\,\text{s}} \approx 2.3\times10^{5}\,\text{km/s}
+wait 1
+
+# a formula wider than its room is set smaller, never cut: this one is about thirty ems wide, more than a phone's room at the smallest size and a desk's at the largest
+scene formula-wide layout=stack brisk
+math f4 formula | c \approx \frac{2.99\times10^{8}\,\text{km}}{1320\,\text{s}} \approx 2.3\times10^{5}\,\text{km/s} \approx 1.4\times10^{5}\,\text{mi/s}
+say | The same speed in two units, on one line.
+wait 1
+
+# a formula KaTeX cannot read shows its source as text, so that a person sees what was meant and what went wrong
+scene formula-error layout=stack brisk
+math f3 formula | x = \notacommand{2} + 1
+say | The line above is not TeX that can be read.
+wait 1

@@ -5,6 +5,7 @@
 // selectable, and the rest of the stage's pointer path is the stage's own (the layer's events bubble to it like any other).
 
 import type { TextSpanView } from '../contracts/text-layer';
+import { formulaMathML } from '../render/formula/host';
 import { answerMarkdown } from './answer-markdown';
 import { selectionAnchors } from './text-anchors';
 import type { TextAnchor } from './text-anchors';
@@ -66,12 +67,19 @@ export function createTextLayer(stage: HTMLElement): TextLayer {
       }
       // what a tap works is not selectable text: the stage's own pointer path has it
       if (span.role === 'choice' || span.role === 'control') holder.setAttribute('aria-hidden', 'true');
+      // a typeset formula is KaTeX's MathML, which a screen reader reads as maths; what is copied from it is its TeX
+      const mathml = span.formula === undefined ? null : formulaMathML(span.formula.tex, span.formula.display);
+      if (span.formula !== undefined) holder.dataset['tex'] = span.formula.tex;
       for (const line of span.lines) {
         const element = document.createElement('span');
         element.dataset['start'] = String(offset);
         offset += line.text.length + 1;
         element.className = 'stage__text-line';
-        element.textContent = line.text;
+        if (mathml === null) element.textContent = line.text;
+        else {
+          element.classList.add('stage__text-line--formula');
+          element.innerHTML = mathml;
+        }
         element.style.font = `${span.bold ? 700 : 400} ${fix(span.fontPx)}/${fix(line.box.height)} ${span.family}`;
         element.style.height = fix(line.box.height);
         holder.append(element);
@@ -107,7 +115,10 @@ export function createTextLayer(stage: HTMLElement): TextLayer {
     for (const block of root.querySelectorAll<HTMLElement>('.stage__text-block')) {
       if (!range.intersectsNode(block)) continue;
       const parts: string[] = [];
-      for (const line of block.querySelectorAll<HTMLElement>('.stage__text-line')) {
+      // a formula is copied as the TeX it was written in
+      const tex = block.dataset['tex'];
+      if (tex !== undefined) parts.push(tex);
+      else for (const line of block.querySelectorAll<HTMLElement>('.stage__text-line')) {
         const node = line.firstChild;
         if (node === null || !range.intersectsNode(node)) continue;
         const text = node.textContent ?? '';

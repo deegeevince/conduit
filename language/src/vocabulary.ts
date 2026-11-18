@@ -1391,8 +1391,8 @@ export const LESSON_LIMITS = {
 // `draw`: the fixed prompt is built by walking `VERB` and is at its budget. It is taught nowhere yet (M5); the parser and the server accept it.
 // ---------------------------------------------------------------------------------------------------------------------------------
 
-/** The written methods (the digit algorithms) and the pictures (`bar`, `groups`, `array`, `line`). */
-export const MATH_METHODS = ['column', 'times', 'split', 'bond', 'bar', 'groups', 'array', 'line'] as const;
+/** The written methods (the digit algorithms), the pictures (`bar`, `groups`, `array`, `line`) and a typeset formula (`formula`: TeX, set by the page with KaTeX). */
+export const MATH_METHODS = ['column', 'times', 'split', 'bond', 'bar', 'groups', 'array', 'line', 'formula'] as const;
 export type MathMethod = (typeof MATH_METHODS)[number];
 /** The methods the painter lays out digit by digit; the rest are pictures. */
 export const MATH_WRITTEN = ['column', 'times', 'split', 'bond'] as const satisfies readonly MathMethod[];
@@ -1410,12 +1410,14 @@ export const MATH_LIMITS = {
   rows: 8,
   /** digits in one number */
   digits: 9,
+  /** characters of the TeX of a formula */
+  formula: 300,
 } as const;
 
 export const MATH_VERB = {
   math: {
-    form: 'math <id> column|times|split|bond|bar|groups|array|line [worked] [blank=answer|all] [carry=write|shown|none] [steps | step=<n|control>] | <sum>',
-    gist: 'A written method laid out as on paper, in place-value columns. The painter computes every digit; you write none. The answer is sealed like an ask\'s `is=`: the default shows the method (the givens, the signs, the rule and empty cells) and never the answer. `worked` writes everything, for teaching on a different sum. `steps` adds a stepper, `step=<id>` follows a `pick`. Its parts are named `<id>.<part>`: `m1.r3` (a row), `m1.tens`, `m1.carry-tens`, `m1.ans-ones`, `m1.rule`, `m1.s2` (a step).',
+    form: 'math <id> column|times|split|bond|bar|groups|array|line|formula [worked] [blank=answer|all] [carry=write|shown|none] [steps | step=<n|control>] | <sum>',
+    gist: 'A written method laid out as on paper, in place-value columns. The painter computes every digit; you write none. The answer is sealed like an ask\'s `is=`: the default shows the method (the givens, the signs, the rule and empty cells) and never the answer. `worked` writes everything, for teaching on a different sum. `steps` adds a stepper, `step=<id>` follows a `pick`. Its parts are named `<id>.<part>`: `m1.r3` (a row), `m1.tens`, `m1.carry-tens`, `m1.ans-ones`, `m1.rule`, `m1.s2` (a step). `formula` sets TeX as a textbook does: `math f1 formula | c = \\frac{d}{\\Delta t}`.',
     time: 'holds',
     family: 'structure',
   },

@@ -18,6 +18,7 @@ import type { CheckResult } from './smoke';
 import type { LensScene } from './lens-check';
 import { modelLabel, modelName, parseJourney } from '../../../web/src/app/journey-script';
 import { chooseView } from './record-view';
+import { bindMovesShape } from '../../../web/src/app/journey-words';
 import type { JourneyState } from '../../../web/src/app/journey-script';
 
 const read = (name: string): string => readFileSync(fileURLToPath(import.meta.resolve(`@conduit/language/demos/journeys/${name}.journey`)), 'utf8');
@@ -34,10 +35,17 @@ export function scriptResults(): CheckResult[] {
   if ('error' in car) problems.push(car.error);
   else {
     const ops = car.steps.map((step) => step.op).join(' ');
-    if (!/^hold type rest hold tap rest hold type rest hold drag hold back rest hold tap rest hold drag hold type rest hold type rest hold$/.test(ops)) problems.push(`the car journey reads as: ${ops}`);
+    if (!/^hold type rest hold tap rest hold type rest hold drag hold type rest hold drag hold type rest hold type rest hold$/.test(ops)) problems.push(`the car journey reads as: ${ops}`);
     const drag = car.steps.find((step) => step.op === 'drag');
     if (drag === undefined || drag.target !== 'speed' || drag.from !== 50 || drag.to !== 100 || drag.seconds !== 4) problems.push('the first drag should be speed 50 > 100 over 4 s');
     if (car.steps.find((step) => step.op === 'type')?.text !== 'Show me the main parts of a car' || car.steps.find((step) => step.op === 'type')?.name !== 'car') problems.push('the first prompt is not the owner\'s');
+    const said = car.steps.filter((step) => step.op === 'type').map((step) => step.text).join(' / ');
+    const want = ['Show me the main parts of a car', 'How far does it take to stop? Let me change the speed.', 'Show me how the engine works, and let me turn it', 'Swap the engine for an electric motor and battery, and keep the rest of the car the same', 'Show me how you\'re doing this'].join(' / ');
+    if (said !== want) problems.push(`the car journey says: ${said}`);
+    const tap = car.steps.find((step) => step.op === 'tap');
+    if (tap === undefined || !tap.optional || tap.text !== 'Brakes / Brake / Engine / Wheels / Wheel') problems.push('the part to tap is not "Brakes / Brake / Engine / Wheels / Wheel", optional');
+    const engine = car.steps.filter((step) => step.op === 'drag')[1];
+    if (engine === undefined || !engine.optional || engine.target !== 'crank / turn / engine' || engine.from !== 'min' || engine.to !== 'max' || engine.seconds !== 4) problems.push('the second drag should be the optional crank / turn / engine min > max over 4 s');
   }
   add('journey-script-car', problems, `the car journey reads: ${'steps' in car ? car.steps.length : 0} steps`);
 
@@ -62,6 +70,11 @@ export function scriptResults(): CheckResult[] {
   const mapped = names.filter(([id, want]) => modelName(id) !== want).map(([id, want]) => `${id} is ${modelName(id)}, not ${want}`);
   if (modelLabel('claude-opus-5-5', 'medium') !== 'Opus 5.5 · medium') mapped.push(`the label reads ${modelLabel('claude-opus-5-5', 'medium')}`);
   add('journey-model-name', mapped, 'a reported model id is shortened (claude-opus-5-5 is Opus 5.5) and the label adds the effort');
+
+  // which slider a drag takes: one that moves a shape (a bound move, turn or redrawn line) before one that only rewrites words or a colour
+  const moves = ['line rod 50,39 50,78 stroke=ink thick=2', 'move sun along=sky', 'set rod rot=45', 'rect post 30,48 3x30 fill=ink', 'set arm at=40,50'];
+  const words = ['correct st | 2. Compression: it rises', 'say x1 | At {rpm}', 'set sun fill=#ff8a4c', 'set shade opacity=0', 'set engine fill=accent'];
+  add('journey-bind-moves', [...moves.filter((body) => !bindMovesShape(body)).map((body) => `"${body}" should move a shape`), ...words.filter((body) => bindMovesShape(body)).map((body) => `"${body}" should not`)], 'a bound move, turn or redrawn shape moves a shape; a bound sentence or colour does not');
 
   // pnpm record's page: a 1920x1080 film is laid out in 1280x720 at 1.5 (every word 1.5 times as big), the old way is behind --legacy, and a bad flag is said
   const view = (flags: Parameters<typeof chooseView>[0]): string => {
@@ -150,6 +163,16 @@ export async function journeyGroup(base: string, dir: string, timeoutMs: number,
         if (took < 1.4 || took > 3.2) drags.push(`the drag took ${took.toFixed(2)} s, asked for 1.5`);
         if (Math.abs(dragStep.drag.reached - 70) > 2) drags.push(`the slider ended at ${dragStep.drag.reached}, asked for 70`);
         if (dragStep.drag.readout.before.join('|') === dragStep.drag.readout.after.join('|')) drags.push(`the words bound to the slider did not change as it moved (${JSON.stringify(dragStep.drag.readout)})`);
+        // the pointer goes one way at a steady eased pace, and the page keeps its frames: no stall as long as a third of a second
+        const pacing = dragStep.drag.pacing;
+        if (dragStep.drag.chose?.by !== 'height') drags.push(`the slider was chosen by ${JSON.stringify(dragStep.drag.chose?.by)}, not by the second alternative "height" (the first, "nothing", has no slider)`);
+        if (dragStep.drag.chose?.movesShape !== true) drags.push('the explorable\'s height slider moves a shape (the sun along its sky), but the journey did not say so');
+        if (pacing === undefined) drags.push('the drag has no pacing');
+        else {
+          if (!pacing.monotonic) drags.push('the pointer went back and forth during the drag');
+          if (pacing.deviationPx > 1) drags.push(`the pointer was ${pacing.deviationPx} px off its steady eased path: something is steering it by what the control reports`);
+          if (pacing.longestMs > 400) drags.push(`the page stalled for ${pacing.longestMs} ms during the drag (mean frame ${pacing.meanMs} ms, p95 ${pacing.p95Ms} ms)`);
+        }
       }
       add('journey-drag', drags, `the knob was dragged for ${dragStep?.dragStart === null || dragStep?.dragEnd === null || dragStep === undefined ? '?' : ((dragStep.dragEnd.perf - dragStep.dragStart.perf) / 1000).toFixed(1)} s to ${dragStep?.drag?.reached ?? '?'}, and the words bound to it changed`);
 

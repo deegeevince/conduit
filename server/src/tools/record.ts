@@ -1,4 +1,4 @@
-// pnpm record --url <server> --journey car --out <dir> [--size 1920x1080] [--css 1280x720] [--scale 1.5] [--legacy] [--fps 60] [--timeout 1200]
+// pnpm record --url <server> --journey car --out <dir> [--size 1920x1080] [--css 1280x720] [--scale 1.5] [--legacy] [--ports 4883-4889] [--fps 60] [--timeout 1200]
 //
 // Films a journey (web/src/app/journey.ts) on a running server: Chrome plays `/?journey=<name>` and its screen is captured with the DevTools screencast, every
 // frame kept with its own timestamp. The film is `--size` (1920x1080). The page is laid out in `--css` CSS pixels and rendered at `--scale` device pixels to a CSS
@@ -16,6 +16,7 @@
 //
 // It is not part of `pnpm check`: it needs a real server and (for the real thing) a real brain. Everything it starts is stopped on the way out.
 
+import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -40,7 +41,7 @@ interface Args extends RecordView {
 }
 
 function usage(message: string): never {
-  process.stderr.write(`record: ${message}\nusage: pnpm record --url <server> --journey car --out <dir> [--size 1920x1080] [--css 1280x720] [--scale 1.5] [--legacy] [--fps 60] [--timeout <seconds>]\n`);
+  process.stderr.write(`record: ${message}\nusage: pnpm record --url <server> --journey car --out <dir> [--size 1920x1080] [--css 1280x720] [--scale 1.5] [--legacy] [--ports 4883-4889] [--fps 60] [--timeout <seconds>]\n`);
   process.exit(2);
 }
 
@@ -55,11 +56,17 @@ function parseArgs(argv: readonly string[]): Args {
       flags.set(name, 'true');
       continue;
     }
-    if (!['url', 'journey', 'out', 'size', 'css', 'scale', 'fps', 'timeout'].includes(name)) usage(`unknown flag ${arg}`);
+    if (!['url', 'journey', 'out', 'size', 'css', 'scale', 'fps', 'timeout', 'ports'].includes(name)) usage(`unknown flag ${arg}`);
     const value = argv[i + 1];
     if (value === undefined) usage(`--${name} needs a value`);
     flags.set(name, value);
     i += 1;
+  }
+  // `--ports a-b` is `CHECK_PORTS=a-b` for the recorder's own Chrome (a machine that keeps its other ports for other things)
+  const ports = flags.get('ports');
+  if (ports !== undefined) {
+    if (!/^\d+-\d+$/.test(ports)) usage('--ports is like 4883-4889');
+    process.env['CHECK_PORTS'] = ports;
   }
   const url = flags.get('url');
   const journey = flags.get('journey');
@@ -81,6 +88,8 @@ function parseArgs(argv: readonly string[]): Args {
 interface Frame {
   readonly t: number;
   readonly file: string;
+  /** a hash of the picture: two frames with the same one are the same picture */
+  readonly hash: string;
 }
 
 function run(bin: string, args: readonly string[]): Promise<{ code: number; text: string }> {
@@ -144,7 +153,7 @@ async function main(): Promise<void> {
       void send('Page.screencastFrameAck', { sessionId: p.sessionId }).catch(() => undefined);
       const t = p.metadata.timestamp ?? Date.now() / 1000;
       const file = join(frameDir, `${String(frames.length + 1).padStart(6, '0')}.jpg`);
-      frames.push({ t, file });
+      frames.push({ t, file, hash: createHash('md5').update(p.data).digest('hex') });
       writes.push(writeFile(file, Buffer.from(p.data, 'base64')));
     });
 
@@ -230,9 +239,35 @@ async function main(): Promise<void> {
     const gaps = frames.slice(1).map((frame, index) => ({ at: Math.round(((frames[index] as Frame).t - first) * 1000) / 1000, ms: Math.round((frame.t - (frames[index] as Frame).t) * 1000) }));
     const active = journey.started === null ? 0 : journey.started.at / 1000 - first;
     const activeEnd = journey.finished === null ? seconds : journey.finished.at / 1000 - first;
+    // distinct pictures: a frame the same as the one before is not a new picture. While a slider is dragged a person sees as many pictures a second as there are distinct frames.
+    const distinct = frames.map((frame, index) => index === 0 || frame.hash !== (frames[index - 1] as Frame).hash);
+    const distinctPerSecond: number[] = Array.from({ length: seconds }, () => 0);
+    frames.forEach((frame, index) => {
+      if (distinct[index] === true) distinctPerSecond[Math.min(seconds - 1, Math.floor(frame.t - first))] = (distinctPerSecond[Math.min(seconds - 1, Math.floor(frame.t - first))] ?? 0) + 1;
+    });
+    const drags = journey.steps.flatMap((step) => {
+      if (step.dragStart === null || step.dragEnd === null) return [];
+      const from = step.dragStart.at / 1000;
+      const to = step.dragEnd.at / 1000;
+      const inside = frames.map((frame, index) => ({ frame, index })).filter(({ frame }) => frame.t >= from && frame.t <= to);
+      const pictures = inside.filter(({ index }) => distinct[index] === true);
+      let run = 0;
+      let longestRun = 0;
+      for (const { index } of inside) {
+        run = distinct[index] === true ? 1 : run + 1;
+        longestRun = Math.max(longestRun, run);
+      }
+      let longestGap = 0;
+      pictures.forEach(({ frame }, at) => {
+        const before = at === 0 ? from : (pictures[at - 1] as { frame: Frame }).frame.t;
+        longestGap = Math.max(longestGap, frame.t - before);
+      });
+      const span = Math.max(0.001, to - from);
+      return [{ step: step.n, name: step.name, control: step.drag?.control ?? null, seconds: Math.round(span * 100) / 100, framesReceived: inside.length, framesPerSecond: Math.round((inside.length / span) * 10) / 10, distinctPictures: pictures.length, distinctPerSecond: Math.round((pictures.length / span) * 10) / 10, longestGapBetweenPicturesMs: Math.round(longestGap * 1000), longestRunOfSameFrame: longestRun, pacing: step.drag?.pacing ?? null }];
+    });
     const long = gaps.filter((gap) => gap.ms > 250).sort((a, b) => b.ms - a.ms);
     const moving = perSecond.slice(Math.max(0, Math.floor(active)), Math.max(1, Math.ceil(activeEnd)));
-    await writeFile(join(args.out, 'frames.json'), JSON.stringify({ total: frames.length, seconds, perSecond, medianGapMs: [...gaps].map((gap) => gap.ms).sort((a, b) => a - b)[Math.floor(gaps.length / 2)], longestGaps: long.slice(0, 20), consoleErrors }, null, 1));
+    await writeFile(join(args.out, 'frames.json'), JSON.stringify({ total: frames.length, seconds, perSecond, medianGapMs: [...gaps].map((gap) => gap.ms).sort((a, b) => a - b)[Math.floor(gaps.length / 2)], longestGaps: long.slice(0, 20), distinctPerSecond, drags, consoleErrors }, null, 1));
     const sorted = [...moving].sort((a, b) => a - b);
     process.stdout.write(
       [
@@ -240,6 +275,7 @@ async function main(): Promise<void> {
         `  ${frames.length} frames over ${(lastFrame.t - first).toFixed(1)} s; while the journey ran: frames a second min ${sorted[0] ?? 0}, median ${sorted[Math.floor(sorted.length / 2)] ?? 0}, max ${sorted[sorted.length - 1] ?? 0}`,
         `  gaps over 250 ms: ${long.length}${long.length === 0 ? '' : ` (longest ${long[0]?.ms} ms at ${long[0]?.at} s)`}`,
         `  focus samples: ${track.length}; model: ${journey.model === null ? 'none reported' : `${journey.model.model} / ${journey.model.effort}`}; journey ${journey.status}${journey.message === null ? '' : `: ${journey.message}`}`,
+        ...drags.map((drag) => `  drag ${drag.control ?? ''} (step ${drag.step}, ${drag.seconds} s): ${drag.framesPerSecond} frames a second, ${drag.distinctPerSecond} distinct pictures a second, longest gap between pictures ${drag.longestGapBetweenPicturesMs} ms, longest run of the same frame ${drag.longestRunOfSameFrame}${drag.pacing === null ? '' : `; the page's own frames: mean ${drag.pacing.meanMs} ms, p95 ${drag.pacing.p95Ms} ms, longest ${drag.pacing.longestMs} ms, ${drag.pacing.slow} slower than 25 ms; the pointer's step changed by at most ${drag.pacing.jerkPx} px from one frame to the next`}`),
         ...(consoleErrors.length === 0 ? [] : [`  console errors: ${consoleErrors.length}`]),
       ].join('\n') + '\n',
     );

@@ -28,6 +28,7 @@ import { createChartEngine } from '../render/chart';
 import { createFilm } from '../painter/film';
 import type { Film } from '../contracts/film';
 import { createPlainRenderer } from '../render/plain';
+import { installFormulas } from '../render/formula/host';
 import { createSwappable } from '../render/swap';
 import { canUseThree, createThreeRenderer } from '../render/three';
 import { asDataTable } from '../link/guards';
@@ -378,6 +379,8 @@ function answerToResume(): KeptAnswer | null {
 
 export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   const { host, params, lockLook } = options;
+  // typeset formulas (`math f1 formula | …`): KaTeX is loaded, as a chunk of its own, the first time the painter asks for one
+  installFormulas();
   // a reload that will open a document again does not play the welcome demo under it
   const reopening = ((): boolean => {
     try {
