@@ -218,6 +218,8 @@ export interface Session {
   readonly boxes: Map<string, BoxDigests>;
   /** turns a snapshot has been uploaded for */
   snapshotTurns: Set<string>;
+  /** fb-101. Turns that were themselves about a calculation worked by hand (`aboutMaths`): their memory says so, and the thread of sums is warm for the turns after them */
+  mathsTurns: Set<string>;
   /** aborted when the session is dropped: stops paintings that outlive their turns */
   readonly abort: AbortController;
   /** v2.1. What the user asked to hold on every reply, oldest first, at most `STANDING_LIMITS.asks` */
@@ -298,6 +300,7 @@ export class SessionStore {
       driftTurn: null,
       boxes: new Map(),
       snapshotTurns: new Set(),
+      mathsTurns: new Set(),
       abort: new AbortController(),
       standing: [],
       findings: new Map(),

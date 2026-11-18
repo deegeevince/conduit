@@ -1,6 +1,11 @@
 // A maths question the person answers herself. There is no verb and no screen of its own: the brain lays out how it is worked out (a column sum, a take-away or a
 // times is a `math` line, PLAN-maths) and writes one `ask` for a question in words, like anything else on the canvas. An old `problem` line (logs, replays) still
-// plays: the normalizer makes it an `ask` (`normalize.ts`). This file holds the cue (when the words are a maths question) and the short chapter the brief carries then.
+// plays: the normalizer makes it an `ask` (`normalize.ts`). This file holds the cue (when the words are a maths question), when the brief carries the short chapter
+// (`carriesMaths`) and the chapter itself.
+
+import type { TurnContext, TurnMemory } from './context';
+import type { ShownItem } from './stage';
+import type { TurnInput } from './wire';
 
 /** Whether the words are a maths question a child would work out: a sum, a times table, a fraction of a number, "question 15", a worksheet. */
 export function asksForMaths(text: string): boolean {
@@ -12,6 +17,54 @@ export function asksForMaths(text: string): boolean {
   if (/\bquestion\s*(?:no\.?\s*|number\s*)?\d+\b|\bnumber\s*\d+\b|\bq\s?\d+\b/.test(t) && /\b(help|teach|show|work|solve|photo|page|sheet|she|he|my (?:kid|child|son|daughter)|year old)\b/.test(t)) return true;
   if (/\d\s*[+×÷*/x−-]\s*\d/.test(t) && /(?:help|teach|show|work out|what is|whats|how (?:do|much)|year old|kid|child|=|\?)/.test(t)) return true;
   return /\b(?:half|quarter|\d+\/\d+)\s+of\s+\d+/.test(t);
+}
+
+
+/** The words of a turn as a cue reads them: what was typed (or what the page made of a voice note) and what the speech recogniser first heard. */
+function wordsOf(input: TurnInput): string {
+  return input.kind === 'prompt' || input.kind === 'tap' ? [input.text, ...(input.kind === 'prompt' ? (input.spoken ?? []) : [])].join(' ') : '';
+}
+
+/** A photo or the person's own writing and drawing comes with the turn: the sheet she is working on, most likely, whatever her words are. */
+function bringsPicture(input: TurnInput): boolean {
+  return input.kind === 'prompt' && ((input.images?.length ?? 0) > 0 || input.marks !== undefined);
+}
+
+/**
+ * fb-101. How many of the latest turns keep a thread of sums warm: the chapter rides again when one of them was about a calculation worked by hand.
+ * A turn that brings a photo or the person's own drawing keeps it warm longer, because a picture in a thread of sums is her sheet again (the pen's
+ * "Please look at what I drew" says nothing a cue could read); a turn of plain words only for a while, so "now draw a cat" some turns on is left alone.
+ */
+export const MATHS_WARM = { words: 8, picture: 20 } as const;
+
+/**
+ * Whether THIS turn is itself about a calculation worked by hand, from what it carries and the stage and nothing before it: its words, the library's maths card
+ * (which reads them better than a pattern does), the choices of a photo's questions, or a written method already on stage. These start a thread of sums: the
+ * conductor remembers them (`TurnMemory.maths`), and a turn that carried the chapter only because the thread was warm does not keep it warm in its turn.
+ */
+export function aboutMaths(context: Pick<TurnContext, 'stage' | 'techniques'>, input: TurnInput): boolean {
+  const { elements } = context.stage;
+  if (elements.some((element) => element.figure?.kind === 'structure' && element.figure.structure === 'math')) return true;
+  if (elements.some((element) => element.text.toLowerCase().includes('which one first'))) return true;
+  if (input.kind !== 'prompt' && input.kind !== 'tap') return false;
+  return (context.techniques ?? []).some((card) => card.id === 'seed:teach-young-learner') || asksForMaths(wordsOf(input));
+}
+
+/** A written method or a typeset formula the person was shown: the brain used the method itself, so the thread is one of sums whatever was asked. */
+export function shownMaths(shown: readonly Pick<ShownItem, 'text'>[]): boolean {
+  return shown.some((item) => /^(?:written method|typeset formula)\b/.test(item.text));
+}
+
+/** Whether a thread of sums is warm for this turn (see `MATHS_WARM`). */
+export function mathsWarm(history: readonly Pick<TurnMemory, 'maths'>[], input: TurnInput): boolean {
+  // only the person's own turns: the server's own (a repair, a carry-on) and a played script do not need it
+  if (input.kind !== 'prompt' && input.kind !== 'tap' && input.kind !== 'act') return false;
+  return history.slice(-(bringsPicture(input) ? MATHS_WARM.picture : MATHS_WARM.words)).some((memory) => memory.maths === true);
+}
+
+/** Whether the brief carries the maths chapter: this turn is about maths, or the thread of sums is warm. A live app on stage or asked for takes the stage instead (the caller's rule). */
+export function carriesMaths(context: Pick<TurnContext, 'stage' | 'techniques' | 'history'>, input: TurnInput): boolean {
+  return aboutMaths(context, input) || mathsWarm(context.history, input);
 }
 
 

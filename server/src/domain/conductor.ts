@@ -1,4 +1,4 @@
-import { API, SKILL_HOLD, CANVAS, DATA_LIMITS, EMPTY_STAGE, isLessonVerb, PASTE_AS_DOCUMENT_CHARS, FULL_CAPABILITIES, LANGUAGE, LEAD_WINDOW, LineNormalizer, LineReader, PRESENCE_TYPING_MS, parseLine, TurnScore, buildSystemPrompt, draftFactsOf, hasLesson, usesParts, repairWorth, serializeLine, settle, splitCells, wearingAt, withoutUnknownBraces, worthALook } from '@conduit/language';
+import { API, SKILL_HOLD, startsMaths, CANVAS, DATA_LIMITS, EMPTY_STAGE, isLessonVerb, PASTE_AS_DOCUMENT_CHARS, FULL_CAPABILITIES, LANGUAGE, LEAD_WINDOW, LineNormalizer, LineReader, PRESENCE_TYPING_MS, parseLine, TurnScore, buildSystemPrompt, draftFactsOf, hasLesson, usesParts, repairWorth, serializeLine, settle, splitCells, wearingAt, withoutUnknownBraces, worthALook } from '@conduit/language';
 import type { DrawLine, OwedFinding, PageFacts, RepairWorth, StyleProps, SkillBlockFacts, TechniqueCard } from '@conduit/language';
 import type { ActivityState, BrainChange, BrainChoice, BrainMode, CriticFinding, DocumentSummary, DocumentView, FixPolicy, NodeId, NodeStatus, OpenDocumentResponse, PromptVariant, Seen, ToolChoice } from '@conduit/language';
 import type {
@@ -1110,7 +1110,7 @@ export class Conductor {
           this.deps.sessionLog.write(s.id, { type: 'pass', turn: turn.id, pass: 2, state: 'repaired', reason: null });
           this.emit(s, turn, { type: 'pass', turn: turn.id, pass: 2, state: 'repaired', reason: null });
         }
-        this.upsertMemory(s, rememberTurn(turn, report, s.snapshotTurns.has(turn.id)));
+        this.upsertMemory(s, rememberTurn(turn, report, s.snapshotTurns.has(turn.id), s.mathsTurns.has(turn.id)));
         const superseded = [...s.turns.values()].some((other) => other.ordinal > turn.ordinal && other.reported);
         if (!superseded) s.stage = report.stage;
         if (report.outcome === 'interrupted' && turn.endReason === null) {
@@ -1215,7 +1215,7 @@ export class Conductor {
 
   /** The painter never reported this turn: remember what it said it showed, and rest the stage where it stopped. */
   private closeMemoryWithoutReport(s: Session, turn: ActiveTurn): void {
-    this.upsertMemory(s, rememberTurn(turn, null, s.snapshotTurns.has(turn.id)));
+    this.upsertMemory(s, rememberTurn(turn, null, s.snapshotTurns.has(turn.id), s.mathsTurns.has(turn.id)));
     if (turn.clock !== null) s.stage = settle(turn.score.schedule, turn.score.base, turn.clock.playhead);
   }
 
@@ -1497,6 +1497,8 @@ export class Conductor {
       // What was said in a voice note goes to the brain as words too (the transcript, beside the text the user sent); never into the log or the audit trail.
       const withVoice: TurnInput = input.kind === 'prompt' && spoken.length > 0 ? { ...input, spoken } : input;
       if (turn.abort.signal.aborted) return;
+      // fb-101. A turn that is itself about a calculation worked by hand keeps the maths chapter riding with the turns after it (the brief says so by the memory); a live app is its own answer, not a sum
+      if (startsMaths(context, withVoice)) s.mathsTurns.add(turn.id);
       const request = { turn: turn.id, session: s.id, input: withVoice, context, snapshot, pdfs, look: this.deps.review.enabled && turn.lookAllowed, ...(images.length > 0 ? { images } : {}) };
       const normalizer = new LineNormalizer(() => {
         s.nextAutoId += 1;

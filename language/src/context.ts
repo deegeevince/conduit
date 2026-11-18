@@ -48,6 +48,8 @@ export interface TurnMemory {
   readonly snapshot: boolean;
   /** how look-and-fix went for this turn; absent when the turn was never considered for it */
   readonly review?: ReviewOutcome;
+  /** fb-101. The turn was about a calculation worked by hand (its words, the maths card, a written method on stage or shown): the next turns carry the maths chapter while the thread is warm (`MATHS_WARM`). Absent: no. */
+  readonly maths?: boolean;
 }
 
 /** What became of look-and-fix in one turn. `why` is the reason it was skipped, in a few words. */
