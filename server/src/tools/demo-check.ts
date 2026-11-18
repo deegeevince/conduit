@@ -160,7 +160,7 @@ export async function scriptGroup(check: string, args: readonly string[], fixed:
     child.once('error', () => done(-1));
   });
   const failed = out.split('\n').filter((line) => /FAILED/.test(line));
-  const summary = out.split('\n').filter((line) => /^(reading rule|demo rules|demo checks)/.test(line));
+  const summary = out.split('\n').filter((line) => /^(reading rule|demo rules|demo checks|feedback checks)/.test(line));
   return [{ turn: 0, check, verdict: code === 0 ? 'PASS' : 'FAIL', detail: code === 0 ? `${fixed} (${summary.join('; ')})` : failed.length > 0 ? failed.slice(0, 6).map((line) => line.trim()).join(' | ') : `exit ${String(code)}: ${out.slice(-300)}` }];
 }
 

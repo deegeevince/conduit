@@ -38,6 +38,7 @@ const PASS_WORDS: Readonly<Record<PassState, string>> = {
   refining: 'Making it better',
   repairing: 'Tidying up the last answer',
   repaired: 'Tidied',
+  retrying: 'Nothing was drawn: asked again',
 };
 
 /** the critic's verdict in two or three words, and whether it is an alarm */
@@ -59,6 +60,7 @@ export function phaseOf(trace: TurnTrace): string | null {
     if (lastPass.state === 'looking') return 'looking at its draft';
     if (lastPass.state === 'fixing' || lastPass.state === 'refining') return 'fixing';
     if (lastPass.state === 'repairing') return 'tidying up the last answer';
+    if (lastPass.state === 'retrying') return 'trying again';
     if (lastPass.state === 'staged') return 'trying a fix out of sight';
     if (lastPass.state === 'drafted') return 'checking its draft';
   }
