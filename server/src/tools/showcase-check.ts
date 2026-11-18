@@ -27,7 +27,8 @@ import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { LineReader, parseLine, readShowcase } from '@conduit/language';
+import { LOOK, LineReader, parseLine, readShowcase } from '@conduit/language';
+import type { LookId } from '@conduit/language';
 import type { Capabilities, ShowcaseEntry, ShowcaseReader } from '@conduit/language';
 import { sleep } from './explore-browser';
 import { MIN_INK_SHARE, MIN_LINE_INK_PX, MIN_TEXT_INK_SHARE, testPattern } from './real-check';
@@ -115,6 +116,16 @@ export function pageSources(category: string): Map<string, string> {
   }
   close();
   return pages;
+}
+
+/** the effects of a look that move pixels on a stage that is standing still: two pictures of it differ, which the footprint judge would read as ink */
+const MOVING_FX = ['persistence', 'signal'];
+
+/** whether the look a page ends in (its last `look` line) has an effect that moves while the stage rests: the phosphor terminal and teletext */
+function endsMoving(scripts: readonly string[]): boolean {
+  const looks = [...scripts.join('\n').matchAll(/^look\s+(\S+)/gm)].map((found) => found[1] as string);
+  const last = looks[looks.length - 1] as LookId | undefined;
+  return last !== undefined && LOOK[last]?.fx.some((name) => MOVING_FX.includes(name)) === true;
 }
 
 /** the lines of a script that the language rejects: the page would skip each without a word */
@@ -488,15 +499,17 @@ async function playPage(host: ShowcaseHost, entry: ShowcaseEntry, source: string
           if (entry.id === 'sum' && turn === 1) {
             // the right answer tells the brain: that turn goes to the server, whose recorded reply holds the page
             for (let waited = 0; waited < 6000 && !tab.posted.slice(posted).some((one) => one.kind === 'act'); waited += 200) await sleep(200);
-            if (!tab.posted.slice(posted).some((one) => one.kind === 'act')) note = 'the right answer was marked but no turn told the brain';
+            if (!tab.posted.slice(posted).some((one) => one.kind === 'act')) note = 'writing the answer in the blank sent no turn to tell the brain (a right answer does)';
           }
           if (note === '') note = await talk.rest(true);
         }
       }
       results.push(restResult(note, began));
       await host.appsLooked(tab);
-      // a map's pins are not separate pictures: hiding a node leaves its label drawn, so the footprint judge cannot see them (it reports every pin as "not drawn"); their ink is `expect`'s
-      last = await host.judge(tab, talk, name, results, began, { footprints: !entry.needs.includes('structure:map'), ...(spots.length > 0 ? { photo: spots } : {}) });
+      // the footprint judge is not run where it cannot tell ink from its own noise: a map's pins are not separate pictures (hiding a node leaves its label drawn, so it calls every pin
+      // undrawn; their ink is `expect`'s), and a stage that ends in the phosphor look keeps moving at rest (two pictures of it differ round every bright thing)
+      const footprints = !entry.needs.includes('structure:map') && !endsMoving(scripts);
+      last = await host.judge(tab, talk, name, results, began, { footprints, ...(spots.length > 0 ? { photo: spots } : {}) });
       after.push(await pieces(tab));
     }
     if (last === null) return;
