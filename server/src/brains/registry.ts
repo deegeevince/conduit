@@ -61,6 +61,7 @@ export function createBrains(deps: BrainsDeps): BrainRegistry {
         idleTimeoutMs: settings.idleTimeoutMs,
         tools: settings.tools,
         effort: settings.effort,
+        thinking: settings.thinking,
         variant: settings.variant,
         warm: settings.warm,
         maxWarm: settings.maxWarm,
