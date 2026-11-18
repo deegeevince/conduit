@@ -12,7 +12,7 @@
 // the battery (which checks a chart without looking at it). It is pure: rows
 // in, model out.
 
-import { evalExpr, parseExpr } from './expr';
+import { evalExpr, namesIn, parseExpr } from './expr';
 import type { Scope } from './expr';
 import type { StructureRow } from './schedule';
 import { splitEmphasis } from './text';
@@ -160,6 +160,19 @@ function valueOf(cell: string, scope: Scope): ReadNumber | null {
   if (expr === null) return null;
   const value = evalExpr(expr, scope);
   return Number.isFinite(value) ? { value, prefix: '', suffix: '', decimals: 2, short: false } : null;
+}
+
+/** The controls a chart's value cells follow (the names inside their `{…}`), in the order written: what a slider or a toggle of the stage changes the chart by. */
+export function chartNames(rows: readonly StructureRow[]): string[] {
+  const found = new Set<string>();
+  for (const row of rows) {
+    for (const cell of valueCells(row.cells)) {
+      const braces = /^\{(.+)\}$/.exec(cell.trim());
+      const expr = braces === null ? null : parseExpr(braces[1] ?? '');
+      if (expr !== null) for (const name of namesIn(expr)) found.add(name);
+    }
+  }
+  return [...found];
 }
 
 /** The value cells of a row: cells may be separated by bars or, within a cell, by spaces (`| 3 Mar | 100 104 99 103 1.2M`). A `{…}` is one value whatever it holds. */

@@ -71,7 +71,7 @@ import { journeyGroup } from './journey-check';
 import { labelGroup } from './label-check';
 import { undoGroup } from './undo-check';
 import { MEMORY_SCREEN, memoryGroup } from './memory-check';
-import { checkAxisTags, checkDeclared, checkLabels, checkNoEarlierChip, checkTourBar, scriptGroup } from './demo-check';
+import { chartBars, checkAxisTags, checkDeclared, checkLabels, checkNoEarlierChip, checkTourBar, scriptGroup } from './demo-check';
 import type { LabelWant } from './demo-check';
 import { fb062Group, loopGroup } from './loop-check';
 import { TOUR_SCREENS, tourGroup } from './tour-check';
@@ -809,6 +809,101 @@ class Screen {
         if (!dead.includes('fbmark')) problems.push(`no dead-bind warning for the toggle fbmark, whose only bind sets what is already set (${dead.length === 0 ? 'no dead-bind at all' : `told of ${dead.join(', ')}`})`);
         if (dead.includes('fbspin')) problems.push('the slider fbspin, whose binds all move something, was called dead');
         good = `a real drag moved ${ids.length} bound things (${ids.join(', ')}) to their targets, each half way at half way and back at the start; the control whose only bind does nothing was told`;
+        break;
+      }
+      case 'fb-071': {
+        // fb-071: a chart whose cells follow a slider rescaled its axis as the slider moved, so a bar barely seemed to grow as the value rose (the thinking distance, 3 m to 30 m, even
+        // shrank). A real drag along the track from one end to the other, the bars measured in pixels in a picture of the page at five places: the axis labels do not change, and every
+        // bar rises, never shrinks, and by enough to see; the bars share one scale (the total is the thinking and the braking together).
+        interface Held { readonly id: string; readonly min: number; readonly max: number; readonly value: number; readonly parts: readonly { part: string; box: { x: number; y: number; width: number; height: number } }[]; readonly box: { x: number; y: number; width: number; height: number } }
+        const held = async (): Promise<Held | undefined> => (await tab.eval<Held[]>('window.__stage.controls().map((c) => ({ id: c.id, min: c.min, max: c.max, value: c.value, parts: c.parts, box: c.box }))')).find((c) => c.id === 'fbspeed');
+        const slider = await held();
+        if (slider === undefined) {
+          problems.push('the slider fbspeed is not on stage');
+          break;
+        }
+        const track = slider.parts.find((p) => p.part === 'track')?.box ?? slider.box;
+        const y = track.y + track.height / 2;
+        const at = (share: number): { x: number; y: number } => ({ x: track.x + 2 + (track.width - 4) * share, y });
+        // the bars' colour is learnt with the speed at the top (a bar is then most of the chart), and the slider put back
+        await tab.eval(`window.__stage.control('fbspeed', ${slider.max})`);
+        await sleep(900);
+        const learnt = await chartBars(tab, 'fbstop', null);
+        if (typeof learnt === 'string') {
+          problems.push(learnt);
+          break;
+        }
+        await tab.eval(`window.__stage.control('fbspeed', ${slider.min})`);
+        await sleep(900);
+        const shares = [0, 0.25, 0.5, 0.75, 1];
+        const seen: { value: number | undefined; bars: Awaited<ReturnType<typeof chartBars>>; ticks: string }[] = [];
+        for (const [index, share] of shares.entries()) {
+          if (index > 0) {
+            await tab.drag(at(shares[index - 1] as number), at(share));
+            await sleep(500);
+          }
+          const ticks = (await tab.eval<{ ticks: { y: string[] } }>(`window.__stage.chart('fbstop', { reset: true })`)).ticks.y.join(' ');
+          seen.push({ value: (await held())?.value, bars: await chartBars(tab, 'fbstop', learnt.colour), ticks });
+        }
+        const words = seen.map((one) => `${String(one.value)}: ${typeof one.bars === 'string' ? one.bars : one.bars.heights.map((h) => `${h}`).join('/')} px`).join(', ');
+        if (seen[0]?.value !== slider.min || (seen[seen.length - 1]?.value ?? 0) < slider.max - 1) problems.push(`the drag went from ${String(seen[0]?.value)} to ${String(seen[seen.length - 1]?.value)}, not from ${slider.min} to ${slider.max}`);
+        if (new Set(seen.map((one) => one.ticks)).size > 1) problems.push(`the axis changed as the speed did: ${seen.map((one) => `${String(one.value)}: ${one.ticks}`).join(' | ')}`);
+        const readings = seen.flatMap((one) => (typeof one.bars === 'string' ? [] : [one.bars]));
+        if (readings.length !== seen.length || readings.some((one) => one.heights.length !== 3)) problems.push(`three bars were not read at each place: ${words}`);
+        else {
+          const height = (readings[0] as { box: { height: number } }).box.height;
+          const least = Math.max(4, 0.015 * height);
+          for (const [bar, name] of ['Thinking', 'Braking', 'Total'].entries()) {
+            const run = readings.map((one) => one.heights[bar] as number);
+            const shrank = run.findIndex((value, index) => index > 0 && value < (run[index - 1] as number) - 1);
+            if (shrank > 0) problems.push(`the ${name} bar shrank as the speed rose: ${run.join(' > ')} px`);
+            else if ((run[run.length - 1] as number) - (run[0] as number) < least) problems.push(`the ${name} bar grew from ${run[0]} to ${run[run.length - 1]} px, less than the ${least.toFixed(0)} px a person sees`);
+          }
+          const last = (readings[readings.length - 1] as { heights: readonly number[] }).heights;
+          const share = (last[2] as number) / Math.max(1, last[1] as number);
+          // 530 m total against 500 m braking at 100 km/h
+          if (share < 0.95 || share > 1.17) problems.push(`the bars do not stand on one scale: the Total is ${share.toFixed(2)} of the Braking at the top, 1.06 by the sentence's numbers`);
+        }
+        good = `dragging the slider from ${slider.min} to ${slider.max}, the axis (${seen[0]?.ticks.split(' ').join(', ') ?? ''}) did not change and every bar rose (${words})`;
+        break;
+      }
+      case 'orbit-lap': {
+        // a bound ride along a closed outline: one whole range is one lap from where the Earth was drawn (3 o'clock), clockwise: 6 at a quarter, 9 at half, 12 at three quarters, 3 again at the end
+        const centreOf = async (id: string): Promise<{ x: number; y: number } | null> =>
+          tab.eval<{ x: number; y: number } | null>(`(() => { const e = window.__stage.elements().find((c) => c.id === ${JSON.stringify(id)}); return e ? { x: e.box.x + e.box.width / 2, y: e.box.y + e.box.height / 2 } : null; })()`);
+        const controls = await tab.eval<{ id: string; min: number; max: number }[]>('window.__stage.controls().map((c) => ({ id: c.id, min: c.min, max: c.max }))');
+        const slider = controls.find((c) => c.id === 'olmonth');
+        if (slider === undefined) {
+          problems.push('the slider olmonth is not on stage');
+          break;
+        }
+        await tab.eval(`window.__stage.control('olmonth', ${slider.min})`);
+        await sleep(600);
+        const sun = await centreOf('olring');
+        const home = await centreOf('olearth');
+        if (sun === null || home === null) {
+          problems.push('the ring or the Earth is not on stage');
+          break;
+        }
+        const radius = Math.hypot(home.x - sun.x, home.y - sun.y);
+        if (!(home.x > sun.x + radius * 0.9 && Math.abs(home.y - sun.y) < radius * 0.1)) problems.push(`the Earth is not drawn at 3 o'clock: it stands ${Math.round(home.x - sun.x)} right and ${Math.round(home.y - sun.y)} down of the ring's middle`);
+        const names = ['3', '6', '9', '12', '3'];
+        const where: string[] = [];
+        for (const [index, share] of [0, 0.25, 0.5, 0.75, 1].entries()) {
+          await tab.eval(`window.__stage.control('olmonth', ${slider.min + share * (slider.max - slider.min)})`);
+          await sleep(600);
+          const earth = await centreOf('olearth');
+          if (earth === null) {
+            problems.push('the Earth left the stage');
+            break;
+          }
+          // on screen, y runs down, so a turn clockwise from 3 o'clock goes down first
+          const want = { x: sun.x + radius * Math.cos(share * 2 * Math.PI), y: sun.y + radius * Math.sin(share * 2 * Math.PI) };
+          const off = Math.hypot(earth.x - want.x, earth.y - want.y);
+          where.push(`${names[index]} o'clock`);
+          if (off > Math.max(4, radius * 0.08)) problems.push(`at ${Math.round(share * 100)}% of the range the Earth should be at ${names[index]} o'clock (${Math.round(want.x)},${Math.round(want.y)}); it is at ${Math.round(earth.x)},${Math.round(earth.y)}, ${Math.round(off)} px off`);
+        }
+        good = `the Earth drawn at 3 o'clock went round clockwise as the slider went from ${slider.min} to ${slider.max}: ${where.join(', ')}`;
         break;
       }
       case 'fb-054': {
@@ -1752,7 +1847,7 @@ function buildUnits(args: Args, welcome: Welcome): { readonly units: Unit[]; rea
     // fb-001 (docs/feedback.md): code blocks that did not render in the tour's code chapter. `--only fb-001` is the code demo's judging.
     demos.forEach((name, index) => units.push(screenUnit(`demo-${name}`, 40, name === 'code' ? ['fb-001'] : [], (run) => run.demoScenes([name], index === 0))));
     // fb-058 to fb-061 (docs/feedback.md): the big-numbers maths turn. `--only fb-059` is the hard group's judging of its own scene (fb-060, fb-061 and fb-058 likewise; the ask and maths groups too)
-    units.push(screenUnit('demo-hard', 60, ['fb-058', 'fb-059', 'fb-060', 'fb-061'], (run) => run.hardScenes()));
+    units.push(screenUnit('demo-hard', 60, ['fb-058', 'fb-059', 'fb-060', 'fb-061', 'fb-071', 'orbit-lap'], (run) => run.hardScenes()));
   }
   for (const screen of LENS_SCREENS) {
     units.push({

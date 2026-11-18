@@ -74,6 +74,11 @@ export interface ChartState {
   readonly words: readonly ChartWord[];
   readonly title: string;
   readonly model: ChartModel;
+  /**
+   * The other models this chart can be read as: a chart whose cells follow a control (`{speed}`) is a different model at each value of it. The scale is fitted to the model and to
+   * these together, so that it holds still, and a bar rises against it, as the control moves. Absent: the chart is the one model.
+   */
+  readonly reach?: readonly ChartModel[];
   readonly marks: readonly ChartMark[];
   readonly theme: ChartTheme;
   /**

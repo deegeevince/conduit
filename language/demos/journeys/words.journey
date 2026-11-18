@@ -1,0 +1,5 @@
+# What pnpm check plays to see a journey tap whole words only. The stage has a label "position" and a choice "Show me the motion" and nothing called "Io": the letters "io" are in
+# both, and neither is tapped for them. The check draws the stage by itself.
+hold 6
+tap? | Io
+tap | Io / position

@@ -14,6 +14,20 @@ function stem(word: string): string {
   return word.length > 3 && word.endsWith('s') && !word.endsWith('ss') ? word.slice(0, -1) : word;
 }
 
+/** how close a choice's or a control's words are to the words a tap asks for: 0 the same words; 1 they begin with them; 2 they hold them, as whole words; -1 they do not. A word is a whole word: "Io" is not in "motion" or "position" (plural or singular is the same word). */
+export function rank(label: string, wanted: string): number {
+  const want = norm(wanted).split(' ').filter((word) => word !== '').map(stem);
+  const have = norm(label).split(' ').filter((word) => word !== '').map(stem);
+  if (want.length === 0 || want.length > have.length) return -1;
+  let best = -1;
+  for (let at = 0; at + want.length <= have.length; at += 1) {
+    if (!want.every((word, i) => have[at + i] === word)) continue;
+    const kind = want.length === have.length ? 0 : at === 0 ? 1 : 2;
+    if (best < 0 || kind < best) best = kind;
+  }
+  return best;
+}
+
 const wordsOf = (text: string): string[] =>
   norm(text)
     .split(' ')
