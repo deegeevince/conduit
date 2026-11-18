@@ -3,7 +3,7 @@
 // for each step, when things happened (the page's clock and `performance.now()`), for a film editor that cuts the waits and places captions.
 
 import { alternativesOf, parseJourney, seeded } from './journey-script';
-import { likeness, norm } from './journey-words';
+import { likeness, norm, rank } from './journey-words';
 import type { FocusBox, FocusSample, JourneyState, JourneyStep, Stamp, StepTiming } from './journey-script';
 import type { StageApp } from './stage-app';
 import type { ControlView, StageElementView } from '../contracts/painter';
@@ -30,6 +30,11 @@ const TURN_OPEN_MS = 45_000;
 /** how long the stage must have been still for `rest` */
 const STILL_MS = 900;
 const CHARS_PER_SECOND = 12;
+/** how long a press holds the button down */
+const PRESS_MS = 110;
+/** how long the hand takes to reach a tap's target, and how long it waits over it before the press (following it, if it goes by motion) */
+const TRAVEL_MS = 650;
+const PAUSE_MS = 160;
 
 class Stop extends Error {}
 
@@ -46,6 +51,8 @@ interface Target {
   readonly box: { readonly x: number; readonly y: number; readonly width: number; readonly height: number };
   readonly tappable: boolean;
   readonly key: string;
+  /** set by `settled` for a target seen to keep moving once the turn was over (motion: a loop, a ride on the clock, a label that goes with a part): its speed, pixels a millisecond */
+  readonly speed?: { readonly x: number; readonly y: number };
 }
 
 export function startJourney(options: JourneyOptions): JourneyState {
@@ -115,14 +122,16 @@ export function startJourney(options: JourneyOptions): JourneyState {
     if (focus !== undefined) doing('tap', focus.id, () => focus.box);
     cursor.press(true);
     pointer('pointerdown', x, y, true, onto);
-    await sleep(110);
-    pointer('pointerup', x, y, false, onto);
+    await sleep(PRESS_MS);
+    // a finger that has stayed down while the words under it were made again (a label that goes by motion is) finds what stands there now
+    const here = onto.isConnected ? onto : (document.elementFromPoint(x, y) ?? onto);
+    pointer('pointerup', x, y, false, here);
     cursor.press(false);
     if (focus !== undefined) lingerThen(900);
     // what a browser adds after a button's pointer goes up
-    const button = onto.closest('button');
+    const button = here.closest('button');
     if (button !== null) button.click();
-    else onto.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, composed: true, clientX: x, clientY: y, button: 0 }));
+    else here.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, composed: true, clientX: x, clientY: y, button: 0 }));
   };
 
   // ---- what is on stage
@@ -146,18 +155,11 @@ export function startJourney(options: JourneyOptions): JourneyState {
     return out;
   };
 
-  const rank = (label: string, wanted: string): number => {
-    const have = norm(label);
-    if (have === wanted) return 0;
-    if (have.startsWith(wanted)) return 1;
-    return have.includes(wanted) ? 2 : -1;
-  };
-
   const findTarget = (wanted: string): Target | null => {
-    const word = norm(wanted);
     let best: { target: Target; score: number } | null = null;
     for (const target of targets()) {
-      const kind = rank(target.label, word);
+      // whole words: "Io" is in "Io / Jupiter" and in nothing that only has the letters, "motion" or "position"
+      const kind = rank(target.label, wanted);
       if (kind < 0) continue;
       // a tappable thing before a plain label; an exact label before a longer one; the smaller box (the part, not the card around it) last
       const score = (target.tappable ? 0 : 100) + kind * 10 + Math.min(9, (target.box.width * target.box.height) / 1e5);
@@ -212,14 +214,36 @@ export function startJourney(options: JourneyOptions): JourneyState {
     return null;
   };
 
-  /** the target, once it has stopped moving and is on stage; null if it does not come in `waitMs` */
+  /**
+   * The turn's own business is over: it has played out, nothing is arriving, no critic or repair is working. What still moves then moves by motion (a loop, a ride on the stage's
+   * clock, a label that goes with a part that does), never because the turn is still drawing. So a stage need not be still to be at rest, or for something on it to be tapped.
+   */
+  const turnOver = (): boolean => {
+    const snap = app.painter.snapshot();
+    const mending = app.facts.mending();
+    return snap.turn === null && snap.clock === 'idle' && !app.status().busy && !snap.anticipating && !mending.pending && !mending.working && !mending.tidying;
+  };
+
+  /**
+   * The target, once it has stopped moving and is on stage; null if it does not come in `waitMs`. A target that never stops because it goes by motion is not waited for: once the turn
+   * is over, one that is still moving is moving on the clock, and it is taken as it is, with the speed it was seen to go (the tap aims ahead by it).
+   */
   const settled = async (find: () => Target | null, waitMs: number): Promise<Target | null> => {
     const until = performance.now() + waitMs;
-    let last: Target | null = null;
+    let last: { readonly target: Target; readonly at: number } | null = null;
     while (performance.now() < until) {
       const now = find();
-      if (now !== null && last !== null && now.key === last.key && Math.abs(now.box.x - last.box.x) < 1 && Math.abs(now.box.y - last.box.y) < 1) return now;
-      last = now;
+      const at = performance.now();
+      if (now !== null && last !== null && now.key === last.target.key) {
+        const dx = now.box.x - last.target.box.x;
+        const dy = now.box.y - last.target.box.y;
+        if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return now;
+        if (turnOver()) {
+          const ms = Math.max(1, at - last.at);
+          return { ...now, speed: { x: dx / ms, y: dy / ms } };
+        }
+      }
+      last = now === null ? null : { target: now, at };
       await sleep(140);
     }
     return null;
@@ -262,10 +286,22 @@ export function startJourney(options: JourneyOptions): JourneyState {
     if (panelSeq() > paintBase.seq) return true;
     return app.painter.snapshot().elements.some((element) => element.opacity > 0.05 && element.phase !== 'struck' && !paintBase.keys.has(element.key));
   };
+  /** how each element looked the last time the turn had a say in it: once the turn is over, what moves moves by motion (it turns, bobs, pulses, rides the clock), and a film is cut by the turn's own changes */
+  let placed = new Map<string, string>();
   const look = (): string => {
     const snap = app.painter.snapshot();
+    const byMotion = turnOver();
+    const stood = new Map<string, string>();
     let out = '';
-    for (const element of snap.elements) if (element.opacity > 0.02 && element.phase !== 'struck') out += `${element.key}:${Math.round(element.box.x)},${Math.round(element.box.y)},${Math.round(element.box.width)},${Math.round(element.box.height)},${Math.round(element.opacity * 25)};`;
+    for (const element of snap.elements) {
+      if (element.opacity <= 0.02 || element.phase === 'struck') continue;
+      // (what comes and goes still counts, and a hand on a control shows in the control)
+      const now = `${Math.round(element.box.x)},${Math.round(element.box.y)},${Math.round(element.box.width)},${Math.round(element.box.height)},${Math.round(element.opacity * 25)}`;
+      const as = byMotion ? (placed.get(element.key) ?? now) : now;
+      stood.set(element.key, as);
+      out += `${element.key}:${as};`;
+    }
+    placed = stood;
     for (const control of snap.controls) out += `${control.key}=${String(control.value)};`;
     for (const chart of snap.charts) out += `${chart.key}@${Math.round(chart.box.x)},${Math.round(chart.box.y)},${Math.round(chart.box.width)},${Math.round(chart.box.height)};`;
     const rows = document.querySelectorAll('.lang__row');
@@ -404,23 +440,38 @@ export function startJourney(options: JourneyOptions): JourneyState {
     if (required) fail(`step ${timing.n}: no turn opened within ${Math.round(waitMs / 1000)} s of sending "${timing.text}"`);
   };
 
+  /** where a target will be `ms` from now, on screen: where it is, and, if it goes by motion, carried on at the speed it was seen to go */
+  const ahead = (target: Target, find: () => Target | null, ms: number): { x: number; y: number } => {
+    if (target.speed === undefined) return globalOf(target.box);
+    const centre = globalOf((find() ?? target).box);
+    return { x: centre.x + target.speed.x * ms, y: centre.y + target.speed.y * ms };
+  };
+
   const doTap = async (step: JourneyStep, timing: StepTiming): Promise<boolean> => {
     const picked: { used: string | null } = { used: null };
-    const target = await settled(() => {
+    const find = (): Target | null => {
       const found = findAmong(step.text);
-      picked.used = found?.used ?? null;
+      picked.used = found?.used ?? picked.used;
       return found?.target ?? null;
-    }, step.optional ? OPTIONAL_WAIT_MS : TAP_WAIT_MS);
+    };
+    const target = await settled(find, step.optional ? OPTIONAL_WAIT_MS : TAP_WAIT_MS);
     if (target === null) {
       if (step.optional) return false;
       return fail(`step ${step.n} (line ${step.line}): "${step.text}" never appeared on stage within ${Math.round(TAP_WAIT_MS / 1000)} s, so the journey stopped there`);
     }
     timing.used = picked.used;
     const before = app.lang.turn;
-    const to = globalOf(target.box);
-    await travel(to.x, to.y, 650);
-    await sleep(160);
-    await press(to.x, to.y, target.label, timing, { id: target.id, box: viewportBox(target.box) });
+    // a target that goes by motion is met where it will be: the hand heads for where it will stand as the press comes down, and in the pause before the press (which a hand
+    // spends following what moves) it sets itself right by where the target is then
+    const moving = target.speed !== undefined;
+    const to = ahead(target, find, TRAVEL_MS + PAUSE_MS + PRESS_MS / 2);
+    await travel(to.x, to.y, TRAVEL_MS);
+    let at = to;
+    if (moving) {
+      at = ahead(target, find, PAUSE_MS + PRESS_MS / 2);
+      await travel(at.x, at.y, PAUSE_MS);
+    } else await sleep(PAUSE_MS);
+    await press(at.x, at.y, target.label, timing, { id: target.id, box: viewportBox((moving ? find() : null)?.box ?? target.box) });
     await opened(before, 6000, timing, false);
     return true;
   };
@@ -561,10 +612,8 @@ export function startJourney(options: JourneyOptions): JourneyState {
     let still = -1;
     for (;;) {
       if (performance.now() - began > REST_CAP_MS) fail(`step ${timing.n}: the stage did not come to rest within ${REST_CAP_MS / 1000} s`);
-      const snap = app.painter.snapshot();
-      const mending = app.facts.mending();
-      const calm = snap.turn === null && snap.clock === 'idle' && !app.status().busy && !snap.anticipating && !mending.pending && !mending.working && !mending.tidying;
-      if (calm) {
+      // the turn's own business, not the stage's motion: a loop or a clock that goes on for ever is no reason to wait
+      if (turnOver()) {
         if (still < 0) still = performance.now();
         if (performance.now() - still >= STILL_MS) break;
       } else still = -1;
