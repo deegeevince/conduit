@@ -1568,14 +1568,10 @@ export function createPainter(options: PainterOptions): Painter {
         const at = mathBox(placed, `${placed.key}@cell:${cell.part}`);
         if (at === null) return [];
         const state = cells.stateOf(run, cell.part);
-        return [{ part: cell.part, label: cells.labelOf(cell), box: at, value: state.value, by: state.by, mark: state.mark, optional: !cells.required(cell), order: order.get(cell.part) ?? null, maxLength: cells.maxLengthOf(cell), lit: run.hint === cell.part, active: run.active === cell.part, read: state.read, reading: state.reading, ink: state.ink, dim: state.dim, clear: state.ink ? mathBox(placed, `${placed.key}@clear:${cell.part}`) : null }];
+        return [{ part: cell.part, label: cells.labelOf(cell), box: at, value: state.value, by: state.by, optional: !cells.required(cell), order: order.get(cell.part) ?? null, maxLength: cells.maxLengthOf(cell), active: run.active === cell.part, ink: state.ink, dim: state.dim, clear: state.ink ? mathBox(placed, `${placed.key}@clear:${cell.part}`) : null }];
       });
       if (views.length === 0) continue;
-      const buttons = (['check', 'hint', 'show'] as const).flatMap((name) => {
-        const at = mathBox(placed, `${placed.key}@btn:${name}`);
-        return at === null ? [] : [{ name, label: name === 'check' ? 'Check' : name === 'hint' ? 'Hint' : 'Show me', box: at }];
-      });
-      out.push({ key: placed.key, id: run.id, sum: run.math.sum, verdict: run.verdict, box: whole, cells: views, buttons, hint: run.hintText });
+      out.push({ key: placed.key, id: run.id, sum: run.math.sum, box: whole, cells: views });
     }
     return out;
   };
@@ -1583,14 +1579,10 @@ export function createPainter(options: PainterOptions): Painter {
   const announceMath = (): void => {
     const views = mathViewsNow();
     if (views.length === 0 && lastMathSignature === '') return;
-    const signature = JSON.stringify(views.map((view) => [view.key, view.sum, view.verdict, view.hint, view.cells.map((cell) => [cell.part, Math.round(cell.box.x), Math.round(cell.box.y), Math.round(cell.box.width), Math.round(cell.box.height), cell.value, cell.mark, cell.lit, cell.active, cell.read, cell.reading, cell.ink, cell.dim]), view.buttons.map((button) => [button.name, Math.round(button.box.x), Math.round(button.box.y)])]));
+    const signature = JSON.stringify(views.map((view) => [view.key, view.sum, view.cells.map((cell) => [cell.part, Math.round(cell.box.x), Math.round(cell.box.y), Math.round(cell.box.width), Math.round(cell.box.height), cell.value, cell.active, cell.ink, cell.dim])]));
     if (signature === lastMathSignature) return;
     lastMathSignature = signature;
     emit('math', views);
-  };
-  /** fb-091. A hand's act on a written method is told to the brain; the one that finishes the sum (Check found every box right, or Show me gave the last) is also the next turn's input, as an ask's last answer is */
-  const sayMath = (run: cells.MathRun, act: cells.MathAct, finishes = false): void => {
-    emitBack({ type: 'control', turn: turn === null ? null : turn.id, id: run.id, value: act.value, text: act.text, playhead: clock.read().playhead, send: finishes && (run.verdict === 'right' || run.verdict === 'shown'), ask: true });
   };
   /** the typeset formulas standing on the stage now, from the views of the structures that hold them */
   const formulasNow = (): FormulaView[] =>
@@ -2103,17 +2095,15 @@ export function createPainter(options: PainterOptions): Painter {
     formulaViews: formulasNow,
     mathAt(x, y): MathHit | null {
       for (const view of mathViewsNow()) {
-        if (view.verdict === 'right' || view.verdict === 'shown') continue;
         for (const cell of view.cells) if (cell.clear !== null && within_(cell.clear, x, y)) return { kind: 'clear', key: view.key, part: cell.part };
-        for (const button of view.buttons) if (within_(button.box, x, y)) return { kind: 'button', key: view.key, name: button.name };
         for (const cell of view.cells) if (within_(cell.box, x, y)) return { kind: 'cell', key: view.key, part: cell.part };
       }
       return null;
     },
-    mathWrite(key, part, text, by) {
+    mathWrite(key, part, text) {
       const run = cells.runNamed(key);
       if (run === null) return false;
-      const changed = by === 'pen' ? (cells.readIn(run, part, text), true) : cells.writeCell(run, part, text, 'key');
+      const changed = cells.writeCell(run, part, text, 'key');
       if (changed) mathChanged();
       return changed;
     },
@@ -2128,37 +2118,10 @@ export function createPainter(options: PainterOptions): Painter {
       if (run === null) return null;
       return move === 'empty' ? cells.nextEmpty(run, part) : move === 'back' ? cells.previous(run, part) : move === 'next' ? cells.following(run, part) : cells.neighbour(run, part, move);
     },
-    mathPress(key, name) {
-      const run = cells.runNamed(key);
-      if (run === null) return;
-      if (name === 'check') {
-        const act = cells.check(run);
-        mathChanged();
-        if (act !== null) sayMath(run, act, true);
-      } else if (name === 'hint') {
-        const made = cells.hint(run);
-        mathChanged();
-        if (made !== null) {
-          emit('transcript', { kind: 'hint', key, text: made.text });
-          sayMath(run, made.act);
-        }
-      } else {
-        const act = cells.show(run);
-        mathChanged();
-        if (act !== null) sayMath(run, act, true);
-      }
-    },
     mathInk(key, part, on) {
       const run = cells.runNamed(key);
       if (run === null) return;
-      cells.inkIn(run, part, on);
-      mathChanged();
-    },
-    mathRead(key, part, digits) {
-      const run = cells.runNamed(key);
-      if (run === null) return;
-      cells.readIn(run, part, digits);
-      mathChanged();
+      if (cells.inkIn(run, part, on)) mathChanged();
     },
 
     setControl(id, value, commit) {

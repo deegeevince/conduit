@@ -3,11 +3,10 @@
 //
 //   which cell    the cell that holds most of a stroke's points, each cell taken 20% larger; the band above the top row is the carry cells (a carry box reaches up by its
 //                 own height). A stroke that is mostly outside every cell is free working: it is kept, drawn, and never checked.
-//   reading       800 ms after the pen lifts, and on Check, every cell whose ink changed goes up in ONE request: a numbered contact sheet (a tile a cell) and a prompt that asks
-//                 for digits only. The cell shimmers while it waits, then shows the digit read, small, beside the child's own ink.
-//   a misread     a tap on the cell opens its input with the digit read selected; a typed digit wins and the ink dims (the painter says so, and `sync` recolours it); the ✕ on
-//                 the cell clears its ink; the eraser end erases (the ink layer does that, and the diff here sees the strokes go)
-//   mixing        the last writer of a cell wins: a key after the pen, or the pen after a key (`painter/blocks/math-cells.ts`)
+//   reading       none. The ink stays where it is written and nothing reads it: the person presses Send (the ink bar's, or the prompt bar's) and the turn carries the picture
+//                 of the stage with the writing on it, the strokes, and the sum's id as what it was written on (`setSurface`); the model decides what comes next.
+//   the cell      a typed digit over the pen's ink dims the ink (the painter says so, and `sync` recolours it); the ✕ on the cell clears its ink; the eraser end erases (the ink
+//                 layer does that, and the diff here sees the strokes go)
 //
 // The lens used to hold the pen (`?lens=1`, `lens.ts`): it is lifted out whole, with no flag. With the lens the pen writes anywhere on the page, as it did; without it, in the
 // written methods only, so that a stage with none behaves exactly as it did before.
@@ -21,17 +20,12 @@ import type { StageApp } from './stage-app';
 
 /** A Pencil tap is a press when the pen travelled no further than this (CSS pixels) between going down and coming up. */
 const PEN_TAP_TRAVEL = 8;
-/** The pen lifts, and this long later (with no new stroke begun) what it wrote is read. */
-export const READ_AFTER_MS = 800;
 /** A cell is taken this much larger when a stroke is given to it. */
 const INFLATE = 0.2;
 /** A stroke belongs to a cell only when this share of its points are in it. */
 const OWN_SHARE = 0.4;
 /** The colour of writing that a typed digit has taken over. */
 const DIM = '#b9b3a8';
-/** A tile of the contact sheet, and how many stand in a row. */
-const TILE = 200;
-const PER_ROW = 4;
 
 interface Zone {
   readonly key: string;
@@ -58,19 +52,13 @@ export interface PenWriteOptions {
   readonly penTap: (event: PointerEvent) => void;
   /** whether something that can be pressed (a button, a choice, a control, a cell) is at this point: in Draw a short tap on nothing is a dot, and on one of these it is a press (default: always) */
   readonly pressable?: (event: PointerEvent) => boolean;
-  /** keeps the picture of the sheet; resolves with its upload id */
-  readonly upload: (png: Blob) => Promise<string>;
-  /** reads the sheet: the digits of each tile by its number */
-  readonly readDigits: (request: { readonly image: string; readonly cells: readonly { readonly n: number; readonly max: number; readonly strokes: number }[] }) => Promise<ReadonlyMap<number, string>>;
-  /** the painter: the pen has ink in a cell (or none now), and what was read from it */
-  readonly painter: { mathInk(key: string, part: string, on: boolean): void; mathRead(key: string, part: string, digits: string): void };
+  /** the painter: the pen has ink in a cell (or none now) */
+  readonly painter: { mathInk(key: string, part: string, on: boolean): void };
 }
 
 export interface PenWrite {
   /** takes the pen's ink off a cell (its ✕) */
   clear(key: string, part: string): void;
-  /** reads whatever the pen has written that is not read yet, and resolves when the digits are in the cells (Check waits for it) */
-  flush(): Promise<void>;
   /** the written methods changed: ink under a typed digit is shown faint */
   sync(views: readonly MathBlockView[]): void;
   dispose(): void;
@@ -79,14 +67,12 @@ export interface PenWrite {
 /** The palm guard a stage shares between its ink and its pen: the lens's own when there is one. */
 export const guardFor = (lens: StageLens | null): PalmGuard => lens?.guard ?? new PalmGuard('auto');
 
-const cellKey = (key: string, part: string): string => `${key}\u0001${part}`;
 const inside = (box: { x: number; y: number; width: number; height: number }, x: number, y: number): boolean => x >= box.x && x <= box.x + box.width && y >= box.y && y <= box.y + box.height;
 
 /** Where each cell of the open written methods takes a stroke. */
 function zonesOf(views: readonly MathBlockView[]): Zone[] {
   const out: Zone[] = [];
   for (const view of views) {
-    if (view.verdict === 'right' || view.verdict === 'shown') continue;
     for (const cell of view.cells) {
       const b = cell.box;
       const up = /^(carry|exchange)/.test(cell.label) ? b.height : 0;
@@ -141,7 +127,7 @@ export function mountPenWrite(options: PenWriteOptions): PenWrite {
   const touchActionWas = host.style.touchAction;
   const takePen = (views: readonly MathBlockView[]): void => {
     if (anywhere) return;
-    const writing = views.some((view) => view.verdict !== 'right' && view.verdict !== 'shown' && view.cells.length > 0);
+    const writing = views.some((view) => view.cells.length > 0);
     const want = writing ? 'none' : touchActionWas;
     if (host.style.touchAction !== want) host.style.touchAction = want;
   };
@@ -154,7 +140,7 @@ export function mountPenWrite(options: PenWriteOptions): PenWrite {
   /** whether a pen at this point is on a written method that still has cells to write in */
   const onMethod = (e: PointerEvent): boolean => {
     const at = pageOf(e.clientX, e.clientY);
-    return options.views().some((view) => view.verdict !== 'right' && view.verdict !== 'shown' && inside({ x: view.box.x - 16, y: view.box.y - 16, width: view.box.width + 32, height: view.box.height + 32 }, at.x, at.y));
+    return options.views().some((view) => inside({ x: view.box.x - 16, y: view.box.y - 16, width: view.box.width + 32, height: view.box.height + 32 }, at.x, at.y));
   };
 
   // ----------------------------------------------------------------------------------------------------------------------------- the pen
@@ -174,8 +160,6 @@ export function mountPenWrite(options: PenWriteOptions): PenWrite {
       if (target instanceof Element && target.closest(drawing ? 'button, input, textarea, select, a[href], [contenteditable="true"], .ink-bar' : 'button, input, textarea, select, a[href], [contenteditable="true"], .stage__chart, .stage__app, .ink-bar')) return;
       if (!anywhere && !drawing && !onMethod(e)) return;
       downs.set(e.pointerId, { x: e.clientX, y: e.clientY, eraser: e.button === 5 || (e.buttons & 32) !== 0, drawing, travel: 0 });
-      // a stroke is begun: what the last one is waiting to be read after waits for this one
-      clearTimer();
       e.stopImmediatePropagation();
       ink.penDown(e);
       return;
@@ -195,8 +179,6 @@ export function mountPenWrite(options: PenWriteOptions): PenWrite {
       ink.abort(e.pointerId);
       options.penTap(e);
     }
-    // a pen that has lifted: what it wrote is read once it has been still for a while
-    else if (dirty.size > 0) schedule();
   };
   for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel']) host.addEventListener(type, onPen as EventListener, true);
 
@@ -213,10 +195,26 @@ export function mountPenWrite(options: PenWriteOptions): PenWrite {
   const owner = new Map<string, { key: string; part: string } | null>();
   /** the sum each owned stroke was written under (fb-097): a stroke belongs to a sum, not only to a block's id, which a later sum may take again */
   const sumOf = new Map<string, string>();
-  const version = new Map<string, number>();
-  const dirty = new Set<string>();
   const dimmed = new Set<string>();
   ink.setOwned((id) => owner.get(id) != null);
+  /** the sum most of the pen's writing is in, named for the turn that carries it: its id (what the model knows it by). Null: none of the ink is in a sum. */
+  ink.setSurface(() => {
+    const counts = new Map<string, number>();
+    for (const stroke of model.strokes) {
+      const own = owner.get(stroke.id);
+      if (own != null) counts.set(own.key, (counts.get(own.key) ?? 0) + 1);
+    }
+    let best: string | null = null;
+    let most = 0;
+    for (const [key, count] of counts) {
+      if (count > most) {
+        best = key;
+        most = count;
+      }
+    }
+    const view = best === null ? undefined : options.views().find((candidate) => candidate.key === best);
+    return view === undefined ? null : { element: view.id, label: 'the sum on the stage, as the user saw it' };
+  });
 
   const strokesOf = (key: string, part: string): InkStroke[] => model.strokes.filter((stroke) => {
     const own = owner.get(stroke.id);
@@ -230,19 +228,9 @@ export function mountPenWrite(options: PenWriteOptions): PenWrite {
       owner.delete(id);
       sumOf.delete(id);
       dimmed.delete(id);
-      if (own === null) continue;
-      const ck = cellKey(own.key, own.part);
-      version.set(ck, (version.get(ck) ?? 0) + 1);
-      if (strokesOf(own.key, own.part).length === 0) {
-        dirty.delete(ck);
-        painter.mathInk(own.key, own.part, false);
-      } else {
-        dirty.add(ck);
-        schedule();
-      }
+      if (own !== null && strokesOf(own.key, own.part).length === 0) painter.mathInk(own.key, own.part, false);
     }
     const zones = zonesOf(options.views());
-    let added = false;
     for (const stroke of model.strokes) {
       if (owner.has(stroke.id)) continue;
       const own = cellOf(stroke, zones);
@@ -250,152 +238,12 @@ export function mountPenWrite(options: PenWriteOptions): PenWrite {
       if (own === null) continue;
       const sum = options.views().find((view) => view.key === own.key)?.sum;
       if (sum !== undefined) sumOf.set(stroke.id, sum);
-      const ck = cellKey(own.key, own.part);
-      version.set(ck, (version.get(ck) ?? 0) + 1);
-      dirty.add(ck);
-      added = true;
       painter.mathInk(own.key, own.part, true);
     }
-    // the ink layer keeps the bar and the badge by what is owned
+    // the ink layer keeps its stage picture for what is outside the cells
     ink.setOwned((id) => owner.get(id) != null);
-    // the pen lifted (or the ink was put back): the wait begins; a stroke still being drawn is not in the model yet
-    if (added && downs.size === 0) schedule();
   };
   const offChange = ink.ink.onChange(noticed);
-
-  // ----------------------------------------------------------------------------------------------------------------------------- reading
-  let timer: number | undefined;
-  let busy: Promise<void> | null = null;
-  function clearTimer(): void {
-    window.clearTimeout(timer);
-    timer = undefined;
-  }
-  /** for the browser check only (`__penWrite.hold`): while held, the pause that starts a read never begins, so what a test writes is read together whatever the machine's speed */
-  let held = false;
-  function schedule(): void {
-    clearTimer();
-    if (held) return;
-    timer = window.setTimeout(() => void flush(), READ_AFTER_MS);
-  }
-
-  interface Entry {
-    readonly n: number;
-    readonly key: string;
-    readonly part: string;
-    readonly max: number;
-    readonly version: number;
-    readonly box: { x: number; y: number; width: number; height: number };
-    readonly strokes: InkStroke[];
-  }
-
-  /** the sheet: a tile for each cell, its number in the corner, the cell's own edge in grey, and what the pen wrote in it, scaled to the tile */
-  async function sheetOf(entries: readonly Entry[]): Promise<Blob | null> {
-    const columns = Math.min(PER_ROW, entries.length);
-    const rows = Math.ceil(entries.length / columns);
-    const canvas = document.createElement('canvas');
-    canvas.width = columns * TILE;
-    canvas.height = rows * TILE;
-    const g = canvas.getContext('2d');
-    if (g === null) return null;
-    g.fillStyle = '#ffffff';
-    g.fillRect(0, 0, canvas.width, canvas.height);
-    entries.forEach((entry, at) => {
-      const ox = (at % columns) * TILE;
-      const oy = Math.floor(at / columns) * TILE;
-      const margin = 26;
-      const area = TILE - 2 * margin;
-      const k = area / Math.max(entry.box.width * (1 + INFLATE), entry.box.height * (1 + INFLATE));
-      const cx = ox + TILE / 2;
-      const cy = oy + TILE / 2 + 6;
-      const mapX = (x: number): number => cx + (x - (entry.box.x + entry.box.width / 2)) * k;
-      const mapY = (y: number): number => cy + (y - (entry.box.y + entry.box.height / 2)) * k;
-      g.save();
-      g.beginPath();
-      g.rect(ox + 2, oy + 2, TILE - 4, TILE - 4);
-      g.clip();
-      g.strokeStyle = '#9a9a9a';
-      g.lineWidth = 2;
-      g.strokeRect(mapX(entry.box.x), mapY(entry.box.y), entry.box.width * k, entry.box.height * k);
-      g.strokeStyle = '#111111';
-      g.lineCap = 'round';
-      g.lineJoin = 'round';
-      for (const stroke of entry.strokes) {
-        g.lineWidth = Math.max(4, stroke.width * k * 1.1);
-        g.beginPath();
-        stroke.points.forEach(([x, y], i) => (i === 0 ? g.moveTo(mapX(x), mapY(y)) : g.lineTo(mapX(x), mapY(y))));
-        if (stroke.points.length === 1) {
-          const [x, y] = stroke.points[0] as readonly number[];
-          g.lineTo(mapX(x as number) + 0.1, mapY(y as number));
-        }
-        g.stroke();
-      }
-      g.restore();
-      g.strokeStyle = '#d0d0d0';
-      g.lineWidth = 1;
-      g.strokeRect(ox + 0.5, oy + 0.5, TILE - 1, TILE - 1);
-      g.fillStyle = '#c62828';
-      g.font = 'bold 24px sans-serif';
-      g.textBaseline = 'top';
-      g.fillText(String(entry.n), ox + 8, oy + 5);
-    });
-    return new Promise((done) => canvas.toBlob((blob) => done(blob), 'image/png'));
-  }
-
-  async function readEntries(entries: readonly Entry[]): Promise<void> {
-    const began = performance.now();
-    let digits: ReadonlyMap<number, string> | null = null;
-    let uploaded = began;
-    try {
-      const blob = await sheetOf(entries);
-      if (blob === null) throw new Error('no sheet');
-      const image = await options.upload(blob);
-      uploaded = performance.now();
-      digits = await options.readDigits({ image, cells: entries.map((entry) => ({ n: entry.n, max: entry.max, strokes: entry.strokes.length })) });
-    } catch {
-      // the sheet could not be read: each cell is a smudge to be corrected by a tap and a typed digit
-      digits = null;
-    }
-    const ended = performance.now();
-    const log = ((window as unknown as { __mathReads?: unknown[] }).__mathReads ??= []);
-    log.push({ cells: entries.length, uploadMs: Math.round(uploaded - began), readMs: Math.round(ended - uploaded), totalMs: Math.round(ended - began), ok: digits !== null });
-    for (const entry of entries) {
-      const ck = cellKey(entry.key, entry.part);
-      // ink written since the sheet was made is read again
-      if (version.get(ck) !== entry.version) {
-        if (strokesOf(entry.key, entry.part).length > 0) dirty.add(ck);
-        continue;
-      }
-      painter.mathRead(entry.key, entry.part, digits === null ? '?' : (digits.get(entry.n) ?? '?'));
-    }
-    if (dirty.size > 0) schedule();
-  }
-
-  /** Reads every cell whose ink changed, in one request. */
-  async function flush(): Promise<void> {
-    clearTimer();
-    for (let round = 0; round < 3; round += 1) {
-      if (busy !== null) await busy.catch(() => undefined);
-      if (dirty.size === 0) return;
-      const zones = zonesOf(options.views());
-      const entries: Entry[] = [];
-      for (const ck of [...dirty]) {
-        const [key = '', part = ''] = ck.split('\u0001');
-        const zone = zones.find((candidate) => candidate.key === key && candidate.part === part);
-        const strokes = strokesOf(key, part);
-        if (zone === undefined || strokes.length === 0) continue;
-        entries.push({ n: entries.length + 1, key, part, max: zone.max, version: version.get(ck) ?? 0, box: zone.box, strokes });
-      }
-      dirty.clear();
-      if (entries.length === 0) return;
-      const run = readEntries(entries);
-      busy = run;
-      try {
-        await run;
-      } finally {
-        if (busy === run) busy = null;
-      }
-    }
-  }
 
   // ----------------------------------------------------------------------------------------------------------------------------- for the test hook
   const hook = window as unknown as { __penWrite?: unknown };
@@ -403,17 +251,6 @@ export function mountPenWrite(options: PenWriteOptions): PenWrite {
     owners: (): { stroke: string; key: string; part: string }[] => [...owner].flatMap(([stroke, own]) => (own === null ? [] : [{ stroke, key: own.key, part: own.part }])),
     free: (): string[] => [...owner].flatMap(([stroke, own]) => (own === null ? [stroke] : [])),
     colours: (): string[] => model.strokes.map((stroke) => stroke.color),
-    /**
-     * The read waits 800 ms after the pen lifts, so a person who writes a number in one go has it read in one request. A browser check that writes several strokes on a machine
-     * that is busy cannot keep to that: each stroke's events come back late, the pause runs out between two strokes, and the strokes are read in pieces. A person who
-     * stops for a second does get a read of each piece (that is the design: it cannot know they have finished), so this is a hold for the check alone, not a change to what a person meets.
-     * `hold(true)` stops the pause from starting; `hold(false)` lets it begin, from now, if there is ink to read.
-     */
-    hold: (on: boolean): void => {
-      held = on;
-      if (held) clearTimer();
-      else if (dirty.size > 0 && downs.size === 0) schedule();
-    },
   };
 
   return {
@@ -421,7 +258,6 @@ export function mountPenWrite(options: PenWriteOptions): PenWrite {
       const ids = strokesOf(key, part).map((stroke) => stroke.id);
       if (ids.length > 0) model.erase(new Set(ids));
     },
-    flush,
     sync(views) {
       takePen(views);
       // fb-097. The working a sum had written leaves with the sum: ink owned by a block that is no longer on the stage, or that now works another sum under the same id, is taken off
@@ -439,7 +275,6 @@ export function mountPenWrite(options: PenWriteOptions): PenWrite {
       model.recolour(faint, DIM);
     },
     dispose() {
-      clearTimer();
       offChange();
       for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel']) host.removeEventListener(type, onPen as EventListener, true);
       host.removeEventListener('pointerdown', onTouch, true);
@@ -461,9 +296,7 @@ export function mountPenWriting(app: StageApp, ink: StageInk, host: HTMLElement,
     views: () => app.painter.mathViews(),
     penTap: (event) => app.penTap(event),
     pressable: (event) => app.pressableAt(event.clientX, event.clientY),
-    upload: async (png) => (await app.link.uploadPhoto(png)).id,
-    readDigits: (request) => app.link.readDigits(request),
-    painter: { mathInk: (key, part, on) => app.painter.mathInk(key, part, on), mathRead: (key, part, digits) => app.painter.mathRead(key, part, digits) },
+    painter: { mathInk: (key, part, on) => app.painter.mathInk(key, part, on) },
   });
   app.pen.set(write);
   app.painter.on('math', (views) => write.sync(views));

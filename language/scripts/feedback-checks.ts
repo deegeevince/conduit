@@ -1,8 +1,10 @@
 // Checks of the owner's feedback that the language settles (docs/feedback.md), each named by its row. Run by `pnpm timeline`.
 //
 //   fb-058  the brain is taught the `math` line for a column sum (no digits placed by hand), it is carried when the words are the owner's, and it never holds the answer
-//   fb-090  a photographed question is shown first with a callout on each number it gives, then worked as a `math` line; a finished sum comes back as an act the brain is
-//           taught to answer with one next question (the chapter, carried with a photo for the owner's words)
+//   fb-090  a photographed question is shown first with a callout on each number it gives, then worked as a `math` line (the chapter, carried with a photo for the owner's words).
+//           Its clause about a finished sum coming back as an act is superseded by fb-104
+//   fb-104  (owner: write, then send) the written method has no Check, Hint or act of its own: the chapter and the fixed prompt say the person writes in the boxes with the pen and
+//           sends, and the model, shown their writing on the sum, decides what is next
 //   fb-008  a markdown bullet or numbered item that is no Series ("- **Mercury** …", "* x", "1. First") is said as text, marker and emphasis off, with a warning that says so, not refused
 //   ro-3a   (PLAN-romer 3a) "show me the maths" is a request to SEE a calculation, not to be coached through one: the chapter the words carry opens by saying which case is which,
 //           and coaches only the learner who will do the working; the formula line it teaches reads
@@ -120,12 +122,14 @@ function fb058(): void {
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------------
-// fb-090: a photographed question is shown with a callout on each number, then worked; a finished sum comes back as an act and is answered
+// fb-090: a photographed question is shown with a callout on each number, then worked (a finished sum used to come back as an act: that is fb-104's now)
 
 function fb090(): void {
   const chapter = MATHS_CHAPTER;
   expect('fb-090: the chapter teaches the photo first, a callout on each number it gives, then the working', [chapter.includes('canvas=square'), chapter.includes('`pic p1 from=u1`'), chapter.includes('callout at=x,y in=p1'), chapter.includes('`wait 3`'), chapter.includes('`scene stack` for the working')], [true, true, true, true, true]);
-  expect('fb-090: the chapter says a finished block is an act, answered with one next question and not the working again', [chapter.includes('m1: all right, after 1 wrong check'), /ONE next small question/.test(chapter), /never the working again/.test(chapter)], [true, true, true]);
+  // fb-104 (owner: write, then send): the person writes in the boxes and sends; the model sees their writing on the sum and decides. No Check, Hint or act is the app's own to teach
+  expect('fb-104: the chapter says they write in the boxes with the pen and send, and the model decides what is next from the picture of the writing', [/write in them with the pen and send/.test(chapter), /you see the picture of their writing on the sum/.test(chapter), /decide what is next/.test(chapter)], [true, true, true]);
+  expect('fb-104: ...and teaches no Check, no Hint built in, and no act that a finished sum comes back as', [/\bCheck\b/.test(chapter), /built in/.test(chapter), /comes back as an act/.test(chapter), /m1: all right/.test(chapter)], [false, false, false, false]);
   expect('fb-090: the chapter keeps the words above the working to a title and three short lines, and gives a new sum a new id', [/title and three short lines at most/.test(chapter), chapter.includes('a new sum is a new id')], [true, true]);
   const card: TechniqueCard = { id: 'seed:teach-young-learner', title: 'A maths question to work out', when: 'a child needs help with a maths question', example: ['scene stack', 'say title | Flowers', 'ask a1 is=12 | How many flowers? __'] };
   const brief = buildTurnBrief({ ...contextWith([card]), photos: { u1: 0.8 } }, { kind: 'prompt', text: "Help me work this out, don't tell me the answer", images: ['u1'] });
@@ -321,7 +325,7 @@ function fb101(): void {
   // 1. The fixed prompt names the written method for any sum worked by hand, with the form, so a turn that carries no chapter is never left to build one from loose digits.
   const named = system();
   expect('fb-101: the fixed prompt names `math` for a sum worked by hand, typed or in a photo, with its form', [named.includes('`math m1 column|times|split|bond | 43 × 8`'), /worked by hand, typed or in a photo/.test(named)], [true, true]);
-  expect('fb-101: ...says never digits or boxes the brain places, and no `ask` beside it (its Check and Hint are its own)', [/never digits or boxes you place/.test(named), /never an `ask` for it/.test(named), /Check and Hint are built in/.test(named)], [true, true, true]);
+  expect('fb-101: ...says never digits or boxes the brain places, and no `ask` beside it (they write in its boxes and send, and the brain decides what is next: fb-104)', [/never digits or boxes you place/.test(named), /never an `ask` for it/.test(named), /write in its boxes with the pen and send it, and you decide what is next/.test(named), /Check and Hint/.test(named)], [true, true, true, false]);
   expect('fb-101: a painter that does not paint `math` is not taught it', system(FULL_CAPABILITIES.structures.filter((name) => name !== 'math')).includes('`math m1'), false);
 
   // 2. A photo and vague words in a thread that is about sums carries the chapter; the same turn in a thread that is not does not.

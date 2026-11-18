@@ -25,8 +25,6 @@ export interface AccessHandlers {
   mathWrite?(key: string, part: string, text: string): void;
   /** where the keyboard goes from a cell (see `Painter.mathMove`) */
   mathMove?(key: string, part: string, move: 'empty' | 'back' | 'next' | 'left' | 'right' | 'up' | 'down'): string | null;
-  /** Check, Hint or Show me of a written method */
-  mathPress?(key: string, name: 'check' | 'hint' | 'show'): void;
   /** the keyboard is in a cell, or in none */
   mathActive?(key: string, part: string | null): void;
   /** the ✕ of a cell the pen has written in */
@@ -40,7 +38,7 @@ export interface AccessLayer {
   controls(views: readonly ControlView[]): void;
   /** the charts on stage now */
   charts(frames: readonly ChartFrame[]): void;
-  /** the written methods on stage now: a real input over each cell the learner writes in, and a button for each of Check, Hint and Show me */
+  /** the written methods on stage now: a real input over each cell the learner writes in */
   maths(views: readonly MathBlockView[]): void;
   /** puts the keyboard in a cell of a written method, inside the tap that was made on it; with its digit selected so that typing replaces it */
   focusMath(key: string, part: string): boolean;
@@ -619,8 +617,6 @@ export function createAccessLayer(stage: HTMLElement, handlers: AccessHandlers):
   interface MathBlock {
     readonly holder: HTMLElement;
     readonly cells: Map<string, MathCell>;
-    readonly buttons: Map<string, HTMLButtonElement>;
-    readonly status: HTMLElement;
     view: MathBlockView;
   }
   const mathHolder = make('div', 'access__math');
@@ -663,8 +659,9 @@ export function createAccessLayer(stage: HTMLElement, handlers: AccessHandlers):
       if (event.isComposing || event.metaKey || event.ctrlKey || event.altKey) return;
       const arrows: Record<string, 'left' | 'right' | 'up' | 'down'> = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' };
       if (event.key === 'Enter') {
+        // the keyboard's Done: nothing is checked, the keyboard goes
         event.preventDefault();
-        handlers.mathPress?.(key, 'check');
+        input.blur();
       } else if (event.key === 'Tab') {
         const to = handlers.mathMove?.(key, part, event.shiftKey ? 'back' : 'next') ?? null;
         if (to !== null) {
@@ -718,12 +715,8 @@ export function createAccessLayer(stage: HTMLElement, handlers: AccessHandlers):
         const holder = make('div', 'access__math-block');
         holder.setAttribute('role', 'group');
         holder.dataset['mathGroup'] = view.key;
-        const status = make('p', 'visually-hidden');
-        status.setAttribute('role', 'status');
-        status.setAttribute('aria-live', 'polite');
-        holder.append(status);
         mathHolder.append(holder);
-        block = { holder, cells: new Map(), buttons: new Map(), status, view };
+        block = { holder, cells: new Map(), view };
         blocks.set(view.key, block);
       }
       const here = block;
@@ -732,7 +725,7 @@ export function createAccessLayer(stage: HTMLElement, handlers: AccessHandlers):
       const seen = new Set<string>();
       // the cells stand in working order, then the rest: the DOM order is what a screen reader and Tab find them in
       const ordered = [...view.cells].sort((a, b) => (a.order ?? 1e6) - (b.order ?? 1e6));
-      let previous: HTMLElement | null = here.status;
+      let previous: HTMLElement | null = null;
       for (const cell of ordered) {
         seen.add(cell.part);
         let slot = here.cells.get(cell.part);
@@ -745,14 +738,12 @@ export function createAccessLayer(stage: HTMLElement, handlers: AccessHandlers):
         place(field, { x: cell.box.x, y: cell.box.y, width: cell.box.width, height: cell.box.height });
         field.maxLength = cell.maxLength;
         field.setAttribute('aria-label', `${cell.label}${cell.optional ? ', optional' : ''}`);
-        field.readOnly = view.verdict === 'right' || view.verdict === 'shown';
         field.tabIndex = cell.order === null ? -1 : 0;
-        field.setAttribute('aria-invalid', String(cell.mark === 'wrong'));
-        const text = cell.by === 'pen' ? cell.read === '?' ? '' : cell.value : cell.value;
-        if (!typing(field) && field.value !== text) field.value = text;
+        if (!typing(field) && field.value !== cell.value) field.value = cell.value;
         if (field.parentElement !== here.holder || field.previousElementSibling !== previous) {
           const focused = document.activeElement === field;
-          previous.after(field);
+          if (previous === null) here.holder.prepend(field);
+          else previous.after(field);
           if (focused) field.focus({ preventScroll: true });
         }
         previous = field;
@@ -770,30 +761,6 @@ export function createAccessLayer(stage: HTMLElement, handlers: AccessHandlers):
         slot.clear.remove();
         here.cells.delete(part);
       }
-      // Check, Hint and Show me are real buttons too, after the cells
-      const named = new Set(view.buttons.map((button) => button.name));
-      for (const button of view.buttons) {
-        let element = here.buttons.get(button.name);
-        if (element === undefined) {
-          const made = make('button', 'access__widget');
-          made.type = 'button';
-          const name = button.name;
-          made.addEventListener('click', () => handlers.mathPress?.(view.key, name));
-          element = made;
-          here.buttons.set(button.name, made);
-        }
-        place(element, button.box);
-        element.textContent = button.label;
-        element.setAttribute('aria-label', `${button.label} ${view.id}`);
-        here.holder.append(element);
-      }
-      for (const [name, element] of [...here.buttons]) {
-        if (named.has(name as 'check')) continue;
-        element.remove();
-        here.buttons.delete(name);
-      }
-      const done = view.verdict === 'right' ? 'All right.' : view.verdict === 'shown' ? 'Finished with help.' : view.hint;
-      if (here.status.textContent !== done) here.status.textContent = done;
     }
   }
 
