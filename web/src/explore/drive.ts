@@ -9,6 +9,7 @@
 //
 // The harness page owns the renderer; this file owns nothing outside one `drive` call and leaves no painter behind.
 
+import { settledFormulas } from '../render/formula/host';
 import { BOUND_SECONDS } from '@conduit/language';
 import type { BackEvent, Capabilities, ChartStageCheck, ControlValue, ControlValues, Line, LookId, StageBase } from '@conduit/language';
 import type { ChartHost } from '../contracts/chart';
@@ -248,6 +249,7 @@ export async function drive(env: DriveEnvironment, request: DriveRequest): Promi
       readonly png: string;
     }
     const encoded = async (): Promise<Taken | null> => {
+      await settledFormulas();
       await frames(3);
       const frame = watched.lastFrame();
       if (frame === null || !watched.capabilities.capture) return null;

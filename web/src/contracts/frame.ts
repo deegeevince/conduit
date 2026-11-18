@@ -103,6 +103,16 @@ export interface ElementFrame {
    * the contrast rule is kept on a stage that has pictures on it.
    */
   readonly plate: number;
+  /**
+   * PLAN-maths M7. Set when the element is a typeset formula (`math f1 formula | …`): its one run holds the TeX as written, and the renderer draws what KaTeX
+   * set from it, in the run's colour, in the element's box (`width` by `height`, whose ems are `fontSize`). A renderer that cannot draw it shows the TeX as the
+   * run's text, which is the source a reader can still read. `raster` is the pixels an em should be drawn at on this screen.
+   */
+  readonly formula?: {
+    readonly tex: string;
+    readonly display: boolean;
+    readonly raster: number;
+  };
 }
 
 /**

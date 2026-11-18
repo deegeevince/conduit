@@ -100,7 +100,10 @@ export function answerMarkdown(spans: readonly TextSpanView[]): string {
       const id = groupOf(span);
       const group = spans.filter((other) => !taken.has(other) && other.structure !== null && groupOf(other) === id && other.role !== 'choice' && other.role !== 'heading');
       for (const other of group) taken.add(other);
-      if (span.structure === 'table' || span.structure === 'chart') {
+      if (group.some((s) => s.formula !== undefined)) {
+        // a typeset formula, as TeX between $$ (what the stage showed, written so that it can be set again)
+        for (const s of group) if (s.formula !== undefined) blocks.push(`$$\n${s.formula.tex}\n$$`);
+      } else if (span.structure === 'table' || span.structure === 'chart') {
         const cells = group.filter((s) => s.role === 'cell');
         const labels = group.filter((s) => s.role === 'label' && s.within !== null && s.within.row >= 0);
         const text = span.structure === 'chart' ? chartTableOf(cells) : tableOf(cells, labels);

@@ -4,6 +4,8 @@
 //   fb-090  a photographed question is shown first with a callout on each number it gives, then worked as a `math` line; a finished sum comes back as an act the brain is
 //           taught to answer with one next question (the chapter, carried with a photo for the owner's words)
 //   fb-008  a markdown bullet or numbered item that is no Series ("- **Mercury** …", "* x", "1. First") is said as text, marker and emphasis off, with a warning that says so, not refused
+//   ro-3a   (PLAN-romer 3a) "show me the maths" is a request to SEE a calculation, not to be coached through one: the chapter the words carry opens by saying which case is which,
+//           and coaches only the learner who will do the working; the formula line it teaches reads
 //   fb-061  an `ask` accepts the ways of writing ONE answer: a thousands comma or space is part of a number; a step of the working that was listed with the answer is
 //           dropped with a reason; a hint is refused only when it shows what the ask really accepts
 //
@@ -80,8 +82,8 @@ function fb058(): void {
   // the hand-placed recipe is gone: no coordinates for digits, no right edge, no mono face, no free layout (a figure scene on a square canvas is the photo's, fb-090)
   expect('fb-058: the chapter teaches no hand-placed column', /align=right|face=mono|layout=free|a row every 10|path.*rule/.test(chapter), false);
   expect('fb-058: the chapter does not teach `problem` or the workspace', /\bproblem\b|workspace/i.test(chapter), false);
-  // the brief stays short (it was 1,348 characters; fb-090 added the photo and the finished act, and the room the working needs, 800 more)
-  expect(`fb-058: the maths chapter stays short (is ${chapter.length})`, chapter.length <= 2200, true);
+  // the brief only grows for what it was asked to say (it was 1,348 characters; PLAN-romer 3a and PLAN-maths M7 added the two cases and the typeset formula, 1,654; fb-090 added the photo, the room the working needs and the finished act)
+  expect(`fb-058: the maths chapter stays short (is ${chapter.length})`, chapter.length <= 2240, true);
   // and it is carried for the owner's own words (they hold no digit and none of the old cue words), and by the maths card
   expect('fb-058: the owner\'s sentence is read as a maths question', asksForMaths(SENTENCE), true);
   const brief = buildTurnBrief(contextWith(), { kind: 'prompt', text: SENTENCE });
@@ -112,15 +114,42 @@ function fb058(): void {
 
 function fb090(): void {
   const chapter = MATHS_CHAPTER;
-  expect('fb-090: the chapter teaches the photo first, a callout on each number it gives, then the working', [chapter.includes('canvas=square'), chapter.includes('`pic p1 from=u1`'), chapter.includes('callout at=x,y in=p1'), chapter.includes('`wait 3`'), chapter.includes('`scene stack` with the working')], [true, true, true, true, true]);
+  expect('fb-090: the chapter teaches the photo first, a callout on each number it gives, then the working', [chapter.includes('canvas=square'), chapter.includes('`pic p1 from=u1`'), chapter.includes('callout at=x,y in=p1'), chapter.includes('`wait 3`'), chapter.includes('`scene stack` for the working')], [true, true, true, true, true]);
   expect('fb-090: the chapter says a finished block is an act, answered with one next question and not the working again', [chapter.includes('m1: all right, after 1 wrong check'), /ONE next small question/.test(chapter), /never the working again/.test(chapter)], [true, true, true]);
-  expect('fb-090: the chapter keeps the words above the working to a title and three short lines, and gives a new sum a new id', [/title and at most three short lines/.test(chapter), chapter.includes('a new sum is a new id')], [true, true]);
+  expect('fb-090: the chapter keeps the words above the working to a title and three short lines, and gives a new sum a new id', [/title and three short lines at most/.test(chapter), chapter.includes('a new sum is a new id')], [true, true]);
   const card: TechniqueCard = { id: 'seed:teach-young-learner', title: 'A maths question to work out', when: 'a child needs help with a maths question', example: ['scene stack', 'say title | Flowers', 'ask a1 is=12 | How many flowers? __'] };
   const brief = buildTurnBrief({ ...contextWith([card]), photos: { u1: 0.8 } }, { kind: 'prompt', text: "Help me work this out, don't tell me the answer", images: ['u1'] });
   expect('fb-090: the brief for a photographed question carries the photo lesson and the photo\'s own frame', [brief.includes('A PHOTO of the question'), brief.includes('`say callout at=52,18 in=<pic id>')], [true, true]);
   const taught = played(['scene layout=figure canvas=square', 'pic p1 from=u1 aspect=0.8', 'say c1 callout at=43,32 in=p1 | 503 apples at the start', 'say c2 callout at=16,38 in=p1 | 278 sold', 'wait 3', 'scene stack', 'say title | 503 apples, 278 sold', 'math m1 column | 503 - 278']);
   expect('fb-090: what the chapter teaches plays with nothing refused or said', [taught.refused, taught.said], [[], []]);
   expect('fb-090: ...and it is the photo, the callouts, then the working', taught.lines, ['scene', 'pic', 'say', 'say', 'wait', 'scene', 'say', 'math']);
+}
+
+// ro-3a: who does the working. The brain is told the two cases by who is to do the working; the page cannot tell them from the words, so the check holds what the brain is
+// told, and the live smoke (a Rømer sentence) holds what it does.
+
+const SEE = "Show me the maths behind Rømer's speed of light, his numbers in. Let me change the delay.";
+const COACH = 'show me how to add two big numbers and ask me questions';
+
+function ro3a(): void {
+  const chapter = MATHS_CHAPTER;
+  const opening = chapter.split('\n')[0] ?? '';
+  const [learner = '', see = ''] = opening.split(/The person asks to SEE/);
+  expect('ro-3a: the opening is about who does the working, and names both cases', [/WHO DOES THE WORKING/.test(opening), /The learner will/.test(learner), see !== ''], [true, true, true]);
+  // what coaches (blanks, an `ask`, a hint, no answer) belongs to the learner's case; the person who asks to see is told to show it whole
+  expect('ro-3a: the learner is coached with blanks, an ask and a hint', [/each result blank/.test(learner), /one `ask`/.test(learner), /hint/.test(learner)], [true, true, true]);
+  expect('ro-3a: a calculation the person asks to see is shown whole: every step and result, no ask, no blank cell', [/show it whole/.test(see), /every step and result/.test(see), /no `ask`/.test(see), /no blank cell/.test(see)], [true, true, true, true]);
+  expect('ro-3a: nothing that coaches is said of the person who asks to see', [/each result blank/.test(see), /is=/.test(see), /hint/.test(see), /coach/.test(see)], [false, false, false, false]);
+  // both sets of words carry the chapter, and both are told the same two cases first: the brief says which case is which, the brain reads who it is talking to
+  for (const text of [SEE, COACH]) {
+    const brief = buildTurnBrief(contextWith(), { kind: 'prompt', text });
+    expect(`ro-3a: "${text.slice(0, 40)}…" carries the chapter, its two cases first`, [asksForMaths(text), brief.includes(opening), brief.indexOf(opening) < brief.indexOf('A column sum, take-away or times as on paper is ONE line')], [true, true, true]);
+  }
+  // a calculation shown whole is a typeset formula, symbols and then the numbers in; the line the chapter teaches reads as written
+  const teaches = /`(math f2 formula \| [^`]+)`/.exec(chapter)?.[1] ?? '';
+  const read = parseLine(teaches);
+  expect('ro-3a: the chapter teaches a formula with its numbers put in, and it reads', [teaches.includes('\\frac{3.0\\times10^{8}'), read.kind === 'line' && read.line.verb === 'math' && read.line.method === 'formula' && read.line.sum.includes('\\approx')], [true, true]);
+  expect('ro-3a: a shown-whole formula says nothing to be sealed or worked out', played(['scene stack', 'math f1 formula | c = \\frac{d}{\\Delta t}', teaches, 'say | About 227,000 km/s.']), { lines: ['scene', 'math', 'math', 'say'], refused: [], said: [] });
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------------
@@ -234,6 +263,7 @@ export function feedbackChecks(): boolean {
   fb058();
   fb090();
   fb008();
+  ro3a();
   fb061();
   process.stdout.write(`\nfeedback checks: ${passed} held${ok ? '' : ', some failed'}\n`);
   return ok;

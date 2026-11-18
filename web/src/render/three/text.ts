@@ -8,6 +8,9 @@ import { Text, configureTextBuilder, preloadFont } from 'troika-three-text';
 import type { ElementFrame, RunFrame } from '../../contracts/frame';
 import { FONTS, GLYPHS, fontFor, foldText, hasDevice, hasWide, isDevice, isWide, startsRtl } from '../../fonts';
 import { WIDE_STACK, deviceFont, ensureFace, fitSpaces } from '../../fonts/device';
+import { hasFormulaHost } from '../../painter/formula';
+import { INK_PAD } from '../formula/drawing';
+import { formulaCanvas } from '../formula/host';
 import { prefixEm } from '../../fonts/measure';
 import { FACES } from '../../fonts/faces';
 import { CLIP_FRAGMENT_DECL, CLIP_TEST, CLIP_VERTEX_DECL, clipVertex, makeClipUniform, setClip } from './clip';
@@ -350,6 +353,7 @@ export function createTextPool(): TextPool {
 
   const configureRun = (run: RunEntry, element: ElementFrame, runFrame: RunFrame, style: SurfaceStyle, index: number, order: number, fontKey: string): boolean => {
     const spec = FACES[element.face];
+    if (element.formula !== undefined) return configureFormula(run, element, runFrame, style, element.formula, order);
     const content = guard(runFrame.text);
     if (hasWide(content) || hasDevice(content)) return configureWide(run, element, runFrame, style, order, fontKey, content);
     if (run.wide !== null) run.wide.mesh.visible = false;
@@ -407,6 +411,73 @@ export function createTextPool(): TextPool {
     // The reveal is a share of the run's drawn width, whatever the face: the painter has already turned characters into a width.
     run.text.clipRect = runFrame.reveal >= 1 ? null : [-TYPESET_SIZE * 2, -TYPESET_SIZE * 6, (runFrame.reveal * runFrame.width) / across, TYPESET_SIZE * 2];
     return honest;
+  };
+
+  /**
+   * A typeset formula (PLAN-maths M7): the run is the whole of it, and what KaTeX set is a picture on a plane in its place, drawn the way a run of CJK is: its glyph
+   * boxes and rules replayed on a 2D canvas (`render/formula`), white, and tinted by the run's colour. It is not drawn until the page has set it; nothing else of the
+   * element is waited for, and a page with no typesetter at all draws nothing for it and does not wait.
+   */
+  const configureFormula = (run: RunEntry, element: ElementFrame, runFrame: RunFrame, style: SurfaceStyle, formula: NonNullable<ElementFrame['formula']>, order: number): boolean => {
+    run.text.visible = false;
+    run.content = runFrame.text;
+    const opacity = element.opacity * runFrame.opacity;
+    const wantedNow = runFrame.reveal > 0 && opacity > 0.002;
+    if (run.wide === null) {
+      const material = new MeshBasicMaterial({ transparent: true, depthTest: false, depthWrite: false, toneMapped: false });
+      material.customProgramCacheKey = () => 'conduit-text-wide';
+      material.onBeforeCompile = (shader) => {
+        patchClip(shader);
+        shader.uniforms['uConduitClip'] = run.clip;
+      };
+      const mesh = new Mesh(wideGeometry(), material);
+      mesh.frustumCulled = false;
+      mesh.visible = false;
+      run.group.add(mesh);
+      run.wide = { mesh, material, texture: null, key: '', em: 0, rtl: false };
+    }
+    const wide = run.wide;
+    const canvas = formulaCanvas(formula.tex, formula.display, formula.raster, '#ffffff');
+    if (canvas === null) {
+      wide.mesh.visible = false;
+      const waiting = hasFormulaHost();
+      run.ready = !waiting;
+      run.typeset = !waiting;
+      return !waiting || !wantedNow;
+    }
+    const key = `${formula.tex}|${formula.display ? 'd' : 'i'}|${formula.raster}`;
+    if (wide.key !== key) {
+      wide.texture?.dispose();
+      const texture = new CanvasTexture(canvas);
+      texture.colorSpace = SRGBColorSpace;
+      texture.minFilter = LinearFilter;
+      texture.generateMipmaps = false;
+      wide.texture = texture;
+      wide.material.map = texture;
+      wide.material.needsUpdate = true;
+      wide.key = key;
+    }
+    run.ready = true;
+    run.typeset = true;
+    wide.mesh.visible = wantedNow;
+    if (!wantedNow) return true;
+    // the plane is the formula's box and the room KaTeX's own box leaves round the ink (`INK_PAD` ems each side)
+    const pad = INK_PAD * element.fontSize;
+    const reveal = Math.max(0.0001, Math.min(1, runFrame.reveal));
+    run.group.position.set(runFrame.x + runFrame.dx + runFrame.width / 2, -(runFrame.y + runFrame.dy + element.height / 2), 0);
+    run.group.rotation.z = 0;
+    run.group.scale.set(runFrame.scale, runFrame.scale, 1);
+    wide.mesh.position.set(-runFrame.width / 2 - pad, element.height / 2 + pad, 0);
+    wide.mesh.scale.set((runFrame.width + 2 * pad) * reveal, element.height + 2 * pad, 1);
+    if (wide.texture !== null) {
+      wide.texture.repeat.set(reveal, 1);
+      wide.texture.offset.set(0, 0);
+    }
+    wide.mesh.renderOrder = order;
+    wide.material.color.copy(inkColour(style, runFrame.colour));
+    wide.material.opacity = opacity;
+    setClip(run.clip, element.clip);
+    return true;
   };
 
   /** A run with CJK characters or a script the faces lack: drawn on a canvas (CJK one character at a time at the painter's advance, any other script as one string), and shown on a plane in the run's place. */

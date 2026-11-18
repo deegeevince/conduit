@@ -143,6 +143,20 @@ export interface MathButtonView {
 }
 
 /** A written method with cells to write in, as it stands on screen. */
+/** A typeset formula on stage as the test hook sees it (PLAN-maths M7): the TeX, where it is on screen, whether KaTeX has set it, and its fault when it could not. */
+export interface FormulaView {
+  readonly key: string;
+  readonly id: string;
+  readonly tex: string;
+  /** host CSS pixels */
+  readonly box: Box;
+  readonly opacity: number;
+  /** the page has set it (its size is KaTeX's own, not the estimate held in its place) */
+  readonly set: boolean;
+  /** KaTeX's words for what it could not read; the TeX is then shown as text */
+  readonly fault: string | null;
+}
+
 export interface MathBlockView {
   readonly key: string;
   readonly id: string;
@@ -573,6 +587,8 @@ export interface Painter {
 
   /** The written methods with cells to write in, as they stand now (host CSS pixels). */
   mathViews(): readonly MathBlockView[];
+  /** The typeset formulas on stage now. */
+  formulaViews(): readonly FormulaView[];
   /** What a point is on, among the cells, buttons and ✕ marks of the written methods; null when it is on none (or the cell is settled). */
   mathAt(x: number, y: number): MathHit | null;
   /** A hand wrote in a cell (`key`: the digits typed; `pen`: what the pen's writing was read as). Returns false when the cell takes nothing now. */

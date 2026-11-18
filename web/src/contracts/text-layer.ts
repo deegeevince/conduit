@@ -61,6 +61,8 @@ export interface TextSpanView {
   readonly placed: boolean;
   /** fb-055. Set when a tap on these words asks about what they label; absent for every other kind of words */
   readonly ask?: TextAsk;
+  /** PLAN-maths M7. Set when the words are a typeset formula: `text` is its TeX, and the layer holds KaTeX's MathML for it, which a screen reader reads and a copy keeps as TeX */
+  readonly formula?: { readonly tex: string; readonly display: boolean };
 }
 
 /** The element a key on stage belongs to: a structure's parts are `<owner>/<part>`, a mock-up's lines `<owner>/…#<n>`. */
