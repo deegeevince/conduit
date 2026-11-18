@@ -8,7 +8,7 @@ It runs on your own computer and uses the Claude or ChatGPT plan you already hav
 
 The idea behind it is in the essay [What does the user interface of the future look like?](https://lattris.com/by/b/memories/what-does-the-user-interface-of-the-future-look-like-8aff)
 
-[![Watch the video: a two-minute demo of Conduit](https://img.youtube.com/vi/LNJc_7TVFMc/maxresdefault.jpg)](https://youtu.be/LNJc_7TVFMc)
+[![Watch the Conduit demo video](https://img.youtube.com/vi/LNJc_7TVFMc/maxresdefault.jpg)](https://youtu.be/LNJc_7TVFMc)
 
 *Watch the demo on YouTube (click the image).*
 
