@@ -1416,7 +1416,7 @@ export const MATH_VERB = {
   math: {
     form: 'math <id> column|times|split|bond|bar|groups|array|line [worked] [blank=answer|all] [carry=write|shown|none] [steps | step=<n|control>] | <sum>',
     gist: 'A written method laid out as on paper, in place-value columns. The painter computes every digit; you write none. The answer is sealed like an ask\'s `is=`: the default shows the method (the givens, the signs, the rule and empty cells) and never the answer. `worked` writes everything, for teaching on a different sum. `steps` adds a stepper, `step=<id>` follows a `pick`. Its parts are named `<id>.<part>`: `m1.r3` (a row), `m1.tens`, `m1.carry-tens`, `m1.ans-ones`, `m1.rule`, `m1.s2` (a step).',
-    time: 'starts',
+    time: 'holds',
     family: 'structure',
   },
 } as const satisfies Record<string, { form: string; gist: string; time: VerbTime; family: VerbFamily }>;

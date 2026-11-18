@@ -22,6 +22,7 @@ export function createHook(app: Omit<StageApp, 'hook'>, ready: Promise<void>): S
     },
     prompt: (text) => app.prompt(text),
     demo: (name) => app.demo(name),
+    tourDemo: (name) => app.playTourDemo(name),
     tap(id) {
       const element = painter.snapshot().elements.find((candidate) => candidate.id === id);
       if (element === undefined) throw new Error(`Nothing with the id "${id}" is on stage.`);

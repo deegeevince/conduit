@@ -11,7 +11,7 @@ chart line | Average price of a loaf, dollars
 node x=2022 | The wheat shock
 node y=3.5 | What a loaf used to cost
 say | The price jumped in a year, then stayed.
-wait 2
+wait 5.2s
 
 scene caption
 chart columns | Visitors, millions
@@ -20,8 +20,8 @@ chart columns | Visitors, millions
 | London | 29.1
 | Rome | 21.8
 | Madrid | 18.2
-say aside | Hover a column for its figure.
-wait 2
+say aside | Tap or hover a column for its figure.
+wait 3.6s
 
 scene caption
 chart candles approx | A coffee company's share price, dollars
@@ -30,9 +30,13 @@ chart candles approx | A coffee company's share price, dollars
 | 2025-02 | 102 111 100 109 1.9M
 | 2025-03 | 109 112 96 99 2.6M
 | 2025-04 | 99 108 97 106 1.2M
+| 2025-05 | 106 113 103 111 1.5M
+| 2025-06 | 111 116 107 109 1.3M
+| 2025-07 | 109 114 104 112 1.6M
+| 2025-08 | 112 121 110 119 2.1M
 node x=2025-03 | The frost warning
 say aside | Recalled figures, not market data.
-wait 2
+wait 4.5s
 
 scene caption
 chart line indexed | Two economies, 2000 = 100

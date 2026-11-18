@@ -45,9 +45,9 @@ export function topInset(viewport: Viewport, look: LookSpec): number {
  */
 export const FLOAT_CLEAR = 52;
 
-/** The least the foot of the stage keeps clear, CSS pixels: the margin, or the room for the floating line when that is more. */
+/** The least the foot of the stage keeps clear, CSS pixels: the margin, or the room for the floating line when that is more, or the band the page keeps for its controls (`Viewport.foot`, the tour's bar). */
 export function bottomInset(viewport: Viewport, look: LookSpec): number {
-  return Math.max(marginOf(viewport, look), Math.min(FLOAT_CLEAR, viewport.height * 0.12));
+  return Math.max(marginOf(viewport, look), Math.min(FLOAT_CLEAR, viewport.height * 0.12), Math.min(viewport.foot ?? 0, viewport.height * 0.4));
 }
 
 /** The safe frame on the reading plane, stage units, origin at the viewport centre. */

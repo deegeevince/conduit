@@ -1,6 +1,8 @@
 // Prints the schedule a script adds up to: when every line starts and ends,
 // as if the whole script had arrived before playback began.
 // Usage: pnpm timeline <demo name | path to a .series file>
+//        pnpm timeline reading    the reading rule (fb-023) for every scene of every demo, as a table
+//        pnpm timeline demos      the demo rules only: the reading rule, charts that are what they say (fb-028), controls that change something (fb-033)
 //        pnpm timeline showcase   the capability pages one to a line: their seconds, hold, lines and what is wrong with them
 //        pnpm timeline            checks every worked example in the brain's prompt, every demo and every seed technique,
 //                                 and that each line reads back as itself
@@ -15,6 +17,8 @@ import { eventChecks, reviewChecks } from './review-checks';
 import { anchorChecks } from './anchor-checks';
 import { nocutChecks } from './nocut-checks';
 import { motionChecks } from './motion-checks';
+import { demoRules } from './demo-rules';
+import { readingChecks } from './reading-checks';
 import { bindChecks } from './bind-checks';
 import { showcaseChecks } from './showcase-checks';
 import { spaceChecks } from './space-checks';
@@ -119,6 +123,8 @@ if (argument === undefined || argument === 'all') {
   ok = anchorChecks() && ok;
   ok = nocutChecks() && ok;
   ok = motionChecks() && ok;
+  ok = readingChecks() && ok;
+  ok = demoRules() && ok;
   ok = bindChecks() && ok;
   ok = showcaseChecks() && ok;
   ok = spaceChecks() && ok;
@@ -133,8 +139,15 @@ if (argument === undefined || argument === 'all') {
     });
   }
 }
+if (argument === 'reading') ok = readingChecks(true) && ok;
+if (argument === 'demos') {
+  // both run: one failing must not hide the other
+  const reading = readingChecks();
+  const rules = demoRules();
+  ok = reading && rules && ok;
+}
 if (argument === 'showcase') ok = showcaseChecks(true) && ok;
-if (argument !== undefined && argument !== 'examples' && argument !== 'all' && argument !== 'showcase') {
+if (argument !== undefined && argument !== 'examples' && argument !== 'all' && argument !== 'reading' && argument !== 'demos' && argument !== 'showcase') {
   const path = argument.endsWith('.series') ? argument : fileURLToPath(new URL(`../demos/${argument}.series`, import.meta.url));
   ok = run(argument, readFileSync(path, 'utf8')) && ok;
 }

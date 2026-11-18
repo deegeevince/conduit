@@ -55,13 +55,17 @@ export interface Wanting {
 /** The conversation's casting: one character a subject, kept, and the next one when the brain says `new`. */
 export class Cast {
   private readonly picked = new Map<string, number>();
-  constructor(private readonly seed: string) {}
+  /** `first`: a demo's casting: the first of the variants, every time, so a demo is one picture whichever conversation plays it (and a check judges that one picture) */
+  constructor(
+    private readonly seed: string,
+    private readonly first = false,
+  ) {}
 
   /** The index among `count` variants: deterministic from the conversation's id, so the same conversation keeps the same fox. */
   pick(key: string, count: number, fresh: boolean): number {
     if (count <= 0) return 0;
     const held = this.picked.get(key);
-    const next = held === undefined ? hash(`${this.seed}\n${key}`) % count : fresh ? (held + 1) % count : held;
+    const next = held === undefined ? (this.first ? 0 : hash(`${this.seed}\n${key}`) % count) : fresh ? (held + 1) % count : held;
     this.picked.set(key, next);
     return next;
   }

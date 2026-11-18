@@ -8,7 +8,7 @@
 // puts the look's colour, stroke and motion on it and maps it to the stage.
 
 import { boundsOf, CANVAS, describeFigure, LOOP_DEFAULT, pointAlong, resample, ROW_SECONDS, sceneAt, valueAt } from '@conduit/language';
-import type { Anchor, ElementChange, ElementSpan, ElementStyle, Fill, Figure, Layer, Paint, Polyline, Schedule, SceneSpan, SpriteData, StageBase, StrokeCharacter } from '@conduit/language';
+import type { Anchor, ElementChange, ElementSpan, ElementStyle, Fill, Figure, Layer, Paint, Polyline, Schedule, SceneSpan, ShapeGeometry, SpriteData, StageBase, StrokeCharacter } from '@conduit/language';
 import type { Affine, Colour, FieldFrame, FigureFrame, FillFrame, PictureFrame, ShapeFrame, SpriteFrame, StrokeFrame } from '../contracts/frame';
 import { IDENTITY } from '../contracts/frame';
 import type { Ease, LookSpec, MotionRecipe } from '../contracts/look';
@@ -281,13 +281,35 @@ function pictureBoxOf(element: ElementSpan, sc: Scn): CanvasRect {
 
 const centres = new WeakMap<ElementSpan, Pt>();
 
+/**
+ * The box of a shape's outline as it stands now: the geometry it entered with, or, once it has been said again and has changed into another (a `morph`), the outline it is changing into.
+ * A move sends the shape's own centre to the point it names, so the centre must be of the outline that is drawn: measured from the outline it entered with, a shape that has morphed
+ * and is then moved lands as far from its point as the two centres were apart (fb-050).
+ */
+function shapeBounds(element: ElementSpan, geometry: ShapeGeometry, sc: Pick<Scn, 'tq' | 'curve'>): { x: number; y: number; w: number; h: number } {
+  if (morphsOf(element).length === 0) return boundsOf(geometry);
+  const points = morphedOutline(geometry, morphsOf(element), sc.tq, sc.curve).polylines.flatMap((line) => line.points);
+  if (points.length === 0) return boundsOf(geometry);
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  for (const p of points) {
+    minX = Math.min(minX, p.x);
+    minY = Math.min(minY, p.y);
+    maxX = Math.max(maxX, p.x);
+    maxY = Math.max(maxY, p.y);
+  }
+  return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+}
+
 function naturalCentre(element: ElementSpan, sc: Scn): Pt {
   const known = centres.get(element);
   if (known !== undefined) return known;
   const figure = element.figure;
   let centre: Pt = { x: 0, y: 0 };
   if (figure !== null && figure.kind === 'shape') {
-    const box = boundsOf(figure.geometry);
+    const box = shapeBounds(element, figure.geometry, sc);
     centre = { x: box.x + box.w / 2, y: box.y + box.h / 2 };
   } else if (figure !== null && figure.kind === 'picture') {
     const box = pictureBoxOf(element, sc);
@@ -296,8 +318,8 @@ function naturalCentre(element: ElementSpan, sc: Scn): Pt {
     const canvas = canvasOf(element, sc);
     centre = { x: canvas.width / 2, y: canvas.height / 2 };
   }
-  // Where a picture over a group is depends on where the group is just now; every other centre is fixed.
-  if (figure === null || figure.kind !== 'picture' || figure.over === null) centres.set(element, centre);
+  // Where a picture over a group is depends on where the group is just now, and where a shape that is changing into another is depends on when; every other centre is fixed.
+  if ((figure === null || figure.kind !== 'picture' || figure.over === null) && (figure === null || figure.kind !== 'shape' || morphsOf(element).length === 0)) centres.set(element, centre);
   return centre;
 }
 
@@ -318,7 +340,7 @@ function halfExtent(element: ElementSpan, sc: Scn, scaled: number | null): Pt {
   const figure = element.figure;
   if (figure === null) return { x: 0, y: 0 };
   if (figure.kind === 'shape') {
-    const box = boundsOf(figure.geometry);
+    const box = shapeBounds(element, figure.geometry, sc);
     return { x: (box.w / 2) * scale, y: (box.h / 2) * scale };
   }
   if (figure.kind === 'sprite') {

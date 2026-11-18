@@ -232,6 +232,8 @@ export class Conductor {
   private readonly drawings = new WeakMap<Session, Map<string, PendingArt>>();
   /** v3 art. The turns that put a made drawing in place: they are said to the page as any in-place turn, but are not "tidying" */
   private readonly artTurns = new WeakSet<ActiveTurn>();
+  /** the casting of a demo turn (the first variant of each subject; `new` takes the next), kept for that turn alone */
+  private readonly demoCasts = new WeakMap<ActiveTurn, Cast>();
   /** v3 art. The figures a session has drawn, by id, and the ids of their parts: `near=<figure>-<word>` is settled against these. */
   private readonly figures = new WeakMap<Session, Map<string, readonly string[]>>();
   private readonly waiters = new Map<string, Set<() => void>>();
@@ -2621,8 +2623,14 @@ export class Conductor {
   private drawFromShelf(s: Session, turn: ActiveTurn, line: DrawLine, normalizer: LineNormalizer, pass: number, repairing: boolean): 'stop' | undefined {
     const schedule = turn.score.schedule;
     const scene = schedule.scenes.at(-1);
-    const cast = this.casts.get(s) ?? new Cast(s.id);
-    this.casts.set(s, cast);
+    // A demo turn casts the first variant of every subject, whichever conversation plays it: a demo is one picture (fb-049), and does not change the conversation's own casting
+    const demo = turn.input.kind === 'demo';
+    let cast = demo ? this.demoCasts.get(turn) : this.casts.get(s);
+    if (cast === undefined) {
+      cast = new Cast(s.id, demo);
+      if (demo) this.demoCasts.set(turn, cast);
+      else this.casts.set(s, cast);
+    }
     const canvasName = scene?.canvas ?? s.screen.canvas;
     const planned = planDraw(line, {
       shelf: this.deps.art ?? null,
