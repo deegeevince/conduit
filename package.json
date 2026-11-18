@@ -49,6 +49,7 @@
     "webkit-check": "pnpm --filter @conduit/server exec tsx src/tools/webkit-check.ts",
     "drift-check": "pnpm --filter @conduit/server exec tsx src/tools/drift-check.ts",
     "smoke": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/smoke.ts",
+    "rehearse": "pnpm --filter @conduit/server exec tsx src/tools/rehearse.ts",
     "scenarios": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/scenarios.ts",
     "voice-check": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/voice-check.ts",
     "catalogue": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/catalogue.ts",
