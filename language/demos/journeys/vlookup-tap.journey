@@ -1,0 +1,11 @@
+# Take A again: the owner's one turn, then (each skipped when the answer has no such control) a slider drag, and one or two taps on a lookup value.
+hold 3
+vlookup: type | Create an interactive explanation of how VLOOKUP works using the canvas
+rest
+hold 5
+dragLookup: drag? lookup / value / key / row / column / col / index / search / find / number / item / product / range min > max over=4
+hold 4
+tapA: tap? | 102 / 103 / Banana / Pear / Apple / Orange / Cherry
+hold 4
+tapB: tap? | 104 / 101 / Date / Kiwi / Plum / Grape / Cherry / Mango
+hold 4
