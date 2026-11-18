@@ -19,10 +19,14 @@ export interface InkBarOptions {
   readonly fingerToggle?: boolean;
   /** the bar can fold down to one small pen button (the stage's bar, which floats over the work); the choice is remembered on this device. Default false. */
   readonly collapsible?: boolean;
+  /** The hand tool (the stage's bar): Draw paused, so that the page under the ink takes the taps; the ink stays, and Send still sends it. Choosing the pen, the highlighter or the eraser again is the way back. */
+  readonly hand?: { readonly on: () => boolean; readonly set: (on: boolean) => void };
 }
 
 export interface InkBar {
   readonly element: HTMLElement;
+  /** shows the state of the tools again (the hand tool was changed from outside) */
+  refresh(): void;
   /** says something in the bar's status line */
   say(text: string): void;
   setSending(sending: boolean): void;
@@ -64,6 +68,7 @@ const ICON = {
   redo: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M15 7l5 5-5 5"/><path d="M20 12h-9a6 6 0 000 12" transform="translate(0 -4)"/></svg>',
   finger: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M9 11V5a1.5 1.5 0 013 0v5l4 1a2 2 0 011.5 2.3L16.5 19a2 2 0 01-2 1.5H11a3 3 0 01-2.4-1.2L5.5 15.5a1.5 1.5 0 012.2-2L9 14.5"/></svg>',
   clear: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12"/></svg>',
+  hand: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M5 4l13 7-6 1.5L9.5 19z"/></svg>',
 } as const;
 
 function button(label: string, icon: string, extra = ''): HTMLButtonElement {
@@ -91,11 +96,25 @@ export function mountInkBar(host: HTMLElement, ink: Ink, options: InkBarOptions)
     b.setAttribute('aria-pressed', String(ink.tool === name));
     b.dataset['tool'] = name;
     b.addEventListener('click', () => {
+      // a drawing tool is the way back from the hand
+      options.hand?.set(false);
       ink.tool = name;
       sync();
     });
     toolButtons.set(name, b);
     tools.append(b);
+  }
+  let hand: HTMLButtonElement | null = null;
+  if (options.hand !== undefined) {
+    const control = options.hand;
+    hand = button('Hand: use the page', ICON.hand, 'ink-btn--hand');
+    hand.dataset['tool'] = 'hand';
+    hand.title = 'Pause drawing: taps, choices and sliders work the page under your drawing, which stays. Tap a pen to draw again.';
+    hand.addEventListener('click', () => {
+      control.set(!control.on());
+      sync();
+    });
+    tools.prepend(hand);
   }
 
   const colours = document.createElement('div');
@@ -196,8 +215,10 @@ export function mountInkBar(host: HTMLElement, ink: Ink, options: InkBarOptions)
 
   let sending = false;
   function sync(): void {
-    for (const [name, b] of toolButtons) b.setAttribute('aria-pressed', String(ink.tool === name));
-    for (const s of swatches) s.setAttribute('aria-pressed', String(ink.tool !== 'eraser' && ink.color === s.dataset['color']));
+    const paused = options.hand?.on() === true;
+    for (const [name, b] of toolButtons) b.setAttribute('aria-pressed', String(!paused && ink.tool === name));
+    hand?.setAttribute('aria-pressed', String(paused));
+    for (const s of swatches) s.setAttribute('aria-pressed', String(!paused && ink.tool !== 'eraser' && ink.color === s.dataset['color']));
     undo.disabled = !ink.model.canUndo;
     redo.disabled = !ink.model.canRedo;
     clear.disabled = ink.model.strokes.length === 0;
@@ -237,6 +258,7 @@ export function mountInkBar(host: HTMLElement, ink: Ink, options: InkBarOptions)
 
   return {
     element: bar,
+    refresh: sync,
     say(text) {
       status.textContent = text;
     },

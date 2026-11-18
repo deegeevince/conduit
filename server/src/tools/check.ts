@@ -22,6 +22,8 @@
 //                      Chrome with an Android user agent and in WebKit (the `webkit` group's fb021 scene, iPhone sizes), as the device does and with a low-latency canvas painted black and every GL
 //                      read zero: the stage's corners and centre stay lit, no ink layer is on screen before Draw, its canvases are transparent, the picture sent is lit, and the first-load welcome's
 //                      turn is never asked of the server (black-check.ts)
+//   draw-taps          (fb-103; 1180x820 and 390x844) in Draw the page under the ink still works: with a Pencil seen it draws and a finger taps through to a choice (the tap is sent, no stroke is added),
+//                      a Pencil tap on a choice presses it and a tap on nothing is a dot; with a mouse only, the hand tool in the ink bar lets a click work a choice and keeps the ink (draw-check.ts)
 //   webkit             Playwright's WebKit at an iPhone in landscape, an iPhone upright and an iPad (welcome, scripts, Draw, fb-021, ask: webkit-check.ts); not part of a run unless asked
 //                      for (`--webkit`, or `--only webkit`), and skipped with a message when that browser is not installed
 //   fb-055             a label the brain drew (`say callout near=x`, a figure part's `label=`) is tapped to ask about what it names: one act that names the part, none for a drag, a click on
@@ -71,7 +73,7 @@ import { Conversation, Tab } from './smoke';
 import { LENS_SCREENS, lensGroup } from './lens-check';
 import { ASK_SCREEN, askGroup } from './ask-check';
 import { BLACK_SCREEN, blackGroup } from './black-check';
-import { DRAW_SCREEN, drawGroup } from './draw-check';
+import { DRAW_SCREEN, DRAW_TAP_SCREENS, drawGroup, drawTapGroup } from './draw-check';
 import { ART_FAKE_MS, ART_SCREEN, artGroup } from './art-check';
 import { CONTINUE_SCREEN, continueFixtures, continueGroup } from './continue-check';
 import { journeyGroup } from './journey-check';
@@ -1895,6 +1897,18 @@ function buildUnits(args: Args, welcome: Welcome): { readonly units: Unit[]; rea
       run: async (servers, out) => {
         if (index === 0) out.lines.push(`\ndraw ${DRAW_SCREEN.name} (dpr ${DRAW_SCREEN.dpr}, touch)`);
         sceneLines(out, await drawGroup(servers.main as string, DRAW_SCREEN, join(args.out, 'draw'), args.timeoutMs, (text) => (args.quiet ? undefined : void process.stdout.write(`[draw] ${text}\n`)), page));
+      },
+    }),
+  );
+  // fb-103: in Draw the page under the ink can still be used (a Pencil draws and a finger taps through; the hand tool for a mouse); looked at on an iPad across and a phone upright
+  DRAW_TAP_SCREENS.forEach((screen, index) =>
+    units.push({
+      name: 'draw-taps',
+      needs: 'main',
+      weight: 20,
+      run: async (servers, out) => {
+        if (index === 0) out.lines.push('\ndraw taps (fb-103): a Pencil and a finger in Draw, and the hand tool');
+        sceneLines(out, await drawTapGroup(servers.main as string, screen, join(args.out, 'draw-taps'), args.timeoutMs, (text) => (args.quiet ? undefined : void process.stdout.write(`[draw-taps] ${text}\n`))));
       },
     }),
   );
