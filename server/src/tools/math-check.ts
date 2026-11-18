@@ -498,6 +498,7 @@ interface PenHook {
   owners(): { stroke: string; key: string; part: string }[];
   free(): string[];
   colours(): string[];
+  hold(on: boolean): void;
 }
 
 /** The pen: no Draw, one stroke owned by its cell, the larger share wins, a finger leaves no ink, the fake reader's digits show and Check marks them, a misread is corrected by a tap and a typed digit. */
@@ -544,6 +545,11 @@ async function penScene(mine: MathsTab, dir: string, problems: Problems): Promis
   await tab.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   await sleep(300);
   if ((await mine.focused()) !== '') list.push(`a palm (a contact 160 wide) took the keyboard into "${await mine.focused()}"`);
+  // The page reads what the pen wrote 800 ms after it lifts, so a number written in one go is read in one request. Here each stroke is written by events that come back late on a
+  // busy machine, and 800 ms can pass between two strokes of one sequence (which a person would also get as two reads, by design). The claim below is about the batching, not about the
+  // wall clock, so the page's pause is held while the sequence is written and let go when it is done (`__penWrite.hold`, for this check only).
+  const hold = (on: boolean): Promise<void> => tab.eval(`window.__penWrite.hold(${on})`);
+  await hold(true);
   // 1. a pen stroke with Draw closed is one stroke, owned by the cell it is in
   await stroke('m4', 'ans-tens', [0.25, 0.2], [0.75, 0.8]);
   if (await hands.drawToggle()) list.push('writing with the pen opened Draw');
@@ -564,6 +570,7 @@ async function penScene(mine: MathsTab, dir: string, problems: Problems): Promis
   await stroke('m4', 'ans-tens', [0.2, 0.7], [0.8, 0.3]);
   for (const [a, b] of [[[0.2, 0.2], [0.3, 0.8]], [[0.5, 0.2], [0.6, 0.8]], [[0.75, 0.2], [0.8, 0.8]]] as [number, number][][]) await stroke('m4', 'ans-ones', a as [number, number], b as [number, number], 6);
   // it is read once, 800 ms after the pen lifts: both cells in one request, shown small beside the ink
+  await hold(false);
   await wait('the digits to be read into the cells', async () => (await mine.cell('m4', 'ans-ones'))?.read !== '' && (await mine.cell('m4', 'ans-tens'))?.read !== '');
   const done = await reads();
   if (done.length !== 1 || done[0]?.cells !== 2) list.push(`the pen's writing was read in ${done.length} request(s) (${JSON.stringify(done)}), wanted one with both cells`);
@@ -582,6 +589,8 @@ async function penScene(mine: MathsTab, dir: string, problems: Problems): Promis
   if (q !== '') list.push(q);
   else {
     const before = (await reads()).length;
+    // held, for the reason above: the second stroke has to be unread when Check is tapped, which a pause of 800 ms on a busy machine would not leave
+    await hold(true);
     await stroke('m5', 'ans-ones', [0.25, 0.2], [0.35, 0.8], 6);
     await stroke('m5', 'ans-ones', [0.6, 0.2], [0.7, 0.8], 6);
     const check = (await mine.block('m5'))?.buttons.find((button) => button.name === 'check');
@@ -593,6 +602,7 @@ async function penScene(mine: MathsTab, dir: string, problems: Problems): Promis
       await wait('Check to mark what the pen wrote', async () => (await mine.cell('m5', 'ans-ones'))?.mark === 'right');
       if ((await reads()).length !== before + 1) list.push(`Check made ${(await reads()).length - before} read request(s), wanted one`);
     }
+    await hold(false);
   }
   // 5. a misread: three strokes are read as 3 where a 4 was meant; a tap opens the cell's input with the 3 selected, a typed 4 wins and the ink dims
   const r = await mine.play(['scene layout=stack mood=calm', 'math m6 column | 12+12'].join('\n'));

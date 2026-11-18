@@ -250,8 +250,11 @@ export function mountPenWrite(options: PenWriteOptions): PenWrite {
     window.clearTimeout(timer);
     timer = undefined;
   }
+  /** for the browser check only (`__penWrite.hold`): while held, the pause that starts a read never begins, so what a test writes is read together whatever the machine's speed */
+  let held = false;
   function schedule(): void {
     clearTimer();
+    if (held) return;
     timer = window.setTimeout(() => void flush(), READ_AFTER_MS);
   }
 
@@ -380,6 +383,17 @@ export function mountPenWrite(options: PenWriteOptions): PenWrite {
     owners: (): { stroke: string; key: string; part: string }[] => [...owner].flatMap(([stroke, own]) => (own === null ? [] : [{ stroke, key: own.key, part: own.part }])),
     free: (): string[] => [...owner].flatMap(([stroke, own]) => (own === null ? [stroke] : [])),
     colours: (): string[] => model.strokes.map((stroke) => stroke.color),
+    /**
+     * The read waits 800 ms after the pen lifts, so a person who writes a number in one go has it read in one request. A browser check that writes several strokes on a machine
+     * that is busy cannot keep to that: each stroke's events come back late, the pause runs out between two strokes, and the strokes are read in pieces. A person who
+     * stops for a second does get a read of each piece (that is the design: it cannot know they have finished), so this is a hold for the check alone, not a change to what a person meets.
+     * `hold(true)` stops the pause from starting; `hold(false)` lets it begin, from now, if there is ink to read.
+     */
+    hold: (on: boolean): void => {
+      held = on;
+      if (held) clearTimer();
+      else if (dirty.size > 0 && downs.size === 0) schedule();
+    },
   };
 
   return {
