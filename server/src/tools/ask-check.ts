@@ -186,7 +186,8 @@ export async function askGroup(base: string, screen: LensScreen, dir: string, ti
       const sent = acts();
       await play('fill w2 | 5');
       const early = await state('w2');
-      if (early === null || early.verdict !== 'open' || early.value === '5') list.push(`a fill into ask w2 before w1 was right was taken (${JSON.stringify(early)})`);
+      // an ask that waits for the one before it is not drawn (fb-060): it has no control to fill, and what was filled is not taken
+      if (early !== null) list.push(`ask w2 is drawn before w1 is right (${JSON.stringify(early)}): an ask that waits draws nothing`);
       await play('fill w1 | 7');
       const wrong = await state('w1');
       if (wrong === null || wrong.verdict !== 'wrong') list.push(`a wrong fill was marked "${wrong?.verdict}"`);

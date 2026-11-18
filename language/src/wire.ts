@@ -201,6 +201,20 @@ export interface TurnSource {
 export const SOURCE_LIMITS = { files: 4, pages: 10, pageChars: 10_000, chars: 40_000, name: 120 } as const;
 
 /**
+ * A tap on a label the brain drew (`say callout near=X`, `say label near=X`, a figure part's `label=`): the label's words as written, and what it names (the
+ * `near=` target, or the figure the part is in), when it names one. It travels on an `act` whose `id` is the label's own id.
+ */
+export interface TappedPart {
+  readonly label: string;
+  readonly on: string | null;
+}
+
+/** The words of such a tap, as the transcript and the log keep them: `tapped the part "brake disc" (x15, on disc1)`. */
+export function partTapText(id: string, part: TappedPart): string {
+  return `tapped the part "${part.label.replace(/\s+/g, ' ').trim().slice(0, 80)}" (${id}${part.on === null ? '' : `, on ${part.on}`})`;
+}
+
+/**
  * v3. Reads `TurnInput.sources` as it arrives. Lenient where cutting is harmless (a name, a page's text, the total) and strict about shape:
  * returns `null` when it is not a list of `{ name, pages: [{ n, text }] }`. Page text is cut to `pageChars`, and the whole to `chars` (later pages lose first).
  */
@@ -251,8 +265,9 @@ export type TurnInput =
    * label (a pick: the option chosen); `values` is every live control's value.
    * A button of a mock-up (`screen`) says which screen it is on, and `values` is what that screen's parts hold, by their labels (a password only as
    * `filled`).
+   * `part` (fb-055): a tap on a label the brain drew, which is the person asking about what it names; `id` is the label's id, `text` is `partTapText`.
    */
-  | { readonly kind: 'act'; readonly id: string; readonly text: string; readonly values: ControlValues; readonly screen?: string; readonly seen?: Seen }
+  | { readonly kind: 'act'; readonly id: string; readonly text: string; readonly values: ControlValues; readonly screen?: string; readonly seen?: Seen; readonly part?: TappedPart }
   /**
    * The brain went on: it ended its answer with `refine | <what it will do next>`, and the server runs it again at once, as a turn of its own, for as
    * long as it keeps writing that. `note` is its own words. Opened by the server and never by a client; no count, no clock: the brain, the person

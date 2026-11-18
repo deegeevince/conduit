@@ -10,15 +10,21 @@ import {
   CONTROL_KINDS,
   DEMOS_NOT_PAINTED,
   ELEMENT_KINDS,
+  EMPTY_STAGE,
   FULL_CAPABILITIES,
   FX_NAMES,
   heldTourCards,
+  LineNormalizer,
+  LineReader,
   LOOK_IDS,
   offeredChapters,
   parseLine,
   PROCEDURAL_MEDIA,
   readShowcase,
+  serializeLine,
+  settle,
   SHOWCASE_LIMITS,
+  SHOWCASE_PAGE,
   SHOWCASE_REEL,
   STROKES,
   STRUCTURE_KINDS,
@@ -26,8 +32,9 @@ import {
   TOUR_CHAPTERS,
   tourActionOf,
   tourTryFor,
+  TurnScore,
 } from '../src/index';
-import type { ShowcaseReader, TourChapter } from '../src/index';
+import type { Line, ShowcaseReader, StageBase, TourChapter, TurnOpening } from '../src/index';
 
 const DEMOS_DIR = fileURLToPath(new URL('../demos/', import.meta.url));
 const PAGES_DIR = `${DEMOS_DIR}showcase/`;
@@ -70,6 +77,208 @@ function sceneResolves(ref: string): boolean | null {
   return /^\d+$/.test(match[2]) ? Number(match[2]) >= 1 && Number(match[2]) <= scenes.length : scenes.includes(match[2]);
 }
 
+// ------------------------------------------------------------------------------------------------------------------------------ the pages
+
+/** The pages of one category's file, by scene id: each is the lines from its `scene` line down, with the comments written just above it. */
+function pageChunks(path: string): Map<string, string> {
+  const chunks = new Map<string, string>();
+  let pending: string[] = [];
+  let current: string[] | null = null;
+  let id: string | null = null;
+  const close = (): void => {
+    if (current !== null && id !== null && !chunks.has(id)) chunks.set(id, current.join('\n'));
+  };
+  for (const raw of readFileSync(path, 'utf8').split('\n')) {
+    const trimmed = raw.trim();
+    if (trimmed === '') {
+      pending = [];
+      continue;
+    }
+    if (/^scene(\s|$)/.test(trimmed)) {
+      close();
+      const read = parseLine(raw);
+      id = read.kind === 'line' && read.line.verb === 'scene' ? (read.line.id ?? null) : null;
+      current = [...pending, raw];
+      pending = [];
+    } else if (trimmed.startsWith('#') && !trimmed.startsWith('#!')) {
+      pending.push(raw);
+    } else {
+      if (current !== null) current.push(...pending);
+      pending = [];
+      current?.push(raw);
+    }
+  }
+  close();
+  return chunks;
+}
+
+/** What a turn of a page comes to, played alone on the stage the turns before it left. */
+interface TurnFacts {
+  /** the turn's own end, seconds */
+  readonly end: number;
+  /** when the last thing arrived: an entrance, a change of something already there, a look */
+  readonly arrived: number;
+  readonly lines: number;
+  /** the `say` lines: how many words, whether it is narration (no id, in the flow), and when it had arrived */
+  readonly says: readonly { readonly words: number; readonly narration: boolean; readonly arrived: number; readonly text: string }[];
+  readonly ids: readonly string[];
+  readonly problems: string[];
+  readonly stage: StageBase;
+  /** each line with when it starts and ends, for `pnpm timeline showcase <id>` */
+  readonly listing: readonly string[];
+  readonly first: Line | null;
+  readonly second: Line | null;
+}
+
+const wordsOf = (text: string): number => text.replace(/\{[^}]*\}/g, 'N').replace(/\*/g, '').trim().split(/\s+/).filter((word) => word.length > 0).length;
+
+function playTurn(source: string, base: StageBase, opened: TurnOpening, who: string): TurnFacts {
+  const problems: string[] = [];
+  const score = new TurnScore(base, opened);
+  const reader = new LineReader();
+  let seq = 0;
+  let auto = 0;
+  let lines = 0;
+  const normalizer = new LineNormalizer(() => `x${(auto += 1)}`);
+  const said = new Map<number, { words: number; narration: boolean; text: string }>();
+  const kept: Line[] = [];
+  source.split('\n').forEach((raw, index) => {
+    const trimmed = raw.trim();
+    if (trimmed === '' || (trimmed.startsWith('#') && !trimmed.startsWith('#!'))) return;
+    lines += 1;
+    const read = reader.read(raw);
+    if (read.kind === 'reject') problems.push(`${who}: line ${index + 1} is rejected: ${raw.trim().slice(0, 60)}`);
+    if (read.kind !== 'line') return;
+    const normalized = normalizer.normalize(read.line);
+    if (normalized.line === null) {
+      problems.push(`${who}: line ${index + 1} is dropped: ${raw.trim().slice(0, 60)}`);
+      return;
+    }
+    seq += 1;
+    const pushed = score.push(normalized.line, seq, 0);
+    for (const issue of [...read.issues, ...normalized.issues, ...pushed.issues]) if (issue.severity === 'error' || issue.severity === 'warn') problems.push(`${who}: line ${index + 1} ${issue.code}: ${issue.message.slice(0, 80)}`);
+    kept.push(read.line);
+    if (read.line.verb === 'say') {
+      const anonymous = read.line.id === '-' && read.line.props.at === undefined && read.line.props.near === undefined && read.line.props.in === undefined;
+      said.set(seq, { words: wordsOf(read.line.text), narration: anonymous, text: read.line.text });
+    }
+  });
+  const schedule = score.schedule;
+  const texts = new Map<number, string>();
+  for (const entry of score.score) if (!entry.void) texts.set(entry.seq, serializeLine(entry.line));
+  const arrivals = [
+    ...schedule.elements.flatMap((element) => (element.enter === null || element.carried ? [] : [element.enter.end])),
+    // a ride along a path is motion for as long as it goes, not a thing arriving; every other change (a morph, a set, a move to a place) is
+    ...schedule.elements.flatMap((element) => element.changes.filter((change) => !(change.kind === 'move' && change.along !== null)).map((change) => change.end)),
+    ...schedule.looks.map((look) => look.end),
+  ];
+  const says = [...said].map(([at, info]) => ({ ...info, arrived: schedule.elements.find((element) => element.seq === at)?.enter?.end ?? 0 }));
+  return {
+    end: schedule.end,
+    arrived: Math.max(0, ...arrivals),
+    lines,
+    says,
+    ids: schedule.elements.map((element) => element.id),
+    problems,
+    stage: settle(schedule, base, schedule.end),
+    listing: schedule.lines.map((time) => `    ${time.start.toFixed(2).padStart(6)} -> ${time.end.toFixed(2).padStart(6)}  ${(texts.get(time.seq) ?? '').slice(0, 100)}`),
+    first: kept[0] ?? null,
+    second: kept[1] ?? null,
+  };
+}
+
+export interface PageFacts {
+  readonly id: string;
+  readonly seconds: number | null;
+  /** the page's end: the turns' ends added */
+  readonly end: number;
+  readonly lines: number;
+  readonly narration: number;
+  readonly words: number;
+  /** from the last arrival to the end, in the last turn */
+  readonly hold: number;
+  readonly turns: number;
+  readonly problems: string[];
+  readonly listing: readonly string[];
+}
+
+/** The page of every entry that has one, played turn by turn on the language's own schedule and held to `SHOWCASE_PAGE`. Empty while there is no folder of pages. */
+export function pageFacts(reader: ShowcaseReader, pagesDir: string = PAGES_DIR): PageFacts[] {
+  const facts: PageFacts[] = [];
+  if (!existsSync(pagesDir)) return facts;
+  const chunks = new Map<string, string>();
+  for (const category of reader.categories) {
+    const path = `${pagesDir}${category.id}.series`;
+    if (existsSync(path)) for (const [id, source] of pageChunks(path)) if (!chunks.has(id)) chunks.set(id, source);
+  }
+  for (const entry of reader.live()) {
+    const source = chunks.get(entry.id);
+    if (source === undefined || entry.page === 'hand' || entry.page === 'recorded') continue;
+    const who = entry.id;
+    const problems: string[] = [];
+    const seconds = reader.pageSeconds(entry);
+    const scripts = [source, ...(entry.turns ?? []).map((turn) => turn.replaceAll('{1}', 't1'))];
+    let base: StageBase = EMPTY_STAGE;
+    const played: TurnFacts[] = [];
+    scripts.forEach((script, at) => {
+      const turn = playTurn(script, base, at === 0 ? 'none' : 'script', who);
+      played.push(turn);
+      base = turn.stage;
+    });
+    const first = played[0];
+    const last = played[played.length - 1];
+    if (first === undefined || last === undefined) continue;
+    for (const turn of played) problems.push(...turn.problems);
+    // the opening: the scene says its layout and `brisk`, the next line chooses the look
+    const scene = first.first;
+    if (scene === null || scene.verb !== 'scene') problems.push(`${who}: the page does not open with its scene line`);
+    else {
+      if (scene.id !== entry.id) problems.push(`${who}: the scene is called "${scene.id ?? ''}"`);
+      if (scene.layout === undefined) problems.push(`${who}: the scene line does not say its layout`);
+      if (scene.pace !== 'brisk') problems.push(`${who}: the scene line does not say brisk`);
+    }
+    if (first.second === null || first.second.verb !== 'look') problems.push(`${who}: the line after the scene is not a look`);
+    const lines = played.reduce((sum, turn) => sum + turn.lines, 0);
+    if (lines > SHOWCASE_PAGE.lines) problems.push(`${who}: ${lines} lines (at most ${SHOWCASE_PAGE.lines})`);
+    const says = played.flatMap((turn) => turn.says);
+    const narration = says.filter((line) => line.narration);
+    if (narration.length > SHOWCASE_PAGE.narration) problems.push(`${who}: ${narration.length} narration lines (at most ${SHOWCASE_PAGE.narration}): a page narrates once`);
+    for (const line of says) if (line.words > SHOWCASE_PAGE.words) problems.push(`${who}: a line of ${line.words} words (at most ${SHOWCASE_PAGE.words}): "${line.text.slice(0, 40)}"`);
+    const words = says.reduce((sum, line) => sum + line.words, 0);
+    if (words > SHOWCASE_PAGE.all) problems.push(`${who}: ${words} words said in all (at most ${SHOWCASE_PAGE.all})`);
+    // the end: the turns together last the page's seconds, and the last thing arrives with time to look at it
+    const end = played.reduce((sum, turn) => sum + turn.end, 0) + (entry.extra ?? 0);
+    if (seconds === null) problems.push(`${who}: the page has no seconds (reel, or seconds)`);
+    else {
+      if (seconds < SHOWCASE_PAGE.min || seconds > SHOWCASE_PAGE.max) problems.push(`${who}: ${seconds} s is not ${SHOWCASE_PAGE.min}..${SHOWCASE_PAGE.max}`);
+      if (Math.abs(end - seconds) > SHOWCASE_PAGE.tolerance) problems.push(`${who}: the page ends at ${end.toFixed(2)} s, not within ${SHOWCASE_PAGE.tolerance} s of its ${seconds} s`);
+    }
+    const hold = last.end - last.arrived;
+    if (hold < SHOWCASE_PAGE.hold - 0.005) problems.push(`${who}: the last thing arrives ${hold.toFixed(2)} s before the end (at least ${SHOWCASE_PAGE.hold} s)`);
+    // fb-023: a line stays up as long as reading it takes, counted from when it has arrived
+    for (const line of last.says) {
+      const need = line.words / SHOWCASE_PAGE.reading;
+      if (last.end - line.arrived < need - 0.005) problems.push(`${who}: "${line.text.slice(0, 30)}" stays up ${(last.end - line.arrived).toFixed(2)} s, and reading it takes ${need.toFixed(2)} s`);
+    }
+    // what the page claims to show is there to be shown (a drawn figure's parts are made from its `draw` line by the server)
+    const made = new Set(played.flatMap((turn) => turn.ids));
+    const drawn = [...made].filter((id) => scripts.some((script) => new RegExp(`^draw\\s+${id}\\b`, 'm').test(script)));
+    for (const id of entry.expect) if (!made.has(id) && !drawn.some((own) => id.startsWith(`${own}-`))) problems.push(`${who}: expect names "${id}", which no line of the page makes`);
+    facts.push({ id: entry.id, seconds, end, lines, narration: narration.length, words, hold, turns: played.length, problems, listing: played.flatMap((turn, at) => [`  turn ${at + 1}: ends ${turn.end.toFixed(2)} s, arrived ${turn.arrived.toFixed(2)} s`, ...turn.listing]) });
+  }
+  return facts;
+}
+
+/** The pages as a table: what `pnpm timeline showcase` prints while they are being tuned, or with an id the lines of that page and what is wrong with it. */
+export function pageTable(reader: ShowcaseReader, only: string | undefined = undefined): string {
+  if (only !== undefined) {
+    const fact = pageFacts(reader).find((entry) => entry.id === only);
+    return fact === undefined ? `  no page ${only}` : [`  ${fact.id}: ${fact.seconds ?? '-'} s, ends ${fact.end.toFixed(2)} s (${fact.seconds === null ? '' : `${fact.seconds - fact.end >= 0 ? 'wait ' : 'cut '}${Math.abs(fact.seconds - fact.end).toFixed(2)} s`}), hold ${fact.hold.toFixed(2)} s`, ...fact.listing, ...fact.problems.map((problem) => `  ! ${problem}`)].join('\n');
+  }
+  const rows = pageFacts(reader).map((fact) => `  ${fact.id.padEnd(10)} ${String(fact.seconds ?? '-').padStart(4)} s  end ${fact.end.toFixed(2).padStart(5)} (${fact.seconds === null ? '' : (fact.seconds - fact.end).toFixed(2).padStart(5)})  hold ${fact.hold.toFixed(2).padStart(5)}  ${String(fact.lines).padStart(2)} lines  ${fact.words} words  ${fact.turns} turn${fact.turns === 1 ? '' : 's'}${fact.problems.length > 0 ? `  <- ${fact.problems.length} to fix` : ''}`);
+  return rows.join('\n');
+}
+
 /** Everything wrong with the table, one sentence each. `pagesDir` is where the pages go once S1 lands; while it is not there no page is looked for. */
 export function showcaseProblems(reader: ShowcaseReader, pagesDir: string = PAGES_DIR): string[] {
   const problems: string[] = [];
@@ -97,7 +306,8 @@ export function showcaseProblems(reader: ShowcaseReader, pagesDir: string = PAGE
       if (entry.needs.length === 0) problems.push(`${at} a "not yet" entry names what it needs, or the painter cannot say when it works`);
     }
     if (entry.reel !== null && (entry.reel < 2 || entry.reel > 4.5)) problems.push(`${at} ${entry.reel} s in the reel (2..4.5)`);
-    if (entry.turns !== undefined && entry.turns.length < 2) problems.push(`${at} a page that takes turns takes at least two`);
+    if (entry.still !== undefined && (entry.still <= 0 || entry.still >= (entry.reel ?? entry.seconds ?? 0))) problems.push(`${at} the still is taken at ${entry.still} s, which is not inside the page`);
+    if (entry.turns !== undefined && entry.turns.length < 1) problems.push(`${at} a page that takes turns holds the scripts of the turns after its scene`);
     for (const need of entry.needs) {
       const [dimension, name, ...rest] = need.split(':');
       const names = dimension === undefined ? undefined : NEED_NAMES[dimension];
@@ -133,6 +343,7 @@ export function showcaseProblems(reader: ShowcaseReader, pagesDir: string = PAGE
       if (ids.get(entry.id) !== entry.category) problems.push(`${entry.id}: no scene "${entry.id}" in ${entry.category}.series`);
       if (entry.expect.length === 0) problems.push(`${entry.id}: the page says nothing it must show (expect)`);
     }
+    for (const fact of pageFacts(reader, pagesDir)) problems.push(...fact.problems);
     for (const [id, category] of ids) {
       const entry = reader.entry(id);
       if (entry === null || entry.status !== 'live' || entry.category !== category) problems.push(`pages: the scene "${id}" in ${category}.series is not a live entry of that category`);
@@ -175,12 +386,13 @@ export function tourProblems(): string[] {
   return problems;
 }
 
-export function showcaseChecks(): boolean {
+export function showcaseChecks(table = false): boolean {
   const reader = readShowcase();
   const problems = [...showcaseProblems(reader), ...tourProblems()];
   process.stdout.write(`\n${reader.summary()}\n`);
   const pending = reader.live().filter((entry) => entry.page !== 'hand' && entry.page !== 'recorded').length;
   process.stdout.write(`  reel ${reader.reelSeconds()} s from ${reader.reel().length} pages; ${existsSync(PAGES_DIR) ? 'pages checked' : `pages not written yet (S1): ${pending} to write`}\n`);
+  if (table) process.stdout.write(`${pageTable(reader, process.argv[3])}\n`);
   for (const problem of problems) process.stdout.write(`  SHOWCASE CHECK FAILED: ${problem}\n`);
   return problems.length === 0;
 }

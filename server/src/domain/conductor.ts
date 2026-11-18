@@ -796,7 +796,7 @@ export class Conductor {
     const file = this.deps.sessionLog.saveSnapshot(s.id, `${turn}-draft${pass}`, snapshot.mime, snapshot.bytes);
     if (file !== '') {
       this.draftFiles.set(`${s.id}/${turn}#${pass}`, file);
-      this.deps.sessionLog.write(s.id, { type: 'draft', turn, pass, noted: 0, picture: true, file });
+      this.deps.sessionLog.write(s.id, { type: 'draft', turn, pass, noted: null, picture: true, file });
     }
   }
 
@@ -1682,6 +1682,7 @@ export class Conductor {
       candidate: attempt.candidate,
       file: this.draftFiles.get(`${s.id}/${turn.id}#${attempt.pass}`) ?? null,
       ...(attempt.retried === true ? { retried: true } : {}),
+      ...(attempt.blocking === undefined ? {} : { blocking: attempt.blocking }),
     });
   }
 
@@ -1805,7 +1806,8 @@ export class Conductor {
     if (s.turn !== turn || turn.endReason !== 'done') return 'a newer turn is on the stage';
     if (!turn.reported) return 'the answer has not come to rest';
     if (this.deps.brains.configured.review === undefined) return 'this brain cannot look at an answer again';
-    if (turn.input.kind === 'act') return 'the person is working a control';
+    // a tap on a label is a question like a choice's tap, and its answer is looked at as that one's is
+    if (turn.input.kind === 'act' && turn.input.part === undefined) return 'the person is working a control';
     const view = this.docs.viewOfSession(s.id);
     if ((view !== null && hasLesson({ document: { document: view.document, state: view.state } }))) return 'a lesson or document turn';
     const structures = turn.score.schedule.elements.filter((element) => element.exit === null && element.figure?.kind === 'structure');
@@ -2530,6 +2532,13 @@ export class Conductor {
     return { ok: reason === 'done', turn, lines, refused: refused.length, costUsd: cost, ms: now() - started, reason: reason === 'done' ? (amended ? 'rewritten once after a refusal' : null) : (message ?? reason) };
   }
 
+  /** fb-064. Everything on the canvas now that stands alone, of any kind: its words, its chart, its controls as well as its shapes. What the Undo chip clears before it puts the answer before back. */
+  private liveEverything(turn: ActiveTurn): string[] {
+    const ids = new Set<string>();
+    for (const element of turn.score.schedule.elements) if (element.exit === null && element.parent === null && element.id !== '-') ids.add(element.id);
+    return [...ids];
+  }
+
   /** The ids of the drawn things on the canvas now that stand alone (not parts of a group): what a whole `restore` clears first. */
   private liveDrawn(turn: ActiveTurn): string[] {
     const ids = new Set<string>();
@@ -2556,7 +2565,9 @@ export class Conductor {
       if (found === null) return refuse(`DRAWING MEMORY holds no ${line.turn}`);
       // `restore undo` goes on from where the last undo stopped; a named turn is a new place to stand
       if (!/^t\d+$/.test(line.turn)) s.memory.restoredIndex(found.index);
-      made = s.memory.restore(found.index, this.liveDrawn(turn));
+      // the Undo chip (a script of its own, `restore undo`) puts the whole answer back, words and labels too, and takes everything of the one it undoes
+      const undoing = line.turn === 'undo' && turn.input.kind === 'script' && turn.input.text.trim() === 'restore undo';
+      made = s.memory.restore(found.index, undoing ? this.liveEverything(turn) : this.liveDrawn(turn), undoing);
     } else if (line.verb === 'use' && line.from !== undefined) {
       const taken = new Set(turn.score.schedule.elements.filter((element) => element.exit === null).map((element) => element.id));
       const at = line.props.at !== undefined && typeof line.props.at === 'object' && 'x' in line.props.at ? line.props.at : undefined;

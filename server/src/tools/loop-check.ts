@@ -8,9 +8,11 @@
 //   owed      a critic's blocking finding that no repair mended is kept and said in the next brief, by id, until it is told twice or its element is gone
 //   move      `move <id> x,y` on a `near=` label is taken (it lets the label go to that place, no leader), and a label drawn again beside the old one is refused
 //
+// And, named for the backlog row fb-062 (`pnpm check --only fb-062`), a lesson in column addition whose title stands on its answer (below: `fb062Problems`).
+//
 // Run by `pnpm check` (as the `loop` group) and standalone: `tsx loop-check.ts`.
 
-import { EMPTY_STAGE, FULL_CAPABILITIES, LEAD_WINDOW, REFERENCE_SCREEN, REVIEW_POLICY, buildTurnBrief, contentOf, fixKeeps, fixLineAllowed, parseLine, settle } from '@conduit/language';
+import { EMPTY_STAGE, FULL_CAPABILITIES, LEAD_WINDOW, REFERENCE_SCREEN, REVIEW_POLICY, blockingCount, buildTurnBrief, contentOf, describeSight, fixKeeps, fixLineAllowed, parseLine, repairKeeps, settle, worthAFix } from '@conduit/language';
 import type { CriticFinding, Line, OwedFinding, Sight, StageBase, TurnContext } from '@conduit/language';
 import { ENGINE_VERSION, scoreOfCase } from '@conduit/web/engine';
 import type { Brain, BrainEvent, ReviewRequest } from '../domain/brain';
@@ -62,7 +64,7 @@ function scripted(tries: readonly (readonly string[])[], seen: ReviewRequest[], 
   } as unknown as Brain;
 }
 
-async function look(brain: Brain, second: Scored, clock: { now: number }): Promise<{ steps: ReviewStep[]; record: ReviewRecord | null }> {
+async function look(brain: Brain, second: Scored, clock: { now: number }, session: MeasureSession = IPAD): Promise<{ steps: ReviewStep[]; record: ReviewRecord | null }> {
   const steps: ReviewStep[] = [];
   let record: ReviewRecord | null = null;
   const generator = reviewTurn({
@@ -78,8 +80,8 @@ async function look(brain: Brain, second: Scored, clock: { now: number }): Promi
     signal: new AbortController().signal,
     // every look at the clock takes 200 ms of a pretend one, so the picture's short grace runs out at once and a look's time is the brain's alone
     now: () => (clock.now += 200),
-    measure: () => measureDraft(second, IPAD),
-    tryFix: (_pass, tried) => tryFix(second, tried, IPAD),
+    measure: () => measureDraft(second, session),
+    tryFix: (_pass, tried) => tryFix(second, tried, session),
   });
   for await (const step of generator) {
     steps.push(step);
@@ -170,6 +172,103 @@ export async function loopProblems(): Promise<string[]> {
   return problems;
 }
 
+// ---------------------------------------------------------------- fb-062: a title over text, and a fix that dodges it
+
+/** The owner's laptop: 1344x866 at 2x, a mouse. */
+const LAPTOP = { screen: { width: 1344, height: 866, dpr: 2, reducedMotion: false, pointer: 'fine' }, capabilities: { looks: [], engine: ENGINE_VERSION }, tables: [], held: {} } as unknown as MeasureSession;
+
+/**
+ * A lesson in column addition on a free layout, in the shape of the one that went wrong (the words and sums are made up): a title told the middle of the stage
+ * (`at=center`), a worked sum and its steps pinned to points, a line of words in ink too pale to read, and a line to close on. A title with no `at=` goes to the
+ * top of a free scene now (fb-059), and one pinned to a point is made room round, but a title told an anchor keeps it: it stands where the steps are, and the
+ * steps are the words it runs into.
+ */
+const TITLE_OVER_STEPS = [
+  'scene layout=free canvas=square',
+  'say t1 title at=center | Adding big numbers',
+  'say k1 aside at=8,14 | Carries',
+  'say k2 aside at=40,14 align=right face=mono | 1 1 1',
+  'say r1 at=40,24 align=right face=mono | 3719',
+  'say r2 at=40,34 align=right face=mono | 2845',
+  'say rp at=22,34 align=right face=mono | +',
+  'path rule stroke=ink | M20,40 L42,40',
+  'say r3 at=40,48 align=right ink=accent face=mono | 6564',
+  'say s1 aside at=75,22 | 1. Line the columns up.',
+  'say s2 aside at=75,32 | 2. Add from the right: 9+5=14.',
+  'say s3 aside at=75,42 | 3. Write 4, carry the 1 above.',
+  'say s4 aside at=75,52 | 4. Each column adds its carry too.',
+  'say fa aside at=75,84 opacity=0.25 | Check each column twice.',
+  'say go strong | Now you try.',
+];
+
+/** What a brain that mended only the pale words writes: it leaves the title on the steps. */
+const MENDS_THE_PALE_WORDS = ['set fa opacity=1'];
+/** What a brain that took the title out of sight writes, and mended the pale words besides: nothing is left to run into. */
+const HIDES_THE_TITLE = ['set t1 opacity=0', 'set fa opacity=1'];
+/** What a brain that sent the worked answer to the right of the canvas writes: nothing runs into it there. */
+const PARKS_THE_ANSWER = ['move r3 130,48', 'set fa opacity=1'];
+/** What mends it: the title up at the top, smaller, and the pale words dark. */
+const MOVES_THE_TITLE = ['set t1 size=m', 'move t1 50,3', 'set fa opacity=1'];
+
+/** Everything wrong in how a title standing on words is measured and mended, in words; empty when it holds. */
+export async function fb062Problems(): Promise<string[]> {
+  const problems: string[] = [];
+  const score = scoreOfCase({ id: 'fb062', base: null, opened: 'prompt', lines: numbered(TITLE_OVER_STEPS) });
+  const measured = measureDraft(score, LAPTOP);
+  if (measured === null) return ['fb-062: the draft could not be measured'];
+  const notes = (id: string): readonly string[] => noted(measured.sight, id);
+  const standing = measured.sight.items.filter((item) => item.id !== 't1' && item.notes.includes('collides'));
+  if (standing.length === 0) return [`fb-062: the fixture no longer puts the title on other words (free-layout title placement changed): put the title where the steps are in TITLE_OVER_STEPS (server/src/tools/loop-check.ts) and run this again; the title's notes: ${notes('t1').join(', ') || 'none'}`];
+
+  // 1. measured: the title is the one standing on words, so it is said to be, and blocking, and it names what it stands on; so does each line it covers
+  if (!notes('t1').includes('collides')) problems.push(`fb-062 measure: the title stands on ${standing.map((item) => item.id).join(', ')} and is not said to run into other words (t1 notes: ${notes('t1').join(', ') || 'none'})`);
+  const lines = describeSight(measured.sight).join('\n');
+  const titleRow = lines.split('\n').find((row) => /^\s*t1 \(text\)/.test(row)) ?? '';
+  if (!standing.every((item) => titleRow.includes(item.id)) || !titleRow.includes('run into')) problems.push(`fb-062 brief: the title's row does not name the words it runs into (${titleRow.trim() || 'no row for t1'})`);
+  const coveredRow = lines.split('\n').find((row) => new RegExp(`^\\s*${standing[0]?.id ?? 'none'} \\(text\\)`).test(row)) ?? '';
+  if (!coveredRow.includes('t1')) problems.push(`fb-062 brief: the words the title stands on do not name it (${coveredRow.trim() || 'no row'})`);
+  if (!worthAFix({ drawn: 1, structures: 0, controls: 0, placedText: 10, rejects: 0 }, measured.sight, false).look) problems.push('fb-062 fast pass: the draft review would not look at it');
+
+  // 2. mended: a repair that leaves the title where it is, or hides it, or parks the answer off the canvas, is not kept; the one that moves the title is
+  const repair = (fix: readonly string[]): { readonly keeps: boolean; readonly why: string | null } => {
+    const tried = tryFix(score, fix, LAPTOP);
+    return tried === null ? { keeps: false, why: 'not tried' } : repairKeeps({ content: measured.content, sight: measured.sight }, { content: tried.measured.content, sight: tried.measured.sight });
+  };
+  const leaves = repair(MENDS_THE_PALE_WORDS);
+  if (leaves.keeps) problems.push('fb-062 gate: a repair that mended the pale words and left the title on the steps was kept');
+  const hides = repair(HIDES_THE_TITLE);
+  if (hides.keeps || !/hid t1/.test(hides.why ?? '')) problems.push(`fb-062 gate: a repair that hid the title to dodge the overlap was ${hides.keeps ? 'kept' : 'refused without saying "hid t1"'} (${hides.why ?? 'no reason'})`);
+  const parks = repair(PARKS_THE_ANSWER);
+  if (parks.keeps || !/moved r3 off the canvas/.test(parks.why ?? '')) problems.push(`fb-062 gate: a repair that sent the answer off the canvas was ${parks.keeps ? 'kept' : 'refused without saying "moved r3 off the canvas"'} (${parks.why ?? 'no reason'})`);
+  const mends = repair(MOVES_THE_TITLE);
+  if (!mends.keeps) problems.push(`fb-062 gate: the repair that moves the title to the top was refused (${mends.why ?? 'no reason'})`);
+
+  // 3. the fast pass: the first fix mends only the pale words, so it is thrown out and told what still runs into what; the second moves the title and is shown, in the same look
+  const seen: ReviewRequest[] = [];
+  const run = await look(scripted([MENDS_THE_PALE_WORDS, MOVES_THE_TITLE], seen, { now: 0 }), score, { now: 0 }, LAPTOP);
+  const fixes = run.record?.fixes ?? [];
+  if (seen.length !== 2) problems.push(`fb-062 fast pass: the brain was asked ${seen.length} time${seen.length === 1 ? '' : 's'}, not twice: a fix that left the title on the steps was ${fixes[0]?.shown === true ? 'shown' : 'not retried'}`);
+  else {
+    const told = (seen[1]?.problems ?? []).map((problem) => `${problem.raw} ${problem.why}`).join(' | ');
+    if (!/t1/.test(told) || !/still run into/.test(told)) problems.push(`fb-062 fast pass: the second try was not told the title still runs into words (${told.slice(0, 200)})`);
+  }
+  if (fixes.length !== 2 || fixes[0]?.shown !== false || fixes[1]?.shown !== true || run.record?.result !== 'fixed') problems.push(`fb-062 fast pass: the look should throw out the first try and show the second (${fixes.map((fix) => (fix.shown ? 'shown' : 'refused')).join(', ') || 'no fixes'}, result ${run.record?.result ?? 'none'})`);
+  const afterwards = tryFix(score, MOVES_THE_TITLE, LAPTOP);
+  if (afterwards !== null && blockingCount(afterwards.measured.sight) !== 0) problems.push(`fb-062 fast pass: the fix that is shown still leaves ${blockingCount(afterwards.measured.sight)} things not landing`);
+  return problems;
+}
+
+/** The group `pnpm check --only fb-062` runs: one result. */
+export async function fb062Group(note: (text: string) => void = () => undefined): Promise<CheckResult[]> {
+  note('fb-062');
+  try {
+    const problems = await fb062Problems();
+    return [{ turn: 0, check: 'fb-062', verdict: problems.length === 0 ? 'PASS' : 'FAIL', detail: problems.length === 0 ? 'a title standing on words is measured as blocking, on both, each naming the other; a fix that leaves it, hides the title or parks the answer off the canvas is refused with the reason; the first try is thrown out and the second shown within the same look' : problems.join('; ') }];
+  } catch (error) {
+    return [{ turn: 0, check: 'fb-062', verdict: 'FAIL', detail: `stopped: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}` }];
+  }
+}
+
 /** The group as `pnpm check` runs it: one result. */
 export async function loopGroup(note: (text: string) => void = () => undefined): Promise<CheckResult[]> {
   note('loop');
@@ -182,7 +281,8 @@ export async function loopGroup(note: (text: string) => void = () => undefined):
 }
 
 if (process.argv[1] !== undefined && /loop-check\.ts$/.test(process.argv[1])) {
-  loopGroup().then((results) => {
+  Promise.all([loopGroup(), fb062Group()]).then(([loop, fb062]) => {
+    const results = [...loop, ...fb062];
     for (const result of results) process.stdout.write(`${result.verdict} ${result.check}: ${result.detail}\n`);
     process.exit(results.every((result) => result.verdict === 'PASS') ? 0 : 1);
   });

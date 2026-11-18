@@ -31,7 +31,8 @@ const DOUBT_NOTE: Readonly<Record<Approx, string>> = { yes: 'approx.', computed:
  * idempotent, so a line the painter reads again (a replay, a fix pass) is not marked twice. The doubt itself stays on the line, for whoever checks.
  */
 export function doubted(text: string, approx: Approx): string {
-  if (HEDGE.test(text) || /\((?:approx\.|from memory|a guess)\)$/.test(text)) return text;
+  // already said, anywhere in the words (the brain often writes "(from memory)" itself, before a full stop or in the middle): once is enough (fb-068)
+  if (HEDGE.test(text) || /\((?:approx\.|from memory|a guess)\)/.test(text)) return text;
   return `${text} (${DOUBT_NOTE[approx]})`;
 }
 

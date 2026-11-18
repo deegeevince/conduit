@@ -146,7 +146,7 @@ function inputText(input: TurnInput): string {
   if (input.kind === 'prompt') return `typed: ${JSON.stringify(input.text)}${(input.images?.length ?? 0) > 0 ? ` with photos ${(input.images ?? []).join(', ')}` : ''}${input.marks === undefined ? '' : ` with ink (${input.marks.strokes.length} strokes, ${input.marks.image})`}`;
   if (input.kind === 'tap') return `tapped: ${JSON.stringify(input.text)} (${input.id})`;
   if (input.kind === 'demo') return `demo: ${input.script}`;
-  if (input.kind === 'act') return `worked control ${input.id}: ${JSON.stringify(input.text)}`;
+  if (input.kind === 'act') return input.part === undefined ? `worked control ${input.id}: ${JSON.stringify(input.text)}` : input.text;
   if (input.kind === 'refine') return `went on by its own choice: ${input.note}`;
   if (input.kind === 'repair') return `repair of ${input.of} (the server tidying the answer after the critic)`;
   return `script of ${input.text.split('\n').length} lines (${input.text.length} characters)`;
@@ -207,12 +207,12 @@ function printTurn(turn: Turn, withLines: boolean): void {
   for (const control of turn.controls) out(`  control at ${((control.at - turn.open.at) / 1000).toFixed(1)}s: ${control.id} = ${JSON.stringify(control.value)}${control.send ? ' (sent)' : ''}`);
   for (const data of turn.data) out(`  data ${data.id} (${data.source}, ${data.rows} rows): ${data.status}${data.reason === null ? '' : ` (${data.reason})`}`);
   for (const pass of turn.passes) out(`  pass ${pass.pass} ${pass.state} at ${((pass.at - turn.open.at) / 1000).toFixed(1)}s${pass.reason === null ? '' : `: ${pass.reason}`}`);
-  for (const draft of turn.drafts) if (draft.file !== null || draft.noted > 0) out(`  draft ${draft.pass}: ${draft.noted} noted${draft.file === null ? '' : `, picture ${draft.file}`}`);
+  for (const draft of turn.drafts) if (draft.file !== null || (draft.noted ?? 0) > 0) out(`  draft ${draft.pass}: ${draft.noted === null ? 'picture only' : `${draft.noted} noted`}${draft.file === null ? '' : `, picture ${draft.file}`}`);
   if (turn.review !== null) {
     const r = turn.review;
     out(`  look and fix: ${r.outcome.result}, ${r.outcome.passes} pass${r.outcome.passes === 1 ? '' : 'es'}${r.outcome.why === null ? '' : ` (${r.outcome.why})`}; first line of fix ${ms(r.firstLineMs)}, total ${ms(r.totalMs)}, cost ${money(r.costUsd)}`);
   }
-  for (const fix of turn.fixes) out(`  fix pass ${fix.pass} (${fix.form}) at ${((fix.at - turn.open.at) / 1000).toFixed(1)}s: ${fix.shown ? 'shown' : `refused${fix.why === null ? '' : ` (${fix.why})`}`}, ${fix.lines.length} line${fix.lines.length === 1 ? '' : 's'}`);
+  for (const fix of turn.fixes) out(`  fix pass ${fix.pass} (${fix.form}) at ${((fix.at - turn.open.at) / 1000).toFixed(1)}s: ${fix.shown ? 'shown' : `refused${fix.why === null ? '' : ` (${fix.why})`}`}, ${fix.lines.length} line${fix.lines.length === 1 ? '' : 's'}${fix.blocking === undefined ? '' : `, not landing ${fix.blocking.draft} before and ${fix.blocking.candidate ?? '?'} with it`}`);
   for (const critic of turn.critics) {
     const f = critic.finding;
     out(`  critic at ${((critic.at - turn.open.at) / 1000).toFixed(1)}s: coherence ${f.coherence}/5, ${f.readable ? 'readable' : 'NOT readable'}, ${f.asked ? 'as asked' : 'NOT as asked'}${critic.queued ? ', queued for the loop' : ''} (${ms(f.ms)}, ${money(f.costUsd)}${f.usage === undefined ? '' : `, ${f.usage.inputTokens + f.usage.cacheReadTokens + f.usage.cacheWriteTokens} in / ${f.usage.outputTokens} out tokens`})`);

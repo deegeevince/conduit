@@ -1,0 +1,6 @@
+# The journey pnpm check plays for fb-055 on the replay brain: the check draws a labelled car by itself while this waits.
+# A line of speech is not a target (a tap there does nothing, so the step is skipped), and of the alternatives the first label on stage is tapped: "Brakes", not "Wheel".
+hold 8
+tap? | The words beside a part can be tapped to ask about it
+tap | Gearbox / Brakes / Wheel
+rest

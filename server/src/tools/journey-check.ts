@@ -2,7 +2,8 @@
 //
 //   script     the journey files read, a bad line refused with its line number, and a model id shortened the way the label shows it
 //   play       `/?journey=check` types into the real box, taps a pick, drags a slider, taps a button, undoes and rests; the hook's timings are asserted:
-//              typing at about 14 characters a second, typed before sent before the first line before rest, the drag as long as asked and the
+//              typing at about 14 characters a second, typed before sent before the first line (painted, and arrived in the log no later) before rest (the last visible change,
+//              before restSettled, the page's own judgement), the drag as long as asked and the
 //              slider where it was sent, the undo's own turn; the language pane is open and cannot be closed; no label (the replay brain reports no model)
 //   missing    a tap target that never appears stops the journey with a message on `window.__journey`, not an alert
 //
@@ -16,6 +17,7 @@ import { Tab } from './smoke';
 import type { CheckResult } from './smoke';
 import type { LensScene } from './lens-check';
 import { modelLabel, modelName, parseJourney } from '../../../web/src/app/journey-script';
+import { chooseView } from './record-view';
 import type { JourneyState } from '../../../web/src/app/journey-script';
 
 const read = (name: string): string => readFileSync(fileURLToPath(import.meta.resolve(`@conduit/language/demos/journeys/${name}.journey`)), 'utf8');
@@ -60,6 +62,23 @@ export function scriptResults(): CheckResult[] {
   const mapped = names.filter(([id, want]) => modelName(id) !== want).map(([id, want]) => `${id} is ${modelName(id)}, not ${want}`);
   if (modelLabel('claude-opus-5-5', 'medium') !== 'Opus 5.5 · medium') mapped.push(`the label reads ${modelLabel('claude-opus-5-5', 'medium')}`);
   add('journey-model-name', mapped, 'a reported model id is shortened (claude-opus-5-5 is Opus 5.5) and the label adds the effort');
+
+  // pnpm record's page: a 1920x1080 film is laid out in 1280x720 at 1.5 (every word 1.5 times as big), the old way is behind --legacy, and a bad flag is said
+  const view = (flags: Parameters<typeof chooseView>[0]): string => {
+    const got = chooseView(flags);
+    return typeof got === 'string' ? got : `${got.width}x${got.height} from ${got.cssWidth}x${got.cssHeight} at ${got.scale} (zoom ${got.zoom})`;
+  };
+  const views: [string, string, string][] = [
+    ['the default', view({}), '1920x1080 from 1280x720 at 1.5 (zoom 1.5)'],
+    ['--css 1280x720 --scale 1.5', view({ css: '1280x720', scale: '1.5' }), '1920x1080 from 1280x720 at 1.5 (zoom 1.5)'],
+    ['--legacy', view({ legacy: true }), '1920x1080 from 1920x1080 at 2 (zoom 1)'],
+    ['--css 1920x1080', view({ css: '1920x1080' }), '1920x1080 from 1920x1080 at 2 (zoom 1)'],
+    ['--size 1280x720', view({ size: '1280x720' }), '1280x720 from 1280x720 at 2 (zoom 1)'],
+    ['--css 960x540', view({ css: '960x540' }), '1920x1080 from 960x540 at 2 (zoom 2)'],
+    ['--scale 3', view({ scale: '3' }), '1920x1080 from 1280x720 at 3 (zoom 1.5)'],
+    ['--css 12', view({ css: '12' }), '--css is like 1280x720'],
+  ];
+  add('journey-record-view', views.filter(([, got, want]) => got !== want).map(([name, got, want]) => `${name} is ${got}, not ${want}`), 'pnpm record lays a 1920x1080 film out in 1280x720 at 1.5 by default; --legacy and an explicit --css keep the old way; a bad --css is refused');
   return results;
 }
 
@@ -105,7 +124,15 @@ export async function journeyGroup(base: string, dir: string, timeoutMs: number,
         if (!(type.typingStart.perf < type.typingEnd.perf && type.typingEnd.perf < type.sent.perf && type.sent.perf < type.firstLine.perf && type.firstLine.perf < type.turnEnded.perf)) typing.push('typingStart, typingEnd, sent, firstLine and turnEnded are not in that order');
         if (Math.abs(type.typingStart.at - type.typingStart.perf - (type.typingEnd.at - type.typingEnd.perf)) > 50) typing.push('the page clock and performance.now() drift apart');
         const rest = steps.find((step) => step.op === 'rest');
-        if (rest === undefined || rest.rest === null || rest.rest.perf < type.turnEnded.perf) typing.push('rest came before the turn had ended');
+        if (rest === undefined || rest.rest === null || rest.restSettled === null) typing.push('the rest step has no rest and restSettled');
+        else {
+          if (rest.restSettled.perf < type.turnEnded.perf) typing.push('the stage was judged settled before the turn had ended');
+          // the film's own clock: the first line painted no earlier than it was sent, and the last visible change came after it and no later than the page's own judgement
+          if (type.firstLineEvent === null) typing.push('the first line\'s arrival in the log was not stamped (firstLineEvent)');
+          else if (type.firstLine.perf + 1 < type.firstLineEvent.perf) typing.push('the first line painted before it arrived in the log');
+          if (rest.rest.perf < type.firstLine.perf) typing.push('the last visible change is before the first line painted');
+          if (rest.rest.perf > rest.restSettled.perf) typing.push('the last visible change is after the page judged the stage settled');
+        }
       }
       add('journey-typing', typing, `typed at about 12 characters a second; sent, first line, turn end and rest are in order (${type?.text ?? ''})`);
 
