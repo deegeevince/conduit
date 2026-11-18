@@ -241,16 +241,14 @@ export function mountPenWrite(options: PenWriteOptions): PenWrite {
         schedule();
       }
     }
-    // the painter's views are made once for the change (each call builds them for every written method on the stage)
-    const views = options.views();
-    const zones = zonesOf(views);
+    const zones = zonesOf(options.views());
     let added = false;
     for (const stroke of model.strokes) {
       if (owner.has(stroke.id)) continue;
       const own = cellOf(stroke, zones);
       owner.set(stroke.id, own);
       if (own === null) continue;
-      const sum = views.find((view) => view.key === own.key)?.sum;
+      const sum = options.views().find((view) => view.key === own.key)?.sum;
       if (sum !== undefined) sumOf.set(stroke.id, sum);
       const ck = cellKey(own.key, own.part);
       version.set(ck, (version.get(ck) ?? 0) + 1);
