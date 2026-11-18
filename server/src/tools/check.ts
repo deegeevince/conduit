@@ -553,9 +553,8 @@ class Screen {
       const found = /^scene\s+(\S+)/.exec(raw);
       return found?.[1] === undefined ? [] : [found[1]];
     });
-    // one long turn: the script is a minute and a quarter of its own clock, but at phone size, beside another screen's Chrome, the clock runs slower than the wall: the rest took 130 s
-    // at 14 scenes and passed 180 s at 16, so it is waited for as long as that takes, up to five minutes
-    const { tab, talk } = await this.open('', false, 300_000);
+    // one long turn: the script plays for a minute and a half on a machine at its ease, and the rest is waited for as long as that takes
+    const { tab, talk } = await this.open('', false, 180_000);
     try {
       await this.look(tab);
       const began = Date.now();
