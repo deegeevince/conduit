@@ -517,6 +517,9 @@ async function sendScene(mine: MathsTab, problems: Problems): Promise<void> {
   await mine.hands.finger([await mine.centre(show.box)]);
   await waitFor('the act turn of the shown sum', 8_000, async () => (turns() > first ? true : null)).catch(() => undefined);
   const told = mine.tab.posted.filter((turn) => turn.kind === 'act').slice(first).map((turn) => turn.text ?? '');
+  // fb-078. A finger on a box or a button works the block and is not also "the user pointed at" it: the brain is told of the acts, not of a tap on a block it cannot name a part of
+  const pointed = await mine.tab.eval<number>(`window.__stage.events().filter((e) => e.type === 'tap' && /^m(9|10)$/.test(e.id)).length`);
+  if (pointed !== 0) list.push(`${pointed} finger press(es) on the written method were also told as taps on it ("the user pointed at m9"), wanted none`);
   if (told.length !== 1 || !/^m10: was shown the ones/.test(told[0] ?? '')) list.push(`the Show me that finished the sum sent ${JSON.stringify(told)}, wanted one act "m10: was shown the ones…"`);
 }
 
