@@ -976,11 +976,12 @@ export async function showcaseReelGroup(note: (text: string) => void = () => und
       await openStage(server.url, page);
       const played = await playSection(page, section, server.url);
       const file = join(dir, 'alphabets.mp4');
-      const made = await exportSection(page, section, played, file, { width: 960, height: 540, fps: 10 }, () => undefined);
+      // at the reel's own size (the page lays its words out for the picture, so a smaller one is not the same page), a few frames a second
+      const made = await exportSection(page, section, played, file, { width: REEL_SIZE.width, height: REEL_SIZE.height, fps: 10 }, () => undefined);
       const problems: string[] = [];
       const rest = (made.turns[made.turns.length - 1]?.to ?? 1) - 0.25;
-      const right = await darkest(file, rest, { x: 650, y: 470, width: 290, height: 50 });
-      const left = await darkest(file, rest, { x: 18, y: 470, width: 290, height: 50 });
+      const right = await darkest(file, rest, { x: 1300, y: 960, width: 560, height: 70 });
+      const left = await darkest(file, rest, { x: 40, y: 960, width: 560, height: 70 });
       if (right > 150) problems.push(`the caption is not at the bottom right (the darkest pixel there is ${right})`);
       if (left < 200) problems.push(`something stands at the bottom left, where the caption would be by default (the darkest pixel there is ${left})`);
       return result('reel-caption-side', problems, `a page that asks for it has its caption at the bottom right and the corner it left is clear (darkest pixel ${right} there, ${left} here)`);
