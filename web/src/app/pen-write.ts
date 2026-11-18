@@ -196,6 +196,7 @@ export function mountPenWrite(options: PenWriteOptions): PenWrite {
   /** the sum each owned stroke was written under (fb-097): a stroke belongs to a sum, not only to a block's id, which a later sum may take again */
   const sumOf = new Map<string, string>();
   const dimmed = new Set<string>();
+  ink.setOwned((id) => owner.get(id) != null);
   /** the sum most of the pen's writing is in, named for the turn that carries it: its id (what the model knows it by). Null: none of the ink is in a sum. */
   ink.setSurface(() => {
     const counts = new Map<string, number>();
@@ -239,6 +240,8 @@ export function mountPenWrite(options: PenWriteOptions): PenWrite {
       if (sum !== undefined) sumOf.set(stroke.id, sum);
       painter.mathInk(own.key, own.part, true);
     }
+    // the ink layer keeps its stage picture for what is outside the cells
+    ink.setOwned((id) => owner.get(id) != null);
   };
   const offChange = ink.ink.onChange(noticed);
 

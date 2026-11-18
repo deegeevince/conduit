@@ -56,6 +56,11 @@ export interface StageInk {
   penDown(event: PointerEvent): void;
   /** Throws away the stroke a pointer has begun. */
   abort(pointerId: number): void;
+  /**
+   * Which strokes are written in a written method's cells (`app/pen-write.ts`). They are a drawing to send like any other (the bar and the badge show for them), but the stage's picture
+   * is not taken in the idle moments between them: a render and a read-back of the stage while a person writes a sum is the lag fb-102 took out. It is taken when they are sent.
+   */
+  setOwned(owned: (strokeId: string) => boolean): void;
   /** What the writing is on, when it is not the stage itself: a written method's sum (`app/pen-write.ts`). Asked when the ink goes up, so the turn says which sum it was written on. */
   setSurface(surface: () => { readonly element: string; readonly label: string } | null): void;
   /** The lens the stage is looked through: strokes stay in page units. Null: none. */
@@ -136,6 +141,8 @@ export function mountStageInk(stage: HTMLElement, menu: ComposerMenu, app: Stage
   let handOn = false;
   /** a pen has touched or hovered over this page (this or any other listener's guard) */
   let penSeen = options.guard?.seenPen === true;
+  /** the strokes that belong to a cell of a written method */
+  let owned: (strokeId: string) => boolean = () => false;
   /** what the ink is on when not the stage: the sum the pen wrote in */
   let surface: () => { readonly element: string; readonly label: string } | null = () => null;
   const ink = createInk(layer, {
@@ -149,6 +156,8 @@ export function mountStageInk(stage: HTMLElement, menu: ComposerMenu, app: Stage
     announce: app.announce,
   });
 
+  /** the strokes outside a written method's cells: the drawing whose picture of the stage is taken once the pen has been up a while */
+  const freeStrokes = (): number => ink.model.strokes.filter((stroke) => !owned(stroke.id)).length;
   const take = async (): Promise<InkMarks | null> => {
     if (ink.model.strokes.length === 0) return null;
     // the turn the drawing began on, not the one the stage has come to since
@@ -208,13 +217,13 @@ export function mountStageInk(stage: HTMLElement, menu: ComposerMenu, app: Stage
   let idle: ReturnType<typeof setTimeout> | undefined;
   /** the pointers that are on the layer now while Draw has it */
   const touching = new Set<number>();
-  /** After the pen has been up for a moment, and only for what is to be sent (a stroke written in a cell is read from the cell, and goes up with no picture of the stage). */
+  /** After the pen has been up for a moment, and only for a drawing outside the cells (what is written in a sum's cells has its picture taken when it is sent, never between strokes). */
   const pictureLater = (): void => {
     clearTimeout(idle);
-    if (backdrop !== null || taking !== null || ink.model.strokes.length === 0) return;
+    if (backdrop !== null || taking !== null || freeStrokes() === 0) return;
     idle = setTimeout(() => {
       if (penHeld.size > 0 || touching.size > 0) return pictureLater();
-      if (backdrop === null && taking === null && ink.model.strokes.length > 0 && sameStage()) void captureBackdrop();
+      if (backdrop === null && taking === null && freeStrokes() > 0 && sameStage()) void captureBackdrop();
     }, PICTURE_AFTER_MS);
   };
   /** nothing is waiting to be sent: what was remembered and taken is let go */
@@ -346,6 +355,10 @@ export function mountStageInk(stage: HTMLElement, menu: ComposerMenu, app: Stage
     abort(pointerId) {
       ink.abort(pointerId);
       if (penHeld.delete(pointerId)) refresh();
+    },
+    setOwned(next) {
+      owned = next;
+      tell();
     },
     setSurface(next) {
       surface = next;

@@ -220,6 +220,7 @@ interface CellView {
 interface BlockView {
   readonly key: string;
   readonly id: string;
+  readonly box: { x: number; y: number; width: number; height: number };
   readonly cells: CellView[];
 }
 
@@ -470,8 +471,15 @@ async function sendScene(mine: MathsTab, dir: string, problems: Problems): Promi
   const here = await tab.eval<number>('window.__penWrite ? window.__penWrite.owners().filter((o) => o.key.startsWith("m9")).length : -1');
   if (here !== written.length) list.push(`${written.length} pen strokes in the answer boxes are ${here} owned by the sum`);
   const picture = await mine.shot(dir, `${screen.name}-maths-written.png`);
-  // 4. the ink bar's Send is there with the writing (it was hidden for strokes in a sum's boxes before), and nothing has gone up or been read
-  const button = await tab.eval<{ x: number; y: number; w: number; h: number } | null>(`(() => { const b = document.querySelector('.ink-btn--send'); if (!b) return null; const r = b.getBoundingClientRect(); const hidden = !!b.closest('[hidden]') || r.width === 0; return hidden ? null : { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width, h: r.height }; })()`);
+  // 4. a Send is on the screen with the writing (the ink bar's, and on a phone, where that bar is folded behind its pen, the prompt bar's, which is enabled for ink alone): it was
+  // hidden for strokes in a sum's boxes before. Nothing has gone up, and nothing has been read
+  const button = await tab.eval<{ x: number; y: number; which: string } | null>(`(() => {
+    const seen = (b) => { if (!b) return null; const r = b.getBoundingClientRect(); return r.width > 0 && r.height > 0 && !b.closest('[hidden]') && !b.disabled ? { x: r.left + r.width / 2, y: r.top + r.height / 2 } : null; };
+    const ink = seen(document.querySelector('.ink-btn--send'));
+    if (ink) return Object.assign(ink, { which: 'the ink bar' });
+    const prompt = seen(document.querySelector('.prompt__button'));
+    return prompt ? Object.assign(prompt, { which: 'the prompt bar' }) : null;
+  })()`);
   if (button === null) {
     list.push('the strokes written in the sum leave no Send on the screen');
     return picture;
@@ -524,7 +532,7 @@ async function fillScene(mine: MathsTab, problems: Problems): Promise<void> {
   const second = await mine.play(['scene layout=stack mood=calm', 'math m3 column | 12+12', 'fill m3.ans-ones | 9', 'fill m3.ans-tens | 2'].join('\n'));
   if (second !== '') return void list.push(second);
   const part = (await mine.block('m3'))?.cells.map((cell) => `${cell.part}=${cell.value}`).join(' ');
-  if (part !== 'ans-ones=9 carry-tens= ans-tens=2') list.push(`fill m3.ans-ones | 9 and fill m3.ans-tens | 2 left "${part}", wanted both written as the line gave them (nothing says the 9 is wrong)`);
+  if (part !== 'ans-ones=9 ans-tens=2') list.push(`fill m3.ans-ones | 9 and fill m3.ans-tens | 2 left "${part}", wanted both written as the line gave them (nothing says the 9 is wrong)`);
   // a hand that writes after the fill wins: the 4 typed over the filled 9
   const ones = (await mine.cell('m3', 'ans-ones'))?.box;
   if (ones !== undefined) {
@@ -596,11 +604,15 @@ async function penScene(mine: MathsTab, dir: string, problems: Problems): Promis
   await hands.pen(line(await hands.onScreen({ x: tensCentre, y: ones.y + ones.height / 2 }), await hands.onScreen({ x: reach, y: ones.y + ones.height / 2 }), 14));
   const second = await owners();
   if (second.length !== 2 || second[1]?.part !== 'ans-ones') list.push(`a stroke from the tens cell's middle to the ones cell's right is owned by "${second[1]?.part}", wanted ans-ones (the larger share)`);
-  // 2b. ink above the dashed carry box, inside no cell, is free working: outside every cell
-  const band = { x: tensCentre - 60, y: tens.y - 150 };
-  await hands.pen(line(await hands.onScreen(band), await hands.onScreen({ x: band.x + 90, y: band.y + 8 }), 8));
+  // 2b. ink on the sum's upper rows, inside no cell, is free working: a stroke on the stage, outside every cell (the pen writes only on a written method, and the ink bar is up by now
+  // over the top of the stage, so the spot is the sum's own rows, which stand clear of it)
+  const sum = (await mine.block('m4'))?.box as { x: number; y: number; width: number; height: number };
+  const band = { x: sum.x + sum.width * 0.3, y: sum.y + sum.height * 0.42 };
+  const drawn = await strokes();
+  await hands.pen(line(await hands.onScreen(band), await hands.onScreen({ x: band.x + 50, y: band.y + 6 }), 8));
   const third = await owners();
-  if (third.length !== 2) list.push(`ink far above every cell was given to a cell (${JSON.stringify(third)}), wanted free working`);
+  if ((await strokes()) !== drawn + 1) list.push(`a stroke below the sum added ${(await strokes()) - drawn} stroke(s) of ink, wanted 1`);
+  if (third.length !== 2) list.push(`ink far from every cell was given to a cell (${JSON.stringify(third)}), wanted free working`);
   // 3. more strokes: the tens cell holds two, the ones cell four. Nothing reads them, and nothing marks them: the ink stays where it is written
   await stroke('m4', 'ans-tens', [0.2, 0.7], [0.8, 0.3]);
   for (const [a, b] of [[[0.2, 0.2], [0.3, 0.8]], [[0.5, 0.2], [0.6, 0.8]], [[0.75, 0.2], [0.8, 0.8]]] as [number, number][][]) await stroke('m4', 'ans-ones', a as [number, number], b as [number, number], 6);
@@ -610,7 +622,7 @@ async function penScene(mine: MathsTab, dir: string, problems: Problems): Promis
   await sleep(1200);
   const penned = await mine.shot(dir, `${screen.name}-maths-pen.png`);
   const quiet = (await mine.block('m4'))?.cells.map((cell) => `${cell.part}=${cell.value}:${cell.by}:${cell.ink}`).sort().join(' ');
-  if (quiet !== 'ans-ones=::true ans-tens=::true carry-tens=::false') list.push(`after the pen wrote the cells hold "${quiet}", wanted ink in the ones and the tens and no digit read into either`);
+  if (quiet !== 'ans-ones=::true ans-tens=::true') list.push(`after the pen wrote the cells hold "${quiet}", wanted ink in the ones and the tens and no digit read into either`);
   if ((await tab.eval<number>('(window.__mathReads || []).length')) !== 0) list.push('the page read the pen\'s writing');
   // 5. a typed digit over the ink: the digit stands, the ink goes faint, and the ✕ takes the ink off and keeps the digit
   const r = await mine.play(['scene layout=stack mood=calm', 'math m6 column | 12+12'].join('\n'));
@@ -806,8 +818,10 @@ async function penLagScene(mine: MathsTab, problems: Problems): Promise<void> {
   const before = drawn.readbacks.length;
   const tens = (await mine.cell('m12', 'ans-tens'))?.box;
   if (tens !== undefined) {
-    const from = await hands.onScreen({ x: tens.x + tens.width / 2 - 60, y: tens.y - 170 });
-    const to = await hands.onScreen({ x: tens.x + tens.width / 2 + 40, y: tens.y - 160 });
+    // on the sum's upper rows, in no cell (the pen writes only on a written method)
+    const sum = (await mine.block('m12'))?.box as { x: number; y: number; width: number; height: number };
+    const from = await hands.onScreen({ x: sum.x + sum.width * 0.3, y: sum.y + sum.height * 0.42 });
+    const to = await hands.onScreen({ x: sum.x + sum.width * 0.3 + 60, y: sum.y + sum.height * 0.42 + 8 });
     await tab.eval('window.__penlag.mark = performance.now()');
     await hands.pen(line(from, to, 8));
     const during = (await probe()).readbacks.length - before;
