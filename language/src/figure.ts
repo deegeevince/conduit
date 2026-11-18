@@ -279,22 +279,59 @@ export const FIGURE_EDIT = `A LABELLED DRAWING ON STAGE IS CHANGED IN PLACE, NOT
 
 /**
  * How the painter plays a change to a figure that is on stage, on its own clock and whenever the lines came: each part that goes (or is put right) fades out in turn, then each part that
- * comes (or is put right) is drawn in, then the routes, then the labels. The pacing is here so that the turn lasts as long as the change plays (`figureReviseSeconds`).
- * `lead`: a change is never earlier than this into a turn, so that the figure as it was is on screen for the change to play from (a layout epoch is a quarter of a second at the least).
+ * comes (or is put right) is drawn in, then the routes, then the labels. What the change leaves alone is never faded or redrawn. A part is played no earlier than the line that made it
+ * arrived, and each waits its turn behind the one before, so a change that streams in over seconds plays as it comes and a burst plays one after another.
+ * The pacing is here so that the turn lasts as long as the change plays (`figureReviseEnd`); `lead`: a change is never earlier than this into a turn, so that the figure as it was is on
+ * screen for the change to play from (a layout epoch is a quarter of a second at the least); `most`: a change that would take longer is played faster; `move`: a part that stays but
+ * is set again (the figure was fitted to its room afresh) eases to its new place over this long.
  */
-export const FIGURE_REVISE = { lead: 0.3, leave: 0.5, leaveStagger: 0.12, enter: 0.7, enterStagger: 0.25, route: 0.6, label: 0.5, labelStagger: 0.12, most: 6 } as const;
+export const FIGURE_REVISE = { lead: 0.3, leave: 0.5, leaveStagger: 0.12, enter: 0.7, enterStagger: 0.25, route: 0.6, label: 0.5, labelStagger: 0.12, move: 0.8, most: 6 } as const;
 
-/** How long a figure's change takes to play, counted from its history (an upper bound of what the painter counts from the frames); at most `FIGURE_REVISE.most`. */
-export function figureReviseSeconds(all: readonly { readonly kind: 'drop' | 'replace' | 'add'; readonly at: number; readonly words?: true }[]): number {
-  // (the steps are only words: they are not played)
-  const history = all.filter((one) => one.words !== true);
-  const last = history.reduce((most, one) => Math.max(most, one.at), 0);
-  // the change of the last moment of the turn, and what came with it (a burst is one change)
-  const together = history.filter((one) => one.at >= last - 0.3);
-  const going = together.filter((one) => one.kind === 'drop' || one.kind === 'replace').length;
-  const coming = together.filter((one) => one.kind === 'add' || one.kind === 'replace').length;
-  const leaves = going === 0 ? 0 : (going - 1) * FIGURE_REVISE.leaveStagger + FIGURE_REVISE.leave;
-  const enters = coming === 0 ? 0 : (coming - 1) * FIGURE_REVISE.enterStagger + FIGURE_REVISE.enter;
-  const labels = coming === 0 ? 0 : (coming - 1) * FIGURE_REVISE.labelStagger + FIGURE_REVISE.label;
-  return Math.min(FIGURE_REVISE.most, leaves + enters + (coming === 0 ? 0 : FIGURE_REVISE.route) + labels);
+/** One thing the change plays: something that leaves, a part that is drawn in, a route, or a label; `at` is when the line that made it arrived (the turn's clock). */
+export interface ReviseItem {
+  readonly at: number;
+  readonly kind: 'leave' | 'part' | 'route' | 'label';
+}
+
+/**
+ * When, from the first of them, each item is played, and when it is all over: what leaves goes first, in turn; then the parts that come, each after the one before and no earlier
+ * than its line arrived; then the routes; then the labels. A change longer than `FIGURE_REVISE.most` is played at the pace that fits it (`pace`: the share of each time and stagger kept).
+ */
+export function reviseTimes(items: readonly ReviseItem[]): { readonly starts: readonly number[]; readonly end: number; readonly pace: number } {
+  if (items.length === 0) return { starts: [], end: 0, pace: 1 };
+  const first = Math.min(...items.map((item) => item.at));
+  const run = (k: number): { readonly starts: number[]; readonly end: number; readonly pace: number } => {
+    const starts: number[] = new Array<number>(items.length).fill(0);
+    const queue = (kind: ReviseItem['kind'], from: number, stagger: number, seconds: number): number => {
+      const order = items.flatMap((item, i) => (item.kind === kind ? [i] : [])).sort((a, b) => (items[a] as ReviseItem).at - (items[b] as ReviseItem).at || a - b);
+      let cursor = from;
+      let end = from;
+      for (const i of order) {
+        const start = Math.max((items[i] as ReviseItem).at - first, cursor);
+        starts[i] = start;
+        cursor = start + stagger * k;
+        end = Math.max(end, start + seconds * k);
+      }
+      return end;
+    };
+    const left = queue('leave', 0, FIGURE_REVISE.leaveStagger, FIGURE_REVISE.leave);
+    const drawn = queue('part', left, FIGURE_REVISE.enterStagger, FIGURE_REVISE.enter);
+    const routed = queue('route', drawn, 0, FIGURE_REVISE.route);
+    const end = queue('label', routed, FIGURE_REVISE.labelStagger, FIGURE_REVISE.label);
+    return { starts, end, pace: k };
+  };
+  const whole = run(1);
+  const k = whole.end > FIGURE_REVISE.most ? FIGURE_REVISE.most / whole.end : 1;
+  return k === 1 ? whole : run(k);
+}
+
+/** On the turn's clock, when a figure's change has finished playing: from its history (the steps are only words and are not played), the same queue the painter plays. 0 when nothing was played. */
+export function figureReviseEnd(history: readonly { readonly kind: 'drop' | 'replace' | 'add'; readonly at: number; readonly row?: 'part' | 'route'; readonly words?: true }[]): number {
+  const played = history.filter((change) => change.words !== true);
+  if (played.length === 0) return 0;
+  const items: ReviseItem[] = played.flatMap((change): ReviseItem[] => {
+    const comes: ReviseItem[] = change.row === 'route' ? [{ at: change.at, kind: 'route' }] : [{ at: change.at, kind: 'part' }, { at: change.at, kind: 'label' }];
+    return change.kind === 'drop' ? [{ at: change.at, kind: 'leave' }] : change.kind === 'add' ? comes : [{ at: change.at, kind: 'leave' }, ...comes];
+  });
+  return Math.min(...items.map((item) => item.at)) + reviseTimes(items).end;
 }

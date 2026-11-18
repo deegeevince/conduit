@@ -73,7 +73,8 @@ export async function inplaceGroup(base: string, dir: string, timeoutMs: number,
   const scenes: LensScene[] = [];
   for (const words of ['shorter', 'revised'] as const) scenes.push(await inplaceCase(base, dir, timeoutMs, note, words));
   scenes.push(await drawnCase(base, dir, timeoutMs, note));
-  scenes.push(await playsCase(base, dir, timeoutMs, note));
+  scenes.push(await playsCase(base, dir, timeoutMs, note, 'kept'));
+  scenes.push(await playsCase(base, dir, timeoutMs, note, 'refit'));
   return scenes;
 }
 
@@ -92,16 +93,31 @@ const partOf = (frames: readonly FrameView[], id: string): { readonly seen: numb
 };
 const labelOf = (frames: readonly FrameView[], id: string): number => frames.filter((frame) => frame.id === id && frame.kind === 'text' && /\/label:/.test(frame.key)).reduce((most, frame) => Math.max(most, frame.progress * frame.opacity), 0);
 
-async function playsCase(base: string, dir: string, timeoutMs: number, note: (text: string) => void): Promise<LensScene> {
+/** a swap that adds a part beyond the body (a tow bar): the figure is wider than it was, so the kit cannot keep the car where it was and as big, and sets it afresh in the same room (the parts are the same parts) */
+const SWAP_REFIT = [
+  'figure car cutaway | The same car, electric',
+  'drop engine tank exhaust',
+  'rect motor 70,48 12x10 in=body fill=copper label="electric motor"',
+  'rect pack 25,56 40x6 in=body fill=blue label="battery pack"',
+  'rect hitch 96,58 26x5 fill=steel label="tow bar"',
+  'route power ink=accent via=pack,motor,wheel',
+  'step show=pack,motor | The battery feeds the motor.',
+  'step show=wheel | The wheels turn.',
+  'end',
+].join('\n');
+
+async function playsCase(base: string, dir: string, timeoutMs: number, note: (text: string) => void, which: 'kept' | 'refit'): Promise<LensScene> {
   const began = Date.now();
-  note('fb-100: a change to a figure arriving as a burst plays in order');
+  note(`fb-100: a change to a figure arriving as a burst plays in order (${which})`);
   const results: CheckResult[] = [];
   const add = (check: string, problems: readonly string[], good: string): void => void results.push({ turn: 0, check, verdict: problems.length === 0 ? 'PASS' : 'FAIL', detail: problems.length === 0 ? good : problems.join('; ') });
   try {
-    const tab = await Tab.open(LABEL_SCREEN.width, LABEL_SCREEN.height);
+    // (the refit case is on a narrower page, where the labels have less room beside the car)
+    const narrow = which === 'refit';
+    const tab = await Tab.open(narrow ? 900 : LABEL_SCREEN.width, narrow ? 660 : LABEL_SCREEN.height);
     try {
       const options: Options = { url: base, screens: [], out: dir, turns: new Set(), timeoutMs, parallel: false, demo: false, quiet: true, page: '', say: null, chat: 'off' };
-      const conv = new Conversation(tab, options, LABEL_SCREEN, dir);
+      const conv = new Conversation(tab, options, narrow ? { ...LABEL_SCREEN, name: '900x660', width: 900, height: 660 } : LABEL_SCREEN, dir);
       await tab.send('DOM.enable');
       await conv.start();
       const play = async (script: string): Promise<string> => {
@@ -111,8 +127,11 @@ async function playsCase(base: string, dir: string, timeoutMs: number, note: (te
       const problems: string[] = [];
       const first = await play(CAR);
       if (first !== '') problems.push(first);
-      const second = await play(SWAP('revised'));
+      const restBefore = await tab.eval<Resting | null>(`(() => { const key = window.__stage.elements().find((e) => e.id === 'car')?.key; const last = key && window.__figures && window.__figures.get(key); return last ? { room: last.room, scale: last.layout.scale, offset: last.layout.offset, parts: last.layout.input.parts.length } : null; })()`);
+      const second = await play(which === 'kept' ? SWAP('revised') : SWAP_REFIT);
       if (second !== '') problems.push(second);
+      const restAfter = await tab.eval<Resting | null>(`(() => { const key = window.__stage.elements().find((e) => e.id === 'car')?.key; const last = key && window.__figures && window.__figures.get(key); return last ? { room: last.room, scale: last.layout.scale, offset: last.layout.offset, parts: last.layout.input.parts.length } : null; })()`);
+      if (which === 'refit' && (restBefore === null || restAfter === null || Math.abs(restAfter.scale / restBefore.scale - 1) < 0.03)) problems.push(`this swap was to make the kit fit the car afresh, and it did not (scale ${restBefore?.scale.toFixed(2)} then ${restAfter?.scale.toFixed(2)}): this is not the case the check is for`);
       // the turn is played back from the start (seek), so that it can be read at any second of it
       await tab.eval<number>('(window.__stage.seek(0), 0)');
       const lines = await tab.eval<{ text: string; start: number; end: number }[]>(`window.__stage.lines().map((l) => ({ text: l.text, start: l.start, end: l.end }))`);
@@ -138,8 +157,11 @@ async function playsCase(base: string, dir: string, timeoutMs: number, note: (te
         let named = -1;
         let partly = false;
         let last = 0;
+        const dimmed: string[] = [];
         const everything: FrameView[][] = [];
-        for (let step = 0; step <= 70; step += 1) everything.push(await frames(at + step / 10));
+        // to the end of the turn (the choices and the words that come after the change are part of it) and a second more
+        const lasts = Math.min(24, Math.max(...lines.map((line) => line.end)) - at + 1);
+        for (let step = 0; step <= Math.max(70, Math.ceil(lasts * 10)); step += 1) everything.push(await frames(at + step / 10));
         everything.forEach((now, step) => {
           const t = step / 10;
           if (gone < 0 && partOf(now, 'engine').seen < 0.02) gone = t;
@@ -148,28 +170,36 @@ async function playsCase(base: string, dir: string, timeoutMs: number, note: (te
           if (motor.seen > 0.02 && motor.progress > 0.1 && motor.progress < 0.9) partly = true;
           if (whole < 0 && motor.seen > 0.98 && motor.progress > 0.99) whole = t;
           if (named < 0 && labelOf(now, 'motor') > 0.02) named = t;
+          // what the change leaves alone is never faded or redrawn: the body, the wheel and their labels stay lit, whole, at every moment of the turn
+          for (const kept of ['body', 'wheel']) {
+            const here = partOf(now, kept);
+            const was = partOf(before, kept);
+            if (here.seen < 0.98 * was.seen || here.progress < 0.99) dimmed.push(`${kept} at ${t.toFixed(1)} s (shown ${(100 * here.seen / Math.max(1e-6, was.seen)).toFixed(0)}%, stroke ${(100 * here.progress).toFixed(0)}%)`);
+            if (labelOf(now, kept) < 0.98 * Math.max(1e-6, labelOf(before, kept))) dimmed.push(`the label of ${kept} at ${t.toFixed(1)} s`);
+          }
           const moving = partOf(now, 'motor').seen < 0.99 || partOf(now, 'motor').progress < 0.99 || partOf(now, 'pack').progress < 0.99 || labelOf(now, 'motor') < 0.99;
           if (moving) last = t;
         });
         if (problems.length > 0) problems.push('frames: ' + everything.slice(0, 40).map((now, step) => `${(step / 10).toFixed(1)}s e${partOf(now, 'engine').seen.toFixed(2)} m${partOf(now, 'motor').seen.toFixed(2)}/${partOf(now, 'motor').progress.toFixed(2)} n${now.length}`).join(' | '));
+        if (dimmed.length > 0) problems.push(`what the change left alone was faded or redrawn: ${dimmed.slice(0, 4).join(', ')}${dimmed.length > 4 ? ` and ${dimmed.length - 4} more` : ''}`);
         if (!partly) problems.push('the motor was never seen partly drawn (its stroke part-way along) in seven seconds');
         if (gone < 0) problems.push('the engine had not gone seven seconds after its drop');
         if (drawn >= 0 && gone >= 0 && drawn + 0.05 < gone) problems.push(`the motor is drawn (${drawn.toFixed(1)} s) before the engine has gone (${gone.toFixed(1)} s)`);
         if (named >= 0 && whole >= 0 && named + 0.05 < whole) problems.push(`the motor's label (${named.toFixed(1)} s) comes before the motor is whole (${whole.toFixed(1)} s)`);
         if (whole < 0) problems.push('the motor was not whole seven seconds after the drop');
         if (last < 1) problems.push(`the change took ${last.toFixed(1)} s to play: it should take a few seconds, not a frame`);
-        add('fb-100-plays-order', problems, `the burst played in order: the engine fades (gone by ${gone.toFixed(1)} s), the motor is drawn in from ${drawn.toFixed(1)} s (whole at ${whole.toFixed(1)} s), its label at ${named.toFixed(1)} s; ${last.toFixed(1)} s in all`);
+        add(`fb-100-plays-${which}-order`, problems, `the burst played in order: the engine fades (gone by ${gone.toFixed(1)} s), the motor is drawn in from ${drawn.toFixed(1)} s (whole at ${whole.toFixed(1)} s), its label at ${named.toFixed(1)} s; ${last.toFixed(1)} s in all`);
       }
-      if (dropLine === undefined) add('fb-100-plays-order', problems, '');
+      if (dropLine === undefined) add(`fb-100-plays-${which}-order`, problems, '');
       const drained = tab.drain();
-      add('fb-100-plays-console', [...drained.consoleErrors, ...drained.failedRequests].map((entry) => entry.text).slice(0, 3), 'no console errors or failed requests');
+      add(`fb-100-plays-${which}-console`, [...drained.consoleErrors, ...drained.failedRequests].map((entry) => entry.text).slice(0, 3), 'no console errors or failed requests');
     } finally {
       await tab.close();
     }
   } catch (error) {
-    add('fb-100-plays', [error instanceof Error ? error.message : String(error)], '');
+    add(`fb-100-plays-${which}`, [error instanceof Error ? error.message : String(error)], '');
   }
-  return { name: 'fb-100-plays', picture: '', results, seconds: (Date.now() - began) / 1000 };
+  return { name: `fb-100-plays-${which}`, picture: '', results, seconds: (Date.now() - began) / 1000 };
 }
 
 /** a car as the brain draws one with shapes: parts by id and a callout on each part that is named */

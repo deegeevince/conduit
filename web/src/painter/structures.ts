@@ -574,6 +574,27 @@ export function buildStructures(schedule: Schedule, env: StructureEnv): Structur
     return { epoch, previous, q: q >= 1 ? 1 : ease('out', q) };
   };
 
+  /** The first epoch of a figure that a turn changed whose picture is not the one before it (0: none; the figure was not changed or the change is not drawn yet). Found once for a plan. */
+  const anchors = new WeakMap<Plan, number>();
+  const reviseAnchor = (plan: Plan): number => {
+    const known = anchors.get(plan);
+    if (known !== undefined) return known;
+    const figure = plan.structure.figure;
+    let found = 0;
+    if (figure?.kind === 'structure' && figure.structure === 'figure' && (figure.history?.length ?? 0) > 0) {
+      for (let i = 1; i < plan.epochs.length; i += 1) {
+        const was = plan.epochs[i - 1]?.layout.drawn;
+        const now = plan.epochs[i]?.layout.drawn;
+        if (was !== undefined && now !== undefined && !sameFigure(was, now)) {
+          found = i;
+          break;
+        }
+      }
+    }
+    anchors.set(plan, found);
+    return found;
+  };
+
   const boxIn = (epoch: Epoch, key: string): Box | undefined => epoch.layout.boxes.get(key);
   const boxAtTime = (plan: Plan, owner: ElementSpan, time: number, key: string = owner.key): Box | null => {
     const { epoch, previous, q } = placeOf(plan, owner, time);
@@ -838,13 +859,16 @@ export function buildStructures(schedule: Schedule, env: StructureEnv): Structur
         const { epoch, previous, q } = placeOf(plan, owner, tq);
         // v2.2: a mock-up draws itself, a row at a time
         if (owner === structure && epoch.layout.drawn !== undefined) {
-          // a figure that a turn changed: played from the layout before the change that is still being played (an epoch that changed nothing, a room that moved, carries on the same change)
-          let from = plan.epochs.indexOf(epoch);
-          if (structure.figure?.kind === 'structure' && structure.figure.structure === 'figure' && (structure.figure.history?.length ?? 0) > 0) {
-            while (from > 0 && plan.epochs[from - 1]?.layout.drawn !== undefined && sameFigure(plan.epochs[from - 1]?.layout.drawn as DrawnFrames, plan.epochs[from]?.layout.drawn as DrawnFrames)) from -= 1;
-          } else from = 0;
-          const changedFrom = from > 0 ? plan.epochs[from - 1]?.layout.drawn : undefined;
-          const drawn = drawUi({ structure, drawn: epoch.layout.drawn, before: changedFrom ?? previous?.layout.drawn ?? null, q, tq, out, ...(changedFrom === undefined ? {} : { revise: { since: tq - (plan.epochs[from]?.start ?? epoch.start) } }) });
+          // a figure that a turn changed: from the first layout that differs from the one before it, the change plays from how the figure was (an epoch that changed nothing, or a room
+          // that moved, goes on with the same change)
+          const anchor = reviseAnchor(plan);
+          const at = plan.epochs.indexOf(epoch);
+          const drawnBefore = anchor > 0 ? plan.epochs[anchor - 1]?.layout.drawn : undefined;
+          const revise =
+            drawnBefore === undefined || at < anchor
+              ? undefined
+              : { before: drawnBefore, chain: plan.epochs.slice(anchor, at + 1).map((each) => ({ start: each.start, drawn: each.layout.drawn as DrawnFrames })), previous: previous?.layout.drawn ?? null };
+          const drawn = drawUi({ structure, drawn: epoch.layout.drawn, before: previous?.layout.drawn ?? null, q, tq, out, ...(revise === undefined ? {} : { revise }) });
           const box = epoch.layout.boxes.get(structure.key);
           if (drawn.drawn && box !== undefined) out.owners.push({ key: structure.key, id: structure.id, kind: structure.kind, layer: structure.style.layer, box, opacity: 1, phase: drawn.phase, colour: look.roles.ink, contrast: 21, tappable: false, fontPx: epoch.layout.drawn.fontPx * planeScale(structure.style.layer, env.viewport) });
           continue;

@@ -27,7 +27,7 @@ import {
   asksForMaths,
   buildSystemPrompt,
   buildTurnBrief,
-  figureReviseSeconds,
+  figureReviseEnd,
   matchAnswer,
   parseLine,
   parseScript,
@@ -346,8 +346,9 @@ function fb100(): void {
   const history = carNow?.figure?.kind === 'structure' ? (carNow.figure.history ?? []) : [];
   const played = history.filter((change) => change.words !== true);
   expect('fb-100: the figure keeps what the turn did to it: the three parts dropped, the two added, the route put right (the steps are words and are not played), each from the lead and none before it', [played.filter((change) => change.kind === 'drop').length, played.filter((change) => change.kind === 'add').length === 2, played.filter((change) => change.kind === 'replace').length === 1, history.every((change) => change.at >= FIGURE_REVISE.lead)], [3, true, true, true]);
-  expect('fb-100: the turn lasts as long as the change plays', second.score.schedule.end >= FIGURE_REVISE.lead + figureReviseSeconds(history) - 1e-6, true);
-  expect('fb-100: a change plays in at most six seconds, however much it changes', figureReviseSeconds(Array.from({ length: 40 }, (_, index) => ({ kind: index % 2 === 0 ? ('drop' as const) : ('add' as const), at: 1 }))) <= FIGURE_REVISE.most, true);
+  expect('fb-100: the turn lasts as long as the change plays', second.score.schedule.end >= figureReviseEnd(history) - 1e-6, true);
+  expect('fb-100: a change plays in at most six seconds, however much it changes', figureReviseEnd(Array.from({ length: 40 }, (_, index) => ({ kind: index % 2 === 0 ? ('drop' as const) : ('add' as const), at: 1 }))) - 1 <= FIGURE_REVISE.most + 1e-9, true);
+  expect('fb-100: a change that streams in plays as it comes, and a burst one after another: later lines are played later, never before they came', [figureReviseEnd([{ kind: 'drop', at: 1 }, { kind: 'add', at: 1, row: 'part' }]) < figureReviseEnd([{ kind: 'drop', at: 1 }, { kind: 'add', at: 5, row: 'part' }]), figureReviseEnd([{ kind: 'add', at: 5, row: 'part' }]) >= 5 + FIGURE_REVISE.enter], [true, true]);
   expect('fb-100: what the turn changed is not carried on: the figure that stands has no history', (after.elements.find((element) => element.id === 'car')?.figure as { history?: unknown } | null | undefined)?.history, undefined);
 
   // a part said again under its id is replaced where it stands (its place in the list and its time are kept); the same words are nothing
