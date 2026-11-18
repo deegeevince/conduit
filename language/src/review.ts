@@ -38,7 +38,7 @@ export interface ReviewPolicy {
 export const REVIEW_POLICY: ReviewPolicy = { enabled: true, passes: 1, minDrawn: 3, draftWaitMs: 8000, firstLineMs: 12_000, passMs: 30_000 };
 
 /** The notes that mean a viewer cannot read or find something. Any one of them is reason enough to look. */
-export const BLOCKING_NOTES: readonly SightNote[] = ['clipped', 'off-canvas', 'covered', 'overlaps', 'collides', 'crossed', 'spills', 'tangled', 'wrong-part', 'faint', 'tiny', 'crowded', 'sparse', 'lost'];
+export const BLOCKING_NOTES: readonly SightNote[] = ['clipped', 'off-canvas', 'outside', 'covered', 'overlaps', 'collides', 'crossed', 'spills', 'tangled', 'wrong-part', 'faint', 'tiny', 'crowded', 'sparse', 'lost'];
 
 /** What can be told about a draft from its lines alone, before the painter has said anything. */
 export interface DraftFacts {
@@ -181,7 +181,7 @@ export function freeRoomRows(placed: readonly PlacedBox[], canvas: { readonly wi
   const across = bands(canvas.height, canvas.height, things.map((item) => [item.box.y, item.box.y + item.box.h] as const)).map((band) => `0,${band.at} ${canvas.width}x${band.size} (a band across)`);
   const down = bands(canvas.width, canvas.width, things.map((item) => [item.box.x, item.box.x + item.box.w] as const)).map((band) => `${band.at},0 ${band.size}x${canvas.height} (a band down)`);
   const rooms = [...across, ...down];
-  return rooms.length === 0 ? null : `FREE ROOM (nothing stands on these; put moved words here, one line to a row, never on another line of words):\n${rooms.map((room) => `  ${room}`).join('\n')}`;
+  return rooms.length === 0 ? null : `FREE ROOM (top-left corner and size; nothing stands on these; put moved words here, one line to a row, never on another line of words; \`move <id> x,y\` puts the middle of the words at x,y):\n${rooms.map((room) => `  ${room}`).join('\n')}`;
 }
 
 function placedRows(placed: readonly PlacedBox[]): string[] {
@@ -395,16 +395,64 @@ export function fixKeeps(draft: ContentCount, candidate: ContentCount, policy: F
   return { keeps: true, why: null };
 }
 
-/** Rule two: by the painter's own measure the candidate lands with no more wrong than the draft. A candidate the painter did not report on in time is not shown. */
+/** The most reasons a refusal names: the brain is told them in one line. */
+const HARMS_NAMED = 3;
+
+/**
+ * What a candidate did to things the draft already had standing, whatever else it cleared: it put one outside the canvas or the screen, made one
+ * invisible, or shrank one until it cannot be made out. A thing that no longer overlaps because it is no longer there is not mended, and a total
+ * that fell because of it is no gain (the owner's lesson: a repair that sent two lines off the left of the canvas "went from 2 problems to 0").
+ * Only what is new counts: a thing the draft already had outside, or already made invisible (a stepper's parts wait at `opacity=0`), is not the fix's doing.
+ */
+export function harmsOf(draft: Sight | null, candidate: Sight): string[] {
+  const had = new Map<string, { notes: Set<SightNote>; hidden: boolean }>();
+  for (const item of draft?.items ?? []) {
+    if (!item.resting) continue;
+    const known = had.get(item.id) ?? { notes: new Set<SightNote>(), hidden: false };
+    for (const note of item.notes) known.notes.add(note);
+    known.hidden = known.hidden || item.hidden === true;
+    had.set(item.id, known);
+  }
+  const out: string[] = [];
+  const say = (text: string): void => {
+    if (!out.includes(text)) out.push(text);
+  };
+  for (const item of candidate.items) {
+    if (!item.resting) continue;
+    const before = had.get(item.id);
+    const fresh = (note: SightNote): boolean => item.notes.includes(note) && before?.notes.has(note) !== true;
+    if (fresh('outside')) say(`moved ${item.id} off the canvas`);
+    if (fresh('off-canvas') || fresh('clipped')) say(`moved ${item.id} off the screen`);
+    if (item.hidden === true && before?.hidden !== true) say(`hid ${item.id}`);
+    if (fresh('tiny')) say(`shrank ${item.id} below readable size`);
+  }
+  return out;
+}
+
+/**
+ * Rule two: by the painter's own measure the candidate lands with no more wrong than the draft, and has not dodged what was wrong by moving a
+ * thing off the canvas, hiding it or shrinking it past reading (`harmsOf`). A candidate the painter did not report on in time is not shown.
+ */
 export function landsNoWorse(draft: Sight | null, candidate: Sight | null): { readonly ok: boolean; readonly why: string | null } {
   if (candidate === null) return { ok: false, why: 'the painter did not say how the fix would land' };
+  const harms = harmsOf(draft, candidate);
+  if (harms.length > 0) return { ok: false, why: `${harms.slice(0, HARMS_NAMED).join('; ')}${harms.length > HARMS_NAMED ? `; and ${harms.length - HARMS_NAMED} more` : ''}: mend it where it stands` };
   const before = blockingCount(draft);
   const after = blockingCount(candidate);
   if (after > before) return { ok: false, why: `${after} things would not land, against ${before} in the draft` };
-  // Words still running into words are not let through on a tie: moving them about without clearing them is no mend (a fix once moved narration lines by coordinates and left them stacked).
+  // Words still running into words are not let through unless fewer run into one another than did: clearing something else does not excuse them (a fix once moved
+  // narration lines by coordinates and left them stacked, and, later, one mended every other thing and left the title on the worked answer: the total fell, so it was shown).
   const wordsAfter = wordsCollideCount(candidate);
-  if (wordsAfter > 0 && wordsAfter >= wordsCollideCount(draft) && after >= before) return { ok: false, why: `${wordsAfter} lines of words would still run into other words` };
+  if (wordsAfter > 0 && wordsAfter >= wordsCollideCount(draft)) {
+    const still = collidingIds(candidate);
+    return { ok: false, why: `${wordsAfter} line${wordsAfter === 1 ? '' : 's'} of words would still run into other words (${still.slice(0, 6).join(', ')})` };
+  }
   return { ok: true, why: null };
+}
+
+/** The ids of the resting lines of words the painter says run into other words. */
+function collidingIds(sight: Sight): string[] {
+  return sight.items.filter((item) => item.kind === 'text' && item.resting && item.notes.some((note) => note === 'collides' || note === 'overlaps')).map((item) => item.id);
 }
 
 /** How many resting lines of words the painter says run into other words (or sit under something over them). */
@@ -488,7 +536,7 @@ const RETRY_ROWS = 6;
 /** What a fix that was thrown out left wrong, as rows the brain can act on: id, then what did not land. */
 function wrongRows(sight: Sight | null): string[] {
   if (sight === null) return [];
-  return sight.items.filter((item) => item.notes.some((note) => BLOCKING_NOTES.includes(note))).slice(0, RETRY_ROWS).map((item) => `${item.id}: ${item.notes.filter((note) => BLOCKING_NOTES.includes(note)).join(', ')}`);
+  return sight.items.filter((item) => item.notes.some((note) => BLOCKING_NOTES.includes(note))).slice(0, RETRY_ROWS).map((item) => `${item.id}: ${item.notes.filter((note) => BLOCKING_NOTES.includes(note)).map((note) => (note === 'collides' && item.against !== undefined && item.against.length > 0 ? `collides with ${item.against.join(', ')}` : note)).join(', ')}`);
 }
 
 /**

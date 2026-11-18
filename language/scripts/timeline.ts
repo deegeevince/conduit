@@ -1,6 +1,7 @@
 // Prints the schedule a script adds up to: when every line starts and ends,
 // as if the whole script had arrived before playback began.
 // Usage: pnpm timeline <demo name | path to a .series file>
+//        pnpm timeline showcase   the capability pages one to a line: their seconds, hold, lines and what is wrong with them
 //        pnpm timeline            checks every worked example in the brain's prompt, every demo and every seed technique,
 //                                 and that each line reads back as itself
 import { readdirSync, readFileSync } from 'node:fs';
@@ -17,6 +18,8 @@ import { motionChecks } from './motion-checks';
 import { bindChecks } from './bind-checks';
 import { showcaseChecks } from './showcase-checks';
 import { spaceChecks } from './space-checks';
+import { feedbackChecks } from './feedback-checks';
+import { doubtChecks } from './doubt-checks';
 
 function describe(issues: readonly Issue[]): string {
   return issues.map((issue) => `${issue.severity} ${issue.code}: ${issue.message}`).join('; ');
@@ -119,6 +122,8 @@ if (argument === undefined || argument === 'all') {
   ok = bindChecks() && ok;
   ok = showcaseChecks() && ok;
   ok = spaceChecks() && ok;
+  ok = feedbackChecks() && ok;
+  ok = doubtChecks() && ok;
   for (const demo of DEMOS) ok = run(`demo ${demo.name}`, readFileSync(fileURLToPath(new URL(`../demos/${demo.name}.series`, import.meta.url)), 'utf8')) && ok;
   const seedDir = fileURLToPath(new URL('../../techniques/seed/', import.meta.url));
   for (const file of readdirSync(seedDir).filter((name) => name.endsWith('.md')).sort()) {
@@ -128,7 +133,8 @@ if (argument === undefined || argument === 'all') {
     });
   }
 }
-if (argument !== undefined && argument !== 'examples' && argument !== 'all') {
+if (argument === 'showcase') ok = showcaseChecks(true) && ok;
+if (argument !== undefined && argument !== 'examples' && argument !== 'all' && argument !== 'showcase') {
   const path = argument.endsWith('.series') ? argument : fileURLToPath(new URL(`../demos/${argument}.series`, import.meta.url));
   ok = run(argument, readFileSync(path, 'utf8')) && ok;
 }

@@ -18,6 +18,10 @@
 //   ask                (tablet 1180x820 at two pixels, touch, the lens off and on) a finger tap on an ask's blank focuses its input, also under the Draw layer after a pen stroke;
 //                      a short pen tap too, a pen drag writes; `fill` puts a wrong or right answer in the blank and opens the next stage; Send drawing names the ask (ask-check.ts)
 //   tour               (`/demo`; 1280x800, 820x971, 390x844) the tour opens on the stage, a chapter lists its cards, a card plays its demo with no model call, "Back to the tour" returns, `/demo <name>` jumps to one (tour-check.ts)
+//   fb-055             a label the brain drew (`say callout near=x`, a figure part's `label=`) is tapped to ask about what it names: one act that names the part, none for a drag, a click on
+//                      the drawn part or on plain words; with a mouse and a finger; the journey's `tap | Brakes` finds "brake disc" (label-check.ts)
+//   fb-064             the Undo chip puts the answer before back whole: the car's labels (and a click on one asks about it), its words and its choice, and nothing of the answer it
+//                      undid stands over it (undo-check.ts)
 //   lens               (flag on, ?lens=1; tablet 1180x820 at two pixels to the point with touch, and 390x844) a two-finger pinch to 2x, then a tap on a choice, a slider
 //                      drag and a pen stroke each land on the right page point; 0 fits again; the pen draws without Draw, a short pen tap presses (lens-check.ts)
 //
@@ -50,8 +54,10 @@ import { DRAW_SCREEN, drawGroup } from './draw-check';
 import { ART_FAKE_MS, ART_SCREEN, artGroup } from './art-check';
 import { CONTINUE_SCREEN, continueFixtures, continueGroup } from './continue-check';
 import { journeyGroup } from './journey-check';
+import { labelGroup } from './label-check';
+import { undoGroup } from './undo-check';
 import { MEMORY_SCREEN, memoryGroup } from './memory-check';
-import { loopGroup } from './loop-check';
+import { fb062Group, loopGroup } from './loop-check';
 import { TOUR_SCREENS, tourGroup } from './tour-check';
 import { printWebkit, webkitGroup, webkitMissing } from './webkit-check';
 import { driftGroup } from './drift-check';
@@ -565,8 +571,8 @@ class Screen {
       const results: CheckResult[] = [];
       Screen.add(results, 'script-lines', rejectedLinesOf(source).slice(0, 3), 'every line of the script reads');
       const played = await tab.eval<string | null>(`Promise.resolve(window.__stage.playScript(${JSON.stringify(source)})).then(() => null, (e) => String(e && e.message || e))`);
-      // the script is one long turn that plays in real time (a minute, and a scene more with each failure written down): it is given half as long again as a demo
-      results.push(Screen.restResult(played !== null ? `the demo would not start: ${played}` : await talk.rest(true, true, Math.round(this.args.timeoutMs * 1.5)), began));
+      // the script is one long turn that plays in real time (a minute and a half of the clock now, and a busy machine plays it slower): it is given as long as four demos
+      results.push(Screen.restResult(played !== null ? `the demo would not start: ${played}` : await talk.rest(true, true, Math.max(Math.round(this.args.timeoutMs * 1.5), 240_000)), began));
       const starts = await this.sceneStarts(tab);
       if (starts.length !== ids.length) results.push({ turn: 0, check: 'scenes', verdict: 'FAIL', detail: `the script has ${ids.length} scenes but the turn has ${starts.length}` });
       const last = ids.length - 1;
@@ -732,6 +738,68 @@ class Screen {
           }
         }
         good = 'all 8 callouts paint to within 2% of the photo width of their spots';
+        break;
+      }
+      case 'fb-058': {
+        // docs/feedback.md fb-058: the column sum is the painter's `math` block, laid out as on paper; the brain wrote no digit, so no word on stage is a bare number
+        // and none holds what the open block seals; the sum the person is to work stands with its boxes empty, and an ask that waits draws nothing
+        const blocks = live.filter((e) => e.kind === 'structure' && e.phase === 'on' && /^written method column/.test(e.text) && e.box.width > 50 && e.box.height > 50);
+        if (blocks.length !== 2) problems.push(`${blocks.length} of the 2 written methods (the worked example and her own sum) are on stage`);
+        const bare = texts.filter((e) => /^[\d\s.,+\-\u00d7\u00f7=]+$/.test(e.text.trim()));
+        if (bare.length > 0) problems.push(`digits placed by hand on stage: ${bare.slice(0, 3).map((e) => `"${e.text}"`).join(', ')}`);
+        const sealed = texts.filter((e) => e.text.replace(/[\s,]/g, '').includes('6281'));
+        if (sealed.length > 0) problems.push(`the sealed answer 6281 is in words on stage: "${sealed[0]?.text.slice(0, 40)}"`);
+        const cells = await tab.eval<{ part: string; value: string }[]>(`window.__stage.maths().flatMap((b) => b.id === 'm1' ? b.cells.map((c) => ({ part: c.part, value: String(c.value ?? '') })) : [])`);
+        if (!cells.some((c) => c.part === 'ans-ones')) problems.push('her own sum has no answer boxes');
+        const filled = cells.filter((c) => c.value !== '');
+        if (filled.length > 0) problems.push(`her boxes are not empty: ${filled.map((c) => `${c.part}=${c.value}`).join(', ')}`);
+        const asks = await tab.eval<string[]>(`window.__stage.controls().filter((c) => c.ask).map((c) => c.id)`);
+        if (asks.join(',') !== 'q1') problems.push(`the asks drawn are ${JSON.stringify(asks)}, wanted only q1 (q2 waits)`);
+        good = 'a worked example and her own sum are laid out by the painter (no digit in any word, the answer sealed, her boxes empty), q1 is open and q2 draws nothing';
+        break;
+      }
+      case 'fb-059': {
+        // docs/feedback.md fb-059: a title with no at= in a free scene stands at the top of the stage, over nothing
+        const title = live.find((e) => e.id === 't1');
+        const rest = live.filter((e) => e.id !== 't1' && e.phase === 'on' && e.box.width > 0 && e.box.height > 0);
+        const view = await tab.eval<{ h: number }>('({ h: innerHeight })');
+        if (title === undefined) problems.push('the title is not on stage');
+        else {
+          const over = rest.filter((e) => title.box.x < e.box.x + e.box.width && title.box.x + title.box.width > e.box.x && title.box.y < e.box.y + e.box.height && title.box.y + title.box.height > e.box.y);
+          if (over.length > 0) problems.push(`the title lies over ${over.slice(0, 3).map((e) => `${e.id} "${e.text.slice(0, 20)}"`).join(', ')}`);
+          const lowest = Math.min(...rest.map((e) => e.box.y));
+          if (title.box.y + title.box.height > lowest + 1) problems.push(`the title (${title.box.y.toFixed(0)}..${(title.box.y + title.box.height).toFixed(0)}) is not above everything else (which starts at ${lowest.toFixed(0)})`);
+          if (title.box.y + title.box.height / 2 > view.h / 3) problems.push(`the title is not at the top of the stage (its middle is at ${(title.box.y + title.box.height / 2).toFixed(0)} of ${view.h})`);
+        }
+        good = `the title stands at the top of the stage, above and clear of the worked answer and every other line`;
+        break;
+      }
+      case 'fb-060': {
+        // docs/feedback.md fb-060: asks 2 and 3 wait for ask 1, so they draw nothing: not on stage as controls, no number, no blank, no box
+        const controls = await tab.eval<{ id: string; locked: boolean; parts: string[] }[]>(`window.__stage.controls().filter((c) => c.ask).map((c) => ({ id: c.id, locked: c.askState.locked, parts: c.parts.map((p) => p.part) }))`);
+        const waiting = controls.filter((c) => c.locked);
+        if (waiting.length > 0) problems.push(`${waiting.length} ask(s) that wait are drawn: ${waiting.map((c) => c.id).join(', ')}`);
+        if (controls.map((c) => c.id).join(',') !== 'q1') problems.push(`the asks drawn are ${JSON.stringify(controls.map((c) => c.id))}, wanted only q1`);
+        const boxed = live.filter((e) => e.kind === 'control' && e.id !== 'q1' && e.box.width > 0 && e.box.height > 0);
+        if (boxed.length > 0) problems.push(`${boxed.map((e) => e.id).join(', ')} stand on the stage with a box (${boxed.map((e) => `${e.box.width.toFixed(0)}x${e.box.height.toFixed(0)}`).join(', ')})`);
+        const numbers = texts.filter((e) => /^\d\.$/.test(e.text.trim()));
+        if (numbers.length > 0) problems.push(`a bare number is drawn: ${numbers.map((e) => e.text).join(', ')}`);
+        good = 'only ask 1 is drawn: asks 2 and 3 draw no number, no blank and take no place on the stage';
+        break;
+      }
+      case 'fb-061': {
+        // docs/feedback.md fb-061: `is=6,281,6` (the answer with its thousands comma, and a step of the working) plays as an ask for 6281, and the hint that names a step is kept
+        // (the turn holds every scene's lines, and the ids repeat from one scene to the next: only this scene's own are read)
+        const whole = await tab.eval<string[]>('window.__stage.lines().map((l) => l.text)');
+        const lines = whole.slice(Math.max(0, whole.findIndex((line) => /^scene fb-061\b/.test(line))));
+        const ask = lines.find((line) => /^ask q1\b/.test(line));
+        const accepted = /\bis=(\S+)/.exec(ask ?? '')?.[1];
+        if (ask === undefined) problems.push('the ask q1 did not play');
+        else if (accepted !== '6281') problems.push(`ask q1 accepts "${accepted}", wanted only 6281`);
+        if (!lines.some((line) => /^hint in=q1\b/.test(line))) problems.push('the hint of ask q1 was dropped');
+        const parts = await tab.eval<string[]>(`(window.__stage.controls().find((c) => c.id === 'q1')?.parts ?? []).map((p) => p.part)`);
+        if (!parts.includes('hint')) problems.push('ask q1 has no Hint to tap');
+        good = 'ask q1 accepts the one answer 6281 (the thousands comma kept in its number, the step dropped) and its hint is on it';
         break;
       }
       case 'fb-025': {
@@ -1426,7 +1494,8 @@ function buildUnits(args: Args, welcome: Welcome): { readonly units: Unit[]; rea
     units.push(screenUnit('follow', 45, [], (run) => run.followScene()));
     // fb-001 (docs/feedback.md): code blocks that did not render in the tour's code chapter. `--only fb-001` is the code demo's judging.
     demos.forEach((name, index) => units.push(screenUnit(`demo-${name}`, 40, name === 'code' ? ['fb-001'] : [], (run) => run.demoScenes([name], index === 0))));
-    units.push(screenUnit('demo-hard', 60, [], (run) => run.hardScenes()));
+    // fb-058 to fb-061 (docs/feedback.md): the big-numbers maths turn. `--only fb-059` is the hard group's judging of its own scene (fb-060, fb-061 and fb-058 likewise; the ask and maths groups too)
+    units.push(screenUnit('demo-hard', 60, ['fb-058', 'fb-059', 'fb-060', 'fb-061'], (run) => run.hardScenes()));
   }
   for (const screen of LENS_SCREENS) {
     units.push({
@@ -1483,6 +1552,26 @@ function buildUnits(args: Args, welcome: Welcome): { readonly units: Unit[]; rea
     run: async (servers, out) => {
       const scenes = await journeyGroup(servers.main as string, join(args.out, 'journey'), args.timeoutMs, plain);
       out.lines.push('\njourney (1280x800, replay brain: typing, a tap, a drag, an undo and rest, with the hook\'s timings)');
+      sceneLines(out, scenes);
+    },
+  });
+  units.push({
+    name: 'fb-055',
+    needs: 'main',
+    weight: 60,
+    run: async (servers, out) => {
+      const scenes = await labelGroup(servers.main as string, join(args.out, 'fb-055'), args.timeoutMs, plain);
+      out.lines.push('\nfb-055 (a label the brain drew is tapped to ask about it: 1280x800 with a mouse, 1180x820 with a finger, the journey\'s fuzzy tap; replay brain)');
+      sceneLines(out, scenes);
+    },
+  });
+  units.push({
+    name: 'fb-064',
+    needs: 'main',
+    weight: 30,
+    run: async (servers, out) => {
+      const scenes = await undoGroup(servers.main as string, join(args.out, 'fb-064'), args.timeoutMs, plain);
+      out.lines.push('\nfb-064 (the Undo chip puts the answer before back with its labels and words, and takes everything of the one it undoes; 1280x800, replay brain)');
       sceneLines(out, scenes);
     },
   });
@@ -1555,6 +1644,17 @@ function buildUnits(args: Args, welcome: Welcome): { readonly units: Unit[]; rea
     run: async (_servers, out) => {
       const results = await loopGroup(plain);
       out.lines.push('\nloop (820x971)');
+      checkLines(out, results);
+    },
+  });
+  // fb-062 (docs/feedback.md): the loop missed a title over text and accepted a fix that moved things off the canvas. `--only fb-062` runs just this.
+  units.push({
+    name: 'fb-062',
+    needs: 'none',
+    weight: 10,
+    run: async (_servers, out) => {
+      const results = await fb062Group(plain);
+      out.lines.push('\nfb-062 (1344x866: a title on words, and the fixes that dodge it)');
       checkLines(out, results);
     },
   });

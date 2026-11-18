@@ -12,3 +12,4 @@ export * from './check';
 export * from './sum';
 export * from './written';
 export * from './written';
+export * from './accepted';

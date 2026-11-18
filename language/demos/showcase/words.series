@@ -1,0 +1,48 @@
+# Words: the pages for what a person reads (PLAN-catalogue.md). Reading aloud is a hand (a tap on the speaker), so it has no page here.
+
+# prose: a question of fact, answered plainly in a reading column.
+scene prose page brisk
+look paper
+say ans strong | Canberra.
+say | A new city, built between Sydney and Melbourne.
+wait 1.3s
+
+# bigtype: a few words set large, like a film's title card.
+scene bigtype stack brisk
+look paper
+style whisper size=s ink=dim enter=fade by=all
+style card size=xxl weight=bold face=display enter=slam by=all
+cam push over=2.5s
+say lead whisper | a short film about
+say big card @with | WAITING
+wait 0.38s
+
+# fix: it takes a line back in view and writes the right thing beside it.
+scene fix stack brisk
+look paper
+say a3 enter=fade by=all | I am always right.
+correct a3 | I am *sometimes* right.
+wait 0.77s
+
+# alphabets: one greeting in each of seven scripts, each drawn in its own letters.
+scene alphabets stack brisk
+look paper
+say ar | مرحبا بالعالم
+say he @with | שלום עולם
+say hi @with | नमस्ते दुनिया
+say th @with | สวัสดีชาวโลก
+say zh @with | 你好世界
+say ja @with | こんにちは世界
+say ko @with | 안녕하세요 세계
+wait 1.7s
+
+# code: source taken exactly as written, indentation kept, monospaced and coloured.
+scene code caption brisk
+look paper
+code cfg ts file=config.ts
+| export const config = {
+|   retries: 3,
+|   timeoutMs: 2_500,
+| } as const;
+say enter=fade by=all dur=0.2s | Kept exactly as written.
+wait 0.77s

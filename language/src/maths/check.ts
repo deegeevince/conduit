@@ -9,7 +9,9 @@
 import { nodeOf, pathOf } from '../document';
 import type { DocNode, Document, NodeId } from '../document';
 import type { LessonAsk, LessonContext, LessonStep } from '../lesson';
-import { agrees, answerText, isText, parseAnswer, sameAnswer, askUnit } from './answer';
+import { agrees, answerText, parseAnswer } from './answer';
+import { compareAccepted } from './accepted';
+import type { Cmp } from './accepted';
 import type { Answer } from './answer';
 import { fragments, solveQuestion, statementsIn } from './solve';
 import type { Solved } from './solve';
@@ -50,21 +52,6 @@ export interface WayCheck {
   readonly findings: readonly MathFinding[];
   /** the question the way answers, as printed, and what it works out to when it is a sum */
   readonly question: { readonly text: string; readonly computed: string | null } | null;
-}
-
-type Cmp = 'same' | 'different' | 'unknown';
-
-function compareAccepted(accepted: string, answers: readonly Answer[], unit: string | null): Cmp {
-  const clockAnswer = answers.some((a) => !Array.isArray(a) && !isText(a) && (a as { t: string }).t === 'clock');
-  // `9.20` for 9:20 is how a child writes a time
-  const written = clockAnswer && /^\s*\d{1,2}\.\d{2}\s*$/.test(accepted) ? accepted.replace('.', ':') : accepted;
-  const parsed = parseAnswer(written);
-  if (parsed === null) return 'unknown';
-  const u = askUnit(unit);
-  if (answers.some((a) => sameAnswer(parsed, a, u))) return 'same';
-  const parsedText = isText(parsed);
-  if (parsedText !== answers.every(isText)) return 'unknown';
-  return 'different';
 }
 
 function summarise(statuses: readonly Cmp[]): AskStatus {

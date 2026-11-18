@@ -2,7 +2,8 @@
 // events at the places a hand would, and waits for the real brain between steps. Nothing is replayed. `window.__journey` says where it is and,
 // for each step, when things happened (the page's clock and `performance.now()`), for a film editor that cuts the waits and places captions.
 
-import { parseJourney, seeded } from './journey-script';
+import { alternativesOf, parseJourney, seeded } from './journey-script';
+import { likeness, norm } from './journey-words';
 import type { FocusBox, FocusSample, JourneyState, JourneyStep, Stamp, StepTiming } from './journey-script';
 import type { StageApp } from './stage-app';
 import type { ControlView, StageElementView } from '../contracts/painter';
@@ -16,7 +17,6 @@ declare global {
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 const stamp = (): Stamp => ({ at: Date.now(), perf: performance.now() });
 const ease = (t: number): number => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
-const norm = (text: string): string => text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 
 /** a tap target that never shows, a rest that never comes: how long each is waited for */
 const TAP_WAIT_MS = ((): number => {
@@ -166,6 +166,52 @@ export function startJourney(options: JourneyOptions): JourneyState {
     return best?.target ?? null;
   };
 
+  // ---- labels: what a tap can ask about (fb-055). A label is the brain's words set against a part (`say callout near=x`, a figure part's `label=`), and the text layer
+  // carries it as `.stage__text-block--ask`. `tap | Brakes` finds the closest of them by what the words say: "Brakes" finds "brake disc", "brakes" and "Brake".
+  /** the labels on stage now: each is the first line of its words, in stage pixels (the text layer is only there while the stage is at rest) */
+  const labels = (): Target[] => {
+    const at = stageBox();
+    const seen = new Set<string>();
+    const out: Target[] = [];
+    for (const holder of document.querySelectorAll<HTMLElement>('.stage__text-block--ask')) {
+      const group = holder.dataset['askGroup'] ?? holder.dataset['key'] ?? '';
+      const label = holder.dataset['ask'] ?? '';
+      const line = holder.querySelector<HTMLElement>('.stage__text-line');
+      if (label === '' || seen.has(group) || line === null || holder.closest('[data-moving]') !== null) continue;
+      const rect = line.getBoundingClientRect();
+      if (rect.width < 2 || rect.height < 2 || rect.right < at.left || rect.bottom < at.top || rect.left > at.right || rect.top > at.bottom) continue;
+      seen.add(group);
+      out.push({ id: holder.dataset['askId'] ?? group, label, box: { x: rect.left - at.left, y: rect.top - at.top, width: rect.width, height: rect.height }, tappable: true, key: holder.dataset['key'] ?? group });
+    }
+    return out;
+  };
+
+  const findLabel = (wanted: string): Target | null => {
+    let best: { target: Target; score: number } | null = null;
+    for (const target of labels()) {
+      const score = likeness(target.label, wanted);
+      if (score >= 0 && (best === null || score < best.score)) best = { target, score };
+    }
+    return best?.target ?? null;
+  };
+
+  /** what `tap | <words>` taps: a choice or a control that says exactly that; else the closest label by its words; else a choice or control that has them (`findTarget`).
+   *  Words that cannot be tapped (a figure's description, a line of speech that names the part) are no target: a tap there does nothing, so the step is skipped or stops instead. */
+  const findTap = (wanted: string): Target | null => {
+    const exact = findTarget(wanted);
+    if (exact !== null && exact.tappable && norm(exact.label) === norm(wanted)) return exact;
+    return findLabel(wanted) ?? (exact !== null && exact.tappable ? exact : null);
+  };
+
+  /** what a tap that lists alternatives taps: the first of them, in the order written, that is a real choice, control or label on stage; and which it was */
+  const findAmong = (wanted: string): { readonly target: Target; readonly used: string } | null => {
+    for (const alternative of alternativesOf(wanted)) {
+      const target = findTap(alternative);
+      if (target !== null) return { target, used: alternative };
+    }
+    return null;
+  };
+
   /** the target, once it has stopped moving and is on stage; null if it does not come in `waitMs` */
   const settled = async (find: () => Target | null, waitMs: number): Promise<Target | null> => {
     const until = performance.now() + waitMs;
@@ -202,12 +248,45 @@ export function startJourney(options: JourneyOptions): JourneyState {
   };
   const sampler = window.setInterval(sampleFollow, 100);
 
-  /** the step whose turn is open: when its first line came and when the stage had played it out */
+  // ---- what can be seen: when the first new thing paints after a turn opens, and when the last visible thing changed. A film is cut by these, not by the events (a line
+  // is in the log before it is on screen, and the page judges a stage settled a while after it stopped changing).
+  const panelSeq = (): number => {
+    let newest = -1;
+    for (const row of document.querySelectorAll<HTMLElement>('.lang__row[data-seq]')) newest = Math.max(newest, Number(row.dataset['seq']));
+    return newest;
+  };
+  const shownKeys = (): Set<string> => new Set(app.painter.snapshot().elements.filter((element) => element.opacity > 0.02 && element.phase !== 'struck').map((element) => element.key));
+  /** what stood when the watched turn opened: a new panel row or stage element after it is the first line painting */
+  let paintBase = { seq: -1, keys: new Set<string>() };
+  const painted = (): boolean => {
+    if (panelSeq() > paintBase.seq) return true;
+    return app.painter.snapshot().elements.some((element) => element.opacity > 0.05 && element.phase !== 'struck' && !paintBase.keys.has(element.key));
+  };
+  const look = (): string => {
+    const snap = app.painter.snapshot();
+    let out = '';
+    for (const element of snap.elements) if (element.opacity > 0.02 && element.phase !== 'struck') out += `${element.key}:${Math.round(element.box.x)},${Math.round(element.box.y)},${Math.round(element.box.width)},${Math.round(element.box.height)},${Math.round(element.opacity * 25)};`;
+    for (const control of snap.controls) out += `${control.key}=${String(control.value)};`;
+    for (const chart of snap.charts) out += `${chart.key}@${Math.round(chart.box.x)},${Math.round(chart.box.y)},${Math.round(chart.box.width)},${Math.round(chart.box.height)};`;
+    const rows = document.querySelectorAll('.lang__row');
+    return `${out}|${rows.length}|${rows[rows.length - 1]?.textContent?.length ?? 0}|${panelSeq()}`;
+  };
+  let lastLook = '';
+  let lastChange: Stamp = stamp();
+  const looker = window.setInterval(() => {
+    const now = look();
+    if (now === lastLook) return;
+    lastLook = now;
+    lastChange = stamp();
+  }, 40);
+
+  /** the step whose turn is open: when its first line came and painted, and when the stage had played it out */
   let watched: StepTiming | null = null;
   const watch = (): void => {
     if (watched === null || watched.turn === null) return;
     if (watched.firstLine === null) {
-      if (app.lang.entriesOf(watched.turn).length > 0) watched.firstLine = stamp();
+      if (watched.firstLineEvent === null && app.lang.entriesOf(watched.turn).length > 0) watched.firstLineEvent = stamp();
+      if (painted()) watched.firstLine = stamp();
     } else if (watched.turnEnded === null && app.painter.snapshot().turn === null) watched.turnEnded = stamp();
   };
   const watcher = window.setInterval(watch, 25);
@@ -316,6 +395,7 @@ export function startJourney(options: JourneyOptions): JourneyState {
       const turn = app.lang.turn;
       if (turn !== null && turn !== before) {
         timing.turn = turn;
+        paintBase = { seq: panelSeq(), keys: shownKeys() };
         watched = timing;
         return;
       }
@@ -325,11 +405,17 @@ export function startJourney(options: JourneyOptions): JourneyState {
   };
 
   const doTap = async (step: JourneyStep, timing: StepTiming): Promise<boolean> => {
-    const target = await settled(() => findTarget(step.text), step.optional ? OPTIONAL_WAIT_MS : TAP_WAIT_MS);
+    const picked: { used: string | null } = { used: null };
+    const target = await settled(() => {
+      const found = findAmong(step.text);
+      picked.used = found?.used ?? null;
+      return found?.target ?? null;
+    }, step.optional ? OPTIONAL_WAIT_MS : TAP_WAIT_MS);
     if (target === null) {
       if (step.optional) return false;
       return fail(`step ${step.n} (line ${step.line}): "${step.text}" never appeared on stage within ${Math.round(TAP_WAIT_MS / 1000)} s, so the journey stopped there`);
     }
+    timing.used = picked.used;
     const before = app.lang.turn;
     const to = globalOf(target.box);
     await travel(to.x, to.y, 650);
@@ -485,7 +571,8 @@ export function startJourney(options: JourneyOptions): JourneyState {
       await sleep(50);
     }
     noteModel();
-    timing.rest = stamp();
+    timing.restSettled = stamp();
+    timing.rest = lastChange;
   };
 
   const run = async (): Promise<void> => {
@@ -533,6 +620,7 @@ export function startJourney(options: JourneyOptions): JourneyState {
   const finish = (): void => {
     window.clearInterval(sampler);
     window.clearInterval(watcher);
+    window.clearInterval(looker);
     cancelAnimationFrame(focusFrame);
     cursor.hide();
   };
@@ -566,10 +654,13 @@ function blank(step: JourneyStep): StepTiming {
     typingEnd: null,
     sent: null,
     firstLine: null,
+    firstLineEvent: null,
     turnEnded: null,
     rest: null,
+    restSettled: null,
     tapAt: null,
     tapped: null,
+    used: null,
     dragStart: null,
     dragEnd: null,
     drag: null,

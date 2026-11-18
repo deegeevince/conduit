@@ -1,4 +1,4 @@
-import { DEFAULT_LOOK, FIRST_LOAD_DEMO, LineNormalizer, LineReader, parseLine, parseReplayDirective, serializeLine, tourActionOf, tourTryFor } from '@conduit/language';
+import { DEFAULT_LOOK, FIRST_LOAD_DEMO, LineNormalizer, LineReader, parseLine, parseReplayDirective, partTapText, serializeLine, tourActionOf, tourTryFor } from '@conduit/language';
 import overtureScript from '@conduit/language/demos/overture.series?raw';
 import type { ActivityState, ActionRisk, BackEvent, ControlValue, ControlValues, CriticFinding, DataTable, InkMarks, Issue, PassState, Line, LeadWindow, LookId, ScreenFacts, Services, Sight, StageEvent, TourAction, TurnEndReason, TurnInput, TurnSource } from '@conduit/language';
 import type { AppAct, AppHost } from '../contracts/app';
@@ -1570,6 +1570,43 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   // wherever it started. A finger or a mouse presses as it goes down, as before.
   const penDowns = new Map<number, { readonly x: number; readonly y: number }>();
   const PEN_TAP_TRAVEL = 8;
+
+  // fb-055. A label the brain drew (`say callout near=x`, `say label near=x`, a figure part's `label=`) can be tapped to ask about what it names: the tap is the next turn,
+  // as a choice's is, sent as an `act` that says which part. The target is the label's words (the text layer's `.stage__text-block--ask`, drawn with a quiet underline), not
+  // the drawn part under or beside them: a tap anywhere on a big drawn area (a car's body, a map's land) would be a question nobody asked, and a label is what shows it can be
+  // asked. A press on a label counts only when the pointer comes up again where it went down (a tap); a drag that starts, crosses or ends on a label is a drag, whatever has
+  // the drag (a pan, Draw, a slider, a selection of text), and a choice or a control under the finger is still theirs (they are asked first).
+  const LABEL_TAP_TRAVEL = PEN_TAP_TRAVEL;
+  const labelDowns = new Map<number, { readonly x: number; readonly y: number; readonly group: string }>();
+  const labelOf = (target: EventTarget | null): HTMLElement | null => (target instanceof Element ? target.closest<HTMLElement>('.stage__text-block--ask') : null);
+  /** the label under a screen point, for a tap that comes as a point (the lens's) */
+  const labelAtPoint = (clientX: number, clientY: number): HTMLElement | null => labelOf(document.elementFromPoint(clientX, clientY));
+  // the label under the pointer says so: `data-lit` is `hot` (the pointer is over it) or `press` (it is held). Set from the pointer events, not from :hover, so that a pointer
+  // that is made by a script (the journey's) shows it as a hand's does.
+  let lit: { readonly group: string; readonly state: 'hot' | 'press' } | null = null;
+  const light = (holder: HTMLElement | null, state: 'hot' | 'press'): void => {
+    const group = holder?.dataset['askGroup'] ?? null;
+    // (the layer is built again when the words change under a pointer that has not moved: what was lit is then lit again)
+    if (lit === null ? group === null : group !== null && lit.group === group && lit.state === state && text.root.querySelector('[data-lit]') !== null) return;
+    for (const node of text.root.querySelectorAll<HTMLElement>('[data-lit]')) delete node.dataset['lit'];
+    lit = group === null ? null : { group, state };
+    if (group === null) return;
+    for (const node of text.root.querySelectorAll<HTMLElement>('.stage__text-block--ask')) if (node.dataset['askGroup'] === group) node.dataset['lit'] = state;
+  };
+  const tapLabel = (holder: HTMLElement): void => {
+    if (starting || disposed) return;
+    const id = holder.dataset['askId'];
+    const label = holder.dataset['ask'];
+    if (id === undefined || label === undefined || label === '') return;
+    const at = painter.snapshot();
+    const turn = at.turn ?? painter.recording()?.turn ?? null;
+    // the tour's own pages and the first-load demo are not a drawing the brain made: a label there asks nothing of it
+    if (turn !== null && (turn.startsWith(PAGE_PREFIX) || turn.startsWith(LOCAL_TURN))) return;
+    const part = { label, on: holder.dataset['askOn'] ?? null };
+    sendBack({ type: 'tap', turn, id, text: label, playhead: at.playhead, choice: false });
+    // the label is pressed in as a choice is, and the other choices recede: the stage heard it before the brain has
+    void submit({ kind: 'act', id, text: partTapText(id, part), values: {}, part }, holder.dataset['key'] ?? null, true).catch(noteTurnFailure);
+  };
   const onPointerDown = (event: PointerEvent): void => {
     if (event.button !== 0 || inChart(event) || inInk(event)) return;
     // with the lens a finger is the lens's to place (`ownsPointer`, and a tap when it lifts); what the work mode hands on from under its layer is not a finger of the lens's
@@ -1605,12 +1642,26 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
       return;
     }
     if (starting && tappableAt(x, y)) return;
+    // a label is asked when the pointer comes up (a Pencil's tap comes here on its up already): a press now is only held
+    const label = labelOf(event.target);
+    if (label !== null) {
+      if (event.type === 'pointerdown') {
+        labelDowns.set(event.pointerId, { x: event.clientX, y: event.clientY, group: label.dataset['askGroup'] ?? '' });
+        light(label, 'press');
+      } else tapLabel(label);
+      return;
+    }
     painter.tapAt(x, y);
   };
   const onPointerMove = (event: PointerEvent): void => {
     if (inChart(event) || inInk(event)) return;
     const down = penDowns.get(event.pointerId);
     if (down !== undefined && Math.hypot(event.clientX - down.x, event.clientY - down.y) > PEN_TAP_TRAVEL) penDowns.delete(event.pointerId);
+    const held = labelDowns.get(event.pointerId);
+    if (held !== undefined && Math.hypot(event.clientX - held.x, event.clientY - held.y) > LABEL_TAP_TRAVEL) {
+      labelDowns.delete(event.pointerId);
+      light(null, 'hot');
+    } else if (held === undefined && event.pointerType !== 'touch' && event.buttons === 0) light(labelOf(event.target), 'hot');
     const point = localPoint(event);
     if (taken.has(event.pointerId)) {
       // A drag is not throttled: the picture follows the finger in the same frame.
@@ -1640,6 +1691,13 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   };
   const onPointerEnd = (event: PointerEvent): void => {
     mathUp(event);
+    const held = labelDowns.get(event.pointerId);
+    if (held !== undefined) {
+      labelDowns.delete(event.pointerId);
+      light(null, 'hot');
+      const label = event.type === 'pointerup' ? labelOf(event.target) : null;
+      if (label !== null && label.dataset['askGroup'] === held.group && Math.hypot(event.clientX - held.x, event.clientY - held.y) <= LABEL_TAP_TRAVEL) tapLabel(label);
+    }
     const down = penDowns.get(event.pointerId);
     penDowns.delete(event.pointerId);
     if (down !== undefined && event.type === 'pointerup' && Math.hypot(event.clientX - down.x, event.clientY - down.y) <= PEN_TAP_TRAVEL) pressAt(event);
@@ -1663,6 +1721,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     }
   };
   const onPointerLeave = (event: PointerEvent): void => {
+    light(null, 'hot');
     if (event.pointerType === 'touch' || taken.has(event.pointerId)) return;
     hoverAt = null;
     painter.pointer({ phase: 'move', x: -1e5, y: -1e5, pointer: -1 });
@@ -1833,6 +1892,11 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
         }
         const tappable = tappableAt(at.x, at.y);
         if (starting && tappable) return true;
+        const label = tappable ? null : labelAtPoint(clientX, clientY);
+        if (label !== null) {
+          tapLabel(label);
+          return true;
+        }
         painter.tapAt(at.x, at.y);
         return tappable;
       },

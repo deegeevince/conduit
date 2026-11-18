@@ -1,0 +1,49 @@
+# Things that work: the pages for what answers a hand (PLAN-catalogue.md).
+
+# switch: a switch and a pick, bound to a lamp: they answer at once, with no round trip.
+scene switch figure lines=1 brisk
+look paper
+rect floor 10,70 140x10 fill=dim
+rect stand 78,44 4x26 fill=ink
+circle bulb 80,34 12 fill=accent soft=4
+card tools | Try it
+toggle power on in=tools | Light on
+pick mood tabs in=tools | Warm | Cool | Party
+bind power=off | set bulb opacity=0.15
+bind mood=cool | set bulb fill=#7fb2ff
+bind mood=party | set bulb fill=#ff4fa3
+wait 1.8s
+
+# app: a counter that runs in a locked box on the stage and keeps its count.
+scene app caption brisk
+look paper
+app tally height=320 | Tally
+| <style>body{margin:0;padding:24px;text-align:center}#n{font-size:72px;margin:16px 0}button{font:inherit;min-height:48px;padding:0 28px;border:0;border-radius:var(--radius);background:var(--accent);color:var(--ground)}</style>
+| <div id="n">0</div><button id="add">Add one</button>
+| <script>var s=conduit.state()||{n:0},el=document.getElementById('n');function show(){el.textContent=s.n}document.getElementById('add').onclick=function(){s.n+=1;show();conduit.state(s);conduit.send('count',s.n)};show();</script>
+wait 2.85s
+
+# mockup: a phone screen with real fields and buttons at its true size.
+scene mockup caption brisk
+look studio
+screen s1 phone | Sign in
+nav close | Sign in
+heading | Welcome back
+field | Email | you@example.com
+field | Password | ••••••••
+button primary wide | Sign in
+say enter=cut | Sign-in screen.
+
+# music: the notes as ABC, drawn as a piano roll and played when the block is closed.
+scene music caption brisk
+look paper
+tune riff tempo=150 voice=piano | Two bars
+| M:4/4
+| L:1/8
+| K:C
+| V:1
+| c2 e2 g2 e2 | d2 f2 a4 |]
+| V:2
+| C,2 G,2 E,2 G,2 | G,,2 D,2 B,,4 |]
+say enter=fade by=all dur=0.2s | Written, drawn, played.
+wait 1.27s

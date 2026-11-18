@@ -13,7 +13,7 @@ export interface JourneyStep {
   readonly optional: boolean;
   /** `name: type | …`: what a film editor calls this step (`car`, `brakes`, `dragSpeed`); null when it has none */
   readonly name: string | null;
-  /** type: the words; tap: the label */
+  /** type: the words; tap: the label (a choice, a control, or a label the brain drew on a part, found by its words); `Brakes / Brake / Wheels` lists alternatives: the first that is on stage is tapped */
   readonly text: string;
   /** drag: the control's id or label, the two values and the seconds */
   readonly target: string;
@@ -49,17 +49,30 @@ export interface StepTiming {
   typingStart: Stamp | null;
   typingEnd: Stamp | null;
   sent: Stamp | null;
+  /** the first new line that PAINTS: the first panel row or the first stage element that was not there when the turn opened is on screen. What a film is cut by. */
   firstLine: Stamp | null;
+  /** the first line arriving in the page's log (before it paints); what `firstLine` was before the paint was timed */
+  firstLineEvent: Stamp | null;
   /** the turn's own end: the stage has played it out */
   turnEnded: Stamp | null;
-  /** the `rest` that followed: ended, still, and any critic or repair done or skipped */
+  /** the `rest` step: the last change anyone could see (a stage element, a control, a chart, a panel row) before the stage came to rest. What a film is cut by. */
   rest: Stamp | null;
+  /** the page judged the stage settled (still for a moment, any critic or repair done or skipped): the last visible change is `rest`, this comes after it */
+  restSettled: Stamp | null;
   /** a tap or an undo: the finger going down, and what it landed on */
   tapAt: Stamp | null;
   tapped: string | null;
+  /** a tap: which of the words it listed (`Brakes / Brake / Wheels`) was found and tapped; null for any other step, and for a tap that found nothing */
+  used: string | null;
   dragStart: Stamp | null;
   dragEnd: Stamp | null;
   drag: { readonly control: string; readonly from: number; readonly to: number; readonly reached: number; readonly readout: { readonly before: readonly string[]; readonly after: readonly string[] } } | null;
+}
+
+/** The alternatives a tap's words list, in the order wanted: `Brakes / Brake / Wheels` is three; words with no ` / ` in them are one. */
+export function alternativesOf(text: string): string[] {
+  const parts = text.split(/\s+\/\s+/).map((part) => part.trim()).filter((part) => part !== '');
+  return parts.length === 0 ? [text.trim()] : parts;
 }
 
 /** A box in CSS pixels of the page's viewport (so, pixels of a recording made at that size). */

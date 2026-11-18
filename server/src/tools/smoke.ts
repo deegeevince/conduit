@@ -956,7 +956,7 @@ export class Conversation {
         return problem;
       }
       if (Date.now() > deadline) {
-        return `no rest within ${Math.round(this.options.timeoutMs / 1000)} s (status "${probe.status}", clock ${probe.clock}, turn ${probe.turn ?? 'none'}, new report ${fresh.length > 0 ? 'yes' : 'no'}, ${tab.pending()} requests in flight${tab.pending() > 0 ? ` (${tab.pendingUrls().join(', ')})` : ''}, ${probe.moving ? 'elements still moving' : 'stage still'})`;
+        return `no rest within ${Math.round(limitMs / 1000)} s (status "${probe.status}", clock ${probe.clock}, turn ${probe.turn ?? 'none'}, new report ${fresh.length > 0 ? 'yes' : 'no'}, ${tab.pending()} requests in flight${tab.pending() > 0 ? ` (${tab.pendingUrls().join(', ')})` : ''}, ${probe.moving ? 'elements still moving' : 'stage still'})`;
       }
     }
   }
