@@ -537,7 +537,7 @@ export function startJourney(options: JourneyOptions): JourneyState {
     const at = valueNow();
     const nextFrame = (): Promise<void> => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
     let x = start.x;
-    const glide = async (to: number, ms: number): Promise<{ readonly at: number; readonly x: number }[]> => {
+    const glide = async (to: number, ms: number): Promise<{ readonly samples: { readonly at: number; readonly x: number }[]; readonly from: number; readonly to: number; readonly ms: number }> => {
       const from = x;
       const begin = performance.now();
       const samples: { at: number; x: number }[] = [];
@@ -547,7 +547,7 @@ export function startJourney(options: JourneyOptions): JourneyState {
         cursor.place(x, y);
         pointer('pointermove', x, y, true, stage);
         samples.push({ at: performance.now() - begin, x });
-        if (t >= 1) return samples;
+        if (t >= 1) return { samples, from, to, ms };
         await nextFrame();
       }
     };
@@ -558,7 +558,7 @@ export function startJourney(options: JourneyOptions): JourneyState {
     // a slider that is not yet at `from` is set there first, by hand, at a quicker pace than the drag
     if (Math.abs(at - from) > tolerance) await glide(start.x + (from - at) * perUnit, 600);
     timing.dragStart = stamp();
-    const samples = await glide(start.x + (to - at) * perUnit, Math.max(0.3, step.seconds) * 1000);
+    const main = await glide(start.x + (to - at) * perUnit, Math.max(0.3, step.seconds) * 1000);
     // the value is where the pointer put it, to the control's own snapping; if it is off by more than a stop, the hand leans the little that is left, steadily
     for (let i = 0; i < 2 && Math.abs(valueNow() - to) > tolerance; i += 1) await glide(x + (to - valueNow()) * perUnit, 220);
     await sleep(180);
@@ -567,7 +567,7 @@ export function startJourney(options: JourneyOptions): JourneyState {
     timing.dragEnd = stamp();
     lingerThen(1000);
     await sleep(350);
-    timing.drag = { control: control.id, from, to, reached: valueNow(), readout: { before, after: readout() }, pacing: pacingOf(samples) };
+    timing.drag = { control: control.id, from, to, reached: valueNow(), readout: { before, after: readout() }, pacing: pacingOf(main.samples, main) };
     return true;
   };
 
@@ -654,7 +654,7 @@ export function startJourney(options: JourneyOptions): JourneyState {
 }
 
 /** How the page kept the pace over the frames of a drag: `samples` are the pointer's places at each animation frame, `at` ms from the start. */
-function pacingOf(samples: readonly { readonly at: number; readonly x: number }[]): DragPacing {
+function pacingOf(samples: readonly { readonly at: number; readonly x: number }[], path: { readonly from: number; readonly to: number; readonly ms: number }): DragPacing {
   const gaps = samples.slice(1).map((sample, index) => sample.at - (samples[index] as { at: number }).at);
   const sorted = [...gaps].sort((a, b) => a - b);
   const round = (value: number): number => Math.round(value * 10) / 10;
@@ -667,6 +667,7 @@ function pacingOf(samples: readonly { readonly at: number; readonly x: number }[
     slow: gaps.filter((gap) => gap > 25).length,
     monotonic: steps.every((step) => step >= -1e-9) || steps.every((step) => step <= 1e-9),
     maxStepPx: round(steps.reduce((most, step) => Math.max(most, Math.abs(step)), 0)),
+    deviationPx: round(samples.reduce((most, sample) => Math.max(most, Math.abs(sample.x - (path.from + (path.to - path.from) * ease(Math.min(1, sample.at / path.ms))))), 0)),
     jerkPx: round(steps.slice(1).reduce((most, step, index) => Math.max(most, Math.abs(step - (steps[index] as number))), 0)),
   };
 }

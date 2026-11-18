@@ -95,6 +95,8 @@ export interface DragPacing {
   readonly monotonic: boolean;
   /** the most the pointer moved between two frames, px */
   readonly maxStepPx: number;
+  /** how far the pointer ever was from its eased path (from where the knob was to where the value is, over the time asked): nothing steers it, so a pixel or less; steering it by what the control reports pulls it off by many */
+  readonly deviationPx: number;
   /** the most one frame's step differed from the one before it, px: a pointer at a steady eased pace changes its step by a pixel or two at most; a lurch is many */
   readonly jerkPx: number;
 }

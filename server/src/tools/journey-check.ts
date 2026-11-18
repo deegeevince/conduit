@@ -162,6 +162,7 @@ export async function journeyGroup(base: string, dir: string, timeoutMs: number,
         if (pacing === undefined) drags.push('the drag has no pacing');
         else {
           if (!pacing.monotonic) drags.push('the pointer went back and forth during the drag');
+          if (pacing.deviationPx > 1) drags.push(`the pointer was ${pacing.deviationPx} px off its steady eased path: something is steering it by what the control reports`);
           if (pacing.longestMs > 400) drags.push(`the page stalled for ${pacing.longestMs} ms during the drag (mean frame ${pacing.meanMs} ms, p95 ${pacing.p95Ms} ms)`);
         }
       }
