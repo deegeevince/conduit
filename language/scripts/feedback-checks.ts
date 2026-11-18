@@ -353,7 +353,7 @@ function fb100(): void {
   // what cannot be done is said at the line
   const unknown = turn(['figure car', 'drop sunroof', 'end'], 'prompt', first.stage);
   expect('fb-100: dropping a part the figure has not is told, and nothing else changes', [unknown.told.some((issue) => /no part or route called "sunroof"/.test(issue)), textsOf(unknown.stage)], [true, textsOf(first.stage)]);
-  const fresh = turn(['scene layout=caption canvas=wide', 'figure other cutaway | A new one', 'rect a 10,10 10x10 label="a"', 'drop a', 'end']);
+  const fresh = turn(['scene layout=caption canvas=wide', 'figure other cutaway | A new one', 'rect a 10,10 10x10 label="a"', 'drop a', 'end'], 'prompt');
   expect('fb-100: `drop` in a figure that is not on stage yet is told, and the part stays', [fresh.told.some((issue) => /already on stage/.test(issue)), (fresh.stage.elements.find((element) => element.id === 'other')?.figure as { rows?: unknown[] } | undefined)?.rows?.length], [true, 1]);
   const swept = turn(['scene layout=caption canvas=wide', 'figure other cutaway | A new one', 'rect a 10,10 10x10 label="a"', 'end'], 'prompt', first.stage);
   expect('fb-100: a new `scene` still clears the old figure (a new subject draws its own)', [swept.stage.elements.some((element) => element.id === 'car'), swept.stage.elements.some((element) => element.id === 'other')], [false, true]);
