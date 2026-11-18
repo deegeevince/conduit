@@ -284,3 +284,13 @@ say c6 callout at=50,8 in=p1 | top middle
 say c7 callout at=3,50 in=p1 | left edge
 say c8 callout at=97,55 in=p1 | right edge
 wait 1
+
+# fb-075: a photographed word problem is shown first, a callout on each number the question gives, and then the working: the photo leaves and nothing of it stands under the column
+scene fb-075 layout=figure canvas=wide
+pic p2 from=u1 aspect=1.5
+say c1 callout at=30,35 in=p2 | 503 at the start
+say c2 callout at=70,60 in=p2 | 278 sold
+wait 3
+scene fb-075-working layout=stack mood=calm
+say title | 503 apples, 278 sold
+math m75 column | 503 - 278

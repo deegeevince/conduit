@@ -1,6 +1,8 @@
 // Checks of the owner's feedback that the language settles (docs/feedback.md), each named by its row. Run by `pnpm timeline`.
 //
 //   fb-058  the brain is taught the `math` line for a column sum (no digits placed by hand), it is carried when the words are the owner's, and it never holds the answer
+//   fb-075  a photographed question is shown first with a callout on each number it gives, then worked as a `math` line; a finished sum comes back as an act the brain is
+//           taught to answer with one next question (the chapter, carried with a photo for the owner's words)
 //   fb-061  an `ask` accepts the ways of writing ONE answer: a thousands comma or space is part of a number; a step of the working that was listed with the answer is
 //           dropped with a reason; a hint is refused only when it shows what the ask really accepts
 //
@@ -76,8 +78,8 @@ function fb058(): void {
   // the hand-placed recipe is gone: no coordinates for digits, no right edge, no mono face, no free canvas
   expect('fb-058: the chapter teaches no hand-placed column', /align=right|face=mono|layout=free|canvas=square|a row every 10|path.*rule/.test(chapter), false);
   expect('fb-058: the chapter does not teach `problem` or the workspace', /\bproblem\b|workspace/i.test(chapter), false);
-  // the brief only shrinks (it was 1,348 characters)
-  expect(`fb-058: the maths chapter is no longer than it was (is ${chapter.length})`, chapter.length <= 1348, true);
+  // the brief stays short (it was 1,348 characters; fb-075 added the photo and the finished act, 560 more)
+  expect(`fb-058: the maths chapter stays short (is ${chapter.length})`, chapter.length <= 2000, true);
   // and it is carried for the owner's own words (they hold no digit and none of the old cue words), and by the maths card
   expect('fb-058: the owner\'s sentence is read as a maths question', asksForMaths(SENTENCE), true);
   const brief = buildTurnBrief(contextWith(), { kind: 'prompt', text: SENTENCE });
@@ -101,6 +103,21 @@ function fb058(): void {
   expect('fb-058: a say that states the sealed answer is refused', sealed.refused.some((issue) => issue.startsWith('spoiler')), true);
   const quiet = played(['scene stack', 'math w1 column worked | 4768 + 2557', 'say | Your turn: add them the same way.', 'math m1 column | 3486 + 2795', 'ask q1 is=7043 stage=1 | 5079 + 1964 = __']);
   expect('fb-058: a worked example, her own sum and an ask play with nothing refused', [quiet.refused, quiet.said], [[], []]);
+}
+
+// ---------------------------------------------------------------------------------------------------------------------------------
+// fb-075: a photographed question is shown with a callout on each number, then worked; a finished sum comes back as an act and is answered
+
+function fb075(): void {
+  const chapter = MATHS_CHAPTER;
+  expect('fb-075: the chapter teaches the photo first, a callout on each number it gives, then the working', [chapter.includes('`pic p1 from=u1`'), chapter.includes('callout at=x,y in=p1'), chapter.includes('`wait 3`'), chapter.includes('`scene stack` with the working')], [true, true, true, true]);
+  expect('fb-075: the chapter says a finished block is an act, answered with one next question and not the working again', [chapter.includes('m1: all right, after 1 wrong check'), /ONE next small question/.test(chapter), /never the working again/.test(chapter)], [true, true, true]);
+  const card: TechniqueCard = { id: 'seed:teach-young-learner', title: 'A maths question to work out', when: 'a child needs help with a maths question', example: ['scene stack', 'say title | Flowers', 'ask a1 is=12 | How many flowers? __'] };
+  const brief = buildTurnBrief({ ...contextWith([card]), photos: { u1: 0.8 } }, { kind: 'prompt', text: "Help me work this out, don't tell me the answer", images: ['u1'] });
+  expect('fb-075: the brief for a photographed question carries the photo lesson and the photo\'s own frame', [brief.includes('A PHOTO of the question'), brief.includes('`say callout at=52,18 in=<pic id>')], [true, true]);
+  const taught = played(['scene layout=figure canvas=wide', 'pic p1 from=u1 aspect=0.8', 'say c1 callout at=43,32 in=p1 | 503 apples at the start', 'say c2 callout at=16,38 in=p1 | 278 sold', 'wait 3', 'scene stack', 'say title | 503 apples, 278 sold', 'math m1 column | 503 - 278']);
+  expect('fb-075: what the chapter teaches plays with nothing refused or said', [taught.refused, taught.said], [[], []]);
+  expect('fb-075: ...and it is the photo, the callouts, then the working', taught.lines, ['scene', 'pic', 'say', 'say', 'wait', 'scene', 'say', 'math']);
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------------
@@ -168,6 +185,7 @@ function fb061(): void {
 /** Run by `pnpm timeline`. */
 export function feedbackChecks(): boolean {
   fb058();
+  fb075();
   fb061();
   process.stdout.write(`\nfeedback checks: ${passed} held${ok ? '' : ', some failed'}\n`);
   return ok;
