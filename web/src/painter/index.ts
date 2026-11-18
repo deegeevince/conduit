@@ -38,6 +38,7 @@ import { Reporter } from './report';
 import { squeezeOf } from './squeeze';
 import type { Squeeze } from '../contracts/squeeze';
 import { annotated } from './annotate';
+import { heldOf } from './hold';
 import { leadersOf, placedOf, sightOf } from './sight';
 import { textSignature, textSpansOf } from './text-out';
 import { downUi, easeUi, easingUi, isScreenBlock, moveUi, setUiPicture, typeUi, typingUi, uiBlockAt, uiMockupViews, upUi } from './ui-stage';
@@ -683,6 +684,7 @@ export function createPainter(options: PainterOptions): Painter {
     controls: heldValues(schedule),
     sight: (when: number) => sightOf(at, schedule, stage, when, wantsSnapshot()),
     placed: (when: number, keys: ReadonlySet<string>) => placedOf(at, schedule, when, keys),
+    held: (when: number, keys: ReadonlySet<string>) => heldOf(at, schedule, when, keys),
     skippedAt,
   });
 

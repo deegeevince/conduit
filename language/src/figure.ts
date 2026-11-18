@@ -58,8 +58,8 @@ export interface FigureSpec {
   readonly steps: readonly FigureStepSpec[];
 }
 
-/** The words a figure's own lines begin with; inside a figure these are its rows and nothing else's. */
-export const FIGURE_WORDS: readonly string[] = ['path', 'poly', 'line', 'ellipse', 'rect', 'circle', 'route', 'step'];
+/** The words a figure's own lines begin with; inside a figure these are its rows and nothing else's. `drop` takes parts away from a figure that is already on stage. */
+export const FIGURE_WORDS: readonly string[] = ['path', 'poly', 'line', 'ellipse', 'rect', 'circle', 'route', 'step', 'drop'];
 const PART_WORDS: readonly string[] = ['path', 'poly', 'line', 'ellipse', 'rect', 'circle'];
 
 const NAME = /^[a-z][a-z0-9_-]*$/;
@@ -90,6 +90,32 @@ export function figureRowLine(raw: string, ordinal: number): string {
   const first = rest[0] ?? '';
   const named = NAME.test(first.toLowerCase()) && !/^(smooth|optional|cut)$/i.test(first);
   return named ? text : [verb, `p${ordinal}`, ...rest].join(' ') + (tail === '' ? '' : ` ${tail}`);
+}
+
+/** What one row of a figure is: a part or a route (named, so that a figure written again can find it), a step (counted, not named), or a `drop` of named parts. */
+export type FigureRowKind =
+  | { readonly kind: 'part'; readonly id: string }
+  | { readonly kind: 'route'; readonly id: string }
+  | { readonly kind: 'step' }
+  | { readonly kind: 'drop'; readonly ids: readonly string[] }
+  | { readonly kind: 'other' };
+
+/** The reading of a figure's row that a figure written again goes by: parts and routes by their ids, as `readFigure` names them. */
+export function figureRowOf(raw: string): FigureRowKind {
+  const text = raw.trim();
+  const bar = barOf(text);
+  const head = (bar < 0 ? text : text.slice(0, bar)).trim();
+  const [verbWord = '', ...rest] = tokens(head);
+  const verb = verbWord.toLowerCase();
+  if (verb === 'step') return { kind: 'step' };
+  if (verb === 'drop') return { kind: 'drop', ids: rest.flatMap((word) => word.split(',')).map((word) => word.trim().toLowerCase()).filter((word) => NAME.test(word)) };
+  if (verb === 'route') {
+    const name = rest.find((word) => !word.includes('=') && NAME.test(word.toLowerCase()));
+    return name === undefined ? { kind: 'other' } : { kind: 'route', id: name.toLowerCase() };
+  }
+  if (!PART_WORDS.includes(verb)) return { kind: 'other' };
+  const idWord = rest.find((word) => !word.includes('=') && NAME.test(word.toLowerCase()) && !/^(smooth|optional|cut)$/i.test(word));
+  return idWord === undefined ? { kind: 'other' } : { kind: 'part', id: idWord.toLowerCase() };
 }
 
 function barOf(text: string): number {
@@ -136,6 +162,7 @@ export function readFigure(id: string, title: string, mode: FigureModeSpec, rows
       else if (steps.length < LIMIT.steps) steps.push({ show, words: words.slice(0, LIMIT.words) });
       continue;
     }
+    if (verb === 'drop') continue;
     if (!PART_WORDS.includes(verb)) {
       notes.push(`"${verbWord}" is not a line of a figure; ignored`);
       continue;
@@ -243,3 +270,9 @@ step show=veins,la | Fresh blood comes back into the left atrium.
 step show=lv,aorta | The left ventricle, the thickest wall, sends it to the whole body. || The left ventricle pumps it to the body.
 end
 say aside approx from=recalled | About 70 beats a minute at rest. Valves stop it flowing back.`;
+
+/**
+ * A figure already on stage is changed in place: said again under its id, then only what changes. Carried while one stands (never in the system prompt, which is full), because
+ * the figure's parts are not shapes the brain can `drop` or `set` one by one, and the only other way to change one was to draw the whole thing again in a new scene.
+ */
+export const FIGURE_EDIT = `A LABELLED DRAWING ON STAGE IS CHANGED IN PLACE, NOT DRAWN AGAIN: write \`figure <its id>\` again (a new title only if it changes), then only the lines that change, then \`end\`. A part or \`route\` line under an id the figure has replaces that one where it stands; a new id adds a part (give every new part an id of its own); \`drop <id> <id>\` takes parts or a route away. \`step\` lines, if you write any, are the whole list of steps (none leaves them as they are). Whatever you do not name stays exactly as it is, so the picture does not move; but whatever the change makes untrue goes with the part named, so drop that too. A route or a step you keep must not name a part you dropped. A new \`scene\` clears the whole drawing: it is for a new subject.`;

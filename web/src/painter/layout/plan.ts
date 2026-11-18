@@ -38,6 +38,11 @@ export interface PlanInput {
   readonly flowHeight: (width: number) => number;
   /** the least the words need to show what matters (headings and the tallest line under them); absent: no floor but a fifth of the column */
   readonly flowLeast?: (width: number) => number;
+  /**
+   * The height a lone block was resting in when the turn before ended, which this turn goes on with (`FigureHold`): the words give way to it, down to a line, before it is
+   * given less. Absent: nothing is being kept, and the block takes what the words leave.
+   */
+  readonly keepHeight?: number;
   /** the creation order of the first flowing word, or null */
   readonly flowOrder: number | null;
   /** the height the choices need across `width`, stage units; 0 when there are none */
@@ -240,7 +245,10 @@ export function planStage(input: PlanInput): StagePlan {
     flow = { x: column.x + column.width - flowW, y: column.y, width: flowW, height: column.height };
     flowWords = input.flowHeight(flow.width);
   } else {
-    const most = Math.min(words, column.height * FLOW_SHARE_MAX);
+    const asked = Math.min(words, column.height * FLOW_SHARE_MAX);
+    // a block that is being gone on with keeps the room it rested in: the words, which are only asking for what they and the words about to come would take (a line that is being
+    // replaced stands beside its new one for a moment), give way to it, down to a line; the oldest retire, as they do when a column is full
+    const most = input.keepHeight === undefined ? asked : Math.min(asked, Math.max(cellOf('m', viewport, look).height * 1.2, column.height - gap - input.keepHeight));
     // words written before every block stand above it; otherwise they stand below, as a caption does
     const firstBlock = blocks.reduce<number | null>((least, block) => (block.kind === 'picture' ? least : least === null ? block.order : Math.min(least, block.order)), null);
     const above = !needsPicture && input.flowOrder !== null && firstBlock !== null && input.flowOrder < firstBlock;

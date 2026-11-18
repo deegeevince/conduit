@@ -6,12 +6,15 @@
 //           and coaches only the learner who will do the working; the formula line it teaches reads
 //   fb-061  an `ask` accepts the ways of writing ONE answer: a thousands comma or space is part of a number; a step of the working that was listed with the answer is
 //           dropped with a reason; a hint is refused only when it shows what the ask really accepts
+//   fb-100  a labelled drawing (a `figure`) on stage is changed in place: said again under its id it keeps the scene and every part it does not name, replaces a part by its id, adds new
+//           ones and drops the ones that go; the brief names the parts by id and teaches this while one stands, and not on a tap that asks to look closer
 //
 // (fb-059, a title in a free scene, and fb-060, an ask that waits, are the painter's: `pnpm check --only fb-059`, `fb-060`.) Nothing here names a learner or copies a log.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
   EMPTY_STAGE,
+  FIGURE_EDIT,
   FULL_CAPABILITIES,
   LEAD_WINDOW,
   MATHS_CHAPTER,
@@ -24,10 +27,13 @@ import {
   matchAnswer,
   parseLine,
   parseScript,
+  LineNormalizer,
   LineReader,
+  TurnScore,
+  settle,
   textHolds,
 } from '../src/index';
-import type { TechniqueCard, TurnContext } from '../src/index';
+import type { StageBase, TechniqueCard, TurnContext, TurnOpening } from '../src/index';
 
 let passed = 0;
 let ok = true;
@@ -241,9 +247,117 @@ function fb008(): void {
   expect('fb-008: words the brain wrote with `say |` carry no such code', readRaw(['say | The planets are dots.']).codes, []);
 }
 
+
+// ---------------------------------------------------------------------------------------------------------------------------------
+// fb-100: the owner's film asked for a car, then "swap the engine for an electric motor and battery, and keep the rest of the car the same". The brain drew a new car in a new scene:
+// the car is a `figure`, whose parts are not shapes it could `drop` or `set`, the brief named none of their ids, and the only same-id way to change one was to write the whole figure again.
+
+/** Lines of Series pushed as a turn would push them (the reader, the normaliser, the score), on the stage the turn before left. */
+function turn(lines: readonly string[], opened: TurnOpening, base: StageBase = EMPTY_STAGE): { readonly score: TurnScore; readonly told: readonly string[]; readonly stage: StageBase } {
+  const score = new TurnScore(base, opened);
+  const reader = new LineReader();
+  let auto = 0;
+  const normalizer = new LineNormalizer(() => `x${(auto += 1)}`);
+  const told: string[] = [];
+  lines.forEach((raw, index) => {
+    const read = reader.read(raw);
+    if (read.kind === 'blank') return;
+    if (read.kind !== 'line') throw new Error(`fb-100 check: does not parse: ${raw}`);
+    const normalized = normalizer.normalize(read.line);
+    if (normalized.line === null) throw new Error(`fb-100 check: dropped: ${raw}`);
+    const pushed = score.push(normalized.line, index + 1, 0);
+    told.push(...[...read.issues, ...normalized.issues, ...pushed.issues].map((issue) => `${issue.code}: ${issue.message}`));
+  });
+  return { score, told, stage: settle(score.schedule, base, score.schedule.end + 1) };
+}
+
+const CAR_TURN = [
+  'scene layout=caption canvas=wide',
+  'figure car cutaway | The main parts of a car',
+  'path body fill=steel label="body" | M6 62 L6 50 C6 46 10 44 16 43 L90 41 L90 62 Z',
+  'rect engine 70,44 13x12 in=body fill=steel label="engine"',
+  'rect tank 25,51 13x7 in=body fill=red label="fuel tank"',
+  'path exhaust stroke=dim thick=1.5 label="exhaust" | M72 60 L20 62',
+  'ellipse wheel 22,64 9x9 fill=rubber label="wheel"',
+  'route power ink=accent via=tank,engine,wheel',
+  'step show=tank,engine | Fuel burns in the engine.',
+  'step show=wheel | The wheels turn.',
+  'end',
+  'say x1 aside | Springs sit over each wheel.',
+  'say x3 choice | How does an engine work?',
+];
+
+const SWAP_TURN = [
+  'figure car cutaway | The same car, electric',
+  'drop engine tank exhaust',
+  'rect motor 70,48 12x10 in=body fill=copper label="electric motor"',
+  'rect pack 25,56 40x6 in=body fill=blue label="battery pack"',
+  'route power ink=accent via=pack,motor,wheel',
+  'step show=pack,motor | The battery feeds the motor.',
+  'step show=wheel | The wheels turn.',
+  'end',
+];
+
+function fb100(): void {
+  const first = turn(CAR_TURN, 'prompt');
+  const rowsOf = (stage: StageBase): readonly { readonly cells: readonly string[]; readonly at: number }[] => {
+    const car = stage.elements.find((element) => element.id === 'car');
+    return car?.figure?.kind === 'structure' ? car.figure.rows : [];
+  };
+  const textsOf = (stage: StageBase): readonly string[] => rowsOf(stage).map((row) => row.cells[0] ?? '');
+  const part = (stage: StageBase, id: string): string | undefined => textsOf(stage).find((row) => new RegExp(`^\\w+ ${id}\\b`).test(row));
+  expect('fb-100: the car is a figure of five parts, a route and two steps', textsOf(first.stage).length, 8);
+
+  // the turn that swaps the engine: said again under the car's id, then only what changes
+  const second = turn(SWAP_TURN, 'prompt', first.stage);
+  const after = second.stage;
+  expect('fb-100: no new scene: the stage keeps its scene and the car stays one element', [after.scene.id, after.scene.index, after.elements.filter((element) => element.id === 'car').length], [first.stage.scene.id, first.stage.scene.index, 1]);
+  // (a choice of the turn before retires with the first line of the answer, as it always does: it is the words that stay)
+  expect('fb-100: the words of the first answer are still standing', after.elements.some((element) => element.id === 'x1' && !element.struck), true);
+  expect('fb-100: nothing was told as wrong (no refused line, no unknown id)', second.told, []);
+  for (const kept of ['body', 'wheel']) expect(`fb-100: ${kept} is untouched: the same line, the same time`, [part(after, kept), rowsOf(after).find((row) => row.cells[0] === part(first.stage, kept))?.at], [part(first.stage, kept), rowsOf(first.stage).find((row) => row.cells[0] === part(first.stage, kept))?.at]);
+  for (const gone of ['engine', 'tank', 'exhaust']) expect(`fb-100: ${gone} was dropped`, part(after, gone), undefined);
+  for (const added of ['motor', 'pack']) expect(`fb-100: ${added} was added`, part(after, added) !== undefined, true);
+  expect('fb-100: the route of the same name is replaced, not doubled', textsOf(after).filter((row) => row.startsWith('route power')), ['route power ink=accent via=pack,motor,wheel']);
+  expect('fb-100: the steps written are the whole list', textsOf(after).filter((row) => row.startsWith('step')), ['step show=pack,motor | The battery feeds the motor.', 'step show=wheel | The wheels turn.']);
+  expect('fb-100: the title is the new one', second.score.schedule.elements.find((element) => element.id === 'car' && element.exit === null)?.text, 'The same car, electric');
+
+  // a part said again under its id is replaced where it stands (its place in the list and its time are kept); the same words are nothing
+  const recoloured = turn(['figure car', 'rect engine 70,44 13x12 in=body fill=copper label="engine"', 'path body fill=steel label="body" | M6 62 L6 50 C6 46 10 44 16 43 L90 41 L90 62 Z', 'end'], 'prompt', first.stage).stage;
+  expect('fb-100: a part said again under its id is replaced where it stands', [textsOf(recoloured).length, textsOf(recoloured).findIndex((row) => row.startsWith('rect engine')), part(recoloured, 'engine')?.includes('fill=copper')], [8, textsOf(first.stage).findIndex((row) => row.startsWith('rect engine')), true]);
+  expect('fb-100: the other lines stay as they were', textsOf(recoloured).filter((row, at) => row !== textsOf(first.stage)[at]).length, 1);
+  // no step lines: the steps stay; the figure said again with no change is nothing
+  const same = turn(['figure car cutaway | The main parts of a car', 'end'], 'prompt', first.stage).stage;
+  expect('fb-100: a figure said again with nothing new changes nothing (steps and all)', textsOf(same), textsOf(first.stage));
+  // the whole figure written again, as it was, is nothing; with one part changed it changes that part and no more
+  const whole = turn(['figure car cutaway | The main parts of a car', ...CAR_TURN.slice(2, 10).map((row) => (row.startsWith('rect tank') ? row.replace('fill=red', 'fill=green') : row)), 'end'], 'prompt', first.stage).stage;
+  expect('fb-100: the whole figure written again changes only the part that differs', textsOf(whole).filter((row, at) => row !== textsOf(first.stage)[at]).map((row) => row.slice(0, 9)), ['rect tank']);
+
+  // what cannot be done is said at the line
+  const unknown = turn(['figure car', 'drop sunroof', 'end'], 'prompt', first.stage);
+  expect('fb-100: dropping a part the figure has not is told, and nothing else changes', [unknown.told.some((issue) => /no part or route called "sunroof"/.test(issue)), textsOf(unknown.stage)], [true, textsOf(first.stage)]);
+  const fresh = turn(['scene layout=caption canvas=wide', 'figure other cutaway | A new one', 'rect a 10,10 10x10 label="a"', 'drop a', 'end']);
+  expect('fb-100: `drop` in a figure that is not on stage yet is told, and the part stays', [fresh.told.some((issue) => /already on stage/.test(issue)), (fresh.stage.elements.find((element) => element.id === 'other')?.figure as { rows?: unknown[] } | undefined)?.rows?.length], [true, 1]);
+  const swept = turn(['scene layout=caption canvas=wide', 'figure other cutaway | A new one', 'rect a 10,10 10x10 label="a"', 'end'], 'prompt', first.stage);
+  expect('fb-100: a new `scene` still clears the old figure (a new subject draws its own)', [swept.stage.elements.some((element) => element.id === 'car'), swept.stage.elements.some((element) => element.id === 'other')], [false, true]);
+
+  // the brief: the parts by id, and how to change them, while a figure stands; none of it when nothing does or when a tap asks to look closer
+  const asked = { kind: 'prompt', text: 'Swap the engine for an electric motor and battery, and keep the rest of the car the same' } as const;
+  const brief = buildTurnBrief({ ...contextWith(), stage: first.stage }, asked);
+  expect('fb-100: the brief names the figure\'s parts by id, the routes and what each step lights', [brief.includes('figure of 5 parts: body, engine, tank "fuel tank", exhaust, wheel'), brief.includes('routes power via tank,engine,wheel'), brief.includes('2 steps lighting tank+engine | wheel')], [true, true, true]);
+  expect('fb-100: the brief teaches the in-place change of a figure on stage', brief.includes(FIGURE_EDIT), true);
+  expect('fb-100: and says a change to part of what is drawn keeps the scene and the parts that stay', [brief.includes('keep the scene and every part that stays'), brief.includes('the parts listed under a figure')], [true, true]);
+  expect('fb-100: the edit is not taught when no figure stands', buildTurnBrief(contextWith(), asked).includes(FIGURE_EDIT), false);
+  const closer = buildTurnBrief({ ...contextWith(), stage: first.stage }, { kind: 'act', id: 'engine', text: 'tapped the part "engine" to look closer (engine, on car)', values: {}, part: { label: 'engine', on: 'car' } });
+  expect('fb-100: a tap that asks to look closer is told to draw the part larger in a new scene, not to edit the figure', [closer.includes('in a new scene'), closer.includes(FIGURE_EDIT)], [true, false]);
+  expect('fb-100: an ordinary request never carries the look-closer wording', brief.includes('A tap means look closer'), false);
+  expect('fb-100: the edit chapter stays short (is ' + FIGURE_EDIT.length + ')', FIGURE_EDIT.length <= 900, true);
+}
+
 /** Run by `pnpm timeline`. */
 export function feedbackChecks(): boolean {
   fb058();
+  fb100();
   fb008();
   ro3a();
   fb061();

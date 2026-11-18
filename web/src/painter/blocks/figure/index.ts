@@ -2,7 +2,7 @@
 export type { FigureHeldState, FigureInput, FigureMode, FigureNote, FigurePart, FigureRoute, FigureShape, FigureStep, Pt } from './types';
 export { FIGURES, FIGURE_NAMES } from './fixtures';
 export { layoutFigure, litParts, MAX_LABELS, SHARES, TARGET, wrapWords } from './layout';
-export type { Chrome, FigureEnv, FigureLayout, LaidLabel, LaidPart } from './layout';
+export type { Chrome, FigureEnv, FigureKeep, FigureLayout, LaidLabel, LaidPart } from './layout';
 export { paintFigure, DIM, EASE_SECONDS, LABEL_DIM } from './paint';
 export type { Painted, PaintedWord, PaintOptions } from './paint';
 export { placeBoundary } from './boundary';

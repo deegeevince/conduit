@@ -30,7 +30,7 @@ import { modelOf, playingParts, rollKey } from './blocks/tune';
 import { mathKey } from './blocks/math';
 import { formulaRev } from './formula';
 import { drawUi, layoutUi, uiKey } from './ui-stage';
-import { figureKey, layoutFigureBlock } from './figure-stage';
+import { figureKey, layoutFigureBlock, noteFigure } from './figure-stage';
 import { loneAppScenes } from './apps';
 
 const SETTLE_SECONDS = 0.4;
@@ -297,7 +297,7 @@ export function probeStructure(structure: ElementSpan, schedule: Schedule, args:
           JSON.stringify(figure.marks ?? []),
           JSON.stringify(figure.math ?? null),
           figure.structure === 'math' ? mathKey(structure.key) : '',
-          figure.structure === 'screen' ? uiKey(structure.key) : figure.structure === 'figure' ? figureKey(structure.key) : '',
+          figure.structure === 'screen' ? uiKey(structure.key) : figure.structure === 'figure' ? figureKey(structure.key, structure.held) : '',
           structure.style.layer,
           args.look.id,
           args.look.name,
@@ -409,7 +409,7 @@ function planOf(structure: ElementSpan, schedule: Schedule, env: StructureEnv): 
         : [];
     // a written method as it stands at the end of this cluster: the marks and fills that were written by then
     const math = figure.math == null ? figure.math : { ...figure.math, marks: figure.math.marks.filter((mark) => mark.at < next), fills: figure.math.fills.filter((fill) => fill.at < next) };
-    const key = [signature(structure, present, rows, env.scope), JSON.stringify(marks), JSON.stringify(math), figure.structure === 'math' ? `${mathKey(structure.key)}.${formulaRev()}` : '', look.id, look.name, env.viewport.width, env.viewport.height, room.x.toFixed(2), room.y.toFixed(2), room.width.toFixed(2), room.height.toFixed(2), obstacles.map((o) => `${o.x.toFixed(0)},${o.y.toFixed(0)},${o.width.toFixed(0)},${o.height.toFixed(0)}`).join(';'), env.engine === undefined ? 'e' : 'b', figure.structure === 'screen' ? uiKey(structure.key) : figure.structure === 'figure' ? figureKey(structure.key) : '', env.viewport.dpr].join('|');
+    const key = [signature(structure, present, rows, env.scope), JSON.stringify(marks), JSON.stringify(math), figure.structure === 'math' ? `${mathKey(structure.key)}.${formulaRev()}` : '', look.id, look.name, env.viewport.width, env.viewport.height, room.x.toFixed(2), room.y.toFixed(2), room.width.toFixed(2), room.height.toFixed(2), obstacles.map((o) => `${o.x.toFixed(0)},${o.y.toFixed(0)},${o.width.toFixed(0)},${o.height.toFixed(0)}`).join(';'), env.engine === undefined ? 'e' : 'b', figure.structure === 'screen' ? uiKey(structure.key) : figure.structure === 'figure' ? figureKey(structure.key, structure.held) : '', env.viewport.dpr].join('|');
     const layout = remembered(key, () => {
       const shown: ElementSpan = { ...structure, figure: { ...figure, rows: figure.rows.slice(0, rows), marks, ...(math === undefined ? {} : { math }) } };
       // v2.2: a mock-up is laid out and drawn by the interface kit, as finished frames
@@ -457,6 +457,9 @@ function planOf(structure: ElementSpan, schedule: Schedule, env: StructureEnv): 
     const pad = 3;
     epochs.push({ start, look, layout, byOwner, ps, rows, cut: crowded ? { x: room.x - pad, y: room.y - pad, width: room.width + 2 * pad, height: room.height + 2 * pad } : null });
   }
+  // the layout the plan ends in is the one a figure stands in (a cache hit is still that layout)
+  const standing = epochs[epochs.length - 1];
+  if (figure.structure === 'figure' && standing !== undefined) noteFigure(structure.key, standing.layout);
   return { structure, members, epochs };
 }
 

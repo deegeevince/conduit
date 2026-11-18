@@ -22,6 +22,9 @@
 //                      the drawn part or on plain words; with a mouse and a finger; the journey's `tap | Brakes` finds "brake disc" (label-check.ts)
 //   fb-064             the Undo chip puts the answer before back whole: the car's labels (and a click on one asks about it), its words and its choice, and nothing of the answer it
 //                      undid stands over it (undo-check.ts)
+//   fb-100             a labelled drawing on stage is changed in place: the car is said again under its id, the engine, tank and exhaust dropped, a motor and a battery pack added; the scene and
+//                      the car (the same element in the same box) are kept, the labels of the parts that stay are still there, and the car stays put (its room within 2 px, its scale within 1%) though
+//                      the words round it change (inplace-check.ts; the language half is `pnpm timeline`)
 //   fb-075, fb-008     a turn that drew nothing (an "ok" after four tool calls; prose and refused markdown bullets) is told so and asked once more in the same turn, "Trying again…" first, never twice; bullets are
 //                      said as text, not refused: the real server with a stand-in for the brain's CLI (empty-check.ts, no model)
 //   lens               (flag on, ?lens=1; tablet 1180x820 at two pixels to the point with touch, and 390x844) a two-finger pinch to 2x, then a tap on a choice, a slider
@@ -69,6 +72,7 @@ import { ART_FAKE_MS, ART_SCREEN, artGroup } from './art-check';
 import { CONTINUE_SCREEN, continueFixtures, continueGroup } from './continue-check';
 import { journeyGroup } from './journey-check';
 import { labelGroup } from './label-check';
+import { inplaceGroup } from './inplace-check';
 import { undoGroup } from './undo-check';
 import { MEMORY_SCREEN, memoryGroup } from './memory-check';
 import { checkAxisTags, checkDeclared, checkLabels, checkNoEarlierChip, checkTourBar, scriptGroup } from './demo-check';
@@ -1829,6 +1833,16 @@ function buildUnits(args: Args, welcome: Welcome): { readonly units: Unit[]; rea
     run: async (servers, out) => {
       const scenes = await undoGroup(servers.main as string, join(args.out, 'fb-064'), args.timeoutMs, plain);
       out.lines.push('\nfb-064 (the Undo chip puts the answer before back with its labels and words, and takes everything of the one it undoes; 1280x800, replay brain)');
+      sceneLines(out, scenes);
+    },
+  });
+  units.push({
+    name: 'fb-100',
+    needs: 'main',
+    weight: 30,
+    run: async (servers, out) => {
+      const scenes = await inplaceGroup(servers.main as string, join(args.out, 'fb-100'), args.timeoutMs, plain);
+      out.lines.push('\nfb-100 (a labelled drawing on stage is changed in place: the scene and the car are kept, the parts that stay are still there, the car stays put while the words round it change; 1280x800, replay brain)');
       sceneLines(out, scenes);
     },
   });

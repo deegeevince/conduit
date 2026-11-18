@@ -53,6 +53,9 @@ function describeMath(math: MathFigure): string {
   return `${head}${blanks.length === 0 ? '' : `: blank ${blanks.join(' ')}`}${rows.size === 0 ? '' : `; parts ${[...rows].join(' ')} rule`}${math.steps ? `; ${grid.steps} steps` : ''}${filled}`;
 }
 
+/** How many of a figure's parts the brief names by id; the rest are counted. */
+const FIGURE_PARTS_LISTED = 30;
+
 /** A drawn thing in a few words, for memory and the transcript: enough to know what was there, not enough to redraw it. `box` is where it really rests, when known. */
 export function describeFigure(figure: Figure, box: CanvasBox | null = null): string {
   switch (figure.kind) {
@@ -83,9 +86,14 @@ export function describeFigure(figure: Figure, box: CanvasBox | null = null): st
       if (figure.structure === 'math' && figure.math != null) return describeMath(figure.math);
       if (figure.structure === 'problem') return `maths question${figure.problem?.question === undefined || figure.problem.question === '' ? '' : ` "${figure.problem.question}"`}`;
       if (figure.structure === 'figure') {
+        // The ids a part is changed by (a figure written again, `drop`), what each is called, what the routes pass through and what each step lights: enough to edit it in place.
         const read = readFigure('', '', figure.mode ?? 'plain', figure.rows.map((row) => row.cells[0] ?? ''));
-        const named = read.input.parts.flatMap((part) => (part.label === undefined ? [] : [part.label]));
-        return `figure of ${read.input.parts.length} parts${named.length === 0 ? '' : ` (labelled ${named.join(', ')})`}${read.input.steps.length === 0 ? '' : `, ${read.input.steps.length} steps`}`;
+        const { parts, routes, steps } = read.input;
+        const named = parts.map((part) => (part.label === undefined || part.label.toLowerCase() === part.id ? part.id : `${part.id} "${part.label}"`));
+        const shown = named.length > FIGURE_PARTS_LISTED ? [...named.slice(0, FIGURE_PARTS_LISTED), `… ${named.length - FIGURE_PARTS_LISTED} more`] : named;
+        const going = routes.length === 0 ? '' : `; routes ${routes.map((route) => `${route.id} via ${route.via.join(',')}`).join(', ')}`;
+        const stops = steps.length === 0 ? '' : `; ${steps.length} step${steps.length === 1 ? '' : 's'} lighting ${steps.map((step) => step.show.join('+')).join(' | ')}`;
+        return `figure of ${parts.length} parts: ${shown.join(', ')}${going}${stops}`;
       }
       if (figure.structure === 'tune') return describeTune(cachedTune(tuneRowsOf(figure.rows), { tempo: figure.tempo ?? null }), figure.rows.length);
       const name = figure.chart === null ? figure.structure : [...figure.words, `${figure.chart} chart`].join(' ');
@@ -311,6 +319,7 @@ export function settle(schedule: Schedule, base: StageBase, at: number, controls
       struck: isStruckAt(element, at),
       replaces: element.replaces,
       ...(element.href !== undefined && { href: element.href }),
+      ...(element.held !== undefined && { held: element.held }),
       ...(driven.length > 0 && { driven: driven.map(({ until: _until, ...change }) => ({ ...change, since: 0 })) }),
     };
   });

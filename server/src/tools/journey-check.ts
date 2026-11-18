@@ -49,6 +49,18 @@ export function scriptResults(): CheckResult[] {
   }
   add('journey-script-car', problems, `the car journey reads: ${'steps' in car ? car.steps.length : 0} steps`);
 
+  // the swap journey (fb-100): the car, then the one swap whose rest of the car must stay put
+  const swap = parseJourney(read('swap'));
+  const swapProblems: string[] = [];
+  if ('error' in swap) swapProblems.push(swap.error);
+  else {
+    const ops = swap.steps.map((step) => step.op).join(' ');
+    if (ops !== 'hold type rest hold type rest hold') swapProblems.push(`the swap journey reads as: ${ops}`);
+    const said = swap.steps.filter((step) => step.op === 'type').map((step) => `${step.name ?? ''}: ${step.text}`).join(' / ');
+    if (said !== 'car: Show me the main parts of a car / swap: Swap the engine for an electric motor and battery, and keep the rest of the car the same') swapProblems.push(`the swap journey says: ${said}`);
+  }
+  add('journey-script-swap', swapProblems, 'the swap journey reads: the car, then the swap of its engine for a motor and battery');
+
   const bad = ['type | hello\ntap Brakes', 'drag speed fifty > 100', 'wiggle | now', 'hold', ''];
   const wrong: string[] = [];
   for (const text of bad) {
