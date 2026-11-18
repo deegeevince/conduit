@@ -136,6 +136,12 @@ interface Building {
   lastSpeedT: number;
   erased: Set<string>;
   last: { x: number; y: number } | null;
+  /** the time of the newest sample taken (`event.timeStamp`): a sample older than it has been seen already, and is not taken again */
+  stamp: number;
+  /** how late the page was, in ms, for "Report a problem": at the pen's down, at its first move, and at its worst during the stroke */
+  downLate: number;
+  firstMoveAt: number | null;
+  worstLate: number;
 }
 
 interface Panning {
@@ -204,6 +210,11 @@ export function createInk(host: HTMLElement, options: InkOptions = {}): Ink {
   let sawPredicted = false;
   const listeners = new Set<() => void>();
   let eraserAt: { x: number; y: number } | null = null;
+  /** the layer is putting a stroke of its own into the document, and how many changes the document told of while it did (one: the stroke, and nothing else) */
+  let adding = false;
+  let changesWhileAdding = 0;
+  /** when the last stroke ended (`event.timeStamp`), for the gap a report shows before the next */
+  let lastEnd: number | null = null;
 
   const announce = options.announce ?? (() => undefined);
 
@@ -325,8 +336,8 @@ export function createInk(host: HTMLElement, options: InkOptions = {}): Ink {
   setBackgroundNow(background);
 
   // ---------------------------------------------------------------- pointer handling
-  const spaceOf = (clientX: number, clientY: number): { x: number; y: number } => {
-    const rect = root.getBoundingClientRect();
+  /** (`rect`: the layer's box, read once for an event that carries many samples: a 240 Hz pen hands four or more to each move) */
+  const spaceOf = (clientX: number, clientY: number, rect: { readonly left: number; readonly top: number } = root.getBoundingClientRect()): { x: number; y: number } => {
     return { x: (clientX - rect.left - view.ox) / view.scale, y: (clientY - rect.top - view.oy) / view.scale };
   };
 
@@ -336,8 +347,8 @@ export function createInk(host: HTMLElement, options: InkOptions = {}): Ink {
     return (kind === 'pen' ? (options.penSize ?? 3.2) : (options.highlighterSize ?? 18)) / view.scale;
   }
 
-  function sample(b: Building, e: PointerEvent): InkPoint | null {
-    const at = spaceOf(e.clientX, e.clientY);
+  function sample(b: Building, e: PointerEvent, rect?: { readonly left: number; readonly top: number }): InkPoint | null {
+    const at = spaceOf(e.clientX, e.clientY, rect);
     const x = Math.min(Math.max(at.x, 0), space.w);
     const y = Math.min(Math.max(at.y, 0), space.h);
     const t = Math.max(0, e.timeStamp - b.started);
@@ -397,6 +408,10 @@ export function createInk(host: HTMLElement, options: InkOptions = {}): Ink {
       lastSpeedT: e.timeStamp,
       erased: new Set(),
       last: null,
+      stamp: e.timeStamp,
+      downLate: 0,
+      firstMoveAt: null,
+      worstLate: 0,
     };
     if (asErase) model.beginErase();
     root.setPointerCapture(e.pointerId);
@@ -405,14 +420,19 @@ export function createInk(host: HTMLElement, options: InkOptions = {}): Ink {
   function extend(b: Building, e: PointerEvent): void {
     const coalesced = typeof e.getCoalescedEvents === 'function' ? e.getCoalescedEvents() : [];
     const events = coalesced.length > 0 ? coalesced : [e];
+    const rect = root.getBoundingClientRect();
     for (const ev of events) {
       if (b.erase) {
-        const at = spaceOf(ev.clientX, ev.clientY);
+        const at = spaceOf(ev.clientX, ev.clientY, rect);
         eraseAlong(b, at.x, at.y);
         eraserAt = at;
         continue;
       }
-      const point = sample(b, ev);
+      // A sample older than the newest one taken has been here before: an iPad hands the same batch of a Pencil's samples to two moves in a row when the page was busy as the stroke
+      // began (the owner's strokes of 18 Nov: 37, 50, 37, 50, 58 ms), and taken twice the line runs back over itself.
+      if (ev.timeStamp > 0 && ev.timeStamp < b.stamp) continue;
+      if (ev.timeStamp > b.stamp) b.stamp = ev.timeStamp;
+      const point = sample(b, ev, rect);
       if (point !== null && b.points.length < INK_LIMITS.pointsPerStroke && model.room(b.points.length + 1)) b.points.push(point);
     }
     b.predicted = [];
@@ -421,7 +441,7 @@ export function createInk(host: HTMLElement, options: InkOptions = {}): Ink {
       if (ahead.length > 0) sawPredicted = true;
       const last = b.points[b.points.length - 1];
       for (const ev of ahead) {
-        const at = spaceOf(ev.clientX, ev.clientY);
+        const at = spaceOf(ev.clientX, ev.clientY, rect);
         if (last !== undefined) b.predicted.push([at.x, at.y, last[2], Math.max(last[3], ev.timeStamp - b.started)]);
       }
     }
@@ -441,9 +461,31 @@ export function createInk(host: HTMLElement, options: InkOptions = {}): Ink {
       return;
     }
     const stroke: InkStroke = { ...b.stroke, points: b.points };
-    model.add(stroke);
-    note({ what: 'stroke kept', points: b.points.length, pen: b.stroke.tool });
-    redrawBase();
+    adding = true;
+    changesWhileAdding = 0;
+    try {
+      model.add(stroke);
+    } finally {
+      adding = false;
+    }
+    note({
+      what: 'stroke kept',
+      points: b.points.length,
+      pen: b.stroke.tool,
+      // for "Report a problem": how late the page was for this stroke (ms), and how long the pen had been up before it
+      downLate: Math.round(b.downLate),
+      ...(b.firstMoveAt === null ? {} : { firstMoveAt: Math.round(b.firstMoveAt) }),
+      worstLate: Math.round(b.worstLate),
+      ...(lastEnd === null ? {} : { penUpFor: Math.round(b.started - lastEnd) }),
+    });
+    lastEnd = b.stamp;
+    // The end of a stroke is the start of the gap before the next one, and nothing heavy is done in it: a pen's stroke lies over everything the base holds, so it is drawn alone, once
+    // (it was every stroke drawn again, twice: once when the document told of the change and once here). Anything else is a fresh draw: a highlighter goes under the pens, and a
+    // listener may have changed other strokes while it was told (a second change).
+    if (stroke.tool === 'pen' && changesWhileAdding === 1 && model.strokes[model.strokes.length - 1] === stroke) {
+      apply(baseCtx);
+      drawPen(baseCtx, stroke);
+    } else redrawBase();
     redrawLive();
     options.onStroke?.({ stroke, region: regions.length === 0 ? null : regionOf(stroke, regions) });
   }
@@ -515,6 +557,7 @@ export function createInk(host: HTMLElement, options: InkOptions = {}): Ink {
           b.points.push([at.x, at.y, 0.6, 0]);
         }
       }
+      if (b !== null) b.downLate = Math.max(0, started - e.timeStamp);
       redrawLive();
       record(started, e);
     }
@@ -548,6 +591,8 @@ export function createInk(host: HTMLElement, options: InkOptions = {}): Ink {
       return;
     }
     e.preventDefault();
+    if (b.firstMoveAt === null) b.firstMoveAt = Math.max(0, e.timeStamp - b.started);
+    b.worstLate = Math.max(b.worstLate, started - e.timeStamp);
     extend(b, e);
     redrawLive();
     record(started, e);
@@ -606,9 +651,24 @@ export function createInk(host: HTMLElement, options: InkOptions = {}): Ink {
   root.addEventListener('keydown', onKey);
   root.addEventListener('selectstart', stop);
   root.addEventListener('dragstart', stop);
+  // iPadOS offers a Pencil that goes down on a page to the system first (Scribble, the text gestures) and hands the page what is left. A stylus touch whose default is prevented is the
+  // page's alone. Pointer events are not touched by this; a finger's touch is left as it was.
+  const ownStylus = (e: TouchEvent): void => {
+    if (!e.cancelable) return;
+    for (const touch of Array.from(e.changedTouches)) {
+      if ((touch as Touch & { readonly touchType?: string }).touchType === 'stylus') {
+        e.preventDefault();
+        return;
+      }
+    }
+  };
+  root.addEventListener('touchstart', ownStylus, { passive: false });
+  root.addEventListener('touchmove', ownStylus, { passive: false });
 
   const unsubscribe = model.onChange(() => {
-    if (building === null) redrawBase();
+    // (a stroke the layer is adding itself is drawn by `finish`, alone)
+    if (adding) changesWhileAdding += 1;
+    if (building === null && !(adding && changesWhileAdding === 1)) redrawBase();
     emitChange();
   });
 

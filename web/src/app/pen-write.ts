@@ -26,6 +26,8 @@ const INFLATE = 0.2;
 const OWN_SHARE = 0.4;
 /** The colour of writing that a typed digit has taken over. */
 const DIM = '#b9b3a8';
+/** How long the pen has been up when the painter is told which cells now hold ink (it lays the sum out again and draws the stage for it: not work for the gap between two strokes). */
+const INK_TOLD_AFTER_MS = 500;
 
 interface Zone {
   readonly key: string;
@@ -143,6 +145,39 @@ export function mountPenWrite(options: PenWriteOptions): PenWrite {
     return options.views().some((view) => inside({ x: view.box.x - 16, y: view.box.y - 16, width: view.box.width + 32, height: view.box.height + 32 }, at.x, at.y));
   };
 
+  // ----------------------------------------------------------------------------------------------------------------------------- telling the painter
+  // The first stroke in a cell makes the painter lay the sum out again (the cell gets its ✕), draw the stage and hand the page its cells: in the task of the pen's `pointerup`, which is
+  // the start of the gap before the next stroke of the same digit. It is told once the pen has been up for a moment instead, and at once when a hand is about to do something else to the
+  // sum (a finger or a mouse goes down, a key is pressed), so that a digit typed over fresh ink still finds the ink there.
+  const inkToTell = new Map<string, { readonly key: string; readonly part: string }>();
+  let inkTimer: ReturnType<typeof setTimeout> | undefined;
+  const tellInkNow = (): void => {
+    clearTimeout(inkTimer);
+    if (inkToTell.size === 0) return;
+    const cells = [...inkToTell.values()];
+    inkToTell.clear();
+    for (const cell of cells) painter.mathInk(cell.key, cell.part, true);
+  };
+  const tellInkLater = (): void => {
+    clearTimeout(inkTimer);
+    if (inkToTell.size === 0) return;
+    inkTimer = setTimeout(() => {
+      if (downs.size > 0 || guard.penInContact) return;
+      tellInkNow();
+    }, INK_TOLD_AFTER_MS);
+  };
+  const onOtherHand = (e: Event): void => {
+    if (inkToTell.size === 0) return;
+    if (e instanceof PointerEvent) {
+      if (e.pointerType === 'pen') return;
+      // a hand resting by the pen is not a hand about to type
+      if (e.pointerType === 'touch' && (guard.penBusy(e.timeStamp) || Math.max(e.width, e.height) > PALM_SIZE)) return;
+    }
+    tellInkNow();
+  };
+  window.addEventListener('pointerdown', onOtherHand, true);
+  window.addEventListener('keydown', onOtherHand, true);
+
   // ----------------------------------------------------------------------------------------------------------------------------- the pen
   // It goes down on the stage: the ink begins the stroke at once; if the pen then comes up having hardly moved it was a tap, the stroke is thrown away and what is under it is pressed.
   const downs = new Map<number, { readonly x: number; readonly y: number; readonly eraser: boolean; readonly drawing: boolean; travel: number }>();
@@ -161,6 +196,8 @@ export function mountPenWrite(options: PenWriteOptions): PenWrite {
       if (!anywhere && !drawing && !onMethod(e)) return;
       downs.set(e.pointerId, { x: e.clientX, y: e.clientY, eraser: e.button === 5 || (e.buttons & 32) !== 0, drawing, travel: 0 });
       e.stopImmediatePropagation();
+      // nothing is laid out again while the pen writes
+      clearTimeout(inkTimer);
       ink.penDown(e);
       return;
     }
@@ -174,6 +211,7 @@ export function mountPenWrite(options: PenWriteOptions): PenWrite {
     downs.delete(e.pointerId);
     // the layer is the one to tell the guard the pen has lifted when it had the stroke; this makes sure that it is told, whoever had it
     guard.penLifted(e.pointerId, e.timeStamp);
+    tellInkLater();
     // (in Draw a tap on nothing is a dot, a mark like any other: only a tap on something that can be pressed is a press, fb-103)
     if (e.type === 'pointerup' && !down.eraser && Math.max(down.travel, Math.hypot(e.clientX - down.x, e.clientY - down.y)) <= PEN_TAP_TRAVEL && (!down.drawing || (options.pressable?.(e) ?? true))) {
       ink.abort(e.pointerId);
@@ -181,6 +219,20 @@ export function mountPenWrite(options: PenWriteOptions): PenWrite {
     }
   };
   for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel']) host.addEventListener(type, onPen as EventListener, true);
+  // iPadOS offers a Pencil that goes down on a page to the system first (Scribble, the text gestures, a pan) and hands the page what is left. The touch of a pen stroke that is being
+  // written here is the page's alone: its default is prevented (the pointer events are not touched by this; `pointerdown` comes before `touchstart`, so the stroke is known by then).
+  // A pen on a button or a field, a finger and a palm are left as they were.
+  const onStylus = (e: TouchEvent): void => {
+    if (downs.size === 0 || !e.cancelable) return;
+    for (const touch of Array.from(e.changedTouches)) {
+      if ((touch as Touch & { readonly touchType?: string }).touchType === 'stylus') {
+        e.preventDefault();
+        return;
+      }
+    }
+  };
+  host.addEventListener('touchstart', onStylus, { capture: true, passive: false });
+  host.addEventListener('touchmove', onStylus, { capture: true, passive: false });
 
   // A palm is ignored: once a pen has been seen, a touch that comes while the pen is on the screen, or whose contact is wider than a fingertip, is not a hand's press
   // (with the lens, the lens's own gestures say the same through the same guard)
@@ -228,7 +280,10 @@ export function mountPenWrite(options: PenWriteOptions): PenWrite {
       owner.delete(id);
       sumOf.delete(id);
       dimmed.delete(id);
-      if (own !== null && strokesOf(own.key, own.part).length === 0) painter.mathInk(own.key, own.part, false);
+      if (own !== null && strokesOf(own.key, own.part).length === 0) {
+        inkToTell.delete(`${own.key}|${own.part}`);
+        painter.mathInk(own.key, own.part, false);
+      }
     }
     const zones = zonesOf(options.views());
     for (const stroke of model.strokes) {
@@ -238,8 +293,10 @@ export function mountPenWrite(options: PenWriteOptions): PenWrite {
       if (own === null) continue;
       const sum = options.views().find((view) => view.key === own.key)?.sum;
       if (sum !== undefined) sumOf.set(stroke.id, sum);
-      painter.mathInk(own.key, own.part, true);
+      inkToTell.set(`${own.key}|${own.part}`, own);
     }
+    // (a stroke that came some other way than the pen's own up, an undo or a redo, is told of too)
+    if (downs.size === 0) tellInkLater();
     // the ink layer keeps its stage picture for what is outside the cells
     ink.setOwned((id) => owner.get(id) != null);
   };
@@ -260,6 +317,8 @@ export function mountPenWrite(options: PenWriteOptions): PenWrite {
     },
     sync(views) {
       takePen(views);
+      // a sum that has gone has no cells to tell of
+      for (const [id, cell] of [...inkToTell]) if (!views.some((view) => view.key === cell.key)) inkToTell.delete(id);
       // fb-097. The working a sum had written leaves with the sum: ink owned by a block that is no longer on the stage, or that now works another sum under the same id, is taken off
       const stale = model.strokes.filter((stroke) => {
         const own = owner.get(stroke.id);
@@ -278,6 +337,11 @@ export function mountPenWrite(options: PenWriteOptions): PenWrite {
       offChange();
       for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel']) host.removeEventListener(type, onPen as EventListener, true);
       host.removeEventListener('pointerdown', onTouch, true);
+      host.removeEventListener('touchstart', onStylus, true);
+      host.removeEventListener('touchmove', onStylus, true);
+      window.removeEventListener('pointerdown', onOtherHand, true);
+      window.removeEventListener('keydown', onOtherHand, true);
+      clearTimeout(inkTimer);
       ink.through(false);
       host.style.touchAction = touchActionWas;
       delete hook.__penWrite;

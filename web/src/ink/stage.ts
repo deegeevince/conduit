@@ -244,6 +244,10 @@ export function mountStageInk(stage: HTMLElement, menu: ComposerMenu, app: Stage
     const inked = throughOn && (penHeld.size > 0 || ink.model.strokes.length > 0);
     layer.hidden = !(explicit || inked);
     layer.classList.toggle('ink-stage--through', passing());
+    // While Draw is on, the stage under the layer takes the Pencil with no gesture of the browser's to wait for (`touch-action: none`), as a sum's stage does (`app/pen-write.ts`): once a
+    // pen has been seen the layer lets every pointer through, and a pen that went down on a stage that may still be panned or zoomed is the browser's to judge first. Not with the hand
+    // tool, which gives the page back to the fingers.
+    stage.classList.toggle('ink-stage-host--draw', explicit && !handOn);
     if (throughOn) bar.element.hidden = !explicit && ink.model.strokes.length === 0;
   };
   /**
@@ -372,6 +376,7 @@ export function mountStageInk(stage: HTMLElement, menu: ComposerMenu, app: Stage
       window.removeEventListener('pointercancel', penLeft);
       bar.dispose();
       ink.dispose();
+      stage.classList.remove('ink-stage-host--draw');
       layer.remove();
       toggle.remove();
     },
