@@ -1,0 +1,48 @@
+# Ask it: the pages of "What Conduit can do" for the ways a person asks (PLAN-catalogue.md). One scene to a capability, its id the capability's id,
+# read by language/src/showcase.ts and judged by `pnpm timeline` (the page rules, language/scripts/showcase-checks.ts). The pen, the voice and a
+# hand on the screen cannot be scripted, so those have no page here; `tap` takes two turns and keeps the second in the table (`turns`).
+
+# type: the answer to a typed question, drawn in front of you. The typing itself is a hand (the film types the recorded words).
+scene type caption brisk
+look paper
+circle sun 20,22 9 fill=accent stroke=none
+line beam 30,26 80,46 thick=1.2
+path blue stroke=alt thick=1.2 | M80 46 L62 28 M80 46 L102 56 M80 46 L92 70 M80 46 L66 66
+line red 80,46 148,60 stroke=accent thick=1.2
+say enter=fade by=all | Blue light scatters most.
+say label @with near=blue:above | blue scatters
+say label @with near=red:above | red goes straight on
+wait 0.57s
+
+# tap: a question with choices. The tap and the turn it opens are in the table (`turns`).
+scene tap stack brisk
+look paper
+say q enter=fade by=all | Which colour?
+say orange choice @with | Orange
+say grey choice @with | Grey
+wait 0.31s
+
+# drag: a slider the picture follows with no round trip.
+scene drag figure lines=1 brisk
+look paper
+line ground 10,78 104,78 thick=1
+rect post 30,48 3x30 fill=ink
+line shadow @with 33,78 90,78 stroke=accent thick=2
+circle sun @with 30,14 6 fill=accent soft=3
+path sky @with stroke=none | M30 14 Q70 6 98 52
+card tools | Try it
+slider height 10 80 20 unit=deg in=tools | Height of the sun
+bind height | move sun along=sky
+bind height | line shadow 33,78 38,78
+say enter=fade by=all | Sun at {height}: shadow {round(3/tan(rad(height)), 1)} m.
+wait 0.75s
+
+# photo: a picture the person gave, pointed at. The check puts a generated test pattern up as u1 (900 by 600) and stamps its shape, as the server does for a photo a turn carries.
+scene photo figure canvas=wide brisk
+look paper
+pic p1 from=u1 aspect=1.5
+say c1 callout at=12,18 in=p1 | top left
+say c2 callout @with at=86,22 in=p1 | top right
+say c3 callout @with at=50,64 in=p1 | middle
+say enter=fade by=all | It points out each part.
+wait 0.5s

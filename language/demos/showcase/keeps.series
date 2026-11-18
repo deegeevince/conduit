@@ -1,0 +1,19 @@
+# It keeps going: the pages for what stays across turns (PLAN-catalogue.md). `changes` and `back` take several turns and keep them in the table (`turns`).
+# Undo is a tap on a chip and the language view is a tap on a button, so neither has a page here.
+
+# changes: the boat is drawn once; asking for a bigger sail sends one line, and nothing else is redrawn.
+scene changes figure lines=1 brisk
+look paper
+line sea 0,70 160,70 thick=1
+poly hull @with 50,60 110,60 100,72 60,72 fill=ink
+rect mast @with 78,26 2x34 fill=ink
+poly sail @with 80,28 80,56 104,56 fill=accent
+wait 0.47s
+
+# back: a moon and a tree, then a house; the turns after this one are in the table.
+scene back figure brisk
+look paper
+circle moon1 40,30 12 fill=accent stroke=none
+rect trunk1 @with 108,50 6x30 fill=ink
+circle crown1 @with 111,42 16 fill=alt stroke=none
+wait 0.5s
