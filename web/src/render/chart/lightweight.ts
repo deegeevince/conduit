@@ -1075,11 +1075,15 @@ function numberOrNull(coordinate: number | null): number | null {
 }
 
 function modelSignature(state: ChartState): string {
+  const total = (m: ChartState['model']): number => {
+    let sum = 0;
+    for (const s of m.series) for (const v of s.values) sum += v ?? 0;
+    return sum;
+  };
   const m = state.model;
-  let sum = 0;
-  for (const s of m.series) for (const v of s.values) sum += v ?? 0;
   const last = m.points[m.points.length - 1];
-  return `${m.points.length}|${m.series.length}|${sum.toPrecision(12)}|${last?.label ?? ''}|${m.x}|${m.layout}`;
+  // (the models the scale also holds are part of what the plot is)
+  return `${m.points.length}|${m.series.length}|${total(m).toPrecision(12)}|${last?.label ?? ''}|${m.x}|${m.layout}|${(state.reach ?? []).map((other) => total(other).toPrecision(12)).join(',')}`;
 }
 
 function themeKey(t: ChartTheme): string {

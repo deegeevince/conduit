@@ -208,3 +208,62 @@ export async function checkPill(tab: Tab): Promise<string[]> {
   }
   return problems.slice(0, 3);
 }
+
+/**
+ * fb-071. The columns of a chart as a person sees them, in pixels: a picture of the page, the chart's box cut out, and in it the runs of the bars' colour, left to right, each as its
+ * height in CSS pixels (the middle of the bar, where a label or an edge does not reach). `colour` is the bars' own: with none given, it is the commonest saturated colour in the box
+ * (read it when the bars are tall), and it is handed back to be given at the next reading, when a bar may be too low to be the commonest thing there. A string says why nothing could be read.
+ */
+export async function chartBars(tab: Tab, id: string, colour: readonly number[] | null): Promise<{ readonly heights: readonly number[]; readonly colour: readonly number[]; readonly box: Box } | string> {
+  const chart = await tab.eval<{ box: Box } | null>(`(() => { const c = window.__stage.charts().find((n) => n.id === ${JSON.stringify(id)}); return c ? { box: c.box } : null; })()`);
+  if (chart === null) return `no chart ${id} on stage`;
+  const host = await hostBox(tab);
+  const picture = await tab.shot();
+  const read = await tab.eval<{ heights: number[]; colour: number[] } | string>(`(async () => {
+    const img = new Image();
+    img.src = ${JSON.stringify(picture)};
+    await img.decode();
+    const k = img.width / innerWidth;
+    const region = { x: Math.max(0, Math.round((${host.x} + ${chart.box.x}) * k)), y: Math.max(0, Math.round((${host.y} + ${chart.box.y}) * k)) };
+    region.w = Math.min(img.width - region.x, Math.round(${chart.box.width} * k));
+    region.h = Math.min(img.height - region.y, Math.round(${chart.box.height} * k));
+    const c = document.createElement('canvas');
+    c.width = region.w;
+    c.height = region.h;
+    const g = c.getContext('2d', { willReadFrequently: true });
+    g.drawImage(img, region.x, region.y, region.w, region.h, 0, 0, region.w, region.h);
+    const d = g.getImageData(0, 0, region.w, region.h).data;
+    const w = region.w;
+    const h = region.h;
+    let best = ${colour === null ? 'null' : JSON.stringify([...colour])};
+    if (best === null) {
+      const tally = new Map();
+      for (let i = 0; i < d.length; i += 4) {
+        if (Math.max(d[i], d[i + 1], d[i + 2]) - Math.min(d[i], d[i + 1], d[i + 2]) < 40) continue;
+        const key = (d[i] >> 4) + ',' + (d[i + 1] >> 4) + ',' + (d[i + 2] >> 4);
+        tally.set(key, (tally.get(key) || 0) + 1);
+      }
+      let most = 0;
+      for (const [key, n] of tally) if (n > most) { most = n; best = key.split(',').map(Number); }
+      if (best === null) return 'no pixel of any colour in the chart';
+    }
+    const near = (i) => Math.abs((d[i] >> 4) - best[0]) <= 1 && Math.abs((d[i + 1] >> 4) - best[1]) <= 1 && Math.abs((d[i + 2] >> 4) - best[2]) <= 1;
+    const column = new Array(w).fill(0);
+    for (let y = 0; y < h; y += 1) for (let x = 0; x < w; x += 1) if (near((y * w + x) * 4)) column[x] += 1;
+    const heights = [];
+    let x = 0;
+    while (x < w) {
+      if (column[x] === 0) { x += 1; continue; }
+      let end = x;
+      while (end < w && column[end] > 0) end += 1;
+      if (end - x >= 6 * k) {
+        const quarter = Math.floor((end - x) / 4);
+        const middle = column.slice(x + quarter, end - quarter).sort((a, b) => a - b);
+        heights.push(Math.round((middle[middle.length >> 1] / k) * 10) / 10);
+      }
+      x = end;
+    }
+    return { heights, colour: best };
+  })()`);
+  return typeof read === 'string' ? read : { heights: read.heights, colour: read.colour, box: chart.box };
+}

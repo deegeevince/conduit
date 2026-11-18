@@ -143,6 +143,18 @@ wait 1
 correct fbc1 | Spec the bindable transforms first
 correct fbc2 | Which matters most to you?
 
+# fb-071: a chart whose cells follow a slider keeps its scale: the axis labels do not change as the speed does, so each bar rises as the value does (the check drags the slider from one end to the other and measures the bars in pixels)
+scene fb-071 layout=figure lines=2
+chart fbstop columns | Stopping distance, metres
+| part | metres
+| Thinking | {fbspeed * 0.3}
+| Braking | {fbspeed * fbspeed / 20}
+| Total | {fbspeed * 0.3 + fbspeed * fbspeed / 20}
+card fbtools | Try it
+slider fbspeed 10 100 10 unit=km/h in=fbtools | Speed
+say | At {fbspeed} the car needs {round(fbspeed * 0.3 + fbspeed * fbspeed / 20)} m to stop.
+wait 1
+
 # a dark look with small dim notes: they must still read
 scene dark layout=figure
 look night
