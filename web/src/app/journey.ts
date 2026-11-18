@@ -3,8 +3,8 @@
 // for each step, when things happened (the page's clock and `performance.now()`), for a film editor that cuts the waits and places captions.
 
 import { alternativesOf, parseJourney, seeded } from './journey-script';
-import { likeness, norm } from './journey-words';
-import type { FocusBox, FocusSample, JourneyState, JourneyStep, Stamp, StepTiming } from './journey-script';
+import { bindMovesShape, likeness, norm } from './journey-words';
+import type { DragPacing, FocusBox, FocusSample, JourneyState, JourneyStep, Stamp, StepTiming } from './journey-script';
 import type { StageApp } from './stage-app';
 import type { ControlView, StageElementView } from '../contracts/painter';
 
@@ -278,7 +278,7 @@ export function startJourney(options: JourneyOptions): JourneyState {
     if (now === lastLook) return;
     lastLook = now;
     lastChange = stamp();
-  }, 40);
+  }, 80);
 
   /** the step whose turn is open: when its first line came and painted, and when the stage had played it out */
   let watched: StepTiming | null = null;
@@ -317,9 +317,13 @@ export function startJourney(options: JourneyOptions): JourneyState {
   let lastKey = '';
   let lastSampleAt = -1e9;
   let focusFrame = 0;
+  let focusAt = -1e9;
   const sampleFocus = (): void => {
     focusFrame = requestAnimationFrame(sampleFocus);
     const now = performance.now();
+    // thirty a second is all a film is cut by (a sample is kept at most every 50 ms), and the painter is asked a lot for each
+    if (now - focusAt < 33) return;
+    focusAt = now;
     if (activity !== null && activity.until < now) activity = null;
     const row = document.querySelector<HTMLElement>('.lang__row.is-now') ?? document.querySelector<HTMLElement>('.lang__row.is-moving--lead');
     const rowBox = row === null ? null : boxOf(row.getBoundingClientRect());
@@ -472,19 +476,38 @@ export function startJourney(options: JourneyOptions): JourneyState {
 
   const sliders = (): ControlView[] => app.painter.snapshot().controls.filter((control) => control.control === 'slider' && control.enabled);
 
-  const findSlider = (wanted: string): ControlView | null => {
+  /** whether a slider moves a drawn thing: a `bind` of it that moves, turns or redraws a shape, in the lines the page took this turn (a bound sentence or colour does not) */
+  const movesShape = (id: string): boolean => {
+    const turn = app.lang.turn;
+    if (turn === null) return false;
+    return app.lang.entriesOf(turn).some((entry) => {
+      const bound = /^bind\s+(\S+)[^|]*\|\s*(.+)$/.exec(entry.text);
+      return bound !== null && bound[1] === id && bindMovesShape(bound[2] as string);
+    });
+  };
+
+  /**
+   * A slider by what the step says. `crank / turn / engine` lists alternatives, in order: a word is an id, or a word of a label. Of all that any of them find, a slider that
+   * moves a shape is taken before one that only changes words (the film wants the piston to move); else the first found; with none found, the only slider there is.
+   * The choice says how it was made.
+   */
+  const findSlider = (wanted: string): { readonly control: ControlView; readonly by: string; readonly movesShape: boolean } | null => {
     const all = sliders();
-    const word = norm(wanted);
-    const byId = all.find((control) => norm(control.id) === word);
-    if (byId !== undefined) return byId;
-    const byLabel = all.filter((control) => norm(control.label).includes(word) || norm(control.id).includes(word));
-    if (byLabel.length >= 1) return byLabel[0] ?? null;
-    return all.length === 1 ? (all[0] ?? null) : null;
+    const found: { control: ControlView; by: string }[] = [];
+    for (const alternative of wanted.split('/').map(norm).filter((word) => word !== '')) {
+      for (const control of [...all.filter((candidate) => norm(candidate.id) === alternative), ...all.filter((candidate) => norm(candidate.label).includes(alternative) || norm(candidate.id).includes(alternative))]) {
+        if (!found.some((seen) => seen.control.key === control.key)) found.push({ control, by: alternative });
+      }
+    }
+    if (found.length === 0) return all.length === 1 && all[0] !== undefined ? { control: all[0], by: 'the only slider', movesShape: movesShape(all[0].id) } : null;
+    const mover = found.find((candidate) => movesShape(candidate.control.id));
+    const picked = mover ?? (found[0] as { control: ControlView; by: string });
+    return { control: picked.control, by: picked.by, movesShape: mover !== undefined };
   };
 
   const doDrag = async (step: JourneyStep, timing: StepTiming): Promise<boolean> => {
     const found = await settled(() => {
-      const control = findSlider(step.target);
+      const control = findSlider(step.target)?.control;
       const knob = control?.parts.find((part) => part.part === 'knob')?.box ?? control?.parts.find((part) => part.part === 'track')?.box;
       return control === null || control === undefined || knob === undefined ? null : { id: control.id, label: control.id, box: knob, tappable: true, key: control.key };
     }, step.optional ? OPTIONAL_WAIT_MS : TAP_WAIT_MS);
@@ -494,6 +517,7 @@ export function startJourney(options: JourneyOptions): JourneyState {
     }
     const control = sliders().find((candidate) => candidate.key === found.key);
     if (control === undefined) return fail(`step ${step.n}: the slider went away`);
+    const choice = findSlider(step.target);
     const clamp = (value: number): number => Math.min(control.max, Math.max(control.min, value));
     const pick = (value: number | 'min' | 'max'): number => (value === 'min' ? control.min : value === 'max' ? control.max : clamp(value));
     const from = pick(step.from);
@@ -504,13 +528,16 @@ export function startJourney(options: JourneyOptions): JourneyState {
       const view = sliders().find((candidate) => candidate.key === control.key);
       return typeof view?.value === 'number' ? view.value : Number(view?.value ?? from);
     };
-    // the knob is taken where it is; a slider that is not yet at `from` is first set there by hand, slowly, as a person would
+    // the knob is taken where it is
     const start = globalOf(found.box);
     const y = start.y;
     await travel(start.x, y, 650);
     await sleep(200);
-    timing.dragStart = stamp();
+    // what the drag changes, for the focus track: asked of the painter a few times a second, not every frame (a snapshot is not free, and the frames are the drag's)
+    let changed: { at: number; box: FocusBox | null } = { at: -1e9, box: null };
     const changes = (): FocusBox | null => {
+      const now = performance.now();
+      if (now - changed.at < 120) return changed.box;
       const snap = app.painter.snapshot();
       const ids = new Set<string>([...app.hook.bindings().map((binding) => binding.id), ...(snap.motions ?? []).map((motion) => motion.id)]);
       const boxes: FocusBox[] = [];
@@ -518,40 +545,47 @@ export function startJourney(options: JourneyOptions): JourneyState {
       if (view !== undefined) boxes.push(viewportBox(view.box));
       for (const chart of snap.charts) boxes.push(viewportBox(chart.box));
       for (const element of snap.elements) if (ids.has(element.id) && element.phase !== 'struck' && element.box.width > 0 && element.box.height > 0 && element.id !== control.id) boxes.push(viewportBox(element.box));
-      return union(boxes);
+      changed = { at: now, box: union(boxes) };
+      return changed.box;
+    };
+    // The pointer is a hand's: it goes from where the knob is to where the value is, at one steady eased pace, and nothing is read back while it moves. (It used to be steered
+    // frame by frame by the control's own reported value, which on a stepped slider is a staircase: the pointer lurched and paused with it, and each frame asked the painter for
+    // a whole snapshot besides.) The knob's travel is the control's own: its centre runs from one end of the track to the other for the whole range.
+    const tolerance = Math.max(1e-6, (control.step ?? 0) / 2, (control.max - control.min) * 0.002);
+    const at = valueNow();
+    const nextFrame = (): Promise<void> => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    let x = start.x;
+    const glide = async (to: number, ms: number): Promise<{ readonly samples: { readonly at: number; readonly x: number }[]; readonly from: number; readonly to: number; readonly ms: number }> => {
+      const from = x;
+      const begin = performance.now();
+      const samples: { at: number; x: number }[] = [];
+      for (;;) {
+        const t = Math.min(1, (performance.now() - begin) / ms);
+        x = from + (to - from) * ease(t);
+        cursor.place(x, y);
+        pointer('pointermove', x, y, true, stage);
+        samples.push({ at: performance.now() - begin, x });
+        if (t >= 1) return { samples, from, to, ms };
+        await nextFrame();
+      }
     };
     doing('drag', control.id, changes);
     const before = readout();
     cursor.press(true);
     pointer('pointerdown', start.x, y, true);
-    const total = Math.max(0.3, step.seconds) * 1000;
-    let x = start.x;
-    const begin = performance.now();
-    // the value follows the easing from `from` to `to`; the hand corrects for what the control reports, so the knob and the numbers agree
-    const wanted = (k: number): number => from + (to - from) * k;
-    for (;;) {
-      const t = Math.min(1, (performance.now() - begin) / total);
-      const target = wanted(ease(t));
-      x += (target - valueNow()) * perUnit * 0.7;
-      cursor.place(x, y);
-      pointer('pointermove', x, y, true, stage);
-      if (t >= 1) break;
-      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-    }
-    // settle on the last value
-    for (let i = 0; i < 12 && Math.abs(valueNow() - to) > Math.max(1e-6, (control.step ?? 0) / 2, (control.max - control.min) * 0.002); i += 1) {
-      x += (to - valueNow()) * perUnit * 0.8;
-      cursor.place(x, y);
-      pointer('pointermove', x, y, true, stage);
-      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-    }
+    // a slider that is not yet at `from` is set there first, by hand, at a quicker pace than the drag
+    if (Math.abs(at - from) > tolerance) await glide(start.x + (from - at) * perUnit, 600);
+    timing.dragStart = stamp();
+    const main = await glide(start.x + (to - at) * perUnit, Math.max(0.3, step.seconds) * 1000);
+    // the value is where the pointer put it, to the control's own snapping; if it is off by more than a stop, the hand leans the little that is left, steadily
+    for (let i = 0; i < 2 && Math.abs(valueNow() - to) > tolerance; i += 1) await glide(x + (to - valueNow()) * perUnit, 220);
     await sleep(180);
     pointer('pointerup', x, y, false, stage);
     cursor.press(false);
     timing.dragEnd = stamp();
     lingerThen(1000);
     await sleep(350);
-    timing.drag = { control: control.id, from, to, reached: valueNow(), readout: { before, after: readout() } };
+    timing.drag = { control: control.id, from, to, reached: valueNow(), readout: { before, after: readout() }, pacing: pacingOf(main.samples, main), chose: { by: choice?.by ?? step.target, movesShape: choice?.movesShape ?? false } };
     return true;
   };
 
@@ -635,6 +669,25 @@ export function startJourney(options: JourneyOptions): JourneyState {
     finish();
   });
   return state;
+}
+
+/** How the page kept the pace over the frames of a drag: `samples` are the pointer's places at each animation frame, `at` ms from the start. */
+function pacingOf(samples: readonly { readonly at: number; readonly x: number }[], path: { readonly from: number; readonly to: number; readonly ms: number }): DragPacing {
+  const gaps = samples.slice(1).map((sample, index) => sample.at - (samples[index] as { at: number }).at);
+  const sorted = [...gaps].sort((a, b) => a - b);
+  const round = (value: number): number => Math.round(value * 10) / 10;
+  const steps = samples.slice(1).map((sample, index) => sample.x - (samples[index] as { x: number }).x);
+  return {
+    frames: samples.length,
+    meanMs: round(gaps.length === 0 ? 0 : gaps.reduce((sum, gap) => sum + gap, 0) / gaps.length),
+    p95Ms: round(sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.95))] ?? 0),
+    longestMs: round(sorted[sorted.length - 1] ?? 0),
+    slow: gaps.filter((gap) => gap > 25).length,
+    monotonic: steps.every((step) => step >= -1e-9) || steps.every((step) => step <= 1e-9),
+    maxStepPx: round(steps.reduce((most, step) => Math.max(most, Math.abs(step)), 0)),
+    deviationPx: round(samples.reduce((most, sample) => Math.max(most, Math.abs(sample.x - (path.from + (path.to - path.from) * ease(Math.min(1, sample.at / path.ms))))), 0)),
+    jerkPx: round(steps.slice(1).reduce((most, step, index) => Math.max(most, Math.abs(step - (steps[index] as number))), 0)),
+  };
 }
 
 function blank(step: JourneyStep): StepTiming {

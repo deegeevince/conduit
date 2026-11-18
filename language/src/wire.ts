@@ -209,9 +209,9 @@ export interface TappedPart {
   readonly on: string | null;
 }
 
-/** The words of such a tap, as the transcript and the log keep them: `tapped the part "brake disc" (x15, on disc1)`. */
+/** The words of such a tap, as the transcript and the log keep them: `tapped the part "brake disc" to look closer (x15, on disc1)`. */
 export function partTapText(id: string, part: TappedPart): string {
-  return `tapped the part "${part.label.replace(/\s+/g, ' ').trim().slice(0, 80)}" (${id}${part.on === null ? '' : `, on ${part.on}`})`;
+  return `tapped the part "${part.label.replace(/\s+/g, ' ').trim().slice(0, 80)}" to look closer (${id}${part.on === null ? '' : `, on ${part.on}`})`;
 }
 
 /**
@@ -265,7 +265,7 @@ export type TurnInput =
    * label (a pick: the option chosen); `values` is every live control's value.
    * A button of a mock-up (`screen`) says which screen it is on, and `values` is what that screen's parts hold, by their labels (a password only as
    * `filled`).
-   * `part` (fb-055): a tap on a label the brain drew, which is the person asking about what it names; `id` is the label's id, `text` is `partTapText`.
+   * `part` (fb-055): a tap on a label the brain drew, which is the person asking to look closer at what it names (the next step down: it drawn larger, its own parts labelled); `id` is the label's id, `text` is `partTapText`.
    */
   | { readonly kind: 'act'; readonly id: string; readonly text: string; readonly values: ControlValues; readonly screen?: string; readonly seen?: Seen; readonly part?: TappedPart }
   /**

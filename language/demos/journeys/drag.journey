@@ -1,0 +1,9 @@
+# Frame pacing of a drag, on the replay brain: the explorable's slider moves a bound picture (a sun along its sky, a shadow, a line of words), dragged both ways at a
+# steady pace. `pnpm record --journey drag` says how many distinct pictures a second a viewer gets while the knob moves, and the page's own frames in journey.json.
+type | explorable
+rest
+hold 1
+drag height 10 > 80 over=4
+hold 1
+drag height 80 > 10 over=4
+hold 1
