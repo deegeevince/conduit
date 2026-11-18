@@ -7,8 +7,8 @@
 // canvas units, from the schedule alone (`canvasBoxOf` stops here). The second
 // puts the look's colour, stroke and motion on it and maps it to the stage.
 
-import { boundsOf, CANVAS, describeFigure, LOOP_DEFAULT, pointAlong, resample, ROW_SECONDS, sceneAt, valueAt } from '@conduit/language';
-import type { Anchor, ElementChange, ElementSpan, ElementStyle, Fill, Figure, Layer, Paint, Polyline, Schedule, SceneSpan, ShapeGeometry, SpriteData, StageBase, StrokeCharacter } from '@conduit/language';
+import { boundsOf, CANVAS, cycleAt, describeFigure, LOOP_DEFAULT, loopOffset, NO_OFFSET, pointAlong, polylineLength, resample, rideShare, ROW_SECONDS, sceneAt, turnAbout, valueAt } from '@conduit/language';
+import type { Anchor, ElementChange, ElementSpan, ElementStyle, Fill, Figure, Layer, LoopOffset, Paint, Polyline, Schedule, SceneSpan, ShapeGeometry, SpriteData, StageBase, StrokeCharacter } from '@conduit/language';
 import type { Affine, Colour, FieldFrame, FigureFrame, FillFrame, PictureFrame, ShapeFrame, SpriteFrame, StrokeFrame } from '../contracts/frame';
 import { IDENTITY } from '../contracts/frame';
 import type { Ease, LookSpec, MotionRecipe } from '../contracts/look';
@@ -62,6 +62,11 @@ export interface FigureContext {
   readonly fixedFit?: CanvasFit;
   /** a thing that cannot be made is reported here and left out; without it the error is thrown */
   readonly onFault?: (error: unknown, key: string) => void;
+  /**
+   * The stage clock T (PLAN-motion), in clock units: where everything with a `period=`, a ride or a carrier is. Absent: the frame has no clock, and what keeps time stands as it
+   * was drawn. A loop with no period is decoration and does not read it.
+   */
+  readonly motion?: number;
 }
 
 export interface FiguresAt {
@@ -94,6 +99,8 @@ type CanvasRect = { x: number; y: number; w: number; h: number };
 
 interface Index {
   readonly byKey: Map<string, ElementSpan>;
+  /** every element of an id, in the order written: `around=` names its pivot by id, and an id may have been said again */
+  readonly byId: Map<string, ElementSpan[]>;
   readonly children: Map<string, ElementSpan[]>;
   readonly scenes: Map<string, SceneSpan>;
 }
@@ -104,9 +111,13 @@ function indexOf(schedule: Schedule): Index {
   const known = indexes.get(schedule);
   if (known !== undefined) return known;
   const byKey = new Map<string, ElementSpan>();
+  const byId = new Map<string, ElementSpan[]>();
   const children = new Map<string, ElementSpan[]>();
   for (const element of schedule.elements) {
     byKey.set(element.key, element);
+    const named = byId.get(element.id) ?? [];
+    named.push(element);
+    byId.set(element.id, named);
     if (element.parent !== null) {
       const list = children.get(element.parent) ?? [];
       list.push(element);
@@ -115,7 +126,7 @@ function indexOf(schedule: Schedule): Index {
   }
   const scenes = new Map<string, SceneSpan>();
   for (const scene of schedule.scenes) scenes.set(scene.id, scene);
-  const made: Index = { byKey, children, scenes };
+  const made: Index = { byKey, byId, children, scenes };
   indexes.set(schedule, made);
   return made;
 }
@@ -154,10 +165,19 @@ interface Scn {
   readonly aq: number;
   readonly reduced: boolean;
   readonly curve: Ease;
-  /** a resting picture: no loops, no gestures */
+  /** a resting picture: no loops, no gestures, nothing that keeps time */
   readonly rest: boolean;
+  /**
+   * The stage clock T, in clock units (PLAN-motion): what a loop with a `period=`, a ride and a carrier are performed at. Null: the frame has no clock, and everything
+   * that keeps time stands as it was drawn (a draft, a candidate, the snapshot; and every live frame until the page has a clock to give).
+   */
+  readonly clock: number | null;
   readonly flashAllowed: ReadonlySet<ElementChange> | null;
   readonly groups: Map<string, GroupState>;
+  /** what each element is at this instant, made once: an element that is another's pivot is asked for by every one it carries */
+  readonly states: Map<string, State>;
+  /** where each element is drawn, before anything that keeps time moves it */
+  readonly drawn: Map<string, Pt>;
   /** told of anything that threw while a thing was being made; that thing is then left out of the frame */
   readonly fault: ((error: unknown, key: string) => void) | null;
 }
@@ -183,7 +203,10 @@ interface Trans {
 
 interface State {
   readonly trans: Trans;
+  /** where it stands, canvas units (or its group's), with what keeps time done to it: ridden, turned about its pivot, carried */
   readonly centre: Pt;
+  /** where it is drawn: the place the lines gave it and the moves have brought it to, before motion */
+  readonly drawn: Pt;
   readonly natural: Pt;
   readonly scale: number;
   /** a sprite's cell side in canvas units, before the group's scale; 0 for anything else */
@@ -498,6 +521,16 @@ function keptInside(at: Pt, element: ElementSpan, style: ElementStyle, sc: Scn):
   return { x: fit(at.x, left, right, canvas.width), y: fit(at.y, up, down, canvas.height) };
 }
 
+/** The loops that stand still under reduced motion when they are decoration; one on the stage clock moves exactly as the clock says, and the clock is what holds still. */
+const STILLED_BY_REDUCED: ReadonlySet<ElementStyle['loop']> = new Set(['blink', 'spin', 'bob', 'sway']);
+
+/** How far a chain of pivots carries: a moon on a planet on a star on a galaxy, and so on up to this many links (PLAN-motion: eight, or a ring, and the rest is not carried). */
+const MAX_LINKS = 8;
+
+/**
+ * What a loop and a gesture add to a thing's pose now. A loop with a `period=` is on the stage clock T (`sc.clock`) and is nothing when the frame has none: a frame with no clock
+ * is the drawing. A loop without one is decoration, on its own fixed time on the ambient clock, as it always was. The arithmetic is `motion.ts`'s.
+ */
 function extrasOf(element: ElementSpan, style: ElementStyle, sc: Scn, cell: number): Extras {
   if (sc.rest) return NO_EXTRAS;
   const { aq, tq, reduced } = sc;
@@ -507,44 +540,22 @@ function extrasOf(element: ElementSpan, style: ElementStyle, sc: Scn, cell: numb
   let scale = 1;
   let opacity = 1;
   let flash = 0;
-  switch (style.loop) {
-    case 'breathe':
-      scale = 1 + LOOP_DEFAULT.breathe.amp * Math.sin((2 * Math.PI * aq) / LOOP_DEFAULT.breathe.period);
-      break;
-    case 'pulse':
-      scale = 1 + LOOP_DEFAULT.pulse.amp * (0.5 - 0.5 * Math.cos(2 * Math.PI * ((aq / LOOP_DEFAULT.pulse.period) % 1)));
-      break;
-    case 'blink':
-      if (!reduced && (aq / LOOP_DEFAULT.blink.period) % 1 >= 0.5) opacity = 0;
-      break;
-    case 'shake':
-      if (!reduced) {
-        const slot = Math.floor(aq * LOOP_DEFAULT.shake.rate);
-        dx = LOOP_DEFAULT.shake.amp * (hash(`${element.key}x${slot}`) * 2 - 1);
-        dy = LOOP_DEFAULT.shake.amp * (hash(`${element.key}y${slot}`) * 2 - 1);
-      }
-      break;
-    case 'drift': {
-      const theta = (2 * Math.PI * aq) / LOOP_DEFAULT.drift.period;
-      dx = LOOP_DEFAULT.drift.amp * Math.sin(theta);
-      dy = LOOP_DEFAULT.drift.amp * LOOP_DEFAULT.drift.lift * Math.sin(2 * theta);
-      break;
+  // a period and a pivot and no loop at all is a spin about the pivot
+  const loop = style.loop === 'none' && style.around !== undefined && style.period !== undefined ? 'spin' : style.loop;
+  if (loop === 'shake') {
+    if (!reduced) {
+      const slot = Math.floor(aq * LOOP_DEFAULT.shake.rate);
+      dx = LOOP_DEFAULT.shake.amp * (hash(`${element.key}x${slot}`) * 2 - 1);
+      dy = LOOP_DEFAULT.shake.amp * (hash(`${element.key}y${slot}`) * 2 - 1);
     }
-    case 'spin':
-      if (!reduced) rot = (LOOP_DEFAULT.spin.amp * aq) / LOOP_DEFAULT.spin.period;
-      break;
-    case 'bob':
-      if (!reduced) {
-        const wave = Math.sin((2 * Math.PI * aq) / LOOP_DEFAULT.bob.period);
-        // A sprite rides by whole cells.
-        dy = cell > 0 ? -cell * Math.round(wave * LOOP_DEFAULT.bob.cells) : -LOOP_DEFAULT.bob.amp * wave;
-      }
-      break;
-    case 'sway':
-      if (!reduced) rot = LOOP_DEFAULT.sway.amp * Math.sin((2 * Math.PI * aq) / LOOP_DEFAULT.sway.period);
-      break;
-    case 'none':
-      break;
+  } else if (loop !== 'none') {
+    let offset: LoopOffset = NO_OFFSET;
+    if (style.period !== undefined) {
+      if (sc.clock !== null) offset = loopOffset(loop, cycleAt(sc.clock, style.period, style.phase ?? 0), style.amp, cell);
+    } else if (!reduced || !STILLED_BY_REDUCED.has(loop)) {
+      offset = loopOffset(loop, cycleAt(aq, LOOP_DEFAULT[loop].period, style.phase ?? 0), style.amp, cell);
+    }
+    ({ dx, dy, rot, scale, opacity } = offset);
   }
   for (const change of element.changes) {
     if (change.kind !== 'hit' || tq < change.start || tq >= change.end) continue;
@@ -557,23 +568,148 @@ function extrasOf(element: ElementSpan, style: ElementStyle, sc: Scn, cell: numb
   return { dx, dy, rot, scale, opacity, flash };
 }
 
+/** Where a thing is drawn: its written place, as its moves have brought it. Nothing that keeps time has touched it. */
+function drawnCentre(element: ElementSpan, sc: Scn, trans?: Trans): Pt {
+  const known = sc.drawn.get(element.key);
+  if (known !== undefined) return known;
+  const made = centreOf(element, trans ?? transition(element, sc.tq, sc.curve), naturalCentre(element, sc), sc);
+  sc.drawn.set(element.key, made);
+  return made;
+}
+
+/** The share (0..1, by length) of the point of an outline nearest to `point`: exact on the segments, not on a sampling of them, so a thing drawn on its outline rides it. */
+function shareNear(line: Polyline, point: Pt): number {
+  const points = line.closed && line.points[0] !== undefined ? [...line.points, line.points[0]] : line.points;
+  const total = polylineLength(line);
+  if (!(total > 0)) return 0;
+  let best = Number.POSITIVE_INFINITY;
+  let along = 0;
+  let travelled = 0;
+  for (let i = 1; i < points.length; i += 1) {
+    const a = points[i - 1];
+    const b = points[i];
+    if (a === undefined || b === undefined) continue;
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const long = dx * dx + dy * dy;
+    const segment = Math.sqrt(long);
+    const u = long > 0 ? clamp01(((point.x - a.x) * dx + (point.y - a.y) * dy) / long) : 0;
+    const d = (a.x + dx * u - point.x) ** 2 + (a.y + dy * u - point.y) ** 2;
+    if (d < best - 1e-12) {
+      best = d;
+      along = travelled + segment * u;
+    }
+    travelled += segment;
+  }
+  const share = Math.min(1, along / total);
+  return line.closed && share >= 1 ? 0 : share;
+}
+
+/**
+ * A ride: the thing goes round the outline it was told for ever (`along=` with `period=`), upright, as far further round than it was drawn as the clock has taken it, and keeping the
+ * offset it was drawn at from the outline. Round and round on a closed one, there and back on an open one. At the clock's zero it is exactly where it was drawn.
+ */
+function ridden(element: ElementSpan, style: ElementStyle, centre: Pt, natural: Pt, sc: Scn): Pt {
+  if (sc.rest || sc.clock === null || style.along === undefined || style.period === undefined) return centre;
+  const track = outlineNamed(element, style.along, sc);
+  const line = track === null ? null : trackOutline(track.key, sc);
+  if (line === null || line.points.length < 2) return centre;
+  const start = shareNear(line, resolveAt(style, element, natural, sc));
+  const was = pointAlong(line, start);
+  const here = pointAlong(line, rideShare(start, cycleAt(sc.clock, style.period, style.phase ?? 0), line.closed));
+  return { x: centre.x + (here.x - was.x), y: centre.y + (here.y - was.y) };
+}
+
+/** The outline `along=` names, by id, as it stands now: the last thing of that id on stage in the element's scene. Null when it names nothing drawn. */
+function outlineNamed(element: ElementSpan, id: string, sc: Scn): ElementSpan | null {
+  const named = sc.idx.byId.get(id);
+  if (named === undefined) return null;
+  for (let i = named.length - 1; i >= 0; i -= 1) {
+    const candidate = named[i];
+    if (candidate !== undefined && candidate.key !== element.key && candidate.scene === element.scene && isOnStage(candidate, sc.tq)) return candidate;
+  }
+  return null;
+}
+
+/** The element `around=` names for `element`: on stage now, in the same scene, and top-level or in the same group (anything else is refused by name when the scene is built). The last said, if the id was said again. */
+function pivotOf(element: ElementSpan, id: string, sc: Scn): ElementSpan | null {
+  const named = sc.idx.byId.get(id);
+  if (named === undefined) return null;
+  for (let i = named.length - 1; i >= 0; i -= 1) {
+    const candidate = named[i];
+    if (candidate === undefined || candidate.key === element.key || candidate.scene !== element.scene || candidate.parent !== element.parent || !isOnStage(candidate, sc.tq)) continue;
+    if (isPlaced(candidate) || candidate.figure?.kind === 'group') return candidate;
+  }
+  return null;
+}
+
+/** Whether `link`, the pivot of `element`, carries it: not when the chain of pivots comes round on itself (a ring), and not past `MAX_LINKS` of them. */
+function carries(element: ElementSpan, link: ElementSpan, sc: Scn): boolean {
+  const seen = new Set<string>([element.key]);
+  let at: ElementSpan | null = link;
+  for (let links = 1; at !== null; links += 1) {
+    if (links > MAX_LINKS || seen.has(at.key)) return false;
+    seen.add(at.key);
+    const around: ElementStyle['around'] = transition(at, sc.tq, sc.curve).to.around;
+    at = typeof around === 'string' ? pivotOf(at, around, sc) : null;
+  }
+  return true;
+}
+
+/**
+ * The pivot: the thing's whole turn (the style's `rot`, which a bound `set` blends, and the loop's) is a turn about `around=`, not about its own centre, so its centre goes round
+ * the pivot as it turns. Then the carrier: what `around=` names by id goes where its motion takes it, and takes the thing along. A frame with no clock has a pivot for a plain `rot=`
+ * and no carrier, since nothing it names has moved. The offsets a loop gave are folded in before the turn, so a bob rides on a turn as it rides on a run.
+ */
+function pivoted(element: ElementSpan, style: ElementStyle, centre: Pt, extras: Extras, rot: number, sc: Scn): { centre: Pt; extras: Extras } {
+  const around = style.around;
+  if (around === undefined) return { centre, extras };
+  const link = typeof around === 'string' ? pivotOf(element, around, sc) : null;
+  if (typeof around === 'string' && link === null) return { centre, extras };
+  const pivot = link === null ? (around as Pt) : drawnCentre(link, sc);
+  let at = centre;
+  let after = extras;
+  const turn = rot + extras.rot;
+  if (turn !== 0) {
+    at = turnAbout({ x: centre.x + extras.dx, y: centre.y + extras.dy }, pivot, turn);
+    after = { ...extras, dx: 0, dy: 0 };
+  }
+  if (link !== null && !sc.rest && carries(element, link, sc)) {
+    const carrier = stateFor(link, sc);
+    at = { x: at.x + (carrier.centre.x + carrier.extras.dx - carrier.drawn.x), y: at.y + (carrier.centre.y + carrier.extras.dy - carrier.drawn.y) };
+  }
+  return { centre: at, extras: after };
+}
+
+/**
+ * What a thing is at this instant, made once for the frame. Its place is the drawing (the lines and the moves, on the turn clock), then what keeps time on the stage clock does its part, in the
+ * order ride, loop, pivot, carrier, group: each adds its own offset and none holds another still. The group's is the parent matrix, applied by whoever places the thing.
+ */
 function stateFor(element: ElementSpan, sc: Scn): State {
+  const known = sc.states.get(element.key);
+  if (known !== undefined) return known;
   const trans = transition(element, sc.tq, sc.curve);
   const natural = naturalCentre(element, sc);
   const figure = element.figure;
   const scale = lerp(trans.from.scale ?? 1, trans.to.scale ?? 1, trans.p);
   const dims = figure !== null && figure.kind === 'sprite' ? { sprite: spriteDims(figure.sprite), canvas: canvasOf(element, sc) } : null;
   const cell = dims === null ? 0 : lerp(cellFor(trans.from.scale, dims.sprite, dims.canvas), cellFor(trans.to.scale, dims.sprite, dims.canvas), trans.p);
-  return {
+  const rot = lerp(trans.from.rot, trans.to.rot, trans.p);
+  const drawn = drawnCentre(element, sc, trans);
+  const turned = pivoted(element, trans.to, ridden(element, trans.to, drawn, natural, sc), extrasOf(element, trans.to, sc, cell), rot, sc);
+  const made: State = {
     trans,
     natural,
-    centre: centreOf(element, trans, natural, sc),
+    drawn,
+    centre: turned.centre,
     scale,
     cell,
-    rot: lerp(trans.from.rot, trans.to.rot, trans.p),
+    rot,
     opacity: lerp(trans.from.opacity, trans.to.opacity, trans.p),
-    extras: extrasOf(element, trans.to, sc, cell),
+    extras: turned.extras,
   };
+  sc.states.set(element.key, made);
+  return made;
 }
 
 function groupState(group: ElementSpan, sc: Scn): GroupState {
@@ -791,7 +927,7 @@ function placedPoints(placed: Placed, sc: Scn): Pt[] {
 }
 
 function scnAt(schedule: Schedule, base: StageBase | null, time: number, curve: Ease): Scn {
-  return { schedule, base, idx: indexOf(schedule), tq: time, aq: time, reduced: false, curve, rest: true, flashAllowed: null, groups: new Map(), fault: null };
+  return { schedule, base, idx: indexOf(schedule), tq: time, aq: time, reduced: false, curve, rest: true, clock: null, flashAllowed: null, groups: new Map(), states: new Map(), drawn: new Map(), fault: null };
 }
 
 function unionBox(element: ElementSpan, schedule: Schedule, time: number, base: StageBase | null, curve: Ease): CanvasRect | null {
@@ -1847,7 +1983,9 @@ function viewColour(element: ElementSpan, frames: readonly FigureFrame[], fields
  *   painting could be drawn; with `sketch=fade` the shapes it stands on lose
  *   opacity as it rises.
  * - Loops run on ambient time; reduced motion stills `shake`, `spin` and
- *   `bob` and removes wobble from morphs, and changes no time.
+ *   `bob` and removes wobble from morphs, and changes no time. A loop with a
+ *   `period=`, a ride (`along=` with `period=`) and a pivot's carrier are on the
+ *   stage clock instead, `context.motion` (T); with no clock they stand as drawn.
  *
  * Outlines and stroke widths are in canvas units; `transform` takes them to
  * the layer's plane in stage units.
@@ -1863,8 +2001,11 @@ export function figuresAt(schedule: Schedule, base: StageBase, time: number, amb
     reduced: context.reducedMotion,
     curve: look.motion.ease,
     rest: false,
+    clock: context.motion ?? null,
     flashAllowed: context.flashAllowed ?? null,
     groups: new Map(),
+    states: new Map(),
+    drawn: new Map(),
     fault: context.onFault ?? null,
   };
   const fades = new Map<string, number>();

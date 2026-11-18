@@ -1,13 +1,15 @@
 // A recording laid out as a film: the same engine the live painter uses, with
 // no clock, no renderer and no server. See contracts/film.ts.
 
-import { DEFAULT_TUNE_VOICE, cachedTune, serializeLine, TurnScore, tuneRowsOf } from '@conduit/language';
+import { DEFAULT_TUNE_VOICE, cachedTune, pinnedClock, serializeLine, TurnScore, tuneRowsOf } from '@conduit/language';
+import type { Schedule } from '@conduit/language';
 import type { ControlMove, Film, FilmOptions, FilmTune, Recording } from '../contracts/film';
 import { noteArrivals } from './arrivals';
 import { pinnedWallTime } from './clock';
 import type { Painting } from './figures';
 import { CHARTS_READY } from '../render/chart';
-import { controlSpecOf, createRuntime } from './bound';
+import { controlLive, controlSpecOf, createRuntime, heldBy } from './bound';
+import type { ControlRuntime } from './bound';
 import { createControlStore } from './controls';
 import type { ChartData } from './charts';
 import { holdControl } from '@conduit/language';
@@ -22,6 +24,27 @@ export function lineSpans(recording: Recording): Map<number, { readonly start: n
   const spans = new Map<number, { readonly start: number; readonly end: number }>();
   for (const time of score.schedule.lines) spans.set(time.seq, { start: time.start, end: time.end });
   return spans;
+}
+
+/**
+ * The stage clock a film shows at `time` seconds (PLAN-motion): what the time slider holds if there is one (the drag's, or the viewer's, or as written), otherwise one clock
+ * unit a second from the start of the scene `time` falls in, as the controls that set the rate (a slider, or a toggle that is 1 or 0; several multiply) make it. A film that is
+ * made for reduced motion is at rest: zero, or the time slider's value. It is the same arithmetic as a live clock's, `pinnedClock`, read at a time instead of run.
+ */
+export function filmClock(schedule: Schedule, runtime: ControlRuntime, time: number, reducedMotion: boolean): number {
+  let slider: number | null = null;
+  let rate = 1;
+  for (const element of schedule.elements) {
+    const spec = controlSpecOf(element);
+    if (spec === null || spec.clock === undefined || !controlLive(element, time)) continue;
+    const held = heldBy(runtime, element);
+    // the later `clock=time` slider replaces the first
+    if (spec.clock === 'time') {
+      if (typeof held === 'number' && Number.isFinite(held)) slider = held;
+    } else if (typeof held === 'number' && Number.isFinite(held)) rate *= held;
+    else if (typeof held === 'boolean') rate *= held ? 1 : 0;
+  }
+  return pinnedClock(schedule, time, { time: slider, rate, rest: reducedMotion });
 }
 
 /** How far along a drag is at `time`, 0..1: still at both ends, quickest in the middle, as a hand's is. */
@@ -84,7 +107,10 @@ export function createFilm(recording: Recording, options: FilmOptions): Film {
   };
   const data = new Map<string, ChartData>();
   for (const [id, table] of Object.entries(options.data ?? {})) data.set(id, { table, since: -10 });
-  const timeline = buildTimeline(schedule, recording.base, { viewport: options.viewport, reducedMotion: options.reducedMotion, lockLook: null, paintings, arrivals, controls: createRuntime(store), charts: { kinds: CHARTS_READY, data }, ...(options.apps === true ? { apps: true } : {}) });
+  const runtime = createRuntime(store);
+  const timeline = buildTimeline(schedule, recording.base, { viewport: options.viewport, reducedMotion: options.reducedMotion, lockLook: null, paintings, arrivals, controls: runtime, charts: { kinds: CHARTS_READY, data }, ...(options.apps === true ? { apps: true } : {}) });
+  /** the instant a film is asked at: ambient is the film's own time, and the stage clock is the film's too (`filmClock`) */
+  const instantAt = (time: number): { time: number; ambient: number; wallTime: number; clock: 'paused'; motion: number } => ({ time, ambient: time, wallTime: pinnedWallTime(time), clock: 'paused', motion: filmClock(schedule, runtime, time, options.reducedMotion) });
   const settled = settledEnd(timeline, null, recording.base.scene.mood);
   // The music of the film: each tune of this turn sounds from where the picture's roll starts keeping time with it, until it ends or leaves.
   const tunes: FilmTune[] = [];
@@ -105,18 +131,18 @@ export function createFilm(recording: Recording, options: FilmOptions): Film {
     frameAt: (seconds) => {
       const time = Math.max(0, seconds);
       hand(time);
-      return timeline.frameAt({ time, ambient: time, wallTime: pinnedWallTime(time), clock: 'paused' });
+      return timeline.frameAt(instantAt(time));
     },
     boxOf: (id, seconds) => {
       const time = Math.max(0, seconds);
       hand(time);
-      const view = timeline.viewsAt({ time, ambient: time, wallTime: pinnedWallTime(time), clock: 'paused' }).find((candidate) => candidate.id === id && candidate.opacity > 0.02);
+      const view = timeline.viewsAt(instantAt(time)).find((candidate) => candidate.id === id && candidate.opacity > 0.02);
       return view === undefined ? null : view.box;
     },
     controlsAt: (seconds) => {
       const time = Math.max(0, seconds);
       hand(time);
-      return timeline.controlsAt({ time, ambient: time, wallTime: pinnedWallTime(time), clock: 'paused' }).map((site) => ({ id: site.id, value: site.value, ...(site.span.figure?.kind === 'control' ? { control: site.span.figure.control } : {}) }));
+      return timeline.controlsAt(instantAt(time)).map((site) => ({ id: site.id, value: site.value, ...(site.span.figure?.kind === 'control' ? { control: site.span.figure.control } : {}) }));
     },
     script: () => script,
   };
