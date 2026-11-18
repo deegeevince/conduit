@@ -49,6 +49,8 @@ export interface ClaudeCliDeps {
   readonly idleTimeoutMs: number;
   readonly tools: readonly string[];
   readonly effort: 'low' | 'medium' | 'high';
+  /** `off`: every process is started with `--thinking disabled` (absent is on) */
+  readonly thinking?: 'on' | 'off';
   readonly variant: PromptVariant;
   /** keep one process per conversation between turns (see warm.ts); false is v0's fresh process per turn */
   readonly warm: boolean;
@@ -237,7 +239,7 @@ export function createClaudeCliBrain(deps: ClaudeCliDeps): Brain {
       session,
       system,
       ...settingsOf(session),
-      proc: startWarmProcess({ bin: deps.bin, tools: deps.tools, ...settingsOf(session), systemPrompt: system, agent: agentRunOf(session), ...(canvas.file === undefined ? {} : { canvas: canvas.file }) }, log),
+      proc: startWarmProcess({ bin: deps.bin, tools: deps.tools, ...settingsOf(session), ...(deps.thinking === 'off' ? { thinking: 'off' as const } : {}), systemPrompt: system, agent: agentRunOf(session), ...(canvas.file === undefined ? {} : { canvas: canvas.file }) }, log),
       agentKey: agentKeyOf(session),
       held: new Map(),
       systemSent: false,
