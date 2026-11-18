@@ -20,6 +20,31 @@ say title size=xxl | 漢字と한글
 say zh | 学习汉字需要耐心和时间
 wait 1
 
+# (the next two scenes stand before the flowchart on purpose: every scene written after a diagram costs it layouts, and the flowchart has room for about one more, see hard-layout-work)
+# fb-071: a chart whose cells follow a slider keeps its scale: the axis labels do not change as the speed does, so each bar rises as the value does (the check drags the slider from one end to the other and measures the bars in pixels)
+scene fb-071 layout=figure lines=2
+chart fbstop columns | Stopping distance, metres
+| part | metres
+| Thinking | {fbspeed * 0.3}
+| Braking | {fbspeed * fbspeed / 20}
+| Total | {fbspeed * 0.3 + fbspeed * fbspeed / 20}
+card fbtools | Try it
+slider fbspeed 10 100 10 unit=km/h in=fbtools | Speed
+say | At {fbspeed} the car needs {round(fbspeed * 0.3 + fbspeed * fbspeed / 20)} m to stop.
+wait 1
+
+# orbit-lap: a bound ride along a closed outline starts from where the thing was drawn, and one whole range of the slider is one lap: the Earth drawn at 3 o'clock is at 6 a quarter of the way
+# (clockwise), at 9 half way, at 12 three quarters, and back at 3 at the end (the check sets the slider at each, and reads where the Earth is against the ring)
+scene orbit-lap layout=figure lines=2
+circle olsun 80,45 4 fill=accent
+circle olring 80,45 30 stroke=dim thick=0.4
+circle olearth 110,45 3 fill=ink
+card oltools | Try it
+slider olmonth 0 12 0 in=oltools | Month
+bind olmonth | move olearth along=olring
+say | The Earth goes once round the Sun as the month goes from 0 to 12.
+wait 1
+
 # a flowchart with multi-word edge labels and cross-links
 scene flow layout=caption
 flow car right | How a car's core parts connect
@@ -142,30 +167,6 @@ drop fbc2
 wait 1
 correct fbc1 | Spec the bindable transforms first
 correct fbc2 | Which matters most to you?
-
-# fb-071: a chart whose cells follow a slider keeps its scale: the axis labels do not change as the speed does, so each bar rises as the value does (the check drags the slider from one end to the other and measures the bars in pixels)
-scene fb-071 layout=figure lines=2
-chart fbstop columns | Stopping distance, metres
-| part | metres
-| Thinking | {fbspeed * 0.3}
-| Braking | {fbspeed * fbspeed / 20}
-| Total | {fbspeed * 0.3 + fbspeed * fbspeed / 20}
-card fbtools | Try it
-slider fbspeed 10 100 10 unit=km/h in=fbtools | Speed
-say | At {fbspeed} the car needs {round(fbspeed * 0.3 + fbspeed * fbspeed / 20)} m to stop.
-wait 1
-
-# orbit-lap: a bound ride along a closed outline starts from where the thing was drawn, and one whole range of the slider is one lap: the Earth drawn at 3 o'clock is at 6 a quarter of the way
-# (clockwise), at 9 half way, at 12 three quarters, and back at 3 at the end (the check sets the slider at each, and reads where the Earth is against the ring)
-scene orbit-lap layout=figure lines=2
-circle olsun 80,45 4 fill=accent
-circle olring 80,45 30 stroke=dim thick=0.4
-circle olearth 110,45 3 fill=ink
-card oltools | Try it
-slider olmonth 0 12 0 in=oltools | Month
-bind olmonth | move olearth along=olring
-say | The Earth goes once round the Sun as the month goes from 0 to 12.
-wait 1
 
 # a dark look with small dim notes: they must still read
 scene dark layout=figure
