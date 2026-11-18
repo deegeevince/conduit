@@ -49,6 +49,7 @@
     "smoke": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/smoke.ts",
     "scenarios": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/scenarios.ts",
     "voice-check": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/voice-check.ts",
+    "showcase": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/showcase.ts",
     "catalogue": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/catalogue.ts",
     "audit": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/audit.ts",
     "audit-log": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/audit.ts"
