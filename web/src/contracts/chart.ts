@@ -100,7 +100,7 @@ export interface ChartProbe {
   readonly from: number;
   readonly to: number;
   /** what the crosshair is on: the point's label and each series' value as written on the chart; null when it is not showing */
-  readonly crosshair: { readonly label: string; readonly values: readonly string[] } | null;
+  readonly crosshair: { readonly label: string; readonly values: readonly string[]; /** the words of the tag the crosshair puts on the bottom axis, as the library drew them; null when none was made (fb-005) */ readonly axis: string | null } | null;
   /** how many points are drawn */
   readonly points: number;
   /** the axis ticks as written, bottom then side: what "properly formatted" is checked against */

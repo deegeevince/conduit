@@ -21,7 +21,7 @@ const KEEPS_SPRITE_OPEN: ReadonlySet<string> = new Set(['wait', 'plan', 'color',
 const ROW_ALPHABET = '.#0123456789abcdefABCDEF';
 
 /** What an app's code reaches for, by shelf word, as the warning names it. */
-const SHELF_NAME: Readonly<Record<AppShelf, string>> = { physics: 'Matter', sound: 'Tone', maths: 'katex', charts: 'd3', graphs: 'd3', fonts: 'the shelf fonts' };
+const SHELF_NAME: Readonly<Record<AppShelf, string>> = { physics: 'Matter', sound: 'Tone', maths: 'katex', charts: 'd3', graphs: 'd3', fonts: 'the shelf fonts', maps: 'World' };
 
 const HEDGE = /\b(about|around|roughly|approximately|approx|nearly|almost|circa|maybe|perhaps)\b|[~\u2248]/i;
 const DOUBT_NOTE: Readonly<Record<Approx, string>> = { yes: 'approx.', computed: 'approx.', given: 'approx.', recalled: 'from memory', guessed: 'a guess' };

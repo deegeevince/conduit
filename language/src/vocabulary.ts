@@ -675,12 +675,13 @@ export const APP_HEIGHT = { min: 120, max: 1200, default: 480 } as const;
 /**
  * v2.1. The vetted library shelf a live app may ask for (`app … uses=physics,sound`). The host puts the library in the app's own document,
  * because the sandbox has no network: `physics` is matter.js (global `Matter`), `sound` Tone.js (`Tone`), `maths` KaTeX (`katex`, its stylesheet
- * included) and `charts`/`graphs` D3 (`d3`; both words name the one library). Other words are said back as a mistake and ignored.
+ * included) and `charts`/`graphs` D3 (`d3`; both words name the one library). `maps` is not a library but the world's land outlines (Natural Earth, 1:110m)
+ * as the global `World` (`World.land`, a GeoJSON MultiPolygon). Other words are said back as a mistake and ignored.
  */
-export const APP_SHELVES = ['physics', 'sound', 'maths', 'charts', 'graphs', 'fonts'] as const;
+export const APP_SHELVES = ['physics', 'sound', 'maths', 'charts', 'graphs', 'fonts', 'maps'] as const;
 export type AppShelf = (typeof APP_SHELVES)[number];
 /** Words a brain says for a shelf that are not its name. */
-export const APP_SHELF_ALIASES: Readonly<Record<string, AppShelf>> = { math: 'maths', matter: 'physics', music: 'sound', tone: 'sound', katex: 'maths', chart: 'charts', graph: 'graphs', d3: 'charts' };
+export const APP_SHELF_ALIASES: Readonly<Record<string, AppShelf>> = { math: 'maths', matter: 'physics', music: 'sound', tone: 'sound', katex: 'maths', chart: 'charts', graph: 'graphs', d3: 'charts', map: 'maps', world: 'maps' };
 
 /** Which way a flow or a tree grows. */
 export const GROWTH = { right: 'left to right', down: 'top to bottom' } as const;
@@ -1415,7 +1416,7 @@ export const MATH_VERB = {
   math: {
     form: 'math <id> column|times|split|bond|bar|groups|array|line [worked] [blank=answer|all] [carry=write|shown|none] [steps | step=<n|control>] | <sum>',
     gist: 'A written method laid out as on paper, in place-value columns. The painter computes every digit; you write none. The answer is sealed like an ask\'s `is=`: the default shows the method (the givens, the signs, the rule and empty cells) and never the answer. `worked` writes everything, for teaching on a different sum. `steps` adds a stepper, `step=<id>` follows a `pick`. Its parts are named `<id>.<part>`: `m1.r3` (a row), `m1.tens`, `m1.carry-tens`, `m1.ans-ones`, `m1.rule`, `m1.s2` (a step).',
-    time: 'starts',
+    time: 'holds',
     family: 'structure',
   },
 } as const satisfies Record<string, { form: string; gist: string; time: VerbTime; family: VerbFamily }>;

@@ -132,10 +132,19 @@ export function boundElement(element: ElementSpan, time: number, now: number, in
     moves.unshift({ kind: 'move', seq: -1, start, end: start + PIN, to: move.to, along: move.along, style: { ...result.style, at: move.to } });
   }
   extra.push(...moves);
-  for (const morph of result.morphs) {
-    const start = time - morph.t * PIN;
-    extra.push({ kind: 'morph', seq: -1, start, end: start + PIN, geometry: morph.geometry, style: result.style });
+  // Bound morphs are chained as the moves are, each beginning where the one before ended: a shape bound over several parts of a control's range (`bind h 20..30 | line a …`,
+  // `bind h 30..45 | line a …`) is drawn along them in turn. Started at once they overlapped, so each began from a half-way shape and the drawing went back on itself (fb-029: a
+  // shadow that grew again as the slider went on).
+  let latestMorph = Number.POSITIVE_INFINITY;
+  const morphs: ElementChange[] = [];
+  for (let i = result.morphs.length - 1; i >= 0; i -= 1) {
+    const morph = result.morphs[i];
+    if (morph === undefined) continue;
+    const start = Math.min(time - morph.t * PIN, latestMorph - PIN);
+    latestMorph = start;
+    morphs.unshift({ kind: 'morph', seq: -1, start, end: start + PIN, geometry: morph.geometry, style: result.style });
   }
+  extra.push(...morphs);
   const changes = [...element.changes, ...extra].sort((a, b) => a.start - b.start);
   return { element: { ...element, changes }, words: result.text };
 }

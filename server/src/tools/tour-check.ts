@@ -9,6 +9,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { TOUR_CHAPTERS } from '@conduit/language';
 import { sleep } from './explore-browser';
+import { checkPill, checkTourBar } from './demo-check';
 import { Conversation, Tab } from './smoke';
 import type { LensScene, LensScreen } from './lens-check';
 import type { CheckResult, Options } from './smoke';
@@ -58,8 +59,12 @@ export async function tourGroup(base: string, screen: LensScreen, dir: string, t
     await tab.type(text);
     await tab.key('Enter');
   };
-  const tapCard = async (text: string): Promise<boolean> => {
-    if (!(await until(`the card "${text}"`, async () => (await shown(text)) !== null, 12_000))) return false;
+  // `wait`: the tour's page plays at the pace of reading (about 13 s for all seven chapters): the last of them comes late
+  const tapCard = async (text: string, wait = 12_000): Promise<boolean> => {
+    if (!(await until(`the card "${text}"`, async () => (await shown(text)) !== null, wait))) {
+      list.push(`on stage then: ${(await seen()).filter((e) => e.opacity > 0.05 && e.text !== '').map((e) => `"${e.text.slice(0, 30)}"${e.tappable ? '*' : ''} ${Math.round(e.opacity * 100)}%`).join(', ')}`);
+      return false;
+    }
     const card = await shown(text);
     if (card === null) return false;
     if (!card.tappable) await sleep(1500);
@@ -68,8 +73,15 @@ export async function tourGroup(base: string, screen: LensScreen, dir: string, t
     await tab.eval(`window.__stage.tap(${JSON.stringify(card.id)})`);
     return true;
   };
-  const barText = (): Promise<string[]> => tab.eval<string[]>(`[...document.querySelectorAll('[data-tour-bar] button')].filter((b) => !b.hidden && b.offsetParent !== null).map((b) => b.textContent)`);
-  const barReady = (): Promise<boolean> => until('the tour bar after the demo', async () => (await barText()).includes('Back to the tour'), 40_000);
+  const barText = (): Promise<string[]> => tab.eval<string[]>(`[...document.querySelectorAll('[data-tour-bar] button')].filter((b) => !b.hidden && b.offsetParent !== null && !b.disabled).map((b) => b.textContent)`);
+  /** the bar is up from the start of a demo with "Try it yourself" held back (disabled) until the demo's end */
+  const barHeld = (): Promise<string[]> => tab.eval<string[]>(`[...document.querySelectorAll('[data-tour-bar] button')].filter((b) => !b.hidden && b.offsetParent !== null).map((b) => b.textContent + (b.disabled ? ' (held)' : ''))`);
+  const barReady = (): Promise<boolean> => until('the tour bar after the demo', async () => (await barText()).includes('Try it yourself'), 40_000);
+  /** fb-004, 031: nothing on the stage or over it meets the bar */
+  const barClear = async (what: string): Promise<void> => {
+    const found = await checkTourBar(tab, true);
+    if (found.length > 0) list.push(`${what}: ${found.join('; ')}`);
+  };
   try {
     note(`tour: ${tag}`);
     await tab.send('DOM.enable');
@@ -95,10 +107,14 @@ export async function tourGroup(base: string, screen: LensScreen, dir: string, t
         if (await until('the chapter page', async () => (await shown(demoCard.label)) !== null, 12_000)) {
           await shoot('chapter');
           if (await tapCard(demoCard.label)) {
+            // the bar is there from the start, with "Try it yourself" held back, and the stage already keeps its room
+            if (!(await until('the tour bar at the start of the demo', async () => (await barHeld()).includes('Back to the tour'), 8_000))) list.push('the tour bar was not up while the demo played');
+            else if (!(await barHeld()).includes('Try it yourself (held)') && !(await barText()).includes('Try it yourself')) list.push('"Try it yourself" was not offered (held or ready) while the demo played');
             if (await barReady()) {
               const bar = await barText();
               if (!bar.includes('Try it yourself')) list.push('"Try it yourself" is not offered after the demo');
               await shoot('demo');
+              await barClear('the demo at its end');
               // no model was asked: the turn was a demo
               const asked = await tab.eval<string>('JSON.stringify(window.__stage.events().filter((e) => e.type === "tap").length)');
               if (asked !== '0') list.push(`a tap on a tour card was sent to the brain (${asked} tap events)`);
@@ -109,15 +125,46 @@ export async function tourGroup(base: string, screen: LensScreen, dir: string, t
         }
       }
     }
-    // the memory card: four real turns (draw, draw again, restore the first, reuse its moon), then the bar
+    // the memory card: five real turns (draw, draw again, restore the first, undo, reuse its moon), with the bar up throughout
     if (await tapCard('Iteration and memory')) {
       if (await tapCard('Bring back an earlier drawing')) {
         if (await barReady()) {
           const ids = await tab.eval<string[]>('window.__stage.elements().filter((e) => e.opacity > 0.05).map((e) => e.id)');
           if (!ids.some((id) => id.startsWith('moon1'))) list.push(`the first drawing's moon did not come back with use (on stage: ${ids.join(', ')})`);
           await shoot('memory');
+          await barClear('the memory card at its end');
           await tab.eval(`[...document.querySelectorAll('[data-tour-bar] button')].find((b) => b.textContent === 'Back to the tour').click()`);
           await until('the tour page after the memory card', async () => (await shown('A tour of Conduit')) !== null, 12_000);
+        }
+      }
+    }
+    // the language view: the pane of lines is on beside the stage, so the stage is only the right part of the page; the line over the stage's lower edge is centred on the stage
+    // (fb-006), and the bar and everything on the stage keep apart (fb-004)
+    if (await tapCard('The language view', 30_000)) {
+      if (await tapCard('Watch the picture being written')) {
+        // while it plays, the line over the stage's lower edge holds "Show all"; tapped, it says where the earlier scenes are. Each stands over the middle of the stage's column (fb-006), on one line
+        const pillUp = (): Promise<boolean> => tab.eval<boolean>(`(() => { const t = document.querySelector('.prompt__top'); return !!t && !t.hidden && t.offsetParent !== null; })()`);
+        if (!(await until('the line over the stage (Show all) while the language view plays', pillUp, 15_000))) list.push('there was no line over the stage while the language view played');
+        else {
+          const pill = await checkPill(tab);
+          if (pill.length > 0) list.push(`the language view, Show all: ${pill.join('; ')}`);
+          await tab.eval(`document.querySelector('.action--show').click()`);
+          // the note is said only when the stage can rest on the last of several scenes; when it is, it stands where the Show all line did
+          let noted = false;
+          for (let waited = 0; waited < 6000 && !noted; waited += 250) {
+            noted = await tab.eval<boolean>(`[...document.querySelectorAll('.prompt__top .prompt__status')].some((n) => /Transcript/.test(n.textContent) && !n.classList.contains('prompt__status--quiet'))`);
+            if (!noted) await sleep(250);
+          }
+          if (noted) {
+            const note = await checkPill(tab);
+            if (note.length > 0) list.push(`the language view, the Transcript note: ${note.join('; ')}`);
+          }
+        }
+        if (await barReady()) {
+          await shoot('language');
+          await barClear('the language view at its end');
+          await tab.eval(`[...document.querySelectorAll('[data-tour-bar] button')].find((b) => b.textContent === 'Back to the tour').click()`);
+          await until('the tour page after the language view', async () => (await shown('A tour of Conduit')) !== null, 12_000);
         }
       }
     }

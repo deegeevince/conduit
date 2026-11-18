@@ -40,6 +40,16 @@ The libraries are permissively licensed (MIT, BSD or ISC, which is the MIT licen
 
 Left out on purpose: d3-delaunay (it bundles robust-predicates, which is public domain, not MIT/BSD/Apache), d3-brush, d3-contour, d3-fetch, d3-dsv, and the KaTeX fonts for script, fraktur, caligraphic and typewriter faces.
 
+## Map data (the `maps` shelf)
+
+Not a library: a data file, vendored as it was published and decoded at build time. An app that asks for `uses=maps` (or whose code says `World.land`) is given the global `World`, whose `land` is a GeoJSON MultiPolygon of the world's land.
+
+- File: `web/src/surfaces/shelf/data/land-110m.json` (55207 bytes, sha256 ead5f68119c49a9250902e7da303bcb209341bbb8fefe7369a439b48b704658a), the TopoJSON `land` object, unchanged.
+- Source: https://cdn.jsdelivr.net/npm/world-atlas@2.0.2/land-110m.json (the `world-atlas` package, version 2.0.2), downloaded 2026-11-18.
+- The outlines are Natural Earth 1:110m land (https://www.naturalearthdata.com), which is in the public domain: no permission or credit is needed.
+- The packaging, world-atlas, is ISC-licensed (the same grant as the D3 modules above). Its own LICENSE file was not fetched, so its copyright line is not reproduced here.
+- Conversion (this script): arcs delta-decoded and the transform applied, shared arcs stitched into rings, coordinates rounded to 2 decimals (2 points that rounded onto their neighbour dropped); 125 polygons, 5121 points. Nothing is fetched when an app runs.
+
 ## Licence texts
 
 ### matter-js

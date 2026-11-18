@@ -14,11 +14,11 @@ path dashed stroke=foam thick=1.4 dash=5,2.5 | M8,22 C30,2 50,44 76,24 C90,14 10
 path inked stroke=foam brush=ink thick=2.4 dash=9,3 | M8,44 C30,28 52,64 78,46 C92,38 100,40 104,48
 circle ring 130,24 14 fill=straw stroke=ember thick=1.2 dash=3,2
 rect frame 112,46 40x20 stroke=foam thick=1 dash=4,2
-path pressure stroke=foam thick=0.3>3.2>0.3 | M8,70 C28,56 52,84 80,68 C92,62 100,64 104,70
+path pressure stroke=deep thick=0.3>3.2>0.3 | M8,70 C28,56 52,84 80,68 C92,62 100,64 104,70
 path graded stroke=ember>straw>foam thick=2.6 | M8,82 C30,70 56,92 82,80 C94,74 102,76 106,82
-path packed stroke=foam brush=dry thick=1.4 | M112,76 L128,74 M112,81 L130,80 M134,75 L152,73 M134,82 L152,80
+path packed stroke=deep brush=dry thick=1.4 | M112,76 L128,74 M112,81 L130,80 M134,75 L152,73 M134,82 L152,80
 say | Dashes, pressure, a graded colour, and packed strokes that each taper alone.
-wait 4
+wait 5.3s
 scene caption calm
 color deep=#1b2a49
 color sea=#2f7f9a
@@ -32,5 +32,5 @@ path hills fill=moss stroke=none | M0,56 C24,44 52,66 84,54 C108,46 132,56 160,5
 rect glow 0,40 160x50 fill=ember>straw>foam angle=90 clip=hills stroke=none opacity=0.85
 path furrows stroke=deep thick=1.2 dash=4,2 clip=hills | M0,46 C40,36 100,70 160,44 M0,62 C50,52 100,76 160,60
 circle haze 52,50 20 fill=ember blend=multiply opacity=0.7 stroke=none
-say | Many stops, from the middle, turned, kept inside a shape, a glaze and a light.
+say | A sky of three colours, a moon lit from its middle, a glow turned on its side and kept inside the hills, and a dark glaze over it all.
 wait 4

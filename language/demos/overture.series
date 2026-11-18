@@ -14,7 +14,7 @@ group g
 rect in=g composer 4,12 92x14 r=7 stroke=dim thick=0.8 dur=0.5s
 say in=g prompt at=50,19 enter=type | Show me half of 64
 wait 0.3
-say in=g total at=50,36 size=xl | 64
+say in=g total at=50,34 size=xl | 64
 rect in=g whole 6,42 88x28 stroke=ink thick=1.2 dur=0.8s
 line in=g cut 50,42 50,70 stroke=ink thick=1.2
 say in=g q at=28,56 size=xxl ink=accent | ?

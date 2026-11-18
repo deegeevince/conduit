@@ -1333,6 +1333,8 @@ export function buildSchedule(entries: readonly ScoreEntry[], base: StageBase, o
       const duration = figureEnterSeconds(joined.style.enter, pace, joined.style.dur, false);
       const slot = takeSlot(line.id, start);
       create(entry, 'structure', line.id, joined.style, start + slot.delay, duration, slot.order, { text: '', emphasis: [], figure: figure(wanted), parent: joined.parent });
+      // A written method holds the pen until it has arrived (fb-023): the next line, a scene's opening too, was starting while the working was still coming in, so it was cleared before anyone could read it.
+      if (!BACKDROP_LAYERS.includes(joined.style.layer)) pen = Math.max(pen, start + slot.delay + duration);
       lines.push({ seq, verb: line.verb, start, end: start + slot.delay + duration });
       return;
     }

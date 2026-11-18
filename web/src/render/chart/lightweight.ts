@@ -108,8 +108,12 @@ const TimeBehaviour = defaultHorzScaleBehavior();
 class SlotScale extends TimeBehaviour {
   labels: SlotLabels = { weight: () => 1, tick: () => '', cross: () => '' };
   readonly seen = new Map<number, string>();
+  /** told the words of the crosshair's tag on the bottom axis whenever one is made (the probe reports them) */
+  onTag: (label: string) => void = () => undefined;
   override formatHorzItem(item: InternalHorzScaleItem): string {
-    return this.labels.cross(slotOf(item));
+    const label = this.labels.cross(slotOf(item));
+    this.onTag(label);
+    return label;
   }
   override formatTickmark(mark: TickMark): string {
     const slot = slotOf(mark.time);
@@ -260,6 +264,8 @@ class LightweightHandle implements ChartHandle {
   private timeChart: IChartApi | null = null;
   private chartMode: 'time' | 'slot' | null = null;
   private slotScale: SlotScale | null = null;
+  /** the words of the tag the crosshair last put on the bottom axis (fb-005: on a slot-scaled chart it once read "1970" over "2005") */
+  private tagSeen: string | null = null;
   private state: ChartState | null = null;
   private plot: Plot | null = null;
   private lastModel: unknown = null;
@@ -399,6 +405,7 @@ class LightweightHandle implements ChartHandle {
       this.slotScale = null;
     } else {
       const scale = new SlotScale();
+      scale.onTag = (label) => (this.tagSeen = label);
       this.chart = createChartEx<Time, SlotScale>(this.element, scale, base);
       this.timeChart = null;
       this.slotScale = scale;
@@ -591,9 +598,16 @@ class LightweightHandle implements ChartHandle {
       // A tick goes on the first slot after a boundary of the calendar: a year, then a month, a day, an hour. Which
       // boundary decides its weight and what it says, so years are chosen before months and a round year before a plain one.
       const said = new Map<number, string>();
+      // With few points (twelve or fewer) the ticks stand under the points: a year that holds none is not a place on the axis, and the last point always has its tick (fb-038)
+      const held = axis.kept.length <= 12 ? new Map(axis.kept.map((slot, j) => [slot + this.pad, model.points[axis.keptPoint[j] ?? 0]?.label ?? ''] as const)) : null;
+      const lastHeld = held === null ? -1 : Math.max(...held.keys());
       scale.labels = {
         weight: (item, previous) => {
           if (!inside(item)) return 0;
+          if (held !== null) {
+            if (!held.has(item)) return 0;
+            if (!said.has(item)) said.set(item, held.get(item) ?? '');
+          }
           const t = new Date(timeOf(item) * 1000);
           const p = new Date((previous === null ? timeOf(item) - axis.step : timeOf(previous)) * 1000);
           let type = -1;
@@ -604,6 +618,7 @@ class LightweightHandle implements ChartHandle {
           else if (t.getUTCHours() !== p.getUTCHours() && this.spanDays <= 6) [type, weight] = [3, 20 + (t.getUTCHours() % 6 === 0 ? 4 : 0)];
           else if (t.getUTCMinutes() !== p.getUTCMinutes() && this.spanDays <= 0.5) [type, weight] = [3, 10];
           if (type >= 0) said.set(item, tickWhen(timeOf(item), type, this.spanDays));
+          if (held !== null) return item === lastHeld ? Math.max(weight, 1000) : Math.max(weight, 1);
           return weight;
         },
         tick: (item) => said.get(item) ?? '',
@@ -690,7 +705,13 @@ class LightweightHandle implements ChartHandle {
         tickMarkMaxCharacterLength: this.maxTickChars,
       },
       localization: {
-        timeFormatter: (time: Time) => this.timeLabel(seconds(time)),
+        // On a slot-scaled chart (names, numbers, an evenly spaced time grid) the library hands over the slot number, not a time: it is read by the scale that knows the slots,
+        // not as seconds after 1970 (fb-005)
+        timeFormatter: (time: Time) => {
+          const said = this.slotScale !== null ? this.slotScale.labels.cross(seconds(time)) : this.timeLabel(seconds(time));
+          this.tagSeen = said;
+          return said;
+        },
       },
       handleScroll: { mouseWheel: false, pressedMouseMove: interactive, horzTouchDrag: interactive, vertTouchDrag: false },
       handleScale: { mouseWheel: interactive, pinch: interactive, axisPressedMouseMove: interactive, axisDoubleClickReset: interactive },
@@ -971,7 +992,7 @@ class LightweightHandle implements ChartHandle {
     return {
       from: xAtSlot(plot.axis, model, slotFrom),
       to: xAtSlot(plot.axis, model, slotTo),
-      crosshair: r === null ? null : { label: r.label, values: r.items.map((i) => i.text) },
+      crosshair: r === null ? null : { label: r.label, values: r.items.map((i) => i.text), axis: this.tagSeen },
       points: Math.min(drawn.landed, plot.axis.kept.length),
       ticks: { x: xs, y: this.yTicks.map((t) => t.label) },
       type: { label: state.theme.fontPx, title: this.header.titlePx, credit: this.header.creditPx, small: (this.source ?? state).theme.fontPx },

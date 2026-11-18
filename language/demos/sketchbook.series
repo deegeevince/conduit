@@ -4,30 +4,31 @@
 
 look chalk
 scene lever figure lines=2
-line beam 14,50 86,50 thick=2
+line beam 14,50 86,50 thick=3
 poly pivot 38,62 44,50 50,62 fill=accent
 rect load 72,40 12x10 fill=dim
-path push stroke=accent thick=1.5 | M20 26 V46 m-4 -5 l4 5 l4 -5
+path push stroke=accent thick=2.5 | M20 24 V46 m-5 -6 l5 6 l5 -6
 say label near=pivot:below | pivot
 say label near=load:above | load
 say | Push down far from the pivot and the short end lifts the load.
 wait
 poly pivot 62,62 68,50 74,62
 say strong | Move the pivot closer: *less effort, less lift*.
-wait 2
+wait 2.3s
 
 scene orbit caption lines=1
 look blueprint
 circle star 80,45 7 fill=accent stroke=none
 ellipse track 80,45 46x24 stroke=dim thick=0.5
-circle planet 126,45 3 fill=ink stroke=none
+circle planet 80,21 3 fill=ink stroke=none
 move planet along=track slow
 say | A year is one trip round the track.
-group moon at=34,45 loop=spin
+group moon at=22,20 loop=spin
 circle in=moon 0,0 2 fill=alt stroke=none
 line in=moon 0,0 6,0 stroke=dim thick=0.4
-use moon2 moon at=118,30 scale=0.7
-wait 3
+use moon2 moon at=140,72 scale=0.7
+say | A group of two parts, spinning as one. Its copy, smaller, spins with it.
+wait 4.5s
 
 scene shapes caption playful brisk
 look riso
@@ -37,14 +38,5 @@ circle blob 80,42 24 fill=alt
 say | becomes another
 poly blob 56,60 80,18 104,60 fill=ink
 say | and another.
-ambient confetti
-wait 2
-
-scene choices layout=caption
-look paper
-card c1 | Words stay in their card
-say x48 in=c1 | Which shape has three sides?
-say x50 choice in=c1 | Triangle
-say x52 choice in=c1 | Square
-say x54 aside | Choices in a card stand apart, each a target of its own.
-wait 2
+ambient confetti heavy
+wait 2.9s

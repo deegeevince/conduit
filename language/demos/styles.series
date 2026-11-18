@@ -12,7 +12,7 @@ pix at=76,74 scale=1.2
 | .88888.
 | ..888..
 | ...8...
-say label near=sun:below | accent
+say label near=sun:above | accent
 say title | Same lines
 say | Only the *look* changes: ground, inks, face, surface.
 say aside | size, colour, stroke and texture belong to the look

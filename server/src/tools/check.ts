@@ -12,7 +12,7 @@
 //                      script's own words; it settles under reduced motion too
 //   choice             a real tap on a starter is sent as a turn and the replay brain answers it, to rest
 //   every demo         each demo (`problem` has its own scenes) is played by name and comes to rest, the ones the app does not offer yet (`DEMOS_NOT_PAINTED`) too: not offered is not unjudged
-//   explorable         a slider, a toggle and a pick of the explorable demo change the drawing with no request to the server
+//   explorable         a slider and a pick of the explorable demo change the drawing with no request to the server (a higher sun stands higher and throws a shorter shadow, away from it)
 //   problems           each `problem` of language/demos/problem.series (old logs) is played at its own turn: the question is on the canvas with a blank, nothing takes the
 //                      screen, a wrong answer put in the blank is marked wrong and the right one right (no model)
 //   ask                (tablet 1180x820 at two pixels, touch, the lens off and on) a finger tap on an ask's blank focuses its input, also under the Draw layer after a pen stroke;
@@ -25,6 +25,10 @@
 //   lens               (flag on, ?lens=1; tablet 1180x820 at two pixels to the point with touch, and 390x844) a two-finger pinch to 2x, then a tap on a choice, a slider
 //                      drag and a pen stroke each land on the right page point; 0 fits again; the pen draws without Draw, a short pen tap presses (lens-check.ts)
 //
+//   fb-023, fb-002     the demo audit's checks with no browser (`pnpm timeline demos`, `pnpm demo-checks`), named by the backlog row they guard (docs/feedback.md): the reading rule, a chart that is what it says, a control
+//                      that changes something; a drawing past its canvas, parts that come apart in a move, a morphed shape that is moved. Their page-side twins run in every demo scene (server/src/tools/demo-check.ts):
+//                      fb-004 the tour's bar (a tour demo plays with it up, and nothing meets it), fb-023 what the scene wrote is on the stage, fb-030 no line let go, fb-037 a label on the side it was written, fb-005 the
+//                      crosshair's tag
 //   hard               language/demos/hard.series: the failures real sessions turned up, one scene each (a 400-character line, CJK, a flowchart, words beside strokes, digits lined up, crowded labels,
 //                      many lines, a dark ground, a photo with callouts); judged like a demo, each scene with its own question
 //   stream             a turn at 80 characters a second has its first element on stage long before its last line is sent; a recorded stream-json turn comes out line by line
@@ -41,8 +45,8 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { cpus, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { DEMOS, LineReader, TOUR_CHAPTERS, digestFull } from '@conduit/language';
-import type { Attention, Observation } from '@conduit/language';
+import { cutScenes, declaredAtRest, DEMOS, DEMOS_NOT_PAINTED, LineReader, playSource, TOUR_CHAPTERS, digestFull } from '@conduit/language';
+import type { Attention, Declared, Observation } from '@conduit/language';
 import { spawnTracked } from '../brains/claude-cli/process';
 import { CHROME_CANDIDATES, repoRoot, sleep, stop, waitFor } from './explore-browser';
 import { claimPort, releasePort } from './check-ports';
@@ -57,6 +61,8 @@ import { journeyGroup } from './journey-check';
 import { labelGroup } from './label-check';
 import { undoGroup } from './undo-check';
 import { MEMORY_SCREEN, memoryGroup } from './memory-check';
+import { checkAxisTags, checkDeclared, checkLabels, checkNoEarlierChip, checkTourBar, scriptGroup } from './demo-check';
+import type { LabelWant } from './demo-check';
 import { fb062Group, loopGroup } from './loop-check';
 import { TOUR_SCREENS, tourGroup } from './tour-check';
 import { printWebkit, webkitGroup, webkitMissing } from './webkit-check';
@@ -114,7 +120,8 @@ function parseArgs(argv: readonly string[]): Args {
     url: url === undefined ? null : url.replace(/\/+$/, ''),
     out: resolve(flags.get('out') ?? join(tmpdir(), 'conduit-check', new Date().toISOString().replace(/[:.]/g, '-'))),
     screens,
-    timeoutMs: Number(flags.get('timeout') ?? 90) * 1000,
+    // the longest demo (maths) plays for about 105 s at the pace of the stage: a demo is given 150 s to come to rest
+    timeoutMs: Number(flags.get('timeout') ?? 150) * 1000,
     allowPlain: flags.has('allow-plain'),
     sequential: flags.has('sequential'),
     quiet: flags.has('quiet'),
@@ -244,6 +251,10 @@ function hardOrder(id: string): number {
   return source.split('\n').flatMap((raw) => /^scene\s+(\S+)/.exec(raw)?.[1] ?? []).indexOf(id) + 1;
 }
 
+/** the land and the sea of the fb-026 map fixtures (hard.series): literal colours, so that a screenshot can say what was drawn where */
+const LAND_RGB: readonly number[] = [0xe8, 0xb8, 0x4a];
+const SEA_RGB: readonly number[] = [0x1b, 0x4f, 0x9c];
+
 /** the spots of the photo scene, as a percent of the photo's width and height (the same as `pnpm photo-check` uses) */
 const PHOTO_SPOTS: readonly (readonly [string, number, number])[] = [['c1', 8, 10], ['c2', 92, 12], ['c3', 50, 50], ['c4', 20, 78], ['c5', 81, 90], ['c6', 50, 8], ['c7', 3, 50], ['c8', 97, 55]];
 
@@ -308,6 +319,24 @@ interface Stage {
   readonly box: { readonly x: number; readonly y: number; readonly width: number; readonly height: number };
 }
 
+/** what a scene's judgement can be asked besides the painter's own account: see `Screen.judge` */
+interface JudgeOptions {
+  readonly earlier?: boolean;
+  readonly footprints?: boolean;
+  readonly photo?: boolean;
+  /** the things the scene's lines wrote that must be on the stage at its rest (fb-023); also asks that no line was let go (fb-030) */
+  readonly declared?: readonly Declared[];
+  /** a tour demo: the tour's bar must be up and nothing meet it (fb-004); false: it must not be there */
+  readonly tourBar?: boolean;
+  /** the labels written `near=<id>:<side>` (fb-037) */
+  readonly labels?: readonly LabelWant[];
+  /** hover every chart on stage: the crosshair's tag on the bottom axis is a written label or a year in the data (fb-005) */
+  readonly axisTags?: boolean;
+}
+
+/** the demos the tour offers a card for: they are played the way the tour plays them, with its bar */
+const TOUR_DEMOS: ReadonlySet<string> = new Set(TOUR_CHAPTERS.flatMap((chapter) => chapter.cards.flatMap((card) => (card.kind === 'demo' ? [card.name] : []))));
+
 class Screen {
   readonly scenes: Scene[] = [];
   renderer = 'unknown';
@@ -363,7 +392,7 @@ class Screen {
    * `earlier`: a scene before the last of a turn, seen by seeking the clock there: what the turn's report says is about the last scene, so only what the screen shows is judged.
    * `footprints`: also hide each line of words in turn and judge what it really paints (real-check.ts).
    */
-  private async judge(tab: Tab, talk: Conversation, name: string, results: CheckResult[], began: number, report: boolean, prompt: boolean, options: { readonly earlier?: boolean; readonly footprints?: boolean; readonly photo?: boolean } = {}): Promise<Scene> {
+  private async judge(tab: Tab, talk: Conversation, name: string, results: CheckResult[], began: number, report: boolean, prompt: boolean, options: JudgeOptions = {}): Promise<Scene> {
     talk.current = this.scenes.length + 1;
     const picture = await tab.shot();
     const file = `${this.screen.name}-${name.replace(/[^\w-]+/g, '-')}.png`;
@@ -379,6 +408,25 @@ class Screen {
     const add = (check: string, verdict: Verdict, detail: string): void => talk.add(results, check, verdict, detail);
     await checkInk(tab, add, picture, answer.live, tab.dpr);
     await checkTakeover(tab, add);
+    // what the scene's own lines wrote, and the chrome that stands over the stage (docs/demo-audit.md part 4; server/src/tools/demo-check.ts)
+    if (options.tourBar !== undefined) {
+      const found = await checkTourBar(tab, options.tourBar);
+      add('fb-004-tour-bar', found.length === 0 ? 'PASS' : 'FAIL', found.length === 0 ? (options.tourBar ? 'the tour bar is up and nothing on the stage or over it meets it' : 'no tour bar here') : found.join('; '));
+    }
+    if (options.declared !== undefined) {
+      const found = await checkDeclared(tab, options.declared);
+      add('fb-023-declared-on-screen', found.length === 0 ? 'PASS' : 'FAIL', found.length === 0 ? `all ${options.declared.length} things the scene wrote are on the stage, seen` : found.join('; '));
+      const chip = await checkNoEarlierChip(tab);
+      add('fb-030-no-line-let-go', chip.length === 0 ? 'PASS' : 'FAIL', chip.length === 0 ? 'no line of the scene was let go' : chip.join('; '));
+    }
+    if (options.axisTags === true) {
+      const found = await checkAxisTags(tab);
+      add('fb-005-axis-tag', found.length === 0 ? 'PASS' : 'FAIL', found.length === 0 ? 'the crosshair\'s tag on the bottom axis is a written label or a year in the data, at three hover points' : found.join('; '));
+    }
+    if (options.labels !== undefined) {
+      const found = await checkLabels(tab, options.labels);
+      add('fb-037-label-on-its-part', found.length === 0 ? 'PASS' : 'FAIL', found.length === 0 ? `${options.labels.length} labels stand on the side of their part they were written on` : found.join('; '));
+    }
     // a photo's callouts are looked at with a long reach (their leaders run to their spots) and their spots asked for
     const spots = new Map<string, { x: number; y: number }>();
     if (options.photo === true) {
@@ -404,7 +452,7 @@ class Screen {
   }
 
   /** each scene before the last, at rest: the clock is sought to the moment before the next scene opens, so what is on screen is the end of this one */
-  private async earlierScenes(tab: Tab, talk: Conversation, base: string, starts: readonly number[], footprints: boolean, names?: readonly string[], then?: (index: number, scene: Scene) => Promise<void>, before?: (index: number) => Promise<void>): Promise<void> {
+  private async earlierScenes(tab: Tab, talk: Conversation, base: string, starts: readonly number[], footprints: boolean, names?: readonly string[], then?: (index: number, scene: Scene) => Promise<void>, before?: (index: number) => Promise<void>, extra?: (index: number) => JudgeOptions): Promise<void> {
     for (let index = 0; index + 1 < starts.length; index += 1) {
       const at = Date.now();
       const name = `${base}#${names?.[index] ?? index + 1}`;
@@ -414,7 +462,7 @@ class Screen {
       // a scene's apps are made afresh by the seek: they are let to load, and to be looked at, before the scene is judged
       if (before !== undefined) await before(index);
       const results: CheckResult[] = [];
-      const scene = await this.judge(tab, talk, name, results, at, false, false, { earlier: true, footprints, photo: names?.[index] === 'photo' });
+      const scene = await this.judge(tab, talk, name, results, at, false, false, { earlier: true, footprints, photo: names?.[index] === 'photo', ...extra?.(index) });
       if (then !== undefined) await then(index, scene);
     }
   }
@@ -498,7 +546,8 @@ class Screen {
         talk.seenReports = new Set((await tab.call<Probe>('probe')).reports);
         tab.drain();
         const results: CheckResult[] = [];
-        const started = await tab.eval<string | null>(`Promise.resolve(window.__stage.demo(${JSON.stringify(demo.name)})).then(() => null, (e) => String(e && e.message || e))`);
+        const tour = TOUR_DEMOS.has(demo.name);
+        const started = await tab.eval<string | null>(`Promise.resolve(window.__stage.${tour ? 'tourDemo' : 'demo'}(${JSON.stringify(demo.name)})).then(() => null, (e) => String(e && e.message || e))`);
         const bad = rejectedLines(demo.name);
         Screen.add(results, 'script-lines', bad.slice(0, 3), 'every line of the script reads');
         results.push(Screen.restResult(started !== null ? `the demo would not start: ${started}` : await talk.rest(true), began));
@@ -509,11 +558,21 @@ class Screen {
         const starts = await this.sceneStarts(tab);
         const base = `demo-${demo.name}`;
         const footprints = FOOTPRINT_DEMOS.includes(demo.name);
+        // what each scene's lines wrote, from the language's own reading of the script; skipped when the page and the schedule do not agree on how many scenes there are
+        const cuts = cutScenes(playSource(readFileSync(fileURLToPath(import.meta.resolve(`@conduit/language/demos/${demo.name}.series`)), 'utf8')));
+        const agree = cuts.length === starts.length && !DEMOS_NOT_PAINTED.includes(demo.name);
+        const sceneOptions = (index: number): JudgeOptions => {
+          const cut = cuts[index];
+          const charts = demo.name === 'charts' ? { axisTags: true } : {};
+          if (!agree || cut === undefined) return { ...charts, ...(tour ? { tourBar: true } : {}) };
+          const labels = cut.elements.flatMap((element): LabelWant[] => (element.kind === 'text' && element.style.near !== null && !element.style.leader && element.style.near.part === undefined && element.exit === null ? [{ text: element.text, target: element.style.near.id, side: element.style.near.side as LabelWant['side'] }] : []));
+          return { declared: declaredAtRest(cut), labels: labels.filter((label) => ['above', 'below', 'left', 'right'].includes(label.side)), ...charts, ...(tour ? { tourBar: true } : {}) };
+        };
         const facts = FACT_DEMOS.includes(demo.name) ? sceneFactsOf(readFileSync(fileURLToPath(import.meta.resolve(`@conduit/language/demos/${demo.name}.series`)), 'utf8')) : null;
-        const last = await this.judge(tab, talk, starts.length > 1 ? `${base}#${starts.length}` : base, results, began, true, first, { footprints });
+        const last = await this.judge(tab, talk, starts.length > 1 ? `${base}#${starts.length}` : base, results, began, true, first, { footprints, ...sceneOptions(starts.length - 1) });
         if (facts !== null) await this.sceneFacts(tab, talk, facts, starts.length, starts.length - 1, last.results);
         if (demo.name === 'scripts') await this.scriptGlyphs(tab, talk, results);
-        if (starts.length > 1) await this.earlierScenes(tab, talk, base, starts, footprints, undefined, facts === null ? undefined : (index, scene) => this.sceneFacts(tab, talk, facts, starts.length, index, scene.results));
+        if (starts.length > 1) await this.earlierScenes(tab, talk, base, starts, footprints, undefined, facts === null ? undefined : (index, scene) => this.sceneFacts(tab, talk, facts, starts.length, index, scene.results), undefined, sceneOptions);
         first = false;
       }
     } finally {
@@ -574,7 +633,7 @@ class Screen {
       await this.judge(tab, talk, `demo-hard#${ids[last]}`, results, began, true, false, { footprints: true, photo: ids[last] === 'photo' });
       await this.hardAsserts(ids[last] as string, tab, talk, results, photo);
       await this.earlierScenes(tab, talk, 'demo-hard', starts, true, ids, async (index, scene) => this.hardAsserts(ids[index] as string, tab, talk, scene.results, photo), async (index) => {
-        if (/^fb-025/.test(ids[index] as string)) await this.appsLooked(tab);
+        if (/^fb-02[56]/.test(ids[index] as string)) await this.appsLooked(tab);
       });
       await this.briefHolds(tab, talk, session, results);
     } finally {
@@ -829,10 +888,85 @@ class Screen {
         good = 'the empty frame is told: the host found nothing visible three seconds after it loaded, and the server holds `app fixblank drew nothing` as blocking';
         break;
       }
+      case 'fb-026': {
+        // fb-026: the world's land is real. The app draws `World.land` (the shelf's Natural Earth outlines) with D3; the screenshot is read for its literal colours, where they fall and how much there is
+        // of them. The globe is turned to centre on 30E 10N, so Africa is not the middle pixel.
+        const app = await this.appWhen(tab, 'earth', (one) => one.blank !== null);
+        if (app === null) problems.push('the map app is not running');
+        else {
+          if (!app.loaded) problems.push('the map app never loaded');
+          if (app.crashes > 0) problems.push(`the map app threw ${app.crashes} time${app.crashes === 1 ? '' : 's'}: \`World\` was not in its page`);
+          if (app.blank === true) problems.push('the map app drew nothing');
+        }
+        if (app !== null && app.loaded) problems.push(...(await this.landLooks(tab)));
+        good = 'the globe turned to 30E 10N shows the land: its fill is a good part of the disc, land is where the Congo basin, Zambia, Chad and Arabia are, and sea is where the mid-Atlantic, the Arabian Sea and the Indian Ocean are';
+        break;
+      }
+      case 'fb-026-inferred': {
+        // an app that never named `maps` and reaches for `World.land` is given it, whole and frozen: its block is land-coloured only if so (and the log's `uses-inferred` warning is read in the brief check)
+        const app = await this.appWhen(tab, 'world', (one) => one.blank !== null);
+        if (app === null) problems.push('the world app is not running');
+        else {
+          if (!app.loaded) problems.push('the world app never loaded');
+          if (app.crashes > 0) problems.push(`the world app threw ${app.crashes} time${app.crashes === 1 ? '' : 's'}: \`World\` was not in its page`);
+        }
+        if (app !== null && app.loaded) {
+          const frame = await tab.eval<{ x: number; y: number; w: number; h: number } | null>(
+            `(() => { const f = [...document.querySelectorAll('iframe')].filter((one) => one.style.visibility === 'visible'); if (f.length !== 1) return null; const r = f[0].getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; })()`,
+          );
+          if (frame === null) problems.push('not one frame is showing, so there is nothing to read');
+          else {
+            const [seen] = await tab.call<(number[] | null)[]>('colourAt', await tab.shot(), [{ x: frame.x + frame.w / 2, y: frame.y + frame.h / 2 }], tab.dpr);
+            if (seen === null || seen === undefined || LAND_RGB.reduce((far, channel, at) => far + Math.abs((seen[at] ?? 0) - channel), 0) > 48) problems.push(`the middle of the world app should be the land colour (World.land whole and frozen) and is ${seen === null || seen === undefined ? 'outside the picture' : `rgb(${seen.join(', ')})`}`);
+          }
+        }
+        good = 'the land reached an app that never asked for it: World.land is a MultiPolygon of over a hundred polygons and frozen, so the page shows its land-coloured block';
+        break;
+      }
       default:
         return;
     }
     add(`hard-${id}`, problems.length === 0 ? 'PASS' : 'FAIL', problems.length === 0 ? good : problems.join('; '));
+  }
+
+  /**
+   * fb-026: what the screenshot shows of the globe app's frame. The fixture draws the land in LAND_RGB over SEA_RGB, nothing else in either colour. The globe is an orthographic one centred on
+   * 30E 10N (`d3.geoOrthographic().rotate([-30, -10])`, a disc of 0.45 of the frame's shorter side): how much of the middle is land, then the colour at a few points that are land (inland, away
+   * from a coast) and a few that are sea. The problems it found, none when the map is real.
+   */
+  private async landLooks(tab: Tab): Promise<string[]> {
+    const frame = await tab.eval<{ x: number; y: number; w: number; h: number } | null>(
+      `(() => { const f = [...document.querySelectorAll('iframe')].filter((one) => one.style.visibility === 'visible'); if (f.length !== 1) return null; const r = f[0].getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; })()`,
+    );
+    if (frame === null) return ['not one map frame is showing, so there is nothing to read'];
+    const picture = await tab.shot();
+    const cx = frame.x + frame.w / 2;
+    const cy = frame.y + frame.h / 2;
+    const radius = 0.45 * Math.min(frame.w, frame.h);
+    const where = (lon: number, lat: number): { x: number; y: number } | null => {
+      const rad = Math.PI / 180;
+      const [lon0, lat0] = [30 * rad, 10 * rad];
+      const [l, p] = [lon * rad, lat * rad];
+      if (Math.sin(lat0) * Math.sin(p) + Math.cos(lat0) * Math.cos(p) * Math.cos(l - lon0) <= 0.05) return null;
+      return { x: cx + radius * Math.cos(p) * Math.sin(l - lon0), y: cy - radius * (Math.cos(lat0) * Math.sin(p) - Math.sin(lat0) * Math.cos(p) * Math.cos(l - lon0)) };
+    };
+    const lands: readonly (readonly [string, number, number])[] = [['the Congo basin', 20, 0], ['Zambia', 25, -15], ['Chad', 15, 15], ['Arabia', 45, 25]];
+    const seas: readonly (readonly [string, number, number])[] = [['the mid-Atlantic', -30, 0], ['the Arabian Sea', 62, 12], ['the Indian Ocean', 75, -15]];
+    const problems: string[] = [];
+    // the middle of the picture: the square inside the disc holds a good share of land fill
+    const half = radius / Math.SQRT2;
+    const [share] = await tab.call<number[]>('colourShare', picture, [{ x: cx - half, y: cy - half, w: 2 * half, h: 2 * half }], LAND_RGB, 48, tab.dpr);
+    if ((share ?? 0) < 0.15) problems.push(`only ${(100 * (share ?? 0)).toFixed(1)}% of the middle of the globe is the land fill (a real one is about a third or more)`);
+    const probes = [...lands.map(([name, lon, lat]) => ({ name, lon, lat, want: LAND_RGB, kind: 'land' })), ...seas.map(([name, lon, lat]) => ({ name, lon, lat, want: SEA_RGB, kind: 'sea' }))];
+    const spots = probes.map((probe) => where(probe.lon, probe.lat));
+    const seen = await tab.call<(number[] | null)[]>('colourAt', picture, spots.map((spot) => spot ?? { x: -10, y: -10 }), tab.dpr);
+    probes.forEach((probe, index) => {
+      const got = seen[index];
+      if (spots[index] === null) problems.push(`${probe.name} is not on the visible side of the globe, so the check cannot read it`);
+      else if (got === null || got === undefined) problems.push(`${probe.name} falls outside the picture`);
+      else if (probe.want.reduce((far, channel, at) => far + Math.abs((got[at] ?? 0) - channel), 0) > 48) problems.push(`${probe.name} (${probe.lon}, ${probe.lat}) should be ${probe.kind} and is rgb(${got.join(', ')})`);
+    });
+    return problems;
   }
 
   /** The apps the page's host runs, as it probes them (`window.__stage.apps()`). */
@@ -933,8 +1067,8 @@ class Screen {
     }
     const problems: string[] = [];
     for (const [what, pattern] of wanted) if (!shown.some((fingerprint) => pattern.test(fingerprint))) problems.push(`no brief listed ${what} among its urgent items (${shown.length} urgent item${shown.length === 1 ? '' : 's'} shown over the session)`);
-    // fb-025: the globe's first row that reaches for d3 says so in the log, once, and no other app (they reach for nothing) is said to
-    if (inferred.length !== 1 || !/^row globe \| .*\(charts\)$/.test(inferred[0] as string)) problems.push(`the log should hold one \`uses-inferred\` warning, on a row of the globe, naming charts: ${inferred.length === 0 ? 'none' : inferred.join('; ')}`);
+    // fb-025: the globe's first row that reaches for d3 says so in the log, once; fb-026: so does the world app's first row that reaches for `World`, once; no other app is said to (the rest reach for nothing, or name what they use)
+    if (inferred.length !== 2 || !/^row globe \| .*\(charts\)$/.test(inferred[0] as string) || !/^row world \| .*\(maps\)$/.test(inferred[1] as string)) problems.push(`the log should hold two \`uses-inferred\` warnings, one on a row of the globe naming charts and one on a row of the world app naming maps: ${inferred.length === 0 ? 'none' : inferred.join('; ')}`);
     // the words the brain reads: the digest, made from the logged observations by the shared function
     const digest = attention === null ? '' : digestFull(noted.filter((one) => one.severity === 'blocking'), attention).text;
     if (!/app fixthrow threw: "Error: fixture: thrown on purpose" \(line 8\)/.test(digest)) problems.push(`the digest does not say how the app threw: ${digest.replace(/\s+/g, ' ').slice(0, 200)}`);
@@ -1202,7 +1336,7 @@ class Screen {
     Screen.add(results, 'art', problems, `fox1 ${partsOf('fox1').length}, kid1 ${partsOf('kid1').length} and the mirrored fox2 ${partsOf('fox2').length} parts on stage, the label by the tail, a quiet placeholder for the okapi`);
   }
 
-  /** a slider, a toggle and a pick of the explorable demo: the drawing changes, and no request is made */
+  /** a slider and a pick of the explorable demo: the drawing changes (a higher sun stands higher and throws a shorter shadow, away from it), the sentence says the number, and no request is made */
   private async explorable(tab: Tab, talk: Conversation, results: CheckResult[]): Promise<void> {
     interface Control {
       readonly id: string;
@@ -1231,25 +1365,47 @@ class Screen {
     };
     const list = await controls();
     const slider = list.find((control) => control.control === 'slider');
-    const toggle = list.find((control) => control.control === 'toggle');
     const pick = list.find((control) => control.control === 'pick');
     const problems: string[] = [];
-    if (slider === undefined || toggle === undefined || pick === undefined) {
-      Screen.add(results, 'explorable', [`the explorable demo should hold a slider, a toggle and a pick; found ${list.map((control) => control.control).join(', ') || 'nothing'}`], '');
+    if (slider === undefined || pick === undefined) {
+      Screen.add(results, 'explorable', [`the explorable demo should hold a slider and a pick; found ${list.map((control) => control.control).join(', ') || 'nothing'}`], '');
       return;
     }
     const sent = tab.posted.length;
     const requests = (): number => tab.pending();
     const start = await settled();
-    // the slider: set through the page's hook (a drag is the same call), to well away from where it stands
-    await tab.eval(`window.__stage.control(${JSON.stringify(slider.id)}, ${JSON.stringify(Number(slider.value) > 45 ? 15 : 75)})`);
+    // fb-029: the sun and its shadow at the two ends of the slider. A higher sun stands higher, throws a shorter shadow, and the shadow falls away from the sun.
+    const sun = async (): Promise<{ readonly sun: { x: number; y: number; width: number; height: number } | null; readonly shadow: { x: number; y: number; width: number; height: number } | null; readonly said: string }> =>
+      tab.eval(`(() => { const live = window.__stage.elements(); const box = (id) => { const e = live.find((c) => c.id === id); return e ? { x: e.box.x, y: e.box.y, width: e.box.width, height: e.box.height } : null; }; const said = live.find((c) => c.kind === 'text' && /^Sun /.test(String(c.text || ''))); return { sun: box('sun'), shadow: box('shadow'), said: said ? String(said.text) : '' }; })()`);
+    await tab.eval(`window.__stage.control(${JSON.stringify(slider.id)}, 20)`);
+    const low = await settled().then(sun);
+    await tab.eval(`window.__stage.control(${JSON.stringify(slider.id)}, 80)`);
     const afterSlider = await settled();
+    const high = await sun();
+    if (low.sun === null || low.shadow === null || high.sun === null || high.shadow === null) problems.push('the sun or its shadow is not on stage');
+    else {
+      if (!(high.sun.y < low.sun.y - 10)) problems.push(`a higher sun must stand higher: the sun's top is at ${Math.round(low.sun.y)} at 20 and ${Math.round(high.sun.y)} at 80`);
+      if (!(high.shadow.width < low.shadow.width - 20)) problems.push(`a higher sun must throw a shorter shadow: ${Math.round(low.shadow.width)} px at 20, ${Math.round(high.shadow.width)} px at 80`);
+      if (!(low.shadow.x + low.shadow.width / 2 > low.sun.x + low.sun.width / 2)) problems.push('the shadow must fall away from the sun, and it falls on the same side');
+    }
+    // the shadow all the way along the slider (it is bound over four parts of the range, chained): it only ever shortens as the sun goes up, and at 45 degrees it is the length the sentence says
+    // (2 m against 5.5 m at 20 degrees: a ratio of 0.36)
+    const along = [20, 26, 32, 38, 45, 50, 56, 62, 68, 74, 80];
+    const lengths: number[] = [];
+    for (const angle of along) {
+      await tab.eval(`window.__stage.control(${JSON.stringify(slider.id)}, ${angle})`);
+      await settled();
+      lengths.push((await sun()).shadow?.width ?? 0);
+    }
+    const grew = lengths.findIndex((length, at) => at > 0 && length > (lengths[at - 1] as number) + 4);
+    if (grew > 0) problems.push(`the shadow grew again as the sun went up: ${along.map((angle, at) => `${angle} ${Math.round(lengths[at] as number)}`).join(', ')}`);
+    const ratio = (lengths[4] as number) / Math.max(1, lengths[0] as number);
+    if (ratio < 0.3 || ratio > 0.43) problems.push(`the shadow at 45 degrees is ${ratio.toFixed(2)} of its length at 20; a 2 m post throws 2 m against 5.5 m (0.36)`);
+    await tab.eval(`window.__stage.control(${JSON.stringify(slider.id)}, 80)`);
+    await settled();
+    if (!/Sun 20\D*\bup\b/.test(low.said) || !/Sun 80\D*\bup\b/.test(high.said)) problems.push(`the live sentence does not say the angle: "${low.said}" at 20 and "${high.said}" at 80`);
     if (afterSlider === start) problems.push(`moving the slider "${slider.label}" changed nothing in the drawing`);
-    // the toggle: a real tap on it
-    const toggleBox = (await controls()).find((control) => control.id === toggle.id)?.box ?? toggle.box;
-    await tab.tap(toggleBox.x + toggleBox.width / 2, toggleBox.y + toggleBox.height / 2);
-    const afterToggle = await settled();
-    if (afterToggle === afterSlider) problems.push(`tapping the toggle "${toggle.label}" changed nothing in the drawing`);
+    const afterToggle = afterSlider;
     // the pick: another option (a pick is set by its 1-based position)
     const shown = (await controls()).find((control) => control.id === pick.id)?.valueText ?? '';
     const next = Math.max(1, pick.options.findIndex((option) => option !== shown) + 1);
@@ -1261,7 +1417,7 @@ class Screen {
     else if (afterPick === afterToggle) problems.push(`choosing "${String(other)}" in the pick "${pick.id}" changed nothing in the drawing`);
     if (tab.posted.length !== sent) problems.push(`working the controls sent ${tab.posted.length - sent} turn(s) to the server: they must not need a round trip`);
     if (requests() !== 0) problems.push(`${requests()} request(s) still in flight after working the controls`);
-    Screen.add(results, 'explorable-controls', problems, 'slider, toggle and pick each changed the drawing, with no turn sent');
+    Screen.add(results, 'explorable-controls', problems, 'the slider moved the sun and shortened its shadow, away from it, the sentence said the angle, and the pick changed the drawing, with no turn sent');
   }
 }
 
@@ -1586,6 +1742,27 @@ function buildUnits(args: Args, welcome: Welcome): { readonly units: Unit[]; rea
       const results = await driftGroup(plain);
       out.lines.push('\ndrift (six screens)');
       checkLines(out, results);
+    },
+  });
+  // the demo audit's checks that read the schedule and the painter's boxes with no browser, named by the backlog row they guard (docs/demo-audit.md part 4)
+  units.push({
+    name: 'fb-023',
+    also: ['fb-028', 'fb-033', 'fb-042'],
+    needs: 'none',
+    weight: 8,
+    run: async (_servers, out) => {
+      out.lines.push('\nfb-023 (pnpm timeline demos): every scene stays up as long as reading it takes and arrives before it leaves; every chart is what it says; every control changes something');
+      checkLines(out, await scriptGroup('fb-023', ['timeline', 'demos'], 'the reading rule, the charts and the controls of every demo hold'));
+    },
+  });
+  units.push({
+    name: 'fb-002',
+    also: ['fb-003', 'fb-029', 'fb-032', 'fb-050'],
+    needs: 'none',
+    weight: 10,
+    run: async (_servers, out) => {
+      out.lines.push('\nfb-002 (pnpm demo-checks): no drawing runs past its canvas, no object comes apart in a move');
+      checkLines(out, await scriptGroup('fb-002', ['demo-checks'], 'every demo scene and every memory step stays on its canvas and no object comes apart in a move'));
     },
   });
   units.push({

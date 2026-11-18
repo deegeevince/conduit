@@ -1,27 +1,26 @@
-# Iterate: a drawing is kept and improved in place. Each change says only what changes (the same id again, a move, a new part);
-# everything else stays exactly where it was, so a follow-up costs a few lines and the picture never starts over.
+# Iterate: one drawing, improved in place. Each beat is one ask, then the one or two lines that answer it; everything else
+# on the stage is left exactly as it was. The boat is a group measured from its own waterline, so the last ask moves it
+# whole with one line and no part can drift. The narration is one line said again under one id, so it never piles up.
 
 look paper
-scene boat figure lines=2
-line sea 0,70 160,70 thick=1
-poly hull 50,60 110,60 100,72 60,72 fill=ink
-rect mast 78,26 2x34 fill=ink
-say | A first draft of a boat.
-wait 2
-poly sail 80,28 80,56 104,56 fill=accent
-say | Ask for a sail and only the sail arrives.
-wait 2
-poly sail 80,22 80,56 116,56 fill=accent
-say | Make it bigger: the same sail, said again with new corners.
-wait 2
-circle sun 132,20 8 fill=alt stroke=none
-poly flag 82,26 82,18 92,22 fill=alt
-say label near=flag:above | flag
-say | A sun and a flag more. Nothing before them was redrawn.
-wait 2
-move hull 70,66 over=1.5s
-move mast 98,40 over=1.5s
-move sail 100,40 over=1.5s
-move flag 100,24 over=1.5s
-say | And the boat sets off. /undo puts the drawing back as it was before the last change.
-wait 2
+scene boat figure canvas=square lines=1
+line sea 4,72 96,72 thick=1
+circle sun 84,13 6 fill=#f2b632 stroke=none
+group boat at=32,74
+poly hull in=boat -18,-10 18,-10 12,0 -12,0 fill=ink
+rect mast in=boat -1,-50 2x40 fill=ink
+say step | "Draw a boat." A hull and a mast: a first draft.
+wait 1.5s
+say step | "Give it a sail." Only the sail is drawn.
+poly sail in=boat 1,-36 1,-14 13,-14 fill=accent
+wait 2.5s
+say step | "Make it bigger." The same sail grows where it stands.
+poly sail in=boat 1,-42 1,-14 17,-14 fill=accent
+wait 2.5s
+say step | "Blue, and add a flag." One line recolours the sail, one more adds the flag.
+set sail fill=alt
+poly flag in=boat 1,-50 1,-44 9,-47 fill=accent
+wait 2.5s
+say step | "Now set sail." One line moves the whole boat: its parts are one group.
+move boat 68,74 over=2s
+wait 4s
