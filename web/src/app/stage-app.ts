@@ -113,6 +113,8 @@ export interface StageApp {
   stageActive(): boolean;
   /** A short Pencil tap, as a press: a cell takes the keyboard, a button works, what is under it is pressed (`app/pen-write.ts`). */
   penTap(event: PointerEvent): void;
+  /** Whether a screen point is on something a tap presses: a written method's cell or button, a control, a choice, an element that can be tapped. In Draw a Pencil tap there is a press, elsewhere a dot. */
+  pressableAt(clientX: number, clientY: number): boolean;
   /** The pen's writing on a written method (`app/pen-write.ts`): who takes the ink off a cell when its ✕ is pressed, and who reads what the pen wrote before Check marks it. */
   readonly pen: { set(writer: { clear(key: string, part: string): void; flush(): Promise<void> } | null): void };
   /** "Show the language": the lines the page was told, as they came, and whether the pane that shows them (and a film's copy of it) is on */
@@ -1555,7 +1557,7 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
   // While Draw is on its layer is over the stage and every pointer is the pen's: a stroke that starts on a control or a mock-up's part draws, it never presses
   const inInk = (event: Event): boolean => event.target instanceof Element && event.target.closest('.ink-stage') !== null;
   // The one place a pointer becomes a point: host CSS pixels of the page, through the lens when there is one
-  const localPoint = (event: MouseEvent): { readonly x: number; readonly y: number } => {
+  const localPoint = (event: { readonly clientX: number; readonly clientY: number }): { readonly x: number; readonly y: number } => {
     const box = host.getBoundingClientRect();
     return lens === null ? { x: event.clientX - box.left, y: event.clientY - box.top } : lens.toPage(event.clientX - box.left, event.clientY - box.top);
   };
@@ -2121,6 +2123,10 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
     lens,
     askAt,
     penTap: penPress,
+    pressableAt: (clientX, clientY) => {
+      const at = localPoint({ clientX, clientY });
+      return painter.mathAt(at.x, at.y) !== null || controlAt(at) !== null || tappableAt(at.x, at.y) || labelAtPoint(clientX, clientY) !== null;
+    },
     stageActive: () => !documents.shown,
     pen: {
       set(next) {

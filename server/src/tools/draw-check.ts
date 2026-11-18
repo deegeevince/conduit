@@ -9,6 +9,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { sleep } from './explore-browser';
 import { Conversation, Tab } from './smoke';
+import { Hands, line } from './lens-check';
 import type { LensScene, LensScreen } from './lens-check';
 import type { CheckResult, Options } from './smoke';
 
@@ -123,6 +124,173 @@ export async function drawGroup(base: string, screen: LensScreen, dir: string, t
   }
   const results: CheckResult[] = [{ turn: 0, check: `draw-${tag}`, verdict: list.length === 0 ? 'PASS' : 'FAIL', detail: list.length === 0 ? 'Draw opens on a phone in landscape and the screen stays lit, within the canvas memory budget' : list.join('; ') }];
   return [{ name: `draw-${tag}`, picture, results, seconds: (Date.now() - began) / 1000 }];
+}
+
+
+/** The two screens the taps in Draw are looked at: an iPad held across (a Pencil and a finger), and a phone upright (a finger and a mouse only). */
+export const DRAW_TAP_SCREENS: readonly LensScreen[] = [
+  { name: '1180x820', width: 1180, height: 820, dpr: 2 },
+  { name: '390x844', width: 390, height: 844, dpr: 3 },
+];
+
+const CHOICES = ['scene layout=stack mood=calm', 'say x1 title | Pick one', 'say x2 choice | The first', 'say x3 choice | The second'].join('\n');
+
+/**
+ * fb-103. In Draw the page under the ink can still be used. With a Pencil seen: the Pencil draws and a finger taps through (a choice's tap is sent, no stroke is added); a Pencil tap on
+ * a choice presses it, and a Pencil tap on nothing is a dot. With a finger or a mouse only: the hand tool in the ink bar pauses drawing, a mouse click on a choice works and the
+ * ink is kept; a pen tool brings drawing back.
+ */
+export async function drawTapGroup(base: string, screen: LensScreen, dir: string, timeoutMs: number, note: (text: string) => void = () => undefined): Promise<LensScene[]> {
+  await mkdir(dir, { recursive: true });
+  const began = Date.now();
+  const list: string[] = [];
+  const pictures: string[] = [];
+  const tab = await Tab.open(screen.width, screen.height, { dpr: screen.dpr, touch: true });
+  const options: Options = { url: base, screens: [], out: dir, turns: new Set(), timeoutMs, parallel: false, demo: false, quiet: true, page: '', say: null, chat: 'off' };
+  const conv = new Conversation(tab, options, { name: screen.name, width: screen.width, height: screen.height }, dir);
+  const hands = new Hands(tab);
+  const taps = (): number => tab.posted.filter((turn) => turn.kind === 'tap').length;
+  const strokes = async (): Promise<number> => (await hands.strokes())?.strokes.length ?? 0;
+  const shot = (name: string): Promise<void> => snap(tab, dir, name, pictures);
+  const choice = async (id: string): Promise<{ x: number; y: number }> => {
+    const box = await tab.eval<{ x: number; y: number; width: number; height: number } | null>(`(() => { const e = window.__stage.elements().find((n) => n.id === ${JSON.stringify(id)}); return e ? e.box : null; })()`);
+    if (box === null) throw new Error(`no element ${id} on the stage`);
+    return hands.onScreen({ x: box.x + box.width / 2, y: box.y + box.height / 2 });
+  };
+  const play = async (): Promise<void> => {
+    const played = await tab.eval<string | null>(`Promise.resolve(window.__stage.playScript(${JSON.stringify(CHOICES)})).then(() => null, (e) => String(e && e.message || e))`);
+    if (played !== null) throw new Error(`the choices would not play: ${played}`);
+    const rest = await conv.rest(true);
+    if (rest !== '') throw new Error(rest);
+    await sleep(400);
+  };
+  const openDraw = async (): Promise<void> => {
+    await tab.eval(`document.querySelector('.composer__plus').click()`);
+    await sleep(300);
+    await tab.eval(`[...document.querySelectorAll('.composer__item')].find((n) => /^Draw/.test(n.textContent.trim())).click()`);
+    await sleep(600);
+  };
+  /** the bar open (it starts folded on a phone) */
+  const barOpen = async (): Promise<void> => {
+    await tab.eval(`(() => { const pill = document.querySelector('.ink-stage .ink-btn--pill'); if (pill && !pill.hidden) pill.click(); })()`);
+    await sleep(200);
+  };
+  try {
+    note(`draw taps: ${screen.name}`);
+    await tab.send('DOM.enable');
+    await conv.start();
+    // ------------------------------------------------------------------------------------------------ a Pencil seen: it draws, a finger taps through, a Pencil tap presses
+    await play();
+    await openDraw();
+    const empty = { x: Math.round(screen.width * 0.5), y: Math.round(screen.height * 0.82) };
+    const drawn0 = await strokes();
+    await hands.pen(line({ x: empty.x - 60, y: empty.y }, { x: empty.x + 60, y: empty.y - 20 }, 10));
+    if ((await strokes()) !== drawn0 + 1) list.push(`the Pencil's stroke in Draw left ${(await strokes()) - drawn0} stroke(s), wanted 1`);
+    await sleep(600);
+    await barOpen();
+    await shot(`${screen.name}-draw-pen-seen.png`);
+    const before = taps();
+    await hands.finger([await choice('x2')]);
+    await sleep(500);
+    if (taps() !== before + 1) list.push(`in Draw, with a Pencil seen, a finger tap on a choice sent ${taps() - before} tap turn(s), wanted 1`);
+    if ((await strokes()) !== drawn0 + 1) list.push(`a finger tap on a choice in Draw added ${(await strokes()) - drawn0 - 1} stroke(s), wanted none`);
+    await conv.rest(null, false).catch(() => '');
+    await play();
+    const drawing = await tab.eval<boolean>(`!!document.querySelector('.ink-stage') && !document.querySelector('.ink-stage').hidden`);
+    if (!drawing) list.push('the ink layer is not on screen after a choice was tapped');
+    const kept = await strokes();
+    const penBefore = taps();
+    await hands.pen([await choice('x3'), await choice('x3')]);
+    await sleep(500);
+    if (taps() !== penBefore + 1) list.push(`in Draw a Pencil tap on a choice sent ${taps() - penBefore} tap turn(s), wanted 1 (it presses)`);
+    if ((await strokes()) !== kept) list.push(`a Pencil tap on a choice left ${(await strokes()) - kept} stroke(s), wanted no dot`);
+    await conv.rest(null, false).catch(() => '');
+    // a Pencil tap on nothing is a dot (a mark like any other)
+    const dotAt = { x: empty.x, y: Math.round(screen.height * 0.9) };
+    const dots = await strokes();
+    await hands.pen([dotAt, dotAt]);
+    if ((await strokes()) !== dots + 1) list.push(`a Pencil tap on empty stage in Draw left ${(await strokes()) - dots} stroke(s), wanted a dot`);
+    // leaving Draw keeps the ink on screen, not sent, with the bar's Send and Clear still there (that already existed; this holds it)
+    const total = await strokes();
+    await openDraw();
+    const left = await tab.eval<{ layer: boolean; bar: boolean; draw: boolean }>(`(() => { const l = document.querySelector('.ink-stage'); const b = document.querySelector('.ink-stage .ink-bar'); return { layer: !!l && !l.hidden, bar: !!b && !b.hidden, draw: !!l && !l.hidden && !l.classList.contains('ink-stage--through') }; })()`);
+    if (!left.layer || !left.bar) list.push(`after leaving Draw the ink layer is ${left.layer ? 'on' : 'off'} the screen and its bar ${left.bar ? 'shown' : 'hidden'}: the ink waiting to be sent is not kept in view`);
+    if ((await strokes()) !== total) list.push(`leaving Draw changed the ink from ${total} to ${await strokes()} stroke(s)`);
+    await shot(`${screen.name}-draw-left.png`);
+  } catch (error) {
+    list.push(`stopped: ${error instanceof Error ? error.message : String(error)}`);
+  } finally {
+    await tab.close();
+  }
+  // ---------------------------------------------------------------------------------------------------------------------------- no Pencil: the hand tool
+  const hand = await Tab.open(screen.width, screen.height, { dpr: screen.dpr, touch: true });
+  try {
+    const handOptions: Options = { ...options };
+    const handConv = new Conversation(hand, handOptions, { name: screen.name, width: screen.width, height: screen.height }, dir);
+    const mhands = new Hands(hand);
+    await hand.send('DOM.enable');
+    await handConv.start();
+    const count = (): number => hand.posted.filter((turn) => turn.kind === 'tap').length;
+    const strokesNow = async (): Promise<number> => (await mhands.strokes())?.strokes.length ?? 0;
+    const played = await hand.eval<string | null>(`Promise.resolve(window.__stage.playScript(${JSON.stringify(CHOICES)})).then(() => null, (e) => String(e && e.message || e))`);
+    if (played !== null) throw new Error(`the choices would not play: ${played}`);
+    await handConv.rest(true);
+    await sleep(400);
+    await hand.eval(`document.querySelector('.composer__plus').click()`);
+    await sleep(300);
+    await hand.eval(`[...document.querySelectorAll('.composer__item')].find((n) => /^Draw/.test(n.textContent.trim())).click()`);
+    await sleep(600);
+    await hand.eval(`(() => { const pill = document.querySelector('.ink-stage .ink-btn--pill'); if (pill && !pill.hidden) pill.click(); })()`);
+    await sleep(200);
+    const box = await hand.eval<{ x: number; y: number; width: number; height: number }>(`(() => { const e = window.__stage.elements().find((n) => n.id === 'x2'); return e.box; })()`);
+    const at = await mhands.onScreen({ x: box.x + box.width / 2, y: box.y + box.height / 2 });
+    const low = { x: Math.round(screen.width * 0.4), y: Math.round(screen.height * 0.85) };
+    // a mouse draws until the hand is chosen
+    const start = async (): Promise<void> => {
+      await hand.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: low.x, y: low.y });
+      await hand.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: low.x, y: low.y, button: 'left', buttons: 1, clickCount: 1 });
+      for (let i = 1; i <= 10; i += 1) {
+        await hand.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: low.x + i * 8, y: low.y - i * 2, button: 'left', buttons: 1 });
+        await sleep(14);
+      }
+      await hand.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: low.x + 80, y: low.y - 20, button: 'left', buttons: 0, clickCount: 1 });
+      await sleep(250);
+    };
+    await start();
+    if ((await strokesNow()) !== 1) list.push(`a mouse stroke in Draw left ${await strokesNow()} stroke(s), wanted 1`);
+    const hasHand = await hand.eval<boolean>(`!!document.querySelector('.ink-stage .ink-btn--hand')`);
+    if (!hasHand) list.push('the ink bar has no hand tool');
+    else {
+      await hand.eval(`document.querySelector('.ink-stage .ink-btn--hand').click()`);
+      await sleep(300);
+      await snap(hand, dir, `${screen.name}-draw-hand-on.png`, pictures);
+      const ahead = count();
+      await hand.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: at.x, y: at.y });
+      await hand.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: at.x, y: at.y, button: 'left', buttons: 1, clickCount: 1 });
+      await hand.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: at.x, y: at.y, button: 'left', buttons: 0, clickCount: 1 });
+      await sleep(500);
+      if (count() !== ahead + 1) list.push(`with the hand tool a mouse click on a choice sent ${count() - ahead} tap turn(s), wanted 1`);
+      if ((await strokesNow()) !== 1) list.push(`with the hand tool the ink holds ${await strokesNow()} stroke(s), wanted the 1 kept`);
+      const shown = await hand.eval<boolean>(`!!document.querySelector('.ink-stage') && !document.querySelector('.ink-stage').hidden`);
+      if (!shown) list.push('the ink was not kept on screen with the hand tool');
+      await handConv.rest(null, false).catch(() => '');
+      await hand.eval(`document.querySelector('.ink-stage .ink-btn[data-tool="pen"]').click()`);
+      await sleep(300);
+      await start();
+      if ((await strokesNow()) !== 2) list.push(`after the pen tool a mouse stroke left ${await strokesNow()} stroke(s) in all, wanted 2`);
+    }
+  } catch (error) {
+    list.push(`stopped (hand): ${error instanceof Error ? error.message : String(error)}`);
+  } finally {
+    await hand.close();
+  }
+  const results: CheckResult[] = [{ turn: 0, check: `fb-103-draw-taps-${screen.name}`, verdict: list.length === 0 ? 'PASS' : 'FAIL', detail: list.length === 0 ? 'in Draw with a Pencil seen it draws and a finger taps through to a choice, a Pencil tap presses a choice and a tap on nothing is a dot; with a mouse only the hand tool lets a click work a choice and keeps the ink, and the pen tool draws again' : list.join('; ') }];
+  return [{ name: `draw-taps-${screen.name}`, picture: pictures[0] ?? '', results, seconds: (Date.now() - began) / 1000 }];
+}
+
+async function snap(tab: Tab, dir: string, name: string, pictures: string[]): Promise<void> {
+  await writeFile(join(dir, name), Buffer.from((await tab.shot()).split(',')[1] ?? '', 'base64'));
+  pictures.push(name);
 }
 
 if (process.argv[1] !== undefined && /draw-check\.ts$/.test(process.argv[1])) {

@@ -786,7 +786,7 @@ interface PenLag {
 }
 
 /**
- * fb-101. The Pencil writes three digits into a sum with a hand's pauses between the strokes, one pause long enough for a read to begin and the strokes after it written while it is
+ * fb-102. The Pencil writes three digits into a sum with a hand's pauses between the strokes, one pause long enough for a read to begin and the strokes after it written while it is
  * in flight. Every stroke is taken (none dropped, cancelled or made a tap), each shows its first ink within 50 ms of the pen going down (at the desk), and no picture of the stage is
  * taken while the pen writes in a cell (a render and a read-back of the stage, on the main thread, at the pen-down of the first stroke of every sum, was the lag a person felt).
  * A stroke that is free working (to be sent as a drawing) has its picture taken after the pen has lifted, not while it is down.
