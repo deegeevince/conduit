@@ -34,10 +34,17 @@ export function scriptResults(): CheckResult[] {
   if ('error' in car) problems.push(car.error);
   else {
     const ops = car.steps.map((step) => step.op).join(' ');
-    if (!/^hold type rest hold tap rest hold type rest hold drag hold back rest hold tap rest hold drag hold type rest hold type rest hold$/.test(ops)) problems.push(`the car journey reads as: ${ops}`);
+    if (!/^hold type rest hold tap rest hold type rest hold drag hold type rest hold drag hold type rest hold type rest hold$/.test(ops)) problems.push(`the car journey reads as: ${ops}`);
     const drag = car.steps.find((step) => step.op === 'drag');
     if (drag === undefined || drag.target !== 'speed' || drag.from !== 50 || drag.to !== 100 || drag.seconds !== 4) problems.push('the first drag should be speed 50 > 100 over 4 s');
     if (car.steps.find((step) => step.op === 'type')?.text !== 'Show me the main parts of a car' || car.steps.find((step) => step.op === 'type')?.name !== 'car') problems.push('the first prompt is not the owner\'s');
+    const said = car.steps.filter((step) => step.op === 'type').map((step) => step.text).join(' / ');
+    const want = ['Show me the main parts of a car', 'How far does it take to stop? Let me change the speed.', 'Show me the engine running, and let me change its speed', 'Now make it an electric car', 'Show me how you\'re doing this'].join(' / ');
+    if (said !== want) problems.push(`the car journey says: ${said}`);
+    const tap = car.steps.find((step) => step.op === 'tap');
+    if (tap === undefined || !tap.optional || tap.text !== 'Brakes / Brake / Engine / Wheels / Wheel') problems.push('the part to tap is not "Brakes / Brake / Engine / Wheels / Wheel", optional');
+    const engine = car.steps.filter((step) => step.op === 'drag')[1];
+    if (engine === undefined || !engine.optional || engine.target !== 'engine/speed' || engine.from !== 'min' || engine.to !== 'max') problems.push('the second drag should be the optional engine/speed min > max');
   }
   add('journey-script-car', problems, `the car journey reads: ${'steps' in car ? car.steps.length : 0} steps`);
 
@@ -150,6 +157,13 @@ export async function journeyGroup(base: string, dir: string, timeoutMs: number,
         if (took < 1.4 || took > 3.2) drags.push(`the drag took ${took.toFixed(2)} s, asked for 1.5`);
         if (Math.abs(dragStep.drag.reached - 70) > 2) drags.push(`the slider ended at ${dragStep.drag.reached}, asked for 70`);
         if (dragStep.drag.readout.before.join('|') === dragStep.drag.readout.after.join('|')) drags.push(`the words bound to the slider did not change as it moved (${JSON.stringify(dragStep.drag.readout)})`);
+        // the pointer goes one way at a steady eased pace, and the page keeps its frames: no stall as long as a third of a second
+        const pacing = dragStep.drag.pacing;
+        if (pacing === undefined) drags.push('the drag has no pacing');
+        else {
+          if (!pacing.monotonic) drags.push('the pointer went back and forth during the drag');
+          if (pacing.longestMs > 400) drags.push(`the page stalled for ${pacing.longestMs} ms during the drag (mean frame ${pacing.meanMs} ms, p95 ${pacing.p95Ms} ms)`);
+        }
       }
       add('journey-drag', drags, `the knob was dragged for ${dragStep?.dragStart === null || dragStep?.dragEnd === null || dragStep === undefined ? '?' : ((dragStep.dragEnd.perf - dragStep.dragStart.perf) / 1000).toFixed(1)} s to ${dragStep?.drag?.reached ?? '?'}, and the words bound to it changed`);
 
