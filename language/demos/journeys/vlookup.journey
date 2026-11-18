@@ -1,0 +1,8 @@
+# The owner's take A: one turn on the real brain, then, if the answer offers a slider, one drag that shows it working.
+hold 3
+vlookup: type | Create an interactive explanation of how VLOOKUP works using the canvas
+rest
+hold 5
+# optional: skipped when the answer has no such slider (the only slider there is is taken when nothing matches by its words)
+dragLookup: drag? lookup / value / key / row / column / col / index / search / find / number / item / product / range min > max over=4
+hold 4

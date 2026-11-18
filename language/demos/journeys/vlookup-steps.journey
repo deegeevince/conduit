@@ -1,0 +1,12 @@
+# Take A once more: the owner's one turn, then three taps. `next` presses the first stepper's next chevron (a stepper on stage is walked one step a tap); when there is
+# no stepper, or it has no step left, the other words are tried in order: a row pick's value, or a menu's option. Each tap is skipped when none of them is on stage.
+hold 3
+vlookup: type | Create an interactive explanation of how VLOOKUP works using the canvas
+rest
+hold 3
+step1: tap? | next / 102 / 103 / Banana
+hold 3
+step2: tap? | next / 103 / 104 / Cherry / Plum
+hold 3
+step3: tap? | next / 104 / 101 / Kiwi / Date
+hold 3

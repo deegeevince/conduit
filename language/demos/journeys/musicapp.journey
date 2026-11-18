@@ -1,0 +1,14 @@
+# The owner's take B: four turns, one conversation, on the real brain.
+hold 3
+wire: type | Can you wireframe a Spotify-like app
+rest
+hold 4
+screens: type | Can you now create an in-app mockup of three core screens
+rest
+hold 4
+flow: type | Create a flow chart diagram of one user journey
+rest
+hold 4
+landing: type | Create an actual landing page for it
+rest
+hold 6

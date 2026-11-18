@@ -51,6 +51,8 @@ interface Target {
   readonly box: { readonly x: number; readonly y: number; readonly width: number; readonly height: number };
   readonly tappable: boolean;
   readonly key: string;
+  /** a closed menu's option: the menu's field, pressed first (the list is not on stage until it is); the option is then tapped where the list puts it */
+  readonly via?: { readonly x: number; readonly y: number; readonly width: number; readonly height: number };
   /** set by `settled` for a target seen to keep moving once the turn was over (motion: a loop, a ride on the clock, a label that goes with a part): its speed, pixels a millisecond */
   readonly speed?: { readonly x: number; readonly y: number };
 }
@@ -144,13 +146,28 @@ export function startJourney(options: JourneyOptions): JourneyState {
       if (element.phase !== 'on' || element.opacity < 0.9 || element.text === '' || !inside(element.box)) continue;
       out.push({ id: element.id, label: element.text, box: element.box, tappable: element.tappable, key: element.key });
     }
+    let stepper = false;
     for (const control of snap.controls as readonly ControlView[]) {
       if (!control.enabled) continue;
       if (control.control === 'button' && control.label !== '' && inside(control.box)) out.push({ id: control.id, label: control.label, box: control.box, tappable: true, key: control.key });
       control.options.forEach((option, index) => {
-        const part = control.parts.find((candidate) => candidate.part === `option:${index}`);
+        const part = control.parts.find((candidate) => candidate.part === `option:${index + 1}`);
         if (part !== undefined && inside(part.box)) out.push({ id: control.id, label: option, box: part.box, tappable: true, key: `${control.key}/${index}` });
       });
+      // a stepper's chevrons: `tap | next` and `tap | back` press those of the first stepper on stage, and a chevron that cannot go on (the last step's next, the first's back) is not offered
+      if (control.control === 'pick' && control.form === 'steps' && !stepper) {
+        stepper = true;
+        const at = typeof control.value === 'number' ? Math.round(control.value) : 1;
+        for (const [word, goes] of [['next', at < control.options.length], ['back', at > 1]] as const) {
+          const part = control.parts.find((candidate) => candidate.part === word);
+          if (goes && part !== undefined && inside(part.box)) out.push({ id: control.id, label: word, box: part.box, tappable: true, key: `${control.key}/${word}` });
+        }
+      }
+      // a closed menu's options, by their labels: the field is pressed first (`via`), then the option is tapped where the list opens. An open menu's options are parts like any pick's.
+      const field = control.parts.find((candidate) => candidate.part === 'field');
+      if (control.control === 'pick' && control.form === 'menu' && field !== undefined && inside(field.box) && !control.parts.some((candidate) => candidate.part.startsWith('option:'))) {
+        control.options.forEach((option, index) => out.push({ id: control.id, label: option, box: field.box, tappable: true, key: `${control.key}/${index}`, via: field.box }));
+      }
     }
     return out;
   };
@@ -458,10 +475,23 @@ export function startJourney(options: JourneyOptions): JourneyState {
       picked.used = found?.used ?? picked.used;
       return found?.target ?? null;
     };
-    const target = await settled(find, step.optional ? OPTIONAL_WAIT_MS : TAP_WAIT_MS);
+    let target = await settled(find, step.optional ? OPTIONAL_WAIT_MS : TAP_WAIT_MS);
     if (target === null) {
       if (step.optional) return false;
       return fail(`step ${step.n} (line ${step.line}): "${step.text}" never appeared on stage within ${Math.round(TAP_WAIT_MS / 1000)} s, so the journey stopped there`);
+    }
+    // a closed menu's option: the hand presses the menu's field first, and the list that opens is tapped like any other
+    if (target.via !== undefined) {
+      const field = globalOf(target.via);
+      await travel(field.x, field.y, TRAVEL_MS);
+      await sleep(PAUSE_MS);
+      await press(field.x, field.y, 'menu', null, { id: target.id, box: viewportBox(target.via) });
+      const listed = await settled(find, step.optional ? OPTIONAL_WAIT_MS : TAP_WAIT_MS);
+      if (listed === null || listed.via !== undefined) {
+        if (step.optional) return false;
+        return fail(`step ${step.n} (line ${step.line}): the menu did not open to "${step.text}"`);
+      }
+      target = listed;
     }
     timing.used = picked.used;
     const before = app.lang.turn;
