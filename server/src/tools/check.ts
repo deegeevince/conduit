@@ -1036,6 +1036,14 @@ class Screen {
         const sent = tab.posted.length;
         const verdict = (): Promise<string> => tab.eval<string>(`(window.__stage.controls().find((c) => c.id === ${JSON.stringify(scene.id)}) || { askState: { verdict: 'none' } }).askState.verdict`);
         await checkTakeover(tab, (check, verdict, detail) => talk.add(results, check, verdict, detail));
+        // The picture is taken here, with the stage at rest and the question on it, and judged with the list of what is on stage read the moment after. It used to be taken last,
+        // after the right answer: that answer is sent to the brain, whose reply opens a turn that clears the stage, and on a machine under load the picture came
+        // while that turn was opening (a bare ground, the status "Playing…") and the list a moment later held the reply's first line: "nothing drawn in its box" for a line that was
+        // drawn a frame later. A picture and the list it is judged against are one frame only when nothing is on its way.
+        const picture = await tab.shot();
+        const file = `${this.screen.name}-${name}.png`;
+        await writeFile(join(this.dir, file), Buffer.from(picture.split(',')[1] ?? '', 'base64'));
+        await checkInk(tab, (check, verdict, detail) => talk.add(results, check, verdict, detail), picture, (await tab.call<Answer>('answer')).live, tab.dpr);
         const words = norm(scene.question.replace(/_{2,}|□/g, ' '));
         const said = norm((await tab.eval<string>(`window.__stage.elements().map((e) => e.text).concat(window.__stage.controls().map((c) => c.label)).join(' ')`)).replaceAll('…', ' '));
         if (!said.includes(words.split(' ').slice(0, 6).join(' '))) problems.push(`the question is not on the canvas: "${scene.question}"`);
@@ -1054,10 +1062,6 @@ class Screen {
           }
           if (right !== 'right' && !tab.posted.slice(sent).some((turn) => /right/.test(turn.text ?? ''))) problems.push(`the right answer in the blank was marked "${right}"`);
         }
-        const picture = await tab.shot();
-        const file = `${this.screen.name}-${name}.png`;
-        await writeFile(join(this.dir, file), Buffer.from(picture.split(',')[1] ?? '', 'base64'));
-        await checkInk(tab, (check, verdict, detail) => talk.add(results, check, verdict, detail), picture, (await tab.call<Answer>('answer')).live, tab.dpr);
         Screen.add(results, 'problem', problems, 'the question is on the canvas with a blank, nothing takes the screen, a wrong answer is marked wrong and the right one right');
         const scenery: Scene = { name, seconds: (Date.now() - began) / 1000, picture: file, results };
         this.scenes.push(scenery);
