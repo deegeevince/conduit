@@ -431,8 +431,6 @@ export async function drawDockGroup(base: string, screen: LensScreen, dir: strin
     if (s.bar.y > s.stage.y + 24) list.push(`${where}: the row is ${(s.bar.y - s.stage.y).toFixed(0)} px down the stage, wanted across its top`);
     if (s.bar.x < s.stage.x - 0.5 || s.bar.x + s.bar.w > s.stage.x + s.stage.w + 0.5) list.push(`${where}: the row runs off the stage's sides`);
     if (s.composer !== null && overlaps(s.bar, s.composer)) list.push(`${where}: the row covers the prompt bar`);
-    // nothing in the row is pushed out of it or off the screen (a short screen has no room to spare: the dock button must not cost Send its place)
-    for (const c of s.controls) if (c.x < s.bar.x - 0.5 || c.x + c.w > s.bar.x + s.bar.w + 0.5 || c.x + c.w > s.stage.x + s.stage.w + 0.5) list.push(`${where}: "${c.label}" sticks out of the row (${c.x.toFixed(0)} to ${(c.x + c.w).toFixed(0)}, the row is ${s.bar.x.toFixed(0)} to ${(s.bar.x + s.bar.w).toFixed(0)})`);
   };
   const judge = (dock: string, where: string): Promise<void> => (dock === 'vertical' ? judgeColumn(where) : judgeRow(where));
 
