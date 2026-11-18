@@ -196,7 +196,7 @@ export function mountPenWrite(options: PenWriteOptions): PenWrite {
   // ----------------------------------------------------------------------------------------------------------------------------- whose strokes
   /** every stroke the ink holds, and the cell it was given to (null: free working) */
   const owner = new Map<string, { key: string; part: string } | null>();
-  /** the sum each owned stroke was written under (fb-081): a stroke belongs to a sum, not only to a block's id, which a later sum may take again */
+  /** the sum each owned stroke was written under (fb-082): a stroke belongs to a sum, not only to a block's id, which a later sum may take again */
   const sumOf = new Map<string, string>();
   const version = new Map<string, number>();
   const dirty = new Set<string>();
@@ -394,7 +394,7 @@ export function mountPenWrite(options: PenWriteOptions): PenWrite {
     },
     flush,
     sync(views) {
-      // fb-081. The working a sum had written leaves with the sum: ink owned by a block that is no longer on the stage, or that now works another sum under the same id, is taken off
+      // fb-082. The working a sum had written leaves with the sum: ink owned by a block that is no longer on the stage, or that now works another sum under the same id, is taken off
       const stale = model.strokes.filter((stroke) => {
         const own = owner.get(stroke.id);
         if (own == null) return false;

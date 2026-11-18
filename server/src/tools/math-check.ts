@@ -698,7 +698,7 @@ async function penScene(mine: MathsTab, dir: string, problems: Problems): Promis
     const mixed = (await mine.block('m7'))?.cells.filter((cell) => cell.part !== 'carry-tens').map((cell) => `${cell.part}=${cell.value}:${cell.by}:${cell.mark}`).sort().join(' ');
     if (mixed !== 'ans-ones=4:pen:right ans-tens=2:key:right') list.push(`the pen in the ones and keys in the tens, then Enter, left "${mixed}"`);
   }
-  // 7. fb-081: the working a sum had written leaves with the sum. A new sum under the same id starts clean (no ink owned, none in its boxes), and a scene with no written
+  // 7. fb-082: the working a sum had written leaves with the sum. A new sum under the same id starts clean (no ink owned, none in its boxes), and a scene with no written
   // method takes the ink off as well
   const own = async (id: string): Promise<number> => (await owners()).filter((o) => o.key.startsWith(id)).length;
   const inkA = await mine.play(['scene layout=stack mood=calm', 'math m11 column | 12+12'].join('\n'));
