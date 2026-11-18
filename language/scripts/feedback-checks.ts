@@ -78,8 +78,8 @@ function fb058(): void {
   // the hand-placed recipe is gone: no coordinates for digits, no right edge, no mono face, no free layout (a figure scene on a square canvas is the photo's, fb-075)
   expect('fb-058: the chapter teaches no hand-placed column', /align=right|face=mono|layout=free|a row every 10|path.*rule/.test(chapter), false);
   expect('fb-058: the chapter does not teach `problem` or the workspace', /\bproblem\b|workspace/i.test(chapter), false);
-  // the brief stays short (it was 1,348 characters; fb-075 added the photo and the finished act, 560 more)
-  expect(`fb-058: the maths chapter stays short (is ${chapter.length})`, chapter.length <= 2000, true);
+  // the brief stays short (it was 1,348 characters; fb-075 added the photo and the finished act, and the room the working needs, 800 more)
+  expect(`fb-058: the maths chapter stays short (is ${chapter.length})`, chapter.length <= 2200, true);
   // and it is carried for the owner's own words (they hold no digit and none of the old cue words), and by the maths card
   expect('fb-058: the owner\'s sentence is read as a maths question', asksForMaths(SENTENCE), true);
   const brief = buildTurnBrief(contextWith(), { kind: 'prompt', text: SENTENCE });
@@ -112,6 +112,7 @@ function fb075(): void {
   const chapter = MATHS_CHAPTER;
   expect('fb-075: the chapter teaches the photo first, a callout on each number it gives, then the working', [chapter.includes('canvas=square'), chapter.includes('`pic p1 from=u1`'), chapter.includes('callout at=x,y in=p1'), chapter.includes('`wait 3`'), chapter.includes('`scene stack` with the working')], [true, true, true, true, true]);
   expect('fb-075: the chapter says a finished block is an act, answered with one next question and not the working again', [chapter.includes('m1: all right, after 1 wrong check'), /ONE next small question/.test(chapter), /never the working again/.test(chapter)], [true, true, true]);
+  expect('fb-075: the chapter keeps the words above the working to a title and three short lines, and gives a new sum a new id', [/title and at most three short lines/.test(chapter), chapter.includes('a new sum is a new id')], [true, true]);
   const card: TechniqueCard = { id: 'seed:teach-young-learner', title: 'A maths question to work out', when: 'a child needs help with a maths question', example: ['scene stack', 'say title | Flowers', 'ask a1 is=12 | How many flowers? __'] };
   const brief = buildTurnBrief({ ...contextWith([card]), photos: { u1: 0.8 } }, { kind: 'prompt', text: "Help me work this out, don't tell me the answer", images: ['u1'] });
   expect('fb-075: the brief for a photographed question carries the photo lesson and the photo\'s own frame', [brief.includes('A PHOTO of the question'), brief.includes('`say callout at=52,18 in=<pic id>')], [true, true]);

@@ -1,6 +1,6 @@
 // pnpm rehearse: the iPad demo, end to end, on a real brain and the real handwriting reader, in headless Chrome at 820x971 (dpr 2) with a finger and a pen.
 //
-//   pnpm rehearse --out <dir> --thinking on|off [--photo <jpg>] [--style pause|burst] [--fix clear|strike] [--fake] [--case <file>]
+//   pnpm rehearse --out <dir> --thinking on|off [--effort low|medium|high (high)] [--photo <jpg>] [--style pause|burst] [--fix clear|strike] [--fake] [--case <file>]
 //
 // The flow the owner records: hold the maths skill, add a photo of a word problem, ask for help; Claude draws it up (callouts on the photo's numbers, then the
 // working as a `math` column with empty boxes); the pen writes the digits (one deliberately wrong), Check crosses the wrong one, Hint says a step, the pen
@@ -34,6 +34,7 @@ interface Args {
   readonly critic: 'on' | 'off';
   readonly wrong: string;
   readonly firstOnly: boolean;
+  readonly effort: 'low' | 'medium' | 'high';
 }
 
 function parseArgs(argv: readonly string[]): Args {
@@ -51,6 +52,7 @@ function parseArgs(argv: readonly string[]): Args {
     critic: get('critic') === 'off' ? 'off' : 'on',
     wrong: get('wrong') ?? '7',
     firstOnly: argv.includes('--first-only'),
+    effort: get('effort') === 'low' ? 'low' : get('effort') === 'medium' ? 'medium' : 'high',
   };
 }
 
@@ -110,7 +112,7 @@ async function startLive(args: Args, skills: string): Promise<Live> {
   const port = await claimPort('the rehearsal server');
   const live: Record<string, string> = args.fake
     ? { BRAIN: 'replay', REPLAY_CPS: '600', INK_READER: 'fake', ...(args.caseFile === null ? {} : { REPLAY_CASE: args.caseFile }) }
-    : { BRAIN: 'claude-cli', CLAUDE_MODEL: 'opus', BRAIN_EFFORT: 'medium', BRAIN_THINKING: args.thinking, INK_READER: 'claude', CRITIC: args.critic, CRITIC_MODEL: 'fable', CRITIC_EFFORT: 'high', CRITIC_LOOK_MS: '150000' };
+    : { BRAIN: 'claude-cli', CLAUDE_MODEL: 'opus', BRAIN_EFFORT: args.effort, BRAIN_THINKING: args.thinking, INK_READER: 'claude', CRITIC: args.critic, CRITIC_MODEL: 'fable', CRITIC_EFFORT: 'high', CRITIC_LOOK_MS: '150000' };
   let log = '';
   const child: ChildProcess = spawnTracked(process.execPath, ['--import', 'tsx', 'src/main.ts'], undefined, {
     cwd: join(root, 'server'),
@@ -144,7 +146,7 @@ class StopRun extends Error {}
 function logSummary(dataDir: string, out: string, note: (step: string, verdict: Finding['verdict'], detail: string) => void, findings: Finding[]): void {
   try {
     const dir = join(dataDir, 'logs');
-    const file = readdirSync(dir).find((name) => name.endsWith('.jsonl'));
+    const file = readdirSync(dir).filter((name) => name.endsWith('.jsonl')).sort().at(-1);
     if (file === undefined) return;
     const records = readFileSync(join(dir, file), 'utf8').split('\n').filter((line) => line.trim() !== '').map((line) => JSON.parse(line) as Record<string, unknown> & { type: string; at: number; turn?: string });
     const turns = [...new Set(records.filter((r) => r.type === 'turn').map((r) => String(r.turn)))];
@@ -160,7 +162,7 @@ function logSummary(dataDir: string, out: string, note: (step: string, verdict: 
       if (written.length > 2) lines.push(`   the lines reached the server over ${seconds(last - first)}${last - first < 1500 ? ' (a burst: the whole answer arrived at once)' : ' (they streamed)'}`);
     }
     const kinds = new Map<string, number>();
-    for (const line of readFileSync(join(dataDir, 'usage.jsonl'), 'utf8').split('\n').filter((l) => l.trim() !== '')) {
+    for (const line of (existsSync(join(dataDir, 'usage.jsonl')) ? readFileSync(join(dataDir, 'usage.jsonl'), 'utf8') : '').split('\n').filter((l) => l.trim() !== '')) {
       const r = JSON.parse(line) as { kind: string };
       kinds.set(r.kind, (kinds.get(r.kind) ?? 0) + 1);
     }
@@ -175,7 +177,7 @@ function logSummary(dataDir: string, out: string, note: (step: string, verdict: 
     writeFileSync(join(out, 'server-timeline.txt'), `${lines.join('\n')}\n`);
     for (const line of lines) note('server-log', 'INFO', line);
   } catch (error) {
-    findings.push({ step: 'server-log', verdict: 'INFO', detail: `the session log could not be read: ${error instanceof Error ? error.message : String(error)}` });
+    note('server-log', 'INFO', `the session log could not be read: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 

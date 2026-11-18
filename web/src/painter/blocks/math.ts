@@ -21,7 +21,7 @@ import type { Box } from '../../contracts/space';
 import { box, closedLine, dashes, inflate, open, roundedRect, union } from './geom';
 import { drawWay, formOf } from './math-ways';
 import type { WayDrawing, WayName, WayPiece } from './math-ways';
-import { canShow, inputCells, mathRev, runOf, stateOf, takeFills } from './math-cells';
+import { canShow, hintFor, inputCells, mathRev, runOf, stateOf, takeFills } from './math-cells';
 
 /** The least a thing the learner writes in is, on a side: a fingertip. */
 const MIN_TARGET = 44;
@@ -30,7 +30,7 @@ const NATURAL_UNIT = 56;
 /** What a block with cells to write in keeps under its digits, in units: a row of Check, Hint and Show me, and the line a hint is said in. */
 const ROWS_BELOW = 2.1;
 /** The most words of a hint that stand under the block, in stage units of width. */
-const HINT_WIDTH = 330;
+const HINT_WIDTH = 480;
 
 // ---------------------------------------------------------------------------------------------------------------------------------
 // The stepper held on the block: a tap advances it. The state of a hand, kept here and not in the schedule, as a control's value is.
@@ -322,7 +322,11 @@ function gridBlock(input: StructureInput, math: MathFigure, grid: maths.Grid, sh
   const stepper = hasOwnStepper(math) ? unitY * 0.7 : 0;
   // a block with cells to write in keeps a row for Check, Hint and Show me under its digits, and a line for a hint: always, so that nothing moves when they are used
   const buttonsH = inputs.size > 0 ? MIN_TARGET + 14 : 0;
-  const hintH = inputs.size > 0 ? Math.max(unitY * 0.9, 56) : 0;
+  // fb-081. The line a hint is said in is as tall as the longest hint of this sum needs at the width it is said in (an exchange takes several lines), so that the words stand
+  // under the buttons, never over them, and still nothing moves when a hint is used
+  const hintBoxW = Math.min(Math.max(room.width, width), Math.max(width, HINT_WIDTH));
+  const hintTall = inputs.size > 0 ? Math.max(...inputCells(grid).map((cell) => input.measure(hintFor(grid, cell), spec('s' as Size, shrink), hintBoxW).height)) : 0;
+  const hintH = inputs.size > 0 ? Math.max(unitY * 0.9, 56, hintTall + 8) : 0;
   const height = y + stepper + buttonsH + hintH;
   const left = room.x + Math.max(0, (room.width - width) / 2);
   const top = room.y;
@@ -499,7 +503,7 @@ function gridBlock(input: StructureInput, math: MathFigure, grid: maths.Grid, sh
   }
   let hintWidth = width;
   if (inputs.size > 0 && run.hintText !== '' && run.verdict !== 'right' && run.verdict !== 'shown') {
-    hintWidth = Math.min(Math.max(room.width, width), Math.max(width, HINT_WIDTH));
+    hintWidth = hintBoxW;
     const at = box(left + width / 2 - hintWidth / 2, top + y + stepper + buttonsH + 2, hintWidth, hintH - 4);
     texts.push(plain(key, 'hint', run.hintText, at, spec('s' as Size, shrink), 'value'));
   }

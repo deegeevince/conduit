@@ -196,6 +196,8 @@ export function mountPenWrite(options: PenWriteOptions): PenWrite {
   // ----------------------------------------------------------------------------------------------------------------------------- whose strokes
   /** every stroke the ink holds, and the cell it was given to (null: free working) */
   const owner = new Map<string, { key: string; part: string } | null>();
+  /** the sum each owned stroke was written under (fb-081): a stroke belongs to a sum, not only to a block's id, which a later sum may take again */
+  const sumOf = new Map<string, string>();
   const version = new Map<string, number>();
   const dirty = new Set<string>();
   const dimmed = new Set<string>();
@@ -211,6 +213,7 @@ export function mountPenWrite(options: PenWriteOptions): PenWrite {
     for (const [id, own] of [...owner]) {
       if (present.has(id)) continue;
       owner.delete(id);
+      sumOf.delete(id);
       dimmed.delete(id);
       if (own === null) continue;
       const ck = cellKey(own.key, own.part);
@@ -230,6 +233,8 @@ export function mountPenWrite(options: PenWriteOptions): PenWrite {
       const own = cellOf(stroke, zones);
       owner.set(stroke.id, own);
       if (own === null) continue;
+      const sum = options.views().find((view) => view.key === own.key)?.sum;
+      if (sum !== undefined) sumOf.set(stroke.id, sum);
       const ck = cellKey(own.key, own.part);
       version.set(ck, (version.get(ck) ?? 0) + 1);
       dirty.add(ck);
@@ -389,6 +394,14 @@ export function mountPenWrite(options: PenWriteOptions): PenWrite {
     },
     flush,
     sync(views) {
+      // fb-081. The working a sum had written leaves with the sum: ink owned by a block that is no longer on the stage, or that now works another sum under the same id, is taken off
+      const stale = model.strokes.filter((stroke) => {
+        const own = owner.get(stroke.id);
+        if (own == null) return false;
+        const view = views.find((candidate) => candidate.key === own.key);
+        return view === undefined || (sumOf.get(stroke.id) ?? view.sum) !== view.sum;
+      });
+      if (stale.length > 0) model.erase(new Set(stale.map((stroke) => stroke.id)));
       const faint = new Set<string>();
       for (const view of views) for (const cell of view.cells) if (cell.dim) for (const stroke of strokesOf(view.key, cell.part)) if (!dimmed.has(stroke.id)) faint.add(stroke.id);
       if (faint.size === 0) return;

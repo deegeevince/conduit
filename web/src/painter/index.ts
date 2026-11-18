@@ -1574,7 +1574,7 @@ export function createPainter(options: PainterOptions): Painter {
         const at = mathBox(placed, `${placed.key}@btn:${name}`);
         return at === null ? [] : [{ name, label: name === 'check' ? 'Check' : name === 'hint' ? 'Hint' : 'Show me', box: at }];
       });
-      out.push({ key: placed.key, id: run.id, verdict: run.verdict, box: whole, cells: views, buttons, hint: run.hintText });
+      out.push({ key: placed.key, id: run.id, sum: run.math.sum, verdict: run.verdict, box: whole, cells: views, buttons, hint: run.hintText });
     }
     return out;
   };
@@ -1582,7 +1582,7 @@ export function createPainter(options: PainterOptions): Painter {
   const announceMath = (): void => {
     const views = mathViewsNow();
     if (views.length === 0 && lastMathSignature === '') return;
-    const signature = JSON.stringify(views.map((view) => [view.key, view.verdict, view.hint, view.cells.map((cell) => [cell.part, Math.round(cell.box.x), Math.round(cell.box.y), Math.round(cell.box.width), Math.round(cell.box.height), cell.value, cell.mark, cell.lit, cell.active, cell.read, cell.reading, cell.ink, cell.dim]), view.buttons.map((button) => [button.name, Math.round(button.box.x), Math.round(button.box.y)])]));
+    const signature = JSON.stringify(views.map((view) => [view.key, view.sum, view.verdict, view.hint, view.cells.map((cell) => [cell.part, Math.round(cell.box.x), Math.round(cell.box.y), Math.round(cell.box.width), Math.round(cell.box.height), cell.value, cell.mark, cell.lit, cell.active, cell.read, cell.reading, cell.ink, cell.dim]), view.buttons.map((button) => [button.name, Math.round(button.box.x), Math.round(button.box.y)])]));
     if (signature === lastMathSignature) return;
     lastMathSignature = signature;
     emit('math', views);

@@ -6,6 +6,7 @@
 //   fill       `fill` writes its digits into the blanks, by place
 //   rule       the rule spans every column of the sum
 //   clear      no two cells overlap, and the block is on the screen
+//   hint       the longest hint of a sum (an exchange) stands under the buttons, clear of them
 //
 // The page's half is `web/src/bench/math-bench.ts` (the real painter, a renderer that keeps the last frame). Run by `pnpm check` and standalone (`tsx math-check.ts`).
 //
@@ -72,7 +73,7 @@ export function mathProblems(captures: readonly Capture[]): { problems: string[]
     }
     blocks += 1;
     const worked = /\bworked\b/.test(one.lines[0] ?? '');
-    const typedBy = one.lines.some((line) => line.startsWith('type ') || line.startsWith('press '));
+    const typedBy = one.lines.some((line) => line.startsWith('type ') || /^press \S+ check$/.test(line));
     const filled = one.lines.some((line) => line.startsWith('fill '));
     const isGrid = method === 'column' || method === 'times' || method === 'split' || method === 'bond';
     // 1. place: every digit cell of one place, in any row, stands on one x (carries and exchanges are set smaller, in the same column)
@@ -109,6 +110,14 @@ export function mathProblems(captures: readonly Capture[]): { problems: string[]
       const ones = elements.find((e) => partOf(e.key) === 'c:ans-ones')?.text;
       if (tens !== '2' || ones !== '4') problems.push(`${where}: fill 24 put "${tens}" and "${ones}" in the tens and ones`);
     }
+    // 4a. hint (fb-081): the words of a hint, longest of the sum (an exchange takes several lines), stand under the buttons and clear of them
+    if (one.lines.some((text) => /^press \S+ hint$/.test(text))) {
+      const hint = elements.find((e) => partOf(e.key) === 'hint');
+      const bottoms = figures.filter((f) => partOf(f.key).startsWith('btn:')).map((f) => f.y1);
+      if (hint === undefined) problems.push(`${where}: the hint said no words`);
+      else if (bottoms.length === 0) problems.push(`${where}: no buttons to say a hint under`);
+      else if (hint.y - hint.height / 2 < Math.max(...bottoms) - 0.5) problems.push(`${where}: the hint's words begin ${(Math.max(...bottoms) - (hint.y - hint.height / 2)).toFixed(0)} units above the buttons' lower edge, over them`);
+    }
     // 4b. typed: a digit a keyboard wrote stands in its cell, typeset (a text part of the block, centred in the box), and the answer is not drawn elsewhere
     for (const line of one.lines.filter((text) => text.startsWith('type '))) {
       const m = /^type \S+\.(\S+) \| (\d+)$/.exec(line);
@@ -127,7 +136,7 @@ export function mathProblems(captures: readonly Capture[]): { problems: string[]
         if (mark.x1 > e.x - w / 2 && mark.x0 < e.x + w / 2 && mark.y1 > e.y - h / 2 && mark.y0 < e.y + h / 2) problems.push(`${where}: the mark ${partOf(mark.key)} lies on the digit ${partOf(e.key)}`);
       }
     }
-    if (one.lines.some((line) => line.startsWith('press ')) && figures.filter((f) => /^(ok|bad):/.test(partOf(f.key))).length < 2) problems.push(`${where}: Check left fewer than two marks (a tick and a cross)`);
+    if (one.lines.some((line) => /^press \S+ check$/.test(line)) && figures.filter((f) => /^(ok|bad):/.test(partOf(f.key))).length < 2) problems.push(`${where}: Check left fewer than two marks (a tick and a cross)`);
     // 5. rule: spans the columns of every digit and sign
     const rule = figures.find((f) => partOf(f.key) === 'rule');
     if (isGrid && method !== 'split' && method !== 'bond') {
@@ -688,6 +697,32 @@ async function penScene(mine: MathsTab, dir: string, problems: Problems): Promis
     await sleep(300);
     const mixed = (await mine.block('m7'))?.cells.filter((cell) => cell.part !== 'carry-tens').map((cell) => `${cell.part}=${cell.value}:${cell.by}:${cell.mark}`).sort().join(' ');
     if (mixed !== 'ans-ones=4:pen:right ans-tens=2:key:right') list.push(`the pen in the ones and keys in the tens, then Enter, left "${mixed}"`);
+  }
+  // 7. fb-081: the working a sum had written leaves with the sum. A new sum under the same id starts clean (no ink owned, none in its boxes), and a scene with no written
+  // method takes the ink off as well
+  const own = async (id: string): Promise<number> => (await owners()).filter((o) => o.key.startsWith(id)).length;
+  const inkA = await mine.play(['scene layout=stack mood=calm', 'math m11 column | 12+12'].join('\n'));
+  if (inkA !== '') list.push(inkA);
+  else {
+    // (a stroke written far above every box, earlier, is free working and stays: the count is against what stood before)
+    const base = await strokes();
+    await stroke('m11', 'ans-ones', [0.3, 0.2], [0.35, 0.8], 6);
+    if ((await own('m11')) !== 1) list.push(`a stroke in m11 is owned by ${await own('m11')} stroke(s), wanted 1`);
+    const inkB = await mine.play(['scene layout=stack mood=calm', 'math m11 column | 13+13'].join('\n'));
+    if (inkB !== '') list.push(inkB);
+    else {
+      await sleep(400);
+      if ((await own('m11')) !== 0) list.push(`a new sum under the id m11 kept the old sum's ink (${await own('m11')} stroke(s) owned)`);
+      if ((await mine.cell('m11', 'ans-ones'))?.ink !== false) list.push("the new sum's ones box still says it holds ink");
+      if ((await strokes()) !== base) list.push(`${(await strokes()) - base} stroke(s) of the old working are still drawn under the new sum`);
+      await stroke('m11', 'ans-ones', [0.3, 0.2], [0.35, 0.8], 6);
+      const inkC = await mine.play(['scene layout=stack mood=calm', 'say r1 | No sum here.'].join('\n'));
+      if (inkC !== '') list.push(inkC);
+      else {
+        await sleep(400);
+        if ((await own('m11')) !== 0 || (await strokes()) !== base) list.push(`a scene with no written method left ${(await strokes()) - base} stroke(s) of its working drawn and ${await own('m11')} owned`);
+      }
+    }
   }
   return penned;
 }
