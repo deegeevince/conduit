@@ -1,10 +1,10 @@
-# The journey pnpm check plays on the replay brain: typing, a tap, a drag, an undo and a rest. No model.
+# The journey pnpm check plays on the replay brain: typing, a tap, a drag, an undo and a rest. No model. The drag lists alternatives, and the first has no slider.
 type | explorable
 rest
 hold 0.2
 tap | Dusk
 hold 0.2
-drag height 20 > 70 over=1.5
+drag nothing/height 20 > 70 over=1.5
 hold 0.2
 tap | Why is it longer
 rest

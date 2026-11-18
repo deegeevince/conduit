@@ -46,3 +46,8 @@ export function likeness(label: string, wanted: string): number {
   const found = (word: string): boolean => have.some((other) => other === word || (Math.min(other.length, word.length) >= 5 && (other.startsWith(word) || word.startsWith(other))));
   return want.every(found) ? 1 + (have.length - want.length) * 0.1 : -1;
 }
+
+/** what a bound line does to a shape: it moves, turns or redraws it (or sets where it is, its turn, its size). A bound sentence (`correct`, `say`) or a colour does not. `body` is what follows the bar of `bind <control> | …`. */
+const SHAPE_BIND = /^(?:move|rot|line|rect|circle|ellipse|poly|path|use|group)\b|^set\s+\S+\s+(?:\S+=\S+\s+)*(?:rot|at|scale|r|thick)=/;
+
+export const bindMovesShape = (body: string): boolean => SHAPE_BIND.test(body.trim());

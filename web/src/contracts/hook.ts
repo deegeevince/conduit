@@ -69,6 +69,8 @@ export interface StageHook {
   controls(): readonly ControlView[];
   /** The written methods with cells to write in, with where each cell and button is, what it holds and how Check marked it (PLAN-maths M3). */
   maths(): readonly import('./painter').MathBlockView[];
+  /** The typeset formulas on stage (PLAN-maths M7): the TeX, the box, and whether KaTeX has set it. */
+  formulas(): readonly import('./painter').FormulaView[];
   /**
    * The same as the user setting this control and letting go: bindings follow at once, a `control` back event is sent, and a
    * button or a control marked `send` opens a turn. A button takes no value. Throws when no live control has the id.

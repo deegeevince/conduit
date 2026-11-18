@@ -687,8 +687,11 @@ function inputText(input: TurnInput, pastedAs?: string): string {
   if (input.kind === 'script') return 'The user played a script of their own.';
   if (input.kind === 'act') {
     const values = valuesText(input.values);
-    // fb-055. A tap on a label the brain drew is a question about what it names, asked by pointing: the person has not typed anything
-    if (input.part !== undefined) return `The user tapped the label "${input.part.label}" on your drawing (${input.id}${input.part.on === null ? '' : `, which names ${input.part.on}`}). That is them asking you to tell them about it: what it is and how it works, in the context of this conversation. Answer that, as you would a question.`;
+    // fb-055. A tap on a label the brain drew is the person pointing at a part to go down into it (broad to drill): the next step is that part, larger, with its own parts labelled. They typed nothing
+    if (input.part !== undefined) {
+      const on = input.part.on === null ? '' : `, which names ${input.part.on}`;
+      return `The user tapped the label "${input.part.label}" on your drawing (${input.id}${on}). A tap means look closer: take them one step down, into that part. Draw the part on its own and much larger than it was, with its own parts labelled (a callout on each, so each can be tapped to go deeper), in a new scene so the whole picture gives way to it; then say in a line or two what it does. Keep a way back out as a choice. Do not leave the picture as it was and only add words or a highlight: a tap that changes nothing on the canvas is a tap that did nothing.`;
+    }
     if (input.screen !== undefined) return `The user pressed "${input.text}" on screen ${input.screen} of your mock-up (button ${input.id}).${values === '' ? '' : ` What the screen's fields and controls hold now: ${values}.`} Answer the press: change the mock-up, or say what it did.`;
     return `The user worked your control ${input.id}: "${input.text}".${values === '' ? '' : ` Every control now: ${values}.`}`;
   }

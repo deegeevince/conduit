@@ -22,6 +22,8 @@
 //                      the drawn part or on plain words; with a mouse and a finger; the journey's `tap | Brakes` finds "brake disc" (label-check.ts)
 //   fb-064             the Undo chip puts the answer before back whole: the car's labels (and a click on one asks about it), its words and its choice, and nothing of the answer it
 //                      undid stands over it (undo-check.ts)
+//   fb-075, fb-008     a turn that drew nothing (an "ok" after four tool calls; prose and refused markdown bullets) is told so and asked once more in the same turn, "Trying again…" first, never twice; bullets are
+//                      said as text, not refused: the real server with a stand-in for the brain's CLI (empty-check.ts, no model)
 //   lens               (flag on, ?lens=1; tablet 1180x820 at two pixels to the point with touch, and 390x844) a two-finger pinch to 2x, then a tap on a choice, a slider
 //                      drag and a pen stroke each land on the right page point; 0 fits again; the pen draws without Draw, a short pen tap presses (lens-check.ts)
 //
@@ -77,6 +79,7 @@ import { printWebkit, webkitGroup, webkitMissing } from './webkit-check';
 import { driftGroup } from './drift-check';
 import { livePages, painterCaps, showcaseCase, showcaseCategory, tableResults } from './showcase-check';
 import { mathsGroup } from './math-check';
+import { emptyGroup } from './empty-check';
 import { motionGroup } from './motion-check';
 import { checkGlyphs, checkInk, checkListings, checkSlideWords, checkTakeover, flowsGroup, footprintJudge, photoGroup, sceneFactsOf, streamBrainCheck, streamFixtureCheck, testPattern } from './real-check';
 import type { Footprint } from './real-check';
@@ -1058,10 +1061,108 @@ class Screen {
         good = 'the land reached an app that never asked for it: World.land is a MultiPolygon of over a hundred polygons and frozen, so the page shows its land-coloured block';
         break;
       }
+      case 'formula': {
+        // PLAN-maths M7: a typeset formula. KaTeX set it (the page measured it), the box has ink in it, the fraction bar is drawn (the longest unbroken run of ink in the box of the second,
+        // which no glyph makes), and its MathML is in the text layer, with the TeX it was written in. KaTeX came as a lazy chunk with its fonts, and not in the main one.
+        interface Typeset { readonly id: string; readonly tex: string; readonly box: { x: number; y: number; width: number; height: number }; readonly opacity: number; readonly set: boolean; readonly fault: string | null }
+        const formulas = await tab.eval<Typeset[]>('window.__stage.formulas()');
+        const view = await tab.eval<{ w: number; h: number }>('({ w: innerWidth, h: innerHeight })');
+        const mine = ['f1', 'f2'].map((name) => formulas.find((f) => f.id === name));
+        const boxes: { x: number; y: number; w: number; h: number }[] = [];
+        mine.forEach((f, at) => {
+          const name = `f${at + 1}`;
+          if (f === undefined) problems.push(`the formula ${name} is not on stage`);
+          else if (!f.set) problems.push(`${name} was never set by KaTeX: it is the estimate, not the page's measure`);
+          else if (f.fault !== null) problems.push(`${name} did not read: ${f.fault}`);
+          else if (f.opacity < 0.5 || f.box.width < 40 || f.box.height < 30 || f.box.x < -2 || f.box.y < -2 || f.box.x + f.box.width > view.w + 2 || f.box.y + f.box.height > view.h + 2) problems.push(`${name} is not on the screen at a size to read: ${Math.round(f.box.width)}x${Math.round(f.box.height)} at ${Math.round(f.box.x)},${Math.round(f.box.y)} (opacity ${f.opacity})`);
+          else boxes.push({ x: f.box.x, y: f.box.y, w: f.box.width, h: f.box.height });
+        });
+        if (boxes.length === 2) {
+          const picture = await tab.shot();
+          const inked = await tab.call<{ px: number; share: number }[]>('inkIn', picture, boxes, tab.dpr);
+          inked.forEach((mark, at) => {
+            if (mark.share < 0.02) problems.push(`no ink in the box of f${at + 1} (${(mark.share * 100).toFixed(1)}% of ${Math.round((boxes[at] as { w: number }).w)}x${Math.round((boxes[at] as { h: number }).h)})`);
+          });
+          const [bar] = await tab.call<{ run: number; rows: number }[]>('barIn', picture, [boxes[1] as { x: number; y: number; w: number; h: number }], tab.dpr);
+          const wanted = 0.25 * (boxes[1] as { w: number }).w;
+          if (bar === undefined || bar.run < wanted) problems.push(`no fraction bar is drawn in f2: the longest unbroken line of ink in its box is ${bar === undefined ? 0 : bar.run.toFixed(0)} px, a bar is over ${wanted.toFixed(0)}`);
+          else if (bar.rows > 6) problems.push(`the fraction bar of f2 is ${bar.rows.toFixed(1)} px thick: that is a smear, not a rule`);
+        }
+        const layer = await tab.eval<{ id: string; math: number; frac: number; tex: string }[]>(`[...document.querySelectorAll('.stage__text-block')].filter((b) => b.dataset.element === 'f1' || b.dataset.element === 'f2').map((b) => ({ id: b.dataset.element, math: b.querySelectorAll('math').length, frac: b.querySelectorAll('mfrac').length, tex: (b.querySelector('annotation[encoding="application/x-tex"]') || {}).textContent || '' }))`);
+        for (const name of ['f1', 'f2']) {
+          const here = layer.find((b) => b.id === name);
+          if (here === undefined || here.math === 0) problems.push(`the text layer holds no MathML for ${name}`);
+          else if (here.frac === 0 || here.tex === '') problems.push(`the MathML of ${name} in the text layer has no fraction (${here.frac}) or no TeX behind it ("${here.tex}")`);
+        }
+        const chunk = await this.katexLoad(tab);
+        problems.push(...chunk);
+        good = `f1 and f2 are set by KaTeX (${boxes.map((b) => `${Math.round(b.w)}x${Math.round(b.h)}`).join(' and ')}), inked, f2's fraction bar is drawn, both have MathML with their TeX in the text layer, and KaTeX came as its own chunk with its fonts`;
+        break;
+      }
+      case 'formula-wide': {
+        // a formula wider than its room is set smaller and whole: its box is inside the screen, nothing is said to be crowded or cut, and it is inked from end to end
+        interface Typeset { readonly id: string; readonly box: { x: number; y: number; width: number; height: number }; readonly set: boolean; readonly fault: string | null }
+        const f = (await tab.eval<Typeset[]>('window.__stage.formulas()')).find((candidate) => candidate.id === 'f4');
+        const view = await tab.eval<{ w: number }>('({ w: innerWidth })');
+        if (f === undefined) problems.push('the formula f4 is not on stage');
+        else {
+          if (!f.set || f.fault !== null) problems.push(`f4 was not set by KaTeX (${f.fault ?? 'the estimate'})`);
+          if (f.box.x < -1 || f.box.x + f.box.width > view.w + 1) problems.push(`f4 stands ${f.box.x < 0 ? 'off the left' : 'off the right'} of the screen: ${Math.round(f.box.x)}..${Math.round(f.box.x + f.box.width)} of ${view.w}`);
+          const picture = await tab.shot();
+          const halves = [0, 1].map((half) => ({ x: f.box.x + (f.box.width / 2) * half, y: f.box.y, w: f.box.width / 2, h: f.box.height }));
+          const marks = await tab.call<{ px: number; share: number }[]>('inkIn', picture, halves, tab.dpr);
+          marks.forEach((mark, at) => {
+            if (mark.share < 0.02) problems.push(`the ${at === 0 ? 'left' : 'right'} half of f4 holds no ink (${(mark.share * 100).toFixed(1)}%): it is cut`);
+          });
+          const sight = await tab.eval<{ id: string; notes: string[] }[]>(`Promise.resolve(window.__stage.sight()).then((s) => s.items.filter((i) => i.id === 'f4').map((i) => ({ id: i.id, notes: i.notes })))`);
+          const blocked = sight[0]?.notes.filter((note) => note === 'crowded' || note === 'clipped') ?? [];
+          if (blocked.length > 0) problems.push(`the page says f4 is ${blocked.join(' and ')}`);
+        }
+        good = 'f4, about thirty ems wide, is set smaller to stand whole in its room: inside the screen, inked in both halves, and the page does not say it is crowded or cut';
+        break;
+      }
+      case 'formula-error': {
+        // a formula KaTeX cannot read is its source, set as text: the page says so (a fault, never a blank), the text layer reads the source, and the box has ink
+        interface Typeset { readonly id: string; readonly box: { x: number; y: number; width: number; height: number }; readonly set: boolean; readonly fault: string | null }
+        const f = (await tab.eval<Typeset[]>('window.__stage.formulas()')).find((candidate) => candidate.id === 'f3');
+        if (f === undefined) problems.push('the formula f3 is not on stage');
+        else {
+          if (f.fault === null) problems.push('f3 is not TeX that can be read, and KaTeX read it');
+          const picture = await tab.shot();
+          const [mark] = await tab.call<{ px: number; share: number }[]>('inkIn', picture, [{ x: f.box.x, y: f.box.y, w: f.box.width, h: f.box.height }], tab.dpr);
+          if (mark === undefined || mark.share < 0.02) problems.push(`no source is drawn where f3 stands (${f.box.width.toFixed(0)}x${f.box.height.toFixed(0)}): a formula that cannot be read must show what was written`);
+        }
+        const layer = await tab.eval<{ text: string; math: number }[]>(`[...document.querySelectorAll('.stage__text-block')].filter((b) => b.dataset.element === 'f3').map((b) => ({ text: b.textContent || '', math: b.querySelectorAll('math').length }))`);
+        if (layer.length === 0 || !layer.some((b) => b.text.includes('\\notacommand{2}'))) problems.push(`the text layer does not hold the source of f3 (${JSON.stringify(layer.map((b) => b.text.slice(0, 40)))})`);
+        if (layer.some((b) => b.math > 0)) problems.push('the text layer holds MathML for a formula that could not be read');
+        good = 'f3 is not TeX that reads: KaTeX said so (a fault), the source stands where it would have been, inked, and the text layer holds the source and no MathML';
+        break;
+      }
       default:
         return;
     }
     add(`hard-${id}`, problems.length === 0 ? 'PASS' : 'FAIL', problems.length === 0 ? good : problems.join('; '));
+  }
+
+  /**
+   * PLAN-maths M7: KaTeX is a chunk of its own. The page fetched it (with its stylesheet and a font) because a formula was asked for, and the main chunk, with the files it loads
+   * at once, holds none of it: its error text and its fonts are not in them.
+   */
+  private async katexLoad(tab: Tab): Promise<string[]> {
+    const problems: string[] = [];
+    const fetched = await tab.eval<string[]>(`performance.getEntriesByType('resource').map((r) => new URL(r.name).pathname)`);
+    if (!fetched.some((path) => /\/assets\/typeset-[^/]*\.js$/.test(path))) problems.push('the page never fetched the typesetter chunk (assets/typeset-*.js)');
+    if (!fetched.some((path) => /KaTeX_[A-Za-z0-9]+-[A-Za-z]+-[^/]*\.woff2$/.test(path))) problems.push('the page fetched no KaTeX font');
+    const dist = join(repoRoot(), 'web', 'dist');
+    const html = readFileSync(join(dist, 'index.html'), 'utf8');
+    // the files the page loads before anything is asked: its entry script and the chunks it preloads
+    const first = [...html.matchAll(/(?:src|href)="(\/assets\/[^"]+\.js)"/g)].map((found) => found[1] as string);
+    if (first.length === 0) problems.push('the built index.html names no script');
+    for (const path of first) {
+      const text = readFileSync(join(dist, path), 'utf8');
+      if (text.includes('KaTeX parse error')) problems.push(`${path}, which the page loads at once, holds KaTeX`);
+    }
+    return problems;
   }
 
   /**
@@ -1907,6 +2008,18 @@ function buildUnits(args: Args, welcome: Welcome): { readonly units: Unit[]; rea
       const results = await fb062Group(plain);
       out.lines.push('\nfb-062 (1344x866: a title on words, and the fixes that dodge it)');
       checkLines(out, results);
+    },
+  });
+  // fb-075 and fb-008 (docs/feedback.md): a turn that drew nothing is told so and asked once more; markdown bullets are said, not refused. `--only fb-075` runs just this.
+  units.push({
+    name: 'fb-075',
+    also: ['fb-008'],
+    needs: 'none',
+    weight: 20,
+    run: async (_servers, out) => {
+      const results = await emptyGroup(plain, join(args.out, 'fb-075'), args.timeoutMs);
+      out.lines.push('\nfb-075 (a server whose brain is a stand-in CLI: a turn that wrote "ok" after four tool calls, one that wrote nothing twice, one of prose and markdown bullets, one that drew; and, with no server, how the reader takes a markdown bullet: `pnpm timeline feedback`)');
+      checkLines(out, [...results, ...(await scriptGroup('fb-008-reader', ['timeline', 'feedback'], 'a markdown bullet or numbered item that is no Series is said as text, its marker and emphasis off, with a warning; what is no list item is not touched'))]);
     },
   });
   units.push({

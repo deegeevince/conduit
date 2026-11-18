@@ -10,6 +10,7 @@ import '../../fonts/device';
 import { FACES } from '../../fonts/faces';
 import { LOOKS } from '../../looks';
 import { fontFile } from '../fonts';
+import { formulaRecord } from '../formula/host';
 import { createPlainFigures } from './figures';
 import type { PlainFigures } from './figures';
 
@@ -20,6 +21,9 @@ interface Node {
   readonly runs: HTMLSpanElement[];
   readonly marks: HTMLDivElement[];
   readonly plates: HTMLDivElement[];
+  /** a typeset formula: KaTeX's own markup, put in the page where the formula's box is (PLAN-maths M7) */
+  formula: HTMLDivElement | null;
+  formulaKey: string;
 }
 
 interface Picked {
@@ -62,7 +66,7 @@ export function createPlainRenderer(): Renderer {
     element.style.cssText = 'position:absolute;left:0;top:0;width:0;height:0;pointer-events:none;';
     outer.appendChild(element);
     parent.appendChild(outer);
-    return { outer, root: element, runs: [], marks: [], plates: [] };
+    return { outer, root: element, runs: [], marks: [], plates: [], formula: null, formulaKey: '' };
   };
 
   // The element names its own face (a line can be set in another than its look's); the box was measured for that one.
@@ -100,8 +104,48 @@ export function createPlainRenderer(): Renderer {
       node.root.appendChild(span);
       node.runs.push(span);
     }
+    // A typeset formula is KaTeX's markup, in the box the layout gave it; until the page has set it nothing of it shows.
+    const formula = element.formula;
+    if (formula === undefined && node.formula !== null) {
+      node.formula.remove();
+      node.formula = null;
+      node.formulaKey = '';
+    }
+    if (formula !== undefined) {
+      const set = formulaRecord(formula.tex, formula.display);
+      const run = element.runs[0];
+      if (node.formula === null) {
+        node.formula = document.createElement('div');
+        node.formula.className = 'conduit-formula';
+        node.formula.setAttribute('aria-hidden', 'true');
+        node.formula.style.cssText = 'position:absolute;left:0;top:0;width:max-content;line-height:normal;white-space:nowrap;pointer-events:none;';
+        node.root.appendChild(node.formula);
+      }
+      const key = `${formula.tex}|${formula.display ? 'd' : 'i'}`;
+      if (node.formulaKey !== key && set !== null) {
+        node.formula.innerHTML = set.html;
+        node.formulaKey = key;
+      }
+      const shown = set !== null && run !== undefined && run.opacity > 0 && run.reveal > 0;
+      node.formula.style.display = shown ? '' : 'none';
+      if (shown && set !== null && run !== undefined) {
+        // the formula's own top left, which KaTeX's markup keeps `origin` ems inside the box it makes
+        const left = centreX + (run.x + run.dx) * s - set.origin.x * fontPx;
+        const top = centreY + (run.y + run.dy) * s - set.origin.y * fontPx;
+        node.formula.style.fontSize = px(fontPx);
+        node.formula.style.color = run.colour;
+        node.formula.style.opacity = run.opacity === 1 ? '' : String(run.opacity);
+        node.formula.style.transform = `translate(${px(left)},${px(top)})${run.scale === 1 ? '' : ` scale(${run.scale})`}`;
+        node.formula.style.clipPath = run.reveal >= 1 ? '' : `inset(0 ${(1 - run.reveal) * 100}% 0 0)`;
+        node.formula.style.transformOrigin = '0 0';
+      }
+    }
     node.runs.forEach((span, i) => {
       const run = element.runs[i];
+      if (formula !== undefined) {
+        span.style.display = 'none';
+        return;
+      }
       // Typed and wiped reveals show whole character cells only, as the WebGL path does.
       const chars = run === undefined ? 0 : [...run.text].length;
       const cells = run === undefined ? 0 : run.reveal >= 1 ? chars : Math.floor(chars * run.reveal + 1e-6);

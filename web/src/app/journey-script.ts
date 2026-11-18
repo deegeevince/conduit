@@ -66,13 +66,41 @@ export interface StepTiming {
   used: string | null;
   dragStart: Stamp | null;
   dragEnd: Stamp | null;
-  drag: { readonly control: string; readonly from: number; readonly to: number; readonly reached: number; readonly readout: { readonly before: readonly string[]; readonly after: readonly string[] } } | null;
+  drag: {
+    readonly control: string;
+    readonly from: number;
+    readonly to: number;
+    readonly reached: number;
+    readonly readout: { readonly before: readonly string[]; readonly after: readonly string[] };
+    /** how the page itself kept the pace while the pointer moved (animation frames, in ms apart): a stall is a long one. Absent in a recording made before this was measured. */
+    readonly pacing?: DragPacing;
+    /** how the slider was chosen: by which of the step's words, and whether it moves a drawn thing (a slider that does is taken before one that only changes words) */
+    readonly chose?: { readonly by: string; readonly movesShape: boolean };
+  } | null;
 }
 
 /** The alternatives a tap's words list, in the order wanted: `Brakes / Brake / Wheels` is three; words with no ` / ` in them are one. */
 export function alternativesOf(text: string): string[] {
   const parts = text.split(/\s+\/\s+/).map((part) => part.trim()).filter((part) => part !== '');
   return parts.length === 0 ? [text.trim()] : parts;
+}
+
+/** The frames of a drag, as the page ran them: how many, how far apart, and how often it stalled; and the pointer's own path (it never goes back). */
+export interface DragPacing {
+  readonly frames: number;
+  readonly meanMs: number;
+  readonly p95Ms: number;
+  readonly longestMs: number;
+  /** frames more than 25 ms after the one before: the ones a viewer would see as a pause at 60 a second */
+  readonly slow: number;
+  /** the pointer went the same way all along */
+  readonly monotonic: boolean;
+  /** the most the pointer moved between two frames, px */
+  readonly maxStepPx: number;
+  /** how far the pointer ever was from its eased path (from where the knob was to where the value is, over the time asked): nothing steers it, so a pixel or less; steering it by what the control reports pulls it off by many */
+  readonly deviationPx: number;
+  /** the most one frame's step differed from the one before it, px: a pointer at a steady eased pace changes its step by a pixel or two at most; a lurch is many */
+  readonly jerkPx: number;
 }
 
 /** A box in CSS pixels of the page's viewport (so, pixels of a recording made at that size). */

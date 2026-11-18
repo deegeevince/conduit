@@ -43,6 +43,7 @@ function round(value: number): number {
  * is never said: a cell the person writes is listed by its name, and the answer is sealed (`answerOf`).
  */
 function describeMath(math: MathFigure): string {
+  if (math.method === 'formula') return `typeset formula ${math.sum}`;
   const head = `written method ${math.method} ${math.sum}${math.worked ? ' (worked)' : ''}`;
   const grid = gridOf({ method: math.method, sum: math.sum, worked: math.worked, ...(math.blank === null ? {} : { blank: math.blank }), ...(math.carry === null ? {} : { carry: math.carry }) });
   if (grid === null) return `${head} drawn as a picture; the unknown is ?`;

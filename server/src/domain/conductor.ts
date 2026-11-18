@@ -48,6 +48,8 @@ import type { PictureService } from './pictures';
 import type { HeldDocument } from './documents';
 import { NO_DOCUMENTS, seedBook } from './document';
 import { NO_AHEAD, createAhead, fillPrompt, refusalBrief } from './ahead';
+import { EMPTY_AGAIN, EMPTY_NOT_ASKED, emptyTurnBrief, emptyTurnFacts } from './empty-turn';
+import type { EmptyTurn } from './empty-turn';
 import type { Ahead, AheadHost, AheadPolicy, AheadStatus, FillJob, FillOutcome } from './ahead';
 import type { LessonCheckResult } from '../judge/lesson';
 import { NO_THROTTLE } from '../usage';
@@ -608,6 +610,10 @@ export class Conductor {
       criticAsked: false,
       refused: [],
       amended: false,
+      drew: 0,
+      said: 0,
+      retried: false,
+      retrying: false,
       calls: new Map(),
       endedAt: null,
     };
@@ -1506,8 +1512,10 @@ export class Conductor {
         }
       }
       if (!stopped) await this.amendTurn(s, turn, brain, normalizer);
+      // a turn of the person's that drew nothing is told so and asked once more, before anything is looked at (fb-075)
+      const emptied = !stopped && turn.endReason === null && !turn.abort.signal.aborted ? await this.retryEmpty(s, turn, brain, normalizer) : null;
       if (!stopped && turn.endReason === null && !turn.abort.signal.aborted) await this.lookAndFix(s, turn, brain, request.input, normalizer);
-      this.finish(s, turn, turn.abort.signal.aborted ? 'interrupted' : 'done', null);
+      this.finish(s, turn, turn.abort.signal.aborted ? 'interrupted' : 'done', emptied);
     } catch (error) {
       if (turn.endReason !== null) {
         log.debug('turn.error_after_end', { turn: turn.id, error });
@@ -1995,6 +2003,10 @@ export class Conductor {
       criticAsked: false,
       refused: [],
       amended: false,
+      drew: 0,
+      said: 0,
+      retried: false,
+      retrying: false,
       calls: new Map(),
       endedAt: null,
     };
@@ -2083,8 +2095,8 @@ export class Conductor {
       return undefined;
     }
     if (event.type === 'typing') {
-      // Only the first pass is shown as it is written; a look's fix is tried out of sight and a repair is not the owner's stream.
-      if (pass === 1 && !repairing && turn.endReason === null) this.typing(s, turn, event.text);
+      // Only the first pass is shown as it is written (and the second try of a turn that drew nothing, which stands in for it); a look's fix is tried out of sight and a repair is not the owner's stream.
+      if ((pass === 1 || turn.retrying) && !repairing && turn.endReason === null) this.typing(s, turn, event.text);
       return undefined;
     }
     if (event.type === 'tool') {
@@ -2095,7 +2107,7 @@ export class Conductor {
     }
     if (event.type === 'usage') {
       this.deps.usage?.record({
-        kind: turn.input.kind === 'repair' || repairing ? 'repair' : pass === 1 ? 'turn' : 'review',
+        kind: turn.input.kind === 'repair' || repairing ? 'repair' : pass === 1 || turn.retrying ? 'turn' : 'review',
         model: this.deps.brains.configured.choice?.(s.id).model ?? null,
         session: s.id,
         turn: turn.id,
@@ -2172,6 +2184,8 @@ export class Conductor {
         const waiting = turn.held.get(missing) ?? [];
         waiting.push({ event, issues: [...event.issues, ...normalized.issues] });
         turn.held.set(missing, waiting);
+        // written, and waiting for the part it belongs to: not an empty turn
+        turn.drew += 1;
         return undefined;
       }
       this.reject(s, turn, serializeLine(event.line), [...event.issues, ...normalized.issues]);
@@ -2196,6 +2210,10 @@ export class Conductor {
     const issues: Issue[] = [...event.issues, ...normalized.issues, ...bracedIssues, ...pushed.issues];
     const text = serializeLine(line);
     log.debug('turn.line', { turn: turn.id, seq, text });
+    // fb-075: a sentence or a bullet that was no Series and was only said as text is not something the brain drew
+    const rescued = issues.some((issue) => issue.code === 'said-as-text');
+    if (rescued) turn.said += 1;
+    else turn.drew += 1;
     if (issues.some((issue) => issue.severity === 'warn')) this.noteProblem(turn, text, 'repaired', issues.filter((issue) => issue.severity === 'warn'));
     const start = pushed.schedule.lines.find((timed) => timed.seq === seq)?.start ?? penBefore;
     const node = this.docs.place(s.id, text);
@@ -2204,7 +2222,13 @@ export class Conductor {
     if (turn.input.kind !== 'demo') s.memory.record(turn.id, seq, text);
     this.emit(s, turn, { type: 'line', turn: turn.id, seq, text, issues });
     // A long `say` was split by the normaliser: its continuations follow at once, in order, as lines of their own. No word is cut.
+    const drewBefore = turn.drew;
     for (const next of normalized.rest ?? []) if (this.ingest(s, turn, { type: 'line', line: next, issues: [] }, normalizer, pass, repairing) === 'stop') return 'stop';
+    // (the pieces of a sentence that was only said as text are said as text too)
+    if (rescued) {
+      turn.said += turn.drew - drewBefore;
+      turn.drew = drewBefore;
+    }
     if (line.verb === 'paint') this.paint(s, turn, seq, line, pushed.schedule);
     if (line.verb === 'refine' && !repairing && this.deps.continuation === true) turn.continueNote = (line.text ?? '').trim() === '' ? 'go on' : (line.text ?? '').trim();
     if (line.verb === 'row') this.findPicture(s, turn, line.id, line.cells, pushed.schedule);
@@ -2261,6 +2285,8 @@ export class Conductor {
 
   /** `standing | …` or `standing drop n`: kept for the conversation and given back in every later brief. */
   private keep(s: Session, turn: ActiveTurn, ask: StandingAsk): void {
+    // a standing ask is a change the person asked for: not an empty turn
+    turn.drew += 1;
     const held = holdStanding(s, ask);
     this.deps.sessionLog.write(s.id, { type: 'setting', name: 'standing', value: ask.kind === 'add' ? `add: ${ask.words}` : `drop ${ask.n}` });
     this.auditTurn(s, turn, { kind: 'setting', tool: 'standing', target: ask.kind === 'add' ? `add: ${ask.words}` : `drop ${ask.n}`, decision: 'allowed', decidedBy: 'owner' });
@@ -2377,6 +2403,42 @@ export class Conductor {
       // a refusal that cannot be put to the brain is not a failed turn: the verifier finds what is missing
       this.deps.log.warn('turn.amend_failed', { session: s.id, turn: turn.id, error });
     }
+  }
+
+  /**
+   * fb-075, fb-008. A turn of the person's (a message, a tap, a control) has been written and drew nothing: no line landed but sentences and bullets said as text, lines
+   * refused, or none at all. The brain is told what happened (`emptyTurnBrief`), in the conversation that wrote it, and writes again, once; its lines come as the turn's
+   * own, and the person sees "Trying again…" meanwhile. It is never asked twice, and it is not told to leave its tools alone: it is told what they did. A brain that cannot
+   * be asked again (no conversation to put it to) is left as it is. Answers what the turn is to say of itself when it ends: null when something was drawn.
+   */
+  private async retryEmpty(s: Session, turn: ActiveTurn, brain: Brain, normalizer: LineNormalizer): Promise<string | null> {
+    if (turn.retried || turn.drew > 0 || !['prompt', 'tap', 'act'].includes(turn.input.kind)) return null;
+    const found: EmptyTurn = { refused: turn.rejects, said: turn.said, examples: turn.problems.filter((problem) => problem.kind === 'rejected').map((problem) => problem.raw) };
+    if (brain.amend === undefined) {
+      this.deps.log.info('turn.empty', { session: s.id, turn: turn.id, refused: found.refused, said: found.said, asked: false });
+      return null;
+    }
+    turn.retried = true;
+    turn.retrying = true;
+    const why = emptyTurnFacts(found);
+    this.deps.log.info('turn.retry', { session: s.id, turn: turn.id, refused: found.refused, said: found.said });
+    this.deps.sessionLog.write(s.id, { type: 'pass', turn: turn.id, pass: 2, state: 'retrying', reason: why });
+    this.emit(s, turn, { type: 'pass', turn: turn.id, pass: 2, state: 'retrying', reason: why });
+    let asked = true;
+    try {
+      for await (const event of brain.amend({ turn: turn.id, session: s.id, styles: Object.keys(turn.score.schedule.styles), text: emptyTurnBrief(found) }, turn.abort.signal)) {
+        if (this.ingest(s, turn, event, normalizer, 2) === 'stop') break;
+      }
+    } catch (error) {
+      // a second try that cannot be made is not a failed turn: what was written stands, and the person is told
+      asked = false;
+      this.deps.log.warn('turn.retry_failed', { session: s.id, turn: turn.id, error });
+    } finally {
+      turn.retrying = false;
+    }
+    if (turn.abort.signal.aborted || turn.endReason !== null || turn.drew > 0) return null;
+    this.deps.log.info('turn.empty', { session: s.id, turn: turn.id, refused: turn.rejects, said: turn.said, asked });
+    return asked ? EMPTY_AGAIN : EMPTY_NOT_ASKED;
   }
 
   // ---------------------------------------------------------------- v3 (WS5): fill ahead

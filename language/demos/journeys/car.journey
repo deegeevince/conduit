@@ -5,7 +5,9 @@
 #                                   (tap? | ... skips the step when it never shows). `Brakes / Brake / Wheels` lists alternatives: the first one on stage is tapped,
 #                                   and the timings say which. Words that cannot be tapped (a line of speech, a figure's description) are never tapped.
 #   drag <control id or label> <from> > <to> over=<s>   (min and max stand for the ends of the slider)
-#                                   work a slider by its knob (drag? skips it when there is no such control)
+#                                   work a slider by its knob (drag? skips it when there is no such control). `crank / turn / engine` lists alternatives (an id, or a word of
+#                                   a label): of the sliders they find, one that moves a shape (a bound move or turn) is worked before one that only changes words, and the
+#                                   timings say how it was chosen. The pointer goes at one steady eased pace and nothing is read back from the control while it moves
 #   undo                            the Undo chip
 #   back                            a Back choice when the brain offers one, else the Undo chip
 #   hold <s>                        look at the stage for a while
@@ -17,8 +19,9 @@ hold 5
 car: type | Show me the main parts of a car
 rest
 hold 4
-# the brain draws what it likes, and what it labels can be tapped: "Brakes" is the closest label ("brake disc", "brakes"); a part it did not label is skipped after a few seconds, and said so in the timings
-brakes: tap? | Brakes / Brake / Wheels / Wheel
+# the brain draws what it likes, and what it labels can be tapped: the first of these that is on stage is tapped, and a tap goes one step down into that part (broad to drill).
+# The step keeps its name, `brakes`, for the film's editor; the timings say which part was used.
+brakes: tap? | Brakes / Brake / Engine / Wheels / Wheel
 rest
 hold 4
 stop: type | How far does it take to stop? Let me change the speed.
@@ -26,15 +29,12 @@ rest
 hold 4
 dragSpeed: drag speed 50 > 100 over=4
 hold 4
-back: back
+engine: type | Show me how the engine works, and let me turn it
 rest
 hold 4
-engine: tap? | Engine / Motor
-rest
-hold 2
-dragEngine: drag? engine min > max over=3
+dragEngine: drag? crank / turn / engine min > max over=4
 hold 4
-diesel: type | What's different in a diesel?
+electric: type | Swap the engine for an electric motor and battery, and keep the rest of the car the same
 rest
 hold 4
 how: type | Show me how you're doing this
