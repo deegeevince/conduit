@@ -52,6 +52,8 @@ export type BrainSettings =
       readonly tools: readonly BrainTool[];
       /** passed to `claude --effort` and written over CLAUDE_EFFORT in the child, so the owner's shell never changes the brain. `low` keeps hidden planning short: the stage is empty while the model deliberates. */
       readonly effort: 'low' | 'medium' | 'high';
+      /** `off` starts the process with `claude --thinking disabled`: no hidden deliberation before the first line, and none between tool calls (BRAIN_THINKING; on by default) */
+      readonly thinking: 'on' | 'off';
       /** how the system prompt teaches a diagram */
       readonly variant: PromptVariant;
       /** keep one process per conversation alive between turns */
@@ -308,6 +310,7 @@ export function loadEnv(source: Source): Env {
       firstTokenTimeoutMs: integer('CLAUDE_FIRST_TOKEN_TIMEOUT_MS', tools.length > 0 ? 120_000 : 60_000, 1_000, 600_000),
       idleTimeoutMs: integer('CLAUDE_IDLE_TIMEOUT_MS', 30_000, 1_000, 600_000),
       effort: choice('BRAIN_EFFORT', ['low', 'medium', 'high'] as const, 'low'),
+      thinking: choice('BRAIN_THINKING', ['on', 'off'] as const, 'on'),
       variant: parsePromptVariant(text('PROMPT_VARIANT')),
       warm: choice('CLAUDE_WARM', ['on', 'off'] as const, 'on') === 'on',
       maxWarm: integer('CLAUDE_MAX_WARM', 4, 1, 32),

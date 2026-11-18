@@ -117,17 +117,29 @@ export interface StructurePlans {
 }
 
 
+/**
+ * How often each structure was really laid out (by an engine, not answered from memory): the browser check reads it as `window.__layoutWork` and holds a structure to
+ * a number of layouts that follows from its own lines, never from the lines that came after it (fb-065).
+ */
+export const LAYOUT_WORK: { runs: Record<string, number>; remembered: number } = { runs: {}, remembered: 0 };
+(globalThis as { __layoutWork?: typeof LAYOUT_WORK }).__layoutWork = LAYOUT_WORK;
+const worked = (owner: string): void => {
+  LAYOUT_WORK.runs[owner] = (LAYOUT_WORK.runs[owner] ?? 0) + 1;
+};
+
 // Layouts are remembered between rebuilds: a timeline is rebuilt at every line, and an epoch that has not changed is not laid out again.
 const LAYOUTS = new Map<string, StructureLayout>();
 const KEPT_LAYOUTS = 160;
 
-function remembered(key: string, make: () => StructureLayout): StructureLayout {
+function remembered(key: string, make: () => StructureLayout, owner: string): StructureLayout {
   const known = LAYOUTS.get(key);
   if (known !== undefined) {
+    LAYOUT_WORK.remembered += 1;
     LAYOUTS.delete(key);
     LAYOUTS.set(key, known);
     return known;
   }
+  worked(owner);
   const made = make();
   LAYOUTS.set(key, made);
   if (LAYOUTS.size > KEPT_LAYOUTS) LAYOUTS.delete(LAYOUTS.keys().next().value as string);
@@ -256,10 +268,17 @@ function signature(structure: ElementSpan, members: readonly ElementSpan[], rows
   return JSON.stringify([structure.key, head, parts, JSON.stringify(scope)]);
 }
 
+// What the stage plan learns of a structure (does it fit its room, or is it cut or shrunk) is remembered between rebuilds as its layouts are: a timeline is
+// rebuilt at every line the brain writes, and a flowchart with a dozen parts takes a tenth of a second or more to route at a phone's width (it is tried at up to
+// seven heights). Asked again at every later line of the turn for the same flowchart in the same room, that was the whole turn's wait: a script of 170 lines
+// with one flowchart in it held the page still for 45 s while it arrived.
+const PROBES = new Map<string, { readonly crowded: boolean; readonly shrink: number } | null>();
+const KEPT_PROBES = 400;
+
 /**
  * What an engine makes of a structure in a room, for the stage plan to learn the room it really needs: whether it had to cut or shrink
  * to fit. The whole structure is laid out (everything the scene will bring), which is the room the plan keeps for it from the first line.
- * Null when there is no engine for it or it fails.
+ * Null when there is no engine for it or it fails. Remembered by what the answer depends on (the structure's parts and words, the look, the screen, the room and the canvas).
  */
 export function probeStructure(structure: ElementSpan, schedule: Schedule, args: { readonly viewport: Viewport; readonly look: LookSpec; readonly fit: CanvasFit; readonly scope: Scope; readonly room: Box; readonly engine?: StructureEngine }): { readonly crowded: boolean; readonly shrink: number } | null {
   const figure = structure.figure;
@@ -269,6 +288,39 @@ export function probeStructure(structure: ElementSpan, schedule: Schedule, args:
   const members = schedule.elements.filter((element) => element.parent === structure.key && (element.kind === 'node' || element.kind === 'link'));
   const ps = planeScale(structure.style.layer, args.viewport);
   const room: Box = { x: args.room.x / ps, y: args.room.y / ps, width: args.room.width / ps, height: args.room.height / ps };
+  // an engine handed in (a check's own) is not known by its key: that one is asked every time
+  const key =
+    args.engine !== undefined
+      ? null
+      : [
+          signature(structure, members, figure.rows.length, args.scope),
+          JSON.stringify(figure.marks ?? []),
+          JSON.stringify(figure.math ?? null),
+          figure.structure === 'math' ? mathKey(structure.key) : '',
+          figure.structure === 'screen' ? uiKey(structure.key) : figure.structure === 'figure' ? figureKey(structure.key) : '',
+          structure.style.layer,
+          args.look.id,
+          args.look.name,
+          args.viewport.width,
+          args.viewport.height,
+          args.viewport.dpr,
+          room.x.toFixed(2),
+          room.y.toFixed(2),
+          room.width.toFixed(2),
+          room.height.toFixed(2),
+          args.fit.box.x.toFixed(2),
+          args.fit.box.y.toFixed(2),
+          args.fit.unit.toFixed(4),
+        ].join('|');
+  if (key !== null && PROBES.has(key)) {
+    const known = PROBES.get(key) as { readonly crowded: boolean; readonly shrink: number } | null;
+    LAYOUT_WORK.remembered += 1;
+    PROBES.delete(key);
+    PROBES.set(key, known);
+    return known;
+  }
+  worked(structure.key);
+  let result: { readonly crowded: boolean; readonly shrink: number } | null;
   try {
     const made = engine({
       structure,
@@ -281,10 +333,15 @@ export function probeStructure(structure: ElementSpan, schedule: Schedule, args:
       scope: args.scope,
       obstacles: [],
     });
-    return { crowded: made.notes.some((n) => n.note === 'crowded'), shrink: made.shrink };
+    result = { crowded: made.notes.some((n) => n.note === 'crowded'), shrink: made.shrink };
   } catch {
-    return null;
+    result = null;
   }
+  if (key !== null) {
+    PROBES.set(key, result);
+    if (PROBES.size > KEPT_PROBES) PROBES.delete(PROBES.keys().next().value as string);
+  }
+  return result;
 }
 
 function planOf(structure: ElementSpan, schedule: Schedule, env: StructureEnv): Plan | null {
@@ -389,7 +446,7 @@ function planOf(structure: ElementSpan, schedule: Schedule, env: StructureEnv): 
       } catch {
         return EMPTY_STRUCTURE_LAYOUT;
       }
-    });
+    }, structure.key);
     const byOwner = new Map<string, BlockPart[]>();
     for (const part of layout.parts) {
       const list = byOwner.get(part.owner) ?? [];

@@ -29,6 +29,10 @@
 //                      that changes something; a drawing past its canvas, parts that come apart in a move, a morphed shape that is moved. Their page-side twins run in every demo scene (server/src/tools/demo-check.ts):
 //                      fb-004 the tour's bar (a tour demo plays with it up, and nothing meets it), fb-023 what the scene wrote is on the stage, fb-030 no line let go, fb-037 a label on the side it was written, fb-005 the
 //                      crosshair's tag
+//   showcase           "What Conduit can do" (PLAN-catalogue.md, showcase-check.ts): every live page of language/demos/showcase/*.series is played on a replay server that has a recorded case, one
+//                      unit a category on each screen, and judged like a demo; each page's `expect` ids are on stage with ink; the pages with a hand are worked with real input (a drag, a tap
+//                      on a pick and a switch, a typed prompt, a tap on a choice, a right answer, an undo); the table and the painter agree both ways (`showcase: N live, M not yet (...)`)
+//
 //   hard               language/demos/hard.series: the failures real sessions turned up, one scene each (a 400-character line, CJK, a flowchart, words beside strokes, digits lined up, crowded labels,
 //                      many lines, a dark ground, a photo with callouts); judged like a demo, each scene with its own question
 //   stream             a turn at 80 characters a second has its first element on stage long before its last line is sent; a recorded stream-json turn comes out line by line
@@ -45,8 +49,8 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { cpus, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { cutScenes, declaredAtRest, DEMOS, DEMOS_NOT_PAINTED, LineReader, playSource, TOUR_CHAPTERS, digestFull } from '@conduit/language';
-import type { Attention, Declared, Observation } from '@conduit/language';
+import { cutScenes, declaredAtRest, DEMOS, DEMOS_NOT_PAINTED, LineReader, playSource, TOUR_CHAPTERS, digestFull, readShowcase } from '@conduit/language';
+import type { Attention, Declared, Observation, ShowcaseReader } from '@conduit/language';
 import { spawnTracked } from '../brains/claude-cli/process';
 import { CHROME_CANDIDATES, repoRoot, sleep, stop, waitFor } from './explore-browser';
 import { claimPort, releasePort } from './check-ports';
@@ -67,8 +71,9 @@ import { fb062Group, loopGroup } from './loop-check';
 import { TOUR_SCREENS, tourGroup } from './tour-check';
 import { printWebkit, webkitGroup, webkitMissing } from './webkit-check';
 import { driftGroup } from './drift-check';
+import { livePages, painterCaps, showcaseCase, showcaseCategory, tableResults } from './showcase-check';
 import { mathsGroup } from './math-check';
-import { checkGlyphs, checkInk, checkListings, checkSlideWords, checkTakeover, flowsGroup, footprintJudge, photoGroup, sceneFactsOf, streamFixtureCheck, testPattern } from './real-check';
+import { checkGlyphs, checkInk, checkListings, checkSlideWords, checkTakeover, flowsGroup, footprintJudge, photoGroup, sceneFactsOf, streamBrainCheck, streamFixtureCheck, testPattern } from './real-check';
 import type { Footprint } from './real-check';
 import type { Answer, CheckResult, Options, Probe, Step, Verdict } from './smoke';
 
@@ -287,6 +292,8 @@ interface AppFacts {
   readonly shown: boolean;
   readonly crashes: number;
   readonly blank: boolean | null;
+  /** where its frame stands, host CSS pixels (the stage's own element for an app has no size) */
+  readonly box: { readonly x: number; readonly y: number; readonly width: number; readonly height: number };
 }
 
 export interface Scene {
@@ -323,7 +330,7 @@ interface Stage {
 interface JudgeOptions {
   readonly earlier?: boolean;
   readonly footprints?: boolean;
-  readonly photo?: boolean;
+  readonly photo?: boolean | readonly (readonly [string, number, number])[];
   /** the things the scene's lines wrote that must be on the stage at its rest (fb-023); also asks that no line was let go (fb-030) */
   readonly declared?: readonly Declared[];
   /** a tour demo: the tour's bar must be up and nothing meet it (fb-004); false: it must not be there */
@@ -429,9 +436,10 @@ class Screen {
     }
     // a photo's callouts are looked at with a long reach (their leaders run to their spots) and their spots asked for
     const spots = new Map<string, { x: number; y: number }>();
-    if (options.photo === true) {
+    const photoSpots = options.photo === true ? PHOTO_SPOTS : options.photo === undefined || options.photo === false ? [] : options.photo;
+    if (photoSpots.length > 0) {
       const box = answer.live.find((e) => e.id === 'p1')?.box;
-      if (box !== undefined) for (const [id, x, y] of PHOTO_SPOTS) spots.set(id, { x: box.x + (x / 100) * box.width, y: box.y + (y / 100) * box.height });
+      if (box !== undefined) for (const [id, x, y] of photoSpots) spots.set(id, { x: box.x + (x / 100) * box.width, y: box.y + (y / 100) * box.height });
     }
     this.feet = options.footprints === true ? await footprintJudge(tab, add, { scale: tab.dpr, spots }) : new Map();
     const drained = tab.drain();
@@ -627,6 +635,7 @@ class Screen {
       const played = await tab.eval<string | null>(`Promise.resolve(window.__stage.playScript(${JSON.stringify(source)})).then(() => null, (e) => String(e && e.message || e))`);
       // the script is one long turn that plays in real time (a minute and a half of the clock now, and a busy machine plays it slower): it is given as long as four demos
       results.push(Screen.restResult(played !== null ? `the demo would not start: ${played}` : await talk.rest(true, true, Math.max(Math.round(this.args.timeoutMs * 1.5), 240_000)), began));
+      Screen.add(results, 'hard-layout-work', await this.layoutWork(tab, source), 'each diagram was laid out for its own lines: the lines written after it cost it no layout');
       const starts = await this.sceneStarts(tab);
       if (starts.length !== ids.length) results.push({ turn: 0, check: 'scenes', verdict: 'FAIL', detail: `the script has ${ids.length} scenes but the turn has ${starts.length}` });
       const last = ids.length - 1;
@@ -639,6 +648,32 @@ class Screen {
     } finally {
       await tab.close();
     }
+  }
+
+  /**
+   * fb-065: a diagram is laid out for the lines that make it (each part that arrives changes it), and not again for every line the turn writes after it. The painter counts
+   * the layouts it really ran by structure (`window.__layoutWork`, the rest answered from memory); a structure whose scene writes `node` and `link` lines may have run
+   * three layouts for each of its own lines, no more. (The flowchart of hard.series, with 170 lines written after it, was laid out 176 times for its 20 lines, and the page
+   * stood still for 45 s while the turn arrived at a phone's width: the check's rest limit was spent before the script began to play.)
+   */
+  private async layoutWork(tab: Tab, source: string): Promise<string[]> {
+    const work = await tab.eval<{ runs: Record<string, number>; remembered: number } | null>('window.__layoutWork || null');
+    if (work === null) return ['the page does not count its layouts (window.__layoutWork)'];
+    const scenes = source.split(/^scene\b/m).slice(1);
+    const problems: string[] = [];
+    let judged = 0;
+    for (const [key, runs] of Object.entries(work.runs)) {
+      const id = key.split('@')[0] as string;
+      const scene = scenes.find((part) => new RegExp(`^\\w+ ${id}\\b`, 'm').test(part));
+      if (scene === undefined) continue;
+      const own = scene.split('\n').filter((line) => /^(node|link)\s/.test(line)).length;
+      if (own === 0) continue;
+      judged += 1;
+      const most = 3 * (own + 2);
+      if (runs > most) problems.push(`${id} was laid out ${runs} times for its ${own + 1} lines (at most ${most}): the lines after it laid it out again`);
+    }
+    if (judged === 0) problems.push('no diagram of the script was found among the layouts counted');
+    return problems;
   }
 
   /** what each scene of hard.series says its own bug would break */
@@ -1309,6 +1344,14 @@ class Screen {
         const sent = tab.posted.length;
         const verdict = (): Promise<string> => tab.eval<string>(`(window.__stage.controls().find((c) => c.id === ${JSON.stringify(scene.id)}) || { askState: { verdict: 'none' } }).askState.verdict`);
         await checkTakeover(tab, (check, verdict, detail) => talk.add(results, check, verdict, detail));
+        // The picture is taken here, with the stage at rest and the question on it, and judged with the list of what is on stage read the moment after. It used to be taken last,
+        // after the right answer: that answer is sent to the brain, whose reply opens a turn that clears the stage, and on a machine under load the picture came
+        // while that turn was opening (a bare ground, the status "Playing…") and the list a moment later held the reply's first line: "nothing drawn in its box" for a line that was
+        // drawn a frame later. A picture and the list it is judged against are one frame only when nothing is on its way.
+        const picture = await tab.shot();
+        const file = `${this.screen.name}-${name}.png`;
+        await writeFile(join(this.dir, file), Buffer.from(picture.split(',')[1] ?? '', 'base64'));
+        await checkInk(tab, (check, verdict, detail) => talk.add(results, check, verdict, detail), picture, (await tab.call<Answer>('answer')).live, tab.dpr);
         const words = norm(scene.question.replace(/_{2,}|□/g, ' '));
         const said = norm((await tab.eval<string>(`window.__stage.elements().map((e) => e.text).concat(window.__stage.controls().map((c) => c.label)).join(' ')`)).replaceAll('…', ' '));
         if (!said.includes(words.split(' ').slice(0, 6).join(' '))) problems.push(`the question is not on the canvas: "${scene.question}"`);
@@ -1327,10 +1370,6 @@ class Screen {
           }
           if (right !== 'right' && !tab.posted.slice(sent).some((turn) => /right/.test(turn.text ?? ''))) problems.push(`the right answer in the blank was marked "${right}"`);
         }
-        const picture = await tab.shot();
-        const file = `${this.screen.name}-${name}.png`;
-        await writeFile(join(this.dir, file), Buffer.from(picture.split(',')[1] ?? '', 'base64'));
-        await checkInk(tab, (check, verdict, detail) => talk.add(results, check, verdict, detail), picture, (await tab.call<Answer>('answer')).live, tab.dpr);
         Screen.add(results, 'problem', problems, 'the question is on the canvas with a blank, nothing takes the screen, a wrong answer is marked wrong and the right one right');
         const scenery: Scene = { name, seconds: (Date.now() - began) / 1000, picture: file, results };
         this.scenes.push(scenery);
@@ -1432,6 +1471,40 @@ class Screen {
     if (soft === undefined) problems.push('the okapi has no placeholder on stage');
     else if (partsOf('okapi1').length !== 1) problems.push(`the okapi is a placeholder of one soft shape, but ${partsOf('okapi1').length} parts are on stage`);
     Screen.add(results, 'art', problems, `fox1 ${partsOf('fox1').length}, kid1 ${partsOf('kid1').length} and the mirrored fox2 ${partsOf('fox2').length} parts on stage, the label by the tail, a quiet placeholder for the okapi`);
+  }
+
+  /**
+   * "What Conduit can do": every live page of one category, each played in a tab of its own on the server that has the recorded case, and judged like a demo (showcase-check.ts).
+   * The server's case answers the typed question, the tap and the right answer of `sum`; `only` (SHOWCASE_ONLY) picks pages by id.
+   */
+  async showcaseScenes(category: string, only: readonly string[] | null): Promise<void> {
+    await showcaseCategory(
+      {
+        base: this.base,
+        timeoutMs: this.args.timeoutMs,
+        note: (text) => this.note(text),
+        open: () => this.open('', false),
+        look: (tab) => this.look(tab),
+        judge: (tab, talk, name, results, began, options) => this.judge(tab, talk, name, results, began, true, false, options),
+        feet: () => this.feet,
+        appsLooked: (tab) => this.appsLooked(tab),
+        apps: (tab) => this.appsOf(tab),
+        sessionOf: (tab) => this.sessionOf(tab),
+      },
+      category,
+      only,
+    );
+  }
+
+  /** the table of what Conduit can do held to what the painter says it can paint, both ways (showcase-check.ts) */
+  async showcaseTable(reader: ShowcaseReader): Promise<CheckResult[]> {
+    const { tab } = await this.open('', false);
+    try {
+      await this.look(tab);
+      return tableResults(reader, await painterCaps(tab));
+    } finally {
+      await tab.close();
+    }
   }
 
   /** a slider and a pick of the explorable demo: the drawing changes (a higher sun stands higher and throws a shorter shadow, away from it), the sentence says the number, and no request is made */
@@ -1553,6 +1626,8 @@ const COLUMNS: readonly (readonly [string, string])[] = [
   ['slide-words', 'slides'],
   ['glyphs', 'glyph'],
   ['hard', 'hard'],
+  ['showcase-expect', 'expect'],
+  ['showcase-hands', 'hands'],
   ['chrome-readable', 'chrome'],
   ['prompt-readable', 'prompt'],
   ['no-console-errors', 'console'],
@@ -1592,8 +1667,8 @@ async function webkitHook(base: string, out: string, timeoutMs: number, quiet: b
 // ---------------------------------------------------------------------------------------------------------------------------------
 // The groups, and how they are run
 
-/** which server a group plays against: the main one (shared: every tab here has its own Chrome profile, so its own session), one with a fake art maker, or one that chains `refine` */
-type Needs = 'main' | 'art' | 'chain' | 'slow' | 'none';
+/** which server a group plays against: the main one (shared: every tab here has its own Chrome profile, so its own session), one with a fake art maker, one that chains `refine`, or the showcase's (shared by its units, started when the first begins: a recorded case answers three of its turns) */
+type Needs = 'main' | 'art' | 'chain' | 'slow' | 'showcase' | 'none';
 
 /** what one group wrote: its lines for the report, how many problems, and what check.json keeps */
 interface Output {
@@ -1776,8 +1851,8 @@ function buildUnits(args: Args, welcome: Welcome): { readonly units: Unit[]; rea
     needs: 'slow',
     weight: 25,
     run: async (servers, out) => {
-      out.lines.push('\nstream (a turn at 80 characters a second, a recorded stream-json turn)');
-      const results = await streamFixtureCheck();
+      out.lines.push('\nstream (a turn at 80 characters a second, a recorded stream-json turn, the same turn through the brain)');
+      const results = [...(await streamFixtureCheck()), ...(await streamBrainCheck())];
       if (servers.slow === null) results.push({ turn: 0, check: 'stream-first-element', verdict: 'SKIP', detail: 'skipped (--url was given: this needs a server that streams slowly)' });
       else results.push(...(await new Screen(args, servers.slow, args.screens[0] as Args['screens'][number], join(args.out, 'stream'), welcome).streamScene()));
       checkLines(out, results);
@@ -1892,6 +1967,59 @@ function buildUnits(args: Args, welcome: Welcome): { readonly units: Unit[]; rea
       sceneLines(out, scenes);
     },
   });
+  // "What Conduit can do" (PLAN-catalogue.md, showcase-check.ts): the table held to the painter once, and each category's pages played and judged on each screen, one unit a category so they
+  // run side by side. SHOWCASE_ONLY=sum,type plays just those pages; `--only showcase-numbers` is one category.
+  const reader = readShowcase();
+  const only = (process.env['SHOWCASE_ONLY'] ?? '').split(',').map((id) => id.trim()).filter((id) => id !== '');
+  units.push({
+    name: 'showcase',
+    also: ['showcase-table'],
+    needs: 'showcase',
+    weight: 15,
+    run: async (servers, out) => {
+      out.lines.push(`\n${reader.summary()}`);
+      const base = servers.showcase ?? servers.main;
+      if (base === null) return void out.lines.push('  SKIP showcase-needs: nothing to read what the painter paints from');
+      const dir = join(args.out, 'showcase');
+      await mkdir(dir, { recursive: true });
+      checkLines(out, await new Screen(args, base, args.screens[0] as Args['screens'][number], dir, welcome).showcaseTable(reader));
+    },
+  });
+  screens.forEach((entry, at) => {
+    const { screen, stopped } = entry;
+    const dir = join(args.out, screen.name);
+    reader.categories.forEach((category, index) => {
+      const pages = livePages(reader, category.id).length;
+      if (pages === 0) return;
+      units.push({
+        name: 'showcase',
+        also: [`showcase-${category.id}`],
+        needs: 'showcase',
+        weight: 10 + 14 * pages,
+        run: async (servers, out) => {
+          const base = servers.showcase;
+          if (base === null) return void (at === 0 && index === 0 ? out.lines.push('\nshowcase pages: skipped (--url was given and SHOWCASE_CHECK_URL names no server with the recorded case: REPLAY_CASE=<showcaseCase()>)') : undefined);
+          const own = new Screen(args, base, screen, dir, welcome);
+          if (entry.began === 0) entry.began = Date.now();
+          try {
+            await mkdir(dir, { recursive: true });
+            await own.showcaseScenes(category.id, only.length === 0 ? null : only);
+          } catch (error) {
+            const why = `showcase ${category.id}: ${error instanceof Error ? error.message : String(error)}`;
+            stopped.push(why);
+            process.stdout.write(`[${screen.name}] ABORTED ${why}\n`);
+          } finally {
+            entry.run.scenes.push(...own.scenes);
+            if (entry.run.renderer === 'unknown') {
+              entry.run.renderer = own.renderer;
+              entry.run.gpu = own.gpu;
+            }
+            entry.ended = Date.now();
+          }
+        },
+      });
+    });
+  });
   return { units, screens };
 }
 
@@ -1947,11 +2075,38 @@ async function main(): Promise<void> {
     // the main server is up for the whole run; the art and continuation servers (each for one group) are started as their group begins and stopped when it ends,
     // so they hold a port only while they are needed
     const wants = (needs: Needs): boolean => chosen.some((unit) => unit.needs === needs);
-    const address: Record<Needs, string | null> = { main: null, art: null, chain: null, slow: null, none: null };
-    const extras: Record<'art' | 'chain' | 'slow', () => Promise<Record<string, string>>> = {
+    const address: Record<Needs, string | null> = { main: null, art: null, chain: null, slow: null, showcase: null, none: null };
+    const extras: Record<'art' | 'chain' | 'slow' | 'showcase', () => Promise<Record<string, string>>> = {
       slow: async () => ({ REPLAY_CPS: '80' }),
       art: async () => ({ ART_MAKER: 'fake', ART_FAKE_MS: String(ART_FAKE_MS), ART_FAKE_STAGES: 'on' }),
       chain: async () => ({ REFINE: 'on', REPLAY_CASE: await continueFixtures() }),
+      showcase: async () => ({ REPLAY_CASE: await showcaseCase() }),
+    };
+    // the showcase's units share one server (its case is read by session, and every tab has a session of its own): the first to begin starts it, the last to end stops it, so it holds
+    // a port only while pages are being played
+    const lease: { users: number; up: Promise<Started> | null } = { users: 0, up: null };
+    const lend = async (): Promise<string> => {
+      lease.users += 1;
+      lease.up ??= extras.showcase().then(startServer).then((server) => {
+        servers.push(server);
+        return server;
+      });
+      try {
+        return (await lease.up).url;
+      } catch (error) {
+        lease.users -= 1;
+        lease.up = null;
+        throw error;
+      }
+    };
+    const giveBack = async (): Promise<void> => {
+      lease.users -= 1;
+      if (lease.users > 0 || lease.up === null) return;
+      const up = lease.up;
+      lease.up = null;
+      const server = await up;
+      servers.splice(servers.indexOf(server), 1);
+      await server.stop();
     };
     if (args.url === null) {
       if (wants('main')) {
@@ -1962,11 +2117,12 @@ async function main(): Promise<void> {
     } else {
       address.main = args.url;
       address.art = process.env['ART_CHECK_URL'] ?? null;
+      address.showcase = process.env['SHOWCASE_CHECK_URL'] ?? null;
       if (!(await fetch(`${args.url}/api/health`).then((response) => response.ok, () => false))) usage(`nothing answers at ${args.url}/api/health`);
     }
     base = address.main ?? args.url ?? '';
     const jobs = args.jobs;
-    process.stdout.write(`check: ${base === '' ? 'no server needed' : base}${args.url === null && base !== '' ? ' (started here, BRAIN=replay)' : ''}, screens ${args.screens.map((screen) => screen.name).join(', ')}, ${chosen.length} of ${units.length} groups, ${jobs} at a time, pictures in ${args.out}\n`);
+    process.stdout.write(`check: ${base === '' ? (wants('showcase') ? 'a replay server with the showcase case, started when its first page is played' : 'no server needed') : base}${args.url === null && base !== '' ? ' (started here, BRAIN=replay)' : ''}, screens ${args.screens.map((screen) => screen.name).join(', ')}, ${chosen.length} of ${units.length} groups, ${jobs} at a time, pictures in ${args.out}\n`);
     // the long ones first; each group's output is kept and printed in the report's order
     const order = [...chosen].sort((a, b) => b.weight - a.weight);
     await pool(order, jobs, async (unit) => {
@@ -1974,9 +2130,13 @@ async function main(): Promise<void> {
       outputs.set(unit, out);
       const here = { ...address };
       let own: Started | null = null;
+      let lent = false;
       const at = Date.now();
       try {
-        if (args.url === null && (unit.needs === 'art' || unit.needs === 'chain' || unit.needs === 'slow')) {
+        if (args.url === null && unit.needs === 'showcase') {
+          here.showcase = await lend();
+          lent = true;
+        } else if (args.url === null && (unit.needs === 'art' || unit.needs === 'chain' || unit.needs === 'slow')) {
           own = await startServer(await extras[unit.needs]());
           servers.push(own);
           here[unit.needs] = own.url;
@@ -1986,6 +2146,7 @@ async function main(): Promise<void> {
         out.failures += 1;
         out.lines.push(`  FAIL ${unit.name} stopped: ${error instanceof Error ? error.message : String(error)}`);
       } finally {
+        if (lent) await giveBack();
         if (own !== null) {
           servers.splice(servers.indexOf(own), 1);
           await own.stop();
@@ -1999,7 +2160,7 @@ async function main(): Promise<void> {
       const { run, screen, stopped } = entry;
       if (run.scenes.length === 0 && stopped.length === 0) continue;
       const offered = judgedDemos();
-      const sequence = ['welcome', 'choice', 'welcome-reduced-motion', ...offered.map((name) => `demo-${name}`), 'demo-hard', ...problemScenes().map((scene) => `problem-${scene.id}`), 'problem-fill', 'follow'];
+      const sequence = ['welcome', 'choice', 'welcome-reduced-motion', ...offered.map((name) => `demo-${name}`), 'demo-hard', ...problemScenes().map((scene) => `problem-${scene.id}`), 'problem-fill', 'follow', ...readShowcase().live().map((page) => `showcase-${page.id}`)];
       // a demo's scenes keep their own order (`demo-diagrams#1`, `#2`...; the hard cases by the order of the file)
       const place = (name: string): number => sequence.indexOf(name.split('#')[0] as string) + (name.includes('#') ? (Number(name.split('#')[1]) || hardOrder(name.split('#')[1] as string)) / 1000 : 0);
       run.scenes.sort((a, b) => place(a.name) - place(b.name));

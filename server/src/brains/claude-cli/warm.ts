@@ -122,6 +122,8 @@ export interface WarmSettings {
   readonly model: string;
   /** passed to `--effort`; `low` is what keeps hidden planning off the stage's clock */
   readonly effort: 'low' | 'medium' | 'high';
+  /** `off` adds `--thinking disabled`; absent is on */
+  readonly thinking?: 'on' | 'off';
   readonly systemPrompt: string;
   /** read-only web tools allowed without a prompt; empty is none */
   readonly tools: readonly string[];
@@ -422,6 +424,7 @@ export function warmArguments(settings: WarmSettings): string[] {
     '--verbose',
     '--model', settings.model,
     '--effort', settings.effort,
+    ...(settings.thinking === 'off' ? ['--thinking', 'disabled'] : []),
     '--system-prompt', settings.systemPrompt,
     ...(settings.agent == null ? toolArguments(settings.tools, settings.canvas, true) : agentArguments(settings.agent, settings.canvas)),
     '--strict-mcp-config',

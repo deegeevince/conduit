@@ -65,7 +65,7 @@ for (const sig of ['SIGINT', 'SIGTERM'] as const) {
 
 const histories = new Map<string, TurnMemory[]>();
 const session = { capabilities: FULL_CAPABILITIES, screen: REFERENCE_SCREEN, services: NO_SERVICES };
-const argv = warmArguments({ bin: settings.bin, model: settings.model, effort: settings.effort, tools: settings.tools, systemPrompt: '<system prompt>' });
+const argv = warmArguments({ bin: settings.bin, model: settings.model, effort: settings.effort, thinking: settings.thinking, tools: settings.tools, systemPrompt: '<system prompt>' });
 out(`${settings.bin} ${argv.map((a) => JSON.stringify(a)).join(' ')}   (warm ${settings.warm ? 'on' : 'off'})`);
 for (let s = 0; s < sessions; s += 1) brain.open?.({ session: `probe${s}`, ...session });
 

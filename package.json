@@ -35,6 +35,7 @@
     "bakeoff": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/art-bakeoff.ts",
     "library": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/library.ts",
     "improve": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/improve.ts",
+    "stream-probe": "pnpm --filter @conduit/server exec tsx src/tools/stream-probe.ts",
     "critic-usage": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/critic-usage.ts",
     "attention": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/attention.ts",
     "lessons": "pnpm --filter @conduit/server exec tsx --env-file-if-exists=../.env src/tools/lessons.ts",

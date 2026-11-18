@@ -9,16 +9,21 @@
 //                (indentation and all) and really drawn (its words hidden in turn through `hide`: the pixels that change are the row)
 //   slides       the words a scene says and the tables it makes, found on stage (what a deck's slides and a code demo's captions are judged by)
 //   streaming    a turn replayed at about 80 characters a second has its first element on stage before the last line is sent; a recorded stream-json turn
-//                fed through the brain's own reader comes out line by line, not in one burst
+//                fed through the brain's own reader comes out line by line, not in one burst; the same turn printed by a stand-in `claude`, one delta
+//                at a time, through the whole brain (process pipes, warm.ts, stream-json.ts, the mailbox) lands each line within a fraction of a second of the
+//                delta that ends it
 //   flows, photo the two free checks that were never part of `pnpm check` (`pnpm flows`, `pnpm photo-check`), run as groups
 //
 // Nothing here is part of the server.
 
-import { readFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { deflateSync } from 'node:zlib';
 import { spawnTracked } from '../brains/claude-cli/process';
-import { LineReader } from '@conduit/language';
+import { createClaudeCliBrain } from '../brains/claude-cli/claude-cli-brain';
+import { EMPTY_STAGE, FULL_CAPABILITIES, LEAD_WINDOW, LineReader, NO_SERVICES, REFERENCE_SCREEN } from '@conduit/language';
+import { createLogger } from '../log';
 import { brainEventsFromText } from '../domain/lines';
 import { parseStreamLine, textDeltaOf } from '../brains/claude-cli/stream-json';
 import { repoRoot, sleep } from './explore-browser';
@@ -501,6 +506,61 @@ export async function streamFixtureCheck(): Promise<CheckResult[]> {
   if (early < seenAt.length - 1) problems.push(`${seenAt.length - early} lines came out together at the end of the stream (a burst)`);
   if (new Set(seenAt).size < Math.min(seenAt.length, 5)) problems.push(`the lines came out in clumps (after deltas ${[...new Set(seenAt)].join(', ')})`);
   return [{ turn: 0, check: 'stream-fixture', verdict: problems.length === 0 ? 'PASS' : 'FAIL', detail: problems.length === 0 ? `${seenAt.length} lines came out one by one while ${total} deltas were fed (first after delta ${seenAt[0]})` : problems.join('; ') }];
+}
+
+
+/** How late a line may reach the brain's caller after the delta that ends it was printed: the real hops measured 1 to 10 ms (docs/technology.md); the rest is room for a loaded machine. */
+const STREAM_LAG_MS = 400;
+const STREAM_GAP_MS = 50;
+
+/**
+ * The same recorded turn, printed by a stand-in `claude` (stream-stand-in.mjs) one delta at a time, 50 ms apart, through the real brain: its process pipes, `warm.ts`, `stream-json.ts`,
+ * the mailbox and the line reader. Each line the caller receives must arrive within `STREAM_LAG_MS` of the delta that ends it was printed, so anything between the process and the
+ * caller that holds events back (a buffer that waits for the turn's end, a batch per tick) shows as lines coming late and together. Only our side: the model's own pace is the
+ * stand-in's, and what the API does to it is not here (`pnpm stream-probe` measures that).
+ */
+export async function streamBrainCheck(): Promise<CheckResult[]> {
+  const result = (verdict: Verdict, detail: string): CheckResult[] => [{ turn: 0, check: 'stream-brain', verdict, detail }];
+  // which delta ends each line, as the reader alone says it (the way `streamFixtureCheck` counts)
+  const deltas = readFileSync(STREAM_FIXTURE, 'utf8').split('\n').flatMap((line) => {
+    const event = line.trim() === '' ? null : parseStreamLine(line);
+    const text = event === null ? null : textDeltaOf(event);
+    return text === null ? [] : [text];
+  });
+  let fed = 0;
+  async function* chunks(): AsyncGenerator<string> {
+    for (const delta of deltas) {
+      fed += 1;
+      yield delta;
+    }
+  }
+  const endsAt: number[] = [];
+  for await (const event of brainEventsFromText(chunks(), [], true)) if (event.type === 'line') endsAt.push(fed);
+
+  const dir = mkdtempSync(join(tmpdir(), 'conduit-stream-check-'));
+  const wrapper = join(dir, 'claude');
+  writeFileSync(wrapper, `#!/bin/sh\nSTAND_IN_DIR='${dir}' STAND_IN_FIXTURE='${STREAM_FIXTURE}' STAND_IN_GAP_MS='${STREAM_GAP_MS}' exec '${process.execPath}' '${join(import.meta.dirname, 'stream-stand-in.mjs')}' "$@"\n`);
+  chmodSync(wrapper, 0o755);
+  const brain = createClaudeCliBrain({ log: createLogger('error'), bin: wrapper, model: 'stand-in', firstTokenTimeoutMs: 20_000, idleTimeoutMs: 20_000, tools: [], effort: 'low', variant: 'column', warm: true, maxWarm: 1, warmIdleMs: 60_000, recycleTokens: 1_000_000 });
+  const arrived: number[] = [];
+  try {
+    const session = { capabilities: FULL_CAPABILITIES, screen: REFERENCE_SCREEN, services: NO_SERVICES };
+    const request = { turn: 't1', session: 's', input: { kind: 'prompt' as const, text: 'stream a turn' }, context: { ...session, lead: LEAD_WINDOW, stage: EMPTY_STAGE, history: [], heard: [] }, snapshot: null };
+    for await (const event of brain.respond(request, new AbortController().signal)) if (event.type === 'line') arrived.push(Date.now());
+    const emitted = JSON.parse(readFileSync(join(dir, 'emitted.json'), 'utf8')) as number[];
+    if (emitted.length !== deltas.length) return result('FAIL', `the stand-in printed ${emitted.length} deltas, the fixture holds ${deltas.length}`);
+    if (arrived.length !== endsAt.length) return result('FAIL', `${arrived.length} lines reached the caller, the reader alone makes ${endsAt.length}`);
+    const lags = arrived.map((at, index) => at - (emitted[(endsAt[index] as number) - 1] as number));
+    const late = lags.filter((lag) => lag > STREAM_LAG_MS).length;
+    const worst = Math.max(...lags);
+    const ok = late === 0 && worst > -50;
+    return result(ok ? 'PASS' : 'FAIL', ok ? `${arrived.length} lines reached the caller within ${worst} ms of the delta that ended each (deltas printed ${STREAM_GAP_MS} ms apart over ${((emitted[emitted.length - 1] as number) - (emitted[0] as number)) / 1000} s)` : `${late} of ${arrived.length} lines came more than ${STREAM_LAG_MS} ms after the delta that ended them (worst ${worst} ms: ${lags.join(', ')}): something between the process and the caller holds events back`);
+  } catch (error) {
+    return result('FAIL', `the brain did not read the stand-in's turn: ${error instanceof Error ? error.message : String(error)}`);
+  } finally {
+    await brain.close?.();
+    rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 
