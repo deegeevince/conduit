@@ -50,6 +50,8 @@ export interface MathRun {
   tries: number;
   /** checks that found a wrong cell */
   wrongs: number;
+  /** what those checks found wrong, once each, as `tens 7`: the brain is told them when the sum is done */
+  readonly slips: string[];
   verdict: BlockVerdict;
   /** bumped at every change: what the layout is remembered by */
   rev: number;
@@ -74,7 +76,7 @@ export function runOf(key: string, id: string, math: MathFigure, grid: maths.Gri
   const signature = signatureOf(key, math);
   let run = RUNS.get(signature);
   if (run === undefined) {
-    run = { key, id, grid, math, cells: new Map(), fillSeen: new Map(), active: null, hint: null, hintText: '', hints: 0, tries: 0, wrongs: 0, verdict: 'open', rev: 0 };
+    run = { key, id, grid, math, cells: new Map(), fillSeen: new Map(), active: null, hint: null, hintText: '', hints: 0, tries: 0, wrongs: 0, slips: [], verdict: 'open', rev: 0 };
     RUNS.set(signature, run);
   }
   LATEST.set(key, signature);
@@ -295,6 +297,7 @@ export function check(run: MathRun): MathAct | null {
     } else {
       state.mark = 'wrong';
       parts.push(`${label} wrong (${mine})`);
+      if (!run.slips.includes(`${label} ${mine}`)) run.slips.push(`${label} ${mine}`);
       wrong += 1;
       touched = true;
     }
@@ -307,7 +310,9 @@ export function check(run: MathRun): MathAct | null {
   run.hintText = '';
   run.verdict = wrong === 0 ? 'right' : 'wrong';
   bump(run);
-  const after = run.hints > 0 && wrong === 0 ? `, after ${run.hints} hint${run.hints === 1 ? '' : 's'}` : '';
+  // fb-076. A sum that is done is told to the brain with how she got there: the wrong checks (and what was wrong), and the hints
+  const finished = wrong === 0 ? [...(run.wrongs > 0 ? [`${run.wrongs} wrong check${run.wrongs === 1 ? '' : 's'} (${run.slips.join(', ')})`] : []), ...(run.hints > 0 ? [`${run.hints} hint${run.hints === 1 ? '' : 's'}`] : [])] : [];
+  const after = finished.length > 0 ? `, after ${finished.join(' and ')}` : '';
   return { text: wrong === 0 && !parts.some((part) => /wrong/.test(part)) ? `${run.id}: all right${after}` : `${run.id}: ${parts.join(', ')}`, value: wrong === 0 ? 'right' : 'wrong' };
 }
 
