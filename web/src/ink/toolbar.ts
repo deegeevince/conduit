@@ -1,5 +1,9 @@
 // The ink toolbar: pen, highlighter, colours, eraser, undo, redo, clear, and the send button (with an optional words field). Every target is 44 px,
 // every control a real button with its state in `aria-pressed`, and the whole bar works from the keyboard.
+//
+// The stage's bar can be docked two ways (`dock: true`): across the top (a row that wraps), or down the right-hand edge (one column of 44 px buttons, vertically centred, that scrolls inside
+// itself when the stage is short). In the column the colours fold into one swatch that opens a small popover, and the words field folds behind a button; Send is an arrow. The choice is kept
+// on this device (`conduit.ink.dock`); with none made, a wide landscape screen starts down the side and anything else across the top.
 
 import type { Ink, InkToolName } from './layer';
 import { injectInkStyles } from './styles';
@@ -19,12 +23,18 @@ export interface InkBarOptions {
   readonly fingerToggle?: boolean;
   /** the bar can fold down to one small pen button (the stage's bar, which floats over the work); the choice is remembered on this device. Default false. */
   readonly collapsible?: boolean;
+  /** the dock toggle (the stage's bar): across the top, or down the right-hand edge. Default false: the bar stays a row. */
+  readonly dock?: boolean;
   /** The hand tool (the stage's bar): Draw paused, so that the page under the ink takes the taps; the ink stays, and Send still sends it. Choosing the pen, the highlighter or the eraser again is the way back. */
   readonly hand?: { readonly on: () => boolean; readonly set: (on: boolean) => void };
 }
 
+export type InkDock = 'horizontal' | 'vertical';
+
 export interface InkBar {
   readonly element: HTMLElement;
+  /** where the bar is docked now ('horizontal' unless it was built with `dock` and the column was chosen or suggested) */
+  dock(): InkDock;
   /** shows the state of the tools again (the hand tool was changed from outside) */
   refresh(): void;
   /** says something in the bar's status line */
@@ -59,7 +69,37 @@ function keepFolded(folded: boolean): void {
   }
 }
 
+const DOCK_KEY = 'conduit.ink.dock';
+
+/** what this device chose last, or null when it never has (or will not remember) */
+function keptDock(): InkDock | null {
+  try {
+    const kept = localStorage.getItem(DOCK_KEY);
+    if (kept === 'vertical' || kept === 'horizontal') return kept;
+  } catch {
+    // a browser that will not remember is not a problem
+  }
+  return null;
+}
+
+function keepDock(dock: InkDock): void {
+  try {
+    localStorage.setItem(DOCK_KEY, dock);
+  } catch {
+    // as above
+  }
+}
+
+/** With no choice made: down the side on a landscape screen wider than 900 px that is tall enough for the column (a phone held across is not), across the top otherwise. */
+export function suggestedDock(): InkDock {
+  return window.innerWidth > 900 && window.innerWidth > window.innerHeight && window.innerHeight >= 600 ? 'vertical' : 'horizontal';
+}
+
 const ICON = {
+  dockRight: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2"/><path d="M15.5 5v14"/><path d="M18 9h.01M18 12h.01M18 15h.01" stroke-width="2.4"/></svg>',
+  dockTop: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2"/><path d="M3.5 9.5h17"/><path d="M8 7.3h.01M11 7.3h.01M14 7.3h.01" stroke-width="2.4"/></svg>',
+  words: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M5 6h14a1 1 0 011 1v8a1 1 0 01-1 1h-8l-4 3.5V16H5a1 1 0 01-1-1V7a1 1 0 011-1z"/></svg>',
+  send: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6"/></svg>',
   fold: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M6 10l6 6 6-6"/></svg>',
   pen: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M4 20l1-4L16.5 4.5a2.1 2.1 0 013 3L8 19z"/><path d="M14.5 6.5l3 3"/></svg>',
   highlighter: '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M9 14l6-9 5 4-7 8z"/><path d="M9 14l-3 5h5l2-2"/><path d="M4 21h16" opacity=".5"/></svg>',
@@ -87,6 +127,25 @@ export function mountInkBar(host: HTMLElement, ink: Ink, options: InkBarOptions)
   bar.className = 'ink-bar';
   bar.setAttribute('role', 'toolbar');
   bar.setAttribute('aria-label', 'Drawing tools');
+
+  // The popovers of the column (the colours, the words field): one at a time, drawn beside the bar by CSS from `data-pop`, level with the button that opened them.
+  let pop: 'colours' | 'words' | null = null;
+  function closePop(): void {
+    if (pop === null) return;
+    pop = null;
+    bar.removeAttribute('data-pop');
+    currentColour.setAttribute('aria-expanded', 'false');
+    wordsButton?.setAttribute('aria-expanded', 'false');
+  }
+  function openPop(which: 'colours' | 'words', trigger: HTMLElement, lift: number): void {
+    closePop();
+    pop = which;
+    bar.dataset['pop'] = which;
+    trigger.setAttribute('aria-expanded', 'true');
+    // level with the button, whatever the column has been scrolled to
+    const top = trigger.getBoundingClientRect().top - bar.getBoundingClientRect().top - bar.clientTop - lift;
+    bar.style.setProperty('--pop-top', `${Math.max(0, Math.round(top))}px`);
+  }
 
   const tools = document.createElement('div');
   tools.className = 'ink-bar__group';
@@ -119,6 +178,19 @@ export function mountInkBar(host: HTMLElement, ink: Ink, options: InkBarOptions)
 
   const colours = document.createElement('div');
   colours.className = 'ink-bar__group';
+  // down the side the colours fold into one swatch (the colour in use) that opens the four as a small popover; across the top the swatches stand in the row as they always did
+  const currentColour = document.createElement('button');
+  currentColour.type = 'button';
+  currentColour.className = 'ink-swatch ink-swatch--current';
+  currentColour.setAttribute('aria-label', 'Colours');
+  currentColour.title = 'Colours';
+  currentColour.setAttribute('aria-haspopup', 'true');
+  currentColour.setAttribute('aria-expanded', 'false');
+  currentColour.innerHTML = '<span class="ink-swatch__dot"></span>';
+  const currentDot = currentColour.firstElementChild as HTMLElement;
+  const swatchPop = document.createElement('div');
+  swatchPop.className = 'ink-bar__swatches';
+  colours.append(currentColour, swatchPop);
   const swatches: HTMLButtonElement[] = [];
   for (const colour of ink.colors) {
     const s = document.createElement('button');
@@ -131,10 +203,11 @@ export function mountInkBar(host: HTMLElement, ink: Ink, options: InkBarOptions)
     s.addEventListener('click', () => {
       ink.color = colour;
       if (ink.tool === 'eraser') ink.tool = 'pen';
+      closePop();
       sync();
     });
     swatches.push(s);
-    colours.append(s);
+    swatchPop.append(s);
   }
 
   const history = document.createElement('div');
@@ -159,9 +232,9 @@ export function mountInkBar(host: HTMLElement, ink: Ink, options: InkBarOptions)
   }
 
   const send = document.createElement('div');
-  send.className = 'ink-bar__group';
-  send.style.flex = '1 1 auto';
+  send.className = 'ink-bar__group ink-bar__send';
   let words: HTMLInputElement | null = null;
+  let wordsButton: HTMLButtonElement | null = null;
   if (options.words !== false) {
     words = document.createElement('input');
     words.type = 'text';
@@ -171,30 +244,100 @@ export function mountInkBar(host: HTMLElement, ink: Ink, options: InkBarOptions)
     words.enterKeyHint = 'send';
     words.autocapitalize = 'sentences';
     send.append(words);
+    // down the side the field folds behind this button (a dot on it says there are words waiting)
+    wordsButton = button('Add words', ICON.words, 'ink-btn--words');
+    wordsButton.setAttribute('aria-haspopup', 'true');
+    wordsButton.setAttribute('aria-expanded', 'false');
+    send.prepend(wordsButton);
+    const field = words;
+    field.addEventListener('input', () => wordsButton?.setAttribute('data-filled', String(field.value.trim() !== '')));
   }
   const go = document.createElement('button');
   go.type = 'button';
   go.className = 'ink-btn ink-btn--send';
-  go.textContent = options.sendLabel ?? 'Send';
+  // across the top the button says its label; down the side it is an arrow (the label stays for a screen reader and for anything that reads the button's text)
+  const sendLabel = options.sendLabel ?? 'Send';
+  go.setAttribute('aria-label', sendLabel);
+  go.innerHTML = `<span class="ink-btn__label"></span><span class="ink-btn__icon" aria-hidden="true">${ICON.send}</span>`;
+  (go.firstElementChild as HTMLElement).textContent = sendLabel;
   send.append(go);
 
   const status = document.createElement('p');
   status.className = 'ink-bar__status';
   status.setAttribute('role', 'status');
+  // The dock (the stage's bar): across the top, or down the right-hand edge. What this device chose wins; with no choice the screen suggests one, and follows it when the screen turns.
+  let chosen: InkDock | null = options.dock === true ? keptDock() : null;
+  let docked: InkDock = 'horizontal';
+  let dockButton: HTMLButtonElement | null = null;
+  const applyDock = (next: InkDock): void => {
+    docked = next;
+    bar.classList.toggle('ink-bar--vertical', next === 'vertical');
+    bar.dataset['dock'] = next;
+    if (dockButton !== null) {
+      const to = next === 'vertical' ? 'across the top' : 'down the right-hand side';
+      dockButton.innerHTML = next === 'vertical' ? ICON.dockTop : ICON.dockRight;
+      dockButton.setAttribute('aria-label', `Dock the tools ${to}`);
+      dockButton.title = `Dock the tools ${to}`;
+    }
+    closePop();
+  };
+  let lastWidth = window.innerWidth;
+  const onResize = (): void => {
+    if (window.innerWidth === lastWidth) return;
+    lastWidth = window.innerWidth;
+    if (chosen === null) applyDock(suggestedDock());
+  };
+  if (options.dock === true) {
+    dockButton = button('', ICON.dockRight, 'ink-btn--dock');
+    applyDock(chosen ?? suggestedDock());
+    dockButton.addEventListener('click', () => {
+      chosen = docked === 'vertical' ? 'horizontal' : 'vertical';
+      keepDock(chosen);
+      applyDock(chosen);
+    });
+    window.addEventListener('resize', onResize);
+  }
+  currentColour.addEventListener('click', () => (pop === 'colours' ? closePop() : openPop('colours', currentColour, 6)));
+  wordsButton?.addEventListener('click', () => {
+    if (pop === 'words') return closePop();
+    openPop('words', wordsButton as HTMLElement, 0);
+    words?.focus();
+  });
+  bar.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || pop === null) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const from = pop === 'words' ? wordsButton : currentColour;
+    closePop();
+    from?.focus({ preventScroll: true });
+  });
+  const outside = (e: Event): void => {
+    if (pop !== null && !e.composedPath().includes(bar)) closePop();
+  };
+  host.ownerDocument.addEventListener('pointerdown', outside, true);
+
+  // Everything but the pen pill and the status line stands in one scroller: across the top it is `display: contents` (the bar's own row), down the side it is the column, and it scrolls
+  // inside itself when the stage is shorter than the column.
+  const scroller = document.createElement('div');
+  scroller.className = 'ink-bar__scroll';
+  const head = document.createElement('div');
+  head.className = 'ink-bar__group ink-bar__fold';
   // Folding: one small pen pill that never covers more than itself, and a fold button at the head of the open bar. The layer still draws either way.
   if (options.collapsible === true) {
     const pill = button('Show drawing tools', ICON.pen, 'ink-btn--pill');
     const fold = button('Hide drawing tools', ICON.fold, 'ink-btn--fold');
     pill.setAttribute('aria-expanded', 'false');
     fold.setAttribute('aria-expanded', 'true');
-    const fold1 = document.createElement('div');
-    fold1.className = 'ink-bar__group ink-bar__fold';
-    fold1.append(fold);
+    head.append(fold);
+    if (dockButton !== null) head.append(dockButton);
     const apply = (folded: boolean): void => {
       bar.classList.toggle('ink-bar--collapsed', folded);
       pill.hidden = !folded;
-      fold1.hidden = folded;
-      if (folded) status.textContent = '';
+      head.hidden = folded;
+      if (folded) {
+        status.textContent = '';
+        closePop();
+      }
     };
     pill.addEventListener('click', () => {
       keepFolded(false);
@@ -206,10 +349,16 @@ export function mountInkBar(host: HTMLElement, ink: Ink, options: InkBarOptions)
       apply(true);
       pill.focus({ preventScroll: true });
     });
-    bar.append(pill, fold1, tools, colours, history, send, status);
+    scroller.append(head, tools, colours, history, send);
+    bar.append(pill, scroller, status);
     apply(startsFolded());
   } else {
-    bar.append(tools, colours, history, send, status);
+    if (dockButton !== null) {
+      head.append(dockButton);
+      scroller.append(head);
+    }
+    scroller.append(tools, colours, history, send);
+    bar.append(scroller, status);
   }
   host.append(bar);
 
@@ -218,6 +367,7 @@ export function mountInkBar(host: HTMLElement, ink: Ink, options: InkBarOptions)
     const paused = options.hand?.on() === true;
     for (const [name, b] of toolButtons) b.setAttribute('aria-pressed', String(!paused && ink.tool === name));
     hand?.setAttribute('aria-pressed', String(paused));
+    currentDot.style.background = ink.color;
     for (const s of swatches) s.setAttribute('aria-pressed', String(!paused && ink.tool !== 'eraser' && ink.color === s.dataset['color']));
     undo.disabled = !ink.model.canUndo;
     redo.disabled = !ink.model.canRedo;
@@ -234,12 +384,14 @@ export function mountInkBar(host: HTMLElement, ink: Ink, options: InkBarOptions)
 
   const doSend = async (): Promise<void> => {
     if (sending || ink.model.strokes.length === 0) return;
+    closePop();
     sending = true;
     sync();
     status.textContent = 'Sending…';
     try {
       await options.onSend((options.readWords?.() ?? words?.value ?? '').trim());
       if (words !== null) words.value = '';
+      wordsButton?.setAttribute('data-filled', 'false');
       status.textContent = '';
     } catch (cause) {
       status.textContent = cause instanceof Error ? cause.message : 'That could not be sent. Your drawing is still here.';
@@ -258,6 +410,7 @@ export function mountInkBar(host: HTMLElement, ink: Ink, options: InkBarOptions)
 
   return {
     element: bar,
+    dock: () => docked,
     refresh: sync,
     say(text) {
       status.textContent = text;
@@ -269,6 +422,8 @@ export function mountInkBar(host: HTMLElement, ink: Ink, options: InkBarOptions)
     focusWords: () => words?.focus(),
     dispose() {
       off();
+      window.removeEventListener('resize', onResize);
+      host.ownerDocument.removeEventListener('pointerdown', outside, true);
       bar.remove();
     },
   };

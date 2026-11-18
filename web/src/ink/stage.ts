@@ -296,6 +296,7 @@ export function mountStageInk(stage: HTMLElement, menu: ComposerMenu, app: Stage
   const bar: InkBar = mountInkBar(layer, ink, {
     sendLabel: 'Send drawing',
     collapsible: true,
+    dock: true,
     hand: { on: () => handOn, set: (on) => setHand(on) },
     wordsPlaceholder: 'Say what you mean (optional)',
     onSend: async (words) => {

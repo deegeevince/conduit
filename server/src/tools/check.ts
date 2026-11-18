@@ -73,7 +73,7 @@ import { Conversation, Tab } from './smoke';
 import { LENS_SCREENS, lensGroup } from './lens-check';
 import { ASK_SCREEN, askGroup } from './ask-check';
 import { BLACK_SCREEN, blackGroup } from './black-check';
-import { DRAW_SCREEN, DRAW_TAP_SCREENS, drawGroup, drawTapGroup } from './draw-check';
+import { DRAW_DOCK_SCREENS, DRAW_SCREEN, DRAW_TAP_SCREENS, drawDockGroup, drawGroup, drawTapGroup } from './draw-check';
 import { ART_FAKE_MS, ART_SCREEN, artGroup } from './art-check';
 import { CONTINUE_SCREEN, continueFixtures, continueGroup } from './continue-check';
 import { journeyGroup } from './journey-check';
@@ -1909,6 +1909,18 @@ function buildUnits(args: Args, welcome: Welcome): { readonly units: Unit[]; rea
       run: async (servers, out) => {
         if (index === 0) out.lines.push('\ndraw taps (fb-103): a Pencil and a finger in Draw, and the hand tool');
         sceneLines(out, await drawTapGroup(servers.main as string, screen, join(args.out, 'draw-taps'), args.timeoutMs, (text) => (args.quiet ? undefined : void process.stdout.write(`[draw-taps] ${text}\n`))));
+      },
+    }),
+  );
+  // fb-106: the ink bar docked down the stage's right-hand edge or across its top: the default, the choice kept over a reload, the column's place and size, and Draw working in both docks
+  DRAW_DOCK_SCREENS.forEach((screen, index) =>
+    units.push({
+      name: 'draw-dock',
+      needs: 'main',
+      weight: 30,
+      run: async (servers, out) => {
+        if (index === 0) out.lines.push('\ndraw dock (fb-106): the ink bar across the top or down the right-hand edge');
+        sceneLines(out, await drawDockGroup(servers.main as string, screen, join(args.out, 'draw-dock'), args.timeoutMs, (text) => (args.quiet ? undefined : void process.stdout.write(`[draw-dock] ${text}\n`))));
       },
     }),
   );
