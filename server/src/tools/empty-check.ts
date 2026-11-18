@@ -58,9 +58,9 @@ const PLAN: Readonly<Record<string, readonly Reply[]>> = {
   // a real line, and a refused one beside it: drawn, so never asked again
   plain: [{ text: `${CAR}\nok\n` }, { text: 'scene layout=solo\nsay z1 | asked again\n' }],
   // in a real page: the second try thinks for a while, and the status line says so over an empty stage
-  page: [{ tools: ['canvas_fits', 'canvas_look'], text: 'ok\n' }, { delayMs: 2500, text: `${CAR}\n` }],
+  page: [{ tools: ['canvas_fits', 'canvas_look'], text: 'ok\n' }, { delayMs: 4000, text: `${CAR}\n` }],
   // in a real page: the second try is empty too, and the person is told so
-  'page-empty': [{ text: 'ok\n' }, { delayMs: 2000, text: 'ok\n' }],
+  'page-empty': [{ text: 'ok\n' }, { delayMs: 3500, text: 'ok\n' }],
 };
 const PHONE_SCREEN: LensScreen = { name: '390x844', width: 390, height: 844, dpr: 3 };
 /** the cases a real page plays (the others are read from the stream) */
