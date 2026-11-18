@@ -35,9 +35,11 @@ export function engineMismatch(capabilities: Capabilities): string | null {
  * its content asks of its frame is the browser's). A turn whose stage holds either is the page's to measure, here and in every later turn that
  * still has it on the stage. Words in a script no shipped face has (Greek, Cyrillic, Arabic, Hebrew, Indic, Thai, Latin Extended...) are the same: the page sets a
  * run in the device's own font and measures it there, the server only estimates it, so such a turn is the page's to measure and costs the conversation nothing.
+ * A typeset formula (`math f1 formula | …`, PLAN-maths M7) is the same: KaTeX sets it in the browser's own layout and the page says how big it came out; the server holds only
+ * an estimate from the characters.
  */
 export function measurable(schedule: Schedule): boolean {
-  return !schedule.elements.some((element) => hasDevice(element.text) || (element.figure !== null && element.figure.kind !== 'shape' && hasDevice(JSON.stringify(element.figure))) || (element.figure?.kind === 'picture' && element.figure.from !== undefined && element.figure.from !== null) || (element.figure?.kind === 'structure' && element.figure.structure === 'app'));
+  return !schedule.elements.some((element) => hasDevice(element.text) || (element.figure !== null && element.figure.kind !== 'shape' && hasDevice(JSON.stringify(element.figure))) || (element.figure?.kind === 'picture' && element.figure.from !== undefined && element.figure.from !== null) || (element.figure?.kind === 'structure' && (element.figure.structure === 'app' || (element.figure.structure === 'math' && element.figure.math?.method === 'formula'))));
 }
 
 function viewOf(s: MeasureSession, look: EngineView['look'], page?: PageFacts): EngineView {

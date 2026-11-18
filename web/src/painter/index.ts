@@ -4,6 +4,7 @@ import { setTarget, targetPx } from './target';
 import { STRUCTURES_READY } from './blocks';
 import { advanceMath, hasOwnStepper, mathSteps } from './blocks/math';
 import * as cells from './blocks/math-cells';
+import { formulaFacts, onFormulaChange } from './formula';
 import { CONTROLS_READY, controlEngine, createControlStore, nextEases } from './controls';
 import { controlIndexOf, createRuntime, controlSpecOf, heldBy, stateReader } from './bound';
 import { penRead, penReady } from './controls/pen';
@@ -22,7 +23,7 @@ import type { Recording } from '../contracts/film';
 import { noteArrivals as noteArrivalsInto } from './arrivals';
 import type { ElementFrame, Frame, Quality, ShapeFrame } from '../contracts/frame';
 import type { LookSpec } from '../contracts/look';
-import type { BindingView, ControlView, LineView, MathBlockView, MathHit, MotionView, Painter, PainterEvents, PainterOptions, PainterSnapshot, StageElementView, UiMockup } from '../contracts/painter';
+import type { BindingView, ControlView, FormulaView, LineView, MathBlockView, MathHit, MotionView, Painter, PainterEvents, PainterOptions, PainterSnapshot, StageElementView, UiMockup } from '../contracts/painter';
 import { REST_POSE } from '../contracts/space';
 import type { Box, CameraPose, Viewport } from '../contracts/space';
 import { PlayClock, pinnedWallTime } from './clock';
@@ -1590,6 +1591,20 @@ export function createPainter(options: PainterOptions): Painter {
   const sayMath = (run: cells.MathRun, act: cells.MathAct): void => {
     emitBack({ type: 'control', turn: turn === null ? null : turn.id, id: run.id, value: act.value, text: act.text, playhead: clock.read().playhead, send: false, ask: true });
   };
+  /** the typeset formulas standing on the stage now, from the views of the structures that hold them */
+  const formulasNow = (): FormulaView[] =>
+    timeline.viewsAt(instantOf(clock.read())).flatMap((view) => {
+      const found = /^typeset formula (.*)$/s.exec(view.text);
+      if (view.kind !== 'structure' || found?.[1] === undefined) return [];
+      const facts = formulaFacts(found[1], true);
+      return [{ key: view.key, id: view.id, tex: found[1], box: view.box, opacity: view.opacity, set: facts.exact, fault: facts.fault }];
+    });
+  /** the page has set more formulas: whatever held one is laid out again, and drawn at once */
+  const offFormulas = onFormulaChange(() => {
+    if (disposed) return;
+    refreshTimeline();
+    drawNow();
+  });
   /** the written method changed: its layout is made again and drawn at once */
   const mathChanged = (): void => {
     refreshTimeline();
@@ -2084,6 +2099,7 @@ export function createPainter(options: PainterOptions): Painter {
       drawNow();
     },
     mathViews: mathViewsNow,
+    formulaViews: formulasNow,
     mathAt(x, y): MathHit | null {
       for (const view of mathViewsNow()) {
         if (view.verdict === 'right' || view.verdict === 'shown') continue;
@@ -2320,6 +2336,7 @@ export function createPainter(options: PainterOptions): Painter {
 
     dispose() {
       disposed = true;
+      offFormulas();
       cancelAnimationFrame(frameHandle);
       document.removeEventListener('visibilitychange', onVisibility);
       for (const set of Object.values(listeners)) set.clear();

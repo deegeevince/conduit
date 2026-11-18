@@ -6,6 +6,7 @@
 // landed (shown, resting stage, sight), and take the pictures: the one the brain is given as its snapshot (what
 // `sendSnapshot` in the painter sends), the ones a judge is shown, and thumbnails for the review page.
 
+import { installFormulas } from '../render/formula/host';
 import { TurnScore, settle, shownAt } from '@conduit/language';
 import type { Capabilities, CanvasBox, ExploreGeometry, Line, LookId, PlacedBox, StageBase, TurnReport } from '@conduit/language';
 import type { Frame } from '../contracts/frame';
@@ -90,6 +91,8 @@ function hostToCanvas(box: { readonly x: number; readonly y: number; readonly wi
 }
 
 export function installHarness(): void {
+  // typeset formulas, as the page sets them: the brain's look at its draft is of the stage as the person sees it
+  installFormulas();
   let renderer: Renderer | null = null;
   let host: HTMLElement | null = null;
   let mountedFor = '';

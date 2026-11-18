@@ -20,6 +20,19 @@ const chatAddress = (): Plugin => ({
   },
 });
 
+/**
+ * KaTeX's stylesheet (`render/formula/typeset.ts`, a lazy chunk) lists each of its fonts three times, as woff2, woff and ttf. Every browser this page runs in reads woff2, so the
+ * other two are dropped here and never reach the build: the build holds one file a face and the page fetches only the faces a formula uses.
+ */
+const katexFonts = (): Plugin => ({
+  name: 'katex-woff2-only',
+  enforce: 'pre',
+  transform(code, id) {
+    if (!/katex\.min\.css(\?|$)/.test(id)) return null;
+    return code.replace(/,url\([^)]*?\.woff\) format\("woff"\),url\([^)]*?\.ttf\) format\("truetype"\)/g, '');
+  },
+});
+
 // Lets parallel work run its own dev server and API without touching 4300/4301.
 const devPort = Number(process.env['VITE_PORT'] ?? '4301');
 const apiTarget = process.env['VITE_API'] ?? 'http://127.0.0.1:4300';
@@ -35,7 +48,7 @@ const commit = ((): string => {
 
 export default defineConfig({
   define: { __BUILD_COMMIT__: JSON.stringify(commit) },
-  plugins: [lessonProgram(), chatAddress()],
+  plugins: [lessonProgram(), chatAddress(), katexFonts()],
   server: {
     host: '127.0.0.1',
     port: devPort,

@@ -28,6 +28,7 @@ import { registerLaidOut } from './registry';
 import { STRUCTURES_READY, layoutStructure } from './blocks';
 import { modelOf, playingParts, rollKey } from './blocks/tune';
 import { mathKey } from './blocks/math';
+import { formulaRev } from './formula';
 import { drawUi, layoutUi, uiKey } from './ui-stage';
 import { figureKey, layoutFigureBlock } from './figure-stage';
 import { loneAppScenes } from './apps';
@@ -173,6 +174,12 @@ export function tuneStartOf(element: ElementSpan): number | null {
  * own floor (a `shrink` under what the floor allows) is touched; the engines say `crowded` when they come to it.
  */
 const SQUEEZED_SHARE = 0.75;
+/** KaTeX sets its own text at 1.21 of the em it is given (its stylesheet's choice): what a formula's type is, against the em its layout was sized in. */
+const FORMULA_FONT = 1.21;
+/** The pixels an em of a formula is drawn at on the screen: its size there and a little more, rounded to sixteen so that a small change of size is the same picture, and kept between these. */
+const FORMULA_RASTER_MIN = 32;
+const FORMULA_RASTER_MAX = 192;
+const FORMULA_RASTER_MORE = 1.5;
 const SQUEEZED_LEAST_PX = 9;
 export function squeezedLook(look: LookSpec): LookSpec {
   const floor = look.type.minFont;
@@ -184,7 +191,7 @@ export function measurerFor(look: LookSpec, viewport: Viewport, ownerStyle: Elem
   const squeezed = squeezedLook(look);
   return (text, spec, maxWidth): MeasuredText => {
     const set = setText({ look: squeezed, viewport, text, emphasis: [], style: textStyleOf(ownerStyle, spec), shrink: spec.shrink, maxWidth, align: 'left' });
-    return { width: set.widest, height: set.lines.length * set.lineHeight, lineHeight: set.lineHeight, lines: set.lines };
+    return { width: set.widest, height: set.lines.length * set.lineHeight, lineHeight: set.lineHeight, lines: set.lines, fontSize: set.fontSize };
   };
 }
 
@@ -345,7 +352,7 @@ function planOf(structure: ElementSpan, schedule: Schedule, env: StructureEnv): 
         : [];
     // a written method as it stands at the end of this cluster: the marks and fills that were written by then
     const math = figure.math == null ? figure.math : { ...figure.math, marks: figure.math.marks.filter((mark) => mark.at < next), fills: figure.math.fills.filter((fill) => fill.at < next) };
-    const key = [signature(structure, present, rows, env.scope), JSON.stringify(marks), JSON.stringify(math), figure.structure === 'math' ? mathKey(structure.key) : '', look.id, look.name, env.viewport.width, env.viewport.height, room.x.toFixed(2), room.y.toFixed(2), room.width.toFixed(2), room.height.toFixed(2), obstacles.map((o) => `${o.x.toFixed(0)},${o.y.toFixed(0)},${o.width.toFixed(0)},${o.height.toFixed(0)}`).join(';'), env.engine === undefined ? 'e' : 'b', figure.structure === 'screen' ? uiKey(structure.key) : figure.structure === 'figure' ? figureKey(structure.key) : '', env.viewport.dpr].join('|');
+    const key = [signature(structure, present, rows, env.scope), JSON.stringify(marks), JSON.stringify(math), figure.structure === 'math' ? `${mathKey(structure.key)}.${formulaRev()}` : '', look.id, look.name, env.viewport.width, env.viewport.height, room.x.toFixed(2), room.y.toFixed(2), room.width.toFixed(2), room.height.toFixed(2), obstacles.map((o) => `${o.x.toFixed(0)},${o.y.toFixed(0)},${o.width.toFixed(0)},${o.height.toFixed(0)}`).join(';'), env.engine === undefined ? 'e' : 'b', figure.structure === 'screen' ? uiKey(structure.key) : figure.structure === 'figure' ? figureKey(structure.key) : '', env.viewport.dpr].join('|');
     const layout = remembered(key, () => {
       const shown: ElementSpan = { ...structure, figure: { ...figure, rows: figure.rows.slice(0, rows), marks, ...(math === undefined ? {} : { math }) } };
       // v2.2: a mock-up is laid out and drawn by the interface kit, as finished frames
@@ -656,8 +663,10 @@ export function buildStructures(schedule: Schedule, env: StructureEnv): Structur
       } else {
         const box = earlier !== undefined && earlier.kind === 'text' ? ({ x: lerp(earlier.box.x, part.box.x, q), y: lerp(earlier.box.y, part.box.y, q), width: lerp(earlier.box.width, part.box.width, q), height: lerp(earlier.box.height, part.box.height, q) } satisfies Box) : part.box;
         const spec: TextSpec = earlier !== undefined && earlier.kind === 'text' ? { ...part.spec, shrink: lerp(earlier.spec.shrink, part.spec.shrink, q) } : part.spec;
-        const set = setTextOnce({ look: squeezedLook(look), viewport: env.viewport, text: part.text, emphasis: part.emphasis as readonly Range[], style: { ...textStyleOf(style, spec), layer: structure.style.layer }, shrink: spec.shrink, maxWidth: box.width, width: box.width, align: part.align });
-        const px = set.fontSize * ps;
+        // a typeset formula is not set as words: its box and its em are the layout's, and the renderer draws what KaTeX set (`ElementFrame.formula`)
+        const formula = part.formula === undefined ? null : { ...part.formula, em: earlier !== undefined && earlier.kind === 'text' && earlier.formula !== undefined ? lerp(earlier.formula.em, part.formula.em, q) : part.formula.em };
+        const set = setTextOnce({ look: squeezedLook(look), viewport: env.viewport, text: formula === null ? part.text : ' ', emphasis: formula === null ? (part.emphasis as readonly Range[]) : [], style: { ...textStyleOf(style, spec), layer: structure.style.layer }, shrink: spec.shrink, maxWidth: box.width, width: box.width, align: part.align });
+        const px = (formula === null ? set.fontSize : formula.em * FORMULA_FONT) * ps;
         const role = part.role === 'tick' || part.role === 'value' || part.tone === 'comment' ? 'dim' : part.tone === 'keyword' ? 'accent' : part.tone === 'literal' ? 'alt' : style.ink;
         const minRatio = minContrastFor(px, structure.style.layer);
         const cx0 = box.x + box.width / 2;
@@ -698,7 +707,8 @@ export function buildStructures(schedule: Schedule, env: StructureEnv): Structur
           return contrastRatio(ink, under) >= contrastRatio(ground, under) ? ink : ground;
         };
         const place = set.placement;
-        const runs: RunFrame[] = place.runs.map((run) => ({ text: run.text, x: run.x, y: run.y, width: run.width, colour: ink(run.emphasised), opacity, dx, dy, scale, reveal: 1 }));
+        // the one run of a formula is its whole box: the TeX as written, drawn by the renderer in the run's colour
+        const runs: RunFrame[] = formula === null ? place.runs.map((run) => ({ text: run.text, x: run.x, y: run.y, width: run.width, colour: ink(run.emphasised), opacity, dx, dy, scale, reveal: 1 })) : [{ text: part.text, x: -box.width / 2, y: -box.height / 2, width: box.width, colour: ink(false), opacity, dx, dy, scale, reveal: 1 }];
         const cx = box.x + box.width / 2 + shake;
         const cy = box.y + box.height / 2;
         out.elements.push({
@@ -710,21 +720,22 @@ export function buildStructures(schedule: Schedule, env: StructureEnv): Structur
           x: cx,
           y: cy,
           width: box.width,
-          height: place.height,
-          fontSize: set.fontSize,
-          stretch: place.stretch,
+          height: formula === null ? place.height : box.height,
+          fontSize: formula === null ? set.fontSize : formula.em,
+          stretch: formula === null ? place.stretch : 1,
           weight: spec.weight,
           opacity,
           scale: pulse,
           rotation: 0,
           runs,
-          lines: place.lines,
+          lines: formula === null ? place.lines : [{ x: -box.width / 2, y: -box.height / 2, width: box.width, height: box.height }],
           mark: 'none',
           markColour: look.roles.ink,
           strike: 0,
           ghost: false,
           tappable: style.tap,
           plate: part.plate ? 1 : 0,
+          ...(formula === null ? {} : { formula: { tex: part.text, display: formula.display, raster: Math.min(FORMULA_RASTER_MAX, Math.max(FORMULA_RASTER_MIN, Math.ceil((formula.em * ps * env.viewport.dpr * FORMULA_RASTER_MORE) / 16) * 16)) } }),
           ...clipOf,
         });
         ownerColour = runs[0]?.colour ?? look.roles.ink;

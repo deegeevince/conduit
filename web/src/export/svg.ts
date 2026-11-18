@@ -8,6 +8,8 @@ import type { Vec3 } from '../contracts/space';
 import type { Layer } from '@conduit/language';
 import { mixHex } from '../painter/affine';
 import { hasDevice, startsRtl } from '../fonts/fold';
+import { INK_PAD } from '../render/formula/drawing';
+import { formulaCanvas } from '../render/formula/host';
 
 export interface SvgSize {
   readonly width: number;
@@ -154,6 +156,15 @@ function textSvg(element: ElementFrame, frame: Frame, fonts: Map<string, Rendere
   }
   for (const run of element.runs) {
     if (run.text === '' || run.opacity * element.opacity <= 0.001 || run.reveal <= 0.001) continue;
+    if (element.formula !== undefined) {
+      // A typeset formula (PLAN-maths M7) is its picture, as a chart is: what KaTeX set, drawn on a canvas in the run's ink, at the box the layout gave it and the room round the ink.
+      const picture = formulaCanvas(element.formula.tex, element.formula.display, element.formula.raster, run.colour);
+      if (picture === null) continue;
+      const pad = INK_PAD * element.fontSize;
+      const reveal = run.reveal < 0.999 ? ` clip-path="inset(0 ${n((1 - run.reveal) * 100)}% 0 0)"` : '';
+      out.push(`<image href="${picture.toDataURL('image/png')}" x="${n(run.x + run.dx - pad)}" y="${n(run.y + run.dy - pad)}" width="${n(run.width + 2 * pad)}" height="${n(element.height + 2 * pad)}" preserveAspectRatio="none"${run.opacity < 0.999 ? ` opacity="${n(run.opacity)}"` : ''}${reveal}/>`);
+      continue;
+    }
     const box = lineBoxFor(element, run.y);
     const cx = run.x + run.dx + run.width / 2;
     const cy = box.y + run.dy + box.height / 2;

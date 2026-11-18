@@ -19,6 +19,7 @@ import { EMPTY_STRUCTURE_LAYOUT } from '../../contracts/blocks';
 import type { BlockPart, StructureInput, StructureLayout, TextSpec } from '../../contracts/blocks';
 import type { Box } from '../../contracts/space';
 import { box, closedLine, dashes, inflate, open, roundedRect, union } from './geom';
+import { formulaFacts } from '../formula';
 import { drawWay, formOf } from './math-ways';
 import type { WayDrawing, WayName, WayPiece } from './math-ways';
 import { canShow, inputCells, mathRev, runOf, stateOf, takeFills } from './math-cells';
@@ -31,6 +32,8 @@ const NATURAL_UNIT = 56;
 const ROWS_BELOW = 2.1;
 /** The most words of a hint that stand under the block, in stage units of width. */
 const HINT_WIDTH = 330;
+/** The em a formula is reserved room for before it is laid out, css px: its sizes are ems, so its room is its size in ems times this. */
+const FORMULA_NATURAL_EM = 34;
 
 // ---------------------------------------------------------------------------------------------------------------------------------
 // The stepper held on the block: a tap advances it. The state of a hand, kept here and not in the schedule, as a control's value is.
@@ -57,6 +60,7 @@ export function gridOfMath(math: MathFigure): maths.Grid | null {
 
 /** How many steps the stepper has: the grid's, or the picture's captions. */
 export function mathSteps(math: MathFigure): number {
+  if (math.method === 'formula') return 0;
   const grid = gridOfMath(math);
   if (grid !== null) return grid.steps;
   const form = formOf(math.sum);
@@ -75,6 +79,10 @@ function shownStep(math: MathFigure, key: string, scope: Scope): number {
 
 /** What the stage plan reserves for a block before it is laid out, css px. */
 export function mathNatural(math: MathFigure): { readonly width: number; readonly height: number } {
+  if (math.method === 'formula') {
+    const facts = formulaFacts(math.sum, true);
+    return { width: Math.ceil(facts.width * FORMULA_NATURAL_EM), height: Math.ceil(facts.height * FORMULA_NATURAL_EM + FORMULA_NATURAL_EM * 0.5) };
+  }
   const grid = gridOfMath(math);
   const stepper = math.steps && math.step === null ? NATURAL_UNIT * 0.7 : 0;
   if (grid === null) return { width: 640, height: 400 + stepper };
@@ -93,6 +101,7 @@ export function mathNatural(math: MathFigure): { readonly width: number; readonl
 /** The least a block can be read at: a written method is never squeezed, so it is its natural size; a picture may be smaller. */
 export function mathLeast(math: MathFigure): { readonly width: number; readonly height: number } {
   const natural = mathNatural(math);
+  if (math.method === 'formula') return { width: Math.ceil(natural.width * 0.62), height: Math.ceil(natural.height * 0.62) };
   return gridOfMath(math) === null ? { width: 260, height: 200 } : natural;
 }
 
@@ -210,6 +219,7 @@ export function layoutMath(input: StructureInput): StructureLayout {
   const math = figure?.kind === 'structure' ? (figure.math ?? null) : null;
   if (math === null) return EMPTY_STRUCTURE_LAYOUT;
   const key = input.structure.key;
+  if (math.method === 'formula') return layoutFormula(input, math);
   const shown = shownStep(math, key, input.scope);
   const grid = gridOfMath(math);
   const room = input.room;
@@ -243,6 +253,63 @@ export function layoutMath(input: StructureInput): StructureLayout {
     shrink: used,
     ...(crowded ? { overflows: wide + tall } : {}),
   };
+}
+
+// --- a formula -------------------------------------------------------------------------------------------------------------------------
+
+/** The sizes a display formula is set at, largest first: the headline of the look, as the digits of a sum are, then smaller while it is wider than the room. */
+const FORMULA_SIZES: readonly Size[] = ['xl', 'l', 'm'];
+/** How far it is shrunk after that, last, before the block says it is crowded. */
+const FORMULA_SHRINKS: readonly number[] = [1, 0.88, 0.76, 0.66];
+/** Round its ink, in ems, so that a glyph that reaches past the box KaTeX gives (an italic's overhang, a radical's tail) is still drawn. */
+export const FORMULA_PAD = 0.12;
+
+/**
+ * `math f1 formula | c = \\frac{d}{\\Delta t}`: one typeset formula, centred in its room at the look's headline size. KaTeX sets it in the page and the page says how big
+ * it came out (`formulaFacts`); until it has, the estimate holds the place and the layout is made again. A formula KaTeX cannot read is its source, set as text.
+ */
+function layoutFormula(input: StructureInput, math: MathFigure): StructureLayout {
+  const key = input.structure.key;
+  const room = input.room;
+  const facts = formulaFacts(math.sum, true);
+  if (facts.fault !== null) {
+    // the source, as the brain wrote it: a reader sees what was meant and what it was
+    const at = specAtPx(input, 20);
+    const measured = input.measure(math.sum, { ...at, face: 'mono' }, Math.max(60, room.width));
+    const whole = box(room.x + Math.max(0, (room.width - measured.width) / 2), room.y, Math.min(measured.width, room.width), measured.height);
+    return { boxes: new Map([[key, whole]]), parts: [plain(key, 'source', math.sum, whole, { ...at, face: 'mono' })], routes: new Map(), notes: [], shrink: 1 };
+  }
+  let chosen: { readonly em: number; readonly shrink: number } | null = null;
+  search: for (const size of FORMULA_SIZES) {
+    const em = emOf(input, size);
+    for (const shrink of FORMULA_SHRINKS) {
+      chosen = { em: em * shrink, shrink };
+      if (facts.width * em * shrink <= room.width + 0.5 && facts.height * em * shrink <= room.height + 0.5) break search;
+      // wider than the room at this size: the size below, not a squeeze, unless it is the last
+      if (shrink === 1) continue search;
+    }
+  }
+  if (chosen === null) return EMPTY_STRUCTURE_LAYOUT;
+  const width = facts.width * chosen.em;
+  const height = facts.height * chosen.em;
+  const at = box(room.x + Math.max(0, (room.width - width) / 2), room.y, width, height);
+  const wide = Math.max(0, width / Math.max(1, room.width) - 1);
+  const tall = Math.max(0, height / Math.max(1, room.height) - 1);
+  const crowded = wide > 0.005 || tall > 0.005;
+  return {
+    boxes: new Map([[key, at]]),
+    parts: [{ kind: 'text', owner: key, part: 'formula', text: math.sum, emphasis: [], box: at, spec: spec('m', 1), align: 'center', role: 'words', plate: false, formula: { display: true, em: chosen.em } }],
+    routes: new Map(),
+    notes: crowded ? [{ key, note: 'crowded' }] : [],
+    shrink: chosen.shrink,
+    ...(crowded ? { overflows: wide + tall } : {}),
+  };
+}
+
+/** The em, in the room's units, of a size of the look. */
+function emOf(input: StructureInput, size: Size): number {
+  const measured = input.measure('0', spec(size, 1), 1e9);
+  return measured.fontSize ?? measured.lineHeight / 1.25;
 }
 
 // --- a grid of cells ---------------------------------------------------------------------------------------------------------------

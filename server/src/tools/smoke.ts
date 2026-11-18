@@ -321,6 +321,32 @@ export const PAGE_LIB = String.raw`(() => {
       return { px: n, share: n / (w * h) };
     });
   };
+  // the longest unbroken horizontal run of ink in each region, in css px, and how many css px of rows hold a run nearly that long: a fraction bar is one long thin run, letters are short ones
+  const barIn = async (url, rects, scale) => {
+    const { g, width, height } = await pixelsOf(url);
+    const sample = g.getImageData(0, 0, width, height).data;
+    const small = [];
+    for (let i = 0; i < sample.length; i += 16) small.push(sample[i], sample[i + 1], sample[i + 2], 255);
+    const ground = modal(small);
+    return rects.map((r) => {
+      const x = Math.max(0, Math.floor(r.x * scale)), y = Math.max(0, Math.floor(r.y * scale));
+      const w = Math.min(width - x, Math.ceil(r.w * scale)), h = Math.min(height - y, Math.ceil(r.h * scale));
+      if (w <= 0 || h <= 0) return { run: 0, rows: 0, outside: true };
+      const d = g.getImageData(x, y, w, h).data;
+      const longest = [];
+      for (let row = 0; row < h; row++) {
+        let run = 0, top = 0;
+        for (let col = 0; col < w; col++) {
+          const i = (row * w + col) * 4;
+          if (Math.abs(d[i] - ground[0]) + Math.abs(d[i + 1] - ground[1]) + Math.abs(d[i + 2] - ground[2]) > 60) run++;
+          else { top = Math.max(top, run); run = 0; }
+        }
+        longest.push(Math.max(top, run));
+      }
+      const best = Math.max(0, ...longest);
+      return { run: best / scale, rows: longest.filter((n) => n >= 0.9 * best).length / scale };
+    });
+  };
   // what is really drawn where: the colour at each point of a picture (the mean of the 3 by 3 pixels about it), and the share of each region within tol (summed channel distance) of one colour
   const colourAt = async (url, points, scale) => {
     const { g, width, height } = await pixelsOf(url);
@@ -372,7 +398,7 @@ export const PAGE_LIB = String.raw`(() => {
     };
   };
   const page = () => ({ sw: document.documentElement.scrollWidth, sh: document.documentElement.scrollHeight, iw: window.innerWidth, ih: window.innerHeight, bw: document.body.scrollWidth, bh: document.body.scrollHeight });
-  window.__smoke = { rect, composerInfo, probe, promptInfo, chromeButtons, answer, analyse, inkIn, colourAt, colourShare, changed, page };
+  window.__smoke = { rect, composerInfo, probe, promptInfo, chromeButtons, answer, analyse, inkIn, barIn, colourAt, colourShare, changed, page };
 })();`;
 
 // ---------------------------------------------------------------------------------------------------------------------------------

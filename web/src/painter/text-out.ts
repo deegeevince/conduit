@@ -10,6 +10,7 @@ import { layerZ, projectToScreen } from '../contracts/space';
 import { ownerKeyOf } from '../contracts/text-layer';
 import type { TextAsk, TextLine, TextRole, TextSpanView } from '../contracts/text-layer';
 import { FACES } from '../fonts/faces';
+import { formulaFacts } from './formula';
 
 /** a run closer to the one before than this share of the font size is the same word (emphasis splits a word, it never leaves a gap) */
 const WORD_GAP = 0.12;
@@ -218,6 +219,7 @@ export function textSpansOf(frame: Frame, schedule: Schedule): readonly TextSpan
         structure: found.structure,
         lang: found.lang,
         placed: true,
+        ...(element.formula === undefined ? {} : { formula: { tex: element.formula.tex, display: element.formula.display } }),
       },
     });
   }
@@ -262,7 +264,7 @@ export function textSignature(spans: readonly TextSpanView[]): string {
   for (const span of spans) {
     out += `${span.key}|${span.role}|${span.text}|`;
     for (const line of span.lines) out += `${Math.round(line.box.x)},${Math.round(line.box.y)},${Math.round(line.box.width)},${Math.round(line.box.height)};`;
-    out += `|${Math.round(span.rotation)}${span.ask === undefined ? '' : `|${span.ask.group}`}\n`;
+    out += `|${Math.round(span.rotation)}${span.ask === undefined ? '' : `|${span.ask.group}`}${span.formula === undefined ? '' : `|formula:${formulaFacts(span.formula.tex, span.formula.display).exact ? 'set' : 'held'}`}\n`;
   }
   return out;
 }
