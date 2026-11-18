@@ -73,6 +73,7 @@ import { printWebkit, webkitGroup, webkitMissing } from './webkit-check';
 import { driftGroup } from './drift-check';
 import { livePages, painterCaps, showcaseCase, showcaseCategory, tableResults } from './showcase-check';
 import { mathsGroup } from './math-check';
+import { motionGroup } from './motion-check';
 import { checkGlyphs, checkInk, checkListings, checkSlideWords, checkTakeover, flowsGroup, footprintJudge, photoGroup, sceneFactsOf, streamBrainCheck, streamFixtureCheck, testPattern } from './real-check';
 import type { Footprint } from './real-check';
 import type { Answer, CheckResult, Options, Probe, Step, Verdict } from './smoke';
@@ -1847,6 +1848,15 @@ function buildUnits(args: Args, welcome: Welcome): { readonly units: Unit[]; rea
     run: async (_servers, out) => {
       out.lines.push('\nmaths (820x971, 390x844, 1280x720; input at 820x971 dpr 2 and 390x844 dpr 3, on a server of its own)');
       checkLines(out, await mathsGroup(plain, join(args.out, 'maths'), args.timeoutMs));
+    },
+  });
+  units.push({
+    name: 'motion',
+    needs: 'none',
+    weight: 8,
+    run: async (_servers, out) => {
+      out.lines.push('\nmotion (PLAN-motion step 2, bench half: centres read from the frames at chosen T, to 1e-6; no browser)');
+      checkLines(out, await motionGroup(plain));
     },
   });
   units.push({
