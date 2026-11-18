@@ -13,21 +13,25 @@
 //             because nothing in it was drawn
 //   plain     a turn that wrote a real line is never asked again, whatever else it wrote ("ok" too)
 //
-// Run by `pnpm check` (group `fb-075`, also `fb-008`) and standalone: `tsx empty-check.ts`.
+// Run by `pnpm check` (group `fb-075`, also `fb-008`) and standalone: `tsx empty-check.ts`; `tsx empty-check.ts --live "<prompt>"` is one real turn (costs money, see `emptyLive`).
 
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { API, FULL_CAPABILITIES, LOOK_IDS, REFERENCE_SCREEN } from '@conduit/language';
 import type { StageEvent } from '@conduit/language';
 import { EMPTY_AGAIN } from '../domain/empty-turn';
 import { sleep } from './explore-browser';
+import { MEMORY_SCREEN, withTab } from './memory-check';
+import type { LensScreen } from './lens-check';
 import { startMathsServer } from './math-check';
 import type { CheckResult } from './smoke';
 
 interface Reply {
   readonly tools?: readonly string[];
   readonly text: string;
+  /** the stand-in thinks this long before it writes */
+  readonly delayMs?: number;
 }
 
 const CAR = ['scene layout=solo', 'say a1 | A car has an engine, four wheels, a body and a steering wheel.', 'say a2 | The engine turns the wheels, and the wheel steers them.'].join('\n');
@@ -53,7 +57,14 @@ const PLAN: Readonly<Record<string, readonly Reply[]>> = {
   ],
   // a real line, and a refused one beside it: drawn, so never asked again
   plain: [{ text: `${CAR}\nok\n` }, { text: 'scene layout=solo\nsay z1 | asked again\n' }],
+  // in a real page: the second try thinks for a while, and the status line says so over an empty stage
+  page: [{ tools: ['canvas_fits', 'canvas_look'], text: 'ok\n' }, { delayMs: 2500, text: `${CAR}\n` }],
+  // in a real page: the second try is empty too, and the person is told so
+  'page-empty': [{ text: 'ok\n' }, { delayMs: 2000, text: 'ok\n' }],
 };
+const PHONE_SCREEN: LensScreen = { name: '390x844', width: 390, height: 844, dpr: 3 };
+/** the cases a real page plays (the others are read from the stream) */
+const IN_A_PAGE: readonly string[] = ['page', 'page-empty'];
 
 interface Played {
   readonly events: readonly StageEvent[];
@@ -62,12 +73,14 @@ interface Played {
   readonly over: boolean;
 }
 
-/** One turn of one session on the server: the events the page would read, until the turn ends (or `waitMs`). */
-async function play(base: string, name: string, dir: string, waitMs: number): Promise<Played> {
+/** A turn of a new session on the server, with the stream a page reads open: every event as it came (and when, in ms after the turn was asked), until the turn ends (or `waitMs`). */
+async function ask(base: string, text: string, waitMs: number, settleMs = 700): Promise<{ readonly events: readonly StageEvent[]; readonly times: readonly number[]; readonly over: boolean; readonly session: string }> {
   const created = (await (await fetch(`${base}${API.sessions}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ screen: REFERENCE_SCREEN, capabilities: FULL_CAPABILITIES, look: LOOK_IDS[0] }) })).json()) as { session: string };
   const stream = await fetch(`${base}${API.stream(created.session)}`);
   const reader = (stream.body as ReadableStream<Uint8Array>).getReader();
   const events: StageEvent[] = [];
+  const times: number[] = [];
+  let asked = 0;
   let over = false;
   const reading = (async (): Promise<void> => {
     const decoder = new TextDecoder();
@@ -84,6 +97,7 @@ async function play(base: string, name: string, dir: string, waitMs: number): Pr
         try {
           const data = JSON.parse(/^data: (.*)$/m.exec(frame)?.[1] ?? '{}') as StageEvent;
           events.push(data);
+          times.push(asked === 0 ? 0 : Date.now() - asked);
           if (data.type === 'end') over = true;
         } catch {
           // a frame that is not JSON is not one of ours
@@ -92,13 +106,20 @@ async function play(base: string, name: string, dir: string, waitMs: number): Pr
     }
   })();
   await sleep(300);
+  asked = Date.now();
   // look and fix is off for the turn: only the second pass of a turn that drew nothing is under test, and a look would be a message more
-  await fetch(`${base}${API.turns(created.session)}`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-conduit-review': 'off' }, body: JSON.stringify({ input: { kind: 'prompt', text: `show me the main parts of a car (case:${name})` } }) });
+  await fetch(`${base}${API.turns(created.session)}`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-conduit-review': 'off' }, body: JSON.stringify({ input: { kind: 'prompt', text } }) });
   for (let waited = 0; !over && waited < waitMs; waited += 100) await sleep(100);
   // anything the turn does after it has ended (a second end, a late line) is seen too
-  await sleep(700);
+  await sleep(settleMs);
   await reader.cancel().catch(() => undefined);
   await reading.catch(() => undefined);
+  return { events, times, over, session: created.session };
+}
+
+/** One turn of one session on the stand-in's server: the events the page would read, and what the brain was sent. */
+async function play(base: string, name: string, dir: string, waitMs: number): Promise<Played> {
+  const { events, over } = await ask(base, `show me the main parts of a car (case:${name})`, waitMs);
   const heard = readFileSync(join(dir, 'messages.jsonl'), 'utf8')
     .split('\n')
     .filter((row) => row !== '')
@@ -186,8 +207,63 @@ export function judge(played: Readonly<Record<string, Played>>): CheckResult[] {
   return results;
 }
 
-/** Runs the four cases on one server whose brain's CLI is the stand-in, and judges them. */
-export async function emptyGroup(note: (text: string) => void = () => undefined): Promise<CheckResult[]> {
+/** What the real page showed of a turn: every text its status line and notice held (a new one when it changed), and how many elements stood on stage when it said "Trying again…" */
+interface Seen {
+  readonly texts: readonly string[];
+  readonly onStageWhenRetrying: number | null;
+  readonly ids: readonly string[];
+}
+
+/** One turn in a real page (headless Chrome at 1280x800) on the stand-in's server: the status line and the stage are read every 100 ms until the turn is over. */
+async function inAPage(base: string, name: string, screen: LensScreen, dir: string, timeoutMs: number, over: (texts: readonly string[], ids: readonly string[]) => boolean): Promise<Seen> {
+  const picture = async (tab: { shot(): Promise<string> }, when: string): Promise<void> => writeFileSync(join(dir, `fb-075-${name}-${screen.name}-${when}.png`), Buffer.from((await tab.shot()).replace(/^data:image\/png;base64,/, ''), 'base64'));
+  return withTab(base, screen, dir, timeoutMs, async (tab, live) => {
+    const texts: string[] = [];
+    let onStageWhenRetrying: number | null = null;
+    await tab.eval<string>(`window.__stage.prompt(${JSON.stringify(`show me the main parts of a car (case:${name})`)})`);
+    for (let waited = 0; waited < 30_000; waited += 100) {
+      // the message box's own words (a short routine status is shown there, where the person looks), then the pill and the notice above it
+      const text = await tab.eval<string>(`[document.querySelector('.prompt__input')?.placeholder ?? '', ...[...document.querySelectorAll('.prompt__status, .prompt__notice')].map((n) => n.textContent.trim())].filter((t) => t !== '' && t !== 'Ask anything').join(' | ')`);
+      if (text !== '' && texts[texts.length - 1] !== text) texts.push(text);
+      if (onStageWhenRetrying === null && /Trying again…/.test(text)) {
+        onStageWhenRetrying = (await live()).length;
+        await picture(tab, 'retrying');
+      }
+      const ids = (await live()).map((element) => element.id);
+      if (over(texts, ids)) {
+        await sleep(400);
+        await picture(tab, 'end');
+        return { texts, onStageWhenRetrying, ids: (await live()).map((element) => element.id) };
+      }
+      await sleep(100);
+    }
+    return { texts, onStageWhenRetrying, ids: (await live()).map((element) => element.id) };
+  });
+}
+
+/** What the person saw: "Trying again…" over an empty stage and then the lines; and, when the second try is empty too, the honest words */
+export function judgePage(pages: Readonly<Record<string, Seen>>): CheckResult[] {
+  const results: CheckResult[] = [];
+  for (const [name, retry] of Object.entries(pages).filter(([name]) => name.startsWith('page@'))) {
+    const problems: string[] = [];
+    if (!retry.texts.some((text) => /Trying again…/.test(text))) problems.push(`the status line never said "Trying again…" (it said ${JSON.stringify(retry.texts)})`);
+    else if (retry.onStageWhenRetrying !== 0) problems.push(`the stage held ${retry.onStageWhenRetrying} elements when "Trying again…" was said: the first try drew nothing`);
+    if (!retry.ids.includes('a2')) problems.push(`the second try's lines never reached the stage (${JSON.stringify(retry.ids)})`);
+    if (/Trying again…/.test(retry.texts[retry.texts.length - 1] ?? '')) problems.push('"Trying again…" was still the status line after the second try\'s lines had come');
+    results.push({ turn: 0, check: `fb-075-page-trying-again ${name.slice(5)}`, verdict: problems.length === 0 ? 'PASS' : 'FAIL', detail: problems.length === 0 ? 'in a real page the status line said "Trying again…" over the empty stage, and the lines came after it' : problems.join('; ') });
+  }
+
+  const empty = pages['page-empty'] as Seen;
+  const bad: string[] = [];
+  if (!empty.texts.some((text) => /Trying again…/.test(text))) bad.push(`the status line never said "Trying again…" (it said ${JSON.stringify(empty.texts)})`);
+  if (!empty.texts.some((text) => text.includes(EMPTY_AGAIN))) bad.push(`the person was not told, in the status line, that nothing was drawn even when asked again (it said ${JSON.stringify(empty.texts)})`);
+  if (empty.ids.length > 0) bad.push(`something stood on a stage that nothing was drawn on (${JSON.stringify(empty.ids)})`);
+  results.push({ turn: 0, check: 'fb-075-page-honest', verdict: bad.length === 0 ? 'PASS' : 'FAIL', detail: bad.length === 0 ? 'in a real page a second try that was empty too left the status line saying "Nothing was drawn, even when asked again"' : bad.join('; ') });
+  return results;
+}
+
+/** Runs the cases on one server whose brain's CLI is the stand-in, and judges them: the stream's, then (needs Chrome) a real page's. */
+export async function emptyGroup(note: (text: string) => void = () => undefined, out: string = join(tmpdir(), 'conduit-empty-out'), timeoutMs = 90_000): Promise<CheckResult[]> {
   const dir = mkdtempSync(join(tmpdir(), 'conduit-empty-check-'));
   const wrapper = join(dir, 'claude');
   writeFileSync(join(dir, 'plan.json'), JSON.stringify(PLAN));
@@ -198,11 +274,18 @@ export async function emptyGroup(note: (text: string) => void = () => undefined)
   // everything else that would speak to a model (the critic, the art studio, writing ahead, agent tools, look and fix) is off: only the turn's own brain is under test
   const server = await startMathsServer({ BRAIN: 'claude-cli', CLAUDE_BIN: wrapper, CLAUDE_MODEL: 'stand-in', CRITIC: 'off', ART_MAKER: 'off', AHEAD: 'off', AGENT: 'off', REVIEW: 'off', IMAGE_MODEL: 'none', VOICE: 'off' });
   try {
-    const names = Object.keys(PLAN);
+    const names = Object.keys(PLAN).filter((name) => !IN_A_PAGE.includes(name));
     const runs = await Promise.all(names.map(async (name) => [name, await play(server.url, name, dir, 40_000)] as const));
     // EMPTY_CHECK_DUMP=1: what each case saw, to be read
     if (process.env['EMPTY_CHECK_DUMP'] !== undefined) for (const [name, run] of runs) note(`--- ${name}\n${run.events.map((event) => JSON.stringify(event).slice(0, 230)).join('\n')}\nmessages: ${JSON.stringify(run.messages.map((message) => message.slice(-330)))}`);
-    return judge(Object.fromEntries(runs));
+    const results = judge(Object.fromEntries(runs));
+    // a real page, one case after the other (each takes a Chrome of its own)
+    note('fb-075: a real page');
+    mkdirSync(out, { recursive: true });
+    const pages: Record<string, Seen> = {};
+    for (const screen of [MEMORY_SCREEN, PHONE_SCREEN]) pages[`page@${screen.name}`] = await inAPage(server.url, 'page', screen, out, timeoutMs, (_texts, ids) => ids.includes('a2'));
+    pages['page-empty'] = await inAPage(server.url, 'page-empty', MEMORY_SCREEN, out, timeoutMs, (texts) => texts.some((text) => text.includes(EMPTY_AGAIN)));
+    return [...results, ...judgePage(pages)];
   } catch (error) {
     return [{ turn: 0, check: 'fb-075-retry', verdict: 'FAIL', detail: `stopped: ${error instanceof Error ? error.message : String(error)}` }];
   } finally {
@@ -211,7 +294,44 @@ export async function emptyGroup(note: (text: string) => void = () => undefined)
   }
 }
 
-if (process.argv[1] !== undefined && /empty-check\.ts$/.test(process.argv[1])) {
+/**
+ * `--live "<prompt>"`: ONE real turn (and a second, if the guard fires) on the owner's login: the real server and the real claude, BRAIN_THINKING=off, the canvas tools on,
+ * `CLAUDE_MODEL`/`BRAIN_EFFORT` as given (opus, medium). Look and fix, the critic, the art studio and writing ahead are off, so the guard is the only thing that can add a call. Prints
+ * what the page was sent, with times, and the turn's own log of what the brain was told and what it cost. Costs money: only when asked.
+ */
+async function emptyLive(prompt: string, logs: string): Promise<void> {
+  const server = await startMathsServer({ BRAIN: 'claude-cli', CLAUDE_MODEL: process.env['CLAUDE_MODEL'] ?? 'opus', BRAIN_EFFORT: process.env['BRAIN_EFFORT'] ?? 'medium', BRAIN_THINKING: process.env['BRAIN_THINKING'] ?? 'off', CANVAS_TOOLS: 'on', CRITIC: 'off', ART_MAKER: 'off', AHEAD: 'off', AGENT: 'off', IMAGE_MODEL: 'none', VOICE: 'off', LOG_DIR: logs });
+  try {
+    const run = await ask(server.url, prompt, 300_000, 2_000);
+    process.stdout.write(`\n${run.over ? 'the turn ended' : 'THE TURN DID NOT END IN TIME'}; what the page was sent (seconds after the question):\n`);
+    run.events.forEach((event, at) => {
+      if (event.type === 'typing' || event.type === 'doc' || event.type === 'hello') return;
+      const detail = event.type === 'line' ? ` ${event.text.slice(0, 110)}${event.issues.length > 0 ? `   [${event.issues.map((issue) => `${issue.severity} ${issue.code}`).join(', ')}]` : ''}` : event.type === 'reject' ? ` ${JSON.stringify(event.raw.slice(0, 90))}` : event.type === 'pass' ? ` pass ${event.pass} ${event.state}${event.reason === null ? '' : `: ${event.reason}`}` : event.type === 'end' ? ` ${event.reason}${event.message === null ? '' : `: ${event.message}`}` : '';
+      process.stdout.write(`${((run.times[at] ?? 0) / 1000).toFixed(1).padStart(7)} s  ${event.type}${detail}\n`);
+    });
+    // what the server's own log says of the brain: the messages it was sent, the tools it used, what each cost
+    const file = join(logs, readdirSync(logs).filter((name) => name.endsWith('.jsonl')).sort().pop() ?? '');
+    const rows = readFileSync(file, 'utf8').split('\n').filter((row) => row !== '').map((row) => JSON.parse(row) as Record<string, unknown>);
+    process.stdout.write('\nthe turn\'s log:\n');
+    for (const row of rows) {
+      if (row['type'] === 'brief') process.stdout.write(`  brief (pass ${String(row['pass'])}, ${String(row['form'])}): ${JSON.stringify(String(row['text']).slice(-260))}\n`);
+      else if (row['type'] === 'usage') process.stdout.write(`  usage (pass ${String(row['pass'])}): ${JSON.stringify(row['usage'])}\n`);
+      else if (row['type'] === 'attention') process.stdout.write(`  canvas tools: ${String(row['calls'] ?? 0)} calls, ${String(row['toolMs'] ?? 0)} ms\n`);
+      else if (row['type'] === 'pass' || row['type'] === 'end') process.stdout.write(`  ${row['type']} ${JSON.stringify({ ...row, type: undefined, at: undefined })}\n`);
+    }
+  } finally {
+    await server.stop();
+  }
+}
+
+if (process.argv[1] !== undefined && /empty-check\.ts$/.test(process.argv[1]) && process.argv.includes('--live')) {
+  const prompt = process.argv.slice(2).filter((arg) => arg !== '--live').join(' ') || 'Show me the main parts of a car';
+  const logs = mkdtempSync(join(tmpdir(), 'conduit-empty-live-'));
+  void emptyLive(prompt, logs).then(() => process.exit(0), (error: unknown) => {
+    process.stderr.write(`${error instanceof Error ? (error.stack ?? error.message) : String(error)}\n`);
+    process.exit(1);
+  });
+} else if (process.argv[1] !== undefined && /empty-check\.ts$/.test(process.argv[1])) {
   void emptyGroup((text) => process.stdout.write(`${text}\n`)).then((results) => {
     for (const result of results) process.stdout.write(`${result.verdict} ${result.check}: ${result.detail}\n`);
     process.exit(results.every((result) => result.verdict === 'PASS') ? 0 : 1);

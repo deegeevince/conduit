@@ -3,7 +3,7 @@
 //
 // $STAND_IN_PLAN is a JSON file: `{ "<case>": [reply, ...], ... }`. A process picks its case from the first message it is sent (the person's words carry `case:<name>`), then
 // answers each user message it is sent with the next reply of the case, in order (the last is kept for any message after it). A reply is `{ "tools": ["canvas_fits", ...],
-// "text": "..." }`: the canvas tools it calls first (each a tool_use and its tool_result, as the CLI prints them for a tool the host let through), then the text, written in
+// "text": "...", "delayMs": 0 }`: the canvas tools it calls first (each a tool_use and its tool_result, as the CLI prints them for a tool the host let through), then the text, written in
 // a few deltas, then the turn's `result`. Every user message's text is appended to $STAND_IN_DIR/messages.jsonl with its case, so the check can say how many times the brain
 // was spoken to and what it was told.
 
@@ -32,6 +32,8 @@ async function reply(spoken) {
     await sleep(30);
     send({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: id, content: 'fits', is_error: false }] } });
   }
+  // `delayMs`: a model that thinks a while before it writes (the page is seen saying "Trying again…" meanwhile)
+  await sleep(planned.delayMs ?? 0);
   const text = planned.text ?? '';
   // a few deltas, cut anywhere, as a model's are
   for (let at = 0; at < text.length; at += 37) {

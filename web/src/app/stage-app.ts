@@ -703,7 +703,8 @@ export async function mountStage(options: StageAppOptions): Promise<StageApp> {
       case 'repaired':
         return 'Tidied';
       case 'retrying':
-        return 'Trying again…';
+        // (no ellipsis of its own: a short routine status is shown in the message box as "Trying again…")
+        return 'Trying again';
       case 'kept':
       case 'skipped':
         return null;

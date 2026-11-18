@@ -1819,7 +1819,7 @@ function buildUnits(args: Args, welcome: Welcome): { readonly units: Unit[]; rea
     needs: 'none',
     weight: 20,
     run: async (_servers, out) => {
-      const results = await emptyGroup(plain);
+      const results = await emptyGroup(plain, join(args.out, 'fb-075'), args.timeoutMs);
       out.lines.push('\nfb-075 (a server whose brain is a stand-in CLI: a turn that wrote "ok" after four tool calls, one that wrote nothing twice, one of prose and markdown bullets, one that drew; and, with no server, how the reader takes a markdown bullet: `pnpm timeline feedback`)');
       checkLines(out, [...results, ...(await scriptGroup('fb-008-reader', ['timeline', 'feedback'], 'a markdown bullet or numbered item that is no Series is said as text, its marker and emphasis off, with a warning; what is no list item is not touched'))]);
     },
