@@ -617,9 +617,10 @@ async function start(): Promise<void> {
     upload: async (png) => (await mounted.link.uploadPhoto(png)).id,
     lastTurn: () => mounted.lastTurn(),
     capture: (maxSide) => mounted.capture(maxSide),
+    moment: () => mounted.moment(),
     prompt: (words, marks) => mounted.prompt(words, [], marks),
     announce: (text) => mounted.announce(text),
-  }, { guard: penGuard });
+  }, { guard: penGuard, penPasses: mounted.lens === null });
   // the lens (`?lens=1`) looks at the ink through its own view
   mounted.lens?.useInk(stageInk);
   // the Pencil writes on the stage with no mode: in a written method's cells (and anywhere with the lens)

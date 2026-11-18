@@ -50,6 +50,8 @@ export interface PenWriteOptions {
   readonly views: () => readonly MathBlockView[];
   /** a short Pencil tap, as a press */
   readonly penTap: (event: PointerEvent) => void;
+  /** whether something that can be pressed (a button, a choice, a control, a cell) is at this point: in Draw a short tap on nothing is a dot, and on one of these it is a press (default: always) */
+  readonly pressable?: (event: PointerEvent) => boolean;
   /** the painter: the pen has ink in a cell (or none now) */
   readonly painter: { mathInk(key: string, part: string, on: boolean): void };
 }
@@ -119,6 +121,16 @@ export function mountPenWrite(options: PenWriteOptions): PenWrite {
   const anywhere = lens !== null;
   const model = ink.ink.model;
   ink.through(true);
+  // fb-102. While a written method has cells to write in, the stage takes the Pencil with no gesture of the browser's to wait for: `touch-action: none` (the stage is `pinch-zoom` otherwise, which
+  // leaves the browser free to read a resting hand and the pen as a pinch, and a pinch cancels the pen's stream; Safari's own arbitration cannot be seen from a desktop browser, so this is the
+  // safe setting, not a measured fix). Only while there is a sum to write in, so that nothing else on the page changes for a finger.
+  const touchActionWas = host.style.touchAction;
+  const takePen = (views: readonly MathBlockView[]): void => {
+    if (anywhere) return;
+    const writing = views.some((view) => view.cells.length > 0);
+    const want = writing ? 'none' : touchActionWas;
+    if (host.style.touchAction !== want) host.style.touchAction = want;
+  };
 
   /** a point of the screen as a point of the page the strokes live on */
   const pageOf = (clientX: number, clientY: number): { x: number; y: number } => {
@@ -133,7 +145,7 @@ export function mountPenWrite(options: PenWriteOptions): PenWrite {
 
   // ----------------------------------------------------------------------------------------------------------------------------- the pen
   // It goes down on the stage: the ink begins the stroke at once; if the pen then comes up having hardly moved it was a tap, the stroke is thrown away and what is under it is pressed.
-  const downs = new Map<number, { readonly x: number; readonly y: number; readonly eraser: boolean; travel: number }>();
+  const downs = new Map<number, { readonly x: number; readonly y: number; readonly eraser: boolean; readonly drawing: boolean; travel: number }>();
   const works = (): boolean => !ink.isOpen() && options.active();
   const onPen = (e: PointerEvent): void => {
     if (e.pointerType !== 'pen') return;
@@ -142,10 +154,12 @@ export function mountPenWrite(options: PenWriteOptions): PenWrite {
     if (e.type === 'pointerdown') {
       if (!works() || (e.button !== 0 && e.button !== 5)) return;
       const target = e.target;
-      // a button, a field or a chart is worked by the pen as it always was
-      if (target instanceof Element && target.closest('button, input, textarea, select, a[href], [contenteditable="true"], .stage__chart, .stage__app, .ink-bar')) return;
-      if (!anywhere && !onMethod(e)) return;
-      downs.set(e.pointerId, { x: e.clientX, y: e.clientY, eraser: e.button === 5 || (e.buttons & 32) !== 0, travel: 0 });
+      // In Draw (the Pencil draws anywhere on the stage, a finger and a mouse work what is under the layer) a chart or an app is drawn over like the rest of the stage; a button or a
+      // field of the page, and the bar, are still worked by the pen as they always were
+      const drawing = ink.drawing();
+      if (target instanceof Element && target.closest(drawing ? 'button, input, textarea, select, a[href], [contenteditable="true"], .ink-bar' : 'button, input, textarea, select, a[href], [contenteditable="true"], .stage__chart, .stage__app, .ink-bar')) return;
+      if (!anywhere && !drawing && !onMethod(e)) return;
+      downs.set(e.pointerId, { x: e.clientX, y: e.clientY, eraser: e.button === 5 || (e.buttons & 32) !== 0, drawing, travel: 0 });
       e.stopImmediatePropagation();
       ink.penDown(e);
       return;
@@ -160,7 +174,8 @@ export function mountPenWrite(options: PenWriteOptions): PenWrite {
     downs.delete(e.pointerId);
     // the layer is the one to tell the guard the pen has lifted when it had the stroke; this makes sure that it is told, whoever had it
     guard.penLifted(e.pointerId, e.timeStamp);
-    if (e.type === 'pointerup' && !down.eraser && Math.max(down.travel, Math.hypot(e.clientX - down.x, e.clientY - down.y)) <= PEN_TAP_TRAVEL) {
+    // (in Draw a tap on nothing is a dot, a mark like any other: only a tap on something that can be pressed is a press, fb-103)
+    if (e.type === 'pointerup' && !down.eraser && Math.max(down.travel, Math.hypot(e.clientX - down.x, e.clientY - down.y)) <= PEN_TAP_TRAVEL && (!down.drawing || (options.pressable?.(e) ?? true))) {
       ink.abort(e.pointerId);
       options.penTap(e);
     }
@@ -241,6 +256,7 @@ export function mountPenWrite(options: PenWriteOptions): PenWrite {
       if (ids.length > 0) model.erase(new Set(ids));
     },
     sync(views) {
+      takePen(views);
       // fb-097. The working a sum had written leaves with the sum: ink owned by a block that is no longer on the stage, or that now works another sum under the same id, is taken off
       const stale = model.strokes.filter((stroke) => {
         const own = owner.get(stroke.id);
@@ -260,6 +276,7 @@ export function mountPenWrite(options: PenWriteOptions): PenWrite {
       for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel']) host.removeEventListener(type, onPen as EventListener, true);
       host.removeEventListener('pointerdown', onTouch, true);
       ink.through(false);
+      host.style.touchAction = touchActionWas;
       delete hook.__penWrite;
     },
   };
@@ -275,6 +292,7 @@ export function mountPenWriting(app: StageApp, ink: StageInk, host: HTMLElement,
     active: () => app.stageActive(),
     views: () => app.painter.mathViews(),
     penTap: (event) => app.penTap(event),
+    pressable: (event) => app.pressableAt(event.clientX, event.clientY),
     painter: { mathInk: (key, part, on) => app.painter.mathInk(key, part, on) },
   });
   app.pen.set(write);

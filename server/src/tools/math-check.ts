@@ -427,6 +427,9 @@ async function keysScene(mine: MathsTab, dir: string, problems: Problems): Promi
 async function sendScene(mine: MathsTab, dir: string, problems: Problems): Promise<string> {
   const list = problems['send'] as string[];
   const { tab, hands, screen } = mine;
+  // (what the scenes before this one wrote is still on the layer: the drawing starts empty here)
+  await tab.eval('window.__inkClear()');
+  await mine.blur();
   const played = await mine.play(['scene layout=stack mood=calm', 'math m9 times | 43 × 8'].join('\n'));
   if (played !== '') {
     list.push(played);
@@ -682,6 +685,139 @@ async function penScene(mine: MathsTab, dir: string, problems: Problems): Promis
 }
 
 
+
+/** What the page keeps while the lag check writes: each pen-down with when its first ink was drawn and the frame that showed it, the stage read-backs (a render and a pixel read of the stage, which is what a picture of it costs), and every request to read handwriting (there are none: nothing reads the pen). */
+const PEN_LAG_PROBE = `(() => {
+  const now = () => performance.now();
+  const P = { downs: [], cancels: 0, readbacks: [], reads: [] };
+  window.__penlag = P;
+  const f = window.fetch.bind(window);
+  window.fetch = (input, init) => {
+    const url = String(input && input.url ? input.url : input);
+    if (/read-ink/.test(url)) P.reads.push({ began: now(), url });
+    return f(input, init);
+  };
+  let pending = null;
+  const fill = CanvasRenderingContext2D.prototype.fill;
+  CanvasRenderingContext2D.prototype.fill = function (...args) {
+    if (pending !== null && pending.drawn === null && this.canvas.classList.contains('ink__live')) pending.drawn = now();
+    return fill.apply(this, args);
+  };
+  for (const gl of [window.WebGLRenderingContext, window.WebGL2RenderingContext]) {
+    if (!gl) continue;
+    const read = gl.prototype.readPixels;
+    gl.prototype.readPixels = function (...args) { P.readbacks.push(now()); return read.apply(this, args); };
+  }
+  window.addEventListener('pointerdown', (e) => {
+    if (e.pointerType !== 'pen') return;
+    const rec = { at: now(), stamp: e.timeStamp, drawn: null, frame: null };
+    pending = rec;
+    P.downs.push(rec);
+    const poll = (n) => requestAnimationFrame(() => {
+      if (rec.drawn !== null) rec.frame = now();
+      else if (n < 60) poll(n + 1);
+    });
+    poll(0);
+  }, true);
+  window.addEventListener('pointercancel', (e) => { if (e.pointerType === 'pen') P.cancels += 1; }, true);
+})()`;
+
+interface PenLag {
+  downs: { at: number; stamp: number; drawn: number | null; frame: number | null }[];
+  cancels: number;
+  readbacks: number[];
+  reads: { began: number; url: string }[];
+}
+
+/**
+ * fb-102. The Pencil writes three digits into a sum with a hand's pauses between the strokes, one pause as long as the read that used to follow it (nothing reads the pen now,
+ * fb-104, and a read request would be a failure). Every stroke is taken (none dropped, cancelled or made a tap), each shows its first ink within 50 ms of the pen going down (at the
+ * desk), and no picture of the stage is taken while the pen writes in a cell (a render and a read-back of the stage, on the main thread, at the pen-down of the first stroke of every
+ * sum, was the lag a person felt).
+ * A stroke that is free working (to be sent as a drawing) has its picture taken after the pen has lifted, not while it is down.
+ */
+async function penLagScene(mine: MathsTab, problems: Problems): Promise<void> {
+  const list = problems['penlag'] as string[];
+  const { tab, hands, screen } = mine;
+  const desk = screen.width >= 800;
+  // (the free working of the scenes before this one is still on the layer, and the stage's picture for it taken: the drawing starts empty here)
+  await tab.eval('window.__inkClear()');
+  await mine.blur();
+  const played = await mine.play(['scene layout=stack mood=calm', 'math m12 column | 123+456'].join('\n'));
+  if (played !== '') return void list.push(played);
+  await sleep(500);
+  await tab.eval(PEN_LAG_PROBE);
+  const owners = (): Promise<{ stroke: string; key: string; part: string }[]> => tab.eval('window.__penWrite ? window.__penWrite.owners() : []');
+  const inked = async (): Promise<number> => (await hands.strokes())?.strokes.length ?? 0;
+  const base = await inked();
+  const probe = (): Promise<PenLag> => tab.eval<PenLag>('JSON.parse(JSON.stringify(window.__penlag))');
+  const digits: Record<string, readonly { ms: number; pts: readonly (readonly [number, number])[] }[]> = {
+    '9': [{ ms: 250, pts: [[0.62, 0.3], [0.5, 0.18], [0.36, 0.28], [0.38, 0.46], [0.54, 0.52], [0.66, 0.4], [0.66, 0.62], [0.62, 0.82], [0.5, 0.92], [0.36, 0.9]] }],
+    '7': [{ ms: 95, pts: [[0.28, 0.2], [0.5, 0.19], [0.74, 0.2]] }, { ms: 150, pts: [[0.74, 0.2], [0.62, 0.5], [0.5, 0.72], [0.44, 0.9]] }],
+    '5': [{ ms: 90, pts: [[0.72, 0.2], [0.5, 0.2], [0.32, 0.22]] }, { ms: 230, pts: [[0.32, 0.22], [0.3, 0.46], [0.5, 0.42], [0.7, 0.54], [0.72, 0.76], [0.52, 0.9], [0.3, 0.84]] }],
+  };
+  /** one stroke as a Pencil sends it: pressed, moved on the hand's own pace, lifted */
+  const write = async (part: string, shape: { ms: number; pts: readonly (readonly [number, number])[] }): Promise<void> => {
+    const box = (await mine.cell('m12', part))?.box;
+    if (box === undefined) throw new Error(`no cell m12.${part}`);
+    const path: Point[] = [];
+    for (let at = 0; at < shape.pts.length - 1; at += 1) {
+      const a = shape.pts[at] as readonly [number, number];
+      const b = shape.pts[at + 1] as readonly [number, number];
+      path.push(...line(await mine.centre(box, { x: a[0], y: a[1] }), await mine.centre(box, { x: b[0], y: b[1] }), Math.max(2, Math.round(shape.ms / 16 / (shape.pts.length - 1)))).slice(at === 0 ? 0 : 1));
+    }
+    const first = path[0] as Point;
+    await tab.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: first.x, y: first.y, pointerType: 'pen' });
+    await tab.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: first.x, y: first.y, button: 'left', buttons: 1, clickCount: 1, pointerType: 'pen', force: 0.5 });
+    for (const p of path.slice(1)) {
+      await tab.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: p.x, y: p.y, button: 'left', buttons: 1, pointerType: 'pen', force: 0.5 });
+      await sleep(Math.max(0, shape.ms / path.length - 4));
+    }
+    const last = path[path.length - 1] as Point;
+    await tab.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: last.x, y: last.y, button: 'left', buttons: 0, clickCount: 1, pointerType: 'pen' });
+  };
+  // the ones, the tens (two strokes), a long pause (a read used to begin in it), then the hundreds (two strokes)
+  const plan: readonly [string, number, string, number][] = [['9', 0, 'ans-ones', 0], ['7', 0, 'ans-tens', 450], ['7', 1, 'ans-tens', 180], ['5', 0, 'ans-hundreds', 1000], ['5', 1, 'ans-hundreds', 150]];
+  for (const [digit, which, part, gap] of plan) {
+    await sleep(gap);
+    await write(part, (digits[digit] as (typeof digits)[string])[which] as (typeof digits)[string][number]);
+  }
+  await sleep(300);
+  const drawn = await probe();
+  const taken = (await inked()) - base;
+  const mine12 = (await owners()).filter((o) => o.key.startsWith('m12'));
+  if (taken !== plan.length) list.push(`${plan.length} strokes were written and the ink holds ${taken}: ${plan.length - taken} dropped or made taps`);
+  const byPart = (part: string): number => mine12.filter((o) => o.part === part).length;
+  if (byPart('ans-ones') !== 1 || byPart('ans-tens') !== 2 || byPart('ans-hundreds') !== 2) list.push(`the strokes went to the cells as ones ${byPart('ans-ones')}, tens ${byPart('ans-tens')}, hundreds ${byPart('ans-hundreds')}, wanted 1, 2 and 2`);
+  if (drawn.cancels !== 0) list.push(`${drawn.cancels} pen stream(s) were cancelled`);
+  if (drawn.downs.length !== plan.length) list.push(`the page saw ${drawn.downs.length} pen-downs for ${plan.length} strokes`);
+  if ((await mine.focused()) !== '') list.push(`a stroke was taken as a tap: the keyboard is in "${await mine.focused()}"`);
+  // nothing reads what the pen wrote: not after a pause, not while more is written (fb-104)
+  if (drawn.reads.length > 0) list.push(`${drawn.reads.length} request(s) to read the handwriting were made while the pen wrote in the cells (${drawn.reads.map((read) => read.url).join(', ')})`);
+  // the first ink of each stroke: drawn in the pen-down's own task, and shown in the next frame
+  for (const [at, down] of drawn.downs.entries()) {
+    if (down.drawn === null || down.frame === null) list.push(`stroke ${at + 1} drew no ink in the frames after its pen-down`);
+    else if (desk && down.frame - down.stamp > 50) list.push(`stroke ${at + 1}: first ink ${Math.round(down.frame - down.stamp)} ms after the pen went down, wanted 50 or less`);
+  }
+  // no picture of the stage while writing in a cell: no read-back of the stage from the first pen-down to now
+  const early = drawn.readbacks.filter((t) => t >= (drawn.downs[0]?.at ?? 0) - 5);
+  if (early.length > 0) list.push(`${early.length} read-back(s) of the stage while the pen wrote in the cells (a picture of the stage is taken for nothing the cells use)`);
+  // free working, to be sent as a drawing: its picture comes after the pen has lifted, and does come
+  const before = drawn.readbacks.length;
+  const tens = (await mine.cell('m12', 'ans-tens'))?.box;
+  if (tens !== undefined) {
+    const from = await hands.onScreen({ x: tens.x + tens.width / 2 - 60, y: tens.y - 170 });
+    const to = await hands.onScreen({ x: tens.x + tens.width / 2 + 40, y: tens.y - 160 });
+    await tab.eval('window.__penlag.mark = performance.now()');
+    await hands.pen(line(from, to, 8));
+    const during = (await probe()).readbacks.length - before;
+    if (during !== 0) list.push(`${during} read-back(s) of the stage within 300 ms of the pen lifting from free working: its picture is taken after the pen has been up a while`);
+    await sleep(2200);
+    const after = (await probe()).readbacks.length - before;
+    if (after === 0) list.push('the stage was never photographed for the free working that waits to be sent');
+  }
+}
+
 /** A sum in a dark look, written in by key and by pen: the learner's digits in pencil, the ink where it is written, nothing marked. A picture to look at (the colours are the look's own). */
 async function darkScene(base: string, screen: InputScreen, dir: string, timeoutMs: number, problems: Problems): Promise<string> {
   const list = problems['keys'] as string[];
@@ -709,7 +845,7 @@ async function darkScene(base: string, screen: InputScreen, dir: string, timeout
 
 /** One screen's whole input run. */
 async function inputScreen(base: string, screen: InputScreen, dir: string, timeoutMs: number, note: (text: string) => void): Promise<{ results: CheckResult[]; pictures: string[] }> {
-  const problems: Problems = { keys: [], fill: [], pen: [], send: [], notes: [] };
+  const problems: Problems = { keys: [], fill: [], pen: [], penlag: [], send: [], notes: [] };
   const pictures: string[] = [];
   note(`maths input: ${screen.name}`);
   const mine = await MathsTab.open(base, screen, dir, timeoutMs);
@@ -717,6 +853,7 @@ async function inputScreen(base: string, screen: InputScreen, dir: string, timeo
     pictures.push(...(await keysScene(mine, dir, problems)));
     await fillScene(mine, problems);
     pictures.push(await penScene(mine, dir, problems));
+    await penLagScene(mine, problems);
     pictures.push(await sendScene(mine, dir, problems));
     pictures.push(await darkScene(base, screen, dir, timeoutMs, problems));
   } catch (error) {
@@ -734,6 +871,7 @@ async function inputScreen(base: string, screen: InputScreen, dir: string, timeo
   add('keys', 'a finger tap focuses a cell inside the gesture; 2 moves to the carry then the tens; Backspace, Tab and the arrows walk the sum; Enter puts the keyboard away and marks nothing; the active cell stays above a short visual viewport');
   add('send', 'pen-written 344 in 43 x 8 and Send: one drawing turn on the sum\'s id with every stroke and its picture; no handwriting read; no Check, Hint or Show me in the page or the painter');
   add('fill', 'fill m1 | 72 and fill m1.ans-ones | 2 put the digits in the cells, marked by nothing, and a later hand wins');
+  add('penlag', 'three digits of five strokes, with a hand\'s pauses: every stroke taken (none dropped, cancelled or made a tap), first ink within 50 ms of the pen-down at the desk, no picture of the stage taken while the pen writes in a cell, and no handwriting read asked for (free working is photographed after the pen has lifted)');
   add('pen', 'with Draw closed a pen stroke is one stroke owned by its cell, the larger share wins, a finger and a palm leave no ink, a short pen tap is a press; nothing is read; a typed digit over the ink dims it and the ✕ takes it off; pen and keys mix');
   return { results, pictures };
 }
