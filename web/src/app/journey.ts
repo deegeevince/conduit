@@ -3,7 +3,7 @@
 // for each step, when things happened (the page's clock and `performance.now()`), for a film editor that cuts the waits and places captions.
 
 import { alternativesOf, parseJourney, seeded } from './journey-script';
-import { likeness, norm } from './journey-words';
+import { bindMovesShape, likeness, norm } from './journey-words';
 import type { DragPacing, FocusBox, FocusSample, JourneyState, JourneyStep, Stamp, StepTiming } from './journey-script';
 import type { StageApp } from './stage-app';
 import type { ControlView, StageElementView } from '../contracts/painter';
@@ -476,21 +476,38 @@ export function startJourney(options: JourneyOptions): JourneyState {
 
   const sliders = (): ControlView[] => app.painter.snapshot().controls.filter((control) => control.control === 'slider' && control.enabled);
 
-  /** a slider by what the step says: `engine/speed` lists alternatives, tried in order (an id, then a word of its label); with none found, the only slider there is */
-  const findSlider = (wanted: string): ControlView | null => {
+  /** whether a slider moves a drawn thing: a `bind` of it that moves, turns or redraws a shape, in the lines the page took this turn (a bound sentence or colour does not) */
+  const movesShape = (id: string): boolean => {
+    const turn = app.lang.turn;
+    if (turn === null) return false;
+    return app.lang.entriesOf(turn).some((entry) => {
+      const bound = /^bind\s+(\S+)[^|]*\|\s*(.+)$/.exec(entry.text);
+      return bound !== null && bound[1] === id && bindMovesShape(bound[2] as string);
+    });
+  };
+
+  /**
+   * A slider by what the step says. `crank / turn / engine` lists alternatives, in order: a word is an id, or a word of a label. Of all that any of them find, a slider that
+   * moves a shape is taken before one that only changes words (the film wants the piston to move); else the first found; with none found, the only slider there is.
+   * The choice says how it was made.
+   */
+  const findSlider = (wanted: string): { readonly control: ControlView; readonly by: string; readonly movesShape: boolean } | null => {
     const all = sliders();
+    const found: { control: ControlView; by: string }[] = [];
     for (const alternative of wanted.split('/').map(norm).filter((word) => word !== '')) {
-      const byId = all.find((control) => norm(control.id) === alternative);
-      if (byId !== undefined) return byId;
-      const byLabel = all.filter((control) => norm(control.label).includes(alternative) || norm(control.id).includes(alternative));
-      if (byLabel.length >= 1) return byLabel[0] ?? null;
+      for (const control of [...all.filter((candidate) => norm(candidate.id) === alternative), ...all.filter((candidate) => norm(candidate.label).includes(alternative) || norm(candidate.id).includes(alternative))]) {
+        if (!found.some((seen) => seen.control.key === control.key)) found.push({ control, by: alternative });
+      }
     }
-    return all.length === 1 ? (all[0] ?? null) : null;
+    if (found.length === 0) return all.length === 1 && all[0] !== undefined ? { control: all[0], by: 'the only slider', movesShape: movesShape(all[0].id) } : null;
+    const mover = found.find((candidate) => movesShape(candidate.control.id));
+    const picked = mover ?? (found[0] as { control: ControlView; by: string });
+    return { control: picked.control, by: picked.by, movesShape: mover !== undefined };
   };
 
   const doDrag = async (step: JourneyStep, timing: StepTiming): Promise<boolean> => {
     const found = await settled(() => {
-      const control = findSlider(step.target);
+      const control = findSlider(step.target)?.control;
       const knob = control?.parts.find((part) => part.part === 'knob')?.box ?? control?.parts.find((part) => part.part === 'track')?.box;
       return control === null || control === undefined || knob === undefined ? null : { id: control.id, label: control.id, box: knob, tappable: true, key: control.key };
     }, step.optional ? OPTIONAL_WAIT_MS : TAP_WAIT_MS);
@@ -500,6 +517,7 @@ export function startJourney(options: JourneyOptions): JourneyState {
     }
     const control = sliders().find((candidate) => candidate.key === found.key);
     if (control === undefined) return fail(`step ${step.n}: the slider went away`);
+    const choice = findSlider(step.target);
     const clamp = (value: number): number => Math.min(control.max, Math.max(control.min, value));
     const pick = (value: number | 'min' | 'max'): number => (value === 'min' ? control.min : value === 'max' ? control.max : clamp(value));
     const from = pick(step.from);
@@ -567,7 +585,7 @@ export function startJourney(options: JourneyOptions): JourneyState {
     timing.dragEnd = stamp();
     lingerThen(1000);
     await sleep(350);
-    timing.drag = { control: control.id, from, to, reached: valueNow(), readout: { before, after: readout() }, pacing: pacingOf(main.samples, main) };
+    timing.drag = { control: control.id, from, to, reached: valueNow(), readout: { before, after: readout() }, pacing: pacingOf(main.samples, main), chose: { by: choice?.by ?? step.target, movesShape: choice?.movesShape ?? false } };
     return true;
   };
 

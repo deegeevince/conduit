@@ -74,6 +74,8 @@ export interface StepTiming {
     readonly readout: { readonly before: readonly string[]; readonly after: readonly string[] };
     /** how the page itself kept the pace while the pointer moved (animation frames, in ms apart): a stall is a long one. Absent in a recording made before this was measured. */
     readonly pacing?: DragPacing;
+    /** how the slider was chosen: by which of the step's words, and whether it moves a drawn thing (a slider that does is taken before one that only changes words) */
+    readonly chose?: { readonly by: string; readonly movesShape: boolean };
   } | null;
 }
 

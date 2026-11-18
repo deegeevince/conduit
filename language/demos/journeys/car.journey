@@ -5,8 +5,9 @@
 #                                   (tap? | ... skips the step when it never shows). `Brakes / Brake / Wheels` lists alternatives: the first one on stage is tapped,
 #                                   and the timings say which. Words that cannot be tapped (a line of speech, a figure's description) are never tapped.
 #   drag <control id or label> <from> > <to> over=<s>   (min and max stand for the ends of the slider)
-#                                   work a slider by its knob (drag? skips it when there is no such control). `engine/speed` lists alternatives, the first slider that is
-#                                   there is worked; the pointer goes at one steady eased pace and nothing is read back from the control while it moves
+#                                   work a slider by its knob (drag? skips it when there is no such control). `crank / turn / engine` lists alternatives (an id, or a word of
+#                                   a label): of the sliders they find, one that moves a shape (a bound move or turn) is worked before one that only changes words, and the
+#                                   timings say how it was chosen. The pointer goes at one steady eased pace and nothing is read back from the control while it moves
 #   undo                            the Undo chip
 #   back                            a Back choice when the brain offers one, else the Undo chip
 #   hold <s>                        look at the stage for a while
@@ -28,12 +29,12 @@ rest
 hold 4
 dragSpeed: drag speed 50 > 100 over=4
 hold 4
-engine: type | Show me the engine running, and let me change its speed
+engine: type | Show me how the engine works, and let me turn it
 rest
 hold 4
-dragEngine: drag? engine/speed min > max over=3
+dragEngine: drag? crank / turn / engine min > max over=4
 hold 4
-electric: type | Now make it an electric car
+electric: type | Swap the engine for an electric motor and battery, and keep the rest of the car the same
 rest
 hold 4
 how: type | Show me how you're doing this
