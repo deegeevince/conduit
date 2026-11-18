@@ -101,6 +101,8 @@ export const PATTERNS: readonly Pattern[] = [
       },
     ],
   },
+  // PLAN-maths M7: a typeset formula is set by KaTeX in the browser's own layout; the server only estimates it, so the server leaves the turn to the page
+  { name: 'formula', turns: [{ lines: [['scene layout=caption', 0], ['math f1 formula | c = \\frac{d}{\\Delta t}', 0.3], ['say b | The speed is the distance over the time.', 0.4]] }] },
   { name: 'app', turns: [{ lines: [['scene layout=caption', 0], ['app tally height=320 | Tally', 0.3], ['| <div id="n">0</div>', 0], ['say s | A counter.', 0.3]] }] },
 ];
 
